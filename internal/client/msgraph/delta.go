@@ -19,6 +19,8 @@ func itoa(n int) string { return strconv.Itoa(n) }
 // where it was last persisted.
 var ErrStop = errors.New("msgraph: stop")
 
+var errDeltaIncomplete = errors.New("msgraph: delta pass incomplete")
+
 // deltaSelect keeps delta pages light: we only need the id, read state, and the
 // @removed marker to decide add/update vs remove. Full envelope + body + headers
 // are hydrated per admitted message via FetchMessage.
@@ -64,15 +66,26 @@ var BackfillFolders = []string{FolderInbox, FolderSent, FolderArchive, FolderDra
 // fits the disposable worker natively: no webhook endpoint, no subscription
 // lifecycle, just a cursor the control plane persists via OnDelta.
 func (c *Client) Sync(ctx context.Context) error {
+	_, err := c.SyncPass(ctx)
+	return err
+}
+
+// SyncPass reports catch-up only when every tracked folder reaches an unpinned delta link.
+func (c *Client) SyncPass(ctx context.Context) (bool, error) {
+	complete := true
 	for _, folder := range TrackedFolders {
 		if err := c.syncFolder(ctx, folder); err != nil {
 			if errors.Is(err, ErrStop) {
-				return nil
+				return false, nil
 			}
-			return err
+			if errors.Is(err, errDeltaIncomplete) {
+				complete = false
+				continue
+			}
+			return false, err
 		}
 	}
-	return nil
+	return complete, nil
 }
 
 func (c *Client) syncFolder(ctx context.Context, folder string) error {
@@ -97,7 +110,7 @@ func (c *Client) syncFolder(ctx context.Context, folder string) error {
 			case pg.DeltaLink != "":
 				return c.saveCursor(ctx, folder, pg.DeltaLink)
 			default:
-				return nil
+				return errDeltaIncomplete
 			}
 		}
 	}
@@ -139,19 +152,21 @@ func (c *Client) syncFolder(ctx context.Context, folder string) error {
 			if !pinned {
 				return c.saveCursor(ctx, folder, pg.DeltaLink)
 			}
-			return nil
+			return errDeltaIncomplete
 		default:
-			return nil
+			return errDeltaIncomplete
 		}
 	}
-	return nil
+	return errDeltaIncomplete
 }
 
 func (c *Client) saveCursor(ctx context.Context, folder, link string) error {
-	c.DeltaLinks[folder] = link
 	if c.OnDelta != nil {
-		return c.OnDelta(ctx, folder, link)
+		if err := c.OnDelta(ctx, folder, link); err != nil {
+			return err
+		}
 	}
+	c.DeltaLinks[folder] = link
 	return nil
 }
 

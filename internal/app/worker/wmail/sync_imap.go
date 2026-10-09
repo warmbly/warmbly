@@ -32,6 +32,8 @@ func (w *WMail) Sync(ctx context.Context) *errx.MailError {
 	}
 	w.beginTick()
 	stats := &tickStats{}
+	complete := false
+	defer func() { w.endTick(ctx, stats, complete) }()
 	if !w.retryUnmap(ctx) {
 		return nil
 	}
@@ -78,6 +80,7 @@ func (w *WMail) Sync(ctx context.Context) *errx.MailError {
 	// mod-sequences where the server has CONDSTORE, UIDNEXT where it does not
 	// (Outlook.com, Microsoft 365 over IMAP, Yahoo, many hosted servers).
 	condStore := client.HasCondStore()
+	caughtUp := true
 
 	for i := range folders {
 		box := &folders[i]
@@ -135,6 +138,9 @@ func (w *WMail) Sync(ctx context.Context) *errx.MailError {
 		} else if changed {
 			// The pass was aborted before this folder; hold its cursor too.
 			fullyProcessed = false
+		}
+		if !fullyProcessed {
+			caughtUp = false
 		}
 
 		if changed || !slices.Equal(befBox.Attrs, box.Attrs) {
@@ -238,7 +244,7 @@ outer:
 		}
 	}
 
-	w.endTick(stats)
+	complete = caughtUp
 	return nil
 }
 

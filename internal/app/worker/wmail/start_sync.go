@@ -78,11 +78,18 @@ func (w *WMail) nextSyncDelay(base time.Duration, last *errx.MailError) time.Dur
 // so one mailbox's bad server response must not take down every other
 // account's sync and send loops.
 func (w *WMail) syncOnce(ctx context.Context) (result *errx.MailError) {
+	if w.tracker != nil {
+		w.tracker.tickComplete = false
+	}
 	defer func() {
 		if r := recover(); r != nil {
+			if w.tracker != nil {
+				w.tracker.tickComplete = false
+			}
 			err := fmt.Errorf("mail sync panic: %v", r)
 			w.CaptureError(err)
 			log.Error().Err(err).Str("email_id", w.ID.String()).Msg("mail sync panicked")
+			result = &errx.MailError{Code: errx.MailErrorCodeImapUnknown, Type: errx.MailErrorWarning, Message: "mail sync pass interrupted"}
 		}
 	}()
 	if err := w.SyncMail(ctx); err != nil {
@@ -100,7 +107,9 @@ func (w *WMail) syncOnce(ctx context.Context) (result *errx.MailError) {
 		log.Warn().Err(err).Str("email_id", w.ID.String()).Msg("mail sync error")
 		return err
 	}
-	w.transportFailures = 0
+	if w.tracker != nil && w.tracker.tickComplete {
+		w.transportFailures = 0
+	}
 	return nil
 }
 

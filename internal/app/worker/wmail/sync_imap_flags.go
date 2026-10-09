@@ -73,7 +73,8 @@ func (w *WMail) imapScanFlags(ctx context.Context, box *models.Mailbox, stats *t
 				return err
 			}
 			if stats.aborted {
-				break
+				scan.at = now
+				return nil
 			}
 		}
 	}

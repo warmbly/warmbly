@@ -134,15 +134,21 @@ func (w *WMail) laneOf(ctx context.Context, key string, msg *models.EmailMessage
 // beginTick releases an expired hold so the state reports "within budget"
 // before the pass looks at anything.
 func (w *WMail) beginTick() {
+	w.tracker.tickComplete = false
 	w.tracker.release(time.Now())
 }
 
-// endTick folds the pass into the relayed state. deferred is the number of
-// live messages still waiting on the server; it is reported as-is (not
-// accumulated) so a pass that admits everything zeroes it.
-func (w *WMail) endTick(stats *tickStats) {
-	w.tracker.setDeferred(stats.deferred)
-	w.tracker.touch(time.Now())
+// endTick retains unmeasured backlog until a complete pass confirms catch-up.
+func (w *WMail) endTick(ctx context.Context, stats *tickStats, complete bool) {
+	complete = complete && ctx.Err() == nil && !stats.aborted && stats.deferred == 0 && w.tracker.state.BackfillCursor.GoogleRecovery == nil
+	w.tracker.tickComplete = complete
+	if complete {
+		w.tracker.setDeferred(0)
+		w.tracker.touch(time.Now())
+		return
+	}
+	w.tracker.setDeferred(max(w.tracker.state.Deferred, stats.deferred))
+	w.tracker.flush(time.Now())
 }
 
 // storeNew is the shared tail of every provider's new-message path: record

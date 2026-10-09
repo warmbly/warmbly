@@ -25,11 +25,14 @@ func (w *WMail) SyncGraph(ctx context.Context) *errx.MailError {
 	w.beginTick()
 	stats := &tickStats{}
 	w.graphTick = stats
+	complete := false
+	defer func() { w.endTick(ctx, stats, complete) }()
 	if !w.retryUnmap(ctx) {
 		return nil
 	}
 
-	if err := w.GraphData.Client.Sync(ctx); err != nil {
+	caughtUp, err := w.GraphData.Client.SyncPass(ctx)
+	if err != nil {
 		var mailErr *errx.MailError
 		if errors.As(err, &mailErr) {
 			return mailErr
@@ -42,7 +45,7 @@ func (w *WMail) SyncGraph(ctx context.Context) *errx.MailError {
 			return merr
 		}
 	}
-	w.endTick(stats)
+	complete = caughtUp
 	return nil
 }
 
@@ -186,6 +189,7 @@ func (w *WMail) graphBackfill(ctx context.Context, stats *tickStats) *errx.MailE
 					return mailErr
 				}
 				w.CaptureError(err)
+				stats.aborted = true
 				return nil
 			}
 			for _, full := range msgs {

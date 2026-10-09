@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { CheckCircle2Icon, DownloadIcon, HourglassIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
 import toast from "react-hot-toast/headless";
@@ -25,8 +25,8 @@ const REASON_COPY: Record<SyncThrottleReason, string> = {
     priority_daily: "the daily limit for replies was reached",
 };
 
-function relative(iso: string | Date): string {
-    const diff = Date.now() - new Date(iso).getTime();
+function relative(iso: string | Date, now: number): string {
+	const diff = now - new Date(iso).getTime();
     const m = Math.round(diff / 60_000);
     if (m < 1) return "just now";
     if (m < 60) return `${m} min ago`;
@@ -148,6 +148,11 @@ function SkipFoldersSection({ mailboxId, listed, skipped }: { mailboxId: string;
 }
 
 export default function SyncStatusCard({ mailboxId, provider }: { mailboxId: string; provider?: string }) {
+	const [now, setNow] = useState(Date.now);
+	useEffect(() => {
+		const timer = setInterval(() => setNow(Date.now()), 60_000);
+		return () => clearInterval(timer);
+	}, []);
     const sync = useSync(mailboxId);
     const state = sync.data?.state ?? null;
     const policy = sync.data?.policy;
@@ -162,15 +167,19 @@ export default function SyncStatusCard({ mailboxId, provider }: { mailboxId: str
     }
     if (!sync.data) return null;
 
-    const throttled = !!state?.throttled_until && new Date(state.throttled_until).getTime() > Date.now();
+    const throttled = !!state?.throttled_until && new Date(state.throttled_until).getTime() > now;
+    const lastSuccess = state?.last_synced_at && new Date(state.last_synced_at).getTime();
+    // The worker relays successful checks at least every ten minutes.
+    const stale = !!lastSuccess && now - lastSuccess > 20 * 60_000;
+    const recovering = !!state?.backfill_cursor?.google_recovery;
     const status = state?.backfill_status ?? "pending";
     const cap = policy?.backfill_messages ?? 0;
     const synced = state?.backfill_synced ?? 0;
     const pct = cap > 0 ? Math.min(100, Math.round((synced / cap) * 100)) : 0;
 
     let headline: React.ReactNode;
-    let Icon = CheckCircle2Icon;
-    let tone = "text-emerald-600";
+    let Icon = RefreshCwIcon;
+    let tone = "text-slate-500";
     if (throttled && state?.throttled_until) {
         Icon = HourglassIcon;
         tone = "text-amber-600";
@@ -181,8 +190,19 @@ export default function SyncStatusCard({ mailboxId, provider }: { mailboxId: str
                 {reason ? <span className="text-slate-500"> ({reason})</span> : null}
             </>
         );
+    } else if (recovering) {
+        tone = "text-sky-600";
+        headline = "Recovering mailbox sync";
+    } else if ((state?.deferred ?? 0) > 0) {
+        Icon = HourglassIcon;
+        tone = "text-amber-600";
+        headline = "New mail was waiting on sync at the last check";
+    } else if (stale) {
+        tone = "text-amber-600";
+        headline = "No recent successful sync check";
     } else if (status === "complete") {
-        headline = state?.last_synced_at ? `Up to date, last checked ${relative(state.last_synced_at)}` : "Up to date";
+        Icon = CheckCircle2Icon;
+        headline = "Recent-mail import complete";
     } else if (status === "running") {
         Icon = DownloadIcon;
         tone = "text-sky-600";
@@ -214,16 +234,23 @@ export default function SyncStatusCard({ mailboxId, provider }: { mailboxId: str
 
             <p className="mt-2 text-[11.5px] leading-relaxed text-slate-500">
                 {status === "complete" && policy
-                    ? `Imported ${synced.toLocaleString()} message${synced === 1 ? "" : "s"} from the last ${policy.backfill_days} days. New mail syncs as it arrives.`
+                    ? `Imported ${synced.toLocaleString()} message${synced === 1 ? "" : "s"} from the configured ${policy.backfill_days}-day window. Import completion does not confirm live sync is current.`
                     : policy
                         ? `The last ${policy.backfill_days} days come in newest first, up to ${cap.toLocaleString()} messages. New mail syncs alongside.`
                         : null}
-                {throttled ? " Replies to your outreach keep syncing; the rest resumes automatically." : null}
+                {throttled ? " Mail is retried automatically within its sync budget." : null}
+            </p>
+
+            <p className="mt-1 text-[11.5px] text-slate-500">
+                {state?.last_synced_at
+                    ? `Last successful sync ${relative(state.last_synced_at, now)}.`
+                    : "No successful sync check reported yet."}
+                {stale ? " Recovery is not yet confirmed by a recent successful check." : null}
             </p>
 
             {(state?.deferred ?? 0) > 0 && (
                 <p className="mt-1 text-[11.5px] text-amber-700">
-                    {state!.deferred.toLocaleString()} message{state!.deferred === 1 ? "" : "s"} waiting on the server.
+                    Last observed backlog: {state!.deferred.toLocaleString()} message{state!.deferred === 1 ? "" : "s"} waiting on the server. The current total may have changed.
                 </p>
             )}
 

@@ -14,6 +14,8 @@ import (
 // returns the checkpoint reached so far and a nil error.
 var ErrStop = errors.New("goog: stop")
 
+var errHistoryIncomplete = errors.New("goog: history pass incomplete")
+
 var ErrHistoryExpired = errors.New("goog: history expired; resynchronization required")
 
 var ErrRecoveryPageExpired = errors.New("goog: recovery page token expired")
@@ -35,6 +37,20 @@ const historyPagesPerPass = 10
 // continues, so later records that are admitted (a reply, say) still land and
 // the deferred ones are re-offered next tick.
 func (c *Client) FetchHistory(ctx context.Context, lastHistoryID uint64) (uint64, error) {
+	checkpoint, _, err := c.FetchHistoryPass(ctx, lastHistoryID)
+	return checkpoint, err
+}
+
+// FetchHistoryPass distinguishes a bounded or pinned walk from full live catch-up.
+func (c *Client) FetchHistoryPass(ctx context.Context, lastHistoryID uint64) (uint64, bool, error) {
+	checkpoint, err := c.fetchHistory(ctx, lastHistoryID)
+	if errors.Is(err, errHistoryIncomplete) {
+		return checkpoint, false, nil
+	}
+	return checkpoint, err == nil, err
+}
+
+func (c *Client) fetchHistory(ctx context.Context, lastHistoryID uint64) (uint64, error) {
 	if lastHistoryID == 0 {
 		return c.HistoryBaseline(ctx)
 	}
@@ -62,7 +78,7 @@ func (c *Client) FetchHistory(ctx context.Context, lastHistoryID uint64) (uint64
 				}
 				added, err := c.OnMessageAdded(ctx, m.Message.Id, m.Message.ThreadId)
 				if errors.Is(err, ErrStop) {
-					return checkpoint, nil
+					return checkpoint, errHistoryIncomplete
 				}
 				if err != nil {
 					return checkpoint, err
@@ -96,13 +112,14 @@ func (c *Client) FetchHistory(ctx context.Context, lastHistoryID uint64) (uint64
 		if resp.NextPageToken == "" {
 			if !pinned {
 				checkpoint = resp.HistoryId
+				return checkpoint, nil
 			}
-			break
+			return checkpoint, errHistoryIncomplete
 		}
 		call.PageToken(resp.NextPageToken)
 	}
 
-	return checkpoint, nil
+	return checkpoint, errHistoryIncomplete
 }
 
 func (c *Client) HistoryBaseline(ctx context.Context) (uint64, error) {
