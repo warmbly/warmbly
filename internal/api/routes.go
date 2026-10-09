@@ -1935,6 +1935,7 @@ func Run(
 		// only keys no environment variable owns.
 		adminRoutes.GET("/instance/config", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminInstanceConfig)
 		adminRoutes.GET("/instance/health", middleware.RequireAdminPermission(models.AdminPermViewAnalytics), h.AdminInstanceHealth)
+		adminRoutes.GET("/instance/monitoring", middleware.RequireAdminPermission(models.AdminPermViewAnalytics), h.AdminInstanceMonitoring)
 		adminRoutes.DELETE("/instance/invitations/expired", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminDeleteExpiredInvitations)
 		adminRoutes.GET("/instance/limits", middleware.RequireAdminPermission(models.AdminPermViewAnalytics), h.AdminInstanceLimits)
 		adminRoutes.GET("/instance/settings", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminGetInstanceSettings)

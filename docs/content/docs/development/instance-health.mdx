@@ -3,13 +3,13 @@ title: Instance health
 description: The Setup and health page, what every check means, how to clear it, and how to run the same checks from a shell.
 ---
 
-Warmbly checks its own deployment and tells you what is wrong in the words of the thing that is wrong, with the command that fixes it. A silent instance and a healthy instance look identical from the outside, so the checks exist to make the difference visible.
+Warmbly reports configuration findings, service reachability and operational measurements separately. A silent instance and a healthy instance can look identical from the outside. The panel shows missing, partial and stale coverage explicitly instead of treating silence as proof of health.
 
 ## Setup and health
 
-The page lives in the [admin panel](/development/admin-panel/) on `:5174`, under **Instance > Setup and health**, on its **Findings** tab; the **Services** tab next to it holds the per-service probes and the platform mail card. It is operator tooling, so it is not in the customer-facing dashboard, and every route behind it is gated on a platform admin permission.
+The page lives in the [admin panel](/development/admin-panel/) on `:5174`, under **Instance > Setup and health**. **Findings** lists configuration findings, **Services** holds per-service reachability probes and the platform mail card, and **Operations** holds read-only operational measurements. It is operator tooling, not a customer dashboard, and every route behind it is gated on a platform admin permission. Tabs support direct links such as `/health?tab=operations`.
 
-Errors and warnings appear in the top panel of the admin overview, and the sidebar entry carries a badge with the number of those problems. Informational notes do not count toward the badge. If there are only informational notes, the Findings tab says **No problems found** and keeps the notes below it.
+Configuration errors and warnings appear on the admin Overview, and the sidebar badge counts those findings. Informational notes do not count toward the badge. If there are no errors or warnings, Findings says **No errors or warnings reported**, not that all checks ran or the instance is healthy. The separate Overview monitoring panel shows operational signals and positive broker queue measurements.
 
 | Severity | Means |
 |---|---|
@@ -17,11 +17,11 @@ Errors and warnings appear in the top panel of the admin overview, and the sideb
 | `warning` | Works today, will hurt you. Misconfiguration, a published secret, a concentration risk |
 | `info` | No action required, stated so you are not surprised later |
 
-Only findings are listed. A check that passes returns nothing, so an empty page means the instance is clean.
+Only findings are listed. A passing check returns nothing, but a skipped or unavailable check may also have no finding. The health response currently reports `execution_coverage: "unreported"`; an empty list is not a confirmed all-clear. Older responses without this additive field are treated the same way. The receipt time shown on Findings is when the browser received the response, not a source-evidence timestamp.
 
 Each row carries a title, the full message including the fix, and a link to the section of these docs that explains it. Every check that ships today is instance-wide, so no row is scoped to a single mailbox, worker or campaign.
 
-Every check that runs is listed below. If a check is not on this page, it does not exist.
+The configuration checks are documented below. Operational evidence has its own coverage and limits.
 
 ## Running the checks from a shell
 
@@ -44,12 +44,14 @@ warmblyctl status                                          # bare binary
 
 ## Health endpoints
 
-There are two, and they answer different questions.
+These endpoints answer different questions.
 
 | Endpoint | Auth | Use it for |
 |---|---|---|
 | `GET /health` | none | Liveness. Is the process up. This is the one a load balancer or an orchestrator probes |
 | `GET /admin/instance/health` | platform admin, `view_analytics` | Deep diagnostics: the finding list the panel renders |
+| `GET /admin/system/status` | platform admin, `view_analytics` | Scoped backing-service probes at `checked_at`, not send or sync throughput |
+| `GET /admin/instance/monitoring` | platform admin, `view_analytics` | Versioned operational snapshot with per-source permission filtering and explicit measurement coverage |
 
 <Callout type="warn" title="Do not point a load balancer at the deep endpoint">
 The diagnostic endpoint reports warnings about configuration, and a warning is not a reason to take a node out of rotation. Use `GET /health` for liveness and leave the diagnostics to the panel and to `make doctor`.
@@ -62,6 +64,42 @@ Two neighbouring endpoints round out the surface, both under **Instance** in the
 | `GET /admin/instance/config` | `manage_settings` | Every configuration entry with its resolved value, source and restart requirement. Sensitive keys return a fingerprint, never a value |
 | `GET /admin/instance/limits` | `view_analytics` | The effective sending, warmup and rate limits this build compiles in |
 | `GET /admin/instance/update` | `view_analytics` | The running build, the newest release, and the updater's state. Backs the version pill at the foot of the sidebar; see [Updates](/development/updates/) |
+
+## Operational monitoring
+
+**Operations** renders the version `"1"` snapshot from `GET /admin/instance/monitoring`. It covers registered workers, worker sample receipt, confirmed sends, campaign reservations, dispatch, safety holds, sync state and fair-use waits, stored mailbox errors, jobs, dead letters, webhooks, customer notification rows, send-result effects, domain checks, warmup mailbox loading and broker queue observations. Unsupported sources remain visible as unavailable, including detailed send-wait attribution and external tracking-broker diagnostics. Optional arrival-outbox measurements are unavailable when their schema is absent; monitoring needs no arrival migration and does not require a new worker wire version.
+
+The backend collects with an eight-second overall timeout, three seconds per source and at most four concurrent collectors. It shares a one-minute snapshot across admins, then filters source permissions for each response. HTTP responses are not cacheable. On collection failure it can retain a source's last good measurement for at most five minutes, marked stale and with its original observation/evidence clocks. After that it is unavailable. Source samples are bounded; measured/expected scope counts and incomplete coverage expose truncation. Counts in partial samples may be lower bounds, never extrapolated fleet totals.
+
+### Reading a snapshot
+
+- **Snapshot checked** and **Collection attempted** are collection clocks. They do not confirm delivery, sync or recovery. **Source observed** and **Observed** are the measurement clocks; **Evidence since**, **Latest evidence**, their ages and any window are distinct. The UI retains the original clocks after a failed refresh and marks retained measurements stale. A successful browser fetch of old data does not make it fresh.
+- `fresh`, `stale` and `unavailable` describe measurement availability. The UI also marks observations older than two minutes or implausibly future-dated as stale/unknown. Coverage can be complete only for the measured sources; it does not mean every customer operation succeeded.
+- A nullable count is **Not measured**, not zero. A successful zero means no matching rows in that metric's scope/window. Zero recent sends means **No matching recent evidence**, not healthy throughput. A completed task, heartbeat, low memory usage or sync tick does not prove delivery or recovery.
+- Recent/persistent failure evidence, recovery unverified, safety holds, backlog and stale telemetry remain separate conditions. An old failure without later confirmed send evidence is **Recovery unverified**, not proof that a new failure is happening now. Unknown warning observations such as missing assignment remain unknown, not fabricated provider outages.
+- Schedule waits, retry waits, budget waits, daily-limit waits and in-flight work are informational. **Next eligible** describes eligibility, not a promise of success. A safety hold is a restriction, not an outage; monitoring never clears it.
+- Positive broker lag/pending/ack-pending/redelivered counts appear prominently on Overview even though the backend deliberately labels them `unknown` with severity `info`. Kafka committed lag excludes uncommitted processing; JetStream pending and acknowledgement-pending are different measurements. Neither is provider-send throughput. Redelivered is not a lifetime retry rate; absent group members can occur during rebalancing.
+- Counts, affected mailboxes, affected organizations and rows with unknown organization are separate quantities. Metrics and per-worker scopes may overlap. The attention total counts recorded signals, not failed sends or unique customers; do not add metric counts together.
+- Query errors, permission denials, unsupported capability, missing dependencies/schema and timeouts do not produce an all-clear. No sources or no metrics means unknown coverage. Raw provider/connection errors, credentials, payloads and mailbox addresses are not rendered by the monitoring panel.
+
+The Overview and Operations tab share the same frontend query cache, scoped to admin identity and permission mask. Monitoring polls at most once per minute while mounted in a visible tab, does not refetch on focus or retry automatically, and offers a refresh control that respects `refresh_after`. Service probes poll every 15 seconds while their tab is mounted; passed probes establish reachability at that time only. Failed or stale probes remain explicit, including whether a cached probe previously passed or failed, and raw component connection errors are withheld. The existing platform mail card is shown only with `manage_settings`, which its inspection and send-test endpoints require.
+
+This is observation-only tooling. It does not subscribe to brokers, create streams/groups, reconnect mailboxes, move assignments or offsets, reclaim tasks, replay results, clear holds, notify customers or deploy changes. Investigation links open existing admin pages when those pages cover the measured population; actions there retain their existing confirmations and permissions. Aggregate dispatch and send measurements have no direct link because the existing campaign-only detail tabs exclude some counted pending or warmup tasks. Keep the count and its evidence time in view while investigating through authorized backend diagnostics.
+
+### Monitoring permissions
+
+Every monitoring request requires an MFA-verified platform admin session and `view_analytics`, not a workspace API key. Source sections additionally require the bit below. Denied sources retain only an unavailable placeholder with `permission_denied`; their counts, scope measurements and private metrics are absent. The frontend also filters sections and checks destination permissions for every investigation link. Monitoring fails closed when an older identity response has no known admin mask.
+
+| Source IDs | Additional platform admin bit |
+|---|---|
+| `send_safety`, `sync`, `mailbox_errors`, `arrivals`, `domain_auth` | `view_users` |
+| `sends`, `campaign_reservations`, `dispatch`, `dead_letters`, `result_effects`, `warmup_loading`, `send_wait_attribution` | `view_campaigns` |
+| `workers`, `worker_samples`, `worker_command_broker` | `view_workers` |
+| `jobs`, `backend_event_broker`, `tracking_broker` | `view_analytics` (already required) |
+| `webhooks` | `view_organizations` |
+| `notifications` | `manage_settings` |
+
+For example, an admin may see webhook measurements with `view_organizations` but not a link into Sends without `view_campaigns`. Worker details, sync/mailboxes, organization details, jobs and configuration links likewise require their native page bit. Arbitrary/external investigation URLs are not accepted.
 
 ## Security and secrets
 

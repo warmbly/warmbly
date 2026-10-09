@@ -41,6 +41,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/leadsync"
 	"github.com/warmbly/warmbly/internal/app/mailboximport"
 	"github.com/warmbly/warmbly/internal/app/mcp"
+	"github.com/warmbly/warmbly/internal/app/monitoring"
 	"github.com/warmbly/warmbly/internal/app/notification"
 	"github.com/warmbly/warmbly/internal/app/oauth"
 	"github.com/warmbly/warmbly/internal/app/opsnotify"
@@ -385,6 +386,7 @@ type Handler struct {
 	// Infrastructure liveness probes for the admin System Status page.
 	// Wired in cmd/backend/main.go where the concrete clients live.
 	SystemChecker *sysstatus.Checker
+	Monitoring    *monitoring.Service
 
 	// Admin operations pages: cross-workspace reads of mailbox sync, the send
 	// outcome loop, fleet placement and abuse signals, plus the scheduled job

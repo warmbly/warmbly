@@ -25,6 +25,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, Panel, Section, Segmented, Stat, StatGrid } from "@/components/ui/kit";
 import { InstanceProblemsPanel } from "./InstanceHealthPanel";
+import { InstanceMonitoringPanel } from "./InstanceMonitoringPanel";
 import { useAdminPerm } from "@/hooks/useAdminPerm";
 import { AdminPerm } from "@/lib/auth/permissions";
 import { TONE_DOT, TONE_TEXT } from "@/lib/tones";
@@ -83,6 +84,7 @@ export default function OverviewPage() {
             </PageHeader>
 
             <InstanceProblemsPanel />
+            <InstanceMonitoringPanel compact />
 
             {!canView ? (
                 <div className="rounded-lg border border-dashed border-border-strong">
