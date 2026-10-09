@@ -40,6 +40,7 @@ const TONES = {
     rose: [244, 63, 94],
     emerald: [16, 185, 129],
     violet: [139, 92, 246],
+    lime: [132, 204, 22],
     slate: [71, 85, 105],
 } as const;
 export type DitherTone = keyof typeof TONES;
@@ -52,6 +53,7 @@ const DARK_TONES: Record<DitherTone, readonly [number, number, number]> = {
     rose: [228, 118, 136],
     emerald: [84, 192, 150],
     violet: [162, 142, 236],
+    lime: [170, 214, 96],
     slate: [150, 155, 165],
 };
 const toneRgb = (tone: DitherTone, dark: boolean): readonly [number, number, number] =>

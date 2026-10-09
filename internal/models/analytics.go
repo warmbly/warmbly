@@ -130,13 +130,36 @@ type CampaignSummary struct {
 	// part of UniqueClicks, which only ever counts a person's click.
 	MachineClicks int `json:"machine_clicks"`
 	Replies       int `json:"replies"`
-	Bounces       int `json:"bounces"`
-	Unsubscribes  int `json:"unsubscribes"`
+	// PositiveReplies is the subset of Replies the reply classifier judged
+	// positive, one per answered step like Replies.
+	PositiveReplies int `json:"positive_replies"`
+	// InterestedLeads counts distinct contacts with a positive reply, so a
+	// lead who answered two steps positively counts once.
+	InterestedLeads int `json:"interested_leads"`
+	Bounces         int `json:"bounces"`
+	Unsubscribes    int `json:"unsubscribes"`
+	// ReplyBreakdown splits Replies by classification, plus the automated
+	// replies that never count as one.
+	ReplyBreakdown ReplyBreakdown `json:"reply_breakdown"`
 
-	OpenRate   float64 `json:"open_rate"`   // percentage
-	ClickRate  float64 `json:"click_rate"`  // percentage
-	ReplyRate  float64 `json:"reply_rate"`  // percentage
-	BounceRate float64 `json:"bounce_rate"` // percentage
+	OpenRate          float64 `json:"open_rate"`           // percentage
+	ClickRate         float64 `json:"click_rate"`          // percentage
+	ReplyRate         float64 `json:"reply_rate"`          // percentage
+	PositiveReplyRate float64 `json:"positive_reply_rate"` // percentage of EmailsSent
+	BounceRate        float64 `json:"bounce_rate"`         // percentage
+}
+
+// ReplyBreakdown is a cohort's replies by reply_class. The human classes plus
+// Unclassified add up to Replies; OutOfOffice and AutoReply are the automated
+// answers, which are not part of Replies.
+type ReplyBreakdown struct {
+	Positive     int `json:"positive"`
+	Neutral      int `json:"neutral"`
+	Negative     int `json:"negative"`
+	Unsubscribe  int `json:"unsubscribe"`
+	Unclassified int `json:"unclassified"`
+	OutOfOffice  int `json:"out_of_office"`
+	AutoReply    int `json:"auto_reply"`
 }
 
 type SequenceStats struct {
@@ -152,24 +175,27 @@ type SequenceStats struct {
 	Clicks       int `json:"clicks"`
 	// MachineClicks counts this step's contacts whose only clicks were
 	// automated; they are not part of Clicks.
-	MachineClicks int `json:"machine_clicks"`
-	Replies       int `json:"replies"`
-	Bounces       int `json:"bounces"`
+	MachineClicks   int `json:"machine_clicks"`
+	Replies         int `json:"replies"`
+	PositiveReplies int `json:"positive_replies"`
+	Bounces         int `json:"bounces"`
 
 	// Rates are percentages of this step's own EmailsSent, so steps that
 	// reached different numbers of contacts still compare.
-	OpenRate   float64 `json:"open_rate"`
-	ClickRate  float64 `json:"click_rate"`
-	ReplyRate  float64 `json:"reply_rate"`
-	BounceRate float64 `json:"bounce_rate"`
+	OpenRate          float64 `json:"open_rate"`
+	ClickRate         float64 `json:"click_rate"`
+	ReplyRate         float64 `json:"reply_rate"`
+	PositiveReplyRate float64 `json:"positive_reply_rate"`
+	BounceRate        float64 `json:"bounce_rate"`
 }
 
 type CampaignDailyStats struct {
-	Date    string `json:"date"`
-	Sent    int    `json:"sent"`
-	Opens   int    `json:"opens"`
-	Clicks  int    `json:"clicks"`
-	Replies int    `json:"replies"`
+	Date            string `json:"date"`
+	Sent            int    `json:"sent"`
+	Opens           int    `json:"opens"`
+	Clicks          int    `json:"clicks"`
+	Replies         int    `json:"replies"`
+	PositiveReplies int    `json:"positive_replies"`
 }
 
 // Email Account Status

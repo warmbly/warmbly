@@ -23,12 +23,31 @@ export interface CampaignSummary {
     machine_clicks: number
     unique_clicks: number
     replies: number
+    // Subset of replies the reply classifier judged positive.
+    positive_replies: number
+    // Distinct contacts with a positive reply; a lead counts once.
+    interested_leads: number
     bounces: number
     unsubscribes: number
+    reply_breakdown: ReplyBreakdown
     open_rate: number
     click_rate: number
     reply_rate: number
+    // Percentage of emails_sent, like reply_rate.
+    positive_reply_rate: number
     bounce_rate: number
+}
+
+// Replies by classification. The human classes plus unclassified add up to
+// replies; out_of_office and auto_reply are automated and never count as one.
+export interface ReplyBreakdown {
+    positive: number
+    neutral: number
+    negative: number
+    unsubscribe: number
+    unclassified: number
+    out_of_office: number
+    auto_reply: number
 }
 
 export interface SequenceStats {
@@ -44,11 +63,13 @@ export interface SequenceStats {
     // Contacts on this step whose only clicks were automated; not part of clicks.
     machine_clicks: number
     replies: number
+    positive_replies: number
     bounces: number
     // Percentages of this step's own emails_sent.
     open_rate: number
     click_rate: number
     reply_rate: number
+    positive_reply_rate: number
     bounce_rate: number
 }
 

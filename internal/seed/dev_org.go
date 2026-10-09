@@ -141,7 +141,7 @@ func seedDevMailboxes(ctx context.Context, pool *pgxpool.Pool) error {
 				tracking_domain, timezone,
 				warmup, warmup_base, warmup_max, warmup_increase, warmup_reply_rate,
 				warmup_tag, warmup_start_time, warmup_end_time, warmup_days,
-				warmup_pool_type,
+				warmup_pool_type, test_mode,
 				created_at, updated_at
 			) VALUES (
 				$1,$2,$3,$4,$5,$6,
@@ -150,7 +150,7 @@ func seedDevMailboxes(ctx context.Context, pool *pgxpool.Pool) error {
 				'', 'UTC',
 				NOW() - INTERVAL '21 days', 10, 40, 1, 30,
 				$7, '08:00', '20:00', 62,
-				'premium',
+				'premium', 'legacy',
 				NOW() - INTERVAL '21 days', NOW()
 			)
 			ON CONFLICT (id) DO UPDATE SET
@@ -165,6 +165,7 @@ func seedDevMailboxes(ctx context.Context, pool *pgxpool.Pool) error {
 				warmup_increase = EXCLUDED.warmup_increase,
 				warmup_tag = EXCLUDED.warmup_tag,
 				warmup_pool_type = EXCLUDED.warmup_pool_type,
+				test_mode = EXCLUDED.test_mode,
 				updated_at = NOW()
 		`, b.id, DevUserID, DevOrgID, DevWorkerID, b.email, b.name, b.tag); err != nil {
 			return fmt.Errorf("mailbox %s: %w", b.email, err)

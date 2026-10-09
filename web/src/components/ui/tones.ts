@@ -9,5 +9,6 @@ export const TONE_DOT: Record<DitherTone, string> = {
     violet: "bg-violet-500",
     amber: "bg-amber-500",
     rose: "bg-rose-500",
+    lime: "bg-lime-500",
     slate: "bg-slate-600",
 };

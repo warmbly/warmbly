@@ -56,7 +56,7 @@ describe("contacts and campaigns browse schemas", () => {
         expect(contactExtrasSchema.safeParse(["provider", "provider"]).success).toBe(false);
         expect(contactGeneralExtrasSchema.safeParse(["lead_status"]).success).toBe(false);
         expect(contactGeneralExtrasSchema.safeParse(["engagement"]).success).toBe(false);
-        expect(hiddenMetricsSchema.safeParse(["sent", "opens", "clicks", "replies"]).success).toBe(false);
+        expect(hiddenMetricsSchema.safeParse(["sent", "opens", "clicks", "replies", "positive_replies"]).success).toBe(false);
         expect(hiddenMetricsSchema.safeParse(["opens", "opens"]).success).toBe(false);
     });
 

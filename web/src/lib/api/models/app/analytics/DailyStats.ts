@@ -7,4 +7,5 @@ export default interface DailyStats {
     opens: number
     clicks: number
     replies: number
+    positive_replies: number
 }

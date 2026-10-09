@@ -9,6 +9,9 @@
         "replies": 12,
         "bounces": 3,
         "open_rate": 50,
-        "reply_rate": 2.9
+        "reply_rate": 2.9,
+        "positive_replies": 4,
+        "positive_reply_rate": 0.9,
+        "interested_leads": 4
     }
 }

@@ -55,6 +55,8 @@ type devProgressStep struct {
 	seq                   uuid.UUID
 	sent, opened, clicked float64
 	replied, bounced      float64
+	// class is the reply classifier's verdict; automated ones carry no replied.
+	class string
 }
 
 // devProgressRows builds the rows for lead i. The processing cohort's latest
@@ -69,6 +71,13 @@ func devProgressRows(i int) []devProgressStep {
 			{seq: devSeqStep2, sent: 8.4 - j, opened: 8.3 - j, clicked: -1, replied: -1, bounced: -1},
 			{seq: devSeqStep3, sent: 3.1 - j, opened: 2.9 - j, clicked: -1, replied: -1, bounced: -1},
 		}
+		// A few automated answers, which never count as replies.
+		switch i {
+		case 1:
+			rows[1].class = "out_of_office"
+		case 17:
+			rows[0].class = "auto_reply"
+		}
 		return rows
 	case devProcessing:
 		// Step 2 went out today, staggered by index (~30min .. ~5.5h ago).
@@ -77,10 +86,18 @@ func devProgressRows(i int) []devProgressStep {
 			{seq: devSeqStep2, sent: 0.02 + float64(i)*0.01, opened: -1, clicked: -1, replied: -1, bounced: -1},
 		}
 	case devReplied:
-		return []devProgressStep{
+		rows := []devProgressStep{
 			{seq: devSeqStep1, sent: 6.5 - j, opened: 6.4 - j, clicked: 6.35 - j, replied: -1, bounced: -1},
-			{seq: devSeqStep2, sent: 3.2 - j, opened: 3.0 - j, clicked: -1, replied: 2.6 - j, bounced: -1},
+			{seq: devSeqStep2, sent: 3.2 - j, opened: 3.0 - j, clicked: -1, replied: 2.6 - j, bounced: -1, class: "positive"},
 		}
+		switch i {
+		case 13:
+			// Positive on both steps: two positive replies, one interested lead.
+			rows[0].replied, rows[0].class = 6.0-j, "positive"
+		case 21:
+			rows[1].class = "negative"
+		}
+		return rows
 	case devBounced:
 		return []devProgressStep{
 			{seq: devSeqStep1, sent: 5.8 - j, opened: -1, clicked: -1, replied: -1, bounced: 5.75 - j},
@@ -96,17 +113,18 @@ func seedDevProgress(ctx context.Context, pool *pgxpool.Pool) error {
 		for _, r := range devProgressRows(i) {
 			sql := fmt.Sprintf(`
 				INSERT INTO campaign_contact_progress
-					(campaign_id, contact_id, sequence_id, sent_at, opened_at, clicked_at, replied_at, bounced_at)
-				VALUES ($1, $2, $3, %s, %s, %s, %s, %s)
+					(campaign_id, contact_id, sequence_id, sent_at, opened_at, clicked_at, replied_at, bounced_at, reply_class)
+				VALUES ($1, $2, $3, %s, %s, %s, %s, %s, $4)
 				ON CONFLICT (campaign_id, contact_id, sequence_id) DO UPDATE SET
 					sent_at = EXCLUDED.sent_at,
 					opened_at = EXCLUDED.opened_at,
 					clicked_at = EXCLUDED.clicked_at,
 					replied_at = EXCLUDED.replied_at,
-					bounced_at = EXCLUDED.bounced_at`,
+					bounced_at = EXCLUDED.bounced_at,
+					reply_class = EXCLUDED.reply_class`,
 				devDayExpr(r.sent), devDayExpr(r.opened), devDayExpr(r.clicked),
 				devDayExpr(r.replied), devDayExpr(r.bounced))
-			if _, err := pool.Exec(ctx, sql, DevCampaignActiveID, devContactID(i), r.seq); err != nil {
+			if _, err := pool.Exec(ctx, sql, DevCampaignActiveID, devContactID(i), r.seq, r.class); err != nil {
 				return fmt.Errorf("progress %d: %w", i, err)
 			}
 		}
