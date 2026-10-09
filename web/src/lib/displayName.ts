@@ -45,3 +45,30 @@ export function nameError(label: string, value: string, kind: NameKind, optional
     }
     return null;
 }
+
+// Mirrors mentionsPlatform in internal/app/oauth/naming.go.
+const CONFUSABLES: Record<string, string> = {
+    "0": "o", "1": "l", "|": "l", "!": "l", i: "l", "ı": "l", "4": "a", "@": "a",
+    "а": "a", "α": "a", "ɑ": "a", "у": "y", "ʏ": "y", "ԝ": "w", "ᴡ": "w",
+    "ʀ": "r", "ᴍ": "m", "ʙ": "b", "ʟ": "l",
+};
+
+function mentionsPlatform(value: string): boolean {
+    const folded = [...value.normalize("NFKC").toLowerCase()]
+        .map((ch) => CONFUSABLES[ch] ?? ch)
+        .join("")
+        .replace(/[^a-z]/g, "")
+        .replace(/rn|vv/g, (d) => (d === "rn" ? "m" : "w"));
+    return folded.includes("warmbly");
+}
+
+/** nameError for an OAuth app, which also may not name Warmbly unless it already did (current). */
+export function appNameError(label: string, value: string, current = ""): string | null {
+    const problem = nameError(label, value, "workspace");
+    if (problem) return problem;
+    const name = normalizeName(value);
+    if (name !== current && mentionsPlatform(name)) {
+        return `${label} cannot include Warmbly: people connecting the app would take it for Warmbly's own.`;
+    }
+    return null;
+}

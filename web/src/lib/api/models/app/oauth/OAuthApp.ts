@@ -71,6 +71,8 @@ export interface OAuthConsentInfo {
     organization_name: string;
     // A registered app the instance features in its directory.
     verified: boolean;
+    // Registered itself (RFC 7591), so nobody vouches for its name.
+    self_registered: boolean;
 }
 
 // An app the current user has authorized (GET /oauth/authorized-apps).

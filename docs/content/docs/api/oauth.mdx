@@ -11,7 +11,7 @@ Warmbly implements the OAuth 2.1 authorization-code flow with PKCE. Confidential
 
 In the dashboard, open **Settings -> OAuth apps** and register an application. You provide:
 
-- a **name**, optional description, logo, and website (shown on the consent screen),
+- a **name**, optional description, logo, and website (shown on the consent screen). The name follows the [naming rules](/api/error-codes/#name-refusals) and cannot include Warmbly, spaced out or spelled with look-alike characters included, because people would take the app for Warmbly's own. An app that already had such a name keeps it until the name is changed,
 - one or more **redirect URIs** (where users are sent back after they approve), matched exactly and required to be HTTPS, except loopback URLs for native apps,
 - the **scopes** your app may request (any permission except `API_KEYS`, which stays with people and API keys),
 - optionally, **allowed webhook domains** (see below).
@@ -67,6 +67,8 @@ curl -X POST "https://api.warmbly.com/v1/oauth/register" \
 
 The registration endpoint is open (unauthenticated) and rate-limited per source IP. Registering grants no access on its own: a human still signs in and approves scopes at the consent screen. Redirect URIs may be HTTPS, loopback (`http://127.0.0.1` or `localhost`, any port), or a private-use scheme (`myapp://`), matched exactly at authorize and token time. Self-registered clients can never request `SEND_CAMPAIGNS` or `API_KEYS`.
 
+Nobody vouches for a self-registered client, so the consent screen shows only what Warmbly can stand behind. `client_uri` and `logo_uri` are ignored, so the screen shows no website or logo for it. Its `client_name` is cleaned rather than refused: a bracketed part that names Warmbly is dropped (`Claude Code (warmbly)` is shown as `Claude Code`), and a name that still names Warmbly, or breaks the naming rules, is shown as `MCP client`.
+
 For a public client the token exchange sends no `client_secret`, only the PKCE `code_verifier`. Everything else in the flow below is identical. If you are connecting an AI assistant, you do not run any of this by hand: see the [MCP server](/api/mcp/) page for the one-command setup.
 
 ## Scopes
@@ -106,7 +108,7 @@ https://app.warmbly.com/oauth/authorize
 
 ### 2. The user approves
 
-Warmbly shows the app, the workspace that will receive access, the scopes it will get, and an authorize or deny choice. An app is marked **Unverified app** unless it is a registered (not self-registered) app the instance features in its [community directory](#publish-to-the-community-directory). Approving asks the member to confirm it is them when they have not signed in or re-authenticated in the last few minutes, because the approval hands your app a standing credential. On approval the browser is redirected back to your `redirect_uri` with a single-use code:
+Warmbly shows the app, the workspace that will receive access, the scopes it will get, where approving sends access (the redirect URI's host, or an app on this device for a loopback or private-use redirect), and an authorize or deny choice. An app is marked **Unverified app** unless it is a registered (not self-registered) app the instance features in its [community directory](#publish-to-the-community-directory), and an unverified app also carries a **Not affiliated with Warmbly** notice that asks the member to approve only a connection they started themselves. Approving asks the member to confirm it is them when they have not signed in or re-authenticated in the last few minutes, because the approval hands your app a standing credential. On approval the browser is redirected back to your `redirect_uri` with a single-use code:
 
 ```
 https://yourapp.com/oauth/callback?code=wmac_...&state=<your-state>

@@ -163,6 +163,7 @@ Names are shown to other people, including in invitation and notification emails
 - no links, web addresses or email addresses: nothing with `@`, `//`, `www.` or a scheme such as `https:`, no hostname such as `example.com`, and no IP address. Full-width and ideographic dots count as dots
 - no control characters, invisible formatting characters (zero-width and bidirectional overrides), `<`, `>`, `` ` `` or `\`, and no more than three stacked combining marks
 - leading and trailing spaces are trimmed and runs of spaces become one, and that is the form stored
+- an OAuth app name cannot include Warmbly, spaced out or spelled with look-alike characters included. An app that already had such a name keeps it until the name is changed
 
 ```json
 {

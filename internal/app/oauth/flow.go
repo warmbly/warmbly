@@ -42,6 +42,8 @@ type ConsentInfo struct {
 	OrganizationName string `json:"organization_name"`
 	// Verified is a registered app the instance's operators feature in the directory.
 	Verified bool `json:"verified"`
+	// SelfRegistered is a client that registered itself (RFC 7591), so nobody vouches for its name.
+	SelfRegistered bool `json:"self_registered"`
 }
 
 // TokenResponse is the /token success body (RFC 6749 §5.1).
@@ -86,15 +88,18 @@ func (s *Service) AuthorizeDetails(ctx context.Context, roleCap uint64, req Auth
 	if werr != nil {
 		website = ""
 	}
+	name := app.Name
 	verified := false
-	if !app.DynamicallyRegistered {
-		if featured, ferr := s.repo.IsFeatured(ctx, app.ID); ferr == nil {
-			verified = featured
-		}
+	if app.DynamicallyRegistered {
+		// Rows stored before these rules are held to them on the way out too.
+		name = dcrClientName(app.Name)
+		website = ""
+	} else if featured, ferr := s.repo.IsFeatured(ctx, app.ID); ferr == nil {
+		verified = featured
 	}
 	return &ConsentInfo{
 		ClientID:       app.ClientID,
-		Name:           app.Name,
+		Name:           name,
 		Description:    app.Description,
 		LogoURL:        app.LogoURL,
 		WebsiteURL:     website,
@@ -103,6 +108,7 @@ func (s *Service) AuthorizeDetails(ctx context.Context, roleCap uint64, req Auth
 		WithheldScopes: ScopeList(withheld),
 		State:          req.State,
 		Verified:       verified,
+		SelfRegistered: app.DynamicallyRegistered,
 	}, nil
 }
 
