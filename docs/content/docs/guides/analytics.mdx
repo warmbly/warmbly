@@ -56,6 +56,12 @@ Live, scoped by `7d`, `30d`, or `90d` tabs, and by default covering every campai
 
 Sending totals, trends, comparisons, and top-campaign rates count email steps only. Completed wait and action steps move a sequence forward but never inflate the number of messages sent.
 
+### Platform admin send counters
+
+The admin **Overview** counts confirmed warmup, campaign, direct email, and placement-test sends across this instance. **Emails sent today** uses the UTC calendar day, not each mailbox's local sending timezone. The all-time total uses the available confirmed task history.
+
+A queued or completed dispatch is not proof of sending. Warmup sends count only after their token records the provider's Message-ID. Other sends count after a successful worker result is applied. Older warmup receipts remain included, but older non-warmup tasks without applied results are not assumed successful: their Message-ID may have been generated before sending. Reserved, unknown, failed, and cancelled dispatches without confirmation do not count. Multiple warmup tokens for one task still count as one send. If the send-count query fails, the overview returns an error instead of reporting zero sends.
+
 ### Filtering by campaign or folder
 
 The **All campaigns** menu next to the period tabs narrows the dashboard to the campaigns you pick. Choose one campaign, several, one or more [campaign folders](/guides/campaigns/), or a mix. The figures add the selected campaigns together, and a campaign picked directly and through a folder, or sitting in two picked folders, is counted once. A folder stands for the campaigns in it right now, so moving a campaign in or out of the folder changes what the dashboard counts the next time it loads. The period tabs keep working on top of the filter, and the selection is remembered in your browser tab like the period.

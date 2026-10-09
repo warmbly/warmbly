@@ -198,11 +198,11 @@ jobs:
           go run ./cmd/migrate
           go test -race ./internal/app/behavior ./internal/repository ./internal/tasks -run 'TestDefaultPlan|TestLiveMailboxPlan|TestLiveCampaignAdmission|TestLiveSharedAdmission|TestLiveDeferredTicksDoNotSpendTheDailyBudget|TestLiveCampaignAtDailyCapWaitsForTomorrow' -count=1
 
-      - name: Warmup dispatch and upgrade regressions (PostgreSQL)
+      - name: Warmup dispatch, upgrade and admin-send regressions (PostgreSQL)
         env:
           WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
         run: |
-          go test -race ./internal/repository -run '^TestLive(LastWarmupSendFailure|PersistentMailboxLoadingFailure|DispatchRetry|LineageQueueRevisions|WarmupRecoversOldPreparation|WarmupPreparationRecoveryRetains)' -count=1
+          go test -race ./internal/repository -run '^TestLive(LastWarmupSendFailure|PersistentMailboxLoadingFailure|DispatchRetry|LineageQueueRevisions|AdminPlatformOverview|WarmupRecoversOldPreparation|WarmupPreparationRecoveryRetains)' -count=1
           go test -race ./internal/tasks -run '^Test(LiveWarmup(SafetyHoldReschedules|Recovery|TaskDoesNotApplyResults)|WarmupSenderDistinguishes)' -count=1
 
       - name: Test the Kafka codec and client lifecycle
