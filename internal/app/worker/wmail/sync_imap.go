@@ -111,9 +111,6 @@ func (w *WMail) Sync(ctx context.Context) *errx.MailError {
 		// a separate bounded folder recovery without resetting global history.
 		if befBox.UIDValidity != box.UIDValidity {
 			saved := *box
-			if w.tracker.state.BackfillStatus != models.SyncBackfillComplete {
-				w.tracker.setFolder(box.Name, models.SyncFolderCursor{})
-			}
 			if !w.imapRecoverFolder(box) {
 				stats.aborted = true
 				return nil
@@ -649,13 +646,24 @@ func (w *WMail) imapApply(ctx context.Context, fetched []*imap.Fetched, backfill
 
 	var fresh []*imap.Fetched
 	for _, f := range fetched {
+		if ctx.Err() != nil || stats.aborted {
+			return false, nil
+		}
 		w.ensureMessageKey(f.Email)
 		internal, err := w.EmailMessageMapRepository.Get(ctx, w.UserID, w.ID, f.Email.MessageID)
 		if err != nil {
 			return false, w.controlPlaneError(err, stats)
 		}
 		if internal == nil {
-			fresh = append(fresh, f)
+			if recovery == nil {
+				fresh = append(fresh, f)
+				continue
+			}
+			done, err := w.imapStoreFetched(ctx, f, backfill, stats, recovery)
+			if err != nil || !done {
+				return false, err
+			}
+			w.imapImportCursor(w.SmtpImapData.folderPath, f.Email.UID, false, recovery)
 			continue
 		}
 		if backfill && recovery == nil {
@@ -679,6 +687,9 @@ func (w *WMail) imapApply(ctx context.Context, fetched []*imap.Fetched, backfill
 		}); err != nil {
 			return false, w.controlPlaneError(err, stats)
 		}
+		if recovery != nil {
+			w.imapImportCursor(w.SmtpImapData.folderPath, f.Email.UID, false, recovery)
+		}
 	}
 
 	if !backfill && len(fresh) > 0 {
@@ -691,43 +702,56 @@ func (w *WMail) imapApply(ctx context.Context, fetched []*imap.Fetched, backfill
 		}
 	}
 
-	policy := w.gov.Policy()
 	all := true
 	for _, f := range fresh {
-		if stats.aborted {
-			return false, nil
+		done, err := w.imapStoreFetched(ctx, f, backfill, stats, recovery)
+		if err != nil {
+			return false, err
 		}
-		if backfill && w.imapImportCount(recovery) >= policy.BackfillMessages {
-			return false, nil
-		}
-		if !w.admit(ctx, w.laneOf(ctx, f.Email.MessageID, f.Email, backfill), stats) {
+		if !done {
 			all = false
-			if backfill {
+			if backfill || stats.aborted || ctx.Err() != nil {
 				return false, nil
 			}
 			continue
 		}
-		if err := w.SmtpImapData.ImapClient.FetchBody(f); err != nil {
-			if err.Code == errx.MailErrorCodeNotFound {
-				continue
-			}
-			return false, err
-		}
-		if err := w.imapStore(ctx, f.Email); err != nil {
-			return false, w.controlPlaneError(err, stats)
-		}
-		w.laneCache.forget(f.Email.MessageID)
 		if backfill {
-			if recovery != nil {
-				recovery.Synced++
-			} else {
-				w.tracker.state.BackfillSynced++
-				w.tracker.mark()
-			}
 			w.imapImportCursor(w.SmtpImapData.folderPath, f.Email.UID, false, recovery)
 		}
 	}
 	return all, nil
+}
+
+func (w *WMail) imapStoreFetched(ctx context.Context, f *imap.Fetched, backfill bool, stats *tickStats, recovery *imapFolderRecovery) (bool, *errx.MailError) {
+	if stats.aborted || ctx.Err() != nil {
+		return false, nil
+	}
+	if backfill && w.imapImportCount(recovery) >= w.gov.Policy().BackfillMessages {
+		// A capped initial import still reconciles known handles, without admitting more history.
+		return recovery != nil && recovery.Initial, nil
+	}
+	if !w.admit(ctx, w.laneOf(ctx, f.Email.MessageID, f.Email, backfill), stats) {
+		return false, nil
+	}
+	if err := w.SmtpImapData.ImapClient.FetchBody(f); err != nil {
+		if err.Code == errx.MailErrorCodeNotFound {
+			return true, nil
+		}
+		return false, err
+	}
+	if err := w.imapStore(ctx, f.Email); err != nil {
+		return false, w.controlPlaneError(err, stats)
+	}
+	w.laneCache.forget(f.Email.MessageID)
+	if backfill {
+		if recovery != nil && !recovery.Initial {
+			recovery.Synced++
+		} else {
+			w.tracker.state.BackfillSynced++
+			w.tracker.mark()
+		}
+	}
+	return true, nil
 }
 
 // ensureMessageKey gives a message without a Message-ID header one that is
@@ -869,6 +893,10 @@ func (w *WMail) imapBackfill(ctx context.Context, folders []models.Mailbox, stat
 		}
 		key := box.Name
 		cur := w.tracker.folder(key)
+		if imapRecoveryCursor(cur) != nil {
+			allDone = allDone && cur.Done
+			continue
+		}
 		if cur.Done {
 			continue
 		}

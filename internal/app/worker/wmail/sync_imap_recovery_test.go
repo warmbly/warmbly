@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,6 +21,154 @@ import (
 type knownRecoveryConn struct {
 	*fakeImapConn
 	message models.EmailMessageData
+}
+
+type initialRecoveryConn struct {
+	*folderIdentityRecoveryConn
+	since  []time.Time
+	bodies []string
+}
+
+func (c *initialRecoveryConn) SearchSince(since time.Time) ([]goimap.UID, *errx.MailError) {
+	c.since = append(c.since, since)
+	return c.fakeImapConn.SearchSince(since)
+}
+
+func (c *initialRecoveryConn) FetchBody(f *imap.Fetched) *errx.MailError {
+	c.bodies = append(c.bodies, f.Email.MessageID)
+	return c.fakeImapConn.FetchBody(f)
+}
+
+type initialRecoveryBudget struct {
+	fixedBudget
+	limit int
+}
+
+func (b *initialRecoveryBudget) Policy() models.SyncPolicy {
+	policy := b.fixedBudget.Policy()
+	policy.BackfillMessages = b.limit
+	return policy
+}
+
+func newRunningRecoveryMail(t *testing.T, budget syncBudget) (*WMail, *[]captured, *initialRecoveryConn, *recoveryMessageMap) {
+	t.Helper()
+	conn := &initialRecoveryConn{folderIdentityRecoveryConn: &folderIdentityRecoveryConn{fakeImapConn: &fakeImapConn{
+		folders: []models.Mailbox{{Name: "INBOX", UIDValidity: 9, UIDNext: 4, HighestModSeq: 5}},
+		all:     uidRange(3), changed: uidRange(3),
+	}}}
+	w, events := newIMAPTestMail(conn, budget, &models.Mailbox{Name: "INBOX", UIDValidity: 8, UIDNext: 500, HighestModSeq: 5})
+	since, started, success := time.Now().Add(-30*24*time.Hour), time.Now().Add(-16*24*time.Hour), time.Now().Add(-time.Hour)
+	w.tracker = newSyncTracker(&models.SyncState{BackfillStatus: models.SyncBackfillRunning, BackfillSince: &since, BackfillStartedAt: &started, BackfillSynced: 2, LastSyncedAt: &success}, func(models.SyncState) error { return nil })
+	w.tracker.setFolder("INBOX", models.SyncFolderCursor{UID: 50, Done: true})
+	maps := &recoveryMessageMap{data: map[string]repository.EmailMessageData{"<2@fake.test>": {ID: uuid.NewString(), MessageID: "<2@fake.test>"}}}
+	w.EmailMessageMapRepository = maps
+	return w, events, conn, maps
+}
+
+func TestImapRunningImportGenerationRecoveryPreservesWindowCountersAndReload(t *testing.T) {
+	for _, outcome := range []string{"complete", "deferred", "relay failure", "global cap", "cap already reached"} {
+		t.Run(outcome, func(t *testing.T) {
+			budget := &initialRecoveryBudget{fixedBudget: fixedBudget{allow: 10}, limit: 4}
+			if outcome == "deferred" {
+				budget.allow = 1
+			}
+			if outcome == "global cap" {
+				budget.limit = 3
+			}
+			if outcome == "cap already reached" {
+				budget.limit = 2
+				budget.allow = 0
+			}
+			w, events, conn, maps := newRunningRecoveryMail(t, budget)
+			since, started, success := *w.tracker.state.BackfillSince, *w.tracker.state.BackfillStartedAt, *w.tracker.state.LastSyncedAt
+			knownID := maps.data["<2@fake.test>"].ID
+			if outcome == "relay failure" {
+				emit := w.onEvent
+				w.onEvent = func(kind models.JobEventType, body any) error {
+					if kind == models.JobEventTypeEmailUpdate {
+						return errors.New("known generation relay failed")
+					}
+					return emit(kind, body)
+				}
+			}
+			if err := w.Sync(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			allEvents := append([]captured{}, (*events)...)
+			if outcome == "deferred" || outcome == "relay failure" {
+				cur := w.tracker.folder("INBOX")
+				recovery := imapRecoveryCursor(cur)
+				wantUID := uint32(2)
+				if outcome == "relay failure" {
+					wantUID = 3
+				}
+				if recovery == nil || !recovery.Initial || recovery.Generation != 9 || !recovery.Since.Equal(since) || cur.Done || cur.UID != wantUID || w.tracker.state.BackfillSynced != 3 || w.tracker.state.BackfillStatus != models.SyncBackfillRunning || !w.tracker.state.LastSyncedAt.Equal(success) {
+					t.Fatalf("unfinished recovery lost progress/window: %+v / %+v / %+v", cur, recovery, w.tracker.state)
+				}
+				w, events = imapReload(t, w, conn, &initialRecoveryBudget{fixedBudget: fixedBudget{allow: 10}, limit: 4})
+				if err := w.Sync(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+				allEvents = append(allEvents, (*events)...)
+			}
+			if !w.tracker.state.BackfillSince.Equal(since) || !w.tracker.state.BackfillStartedAt.Equal(started) {
+				t.Fatal("generation changed original import window/timer")
+			}
+			updates := mailboxEvents(allEvents, models.JobEventTypeEmailUpdate)
+			if len(updates) != 1 {
+				t.Fatalf("known metadata relayed %d times, want once across reload", len(updates))
+			}
+			update := updates[0].body.(*models.JobEventEmailUpdate)
+			if update.ID.String() != knownID || update.UID != 2 || update.Mailbox != 9 || update.ModSeq != 5 || !models.SeenFromFlags(update.Flags) {
+				t.Fatalf("known handles/read state stale: %+v", update)
+			}
+			wantCount := budget.limit
+			if w.tracker.state.BackfillStatus != models.SyncBackfillComplete || w.tracker.state.BackfillSynced != wantCount || len(maps.data) != 1+wantCount-2 || len(mailboxEvents(allEvents, models.JobEventTypeNewEmail)) != wantCount-2 || len(conn.bodies) != wantCount-2 {
+				t.Fatal("recovery duplicated known mail, bypassed cap or lost cumulative admission count")
+			}
+			if maps.data["<2@fake.test>"].ID != knownID {
+				t.Fatal("known identity changed")
+			}
+			for _, cutoff := range conn.since {
+				if !cutoff.Equal(since) {
+					t.Fatal("provider search escaped original import window")
+				}
+			}
+			cur := w.tracker.folder("INBOX")
+			if !cur.Done || cur.UID != 1 || imapRecoveryCursor(cur) == nil || !imapRecoveryCursor(cur).Initial {
+				t.Fatalf("running-import recovery continuation lost: %+v", cur)
+			}
+			if strings.HasPrefix(cur.Next, imapRecoveryPrefix) {
+				t.Fatal("an older worker could apply a separate cap to the initial import")
+			}
+			searches := conn.searches
+			again, later := imapReload(t, w, conn, &initialRecoveryBudget{fixedBudget: fixedBudget{allow: 10}, limit: 4})
+			if err := again.Sync(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			if conn.searches != searches || len(mailboxEvents(*later, models.JobEventTypeEmailUpdate)) != 0 || len(mailboxEvents(*later, models.JobEventTypeNewEmail)) != 0 {
+				t.Fatal("completed initial-generation replay repeated")
+			}
+		})
+	}
+}
+
+func TestImapRunningImportGenerationMarkerPrecedesBaseline(t *testing.T) {
+	w, events, conn, _ := newRunningRecoveryMail(t, &initialRecoveryBudget{fixedBudget: fixedBudget{allow: 10}, limit: 4})
+	w.tracker.emit = func(models.SyncState) error { return errors.New("generation state relay failed") }
+	if err := w.Sync(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if conn.fetches != 0 || len(mailboxEvents(*events, models.JobEventTypeMailboxUpdate)) != 0 || w.SmtpImapData.Mailboxes[0].UIDValidity != 8 || w.tracker.state.BackfillSynced != 2 {
+		t.Fatal("baseline or admissions outran initial-generation marker")
+	}
+	w.tracker.emit = func(models.SyncState) error { return nil }
+	if err := w.Sync(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if w.tracker.state.BackfillStatus != models.SyncBackfillComplete || w.tracker.state.BackfillSynced != 4 || len(mailboxEvents(*events, models.JobEventTypeEmailUpdate)) != 1 {
+		t.Fatal("state relay retry did not recover initial generation")
+	}
 }
 
 func (c *knownRecoveryConn) FetchEnvelopes(_ context.Context, _ []goimap.UID) ([]*imap.Fetched, *errx.MailError) {
@@ -136,11 +285,14 @@ func TestImapCompletedFolderRecoveryResumesAfterDeferralAndReload(t *testing.T) 
 			}
 			cur := w.tracker.folder("Archive")
 			recovery := imapRecoveryCursor(cur)
-			if cur.Done || cur.UID != 3 || recovery == nil || recovery.Generation != 9 || recovery.Synced != 1 {
+			if cur.Done || cur.UID != 2 || recovery == nil || recovery.Generation != 9 || recovery.Synced != 1 {
 				t.Fatalf("deferred recovery = %+v / %+v", cur, recovery)
 			}
 			if len(mailboxEvents(*events, models.JobEventTypeNewEmail)) != 1 {
 				t.Fatal("newest recovery arrival missing")
+			}
+			if len(mailboxEvents(*events, models.JobEventTypeEmailUpdate)) != 1 {
+				t.Fatal("known metadata was not reconciled before the saved floor")
 			}
 			if !w.tracker.state.LastSyncedAt.Equal(oldSuccess) {
 				t.Fatal("deferred recovery refreshed success")
@@ -156,6 +308,9 @@ func TestImapCompletedFolderRecoveryResumesAfterDeferralAndReload(t *testing.T) 
 			}
 			if len(maps.data) != 3 || len(mailboxEvents(*resumed, models.JobEventTypeNewEmail)) != 1 || maps.data["<2@fake.test>"].ID != knownID {
 				t.Fatal("recovery lost or duplicated arrivals")
+			}
+			if len(mailboxEvents(*resumed, models.JobEventTypeEmailUpdate)) != 0 {
+				t.Fatal("checkpointed known metadata was relayed again after reload")
 			}
 			if next.tracker.state.BackfillStatus != models.SyncBackfillComplete || next.tracker.state.BackfillSynced != 0 {
 				t.Fatal("global history reset")

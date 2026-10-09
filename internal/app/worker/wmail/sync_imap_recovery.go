@@ -14,16 +14,23 @@ import (
 )
 
 const imapRecoveryPrefix = "imap-recovery-v1:"
+const imapInitialRecoveryPrefix = "imap-initial-generation-v1:"
 
 // Recovery metadata lives in the existing opaque folder continuation, not a new wire field.
 type imapFolderRecovery struct {
 	Generation uint32    `json:"generation"`
 	Since      time.Time `json:"since"`
 	Synced     int       `json:"synced"`
+	Initial    bool      `json:"-"`
 }
 
 func imapRecoveryCursor(cur models.SyncFolderCursor) *imapFolderRecovery {
 	raw, ok := strings.CutPrefix(cur.Next, imapRecoveryPrefix)
+	initial := false
+	if !ok {
+		raw, ok = strings.CutPrefix(cur.Next, imapInitialRecoveryPrefix)
+		initial = ok
+	}
 	if !ok {
 		return nil
 	}
@@ -31,17 +38,26 @@ func imapRecoveryCursor(cur models.SyncFolderCursor) *imapFolderRecovery {
 	if json.Unmarshal([]byte(raw), &recovery) != nil || recovery.Generation == 0 || recovery.Since.IsZero() || recovery.Synced < 0 {
 		return nil
 	}
+	recovery.Initial = initial
 	return &recovery
 }
 
 func (w *WMail) imapRecoverFolder(box *models.Mailbox) bool {
-	if w.tracker.state.BackfillStatus != models.SyncBackfillComplete || !imapBackfillEligible(box) {
+	if !imapBackfillEligible(box) {
 		return true
 	}
 	cur := w.tracker.folder(box.Name)
 	if recovery := imapRecoveryCursor(cur); recovery == nil || recovery.Generation != box.UIDValidity {
 		since := time.Now().Add(-time.Duration(w.gov.Policy().BackfillDays) * 24 * time.Hour)
-		w.imapImportCursor(box.Name, 0, false, &imapFolderRecovery{Generation: box.UIDValidity, Since: since})
+		initial := w.tracker.state.BackfillStatus != models.SyncBackfillComplete
+		if initial {
+			w.tracker.startBackfill(time.Now(), w.gov.Policy().BackfillDays)
+			if w.tracker.state.BackfillSince == nil {
+				return false
+			}
+			since = *w.tracker.state.BackfillSince
+		}
+		w.imapImportCursor(box.Name, 0, false, &imapFolderRecovery{Generation: box.UIDValidity, Since: since, Initial: initial})
 	}
 	// Publish replay state before a live baseline can make the folder look caught up on reload.
 	w.tracker.flush(time.Now())
@@ -59,7 +75,7 @@ func (w *WMail) imapRecoveryPending(folders []models.Mailbox) bool {
 }
 
 func (w *WMail) imapImportCount(recovery *imapFolderRecovery) int {
-	if recovery != nil {
+	if recovery != nil && !recovery.Initial {
 		return recovery.Synced
 	}
 	return w.tracker.state.BackfillSynced
@@ -69,12 +85,17 @@ func (w *WMail) imapImportCursor(folder string, uid uint32, done bool, recovery 
 	cur := models.SyncFolderCursor{UID: uid, Done: done}
 	if recovery != nil {
 		raw, _ := json.Marshal(recovery)
-		cur.Next = imapRecoveryPrefix + string(raw)
+		prefix := imapRecoveryPrefix
+		if recovery.Initial {
+			// Older workers must not interpret the global import cap as a per-folder recovery cap.
+			prefix = imapInitialRecoveryPrefix
+		}
+		cur.Next = prefix + string(raw)
 	}
 	w.tracker.setFolder(folder, cur)
 }
 
-// Completed account history does not suppress bounded recovery of a new folder or UID generation.
+// Generation recovery uses its original window and the owning import's counters.
 func (w *WMail) imapRecoverFolders(ctx context.Context, folders []models.Mailbox, stats *tickStats) *errx.MailError {
 	client := w.SmtpImapData.ImapClient
 	for i := range folders {
@@ -101,7 +122,7 @@ func (w *WMail) imapRecoverFolders(ctx context.Context, folders []models.Mailbox
 		if ctx.Err() != nil || stats.aborted || stats.laneDenied(LaneBackfill) {
 			return nil
 		}
-		if recovery.Synced >= w.gov.Policy().BackfillMessages {
+		if !recovery.Initial && recovery.Synced >= w.gov.Policy().BackfillMessages {
 			w.imapImportCursor(box.Name, cur.UID, true, recovery)
 			continue
 		}
