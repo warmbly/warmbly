@@ -408,7 +408,7 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 	}
 	emailMsg.DispatchNonce = nonce.String()
 	if err := s.emailSender.Send(ctx, taskID, emailMsg, *account); err != nil {
-		if !errors.Is(err, ErrSendDispatchUnknown) {
+		if !errors.Is(err, ErrSendDispatchUnknown) && !errors.Is(err, ErrWarmupDispatchDeferred) {
 			result := models.SendEmailResult{TaskID: taskID, Error: &models.EmailSendError{Failure: &errx.SendFailure{Protocol: "internal", Stage: "prepare", Disposition: errx.SendRetry, Scope: "mailbox", ObservedAt: time.Now().UTC()}}, SentAt: time.Now().UTC()}
 			recovery := s.taskRepo.(repository.SendResultRecovery)
 			if applyErr := recovery.ApplySendResult(ctx, result, func(ctx context.Context) error {

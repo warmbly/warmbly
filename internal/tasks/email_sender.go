@@ -72,6 +72,8 @@ var ErrWorkerUnconfirmed = errors.New("the mailbox's sending worker could not be
 // being offered again.
 var ErrSendDispatchUnknown = errors.New("the send was not confirmed as queued and may already be on its way to a worker")
 
+var ErrWarmupDispatchDeferred = errors.New("the warmup send was not published and has already been rescheduled")
+
 type emailSender struct {
 	emailRepo repository.EmailRepository
 	publisher events.Publisher
@@ -192,8 +194,9 @@ func (s *emailSender) Send(ctx context.Context, taskID uuid.UUID, msg EmailMessa
 			if r, ok := s.admission.(repository.WarmupDispatchRepository); ok {
 				if n, nerr := uuid.Parse(msg.DispatchNonce); nerr == nil {
 					if derr := r.DeferWarmupDispatch(ctx, taskID, account.ID, *workerID, n, time.Now().Add(5*time.Minute)); derr != nil {
-						return derr
+						return fmt.Errorf("%w: defer warmup: %v", ErrSendDispatchUnknown, derr)
 					}
+					return fmt.Errorf("%w: %v", ErrWarmupDispatchDeferred, err)
 				}
 			}
 		}
