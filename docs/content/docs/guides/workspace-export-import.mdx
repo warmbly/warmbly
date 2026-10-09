@@ -150,6 +150,8 @@ If you have shell access to the source, `warmblyctl org export` writes the same 
 
 ## What does not travel
 
+Pending mailbox arrivals and their delivery queue are instance-local. Provider mappings whose arrivals are still pending are excluded too. Let the source consumer finish its pending arrivals before exporting; importing the archive does not replay that source queue. A [full-instance backup](/development/data-control/#mailbox-sync-recovery-data) instead preserves the queue together with its keys and message-body storage.
+
 The Test workspace classification is instance-local. Importing an archive does not classify the destination as Test or grant a managed Test plan or testing credits.
 
 A few things belong to the instance rather than the workspace and are left out on purpose: the instance's link to Warmbly Cloud and which mailboxes it enrolled in the hosted pool ([Warmbly Cloud](/guides/warmbly-cloud/)), linked self-hosted instances on a cloud workspace, Google Workspace and Microsoft 365 admin grants, live sessions, in-flight OAuth handshakes and the organization's wrapped data key. Reconnect to Warmbly Cloud and make each admin grant again after the move.

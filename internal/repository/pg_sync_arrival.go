@@ -84,8 +84,26 @@ func (r *pgEmailMessageMapRepository) AdmitArrival(ctx context.Context, data Ema
 		if err != nil {
 			return err
 		}
+	} else {
+		var pending bool
+		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM email_message_map m
+			JOIN sync_arrival_outbox o USING(user_id,email_id,message_id,id)
+			WHERE m.user_id=$1 AND m.email_id=$2 AND m.message_id=$3 AND o.organization_id=$4)`, user, email, data.MessageID, org).Scan(&pending)
+		if err != nil {
+			return err
+		}
+		// Legacy, deleted and already-delivered maps have no durable admission proof.
+		if !pending {
+			return ErrArrivalAdmissionUnconfirmed
+		}
 	}
 	return tx.Commit(ctx)
+}
+
+func (r *pgEmailMessageMapRepository) ArrivalBacklog(ctx context.Context) (ArrivalBacklog, error) {
+	var backlog ArrivalBacklog
+	err := r.db.QueryRow(ctx, `SELECT count(*),min(created_at) FROM sync_arrival_outbox`).Scan(&backlog.Pending, &backlog.Oldest)
+	return backlog, err
 }
 
 func (r *pgEmailMessageMapRepository) HasPendingArrival(ctx context.Context, user, email, id uuid.UUID) (bool, error) {

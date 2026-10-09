@@ -93,12 +93,11 @@ func (w *WMail) syncOnce(ctx context.Context) (result *errx.MailError) {
 		}
 	}()
 	if err := w.SyncMail(ctx); err != nil {
-		// A server that is down answers every pass the same way. Report the
-		// first one and then stay quiet until it comes back, so one outage is
-		// one warning in the drawer rather than one a minute.
+		// Keep observations fresh; the consumer deduplicates user notifications.
 		if isTransportError(err) {
 			w.transportFailures++
 			if w.transportFailures > 1 {
+				w.CaptureError(err)
 				log.Debug().Err(err).Str("email_id", w.ID.String()).Int("consecutive", w.transportFailures).Msg("mail server still unreachable")
 				return err
 			}

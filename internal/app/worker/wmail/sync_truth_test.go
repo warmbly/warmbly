@@ -28,6 +28,27 @@ func seedSyncTruth(w *WMail, relayed *[]models.SyncState) time.Time {
 	return previous
 }
 
+func TestSyncTruthRepeatedTransportFailuresRelayFreshObservations(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	srv.Close()
+	var events []captured
+	w := newGoogleTestMail(t, srv, &events)
+	for i := 0; i < 2; i++ {
+		if err := w.syncOnce(t.Context()); err == nil {
+			t.Fatal("provider failure hidden")
+		}
+	}
+	errors := 0
+	for _, event := range events {
+		if event.eventType == models.JobEventTypeEmailServerError {
+			errors++
+		}
+	}
+	if errors != 2 || w.transportFailures != 2 {
+		t.Fatalf("observations=%d failures=%d", errors, w.transportFailures)
+	}
+}
+
 func assertNoSyncSuccess(t *testing.T, w *WMail, previous time.Time) {
 	t.Helper()
 	if w.tracker.state.LastSyncedAt == nil || !w.tracker.state.LastSyncedAt.Equal(previous) || w.tracker.state.Deferred != 5 {

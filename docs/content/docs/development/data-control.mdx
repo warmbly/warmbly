@@ -281,6 +281,16 @@ The `rsync` alternative works too and is sometimes simpler, as long as the stack
 
 [Workspace export and import](/guides/workspace-export-import/) moves a single organization's data between two running instances, re-sealing its secrets for the destination's keys. That is the per-customer tool; the bundle here is the instance-level one. They are not interchangeable: a bundle cannot be applied to one workspace, and a workspace archive cannot restore an instance.
 
+### Mailbox sync recovery data
+
+New durable admissions retain an organization-encrypted arrival payload in `sync_arrival_outbox` alongside the provider map. The queue tracks delivery stages and retries consumer failures under the original message identity. A delivered arrival is removed; an unresolved arrival is retained for retry until it completes or its owning mailbox or organization is deleted. Deleting the mailbox intentionally removes that mailbox's pending work. This queue does not schedule new sends or authorize repeating a send.
+
+A full-instance backup must preserve the database, wrapped organization keys, the root key needed to unwrap them, and referenced message-body storage together. Restoring a queue without its keys or body objects cannot restore delivery. Use the normal consistent instance backup, not a separate copy of just the queue. A workspace archive excludes the queue and provider mappings whose arrivals are still pending. Drain pending work on the source before moving a workspace; importing an archive does not resume source-instance delivery.
+
+The consumer logs aggregate pending counts and oldest-arrival age. Arrivals older than five minutes, or delivery/inspection failures continuing for one minute, raise a deduplicated operator alert through the existing operator-notification integration when configured. Logs and notifications contain counts and age, not message bodies or addresses. Operator notifications repeat at most once per fifteen minutes; without an operator channel, monitor consumer logs for `sync arrival queue needs attention`. An empty queue is not proof of provider success or historical completeness.
+
+See [upgrade order and downgrade limits](/development/install/#mailbox-sync-upgrade-order). Legacy maps without stored arrival payloads cannot reconstruct historical lost mail.
+
 ## Outbound calls
 
 ### Diagnostic and managed-consent portability

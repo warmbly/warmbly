@@ -51,6 +51,10 @@ func TestLiveSyncArrivalRestartAndAmbiguousAdmission(t *testing.T) {
 	if err := r.AdmitArrival(ctx, data, p); err != nil {
 		t.Fatal(err)
 	}
+	stats, err := r.ArrivalBacklog(ctx)
+	if err != nil || stats.Pending != 1 || stats.Oldest == nil {
+		t.Fatalf("missing retained backlog evidence: %+v %v", stats, err)
+	}
 	var payload string
 	if err := d.QueryRow(ctx, `SELECT payload FROM sync_arrival_outbox WHERE email_id=$1`, f.mailbox).Scan(&payload); err != nil {
 		t.Fatal(err)
@@ -128,6 +132,13 @@ func TestLiveSyncArrivalRestartAndAmbiguousAdmission(t *testing.T) {
 	if pending, err := r.HasPendingArrival(ctx, f.user, f.mailbox, original); err != nil || pending {
 		t.Fatalf("pending not retired: %v", err)
 	}
+	if err := r.AdmitArrival(ctx, data, p); !errors.Is(err, ErrArrivalAdmissionUnconfirmed) {
+		t.Fatalf("completed delivery without retained proof was acknowledged: %v", err)
+	}
+	stats, err = r.ArrivalBacklog(ctx)
+	if err != nil || stats.Pending != 0 || stats.Oldest != nil {
+		t.Fatalf("delivered queue claimed a backlog: %+v %v", stats, err)
+	}
 }
 
 func TestLiveSyncArrivalReportStagesOwnershipAndLegacyMaps(t *testing.T) {
@@ -188,8 +199,8 @@ func TestLiveSyncArrivalReportStagesOwnershipAndLegacyMaps(t *testing.T) {
 	lp.Arrival.Message.ID = uuid.New()
 	retry := legacy
 	retry.ID = lp.Arrival.Message.ID.String()
-	if err := r.AdmitArrival(ctx, retry, lp); err != nil {
-		t.Fatal(err)
+	if err := r.AdmitArrival(ctx, retry, lp); !errors.Is(err, ErrArrivalAdmissionUnconfirmed) {
+		t.Fatalf("legacy mapping claimed durable admission: %v", err)
 	}
 	known, err := r.Get(ctx, f.user, f.mailbox, legacy.MessageID)
 	if err != nil || known.ID != legacy.ID {

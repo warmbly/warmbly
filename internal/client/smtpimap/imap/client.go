@@ -333,7 +333,11 @@ func (c *Client) Close() error {
 	if c.transport == nil {
 		return nil
 	}
-	return c.transport.Close()
+	err := c.transport.Close()
+	if errors.Is(err, net.ErrClosed) {
+		return nil
+	}
+	return err
 }
 
 func (c *Client) plainAuth() *errx.MailError {

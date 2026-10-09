@@ -41,6 +41,7 @@ func TestInternalArrivalAcknowledgesOnlyCompletedAdmission(t *testing.T) {
 		ack    string
 	}{
 		{"success", nil, 204, "1"}, {"failure", errors.New("private payload or cipher failure"), 503, ""},
+		{"unconfirmed collision", repository.ErrArrivalAdmissionUnconfirmed, 503, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := &internalArrivalMap{err: tc.err}
