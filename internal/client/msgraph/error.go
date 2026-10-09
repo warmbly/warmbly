@@ -2,12 +2,24 @@ package msgraph
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/warmbly/warmbly/internal/errx"
 )
+
+func deltaExpired(err error) bool {
+	var mailErr *errx.MailError
+	if !errors.As(err, &mailErr) || mailErr.Failure == nil {
+		return false
+	}
+	failure := mailErr.Failure
+	return failure.Status == http.StatusGone ||
+		(failure.Status == http.StatusBadRequest && strings.EqualFold(failure.Cause, "syncStateNotFound"))
+}
 
 // graphErrorEnvelope is Graph's standard error shape.
 type graphErrorEnvelope struct {
