@@ -10,6 +10,8 @@
 /* Nothing may widen the page: on iOS one overflowing row scales the whole
    layout viewport. clip (not hidden) keeps the sticky header working. */
 html, body { overflow-x: clip; }
+/* A grid track never grows to fit a wide child (a table, a code block): the child scrolls or wraps instead. */
+.grid > * { min-width: 0; }
 
 /* ----------------------------------------------------------------
    Color tokens — mirrors web/src/global.css OKLCH neutrals,
@@ -484,27 +486,16 @@ body {
     position: relative;
     margin-top: 3.5rem;
     margin-bottom: 1.25rem;
-    font-size: 24px;
-    font-weight: 600;
-    letter-spacing: -0.02em;
+    font-size: 26px;
+    font-weight: 500;
+    letter-spacing: -0.03em;
     line-height: 1.15;
     color: var(--heading);
     scroll-margin-top: 6.5rem;
   }
   .article-prose h2:first-child { margin-top: 0; }
   @media (min-width: 768px) {
-    .article-prose h2 { font-size: 28px; }
-    /* Section glyph sits in the left margin; gated to md+ so it cannot
-       poke past the px-6 container edge on phones. */
-    .article-prose h2::before {
-      content: '§';
-      position: absolute;
-      left: -1.75rem;
-      top: 0.25rem;
-      font-family: var(--font-mono);
-      font-size: 18px;
-      color: color-mix(in oklab, #0284c7 30%, transparent);
-    }
+    .article-prose h2 { font-size: 32px; }
   }
 
   /* Hover anchor for deep links; the <a> is injected by the article script. */
@@ -519,35 +510,31 @@ body {
     font-family: var(--font-mono);
     font-size: 15px;
     font-weight: 400;
-    color: #0284c7;
+    color: #94a3b8;
     opacity: 0;
     text-decoration: none;
     transition: opacity 160ms ease;
   }
   .article-prose h2:hover .heading-anchor,
   .article-prose h2 .heading-anchor:focus-visible { opacity: 1; }
-  @media (min-width: 768px) {
-    /* When the § glyph is visible, the anchor replaces it on hover. */
-    .article-prose h2:hover::before { opacity: 0; }
-  }
 
   .article-prose h3 {
     margin-top: 2rem;
     margin-bottom: 0.5rem;
-    font-size: 17px;
-    font-weight: 600;
+    font-size: 19px;
+    font-weight: 500;
     color: var(--heading);
   }
 
   .article-prose p {
     margin-top: 1rem;
-    font-size: 15.5px;
+    font-size: 16.5px;
     line-height: 1.75;
-    color: color-mix(in oklab, var(--foreground) 85%, transparent);
+    color: #475569;
   }
   .article-prose p:first-child { margin-top: 0; }
   @media (min-width: 768px) {
-    .article-prose p { font-size: 16px; }
+    .article-prose p { font-size: 17.5px; }
   }
 
   .article-prose ul {
@@ -595,12 +582,12 @@ body {
   }
 
   .article-prose a {
-    color: #0369a1;
+    color: #0f172a;
     text-decoration: underline;
     text-underline-offset: 2px;
-    text-decoration-color: color-mix(in oklab, #0284c7 30%, transparent);
+    text-decoration-color: #cbd5e1;
   }
-  .article-prose a:hover { color: #075985; }
+  .article-prose a:hover { text-decoration-color: #0f172a; }
 
   .article-prose strong {
     color: var(--heading);
@@ -683,6 +670,13 @@ body {
   .article-prose tbody td:first-child {
     color: var(--heading);
     font-weight: 500;
+  }
+  /* A long inline address or header breaks rather than widening the column. */
+  .article-prose :not(pre) > code { overflow-wrap: anywhere; }
+  /* On a phone a wide table scrolls sideways rather than squeezing every cell. */
+  @media (max-width: 640px) {
+    .article-prose table { display: block; overflow-x: auto; overscroll-behavior-x: contain; }
+    .article-prose th, .article-prose td { min-width: 8.5rem; }
   }
 
   .article-prose hr {
@@ -1053,3 +1047,21 @@ html[data-diag~="noanim"] *, html[data-diag~="noanim"] *::before, html[data-diag
 @media (prefers-reduced-motion: reduce) {
   .campaign-grid::before, .flame-flicker { animation: none !important; }
 }
+
+/* Remie's blob mark (AgentMark), copied from web/src/global.css: idle state only. */
+@property --amo-a { syntax: "<color>"; inherits: true; initial-value: #7dd3fc; }
+@property --amo-b { syntax: "<color>"; inherits: true; initial-value: #0ea5e9; }
+@property --amo-c { syntax: "<color>"; inherits: true; initial-value: #2563eb; }
+@property --amo-angle { syntax: "<angle>"; inherits: true; initial-value: 0deg; }
+.amo { position: relative; display: inline-grid; place-items: center; flex-shrink: 0; vertical-align: middle; color: #0ea5e9; transition: scale 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.amo-body { position: absolute; inset: 6%; overflow: hidden; border-radius: 46% 54% 52% 48% / 52% 46% 54% 48%; box-shadow: 0 0.1em 0.3em -0.08em color-mix(in srgb, var(--amo-b) 70%, transparent); animation: amo-blob 5s ease-in-out infinite; }
+.amo-swirl { position: absolute; inset: -30%; background: conic-gradient(from var(--amo-angle), var(--amo-a), var(--amo-b), var(--amo-c), var(--amo-a)); filter: blur(0.1em); animation: amo-turn 7s linear infinite; }
+.amo-shine { position: absolute; left: 22%; top: 16%; width: 32%; height: 22%; border-radius: 50%; background: radial-gradient(closest-side, rgb(255 255 255 / 0.9), rgb(255 255 255 / 0)); rotate: -28deg; }
+.group:hover .amo { scale: 1.1; }
+@keyframes amo-blob {
+  0%, 100% { border-radius: 46% 54% 52% 48% / 52% 46% 54% 48%; transform: scale(1, 1); }
+  33% { border-radius: 58% 42% 46% 54% / 44% 56% 46% 56%; transform: scale(1.04, 0.97); }
+  66% { border-radius: 42% 58% 56% 44% / 56% 44% 58% 42%; transform: scale(0.97, 1.04); }
+}
+@keyframes amo-turn { from { --amo-angle: 0deg; } to { --amo-angle: 360deg; } }
+@media (prefers-reduced-motion: reduce) { .amo-body, .amo-swirl { animation: none; } }

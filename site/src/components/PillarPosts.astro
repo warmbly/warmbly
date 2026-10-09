@@ -1,10 +1,10 @@
 ---
 /**
- * "Deep dives" block for a pillar page: links down to the best blog posts in
- * its topic cluster, so the pillar-to-spoke links mirror the spoke-to-pillar
- * links the posts already carry. Keeps the cluster reciprocal.
+ * Links from a pillar page down to the best posts in its topic, so the
+ * pillar-to-post links mirror the post-to-pillar links the posts already carry.
  */
 import Icon from './Icon.astro';
+import Rule from './page/Rule.astro';
 
 interface Item {
   href: string;
@@ -17,27 +17,23 @@ interface Props {
 }
 const { title = 'From the blog', items } = Astro.props;
 ---
-<section class="border-t border-[color:var(--border)] py-16 md:py-20">
-  <div class="container-page">
-    <div class="flex items-end justify-between gap-4 mb-8">
-      <div>
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Deep dives</div>
-        <h2 class="text-[26px] md:text-[34px] font-semibold tracking-[-0.025em] text-heading leading-[1.08]">{title}</h2>
-      </div>
-      <a href="/blog/" class="hidden sm:inline-flex items-center gap-1.5 text-[13px] font-medium text-[#0369a1] hover:text-[#075985] shrink-0">
-        All posts <Icon name="arrowRight" size={12} />
+<Rule />
+<section class="container-page py-20 md:py-24">
+  <div class="flex items-end justify-between gap-4">
+    <h2 class="text-[26px] md:text-[34px] font-medium tracking-[-0.035em] leading-[1.1] text-slate-900">{title}</h2>
+    <a href="/blog/" class="hidden sm:inline-flex shrink-0 items-center gap-1.5 text-[14px] font-medium text-slate-600 hover:text-slate-900">
+      All posts <Icon name="arrowRight" size={12} />
+    </a>
+  </div>
+  <div class="mt-8 grid gap-3 sm:grid-cols-3">
+    {items.map((it) => (
+      <a href={it.href} class="group flex min-h-[148px] flex-col rounded-[6px] bg-white p-6 ring-1 ring-slate-200 transition-colors hover:ring-slate-300">
+        {it.kicker && <div class="text-[13px] text-slate-400">{it.kicker}</div>}
+        <div class="mt-1.5 text-[16px] font-medium leading-snug text-slate-900">{it.title}</div>
+        <div class="mt-auto inline-flex items-center gap-1 pt-5 text-[13px] text-slate-500 transition-colors group-hover:text-slate-900">
+          Read the post <Icon name="arrowRight" size={11} class="transition-transform group-hover:translate-x-0.5" />
+        </div>
       </a>
-    </div>
-    <div class="grid sm:grid-cols-3 gap-3">
-      {items.map((it) => (
-        <a href={it.href} class="group flex flex-col p-5 rounded-[12px] bg-white ring-1 ring-[color:var(--border)] hover:ring-[#0284c7]/40 transition-all min-h-[132px]">
-          {it.kicker && <div class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground mb-2">{it.kicker}</div>}
-          <div class="text-[15px] font-semibold text-heading group-hover:text-[#0369a1] transition-colors leading-snug">{it.title}</div>
-          <div class="mt-auto pt-4 inline-flex items-center gap-1 text-[12px] font-medium text-foreground/45 group-hover:text-[#0369a1] transition-colors">
-            Read <Icon name="arrowRight" size={11} />
-          </div>
-        </a>
-      ))}
-    </div>
+    ))}
   </div>
 </section>

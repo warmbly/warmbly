@@ -1,0 +1,41 @@
+---
+import SectionIntro from './SectionIntro.astro';
+
+/**
+ * Questions and answers as native disclosure rows, so every answer is in the
+ * page for readers and search engines alike, plus the FAQPage data that lets
+ * a search result show them.
+ */
+interface Props {
+  lead?: string;
+  title?: string;
+  items: [string, string][];
+}
+const { lead = 'Questions.', title = 'The ones we hear most.', items } = Astro.props;
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: items.map(([q, a]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })),
+};
+---
+<section class="container-page py-20 md:py-28">
+  <div class="grid gap-10 lg:grid-cols-[1fr_1.6fr] lg:gap-20">
+    <SectionIntro lead={lead} title={title}>
+      <slot />
+    </SectionIntro>
+    <div class="divide-y divide-slate-200 border-y border-slate-200">
+      {items.map(([q, a]) => (
+        <details class="faq group py-1">
+          <summary class="flex cursor-pointer list-none items-start justify-between gap-6 py-4 text-[16px] font-medium text-slate-900 [&::-webkit-details-marker]:hidden">
+            {q}
+            <span class="mt-1 inline-flex size-5 shrink-0 items-center justify-center text-slate-400 transition-transform duration-300 group-open:rotate-45" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            </span>
+          </summary>
+          <p class="max-w-2xl pb-5 pr-10 text-[15px] leading-[1.65] text-slate-600">{a}</p>
+        </details>
+      ))}
+    </div>
+  </div>
+  <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+</section>
