@@ -19,6 +19,13 @@ type digestDevices struct {
 	lists int
 }
 
+type digestTimeoutMembers struct{}
+
+func (*digestTimeoutMembers) GetMembers(ctx context.Context, _ uuid.UUID) ([]models.OrganizationMember, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
 func (d *digestDevices) ListByUser(context.Context, uuid.UUID) ([]models.DeviceToken, error) {
 	d.lists++
 	return nil, nil
@@ -40,7 +47,7 @@ func TestLivePushDigestAudienceRetries(t *testing.T) {
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		t.Fatal(err)
 	}
-	for _, failure := range []string{"membership", "message"} {
+	for _, failure := range []string{"membership", "message", "deadline"} {
 		for _, recovery := range []string{"authorized", "revoked"} {
 			t.Run(failure+"/"+recovery, func(t *testing.T) {
 				user, org, message := uuid.New(), uuid.New(), uuid.New()
@@ -54,10 +61,16 @@ func TestLivePushDigestAudienceRetries(t *testing.T) {
 				repo := &messageNotificationRepo{allowed: true}
 				devices := &digestDevices{}
 				s := &service{repo: repo, members: members, pushRedis: rdb, deviceTokens: devices}
+				deliveryCtx := ctx
 				if failure == "membership" {
 					members.err = errors.New("temporary membership failure")
-				} else {
+				} else if failure == "message" {
 					repo.err = errors.New("temporary message failure")
+				} else {
+					s.members = &digestTimeoutMembers{}
+					var cancel context.CancelFunc
+					deliveryCtx, cancel = context.WithTimeout(ctx, 100*time.Millisecond)
+					defer cancel()
 				}
 				p := pendingPush{OrganizationID: &org, MessageID: &message, Title: "private", Body: "Human reply"}
 				data, err := json.Marshal(p)
@@ -67,7 +80,7 @@ func TestLivePushDigestAudienceRetries(t *testing.T) {
 				if err := rdb.RPush(ctx, pendingKey(member), string(data), `{"title":"legacy workspace notice"}`, "invalid-json").Err(); err != nil {
 					t.Fatal(err)
 				}
-				s.sendDigest(ctx, member)
+				s.sendDigest(deliveryCtx, member)
 				queued, err := rdb.LRange(ctx, pendingKey(member), 0, -1).Result()
 				if err != nil || len(queued) != 1 || queued[0] != string(data) || devices.lists != 0 {
 					t.Fatalf("lookup failure lost or delivered pending item: queued=%v device lookups=%d err=%v", queued, devices.lists, err)
@@ -77,6 +90,7 @@ func TestLivePushDigestAudienceRetries(t *testing.T) {
 					t.Fatalf("retry not scheduled: due=%v err=%v", due, err)
 				}
 				members.err, repo.err = nil, nil
+				s.members = members
 				if recovery == "revoked" {
 					members.members = nil
 				}

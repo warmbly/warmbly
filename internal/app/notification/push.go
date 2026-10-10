@@ -199,9 +199,11 @@ func (s *service) sendDigest(ctx context.Context, member string) {
 		}
 	}
 	if len(retry) > 0 {
-		_, err := s.pushRedis.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-			pipe.RPush(ctx, pendingKey(member), retry...)
-			pipe.ZAdd(ctx, dueKey(), redis.Z{Score: float64(time.Now().Add(digestPollEvery).Unix()), Member: member})
+		recoveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		_, err := s.pushRedis.TxPipelined(recoveryCtx, func(pipe redis.Pipeliner) error {
+			pipe.RPush(recoveryCtx, pendingKey(member), retry...)
+			pipe.ZAdd(recoveryCtx, dueKey(), redis.Z{Score: float64(time.Now().Add(digestPollEvery).Unix()), Member: member})
 			return nil
 		})
 		if err != nil {

@@ -93,7 +93,7 @@ func TestResourceOnlyOwnerEvents(t *testing.T) {
 		t.Fatalf("resource resolution lost events: %+v", bus.events)
 	}
 	for _, event := range bus.events {
-		if event["org_id"] != nil || event["organization_id"] != nil || event["user_id"] != user.String() {
+		if event["org_id"] != nil || event["organization_id"] != nil || event["authorization_org_id"] != org.String() || event["user_id"] != user.String() {
 			t.Fatalf("private event audience widened: %+v", event)
 		}
 	}
@@ -123,7 +123,7 @@ func TestUserEventContextPreservesPrivateAudience(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i, event := range bus.events {
-		if event["org_id"] != nil || event["organization_id"] != nil || bus.attrs[i]["org_id"] != "" || event["user_id"] != user.String() {
+		if event["org_id"] != nil || event["organization_id"] != nil || event["authorization_org_id"] != org.String() || bus.attrs[i]["org_id"] != "" || event["user_id"] != user.String() {
 			t.Fatalf("context became workspace broadcast: event=%+v attrs=%+v", event, bus.attrs[i])
 		}
 	}

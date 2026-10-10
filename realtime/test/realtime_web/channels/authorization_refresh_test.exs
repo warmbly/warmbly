@@ -436,6 +436,64 @@ defmodule RealtimeWeb.AuthorizationRefreshTest do
     refute_push("CAMPAIGN_UPDATED", _)
   end
 
+  test "private reload context authorizes user delivery without a workspace broadcast", ctx do
+    parent = self()
+
+    listener =
+      spawn(fn ->
+        Phoenix.PubSub.subscribe(Realtime.PubSub, "org:#{ctx.org_id}")
+        send(parent, :org_listener_ready)
+
+        receive do
+          message -> send(parent, {:org_delivery, message})
+        end
+      end)
+
+    on_exit(fn -> Process.exit(listener, :kill) end)
+    assert_receive :org_listener_ready
+
+    {:ok, _, socket} =
+      subscribe_and_join(user_socket(ctx.user_id), UserChannel, "user:#{ctx.user_id}")
+
+    ev = %{
+      "event_type" => "CONTACTS_RELOAD",
+      "user_id" => ctx.user_id,
+      "authorization_org_id" => ctx.org_id,
+      "entity_type" => "contacts"
+    }
+
+    Realtime.EventBroadcaster.broadcast(ev)
+    assert_push("CONTACTS_RELOAD", ^ev)
+    refute_receive {:org_delivery, _}
+
+    expire_user_cache(socket)
+    authorize(ctx, refusal: :revoked)
+    Realtime.EventBroadcaster.broadcast(ev)
+    refute_push("CONTACTS_RELOAD", _)
+  end
+
+  for refusal <- [:restricted, :error] do
+    @refusal refusal
+
+    test "private reload context fails closed with #{@refusal} membership", ctx do
+      if @refusal == :restricted,
+        do: authorize(ctx, scope: "restricted"),
+        else: authorize(ctx, refusal: @refusal)
+
+      {:ok, _, _socket} =
+        subscribe_and_join(user_socket(ctx.user_id), UserChannel, "user:#{ctx.user_id}")
+
+      Realtime.EventBroadcaster.broadcast(%{
+        "event_type" => "CONTACTS_RELOAD",
+        "user_id" => ctx.user_id,
+        "authorization_org_id" => ctx.org_id,
+        "entity_type" => "contacts"
+      })
+
+      refute_push("CONTACTS_RELOAD", _)
+    end
+  end
+
   test "personal notifications remain available without workspace membership", ctx do
     notification_id = uuid()
 

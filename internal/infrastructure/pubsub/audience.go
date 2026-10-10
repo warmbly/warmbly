@@ -107,6 +107,7 @@ func (p *StreamingPublisher) publish(ctx context.Context, topic string, event an
 		delete(fields, "org_id")
 		delete(fields, "organization_id")
 		fields["user_id"], _ = json.Marshal(userID.String())
+		fields["authorization_org_id"], _ = json.Marshal(orgID.String())
 		delete(attrs, "org_id")
 		delete(attrs, "organization_id")
 		return p.client.Publish(ctx, topic, fields, attrs)

@@ -156,7 +156,7 @@ defmodule RealtimeWeb.UserChannel do
         do: Map.put(event, "campaign_id", member.event_campaign_id),
         else: event
 
-    Auth.matches_org?(member, event["org_id"]) and
+    Auth.matches_org?(member, event["org_id"] || event["authorization_org_id"]) and
       socket
       |> ChannelGuard.remember_authorization(member)
       |> OrgChannel.can_see_event?(event)
@@ -178,6 +178,9 @@ defmodule RealtimeWeb.UserChannel do
 
       is_binary(event["org_id"]) and event["org_id"] != "" ->
         {:org, event["org_id"]}
+
+      is_binary(event["authorization_org_id"]) and event["authorization_org_id"] != "" ->
+        {:org, event["authorization_org_id"]}
 
       is_binary(event["contact_id"]) and event["contact_id"] != "" ->
         {:contact, event["contact_id"]}
