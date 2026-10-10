@@ -20,6 +20,7 @@ import (
 func TestGraphWarmupDeleteIncompleteLookupRetainsBody(t *testing.T) {
 	for _, tc := range []struct{ name, body string }{
 		{"missing collection", `{}`},
+		{"terminal absence followed by identity", `{"value":[]}{"value":[{"id":"live-id"}]}`},
 		{"null collection", `{"value":null}`},
 		{"continuation not exhausted", `{"value":[],"@odata.nextLink":"https://graph.microsoft.com/v1.0/me/messages?$skiptoken=more"}`},
 		{"foreign continuation", `{"value":[],"@odata.nextLink":"https://other.example.test/collect"}`},

@@ -20,7 +20,11 @@ func TestResolveMessageIDRequiresCompleteIdentityLookup(t *testing.T) {
 		uncertain        bool
 	}{
 		{"terminal absence", `{"value":[]}`, "", false},
+		{"terminal absence with whitespace", "{\"value\":[]} \n", "", false},
 		{"terminal identity", `{"value":[{"id":"live-id"}]}`, "live-id", false},
+		{"terminal absence followed by identity", `{"value":[]}{"value":[{"id":"live-id"}]}`, "", true},
+		{"identity followed by another page", `{"value":[{"id":"live-id"}]}{"value":[]}`, "", true},
+		{"terminal absence followed by junk", `{"value":[]}private-marker`, "", true},
 		{"missing collection", `{}`, "", true},
 		{"null collection", `{"value":null}`, "", true},
 		{"null response", `null`, "", true},

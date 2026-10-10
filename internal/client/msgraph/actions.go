@@ -167,6 +167,9 @@ func (c *Client) ResolveMessageID(ctx context.Context, internetMessageID string)
 		NextLink json.RawMessage `json:"@odata.nextLink"`
 	}
 	if err := c.doJSON(ctx, "GET", u, nil, &resp); err != nil {
+		if errors.Is(err, errGraphTrailingJSON) {
+			return "", errMessageLookupIncomplete
+		}
 		return "", err
 	}
 	// Never follow a continuation or infer absence from an incomplete page.
