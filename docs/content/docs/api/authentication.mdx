@@ -78,6 +78,8 @@ curl -X GET "https://api.warmbly.com/v1/me" \
 
 `auth_type` is `api_key`, `oauth`, or `jwt`, and `scopes` lists the granted API scopes for key and OAuth callers (empty for dashboard sessions, which use organization roles instead). This is the right endpoint for an integration to validate a connection and render a label. The separate `GET /v1/auth/me` is session-only and is not reachable with an API key or OAuth token.
 
+For a restricted session, `/auth/me` returns only conversation categories applied to messages in its granted mailboxes. Campaign grants do not grant inbox access. Workspace-wide category registries remain available to unrestricted members. See [member access scope](/guides/team-roles/#access-scope) for the summary, notification and workspace-creation boundaries that also apply to existing members and credentials.
+
 ## OAuth access tokens
 
 API keys authenticate your own scripts. If you are building an app that other people connect their Warmbly workspace to, use OAuth instead: the user grants your app scoped access and you receive a bearer **access token** (prefix `wmat_`). It goes in the same `Authorization: Bearer` header and is checked against the same permissions, so every endpoint below behaves identically whether you present an API key or an OAuth token, with two differences: an OAuth token also acts within the approving member's current role, and it can never manage API keys or OAuth apps. See [OAuth](/api/oauth/) for the full flow.
