@@ -56,9 +56,21 @@ func TestInternalArrivalLogsOnlySafeDiagnosticsWithoutAcknowledging(t *testing.T
 		t.Fatal("diagnostic has no observation time")
 	}
 	output.Reset()
+	requestID = "client-trace_123"
 	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/arrival", strings.NewReader(`{"map":{"user_id":"private","email_id":"private","id":"private"},"pending":{}}`)))
 	if strings.Contains(output.String(), `"email_id"`) || strings.Contains(output.String(), `"user_id"`) || strings.Contains(output.String(), `"arrival_id"`) {
 		t.Fatal("invalid identities were logged")
+	}
+	if !strings.Contains(output.String(), `"request_id":"client-trace_123"`) {
+		t.Fatal("accepted non-UUID trace identifier was lost")
+	}
+	for _, invalid := range []string{"bad/request/id", "invalid\ntrace", strings.Repeat("a", 129)} {
+		output.Reset()
+		requestID = invalid
+		r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/arrival", strings.NewReader(`{"map":{},"pending":{}}`)))
+		if strings.Contains(output.String(), `"request_id"`) {
+			t.Fatal("unsafe or oversized trace identifier was logged")
+		}
 	}
 }
 

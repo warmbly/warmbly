@@ -46,11 +46,13 @@ func logArrivalAdmissionFailure(c *gin.Context, mapping emailMessageMapPayload, 
 	}
 	for name, raw := range map[string]string{
 		"user_id": mapping.UserID, "email_id": mapping.EmailID, "arrival_id": mapping.ID,
-		"request_id": c.GetString(middleware.RequestIDContextKey),
 	} {
 		if id, err := uuid.Parse(raw); err == nil && id != uuid.Nil {
 			event.Str(name, id.String())
 		}
+	}
+	if requestID := middleware.RequestID(c); requestID != "" {
+		event.Str("request_id", requestID)
 	}
 	event.Msg("sync arrival admission deferred; durability not confirmed")
 }
