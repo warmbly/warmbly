@@ -202,6 +202,10 @@ Every invitation is backed by a link of the form `https://your-instance/invite?t
 
 The invitee opens the link, sees the workspace, the inviter and the roles they are being given, and clicks **Create an account**. They set a password and land inside your workspace.
 
+Signup accepts the invitation as part of account creation, with or without an emailed verification code. It goes straight to the dashboard rather than reopening the used link. An existing account instead signs in, returns to the invitation, and clicks **Accept invitation**. Restricted members land on a resource they can access.
+
+The account, workspace membership, roles and resource grants are saved together. If an invitation becomes invalid before an invite-only signup finishes, no account is left behind. Ask for a fresh invitation and retry with the same address. On an instance with open registration, an invalid invitation can still fall back to creating a personal workspace.
+
 This is the part worth being explicit about: **that signup succeeds under `invite_only` precisely because the link carries the invitation token.** The same person visiting the sign-up form directly, without the link, is refused with `registration_invite_only`. The token is the capability. Nothing else about the address is special.
 
 </Step>

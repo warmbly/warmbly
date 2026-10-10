@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import safeNext from "./safeNext";
+import safeNext, { postAuthNext } from "./safeNext";
 
 describe("safeNext", () => {
     it("follows a path on this origin", () => {
@@ -13,5 +13,26 @@ describe("safeNext", () => {
             expect(safeNext(bad, "/home")).toBe("/home");
         }
         expect(safeNext(null, "/home")).toBe("/home");
+    });
+});
+
+describe("postAuthNext", () => {
+    it("does not reopen a consumed invitation after either signup path", () => {
+        for (const next of ["/invite?token=old", "/invite/?token=old", "/invite#accepted", "/auth/../invite?token=old"]) {
+            expect(postAuthNext(next, true)).toBe("/app/emails");
+        }
+    });
+
+    it("returns existing users to their still-pending invitation", () => {
+        expect(postAuthNext("/invite?token=pending")).toBe("/invite?token=pending");
+    });
+
+    it("preserves other safe destinations and rejects external redirects", () => {
+        expect(postAuthNext("/cli?code=ABCD-EFGH", true)).toBe("/cli?code=ABCD-EFGH");
+        expect(postAuthNext("/app/emails", true)).toBe("/app/emails");
+        expect(postAuthNext("/invites", true)).toBe("/invites");
+        for (const next of [null, "//evil.example", "https://evil.example", "/\\evil.example"]) {
+            expect(postAuthNext(next, true)).toBe("/app/emails");
+        }
     });
 });

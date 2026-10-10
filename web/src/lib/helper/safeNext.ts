@@ -6,3 +6,12 @@ export default function safeNext(next: string | null | undefined, fallback: stri
     if (/[\u0000-\u001f\u007f\\]/.test(next)) return fallback;
     return next;
 }
+
+export function postAuthNext(next: string | null | undefined, invitationConsumed = false): string {
+    const target = safeNext(next, "/app/emails");
+    if (invitationConsumed) {
+        const path = new URL(target, "https://warmbly.invalid").pathname.replace(/\/+$/, "");
+        if (path === "/invite") return "/app/emails";
+    }
+    return target;
+}

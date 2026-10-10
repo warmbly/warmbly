@@ -58,50 +58,47 @@ func (s *authService) createAccount(ctx context.Context, address, passwordHash s
 	// that would turn an invite-gated signup into an unrelated account.
 	inviteRequired := s.inviteIsLoadBearing(ctx, attr.Invite)
 
-	u, xerr := s.userRepository.CreateUser(ctx, email, passwordHash)
-	if xerr != nil {
-		if errors.Is(xerr, repository.ErrUserEmailTaken) {
-			return nil, errx.ErrAccountExists
+	var u *models.User
+	var member *models.OrganizationMember
+	if attr.Invite != "" && s.organizationService != nil {
+		var xerr *errx.Error
+		u, member, xerr = s.organizationService.CreateInvitedUser(ctx, attr.Invite, email, passwordHash)
+		if xerr != nil && (inviteRequired || xerr != errx.ErrInvitationInvalid) {
+			return nil, xerr
 		}
-		errs.CaptureException(xerr)
-		return nil, errx.InternalError()
+	} else if inviteRequired {
+		return nil, errx.ErrInvitationInvalid
+	}
+	if u == nil {
+		var xerr error
+		u, xerr = s.userRepository.CreateUser(ctx, email, passwordHash)
+		if xerr != nil {
+			if errors.Is(xerr, repository.ErrUserEmailTaken) {
+				return nil, errx.ErrAccountExists
+			}
+			errs.CaptureException(xerr)
+			return nil, errx.InternalError()
+		}
 	}
 
 	if err := s.userService.SaveUser(ctx, u); err != nil {
-		return nil, err
+		if member == nil {
+			return nil, err
+		}
+		errs.CaptureException(err)
 	}
 
 	s.recordSignupOrigin(ctx, u.ID, u.Email, origin)
 
-	// An invited account joins the inviting org and stops there: no second
-	// workspace, no trial of its own. A token that died between start and
-	// confirm only falls through to a personal org when open registration
-	// would have accepted the signup anyway.
-	if attr.Invite != "" && s.organizationService != nil {
-		if member, err := s.organizationService.AcceptInvitation(ctx, attr.Invite, u.ID, u.Email); err == nil {
-			// An invited account finished signing up just as much as a
-			// self-serve one; it simply joined an existing workspace. It is
-			// counted here rather than at the end because this path returns
-			// early, and the count cannot move above the invitation check: a
-			// failed invitation either refuses or falls through to a
-			// self-serve signup, and only one of those is a signup.
-			s.notifyOperatorSignup(u, "")
-			// The workspace joined is the inviter's, so it comes from the
-			// membership rather than from the account's own (owned)
-			// organizations, of which an invited account has none. Failing
-			// to resolve it only leaves the group off the event.
-			var joined *models.Organization
-			if member != nil {
-				if org, oerr := s.organizationService.Get(ctx, member.OrganizationID); oerr == nil {
-					joined = org
-				}
-			}
-			s.countSignup(u, joined, attr, origin)
-			return u, nil
+	// An invited signup needs neither a personal workspace nor its own trial.
+	if member != nil {
+		s.notifyOperatorSignup(u, "")
+		var joined *models.Organization
+		if org, oerr := s.organizationService.Get(ctx, member.OrganizationID); oerr == nil {
+			joined = org
 		}
-		if inviteRequired {
-			return nil, errx.ErrInvitationInvalid
-		}
+		s.countSignup(u, joined, attr, origin)
+		return u, nil
 	}
 
 	// Auto-create organization for new user
