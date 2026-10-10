@@ -15,12 +15,12 @@ type AdminDeviceIssuer interface {
 	GenerateAdminDeviceSession(context.Context, uuid.UUID, uuid.UUID, time.Time) (*models.Token, *errx.Error)
 }
 
-func validAdminDeviceProof(mfa bool, revoked, expires, reauth *time.Time, approvedAt, now time.Time) bool {
+func validAdminDeviceProof(mfa bool, revoked, expires, reauth *time.Time, proofAt, now time.Time) bool {
 	return mfa && revoked == nil && expires != nil && expires.After(now) && reauth != nil &&
-		!approvedAt.After(now) && now.Sub(approvedAt) <= ReauthWindow && !reauth.Before(approvedAt)
+		!proofAt.After(now) && now.Sub(proofAt) <= ReauthWindow && !reauth.Before(proofAt) && !reauth.After(now)
 }
 
-func (s *tokenService) GenerateAdminDeviceSession(ctx context.Context, sourceID, userID uuid.UUID, approvedAt time.Time) (*models.Token, *errx.Error) {
+func (s *tokenService) GenerateAdminDeviceSession(ctx context.Context, sourceID, userID uuid.UUID, proofAt time.Time) (*models.Token, *errx.Error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return nil, errx.InternalError()
@@ -35,7 +35,7 @@ func (s *tokenService) GenerateAdminDeviceSession(ctx context.Context, sourceID,
 		WHERE s.id=$1 AND s.user_id=$2 FOR UPDATE OF s, u`, sourceID, userID).Scan(
 		&source.AuthProvider, &source.MFAVerified, &source.RevokedAt, &source.ExpiresAt, &source.ReauthAt, &perms, &banScope)
 	now := time.Now().UTC()
-	if err != nil || perms == 0 || banScope&uint64(models.BanScopeLogin) != 0 || !validAdminDeviceProof(source.MFAVerified, source.RevokedAt, source.ExpiresAt, source.ReauthAt, approvedAt, now) {
+	if err != nil || perms == 0 || banScope&uint64(models.BanScopeLogin) != 0 || !validAdminDeviceProof(source.MFAVerified, source.RevokedAt, source.ExpiresAt, source.ReauthAt, proofAt, now) {
 		return nil, errx.ErrUnauthorized
 	}
 	accessNonce, err := crypt.Nonce()
@@ -48,7 +48,7 @@ func (s *tokenService) GenerateAdminDeviceSession(ctx context.Context, sourceID,
 	}
 	expires := now.Add(RefreshTokenLifeTime)
 	session := &models.Session{ID: uuid.New(), UserID: userID, AuthProvider: source.AuthProvider,
-		MFAVerified: source.MFAVerified, ReauthAt: &approvedAt, CreatedAt: now, LastRefreshedAt: now,
+		MFAVerified: source.MFAVerified, ReauthAt: &proofAt, CreatedAt: now, LastRefreshedAt: now,
 		ExpiresAt: &expires, AccessNonce: accessNonce, RefreshNonce: refreshNonce, BrowserName: "warmblyctl", OSName: "CLI"}
 	tok := &models.Token{AccessTokenExpiresAt: now.Add(AccessTokenLifeTime), RefreshTokenExpiresAt: expires}
 	tok.AccessToken, err = s.GenerateTokenFor(PurposeAccess, userID, session.ID, "", accessNonce, now, tok.AccessTokenExpiresAt)

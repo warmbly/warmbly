@@ -27,6 +27,8 @@ func TestAdminDeviceProofCannotCreateFreshnessOrMFA(t *testing.T) {
 		{"invented newer proof", true, nil, &expires, &older, proof, false},
 		{"old approval stays old after source reauth", true, nil, &expires, &proof, older, false},
 		{"future proof", true, nil, &expires, &future, future, false},
+		{"future source cannot bless older delegated proof", true, nil, &expires, &future, proof, false},
+		{"later source reauth keeps original proof", true, nil, &expires, &now, proof, true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
