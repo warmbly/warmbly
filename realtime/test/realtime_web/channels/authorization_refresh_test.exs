@@ -441,8 +441,9 @@ defmodule RealtimeWeb.AuthorizationRefreshTest do
 
     AuthRepo.respond_with(fn query, params ->
       assert String.contains?(query, "FROM notifications")
+      assert String.contains?(query, "organization_id, category")
       assert params == [bin(notification_id), bin(ctx.user_id)]
-      rows([[nil]])
+      rows([[nil, "security_new_signin"]])
     end)
 
     {:ok, _, socket} =
@@ -459,6 +460,42 @@ defmodule RealtimeWeb.AuthorizationRefreshTest do
     assert_push("NOTIFICATION_CREATED", ^ev)
   end
 
+  for category <- ["campaign_paused", "unknown", nil],
+      membership <- [:restricted, :revoked] do
+    test "unscoped #{inspect(category)} notification is withheld with #{membership} membership",
+         ctx do
+      category = unquote(category)
+
+      authorize(ctx,
+        scope: "restricted",
+        refusal: unquote(if membership == :revoked, do: :revoked)
+      )
+
+      notification_id = uuid()
+      original = Agent.get(AuthRepo, & &1.handler)
+
+      AuthRepo.respond_with(fn query, params ->
+        if String.contains?(query, "FROM notifications"),
+          do: rows([[nil, category]]),
+          else: original.(query, params)
+      end)
+
+      {:ok, _, socket} =
+        subscribe_and_join(user_socket(ctx.user_id), UserChannel, "user:#{ctx.user_id}")
+
+      ev = %{
+        "event_type" => "NOTIFICATION_CREATED",
+        "notification_id" => notification_id,
+        "category" => "security_new_signin",
+        "title" => "Private campaign",
+        "link" => "/campaigns/private"
+      }
+
+      broadcast(socket, ev)
+      refute_push("NOTIFICATION_CREATED", _)
+    end
+  end
+
   test "workspace notifications with no resource scope are withheld from restricted owners",
        ctx do
     authorize(ctx, scope: "restricted")
@@ -467,7 +504,7 @@ defmodule RealtimeWeb.AuthorizationRefreshTest do
 
     AuthRepo.respond_with(fn query, params ->
       if String.contains?(query, "FROM notifications"),
-        do: rows([[bin(ctx.org_id)]]),
+        do: rows([[bin(ctx.org_id), "campaign_paused"]]),
         else: original.(query, params)
     end)
 

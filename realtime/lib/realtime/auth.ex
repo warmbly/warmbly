@@ -455,8 +455,21 @@ defmodule Realtime.Auth do
 
   @doc false
   def check_user_event_resource(user_id, :notification, id) do
-    query = "SELECT organization_id FROM notifications WHERE id = $1 AND user_id = $2"
-    event_membership(query, [id, user_id], user_id)
+    query = "SELECT organization_id, category FROM notifications WHERE id = $1 AND user_id = $2"
+
+    case dump_and_query(query, [id, user_id]) do
+      {:ok, %{rows: [[org_id, _category]]}} when not is_nil(org_id) ->
+        check_org_membership(user_id, org_id)
+
+      {:ok, %{rows: [[nil, "security_new_signin"]]}} ->
+        {:ok, %{permissions: 65535, scope: nil}}
+
+      {:ok, %{rows: _}} ->
+        {:error, :forbidden}
+
+      {:error, _reason} ->
+        {:error, :database_error}
+    end
   end
 
   def check_user_event_resource(user_id, :contact, id) do
