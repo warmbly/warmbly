@@ -282,6 +282,12 @@ func TestLiveMonitoringLoadingIncidentBuckets(t *testing.T) {
 	repo := NewMonitoringRepository(pool)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	before := collectMonitoring(t, repo, "warmup_loading", now)
+	if before.ExpectedScopes == nil {
+		t.Fatal("missing eligible-mailbox count")
+	}
+	if *before.ExpectedScopes > 197 {
+		t.Skip("requires an isolated live database with room for three fixtures in the 200-mailbox sample")
+	}
 	for _, offsets := range [][]time.Duration{
 		{-5 * time.Minute},
 		{-80 * time.Minute, -40 * time.Minute, -5 * time.Minute},
