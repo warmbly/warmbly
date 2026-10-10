@@ -2,11 +2,14 @@ package msgraph
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/warmbly/warmbly/internal/errx"
 )
 
 // Warmup mailbox actions. These mirror the goog/imap warmup actions so the
@@ -153,25 +156,34 @@ func (c *Client) move(ctx context.Context, messageID, destinationID string) (str
 // ResolveMessageID returns the current Graph message id for the message with the
 // given immutable RFC 5322 internetMessageId, searching across folders. Graph
 // ids change on move, so warmup actions re-resolve against this stable key.
-// Returns an empty string (no error) when the message can't be found.
+// Only an explicit terminal empty collection establishes absence.
 func (c *Client) ResolveMessageID(ctx context.Context, internetMessageID string) (string, error) {
+	if strings.TrimSpace(internetMessageID) == "" {
+		return "", errMessageLookupIncomplete
+	}
 	u := c.messagesByInternetID(internetMessageID, "id", 1)
 	var resp struct {
-		Value []struct {
-			ID string `json:"id"`
-		} `json:"value"`
+		Value    []GraphMessage  `json:"value"`
+		NextLink json.RawMessage `json:"@odata.nextLink"`
 	}
 	if err := c.doJSON(ctx, "GET", u, nil, &resp); err != nil {
 		return "", err
 	}
+	// Never follow a continuation or infer absence from an incomplete page.
+	if resp.Value == nil || resp.NextLink != nil || len(resp.Value) > 1 {
+		return "", errMessageLookupIncomplete
+	}
 	if len(resp.Value) == 0 {
 		return "", nil
 	}
-	if resp.Value[0].ID == "" {
-		return "", errors.New("graph: message lookup returned an empty id")
+	id := resp.Value[0].ID
+	if id == "" || strings.TrimSpace(id) != id {
+		return "", errMessageLookupIncomplete
 	}
-	return resp.Value[0].ID, nil
+	return id, nil
 }
+
+var errMessageLookupIncomplete = errx.MError(errx.MailErrorWarning, errx.MailErrorCodeServerUnreachable, "The message lookup could not establish a complete identity or confirmed absence. Retry later.", errx.MailErrorResolveMethodRetry)
 
 // LocateRFCMessageID reports whether any folder still holds the message, and
 // whether every copy is in Deleted Items. Delta reports a move as a removal.

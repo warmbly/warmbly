@@ -454,7 +454,7 @@ The same tab decides where warmup mail lands **in your own mail client**: its ow
 
 Warmbly retries filing until the worker confirms success, including after a worker restart or reassignment. Reconnecting also files recognized warmup mail left behind while access was unavailable, using your current placement setting. Choosing **Inbox** deliberately leaves it in place.
 
-On Outlook, a failed or ambiguous lookup of a warmup message's stable identity stops deletion before removing the provider message or its stored body. Unavailable lookup is not proof that the message is missing. A completed empty lookup and a provider-confirmed missing item retain the existing idempotent cleanup behavior. This safeguard needs no schema change or backfill and does not change the existing command retry limit.
+On Outlook, a failed, ambiguous or incomplete lookup of a warmup message's stable identity stops deletion before removing the provider message or its stored body. Unavailable lookup is not proof that the message is missing. Each lookup uses one request. Missing or null message collections, invalid identities and responses containing a continuation return a temporary error without following the continuation. Only an explicit terminal empty collection proves absence. A completed empty lookup and a provider-confirmed missing item retain the existing idempotent cleanup behavior. This safeguard needs no schema change or backfill and does not change the existing command retry limit. If the lookup remains incomplete through that limit, the stored body remains in place rather than being deleted on uncertain evidence.
 
 Keep warmup running after campaigns begin rather than switching it off once a mailbox looks ready. See [Warmup](/guides/warmup/).
 
