@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/textproto"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -102,6 +103,10 @@ type Client struct {
 	// incremental sync.
 	condStore atomic.Bool
 
+	// eSearch is whether the session advertised ESEARCH, read at connect
+	// because a session the server's reply just closed reports no caps.
+	eSearch atomic.Bool
+
 	// folderOverflow is what the last Folders call had to leave out for the
 	// cap, folderConflicts what it left out for a duplicate UIDVALIDITY.
 	folderOverflow  atomic.Int32
@@ -115,6 +120,14 @@ type Client struct {
 	// sinceRefused is set once the server refuses a dated SEARCH; SearchSince
 	// reads INTERNALDATE instead from then on. It outlives a reconnect.
 	sinceRefused atomic.Bool
+
+	// changedSince is the changedSinceMode this server answers in a form we
+	// can read. It only ever steps down, and it outlives a reconnect.
+	changedSince atomic.Int32
+
+	// lastUnreadable is the last unreadable reply logged, so a server stuck on
+	// one is reported once rather than every pass.
+	lastUnreadable atomic.Pointer[string]
 
 	// dateScans is that read per folder, extended rather than repeated on the
 	// next pass. Guarded by scanMu.
@@ -309,7 +322,8 @@ func (c *Client) connectLocked() *errx.MailError {
 	// Dovecot, ...) typically advertise it only after authentication, so the
 	// check must run post-auth. Without it (Outlook.com, Microsoft 365 over
 	// IMAP, Yahoo, many hosted servers) the sync loop keys on UIDNEXT instead.
-	c.condStore.Store(c.client.Caps().Has(imap.CapCondStore))
+	c.condStore.Store(c.client.Caps().Has(imap.CapCondStore) && changedSinceMode(c.changedSince.Load()) != changedSinceNone)
+	c.eSearch.Store(c.client.Caps().Has(imap.CapESearch))
 	if !stopSetup() || setupCtx.Err() != nil {
 		_ = client.Close()
 		return errx.ErrMailServerUnreachable
@@ -573,11 +587,113 @@ func (c *Client) searchSince(since time.Time) ([]imap.UID, error) {
 }
 
 // SearchChangedSince returns the UIDs whose mod-sequence is above modSeq: the
-// CONDSTORE incremental set. Asking the server for the set first, instead of
-// FETCHing every sequence window with CHANGEDSINCE, keeps a quiet 50,000
-// message folder to one round trip per tick.
+// CONDSTORE incremental set, in one round trip. It asks in the most widely
+// implemented form first and steps down for good when a server's answer
+// cannot be read (see changedSinceMode).
 func (c *Client) SearchChangedSince(modSeq uint64) ([]imap.UID, *errx.MailError) {
-	return c.uidSearch(&imap.SearchCriteria{ModSeq: &imap.SearchCriteriaModSeq{ModSeq: modSeq + 1}})
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.lifecycle.RLock()
+	defer c.lifecycle.RUnlock()
+	defer c.begin()()
+	if err := c.resumeSyncLocked(); err != nil {
+		return nil, c.handleError(err)
+	}
+	mode := changedSinceMode(c.changedSince.Load())
+	uids, err := c.changedSinceLocked(mode, modSeq)
+	if err != nil {
+		if unreadableReply(err) {
+			c.stepDownChangedSince(mode, err)
+		}
+		return nil, c.handleError(err)
+	}
+	slices.Sort(uids)
+	return uids, nil
+}
+
+// changedSinceMode is one way of asking what changed since a mod-sequence,
+// ordered from the form the most servers answer correctly to the least.
+type changedSinceMode int32
+
+const (
+	// UID FETCH 1:* (UID) (CHANGEDSINCE n), RFC 7162's own resync and the
+	// path every mainstream client exercises.
+	changedSinceFetch changedSinceMode = iota
+	// UID SEARCH RETURN (ALL) MODSEQ n. Zoho's plain SEARCH answer to an
+	// empty match is malformed and this one is not.
+	changedSinceESearch
+	// UID SEARCH MODSEQ n. Dovecot's ESEARCH answer trails a parenthesised
+	// MODSEQ that go-imap cannot parse and this one is fine.
+	changedSinceSearch
+	// No readable form: HasCondStore turns false and the sync keys on UIDNEXT
+	// with the periodic flag scan, like a server without CONDSTORE.
+	changedSinceNone
+)
+
+func (m changedSinceMode) String() string {
+	switch m {
+	case changedSinceFetch:
+		return "fetch-changedsince"
+	case changedSinceESearch:
+		return "esearch-modseq"
+	case changedSinceSearch:
+		return "search-modseq"
+	default:
+		return "uidnext"
+	}
+}
+
+// changedSinceLocked runs one mode; mu and the lifecycle read lock are held.
+func (c *Client) changedSinceLocked(mode changedSinceMode, modSeq uint64) ([]imap.UID, error) {
+	if mode == changedSinceFetch {
+		// An empty view has nothing to report, and "1:*" against it is an error on strict servers.
+		if sel := c.selection.Load(); sel != nil && sel.count == 0 {
+			return nil, nil
+		}
+		var set imap.UIDSet
+		set.AddRange(1, 0)
+		cmd := c.client.Fetch(set, &imap.FetchOptions{UID: true, ChangedSince: modSeq})
+		var uids []imap.UID
+		for msg := cmd.Next(); msg != nil; msg = cmd.Next() {
+			for item := msg.Next(); item != nil; item = msg.Next() {
+				if u, ok := item.(imapclient.FetchItemDataUID); ok {
+					uids = append(uids, u.UID)
+				}
+			}
+		}
+		return uids, cmd.Close()
+	}
+	var opts *imap.SearchOptions
+	if mode == changedSinceESearch {
+		opts = &imap.SearchOptions{ReturnAll: true}
+	}
+	data, err := c.client.UIDSearch(&imap.SearchCriteria{ModSeq: &imap.SearchCriteriaModSeq{ModSeq: modSeq + 1}}, opts).Wait()
+	if err != nil {
+		return nil, err
+	}
+	return data.AllUIDs(), nil
+}
+
+// stepDownChangedSince moves past a mode whose answer could not be read. The
+// session is already gone, so the next pass reconnects and asks the next way.
+func (c *Client) stepDownChangedSince(from changedSinceMode, cause error) {
+	next := from + 1
+	if next == changedSinceESearch && !c.eSearch.Load() {
+		next++
+	}
+	if next > changedSinceNone {
+		return
+	}
+	if !c.changedSince.CompareAndSwap(int32(from), int32(next)) {
+		return
+	}
+	if next == changedSinceNone {
+		c.condStore.Store(false)
+	}
+	msg := cause.Error()
+	c.lastUnreadable.Store(&msg)
+	log.Warn().Str("host", c.host()).Str("from", from.String()).Str("to", next.String()).Str("reply", cause.Error()).
+		Msg("imap: server answered a change query in a form that cannot be read; asking another way from now on")
 }
 
 // SearchAll returns every UID in the selected mailbox, ascending. An expunge
@@ -678,14 +794,7 @@ func (c *Client) uidSearch(criteria *imap.SearchCriteria) ([]imap.UID, *errx.Mai
 	if err := c.resumeSyncLocked(); err != nil {
 		return nil, c.handleError(err)
 	}
-	// Zoho answers a MODSEQ search that matches nothing with
-	// "* SEARCH  (MODSEQ n)", which go-imap cannot parse, so the session drops
-	// on every quiet pass. Its ESEARCH answer to the same query is well formed.
-	var opts *imap.SearchOptions
-	if criteria.ModSeq != nil && c.client.Caps().Has(imap.CapESearch) {
-		opts = &imap.SearchOptions{ReturnAll: true}
-	}
-	data, err := c.client.UIDSearch(criteria, opts).Wait()
+	data, err := c.client.UIDSearch(criteria, nil).Wait()
 	if err != nil {
 		return nil, c.handleError(err)
 	}

@@ -516,6 +516,21 @@ Current code matches that intent in `cmd/worker/main.go`: the worker boots Kafka
 
 When changing worker behavior, preserve that boundary unless there is a very strong reason not to.
 
+## Mail Servers Are Dialects
+
+A customer can connect any IMAP/SMTP server, and every one of them reads the RFCs a little differently. Production already syncs well over a hundred distinct hosts: Gmail, Zoho (each region its own host), Dovecot behind OVH, Hostinger, GoDaddy and most shared hosting, Infomaniak, Seznam, Lark, and a long tail of one-company servers. Supporting "every mailbox" means a server's quirk may cost us efficiency, never the mailbox.
+
+What makes this sharp is that go-imap closes the whole session on any reply it cannot decode. One unparseable line in an optional extension's answer surfaces as `SERVER_UNREACHABLE` on every pass, forever, on a server that is up and accepting the login. `unreadableReply` in `internal/client/smtpimap/imap/err.go` tells that apart from a dead network (an io failure keeps its own error; a grammar mismatch is `imapwire: ...`), and the worker logs `imap: server sent a reply that could not be read` with the host and the reply. That line is the only place the real cause shows.
+
+Rules:
+
+- **ask in the form the most clients exercise.** A server's mainstream path is the one Thunderbird, Apple Mail and Outlook hit every minute; its rarely used corners are where the bugs are. The CONDSTORE incremental set is `UID FETCH 1:* (UID) (CHANGEDSINCE n)` for that reason, not `SEARCH MODSEQ`: Dovecot answers the ESEARCH form with a parenthesised `(MODSEQ n)` go-imap cannot read, and Zoho answers an empty plain one with a double space
+- **an optional capability degrades, it never fails the mailbox.** When a server's answer to one form cannot be read, the client steps down to the next form for good and says so once (`changedSinceMode` in `client.go`; `sinceRefused` is the same pattern for dated SEARCH). The state lives on the `Client`, so it outlives a reconnect, and the last rung is the plain UIDNEXT path every server supports. Step down only on evidence about the dialect (an unreadable reply or a refusal against a folder that stayed selected), never on a network error
+- **read capabilities while the session is healthy.** A session the server's reply just closed reports none, so anything the ladder needs (`eSearch`, `condStore`) is recorded at connect
+- **a fix for one provider must not move the others.** #858 fixed Zoho by moving every server onto ESEARCH, which stalled every OVH mailbox for days. Add the provider's real reply to the dialect table in `search_modseq_test.go` (or its equivalent for the command you touch) and keep the whole table green, rather than writing a test that only knows the one server
+- **check a change to what the sync sends against real servers before it ships.** The cheap version: one login per distinct host, from the worker each mailbox already sits on (a new client IP can earn a provider security challenge), running the changed command and reporting only per-host results. Never print a credential or message content while doing it
+- **keep the server's words.** An `[ALERT]` reaches the owner verbatim through `imapErrDetail` (Zoho's `The server details you are using seems incorrect` is how they learn the account lives in another Zoho region). Map one in `classifyAlert` only when it is a known throttle or credentials case
+
 ## Encryption Model
 
 Warmbly uses envelope encryption for application secrets and sensitive payloads.
