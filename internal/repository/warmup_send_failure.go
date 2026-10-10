@@ -28,6 +28,7 @@ const warmupSendFailuresSQL = `
 	LEFT JOIN LATERAL (
 		SELECT c.completed_at AS at
 		FROM (
+			-- Sort task history before probing confirmation tokens.
 			SELECT id, completed_at FROM tasks
 			WHERE email_account_id = e.id AND task_type = 'warmup' AND status = 'completed' AND completed_at <= $3
 			ORDER BY completed_at DESC

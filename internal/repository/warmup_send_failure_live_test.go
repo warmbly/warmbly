@@ -64,6 +64,26 @@ func TestLiveLastWarmupSendFailure(t *testing.T) {
 	if got, err := repo.LastWarmupSendFailure(ctx, f.account, since); err != nil || got != nil {
 		t.Fatalf("after a delivered send: got %+v, %v; want nil", got, err)
 	}
+	newer := uuid.New()
+	f.exec(`INSERT INTO tasks(id,task_type,email_account_id,status,message_id,completed_at)
+	        VALUES($1,'warmup',$2,'completed','',NOW()-INTERVAL '30 minutes')`, newer, f.account)
+	f.exec(`INSERT INTO warmup_tokens(token,task_id,sender_account_id,recipient_account_id,conversation_turn)
+	        VALUES($1,$2,$3,$3,0)`, uuid.New(), newer, f.account)
+	if got, err := repo.LastWarmupSendFailure(ctx, f.account, since); err != nil || got != nil {
+		t.Fatalf("newer unconfirmed task hid the older confirmation: got %+v, %v", got, err)
+	}
+	failed(time.Now().Add(-45*time.Minute), "newer refusal")
+	if got, err := repo.LastWarmupSendFailure(ctx, f.account, since); err != nil || got == nil || got.Message != "newer refusal" {
+		t.Fatalf("newer unconfirmed task closed a later failure: got %+v, %v", got, err)
+	}
+	future := uuid.New()
+	f.exec(`INSERT INTO tasks(id,task_type,email_account_id,status,message_id,completed_at)
+	        VALUES($1,'warmup',$2,'completed','',NOW()+INTERVAL '1 hour')`, future, f.account)
+	f.exec(`INSERT INTO warmup_tokens(token,task_id,sender_account_id,recipient_account_id,conversation_turn,sent_message_id)
+	        VALUES($1,$2,$3,$3,0,'<future@example.test>')`, uuid.New(), future, f.account)
+	if got, err := repo.LastWarmupSendFailure(ctx, f.account, since); err != nil || got == nil || got.Message != "newer refusal" {
+		t.Fatalf("future confirmation closed a current failure: got %+v, %v", got, err)
+	}
 }
 
 func TestLiveDispatchRetryUpgradePreservesOldTasksAndNewMailboxes(t *testing.T) {
