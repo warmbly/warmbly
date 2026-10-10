@@ -14,7 +14,7 @@ function Check({ t = 'good' }: { t?: Tone }) {
 /** One message, and what each record checks on it. */
 export function AuthChecks() {
   return (
-    <Frame caption="SPF and DKIM prove where the mail came from. DMARC checks they match the From address you see.">
+    <Frame caption="SPF and DKIM prove where the mail came from. DMARC passes when either one matches the From address you see.">
       <div className="grid gap-5 lg:grid-cols-[0.95fr_1.05fr]">
         <div className="rounded-lg border border-fd-border bg-fd-background font-mono text-[12px]">
           <div className="border-b border-fd-border px-4 py-2 font-sans text-[11px] font-medium uppercase tracking-[0.12em] text-fd-muted-foreground">One email</div>

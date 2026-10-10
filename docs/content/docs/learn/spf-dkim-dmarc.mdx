@@ -7,7 +7,7 @@ description: The three authentication records every cold-email sender needs, the
 
 - SPF lists the servers allowed to send mail for your domain.
 - DKIM signs each message so the receiver can tell it was not changed in flight.
-- DMARC checks that they match the From address, and tells receivers what to do when they do not.
+- DMARC passes when SPF or DKIM passes and matches the From domain, and tells receivers what to do when neither does.
 - Roll DMARC out in steps, from `p=none` to `p=reject`.
 
 </ShortVersion>
