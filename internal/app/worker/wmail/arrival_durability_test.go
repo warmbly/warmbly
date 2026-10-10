@@ -14,6 +14,7 @@ import (
 	goimap "github.com/emersion/go-imap/v2"
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/client/msgraph"
+	"github.com/warmbly/warmbly/internal/client/smtpimap/imap"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -24,6 +25,141 @@ type durableTestMap struct {
 	failAfterCommit bool
 	unsupported     bool
 	admitErr        error
+}
+
+type completedArrivalMap struct {
+	recoveryMessageMap
+	admissions int
+	lost       bool
+	reads      int
+	readErrAt  int
+}
+
+func (m *completedArrivalMap) Get(ctx context.Context, userID, emailID uuid.UUID, messageID string) (*repository.EmailMessageData, error) {
+	m.reads++
+	if m.readErrAt == m.reads {
+		return nil, errors.New("canonical map lookup unavailable")
+	}
+	return m.recoveryMessageMap.Get(ctx, userID, emailID, messageID)
+}
+
+func (m *completedArrivalMap) AdmitArrival(_ context.Context, data repository.EmailMessageData, _ *repository.PendingArrival) error {
+	m.admissions++
+	if _, exists := m.data[data.MessageID]; exists {
+		return repository.ErrArrivalAdmissionUnconfirmed
+	}
+	m.data[data.MessageID] = data
+	if m.lost {
+		return errors.New("successful admission response lost after consumer drain")
+	}
+	return nil
+}
+
+func TestCompletedArrivalLostResponseReofferUsesKnownMapAcrossProviders(t *testing.T) {
+	for _, provider := range []string{"google", "graph", "imap"} {
+		t.Run(provider, func(t *testing.T) {
+			var events []captured
+			var w *WMail
+			var offer func() (bool, error)
+			key := "provider-id"
+			switch provider {
+			case "google":
+				w = newGoogleTestMail(t, (&fakeGmail{}).serve(t), &events)
+				offer = func() (bool, error) { return w.onGoogleMessageAdded(t.Context(), key, "thread") }
+			case "graph":
+				var relayed []models.SyncState
+				w = newGraphTestMail(t, newFakeGraph().serve(t), &events, &relayed)
+				offer = func() (bool, error) { return w.onGraphMessageSeen(t.Context(), msgraph.FolderInbox, key, false) }
+			case "imap":
+				key = "<arrival@test.local>"
+				var captured *[]captured
+				w, captured = newIMAPTestMail(&fakeImapConn{}, &fixedBudget{allow: 10}, &models.Mailbox{Name: "INBOX", UIDValidity: 1})
+				offer = func() (bool, error) {
+					ok, err := w.imapApply(t.Context(), []*imap.Fetched{{Email: &models.EmailMessageData{MessageID: key, UID: 1}}}, false, &tickStats{}, nil)
+					events = *captured
+					if err != nil {
+						return ok, err
+					}
+					return ok, nil
+				}
+			}
+			m := &completedArrivalMap{recoveryMessageMap: recoveryMessageMap{data: map[string]repository.EmailMessageData{}}, lost: true}
+			w.EmailMessageMapRepository = m
+			storage := &retainedArrivalStore{body: map[string][]byte{}}
+			w.Storage = storage
+			if ok, err := offer(); ok || (provider != "imap" && err == nil) || m.admissions != 1 || len(m.data) != 1 {
+				t.Fatalf("lost response did not retain canonical admission: ok=%t err=%v calls=%d maps=%d", ok, err, m.admissions, len(m.data))
+			}
+			canonical := m.data[key].ID
+			w.googleTick, w.graphTick = nil, nil
+			if ok, err := offer(); !ok || err != nil {
+				t.Fatalf("completed admission was retried instead of known-map path: ok=%t err=%v", ok, err)
+			}
+			if m.admissions != 1 || m.data[key].ID != canonical || len(storage.body) != 1 || storage.deletes != 0 || len(newEmails(events)) != 0 {
+				t.Fatal("known reoffer rewrote admission identity/body or published another arrival")
+			}
+		})
+	}
+}
+
+func TestIMAPBatchDuplicateCompletedArrivalUsesCanonicalMap(t *testing.T) {
+	for _, backfill := range []bool{false, true} {
+		t.Run(fmt.Sprintf("backfill=%t", backfill), func(t *testing.T) {
+			budget := &fixedBudget{allow: 10}
+			w, events := newIMAPTestMail(&fakeImapConn{}, budget, &models.Mailbox{Name: "INBOX", UIDValidity: 1})
+			m := &completedArrivalMap{recoveryMessageMap: recoveryMessageMap{data: map[string]repository.EmailMessageData{}}}
+			w.EmailMessageMapRepository = m
+			storage := &retainedArrivalStore{body: map[string][]byte{}}
+			w.Storage = storage
+			key := "<duplicate@test.local>"
+			stats := &tickStats{}
+			ok, err := w.imapApply(t.Context(), []*imap.Fetched{
+				{Email: &models.EmailMessageData{MessageID: key, UID: 1, ModSeq: 3, Flags: []string{"\\Seen"}}},
+				{Email: &models.EmailMessageData{MessageID: key, UID: 2}},
+			}, backfill, stats, nil)
+			if !ok || err != nil {
+				t.Fatalf("same-batch duplicate retried completed admission: ok=%t err=%v calls=%d", ok, err, m.admissions)
+			}
+			if m.admissions != 1 || len(m.data) != 1 || len(storage.body) != 1 || storage.deletes != 0 || budget.admitted != 1 {
+				t.Fatalf("duplicate re-admitted, re-budgeted or lost body: calls=%d maps=%d bodies=%d budget=%d", m.admissions, len(m.data), len(storage.body), budget.admitted)
+			}
+			updates := 0
+			for _, e := range *events {
+				if e.eventType == models.JobEventTypeEmailUpdate {
+					updates++
+					u := e.body.(*models.JobEventEmailUpdate)
+					if u.ID.String() != m.data[key].ID || u.UID != 1 || u.ModSeq != 3 || len(u.Flags) != 1 || u.Flags[0] != "\\Seen" {
+						t.Fatal("duplicate metadata lost canonical identity, UID or flags")
+					}
+				}
+			}
+			if len(newEmails(*events)) != 0 || (!backfill && (updates != 1 || stats.seen != 1)) || (backfill && (updates != 0 || stats.seen != 0)) {
+				t.Fatal("duplicate published another arrival, skipped reconciliation or inflated flood observation")
+			}
+		})
+	}
+}
+
+func TestIMAPBatchDuplicateCanonicalLookupFailureHoldsPass(t *testing.T) {
+	for _, backfill := range []bool{false, true} {
+		t.Run(fmt.Sprintf("backfill=%t", backfill), func(t *testing.T) {
+			budget := &fixedBudget{allow: 10}
+			w, events := newIMAPTestMail(&fakeImapConn{}, budget, &models.Mailbox{Name: "INBOX", UIDValidity: 1})
+			m := &completedArrivalMap{recoveryMessageMap: recoveryMessageMap{data: map[string]repository.EmailMessageData{}}, readErrAt: 3}
+			w.EmailMessageMapRepository = m
+			storage := &retainedArrivalStore{body: map[string][]byte{}}
+			w.Storage = storage
+			stats := &tickStats{}
+			key := "<duplicate@test.local>"
+			ok, err := w.imapApply(t.Context(), []*imap.Fetched{
+				{Email: &models.EmailMessageData{MessageID: key, UID: 1}},
+				{Email: &models.EmailMessageData{MessageID: key, UID: 2}},
+			}, backfill, stats, nil)
+			if ok || err != nil || !stats.aborted || m.admissions != 1 || len(storage.body) != 1 || storage.deletes != 0 || budget.admitted != 1 || len(newEmails(*events)) != 0 {
+				t.Fatal("failed canonical lookup re-admitted duplicate, lost body or completed the pass")
+			}
+		})
+	}
 }
 
 func (m *durableTestMap) AdmitArrival(ctx context.Context, data repository.EmailMessageData, p *repository.PendingArrival) error {
