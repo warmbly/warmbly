@@ -1,11 +1,39 @@
 package scheduler
 
 import (
+	"errors"
 	"testing"
+	"time"
 
+	"github.com/warmbly/warmbly/internal/app/behavior"
 	"github.com/warmbly/warmbly/internal/app/warmupramp"
 	"github.com/warmbly/warmbly/internal/models"
 )
+
+func TestWarmupDispatchWindowClassifiesInvalidHoursWithoutOpeningThem(t *testing.T) {
+	now := time.Date(2026, time.October, 10, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		start, end string
+		invalid    bool
+	}{
+		{"08:00", "07:00", true},
+		{"08:00:00", "07:00:00", true},
+		{"08:00", "08:00", true},
+		{"08:00:00", "19:00:00", false},
+	} {
+		t.Run(tc.start+"/"+tc.end, func(t *testing.T) {
+			a := &models.Email{WarmupStartTime: tc.start, WarmupEndTime: tc.end, WarmupDays: 127}
+			at, err := warmupDispatchWindow(a, behavior.Resolved{}, now)
+			if tc.invalid {
+				if !errors.Is(err, ErrWarmupTimeWindowInvalid) || !at.IsZero() {
+					t.Fatalf("invalid hours opened: at=%v err=%v", at, err)
+				}
+			} else if err != nil || !at.Equal(now) {
+				t.Fatalf("valid hours rejected: at=%v err=%v", at, err)
+			}
+		})
+	}
+}
 
 func TestAdjustmentFor(t *testing.T) {
 	tests := []struct {

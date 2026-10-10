@@ -15,6 +15,7 @@ import (
 	"github.com/warmbly/warmbly/internal/observability/errs"
 	"github.com/warmbly/warmbly/internal/pkg/mailhost"
 	"github.com/warmbly/warmbly/internal/repository"
+	"github.com/warmbly/warmbly/internal/scheduler"
 	"github.com/warmbly/warmbly/internal/tasks/proto"
 )
 
@@ -228,6 +229,12 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 		WarmupDispatchNotBefore(context.Context, uuid.UUID, time.Time) (time.Time, error)
 	}); ok {
 		at, err := gate.WarmupDispatchNotBefore(ctx, account.ID, time.Now())
+		if errors.Is(err, scheduler.ErrWarmupTimeWindowInvalid) {
+			if err := lineage.RescheduleWarmupTask(ctx, taskID, time.Now().Add(5*time.Minute)); err != nil {
+				return errx.InternalError()
+			}
+			return nil
+		}
 		if err != nil {
 			return errx.InternalError()
 		}

@@ -19,6 +19,8 @@ All paths below are relative to the versioned base URL `https://api.warmbly.com/
 
 ### Emails
 
+`PATCH /emails/:id` validates `warmup_start_time` and `warmup_end_time` together: the end must be later than the start on the same day. A partial time patch uses the other stored endpoint; an invalid pair returns `400`. Unrelated patches do not rewrite existing invalid hours. See [warmup hours](/guides/warmup/).
+
 | Method | Path | API Permission |
 |--------|------|----------------|
 | GET | `/emails` | `READ_EMAILS` |

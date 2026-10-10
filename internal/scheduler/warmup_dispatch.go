@@ -11,6 +11,8 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 )
 
+var ErrWarmupTimeWindowInvalid = errors.New("invalid warmup time window")
+
 // WarmupDispatchNotBefore rechecks current policy, not the queue's old snapshot.
 func (s *schedulerService) WarmupDispatchNotBefore(ctx context.Context, id uuid.UUID, now time.Time) (time.Time, error) {
 	return s.WarmupExecutionNotBefore(ctx, id, uuid.Nil, now)
@@ -143,7 +145,7 @@ func warmupDispatchWindow(a *models.Email, bhv behavior.Resolved, desired time.T
 		{
 			start, end := models.ClockMinutes(a.WarmupStartTime, 8*60), models.ClockMinutes(a.WarmupEndTime, 20*60)
 			if end <= start {
-				return time.Time{}, errors.New("invalid warmup time window")
+				return time.Time{}, ErrWarmupTimeWindowInvalid
 			}
 			local := at.In(loc)
 			minutes := local.Hour()*60 + local.Minute()
