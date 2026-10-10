@@ -45,6 +45,88 @@ func TestLiveWarmupActionsPreserveAuthorityFailure(t *testing.T) {
 	}
 }
 
+func TestLiveWarmupFilingAuthorityRequiresOwnedPendingWork(t *testing.T) {
+	f, r := lineageFixture(t)
+	worker := uuid.New()
+	ctx := t.Context()
+	exec := func(query string, args ...any) {
+		t.Helper()
+		if _, err := f.pool.Exec(ctx, query, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec(`INSERT INTO fleet_nodes(id,role,active,last_seen_at,warmup_send_protocol)VALUES($1,'worker',true,NOW(),2)`, worker)
+	exec(`INSERT INTO workers(id)VALUES($1)`, worker)
+	t.Cleanup(func() { _, _ = f.pool.Exec(context.Background(), `DELETE FROM fleet_nodes WHERE id=$1`, worker) })
+	exec(`UPDATE email_accounts SET worker_id=$1,test_mode='diagnostic',test_receive_enabled=true,send_recovery_hold=true,send_recovery_reason='unknown' WHERE id=$2`, worker, f.recipient)
+	recovery := NewWarmupRecoveryRepository(f.pool)
+	id, err := recovery.EnqueueFiling(ctx, models.WarmupEmailAction{EmailID: f.recipient, RFCMessageID: "<durable@example.test>", Actions: []string{models.WarmupActionFile}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := models.WarmupActionRequest{MailboxID: f.recipient, WorkerID: worker, FilingID: id.String(), Actions: []string{models.WarmupActionFile}}
+	for _, tc := range []struct {
+		name    string
+		change  func(*models.WarmupActionRequest)
+		pending bool
+	}{
+		{"pending", func(*models.WarmupActionRequest) {}, true},
+		{"missing filing", func(r *models.WarmupActionRequest) { r.FilingID = uuid.NewString() }, false},
+		{"other mailbox", func(r *models.WarmupActionRequest) { r.MailboxID = f.sender }, false},
+		{"other worker", func(r *models.WarmupActionRequest) { r.WorkerID = uuid.New() }, false},
+		{"mixed action", func(r *models.WarmupActionRequest) {
+			r.Actions = []string{models.WarmupActionFile, models.WarmupActionDelete}
+		}, false},
+		{"legacy event", func(r *models.WarmupActionRequest) { r.FilingID = "" }, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			patch := req
+			tc.change(&patch)
+			out, err := r.AdmitWarmupAction(ctx, patch)
+			if err != nil || out.FilingPending != tc.pending {
+				t.Fatalf("decision=%+v err=%v", out, err)
+			}
+		})
+	}
+	exec(`UPDATE warmup_pending_filings SET payload=jsonb_set(payload,'{actions}',to_jsonb($2::text[])) WHERE id=$1`, id, []string{models.WarmupActionFile, models.WarmupActionDelete})
+	if out, err := r.AdmitWarmupAction(ctx, req); err != nil || out.FilingPending {
+		t.Fatal("mixed durable work granted filing-only proof", out, err)
+	}
+	exec(`UPDATE warmup_pending_filings SET payload=jsonb_set(payload,'{actions}',to_jsonb($2::text[])) WHERE id=$1`, id, []string{models.WarmupActionFile})
+	// Inspecting authority does not complete work or bypass recovery backoff.
+	claimed, err := recovery.ClaimFilings(ctx, 1)
+	if err != nil || len(claimed) != 1 || claimed[0].FilingID != id.String() {
+		t.Fatal("filing was lost before acknowledgement", claimed, err)
+	}
+	if claimed, err := recovery.ClaimFilings(ctx, 1); err != nil || len(claimed) != 0 {
+		t.Fatal("retry backoff was lost", claimed, err)
+	}
+	if out, err := r.AdmitWarmupAction(ctx, req); err != nil || !out.FilingPending {
+		t.Fatal("backoff erased durable authority", out, err)
+	}
+	exec(`UPDATE email_accounts SET test_mode='off' WHERE id=$1`, f.recipient)
+	if out, err := r.AdmitWarmupAction(ctx, req); err != nil || out.FilingPending || len(out.Actions) != 0 {
+		t.Fatal("revoked filing remained permitted", out, err)
+	}
+	exec(`UPDATE email_accounts SET test_mode='diagnostic' WHERE id=$1`, f.recipient)
+	if err := recovery.CompleteFiling(ctx, f.recipient, id); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := r.AdmitWarmupAction(ctx, req); err != nil || out.FilingPending {
+		t.Fatal("completed filing retained pending proof", out, err)
+	}
+	var held bool
+	var reason string
+	if err := f.pool.QueryRow(ctx, `SELECT send_recovery_hold,send_recovery_reason FROM email_accounts WHERE id=$1`, f.recipient).Scan(&held, &reason); err != nil || !held || reason != "unknown" {
+		t.Fatal("filing authority changed uncertain-send protection", err)
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err := r.AdmitWarmupAction(ctx, req); !errors.Is(err, context.Canceled) {
+		t.Fatal("authority failure did not remain retryable", err)
+	}
+}
+
 func TestLiveDiagnosticOffStopsQueuedSendAndActions(t *testing.T) {
 	f, r := lineageFixture(t)
 	ctx := t.Context()

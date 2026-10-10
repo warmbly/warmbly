@@ -643,6 +643,8 @@ Cloud-managed OAuth additionally exposes `POST /pool-link/instance/oauth/start-c
 
 Warmup actions for a deleted, unassigned or no-longer-authorized mailbox return no permitted actions. The worker treats that authoritative denial as a no-op without touching the provider. Database or authority failures still return `503` and retry; denial does not authorize a send, clear a send hold, or acknowledge an arrival.
 
+`POST /internal/worker/warmup-actions` optionally accepts `filing_id` for a filing-only action. `filing_pending: true` is returned only for permitted, pure filing work still durably queued for that exact mailbox and its current worker. On a failed filing, this proof lets an updated worker finish the command without a `WarmupFiled` completion event; the durable recovery queue remains responsible for retrying it. Missing proof or an older backend retains the existing command retries. Deploy the backend before workers to enable this behavior. Successful filing still requires a completion event, and publication failures remain retryable. No send, arrival or retention-delete authority is added.
+
 ### Referrals and discounts
 
 The referral program and billing discount history are part of `/subscription/*`, so they are JWT only and never accept an API key. There is no API permission scope for them; browser callers are gated by the org permission below. The discount validation and checkout endpoints are listed under [Subscription and billing](/api/reference/account-org/) in the reference.
