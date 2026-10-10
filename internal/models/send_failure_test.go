@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hamba/avro/v2"
+	"github.com/iskorotkov/avro/v2"
 	"github.com/warmbly/warmbly/internal/errx"
 )
 
@@ -32,7 +32,7 @@ func TestSendResultLegacyJSONAndNativeFailureRoundTrip(t *testing.T) {
 	assertBody(t, &got, want)
 	in := JobEvent{Type: JobEventTypeEmailFailed, Body: *want}
 	var out JobEvent
-	if err := avro.Unmarshal(JobEvent{}.Schema(), encode(t, JobEvent{}.Schema(), in), &out); err != nil {
+	if err := EventAvro.Unmarshal(JobEvent{}.Schema(), encode(t, JobEvent{}.Schema(), in), &out); err != nil {
 		t.Fatal(err)
 	}
 	assertBody(t, out.Body, *want)
@@ -87,7 +87,7 @@ func TestSendResultAvroConsumesLegacyWriter(t *testing.T) {
 	want := &SendEmailResult{TaskID: uuid.New(), Error: &EmailSendError{Code: "SENDING_TOO_FAST"}}
 	payload := encode(t, writer, JobEvent{Type: JobEventTypeEmailFailed, Body: *want})
 	var got JobEvent
-	if err := avro.Unmarshal(resolved, payload, &got); err != nil {
+	if err := EventAvro.Unmarshal(resolved, payload, &got); err != nil {
 		t.Fatal(err)
 	}
 	assertBody(t, got.Body, *want)

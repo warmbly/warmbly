@@ -254,9 +254,7 @@ func (b *KafkaBus) Close() error {
 	return nil
 }
 
-// Producer exposes the underlying *kafka.Producer for legacy callers that
-// need the Avrov2 serializer attached or other Kafka-specific knobs. New code
-// should not depend on this; it exists to keep the migration incremental.
+// Producer exposes Kafka-specific knobs for legacy callers.
 func (b *KafkaBus) Producer() *kafka.Producer { return b.producer }
 
 // Compile-time interface check.

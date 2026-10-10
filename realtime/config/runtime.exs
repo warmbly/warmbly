@@ -76,7 +76,8 @@ if config_env() == :prod do
     url: [host: host, port: 443, scheme: "https"],
     http: [
       ip: {0, 0, 0, 0, 0, 0, 0, 0},
-      port: port
+      port: port,
+      protocol_options: [invalid_response_headers: :error_terminate]
     ],
     secret_key_base: secret_key_base,
     # The browser's Origin on a websocket upgrade is the DASHBOARD's origin,

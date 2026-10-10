@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hamba/avro/v2"
+	"github.com/iskorotkov/avro/v2"
 )
 
 // Production is four processes, and one of them only ever decodes what another
@@ -34,7 +34,7 @@ func TestDecodeInAProcessThatHasNeverEncoded(t *testing.T) {
 
 	schema := WorkerEvent{}.Schema()
 	in := WorkerEvent{Type: WorkerEventTypeAddEmail, Body: sample(WorkerEventBodies[WorkerEventTypeAddEmail])}
-	raw, err := avro.Marshal(schema, in)
+	raw, err := EventAvro.Marshal(schema, in)
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
@@ -71,7 +71,7 @@ func runDecodeHelper(t *testing.T, encoded string) {
 	}
 
 	var out WorkerEvent
-	if err := avro.Unmarshal(schema, raw, &out); err != nil {
+	if err := EventAvro.Unmarshal(schema, raw, &out); err != nil {
 		t.Fatalf("helper: decode: %v", err)
 	}
 	want := reflect.TypeOf(sample(WorkerEventBodies[WorkerEventTypeAddEmail]))
