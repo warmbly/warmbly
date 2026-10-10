@@ -2,11 +2,48 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/models"
 )
+
+func TestLiveWarmupActionsDenyUnavailableMailbox(t *testing.T) {
+	for _, state := range []string{"missing", "deleted", "unassigned"} {
+		t.Run(state, func(t *testing.T) {
+			f, r := lineageFixture(t)
+			worker := uuid.New()
+			mailbox := f.recipient
+			switch state {
+			case "missing":
+				mailbox = uuid.New()
+			case "deleted":
+				if _, err := f.pool.Exec(t.Context(), `DELETE FROM email_accounts WHERE id=$1`, mailbox); err != nil {
+					t.Fatal(err)
+				}
+			case "unassigned":
+				if _, err := f.pool.Exec(t.Context(), `UPDATE email_accounts SET worker_id=NULL WHERE id=$1`, mailbox); err != nil {
+					t.Fatal(err)
+				}
+			}
+			actions, err := r.PermittedWarmupActions(t.Context(), mailbox, worker, []string{models.WarmupActionFile, models.WarmupActionDelete})
+			if err != nil || len(actions) != 0 {
+				t.Fatalf("unavailable mailbox must deny provider actions without retry: actions=%v err=%v", actions, err)
+			}
+		})
+	}
+}
+
+func TestLiveWarmupActionsPreserveAuthorityFailure(t *testing.T) {
+	f, r := lineageFixture(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	actions, err := r.PermittedWarmupActions(ctx, f.recipient, uuid.New(), []string{models.WarmupActionDelete})
+	if !errors.Is(err, context.Canceled) || len(actions) != 0 {
+		t.Fatalf("authority failure must remain retryable: actions=%v err=%v", actions, err)
+	}
+}
 
 func TestLiveDiagnosticOffStopsQueuedSendAndActions(t *testing.T) {
 	f, r := lineageFixture(t)
@@ -63,6 +100,10 @@ func TestLiveDiagnosticOffStopsQueuedSendAndActions(t *testing.T) {
 	got, err = r.PermittedWarmupActions(ctx, f.recipient, worker, actions)
 	if err != nil || len(got) != len(actions) {
 		t.Fatal("explicit legacy behavior changed", got, err)
+	}
+	got, err = r.PermittedWarmupActions(ctx, f.recipient, uuid.New(), actions)
+	if err != nil || len(got) != 0 {
+		t.Fatal("a different worker gained provider action authority", got, err)
 	}
 	exec(`UPDATE email_accounts SET test_mode='off' WHERE id=$1`, f.recipient)
 	got, err = r.PermittedWarmupActions(ctx, f.recipient, worker, actions)

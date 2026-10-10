@@ -9,7 +9,35 @@ import (
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/repository"
 )
+
+type warmupActionAuthorityStub struct {
+	repository.SyncContextRepository
+	err error
+}
+
+func (s *warmupActionAuthorityStub) PermittedWarmupActions(context.Context, uuid.UUID, uuid.UUID, []string) ([]string, error) {
+	return nil, s.err
+}
+
+func TestWarmupActionAuthorityDenialDoesNotTouchMailbox(t *testing.T) {
+	w := &WorkerService{ID: uuid.NewString(), SyncContextRepository: &warmupActionAuthorityStub{}}
+	for _, action := range []string{models.WarmupActionFile, models.WarmupActionDelete, models.WarmupActionVerifyRemoval} {
+		if err := w.HandleWarmupAction(t.Context(), models.WarmupEmailAction{EmailID: uuid.New(), Actions: []string{action}, FilingID: uuid.NewString()}); err != nil {
+			t.Fatalf("denied %s action must finish without loading a mailbox: %v", action, err)
+		}
+	}
+}
+
+func TestWarmupActionAuthorityFailureMustRetry(t *testing.T) {
+	failure := errors.New("authority unavailable")
+	w := &WorkerService{ID: uuid.NewString(), SyncContextRepository: &warmupActionAuthorityStub{err: failure}}
+	err := w.HandleWarmupAction(t.Context(), models.WarmupEmailAction{EmailID: uuid.New(), Actions: []string{models.WarmupActionDelete}})
+	if !errors.Is(err, failure) {
+		t.Fatalf("authority failure must remain retryable: %v", err)
+	}
+}
 
 func TestWarmupFilingFallsBackForOlderEvents(t *testing.T) {
 	// An event published before the placement fields existed has to behave the
