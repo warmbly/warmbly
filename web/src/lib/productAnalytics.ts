@@ -19,7 +19,9 @@ export function initProductAnalytics(): void {
 // readable as the answer to "what do we actually measure".
 export type Event =
     | "mailbox_connected"
-    | "campaign_launched";
+    | "campaign_launched"
+    | "product_tour_finished"
+    | "product_tour_hosted_plan";
 
 // capture reports one product event. A no-op when analytics is off. The
 // signed-in person and workspace are already on the event through identify,

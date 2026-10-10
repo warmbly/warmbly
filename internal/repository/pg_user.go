@@ -58,6 +58,7 @@ type UserRepository interface {
 	SetFreeTrialUsed(ctx context.Context, userID uuid.UUID) error
 	UpdateOnboarding(ctx context.Context, userID uuid.UUID, firstName, lastName, referralSource, role, teamSize string) error
 	MarkOnboarded(ctx context.Context, userID uuid.UUID) (time.Time, error)
+	MarkProductTourCompleted(ctx context.Context, userID uuid.UUID) (time.Time, error)
 	UpdateProfile(ctx context.Context, userID uuid.UUID, firstName, lastName string) error
 	UpdateAvatar(ctx context.Context, userID uuid.UUID, avatarURL *string) error
 
@@ -170,7 +171,7 @@ func (r *userRepository) getUser(ctx context.Context, key string, value any) (*m
 	var u models.User
 
 	q := fmt.Sprintf(
-		`SELECT u.id, u.email, u.first_name, u.last_name, u.avatar_url, u.referral_source, u.onboarding_completed_at,
+		`SELECT u.id, u.email, u.first_name, u.last_name, u.avatar_url, u.referral_source, u.onboarding_completed_at, u.product_tour_completed_at,
 		   u.max_organizations, u.free_trial_used, u.admin_permissions,
 		   u.deletion_scheduled_at, u.deletion_scheduled_for, u.undo_send_seconds,
 		   u.updated_at, u.created_at,
@@ -191,7 +192,7 @@ func (r *userRepository) getUser(ctx context.Context, key string, value any) (*m
 		ctx,
 		q,
 		params...,
-	).Scan(&u.ID, &u.Email, &u.FirstName, &u.LastName, &u.AvatarURL, &u.ReferralSource, &u.OnboardingCompletedAt,
+	).Scan(&u.ID, &u.Email, &u.FirstName, &u.LastName, &u.AvatarURL, &u.ReferralSource, &u.OnboardingCompletedAt, &u.ProductTourCompletedAt,
 		&u.MaxOrganizations, &u.FreeTrialUsed, &adminPerm,
 		&u.DeletionScheduledAt, &u.DeletionScheduledFor, &u.UndoSendSeconds,
 		&u.UpdatedAt, &u.CreatedAt, &u.Roles)
@@ -241,6 +242,14 @@ func (r *userRepository) UpdateOnboarding(ctx context.Context, userID uuid.UUID,
 // keeping an earlier completion time when there is one.
 func (r *userRepository) MarkOnboarded(ctx context.Context, userID uuid.UUID) (time.Time, error) {
 	const q = `UPDATE users SET onboarding_completed_at=COALESCE(onboarding_completed_at, NOW()), updated_at=NOW() WHERE id=$1 RETURNING onboarding_completed_at`
+	var at time.Time
+	err := r.DB.QueryRow(ctx, q, userID).Scan(&at)
+	return at, err
+}
+
+// MarkProductTourCompleted records that the tour was finished or skipped, keeping the first time.
+func (r *userRepository) MarkProductTourCompleted(ctx context.Context, userID uuid.UUID) (time.Time, error) {
+	const q = `UPDATE users SET product_tour_completed_at=COALESCE(product_tour_completed_at, NOW()), updated_at=NOW() WHERE id=$1 RETURNING product_tour_completed_at`
 	var at time.Time
 	err := r.DB.QueryRow(ctx, q, userID).Scan(&at)
 	return at, err

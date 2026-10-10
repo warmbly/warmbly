@@ -79,6 +79,9 @@ export interface UISlice {
   // AI assistant panel (right-side, persistent across routes)
   aiAssistantOpen: boolean
 
+  // Product tour overlay; not persisted, whether it is still owed rides the user record.
+  productTourOpen: boolean
+
   // Unibox layout preferences (persisted). The list column is drag-resizable
   // against the thread pane; the CRM rail remembers the last explicit toggle
   // so closing it survives opening the next thread.
@@ -115,6 +118,7 @@ export interface UISlice {
   setCommandPaletteOpen: (open: boolean) => void
   setAIAssistantOpen: (open: boolean) => void
   toggleAIAssistant: () => void
+  setProductTourOpen: (open: boolean) => void
 
   // Actions - Unibox layout
   setUniboxListWidth: (width: number) => void
@@ -205,6 +209,7 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set, get) 
   shortcutsModalOpen: false,
   commandPaletteOpen: false,
   aiAssistantOpen: false,
+  productTourOpen: false,
 
   // Unibox layout
   uniboxListWidth: UNIBOX_LIST_DEFAULT_WIDTH,
@@ -284,6 +289,8 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set, get) 
   setAIAssistantOpen: (aiAssistantOpen) =>
     set((state) => (state.aiAssistantOpen === aiAssistantOpen ? state : { aiAssistantOpen })),
   toggleAIAssistant: () => set((state) => ({ aiAssistantOpen: !state.aiAssistantOpen })),
+  setProductTourOpen: (productTourOpen) =>
+    set((state) => (state.productTourOpen === productTourOpen ? state : { productTourOpen })),
 
   // Actions - Unibox layout
   setUniboxRailWidth: (width) => {

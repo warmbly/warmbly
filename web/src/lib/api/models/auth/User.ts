@@ -12,6 +12,8 @@ export default interface User {
 
     referral_source: string;
     onboarding_completed_at: Date | null;
+    // When the product tour was finished or skipped; null offers it on the next visit.
+    product_tour_completed_at?: Date | null;
 
     // Undo-send window in seconds (5..120). A stale server cache may omit
     // it briefly, so readers treat 0/undefined as the default 30.
