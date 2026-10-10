@@ -30,11 +30,28 @@ type Task struct {
 
 // CampaignTask represents campaign-specific task data
 type CampaignTask struct {
-	TaskID     uuid.UUID
-	CampaignID *uuid.UUID
-	ContactID  *uuid.UUID
-	SequenceID *uuid.UUID
+	TaskID         uuid.UUID
+	CampaignID     *uuid.UUID
+	ContactID      *uuid.UUID
+	SequenceID     *uuid.UUID
+	DispatchIntent CampaignDispatchIntent
 }
+
+type CampaignDispatchIntent string
+
+const (
+	CampaignDispatchUnverified CampaignDispatchIntent = "unverified"
+	CampaignDispatchWakeup     CampaignDispatchIntent = "wakeup"
+	CampaignDispatchSend       CampaignDispatchIntent = "send"
+)
+
+var ErrCampaignReplayUnverified = errors.New("campaign replay requires verified wakeup intent")
+
+const campaignWakeupReplayPredicate = `ct.dispatch_intent='wakeup' AND ct.campaign_id IS NOT NULL AND ct.contact_id IS NULL AND ct.sequence_id IS NULL`
+
+const campaignReplayTaskPredicate = `d.task_type='campaign' AND t.task_type='campaign' AND t.status='dead_lettered'`
+
+const safeDLQCampaignPass = campaignReplayTaskPredicate + ` AND EXISTS (SELECT 1 FROM campaign_tasks ct WHERE ct.task_id=t.id AND ` + campaignWakeupReplayPredicate + `)`
 
 // WarmupTask represents warmup-specific task data
 type WarmupTask struct {
@@ -170,6 +187,7 @@ type TaskRepository interface {
 
 	// Task locking
 	CreateTaskWithLock(ctx context.Context, task *Task, campaignTask *CampaignTask) (bool, error)
+	CreateCampaignReplayTask(ctx context.Context, task *Task, campaignTask *CampaignTask, sourceTaskID uuid.UUID) (bool, error)
 	CreateWarmupTaskWithLock(ctx context.Context, task *Task, warmupTask *WarmupTask) (bool, error)
 	// DirectPendingWarmupTask points a mailbox's pending warmup task at one
 	// partner and pulls it forward. Returns false when there is no pending task
@@ -385,7 +403,7 @@ func (r *taskRepository) GetTaskByMessageID(ctx context.Context, messageID strin
 // GetCampaignTask retrieves campaign task data
 func (r *taskRepository) GetCampaignTask(ctx context.Context, taskID uuid.UUID) (*CampaignTask, error) {
 	query := `
-		SELECT task_id, campaign_id, contact_id, sequence_id
+		SELECT task_id, campaign_id, contact_id, sequence_id, dispatch_intent
 		FROM campaign_tasks
 		WHERE task_id = $1
 	`
@@ -396,6 +414,7 @@ func (r *taskRepository) GetCampaignTask(ctx context.Context, taskID uuid.UUID) 
 		&campaignTask.CampaignID,
 		&campaignTask.ContactID,
 		&campaignTask.SequenceID,
+		&campaignTask.DispatchIntent,
 	)
 
 	if errors.Is(err, sql.ErrNoRows) {
@@ -945,6 +964,20 @@ func (r *taskRepository) DeleteTask(ctx context.Context, taskID uuid.UUID) error
 // CreateTaskWithLock creates a campaign task with a PostgreSQL advisory lock.
 // It returns false when the campaign already has a pending wakeup task.
 func (r *taskRepository) CreateTaskWithLock(ctx context.Context, task *Task, campaignTask *CampaignTask) (bool, error) {
+	return r.createCampaignTaskWithLock(ctx, task, campaignTask, uuid.Nil)
+}
+
+func (r *taskRepository) CreateCampaignReplayTask(ctx context.Context, task *Task, campaignTask *CampaignTask, sourceTaskID uuid.UUID) (bool, error) {
+	if sourceTaskID == uuid.Nil || task == nil || task.TaskType != "campaign" || campaignTask == nil || campaignTask.CampaignID == nil || campaignTask.ContactID != nil || campaignTask.SequenceID != nil {
+		return false, ErrCampaignReplayUnverified
+	}
+	return r.createCampaignTaskWithLock(ctx, task, campaignTask, sourceTaskID)
+}
+
+func (r *taskRepository) createCampaignTaskWithLock(ctx context.Context, task *Task, campaignTask *CampaignTask, sourceTaskID uuid.UUID) (bool, error) {
+	if task == nil || (campaignTask != nil && campaignTask.TaskID != task.ID) {
+		return false, ErrCampaignReplayUnverified
+	}
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return false, err
@@ -956,6 +989,19 @@ func (r *taskRepository) CreateTaskWithLock(ctx context.Context, task *Task, cam
 		_, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('campaign_task_' || $1::text))`, *campaignTask.CampaignID)
 		if err != nil {
 			return false, err
+		}
+		if sourceTaskID != uuid.Nil {
+			var verified bool
+			err = tx.QueryRow(ctx, `SELECT true FROM task_dead_letters d JOIN tasks t ON t.id=d.task_id
+			 JOIN campaign_tasks ct ON ct.task_id=t.id WHERE t.id=$1 AND ct.campaign_id=$2
+			 AND t.email_account_id=$3 AND d.status='pending' AND `+campaignReplayTaskPredicate+` AND `+campaignWakeupReplayPredicate+`
+			 FOR UPDATE OF d,t,ct`, sourceTaskID, *campaignTask.CampaignID, task.EmailAccountID).Scan(&verified)
+			if errors.Is(err, pgx.ErrNoRows) {
+				return false, ErrCampaignReplayUnverified
+			}
+			if err != nil {
+				return false, err
+			}
 		}
 
 		var existing uuid.UUID
@@ -987,8 +1033,12 @@ func (r *taskRepository) CreateTaskWithLock(ctx context.Context, task *Task, cam
 
 	// Create campaign task entry if provided
 	if campaignTask != nil {
-		ctQuery := `INSERT INTO campaign_tasks (task_id, campaign_id, contact_id, sequence_id) VALUES ($1, $2, $3, $4)`
-		_, err = tx.Exec(ctx, ctQuery, campaignTask.TaskID, campaignTask.CampaignID, campaignTask.ContactID, campaignTask.SequenceID)
+		intent := CampaignDispatchUnverified
+		if task.TaskType == "campaign" && campaignTask.CampaignID != nil && campaignTask.ContactID == nil && campaignTask.SequenceID == nil {
+			intent = CampaignDispatchWakeup
+		}
+		ctQuery := `INSERT INTO campaign_tasks (task_id, campaign_id, contact_id, sequence_id, dispatch_intent) VALUES ($1, $2, $3, $4, $5)`
+		_, err = tx.Exec(ctx, ctQuery, campaignTask.TaskID, campaignTask.CampaignID, campaignTask.ContactID, campaignTask.SequenceID, intent)
 		if err != nil {
 			return false, err
 		}
@@ -1181,7 +1231,10 @@ func (r *taskRepository) UpdateCampaignTaskTracking(ctx context.Context, taskID,
 		WHERE task_id = $1
 	`
 
-	_, err := r.db.Exec(ctx, query, taskID, contactID, sequenceID)
+	tag, err := r.db.Exec(ctx, query, taskID, contactID, sequenceID)
+	if err == nil && tag.RowsAffected() != 1 {
+		return pgx.ErrNoRows
+	}
 	return err
 }
 
