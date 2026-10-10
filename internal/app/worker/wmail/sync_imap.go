@@ -683,17 +683,7 @@ func (w *WMail) imapApply(ctx context.Context, fetched []*imap.Fetched, backfill
 		if perr != nil {
 			continue
 		}
-		if err := w.onEvent(models.JobEventTypeEmailUpdate, &models.JobEventEmailUpdate{
-			UserID:     w.UserID,
-			EmailID:    w.ID,
-			ID:         internalID,
-			UID:        f.Email.UID,
-			ModSeq:     f.Email.ModSeq,
-			Mailbox:    w.SmtpImapData.mailbox,
-			FolderPath: w.SmtpImapData.folderPath,
-			Folder:     w.SmtpImapData.folder,
-			Flags:      f.Email.Flags,
-		}); err != nil {
+		if err := w.imapUpdateKnown(f, internalID); err != nil {
 			return false, w.controlPlaneError(err, stats)
 		}
 		if recovery != nil {
@@ -703,8 +693,12 @@ func (w *WMail) imapApply(ctx context.Context, fetched []*imap.Fetched, backfill
 
 	if !backfill && len(fresh) > 0 {
 		ids := make([]string, 0, len(fresh))
+		seen := make(map[string]bool, len(fresh))
 		for _, f := range fresh {
-			ids = append(ids, f.Email.MessageID)
+			if !seen[f.Email.MessageID] {
+				ids = append(ids, f.Email.MessageID)
+				seen[f.Email.MessageID] = true
+			}
 		}
 		if w.observeLive(ctx, ids, stats) {
 			return false, nil
@@ -712,7 +706,25 @@ func (w *WMail) imapApply(ctx context.Context, fetched []*imap.Fetched, backfill
 	}
 
 	all := true
+	stored := make(map[string]bool, len(fresh))
 	for _, f := range fresh {
+		// Earlier copies in this batch can already be delivered before this offer.
+		if stored[f.Email.MessageID] {
+			internal, err := w.EmailMessageMapRepository.Get(ctx, w.UserID, w.ID, f.Email.MessageID)
+			if err != nil {
+				return false, w.controlPlaneError(err, stats)
+			}
+			if internal != nil {
+				if !backfill {
+					if id, err := uuid.Parse(internal.ID); err == nil {
+						if err := w.imapUpdateKnown(f, id); err != nil {
+							return false, w.controlPlaneError(err, stats)
+						}
+					}
+				}
+				continue
+			}
+		}
 		done, err := w.imapStoreFetched(ctx, f, backfill, stats, recovery)
 		if err != nil {
 			return false, err
@@ -724,11 +736,26 @@ func (w *WMail) imapApply(ctx context.Context, fetched []*imap.Fetched, backfill
 			}
 			continue
 		}
+		stored[f.Email.MessageID] = true
 		if backfill {
 			w.imapImportCursor(w.SmtpImapData.folderPath, f.Email.UID, false, recovery)
 		}
 	}
 	return all, nil
+}
+
+func (w *WMail) imapUpdateKnown(f *imap.Fetched, id uuid.UUID) error {
+	return w.onEvent(models.JobEventTypeEmailUpdate, &models.JobEventEmailUpdate{
+		UserID:     w.UserID,
+		EmailID:    w.ID,
+		ID:         id,
+		UID:        f.Email.UID,
+		ModSeq:     f.Email.ModSeq,
+		Mailbox:    w.SmtpImapData.mailbox,
+		FolderPath: w.SmtpImapData.folderPath,
+		Folder:     w.SmtpImapData.folder,
+		Flags:      f.Email.Flags,
+	})
 }
 
 func (w *WMail) imapStoreFetched(ctx context.Context, f *imap.Fetched, backfill bool, stats *tickStats, recovery *imapFolderRecovery) (bool, *errx.MailError) {
