@@ -1,1 +1,1 @@
-DROP INDEX tasks_pending_executor_results;
+DROP INDEX CONCURRENTLY tasks_pending_executor_results;
