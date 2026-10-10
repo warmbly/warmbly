@@ -1647,6 +1647,28 @@ func (r *emailRepository) Update(ctx context.Context, orgID, emailAccountID stri
 		return nil, errx.InternalError()
 	}
 	defer tx.Rollback(ctx)
+	if udata.WarmupStartTime != nil || udata.WarmupEndTime != nil {
+		// Lock the stored half of a partial patch so concurrent changes cannot cross.
+		query := `SELECT warmup_start_time::text, warmup_end_time::text FROM email_accounts WHERE organization_id=$1 AND id=$2 FOR UPDATE`
+		var start, end string
+		if err := tx.QueryRow(ctx, query, orgID, emailAccountID).Scan(&start, &end); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, errx.ErrNotFound
+			}
+			db.CaptureError(err, query, []any{orgID, emailAccountID}, "queryrow")
+			return nil, errx.InternalError()
+		}
+		if udata.WarmupStartTime != nil {
+			start = *udata.WarmupStartTime
+		}
+		if udata.WarmupEndTime != nil {
+			end = *udata.WarmupEndTime
+		}
+		startMinute, endMinute := models.ClockMinutes(start, -1), models.ClockMinutes(end, -1)
+		if startMinute < 0 || endMinute < 0 || endMinute <= startMinute {
+			return nil, errx.New(errx.BadRequest, "warmup end time must be later than start time on the same day")
+		}
+	}
 	if udata.SendRecoveryResolution != nil {
 		resolution := udata.SendRecoveryResolution
 		if strings.ContainsAny(resolution.ConfirmationReference, "\r\n") || len(resolution.ConfirmationReference) > 256 {

@@ -23,6 +23,7 @@ type warmupRecoveryRepository interface {
 
 func TestLiveWarmupSafetyHoldReschedulesInsteadOfBlockingTheDispatcher(t *testing.T) {
 	f := newWarmupRecoveryFixture(t)
+	f.exec(t, `UPDATE email_accounts SET warmup_start_time='08:00',warmup_end_time='07:00' WHERE id=$1`, f.sender.ID)
 	f.svc.taskRepo = repository.NewTaskRepository(f.pool)
 	f.svc.warmupHealth = nil
 	pending := uuid.New()

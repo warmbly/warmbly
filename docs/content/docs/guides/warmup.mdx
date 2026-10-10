@@ -208,6 +208,8 @@ The partner cap exists because a mailbox never writes to the same partner twice 
 
 Warmup hours are read in the mailbox's timezone: its own when one is set on the **Settings** tab of its drawer, otherwise the workspace timezone under **Settings > Profile > Timezones**, and UTC when neither is set. Set the workspace timezone once and every mailbox that follows it reads its warmup hours in the team's day. A mailbox with its own timezone keeps it, and changing the workspace timezone does not change any mailbox's hours.
 
+Warmup hours must end later than they start on the same day. Equal or reversed hours are rejected, including a change to only one endpoint that would invalidate the stored window. Existing invalid windows are not widened or corrected automatically: pending sends stay unstarted and recheck after five minutes, while admin monitoring shows **Invalid warmup sending hours** until the configured window is corrected. Other send protections still apply after correction; this does not replay uncertain sends or confirm mailbox recovery.
+
 ### Holding the ramp on an early signal
 
 If any warmup email lands in the spam folder of a Google, Microsoft or Yahoo recipient, that mailbox stops climbing immediately:

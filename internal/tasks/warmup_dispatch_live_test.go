@@ -1,13 +1,96 @@
 package tasks
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/scheduler"
+	"github.com/warmbly/warmbly/internal/tasks/proto"
 )
+
+func TestLiveWarmupDispatchDefersInvalidHoursBeforeClaimOrSend(t *testing.T) {
+	f := newPartnerRoutingFixture(t)
+	ctx := t.Context()
+	task := uuid.New()
+	exec := func(query string, args ...any) {
+		t.Helper()
+		if _, err := f.pool.Exec(ctx, query, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec(`UPDATE email_accounts SET warmup=NOW(),warmup_start_time='08:00',warmup_end_time='07:00',warmup_pool_type='free' WHERE id=$1`, f.sender.ID)
+	exec(`INSERT INTO tasks(id,email_account_id,task_type,status,message_id,scheduled_at)VALUES($1,$2,'warmup','pending','',NOW()-INTERVAL '1 hour')`, task, f.sender.ID)
+	exec(`INSERT INTO warmup_tasks(task_id)VALUES($1)`, task)
+	base := repository.NewTaskRepository(f.pool)
+	observed := &windowCheckedTasks{TaskRepository: base, WarmupLineageRepository: base.(repository.WarmupLineageRepository), SendResultRecovery: base.(repository.SendResultRecovery)}
+	f.svc.taskRepo = observed
+	f.svc.scheduler = scheduler.NewSchedulerService(f.svc.taskRepo, f.svc.warmupRepo, nil, f.svc.emailRepo, nil, nil, nil)
+	sender := &preparationDeferringSender{}
+	f.svc.emailSender = sender
+	if xerr := f.svc.HandleEmailTask(&proto.ProcessTask{TaskId: task.String()}); xerr != nil {
+		t.Fatalf("invalid configured hours remained a dispatcher error: %v", xerr)
+	}
+	var status string
+	var scheduled time.Time
+	var unstarted bool
+	if err := f.pool.QueryRow(ctx, `SELECT status,scheduled_at,send_reserved_at IS NULL AND send_executor_started_at IS NULL AND send_result_state IS NULL FROM tasks WHERE id=$1`, task).Scan(&status, &scheduled, &unstarted); err != nil {
+		t.Fatal(err)
+	}
+	if status != "pending" || !scheduled.After(time.Now().Add(4*time.Minute)) || !unstarted || sender.calls != 0 {
+		t.Fatalf("status=%s scheduled=%v unstarted=%v calls=%d", status, scheduled, unstarted, sender.calls)
+	}
+	if observed.claimed {
+		t.Fatal("invalid window reached the task claim")
+	}
+	var start, end string
+	if err := f.pool.QueryRow(ctx, `SELECT warmup_start_time::text,warmup_end_time::text FROM email_accounts WHERE id=$1`, f.sender.ID).Scan(&start, &end); err != nil || start != "08:00:00" || end != "07:00:00" {
+		t.Fatalf("configured hours silently changed: %s/%s err=%v", start, end, err)
+	}
+	// Real database failures must still fail dispatch rather than count as deferral.
+	exec(`UPDATE tasks SET scheduled_at=NOW()-INTERVAL '1 hour' WHERE id=$1`, task)
+	f.svc.scheduler = failedWindowScheduler{}
+	if xerr := f.svc.HandleEmailTask(&proto.ProcessTask{TaskId: task.String()}); xerr == nil {
+		t.Fatal("authority failure became a successful configuration deferral")
+	}
+	f.svc.scheduler = scheduler.NewSchedulerService(f.svc.taskRepo, f.svc.warmupRepo, nil, f.svc.emailRepo, nil, nil, nil)
+	observed.deferralErr = context.DeadlineExceeded
+	if xerr := f.svc.HandleEmailTask(&proto.ProcessTask{TaskId: task.String()}); xerr == nil {
+		t.Fatal("failed reschedule was acknowledged as successful configuration deferral")
+	}
+	if observed.claimed || sender.calls != 0 {
+		t.Fatal("failed authority or reschedule reached claim or provider execution")
+	}
+}
+
+type windowCheckedTasks struct {
+	repository.TaskRepository
+	repository.WarmupLineageRepository
+	repository.SendResultRecovery
+	claimed     bool
+	deferralErr error
+}
+
+func (r *windowCheckedTasks) ClaimWarmupTask(ctx context.Context, id uuid.UUID, at time.Time) (bool, error) {
+	r.claimed = true
+	return r.WarmupLineageRepository.ClaimWarmupTask(ctx, id, at)
+}
+
+func (r *windowCheckedTasks) RescheduleWarmupTask(ctx context.Context, id uuid.UUID, at time.Time) error {
+	if r.deferralErr != nil {
+		return r.deferralErr
+	}
+	return r.WarmupLineageRepository.RescheduleWarmupTask(ctx, id, at)
+}
+
+type failedWindowScheduler struct{ scheduler.SchedulerService }
+
+func (failedWindowScheduler) WarmupDispatchNotBefore(context.Context, uuid.UUID, time.Time) (time.Time, error) {
+	return time.Time{}, context.DeadlineExceeded
+}
 
 func TestLiveWarmupDispatchRechecksOpeningSourceAndExactRecipient(t *testing.T) {
 	f := newPartnerRoutingFixture(t)
