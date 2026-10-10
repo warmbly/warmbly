@@ -162,7 +162,7 @@ const CAMPAIGN_SELECT = `id, name, description, status,
 		  start_time, end_time,
 		  contact_order_by, contact_order_dir, contact_order_field,
 		  updated_at, created_at,
-		  sender_strategy, rotation_mode,
+		  sender_strategy, rotation_mode, rotate_sender_per_step,
 		  ramp_enabled, ramp_start, ramp_increment, ramp_ceiling, ramp_level, ramp_level_date,
 		  esp_match_mode, max_new_leads_per_day, prioritize_new_leads, entry_delay_minutes,
 		  tracking_domain, tracking_domain_verified, tracking_domain_verified_at,
@@ -183,7 +183,7 @@ func getCampaign(rows db.Scannable, campaign *models.Campaign, extra ...any) err
 		&campaign.StartTime, &campaign.EndTime,
 		&campaign.ContactOrderBy, &campaign.ContactOrderDir, &campaign.ContactOrderField,
 		&campaign.UpdatedAt, &campaign.CreatedAt,
-		&campaign.SenderStrategy, &campaign.RotationMode,
+		&campaign.SenderStrategy, &campaign.RotationMode, &campaign.RotateSenderPerStep,
 		&campaign.RampEnabled, &campaign.RampStart, &campaign.RampIncrement, &campaign.RampCeiling, &campaign.RampLevel, &campaign.RampLevelDate,
 		&campaign.ESPMatchMode, &campaign.MaxNewLeadsPerDay, &campaign.PrioritizeNewLeads, &campaign.EntryDelayMinutes,
 		&campaign.TrackingDomain, &campaign.TrackingDomainVerified, &campaign.TrackingDomainVerifiedAt,
@@ -209,7 +209,7 @@ const CAMPAIGN_SELECT_FULL = `
 	c.start_time, c.end_time,
 	c.contact_order_by, c.contact_order_dir, c.contact_order_field,
 	c.updated_at, c.created_at,
-	c.sender_strategy, c.rotation_mode,
+	c.sender_strategy, c.rotation_mode, c.rotate_sender_per_step,
 	c.ramp_enabled, c.ramp_start, c.ramp_increment, c.ramp_ceiling, c.ramp_level, c.ramp_level_date,
 	c.esp_match_mode, c.max_new_leads_per_day, c.prioritize_new_leads, c.entry_delay_minutes,
 	c.tracking_domain, c.tracking_domain_verified, c.tracking_domain_verified_at,
@@ -410,6 +410,10 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 		}
 		rotationMode = *data.RotationMode
 	}
+	rotateSenderPerStep := false
+	if data.RotateSenderPerStep != nil {
+		rotateSenderPerStep = *data.RotateSenderPerStep
+	}
 	rampEnabled := false
 	if data.RampEnabled != nil {
 		rampEnabled = *data.RampEnabled
@@ -502,7 +506,7 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 			esp_match_mode, max_new_leads_per_day, prioritize_new_leads,
 			tracking_domain,
 			utm_tracking, utm_source, utm_medium, utm_campaign,
-			unsubscribe_mode, continuous, entry_delay_minutes,
+			unsubscribe_mode, continuous, entry_delay_minutes, rotate_sender_per_step,
 			created_at, updated_at
 		) VALUES (
 			gen_random_uuid(), $1, $2, $3, $4,
@@ -515,50 +519,51 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 			$27, $28, $29,
 			$30,
 			$31, $32, $33, $34,
-			$35, $36, $37,
+			$35, $36, $37, $38,
 			NOW(), NOW()
 		)
 		RETURNING %s
 	`, CAMPAIGN_SELECT)
 
 	params := []any{
-		data.Name,          // $1
-		data.Description,   // $2
-		userID,             // $3
-		orgID,              // $4 (nullable)
-		stopOnReply,        // $5
-		openTracking,       // $6
-		linkTracking,       // $7
-		textOnly,           // $8
-		dailyLimit,         // $9
-		unsubHeader,        // $10
-		riskyEmails,        // $11
-		cc,                 // $12
-		bcc,                // $13
-		data.StartDate,     // $14
-		data.EndDate,       // $15
-		timezone,           // $16
-		days,               // $17
-		startTime,          // $18
-		endTime,            // $19
-		scheduleWindows,    // $20
-		senderStrategy,     // $21
-		rotationMode,       // $22
-		rampEnabled,        // $23
-		rampStart,          // $24
-		rampIncrement,      // $25
-		rampCeiling,        // $26
-		espMatchMode,       // $27
-		maxNewLeads,        // $28
-		prioritizeNewLeads, // $29
-		trackingDomain,     // $30
-		utmTracking,        // $31
-		utmSource,          // $32
-		utmMedium,          // $33
-		utmCampaign,        // $34
-		unsubMode,          // $35
-		continuous,         // $36
-		entryDelay,         // $37
+		data.Name,           // $1
+		data.Description,    // $2
+		userID,              // $3
+		orgID,               // $4 (nullable)
+		stopOnReply,         // $5
+		openTracking,        // $6
+		linkTracking,        // $7
+		textOnly,            // $8
+		dailyLimit,          // $9
+		unsubHeader,         // $10
+		riskyEmails,         // $11
+		cc,                  // $12
+		bcc,                 // $13
+		data.StartDate,      // $14
+		data.EndDate,        // $15
+		timezone,            // $16
+		days,                // $17
+		startTime,           // $18
+		endTime,             // $19
+		scheduleWindows,     // $20
+		senderStrategy,      // $21
+		rotationMode,        // $22
+		rampEnabled,         // $23
+		rampStart,           // $24
+		rampIncrement,       // $25
+		rampCeiling,         // $26
+		espMatchMode,        // $27
+		maxNewLeads,         // $28
+		prioritizeNewLeads,  // $29
+		trackingDomain,      // $30
+		utmTracking,         // $31
+		utmSource,           // $32
+		utmMedium,           // $33
+		utmCampaign,         // $34
+		unsubMode,           // $35
+		continuous,          // $36
+		entryDelay,          // $37
+		rotateSenderPerStep, // $38
 	}
 
 	row := tx.QueryRow(ctx, insertSQL, params...)
@@ -1152,6 +1157,11 @@ func (r *campaignRepository) Update(ctx context.Context, orgID, campaignID strin
 		args = append(args, *data.RotationMode)
 		argPos++
 	}
+	if data.RotateSenderPerStep != nil {
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "rotate_sender_per_step", argPos))
+		args = append(args, *data.RotateSenderPerStep)
+		argPos++
+	}
 	if data.RampEnabled != nil {
 		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "ramp_enabled", argPos))
 		args = append(args, *data.RampEnabled)
@@ -1443,7 +1453,7 @@ func (r *campaignRepository) GetByID(ctx context.Context, campaignID uuid.UUID) 
 		&campaign.StartTime, &campaign.EndTime,
 		&campaign.ContactOrderBy, &campaign.ContactOrderDir, &campaign.ContactOrderField,
 		&campaign.UpdatedAt, &campaign.CreatedAt,
-		&campaign.SenderStrategy, &campaign.RotationMode,
+		&campaign.SenderStrategy, &campaign.RotationMode, &campaign.RotateSenderPerStep,
 		&campaign.RampEnabled, &campaign.RampStart, &campaign.RampIncrement, &campaign.RampCeiling, &campaign.RampLevel, &campaign.RampLevelDate,
 		&campaign.ESPMatchMode, &campaign.MaxNewLeadsPerDay, &campaign.PrioritizeNewLeads, &campaign.EntryDelayMinutes,
 		&campaign.TrackingDomain, &campaign.TrackingDomainVerified, &campaign.TrackingDomainVerifiedAt,

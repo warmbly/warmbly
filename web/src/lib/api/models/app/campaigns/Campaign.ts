@@ -53,6 +53,7 @@ export default interface Campaign {
     // "explicit" uses the campaign's sender pool (edited via the senders endpoint).
     sender_strategy: 'tags' | 'explicit';
     rotation_mode: 'weighted' | 'round_robin' | 'least_recently_used';
+    rotate_sender_per_step: boolean;
     senders?: CampaignSender[];
 
     // Per-campaign daily ramp-up. ramp_level/ramp_level_date are server-managed.
