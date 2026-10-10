@@ -8,6 +8,47 @@ import (
 	"github.com/google/uuid"
 )
 
+func TestLiveJobRegistrationDoesNotRetireUnregisteredRows(t *testing.T) {
+	handle, pool := liveContactDB(t)
+	repo := NewJobRunRepository(handle)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	monitor := NewMonitoringRepository(monitoringReadOnlyPool(t, pool))
+	before := collectMonitoring(t, monitor, "jobs", now)
+	oldName, currentName := uuid.NewString(), uuid.NewString()
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM scheduled_job_runs WHERE name IN ($1,$2)`, oldName, currentName)
+	})
+	oldAt := now.Add(-30 * 24 * time.Hour)
+	if _, err := pool.Exec(ctx, `INSERT INTO scheduled_job_runs(name,service,interval_seconds,last_status,last_finished_at,next_run_at,updated_at) VALUES($1,'test',300,'ok',$2,$2,$2)`, oldName, oldAt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.Register(ctx, currentName, "test", time.Minute, now.Add(time.Minute), now); err != nil {
+		t.Fatal(err)
+	}
+	after := collectMonitoring(t, monitor, "jobs", now)
+	for _, id := range []string{"job_overdue", "job_ok"} {
+		got, baseline := measuredMonitoring(t, after, id), measuredMonitoring(t, before, id)
+		if got.Count == nil || baseline.Count == nil || *got.Count != *baseline.Count+1 || got.EvidenceAt == nil || got.EvidenceAt.After(oldAt) {
+			t.Fatal("historical wrapper evidence was hidden or refreshed", id, got)
+		}
+	}
+	rows, err := repo.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range rows {
+		if row.Name != oldName {
+			continue
+		}
+		if row.LastStatus != "ok" || row.LastFinishedAt == nil || !row.LastFinishedAt.Equal(oldAt) || row.NextRunAt == nil || !row.NextRunAt.Equal(oldAt) || !row.UpdatedAt.Equal(oldAt) {
+			t.Fatal("unregistered job history was changed", row)
+		}
+		return
+	}
+	t.Fatal("registration of a new loop hid the old row without retirement authority")
+}
+
 // A restart keeps the stored due time inside [earliest, next]; a claim takes
 // each slot once; a finished run leaves the schedule to the claim.
 //

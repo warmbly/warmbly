@@ -14,6 +14,35 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 )
 
+func TestUnobservedSourcesKeepUnknownCountsDespiteMeasuredFutureSends(t *testing.T) {
+	now := time.Now().UTC()
+	n := int64(7)
+	sources := []Source{{ID: "dispatch", Permission: models.AdminPermViewCampaigns, Collect: func(context.Context, time.Time) (models.MonitoringSource, error) {
+		return models.MonitoringSource{Metrics: []models.MonitoringMetric{{ID: "dispatch_future", Count: &n, Availability: models.MonitoringFresh, Condition: models.MonitoringSchedule}}}, nil
+	}}}
+	sources = append(sources, UnobservedSources()...)
+	s := New(sources)
+	s.now = func() time.Time { return now }
+	out := s.Snapshot(t.Context(), models.AdminPermViewAnalytics|models.AdminPermViewCampaigns)
+	if out.Coverage != "partial" || *out.Sources[0].Metrics[0].Count != n {
+		t.Fatal("measured future schedules lost", out)
+	}
+	for _, source := range out.Sources[1:] {
+		if source.Availability != models.MonitoringUnavailable || source.Coverage != "unavailable" || source.Reason != "unsupported" || source.ObservedAt != nil || source.MeasuredScopes != nil || source.ExpectedScopes != nil {
+			t.Fatal("unknown source claimed a measurement", source)
+		}
+		for _, metric := range source.Metrics {
+			if metric.Availability != models.MonitoringUnavailable || metric.Reason != "unsupported" || metric.Count != nil || metric.ObservedAt != nil || metric.EvidenceAt != nil || metric.LatestEvidenceAt != nil || metric.Broker != nil {
+				t.Fatal("unsupported detail became zero or inferred from future schedules", metric)
+			}
+		}
+	}
+	restricted := s.Snapshot(t.Context(), models.AdminPermViewAnalytics)
+	if restricted.Sources[1].Reason != "permission_denied" || len(restricted.Sources[1].Metrics) != 0 {
+		t.Fatal("wait attribution permission boundary was lost", restricted.Sources[1])
+	}
+}
+
 func TestMonitoringCoalescesCacheAndPreservesObservationTimes(t *testing.T) {
 	var clock atomic.Int64
 	clock.Store(time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC).Unix())

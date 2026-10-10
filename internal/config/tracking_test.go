@@ -2,6 +2,25 @@ package config
 
 import "testing"
 
+func TestTrackingConsumerScopeUsesProcessOverridesNotBackendDefaults(t *testing.T) {
+	t.Setenv("KAFKA_TRACKING_TOPIC", "custom-tracking-events")
+	t.Setenv("KAFKA_CONSUMER_GROUP", "custom-tracking-consumer")
+	cfg := &Config{}
+	consumer, err := cfg.LoadTrackingConsumerConfig(t.Context())
+	if err != nil || consumer.Topic != "custom-tracking-events" || consumer.GroupID != "custom-tracking-consumer" {
+		t.Fatalf("consumer scope = %+v, error = %v", consumer, err)
+	}
+	t.Setenv("KAFKA_TRACKING_TOPIC", "")
+	t.Setenv("KAFKA_CONSUMER_GROUP", "")
+	backend, err := cfg.LoadTrackingConsumerConfig(t.Context())
+	if err != nil || backend.Topic != "tracking-events" || backend.GroupID != "tracking-consumer" {
+		t.Fatalf("default scope = %+v, error = %v", backend, err)
+	}
+	if consumer.Topic == backend.Topic || consumer.GroupID == backend.GroupID {
+		t.Fatal("consumer process overrides were mistaken for backend defaults")
+	}
+}
+
 func TestNormalizeTrackingHost(t *testing.T) {
 	cases := map[string]string{
 		"t.acme.com":                   "t.acme.com",
