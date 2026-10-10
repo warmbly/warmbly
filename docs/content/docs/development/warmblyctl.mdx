@@ -1,19 +1,21 @@
 ---
 title: warmblyctl
-description: The CLI for a Warmbly instance. The operator commands for accounts, health and recovery, and the API commands that let scripts and AI agents drive campaigns, contacts, mailboxes and the inbox with an API key.
+description: Local operator recovery, remotely approved administrator diagnostics, and public API-key commands for a Warmbly instance.
 ---
 
-<Callout type="info" title="There are two CLIs. This is the operator's one.">
-`warmblyctl` is for running an instance: accounts, health, recovery, backups. It reads the database directly and is meant to be run inside the backend container.
+<Callout type="info" title="There are two CLIs. This is the administrator's one.">
+`warmblyctl` is for running an instance: accounts, health, recovery, backups. Local operator commands use the database inside the backend container. Remote administrator commands use a separately approved MFA session from your own machine, without database credentials.
 
 If you want to use the product from your terminal (campaigns, contacts, mailboxes, the inbox), you want [`warmbly`](/api/cli/): a signed-in, multi-host client you install on your own machine, with `warmbly auth login` instead of an exported key.
 </Callout>
 
-`warmblyctl` is the CLI for a Warmbly instance, and it has two halves with two trust models.
+`warmblyctl` is the CLI for a Warmbly instance, with three deliberately separate trust models.
 
 The operator commands answer two questions: what state is this install in, and how do I get back in. They read and write the database directly, so they keep working when the sign-in page does not. Their authorization is container or host access, the same trust model as Sentry's `createuser`, Gitea's `admin user create` and authentik's `ak changepassword`, and it is the right one when the identity system is the thing that is broken.
 
 The [API commands](#the-api-commands) drive a running instance over its public REST API with an API key, so they work from any machine against any instance you hold a key for, the hosted service included. They exist so scripts and AI agents can operate the product itself: campaigns, contacts, mailboxes, the inbox, settings. Everything they can do is bounded by the key's scopes.
+
+The [remote administrator commands](#remote-administrator-commands) use an independent signed-in session approved on the existing administrator website. They require live platform permissions, session MFA, and the server's existing fresh-auth and audit guards. Platform administrator access does not imply organization membership, select a workspace, or issue an API key. These commands never fall back to local database authority or `WARMBLY_API_KEY`.
 
 The CLI never serves HTTP. The API commands are a client of the already-gated public API, which adds no new surface to your instance.
 
@@ -30,7 +32,7 @@ kubectl exec -it deploy/warmbly-backend -- warmblyctl status
 warmblyctl status                                          # bare binary
 ```
 
-Every example on this page shows the compose form. Substitute the prefix you need.
+Local operator examples use the compose form. Remote administrator examples run the binary on your own machine.
 
 For a compose install, `make cli` is the same thing with less typing. Flags go through `ARGS`, because make reads a bare `--email` as one of its own options:
 
@@ -57,7 +59,7 @@ A command that would set a password refuses on a non-TTY unless you passed `--pa
 
 | Variable | Needed by | If it is missing |
 |---|---|---|
-| `PRIMARY_DB` | every command except `hash-password` | The command stops and tells you to run it inside the backend container |
+| `PRIMARY_DB` | local database operator commands except `hash-password` | The command stops and tells you to run it inside the backend container |
 | `REDIS` | `setup-link` always, `reset-password` to mint a link | `setup-link` fails. Everything else degrades to a warning and continues |
 | `AUTH_SECRET` | `reset-password` when it mints a link | The link cannot be signed with the key the backend verifies, so it is refused |
 | `APP_URL` | every printed link and sign-in hint | Links are built against `https://app.warmbly.com`, which is the hosted service and not your instance |
@@ -69,6 +71,150 @@ A command that would set a password refuses on a non-TTY unless you passed `--pa
 | `WARMBLY_API_URL` | every API command | Falls back to the instance's own `API_PUBLIC_URL`, then the hosted service |
 
 `backup` and `restore` also need `pg_dump` and `psql`, which the backend image ships for exactly this reason. Inside the backend container all of these are already set, except the API key, which is yours. Outside it, export what the command needs, and match `AUTH_SECRET` to the backend's exactly.
+
+Remote administrator commands require none of those instance secrets. They do not read `API_PUBLIC_URL`, `WARMBLY_API_URL` or `WARMBLY_API_KEY` to choose an instance or authenticate. Their only configuration-directory dependency is the operating system's user configuration location (`XDG_CONFIG_HOME` on Linux when set).
+
+## Remote administrator commands
+
+### Installing on another machine
+
+The backend image still includes `warmblyctl` for local emergency recovery. To use the remote commands from a laptop or separate VM, compile just this binary from a trusted source checkout with the repository's Go toolchain, then install it on your path:
+
+```bash
+go build -o ./warmblyctl ./cmd/warmblyctl
+install -m 0755 ./warmblyctl "$HOME/.local/bin/warmblyctl"
+```
+
+Create `$HOME/.local/bin` first if it does not exist. This is not the [`warmbly` installer](/api/cli/); that installer provides the separate public product CLI. Remote credential storage currently supports Linux, macOS and BSD on filesystems with verifiable POSIX ownership, modes and file locking. Windows and other unsupported platforms refuse remote storage rather than saving unprotected credentials.
+
+Deploy the backend device-login routes and the administrator website's `/device` consent page first. An older backend can refuse the new routes without affecting any existing local operator or API-key commands. No database migration or `PRIMARY_DB` access is required by the remote client.
+
+### Login, identity and logout
+
+```bash
+warmblyctl login --url https://api.example.com --server laptop --client-name 'work laptop'
+warmblyctl whoami --server laptop
+warmblyctl logout --server laptop
+```
+
+`--url` is the backend origin, not the administrator frontend URL. It must be a bare HTTPS origin without credentials, path, query or fragment. HTTP is allowed only for loopback development. Redirects are refused, including same-origin redirects; point directly at the backend's canonical origin. There is no insecure TLS flag or environment-selected default server.
+
+Login prints the selected backend, requester, lookup code and `/device` verification path to **stderr**. Open your configured administrator website's `/device` page on any machine, sign in through the unchanged OAuth, passkey or password flow with MFA, enter the lookup code, and explicitly approve the named requester and instance. The administrator website may be on a different frontend origin; the CLI never sends a credential there. Merely viewing the request does not approve it.
+
+The client compares the returned instance identity with the selected backend, waits the supplied poll interval, and stores only the resulting ordinary session token pair. The private device secret stays in process memory and is never printed, saved, placed in a URL or given to a browser. The CLI opens no browser and serves no HTTP. Approval expires after five minutes; a lost claim response requires a new login, not a replay. If the source session's original authentication proof ages out, perform a fresh browser authentication and begin a new request. There is no password or MFA-bypass option in the remote client.
+
+`whoami` reads `/v1/auth/me` and prints the safely projected identity UUID, live admin permissions and MFA state. Arbitrary display names, addresses and free text are redacted. Login success prints session expiry timestamps, never token values.
+
+Every remote request requires `--url` or a registered `--server`. A URL-only login uses the `default` profile *for that exact origin*; it never sets a global default. Named profiles are bound to the origin registered by `login --server NAME --url URL`. A conflicting URL is rejected; use another profile name for another instance or administrator session. Logging out leaves that non-secret server mapping intact.
+
+Refresh happens before expiry or after one rejected read. Rotated credentials are atomically saved before use and local processes serialize refresh with a file lock. A failed or ambiguous refresh discards only the affected profile because the previous refresh token may already have been consumed. Reads retry at most once; writes are never automatically repeated. Permission, MFA and fresh-auth denials do not trigger refresh. Refresh is not fresh authentication: for `reauth_required`, logout and start a new explicitly browser-approved login, or use a new named profile.
+
+Normal logout revokes the independent CLI session and removes its local credential only after confirmed success. A transport failure leaves the credential available for a later explicit attempt. An authentication rejection forgets it. `logout --local-only` is explicit local forgetting, not revocation; its JSON says `revoked:false` and the server session remains valid until separately revoked or expired.
+
+Revoke **all** sessions for this user on this backend only deliberately:
+
+```bash
+warmblyctl logout --server laptop --all --write \
+  --confirm 'POST /v1/auth/logout-all'
+```
+
+The server's existing logout-all behavior applies, including trusted-device forgetting. Matching local profiles for the same user and instance are removed; other instances and users are untouched. After device issuance, revoking the approving browser alone does not revoke the independently issued CLI session. Use normal session management or revoke-all.
+
+### Private credential files
+
+No supported OS keychain library is already used by this binary, so the fallback is an atomic `0600` credential file inside an owner-only `0700` directory. On Linux the location is `$XDG_CONFIG_HOME/warmblyctl/credentials.json`, or `$HOME/.config/warmblyctl/credentials.json`; on macOS it is under the user's `Library/Application Support/warmblyctl`. Tokens are plaintext secrets protected by filesystem ownership and modes, not encrypted by an application key.
+
+The client checks owner identity, regular-file type, exact permissions, symlinks in storage paths, and hard links. It refuses unsafe existing storage instead of silently fixing modes or following a link. Writes use a private temporary file, sync, atomic rename and directory sync. A pinned directory handle bounds file access. The owner-only lock file protects rotating refresh tokens from concurrent processes. Passwords are never accepted in remote argv or saved configuration. Do not copy this directory into a repository, diagnostic archive or another user's account.
+
+### Read-only operational helpers
+
+```bash
+warmblyctl admin --help
+warmblyctl admin workers list --server laptop
+warmblyctl admin workers stats --id <worker-uuid> --server laptop
+warmblyctl admin fleet nodes --server laptop
+warmblyctl admin fleet capacity --server laptop
+warmblyctl admin fleet decisions --server laptop
+warmblyctl admin logs --node-id <worker-uuid> --level warn --limit 100 --server laptop
+warmblyctl admin broker --node-id <worker-uuid> --server laptop
+warmblyctl admin mailbox list --q example.com --server laptop
+warmblyctl admin sync list --state stalled --server laptop
+warmblyctl admin sends in-flight --server laptop
+warmblyctl admin recovery dead-letters --status pending --server laptop
+warmblyctl admin recovery failures --server laptop
+warmblyctl admin recovery webhooks --server laptop
+warmblyctl admin jobs list --server laptop
+warmblyctl admin health monitoring --server laptop
+```
+
+Run `--help` after a helper for its typed UUID, time, enum and limit filters. Logs also accept `--after`, `--before` (inclusive RFC3339) and `--mailbox-id`. Lists with pagination accept the exact `next_cursor` returned by that endpoint, not page numbers. Helpers reject invalid filters before accessing credentials. Additional existing filters are available through the catalog request command below.
+
+Keep AI diagnosis read-only: inspect availability, coverage, observation timestamps, dropped events, recent evidence and scope before concluding there is an outage. Empty or unavailable evidence is not proof of health. Node logs are the backend's allowlisted partial event history, not raw journals or provider conversations. Existing workers without an enrollment-bound log credential need an upgrade and re-enrollment for capture; there is no historical backfill.
+
+Broker observations keep `commands` (this worker) separate from `results` (shared result consumer). Lag is committed-offset distance, not delivery success, throughput or proof that a particular worker is broken. Missing permissions, commits or dependencies remain explicitly unavailable. No command resets offsets.
+
+In-flight send rows retain `has_message_id` and age information but omit bodies, headers and free-form failure text. Do not infer that an unknown outcome was never sent from an empty log or a missing message ID. These commands cannot clear uncertain-send holds, disable mailboxes or silently resend.
+
+### Explicit recovery actions
+
+Every admin mutation requires the named action **and** `--write` **and** an exact `--confirm 'METHOD /admin/concrete-target-path'`, excluding query parameters. This is an operator safeguard, not a replacement for server permissions, MFA, fresh authentication or audit logs. There is no generic `--yes` or automatic retry of a write. Transport errors mean the action may have reached the server; inspect state before another attempt.
+
+Provider-throttle recovery and backfill restart use their existing server workflows, not unknown-send clearing:
+
+```bash
+warmblyctl admin recovery clear-throttle --id <mailbox-uuid> --server laptop \
+  --write --confirm 'POST /admin/sync/<mailbox-uuid>/clear-throttle'
+warmblyctl admin recovery restart-backfill --id <mailbox-uuid> --server laptop \
+  --write --confirm 'POST /admin/sync/<mailbox-uuid>/restart-backfill'
+```
+
+Substitute the same real canonical UUID in both places. Clearing a provider throttle can resume provider work; restarting backfill resets the existing sync backfill state. Neither action establishes sending authority.
+
+Dead-letter replay is never part of diagnosis. Inspect the task, mailbox, provider receipts and uncertain-send protections first. Replay additionally requires a separate risk acknowledgement:
+
+```bash
+warmblyctl admin recovery replay --id <dead-letter-uuid> --server laptop \
+  --write --acknowledge-send-risk \
+  --confirm 'POST /admin/tasks/dead-letters/<dead-letter-uuid>/replay'
+```
+
+Acknowledging risk does not prove the message was not delivered or override server recovery guards. Never replay an uncertain send solely because a CLI diagnostic has no evidence. Webhook lease recovery is separately available as `admin recovery reclaim-webhooks`, with exact confirmation for `POST /admin/webhooks/reclaim`.
+
+### Cataloged admin API requests
+
+```bash
+warmblyctl admin catalog
+warmblyctl admin api GET /admin/users --server laptop --query limit=25
+warmblyctl admin api GET /admin/instance/settings --server laptop
+warmblyctl admin api PUT /admin/workers/<worker-uuid>/tags --server laptop \
+  --data @worker-tags.json --write \
+  --confirm 'PUT /admin/workers/<worker-uuid>/tags'
+```
+
+The offline, deterministically sorted catalog lists every registered admin method and path template, permission names, fresh-auth requirement, read/write classification, replay-risk gate and unavailable reason. Replace parameter templates with canonical UUIDs, or bounded single-segment words for the few non-UUID parameters. The request command matches only that compiled inventory; it does not accept arbitrary URLs, `/v1` routes, traversal, encoded paths or made-up endpoints. Server guards remain authoritative even if the CLI catalog is older than the server.
+
+Supply `--query key=value` separately for each bounded filter. Mutating JSON input is a single object from `--data @file` or `--data -` for stdin, limited to 1 MiB, without duplicate keys or excessive nesting. Inline JSON is intentionally refused so passwords cannot enter argv. Input, headers and request bodies are not echoed. Responses must be JSON within 8 MiB; there is no raw-output or secret-reveal flag.
+
+Some catalog entries are discoverable but deliberately unavailable: browser device-consent endpoints, fleet join-token and tester credential issuance, binary export downloads and multipart imports, and arbitrary background-job execution. Use the existing browser or transfer/operator tools for those workflows. Unsupported entries fail before network or credential access, even with confirmation.
+
+### JSON, redaction and exit codes
+
+Remote success is one deterministic JSON value on stdout. Progress, approval codes, help and machine-readable errors are on stderr. Object keys are sorted by the JSON encoder; backend list ordering is preserved. Redaction projects only allowlisted diagnostic fields, canonical UUIDs, timestamps, typed enums, known broker scope names, validated cursors, numbers and booleans. Unknown fields are omitted and counted in `_redacted_fields`; arbitrary strings become `[REDACTED]`, including addresses and display names. No provider tokens, passwords, body, header, payload or free-form error subtree is exposed. The existing local emergency and public API commands keep their own documented output behavior unchanged.
+
+Errors preserve safe server `code`, HTTP `status` and `request_id`, but never raw backend messages, response bodies, response headers or transport errors. A numeric `retry_after_seconds` can accompany rate limiting.
+
+| Exit | Meaning |
+|---|---|
+| `0` | Successful command or help |
+| `2` | Invalid arguments, malformed input, invalid server selection or rejected HTTP 400 |
+| `3` | Permission, MFA, fresh-auth or device approval denied |
+| `4` | Login needed, expired/rejected session or invalid device identity |
+| `5` | Transport, service, unsafe storage or invalid response failure |
+| `6` | Rate limited |
+| `7` | Cancelled operation |
+| `8` | Missing write confirmation, missing replay-risk acknowledgement or unavailable catalog action |
+
+The [shared authentication reference](/api/authentication/) remains the backend contract. These CLI additions change neither admin permission bits nor organization API scopes.
 
 ## The operator commands
 
