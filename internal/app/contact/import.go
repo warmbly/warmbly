@@ -599,7 +599,7 @@ func (s *contactService) runImport(ctx context.Context, plan *importPlan, rows [
 	s.updateListQuality(ctx, plan.orgID, quality)
 
 	if len(touched) > len(prior) {
-		s.publishContactsReload(ctx, plan.userID, "contacts:import")
+		s.publishContactsReload(ctx, plan.userID, "contacts:import", plan.orgID)
 		// Covers the Google Sheets sync too: it commits through this path.
 		s.wakeCampaigns(ctx, plan.orgID, plan.campaignIDs)
 		s.syncSegmentCampaigns(ctx, plan.orgID)

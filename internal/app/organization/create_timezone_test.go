@@ -18,6 +18,10 @@ type createRepo struct {
 	owned   int
 }
 
+func (*createRepo) GetUserOrganizations(context.Context, uuid.UUID) ([]models.OrganizationMember, error) {
+	return nil, nil
+}
+
 func (r *createRepo) GetUserOwnedOrganizationCount(context.Context, uuid.UUID) (int, error) {
 	return r.owned, nil
 }

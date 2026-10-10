@@ -549,13 +549,15 @@ A member restricted to [selected resources](/guides/team-roles/#access-scope), a
 
 | `code` | Status | Meaning |
 |--------|--------|---------|
-| `member_access_restricted` | 403 | The caller is restricted to selected campaigns and mailboxes, and this route is not one their scope covers. Writes are always refused, as are workspace-wide surfaces such as contacts and settings |
+| `member_access_restricted` | 403 | The caller's selected-resource scope does not cover this route. Resource writes and workspace-wide surfaces such as contacts and settings are refused. Workspace creation is refused to accounts with only restricted memberships, except instance administrators; limit-request operations require an unrestricted membership in the target workspace |
 | `invalid_access_resource` | 400 | `PUT /organization/members/:id/access` or an invitation named a campaign folder, campaign or mailbox that is not in this workspace |
 | `invalid_access_scope` | 400 | The scope is neither `workspace` nor `restricted` |
 | `too_many_access_grants` | 400 | More than 500 folders, campaigns or mailboxes in one list |
 | `owner_access_unrestricted` | 403 | The workspace owner always reaches the entire workspace and cannot be restricted |
 
-A campaign or mailbox outside a restricted caller's grants answers `404`, the same as one that does not exist, so a scope does not reveal what else the workspace holds.
+A campaign or mailbox outside a restricted caller's grants answers `404`, the same as one that does not exist, so a scope does not reveal what else the workspace holds. `GET /unibox/thread/labels` likewise returns the same `404` for an unknown thread, a thread outside the selected workspace, or a thread with no message in an accessible mailbox. An accessible thread with no labels returns an empty list.
+
+Failure to resolve a restricted scope or its scoped counts fails the request rather than returning workspace-wide data. Realtime authorization lookup errors stop campaign, mailbox and organization channels; user-channel events whose authorization cannot be verified are withheld. See [bounded realtime authorization](/api/realtime/#channels).
 
 ```json
 {

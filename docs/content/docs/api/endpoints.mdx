@@ -15,6 +15,21 @@ A member restricted to [selected resources](/guides/team-roles/#access-scope) is
 
 All paths below are relative to the versioned base URL `https://api.warmbly.com/v1` (for example `/campaigns` is `https://api.warmbly.com/v1/campaigns`). See [versioning](/api/) for details.
 
+### Restricted response data and workspace policies
+
+- `GET /organization/current` returns a restricted summary: `total_campaigns` and `active_campaigns` count granted campaigns; `total_contacts` counts distinct contacts in those campaigns; `email_accounts` counts granted mailboxes; and `emails_sent_today` counts confirmed campaign sends in both granted campaigns and granted mailboxes. `member_count`, `product_description`, `icp_notes` and `voice_profile` are omitted. Unrestricted responses keep their workspace-wide shape.
+- `GET /analytics/dashboard` intersects campaign and folder filters with grants before returning `scope.campaign_count`.
+- `GET /campaigns/:id/logs` keeps pagination and campaign activity, but restricted responses use safe messages and explicitly selected metadata. Mailbox addresses, caps, cross-campaign sending state, warmup health and account IDs outside mailbox grants are removed. Tracking domains, raw provider errors, unknown fields and nested metadata are not exposed. Granting a campaign alone does not grant its senders.
+- `GET /auth/me` and `/unibox/overview` include only categories applied to messages in accessible mailboxes for restricted members. Unrestricted members keep the workspace category registry. Inbox access is mailbox-based: granting a shared mailbox exposes its conversations from other campaigns too.
+- `GET /unibox/thread/labels` checks for a message in the selected organization and effective mailbox allowlist before listing labels. Unknown, cross-workspace and inaccessible threads have the same `404`. An accessible thread with no labels returns an empty list.
+- `GET /emails` resolves a pagination cursor only inside the selected organization and effective mailbox allowlist. A cursor outside either boundary does not supply a timestamp for pagination.
+
+Workspace creation and limit-request routes are exceptions to the route-wide refusal described above: they authorize the account or target workspace in the service. `POST /organization` refuses accounts whose memberships are all restricted with `403` `member_access_restricted`, unless they are instance administrators. Accounts with no memberships or at least one unrestricted membership remain subject to the existing creation limits. Submitting or listing `/organization/:orgId/limit-requests`, and deleting `/limit-requests/:id`, requires an unrestricted membership in the request's target organization. Switching the selected workspace does not bypass these checks.
+
+Workspace notifications and owner-addressed realtime delivery also check current organization membership. Resource ownership alone does not authorize a workspace-wide event. Restricted, removed and unaccepted members are excluded from workspace notifications, including persisted feeds and deferred email/push delivery. Personal sign-in security notices remain available. See [realtime authorization and revocation](/api/realtime/#channels) for the 30-second refresh bound on open resource channels.
+
+These checks use existing grants on hosted and self-hosted instances and need no new migration or configuration. Existing unrestricted behavior is preserved.
+
 ## API key accepted
 
 ### Emails

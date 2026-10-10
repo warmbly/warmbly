@@ -320,6 +320,8 @@ export function AccessEditor({ value, onChange }: { value: MemberAccess; onChang
                             />
                             <p className="mt-1 text-[11px] text-slate-400">
                                 Campaign access never includes a mailbox. Grant the ones whose conversations they should read.
+                                {" "}Inbox access is by mailbox, not campaign. A mailbox shared with other campaigns exposes
+                                their conversations too.
                             </p>
                             <SuggestedSenders
                                 campaignIds={value.campaign_ids}

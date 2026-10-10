@@ -116,6 +116,7 @@ type UniboxRepository interface {
 	// MessageMailboxes lists the mailboxes holding the named messages and every
 	// message in the named conversations, within the organization.
 	MessageMailboxes(ctx context.Context, orgID uuid.UUID, ids []uuid.UUID, threadIDs []string) ([]uuid.UUID, error)
+	CategoriesForMailboxes(ctx context.Context, orgID uuid.UUID, accountIDs []uuid.UUID) ([]models.Group, error)
 	// UnseenCountForMailboxes is GetUnseenCount over a set of mailboxes.
 	UnseenCountForMailboxes(ctx context.Context, orgID uuid.UUID, accountIDs []uuid.UUID) (int64, error)
 
@@ -125,6 +126,7 @@ type UniboxRepository interface {
 	// ListThreadLabels returns the current set for one thread.
 	SetThreadLabels(ctx context.Context, orgID, userID uuid.UUID, threadID string, categoryIDs []uuid.UUID) ([]models.MiniCategory, error)
 	ListThreadLabels(ctx context.Context, orgID uuid.UUID, threadID string) ([]models.MiniCategory, error)
+	ListThreadLabelsWithin(ctx context.Context, orgID uuid.UUID, threadID string, accountIDs []uuid.UUID) ([]models.MiniCategory, error)
 	// AddThreadLabels attaches labels to a thread WITHOUT removing existing ones
 	// (additive; for automation/step "label email" actions). LatestThreadIDForContact
 	// finds the workspace's most recent conversation with an address, so a campaign
@@ -1658,7 +1660,7 @@ func (r *uniboxRepository) Overview(ctx context.Context, orgID uuid.UUID) (*mode
 // credential limited to them.
 func (r *uniboxRepository) OverviewForMailboxes(ctx context.Context, orgID uuid.UUID, accountIDs []uuid.UUID) (*models.UniboxOverview, error) {
 	if len(accountIDs) == 0 {
-		return nil, errors.New("accountIDs required")
+		accountIDs = models.NoneMatch()
 	}
 	return r.overview(ctx, orgID, accountIDs)
 }
@@ -1900,6 +1902,15 @@ func (r *uniboxRepository) overview(ctx context.Context, orgID uuid.UUID, accoun
 	// has any unseen message. Like tags, labels are optional — never let
 	// the join fail the whole overview.
 	overview.Categories = make([]models.UniboxCategoryOverview, 0)
+	categoriesOnMailboxes := ""
+	if accountIDs != nil {
+		categoriesOnMailboxes = ` AND EXISTS (
+			SELECT 1 FROM unibox_thread_labels visible_label
+			JOIN unibox_emails visible_message ON visible_message.thread_id = visible_label.thread_id
+			WHERE visible_label.organization_id = c.organization_id AND visible_label.category_id = c.id
+			  AND visible_message.email_id IN ` + mailboxes + `
+		)`
+	}
 	catRows, err := r.db.Query(ctx, `
 		WITH thread_state AS (
 			SELECT e.thread_id, bool_or(NOT e.seen) AS has_unread
@@ -1919,7 +1930,7 @@ func (r *uniboxRepository) overview(ctx context.Context, orgID uuid.UUID, accoun
 		FROM categories c
 		LEFT JOIN unibox_thread_labels utl ON utl.category_id = c.id AND utl.organization_id = c.organization_id
 		LEFT JOIN thread_state ts ON ts.thread_id = utl.thread_id
-		WHERE c.organization_id = $1
+		WHERE c.organization_id = $1`+categoriesOnMailboxes+`
 		GROUP BY c.id, c.title, c.color, c.position
 		ORDER BY c.position ASC, c.title ASC
 	`, orgID)

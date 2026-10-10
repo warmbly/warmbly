@@ -367,12 +367,7 @@ func (h *Handler) GetUniboxThreadLabels(c *gin.Context) {
 		return
 	}
 
-	if xerr := h.uniboxMessagesAllowed(c, *orgID, nil, []string{threadID}); xerr != nil {
-		errx.Handle(c, xerr)
-		return
-	}
-
-	labels, xerr := h.UniboxService.ListThreadLabels(c.Request.Context(), *orgID, threadID)
+	labels, xerr := h.UniboxService.ListThreadLabelsWithin(c.Request.Context(), *orgID, threadID, restrictedMailboxes(c))
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return

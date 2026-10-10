@@ -91,7 +91,7 @@ Each row shows email, role, access, and join date, with your own row tagged "you
 
 To remove someone, hover (or tap) their row and click the remove icon. **You cannot remove the owner or yourself.** To leave a workspace you own, transfer ownership first.
 
-Removal takes effect at once, including for someone who is signed in right now. Their open dashboard loses the workspace on its next request and its live updates stop, and they are asked to pick another workspace they belong to. Apps they authorized in the workspace are disconnected. Nothing they created is removed with them: mailboxes, contacts, campaigns and API keys belong to the workspace, so revoke their keys under **API keys** if those should go too. A changed role or a new owner reaches open dashboards' live updates without a reload.
+Removal applies to someone who is signed in right now. Their open dashboard loses the workspace on its next request and its live updates stop, and they are asked to pick another workspace they belong to. Apps they authorized in the workspace are disconnected. Nothing they created is removed with them: mailboxes, contacts, campaigns and API keys belong to the workspace, so revoke their keys under **API keys** if those should go too. Realtime channels refresh access at least every 30 seconds and before delivering with an expired authorization check, even if a change event is missed. A changed role or a new owner reaches open dashboards' live updates without a reload.
 
 </Fold>
 
@@ -114,20 +114,29 @@ Click the **Access** cell on a member's row to change it. In the dialog, choose 
 
 A campaign is reachable when it sits in at least one granted folder or is granted on its own. Campaign access never includes a mailbox, even the ones the campaign sends from: inbox access is always granted mailbox by mailbox. Under the mailbox picker, **Senders of the selected campaigns** lists the mailboxes the chosen campaigns and folders send from, to review and add with one click. A restricted member with nothing selected reaches nothing.
 
+<Callout type="warn" title="A shared mailbox exposes its conversations">
+Inbox access is by mailbox, not campaign. Granting a mailbox shared with other campaigns also exposes those campaigns' conversations in that mailbox, even when the campaigns themselves are not granted. Review the mailbox's use before granting it.
+</Callout>
+
 <Callout type="warn" title="Restricted access is read-only">
 A restricted member's roles still apply, but only their read permissions do: **View campaigns**, **View analytics** and **Use unified inbox** (reading only). Everything else is set aside while the scope is restricted, so they cannot edit, start, send, reply, label, move, or mark anything read or unread. Opening a conversation does not mark it read for the rest of the team.
 </Callout>
 
 What a restricted member sees:
 
-- **Campaigns**: the list, folder counts, each granted campaign's settings, steps and activity feed, and its analytics. Any other campaign answers as not found, including by direct link.
-- **Analytics**: the dashboard and campaign reports, computed only over their campaigns and mailboxes.
-- **Inbox**: the conversations of their mailboxes, with counts and filters to match.
+- **Campaigns**: the list, folder counts, each granted campaign's settings, steps and activity feed, and its analytics. The activity feed uses safe messages and selected metadata; mailbox identities and details outside their mailbox grants, raw provider errors and unknown metadata are not returned. Any other campaign answers as not found, including by direct link.
+- **Analytics**: the dashboard and campaign reports, computed only over their campaigns and mailboxes. Filtered campaign counts are recalculated after intersecting the filter with their grants.
+- **Workspace summary**: campaign counts cover their campaigns, contact counts cover distinct contacts in those campaigns, and mailbox counts cover their mailboxes. Today's confirmed campaign sends must belong to both a granted campaign and a granted mailbox. Member counts and AI voice fields are omitted.
+- **Inbox**: the conversations of their mailboxes, with counts and filters to match. Category lists include only categories applied to conversations with messages in accessible mailboxes. Thread labels require an accessible message; unknown and inaccessible threads both answer as not found.
 - **Live updates** for those resources only. They do not appear in the team's presence and do not see who else is online.
 
-Everything that cannot yet be narrowed to a scope is unavailable to them, and shows as locked in their sidebar with the reason: contacts, CRM, templates, forms, automations, deliverability, placement tests, settings other than their own profile and security, the AI assistant, and the Slack app. They are not sent workspace notifications. An API key a restricted member already holds, and an app they authorized, are held to the same scope and the same read-only routes; they cannot create new keys.
+Everything that cannot yet be narrowed to a scope is unavailable to them, and shows as locked in their sidebar with the reason: contacts, CRM, templates, forms, automations, deliverability, placement tests, settings other than their own profile and security, the AI assistant, and the Slack app. Resource ownership does not bypass access checks for live events or notifications. They are not sent workspace notifications, including queued email or push notifications, and stored workspace notifications are hidden while their membership is restricted or removed. Personal sign-in security notices remain available. An API key a restricted member already holds, and an app they authorized, are held to the same scope and the same read-only routes; they cannot create new keys.
 
-Changing a member's access needs **Manage team** and a recent sign-in, takes effect on their next request, and applies to their open dashboard and live updates without a reload. You must hold every permission the member's roles grant, the owner always reaches the entire workspace, and you cannot change your own access. Grants on a deleted folder, campaign or mailbox disappear with it.
+An account whose workspace memberships are all restricted cannot create another workspace, regardless of which workspace is selected. Accounts with no memberships or at least one unrestricted membership can still create workspaces subject to the existing limits. Instance administrators are exempt from this restriction. Submitting, listing or cancelling a workspace limit request requires an unrestricted membership in the request's target workspace, not just the currently selected one. These rules apply to hosted and self-hosted instances.
+
+Changing a member's access needs **Manage team** and a recent sign-in, takes effect on their next request, and applies to their open dashboard and live updates without a reload. Realtime authorization is cached for at most 30 seconds; campaign and mailbox channels close when a refreshed check refuses access or fails. Organization channels refresh grants on relevant change events and on the same bounded timer. You must hold every permission the member's roles grant, the owner always reaches the entire workspace, and you cannot change your own access. Grants on a deleted folder, campaign or mailbox disappear with it.
+
+Existing unrestricted memberships retain workspace-wide access. These protections use the existing member grants and require no new configuration or data migration. Self-hosted operators should update both the backend/consumer and realtime services so API, notification and channel checks all run the updated code.
 
 </Fold>
 

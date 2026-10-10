@@ -474,6 +474,13 @@ func (h *Handler) GetCampaignLogs(c *gin.Context) {
 		return
 	}
 
+	if allowed := middleware.AllowedEmailAccounts(c); allowed != nil {
+		addresses := h.campaignLogAddresses(c, *orgID, result.Data, allowed)
+		for i := range result.Data {
+			result.Data[i] = scopedCampaignLog(result.Data[i], allowed, addresses)
+		}
+	}
+
 	c.JSON(http.StatusOK, result)
 }
 

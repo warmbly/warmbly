@@ -156,6 +156,15 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
 
@@ -216,6 +225,17 @@ jobs:
           WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
         run: |
           go test -race -p 1 ./internal/repository ./internal/app/consumer ./internal/app/orgtransfer ./internal/infrastructure/db -run '^TestLive(SyncArrival|SyncTruth|EmailErrorDedupe)' -count=1
+
+      - name: Restricted member summary, inbox and notification regressions (PostgreSQL)
+        env:
+          WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
+        run: |
+          go test -race -p 1 ./internal/repository -run '^TestLive(OrganizationScopedCounts|UniboxVisibility|EmailCursorVisibility|NotificationAudience)' -count=1
+
+      - name: Notification digest authorization retries (Redis)
+        env:
+          WARMBLY_TEST_REDIS: redis://127.0.0.1:6379/15
+        run: go test -race ./internal/app/notification -run '^TestLivePushDigestAudienceRetries$' -count=1
 
       - name: Test the Kafka codec, failed-handler replay and client lifecycle
         run: go test -race -tags kafka ./internal/infrastructure/codec/ ./internal/infrastructure/kafka/ ./internal/infrastructure/eventbus/
