@@ -13,6 +13,7 @@ import (
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapserver"
 	"github.com/emersion/go-imap/v2/imapserver/imapmemserver"
+	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
@@ -259,6 +260,87 @@ func TestFoldersWithoutListStatus(t *testing.T) {
 		if b.UIDNext == 0 {
 			t.Errorf("%q came back with no UIDNEXT, which is the incremental cursor here", b.Name)
 		}
+	}
+}
+
+func TestFoldersStatusFailureDoesNotBecomeFolderAbsence(t *testing.T) {
+	for _, tc := range []struct {
+		name, reply string
+		code        errx.MailErrorCode
+	}{
+		{"unavailable", "NO [UNAVAILABLE] Try later", errx.MailErrorCodeServerUnreachable},
+		{"server bug", "NO [SERVERBUG] Try later", errx.MailErrorCodeServerUnreachable},
+		{"connection limit", "NO [LIMIT] Try later", errx.MailErrorCodeSendingTooFast},
+		{"authentication", "NO [AUTHENTICATIONFAILED] Sign in again", errx.MailErrorCodeInvalidCredentials},
+		{"authorization", "NO [AUTHORIZATIONFAILED] Not permitted", errx.MailErrorCodeAuthorizationFailed},
+		{"unknown refusal", "NO Could not obtain status", errx.MailErrorCodeImapUnknown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := interceptingServer(t, nil, func(line string) string {
+				fields := strings.Fields(line)
+				if len(fields) >= 3 && strings.EqualFold(fields[1], "STATUS") && strings.Contains(line, "Sent") {
+					return fields[0] + " " + tc.reply
+				}
+				return ""
+			}, "Sent")
+			if err := c.Connect(); err != nil {
+				t.Fatal(err)
+			}
+			boxes, err := c.Folders()
+			if err == nil || err.Code != tc.code || len(boxes) != 0 {
+				t.Fatalf("partial listing could retire Sent: boxes=%v err=%v, want %s", boxes, err, tc.code)
+			}
+		})
+	}
+}
+
+func TestFoldersExplicitlyMissingStatusFolderCanBeSkipped(t *testing.T) {
+	c, _ := interceptingServer(t, nil, func(line string) string {
+		fields := strings.Fields(line)
+		if len(fields) >= 3 && strings.EqualFold(fields[1], "STATUS") && strings.Contains(line, "Sent") {
+			return fields[0] + " NO [NONEXISTENT] Folder removed"
+		}
+		return ""
+	}, "Sent")
+	boxes, err := c.Folders()
+	if err != nil || len(boxes) != 1 || boxes[0].Name != "INBOX" {
+		t.Fatalf("authoritative missing folder did not preserve remaining listing: %v %v", boxes, err)
+	}
+}
+
+func TestFoldersMissingListStatusFallsBackToStatus(t *testing.T) {
+	suppressed := 0
+	c, wire := rewritingServer(t, imap.CapSet{imap.CapIMAP4rev1: {}, imap.CapListExtended: {}, imap.CapListStatus: {}}, nil, func(line string) string {
+		if strings.HasPrefix(strings.ToUpper(line), "* STATUS ") && suppressed < 2 {
+			suppressed++
+			return ""
+		}
+		return line
+	}, "Sent")
+	boxes, err := c.Folders()
+	if err != nil || len(boxes) != 2 || len(wire.commands("STATUS")) != 2 {
+		t.Fatalf("missing LIST-STATUS metadata became folder absence: boxes=%v err=%v fallback=%v", boxes, err, wire.commands("STATUS"))
+	}
+}
+
+func TestFoldersIncompleteStatusRemainsRetryable(t *testing.T) {
+	for _, reply := range []string{"OK Status unavailable", "OK Status completed"} {
+		t.Run(reply, func(t *testing.T) {
+			c, _ := interceptingServer(t, nil, func(line string) string {
+				fields := strings.Fields(line)
+				if len(fields) >= 3 && strings.EqualFold(fields[1], "STATUS") && strings.Contains(line, "Sent") {
+					if reply == "OK Status completed" {
+						return "* STATUS Sent (MESSAGES 0)\r\n" + fields[0] + " " + reply
+					}
+					return fields[0] + " " + reply
+				}
+				return ""
+			}, "Sent")
+			boxes, err := c.Folders()
+			if err == nil || err.Code != errx.MailErrorCodeServerUnreachable || len(boxes) != 0 {
+				t.Fatalf("incomplete status was treated as authoritative: boxes=%v err=%v", boxes, err)
+			}
+		})
 	}
 }
 

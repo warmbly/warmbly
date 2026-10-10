@@ -1,7 +1,6 @@
 package imap
 
 import (
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -47,7 +46,7 @@ func (c *Client) foldersCapped(limit int) ([]models.Mailbox, *errx.MailError) {
 		// Asking a server without CONDSTORE for HIGHESTMODSEQ is a BAD.
 		HighestModSeq: caps.Has(imap.CapCondStore),
 	}
-	opts, listStatus := listOptionsFor(caps, status)
+	opts, _ := listOptionsFor(caps, status)
 
 	var all []models.Mailbox
 	statuses := map[string]*imap.StatusData{}
@@ -83,23 +82,19 @@ func (c *Client) foldersCapped(limit int) ([]models.Mailbox, *errx.MailError) {
 	for _, box := range kept {
 		st := statuses[box.Name]
 		if st == nil {
-			if listStatus {
-				// The server was asked and said nothing: the folder is not
-				// one it can open for us.
-				continue
-			}
 			data, err := c.client.Status(box.Name, status).Wait()
 			if err != nil {
-				var imapErr *imap.Error
-				if errors.As(err, &imapErr) {
-					// One folder the server will not report on must not
-					// take the rest of the account with it.
-					log.Warn().Err(err).Str("folder", box.Name).Msg("imap: STATUS refused; folder skipped")
+				merr := c.handleError(err)
+				if merr.Code == errx.ErrMailResourceNotFound.Code {
+					// Only explicit absence can retire a folder's stored state.
 					continue
 				}
-				return nil, c.handleError(err)
+				return nil, merr
 			}
 			st = data
+		}
+		if st == nil || st.UIDValidity == 0 || st.UIDNext == 0 {
+			return nil, errx.ErrMailServerUnreachable
 		}
 		box.UIDValidity = st.UIDValidity
 		box.UIDNext = uint32(st.UIDNext)

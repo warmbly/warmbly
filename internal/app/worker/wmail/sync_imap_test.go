@@ -21,6 +21,7 @@ import (
 type fakeImapConn struct {
 	ImapConn
 	folders   []models.Mailbox
+	folderErr *errx.MailError
 	changed   []goimap.UID
 	fetches   int
 	released  int
@@ -54,6 +55,9 @@ type fakeImapConn struct {
 // in place, and a fake that shared its backing array would lose folders
 // between passes.
 func (c *fakeImapConn) Folders() ([]models.Mailbox, *errx.MailError) {
+	if c.folderErr != nil {
+		return nil, c.folderErr
+	}
 	return append([]models.Mailbox(nil), c.folders...), nil
 }
 
