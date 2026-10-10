@@ -121,6 +121,11 @@ func TestLiveAuthoritativeDeadLetterResultsReconcileWithoutReplay(t *testing.T) 
 			if err := s.WarmupRepo.IncrementDailyCount(t.Context(), f.sender, day); err != nil {
 				t.Fatal(err)
 			}
+			if outcome == "failed" {
+				if _, err := h.Exec(t.Context(), `INSERT INTO warmup_tasks(task_id,warmup_charged_date,warmup_reply_charged) VALUES($1,($2::timestamptz AT TIME ZONE 'UTC')::date,false)`, f.task, day); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if _, err := h.Exec(t.Context(), `UPDATE tasks SET status='dead_lettered',send_result_state='unknown' WHERE id=$1`, f.task); err != nil {
 				t.Fatal(err)
 			}

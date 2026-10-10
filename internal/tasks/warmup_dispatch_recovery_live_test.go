@@ -70,9 +70,9 @@ func newWarmupRecoveryFixture(t *testing.T) *warmupRecoveryFixture {
 	f.exec(t, `UPDATE email_accounts SET worker_id=$2,warmup=NOW()-INTERVAL '30 days',warmup_pool_type='free',send_recovery_hold=true,send_recovery_reason='unknown',send_recovery_task_id=$3 WHERE id=$1`, f.sender.ID, f.worker, f.task)
 	f.exec(t, `INSERT INTO tasks(id,email_account_id,task_type,status,message_id,completed_at,send_reserved_at,send_result_state,send_executor_nonce,send_executor_worker,send_recipients)
 		VALUES($1,$2,'warmup','completed','',NOW()-INTERVAL '1 hour',NOW()-INTERVAL '1 hour','unknown',$3,$4,ARRAY[$5])`, f.task, f.sender.ID, f.nonce, f.worker, "pick-"+f.atWorkspace.String()[:8]+"@acme.test")
-	f.exec(t, `INSERT INTO warmup_tasks(task_id,lineage_version,dispatch_nonce,dispatch_worker_id) VALUES($1,1,$2,$3)`, f.task, f.nonce, f.worker)
+	f.exec(t, `INSERT INTO warmup_tasks(task_id,lineage_version,dispatch_nonce,dispatch_worker_id,warmup_charged_date,warmup_reply_charged) VALUES($1,1,$2,$3,(NOW() AT TIME ZONE 'UTC')::date,false)`, f.task, f.nonce, f.worker)
 	f.exec(t, `INSERT INTO warmup_tokens(token,task_id,sender_account_id,recipient_account_id) VALUES($1,$2,$3,$4)`, uuid.New(), f.task, f.sender.ID, f.atWorkspace)
-	f.exec(t, `INSERT INTO warmup_statistics(email_account_id,date,emails_sent,emails_replied,target_volume) VALUES($1,CURRENT_DATE,1,0,8)`, f.sender.ID)
+	f.exec(t, `INSERT INTO warmup_statistics(email_account_id,date,emails_sent,emails_replied,target_volume) VALUES($1,(NOW() AT TIME ZONE 'UTC')::date,1,0,8)`, f.sender.ID)
 	t.Cleanup(func() {
 		_, _ = f.pool.Exec(context.Background(), `DELETE FROM warmup_received WHERE sender_account_id=$1`, f.sender.ID)
 		_, _ = f.pool.Exec(context.Background(), `DELETE FROM fleet_nodes WHERE id=$1`, f.worker)
@@ -94,7 +94,7 @@ func (f *warmupRecoveryFixture) checkRetired(t *testing.T) {
 	var released, applied, held bool
 	var sent, tokens int
 	if err := f.pool.QueryRow(t.Context(), `SELECT t.status,t.send_result_state,t.send_released_at IS NOT NULL,t.send_result_applied_at IS NOT NULL,ea.send_recovery_hold,
-		(SELECT emails_sent FROM warmup_statistics WHERE email_account_id=ea.id AND date=CURRENT_DATE),(SELECT count(*) FROM warmup_tokens WHERE task_id=t.id)
+		(SELECT emails_sent FROM warmup_statistics WHERE email_account_id=ea.id AND date=(NOW() AT TIME ZONE 'UTC')::date),(SELECT count(*) FROM warmup_tokens WHERE task_id=t.id)
 		FROM tasks t JOIN email_accounts ea ON ea.id=t.email_account_id WHERE t.id=$1`, f.task).Scan(&status, &state, &released, &applied, &held, &sent, &tokens); err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func TestLiveWarmupRecoveryPreservesExecutionAndReceiptEvidence(t *testing.T) {
 			}
 			var held bool
 			var sent int
-			if err := f.pool.QueryRow(t.Context(), `SELECT send_recovery_hold,(SELECT emails_sent FROM warmup_statistics WHERE email_account_id=$1 AND date=CURRENT_DATE) FROM email_accounts WHERE id=$1`, f.sender.ID).Scan(&held, &sent); err != nil || !held || sent != 1 {
+			if err := f.pool.QueryRow(t.Context(), `SELECT send_recovery_hold,(SELECT emails_sent FROM warmup_statistics WHERE email_account_id=$1 AND date=(NOW() AT TIME ZONE 'UTC')::date) FROM email_accounts WHERE id=$1`, f.sender.ID).Scan(&held, &sent); err != nil || !held || sent != 1 {
 				t.Fatalf("held=%t sent=%d err=%v", held, sent, err)
 			}
 		})

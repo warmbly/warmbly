@@ -93,6 +93,8 @@ Inbox, send history, delivery events, and logs are the ones that grow without li
 
 The pending warmup-filing queue stays on its source instance. The destination resyncs mail and files recognized warmup messages using its own workers and the mailbox's placement setting.
 
+Warmup statistics travel as history. Per-task charge and refund markers reset on import so settling an old task cannot refund another send's destination statistics. Whole-instance database backups retain these markers.
+
 [Test workspace samples](/development/accounts-and-access/#adding-sample-data) move as ordinary contacts, campaigns and CRM records in their corresponding groups; reply templates are in **Assistant**. Their instance-wide admin audit marker does not travel, and import does not grant managed Test access.
 
 A restricted member stays restricted on the destination. Their campaign and folder grants travel with **Campaigns**, so an import without that group brings them in with no campaign access rather than more.

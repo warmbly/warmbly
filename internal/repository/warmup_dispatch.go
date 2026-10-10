@@ -47,10 +47,12 @@ func (r *taskRepository) AuthorizeWarmupDispatch(ctx context.Context, task, mail
 	}
 	nonce := uuid.New()
 	var saved uuid.UUID
-	err = tx.QueryRow(ctx, `UPDATE warmup_tasks w SET dispatch_nonce=$4,dispatch_worker_id=$3
+	err = tx.QueryRow(ctx, `UPDATE warmup_tasks w SET dispatch_nonce=$4,dispatch_worker_id=$3,
+		warmup_charged_date=(NOW() AT TIME ZONE 'UTC')::date,warmup_reply_charged=(w.parent_task_id IS NOT NULL),warmup_refunded_at=NULL
         FROM tasks t JOIN email_accounts ea ON ea.id=t.email_account_id JOIN fleet_nodes n ON n.id=ea.worker_id
         WHERE w.task_id=t.id AND t.id=$1 AND t.email_account_id=$2 AND ea.worker_id=$3 AND t.status='active'
-        AND w.lineage_version=1 AND w.dispatch_nonce IS NULL AND ea.status='active'
+		AND w.lineage_version=1 AND w.dispatch_nonce IS NULL
+		AND (w.warmup_charged_date IS NULL OR w.warmup_refunded_at IS NOT NULL) AND ea.status='active'
         AND NOT ea.send_recovery_hold AND (ea.send_cooldown_until IS NULL OR ea.send_cooldown_until<=NOW())
         AND n.role='worker' AND n.active AND n.last_seen_at>NOW()-$5::interval AND n.warmup_send_protocol>=1
 		RETURNING w.dispatch_nonce`, task, mailbox, worker, nonce, WorkerLivenessWindow).Scan(&saved)
@@ -64,7 +66,7 @@ func (r *taskRepository) AuthorizeWarmupDispatch(ctx context.Context, task, mail
 		return uuid.Nil, err
 	}
 	if _, err = tx.Exec(ctx, `INSERT INTO warmup_statistics(email_account_id,date,emails_sent,emails_replied,target_volume)
-        SELECT $2,CURRENT_DATE,1,CASE WHEN parent_task_id IS NULL THEN 0 ELSE 1 END,0 FROM warmup_tasks WHERE task_id=$1
+		SELECT $2,warmup_charged_date,1,CASE WHEN warmup_reply_charged THEN 1 ELSE 0 END,0 FROM warmup_tasks WHERE task_id=$1
         ON CONFLICT(email_account_id,date) DO UPDATE SET emails_sent=warmup_statistics.emails_sent+1,emails_replied=warmup_statistics.emails_replied+EXCLUDED.emails_replied`, task, mailbox); err != nil {
 		return uuid.Nil, err
 	}
@@ -173,16 +175,15 @@ func (r *taskRepository) DeferWarmupDispatch(ctx context.Context, task, mailbox,
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,269))`, mailbox.String()); err != nil {
 		return err
 	}
-	var reply bool
-	var completed time.Time
+	var deferred uuid.UUID
 	err = tx.QueryRow(ctx, `UPDATE warmup_tasks w SET dispatch_nonce=NULL,dispatch_worker_id=NULL,schedule_revision=schedule_revision+1
         FROM tasks t WHERE w.task_id=t.id AND t.id=$1 AND t.email_account_id=$2 AND w.dispatch_worker_id=$3 AND w.dispatch_nonce=$4
         AND w.dispatch_started_at IS NULL AND w.dispatch_result IS NULL AND t.send_result_applied_at IS NULL
-        RETURNING w.parent_task_id IS NOT NULL,t.completed_at`, task, mailbox, worker, nonce).Scan(&reply, &completed)
+		RETURNING w.task_id`, task, mailbox, worker, nonce).Scan(&deferred)
 	if err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `UPDATE warmup_statistics SET emails_sent=GREATEST(emails_sent-1,0),emails_replied=GREATEST(emails_replied-CASE WHEN $3 THEN 1 ELSE 0 END,0) WHERE email_account_id=$1 AND date=DATE($2)`, mailbox, completed, reply); err != nil {
+	if err = refundWarmupCharge(ctx, tx, task, mailbox); err != nil {
 		return err
 	}
 	if _, err = tx.Exec(ctx, `DELETE FROM warmup_tokens WHERE task_id=$1`, task); err != nil {

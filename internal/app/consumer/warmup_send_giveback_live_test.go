@@ -86,6 +86,7 @@ func TestLiveWarmupSendFailureGivesTheDayBack(t *testing.T) {
 	taskID := uuid.New()
 	exec(`INSERT INTO tasks (id, task_type, email_account_id, status, message_id, completed_at)
 	      VALUES ($1, 'warmup', $2, 'completed', '', $3)`, taskID, f.mailbox, day)
+	exec(`INSERT INTO warmup_tasks(task_id,warmup_charged_date,warmup_reply_charged) VALUES($1,($2::timestamptz AT TIME ZONE 'UTC')::date,true)`, taskID, day)
 	exec(`INSERT INTO warmup_tokens (token, task_id, sender_account_id, recipient_account_id, conversation_turn)
 	      VALUES (gen_random_uuid(), $1, $2, $2, 1)`, taskID, f.mailbox)
 	if err := s.WarmupRepo.IncrementDailyCount(ctx, f.mailbox, day); err != nil {
@@ -98,7 +99,7 @@ func TestLiveWarmupSendFailureGivesTheDayBack(t *testing.T) {
 	read := func() (sent, replied int) {
 		t.Helper()
 		if err := handle.Pool.QueryRow(ctx, `SELECT emails_sent, emails_replied FROM warmup_statistics
-		    WHERE email_account_id = $1 AND date = DATE($2)`, f.mailbox, day).Scan(&sent, &replied); err != nil {
+		    WHERE email_account_id = $1 AND date = ($2::timestamptz AT TIME ZONE 'UTC')::date`, f.mailbox, day).Scan(&sent, &replied); err != nil {
 			t.Fatalf("read statistics: %v", err)
 		}
 		return sent, replied
@@ -167,6 +168,9 @@ func TestLiveWarmupSendGiveBackIsIdempotent(t *testing.T) {
 	      VALUES ($1, 'warmup', $2, 'completed', '', $3)`, taskID, f.mailbox, day); err != nil {
 		t.Fatalf("fixture: %v", err)
 	}
+	if _, err := handle.Pool.Exec(ctx, `INSERT INTO warmup_tasks(task_id,warmup_charged_date,warmup_reply_charged) VALUES($1,($2::timestamptz AT TIME ZONE 'UTC')::date,false)`, taskID, day); err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
 	for i := 0; i < 3; i++ {
 		if err := s.WarmupRepo.IncrementDailyCount(ctx, f.mailbox, day); err != nil {
 			t.Fatalf("increment: %v", err)
@@ -185,7 +189,7 @@ func TestLiveWarmupSendGiveBackIsIdempotent(t *testing.T) {
 
 	var sent int
 	if err := handle.Pool.QueryRow(ctx, `SELECT emails_sent FROM warmup_statistics
-	    WHERE email_account_id = $1 AND date = DATE($2)`, f.mailbox, day).Scan(&sent); err != nil {
+	    WHERE email_account_id = $1 AND date = ($2::timestamptz AT TIME ZONE 'UTC')::date`, f.mailbox, day).Scan(&sent); err != nil {
 		t.Fatalf("read statistics: %v", err)
 	}
 	if sent != 2 {

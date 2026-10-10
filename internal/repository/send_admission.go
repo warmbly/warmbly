@@ -228,7 +228,7 @@ func (r *taskRepository) ReserveOutbound(ctx context.Context, in OutboundReserva
 	}
 	_, err = tx.Exec(ctx, `UPDATE tasks SET send_reserved_at=NOW(),send_business_day=(NOW() AT TIME ZONE $2)::date,send_recipients=$3,
 	 send_released_at=NULL,send_executor_nonce=$4,send_executor_worker=$5,send_executor_started_at=NULL,send_executor_result=NULL,
-	 send_result_state='unknown',status='completed',completed_at=NOW() WHERE id=$1`, in.TaskID, timezone, recipients, nonce, in.WorkerID)
+	 send_result_state='unknown',status='completed',completed_at=CASE WHEN $6 THEN COALESCE(completed_at,NOW()) ELSE NOW() END WHERE id=$1`, in.TaskID, timezone, recipients, nonce, in.WorkerID, lane == "warmup")
 	if err != nil {
 		return uuid.Nil, err
 	}
@@ -496,7 +496,7 @@ func (r *taskRepository) cancelOutbound(ctx context.Context, task, mailbox, work
 		}
 	}
 	if lane == "warmup" {
-		if _, err = tx.Exec(ctx, `UPDATE warmup_statistics SET emails_sent=GREATEST(emails_sent-1,0),emails_replied=GREATEST(emails_replied-CASE WHEN w.parent_task_id IS NULL THEN 0 ELSE 1 END,0) FROM warmup_tasks w JOIN tasks t ON t.id=w.task_id WHERE w.task_id=$2 AND warmup_statistics.email_account_id=$1 AND date=DATE(t.completed_at)`, mailbox, task); err != nil {
+		if err = refundWarmupCharge(ctx, tx, task, mailbox); err != nil {
 			return err
 		}
 		if _, err = tx.Exec(ctx, `DELETE FROM warmup_tokens WHERE task_id=$1`, task); err != nil {
