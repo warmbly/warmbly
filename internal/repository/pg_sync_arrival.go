@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -40,7 +39,7 @@ func validateArrival(data EmailMessageData, pending *PendingArrival) (uuid.UUID,
 func (r *pgEmailMessageMapRepository) AdmitArrival(ctx context.Context, data EmailMessageData, pending *PendingArrival) error {
 	user, email, id, err := validateArrival(data, pending)
 	if err != nil {
-		return err
+		return arrivalFailure("validation", err)
 	}
 	if r.cipher == nil {
 		return ErrArrivalOutboxUnsupported
@@ -48,41 +47,41 @@ func (r *pgEmailMessageMapRepository) AdmitArrival(ctx context.Context, data Ema
 	var org uuid.UUID
 	err = r.db.QueryRow(ctx, `SELECT organization_id FROM email_accounts WHERE id=$1 AND user_id=$2`, email, user).Scan(&org)
 	if err != nil {
-		return fmt.Errorf("arrival mailbox ownership: %w", err)
+		return arrivalFailure("mailbox_ownership", err)
 	}
 	sealed, err := r.cipher.Cipher(ctx, org)
 	if err != nil {
-		return err
+		return arrivalFailure("organization_key", err)
 	}
 	raw, err := json.Marshal(pending)
 	if err != nil {
-		return err
+		return arrivalFailure("payload_encoding", err)
 	}
 	payload, err := sealed.Encrypt(ctx, string(raw))
 	if err != nil {
-		return err
+		return arrivalFailure("payload_encryption", err)
 	}
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
-		return err
+		return arrivalFailure("database_begin", err)
 	}
 	defer tx.Rollback(context.Background())
 	// Recheck and lock ownership after crypto, without nesting key-store I/O in the transaction.
 	var owned uuid.UUID
 	if err = tx.QueryRow(ctx, `SELECT id FROM email_accounts WHERE id=$1 AND user_id=$2 AND organization_id=$3 FOR SHARE`, email, user, org).Scan(&owned); err != nil {
-		return fmt.Errorf("arrival mailbox ownership: %w", err)
+		return arrivalFailure("mailbox_ownership_recheck", err)
 	}
 	// A retry after an ambiguous response adopts the first canonical identity.
 	inserted, err := tx.Exec(ctx, `INSERT INTO email_message_map(user_id,email_id,message_id,id,thread_id)
 		VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`, user, email, data.MessageID, id, data.ThreadID)
 	if err != nil {
-		return err
+		return arrivalFailure("mapping_write", err)
 	}
 	if inserted.RowsAffected() != 0 {
 		_, err = tx.Exec(ctx, `INSERT INTO sync_arrival_outbox(user_id,email_id,organization_id,message_id,id,payload)
 			VALUES($1,$2,$3,$4,$5,$6)`, user, email, org, data.MessageID, id, payload)
 		if err != nil {
-			return err
+			return arrivalFailure("outbox_write", err)
 		}
 	} else {
 		var pending bool
@@ -90,14 +89,17 @@ func (r *pgEmailMessageMapRepository) AdmitArrival(ctx context.Context, data Ema
 			JOIN sync_arrival_outbox o USING(user_id,email_id,message_id,id)
 			WHERE m.user_id=$1 AND m.email_id=$2 AND m.message_id=$3 AND o.organization_id=$4)`, user, email, data.MessageID, org).Scan(&pending)
 		if err != nil {
-			return err
+			return arrivalFailure("durability_check", err)
 		}
 		// Legacy, deleted and already-delivered maps have no durable admission proof.
 		if !pending {
 			return ErrArrivalAdmissionUnconfirmed
 		}
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return arrivalFailure("database_commit", err)
+	}
+	return nil
 }
 
 func (r *pgEmailMessageMapRepository) ArrivalBacklog(ctx context.Context) (ArrivalBacklog, error) {

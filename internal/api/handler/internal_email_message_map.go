@@ -7,6 +7,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -22,16 +24,35 @@ func (h *Handler) InternalAdmitEmailArrival(c *gin.Context) {
 	}
 	repo, ok := h.EmailMessageMap.(repository.ArrivalAdmission)
 	if !ok {
+		logArrivalAdmissionFailure(c, p.Map, repository.ErrArrivalOutboxUnsupported)
 		c.Status(http.StatusServiceUnavailable)
 		return
 	}
 	if err := repo.AdmitArrival(c.Request.Context(), repository.EmailMessageData(p.Map), p.Pending); err != nil {
+		logArrivalAdmissionFailure(c, p.Map, err)
 		// Do not expose message content or org encryption failures over the protocol.
 		c.Status(http.StatusServiceUnavailable)
 		return
 	}
 	c.Header("X-Warmbly-Arrival-Durable", "1")
 	c.Status(http.StatusNoContent)
+}
+
+func logArrivalAdmissionFailure(c *gin.Context, mapping emailMessageMapPayload, err error) {
+	stage, state := repository.ArrivalAdmissionDiagnostic(err)
+	event := log.Warn().Timestamp().Str("admission_stage", stage)
+	if state != "" {
+		event.Str("sqlstate", state)
+	}
+	for name, raw := range map[string]string{
+		"user_id": mapping.UserID, "email_id": mapping.EmailID, "arrival_id": mapping.ID,
+		"request_id": c.GetString(middleware.RequestIDContextKey),
+	} {
+		if id, err := uuid.Parse(raw); err == nil && id != uuid.Nil {
+			event.Str(name, id.String())
+		}
+	}
+	event.Msg("sync arrival admission deferred; durability not confirmed")
 }
 
 // Internal email-message-map endpoints. Workers call these instead of touching
