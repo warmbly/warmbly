@@ -129,8 +129,10 @@ func (r *MonitoringRepository) loadingSource() monitoring.Source {
 	}}
 }
 
+const workerHeartbeatMissingPredicate = `w.last_seen_at IS NULL OR w.last_seen_at<=observation.at-INTERVAL '5 minutes' OR w.last_seen_at>observation.at`
+
 func (r *MonitoringRepository) workerSource() monitoring.Source {
-	return monitoring.Source{ID: "workers", Permission: models.AdminPermViewWorkers, Collect: func(ctx context.Context, at time.Time) (models.MonitoringSource, error) {
+	return monitoring.Source{ID: "workers", Permission: models.AdminPermViewWorkers, Collect: func(ctx context.Context, _ time.Time) (models.MonitoringSource, error) {
 		out := models.MonitoringSource{Metrics: []models.MonitoringMetric{}}
 		if r == nil || r.pool == nil {
 			out.Availability = models.MonitoringUnavailable
@@ -138,39 +140,80 @@ func (r *MonitoringRepository) workerSource() monitoring.Source {
 			out.Reason = "dependency_missing"
 			return out, nil
 		}
-		q := monitoringQuery{id: "workers_missing_heartbeat", title: "Active workers without recent heartbeat", unit: "workers", condition: models.MonitoringTelemetryStale, severity: "warning", note: "Native node liveness window is 5m. Missing heartbeat is registration evidence, not proof of power failure or lost throughput."}
-		m := monitoringMetric(q, at, "/fleet")
+		q := monitoringQuery{id: "workers_missing_heartbeat", title: "Active workers without recent heartbeat", unit: "workers", condition: models.MonitoringTelemetryStale, severity: "warning", note: "Native node liveness window is 5m. Missing heartbeat is registration evidence, not proof of power failure or lost throughput. Future heartbeat stamps are clock uncertainty relative to the database observation, not proof of a stopped worker."}
+		var observed time.Time
+		var future int64
+		m := monitoringMetric(q, observed, "/fleet")
+		m.ObservedAt = &observed
 		threshold := int64(models.NodeLivenessWindow.Seconds())
 		m.ThresholdSeconds = &threshold
-		err := r.pool.QueryRow(ctx, `WITH stale AS(SELECT id,last_seen_at FROM fleet_nodes WHERE role='worker' AND active AND (last_seen_at IS NULL OR last_seen_at<=$1::timestamptz-INTERVAL '5 minutes' OR last_seen_at>$1)), assigned AS(SELECT e.id,e.organization_id FROM email_accounts e JOIN stale s ON s.id=e.worker_id)
-		SELECT (SELECT COUNT(*) FROM stale),(SELECT COUNT(*) FROM assigned),(SELECT COUNT(DISTINCT organization_id) FROM assigned),(SELECT COUNT(*) FROM assigned WHERE organization_id IS NULL),(SELECT MIN(last_seen_at) FROM stale),(SELECT MAX(last_seen_at) FROM stale),NULL::timestamptz`, at).Scan(&m.Count, &m.AffectedMailboxes, &m.AffectedOrganizations, &m.UnknownOrganizationRows, &m.EvidenceAt, &m.LatestEvidenceAt, &m.NextEligibleAt)
-		if err != nil {
-			return out, err
-		}
-		classifyMonitoringMetric(&m)
-		out.Metrics = append(out.Metrics, m)
-		rows, err := r.pool.Query(ctx, `SELECT n.id::text,n.last_seen_at,COUNT(e.id),COUNT(DISTINCT e.organization_id),COUNT(e.id) FILTER(WHERE e.organization_id IS NULL) FROM fleet_nodes n LEFT JOIN email_accounts e ON e.worker_id=n.id WHERE n.role='worker' AND n.active AND (n.last_seen_at IS NULL OR n.last_seen_at<=$1::timestamptz-INTERVAL '5 minutes' OR n.last_seen_at>$1) GROUP BY n.id ORDER BY n.last_seen_at NULLS FIRST,n.id LIMIT 20`, at)
+		// Capture the worker snapshot before taking its single database observation clock.
+		rows, err := r.pool.Query(ctx, `WITH workers AS MATERIALIZED (
+			SELECT id,last_seen_at FROM fleet_nodes WHERE role='worker' AND active
+		), observation AS MATERIALIZED (
+			SELECT clock_timestamp() AS at,COUNT(*) FROM workers
+		), stale AS MATERIALIZED (
+			SELECT w.id,w.last_seen_at FROM workers w CROSS JOIN observation WHERE `+workerHeartbeatMissingPredicate+`
+		), assigned AS MATERIALIZED (
+			SELECT e.worker_id,e.organization_id FROM email_accounts e JOIN stale s ON s.id=e.worker_id
+		), summary AS (
+			SELECT (SELECT COUNT(*) FROM stale) AS count,
+				(SELECT COUNT(*) FROM stale CROSS JOIN observation WHERE last_seen_at>observation.at) AS future_count,
+				(SELECT COUNT(*) FROM assigned) AS mailboxes,
+				(SELECT COUNT(DISTINCT organization_id) FROM assigned) AS organizations,
+				(SELECT COUNT(*) FROM assigned WHERE organization_id IS NULL) AS unknown_organizations,
+				(SELECT MIN(last_seen_at) FROM stale) AS first_seen,
+				(SELECT MAX(last_seen_at) FROM stale) AS last_seen
+		), sample AS MATERIALIZED (
+			SELECT id,last_seen_at FROM stale ORDER BY last_seen_at NULLS FIRST,id LIMIT 20
+		), details AS (
+			SELECT a.worker_id,COUNT(*) AS mailboxes,COUNT(DISTINCT a.organization_id) AS organizations,
+				COUNT(*) FILTER(WHERE a.organization_id IS NULL) AS unknown_organizations
+			FROM assigned a JOIN sample s ON s.id=a.worker_id GROUP BY a.worker_id
+		)
+		SELECT observation.at,summary.count,summary.future_count,summary.mailboxes,summary.organizations,summary.unknown_organizations,summary.first_seen,summary.last_seen,
+			sample.id::text,sample.last_seen_at,COALESCE(details.mailboxes,0),COALESCE(details.organizations,0),COALESCE(details.unknown_organizations,0)
+		FROM summary CROSS JOIN observation LEFT JOIN sample ON true
+		LEFT JOIN details ON details.worker_id=sample.id
+		ORDER BY sample.last_seen_at NULLS FIRST,sample.id`)
 		if err != nil {
 			return out, err
 		}
 		defer rows.Close()
 		for rows.Next() {
-			v := monitoringMetric(q, at, "")
+			var scopeID *string
+			v := monitoringMetric(q, observed, "")
 			one := int64(1)
 			v.Count = &one
 			v.ThresholdSeconds = &threshold
-			if err := rows.Scan(&v.ScopeID, &v.EvidenceAt, &v.AffectedMailboxes, &v.AffectedOrganizations, &v.UnknownOrganizationRows); err != nil {
+			if err := rows.Scan(&observed, &m.Count, &future, &m.AffectedMailboxes, &m.AffectedOrganizations, &m.UnknownOrganizationRows, &m.EvidenceAt, &m.LatestEvidenceAt, &scopeID, &v.EvidenceAt, &v.AffectedMailboxes, &v.AffectedOrganizations, &v.UnknownOrganizationRows); err != nil {
 				return out, err
 			}
+			if scopeID == nil {
+				continue
+			}
+			v.ScopeID, v.ObservedAt = *scopeID, &observed
 			v.ID = "worker_missing_heartbeat"
 			v.Investigate = "/workers/" + v.ScopeID
+			if v.EvidenceAt != nil && v.EvidenceAt.After(observed) {
+				v.Condition = models.MonitoringUnknown
+			}
 			out.Metrics = append(out.Metrics, v)
 		}
 		if err := rows.Err(); err != nil {
 			return out, err
 		}
+		if m.Count == nil {
+			return out, errors.New("incomplete worker monitoring rows")
+		}
+		if *m.Count > 0 && future == *m.Count {
+			m.Condition = models.MonitoringUnknown
+		}
+		classifyMonitoringMetric(&m)
 		expected := *m.Count
-		measured := int64(len(out.Metrics) - 1)
+		measured := int64(len(out.Metrics))
+		out.Metrics = append([]models.MonitoringMetric{m}, out.Metrics...)
+		out.ObservedAt = &observed
 		out.ExpectedScopes = &expected
 		out.MeasuredScopes = &measured
 		if measured < expected {

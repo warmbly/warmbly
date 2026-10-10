@@ -56,6 +56,19 @@ func TestMonitoringCoalescesCacheAndPreservesObservationTimes(t *testing.T) {
 	}
 }
 
+func TestMonitoringPreservesSourceObservationAfterRefreshStart(t *testing.T) {
+	start := time.Date(2026, 10, 10, 16, 0, 59, 0, time.UTC)
+	observed, checked := start.Add(650*time.Millisecond), start.Add(700*time.Millisecond)
+	s := New([]Source{{ID: "workers", Permission: models.AdminPermViewWorkers, Collect: func(_ context.Context, _ time.Time) (models.MonitoringSource, error) {
+		return models.MonitoringSource{ObservedAt: &observed, CheckedAt: checked, Metrics: []models.MonitoringMetric{{ID: "workers_missing_heartbeat", ObservedAt: &observed, Availability: models.MonitoringFresh}}}, nil
+	}}})
+	s.now = func() time.Time { return start }
+	out := s.Snapshot(t.Context(), models.AdminPermViewWorkers)
+	if !out.CheckedAt.Equal(start) || !out.Sources[0].CheckedAt.Equal(start) || !out.Sources[0].ObservedAt.Equal(observed) || !out.Sources[0].Metrics[0].ObservedAt.Equal(observed) {
+		t.Fatalf("source observation overwritten by snapshot start: %+v", out)
+	}
+}
+
 func TestMonitoringFailedRefreshRetainsOriginalEvidenceThenExpires(t *testing.T) {
 	now := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
 	fail := false

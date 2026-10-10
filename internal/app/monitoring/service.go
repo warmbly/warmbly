@@ -114,7 +114,7 @@ func (s *Service) refresh(ready chan struct{}) {
 			if result.Coverage == "" {
 				result.Coverage = "complete"
 			}
-			if result.Availability == models.MonitoringFresh {
+			if result.Availability == models.MonitoringFresh && result.ObservedAt == nil {
 				result.ObservedAt = &now
 			}
 			if result.Metrics == nil {
