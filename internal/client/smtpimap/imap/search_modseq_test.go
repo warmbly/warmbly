@@ -72,6 +72,13 @@ const (
 	searchOK       = "* SEARCH 5 7 (MODSEQ 21)\r\n$TAG OK Search completed"
 	// Zoho answers an empty match with a double space.
 	searchZohoEmpty = "* SEARCH  (MODSEQ 21)\r\n$TAG OK Search completed"
+	// Refusals of the form itself, which leave the session usable.
+	fetchRefused   = "$TAG BAD Unknown FETCH modifier CHANGEDSINCE"
+	esearchRefused = "$TAG BAD Unknown search return option"
+	searchRefusal  = "$TAG NO [CANNOT] MODSEQ search not supported"
+	// Answers that say nothing about the form and must stay retryable.
+	fetchBareFailure = "$TAG NO UID FETCH failed"
+	fetchUnavailable = "$TAG NO [UNAVAILABLE] Try again later"
 )
 
 // runChangedSince is one sync step as the worker drives it: reconnect when the
@@ -103,6 +110,9 @@ func TestSearchChangedSinceFindsAReadableForm(t *testing.T) {
 		{"fetch unreadable, esearch fine", changedSinceDialect{fetch: fetchUnreadable, esearch: esearchOK, search: searchZohoEmpty}, true, changedSinceESearch, 1, true},
 		{"fetch and esearch unreadable", changedSinceDialect{fetch: fetchUnreadable, esearch: esearchDovecot, search: searchOK}, true, changedSinceSearch, 2, true},
 		{"no esearch skips that form", changedSinceDialect{fetch: fetchUnreadable, search: searchOK}, false, changedSinceSearch, 1, true},
+		{"fetch refused, esearch asked in the same pass", changedSinceDialect{fetch: fetchRefused, esearch: esearchOK}, true, changedSinceESearch, 0, true},
+		{"refused then unreadable", changedSinceDialect{fetch: fetchRefused, esearch: esearchDovecot, search: searchOK}, true, changedSinceSearch, 1, true},
+		{"every form refused falls back to uidnext", changedSinceDialect{fetch: fetchRefused, esearch: esearchRefused, search: searchRefusal}, true, changedSinceNone, 1, false},
 		{"nothing readable falls back to uidnext", changedSinceDialect{fetch: fetchUnreadable, esearch: esearchDovecot, search: searchZohoEmpty}, true, changedSinceNone, 3, false},
 	}
 	for _, tc := range cases {
@@ -174,6 +184,29 @@ func TestSearchChangedSinceEmptyViewSkipsTheQuery(t *testing.T) {
 	}
 	if n := len(wire.commands("FETCH")); n != 0 {
 		t.Fatalf("empty view sent %d FETCH commands", n)
+	}
+}
+
+// A transient NO is about the moment, not the form: it retries on the next
+// pass and never costs the server its CONDSTORE path.
+func TestSearchChangedSinceKeepsTheFormOnTransientAnswers(t *testing.T) {
+	for name, fetch := range map[string]string{"bare failure": fetchBareFailure, "unavailable": fetchUnavailable} {
+		t.Run(name, func(t *testing.T) {
+			d := changedSinceDialect{fetch: fetch, esearch: esearchOK, search: searchOK, exists: 2}
+			c, _ := rewritingServer(t, imap.CapSet{imap.CapIMAP4rev1: {}}, d.reply, advertising("CONDSTORE ESEARCH"))
+			for range 3 {
+				_, err := runChangedSince(t, c)
+				if err == nil || err.Code != errx.MailErrorCodeServerUnreachable {
+					t.Fatalf("err = %v, want a retryable SERVER_UNREACHABLE", err)
+				}
+			}
+			if got := changedSinceMode(c.changedSince.Load()); got != changedSinceFetch {
+				t.Fatalf("mode = %v, want %v", got, changedSinceFetch)
+			}
+			if !c.HasCondStore() {
+				t.Fatal("a transient answer turned CONDSTORE off")
+			}
+		})
 	}
 }
 

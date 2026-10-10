@@ -599,16 +599,39 @@ func (c *Client) SearchChangedSince(modSeq uint64) ([]imap.UID, *errx.MailError)
 	if err := c.resumeSyncLocked(); err != nil {
 		return nil, c.handleError(err)
 	}
-	mode := changedSinceMode(c.changedSince.Load())
-	uids, err := c.changedSinceLocked(mode, modSeq)
-	if err != nil {
-		if unreadableReply(err) {
-			c.stepDownChangedSince(mode, err)
+	for {
+		mode := changedSinceMode(c.changedSince.Load())
+		sel := c.selection.Load()
+		uids, err := c.changedSinceLocked(mode, modSeq)
+		if err == nil {
+			slices.Sort(uids)
+			return uids, nil
+		}
+		switch {
+		case unreadableReply(err):
+			// The session is gone; the next pass reconnects and asks the next way.
+			c.stepDownChangedSince(mode, err, false)
+		case changedSinceRefused(err, sel, c.selection.Load()) && c.stepDownChangedSince(mode, err, true):
+			// A refusal leaves the session usable, so the next form is asked now.
+			if c.condStore.Load() {
+				continue
+			}
+			// Nothing left to ask: the next pass takes the UIDNEXT path, so this one only retries.
+			return nil, errx.ErrMailServerUnreachable
 		}
 		return nil, c.handleError(err)
 	}
-	slices.Sort(uids)
-	return uids, nil
+}
+
+// changedSinceRefused is the server declining the form itself, against a
+// folder that stayed selected. A transient NO (UNAVAILABLE, INUSE, SERVERBUG)
+// and the bare "UID FETCH failed" OVH and Zoho send under load stay retryable.
+func changedSinceRefused(err error, before, after *selection) bool {
+	if before == nil || before != after || !searchRefused(err) {
+		return false
+	}
+	var imapErr *imap.Error
+	return !errors.As(err, &imapErr) || !bareCommandFailure(imapErr.Text)
 }
 
 // changedSinceMode is one way of asking what changed since a mod-sequence,
@@ -674,26 +697,31 @@ func (c *Client) changedSinceLocked(mode changedSinceMode, modSeq uint64) ([]ima
 	return data.AllUIDs(), nil
 }
 
-// stepDownChangedSince moves past a mode whose answer could not be read. The
-// session is already gone, so the next pass reconnects and asks the next way.
-func (c *Client) stepDownChangedSince(from changedSinceMode, cause error) {
+// stepDownChangedSince moves past a mode the server could not answer usably,
+// reporting whether this call made the move.
+func (c *Client) stepDownChangedSince(from changedSinceMode, cause error, refused bool) bool {
 	next := from + 1
 	if next == changedSinceESearch && !c.eSearch.Load() {
 		next++
 	}
 	if next > changedSinceNone {
-		return
+		return false
 	}
 	if !c.changedSince.CompareAndSwap(int32(from), int32(next)) {
-		return
+		return false
 	}
 	if next == changedSinceNone {
 		c.condStore.Store(false)
 	}
+	ev := log.Warn().Str("host", c.host()).Str("from", from.String()).Str("to", next.String()).Str("reply", cause.Error())
+	if refused {
+		ev.Msg("imap: server refused a change query; asking another way from now on")
+		return true
+	}
 	msg := cause.Error()
 	c.lastUnreadable.Store(&msg)
-	log.Warn().Str("host", c.host()).Str("from", from.String()).Str("to", next.String()).Str("reply", cause.Error()).
-		Msg("imap: server answered a change query in a form that cannot be read; asking another way from now on")
+	ev.Msg("imap: server answered a change query in a form that cannot be read; asking another way from now on")
+	return true
 }
 
 // SearchAll returns every UID in the selected mailbox, ascending. An expunge
