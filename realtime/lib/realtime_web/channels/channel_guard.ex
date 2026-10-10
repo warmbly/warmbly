@@ -21,6 +21,45 @@ defmodule RealtimeWeb.ChannelGuard do
 
   require Logger
 
+  @authorization_ttl_ms 30_000
+
+  def authorization_ttl_ms, do: @authorization_ttl_ms
+
+  def remember_authorization(socket, member, checked_at \\ System.monotonic_time(:millisecond)) do
+    socket
+    |> Phoenix.Socket.assign(:member, member)
+    |> Phoenix.Socket.assign(:permissions, Map.get(member, :permissions, 0))
+    |> Phoenix.Socket.assign(:authorization_checked_at, checked_at)
+  end
+
+  def refresh_authorization(socket, lookup, force \\ false) do
+    now = System.monotonic_time(:millisecond)
+
+    if not force and fresh?(socket.assigns[:authorization_checked_at], now) do
+      {:ok, socket}
+    else
+      case lookup.() do
+        {:ok, member} ->
+          if fresh?(now, System.monotonic_time(:millisecond)),
+            do: {:ok, remember_authorization(socket, member, now)},
+            else: {:error, :authorization_expired}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  def fresh?(checked_at, now) when is_integer(checked_at),
+    do: now - checked_at >= 0 and now - checked_at < @authorization_ttl_ms
+
+  def fresh?(_, _), do: false
+
+  def schedule_authorization_refresh(socket) do
+    age = System.monotonic_time(:millisecond) - socket.assigns.authorization_checked_at
+    Process.send_after(self(), :refresh_authorization, max(@authorization_ttl_ms - age, 0))
+  end
+
   @doc """
   Spend one unit of this user's channel-join budget.
 

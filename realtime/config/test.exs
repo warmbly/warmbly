@@ -12,6 +12,8 @@ config :realtime,
   # Count rate-limit hits in memory: the suite must run with no Redis.
   rate_limit_counter: Realtime.Test.Counter
 
+config :realtime, auth_repo: Realtime.Test.AuthRepo
+
 # No database in the test env: these tests build sockets directly and never
 # reach Auth. One connection keeps the unreachable-Postgres retry noise to a
 # single line instead of five.
