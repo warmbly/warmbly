@@ -48,8 +48,8 @@ func (h *Handler) AdminDevicePoll(c *gin.Context) {
 		errx.JSON(c, xerr)
 		return
 	}
-	if res.Status == "approved" && h.AdminService != nil {
-		h.AdminService.LogAdminAction(c.Request.Context(), res.UserID, "admin_device_session_issued", "session", nil, nil, c.ClientIP(), "warmblyctl")
+	if res.Status == "approved" && res.UserID != nil && h.AdminService != nil {
+		h.AdminService.LogAdminAction(c.Request.Context(), *res.UserID, "admin_device_session_issued", "session", nil, nil, c.ClientIP(), "warmblyctl")
 	}
 	c.JSON(http.StatusOK, res)
 }

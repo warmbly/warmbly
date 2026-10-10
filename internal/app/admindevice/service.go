@@ -82,7 +82,7 @@ type Description struct {
 type Poll struct {
 	Status string        `json:"status"`
 	Token  *models.Token `json:"token,omitempty"`
-	UserID uuid.UUID     `json:"user_id,omitempty"`
+	UserID *uuid.UUID    `json:"user_id,omitempty"`
 }
 
 func randomSecret() (string, error) {
@@ -290,7 +290,7 @@ func (s *Service) Poll(ctx context.Context, secret string) (*Poll, *errx.Error) 
 		if xerr != nil {
 			return nil, xerr
 		}
-		res.UserID = r.UserID
+		res.UserID = &r.UserID
 	}
 	return res, nil
 }

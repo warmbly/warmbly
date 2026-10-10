@@ -2,6 +2,7 @@ package admindevice
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"strings"
 	"sync"
@@ -15,6 +16,13 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/crypt"
 )
+
+func TestAdminDevicePendingResponseDoesNotReturnUserOrToken(t *testing.T) {
+	raw, err := json.Marshal(Poll{Status: "pending"})
+	if err != nil || string(raw) != `{"status":"pending"}` {
+		t.Fatal("pending response differs from contract", string(raw), err)
+	}
+}
 
 type deviceIssuer struct {
 	count        atomic.Int32
