@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hamba/avro/v2"
+	"github.com/iskorotkov/avro/v2"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -84,12 +84,12 @@ func TestLiveLegacyJSONAndAvroFailurePersistConservativeAdmission(t *testing.T) 
 						t.Fatal(err)
 					}
 				} else {
-					data, err := avro.Marshal(writer, models.JobEvent{Type: models.JobEventTypeEmailFailed, Body: original})
+					data, err := models.EventAvro.Marshal(writer, models.JobEvent{Type: models.JobEventTypeEmailFailed, Body: original})
 					if err != nil {
 						t.Fatal(err)
 					}
 					var event models.JobEvent
-					if err = avro.Unmarshal(reader, data, &event); err != nil {
+					if err = models.EventAvro.Unmarshal(reader, data, &event); err != nil {
 						t.Fatal(err)
 					}
 					var ok bool

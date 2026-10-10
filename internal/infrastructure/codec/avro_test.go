@@ -4,13 +4,16 @@ package codec
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
+	"math"
 	"slices"
+	"strconv"
 	"testing"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/schemaregistry"
 	"github.com/confluentinc/confluent-kafka-go/v2/schemaregistry/rest"
-	"github.com/hamba/avro/v2"
+	"github.com/iskorotkov/avro/v2"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
@@ -25,6 +28,75 @@ func TestAvroCodec_Name(t *testing.T) {
 	c := &AvroCodec{}
 	if got := c.Name(); got != "avro" {
 		t.Fatalf("expected name 'avro', got %q", got)
+	}
+}
+
+func TestAvroCodec_RejectsMalformedCollectionCounts(t *testing.T) {
+	for _, schemaJSON := range []string{
+		`{"type":"array","items":"long"}`,
+		`{"type":"map","values":"long"}`,
+	} {
+		for _, count := range []int64{65537, math.MaxInt64, math.MinInt64} {
+			t.Run(schemaJSON+"/"+strconv.FormatInt(count, 10), func(t *testing.T) {
+				schema := avro.MustParse(schemaJSON)
+				c := &AvroCodec{client: &fakeRegistry{}, schemas: map[int]avro.Schema{7: schema}}
+				payload := binary.AppendVarint([]byte{0, 0, 0, 0, 7}, count)
+				var target any = &[]int64{}
+				if schema.Type() == avro.Map {
+					target = &map[string]int64{}
+				}
+				if err := c.Deserialize(context.Background(), "topic", payload, target); err == nil {
+					t.Fatal("malformed block count was accepted")
+				}
+			})
+		}
+	}
+}
+
+func TestAvroCodec_CollectionLimitSpansBlocks(t *testing.T) {
+	for _, schemaJSON := range []string{
+		`{"type":"array","items":"long"}`,
+		`{"type":"map","values":"long"}`,
+	} {
+		t.Run(schemaJSON, func(t *testing.T) {
+			schema := avro.MustParse(schemaJSON)
+			c := &AvroCodec{client: &fakeRegistry{}, schemas: map[int]avro.Schema{7: schema}}
+			payload := binary.AppendVarint([]byte{0, 0, 0, 0, 7}, 65536)
+			for range 65536 {
+				if schema.Type() == avro.Map {
+					payload = append(payload, 2, 'a')
+				}
+				payload = append(payload, 0)
+			}
+			var target any = &[]int64{}
+			if schema.Type() == avro.Map {
+				target = &map[string]int64{}
+			}
+			if err := c.Deserialize(context.Background(), "topic", append(slices.Clone(payload), 0), target); err != nil {
+				t.Fatalf("valid boundary block rejected: %v", err)
+			}
+			payload = binary.AppendVarint(payload, 1)
+			if err := c.Deserialize(context.Background(), "topic", payload, target); err == nil {
+				t.Fatal("second block bypassed collection limit")
+			}
+		})
+	}
+}
+
+func TestAvroCodec_ExistingWireFormat(t *testing.T) {
+	schema := avro.MustParse(`{"type":"array","items":"long"}`)
+	c := &AvroCodec{client: &fakeRegistry{}, schemas: map[int]avro.Schema{7: schema}}
+	payload := []byte{0, 0, 0, 0, 7, 6, 2, 4, 6, 0}
+	var got []int64
+	if err := c.Deserialize(context.Background(), "topic", payload, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got, []int64{1, 2, 3}) {
+		t.Fatalf("existing wire payload changed: %v", got)
+	}
+	encoded, err := models.EventAvro.Marshal(schema, got)
+	if err != nil || !slices.Equal(encoded, []byte{5, 6, 2, 4, 6, 0}) {
+		t.Fatalf("invalid block-size wire encoding: %x, %v", encoded, err)
 	}
 }
 

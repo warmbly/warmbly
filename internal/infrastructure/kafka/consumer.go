@@ -26,7 +26,6 @@ type consumerClient interface {
 
 type Consumer struct {
 	c               consumerClient
-	Avrov2          *Avrov2
 	mu              sync.Mutex
 	closed          bool
 	retryLimit      int
@@ -70,10 +69,6 @@ func (conf *ConsumerConfig) Connect() (*Consumer, error) {
 	return &Consumer{
 		c: consumer,
 	}, nil
-}
-
-func (cons *Consumer) WithAvrov2(avrov2 *Avrov2) {
-	cons.Avrov2 = avrov2
 }
 
 func (cons *Consumer) Close() {

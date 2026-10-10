@@ -5,7 +5,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hamba/avro/v2"
+	"github.com/iskorotkov/avro/v2"
+	"github.com/warmbly/warmbly/internal/models"
 )
 
 // Every value published through the codec has to describe its own schema; the
@@ -32,12 +33,12 @@ func TestEmailSentEventRoundTrips(t *testing.T) {
 		Subject:    "hello",
 		SentAt:     time.Now().Truncate(time.Millisecond).UTC(),
 	}
-	b, err := avro.Marshal(in.Schema(), in)
+	b, err := models.EventAvro.Marshal(in.Schema(), in)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
 	var out EmailSentEvent
-	if err := avro.Unmarshal(in.Schema(), b, &out); err != nil {
+	if err := models.EventAvro.Unmarshal(in.Schema(), b, &out); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if out != in {
@@ -55,12 +56,12 @@ func TestWarmupEmailSentEventRoundTrips(t *testing.T) {
 		IsReply:         true,
 		SentAt:          time.Now().Truncate(time.Millisecond).UTC(),
 	}
-	b, err := avro.Marshal(in.Schema(), in)
+	b, err := models.EventAvro.Marshal(in.Schema(), in)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
 	var out WarmupEmailSentEvent
-	if err := avro.Unmarshal(in.Schema(), b, &out); err != nil {
+	if err := models.EventAvro.Unmarshal(in.Schema(), b, &out); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if out != in {

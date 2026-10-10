@@ -3,7 +3,7 @@ package events
 import (
 	"fmt"
 
-	"github.com/hamba/avro/v2"
+	"github.com/iskorotkov/avro/v2"
 	"github.com/warmbly/warmbly/internal/models"
 )
 

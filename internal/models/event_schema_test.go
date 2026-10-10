@@ -1,12 +1,13 @@
 package models
 
 import (
+	"encoding/base64"
 	"fmt"
 	"reflect"
 	"testing"
 	"time"
 
-	"github.com/hamba/avro/v2"
+	"github.com/iskorotkov/avro/v2"
 )
 
 // Every event the bus carries has to survive the codec. This is what makes the
@@ -21,7 +22,7 @@ func TestEveryWorkerCommandRoundTrips(t *testing.T) {
 			in := WorkerEvent{Type: eventType, Body: want}
 			payload := encode(t, schema, in)
 			var out WorkerEvent
-			if err := avro.Unmarshal(schema, payload, &out); err != nil {
+			if err := EventAvro.Unmarshal(schema, payload, &out); err != nil {
 				t.Fatalf("decode: %v", err)
 			}
 			if out.Type != eventType {
@@ -40,7 +41,7 @@ func TestEveryWorkerResultRoundTrips(t *testing.T) {
 			in := JobEvent{Type: eventType, Body: want}
 			payload := encode(t, schema, in)
 			var out JobEvent
-			if err := avro.Unmarshal(schema, payload, &out); err != nil {
+			if err := EventAvro.Unmarshal(schema, payload, &out); err != nil {
 				t.Fatalf("decode: %v", err)
 			}
 			if out.Type != eventType {
@@ -53,11 +54,43 @@ func TestEveryWorkerResultRoundTrips(t *testing.T) {
 
 func encode(t *testing.T, schema avro.Schema, in any) []byte {
 	t.Helper()
-	payload, err := avro.Marshal(schema, in)
+	payload, err := EventAvro.Marshal(schema, in)
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
 	return payload
+}
+
+// Fixtures were emitted by hamba v2.31.0 on main at 7345dd7ff.
+func TestEventAvroReadsPreUpgradeEnvelopes(t *testing.T) {
+	t.Run("worker", func(t *testing.T) {
+		payload, err := base64.StdEncoding.DecodeString("EkFERF9FTUFJTABIODE4MTgxODEtODE4MS04MTgxLTgxODEtODE4MTgxODE4MTgxSDgxODE4MTgxLTgxODEtODE4MS04MTgxLTgxODE4MTgxODE4MQJIODE4MTgxODEtODE4MS04MTgxLTgxODEtODE4MTgxODE4MTgxAQIBAngCeAJ4AngCgAAAAAAAAAECAngCeAJ4gPCGwu5lDgIBTAJ4AQQCeACCgICAEIAAAAAAAAABgoCAgBACeIKAgIAQgPCGwu5lAAICeAJ4AniA8IbC7mUOAgICeAJ4AngOAngCAngCeAJ4DgJ4AgICeAJ4AniA8IbC7mUOAQgCeAJ4AAJ4Ag4ODg4BBAJ4AAICeAJ4ARQCeAJ4goCAgBABAAKAAAAAAAAAAYDwhsLuZQJ4AQJ4DgKA8IbC7mUCgPCGwu5lAoDwhsLuZQKA8IbC7mUCeA4ODgKA8IbC7mUB")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got WorkerEvent
+		if err := EventAvro.Unmarshal(WorkerEvent{}.Schema(), payload, &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.Type != WorkerEventTypeAddEmail {
+			t.Fatalf("worker type changed: %s", got.Type)
+		}
+		assertBody(t, got.Body, sample(WorkerEventBodies[WorkerEventTypeAddEmail]))
+	})
+	t.Run("job", func(t *testing.T) {
+		payload, err := base64.StdEncoding.DecodeString("FEVNQUlMX1NFTlQiSDgxODE4MTgxLTgxODEtODE4MS04MTgxLTgxODE4MTgxODE4MQECeAJ4AniA8IbC7mUCAgJ4AngOAngCeAJ4AngCeIDwhsLuZQKA8IbC7mUCeAJ4AngCeAECeAJ4AngCeAJ4")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got JobEvent
+		if err := EventAvro.Unmarshal(JobEvent{}.Schema(), payload, &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.Type != JobEventTypeEmailSent {
+			t.Fatalf("job type changed: %s", got.Type)
+		}
+		assertBody(t, got.Body, sample(JobEventBodies[JobEventTypeEmailSent]))
+	})
 }
 
 // The decoded body has to arrive as the type the handler asserts on, carrying
