@@ -1,4 +1,4 @@
-// warmblyctl is the CLI for a Warmbly instance. It has two halves with two
+// warmblyctl is the CLI for a Warmbly instance. It has three distinct
 // trust models, and the split is deliberate:
 //
 // The operator commands (status, setup-link, user, org) talk to the database
@@ -14,6 +14,8 @@
 // agents and scripts can operate the product itself: everything they can do is
 // bounded by the key's scopes. The CLI must never SERVE HTTP; being a client
 // of the already-gated public API adds no new surface.
+// Remote admin commands use separately approved MFA sessions, never API keys
+// or local database authority, and require an explicitly selected backend.
 //
 //	docker compose -p warmbly exec backend warmblyctl status
 //	WARMBLY_API_KEY=wmbly_... warmblyctl campaign list
@@ -44,6 +46,11 @@ func main() {
 		if errors.Is(err, flag.ErrHelp) {
 			return
 		}
+		var remoteErr *remoteError
+		if errors.As(err, &remoteErr) {
+			_ = writeRemoteJSON(os.Stderr, remoteErr)
+			os.Exit(remoteErr.Exit)
+		}
 		// A failing check has already printed itself; repeating it as an error
 		// line would bury the findings under the tool's own noise.
 		if errors.Is(err, errChecksFailed) {
@@ -56,6 +63,8 @@ func main() {
 
 func dispatch(ctx context.Context, args []string) error {
 	switch args[0] {
+	case "login", "logout", "whoami", "admin":
+		return runRemote(ctx, args[0], args[1:])
 	case "help", "-h", "--help":
 		usage(os.Stdout)
 		return nil
@@ -143,6 +152,19 @@ Operator commands (run where PRIMARY_DB is set, normally the backend container):
 		fmt.Fprintf(w, "  %-20s %s\n", f, apiFamilies[f])
 	}
 	fmt.Fprintf(w, "  %-20s %s\n", "api", "Raw passthrough: any method, any /v1 path")
+	fmt.Fprint(w, `
+Remote administrator commands (explicit --url URL or --server NAME; no API key):
+  login                Device approval on your administrator website; never a password in argv
+  logout               Revoke this profile's session and remove its local credentials
+  whoami               Redacted signed-in identity and live administrator permissions
+  admin                Read-only operational helpers; admin --help lists families
+  admin catalog        Offline bounded route inventory including permissions and write gates
+  admin api            Catalog-only JSON requests; writes require --write and exact --confirm
+
+  warmblyctl login --url https://api.example.com --server work-laptop
+  warmblyctl admin fleet nodes --server work-laptop
+  warmblyctl admin logs --node-id <uuid> --server work-laptop
+`)
 
 	fmt.Fprint(w, "\nExamples:\n")
 	for _, c := range commands {
