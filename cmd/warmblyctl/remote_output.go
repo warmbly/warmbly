@@ -94,6 +94,44 @@ MANAGE_TESTERS MANAGE_WARMUP_BANS REVIEW_APPEALS public dedicated shared global
 
 var remoteSemver = regexp.MustCompile(`^v?[0-9]{1,5}\.[0-9]{1,5}\.[0-9]{1,5}(-[a-z0-9.-]{1,30})?$`)
 
+var remoteMonitoringIDs = remoteWordSet(`
+send_safety sends campaign_reservations dispatch sync mailbox_errors worker_samples
+jobs dead_letters webhooks notifications result_effects arrivals workers domain_auth
+warmup_loading backend_event_broker worker_command_broker send_wait_attribution tracking_broker
+arrival_aging arrival_due arrival_leased arrival_pending arrival_stage_0 arrival_stage_1
+arrival_stage_2 arrival_stage_3 arrival_wait backfill_complete backfill_pending
+backfill_running backfill_stale_running campaign_reserved campaign_reserved_aging
+confirmed_other_1h confirmed_warmup_1h confirmed_warmup_proxy_1h credential_errors
+dispatch_due dispatch_old_failure dispatch_persistent dlq_due dlq_exhausted dlq_replayed
+dlq_unscheduled dlq_wait effects_leased effects_pending effects_repeated effects_unleased
+failed_results_1h failed_results_24h future_schedule holds_authentication holds_conflict
+holds_permanent holds_unknown inactive_credential_errors job_error_old job_error_recent
+job_future job_ok job_overdue job_running notification_aging notification_due
+notification_exhausted notification_retry notification_sending notification_settled_24h
+notification_stale notification_wait original_slot_overdue_1h other_mailbox_errors
+reservations_5_to_30m reservations_over_30m reservations_under_5m retry_wait send_cooldowns
+send_paused sync_deferred sync_eligible sync_errors sync_future_clock sync_held_stale
+sync_hold_burst sync_hold_daily sync_hold_hourly sync_hold_org_daily sync_hold_other
+sync_hold_priority_daily sync_missing sync_safety_reports sync_stale sync_state_rows
+sync_unassigned task_failures_recent unknown_results unscheduled_pending webhook_abandoned_24h
+webhook_auto_disabled webhook_delivered_24h webhook_drop_windows webhook_due webhook_endpoint_old
+webhook_endpoint_persistent webhook_endpoint_recent webhook_retry webhook_stale_claim webhook_wait
+worker_sample_auth_errors_1h worker_sample_rate_errors_1h worker_sample_sends_1h worker_samples_missing
+domain_blocked domain_failing domain_future_clock domain_passing_fresh domain_stale domain_unknown
+loading_old loading_persistent loading_recent workers_missing_heartbeat worker_missing_heartbeat
+send_budget_wait send_daily_limit_wait send_schedule_reason tracking_queue
+broker_queue
+`)
+
+var remoteMonitoringUnits = remoteWordSet(`
+arrivals deliveries effects endpoints jobs mailboxes messages records reports reservations
+rows tasks windows workers
+`)
+
+var remoteMonitoringReasons = remoteWordSet(`
+scope_limit sample_limit query_failed schema_absent no_registered_scopes
+`)
+
 func decodeRemoteJSON(payload []byte) (any, error) {
 	dec := json.NewDecoder(bytes.NewReader(payload))
 	dec.UseNumber()
@@ -163,6 +201,29 @@ func decodeRemoteJSON(payload []byte) (any, error) {
 func safeRemoteString(key, value string) any {
 	if value == "" {
 		return ""
+	}
+
+	switch key {
+	case "id":
+		if remoteMonitoringIDs[value] {
+			return value
+		}
+	case "unit":
+		if remoteMonitoringUnits[value] {
+			return value
+		}
+	case "severity":
+		if value == "warning" || value == "critical" {
+			return value
+		}
+	case "reason":
+		if remoteMonitoringReasons[value] {
+			return value
+		}
+	case "version":
+		if value == "1" {
+			return value
+		}
 	}
 	if (key == "cursor" || key == "next_cursor" || key == "prev_cursor") && len(value) <= 512 {
 		if _, err := paging.DecodeOffsetCursor(value); err == nil {

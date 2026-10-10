@@ -203,6 +203,8 @@ Some catalog entries are discoverable but deliberately unavailable: browser devi
 
 Remote success is one deterministic JSON value on stdout. Progress, approval codes, help and machine-readable errors are on stderr. Object keys are sorted by the JSON encoder; backend list ordering is preserved. Redaction projects only allowlisted diagnostic fields, canonical UUIDs, timestamps, typed enums, known broker scope names, validated cursors, numbers and booleans. Unknown fields are omitted and counted in `_redacted_fields`; arbitrary strings become `[REDACTED]`, including addresses and display names. No provider tokens, passwords, body, header, payload or free-form error subtree is exposed. The existing local emergency and public API commands keep their own documented output behavior unchanged.
 
+Monitoring preserves the compiled source and metric IDs, count units, severity, schema version and bounded coverage reasons so an AI client can identify each observation without free-form labels. New or unrecognized identifiers still fail closed; update the CLI when the backend adds a monitoring metric. Titles, notes, mailbox addresses and provider error text remain redacted.
+
 Errors preserve safe server `code`, HTTP `status` and `request_id`, but never raw backend messages, response bodies, response headers or transport errors. A numeric `retry_after_seconds` can accompany rate limiting.
 
 | Exit | Meaning |

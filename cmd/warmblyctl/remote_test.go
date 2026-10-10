@@ -479,6 +479,97 @@ func TestRemoteRedactionPreservesExplicitUnavailableGenericErrorCoverage(t *test
 	}
 }
 
+func TestRemoteRedactionPreservesTypedMonitoring(t *testing.T) {
+	value, err := decodeRemoteJSON([]byte(`{"version":"1","coverage":"partial","sources":[{"id":"sends","reason":"scope_limit","metrics":[{"id":"failed_results_1h","unit":"tasks","severity":"warning","condition":"recent_failure","count":7,"title":"fixture-private-title","note":"fixture-private-note"},{"id":"unknown_results","unit":"tasks","severity":"warning","condition":"recovery_unverified","count":null},{"id":"future_metric_fixture","unit":"future_unit_fixture","severity":"future_severity_fixture","reason":"fixture-private-reason"}]}],"payload":{"token":"fixture-private-token"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := redactRemoteJSON("", value).(map[string]any)
+	source := got["sources"].([]any)[0].(map[string]any)
+	metrics := source["metrics"].([]any)
+	first := metrics[0].(map[string]any)
+	if got["version"] != "1" || got["coverage"] != "partial" || source["id"] != "sends" || source["reason"] != "scope_limit" || first["id"] != "failed_results_1h" || first["unit"] != "tasks" || first["severity"] != "warning" || first["condition"] != "recent_failure" || first["count"] != json.Number("7") {
+		t.Fatal("typed monitoring identity, severity, units or count discarded")
+	}
+	unknown := metrics[1].(map[string]any)
+	if unknown["id"] != "unknown_results" || unknown["count"] != nil {
+		t.Fatal("unmeasured metric converted to zero or its identity discarded")
+	}
+	for _, field := range []string{"id", "unit", "severity", "reason"} {
+		if metrics[2].(map[string]any)[field] != "[REDACTED]" {
+			t.Fatalf("unknown %s exposed", field)
+		}
+	}
+	var output bytes.Buffer
+	if err := writeRemoteJSON(&output, got); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output.String(), "fixture-private") || strings.Contains(output.String(), "future_") {
+		t.Fatal("free text or unknown enum escaped monitoring projection")
+	}
+	for _, value := range []string{"failed_results_1h", "domain_auth", "warning", "critical", "tasks", "scope_limit", "1"} {
+		if safeRemoteString("name", value) != "[REDACTED]" {
+			t.Fatalf("monitoring value %q accepted outside its typed field", value)
+		}
+	}
+}
+
+func TestRemoteMonitoringProjectionMatchesCompiledCollectors(t *testing.T) {
+	for _, path := range []string{
+		"../../internal/repository/pg_monitoring.go",
+		"../../internal/repository/pg_monitoring_state.go",
+		"../../internal/repository/pg_monitoring_broker.go",
+		"../../internal/app/monitoring/unobserved.go",
+		"../../internal/infrastructure/eventbus/diagnostics.go",
+	} {
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		check := func(key string, node ast.Node) {
+			t.Helper()
+			literal, ok := node.(*ast.BasicLit)
+			if !ok || literal.Kind != token.STRING {
+				return
+			}
+			value, err := strconv.Unquote(literal.Value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := safeRemoteString(key, value); got != value {
+				t.Errorf("%s: compiled monitoring %s=%q is redacted", path, key, value)
+			}
+		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			switch n := node.(type) {
+			case *ast.ValueSpec:
+				if len(n.Names) == 1 && n.Names[0].Name == "monitoringSectionOrder" {
+					for _, value := range n.Values[0].(*ast.CompositeLit).Elts {
+						check("id", value)
+					}
+				}
+			case *ast.KeyValueExpr:
+				if key, ok := n.Key.(*ast.Ident); ok {
+					switch field := strings.ToLower(key.Name); field {
+					case "id", "unit", "severity", "reason":
+						check(field, n.Value)
+					}
+				}
+			case *ast.AssignStmt:
+				for i, left := range n.Lhs {
+					if field, ok := left.(*ast.SelectorExpr); ok && i < len(n.Rhs) {
+						switch key := strings.ToLower(field.Sel.Name); key {
+						case "id", "unit", "severity", "reason":
+							check(key, n.Rhs[i])
+						}
+					}
+				}
+			}
+			return true
+		})
+	}
+}
+
 func TestRemoteMalformedInputAndWriteSafeguards(t *testing.T) {
 	for _, input := range []string{`{`, `{"enabled":true} {}`, `{"enabled":true,"enabled":false}`, strings.Repeat("[", 66) + "0" + strings.Repeat("]", 66)} {
 		if _, err := decodeRemoteJSON([]byte(input)); err == nil {
