@@ -16,6 +16,8 @@ export interface NodeLogHistory {
     node_id: string;
     availability: MonitoringAvailability;
     coverage: "partial" | "unavailable";
+    generic_error_coverage?: "unavailable";
+    generic_error_reason?: "unhooked_runtime_sources";
     reason?: string;
     observed_at: string;
     capture?: { protocol: number; run_id: string; started_at: string; observed_at: string; received_at: string; dropped: number };

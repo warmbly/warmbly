@@ -92,6 +92,9 @@ func TestNodeLogsUnavailableEmptyStaleAndOldEvidenceAreNotHealthy(t *testing.T) 
 	s, id, secret := logFixture(t)
 	ctx := t.Context()
 	h, err := s.History(ctx, id, Filter{})
+	if err != nil || h.GenericErrorCoverage != "unavailable" || h.GenericErrorReason != "unhooked_runtime_sources" {
+		t.Fatal("unhooked generic runtime sources reported as captured", err)
+	}
 	if err != nil || h.Availability != "unavailable" || h.Coverage != "unavailable" {
 		t.Fatal(h, err)
 	}
@@ -103,6 +106,9 @@ func TestNodeLogsUnavailableEmptyStaleAndOldEvidenceAreNotHealthy(t *testing.T) 
 	h, _ = s.History(ctx, id, Filter{})
 	if h.Reason != "no_recent_evidence" || h.Coverage != "partial" {
 		t.Fatal(h)
+	}
+	if h.GenericErrorCoverage != "unavailable" || h.GenericErrorReason != "unhooked_runtime_sources" {
+		t.Fatal("empty fresh capture implied generic logger coverage")
 	}
 	status := *h.Status
 	status.ObservedAt = now.Add(-3 * time.Minute)
@@ -122,5 +128,14 @@ func TestNodeLogsUnavailableEmptyStaleAndOldEvidenceAreNotHealthy(t *testing.T) 
 	b.Events[0].Name = "private body"
 	if err := s.Ingest(ctx, id, secret, b); !errors.Is(err, ErrInvalid) {
 		t.Fatal("arbitrary log accepted", err)
+	}
+}
+
+func TestNodeLogsGenericRuntimeCoverageUnavailableWithoutCache(t *testing.T) {
+	for _, service := range []*Service{nil, {}} {
+		history, err := service.History(t.Context(), uuid.New(), Filter{})
+		if err != nil || history.GenericErrorCoverage != "unavailable" || history.GenericErrorReason != "unhooked_runtime_sources" {
+			t.Fatal("unhooked generic runtime error sources claimed as captured", err)
+		}
 	}
 }

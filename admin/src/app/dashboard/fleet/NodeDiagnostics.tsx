@@ -102,6 +102,7 @@ export function NodeDiagnostics({ node }: { node: FleetNode }) {
                     <p className="mt-3 text-sm text-muted-foreground">{diagnosticReason(matchedHistory.reason)}</p>
                     <PropertyList className="mt-3">
                         <Property label="Source">Node-agent allowlisted events via bounded Redis history. No historical journal import.</Property>
+                        <Property label="Generic error coverage">Unavailable across runtime loggers. Only worker Zap errors have a coarse hook; worker Zerolog and consumer standard-log/Zerolog errors are not captured. Empty evidence is not zero errors.</Property>
                         <Property label="Capture protocol">{matchedHistory.capture?.protocol === 1 ? "Protocol 1" : "Not observed or unsupported"}</Property>
                         <Property label="Snapshot queried"><Timestamp value={matchedHistory.observed_at} /></Property>
                         <Property label="Capture observed"><Timestamp value={matchedHistory.capture?.observed_at} /></Property>

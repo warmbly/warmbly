@@ -18,6 +18,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -291,6 +292,9 @@ func TestRemoteStorageRejectsUnsafeModesLinksAndMalformedFiles(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "ancestor-link":
+				if err := os.Chmod(dir, 0777); err != nil {
+					t.Fatal(err)
+				}
 				alias := filepath.Join(filepath.Dir(dir), "alias")
 				if err := os.Symlink(dir, alias); err != nil {
 					t.Fatal(err)
@@ -315,6 +319,90 @@ func TestRemoteStorageRejectsUnsafeModesLinksAndMalformedFiles(t *testing.T) {
 			assertRemoteError(t, err, 5, "unsafe_storage")
 			if strings.Contains(err.Error(), "synthetic-secret") {
 				t.Fatal("corrupt credential leaked")
+			}
+		})
+	}
+}
+
+func TestRemoteStorageResolvesTrustedConfigurationAncestors(t *testing.T) {
+	base := filepath.Dir(remoteTestDir(t))
+	real := filepath.Join(base, "real")
+	if err := os.Mkdir(real, 0755); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(base, "config-link")
+	if err := os.Symlink(real, alias); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(alias, "missing", "warmblyctl")
+	store, err := openRemoteStore(t.Context(), path)
+	if err != nil {
+		t.Fatal("trusted user/root-controlled ancestor link refused", err)
+	}
+	store.state.Servers["main"] = "https://fixture.invalid"
+	if err := store.save(); err != nil {
+		t.Fatal(err)
+	}
+	store.close()
+	canonical := filepath.Join(real, "missing", "warmblyctl")
+	info, err := os.Stat(canonical)
+	if err != nil || !privateRemoteFile(info, true) {
+		t.Fatal("canonical store lost private root protection")
+	}
+	if err := os.Remove(alias); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := openRemoteStore(t.Context(), canonical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer loaded.close()
+	if loaded.state.Servers["main"] != "https://fixture.invalid" {
+		t.Fatal("canonical storage did not survive ancestor alias removal")
+	}
+	finalLink := filepath.Join(base, "store-link")
+	if err := os.Symlink(canonical, finalLink); err != nil {
+		t.Fatal(err)
+	}
+	unsafe, err := openRemoteStore(t.Context(), finalLink)
+	if unsafe != nil {
+		unsafe.close()
+		t.Fatal("final credential root symlink accepted")
+	}
+	assertRemoteError(t, err, 5, "unsafe_storage")
+}
+
+type remoteAncestorFixture struct {
+	os.FileInfo
+	uid  uint32
+	mode os.FileMode
+}
+
+func (f remoteAncestorFixture) Sys() any          { return &syscall.Stat_t{Uid: f.uid} }
+func (f remoteAncestorFixture) Mode() os.FileMode { return f.mode }
+
+func TestRemoteStorageAncestorTrustRequiresRootOrEffectiveUserAndSafeWrites(t *testing.T) {
+	info, err := os.Stat(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name    string
+		uid     uint32
+		mode    os.FileMode
+		trusted bool
+	}{
+		{"root-controlled", 0, 0755, true},
+		{"user-controlled", uint32(os.Geteuid()), 0755, true},
+		{"group-writable", uint32(os.Geteuid()), 0770, false},
+		{"world-writable", 0, 0777, false},
+		{"sticky-root", 0, os.ModeSticky | 0777, true},
+		{"other-owner", uint32(os.Geteuid()) + 100000, 0700, false},
+		{"sticky-other-owner", uint32(os.Geteuid()) + 100000, os.ModeSticky | 0777, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if trustedRemoteAncestor(remoteAncestorFixture{info, tc.uid, tc.mode}) != tc.trusted {
+				t.Fatal("ancestor trust does not match ownership and write protections")
 			}
 		})
 	}
@@ -374,6 +462,20 @@ func TestRemoteRedactionIsRecursiveAndDeterministic(t *testing.T) {
 		if got := safeRemoteString("reason", secret); got != "[REDACTED]" {
 			t.Fatal("free-form safe-looking field was trusted")
 		}
+	}
+}
+
+func TestRemoteRedactionPreservesExplicitUnavailableGenericErrorCoverage(t *testing.T) {
+	value, err := decodeRemoteJSON([]byte(`{"generic_error_coverage":"unavailable","generic_error_reason":"unhooked_runtime_sources","error":{"message":"fixture-private-provider-error"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := writeRemoteJSON(&output, redactRemoteJSON("", value)); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), `"generic_error_coverage":"unavailable"`) || !strings.Contains(output.String(), `"generic_error_reason":"unhooked_runtime_sources"`) || strings.Contains(output.String(), "fixture-private") {
+		t.Fatal("explicit unavailable source coverage omitted or raw error exposed")
 	}
 }
 

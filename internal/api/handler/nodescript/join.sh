@@ -60,6 +60,8 @@ A second run re-enrols the same machine: it keeps the existing node id, so the
 node keeps its identity, history and mailbox placements. It rewrites node.env
 from the control plane's answer; put anything of your own in node.local.env
 next to it, which is created once and never written again.
+Normal first joins persist a nonsecret pending UUID before contacting the
+control plane, so a failed or lost reply can be retried with the same identity.
 USAGE
 }
 
@@ -101,6 +103,7 @@ need_cmd() {
 check_deps() {
   need_cmd curl
   if [ "$DRY_RUN" = "false" ]; then
+    need_cmd flock
     command -v docker >/dev/null 2>&1 || die "docker is required but not installed. Install it, then re-run."
     command -v systemctl >/dev/null 2>&1 || die "systemd is required (this script installs a service and a timer)"
     [ "$(id -u)" = "0" ] || die "run as root: this writes to $CONFIG_DIR and installs a systemd unit"
@@ -131,8 +134,40 @@ existing_node_id() {
   fi
 }
 
+valid_node_id() {
+  printf '%s\n' "$1" | LC_ALL=C grep -Eq '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' &&
+    [ "$1" != "00000000-0000-0000-0000-000000000000" ]
+}
+
+prepare_node_id() {
+  PRIOR_NODE_ID="$(existing_node_id)"
+  [ "$DRY_RUN" = "false" ] || return 0
+  mkdir -p "$CONFIG_DIR"
+  [ ! -L "$CONFIG_DIR/.join.lock" ] || die "join lock must not be a symlink"
+  # Hold the lock through configuration writes, not just UUID initialization.
+  exec 9>"$CONFIG_DIR/.join.lock"
+  flock -w 30 9 || die "another join is in progress; retry after it finishes"
+  PRIOR_NODE_ID="$(existing_node_id)"
+  if [ -z "$PRIOR_NODE_ID" ]; then
+    [ ! -L "$CONFIG_DIR/node.pending-id" ] || die "pending node identity must not be a symlink"
+    if [ -f "$CONFIG_DIR/node.pending-id" ]; then
+      PRIOR_NODE_ID="$(cat "$CONFIG_DIR/node.pending-id")"
+    else
+      PRIOR_NODE_ID="$(cat /proc/sys/kernel/random/uuid)" || die "secure UUID generation unavailable"
+      valid_node_id "$PRIOR_NODE_ID" || die "secure UUID generation returned an invalid identity"
+      pending=$(mktemp "$CONFIG_DIR/.node-id.XXXXXX")
+      printf '%s\n' "$PRIOR_NODE_ID" > "$pending"
+      chmod 600 "$pending"
+      mv "$pending" "$CONFIG_DIR/node.pending-id"
+    fi
+  fi
+  valid_node_id "$PRIOR_NODE_ID" || die "stored node identity is invalid; no enrollment requested"
+  PRIOR_NODE_ID=$(printf '%s' "$PRIOR_NODE_ID" | tr 'A-F' 'a-f')
+}
+
 enrol() {
-  prior="$(existing_node_id)"
+  prepare_node_id
+  prior="$PRIOR_NODE_ID"
   if [ -n "$prior" ]; then
     log "Re-joining as existing node $prior"
   fi
@@ -170,6 +205,13 @@ enrol() {
 
   [ -n "$NODE_ID" ] || die "the control plane did not return a node id"
   [ -n "$NODE_ENV" ] || die "the control plane returned no configuration for this node"
+  if [ "$DRY_RUN" = "false" ]; then
+    valid_node_id "$NODE_ID" || die "the control plane returned an invalid node identity"
+    NODE_ID=$(printf '%s' "$NODE_ID" | tr 'A-F' 'a-f')
+    [ "$NODE_ID" = "$prior" ] || die "the control plane returned a different node identity; configuration not written"
+    env_id=$(printf '%s\n' "$NODE_ENV" | sed -n 's/^WARMBLY_NODE_ID=//p')
+    [ "$env_id" = "$NODE_ID" ] || die "node configuration does not match the enrolled identity"
+  fi
   # The control plane names a tag, including when it has no release resolved.
   # This only catches a backend too old to do that, and it names the tag the
   # project publishes: there is no `latest`.

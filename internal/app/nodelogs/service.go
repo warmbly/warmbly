@@ -150,24 +150,27 @@ type Filter struct {
 	Limit         int
 }
 type History struct {
-	NodeID           uuid.UUID            `json:"node_id"`
-	Availability     string               `json:"availability"`
-	Coverage         string               `json:"coverage"`
-	Reason           string               `json:"reason,omitempty"`
-	Status           *Status              `json:"capture,omitempty"`
-	Events           []nodeevidence.Event `json:"events"`
-	Oldest           *time.Time           `json:"oldest_retained_at,omitempty"`
-	Newest           *time.Time           `json:"newest_retained_at,omitempty"`
-	RetainedCount    int                  `json:"retained_count"`
-	Truncated        bool                 `json:"truncated"`
-	RetentionSeconds int                  `json:"retention_seconds"`
-	MaxEvents        int                  `json:"max_events"`
-	ObservedAt       time.Time            `json:"observed_at"`
+	GenericErrorCoverage string               `json:"generic_error_coverage"`
+	GenericErrorReason   string               `json:"generic_error_reason"`
+	NodeID               uuid.UUID            `json:"node_id"`
+	Availability         string               `json:"availability"`
+	Coverage             string               `json:"coverage"`
+	Reason               string               `json:"reason,omitempty"`
+	Status               *Status              `json:"capture,omitempty"`
+	Events               []nodeevidence.Event `json:"events"`
+	Oldest               *time.Time           `json:"oldest_retained_at,omitempty"`
+	Newest               *time.Time           `json:"newest_retained_at,omitempty"`
+	RetainedCount        int                  `json:"retained_count"`
+	Truncated            bool                 `json:"truncated"`
+	RetentionSeconds     int                  `json:"retention_seconds"`
+	MaxEvents            int                  `json:"max_events"`
+	ObservedAt           time.Time            `json:"observed_at"`
 }
 
 func (s *Service) History(ctx context.Context, node uuid.UUID, f Filter) (*History, error) {
 	now := time.Now().UTC()
 	out := &History{NodeID: node, Availability: "unavailable", Coverage: "unavailable", Reason: "capture_not_observed", Events: []nodeevidence.Event{}, ObservedAt: now, RetentionSeconds: int(Retention.Seconds()), MaxEvents: MaxEvents}
+	out.GenericErrorCoverage, out.GenericErrorReason = "unavailable", "unhooked_runtime_sources"
 	if s == nil || s.cache == nil {
 		out.Reason = "cache_unavailable"
 		return out, nil

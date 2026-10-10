@@ -25,6 +25,7 @@ func remoteWordSet(words string) map[string]bool {
 var remoteOutputFields = remoteWordSet(`
 data pagination summary permissions user organization workers nodes mailboxes
 commands results metrics broker partitions topics consumer_group topic events capture
+generic_error_coverage generic_error_reason
 sources counts health totals failing_endpoints jobs plans discounts members roles
 id node_id worker_id email_id email_account_id mailbox_id user_id organization_id
 campaign_id contact_id sequence_id task_id run_id scope_id provider account_status
@@ -76,6 +77,7 @@ mailbox_provider_throttled mailbox_provider_sync_completed sync_folder_skipped
 sync_skipped_folder_search_failed sync_message_deferred sync_message_deferred_by_policy
 sync_legacy_arrival worker_error log_credential_unavailable capture_not_observed
 cache_unavailable no_recent_capture no_recent_evidence allowlisted_evidence_only
+unhooked_runtime_sources
 dependency_missing resource_absent permission_denied timeout collection_failed unsupported
 committed_lag members worker_events seconds count bytes percent messages lag mailboxes
 no_evidence recent_failure persistent_failure recovery_unverified safety_hold backlog

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,15 +24,20 @@ type joinNodes struct {
 	repository.FleetNodeRepository
 	upserts int
 	nodeID  uuid.UUID
+	role    models.NodeRole
 }
 
-func (n *joinNodes) Get(context.Context, uuid.UUID) (*models.FleetNode, error) {
+func (n *joinNodes) Get(_ context.Context, id uuid.UUID) (*models.FleetNode, error) {
+	if n.nodeID == id && id != uuid.Nil {
+		return &models.FleetNode{ID: id, Role: n.role}, nil
+	}
 	return nil, nil
 }
 
 func (n *joinNodes) UpsertOnHeartbeat(_ context.Context, beat models.NodeHeartbeat) error {
 	n.upserts++
 	n.nodeID = beat.NodeID
+	n.role = beat.Role
 	return nil
 }
 
@@ -126,6 +132,51 @@ func TestFleetJoinReenrollsOriginalNodeIdentityWithEvidenceCredential(t *testing
 	env := envLines(t, string(raw))
 	if env["WARMBLY_NODE_ID"] != id.String() || env["NODE_LOG_TOKEN"] != strings.Repeat("l", 43) {
 		t.Fatal("protected environment did not bind the evidence credential to the existing node")
+	}
+}
+
+type retryJoinEvidence struct {
+	joinEvidence
+	calls int
+}
+
+func (e *retryJoinEvidence) Enroll(ctx context.Context, id uuid.UUID) (string, error) {
+	e.calls++
+	if e.calls == 1 {
+		return "", errors.New("fixture enrollment unavailable")
+	}
+	return e.joinEvidence.Enroll(ctx, id)
+}
+
+func TestFleetJoinRetryKeepsIdentityAfterEnrollmentFailureAndLostReply(t *testing.T) {
+	t.Setenv("WARMBLY_VERSION", "v0.6.44")
+	t.Setenv("FLEET_IMAGE_VARIANT", "")
+	id := uuid.New()
+	nodes, evidence := &joinNodes{}, &retryJoinEvidence{}
+	h := &Handler{FleetNodes: fleetnode.New(nodes, nil, joinSettings{}), NodeLogs: evidence}
+	for i, role := range []string{"worker", "worker", "worker", "consumer"} {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/fleet/join", strings.NewReader(`{"token":"join-test-token","role":"`+role+`","node_id":"`+id.String()+`"}`))
+		c.Request.Header.Set("Content-Type", "application/json")
+		h.FleetJoin(c)
+		if i == 0 {
+			if w.Code != http.StatusServiceUnavailable || nodes.nodeID != id || nodes.upserts != 1 {
+				t.Fatal("failed enrollment did not retain the supplied identity")
+			}
+			continue
+		}
+		if i == 3 {
+			if w.Code == http.StatusOK || evidence.calls != 3 || nodes.upserts != 3 {
+				t.Fatal("role change mutated identity or rotated evidence authority before validation")
+			}
+			continue
+		}
+		var reply fleetJoinResponse
+		if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &reply) != nil || reply.NodeID != id || evidence.node != id || nodes.nodeID != id {
+			t.Fatal("retry after failed/lost reply changed node identity")
+		}
+		// The first successful response is deliberately unused, as if its acknowledgement was lost.
 	}
 }
 

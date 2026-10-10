@@ -845,7 +845,9 @@ canonical `level`/`category`, optional mailbox UUID and numeric `count`
 | `sync_message_deferred_by_policy` | `sync_policy` / `info` | Count of messages deferred in a sync pass |
 | `sync_skipped_folder_search_failed` | `provider` / `warn` | Actual excluded-folder search failure |
 | `sync_legacy_arrival` | `compatibility` / `warn` | Existing legacy arrival fallback used |
-| `worker_error` | `worker_runtime` / `error` | Worker error severity, without arbitrary log text |
+| `worker_error` | `worker_runtime` / `error` | Worker Zap error severity only, without arbitrary log text |
+
+History also reports `generic_error_coverage: "unavailable"` and `generic_error_reason: "unhooked_runtime_sources"`. Generic runtime error capture currently hooks worker Zap only. Worker Zerolog and consumer standard-log/Zerolog errors are not captured. Explicit allowlisted sync/provider/control-plane decision hooks remain separate and unchanged. A fresh empty capture, including a consumer capture, never establishes zero runtime errors or health. These fields describe missing source coverage, not a current failure.
 
 No addresses, subjects, bodies, headers, raw errors, folder names or provider
 credentials are forwarded. Unknown free-form fields are discarded; categories

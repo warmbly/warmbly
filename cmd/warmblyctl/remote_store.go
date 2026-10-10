@@ -62,18 +62,9 @@ func openRemoteStore(ctx context.Context, path string) (*remoteStore, error) {
 	if !filepath.IsAbs(path) {
 		return nil, storageFailure()
 	}
-	// Check ancestors before creating anything; the opened root pins the directory.
-	for p := path; ; p = filepath.Dir(p) {
-		info, err := os.Lstat(p)
-		if err == nil && (!info.IsDir() || info.Mode()&os.ModeSymlink != 0) {
-			return nil, storageFailure()
-		}
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return nil, storageFailure()
-		}
-		if filepath.Dir(p) == p {
-			break
-		}
+	path, err := canonicalRemoteStorePath(path)
+	if err != nil {
+		return nil, err
 	}
 	if err := os.MkdirAll(path, 0700); err != nil {
 		return nil, storageFailure()
@@ -135,8 +126,49 @@ func openRemoteStore(ctx context.Context, path string) (*remoteStore, error) {
 	return s, nil
 }
 
+// Resolve existing ancestors once; all subsequent operations use the canonical, pinned root.
+func canonicalRemoteStorePath(path string) (string, error) {
+	path = filepath.Clean(path)
+	if info, err := os.Lstat(path); err == nil {
+		if !privateRemoteFile(info, true) {
+			return "", storageFailure()
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", storageFailure()
+	}
+	p, suffix := filepath.Dir(path), []string{filepath.Base(path)}
+	for {
+		_, err := os.Lstat(p)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, os.ErrNotExist) || filepath.Dir(p) == p {
+			return "", storageFailure()
+		}
+		suffix = append(suffix, filepath.Base(p))
+		p = filepath.Dir(p)
+	}
+	canonical, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return "", storageFailure()
+	}
+	for ancestor := canonical; ; ancestor = filepath.Dir(ancestor) {
+		info, err := os.Lstat(ancestor)
+		if err != nil || !trustedRemoteAncestor(info) {
+			return "", storageFailure()
+		}
+		if filepath.Dir(ancestor) == ancestor {
+			break
+		}
+	}
+	for i := len(suffix) - 1; i >= 0; i-- {
+		canonical = filepath.Join(canonical, suffix[i])
+	}
+	return canonical, nil
+}
+
 func storageFailure() error {
-	return remoteFailure(5, "unsafe_storage", "Credential storage requires an owner-only directory and regular owner-only files with no symlinks or hard links on a supported POSIX filesystem.")
+	return remoteFailure(5, "unsafe_storage", "Credential storage requires trusted ancestors, an owner-only pinned directory, and regular owner-only files with no symlinks or hard links on a supported POSIX filesystem.")
 }
 
 func (s *remoteStore) openPrivate(name string, create bool) (*os.File, error) {
