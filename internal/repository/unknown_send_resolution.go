@@ -92,7 +92,7 @@ func (r *taskRepository) ListUnappliedSendResults(ctx context.Context, limit int
 	rows, err := r.db.Query(ctx, `WITH recorded AS (
 	 SELECT t.id,t.created_at,t.send_result_state,t.send_result_applied_at,t.send_executor_result AS result,1 AS priority
 	 FROM tasks t WHERE t.send_executor_result IS NOT NULL AND t.status<>'cancelled'
-	 AND (t.send_result_applied_at IS NULL OR (t.status='dead_lettered' AND t.send_result_state='sent'))
+	 AND (t.send_result_applied_at IS NULL OR (`+repairableSendDeadLetterPredicate+`))
 	 UNION ALL
 	 SELECT t.id,t.created_at,t.send_result_state,t.send_result_applied_at,t.send_executor_result,1 FROM send_recovery_resolutions r JOIN tasks t ON t.id=r.recovery_task_id
 	 WHERE r.previous_reason='unknown' AND r.conflict_detected_at IS NULL AND r.confirmed_result IS NOT NULL
@@ -100,14 +100,14 @@ func (r *taskRepository) ListUnappliedSendResults(ctx context.Context, limit int
 	 UNION ALL
 	 SELECT t.id,t.created_at,t.send_result_state,t.send_result_applied_at,w.dispatch_result,1 FROM warmup_tasks w JOIN tasks t ON t.id=w.task_id
 	 WHERE w.dispatch_result IS NOT NULL AND t.status<>'cancelled'
-	 AND (t.send_result_applied_at IS NULL OR (t.status='dead_lettered' AND t.send_result_state='sent'))
+	 AND (t.send_result_applied_at IS NULL OR (`+repairableSendDeadLetterPredicate+`))
 	 UNION ALL
 	 SELECT t.id,t.created_at,t.send_result_state,t.send_result_applied_at,w.dispatch_result,1 FROM send_recovery_resolutions r JOIN tasks t ON t.id=r.recovery_task_id JOIN warmup_tasks w ON w.task_id=t.id
 	 WHERE r.previous_reason='unknown' AND r.conflict_detected_at IS NULL AND r.confirmed_result IS NOT NULL
 	 AND w.dispatch_result IS NOT NULL AND t.send_result_applied_at IS NOT NULL AND t.status<>'cancelled'
 	 UNION ALL
 	 SELECT t.id,t.created_at,t.send_result_state,t.send_result_applied_at,r.confirmed_result,2 FROM send_recovery_resolutions r JOIN tasks t ON t.id=r.recovery_task_id
-	 WHERE r.confirmed_result IS NOT NULL AND (t.send_result_applied_at IS NULL OR (t.status='dead_lettered' AND t.send_result_state='sent')) AND t.status<>'cancelled'
+	 WHERE r.confirmed_result IS NOT NULL AND (t.send_result_applied_at IS NULL OR (`+repairableSendDeadLetterPredicate+`)) AND t.status<>'cancelled'
 	 ),
 	 definitive AS (SELECT *,CASE WHEN result->>'success'='true' THEN 'sent' ELSE 'failed' END AS outcome FROM recorded
 	 WHERE result->>'success'='true' OR result->'error'->'failure'->>'disposition' IN('retry','throttle','permanent','authentication')
@@ -115,7 +115,7 @@ func (r *taskRepository) ListUnappliedSendResults(ctx context.Context, limit int
 	 ('RECIPIENT_REJECTED','SEND_REJECTED','DOMAIN_AUTH_REJECTED','AUTHENTICATION_FAILED','INVALID_CREDENTIALS','GOOGLE_AUTHENTICATION_FAILED','SENDING_TOO_FAST','QUOTA_EXCEEDED','UNSUPPORTED'))),
 	 pending AS (SELECT DISTINCT ON(id) id,created_at,result FROM definitive
 	 WHERE send_result_applied_at IS NULL OR outcome IS DISTINCT FROM send_result_state
-	 OR EXISTS(SELECT 1 FROM tasks t WHERE t.id=definitive.id AND t.status='dead_lettered' AND t.send_result_state='sent') ORDER BY id,priority)
+	 OR EXISTS(SELECT 1 FROM tasks t WHERE t.id=definitive.id AND `+repairableSendDeadLetterPredicate+`) ORDER BY id,priority)
 	 SELECT id,result FROM pending ORDER BY created_at LIMIT $1`, limit)
 	if err != nil {
 		return nil, err

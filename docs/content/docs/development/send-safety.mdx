@@ -41,6 +41,8 @@ Result reconciliation commits task, campaign progress, variant, suppression and 
 
 Warmup authorization records the UTC charge day and whether a reply was counted in the same transaction as the statistics increment. Outbound reservation preserves the initial completion timestamp. A definitive failure or safe unstarted cancellation refunds only that recorded charge, at most once, in the same transaction as the task change. Completion timestamps and dispatch/executor nonces alone never authorize a refund. Pre-upgrade and imported tasks have no positive charge record: known outcomes can still settle, but historical statistics are not decremented by inference. Unknown outcomes remain held and unresolved.
 
+If a modern warmup task becomes dead-lettered after its definitive failure and refund were committed, the matching authoritative result repairs only task and dead-letter metadata. It does not repeat accounting, callbacks or mailbox hold changes. Already-applied failures without positive refunded-charge proof remain protected.
+
 ## Evidence-based repair holds
 
 Authentication, permanent and conflicting-result holds do not clear merely because time passed, a reconnect occurred or an unrelated send succeeded. An organization-authorized operator can use `send_recovery_resolution` in the existing mailbox PATCH after investigating the current held task and reason:
