@@ -211,6 +211,7 @@ func Run(
 		node.GET("/worker/config", h.InternalWorkerConfig)
 		node.POST("/worker/warmup-dispatch", h.InternalWarmupDispatch)
 		node.POST("/worker/warmup-actions", h.InternalWarmupActions)
+		node.POST("/worker/warmup-actions/defer", h.InternalWarmupFilingDeferral)
 		node.POST("/worker/diagnostic-auth", h.InternalDiagnosticAuth)
 	}
 

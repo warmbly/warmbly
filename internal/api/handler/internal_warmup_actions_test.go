@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -19,6 +20,60 @@ type warmupRecoveryAuthority struct {
 	repository.WarmupDispatchRepository
 	request models.WarmupActionRequest
 	err     error
+}
+
+type warmupDeferralAuthority struct {
+	repository.WarmupDispatchRepository
+	req   models.WarmupFilingDeferralRequest
+	out   models.WarmupFilingDeferralDecision
+	err   error
+	calls int
+}
+
+func (a *warmupDeferralAuthority) DeferWarmupFiling(_ context.Context, req models.WarmupFilingDeferralRequest) (models.WarmupFilingDeferralDecision, error) {
+	a.req, a.calls = req, a.calls+1
+	return a.out, a.err
+}
+
+func TestInternalWarmupFilingDeferralRequiresScopedMutation(t *testing.T) {
+	req := models.WarmupFilingDeferralRequest{MailboxID: uuid.New(), WorkerID: uuid.New(), FilingID: uuid.New(), ProviderRetryAt: time.Now().Add(time.Hour)}
+	for _, tc := range []struct {
+		name   string
+		method string
+		input  models.WarmupFilingDeferralRequest
+		err    error
+		legacy bool
+		want   int
+		calls  int
+	}{
+		{"committed", http.MethodPost, req, nil, false, http.StatusOK, 1},
+		{"read refused", http.MethodGet, req, nil, false, http.StatusNotFound, 0},
+		{"invalid scope", http.MethodPost, models.WarmupFilingDeferralRequest{MailboxID: uuid.Nil}, nil, false, http.StatusBadRequest, 0},
+		{"unavailable", http.MethodPost, req, errors.New("database unavailable"), false, http.StatusServiceUnavailable, 1},
+		{"stale work", http.MethodPost, req, repository.ErrSendAdmissionDenied, false, http.StatusForbidden, 1},
+		{"unsupported backend", http.MethodPost, req, nil, true, http.StatusServiceUnavailable, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stub := &warmupDeferralAuthority{err: tc.err, out: models.WarmupFilingDeferralDecision{Persisted: true, FilingRecovery: &models.WarmupFilingRecoveryProof{Protocol: models.WarmupFilingRecoveryProtocol, MailboxID: req.MailboxID, WorkerID: req.WorkerID, FilingID: req.FilingID, ProviderRetryAt: &req.ProviderRetryAt}}}
+			h := Handler{WarmupDispatch: stub}
+			if tc.legacy {
+				h.WarmupDispatch = &legacyWarmupAuthority{}
+			}
+			r := gin.New()
+			r.POST("/api/v1/internal/worker/warmup-actions/defer", h.InternalWarmupFilingDeferral)
+			body, _ := json.Marshal(tc.input)
+			httpRequest := httptest.NewRequest(tc.method, "/api/v1/internal/worker/warmup-actions/defer", strings.NewReader(string(body)))
+			httpRequest.Header.Set("Content-Type", "application/json")
+			out := httptest.NewRecorder()
+			r.ServeHTTP(out, httpRequest)
+			if out.Code != tc.want || stub.calls != tc.calls || out.Header().Get("Cache-Control") != map[bool]string{true: "", false: "no-store"}[tc.method == http.MethodGet] {
+				t.Fatalf("deferral status=%d calls=%d headers=%v", out.Code, stub.calls, out.Header())
+			}
+			if out.Code == http.StatusOK && (!stub.req.ProviderRetryAt.Equal(req.ProviderRetryAt) || stub.req.WorkerID != req.WorkerID || stub.req.FilingID != req.FilingID) {
+				t.Fatalf("deferral request lost scope: %+v", stub.req)
+			}
+		})
+	}
 }
 
 func (r *warmupRecoveryAuthority) AdmitWarmupAction(_ context.Context, req models.WarmupActionRequest) (models.WarmupActionDecision, error) {

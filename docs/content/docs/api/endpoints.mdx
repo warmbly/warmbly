@@ -963,6 +963,21 @@ Errors: `400 bad_request` (UUID/non-worker/invalid log filters),
 returns `200` with explicit unavailable coverage. Successful diagnostics use
 `Cache-Control: no-store`.
 
+## Internal warmup recovery
+
+These control-plane endpoints use the existing node-internal credential, not an API key, dashboard JWT or node logging credential. Their base is `/api/v1/internal`, not the public API base above. They introduce no new node identity or credential exchange.
+
+| Method | Internal path | Scope |
+| --- | --- | --- |
+| POST | `/worker/warmup-actions` | Check current mailbox assignment and permitted actions; exact pending single-file work can return versioned filing recovery proof |
+| POST | `/worker/warmup-actions/defer` | Commit a monotonic provider retry time for that exact pending filing under current mailbox assignment |
+
+Deferral accepts `mailbox_id`, `worker_id`, `filing_id` and an absolute `provider_retry_at` timestamp. Successful `persisted: true` is returned only after commit, with `filing_recovery` proof containing protocol `1`, the same three IDs and the retained timestamp. Requesting a shorter time never shortens an existing provider hold or ordinary retry lease. There is no GET mutation or new filing-success event on deferral.
+
+For exact filing commands, an upgraded backend returns no permitted actions when the pending filing is completed, missing, foreign or has a different action payload. Workers skip provider filing and do not emit a filing-success event for that denial. Untracked actions retain the existing admission behavior.
+
+Invalid identifiers or time return `400`; stale, deleted, foreign or disallowed work returns `403`; unsupported authority or database failure returns `503`. Responses use `Cache-Control: no-store`. Clients reject unmarked, malformed, unsupported-version or incorrectly scoped replies as durable deferral proof. Existing older-backend retry behavior is unchanged; an older worker does not implement the provider floor. See [warmup reconnect recovery](/development/data-control/#warmup-reconnect-recovery) for backend-first upgrade and source-instance data handling.
+
 ## Notes
 
 - When a route has both a JWT permission and an API permission listed, the dual-auth middleware checks the JWT user's organization role for browser callers and the key's permission bitmask for API key callers. They're independent gates: a user's role doesn't constrain what an API key can do beyond what was granted at creation.

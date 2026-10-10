@@ -86,8 +86,36 @@ type WarmupActionRequest struct {
 }
 
 type WarmupActionDecision struct {
-	Actions       []string `json:"actions"`
-	FilingPending bool     `json:"filing_pending,omitempty"`
+	Actions        []string                   `json:"actions"`
+	FilingPending  bool                       `json:"filing_pending,omitempty"`
+	FilingRecovery *WarmupFilingRecoveryProof `json:"filing_recovery,omitempty"`
+}
+
+const WarmupFilingRecoveryProtocol = 1
+
+type WarmupFilingRecoveryProof struct {
+	Protocol        int        `json:"protocol"`
+	MailboxID       uuid.UUID  `json:"mailbox_id"`
+	WorkerID        uuid.UUID  `json:"worker_id"`
+	FilingID        uuid.UUID  `json:"filing_id"`
+	ProviderRetryAt *time.Time `json:"provider_retry_at,omitempty"`
+}
+
+func (p *WarmupFilingRecoveryProof) ValidFor(mailbox, worker, filing uuid.UUID) bool {
+	return p != nil && p.Protocol == WarmupFilingRecoveryProtocol && mailbox != uuid.Nil && worker != uuid.Nil && filing != uuid.Nil &&
+		p.MailboxID == mailbox && p.WorkerID == worker && p.FilingID == filing && (p.ProviderRetryAt == nil || !p.ProviderRetryAt.IsZero())
+}
+
+type WarmupFilingDeferralRequest struct {
+	MailboxID       uuid.UUID `json:"mailbox_id"`
+	WorkerID        uuid.UUID `json:"worker_id"`
+	FilingID        uuid.UUID `json:"filing_id"`
+	ProviderRetryAt time.Time `json:"provider_retry_at"`
+}
+
+type WarmupFilingDeferralDecision struct {
+	FilingRecovery *WarmupFilingRecoveryProof `json:"filing_recovery"`
+	Persisted      bool                       `json:"persisted"`
 }
 
 // WarmupEmailAction represents actions to perform on a detected warmup email.
