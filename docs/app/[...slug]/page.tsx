@@ -1,5 +1,5 @@
 import { getPageImage, getPageMarkdown, source } from '@/lib/source';
-import { DocsBody, DocsDescription, DocsPage, DocsTitle } from 'fumadocs-ui/layouts/docs/page';
+import { DocsBody, DocsDescription, DocsPage, DocsTitle } from 'fumadocs-ui/layouts/notebook/page';
 import { notFound } from 'next/navigation';
 import { getMDXComponents } from '@/mdx-components';
 import type { Metadata } from 'next';
@@ -17,8 +17,8 @@ export default async function Page(props: PageProps<'/[...slug]'>) {
   return (
     <DocsPage toc={page.data.toc} full={page.data.full}>
       <DocsTitle>{page.data.title}</DocsTitle>
-      <DocsDescription className="mb-2.5">{page.data.description}</DocsDescription>
-      <div className="flex flex-row items-center gap-2 border-b pb-6">
+      <DocsDescription className="wd-description mb-1">{page.data.description}</DocsDescription>
+      <div className="wd-actions flex flex-row items-center gap-2 pb-4">
         <LLMCopyButton markdownUrl={markdownUrl} />
         <ViewOptions
           markdownUrl={markdownUrl}
