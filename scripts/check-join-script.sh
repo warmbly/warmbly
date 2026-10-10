@@ -224,6 +224,12 @@ printf '%s\n' "$local_body" | awk '
   || fail "ensure_local_env must test for an existing file before writing one, or a re-join truncates the operator's file"
 ok "an existing local override file is never truncated"
 
+if ! command -v flock >/dev/null 2>&1; then
+  fail "enrollment fixture requires util-linux flock"
+fi
+[ -r /proc/sys/kernel/random/uuid ] \
+  || fail "enrollment fixture requires /proc/sys/kernel/random/uuid"
+
 join_fixture=$(mktemp -d)
 trap 'rm -rf "$join_fixture"' EXIT HUP INT TERM
 sed '$d' "$SCRIPT" > "$join_fixture/functions.sh"
