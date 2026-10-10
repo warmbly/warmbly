@@ -64,6 +64,26 @@ func TestLiveLastWarmupSendFailure(t *testing.T) {
 	if got, err := repo.LastWarmupSendFailure(ctx, f.account, since); err != nil || got != nil {
 		t.Fatalf("after a delivered send: got %+v, %v; want nil", got, err)
 	}
+	newer := uuid.New()
+	f.exec(`INSERT INTO tasks(id,task_type,email_account_id,status,message_id,completed_at)
+	        VALUES($1,'warmup',$2,'completed','',NOW()-INTERVAL '30 minutes')`, newer, f.account)
+	f.exec(`INSERT INTO warmup_tokens(token,task_id,sender_account_id,recipient_account_id,conversation_turn)
+	        VALUES($1,$2,$3,$3,0)`, uuid.New(), newer, f.account)
+	if got, err := repo.LastWarmupSendFailure(ctx, f.account, since); err != nil || got != nil {
+		t.Fatalf("newer unconfirmed task hid the older confirmation: got %+v, %v", got, err)
+	}
+	failed(time.Now().Add(-45*time.Minute), "newer refusal")
+	if got, err := repo.LastWarmupSendFailure(ctx, f.account, since); err != nil || got == nil || got.Message != "newer refusal" {
+		t.Fatalf("newer unconfirmed task closed a later failure: got %+v, %v", got, err)
+	}
+	future := uuid.New()
+	f.exec(`INSERT INTO tasks(id,task_type,email_account_id,status,message_id,completed_at)
+	        VALUES($1,'warmup',$2,'completed','',NOW()+INTERVAL '1 hour')`, future, f.account)
+	f.exec(`INSERT INTO warmup_tokens(token,task_id,sender_account_id,recipient_account_id,conversation_turn,sent_message_id)
+	        VALUES($1,$2,$3,$3,0,'<future@example.test>')`, uuid.New(), future, f.account)
+	if got, err := repo.LastWarmupSendFailure(ctx, f.account, since); err != nil || got == nil || got.Message != "newer refusal" {
+		t.Fatalf("future confirmation closed a current failure: got %+v, %v", got, err)
+	}
 }
 
 func TestLiveDispatchRetryUpgradePreservesOldTasksAndNewMailboxes(t *testing.T) {
@@ -208,6 +228,41 @@ func TestLivePersistentMailboxLoadingFailure(t *testing.T) {
 	got, err = repo.LastWarmupSendFailure(ctx, f.account, since)
 	if err != nil || got == nil || got.Kind != "" || got.Message != "Provider sign-in was refused." {
 		t.Fatalf("new provider error must show immediately: %+v %v", got, err)
+	}
+}
+
+func TestLiveLoadingIncidentNonLoadingBoundary(t *testing.T) {
+	_, pool := liveContactDB(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	for _, tc := range []struct {
+		name     string
+		boundary time.Duration
+		first    time.Duration
+	}{
+		{"before incident", -3 * time.Hour, -2 * time.Hour},
+		{"same timestamp", -80 * time.Minute, -40 * time.Minute},
+		{"between failures", -79 * time.Minute, -40 * time.Minute},
+		{"future failure", 10 * time.Minute, -2 * time.Hour},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newWarmupUsageFixture(t, pool)
+			failed := func(offset time.Duration, message string) {
+				id := uuid.New()
+				f.exec(`INSERT INTO tasks(id,task_type,email_account_id,status,message_id,updated_at) VALUES($1,'warmup',$2,'failed','',$3)`, id, f.account, now.Add(offset))
+				f.exec(`INSERT INTO task_failures(task_id,title,message) VALUES($1,'private',$2)`, id, message)
+			}
+			for _, offset := range []time.Duration{-2 * time.Hour, -80 * time.Minute, -40 * time.Minute, -5 * time.Minute} {
+				failed(offset, models.MailboxNotLoadedPrefix)
+			}
+			failed(tc.boundary, "Other provider failure")
+			var first time.Time
+			if err := pool.QueryRow(t.Context(), `SELECT first_at FROM (`+warmupSendFailuresSQL+`) failures`, f.account, mailboxLoadingPattern, now).Scan(&first); err != nil {
+				t.Fatal(err)
+			}
+			if !first.Equal(now.Add(tc.first)) {
+				t.Fatalf("first failure=%v want=%v", first, now.Add(tc.first))
+			}
+		})
 	}
 }
 
