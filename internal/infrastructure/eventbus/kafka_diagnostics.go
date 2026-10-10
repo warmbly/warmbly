@@ -5,6 +5,7 @@ package eventbus
 import (
 	"context"
 	"errors"
+	"sort"
 	"time"
 
 	ckf "github.com/confluentinc/confluent-kafka-go/v2/kafka"
@@ -49,20 +50,25 @@ func kafkaDiagnosticReason(err error) string {
 }
 
 func diagnoseKafka(ctx context.Context, admin kafkaDiagnosticAdmin, at time.Time, scopes []DiagnosticScope) models.MonitoringSource {
-	out := models.MonitoringSource{Metrics: []models.MonitoringMetric{}}
+	out := models.MonitoringSource{Availability: models.MonitoringFresh, CheckedAt: at, ObservedAt: &at, Metrics: []models.MonitoringMetric{}}
 	var measured int64
 	for _, scope := range scopes {
 		if admin == nil {
 			out.Metrics = append(out.Metrics, diagnosticUnavailable(scope, at, "dependency_missing"))
 			continue
 		}
-		lag, members, err := kafkaScopeLag(ctx, admin, scope)
+		var parts []models.MonitoringBrokerPartition
+		lag, members, err := kafkaScopeLag(ctx, admin, scope, func(p []models.MonitoringBrokerPartition) { parts = p })
 		if err != nil {
 			out.Metrics = append(out.Metrics, diagnosticUnavailable(scope, at, kafkaDiagnosticReason(err)))
 			continue
 		}
 		measured++
-		out.Metrics = append(out.Metrics, diagnosticMetric(scope, at, "committed_lag", "messages", "All requested topic partitions validated against earliest and latest offsets. Committed lag is not uncommitted processing, throughput or provider delivery.", lag), diagnosticMetric(scope, at, "members", "members", "Group membership can be absent during a rebalance; zero members alone is not an outage.", members))
+		metric := diagnosticMetric(scope, at, "committed_lag", "messages", "All requested topic partitions validated against earliest and latest offsets. Committed lag is not uncommitted processing, throughput or provider delivery.", lag)
+		if scope.IncludePartitions {
+			metric.Broker = &models.MonitoringBrokerObservation{ConsumerGroup: scope.Group, Topics: scope.Topics, Partitions: parts}
+		}
+		out.Metrics = append(out.Metrics, metric, diagnosticMetric(scope, at, "members", "members", "Group membership can be absent during a rebalance; zero members alone is not an outage.", members))
 	}
 	diagnosticCoverage(&out, measured, int64(len(scopes)))
 	return out
@@ -73,7 +79,7 @@ type diagnosticPartition struct {
 	partition int32
 }
 
-func kafkaScopeLag(ctx context.Context, admin kafkaDiagnosticAdmin, scope DiagnosticScope) (int64, int64, error) {
+func kafkaScopeLag(ctx context.Context, admin kafkaDiagnosticAdmin, scope DiagnosticScope, capture ...func([]models.MonitoringBrokerPartition)) (int64, int64, error) {
 	invalid := errors.New("incomplete broker observation")
 	topics, err := admin.DescribeTopics(ctx, ckf.NewTopicCollectionOfTopicNames(scope.Topics))
 	if err != nil {
@@ -101,6 +107,9 @@ func kafkaScopeLag(ctx context.Context, admin kafkaDiagnosticAdmin, scope Diagno
 			return 0, 0, invalid
 		}
 		for _, p := range t.Partitions {
+			if p.Partition < 0 || int64(p.Partition) > int64(^uint32(0)>>1) {
+				return 0, 0, invalid
+			}
 			name := t.Name
 			key := diagnosticPartition{name, int32(p.Partition)}
 			if expected[key] {
@@ -198,6 +207,7 @@ func kafkaScopeLag(ctx context.Context, admin kafkaDiagnosticAdmin, scope Diagno
 		return 0, 0, err
 	}
 	var lag int64
+	parts := make([]models.MonitoringBrokerPartition, 0, len(offsets))
 	for key, offset := range offsets {
 		if starts[key] > offset || offset > ends[key] || starts[key] > ends[key] {
 			return 0, 0, invalid
@@ -207,6 +217,16 @@ func kafkaScopeLag(ctx context.Context, admin kafkaDiagnosticAdmin, scope Diagno
 			return 0, 0, invalid
 		}
 		lag += delta
+		parts = append(parts, models.MonitoringBrokerPartition{Topic: key.topic, Partition: key.partition, Committed: offset, Earliest: starts[key], Latest: ends[key], CommittedLag: delta})
+	}
+	sort.Slice(parts, func(i, j int) bool {
+		if parts[i].Topic != parts[j].Topic {
+			return parts[i].Topic < parts[j].Topic
+		}
+		return parts[i].Partition < parts[j].Partition
+	})
+	for _, fn := range capture {
+		fn(parts)
 	}
 	return lag, int64(len(g.Members)), nil
 }

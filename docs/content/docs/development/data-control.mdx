@@ -361,6 +361,53 @@ If you do want product analytics on your own instance, the variables are on [con
 
 Diagnostic participation, shared limits, durable recovery evidence and operator repair history are organization data. Raw MIME is never persisted by the bounded Gmail/Graph DKIM verifier. Minimal verifier/version/time results can attach to historical receipt evidence; source-worker/message authorization nonces are excluded from workspace moves. The SQL reconciliation outbox is source-instance-local and retained by full database backups, not organization archives. Drain it before moving a workspace; pending effects survive restart, delivered rows expire after seven days, and organization/task deletion cascades their removal. Repair audit history lasts with the organization. Rollback refuses pending effects, unknown sends and retained restrictive state. See [send safety](/development/send-safety/).
 
+## Retained node evidence and admin device requests
+
+Recent fleet evidence uses existing primary Redis, not a SQL migration or
+external journal reader. Each node retains at most 1,000 allowlisted events for
+one hour, pruned by observation time/count on ingest and time-filtered on reads.
+Capture metadata expires after two hours; retry deduplication after one hour.
+Ingestion is limited to 30/node/minute. Each process has a 256-event memory
+queue, up to 32 events/batch and three bounded transport attempts. Known drops
+reset with the process ID; crashes/lost acknowledgements are not fully measured.
+
+Data contains fixed event names, node/mailbox/event/process UUIDs, timestamps,
+canonical severity/category and numeric status/counts. No addresses, subjects,
+message bodies, headers, raw errors, folder names, provider tokens, passwords
+or broker connection strings are forwarded. Allowlists run before transport
+and at ingest/read. This instance-local evidence is not organization mail data
+and is excluded from workspace export/import; it is not a delivery receipt.
+
+`NODE_LOG_TOKEN` is a separate 256-bit node-enrollment ingestion credential.
+Its hash stays in Redis until rejoin rotates it or node deletion revokes it;
+enrollment identity is not an event and does not expire with history. Protect
+the node environment like other credentials; never publish `env_b64` or include
+raw credentials in support bundles. Node deletion removes its credential,
+events and capture metadata; TTL retry markers age out independently. Redis
+eviction/restore may lose credential hashes: re-enroll, never fall back to shared
+broker authentication for logs.
+
+Admin device grants/indexes/hashed session-bound consent tokens expire within
+five minutes. Device secrets are hashed; access/refresh tokens are not stored
+there for deferred delivery. Rate counters expire after one/ten minutes.
+Successful issuance uses existing SQL sessions and admin audit logs, retaining
+the original MFA flag/provider/proof timestamp. Redis loss cancels pending
+handshakes, not issued sessions. No permanent grant datastore/migration is added.
+
+### Upgrade order and coverage
+
+Deploy the backend first, upgrade node binaries/images, then re-enroll existing
+nodes to receive `NODE_LOG_TOKEN` in the existing enrollment environment.
+Preserve the existing node UUID when rejoining to keep placement identity.
+New enrollments receive it automatically; manually provisioned workers require
+the same step. Upgrading alone cannot safely manufacture per-node identity from
+the shared broker token. Older nodes keep working under existing heartbeat/sync
+compatibility but log coverage stays unavailable until capture is received.
+There is no import of old journal/container logs. Empty fresh capture is not
+proof of health. See [exact diagnostic contracts](/api/endpoints/#platform-node-diagnostics).
+Admin UI/CLI changes are a separate stage; backend endpoints alone do not
+provide the consent page or CLI command.
+
 ## See also
 
 - [Install](/development/install/): the wizard that asks all of this up front

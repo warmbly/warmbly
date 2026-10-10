@@ -116,3 +116,20 @@ func TestMonitoringKafkaNeverClampsMissingInvalidOrDeniedOffsets(t *testing.T) {
 		t.Fatal(out)
 	}
 }
+
+func TestKafkaPartitionEvidenceIsExplicitBoundedAndTimestamped(t *testing.T) {
+	at := time.Now().UTC()
+	scope := DiagnosticScope{ID: "worker_events", Group: "private-group", Topics: []string{"jobs.worker-events"}, IncludePartitions: true}
+	out := diagnoseKafka(t.Context(), &fakeDiagnosticAdmin{}, at, []DiagnosticScope{scope})
+	if out.Availability != models.MonitoringFresh || out.ObservedAt == nil || !out.ObservedAt.Equal(at) {
+		t.Fatal("missing observation time", out)
+	}
+	b := out.Metrics[0].Broker
+	if b == nil || len(b.Partitions) != 1 || b.ConsumerGroup != scope.Group || b.Partitions[0].CommittedLag != *out.Metrics[0].Count || b.Partitions[0].Latest-b.Partitions[0].Committed != b.Partitions[0].CommittedLag {
+		t.Fatal("missing validated partition offsets", b)
+	}
+	out = diagnoseKafka(t.Context(), &fakeDiagnosticAdmin{problem: "no_commit"}, at, []DiagnosticScope{scope})
+	if out.Metrics[0].Broker != nil || out.Metrics[0].Count != nil || out.Metrics[0].ObservedAt == nil {
+		t.Fatal("missing offsets became healthy or unobserved", out)
+	}
+}

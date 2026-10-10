@@ -15,6 +15,7 @@ import (
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/nodeevidence"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -68,6 +69,9 @@ func (w *WMail) Sync(ctx context.Context) *errx.MailError {
 		})
 	}
 
+	if len(skipped) > 0 {
+		nodeevidence.Emit(nodeevidence.FolderSkipped, w.ID, 0, len(skipped))
+	}
 	// Before anything is matched by name, follow the folders whose name
 	// changed. A rename read as a delete plus a first sighting would orphan
 	// every message filed under the old name and re-import the folder's
@@ -423,6 +427,7 @@ func (w *WMail) imapReconcileSkipped(ctx context.Context, box *models.Mailbox, s
 		}
 		found, ferr := client.FindUIDsByMessageIDs(ctx, skipped[i].Name, ids)
 		if ferr != nil {
+			nodeevidence.Emit(nodeevidence.SearchSkipped, w.ID, 0, 1)
 			log.Debug().Err(ferr).Str("email_id", w.ID.String()).Str("folder", skipped[i].Name).Msg("sync: search in skipped folder failed")
 			complete = false
 			continue
@@ -987,6 +992,7 @@ func imapCanonicalFolder(box *models.Mailbox) string {
 // retry next tick. It is not a mailbox error, so nothing is relayed to the
 // consumer and no error record is written for a control-plane hiccup.
 func (w *WMail) controlPlaneError(err error, stats *tickStats) *errx.MailError {
+	nodeevidence.Emit(nodeevidence.ControlPlaneHeld, w.ID, evidenceHTTPStatus(err), 1)
 	log.Warn().Err(err).Str("email_id", w.ID.String()).Msg("sync: control-plane call failed; pass ended, cursors held")
 	stats.aborted = true
 	return nil

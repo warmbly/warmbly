@@ -57,7 +57,7 @@ func (r *tokenRepository) GenerateSession(ctx context.Context, tx pgx.Tx, sessio
 		 $4, $5, $6, $7,
 		 $8, $9,
 		 $10, $11, $12, $13, $14,
-		 $15, $16, $17, $18, $4
+		 $15, $16, $17, $18, $19
 		)
 	`
 
@@ -66,7 +66,7 @@ func (r *tokenRepository) GenerateSession(ctx context.Context, tx pgx.Tx, sessio
 		session.CreatedAt, session.ExpiresAt, session.LastRefreshedAt, session.RevokedAt,
 		session.AccessNonce, session.RefreshNonce,
 		session.LocationCity, session.LocationRegion, session.LocationCountry, session.LocationCountryCode, session.LocationPostalCode,
-		session.OSName, session.BrowserName, session.AuthProvider, session.MFAVerified,
+		session.OSName, session.BrowserName, session.AuthProvider, session.MFAVerified, session.ReauthAt,
 	}
 
 	_, err := tx.Exec(

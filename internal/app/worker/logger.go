@@ -3,6 +3,9 @@ package worker
 import (
 	"os"
 
+	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/pkg/nodeevidence"
+
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -35,5 +38,10 @@ func NewLoggerWithHandler(onError func(zapcore.Entry)) (*zap.Logger, error) {
 
 	customCore := &CustomCore{Core: core, OnError: onError}
 
-	return zap.New(customCore, zap.AddCaller()), nil
+	return zap.New(customCore, zap.AddCaller(), zap.Hooks(func(entry zapcore.Entry) error {
+		if entry.Level >= zapcore.ErrorLevel {
+			nodeevidence.Emit(nodeevidence.WorkerError, uuid.Nil, 0, 1)
+		}
+		return nil
+	})), nil
 }

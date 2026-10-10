@@ -8,6 +8,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/pkg/nodeevidence"
 )
 
 // syncBackoffMax is the normal ceiling between passes. An explicit provider
@@ -93,6 +94,14 @@ func (w *WMail) syncOnce(ctx context.Context) (result *errx.MailError) {
 		}
 	}()
 	if err := w.SyncMail(ctx); err != nil {
+		switch err.Code {
+		case errx.MailErrorCodeServerUnreachable, errx.MailErrorCodeConnectionLost:
+			nodeevidence.Emit(nodeevidence.ProviderUnreachable, w.ID, 0, 1)
+		case errx.MailErrorCodeGoogleAuth, errx.MailErrorCodeAuthenticationFailed, errx.MailErrorCodeAuthorizationFailed:
+			nodeevidence.Emit(nodeevidence.ProviderAuth, w.ID, 0, 1)
+		case errx.MailErrorCodeSendingTooFast:
+			nodeevidence.Emit(nodeevidence.ProviderThrottled, w.ID, 0, 1)
+		}
 		// Keep observations fresh; the consumer deduplicates user notifications.
 		if isTransportError(err) {
 			w.transportFailures++
@@ -107,6 +116,9 @@ func (w *WMail) syncOnce(ctx context.Context) (result *errx.MailError) {
 		return err
 	}
 	if w.tracker != nil && w.tracker.tickComplete {
+		if w.transportFailures > 0 {
+			nodeevidence.Emit(nodeevidence.ProviderRecovered, w.ID, 0, 1)
+		}
 		w.transportFailures = 0
 	}
 	return nil

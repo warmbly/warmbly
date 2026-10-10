@@ -228,6 +228,136 @@ Returned when:
 }
 ```
 
+## Platform admin device sessions
+
+This backend flow is separate from workspace API-key authorization. Platform
+admin access uses a normal bearer session, never an organization API key.
+The admin UI and CLI implement this contract in a separate rollout stage;
+these endpoints alone do not provide a consent page or CLI command. The CLI
+never listens on an HTTP port or receives a browser redirect.
+
+### Endpoint contract
+
+All bodies/responses are JSON; bodies are capped at 4 KiB. Successful responses
+are `Cache-Control: no-store`. Keep device and consent secrets in memory, not
+URLs, stdout, command arguments, diagnostics or browser localStorage.
+
+| Endpoint | Request | Success | Authentication |
+| --- | --- | --- | --- |
+| `POST /v1/auth/cli/admin/code` | `{"client_name":"My diagnostic laptop"}` | 201, start schema below | Public, IP limited |
+| `POST /v1/auth/cli/admin/poll` | `{"device_secret":"<CLI memory secret>"}` | 200, poll schema below | Device secret in body, IP limited |
+| `POST /admin/auth/device/describe` | `{"user_code":"ABCD-EFGH"}` | 200, describe schema below | Normal session, live nonzero admin permissions, session MFA |
+| `POST /admin/auth/device/decide` | `{"user_code":"ABCD-EFGH","consent_token":"<page memory secret>","decision":"approved"}` | 200 `{"status":"approved"}`; `denied` is the other valid decision/status | Same admin gates, plus existing fresh-auth gate |
+
+Start response:
+
+```json
+{
+  "device_secret": "<43-character base64url secret, never display>",
+  "user_code": "ABCD-EFGH",
+  "instance_url": "https://backend.example.test",
+  "verification_path": "/device",
+  "expires_in": 300,
+  "interval": 5
+}
+```
+
+`client_name` uses existing plain workspace-display-name rules (required, max
+64 characters). It is requester-supplied, not verified device identity. The CLI
+must compare `instance_url` to its configured server. It is the existing
+`API_PUBLIC_URL`, or the local listener fallback; remote deployments must
+configure that public URL correctly. Show only the user code and the configured
+admin origin's `/device` page, never an untrusted origin from a requester.
+Instance URLs with credentials, query strings, fragments or non-HTTP schemes
+disable the device service rather than echoing sensitive/ambiguous identity.
+
+Describe response:
+
+```json
+{
+  "request": {
+    "client_name": "My diagnostic laptop",
+    "instance_url": "https://backend.example.test",
+    "expires_at": "2026-10-10T06:05:00Z",
+    "status": "pending",
+    "consent_token": "<43-character page-memory secret>"
+  },
+  "requested_access": "Your live platform administrator permissions through a separate revocable session",
+  "admin_permissions": 16
+}
+```
+
+Show server, client name, expiry and full requested access before explicit
+consent. Warn against approving an unsolicited code. `admin_permissions` is
+the existing numeric platform bitmask, not workspace API scopes. Opening a
+link or describing a code never authorizes it. Sign in normally first: OAuth,
+passkeys and password+MFA retain all existing challenges, Turnstile and rate
+limits. A consent token is hashed and bound to the describing browser session
+and request. A different session cannot spend it. If decide returns
+`reauth_required`, finish existing `POST /v1/auth/reauth`, then explicitly decide
+again; never auto-approve when login/reauth returns.
+
+Poll no faster than every five seconds. Pending/denied responses contain
+`status: "pending"` or `"denied"`, no `token`; the existing UUID serializer may
+include a zero `user_id`, which is not an identity. An approving poll returns:
+
+```json
+{
+  "status": "approved",
+  "user_id": "<approving admin UUID>",
+  "token": {
+    "access_token": "<normal purpose-bound access token>",
+    "refresh_token": "<normal purpose-bound refresh token>",
+    "access_token_expires_at": "2026-10-10T18:01:00Z",
+    "refresh_token_expires_at": "2027-04-08T06:01:00Z"
+  }
+}
+```
+
+### Security and lifecycle
+
+- Five-minute Redis grants contain only the hashed 256-bit device secret and
+  approval metadata; the short user code has 40 bits of randomness and is only
+  a browser lookup. State is namespaced to instance identity/signing secret.
+- Redis decisions and poll claims are atomic and one-use. Approval/denial and
+  successful issuance use the existing admin audit log without secret material.
+  Issuance consumes the grant before creating the session. A lost response or
+  issuance error cannot replay it; start again and inspect/revoke any session
+  whose response was lost. Redis loss cancels handshakes, not issued sessions.
+- Approval requires session MFA and fresh auth. Issuance locks/rechecks the
+  source session and user in Postgres: active/unexpired, not login-banned, live
+  admin access, original proof within five minutes. Later browser reauth cannot
+  rejuvenate an already-approved old proof.
+- The separate CLI session gets new ID/nonces but preserves source
+  `auth_provider`, `mfa_verified` and the original approval-time `reauth_at`.
+  New session creation time is not fresh MFA. The existing model has no separate
+  factor-time column to invent. It starts without a selected workspace; any
+  workspace use requires existing selection and permissions.
+- Access/refresh lifetimes remain 12 hours/180 days, with existing purpose
+  checks, rotation, reuse detection, revocation and MFA lifecycle. Refresh never
+  stamps reauth. Sensitive actions still use existing fresh-auth gates. Revoke
+  the CLI through normal sessions management. Revoking the browser after
+  issuance does not revoke the independent CLI session; revoke-all and security
+  changes keep existing behavior. Store tokens only in a protected CLI store.
+- Additional fail-closed budgets: starts 20/IP/10 minutes; polls 360/IP/10
+  minutes; browser lookups/decisions 12/user/minute; poll interval five seconds.
+  The existing CLI IP limiter also applies (default 500/15 minutes). Redis
+  failure never bypasses these budgets or allows anonymous/single-factor admin.
+
+Errors use the existing `{error,message,code,request_id}` envelope:
+
+| Status | Code | Client action |
+| --- | --- | --- |
+| 400 | `bad_request`, `invalid_name` | Correct JSON/name/decision |
+| 401 | `unauthorized` | Sign in normally or restart if source invalid at issuance |
+| 403 | `admin_mfa_required`, `forbidden` | Require MFA/live platform admin access |
+| 403 | `reauth_required` | Reauthenticate browser, then explicitly decide |
+| 404 | `admin_device_expired` | Invalid/unknown/expired/consumed requests are indistinguishable; restart |
+| 409 | `admin_device_resolved` | Already decided or mismatched/replayed consent; do not auto-retry approval |
+| 429 | `admin_device_slow_down`, `rate_limit_exceeded` | Wait five seconds or the attempt window |
+| 503 | `service_unavailable` | Dependency unavailable; no fail-open issuance |
+| 500 | `internal_error` | Start again; approving poll cannot be replayed |
+
 ## Next steps
 
 - [Endpoints](/api/endpoints/)

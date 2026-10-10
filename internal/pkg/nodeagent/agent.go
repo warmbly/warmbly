@@ -32,6 +32,7 @@ import (
 const DefaultInterval = 90 * time.Second
 
 type Config struct {
+	LogToken           string
 	WarmupSendProtocol int
 	NodeID             uuid.UUID
 	Role               models.NodeRole
@@ -61,6 +62,7 @@ type Config struct {
 }
 
 type Agent struct {
+	logs           *logCapture
 	cfg            Config
 	http           *http.Client
 	started        time.Time
@@ -78,7 +80,9 @@ func New(cfg Config) *Agent {
 	if cfg.HTTPClient == nil {
 		cfg.HTTPClient = &http.Client{Timeout: 10 * time.Second}
 	}
-	return &Agent{cfg: cfg, http: cfg.HTTPClient, started: time.Now()}
+	a := &Agent{cfg: cfg, http: cfg.HTTPClient, started: time.Now()}
+	a.prepareLogs()
+	return a
 }
 
 // ReportError attaches a message to the next heartbeat. Safe from any
@@ -103,6 +107,7 @@ func (a *Agent) Run(ctx context.Context) {
 		log.Println("nodeagent: no backend URL or token; heartbeats disabled")
 		return
 	}
+	go a.runLogs(ctx)
 
 	interval := DefaultInterval
 	bootPending := true

@@ -89,7 +89,7 @@ func (r *httpEmailMessageMapRepository) Add(ctx context.Context, data EmailMessa
 	case http.StatusNoContent, http.StatusOK, http.StatusCreated:
 		return nil
 	default:
-		return fmt.Errorf("email_message_map.http: add: unexpected status %d", resp.StatusCode)
+		return &ControlPlaneHTTPError{Status: resp.StatusCode}
 	}
 }
 
@@ -116,7 +116,7 @@ func (r *httpEmailMessageMapRepository) AdmitArrival(ctx context.Context, data E
 		return ErrArrivalOutboxUnsupported
 	}
 	if resp.StatusCode != http.StatusNoContent || resp.Header.Get("X-Warmbly-Arrival-Durable") != "1" {
-		return fmt.Errorf("arrival admission not confirmed: status %d", resp.StatusCode)
+		return &ControlPlaneHTTPError{Status: resp.StatusCode}
 	}
 	return nil
 }
@@ -154,7 +154,7 @@ func (r *httpEmailMessageMapRepository) Get(ctx context.Context, userID, emailID
 		d := EmailMessageData(p)
 		return &d, nil
 	default:
-		return nil, fmt.Errorf("email_message_map.http: get: unexpected status %d", resp.StatusCode)
+		return nil, &ControlPlaneHTTPError{Status: resp.StatusCode}
 	}
 }
 
@@ -180,7 +180,7 @@ func (r *httpEmailMessageMapRepository) Del(ctx context.Context, userID, emailID
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
-		return fmt.Errorf("email_message_map.http: del: unexpected status %d", resp.StatusCode)
+		return &ControlPlaneHTTPError{Status: resp.StatusCode}
 	}
 	return nil
 }
