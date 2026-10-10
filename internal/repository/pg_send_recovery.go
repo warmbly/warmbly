@@ -14,6 +14,14 @@ import (
 )
 
 type sendResultKey struct{}
+
+const refundedWarmupChargePredicate = `t.task_type='warmup' AND EXISTS(SELECT 1 FROM warmup_tasks charge
+	WHERE charge.task_id=t.id AND charge.warmup_charged_date IS NOT NULL
+	AND charge.warmup_reply_charged IS NOT NULL AND charge.warmup_refunded_at IS NOT NULL)`
+
+const repairableSendDeadLetterPredicate = `t.status='dead_lettered' AND (t.send_result_state='sent'
+	OR (t.send_result_state='failed' AND ` + refundedWarmupChargePredicate + `))`
+
 type sendResultContext struct {
 	tx          pgx.Tx
 	taskID      uuid.UUID
@@ -190,7 +198,18 @@ func (r *taskRepository) ApplySendResult(ctx context.Context, result models.Send
 			}
 			return tx.Commit(ctx)
 		}
-		if applied != nil && status != "dead_lettered" && previous != nil && state == *previous && state != "unknown" {
+		if applied != nil && previous != nil && state == *previous && state != "unknown" {
+			if status == "dead_lettered" {
+				// Repair metadata only; the positive refund proof forbids repeating accounting.
+				tag, err := tx.Exec(ctx, `UPDATE tasks t SET status='failed',updated_at=NOW() WHERE t.id=$1 AND t.status='dead_lettered'
+					AND t.send_result_state='failed' AND t.send_result_applied_at IS NOT NULL AND `+refundedWarmupChargePredicate, result.TaskID)
+				if err != nil {
+					return err
+				}
+				if tag.RowsAffected() == 0 {
+					return nil
+				}
+			}
 			if err = resolveSendDeadLetter(ctx, tx, result.TaskID); err != nil {
 				return err
 			}
