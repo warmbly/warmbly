@@ -131,6 +131,8 @@ What you see is the message as it was sent: paragraphs, line breaks, lists, tabl
 
 HTML mail renders in an isolated frame, so a sender's styling cannot leak into the dashboard and nothing in the message can run code. Links open in a new tab and carry no referrer. If the stored copy of a message cannot be read, Warmbly shows the preview it has and says so instead of failing to open the conversation.
 
+The conversation has one reading scrollbar. Message bodies resize as you change the pane width, load images or expand quoted history. Wide newsletters fit the pane instead of clipping the right edge; layouts that cannot wrap scale down to stay complete. The subject and actions stay above the reading area, with Reply and Forward below it. Narrow panes put filing actions behind **More thread actions**, even on a wide screen.
+
 Warmbly removes its open-tracking pixels from the displayed copy, including quoted messages. Reading mail here, whether in Inbox, Sent or another view, does not record a campaign open. The delivered email keeps its tracking pixel for recipient opens.
 
 Remote images in mail you receive are held back until you ask for them. Any sender can put a tracking pixel in a message, and loading it would tell them when you read it, your IP address and your mail client. A message that references remote images, backgrounds or fonts shows a bar with **Load images**; click it to show them for that message. Images embedded in the message itself display straight away, and your own sent messages are not affected.

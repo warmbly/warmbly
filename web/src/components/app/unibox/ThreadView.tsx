@@ -406,14 +406,14 @@ export function ThreadView({ threadId, emailId, onClose }: ThreadViewProps) {
   };
 
   return (
-    <div className="flex h-full min-h-0">
-      <div className="flex-1 flex flex-col min-w-0 bg-white">
-      <div className="min-h-12 px-4 sm:px-5 py-2 border-b border-slate-200 flex items-center gap-3 shrink-0 bg-white">
+    <div className="flex h-full min-h-0 min-w-0 overflow-hidden">
+      <div className="@container/thread flex-1 flex flex-col min-h-0 min-w-0 bg-white">
+      <div className="min-h-12 px-4 sm:px-5 py-2 border-b border-slate-200 flex flex-col items-stretch gap-2 @min-[40rem]/thread:flex-row @min-[40rem]/thread:items-center @min-[40rem]/thread:gap-3 shrink-0 bg-white">
         <div className="min-w-0 flex-1">
-          <h1 className="text-[13.5px] text-slate-900 font-semibold truncate leading-5">
+          <h1 title={subject} className="text-[13.5px] text-slate-900 font-semibold line-clamp-2 break-words leading-5">
             {subject}
           </h1>
-          <div className="flex items-center gap-1.5 min-w-0 text-[11px] text-slate-400 leading-4">
+          <div className="flex flex-wrap items-center gap-1.5 min-w-0 text-[11px] text-slate-400 leading-4">
             <span className="shrink-0">
               {messages.length} {messages.length === 1 ? "message" : "messages"}
             </span>
@@ -424,7 +424,7 @@ export function ThreadView({ threadId, emailId, onClose }: ThreadViewProps) {
               </>
             )}
             {(threadLabels.data ?? []).length > 0 && (
-              <span className="hidden md:inline-flex items-center gap-1 shrink-0 ml-1">
+              <span className="inline-flex max-w-full flex-wrap items-center gap-1 ml-1">
                 {(threadLabels.data ?? []).slice(0, 3).map((c) => (
                   <CategoryChip key={c.id} category={c} compact />
                 ))}
@@ -443,7 +443,7 @@ export function ThreadView({ threadId, emailId, onClose }: ThreadViewProps) {
             />
           )
         ) : (
-        <div className="flex items-center gap-0.5 shrink-0">
+        <div className="flex flex-wrap items-center gap-0.5 shrink-0">
           <ThreadLabelMenu
             threadId={threadId}
             open={labelMenuOpen}
@@ -542,7 +542,7 @@ export function ThreadView({ threadId, emailId, onClose }: ThreadViewProps) {
             </PopoverMenuContent>
           </PopoverMenu>
 
-          <div className="hidden sm:flex items-center gap-0.5">
+          <div className="hidden @min-[28rem]/thread:flex items-center gap-0.5">
             <IconAction
               label="Mark as unread"
               icon={<MailCheckIcon className="w-[15px] h-[15px]" />}
@@ -573,7 +573,7 @@ export function ThreadView({ threadId, emailId, onClose }: ThreadViewProps) {
               />
             )}
           </div>
-          <span aria-hidden className="hidden sm:block h-4 w-px bg-slate-200 mx-1" />
+          <span aria-hidden className="hidden @min-[28rem]/thread:block h-4 w-px bg-slate-200 mx-1" />
           <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -597,7 +597,7 @@ export function ThreadView({ threadId, emailId, onClose }: ThreadViewProps) {
               <button
                 type="button"
                 aria-label="More thread actions"
-                className="sm:hidden size-7 rounded-md inline-flex items-center justify-center text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors"
+                className="@min-[28rem]/thread:hidden size-7 rounded-md inline-flex items-center justify-center text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors"
               >
                 <MoreVerticalIcon className="w-3.5 h-3.5" />
               </button>
@@ -660,7 +660,10 @@ export function ThreadView({ threadId, emailId, onClose }: ThreadViewProps) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-        className="flex-1 overflow-y-auto divide-y divide-slate-100"
+        role="region"
+        aria-label="Conversation messages"
+        tabIndex={0}
+        className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden divide-y divide-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500"
       >
         {messages.map((email, i) => (
           <MessageBubble

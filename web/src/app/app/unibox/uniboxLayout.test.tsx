@@ -126,6 +126,22 @@ describe("unibox desktop layout (#473)", SUITE, () => {
         vi.mocked(localStorage.getItem).mockReset();
     });
 
+    it("keeps one bounded keyboard-accessible reading area and pane-responsive actions", async () => {
+        await mount("/app/unibox/all");
+        await settle();
+        await openThread("Subject 4");
+        const messages = screen.getByRole("region", { name: "Conversation messages" });
+        expect(messages).toHaveAttribute("tabindex", "0");
+        expect(messages.className).toContain("min-h-0");
+        expect(messages.className).toContain("overflow-y-auto");
+        expect(messages.className).toContain("overflow-x-hidden");
+        expect(messages.parentElement?.className).toContain("@container/thread");
+        const more = screen.getByRole("button", { name: "More thread actions" });
+        expect(more.className).toContain("@min-[28rem]/thread:hidden");
+        expect(screen.getByRole("button", { name: "Reply" })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Forward" })).toBeInTheDocument();
+    });
+
     it("reopens a personal draft on an older message when newer mail exists", async () => {
         threadFixture.includeNewer = true;
         useAppStore.setState({ currentOrganization: { id: "org-1", name: "Org", role: "owner" } });
