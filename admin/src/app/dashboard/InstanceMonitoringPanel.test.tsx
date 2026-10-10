@@ -1,4 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MonitoringMetric, MonitoringSnapshot, MonitoringSource } from "@/lib/api/client/admin/monitoring";
@@ -42,6 +44,34 @@ beforeEach(() => {
 });
 
 describe("operational monitoring evidence", () => {
+    it("uses the current clock when a new snapshot arrives between clock ticks", async () => {
+        vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date(at));
+        const container = document.createElement("div");
+        const root = createRoot(container);
+        try {
+            await act(async () => root.render(<MemoryRouter><InstanceMonitoringPanel /></MemoryRouter>));
+            vi.setSystemTime(new Date(Date.parse(at) + 5_000));
+            const fresh = new Date(Date.now()).toISOString();
+            state.query.data = { ...snapshot([source({ observed_at: fresh, checked_at: fresh, metrics: [metric({ observed_at: fresh, latest_evidence_at: fresh })] })]), checked_at: fresh };
+            await act(async () => root.render(<MemoryRouter><InstanceMonitoringPanel /></MemoryRouter>));
+            expect(container.textContent).not.toContain("future timestamp, age unknown");
+            expect(container.textContent).toContain("0s ago");
+            await act(async () => vi.advanceTimersByTime(30_000));
+            expect(container.textContent).toContain("30s ago");
+            const future = new Date(Date.now() + 90_000).toISOString();
+            state.query.data = snapshot([source({ observed_at: future, metrics: [metric({ observed_at: future })] })]);
+            await act(async () => root.render(<MemoryRouter><InstanceMonitoringPanel /></MemoryRouter>));
+            expect(container.textContent).toContain("future timestamp, age unknown");
+            expect(container.textContent).toContain("Stale observation");
+        } finally {
+            await act(async () => root.unmount());
+            vi.useRealTimers();
+            vi.unstubAllGlobals();
+        }
+    });
+
     it("keeps metric counts distinct from affected mailboxes, organizations and attention signals", () => {
         const document = render();
         const text = document.body.textContent;

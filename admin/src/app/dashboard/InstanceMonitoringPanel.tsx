@@ -113,11 +113,12 @@ function SourcePanel({ source, mask, now }: { source: MonitoringSource; mask: nu
 export function InstanceMonitoringPanel({ compact = false }: { compact?: boolean }) {
     const { data: me } = useMe();
     const query = useInstanceMonitoring();
-    const [now, setNow] = useState(() => Date.now());
+    const [, setClockTick] = useState(0);
     useEffect(() => {
-        const timer = setInterval(() => setNow(Date.now()), 30_000);
+        const timer = setInterval(() => setClockTick((tick) => tick + 1), 30_000);
         return () => clearInterval(timer);
     }, []);
+    const now = Date.now();
     const mask = me?.admin_permissions;
     const allowed = canMonitor(mask, AdminPerm.ViewAnalytics);
     const data = allowed ? query.data : undefined;
