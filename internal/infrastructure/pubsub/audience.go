@@ -3,6 +3,7 @@ package pubsub
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/google/uuid"
 )
@@ -12,7 +13,7 @@ type AudienceResolver interface {
 	CanAddressUser(ctx context.Context, orgID, userID uuid.UUID) (bool, error)
 }
 
-// publish keeps workspace payloads on authorized org/resource routes when the owner shortcut is unavailable.
+// publish authorizes owner shortcuts without widening the event's original audience.
 func (p *StreamingPublisher) publish(ctx context.Context, topic string, event any, attrs map[string]string) error {
 	data, err := json.Marshal(event)
 	if err != nil {
@@ -43,6 +44,10 @@ func (p *StreamingPublisher) publish(ctx context.Context, topic string, event an
 	}
 	if org == "" {
 		org = attrs["org_id"]
+	}
+	userOnly := org == "" || topic == TopicUserEvents || value("event_type") == string(EventContactsReload)
+	if org == "" {
+		org = attrs["organization_id"]
 	}
 	personal := org == "" && (value("event_type") == string(EventSessionsRevoked) ||
 		(value("event_type") == string(EventNotificationCreated) && value("category") == "security_new_signin"))
@@ -93,15 +98,17 @@ func (p *StreamingPublisher) publish(ctx context.Context, topic string, event an
 		}
 	}
 	if !resolved {
-		return nil
+		return errors.New("user event requires organization or resource context")
 	}
-	if value("event_type") == string(EventNotificationCreated) {
+	if userOnly || value("event_type") == string(EventNotificationCreated) {
 		if !allowed {
 			return nil
 		}
 		delete(fields, "org_id")
 		delete(fields, "organization_id")
+		fields["user_id"], _ = json.Marshal(userID.String())
 		delete(attrs, "org_id")
+		delete(attrs, "organization_id")
 		return p.client.Publish(ctx, topic, fields, attrs)
 	}
 	if !allowed {

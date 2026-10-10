@@ -402,7 +402,7 @@ func (p *StreamingPublisher) PublishEmailDeleted(ctx context.Context, event *Ema
 }
 
 // PublishContactsReload signals frontend to reload contacts
-func (p *StreamingPublisher) PublishContactsReload(ctx context.Context, userID, operationID string) {
+func (p *StreamingPublisher) PublishContactsReload(ctx context.Context, userID, operationID string, orgID uuid.UUID) {
 	if p.client == nil {
 		return
 	}
@@ -415,6 +415,7 @@ func (p *StreamingPublisher) PublishContactsReload(ctx context.Context, userID, 
 		},
 		OperationID: operationID,
 		EntityType:  "contacts",
+		OrgID:       orgID.String(),
 	}
 
 	attrs := map[string]string{
@@ -450,9 +451,9 @@ func (p *StreamingPublisher) PublishOrgContactsReload(ctx context.Context, orgID
 }
 
 // PublishBulkProgress sends bulk operation progress update
-func (p *StreamingPublisher) PublishBulkProgress(ctx context.Context, event *BulkOperationEvent) {
+func (p *StreamingPublisher) PublishBulkProgress(ctx context.Context, event *BulkOperationEvent) error {
 	if p.client == nil {
-		return
+		return nil
 	}
 
 	event.Timestamp = time.Now()
@@ -463,9 +464,7 @@ func (p *StreamingPublisher) PublishBulkProgress(ctx context.Context, event *Bul
 		"event_type":   string(event.EventType),
 	}
 
-	if err := p.publish(ctx, TopicBulkOps, event, attrs); err != nil {
-		// Log error but don't fail
-	}
+	return p.publish(ctx, TopicBulkOps, event, attrs)
 }
 
 // PublishCampaignEvent sends campaign event
@@ -1027,18 +1026,19 @@ func (p *StreamingPublisher) PublishSessionsRevoked(ctx context.Context, userID 
 }
 
 // PublishToUser publishes a generic event to a user
-func (p *StreamingPublisher) PublishToUser(ctx context.Context, userID string, event interface{}) {
+func (p *StreamingPublisher) PublishToUser(ctx context.Context, userID string, event interface{}, orgIDs ...uuid.UUID) error {
 	if p.client == nil {
-		return
+		return nil
 	}
 
 	attrs := map[string]string{
 		"user_id": userID,
 	}
-
-	if err := p.publish(ctx, TopicUserEvents, event, attrs); err != nil {
-		// Log error but don't fail
+	if len(orgIDs) > 0 {
+		attrs["organization_id"] = orgIDs[0].String()
 	}
+
+	return p.publish(ctx, TopicUserEvents, event, attrs)
 }
 
 // NotificationEvent is the user-scoped realtime signal for a new in-app

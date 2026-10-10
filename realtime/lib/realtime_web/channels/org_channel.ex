@@ -203,8 +203,7 @@ defmodule RealtimeWeb.OrgChannel do
     end
   end
 
-  # Swallow the duplicate %Broadcast{} our manual PubSub subscription delivers
-  # to the channel process (the fastlane copy is what reaches the client).
+  # Phoenix delivers socket broadcasts separately; intercepted presence uses handle_out/3.
   def handle_info(%Phoenix.Socket.Broadcast{}, socket), do: {:noreply, socket}
 
   defp update_presence_policy(socket, event) do

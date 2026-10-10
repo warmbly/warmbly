@@ -15,6 +15,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/replyclassify"
 	"github.com/warmbly/warmbly/internal/infrastructure/apns"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/observability/errs"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -89,6 +90,12 @@ func pushMember(userID uuid.UUID, category models.NotificationCategory) string {
 func lastKey(member string) string    { return pushKeyPrefix + ":last:{" + member + "}" }
 func pendingKey(member string) string { return pushKeyPrefix + ":pending:{" + member + "}" }
 func dueKey() string                  { return pushKeyPrefix + ":due" }
+
+var takePendingPushes = redis.NewScript(`
+local items = redis.call('LRANGE', KEYS[1], 0, -1)
+redis.call('DEL', KEYS[1])
+return items
+`)
 
 // deliverPush is the per-notification ingress (detached, best-effort). First
 // event in a quiet window pushes right away; the rest queue for the digest.
@@ -167,11 +174,10 @@ func (s *service) sendDigest(ctx context.Context, member string) {
 	}
 	category := models.NotificationCategory(parts[1])
 
-	raw, lerr := s.pushRedis.LRange(ctx, pendingKey(member), 0, -1).Result()
+	raw, lerr := takePendingPushes.Run(ctx, s.pushRedis, []string{pendingKey(member)}).StringSlice()
 	if lerr != nil {
 		return
 	}
-	s.pushRedis.Del(ctx, pendingKey(member))
 	if len(raw) == 0 {
 		return
 	}
@@ -179,10 +185,27 @@ func (s *service) sendDigest(ctx context.Context, member string) {
 	s.pushRedis.Set(ctx, lastKey(member), "1", pushWindow())
 
 	items := make([]pendingPush, 0, len(raw))
+	retry := make([]any, 0)
 	for _, r := range raw {
 		var p pendingPush
-		if json.Unmarshal([]byte(r), &p) == nil && s.canDeliverPush(ctx, userID, category, p) {
+		if json.Unmarshal([]byte(r), &p) != nil {
+			continue
+		}
+		allowed, err := s.pushEligibility(ctx, userID, category, p)
+		if err != nil {
+			retry = append(retry, r)
+		} else if allowed {
 			items = append(items, p)
+		}
+	}
+	if len(retry) > 0 {
+		_, err := s.pushRedis.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+			pipe.RPush(ctx, pendingKey(member), retry...)
+			pipe.ZAdd(ctx, dueKey(), redis.Z{Score: float64(time.Now().Add(digestPollEvery).Unix()), Member: member})
+			return nil
+		})
+		if err != nil {
+			errs.CaptureException(fmt.Errorf("notification: requeue push digest: %w", err))
 		}
 	}
 	if len(items) == 0 {
@@ -199,16 +222,29 @@ func (s *service) sendDigest(ctx context.Context, member string) {
 }
 
 func (s *service) canDeliverPush(ctx context.Context, userID uuid.UUID, category models.NotificationCategory, p pendingPush) bool {
+	allowed, err := s.pushEligibility(ctx, userID, category, p)
+	return err == nil && allowed
+}
+
+func (s *service) pushEligibility(ctx context.Context, userID uuid.UUID, category models.NotificationCategory, p pendingPush) (bool, error) {
 	allowed, err := s.recipientEligibility(ctx, userID, p.OrganizationID, category)
-	return err == nil && allowed && s.canPushMessage(ctx, category, p)
+	if err != nil || !allowed {
+		return false, err
+	}
+	return s.pushMessageEligibility(ctx, category, p)
 }
 
 func (s *service) canPushMessage(ctx context.Context, category models.NotificationCategory, p pendingPush) bool {
+	allowed, err := s.pushMessageEligibility(ctx, category, p)
+	return err == nil && allowed
+}
+
+func (s *service) pushMessageEligibility(ctx context.Context, category models.NotificationCategory, p pendingPush) (bool, error) {
 	if (category == models.NotifInboundReply || category == models.NotifInboundOOO) &&
 		replyclassify.IsSystemReport(replyclassify.Input{Subject: p.Body}) {
-		return false
+		return false, nil
 	}
-	return s.canNotifyMessage(ctx, category, p.MessageID)
+	return s.messageEligibility(ctx, category, p.MessageID)
 }
 
 func apnsAlert(category models.NotificationCategory, title, body, link string, count int) apns.Notification {

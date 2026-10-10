@@ -83,7 +83,7 @@ func TestOwnerEventAudience(t *testing.T) {
 
 func TestResourceOnlyOwnerEvents(t *testing.T) {
 	org, user, mailbox, task := uuid.New(), uuid.New(), uuid.New(), uuid.New()
-	resolver := &audienceStub{org: org}
+	resolver := &audienceStub{org: org, allowed: true}
 	bus := &audienceBus{}
 	p := NewStreamingPublisher(bus, resolver)
 	p.PublishEmailError(context.Background(), user.String(), mailbox, uuid.Nil, "private", "private")
@@ -93,15 +93,62 @@ func TestResourceOnlyOwnerEvents(t *testing.T) {
 		t.Fatalf("resource resolution lost events: %+v", bus.events)
 	}
 	for _, event := range bus.events {
-		if event["org_id"] != org.String() || event["user_id"] != nil {
-			t.Fatalf("restricted owner received user route: %+v", event)
+		if event["org_id"] != nil || event["organization_id"] != nil || event["user_id"] != user.String() {
+			t.Fatalf("private event audience widened: %+v", event)
 		}
+	}
+	resolver.allowed = false
+	p.PublishEmailError(context.Background(), user.String(), mailbox, uuid.Nil, "private", "private")
+	p.PublishTaskStatus(context.Background(), user.String(), task, EventTaskCompleted, "private", nil)
+	p.PublishWarmupStats(context.Background(), user.String(), mailbox, nil)
+	if len(bus.events) != 3 {
+		t.Fatal("ineligible private event must not be rerouted to workspace")
 	}
 	resolver.orgErr = errors.New("unavailable")
 	p.PublishEmailError(context.Background(), user.String(), mailbox, uuid.Nil, "private", "private")
 	NewStreamingPublisher(bus).PublishEmailError(context.Background(), user.String(), mailbox, uuid.Nil, "private", "private")
 	if len(bus.events) != 3 {
 		t.Fatal("unresolved events must fail closed")
+	}
+}
+
+func TestUserEventContextPreservesPrivateAudience(t *testing.T) {
+	ctx := context.Background()
+	org, user := uuid.New(), uuid.New()
+	resolver := &audienceStub{org: org, allowed: true}
+	bus := &audienceBus{}
+	p := NewStreamingPublisher(bus, resolver)
+	p.PublishContactsReload(ctx, user.String(), "contacts:add", org)
+	if err := p.PublishToUser(ctx, user.String(), map[string]string{"event_type": "CONTACTS_RELOAD"}, org); err != nil {
+		t.Fatal(err)
+	}
+	for i, event := range bus.events {
+		if event["org_id"] != nil || event["organization_id"] != nil || bus.attrs[i]["org_id"] != "" || event["user_id"] != user.String() {
+			t.Fatalf("context became workspace broadcast: event=%+v attrs=%+v", event, bus.attrs[i])
+		}
+	}
+	if len(bus.events) != 2 {
+		t.Fatal("authorized reload/generic user events were lost")
+	}
+	if err := p.PublishToUser(ctx, user.String(), map[string]string{"event_type": "PRIVATE"}); err == nil {
+		t.Fatal("generic user event must require context")
+	}
+	if err := p.PublishBulkProgress(ctx, &BulkOperationEvent{BaseEvent: BaseEvent{UserID: user.String(), EventType: EventBulkProgress}}); err == nil {
+		t.Fatal("bulk user event must require context")
+	}
+	if err := p.PublishBulkProgress(ctx, &BulkOperationEvent{BaseEvent: BaseEvent{UserID: user.String(), EventType: EventBulkProgress}, OrgID: org.String()}); err != nil {
+		t.Fatal(err)
+	}
+	if len(bus.events) != 3 || bus.events[2]["org_id"] != org.String() {
+		t.Fatal("explicit workspace bulk routing lost")
+	}
+	resolver.allowed = false
+	p.PublishContactsReload(ctx, user.String(), "contacts:import", org)
+	if err := p.PublishToUser(ctx, user.String(), map[string]string{"event_type": "PRIVATE"}, org); err != nil {
+		t.Fatal(err)
+	}
+	if len(bus.events) != 3 {
+		t.Fatal("ineligible private audience was published")
 	}
 }
 

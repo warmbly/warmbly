@@ -72,7 +72,7 @@ func (s *contactService) Add(ctx context.Context, userID string, orgID uuid.UUID
 		return nil, xerr
 	}
 
-	s.publishContactsReload(ctx, userID, "contacts:add")
+	s.publishContactsReload(ctx, userID, "contacts:add", orgID)
 	var attached []string
 	for i := range contacts {
 		attached = append(attached, contacts[i].Campaigns...)
@@ -193,7 +193,7 @@ func (s *contactService) BulkUpdate(ctx context.Context, userID string, orgID uu
 		return nil, xerr
 	}
 
-	s.publishContactsReload(ctx, userID, "contacts:bulk_update")
+	s.publishContactsReload(ctx, userID, "contacts:bulk_update", orgID)
 	s.wakeCampaigns(ctx, orgID, data.AddCampaigns)
 	s.syncSegmentCampaigns(ctx, orgID)
 	return updated, nil
@@ -205,7 +205,7 @@ func (s *contactService) Update(ctx context.Context, userID, contactID string, o
 		return nil, xerr
 	}
 
-	s.publishContactsReload(ctx, userID, "contacts:update:"+contactID)
+	s.publishContactsReload(ctx, userID, "contacts:update:"+contactID, orgID)
 	s.wakeCampaigns(ctx, orgID, data.Campaigns)
 	s.syncSegmentCampaigns(ctx, orgID)
 	return updated, nil
@@ -216,7 +216,7 @@ func (s *contactService) BulkDelete(ctx context.Context, userID string, orgID uu
 		return xerr
 	}
 
-	s.publishContactsReload(ctx, userID, "contacts:bulk_delete")
+	s.publishContactsReload(ctx, userID, "contacts:bulk_delete", orgID)
 	return nil
 }
 
@@ -225,7 +225,7 @@ func (s *contactService) Delete(ctx context.Context, userID string, orgID uuid.U
 		return xerr
 	}
 
-	s.publishContactsReload(ctx, userID, "contacts:delete:"+contactID)
+	s.publishContactsReload(ctx, userID, "contacts:delete:"+contactID, orgID)
 	return nil
 }
 

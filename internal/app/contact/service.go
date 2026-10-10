@@ -222,11 +222,11 @@ func NewService(
 	}
 }
 
-func (s *contactService) publishContactsReload(ctx context.Context, userID string, operationID string) {
+func (s *contactService) publishContactsReload(ctx context.Context, userID string, operationID string, orgID uuid.UUID) {
 	if s.streamingPublisher == nil {
 		return
 	}
-	s.streamingPublisher.PublishContactsReload(ctx, userID, operationID)
+	s.streamingPublisher.PublishContactsReload(ctx, userID, operationID, orgID)
 }
 
 func (s *contactService) SetCampaignWaker(w CampaignWaker) { s.campaignWaker = w }

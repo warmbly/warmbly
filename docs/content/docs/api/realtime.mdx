@@ -65,6 +65,8 @@ For a member restricted to [selected resources](/guides/team-roles/#access-scope
 
 Owner-addressed workspace events do not bypass these gates. The Go publisher checks current membership before using the direct user route, and `user:<id>` verifies each workspace or resource event against current access with a bounded 30-second authorization cache. Scope-less workspace events are withheld from restricted members. Personal account events, session revocation and sign-in security notices remain available. Workspace notifications require a current unrestricted membership, including stored feed rows and deferred email/push delivery.
 
+Private task, mailbox error and warmup-statistics events stay on their authorized user route; they are not promoted to workspace broadcasts. Contact reload signals retain their workspace authorization context without broadcasting to other members. If a queued push digest cannot verify membership or message eligibility because of a temporary lookup failure, it retries rather than delivering or discarding the affected items. Revoked access is checked again on retry.
+
 A change to your own membership, to a role, or to the workspace's owner triggers a re-read on the org channel when its change event arrives, with the bounded refresh above as a fallback. Removal from a workspace also applies to open connections: every socket the removed member has open is disconnected. On reconnect each channel's join checks membership again, so channels for workspaces they still belong to come back and the removed workspace's are refused with `not_a_member` (code `4010`).
 
 ## Selecting events with intents
