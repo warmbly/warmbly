@@ -16,12 +16,19 @@ const MemberAccessRestricted = "member_access_restricted"
 var errMemberAccessRestricted = errx.NewWithIdentifier(errx.Forbidden, MemberAccessRestricted,
 	"Your access to this workspace is limited to selected campaigns and mailboxes, and this is outside it.")
 
+// These services authorize the account or target workspace, not the currently selected membership.
+var organizationPolicyRoutes = map[string]bool{
+	"POST /v1/organization":                       true,
+	"POST /v1/organization/:orgId/limit-requests": true,
+	"GET /v1/organization/:orgId/limit-requests":  true,
+	"DELETE /v1/limit-requests/:id":               true,
+}
+
 // scopeAwareRoutes is every route a restricted member may call; each one filters to the member's grants.
 var scopeAwareRoutes = map[string]bool{
 	// The member's own account, workspace list and socket.
 	"GET /v1/me":                             true,
 	"GET /v1/organization":                   true,
-	"POST /v1/organization":                  true,
 	"POST /v1/organization/switch/:id":       true,
 	"GET /v1/organization/current":           true,
 	"GET /v1/me/views/:view":                 true,
@@ -60,10 +67,13 @@ var scopeAwareRoutes = map[string]bool{
 	"GET /v1/unibox/:id":                     true,
 }
 
-// ScopeAwareRoutes lists the routes a restricted member may call, for the route-table test.
+// ScopeAwareRoutes lists grant-aware and target-authorized routes for the route-table test.
 func ScopeAwareRoutes() []string {
-	out := make([]string, 0, len(scopeAwareRoutes))
+	out := make([]string, 0, len(scopeAwareRoutes)+len(organizationPolicyRoutes))
 	for r := range scopeAwareRoutes {
+		out = append(out, r)
+	}
+	for r := range organizationPolicyRoutes {
 		out = append(out, r)
 	}
 	return out
@@ -72,6 +82,10 @@ func ScopeAwareRoutes() []string {
 // ResourceScopeGate holds a restricted member, and any key or app acting for one, to scope-aware routes and their grants.
 func (h *Handler) ResourceScopeGate() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if organizationPolicyRoutes[c.Request.Method+" "+c.FullPath()] {
+			c.Next()
+			return
+		}
 		m := GetAuthMember(c)
 		if !m.IsRestricted() {
 			c.Next()
@@ -90,6 +104,11 @@ func (h *Handler) ResourceScopeGate() gin.HandlerFunc {
 		scope, xerr := h.OrganizationService.ResolveMemberScope(c.Request.Context(), m.OrganizationID, m.UserID)
 		if xerr != nil {
 			errx.JSON(c, xerr)
+			c.Abort()
+			return
+		}
+		if scope == nil {
+			errx.JSON(c, errx.InternalError())
 			c.Abort()
 			return
 		}

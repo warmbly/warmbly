@@ -94,6 +94,7 @@ type OrganizationRepository interface {
 	GetEmailAccountCount(ctx context.Context, orgID uuid.UUID) (int, error)
 	GetContactCount(ctx context.Context, orgID uuid.UUID) (int, error)
 	GetEmailsSentTodayCount(ctx context.Context, orgID uuid.UUID) (int, error)
+	GetScopedOrganizationCounts(ctx context.Context, orgID uuid.UUID, scope *models.ResourceScope) (*models.OrganizationCounts, error)
 
 	// Ownership counts
 	GetUserOwnedOrganizationCount(ctx context.Context, userID uuid.UUID) (int, error)
@@ -276,7 +277,7 @@ func (r *organizationRepository) GetUserOrganizations(ctx context.Context, userI
 		m.Organization = &org
 		members = append(members, m)
 	}
-	return members, nil
+	return members, rows.Err()
 }
 
 // GetUserDefaultOrganization retrieves the first organization a user owns
@@ -672,6 +673,39 @@ func (r *organizationRepository) GetCampaignCounts(ctx context.Context, orgID uu
 	`
 	err = r.db.QueryRow(ctx, query, orgID).Scan(&total, &active)
 	return
+}
+
+// GetScopedOrganizationCounts intersects every aggregate with grants and organization ownership.
+func (r *organizationRepository) GetScopedOrganizationCounts(ctx context.Context, orgID uuid.UUID, scope *models.ResourceScope) (*models.OrganizationCounts, error) {
+	if scope == nil {
+		return nil, errors.New("member access was not resolved")
+	}
+	counts := &models.OrganizationCounts{}
+	err := r.db.QueryRow(ctx, `
+		WITH campaigns_in_scope AS (
+			SELECT id, status FROM campaigns WHERE organization_id = $1 AND id = ANY($2::uuid[])
+		), mailboxes_in_scope AS (
+			SELECT id FROM email_accounts WHERE organization_id = $1 AND id = ANY($3::uuid[])
+		)
+		SELECT
+			(SELECT COUNT(*) FROM campaigns_in_scope),
+			(SELECT COUNT(*) FROM campaigns_in_scope WHERE status = 'active'),
+			(SELECT COUNT(*) FROM contacts c WHERE c.organization_id = $1 AND EXISTS (
+				SELECT 1 FROM campaign_leads cl JOIN campaigns_in_scope cs ON cs.id = cl.campaign_id
+				WHERE cl.contact_id = c.id)),
+			(SELECT COUNT(*) FROM mailboxes_in_scope),
+			(SELECT COUNT(*) FROM tasks t
+				JOIN campaign_tasks ct ON ct.task_id = t.id
+				JOIN campaigns_in_scope cs ON cs.id = ct.campaign_id
+				JOIN mailboxes_in_scope ms ON ms.id = t.email_account_id
+				WHERE `+campaignSendToday+`)
+	`, orgID, nonNilUUIDs(scope.Campaigns), nonNilUUIDs(scope.Mailboxes)).Scan(
+		&counts.TotalCampaigns, &counts.ActiveCampaigns, &counts.TotalContacts,
+		&counts.EmailAccounts, &counts.EmailsSentToday)
+	if err != nil {
+		return nil, err
+	}
+	return counts, nil
 }
 
 // GetMemberCounts returns the member count for an organization

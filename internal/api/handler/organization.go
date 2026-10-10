@@ -105,11 +105,33 @@ func (h *Handler) SwitchOrganization(c *gin.Context) {
 	})
 }
 
-// GetCurrentOrganization returns the current organization from session
+type scopedOrganizationCounts struct {
+	TotalCampaigns  int `json:"total_campaigns"`
+	ActiveCampaigns int `json:"active_campaigns"`
+	TotalContacts   int `json:"total_contacts"`
+	EmailAccounts   int `json:"email_accounts"`
+	EmailsSentToday int `json:"emails_sent_today"`
+}
+
+type scopedOrganizationWithLimits struct {
+	models.OrganizationWithLimits
+	// Shadow workspace-only fields so they are absent, not merely empty.
+	ProductDescription *string                  `json:"product_description,omitempty"`
+	ICPNotes           *string                  `json:"icp_notes,omitempty"`
+	VoiceProfile       *string                  `json:"voice_profile,omitempty"`
+	Counts             scopedOrganizationCounts `json:"counts"`
+}
+
+// GetCurrentOrganization returns the current organization from session.
 func (h *Handler) GetCurrentOrganization(c *gin.Context) {
 	orgID := middleware.GetOrganizationID(c)
 	if orgID == nil {
 		errx.JSON(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+	restricted := middleware.IsScopeRestricted(c)
+	if restricted && middleware.GetResourceScope(c) == nil {
+		errx.JSON(c, errx.InternalError())
 		return
 	}
 
@@ -120,13 +142,42 @@ func (h *Handler) GetCurrentOrganization(c *gin.Context) {
 	}
 
 	// Get counts and limits
-	counts, _ := h.OrganizationService.GetOrganizationCounts(c.Request.Context(), *orgID)
-	limits, _ := h.OrganizationService.GetOrganizationLimits(c.Request.Context(), *orgID)
+	var counts *models.OrganizationCounts
+	if restricted {
+		scope := &models.ResourceScope{Campaigns: middleware.AllowedCampaigns(c), Mailboxes: middleware.AllowedEmailAccounts(c)}
+		counts, xerr = h.OrganizationService.GetScopedOrganizationCounts(c.Request.Context(), *orgID, scope)
+	} else {
+		counts, xerr = h.OrganizationService.GetOrganizationCounts(c.Request.Context(), *orgID)
+	}
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	if counts == nil || org == nil {
+		errx.JSON(c, errx.InternalError())
+		return
+	}
+	limits, xerr := h.OrganizationService.GetOrganizationLimits(c.Request.Context(), *orgID)
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
 
 	result := models.OrganizationWithLimits{
 		Organization: *org,
 		Limits:       limits,
 		Counts:       counts,
+	}
+	if restricted {
+		c.JSON(http.StatusOK, scopedOrganizationWithLimits{
+			OrganizationWithLimits: result,
+			Counts: scopedOrganizationCounts{
+				TotalCampaigns: counts.TotalCampaigns, ActiveCampaigns: counts.ActiveCampaigns,
+				TotalContacts: counts.TotalContacts, EmailAccounts: counts.EmailAccounts,
+				EmailsSentToday: counts.EmailsSentToday,
+			},
+		})
+		return
 	}
 
 	c.JSON(http.StatusOK, result)
