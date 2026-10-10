@@ -3,6 +3,7 @@ package jobs
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -95,10 +96,28 @@ func (r *removeSyncWarmup) GetWarmupReceived(_ context.Context, mailbox, id uuid
 }
 
 func (b *removeSyncBus) Publish(_ context.Context, _ string, data any, _ map[string]string) error {
-	if event, ok := data.(*pubsub.EmailInboxEvent); ok && event.EventType == pubsub.EventEmailDeleted {
+	wire, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	var event pubsub.EmailInboxEvent
+	if err := json.Unmarshal(wire, &event); err != nil {
+		return err
+	}
+	if event.EventType == pubsub.EventEmailDeleted {
 		b.deleted++
 	}
 	return nil
+}
+
+type removeSyncAudience struct{ org uuid.UUID }
+
+func (a removeSyncAudience) ResourceOrganization(context.Context, string, uuid.UUID) (uuid.UUID, error) {
+	return a.org, nil
+}
+
+func (a removeSyncAudience) CanAddressUser(context.Context, uuid.UUID, uuid.UUID) (bool, error) {
+	return true, nil
 }
 
 func TestSyncTruthRemovalWaitsForScopedPendingArrivals(t *testing.T) {
@@ -119,7 +138,7 @@ func TestSyncTruthRemovalWaitsForScopedPendingArrivals(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			inbox, bus := &removeSyncInbox{}, &removeSyncBus{}
-			s := &JobsService{UniboxRepository: inbox, ArrivalOutbox: &syncTruthOutbox{user: user, mailbox: mailbox, id: id, pending: tc.pending, err: tc.err}, EmailRepository: newEmailAccountRepo{}, StreamingPublisher: pubsub.NewStreamingPublisher(bus)}
+			s := &JobsService{UniboxRepository: inbox, ArrivalOutbox: &syncTruthOutbox{user: user, mailbox: mailbox, id: id, pending: tc.pending, err: tc.err}, EmailRepository: newEmailAccountRepo{}, StreamingPublisher: pubsub.NewStreamingPublisher(bus, removeSyncAudience{org: uuid.New()})}
 			err := s.HandleRemoveEmail(t.Context(), &models.JobEventRemoveEmail{UserID: tc.owner, EmailID: tc.account, ID: tc.message})
 			if !errors.Is(err, tc.want) {
 				t.Fatalf("removal error=%v want=%v", err, tc.want)
@@ -139,7 +158,7 @@ func TestSyncTruthRemovalDeleteFailureRetriesBeforeNotification(t *testing.T) {
 	failure := errors.New("unibox delete unavailable")
 	inbox, bus := &removeSyncInbox{err: failure}, &removeSyncBus{}
 	warmup := &removeSyncWarmup{}
-	s := &JobsService{UniboxRepository: inbox, WarmupRepo: warmup, EmailRepository: newEmailAccountRepo{}, StreamingPublisher: pubsub.NewStreamingPublisher(bus)}
+	s := &JobsService{UniboxRepository: inbox, WarmupRepo: warmup, EmailRepository: newEmailAccountRepo{}, StreamingPublisher: pubsub.NewStreamingPublisher(bus, removeSyncAudience{org: uuid.New()})}
 	e := &models.JobEventRemoveEmail{UserID: uuid.New(), EmailID: uuid.New(), ID: uuid.New()}
 	if err := s.HandleRemoveEmail(t.Context(), e); !errors.Is(err, failure) {
 		t.Fatalf("delete failure acknowledged: %v", err)

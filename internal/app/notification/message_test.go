@@ -29,6 +29,8 @@ func (r *messageNotificationRepo) CanNotifyAboutMessage(context.Context, uuid.UU
 func (r *messageNotificationRepo) GetPreferences(context.Context, uuid.UUID) (*models.NotificationPreferences, error) {
 	prefs := models.DefaultNotificationPreferences()
 	prefs.InboundReply = models.CategoryPref{Enabled: true, Channels: r.channels}
+	prefs.CampaignPaused = models.CategoryPref{Enabled: true, Channels: r.channels}
+	prefs.SecuritySignIn = models.CategoryPref{Enabled: true, Channels: r.channels}
 	return &prefs, nil
 }
 
@@ -49,11 +51,12 @@ func (r *messageNotificationRepo) RequeueEmails(_ context.Context, ids []uuid.UU
 
 func TestEmailRechecksTheMessageAfterClaiming(t *testing.T) {
 	id, notificationID, actionID := uuid.New(), uuid.New(), uuid.New()
+	userID, orgID := uuid.New(), uuid.New()
 	r := &messageNotificationRepo{}
-	s := &service{repo: r}
+	s := &service{repo: r, members: acceptedMember(userID)}
 	kept := s.keepEligibleEmailMessages(context.Background(), []models.Notification{
-		{ID: notificationID, Category: models.NotifInboundReply, UniboxEmailID: &id},
-		{ID: actionID, Category: models.NotifInboxActionRequired, UniboxEmailID: &id},
+		{ID: notificationID, UserID: userID, OrganizationID: &orgID, Category: models.NotifInboundReply, UniboxEmailID: &id},
+		{ID: actionID, UserID: userID, OrganizationID: &orgID, Category: models.NotifInboxActionRequired, UniboxEmailID: &id},
 	})
 	if len(kept) != 1 || kept[0].ID != actionID || len(r.skipped) != 1 || r.skipped[0] != notificationID {
 		t.Fatalf("kept=%v, skipped=%v", kept, r.skipped)
@@ -61,7 +64,7 @@ func TestEmailRechecksTheMessageAfterClaiming(t *testing.T) {
 	r.skipped = nil
 	r.err = errors.New("database unavailable")
 	kept = s.keepEligibleEmailMessages(context.Background(), []models.Notification{
-		{ID: notificationID, Category: models.NotifInboundReply, UniboxEmailID: &id},
+		{ID: notificationID, UserID: userID, OrganizationID: &orgID, Category: models.NotifInboundReply, UniboxEmailID: &id},
 	})
 	if len(kept) != 0 || len(r.skipped) != 0 || len(r.retry) != 1 || r.retry[0] != notificationID {
 		t.Fatalf("eligibility lookup failure did not retry: kept=%v skipped=%v retry=%v", kept, r.skipped, r.retry)
@@ -83,9 +86,10 @@ func TestNotifyAboutMessageGatesEveryChannel(t *testing.T) {
 		{"human reply", true, nil, models.ChannelPrefs{InApp: true}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			userID, orgID := uuid.New(), uuid.New()
 			r := &messageNotificationRepo{allowed: tc.allowed, err: tc.err, channels: tc.channels}
-			s := &service{repo: r}
-			s.NotifyAboutMessage(context.Background(), uuid.New(), nil, uuid.New(), models.NotifInboundReply, "Reply", "", "", nil)
+			s := &service{repo: r, members: acceptedMember(userID)}
+			s.NotifyAboutMessage(context.Background(), userID, &orgID, uuid.New(), models.NotifInboundReply, "Reply", "", "", nil)
 			if r.checks != 1 {
 				t.Fatalf("eligibility checks = %d, want 1", r.checks)
 			}

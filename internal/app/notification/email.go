@@ -134,28 +134,12 @@ func (s *service) sendGroupEmail(ctx context.Context, rows []models.Notification
 	if len(rows) == 0 {
 		return
 	}
-	var stillMember map[uuid.UUID]bool
-	if s.members != nil && rows[0].OrganizationID != nil {
-		if members, err := s.members.GetMembers(ctx, *rows[0].OrganizationID); err == nil {
-			stillMember = map[uuid.UUID]bool{}
-			for _, m := range members {
-				if m.AcceptedAt != nil {
-					stillMember[m.UserID] = true
-				}
-			}
-		}
-	}
-
 	to := make([]string, 0, len(rows))
 	seen := map[string]bool{}
 	kept := make([]models.Notification, 0, len(rows))
 	dropped := make([]uuid.UUID, 0)
 	budgetOK := map[uuid.UUID]bool{}
 	for _, n := range rows {
-		if stillMember != nil && !stillMember[n.UserID] {
-			dropped = append(dropped, n.ID)
-			continue
-		}
 		if _, checked := budgetOK[n.UserID]; !checked {
 			budgetOK[n.UserID] = !s.overEmailBudget(ctx, n.UserID)
 		}
@@ -262,7 +246,10 @@ func (s *service) keepEligibleEmailMessages(ctx context.Context, rows []models.N
 	kept := rows[:0:0]
 	var skipped, retry []uuid.UUID
 	for _, n := range rows {
-		allowed, err := s.messageEligibility(ctx, n.Category, n.UniboxEmailID)
+		allowed, err := s.recipientEligibility(ctx, n.UserID, n.OrganizationID, n.Category)
+		if err == nil && allowed {
+			allowed, err = s.messageEligibility(ctx, n.Category, n.UniboxEmailID)
+		}
 		if err != nil {
 			retry = append(retry, n.ID)
 		} else if allowed {
