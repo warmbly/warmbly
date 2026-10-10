@@ -14,6 +14,8 @@ defmodule Realtime.Auth do
   alias Realtime.ErrorReporter
   alias Realtime.OAuthToken
 
+  @repo Application.compile_env(:realtime, :auth_repo, Realtime.Repo)
+
   @doc """
   Verifies a token (JWT or API key) and returns the user_id if valid.
 
@@ -228,7 +230,7 @@ defmodule Realtime.Auth do
   end
 
   defp run_org_membership(query, org_bin, user_bin, org_id, user_id) do
-    case Realtime.Repo.query(query, [org_bin, user_bin]) do
+    case @repo.query(query, [org_bin, user_bin]) do
       {:ok, %{rows: [[id, role, permissions, show_online, show_activity, access_scope] | _]}} ->
         with {:ok, scope} <- member_scope(role, access_scope, org_bin, user_bin) do
           {:ok,
@@ -283,7 +285,7 @@ defmodule Realtime.Auth do
         WHERE ea.organization_id = $1 AND a.organization_id = $1 AND a.user_id = $2), '{}')
     """
 
-    case Realtime.Repo.query(query, [org_bin, user_bin]) do
+    case @repo.query(query, [org_bin, user_bin]) do
       {:ok, %{rows: [[campaigns, folders, mailboxes] | _]}} ->
         {:ok,
          %{
@@ -309,6 +311,20 @@ defmodule Realtime.Auth do
   def in_scope?(%{scope: _}, _kind, _id), do: false
   def in_scope?(_member, _kind, _id), do: true
 
+  @doc false
+  def matches_org?(_member, org_id) when org_id in [nil, ""], do: true
+
+  def matches_org?(%{organization_id: member_org_id}, org_id) do
+    with {:ok, id} <- dump_uuid(org_id),
+         {:ok, ^id} <- dump_uuid(member_org_id) do
+      true
+    else
+      _ -> false
+    end
+  end
+
+  def matches_org?(_member, _org_id), do: false
+
   @doc """
   Fetch a user's display profile (name + avatar) for presence metadata.
   Best-effort: returns nil fields when the user can't be loaded, so a
@@ -318,7 +334,7 @@ defmodule Realtime.Auth do
     query = "SELECT first_name, last_name, avatar_url FROM users WHERE id = $1"
 
     with {:ok, uuid} <- Ecto.UUID.dump(user_id),
-         {:ok, %{rows: [[first, last, avatar] | _]}} <- Realtime.Repo.query(query, [uuid]) do
+         {:ok, %{rows: [[first, last, avatar] | _]}} <- @repo.query(query, [uuid]) do
       %{name: String.trim("#{first} #{last}"), avatar: avatar}
     else
       _ -> %{name: nil, avatar: nil}
@@ -437,6 +453,47 @@ defmodule Realtime.Auth do
     end
   end
 
+  @doc false
+  def check_user_event_resource(user_id, :notification, id) do
+    query = "SELECT organization_id FROM notifications WHERE id = $1 AND user_id = $2"
+    event_membership(query, [id, user_id], user_id)
+  end
+
+  def check_user_event_resource(user_id, :contact, id) do
+    query = """
+    SELECT organization_id FROM contacts
+    WHERE id = $1 AND (organization_id IS NOT NULL OR user_id = $2)
+    """
+
+    event_membership(query, [id, user_id], user_id)
+  end
+
+  def check_user_event_resource(user_id, :booking, id) do
+    query = "SELECT organization_id, campaign_id FROM meeting_bookings WHERE id = $1"
+    event_membership(query, [id], user_id)
+  end
+
+  defp event_membership(query, params, user_id) do
+    case dump_and_query(query, params) do
+      {:ok, %{rows: [[org_id | resource] | _]}} when not is_nil(org_id) ->
+        with {:ok, member} <- check_org_membership(user_id, org_id) do
+          {:ok, Map.put(member, :event_campaign_id, resource_id(resource))}
+        end
+
+      {:ok, %{rows: [[nil]]}} when length(params) == 2 ->
+        {:ok, %{permissions: 65535, scope: nil}}
+
+      {:ok, %{rows: _}} ->
+        {:error, :forbidden}
+
+      {:error, _reason} ->
+        {:error, :database_error}
+    end
+  end
+
+  defp resource_id([id]) when not is_nil(id), do: Ecto.UUID.load!(id)
+  defp resource_id(_), do: nil
+
   @doc """
   Check if a user is a platform admin (users.admin_permissions > 0).
 
@@ -480,7 +537,7 @@ defmodule Realtime.Auth do
       end)
 
     case dumped do
-      {:ok, bins} -> Realtime.Repo.query(query, Enum.reverse(bins))
+      {:ok, bins} -> @repo.query(query, Enum.reverse(bins))
       :error -> {:ok, %{rows: []}}
     end
   end
