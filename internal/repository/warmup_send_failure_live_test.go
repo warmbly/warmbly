@@ -211,6 +211,41 @@ func TestLivePersistentMailboxLoadingFailure(t *testing.T) {
 	}
 }
 
+func TestLiveLoadingIncidentNonLoadingBoundary(t *testing.T) {
+	_, pool := liveContactDB(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	for _, tc := range []struct {
+		name     string
+		boundary time.Duration
+		first    time.Duration
+	}{
+		{"before incident", -3 * time.Hour, -2 * time.Hour},
+		{"same timestamp", -80 * time.Minute, -40 * time.Minute},
+		{"between failures", -79 * time.Minute, -40 * time.Minute},
+		{"future failure", 10 * time.Minute, -2 * time.Hour},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newWarmupUsageFixture(t, pool)
+			failed := func(offset time.Duration, message string) {
+				id := uuid.New()
+				f.exec(`INSERT INTO tasks(id,task_type,email_account_id,status,message_id,updated_at) VALUES($1,'warmup',$2,'failed','',$3)`, id, f.account, now.Add(offset))
+				f.exec(`INSERT INTO task_failures(task_id,title,message) VALUES($1,'private',$2)`, id, message)
+			}
+			for _, offset := range []time.Duration{-2 * time.Hour, -80 * time.Minute, -40 * time.Minute, -5 * time.Minute} {
+				failed(offset, models.MailboxNotLoadedPrefix)
+			}
+			failed(tc.boundary, "Other provider failure")
+			var first time.Time
+			if err := pool.QueryRow(t.Context(), `SELECT first_at FROM (`+warmupSendFailuresSQL+`) failures`, f.account, mailboxLoadingPattern, now).Scan(&first); err != nil {
+				t.Fatal(err)
+			}
+			if !first.Equal(now.Add(tc.first)) {
+				t.Fatalf("first failure=%v want=%v", first, now.Add(tc.first))
+			}
+		})
+	}
+}
+
 func TestLiveDispatchRetryDoesNotStarveNewerTask(t *testing.T) {
 	_, pool := liveContactDB(t)
 	ctx, now := context.Background(), time.Now().UTC().Truncate(time.Microsecond)
