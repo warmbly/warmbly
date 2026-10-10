@@ -95,7 +95,7 @@ func (c *Client) SyncPass(ctx context.Context) (bool, error) {
 			if folder == FolderArchive && errors.As(err, &mailErr) && mailErr.Code == errx.MailErrorCodeNotFound {
 				continue
 			}
-			if errors.As(err, &mailErr) && (mailErr.Type == errx.MailErrorCritical || mailErr.Code == errx.MailErrorCodeSendingTooFast) {
+			if errors.As(err, &mailErr) && (mailErr.Type == errx.MailErrorCritical || mailErr.Code == errx.MailErrorCodeSendingTooFast || mailErr.RetryAfter > 0) {
 				return false, err
 			}
 			complete = false

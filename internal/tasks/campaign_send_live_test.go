@@ -37,6 +37,47 @@ type breakingProgressRepo struct {
 	breakStamp bool
 }
 
+type rejectingCampaignTrackingRepo struct {
+	repository.TaskRepository
+}
+
+func (r rejectingCampaignTrackingRepo) UpdateCampaignTaskTracking(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) error {
+	return errors.New("simulated durable tracking write failure")
+}
+
+func TestLiveCampaignSendRequiresDurableIntentBeforeReservation(t *testing.T) {
+	f := newSendFixture(t)
+	id := uuid.New()
+	at := time.Now().Add(-time.Minute)
+	if ok, err := f.svc.taskRepo.CreateTaskWithLock(t.Context(), &Task{ID: id, TaskType: "campaign", EmailAccountID: f.mailbox, Status: "pending", ScheduledAt: &at}, &CampaignTask{TaskID: id, CampaignID: &f.campaign}); err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	original := f.svc.taskRepo
+	f.svc.taskRepo = rejectingCampaignTrackingRepo{TaskRepository: original}
+	if xerr := f.svc.HandleCampaignTask(&proto.ProcessTask{TaskId: id.String()}); xerr == nil {
+		t.Fatal("failed durable intent write allowed execution")
+	}
+	if f.sender.count() != 0 {
+		t.Fatal("send dispatched without durable send intent")
+	}
+	var dispatched int
+	if err := f.pool.QueryRow(t.Context(), `SELECT COUNT(*) FROM campaign_contact_progress WHERE campaign_id=$1 AND dispatched_at IS NOT NULL`, f.campaign).Scan(&dispatched); err != nil || dispatched != 0 {
+		t.Fatal("send reserved without durable intent", dispatched, err)
+	}
+	ct, err := original.GetCampaignTask(t.Context(), id)
+	if err != nil || ct.DispatchIntent != repository.CampaignDispatchWakeup {
+		t.Fatal("unsent wakeup intent changed", ct, err)
+	}
+	f.svc.taskRepo = original
+	if xerr := f.svc.HandleCampaignTask(&proto.ProcessTask{TaskId: id.String()}); xerr != nil {
+		t.Fatal(xerr)
+	}
+	ct, err = original.GetCampaignTask(t.Context(), id)
+	if err != nil || ct.DispatchIntent != repository.CampaignDispatchSend || f.sender.count() != 1 {
+		t.Fatal("durable send intent not recorded before successful retry", ct, err)
+	}
+}
+
 func (b *breakingProgressRepo) RecordEmailSent(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID) error {
 	if b.breakStamp {
 		return errors.New("simulated transient database error on the progress write")

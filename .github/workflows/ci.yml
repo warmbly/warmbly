@@ -47,6 +47,7 @@ jobs:
         with:
           filters: |
             go-services:
+              - '.github/workflows/ci.yml'
               - 'go.mod'
               - 'go.sum'
               - 'internal/**'
@@ -219,6 +220,13 @@ jobs:
           go test -race ./internal/repository -run '^TestLive(Monitoring|LastWarmupSendFailure|PersistentMailboxLoadingFailure|DispatchRetry|LineageQueueRevisions|AdminPlatformOverview|WarmupRecoversOldPreparation|WarmupPreparationRecoveryRetains|WarmupFilingRequiresAcknowledgement|WarmupFilingAuthority|WarmupTimeWindow|WarmupInvalidWindow)' -count=1
           go test -race ./internal/tasks -run '^Test(LiveWarmup(SafetyHoldReschedules|Recovery|TaskDoesNotApplyResults|DispatchDefersInvalidHours)|WarmupSenderDistinguishes)' -count=1
           go test -race ./internal/app/consumer -run '^TestLiveStoredSendResult' -count=1
+
+      - name: Warmup charge and authoritative result regressions (PostgreSQL)
+        env:
+          WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
+        run: |
+          go test -race -v -p 1 ./internal/repository ./internal/app/consumer ./internal/tasks ./internal/app/orgtransfer -run '^TestLive(Warmup(ReservationPreservesOriginalChargeDay|RefundCASProtectsConcurrentAndRestampedTasks|RefundAndResultRollbackTogether|ReplyRefundUsesChargedShapeAfterParentDeletion|ChargeAndRefundUseUTCInNonUTCSession|ChargeProofRollsBackWhenCounterWriteFails|CancellationPathsRefundOnlyProvenCharge|GenericCompletionDoesNotProveChargedAccounting|SendFailureGivesTheDayBack|SendGiveBackIsIdempotent|SafetyHoldReschedulesInsteadOfBlockingTheDispatcher|Recovery(RetiresExistingUnstartedDispatchOnce|HandlesPartialReservations|PreservesExecutionAndReceiptEvidence|KeepsOtherUnknownAndRestrictiveHolds|AndBeginCannotBothWin))|AppliedWarmupFailureRepairsOnlyRefundedChargeDeadLetters|GiveBackDailySend(ReversesADispatchedWarmupSend|LeavesOtherDaysAlone)|AccountDailyUsage(CountsWarmupTasksNotTheStatisticsRow|ScopesWarmupToTypeAndDay)|ImportWarmupStatisticsCannotGrantChargeRefundAuthority|Legacy(FailedStatusCannotProveNonExecution|JSONAndAvroFailurePersistConservativeAdmission)|AuthoritativeDeadLetterResultsReconcileWithoutReplay|DeadLetterResultEffectsAndSettlementRollBackTogether|Campaign(DeadLetterWorkerResultReleasesReservationOnce|ForeignKeyCleanupDoesNotProveWakeupOnly)|UserEmailDeadLetterUsesUnderlyingSendTaskType|UnknownSendOperatorResolutionReconcilesAndAudits|RecordedWorkerOutcomeSurvivesLostEvent|UnreservedLegacyFailedTaskRetainsUnknownHold|UnknownResolutionRejectsMissingEvidenceAndLiveExecution|SendRecoveryResolutionRequiresEvidenceAndRetainsUnknown)$' -count=1
+          go test -race -v -p 1 ./internal/infrastructure/db -run '^TestLiveWarmupChargeUpgradeKeepsLegacyUnverifiedAndPreservesEvidence$' -count=1
 
       - name: Mailbox sync admission, replay, truthful state and upgrade regressions (PostgreSQL)
         env:

@@ -188,14 +188,17 @@ func TestNextSyncDelay(t *testing.T) {
 }
 
 func TestNextSyncDelayDoesNotUndercutProviderRetryAfter(t *testing.T) {
-	w := &WMail{}
-	retryAfter := 12 * time.Minute
-	mailErr := errx.MError(errx.MailErrorWarning, errx.MailErrorCodeSendingTooFast, "throttled", errx.MailErrorResolveMethodRetry)
-	mailErr.RetryAfter = retryAfter
-
-	for i := 0; i < 50; i++ {
-		if got := w.nextSyncDelay(time.Minute, mailErr); got < retryAfter {
-			t.Fatalf("delay %v retried before provider's %v window", got, retryAfter)
-		}
+	for _, code := range []errx.MailErrorCode{errx.MailErrorCodeSendingTooFast, errx.MailErrorCodeServerUnreachable, errx.MailErrorCodeConnectionLost} {
+		t.Run(string(code), func(t *testing.T) {
+			w := &WMail{transportFailures: 1}
+			retryAfter := 12 * time.Minute
+			mailErr := errx.MError(errx.MailErrorWarning, code, "retry later", errx.MailErrorResolveMethodRetry)
+			mailErr.RetryAfter = retryAfter
+			for i := 0; i < 50; i++ {
+				if got := w.nextSyncDelay(time.Minute, mailErr); got < retryAfter {
+					t.Fatalf("delay %v retried before provider's %v window", got, retryAfter)
+				}
+			}
+		})
 	}
 }

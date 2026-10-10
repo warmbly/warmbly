@@ -2,8 +2,21 @@ package orgtransfer
 
 import (
 	"encoding/json"
+	"slices"
 	"testing"
 )
+
+func TestCampaignReplayIntentResetsOnWorkspaceImport(t *testing.T) {
+	for _, tbl := range Tables {
+		if tbl.Name == "campaign_tasks" {
+			if !slices.Contains(tbl.ResetOnImport, "dispatch_intent") {
+				t.Fatal("workspace import grants source-instance replay intent")
+			}
+			return
+		}
+	}
+	t.Fatal("campaign tasks missing from portable data registry")
+}
 
 // An archive is a customer download. The risk verdict and the evidence behind
 // it are operator-facing, so they must not ride along in the manifest, and the

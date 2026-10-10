@@ -814,13 +814,14 @@ var Tables = []Table{
 	},
 	{
 		Name: "campaign_tasks", Group: models.OrgDataGroupSending,
-		Scope: `task_id IN ` + orgTasks,
+		Scope:         `task_id IN ` + orgTasks,
+		ResetOnImport: []string{"dispatch_intent"},
 	},
 	{
 		Name: "warmup_tasks", Group: models.OrgDataGroupSending,
 		PartnerRefs:   []string{"target_account_id"},
 		Scope:         `task_id IN ` + orgTasks,
-		ResetOnImport: []string{"parent_task_id", "parent_received_id", "parent_message_id", "lineage_version", "schedule_revision", "queued_revision", "dispatch_nonce", "dispatch_worker_id", "dispatch_started_at", "dispatch_result"},
+		ResetOnImport: []string{"parent_task_id", "parent_received_id", "parent_message_id", "lineage_version", "schedule_revision", "queued_revision", "dispatch_nonce", "dispatch_worker_id", "dispatch_started_at", "dispatch_result", "warmup_charged_date", "warmup_reply_charged", "warmup_refunded_at"},
 	},
 	{
 		Name: "warmup_tokens", Group: models.OrgDataGroupSending,

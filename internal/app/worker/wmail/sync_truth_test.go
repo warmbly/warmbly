@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -60,6 +61,81 @@ func assertSyncCatchUp(t *testing.T, w *WMail, previous time.Time) {
 	t.Helper()
 	if w.tracker.state.LastSyncedAt == nil || !w.tracker.state.LastSyncedAt.After(previous) || w.tracker.state.Deferred != 0 {
 		t.Fatalf("successful catch-up did not replace old evidence: %+v", w.tracker.state)
+	}
+}
+
+func TestSyncTruthGraphServiceUnavailableHonorsRetryWindowAndRecovers(t *testing.T) {
+	var recovered atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(out http.ResponseWriter, req *http.Request) {
+		out.Header().Set("Content-Type", "application/json")
+		if !recovered.Load() {
+			out.Header().Set("Retry-After", "720")
+			out.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = out.Write([]byte(`{"error":{"code":"ServiceUnavailable"}}`))
+			return
+		}
+		_, _ = fmt.Fprintf(out, `{"value":[],"@odata.deltaLink":"https://graph.microsoft.com%s?$deltatoken=recovered"}`, req.URL.Path)
+	}))
+	defer srv.Close()
+	var events []captured
+	var relayed []models.SyncState
+	w := newGraphTestMail(t, srv, &events, &relayed)
+	previous := seedSyncTruth(w, &relayed)
+	before := w.GraphData.Client.DeltaLinks[msgraph.FolderInbox]
+
+	for range 2 {
+		err := w.syncOnce(t.Context())
+		if err == nil || err.Code != errx.MailErrorCodeServerUnreachable || err.RetryAfter != 12*time.Minute {
+			t.Fatalf("missing retryable provider evidence: %v", err)
+		}
+		if delay := w.nextSyncDelay(time.Minute, err); delay < err.RetryAfter {
+			t.Fatalf("service retry window undercut: %v < %v", delay, err.RetryAfter)
+		}
+		assertNoSyncSuccess(t, w, previous)
+		if w.GraphData.Client.DeltaLinks[msgraph.FolderInbox] != before {
+			t.Fatal("failed service request advanced delta cursor")
+		}
+	}
+	if w.transportFailures != 2 {
+		t.Fatalf("failed passes reset transport evidence: %d", w.transportFailures)
+	}
+	recovered.Store(true)
+	if err := w.syncOnce(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	assertSyncCatchUp(t, w, previous)
+	if w.transportFailures != 0 || w.GraphData.Client.DeltaLinks[msgraph.FolderInbox] == before {
+		t.Fatal("provider-confirmed complete pass failed to update recovery state")
+	}
+}
+
+func TestSyncTruthImapFolderFailurePreservesSavedStateUntilRecovery(t *testing.T) {
+	box := &models.Mailbox{Name: "Sent", UIDValidity: 7, UIDNext: 10, HighestModSeq: 30}
+	conn := &fakeImapConn{folders: []models.Mailbox{*box}, folderErr: errx.ErrMailServerUnreachable}
+	w, events := newIMAPTestMail(conn, &fixedBudget{allow: 100}, box)
+	w.EmailType = models.InboxProviderSMTPIMAP
+	var relayed []models.SyncState
+	previous := seedSyncTruth(w, &relayed)
+	w.tracker.state.BackfillCursor.Folders = map[string]models.SyncFolderCursor{"Sent": {Done: true, UID: 7}}
+	for range 2 {
+		if err := w.syncOnce(t.Context()); err == nil || err.Code != errx.MailErrorCodeServerUnreachable {
+			t.Fatalf("folder failure hidden: %v", err)
+		}
+		assertNoSyncSuccess(t, w, previous)
+		if hasEvent(*events, models.JobEventTypeMailboxDelete) || len(w.SmtpImapData.Mailboxes) != 1 || w.SmtpImapData.Mailboxes[0] != box {
+			t.Fatal("failed folder listing retired saved mailbox state")
+		}
+		if cursor, ok := w.tracker.state.BackfillCursor.Folders["Sent"]; !ok || cursor.UID != 7 || !cursor.Done {
+			t.Fatal("failed folder listing lost the durable recovery cursor")
+		}
+	}
+	conn.folderErr = nil
+	if err := w.syncOnce(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	assertSyncCatchUp(t, w, previous)
+	if hasEvent(*events, models.JobEventTypeMailboxDelete) || w.transportFailures != 0 {
+		t.Fatal("complete provider recovery did not preserve folder state")
 	}
 }
 

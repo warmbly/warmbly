@@ -292,12 +292,14 @@ Auth: **Scope** `SEND_CAMPAIGNS` · **Org permission** `send_campaigns`
 
 | Parameter | In | Type | Description |
 |-----------|----|------|-------------|
-| `status` | query | string | Optional status filter (e.g. `pending`, `replayed`). |
+| `status` | query | string | Optional status filter (e.g. `pending`, `replayed`, `resolved`). |
 | `limit` | query | integer | Max rows to return, 1 to 200 (default 100). |
 
 ### Response
 
 Returns a `data` array of dead-letter records. This endpoint is not cursor-paginated; it returns up to `limit` rows in one response.
+
+Send dead letters become `resolved` only after an authoritative worker or operator-confirmed send outcome is reconciled. Recovery does not resend mail: the original payload, error and attempts stay available for inspection. Unknown outcomes remain pending and held. A missing Sent-folder copy, reservation marker or executor marker is not proof that nothing was sent.
 
 ```json
 {
@@ -324,7 +326,9 @@ Returns a `data` array of dead-letter records. This endpoint is not cursor-pagin
 
 `POST /tasks/dlq/:id/replay`
 
-Re-dispatches a dead-lettered task. Because a replay can transmit real mail, this requires the send permission rather than plain write access.
+Replays only a dead-lettered campaign wakeup with explicit durable wakeup intent, rechecked under its campaign lock. Once a task binds a contact or sequence for sending, its send intent stays restrictive even after either record is deleted. Legacy or imported tasks without verified wakeup intent and all send-capable tasks return `409 Conflict` and retain their dead-letter evidence. A retry date, JSON payload, null contact/sequence, or missing send marker cannot grant replay. This route requires the send permission rather than plain write access.
+
+Database downgrades refuse to discard this provenance while send-intent or unresolved unverified dead-letter rows exist. Keep the schema and roll forward instead.
 
 Auth: **Scope** `SEND_CAMPAIGNS` · **Org permission** `send_campaigns`
 

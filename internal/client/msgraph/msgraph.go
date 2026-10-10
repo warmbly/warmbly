@@ -161,18 +161,31 @@ func (c *Client) doJSON(ctx context.Context, method, url string, in, out any) er
 		return HandleError(resp)
 	}
 	if out != nil {
-		err := json.NewDecoder(resp.Body).Decode(out)
-		var networkError net.Error
-		if errors.As(err, &networkError) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			return transportError(err)
+		decoder := json.NewDecoder(resp.Body)
+		if err := decoder.Decode(out); err != nil {
+			var networkError net.Error
+			if errors.As(err, &networkError) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+				return transportError(err)
+			}
+			return err
 		}
-		return err
+		var trailing json.RawMessage
+		if err := decoder.Decode(&trailing); err != io.EOF {
+			var networkError net.Error
+			if errors.As(err, &networkError) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+				return transportError(err)
+			}
+			return errGraphTrailingJSON
+		}
+		return nil
 	}
 	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
 		return transportError(err)
 	}
 	return nil
 }
+
+var errGraphTrailingJSON = errors.New("graph: response contains extra JSON data")
 
 // transportError classifies a failure of the HTTP call itself. The client's
 // token source runs inside it, so a grant the provider has revoked arrives

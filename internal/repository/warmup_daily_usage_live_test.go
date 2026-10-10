@@ -118,6 +118,7 @@ func TestLiveGiveBackDailySendReversesADispatchedWarmupSend(t *testing.T) {
 		f.exec(`INSERT INTO tasks (id, task_type, email_account_id, status, message_id, completed_at)
 		        VALUES ($1, 'warmup', $2, 'completed', '', $3)`, id, f.account, day)
 	}
+	f.exec(`INSERT INTO warmup_tasks(task_id,warmup_charged_date,warmup_reply_charged) VALUES($1,($2::timestamptz AT TIME ZONE 'UTC')::date,false),($3,($2::timestamptz AT TIME ZONE 'UTC')::date,true)`, newThread, day, reply)
 	// Only a nonzero conversation turn consumed the reply counter.
 	f.exec(`INSERT INTO warmup_tokens (token, task_id, sender_account_id, recipient_account_id, conversation_turn)
 	        VALUES ($1, $2, $3, $3, 0)`, uuid.New(), newThread, f.account)
@@ -172,6 +173,7 @@ func TestLiveGiveBackDailySendLeavesOtherDaysAlone(t *testing.T) {
 	taskID := uuid.New()
 	f.exec(`INSERT INTO tasks (id, task_type, email_account_id, status, message_id, completed_at)
 	        VALUES ($1, 'warmup', $2, 'completed', '', $3)`, taskID, f.account, counted)
+	f.exec(`INSERT INTO warmup_tasks(task_id,warmup_charged_date,warmup_reply_charged) VALUES($1,($2::timestamptz AT TIME ZONE 'UTC')::date,false)`, taskID, counted)
 	f.exec(`INSERT INTO warmup_statistics (email_account_id, date, emails_sent, target_volume)
 	        VALUES ($1, DATE($2), 5, 10)`, f.account, counted)
 	f.exec(`INSERT INTO warmup_statistics (email_account_id, date, emails_sent, target_volume)
