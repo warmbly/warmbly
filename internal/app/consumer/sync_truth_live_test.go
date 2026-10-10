@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -13,6 +14,74 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
+
+func TestLiveSyncTruthDependentEventsPrioritizeArrival(t *testing.T) {
+	for _, kind := range []models.JobEventType{models.JobEventTypeEmailUpdate, models.JobEventTypeFolderUpdate, models.JobEventTypeRemoveEmail} {
+		t.Run(string(kind), func(t *testing.T) {
+			s, d := liveWarmupService(t)
+			f := newWarmupFixture(t, d)
+			key, err := kms.NewLocal(make([]byte, 32))
+			if err != nil {
+				t.Fatal(err)
+			}
+			r := repository.NewDurableEmailMessageMapRepository(d, cipher.NewService(key, nil, encryptedkeys.NewPostgres(d)))
+			s.ArrivalOutbox = r
+			s.InitEvents()
+			for i := 0; i < 41; i++ {
+				e := f.arrival("<"+uuid.NewString()+"@test.local>", nil)
+				e.Message.Subject = "ordinary customer question"
+				mapping := repository.EmailMessageData{UserID: e.UserID.String(), EmailID: e.Message.EmailID.String(), ID: e.Message.ID.String(), MessageID: e.Message.MessageID, ThreadID: e.Message.ThreadID}
+				if err := r.AdmitArrival(t.Context(), mapping, &repository.PendingArrival{Arrival: e}); err != nil {
+					t.Fatal(err)
+				}
+				if i != 40 {
+					continue
+				}
+				var body any
+				switch kind {
+				case models.JobEventTypeEmailUpdate:
+					body = &models.JobEventEmailUpdate{UserID: e.UserID, EmailID: e.Message.EmailID, ID: e.Message.ID, Flags: []string{"\\Seen"}, UID: 99, Mailbox: 2, ModSeq: 5}
+				case models.JobEventTypeFolderUpdate:
+					body = &models.JobEventFolderUpdate{UserID: e.UserID, EmailID: e.Message.EmailID, ID: e.Message.ID, Folder: models.FolderArchive}
+				case models.JobEventTypeRemoveEmail:
+					body = &models.JobEventRemoveEmail{UserID: e.UserID, EmailID: e.Message.EmailID, ID: e.Message.ID}
+				}
+				// JSON-decoded bodies use the same registered handlers as typed Kafka events.
+				raw, err := json.Marshal(body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var decoded map[string]any
+				if err := json.Unmarshal(raw, &decoded); err != nil {
+					t.Fatal(err)
+				}
+				event := &models.JobEvent{Type: kind, Body: decoded}
+				if err := s.HandleEvent(t.Context(), event); err != nil {
+					t.Fatalf("dependent event blocked by unrelated backlog: %v", err)
+				}
+				if err := s.HandleEvent(t.Context(), event); err != nil {
+					t.Fatalf("dependent replay failed: %v", err)
+				}
+				message, err := s.UniboxRepository.GetForSync(t.Context(), e.UserID, e.Message.EmailID, e.Message.ID)
+				if kind == models.JobEventTypeRemoveEmail {
+					if !errors.Is(err, repository.ErrEmailNotFound) {
+						t.Fatalf("removal did not follow arrival: %v", err)
+					}
+				} else if err != nil {
+					t.Fatal(err)
+				} else if kind == models.JobEventTypeFolderUpdate && message.Folder != models.FolderArchive {
+					t.Fatal("folder change lost after arrival")
+				} else if kind == models.JobEventTypeEmailUpdate && (message.UID != 99 || !message.Seen) {
+					t.Fatal("flags/provider update lost after arrival")
+				}
+			}
+			var left int
+			if err := d.QueryRow(t.Context(), `SELECT count(*) FROM sync_arrival_outbox WHERE email_id=$1`, f.partner).Scan(&left); err != nil || left != 40 {
+				t.Fatalf("unrelated arrivals lost: %d %v", left, err)
+			}
+		})
+	}
+}
 
 func TestLiveSyncTruthRemovalWaitsForArrivalAndLostStageAcknowledgement(t *testing.T) {
 	for _, lostAck := range []bool{false, true} {

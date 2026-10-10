@@ -38,6 +38,69 @@ func dueArrival(t *testing.T, d *db.DB, f *uniboxFolderFixture) {
 	}
 }
 
+func TestLiveSyncArrivalPriorityRetainsScopeLeaseRetryAndBacklog(t *testing.T) {
+	d := liveUniboxFolderDB(t)
+	f := newUniboxFolderFixture(t, d.Pool)
+	r := NewDurableEmailMessageMapRepository(d, arrivalLiveCipher(t, d))
+	ctx := t.Context()
+	for i := 0; i < 40; i++ {
+		data, pending := arrivalLivePayload(f, uuid.NewString())
+		if err := r.AdmitArrival(ctx, data, pending); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, pending := arrivalLivePayload(f, "blocking-arrival")
+	if err := r.AdmitArrival(ctx, data, pending); err != nil {
+		t.Fatal(err)
+	}
+	id := pending.Arrival.Message.ID
+	deliveries := 0
+	deliver := func(_ context.Context, kind models.JobEventType, body any) error {
+		if kind != models.JobEventTypeNewEmail || body.(*models.JobEventNewEmail).Message.ID != id {
+			t.Fatal("priority delivery replayed an unrelated arrival")
+		}
+		deliveries++
+		return nil
+	}
+	other := newUniboxFolderFixture(t, d.Pool)
+	for _, scope := range [][3]uuid.UUID{{other.user, f.mailbox, id}, {f.user, other.mailbox, id}, {f.user, f.mailbox, uuid.Nil}} {
+		found, err := r.DeliverPendingArrival(ctx, scope[0], scope[1], scope[2], deliver)
+		if found || (scope[2] == uuid.Nil && err == nil) || deliveries != 0 {
+			t.Fatalf("invalid ownership or identity delivered: %v %v", found, err)
+		}
+	}
+	for _, column := range []string{"locked_until", "retry_at"} {
+		if _, err := d.Exec(ctx, `UPDATE sync_arrival_outbox SET `+column+`=now()+interval '1 minute' WHERE id=$1`, id); err != nil {
+			t.Fatal(err)
+		}
+		if found, err := r.DeliverPendingArrival(ctx, f.user, f.mailbox, id, deliver); found || err != nil || deliveries != 0 {
+			t.Fatalf("priority bypassed %s: %v %v", column, found, err)
+		}
+		dueArrival(t, d, f)
+	}
+	failed := errors.New("priority handler failed")
+	if found, err := r.DeliverPendingArrival(ctx, f.user, f.mailbox, id, func(context.Context, models.JobEventType, any) error { return failed }); !found || !errors.Is(err, failed) {
+		t.Fatalf("failed priority delivery was acknowledged: %v %v", found, err)
+	}
+	if retained, err := r.HasPendingArrival(ctx, f.user, f.mailbox, id); !retained || err != nil {
+		t.Fatalf("failed stage discarded: %v %v", retained, err)
+	}
+	if found, err := r.DeliverPendingArrival(ctx, f.user, f.mailbox, id, deliver); found || err != nil {
+		t.Fatalf("priority bypassed failure retry delay: %v %v", found, err)
+	}
+	dueArrival(t, d, f)
+	if found, err := r.DeliverPendingArrival(ctx, f.user, f.mailbox, id, deliver); !found || err != nil || deliveries != 1 {
+		t.Fatalf("blocking dependency not prioritized: %v %v calls=%d", found, err, deliveries)
+	}
+	var left int
+	if err := d.QueryRow(ctx, `SELECT count(*) FROM sync_arrival_outbox WHERE email_id=$1`, f.mailbox).Scan(&left); err != nil || left != 40 {
+		t.Fatalf("priority delivery lost the unrelated backlog: %d %v", left, err)
+	}
+	if found, err := r.DeliverPendingArrival(ctx, f.user, f.mailbox, id, deliver); found || err != nil || deliveries != 1 {
+		t.Fatalf("completed arrival redelivered: %v %v", found, err)
+	}
+}
+
 func TestLiveSyncArrivalRestartAndAmbiguousAdmission(t *testing.T) {
 	d := liveUniboxFolderDB(t)
 	f := newUniboxFolderFixture(t, d.Pool)

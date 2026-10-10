@@ -118,7 +118,7 @@ func (r *pgEmailMessageMapRepository) HasPendingArrival(ctx context.Context, use
 func (r *pgEmailMessageMapRepository) DeliverArrivals(ctx context.Context, deliver func(context.Context, models.JobEventType, any) error) error {
 	var first error
 	for i := 0; i < 32; i++ {
-		found, err := r.deliverArrival(ctx, deliver)
+		found, err := r.deliverArrival(ctx, nil, deliver)
 		if err != nil && first == nil {
 			first = err
 		}
@@ -129,20 +129,37 @@ func (r *pgEmailMessageMapRepository) DeliverArrivals(ctx context.Context, deliv
 	return first
 }
 
-func (r *pgEmailMessageMapRepository) deliverArrival(ctx context.Context, deliver func(context.Context, models.JobEventType, any) error) (bool, error) {
+type arrivalIdentity struct {
+	user, email, id uuid.UUID
+}
+
+func (r *pgEmailMessageMapRepository) DeliverPendingArrival(ctx context.Context, user, email, id uuid.UUID, deliver func(context.Context, models.JobEventType, any) error) (bool, error) {
+	if user == uuid.Nil || email == uuid.Nil || id == uuid.Nil {
+		return false, errors.New("invalid pending arrival identity")
+	}
+	return r.deliverArrival(ctx, &arrivalIdentity{user: user, email: email, id: id}, deliver)
+}
+
+func (r *pgEmailMessageMapRepository) deliverArrival(ctx context.Context, target *arrivalIdentity, deliver func(context.Context, models.JobEventType, any) error) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	var user, email, org, lease uuid.UUID
 	var key, payload string
 	var stage int
+	scope := ""
+	var args []any
+	if target != nil {
+		scope = " AND o.user_id=$1 AND o.email_id=$2 AND o.id=$3"
+		args = []any{target.user, target.email, target.id}
+	}
 	// Claim without retaining a connection while handlers use their repositories.
 	err := r.db.QueryRow(ctx, `WITH candidate AS (SELECT o.user_id,o.email_id,o.message_id
 		FROM sync_arrival_outbox o JOIN email_accounts a ON a.id=o.email_id AND a.user_id=o.user_id AND a.organization_id=o.organization_id
-		WHERE o.retry_at<=now() AND (o.locked_until IS NULL OR o.locked_until<now())
+		WHERE o.retry_at<=now() AND (o.locked_until IS NULL OR o.locked_until<now())`+scope+`
 		ORDER BY o.retry_at,o.created_at LIMIT 1 FOR UPDATE OF o SKIP LOCKED)
 		UPDATE sync_arrival_outbox o SET lease=gen_random_uuid(),locked_until=now()+interval '1 minute'
 		FROM candidate c WHERE o.user_id=c.user_id AND o.email_id=c.email_id AND o.message_id=c.message_id
-		RETURNING o.user_id,o.email_id,o.organization_id,o.message_id,o.payload,o.stage,o.lease`).Scan(&user, &email, &org, &key, &payload, &stage, &lease)
+		RETURNING o.user_id,o.email_id,o.organization_id,o.message_id,o.payload,o.stage,o.lease`, args...).Scan(&user, &email, &org, &key, &payload, &stage, &lease)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
