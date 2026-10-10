@@ -2,6 +2,7 @@ package wmail
 
 import (
 	"errors"
+
 	"github.com/warmbly/warmbly/internal/repository"
 )
 

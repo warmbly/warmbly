@@ -191,7 +191,7 @@ type Handler struct {
 	// Fleet. Nodes enrol with the join token and pull everything else; the
 	// control plane never reaches into a machine.
 	FleetNodes        *fleetnode.Service
-	NodeLogs          *nodelogs.Service
+	NodeLogs          nodelogs.Store
 	BrokerDiagnostics eventbus.EventBus
 	WorkerRepo        repository.WorkerRepository
 	// UpdatesService backs the admin panel's update indicator and button.

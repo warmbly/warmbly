@@ -52,10 +52,27 @@ func TestNodeLogTransportUsesHeaderAndRefusesRedirects(t *testing.T) {
 	}))
 	defer server.Close()
 	a := &Agent{cfg: Config{NodeID: id, BaseURL: server.URL, LogToken: "test-node-credential"}}
-	if a.sendLogs(context.Background(), []byte(`{"protocol":1,"events":[{"event":"sync_control_plane_held","http_status":503}]}`)) {
+	if a.sendLogs(context.Background(), []byte(`{"protocol":1,"events":[{"event":"sync_control_plane_held","http_status":503}]}`)).accepted {
 		t.Fatal("redirect counted as ingestion")
 	}
 	if calls != 0 || strings.Contains(safeBody.String(), "test-node-credential") {
 		t.Fatal("credential forwarded across redirect or in body")
+	}
+}
+
+func TestNodeLogTransportRejectsPermanentFailuresAndHonorsRateLimit(t *testing.T) {
+	for _, status := range []int{204, 400, 401, 403, 429, 503} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Retry-After", "60")
+				w.WriteHeader(status)
+			}))
+			defer server.Close()
+			a := &Agent{cfg: Config{NodeID: uuid.New(), BaseURL: server.URL, LogToken: "test-node-credential"}}
+			result := a.sendLogs(t.Context(), []byte(`{}`))
+			if result.accepted != (status == 204) || result.retryable != (status >= 500) || (status == 429 && result.cooldown != time.Minute) {
+				t.Fatalf("incorrect retry or cooldown for %d: %+v", status, result)
+			}
+		})
 	}
 }

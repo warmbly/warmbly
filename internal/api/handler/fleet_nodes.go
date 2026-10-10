@@ -117,6 +117,11 @@ func (h *Handler) FleetJoin(c *gin.Context) {
 		return
 	}
 
+	if h.NodeLogs == nil {
+		errx.JSON(c, errx.ErrServiceDown)
+		return
+	}
+
 	// Registering here rather than waiting for the first beat means the node
 	// shows up in the dashboard the moment it joins, even if it then fails to
 	// start. A join that silently produces nothing visible is the worst
@@ -139,10 +144,6 @@ func (h *Handler) FleetJoin(c *gin.Context) {
 		return
 	}
 
-	if h.NodeLogs == nil {
-		errx.JSON(c, errx.ErrServiceDown)
-		return
-	}
 	logToken, logErr := h.NodeLogs.Enroll(ctx, nodeID)
 	if logErr != nil {
 		errx.JSON(c, errx.ErrServiceDown)

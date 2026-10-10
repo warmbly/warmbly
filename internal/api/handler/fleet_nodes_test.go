@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/app/fleetnode"
+	"github.com/warmbly/warmbly/internal/app/nodelogs"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/crypt"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -34,6 +35,16 @@ type joinSettings struct {
 	repository.FleetSettingsRepository
 }
 
+type joinEvidence struct {
+	*nodelogs.Service
+	node uuid.UUID
+}
+
+func (e *joinEvidence) Enroll(_ context.Context, id uuid.UUID) (string, error) {
+	e.node = id
+	return strings.Repeat("l", 43), nil
+}
+
 func (joinSettings) GetJoinToken(context.Context) (string, *time.Time, error) {
 	expiresAt := time.Now().Add(time.Hour)
 	return crypt.SHA256("join-test-token"), &expiresAt, nil
@@ -49,7 +60,8 @@ func TestFleetJoinResolvesImageBeforeRegisteringNode(t *testing.T) {
 			t.Setenv("WARMBLY_VERSION", version)
 			t.Setenv("FLEET_IMAGE_VARIANT", "")
 			nodes := &joinNodes{}
-			h := &Handler{FleetNodes: fleetnode.New(nodes, nil, joinSettings{})}
+			evidence := &joinEvidence{}
+			h := &Handler{FleetNodes: fleetnode.New(nodes, nil, joinSettings{}), NodeLogs: evidence}
 			for i := range 2 {
 				response := httptest.NewRecorder()
 				c, _ := gin.CreateTestContext(response)
@@ -62,9 +74,26 @@ func TestFleetJoinResolvesImageBeforeRegisteringNode(t *testing.T) {
 					}
 				} else if response.Code != http.StatusOK || nodes.upserts != i+1 {
 					t.Fatalf("successful join was not registered: status=%d, upserts=%d", response.Code, nodes.upserts)
+				} else if evidence.node == uuid.Nil {
+					t.Fatal("successful join did not enroll node evidence")
 				}
 			}
 		})
+	}
+}
+
+func TestFleetJoinFailsClosedWithoutEvidenceStore(t *testing.T) {
+	t.Setenv("WARMBLY_VERSION", "v0.6.33")
+	t.Setenv("FLEET_IMAGE_VARIANT", "")
+	nodes := &joinNodes{}
+	h := &Handler{FleetNodes: fleetnode.New(nodes, nil, joinSettings{})}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/fleet/join", strings.NewReader(`{"token":"join-test-token","role":"consumer"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	h.FleetJoin(c)
+	if w.Code != http.StatusServiceUnavailable || nodes.upserts != 0 {
+		t.Fatalf("missing evidence dependency registered a node: status=%d, upserts=%d", w.Code, nodes.upserts)
 	}
 }
 

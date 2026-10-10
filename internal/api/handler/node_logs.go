@@ -34,6 +34,10 @@ func (h *Handler) logNodeExists(c *gin.Context, id uuid.UUID) bool {
 
 func (h *Handler) InternalNodeLogs(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
+	if h.NodeLogs == nil {
+		errx.JSON(c, errx.ErrServiceDown)
+		return
+	}
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		errx.JSON(c, errx.ErrUnauthorized)
@@ -77,6 +81,10 @@ func (h *Handler) InternalNodeLogs(c *gin.Context) {
 
 func (h *Handler) AdminNodeLogs(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
+	if h.NodeLogs == nil {
+		errx.JSON(c, errx.ErrServiceDown)
+		return
+	}
 	id, ok := h.parseID(c)
 	if !ok || !h.logNodeExists(c, id) {
 		return

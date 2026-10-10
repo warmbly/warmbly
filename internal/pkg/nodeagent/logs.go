@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -84,8 +85,22 @@ func (a *Agent) runLogs(ctx context.Context) {
 				case <-timer.C:
 				}
 			}
-			if a.sendLogs(ctx, body) {
+			result := a.sendLogs(ctx, body)
+			if result.accepted {
 				ok = true
+				break
+			}
+			if !result.retryable {
+				if result.cooldown > 0 {
+					timer := time.NewTimer(result.cooldown)
+					select {
+					case <-ctx.Done():
+						timer.Stop()
+						a.logs.dropped.Add(uint64(len(batch.Events)))
+						return
+					case <-timer.C:
+					}
+				}
 				break
 			}
 		}
@@ -95,13 +110,18 @@ func (a *Agent) runLogs(ctx context.Context) {
 	}
 }
 
-func (a *Agent) sendLogs(ctx context.Context, body []byte) bool {
+type logSendResult struct {
+	accepted, retryable bool
+	cooldown            time.Duration
+}
+
+func (a *Agent) sendLogs(ctx context.Context, body []byte) logSendResult {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	url := strings.TrimRight(a.cfg.BaseURL, "/") + "/api/v1/internal/fleet/nodes/" + a.cfg.NodeID.String() + "/logs"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return false
+		return logSendResult{}
 	}
 	req.Header.Set("Authorization", "Bearer "+a.cfg.LogToken)
 	req.Header.Set("Content-Type", "application/json")
@@ -109,8 +129,15 @@ func (a *Agent) sendLogs(ctx context.Context, body []byte) bool {
 	client := &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	resp, err := client.Do(req)
 	if err != nil {
-		return false
+		return logSendResult{retryable: true}
 	}
 	defer resp.Body.Close()
-	return resp.StatusCode == http.StatusNoContent
+	if resp.StatusCode == http.StatusTooManyRequests {
+		cooldown := time.Minute
+		if seconds, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && seconds > 0 && seconds <= 300 {
+			cooldown = time.Duration(seconds) * time.Second
+		}
+		return logSendResult{cooldown: cooldown}
+	}
+	return logSendResult{accepted: resp.StatusCode == http.StatusNoContent, retryable: resp.StatusCode >= 500}
 }

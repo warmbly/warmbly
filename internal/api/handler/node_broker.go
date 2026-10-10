@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -49,7 +50,17 @@ func (h *Handler) AdminNodeBroker(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 8*time.Second)
 	defer cancel()
 	at := time.Now().UTC()
-	commands := brokerObservation(ctx, h.BrokerDiagnostics, at, eventbus.DiagnosticScope{ID: id.String(), Group: "worker-" + id.String(), Topics: []string{kafka.GetWorkerTopic(id.String())}, IncludePartitions: true})
-	results := brokerObservation(ctx, h.BrokerDiagnostics, at, eventbus.DiagnosticScope{ID: "worker_events", Group: "consumer-group", Topics: []string{kafka.TopicWorkerEvents}, IncludePartitions: true})
+	var commands, results models.MonitoringSource
+	var scopes sync.WaitGroup
+	scopes.Add(2)
+	go func() {
+		defer scopes.Done()
+		commands = brokerObservation(ctx, h.BrokerDiagnostics, at, eventbus.DiagnosticScope{ID: id.String(), Group: "worker-" + id.String(), Topics: []string{kafka.GetWorkerTopic(id.String())}, IncludePartitions: true})
+	}()
+	go func() {
+		defer scopes.Done()
+		results = brokerObservation(ctx, h.BrokerDiagnostics, at, eventbus.DiagnosticScope{ID: "worker_events", Group: "consumer-group", Topics: []string{kafka.TopicWorkerEvents}, IncludePartitions: true})
+	}()
+	scopes.Wait()
 	c.JSON(http.StatusOK, gin.H{"node_id": id, "observed_at": at, "commands": commands, "results": results, "note": "Results are the shared result-consumer scope, not this worker's delivery or processing count. Committed lag is not evidence of delivery or outage."})
 }

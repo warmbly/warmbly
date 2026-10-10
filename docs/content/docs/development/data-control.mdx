@@ -368,7 +368,10 @@ external journal reader. Each node retains at most 1,000 allowlisted events for
 one hour, pruned by observation time/count on ingest and time-filtered on reads.
 Capture metadata expires after two hours; retry deduplication after one hour.
 Ingestion is limited to 30/node/minute. Each process has a 256-event memory
-queue, up to 32 events/batch and three bounded transport attempts. Known drops
+queue, up to 32 events/batch and at most three bounded transport attempts.
+Permanent HTTP failures are not retried; rate limiting pauses capture uploads
+for the server's bounded `Retry-After` interval (60 seconds by default).
+The rejected batch counts as known loss. Known drops
 reset with the process ID; crashes/lost acknowledgements are not fully measured.
 
 Data contains fixed event names, node/mailbox/event/process UUIDs, timestamps,

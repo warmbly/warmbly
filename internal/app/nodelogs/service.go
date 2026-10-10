@@ -29,6 +29,14 @@ var ErrRateLimited = errors.New("node evidence request rate exceeded")
 
 type Service struct{ cache *cache.Cache }
 
+type Store interface {
+	Enroll(context.Context, uuid.UUID) (string, error)
+	Revoke(context.Context, uuid.UUID) error
+	Authenticate(context.Context, uuid.UUID, string) error
+	Ingest(context.Context, uuid.UUID, string, nodeevidence.Batch) error
+	History(context.Context, uuid.UUID, Filter) (*History, error)
+}
+
 func New(c *cache.Cache) *Service  { return &Service{cache: c} }
 func prefix(node uuid.UUID) string { return "node-evidence:" + node.String() + ":" }
 
