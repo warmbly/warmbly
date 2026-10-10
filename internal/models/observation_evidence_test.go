@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"math"
 	"testing"
-
-	"github.com/hamba/avro/v2"
 )
 
 func TestObservationMetricBoundaries(t *testing.T) {
@@ -57,12 +55,12 @@ func TestReceivedMetadataSurvivesExistingJSONAndAvroEvents(t *testing.T) {
 		body := &JobEventNewEmail{Message: &EmailMessageStoreData{Flags: flags}}
 		schema := JobEvent{}.Schema()
 		in := JobEvent{Type: JobEventTypeNewEmail, Body: body}
-		payload, err := avro.Marshal(schema, in)
+		payload, err := EventAvro.Marshal(schema, in)
 		if err != nil {
 			t.Fatal(err)
 		}
 		var out JobEvent
-		if err := avro.Unmarshal(schema, payload, &out); err != nil {
+		if err := EventAvro.Unmarshal(schema, payload, &out); err != nil {
 			t.Fatal(err)
 		}
 		assertBody(t, out.Body, body)

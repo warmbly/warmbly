@@ -3,11 +3,53 @@ title: Integrations
 description: "Connect third-party tools over OAuth and send data out via webhooks."
 ---
 
+Integrations connect Warmbly to the rest of your tools. When a reply lands, a meeting is booked or an email bounces, your CRM, chat channel or automation tool hears about it.
+
+## Connect an integration
+
+<Steps>
+
+<Step>
+
+Open **Integrations** and find the app in **Discover**, **All apps** or a category, or search for it.
+
+</Step>
+
+<Step>
+
+Select **Connect** on its card or its page.
+
+</Step>
+
+<Step>
+
+Sign in to the provider for a one-click connection, or paste an API key or webhook URL when asked.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- Credentials are sealed with envelope encryption before they touch the database.
+- An expired or revoked token moves the connection to "reconnect required", and one click fixes it.
+- A workspace uses one verification service at a time.
+- Outbound events are HMAC-SHA256 signed so receivers can verify them.
+- HubSpot or Pipedrive can become the workspace's whole CRM, one at a time.
+
+<Fold>
+
+## About the Integrations page
+
 Browsing filters, searches and view choices are [remembered in your browser tab](/guides/browsing/) across refreshes and navigation, separately for each user and workspace.
 
 Integrations push Warmbly events into the rest of your stack: a reply lands, a meeting is booked, an email bounces, and your CRM, chat channel, or automation tool hears about it.
 
 The Integrations page is one directory for everything that connects to Warmbly: the built-in integrations below, apps other developers have published, and the tools to build your own. State stays live, so a connection needing reauthorization surfaces without a refresh.
+
+</Fold>
+
+<Fold>
 
 ## Finding an integration
 
@@ -28,6 +70,10 @@ On **All apps**, **Connected**, **Community apps** and each category, the same b
 - A grid or a list view.
 
 The active filters show as chips you can clear one at a time or all at once. Search, sort, filters and view are kept in the page address, so a filtered view can be bookmarked or shared with a teammate.
+
+</Fold>
+
+<Fold>
 
 ## Supported providers
 
@@ -78,6 +124,10 @@ An account with nothing left is only visible when a check is refused, so Warmbly
 
 A workspace uses one verification service. Connecting a second one is refused while the first is connected, because which one ran would otherwise be decided by connection order alone and every check would quietly move to a different bill. Disconnect the current service first, then connect the new one.
 
+</Fold>
+
+<Fold>
+
 ## Community apps
 
 A community app is an [OAuth app](/api/oauth/) another team built on the Warmbly API and published. Opening one shows who built it, what it does, how many workspaces use it, and every permission it can ask for.
@@ -105,9 +155,17 @@ Any change to the listing, or to the app's name, logo, website or permissions, r
 
 A listing's link must be 3 to 48 lowercase letters, numbers or single dashes, and the names of the built-in integrations are reserved. The tagline is at most 120 characters and the description 2,000. Every link must be `https`.
 
+</Fold>
+
+<Fold>
+
 ## HubSpot or Pipedrive as your CRM
 
 HubSpot and Pipedrive can do more than receive contacts: in [HubSpot mode](/guides/hubspot/) or [Pipedrive mode](/guides/pipedrive/) one of them becomes the workspace's CRM. Deals, pipelines, tasks and notes are the CRM's records written through from Warmbly, sends, replies, bounces, unsubscribes and meetings are logged on the contact, and a deal opened or a lifecycle stage (in Pipedrive, a label) reached there stops the contact's campaigns. Set it up from **Integrations > HubSpot** or **Integrations > Pipedrive**. A workspace runs on one CRM at a time.
+
+</Fold>
+
+<Fold>
 
 ## CRM field mappings
 
@@ -131,6 +189,10 @@ In HubSpot or Pipedrive mode, contacts sync on their own with a field map of the
 Empty values are dropped before the upsert, so a missing first name never blanks an existing one in your CRM.
 </Callout>
 
+</Fold>
+
+<Fold>
+
 ## Webhook delivery
 
 Outbound events are **HMAC-SHA256 signed** so receivers can verify them. Reveal the connection's `whsec_` signing secret in its settings and check the signature header on every request. The signed body carries a stable delivery id, event type, version, timestamp, and full event data.
@@ -143,6 +205,10 @@ URLs are validated before storage under the same policy as customer webhooks: th
 
 **Inbound webhooks** work the other way: Calendly and Cal.com call into a URL Warmbly mints for you, landing booked, rescheduled, and canceled calls on the contact timeline in real time. Rotate the secret from connection settings if exposed.
 
+</Fold>
+
+<Fold>
+
 ## Feeding automations
 
 Integrations are most useful as the actions at the end of an [automation](/guides/automations/): post to Slack or Discord, upsert into a CRM, or fan out to Zapier, Make, n8n, or any signed webhook.
@@ -154,6 +220,8 @@ Data flows in as well as out. An automation's inbound webhook URL plus its **Cre
 Actions run in the background, so a slow third party never blocks the event that triggered it. Failures are recorded against the connection's health and visible in its recent activity rather than retried forever or silently lost.
 
 You can filter when an action runs, commonly firing only on a `positive` reply or above a minimum classifier confidence. Beyond events, you can push a batch of contacts into a connected CRM on demand, with each record reporting its own result.
+
+</Fold>
 
 ## Next steps
 

@@ -3,7 +3,55 @@ title: AI steps in automations
 description: Add an AI step or an AI switch to an automation so a flow can read the event with a model, take reversible actions, or route down one of your cases.
 ---
 
+AI steps let an automation read an event with a model and act on it, or route it down one of your cases. They are built in and need no integration.
+
+## Add an AI step
+
+<Steps>
+
+<Step>
+
+In an automation, add an action node.
+
+</Step>
+
+<Step>
+
+Under **Run**, choose **Warmbly (built-in)**, then **AI step** or **AI switch**.
+
+</Step>
+
+<Step>
+
+Write a plain-language instruction. Drop in event fields with `{{.field}}`.
+
+</Step>
+
+<Step>
+
+Press **Test** to see the real output. AI steps run for real in a test and spend credits.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- No AI step ever sends email or contacts anyone.
+- Classify, extract and generate cost 1 credit; the agent costs 1 per step it takes. Provider failures refund automatically.
+- Out of credits, the step fails and the run continues down the normal path.
+- **Ask AI (yes/no)** fails safe: if the model can't answer, the **no** path runs.
+- An automation whose AI steps keep failing for lack of credits is switched off.
+
+<Fold>
+
+## The two AI nodes
+
 Automations have two AI nodes, mirroring the AI steps in campaign sequences: an **AI step** that reads the event and transforms or acts on it, and an **AI switch** that routes it down one of your cases. Both are built-in, needing no integration. Add one from an action node: **Warmbly (built-in)** under **Run**, then **AI step** or **AI switch**.
+
+</Fold>
+
+<Fold>
 
 ## The AI step
 
@@ -30,6 +78,10 @@ On a Reply received trigger, an instruction like "If they ask about pricing, lab
 A generate step only writes text into a variable. To use it you connect a later step you control (a Slack message, a task, a webhook). Warmbly never sends outreach email from an AI step.
 </Callout>
 
+</Fold>
+
+<Fold>
+
 ## The AI switch
 
 Routes the event down exactly one of your **cases** (at least two), each its own column under the switch. Put ordinary action steps under a case to make things happen for events routed down it. Steps under **Always** run whichever case is picked; a renamed case keeps the steps under it.
@@ -41,11 +93,19 @@ Routes the event down exactly one of your **cases** (at least two), each its own
 
 An unmatched value, or a model picking no case, takes the fallback.
 
+</Fold>
+
+<Fold>
+
 ## Capabilities
 
 Both nodes can enable **extended thinking**, routing to the stronger model with a larger reasoning budget, metered by usage rather than a flat credit.
 
 The AI switch in prompt mode can also enable **web search**: it looks up the event's company before deciding. The query is built only from event fields such as company name or corporate email domain, **never from the reply text**, and costs one extra credit only when it returns results.
+
+</Fold>
+
+<Fold>
 
 ## The Ask AI branch
 
@@ -56,6 +116,10 @@ A condition node can ask the model directly. Pick **Ask AI (yes/no)** and write 
 - **Fails safe**: if the model can't answer, you are out of credits, or the answer is ambiguous, the **no** path runs and the reason is recorded.
 - Use an AI switch when you need more than two outcomes.
 
+</Fold>
+
+<Fold>
+
 ## Using the result downstream
 
 Classify, extract, and generate write into the flow exactly like a **Set variables** step, so every later step can read them:
@@ -64,6 +128,10 @@ Classify, extract, and generate write into the flow exactly like a **Set variabl
 - **Action text**: reference `{{.ai_class}}`, `{{.ai_text}}`, or `{{.your_key}}` in any templated field.
 
 If two AI steps would both write `ai_class` or `ai_text`, set an **output variable name** on one so they do not overwrite each other.
+
+</Fold>
+
+<Fold>
 
 ## Cost, failures, and safety
 
@@ -75,9 +143,15 @@ If two AI steps would both write `ai_class` or `ai_text`, set an **output variab
 | Timing | Each step is bounded to a few seconds so a slow model never stalls the flow |
 | Sending safety | **No AI step ever sends email or contacts anyone.** The agent takes only the reversible actions you enable; other modes only write a variable |
 
+</Fold>
+
+<Fold>
+
 ## Testing
 
 **Test** dry-runs the flow, but AI steps and Ask AI branches run **for real** so you see actual output and the branch it drives, which spends credits. The agent reports what it would do without applying it. The trace panel shows each step's output beside its node. See [Testing and history](/guides/automations/).
+
+</Fold>
 
 ## See also
 

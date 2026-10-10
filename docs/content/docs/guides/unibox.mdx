@@ -3,11 +3,61 @@ title: "Unibox"
 description: "A unified inbox across all connected mailboxes, with labels and threading."
 ---
 
+Unibox is one inbox for every connected mailbox. You read, sort and reply from a single screen instead of logging into each account.
+
+![The unibox: folders, mailboxes and labels on the left, the conversation list, and the open thread](/guides/unibox.webp)
+
+## Reply to a conversation
+
+<Steps>
+
+<Step>
+
+Open **Inbox** from the main navigation.
+
+</Step>
+
+<Step>
+
+Pick a folder, view or mailbox in the **scope rail** on the left.
+
+</Step>
+
+<Step>
+
+Click a conversation in the list to read the whole thread.
+
+</Step>
+
+<Step>
+
+Reply in the thread. **From** starts on the mailbox that holds the message.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- Verified warmup mail stays out of Unibox and does not raise the unread count.
+- Archive and Delete also file the conversation in Gmail, Outlook or your IMAP mailbox, and Delete only moves mail to the mailbox's own trash.
+- Remote images in mail you receive stay hidden until you click **Load images**.
+- Instant sends wait 30 seconds by default, so you can **Cancel** one before it goes.
+- Nothing needs refreshing: new mail and unread counts update on their own.
+
+<Fold>
+
+## What the inbox shows
+
 Browsing filters, searches and view choices are [remembered in your browser tab](/guides/browsing/) across refreshes and navigation, separately for each user and workspace.
 
 One inbox for every connected mailbox. Read, sort, and reply from a single screen instead of logging into each account. Three columns: a **scope rail** for picking what to look at, a **conversation list**, and a **thread view** where you read and reply.
 
 Verified [warmup mail](/guides/warmup/) stays out of Unibox, including your mailbox's Sent copies and warmup run by [Warmbly Cloud](/guides/warmbly-cloud/). It does not create inbox notifications, raise the unread count or trigger reply classification. The consumer also checks existing messages in batches (once a day and after every restart) and removes confirmed warmup from Unibox, and any reply notification it had raised goes with it. This leaves the messages in your email provider and keeps ordinary conversations intact.
+
+</Fold>
+
+<Fold>
 
 ## Layout
 
@@ -31,6 +81,10 @@ On a screen narrower than 1024px the contact panel is an overlay rather than a c
 
 The contact panel shows the person on the other side of the conversation: the first sender who is not one of the workspace's mailboxes. It finds their contact by address first. When that address is not a contact but the conversation answers one of your campaign emails (people often reply from an alias, a second domain or a colleague's account), the panel shows the lead that campaign wrote to, with a **Replied from** line naming the address the reply actually came from. Only when neither matches does it offer **Add as contact**.
 
+</Fold>
+
+<Fold>
+
 ## Keyboard
 
 The conversation list takes the keyboard, so a triage pass never needs the mouse. Press `?` anywhere in Warmbly for the full list; these are the ones that act on the inbox.
@@ -47,6 +101,10 @@ The conversation list takes the keyboard, so a triage pass never needs the mouse
 | `c` | Label the open conversation. |
 
 The shortcuts modal only lists what the screen you are on can actually do, so these rows appear while the inbox is open and not elsewhere.
+
+</Fold>
+
+<Fold>
 
 ## Folders
 
@@ -72,6 +130,10 @@ Spam and Trash stay out of every other view, and so does Archive: filing a conve
 <Callout type="info" title="Spam and Trash start from when you connect">
 The initial import that runs when a mailbox is first connected covers Inbox, Sent, Archive, and Drafts. It deliberately skips the existing contents of Spam and Trash, whose history would consume the import budget that belongs to real conversations. Both folders fill normally from the moment the mailbox is connected, so they show what arrives from then on rather than what was already there.
 </Callout>
+
+</Fold>
+
+<Fold>
 
 ## Scopes
 
@@ -109,6 +171,10 @@ It searches the scope you are in. When that finds nothing, the empty state offer
 
 The filter button next to the title opens a small panel that narrows the list on the spot: read state, a date range (today, the last 7 or 30 days, or two dates), sender, labels, mailboxes (or a whole tag of them), and sort order. Anything you add shows as a chip under the search box, and each chip removes itself with one click. A view that already fixes one of these, such as Unread or a single mailbox, does not offer that control again.
 
+</Fold>
+
+<Fold>
+
 ## Threading
 
 Each row is a conversation, not a message, with a count next to the sender when more than one message is inside. Opening it shows every message in order, with the message count and the owning mailbox under the subject. Replies and new inbound mail land in the same thread. Rows group under `Today`, `Yesterday`, `This week`, and `Earlier` headers.
@@ -122,6 +188,10 @@ Threading applies on both sides. A reply carries an `In-Reply-To` header naming 
 <Callout type="info" title="Keyboard navigation">
 `j` / `k` move between rows, `Enter` opens, `Esc` closes, `/` focuses search, `c` labels. Press `?` for the full list.
 </Callout>
+
+</Fold>
+
+<Fold>
 
 ## Reading a message
 
@@ -141,6 +211,10 @@ Recognized quoted history collapses behind **Show quoted text**. Click it to rea
 
 Every open message has a details toggle on its recipient line, the `to` under the sender's name, and the sender's name and address open the same panel. It shows the message envelope in place: every From, Reply-To, To, Cc and Bcc address, when it was sent and, if that differs, when the mailbox received it, both in your own time zone, the mailbox and folder it lives in, its size, and the Message-ID and In-Reply-To headers. Click any address or identifier to copy it. The info icon next to Reply and Forward opens the same panel, including on a message that is still collapsed.
 
+</Fold>
+
+<Fold>
+
 ## Labels
 
 Labels are one workspace list, used on [contacts](/guides/contacts-crm/#labels), on conversations here and by [forms](/guides/forms/), so `Interested` means the same thing on a contact as it does on a conversation. The list is shared with the rest of the team too: a label anyone creates is available to everyone, and a conversation one member labels shows that label to the next. Label with the tag button in the conversation header or `c`: search existing labels, tick what applies, or type a name and **Create**. A conversation can carry several.
@@ -151,6 +225,10 @@ Labeled conversations show colored chips on the row and in the header, and each 
 Labels mark conversations and contacts. Mailbox tags mark the mailboxes themselves (grouping accounts by client or domain). Both filter from the rail, but they describe different things.
 </Callout>
 
+</Fold>
+
+<Fold>
+
 ## Read state
 
 A conversation is unread when any message inside is unseen, marked by a blue dot in the margin, bolder text, and a blue timestamp. Opening it marks its messages seen and updates the counts, and so does **Mark as read** on the row or on a selection, without opening anything.
@@ -160,6 +238,10 @@ A conversation is unread when any message inside is unseen, marked by a blue dot
 Read state travels both ways. A message arriving already read is stored that way, and reading a conversation here marks it read in the mailbox itself, so Gmail, Outlook and any IMAP mailbox stop showing it bold too. **Mark as unread** does the same in reverse, and **Mark all as read** on a folder carries the whole sweep across. Only a real change travels: opening a conversation you have already read costs nothing at the provider.
 
 The relay runs on the worker that holds the mailbox, just after Warmbly's own copy is updated, so the dashboard never waits on it. If the mailbox is between workers at that moment, or the provider refuses, Warmbly keeps your read state and the mailbox keeps its own; nothing retries, because the next sync reports whatever the provider actually thinks.
+
+</Fold>
+
+<Fold>
 
 ## Filing a conversation
 
@@ -205,6 +287,10 @@ The move runs on the worker that holds the mailbox, just after Warmbly's own cop
 
 To keep filing inside Warmbly for one mailbox, turn off **Mirror Archive and Delete** on its Settings tab (see [mailboxes](/guides/mailboxes/#filing-in-the-mailbox)). Filing then only moves the conversation here, and the next sync will not undo it: Warmbly records where the provider has each message separately from where you filed it, and follows the provider only when the provider itself moves the message. So archiving or junking a message in Gmail still reaches Warmbly either way, and an ordinary sync pass does not.
 
+</Fold>
+
+<Fold>
+
 ## Replying
 
 Reply, forward, or hover any single message to reply to it specifically. The composer appears when you ask for it or return to a conversation with a saved reply or forward. You can apply a saved **template** or **Insert booking link**. A template with an HTML body keeps its formatting; see [templates and HTML](#templates-and-html).
@@ -249,6 +335,10 @@ Set your voice profile under **Settings, Workspace**: what you sell, who to, and
 
 For drafts written automatically on every inbound reply and held for approval, turn on the [inbox agent](/guides/inbox-agent/). It never sends on its own.
 
+</Fold>
+
+<Fold>
+
 ## Composing
 
 **Compose** at the top of the conversation list, the `n` key anywhere, or the **Email** action on a contact opens a docked window so you can keep browsing while writing.
@@ -291,6 +381,10 @@ With a recipient set, **History** slides out every conversation you have had wit
 
 Scheduled and smart-queued sends skip the undo window, since they already wait. Cancel them from the **Scheduled** view, or via `DELETE /unibox/scheduled/:task_id`.
 
+</Fold>
+
+<Fold>
+
 ## Realtime
 
 Nothing needs refreshing. New mail appears in the list, updates the open thread, and raises the unread count on its own. The open conversation updates as soon as its mail changes; rail counts, lists and analytics catch up within a couple of seconds, so a burst of incoming mail refreshes them once instead of once per message. The count on **Unibox** in the navigation (and in the browser tab) is the number of unread conversations in **Inbox**, the view it opens, so it never points at mail that view does not list: sent mail, drafts, archived, snoozed and automated conversations are left out. Read-state changes, replies, scheduled sends, snoozes, and label changes all refresh the affected views, keeping rail counts, the list, and the open thread consistent.
@@ -298,6 +392,8 @@ Nothing needs refreshing. New mail appears in the list, updates the open thread,
 <Callout type="info" title="Keeping inboxes healthy">
 Replying promptly supports sender reputation, which warmup and good deliverability practice protect. See [Deliverability](/guides/deliverability/).
 </Callout>
+
+</Fold>
 
 ## Related
 

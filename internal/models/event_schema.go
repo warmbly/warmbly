@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hamba/avro/v2"
+	"github.com/iskorotkov/avro/v2"
 )
 
 // Avro has to be told the shape of a union before it meets one, and the two bus
@@ -31,6 +31,9 @@ import (
 // today, which is what makes the two codecs interchangeable during a cutover.
 
 var (
+	// Collection limits count entries, not encoded bytes, across all blocks.
+	EventAvro = avro.Config{MaxSliceAllocSize: 65536, MaxMapAllocSize: 65536, MaxByteSliceSize: 1 << 20}.Freeze()
+
 	eventSchemaOnce   sync.Once
 	workerEventSchema avro.Schema
 	jobEventSchema    avro.Schema
@@ -95,7 +98,7 @@ func envelopeSchema(name string, bodies []any) (avro.Schema, error) {
 		// a value cannot resolve to a branch registered as a pointer, and the
 		// handler's type assertion is what decides whether the decoded body is
 		// used directly or re-marshalled through JSON.
-		avro.Register(record.FullName(), body)
+		EventAvro.Register(record.FullName(), body)
 		branches = append(branches, record)
 	}
 	body, err := avro.NewUnionSchema(branches)

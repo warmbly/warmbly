@@ -45,6 +45,7 @@ config :realtime, RealtimeWeb.Endpoint,
   url: [host: "localhost"],
   http: [
     port: String.to_integer(System.get_env("PORT") || "4000"),
+    protocol_options: [invalid_response_headers: :error_terminate],
     transport_options: [socket_opts: [:inet6]]
   ],
   secret_key_base:

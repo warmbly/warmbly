@@ -321,6 +321,8 @@ A worker's command topic is named after the node id issued when it joined, so th
 
 `json` needs nothing and is the default. `avro` resolves every event against `SCHEMA_REGISTRY_URL` and ships only in the `-kafka` images. Producers and consumers have to agree on one: there is no in-band marker, so a consumer on the other codec cannot read what is already on the bus. Change it by draining the bus, not in place. The envelope subjects need `BACKWARD` compatibility, because a new event type adds a union branch; a publisher that meets `FORWARD` or `FULL` sets its subject to `BACKWARD` itself. `PUBSUB_ENABLED` must agree across backend, consumer and realtime.
 
+Go services limit each decoded Avro array or map to 65,536 entries, counted across blocks, and each string or byte field to 1 MiB. Payloads exceeding these limits are rejected. The maintained encoder uses the existing schemas and Confluent framing. Queued messages within these limits remain readable without draining the bus or re-registering subjects. Keep the same codec configuration during the upgrade.
+
 <Callout type="warn" title="The tracking topic is read by two languages">
 `KAFKA_TRACKING_TOPIC` is read by the Rust publisher and the Go subscriber. Override it in one place only and opens and clicks stop being consumed, with no error anywhere.
 </Callout>

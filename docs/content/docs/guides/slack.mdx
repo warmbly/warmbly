@@ -3,6 +3,50 @@ title: Slack
 description: "Ask the Warmbly assistant from Slack, work inbox replies in a Slack channel, and route notifications to the right channels."
 ---
 
+Warmbly for Slack brings the AI assistant, your inbox replies and Warmbly notifications into the Slack workspace your team already uses.
+
+## Connect Slack
+
+<Steps>
+
+<Step>
+
+Open **Integrations > Slack** and select **Connect**.
+
+</Step>
+
+<Step>
+
+Pick the Slack workspace and approve the app's permissions.
+
+</Step>
+
+<Step>
+
+Mention `@Warmbly` or message it to link your Slack account. When your Slack email matches your Warmbly account, it links you automatically.
+
+</Step>
+
+<Step>
+
+Under **Integrations > Slack**, pick a **Default channel** for notifications and, if you want, an **Inbox channel**.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- Connecting and changing Slack settings need the **Manage settings** permission.
+- The assistant acts as you, with your permissions, and asks before changing anything. In a DM, an action your workspace has set to **Always allow** can go ahead without asking again.
+- Anything that sends mail to a real recipient needs your approval every time.
+- Every member of the inbox channel can read the mail posted there.
+- On a self-hosted instance, the operator has to create a Slack app first.
+
+<Fold>
+
+## What Warmbly for Slack does
+
 Warmbly for Slack brings three things into the Slack workspace your team already lives in:
 
 - **The assistant.** Ask the same [AI assistant](/guides/ai-assistant/) you use in the dashboard by mentioning `@Warmbly` or messaging it, the way you would ask a teammate. It is the same assistant, with the same tools and the same answers, and it acts as you, with your permissions, and asks before changing anything.
@@ -10,6 +54,10 @@ Warmbly for Slack brings three things into the Slack workspace your team already
 - **Notifications.** Post Warmbly [notifications](/guides/notifications/) to a default channel, route each category to its own channel, and optionally get your own as DMs.
 
 The app's **Home** tab shows whether your Slack account is linked, with buttons to link or unlink, ask Warmbly, and open Warmbly.
+
+</Fold>
+
+<Fold>
 
 ## Connect Slack
 
@@ -20,6 +68,10 @@ When the connection was made before Warmbly asked for a permission it now uses, 
 <Callout type="info" title="Self-hosted instances need a Slack app first">
 On a self-hosted instance the Slack card stays unavailable until the operator creates the instance's own Slack app. See [Slack app](/development/slack-app/).
 </Callout>
+
+</Fold>
+
+<Fold>
 
 ## Link your Slack account
 
@@ -43,6 +95,10 @@ Matching by email needs the `users:read` and `users:read.email` permissions. A c
 </Callout>
 
 A Slack account links to one Warmbly account at a time. Linking again replaces the previous link. Unlink from the app's Home tab or from **Integrations > Slack** in Warmbly. If your membership in the workspace ends, the link stops working and the bot asks you to link again.
+
+</Fold>
+
+<Fold>
 
 ## The assistant
 
@@ -104,6 +160,10 @@ Every Slack conversation is also in your assistant history in the dashboard, and
 - **Slack Connect channels.** In a channel shared with another organization the assistant declines, because people outside your company would read what it says about your workspace.
 - **When the workspace limits it.** Under **Integrations > Slack**, a member with **Manage settings** can set the assistant to **On**, **DMs only** (it answers in DMs and the assistant pane, never in channels) or **Off**.
 
+</Fold>
+
+<Fold>
+
 ## Inbox in Slack
 
 Pick an **Inbox channel** under **Integrations > Slack** and incoming mail from the [Unibox](/guides/unibox/) is posted there, so the team can work replies without leaving Slack. Leave it empty and nothing is posted.
@@ -141,6 +201,10 @@ Every button except **Open in Warmbly** needs a linked Slack account and the **U
 
 Typing in a conversation's thread is team discussion. It never sends email, and the assistant does not read it. Mention `@Warmbly` in the thread to ask the assistant about the conversation: it starts with that conversation as context, and still asks before sending anything.
 
+</Fold>
+
+<Fold>
+
 ## Notifications
 
 Warmbly posts a notification to Slack when the category is enabled for Slack in the recipient's **Settings > Notifications**. A notification meant for several teammates is posted once, not once per person.
@@ -159,6 +223,10 @@ Each post carries an **Open in Warmbly** button. A **Reply received** notificati
 
 To work every reply in Slack rather than be pinged about it, use the [inbox channel](#inbox-in-slack) instead.
 
+</Fold>
+
+<Fold>
+
 ## Permissions
 
 | Action | Who |
@@ -173,6 +241,10 @@ To work every reply in Slack rather than be pinged about it, use the [inbox chan
 
 Removing a member from the workspace ends what their Slack account can do here, because everything runs as their Warmbly membership at the time.
 
+</Fold>
+
+<Fold>
+
 ## What the bot reads
 
 The bot acts only on messages addressed to it:
@@ -183,6 +255,10 @@ The bot acts only on messages addressed to it:
 - a message you run **Ask Warmbly about this** on
 
 Slack delivers other messages from channels the bot is in, including the team's discussion in inbox threads, and Warmbly ignores them. When you mention the bot inside an existing thread, or use the message shortcut, it also reads that thread's earlier messages so it knows what you are asking about. Those messages are passed to the assistant as quoted material, never as instructions, so text in a thread cannot tell the assistant to do something. The same holds for email text in the inbox channel.
+
+</Fold>
+
+<Fold>
 
 ## Troubleshooting
 
@@ -201,3 +277,5 @@ Slack delivers other messages from channels the bot is in, including the team's 
 | A reply you expected is not in the inbox channel | With **Replies** selected, auto-replies, bounces and mail that answers nothing are left out. Switch to **All** to post every inbound message |
 | The bot answers without the thread's earlier messages | Slack limited how often the app may read message history, so it answered with only your message. Paste the relevant text into your question, or try again in a minute |
 | A notification did not reach a private channel | Invite the bot to that channel |
+
+</Fold>

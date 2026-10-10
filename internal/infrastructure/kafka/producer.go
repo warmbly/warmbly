@@ -20,7 +20,6 @@ type producerClient interface {
 
 type Producer struct {
 	p             producerClient
-	Avrov2        *Avrov2
 	mu            sync.Mutex
 	closed        bool
 	eventsDrained <-chan struct{}
@@ -80,10 +79,6 @@ func (conf *ProducerConfig) Connect() (*Producer, error) {
 		p:             p,
 		eventsDrained: eventsDrained,
 	}, nil
-}
-
-func (pr *Producer) WithAvrov2(avrov2 *Avrov2) {
-	pr.Avrov2 = avrov2
 }
 
 func (pr *Producer) Close() {

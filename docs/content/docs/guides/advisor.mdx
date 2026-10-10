@@ -3,9 +3,57 @@ title: "Advisor"
 description: "Warmbly watches your sending and tells you what to fix, on the page where the fix lives."
 ---
 
+The Advisor checks your workspace for problems that quietly hurt cold outreach, such as climbing complaints or a domain missing DMARC. It says what is wrong and what to do, on the page where the problem is.
+
+## Fix a finding
+
+<Steps>
+
+<Step>
+
+Click the colored flag on a mailbox or campaign row to open its findings.
+
+</Step>
+
+<Step>
+
+Read **Why** to see the measured numbers behind the finding.
+
+</Step>
+
+<Step>
+
+Check **What changes**, which shows the exact before and after of every field.
+
+</Step>
+
+<Step>
+
+Apply the fix. **Done** offers **Undo** where the change can be reverted.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- Detection is explicit rules with explicit thresholds, not AI, so it works with no AI configured and never spends AI credits.
+- A check stays quiet until it has enough data, for example `100` sends in 30 days for complaint rate.
+- Nothing is applied until you have seen the **What changes** screen, and the change runs with your permissions.
+- Autopilot, under **Settings > Workspace**, is off by default and only takes bounded fixes that can be undone.
+- **Snooze** hides a finding for a week or a month. **Stop suggesting this** dismisses it until the problem clears and recurs.
+
+<Fold>
+
+## What the Advisor does
+
 The Advisor checks your workspace for the things that quietly ruin cold outreach: complaints climbing, a domain missing DMARC, a new mailbox at full volume, a list that is mostly shared inboxes. It says what is wrong, why it matters, and what to do, and where the fix is a setting, it offers to make the change.
 
 Advice appears on the page where the problem is, not in a separate inbox you have to check.
+
+</Fold>
+
+<Fold>
 
 ## Where you see it
 
@@ -20,6 +68,10 @@ Advice appears on the page where the problem is, not in a separate inbox you hav
 A step's copy problem flags its campaign, since a step has no row. When there is nothing to say, nothing renders.
 
 If one check fires on many things, they collapse into a single card ("19 mailboxes are capped above the safe band") that expands to list each affected row with its own **Fix**, plus one **Fix all**.
+
+</Fold>
+
+<Fold>
 
 ## How findings are made
 
@@ -48,6 +100,10 @@ A check stays quiet until it can be right. Two bounces in thirty sends is not a 
 
 Only the first two badge a nav tab.
 
+</Fold>
+
+<Fold>
+
 ## What it checks
 
 **Deliverability**: complaint rate per mailbox (warns `0.03%`, critical `0.10%`, matching Google's bulk-sender ceiling); bounce rate (warns `3%`, critical `5%`, where SES opens a review); spam placement on warmup mail at Google, Microsoft and Yahoo (warns `10%`, escalates `20%`, critical `50%`; other mail hosts are not counted, see [how spam placement is judged](/guides/warmup/#how-spam-placement-is-judged)); SPF and DMARC per sending domain (critical while sending cold, since Google requires them; an unchecked domain is never called failing, and DKIM is never reported missing because its selector is not discoverable from DNS); and whether a mailbox has its own verified tracking domain.
@@ -63,6 +119,10 @@ Only the first two badge a nav tab.
 Two more copy findings run only when the operator has configured TypeSafe (`TYPESAFE_API_KEY`), a calibrated reader model rather than a language model: a step that **reads as bulk mail** to its recipient, or makes a claim a spam filter objects to (guaranteed results, free money, a prize, pressure to act now); and a step with **no clear ask**, either asking for nothing or for several things. Each step's subject and body are sent to TypeSafe for this, once per version of the copy; the verdict is cached and an unchanged step is never sent again. At most `40` steps are judged per evaluation, and the rest wait for the next run.
 
 **List quality**: shared inboxes (`info@`, `sales@`) above `15%`; consumer domains above `40%` of a B2B list; suppressed contacts above `10%`; missing first names above `10%` when copy personalizes on them; unsubscribed contacts still enrolled.
+
+</Fold>
+
+<Fold>
 
 ## Fixing something
 
@@ -105,17 +165,27 @@ Under **Settings > Workspace**, off by default. It only takes fixes that are bou
 
 **It never pauses sending, edits copy, starts or resumes warmup, or acts without an undo.** Eligible findings are marked **Auto** on the card whether or not it is on, so the set is visible before you enable it. It acts as the member who enabled it, with their permissions, logged as them, and stops if that person leaves. At most ten fixes per evaluation.
 
+</Fold>
+
+<Fold>
+
 ## Making one go away
 
 - **Snooze** hides it for a week or a month; the check keeps running.
 - **Stop suggesting this** dismisses it until the problem clears and recurs later.
 - **Useful / not useful** feeds threshold tuning.
 
+</Fold>
+
+<Fold>
+
 ## Settings and timing
 
 Under **Settings > Workspace** you can switch the Advisor off, enable autopilot, mute whole categories, or raise the minimum severity. Changing these needs the manage-settings permission and applies workspace-wide.
 
 Findings refresh in the background and when you open a page whose advice went stale. Adding, changing or removing a mailbox re-checks them right away, and removing a mailbox, campaign or step closes the advice about it in the same action. Updates are live, so a teammate applying a fix clears the card on your screen.
+
+</Fold>
 
 ## See also
 

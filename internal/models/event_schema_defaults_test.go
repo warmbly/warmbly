@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hamba/avro/v2"
+	"github.com/iskorotkov/avro/v2"
 )
 
 // TestEveryBodyFieldHasADefault is the guard on the outage in #583: v0.4.23

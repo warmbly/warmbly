@@ -5,9 +5,19 @@ description: A full mental model for getting cold mail into the inbox, and keepi
 
 A full mental model for getting cold mail into the inbox, and keeping it there: authentication, warmup, volume, reputation.
 
+<ShortVersion>
+
+- Delivered is not the same as in the inbox: a provider can accept a message and still file it in Spam.
+- Placement is decided by authentication, sender reputation, engagement, content and volume.
+- The only way to know where mail lands is to measure it.
+
+</ShortVersion>
+
 ## What deliverability actually means
 
 A message goes through three gates after you hand it to a mailbox provider. **Acceptance**: the SMTP server returns 250 and writes a queue ID. **Filtering**: spam scoring decides whether to deliver, defer, or reject. **Placement**: the surviving message lands in Inbox, Promotions, Spam, or a user-defined folder.
+
+<MailJourney />
 
 | Gate | Decided by | What it checks |
 | --- | --- | --- |
@@ -24,6 +34,8 @@ The only way to know placement after the fact is to probe it: warmup pool partne
 </Callout>
 
 ## The signals that decide placement
+
+<SignalWeights />
 
 ### Authentication alignment
 

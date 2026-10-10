@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hamba/avro/v2"
+	"github.com/iskorotkov/avro/v2"
 )
 
 // SchemaDocument is the JSON to hand a schema registry for one of the derived

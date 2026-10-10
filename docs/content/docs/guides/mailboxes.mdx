@@ -3,6 +3,49 @@ title: Mailboxes
 description: "Connect sender accounts, providers, and how they are assigned to workers."
 ---
 
+A mailbox is a sender account you connect to Warmbly. Every warmup message and campaign email goes out through one you own.
+
+![The Accounts page: every connected mailbox with its status, cold sends today, warmup progress, inbox rate and health](/guides/accounts.webp)
+
+## Connect a mailbox
+
+<Steps>
+
+<Step>
+
+Open **Accounts** and choose **Add account**.
+
+</Step>
+
+<Step>
+
+Pick **Google**, **Microsoft**, or **Other (SMTP / IMAP)** for any other host.
+
+</Step>
+
+<Step>
+
+On Google Workspace or Microsoft 365, choose the administrator's grant: it connects every mailbox on the domain at once, with no password and no sign-in each.
+
+</Step>
+
+</Steps>
+
+![Add account: Google, Microsoft, any SMTP and IMAP host, a file import, or an inbox vendor](/guides/add-account.webp)
+
+To bring in many at once, choose **Import mailboxes**: up to 5,000 from a CSV, TSV or XLSX file, or a pasted list.
+
+## Good to know
+
+- A mailbox sends at most `50` cold emails a day by default. New mailboxes start on a sending plan of about `30` a day.
+- Mailboxes are unlimited on every paid plan, with a fair-use allowance of one mailbox for every send a day the plan includes.
+- When a provider stops accepting a mailbox's sign-in, the mailbox stops sending and its drawer shows the fix.
+- You never pick a sending worker. Warmbly assigns one.
+
+<Fold>
+
+## How the list reports health
+
 Browsing filters, searches and view choices are [remembered in your browser tab](/guides/browsing/) across refreshes and navigation, separately for each user and workspace.
 
 A mailbox is a sender account you connect to Warmbly. Every warmup message and campaign email goes out through one you own.
@@ -13,11 +56,19 @@ The Accounts list checks mailbox health and, on linked self-hosted instances, Cl
 
 New mailboxes default to diagnostic participation **off**. The organization-authorized mailbox PATCH exposes `test_mode` (`off`, `diagnostic`, `legacy`), separate `test_send_enabled` and `test_receive_enabled` flags, and optional positive `shared_daily_limit`/`rolling_recipient_limit`. These are API controls, not new dashboard switches. Diagnostic mode sends disclosed tests but does not manufacture reads, stars, importance or spam rescue. Existing upgraded mailboxes with NULL participation retain legacy behavior until explicitly changed. Set `test_mode=off` to stop future diagnostic send/receive admission; current protocol-2 workers also recheck queued sends/actions. Already accepted old-worker commands or a provider send underway cannot be recalled. A local Cloud alias unlink stops local authority, not an independently cloud-owned mailbox or provider grant: pause/remove that mailbox on Cloud separately. See [send safety, repair evidence and rollout](/development/send-safety/).
 
+</Fold>
+
+<Fold>
+
 ## Filtering accounts
 
 Use the **Tags** dropdown above the mailbox list to show accounts with a particular tag. The selection is kept in the page URL and remembered for your user and workspace in the browser tab, so refreshing, opening a bookmark, or visiting another page and returning keeps the filter. Choose **All accounts** to clear it. A tag that no longer exists in the current workspace falls back to **All accounts**.
 
 Without an explicit column sort, the Accounts list groups the loaded mailboxes by their complete set of tags, both in **All accounts** and when filtering by a specific tag. Mailboxes with **Tag A + Tag B** stay together even when those tags were assigned in a different order, separately from mailboxes with only **Tag A**. Groups follow the workspace's tag order, with untagged mailboxes last; mailboxes within a group are ordered by email address. Selecting a tag narrows the list without changing this order. Each mailbox appears only once. Selecting a column sort takes priority over grouping and remains selected when changing the tag filter.
+
+</Fold>
+
+<Fold>
 
 ## Connecting an account
 
@@ -156,6 +207,10 @@ Both are about the same thing: the credentials never leave the machine, so there
 
 Set the Bridge's own username and password, which it shows in its interface, not your Proton account password. The same applies to any relay on the machine: a Dovecot sharing a host with its worker, or a local sink used for testing.
 
+</Fold>
+
+<Fold>
+
 ## Mailbox allowance
 
 Mailboxes are unlimited on every paid plan. What keeps that honest is a fair-use allowance derived from the plan's sending volume: one mailbox for every send a day the plan includes.
@@ -183,6 +238,10 @@ Nothing is ever removed for being over the allowance. A workspace that moves to 
 
 There is no daily cap on how many mailboxes you connect: a Business workspace can connect thousands in one afternoon, and the [mailbox import](/guides/mailbox-import/) exists for exactly that.
 
+</Fold>
+
+<Fold>
+
 ## Connecting many mailboxes at once
 
 Choose **Import mailboxes** in the connect dialog to connect up to 5,000 mailboxes from a CSV, TSV or XLSX file, a vendor export, or a pasted list of `address:password` pairs. Only an address and a password are needed: the columns are recognised and each domain's servers are found from DNS. Microsoft 365 and Outlook.com rows wait for a Microsoft sign-in each. Google rows use an app password, an admin grant, or Google sign-in where enabled. The import runs on the server, verifies every credential before saving it, and groups whatever fails by cause with the fix.
@@ -190,6 +249,10 @@ Choose **Import mailboxes** in the connect dialog to connect up to 5,000 mailbox
 The same dialog imports straight from an [inbox vendor](/guides/mailbox-import/#import-from-an-inbox-vendor) with an API key, and connects a whole [Google Workspace domain](/guides/mailbox-import/#connect-a-whole-google-workspace-domain) (**Google > Whole Workspace domain**) or [Microsoft 365 organization](/guides/mailbox-import/#connect-a-whole-microsoft-365-organization) (**Microsoft > Whole organization**) through one administrator's grant.
 
 See [Import mailboxes](/guides/mailbox-import/) for the columns, what each provider needs, and what is kept, and [sending domains](/guides/sending-domains/) for setting a tracking host and a root redirect per domain.
+
+</Fold>
+
+<Fold>
 
 ## Reconnecting an account
 
@@ -202,6 +265,10 @@ When the provider stops accepting a mailbox's stored credential (a password chan
 A successful reconnect stores the new credential, clears the authentication error, reactivates the mailbox on its existing worker, and it resumes syncing from where it stopped. Nothing else changes: settings, history, warmup progress, and campaign membership all stay.
 
 Reconnecting never counts against the mailbox allowance, so a workspace at its cap can still fix a broken mailbox. A mailbox whose sign-in is held by Warmbly Cloud is reconnected from your cloud workspace instead; the button says so if you try locally.
+
+</Fold>
+
+<Fold>
 
 ## What gets synced
 
@@ -244,6 +311,10 @@ The same setting is `PUT /emails/:id/sync` in the [API](/api/endpoints/) and `wa
 </Callout>
 
 Only two patterns deactivate a mailbox's sync, and both mean something is wrong upstream: a flood (thousands of new messages in a single hour, more than any real inbox produces) or exceeding the daily budget on three of the last seven days. The mailbox then shows the reason under **Needs attention**; fix what is delivering that volume into it, or ask your administrator to raise the budget, and reactivate it.
+
+</Fold>
+
+<Fold>
 
 ## Sending controls
 
@@ -369,6 +440,10 @@ Clicks are counted per message, not per link: Direct mail reports how many messa
 
 Tracking uses the same host as everything else, so a [custom tracking domain](#custom-tracking-domain) on this mailbox applies here too. On an install with no tracking host configured, direct mail goes out untracked rather than carrying a pixel that points nowhere.
 
+</Fold>
+
+<Fold>
+
 ## Warmup
 
 New mailboxes should warm up before carrying campaign volume. Defaults are `10`/day starting volume, `+1`/day ramp, and a `40`/day ceiling.
@@ -386,6 +461,10 @@ A mailbox marked as a [placement seed inbox](/guides/placement-tests/#your-own-s
 <Callout type="info" title="Warmup is a paid feature">
   The model still supports separate free and premium pools, but access is gated to paid workspaces today.
 </Callout>
+
+</Fold>
+
+<Fold>
 
 ## Pausing and disconnecting
 
@@ -423,6 +502,10 @@ If either step cannot finish, because a provider is down or storage is briefly u
 
 Closing the whole workspace does the same thing for every mailbox in it, for the same reasons.
 
+</Fold>
+
+<Fold>
+
 ## Worker assignment
 
 You never pick a worker. Warmbly assigns each mailbox to a sending worker automatically and can move it later.
@@ -442,6 +525,10 @@ Each assigned mailbox counts as one unit against the worker's configurable plann
 **Mailboxes move only when there is a reason.** A worker going offline or running hot (above 85% of its planning target) will move yours. Warmbly also corrects workspace or provider concentration across the live fleet. A settled mailbox has to have been in place for three days before an ordinary rebalance is considered, and the alternative has to be meaningfully better. A mailbox that never needs to move is the ideal, not a stuck one.
 
 Plans that include reserved sending give your workspace a worker no other customer sends from, so your mailboxes always sign in from an address that is yours alone. It is a preference, not a lock: if that machine goes down your mailboxes keep working on the rest of the fleet and return when a replacement is ready.
+
+</Fold>
+
+<Fold>
 
 ## Resting a tired mailbox
 
@@ -477,6 +564,10 @@ The same hold is available to API keys as `POST /emails/:id/hold` and `POST /ema
 This is not the same as the risk band that decides which sending worker and IP host a mailbox. A resting mailbox is usually still on a clean worker; it is simply not being offered campaign sends. The mailbox drawer says which state it is in and why.
 </Callout>
 
+</Fold>
+
+<Fold>
+
 ## Health
 
 The Accounts list groups mailboxes as **Healthy** (sending normally), **Warming** (ramping through warmup), or **Needs attention** (paused, failing, or not sending). Each row shows the mailbox with how it connects and its tags, a **Status** that says what it is doing (**Sending**, **Warming**, **Active** when it does both, **Resting**, or **Idle**, and **Error**, **Off** or **Reconnect** when something stops it), campaign emails sent today against its cap, warmup sent today against the ramp target, the inbox rate, and the health score. Hover a status for the reason, and click any column header to sort. A drop in health between refreshes notifies you rather than waiting to be noticed.
@@ -492,6 +583,8 @@ Health is judged only on what happened while the mailbox was in the pool: signal
 <Callout type="info" title="Health protects the pool">
   These controls act earlier than the point where providers start penalizing senders. Low complaint rate and low spam placement matter more than maximum throughput.
 </Callout>
+
+</Fold>
 
 ## Related guides
 
