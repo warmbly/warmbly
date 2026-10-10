@@ -21,6 +21,7 @@ import (
 type fakeImapConn struct {
 	ImapConn
 	folders   []models.Mailbox
+	present   []string
 	folderErr *errx.MailError
 	changed   []goimap.UID
 	fetches   int
@@ -59,6 +60,21 @@ func (c *fakeImapConn) Folders() ([]models.Mailbox, *errx.MailError) {
 		return nil, c.folderErr
 	}
 	return append([]models.Mailbox(nil), c.folders...), nil
+}
+
+func (c *fakeImapConn) ListFolders() (imap.FolderListing, *errx.MailError) {
+	folders, err := c.Folders()
+	if err != nil {
+		return imap.FolderListing{}, err
+	}
+	present := map[string]struct{}{}
+	for _, f := range folders {
+		present[f.Name] = struct{}{}
+	}
+	for _, name := range c.present {
+		present[name] = struct{}{}
+	}
+	return imap.FolderListing{Folders: folders, Present: present}, nil
 }
 
 func (c *fakeImapConn) FolderOverflow() int  { return c.overflow }
@@ -355,10 +371,17 @@ type backfillImapConn struct {
 }
 
 func (c *backfillImapConn) Folders() ([]models.Mailbox, *errx.MailError) { return c.folders, nil }
-func (c *backfillImapConn) FolderOverflow() int                          { return 0 }
-func (c *backfillImapConn) FolderConflicts() int                         { return 0 }
-func (c *backfillImapConn) HasCondStore() bool                           { return true }
-func (c *backfillImapConn) ReleaseMailbox()                              {}
+func (c *backfillImapConn) ListFolders() (imap.FolderListing, *errx.MailError) {
+	present := map[string]struct{}{}
+	for _, f := range c.folders {
+		present[f.Name] = struct{}{}
+	}
+	return imap.FolderListing{Folders: c.folders, Present: present}, nil
+}
+func (c *backfillImapConn) FolderOverflow() int  { return 0 }
+func (c *backfillImapConn) FolderConflicts() int { return 0 }
+func (c *backfillImapConn) HasCondStore() bool   { return true }
+func (c *backfillImapConn) ReleaseMailbox()      {}
 
 func (c *backfillImapConn) SelectForSyncState(folder string) (imap.Selected, *errx.MailError) {
 	count, err := c.SelectForSync(folder)

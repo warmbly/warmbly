@@ -3,6 +3,7 @@ package imap
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"strings"
@@ -396,6 +397,72 @@ func TestFoldersCapKeepsInboxAndSpecialFolders(t *testing.T) {
 	}
 	if c.FolderOverflow() != len(many)+1-5 {
 		t.Errorf("FolderOverflow = %d, want %d", c.FolderOverflow(), len(many)+1-5)
+	}
+}
+
+func TestFolderListingPreservesCompleteNamesWithBoundedStatus(t *testing.T) {
+	for _, listStatus := range []bool{false, true} {
+		t.Run(fmt.Sprintf("LIST-STATUS=%t", listStatus), func(t *testing.T) {
+			var caps imap.CapSet
+			if listStatus {
+				caps = imap.CapSet{imap.CapIMAP4rev1: {}, imap.CapListExtended: {}, imap.CapListStatus: {}}
+			}
+			suppressed := 0
+			c, wire := rewritingServer(t, caps, nil, func(line string) string {
+				if listStatus && strings.HasPrefix(strings.ToUpper(line), "* STATUS ") && suppressed < 5 {
+					suppressed++
+					return ""
+				}
+				return line
+			}, "Sent", "Archive", "Outside", "Other")
+			listing, err := c.listFoldersCapped(2)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(listing.Folders) != 2 || c.FolderOverflow() != 3 || len(wire.commands("STATUS")) != 2 {
+				t.Fatalf("cap did not bound status work: listing=%+v commands=%v", listing, wire.commands("STATUS"))
+			}
+			for _, name := range []string{"INBOX", "Sent", "Archive", "Outside", "Other"} {
+				if _, present := listing.Present[name]; !present {
+					t.Fatalf("complete LIST presence lost %q outside cap", name)
+				}
+			}
+			for _, box := range listing.Folders {
+				if box.UIDValidity == 0 || box.UIDNext == 0 {
+					t.Fatalf("kept folder has incomplete status: %+v", box)
+				}
+			}
+		})
+	}
+}
+
+func TestFolderListingRequiresCompleteDiscoveryOrExplicitAbsence(t *testing.T) {
+	for _, reply := range []string{"NO [UNAVAILABLE] Try later", "NO [NONEXISTENT] Folder removed"} {
+		t.Run(reply, func(t *testing.T) {
+			c, _ := interceptingServer(t, nil, func(line string) string {
+				fields := strings.Fields(line)
+				if len(fields) >= 3 && strings.EqualFold(fields[1], "STATUS") && strings.Contains(line, "Sent") {
+					return fields[0] + " " + reply
+				}
+				return ""
+			}, "Sent")
+			listing, err := c.ListFolders()
+			if strings.Contains(reply, "UNAVAILABLE") {
+				if err == nil || listing.Present != nil || len(listing.Folders) != 0 {
+					t.Fatalf("failed pass leaked retirement authority: %+v err=%v", listing, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, present := listing.Present["Sent"]; present {
+				t.Fatal("explicit resource absence was not retained")
+			}
+			if _, present := listing.Present["INBOX"]; !present {
+				t.Fatal("remaining positive presence was lost")
+			}
+		})
 	}
 }
 
