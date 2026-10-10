@@ -5,9 +5,19 @@ description: How shared warmup pools work, why pool quality beats pool size, and
 
 A warmup pool is a group of mailboxes that send warmup mail to one another. Your mailbox sends a short message to another mailbox in the pool. That mailbox opens it, sometimes replies, and the pattern reverses with mail from another pool member.
 
+<ShortVersion>
+
+- A warmup pool is a group of mailboxes that send warmup mail to one another.
+- Pool quality matters more than size: vetted mailboxes across the major providers beat thousands of throwaways.
+- Free and premium pools are kept apart.
+
+</ShortVersion>
+
 ## What a warmup pool is
 
 From a mailbox provider's point of view, the pattern looks like normal individual mailbox activity: low volume, conversational, mixed senders.
+
+<WarmupExchange />
 
 ## Why pool quality matters more than size
 
@@ -39,6 +49,8 @@ In Warmbly, free and premium pools are physically separated. Reserved sending in
 Separation has to stay an exchange, though. A tier that only sends into the other and never receives builds nothing: reputation comes from mail arriving, being read and being answered, not from mail leaving. So the one crossing Warmbly allows is mirrored: a premium mailbox short of partners outside its own workspace borrows the best proven free mailboxes as recipients, and those same mailboxes write back to the paying mailboxes that wrote to them. Free senders leave part of every inbox's daily capacity unused, so premium mailboxes are never crowded out of it. Every draw then favours whichever inbox is furthest behind on what it sent, and caps what any inbox receives in a day, so neither tier is starved and neither is flooded.
 
 When a workspace's paid subscription becomes active, Warmbly records the premium tier on every existing mailbox and moves its active warmup participants to the premium pool. Mailboxes connected later inherit the same tier. A workspace restricted or suspended for abuse keeps the paid tier on its mailboxes but cannot enter the premium participant pool until the restriction clears. Stripe webhook retries are safe, so an interrupted promotion finishes on redelivery without duplicating pool membership. Payment-recovery and cancellation events do not churn existing pool membership.
+
+<PoolTiers />
 
 ## What reserved sending means
 

@@ -2,11 +2,12 @@
 @import 'fumadocs-ui/css/neutral.css';
 @import 'fumadocs-ui/css/preset.css';
 
-/* Warmbly brand theme mirroring site/: slate text and borders, sky accent. */
+/* Warmbly brand theme, the same as site/: slate type and hairlines, sky accents,
+   light by default. Unlayered rules here win over the preset's layered ones. */
 :root {
   --color-fd-background: #ffffff;
   --color-fd-foreground: #0f172a;
-  --color-fd-muted: #f5f8fc;
+  --color-fd-muted: #f8fafc;
   --color-fd-muted-foreground: #64748b;
   --color-fd-popover: #ffffff;
   --color-fd-popover-foreground: #0f172a;
@@ -15,37 +16,58 @@
   --color-fd-border: #e2e8f0;
   --color-fd-primary: #0284c7;
   --color-fd-primary-foreground: #ffffff;
-  --color-fd-secondary: #f1f5f9;
+  --color-fd-secondary: #f8fafc;
   --color-fd-secondary-foreground: #0f172a;
   --color-fd-accent: #f1f5f9;
   --color-fd-accent-foreground: #0f172a;
-  --color-fd-ring: #0ea5e9;
+  --color-fd-ring: #38bdf8;
+
+  --wd-heading: #0f172a;
+  --wd-body: #475569;
+  --wd-muted: #64748b;
+  --wd-faint: #94a3b8;
+  --wd-line: #e2e8f0;
+  --wd-line-soft: #f1f5f9;
+  --wd-soft: #f8fafc;
+  --wd-hover: #f1f5f9;
+  --wd-code-bg: #f1f5f9;
+  --wd-code-fg: #1e293b;
+  --wd-link-line: #cbd5e1;
+  --wd-ink: #0f172a;
+  --wd-ink-fg: #ffffff;
 }
 
 .dark {
-  --color-fd-background: oklch(0.13 0.01 260);
-  --color-fd-foreground: oklch(0.95 0.005 260);
-  --color-fd-muted: oklch(0.2 0.01 260);
-  --color-fd-muted-foreground: oklch(0.65 0.01 260);
-  --color-fd-popover: oklch(0.16 0.01 260);
-  --color-fd-popover-foreground: oklch(0.95 0.005 260);
-  --color-fd-card: oklch(0.16 0.01 260);
-  --color-fd-card-foreground: oklch(0.95 0.005 260);
-  --color-fd-border: oklch(0.26 0.01 260);
-  --color-fd-primary: oklch(0.72 0.15 250);
-  --color-fd-primary-foreground: oklch(0.13 0.01 260);
-  --color-fd-secondary: oklch(0.18 0.01 260);
-  --color-fd-secondary-foreground: oklch(0.95 0.005 260);
-  --color-fd-accent: oklch(0.22 0.01 260);
-  --color-fd-accent-foreground: oklch(0.95 0.005 260);
-  --color-fd-ring: oklch(0.62 0.02 252);
-}
+  --color-fd-background: #0a0a0a;
+  --color-fd-foreground: #ededed;
+  --color-fd-muted: #141414;
+  --color-fd-muted-foreground: #a1a1a1;
+  --color-fd-popover: #111111;
+  --color-fd-popover-foreground: #ededed;
+  --color-fd-card: #111111;
+  --color-fd-card-foreground: #ededed;
+  --color-fd-border: #262626;
+  --color-fd-primary: #38bdf8;
+  --color-fd-primary-foreground: #0a0a0a;
+  --color-fd-secondary: #141414;
+  --color-fd-secondary-foreground: #ededed;
+  --color-fd-accent: #1c1c1c;
+  --color-fd-accent-foreground: #ededed;
+  --color-fd-ring: #38bdf8;
 
-/* Keep the dark sidebar on the slate-blue palette, not the preset's gray. */
-.dark #nd-sidebar {
-  --color-fd-muted: oklch(0.2 0.01 260);
-  --color-fd-secondary: oklch(0.22 0.01 260);
-  --color-fd-muted-foreground: oklch(0.7 0.01 260);
+  --wd-heading: #f5f5f5;
+  --wd-body: #c7c7c7;
+  --wd-muted: #a1a1a1;
+  --wd-faint: #6e6e6e;
+  --wd-line: #262626;
+  --wd-line-soft: #1a1a1a;
+  --wd-soft: #111111;
+  --wd-hover: #1c1c1c;
+  --wd-code-bg: #1c1c1c;
+  --wd-code-fg: #e5e5e5;
+  --wd-link-line: #4a4a4a;
+  --wd-ink: #f5f5f5;
+  --wd-ink-fg: #0a0a0a;
 }
 
 body {
@@ -56,6 +78,324 @@ body {
 }
 
 ::selection {
-  background: color-mix(in oklab, var(--color-fd-primary) 25%, transparent);
+  background: color-mix(in oklab, var(--color-fd-primary) 22%, transparent);
   color: var(--color-fd-foreground);
+}
+
+/* ---------------------------------------------------------------- navbar */
+
+/* Navigation chrome marks the active item in ink; the page keeps the sky accent. */
+#nd-notebook-layout {
+  --color-fd-primary: var(--wd-ink);
+}
+#nd-page {
+  --color-fd-primary: #0284c7;
+}
+.dark #nd-page {
+  --color-fd-primary: #38bdf8;
+}
+#nd-subnav {
+  border-color: var(--wd-line);
+}
+#nd-subnav[data-transparent='false'] {
+  background: color-mix(in oklab, var(--color-fd-background) 88%, transparent);
+}
+/* Section tabs: plain text, the active one in ink with an ink underline. */
+#nd-subnav a[data-active] {
+  font-size: 14px;
+  color: var(--wd-muted);
+}
+#nd-subnav a[data-active]:hover {
+  color: var(--wd-heading);
+}
+#nd-subnav a[data-active='true'] {
+  color: var(--wd-heading);
+  font-weight: 500;
+  border-color: var(--wd-ink);
+}
+
+/* --------------------------------------------------------------- sidebar */
+
+#nd-sidebar {
+  --color-fd-primary: var(--wd-ink);
+}
+#nd-sidebar p {
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--wd-heading);
+}
+#nd-sidebar a[data-active] {
+  font-size: 14px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--wd-muted);
+}
+#nd-sidebar a[data-active]:hover {
+  background: var(--wd-soft);
+  color: var(--wd-heading);
+}
+#nd-sidebar a[data-active='true'] {
+  background: var(--wd-hover);
+  color: var(--wd-heading);
+  font-weight: 500;
+}
+
+/* ------------------------------------------------------------------- toc */
+
+#nd-toc {
+  --color-fd-primary: var(--wd-ink);
+}
+#nd-toc #toc-title {
+  font-size: 12.5px;
+  color: var(--wd-faint);
+}
+#nd-toc a {
+  font-size: 13px;
+  color: var(--wd-muted);
+}
+#nd-toc a:hover {
+  color: var(--wd-heading);
+}
+#nd-toc a[data-active='true'] {
+  color: var(--wd-heading);
+}
+
+/* -------------------------------------------------------------- the page */
+
+#nd-page h1 {
+  font-size: clamp(32px, 4vw, 42px);
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  line-height: 1.08;
+  color: var(--wd-heading);
+}
+#nd-page .wd-description {
+  font-size: 18px;
+  line-height: 1.55;
+  color: var(--wd-muted);
+}
+
+#nd-page .prose {
+  --tw-prose-body: var(--wd-body);
+  --tw-prose-headings: var(--wd-heading);
+  --tw-prose-bold: var(--wd-heading);
+  --tw-prose-links: var(--wd-heading);
+  --tw-prose-counters: var(--wd-faint);
+  --tw-prose-bullets: var(--wd-faint);
+  --tw-prose-quotes: var(--wd-body);
+  --tw-prose-captions: var(--wd-muted);
+  --tw-prose-th-borders: var(--wd-line);
+  --tw-prose-td-borders: var(--wd-line-soft);
+  font-size: 15.5px;
+  line-height: 1.75;
+  color: var(--wd-body);
+}
+#nd-page .prose :is(h2, h3, h4) {
+  font-weight: 500;
+  color: var(--wd-heading);
+}
+#nd-page .prose h2 {
+  font-size: 25px;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+  margin-top: 2.6em;
+  padding-top: 1.4em;
+  border-top: 1px solid var(--wd-line-soft);
+}
+#nd-page .prose h3 {
+  font-size: 19px;
+  letter-spacing: -0.02em;
+  margin-top: 2em;
+}
+#nd-page .prose h4 {
+  font-size: 16px;
+  letter-spacing: -0.01em;
+}
+#nd-page .prose strong {
+  font-weight: 600;
+}
+
+/* Links read as text with a quiet underline, like the marketing site. */
+#nd-page .prose a:not([data-card]) {
+  font-weight: 500;
+  color: var(--wd-heading);
+  text-decoration-line: underline;
+  text-decoration-color: var(--wd-link-line);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+  border: 0;
+  transition: text-decoration-color 150ms ease;
+}
+#nd-page .prose a:not([data-card]):hover {
+  text-decoration-color: currentColor;
+}
+
+/* Inline code: a soft chip, no border. */
+#nd-page .prose :not(pre) > code {
+  background: var(--wd-code-bg);
+  color: var(--wd-code-fg);
+  border: 0;
+  border-radius: 5px;
+  padding: 0.12em 0.4em;
+  font-size: 0.86em;
+  font-weight: 500;
+}
+
+/* Code blocks: a flat panel on a hairline. */
+#nd-page figure.shiki {
+  border-radius: 8px;
+  border-color: var(--wd-line);
+  background: var(--wd-soft);
+  box-shadow: none;
+}
+#nd-page figure.shiki > div:first-child:not(:only-child) {
+  border-color: var(--wd-line);
+  color: var(--wd-muted);
+}
+
+/* Tables: hairlines and a quiet header. */
+#nd-page .prose table {
+  font-size: 14px;
+}
+#nd-page .prose th {
+  font-weight: 500;
+  font-size: 12.5px;
+  color: var(--wd-muted);
+  background: var(--wd-soft);
+}
+#nd-page .prose :where(table) {
+  border-color: var(--wd-line);
+}
+
+/* Callouts: a flat slate panel; the icon carries the colour. */
+#nd-page [role='note'],
+#nd-page .prose > div:has(> svg + div) {
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+/* Cards (Related guides and the like). */
+#nd-page a[data-card] {
+  border-radius: 8px;
+  border-color: var(--wd-line);
+  background: var(--color-fd-background);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+#nd-page a[data-card]:hover {
+  background: var(--color-fd-background);
+  border-color: color-mix(in oklab, var(--wd-faint) 60%, transparent);
+  box-shadow: 0 10px 30px -18px rgba(15, 23, 42, 0.35);
+}
+#nd-page a[data-card] h3 {
+  font-weight: 500;
+  color: var(--wd-heading);
+}
+
+/* Steps: an ink counter. */
+#nd-page .fd-step::before {
+  background: var(--wd-ink);
+  color: var(--wd-ink-fg);
+  font-weight: 500;
+}
+
+/* Previous / next footer. */
+#nd-page footer a {
+  border-radius: 8px;
+  border-color: var(--wd-line);
+}
+#nd-page footer a:hover {
+  background: var(--wd-soft);
+}
+
+/* The page actions under the title: small rounded ghost buttons. */
+#nd-page .wd-actions button,
+#nd-page .wd-actions a {
+  height: 30px;
+  border-radius: 999px;
+  padding-inline: 12px;
+  font-size: 12.5px;
+  background: var(--color-fd-background);
+  border: 1px solid var(--wd-line);
+  color: var(--wd-heading);
+}
+#nd-page .wd-actions button:hover,
+#nd-page .wd-actions a:hover {
+  background: var(--wd-soft);
+}
+
+/* Dashboard screenshots: a plain frame on a hairline, no backdrop. */
+#nd-page .prose img {
+  border-radius: 8px;
+  border: 1px solid var(--wd-line);
+  box-shadow: 0 18px 40px -28px rgba(15, 23, 42, 0.35);
+  margin-block: 1.75em;
+}
+
+/* Folded detail: a hairline row per section, its heading as the toggle. */
+#nd-page .wd-fold {
+  border-top: 1px solid var(--wd-line);
+}
+#nd-page .wd-fold:last-of-type {
+  border-bottom: 1px solid var(--wd-line);
+}
+#nd-page .wd-fold > summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  list-style: none;
+  padding: 14px 2px;
+  color: var(--wd-muted);
+}
+#nd-page .wd-fold > summary::-webkit-details-marker {
+  display: none;
+}
+#nd-page .wd-fold > summary :is(h2, h3) {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+}
+#nd-page .wd-fold > summary :is(h2, h3) a {
+  pointer-events: none;
+}
+#nd-page .wd-fold > summary:hover :is(h2, h3) {
+  color: var(--color-fd-primary);
+}
+#nd-page .wd-fold-body {
+  padding: 0 2px 20px;
+}
+#nd-page .wd-fold-body > :first-child {
+  margin-top: 0;
+}
+/* Short "good to know" lists at the top of a guide. */
+#nd-page .prose h2#good-to-know + ul {
+  margin-top: 0.5em;
+}
+/* A tall drawer screenshot reads at drawer size, not stretched across the column. */
+#nd-page .prose img[src$='mailbox-warmup.webp'] {
+  max-width: min(100%, 560px);
+}
+
+/* The short version box on Learn pages: a plain list, no prose spacing. */
+.wd-short-body ul {
+  list-style: disc;
+  padding-left: 1.15em;
+}
+.wd-short-body li {
+  margin: 0.2em 0;
+}
+.wd-short-body li::marker {
+  color: var(--wd-faint);
+}
+.wd-short-body p {
+  margin: 0;
+}
+.wd-short-body code {
+  border-radius: 4px;
+  background: var(--wd-code-bg);
+  padding: 0.1em 0.35em;
+  font-size: 0.88em;
 }

@@ -3,6 +3,15 @@ title: Reputation recovery
 description: A step-by-step plan to bring a quarantined or low-placement mailbox back to healthy without making things worse.
 ---
 
+<ShortVersion>
+
+- Pause campaigns from the mailbox, but keep warmup running.
+- Fix authentication before anything else.
+- Ramp back up over about six weeks, safest recipients first.
+- If placement is still below 80% after 8 weeks, retire the mailbox or move to a new sub-domain.
+
+</ShortVersion>
+
 ## Triage first
 
 Before you start a recovery plan, decide whether the mailbox is worth recovering at all. Three questions:
@@ -31,6 +40,8 @@ Fix anything that's broken before you start the volume work. Recovery on a misco
 ## The recovery ramp
 
 Treat the mailbox like a brand-new one. The ramp:
+
+<RecoveryRamp />
 
 - **Days 1–7:** warmup only, capped at 5/day. No cold sends.
 - **Days 8–14:** warmup at 10/day. Still no cold sends.

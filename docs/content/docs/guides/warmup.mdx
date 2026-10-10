@@ -3,15 +3,69 @@ title: Warmup
 description: "Disclosed diagnostics, placement evidence, participation and conservative pacing."
 ---
 
+Warmup sends short, disclosed test messages between participating mailboxes and records where they land. It reveals configuration and delivery problems, but it does not guarantee inbox placement.
+
+![A mailbox's Warmup tab: participation, today's sends against the ramp target, pool standing and the ramp settings](/guides/mailbox-warmup.webp)
+
+## Start warmup on a mailbox
+
+<Steps>
+
+<Step>
+
+Open a mailbox from the Accounts list and go to the **Warmup** tab of its drawer.
+
+</Step>
+
+<Step>
+
+Start warmup to turn on diagnostic sending.
+
+</Step>
+
+<Step>
+
+Choose where warmup mail is filed: **Its own folder** (the default), **Leave it in the inbox**, or **Archive it**.
+
+</Step>
+
+<Step>
+
+Pause to stop sending but keep receiving, or Stop to turn off both while keeping the ramp history.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- Warmup is a paid feature: free organizations can connect mailboxes, but no warmup traffic is scheduled for them.
+- New mailboxes start with warmup off. Once on, it starts at `10` emails a day by default and climbs by `+1` a day to a ceiling of `40`.
+- Keep warmup on after campaigns start. A mailbox backing a live campaign drops to at most five warmup messages a day.
+- Warmup mail never appears in the unibox, and it is removed from the mailbox after 30 days by default.
+- Spam placement is judged at Google, Microsoft and Yahoo only. It slows a mailbox down but does not, on its own, quarantine or block it.
+
+<Fold>
+
+## What warmup is and who gets it
+
 Warmup sends disclosed automated diagnostics between participating mailboxes. It measures observed placement and bounded actual-message DKIM evidence. It does not establish organic engagement or guarantee reputation improvement or inbox placement.
 
 <Callout type="info" title="Warmup is a paid feature">
   Free organizations can connect mailboxes, but no warmup traffic is scheduled for them; pending warmup activity is skipped rather than sent.
 </Callout>
 
+</Fold>
+
+<Fold>
+
 ## Why it works
 
 Diagnostics reveal configuration and delivery problems, not whether real recipients welcome outreach. Provider acceptance is not inbox placement; synthetic replies are not human feedback. Missing observations remain unknown.
+
+</Fold>
+
+<Fold>
 
 ## How it works
 
@@ -56,6 +110,10 @@ Message generation stays off the live sending path. When an AI provider is confi
 Canonical turns use actual alternating configured identities and pinned subject/source/version. Exact-parent continuation preserves facts and closes exhausted, retired or missing threads. A varied vetted bank of disclosed hypothetical exercises supplies fallback. Generated prose never claims a provider check passed.
 
 The controller runs every six hours against the last seven days of demand: at least 200 active threads, up to 5,000, refreshing the most-used content, at most 250 threads per batch and 1,000 per day. Threads are retired automatically when at least 3 of 20 or more sampled deliveries land in spam and the rate is `15%` or higher. Admins monitor it but never refill it by hand.
+
+</Fold>
+
+<Fold>
 
 ## Pools
 
@@ -104,6 +162,10 @@ The **Analytics** tab of the same drawer charts the exchange over time: sent, re
 
 Pause preserves separate receiving permission; Stop disables both directions. Lost authority, disconnection, quarantine or block also restrict participation. Health alone is not consent.
 
+</Fold>
+
+<Fold>
+
 ## Seeing where warmup lands
 
 Every warmup email a mailbox sends is looked for in the partner's mailbox, and when it arrives Warmbly records where: the primary inbox, a Gmail category tab (Promotions, Updates, Social or Forums), or spam. Nothing is estimated or sampled, and the history is kept for the life of the mailbox rather than only the latest day.
@@ -125,6 +187,10 @@ The **inbox rate** is inbox plus category tabs over everything delivered in the 
 The rate is taken at Google, Microsoft and Yahoo only, the providers that judge a mailbox. Smaller mail hosts run their own filters, so their spam folders never count toward it: a mailbox whose warmup mail only reached small hosts shows no rate rather than one built from them. Other mail hosts are still shown: their inbox rate sits right under the headline in the drawer and on **Deliverability**, and they appear in the daily charts, the counts and the per-provider breakdown. It only appears once `20` deliveries at those three are in the window, the same sample the pool needs before it acts on spam placement. Until then the mailbox shows how far along it is (`8/20`) rather than a percentage that would swing on every delivery. The mailbox's health score is capped at its inbox rate, so a mailbox with some mail in spam reads `97`, not a flat `100`.
 
 Filter by provider to distinguish observations from gaps. Historical rescued counts are legacy requests, not confirmed moves or benefits. Diagnostic mode does not rescue spam. Unconfirmed means not observed after timeout, not verified failure. First-folder evidence is separate from housekeeping; absent historical folders stay unknown. Days are UTC. See [warmup placement](/api/reference/analytics/#get-warmup-placement).
+
+</Fold>
+
+<Fold>
 
 ## The ramp
 
@@ -162,6 +228,10 @@ Placement slowdown and ramp pause have different windows. The drawer shows obser
   Keep warmup on after campaigns start. A mailbox backing a live campaign drops to at most five warmup messages per day, leaving the campaign as primary traffic. Warmup does not make repetitive or unwanted copy safe: you still need real targeting, personalization, suppression, and unsubscribe support.
 </Callout>
 
+</Fold>
+
+<Fold>
+
 ## Replies
 
 Configured diagnostic turns continue disclosed scenarios, not organic relationships. Exact pinned plans and subjects are reloaded, each parent is answered once, and exhausted, retired or missing threads close.
@@ -171,6 +241,10 @@ Replies thread properly with a real `Re:` subject and `In-Reply-To` header, and 
 Receiving warmup mail can also prompt an answer directly. When a verified warmup email arrives, the recipient sometimes points its next scheduled send back at whoever wrote, 25 minutes to 5 hours later and inside its own warmup hours. That is a re-pointing, not extra work: each mailbox has one warmup send queued at a time, so a reply-back moves that send earlier and aims it, and can never push a send the mailbox had already planned sooner. The chance is the recipient's own reply rate, drawn once when the reply is scheduled rather than again when it sends, and it stops before a thread reaches its message cap so replies cannot answer replies indefinitely.
 
 Scheduling respects windows, provider feedback, shared limits and spacing. Jitter distributes load, not human identities. Diagnostic mode schedules no synthetic read, star, importance or spam-rescue actions.
+
+</Fold>
+
+<Fold>
 
 ## Keeping warmup out of your inbox
 
@@ -233,6 +307,10 @@ Warmup writes to none of the tables the customer-facing views read, so nothing n
 - direct-mail analytics counts a mailbox's own sent and received mail and excludes every task-backed message, campaign and warmup alike
 - notifications are raised for domain authentication, worker downtime and campaign guardrails, never per message
 
+</Fold>
+
+<Fold>
+
 ## Pool safety
 
 Pools enforce permission and restrictive complaint/bounce/authentication evidence, current authority and durable holds. Deleting diagnostics or choosing spam is recipient withdrawal, not automatic tampering misconduct.
@@ -277,9 +355,17 @@ On a self-hosted instance linked to [Warmbly Cloud](/guides/warmbly-cloud/#safet
 
 The standing follows the address, not the connection. Removing a mailbox from the workspace and adding it back, or dropping out of the pool and rejoining, does not clear its score or its block: the same address in the same workspace rejoins with the standing it left with. That standing is kept for 90 days after the block ends or after the mailbox was removed, whichever is later; a block that requires review never lapses. A mailbox in good standing leaves nothing behind.
 
+</Fold>
+
+<Fold>
+
 ## Graduating to cold sending
 
 Diagnostic-history mailboxes start cold sending at a conservative ceiling of five/day. Synthetic age never increases it. Recent confirmed human replies to actual campaign recipients permit bounded increases, subject to calendar days and negative feedback. Missing evidence leaves readiness/full-cap dates unknown. This product policy is not a provider-approved safe volume. See [campaign pacing](/guides/campaigns/).
+
+</Fold>
+
+<Fold>
 
 ## Recommended posture
 
@@ -288,6 +374,8 @@ Diagnostic-history mailboxes start cold sending at a conservative ceiling of fiv
 - Keep warmup running alongside campaigns, not only before them.
 - Prefer more healthy mailboxes over pushing a few too hard.
 - Watch complaints and spam placement, not open-rate vanity metrics.
+
+</Fold>
 
 ## Related guides
 

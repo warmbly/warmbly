@@ -3,11 +3,59 @@ title: "Forms"
 description: "Build a hosted lead-capture form, style it to match your site, embed it anywhere, and turn every submission into a contact."
 ---
 
+Forms turn website visitors into contacts. You build a form, publish it to a hosted page, and share the link or embed it on any website.
+
+## Publish a form
+
+<Steps>
+
+<Step>
+
+Open **Forms** in the sidebar and choose **New form**.
+
+</Step>
+
+<Step>
+
+Add and arrange blocks in the builder. The canvas shows exactly what the hosted page renders.
+
+</Step>
+
+<Step>
+
+Style it on the **Design** tab, then pick labels or a campaign on the **Settings** tab.
+
+</Step>
+
+<Step>
+
+Press **Publish**, then copy a link or embed code from the **Share** tab.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- A submission with an email answer creates or updates a contact. Without one, it is stored but never touches the contact list.
+- **Add to campaign** enrolls new contacts as leads, but a form never causes immediate mail.
+- Every published form has spam protection with nothing to configure.
+- Edits to a published form go live when you save.
+- Viewing forms takes the same permission as viewing contacts; building and publishing take the manage-contacts permission.
+
+<Fold>
+
+## What forms do and who can use them
+
 Browsing filters, searches and view choices are [remembered in your browser tab](/guides/browsing/) across refreshes and navigation, separately for each user and workspace.
 
 Forms turn website visitors into contacts. You build a form in the dashboard, publish it to a hosted page, and either share the link or embed the form on any website. Every submission is stored, and when it carries an email address it creates or updates a contact, applies the labels you chose, and can drop it straight into a campaign.
 
 Open **Forms** in the sidebar. Viewing takes the same permission as viewing contacts; building and publishing take the manage-contacts permission.
+
+</Fold>
+
+<Fold>
 
 ## Building a form
 
@@ -43,6 +91,10 @@ Every answer is kept verbatim on the submission. On top of that, each input fiel
 
 A form needs an email answer to create a contact. Forms without an email field still collect submissions; they just never touch the contact list.
 
+</Fold>
+
+<Fold>
+
 ## Design
 
 The **Design** tab styles the form while the canvas updates live. The defaults are a clean, neutral card that looks right on most sites; changing nothing is a fine choice.
@@ -55,6 +107,10 @@ The **Design** tab styles the form while the canvas updates live. The defaults a
 - **Side panel.** On the Split layout, the panel takes a title and a paragraph of text on top of the cover image, rendered in white with a soft shadow so it stays readable on any photo.
 - **Branding and backgrounds.** Upload a logo (PNG or JPG, up to 1 MB), a cover image for the Split layout, and a background image behind the whole page (both up to 4 MB). The logo renders small, medium or large, and on the Card layout it can sit on the card or above it on the page background; check contrast if you move it out, since a dark page can swallow a dark logo. A background image can fill, fit or tile, and the **veil** slider fades the page color over it: raise it when text on a busy photo gets hard to read.
 
+</Fold>
+
+<Fold>
+
 ## Settings
 
 The **Settings** tab controls what a submission does:
@@ -63,6 +119,10 @@ The **Settings** tab controls what a submission does:
 - **Add to labels** puts the labels you pick on every submitted contact, for example "Website leads".
 - **Add to campaign** enrolls new contacts as leads in the campaign you pick. Sending still follows the campaign's own schedule, limits and windows; a form never causes immediate mail. Picking a campaign turns on its **Keep running for new leads** setting, so it waits between submissions instead of finishing; a campaign that had already finished restarts when a lead arrives, through the usual launch checks, and a refused restart is noted in its activity log while the lead waits.
 - **Spam protection** and **allowed embed domains** are covered below.
+
+</Fold>
+
+<Fold>
 
 ## Publishing and sharing
 
@@ -110,6 +170,10 @@ A campaign that links to a form grows a **Forms** panel on its overview page, li
 
 Because each recipient's link is unique, those numbers are per contact rather than per click: the same person opening twice counts once, and every submission names the campaign that sent them. The form's own Analytics tab has the mirror image, a **Campaigns** breakdown of where its traffic came from, and every submission row shows its campaign.
 
+</Fold>
+
+<Fold>
+
 ## Submissions
 
 The **Submissions** tab is a table of everyone who engaged, newest activity first and live: a new submission appears for everyone with the form open, without a refresh. Alongside completed responses it lists people who opened a personalized link but have not finished, marked **In progress** with the page they reached, so a stalled lead is visible instead of invisible. Search and the status filter narrow the list; click a response for every answer; the trash button deletes it (the contact it created is kept), and selecting rows offers a bulk delete.
@@ -119,6 +183,10 @@ Each submitted contact carries `form` as its first-touch source, gets a "Submitt
 A submission is also the **Form submitted** [automation trigger](/guides/automations/#triggers) and the `form.submitted` webhook event, carrying the form, the contact and every answer by its key, so a flow can tag the contact, open a task or post to Slack the moment it lands.
 
 Submissions also fire the `form.submitted` [webhook](/guides/webhooks/), carrying the answers and the contact id, so you can forward leads to any external system.
+
+</Fold>
+
+<Fold>
 
 ## Analytics
 
@@ -130,6 +198,10 @@ The **Analytics** tab shows the funnel for the last 7, 30 or 90 days:
 - **Identified visitors.** Contacts who opened the form through a personalized link: when they were last seen, the furthest page they reached, and whether they completed it.
 
 Funnel events are kept for 180 days; the lifetime view and submission counters on the Forms list are kept forever.
+
+</Fold>
+
+<Fold>
 
 ## Spam protection
 
@@ -149,6 +221,12 @@ Three more controls are yours:
 
   Worth listing your domains even if you only embed on one site. A form left open to any origin can be framed invisibly under someone else's page and used to collect leads that look like yours, and the browser is the only thing that can prevent it.
 
+</Fold>
+
+<Fold>
+
 ## Data and portability
 
 Forms, their design, their logo and cover images, their submissions, personalized link tickets and funnel events all belong to the **Contacts** data group of a [workspace archive](/guides/workspace-export-import/). The public form id travels with them, so embed codes installed on your website keep working after a move to another instance (point your embeds at the new host), and link tickets travel verbatim, so personalized links already sitting in sent emails keep identifying their contacts. A form's campaign link is dropped on import when campaigns stay behind.
+
+</Fold>

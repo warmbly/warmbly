@@ -3,7 +3,49 @@ title: "Personalization & Expressions"
 description: "Merge fields, conditionals, fallbacks, functions, spintax, and automation expressions: the templating language shared by campaign emails and automations."
 ---
 
+Personalization lets you write one email that comes out tailored for every contact, using merge fields like `{{.FirstName}}`. The same language also powers automation conditions and action text, and needs no programming knowledge.
+
+## Personalize an email
+
+<Steps>
+
+<Step>
+
+In a campaign step's subject or body, type a merge field such as `{{.FirstName}}`.
+
+</Step>
+
+<Step>
+
+Give fields that may be empty a fallback: `{{.FirstName | default "there"}}`.
+
+</Step>
+
+<Step>
+
+Open the Preview to check it renders as expected, with no leftover `{{...}}` tokens.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- Field names are case-sensitive: `{{.FirstName}}` works, `{{.firstname}}` does not.
+- Unknown variables render empty rather than erroring.
+- Every `{{if}}` must close with `{{end}}`. A broken one blocks launching the campaign.
+- Spintax such as `{Hi|Hey|Hello}` varies wording in campaign subjects and bodies only.
+- Automations use the trigger's lowercase keys, such as `{{.contact_email}}`, still with the leading dot.
+
+<Fold>
+
+## What personalization is for
+
 Write one email and have it come out personalized for every contact, using merge fields like `{{.FirstName}}` plus helpers for fallbacks, conditions, and math. No programming knowledge needed; match the patterns below.
+
+</Fold>
+
+<Fold>
 
 ## Quick reference
 
@@ -16,6 +58,10 @@ Write one email and have it come out personalized for every contact, using merge
 | Branch on a condition | `{{if eq .Company "Acme"}}...{{else}}...{{end}}` |
 | Randomize wording (campaigns only) | `{a\|b\|c}` |
 | Filter an automation by a number | `gtf .confidence 0.8` |
+
+</Fold>
+
+<Fold>
 
 ## Variables
 
@@ -96,6 +142,10 @@ New reply from {{.contact_email}} on campaign {{.campaign_id}} ({{.intent}})
 
 Action text is a **full template, not token substitution**: conditionals, pipelines, helpers, `{{range}}`, and nested fields (`{{.lead.company}}`) all work, and values keep their type. Because numbers stay numbers, `{{if gt .confidence 0.8}}` works directly in a message body. A malformed template never blocks the action; it falls back to plain `{{.key}}` substitution. Unknown keys render empty. `{{range}}` loops over a field of the data (`{{range .lead.tags}}`), never a number or a function's result, and nests at most two deep; `{{template}}` and `{{block}}` are not supported, and output is capped at 1 MB. A template past any of these limits falls back the same way.
 
+</Fold>
+
+<Fold>
+
 ## Fallbacks
 
 Put the field first, then a pipe, then `default` and your backup in quotes:
@@ -104,6 +154,10 @@ Put the field first, then a pipe, then `default` and your backup in quotes:
 Hi {{.FirstName | default "there"}},
 Hope things are going well at {{.Company | default "your company"}}.
 ```
+
+</Fold>
+
+<Fold>
 
 ## Conditionals
 
@@ -115,6 +169,10 @@ Hope things are going well at {{.Company | default "your company"}}.
 ```
 
 `eq` is equals and `ne` is not-equals. Quote your text values.
+
+</Fold>
+
+<Fold>
 
 ## Functions
 
@@ -143,6 +201,10 @@ Comparing automation numbers? Native `gt` / `ge` works. Comparing a custom field
 {{if hasSuffix .Email ".edu"}}As someone in academia, {{end}}I thought this might help.
 ```
 
+</Fold>
+
+<Fold>
+
 ## Spintax
 
 Alternatives in single braces separated by pipes, so a batch of sends does not look identical:
@@ -154,6 +216,10 @@ Alternatives in single braces separated by pipes, so a batch of sends does not l
 <Callout type="warn" title="Spintax rules">
 Campaign subject and body only; it does not run in automations. Use **single** braces, not the double braces of merge fields. Only groups containing a pipe count, so a brace run without one (CSS or JSON in an HTML email) is left exactly as written.
 </Callout>
+
+</Fold>
+
+<Fold>
 
 ## Advanced automation expressions
 
@@ -175,6 +241,10 @@ hasSuffix .contact_email "@acme.com"
 
 `and`, `or`, and `not` take whole tests as inputs, so wrap each in parentheses when mixing groups.
 
+</Fold>
+
+<Fold>
+
 ## Where each thing applies
 
 | Surface | Variables | Conditionals / functions | `default` | Spintax |
@@ -182,6 +252,10 @@ hasSuffix .contact_email "@acme.com"
 | Campaign subject & body | Contact fields | Yes | Yes | Yes |
 | Automation condition | Trigger keys | Yes | Yes | No |
 | Automation action text | Trigger keys, with the dot | Yes | Yes | No |
+
+</Fold>
+
+<Fold>
 
 ## Gotchas
 
@@ -192,8 +266,14 @@ hasSuffix .contact_email "@acme.com"
 - Unknown variables render empty rather than erroring. A leftover `{{...}}` usually means a typo or wrong capitalization.
 - In action text keep the leading dot. It is standard Go `text/template`, so a bare `{{contact_email}}` is invalid.
 
+</Fold>
+
+<Fold>
+
 ## Preview and validation
 
 **Campaigns**: the composer's live Preview renders against a sample contact exactly as the real send does (variables, conditionals, functions, then spintax). It flags errors like a broken `{{if}}`, which block launching, and unresolved tokens left after rendering.
 
 **Automations**: an advanced expression is validated on save, so a condition that does not parse cannot be saved. The **Reference** button lists every variable and function inline.
+
+</Fold>

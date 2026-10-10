@@ -15,25 +15,34 @@ function Mark() {
 export function baseOptions(): BaseLayoutProps {
   return {
     nav: {
+      url: '/guides/',
       title: (
         <div className="flex items-center gap-2">
           <Mark />
           <span className="font-extrabold tracking-tight text-[15px]">Warmbly</span>
-          <span className="rounded-md border border-fd-border bg-fd-muted px-1.5 py-px text-[10px] font-medium uppercase tracking-[0.14em] text-fd-muted-foreground">
-            Docs
-          </span>
+          <span className="text-[15px] font-normal text-fd-muted-foreground">Docs</span>
         </div>
       ),
     },
     githubUrl: 'https://github.com/warmbly/warmbly',
+    themeSwitch: { mode: 'light-dark' },
     links: [
       {
         text: 'warmbly.com',
         url: 'https://warmbly.com',
       },
       {
-        text: 'Dashboard',
-        url: 'https://app.warmbly.com',
+        type: 'custom',
+        on: 'nav',
+        secondary: true,
+        children: (
+          <a
+            href="https://app.warmbly.com"
+            className="inline-flex h-8 items-center whitespace-nowrap rounded-full bg-fd-foreground px-3.5 text-[13px] font-medium text-fd-background transition-opacity hover:opacity-85"
+          >
+            Open dashboard
+          </a>
+        ),
       },
     ],
   };

@@ -3,11 +3,61 @@ title: Sending domains
 description: "Every domain your mailboxes send from, with its authentication, tracking host and a redirect for visitors to the bare domain."
 ---
 
+A sending domain is any domain one of your mailboxes has an address on. Warmbly lists them for you, and from here you give each one a tracking host and a redirect for visitors to the bare domain.
+
+![Sending domains: each domain with its mailboxes, authentication and tracking host](/guides/sending-domains.webp)
+
+## Set up your domains
+
+<Steps>
+
+<Step>
+
+Tick the domains in the list, or the box in the header for every domain shown.
+
+</Step>
+
+<Step>
+
+In the bar at the bottom, choose **Tracking domain** or **Redirect**.
+
+</Step>
+
+<Step>
+
+Set the tracking subdomain (`link` unless you change it) and the website to send visitors to.
+
+</Step>
+
+<Step>
+
+Add the DNS records the dialog lists at your DNS provider, unless an inbox vendor sets them up for you.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- There is nothing to add: connect a mailbox on `acme.io` and `acme.io` appears here.
+- A tracking host is saved before its DNS record exists. Links keep using the shared tracking host until the record resolves.
+- A redirect sends visitors to the bare domain on to your company's website, so the domain looks like part of a real business.
+- Mail is unaffected: `MX`, SPF, DKIM and DMARC records live beside these and nothing here changes them.
+- When an inbox vendor holds the domain, Warmbly can forward it or write the tracking record there for you.
+
+<Fold>
+
+## What a sending domain is
+
 Browsing filters, searches and view choices are [remembered in your browser tab](/guides/browsing/) across refreshes and navigation, separately for each user and workspace.
 
 A sending domain is any domain one of the workspace's mailboxes has an address on. Warmbly builds the list from the mailboxes themselves, so there is nothing to add: connect a mailbox on `acme.io` and `acme.io` is here.
 
 The same choices are offered per domain while [importing mailboxes](/guides/mailbox-import/#tracking-domains-and-root-redirects), so a new domain can be set up in one pass.
+
+</Fold>
+
+<Fold>
 
 ## The domains list
 
@@ -21,6 +71,10 @@ Each domain shows:
 | Redirect | Where visitors to the bare domain are sent, and whether the redirect is live |
 | Vendor | The [inbox vendor](/guides/mailbox-import/#import-from-an-inbox-vendor) account that holds the domain, when one of the workspace's connected vendor accounts does, with its current forwarding and what its API can do for the domain |
 
+</Fold>
+
+<Fold>
+
 ## One tracking host for a whole domain
 
 A tracking host is normally set per mailbox. From the domain you can set one for every mailbox on it in one step, or clear it for all of them.
@@ -30,6 +84,10 @@ Warmbly suggests a host: one a verified mailbox on the domain already uses, else
 The host is saved even before its DNS record exists. Until the record resolves, links keep using the shared tracking host, so nothing breaks; the hourly tracking check verifies the host by itself, and new sends switch to it from then on. Setting the same host again changes nothing.
 
 When an inbox vendor account holds the domain and can write DNS records for it, Warmbly can add the `CNAME` for you instead; see [domains held by an inbox vendor](#domains-held-by-an-inbox-vendor).
+
+</Fold>
+
+<Fold>
 
 ## Set up many domains at once
 
@@ -55,6 +113,10 @@ The setup dialog takes one base value for every picked domain:
 The dialog says up front how many domains an [inbox vendor](#domains-held-by-an-inbox-vendor) sets up for you and how many need DNS you add. Each domain takes the easiest path on its own: the vendor writes the `CNAME` or forwards the root when its API can, and otherwise the host or redirect is saved and waits for DNS exactly as it would when set one domain at a time. When it finishes, the dialog lists the `CNAME` records still to add (with **Copy all**), the redirects waiting for DNS, and any domain that was refused and why. A refusal on one domain never stops the others, and running the same setup again changes nothing that is already in place.
 
 While any domain still uses the shared tracking host or has no redirect, the top of the page says how many and offers **Set up all**, which opens the same dialog for exactly those domains. Dismissing it hides it until another domain needs setting up.
+
+</Fold>
+
+<Fold>
 
 ## Root redirects
 
@@ -143,6 +205,10 @@ On a self-hosted instance [linked to Warmbly Cloud](/guides/warmbly-cloud/), a r
 - The instance needs a tracking host (`TRACKING_DOMAIN`), because the tracking service is what answers. Without one, redirects are not offered, except from Warmbly Cloud on a linked instance.
 - Warmbly Cloud serves up to 200 redirects for one linked instance.
 
+</Fold>
+
+<Fold>
+
 ## Domains held by an inbox vendor
 
 A domain bought from an [inbox vendor](/guides/mailbox-import/#import-from-an-inbox-vendor) usually has its DNS hosted by that vendor, and most vendors can forward the domain themselves. When one of the workspace's connected vendor accounts holds a domain, the domain shows that vendor, and two shortcuts replace the DNS work above:
@@ -168,9 +234,15 @@ A [mailbox import](/guides/mailbox-import/#tracking-domains-and-root-redirects) 
 
 The vendor's domain list is read with the workspace's own API key, only for connections that are active, and kept for five minutes. A vendor that does not answer is left out, so its domains show without a vendor until it does.
 
+</Fold>
+
+<Fold>
+
 ## What travels in an export
 
 Redirects travel in a [workspace export](/guides/workspace-export-import/). They arrive unverified and are served once the destination's own check sees both records. One Warmbly Cloud served for the source arrives served by the destination itself. The ownership value belongs to the workspace on the instance that issued it, so the destination lists its own value: publish that value in the `TXT` record, and point the root at the destination. A tracking host is part of each mailbox's settings and travels with the mailbox; it arrives unverified, and the destination's hourly check verifies it once the `CNAME` points at the destination. Forwarding set through a vendor lives at the vendor and is unaffected by a move.
+
+</Fold>
 
 ## Related guides
 

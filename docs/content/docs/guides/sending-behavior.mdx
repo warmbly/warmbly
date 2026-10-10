@@ -3,11 +3,59 @@ title: "Sending behavior"
 description: "Give each mailbox a human workday: randomized hours, volume, lunch break, and spacing, in its own timezone."
 ---
 
+Sending behavior gives each mailbox a human workday, so its sending does not look automated. You set ranges instead of fixed values, and each day the mailbox rolls its own start, finish, lunch break, daily target and hourly ceiling, in its own timezone.
+
+## Set up a mailbox's workday
+
+<Steps>
+
+<Step>
+
+Open **Mailboxes** and pick a mailbox.
+
+</Step>
+
+<Step>
+
+Open the **Sending** tab and turn on **Variable sending plan**.
+
+</Step>
+
+<Step>
+
+Keep the default ranges, or adjust them.
+
+</Step>
+
+<Step>
+
+Check today's rolled workday at the top of the tab to see when the mailbox will send.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- New mailboxes start with it on and a daily target of `28` to `32` cold emails, about `30`.
+- It can only lower volume or delay a send. It never raises a mailbox above its own daily cap.
+- Times are local to the mailbox's timezone, or the workspace timezone when it has none.
+- Editing the ranges does not change today. The new ranges apply from the next roll.
+- Warmup keeps the same working days and hours, but does not count against the cold limits.
+
+<Fold>
+
+## Why sending gets a workday
+
 Automated sending looks automated. A mailbox that sends exactly 40 emails every day, starts at 09:00:00, and spaces every send exactly 600 seconds apart is describing itself as a machine in its own headers.
 
 Sending behavior fixes that. You give a mailbox ranges instead of fixed values, and it rolls one workday out of those ranges each day: a start time, a finish time, a lunch break, a daily target, an hourly ceiling. It then keeps to that day.
 
 Everything here is per mailbox and lives in its own timezone, so a London mailbox and a Denver mailbox on the same campaign each keep their own office hours.
+
+</Fold>
+
+<Fold>
 
 ## Turn it on
 
@@ -16,6 +64,10 @@ Everything here is per mailbox and lives in its own timezone, so a London mailbo
 Newly connected mailboxes start with this enabled and a configurable daily target range of `28` to `32`, about `30` per local working day. Existing mailboxes keep their saved profile, including fixed schedules, and existing daily plans are not changed by an upgrade. You can disable the plan to use the mailbox's fixed cap and minimum gap instead.
 
 While it is off, the rest of the tab is greyed out and read-only, because none of it applies. Turn the switch on to edit the ranges.
+
+</Fold>
+
+<Fold>
 
 ## What gets randomized
 
@@ -33,6 +85,10 @@ Every time is local to the mailbox's timezone: its own, set on the **Settings** 
 
 A new mailbox has no timezone of its own, and that is a valid state rather than a gap: its workday and warmup hours are read in the workspace timezone (UTC when that is not set either), and on campaigns only the campaign's own sending window applies. Set one when the mailbox belongs to somebody in a particular place, and both calendars then have to agree before a send goes out.
 
+</Fold>
+
+<Fold>
+
 ## The daily plan
 
 The roll happens once per mailbox per local day, and the result is stored. That matters: the scheduler recomputes a mailbox's next slot many times a day, and a fresh random workday on every calculation would mean the mailbox never actually keeps to one.
@@ -42,6 +98,10 @@ The **Sending** tab shows today's rolled workday at the top: the hours, the brea
 Emails reserved for dispatch count once against the day's target; a cancelled reservation gives its capacity back. A campaign wakes itself up far more often than it sends, and most of those wake-ups find nothing to do: every mailbox is mid-gap, the workday has not opened yet, or no contact is due. Those are not sends. They do not show up in the count, they do not spend the plan, and neither does the run the campaign has queued next.
 
 Editing the ranges does not change today. Today keeps the workday it already started, and the new ranges take effect on the next roll.
+
+</Fold>
+
+<Fold>
 
 ## How it interacts with your other limits
 
@@ -57,6 +117,10 @@ Sending behavior can only ever **lower** volume or **delay** a send. It can neve
 Without it, a mailbox with a 40/day target and a 90-second floor could empty its whole day before 11am and then sit silent. That is a more obvious pattern than sending too much.
 </Callout>
 
+</Fold>
+
+<Fold>
+
 ## Choosing ranges
 
 The defaults describe an ordinary weekday sender and are a good starting point for most mailboxes. If you change them:
@@ -67,6 +131,10 @@ The defaults describe an ordinary weekday sender and are a good starting point f
 - Do not set the workday to cover the whole clock. A mailbox that sends at every hour of the day is not describing an office.
 
 The break has to fit inside the shortest workday the ranges can produce, and the latest possible start has to come before the earliest possible finish. The editor blocks a save that would break either rule.
+
+</Fold>
+
+<Fold>
 
 ## Sending in the recipient's timezone
 
@@ -94,6 +162,10 @@ Send-time optimization can move a send later, never earlier. Every other constra
 
 Because it delays sends, a campaign with tight delivery hours and a small mailbox pool sends fewer emails per day than one without. Widen the hours if throughput matters more than placement.
 
+</Fold>
+
+<Fold>
+
 ## API
 
 The profile and today's plan are both readable and writable through the API. See [Endpoints](/api/endpoints/) for the scopes.
@@ -105,3 +177,5 @@ GET  /v1/emails/{id}/behavior/plan
 ```
 
 `PUT` is a partial update: send only the fields you want to change. It is naturally idempotent, so retries are safe without an `Idempotency-Key`.
+
+</Fold>

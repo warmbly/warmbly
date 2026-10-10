@@ -3,6 +3,14 @@ title: Inbox placement
 description: Delivery is a 200 OK from an SMTP server. Placement is whether the recipient actually sees the message.
 ---
 
+<ShortVersion>
+
+- Delivery means the server accepted the message. Placement means it reached the inbox.
+- 99% delivery and 30% placement is not unusual on a poorly authenticated cold mailbox.
+- Aim for above 90% inbox placement.
+
+</ShortVersion>
+
 ## Delivery vs placement
 
 Most cold-email tools report "delivery rate": the percentage of messages that the receiving SMTP server accepted. That number is almost always close to 100% and tells you almost nothing.
@@ -10,6 +18,8 @@ Most cold-email tools report "delivery rate": the percentage of messages that th
 A receiving server can accept a message (delivery) and then immediately filter it into Spam, Promotions, or out of the inbox entirely. Placement is the share of accepted messages that land in the recipient's primary inbox.
 
 The two numbers can be wildly different. 99% delivery and 30% placement is not unusual on a poorly authenticated cold mailbox.
+
+<DeliveryVsPlacement />
 
 ## How placement is measured
 
@@ -51,6 +61,8 @@ If a recipient moves a message from Spam to Inbox, replies, or adds you to their
 - A consistent sending pattern: same business hours every day, with weekends off.
 
 ## Targets to aim for
+
+<PlacementScale />
 
 | Inbox placement | What it means |
 | --- | --- |
