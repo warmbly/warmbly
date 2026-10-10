@@ -29,7 +29,7 @@ func (s *JobsService) HandleRemoveEmail(ctx context.Context, e *models.JobEventR
 			return err
 		}
 		if pending {
-			return ErrSyncArrivalPending
+			return &syncArrivalPendingError{user: e.UserID, email: e.EmailID, id: e.ID}
 		}
 	}
 	var checkErr error

@@ -3,10 +3,12 @@ package jobs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/repository"
 )
 
 type EventHandler[T any] func(ctx context.Context, event T) error
@@ -20,6 +22,19 @@ func (s *JobsService) HandleEvent(ctx context.Context, event *models.JobEvent) e
 		log.Warn().Str("event_type", string(event.Type)).
 			Msg("no handler registered for job event type, dropping")
 		return nil
+	}
+	err := resp(ctx, event.Body)
+	var pending *syncArrivalPendingError
+	if !errors.As(err, &pending) {
+		return err
+	}
+	outbox, ok := s.ArrivalOutbox.(repository.PriorityArrivalOutbox)
+	if !ok {
+		return err
+	}
+	// Resolve the blocking dependency without overtaking it or waiting for the whole backlog.
+	if _, deliveryErr := outbox.DeliverPendingArrival(ctx, pending.user, pending.email, pending.id, s.deliverArrivalEvent); deliveryErr != nil {
+		return deliveryErr
 	}
 	return resp(ctx, event.Body)
 }

@@ -146,6 +146,13 @@ func (s *JobsService) applyRelayedFolder(ctx context.Context, e *models.JobEvent
 // emailForSyncUpdate rechecks visible mail if verification won the pending-row lock.
 var ErrSyncArrivalPending = errors.New("sync arrival pending delivery")
 
+type syncArrivalPendingError struct {
+	user, email, id uuid.UUID
+}
+
+func (e *syncArrivalPendingError) Error() string { return ErrSyncArrivalPending.Error() }
+func (e *syncArrivalPendingError) Unwrap() error { return ErrSyncArrivalPending }
+
 func (s *JobsService) emailForSyncUpdate(ctx context.Context, userID, emailID, id uuid.UUID, updatePending func(*models.EmailMessageStoreData)) (*models.EmailMessageStoreData, error) {
 	message, err := s.UniboxRepository.GetForSync(ctx, userID, emailID, id)
 	if !errors.Is(err, repository.ErrEmailNotFound) {
@@ -166,7 +173,7 @@ func (s *JobsService) emailForSyncUpdate(ctx context.Context, userID, emailID, i
 			return nil, lookupErr
 		}
 		if pending {
-			return nil, ErrSyncArrivalPending
+			return nil, &syncArrivalPendingError{user: userID, email: emailID, id: id}
 		}
 		// Delivery may have finished between the visible-row read and the marker read.
 		message, err = s.UniboxRepository.GetForSync(ctx, userID, emailID, id)

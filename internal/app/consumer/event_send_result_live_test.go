@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"testing"
 	"time"
@@ -14,6 +15,93 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
+
+func TestLiveStoredSendResultRecoveryWithoutBrokerDelivery(t *testing.T) {
+	for _, outcome := range []string{"sent", "failed", "ambiguous", "mismatched", "not started", "no nonce", "cancelled", "deleted worker"} {
+		t.Run(outcome, func(t *testing.T) {
+			s, d := liveWarmupService(t)
+			f := newWarmupFixture(t, d)
+			worker := uuid.New()
+			if _, err := d.Exec(t.Context(), `INSERT INTO fleet_nodes(id,role,name,active) VALUES($1,'worker','result recovery test',true)`, worker); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _, _ = d.Exec(context.Background(), `DELETE FROM fleet_nodes WHERE id=$1`, worker) })
+			token := f.mintToken(t, s.WarmupRepo)
+			result := models.SendEmailResult{TaskID: f.task, Success: true, MessageID: f.sentMsgID}
+			if outcome == "mismatched" {
+				result.TaskID = uuid.New()
+			}
+			if outcome == "failed" || outcome == "ambiguous" {
+				result.Success = false
+				disposition := errx.SendPermanent
+				if outcome == "ambiguous" {
+					disposition = errx.SendAmbiguous
+				}
+				result.Error = &models.EmailSendError{Failure: &errx.SendFailure{Disposition: disposition, ObservedAt: time.Now()}}
+			}
+			raw, err := json.Marshal(result)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := d.Exec(t.Context(), `UPDATE tasks SET send_reserved_at=NOW()-INTERVAL '1 hour',send_result_state='unknown',send_executor_nonce=$2,send_executor_worker=$3,send_executor_started_at=NOW(),send_executor_result=$4 WHERE id=$1`, f.task, uuid.New(), worker, raw); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := d.Exec(t.Context(), `UPDATE email_accounts SET send_recovery_hold=true,send_recovery_reason='unknown',send_recovery_task_id=$2 WHERE id=$1`, f.sender, f.task); err != nil {
+				t.Fatal(err)
+			}
+			if outcome == "not started" {
+				if _, err := d.Exec(t.Context(), `UPDATE tasks SET send_executor_started_at=NULL WHERE id=$1`, f.task); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if outcome == "no nonce" {
+				if _, err := d.Exec(t.Context(), `UPDATE tasks SET send_executor_nonce=NULL WHERE id=$1`, f.task); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if outcome == "deleted worker" {
+				if _, err := d.Exec(t.Context(), `DELETE FROM fleet_nodes WHERE id=$1`, worker); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if outcome == "cancelled" {
+				if _, err := d.Exec(t.Context(), `UPDATE tasks SET status='cancelled' WHERE id=$1`, f.task); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err = s.recoverStoredSendResults(t.Context(), uuid.Nil)
+			if (outcome == "mismatched") != (err != nil) {
+				t.Fatalf("unexpected replay result: %v", err)
+			}
+			var state string
+			var applied, released, hold bool
+			if err := d.QueryRow(t.Context(), `SELECT t.send_result_state,t.send_result_applied_at IS NOT NULL,t.send_released_at IS NOT NULL,e.send_recovery_hold FROM tasks t JOIN email_accounts e ON e.id=t.email_account_id WHERE t.id=$1`, f.task).Scan(&state, &applied, &released, &hold); err != nil {
+				t.Fatal(err)
+			}
+			switch outcome {
+			case "sent", "deleted worker":
+				if state != "sent" || !applied || released || hold {
+					t.Fatalf("confirmed send not recovered: %s applied=%v released=%v hold=%v", state, applied, released, hold)
+				}
+				if err := s.HandleEmailSent(t.Context(), result); err != nil {
+					t.Fatalf("later broker result not idempotent: %v", err)
+				}
+				verified, err := s.WarmupRepo.FindWarmupToken(t.Context(), token)
+				if err != nil || verified.SentMessageID != f.sentMsgID {
+					t.Fatalf("worker receipt not applied to warmup: %+v %v", verified, err)
+				}
+			case "failed":
+				if state != "failed" || !applied || !released || !hold {
+					t.Fatalf("definite failure not reconciled: %s applied=%v released=%v hold=%v", state, applied, released, hold)
+				}
+			default:
+				if state != "unknown" || applied || released || !hold {
+					t.Fatalf("unsafe outcome released: %s applied=%v released=%v hold=%v", state, applied, released, hold)
+				}
+			}
+		})
+	}
+}
 
 // Live checks of the send-outcome loop against a real Postgres. Skipped unless
 // WARMBLY_TEST_DB is set (same convention as internal/scheduler):

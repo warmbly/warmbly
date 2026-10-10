@@ -42,6 +42,10 @@ type ArrivalOutbox interface {
 	DeliverArrivals(context.Context, func(context.Context, models.JobEventType, any) error) error
 }
 
+type PriorityArrivalOutbox interface {
+	DeliverPendingArrival(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, func(context.Context, models.JobEventType, any) error) (bool, error)
+}
+
 type ArrivalBacklog struct {
 	Pending int
 	Oldest  *time.Time

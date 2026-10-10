@@ -89,9 +89,7 @@ function prepareQuotes(body: string): { expanded: string; collapsed: string; has
     return { expanded, collapsed: doc.documentElement.outerHTML, hasQuote: true };
 }
 
-// Typography for the message document. Deliberately minimal: the message
-// brings its own styling, and this only sets what it does not. It is injected
-// at the END of the document's head so the message's own rules win.
+// Default typography goes before the sender's styles; containment remains enforced.
 const DOCUMENT_CSS = `
   html, body { margin: 0; padding: 0; }
   body {
@@ -106,7 +104,7 @@ const DOCUMENT_CSS = `
   /* Containment, not styling: a 600px design must not scroll the drawer
      sideways, so these hold even against the message's own stylesheet. */
   img { max-width: 100% !important; height: auto; border: 0; }
-  table { max-width: 100% !important; }
+  table, div { box-sizing: border-box !important; max-width: 100% !important; min-width: 0 !important; }
   a { color: #0284c7; }
   blockquote {
     margin: 0.5em 0;
@@ -175,7 +173,7 @@ function buildDocument(body: string, csp: string, dark: boolean): string {
 
 export default function EmailBody({ html, plain, blockRemote = false }: EmailBodyProps) {
     const frameRef = React.useRef<HTMLIFrameElement>(null);
-    const [height, setHeight] = React.useState(0);
+    const viewportRef = React.useRef<HTMLDivElement>(null);
     const [showQuoted, setShowQuoted] = React.useState(false);
 
     // The message body, before the shell. Split from srcDoc so toggling the
@@ -205,19 +203,38 @@ export default function EmailBody({ html, plain, blockRemote = false }: EmailBod
         [body, quotes, showQuoted, csp, darkDocument],
     );
 
-    // Late-loading remote images change the document height after onLoad, so
-    // measurement repeats until the size settles rather than running once.
+    // Measure at the available width first; scale only layouts that cannot reflow.
     const measure = React.useCallback(() => {
-        const doc = frameRef.current?.contentDocument;
-        if (!doc?.body) return;
-        const next = Math.ceil(
-            Math.max(doc.body.scrollHeight, doc.documentElement?.scrollHeight ?? 0),
-        );
-        setHeight((prev) => (Math.abs(prev - next) > 1 ? next : prev));
+        const frame = frameRef.current;
+        const viewport = viewportRef.current;
+        const doc = frame?.contentDocument;
+        const available = viewport?.clientWidth ?? 0;
+        if (!frame || !viewport || !doc?.body || !available) return;
+        frame.style.width = `${available}px`;
+        // Document scrollHeight includes the viewport, so remove its previous floor.
+        frame.style.height = "0px";
+        const width = Math.max(available, doc.body.scrollWidth, doc.documentElement.scrollWidth);
+        if (width > available) frame.style.width = `${width}px`;
+        const height = Math.ceil(Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight));
+        const scale = available / width;
+        frame.style.height = `${height}px`;
+        frame.style.transform = scale < 1 ? `scale(${scale})` : "";
+        viewport.style.height = `${Math.ceil(height * scale)}px`;
     }, []);
 
     const observerRef = React.useRef<ResizeObserver | null>(null);
-    React.useEffect(() => () => observerRef.current?.disconnect(), []);
+    const animationRef = React.useRef<number | null>(null);
+    const scheduleMeasure = React.useCallback(() => {
+        if (animationRef.current !== null) cancelAnimationFrame(animationRef.current);
+        animationRef.current = requestAnimationFrame(() => {
+            animationRef.current = null;
+            measure();
+        });
+    }, [measure]);
+    React.useEffect(() => () => {
+        observerRef.current?.disconnect();
+        if (animationRef.current !== null) cancelAnimationFrame(animationRef.current);
+    }, []);
 
     const onLoad = React.useCallback(() => {
         const doc = frameRef.current?.contentDocument;
@@ -225,17 +242,38 @@ export default function EmailBody({ html, plain, blockRemote = false }: EmailBod
         // A network document has its own CSP, unlike srcdoc which inherits the dashboard's.
         const parsed = new DOMParser().parseFromString(srcDoc, "text/html");
         doc.documentElement.replaceChildren(doc.importNode(parsed.head, true), doc.importNode(parsed.body, true));
+        // Sender styles must not turn the document roots into another scroll area.
+        for (const root of [doc.documentElement, doc.body]) {
+            for (const [name, value] of Object.entries({
+                margin: "0", padding: "0", width: "auto", "min-width": "0",
+                height: "auto", "min-height": "0", "max-height": "none",
+            })) root.style.setProperty(name, value, "important");
+        }
+        doc.documentElement.style.setProperty("overflow", "hidden", "important");
+        doc.body.style.setProperty("overflow", "visible", "important");
+        doc.body.style.setProperty("display", "flow-root", "important");
         measure();
         // A reload replaces the document the previous observer watched.
         observerRef.current?.disconnect();
-        const observer = new ResizeObserver(measure);
+        let viewportWidth = viewportRef.current?.clientWidth;
+        const observer = new ResizeObserver((entries) => {
+            const width = viewportRef.current?.clientWidth;
+            if (width !== viewportWidth || entries.some((entry) => entry.target === doc.body)) {
+                viewportWidth = width;
+                scheduleMeasure();
+            }
+        });
         observer.observe(doc.body);
+        if (viewportRef.current) observer.observe(viewportRef.current);
         observerRef.current = observer;
         doc.querySelectorAll("img").forEach((img) => {
-            img.addEventListener("load", measure);
-            img.addEventListener("error", measure);
+            img.addEventListener("load", scheduleMeasure);
+            img.addEventListener("error", scheduleMeasure);
         });
-    }, [measure, srcDoc]);
+        void doc.fonts?.ready.then(() => {
+            if (frameRef.current?.contentDocument === doc) scheduleMeasure();
+        });
+    }, [measure, scheduleMeasure, srcDoc]);
 
     if (!srcDoc) {
         return (
@@ -260,22 +298,23 @@ export default function EmailBody({ html, plain, blockRemote = false }: EmailBod
                     </button>
                 </div>
             )}
-            <iframe
-                key={srcDoc}
-                ref={frameRef}
-                title="Message body"
-                src="/mail-preview.html"
-                onLoad={onLoad}
-                // No allow-scripts: message markup can never run code. allow-popups
-                // (plus escape-to-normal-context) is what lets a link actually open.
-                sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-                referrerPolicy="no-referrer"
-                className={cn(
-                    "w-full border-0 block",
-                    darkTheme && designed && "theme-light box-content w-[calc(100%-1.5rem)] rounded-md bg-white p-3",
-                )}
-                style={{ height: height ? `${height}px` : "80px" }}
-            />
+            <div className={cn("min-w-0", darkTheme && designed && "theme-light rounded-md bg-white p-3")}>
+                <div ref={viewportRef} className="relative w-full overflow-hidden" style={{ height: "80px" }}>
+                    <iframe
+                        key={srcDoc}
+                        ref={frameRef}
+                        title="Message body"
+                        src="/mail-preview.html"
+                        onLoad={onLoad}
+                        // No allow-scripts: message markup can never run code.
+                        sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                        referrerPolicy="no-referrer"
+                        scrolling="no"
+                        className="w-full border-0 block origin-top-left"
+                        style={{ height: "80px" }}
+                    />
+                </div>
+            </div>
             {hasQuote && (
                 <button
                     type="button"
