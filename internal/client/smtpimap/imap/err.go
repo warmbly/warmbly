@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/emersion/go-imap/v2"
+	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
@@ -56,6 +57,10 @@ func (c *Client) handleError(err error) *errx.MailError {
 		return nil
 	}
 
+	if unreadableReply(err) {
+		c.logUnreadable(err)
+	}
+
 	// Anything that is not a tagged IMAP response is the transport: a server
 	// that dropped the session (net.ErrClosed once go-imap parks the client in
 	// Logout), an EOF, a timeout. These used to map to nil, which turned a dead
@@ -63,6 +68,30 @@ func (c *Client) handleError(err error) *errx.MailError {
 	// no new mail, forever. Retry-level, so the loop reconnects at the next
 	// pass instead of deactivating the mailbox.
 	return errx.ErrMailServerUnreachable
+}
+
+// unreadableReply is a server answer go-imap could not decode, which also
+// closes the session. It is a dialect we do not read yet, not a dead network:
+// an io failure keeps its own error and never reaches the grammar check.
+func unreadableReply(err error) bool {
+	var imapErr *imap.Error
+	if err == nil || errors.As(err, &imapErr) {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "imapwire: ") ||
+		strings.Contains(msg, "in search-") ||
+		strings.Contains(msg, "panic reading response")
+}
+
+// logUnreadable names the reply once per distinct message: it reads as
+// SERVER_UNREACHABLE everywhere else, and this line is the only clue.
+func (c *Client) logUnreadable(err error) {
+	msg := err.Error()
+	if prev := c.lastUnreadable.Swap(&msg); prev != nil && *prev == msg {
+		return
+	}
+	log.Warn().Str("host", c.host()).Str("reply", msg).Msg("imap: server sent a reply that could not be read; the session was dropped")
 }
 
 func (c *Client) credentialsRefused() *errx.MailError {
