@@ -19,6 +19,7 @@ import {
     Network,
     Send,
     SlidersHorizontal,
+    Terminal,
     TicketPercent,
     UserCog,
     Users,
@@ -136,6 +137,7 @@ export const NAV_GROUPS: NavGroup[] = [
     {
         label: "Instance",
         items: [
+            { label: "CLI sign-in", icon: Terminal, pages: [{ to: "/device", label: "CLI sign-in", title: "Approve CLI sign-in" }] },
             {
                 label: "Setup and health",
                 icon: HeartPulse,
