@@ -454,6 +454,8 @@ The same tab decides where warmup mail lands **in your own mail client**: its ow
 
 Warmbly retries filing until the worker confirms success, including after a worker restart or reassignment. Reconnecting also files recognized warmup mail left behind while access was unavailable, using your current placement setting. Choosing **Inbox** deliberately leaves it in place.
 
+On Outlook, a failed or ambiguous lookup of a warmup message's stable identity stops deletion before removing the provider message or its stored body. Unavailable lookup is not proof that the message is missing. A completed empty lookup and a provider-confirmed missing item retain the existing idempotent cleanup behavior. This safeguard needs no schema change or backfill and does not change the existing command retry limit.
+
 Keep warmup running after campaigns begin rather than switching it off once a mailbox looks ready. See [Warmup](/guides/warmup/).
 
 A mailbox marked as a [placement seed inbox](/guides/placement-tests/#your-own-seed-inboxes) is the exception: it never warms up (starting warmup on it is refused until it is unmarked) and never sends campaign mail, because a test inbox has to stay a stranger to your senders.
