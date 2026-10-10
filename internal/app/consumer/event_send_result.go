@@ -186,12 +186,12 @@ func (s *JobsService) applyEmailFailed(ctx context.Context, result models.SendEm
 		}
 	}
 	switch task.Status {
-	case "completed":
+	case "completed", "dead_lettered":
 		// The normal case: stamped by the control plane, refused by the worker.
 	case "active":
 		return errSendResultEarly
 	default:
-		// Already walked back (duplicate delivery), cancelled, or dead-lettered.
+		// Already walked back (duplicate delivery) or cancelled.
 		return nil
 	}
 

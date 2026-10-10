@@ -14,6 +14,14 @@ import (
 )
 
 type sendResultKey struct{}
+
+const refundedWarmupChargePredicate = `t.task_type='warmup' AND EXISTS(SELECT 1 FROM warmup_tasks charge
+	WHERE charge.task_id=t.id AND charge.warmup_charged_date IS NOT NULL
+	AND charge.warmup_reply_charged IS NOT NULL AND charge.warmup_refunded_at IS NOT NULL)`
+
+const repairableSendDeadLetterPredicate = `t.status='dead_lettered' AND (t.send_result_state='sent'
+	OR (t.send_result_state='failed' AND ` + refundedWarmupChargePredicate + `))`
+
 type sendResultContext struct {
 	tx          pgx.Tx
 	taskID      uuid.UUID
@@ -163,11 +171,8 @@ func (r *taskRepository) ApplySendResult(ctx context.Context, result models.Send
 	var applied *time.Time
 	var mailboxID uuid.UUID
 	var status string
-	var reserved, warmupAuthorized bool
-	err = tx.QueryRow(ctx, `SELECT send_result_state, send_result_applied_at, email_account_id, status::text,
-	 send_reserved_at IS NOT NULL OR send_executor_nonce IS NOT NULL OR send_executor_started_at IS NOT NULL OR send_executor_result IS NOT NULL,
-	 EXISTS(SELECT 1 FROM warmup_tasks WHERE task_id=tasks.id AND dispatch_nonce IS NOT NULL)
-	 FROM tasks WHERE id = $1`, result.TaskID).Scan(&previous, &applied, &mailboxID, &status, &reserved, &warmupAuthorized)
+	err = tx.QueryRow(ctx, `SELECT send_result_state, send_result_applied_at, email_account_id, status::text
+	 FROM tasks WHERE id = $1`, result.TaskID).Scan(&previous, &applied, &mailboxID, &status)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
@@ -177,12 +182,10 @@ func (r *taskRepository) ApplySendResult(ctx context.Context, result models.Send
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 269))`, mailboxID.String()); err != nil {
 		return err
 	}
-	// A pre-dispatch failure cannot leave ambiguous provider execution behind.
-	if resultState(result) == "unknown" && status == "failed" && !reserved && !warmupAuthorized {
-		result.Error = &models.EmailSendError{Failure: &errx.SendFailure{Protocol: "internal", Stage: "prepare", Scope: "mailbox", Disposition: errx.SendRetry}}
-	}
-	if applied != nil || (previous != nil && *previous != "unknown") {
-		state := resultState(result)
+	state := resultState(result)
+	// Receipt stamping is idempotent; an already-applied failure cannot be refunded again.
+	repairDeadLetter := status == "dead_lettered" && previous != nil && *previous == state && state == "sent"
+	if !repairDeadLetter && (applied != nil || (previous != nil && *previous != "unknown")) {
 		if previous != nil && state != "unknown" && state != *previous {
 			if _, err = tx.Exec(ctx, `UPDATE send_recovery_resolutions SET conflict_detected_at=NOW()
 				WHERE recovery_task_id=$1 AND previous_reason='unknown' AND confirmed_result IS NOT NULL`, result.TaskID); err != nil {
@@ -195,12 +198,28 @@ func (r *taskRepository) ApplySendResult(ctx context.Context, result models.Send
 			}
 			return tx.Commit(ctx)
 		}
+		if applied != nil && previous != nil && state == *previous && state != "unknown" {
+			if status == "dead_lettered" {
+				// Repair metadata only; the positive refund proof forbids repeating accounting.
+				tag, err := tx.Exec(ctx, `UPDATE tasks t SET status='failed',updated_at=NOW() WHERE t.id=$1 AND t.status='dead_lettered'
+					AND t.send_result_state='failed' AND t.send_result_applied_at IS NOT NULL AND `+refundedWarmupChargePredicate, result.TaskID)
+				if err != nil {
+					return err
+				}
+				if tag.RowsAffected() == 0 {
+					return nil
+				}
+			}
+			if err = resolveSendDeadLetter(ctx, tx, result.TaskID); err != nil {
+				return err
+			}
+			return tx.Commit(ctx)
+		}
 		return nil
 	}
 	if status == "cancelled" {
 		return nil
 	}
-	state := resultState(result)
 	if state == "failed" && status == "active" {
 		return errors.New("send result arrived before task stamping")
 	}
@@ -217,6 +236,15 @@ func (r *taskRepository) ApplySendResult(ctx context.Context, result models.Send
 	var effects []func(context.Context)
 	var effectError error
 	if state != "unknown" {
+		if status == "dead_lettered" && state == "sent" {
+			sentAt := result.SentAt
+			if sentAt.IsZero() {
+				sentAt = time.Now().UTC()
+			}
+			if _, err = tx.Exec(ctx, `UPDATE tasks SET status='completed',completed_at=COALESCE(completed_at,$2),updated_at=NOW() WHERE id=$1`, result.TaskID, sentAt); err != nil {
+				return err
+			}
+		}
 		inner := context.WithValue(ctx, sendResultKey{}, sendResultContext{tx: tx, taskID: result.TaskID, effects: &effects, effectError: &effectError})
 		if err = apply(inner); err != nil {
 			return err
@@ -225,6 +253,9 @@ func (r *taskRepository) ApplySendResult(ctx context.Context, result models.Send
 			return effectError
 		}
 		if _, err = tx.Exec(ctx, `UPDATE tasks SET send_result_applied_at = NOW(), send_released_at=CASE WHEN send_result_state='failed' THEN NOW() ELSE send_released_at END WHERE id = $1`, result.TaskID); err != nil {
+			return err
+		}
+		if err = resolveSendDeadLetter(ctx, tx, result.TaskID); err != nil {
 			return err
 		}
 	}
@@ -238,6 +269,13 @@ func (r *taskRepository) ApplySendResult(ctx context.Context, result models.Send
 		effect(ctx)
 	}
 	return nil
+}
+
+func resolveSendDeadLetter(ctx context.Context, tx pgx.Tx, taskID uuid.UUID) error {
+	_, err := tx.Exec(ctx, `UPDATE task_dead_letters SET status='resolved',next_retry_at=NULL,updated_at=NOW()
+		WHERE task_id=$1 AND status IN ('pending','failed','replayed')
+		AND EXISTS(SELECT 1 FROM tasks t WHERE t.id=$1 AND t.task_type IN ('warmup','campaign','email','placement'))`, taskID)
+	return err
 }
 
 func persistSendHold(ctx context.Context, tx pgx.Tx, mailboxID uuid.UUID, result models.SendEmailResult, state string) error {

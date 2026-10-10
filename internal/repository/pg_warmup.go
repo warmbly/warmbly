@@ -1063,7 +1063,7 @@ func (r *warmupRepository) SumWarmupSentSince(ctx context.Context, accountID uui
 func (r *warmupRepository) IncrementDailyCount(ctx context.Context, accountID uuid.UUID, date time.Time) error {
 	query := `
 		INSERT INTO warmup_statistics (email_account_id, date, emails_sent, target_volume)
-		VALUES ($1, DATE($2), 1, 0)
+		VALUES ($1, ($2::timestamptz AT TIME ZONE 'UTC')::date, 1, 0)
 		ON CONFLICT (email_account_id, date)
 		DO UPDATE SET emails_sent = warmup_statistics.emails_sent + 1
 	`
@@ -1077,7 +1077,7 @@ func (r *warmupRepository) IncrementDailyCount(ctx context.Context, accountID uu
 func (r *warmupRepository) IncrementReplyCount(ctx context.Context, accountID uuid.UUID, date time.Time) error {
 	query := `
 		INSERT INTO warmup_statistics (email_account_id, date, emails_sent, emails_replied, target_volume)
-		VALUES ($1, DATE($2), 0, 1, 0)
+		VALUES ($1, ($2::timestamptz AT TIME ZONE 'UTC')::date, 0, 1, 0)
 		ON CONFLICT (email_account_id, date)
 		DO UPDATE SET emails_replied = warmup_statistics.emails_replied + 1
 	`
@@ -1086,12 +1086,15 @@ func (r *warmupRepository) IncrementReplyCount(ctx context.Context, accountID uu
 }
 
 // FailWarmupSend makes the task transition and counter refund one retryable write.
-func (r *warmupRepository) FailWarmupSend(ctx context.Context, accountID, taskID uuid.UUID, date time.Time, title, message string) error {
+func (r *warmupRepository) FailWarmupSend(ctx context.Context, accountID, taskID uuid.UUID, _ time.Time, title, message string) error {
 	tx, err := beginResultTx(ctx, r.db)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
+	if err = lockSend(ctx, tx, taskID, accountID); err != nil {
+		return err
+	}
 
 	var status string
 	err = tx.QueryRow(ctx, `
@@ -1106,23 +1109,11 @@ func (r *warmupRepository) FailWarmupSend(ctx context.Context, accountID, taskID
 	if err != nil {
 		return err
 	}
-	if status != "completed" {
+	if status != "completed" && status != "dead_lettered" {
 		return tx.Commit(ctx)
 	}
 
-	if _, err = tx.Exec(ctx, `
-		UPDATE warmup_statistics ws
-		SET emails_sent = GREATEST(ws.emails_sent - 1, 0),
-		    emails_replied = CASE
-		      WHEN EXISTS (
-		        SELECT 1 FROM warmup_tokens wt
-		        WHERE wt.task_id = $2 AND wt.conversation_turn > 0
-		      ) THEN GREATEST(ws.emails_replied - 1, 0)
-		      ELSE ws.emails_replied
-		    END
-		WHERE ws.email_account_id = $1
-		  AND ws.date = DATE($3)
-	`, accountID, taskID, date); err != nil {
+	if err = refundWarmupCharge(ctx, tx, taskID, accountID); err != nil {
 		return err
 	}
 	if _, err = tx.Exec(ctx, `UPDATE tasks SET status = 'failed', updated_at = NOW() WHERE id = $1`, taskID); err != nil {
@@ -1137,6 +1128,17 @@ func (r *warmupRepository) FailWarmupSend(ctx context.Context, accountID, taskID
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+func refundWarmupCharge(ctx context.Context, tx pgx.Tx, taskID, accountID uuid.UUID) error {
+	_, err := tx.Exec(ctx, `WITH refunded AS (UPDATE warmup_tasks w SET warmup_refunded_at=NOW()
+		FROM tasks t WHERE w.task_id=t.id AND t.id=$1 AND t.email_account_id=$2 AND t.task_type='warmup'
+		AND w.warmup_charged_date IS NOT NULL AND w.warmup_reply_charged IS NOT NULL AND w.warmup_refunded_at IS NULL
+		RETURNING w.warmup_charged_date,w.warmup_reply_charged)
+		UPDATE warmup_statistics s SET emails_sent=GREATEST(s.emails_sent-1,0),
+			emails_replied=GREATEST(s.emails_replied-CASE WHEN r.warmup_reply_charged THEN 1 ELSE 0 END,0)
+		FROM refunded r WHERE s.email_account_id=$2 AND s.date=r.warmup_charged_date`, taskID, accountID)
+	return err
 }
 
 func (r *warmupRepository) LastWarmupSendFailure(ctx context.Context, accountID uuid.UUID, since time.Time) (*models.WarmupSendFailure, error) {

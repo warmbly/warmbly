@@ -39,6 +39,10 @@ The executor rechecks organization, mailbox, worker, provider, durable task/nonc
 
 Result reconciliation commits task, campaign progress, variant, suppression and warmup-health changes together. Bounce webhooks and notifications enter an idempotent durable outbox in that transaction, and result consumers drain it after commit. Failed delivery retains a leased retry row; a consumer restart does not lose the effect. Stable downstream webhook delivery and notification-feed IDs prevent duplicate stored rows. External integration, Slack/push and realtime delivery remain at least once/best effort, not exactly-once delivery. Core accounting and unknown holds remain durable.
 
+Warmup authorization records the UTC charge day and whether a reply was counted in the same transaction as the statistics increment. Outbound reservation preserves the initial completion timestamp. A definitive failure or safe unstarted cancellation refunds only that recorded charge, at most once, in the same transaction as the task change. Completion timestamps and dispatch/executor nonces alone never authorize a refund. Pre-upgrade and imported tasks have no positive charge record: known outcomes can still settle, but historical statistics are not decremented by inference. Unknown outcomes remain held and unresolved.
+
+If a modern warmup task becomes dead-lettered after its definitive failure and refund were committed, the matching authoritative result repairs only task and dead-letter metadata. It does not repeat accounting, callbacks or mailbox hold changes. Already-applied failures without positive refunded-charge proof remain protected.
+
 ## Evidence-based repair holds
 
 Authentication, permanent and conflicting-result holds do not clear merely because time passed, a reconnect occurred or an unrelated send succeeded. An organization-authorized operator can use `send_recovery_resolution` in the existing mailbox PATCH after investigating the current held task and reason:
@@ -114,6 +118,8 @@ Hard bounce/complaint/suppression and authentication failures remain negative ev
 4. Recheck holds, actual configured provider, worker liveness, schedules, directional participation, shared/rolling limits and Cloud-side settings before resuming. New mailboxes default off; existing NULL participation stays legacy rather than silently relabeling historical consent. No migration rewrites legacy AI provenance as reviewed. Legacy NULL-provenance sources do not count toward new versioned selection/readiness; existing exact-parent ambiguity stays closed.
 
 Organization export retains participation, ceilings, restrictive task/account evidence and repair history. Executor worker/nonce/start/result handles reset on import. Exact diagnostic authorization and nonces, including raw warmup receipt provenance, are instance-local and excluded; registered placement aggregates travel as history, never as execution grants. See [workspace moves](/guides/workspace-export-import/).
+
+Per-task warmup charge and refund markers reset on organization import; imported statistics remain history, not destination-instance refund authority. Whole-instance database backups retain those markers. The additive charge-provenance migration leaves all historical markers NULL without backfill; apply it before starting the updated backend and result consumers. Rollback refuses to remove recorded charge or refund evidence; retain the additive schema and roll forward.
 
 Immutable attempt timestamps and recipient counts travel with the sending group and retain restrictive rate evidence; their historical nonces do not authorize execution. Raw warmup receipt provenance remains source-instance-local and excluded, while registered placement aggregates travel.
 

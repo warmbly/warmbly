@@ -91,10 +91,7 @@ func (r *taskRepository) retireUnstartedWarmupDispatch(ctx context.Context, task
 	if tag.RowsAffected() == 0 {
 		return false, nil
 	}
-	if _, err = tx.Exec(ctx, `UPDATE warmup_statistics SET emails_sent=GREATEST(emails_sent-1,0),
-		emails_replied=GREATEST(emails_replied-CASE WHEN w.parent_task_id IS NULL THEN 0 ELSE 1 END,0)
-		FROM warmup_tasks w JOIN tasks t ON t.id=w.task_id
-		WHERE t.id=$2 AND warmup_statistics.email_account_id=$1 AND date=DATE(t.completed_at)`, mailbox, task); err != nil {
+	if err = refundWarmupCharge(ctx, tx, task, mailbox); err != nil {
 		return false, err
 	}
 	if _, err = tx.Exec(ctx, `DELETE FROM warmup_tokens WHERE task_id=$1`, task); err != nil {
