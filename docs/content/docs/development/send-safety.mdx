@@ -54,7 +54,41 @@ Authentication, permanent and conflicting-result holds do not clear merely becau
 }
 ```
 
-`authentication_repaired` requires `evidence_task_id` naming a newer definitive, applied successful outbound send on the same mailbox; fresh inbox sync alone is not repair proof. `operator_provider_confirmation` requires a same-mailbox definitive, applied evidence task and non-empty `confirmation_reference`. Include the exact held task and reason (`authentication`, `permanent`, `conflict`). Changed holds, inactive mailboxes, cross-organization requests and remaining unknown sends refuse resolution. Investigate unknown tasks; never label them failed just to free capacity. Repair history is inserted atomically before clearing only the repair hold. Cooldowns, suppression and other restrictions remain. References must not contain credentials, message bodies or provider payloads.
+`authentication_repaired` requires `evidence_task_id` naming a newer definitive, applied successful outbound send on the same mailbox; fresh inbox sync alone is not repair proof. `operator_provider_confirmation` requires a same-mailbox definitive, applied evidence task and non-empty `confirmation_reference`. Include the exact held task and reason (`authentication`, `permanent`, `conflict`). Changed holds, inactive mailboxes, cross-organization requests and remaining unknown sends refuse these repair resolutions. Repair history is inserted atomically before clearing only the repair hold. Cooldowns, suppression and other restrictions remain. References must not contain credentials, message bodies or provider payloads.
+
+### Resolving an unknown send
+
+Unknown means the provider outcome is unproven, not that sending failed. Neither an expired timeout nor the absence of a synced Sent copy is proof that nothing was sent. Obtain explicit provider evidence for the exact task before using the mailbox PATCH:
+
+```json
+{
+  "send_recovery_resolution": {
+    "held_task_id": "00000000-0000-0000-0000-000000000001",
+    "held_reason": "unknown",
+    "evidence_type": "operator_confirmed_sent",
+    "confirmation_reference": "Provider support ticket or delivery-trace reference",
+    "message_id": "provider-confirmed-message@example.com",
+    "provider_msg_id": "optional-provider-message-handle",
+    "thread_id": "optional-provider-conversation-handle"
+  }
+}
+```
+
+- `operator_confirmed_sent` requires the provider-confirmed `message_id`. It records success and preserves the campaign step without resending it. Optional provider/thread handles preserve conversation routing.
+- `operator_confirmed_not_sent` requires explicit provider confirmation that this task did not send. Omit all message/thread handles. Normal failure reconciliation releases the reservation and makes the step eligible for retry, subject to the existing attempt limit.
+- Both require a non-empty, bounded `confirmation_reference`, the exact current `held_task_id`/`held_reason`, and no `evidence_task_id`. A timeout or missing Sent copy alone is not an acceptable confirmation. Never use a not-sent confirmation merely to free capacity: an incorrect confirmation can duplicate an email.
+
+Execution must have been unresolved for at least two minutes, so a normal in-flight send and its bounded report cannot be overridden. Changed holds, inactive mailboxes, another organization's task, duplicate confirmations and already-recorded definitive outcomes are rejected. Definitive worker outcomes take precedence over queued operator confirmations.
+
+The PATCH atomically queues an immutable audited result; it does **not** immediately clear the hold. The consumer checks recorded results every 15 seconds and applies the normal success/failure accounting transaction exactly once. Admission stays closed until that transaction commits. If another unknown task remains, the hold moves to that task instead of reopening the mailbox. A later contradictory provider outcome produces a conflict hold rather than rewriting the earlier accounting.
+
+### Campaign placement and result reporting
+
+Campaign routing, placement, day plans and estimates share durable mailbox send admission. Recovery-held or currently cooling mailboxes contribute no immediately available capacity and do not trap a lead when another healthy sender is available. Plans identify send recovery and provider cooldown separately. When the entire pool is unavailable, the campaign defers with a bounded recheck rather than completing or repeatedly dispatching refused sends. An admission read failure also closes the affected mailbox for that pass.
+
+After provider execution, workers record and publish the result on an independent 45-second context with at most four attempts, each bounded to 10 seconds. Failed reports retain the exact outcome in memory for command redelivery without another provider send. Persisted results survive worker replacement and lost broker events: the consumer replays them through the same idempotent reconciliation. A worker crash before durable recording can still leave an unknown outcome requiring investigation.
+
+Already-failed tasks with no outbound reservation or execution authorization cannot create unknown provider holds. The recorded-result sweep also reconciles existing invalid holds for such tasks. Real reserved or started unknown sends remain held; upgrades never infer failure from elapsed time. Deploy the backend/consumer (including the additive migration) before updated workers. No new configuration is required; existing genuine unknown holds need definitive worker evidence or the explicit operator confirmation above.
 
 ## Actual-message authentication
 

@@ -53,6 +53,16 @@ const LIMIT_META: Record<SendLimitKind, LimitMeta> = {
         hint: "A mailbox is quarantined or blocked by its warmup health and sends nothing cold until that lifts.",
         to: "/app/emails",
     },
+    send_recovery: {
+        label: "Send recovery hold",
+        hint: "A mailbox has an unresolved send or provider refusal. Healthy mailboxes remain available; investigate the held send before resolving it.",
+        to: "/app/emails",
+    },
+    send_cooldown: {
+        label: "Provider cooldown",
+        hint: "A mailbox is temporarily unavailable after a provider refusal. It is checked again when its cooldown expires.",
+        to: "/app/emails",
+    },
     other_campaigns: {
         label: "Used by other campaigns",
         hint: "A mailbox's daily cap is shared by every campaign it is on; these sends went to another one today.",
@@ -112,6 +122,9 @@ const STATE_META: Record<MailboxPlan["state"], { label: string; tone: string }> 
     domain_auth: { label: "Auth failing", tone: "bg-rose-50 text-rose-700 ring-rose-200" },
     resting: { label: "Resting", tone: "bg-slate-100 text-slate-600 ring-slate-200" },
     health_hold: { label: "Health hold", tone: "bg-rose-50 text-rose-700 ring-rose-200" },
+    send_recovery: { label: "Send recovery", tone: "bg-rose-50 text-rose-700 ring-rose-200" },
+    send_cooldown: { label: "Cooling down", tone: "bg-amber-50 text-amber-700 ring-amber-200" },
+    send_authority: { label: "Send unavailable", tone: "bg-amber-50 text-amber-700 ring-amber-200" },
     no_worker: { label: "Reconnecting", tone: "bg-amber-50 text-amber-700 ring-amber-200" },
     window_closed: { label: "Window closed", tone: "bg-amber-50 text-amber-700 ring-amber-200" },
 };

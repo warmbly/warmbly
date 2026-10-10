@@ -416,6 +416,9 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 	hoursClosed := 0
 	healthHeld := 0
 	noWorker := 0
+	recoveryHeld := 0
+	cooling := 0
+	var sendRecheck time.Time
 	var reopensAt time.Time
 	gates := map[uuid.UUID]mailboxGate{}
 
@@ -464,6 +467,13 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 				budgetSpent++
 			case gateNoWorker:
 				noWorker++
+			case gateRecovery, gateAdmission:
+				recoveryHeld++
+			case gateCooldown:
+				cooling++
+			}
+			if !gate.reopensAt.IsZero() && (sendRecheck.IsZero() || gate.reopensAt.Before(sendRecheck)) {
+				sendRecheck = gate.reopensAt
 			}
 			continue
 		}
@@ -546,6 +556,16 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 	// until midnight are logged once a day, or the feed drowns in them.
 	if len(candidates) == 0 {
 		switch {
+		case recoveryHeld > 0 || cooling > 0:
+			resume := time.Now().Add(workerRecheck)
+			if !sendRecheck.IsZero() && sendRecheck.Before(resume) {
+				resume = sendRecheck
+			}
+			logDecisionOnce("mailboxes_send_recovery",
+				fmt.Sprintf("No mailbox can send right now: %d require send recovery, %d cooling down", recoveryHeld, cooling),
+				map[string]interface{}{"recovery_held": recoveryHeld, "cooling_down": cooling, "pool_size": len(accounts),
+					"mailboxes": s.poolBudget(pass, accounts, gates, uuid.Nil)})
+			return resume, nil, accounts[0].ID, ErrCampaignDeferred
 		case noWorker > 0:
 			// Mailboxes that could send once a worker holds them again, which
 			// the worker reconciler sees to within minutes, unless a mailbox

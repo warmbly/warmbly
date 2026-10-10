@@ -84,6 +84,8 @@ const (
 	SendLimitDomainAuth         = "domain_auth"
 	SendLimitResting            = "resting"
 	SendLimitHealthHold         = "warmup_health_hold"
+	SendLimitRecovery           = "send_recovery"
+	SendLimitCooldown           = "send_cooldown"
 	SendLimitOtherCampaigns     = "other_campaigns"
 	SendLimitHealthPace         = "warmup_health_pace"
 	SendLimitMailboxHours       = "mailbox_hours"
@@ -187,6 +189,9 @@ const (
 	MailboxPlanDomainAuth   = "domain_auth"
 	MailboxPlanResting      = "resting"
 	MailboxPlanHealthHold   = "health_hold"
+	MailboxPlanRecovery     = "send_recovery"
+	MailboxPlanCooldown     = "send_cooldown"
+	MailboxPlanAdmission    = "send_authority"
 	MailboxPlanWindowClosed = "window_closed"
 	// MailboxPlanNoWorker is a mailbox no heartbeating worker holds right now.
 	MailboxPlanNoWorker = "no_worker"

@@ -748,6 +748,9 @@ type UpdateEmail struct {
 }
 
 type SendRecoveryResolution struct {
+	MessageID             string     `json:"message_id,omitempty"`
+	ProviderMsgID         string     `json:"provider_msg_id,omitempty"`
+	ThreadID              string     `json:"thread_id,omitempty"`
 	HeldTaskID            uuid.UUID  `json:"held_task_id"`
 	HeldReason            string     `json:"held_reason"`
 	EvidenceType          string     `json:"evidence_type"`
