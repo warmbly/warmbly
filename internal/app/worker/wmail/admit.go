@@ -207,6 +207,11 @@ func (w *WMail) storeNew(ctx context.Context, msg *models.EmailMessageData, data
 	}
 	if durable, ok := w.EmailMessageMapRepository.(repository.ArrivalAdmission); ok {
 		err := durable.AdmitArrival(ctx, mapping, &repository.PendingArrival{Arrival: arrival, Bounce: bounce, Complaint: complaint})
+		if errors.Is(err, repository.ErrArrivalMailboxOwnershipLost) {
+			log.Warn().Str("email_id", w.ID.String()).Msg("sync: mailbox ownership revoked; worker generation retired, arrival unacknowledged")
+			w.Terminate()
+			return err
+		}
 		if !errors.Is(err, repository.ErrArrivalOutboxUnsupported) {
 			return err
 		}

@@ -1,11 +1,13 @@
 package repository
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -27,6 +29,23 @@ func TestArrivalAdmissionDiagnosticNeverExposesErrorText(t *testing.T) {
 		if stage != tc.stage || state != tc.state || strings.Contains(stage+state, private) {
 			t.Fatalf("unexpected safe diagnostic: %q %q", stage, state)
 		}
+	}
+}
+
+func TestArrivalOwnershipLossRequiresAuthoritativeAbsence(t *testing.T) {
+	for _, stage := range []string{"mailbox_ownership", "mailbox_ownership_recheck"} {
+		for _, cause := range []error{pgx.ErrNoRows, fmt.Errorf("wrapped: %w", pgx.ErrNoRows), context.Canceled, context.DeadlineExceeded, errors.New("database unavailable"), &pgconn.PgError{Code: "08006"}} {
+			err := arrivalOwnershipFailure(stage, cause)
+			if errors.Is(err, ErrArrivalMailboxOwnershipLost) != errors.Is(cause, pgx.ErrNoRows) || !errors.Is(err, cause) {
+				t.Fatalf("ownership error incorrectly classified: %v", cause)
+			}
+			if got, _ := ArrivalAdmissionDiagnostic(err); got != stage {
+				t.Fatalf("lost stage: %s", got)
+			}
+		}
+	}
+	if errors.Is(arrivalFailure("organization_key", pgx.ErrNoRows), ErrArrivalMailboxOwnershipLost) {
+		t.Fatal("unrelated missing row retired mailbox")
 	}
 }
 

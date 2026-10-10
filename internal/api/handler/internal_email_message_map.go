@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 
@@ -30,6 +31,11 @@ func (h *Handler) InternalAdmitEmailArrival(c *gin.Context) {
 	}
 	if err := repo.AdmitArrival(c.Request.Context(), repository.EmailMessageData(p.Map), p.Pending); err != nil {
 		logArrivalAdmissionFailure(c, p.Map, err)
+		if errors.Is(err, repository.ErrArrivalMailboxOwnershipLost) {
+			if mailbox, parseErr := uuid.Parse(p.Map.EmailID); parseErr == nil && mailbox != uuid.Nil {
+				c.Header("X-Warmbly-Arrival-Ownership-Lost", mailbox.String())
+			}
+		}
 		// Do not expose message content or org encryption failures over the protocol.
 		c.Status(http.StatusServiceUnavailable)
 		return
