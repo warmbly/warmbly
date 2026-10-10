@@ -1,16 +1,45 @@
 package jobs
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"log"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/observability/errs"
 	"github.com/warmbly/warmbly/internal/repository"
 )
+
+func TestArrivalWaitStillRetriesWithoutCapturingAnException(t *testing.T) {
+	if err := errs.Init(errs.Config{Service: "consumer", Environment: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	log.SetOutput(&output)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	user, mailbox, id := uuid.New(), uuid.New(), uuid.New()
+	s := &JobsService{UniboxRepository: &syncTruthLookup{}, ArrivalOutbox: &syncTruthOutbox{user: user, mailbox: mailbox, id: id, pending: true}}
+	err := s.HandleUpdateEmail(t.Context(), &models.JobEventEmailUpdate{UserID: user, EmailID: mailbox, ID: id})
+	if !errors.Is(err, ErrSyncArrivalPending) {
+		t.Fatalf("arrival wait acknowledged instead of retried: %v", err)
+	}
+	CaptureError(user, mailbox, fmt.Errorf("wrapped: %w", err))
+	if output.Len() != 0 {
+		t.Fatalf("expected wait captured as an exception: %s", output.String())
+	}
+	CaptureError(user, mailbox, errors.New("actual repository failure"))
+	if !strings.Contains(output.String(), "actual repository failure") {
+		t.Fatal("unexpected errors are no longer reported")
+	}
+}
 
 func TestSyncTruthProgressRelaysDoNotResolveTransportWarnings(t *testing.T) {
 	previous := time.Now().Add(-time.Hour)

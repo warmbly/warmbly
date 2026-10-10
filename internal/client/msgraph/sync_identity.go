@@ -2,12 +2,14 @@ package msgraph
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"net/http"
 
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
+
+var ErrIncompleteIDConversion = errors.New("graph: incomplete immutable id conversion")
 
 func (c *Client) ImmutableIDMode() bool {
 	c.idMu.RLock()
@@ -50,7 +52,7 @@ func (c *Client) translateIDs(ctx context.Context, ids []string, source, target 
 	}
 	for _, id := range ids {
 		if converted[id] == "" {
-			return nil, fmt.Errorf("graph: incomplete immutable id conversion")
+			return converted, ErrIncompleteIDConversion
 		}
 	}
 	return converted, nil

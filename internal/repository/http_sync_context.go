@@ -32,6 +32,7 @@ type StoredFolderMessage struct {
 type ProviderFolderMessage struct {
 	ID             uuid.UUID `json:"id"`
 	ProviderID     string    `json:"provider_id"`
+	MessageID      string    `json:"message_id,omitempty"`
 	ProviderFolder string    `json:"provider_folder"`
 	InternalDate   time.Time `json:"internal_date"`
 	Flags          []string  `json:"flags,omitempty"`
