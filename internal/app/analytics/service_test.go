@@ -261,3 +261,48 @@ func TestDashboardHoldsARestrictedMemberToTheirCampaigns(t *testing.T) {
 		})
 	}
 }
+
+func TestDashboardScopeCountAfterGrantIntersection(t *testing.T) {
+	granted, other, folder := uuid.New(), uuid.New(), uuid.New()
+	for _, tc := range []struct {
+		name           string
+		filter         models.DashboardFilter
+		resolved, want []uuid.UUID
+	}{
+		{"folder mixed grants", models.DashboardFilter{FolderIDs: []uuid.UUID{folder}, AllowedCampaigns: []uuid.UUID{granted}}, []uuid.UUID{granted, other}, []uuid.UUID{granted}},
+		{"folder empty grants", models.DashboardFilter{FolderIDs: []uuid.UUID{folder}, AllowedCampaigns: []uuid.UUID{}}, []uuid.UUID{granted, other}, []uuid.UUID{}},
+		{"folder none-match sentinel", models.DashboardFilter{FolderIDs: []uuid.UUID{folder}, AllowedCampaigns: models.NoneMatch()}, []uuid.UUID{granted, other}, []uuid.UUID{}},
+		{"explicit campaign granted", models.DashboardFilter{CampaignIDs: []uuid.UUID{granted}, AllowedCampaigns: []uuid.UUID{granted}}, []uuid.UUID{granted}, []uuid.UUID{granted}},
+		{"explicit campaign outside grants", models.DashboardFilter{CampaignIDs: []uuid.UUID{other}, AllowedCampaigns: []uuid.UUID{granted}}, []uuid.UUID{other}, []uuid.UUID{}},
+		{"explicit campaigns empty grants", models.DashboardFilter{CampaignIDs: []uuid.UUID{granted, other}, AllowedCampaigns: []uuid.UUID{}}, []uuid.UUID{granted, other}, []uuid.UUID{}},
+		{"combined filters", models.DashboardFilter{CampaignIDs: []uuid.UUID{other}, FolderIDs: []uuid.UUID{folder}, AllowedCampaigns: []uuid.UUID{granted}}, []uuid.UUID{granted, other}, []uuid.UUID{granted}},
+		{"deleted folder", models.DashboardFilter{FolderIDs: []uuid.UUID{folder}, AllowedCampaigns: []uuid.UUID{granted}}, []uuid.UUID{}, []uuid.UUID{}},
+		{"unrestricted folder compatibility", models.DashboardFilter{FolderIDs: []uuid.UUID{folder}}, []uuid.UUID{granted, other}, []uuid.UUID{granted, other}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &dashboardAnalyticsRepoStub{resolved: &models.CampaignScope{CampaignIDs: tc.resolved}}
+			svc := &analyticsService{analyticsRepo: repo}
+			got, xerr := svc.GetDashboardAnalytics(context.Background(), uuid.New(), "7d", tc.filter)
+			if xerr != nil {
+				t.Fatal(xerr)
+			}
+			if got.Scope == nil || got.Scope.CampaignCount != len(tc.want) {
+				t.Fatalf("scope=%+v, want grant-visible count %d", got.Scope, len(tc.want))
+			}
+			for _, section := range []string{"overall", "recent", "top", "trend"} {
+				scope := repo.scopes[section]
+				if scope == nil || len(scope.CampaignIDs) != len(tc.want) {
+					t.Fatalf("%s scope=%+v want %v", section, scope, tc.want)
+				}
+				for i, id := range tc.want {
+					if scope.CampaignIDs[i] != id {
+						t.Errorf("%s campaign=%s, want %s", section, scope.CampaignIDs[i], id)
+					}
+				}
+			}
+			if len(repo.resolved.CampaignIDs) != len(tc.resolved) {
+				t.Fatal("grant intersection modified the resolved scope")
+			}
+		})
+	}
+}
