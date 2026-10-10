@@ -204,6 +204,7 @@ jobs:
         run: |
           go test -race ./internal/repository -run '^TestLive(Monitoring|LastWarmupSendFailure|PersistentMailboxLoadingFailure|DispatchRetry|LineageQueueRevisions|AdminPlatformOverview|WarmupRecoversOldPreparation|WarmupPreparationRecoveryRetains|WarmupFilingRequiresAcknowledgement)' -count=1
           go test -race ./internal/tasks -run '^Test(LiveWarmup(SafetyHoldReschedules|Recovery|TaskDoesNotApplyResults)|WarmupSenderDistinguishes)' -count=1
+          go test -race ./internal/app/consumer -run '^TestLiveStoredSendResult' -count=1
 
       - name: Mailbox sync admission, replay, truthful state and upgrade regressions (PostgreSQL)
         env:

@@ -127,6 +127,7 @@ func (s *JobsService) Start(ctx context.Context) {
 	// timestamps.
 	go s.sweepFollowUps(ctx)
 	go s.runSendResultEffects(ctx)
+	go s.runStoredSendResults(ctx)
 	go s.runArrivalOutbox(ctx)
 
 	if err := s.Bus.Subscribe(ctx, []string{kafka.TopicWorkerEvents}, "consumer-group", s.receive); err != nil {

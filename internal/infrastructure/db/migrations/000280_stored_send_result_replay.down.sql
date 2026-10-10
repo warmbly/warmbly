@@ -1,0 +1,1 @@
+DROP INDEX tasks_pending_executor_results;

@@ -66,6 +66,37 @@ type SendResultRecovery interface {
 	GetSendAdmission(context.Context, uuid.UUID, uuid.UUID, models.InboxProvider, time.Time) (*SendAdmission, error)
 }
 
+type StoredSendResult struct {
+	TaskID  uuid.UUID
+	Payload json.RawMessage
+}
+
+type StoredSendResultRepository interface {
+	SendResultRecovery
+	ListPendingSendResults(context.Context, uuid.UUID, int) ([]StoredSendResult, error)
+}
+
+func (r *taskRepository) ListPendingSendResults(ctx context.Context, after uuid.UUID, limit int) ([]StoredSendResult, error) {
+	rows, err := r.db.Query(ctx, `SELECT id,send_executor_result FROM tasks
+		WHERE id>$1 AND send_executor_result IS NOT NULL AND send_executor_started_at IS NOT NULL
+		AND send_executor_nonce IS NOT NULL
+		AND send_result_applied_at IS NULL AND (send_result_state IS NULL OR send_result_state='unknown')
+		AND status<>'cancelled' ORDER BY id LIMIT $2`, after, min(max(limit, 1), 200))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var results []StoredSendResult
+	for rows.Next() {
+		var result StoredSendResult
+		if err := rows.Scan(&result.TaskID, &result.Payload); err != nil {
+			return nil, err
+		}
+		results = append(results, result)
+	}
+	return results, rows.Err()
+}
+
 type SendAdmission struct {
 	MailboxID    uuid.UUID
 	Provider     models.InboxProvider
