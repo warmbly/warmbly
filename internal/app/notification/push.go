@@ -36,10 +36,11 @@ const (
 )
 
 type pendingPush struct {
-	Title     string     `json:"title"`
-	Body      string     `json:"body,omitempty"`
-	Link      string     `json:"link,omitempty"`
-	MessageID *uuid.UUID `json:"unibox_email_id,omitempty"`
+	OrganizationID *uuid.UUID `json:"organization_id,omitempty"`
+	Title          string     `json:"title"`
+	Body           string     `json:"body,omitempty"`
+	Link           string     `json:"link,omitempty"`
+	MessageID      *uuid.UUID `json:"unibox_email_id,omitempty"`
 }
 
 func pushWindow() time.Duration {
@@ -94,7 +95,7 @@ func dueKey() string                  { return pushKeyPrefix + ":due" }
 func (s *service) deliverPush(userID uuid.UUID, category models.NotificationCategory, p pendingPush) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if !s.canPushMessage(ctx, category, p) {
+	if !s.canDeliverPush(ctx, userID, category, p) {
 		return
 	}
 
@@ -180,7 +181,7 @@ func (s *service) sendDigest(ctx context.Context, member string) {
 	items := make([]pendingPush, 0, len(raw))
 	for _, r := range raw {
 		var p pendingPush
-		if json.Unmarshal([]byte(r), &p) == nil && s.canPushMessage(ctx, category, p) {
+		if json.Unmarshal([]byte(r), &p) == nil && s.canDeliverPush(ctx, userID, category, p) {
 			items = append(items, p)
 		}
 	}
@@ -195,6 +196,11 @@ func (s *service) sendDigest(ctx context.Context, member string) {
 	n := apnsAlert(category, digestTitle(category, len(items)), "Latest: "+last.Title, last.Link, len(items))
 	n.CollapseID = "digest:" + string(category)
 	s.sendPush(ctx, userID, category, n)
+}
+
+func (s *service) canDeliverPush(ctx context.Context, userID uuid.UUID, category models.NotificationCategory, p pendingPush) bool {
+	allowed, err := s.recipientEligibility(ctx, userID, p.OrganizationID, category)
+	return err == nil && allowed && s.canPushMessage(ctx, category, p)
 }
 
 func (s *service) canPushMessage(ctx context.Context, category models.NotificationCategory, p pendingPush) bool {
@@ -258,7 +264,7 @@ func (s *service) sendPush(ctx context.Context, userID uuid.UUID, category model
 	if err != nil || len(tokens) == 0 {
 		return
 	}
-	if unread, cerr := s.repo.CountUnread(ctx, userID); cerr == nil {
+	if unread, cerr := s.UnreadCount(ctx, userID); cerr == nil {
 		n.Badge = &unread
 	}
 	for _, t := range tokens {

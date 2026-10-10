@@ -113,7 +113,7 @@ func (r *notificationRepository) Create(ctx context.Context, n *models.Notificat
 	err := r.db.QueryRow(ctx, `
 		WITH msg AS (SELECT seen FROM unibox_emails WHERE id = $13 FOR SHARE),
 		seen AS (SELECT COALESCE((SELECT seen FROM msg), false) AS v),
-		candidate AS (SELECT $3::uuid AS organization_id, $4::text AS category,
+		candidate AS (SELECT $2::uuid AS user_id, $3::uuid AS organization_id, $4::text AS category,
 			$8::jsonb AS metadata, $13::uuid AS unibox_email_id)
 		INSERT INTO notifications (id, user_id, organization_id, category, title, body, link, metadata,
 			group_key, email_state, email_due_at, read_at, unibox_email_id)
@@ -122,7 +122,7 @@ func (r *notificationRepository) Create(ctx context.Context, n *models.Notificat
 			CASE WHEN seen.v AND $10 = 'pending' THEN NULL ELSE $11::timestamptz END,
 			CASE WHEN $12 OR seen.v THEN now() END,
 			$13
-		FROM seen, candidate n WHERE `+notificationReplyVisibleSQL+`
+		FROM seen, candidate n WHERE `+notificationReplyVisibleSQL+` AND `+notificationRecipientVisibleSQL+`
 		ON CONFLICT(id) DO UPDATE SET id=EXCLUDED.id
 		RETURNING created_at, (SELECT v FROM seen)`,
 		n.ID, n.UserID, n.OrganizationID, n.Category, n.Title, n.Body, n.Link, meta,
@@ -193,7 +193,7 @@ func (r *notificationRepository) List(ctx context.Context, userID uuid.UUID, lim
 		limit = 50
 	}
 	q := `SELECT id, user_id, organization_id, category, title, body, link, metadata, read_at, created_at
-		FROM notifications n WHERE user_id = $1 AND ` + notificationReplyVisibleSQL
+		FROM notifications n WHERE user_id = $1 AND ` + notificationReplyVisibleSQL + ` AND ` + notificationRecipientVisibleSQL
 	if unreadOnly {
 		q += ` AND read_at IS NULL`
 	}
@@ -220,7 +220,7 @@ func (r *notificationRepository) List(ctx context.Context, userID uuid.UUID, lim
 
 func (r *notificationRepository) CountUnread(ctx context.Context, userID uuid.UUID) (int, error) {
 	var c int
-	err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM notifications n WHERE user_id = $1 AND read_at IS NULL AND `+notificationReplyVisibleSQL, userID).Scan(&c)
+	err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM notifications n WHERE user_id = $1 AND read_at IS NULL AND `+notificationReplyVisibleSQL+` AND `+notificationRecipientVisibleSQL, userID).Scan(&c)
 	return c, err
 }
 
@@ -249,7 +249,7 @@ func (r *notificationRepository) MarkAllRead(ctx context.Context, userID uuid.UU
 // claims can be recovered back to pending.
 func (r *notificationRepository) ClaimDueEmails(ctx context.Context) ([]models.Notification, error) {
 	if _, err := r.db.Exec(ctx, `UPDATE notifications n SET email_state = 'skipped', email_due_at = NULL
-		WHERE email_state = 'pending' AND NOT `+notificationReplyVisibleSQL); err != nil {
+		WHERE email_state = 'pending' AND NOT (`+notificationReplyVisibleSQL+` AND `+notificationRecipientVisibleSQL+`)`); err != nil {
 		return nil, err
 	}
 	_, _ = r.db.Exec(ctx, `
@@ -260,7 +260,7 @@ func (r *notificationRepository) ClaimDueEmails(ctx context.Context) ([]models.N
 		UPDATE notifications SET email_state = 'sending', email_due_at = now()
 		WHERE id IN (
 			SELECT n.id FROM notifications n
-			WHERE n.email_state = 'pending' AND `+notificationReplyVisibleSQL+` AND (
+			WHERE n.email_state = 'pending' AND `+notificationReplyVisibleSQL+` AND `+notificationRecipientVisibleSQL+` AND (
 				n.user_id IN (
 					SELECT user_id FROM notifications
 					WHERE email_state = 'pending' AND email_due_at <= now())

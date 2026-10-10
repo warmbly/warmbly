@@ -132,14 +132,17 @@ type eventBus interface {
 
 // StreamingPublisher handles real-time streaming to users
 type StreamingPublisher struct {
-	client eventBus
+	client   eventBus
+	audience AudienceResolver
 }
 
 // NewStreamingPublisher creates a new streaming publisher
-func NewStreamingPublisher(client eventBus) *StreamingPublisher {
-	return &StreamingPublisher{
-		client: client,
+func NewStreamingPublisher(client eventBus, audience ...AudienceResolver) *StreamingPublisher {
+	p := &StreamingPublisher{client: client}
+	if len(audience) > 0 {
+		p.audience = audience[0]
 	}
+	return p
 }
 
 // Topic names for real-time updates
@@ -196,7 +199,7 @@ func (p *StreamingPublisher) PublishTaskStatus(ctx context.Context, userID strin
 		"event_type": string(eventType),
 	}
 
-	if err := p.client.Publish(ctx, TopicTaskStatus, event, attrs); err != nil {
+	if err := p.publish(ctx, TopicTaskStatus, event, attrs); err != nil {
 		errs.CaptureException(fmt.Errorf("failed to publish task status: %w", err))
 	}
 }
@@ -226,7 +229,7 @@ func (p *StreamingPublisher) PublishEmailError(ctx context.Context, userID strin
 		"event_type": string(EventError),
 	}
 
-	if err := p.client.Publish(ctx, TopicEmailError, event, attrs); err != nil {
+	if err := p.publish(ctx, TopicEmailError, event, attrs); err != nil {
 		errs.CaptureException(fmt.Errorf("failed to publish email error: %w", err))
 	}
 }
@@ -255,7 +258,7 @@ func (p *StreamingPublisher) PublishEmailWarning(ctx context.Context, userID str
 		"event_type": string(EventWarning),
 	}
 
-	if err := p.client.Publish(ctx, TopicEmailWarning, event, attrs); err != nil {
+	if err := p.publish(ctx, TopicEmailWarning, event, attrs); err != nil {
 		errs.CaptureException(fmt.Errorf("failed to publish email warning: %w", err))
 	}
 }
@@ -280,7 +283,7 @@ func (p *StreamingPublisher) PublishCampaignProgress(ctx context.Context, userID
 		"event_type":  "CAMPAIGN_PROGRESS",
 	}
 
-	if err := p.client.Publish(ctx, TopicCampaignUpdate, event, attrs); err != nil {
+	if err := p.publish(ctx, TopicCampaignUpdate, event, attrs); err != nil {
 		errs.CaptureException(fmt.Errorf("failed to publish campaign progress: %w", err))
 	}
 }
@@ -306,7 +309,7 @@ func (p *StreamingPublisher) PublishWarmupStats(ctx context.Context, userID stri
 		"event_type": "WARMUP_STATS",
 	}
 
-	if err := p.client.Publish(ctx, TopicWarmupUpdate, event, attrs); err != nil {
+	if err := p.publish(ctx, TopicWarmupUpdate, event, attrs); err != nil {
 		errs.CaptureException(fmt.Errorf("failed to publish warmup stats: %w", err))
 	}
 }

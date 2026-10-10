@@ -194,10 +194,10 @@ func main() {
 			errs.CaptureFatal(err)
 			log.Fatal("Failed to provision Pub/Sub topics/subscriptions: ", err)
 		}
-		streamingPublisher = pubsub.NewStreamingPublisher(pubsubClient)
+		streamingPublisher = pubsub.NewStreamingPublisher(pubsubClient, repository.NewEventAudienceRepository(primaryDB.Pool))
 	}
 	if streamingPublisher == nil {
-		streamingPublisher = pubsub.NewStreamingPublisher(pubsub.NewRedisBus(redisCache.Client, ""))
+		streamingPublisher = pubsub.NewStreamingPublisher(pubsub.NewRedisBus(redisCache.Client, ""), repository.NewEventAudienceRepository(primaryDB.Pool))
 		log.Println("Realtime events bridged over Redis (Pub/Sub disabled)")
 	}
 
