@@ -289,6 +289,8 @@ A full-instance backup must preserve the database, wrapped organization keys, th
 
 The consumer logs aggregate pending counts and oldest-arrival age. Arrivals older than five minutes, or delivery/inspection failures continuing for one minute, raise a deduplicated operator alert through the existing operator-notification integration when configured. Logs and notifications contain counts and age, not message bodies or addresses. Operator notifications repeat at most once per fifteen minutes; without an operator channel, monitor consumer logs for `sync arrival queue needs attention`. An empty queue is not proof of provider success or historical completeness.
 
+The backend also logs `sync arrival admission deferred; durability not confirmed` when it cannot acknowledge an arrival. Diagnostics contain a server-controlled failure stage, a validated SQLSTATE when available, valid user, mailbox and arrival UUIDs, and request identifiers accepted by the middleware's bounded tracing policy. They exclude raw error text, database error details, provider message identifiers, message contents and encryption material. The worker still receives only an unacknowledged admission and retains its cursor. These are control-plane observations, not proof of a provider outage.
+
 See [upgrade order and downgrade limits](/development/install/#mailbox-sync-upgrade-order). Legacy maps without stored arrival payloads cannot reconstruct historical lost mail.
 
 ## Outbound calls

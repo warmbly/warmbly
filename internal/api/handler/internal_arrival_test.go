@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,12 +13,65 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
 type internalArrivalMap struct {
 	calls, legacyCalls int
 	err                error
+}
+
+func TestInternalArrivalLogsOnlySafeDiagnosticsWithoutAcknowledging(t *testing.T) {
+	var output bytes.Buffer
+	original := log.Logger
+	log.Logger = zerolog.New(&output)
+	t.Cleanup(func() { log.Logger = original })
+	private := "private-provider-payload-and-key"
+	m := &internalArrivalMap{err: &pgconn.PgError{Code: "22021", Message: private, Detail: private}}
+	h := &Handler{EmailMessageMap: m}
+	r := gin.New()
+	requestID, user, email, arrival := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+	r.Use(func(c *gin.Context) { c.Set(middleware.RequestIDContextKey, requestID) })
+	r.POST("/arrival", h.InternalAdmitEmailArrival)
+	body := fmt.Sprintf(`{"map":{"user_id":%q,"email_id":%q,"id":%q,"message_id":%q,"thread_id":%q},"pending":{}}`, user, email, arrival, private, private)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/arrival", strings.NewReader(body)))
+	if w.Code != 503 || w.Body.Len() != 0 || w.Header().Get("X-Warmbly-Arrival-Durable") != "" || strings.Contains(output.String(), private) {
+		t.Fatal("failed admission was acknowledged or exposed private data")
+	}
+	var diagnostic map[string]any
+	if err := json.Unmarshal(output.Bytes(), &diagnostic); err != nil {
+		t.Fatal(err)
+	}
+	for key, expected := range map[string]string{"admission_stage": "dependency", "sqlstate": "22021", "user_id": user, "email_id": email, "arrival_id": arrival, "request_id": requestID} {
+		if diagnostic[key] != expected {
+			t.Fatalf("missing diagnostic field %s", key)
+		}
+	}
+	if diagnostic["time"] == nil {
+		t.Fatal("diagnostic has no observation time")
+	}
+	output.Reset()
+	requestID = "client-trace_123"
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/arrival", strings.NewReader(`{"map":{"user_id":"private","email_id":"private","id":"private"},"pending":{}}`)))
+	if strings.Contains(output.String(), `"email_id"`) || strings.Contains(output.String(), `"user_id"`) || strings.Contains(output.String(), `"arrival_id"`) {
+		t.Fatal("invalid identities were logged")
+	}
+	if !strings.Contains(output.String(), `"request_id":"client-trace_123"`) {
+		t.Fatal("accepted non-UUID trace identifier was lost")
+	}
+	for _, invalid := range []string{"bad/request/id", "invalid\ntrace", strings.Repeat("a", 129)} {
+		output.Reset()
+		requestID = invalid
+		r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/arrival", strings.NewReader(`{"map":{},"pending":{}}`)))
+		if strings.Contains(output.String(), `"request_id"`) {
+			t.Fatal("unsafe or oversized trace identifier was logged")
+		}
+	}
 }
 
 func (m *internalArrivalMap) Add(context.Context, repository.EmailMessageData) error {

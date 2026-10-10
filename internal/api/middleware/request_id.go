@@ -28,6 +28,11 @@ func RequestIDMiddleware() gin.HandlerFunc {
 	}
 }
 
+// RequestID returns only a bounded identifier accepted by the tracing policy.
+func RequestID(c *gin.Context) string {
+	return sanitizeRequestID(c.GetString(RequestIDContextKey))
+}
+
 func sanitizeRequestID(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" || len(value) > 128 {
