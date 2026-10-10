@@ -29,8 +29,6 @@ type monitoringSection struct {
 	queries     []monitoringQuery
 }
 
-const safeDLQCampaignPass = `d.task_type='campaign' AND t.task_type='campaign' AND EXISTS (SELECT 1 FROM campaign_tasks ct WHERE ct.task_id=t.id AND ct.contact_id IS NULL AND ct.sequence_id IS NULL)`
-
 func (r *MonitoringRepository) Sources() []monitoring.Source {
 	out := make([]monitoring.Source, 0, len(monitoringSections)+3)
 	for _, id := range monitoringSectionOrder {

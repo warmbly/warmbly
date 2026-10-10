@@ -11,8 +11,8 @@ import (
 )
 
 func TestLiveMonitoringQueueSettlementAndFailureSemantics(t *testing.T) {
-	_, pool := liveContactDB(t)
-	requireSchemaVersion(t, pool, 277)
+	pool := liveCampaignReplayDB(t)
+	requireSchemaVersion(t, pool, 282)
 	f := newWarmupUsageFixture(t, pool)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	r := NewMonitoringRepository(pool)
@@ -31,8 +31,11 @@ func TestLiveMonitoringQueueSettlementAndFailureSemantics(t *testing.T) {
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM task_dead_letters WHERE task_id=$1`, id) })
 	passID := uuid.New()
-	f.exec(`INSERT INTO tasks(id,task_type,email_account_id,status,message_id)VALUES($1,'campaign',$2,'dead_lettered','')`, passID, f.account)
-	f.exec(`INSERT INTO campaign_tasks(task_id) VALUES($1)`, passID)
+	campaignID := uuid.New()
+	f.exec(`INSERT INTO campaigns(id,user_id,organization_id,name,description,status,days,timezone,created_at,updated_at)VALUES($1,$2,$3,'Replay','','active',127,'UTC',NOW(),NOW())`, campaignID, f.user, f.org)
+	if created, err := NewTaskRepository(pool).CreateTaskWithLock(t.Context(), &Task{ID: passID, TaskType: "campaign", EmailAccountID: f.account, Status: "dead_lettered"}, &CampaignTask{TaskID: passID, CampaignID: &campaignID}); err != nil || !created {
+		t.Fatal(created, err)
+	}
 	f.exec(`INSERT INTO task_dead_letters(task_id,task_type,status,next_retry_at,attempts,max_attempts,payload,last_error)VALUES($1,'campaign','pending',$2,1,5,'{}','test')`, passID, now.Add(-2*time.Minute))
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM task_dead_letters WHERE task_id=$1`, passID)
@@ -41,13 +44,19 @@ func TestLiveMonitoringQueueSettlementAndFailureSemantics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(listed) == 0 || listed[0].TaskID != passID {
-		t.Fatal("replayable campaign pass was missing or an unverified send was chosen")
-	}
+	found := false
 	for _, letter := range listed {
+		found = found || letter.TaskID == passID
+		ct, err := NewTaskRepository(pool).GetCampaignTask(t.Context(), letter.TaskID)
+		if err != nil || ct == nil || ct.DispatchIntent != CampaignDispatchWakeup || ct.ContactID != nil || ct.SequenceID != nil {
+			t.Fatal("candidate lacks positive wakeup intent", ct, err)
+		}
 		if letter.TaskID == id {
 			t.Fatal("legacy send was selected for automatic replay")
 		}
+	}
+	if !found {
+		t.Fatal("replayable campaign pass missing from isolated fixture")
 	}
 	job := uuid.NewString()
 	f.exec(`INSERT INTO scheduled_job_runs(name,last_status,last_finished_at,error_count,run_count,last_error)VALUES($1,'error',$2,999,1000,'private error')`, job, now.Add(-time.Minute))

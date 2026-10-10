@@ -2311,25 +2311,27 @@ func (s *service) ReplayDeadLetter(ctx context.Context, organizationID, deadLett
 // campaign pass; replayed, that a new pass was queued. An error means nothing
 // was queued and the dead letter stays for another try.
 func (s *service) replayCampaignPass(ctx context.Context, task *repository.Task) (replayed, handled bool, err error) {
-	if task == nil || task.TaskType != "campaign" {
+	if task == nil || task.TaskType != "campaign" || task.Status != "dead_lettered" {
 		return false, false, nil
 	}
 	ct, err := s.taskRepo.GetCampaignTask(ctx, task.ID)
 	if err != nil {
 		return false, true, err
 	}
-	if ct == nil || ct.ContactID != nil || ct.SequenceID != nil {
+	if ct == nil || ct.DispatchIntent != repository.CampaignDispatchWakeup || ct.ContactID != nil || ct.SequenceID != nil {
 		return false, false, nil
 	}
 	if ct.CampaignID == nil {
-		// The campaign is gone; there is nothing to replay into.
-		return false, true, nil
+		return false, false, nil
 	}
 	at := time.Now().UTC().Add(10 * time.Second)
 	id := uuid.New()
-	created, err := s.taskRepo.CreateTaskWithLock(ctx,
+	created, err := s.taskRepo.CreateCampaignReplayTask(ctx,
 		&repository.Task{ID: id, TaskType: "campaign", EmailAccountID: task.EmailAccountID, Status: "pending", ScheduledAt: &at},
-		&repository.CampaignTask{TaskID: id, CampaignID: ct.CampaignID})
+		&repository.CampaignTask{TaskID: id, CampaignID: ct.CampaignID}, task.ID)
+	if errors.Is(err, repository.ErrCampaignReplayUnverified) {
+		return false, false, nil
+	}
 	if err != nil {
 		return false, true, err
 	}

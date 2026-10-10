@@ -1317,13 +1317,11 @@ func (r *advancedOutreachRepository) ListRetryableDeadLetters(ctx context.Contex
 		SELECT d.id, d.task_id, d.task_type, d.payload, d.last_error, d.attempts, d.max_attempts, d.status, d.next_retry_at, d.replayed_at, d.created_at, d.updated_at
 		FROM task_dead_letters d
 		JOIN tasks t ON t.id = d.task_id
-		JOIN campaign_tasks ct ON ct.task_id = t.id
 		WHERE d.status = 'pending'
 		  AND d.next_retry_at IS NOT NULL
 		  AND d.next_retry_at <= NOW()
 		  AND d.attempts < d.max_attempts
-		  AND d.task_type = 'campaign' AND t.task_type = 'campaign'
-		  AND ct.contact_id IS NULL AND ct.sequence_id IS NULL
+		  AND ` + safeDLQCampaignPass + `
 		ORDER BY d.next_retry_at ASC
 		LIMIT $1
 	`
