@@ -19,6 +19,7 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/eventbus"
 	"github.com/warmbly/warmbly/internal/infrastructure/storage"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/repository"
 	"golang.org/x/oauth2"
 )
 
@@ -262,6 +263,241 @@ func TestGraphWarmupDeletePreservesAbsentAndLegacyCleanup(t *testing.T) {
 				t.Fatalf("legacy lookup behavior changed: %d", lookups)
 			}
 		})
+	}
+}
+
+type filingFloorAuthority struct {
+	repository.SyncContextRepository
+	floor     *time.Time
+	lost      bool
+	invalid   bool
+	deferrals int
+	deferErr  error
+	requests  []models.WarmupFilingDeferralRequest
+}
+
+func (*filingFloorAuthority) PermittedWarmupActions(_ context.Context, _, _ uuid.UUID, actions []string) ([]string, error) {
+	return actions, nil
+}
+
+func (s *filingFloorAuthority) AdmitWarmupAction(_ context.Context, req models.WarmupActionRequest) (models.WarmupActionDecision, error) {
+	return models.WarmupActionDecision{Actions: req.Actions, FilingPending: true, FilingRecovery: &models.WarmupFilingRecoveryProof{
+		Protocol: models.WarmupFilingRecoveryProtocol, MailboxID: req.MailboxID, WorkerID: req.WorkerID,
+		FilingID: uuid.MustParse(req.FilingID), ProviderRetryAt: s.floor,
+	}}, nil
+}
+
+func (s *filingFloorAuthority) DeferWarmupFiling(_ context.Context, req models.WarmupFilingDeferralRequest) (models.WarmupFilingDeferralDecision, error) {
+	s.deferrals++
+	s.requests = append(s.requests, req)
+	if s.deferErr != nil {
+		return models.WarmupFilingDeferralDecision{}, s.deferErr
+	}
+	s.floor = &req.ProviderRetryAt
+	if s.lost {
+		return models.WarmupFilingDeferralDecision{}, errors.New("successful deferral response lost")
+	}
+	if s.invalid {
+		return models.WarmupFilingDeferralDecision{Persisted: true, FilingRecovery: &models.WarmupFilingRecoveryProof{
+			Protocol: 2, MailboxID: req.MailboxID, WorkerID: req.WorkerID, FilingID: req.FilingID, ProviderRetryAt: s.floor,
+		}}, nil
+	}
+	return models.WarmupFilingDeferralDecision{Persisted: true, FilingRecovery: &models.WarmupFilingRecoveryProof{
+		Protocol: models.WarmupFilingRecoveryProtocol, MailboxID: req.MailboxID, WorkerID: req.WorkerID, FilingID: req.FilingID, ProviderRetryAt: s.floor,
+	}}, nil
+}
+
+func TestGraphFilingProviderFloorSurvivesReoffersAndLostDeferralResponse(t *testing.T) {
+	for _, status := range []int{http.StatusServiceUnavailable, http.StatusTooManyRequests} {
+		for _, stage := range []string{"locate", "move"} {
+			for _, responseLost := range []bool{false, true} {
+				t.Run(http.StatusText(status)+"/"+stage+"/lost="+map[bool]string{false: "no", true: "yes"}[responseLost], func(t *testing.T) {
+					failing, providerCalls := true, 0
+					transport := filingTransport(func(r *http.Request) (*http.Response, error) {
+						body, code := `{}`, http.StatusOK
+						h := make(http.Header)
+						switch {
+						case strings.HasSuffix(r.URL.Path, "/messages"):
+							body = `{"value":[{"id":"resolved"}]}`
+						case strings.HasSuffix(r.URL.Path, "/mailFolders/deleteditems"):
+							body = `{"id":"trash-id"}`
+						case strings.HasSuffix(r.URL.Path, "/mailFolders"):
+							body = `{"value":[{"id":"target-id","displayName":"Warmbly"}]}`
+						case strings.HasSuffix(r.URL.Path, "/messages/resolved"):
+							body = `{"parentFolderId":"inbox-id"}`
+						case strings.HasSuffix(r.URL.Path, "/messages/resolved/move"):
+							body = `{"id":"moved"}`
+						default:
+							t.Fatalf("unexpected Graph request %s", r.URL.Path)
+						}
+						if stage == "locate" && strings.HasSuffix(r.URL.Path, "/messages") || stage == "move" && strings.HasSuffix(r.URL.Path, "/move") {
+							providerCalls++
+							if failing {
+								code, body = status, `{"error":{"code":"Unavailable","message":"synthetic retry floor"}}`
+								h.Set("Retry-After", "600")
+							}
+						}
+						return &http.Response{StatusCode: code, Body: io.NopCloser(strings.NewReader(body)), Header: h, Request: r}, nil
+					})
+					ctx := context.WithValue(t.Context(), oauth2.HTTPClient, &http.Client{Transport: transport})
+					client := &msgraph.Client{}
+					if err := client.Init(ctx, &oauth2.Token{AccessToken: "test", Expiry: time.Now().Add(time.Hour)}, oauth2.Config{}); err != nil {
+						t.Fatal(err)
+					}
+					account, worker := uuid.New(), uuid.New()
+					w, bus := filingWorker(account, &filingIMAP{})
+					w.ID = worker.String()
+					w.mailManager.Emails[account] = &wmail.WMail{GraphData: &wmail.GraphData{Client: client}}
+					authority := &filingFloorAuthority{lost: responseLost}
+					w.SyncContextRepository = authority
+					action := models.WarmupEmailAction{EmailID: account, FilingID: uuid.NewString(), RFCMessageID: "<warmup@example.test>", Actions: []string{models.WarmupActionFile}}
+					before := time.Now()
+					err := w.HandleWarmupAction(ctx, action)
+					if (err != nil) != responseLost || providerCalls != 1 || len(bus.events) != 0 || authority.deferrals != 1 || authority.floor == nil || authority.floor.Before(before.Add(10*time.Minute)) {
+						t.Fatalf("unconfirmed floor acknowledgment or lost native retry deadline: err=%v calls=%d deferrals=%d floor=%v events=%d", err, providerCalls, authority.deferrals, authority.floor, len(bus.events))
+					}
+					// A different process can read only the persisted floor on admission.
+					newWorker, restartedBus := filingWorker(account, &filingIMAP{})
+					newWorker.ID, newWorker.SyncContextRepository = w.ID, authority
+					newWorker.mailManager.Emails[account] = &wmail.WMail{GraphData: &wmail.GraphData{Client: client}}
+					if err := newWorker.HandleWarmupAction(ctx, action); err != nil || providerCalls != 1 || len(restartedBus.events) != 0 || authority.deferrals != 1 {
+						t.Fatalf("restarted reoffer bypassed floor: err=%v calls=%d events=%d", err, providerCalls, len(restartedBus.events))
+					}
+					authority.lost = false
+					failing = false
+					past := time.Now().Add(-time.Second)
+					authority.floor = &past
+					if err := newWorker.HandleWarmupAction(ctx, action); err != nil || providerCalls != 2 || len(restartedBus.events) != 1 || restartedBus.events[0].Type != models.JobEventTypeWarmupFiled {
+						t.Fatalf("expired floor did not resume filing: err=%v calls=%d events=%+v", err, providerCalls, restartedBus.events)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestGraphFilingRejectsUnconfirmedDeferralProof(t *testing.T) {
+	authority := &filingFloorAuthority{invalid: true}
+	w, bus := filingWorker(uuid.New(), &filingIMAP{})
+	w.ID = uuid.NewString()
+	w.SyncContextRepository = authority
+	w.mailManager.Emails = map[uuid.UUID]*wmail.WMail{}
+	account := uuid.New()
+	client := &msgraph.Client{}
+	transport := filingTransport(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusServiceUnavailable, Header: http.Header{"Retry-After": {"600"}}, Body: io.NopCloser(strings.NewReader(`{"error":{"code":"Unavailable"}}`)), Request: r}, nil
+	})
+	ctx := context.WithValue(t.Context(), oauth2.HTTPClient, &http.Client{Transport: transport})
+	if err := client.Init(ctx, &oauth2.Token{AccessToken: "test", Expiry: time.Now().Add(time.Hour)}, oauth2.Config{}); err != nil {
+		t.Fatal(err)
+	}
+	w.mailManager.Emails[account] = &wmail.WMail{GraphData: &wmail.GraphData{Client: client}}
+	action := models.WarmupEmailAction{EmailID: account, FilingID: uuid.NewString(), RFCMessageID: "<warmup@example.test>", Actions: []string{models.WarmupActionFile}}
+	if err := w.HandleWarmupAction(ctx, action); err == nil || authority.deferrals != 1 || len(bus.events) != 0 {
+		t.Fatalf("unsupported deferral claimed durable: err=%v calls=%d events=%v", err, authority.deferrals, bus.events)
+	}
+}
+
+func TestWarmupProviderRetryAtUsesOnlyNativeAbsoluteEvidence(t *testing.T) {
+	observed := time.Date(2026, 10, 11, 14, 0, 0, 123, time.FixedZone("UTC+02", 2*60*60))
+	absolute := observed.Add(40 * time.Minute)
+	failure := *errx.ErrMailServerUnreachable
+	failure.RetryAfter = time.Minute
+	failure.Failure = &errx.SendFailure{ObservedAt: observed, RetryAt: &absolute}
+	if got := warmupProviderRetryAt(&failure); !got.Equal(absolute) || got.Location() != time.UTC {
+		t.Fatalf("relative guidance shortened absolute UTC floor: %s", got)
+	}
+	failure.RetryAfter = time.Hour
+	if got := warmupProviderRetryAt(&failure); !got.Equal(absolute) {
+		t.Fatalf("larger relative guidance replaced native deadline: %s", got)
+	}
+	for _, f := range []*errx.SendFailure{nil, {ObservedAt: observed}} {
+		failure.Failure = f
+		if got := warmupProviderRetryAt(&failure); !got.IsZero() {
+			t.Fatalf("relative-only guidance invented persisted floor: %s", got)
+		}
+	}
+	if got := warmupProviderRetryAt(errors.New("unclassified provider failure")); !got.IsZero() {
+		t.Fatalf("unknown error invented provider floor: %s", got)
+	}
+}
+
+func TestWarmupFilingRelativeRetryAfterDoesNotPersistFloor(t *testing.T) {
+	for _, observed := range []time.Time{{}, time.Now().UTC()} {
+		account := uuid.New()
+		failure := *errx.ErrMailServerUnreachable
+		failure.RetryAfter = 10 * time.Minute
+		if !observed.IsZero() {
+			failure.Failure = &errx.SendFailure{ObservedAt: observed}
+		}
+		w, bus := filingWorker(account, &filingIMAP{found: map[string]uint32{"INBOX": 11}, err: &failure})
+		w.ID = uuid.NewString()
+		authority := &filingFloorAuthority{}
+		w.SyncContextRepository = authority
+		action := models.WarmupEmailAction{EmailID: account, FilingID: uuid.NewString(), RFCMessageID: "<relative@example.test>", Actions: []string{models.WarmupActionFile}}
+		if err := w.HandleWarmupAction(t.Context(), action); err != nil || authority.deferrals != 0 || authority.floor != nil || len(bus.events) != 0 {
+			t.Fatalf("relative guidance became durable floor: err=%v deferrals=%d floor=%v events=%v", err, authority.deferrals, authority.floor, bus.events)
+		}
+		if _, found := w.pendingFilingDeferrals.Load(uuid.MustParse(action.FilingID)); found {
+			t.Fatal("relative-only guidance retained a pending floor")
+		}
+	}
+}
+
+func TestGraphFilingLegacyRetryPolicyIsUnchangedWithProviderFloor(t *testing.T) {
+	for _, pending := range []bool{false, true} {
+		for _, attempt := range []int{warmupDeleteRedeliveries - 1, warmupDeleteRedeliveries} {
+			transport := filingTransport(func(r *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: http.StatusServiceUnavailable, Header: http.Header{"Retry-After": {"600"}}, Body: io.NopCloser(strings.NewReader(`{"error":{"code":"Unavailable"}}`)), Request: r}, nil
+			})
+			ctx := context.WithValue(t.Context(), oauth2.HTTPClient, &http.Client{Transport: transport})
+			client := &msgraph.Client{}
+			if err := client.Init(ctx, &oauth2.Token{AccessToken: "test", Expiry: time.Now().Add(time.Hour)}, oauth2.Config{}); err != nil {
+				t.Fatal(err)
+			}
+			account := uuid.New()
+			w, bus := filingWorker(account, &filingIMAP{})
+			w.ID, w.SyncContextRepository = uuid.NewString(), &warmupFilingAuthorityStub{pending: pending}
+			w.mailManager.Emails[account] = &wmail.WMail{GraphData: &wmail.GraphData{Client: client}}
+			ctx = context.WithValue(ctx, deliveryKey{}, delivery{attempt: attempt, redelivers: true})
+			err := w.HandleWarmupAction(ctx, models.WarmupEmailAction{EmailID: account, FilingID: uuid.NewString(), RFCMessageID: "<legacy@example.test>", Actions: []string{models.WarmupActionFile}})
+			if (err != nil) != (!pending && attempt < warmupDeleteRedeliveries) || len(bus.events) != 0 {
+				t.Fatalf("legacy policy changed: pending=%v attempt=%d err=%v events=%v", pending, attempt, err, bus.events)
+			}
+		}
+	}
+}
+
+func TestGraphFilingRetriesUnconfirmedPersistenceWithoutProviderReoffer(t *testing.T) {
+	providerCalls := 0
+	transport := filingTransport(func(r *http.Request) (*http.Response, error) {
+		providerCalls++
+		return &http.Response{StatusCode: http.StatusServiceUnavailable, Header: http.Header{"Retry-After": {"600"}}, Body: io.NopCloser(strings.NewReader(`{"error":{"code":"Unavailable"}}`)), Request: r}, nil
+	})
+	ctx := context.WithValue(t.Context(), oauth2.HTTPClient, &http.Client{Transport: transport})
+	client := &msgraph.Client{}
+	if err := client.Init(ctx, &oauth2.Token{AccessToken: "test", Expiry: time.Now().Add(time.Hour)}, oauth2.Config{}); err != nil {
+		t.Fatal(err)
+	}
+	account := uuid.New()
+	w, bus := filingWorker(account, &filingIMAP{})
+	w.ID = uuid.NewString()
+	w.mailManager.Emails[account] = &wmail.WMail{GraphData: &wmail.GraphData{Client: client}}
+	backendFailure := errors.New("floor store unavailable")
+	authority := &filingFloorAuthority{deferErr: backendFailure}
+	w.SyncContextRepository = authority
+	action := models.WarmupEmailAction{EmailID: account, FilingID: uuid.NewString(), RFCMessageID: "<warmup@example.test>", Actions: []string{models.WarmupActionFile}}
+	for range 2 {
+		if err := w.HandleWarmupAction(ctx, action); !errors.Is(err, backendFailure) {
+			t.Fatalf("failed persistence acknowledged: %v", err)
+		}
+	}
+	if providerCalls != 1 || authority.deferrals != 2 || len(bus.events) != 0 {
+		t.Fatalf("unconfirmed persistence retried provider early: provider=%d deferrals=%d events=%v", providerCalls, authority.deferrals, bus.events)
+	}
+	authority.deferErr = nil
+	if err := w.HandleWarmupAction(ctx, action); err != nil || providerCalls != 1 || authority.deferrals != 3 || len(bus.events) != 0 || !authority.requests[0].ProviderRetryAt.Equal(authority.requests[2].ProviderRetryAt) {
+		t.Fatalf("retry did not retain original error deadline: err=%v provider=%d deferrals=%d", err, providerCalls, authority.deferrals)
 	}
 }
 
