@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -23,6 +24,33 @@ import (
 type internalArrivalMap struct {
 	calls, legacyCalls int
 	err                error
+}
+
+func TestInternalArrivalOwnershipLossIsNotDurableAdmission(t *testing.T) {
+	mailbox := uuid.NewString()
+	for _, tc := range []struct {
+		name, mailbox, marker string
+		err                   error
+	}{
+		{"ownership-loss", mailbox, mailbox, fmt.Errorf("wrapped: %w", repository.ErrArrivalMailboxOwnershipLost)},
+		{"database-failure", mailbox, "", &pgconn.PgError{Code: "08006", Message: "private payload"}},
+		{"unrelated-missing-row", mailbox, "", pgx.ErrNoRows},
+		{"unconfirmed", mailbox, "", repository.ErrArrivalAdmissionUnconfirmed},
+		{"invalid-id", "invalid", "", repository.ErrArrivalMailboxOwnershipLost},
+		{"nil-id", uuid.Nil.String(), "", repository.ErrArrivalMailboxOwnershipLost},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &internalArrivalMap{err: tc.err}
+			h := &Handler{EmailMessageMap: m}
+			r := gin.New()
+			r.POST("/arrival", h.InternalAdmitEmailArrival)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/arrival", strings.NewReader(fmt.Sprintf(`{"map":{"email_id":%q},"pending":{}}`, tc.mailbox))))
+			if m.calls != 1 || w.Code != 503 || w.Body.Len() != 0 || w.Header().Get("X-Warmbly-Arrival-Durable") != "" || w.Header().Get("X-Warmbly-Arrival-Ownership-Lost") != tc.marker {
+				t.Fatal("failure acknowledged or ownership marker inferred without authority")
+			}
+		})
+	}
 }
 
 func TestInternalArrivalLogsOnlySafeDiagnosticsWithoutAcknowledging(t *testing.T) {

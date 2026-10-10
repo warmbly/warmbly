@@ -115,6 +115,13 @@ func (r *httpEmailMessageMapRepository) AdmitArrival(ctx context.Context, data E
 	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
 		return ErrArrivalOutboxUnsupported
 	}
+	if resp.StatusCode == http.StatusServiceUnavailable && resp.Header.Get("X-Warmbly-Arrival-Durable") == "" &&
+		resp.Request != nil && resp.Request.URL.String() == req.URL.String() && resp.Request.Method == req.Method {
+		markers := resp.Header.Values("X-Warmbly-Arrival-Ownership-Lost")
+		if mailbox, parseErr := uuid.Parse(data.EmailID); parseErr == nil && mailbox != uuid.Nil && len(markers) == 1 && markers[0] == mailbox.String() {
+			return ErrArrivalMailboxOwnershipLost
+		}
+	}
 	if resp.StatusCode != http.StatusNoContent || resp.Header.Get("X-Warmbly-Arrival-Durable") != "1" {
 		return fmt.Errorf("arrival admission not confirmed: status %d", resp.StatusCode)
 	}

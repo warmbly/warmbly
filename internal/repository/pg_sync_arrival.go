@@ -47,7 +47,7 @@ func (r *pgEmailMessageMapRepository) AdmitArrival(ctx context.Context, data Ema
 	var org uuid.UUID
 	err = r.db.QueryRow(ctx, `SELECT organization_id FROM email_accounts WHERE id=$1 AND user_id=$2`, email, user).Scan(&org)
 	if err != nil {
-		return arrivalFailure("mailbox_ownership", err)
+		return arrivalOwnershipFailure("mailbox_ownership", err)
 	}
 	sealed, err := r.cipher.Cipher(ctx, org)
 	if err != nil {
@@ -69,7 +69,7 @@ func (r *pgEmailMessageMapRepository) AdmitArrival(ctx context.Context, data Ema
 	// Recheck and lock ownership after crypto, without nesting key-store I/O in the transaction.
 	var owned uuid.UUID
 	if err = tx.QueryRow(ctx, `SELECT id FROM email_accounts WHERE id=$1 AND user_id=$2 AND organization_id=$3 FOR SHARE`, email, user, org).Scan(&owned); err != nil {
-		return arrivalFailure("mailbox_ownership_recheck", err)
+		return arrivalOwnershipFailure("mailbox_ownership_recheck", err)
 	}
 	// A retry after an ambiguous response adopts the first canonical identity.
 	inserted, err := tx.Exec(ctx, `INSERT INTO email_message_map(user_id,email_id,message_id,id,thread_id)
@@ -100,6 +100,13 @@ func (r *pgEmailMessageMapRepository) AdmitArrival(ctx context.Context, data Ema
 		return arrivalFailure("database_commit", err)
 	}
 	return nil
+}
+
+func arrivalOwnershipFailure(stage string, err error) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		err = errors.Join(ErrArrivalMailboxOwnershipLost, err)
+	}
+	return arrivalFailure(stage, err)
 }
 
 func (r *pgEmailMessageMapRepository) ArrivalBacklog(ctx context.Context) (ArrivalBacklog, error) {

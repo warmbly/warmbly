@@ -25,6 +25,7 @@ type EmailMessageMapRepository interface {
 
 var ErrArrivalOutboxUnsupported = errors.New("durable arrival admission unavailable; upgrade backend and consumer first")
 var ErrArrivalAdmissionUnconfirmed = errors.New("existing provider mapping has no verifiable pending admission")
+var ErrArrivalMailboxOwnershipLost = errors.New("arrival mailbox is no longer owned by this user")
 
 // ArrivalAdmission is an optional internal protocol, separate from legacy map writes.
 type ArrivalAdmission interface {

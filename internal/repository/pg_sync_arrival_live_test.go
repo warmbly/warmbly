@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
@@ -23,6 +24,52 @@ func arrivalLiveCipher(t *testing.T, d *db.DB) cipher.CipherService {
 		t.Fatal(err)
 	}
 	return cipher.NewService(k, nil, encryptedkeys.NewPostgres(d))
+}
+
+type arrivalRecheckCipher struct {
+	cipher.CipherService
+	after func()
+	err   error
+}
+
+func (c arrivalRecheckCipher) Cipher(ctx context.Context, org uuid.UUID) (*cipher.Cipher, error) {
+	if c.err != nil {
+		return nil, c.err
+	}
+	sealed, err := c.CipherService.Cipher(ctx, org)
+	if err == nil && c.after != nil {
+		c.after()
+	}
+	return sealed, err
+}
+
+func TestLiveSyncArrivalOwnershipRecheckRetiresOnlyAuthoritativeAbsence(t *testing.T) {
+	d := liveUniboxFolderDB(t)
+	f := newUniboxFolderFixture(t, d.Pool)
+	data, pending := arrivalLivePayload(f, "ownership-recheck")
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	r := NewDurableEmailMessageMapRepository(d, arrivalLiveCipher(t, d))
+	if err := r.AdmitArrival(ctx, data, pending); !errors.Is(err, context.Canceled) || errors.Is(err, ErrArrivalMailboxOwnershipLost) {
+		t.Fatalf("canceled ownership lookup retired mailbox: %v", err)
+	}
+	r = NewDurableEmailMessageMapRepository(d, arrivalRecheckCipher{err: pgx.ErrNoRows})
+	if err := r.AdmitArrival(t.Context(), data, pending); !errors.Is(err, pgx.ErrNoRows) || errors.Is(err, ErrArrivalMailboxOwnershipLost) {
+		t.Fatalf("missing organization key retired mailbox: %v", err)
+	}
+	r = NewDurableEmailMessageMapRepository(d, arrivalRecheckCipher{CipherService: arrivalLiveCipher(t, d), after: func() {
+		if _, err := d.Exec(t.Context(), `DELETE FROM email_accounts WHERE id=$1`, f.mailbox); err != nil {
+			t.Fatal(err)
+		}
+	}})
+	err := r.AdmitArrival(t.Context(), data, pending)
+	stage, _ := ArrivalAdmissionDiagnostic(err)
+	if !errors.Is(err, ErrArrivalMailboxOwnershipLost) || !errors.Is(err, pgx.ErrNoRows) || stage != "mailbox_ownership_recheck" {
+		t.Fatalf("ownership recheck did not retire removed mailbox: %v stage=%s", err, stage)
+	}
+	if known, err := r.Get(t.Context(), f.user, f.mailbox, data.MessageID); err != nil || known != nil {
+		t.Fatal("failed ownership recheck created a mapping")
+	}
 }
 
 func arrivalLivePayload(f *uniboxFolderFixture, key string) (EmailMessageData, *PendingArrival) {
@@ -217,7 +264,7 @@ func TestLiveSyncArrivalReportStagesOwnershipAndLegacyMaps(t *testing.T) {
 	p.Arrival.UserID = wrong
 	p.Bounce.UserID = wrong
 	p.Complaint.UserID = wrong
-	if err := r.AdmitArrival(ctx, data, p); err == nil {
+	if err := r.AdmitArrival(ctx, data, p); !errors.Is(err, ErrArrivalMailboxOwnershipLost) || !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatal("another user admitted mail")
 	}
 	data.UserID = f.user.String()
@@ -292,6 +339,8 @@ func TestLiveSyncArrivalAtomicRollbackDeletedMailboxAndLease(t *testing.T) {
 	})
 	if err := r.AdmitArrival(ctx, data, p); err == nil {
 		t.Fatal("expected outbox insertion failure")
+	} else if errors.Is(err, ErrArrivalMailboxOwnershipLost) {
+		t.Fatal("database failure retired an owned mailbox")
 	}
 	if known, err := r.Get(ctx, f.user, f.mailbox, data.MessageID); err != nil || known != nil {
 		t.Fatal("map escaped rolled-back admission")
@@ -339,6 +388,9 @@ func TestLiveSyncArrivalAtomicRollbackDeletedMailboxAndLease(t *testing.T) {
 	}
 	if _, err := d.Exec(ctx, `DELETE FROM email_accounts WHERE id=$1`, f.mailbox); err != nil {
 		t.Fatal(err)
+	}
+	if err := r.AdmitArrival(ctx, data, p); !errors.Is(err, ErrArrivalMailboxOwnershipLost) || !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("deleted mailbox did not fail authoritative ownership: %v", err)
 	}
 	if pending, err := r.HasPendingArrival(ctx, f.user, f.mailbox, p.Arrival.Message.ID); err != nil || pending {
 		t.Fatal("deleted mailbox retained pending arrival")
