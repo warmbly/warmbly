@@ -2288,26 +2288,15 @@ func (s *service) ReplayDeadLetter(ctx context.Context, organizationID, deadLett
 	if task == nil {
 		return errx.ErrNotFound
 	}
-	if _, handled, rerr := s.replayCampaignPass(ctx, task); handled {
-		if rerr != nil {
-			return toErrx(rerr)
-		}
-		if err := s.repo.MarkTaskDeadLetterReplayed(ctx, deadLetterID); err != nil {
-			return toErrx(err)
-		}
-		return nil
+	if dlq.TaskType != "campaign" || task.TaskType != "campaign" {
+		return errx.New(errx.Conflict, "send dead letters require authoritative outcome evidence and cannot be replayed")
 	}
-
-	scheduleAt := time.Now().UTC().Add(10 * time.Second)
-	cloudTaskName, err := s.tasksClient.CreateTask(ctx, &proto.ProcessTask{TaskId: task.ID.String()}, scheduleAt)
-	if err != nil {
-		return toErrx(err)
+	_, handled, rerr := s.replayCampaignPass(ctx, task)
+	if rerr != nil {
+		return toErrx(rerr)
 	}
-	if err := s.taskRepo.UpdateTaskScheduledAt(ctx, task.ID, scheduleAt, cloudTaskName); err != nil {
-		return toErrx(err)
-	}
-	if err := s.taskRepo.UpdateTaskStatus(ctx, task.ID, "pending"); err != nil {
-		return toErrx(err)
+	if !handled {
+		return errx.New(errx.Conflict, "only non-sending campaign passes can be replayed")
 	}
 	if err := s.repo.MarkTaskDeadLetterReplayed(ctx, deadLetterID); err != nil {
 		return toErrx(err)
@@ -2329,7 +2318,10 @@ func (s *service) replayCampaignPass(ctx context.Context, task *repository.Task)
 	if err != nil {
 		return false, true, err
 	}
-	if ct == nil || ct.CampaignID == nil {
+	if ct == nil || ct.ContactID != nil || ct.SequenceID != nil {
+		return false, false, nil
+	}
+	if ct.CampaignID == nil {
 		// The campaign is gone; there is nothing to replay into.
 		return false, true, nil
 	}
@@ -2680,10 +2672,14 @@ func (s *service) ProcessRetryableDeadLetters(ctx context.Context) (int, *errx.E
 
 	retried := 0
 	for _, dlq := range items {
+		if dlq.TaskType != "campaign" {
+			continue
+		}
 		task, err := s.taskRepo.GetTask(ctx, dlq.TaskID)
-		if err != nil || task == nil {
-			// Mark as exhausted if the task no longer exists
-			_ = s.repo.MarkTaskDeadLetterReplayed(ctx, dlq.ID)
+		if err != nil {
+			return retried, toErrx(err)
+		}
+		if task == nil || task.TaskType != "campaign" {
 			continue
 		}
 
@@ -2700,30 +2696,6 @@ func (s *service) ProcessRetryableDeadLetters(ctx context.Context) (int, *errx.E
 			_ = s.repo.MarkTaskDeadLetterReplayed(ctx, dlq.ID)
 			continue
 		}
-
-		// Check if attempts exceeded
-		if dlq.Attempts >= dlq.MaxAttempts {
-			_ = s.repo.IncrementDeadLetterAttempt(ctx, dlq.ID, nil)
-			continue
-		}
-
-		// Schedule retry via Cloud Tasks
-		scheduleAt := time.Now().UTC().Add(10 * time.Second)
-		cloudTaskName, err := s.tasksClient.CreateTask(ctx, &proto.ProcessTask{TaskId: task.ID.String()}, scheduleAt)
-		if err != nil {
-			// Compute next retry with exponential backoff
-			backoff := time.Duration(30*(1<<uint(dlq.Attempts+1))) * time.Second
-			nextRetry := time.Now().UTC().Add(backoff)
-			_ = s.repo.IncrementDeadLetterAttempt(ctx, dlq.ID, &nextRetry)
-			continue
-		}
-
-		if err := s.taskRepo.UpdateTaskScheduledAt(ctx, task.ID, scheduleAt, cloudTaskName); err != nil {
-			continue
-		}
-		_ = s.taskRepo.UpdateTaskStatus(ctx, task.ID, "pending")
-		_ = s.repo.MarkTaskDeadLetterReplayed(ctx, dlq.ID)
-		retried++
 	}
 
 	return retried, nil

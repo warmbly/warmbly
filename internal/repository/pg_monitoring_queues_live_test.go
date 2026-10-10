@@ -30,6 +30,25 @@ func TestLiveMonitoringQueueSettlementAndFailureSemantics(t *testing.T) {
 		f.exec(`INSERT INTO task_dead_letters(task_id,task_type,status,next_retry_at,attempts,max_attempts,payload,last_error)VALUES($1,'email',$2,$3,$4,5,'{"private":"body"}','private cursor')`, id, row.status, row.at, row.attempts)
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM task_dead_letters WHERE task_id=$1`, id) })
+	passID := uuid.New()
+	f.exec(`INSERT INTO tasks(id,task_type,email_account_id,status,message_id)VALUES($1,'campaign',$2,'dead_lettered','')`, passID, f.account)
+	f.exec(`INSERT INTO campaign_tasks(task_id) VALUES($1)`, passID)
+	f.exec(`INSERT INTO task_dead_letters(task_id,task_type,status,next_retry_at,attempts,max_attempts,payload,last_error)VALUES($1,'campaign','pending',$2,1,5,'{}','test')`, passID, now.Add(-2*time.Minute))
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM task_dead_letters WHERE task_id=$1`, passID)
+	})
+	listed, err := NewAdvancedOutreachRepository(pool).ListRetryableDeadLetters(t.Context(), 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) == 0 || listed[0].TaskID != passID {
+		t.Fatal("replayable campaign pass was missing or an unverified send was chosen")
+	}
+	for _, letter := range listed {
+		if letter.TaskID == id {
+			t.Fatal("legacy send was selected for automatic replay")
+		}
+	}
 	job := uuid.NewString()
 	f.exec(`INSERT INTO scheduled_job_runs(name,last_status,last_finished_at,error_count,run_count,last_error)VALUES($1,'error',$2,999,1000,'private error')`, job, now.Add(-time.Minute))
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM scheduled_job_runs WHERE name=$1`, job) })
@@ -50,7 +69,7 @@ func TestLiveMonitoringQueueSettlementAndFailureSemantics(t *testing.T) {
 	}
 	f.exec(`INSERT INTO send_result_effects(task_id,effect_key,organization_id,kind,payload,attempts)VALUES($1,'monitoring',$2,'notification','{"private":"body"}',2)`, id, f.org)
 	for source, deltas := range map[string]map[string]int64{
-		"jobs": {"job_error_recent": 1}, "dead_letters": {"dlq_due": 1, "dlq_wait": 1, "dlq_exhausted": 1, "dlq_replayed": 1}, "webhooks": {"webhook_due": 1, "webhook_wait": 1, "webhook_stale_claim": 1, "webhook_abandoned_24h": 1, "webhook_endpoint_persistent": 1}, "notifications": {"notification_aging": 1, "notification_stale": 1, "notification_settled_24h": 1, "notification_exhausted": 1}, "result_effects": {"effects_pending": 1, "effects_repeated": 1},
+		"jobs": {"job_error_recent": 1}, "dead_letters": {"dlq_due": 1, "dlq_unverified": 2, "dlq_exhausted": 1, "dlq_replayed": 1}, "webhooks": {"webhook_due": 1, "webhook_wait": 1, "webhook_stale_claim": 1, "webhook_abandoned_24h": 1, "webhook_endpoint_persistent": 1}, "notifications": {"notification_aging": 1, "notification_stale": 1, "notification_settled_24h": 1, "notification_exhausted": 1}, "result_effects": {"effects_pending": 1, "effects_repeated": 1},
 	} {
 		got := collectMonitoring(t, NewMonitoringRepository(monitoringReadOnlyPool(t, pool)), source, now)
 		for id, delta := range deltas {
@@ -62,6 +81,10 @@ func TestLiveMonitoringQueueSettlementAndFailureSemantics(t *testing.T) {
 		}
 	}
 	settled := measuredMonitoring(t, collectMonitoring(t, r, "notifications", now), "notification_settled_24h")
+	dlq := collectMonitoring(t, r, "dead_letters", now)
+	if *measuredMonitoring(t, dlq, "dlq_wait").Count != *measuredMonitoring(t, baseline["dead_letters"], "dlq_wait").Count {
+		t.Fatal("unverified send was reported as eligible for replay")
+	}
 	if settled.Condition == models.MonitoringHealthy {
 		t.Fatal("notification settlement claimed delivery")
 	}

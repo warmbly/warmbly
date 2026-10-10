@@ -172,7 +172,7 @@ warmblyctl admin recovery restart-backfill --id <mailbox-uuid> --server laptop \
 
 Substitute the same real canonical UUID in both places. Clearing a provider throttle can resume provider work; restarting backfill resets the existing sync backfill state. Neither action establishes sending authority.
 
-Dead-letter replay is never part of diagnosis. Inspect the task, mailbox, provider receipts and uncertain-send protections first. Replay additionally requires a separate risk acknowledgement:
+Dead-letter replay is never part of diagnosis. Only non-sending campaign wakeup passes can be replayed; send-capable dead letters remain pending until their outcome is independently reconciled through normal recovery. Inspect the task, mailbox, provider receipts and uncertain-send protections first. Replay additionally requires a separate risk acknowledgement:
 
 ```bash
 warmblyctl admin recovery replay --id <dead-letter-uuid> --server laptop \

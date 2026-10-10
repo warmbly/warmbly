@@ -324,7 +324,7 @@ Returns a `data` array of dead-letter records. This endpoint is not cursor-pagin
 
 `POST /tasks/dlq/:id/replay`
 
-Re-dispatches a dead-lettered task. Because a replay can transmit real mail, this requires the send permission rather than plain write access.
+Replays only a non-sending campaign wakeup pass, using its campaign lock. Send-capable tasks, including legacy warmup and campaign contact sends, return `409 Conflict` and remain in the dead-letter queue: a retry date or missing send marker is not proof that the provider did not send. This route requires the send permission rather than plain write access.
 
 Auth: **Scope** `SEND_CAMPAIGNS` · **Org permission** `send_campaigns`
 
