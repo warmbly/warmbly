@@ -16,11 +16,17 @@ import (
 type repairInbox struct {
 	repository.UniboxRepository
 	events []models.JobEventNewEmail
+	pages  []repository.CampaignReplyRepairPage
 	since  time.Time
 }
 
-func (r *repairInbox) ListUnprocessedCampaignReplies(_ context.Context, since time.Time, afterID uuid.UUID, limit int) ([]models.JobEventNewEmail, error) {
+func (r *repairInbox) ListUnprocessedCampaignReplies(_ context.Context, since time.Time, afterID uuid.UUID, limit int) (repository.CampaignReplyRepairPage, error) {
 	r.since = since
+	if len(r.pages) > 0 {
+		page := r.pages[0]
+		r.pages = r.pages[1:]
+		return page, nil
+	}
 	// Ordered by id like the query, so the cursor is deterministic.
 	var out []models.JobEventNewEmail
 	for _, e := range r.events {
@@ -29,7 +35,12 @@ func (r *repairInbox) ListUnprocessedCampaignReplies(_ context.Context, since ti
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Message.ID.String() < out[j].Message.ID.String() })
-	return out[:min(len(out), limit)], nil
+	out = out[:min(len(out), limit)]
+	page := repository.CampaignReplyRepairPage{Events: out, NextCursor: afterID, Done: len(out) < limit}
+	if len(out) > 0 {
+		page.NextCursor = out[len(out)-1].Message.ID
+	}
+	return page, nil
 }
 
 type repairAdvanced struct {
@@ -86,4 +97,25 @@ func TestIncomingReplyRepairNeedsBothCollaborators(t *testing.T) {
 	(&JobsService{}).StartIncomingReplyRepair(context.Background())
 	(&JobsService{UniboxRepository: &repairInbox{}}).StartIncomingReplyRepair(context.Background())
 	_ = errors.New
+}
+
+func TestIncomingReplyRepairKeepsScanningWhenAFullRawPageHasNoMatches(t *testing.T) {
+	first := uuid.New()
+	second := uuid.New()
+	event := models.JobEventNewEmail{Message: &models.EmailMessageStoreData{ID: second, EmailID: uuid.New()}}
+	inbox := &repairInbox{pages: []repository.CampaignReplyRepairPage{
+		{NextCursor: first},
+		{Events: []models.JobEventNewEmail{event}, NextCursor: second, Done: true},
+	}}
+	adv := &repairAdvanced{}
+	s := &JobsService{UniboxRepository: inbox, AdvancedService: adv}
+
+	next, done, err := s.repairIncomingReplyBatch(context.Background(), uuid.Nil)
+	if err != nil || done || next != first || len(adv.seen) != 0 {
+		t.Fatalf("first raw page: next=%v done=%t seen=%d err=%v", next, done, len(adv.seen), err)
+	}
+	next, done, err = s.repairIncomingReplyBatch(context.Background(), next)
+	if err != nil || !done || next != second || len(adv.seen) != 1 || adv.seen[0] != second {
+		t.Fatalf("second raw page: next=%v done=%t seen=%v err=%v", next, done, adv.seen, err)
+	}
 }

@@ -47,11 +47,11 @@ func (s *JobsService) StartIncomingReplyRepair(ctx context.Context) {
 
 func (s *JobsService) repairIncomingReplyBatch(ctx context.Context, afterID uuid.UUID) (uuid.UUID, bool, error) {
 	const batchSize = 100
-	events, err := s.UniboxRepository.ListUnprocessedCampaignReplies(ctx, time.Now().Add(-replyRepairWindow), afterID, batchSize)
+	page, err := s.UniboxRepository.ListUnprocessedCampaignReplies(ctx, time.Now().Add(-replyRepairWindow), afterID, batchSize)
 	if err != nil {
 		return afterID, false, err
 	}
-	for _, e := range events {
+	for _, e := range page.Events {
 		if e.Message == nil {
 			continue
 		}
@@ -63,9 +63,8 @@ func (s *JobsService) repairIncomingReplyBatch(ctx context.Context, afterID uuid
 				Str("message_id", e.Message.MessageID).
 				Msg("incoming reply repair: reply processing failed")
 		}
-		afterID = e.Message.ID
 	}
-	return afterID, len(events) < batchSize, nil
+	return page.NextCursor, page.Done, nil
 }
 
 // StartReplyOptOutRecheck re-reads, once, every suppression a reply opt-out
