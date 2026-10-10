@@ -120,17 +120,48 @@ worker_sample_auth_errors_1h worker_sample_rate_errors_1h worker_sample_sends_1h
 domain_blocked domain_failing domain_future_clock domain_passing_fresh domain_stale domain_unknown
 loading_old loading_persistent loading_recent workers_missing_heartbeat worker_missing_heartbeat
 send_budget_wait send_daily_limit_wait send_schedule_reason tracking_queue
-broker_queue
+broker_queue committed_lag members
 `)
 
 var remoteMonitoringUnits = remoteWordSet(`
 arrivals deliveries effects endpoints jobs mailboxes messages records reports reservations
-rows tasks windows workers
+rows tasks windows workers members
 `)
 
 var remoteMonitoringReasons = remoteWordSet(`
 scope_limit sample_limit query_failed schema_absent no_registered_scopes
+dependency_missing resource_absent permission_denied timeout collection_failed
+unsupported no_recent_evidence
 `)
+
+func safeRemoteMonitoringString(key, value string) string {
+	if value == "" {
+		return ""
+	}
+	switch key {
+	case "id":
+		if remoteMonitoringIDs[value] {
+			return value
+		}
+	case "unit":
+		if remoteMonitoringUnits[value] {
+			return value
+		}
+	case "severity":
+		if value == "info" || value == "warning" || value == "critical" {
+			return value
+		}
+	case "reason":
+		if remoteMonitoringReasons[value] {
+			return value
+		}
+	case "version":
+		if value == "1" {
+			return value
+		}
+	}
+	return "[REDACTED]"
+}
 
 func decodeRemoteJSON(payload []byte) (any, error) {
 	dec := json.NewDecoder(bytes.NewReader(payload))
@@ -203,28 +234,6 @@ func safeRemoteString(key, value string) any {
 		return ""
 	}
 
-	switch key {
-	case "id":
-		if remoteMonitoringIDs[value] {
-			return value
-		}
-	case "unit":
-		if remoteMonitoringUnits[value] {
-			return value
-		}
-	case "severity":
-		if value == "warning" || value == "critical" {
-			return value
-		}
-	case "reason":
-		if remoteMonitoringReasons[value] {
-			return value
-		}
-	case "version":
-		if value == "1" {
-			return value
-		}
-	}
 	if (key == "cursor" || key == "next_cursor" || key == "prev_cursor") && len(value) <= 512 {
 		if _, err := paging.DecodeOffsetCursor(value); err == nil {
 			return value
@@ -271,6 +280,15 @@ func redactRemoteJSON(key string, value any) any {
 		for name, item := range v {
 			if !remoteOutputFields[name] {
 				redacted++
+				continue
+			}
+			if (key == "sources" || key == "metrics") && (name == "id" || name == "unit" || name == "severity" || name == "reason") ||
+				key == "" && name == "version" && v["sources"] != nil {
+				if value, ok := item.(string); ok {
+					out[name] = safeRemoteMonitoringString(name, value)
+				} else {
+					out[name] = "[REDACTED]"
+				}
 				continue
 			}
 			out[name] = redactRemoteJSON(name, item)

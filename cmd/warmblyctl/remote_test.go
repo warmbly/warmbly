@@ -480,7 +480,7 @@ func TestRemoteRedactionPreservesExplicitUnavailableGenericErrorCoverage(t *test
 }
 
 func TestRemoteRedactionPreservesTypedMonitoring(t *testing.T) {
-	value, err := decodeRemoteJSON([]byte(`{"version":"1","coverage":"partial","sources":[{"id":"sends","reason":"scope_limit","metrics":[{"id":"failed_results_1h","unit":"tasks","severity":"warning","condition":"recent_failure","count":7,"title":"fixture-private-title","note":"fixture-private-note"},{"id":"unknown_results","unit":"tasks","severity":"warning","condition":"recovery_unverified","count":null},{"id":"future_metric_fixture","unit":"future_unit_fixture","severity":"future_severity_fixture","reason":"fixture-private-reason"}]}],"payload":{"token":"fixture-private-token"}}`))
+	value, err := decodeRemoteJSON([]byte(`{"version":"1","coverage":"partial","sources":[{"id":"sends","reason":"scope_limit","metrics":[{"id":"failed_results_1h","unit":"tasks","severity":"warning","condition":"recent_failure","count":7,"title":"fixture-private-title","note":"fixture-private-note"},{"id":"unknown_results","unit":"tasks","severity":"warning","condition":"recovery_unverified","count":null},{"id":"fresh","unit":"fresh","severity":"fresh","reason":"fresh"},{"id":"future_metric_fixture","unit":"future_unit_fixture","severity":"future_severity_fixture","reason":"fixture-private-reason"}]},{"id":"fresh","reason":"fresh"}],"payload":{"token":"fixture-private-token"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -495,10 +495,15 @@ func TestRemoteRedactionPreservesTypedMonitoring(t *testing.T) {
 	if unknown["id"] != "unknown_results" || unknown["count"] != nil {
 		t.Fatal("unmeasured metric converted to zero or its identity discarded")
 	}
-	for _, field := range []string{"id", "unit", "severity", "reason"} {
-		if metrics[2].(map[string]any)[field] != "[REDACTED]" {
-			t.Fatalf("unknown %s exposed", field)
+	for _, candidate := range metrics[2:] {
+		for _, field := range []string{"id", "unit", "severity", "reason"} {
+			if candidate.(map[string]any)[field] != "[REDACTED]" {
+				t.Fatalf("unknown %s exposed", field)
+			}
 		}
+	}
+	if unknownSource := got["sources"].([]any)[1].(map[string]any); unknownSource["id"] != "[REDACTED]" || unknownSource["reason"] != "[REDACTED]" {
+		t.Fatal("unknown source identity or reason exposed")
 	}
 	var output bytes.Buffer
 	if err := writeRemoteJSON(&output, got); err != nil {
@@ -511,6 +516,12 @@ func TestRemoteRedactionPreservesTypedMonitoring(t *testing.T) {
 		if safeRemoteString("name", value) != "[REDACTED]" {
 			t.Fatalf("monitoring value %q accepted outside its typed field", value)
 		}
+	}
+	if got := redactRemoteJSON("", map[string]any{"version": "fresh", "sources": []any{}}).(map[string]any); got["version"] != "[REDACTED]" {
+		t.Fatal("unknown monitoring schema version escaped")
+	}
+	if got := redactRemoteJSON("", map[string]any{"status": "fresh", "id": "pending"}).(map[string]any); got["status"] != "fresh" || got["id"] != "pending" {
+		t.Fatal("other admin projections lost their legacy enum treatment")
 	}
 }
 
@@ -536,7 +547,7 @@ func TestRemoteMonitoringProjectionMatchesCompiledCollectors(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := safeRemoteString(key, value); got != value {
+			if got := safeRemoteMonitoringString(key, value); got != value {
 				t.Errorf("%s: compiled monitoring %s=%q is redacted", path, key, value)
 			}
 		}
@@ -552,6 +563,14 @@ func TestRemoteMonitoringProjectionMatchesCompiledCollectors(t *testing.T) {
 				if key, ok := n.Key.(*ast.Ident); ok {
 					switch field := strings.ToLower(key.Name); field {
 					case "id", "unit", "severity", "reason":
+						if key.Name == "ID" && strings.HasSuffix(path, "pg_monitoring_broker.go") {
+							if literal, ok := n.Value.(*ast.BasicLit); ok && literal.Value == `"worker_events"` {
+								if safeRemoteString("scope_id", "worker_events") != "worker_events" {
+									t.Error("worker-event scope ID is redacted")
+								}
+								break
+							}
+						}
 						check(field, n.Value)
 					}
 				}
