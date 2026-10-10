@@ -26,10 +26,22 @@ const warmupSendFailuresSQL = `
 		ORDER BY t.updated_at DESC, t.id DESC LIMIT 1
 	) latest ON true
 	LEFT JOIN LATERAL (
-		SELECT MAX(c.completed_at) AS at
-		FROM tasks c JOIN warmup_tokens wt ON wt.task_id = c.id AND wt.sent_message_id <> ''
-		WHERE c.email_account_id = e.id AND c.task_type = 'warmup' AND c.status = 'completed' AND c.completed_at <= $3
+		SELECT c.completed_at AS at
+		FROM (
+			-- Sort task history before probing confirmation tokens.
+			SELECT id, completed_at FROM tasks
+			WHERE email_account_id = e.id AND task_type = 'warmup' AND status = 'completed' AND completed_at <= $3
+			ORDER BY completed_at DESC
+		) c JOIN warmup_tokens wt ON wt.task_id = c.id AND wt.sent_message_id <> ''
+		ORDER BY c.completed_at DESC LIMIT 1
 	) confirmed ON true
+	LEFT JOIN LATERAL (
+		SELECT p.updated_at AS at
+		FROM tasks p JOIN task_failures pf ON pf.task_id = p.id
+		WHERE p.email_account_id = e.id AND p.task_type = 'warmup' AND p.status = 'failed'
+		  AND pf.message NOT LIKE $2 AND p.updated_at <= $3
+		ORDER BY p.updated_at DESC LIMIT 1
+	) non_loading ON latest.message LIKE $2
 	LEFT JOIN LATERAL (
 		WITH loading AS (
 			SELECT t.updated_at AS at,
@@ -39,11 +51,7 @@ const warmupSendFailuresSQL = `
 			  AND tf.message LIKE $2
 			  AND t.updated_at <= $3
 			  AND (confirmed.at IS NULL OR t.updated_at > confirmed.at)
-			  AND NOT EXISTS (
-				SELECT 1 FROM tasks p JOIN task_failures pf ON pf.task_id=p.id
-				WHERE p.email_account_id=e.id AND p.task_type='warmup' AND p.status='failed'
-				  AND pf.message NOT LIKE $2 AND p.updated_at >= t.updated_at AND p.updated_at <= $3
-			  )
+			  AND (non_loading.at IS NULL OR t.updated_at > non_loading.at)
 		)
 		SELECT MIN(at) AS at FROM loading
 		WHERE at >= COALESCE((SELECT MAX(at) FROM loading

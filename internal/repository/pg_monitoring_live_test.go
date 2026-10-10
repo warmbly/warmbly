@@ -276,3 +276,43 @@ func TestLiveMonitoringLoadingIncidentRecoveryNeedsConfirmedToken(t *testing.T) 
 		t.Fatal("scoped provider confirmation did not close loading", source)
 	}
 }
+
+func TestLiveMonitoringLoadingIncidentBuckets(t *testing.T) {
+	_, pool := liveContactDB(t)
+	repo := NewMonitoringRepository(pool)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	before := collectMonitoring(t, repo, "warmup_loading", now)
+	if before.ExpectedScopes == nil {
+		t.Fatal("missing eligible-mailbox count")
+	}
+	if *before.ExpectedScopes > 197 {
+		t.Skip("requires an isolated live database with room for three fixtures in the 200-mailbox sample")
+	}
+	for _, offsets := range [][]time.Duration{
+		{-5 * time.Minute},
+		{-80 * time.Minute, -40 * time.Minute, -5 * time.Minute},
+		{-2 * time.Hour},
+	} {
+		f := newWarmupUsageFixture(t, pool)
+		f.exec(`UPDATE email_accounts SET status='active',warmup=$2,test_mode='legacy' WHERE id=$1`, f.account, now.Add(-24*time.Hour))
+		for _, offset := range offsets {
+			id := uuid.New()
+			f.exec(`INSERT INTO tasks(id,task_type,email_account_id,status,message_id,updated_at) VALUES($1,'warmup',$2,'failed','',$3)`, id, f.account, now.Add(offset))
+			f.exec(`INSERT INTO task_failures(task_id,title,message) VALUES($1,'private',$2)`, id, models.MailboxNotLoadedPrefix+"private-provider-cursor")
+		}
+	}
+	after := collectMonitoring(t, repo, "warmup_loading", now)
+	for id, condition := range map[string]models.MonitoringCondition{
+		"loading_recent":     models.MonitoringRecentFailure,
+		"loading_persistent": models.MonitoringPersistentFailure,
+		"loading_old":        models.MonitoringRecoveryUnverified,
+	} {
+		previous, current := measuredMonitoring(t, before, id), measuredMonitoring(t, after, id)
+		if *current.Count != *previous.Count+1 || *current.AffectedMailboxes != *previous.AffectedMailboxes+1 || *current.AffectedOrganizations != *previous.AffectedOrganizations+1 {
+			t.Fatalf("%s: before=%+v after=%+v", id, previous, current)
+		}
+		if current.EvidenceAt == nil || current.LatestEvidenceAt == nil || current.Condition != condition || current.Availability != models.MonitoringFresh {
+			t.Fatalf("%s: missing evidence or changed classification: %+v", id, current)
+		}
+	}
+}
