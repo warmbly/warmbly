@@ -504,8 +504,10 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 	// This allows the tracking consumer to find the correct contact/sequence when
 	// processing open/click events from the tracking pixel service
 	if err := s.taskRepo.UpdateCampaignTaskTracking(ctx, taskID, contact.ID, sequence.ID); err != nil {
-		// Log but don't fail - tracking can still work via fallback methods
-		log.Warn().Err(err).Str("campaign_id", campaign.ID.String()).Str("task_id", taskID.String()).Msg("Failed to update campaign task tracking")
+		errs.CaptureException(err)
+		s.retryCampaignTickLater(ctx, taskRecord)
+		executionStatus = "failed"
+		return errx.InternalError()
 	}
 
 	// stop_on_reply is enforced inside FindRoutedPairs (STEP 6), and it is now

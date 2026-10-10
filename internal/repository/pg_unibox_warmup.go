@@ -141,13 +141,45 @@ func (r *uniboxRepository) UpdatePendingEmail(ctx context.Context, userID, id uu
 	return true, tx.Commit(ctx)
 }
 
-// ListUnprocessedCampaignReplies feeds the repair sweep in the consumer. A
-// reply that reply processing refused before claiming (an address check that
-// failed, the automation switch) has campaign_reply_processed_at NULL, so
-// this is exactly the set that can still be attributed; everything already
-// decided is excluded by that column. Bounded to `since` because older mail
-// was processed by the code of its day.
-func (r *uniboxRepository) ListUnprocessedCampaignReplies(ctx context.Context, since time.Time, afterID uuid.UUID, limit int) ([]models.JobEventNewEmail, error) {
+type CampaignReplyRepairPage struct {
+	Events     []models.JobEventNewEmail
+	NextCursor uuid.UUID
+	Done       bool
+}
+
+// ListUnprocessedCampaignReplies bounds the raw scan as well as the replies returned.
+func (r *uniboxRepository) ListUnprocessedCampaignReplies(ctx context.Context, since time.Time, afterID uuid.UUID, limit int) (CampaignReplyRepairPage, error) {
+	const scanSize = 500
+	page := CampaignReplyRepairPage{NextCursor: afterID}
+	if limit <= 0 {
+		return page, fmt.Errorf("campaign reply repair requires a positive result limit")
+	}
+	scan, err := r.db.Query(ctx, `SELECT u.id FROM unibox_emails u
+		WHERE u.id > $1 AND u.created_at >= $2 AND u.campaign_reply_processed_at IS NULL
+		AND u.folder NOT IN ('sent', 'drafts') AND u.provider_folder NOT IN ('sent', 'drafts')
+		ORDER BY u.id LIMIT $3`, afterID, since, scanSize)
+	if err != nil {
+		return page, err
+	}
+	var scanned int
+	var lastScanned uuid.UUID
+	for scan.Next() {
+		if err := scan.Scan(&lastScanned); err != nil {
+			scan.Close()
+			return page, err
+		}
+		scanned++
+	}
+	err = scan.Err()
+	scan.Close()
+	if err != nil {
+		return page, err
+	}
+	if scanned == 0 {
+		page.Done = true
+		return page, nil
+	}
+
 	// The sender in whichever form the sync stored it: "Name <addr>",
 	// "Name (addr)" or bare.
 	const bareFrom = `lower(COALESCE(
@@ -159,7 +191,7 @@ func (r *uniboxRepository) ListUnprocessedCampaignReplies(ctx context.Context, s
 		       u.reply_to, u.in_reply_to, u.subject, u.snippet, u.body_text, u.folder, u.provider_folder,
 		       u.gmail_id, u.uid, u.mailbox, u.folder_path, u.internal_date
 		FROM unibox_emails u
-		WHERE u.id > $1
+		WHERE u.id > $1 AND u.id <= $3
 		  AND u.created_at >= $2
 		  AND u.campaign_reply_processed_at IS NULL
 		  AND u.folder NOT IN ('sent', 'drafts')
@@ -180,23 +212,31 @@ func (r *uniboxRepository) ListUnprocessedCampaignReplies(ctx context.Context, s
 		        AND lower(co.email) = `+bareFrom+`
 		    )
 		  )
-		ORDER BY u.id LIMIT $3`, afterID, since, limit)
+		ORDER BY u.id LIMIT $4`, afterID, since, lastScanned, limit)
 	if err != nil {
-		return nil, err
+		return page, err
 	}
 	defer rows.Close()
-	var events []models.JobEventNewEmail
 	for rows.Next() {
 		e := models.JobEventNewEmail{Message: &models.EmailMessageStoreData{}}
 		m := e.Message
 		if err := rows.Scan(&e.UserID, &m.ID, &m.EmailID, &m.MessageID, &m.ThreadID, &m.Flags, &m.FromAddr, &m.ToAddr, &m.CC, &m.BCC,
 			&m.ReplyTo, &m.InReplyTo, &m.Subject, &m.Snippet, &m.BodyText, &m.Folder, &m.ProviderFolder,
 			&m.GmailID, &m.UID, &m.Mailbox, &m.FolderPath, &m.InternalDate); err != nil {
-			return nil, err
+			return page, err
 		}
-		events = append(events, e)
+		page.Events = append(page.Events, e)
 	}
-	return events, rows.Err()
+	if err := rows.Err(); err != nil {
+		return page, err
+	}
+	page.Done = scanned < scanSize && len(page.Events) < limit
+	if len(page.Events) == limit {
+		page.NextCursor = page.Events[len(page.Events)-1].Message.ID
+	} else {
+		page.NextCursor = lastScanned
+	}
+	return page, nil
 }
 
 // InboundMessage is a stored inbound message and when reply processing

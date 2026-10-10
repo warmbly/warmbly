@@ -685,6 +685,8 @@ Per-mailbox `test_mode`, `test_send_enabled` and `test_receive_enabled` separate
 | `BILLING_PROVIDER` | `none` (every feature unlocked, no trial expiry; the dashboard reports the workspace as self-hosted rather than on a free tier and hides billing) or `stripe` | `none` |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PUBLISHABLE_KEY` | Required together when `BILLING_PROVIDER=stripe`. The backend exits at boot if any is missing | unset |
 
+The local task dispatcher runs at most eight handlers at once, lowered to one third of the backend's effective Postgres pool ceiling with a minimum of one. This leaves room for API requests and reconciliation. Work beyond that limit stays pending in Postgres without a dispatch attempt or failure stamp. The ceiling applies across polling rounds, not separately to each batch, and does not change sending authority or unknown-outcome protections.
+
 Stripe Tax also needs account-side setup. In **Tax > Settings**, confirm the head office address, use the business-use SaaS product tax code (`txcd_10103001`) as the default, and choose whether prices include tax or have tax added at checkout. Apply the same tax code and an explicit tax behavior to every subscription and credit-pack product and price. A price set to inclusive or exclusive cannot be changed later, so replacing that choice requires a new Price and an update to the matching plan or `STRIPE_CREDIT_PACK_*_PRICE_ID` value.
 
 Add a Tax registration only after the business is registered with that tax authority. Automatic tax returns zero with a `not_collecting` reason in jurisdictions where no active registration applies. Enabling Stripe Tax is not a substitute for registering or filing.

@@ -814,7 +814,8 @@ var Tables = []Table{
 	},
 	{
 		Name: "campaign_tasks", Group: models.OrgDataGroupSending,
-		Scope: `task_id IN ` + orgTasks,
+		Scope:         `task_id IN ` + orgTasks,
+		ResetOnImport: []string{"dispatch_intent"},
 	},
 	{
 		Name: "warmup_tasks", Group: models.OrgDataGroupSending,

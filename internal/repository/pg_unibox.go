@@ -87,7 +87,7 @@ type UniboxRepository interface {
 	// ListUnprocessedCampaignReplies pages inbound messages that reply
 	// processing never claimed and that look like campaign replies: they
 	// answer a campaign send, or come from one of the workspace's contacts.
-	ListUnprocessedCampaignReplies(ctx context.Context, since time.Time, afterID uuid.UUID, limit int) ([]models.JobEventNewEmail, error)
+	ListUnprocessedCampaignReplies(ctx context.Context, since time.Time, afterID uuid.UUID, limit int) (CampaignReplyRepairPage, error)
 	// ListInboundFrom returns a workspace's inbound mail from one address,
 	// newest first: the evidence behind an opt-out that address triggered.
 	ListInboundFrom(ctx context.Context, orgID uuid.UUID, address string, limit int) ([]InboundMessage, error)
