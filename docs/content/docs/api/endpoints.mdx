@@ -636,6 +636,8 @@ Cloud-managed OAuth additionally exposes `POST /pool-link/instance/oauth/start-c
 
 `POST /internal/worker/outbound-dispatch`, `/internal/worker/warmup-actions`, and `/internal/worker/diagnostic-auth` use the existing execution-plane internal token, never customer API keys. They bind the current mailbox/worker and require protocol 2. Outbound start additionally rechecks task/organization/provider/nonce/recipients and current campaign or diagnostic policy. Diagnostic authorization/result submission binds one exact already-owned warmup receipt and short-lived nonce; it neither ingests unrelated inbox messages nor trusts event/header claims. No public scope or permission was added. Details and limits: [send safety](/development/send-safety/).
 
+Warmup actions for a deleted, unassigned or no-longer-authorized mailbox return no permitted actions. The worker treats that authoritative denial as a no-op without touching the provider. Database or authority failures still return `503` and retry; denial does not authorize a send, clear a send hold, or acknowledge an arrival.
+
 ### Referrals and discounts
 
 The referral program and billing discount history are part of `/subscription/*`, so they are JWT only and never accept an API key. There is no API permission scope for them; browser callers are gated by the org permission below. The discount validation and checkout endpoints are listed under [Subscription and billing](/api/reference/account-org/) in the reference.

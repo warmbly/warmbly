@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
@@ -24,6 +25,9 @@ func (r *taskRepository) PermittedWarmupActions(ctx context.Context, mailbox, wo
 	err := r.db.QueryRow(ctx, `SELECT ea.status='active' AND ea.worker_id=$2 AND n.role='worker' AND n.active AND n.last_seen_at>NOW()-INTERVAL '10 minutes' AND n.warmup_send_protocol>=2
  AND o.risk_state IN ('trusted','watch') AND NOT EXISTS(SELECT 1 FROM cloud_link_mailboxes c WHERE c.email_account_id=ea.id),ea.test_mode,ea.test_send_enabled,ea.test_receive_enabled
  FROM email_accounts ea JOIN organizations o ON o.id=ea.organization_id JOIN fleet_nodes n ON n.id=ea.worker_id WHERE ea.id=$1`, mailbox, worker).Scan(&active, &a.TestMode, &a.TestSendEnabled, &a.TestReceiveEnabled)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
