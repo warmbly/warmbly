@@ -38,6 +38,20 @@ func TestParamUUIDRejectsGarbage(t *testing.T) {
 	}
 }
 
+func TestAdminMailboxExactIdentityBindsAndRejectsInvalidUUID(t *testing.T) {
+	id := uuid.New()
+	var search AdminMailboxSearch
+	if err := bindQuery(t, "mailbox_id="+id.String()+"&status=all", &search); err != nil {
+		t.Fatal(err)
+	}
+	if search.MailboxID == nil || search.MailboxID.UUID != id || search.Status != "all" || search.WorkerID != nil {
+		t.Fatalf("exact mailbox lookup changed identity or placement scope: %+v", search)
+	}
+	if err := bindQuery(t, "mailbox_id=not-a-uuid", &AdminMailboxSearch{}); err == nil {
+		t.Fatal("invalid exact mailbox identity accepted")
+	}
+}
+
 // Every admin search struct must bind its ids and cursor together, so a field
 // typed as a bare uuid.UUID cannot 400 an explorer again.
 func TestAdminSearchStructsBindIDsAndCursor(t *testing.T) {

@@ -12,6 +12,8 @@
 // intentional — the admin surface should require a fresh, deliberate
 // auth event, not silently inherit a dashboard session.
 
+import { clearAdminBrowse, resumeBrowse } from "@/lib/browseState";
+
 const TOKEN_KEY = "warmbly_admin_token";
 
 export interface AdminToken {
@@ -33,13 +35,16 @@ export function getToken(): AdminToken | null {
 
 export function setToken(t: AdminToken | null) {
     if (!t) {
+        clearAdminBrowse();
         localStorage.removeItem(TOKEN_KEY);
         return;
     }
     localStorage.setItem(TOKEN_KEY, JSON.stringify(t));
+    resumeBrowse();
 }
 
 export function clearToken() {
+    clearAdminBrowse();
     localStorage.removeItem(TOKEN_KEY);
 }
 

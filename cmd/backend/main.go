@@ -30,6 +30,7 @@ import (
 	"github.com/warmbly/warmbly/internal/observability/errs"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/warmbly/warmbly/internal/app/admindevice"
 	"github.com/warmbly/warmbly/internal/app/advisor"
 	"github.com/warmbly/warmbly/internal/app/aiagent"
 	"github.com/warmbly/warmbly/internal/app/aitools"
@@ -79,6 +80,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/mcp"
 	"github.com/warmbly/warmbly/internal/app/monitoring"
 	"github.com/warmbly/warmbly/internal/app/nativeactions"
+	"github.com/warmbly/warmbly/internal/app/nodelogs"
 	"github.com/warmbly/warmbly/internal/app/notification"
 	"github.com/warmbly/warmbly/internal/app/oauth"
 	"github.com/warmbly/warmbly/internal/app/oidcauth"
@@ -289,6 +291,7 @@ func main() {
 	// authCache is the same Redis client the services use, hoisted so the
 	// middleware handler can reach it for the pre-login per-IP limiter.
 	var authCache *cache.Cache
+	var adminDevice *admindevice.Service
 
 	// Warmup
 	var warmupService warmupapp.Service
@@ -874,6 +877,7 @@ func main() {
 		}
 
 		tokenService = token.NewService(primaryDB, tokenRepostory, cache, geoloc, authCfg.AuthSecret)
+		adminDevice = admindevice.New(cache, tokenService, oauthPublicBaseURL(apiCfg.Hostname), authCfg.AuthSecret)
 		// A revoked session takes the user's open sockets with it.
 		if streamingPublisher != nil {
 			tokenService.WireRevocationPublisher(streamingPublisher)
@@ -2323,9 +2327,12 @@ func main() {
 		Monitoring:       monitoringService,
 		OpsNotifier:      opsNotifier,
 
-		PoolLinkService:  poolLinkService,
-		CloudLinkService: cloudLinkService,
-		CLIAuthService:   cliAuthService,
+		PoolLinkService:   poolLinkService,
+		CloudLinkService:  cloudLinkService,
+		CLIAuthService:    cliAuthService,
+		AdminDevice:       adminDevice,
+		NodeLogs:          nodelogs.New(authCache),
+		BrokerDiagnostics: monitoringBus,
 
 		TokenService:         tokenService,
 		PasskeyService:       passkeyService,

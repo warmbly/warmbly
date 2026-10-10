@@ -219,6 +219,8 @@ func Run(
 	heartbeat := r.Group("/api/v1/internal")
 	heartbeat.Use(m.NodeHeartbeatAuthMiddleware())
 	heartbeat.POST("/fleet/heartbeat", h.FleetHeartbeat)
+	// This route authenticates an enrollment-issued, node-bound log credential, never a shared broker token.
+	r.POST("/api/v1/internal/fleet/nodes/:id/logs", h.InternalNodeLogs)
 
 	// The edge group is what the tracking and forms services call, on
 	// INTERNAL_API_TOKEN.
@@ -349,6 +351,8 @@ func Run(
 	cliAuthPublic.Use(m.CLIAuthIPRateLimitMiddleware())
 	{
 		cliAuthPublic.POST("/code", h.CLIAuthStart)
+		cliAuthPublic.POST("/admin/code", h.AdminDeviceStart)
+		cliAuthPublic.POST("/admin/poll", h.AdminDevicePoll)
 		cliAuthPublic.POST("/poll", h.CLIAuthPoll)
 	}
 
@@ -1764,6 +1768,10 @@ func Run(
 	adminRoutes := r.Group("/admin")
 	adminRoutes.Use(m.AuthMiddleware(), m.AdminMiddleware())
 	{
+		adminRoutes.POST("/auth/device/describe", h.AdminDeviceDescribe)
+		adminRoutes.GET("/fleet/nodes/:id/logs", middleware.RequireAdminPermission(models.AdminPermViewWorkers), h.AdminNodeLogs)
+		adminRoutes.GET("/fleet/nodes/:id/broker", middleware.RequireAdminPermission(models.AdminPermViewWorkers), middleware.RequireAdminPermission(models.AdminPermViewAnalytics), h.AdminNodeBroker)
+		adminRoutes.POST("/auth/device/decide", middleware.RequireFreshAuth(), h.AdminDeviceDecide)
 		// Settings → Storage backends (pluggable infrastructure registry)
 		// Platform mail diagnostics. A broken relay locks everyone out, so the
 		// operator needs to see the SMTP dialogue from inside the panel rather

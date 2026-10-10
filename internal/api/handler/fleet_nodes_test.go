@@ -2,6 +2,9 @@ package handler
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/app/fleetnode"
+	"github.com/warmbly/warmbly/internal/app/nodelogs"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/crypt"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -19,19 +23,36 @@ import (
 type joinNodes struct {
 	repository.FleetNodeRepository
 	upserts int
+	nodeID  uuid.UUID
+	role    models.NodeRole
 }
 
-func (n *joinNodes) Get(context.Context, uuid.UUID) (*models.FleetNode, error) {
+func (n *joinNodes) Get(_ context.Context, id uuid.UUID) (*models.FleetNode, error) {
+	if n.nodeID == id && id != uuid.Nil {
+		return &models.FleetNode{ID: id, Role: n.role}, nil
+	}
 	return nil, nil
 }
 
-func (n *joinNodes) UpsertOnHeartbeat(context.Context, models.NodeHeartbeat) error {
+func (n *joinNodes) UpsertOnHeartbeat(_ context.Context, beat models.NodeHeartbeat) error {
 	n.upserts++
+	n.nodeID = beat.NodeID
+	n.role = beat.Role
 	return nil
 }
 
 type joinSettings struct {
 	repository.FleetSettingsRepository
+}
+
+type joinEvidence struct {
+	*nodelogs.Service
+	node uuid.UUID
+}
+
+func (e *joinEvidence) Enroll(_ context.Context, id uuid.UUID) (string, error) {
+	e.node = id
+	return strings.Repeat("l", 43), nil
 }
 
 func (joinSettings) GetJoinToken(context.Context) (string, *time.Time, error) {
@@ -49,7 +70,8 @@ func TestFleetJoinResolvesImageBeforeRegisteringNode(t *testing.T) {
 			t.Setenv("WARMBLY_VERSION", version)
 			t.Setenv("FLEET_IMAGE_VARIANT", "")
 			nodes := &joinNodes{}
-			h := &Handler{FleetNodes: fleetnode.New(nodes, nil, joinSettings{})}
+			evidence := &joinEvidence{}
+			h := &Handler{FleetNodes: fleetnode.New(nodes, nil, joinSettings{}), NodeLogs: evidence}
 			for i := range 2 {
 				response := httptest.NewRecorder()
 				c, _ := gin.CreateTestContext(response)
@@ -62,9 +84,99 @@ func TestFleetJoinResolvesImageBeforeRegisteringNode(t *testing.T) {
 					}
 				} else if response.Code != http.StatusOK || nodes.upserts != i+1 {
 					t.Fatalf("successful join was not registered: status=%d, upserts=%d", response.Code, nodes.upserts)
+				} else if evidence.node == uuid.Nil {
+					t.Fatal("successful join did not enroll node evidence")
 				}
 			}
 		})
+	}
+}
+
+func TestFleetJoinFailsClosedWithoutEvidenceStore(t *testing.T) {
+	t.Setenv("WARMBLY_VERSION", "v0.6.33")
+	t.Setenv("FLEET_IMAGE_VARIANT", "")
+	nodes := &joinNodes{}
+	h := &Handler{FleetNodes: fleetnode.New(nodes, nil, joinSettings{})}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/fleet/join", strings.NewReader(`{"token":"join-test-token","role":"consumer"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	h.FleetJoin(c)
+	if w.Code != http.StatusServiceUnavailable || nodes.upserts != 0 {
+		t.Fatalf("missing evidence dependency registered a node: status=%d, upserts=%d", w.Code, nodes.upserts)
+	}
+}
+
+func TestFleetJoinReenrollsOriginalNodeIdentityWithEvidenceCredential(t *testing.T) {
+	t.Setenv("WARMBLY_VERSION", "v0.6.44")
+	t.Setenv("FLEET_IMAGE_VARIANT", "")
+	id := uuid.New()
+	nodes, evidence := &joinNodes{}, &joinEvidence{}
+	h := &Handler{FleetNodes: fleetnode.New(nodes, nil, joinSettings{}), NodeLogs: evidence}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/fleet/join", strings.NewReader(`{"token":"join-test-token","role":"worker","node_id":"`+id.String()+`"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	h.FleetJoin(c)
+	if w.Code != http.StatusOK || nodes.nodeID != id || evidence.node != id || nodes.upserts != 1 {
+		t.Fatalf("re-enrollment changed identity or omitted evidence enrollment: status=%d", w.Code)
+	}
+	var reply fleetJoinResponse
+	if json.Unmarshal(w.Body.Bytes(), &reply) != nil || reply.NodeID != id {
+		t.Fatal("re-enrollment response replaced the original identity")
+	}
+	raw, err := base64.StdEncoding.DecodeString(reply.EnvB64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := envLines(t, string(raw))
+	if env["WARMBLY_NODE_ID"] != id.String() || env["NODE_LOG_TOKEN"] != strings.Repeat("l", 43) {
+		t.Fatal("protected environment did not bind the evidence credential to the existing node")
+	}
+}
+
+type retryJoinEvidence struct {
+	joinEvidence
+	calls int
+}
+
+func (e *retryJoinEvidence) Enroll(ctx context.Context, id uuid.UUID) (string, error) {
+	e.calls++
+	if e.calls == 1 {
+		return "", errors.New("fixture enrollment unavailable")
+	}
+	return e.joinEvidence.Enroll(ctx, id)
+}
+
+func TestFleetJoinRetryKeepsIdentityAfterEnrollmentFailureAndLostReply(t *testing.T) {
+	t.Setenv("WARMBLY_VERSION", "v0.6.44")
+	t.Setenv("FLEET_IMAGE_VARIANT", "")
+	id := uuid.New()
+	nodes, evidence := &joinNodes{}, &retryJoinEvidence{}
+	h := &Handler{FleetNodes: fleetnode.New(nodes, nil, joinSettings{}), NodeLogs: evidence}
+	for i, role := range []string{"worker", "worker", "worker", "consumer"} {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/fleet/join", strings.NewReader(`{"token":"join-test-token","role":"`+role+`","node_id":"`+id.String()+`"}`))
+		c.Request.Header.Set("Content-Type", "application/json")
+		h.FleetJoin(c)
+		if i == 0 {
+			if w.Code != http.StatusServiceUnavailable || nodes.nodeID != id || nodes.upserts != 1 {
+				t.Fatal("failed enrollment did not retain the supplied identity")
+			}
+			continue
+		}
+		if i == 3 {
+			if w.Code == http.StatusOK || evidence.calls != 3 || nodes.upserts != 3 {
+				t.Fatal("role change mutated identity or rotated evidence authority before validation")
+			}
+			continue
+		}
+		var reply fleetJoinResponse
+		if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &reply) != nil || reply.NodeID != id || evidence.node != id || nodes.nodeID != id {
+			t.Fatal("retry after failed/lost reply changed node identity")
+		}
+		// The first successful response is deliberately unused, as if its acknowledgement was lost.
 	}
 }
 

@@ -224,4 +224,87 @@ printf '%s\n' "$local_body" | awk '
   || fail "ensure_local_env must test for an existing file before writing one, or a re-join truncates the operator's file"
 ok "an existing local override file is never truncated"
 
+if ! command -v flock >/dev/null 2>&1; then
+  fail "enrollment fixture requires util-linux flock"
+fi
+[ -r /proc/sys/kernel/random/uuid ] \
+  || fail "enrollment fixture requires /proc/sys/kernel/random/uuid"
+
+join_fixture=$(mktemp -d)
+trap 'rm -rf "$join_fixture"' EXIT HUP INT TERM
+sed '$d' "$SCRIPT" > "$join_fixture/functions.sh"
+cat > "$join_fixture/enrol.sh" <<'FIXTURE'
+#!/bin/sh
+set -eu
+. "$JOIN_FUNCTIONS"
+CONFIG_DIR="$JOIN_CONFIG"
+WARMBLY_URL="https://fixture.invalid"
+WARMBLY_TOKEN="fixture-join-token"
+WARMBLY_ROLE="worker"
+DRY_RUN="${JOIN_DRY_RUN:-false}"
+curl() {
+  response=""; payload=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -o) response="$2"; shift 2 ;;
+      -d) payload="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  if [ "$DRY_RUN" = "false" ]; then
+    [ -f "$CONFIG_DIR/node.pending-id" ] || [ -f "$CONFIG_DIR/node.env" ] || exit 8
+  fi
+  request_id=$(printf '%s\n' "$payload" | json_field node_id)
+  printf '%s\n' "$request_id" >> "$JOIN_REQUESTS"
+  case "$JOIN_RESULT" in
+    failure) printf '{"message":"fixture enrollment unavailable"}' > "$response"; printf 503; return 0 ;;
+    lost) return 7 ;;
+    mismatch) reply_id="22222222-2222-4222-8222-222222222222" ;;
+    *) reply_id="${request_id:-11111111-1111-4111-8111-111111111111}" ;;
+  esac
+  env_b64=$(printf 'WARMBLY_NODE_ID=%s\nNODE_LOG_TOKEN=fixture\n' "$reply_id" | base64 | tr -d '\n')
+  printf '{"node_id":"%s","env_b64":"%s","desired_version":"v0.6.44"}' "$reply_id" "$env_b64" > "$response"
+  printf 200
+}
+enrol
+FIXTURE
+run_enrol() {
+  JOIN_FUNCTIONS="$join_fixture/functions.sh" JOIN_CONFIG="$join_fixture/config" \
+    JOIN_REQUESTS="$join_fixture/requests" JOIN_RESULT="$1" JOIN_DRY_RUN="${2:-false}" \
+    sh "$join_fixture/enrol.sh" >/dev/null 2>&1
+}
+if run_enrol failure; then fail "enrollment failure must not succeed"; fi
+pending_id=$(cat "$join_fixture/config/node.pending-id")
+[ -n "$pending_id" ] || fail "first failed POST did not persist an identity"
+if run_enrol lost; then fail "lost reply must not succeed"; fi
+run_enrol success || fail "retry after failed/lost reply failed"
+[ "$(sort -u "$join_fixture/requests" | wc -l | tr -d ' ')" = "1" ] \
+  || fail "retry after enrollment failure/lost reply changed the UUID"
+[ ! -f "$join_fixture/config/node.env" ] || fail "enrol must not write managed config itself"
+if run_enrol mismatch; then fail "a response with a different identity was accepted"; fi
+[ "$(cat "$join_fixture/config/node.pending-id")" = "$pending_id" ] \
+  || fail "rejected response replaced pending identity"
+ok "first-join identity persists before POST and survives failed/lost/mismatched replies"
+
+printf 'WARMBLY_NODE_ID=33333333-3333-4333-8333-333333333333\n' > "$join_fixture/config/node.env"
+run_enrol success || fail "existing node UUID retry failed"
+[ "$(tail -1 "$join_fixture/requests")" = "33333333-3333-4333-8333-333333333333" ] \
+  || fail "pending identity overrode the existing managed identity"
+ok "existing node.env identity wins over pending identity"
+
+rm -rf "$join_fixture/config"
+rm -f "$join_fixture/requests"
+run_enrol success & join_one=$!
+run_enrol success & join_two=$!
+wait "$join_one" || fail "first concurrent initialization failed"
+wait "$join_two" || fail "second concurrent initialization failed"
+[ "$(sort -u "$join_fixture/requests" | wc -l | tr -d ' ')" = "1" ] \
+  || fail "concurrent initialization produced different node identities"
+ok "concurrent initialization locks and reuses a single pending UUID"
+
+rm -rf "$join_fixture/config"
+run_enrol success true || fail "dry-run fixture failed"
+[ ! -e "$join_fixture/config" ] || fail "dry-run persisted an identity or lock"
+ok "dry-run leaves no pending identity or lock"
+
 printf 'check-join-script: all checks passed\n'

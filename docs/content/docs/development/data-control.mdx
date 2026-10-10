@@ -363,6 +363,93 @@ If you do want product analytics on your own instance, the variables are on [con
 
 Diagnostic participation, shared limits, durable recovery evidence and operator repair history are organization data. Raw MIME is never persisted by the bounded Gmail/Graph DKIM verifier. Minimal verifier/version/time results can attach to historical receipt evidence; source-worker/message authorization nonces are excluded from workspace moves. The SQL reconciliation outbox is source-instance-local and retained by full database backups, not organization archives. Drain it before moving a workspace; pending effects survive restart, delivered rows expire after seven days, and organization/task deletion cascades their removal. Repair audit history lasts with the organization. Rollback refuses pending effects, unknown sends and retained restrictive state. See [send safety](/development/send-safety/).
 
+## Retained node evidence and admin device requests
+
+Recent fleet evidence uses existing primary Redis, not a SQL migration or
+external journal reader. Each node retains at most 1,000 allowlisted events for
+one hour, pruned by observation time/count on ingest and time-filtered on reads.
+Capture metadata expires after two hours; retry deduplication after one hour.
+Ingestion is limited to 30/node/minute. Each process has a 256-event memory
+queue, up to 32 events/batch and at most three bounded transport attempts.
+Permanent HTTP failures are not retried; rate limiting pauses capture uploads
+for the server's bounded `Retry-After` interval (60 seconds by default).
+The rejected batch counts as known loss. Known drops
+reset with the process ID; crashes/lost acknowledgements are not fully measured.
+
+Data contains fixed event names, node/mailbox/event/process UUIDs, timestamps,
+canonical severity/category and numeric status/counts. No addresses, subjects,
+message bodies, headers, raw errors, folder names, provider tokens, passwords
+or broker connection strings are forwarded. Allowlists run before transport
+and at ingest/read. This instance-local evidence is not organization mail data
+and is excluded from workspace export/import; it is not a delivery receipt.
+
+Generic runtime error coverage is explicitly unavailable across all logger
+sources. The worker Zap hook emits coarse `worker_error` events, but worker
+Zerolog and consumer standard-log/Zerolog errors are not captured. Existing
+typed provider/sync/control-plane decision hooks remain available separately.
+Neither recent empty capture nor a zero known-drop counter proves zero errors.
+The API, administrator CLI and Fleet detail disclose this source gap instead
+of forwarding arbitrary log text or trying to infer severity from raw strings.
+
+`NODE_LOG_TOKEN` is a separate 256-bit node-enrollment ingestion credential.
+Its hash stays in Redis until rejoin rotates it or node deletion revokes it;
+enrollment identity is not an event and does not expire with history. Protect
+the node environment like other credentials; never publish `env_b64` or include
+raw credentials in support bundles. Node deletion removes its credential,
+events and capture metadata; TTL retry markers age out independently. Redis
+eviction/restore may lose credential hashes: re-enroll, never fall back to shared
+broker authentication for logs.
+
+Admin device grants/indexes/hashed session-bound consent tokens expire within
+five minutes. Device secrets are hashed; access/refresh tokens are not stored
+there for deferred delivery. Rate counters expire after one/ten minutes.
+Successful issuance uses existing SQL sessions and admin audit logs, retaining
+the original MFA flag/provider/proof timestamp. Redis loss cancels pending
+handshakes, not issued sessions. No permanent grant datastore/migration is added.
+
+### Upgrade order and coverage
+
+Deploy the backend first, then upgrade node binaries/images. Existing nodes need
+authenticated re-enrollment to receive `NODE_LOG_TOKEN` in the protected join
+environment. The existing broker key is fleet-wide, not proof of ownership of
+one UUID; this release does not exchange it for per-node evidence authority or
+silently rotate another node's credential. Upgrading alone therefore leaves
+evidence unavailable when the node has no enrollment-issued log credential.
+
+For a node installed with the normal join script, obtain a fresh join token
+through Fleet settings (or the existing administrator CLI) and rerun the
+instance's `/join.sh` with the same URL, role and `--config-dir`, retaining the
+original name, region and image-repository options. The script reads
+`WARMBLY_NODE_ID` from the existing `node.env` and sends that UUID in the join
+request. Keep that file and configuration directory in place: removing them
+would enroll a different identity. Do not delete/disconnect the fleet node or
+move its mailboxes. A rejoin does not revoke provider credentials or change
+mailbox assignments. The backend regenerates managed `node.env` from its
+current configuration; `node.local.env` is never truncated and is loaded last.
+Keep local overrides there, not in managed `node.env`, and do not override the
+new `NODE_LOG_TOKEN` with a stale local value. The script performs a normal
+service restart, not a zero-downtime refresh. Do not manually copy secrets.
+
+Normal first joins persist a random, nonsecret UUID in `node.pending-id` inside
+the same configuration directory before their first request. Failed enrollment
+or a lost successful response can then be retried with the same identity.
+An existing valid UUID in `node.env` takes precedence. A bounded `flock` lock
+(from Linux util-linux) serializes enrollment through configuration writes;
+the response and returned environment must match the chosen UUID before any
+managed configuration is written. Do not remove pending identity state while
+retrying. Dry-run and print-unit do not initialize pending state or take locks.
+
+Manually provisioned nodes must use the existing authenticated enrollment with
+their original UUID and protected configuration, not a newly generated ID.
+New joins receive the log credential automatically. Redis credential-hash loss
+requires the same authorized re-enrollment; no broker/internal-token fallback
+is accepted by log ingestion. Older binaries do not implement capture, and
+coverage remains unavailable until an upgraded process actually sends evidence.
+There is no import of old journal/container logs. Empty fresh capture is not
+proof of health. See [exact diagnostic contracts](/api/endpoints/#platform-node-diagnostics).
+Admin UI/CLI changes are a separate stage; backend endpoints alone do not
+provide the consent page or CLI command.
+
 ## See also
 
 - [Install](/development/install/): the wizard that asks all of this up front

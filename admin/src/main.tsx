@@ -24,6 +24,7 @@ import { RequireAdmin } from "@/components/layout/RequireAdmin";
 import { RouteError } from "@/components/layout/RouteError";
 
 import LoginPage from "@/app/auth/LoginPage";
+import DeviceApprovalPage from "@/app/auth/DeviceApprovalPage";
 import OverviewPage from "@/app/dashboard/OverviewPage";
 import WorkersPage from "@/app/dashboard/WorkersPage";
 import WorkerDetailPage from "@/app/dashboard/WorkerDetailPage";
@@ -135,6 +136,7 @@ const router = createBrowserRouter([
                         errorElement: <RouteError />,
                         children: [
                             { index: true, element: <OverviewPage /> },
+                            { path: "device", element: <DeviceApprovalPage /> },
 
                             // Operations
                             { path: "workers", element: gated(AdminPerm.ViewWorkers, <WorkersPage />) },

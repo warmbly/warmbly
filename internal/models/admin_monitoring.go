@@ -25,30 +25,46 @@ const (
 	MonitoringTelemetryStale     MonitoringCondition    = "stale_telemetry"
 )
 
-// MonitoringMetric carries aggregates only; source-specific counts may overlap.
+// MonitoringMetric carries aggregates and optional bounded broker evidence; counts may overlap.
 type MonitoringMetric struct {
-	ID                      string                 `json:"id"`
-	Title                   string                 `json:"title"`
-	Unit                    string                 `json:"unit"`
-	ScopeID                 string                 `json:"scope_id,omitempty"`
-	Availability            MonitoringAvailability `json:"availability"`
-	Condition               MonitoringCondition    `json:"condition"`
-	Severity                string                 `json:"severity"`
-	Reason                  string                 `json:"reason,omitempty"`
-	Note                    string                 `json:"note"`
-	Count                   *int64                 `json:"count"`
-	AffectedMailboxes       *int64                 `json:"affected_mailboxes"`
-	AffectedOrganizations   *int64                 `json:"affected_organizations"`
-	UnknownOrganizationRows *int64                 `json:"unknown_organization_rows"`
-	ObservedAt              *time.Time             `json:"observed_at"`
-	EvidenceAt              *time.Time             `json:"evidence_at"`
-	LatestEvidenceAt        *time.Time             `json:"latest_evidence_at"`
-	EvidenceAgeSeconds      *int64                 `json:"evidence_age_seconds"`
-	NextEligibleAt          *time.Time             `json:"next_eligible_at"`
-	WindowStart             *time.Time             `json:"window_start"`
-	WindowEnd               *time.Time             `json:"window_end"`
-	ThresholdSeconds        *int64                 `json:"threshold_seconds"`
-	Investigate             string                 `json:"investigate,omitempty"`
+	Broker                  *MonitoringBrokerObservation `json:"broker,omitempty"`
+	ID                      string                       `json:"id"`
+	Title                   string                       `json:"title"`
+	Unit                    string                       `json:"unit"`
+	ScopeID                 string                       `json:"scope_id,omitempty"`
+	Availability            MonitoringAvailability       `json:"availability"`
+	Condition               MonitoringCondition          `json:"condition"`
+	Severity                string                       `json:"severity"`
+	Reason                  string                       `json:"reason,omitempty"`
+	Note                    string                       `json:"note"`
+	Count                   *int64                       `json:"count"`
+	AffectedMailboxes       *int64                       `json:"affected_mailboxes"`
+	AffectedOrganizations   *int64                       `json:"affected_organizations"`
+	UnknownOrganizationRows *int64                       `json:"unknown_organization_rows"`
+	ObservedAt              *time.Time                   `json:"observed_at"`
+	EvidenceAt              *time.Time                   `json:"evidence_at"`
+	LatestEvidenceAt        *time.Time                   `json:"latest_evidence_at"`
+	EvidenceAgeSeconds      *int64                       `json:"evidence_age_seconds"`
+	NextEligibleAt          *time.Time                   `json:"next_eligible_at"`
+	WindowStart             *time.Time                   `json:"window_start"`
+	WindowEnd               *time.Time                   `json:"window_end"`
+	ThresholdSeconds        *int64                       `json:"threshold_seconds"`
+	Investigate             string                       `json:"investigate,omitempty"`
+}
+
+type MonitoringBrokerPartition struct {
+	Topic        string `json:"topic"`
+	Partition    int32  `json:"partition"`
+	Committed    int64  `json:"committed"`
+	Earliest     int64  `json:"earliest"`
+	Latest       int64  `json:"latest"`
+	CommittedLag int64  `json:"committed_lag"`
+}
+
+type MonitoringBrokerObservation struct {
+	ConsumerGroup string                      `json:"consumer_group"`
+	Topics        []string                    `json:"topics"`
+	Partitions    []MonitoringBrokerPartition `json:"partitions"`
 }
 
 type MonitoringSource struct {

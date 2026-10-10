@@ -117,6 +117,11 @@ func (h *Handler) FleetJoin(c *gin.Context) {
 		return
 	}
 
+	if h.NodeLogs == nil {
+		errx.JSON(c, errx.ErrServiceDown)
+		return
+	}
+
 	// Registering here rather than waiting for the first beat means the node
 	// shows up in the dashboard the moment it joins, even if it then fails to
 	// start. A join that silently produces nothing visible is the worst
@@ -139,10 +144,16 @@ func (h *Handler) FleetJoin(c *gin.Context) {
 		return
 	}
 
+	logToken, logErr := h.NodeLogs.Enroll(ctx, nodeID)
+	if logErr != nil {
+		errx.JSON(c, errx.ErrServiceDown)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, fleetJoinResponse{
 		NodeID: nodeID,
 		Role:   string(role),
-		EnvB64: base64.StdEncoding.EncodeToString([]byte(renderNodeEnv(nodeID, role, req.Region))),
+		EnvB64: base64.StdEncoding.EncodeToString([]byte(renderNodeEnv(nodeID, role, req.Region) + "\nNODE_LOG_TOKEN=" + logToken + "\n")),
 		// Not reply.DesiredVersion: an empty answer is "no opinion" to a node
 		// that is already running something, but this one has nothing to run.
 		DesiredVersion:   joinVersion,
@@ -579,6 +590,14 @@ func (h *Handler) AdminFleetDeleteNode(c *gin.Context) {
 	}
 	if h.FleetNodeRepo == nil {
 		errx.JSON(c, errx.New(errx.NotImplemented, "fleet enrolment is not available on this instance"))
+		return
+	}
+	if h.NodeLogs == nil {
+		errx.JSON(c, errx.ErrServiceDown)
+		return
+	}
+	if err := h.NodeLogs.Revoke(c.Request.Context(), id); err != nil {
+		errx.JSON(c, errx.ErrServiceDown)
 		return
 	}
 	if err := h.FleetNodeRepo.Delete(c.Request.Context(), id); err != nil {

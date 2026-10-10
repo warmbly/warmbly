@@ -1913,6 +1913,11 @@ func (r *adminRepository) SearchMailboxesForAdmin(ctx context.Context, search *m
 	args := []interface{}{}
 	argNum := 1
 	where := "WHERE 1=1"
+	if search.MailboxID != nil {
+		where += " AND ea.id = $" + itoa(argNum)
+		args = append(args, search.MailboxID.UUID)
+		argNum++
+	}
 
 	if search.Query != "" {
 		where += ` AND (ea.email ILIKE $` + itoa(argNum) +

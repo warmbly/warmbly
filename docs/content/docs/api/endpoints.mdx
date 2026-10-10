@@ -623,6 +623,7 @@ Alongside them, `api_url` is this API's own public base (for a copyable example 
   - `GET /admin/warmup-content/overview` includes effective generation controls and requires `view_warmup_pool`; `PUT /admin/warmup-content/settings` writes effective controls with `manage_settings`. These are platform-admin routes, not organization API-key scopes. See [effective generation policy and stopping](/development/warmup-generation/).
   - `POST /admin/organizations/:id/sample-data`: `manage_testers` and an MFA-verified admin session. Adds the [reviewer sample dataset](/development/accounts-and-access/#adding-sample-data) only to an active dedicated Test workspace. No request body. Returns `200` with `organization_id`, `created` (false when already seeded) and `seeded_at`; retries preserve edits and deletions. An ordinary workspace, revoked or expired tester, or missing/expired managed Test grant returns `400`. Inserts and the admin audit marker commit together. No mailbox connection, email delivery, external request or credit spend occurs.
   - `GET /admin/testers`: `view_users` and an MFA-verified admin session. Each tester in `data` may include `test_workspace_id` for its owned dedicated Test workspace and `sample_data_seeded_at` when populated. These fields are absent for a tester merely attached to an ordinary workspace.
+  - `GET /admin/mailboxes`: `view_users` and an MFA-verified admin session. Optional `mailbox_id` filters by exact UUID; `status=all` includes inactive mailboxes. Node evidence links use `/mailboxes?mailbox_id=UUID`, regardless of loaded worker assignments or earlier browse filters. Deleted identities return an empty result, not a substitute mailbox.
 
 `POST /subscription/checkout`, `POST /subscription/portal`, `POST /subscription/cancel`, `POST /subscription/change-plan` and `GET /subscription/preview-change` require the `MANAGE_BILLING` organization permission; reading the subscription, its limits, trial and features needs only membership. `POST /subscription/portal` requires an existing Stripe billing customer. A workspace without one receives `400` with code `bad_request` and a message to complete checkout first; free and operator-granted plans alone do not create a billing customer.
 
@@ -762,6 +763,184 @@ On the tracking service (the `TRACKING_DOMAIN` host, not the API), also public a
 - `GET /t/o/:task_id.png` (open pixel), `GET /c/:link_id` (click redirect)
 - `GET /tracking.js` (the website tracking snippet), `POST /p` (page-view ingest; JSON body up to 8 KB, `429` over budget, `204` otherwise. Nothing in the request can name a contact)
 - A visit to a [sending domain's root](/guides/sending-domains/#root-redirects) (or its `www`) that a workspace pointed here. On a verified domain every path except `/health` answers `302` to its website with `Cache-Control: public, max-age=300`, before any route above; an unknown host is a `404`. The forms service answers a verified redirect domain the same way
+
+## Platform node diagnostics
+
+Backend-origin routes outside `/v1` require a normal bearer session, live admin
+permissions and session MFA. Workspace API keys/OAuth API tokens cannot use them.
+
+| Method and path | Existing admin permissions |
+| --- | --- |
+| `POST /admin/auth/device/describe` | Any nonzero admin permission |
+| `POST /admin/auth/device/decide` | Any nonzero admin permission + fresh auth |
+| `GET /admin/fleet/nodes/:id/logs` | `VIEW_WORKERS` |
+| `GET /admin/fleet/nodes/:id/broker` | `VIEW_WORKERS` and `VIEW_ANALYTICS` |
+
+Public device starts/polls are `POST /v1/auth/cli/admin/code` and `/poll`.
+See [exact auth schemas](/api/authentication/#platform-admin-device-sessions).
+There is no remote shell, arbitrary execution endpoint or admin API key.
+Mutations stay on existing permission-gated admin endpoints and audit trails.
+
+### Recent evidence
+
+`GET /admin/fleet/nodes/:id/logs` accepts optional `after`/`before` (inclusive
+RFC3339 timestamps, after cannot follow before), `level` (`info`, `warn`,
+`error`), `mailbox_id` (mailbox account UUID, not folder/message) and `limit`
+(integer 1..200, default 200). Newest-first results contain at most one hour
+and 1,000 retained events per node; expired/count-evicted evidence cannot be
+recovered. This is allowlisted process evidence, not a full journal export.
+
+Response `200` (`Cache-Control: no-store`):
+
+```json
+{
+  "node_id": "<node UUID>",
+  "availability": "fresh", "coverage": "partial",
+  "reason": "allowlisted_evidence_only", "observed_at": "2026-10-10T06:10:00Z",
+  "capture": {
+    "protocol": 1, "run_id": "<process UUID>", "started_at": "2026-10-10T06:00:00Z",
+    "observed_at": "2026-10-10T06:09:58Z", "received_at": "2026-10-10T06:09:59Z",
+    "dropped": 2
+  },
+  "events": [{
+    "id": "<event UUID>", "observed_at": "2026-10-10T06:09:50Z",
+    "event": "sync_control_plane_held", "level": "warn", "category": "control_plane",
+    "mailbox_id": "<mailbox account UUID>", "http_status": 503, "count": 1
+  }],
+  "oldest_retained_at": "2026-10-10T06:09:50Z", "newest_retained_at": "2026-10-10T06:09:50Z",
+  "retained_count": 1, "truncated": false, "retention_seconds": 3600, "max_events": 1000
+}
+```
+
+`capture` is omitted until observed. Oldest/newest/count describe the entire
+retained window, not filtered rows. `truncated` means additional matching
+retained rows exist beyond the response limit. `dropped` counts known queue
+overflow/exhausted transport batches since that process's start, not lifetime
+loss. It resets on `run_id`. Crash loss, events before capture installation and
+lost acknowledgements cannot be measured completely: an exhausted batch is
+counted as dropped even if ingestion succeeded but its acknowledgement was
+lost. TTL/count eviction is intentional retention, not transport loss.
+
+| Availability / reason | Meaning |
+| --- | --- |
+| `unavailable` / `log_credential_unavailable` | Old/manual worker or lost Redis enrollment state; re-enroll |
+| `unavailable` / `capture_not_observed` | Enrolled but no upgraded capture received; might be an old worker |
+| `unavailable` / `cache_unavailable` | History cannot be read, not zero errors |
+| `stale` / `no_recent_capture` | Capture observation older than two minutes; retained rows may still appear |
+| `fresh` / `no_recent_evidence` | Recent empty capture, not proof of provider health |
+| `fresh` / `allowlisted_evidence_only` | Fresh partial evidence, never complete/healthy inference |
+
+Fixed event schema: UUID `id`, RFC3339 `observed_at`, allowlisted `event`,
+canonical `level`/`category`, optional mailbox UUID and numeric `count`
+(0..1,000,000). Only `sync_control_plane_held` retains numeric HTTP status
+(100..599), including actual sync map/control-plane 503 responses.
+
+| Event | Category / level | Observed behavior |
+| --- | --- | --- |
+| `sync_control_plane_held` | `control_plane` / `warn` | Actual failed sync control-plane call; pass aborted, cursors held |
+| `sync_message_deferred` | `control_plane` / `warn` | Unpublished map cleanup failed, pass skipped |
+| `mailbox_provider_unreachable` | `provider` / `warn` | Actual sync connection/transport failure |
+| `mailbox_provider_auth_failed` | `provider` / `warn` | Actual sync auth/authorization failure |
+| `mailbox_provider_throttled` | `provider` / `warn` | Actual sync throttle |
+| `mailbox_provider_sync_completed` | `provider` / `info` | Measured complete pass after prior transport failures |
+| `sync_folder_skipped` | `sync_policy` / `info` | Count of folders excluded by sync policy |
+| `sync_message_deferred_by_policy` | `sync_policy` / `info` | Count of messages deferred in a sync pass |
+| `sync_skipped_folder_search_failed` | `provider` / `warn` | Actual excluded-folder search failure |
+| `sync_legacy_arrival` | `compatibility` / `warn` | Existing legacy arrival fallback used |
+| `worker_error` | `worker_runtime` / `error` | Worker Zap error severity only, without arbitrary log text |
+
+History also reports `generic_error_coverage: "unavailable"` and `generic_error_reason: "unhooked_runtime_sources"`. Generic runtime error capture currently hooks worker Zap only. Worker Zerolog and consumer standard-log/Zerolog errors are not captured. Explicit allowlisted sync/provider/control-plane decision hooks remain separate and unchanged. A fresh empty capture, including a consumer capture, never establishes zero runtime errors or health. These fields describe missing source coverage, not a current failure.
+
+No addresses, subjects, bodies, headers, raw errors, folder names or provider
+credentials are forwarded. Unknown free-form fields are discarded; categories
+and levels are reconstructed before transport and again on ingestion/read.
+Unknown events are rejected. Evidence does not change sync leases, cursor
+handling, arrival admission or send authority.
+
+### Node ingestion
+
+`POST /api/v1/internal/fleet/nodes/:id/logs` accepts only the enrollment-issued
+node-specific `Authorization: Bearer <NODE_LOG_TOKEN>`. The existing fleet join
+token authorizes issuance in `env_b64`. Shared broker/internal tokens are not
+accepted; hashes bind to exactly one registered node and are rechecked atomically
+at ingestion. Rejoin rotates; node deletion revokes and removes log state.
+This credential grants evidence submission only, not mailbox/command access.
+
+There is no broker-key-to-log-credential refresh endpoint: the existing broker
+key authenticates the fleet, not ownership of a particular node UUID. Existing
+nodes must upgrade and rerun authenticated enrollment with the same UUID. The
+normal join script reads that UUID from the existing `node.env`, retains
+`node.local.env` and restarts the service; do not remove the configuration
+directory or delete the fleet row. Until capture is received, availability is
+unavailable, not healthy. Redis enrollment-hash loss requires the same safe
+re-enrollment, and no historical journals are imported. See
+[upgrade order and coverage](/development/data-control/#upgrade-order-and-coverage).
+
+Request JSON (max 32 KiB, 32 events; events use the schema above):
+
+```json
+{
+  "protocol": 1, "batch_id": "<UUID, stable across retries>", "run_id": "<process UUID>",
+  "started_at": "2026-10-10T06:00:00Z", "observed_at": "2026-10-10T06:09:58Z",
+  "dropped": 2, "events": []
+}
+```
+
+Empty batches report capture coverage only. Batch time must be within two
+minutes of receipt and no more than one minute ahead. Events must be within
+one-hour retention and no more than one minute ahead. `started_at` must be
+present and not after observation. Duplicate batch IDs are idempotent for one
+hour; older batches cannot overwrite newer capture metadata. Cadence is five
+seconds, queue 256 events, at most three attempts with bounded backoff and
+five-second HTTP deadlines. Capture never waits for network/queue space.
+Authenticated requests are capped at 30/node/minute. Success `204`; errors use
+the standard envelope: `400 bad_request` (invalid protocol/time/bounds/event),
+`401 unauthorized` (missing/wrong-node/revoked credential), `404 not_found`
+(absent registered node), `429 rate_limit_exceeded` (`Retry-After: 60`) and
+`503 service_unavailable` (dependencies).
+
+### Broker committed lag
+
+`GET /admin/fleet/nodes/:id/broker` accepts a registered worker UUID, no
+topic/group overrides. Existing read-only scopes remain separate:
+`commands` observes `worker-<UUID>` / `w.<UUID>`; `results` observes
+`consumer-group` / `jobs.worker-events`, shared results, not attributable to
+that worker. No extra consumer scopes or offset mutations are created.
+
+Response `200` has `node_id`, RFC3339 `observed_at`, `commands`, `results` and
+`note`. Each uses existing `MonitoringSource`: `id`, `availability`, `coverage`,
+optional `reason`, `observed_at`, `checked_at`, measured/expected scopes and
+`metrics`. Successful metrics are `committed_lag` (messages) and `members`, with
+count, observation/evidence timestamps, `condition: "unknown"`, severity and
+cautionary note. Only this focused endpoint opts into lag partition detail:
+
+```json
+{
+  "broker": {
+    "consumer_group": "worker-<UUID>", "topics": ["w.<UUID>"],
+    "partitions": [{"topic":"w.<UUID>","partition":0,"earliest":10,"committed":16,"latest":22,"committed_lag":6}]
+  }
+}
+```
+
+Every requested topic/partition and committed/earliest/latest offset is
+validated; partition IDs must be nonnegative, max 128 partitions/scope, sorted
+by topic/partition. Missing commits, offsets outside retention, mismatched
+partitions, negative/overflowing lag, permission errors and timeouts are
+unavailable, never clamped to zero. Failed metrics have null count, no broker
+detail, unknown condition and attempted observation time. Reasons include
+`dependency_missing`, `resource_absent`, `permission_denied`, `timeout`,
+`collection_failed`; non-Kafka/unsupported buses return `unsupported` with
+empty metrics. One scope failure does not hide another successful scope.
+Overall collection deadline is eight seconds.
+
+Lag is **not** delivery, provider health, throughput, uncommitted in-flight
+work, queue-drain time or an outage. Membership alone is not an outage either.
+Errors: `400 bad_request` (UUID/non-worker/invalid log filters),
+`401 unauthorized`, `403 admin_mfa_required`/`forbidden`, `404 not_found`,
+`503 service_unavailable` (node registry). Log Redis read failure instead
+returns `200` with explicit unavailable coverage. Successful diagnostics use
+`Cache-Control: no-store`.
 
 ## Notes
 

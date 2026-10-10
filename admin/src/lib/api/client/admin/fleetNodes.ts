@@ -2,7 +2,8 @@
 //
 // Nodes are pull-based: they enrol with the join token, heartbeat, and ask what
 // version they should be running. Nothing here reaches into a machine, so there
-// is no install, restart, logs or reboot call to make.
+// is no install, restart or reboot call to make. Redacted submitted evidence
+// is read through the generic node diagnostics API.
 
 import { Request } from "@/lib/api/client";
 

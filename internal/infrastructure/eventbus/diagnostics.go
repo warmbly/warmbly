@@ -8,9 +8,10 @@ import (
 )
 
 type DiagnosticScope struct {
-	ID     string
-	Group  string
-	Topics []string
+	IncludePartitions bool
+	ID                string
+	Group             string
+	Topics            []string
 }
 
 // Diagnostics is optional and does not extend the worker EventBus envelope.
@@ -19,7 +20,7 @@ type Diagnostics interface {
 }
 
 func diagnosticUnavailable(scope DiagnosticScope, at time.Time, reason string) models.MonitoringMetric {
-	return models.MonitoringMetric{ID: "broker_queue", Title: "Broker queue observation", ScopeID: scope.ID, Unit: "messages", Availability: models.MonitoringUnavailable, Condition: models.MonitoringUnknown, Severity: "info", Reason: reason, Note: "Unavailable queue observation is not zero backlog or a broker outage."}
+	return models.MonitoringMetric{ID: "broker_queue", Title: "Broker queue observation", ScopeID: scope.ID, Unit: "messages", Availability: models.MonitoringUnavailable, Condition: models.MonitoringUnknown, Severity: "info", Reason: reason, ObservedAt: &at, Note: "Unavailable queue observation is not zero backlog or a broker outage."}
 }
 
 func diagnosticMetric(scope DiagnosticScope, at time.Time, id, unit, note string, count int64) models.MonitoringMetric {

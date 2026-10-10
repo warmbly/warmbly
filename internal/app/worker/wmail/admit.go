@@ -11,6 +11,7 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/emsg"
+	"github.com/warmbly/warmbly/internal/pkg/nodeevidence"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -140,6 +141,9 @@ func (w *WMail) beginTick() {
 
 // endTick retains unmeasured backlog until a complete pass confirms catch-up.
 func (w *WMail) endTick(ctx context.Context, stats *tickStats, complete bool) {
+	if stats.deferred > 0 {
+		nodeevidence.Emit(nodeevidence.PolicyDeferred, w.ID, 0, stats.deferred)
+	}
 	complete = complete && ctx.Err() == nil && !stats.aborted && stats.deferred == 0 && w.tracker.state.BackfillCursor.GoogleRecovery == nil
 	w.tracker.tickComplete = complete
 	if complete {
@@ -207,6 +211,7 @@ func (w *WMail) storeNew(ctx context.Context, msg *models.EmailMessageData, data
 			return err
 		}
 		log.Warn().Str("email_id", w.ID.String()).Msg("sync: legacy arrival publication; upgrade backend and consumer before workers for crash durability")
+		nodeevidence.Emit(nodeevidence.LegacyArrival, w.ID, 0, 1)
 	}
 	if err := w.EmailMessageMapRepository.Add(ctx, mapping); err != nil {
 		return err
@@ -242,6 +247,7 @@ func (w *WMail) storeNew(ctx context.Context, msg *models.EmailMessageData, data
 func (w *WMail) retryUnmap(ctx context.Context) bool {
 	for key, id := range w.unmapPending {
 		if err := w.EmailMessageMapRepository.Del(ctx, w.UserID, w.ID, key, id); err != nil {
+			nodeevidence.Emit(nodeevidence.MessageDeferred, w.ID, evidenceHTTPStatus(err), 1)
 			log.Warn().Err(err).Str("email_id", w.ID.String()).Msg("sync: map entry for an unpublished message still not removed; pass skipped")
 			return false
 		}

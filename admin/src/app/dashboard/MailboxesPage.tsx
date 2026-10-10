@@ -177,6 +177,7 @@ export default function MailboxesPage() {
     const orgId = params.get("org") || undefined;
     const userId = params.get("user") || undefined;
     const workerParam = params.get("worker") || "";
+    const mailboxId = params.get("mailbox_id") || undefined;
 
     // `?q=` seeds the search box so the command palette can land here on a
     // mailbox; a status of "all" keeps a disabled mailbox findable that way.
@@ -225,7 +226,7 @@ export default function MailboxesPage() {
     ];
 
     const filterKey = JSON.stringify({
-        query, status, provider, warmup, workerId, riskBand, pool, synced, orgId, userId,
+        query, status, provider, warmup, workerId, riskBand, pool, synced, orgId, userId, mailboxId,
         warmupPaused, trackingVerified, hasTrackingDomain, hasOrg, signatureSync, hasOAuth, hasSmtp,
         capMin, capMax, gapMin, gapMax, connected, lastSynced, sort,
     });
@@ -237,7 +238,7 @@ export default function MailboxesPage() {
     const { data, isLoading, error, refetch } = useQuery({
         queryKey: ["admin", "mailboxes", filterKey, pager.cursor],
         queryFn: () =>
-            searchMailboxes({
+            searchMailboxes(mailboxId ? { mailbox_id: mailboxId, status: "all", limit: 50 } : {
                 q: query.trim() || undefined,
                 status,
                 provider: provider || undefined,
@@ -270,7 +271,7 @@ export default function MailboxesPage() {
                 sort_desc: sort.by ? sort.desc : undefined,
             }),
         staleTime: 30_000,
-        placeholderData: keepPreviousData,
+        placeholderData: mailboxId ? undefined : keepPreviousData,
     });
 
     const rows = data?.data ?? [];
@@ -329,6 +330,15 @@ export default function MailboxesPage() {
         next.delete("q");
         setParams(next, { replace: true });
     }
+
+    if (mailboxId) return <div>
+        <PageHeader title="Mailbox" description="Exact identity lookup across current assignments, including inactive mailboxes. Existing browse filters do not apply." />
+        <p className="mb-4 break-all font-mono text-xs">{mailboxId}</p>
+        <Button variant="outline" className="mb-4" onClick={() => clearParam("mailbox_id")}>Return to mailbox browser</Button>
+        <DataTable columns={columns} rows={rows} getRowId={(m) => m.id} loading={isLoading} error={error}
+            onRetry={() => refetch()} errorTitle="Mailbox lookup failed" noun="mailboxes"
+            emptyTitle="Mailbox not found" emptyHint="This mailbox is no longer registered on this instance." />
+    </div>;
 
     return (
         <div>

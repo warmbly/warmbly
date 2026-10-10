@@ -1077,6 +1077,18 @@ Retry-After: 60
 
 Use the `Retry-After` header to determine when to retry.
 
+## Admin device request errors
+
+The [admin device flow](/api/authentication/#platform-admin-device-sessions)
+adds `admin_device_expired` (404, indistinguishable invalid/unknown/expired/
+consumed request), `admin_device_resolved` (409, already decided or mismatched/
+replayed consent), and `admin_device_slow_down` (429, poll faster than five
+seconds). Start again on expiry and never auto-approve on conflict.
+Attempt budgets use existing `rate_limit_exceeded`. Auth/MFA/reauth and
+dependency failures keep existing codes. Redis failures never authorize a
+single-factor or anonymous admin. [Node diagnostics](/api/endpoints/#platform-node-diagnostics)
+use generic errors and explicit unavailable/stale coverage, not outage inference.
+
 ## See also
 
 - [Authentication](/api/authentication/)

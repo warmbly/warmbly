@@ -190,6 +190,7 @@ export interface AdminMailboxesResult {
 }
 
 export interface AdminMailboxSearch {
+    mailbox_id?: string;
     q?: string;
     status?: string;
     provider?: string;
