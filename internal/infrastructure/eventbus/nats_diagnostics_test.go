@@ -49,9 +49,25 @@ func TestMonitoringNATSExistingConsumerReadOnlyAndAbsentScopes(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	before, err := consumer.Info(t.Context())
-	if err != nil {
-		t.Fatal(err)
+	// Publish acknowledgements precede JetStream's asynchronous consumer updates.
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	var before *jetstream.ConsumerInfo
+	for {
+		before, err = consumer.Info(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if before.NumPending == 2 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("consumer pending count did not settle: %+v", before)
+		case <-ticker.C:
+		}
 	}
 	streamBefore, err := stream.Info(t.Context())
 	if err != nil {
@@ -78,7 +94,7 @@ func TestMonitoringNATSExistingConsumerReadOnlyAndAbsentScopes(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(before.Config, after.Config) || !reflect.DeepEqual(before.Delivered, after.Delivered) || !reflect.DeepEqual(before.AckFloor, after.AckFloor) || before.NumPending != after.NumPending || before.NumAckPending != after.NumAckPending || !reflect.DeepEqual(streamBefore.State, streamAfter.State) {
-		t.Fatal("diagnostics altered stream or delivery state")
+		t.Fatalf("diagnostics altered stream or delivery state: consumer before=%+v after=%+v; stream before=%+v after=%+v", before, after, streamBefore.State, streamAfter.State)
 	}
 	var absent *NATSBus
 	if result := absent.Diagnose(context.Background(), time.Now(), []DiagnosticScope{scope}); result.Metrics[0].Count != nil || result.Metrics[0].Reason != "dependency_missing" {
