@@ -191,13 +191,43 @@ func (w *WMail) graphUpgradeIDs(ctx context.Context) (bool, error) {
 	var converted map[string]string
 	if len(ids) > 0 {
 		converted, err = w.GraphData.Client.ImmutableMessageIDs(ctx, ids)
-		if err != nil {
+		if err != nil && !errors.Is(err, msgraph.ErrIncompleteIDConversion) {
 			return false, err
 		}
 	}
 	cur := w.tracker.folder(graphIdentityCursor)
 	for _, row := range rows {
 		id := converted[row.ProviderID]
+		if id == "" {
+			// A per-item conversion failure is not proof that the message was deleted.
+			full, err := w.GraphData.Client.FetchMessage(ctx, "", row.ProviderID)
+			if err != nil {
+				return false, err
+			}
+			if full == nil {
+				// Regular IDs also disappear on moves; resolve the stable RFC Message-ID first.
+				if row.MessageID == "" {
+					return false, repository.ErrSyncContextUnsupported
+				}
+				id, err = w.GraphData.Client.ResolveMessageID(ctx, row.MessageID)
+				if err != nil {
+					return false, err
+				}
+			} else {
+				id = full.ID
+				if id == "" {
+					return false, msgraph.ErrIncompleteIDConversion
+				}
+			}
+			if id == "" {
+				if err := w.onEvent(models.JobEventTypeRemoveEmail, &models.JobEventRemoveEmail{UserID: w.UserID, EmailID: w.ID, ID: row.ID}); err != nil {
+					return false, err
+				}
+				cur.Next = row.ID.String()
+				w.tracker.setFolder(graphIdentityCursor, cur)
+				continue
+			}
+		}
 		known, err := w.EmailMessageMapRepository.Get(ctx, w.UserID, w.ID, row.ProviderID)
 		if err != nil {
 			return false, err

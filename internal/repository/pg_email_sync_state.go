@@ -38,7 +38,7 @@ type EmailSyncStateRepository interface {
 }
 
 func (r *pgEmailSyncStateRepository) ListProviderMessages(ctx context.Context, userID, emailID uuid.UUID, after *uuid.UUID, limit int) ([]ProviderFolderMessage, error) {
-	const q = `SELECT id, gmail_id, provider_folder, internal_date, flags FROM unibox_emails
+	const q = `SELECT id, gmail_id, message_id, provider_folder, internal_date, flags FROM unibox_emails
 		WHERE user_id = $1 AND email_id = $2 AND gmail_id <> '' AND ($3::uuid IS NULL OR id > $3)
 		ORDER BY id LIMIT $4`
 	rows, err := r.db.Query(ctx, q, userID, emailID, after, limit)
@@ -49,7 +49,7 @@ func (r *pgEmailSyncStateRepository) ListProviderMessages(ctx context.Context, u
 	out := make([]ProviderFolderMessage, 0)
 	for rows.Next() {
 		var m ProviderFolderMessage
-		if err := rows.Scan(&m.ID, &m.ProviderID, &m.ProviderFolder, &m.InternalDate, &m.Flags); err != nil {
+		if err := rows.Scan(&m.ID, &m.ProviderID, &m.MessageID, &m.ProviderFolder, &m.InternalDate, &m.Flags); err != nil {
 			return nil, err
 		}
 		out = append(out, m)

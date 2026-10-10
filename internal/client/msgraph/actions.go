@@ -167,6 +167,9 @@ func (c *Client) ResolveMessageID(ctx context.Context, internetMessageID string)
 	if len(resp.Value) == 0 {
 		return "", nil
 	}
+	if resp.Value[0].ID == "" {
+		return "", errors.New("graph: message lookup returned an empty id")
+	}
 	return resp.Value[0].ID, nil
 }
 

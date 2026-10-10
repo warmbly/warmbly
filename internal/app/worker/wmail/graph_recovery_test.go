@@ -17,12 +17,17 @@ import (
 )
 
 type graphRecoveryProvider struct {
-	snapshot map[string][]any
-	page2    map[string][]any
-	messages map[string]map[string]any
-	expired  string
-	seen     bool
-	requests []string
+	snapshot         map[string][]any
+	page2            map[string][]any
+	messages         map[string]map[string]any
+	translations     map[string]string
+	messageErrors    map[string]int
+	resolvedID       string
+	resolveError     int
+	resolveMalformed bool
+	expired          string
+	seen             bool
+	requests         []string
 }
 
 func (g *graphRecoveryProvider) serve(t *testing.T) *httptest.Server {
@@ -35,6 +40,23 @@ func (g *graphRecoveryProvider) serve(t *testing.T) *httptest.Server {
 		path := strings.TrimPrefix(r.URL.Path, "/v1.0/me/")
 		g.requests = append(g.requests, path+"?"+r.URL.RawQuery)
 		switch {
+		case path == "messages":
+			if r.URL.Query().Get("$filter") != "internetMessageId eq '<stored@fake.test>'" {
+				t.Error("RFC lookup lost its exact stored identity")
+			}
+			if g.resolveError != 0 {
+				w.WriteHeader(g.resolveError)
+				_, _ = w.Write([]byte(`{"error":{"code":"ErrorServerBusy"}}`))
+				return
+			}
+			value := []any{}
+			if g.resolveMalformed {
+				value = append(value, map[string]any{})
+			}
+			if g.resolvedID != "" {
+				value = append(value, map[string]any{"id": g.resolvedID})
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"value": value})
 		case path == "translateExchangeIds":
 			var body struct {
 				IDs    []string `json:"inputIds"`
@@ -49,11 +71,19 @@ func (g *graphRecoveryProvider) serve(t *testing.T) *httptest.Server {
 				if body.Target == "restId" {
 					target = "regular-" + strings.TrimPrefix(id, "stable-")
 				}
+				if translated, ok := g.translations[id]; ok {
+					target = translated
+				}
 				value = append(value, map[string]any{"sourceId": id, "targetId": target})
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"value": value})
 		case strings.HasPrefix(path, "messages/"):
 			id := strings.TrimPrefix(path, "messages/")
+			if status := g.messageErrors[id]; status != 0 {
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte(`{"error":{"code":"ErrorServerBusy"}}`))
+				return
+			}
 			msg := g.messages[id]
 			if msg == nil {
 				w.WriteHeader(http.StatusNotFound)
@@ -100,6 +130,125 @@ func (g *graphRecoveryProvider) serve(t *testing.T) *httptest.Server {
 	}))
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+func TestGraphIdentityUpgradeRecoversPartialConversions(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		message      map[string]any
+		status       int
+		resolvedID   string
+		resolveError int
+		wantErr      bool
+		wantRemoved  bool
+	}{
+		{"live message", graphMessageJSON("stable-recovered"), 0, "", 0, false, false},
+		{"moved message", nil, 0, "stable-recovered", 0, false, false},
+		{"confirmed missing", nil, 0, "", 0, false, true},
+		{"provider unavailable", nil, http.StatusServiceUnavailable, "", 0, true, false},
+		{"RFC lookup unavailable", nil, 0, "", http.StatusServiceUnavailable, true, false},
+		{"empty message identity", map[string]any{}, 0, "", 0, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := &graphRecoveryProvider{translations: map[string]string{"regular-recover": ""}, messages: map[string]map[string]any{"regular-recover": tc.message}, messageErrors: map[string]int{"regular-recover": tc.status}, resolvedID: tc.resolvedID, resolveError: tc.resolveError}
+			var events []captured
+			var states []models.SyncState
+			w := newGraphTestMail(t, g.serve(t), &events, &states)
+			w.GraphData.Client.SetImmutableIDMode(true)
+			id := uuid.New()
+			w.EmailMessageMapRepository = &recoveryMessageMap{data: map[string]repository.EmailMessageData{"regular-recover": {UserID: w.UserID.String(), EmailID: w.ID.String(), MessageID: "regular-recover", ID: id.String(), ThreadID: "owned"}}}
+			w.SyncContext = &graphRecoveryContext{recoveryRows: recoveryRows{rows: []repository.ProviderFolderMessage{{ID: id, ProviderID: "regular-recover", MessageID: "<stored@fake.test>", ProviderFolder: models.FolderInbox}}}}
+			done, err := w.graphUpgradeIDs(t.Context())
+			if (err != nil) != tc.wantErr || done == tc.wantErr {
+				t.Fatalf("done=%v err=%v", done, err)
+			}
+			cur := w.tracker.folder(graphIdentityCursor)
+			if tc.wantErr {
+				if cur.Next != "" || cur.Done || len(events) != 0 {
+					t.Fatalf("failed lookup advanced or deleted mail: cursor=%+v events=%v", cur, events)
+				}
+				return
+			}
+			if cur.Next != id.String() || !cur.Done || len(events) != 1 {
+				t.Fatalf("upgrade failed to checkpoint: cursor=%+v events=%v", cur, events)
+			}
+			if tc.wantRemoved {
+				if events[0].eventType != models.JobEventTypeRemoveEmail || events[0].body.(*models.JobEventRemoveEmail).ID != id {
+					t.Fatal("confirmed missing message not removed with original identity")
+				}
+			} else {
+				update := events[0].body.(*models.JobEventFolderUpdate)
+				if update.ID != id || update.ProviderID != "stable-recovered" || !update.Relayed {
+					t.Fatalf("recovered identity changed the conversation: %+v", update)
+				}
+			}
+		})
+	}
+}
+
+func TestGraphIdentityUpgradeResumesAfterTransientFailure(t *testing.T) {
+	first := uuid.MustParse("00000000-0000-4000-8000-000000000001")
+	second := uuid.MustParse("00000000-0000-4000-8000-000000000002")
+	g := &graphRecoveryProvider{translations: map[string]string{"regular-recover": ""}, messages: map[string]map[string]any{}, messageErrors: map[string]int{"regular-recover": http.StatusServiceUnavailable}}
+	srv := g.serve(t)
+	var events []captured
+	var states []models.SyncState
+	w := newGraphTestMail(t, srv, &events, &states)
+	w.GraphData.Client.SetImmutableIDMode(true)
+	maps := &recoveryMessageMap{data: map[string]repository.EmailMessageData{}}
+	for key, id := range map[string]uuid.UUID{"regular-first": first, "regular-recover": second} {
+		maps.data[key] = repository.EmailMessageData{UserID: w.UserID.String(), EmailID: w.ID.String(), MessageID: key, ID: id.String(), ThreadID: "owned"}
+	}
+	w.EmailMessageMapRepository = maps
+	w.SyncContext = &graphRecoveryContext{recoveryRows: recoveryRows{rows: []repository.ProviderFolderMessage{
+		{ID: first, ProviderID: "regular-first", ProviderFolder: models.FolderInbox},
+		{ID: second, ProviderID: "regular-recover", MessageID: "<stored@fake.test>", ProviderFolder: models.FolderInbox},
+	}}}
+	if done, err := w.graphUpgradeIDs(t.Context()); err == nil || done {
+		t.Fatalf("transient conversion marked upgrade done: done=%v err=%v", done, err)
+	}
+	if cur := w.tracker.folder(graphIdentityCursor); cur.Next != first.String() || cur.Done || len(events) != 1 {
+		t.Fatalf("lost successful prefix or advanced past failure: cursor=%+v events=%v", cur, events)
+	}
+	g.messageErrors = nil
+	g.resolvedID = "stable-recovered"
+	reloaded := newGraphTestMail(t, srv, &events, &states)
+	reloaded.ID, reloaded.UserID = w.ID, w.UserID
+	reloaded.GraphData.Client.SetImmutableIDMode(true)
+	reloaded.EmailMessageMapRepository, reloaded.SyncContext = maps, w.SyncContext
+	reloaded.tracker = newSyncTracker(graphReloadState(t, w.tracker.state), func(models.SyncState) error { return nil })
+	if done, err := reloaded.graphUpgradeIDs(t.Context()); err != nil || !done {
+		t.Fatalf("retry failed to recover: done=%v err=%v", done, err)
+	}
+	if len(events) != 2 || maps.data["stable-first"].ID != first.String() || maps.data["stable-recovered"].ID != second.String() {
+		t.Fatalf("retry changed identity or replayed prefix: events=%v maps=%v", events, maps.data)
+	}
+}
+
+func TestGraphIdentityUpgradeWithoutRFCIdentityNeverDeletesOnLegacy404(t *testing.T) {
+	g := &graphRecoveryProvider{translations: map[string]string{"regular-missing": ""}, messages: map[string]map[string]any{}}
+	var events []captured
+	var states []models.SyncState
+	w := newGraphTestMail(t, g.serve(t), &events, &states)
+	w.GraphData.Client.SetImmutableIDMode(true)
+	w.SyncContext = &graphRecoveryContext{recoveryRows: recoveryRows{rows: []repository.ProviderFolderMessage{{ID: uuid.New(), ProviderID: "regular-missing"}}}}
+	if done, err := w.graphUpgradeIDs(t.Context()); !errors.Is(err, repository.ErrSyncContextUnsupported) || done {
+		t.Fatalf("missing stable identity did not retain legacy mode: done=%v err=%v", done, err)
+	}
+	if cur := w.tracker.folder(graphIdentityCursor); cur.Next != "" || cur.Done || len(events) != 0 {
+		t.Fatalf("legacy 404 deleted or checkpointed mail: cursor=%+v events=%v", cur, events)
+	}
+}
+
+func TestGraphRFCIdentityLookupRejectsMalformedResults(t *testing.T) {
+	g := &graphRecoveryProvider{resolveMalformed: true}
+	var events []captured
+	var states []models.SyncState
+	w := newGraphTestMail(t, g.serve(t), &events, &states)
+	w.GraphData.Client.SetImmutableIDMode(true)
+	if _, err := w.GraphData.Client.ResolveMessageID(t.Context(), "<stored@fake.test>"); err == nil {
+		t.Fatal("malformed lookup reported definitive absence")
+	}
 }
 
 type graphRecoveryContext struct{ recoveryRows }
