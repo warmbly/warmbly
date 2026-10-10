@@ -53,7 +53,10 @@ const (
 	gateNoWorkday = "no_working_day"
 	// gateNoWorker is a mailbox no heartbeating worker holds: a send handed to
 	// it is refused before it leaves.
-	gateNoWorker = "no_worker"
+	gateNoWorker  = "no_worker"
+	gateRecovery  = "send_recovery"
+	gateCooldown  = "send_cooldown"
+	gateAdmission = "send_authority"
 )
 
 // workerRecheck is when a mailbox without a live worker is looked at again:
@@ -84,7 +87,8 @@ type campaignPass struct {
 	lastSendsRead map[uuid.UUID]bool
 	// gapDraws is each mailbox's gap drawn by gapClearCandidates, reused by
 	// placement so the filter and the send enforce the same gap.
-	gapDraws map[uuid.UUID]int
+	gapDraws  map[uuid.UUID]int
+	sendGates map[uuid.UUID]mailboxGate
 }
 
 // healthRead is one mailbox's warmup health, as the gate reads it.
@@ -244,6 +248,9 @@ func (s *schedulerService) healthFor(ctx context.Context, p *campaignPass, id uu
 // remaining is today's budget left, already read; it is returned adjusted for a
 // health band that dampens rather than blocks.
 func (s *schedulerService) gateFor(ctx context.Context, p *campaignPass, acct models.Email, remaining int) (mailboxGate, int) {
+	if gate := s.sendGate(ctx, p, acct); !gate.open() {
+		return gate, 0
+	}
 	// Sending-domain authentication first, because unauthenticated mail is
 	// rejected outright by Gmail/Yahoo/Outlook: no amount of budget, window or
 	// rotation makes it deliverable. Only a SUSTAINED failure gates — "unknown"
@@ -282,6 +289,39 @@ func (s *schedulerService) gateFor(ctx context.Context, p *campaignPass, acct mo
 		return mailboxGate{reason: gateBudget, paced: true}, 0
 	}
 	return mailboxGate{}, remaining
+}
+
+func (s *schedulerService) sendGate(ctx context.Context, p *campaignPass, acct models.Email) mailboxGate {
+	reader, ok := s.taskRepo.(interface {
+		GetSendAdmission(context.Context, uuid.UUID, uuid.UUID, models.InboxProvider, time.Time) (*repository.SendAdmission, error)
+	})
+	if !ok {
+		return mailboxGate{}
+	}
+	if p.sendGates == nil {
+		p.sendGates = map[uuid.UUID]mailboxGate{}
+	}
+	if gate, ok := p.sendGates[acct.ID]; ok {
+		return gate
+	}
+	now := time.Now()
+	if acct.OrganizationID == nil {
+		return mailboxGate{reason: gateAdmission}
+	}
+	a, err := reader.GetSendAdmission(ctx, *acct.OrganizationID, acct.ID, models.InboxProvider(acct.Provider), now)
+	gate := mailboxGate{}
+	switch {
+	case err != nil || a == nil:
+		gate = mailboxGate{reason: gateAdmission, paced: true, reopensAt: now.Add(workerRecheck)}
+	case a.RecoveryHold:
+		gate = mailboxGate{reason: gateRecovery}
+	case a.RetryAt != nil && a.RetryAt.After(now):
+		gate = mailboxGate{reason: gateCooldown, reopensAt: *a.RetryAt}
+	case !a.Allowed:
+		gate = mailboxGate{reason: gateAdmission}
+	}
+	p.sendGates[acct.ID] = gate
+	return gate
 }
 
 // windowFor places a mailbox on its OWN calendar for a send aimed at `at`, and

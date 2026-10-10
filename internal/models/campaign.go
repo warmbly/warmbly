@@ -344,6 +344,9 @@ const (
 	EstimateSenderDomainAuth = "domain_auth"
 	EstimateSenderResting    = "resting"
 	EstimateSenderNoWorker   = "no_worker"
+	EstimateSenderRecovery   = "send_recovery"
+	EstimateSenderCooldown   = "send_cooldown"
+	EstimateSenderAdmission  = "send_authority"
 )
 
 // CampaignEstimateWarmup is the warmup traffic running beside the campaign.

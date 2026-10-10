@@ -48,12 +48,15 @@ The estimate simulates the campaign day by day against the mailboxes that would 
 - conservative cold pacing, requiring recent real-recipient replies for bounded increases rather than synthetic age
 - the workspace's risk band and each mailbox's health band
 - mailboxes on hold or failing domain authentication, which send nothing
+- mailboxes with an unresolved send outcome or a provider cooldown, which contribute no available sends until the hold is resolved or the cooldown expires
 - sending behaviour profiles
 - the sending window, with the spacing between sends
 
 Warmup keeps running on every warming mailbox, reduced to 5 emails a day while it backs a live campaign, and those emails use the same spacing clock as campaign sends. The estimate counts them, so a narrow window with a long gap between sends finishes later than the caps alone suggest. Mailboxes that already send for other campaigns keep that share of their cap, judged from their last seven days.
 
 Follow-ups that are due go out before new leads start, and the total assumes nobody replies or unsubscribes, so real sequences usually finish sooner. Replies, bounces, new contacts joining a linked segment and changes to a mailbox's health all move the real finish.
+
+An unresolved send from one mailbox does not stop other healthy mailboxes from sending. A follow-up normally uses the address its lead first heard from, but can move to another eligible mailbox when that address is held or cooling. The launch plan and day plan show the hold or cooldown separately from the normal daily limit. An unknown send needs [provider-confirmed resolution](/development/send-safety/#resolving-an-unknown-send); a timeout or missing Sent copy is not proof that it can be retried.
 
 ## Images in the editor
 

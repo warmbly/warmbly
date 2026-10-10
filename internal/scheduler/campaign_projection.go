@@ -359,6 +359,13 @@ func (s *schedulerService) ProjectCampaign(ctx context.Context, in CampaignProje
 			p.heldTill = h.blockedUntil
 		case gateNoWorker:
 			p.state = models.EstimateSenderNoWorker
+		case gateRecovery:
+			p.held, p.state = true, models.EstimateSenderRecovery
+		case gateCooldown:
+			p.held, p.state = true, models.EstimateSenderCooldown
+			p.heldTill = &gate.reopensAt
+		case gateAdmission:
+			p.held, p.state = true, models.EstimateSenderAdmission
 		}
 		if p.state == "" {
 			switch p.health {

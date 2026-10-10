@@ -63,16 +63,18 @@ func (s dispatchBodyStore) Get(context.Context, string) (io.ReadCloser, error) {
 
 type dispatchResultBus struct {
 	eventbus.EventBus
-	mu     sync.Mutex
-	fail   bool
-	events int
+	mu       sync.Mutex
+	fail     bool
+	failures int
+	events   int
 }
 
 func (b *dispatchResultBus) Publish(context.Context, string, string, []byte) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.fail {
+	if b.fail || b.failures > 0 {
 		b.fail = false
+		b.failures--
 		return errors.New("lost broker acknowledgement")
 	}
 	b.events++
@@ -94,7 +96,7 @@ func TestWarmupWorkerExecutesNativeOnceAndReplaysAfterLostEventAndRestart(t *tes
 		t.Fatal(err)
 	}
 	authority := &dispatchAuthority{nonce: uuid.New(), state: "authorized"}
-	bus := &dispatchResultBus{fail: true}
+	bus := &dispatchResultBus{failures: 4}
 	worker := newLoadingWorker(&capturedEvents{})
 	worker.ID = uuid.NewString()
 	worker.SyncContextRepository = authority
@@ -155,5 +157,18 @@ func TestWarmupWorkerExecutesNativeOnceAndReplaysAfterLostEventAndRestart(t *tes
 	}
 	if rt.calls.Load() != 1 {
 		t.Fatal("rejected dispatch reached native transport")
+	}
+	worker.ID = restarted.ID
+	blob.DispatchNonce = authority.nonce.String()
+	data, err = blob.EncodeBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker.Storage = dispatchBodyStore{data: data}
+	if err := worker.HandleSendEmail(ctx, command); err != nil {
+		t.Fatal(err)
+	}
+	if rt.calls.Load() != 1 || bus.events != 13 {
+		t.Fatal("pending replay resent the provider request")
 	}
 }
