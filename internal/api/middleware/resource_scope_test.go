@@ -19,11 +19,52 @@ type scopeOrgs struct {
 	organization.OrganizationService
 	scope    *models.ResourceScope
 	resolved int
+	err      *errx.Error
 }
 
 func (f *scopeOrgs) ResolveMemberScope(context.Context, uuid.UUID, uuid.UUID) (*models.ResourceScope, *errx.Error) {
 	f.resolved++
-	return f.scope, nil
+	return f.scope, f.err
+}
+
+func TestResourceScopeGateFailsClosedOnResolutionFailure(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, tc := range []struct {
+		name string
+		err  *errx.Error
+	}{
+		{"nil scope", nil},
+		{"resolver error", errx.InternalError()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			orgs := &scopeOrgs{err: tc.err}
+			rec, seen := serveScoped(t, &Handler{OrganizationService: orgs}, restrictedMember(uuid.New()), nil, http.MethodGet, "/v1/organization/current", "/v1/organization/current")
+			if rec.Code != http.StatusInternalServerError || seen != nil || orgs.resolved != 1 {
+				t.Fatalf("resolution failure proceeded: HTTP %d seen=%v resolved=%d", rec.Code, seen != nil, orgs.resolved)
+			}
+		})
+	}
+}
+
+func TestResourceScopeGateDefersCreationToAccountPolicy(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, auth := range []string{AuthTypeJWT, AuthTypeAPIKey, AuthTypeOAuth} {
+		t.Run(auth, func(t *testing.T) {
+			orgs := &scopeOrgs{err: errx.InternalError()}
+			h := &Handler{OrganizationService: orgs}
+			r := gin.New()
+			r.Use(func(c *gin.Context) {
+				c.Set(AuthTypeKey, auth)
+				c.Set(SessionMemberKey, restrictedMember(uuid.New()))
+			})
+			r.POST("/v1/organization", h.ResourceScopeGate(), func(c *gin.Context) { c.Status(http.StatusAccepted) })
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/organization", nil))
+			if w.Code != http.StatusAccepted || orgs.resolved != 0 {
+				t.Fatalf("creation was tied to selected member resolution: HTTP %d resolved=%d", w.Code, orgs.resolved)
+			}
+		})
+	}
 }
 
 func restrictedMember(orgID uuid.UUID) *models.OrganizationMember {
