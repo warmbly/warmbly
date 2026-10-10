@@ -46,13 +46,12 @@ func (w *WMail) nextSyncDelay(base time.Duration, last *errx.MailError) time.Dur
 	d := base
 	minimum := base / 2
 	switch {
+	case last != nil && last.RetryAfter > 0 && (isTransportError(last) || last.Code == errx.MailErrorCodeSendingTooFast):
+		// Service-unavailable responses can supply the same retry window as 429.
+		d = max(last.RetryAfter, base)
+		minimum = d
 	case last != nil && last.Code == errx.MailErrorCodeSendingTooFast:
-		// The provider returned 429. Respect its window when supplied.
 		d = syncBackoffMax
-		if last.RetryAfter > 0 {
-			d = max(last.RetryAfter, base)
-			minimum = d
-		}
 	case last != nil && isTransportError(last):
 		// The server is unreachable. Retry soon after the first failure (a
 		// dropped session reconnects on the next pass and costs one dial),

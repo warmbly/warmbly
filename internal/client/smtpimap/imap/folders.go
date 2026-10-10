@@ -1,8 +1,8 @@
 package imap
 
 import (
-	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -13,6 +13,16 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
+
+type FolderListing struct {
+	Folders []models.Mailbox
+	// Present includes names outside the sync cap, from the complete LIST.
+	Present map[string]struct{}
+}
+
+func (c *Client) ListFolders() (FolderListing, *errx.MailError) {
+	return c.listFoldersCapped(config.MaxEmailFolders)
+}
 
 // Folders lists the selectable folders of the account with the cursors the
 // sync loop keys on (UIDVALIDITY, UIDNEXT and, on a CONDSTORE server,
@@ -32,8 +42,13 @@ func (c *Client) Folders() ([]models.Mailbox, *errx.MailError) {
 // foldersCapped is Folders with the cap injectable, so a test can exercise
 // the overflow without standing up a hundred folders.
 func (c *Client) foldersCapped(limit int) ([]models.Mailbox, *errx.MailError) {
+	listing, err := c.listFoldersCapped(limit)
+	return listing.Folders, err
+}
+
+func (c *Client) listFoldersCapped(limit int) (FolderListing, *errx.MailError) {
 	if err := c.ensureConnected(); err != nil {
-		return nil, err
+		return FolderListing{}, err
 	}
 	c.lifecycle.RLock()
 	defer c.lifecycle.RUnlock()
@@ -47,12 +62,16 @@ func (c *Client) foldersCapped(limit int) ([]models.Mailbox, *errx.MailError) {
 		// Asking a server without CONDSTORE for HIGHESTMODSEQ is a BAD.
 		HighestModSeq: caps.Has(imap.CapCondStore),
 	}
-	opts, listStatus := listOptionsFor(caps, status)
+	opts, _ := listOptionsFor(caps, status)
 
 	var all []models.Mailbox
+	present := map[string]struct{}{}
 	statuses := map[string]*imap.StatusData{}
 	cmd := c.client.List("", "*", opts)
 	for f := cmd.Next(); f != nil; f = cmd.Next() {
+		if !slices.Contains(f.Attrs, imap.MailboxAttrNonExistent) {
+			present[f.Mailbox] = struct{}{}
+		}
 		attrs := make([]string, len(f.Attrs))
 		for i := range f.Attrs {
 			attrs[i] = string(f.Attrs[i])
@@ -67,7 +86,7 @@ func (c *Client) foldersCapped(limit int) ([]models.Mailbox, *errx.MailError) {
 		}
 	}
 	if err := cmd.Close(); err != nil {
-		return nil, c.handleError(err)
+		return FolderListing{}, c.handleError(err)
 	}
 
 	// Before the cap, not after: a name the server listed twice would
@@ -83,23 +102,20 @@ func (c *Client) foldersCapped(limit int) ([]models.Mailbox, *errx.MailError) {
 	for _, box := range kept {
 		st := statuses[box.Name]
 		if st == nil {
-			if listStatus {
-				// The server was asked and said nothing: the folder is not
-				// one it can open for us.
-				continue
-			}
 			data, err := c.client.Status(box.Name, status).Wait()
 			if err != nil {
-				var imapErr *imap.Error
-				if errors.As(err, &imapErr) {
-					// One folder the server will not report on must not
-					// take the rest of the account with it.
-					log.Warn().Err(err).Str("folder", box.Name).Msg("imap: STATUS refused; folder skipped")
+				merr := c.handleError(err)
+				if merr.Code == errx.ErrMailResourceNotFound.Code {
+					// Only explicit absence can retire a folder's stored state.
+					delete(present, box.Name)
 					continue
 				}
-				return nil, c.handleError(err)
+				return FolderListing{}, merr
 			}
 			st = data
+		}
+		if st == nil || st.UIDValidity == 0 || st.UIDNext == 0 {
+			return FolderListing{}, errx.ErrMailServerUnreachable
 		}
 		box.UIDValidity = st.UIDValidity
 		box.UIDNext = uint32(st.UIDNext)
@@ -110,7 +126,7 @@ func (c *Client) foldersCapped(limit int) ([]models.Mailbox, *errx.MailError) {
 		resp = append(resp, box)
 	}
 
-	return resp, nil
+	return FolderListing{Folders: resp, Present: present}, nil
 }
 
 // listOptionsFor is the LIST options a server's capabilities allow, and

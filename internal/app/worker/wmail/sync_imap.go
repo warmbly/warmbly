@@ -43,12 +43,16 @@ func (w *WMail) Sync(ctx context.Context) *errx.MailError {
 	// A mailbox left selected by the previous pass freezes LIST-STATUS on this
 	// connection, so release it before asking what changed.
 	client.ReleaseMailbox()
-	folders, err := client.Folders()
+	listing, err := client.ListFolders()
 	if err != nil {
 		return err
 	}
+	if listing.Present == nil {
+		return errx.ErrMailServerUnreachable
+	}
+	folders := listing.Folders
 	w.reportFolderOverflow()
-	// Folders() already drops Gmail's label views. Dropping them here too
+	// ListFolders already drops Gmail's label views. Dropping them here too
 	// costs nothing and keeps the pass correct against any listing: a view
 	// that reached it would re-file known mail as archive under a second UID.
 	folders = slices.DeleteFunc(folders, func(b models.Mailbox) bool { return imapVirtualFolder(&b) })
@@ -59,7 +63,8 @@ func (w *WMail) Sync(ctx context.Context) *errx.MailError {
 	// baselined. They are kept aside so mail that moves into one of them can
 	// be recognised as filed rather than lost.
 	var skipped []models.Mailbox
-	if skip := w.skipFolders(); len(skip) > 0 {
+	skip := w.skipFolders()
+	if len(skip) > 0 {
 		folders = slices.DeleteFunc(folders, func(b models.Mailbox) bool {
 			if !imap.SkipsFolder(b, skip) {
 				return false
@@ -76,12 +81,19 @@ func (w *WMail) Sync(ctx context.Context) *errx.MailError {
 	// changed. A rename read as a delete plus a first sighting would orphan
 	// every message filed under the old name and re-import the folder's
 	// history under the new one.
-	if err := w.imapFollowRenames(folders); err != nil {
-		return nil
+	selectionComplete := client.FolderOverflow() == 0 && client.FolderConflicts() == 0
+	if selectionComplete {
+		if err := w.imapFollowRenames(folders, listing.Present); err != nil {
+			return nil
+		}
 	}
 
 	// CONDSTORE is effective per folder; NOMODSEQ uses UIDNEXT and periodic flags.
-	caughtUp := true
+	caughtUp := selectionComplete
+	selectedNames := make(map[string]struct{}, len(folders))
+	for _, box := range folders {
+		selectedNames[box.Name] = struct{}{}
+	}
 
 	for i := range folders {
 		box := &folders[i]
@@ -212,17 +224,15 @@ func (w *WMail) Sync(ctx context.Context) *errx.MailError {
 		}
 	}
 
-	// Collect deletions first to avoid modifying the slice during iteration.
-	// Renames were already followed above, so a name missing from the listing
-	// at this point really is a folder that is gone.
+	// Only complete LIST presence or an explicit exclusion can retire state.
 	var deleted []string
 	var gone []*models.Mailbox
-outer:
 	for _, box := range w.SmtpImapData.Mailboxes {
-		for _, f := range folders {
-			if box.Name == f.Name {
-				continue outer
+		if _, present := listing.Present[box.Name]; present && !imapVirtualFolder(box) && !imap.SkipsFolder(*box, skip) {
+			if _, selected := selectedNames[box.Name]; !selected {
+				caughtUp = false
 			}
+			continue
 		}
 		gone = append(gone, box)
 	}
@@ -234,7 +244,7 @@ outer:
 			UIDValidity: box.UIDValidity,
 			// A folder that is still on the server but now excluded takes
 			// the mail already stored from it along.
-			Skipped: imapRetiredIntoSkipped(box, gone, skipped),
+			Skipped: imap.SkipsFolder(*box, skip) || imapRetiredIntoSkipped(box, gone, skipped),
 		}); err != nil {
 			return nil
 		}
@@ -1070,17 +1080,12 @@ func (w *WMail) setWalking(box *models.Mailbox) {
 // go missing while one arrives, and picking either would move the wrong
 // folder's mail into it. Those fall through to the ordinary delete and
 // first-sight paths, which lose nothing that was not already gone.
-func (w *WMail) imapFollowRenames(folders []models.Mailbox) error {
-	listed := make(map[string]struct{}, len(folders))
-	for i := range folders {
-		listed[folders[i].Name] = struct{}{}
-	}
-
+func (w *WMail) imapFollowRenames(folders []models.Mailbox, present map[string]struct{}) error {
 	// Group both sides by UIDVALIDITY: the stored folders that are no longer
 	// listed, and the listed folders that are not stored.
 	gone := map[uint32][]*models.Mailbox{}
 	for _, before := range w.SmtpImapData.Mailboxes {
-		if _, still := listed[before.Name]; still || before.UIDValidity == 0 {
+		if _, still := present[before.Name]; still || before.UIDValidity == 0 {
 			continue
 		}
 		gone[before.UIDValidity] = append(gone[before.UIDValidity], before)
