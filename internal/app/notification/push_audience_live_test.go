@@ -79,9 +79,6 @@ func TestLivePushDigestAudienceRetries(t *testing.T) {
 						timeoutMembers.first = members.members
 					}
 					s.members = timeoutMembers
-					var cancel context.CancelFunc
-					deliveryCtx, cancel = context.WithTimeout(ctx, 100*time.Millisecond)
-					defer cancel()
 				}
 				p := pendingPush{OrganizationID: &org, MessageID: &message, Title: "private", Body: "Human reply"}
 				data, err := json.Marshal(p)
@@ -96,6 +93,11 @@ func TestLivePushDigestAudienceRetries(t *testing.T) {
 				}
 				if err := rdb.RPush(ctx, pendingKey(member), values...).Err(); err != nil {
 					t.Fatal(err)
+				}
+				if failure == "deadline" || failure == "mixed deadline" {
+					var cancel context.CancelFunc
+					deliveryCtx, cancel = context.WithTimeout(ctx, 100*time.Millisecond)
+					defer cancel()
 				}
 				s.sendDigest(deliveryCtx, member)
 				queued, err := rdb.LRange(ctx, pendingKey(member), 0, -1).Result()
