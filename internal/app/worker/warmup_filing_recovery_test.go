@@ -237,3 +237,68 @@ func TestDurableGraphFilingRetriesWithoutRestoringTrashedMail(t *testing.T) {
 		t.Fatal("Graph filing restored a message from Trash or failed to resolve the pending filing")
 	}
 }
+
+func TestDurableGraphFilingFailureReleasesCommandWithoutFilingAcknowledgement(t *testing.T) {
+	for _, stage := range []string{"locate", "move"} {
+		t.Run(stage, func(t *testing.T) {
+			failing := true
+			transport := filingTransport(func(r *http.Request) (*http.Response, error) {
+				body, status := `{}`, http.StatusOK
+				switch {
+				case strings.HasSuffix(r.URL.Path, "/messages"):
+					body = `{"value":[{"id":"resolved"}]}`
+					if failing && stage == "locate" {
+						status = http.StatusServiceUnavailable
+					}
+				case strings.HasSuffix(r.URL.Path, "/mailFolders/deleteditems"):
+					body = `{"id":"trash-id"}`
+				case strings.HasSuffix(r.URL.Path, "/mailFolders"):
+					body = `{"value":[{"id":"target-id","displayName":"Warmbly"}]}`
+				case strings.HasSuffix(r.URL.Path, "/messages/resolved"):
+					body = `{"parentFolderId":"inbox-id"}`
+				case strings.HasSuffix(r.URL.Path, "/messages/resolved/move"):
+					if failing {
+						status = http.StatusServiceUnavailable
+					}
+					body = `{"id":"resolved"}`
+				default:
+					t.Errorf("unexpected Graph request: %s", r.URL.Path)
+				}
+				if status == http.StatusServiceUnavailable {
+					body = `{"error":{"code":"Unavailable","message":"provider unavailable"}}`
+				}
+				return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header), Request: r}, nil
+			})
+			ctx := context.WithValue(t.Context(), oauth2.HTTPClient, &http.Client{Transport: transport})
+			client := &msgraph.Client{}
+			if err := client.Init(ctx, &oauth2.Token{AccessToken: "test", Expiry: time.Now().Add(time.Hour)}, oauth2.Config{}); err != nil {
+				t.Fatal(err)
+			}
+			account := uuid.New()
+			w, bus := filingWorker(account, &filingIMAP{})
+			w.ID = uuid.NewString()
+			w.mailManager.Emails[account] = &wmail.WMail{GraphData: &wmail.GraphData{Client: client}}
+			authority := &warmupFilingAuthorityStub{pending: true}
+			w.SyncContextRepository = authority
+			action := models.WarmupEmailAction{EmailID: account, FilingID: uuid.NewString(), RFCMessageID: "<warmup@example.test>", Actions: []string{models.WarmupActionFile}}
+			ctx = context.WithValue(ctx, deliveryKey{}, delivery{attempt: 1, redelivers: true})
+			if err := w.HandleWarmupAction(ctx, action); err != nil || len(bus.events) != 0 {
+				t.Fatalf("durable Graph failure blocked the command or falsely acknowledged filing: %v %+v", err, bus.events)
+			}
+			// A healthy mailbox can run before the control plane retries the failed filing.
+			other := uuid.New()
+			w.mailManager.Emails[other] = &wmail.WMail{SmtpImapData: &wmail.SmtpImapData{ImapClient: &filingIMAP{found: map[string]uint32{"INBOX": 12}}, Mailboxes: []*models.Mailbox{{Name: "INBOX", UIDValidity: 77}}}}
+			if err := w.HandleWarmupAction(ctx, models.WarmupEmailAction{EmailID: other, FilingID: uuid.NewString(), RFCMessageID: "<other@example.test>", Actions: []string{models.WarmupActionFile}}); err != nil || len(bus.events) != 1 {
+				t.Fatalf("healthy filing blocked: %v", err)
+			}
+			failing = false
+			if err := w.HandleWarmupAction(ctx, action); err != nil || len(bus.events) != 2 {
+				t.Fatalf("durable retry did not acknowledge success: %v %+v", err, bus.events)
+			}
+			bus.err = errors.New("result broker unavailable")
+			if err := w.HandleWarmupAction(ctx, action); err == nil {
+				t.Fatal("filing acknowledgement failure was discarded")
+			}
+		})
+	}
+}

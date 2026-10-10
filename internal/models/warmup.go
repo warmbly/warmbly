@@ -78,6 +78,18 @@ const (
 	WarmupRemovalUnknown = "unknown"
 )
 
+type WarmupActionRequest struct {
+	MailboxID uuid.UUID `json:"mailbox_id"`
+	WorkerID  uuid.UUID `json:"worker_id"`
+	Actions   []string  `json:"actions"`
+	FilingID  string    `json:"filing_id,omitempty"`
+}
+
+type WarmupActionDecision struct {
+	Actions       []string `json:"actions"`
+	FilingPending bool     `json:"filing_pending,omitempty"`
+}
+
 // WarmupEmailAction represents actions to perform on a detected warmup email.
 //
 // For Gmail accounts the worker uses GmailID to issue Users.Messages.Modify

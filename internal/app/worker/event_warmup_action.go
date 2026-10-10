@@ -27,12 +27,18 @@ import (
 // DelaySeconds=0. That makes the dwell survive a worker restart, which the old
 // in-process time.AfterFunc here could not.
 func (w *WorkerService) HandleWarmupAction(ctx context.Context, action models.WarmupEmailAction) error {
+	filingPending := false
 	if gate, ok := w.SyncContextRepository.(repository.WarmupActionAdmission); ok {
 		worker, err := uuid.Parse(w.ID)
 		if err != nil {
 			return err
 		}
-		action.Actions, err = gate.PermittedWarmupActions(ctx, action.EmailID, worker, action.Actions)
+		if recovery, ok := w.SyncContextRepository.(repository.WarmupActionRecoveryAdmission); ok && action.FilingID != "" && len(action.Actions) == 1 && action.Actions[0] == models.WarmupActionFile {
+			decision, xerr := recovery.AdmitWarmupAction(ctx, models.WarmupActionRequest{MailboxID: action.EmailID, WorkerID: worker, Actions: action.Actions, FilingID: action.FilingID})
+			action.Actions, filingPending, err = decision.Actions, decision.FilingPending, xerr
+		} else {
+			action.Actions, err = gate.PermittedWarmupActions(ctx, action.EmailID, worker, action.Actions)
+		}
 		if err != nil {
 			return err
 		}
@@ -99,6 +105,12 @@ func (w *WorkerService) HandleWarmupAction(ctx context.Context, action models.Wa
 			return w.Produce(models.JobEventTypeWarmupFiled, action.EmailID.String(),
 				&models.JobEventWarmupFiled{EmailID: action.EmailID, FilingID: id})
 		}
+		return nil
+	}
+	if filingPending && len(action.Actions) == 1 && action.Actions[0] == models.WarmupActionFile {
+		// Only the confirmed durable filing queue can take over this failed command.
+		log.Warn().Err(err).Str("email_id", action.EmailID.String()).Str("filing_id", action.FilingID).
+			Msg("Warmup filing deferred to durable recovery")
 		return nil
 	}
 	// Engagement is best effort and never returns here. A retention delete

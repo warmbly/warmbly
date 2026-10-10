@@ -272,6 +272,8 @@ Mail that arrives somewhere unexpected is still handled. A server-side rule, or 
 
 Filing happens as each message arrives, so changing the setting applies to warmup from that point on.
 
+If filing fails, it is not reported as completed. An updated worker can release that filing command for later retry only after the backend confirms that the exact filing is still in its durable recovery queue. Recovery retries use the current worker assignment and folder setting, spaced by 5, 15 or 30 minutes as the queued filing ages. Unknown recovery authority keeps the existing command retry behavior. This does not resend mail, clear uncertain-send protection, acknowledge mailbox arrivals, or discard retention deletes and removal checks.
+
 A sweep identifies missed application-owned diagnostics and applies authorized housekeeping. It does not establish retroactive authentication or engagement. Leaving mail in the inbox remains an owner choice.
 
 The sweep repairs what it can still see, so it does not clear a backlog that built up before the setting existed. To do that on Gmail, search `label:Warmbly` and archive the results: warmup mail has always carried the label, so that selects exactly it. On Outlook and IMAP the received mail is already in the folder, and only the Sent copies from before this change stay in Sent.

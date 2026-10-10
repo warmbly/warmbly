@@ -17,6 +17,61 @@ type warmupActionAuthorityStub struct {
 	err error
 }
 
+type warmupFilingAuthorityStub struct {
+	repository.SyncContextRepository
+	pending  bool
+	err      error
+	requests []models.WarmupActionRequest
+}
+
+func (s *warmupFilingAuthorityStub) PermittedWarmupActions(_ context.Context, _, _ uuid.UUID, actions []string) ([]string, error) {
+	return actions, s.err
+}
+
+func (s *warmupFilingAuthorityStub) AdmitWarmupAction(_ context.Context, req models.WarmupActionRequest) (models.WarmupActionDecision, error) {
+	s.requests = append(s.requests, req)
+	return models.WarmupActionDecision{Actions: req.Actions, FilingPending: s.pending}, s.err
+}
+
+func TestDurableWarmupFilingDefersOnlyWithPositiveAuthority(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		pending      bool
+		authorityErr error
+		actions      []string
+		filing       bool
+		deferred     bool
+	}{
+		{"confirmed filing", true, nil, []string{models.WarmupActionFile}, true, true},
+		{"absent proof", false, nil, []string{models.WarmupActionFile}, true, false},
+		{"authority unavailable", true, errors.New("authority unavailable"), []string{models.WarmupActionFile}, true, false},
+		{"mixed deletion", true, nil, []string{models.WarmupActionFile, models.WarmupActionDelete}, true, false},
+		{"retention delete", true, nil, []string{models.WarmupActionDelete}, false, false},
+		{"removal check", true, nil, []string{models.WarmupActionVerifyRemoval}, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			account := uuid.New()
+			w, bus := filingWorker(account, &filingIMAP{found: map[string]uint32{"INBOX": 11}, err: errors.New("provider unavailable")})
+			w.ID = uuid.NewString()
+			delete(w.mailManager.Emails, account)
+			authority := &warmupFilingAuthorityStub{pending: tc.pending, err: tc.authorityErr}
+			w.SyncContextRepository = authority
+			action := models.WarmupEmailAction{EmailID: account, Actions: tc.actions}
+			if tc.filing {
+				action.FilingID = uuid.NewString()
+			}
+			ctx := context.WithValue(t.Context(), deliveryKey{}, delivery{attempt: 1, redelivers: true})
+			err := w.HandleWarmupAction(ctx, action)
+			if (err == nil) != tc.deferred || len(bus.events) != 0 {
+				t.Fatalf("deferred=%v error=%v events=%v", tc.deferred, err, bus.events)
+			}
+			if tc.deferred && (len(authority.requests) != 1 || authority.requests[0].FilingID != action.FilingID || authority.requests[0].MailboxID != account || authority.requests[0].WorkerID.String() != w.ID) {
+				t.Fatal("durable proof was not bound to the exact mailbox, worker and filing")
+			}
+		})
+	}
+}
+
 func (s *warmupActionAuthorityStub) PermittedWarmupActions(context.Context, uuid.UUID, uuid.UUID, []string) ([]string, error) {
 	return nil, s.err
 }
