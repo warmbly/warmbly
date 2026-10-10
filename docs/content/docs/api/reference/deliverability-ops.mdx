@@ -292,12 +292,14 @@ Auth: **Scope** `SEND_CAMPAIGNS` · **Org permission** `send_campaigns`
 
 | Parameter | In | Type | Description |
 |-----------|----|------|-------------|
-| `status` | query | string | Optional status filter (e.g. `pending`, `replayed`). |
+| `status` | query | string | Optional status filter (e.g. `pending`, `replayed`, `resolved`). |
 | `limit` | query | integer | Max rows to return, 1 to 200 (default 100). |
 
 ### Response
 
 Returns a `data` array of dead-letter records. This endpoint is not cursor-paginated; it returns up to `limit` rows in one response.
+
+Send dead letters become `resolved` only after an authoritative worker or operator-confirmed send outcome is reconciled. Recovery does not resend mail: the original payload, error and attempts stay available for inspection. Unknown outcomes remain pending and held. A missing Sent-folder copy, reservation marker or executor marker is not proof that nothing was sent.
 
 ```json
 {

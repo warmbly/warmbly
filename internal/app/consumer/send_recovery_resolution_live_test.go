@@ -113,9 +113,9 @@ func TestLiveRecordedWorkerOutcomeSurvivesLostEvent(t *testing.T) {
 	}
 }
 
-func TestLiveUnreservedFailedTaskCannotHoldMailbox(t *testing.T) {
+func TestLiveUnreservedLegacyFailedTaskRetainsUnknownHold(t *testing.T) {
 	for _, existing := range []bool{false, true} {
-		t.Run(map[bool]string{false: "new failure", true: "existing invalid hold"}[existing], func(t *testing.T) {
+		t.Run(map[bool]string{false: "new ambiguous result", true: "existing unknown hold"}[existing], func(t *testing.T) {
 			h := liveDB(t)
 			f := newSendResultFixture(t, h)
 			s := liveJobsService(h)
@@ -140,8 +140,8 @@ func TestLiveUnreservedFailedTaskCannotHoldMailbox(t *testing.T) {
 			if err := h.Pool.QueryRow(ctx, `SELECT ea.send_recovery_hold,t.send_result_applied_at IS NOT NULL,t.send_result_state FROM tasks t JOIN email_accounts ea ON ea.id=t.email_account_id WHERE t.id=$1`, id).Scan(&hold, &applied, &state); err != nil {
 				t.Fatal(err)
 			}
-			if hold || !applied || state != "failed" {
-				t.Fatal("unreserved failure held mailbox", hold, applied, state)
+			if !hold || applied || state != "unknown" {
+				t.Fatal("missing authority markers resolved a legacy unknown", hold, applied, state)
 			}
 		})
 	}

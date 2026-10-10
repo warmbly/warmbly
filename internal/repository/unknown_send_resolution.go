@@ -91,33 +91,31 @@ func queueUnknownSendResolution(ctx context.Context, tx pgx.Tx, org, mailbox str
 func (r *taskRepository) ListUnappliedSendResults(ctx context.Context, limit int) ([]models.SendEmailResult, error) {
 	rows, err := r.db.Query(ctx, `WITH recorded AS (
 	 SELECT t.id,t.created_at,t.send_result_state,t.send_result_applied_at,t.send_executor_result AS result,1 AS priority
-	 FROM tasks t WHERE t.send_executor_result IS NOT NULL AND t.status<>'cancelled' AND t.send_result_applied_at IS NULL
+	 FROM tasks t WHERE t.send_executor_result IS NOT NULL AND t.status<>'cancelled'
+	 AND (t.send_result_applied_at IS NULL OR (t.status='dead_lettered' AND t.send_result_state='sent'))
 	 UNION ALL
 	 SELECT t.id,t.created_at,t.send_result_state,t.send_result_applied_at,t.send_executor_result,1 FROM send_recovery_resolutions r JOIN tasks t ON t.id=r.recovery_task_id
 	 WHERE r.previous_reason='unknown' AND r.conflict_detected_at IS NULL AND r.confirmed_result IS NOT NULL
 	 AND t.send_executor_result IS NOT NULL AND t.send_result_applied_at IS NOT NULL AND t.status<>'cancelled'
 	 UNION ALL
 	 SELECT t.id,t.created_at,t.send_result_state,t.send_result_applied_at,w.dispatch_result,1 FROM warmup_tasks w JOIN tasks t ON t.id=w.task_id
-	 WHERE w.dispatch_result IS NOT NULL AND t.status<>'cancelled' AND t.send_result_applied_at IS NULL
+	 WHERE w.dispatch_result IS NOT NULL AND t.status<>'cancelled'
+	 AND (t.send_result_applied_at IS NULL OR (t.status='dead_lettered' AND t.send_result_state='sent'))
 	 UNION ALL
 	 SELECT t.id,t.created_at,t.send_result_state,t.send_result_applied_at,w.dispatch_result,1 FROM send_recovery_resolutions r JOIN tasks t ON t.id=r.recovery_task_id JOIN warmup_tasks w ON w.task_id=t.id
 	 WHERE r.previous_reason='unknown' AND r.conflict_detected_at IS NULL AND r.confirmed_result IS NOT NULL
 	 AND w.dispatch_result IS NOT NULL AND t.send_result_applied_at IS NOT NULL AND t.status<>'cancelled'
 	 UNION ALL
 	 SELECT t.id,t.created_at,t.send_result_state,t.send_result_applied_at,r.confirmed_result,2 FROM send_recovery_resolutions r JOIN tasks t ON t.id=r.recovery_task_id
-	 WHERE r.confirmed_result IS NOT NULL AND t.send_result_applied_at IS NULL AND t.status<>'cancelled'
-	 UNION ALL
-	 SELECT t.id,t.created_at,t.send_result_state,t.send_result_applied_at,jsonb_build_object('task_id',t.id,'success',false,'legacy_error','Send failed before reservation',
-	 'error',jsonb_build_object('failure',jsonb_build_object('protocol','internal','stage','prepare','scope','mailbox','disposition','retry'))),3
-	 FROM tasks t WHERE t.status='failed' AND t.send_result_state='unknown' AND t.send_result_applied_at IS NULL
-	 AND t.send_reserved_at IS NULL AND t.send_executor_nonce IS NULL AND t.send_executor_started_at IS NULL
-	 AND NOT EXISTS(SELECT 1 FROM warmup_tasks w WHERE w.task_id=t.id AND w.dispatch_nonce IS NOT NULL)),
+	 WHERE r.confirmed_result IS NOT NULL AND (t.send_result_applied_at IS NULL OR (t.status='dead_lettered' AND t.send_result_state='sent')) AND t.status<>'cancelled'
+	 ),
 	 definitive AS (SELECT *,CASE WHEN result->>'success'='true' THEN 'sent' ELSE 'failed' END AS outcome FROM recorded
 	 WHERE result->>'success'='true' OR result->'error'->'failure'->>'disposition' IN('retry','throttle','permanent','authentication')
 	 OR (result->'error'->>'failure' IS NULL AND result->'error'->>'code' IN
 	 ('RECIPIENT_REJECTED','SEND_REJECTED','DOMAIN_AUTH_REJECTED','AUTHENTICATION_FAILED','INVALID_CREDENTIALS','GOOGLE_AUTHENTICATION_FAILED','SENDING_TOO_FAST','QUOTA_EXCEEDED','UNSUPPORTED'))),
 	 pending AS (SELECT DISTINCT ON(id) id,created_at,result FROM definitive
-	 WHERE send_result_applied_at IS NULL OR outcome IS DISTINCT FROM send_result_state ORDER BY id,priority)
+	 WHERE send_result_applied_at IS NULL OR outcome IS DISTINCT FROM send_result_state
+	 OR EXISTS(SELECT 1 FROM tasks t WHERE t.id=definitive.id AND t.status='dead_lettered' AND t.send_result_state='sent') ORDER BY id,priority)
 	 SELECT id,result FROM pending ORDER BY created_at LIMIT $1`, limit)
 	if err != nil {
 		return nil, err

@@ -1094,23 +1094,32 @@ func (r *warmupRepository) FailWarmupSend(ctx context.Context, accountID, taskID
 	defer tx.Rollback(ctx)
 
 	var status string
+	var completedAt *time.Time
+	var dispatchAuthorized bool
 	err = tx.QueryRow(ctx, `
-		SELECT status::text
+		SELECT status::text, completed_at,
+		 send_reserved_at IS NOT NULL OR send_executor_nonce IS NOT NULL
+		 OR EXISTS(SELECT 1 FROM warmup_tasks WHERE task_id=tasks.id AND dispatch_nonce IS NOT NULL)
 		FROM tasks
 		WHERE id = $1 AND email_account_id = $2 AND task_type = 'warmup'
 		FOR UPDATE
-	`, taskID, accountID).Scan(&status)
+	`, taskID, accountID).Scan(&status, &completedAt, &dispatchAuthorized)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	if status != "completed" {
+	if status != "completed" && status != "dead_lettered" {
 		return tx.Commit(ctx)
 	}
 
-	if _, err = tx.Exec(ctx, `
+	// Legacy dead-letter accounting cannot be reconstructed from status alone.
+	if status == "completed" || (dispatchAuthorized && completedAt != nil) {
+		if completedAt != nil {
+			date = *completedAt
+		}
+		if _, err = tx.Exec(ctx, `
 		UPDATE warmup_statistics ws
 		SET emails_sent = GREATEST(ws.emails_sent - 1, 0),
 		    emails_replied = CASE
@@ -1122,8 +1131,9 @@ func (r *warmupRepository) FailWarmupSend(ctx context.Context, accountID, taskID
 		    END
 		WHERE ws.email_account_id = $1
 		  AND ws.date = DATE($3)
-	`, accountID, taskID, date); err != nil {
-		return err
+		`, accountID, taskID, date); err != nil {
+			return err
+		}
 	}
 	if _, err = tx.Exec(ctx, `UPDATE tasks SET status = 'failed', updated_at = NOW() WHERE id = $1`, taskID); err != nil {
 		return err
