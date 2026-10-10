@@ -126,6 +126,13 @@ func recordingServer(t *testing.T, caps imap.CapSet, folders ...string) (*Client
 // with it instead of forwarding the command.
 func interceptingServer(t *testing.T, caps imap.CapSet, refuse func(line string) string, folders ...string) (*Client, *wireLog) {
 	t.Helper()
+	return rewritingServer(t, caps, refuse, nil, folders...)
+}
+
+// rewritingServer is interceptingServer that can also rewrite what the server
+// says, line by line, to stand in for a server whose dialect it does not speak.
+func rewritingServer(t *testing.T, caps imap.CapSet, refuse, rewrite func(line string) string, folders ...string) (*Client, *wireLog) {
+	t.Helper()
 	upstream := startMemServer(t, caps, folders...)
 	log := &wireLog{}
 
@@ -147,7 +154,25 @@ func interceptingServer(t *testing.T, caps imap.CapSet, refuse func(line string)
 				return
 			}
 			toClient := &lockedWriter{w: down}
-			go func() { _, _ = io.Copy(toClient, up); _ = down.Close() }()
+			go func() {
+				defer func() { _ = down.Close() }()
+				if rewrite == nil {
+					_, _ = io.Copy(toClient, up)
+					return
+				}
+				r := bufio.NewReader(up)
+				for {
+					line, err := r.ReadString('\n')
+					if line != "" {
+						if _, werr := toClient.Write([]byte(rewrite(line))); werr != nil {
+							return
+						}
+					}
+					if err != nil {
+						return
+					}
+				}
+			}()
 			go func() {
 				defer func() { _ = up.Close() }()
 				r := bufio.NewReader(down)
