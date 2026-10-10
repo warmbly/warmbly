@@ -401,13 +401,33 @@ handshakes, not issued sessions. No permanent grant datastore/migration is added
 
 ### Upgrade order and coverage
 
-Deploy the backend first, upgrade node binaries/images, then re-enroll existing
-nodes to receive `NODE_LOG_TOKEN` in the existing enrollment environment.
-Preserve the existing node UUID when rejoining to keep placement identity.
-New enrollments receive it automatically; manually provisioned workers require
-the same step. Upgrading alone cannot safely manufacture per-node identity from
-the shared broker token. Older nodes keep working under existing heartbeat/sync
-compatibility but log coverage stays unavailable until capture is received.
+Deploy the backend first, then upgrade node binaries/images. Existing nodes need
+authenticated re-enrollment to receive `NODE_LOG_TOKEN` in the protected join
+environment. The existing broker key is fleet-wide, not proof of ownership of
+one UUID; this release does not exchange it for per-node evidence authority or
+silently rotate another node's credential. Upgrading alone therefore leaves
+evidence unavailable when the node has no enrollment-issued log credential.
+
+For a node installed with the normal join script, obtain a fresh join token
+through Fleet settings (or the existing administrator CLI) and rerun the
+instance's `/join.sh` with the same URL, role and `--config-dir`, retaining the
+original name, region and image-repository options. The script reads
+`WARMBLY_NODE_ID` from the existing `node.env` and sends that UUID in the join
+request. Keep that file and configuration directory in place: removing them
+would enroll a different identity. Do not delete/disconnect the fleet node or
+move its mailboxes. A rejoin does not revoke provider credentials or change
+mailbox assignments. The backend regenerates managed `node.env` from its
+current configuration; `node.local.env` is never truncated and is loaded last.
+Keep local overrides there, not in managed `node.env`, and do not override the
+new `NODE_LOG_TOKEN` with a stale local value. The script performs a normal
+service restart, not a zero-downtime refresh. Do not manually copy secrets.
+
+Manually provisioned nodes must use the existing authenticated enrollment with
+their original UUID and protected configuration, not a newly generated ID.
+New joins receive the log credential automatically. Redis credential-hash loss
+requires the same authorized re-enrollment; no broker/internal-token fallback
+is accepted by log ingestion. Older binaries do not implement capture, and
+coverage remains unavailable until an upgraded process actually sends evidence.
 There is no import of old journal/container logs. Empty fresh capture is not
 proof of health. See [exact diagnostic contracts](/api/endpoints/#platform-node-diagnostics).
 Admin UI/CLI changes are a separate stage; backend endpoints alone do not

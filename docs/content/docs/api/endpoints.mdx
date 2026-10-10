@@ -862,6 +862,16 @@ accepted; hashes bind to exactly one registered node and are rechecked atomicall
 at ingestion. Rejoin rotates; node deletion revokes and removes log state.
 This credential grants evidence submission only, not mailbox/command access.
 
+There is no broker-key-to-log-credential refresh endpoint: the existing broker
+key authenticates the fleet, not ownership of a particular node UUID. Existing
+nodes must upgrade and rerun authenticated enrollment with the same UUID. The
+normal join script reads that UUID from the existing `node.env`, retains
+`node.local.env` and restarts the service; do not remove the configuration
+directory or delete the fleet row. Until capture is received, availability is
+unavailable, not healthy. Redis enrollment-hash loss requires the same safe
+re-enrollment, and no historical journals are imported. See
+[upgrade order and coverage](/development/data-control/#upgrade-order-and-coverage).
+
 Request JSON (max 32 KiB, 32 events; events use the schema above):
 
 ```json

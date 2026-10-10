@@ -2,6 +2,8 @@ package handler
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,14 +22,16 @@ import (
 type joinNodes struct {
 	repository.FleetNodeRepository
 	upserts int
+	nodeID  uuid.UUID
 }
 
 func (n *joinNodes) Get(context.Context, uuid.UUID) (*models.FleetNode, error) {
 	return nil, nil
 }
 
-func (n *joinNodes) UpsertOnHeartbeat(context.Context, models.NodeHeartbeat) error {
+func (n *joinNodes) UpsertOnHeartbeat(_ context.Context, beat models.NodeHeartbeat) error {
 	n.upserts++
+	n.nodeID = beat.NodeID
 	return nil
 }
 
@@ -94,6 +98,34 @@ func TestFleetJoinFailsClosedWithoutEvidenceStore(t *testing.T) {
 	h.FleetJoin(c)
 	if w.Code != http.StatusServiceUnavailable || nodes.upserts != 0 {
 		t.Fatalf("missing evidence dependency registered a node: status=%d, upserts=%d", w.Code, nodes.upserts)
+	}
+}
+
+func TestFleetJoinReenrollsOriginalNodeIdentityWithEvidenceCredential(t *testing.T) {
+	t.Setenv("WARMBLY_VERSION", "v0.6.44")
+	t.Setenv("FLEET_IMAGE_VARIANT", "")
+	id := uuid.New()
+	nodes, evidence := &joinNodes{}, &joinEvidence{}
+	h := &Handler{FleetNodes: fleetnode.New(nodes, nil, joinSettings{}), NodeLogs: evidence}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/fleet/join", strings.NewReader(`{"token":"join-test-token","role":"worker","node_id":"`+id.String()+`"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	h.FleetJoin(c)
+	if w.Code != http.StatusOK || nodes.nodeID != id || evidence.node != id || nodes.upserts != 1 {
+		t.Fatalf("re-enrollment changed identity or omitted evidence enrollment: status=%d", w.Code)
+	}
+	var reply fleetJoinResponse
+	if json.Unmarshal(w.Body.Bytes(), &reply) != nil || reply.NodeID != id {
+		t.Fatal("re-enrollment response replaced the original identity")
+	}
+	raw, err := base64.StdEncoding.DecodeString(reply.EnvB64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := envLines(t, string(raw))
+	if env["WARMBLY_NODE_ID"] != id.String() || env["NODE_LOG_TOKEN"] != strings.Repeat("l", 43) {
+		t.Fatal("protected environment did not bind the evidence credential to the existing node")
 	}
 }
 
