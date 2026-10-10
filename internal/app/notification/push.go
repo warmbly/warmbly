@@ -114,7 +114,7 @@ func (s *service) deliverPush(userID uuid.UUID, category models.NotificationCate
 		return
 	}
 	if ok {
-		s.sendPush(ctx, userID, category, apnsAlert(category, p.Title, p.Body, p.Link, 1))
+		_ = s.sendPush(ctx, userID, category, apnsAlert(category, p.Title, p.Body, p.Link, 1))
 		return
 	}
 
@@ -185,6 +185,7 @@ func (s *service) sendDigest(ctx context.Context, member string) {
 	s.pushRedis.Set(ctx, lastKey(member), "1", pushWindow())
 
 	items := make([]pendingPush, 0, len(raw))
+	deliver := make([]any, 0, len(raw))
 	retry := make([]any, 0)
 	for _, r := range raw {
 		var p pendingPush
@@ -196,8 +197,29 @@ func (s *service) sendDigest(ctx context.Context, member string) {
 			retry = append(retry, r)
 		} else if allowed {
 			items = append(items, p)
+			deliver = append(deliver, r)
 		}
 	}
+	if ctx.Err() != nil {
+		retry = append(retry, deliver...)
+		items = nil
+	}
+	s.retryPushDigest(ctx, member, retry)
+	if len(items) == 0 {
+		return
+	}
+	n := apnsAlert(category, items[0].Title, items[0].Body, items[0].Link, 1)
+	if len(items) > 1 {
+		last := items[len(items)-1]
+		n = apnsAlert(category, digestTitle(category, len(items)), "Latest: "+last.Title, last.Link, len(items))
+		n.CollapseID = "digest:" + string(category)
+	}
+	if err := s.sendPush(ctx, userID, category, n); err != nil {
+		s.retryPushDigest(ctx, member, deliver)
+	}
+}
+
+func (s *service) retryPushDigest(ctx context.Context, member string, retry []any) {
 	if len(retry) > 0 {
 		recoveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
@@ -210,17 +232,6 @@ func (s *service) sendDigest(ctx context.Context, member string) {
 			errs.CaptureException(fmt.Errorf("notification: requeue push digest: %w", err))
 		}
 	}
-	if len(items) == 0 {
-		return
-	}
-	if len(items) == 1 {
-		s.sendPush(ctx, userID, category, apnsAlert(category, items[0].Title, items[0].Body, items[0].Link, 1))
-		return
-	}
-	last := items[len(items)-1]
-	n := apnsAlert(category, digestTitle(category, len(items)), "Latest: "+last.Title, last.Link, len(items))
-	n.CollapseID = "digest:" + string(category)
-	s.sendPush(ctx, userID, category, n)
 }
 
 func (s *service) canDeliverPush(ctx context.Context, userID uuid.UUID, category models.NotificationCategory, p pendingPush) bool {
@@ -297,17 +308,24 @@ func digestTitle(category models.NotificationCategory, n int) string {
 
 // sendPush fans one alert out to every device the user registered, dropping
 // tokens APNs reports as gone. The badge is the user's unread feed count.
-func (s *service) sendPush(ctx context.Context, userID uuid.UUID, category models.NotificationCategory, n apns.Notification) {
+func (s *service) sendPush(ctx context.Context, userID uuid.UUID, category models.NotificationCategory, n apns.Notification) error {
 	tokens, err := s.deviceTokens.ListByUser(ctx, userID)
-	if err != nil || len(tokens) == 0 {
-		return
+	if err != nil {
+		return err
+	}
+	if len(tokens) == 0 {
+		return nil
 	}
 	if unread, cerr := s.UnreadCount(ctx, userID); cerr == nil {
 		n.Badge = &unread
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	for _, t := range tokens {
 		if perr := s.push.Push(ctx, t.Token, t.Environment, n); errors.Is(perr, apns.ErrUnregistered) {
 			_ = s.deviceTokens.DeleteToken(ctx, t.Token)
 		}
 	}
+	return nil
 }

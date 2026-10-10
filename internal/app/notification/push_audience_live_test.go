@@ -19,9 +19,16 @@ type digestDevices struct {
 	lists int
 }
 
-type digestTimeoutMembers struct{}
+type digestTimeoutMembers struct {
+	first []models.OrganizationMember
+}
 
-func (*digestTimeoutMembers) GetMembers(ctx context.Context, _ uuid.UUID) ([]models.OrganizationMember, error) {
+func (m *digestTimeoutMembers) GetMembers(ctx context.Context, _ uuid.UUID) ([]models.OrganizationMember, error) {
+	if len(m.first) > 0 {
+		first := m.first
+		m.first = nil
+		return first, nil
+	}
 	<-ctx.Done()
 	return nil, ctx.Err()
 }
@@ -47,7 +54,7 @@ func TestLivePushDigestAudienceRetries(t *testing.T) {
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		t.Fatal(err)
 	}
-	for _, failure := range []string{"membership", "message", "deadline"} {
+	for _, failure := range []string{"membership", "message", "deadline", "mixed deadline"} {
 		for _, recovery := range []string{"authorized", "revoked"} {
 			t.Run(failure+"/"+recovery, func(t *testing.T) {
 				user, org, message := uuid.New(), uuid.New(), uuid.New()
@@ -67,7 +74,11 @@ func TestLivePushDigestAudienceRetries(t *testing.T) {
 				} else if failure == "message" {
 					repo.err = errors.New("temporary message failure")
 				} else {
-					s.members = &digestTimeoutMembers{}
+					timeoutMembers := &digestTimeoutMembers{}
+					if failure == "mixed deadline" {
+						timeoutMembers.first = members.members
+					}
+					s.members = timeoutMembers
 					var cancel context.CancelFunc
 					deliveryCtx, cancel = context.WithTimeout(ctx, 100*time.Millisecond)
 					defer cancel()
@@ -77,12 +88,18 @@ func TestLivePushDigestAudienceRetries(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if err := rdb.RPush(ctx, pendingKey(member), string(data), `{"title":"legacy workspace notice"}`, "invalid-json").Err(); err != nil {
+				values := []any{string(data), `{"title":"legacy workspace notice"}`, "invalid-json"}
+				wantQueued := 1
+				if failure == "mixed deadline" {
+					values = append([]any{string(data)}, values...)
+					wantQueued = 2
+				}
+				if err := rdb.RPush(ctx, pendingKey(member), values...).Err(); err != nil {
 					t.Fatal(err)
 				}
 				s.sendDigest(deliveryCtx, member)
 				queued, err := rdb.LRange(ctx, pendingKey(member), 0, -1).Result()
-				if err != nil || len(queued) != 1 || queued[0] != string(data) || devices.lists != 0 {
+				if err != nil || len(queued) != wantQueued || queued[0] != string(data) || devices.lists != 0 {
 					t.Fatalf("lookup failure lost or delivered pending item: queued=%v device lookups=%d err=%v", queued, devices.lists, err)
 				}
 				due, err := rdb.ZScore(ctx, dueKey(), member).Result()
