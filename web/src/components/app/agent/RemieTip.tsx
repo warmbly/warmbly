@@ -51,7 +51,8 @@ export default function RemieTip({ anchor }: { anchor: React.RefObject<HTMLEleme
 
     // Findings are read under View analytics, the Advisor's own permission.
     const canSeeAdvisor = usePermission("VIEW_ANALYTICS");
-    const enabled = !!userId && !!orgId && wide && canSeeAdvisor;
+    const touring = useAppStore((s) => s.productTourOpen);
+    const enabled = !!userId && !!orgId && wide && canSeeAdvisor && !touring;
     const { data: findings } = useAdvisorFindings({ limit: 50 }, enabled);
     const suggestions = React.useMemo(
         () => suggestionsFrom(findings ?? [], SEVERITY_RANK.low),

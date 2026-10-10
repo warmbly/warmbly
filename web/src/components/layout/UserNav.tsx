@@ -11,6 +11,7 @@ import { DashboardImage } from "@/components/ui/dashboard-image";
 
 import { useNavigate } from "@tanstack/react-router";
 import {
+    CompassIcon,
     LogOutIcon,
     SettingsIcon,
 } from "lucide-react";
@@ -30,6 +31,7 @@ export function UserNav({ collapsed = false }: { collapsed?: boolean }) {
     const navigate = useNavigate();
     const user = useAppStore((s) => s.user);
     const logoutMutation = useLogout();
+    const setProductTourOpen = useAppStore((s) => s.setProductTourOpen);
 
     if (!user) return null;
 
@@ -111,6 +113,12 @@ export function UserNav({ collapsed = false }: { collapsed?: boolean }) {
                     icon={<SettingsIcon className="w-3 h-3" />}
                 >
                     Settings
+                </PopoverMenuItem>
+                <PopoverMenuItem
+                    onSelect={() => setProductTourOpen(true)}
+                    icon={<CompassIcon className="w-3 h-3" />}
+                >
+                    Take the tour
                 </PopoverMenuItem>
                 <PopoverMenuSeparator />
                 <PopoverMenuItem

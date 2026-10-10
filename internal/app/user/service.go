@@ -2,6 +2,7 @@ package user
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/errx"
@@ -16,6 +17,7 @@ type UserService interface {
 	CompleteOnboarding(ctx context.Context, userID uuid.UUID, firstName, lastName, referralSource, role, teamSize string) *errx.Error
 	UpdateProfile(ctx context.Context, userID uuid.UUID, firstName, lastName string) *errx.Error
 	UpdateUndoSendSeconds(ctx context.Context, userID uuid.UUID, seconds int) *errx.Error
+	CompleteProductTour(ctx context.Context, userID uuid.UUID) (time.Time, *errx.Error)
 	UpdateAvatar(ctx context.Context, userID uuid.UUID, avatarURL *string) *errx.Error
 }
 

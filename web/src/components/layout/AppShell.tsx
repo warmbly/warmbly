@@ -29,6 +29,7 @@ import { CommandPalette } from "@/components/shared/CommandPalette";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { GlobalCursorsProvider } from "@/components/app/presence/GlobalCursors";
 import AgentPanel from "@/components/app/agent/AgentPanel";
+import ProductTourHost from "@/components/app/tour/ProductTourHost";
 import { useRouteKey } from "@/hooks/useRouteKey";
 import { useScrollMemory, type ScrollStore } from "@/hooks/useScrollMemory";
 import { RouteFallback } from "./RouteStates";
@@ -102,6 +103,7 @@ export function AppShell() {
             <CommandPalette />
             {/* Right-side AI assistant, persistent across routes. */}
             <AgentPanel />
+            <ProductTourHost />
         </div>
     );
 }

@@ -274,6 +274,7 @@ function NavRow({ item, collapsed = false }: { item: NavItem; collapsed?: boolea
             <>
                 <NavTip collapsed={collapsed} label={`${item.title} · no access`}>
                 <button
+                    data-tour={item.url}
                     type="button"
                     onClick={() => setDeniedOpen(true)}
                     className={cn(
@@ -320,6 +321,7 @@ function NavRow({ item, collapsed = false }: { item: NavItem; collapsed?: boolea
         return (
             <NavTip collapsed={collapsed} label={`${item.title} · ${planBadge.label} plan`}>
             <button
+                data-tour={item.url}
                 type="button"
                 onClick={() => upgradeDialog.open({ feature: item.title, minPlan })}
                 className={cn(
@@ -365,6 +367,7 @@ function NavRow({ item, collapsed = false }: { item: NavItem; collapsed?: boolea
     return (
         <NavTip collapsed={collapsed} label={item.title}>
             <Link
+                data-tour={item.url}
                 to={item.url}
                 aria-current={active ? "page" : undefined}
                 title={!collapsed && planBadge ? `${item.title} · ${planBadge.label} plan` : undefined}
@@ -1298,6 +1301,7 @@ export function AppNav({ open = false, onClose }: { open?: boolean; onClose?: ()
                 then none while the cursor moves between rows. */}
             <TooltipProvider delayDuration={120} skipDelayDuration={500}>
             <aside
+                data-tour-nav
                 className={cn(
                     // Mobile: off-canvas drawer that slides in from the left.
                     "fixed inset-y-0 left-0 z-50 w-64 flex flex-col text-slate-900 bg-white shadow-2xl transition-transform duration-300 ease-out",
