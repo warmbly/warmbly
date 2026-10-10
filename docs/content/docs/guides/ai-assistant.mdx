@@ -3,6 +3,44 @@ title: Remie, the AI assistant
 description: Remie, Warmbly's in-product AI assistant, searches your data, edits records, sends messages with your approval, and manages campaigns, mailboxes, and settings, never doing anything your own role could not.
 ---
 
+Remie is Warmbly's AI assistant: a chat panel in the dashboard that reads across your workspace and takes almost any action you could take yourself. It asks before it changes anything.
+
+## Ask Remie
+
+<Steps>
+
+<Step>
+
+Open Remie from the blue blob in the top bar, or press `Cmd/Ctrl + I`.
+
+</Step>
+
+<Step>
+
+Ask in plain words. It knows what page you are on, so "summarize this campaign" works.
+
+</Step>
+
+<Step>
+
+Choose **Approve** or **Skip** on each approval card Remie shows before a change.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- Remie needs a paid plan and the **Use AI** role permission.
+- It acts as you: only what your role allows, only in your workspace.
+- Sending, starting things that send, and changing who has access always ask, even with **Always allow** on.
+- Conversations are private to you unless an admin turns on **Shared history**.
+- Each step costs one AI credit, and the stop button ends a run anytime.
+
+<Fold>
+
+## What Remie is and who can use it
+
 Remie is Warmbly's AI assistant: a chat panel in the dashboard that reads across your contacts, campaigns, mailboxes, unified inbox, CRM, team, and settings, and takes almost any action you could take yourself. Answers stream word by word and each tool step appears as it starts.
 
 Open Remie from the blue blob in the top bar or `Cmd/Ctrl + I`. The panel follows you between pages.
@@ -14,6 +52,10 @@ Remie acts as you: only what your role allows, only in your workspace, never ano
 </Callout>
 
 Remie needs a paid plan; a free trial has no credit allowance and the AI surfaces stay locked. Beyond that, access is the **Use AI** role permission (on for admins and managers, off for viewers); without it Remie and AI drafting are hidden. Admins can cap per-member spend by day, week, or month. See [AI credits](/guides/ai-credits/) and [Team and roles](/guides/team-roles/).
+
+</Fold>
+
+<Fold>
 
 ## Conversations and the panel
 
@@ -34,6 +76,10 @@ Docked, the panel resizes by dragging its inner edge, which also takes the keybo
 
 **Work continues without the panel.** Minimizing docks it to a status bar showing live state: working with how long the run has taken, waiting on approval, or holding an unread response. Closing it entirely also keeps runs going, and the blob in the top bar shows the state: it swirls while Remie works, turns amber when an approval waits, flashes green when a run finishes, and carries a dot while a response is unread.
 
+</Fold>
+
+<Fold>
+
 ## Suggestions and tips
 
 Remie reads what the [Advisor](/guides/advisor/) measures in your workspace and suggests fixes for it, never generic prompts. An empty conversation lists them under **Suggested for you**, one line per kind of problem ("3 new mailboxes are sending at full volume"). Choosing one asks Remie to fix it: it checks the current state, proposes the smallest change, and shows each one as an approval card first.
@@ -47,6 +93,10 @@ Now and then Remie also offers one of these in a small bubble under the blob in 
 - dismissing two in a row quiets them for three days, and the bell in the bubble pauses them for a week
 
 These preferences are yours alone, kept in your browser for each workspace.
+
+</Fold>
+
+<Fold>
 
 ## What you can ask Remie
 
@@ -65,6 +115,10 @@ These preferences are yours alone, kept in your browser for each workspace.
 - Search the web and read a public page
 
 It knows what page you are on, so "summarize this campaign" and "draft a reply here" resolve correctly.
+
+</Fold>
+
+<Fold>
 
 ## Approvals
 
@@ -87,8 +141,14 @@ Settings > Workspace > Remie lists every action that is always allowed, who allo
 
 **Drafts stay drafts.** Campaigns Remie builds are never started and automations are left disabled; you get a button to open them in the real editor. Copy it writes is grounded in your workspace [voice profile](/guides/unibox/) and follows the same human-writing rules as the rest of Warmbly.
 
+</Fold>
+
+<Fold>
+
 ## Credits and privacy
 
 Each step costs one AI credit, and a request is capped at a set number of steps (shown as the run progresses) so nothing runs away. Remaining credits show at the panel's bottom, and the stop button ends a run anytime. On a self-hosted install with a free or local model, runs are not charged and a "free model" notice appears.
 
 Changes Remie makes (a created task, an updated contact) appear in the shared activity feed like any other edit, so teammates' views stay current.
+
+</Fold>

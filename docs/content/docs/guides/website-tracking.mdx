@@ -3,7 +3,54 @@ title: "Website tracking"
 description: "Install the tracking snippet, see which pages a contact visits, and control consent and retention."
 ---
 
+Website tracking adds visits to your own site to a contact's activity timeline: which pages they saw, where they came from and which campaign brought them. It is off until you turn it on.
+
+## Turn on website tracking
+
+<Steps>
+
+<Step>
+
+Open **Settings > Website tracking** and switch on **Record website visits**.
+
+</Step>
+
+<Step>
+
+Add the hosts your site runs on under **Your website hosts**.
+
+</Step>
+
+<Step>
+
+Paste the snippet from the settings page before the closing `</head>` tag on every page.
+
+</Step>
+
+<Step>
+
+In the default **Ask first** mode, call `warmbly('consent', 'granted')` from your cookie banner once a visitor accepts.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- A visit is tied to a contact only after they click a campaign email link that leads to one of your hosts.
+- Visits are kept for 90 days by default, adjustable from 7 to 365.
+- The IP address is never kept, and a browser sending Global Privacy Control or Do Not Track is never recorded.
+- Visits show in a contact's **Activity** tab under the **Website** filter.
+
+<Fold>
+
+## What website tracking records
+
 Website tracking adds page views on your own site to a contact's activity timeline: which pages they landed on, where they came from, which campaign or UTM brought them, and what device they used. It is off until you turn it on, and the consent mode, location precision and retention window are yours to set.
+
+</Fold>
+
+<Fold>
 
 ## Installation
 
@@ -28,6 +75,10 @@ The **Your website hosts** list does two things. Page views reported from any ot
 
 Leave the list empty and page views from any host are recorded, but none are ever tied to a contact.
 
+</Fold>
+
+<Fold>
+
 ## How a visitor becomes a contact
 
 Every link in a campaign email is already a [tracked ticket](/guides/campaigns/) that resolves server-side to the recipient. When a recipient clicks one and the destination is one of your hosts, the redirect appends that ticket to the landing URL as `wbly_t`. The snippet reads it, removes it from the address bar immediately, and sends it with the page view. The server checks that the ticket belongs to a campaign in the same workspace as the site key and, only then, ties the browser to that contact.
@@ -42,6 +93,10 @@ If a second contact's ticket arrives on a browser already tied to someone else, 
 
 On a shared device, call `warmbly('reset')` when it changes hands to drop the visitor and session ids.
 
+</Fold>
+
+<Fold>
+
 ## Consent
 
 Choose the mode on the settings page:
@@ -50,6 +105,10 @@ Choose the mode on the settings page:
 - **Record on load**: page views are recorded as soon as the page loads. Choose this only where you have a lawful basis without a prior opt-in.
 
 The mode is enforced on the server as well as in the snippet, so a stale snippet cannot downgrade a workspace that requires consent. In both modes a browser that sends Global Privacy Control or Do Not Track is never recorded.
+
+</Fold>
+
+<Fold>
 
 ## What is collected
 
@@ -65,16 +124,30 @@ Nothing about the device or location is trusted from the page: the snippet does 
 
 A session ends after 30 minutes without a page view. The first view of a session is marked as the landing page.
 
+</Fold>
+
+<Fold>
+
 ## Retention
 
 **Keep visits for** sets how long page views are kept, from 7 to 365 days (90 by default). A job on the backend prunes each workspace's views past its own window every few hours; the promise on the settings page is what the job keeps. Deleting a contact deletes the browsing history tied to them at the same time.
 
 Page views, and the browser records that carry them, travel in the **Delivery events** group of a [workspace archive](/guides/workspace-export-import/). The tracking settings, including the site key, are part of the workspace itself so installed snippets keep reporting after a move.
 
+</Fold>
+
+<Fold>
+
 ## In the timeline
 
 Page views show in the **Activity** tab of a contact under the **Website** filter, one line each with the page title or path, the referring domain, the device and any UTM source. Open a row for the full detail: URL, referrer, operating system, browser, resolution, language, timezone, location and every UTM parameter. New views for a contact appear live for everyone with the contact open.
 
+</Fold>
+
+<Fold>
+
 ## Abuse controls
 
 The ingest endpoint on the tracking service is public, so it runs behind the same controls as the open pixel and click redirects: a per-source request budget (with a tighter one for page views on top), prefetch and crawler filtering, an 8 KB body cap with limits on every field, a short window that ignores reloads and double-fires, a per-source budget for unknown site keys, and a circuit breaker toward the backend. A forwarded client address is believed only from proxies the operator lists in `TRACKING_TRUSTED_PROXIES`, and only from the one header named in `TRACKING_CLIENT_IP_HEADER`, so a caller cannot choose its own rate-limit bucket or the location stored with a view. Over budget requests get `429`; everything else that is declined is acknowledged quietly so a probe learns nothing about which keys exist.
+
+</Fold>

@@ -3,9 +3,65 @@ title: "Contacts & CRM"
 description: "Import contacts, custom fields, labels, deals, and pipelines."
 ---
 
+Contacts are the people you reach out to. The CRM tracks what happens after they reply.
+
+![The contacts list with company, subscription status and campaign membership](/guides/contacts.webp)
+
+## Import contacts
+
+<Steps>
+
+<Step>
+
+Start a file import from **Contacts**: a CSV, TSV or XLSX file of up to 50 MB and 50,000 rows.
+
+</Step>
+
+<Step>
+
+**Upload** the file. Nothing is written to your contacts yet.
+
+</Step>
+
+<Step>
+
+**Map columns**, with at least one column mapped to **Email**.
+
+</Step>
+
+<Step>
+
+On **Review**, check the counts and choose **Leave as is** or **Update details** for contacts you already have.
+
+</Step>
+
+<Step>
+
+**Import**. It runs on the server, so you can close the window while it finishes.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- Duplicates match on lowercased email across the workspace, so one address is one contact.
+- A blank cell never erases a value you already have, so re-importing a partial export is safe.
+- Custom fields feed personalization, such as `{{.industry}}` in an email.
+- Unsubscribed contacts are skipped by every campaign automatically.
+- **Save as segment** turns the filters on the list into a reusable [segment](/guides/segments/).
+
+<Fold>
+
+## How the list remembers your view
+
 Browsing filters, searches and view choices are [remembered in your browser tab](/guides/browsing/) across refreshes and navigation, separately for each user and workspace.
 
 Contacts are the people you reach out to; the CRM tracks what happens after they reply.
+
+</Fold>
+
+<Fold>
 
 ## Importing
 
@@ -76,6 +132,10 @@ The Review step and the result also report what the addresses themselves look li
 
 This is not address verification. It reads the addresses; verification asks the receiving server whether they exist, and runs separately in the background, within a minute of the import. A file that already carries verification results from another service (a `status` or `ZeroBounce Status` column, say) is recognised during mapping and offered as **Verification status**; those verdicts are kept and the background check skips them. See [address verification](/guides/deliverability/#address-verification).
 
+</Fold>
+
+<Fold>
+
 ## Custom fields
 
 For anything beyond identity: industry, plan tier, account owner. Create them by mapping a column to a new custom field during import, or on a contact's Details tab. A later import can map into the same field by picking it from the mapping menu (see [Mapping into your custom fields](#mapping-into-your-custom-fields)).
@@ -102,11 +162,19 @@ Both forms work everywhere, including inside `{{if}}` conditions and helper func
 
 See [Personalization & expressions](/guides/expressions/) for the full templating language.
 
+</Fold>
+
+<Fold>
+
 ## Filtering the list
 
 A filter bar sits above the contact list. **Label**, **Segment**, **Status** and **Campaign** are always there; open one, tick values, and the list updates immediately with the matching count next to the bar. **Add filter** adds a custom-field condition (field, contains/is/starts with/ends with, value), a date-added or last-updated range, a number-of-campaigns range, the address verification verdict, the [email provider](#email-provider) and, on a campaign's Leads tab, lead status and engagement. Each active filter is a pill you can reopen to change or remove with its cross; **Clear** drops them all, and **Save as segment** turns the current set into a [segment](/guides/segments/). Free-text search, sort and the column chooser stay in the toolbar.
 
 Free-text search matches first name, last name, email, company and phone. Every word you type has to match one of those, so `Test Demo` finds the contact whose first name is Test and last name is Demo, and `Demo Acme` finds everyone named Demo at Acme. Words can be in any order, and only the first six count.
+
+</Fold>
+
+<Fold>
 
 ## Choosing columns
 
@@ -114,11 +182,19 @@ Free-text search matches first name, last name, email, company and phone. Every 
 
 The layout is yours: it is saved to your account for this workspace, so it follows you to another browser, and a teammate looking at the same list keeps their own columns. The campaign Leads tab has its own layout, separate from the contacts page. **Reset to default** at the bottom of the chooser puts the standard columns back.
 
+</Fold>
+
+<Fold>
+
 ## Sorting
 
 Click a column header to sort by it, and click it again to flip the direction. Text columns (name, company, phone, custom fields) start ascending; dates and counts start with the newest or largest first. The **Sort** menu in the toolbar reaches the same orderings, including columns that are hidden or that a phone screen has no room for, email provider, and every custom field in the workspace.
 
 A sort on a custom field orders the values as text. Contacts that do not have the field, or have it blank, are grouped at the end when ascending and at the start when descending. The sort is saved with your layout, so the list opens the way you left it.
+
+</Fold>
+
+<Fold>
 
 ## Email provider
 
@@ -127,6 +203,10 @@ Each contact's avatar carries a small badge with the logo of whoever hosts their
 A contact on a company domain shows that company's logo in place of their initials, and the **Company** column shows it beside the company name; when no company is on file, the column shows the domain their address is on. Personal inboxes (Gmail, Outlook.com, Yahoo and the like) keep their initials. Logos are on for Warmbly Cloud and off on a self-hosted instance unless its operator turns them on, because the browser fetches each one from DuckDuckGo; see [data control](/development/data-control/#outbound-calls).
 
 It shows on the contacts page and on a campaign's Leads tab alike. You can sort by it from **Sort**, filter with **Add filter** > **Email provider** (including **Unknown or not checked yet**), select every match and act on them in bulk (add them to a campaign, label them, export them), or save the filter as a segment. Campaign [ESP matching](/guides/campaigns/) uses the same data to pair each lead with a same-provider mailbox.
+
+</Fold>
+
+<Fold>
 
 ## Selecting rows
 
@@ -140,17 +220,29 @@ Every bulk action reads the selection: **Edit**, **Segment**, **Remove from segm
 
 **Select all matching** is in the **From contacts** picker too, on a campaign's Leads tab and a segment page, so a whole search can be added as leads or members in one step.
 
+</Fold>
+
+<Fold>
+
 ## Editing one contact
 
 Clicking a row opens the contact's panel. Its **Details** tab edits the fields the contact is made of: name, email address, company, phone, subscription, campaigns, labels and custom fields. Nothing is sent until **Save**, **Discard** puts the panel back to the stored values, and closing it with unsaved edits asks first.
 
 The email address can be changed here, which is the right move when someone's address was mistyped on import or they moved to a new domain. It is stored lowercased and stripped of any display name, and it has to be free: an address another contact already holds is refused, because merging two people's campaign history is not something the edit could undo. A new address also clears the contact's [verification](/guides/deliverability/#address-verification) verdict and everything the platform had observed about the old mailbox, so the background check starts the new address from scratch on its next pass, and the recipient provider Warmbly matches senders against is worked out again from the new domain. Emails already sent went to the old address and stay in the timeline as they happened.
 
+</Fold>
+
+<Fold>
+
 ## Editing many contacts at once
 
 Tick rows in any contact list, a segment's members or a campaign's leads, and the selection bar's **Edit** opens a bulk panel. It can add or remove campaigns, add or remove labels, force a subscription state, and queue custom-field operations (add, edit, delete, rename) that run on every selected contact (the key box suggests your existing fields as you type), including a **Select all matching** selection that reaches past the loaded pages.
 
 Nothing is applied while you build it up. The header names the list the selection came from, and a **Will apply** strip above the buttons lists every queued change as a chip you can take back one at a time before pressing Apply. A field operation missing its key, or its value where one is needed, is marked and skipped rather than sent half-finished.
+
+</Fold>
+
+<Fold>
 
 ## Labels
 
@@ -163,6 +255,10 @@ Labels belong to the workspace, not to whoever made them: every teammate sees th
 Labels also drive automation: a sequence can run **Add label** or **Remove label** as a contact moves through a flow, so a label can be applied automatically on a positive reply. **Add to segment** and **Remove from segment** do the same for [segments](/guides/segments/).
 
 To turn labels and activity into a reusable audience, build a [segment](/guides/segments/): a saved set of conditions over contacts (labels, fields, campaign activity, engagement) that you can browse and add to a campaign in one step.
+
+</Fold>
+
+<Fold>
 
 ## Where a contact came from
 
@@ -184,6 +280,10 @@ Only new contacts get a source. An import or API call that matches an existing c
 
 A new contact is also an event. `contact.created` goes to your [webhooks](/guides/webhooks/) and can start an [automation](/guides/automations/#triggers) with the contact's fields and source, except for bulk arrivals, which stay silent: file imports, sheet syncs, and a single API request adding more than 100 contacts.
 
+</Fold>
+
+<Fold>
+
 ## Activity timeline
 
 The **Activity** tab of a contact is one workspace-wide feed, newest first, of everything Warmbly knows about them. Every member with permission to view contacts sees the same timeline, regardless of who created the contact or its campaigns. It includes every campaign email sent, opened, clicked, replied to or bounced (with the campaign, step, subject and sending mailbox), replies with their classified intent, deliverability and suppression events, notes, meetings, and the contact's lifecycle: when it was created and how, and each time it joined or left a campaign or gained or lost a label.
@@ -194,9 +294,15 @@ Filter chips narrow the feed (**Emails**, **Replies**, **Deliv.**, **Notes**, **
 
 At the top of the tab sits the campaign panel: for each campaign the contact is in, its flow with this contact's progress, the lead status, and what the scheduler will do next. See [Campaigns](/guides/campaigns/) for how the next action is worked out and what its states mean.
 
+</Fold>
+
+<Fold>
+
 ## Deals and pipelines
 
 A **pipeline** is a named, ordered sequence of **stages** a deal advances through. On the Pipelines page you create pipelines (new ones start with `Open`, `Qualified`, `Won`), then add, rename, recolor, and delete stages, each showing its deal count. Stage order is the left-to-right column order on the board.
+
+![Deals across every pipeline, with open and won value at the top](/guides/deals.webp)
 
 | View | Behavior |
 |------|----------|
@@ -228,6 +334,10 @@ Each mirrored record links to its HubSpot page.
 - the contact panel shows the person's owner, label and organization, and a label you choose can stop a campaign
 
 Each mirrored record links to its Pipedrive page.
+
+</Fold>
+
+<Fold>
 
 ## Tasks
 
@@ -263,6 +373,10 @@ Automated replies are off deliberately. A vacation notice is not follow-up work,
 
 The classification does more than decide the task: an automated reply never counts as a reply for **stop on reply** or for a **replied** branch in a sequence, and its notification goes to the **Out-of-office detected** preference rather than **New reply**, so muting one does not mute the other.
 
+</Fold>
+
+<Fold>
+
 ## Suppression
 
 A suppressed contact receives no further mail. Unsubscribed contacts are skipped by every campaign automatically; toggle subscription on the Details tab, and filter the list by Subscribed or Unsubscribed.
@@ -270,6 +384,8 @@ A suppressed contact receives no further mail. Unsubscribed contacts are skipped
 Suppression also happens automatically when a recipient unsubscribes or replies asking to stop, on a hard bounce or spam complaint, and when a sequence runs an **Unsubscribe** action. The **Suppression list** tab holds every entry, takes addresses and whole domains by hand, and lets you lift an entry; a suppressed contact's Overview tab shows why and offers the same.
 
 This is the safe default response to a bad signal: stop sending rather than keep collecting bounces and complaints. See [unsubscribe and suppression](/guides/unsubscribe/) for the full picture and [Deliverability](/guides/deliverability/) for the signals behind it.
+
+</Fold>
 
 ## Where to go next
 

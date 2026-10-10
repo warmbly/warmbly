@@ -3,6 +3,56 @@ title: "Export and import"
 description: "Move a whole workspace between Warmbly instances, including mailboxes, campaigns, contacts, and inbox history."
 ---
 
+A workspace archive is one file holding everything a workspace owns. Use it to move a workspace between Warmbly instances, for example from a self-hosted install to the cloud or back.
+
+## Move a workspace
+
+<Steps>
+
+<Step>
+
+On the source instance, open **Settings > Data**, pick the groups to export, and select **Start export**.
+
+</Step>
+
+<Step>
+
+To keep mailboxes connected, turn on **Include mailbox credentials** and choose a passphrase.
+
+</Step>
+
+<Step>
+
+When the archive lands in the **Archives** list, select **Download**.
+
+</Step>
+
+<Step>
+
+On the destination, choose the archive file, enter its passphrase, and select **Check this archive**.
+
+</Step>
+
+<Step>
+
+Read the report, pick the groups to apply, and confirm.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- Export and import are limited to the workspace owner.
+- Archives are kept for 7 days and then deleted automatically.
+- The passphrase is never stored. If you lose it, the credentials in that archive cannot be recovered.
+- An import runs as one transaction. If anything fails, nothing lands.
+- To move a whole self-hosted install, use `warmblyctl backup` and `warmblyctl restore` instead.
+
+<Fold>
+
+## About workspace archives
+
 A workspace archive is a single file holding everything one workspace owns. It exists so you can move between instances: a self-hosted install to the cloud, the cloud back to self-hosted, or one self-host to another.
 
 Diagnostic participation, shared/rolling limits, restrictive send evidence and audited repair-resolution history travel with their registered mailbox/task/organization data. Source-worker executor handles reset; exact provider-message DKIM authorization/nonces are excluded. Portable minimal receipt proof remains historical evidence, never an execution grant. The reconciliation webhook/notification outbox is source-instance-local and excluded to prevent replay on import; drain pending effects before moving. Whole-instance database backups retain it. See [send-safety retention and rollback](/development/send-safety/#upgrade-rollback-and-portability).
@@ -12,6 +62,10 @@ This page moves **one workspace** between two running instances, re-sealing its 
 </Callout>
 
 Everything here lives under **Settings > Data**, and is limited to the workspace owner. An export with credentials contains every mailbox password in the workspace, so it sits at the same level as deleting the workspace.
+
+</Fold>
+
+<Fold>
 
 ## What an archive contains
 
@@ -45,6 +99,10 @@ A restricted member stays restricted on the destination. Their campaign and fold
 The suppression list is part of the Contacts group and is never optional within it. An import that dropped it would start mailing people who already opted out.
 </Callout>
 
+</Fold>
+
+<Fold>
+
 ## Exporting
 
 Pick your groups, decide about credentials, and select **Start export**. The archive builds in the background, so you can leave the page; the **Archives** list shows live progress and a **Download** button when it lands.
@@ -64,6 +122,10 @@ Warmbly does not keep it on either instance. If you lose it, the credentials ins
 Leave the option off and the credential fields travel empty. Everything else imports normally, and each mailbox arrives marked for reconnection: open it on the destination and sign in again, exactly like connecting it the first time.
 
 Webhook signing secrets follow the same rule, including the one an [OAuth app](/api/oauth/#receiving-events-as-an-app-webhooks) signs its deliveries with. Without the option, rotate the app's webhook secret on the destination before relying on its deliveries.
+
+</Fold>
+
+<Fold>
 
 ## Importing
 
@@ -130,6 +192,10 @@ Some things belong to an instance rather than to a workspace, so they are not ap
 
 An import runs as one transaction. If anything fails, nothing lands and the workspace is untouched.
 
+</Fold>
+
+<Fold>
+
 ## After a move
 
 - **Reconnect any mailbox that needs it.** Mailboxes without credentials show as needing a reconnect in the mailbox list.
@@ -150,6 +216,10 @@ An import runs as one transaction. If anything fails, nothing lands and the work
 If you have shell access to the source, `warmblyctl org export` writes the same archive straight to a file without going through a browser, which is the easier route for a large workspace. See the [warmblyctl reference](/development/warmblyctl/).
 </Callout>
 
+</Fold>
+
+<Fold>
+
 ## What does not travel
 
 Pending mailbox arrivals and their delivery queue are instance-local. Provider mappings whose arrivals are still pending are excluded too. Let the source consumer finish its pending arrivals before exporting; importing the archive does not replay that source queue. A [full-instance backup](/development/data-control/#mailbox-sync-recovery-data) instead preserves the queue together with its keys and message-body storage.
@@ -168,9 +238,15 @@ A [community directory](/guides/integrations/#community-apps) listing does not t
 
 Reply and forward drafts kept in your browser are also excluded. Finish or copy them before moving to another instance. See [reply drafts](/guides/unibox/#reply-drafts).
 
+</Fold>
+
+<Fold>
+
 ## Limits
 
 - One export and one import can run per workspace at a time.
 - An uploaded archive can be up to 8 GB.
 - Archives expire 7 days after they finish.
 - An archive can be imported into any instance running the same or a newer release. A newer archive on an older instance is refused, with the version in the message.
+
+</Fold>

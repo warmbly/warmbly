@@ -3,11 +3,59 @@ title: "Team & roles"
 description: "Invite members and control access with roles, permissions, and resource scopes."
 ---
 
+Share a workspace with your team: invite people by email and give each one a role that decides what they can see and change.
+
+## Invite a teammate
+
+<Steps>
+
+<Step>
+
+Open **Settings > Members**.
+
+</Step>
+
+<Step>
+
+Type addresses into **Emails** in the **Invite teammates** box.
+
+</Step>
+
+<Step>
+
+Pick one or more **Roles**, and optionally narrow their **Access**.
+
+</Step>
+
+<Step>
+
+Press **Send invitations**.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- Every workspace starts with **Admin**, **Manager** and **Viewer** roles, which you can edit, delete or add to.
+- **Owner** is a membership status, not a role, and there is exactly one per workspace.
+- A member with several roles gets the union of all of them.
+- A member limited to **Selected resources** has read-only access.
+- Inviting, re-roling and removing members needs the **Manage team** permission.
+
+<Fold>
+
+## Where team settings live and who manages them
+
 Share a workspace with your team: invite by email, give each person a role, and the role decides what they can see and change. An optional access scope narrows which campaigns and mailboxes the role applies to, so a client or contractor can work inside your workspace without seeing the rest of it. The roster and invitations live under **Settings > Members**; roles and the permission matrix under **Settings > Roles & access**.
 
 <Callout type="info" title="Who can manage the team">
 Inviting, re-roling, removing, and managing roles all need the **Manage team** permission (the owner and the seeded Admin role have it; any custom role can carry it). Without it the roster is read-only.
 </Callout>
+
+</Fold>
+
+<Fold>
 
 ## Inviting members
 
@@ -33,6 +81,10 @@ Two things work differently when you run Warmbly yourself.
 
 Both are covered in [accounts and access](/development/accounts-and-access/#without-a-mail-relay), along with how to point the instance at a real relay.
 
+</Fold>
+
+<Fold>
+
 ## The roster
 
 Each row shows email, role, access, and join date, with your own row tagged "you". Open the role picker on a row to tick the roles that member holds; a member can hold several, and their effective access is the union. The owner's row is a fixed Owner badge, and your own row is not editable.
@@ -40,6 +92,10 @@ Each row shows email, role, access, and join date, with your own row tagged "you
 To remove someone, hover (or tap) their row and click the remove icon. **You cannot remove the owner or yourself.** To leave a workspace you own, transfer ownership first.
 
 Removal takes effect at once, including for someone who is signed in right now. Their open dashboard loses the workspace on its next request and its live updates stop, and they are asked to pick another workspace they belong to. Apps they authorized in the workspace are disconnected. Nothing they created is removed with them: mailboxes, contacts, campaigns and API keys belong to the workspace, so revoke their keys under **API keys** if those should go too. A changed role or a new owner reaches open dashboards' live updates without a reload.
+
+</Fold>
+
+<Fold>
 
 ## Access scope
 
@@ -72,6 +128,10 @@ What a restricted member sees:
 Everything that cannot yet be narrowed to a scope is unavailable to them, and shows as locked in their sidebar with the reason: contacts, CRM, templates, forms, automations, deliverability, placement tests, settings other than their own profile and security, the AI assistant, and the Slack app. They are not sent workspace notifications. An API key a restricted member already holds, and an app they authorized, are held to the same scope and the same read-only routes; they cannot create new keys.
 
 Changing a member's access needs **Manage team** and a recent sign-in, takes effect on their next request, and applies to their open dashboard and live updates without a reload. You must hold every permission the member's roles grant, the owner always reaches the entire workspace, and you cannot change your own access. Grants on a deleted folder, campaign or mailbox disappear with it.
+
+</Fold>
+
+<Fold>
 
 ## Roles
 
@@ -107,6 +167,10 @@ How the seeded roles map: **Viewer** holds only the two view permissions plus an
 
 A role also bounds what its members hand to software. An API key a member creates, and an app a member authorizes over OAuth, only gets the [API permissions their role covers](/api/permissions/#what-a-role-can-delegate), and an app's access shrinks with the member's role if it changes later. Members with **Manage API keys** or **Manage settings** can see every member's authorized apps under **Settings > OAuth apps > Authorized apps** and revoke any of them.
 
+</Fold>
+
+<Fold>
+
 ## Custom roles
 
 On **Roles & access**, click **New role**: a name (up to 50 characters, and only "owner" is reserved), a color, and an optional description. Pick a template under **Start from** to copy a permission bundle, then toggle individual permissions. Assign it from the roster or the invite flow.
@@ -120,6 +184,8 @@ Five rules keep this safe:
 - Up to 25 roles per workspace, including the seeded ones.
 
 Custom roles apply everywhere permissions do: API access checks, dashboard visibility, and which realtime events a member receives. For a member with a restricted [access scope](#access-scope), only a role's read permissions take effect.
+
+</Fold>
 
 ## Related guides
 

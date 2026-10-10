@@ -3,7 +3,55 @@ title: "Security"
 description: "Two-factor authentication, passkeys, and sessions."
 ---
 
+**Settings > Security** is where you protect how you sign in to Warmbly: two-factor authentication, passkeys and your signed-in devices.
+
+## Secure your account
+
+<Steps>
+
+<Step>
+
+Open **Settings > Security**.
+
+</Step>
+
+<Step>
+
+Choose **Add a passkey** so daily sign-in is fast and phishing-resistant.
+
+</Step>
+
+<Step>
+
+Turn on two-factor authentication with any standard authenticator app, and store the recovery codes safely.
+
+</Step>
+
+<Step>
+
+Review **Sessions** now and then, and sign out anything unfamiliar.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- Recovery codes are shown only once, and each one works once.
+- A passkey skips the emailed code, because unlocking your device already proves it is you.
+- Changing your password ends every session. The device you are on is signed straight back in.
+- Some sensitive changes ask for your password or an authenticator code again. The confirmation lasts five minutes.
+- A password has to be 8 to 128 characters, and commonly breached passwords are refused.
+
+<Fold>
+
+## Where these settings live
+
 Everything here lives under **Settings > Security** and concerns signing in to Warmbly. For authenticating the domains you send from (SPF, DKIM, DMARC), see [Deliverability](/guides/deliverability/).
+
+</Fold>
+
+<Fold>
 
 ## How signing in works
 
@@ -22,6 +70,10 @@ Accounts created through an external sign-in provider have no password initially
 <Callout type="info" title="Passwordless by design">
 A passkey is tied to your device and unlocked with biometrics or a PIN, so it already proves both something you have and something you are or know. That is why it skips the emailed code. Warmbly requires that unlock: a security key with no PIN set cannot be added, and cannot sign in, until you set one on the key.
 </Callout>
+
+</Fold>
+
+<Fold>
 
 ## Two-factor authentication
 
@@ -47,6 +99,10 @@ Wrong codes are limited three ways: five per sign-in attempt, after which you si
 
 **Turn off** asks for a current code or a recovery code first, then an explicit confirmation. With 2FA off you are protected only by your password plus the emailed code, your recovery codes stop working, and setting it up again issues a fresh secret and new recovery codes.
 
+</Fold>
+
+<Fold>
+
 ## Passkeys
 
 A passkey signs you in with whatever unlocks your device. Nothing is phishable, because the credential never leaves the device. Current Chrome, Safari, Edge, and Firefox all support them; if yours does not, the Security page says so and you keep using your password.
@@ -60,6 +116,10 @@ Each entry shows when it was added and last used, and can be renamed or removed.
 <Callout type="info" title="No passkey on this device?">
 Unsynced passkeys live only on the device that created them. On a device without one, Warmbly says none was found and you sign in with your password, then add a passkey there.
 </Callout>
+
+</Fold>
+
+<Fold>
 
 ## Confirming sensitive changes
 
@@ -81,6 +141,10 @@ If you signed up with Google, Apple or your company's single sign-on, your accou
 
 This exists because the things on that list either hand out a credential that outlives the session that made it, reveal a secret, change who can get in, or cannot be undone from your side. Someone who got hold of a signed-in browser should not be able to do any of them without knowing something you know.
 
+</Fold>
+
+<Fold>
+
 ## Sessions
 
 Every signed-in device appears under **Sessions** with its device (`Chrome on macOS`), location where known, sign-in method (Email, Google, Apple, or Passkey), and last activity. Your current device is tagged **This device**.
@@ -93,6 +157,10 @@ A session renews itself in the background, and each renewal replaces the credent
 Sign out the session, change your password, and make sure 2FA is on. Signing out other sessions is the fastest way to cut off access.
 </Callout>
 
+</Fold>
+
+<Fold>
+
 ## Choosing a password
 
 A password has to be between 8 and 128 characters, and it is checked against a list of the 100,000 most commonly breached passwords published by the UK National Cyber Security Centre. If yours appears there, it is refused and you are told why. The check is case-insensitive, so capitalising the first letter of a known password does not get past it.
@@ -101,15 +169,27 @@ There is no rule about mixing upper case, digits and symbols. A long passphrase 
 
 Repeated wrong passwords are counted per account, not just per device, so guessing one account from many addresses does not buy an attacker more attempts. After fifty failures in an hour the account stops accepting password attempts until the hour is up. Signing in correctly or completing a password reset clears the count. The current password asked for when you change it, and the password you confirm a sensitive change with, share a separate budget of the same size.
 
+</Fold>
+
+<Fold>
+
 ## Names
 
 Your name and your workspace's name appear in emails Warmbly sends to other people, such as invitations. They are plain text only: a name that contains a link, a web address, an email address or invisible formatting characters is refused, and the field tells you why. The full rules are in [Name refusals](/api/error-codes/#name-refusals).
+
+</Fold>
+
+<Fold>
 
 ## Password and alerts
 
 Change your password under **Password**: current password, then a new one. **Changing it ends every session, including the one you change it from.** The device you are on is signed straight back in with a new session, so you notice nothing, while anything that held your old session, on any device, is signed out. Accounts that only use Google, Apple, or a passkey have no password to change.
 
 **Sign-in alerts** notify you when your account is accessed from a new browser and OS combination, naming the device and location with a reminder to act if it was not you. They appear in your in-app feed by default; enable email under **Settings > Notifications**, Security section, Email channel. Your first sign-in is never alerted, as there is nothing to compare against.
+
+</Fold>
+
+<Fold>
 
 ## What is recorded when you sign up
 
@@ -120,6 +200,10 @@ Creating an account records the address it was created from, the browser's user-
 - It stays on the instance the account was created on. Workspace archives do not carry it.
 
 Nothing here refuses a signup on its own. A single weak signal is wrong too often, and turning a false positive into a rejected account leaves a real customer with no way through.
+
+</Fold>
+
+<Fold>
 
 ## Sign-ins from an impossible place
 
@@ -141,6 +225,10 @@ Repeated anomalies inside a fortnight are recorded against the workspace's postu
 This uses the optional MaxMind city database. Without it configured, sign-ins are recorded but never judged, which is the safe direction: a false challenge locks a real person out of their own account.
 </Callout>
 
+</Fold>
+
+<Fold>
+
 ## Cross-account patterns
 
 Individually, every abuse control watches one thing: a rate limit watches one account, warmup health one mailbox, verification one address. Someone spreading the same behaviour across several accounts stays under all of them.
@@ -154,11 +242,17 @@ Findings are recorded as evidence on the [workspace posture](/guides/deliverabil
 - **Sharing an address carries little weight** on its own. Offices, co-working spaces and VPNs all produce it honestly.
 - **Only the last 30 days count.** Two workspaces opened from one office a year apart are not related.
 
+</Fold>
+
+<Fold>
+
 ## Strongest setup
 
 1. **Add a passkey** so daily sign-in is fast and phishing-resistant.
 2. **Turn on 2FA** and store the recovery codes safely, so password sign-ins keep a second factor.
 3. **Review sessions** periodically and sign out anything unfamiliar.
+
+</Fold>
 
 ## Related guides
 

@@ -3,9 +3,57 @@ title: Pipedrive
 description: "Run your workspace's CRM on Pipedrive: deals, activities and notes written through, outreach logged on the person, and campaigns that stop when Pipedrive says someone has moved on."
 ---
 
+Pipedrive mode makes Pipedrive your workspace's CRM. The deals, tasks and notes you see in Warmbly are Pipedrive's records, and your outreach is logged on each person.
+
+## Switch to Pipedrive
+
+<Steps>
+
+<Step>
+
+Open **Integrations > Pipedrive** and select **Connect**.
+
+</Step>
+
+<Step>
+
+Sign in to Pipedrive, pick the company, and approve the permissions.
+
+</Step>
+
+<Step>
+
+In the setup wizard, select **Switch to Pipedrive**, then press **Looks good** through the rest.
+
+</Step>
+
+<Step>
+
+Finish the wizard. The dashboard fills in as the first pull runs, usually within a minute or two.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- Every change you make in Warmbly goes to Pipedrive first. If Pipedrive refuses it, nothing is saved.
+- A deal opened in Pipedrive, a label you choose (such as **Customer**) or an unsubscribe holds the person's campaigns.
+- Connect as a Pipedrive admin when you can. Without admin rights, the Warmbly fields are not written and Warmbly checks for changes every five minutes.
+- Opens and clicks are not logged by default.
+- Switching back or disconnecting deletes nothing on either side.
+
+<Fold>
+
+## How Pipedrive mode works
+
 A workspace can use Warmbly's own CRM, [HubSpot](/guides/hubspot/) or Pipedrive. In **Pipedrive mode**, Pipedrive is the system of record. The deals, pipelines, tasks and notes you see in Warmbly are Pipedrive's deals, pipelines, activities and notes, mirrored into Warmbly so lists, search and the board stay fast, and every change you make in Warmbly goes to Pipedrive first. Your outreach is logged as activities on each person, and Pipedrive can stop a campaign when a deal opens or a person is labeled a customer.
 
 The basic Pipedrive connection (a person upsert from an [automation](/guides/automations/#actions) or **Push to CRM**) works without Pipedrive mode. This page covers the full mode.
+
+</Fold>
+
+<Fold>
 
 ## What Pipedrive mode does
 
@@ -14,6 +62,10 @@ The basic Pipedrive connection (a person upsert from an [automation](/guides/aut
 - **Warmbly fields** on Pipedrive people carry each person's outreach status, so your team can filter, report and run Pipedrive automations on it.
 - **Pipedrive can stop outreach.** A deal opened in Pipedrive, a label you choose (such as **Customer**) or an unsubscribe holds the person's campaigns.
 - **The contact panel shows Pipedrive's side.** In the contact drawer and the inbox, a contact shows their Pipedrive owner, label, organization and any fields you choose, and you can change the owner and label in place.
+
+</Fold>
+
+<Fold>
 
 ## Connect and set up
 
@@ -28,6 +80,10 @@ If the workspace runs on HubSpot when you switch, the wizard says so first. Swit
 <Callout type="info" title="Who should connect">
 Connect as a Pipedrive admin when you can. Pipedrive checks every change against the connected user's own permissions, and adding the Warmbly fields and the change notifications needs an admin (or the contact fields and webhooks permissions). Without them the sync still runs: fields are not written, and Warmbly checks Pipedrive every five minutes instead of hearing about changes at once.
 </Callout>
+
+</Fold>
+
+<Fold>
 
 ## What syncs
 
@@ -71,6 +127,10 @@ The Tasks page shows the Pipedrive activities owned by Pipedrive users who are m
 
 Creating, editing or deleting a task type is refused with `crm_managed_externally`, because the types are Pipedrive's activity types. Tasks Warmbly opens by itself, such as [follow-up tasks from replies](/guides/contacts-crm/#follow-up-tasks-from-replies) and an automation's **Create a task**, become Pipedrive activities as well.
 
+</Fold>
+
+<Fold>
+
 ## People and field mapping
 
 A Warmbly contact is linked to a Pipedrive person by email address. Linking happens when Warmbly emails the contact, when you open it, when a person whose address Warmbly has changes in Pipedrive, and after an [import from a Pipedrive filter](#importing-from-pipedrive-filters).
@@ -89,6 +149,10 @@ The defaults map first name, last name, company and phone to the person's first 
 
 You can also pick up to 40 of your Pipedrive fields to show on the contact panel.
 
+</Fold>
+
+<Fold>
+
 ## Activity logged to Pipedrive
 
 | In Warmbly | In Pipedrive | Default |
@@ -105,6 +169,10 @@ Each activity is linked to the person, their organization and their open deal. I
 
 Opens and clicks are off by default because mail privacy proxies and security scanners open and click on their own. Turned on, they only update the two fields, at most once a day per person, and never create a person in Pipedrive.
 
+</Fold>
+
+<Fold>
+
 ## Warmbly fields
 
 Warmbly adds these custom fields to Pipedrive people when you switch, and keeps them up to date (on by default; turning it off stops every field write, including opens and clicks). A field your team already has with the same name is reused.
@@ -120,6 +188,10 @@ Warmbly adds these custom fields to Pipedrive people when you switch, and keeps 
 | Warmbly last clicked | Last click, when click logging is on |
 | Open in Warmbly | A link that opens the contact in Warmbly |
 
+</Fold>
+
+<Fold>
+
 ## Users
 
 Pipedrive's users are matched to workspace members by email address. Where the addresses differ, pick the member by hand on the Pipedrive page; a match you choose is kept and never replaced by the email match. Matching decides:
@@ -127,6 +199,10 @@ Pipedrive's users are matched to workspace members by email address. Where the a
 - whose activities appear on the Tasks page
 - who owns the email activities a mailbox logs, and the people it creates
 - which Pipedrive user a deal or activity gets when you assign it to a member in Warmbly
+
+</Fold>
+
+<Fold>
 
 ## Positive replies
 
@@ -137,6 +213,10 @@ When a reply is classified as interested, Warmbly can:
 - **create a deal** in a pipeline and stage you choose (off by default)
 
 The lead and the deal are both skipped when the person already has an open deal. The follow-up task comes from your existing [reply follow-up setting](/guides/contacts-crm/#follow-up-tasks-from-replies) and becomes a Pipedrive activity like any other task.
+
+</Fold>
+
+<Fold>
 
 ## Exit rules
 
@@ -159,6 +239,10 @@ Guards decide who an [import from a Pipedrive filter](#importing-from-pipedrive-
 | Skip people with an open deal | On |
 | Skip people owned by someone outside the workspace | Off |
 
+</Fold>
+
+<Fold>
+
 ## Working from inside Pipedrive
 
 The **Warmbly panel** on person and deal pages shows the person's Warmbly status, each campaign they are in with its step, status and last activity, and why a lead is paused, with a link that opens them in Warmbly. Its two actions work from Pipedrive itself:
@@ -176,11 +260,19 @@ On a deal page the panel shows the deal's person. The panel acts as the Warmbly 
 
 A Pipedrive user with no matched member, or whose member is still invited, is banned from signing in, or lacks the permission, sees why in the panel and changes nothing. The panel needs the Pipedrive company to be in Pipedrive mode in exactly one Warmbly workspace. On a self-hosted instance the panel is part of your own Pipedrive app; see [self-hosting](#self-hosting).
 
+</Fold>
+
+<Fold>
+
 ## Importing from Pipedrive filters
 
 From **Contacts**, choose **Import from Pipedrive** and pick one of your saved people filters. The preview counts who would come in and who is skipped, by reason: unsubscribed, label, open deal, owned by someone outside the workspace, no email address, and duplicate address. Continue, and the filter becomes an ordinary contact import, finished in the usual [import review](/guides/contacts-crm/#importing) where you pick the campaign, labels and duplicate handling.
 
 One import takes up to 25,000 people; a larger filter is cut off at that number and the preview says so. The imported contacts are linked to their Pipedrive persons a couple of minutes later, so their first sends log against the right person.
+
+</Fold>
+
+<Fold>
 
 ## Copying your Warmbly CRM into Pipedrive
 
@@ -190,6 +282,10 @@ When a workspace that used Warmbly's CRM switches, its own deals, tasks and note
 - **Tasks** become activities and **notes** become notes, with their person and deal
 
 A record already in Pipedrive is never copied twice, so running it again only picks up what was missed. A Warmbly deal, task or note you edit after switching is also created in Pipedrive at that moment.
+
+</Fold>
+
+<Fold>
 
 ## Sync health and fixing errors
 
@@ -208,9 +304,17 @@ Changes you make in the dashboard go to Pipedrive while you wait. Activity loggi
 
 Warmbly keeps its calls well under Pipedrive's burst limit for each company (30 requests every two seconds and 4 searches, shared across every Warmbly process), and waits and retries when Pipedrive asks it to slow down.
 
+</Fold>
+
+<Fold>
+
 ## Switching back and disconnecting
 
 Choosing **Warmbly** as the CRM again, switching to HubSpot, or disconnecting Pipedrive stops the sync and the activity logging. Switching removes Warmbly's change notifications from Pipedrive; after a disconnect, Warmbly answers their deliveries as gone and Pipedrive retires them. Nothing is deleted on either side: the deals, pipelines, tasks and notes that were mirrored stay in Warmbly as ordinary records you can edit, the hidden Warmbly-only pipelines come back, and Pipedrive keeps everything that was written there, including the Warmbly fields. Switching back to the same Pipedrive company later picks up the same records rather than duplicating them.
+
+</Fold>
+
+<Fold>
 
 ## Self-hosting
 
@@ -223,9 +327,17 @@ A self-hosted instance uses its own Pipedrive app. Create one in the Pipedrive D
 
 The consumer runs the pull and the sync queue. Change notifications are registered by Warmbly itself when a workspace switches, one set per connection, delivered to `<backend>/api/v1/integrations/pipedrive/webhooks/<connection id>`. They need `BACKEND_PUBLIC_URL` to be an `https` address Pipedrive can reach; without one, Warmbly checks Pipedrive every five minutes instead. Pipedrive authenticates each delivery with a password Warmbly derives for that connection from the client secret, and a delivery only makes Warmbly read the named record sooner: it always reads the record from Pipedrive itself, and removes a mirrored record only when Pipedrive answers that it is gone.
 
+</Fold>
+
+<Fold>
+
 ## Moving a workspace
 
 A [workspace export](/guides/workspace-export-import/) carries the CRM mode, its setup choices, the user matches, which Warmbly record is which Pipedrive record, and each contact's Pipedrive details, so the destination keeps updating the same Pipedrive records instead of creating duplicates. The sync queue and the pull checkpoints stay behind; the destination starts its own pull and registers its own change notifications. Reconnect Pipedrive on the destination unless it uses the same Pipedrive app and the archive carried credentials.
+
+</Fold>
+
+<Fold>
 
 ## FAQ
 
@@ -240,6 +352,8 @@ A [workspace export](/guides/workspace-export-import/) carries the CRM mode, its
 **Can I edit pipelines in Warmbly?** No, while Pipedrive is your CRM. Edit them in Pipedrive and they update in Warmbly within moments.
 
 **Does every member need a Pipedrive seat?** No. Members without a matched user still see deals, activities and notes; they cannot be assigned Pipedrive deals or activities, and their mailboxes log email under the person's owner.
+
+</Fold>
 
 ## Next steps
 

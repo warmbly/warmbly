@@ -3,7 +3,55 @@ title: Unsubscribe and suppression
 description: How recipients opt out of campaign email, what Warmbly does when they do, and how the suppression list works.
 ---
 
+Every campaign email gives its recipient a way to stop hearing from you. Every opt-out is honoured automatically across the whole workspace.
+
+## Choose how recipients opt out
+
+<Steps>
+
+<Step>
+
+Open **Settings > Sending > Unsubscribe** to set the workspace's opt-out mode.
+
+</Step>
+
+<Step>
+
+Pick **Reply to opt out** (the default), **Unsubscribe link**, or **Nothing**.
+
+</Step>
+
+<Step>
+
+Change the wording of the sentence or the link text if you want.
+
+</Step>
+
+<Step>
+
+To use a different mode for one campaign, set it under **Preferences** on that campaign.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- A reply asking to stop, such as "remove me", puts the sender on the suppression list. A reply saying "not interested" does not.
+- **Contacts > Suppression list** is workspace-wide: no campaign emails an address on it.
+- A bare domain such as `acme.com` suppresses every address at it.
+- An unsubscribe link opens a confirmation page, and nothing happens until the recipient presses its button.
+- On a self-hosted instance, `API_PUBLIC_URL` must be an address recipients can reach.
+
+<Fold>
+
+## What this page covers
+
 Every campaign email gives its recipient a way to stop hearing from you, and every opt-out is honoured automatically across the whole workspace. This page covers the three mechanisms, the suppression list behind them, and the settings that shape what a recipient sees.
+
+</Fold>
+
+<Fold>
 
 ## What a recipient sees
 
@@ -55,11 +103,19 @@ A campaign with **Plain text only** switched on ships no HTML at all, so there i
 
 The answer there is the header. It is not visible copy, it works the same on a plain-text send, and it is what Gmail and Yahoo actually look for. Leave **Unsubscribe header** on, leave the opt-out line as the reply sentence, and the recipient gets a one-click control in their mail client plus a human sentence in the message.
 
+</Fold>
+
+<Fold>
+
 ## The List-Unsubscribe header
 
 Independently of the body, each campaign can attach the `List-Unsubscribe` and `List-Unsubscribe-Post` headers (RFC 8058). Mail clients that recognise them show their own **Unsubscribe** control next to the sender's name, and pressing it opts the recipient out with no page at all. The toggle is **Preferences > Unsubscribe header**, on by default.
 
 Two things to know. Gmail only shows its button for mail it already classes as bulk, so a one-to-one style cold email from a Workspace mailbox usually does not get one. And Google and Yahoo require the header only above roughly five thousand messages a day to their consumer inboxes, which no mailbox at Warmbly's default limits approaches. The header costs nothing and is worth leaving on; it is not a substitute for the opt-out line.
+
+</Fold>
+
+<Fold>
 
 ## Replies that ask to stop
 
@@ -76,6 +132,10 @@ Entries written under an earlier, broader reading of replies are read again once
 A reply that says "not interested" is classed as negative and can stop the sequence, but it does not suppress the contact. Someone who says no today may be a fit next year; someone who says stop is asking not to be contacted at all.
 
 Turn this off with **Settings > Sending > Honour replies that ask to stop** if you would rather handle such replies by hand. Leaving it off with the reply-to-opt-out line in place means promising an opt-out you then honour manually.
+
+</Fold>
+
+<Fold>
 
 ## The suppression list
 
@@ -99,11 +159,19 @@ The list is workspace-wide. An entry stops the address in every campaign, in new
 
 Suppression entries travel with a [workspace export](/guides/workspace-export-import/), so a workspace moved to another instance does not re-mail people who already opted out.
 
+</Fold>
+
+<Fold>
+
 ## Webhooks and the API
 
 An opt-out fires the `campaign.unsubscribed` [webhook](/guides/webhooks/) with a `source` of `one_click` (the mail client's button), `link` (the link in the email), `reply` (a reply asking to stop) or `action` (a sequence's **Unsubscribe** step).
 
 The suppression list is available over the API as `GET /suppressions`, `POST /suppressions` and `DELETE /suppressions/:id`. See [deliverability and ops](/api/reference/deliverability-ops/#list-the-suppression-list).
+
+</Fold>
+
+<Fold>
 
 ## Self-hosting
 
@@ -114,3 +182,5 @@ A link minted today is a row in the database, so it survives a secret rotation a
 Nothing in a campaign email points at warmbly.com. The opt-out address, the tracking pixel and every wrapped link are built from your own `API_PUBLIC_URL` and `TRACKING_DOMAIN`, and a workspace on your instance that verifies its own tracking domain gets the opt-out on that domain instead. A workspace's verified domain is a CNAME to your `TRACKING_DOMAIN`, so the tracking service serves the unsubscribe routes as well as the pixel and click tickets: an install running [core only](/development/install/) has no tracking service, keeps `TRACKING_DOMAIN` unset, and serves every opt-out from the API address.
 
 One-click (`List-Unsubscribe-Post`) is attached only when the link is `https`. An instance reachable over plain HTTP still sends the plain `List-Unsubscribe` header, because a provider POSTing an opt-out to an `http` address either refuses it or sends the token in the clear.
+
+</Fold>

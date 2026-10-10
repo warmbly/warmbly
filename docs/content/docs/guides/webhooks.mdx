@@ -3,11 +3,65 @@ title: Webhooks
 description: Receive real-time HTTP callbacks when things happen in your Warmbly workspace.
 ---
 
+Webhooks send a signed HTTP POST to your own URL when something happens in your workspace, such as a reply landing or a campaign completing. Use them to update your CRM or trigger other tools without polling the API.
+
+## Add a webhook
+
+<Steps>
+
+<Step>
+
+Open **Settings -> Webhooks** and click **Add endpoint**.
+
+</Step>
+
+<Step>
+
+Enter the public HTTPS URL where Warmbly should POST events.
+
+</Step>
+
+<Step>
+
+Choose the events to subscribe to, or leave the list empty to receive all standard events.
+
+</Step>
+
+<Step>
+
+Click **Create** and copy the signing secret right away. It is shown only once.
+
+</Step>
+
+<Step>
+
+Answer Warmbly's test request with any `2xx` to verify the endpoint, and real events start.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- An unverified endpoint receives only a challenge request, not real events.
+- High-volume **firehose** events (campaign sends, opens, clicks, inbox syncs) must be added explicitly.
+- Check the `X-Warmbly-Signature` header on every delivery against the raw request body.
+- A failed delivery is retried for up to 8 attempts, then marked abandoned.
+- Every attempt is logged on the endpoint's **Deliveries** tab, where a failed one can be redelivered.
+
+<Fold>
+
+## What webhooks are for
+
 Browsing filters, searches and view choices are [remembered in your browser tab](/guides/browsing/) across refreshes and navigation, separately for each user and workspace.
 
 Webhooks let external systems react to Warmbly activity without polling the API. When an event fires (a reply lands, a campaign completes, a meeting is booked), Warmbly sends a signed HTTP POST to every matching endpoint your workspace has registered. From there you can update your CRM, trigger a Slack message, or hand off to any other tool.
 
 If you prefer an in-product alternative that works behind a firewall (no public URL required), the [automations](/guides/automations/) Fire Event step publishes custom events to the realtime socket instead.
+
+</Fold>
+
+<Fold>
 
 ## Setting up a webhook
 
@@ -21,6 +75,10 @@ Open **Settings -> Webhooks** in the dashboard and click **Add endpoint**.
 The secret is encrypted at rest with the instance's credential key, the same one that protects mailbox passwords, and is decrypted only when a delivery is signed. It is never returned by the API after creation, and never shown in the admin panel.
 
 After creation the endpoint is **unverified** and will receive only a challenge request, not real events.
+
+</Fold>
+
+<Fold>
 
 ## Verifying your endpoint
 
@@ -43,6 +101,10 @@ If you are building an OAuth app that registers endpoints on behalf of users, yo
 
 **Changing an endpoint's URL host re-arms verification.** The endpoint goes back to unverified and must pass the challenge again.
 
+</Fold>
+
+<Fold>
+
 ## Selecting events
 
 The event picker in Settings shows the full catalog grouped by category. A few things to keep in mind:
@@ -52,6 +114,10 @@ The event picker in Settings shows the full catalog grouped by category. A few t
 - You can update the event list at any time without affecting the signing secret or verification state.
 
 The complete event catalog is available programmatically at `GET /webhooks/event-types`. See the [webhooks API reference](/api/reference/webhooks/) for the full list.
+
+</Fold>
+
+<Fold>
 
 ## Reading the delivery log
 
@@ -66,9 +132,17 @@ You can also query deliveries across all endpoints with `GET /webhooks/deliverie
 
 If an event was throttled rather than delivered, it appears in `GET /webhooks/throttle-drops` instead of the delivery log.
 
+</Fold>
+
+<Fold>
+
 ## Redelivering a failed event
 
 In the dashboard, open any failed delivery and click **Redeliver**. Programmatically, call `POST /webhooks/deliveries/{deliveryId}/redeliver`. Redelivery re-enqueues the event with its original payload, and the same `X-Warmbly-Event-Id` value, so your idempotency logic will dedupe it correctly if the original delivery eventually arrived.
+
+</Fold>
+
+<Fold>
 
 ## Verifying signatures in your receiver
 
@@ -97,6 +171,10 @@ Key points:
 - Only accept schemes you recognize (`v1`). Ignore any unknown scheme prefix.
 - Use `X-Warmbly-Event-Id` (or the payload `id` field) as an idempotency key. The same event id may arrive more than once if a retry fires before Warmbly receives your `2xx`.
 
+</Fold>
+
+<Fold>
+
 ## Retries and auto-disable
 
 If your endpoint returns a non-`2xx` response (or times out), Warmbly retries with exponential backoff: 30 seconds, 1 minute, 2 minutes, 4 minutes, and so on, capped at 1 hour between attempts, for up to 8 attempts. After 8 failed attempts the delivery is marked abandoned.
@@ -105,11 +183,17 @@ Redirects are never followed. `3xx` responses are treated as failures.
 
 If an endpoint fails continuously over a sustained window, Warmbly auto-disables it to protect both your downstream systems and any third-party receiving infrastructure. Re-enable it in Settings once the receiver is healthy, then use the delivery log to redeliver any abandoned events you need to recover.
 
+</Fold>
+
+<Fold>
+
 ## OAuth app allowed domains
 
 If your OAuth app registers webhook endpoints on behalf of its users, it must declare the allowed domains in `allowed_webhook_domains` when creating or updating the app (see [OAuth](/api/oauth/)). Any endpoint URL your app registers must have a host within that list. An empty list means webhook registration is blocked for the app.
 
 Domain matching is subdomain-inclusive when you prefix the entry with a dot: `.acme.com` matches `acme.com`, `hooks.acme.com`, and any deeper subdomain. A bare entry like `acme.com` matches that exact host only.
+
+</Fold>
 
 ## What comes next
 

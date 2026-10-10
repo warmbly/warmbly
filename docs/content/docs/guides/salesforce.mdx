@@ -3,7 +3,55 @@ title: Salesforce
 description: "Two-way Salesforce sync: activity on the timeline, Lead Status writeback, do-not-email in step, imports from list views and Campaigns, and Salesforce context on every contact."
 ---
 
+The Salesforce integration keeps your Salesforce org and Warmbly in step. Campaign emails, replies and meetings are logged on the Lead or Contact, and an opt-out on either side stops email on both.
+
+## Connect Salesforce
+
+<Steps>
+
+<Step>
+
+Open **Integrations > Salesforce > Connect**.
+
+</Step>
+
+<Step>
+
+Choose where your org lives: **Production**, **Sandbox**, or **Custom domain**.
+
+</Step>
+
+<Step>
+
+Sign in to Salesforce and approve access.
+
+</Step>
+
+<Step>
+
+On the connection's page, use **Overview > Run permission check** to see anything missing.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- Your Salesforce edition needs API access. Essentials has no API.
+- A new connection logs sends, replies, bounces, unsubscribes and meetings, never overwrites a filled field, and only creates a Lead when someone replies.
+- Opens and clicks are not logged by default.
+- Warmbly reads what changed in your org every five minutes.
+- By default Warmbly uses at most a fifth of your org's daily API allocation.
+
+<Fold>
+
+## What the integration does
+
 The Salesforce integration keeps your org and Warmbly in step without anyone copying data between them. Campaign emails, replies and meetings land on the Lead or Contact timeline as completed Tasks, a reply can move the Lead Status, an opt-out on either side stops email on both, and every contact drawer and inbox thread shows who owns the person in Salesforce and which deals are open.
+
+</Fold>
+
+<Fold>
 
 ## What you need
 
@@ -12,6 +60,10 @@ The Salesforce integration keeps your org and Warmbly in step without anyone cop
 - If your org restricts connected apps, an admin approves the Warmbly app once (**Setup > Connected Apps OAuth Usage**). Since September 2025 Salesforce refuses an app nobody approved unless the user can approve uninstalled apps.
 
 Warmbly acts as the connecting user. Records it creates and Tasks it logs are owned according to the rules below, but every call is made with that user's access, so a dedicated integration user with the permissions above is the cleanest setup.
+
+</Fold>
+
+<Fold>
 
 ## Connect
 
@@ -27,6 +79,10 @@ Connecting a sandbox and production at the same time is supported; each is its o
 **Overview > Run permission check** describes Leads, Contacts and Tasks as the connected user and says exactly what is missing, for example "Email Opt Out is not editable for this user, so unsubscribes cannot be written back".
 </Callout>
 
+</Fold>
+
+<Fold>
+
 ## How people are matched
 
 Every Warmbly contact is linked to at most one record per connected org, by email address:
@@ -38,6 +94,10 @@ Every Warmbly contact is linked to at most one record per connected org, by emai
 A created record gets the contact's name, company (the email domain when there is none, because Salesforce requires one on a Lead), phone and title, the **Lead Source** you set (Warmbly by default) and the initial **Lead Status** you pick. Its owner is the connected user, the Salesforce user whose email matches the sending mailbox, or a fixed user. Turn on **Run assignment rules** to let your org's lead assignment rules decide instead. Duplicate rules that only alert do not block the save.
 
 Links are made as activity flows, when a contact's drawer opens, on import, and from **Push to Salesforce** in Contacts.
+
+</Fold>
+
+<Fold>
 
 ## Activity on the timeline
 
@@ -59,6 +119,10 @@ A Contact's Tasks are related to the account's most recently active open opportu
 
 Every event is recorded the moment it happens and logged in batches of up to 200, normally within a minute. A send is logged once it has actually gone out, so a send that failed and was retried appears once. Each event is logged once even if it is reported twice. Turn **Include the email text** off to log subjects and metadata only.
 
+</Fold>
+
+<Fold>
+
 ## Status writeback
 
 On a Lead (never a converted one), Warmbly can move Lead Status:
@@ -69,6 +133,10 @@ On a Lead (never a converted one), Warmbly can move Lead Status:
 
 With **Never move backwards** on, a Lead already further along the status picklist stays where it is.
 
+</Fold>
+
+<Fold>
+
 ## Do not email, both ways
 
 With **Opt-out sync** set to both (the default):
@@ -77,6 +145,10 @@ With **Opt-out sync** set to both (the default):
 - **Email Opt Out** set in Salesforce suppresses the address in Warmbly and unsubscribes the contact, so no campaign mails them again. This applies when it changes, when a contact is first linked to an opted-out record, and on import.
 
 You can restrict it to one direction or turn it off.
+
+</Fold>
+
+<Fold>
 
 ## When Salesforce changes
 
@@ -87,6 +159,10 @@ Warmbly reads what changed in your org every five minutes and refreshes linked c
 - when a new open opportunity appears on a Contact's account, because the deal is already being worked.
 
 A paused lead shows "Paused by Salesforce" with the reason in its campaign drawer and stays paused until someone resumes it. A rule never replaces a pause a member set, and each change triggers it once, so resuming a lead is not undone by the next pull.
+
+</Fold>
+
+<Fold>
 
 ## Field mapping
 
@@ -101,6 +177,10 @@ Warmbly fields are first name, last name, company, phone, any contact custom fie
 
 "Only fill blanks" never writes a field Warmbly has not read, so it cannot overwrite a value it never saw. The default rules fill names, phone and company in both directions without overwriting either side.
 
+</Fold>
+
+<Fold>
+
 ## Import from Salesforce
 
 **Import > New import** brings people in from:
@@ -112,9 +192,17 @@ Preview shows the count and a sample before anything is written. Choose a Warmbl
 
 Turn on **Keep in sync** and the import re-reads the list every 30 minutes, bringing in only people who are new to it, so a teammate's edits in Warmbly are never overwritten by the next run. One run imports up to 10,000 people; the rest come in on the following runs.
 
+</Fold>
+
+<Fold>
+
 ## Contacts and the inbox
 
 The contact drawer and every inbox thread show a Salesforce card: the Lead or Contact, owner, Lead Status, account, open opportunities, the latest Salesforce Tasks (Warmbly's own marked), opt-out and conversion badges, and when it last synced. **Open in Salesforce** goes straight to the record. When the person is not in Salesforce yet, **Add to Salesforce** creates them as a Lead or Contact. **Sync now** refreshes the card and pushes mapped fields.
+
+</Fold>
+
+<Fold>
 
 ## Sync health
 
@@ -130,13 +218,25 @@ Warmbly caps its own daily calls, a fifth of your org's daily allocation by defa
 
 When Salesforce ends the session (a password reset, a revoked app, a deactivated user), the connection shows **Reconnect** and activity waits. Nothing is lost; it is logged after you reconnect.
 
+</Fold>
+
+<Fold>
+
 ## Automations
 
 The **Create or update Salesforce record** action in [automations](/guides/automations/) uses the same matching, creation and field rules as the sync, so an automation and the sync never disagree about who someone is.
 
+</Fold>
+
+<Fold>
+
 ## What moves with a workspace export
 
 Saved imports travel with the Automations group of a [workspace export](/guides/workspace-export-import/). Links between contacts and records, the activity log and pull progress do not: the destination links contacts again by address the first time it syncs, and Tasks already logged are in Salesforce. Reconnect Salesforce on the destination before anything syncs.
+
+</Fold>
+
+<Fold>
 
 ## Self-hosting
 
@@ -153,3 +253,5 @@ Whichever you create, configure it with:
 - refresh tokens **valid until revoked**.
 
 Copy the consumer key and secret into `SALESFORCE_OAUTH_CLIENT_ID` and `SALESFORCE_OAUTH_CLIENT_SECRET` (see [configuration](/development/configuration/#integrations)) and restart the backend. Salesforce can take a few minutes to activate a new app; until then a connect attempt fails with `invalid_client_id`.
+
+</Fold>

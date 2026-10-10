@@ -3,7 +3,61 @@ title: Automations
 description: "A visual flow builder: a trigger event connected to action steps across your integrations."
 ---
 
+An automation does work for you when something happens: a reply arrives or a meeting is booked, and Warmbly posts to Slack, pushes to your CRM or labels a contact. You build it on a canvas, with no code.
+
+![An automation in the builder: a reply trigger, an If / else on intent, then a deal and a task on the Yes branch](/guides/automation-builder.webp)
+
+## Build an automation
+
+<Steps>
+
+<Step>
+
+Open the **Automations** tab and choose **New automation**.
+
+</Step>
+
+<Step>
+
+Pick the trigger it should run on, such as **Reply received**.
+
+</Step>
+
+<Step>
+
+Press **+** to add actions, and an **If / else** wherever the flow should branch.
+
+</Step>
+
+<Step>
+
+Press **Test** to dry-run it against sample data.
+
+</Step>
+
+<Step>
+
+Press **Save** and make sure the automation is switched on.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- Nothing takes effect until you **Save**. **Test** saves first, then dry-runs.
+- An automation that is off never fires, even from a campaign step.
+- A test sends no messages and changes no records, but AI steps run for real and spend credits.
+- One failing step never blocks the rest. The failure is recorded in **History**.
+- Bulk file imports and sheet syncs do not fire **Contact created**.
+
+<Fold>
+
+## What an automation is
+
 An automation is a flow on a canvas: one **trigger** (a reply arrives, a meeting is booked) runs one or more **actions** (post to Slack, push to your CRM, label a contact), with **IF conditions** in between to branch. No code, though an advanced mode accepts a free-form condition.
+
+![The automations list, with starting templates underneath](/guides/automations.webp)
 
 <Mermaid
   chart={`
@@ -14,6 +68,10 @@ flowchart LR
   A1 -.->|on error| E["Error path"]
 `}
 />
+
+</Fold>
+
+<Fold>
 
 ## The builder
 
@@ -33,6 +91,10 @@ The canvas lays itself out: the **Trigger** sits at the top and every step runs 
 <Callout type="info" title="Save before it runs">
 Triggers, conditions, and actions only take effect after **Save**. **Test** saves first, then dry-runs.
 </Callout>
+
+</Fold>
+
+<Fold>
 
 ## Triggers
 
@@ -64,6 +126,10 @@ Pick the trigger and **save**, and the editor shows a unique URL. Anything that 
 - The request returns immediately and the flow runs in the background, so a slow action never blocks the caller.
 - Keys starting with an underscore are stripped; the body is capped at 1 MB.
 
+</Fold>
+
+<Fold>
+
 ## IF conditions
 
 An **If / else** splits into a **Yes** column and a **No** column. Only the matching branch runs; an empty branch just ends.
@@ -87,6 +153,10 @@ and (gtf .confidence 0.8) (eq .intent "positive")
 ```
 
 Comparisons (`eq`, `gt`, `lt`), numeric coercion (`gtf`, `ltf`, `add`, `sub`, `mul`, `div`), logic (`and`, `or`, `not`), and text helpers (`contains`, `lower`) are available. A broken or empty expression is **false**, so a malformed condition never silently passes, and it is validated on save.
+
+</Fold>
+
+<Fold>
 
 ## Actions
 
@@ -160,6 +230,10 @@ New reply from {{.contact_email}} on {{.campaign_name}}
 
 Unknown tokens render empty rather than failing.
 
+</Fold>
+
+<Fold>
+
 ## Testing and history
 
 **Test** saves the canvas and dry-runs it against sample data: no messages sent, no records changed. It shows the exact path taken, on the canvas (each step it reached is marked, the rest fade back) and as a list with a preview of each action. AI steps are the exception, running for real so you see actual output, which spends one credit per AI step.
@@ -169,6 +243,8 @@ Unknown tokens render empty rather than failing.
 <Callout type="info" title="Best-effort by design">
 Runs are best-effort and bounded against loops, so one failing step won't block the rest. The run is still recorded as errored so you can see what went wrong.
 </Callout>
+
+</Fold>
 
 ## Related guides
 
