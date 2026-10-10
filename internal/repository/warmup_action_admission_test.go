@@ -22,6 +22,11 @@ func TestWarmupFilingHTTPAuthorityCompatibility(t *testing.T) {
 		{"not pending", `{"actions":["move_to_warmbly"],"filing_pending":false}`, 200, false, false},
 		{"authority error", `{"actions":["move_to_warmbly"],"filing_pending":true}`, 503, false, true},
 		{"invalid response", `{"filing_pending":true,"actions":`, 200, false, true},
+		{"missing actions", `{"filing_pending":true}`, 200, false, true},
+		{"trailing garbage", `{"actions":["move_to_warmbly"],"filing_pending":true} invalid`, 200, false, true},
+		{"multiple responses", `{"actions":["move_to_warmbly"],"filing_pending":true}{}`, 200, false, true},
+		{"null response", `null`, 200, false, true},
+		{"denied actions", `{"actions":null}`, 200, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

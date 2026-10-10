@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -83,6 +84,21 @@ func (r *httpSyncContextRepository) AdmitWarmupAction(ctx context.Context, reque
 	if resp.StatusCode != http.StatusOK {
 		return out, errors.New("warmup action authority unavailable")
 	}
-	err = json.NewDecoder(resp.Body).Decode(&out)
-	return out, err
+	var response struct {
+		Actions       json.RawMessage `json:"actions"`
+		FilingPending bool            `json:"filing_pending"`
+	}
+	decoder := json.NewDecoder(resp.Body)
+	if err := decoder.Decode(&response); err != nil {
+		return out, err
+	}
+	var trailing any
+	if len(response.Actions) == 0 || decoder.Decode(&trailing) != io.EOF {
+		return out, errors.New("invalid warmup action authority response")
+	}
+	if err := json.Unmarshal(response.Actions, &out.Actions); err != nil {
+		return out, err
+	}
+	out.FilingPending = response.FilingPending
+	return out, nil
 }
