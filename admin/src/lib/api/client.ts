@@ -61,7 +61,7 @@ const REAUTH_PROMPT_TIMEOUT_MS = 2 * 60 * 1000;
 
 // promptForReauth asks ReauthDialog (mounted in the app shell) to confirm the
 // operator, resolving on success and rejecting on cancel.
-function promptForReauth(): Promise<void> {
+export function promptForReauth(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
         let settled = false;
         let timer = 0;

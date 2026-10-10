@@ -1,7 +1,7 @@
 // One machine in the fleet.
 //
 // Everything shown here is reported BY the node or resolved FOR it. There is
-// no install, restart, log or reboot button, because nothing reaches into a
+// no install, restart or reboot button, because nothing reaches into a
 // machine any more: a node enrols with a token, heartbeats, and pulls the
 // version it should run. What an operator can actually do is rename it, hold
 // it at a version, and forget it.
@@ -56,6 +56,8 @@ import { TONE_PANEL, TONE_TEXT } from "@/lib/tones";
 import { cn } from "@/lib/utils";
 import { NodeStatePill } from "./fleet/tones";
 import { ResourceUsage } from "./fleet/ResourceUsage";
+import { NodeDiagnostics } from "./fleet/NodeDiagnostics";
+import { ErrorState } from "@/components/ErrorState";
 
 const CRUMBS = [{ label: "Workers", to: "/workers" }];
 
@@ -134,6 +136,7 @@ export default function WorkerDetailPage() {
             </div>
         );
     }
+    if (nodeQ.isError) return <div><PageHeader breadcrumbs={CRUMBS} title="Node unavailable" /><ErrorState error={nodeQ.error} onRetry={() => void nodeQ.refetch()} /></div>;
     if (!node) {
         return (
             <div>
@@ -168,7 +171,7 @@ export default function WorkerDetailPage() {
                     </>
                 }
             >
-                <Button size="sm" variant="ghost" onClick={() => nodeQ.refetch()}>
+                <Button size="sm" variant="ghost" onClick={() => { void nodeQ.refetch(); void qc.invalidateQueries({ queryKey: ["admin", "node-diagnostics", id] }); }}>
                     <RefreshCw className={cn("size-3.5", nodeQ.isFetching && "animate-spin")} />
                     Refresh
                 </Button>
@@ -178,7 +181,7 @@ export default function WorkerDetailPage() {
                 <div className="min-w-0">
                     {node.last_error && (
                         <Callout tone="danger" icon={AlertTriangle} title="Last error" className="mb-8">
-                            <span className="break-words font-mono text-xs">{node.last_error}</span>
+                            <span>The node reported an error on its last heartbeat. Inspect redacted evidence below; raw node error text is not displayed.</span>
                         </Callout>
                     )}
 
@@ -276,6 +279,8 @@ export default function WorkerDetailPage() {
                             </Panel>
                         </Section>
                     )}
+
+                    <NodeDiagnostics node={node} mailboxes={mailboxes} />
 
                     <Section
                         title="Version"
