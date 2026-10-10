@@ -18,7 +18,24 @@ type DueTaskLister interface {
 	RecordDispatchAttempt(ctx context.Context, taskID uuid.UUID, failed bool, retryAt time.Time) error
 }
 
-const dispatchRetryDelay = 5 * time.Minute
+const (
+	dispatchRetryDelay      = 5 * time.Minute
+	defaultLocalConcurrency = 8
+)
+
+type LocalOption func(*Local)
+
+func WithPoolCapacity(maxConns int) LocalOption {
+	return WithConcurrency(max(1, min(defaultLocalConcurrency, maxConns/3)))
+}
+
+func WithConcurrency(limit int) LocalOption {
+	return func(l *Local) {
+		if limit > 0 {
+			l.slots = make(chan struct{}, limit)
+		}
+	}
+}
 
 // Local is the no-cloud Scheduler. Task rows already exist in Postgres (the
 // caller inserts them before CreateTask), and Run polls for due rows and fires
@@ -27,18 +44,23 @@ type Local struct {
 	repo     DueTaskLister
 	interval time.Duration
 	batch    int
+	slots    chan struct{}
 	inflight sync.Map // taskID string -> struct{}, dedups across overlapping ticks
 }
 
 // NewLocal builds a Local poller. interval<=0 defaults to 1s; batch<=0 to 200.
-func NewLocal(repo DueTaskLister, interval time.Duration, batch int) *Local {
+func NewLocal(repo DueTaskLister, interval time.Duration, batch int, options ...LocalOption) *Local {
 	if interval <= 0 {
 		interval = time.Second
 	}
 	if batch <= 0 {
 		batch = 200
 	}
-	return &Local{repo: repo, interval: interval, batch: batch}
+	l := &Local{repo: repo, interval: interval, batch: batch, slots: make(chan struct{}, defaultLocalConcurrency)}
+	for _, option := range options {
+		option(l)
+	}
+	return l
 }
 
 // CreateTask is a no-op enqueue: the row already exists with status=pending and
@@ -60,7 +82,7 @@ func (l *Local) DeleteTask(_ context.Context, _ string) error { return nil }
 func (l *Local) Run(ctx context.Context, handle func(taskID string) error) {
 	ticker := time.NewTicker(l.interval)
 	defer ticker.Stop()
-	log.Info().Dur("interval", l.interval).Int("batch", l.batch).Msg("tasksched: local dispatcher started")
+	log.Info().Dur("interval", l.interval).Int("batch", l.batch).Int("concurrency", cap(l.slots)).Msg("tasksched: local dispatcher started")
 	for {
 		select {
 		case <-ctx.Done():
@@ -72,18 +94,34 @@ func (l *Local) Run(ctx context.Context, handle func(taskID string) error) {
 }
 
 func (l *Local) tick(ctx context.Context, handle func(taskID string) error) {
+	if ctx.Err() != nil || len(l.slots) == cap(l.slots) {
+		return
+	}
 	ids, err := l.repo.ListDuePendingTaskIDs(ctx, l.batch)
 	if err != nil {
 		log.Error().Err(err).Msg("tasksched: list due tasks")
 		return
 	}
 	for _, id := range ids {
+		if ctx.Err() != nil {
+			return
+		}
+		select {
+		case l.slots <- struct{}{}:
+		default:
+			return
+		}
 		key := id.String()
 		if _, busy := l.inflight.LoadOrStore(key, struct{}{}); busy {
+			<-l.slots
 			continue
 		}
 		go func(taskID string) {
+			defer func() { <-l.slots }()
 			defer l.inflight.Delete(taskID)
+			if ctx.Err() != nil {
+				return
+			}
 			err := handle(taskID)
 			if ctx.Err() != nil {
 				return

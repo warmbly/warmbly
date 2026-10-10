@@ -1398,7 +1398,9 @@ func main() {
 			}
 			tasksClient = gclient
 		} else {
-			localTasks = tasksched.NewLocal(taskRepository, localTasksPollInterval(), 0)
+			// Leave pool headroom for HTTP admission and result reconciliation.
+			localTasks = tasksched.NewLocal(taskRepository, localTasksPollInterval(), 0,
+				tasksched.WithPoolCapacity(int(primaryDB.Config().MaxConns)))
 			tasksClient = localTasks
 		}
 
