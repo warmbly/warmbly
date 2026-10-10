@@ -12,7 +12,6 @@ import { useMe } from "@/hooks/useMe";
 import useBrowseState from "@/hooks/useBrowseState";
 import { AdminPerm, hasAdminPerm } from "@/lib/auth/permissions";
 import type { FleetNode } from "@/lib/api/client/admin/fleetNodes";
-import type { AdminWorkerEmail } from "@/lib/api/models/admin";
 import { getNodeLogs, getNodeBroker, type NodeBrokerSource, type NodeLogFilters } from "@/lib/api/client/admin/nodeDiagnostics";
 import { diagnosticReason, emptyLogFilters, eventLabels, isUUID, logFilterError, parseLogFilters, safeCount, safeLogEvent, validTime, validatedBroker } from "@/lib/nodeDiagnostics";
 
@@ -52,7 +51,7 @@ function BrokerScope({ title, source, group, topic }: { title: string; source: N
     </Panel>;
 }
 
-export function NodeDiagnostics({ node, mailboxes }: { node: FleetNode; mailboxes: AdminWorkerEmail[] }) {
+export function NodeDiagnostics({ node }: { node: FleetNode }) {
     const { data: me } = useMe();
     const canViewBroker = !!me && hasAdminPerm(me.admin_permissions, AdminPerm.ViewAnalytics);
     const canViewMailboxes = !!me && hasAdminPerm(me.admin_permissions, AdminPerm.ViewUsers);
@@ -121,7 +120,6 @@ export function NodeDiagnostics({ node, mailboxes }: { node: FleetNode; mailboxe
                         <div className="mt-4 overflow-x-auto"><table className="w-full text-left text-xs" aria-label="Redacted node events">
                             <thead><tr className="border-b text-muted-foreground"><th className="p-2">Observed</th><th className="p-2">Level</th><th className="p-2">Evidence</th><th className="p-2">Mailbox</th></tr></thead>
                             <tbody>{events.map((event) => {
-                                const mailbox = mailboxes.find((m) => m.id === event.mailbox_id);
                                 const mailboxID = isUUID(event.mailbox_id ?? "") ? event.mailbox_id : null;
                                 return <tr key={event.id} className="border-b align-top">
                                     <td className="whitespace-nowrap p-2"><Timestamp value={event.observed_at} /></td>
@@ -129,7 +127,7 @@ export function NodeDiagnostics({ node, mailboxes }: { node: FleetNode; mailboxe
                                     <td className="p-2"><div className="font-medium">{eventLabels[event.event].title}</div><div className="mt-1 text-muted-foreground">{event.category.replaceAll("_", " ")}
                                         {event.event === "sync_control_plane_held" && safeCount(event.http_status) && event.http_status >= 100 && event.http_status <= 599 && ` · HTTP ${event.http_status}`}
                                         {safeCount(event.count) && event.count <= 1000000 && ` · count ${event.count}`}</div></td>
-                                    <td className="p-2 font-mono">{mailboxID ? mailbox && canViewMailboxes ? <Link className="text-[var(--admin-accent-strong)] underline underline-offset-2" to={`/mailboxes?q=${encodeURIComponent(mailbox.email)}&worker=${node.id}`} title="Open assigned mailbox in the mailbox browser">{mailboxID}</Link> : <span title="Mailbox identity is not in the currently loaded assignment page, or mailbox access is not permitted.">{mailboxID}</span> : "Not provided"}</td>
+                                    <td className="p-2 font-mono">{mailboxID ? canViewMailboxes ? <Link className="text-[var(--admin-accent-strong)] underline underline-offset-2" to={`/mailboxes?mailbox_id=${encodeURIComponent(mailboxID)}`} title="Look up this exact mailbox, regardless of current assignment">{mailboxID}</Link> : <span title="Mailbox access is not permitted.">{mailboxID}</span> : "Not provided"}</td>
                                 </tr>;
                             })}</tbody>
                         </table></div>}

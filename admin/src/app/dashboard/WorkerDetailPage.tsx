@@ -280,7 +280,7 @@ export default function WorkerDetailPage() {
                         </Section>
                     )}
 
-                    <NodeDiagnostics node={node} mailboxes={mailboxes} />
+                    <NodeDiagnostics node={node} />
 
                     <Section
                         title="Version"

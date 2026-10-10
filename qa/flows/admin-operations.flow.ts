@@ -122,7 +122,7 @@ test("admin CLI consent and redacted node diagnostics with disclosed local respo
   await expect(logs.getByRole("table", { name: "Redacted node events", exact: true })).toBeVisible();
   await expect(logs.getByText("Control-plane sync held", { exact: true })).toBeVisible();
   await expect(logs).toContainText("HTTP 503"); await expect(logs).toContainText("Partial coverage"); await expect(logs).toContainText("per process run");
-  await expect(logs.getByRole("link", { name: mailbox, exact: true })).toHaveAttribute("href", new RegExp("/mailboxes\\?q=fixture-mailbox%40example.test"));
+  await expect(logs.getByRole("link", { name: mailbox, exact: true })).toHaveAttribute("href", `/mailboxes?mailbox_id=${mailbox}`);
   await proof.chapter("Redacted operational evidence", "All node capture/log/offset responses are synthetic localhost fixtures. They do not establish production sampling, provider health, delivery or the cause of an arrival 503.");
   await logs.getByRole("table", { name: "Redacted node events", exact: true }).scrollIntoViewIfNeeded();
   await proof.shot("admin-node-redacted-evidence", { caption: "Synthetic capture and allowlisted events: timestamps, partial coverage, retention bounds, three known per-run drops, numeric control-plane HTTP 503 and native mailbox link." });

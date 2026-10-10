@@ -435,6 +435,7 @@ type AdminMailboxesResult struct {
 // All fields optional; empty status = active, "all" returns every
 // status. provider lets ops filter to "all gmail mailboxes" quickly.
 type AdminMailboxSearch struct {
+	MailboxID     *ParamUUID `form:"mailbox_id"`
 	Query         string     `form:"q"`
 	Status        string     `form:"status"`
 	Provider      string     `form:"provider"`

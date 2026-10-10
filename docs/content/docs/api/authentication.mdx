@@ -232,9 +232,10 @@ Returned when:
 
 This backend flow is separate from workspace API-key authorization. Platform
 admin access uses a normal bearer session, never an organization API key.
-The admin UI and CLI implement this contract in a separate rollout stage;
-these endpoints alone do not provide a consent page or CLI command. The CLI
-never listens on an HTTP port or receives a browser redirect.
+Use [remote `warmblyctl` login](/development/warmblyctl/#remote-administrator-commands)
+and the administrator website's `/device` consent page. Deploy the backend
+before upgrading the admin UI and CLI. The CLI never listens on an HTTP port
+or receives a browser redirect.
 
 ### Endpoint contract
 
@@ -298,8 +299,8 @@ and request. A different session cannot spend it. If decide returns
 again; never auto-approve when login/reauth returns.
 
 Poll no faster than every five seconds. Pending/denied responses contain
-`status: "pending"` or `"denied"`, no `token`; the existing UUID serializer may
-include a zero `user_id`, which is not an identity. An approving poll returns:
+`status: "pending"` or `"denied"`, with neither `token` nor `user_id`.
+An approving poll returns:
 
 ```json
 {
