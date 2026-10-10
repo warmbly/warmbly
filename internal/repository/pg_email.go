@@ -1171,6 +1171,8 @@ func (r *emailRepository) Search(ctx context.Context, orgID, search string, curs
 		  SELECT created_at, id
 		  FROM email_accounts
 		  WHERE id = $2
+		   AND organization_id = $1
+		   AND ($6::uuid[] IS NULL OR id = ANY($6::uuid[]))
 		 ))
 		 AND (ea.name ILIKE $3 OR ea.email ILIKE $3)
 		 AND ($4::uuid IS NULL OR EXISTS (
@@ -1183,7 +1185,7 @@ func (r *emailRepository) Search(ctx context.Context, orgID, search string, curs
 	`
 
 	var allowedAccountParam any
-	if len(allowedAccountIDs) > 0 {
+	if allowedAccountIDs != nil {
 		allowedAccountParam = allowedAccountIDs
 	}
 	params := []any{

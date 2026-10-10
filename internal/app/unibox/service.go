@@ -71,11 +71,14 @@ type UniboxService interface {
 	// MessageMailboxes lists the mailboxes the named messages and
 	// conversations sit in, within the organization.
 	MessageMailboxes(ctx context.Context, orgID uuid.UUID, ids []uuid.UUID, threadIDs []string) ([]uuid.UUID, *errx.Error)
+	// CategoriesForMailboxes lists categories attached to messages in the named mailboxes; empty grants see none.
+	CategoriesForMailboxes(ctx context.Context, orgID uuid.UUID, accountIDs []uuid.UUID) ([]models.Group, *errx.Error)
 
 	// Conversation labels. SetThreadLabels replaces a thread's full
 	// label set (idempotent); ListThreadLabels reads the current set.
 	SetThreadLabels(ctx context.Context, orgID, userID uuid.UUID, threadID string, categoryIDs []uuid.UUID) ([]models.MiniCategory, *errx.Error)
 	ListThreadLabels(ctx context.Context, orgID uuid.UUID, threadID string) ([]models.MiniCategory, *errx.Error)
+	ListThreadLabelsWithin(ctx context.Context, orgID uuid.UUID, threadID string, accountIDs []uuid.UUID) ([]models.MiniCategory, *errx.Error)
 
 	// Scheduled-sends review + cancel. CancelScheduled is DB-only: we
 	// flip status to 'cancelled' and let the queued Cloud Task fire as
