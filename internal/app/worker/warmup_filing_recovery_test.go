@@ -14,8 +14,10 @@ import (
 	"github.com/warmbly/warmbly/internal/app/worker/wmail"
 	"github.com/warmbly/warmbly/internal/client/goog"
 	"github.com/warmbly/warmbly/internal/client/msgraph"
+	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/codec"
 	"github.com/warmbly/warmbly/internal/infrastructure/eventbus"
+	"github.com/warmbly/warmbly/internal/infrastructure/storage"
 	"github.com/warmbly/warmbly/internal/models"
 	"golang.org/x/oauth2"
 )
@@ -134,6 +136,134 @@ func TestDisconnectRespectsInboxPlacement(t *testing.T) {
 type filingTransport func(*http.Request) (*http.Response, error)
 
 func (f filingTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+type warmupDeleteStore struct {
+	storage.Store
+	deletes int
+	err     error
+}
+
+func (s *warmupDeleteStore) Delete(context.Context, string) error {
+	s.deletes++
+	return s.err
+}
+
+func TestGraphWarmupDeleteHoldsOnUnconfirmedLookup(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   string
+		err    error
+	}{
+		{"503 retry window", 503, `{"error":{"code":"Unavailable"}}`, nil},
+		{"429 retry window", 429, `{"error":{"code":"Throttled"}}`, nil},
+		{"lookup resource unavailable", 404, `{"error":{"code":"ErrorItemNotFound"}}`, nil},
+		{"deadline", 0, "", context.DeadlineExceeded},
+		{"ambiguous identity", 200, `{"value":[{"id":""}]}`, nil},
+		{"malformed response", 200, `{`, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			failed, deletes := true, 0
+			transport := filingTransport(func(r *http.Request) (*http.Response, error) {
+				body, status := `{"value":[{"id":"resolved"}]}`, http.StatusOK
+				h := make(http.Header)
+				switch r.Method {
+				case http.MethodGet:
+					if !strings.HasSuffix(r.URL.Path, "/messages") {
+						t.Fatalf("unexpected lookup: %s", r.URL.Path)
+					}
+					if failed {
+						if tc.err != nil {
+							return nil, tc.err
+						}
+						body, status = tc.body, tc.status
+						h.Set("Retry-After", "600")
+					}
+				case http.MethodDelete:
+					deletes++
+					if !failed && !strings.HasSuffix(r.URL.Path, "/messages/resolved") {
+						t.Fatalf("delete used stale identity: %s", r.URL.Path)
+					}
+					body, status = "", http.StatusNoContent
+				default:
+					t.Fatalf("unexpected request: %s", r.Method)
+				}
+				return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: h, Request: r}, nil
+			})
+			ctx := context.WithValue(t.Context(), oauth2.HTTPClient, &http.Client{Transport: transport})
+			client := &msgraph.Client{}
+			if err := client.Init(ctx, &oauth2.Token{AccessToken: "test", Expiry: time.Now().Add(time.Hour)}, oauth2.Config{}); err != nil {
+				t.Fatal(err)
+			}
+			account := uuid.New()
+			w, bus := filingWorker(account, &filingIMAP{})
+			store := &warmupDeleteStore{}
+			w.mailManager.Emails[account] = &wmail.WMail{ID: account, Storage: store, GraphData: &wmail.GraphData{Client: client}}
+			action := models.WarmupEmailAction{EmailID: account, GmailID: "old-id", InternalID: uuid.NewString(), RFCMessageID: "<warmup@example.test>", Actions: []string{models.WarmupActionDelete}}
+			ctx = context.WithValue(ctx, deliveryKey{}, delivery{attempt: 1, redelivers: true})
+			err := w.HandleWarmupAction(ctx, action)
+			if err == nil || deletes != 0 || store.deletes != 0 || len(bus.events) != 0 {
+				t.Fatalf("unconfirmed lookup acknowledged or deleted: err=%v provider=%d bodies=%d events=%d", err, deletes, store.deletes, len(bus.events))
+			}
+			if tc.status == 503 || tc.status == 429 {
+				var mailErr *errx.MailError
+				if !errors.As(err, &mailErr) || mailErr.RetryAfter != 10*time.Minute || mailErr.Failure == nil || mailErr.Failure.Status != tc.status {
+					t.Fatalf("provider evidence lost: %v", err)
+				}
+			}
+			failed = false
+			if err := w.HandleWarmupAction(ctx, action); err != nil || deletes != 1 || store.deletes != 1 {
+				t.Fatalf("confirmed retry did not clean up: err=%v provider=%d bodies=%d", err, deletes, store.deletes)
+			}
+		})
+	}
+}
+
+func TestGraphWarmupDeletePreservesAbsentAndLegacyCleanup(t *testing.T) {
+	for _, tc := range []struct {
+		name, stableID, providerID string
+		deletes                    int
+	}{
+		{"confirmed absent with old provider key", "<absent@example.test>", "old-id", 1},
+		{"confirmed absent without provider key", "<absent@example.test>", "", 0},
+		{"legacy provider key", "", "old-id", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lookups, deletes := 0, 0
+			transport := filingTransport(func(r *http.Request) (*http.Response, error) {
+				body, status := `{"value":[]}`, http.StatusOK
+				if r.Method == http.MethodGet {
+					lookups++
+				} else if r.Method == http.MethodDelete {
+					deletes++
+					body, status = `{"error":{"code":"ErrorItemNotFound"}}`, http.StatusNotFound
+				}
+				return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header), Request: r}, nil
+			})
+			ctx := context.WithValue(t.Context(), oauth2.HTTPClient, &http.Client{Transport: transport})
+			client := &msgraph.Client{}
+			if err := client.Init(ctx, &oauth2.Token{AccessToken: "test", Expiry: time.Now().Add(time.Hour)}, oauth2.Config{}); err != nil {
+				t.Fatal(err)
+			}
+			account := uuid.New()
+			w, _ := filingWorker(account, &filingIMAP{})
+			store := &warmupDeleteStore{err: errors.New("body store unavailable")}
+			w.mailManager.Emails[account] = &wmail.WMail{ID: account, Storage: store, GraphData: &wmail.GraphData{Client: client}}
+			action := models.WarmupEmailAction{EmailID: account, GmailID: tc.providerID, InternalID: uuid.NewString(), RFCMessageID: tc.stableID, Actions: []string{models.WarmupActionDelete}}
+			ctx = context.WithValue(ctx, deliveryKey{}, delivery{attempt: 1, redelivers: true})
+			if err := w.HandleWarmupAction(ctx, action); !errors.Is(err, store.err) || store.deletes != 1 {
+				t.Fatalf("body-store error must remain retryable: err=%v bodies=%d", err, store.deletes)
+			}
+			store.err = nil
+			if err := w.HandleWarmupAction(ctx, action); err != nil || deletes != 2*tc.deletes || store.deletes != 2 {
+				t.Fatalf("absent/legacy cleanup changed: err=%v provider=%d bodies=%d", err, deletes, store.deletes)
+			}
+			if (lookups == 0) != (tc.stableID == "") {
+				t.Fatalf("legacy lookup behavior changed: %d", lookups)
+			}
+		})
+	}
+}
 
 func TestDurableGmailFilingResolvesStableIDAndRetriesProviderFailure(t *testing.T) {
 	failing, modifications := true, 0

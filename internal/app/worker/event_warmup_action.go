@@ -207,7 +207,7 @@ func (w *WorkerService) runGraphWarmupActions(ctx context.Context, mail *wmail.W
 	msgID := action.GmailID
 	if action.RFCMessageID != "" {
 		if resolved, err := client.ResolveMessageID(ctx, action.RFCMessageID); err != nil {
-			if hasWarmupAction(action.Actions, models.WarmupActionFile) {
+			if hasWarmupAction(action.Actions, models.WarmupActionFile) || hasWarmupAction(action.Actions, models.WarmupActionDelete) {
 				return fmt.Errorf("locate warmup message (Graph): %w", err)
 			}
 		} else if resolved != "" {
