@@ -50,7 +50,7 @@ defmodule RealtimeWeb.ResponseHeadersTest do
     case :gen_tcp.recv(socket, 0, 2_000) do
       {:ok, data} -> receive_response(socket, response <> data)
       {:error, :closed} -> response
-      {:error, :timeout} -> response
+      {:error, :timeout} -> flunk("response connection did not close")
       other -> flunk("unexpected socket result: #{inspect(other)}")
     end
   end

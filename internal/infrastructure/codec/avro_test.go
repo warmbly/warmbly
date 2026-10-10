@@ -9,6 +9,7 @@ import (
 	"math"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/schemaregistry"
@@ -62,9 +63,11 @@ func TestAvroCodec_CollectionLimitSpansBlocks(t *testing.T) {
 			schema := avro.MustParse(schemaJSON)
 			c := &AvroCodec{client: &fakeRegistry{}, schemas: map[int]avro.Schema{7: schema}}
 			payload := binary.AppendVarint([]byte{0, 0, 0, 0, 7}, 65536)
-			for range 65536 {
+			for i := range 65536 {
 				if schema.Type() == avro.Map {
-					payload = append(payload, 2, 'a')
+					key := strconv.Itoa(i)
+					payload = binary.AppendVarint(payload, int64(len(key)))
+					payload = append(payload, key...)
 				}
 				payload = append(payload, 0)
 			}
@@ -76,8 +79,14 @@ func TestAvroCodec_CollectionLimitSpansBlocks(t *testing.T) {
 				t.Fatalf("valid boundary block rejected: %v", err)
 			}
 			payload = binary.AppendVarint(payload, 1)
-			if err := c.Deserialize(context.Background(), "topic", payload, target); err == nil {
-				t.Fatal("second block bypassed collection limit")
+			limit := "MaxSliceAllocSize"
+			if schema.Type() == avro.Map {
+				payload = append(payload, 10, 'e', 'x', 't', 'r', 'a')
+				limit = "MaxMapAllocSize"
+			}
+			payload = append(payload, 0, 0)
+			if err := c.Deserialize(context.Background(), "topic", payload, target); err == nil || !strings.Contains(err.Error(), "size is greater than `Config."+limit+"`") {
+				t.Fatalf("expected collection limit error across blocks, got %v", err)
 			}
 		})
 	}
