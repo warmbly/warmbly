@@ -186,6 +186,7 @@ function AssistantButton() {
                 }
             }}
             aria-label="Ask Remie"
+            data-tour="remie"
             className="group relative flex items-center justify-center size-7 rounded-md hover:bg-sky-50 transition-colors"
         >
             <AgentMark

@@ -164,6 +164,24 @@ func (h *Handler) UpdateSendPreferences(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"undo_send_seconds": req.UndoSendSeconds})
 }
 
+// CompleteProductTour records that the caller finished or skipped the product
+// tour. Repeating it is harmless: the first time is kept.
+func (h *Handler) CompleteProductTour(c *gin.Context) {
+	uid, err := uuid.Parse(middleware.GetUserID(c))
+	if err != nil {
+		errx.Handle(c, errx.ErrUser)
+		return
+	}
+
+	at, xerr := h.UserService.CompleteProductTour(c.Request.Context(), uid)
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"product_tour_completed_at": at})
+}
+
 // validatePersonName applies the display-name rules to a first and last name,
 // returning their stored forms.
 func validatePersonName(first, last string) (string, string, *errx.Error) {

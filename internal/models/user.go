@@ -17,6 +17,8 @@ type User struct {
 
 	ReferralSource        *string    `json:"referral_source"`
 	OnboardingCompletedAt *time.Time `json:"onboarding_completed_at"`
+	// When the dashboard's product tour was finished or skipped; nil shows it.
+	ProductTourCompletedAt *time.Time `json:"product_tour_completed_at"`
 
 	MaxOrganizations int  `json:"max_organizations"`
 	FreeTrialUsed    bool `json:"free_trial_used"`
