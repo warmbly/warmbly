@@ -102,7 +102,7 @@ export function MessageBubble({
     return (
         <article
             className={cn(
-                "group border-l-2 pl-[14px] sm:pl-[18px] pr-4 sm:pr-5",
+                "group min-w-0 border-l-2 pl-[14px] sm:pl-[18px] pr-4 sm:pr-5",
                 expanded ? "py-4" : "py-2.5",
                 outbound ? "border-l-sky-400 bg-sky-50/30" : "border-l-transparent",
             )}
@@ -204,7 +204,7 @@ export function MessageBubble({
                     )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                    <div className="flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity">
                         <button
                             type="button"
                             onClick={toggleDetails}
@@ -297,7 +297,7 @@ export function MessageBubble({
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ duration: 0.16 }}
-                    className="sm:pl-10"
+                    className="min-w-0"
                 >
                     <EmailBody html={body.data?.body_html} plain={body.data?.body_plain} blockRemote={!outbound} />
                     {body.data?.body_truncated && (
