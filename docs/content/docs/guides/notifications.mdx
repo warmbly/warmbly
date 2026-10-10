@@ -3,6 +3,44 @@ title: "Notifications"
 description: "In-app notification feed and per-category preferences."
 ---
 
+The bell in the dashboard shows your unread notifications, such as bounces, spam complaints, worker downtime and billing alerts. Each person chooses which ones they get and how.
+
+## Choose your notifications
+
+<Steps>
+
+<Step>
+
+Open **Settings > Notifications**.
+
+</Step>
+
+<Step>
+
+Turn each category on or off. Changes save automatically.
+
+</Step>
+
+<Step>
+
+Under Email delivery, pick how often unread notifications are emailed to you.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- Feeds are per user, not shared across the workspace.
+- Health alerts are on by default. **Reply received** is off by default, so a large campaign does not flood the feed.
+- Nothing is emailed the moment it happens: unread notifications go out as one bundled email, every 30 minutes by default.
+- Anything you read in the dashboard before the email goes out is never emailed.
+- Every reply still lands in the [Unibox](/guides/unibox/), even with reply notifications off.
+
+<Fold>
+
+## How the bell and feed work
+
 The bell in the dashboard chrome shows your unread count. Every time you open it, it starts on **Unread**, showing only notifications you have not read, newest first. If there is nothing new, it shows "You're all caught up." Switch to **All** to see recent history, including items already read. Each notification has a title, optional detail, and a link to the thing it is about. Reading one clears it from **Unread** and the count.
 
 **Feeds are per user**, not shared across the workspace, so two teammates see different things depending on what they own and what they enabled.
@@ -12,6 +50,10 @@ The feed floats above the dashboard instead of being clipped by the header or pa
 <Callout type="info" title="Realtime by default">
 The feed and the bell count update live, without refreshing.
 </Callout>
+
+</Fold>
+
+<Fold>
 
 ## Categories and defaults
 
@@ -36,6 +78,10 @@ Health defaults **on** because those alerts are operationally important and low 
 Workspace events never fan out to everyone. Reply and bounce alerts go to the owner of the mailbox or campaign, worker downtime to members who can manage mailboxes, mailbox mail that needs action to members who can both manage mailboxes and use the inbox, a finished placement test to whoever started it, a placement monitor alert to members who can view campaigns, billing to those who can manage billing, and team changes to those who can manage the team. The person who joined is not notified about themselves.
 </Callout>
 
+</Fold>
+
+<Fold>
+
 ## Notifications about a message follow it
 
 A **Reply received**, **Out-of-office detected** or **Mail that needs action** notification is about one message in the [Unibox](/guides/unibox/), and it stays in step with it:
@@ -51,6 +97,10 @@ Even with reply notifications off you never miss anything: every reply still lan
 
 Toggle each category under **Settings > Notifications**. Changes save automatically.
 
+</Fold>
+
+<Fold>
+
 ## Channels
 
 | Channel | Behavior |
@@ -59,6 +109,10 @@ Toggle each category under **Settings > Notifications**. Changes save automatica
 | **Mobile push** | iOS app devices, registered automatically when you allow notifications. Batched: the first alert in a quiet stretch goes immediately, and anything inside the window (five hours by default) is held and sent as one summary like "3 new replies" |
 | **Email** | Your account email, batched by the digest rules below |
 | **Slack** | Posts to the workspace's connected Slack: the channel set for that category, else the default channel, both chosen under [Slack](/guides/slack/#notifications). A notification for several teammates is posted once. If you linked your Slack account and turned on personal DMs, you also get it as a DM from the bot. With no channel set the toggle still saves, and only personal DMs are delivered. To have every reply posted to a channel as a thread the team can answer from, use the [inbox channel](/guides/slack/#inbox-in-slack) instead |
+
+</Fold>
+
+<Fold>
 
 ## Email digest
 
@@ -78,11 +132,17 @@ Each person also has a rolling 24-hour budget of notification emails (25 by defa
 
 For event-specific routing with custom messages, branching, or multiple destinations, use [Automations](/guides/automations/) instead.
 
+</Fold>
+
+<Fold>
+
 ## Tips
 
 - Leave the three health categories on. They stay quiet unless something is genuinely wrong.
 - A rising count of **Bounce** or **Spam complaint** entries is your cue to open [Deliverability](/guides/deliverability/) and find the campaign behind it.
 - Preferences are per user, so if a teammate is not seeing alerts you expect them to act on, check their own settings.
+
+</Fold>
 
 ## Related guides
 

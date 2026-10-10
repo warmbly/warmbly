@@ -3,9 +3,57 @@ title: HubSpot
 description: "Run your workspace's CRM on HubSpot: deals, tasks and notes written through, outreach logged on the timeline, and campaigns that stop when HubSpot says a contact has moved on."
 ---
 
+HubSpot mode makes HubSpot your workspace's CRM. The deals, pipelines, tasks and notes you see in Warmbly are HubSpot's records, and your outreach is logged on each contact's HubSpot timeline.
+
+## Switch to HubSpot
+
+<Steps>
+
+<Step>
+
+Open **Integrations > HubSpot** and select **Connect**.
+
+</Step>
+
+<Step>
+
+Sign in to HubSpot, pick the account, and approve the permissions.
+
+</Step>
+
+<Step>
+
+Go through the setup wizard. Every question has a default that works, so you can finish without changing anything.
+
+</Step>
+
+<Step>
+
+Finish the wizard. The dashboard fills in as the first pull runs, usually within a minute or two.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- Every change you make in Warmbly is written to HubSpot first. If HubSpot refuses it, nothing is saved.
+- A deal opened in HubSpot, a lifecycle stage you choose or an email opt-out holds the contact's campaigns.
+- Pipelines and stages are managed in HubSpot only.
+- It works with free HubSpot.
+- Switching back or disconnecting deletes nothing on either side.
+
+<Fold>
+
+## How HubSpot mode works
+
 A workspace can use Warmbly's own CRM or HubSpot. In **HubSpot mode**, HubSpot is the system of record. The deals, pipelines, tasks and notes you see in Warmbly are HubSpot's records, mirrored into Warmbly so lists, search and the board stay fast, and every change you make in Warmbly goes to HubSpot first. Your outreach is logged on each contact's HubSpot timeline, and HubSpot can stop a campaign when a contact becomes a deal or a customer.
 
 The basic HubSpot connection (a contact upsert from an [automation](/guides/automations/#actions) or **Push to CRM**) works without HubSpot mode. This page covers the full mode.
+
+</Fold>
+
+<Fold>
 
 ## What HubSpot mode does
 
@@ -14,6 +62,10 @@ The basic HubSpot connection (a contact upsert from an [automation](/guides/auto
 - **A "Warmbly" property group** on HubSpot contacts carries each contact's outreach status, so HubSpot users can filter lists, build reports and trigger workflows on it.
 - **HubSpot can stop outreach.** A deal opened in HubSpot, a lifecycle stage you choose or an email opt-out holds the contact's campaigns.
 - **The contact panel shows HubSpot's side.** In the contact drawer and the inbox, a contact shows its HubSpot owner, lifecycle stage, lead status, company and any properties you choose, and you can edit the owner, lifecycle stage and lead status in place.
+
+</Fold>
+
+<Fold>
 
 ## Connect and set up
 
@@ -26,6 +78,10 @@ After setup the same page holds the settings and the [sync health](#sync-health-
 <Callout type="info" title="A connection made before HubSpot mode existed needs a reconnect">
 Earlier HubSpot connections only asked for contact access. HubSpot mode also needs companies, deals, owners and the contact schema, so the page asks you to reconnect before you can switch, and the switch is refused with `crm_reauth_required` until you do.
 </Callout>
+
+</Fold>
+
+<Fold>
 
 ## What syncs
 
@@ -64,6 +120,10 @@ The Tasks page shows the HubSpot tasks owned by HubSpot users who are matched to
 
 Creating, editing or deleting a task type is refused with `crm_managed_externally`, because HubSpot's task types are fixed. Tasks Warmbly opens by itself, such as [follow-up tasks from replies](/guides/contacts-crm/#follow-up-tasks-from-replies) and an automation's **Create a task**, are written to HubSpot as well.
 
+</Fold>
+
+<Fold>
+
 ## Contacts and field mapping
 
 A Warmbly contact is linked to a HubSpot contact by email address. Linking happens when Warmbly emails the contact, when you open it, when HubSpot changes a contact whose address Warmbly has, and after an [import from a HubSpot list](#importing-from-hubspot-lists).
@@ -82,6 +142,10 @@ The defaults map first name, last name, company and phone to `firstname`, `lastn
 
 You can also pick up to 40 extra HubSpot properties to show on the contact panel.
 
+</Fold>
+
+<Fold>
+
 ## Activity logged to HubSpot
 
 | In Warmbly | In HubSpot | Default |
@@ -97,6 +161,10 @@ You can also pick up to 40 extra HubSpot properties to show on the contact panel
 Each email activity is associated with the contact, its company and its open deals. Its owner is the member who owns the sending mailbox when that member is matched to a HubSpot owner, otherwise the contact's owner. Activity is logged within seconds and never depends on your [webhooks](/guides/webhooks/) or their per-minute limit, so a large send is logged in full.
 
 Opens and clicks are off by default because mail privacy proxies and security scanners open and click on their own, and HubSpot timelines fill with noise. Turned on, they only update the two properties, at most once an hour per contact, and never create a contact in HubSpot.
+
+</Fold>
+
+<Fold>
 
 ## The Warmbly property group
 
@@ -114,6 +182,10 @@ Warmbly creates a **Warmbly** group of contact properties in HubSpot when you sw
 | `warmbly_unsubscribed` | Set when the contact unsubscribes from Warmbly outreach |
 | `warmbly_link` | A link that opens the contact in Warmbly |
 
+</Fold>
+
+<Fold>
+
 ## Owners
 
 HubSpot's owners (its users) are matched to workspace members by email address. Where the addresses differ, pick the member by hand on the HubSpot page; a match you choose is kept and never replaced by the email match. Matching decides:
@@ -122,6 +194,10 @@ HubSpot's owners (its users) are matched to workspace members by email address. 
 - who owns the email activity a mailbox logs
 - which HubSpot owner a deal or task gets when you assign it to a member in Warmbly
 - who the [Warmbly card](#working-from-inside-hubspot) acts as, and so what a HubSpot user can do from it
+
+</Fold>
+
+<Fold>
 
 ## Positive replies
 
@@ -132,6 +208,10 @@ When a reply is classified as interested, Warmbly can:
 - **create a deal** in a pipeline and stage you choose (off by default). It is skipped when the contact already has an open deal
 
 The follow-up task comes from your existing [reply follow-up setting](/guides/contacts-crm/#follow-up-tasks-from-replies) and is written to HubSpot like any other task.
+
+</Fold>
+
+<Fold>
 
 ## Exit rules
 
@@ -154,6 +234,10 @@ Guards decide who an [import from a HubSpot list](#importing-from-hubspot-lists)
 | Skip contacts with an open deal | On |
 | Skip contacts owned by someone outside the workspace | Off |
 
+</Fold>
+
+<Fold>
+
 ## Working from inside HubSpot
 
 Two things put Warmbly inside HubSpot itself, so a rep never has to switch tabs to act on a contact:
@@ -173,6 +257,10 @@ A HubSpot user with no matched member, or whose member is still invited, is bann
 
 The card and the workflow action need the HubSpot account to be in HubSpot mode in exactly one Warmbly workspace. When more than one workspace has it connected in HubSpot mode, both refuse until only one does.
 
+</Fold>
+
+<Fold>
+
 ## Importing from HubSpot lists
 
 On the HubSpot page, pick one of your HubSpot lists. The preview counts who would come in and who is skipped, by reason: opted out, lifecycle stage, open deal, owned by someone outside the workspace, no email address, and duplicate address. Continue, and the list becomes an ordinary contact import, finished in the usual [import review](/guides/contacts-crm/#importing) where you pick the campaign, labels and duplicate handling.
@@ -180,6 +268,10 @@ On the HubSpot page, pick one of your HubSpot lists. The preview counts who woul
 One import takes up to 25,000 contacts; a larger list is cut off at that number and the preview says so. The imported contacts are linked to their HubSpot records a couple of minutes later, so their first sends log against the right person.
 
 List import needs HubSpot's list permission, which is optional. A connection without it is asked to reconnect and allow list access.
+
+</Fold>
+
+<Fold>
 
 ## Copying your Warmbly CRM into HubSpot
 
@@ -189,6 +281,10 @@ When a workspace that used Warmbly's CRM switches, its own deals, tasks and note
 - **Tasks** and **notes** are created in HubSpot with their contact and deal
 
 A record already in HubSpot is never copied twice, so running it again only picks up what was missed. A Warmbly deal, task or note you edit after switching is also created in HubSpot at that moment.
+
+</Fold>
+
+<Fold>
 
 ## Sync health and fixing errors
 
@@ -206,9 +302,17 @@ Changes you make in the dashboard go to HubSpot while you wait. Activity logging
 
 Warmbly keeps its calls under HubSpot's limit for each HubSpot account (about 90 requests every 10 seconds, shared across every Warmbly process), and waits and retries when HubSpot asks it to slow down.
 
+</Fold>
+
+<Fold>
+
 ## Switching back and disconnecting
 
 Choosing **Warmbly** as the CRM again, or disconnecting HubSpot, stops the sync and the activity logging. Nothing is deleted on either side: the deals, pipelines, tasks and notes that were mirrored stay in Warmbly as ordinary records you can edit, the hidden Warmbly-only pipelines come back, and HubSpot keeps everything that was written there. Switching back to the same HubSpot account later picks up the same records rather than duplicating them.
+
+</Fold>
+
+<Fold>
 
 ## Self-hosting
 
@@ -220,9 +324,17 @@ A self-hosted instance uses its own HubSpot app. Create one in a HubSpot develop
 
 The consumer runs the minute-by-minute pull and the sync queue, so HubSpot mode needs no inbound traffic from HubSpot. Webhooks are optional: subscribe the app to `contact.creation`, `contact.propertyChange`, `contact.deletion`, `deal.creation`, `deal.propertyChange` and `deal.deletion` with the target URL `<backend>/api/v1/integrations/hubspot/webhooks`, and a change is picked up within seconds instead of within the minute. Deliveries are verified with HubSpot's `X-HubSpot-Signature-v3` signature over `BACKEND_PUBLIC_URL` and only make the next read come sooner; Warmbly always reads the record from HubSpot itself, and removes a deal or task only when HubSpot answers that it is gone.
 
+</Fold>
+
+<Fold>
+
 ## Moving a workspace
 
 A [workspace export](/guides/workspace-export-import/) carries the CRM mode, its setup choices, the owner matches, which Warmbly record is which HubSpot record, and each contact's HubSpot details, so the destination keeps updating the same HubSpot records instead of creating duplicates. The sync queue and the pull checkpoints stay behind; the destination starts its own pull. Reconnect HubSpot on the destination unless it uses the same HubSpot app and the archive carried credentials.
+
+</Fold>
+
+<Fold>
 
 ## FAQ
 
@@ -237,6 +349,8 @@ A [workspace export](/guides/workspace-export-import/) carries the CRM mode, its
 **Can I edit pipelines in Warmbly?** No, while HubSpot is your CRM. Edit them in HubSpot and they update in Warmbly within minutes.
 
 **Does every member need a HubSpot seat?** No. Members without a matched owner still see deals, tasks and notes; they cannot be assigned HubSpot deals or tasks, and their mailboxes log email under the contact's owner.
+
+</Fold>
 
 ## Next steps
 

@@ -3,11 +3,61 @@ title: "Deliverability"
 description: "Bounce, complaint, and spam-placement health, with the thresholds Warmbly acts on."
 ---
 
+Deliverability is whether your mail reaches the inbox instead of bouncing, getting marked as spam, or landing in junk. Warmbly tracks it per mailbox and per campaign, and acts automatically when a mailbox looks risky.
+
+![The deliverability dashboard: score, bounce and complaint rates over time, and where warmup mail lands](/guides/deliverability.webp)
+
+## Read the dashboard
+
+<Steps>
+
+<Step>
+
+Pick a window with the `7d`, `30d` or `90d` range tabs.
+
+</Step>
+
+<Step>
+
+Start with the headline rates: bounce at `5%` and complaints at `0.1%` are the highlighted danger lines.
+
+</Step>
+
+<Step>
+
+If a rate looks off, switch the chart to that metric and find the day it spiked.
+
+</Step>
+
+<Step>
+
+Read the at-risk lists to see which mailboxes and campaigns Warmbly is already acting on.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- Each mailbox sits in a health band (Healthy, Watch, Throttled, Quarantine or Blocked) that controls how Warmbly treats it.
+- Spam placement never goes past Throttled. It slows the mailbox down and lifts on its own.
+- A complaint rate of `0.10%` or a bounce rate of `5%` quarantines a mailbox: out of the shared paid warmup pool for `7 days`, with cold sending paused.
+- Warmbly suppresses a recipient automatically on a bounce, a spam complaint, or an unsubscribe, and no campaign emails them again.
+- A domain that stays Failing on SPF or DMARC past the grace period (`72 hours` by default) stops cold campaign and warmup sending. Your own replies always go out.
+
+<Fold>
+
+## What deliverability covers
+
 Browsing filters, searches and view choices are [remembered in your browser tab](/guides/browsing/) across refreshes and navigation, separately for each user and workspace.
 
 Deliverability is whether your mail reaches the inbox instead of bouncing, getting marked as spam, or landing in junk. Warmbly tracks it per mailbox and per campaign, and acts automatically when a mailbox looks risky.
 
 These defaults are deliberately stricter than the point where Google or Microsoft start penalizing senders, so action happens before provider enforcement hits your reputation.
+
+</Fold>
+
+<Fold>
 
 ## The dashboard
 
@@ -45,6 +95,10 @@ Metric metadata specifies the population, numerator, denominator, missingness, u
 
 Google, Microsoft, and Yahoo family totals are not interchangeable with their consumer and business services. Inspect the host-level breakdown when Gmail versus Google Workspace or Outlook.com versus Microsoft 365 matters. Hosts that cannot be distinguished remain unknown. Pool placement, organic recipient activity, opens, bounces, and complaints stay separate. A **rescue request** is an action attempt, not confirmed movement or proof that reputation recovered.
 
+</Fold>
+
+<Fold>
+
 ## Health bands
 
 Each mailbox sits in a band, shown as a colored chip. The band controls how Warmbly treats it.
@@ -77,6 +131,10 @@ Warmbly never acts on the composite score alone. Complaint rate, spam placement,
 ### Re-entry after a block
 
 Time elapsing is not enough. A blocked mailbox must requalify: SPF, DKIM, and DMARC still healthy; no recent complaints or hard-bounce spikes; no recent tampering with received warmup mail; spam placement back under `10%` on a fresh probation sample. Re-entry then starts low, around `5-10/day` of warmup.
+
+</Fold>
+
+<Fold>
 
 ## Domain authentication
 
@@ -116,6 +174,10 @@ Re-check is also worth pressing after reconnecting a mailbox that was disconnect
 
 If a campaign has already been paused because every one of its mailboxes was gated, the activity log says so, and you restart the campaign yourself once the domain reads Passing.
 
+</Fold>
+
+<Fold>
+
 ## Built-in protections
 
 **An opt-out in every email.** Each campaign email ends with a way to stop hearing from you: by default a plain "just reply and let me know" sentence, whose replies are detected and honoured automatically, or an unsubscribe link. Eligible marketing/bulk messages can attach one-click unsubscribe headers. RFC 8058 requires an HTTPS URI, `List-Unsubscribe-Post: List-Unsubscribe=One-Click`, and a valid DKIM signature covering both headers. The endpoint must process the POST without cookies, authorization context, or a redirect. Header presence and claimed signing coverage alone do not establish compliance; the delivered signature and endpoint must be checked. This requirement does not turn an ordinary personal reply into bulk marketing mail. See [unsubscribe and suppression](/guides/unsubscribe/).
@@ -135,6 +197,10 @@ Complaint reports are read from IMAP and Gmail mailboxes. Microsoft Graph return
 </Callout>
 
 **Domain authentication refusals** are separated from ordinary failures. When a receiving server refuses a message because your sending domain failed its checks (Microsoft's `5.7.515`, Gmail's `5.7.26`), that is not a bad recipient and not an outage: every send from that domain fails the same way until its DNS is fixed. Warmbly says so in the campaign's activity feed rather than blaming the address, does not suppress the recipient, and brings that domain's authentication check forward so the [domain authentication](/guides/deliverability/#domain-authentication) state reflects it.
+
+</Fold>
+
+<Fold>
 
 ## Address verification
 
@@ -173,6 +239,10 @@ The Deliverability card always says who produced the verdict and when: **Verifie
 
 A campaign never quietly finishes because of verification. When every remaining lead has been refused, the campaign shows **needs verification** and pauses, with two buttons on it: **Re-verify leads** checks them again and resumes sending automatically as soon as any pass, and **Send anyway** marks them deliverable and resumes at once. The [launch check](/guides/campaigns/#adding-leads) likewise offers **Launch anyway** when a list is refused for its projected bounce rate, for a list verified elsewhere.
 
+</Fold>
+
+<Fold>
+
 ## Workspace sending posture
 
 Individual protections each watch one thing: a rate limit watches one user, warmup health watches one mailbox, verification watches one address. A workspace that is slightly wrong on several of those at once sits under every individual threshold and is never noticed. The workspace posture is the view that sees all of them together.
@@ -204,6 +274,10 @@ No posture is permanent, and there are three ways out of one.
 
 If your workspace is restricted or suspended and you believe it is wrong, reply to the notice or contact your platform operator and ask for a review. The banner's reason is the same sentence they see.
 
+</Fold>
+
+<Fold>
+
 ## How to read it
 
 1. Start with the headline numbers. Bounce at `5%` and complaints at `0.1%` are the highlighted danger lines.
@@ -213,6 +287,8 @@ If your workspace is restricted or suspended and you believe it is wrong, reply 
 5. Slow down anything in Watch and let it recover. Leave Quarantine and Blocked out of sending until they requalify.
 
 The habit that matters: keep complaint rate and spam placement low. A clean reputation at modest volume beats high volume with rising complaints every time.
+
+</Fold>
 
 ## Related guides
 

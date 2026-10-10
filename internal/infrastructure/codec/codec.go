@@ -2,7 +2,7 @@
 //
 // Two implementations:
 //   - AvroCodec  (Confluent Schema Registry wire format, encoded through
-//     hamba's default API so the envelopes' union bodies resolve)
+//     the shared bounded API so the envelopes' union bodies resolve)
 //   - JSONCodec  (encoding/json — self-hostable alternative with no external
 //     schema registry dependency)
 //
@@ -18,7 +18,7 @@ package codec
 import (
 	"context"
 
-	"github.com/hamba/avro/v2"
+	"github.com/iskorotkov/avro/v2"
 )
 
 // Codec serializes and deserializes event payloads. Implementations may

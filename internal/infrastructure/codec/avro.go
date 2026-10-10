@@ -16,7 +16,7 @@ import (
 
 	"github.com/confluentinc/confluent-kafka-go/v2/schemaregistry"
 	"github.com/confluentinc/confluent-kafka-go/v2/schemaregistry/rest"
-	"github.com/hamba/avro/v2"
+	"github.com/iskorotkov/avro/v2"
 	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/models"
 )
@@ -29,18 +29,7 @@ const (
 	wireHeader = 5
 )
 
-// AvroCodec encodes through hamba's default API rather than Confluent's
-// avrov2 serializer, which is the one thing here worth explaining.
-//
-// Both bus envelopes carry `Body any`, and hamba resolves which union branch an
-// `any` belongs to through a type resolver that `avro.Register` writes to. That
-// registry is `avro.DefaultConfig`'s. avrov2 marshals with `avro.Config{}.Freeze()`,
-// a private API holding its own empty resolver, and exposes no way to add to
-// it, so every worker command failed there with "unable to resolve type" while
-// encoding perfectly against the same schema through the default API.
-//
-// So the registry client is used for what it is good at, turning a schema into
-// an id and back, and the encoding is done where the types are known.
+// AvroCodec uses the bounded API that owns the envelopes' union type registry.
 type AvroCodec struct {
 	client schemaregistry.Client
 
@@ -84,7 +73,7 @@ func (c *AvroCodec) Serialize(_ context.Context, topic string, value any) ([]byt
 	if err != nil {
 		return nil, err
 	}
-	body, err := avro.Marshal(schema, value)
+	body, err := models.EventAvro.Marshal(schema, value)
 	if err != nil {
 		return nil, fmt.Errorf("codec: encode %T: %w", value, err)
 	}
@@ -138,7 +127,7 @@ func (c *AvroCodec) Deserialize(_ context.Context, topic string, payload []byte,
 	if err != nil {
 		return err
 	}
-	if err := avro.Unmarshal(schema, payload[wireHeader:], target); err != nil {
+	if err := models.EventAvro.Unmarshal(schema, payload[wireHeader:], target); err != nil {
 		return fmt.Errorf("codec: decode into %T: %w", target, err)
 	}
 	return nil

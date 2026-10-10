@@ -3,9 +3,57 @@ title: "Automatic inbox tagging"
 description: "Label and score inbound mail as it arrives, keep automated mail out of the inbox, and let a confident verdict hold, stop, follow up or suppress. Optional, off by default."
 ---
 
+Automatic tagging reads each inbound message, files it under workspace labels and scores how much it deserves your attention. It is optional and off until an operator turns it on.
+
+## Turn on tagging
+
+<Steps>
+
+<Step>
+
+An operator sets `TYPESAFE_API_KEY` to a key from typesafe.ai.
+
+</Step>
+
+<Step>
+
+The operator sets `INBOX_TAGGING_ENABLED=true`, since tagging stays off even when a key is present.
+
+</Step>
+
+<Step>
+
+Open **Settings > Inbox tagging** to see every decision and what it did.
+
+</Step>
+
+<Step>
+
+After watching it for a week, turn on the suppression under **Settings > Sending > Classified replies** if you want it.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- Classification sends message content to TypeSafe, so nothing is sent until an operator adds a key and switches the feature on.
+- Mail nobody wrote, such as sign-in codes, receipts, bounces and auto-replies, moves to the **Automated** view.
+- Automated mail that needs your action stays in the inbox, labelled **Action required**.
+- When the classifier is unsure, the thread is labelled **Needs review** and stays in the inbox.
+- Holding, stopping and opening a task are on by default; suppressing a sender is off until you turn it on.
+
+<Fold>
+
+## What tagging is and what it sends out
+
 Automatic tagging reads each inbound message and files it under workspace labels, then scores how much it deserves your attention. It is optional and off until an operator turns it on.
 
 Classification sends message content to TypeSafe, so it is opt-in twice: an operator supplies a key, and separately switches the feature on. An instance that does neither never calls TypeSafe and behaves exactly as it did before. Other optional AI features can also send content to their configured provider; see [data control](/development/data-control/).
+
+</Fold>
+
+<Fold>
 
 ## What it does
 
@@ -13,9 +61,17 @@ It writes labels and a relevance score for every inbound message, and moves mail
 
 It can also act on a confident verdict: hold a contact who said not now, stop a contact who declined, open a task when someone asks for a call, and suppress a sender who asked to be removed. Each of those is its own switch under **Settings > Sending > Classified replies**. The three reversible ones are on from the start; the suppression is off until you turn it on, because it is the one the system cannot undo. See [Acting on a verdict](#acting-on-a-verdict).
 
+</Fold>
+
+<Fold>
+
 ## Nothing to set up
 
 The whole label set is created when a workspace is created (and, on an instance that turned the feature on later, within the hour by the follow-up sweep), so the inbox can filter for **Unsubscribe** before anyone has asked. The premade **Views** in the inbox rail (Action required, Hot leads, Needs a reply, Follow up, Declined, Automated) are built on those labels and fill as mail is classified; see [Unified inbox](/guides/unibox/). Every label has a hover explanation, so nobody has to learn the taxonomy first.
+
+</Fold>
+
+<Fold>
 
 ## The labels
 
@@ -42,6 +98,10 @@ The classifier answers more questions than this (whether the sender is the decis
 
 **Needs review** means the classifier was not sure. See below.
 
+</Fold>
+
+<Fold>
+
 ## Automated mail stays out of the inbox
 
 Sign-in and verification codes, routine security, account and billing notices, receipts, newsletters, bounces and auto-replies are not mail anyone has to answer. When the verdict is that no person wrote a message, its conversation leaves **Inbox**, Unread, every mailbox and tag view and the unread badge, and is listed under the **Automated** view instead. **All mail** still shows everything.
@@ -49,6 +109,10 @@ Sign-in and verification codes, routine security, account and billing notices, r
 Only a confident verdict moves a conversation: a message the classifier was unsure about stays in the inbox. A conversation counts as automated only while every message in it that is not yours was judged automated, so a reply from a person brings it back to the inbox the moment it arrives, before it is even classified. Nothing is moved in the mailbox itself; the provider's folders are untouched.
 
 Common senders and headers (no-reply addresses, bulk mail, out-of-office subjects, delivery failures) are decided offline. Everything else is judged by the model.
+
+</Fold>
+
+<Fold>
 
 ## Mail that needs your action
 
@@ -66,6 +130,10 @@ Routine notices are not affected: a sign-in code, a receipt, a newsletter or a "
 A notification recognised offline by its sender alone costs one small call for this question and nothing else; a notification the model judged has it in the same call as every other question. If that call fails, the notification is filed under Automated as it was before the check existed, and `--recheck-notifications` (below) asks it later.
 
 It is on by default for every workspace. To turn it off, clear **Keep mail that needs action in the inbox** under **Settings > Sending > Automated mail**; notifications then go to Automated as before and no call is made for them. To file other automated mail your own way, ask one of [your own questions](#your-own-questions) of notifications too.
+
+</Fold>
+
+<Fold>
 
 ## Follow-ups: who owes whom a reply
 
@@ -95,11 +163,19 @@ To recompute on demand (this checks every conversation in one run and leaves the
 warmblyctl inbox-tag follow-ups --org you@example.com
 ```
 
+</Fold>
+
+<Fold>
+
 ## Relevance and priority
 
 Each message gets a score from 0 to 100, and a priority of `now`, `today`, `whenever` or `ignore`. Sorting the inbox by relevance puts the person who said yes above the person who is thinking about it, above a bounce.
 
 The score is arithmetic over the answers, computed in Warmbly rather than asked. Asking for a single "how relevant is this" rating hides four independent judgments inside one question, and the model correctly refuses those: it returns a flat distribution at zero confidence.
+
+</Fold>
+
+<Fold>
 
 ## Acting on a verdict
 
@@ -118,6 +194,10 @@ Your own questions can act too; see [Your own questions](#your-own-questions).
 
 Every action is recorded on the verdict, so the review page shows what was done next to the answer that caused it, and the **Actions taken** count at the top tells you how often the switches fire. Actions run on mail as it arrives; a backfill over history labels and never acts.
 
+</Fold>
+
+<Fold>
+
 ## Your own questions
 
 The built-in labels answer what every workspace needs to know. Anything more specific to yours, you can ask yourself under **Settings > Sending > Tagging languages and questions**. For example: "The sender says there is no suitable position right now but they will get back later", labelled **Later maybe**, holding the contact for 60 days.
@@ -134,6 +214,10 @@ Each label, or each option, can also act, with the same primitives as the switch
 A question can also be asked of automated notifications: tick **Also ask about automated notifications** on it. Notifications are otherwise never asked your questions, since they are about what a person said. A notification the question matches gets its label and stays in the inbox instead of the Automated view, like one that needs your action. It never holds, stops or opens a task: those still apply to replies only. A notification recognised offline by its sender is asked only these questions and the action check, in one small call.
 
 Your questions ride in the same call as the built-in ones, so they cost input tokens on every classified message but never a second request. A workspace can ask up to 10. They add labels and nothing else to a verdict: the kind, the intent and the relevance score are calibrated on the built-in questions alone and are never moved by yours. The labels are created the first time they apply, or within the hour by the hourly sweep. Questions are part of the workspace settings, so they travel with a [workspace export](/guides/workspace-export-import/).
+
+</Fold>
+
+<Fold>
 
 ## Tagging languages
 
@@ -152,12 +236,20 @@ The reading before any call covers:
 
 Tagging languages are part of the workspace settings, so they travel with a [workspace export](/guides/workspace-export-import/).
 
+</Fold>
+
+<Fold>
+
 ## What else reads the verdict
 
 Two other features reuse a stored verdict rather than paying for a second judgment:
 
 - **Campaign reply handling.** The reply classifier that drives `stop_on_reply` and the reply branches reads the stored kind and intent when one exists, so an interested reply routes as positive and a declined one as negative with the classifier's real confidence. The intent itself is also stored on the contact's progress, and a sequence can branch on it with the `reply_intent` condition (see [Campaigns](/guides/campaigns/)). Without tagging, the classifier asks TypeSafe one three-way question instead, and without a key it falls back to the platform LLM as before.
 - **The inbox agent.** A reply the verdict shows as closed (Not interested, Unsubscribe, Wrong person, Not now), a one-line acknowledgement, a legal threat or a message that needs a person to read it is not drafted, so no credits are spent answering it.
+
+</Fold>
+
+<Fold>
 
 ## Confirming an away message's return date
 
@@ -169,11 +261,19 @@ Below `0.40` the hold uses the workspace's fallback instead of the date. That is
 
 An away message recognised offline costs one small call carrying only the message and the phrase, and only when the rules found a date and the workspace holds on out-of-office. When the model decides the kind, the question rides in the same call as the rest. A backfill never asks it, since it labels history and holds nobody. The review page shows the date and the answer next to the verdict, struck through when the hold used the fallback.
 
+</Fold>
+
+<Fold>
+
 ## When it declines to decide
 
 Every classification carries a confidence. If the message kind is below 0.70, the thread is labelled **Needs review**, no other label is applied, and the conversation stays in the inbox. If the kind is confident but the intent is below 0.70, the trusted kind and relevance remain, the uncertain intent label is omitted, and **Needs review** is added.
 
 That floor is not caution for its own sake. A low-confidence answer is not merely uncertain, it is not reproducible: the same ambiguous message run three times returned a different winning label each time while confidence stayed near 0.2. A label that would not survive being asked again is not one to file mail under.
+
+</Fold>
+
+<Fold>
 
 ## What it never asks
 
@@ -185,11 +285,19 @@ This matters more than it sounds. Given only a message body, the model classifie
 
 Common out-of-office subject prefixes and automated sender addresses are checked offline. When one is decisive, the kind is not asked; only a notification is still asked whether it needs your action, and an away message whether its [return date](#confirming-an-away-messages-return-date) is the day the sender is back. The review page shows which verdicts were decided offline and which came from the model.
 
+</Fold>
+
+<Fold>
+
 ## Follow-ups without TypeSafe
 
 With no `TYPESAFE_API_KEY`, Warmbly can still compute **Follow up** locally from sent-message dates. It makes no external call. **Needs reply** and **Gone quiet** also need a trusted stored classification so an automated message is not mistaken for a person and a weak intent is not treated as interest, and without classification nothing leaves the inbox as automated.
 
 The key and switch add message classification. When both are unset, automatic inbox tagging sends no message content to TypeSafe. Other optional AI features use their separately configured provider; see [data control](/development/data-control/).
+
+</Fold>
+
+<Fold>
 
 ## Turning it on
 
@@ -201,6 +309,10 @@ INBOX_TAGGING_ENABLED=true  # off by default even when a key is present
 ```
 
 Then **Settings > Inbox tagging** shows every decision: the labels, the relevance, the confidence, where the verdict came from, and what it did. Watch it for a week before enabling the suppression under **Settings > Sending > Classified replies**; the reversible actions are already on and every one of them is visible on the Leads tab or the Tasks page.
+
+</Fold>
+
+<Fold>
 
 ## Backfilling mail you already have
 
@@ -236,8 +348,11 @@ warmblyctl inbox-tag backfill --org you@example.com --days 30 --recheck-notifica
 
 Only messages stored as a notification by a verdict that never asked the action check are covered, and each is asked again, so the ones that need action return to the inbox labelled **Action required**. The command refuses when **Keep mail that needs action in the inbox** is off. A notification with no text to read is skipped. A message whose call fails is offered again by the next run, or by a plain backfill. Like any backfill, it labels, moves and never notifies.
 
-## What it costs
+</Fold>
 
+<Fold>
+
+## What it costs
 
 One call contains every question for a message and currently uses about 1,300 input tokens on the recorded fixture set. A notification recognised offline costs one smaller call, for the action check and any of your questions asked of notifications, and nothing when neither is on. An away message recognised offline costs one small call when its return date is checked, and nothing otherwise. TypeSafe evaluates the questions in parallel, but each question still contributes tokens, so check its current pricing before a large backfill. Output tokens are not billed.
 
@@ -250,6 +365,8 @@ If TypeSafe returns a billing error (HTTP 402), paid judgments pause for five mi
 Incoming mail is still saved during the pause. Offline rules and already stored verdicts remain available; unavailable model answers are not invented. After restoring credits, a plain backfill can classify skipped historical mail, and `--recheck-notifications` can check notifications filed without an action answer. Recovery probes happen on demand, not by sending paid synthetic health checks.
 
 A message with no Message-ID is skipped. A database claim prevents two concurrent deliveries of the same Message-ID from making duplicate calls, and an abandoned claim becomes eligible for retry after 15 minutes.
+
+</Fold>
 
 ## Related guides
 

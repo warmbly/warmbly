@@ -3,6 +3,7 @@
   "description": "Using the Warmbly product",
   "root": true,
   "pages": [
+    "index",
     "---Sending---",
     "mailboxes",
     "mailbox-import",

@@ -3,6 +3,58 @@ title: Campaigns
 description: "Create and send cold outreach campaigns safely."
 ---
 
+A campaign sends a sequence of emails to a list of contacts, spread across your connected mailboxes. Warmbly handles the timing, volume limits and mailbox rotation, so sending looks natural and stays safe.
+
+![The campaigns list, grouped by state, with each campaign tagged and filed in a folder](/guides/campaigns.webp)
+
+## Set up a campaign
+
+<Steps>
+
+<Step>
+
+Open **Campaigns** and choose **New campaign**.
+
+</Step>
+
+<Step>
+
+On **Leads**, name the campaign and pick one or more lead lists.
+
+</Step>
+
+<Step>
+
+On **Emails**, write the first email and any follow-ups.
+
+</Step>
+
+<Step>
+
+On **Schedule**, choose when it starts, the sending days and hours, the mailboxes to send from and the daily limit per mailbox.
+
+</Step>
+
+<Step>
+
+On **Review**, check the finish date, then choose **Launch** or **Save as draft**.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- Each mailbox sends at most `50` cold emails a day by default, with at least `600` seconds between two sends.
+- A campaign sends only inside its weekly sending windows, in the campaign's timezone.
+- A lead's follow-ups normally go out from the mailbox that sent their first email, and move to another one only when that mailbox is held, cooling or gone.
+- Launch checks your list first and refuses one that is known to be largely undeliverable.
+- Nothing sends until the campaign launches. Closing the flow with anything filled in saves a draft.
+
+<Fold>
+
+## Sender fields and what you need first
+
 Browsing filters, searches and view choices are [remembered in your browser tab](/guides/browsing/) across refreshes and navigation, separately for each user and workspace.
 
 A campaign sends a sequence of emails to a list of contacts, spread across your connected mailboxes. Warmbly handles timing, volume limits, and mailbox rotation so sending looks natural and stays safe.
@@ -13,15 +65,27 @@ Personalize from the mailbox sending each message with `{{.Sender.Name}}` and `{
 You need at least one active mailbox and a contact list. Warm new mailboxes before running cold campaigns from them. See [Deliverability](/guides/deliverability/).
 </Callout>
 
+</Fold>
+
+<Fold>
+
 ## Shared workspace access
 
 Campaigns belong to the workspace. Members with **View campaigns** can read campaign details, steps and activity logs regardless of who created them. **Manage campaigns** allows members to edit settings, create or edit steps and delete steps. Campaign overview metrics require **View analytics**. See [Team and roles](/guides/team-roles/) for permission details.
 
 Select the workspace that owns the campaign before opening it. Creating a campaign does not grant access to it from a different workspace.
 
+</Fold>
+
+<Fold>
+
 ## Campaigns list
 
 Campaign names take priority over descriptions in the list. Descriptions use the remaining space and are hidden on small screens. A name that is still too long for the available space is shortened with an ellipsis so the status and actions stay accessible. On devices that support hover, hover over the name to read it in full. The top campaigns list in Analytics also uses the available space for names before shortening them.
+
+</Fold>
+
+<Fold>
 
 ## Create a campaign
 
@@ -58,15 +122,27 @@ Follow-ups that are due go out before new leads start, and the total assumes nob
 
 An unresolved send from one mailbox does not stop other healthy mailboxes from sending. A follow-up normally uses the address its lead first heard from, but can move to another eligible mailbox when that address is held or cooling. The launch plan and day plan show the hold or cooldown separately from the normal daily limit. An unknown send needs [provider-confirmed resolution](/development/send-safety/#resolving-an-unknown-send); a timeout or missing Sent copy is not proof that it can be retried.
 
+</Fold>
+
+<Fold>
+
 ## Images in the editor
 
 Warmbly loads external images through a display-only preview service while you edit. The image must be publicly reachable over HTTPS and 5 MiB or smaller. Images behind a login, private-network images and unavailable images show an unavailable preview. Uploaded images are read directly from the instance's object store.
 
 Your original image URLs, image links and background-image styles stay in saved templates and sent emails. Recipients load images directly from those original URLs, without a Warmbly login. Existing templates use the same preview behavior without a migration. This does not change recipient open or click tracking, or the remote-image consent in your inbox.
 
+</Fold>
+
+<Fold>
+
 ## Plain text only
 
 **Settings** > **Plain text only** sends the campaign without an HTML part. Recipients get the plain-text body with the mailbox's plain-text signature, and because open pixels and wrapped links need HTML, open and click tracking are off for that campaign whatever their toggles say. Test emails respect it too, so what lands in your own inbox is what recipients get.
+
+</Fold>
+
+<Fold>
 
 ## Senders and rotation
 
@@ -105,6 +181,10 @@ Two things can happen to a lead's mailbox, and Warmbly treats them differently:
 
 Removing a mailbox from **Sending accounts** therefore hands its in-flight leads to the remaining mailboxes as each of them reaches its next step. Adding a mailbox never moves an existing lead; it picks up new ones.
 
+</Fold>
+
+<Fold>
+
 ## Sending limits
 
 Warmbly is mailbox-first: safe volume is the sum of each mailbox's budget, not one global limit. Limits stack, and **the smallest always wins**.
@@ -124,6 +204,8 @@ Each of those lines carries a breakdown per mailbox: the cap this campaign gives
 ### Today's sending plan
 
 The campaign overview opens with a one-line **Today's sending plan**: how many emails the campaign sends today, worked out through the same gates a real send goes through, and the one limit that decides it. **Why** opens the working: a list of every limit that took the number below what your settings add up to, the leads, and each mailbox's day. The card re-reads itself once a minute while the page is open.
+
+![A running campaign's overview: today's sends, performance over time and the live activity feed](/guides/campaign-overview.webp)
 
 For an active campaign the plan is worked out in the background and refreshed about once a minute, so opening it is quick no matter how many leads the campaign has. The card shows when the figures were last worked out. Right after you edit, start or stop a campaign, or just after midnight UTC, it shows the last good figures while a fresh plan is worked out, then updates on its own within moments. A campaign you have only just created is worked out the moment you open it.
 
@@ -258,6 +340,10 @@ Every sent count counts emails only: the contact's **Sent** total, a lead's sent
 
 No contact is emailed the same step twice. Each step is recorded as attempted before the send is handed to a worker, so a crash, a restart, or a database hiccup in the moment between the two cannot make the step look unsent and send it again. The trade-off is a step whose outcome is genuinely unknown, when the worker stops responding mid-send: after 30 minutes with no answer the step is treated as a failed attempt, appears in **Needs attention**, and is retried like any other failure.
 
+</Fold>
+
+<Fold>
+
 ## Link tracking and UTM parameters
 
 With **Link tracking** on, every link in the email body becomes its own tracked link, so Warmbly records which link was clicked, not only that one was. Open a contact's **Activity** tab and a click reads **Clicked Pricing**, with the campaign, step and sending mailbox on the row and, expanded, the link's text, its full URL, every UTM parameter it carried, the browser, and whether a person or a scanner followed it. The campaign's live feed names the link the same way, and the `campaign.email_clicked` webhook carries the URL and the link text.
@@ -272,6 +358,10 @@ With **Link tracking** on, every link in the email body becomes its own tracked 
 | `utm_content` | The link's own text as a slug (`pricing_page`); a link with no text, such as an image, is numbered `link_1`, `link_2` in order |
 
 A link that already carries one of these keeps the hand-written value; only the missing parameters are added. Existing query strings and fragments are left exactly as written, and the tags go on the real destination, so they survive the tracking redirect. Anchors, `mailto:` and `tel:` links, and anything that is not `http(s)` are never touched. UTM tagging works with link tracking off too: the tags are added and the link is otherwise left as written. Bare URLs in the plain-text part are tagged as well, numbered `link_1`, `link_2` since they have no text. Change the source, medium and campaign values under **Settings** > **Deliverability**; leave a field empty to use the default.
+
+</Fold>
+
+<Fold>
 
 ## Scheduling
 
@@ -305,6 +395,10 @@ Follow-up spacing is separate and unaffected: that is each step's own wait, set 
 
 Optional **campaign dates** bound when it may send. Leave both blank to run open-ended. Picking today as the start date means "start now", and clearing a start date on a running campaign removes the wait entirely. Schedule changes on an active campaign take effect immediately: the next send is recomputed on save, so a campaign waiting on a future start date starts sending as soon as you clear or shorten it. Past the end date nothing goes out at all, including a follow-up that came due before it: the campaign finishes instead, and its activity log says it reached its end date.
 
+</Fold>
+
+<Fold>
+
 ## Start and stop
 
 The play and pause buttons work from the list row or the detail view. Starting moves the campaign to **active** and begins scheduling inside your windows and limits; pausing stops new scheduling immediately and resumes from where it left off.
@@ -315,6 +409,10 @@ An auto-pause is never silent. It writes a red entry to the campaign's activity 
 
 A finished campaign starts again on its own when a lead is added to it, whether by a linked segment, the API, a form, an integration or an automation, through the same launch checks as pressing play. If a check refuses the restart (the list is a bounce risk, the plan cannot send, too many campaigns are active), the activity log says so and the new leads wait until you fix the cause and press play. Pressing play also works after extending or clearing the end date. If there is genuinely nothing left to send, pressing play turns on **Keep running for new leads** and the campaign stays active, **waiting for leads**, so it never dead-ends on a campaign that only ran out of people to write to; the activity log notes the switch.
 
+</Fold>
+
+<Fold>
+
 ## Duplicate and delete
 
 Every campaign has a **⋯** menu, on its row in the list and in the header of its detail view, with **Edit**, **Duplicate**, **Start** or **Pause**, and **Delete**. Both actions need the **Manage campaigns** permission; a member without it is told which permission is missing instead of the action failing later.
@@ -322,6 +420,10 @@ Every campaign has a **⋯** menu, on its row in the list and in the header of i
 **Duplicate** creates a new draft from the campaign's configuration and opens its settings so you can rename it (it starts as `name (copy)`), pick a different audience, change the copy, or adjust the schedule before starting it. The copy keeps every setting, the steps with their branching, the sending accounts, folders, tags, A/B variants and attachments. It does not keep leads, progress, statistics, activity, the ramp level, an auto-pause, or a start or end date that has already passed. The original is not touched, and the two campaigns are independent from then on. A duplicate counts as a new campaign for the daily creation limit.
 
 **Delete** asks for confirmation that spells out what goes: the campaign, its steps, lead progress and activity. Contacts and emails already sent stay. A running campaign can be deleted directly; the confirmation says so, and sending stops immediately because every task waiting for the campaign is cancelled together with it. The same action is available at the bottom of the campaign's **Settings**. Deletion cannot be undone.
+
+</Fold>
+
+<Fold>
 
 ## Auto-pause guardrails
 
@@ -344,11 +446,19 @@ Setting a rate to `0` turns that rule off. The check runs every 15 minutes, and 
 
 A paused campaign shows the reason and the numbers behind it on the **Auto-pause** section, and everyone on the team who can see campaigns gets a notification. Starting the campaign again clears the marker, but the next check re-evaluates from scratch, so fix the underlying problem first.
 
+</Fold>
+
+<Fold>
+
 ## Live activity
 
 The detail view streams sends, opens, clicks, replies, bounces, and skips as they happen, for every teammate at once. The **Sending** card appears only while an email is actually being handed to a worker, and always names the contact; between sends the panel shows the campaign's progress and the log, not a send in flight. A **Needs attention** panel above it surfaces failures such as a step that could not be scheduled, a send the worker could not complete, or a mailbox whose sending worker is offline; these retry automatically and stay visible so nothing fails silently.
 
 If scheduling stalls on a transient infrastructure hiccup, Warmbly re-seeds within a few minutes. Pausing and resuming forces a fresh start.
+
+</Fold>
+
+<Fold>
 
 ## Content checks
 
@@ -397,11 +507,19 @@ The AI score is deliberately not sampled, so re-checking copy you did not touch 
 
 When the draft has moved on from the analysis on screen, the panel says so and highlights the button, rather than presenting stale findings as current.
 
+</Fold>
+
+<Fold>
+
 ## Testing placement
 
 A content score reads the copy; a placement test sends it. Test any email step from **Placement tests** by choosing the campaign and the step: the copy is rendered the way this campaign sends it (merge fields for its first lead, its opt-out line, its tracking and attachments) and sent from one of its mailboxes to seed inboxes at the major providers, which report whether it reached the inbox, a Gmail tab or spam, or never arrived. Each copy is a send from that mailbox's daily limit.
 
 A **placement monitor** repeats that on a schedule while the campaign runs, every `7` days by default, rotating through the campaign's mailboxes. When a run lands below its alert threshold (`70%` inbox by default), everyone who can view campaigns is notified, and the monitor can pause the campaign too, as an auto-pause you restart yourself. See [inbox placement tests](/guides/placement-tests/).
+
+</Fold>
+
+<Fold>
 
 ## Easing out of warmup
 
@@ -416,6 +534,10 @@ A mailbox that never used warmup is not gated. This exists to smooth the warmup-
 
 </Callout>
 
+</Fold>
+
+<Fold>
+
 ## The launch check on your list
 
 Starting a campaign measures its recipient list first and refuses to launch one that is known to be largely undeliverable. Mailbox providers put a sender under review at around a 5% bounce rate, so the number worth seeing is the one you can see beforehand.
@@ -429,6 +551,10 @@ What it counts:
 A refused launch shows why and offers **Launch anyway**, for a list you verified with another service. Through the API the same override is `acknowledge_list_risk` on the start request.
 
 Above `4%` projected bounce the launch is refused with the number and what to do about it. Between `2%` and `4%` it launches with a warning. The same projection appears in the launch dialog before you click, so a refusal is never a surprise.
+
+</Fold>
+
+<Fold>
 
 ## Safety posture
 
@@ -445,6 +571,8 @@ Choose configured caps using provider policy, recipient permission and observed 
 <Callout type="warn" title="Diagnostics are optional">
 When enabled, Warmbly limits a campaign mailbox to at most five diagnostic warmup messages per day, so campaign traffic stays primary. Diagnostic participation is not a proven reputation benefit and cannot compensate for a repetitive template sent to a poorly targeted list: personalize, test meaningful A/B variants, and honor suppression and unsubscribe signals.
 </Callout>
+
+</Fold>
 
 ## Related guides
 

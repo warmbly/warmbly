@@ -5,6 +5,14 @@ description: Merge variables, conditionals, fallbacks, functions, and spintax so
 
 Every subject line and email body in Warmbly supports merge variables and simple conditionals. They're rendered separately for each recipient when the email actually sends, so a single template can read naturally for your whole list.
 
+<ShortVersion>
+
+- Variables like `{{.FirstName}}` are filled in for each recipient when the email sends.
+- A missing value renders as blank, so write around it or guard it with a conditional.
+- Conditionals show text only when a field has a value, or matches one.
+
+</ShortVersion>
+
 <Callout type="info" title="Full syntax reference">
   This page covers the ideas and how to combine them. The complete syntax reference (every field, helper, and rule) lives in the [Expressions guide](/guides/expressions/).
 </Callout>
@@ -50,6 +58,8 @@ Hi {{.FirstName}},{{if .Company}} I saw {{.Company}} is hiring.{{end}}
 ```
 
 That renders as "Hi Alex, I saw Acme is hiring." when Company is set, and "Hi Alex," when it's blank.
+
+<MergePreview />
 
 Provide a fallback with `else`:
 

@@ -3,11 +3,61 @@ title: "Analytics"
 description: "Campaign and account performance metrics."
 ---
 
+Analytics turns every send, open, click, reply, bounce and complaint into rates you can act on, for the whole workspace, each campaign and each mailbox.
+
+![The workspace dashboard: sends, opens, replies and bounces over time, top campaigns and account health](/guides/analytics.webp)
+
+## Read your numbers
+
+<Steps>
+
+<Step>
+
+Check the four headline rates for your window: `7d`, `30d` or `90d`.
+
+</Step>
+
+<Step>
+
+If one looks off, switch the chart to that metric and find the day it moved.
+
+</Step>
+
+<Step>
+
+Open that campaign and read its per-step stats to see which touch is responsible.
+
+</Step>
+
+<Step>
+
+For bounces or complaints, check the per-mailbox breakdown to find the sender at fault.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- Opens and clicks only count when open or link tracking is on for the campaign.
+- Bots, security scanners and privacy-proxy auto-opens are logged but never counted.
+- Replies are human replies. Out-of-office notices and autoresponders never count.
+- A click by a person counts as an open too.
+- Warmbly will not call an A/B winner until the leader has a minimum sample, `30` sends by default.
+
+<Fold>
+
+## What analytics covers and who can see it
+
 Browsing filters, searches and view choices are [remembered in your browser tab](/guides/browsing/) across refreshes and navigation, separately for each user and workspace.
 
 Analytics rolls every send, open, click, reply, bounce, and complaint into rates you can act on, by workspace, campaign, and mailbox. For health bands and the thresholds Warmbly acts on, see [Deliverability](/guides/deliverability/).
 
 Campaign analytics are shared across the workspace. With **View analytics**, you can see the overview, daily and hourly statistics, step performance and comparisons for campaigns created by any member of the selected workspace. The campaign author does not need to grant separate access.
+
+</Fold>
+
+<Fold>
 
 ## Signup source attribution (platform admins)
 
@@ -18,6 +68,10 @@ The new workspace records acquisition once. In the admin panel, **Organizations 
 Sources come from campaign tags or the browser's referrer, not guesses. Warmbly's own domains are not external sources. Browsers, search engines and apps can withhold referrers; absent source information is shown as **Unknown**, even when the landing page is known. Full referrer URLs, search queries and landing-page query strings are not stored. Acquisition values are limited in length and email-shaped values are redacted by the backend.
 
 The marketing site stays cookieless, with no persistent PostHog identity. Attribution travels in URLs, not cookies or browser storage. It survives linked navigation but cannot reliably reconnect a later unrelated visit, another device or a URL whose attribution parameters were removed. It is not a complete anonymous browsing history. Existing saved acquisition remains unchanged, and missing historical sources are not backfilled. No new configuration or database migration is required.
+
+</Fold>
+
+<Fold>
 
 ## What is counted
 
@@ -40,6 +94,10 @@ Seven rules govern the counts:
 - **Auto-opens are logged, not counted.** Privacy proxies like Apple Mail Privacy Protection, and instant opens, are kept as proof of delivery and shown separately (`12 auto, not counted`), and an open counts only once per email however many times it is fetched. Every open count and open rate, on the campaign overview, per step, per day and per hour, and on the dashboard, counts a person's opens only, which is how the Leads tab already reads a lead: not opened until a person opens it. Apple Mail Privacy Protection's relay (a user agent of just `Mozilla/5.0`) and the stripped WebKit user agent that Mail on a Mac and the new Outlook for Windows both send are treated as a prefetch only when they arrive inside the automated-open window. Later, the same request is a person's open. **Auto-opens never trigger opened-based branches or automations.**
 - **A click is an open.** Opens need the mail client to load images, and many clients block them. A click by the person proves the email was read, so it counts as an open as well, and a lead can never read "clicked, not opened".
 - **Auto-clicks are kept but never counted.** A click classified as automated is logged on the contact's activity with the link it hit and the rule that caught it, and the campaign overview shows how many steps had only automated clicks (`3 auto`). It never makes the step clicked, never fires a clicked branch or automation, and never sends a webhook. A person clicking the same link later counts normally. A burst is only recognisable from its second click, so a click that looks human waits for the burst window plus one second (six seconds) before it fires anything (clicked branches, automations, webhooks, the live feed): if a second link follows inside that window, both clicks are relabeled, the stamp is withdrawn and nothing fires.
+
+</Fold>
+
+<Fold>
 
 ## Workspace dashboard
 
@@ -72,6 +130,10 @@ The **All campaigns** menu next to the period tabs narrows the dashboard to the 
 
 A campaign or folder that is deleted while selected drops out of the filter on its own. The mobile app's Analytics overview has the same menu under its period picker; there the filter changes the overview's campaign figures and leaves the Deliverability, Warmup and Accounts sections as they are. Through the API, pass `campaign_ids` and `folder_ids` to [`GET /analytics/dashboard`](/api/reference/analytics/#get-dashboard-analytics).
 
+</Fold>
+
+<Fold>
+
 ## Direct mail
 
 The rest of this page measures campaigns. **Direct mail** measures what you write by hand in the [unified inbox](/guides/unified-inbox/), which most workspaces do far more of than they expect.
@@ -94,6 +156,10 @@ A thread counts as yours when the first message in it was one you sent, and as a
 To switch it on, open the mailbox and turn on **Track opens and clicks on direct mail**. See [Mailboxes](/guides/mailboxes/#tracking-direct-mail).
 
 **Per mailbox** ranks your mailboxes by how many messages each mailbox sent and received, and marks the ones that are tracking. **Top correspondents** ranks the people you exchange the most mail with. Your own mailboxes are excluded from that list, so a copy to yourself is not a correspondent.
+
+</Fold>
+
+<Fold>
 
 ## Per-campaign
 
@@ -138,6 +204,10 @@ A click names the browser the link opened in and the device it opened on, becaus
 
 These records back the engagement rows on a contact's [activity timeline](/guides/contacts-crm/#activity-timeline) and the per-campaign breakdown above.
 
+</Fold>
+
+<Fold>
+
 ## Per-mailbox
 
 | Signal | What it tells you |
@@ -150,6 +220,10 @@ These records back the engagement rows on a contact's [activity timeline](/guide
 The overview calls the configured percentage **Reply target** because it controls how much synthetic warmup mail should receive a reply. The Analytics tab reports the measured reply rate from actual sends and replies. Its **Target met** percentage is actual warmup sends divided by planned target volume across the active days in the selected range; it can exceed 100% when volume beats the plan.
 
 Use this to find the one mailbox dragging down a campaign's bounce rate instead of blaming the campaign.
+
+</Fold>
+
+<Fold>
 
 ## A/B analysis
 
@@ -174,6 +248,10 @@ The default winning rule is **reply rate**; you can rank by open or click rate i
 A variant can look like the winner after a handful of sends and flip later. Wait for `medium` or `high` before promoting one. The minimum sample size is configurable in outreach settings.
 </Callout>
 
+</Fold>
+
+<Fold>
+
 ## How to read your numbers
 
 1. Check the four headline rates for your window.
@@ -183,6 +261,8 @@ A variant can look like the winner after a handful of sends and flip later. Wait
 5. Use A/B analysis for copy decisions, and wait for real confidence.
 
 A clean reply rate with low bounces and complaints beats a big open-rate screenshot every time.
+
+</Fold>
 
 ## Related guides
 

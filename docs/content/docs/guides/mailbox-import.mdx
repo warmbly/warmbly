@@ -3,6 +3,50 @@ title: Import mailboxes
 description: "Connect hundreds or thousands of mailboxes from a spreadsheet, a vendor export, or a pasted list."
 ---
 
+**Import mailboxes** connects many mailboxes in one go, from the file your inbox vendor or your previous sending tool gave you. Only an address and a password are required: servers, ports and encryption are found for you.
+
+## Import a file
+
+<Steps>
+
+<Step>
+
+Open **Accounts**, choose **Add account**, then **Import mailboxes**.
+
+</Step>
+
+<Step>
+
+Upload a CSV, TSV or XLSX file, or paste a list such as `address:password`, one mailbox per line.
+
+</Step>
+
+<Step>
+
+Check the preview: each column is matched for you and can be reassigned by hand.
+
+</Step>
+
+<Step>
+
+Start the import. It runs on the server, so closing the tab does not stop it.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- One import takes up to 5,000 mailboxes, from a file of up to 10 MB.
+- Google mailboxes need a 16-letter app password. Microsoft 365 and Outlook.com mailboxes connect with Microsoft sign-in instead.
+- To skip passwords for a whole domain, [connect a whole Google Workspace domain](#connect-a-whole-google-workspace-domain) or [a whole Microsoft 365 organization](#connect-a-whole-microsoft-365-organization).
+- **Inbox vendor** reads the mailboxes straight from the vendor you bought them from, with an API key.
+- Failed rows are grouped by cause, and you can fix and retry them for 7 days without uploading again.
+
+<Fold>
+
+## What an import does
+
 Browsing filters, searches and view choices are [remembered in your browser tab](/guides/browsing/) across refreshes and navigation, separately for each user and workspace.
 
 **Import mailboxes** connects many mailboxes in one go. Open **Accounts**, choose **Add account**, then **Import mailboxes**. It takes the file your inbox vendor or your previous sending tool gave you, works out what each column means and where each domain's mail is hosted, and connects the rows in the background.
@@ -17,6 +61,10 @@ Three other sources skip the file entirely, each reached from the same **Add acc
 
 All three create the same kind of import as a file: it runs in the background, shows the same progress, and groups failures by cause.
 
+</Fold>
+
+<Fold>
+
 ## What it reads
 
 - **A file**: CSV, TSV or XLSX (the active sheet), up to 10 MB. A CSV may separate its columns with commas or semicolons (the separator spreadsheet apps use where the comma is the decimal mark); the header line decides which.
@@ -30,6 +78,10 @@ sam@acme.com:abcd efgh ijkl mnop
 One import takes up to 5,000 mailboxes. Split a larger file and import the rest separately.
 
 The first row is treated as a header unless it holds an email address. **First row is a header** in the dialog overrides the guess.
+
+</Fold>
+
+<Fold>
 
 ## Columns
 
@@ -63,6 +115,10 @@ Every column can be reassigned by hand, or set to be ignored. Password columns a
 
 Security columns accept `SSL`, `TLS`, `SSL/TLS` and `STARTTLS`, and the `true`/`false` SSL columns some exports use. Without one, security follows the port.
 
+</Fold>
+
+<Fold>
+
 ## Where the servers come from
 
 Servers are found once per domain, from DNS and the provider's own published settings, in this order:
@@ -76,6 +132,10 @@ Servers are found once per domain, from DNS and the provider's own published set
 The preview lists each domain with its provider, the servers found, and whether SPF, DKIM and DMARC are published. `smtp_host` and `imap_host` columns, and the port and security columns, override what detection found. A domain nothing finds needs those columns, or the servers entered on each row after the import.
 
 Each mailbox is labelled with where it is hosted and how it signs in. The [API](/api/reference/mailboxes/) returns these as `mail_host` and `auth_method`; a mailbox whose host is not recorded yet, such as one connected before the labels existed, is classified in the background from its domain.
+
+</Fold>
+
+<Fold>
 
 ## What each provider needs
 
@@ -109,6 +169,10 @@ A Microsoft 365 admin can grant consent once for the whole organization, after w
 
 Proton Mail offers no IMAP or SMTP sign-in to other apps; only its Bridge does. Proton rows are flagged as unable to connect. On a [self-hosted instance](/development/install/) whose worker runs on the machine the Bridge is on, map `smtp_host` and `imap_host` columns (and ports) to the Bridge and use the Bridge's own password. See [local mail relays](/guides/mailboxes/#local-mail-relays-proton-bridge).
 
+</Fold>
+
+<Fold>
+
 ## Import from an inbox vendor
 
 Choose **Add account**, then **Inbox vendor**, pick the vendor and paste an API key. That is all any vendor asks for. Warmbly checks the key with the vendor before saving it, lists the mailboxes the key reaches (marking the ones already in the workspace), and imports the ones you pick, or every one not yet connected.
@@ -133,6 +197,10 @@ One vendor account lists up to 10,000 mailboxes.
 - **Passwords the vendor rotates are picked up.** An SMTP and IMAP mailbox that came from a vendor and has stopped with an unresolved connection error is looked at every 15 minutes. When the vendor now holds a different password for it, Warmbly verifies that password against the server and reconnects the mailbox with it. Each mailbox is tried at most once every 6 hours, so a password that still fails is not retried on every pass.
 - **A refused key marks the connection.** A key the vendor accepts but that reaches no workspace is refused with `mailbox_vendor_no_workspace`, since there is nothing to list. When the vendor stops accepting the key, the connection shows as invalid with the vendor's reason, and rows that needed it fail as `vendor_unauthorized` until the key is updated.
 - **Deleting the connection keeps the mailboxes.** They stay connected and keep sending; they are no longer reconnected automatically when the vendor rotates a password.
+
+</Fold>
+
+<Fold>
 
 ## Connect a whole Google Workspace domain
 
@@ -179,6 +247,10 @@ The grant is checked again every hour. When Google stops honoring it (the entry 
 
 Connecting mailboxes through a grant and deleting a grant both reach a whole domain's mail, so like recording one they need a recent confirmation of your sign-in.
 
+</Fold>
+
+<Fold>
+
 ## Connect a whole Microsoft 365 organization
 
 A Global Administrator can approve Warmbly once for the whole Microsoft 365 organization. Mailboxes then connect through Microsoft Graph with application permissions: no sign-in per mailbox. It is the recommended way to connect Microsoft 365 mailboxes.
@@ -209,6 +281,10 @@ Microsoft's newer RBAC for Applications does the same with a management scope an
 
 Pick users from the directory, or connect every enabled one not yet in the workspace. Only users with a mail address are listed. A mailbox already here on its own Microsoft sign-in is marked as one to move, as with Google: connecting it puts it onto the grant in place, and connecting everyone includes it. Moving is optional for Microsoft mailboxes; their own sign-in keeps working. Each mailbox is checked against Microsoft Graph as it connects; a disabled account, or a user without an Exchange Online license, has no mailbox to connect and is refused. As with Google, no token is stored: the backend mints one each time a worker needs it. The grant is checked every hour, its mailboxes stop when the consent is withdrawn and restart when a check succeeds again, a check that gets no answer from Microsoft changes nothing, and deleting it stops every mailbox it connected.
 
+</Fold>
+
+<Fold>
+
 ## When a file meets an admin grant
 
 A file or pasted list does not need to know about grants. When an active grant covers a row's domain, the row connects through it:
@@ -218,6 +294,10 @@ A file or pasted list does not need to know about grants. When an active grant c
 
 The same holds for rows from an inbox vendor. A grant made after the import also counts: rows still waiting for Google or Microsoft sign-in on a domain it covers are queued again and connect through it within a minute, with no need to import them again. The preview marks these rows, and each connected mailbox is labelled with the sign-in method `delegated`. A grant that stops working fails its rows as `mailbox_grant_inactive`; check the grant, then retry them.
 
+</Fold>
+
+<Fold>
+
 ## Mailboxes already connected
 
 An address already in the workspace, connected by anyone, is matched case-insensitively. **If a mailbox is already connected** decides what happens:
@@ -226,6 +306,10 @@ An address already in the workspace, connected by anyone, is matched case-insens
 - **Skip**: the mailbox is left as it is and the row is marked skipped.
 
 A mailbox connected with Google or Microsoft sign-in only takes the settings; there is no password to replace. When an active grant covers its domain, the row moves it onto the grant instead, in place, keeping its history, campaigns and warmup (see [moving off per-mailbox Google sign-in](/guides/mailboxes/#moving-off-per-mailbox-google-sign-in)); **Skip** leaves it as it is. When the same address appears twice in one file, only the first row is imported and the later ones are skipped as **Listed twice in the file**.
+
+</Fold>
+
+<Fold>
 
 ## Settings for every mailbox
 
@@ -239,6 +323,10 @@ The dialog sets these for every mailbox the import connects or updates. A mapped
 
 Tags are added to the ones a mailbox already has. A tag named in the `tags` column that does not exist yet is created. A setting that cannot be applied never fails its row: the mailbox is connected and the row's message says what did not apply. A value that cannot be read at all, such as text in a limit column, fails that row before it is tried. See [sending behavior](/guides/sending-behavior/) and [warmup](/guides/warmup/) for sensible values.
 
+</Fold>
+
+<Fold>
+
 ## Tracking domains and root redirects
 
 The review step makes two choices for every domain in the import at once, and says how many of them an inbox vendor sets up for you. Both are applied as the import connects the domain's mailboxes, and both can be changed later on [sending domains](/guides/sending-domains/).
@@ -249,6 +337,10 @@ The review step makes two choices for every domain in the import at once, and sa
 With more than one domain, **Change per domain** opens a list of every domain with its own tracking host and website, filled in from the base values. Type over either for one domain (a tracking host has to be a subdomain of that domain), untick it to leave that domain out, or press **Reset** to put it back on the base values. Changing a base value updates every domain nobody changed.
 
 A setting that cannot be applied does not fail the row: the mailbox connects and the row's message says what did not apply. In the API these are the `tracking_domains` and `redirects` objects in `options`, each keyed by domain, up to 500 domains each.
+
+</Fold>
+
+<Fold>
 
 ## While it runs
 
@@ -261,6 +353,10 @@ Rows connect 8 at a time, and at most 3 at once against any one mail host, since
 Rows past the workspace's [mailbox allowance](/guides/mailboxes/#mailbox-allowance) fail as **Mailbox limit reached**; the preview says how many will fit. Raise the allowance and retry them.
 
 Cancelling stops the rows not yet started. Rows already connecting finish.
+
+</Fold>
+
+<Fold>
 
 ## When rows fail
 
@@ -327,6 +423,10 @@ Then fix them without re-uploading:
 
 A retry is possible for 7 days after the import finishes. After that the row's credentials are gone and it has to be imported again.
 
+</Fold>
+
+<Fold>
+
 ## What is kept
 
 - Credentials of rows that did not connect are kept, sealed with the workspace's own encryption key, for 7 days after the import finishes so a retry works, then deleted.
@@ -337,9 +437,15 @@ A retry is possible for 7 days after the import finishes. After that the row's c
 
 The saved column mappings and vendor connections travel with a [workspace export](/guides/workspace-export-import/). Imports themselves do not, and neither do admin grants: a grant is recorded only after the workspace proves the domain or organization on the instance it runs on, and an archive proves nothing. The mailboxes a grant connected do travel. On the destination, make the grant again, then pick those users in its directory (they are listed as already connected, so connecting every user not yet here skips them), or import a file of their addresses with **Update** for existing mailboxes. Each one relinks the mailbox that arrived, with its history and settings, rather than adding a second one.
 
+</Fold>
+
+<Fold>
+
 ## API
 
 The import is available to a signed-in session under `/emails/imports`, never to an API key, because it carries passwords. Vendor connections (`/emails/vendors`), admin grants (`/emails/grants`) and sending domains (`/emails/domains`) are session-only for the same reason. See [endpoints](/api/endpoints/#jwt-only) for the routes. `POST /emails/onboarding/smtp-imap/bulk` remains for connecting up to 50 SMTP and IMAP mailboxes in one synchronous call.
+
+</Fold>
 
 ## Related guides
 
