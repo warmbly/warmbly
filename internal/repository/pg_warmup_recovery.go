@@ -113,7 +113,7 @@ func (r *warmupRecoveryRepository) ClaimFilings(ctx context.Context, limit int) 
 		  ELSE INTERVAL '30 minutes' END
 		WHERE id IN (SELECT f.id FROM warmup_pending_filings f
 		  JOIN email_accounts a ON a.id = f.email_account_id
-		  WHERE f.next_attempt_at <= NOW() AND a.worker_id IS NOT NULL
+		  WHERE f.next_attempt_at <= NOW() AND (f.provider_retry_at IS NULL OR f.provider_retry_at <= NOW()) AND a.worker_id IS NOT NULL
 		  ORDER BY f.next_attempt_at LIMIT $1 FOR UPDATE OF f SKIP LOCKED)
 		RETURNING id, payload`, limit)
 	if err != nil {

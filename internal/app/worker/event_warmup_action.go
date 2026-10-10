@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
@@ -12,6 +13,7 @@ import (
 	"github.com/warmbly/warmbly/internal/client/msgraph"
 	"github.com/warmbly/warmbly/internal/client/smtpimap/imap"
 	"github.com/warmbly/warmbly/internal/config"
+	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/storage"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -28,6 +30,7 @@ import (
 // in-process time.AfterFunc here could not.
 func (w *WorkerService) HandleWarmupAction(ctx context.Context, action models.WarmupEmailAction) error {
 	filingPending := false
+	var filingProof *models.WarmupFilingRecoveryProof
 	if gate, ok := w.SyncContextRepository.(repository.WarmupActionAdmission); ok {
 		worker, err := uuid.Parse(w.ID)
 		if err != nil {
@@ -35,7 +38,25 @@ func (w *WorkerService) HandleWarmupAction(ctx context.Context, action models.Wa
 		}
 		if recovery, ok := w.SyncContextRepository.(repository.WarmupActionRecoveryAdmission); ok && action.FilingID != "" && len(action.Actions) == 1 && action.Actions[0] == models.WarmupActionFile {
 			decision, xerr := recovery.AdmitWarmupAction(ctx, models.WarmupActionRequest{MailboxID: action.EmailID, WorkerID: worker, Actions: action.Actions, FilingID: action.FilingID})
-			action.Actions, filingPending, err = decision.Actions, decision.FilingPending, xerr
+			action.Actions, filingPending, filingProof, err = decision.Actions, decision.FilingPending, decision.FilingRecovery, xerr
+			if err == nil {
+				filing, perr := uuid.Parse(action.FilingID)
+				if filingProof != nil && (perr != nil || !filingPending || len(action.Actions) != 1 || action.Actions[0] != models.WarmupActionFile || !filingProof.ValidFor(action.EmailID, worker, filing)) {
+					return errors.New("invalid warmup filing recovery proof")
+				}
+				if pending, ok := w.pendingFilingDeferrals.Load(filing); ok {
+					request := pending.(models.WarmupFilingDeferralRequest)
+					if request.MailboxID == action.EmailID && request.WorkerID == worker && len(action.Actions) == 1 && action.Actions[0] == models.WarmupActionFile && (filingProof == nil || filingProof.ProviderRetryAt == nil || filingProof.ProviderRetryAt.Before(request.ProviderRetryAt)) {
+						return w.deferWarmupFiling(ctx, request)
+					}
+					if filingProof != nil {
+						w.pendingFilingDeferrals.CompareAndDelete(filing, request)
+					}
+				}
+				if filingProof != nil && filingProof.ProviderRetryAt != nil && filingProof.ProviderRetryAt.After(time.Now()) {
+					return nil
+				}
+			}
 		} else {
 			action.Actions, err = gate.PermittedWarmupActions(ctx, action.EmailID, worker, action.Actions)
 		}
@@ -54,6 +75,9 @@ func (w *WorkerService) HandleWarmupAction(ctx context.Context, action models.Wa
 		Msg("Processing warmup email action")
 
 	if len(action.Actions) == 0 {
+		if filing, err := uuid.Parse(action.FilingID); err == nil {
+			w.pendingFilingDeferrals.Delete(filing)
+		}
 		return nil
 	}
 
@@ -108,6 +132,12 @@ func (w *WorkerService) HandleWarmupAction(ctx context.Context, action models.Wa
 		return nil
 	}
 	if filingPending && len(action.Actions) == 1 && action.Actions[0] == models.WarmupActionFile {
+		if at := warmupProviderRetryAt(err); filingProof != nil && !at.IsZero() {
+			request := models.WarmupFilingDeferralRequest{MailboxID: action.EmailID, WorkerID: filingProof.WorkerID, FilingID: filingProof.FilingID, ProviderRetryAt: at}
+			if deferErr := w.deferWarmupFiling(ctx, w.retainFilingDeferral(request)); deferErr != nil {
+				return deferErr
+			}
+		}
 		// Only the confirmed durable filing queue can take over this failed command.
 		log.Warn().Err(err).Str("email_id", action.EmailID.String()).Str("filing_id", action.FilingID).
 			Msg("Warmup filing deferred to durable recovery")
@@ -130,6 +160,46 @@ func (w *WorkerService) HandleWarmupAction(ctx context.Context, action models.Wa
 // warmupDeleteRedeliveries bounds how many times a failed retention delete or
 // removal check is redelivered before it is given up.
 const warmupDeleteRedeliveries = 5
+
+func warmupProviderRetryAt(err error) time.Time {
+	var mailErr *errx.MailError
+	if !errors.As(err, &mailErr) || mailErr.Failure == nil || mailErr.Failure.RetryAt == nil {
+		return time.Time{}
+	}
+	return mailErr.Failure.RetryAt.UTC()
+}
+
+func (w *WorkerService) retainFilingDeferral(request models.WarmupFilingDeferralRequest) models.WarmupFilingDeferralRequest {
+	for {
+		old, loaded := w.pendingFilingDeferrals.LoadOrStore(request.FilingID, request)
+		if !loaded {
+			return request
+		}
+		prior := old.(models.WarmupFilingDeferralRequest)
+		if prior.MailboxID == request.MailboxID && prior.WorkerID == request.WorkerID && prior.ProviderRetryAt.After(request.ProviderRetryAt) {
+			return prior
+		}
+		if w.pendingFilingDeferrals.CompareAndSwap(request.FilingID, prior, request) {
+			return request
+		}
+	}
+}
+
+func (w *WorkerService) deferWarmupFiling(ctx context.Context, request models.WarmupFilingDeferralRequest) error {
+	authority, ok := w.SyncContextRepository.(repository.WarmupFilingDeferralAuthority)
+	if !ok {
+		return errors.New("warmup filing deferral authority unavailable")
+	}
+	out, err := authority.DeferWarmupFiling(ctx, request)
+	if err != nil {
+		return err
+	}
+	if !out.Persisted || !out.FilingRecovery.ValidFor(request.MailboxID, request.WorkerID, request.FilingID) || out.FilingRecovery.ProviderRetryAt == nil || out.FilingRecovery.ProviderRetryAt.Before(request.ProviderRetryAt) {
+		return errors.New("unconfirmed warmup filing deferral")
+	}
+	w.pendingFilingDeferrals.CompareAndDelete(request.FilingID, request)
+	return nil
+}
 
 func (w *WorkerService) runGoogleWarmupActions(ctx context.Context, mail *wmail.WMail, action models.WarmupEmailAction) error {
 	placement, folder := warmupFiling(action)
