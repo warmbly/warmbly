@@ -5,9 +5,20 @@ description: Why warmup exists, how providers read it, and how to do it without 
 
 Warmup is the practice of sending small, conversational volumes of mail from a new (or recently dormant) mailbox to gradually build a positive reputation with mailbox providers like Google, Microsoft, Yahoo and Apple. The goal isn't a one-off score. It's a track record. Mailbox providers reward consistency.
 
+<ShortVersion>
+
+- Warmup sends small, conversational volumes from a new mailbox so providers learn to trust it.
+- Start at `10` a day, add `1` a day, and stop at `40`.
+- Domain warmup commonly takes 3 to 6 weeks.
+- Keep it running after campaigns start: reputation has to be maintained, not earned once.
+
+</ShortVersion>
+
 ## What "warmup" actually means
 
 Modern warmup tools generate this traffic between participating mailboxes: your mailbox sends short, plain-text messages to other warmed mailboxes, those mailboxes open and reply, and the cycle repeats. Done well, the pattern looks like a real human starting to use a new inbox.
+
+<WarmupExchange />
 
 ## Why providers care about it
 
@@ -20,6 +31,8 @@ Warmup gives them signal. Mailboxes that send small volumes, get opens, get repl
 ### Gradual volume growth
 
 Start low and ramp slowly. Warmbly's defaults are 10 emails per day to start, +1 per day, with a ceiling of 40 per day. That ceiling exists on purpose: warmup that climbs to 100/day looks unnatural and starts to look like a bot.
+
+<WarmupRamp />
 
 ### Realistic spacing
 
@@ -61,6 +74,8 @@ In Warmbly, free-tier mailboxes never silently appear in the premium pool. Even 
 ## When to quarantine a mailbox
 
 Complaints, bounces and tampering are things a mailbox does to other people, so they act early. Spam placement is different: it is a reading of reputation, and warming is how reputation recovers, so pulling a struggling mailbox out of warmup takes away the one thing that would fix it. Placement only ever slows a mailbox down. Our policy:
+
+<HealthBands />
 
 - **Watch**: spam placement ≥ 10% over a 20-delivery sample, or complaint rate ≥ 0.03%. Lower volume, increase spacing.
 - **Throttled**: spam placement ≥ 20%. Warmup keeps running at half volume; cold volume is halved too. Lifts by itself once placement recovers.

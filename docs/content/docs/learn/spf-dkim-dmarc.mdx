@@ -3,6 +3,15 @@ title: SPF, DKIM, and DMARC
 description: The three authentication records every cold-email sender needs, the alignment rules nobody explains, and the practical step-by-step setup.
 ---
 
+<ShortVersion>
+
+- SPF lists the servers allowed to send mail for your domain.
+- DKIM signs each message so the receiver can tell it was not changed in flight.
+- DMARC checks that they match the From address, and tells receivers what to do when they do not.
+- Roll DMARC out in steps, from `p=none` to `p=reject`.
+
+</ShortVersion>
+
 ## Why these three records exist
 
 Mailbox providers receive a message and need to answer two questions:
@@ -11,6 +20,8 @@ Mailbox providers receive a message and need to answer two questions:
 2. Was the message changed in flight?
 
 SPF answers the first. DKIM answers both. DMARC ties the answers to the visible "From" address and tells the receiver what to do if anything is off.
+
+<AuthChecks />
 
 ## SPF: Sender Policy Framework
 
@@ -81,6 +92,8 @@ Most senders should use relaxed alignment. Strict only matters when you're tryin
 5. Move to `p=quarantine; pct=25`. Ramp `pct` to 100 over a month while watching reports.
 6. When clean, move to `p=reject`. This is the strongest spoof protection.
 
+<DmarcRollout />
+
 ## Common mistakes
 
 - Multiple SPF records on the same domain: receivers treat that as PermError. There must be exactly one SPF record.
@@ -96,6 +109,8 @@ For a company at `acme.com`:
 - `acme.com` carries transactional and human mail. DMARC reject after rollout.
 - `outreach.acme.com` carries cold campaigns, with its own SPF, DKIM, and DMARC.
 - `news.acme.com` carries newsletters, with separate authentication and reputation.
+
+<SubdomainPattern />
 
 The sub-domain pattern keeps cold reputation issues from contaminating the inboxes you use to run the company. It also lets you change cold-email providers without disturbing transactional mail.
 
