@@ -746,6 +746,9 @@ func (s *analyticsService) GetDashboardAnalytics(ctx context.Context, orgID uuid
 	}
 	if filter.AllowedCampaigns != nil {
 		scope = withinCampaigns(scope, filter.AllowedCampaigns)
+		if view != nil {
+			view.CampaignCount = len(scope.CampaignIDs)
+		}
 	}
 
 	// Get overall stats
