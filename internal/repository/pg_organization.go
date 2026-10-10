@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/mail"
 	"strings"
 	"time"
 
@@ -73,6 +74,7 @@ type OrganizationRepository interface {
 	GetMemberCount(ctx context.Context, orgID uuid.UUID) (int, error)
 
 	// Invitations
+	CreateInvitedUser(ctx context.Context, tokenHash string, email *mail.Address, passwordHash string) (*models.User, *models.OrganizationMember, error)
 	CreateInvitation(ctx context.Context, inv *models.OrganizationInvitation) error
 	GetInvitationByToken(ctx context.Context, tokenHash string) (*models.OrganizationInvitation, error)
 	SetInvitationLinkToken(ctx context.Context, orgID, invitationID uuid.UUID, linkTokenHash string) (bool, error)

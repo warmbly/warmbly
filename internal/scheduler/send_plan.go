@@ -144,6 +144,13 @@ func (s *schedulerService) planMailbox(ctx context.Context, pass *campaignPass, 
 			d.state = models.MailboxPlanDomainAuth
 		case gateResting:
 			d.state = models.MailboxPlanResting
+		case gateRecovery:
+			d.state = models.MailboxPlanRecovery
+		case gateCooldown:
+			d.state = models.MailboxPlanCooldown
+			d.reopensAt = gate.reopensAt
+		case gateAdmission:
+			d.state = models.MailboxPlanAdmission
 		default:
 			d.state = models.MailboxPlanHealthHold
 		}
@@ -468,6 +475,7 @@ func (s *schedulerService) PlanCampaignDay(ctx context.Context, campaignID uuid.
 		{kind: models.SendLimitCampaignDailyLimit}, {kind: models.SendLimitCampaignRamp},
 		{kind: models.SendLimitWarmupGraduation}, {kind: models.SendLimitWorkspaceRisk},
 		{kind: models.SendLimitDomainAuth}, {kind: models.SendLimitResting}, {kind: models.SendLimitHealthHold},
+		{kind: models.SendLimitRecovery}, {kind: models.SendLimitCooldown},
 		{kind: models.SendLimitOtherCampaigns}, {kind: models.SendLimitHealthPace},
 		{kind: models.SendLimitMailboxHours}, {kind: models.SendLimitSendingBehavior}, {kind: models.SendLimitSpacing},
 	}
@@ -499,6 +507,10 @@ func (s *schedulerService) PlanCampaignDay(ctx context.Context, campaignID uuid.
 			add(models.SendLimitResting, d.byGate)
 		case gateHealth:
 			add(models.SendLimitHealthHold, d.byGate)
+		case gateRecovery, gateAdmission:
+			add(models.SendLimitRecovery, d.byGate)
+		case gateCooldown:
+			add(models.SendLimitCooldown, d.byGate)
 		}
 		add(models.SendLimitOtherCampaigns, d.byOther)
 		add(models.SendLimitHealthPace, d.byHealthPace)

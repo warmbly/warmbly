@@ -10,6 +10,8 @@ export type SendLimitKind =
     | "domain_auth"
     | "resting"
     | "warmup_health_hold"
+    | "send_recovery"
+    | "send_cooldown"
     | "other_campaigns"
     | "warmup_health_pace"
     | "mailbox_hours"
@@ -31,6 +33,9 @@ export type MailboxPlanState =
     | "domain_auth"
     | "resting"
     | "health_hold"
+    | "send_recovery"
+    | "send_cooldown"
+    | "send_authority"
     | "no_worker"
     | "window_closed";
 

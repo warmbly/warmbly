@@ -1652,11 +1652,16 @@ func (r *emailRepository) Update(ctx context.Context, orgID, emailAccountID stri
 		if strings.ContainsAny(resolution.ConfirmationReference, "\r\n") || len(resolution.ConfirmationReference) > 256 {
 			return nil, errx.ErrInvalid
 		}
-		var evidenceTask any
-		if resolution.EvidenceTaskID != nil {
-			evidenceTask = *resolution.EvidenceTaskID
-		}
-		tag, resolveErr := tx.Exec(ctx, `WITH held AS(
+		if resolution.HeldReason == "unknown" {
+			if xerr := queueUnknownSendResolution(ctx, tx, orgID, emailAccountID, resolution); xerr != nil {
+				return nil, xerr
+			}
+		} else {
+			var evidenceTask any
+			if resolution.EvidenceTaskID != nil {
+				evidenceTask = *resolution.EvidenceTaskID
+			}
+			tag, resolveErr := tx.Exec(ctx, `WITH held AS(
 		 SELECT ea.organization_id,ea.id,ea.send_recovery_task_id,ea.send_recovery_reason,t.completed_at,ea.last_synced_at
 		 FROM email_accounts ea LEFT JOIN tasks t ON t.id=ea.send_recovery_task_id
 		 WHERE ea.organization_id=$1 AND ea.id=$2 AND ea.status='active' AND ea.send_recovery_hold AND ea.send_recovery_task_id=$6 AND ea.send_recovery_reason=$7 AND ea.send_recovery_reason IN('authentication','permanent','conflict')
@@ -1670,12 +1675,13 @@ func (r *emailRepository) Update(ctx context.Context, orgID, emailAccountID stri
 		 SELECT organization_id,id,send_recovery_task_id,$4,send_recovery_reason,$3,$5 FROM valid RETURNING email_account_id)
 		 UPDATE email_accounts ea SET send_recovery_hold=false,send_recovery_reason=NULL,send_recovery_task_id=NULL
 		 FROM history WHERE ea.id=history.email_account_id`, orgID, emailAccountID, resolution.EvidenceType, evidenceTask, strings.TrimSpace(resolution.ConfirmationReference), resolution.HeldTaskID, resolution.HeldReason)
-		if resolveErr != nil {
-			db.CaptureError(resolveErr, "resolve send recovery", nil, "exec")
-			return nil, errx.InternalError()
-		}
-		if tag.RowsAffected() != 1 {
-			return nil, errx.ErrInvalid
+			if resolveErr != nil {
+				db.CaptureError(resolveErr, "resolve send recovery", nil, "exec")
+				return nil, errx.InternalError()
+			}
+			if tag.RowsAffected() != 1 {
+				return nil, errx.ErrInvalid
+			}
 		}
 	}
 	query := fmt.Sprintf(`
@@ -2369,6 +2375,7 @@ func (r *emailRepository) GetByTags(ctx context.Context, scope AccountScope, tag
 			db.CaptureError(err, "", nil, "scan")
 			return nil, errx.InternalError()
 		}
+		i.OrganizationID = &orgID
 		i.Tags = []string{} // Tags not fetched in this query
 		emails = append(emails, i)
 	}
@@ -2424,6 +2431,7 @@ func (r *emailRepository) GetAllActiveInScope(ctx context.Context, scope Account
 			db.CaptureError(err, "", nil, "scan")
 			return nil, errx.InternalError()
 		}
+		i.OrganizationID = &orgID
 		i.Tags = []string{}
 		emails = append(emails, i)
 	}
@@ -2497,6 +2505,7 @@ func (r *emailRepository) GetByCampaignSenders(ctx context.Context, scope Accoun
 			db.CaptureError(err, "", nil, "scan")
 			return nil, errx.InternalError()
 		}
+		i.OrganizationID = &orgID
 		i.Tags = []string{}
 		sender.Account = i
 		out = append(out, sender)

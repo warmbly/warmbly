@@ -54,6 +54,13 @@ func (r *organizationRepository) AddMemberWithRoles(ctx context.Context, member 
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
+	if err := addMemberWithRoles(ctx, tx, member, roleIDs); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func addMemberWithRoles(ctx context.Context, tx pgx.Tx, member *models.OrganizationMember, roleIDs []uuid.UUID) error {
 	if member.Access.Restricted() {
 		member.AccessScope = models.AccessScopeRestricted
 	}
@@ -84,7 +91,7 @@ func (r *organizationRepository) AddMemberWithRoles(ctx context.Context, member 
 	if err := recomputeMemberPermissions(ctx, tx, member.OrganizationID, member.UserID); err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	return nil
 }
 
 // HydrateInvitationRoles fills the Roles slice on each pending invitation

@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -8,6 +10,122 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
 	"github.com/warmbly/warmbly/internal/models"
 )
+
+func TestLiveUnknownResolutionRejectsMissingEvidenceAndLiveExecution(t *testing.T) {
+	f, r := lineageFixture(t)
+	ctx := t.Context()
+	repo := NewEmailRepostory(&db.DB{Pool: f.pool}, nil)
+	if _, err := f.pool.Exec(ctx, `UPDATE tasks SET status='completed',completed_at=NOW()-INTERVAL '5 minutes',send_reserved_at=NOW()-INTERVAL '5 minutes',send_result_state='unknown' WHERE id=$1`, f.task); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(ctx, `UPDATE email_accounts SET send_recovery_hold=true,send_recovery_reason='unknown',send_recovery_task_id=$2 WHERE id=$1`, f.sender, f.task); err != nil {
+		t.Fatal(err)
+	}
+	valid := models.SendRecoveryResolution{HeldTaskID: f.task, HeldReason: "unknown", EvidenceType: "operator_confirmed_not_sent", ConfirmationReference: "Provider ticket fixture-907"}
+	for _, mutate := range []func(*models.SendRecoveryResolution){
+		func(v *models.SendRecoveryResolution) { v.ConfirmationReference = " " },
+		func(v *models.SendRecoveryResolution) { v.ConfirmationReference = "unsafe\nreference" },
+		func(v *models.SendRecoveryResolution) { v.HeldTaskID = uuid.New() },
+		func(v *models.SendRecoveryResolution) { v.HeldReason = "permanent" },
+		func(v *models.SendRecoveryResolution) { v.EvidenceType = "no_sent_copy" },
+		func(v *models.SendRecoveryResolution) { v.EvidenceType = "operator_confirmed_sent" },
+		func(v *models.SendRecoveryResolution) { v.MessageID = "unsent-cannot-have-message@example.test" },
+		func(v *models.SendRecoveryResolution) { v.EvidenceTaskID = &f.task },
+	} {
+		v := valid
+		mutate(&v)
+		if _, xerr := repo.Update(ctx, f.org.String(), f.sender.String(), &models.UpdateEmail{SendRecoveryResolution: &v}); xerr == nil {
+			t.Fatalf("unsafe evidence accepted: %+v", v)
+		}
+	}
+	if _, err := f.pool.Exec(ctx, `UPDATE tasks SET send_executor_started_at=NOW() WHERE id=$1`, f.task); err != nil {
+		t.Fatal(err)
+	}
+	if _, xerr := repo.Update(ctx, f.org.String(), f.sender.String(), &models.UpdateEmail{SendRecoveryResolution: &valid}); xerr == nil {
+		t.Fatal("live provider execution resolved")
+	}
+	if _, err := f.pool.Exec(ctx, `UPDATE tasks SET send_executor_started_at=NOW()-INTERVAL '5 minutes' WHERE id=$1`, f.task); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(models.SendEmailResult{TaskID: f.task, Success: true, MessageID: "already-sent@example.test"})
+	if _, err := f.pool.Exec(ctx, `UPDATE tasks SET send_executor_result=$2 WHERE id=$1`, f.task, raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, xerr := repo.Update(ctx, f.org.String(), f.sender.String(), &models.UpdateEmail{SendRecoveryResolution: &valid}); xerr == nil {
+		t.Fatal("operator overrode durable provider outcome")
+	}
+	if _, err := f.pool.Exec(ctx, `UPDATE tasks SET send_executor_result=NULL WHERE id=$1`, f.task); err != nil {
+		t.Fatal(err)
+	}
+	other := uuid.New()
+	if _, err := f.pool.Exec(ctx, `INSERT INTO tasks(id,email_account_id,task_type,status,message_id,send_result_state)VALUES($1,$2,'email','completed','','unknown')`, other, f.sender); err != nil {
+		t.Fatal(err)
+	}
+	if _, xerr := repo.Update(ctx, f.org.String(), f.sender.String(), &models.UpdateEmail{SendRecoveryResolution: &valid}); xerr != nil {
+		t.Fatal(xerr)
+	}
+	results, err := r.ListUnappliedSendResults(ctx, 200)
+	if err != nil || len(results) != 1 {
+		t.Fatal("confirmed outcome unavailable", err, len(results))
+	}
+	if err := r.ApplySendResult(ctx, results[0], func(ctx context.Context) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	var held bool
+	var heldTask uuid.UUID
+	if err := f.pool.QueryRow(ctx, `SELECT send_recovery_hold,send_recovery_task_id FROM email_accounts WHERE id=$1`, f.sender).Scan(&held, &heldTask); err != nil {
+		t.Fatal(err)
+	}
+	if !held || heldTask != other {
+		t.Fatal("resolving one unknown freed another", held, heldTask)
+	}
+	native := models.SendEmailResult{TaskID: f.task, Success: true, MessageID: "late@example.test"}
+	raw, err = json.Marshal(native)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(ctx, `UPDATE tasks SET send_executor_result=$2 WHERE id=$1`, f.task, raw); err != nil {
+		t.Fatal(err)
+	}
+	results, err = r.ListUnappliedSendResults(ctx, 200)
+	if err != nil || len(results) != 1 || results[0].TaskID != f.task {
+		t.Fatal("late definitive outcome unavailable", err, len(results))
+	}
+	if err := r.ApplySendResult(ctx, results[0], func(context.Context) error { t.Fatal("late result changed committed accounting"); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	var reason string
+	if err := f.pool.QueryRow(ctx, `SELECT send_recovery_reason,send_recovery_task_id FROM email_accounts WHERE id=$1`, f.sender).Scan(&reason, &heldTask); err != nil {
+		t.Fatal(err)
+	}
+	if reason != "unknown" || heldTask != other {
+		t.Fatal("late conflict displaced a different unknown hold", reason, heldTask)
+	}
+	results, err = r.ListUnappliedSendResults(ctx, 200)
+	if err != nil || len(results) != 0 {
+		t.Fatal("resolved conflict replayed on every sweep", err, len(results))
+	}
+	if _, err := f.pool.Exec(ctx, `UPDATE tasks SET status='completed',send_reserved_at=NOW()-INTERVAL '5 minutes',completed_at=NOW()-INTERVAL '4 minutes' WHERE id=$1`, other); err != nil {
+		t.Fatal(err)
+	}
+	second := models.SendRecoveryResolution{HeldTaskID: other, HeldReason: "unknown", EvidenceType: "operator_confirmed_sent", MessageID: "second@example.test", ConfirmationReference: "Provider ticket fixture-908"}
+	if _, xerr := repo.Update(ctx, f.org.String(), f.sender.String(), &models.UpdateEmail{SendRecoveryResolution: &second}); xerr != nil {
+		t.Fatal(xerr)
+	}
+	results, err = r.ListUnappliedSendResults(ctx, 200)
+	if err != nil || len(results) != 1 || results[0].TaskID != other {
+		t.Fatal("second confirmation unavailable", err, len(results))
+	}
+	if err := r.ApplySendResult(ctx, results[0], func(context.Context) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.pool.QueryRow(ctx, `SELECT send_recovery_reason,send_recovery_task_id FROM email_accounts WHERE id=$1`, f.sender).Scan(&reason, &heldTask); err != nil {
+		t.Fatal(err)
+	}
+	if reason != "conflict" || heldTask != f.task {
+		t.Fatal("late conflict disappeared after other unknown was resolved", reason, heldTask)
+	}
+}
 
 func TestLiveSendRecoveryResolutionRequiresEvidenceAndRetainsUnknown(t *testing.T) {
 	f, _ := lineageFixture(t)

@@ -38,6 +38,9 @@ export type EstimateSenderState =
     | "ramping"
     | "throttled"
     | "health_hold"
+    | "send_recovery"
+    | "send_cooldown"
+    | "send_authority"
     | "domain_auth"
     | "resting"
     | "no_worker";

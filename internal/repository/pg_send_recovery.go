@@ -163,7 +163,11 @@ func (r *taskRepository) ApplySendResult(ctx context.Context, result models.Send
 	var applied *time.Time
 	var mailboxID uuid.UUID
 	var status string
-	err = tx.QueryRow(ctx, `SELECT send_result_state, send_result_applied_at, email_account_id, status::text FROM tasks WHERE id = $1`, result.TaskID).Scan(&previous, &applied, &mailboxID, &status)
+	var reserved, warmupAuthorized bool
+	err = tx.QueryRow(ctx, `SELECT send_result_state, send_result_applied_at, email_account_id, status::text,
+	 send_reserved_at IS NOT NULL OR send_executor_nonce IS NOT NULL OR send_executor_started_at IS NOT NULL OR send_executor_result IS NOT NULL,
+	 EXISTS(SELECT 1 FROM warmup_tasks WHERE task_id=tasks.id AND dispatch_nonce IS NOT NULL)
+	 FROM tasks WHERE id = $1`, result.TaskID).Scan(&previous, &applied, &mailboxID, &status, &reserved, &warmupAuthorized)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
@@ -173,11 +177,19 @@ func (r *taskRepository) ApplySendResult(ctx context.Context, result models.Send
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 269))`, mailboxID.String()); err != nil {
 		return err
 	}
+	// A pre-dispatch failure cannot leave ambiguous provider execution behind.
+	if resultState(result) == "unknown" && status == "failed" && !reserved && !warmupAuthorized {
+		result.Error = &models.EmailSendError{Failure: &errx.SendFailure{Protocol: "internal", Stage: "prepare", Scope: "mailbox", Disposition: errx.SendRetry}}
+	}
 	if applied != nil || (previous != nil && *previous != "unknown") {
 		state := resultState(result)
 		if previous != nil && state != "unknown" && state != *previous {
+			if _, err = tx.Exec(ctx, `UPDATE send_recovery_resolutions SET conflict_detected_at=NOW()
+				WHERE recovery_task_id=$1 AND previous_reason='unknown' AND confirmed_result IS NOT NULL`, result.TaskID); err != nil {
+				return err
+			}
 			_, err = tx.Exec(ctx, `UPDATE email_accounts SET send_recovery_hold = true, send_recovery_reason = 'conflict', send_recovery_task_id = $2
-				WHERE id = $1 AND (NOT send_recovery_hold OR send_recovery_reason = 'unknown')`, mailboxID, result.TaskID)
+				WHERE id = $1 AND (NOT send_recovery_hold OR (send_recovery_reason = 'unknown' AND send_recovery_task_id = $2))`, mailboxID, result.TaskID)
 			if err != nil {
 				return err
 			}
@@ -230,11 +242,18 @@ func (r *taskRepository) ApplySendResult(ctx context.Context, result models.Send
 
 func persistSendHold(ctx context.Context, tx pgx.Tx, mailboxID uuid.UUID, result models.SendEmailResult, state string) error {
 	if state != "unknown" {
-		_, err := tx.Exec(ctx, `UPDATE email_accounts SET
-			send_recovery_task_id = (SELECT id FROM tasks WHERE email_account_id = $1 AND send_result_state = 'unknown' ORDER BY created_at, id LIMIT 1),
-			send_recovery_hold = EXISTS (SELECT 1 FROM tasks WHERE email_account_id = $1 AND send_result_state = 'unknown'),
-			send_recovery_reason = CASE WHEN EXISTS (SELECT 1 FROM tasks WHERE email_account_id = $1 AND send_result_state = 'unknown') THEN 'unknown' END
-			WHERE id = $1 AND send_recovery_task_id = $2 AND send_recovery_reason = 'unknown'`, mailboxID, result.TaskID)
+		_, err := tx.Exec(ctx, `WITH next_hold AS (
+			SELECT id,reason FROM (
+			 SELECT t.id,'unknown' AS reason,1 AS priority,t.created_at FROM tasks t
+			 WHERE t.email_account_id=$1 AND t.send_result_state='unknown'
+			 UNION ALL
+			 SELECT t.id,'conflict',2,t.created_at FROM send_recovery_resolutions r JOIN tasks t ON t.id=r.recovery_task_id
+			 WHERE t.email_account_id=$1 AND r.previous_reason='unknown' AND r.conflict_detected_at IS NOT NULL
+			 AND NOT EXISTS(SELECT 1 FROM send_recovery_resolutions resolved WHERE resolved.recovery_task_id=t.id AND resolved.previous_reason='conflict')
+			) candidates ORDER BY priority,created_at,id LIMIT 1)
+			UPDATE email_accounts ea SET send_recovery_task_id=n.id,send_recovery_hold=n.id IS NOT NULL,send_recovery_reason=n.reason
+			FROM (SELECT 1) singleton LEFT JOIN next_hold n ON true
+			WHERE ea.id=$1 AND ea.send_recovery_task_id=$2 AND ea.send_recovery_reason='unknown'`, mailboxID, result.TaskID)
 		if err != nil {
 			return err
 		}
@@ -264,6 +283,9 @@ func persistSendHold(ctx context.Context, tx pgx.Tx, mailboxID uuid.UUID, result
 		return nil
 	}
 	if f.Disposition == errx.SendRetry || f.Disposition == errx.SendThrottle {
+		if f.Protocol == "internal" && f.Stage == "prepare" {
+			return nil
+		}
 		until := f.RetryAt
 		if until == nil {
 			// Bounded product backoff; not a provider promise.

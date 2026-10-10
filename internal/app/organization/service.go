@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"net/mail"
 	"regexp"
 	"strconv"
 	"strings"
@@ -88,6 +89,7 @@ type OrganizationService interface {
 	// manage_testers bit plus the admin audit row the caller writes.
 	AttachTester(ctx context.Context, orgID, userID, adminID, roleID uuid.UUID) (*models.OrganizationMember, *errx.Error)
 	AcceptInvitation(ctx context.Context, token string, userID uuid.UUID, email string) (*models.OrganizationMember, *errx.Error)
+	CreateInvitedUser(ctx context.Context, token string, email *mail.Address, passwordHash string) (*models.User, *models.OrganizationMember, *errx.Error)
 	AcceptInvitationByID(ctx context.Context, invitationID, userID uuid.UUID, email string) (*models.OrganizationMember, *errx.Error)
 	PreviewInvitation(ctx context.Context, token string) (*models.InvitationPreview, *errx.Error)
 	GetInvitationToken(ctx context.Context, orgID, invitationID uuid.UUID) (string, *errx.Error)
@@ -785,7 +787,23 @@ func toMemberRoles(roles []models.OrganizationRole) []models.MemberRole {
 	return out
 }
 
-// AcceptInvitation accepts an invitation and adds the user as a member
+// CreateInvitedUser provisions a new account and its invitation membership atomically.
+func (s *organizationService) CreateInvitedUser(ctx context.Context, token string, email *mail.Address, passwordHash string) (*models.User, *models.OrganizationMember, *errx.Error) {
+	u, member, err := s.orgRepo.CreateInvitedUser(ctx, crypt.SHA256(token), email, passwordHash)
+	if errors.Is(err, repository.ErrInvitationInvalid) {
+		return nil, nil, errx.ErrInvitationInvalid
+	}
+	if errors.Is(err, repository.ErrUserEmailTaken) {
+		return nil, nil, errx.ErrAccountExists
+	}
+	if err != nil {
+		errs.CaptureException(err)
+		return nil, nil, errx.InternalError()
+	}
+	return u, member, nil
+}
+
+// AcceptInvitation accepts an invitation and adds the user as a member.
 func (s *organizationService) AcceptInvitation(ctx context.Context, token string, userID uuid.UUID, email string) (*models.OrganizationMember, *errx.Error) {
 	inv, err := s.orgRepo.GetInvitationByToken(ctx, crypt.SHA256(token))
 	if err != nil {

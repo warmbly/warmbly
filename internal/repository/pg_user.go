@@ -100,6 +100,14 @@ var ErrUserEmailTaken = errors.New("an account with this email address already e
 var ErrUserNotFound = errors.New("no such account")
 
 func (r *userRepository) CreateUser(ctx context.Context, email *mail.Address, passwordHash string) (*models.User, error) {
+	return createUser(ctx, r.DB, email, passwordHash)
+}
+
+type userCreator interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+func createUser(ctx context.Context, store userCreator, email *mail.Address, passwordHash string) (*models.User, error) {
 	id := uuid.New()
 
 	// The stored form is decided here, not by the caller, because the account
@@ -132,7 +140,7 @@ func (r *userRepository) CreateUser(ctx context.Context, email *mail.Address, pa
 		now,
 	}
 
-	_, err := r.DB.Exec(
+	_, err := store.Exec(
 		ctx,
 		q,
 		params...)

@@ -46,6 +46,9 @@ const STATE: Record<EstimateSenderState, { label: string; cls: string }> = {
     domain_auth: { label: "DNS failing", cls: "bg-rose-50 text-rose-700" },
     resting: { label: "Resting", cls: "bg-slate-100 text-slate-600" },
     no_worker: { label: "Reconnecting", cls: "bg-slate-100 text-slate-600" },
+    send_recovery: { label: "Send recovery", cls: "bg-rose-50 text-rose-700" },
+    send_cooldown: { label: "Cooling down", cls: "bg-amber-50 text-amber-700" },
+    send_authority: { label: "Send unavailable", cls: "bg-slate-100 text-slate-600" },
 };
 
 function capLabel(s: CampaignEstimateSender, tz?: string): string {

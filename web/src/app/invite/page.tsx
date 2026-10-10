@@ -4,7 +4,7 @@ import { DashboardImage } from "@/components/ui/dashboard-image";
 //
 // The token is the capability: anyone holding it can see who invited them
 // where (a safe preview, no permissions/ids), then accept. Works for both
-// brand-new users (sign up, bounce back, accept) and logged-in users.
+// brand-new users (sign up and join) and logged-in users (return to accept).
 
 import React from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -53,7 +53,7 @@ export default function InviteAcceptPage() {
     const registerSearch = {
         invite: token ?? "",
         email: invitedEmail || undefined,
-        next: nextPath,
+        next: "/app/emails",
     };
     const signupClosed = authConfig.registration === "true";
     const signedInEmail = me.data?.email ?? "";

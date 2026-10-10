@@ -30,7 +30,7 @@ import type { SSOLinkChallenge } from "@/lib/api/models/auth/LoginResult";
 import beginSSO from "@/lib/api/client/auth/beginSSO";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
-import safeNext from "@/lib/helper/safeNext";
+import { postAuthNext } from "@/lib/helper/safeNext";
 import { hrefTarget } from "@/lib/routerSearch";
 import { captureException } from "@/lib/observability";
 import { isEmpty, readAcquisition } from "@/lib/acquisition";
@@ -245,16 +245,22 @@ export default function LoginPage() {
     const passkeysEnabled = authConfig.passkeys;
 
     /* Mode change — update URL without remounting */
+    const invitationConsumed = useRef(false);
     const handleModeChange = (m: "signin" | "signup") => {
         setMode(m);
         setRefusal(null);
         // Keep the query string: dropping it is how ?invite= and ?next= were
         // silently lost on a toggle, turning an invited signup into a refused one.
         // The current state carries the router's entry key; null would wipe it.
+        const params = new URLSearchParams(location.searchStr);
+        if (invitationConsumed.current) {
+            params.delete("invite");
+            params.set("next", postAuthNext(params.get("next"), true));
+        }
         window.history.replaceState(
             window.history.state,
             "",
-            `${m === "signin" ? "/auth/login" : "/auth/register"}${location.searchStr}`,
+            `${m === "signin" ? "/auth/login" : "/auth/register"}${params.size ? `?${params}` : ""}`,
         );
     };
     // /invite sends the invited address along, because the backend only accepts
@@ -318,7 +324,7 @@ export default function LoginPage() {
         // home. Powers the /invite link: sign in, then bounce back to accept.
         const params = new URLSearchParams(location.searchStr);
         const next = params.get("next");
-        navigate(hrefTarget(safeNext(next, "/app/emails")));
+        navigate(hrefTarget(postAuthNext(next, invitationConsumed.current)));
     }, [navigate, queryClient, location.searchStr]);
 
     // Conditional UI: surface passkeys inside the email field's native autofill
@@ -600,6 +606,7 @@ export default function LoginPage() {
                 // Email verification off means the account already exists and
                 // is signed in: land in the dashboard.
                 if (!res.code_required) {
+                    invitationConsumed.current = !!inviteToken;
                     if (res.token) {
                         toast.success("Welcome to Warmbly!");
                         await completeSession(res.token);
@@ -663,6 +670,7 @@ export default function LoginPage() {
                     await completeSession(res as unknown as Token);
                 } else {
                     const created = await registerConfirmMutation.mutateAsync({ session, code });
+                    invitationConsumed.current = !!inviteToken;
                     if (created?.token) {
                         toast.success("Welcome to Warmbly!");
                         await completeSession(created.token);
