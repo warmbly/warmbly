@@ -60,6 +60,7 @@ A `data` plus `pagination` envelope. `next_cursor` is the campaign id to resume 
       "contact_order_dir": "asc",
       "sender_strategy": "tags",
       "rotation_mode": "round_robin",
+      "rotate_sender_per_step": false,
       "ramp_enabled": false,
       "ramp_start": 0,
       "ramp_increment": 0,
@@ -209,6 +210,7 @@ Create a campaign. Only `name` is required, every other field is optional and ap
 | `folder_ids` | string[] | no | Folder ids to file the campaign under. |
 | `sender_strategy` | string | no | `tags` (default) or `explicit`. `tags` resolves the pool from `email_tag_ids`, and falls back to every active mailbox in the workspace when no tag and no explicit sender is set. `explicit` sends from the mailboxes in `senders`, plus any `email_tag_ids` set alongside them. It never falls back to every active mailbox, so a pool that empties out parks the campaign at `paused_no_accounts` instead of widening to the whole workspace. |
 | `rotation_mode` | string | no | How volume spreads across the chosen mailboxes. |
+| `rotate_sender_per_step` | boolean | no | When `true`, every step of a lead's sequence is sent from a mailbox chosen by `rotation_mode`, not the mailbox that sent the previous step (which is reused only when nothing else is eligible). Defaults to `false`, which keeps the whole sequence on the mailbox that sent the first email. |
 | `senders` | object[] | no | Explicit-strategy mailbox pool (see sender input below). |
 | `ramp_enabled` | boolean | no | Enable per-campaign daily ramp-up. |
 | `ramp_start` | integer | no | Ramp starting volume. |
@@ -239,6 +241,7 @@ Create a campaign. Only `name` is required, every other field is optional and ap
   "email_tag_ids": ["3b0a...", "9d2c..."],
   "sender_strategy": "tags",
   "rotation_mode": "round_robin",
+  "rotate_sender_per_step": true,
   "ramp_enabled": true,
   "ramp_start": 10,
   "ramp_increment": 2,
@@ -272,7 +275,7 @@ A `Campaign` object (see the [list](#list-campaigns) shape).
 
 `PATCH /campaigns/:id`
 
-Patch any subset of campaign fields. Omitted fields are left unchanged. The explicit sender list is edited through [replace senders](#replace-senders), only the `sender_strategy`/`rotation_mode` toggles ride this PATCH. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
+Patch any subset of campaign fields. Omitted fields are left unchanged. The explicit sender list is edited through [replace senders](#replace-senders), only the `sender_strategy`/`rotation_mode`/`rotate_sender_per_step` toggles ride this PATCH. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
 
 | Parameter | In | Type | Description |
 | --- | --- | --- | --- |
@@ -280,7 +283,7 @@ Patch any subset of campaign fields. Omitted fields are left unchanged. The expl
 
 ### Request body
 
-Every field is optional. Scalar fields use nullable pointers, so any field you send is applied. `timezone` accepts `""` to make the campaign follow the workspace timezone. `start_date` and `end_date` additionally accept an explicit `null` to clear the stored date: a null `start_date` means "start now" and a null `end_date` means "run open-ended". Changing any schedule field (`start_date`, `end_date`, `timezone`, `days`, `start_time`, `end_time`, `schedule_windows`, `entry_delay_minutes`) on an active campaign reschedules its next send immediately, so clearing a future start date or shortening the entry delay takes effect right away. Notable fields: `name`, `description`, `status`, `stop_on_reply`, `open_tracking`, `link_tracking`, `text_only`, `daily_limit`, `unsubscribe_header`, `risky_emails`, `cc`, `bcc`, `start_date`, `end_date`, `timezone`, `days`, `start_time`, `end_time`, `schedule_windows`, `email_tags`, `folders`, `contact_order_by`, `contact_order_dir`, `contact_order_field`, `sender_strategy`, `rotation_mode`, `ramp_enabled`, `ramp_start`, `ramp_increment`, `ramp_ceiling`, `esp_match_mode`, `max_new_leads_per_day`, `prioritize_new_leads`, `entry_delay_minutes`, `continuous`, `tracking_domain`, `utm_tracking`, `utm_source`, `utm_medium`, `utm_campaign`.
+Every field is optional. Scalar fields use nullable pointers, so any field you send is applied. `timezone` accepts `""` to make the campaign follow the workspace timezone. `start_date` and `end_date` additionally accept an explicit `null` to clear the stored date: a null `start_date` means "start now" and a null `end_date` means "run open-ended". Changing any schedule field (`start_date`, `end_date`, `timezone`, `days`, `start_time`, `end_time`, `schedule_windows`, `entry_delay_minutes`) on an active campaign reschedules its next send immediately, so clearing a future start date or shortening the entry delay takes effect right away. Notable fields: `name`, `description`, `status`, `stop_on_reply`, `open_tracking`, `link_tracking`, `text_only`, `daily_limit`, `unsubscribe_header`, `risky_emails`, `cc`, `bcc`, `start_date`, `end_date`, `timezone`, `days`, `start_time`, `end_time`, `schedule_windows`, `email_tags`, `folders`, `contact_order_by`, `contact_order_dir`, `contact_order_field`, `sender_strategy`, `rotation_mode`, `rotate_sender_per_step`, `ramp_enabled`, `ramp_start`, `ramp_increment`, `ramp_ceiling`, `esp_match_mode`, `max_new_leads_per_day`, `prioritize_new_leads`, `entry_delay_minutes`, `continuous`, `tracking_domain`, `utm_tracking`, `utm_source`, `utm_medium`, `utm_campaign`.
 
 `entry_delay_minutes` is anchored on when each contact entered the campaign, not on when the campaign started, so a contact enrolled by a linked segment next week waits the same amount from their own arrival. Leads that were in the campaign before the field existed count from the campaign's `created_at`, so turning a delay on never re-delays leads that have been enrolled for weeks.
 

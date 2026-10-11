@@ -118,8 +118,29 @@ export function RotationRampSection({
                     Rotation picks the mailbox for a lead's first email, and every follow-up to that lead comes from
                     the same address, so the conversation stays consistent. Each mailbox stays within its own daily
                     limit, and a lead only changes address if its mailbox stops being able to send for this campaign.
+                    Turn on the option below to send each step from a fresh mailbox instead.
                 </p>
             </div>
+
+            {/* Per-step sender rotation */}
+            <SettingRow
+                title="Rotate mailbox on every step"
+                description="Send each follow-up from a different mailbox, picked by the rotation mode above, instead of keeping the one that sent the first email. A step reuses the previous mailbox only when no other mailbox in the pool can send it."
+                control={
+                    <Toggle
+                        id="campaign-pref-rotate-per-step"
+                        value={newCampaign.rotate_sender_per_step}
+                        onChange={(v) => setNewCampaign((bef) => ({ ...bef, rotate_sender_per_step: v }))}
+                    />
+                }
+            />
+            {newCampaign.rotate_sender_per_step && (
+                <p className="text-[11px] text-amber-600 leading-relaxed">
+                    Recipients see a different sender address on follow-ups, and replies land in different inboxes.
+                    Use it only when the campaign's audience and content support that; the mailbox pool should have
+                    more than one eligible sender.
+                </p>
+            )}
 
             {/* Daily ramp-up */}
             <SettingRow
