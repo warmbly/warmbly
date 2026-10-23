@@ -221,7 +221,7 @@ Your questions ride in the same call as the built-in ones, so they cost input to
 
 ## Tagging languages
 
-Tagging reads English, German, French, Spanish, Italian and Dutch replies out of the box. If your mail also arrives in other languages, add them under **Settings > Sending > Tagging languages and questions**. Nothing about a language is used until a workspace adds it: a language nobody on your team writes in only adds patterns that could misread someone's mail, so leave it off. The setting changes inbox tagging only; campaign reply handling reads replies the same way whatever it says.
+Tagging reads English, German, French, Spanish, Italian and Dutch replies out of the box. If your mail also arrives in other languages, add them under **Settings > Sending > Tagging languages and questions**. Nothing about a language is used until a workspace adds it: a language nobody on your team writes in only adds patterns that could misread someone's mail, so leave it off. Campaign reply handling reads the same languages, so the reply classifier behind `stop_on_reply`, the reply branches and the reply counts sees what tagging sees.
 
 Adding a language does two things:
 
@@ -233,6 +233,7 @@ The reading before any call covers:
 - **Quoted history**, cut from a reply so the classifier reads what the person wrote and not your own message quoted under it: the reply line each mail client writes ("Den ... skrev", "W dniu ... pisze:", "于 ... 写道：" and the like), Outlook's quoted `From: / Sent:` block in that language (`Von: / Gesendet:`, `De : / Envoyé :`, `差出人: / 送信日時:`), and the dashed "Original message" and "Forwarded message" lines.
 - **Out-of-office replies**, recognized by the subject their mail provider writes (`Автоматический ответ`, `自動応答`, `자동 회신`, `رد تلقائي` and so on) and decided with no call at all.
 - **Non-delivery notices**, by the subject Exchange writes in Spanish, Italian, Dutch and Portuguese. A notice carrying a delivery-status report is recognized in any language without this.
+- **Replies that say no**, in German, French and Spanish: a declined interest ("kein Interesse", "pas intéressé", "no me interesa") or another clear no ("nein danke", "non merci", "no gracias", "falscher Ansprechpartner", "pas la bonne personne"). The reply classifier reads these as negative with no call, the same verdict "not interested" and "no thanks" get in English, so they take the `reply_negative` branch. Inbox labels still come from the classifier. Phrases of interest are read in English only for now.
 
 Tagging languages are part of the workspace settings, so they travel with a [workspace export](/guides/workspace-export-import/).
 

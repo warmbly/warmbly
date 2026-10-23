@@ -1464,6 +1464,7 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 				// this message, so a reply is judged once.
 				OrganizationID: *account.OrganizationID,
 				MessageID:      msg.MessageID,
+				Languages:      settings.InboxTagging.Languages,
 			}, gate)
 		}
 
@@ -1575,9 +1576,10 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 	// human" for every inbound message; only the model layer is worth gating.
 	if verdict.Class == "" {
 		verdict = replyclassify.ClassifyOffline(replyclassify.Input{
-			Headers:  buildReplyHeaders(msg),
-			Subject:  msg.Subject,
-			BodyText: firstNonEmpty(msg.BodyText, msg.Snippet),
+			Headers:   buildReplyHeaders(msg),
+			Subject:   msg.Subject,
+			BodyText:  firstNonEmpty(msg.BodyText, msg.Snippet),
+			Languages: settings.InboxTagging.Languages,
 		})
 	}
 	if replyClaimToken == uuid.Nil && !replyClaimCompleted {

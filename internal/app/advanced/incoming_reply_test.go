@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/app/inboxtag"
+	"github.com/warmbly/warmbly/internal/app/replyclassify"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -19,6 +20,7 @@ type incomingReplyAdvancedRepo struct {
 	intents   int
 	intentOff bool
 	holdOff   bool
+	languages []string
 }
 
 type incomingReplyNotifier struct {
@@ -127,6 +129,7 @@ func (r *incomingReplyAdvancedRepo) GetOutreachSettings(context.Context, uuid.UU
 	settings := models.DefaultAdvancedOutreachSettings()
 	settings.ReplyIntent.Enabled = !r.intentOff
 	settings.ReplyIntent.HoldOnOutOfOffice = !r.holdOff
+	settings.InboxTagging.Languages = r.languages
 	return &settings, nil
 }
 
@@ -188,6 +191,7 @@ type incomingReplyProgressRepo struct {
 	repository.CampaignProgressRepository
 	replied       int
 	classified    int
+	class         string
 	claims        int
 	completed     int
 	latest        *repository.CampaignSequencePair
@@ -232,8 +236,9 @@ func (r *incomingReplyProgressRepo) RecordReplyIntent(context.Context, uuid.UUID
 	return nil
 }
 
-func (r *incomingReplyProgressRepo) RecordReplyClassification(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, string, string, float64) error {
+func (r *incomingReplyProgressRepo) RecordReplyClassification(_ context.Context, _, _, _ uuid.UUID, class, _ string, _ float64) error {
 	r.classified++
+	r.class = class
 	return nil
 }
 
@@ -863,5 +868,35 @@ func TestProcessIncomingReplyFencesExpiredClaimBeforeSideEffects(t *testing.T) {
 	}
 	if progress.advanced.intents != 0 {
 		t.Fatalf("CreateReplyIntent calls = %d, want 0 after ownership was lost", progress.advanced.intents)
+	}
+}
+
+// A reply in one of the workspace's tagging languages is read with that
+// language's declined and negative phrases; without the language it is not.
+func TestProcessIncomingReplyReadsTheWorkspaceLanguages(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		languages []string
+		want      string
+	}{
+		{"with German chosen", []string{"de"}, replyclassify.ClassNegative},
+		{"without it", nil, replyclassify.ClassUnknown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			orgID, accountID, contactID := uuid.New(), uuid.New(), uuid.New()
+			account := &models.Email{ID: accountID, OrganizationID: &orgID, Email: "sender@example.test"}
+			s, progress := newIncomingReplyService(account, &models.Contact{ID: contactID, Email: "recipient@example.test"}, contactID)
+			progress.advanced.languages = tc.languages
+			if err := s.ProcessIncomingReply(context.Background(), accountID, &models.EmailMessageStoreData{
+				ID: uuid.New(), EmailID: accountID, MessageID: "<reply@example.test>", Folder: models.FolderInbox,
+				FromAddr: []string{"recipient@example.test"}, ToAddr: []string{account.Email}, InReplyTo: []string{"<opener@example.test>"},
+				Subject: "Re: Hallo", Snippet: "Danke, aber wir haben kein Interesse.",
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if progress.class != tc.want {
+				t.Errorf("reply class = %q, want %q", progress.class, tc.want)
+			}
+		})
 	}
 }

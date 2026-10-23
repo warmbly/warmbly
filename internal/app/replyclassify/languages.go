@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 )
 
 // The offline layers read every reply with the base vocabulary below, and a
@@ -30,9 +32,14 @@ type langRules struct {
 	months          map[int][]string
 	// bounce are non-delivery subject prefixes, lower case.
 	bounce []string
+	// declined turns down interest and is read before any interest phrase;
+	// negative is any other clear no. Both are phrases, never single words.
+	declined, negative []string
 }
 
 var baseRules = langRules{
+	declined: declinedInterestKeywords,
+	negative: negativeKeywords,
 	quote: []quoteMarker{
 		{re: attribution(`on`, `wrote:`)},
 		{re: regexp.MustCompile(`(?i)_{10,}`)},
@@ -124,17 +131,42 @@ var languageRules = map[string]langRules{
 		// GMX and web.de put the date first: "Gesendet: ... Von: ...".
 		quote:      []quoteMarker{{re: headerBlock(`von`, `gesendet|datum`)}, {re: headerBlock(`gesendet`, `von`)}},
 		separators: []string{`ursprüngliche nachricht`, `original-nachricht`, `weitergeleitete nachricht`},
+		declined: []string{
+			"kein interesse", "keinerlei interesse", "nicht interessiert", "nicht mehr interessiert",
+			"interessiert uns nicht", "interessiert mich nicht",
+		},
+		negative: []string{
+			"nein danke", "nein, danke", "kein bedarf", "keinen bedarf", "falscher ansprechpartner", "falschen ansprechpartner",
+			"nicht der richtige ansprechpartner", "nicht die richtige ansprechpartnerin", "nicht zuständig",
+		},
 	},
 	"fr": {
 		quote:      []quoteMarker{{re: headerBlock(`de ?`, `envoyé ?|date ?`)}},
 		separators: []string{`message d'origine`, `message transféré`},
 		ooo:        []string{"absent du bureau", "absente du bureau"},
+		declined: []string{
+			"pas intéressé", "pas intéressée", "pas intéressés", "pas intéressées", "aucun intérêt",
+			"ne nous intéresse pas", "ne m'intéresse pas", "ne suis plus intéressé", "ne suis plus intéressée",
+			"ne sommes plus intéressés", "ne sommes plus intéressées",
+		},
+		negative: []string{
+			"non merci", "non, merci", "pas le bon interlocuteur", "pas la bonne personne",
+			"nous avons déjà une solution", "nous avons déjà un prestataire",
+		},
 	},
 	"es": {
 		quote:      []quoteMarker{{re: headerBlock(`de`, `enviado|fecha`)}},
 		separators: []string{`mensaje original`, `mensaje reenviado`},
 		ooo:        []string{"fuera de la oficina"},
 		bounce:     []string{"no se puede entregar"},
+		declined: []string{
+			"no estoy interesado", "no estoy interesada", "no estamos interesados", "no estamos interesadas",
+			"no me interesa", "no nos interesa", "no tengo interés", "no tenemos interés", "sin interés",
+		},
+		negative: []string{
+			"no gracias", "no, gracias", "no soy la persona", "persona equivocada",
+			"ya tenemos una solución", "ya tenemos proveedor",
+		},
 	},
 	"pt": {
 		quote: []quoteMarker{
@@ -369,6 +401,44 @@ type ruleSet struct {
 	inclusive map[string]bool
 	months    map[string]int
 	bounce    []string
+	declined  []phrase
+	negative  []phrase
+}
+
+// phrase is a sentiment phrase as compiled. The English base set keeps the
+// substring match it always had; a chosen language's phrase must stand as
+// whole words, so "no gracias" never matches inside "bueno gracias".
+type phrase struct {
+	text    string
+	bounded bool
+}
+
+// in matches an English base phrase against the text as written and a chosen
+// language's phrase, whole words only, against its accent-folded form.
+func (p phrase) in(text, folded string) bool {
+	if !p.bounded {
+		return strings.Contains(text, p.text)
+	}
+	text = folded
+	for i := 0; i < len(text); {
+		j := strings.Index(text[i:], p.text)
+		if j < 0 {
+			return false
+		}
+		start, end := i+j, i+j+len(p.text)
+		before, _ := utf8.DecodeLastRuneInString(text[:start])
+		after, _ := utf8.DecodeRuneInString(text[end:])
+		if !wordRune(before) && !wordRune(after) {
+			return true
+		}
+		_, size := utf8.DecodeRuneInString(text[start:])
+		i = start + size
+	}
+	return false
+}
+
+func wordRune(r rune) bool {
+	return r != utf8.RuneError && (unicode.IsLetter(r) || unicode.IsDigit(r))
 }
 
 var ruleSets sync.Map // sorted codes joined by "," -> *ruleSet
@@ -400,7 +470,7 @@ func rulesFor(langs []string) *ruleSet {
 func compileRules(parts []langRules) *ruleSet {
 	rs := &ruleSet{inclusive: map[string]bool{}, months: map[string]int{}}
 	var separators, cues []string
-	for _, p := range parts {
+	for i, p := range parts {
 		rs.quote = append(rs.quote, p.quote...)
 		separators = append(separators, p.separators...)
 		for _, m := range p.ooo {
@@ -416,6 +486,13 @@ func compileRules(parts []langRules) *ruleSet {
 			}
 		}
 		rs.bounce = append(rs.bounce, p.bounce...)
+		// parts[0] is always baseRules.
+		for _, d := range p.declined {
+			rs.declined = append(rs.declined, phrase{text: accentFolder.Replace(strings.ToLower(d)), bounded: i > 0})
+		}
+		for _, n := range p.negative {
+			rs.negative = append(rs.negative, phrase{text: accentFolder.Replace(strings.ToLower(n)), bounded: i > 0})
+		}
 	}
 	rs.quote = append(rs.quote, quoteMarker{re: regexp.MustCompile(`(?i)-{2,}\s*(` + strings.Join(separators, `|`) + `)\s*-{2,}`)})
 	rs.cue = regexp.MustCompile(`(?i)\b(` + strings.Join(longestFirst(cues), `|`) + `)\b`)
