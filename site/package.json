@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "test": "node scripts/check-observability.mjs && node scripts/check-acquisition.mjs",
+    "test": "node scripts/check-observability.mjs && node scripts/check-acquisition.mjs && node --test scripts/content-security-policy.test.mjs",
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
@@ -21,5 +21,9 @@
     "reading-time": "^1.5.0",
     "sharp": "0.35.5",
     "tailwindcss": "^4.1.10"
+  },
+  "devDependencies": {
+    "parse5": "^8.0.1",
+    "vite": "^8.3.5"
   }
 }

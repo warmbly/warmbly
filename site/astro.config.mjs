@@ -3,11 +3,13 @@ import { defineConfig } from 'astro/config';
 import tailwindcss from '@tailwindcss/vite';
 import sitemap from '@astrojs/sitemap';
 import mdx from '@astrojs/mdx';
+import contentSecurityPolicyHeaders from './scripts/content-security-policy.mjs';
 
 // https://astro.build/config
 export default defineConfig({
   site: 'https://warmbly.com',
   integrations: [
+    contentSecurityPolicyHeaders(),
     mdx(),
     sitemap({
       // The 404 page is noindex and should never appear in the sitemap.

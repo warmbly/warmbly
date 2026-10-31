@@ -262,6 +262,27 @@ A Pages deploy hook would reuse Cloudflare's build configuration too, but it bui
 
 Projects deploy independently, not atomically: one failed build or upload leaves that project's previous deployment live and does not cancel the other projects. After fixing the configuration, use **Re-run failed jobs** on that release run to retry the same release commit without creating another tag or rebuilding successful jobs. Do not retry an older release after a newer one has deployed unless you intend a rollback. To pause release uploads, set `CLOUDFLARE_PAGES_DEPLOY_ENABLED` to `false`; this leaves current deployments live and does not re-enable Cloudflare's automatic deployments. This workflow deploys only the listed static frontends; it does not deploy backend services.
 
+The marketing build generates a Content Security Policy in `site/dist/_headers`
+from the inline scripts in every rendered page, including the error page. Serve
+that header with the generated files when hosting outside Pages. Scripts require
+a build-generated hash or an allowed origin; inline event handlers and dynamic
+code evaluation are refused. Inline styles remain allowed for page presentation.
+The configured PostHog HTTPS origin and its regional asset host are allowed when
+analytics is enabled. Cloudflare's analytics beacon has its own explicit origin.
+Changes to scripts or analytics configuration require a fresh build. A policy
+that exceeds Pages' 2,000-character header limit fails the build.
+
+For a marketing-only update without a release tag, run **Deploy marketing Pages**
+on `main`, passing its reviewed full commit SHA as `expected_sha`. The manual
+workflow uses `site-production` and the existing Pages production variables. It
+requires exactly one `site` project in `CLOUDFLARE_PAGES_PROJECTS`, runs the site
+checks, and builds once. An isolated preview must serve the built CSP on the
+home, legal and error pages and preserve the published installer bytes before
+the same artifact is uploaded to the production branch. A failed preview leaves
+production unchanged. The workflow shares the release concurrency lock and
+deploys only the marketing site. The existing Pages deployment enable flag
+applies to this workflow too.
+
 ## Anything the control plane cannot know
 
 `warmbly join` writes `/etc/warmbly/node.env` from the control plane's answer and rewrites it on every join. Next to it, `/etc/warmbly/node.local.env` is created once and never written again, and the container reads it second, so a name repeated there wins.
