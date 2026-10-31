@@ -78,6 +78,12 @@ Unenrolling an SMTP/IMAP mailbox, disconnecting the instance, or deleting the ma
 
 ## Warmup analytics on your instance
 
+The Accounts sidebar counts mailboxes with warmup sending enabled at their current warmup source. For an enrolled mailbox, Cloud's lifecycle and report take precedence over the local warmup start date. Starting local warmup before enrolling is unnecessary: enrollment stops local warmup execution, so the two pools do not send in parallel.
+
+The Accounts banner separates **connected** mailboxes from those actively **warming**. A paused, Off or receive-only Cloud mailbox remains connected but is not counted as actively sending warmup. These counts cover mailboxes in the selected local workspace. Cloud plan usage covers the linked Cloud workspace and can also include mailboxes connected directly there. The Accounts health summary follows the current search and tag filter, and puts a mailbox needing attention in that category before Warming.
+
+The mailbox's Overview and Warmup Today sections use Cloud's sends, target and ramp details while enrolled. Missing Cloud reports show an unavailable state instead of local zeros. These are last-observed reports: warmup actions refresh them, stale reports refresh when you return to the window or reconnect, and **Settings > Warmbly Cloud > Refresh** requests both the connection and mailbox reports. Changes made directly on Cloud are visible after the next successful refresh.
+
 Enrolled mailboxes show Cloud's daily sends, replies, received warmup mail and target volumes in **Mailboxes > Analytics**. Their warmup placement reports include daily inbox, tabs, spam and rescued counts, provider and host breakdowns, and the trailing inbox rate. Workspace reports combine Cloud-enrolled mailboxes with mailboxes warming locally. Earlier local warmup history stays visible too.
 
 Reports are fetched from Cloud when you open or refresh them, using the existing instance link. They are not copied into your instance's warmup tables and do not wait for the five-minute standing poll. Only enrolled mailboxes belonging to the selected local workspace are requested. A Cloud failure shows a load error and a retry action, not an empty chart.

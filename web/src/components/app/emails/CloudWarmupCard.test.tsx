@@ -4,24 +4,47 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DiagnosticParticipation } from "@/lib/api/models/app/cloudlink/CloudLink";
 import CloudWarmupCard from "./CloudWarmupCard";
 
-const fixtures = vi.hoisted(() => ({ participation: undefined as DiagnosticParticipation | undefined, workspaceConnected: true, managed: false, patch: vi.fn(), unenroll: vi.fn(), confirm: vi.fn() }));
-vi.mock("@/hooks/useCloudPool", () => ({ default: () => ({ manageable: true, connected: true, workspaceConnected: fixtures.workspaceConnected, isEnrolled: (id: string) => id === "mailbox", rowFor: () => ({ enrolled: true, managed: fixtures.managed, cloud: { participation: fixtures.participation, settings: { base: 10 }, sent_today: 0, sent_7d: 0 } }) }) }));
-vi.mock("@/lib/api/hooks/app/cloudlink/useCloudLink", () => ({ useEnrollCloudLinkMailbox: () => ({}), useUnenrollCloudLinkMailbox: () => ({ mutateAsync: fixtures.unenroll }), useCloudLinkMailboxLifecycle: () => ({}) }));
+const fixtures = vi.hoisted(() => ({ participation: undefined as DiagnosticParticipation | undefined, unavailable: false, missing: false, workspaceConnected: true, managed: false, executor: "cloud" as "cloud" | "instance", patch: vi.fn(), lifecycle: vi.fn(), unenroll: vi.fn(), confirm: vi.fn() }));
+vi.mock("@/hooks/useCloudPool", () => ({ default: () => ({ manageable: true, connected: true, unavailable: fixtures.unavailable, workspaceConnected: fixtures.workspaceConnected, isEnrolled: (id: string) => id === "mailbox", rowFor: () => ({ enrolled: true, managed: fixtures.managed, executor: fixtures.executor, cloud: fixtures.missing ? null : { participation: fixtures.participation, warmup: { enabled: true, paused: false }, settings: { base: 10 }, sent_today: 0, sent_7d: 0 } }) }) }));
+vi.mock("@/lib/api/hooks/app/cloudlink/useCloudLink", () => ({ useEnrollCloudLinkMailbox: () => ({}), useUnenrollCloudLinkMailbox: () => ({ mutateAsync: fixtures.unenroll }), useCloudLinkMailboxLifecycle: () => ({ mutateAsync: fixtures.lifecycle }) }));
 vi.mock("@/hooks/context/confirm", () => ({ useConfirm: () => ({ show: (message: string, confirm: () => void) => { fixtures.confirm(message); confirm(); } }) }));
 vi.mock("@/lib/api/client/app/cloudlink/cloudLink", () => ({ setCloudLinkParticipation: fixtures.patch }));
 vi.mock("./WarmupPartnerDiversity", () => ({ default: () => null }));
 vi.mock("./WarmupSendFailureNote", () => ({ default: () => null }));
 
 describe.each([true, false])("Cloud diagnostic participation with workspace connection %s", (workspaceConnected) => {
-    beforeEach(() => { fixtures.participation = undefined; fixtures.workspaceConnected = workspaceConnected; fixtures.managed = false; fixtures.patch.mockReset().mockResolvedValue({}); fixtures.unenroll.mockReset().mockResolvedValue(undefined); fixtures.confirm.mockReset(); });
+    beforeEach(() => { fixtures.participation = undefined; fixtures.missing = fixtures.unavailable = false; fixtures.workspaceConnected = workspaceConnected; fixtures.managed = false; fixtures.executor = "cloud"; fixtures.patch.mockReset().mockResolvedValue({}); fixtures.lifecycle.mockReset().mockResolvedValue({}); fixtures.unenroll.mockReset().mockResolvedValue(undefined); fixtures.confirm.mockReset(); });
     afterEach(cleanup);
-    const draw = () => render(<QueryClientProvider client={new QueryClient()}><CloudWarmupCard mailboxId="mailbox" email="fixture@example.test" provider="smtp_imap" /></QueryClientProvider>);
+    const draw = () => render(<QueryClientProvider client={new QueryClient()}><CloudWarmupCard mailboxId="mailbox" email="fixture@example.test" provider="smtp_imap" status="active" /></QueryClientProvider>);
 
     it("does not infer consent or offer new controls from an old Cloud payload", () => {
         draw();
         expect(screen.getByText(/Legacy state is not proof of diagnostic consent/)).toBeInTheDocument();
         expect(screen.queryByText("Stop all diagnostic participation")).not.toBeInTheDocument();
         expect(fixtures.patch).not.toHaveBeenCalled();
+    });
+
+    it("does not describe a missing Cloud report as active diagnostics", () => {
+        fixtures.missing = true;
+        draw();
+        expect(screen.getByText("Cloud warmup status unavailable")).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Pause" })).not.toBeInTheDocument();
+    });
+
+    it.each([false, true])("keeps Cloud lifecycle controls based on the reported state when the local executor is off (paused: %s)", async (paused) => {
+        fixtures.executor = "instance";
+        if (paused) fixtures.participation = { mode: "diagnostic", send: false, receive: true };
+        render(<QueryClientProvider client={new QueryClient()}><CloudWarmupCard mailboxId="mailbox" email="fixture@example.test" provider="smtp_imap" status="inactive" /></QueryClientProvider>);
+        expect(screen.getByText("Mailbox off on this server")).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: paused ? "Resume" : "Pause" }));
+        await waitFor(() => expect(fixtures.lifecycle).toHaveBeenCalledWith({ id: "mailbox", action: paused ? "resume" : "pause" }));
+    });
+
+    it("retains a positive mailbox report when the separate connection request fails", () => {
+        fixtures.unavailable = true;
+        draw();
+        expect(screen.getByText("Automated diagnostics in Warmbly Cloud")).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
     });
 
     it("shows off rather than actively warming and stops both directions with shared limits intact", async () => {

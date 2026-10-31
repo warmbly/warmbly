@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import type Inbox from "@/lib/api/models/app/emails/Inbox";
 import { diagnosticSendingAllowed, diagnosticWarmupActive } from "./diagnosticParticipation";
 import mailboxDisplayStatus from "./mailboxStatus";
-import { cloudWarmupPaused } from "./cloudWarmup";
-import type { PoolLinkMailboxState } from "@/lib/api/models/app/cloudlink/CloudLink";
+import { resolveMailboxWarmup } from "./mailboxWarmup";
+import type { CloudLinkMailboxRow, PoolLinkMailboxState } from "@/lib/api/models/app/cloudlink/CloudLink";
 
 describe("consent-aware mailbox activity", () => {
     const legacy = { status: "active", warmup: new Date("2020-01-01"), warmup_paused_at: null, test_mode: null } as Inbox;
@@ -25,9 +25,10 @@ describe("consent-aware mailbox activity", () => {
     });
 
     it("respects Cloud off/receive-only while preserving unsupported legacy shape", () => {
-        const old = { warmup: { paused: false } } as PoolLinkMailboxState;
-        expect(cloudWarmupPaused(old)).toBe(false);
-        expect(cloudWarmupPaused({ ...old, participation: { mode: "off", send: false, receive: false } })).toBe(true);
-        expect(cloudWarmupPaused({ ...old, participation: { mode: "diagnostic", send: false, receive: true } })).toBe(true);
+        const old = { warmup: { enabled: true, paused: false } } as PoolLinkMailboxState;
+        const activity = (cloud: PoolLinkMailboxState) => resolveMailboxWarmup(legacy, undefined, { connected: true, rowFor: () => ({ enrolled: true, cloud } as CloudLinkMailboxRow) }).activity;
+        expect(activity(old)).toBe("active");
+        expect(activity({ ...old, participation: { mode: "off", send: false, receive: false } })).toBe("off");
+        expect(activity({ ...old, participation: { mode: "diagnostic", send: false, receive: true } })).toBe("receive_only");
     });
 });

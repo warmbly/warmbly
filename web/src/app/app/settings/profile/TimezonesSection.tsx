@@ -24,7 +24,8 @@ import type Campaign from "@/lib/api/models/app/campaigns/Campaign";
 import type Inbox from "@/lib/api/models/app/emails/Inbox";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
-import mailboxDisplayStatus from "@/lib/mailboxStatus";
+import useCloudPool from "@/hooks/useCloudPool";
+import { resolveMailboxWarmup, warmupActivityLabel, type MailboxWarmup } from "@/lib/mailboxWarmup";
 import { browserTimezone, followWorkspaceLabel, timezoneOptions } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 
@@ -237,6 +238,7 @@ function CampaignZoneRow({ campaign, workspaceZone, fallback }: { campaign: Camp
 /* ── Mailboxes ─────────────────────────────────────────────────────── */
 
 function MailboxClocks({ workspaceZone }: { workspaceZone: string }) {
+    const pool = useCloudPool();
     const list = useEmails({ query: "", tag: "" });
     const loading = list.isLoadingRest || list.isPending;
     const queryClient = useQueryClient();
@@ -298,7 +300,7 @@ function MailboxClocks({ workspaceZone }: { workspaceZone: string }) {
                     }
                 >
                     {mailboxes.map((m) => (
-                        <MailboxZoneRow key={m.id} mailbox={m} fallback={fallback} />
+                        <MailboxZoneRow key={m.id} mailbox={m} fallback={fallback} warmup={resolveMailboxWarmup(m, undefined, pool)} />
                     ))}
                 </ClockList>
             )}
@@ -306,7 +308,7 @@ function MailboxClocks({ workspaceZone }: { workspaceZone: string }) {
     );
 }
 
-function MailboxZoneRow({ mailbox, fallback }: { mailbox: Inbox; fallback: string }) {
+function MailboxZoneRow({ mailbox, fallback, warmup }: { mailbox: Inbox; fallback: string; warmup: MailboxWarmup }) {
     const { timezones } = useUserProfile();
     const update = useUpdateEmail(mailbox.id);
     const options = React.useMemo<SelectOption[]>(
@@ -318,10 +320,10 @@ function MailboxZoneRow({ mailbox, fallback }: { mailbox: Inbox; fallback: strin
         if (next === zone) return;
         update.mutateAsync({ timezone: next }).catch((e) => toast.error(buildError(e as AppError)));
     };
-    const status = mailboxDisplayStatus(mailbox);
+    const status = warmup.activity === "active" ? "warming" : warmup.activity === "paused" || warmup.activity === "receive_only" ? "paused" : warmup.activity === "off" && mailbox.status === "active" ? "healthy" : "inactive";
     return (
         <li className="flex items-center gap-3 px-3.5 py-2">
-            <span className={cn("shrink-0 w-1.5 h-1.5 rounded-full", MAILBOX_DOT[status])} title={status} />
+            <span className={cn("shrink-0 w-1.5 h-1.5 rounded-full", MAILBOX_DOT[status])} title={`${warmup.source === "cloud" ? "Warmbly Cloud: " : ""}${warmupActivityLabel[warmup.activity]}`} />
             <div className="min-w-0 flex-1 flex items-baseline gap-2">
                 <span className="truncate text-[12.5px] text-slate-800">{mailbox.email}</span>
                 {mailbox.name && <span className="truncate text-[11px] text-slate-400 hidden sm:inline">{mailbox.name}</span>}

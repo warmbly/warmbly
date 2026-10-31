@@ -27,8 +27,9 @@ import { useInstanceAdmin } from "@/hooks/usePermission";
 import { CLOUD_MAILBOX_PICKER_EVENT, CLOUD_MAILBOX_PICKER_OPENED } from "@/lib/cloudMailboxConnect";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import type { CloudLinkExecutor, CloudLinkMailboxRow } from "@/lib/api/models/app/cloudlink/CloudLink";
+import { CLOUD_LINK_KEY, cloudLinkScope, invalidateWarmupReports } from "./warmupReports";
 
-export const CLOUD_LINK_KEY = ["cloud-link"];
+export { CLOUD_LINK_KEY } from "./warmupReports";
 export const POOL_LINK_KEY = ["pool-link"];
 
 // Self-hosted side.
@@ -36,12 +37,12 @@ export const POOL_LINK_KEY = ["pool-link"];
 // Each read asks Warmbly Cloud, so a surface that only needs the redirect offer can take a longer staleTime.
 export function useCloudLinkStatus(enabled = true, staleTime = 10_000) {
     const organization = useCurrentOrganization();
-    return useQuery({ queryKey: [...CLOUD_LINK_KEY, organization.data?.id, "status"], queryFn: getCloudLinkStatus, enabled: enabled && !!organization.data?.id, staleTime });
+    return useQuery({ queryKey: [...CLOUD_LINK_KEY, organization.data?.id, "status"], queryFn: getCloudLinkStatus, enabled: enabled && !!organization.data?.id, staleTime, refetchOnWindowFocus: true, refetchOnReconnect: true });
 }
 
 export function useCloudLinkMailboxes(enabled = true) {
     const organization = useCurrentOrganization();
-    return useQuery({ queryKey: [...CLOUD_LINK_KEY, organization.data?.id, "mailboxes"], queryFn: listCloudLinkMailboxes, enabled: enabled && !!organization.data?.id, staleTime: 10_000 });
+    return useQuery({ queryKey: [...CLOUD_LINK_KEY, organization.data?.id, "mailboxes"], queryFn: listCloudLinkMailboxes, enabled: enabled && !!organization.data?.id, staleTime: 10_000, refetchOnWindowFocus: true, refetchOnReconnect: true });
 }
 
 export function useStartCloudLinkConnect() {
@@ -76,6 +77,7 @@ export function useEnrollCloudLinkMailbox() {
     const organization = useCurrentOrganization();
     const admin = useInstanceAdmin();
     return useMutation({
+        onMutate: () => cloudLinkScope(qc),
         mutationFn: async (input: string | { id: string; executor?: CloudLinkExecutor }) => {
             const { id, executor } = typeof input === "string" ? { id: input, executor: undefined } : input;
             try {
@@ -92,8 +94,8 @@ export function useEnrollCloudLinkMailbox() {
                 throw { ...failure, code: CLOUD_MAILBOX_PICKER_OPENED } satisfies AppError;
             }
         },
-        onSuccess: () => {
-            void qc.invalidateQueries({ queryKey: CLOUD_LINK_KEY });
+        onSettled: (_data, _error, _id, scope) => {
+            void invalidateWarmupReports(qc, scope ?? cloudLinkScope(qc));
             void qc.invalidateQueries({ queryKey: ["emails"] });
         },
     });
@@ -102,9 +104,10 @@ export function useEnrollCloudLinkMailbox() {
 export function useUnenrollCloudLinkMailbox() {
     const qc = useQueryClient();
     return useMutation({
+        onMutate: () => cloudLinkScope(qc),
         mutationFn: (id: string) => unenrollCloudLinkMailbox(id),
-        onSuccess: () => {
-            void qc.invalidateQueries({ queryKey: CLOUD_LINK_KEY });
+        onSettled: (_data, _error, _id, scope) => {
+            void invalidateWarmupReports(qc, scope ?? cloudLinkScope(qc));
             void qc.invalidateQueries({ queryKey: ["emails"] });
         },
     });
@@ -113,8 +116,9 @@ export function useUnenrollCloudLinkMailbox() {
 export function useCloudLinkMailboxLifecycle() {
     const qc = useQueryClient();
     return useMutation({
+        onMutate: () => cloudLinkScope(qc),
         mutationFn: ({ id, action }: { id: string; action: "pause" | "resume" }) => setCloudLinkMailboxLifecycle(id, action),
-        onSuccess: () => void qc.invalidateQueries({ queryKey: CLOUD_LINK_KEY }),
+        onSettled: (_data, _error, _action, scope) => invalidateWarmupReports(qc, scope ?? cloudLinkScope(qc)),
     });
 }
 
