@@ -386,7 +386,7 @@ stops click tracking and hosted forms.
 
 ### Move through the stages
 
-`target_tls` takes four values. Change it one stage at a time, and let each
+`target_tls` takes six values. Change it one stage at a time, and let each
 merge finish its apply and redeploy before the next:
 
 | Stage | What changes |
@@ -394,42 +394,58 @@ merge finish its apply and redeploy before the next:
 | `off` | Nothing; tasks serve plain HTTP only |
 | `serve` | Every load-balanced task also serves TLS on `target_tls_port` (default `8443`), and the security groups open that port to the load balancer and between tasks. Traffic is unchanged |
 | `both` | An HTTPS target group per service is attached to its listener rule at weight 0 and the tasks register in both groups. The forms and tracking services move to the backend's TLS port |
-| `on` | The listener rules forward to the HTTPS groups. The HTTP groups, the plain-port security group rules and the internal `8080` rule are removed, and every plain listener is bound to loopback for the container health check only |
+| `route` | Listener rules forward to HTTPS and alarms watch the HTTPS groups. The HTTP groups, healthy registrations and network rules remain ready while the new path bakes |
+| `drain` | After the route deployment and bakes pass, ECS stops registering HTTP targets and listeners drop their HTTP references. The groups and network rules remain while connections drain |
+| `on` | After the drain deployment and bakes pass, the empty HTTP groups, the plain-port security group rules and the internal `8080` rule are removed. Every plain listener is bound to loopback for the container health check only |
 
 Each stage keeps the listeners the previous one used, so a rolling deploy never
 meets a task that cannot answer. `serve` and `both` only add task definition
-revisions and resources, so they apply on their own. `on` destroys the HTTP
-target groups and waits for approval in `aws-infrastructure-approval`. In
-`both` and `on` the ECS services wait for a steady state before the apply moves
-on, so traffic switches only to a target group whose tasks are healthy.
+revisions and resources, so they apply on their own. `route` performs the traffic
+switch without deleting network rules or target groups. It must finish its normal
+release redeploy and bakes before a separately approved `drain` run. Cleanup checks
+that the HTTP groups have no load balancer references or registered targets and
+that every public service uses only its HTTPS target group. ECS waits for a steady
+state during these stages.
 
 Before `serve`, the running release has to support `SERVE_TLS`. An older image
 ignores the setting and keeps working in `serve`, but not in `both` or `on`, so
 advance past `serve` only once rolling back to a release without it is no longer
 needed. A stage can be undone by setting the previous one while the current
-one is `serve` or `both`. Stepping back from `on` is not supported, because it
+one is `serve` or `both`. From `route`, returning to `both` sends traffic to the
+still-registered HTTP targets. From `drain`, return to `route` first and wait for
+healthy HTTP registrations before returning to `both`. Stepping back from `on` is not supported, because it
 would forward to an HTTP target group that has no tasks yet; roll back images
 among releases that support `SERVE_TLS` instead.
 
 ### Finalize TLS independently
 
-The manual **Finalize runtime TLS** workflow advances `both` to `on` without
-applying other infrastructure changes. After verifying the pinned backend hop
+The manual **Finalize runtime TLS** workflow advances `both` to `route`, then
+`drain` and `on` in separate approved runs without applying other infrastructure
+changes. After verifying the pinned backend hop
 and every HTTPS target, upload the reviewed `both` runtime var file to
 `warmbly/production/vars/runtime-tls.tfvars.json` in the private state bucket.
 Keep its S3 version ID: the workflow reads that exact version in both jobs.
 
-Dispatch the workflow from `main` with that version ID and the currently
-deployed release tag. It prints resource addresses and actions for review and
+Dispatch the workflow from `main` with stage `route`, that version ID and the
+currently deployed release tag. It prints resource addresses and actions for review and
 waits in `aws-infrastructure-approval`. After approval it rechecks HTTPS target
 health, replans and requires the complete resource changes to match the approved
-digest. Its scope guard permits only the TLS switch, including loopback listener
-settings, and refuses changes to other task definitions or infrastructure.
+digest. Each job first requires all four services to be stable on the selected
+release with compatible TLS listeners and registrations. Route also requires
+healthy HTTP fallback targets. Route and drain plans refuse target-group and security-rule deletions. The scope
+guard refuses changes to other task definitions or infrastructure.
 
 After applying, it redeploys the same release to backend, forms, tracking and
 realtime through the normal attestation, secret comparison, alarm and bake gates.
-It does not start a worker rollout. Persist `target_tls=on` in the authoritative
-runtime var file after success, then verify HTTPS target health and routes.
+It does not start a worker rollout. After that run succeeds, persist
+`target_tls=route`, verify HTTPS health and routes, and upload a new versioned
+snapshot. Dispatch stage `drain` with that snapshot and the successful route run ID
+as `previous_run`. After the drain run succeeds, persist `target_tls=drain`, upload
+a new snapshot, and dispatch `on` with the successful drain run ID. Each stage
+verifies the preceding workflow completed all bakes. Cleanup is refused until
+HTTP references and registrations have drained. Review and approve each
+plan separately. Persist `target_tls=on` only after it succeeds, then verify the
+effective loopback listeners and HTTPS routes.
 
 ## One-time GitHub setup
 
