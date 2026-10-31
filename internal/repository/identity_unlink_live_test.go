@@ -53,7 +53,8 @@ func TestLiveIdentityUnlinkKeepsAWayIn(t *testing.T) {
 	// A passkey is a way in too, and the last one cannot go either.
 	passkeys := NewWebAuthnRepository(handle)
 	passkey := uuid.New()
-	if _, err := pool.Exec(ctx, `INSERT INTO webauthn_credentials (id, user_id) VALUES ($1, $2)`, passkey, user); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO webauthn_credentials (id, user_id, credential_id, public_key)
+		VALUES ($1, $2, $3, $4)`, passkey, user, passkey[:], []byte{1}); err != nil {
 		t.Fatal(err)
 	}
 	if err := repo.Unlink(ctx, user, models.IdentityProviderApple); err != nil {
