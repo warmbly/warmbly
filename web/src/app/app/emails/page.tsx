@@ -622,31 +622,35 @@ export default function AddressesPage() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {sortedEmails.map((box) => (
-                                    <MailboxRow
-                                        key={box.id}
-                                        box={box}
-                                        tags={p?.user.tags ?? []}
-                                        status={(cloud.unavailable || cloudStandingUnavailable) && statusById.get(box.id)?.health?.status === "healthy" && !statusById.get(box.id)?.errors?.length ? undefined : statusById.get(box.id)}
-                                        lastReportedIssue={lastReportedIssues.get(box.id)}
-                                        statusPending={statusChecking && !statusUnavailable}
-                                        cloudStatusPending={cloudChecking || cloud.unavailable || cloudStandingUnavailable}
-                                        cloudRemovalPending={cloudRemovalPending}
-                                        findings={advisor.get(box.id)}
-                                        canWarmup={canWarmup}
-                                        cloud={cloud.connected ? cloud.rowFor(box.id) : undefined}
-                                        cloudConnected={cloud.connected}
-                                        retiring={retiringDomain.has(box.id)}
-                                        onRetiring={() => openMigration(retiringDomain.get(box.id) ?? null)}
-                                        checked={selected.includes(box.id)}
-                                        onToggleSelect={() =>
-                                            selected.includes(box.id)
-                                                ? setSelected((bef) => bef.filter((i) => i !== box.id))
-                                                : setSelected((bef) => [...bef, box.id])
-                                        }
-                                        onOpen={openDetail}
-                                    />
-                                ))}
+                                {sortedEmails.map((box) => {
+                                    const cloudRow = cloud.connected ? cloud.rowFor(box.id) : undefined;
+                                    const rowCloudUnavailable = cloud.unavailable || !!(cloudRow?.enrolled && !cloudRow.cloud?.health);
+                                    return (
+                                        <MailboxRow
+                                            key={box.id}
+                                            box={box}
+                                            tags={p?.user.tags ?? []}
+                                            status={rowCloudUnavailable && statusById.get(box.id)?.health?.status === "healthy" && !statusById.get(box.id)?.errors?.length ? undefined : statusById.get(box.id)}
+                                            lastReportedIssue={lastReportedIssues.get(box.id)}
+                                            statusPending={statusChecking && !inventoryUnavailable && !rowCloudUnavailable && !statuses.isError}
+                                            cloudStatusPending={cloudChecking || rowCloudUnavailable}
+                                            cloudRemovalPending={cloudRemovalPending}
+                                            findings={advisor.get(box.id)}
+                                            canWarmup={canWarmup}
+                                            cloud={cloudRow}
+                                            cloudConnected={cloud.connected}
+                                            retiring={retiringDomain.has(box.id)}
+                                            onRetiring={() => openMigration(retiringDomain.get(box.id) ?? null)}
+                                            checked={selected.includes(box.id)}
+                                            onToggleSelect={() =>
+                                                selected.includes(box.id)
+                                                    ? setSelected((bef) => bef.filter((i) => i !== box.id))
+                                                    : setSelected((bef) => [...bef, box.id])
+                                            }
+                                            onOpen={openDetail}
+                                        />
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>

@@ -638,6 +638,8 @@ This is not the same as the risk band that decides which sending worker and IP h
 
 ## Health
 
+Each Cloud mailbox uses its own current health report. A missing report shows **Unavailable** for that mailbox while other mailboxes keep their reported readings. Summary counts remain unavailable until every listed mailbox has a current status.
+
 The Accounts list groups mailboxes as **Healthy** (sending normally), **Warming** (ramping through warmup), or **Needs attention** (paused, failing, or not sending). Each row shows the mailbox with how it connects and its tags, a **Status** that says what it is doing (**Sending**, **Warming**, **Active** when it does both, **Resting**, or **Idle**, and **Error**, **Off** or **Reconnect** when something stops it), campaign emails sent today against its cap, warmup sent today against the ramp target, the inbox rate, and the health score. Hover a status for the reason, and click any column header to sort. A drop in health between refreshes notifies you rather than waiting to be noticed.
 
 Repeated reports of the same error code count once toward the health score, at their highest unresolved severity, rather than making one problem look like several. The drawer groups identical reports while keeping different error details and sending versus sync failures separate. Connection titles name Gmail, Microsoft Outlook or the mail server. **Reported** shows the stored report time: connection and temporary provider-limit observations refresh it, while other error categories may retain their original report time. It is not proof of an ongoing outage.
