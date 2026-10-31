@@ -18,6 +18,7 @@ import useLogin from "@/lib/api/hooks/auth/useLogin";
 import useLoginConfirm from "@/lib/api/hooks/auth/useLoginConfirm";
 import { useTwoFactorVerify } from "@/lib/api/hooks/auth/useTwoFactor";
 import useLinkSSO from "@/lib/api/hooks/auth/useLinkSSO";
+import useSetInitialPassword from "@/lib/api/hooks/auth/useSetInitialPassword";
 import useRegister from "@/lib/api/hooks/auth/useRegister";
 import useRegisterConfirm from "@/lib/api/hooks/auth/useRegisterConfirm";
 import { saveTokens, takeSessionEndedNotice, SESSION_ENDED_MESSAGE } from "@/lib/auth";
@@ -158,7 +159,7 @@ function useCountdown(seconds: number) {
    Main multi-step auth page
    ═══════════════════════════════════════════ */
 
-type Step = "email" | "signin" | "signup" | "verify" | "2fa" | "link";
+type Step = "email" | "signin" | "signup" | "verify" | "2fa" | "link" | "initial";
 type PasskeyStatus = "preparing" | "ready" | "waiting" | "timeout" | "not-found" | "error";
 // Why a signup cannot proceed. Either read off /auth/config before the form is
 // shown, or returned by the API when the policy changed mid-session.
@@ -275,6 +276,8 @@ export default function LoginPage() {
     const [password, setPassword] = useState("");
     const [session, setSession] = useState("");
     const [pendingToken, setPendingToken] = useState(ssoTwoFA);
+    // The single-use challenge a sign-in with an issued initial password returns.
+    const [initialToken, setInitialToken] = useState("");
     const [direction, setDirection] = useState(0);
     const pendingRef = useRef<((token: string) => void) | null>(null);
     const tokenRef = useRef<string>("");
@@ -288,6 +291,7 @@ export default function LoginPage() {
     const loginConfirmMutation = useLoginConfirm();
     const verify2FAMutation = useTwoFactorVerify();
     const linkMutation = useLinkSSO();
+    const initialPasswordMutation = useSetInitialPassword();
     const registerConfirmMutation = useRegisterConfirm();
 
     const pending = captchaLoading ||
@@ -579,6 +583,17 @@ export default function LoginPage() {
                     turnstile: token,
                     device_token: getTrustedDevice(email),
                 });
+                // An issued initial password opens nothing until the holder
+                // chooses their own; the sign-in continues from that step.
+                if (res.password_change_required) {
+                    if (!res.pending_token) {
+                        toast.error("Something went wrong, please try again.");
+                        return;
+                    }
+                    setInitialToken(res.pending_token);
+                    goTo("initial");
+                    return;
+                }
                 // A deployment with the login code turned off, or a device this
                 // account has used before, completes here: there is nothing to
                 // confirm and nothing was emailed.
@@ -701,6 +716,37 @@ export default function LoginPage() {
             await completeSession(token);
         } catch (e) {
             toast.error(buildError(e as AppError));
+        }
+    };
+
+    /* ── Initial password: replace an issued password, then continue ── */
+    // No captcha: sign-in already spent one, and the single-use challenge it
+    // returned is the proof. What follows is the normal sign-in.
+    const handleInitialPassword = async (newPassword: string) => {
+        if (!initialToken) return;
+        try {
+            const res = await initialPasswordMutation.mutateAsync({
+                pending_token: initialToken,
+                password: newPassword,
+                device_token: getTrustedDevice(email) || undefined,
+            });
+            setInitialToken("");
+            // A resent code signs in again, now with the chosen password.
+            setPassword(newPassword);
+            if (res.code_required) {
+                toast.success("Password saved. Verification code sent!");
+                setSession(res.session ?? "");
+                goTo("verify");
+                return;
+            }
+            await finishDirectLogin(res);
+        } catch (e) {
+            toast.error(buildError(e as AppError));
+            // The challenge is spent or expired: only a new sign-in can continue.
+            if ((e as AppError).code === "password_change_expired") {
+                setInitialToken("");
+                goTo("signin", -1);
+            }
         }
     };
 
@@ -871,6 +917,20 @@ export default function LoginPage() {
                             onResend={handleResend}
                             canRemember={mode === "signin" && authConfig.login_code === "new_device"}
                             captcha={captchaWidget}
+                        />
+                    </MotionWrap>
+                )}
+
+                {!signupGate && !showSignupUnavailable && step === "initial" && (
+                    <MotionWrap key="initial" direction={direction}>
+                        <InitialPasswordStep
+                            email={email}
+                            pending={initialPasswordMutation.isPending}
+                            onBack={() => {
+                                setInitialToken("");
+                                goTo("signin", -1);
+                            }}
+                            onSubmit={handleInitialPassword}
                         />
                     </MotionWrap>
                 )}
@@ -1385,6 +1445,92 @@ function LinkStep({
 
             <p className="text-xs text-slate-400 text-center mt-4">
                 Not you? Go back and sign in with your password instead; nothing has been changed on the account.
+            </p>
+        </div>
+    );
+}
+
+/* ── Initial password step ─────────────────────── */
+
+const initialPasswordSchema = z.object({
+    password: z.string().min(8, "Password must be at least 8 characters").max(128, "Password must be at most 128 characters"),
+    confirmPassword: z.string(),
+}).refine((d) => d.password === d.confirmPassword, {
+    message: "Passwords don't match",
+    path: ["confirmPassword"],
+});
+
+function InitialPasswordStep({
+    email,
+    pending,
+    onBack,
+    onSubmit,
+}: {
+    email: string;
+    pending: boolean;
+    onBack: () => void;
+    onSubmit: (password: string) => void;
+}) {
+    const { register, handleSubmit, watch, setError, formState: { errors } } = useForm<z.infer<typeof initialPasswordSchema>>({
+        resolver: zodResolver(initialPasswordSchema),
+        defaultValues: { password: "", confirmPassword: "" },
+    });
+    const pw = watch("password");
+    const { evaluate } = usePasswordStrength();
+    const [strength, setStrength] = useState<{ score: 0 | 1 | 2 | 3 | 4; warning: string }>({ score: 0, warning: "" });
+
+    useEffect(() => {
+        if (!pw) { setStrength({ score: 0, warning: "" }); return; }
+        let cancelled = false;
+        evaluate(pw).then((r) => { if (!cancelled) setStrength({ score: r.score, warning: r.warning }); });
+        return () => { cancelled = true; };
+    }, [pw, evaluate]);
+
+    const onFormSubmit = handleSubmit(async (data) => {
+        const result = await evaluate(data.password);
+        if (result.score < 2) {
+            setError("password", { message: result.warning || "Please choose a stronger password." });
+            return;
+        }
+        onSubmit(data.password);
+    });
+
+    return (
+        <div>
+            <div className="text-center mb-6">
+                <EmailPill email={email} onEdit={onBack} />
+                <h1 className="text-[28px] font-bold text-slate-900 tracking-tight leading-tight">Choose your password</h1>
+                <p className="text-sm text-slate-400 mt-1.5">
+                    The password you signed in with was issued to you and only works for a first sign-in.
+                    Choose your own to continue; the issued one stops working once you do.
+                </p>
+            </div>
+
+            <form onSubmit={onFormSubmit} className="space-y-4">
+                <div>
+                    <label className="text-sm font-medium text-slate-600 pl-0.5">New password</label>
+                    <input type="password" placeholder="Choose a password" className={INPUT} autoComplete="new-password" autoFocus {...register("password")} />
+                    <FieldError message={errors.password?.message} />
+                    {pw && (
+                        <div className="mt-2">
+                            <PasswordStrength score={strength.score} warning={strength.warning} />
+                        </div>
+                    )}
+                </div>
+
+                <div>
+                    <label className="text-sm font-medium text-slate-600 pl-0.5">Confirm password</label>
+                    <input type="password" placeholder="Confirm your password" className={INPUT} autoComplete="new-password" {...register("confirmPassword")} />
+                    <FieldError message={errors.confirmPassword?.message} />
+                </div>
+
+                <div className="pt-1">
+                    <AuthButton loading={pending}>Save password and continue</AuthButton>
+                </div>
+            </form>
+
+            <p className="text-xs text-slate-400 text-center mt-4">
+                Every other session on this account is signed out when you save it.
             </p>
         </div>
     );

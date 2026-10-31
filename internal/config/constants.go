@@ -270,6 +270,9 @@ const (
 	// it must stay well clear of a slow provider handshake.
 	CampaignSendReclaimAfterMinutes = 30
 
+	// WorkerReleaseGraceMinutes keeps a mailbox in its previous worker's scope after a move, until the reclaimer has resolved any send it left unanswered.
+	WorkerReleaseGraceMinutes = CampaignSendReclaimAfterMinutes
+
 	// TrackingMachineWindowOpenSecondsDefault and
 	// TrackingMachineWindowClickSecondsDefault are how soon after a step was
 	// dispatched an open or a click is treated as automated rather than a

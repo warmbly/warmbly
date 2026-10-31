@@ -46,6 +46,33 @@ Auth: public (not available to API keys).
 }
 ```
 
+When the password is an [issued initial password](/development/accounts-and-access/#initial-passwords), no code is sent and no session exists yet. The response asks for a new password instead:
+
+```json
+{
+  "code_required": false,
+  "password_change_required": true,
+  "pending_token": "eyJhbGciOiJIUzI1NiIs...",
+  "expires_in": 600
+}
+```
+
+### Choose a password after an issued one
+
+`POST /auth/login/initial-password`
+
+Replaces an issued initial password with the holder's own, then continues the sign-in exactly as `/auth/login` would: the response has the same shape, so it can carry `code_required` with a `session` for `/auth/login/confirm`, a `two_fa_required` challenge, or the `token` pair. Every other session the account holds is signed out first. The `pending_token` is single use and lasts ten minutes; it is accepted nowhere else, and no other token is accepted here.
+
+Auth: public (not available to API keys).
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `pending_token` | string | yes | The `pending_token` from a `password_change_required` response. |
+| `password` | string | yes | The new password. The usual rules apply (8 to 128 characters, not on the breached list), and the issued password itself is refused with `password_reused`. |
+| `device_token` | string | no | The remembered-browser token, as sent to `/auth/login`. |
+
+A token that is unknown, expired or already used, or whose issued password has run out, answers `password_change_expired`. See [password refusals](/api/error-codes/#password-refusals).
+
 ### Confirm login
 
 `POST /auth/login/confirm`
@@ -205,7 +232,7 @@ Auth: public (not available to API keys).
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `token` | string | yes | The `session` value from the emailed reset link, carried in its fragment (`#session=`); a link from older mail carries it in the query. |
+| `token` | string | yes | The `session` value from the emailed reset link, carried in its fragment (`#session=`), which a browser never sends to a server. |
 
 #### Response
 
@@ -386,6 +413,12 @@ Self-service session management for the signed-in user. Revoking by id can only 
 `POST /auth/logout`
 
 Revokes the current session and closes the user's open realtime connections. Returns `204 No Content`.
+
+The body is optional. `device_tokens` (an array of up to 16 strings) names the remembered-device tokens the signing-out browser holds; each one that belongs to this account is forgotten, so the next sign-in from that browser asks for the emailed code. A token of another account changes nothing.
+
+```json
+{ "device_tokens": ["<token>"] }
+```
 
 Auth: Session only (not available to API keys).
 

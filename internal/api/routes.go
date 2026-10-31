@@ -133,7 +133,6 @@ func Run(
 	// A linked instance's brokered sign-in opens here first: the page names who is asking and binds the browser.
 	r.GET("/addresses/connect", m.PublicIPRateLimitMiddleware(), h.PoolLinkOAuthConsentPage)
 	r.POST("/addresses/connect/continue", m.PublicIPRateLimitMiddleware(), h.PoolLinkOAuthContinue)
-	r.GET("/addresses/connect/continue", m.PublicIPRateLimitMiddleware(), h.PoolLinkOAuthContinue)
 
 	// Public OAuth callback bouncer for third-party integrations (HubSpot,
 	// Slack, Google, Pipedrive, …). The provider redirects here; the page
@@ -399,6 +398,8 @@ func Run(
 
 		auth.POST("/login", h.LoginStart)
 		auth.POST("/login/confirm", h.LoginConfirm)
+		// An issued initial password is replaced here before the sign-in continues.
+		auth.POST("/login/initial-password", h.LoginInitialPassword)
 		auth.POST("/register", h.RegistrationStart)
 		auth.POST("/register/confirm", h.RegistrationConfirm)
 		auth.POST("/refresh", h.RefreshToken)
@@ -1859,6 +1860,8 @@ func Run(
 		adminRoutes.POST("/testers", middleware.RequireAdminPermission(models.AdminPermManageTesters), h.AdminCreateTester)
 		adminRoutes.POST("/organizations/:id/sample-data", middleware.RequireAdminPermission(models.AdminPermManageTesters), h.AdminSeedTesterWorkspace)
 		adminRoutes.DELETE("/testers/:id", middleware.RequireAdminPermission(models.AdminPermManageTesters), h.AdminRevokeTester)
+		// A fresh initial password changes who can get in.
+		adminRoutes.POST("/testers/:id/password", middleware.RequireAdminPermission(models.AdminPermManageTesters), middleware.RequireFreshAuth(), h.AdminReissueTesterPassword)
 		// Removing a sign-in step from an account changes who can get in.
 		adminRoutes.PUT("/users/:id/login-code-exempt", middleware.RequireAdminPermission(models.AdminPermManageTesters), middleware.RequireFreshAuth(), h.AdminSetLoginCodeExempt)
 		adminRoutes.POST("/users/:id/ban", middleware.RequireAdminPermission(models.AdminPermBanUsers), h.AdminBanUser)

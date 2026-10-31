@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/pkg/nodeauth"
 )
 
 // HTTPStore is the worker-side adapter. Workers cannot connect to Postgres
@@ -72,7 +73,7 @@ func (s *HTTPStore) url(orgID uuid.UUID) string {
 }
 
 func (s *HTTPStore) authed(req *http.Request) {
-	req.Header.Set("Authorization", "Bearer "+s.token)
+	nodeauth.Authorize(req, s.token)
 	req.Header.Set("User-Agent", "warmbly-worker/encryptedkeys-http")
 }
 

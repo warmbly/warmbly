@@ -12,6 +12,9 @@ defmodule Realtime.Application do
     # while named processes (like PubSub.Supervisor) survive, causing conflicts.
     {:ok, _} = Application.ensure_all_started(:postgrex)
 
+    # Before the endpoint starts: it reads its listeners from this env once.
+    Realtime.ServeTLS.configure_endpoint!()
+
     children =
       [
         # Database repository for API key lookups

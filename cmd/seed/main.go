@@ -47,6 +47,7 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/argon2"
+	"github.com/warmbly/warmbly/internal/pkg/crypt"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/seed"
 )
@@ -152,6 +153,11 @@ func seedBaseline(ctx context.Context, pool *pgxpool.Pool) error {
 	// the running worker container can pick the assignments up.
 	if err := upsertWorker(ctx, pool, workerShared, "worker-1", "10.0.0.11", "", true); err != nil {
 		return fmt.Errorf("dev worker: %w", err)
+	}
+	// Its own node credential, so `make worker` also runs with NODE_REQUIRE_NODE_CREDENTIAL=true.
+	if _, err := pool.Exec(ctx, `UPDATE fleet_nodes SET credential_hash = $2, updated_at = now() WHERE id = $1`,
+		workerShared, crypt.SHA256(seed.DevNodeCredential)); err != nil {
+		return fmt.Errorf("dev worker credential: %w", err)
 	}
 
 	// Connect two email accounts on the dev org. Without these a fresh

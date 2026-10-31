@@ -18,6 +18,7 @@ var remoteAdminRoutes = []remoteAdminRoute{
 	{"POST", "/admin/testers", []string{"ManageTesters"}, false, "Credential issuance is intentionally not exposed through diagnostic output"},
 	{"POST", "/admin/organizations/:id/sample-data", []string{"ManageTesters"}, false, ""},
 	{"DELETE", "/admin/testers/:id", []string{"ManageTesters"}, false, ""},
+	{"POST", "/admin/testers/:id/password", []string{"ManageTesters"}, true, "Credential issuance is intentionally not exposed through diagnostic output"},
 	{"PUT", "/admin/users/:id/login-code-exempt", []string{"ManageTesters"}, true, ""},
 	{"POST", "/admin/users/:id/ban", []string{"BanUsers"}, false, ""},
 	{"POST", "/admin/users/:id/unban", []string{"BanUsers"}, false, ""},

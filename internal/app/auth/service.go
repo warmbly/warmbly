@@ -77,6 +77,9 @@ type AuthService interface {
 	ReleaseReauthAttempt(ctx context.Context, userID uuid.UUID)
 	ClearReauthFailures(ctx context.Context, userID uuid.UUID)
 	LoginConfirm(ctx context.Context, data *ConfirmData, session, ipaddr, userAgent string) (*models.LoginResult, *errx.Error)
+	// CompleteInitialPassword takes the password_change_required challenge and
+	// the holder's own password, then continues the sign-in like LoginStart.
+	CompleteInitialPassword(ctx context.Context, data *InitialPasswordData, ipaddr, userAgent string) (*models.AuthSession, *errx.Error)
 	// WireTwoFA attaches the 2FA challenger (post-construction; nil = 2FA off).
 	WireTwoFA(t TwoFAChallenger)
 	// WireAppAttest accepts native app proofs on the captcha-gated paths (nil = off).
@@ -124,6 +127,8 @@ type AuthService interface {
 	// ForgetTrustedDevices drops every browser the user asked to remember, so
 	// each asks for an emailed login code again.
 	ForgetTrustedDevices(ctx context.Context, userID uuid.UUID) *errx.Error
+	// ForgetTrustedDevice drops the remembered devices whose tokens a signing-out browser presents.
+	ForgetTrustedDevice(ctx context.Context, userID uuid.UUID, tokens []string) *errx.Error
 
 	// Policy is the resolved per-deployment auth behavior, exposed so the
 	// public /auth/config endpoint can report it to the login screen.

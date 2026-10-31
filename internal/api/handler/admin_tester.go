@@ -79,6 +79,8 @@ type adminCreateTesterResponse struct {
 	// means making another tester, which is cheap.
 	Password          string    `json:"password"`
 	PasswordExpiresAt time.Time `json:"password_expires_at"`
+	// PasswordChangeRequired is always true: the holder replaces the password at first sign-in.
+	PasswordChangeRequired bool `json:"password_change_required"`
 }
 
 // testerPasswordAlphabet leaves out the characters that are misread when a
@@ -170,6 +172,10 @@ func (h *Handler) AdminCreateTester(c *gin.Context) {
 		errx.JSON(c, errx.New(errx.Internal, "could not create the account"))
 		return
 	}
+	// The workspace grant must end exactly when the stored password does.
+	if created.PasswordExpiresAt != nil {
+		passwordExpiresAt = *created.PasswordExpiresAt
+	}
 
 	// A tester joined to an existing workspace gets no workspace of its own on
 	// purpose. Owning one would leave the reviewer a member of two, and the
@@ -210,12 +216,13 @@ func (h *Handler) AdminCreateTester(c *gin.Context) {
 	h.logTesterAction(c, *adminID, created.ID, "create_tester", entry)
 
 	c.JSON(http.StatusOK, adminCreateTesterResponse{
-		UserID:            created.ID,
-		Email:             created.Email,
-		OrgID:             orgID,
-		Joined:            joined,
-		Password:          password,
-		PasswordExpiresAt: passwordExpiresAt,
+		UserID:                 created.ID,
+		Email:                  created.Email,
+		OrgID:                  orgID,
+		Joined:                 joined,
+		Password:               password,
+		PasswordExpiresAt:      passwordExpiresAt,
+		PasswordChangeRequired: true,
 	})
 }
 
@@ -330,6 +337,98 @@ func (h *Handler) revokeExemption(c *gin.Context, userID uuid.UUID) (passwordCle
 		}
 	}
 	return cleared, true
+}
+
+type adminReissueTesterPasswordResponse struct {
+	UserID uuid.UUID `json:"user_id"`
+	// Password is returned once and never stored in a readable form.
+	Password               string    `json:"password"`
+	PasswordExpiresAt      time.Time `json:"password_expires_at"`
+	PasswordChangeRequired bool      `json:"password_change_required"`
+}
+
+// AdminReissueTesterPassword gives an account created as a tester a fresh
+// initial password, valid 48 hours, and signs out everything it held.
+func (h *Handler) AdminReissueTesterPassword(c *gin.Context) {
+	adminID := middleware.GetAdminUserID(c)
+	if adminID == nil {
+		errx.JSON(c, errx.ErrUnauthorized)
+		return
+	}
+	userID, err := uuid.Parse(c.Param("id"))
+	if err != nil || userID == uuid.Nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "that is not a user id"))
+		return
+	}
+	if h.UserRepo == nil {
+		errx.JSON(c, errx.New(errx.ServiceUnavailable, "accounts are not available on this instance"))
+		return
+	}
+	ctx := c.Request.Context()
+
+	// Checked before anything is revoked, so a refused call changes nothing.
+	tester, terr := h.UserRepo.IsCreatedTester(ctx, userID)
+	if errors.Is(terr, repository.ErrUserNotFound) || (terr == nil && !tester) {
+		errx.JSON(c, errx.New(errx.NotFound, "no account created as a tester has that id"))
+		return
+	}
+	if terr != nil {
+		errs.CaptureException(terr)
+		errx.JSON(c, errx.New(errx.Internal, "could not read the account"))
+		return
+	}
+
+	password, gerr := testerPassword()
+	if gerr != nil {
+		errx.JSON(c, errx.New(errx.Internal, "could not generate a password"))
+		return
+	}
+	hash, herr := argon2.Hash(password)
+	if herr != nil {
+		errx.JSON(c, errx.New(errx.Internal, "could not hash the password"))
+		return
+	}
+
+	// Sessions and remembered devices end first, so a failure leaves the old password in place.
+	if h.TokenService != nil {
+		if xerr := h.TokenService.RevokeOtherSessions(ctx, userID, uuid.Nil); xerr != nil {
+			errs.CaptureException(xerr)
+			errx.JSON(c, errx.New(errx.Internal, "could not end the account's sessions"))
+			return
+		}
+	}
+	if h.AuthService != nil {
+		if xerr := h.AuthService.ForgetTrustedDevices(ctx, userID); xerr != nil {
+			errx.JSON(c, errx.New(errx.Internal, "could not forget the account's remembered devices"))
+			return
+		}
+	}
+	until, rerr := h.UserRepo.ReissueTesterPassword(ctx, userID, hash)
+	if rerr != nil {
+		if errors.Is(rerr, repository.ErrNotTester) {
+			errx.JSON(c, errx.New(errx.NotFound, "no account created as a tester has that id"))
+			return
+		}
+		errs.CaptureException(rerr)
+		errx.JSON(c, errx.New(errx.Internal, "could not store the new password"))
+		return
+	}
+	// A sign-in that landed between the two writes is ended too.
+	if h.TokenService != nil {
+		if xerr := h.TokenService.RevokeOtherSessions(ctx, userID, uuid.Nil); xerr != nil {
+			errs.CaptureException(xerr)
+		}
+	}
+
+	h.logTesterAction(c, *adminID, userID, "reissue_tester_password", map[string]any{
+		"password_expires_at": until.UTC().Format(time.RFC3339),
+	})
+	c.JSON(http.StatusOK, adminReissueTesterPasswordResponse{
+		UserID:                 userID,
+		Password:               password,
+		PasswordExpiresAt:      until,
+		PasswordChangeRequired: true,
+	})
 }
 
 type adminSetLoginCodeExemptRequest struct {

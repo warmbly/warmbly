@@ -45,6 +45,12 @@ schema_registry_converter = { version = "4.0", features = ["avro", "blocking"], 
 # OpenSSL system libraries.
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 
+# Opt-in TLS listener (SERVE_TLS). No provider feature: main installs ring,
+# so aws-lc-rs is not pulled in for it. rcgen makes the in-memory self-signed
+# certificate, on ring for the same reason.
+axum-server = { version = "0.8", default-features = false, features = ["tls-rustls-no-provider"] }
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "ring"] }
+
 # Utils
 uuid = { version = "1", features = ["v4", "serde"] }
 serde = { version = "1", features = ["derive"] }

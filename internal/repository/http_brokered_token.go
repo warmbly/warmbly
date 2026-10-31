@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/pkg/nodeauth"
 	"golang.org/x/oauth2"
 )
 
@@ -57,7 +58,7 @@ func (r *httpBrokeredTokenClient) Token(ctx context.Context, accountID uuid.UUID
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+r.token)
+	nodeauth.Authorize(req, r.token)
 	req.Header.Set("User-Agent", "warmbly-worker/brokered-token-http")
 	resp, err := r.client.Do(req)
 	if err != nil {

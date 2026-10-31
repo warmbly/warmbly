@@ -82,3 +82,25 @@ func (s *authService) ForgetTrustedDevices(ctx context.Context, userID uuid.UUID
 	}
 	return nil
 }
+
+// ForgetTrustedDevice drops the given tokens' devices for this user; a token
+// issued to another account names no key here and changes nothing.
+func (s *authService) ForgetTrustedDevice(ctx context.Context, userID uuid.UUID, tokens []string) *errx.Error {
+	if s.cache == nil {
+		return nil
+	}
+	var keys []string
+	for _, tok := range tokens {
+		if tok = strings.TrimSpace(tok); tok != "" && len(tok) <= 128 {
+			keys = append(keys, getTrustedDeviceKey(userID, crypt.SHA256(tok)))
+		}
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	if err := s.cache.Del(ctx, keys...).Err(); err != nil {
+		errs.CaptureExceptionContext(ctx, err, errs.Tag("area", "trusted_device"))
+		return errx.InternalError()
+	}
+	return nil
+}

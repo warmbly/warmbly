@@ -8,6 +8,7 @@ package main
 
 import (
 	"log"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/warmbly/warmbly/internal/formserver"
 	"github.com/warmbly/warmbly/internal/observability"
 	"github.com/warmbly/warmbly/internal/observability/errs"
+	"github.com/warmbly/warmbly/internal/pkg/servetls"
 )
 
 func main() {
@@ -37,6 +39,11 @@ func main() {
 		log.Fatal("INTERNAL_API_TOKEN is required (must match the backend's)")
 	}
 
+	backendRoots, err := servetls.ClientRoots(strings.TrimSpace(os.Getenv("BACKEND_INTERNAL_CA")), strings.TrimSpace(os.Getenv("BACKEND_INTERNAL_CA_FILE")))
+	if err != nil {
+		log.Fatalf("invalid BACKEND_INTERNAL_CA or BACKEND_INTERNAL_CA_FILE: %v", err)
+	}
+
 	submitLimit := 0
 	if v := os.Getenv("FORM_IP_RATE_LIMIT"); v != "" {
 		parsed, err := strconv.Atoi(v)
@@ -56,6 +63,7 @@ func main() {
 	srv, err := formserver.New(formserver.Config{
 		BackendURL:    backendURL,
 		InternalToken: token,
+		BackendRoots:  backendRoots,
 		StaticDir:     staticDir,
 		SubmitLimit:   submitLimit,
 		// The browser half of analytics and error reporting, separate from
@@ -82,14 +90,28 @@ func main() {
 	if port == "" {
 		port = "8090"
 	}
-	log.Printf("forms service listening on :%s (backend %s)", port, backendURL)
-	if err := r.Run(":" + port); err != nil {
-		// The listener dying is the one failure here worth reporting: the
-		// boot-time checks above are operator configuration, not a bug.
-		errs.CaptureException(err)
-		errs.Flush(2 * time.Second)
-		log.Fatal(err)
+	tlsListen, err := servetls.FromEnv(os.Getenv)
+	if err != nil {
+		log.Fatalf("invalid TLS listener setting: %v", err)
 	}
+	plain, secure, err := tlsListen.Servers(":"+port, r)
+	if err != nil {
+		log.Fatalf("TLS listener: %v", err)
+	}
+	failed := make(chan error, 2)
+	for _, s := range []*http.Server{plain, secure} {
+		if s == nil {
+			continue
+		}
+		log.Printf("forms service listening on %s (backend %s)", s.Addr, backendURL)
+		go func(s *http.Server) { failed <- servetls.ListenAndServe(s) }(s)
+	}
+	// The listener dying is the one failure here worth reporting: the
+	// boot-time checks above are operator configuration, not a bug.
+	err = <-failed
+	errs.CaptureException(err)
+	errs.Flush(2 * time.Second)
+	log.Fatal(err)
 }
 
 // browserPostHogErrorTracking is the WARMBLY_POSTHOG_ERROR_TRACKING switch the

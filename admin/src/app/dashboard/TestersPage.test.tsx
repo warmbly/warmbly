@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LoginCodeExemption } from "@/lib/api/models/admin";
+import { ConfirmProvider } from "@/components/ConfirmDialog";
 import TestersPage from "./TestersPage";
 
 const access = vi.hoisted(() => ({ canManage: true }));
@@ -15,11 +16,23 @@ function render(tester: Partial<LoginCodeExemption>) {
     client.setQueryData(["admin", "testers"], {
         data: [{ user_id: "reviewer", email: "reviewer@example.test", password_expires_at: "2100-01-01T00:00:00Z", ...tester }],
     });
-    const html = renderToStaticMarkup(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/testers"]}><TestersPage /></MemoryRouter></QueryClientProvider>);
+    const html = renderToStaticMarkup(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/testers"]}><ConfirmProvider><TestersPage /></ConfirmProvider></MemoryRouter></QueryClientProvider>);
     client.clear();
     const document = new DOMParser().parseFromString(html, "text/html");
     return document;
 }
+
+describe("tester password re-issue", () => {
+    beforeEach(() => { access.canManage = true; });
+
+    it("offers a new password only on accounts created as testers, to managers", () => {
+        const selector = 'button[aria-label^="Issue new password for"]';
+        expect(render({ created_as_tester: true }).querySelector(selector)).not.toBeNull();
+        expect(render({ created_as_tester: false }).querySelector(selector)).toBeNull();
+        access.canManage = false;
+        expect(render({ created_as_tester: true }).querySelector(selector)).toBeNull();
+    });
+});
 
 describe("tester sample-data controls", () => {
     beforeEach(() => { access.canManage = true; });

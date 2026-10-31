@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"os"
 
@@ -57,6 +58,11 @@ func (h *Handler) InternalWorkerConfig(c *gin.Context) {
 	id, err := uuid.Parse(idParam)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "valid worker_id query param required"})
+		return
+	}
+	if !h.nodeInScope(c, "worker.config", http.StatusNotFound, func(ctx context.Context, node uuid.UUID) (bool, error) {
+		return h.NodeScope.Worker(ctx, node, id)
+	}) {
 		return
 	}
 	bindIP := c.Query("bind_ip")

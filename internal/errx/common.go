@@ -86,6 +86,18 @@ var (
 	ErrSSOLinkExpired = NewWithIdentifier(BadRequest, "sso_link_expired",
 		"That sign-in request expired or had too many attempts. Start the sign-in again.")
 
+	// ErrPasswordChangeRequired refuses using an issued initial password anywhere but the password sign-in, which replaces it.
+	ErrPasswordChangeRequired = NewWithIdentifier(Forbidden, "password_change_required",
+		"This account still has the password it was issued, which has to be replaced first. Sign in with your email and password to choose your own.")
+
+	// ErrPasswordChangeExpired ends a choose-your-password step that is unknown, expired, already used, or whose issued password ran out.
+	ErrPasswordChangeExpired = NewWithIdentifier(BadRequest, "password_change_expired",
+		"That sign-in request expired or was already used. Sign in again.")
+
+	// ErrPasswordReused refuses choosing the issued initial password as your own.
+	ErrPasswordReused = NewWithIdentifier(BadRequest, "password_reused",
+		"Choose a password of your own, different from the one you were given.")
+
 	// Re-authentication through a linked identity.
 	ErrReauthIdentityMismatch = NewWithIdentifier(BadRequest, "reauth_identity_mismatch",
 		"That account is not the one linked to this Warmbly account. Continue with the account you sign in with.")
