@@ -323,6 +323,58 @@ func (h *Handler) ResetPasswordConfirm(c *gin.Context) {
 	c.Status(http.StatusOK)
 }
 
+// SendPasswordLink emails the signed-in user a link to set a password.
+func (h *Handler) SendPasswordLink(c *gin.Context) {
+	uid, err := uuid.Parse(middleware.GetUserID(c))
+	if err != nil {
+		errx.Handle(c, errx.ErrUnauthorized)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), authRequestTimeout)
+	defer cancel()
+
+	if xerr := h.AuthService.SendPasswordLink(ctx, uid); xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	c.Status(http.StatusOK)
+}
+
+// LinkedIdentities lists the providers the signed-in user can sign in with.
+func (h *Handler) LinkedIdentities(c *gin.Context) {
+	uid, err := uuid.Parse(middleware.GetUserID(c))
+	if err != nil {
+		errx.Handle(c, errx.ErrUnauthorized)
+		return
+	}
+	ids, xerr := h.AuthService.LinkedIdentities(c.Request.Context(), uid)
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": ids})
+}
+
+// UnlinkIdentity removes one provider from the signed-in user's sign-in methods.
+func (h *Handler) UnlinkIdentity(c *gin.Context) {
+	uid, err := uuid.Parse(middleware.GetUserID(c))
+	if err != nil {
+		errx.Handle(c, errx.ErrUnauthorized)
+		return
+	}
+	session := middleware.GetSession(c)
+	if session == nil || session.UserID != uid {
+		errx.Handle(c, errx.ErrUnauthorized)
+		return
+	}
+	if xerr := h.AuthService.UnlinkIdentity(c.Request.Context(), uid, session.ID, c.Param("provider")); xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 // ChangePassword updates the signed-in user's password (current + new). Every
 // session ends with it; the response carries the token pair of a new session
 // for this device, and the client must use it from here on.

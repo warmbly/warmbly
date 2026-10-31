@@ -195,6 +195,21 @@ docker exec wqa-<worktree>-redis redis-cli FLUSHDB
 QA_CAMPAIGN_ESTIMATE_FIXTURES=1 pnpm proof campaign-estimate
 ```
 
+## Sign-in methods proof fixtures
+
+`flows/signin-methods.flow.ts` is opt-in: apply `fixtures/signin-methods.sql` to
+this worktree's rich-seed database after the stack has signed in. It turns the
+seeded owner into an account with Apple and Google linked and no password, and
+stamps the saved session as freshly confirmed for five minutes, so record right
+away. Clear the stack's private Redis afterwards, and `pnpm stack reset-data`
+once you are done, because the owner no longer has a password.
+
+```bash
+docker exec -i warmbly-postgres-1 psql -U warmbly -d warmbly_qa_<worktree> < fixtures/signin-methods.sql
+docker exec wqa-<worktree>-redis redis-cli FLUSHDB
+QA_SIGNIN_METHODS_FIXTURES=1 pnpm proof signin-methods
+```
+
 ## Tester sample data proof
 
 The `tester-sample-data` flow uses the real local tester-provisioning and sample-data endpoints. Start the worktree's lite stack, then serve `admin/` separately against its API. Set `QA_WEB_URL` to that localhost admin origin. Prepare a seeded admin holding `view_users` and `manage_testers`, with a locally MFA-verified session; clear only that user's and session's isolated Redis entries after SQL fixture changes. These authentication fixtures are not proof of real MFA. Run `QA_TESTER_SAMPLE_FIXTURES=1 pnpm proof tester-sample-data`.

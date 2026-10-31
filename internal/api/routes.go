@@ -474,6 +474,11 @@ func Run(
 		protectedAuth.POST("/me/avatar", h.UploadUserAvatar)
 		protectedAuth.DELETE("/me/avatar", h.DeleteUserAvatar)
 		protectedAuth.POST("/me/password", m.RateLimitMiddleware(models.RateLimitWrite), h.ChangePassword)
+		// No Idempotency-Key: a repeat mails another single-use link on the capped reset budget.
+		protectedAuth.POST("/me/password/link", m.RateLimitMiddleware(models.RateLimitWrite), h.SendPasswordLink)
+		// Removing a sign-in method changes who can get in. A repeat converges, so it takes no Idempotency-Key.
+		protectedAuth.GET("/me/identities", h.LinkedIdentities)
+		protectedAuth.DELETE("/me/identities/:provider", middleware.RequireFreshAuth(), m.RateLimitMiddleware(models.RateLimitWrite), h.UnlinkIdentity)
 		// Undo-send window (user-scoped; current value rides /auth/me).
 		protectedAuth.PUT("/me/send-preferences", h.UpdateSendPreferences)
 
