@@ -62,16 +62,26 @@ defmodule Realtime.ServeTLSTest do
 
     {:ok, {_, port}} = :ssl.sockname(listen)
 
+    test_pid = self()
+
+    # The socket closes with its owner, so the server holds it until the client has looked.
     server =
       Task.async(fn ->
         {:ok, socket} = :ssl.transport_accept(listen)
-        :ssl.handshake(socket)
+        result = :ssl.handshake(socket)
+        send(test_pid, :handshaken)
+
+        receive do
+          :done -> result
+        end
       end)
 
     {:ok, client} =
       :ssl.connect(~c"localhost", port, [versions: [:"tlsv1.2"], verify: :verify_none], 5_000)
 
+    assert_receive :handshaken, 5_000
     assert {:ok, [protocol: :"tlsv1.2"]} = :ssl.connection_information(client, [:protocol])
+    send(server.pid, :done)
     assert {:ok, _} = Task.await(server)
     :ssl.close(client)
     :ssl.close(listen)
