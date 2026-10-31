@@ -593,6 +593,50 @@ Auth: Session only (not available to API keys).
 }
 ```
 
+### Send a set-password link
+
+`POST /auth/me/password/link`
+
+Emails the signed-in user a single-use link to set a password, to the address on the account. It is how an account created through Google, Apple or single sign-on adds email and password sign-in without a second account; it also works for an account that already has a password. The link is the same one **Forgot password** sends: it expires after one hour, setting the password through it ends every session (this one included), and it shares that flow's budget of 2 links per address per 4 hours. No request body. Returns `200 OK`.
+
+The server refuses with `403` `password_login_disabled` when password sign-in is turned off, and with `400` when the budget is spent.
+
+Auth: Session only (not available to API keys).
+
+### List sign-in methods
+
+`GET /auth/me/identities`
+
+The providers linked to the signed-in user: Google, Apple or the deployment's single sign-on. `provider` is `google`, `apple` or `oidc`; `email` is the address the provider reported, which for Apple can be a Hide My Email relay address. A password and passkeys are not listed here.
+
+Auth: Session only (not available to API keys).
+
+#### Response
+
+```json
+{
+  "data": [
+    {
+      "provider": "apple",
+      "label": "Apple",
+      "email": "[EMAIL]",
+      "created_at": "2026-03-02T09:14:00Z",
+      "last_login_at": "2026-10-20T08:01:00Z"
+    }
+  ]
+}
+```
+
+### Remove a sign-in method
+
+`DELETE /auth/me/identities/:provider`
+
+Stops the provider signing in to this account and ends every other session that signed in through it; the session making the request stays signed in. The account, its address, workspaces, roles, plan and connected mailboxes are unchanged. Signing in with the same provider and address again later links it back, after asking for the account's password when it has one. Requires a fresh confirmation (`reauth_required` otherwise). Returns `204 No Content`, also when the provider was already removed, so a repeat is safe.
+
+Refused with `409` `last_sign_in_method` when the account would be left with no password, no passkey and no other provider, and with `404` `identity_not_found` when `:provider` is not `google`, `apple` or `oidc`. If the provider was removed but its sessions could not all be ended, the answer is `503` `sessions_not_ended` with `Retry-After`; repeat the request to finish.
+
+Auth: Session only (not available to API keys).
+
 ## Notification preferences and feed
 
 User-scoped, no organization gate. Preferences are a single per-user object; the feed is the in-app notification list.

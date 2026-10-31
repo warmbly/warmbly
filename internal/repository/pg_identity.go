@@ -36,6 +36,10 @@ type IdentityRepository interface {
 	// ListForUser returns every identity linked to a user, for the account
 	// security screen.
 	ListForUser(ctx context.Context, userID uuid.UUID) ([]models.UserIdentity, error)
+
+	// Unlink removes the user's identity from provider unless it is the
+	// account's last way to sign in.
+	Unlink(ctx context.Context, userID uuid.UUID, provider string) error
 }
 
 type identityRepository struct {
@@ -116,4 +120,53 @@ func (r *identityRepository) ListForUser(ctx context.Context, userID uuid.UUID) 
 		out = append(out, identity)
 	}
 	return out, rows.Err()
+}
+
+// ErrIdentityNotLinked is Unlink's answer when the user has no identity from
+// that provider.
+var ErrIdentityNotLinked = errors.New("identity is not linked to this account")
+
+// ErrLastSignInMethod is Unlink's answer when the identity is the account's
+// only way to sign in: no password, no passkey and no other identity.
+var ErrLastSignInMethod = errors.New("identity is the last sign-in method")
+
+func (r *identityRepository) Unlink(ctx context.Context, userID uuid.UUID, provider string) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// The user row lock serialises two removals so they cannot each count the
+	// other as the remaining way in.
+	var hasPassword bool
+	err = tx.QueryRow(ctx, `SELECT COALESCE(`+livePasswordHash+`, '') <> '' FROM users WHERE id = $1 FOR UPDATE`, userID).Scan(&hasPassword)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrIdentityNotLinked
+	}
+	if err != nil {
+		return err
+	}
+
+	var linked, others, passkeys bool
+	err = tx.QueryRow(ctx, `
+		SELECT
+			EXISTS (SELECT 1 FROM user_identities WHERE user_id = $1 AND provider = $2),
+			EXISTS (SELECT 1 FROM user_identities WHERE user_id = $1 AND provider <> $2),
+			EXISTS (SELECT 1 FROM webauthn_credentials WHERE user_id = $1)
+	`, userID, provider).Scan(&linked, &others, &passkeys)
+	if err != nil {
+		return err
+	}
+	if !linked {
+		return ErrIdentityNotLinked
+	}
+	if !hasPassword && !passkeys && !others {
+		return ErrLastSignInMethod
+	}
+
+	if _, err := tx.Exec(ctx, `DELETE FROM user_identities WHERE user_id = $1 AND provider = $2`, userID, provider); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }

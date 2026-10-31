@@ -65,7 +65,21 @@ A first sign-in with a new address via Google or Apple creates your account, wor
 
 If the address already has a Warmbly account with a password, the first Google, Apple or single sign-on with it asks for that password before the provider is attached to the account. The provider confirms the address is yours; the password confirms the account is. Once linked, later sign-ins with that provider go straight through. An account that never set a password (created through a provider or an invitation) is linked on the first sign-in.
 
-Accounts created through an external sign-in provider have no password initially. Trying password sign-in returns the same invalid-credentials response as an incorrect password. Continue with your provider, or use **Forgot password** to set a password before signing in with it. A reset link works once and only for the password it was requested against: changing your password by any route, including using another reset link, makes every earlier link invalid before it expires.
+Accounts created through an external sign-in provider have no password initially. Trying password sign-in returns the same invalid-credentials response as an incorrect password. Continue with your provider, or set a password: while signed in, open **Settings > Security** and choose **Email me a link** under **Password**, or use **Forgot password** on the sign-in page. A reset link works once and only for the password it was requested against: changing your password by any route, including using another reset link, makes every earlier link invalid before it expires.
+
+### Move from Google or Apple sign-in to email sign-in
+
+To stop using a provider (for example when an Apple ID or a Google Workspace account is being retired) while keeping the same Warmbly account, workspaces, roles and plan:
+
+1. While you can still sign in, open **Settings > Security** and choose **Email me a link** under **Password**. The link goes to the email address on your account.
+2. Open the link within one hour and choose a password. This signs out every device.
+3. Sign in with your email and the new password. Warmbly can also email a 6-digit code to that address, for example when you sign in on a new device.
+4. Optionally add a passkey or turn on two-factor authentication on the same page.
+5. Under **Sign-in methods**, choose **Remove** next to the provider. Warmbly asks you to confirm it is you first, refuses if the provider is still your only way in, and signs out every other device that signed in with it.
+
+The address on the account does not change, so it must keep receiving mail (a forward is fine): sign-in codes and password reset links are sent there. If you signed up with Apple's **Hide My Email**, the address is an `@privaterelay.appleid.com` relay that only forwards while Warmbly stays connected to your Apple ID, so do not disconnect Warmbly on Apple's side. With any other address, you can also disconnect Warmbly in your Apple ID or Google account settings after removing the provider here.
+
+Signing in to Warmbly is separate from any Gmail, Workspace or iCloud mailbox you connected for sending; removing a sign-in method does not affect it, and retiring that mailbox affects its sending and sync, not your sign-in. See [mailboxes](/guides/mailboxes/).
 
 <Callout type="info" title="Passwordless by design">
 A passkey is tied to your device and unlocked with biometrics or a PIN, so it already proves both something you have and something you are or know. That is why it skips the emailed code. Warmbly requires that unlock: a security key with no PIN set cannot be added, and cannot sign in, until you set one on the key.

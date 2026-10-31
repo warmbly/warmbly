@@ -1,6 +1,7 @@
 import type React from "react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "@/hooks/useSearchParams";
 import useResetPasswordConfirm from "@/lib/api/hooks/auth/useResetPasswordConfirm";
 import { usePasswordStrength } from "@/hooks/usePasswordStrength";
@@ -9,11 +10,14 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import resetPasswordSession from "@/lib/api/client/auth/resetPasswordSession";
 import { resetLinkToken } from "@/lib/resetLinkToken";
+import getToken from "@/lib/helper/getToken";
+import { clearClientSession } from "@/lib/session";
 
 export function useResetPasswordConfirmForm() {
     // The link token is exchanged for a reset session held in memory, and cleared from the address bar.
     const [params, setParams] = useSearchParams();
     const navigate = useNavigate();
+    const queryClient = useQueryClient();
     const resetConfirm = useResetPasswordConfirm();
     const { evaluate } = usePasswordStrength();
 
@@ -67,6 +71,8 @@ export function useResetPasswordConfirmForm() {
                 resetConfirm.mutateAsync({ session, password, turnstile: turnstileToken }),
                 { loading: "Loading...", success: "Password successfully changed", error: (err: AppError) => buildError(err) }
             );
+            // The reset ended every session, this browser's included.
+            if (getToken()) clearClientSession(queryClient);
             navigate({ to: "/auth/login", search: { action: "1" } });
         } catch (err) {
             // The link died meanwhile (used, expired, or the password changed): show the request-a-new-one screen.
