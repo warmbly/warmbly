@@ -9,6 +9,7 @@
 // click-outside handlers treat it as part of the floating layer.
 
 import React from "react";
+import useClickOutside from "@/hooks/useClickOutside";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { SparklesIcon } from "lucide-react";
@@ -196,23 +197,8 @@ export default function TextareaAIEdit({
         };
     }, [sel, syncRects]);
 
-    // Dismiss when the user clicks anywhere outside the floating layer and
-    // the textarea (like useClickOutside, plus the textarea exception).
-    React.useEffect(() => {
-        if (!open) return;
-        const onDown = (e: MouseEvent | TouchEvent) => {
-            const t = e.target as Node | null;
-            if (rootRef.current?.contains(t)) return;
-            if (textareaRef.current?.contains(t)) return;
-            closeAll();
-        };
-        document.addEventListener("mousedown", onDown, true);
-        document.addEventListener("touchstart", onDown, true);
-        return () => {
-            document.removeEventListener("mousedown", onDown, true);
-            document.removeEventListener("touchstart", onDown, true);
-        };
-    }, [open, closeAll, textareaRef]);
+    // Click-away (the textarea counts as inside) and Escape while open.
+    useClickOutside(open, () => closeAll(), [textareaRef, rootRef]);
 
     // External edits (typing, template insert, discard) while open: bail out
     // rather than rewriting stale ranges.
@@ -220,18 +206,6 @@ export default function TextareaAIEdit({
         if (!open) return;
         if (expectedValue.current !== null && value !== expectedValue.current) closeAll();
     }, [value, open, closeAll]);
-
-    React.useEffect(() => {
-        if (!open) return;
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key === "Escape") {
-                e.stopPropagation();
-                closeAll();
-            }
-        };
-        document.addEventListener("keydown", onKey, true);
-        return () => document.removeEventListener("keydown", onKey, true);
-    }, [open, closeAll]);
 
     const applyResult = React.useCallback(
         (

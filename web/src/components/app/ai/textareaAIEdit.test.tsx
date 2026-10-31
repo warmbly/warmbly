@@ -5,7 +5,7 @@
 
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, act, fireEvent } from "@testing-library/react";
+import { render, screen, act, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 let reply = { text: "", credits_charged: 1, tokens_used: 10 };
@@ -178,5 +178,47 @@ describe("TextareaAIEdit against the composer's length cap", () => {
             fireEvent.keyDown(again, { key: "Enter" });
         });
         expect(sent?.text).toBe("two");
+    });
+});
+
+describe("TextareaAIEdit closes like every floating layer", () => {
+    async function openPopover() {
+        const { container } = render(
+            <QueryClientProvider client={new QueryClient()}>
+                <Host initial="one two three" />
+            </QueryClientProvider>,
+        );
+        const ta = container.querySelector("textarea")!;
+        await act(async () => {
+            ta.focus();
+            ta.setSelectionRange(4, 7);
+            document.dispatchEvent(new Event("selectionchange"));
+        });
+        await act(async () => {
+            fireEvent.mouseDown(await screen.findByText("Edit with AI"));
+        });
+        await screen.findByPlaceholderText("Tell AI how to change it…");
+        return ta;
+    }
+    const isOpen = () => screen.queryByPlaceholderText("Tell AI how to change it…") !== null;
+
+    it("stays open on a press in the textarea and closes on a press anywhere else", async () => {
+        const ta = await openPopover();
+        await act(async () => {
+            fireEvent.pointerDown(ta);
+        });
+        expect(isOpen()).toBe(true);
+        await act(async () => {
+            fireEvent.pointerDown(document.body);
+        });
+        await waitFor(() => expect(isOpen()).toBe(false));
+    });
+
+    it("closes on Escape", async () => {
+        await openPopover();
+        await act(async () => {
+            fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+        });
+        await waitFor(() => expect(isOpen()).toBe(false));
     });
 });
