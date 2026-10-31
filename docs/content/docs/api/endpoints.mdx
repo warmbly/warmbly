@@ -247,6 +247,7 @@ A source's `column_mapping` is validated when the source is written, not on its 
 | GET | `/unibox/agent-drafts` | `READ_UNIBOX` |
 | POST | `/unibox/agent-drafts/:id/approve` | `WRITE_UNIBOX` |
 | POST | `/unibox/agent-drafts/:id/discard` | `WRITE_UNIBOX` |
+| PUT | `/unibox/ai-drafts/by-thread` | `WRITE_UNIBOX` |
 
 `PATCH /unibox/folder` re-files into `inbox`, `archive` or `trash`. Name the messages with `email_ids`, the conversations with `thread_ids`, or both; up to 500 of each. Prefer `thread_ids` when you have one: filing part of a conversation leaves it listed, because a thread shows wherever any message of it still sits. The move is then relayed to each mailbox with `relay_folder_moves` on (the default): the provider's copy is archived, moved to its trash, or put back in its inbox, after the response and best-effort, and the next sync will not undo a filing either way, because the provider's placement is tracked separately and followed only when the provider itself moves the message. `sent`, `drafts` and `spam` are placements a provider reaches rather than somewhere a person files mail, so they are rejected with a `400`. See [filing a conversation](/guides/unibox/#filing-a-conversation).
 
@@ -293,6 +294,8 @@ The same `WRITE_EMAILS` mailbox PATCH accepts `test_mode` (`diagnostic`, `off`, 
 `GET /unibox` also accepts `address=<value>` (matches sender or recipient, for "every conversation with this person") and `direction=sent|received` (resolved against your own mailbox addresses).
 
 The `agent-drafts` endpoints back the [inbox agent](/guides/inbox-agent/): the agent drafts a suggested reply on an inbound human reply and holds it here for review. `GET` lists the pending drafts; `approve` sends one (optionally with an edited `body`) through the normal reply path and is safe to retry with an `Idempotency-Key`; `discard` dismisses it. Approving is the only path that sends.
+
+`PUT /unibox/ai-drafts/by-thread` lets an API key hand in a reply it wrote itself, for the team to review in the same Drafts view. Send `thread_id`, `body` (plain text, up to 8000 characters) and `source` (a short label such as `llcdrop`, up to 40 letters, digits, dots, dashes or underscores, kept as the draft's model). `intent_class` (up to 40 characters) and `confidence` (0 to 1) are optional. The draft answers the newest message on the thread that came from someone else: it replaces the body of the thread's pending draft (and points it at that message if it answered an older one), or creates a pending draft addressed to that sender with the subject `Re: ...`. The response is `{"id", "status": "pending", "created"}`, and repeating the call is safe. It never sends and never changes an approved or discarded draft: `404 thread_not_found` when the workspace has no inbound message on the thread, `409 already_sent` when an approved draft already answers the newest inbound message, and `409 draft_discarded` when a discarded one does. A key limited to certain mailboxes can only draft on threads that arrive in them.
 
 ### Templates and CRM
 

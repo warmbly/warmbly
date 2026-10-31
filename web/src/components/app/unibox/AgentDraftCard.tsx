@@ -19,10 +19,16 @@ export default function AgentDraftCard({ threadId }: { threadId: string }) {
     );
 
     const [body, setBody] = useState("");
+    const [edited, setEdited] = useState(false);
     useEffect(() => {
-        // Seed the editor when a draft arrives (or changes).
+        // Seed the editor when a different draft arrives.
+        setEdited(false);
         if (draft) setBody(draft.body);
     }, [draft?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => {
+        // An API key can replace the pending draft's body: follow it unless someone is mid-edit.
+        if (draft && !edited) setBody(draft.body);
+    }, [draft?.body]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const queryClient = useQueryClient();
     const confirm = useConfirm();
@@ -76,7 +82,10 @@ export default function AgentDraftCard({ threadId }: { threadId: string }) {
 
             <textarea
                 value={body}
-                onChange={(e) => setBody(e.target.value)}
+                onChange={(e) => {
+                    setBody(e.target.value);
+                    setEdited(true);
+                }}
                 rows={5}
                 disabled={busy}
                 className="mt-2 w-full resize-y rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[12.5px] leading-relaxed text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 disabled:opacity-60"
