@@ -398,6 +398,8 @@ func Run(
 
 		auth.POST("/login", h.LoginStart)
 		auth.POST("/login/confirm", h.LoginConfirm)
+		// An issued initial password is replaced here before the sign-in continues.
+		auth.POST("/login/initial-password", h.LoginInitialPassword)
 		auth.POST("/register", h.RegistrationStart)
 		auth.POST("/register/confirm", h.RegistrationConfirm)
 		auth.POST("/refresh", h.RefreshToken)

@@ -15,4 +15,7 @@ export default interface Session {
     two_fa_required?: boolean;
     pending_token?: string;
     expires_in?: number;
+    /** The password was an issued initial one: post `pending_token` and a new
+     *  password to /auth/login/initial-password before anything else. */
+    password_change_required?: boolean;
 }

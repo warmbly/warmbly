@@ -23,13 +23,15 @@ type testerUsers struct {
 	repository.UserRepository
 	userID uuid.UUID
 	until  time.Time
+	// stored, when set, is the expiry the database kept in place of the requested one.
+	stored *time.Time
 }
 
 func (r *testerUsers) GetUserByEmail(context.Context, string) (*models.User, error) { return nil, nil }
 
 func (r *testerUsers) CreateExemptUser(_ context.Context, email *mail.Address, _, _ string, _ *uuid.UUID, until time.Time) (*models.User, error) {
 	r.until = until
-	return &models.User{ID: r.userID, Email: email.Address}, nil
+	return &models.User{ID: r.userID, Email: email.Address, PasswordExpiresAt: r.stored}, nil
 }
 
 type testerWorkspaces struct {
@@ -170,5 +172,33 @@ func TestTesterPasswordLifetimeIsAtMostTwoDays(t *testing.T) {
 		if (err == nil) != tc.ok || got != tc.want {
 			t.Errorf("%+v: got %v, err %v; want %v, ok %v", tc.req, got, err, tc.want, tc.ok)
 		}
+	}
+}
+
+// The response and the workspace grant carry the expiry the database stored, and the password is marked initial.
+func TestAdminCreateTesterUsesTheStoredExpiry(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	stored := time.Now().Add(47 * time.Hour).Truncate(time.Second)
+	users := &testerUsers{userID: uuid.New(), stored: &stored}
+	orgs := &testerWorkspaces{orgID: uuid.New()}
+	h := &Handler{UserRepo: users, OrganizationService: orgs}
+	r := gin.New()
+	r.Use(func(c *gin.Context) { c.Set(middleware.AdminUserIDKey, uuid.New()) })
+	r.POST("/testers", h.AdminCreateTester)
+	body := `{"email":"` + "reviewer" + "@example.test" + `","reason":"OAuth review"}`
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/testers", strings.NewReader(body)))
+	if w.Code != http.StatusOK {
+		t.Fatalf("HTTP %d", w.Code)
+	}
+	var response adminCreateTesterResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.PasswordExpiresAt.Equal(stored) || !orgs.until.Equal(stored) {
+		t.Fatalf("response %v, grant %v; want the stored %v", response.PasswordExpiresAt, orgs.until, stored)
+	}
+	if !response.PasswordChangeRequired {
+		t.Fatal("an issued password was not marked as one to change")
 	}
 }

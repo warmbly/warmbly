@@ -79,6 +79,8 @@ type adminCreateTesterResponse struct {
 	// means making another tester, which is cheap.
 	Password          string    `json:"password"`
 	PasswordExpiresAt time.Time `json:"password_expires_at"`
+	// PasswordChangeRequired is always true: the holder replaces the password at first sign-in.
+	PasswordChangeRequired bool `json:"password_change_required"`
 }
 
 // testerPasswordAlphabet leaves out the characters that are misread when a
@@ -170,6 +172,10 @@ func (h *Handler) AdminCreateTester(c *gin.Context) {
 		errx.JSON(c, errx.New(errx.Internal, "could not create the account"))
 		return
 	}
+	// The workspace grant must end exactly when the stored password does.
+	if created.PasswordExpiresAt != nil {
+		passwordExpiresAt = *created.PasswordExpiresAt
+	}
 
 	// A tester joined to an existing workspace gets no workspace of its own on
 	// purpose. Owning one would leave the reviewer a member of two, and the
@@ -210,12 +216,13 @@ func (h *Handler) AdminCreateTester(c *gin.Context) {
 	h.logTesterAction(c, *adminID, created.ID, "create_tester", entry)
 
 	c.JSON(http.StatusOK, adminCreateTesterResponse{
-		UserID:            created.ID,
-		Email:             created.Email,
-		OrgID:             orgID,
-		Joined:            joined,
-		Password:          password,
-		PasswordExpiresAt: passwordExpiresAt,
+		UserID:                 created.ID,
+		Email:                  created.Email,
+		OrgID:                  orgID,
+		Joined:                 joined,
+		Password:               password,
+		PasswordExpiresAt:      passwordExpiresAt,
+		PasswordChangeRequired: true,
 	})
 }
 

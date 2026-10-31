@@ -156,8 +156,9 @@ export default function TestersPage() {
                         holder cannot read this instance&apos;s mail, and arrives with onboarding complete. Authentication still requires the password,
                         the captcha and the sign-in risk assessment. A tester either gets a workspace of its own
                         or joins one that already exists. A new Test workspace includes paid-feature access and 100 test credits until the password expires.
-                        An existing workspace keeps its plan and the role you select. Its password stops working on the date you choose, and
-                        revoking it ends the password and signs out every session at once.
+                        An existing workspace keeps its plan and the role you select. The password it is issued is an initial password: valid
+                        for at most 48 hours, it cannot be extended, and the holder must replace it with their own at first sign-in.
+                        Revoking a tester ends its password, issued or chosen, and signs out every session at once.
                         Use Add sample data on an active dedicated Test workspace to populate contacts, a draft campaign, templates and CRM examples.
                         Mailboxes must be connected separately.
                     </>
@@ -177,6 +178,10 @@ export default function TestersPage() {
                                     ? "This account is a member of an existing workspace and will land in it on sign-in."
                                     : "This account owns a new Test workspace with paid-feature access and 100 test credits until the password expires."}
                             </div>
+                            <div className="mt-0.5 text-[12.5px] text-muted-foreground">
+                                This is an initial password. It is valid until {fmt(created.password_expires_at)} (48 hours at most) and
+                                must be changed at first sign-in, when the holder is asked to choose their own.
+                            </div>
                         </div>
                         <Button size="sm" variant="outline" onClick={() => setCreated(null)}>
                             Done
@@ -187,7 +192,7 @@ export default function TestersPage() {
                             ["Sign in at", DASHBOARD_URL],
                             ["Email", created.email],
                             ["Password", created.password],
-                            ["Expires", fmt(created.password_expires_at)],
+                            ["Valid until", fmt(created.password_expires_at)],
                         ].map(([k, v]) => (
                             <div key={k} className="flex min-h-10 items-center gap-3 px-4 py-1.5 text-[13px]">
                                 <dt className="w-24 shrink-0 text-muted-foreground">{k}</dt>
@@ -292,7 +297,7 @@ export default function TestersPage() {
                                                 dot={expired}
                                                 className="hidden sm:inline-flex"
                                             >
-                                                Password {expired ? "expired" : "expires"} {fmt(t.password_expires_at)}
+                                                Initial password {expired ? "expired" : "valid until"} {fmt(t.password_expires_at)}
                                             </StatusBadge>
                                         )}
                                         {canManage && (
@@ -462,6 +467,9 @@ export default function TestersPage() {
                                     ))}
                                 </SelectContent>
                             </Select>
+                            <p className="mt-1.5 text-xs text-muted-foreground">
+                                Valid 48 hours at most and never extendable. The holder must change it at first sign-in.
+                            </p>
                         </Field>
 
                         <div className="flex justify-end border-t border-border pt-4">

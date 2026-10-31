@@ -77,6 +77,9 @@ type AuthService interface {
 	ReleaseReauthAttempt(ctx context.Context, userID uuid.UUID)
 	ClearReauthFailures(ctx context.Context, userID uuid.UUID)
 	LoginConfirm(ctx context.Context, data *ConfirmData, session, ipaddr, userAgent string) (*models.LoginResult, *errx.Error)
+	// CompleteInitialPassword takes the password_change_required challenge and
+	// the holder's own password, then continues the sign-in like LoginStart.
+	CompleteInitialPassword(ctx context.Context, data *InitialPasswordData, ipaddr, userAgent string) (*models.AuthSession, *errx.Error)
 	// WireTwoFA attaches the 2FA challenger (post-construction; nil = 2FA off).
 	WireTwoFA(t TwoFAChallenger)
 	// WireAppAttest accepts native app proofs on the captcha-gated paths (nil = off).

@@ -55,6 +55,26 @@ func (h *Handler) LoginConfirm(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+// LoginInitialPassword answers a password_change_required sign-in. Public
+// like /login/confirm: the single-use challenge from LoginStart is the proof.
+func (h *Handler) LoginInitialPassword(c *gin.Context) {
+	var data auth.InitialPasswordData
+	if err := c.ShouldBindJSON(&data); err != nil {
+		errx.Handle(c, errx.InvalidBody(err))
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), authRequestTimeout)
+	defer cancel()
+
+	resp, err := h.AuthService.CompleteInitialPassword(ctx, &data, c.ClientIP(), c.Request.UserAgent())
+	if err != nil {
+		errx.Handle(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
 func (h *Handler) RegistrationStart(c *gin.Context) {
 	var data auth.AuthData
 

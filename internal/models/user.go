@@ -56,6 +56,9 @@ type User struct {
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+
+	// PasswordExpiresAt is set only by CreateExemptUser, to the stored expiry of the issued password.
+	PasswordExpiresAt *time.Time `json:"-"`
 }
 
 // IsPendingDeletion reports whether the user has a pending account deletion.

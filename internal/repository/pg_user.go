@@ -43,11 +43,12 @@ type UserRepository interface {
 	// CreateExemptUser creates an account and its login-code exemption in one
 	// transaction, so a failure cannot leave an account that holds no
 	// exemption and therefore appears in no list.
-	// The password stops working at passwordExpiresAt.
+	// The password is an initial one: it stops working at passwordExpiresAt,
+	// at most 48 hours away, and the returned user carries the stored expiry.
 	CreateExemptUser(ctx context.Context, email *mail.Address, passwordHash, reason string, by *uuid.UUID, passwordExpiresAt time.Time) (*models.User, error)
 
-	// RevokeTester clears the exemption and, on an account whose password was
-	// handed out with an expiry, the password too. It reports whether it did.
+	// RevokeTester clears the exemption and, on an account created as a tester or
+	// holding an issued password, the password too. It reports whether it did.
 	RevokeTester(ctx context.Context, id uuid.UUID) (passwordCleared bool, err error)
 
 	// DeleteOrphanExemptUser undoes a tester creation whose workspace step
@@ -447,24 +448,27 @@ func (r *userRepository) CreateExemptUser(ctx context.Context, email *mail.Addre
 		CreatedAt:             now,
 		UpdatedAt:             now,
 	}
-	if _, eerr := tx.Exec(ctx, `
+	var stored time.Time
+	if eerr := tx.QueryRow(ctx, `
 		UPDATE users
 		SET login_code_exempt = true,
 		    login_code_exempt_reason = $2,
 		    login_code_exempt_by = $3,
 		    login_code_exempt_at = NOW(),
-		    password_expires_at = $4
-		WHERE id = $1`, created.ID, reason, by, passwordExpiresAt); eerr != nil {
+		    password_expires_at = LEAST($4, now() + interval '48 hours')
+		WHERE id = $1
+		RETURNING password_expires_at`, created.ID, reason, by, passwordExpiresAt).Scan(&stored); eerr != nil {
 		return nil, eerr
 	}
+	created.PasswordExpiresAt = &stored
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
 	return created, nil
 }
 
-// RevokeTester ends a tester's exemption and its handed-out password in one
-// write. An account exempted without an expiring password keeps its password.
+// RevokeTester ends a tester's exemption and its password in one write, whether
+// issued or chosen since. An account only exempted keeps its own password.
 func (r *userRepository) RevokeTester(ctx context.Context, id uuid.UUID) (bool, error) {
 	var cleared bool
 	err := r.DB.QueryRow(ctx, `
@@ -483,7 +487,12 @@ func (r *userRepository) RevokeTester(ctx context.Context, id uuid.UUID) (bool, 
 		    password_changed_at = CASE WHEN old.tester THEN now() ELSE u.password_changed_at END,
 		    password_expires_at = NULL,
 		    updated_at = now()
-		FROM (SELECT id, password_expires_at IS NOT NULL AS tester FROM users WHERE id = $1 FOR UPDATE) old
+		FROM (
+			SELECT id, password_expires_at IS NOT NULL OR EXISTS (
+				SELECT 1 FROM admin_audit_logs a WHERE a.action = 'create_tester' AND a.target_id = users.id
+			) AS tester
+			FROM users WHERE id = $1 FOR UPDATE
+		) old
 		WHERE u.id = old.id
 		RETURNING old.tester`, id, models.TestPlanID).Scan(&cleared)
 	if errors.Is(err, pgx.ErrNoRows) {
