@@ -1,6 +1,7 @@
 # Security response headers for the marketing site. Static pages, no
 # credentials, but the site serves install.sh and cli.sh, so framing and
 # content-type sniffing are both switched off.
+# The build adds a CSP with hashes of the generated inline scripts.
 /*
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
