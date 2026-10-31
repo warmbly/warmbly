@@ -68,6 +68,17 @@ earlier revisions remain active for rollback. Retain their referenced images and
 secret versions throughout the rollback window; retire them separately after it
 closes.
 
+## TLS behind the load balancer
+
+`target_tls` moves the load balancer's target groups and the forms and tracking
+services' internal calls to the backend onto TLS, in four stages (`off`,
+`serve`, `both`, `on`) advanced one apply at a time. The backend serves the
+certificate in `backend_internal_certificate` with `SERVE_TLS_KEY` from its
+secret, and its callers trust only that certificate. Prerequisites, the stages
+and what each one changes are in `aws-fargate.mdx` under "Encrypt traffic inside
+the VPC". `terraform test` in this directory exercises every stage against a
+mocked provider.
+
 ## Rotate keys
 
 `rotation.tf` registers a rotator task that generates replacement values with

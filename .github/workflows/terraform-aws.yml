@@ -46,6 +46,8 @@ jobs:
             terraform -chdir="deploy/terraform/aws/$stack" init -backend=false -input=false >/dev/null
             terraform -chdir="deploy/terraform/aws/$stack" validate -no-color
           done
+      # Mocked provider: no credentials, nothing created.
+      - run: terraform -chdir=deploy/terraform/aws/runtime test -no-color
       - run: shellcheck .github/scripts/terraform-stack.sh
 
   plan:

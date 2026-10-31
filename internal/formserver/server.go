@@ -11,6 +11,7 @@ package formserver
 
 import (
 	"bytes"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -52,6 +53,8 @@ type Config struct {
 	// endpoints, the service's only dependency.
 	BackendURL    string
 	InternalToken string
+	// BackendRoots, when set, is the only trust the backend's certificate is verified against.
+	BackendRoots *x509.CertPool
 	// BrowserPostHogKey and BrowserPostHogHost are stamped into the page shell
 	// so the form app can report pageviews, web vitals and browser errors to
 	// PostHog. An empty key, which is the default, means the app never loads
@@ -116,7 +119,7 @@ func New(cfg Config) (*Server, error) {
 	if limit <= 0 {
 		limit = submitDefaultLimit
 	}
-	client := newBackendClient(strings.TrimRight(cfg.BackendURL, "/"), cfg.InternalToken)
+	client := newBackendClient(strings.TrimRight(cfg.BackendURL, "/"), cfg.InternalToken, cfg.BackendRoots)
 	return &Server{
 		redirects: newRedirects(client),
 		client:    client,

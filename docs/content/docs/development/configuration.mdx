@@ -179,6 +179,22 @@ Empty is correct for a directly exposed backend. Behind a reverse proxy it is no
 TRUSTED_PROXIES=10.0.0.0/8,172.16.0.0/12
 ```
 
+### TLS listeners
+
+The backend, forms, tracking and realtime services listen on plain HTTP, and that stays the default everywhere: Compose, the installer and local development need nothing from this table. Set `SERVE_TLS` on a service and it also listens with TLS 1.2 or later on `SERVE_TLS_PORT`, for a load balancer or an internal caller that should reach it encrypted. The plain listener stays up beside it, so the container health check and any caller not yet moved keep working.
+
+| Variable | What it does | Default | Restart needed |
+|---|---|---|---|
+| `SERVE_TLS` | `self-signed` generates an ECDSA P-256 certificate in memory at boot, for a load balancer that does not validate its targets (an AWS Application Load Balancer does not). `supplied` serves the certificate and key below, for a caller that verifies the server. Unset or `off` adds no TLS listener | unset | yes |
+| `SERVE_TLS_PORT` | The TLS listener's port. Required with `SERVE_TLS` | none | yes |
+| `SERVE_TLS_CERT`, `SERVE_TLS_CERT_FILE` | With `supplied`, the PEM certificate, given inline or as a file path. Set exactly one | none | yes |
+| `SERVE_TLS_KEY`, `SERVE_TLS_KEY_FILE` | With `supplied`, the PEM private key, given inline or as a file path. Set exactly one, and keep it with your other secrets | none | yes |
+| `SERVE_HTTP_LOOPBACK_ONLY` | `true` binds the plain listener to `127.0.0.1`, so from outside the container the TLS port is the only way in while the health check still reaches the plain one. Needs `SERVE_TLS` | `false` | yes |
+
+A service refuses to start on an incomplete combination rather than serving something other than what was asked for. The backend logs a line at boot when the certificate it serves expires within 30 days.
+
+The forms and tracking services verify the backend's certificate whenever `BACKEND_INTERNAL_URL` is `https://`. `BACKEND_INTERNAL_CA` (PEM) or `BACKEND_INTERNAL_CA_FILE` replaces the system roots with exactly the certificates given, which is how they trust a backend serving a private certificate through `SERVE_TLS=supplied`. That certificate has to name the host in `BACKEND_INTERNAL_URL`.
+
 ## Authentication
 
 | Variable | What it does | Default | Restart needed |
@@ -927,6 +943,7 @@ The public face of hosted forms (`cmd/forms`): it serves the React (TanStack) fo
 | `FORMS_PORT` | Listen port | `8090` |
 | `FORMS_STATIC_DIR` | The built forms app (`pnpm build` output). The service exits at boot when `index.html` is missing there | `forms/dist` |
 | `BACKEND_INTERNAL_URL` | Where the service resolves forms and forwards submissions, the same variable the tracking service uses. **Required**: the service exits at boot without it | none |
+| `BACKEND_INTERNAL_CA`, `BACKEND_INTERNAL_CA_FILE` | PEM certificates that replace the system roots when verifying an `https://` `BACKEND_INTERNAL_URL`. See [TLS listeners](/development/configuration/#tls-listeners) | unset (system roots) |
 | `INTERNAL_API_TOKEN` | Bearer token for those calls, matching the backend's. **Required**: the service exits at boot on an empty value | none |
 | `FORM_IP_RATE_LIMIT` | Public form submissions allowed per source IP per 10 minutes, per forms-service instance | `30` |
 | `POSTHOG_KEY`, `POSTHOG_HOST`, `POSTHOG_ERROR_TRACKING` | The service's own error tracking. Unset means none | unset |
@@ -945,6 +962,7 @@ Run a single copy of it. Its event deduplication, its per-source rate limits and
 |---|---|---|
 | `TRACKING_HOST`, `TRACKING_PORT` | Listen address | `0.0.0.0`, `3000` |
 | `BACKEND_INTERNAL_URL` | Where tracking resolves opaque `/c/<id>` click tickets. **Required**: the service exits at boot without it | none |
+| `BACKEND_INTERNAL_CA`, `BACKEND_INTERNAL_CA_FILE` | PEM certificates that replace the system roots when verifying an `https://` `BACKEND_INTERNAL_URL`. See [TLS listeners](/development/configuration/#tls-listeners) | unset (system roots) |
 | `INTERNAL_API_TOKEN` | Bearer token for that lookup. **Required**: the service exits at boot on an empty value | none |
 | `TRACKING_RATE_LIMIT_PER_MIN` | Counted pixel and click requests per source per minute. Over budget, pixels are still served but not counted, and click redirects get `429` | `300` |
 | `TRACKING_PAGEHIT_RATE_LIMIT_PER_MIN` | Website page views accepted per source per minute, on top of the shared budget above. Over budget, the snippet gets `429` | `60` |

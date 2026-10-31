@@ -162,6 +162,7 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/idtoken"
 	"github.com/warmbly/warmbly/internal/pkg/mailhost"
 	"github.com/warmbly/warmbly/internal/pkg/mailvendor"
+	"github.com/warmbly/warmbly/internal/pkg/servetls"
 	"github.com/warmbly/warmbly/internal/pkg/typesafe"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/scheduler"
@@ -2688,19 +2689,30 @@ func main() {
 
 	router := api.Run(h, m, oidcH, addr, ginMode, allowedOrigins)
 
-	srv := &http.Server{
-		Addr:    addr,
-		Handler: router,
+	tlsListen, err := servetls.FromEnv(os.Getenv)
+	if err != nil {
+		log.Fatalf("Invalid TLS listener setting: %v", err)
+	}
+	srv, tlsSrv, err := tlsListen.Servers(addr, router)
+	if err != nil {
+		log.Fatalf("TLS listener: %v", err)
+	}
+	servers := []*http.Server{srv}
+	if tlsSrv != nil {
+		servers = append(servers, tlsSrv)
+		if exp := servetls.Expiry(tlsSrv.TLSConfig); time.Until(exp) < 30*24*time.Hour {
+			log.Printf("TLS listener certificate expires %s; replace it before then", exp.Format(time.RFC3339))
+		}
 	}
 
-	// Start server in a goroutine
-	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server error: %v", err)
-		}
-	}()
-
-	log.Println("Backend started on", addr)
+	for _, s := range servers {
+		go func(s *http.Server) {
+			if err := servetls.ListenAndServe(s); err != nil && err != http.ErrServerClosed {
+				log.Fatalf("Server error: %v", err)
+			}
+		}(s)
+		log.Println("Backend started on", s.Addr)
+	}
 
 	// Wait for interrupt signal for graceful shutdown
 	sigCh := make(chan os.Signal, 1)
@@ -2727,8 +2739,10 @@ func main() {
 			}
 		}()
 	}
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("Server shutdown error: %v", err)
+	for _, s := range servers {
+		if err := s.Shutdown(shutdownCtx); err != nil {
+			log.Printf("Server shutdown error: %v", err)
+		}
 	}
 	drained.Wait()
 
