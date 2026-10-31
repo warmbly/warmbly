@@ -31,7 +31,7 @@ const liftableHeldSend = `t.task_type IN ('email','placement','cloud_warmup')
 	AND (t.send_executor_started_at IS NULL OR t.send_executor_started_at<$1)`
 
 const recoverableUnknownHold = `ea.send_recovery_hold AND ea.send_recovery_reason='unknown' AND ea.send_recovery_task_id IS NOT NULL
-	AND (t.id IS NULL OR NOT COALESCE(` + liveUnknownSend + `,false)
+	AND (t.id IS NULL
 	 OR COALESCE((` + liveUnknownSend + `) AND (` + unstartedHeldSend + `),false)
 	 OR COALESCE((` + liveUnknownSend + `) AND (` + liftableHeldSend + `),false))`
 
@@ -81,15 +81,15 @@ func (r *taskRepository) recoverUnknownSendHold(ctx context.Context, mailbox, ta
 	if err = lockSend(ctx, tx, task, mailbox); err != nil {
 		return false, err
 	}
-	var live, unstarted, liftable bool
+	var missing, unstarted, liftable bool
 	var worker, nonce *uuid.UUID
-	err = tx.QueryRow(ctx, `SELECT COALESCE(t.id IS NOT NULL AND (`+liveUnknownSend+`),false),
+	err = tx.QueryRow(ctx, `SELECT t.id IS NULL,
 		COALESCE(t.id IS NOT NULL AND (`+liveUnknownSend+`) AND (`+unstartedHeldSend+`),false),
 		COALESCE(t.id IS NOT NULL AND (`+liveUnknownSend+`) AND (`+liftableHeldSend+`),false),
 		t.send_executor_worker,t.send_executor_nonce
 		FROM email_accounts ea LEFT JOIN tasks t ON t.id=ea.send_recovery_task_id AND t.email_account_id=ea.id
 		WHERE ea.id=$3 AND ea.send_recovery_task_id=$4 AND `+recoverableUnknownHold+`
-		FOR UPDATE OF ea`, startedBefore, unstartedBefore, mailbox, task).Scan(&live, &unstarted, &liftable, &worker, &nonce)
+		FOR UPDATE OF ea`, startedBefore, unstartedBefore, mailbox, task).Scan(&missing, &unstarted, &liftable, &worker, &nonce)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
@@ -97,8 +97,8 @@ func (r *taskRepository) recoverUnknownSendHold(ctx context.Context, mailbox, ta
 		return false, err
 	}
 	switch {
-	case !live:
-		// The held send is gone or settled; recompute the hold from what is still unknown.
+	case missing:
+		// The held send is gone; recompute the hold from what is still unknown. A settled send keeps the hold its result left.
 	case unstarted && worker != nil && nonce != nil:
 		if err = tx.Rollback(ctx); err != nil {
 			return false, err

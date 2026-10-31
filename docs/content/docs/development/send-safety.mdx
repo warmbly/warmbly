@@ -100,7 +100,7 @@ The same result-recovery loop frees a mailbox held by a send that can never run 
 
 - **Never started.** A campaign, Unibox or placement-test send reserved over 30 minutes ago with no executor start, attempt or result is released through the ordinary unstarted-release path under the send lock, so the worker's start check refuses it afterwards. A campaign step is handed back and sent as a fresh task.
 - **Started, outcome unknown.** A Unibox, placement-test or Warmbly Cloud send started over ten minutes ago gets `tasks.send_hold_lifted_at` (migration 334) and stops holding its mailbox. It already cannot start a second time. Its unknown state, reservation, charge and attempt history are kept, and a late definitive result still applies once. A repeated unknown report does not hold the mailbox again.
-- **Gone or settled.** An unknown hold whose task no longer exists, or is no longer an unresolved unknown send, is recomputed from the sends that still are.
+- **Gone.** An unknown hold whose task no longer exists is recomputed from the sends that are still unresolved. A hold left by an applied result stays until that result is resolved.
 
 Campaign and warmup sends that started keep the isolation and retirement rules above. An older replica may re-hold a lifted send during a rolling upgrade or rollback; the loop repairs it on its next pass. The down migration refuses to remove recorded lifts.
 
