@@ -482,12 +482,29 @@ func negatedOrConditionalAt(text string, start int) bool {
 	if i := strings.LastIndexAny(head, ".!?;"); i >= 0 {
 		head = head[i+1:]
 	}
-	for _, word := range strings.FieldsFunc(head, func(r rune) bool { return !unicode.IsLetter(r) }) {
-		if negators[word] || word == "si" || word == "wenn" || word == "falls" || word == "sofern" {
+	for _, word := range strings.FieldsFunc(head, func(r rune) bool { return !unicode.IsLetter(r) && r != '\'' }) {
+		word = strings.Trim(word, "'")
+		if word == "s'il" || word == "s'ils" {
 			return true
+		}
+		for _, part := range strings.Split(word, "'") {
+			if negators[accentFolder.Replace(part)] || part == "si" || part == "wenn" || part == "falls" || part == "sofern" {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// unfoldedOffset maps a folded match back across replacements that change byte length.
+func unfoldedOffset(text string, offset int) int {
+	for i, r := range text {
+		if offset <= 0 {
+			return i
+		}
+		offset -= len(accentFolder.Replace(string(r)))
+	}
+	return len(text)
 }
 
 // contrasts open a reservation; a negator after one takes the interest back.
@@ -513,6 +530,7 @@ func (p phrase) in(text, folded string) bool {
 	if !p.bounded {
 		return strings.Contains(text, p.text)
 	}
+	original := text
 	if !p.asWritten {
 		text = folded
 	}
@@ -524,8 +542,14 @@ func (p phrase) in(text, folded string) bool {
 		start, end := i+j, i+j+len(p.text)
 		before, _ := utf8.DecodeLastRuneInString(text[:start])
 		after, _ := utf8.DecodeRuneInString(text[end:])
-		if !wordRune(before) && !wordRune(after) && !(p.negatable && (negatedOrConditionalAt(text, start) || refusedAfter(text, end))) {
-			return true
+		if !wordRune(before) && !wordRune(after) {
+			originalStart := start
+			if p.negatable && !p.asWritten {
+				originalStart = unfoldedOffset(original, start)
+			}
+			if !p.negatable || !(negatedOrConditionalAt(original, originalStart) || refusedAfter(text, end)) {
+				return true
+			}
 		}
 		_, size := utf8.DecodeRuneInString(text[start:])
 		i = start + size
