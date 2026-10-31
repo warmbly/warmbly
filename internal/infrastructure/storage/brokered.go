@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/warmbly/warmbly/internal/pkg/nodeauth"
 )
 
 // BrokeredStore is the node-side blob backend: it holds no credential for the
@@ -123,7 +125,7 @@ func (s *BrokeredStore) presign(ctx context.Context, op PresignOp, key, contentT
 	if err != nil {
 		return out, err
 	}
-	req.Header.Set("Authorization", "Bearer "+s.token)
+	nodeauth.Authorize(req, s.token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "warmbly-node/storage-brokered")
 

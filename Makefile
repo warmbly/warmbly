@@ -697,10 +697,16 @@ consumer:
 #
 # The worker reads encrypted DEKs through the backend's /internal/dek
 # endpoint (the prod `http` provider, no worker DB), so `make backend`
-# must be running and INTERNAL_API_TOKEN must match.
+# must be running and INTERNAL_API_TOKEN must match. The seeded dev worker
+# also presents its own NODE_CREDENTIAL (internal/seed.DevNodeCredential), so it
+# keeps working with NODE_REQUIRE_NODE_CREDENTIAL=true on the backend.
+DEV_WORKER_ID := 10c8f5e4-1c39-5b2a-9c8b-3d2f0a8b1a01
+NODE_CREDENTIAL_DEV := dev-node-credential-not-for-production
+WORKER_ID ?= $(DEV_WORKER_ID)
 worker:
 	$(WORKER_DEV_ENV) \
-	WORKER_ID=10c8f5e4-1c39-5b2a-9c8b-3d2f0a8b1a01 \
+	WORKER_ID=$(WORKER_ID) \
+	$(if $(filter $(DEV_WORKER_ID),$(WORKER_ID)),NODE_CREDENTIAL=$(NODE_CREDENTIAL_DEV),) \
 	ENCRYPTED_KEYS_PROVIDER=http \
 	ENCRYPTED_KEYS_BACKEND_URL=http://localhost:8080 \
 	ENCRYPTED_KEYS_WORKER_TOKEN=local-dev-internal-token \

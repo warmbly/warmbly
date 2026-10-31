@@ -2673,6 +2673,9 @@ func main() {
 		Cache:               authCache,
 		PoolLinkService:     poolLinkService,
 	}
+	if fleetNodeService != nil {
+		m.NodeCredentials = fleetNodeService
+	}
 
 	oidcH := &middleware.OidcHandler{
 		ServiceAccount: serviceAccount,
