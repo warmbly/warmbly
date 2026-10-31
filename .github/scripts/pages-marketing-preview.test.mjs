@@ -6,19 +6,19 @@ import { pathToFileURL } from 'node:url';
 import { test } from 'node:test';
 import { previewURL, verifyPreview } from './pages-marketing-preview.mjs';
 
-test('accepts only this run successful preview on the reviewed commit and project', () => {
-  const deployment = { environment: 'preview', url: 'https://abc.marketing.pages.dev',
-    deployment_trigger: { metadata: { branch: 'check-123', commit_hash: 'sha' } },
-    latest_stage: { name: 'deploy', status: 'success' } };
-  const select = value => previewURL([value], 'marketing', 'check-123', 'sha');
+test('accepts only a versioned Wrangler preview receipt for the reviewed commit and project', () => {
+  const deployment = { type: 'pages-deploy-detailed', version: 1, pages_project: 'marketing',
+    deployment_id: 'deployment-id', environment: 'preview', url: 'https://abc.marketing.pages.dev',
+    deployment_trigger: { metadata: { commit_hash: 'sha' } } };
+  const select = value => previewURL([value], 'marketing', 'sha');
   assert.equal(select(deployment).origin, 'https://abc.marketing.pages.dev');
   for (const override of [
     { environment: 'production' }, { url: 'https://abc.other.pages.dev' },
-    { latest_stage: { name: 'deploy', status: 'failure' } },
-    { deployment_trigger: { metadata: { branch: 'other', commit_hash: 'sha' } } },
-    { deployment_trigger: { metadata: { branch: 'check-123', commit_hash: 'old' } } },
+    { type: 'pages-deploy' }, { version: 2 }, { pages_project: 'other' }, { deployment_id: null },
+    { deployment_trigger: { metadata: { commit_hash: 'old' } } },
   ]) assert.throws(() => select({ ...deployment, ...override }));
-  assert.throws(() => previewURL([deployment, deployment], 'marketing', 'check-123', 'sha'));
+  assert.throws(() => previewURL([deployment, deployment], 'marketing', 'sha'));
+  assert.equal(previewURL([{ type: 'pages-deploy' }, deployment], 'marketing', 'sha').origin, 'https://abc.marketing.pages.dev');
 });
 
 test('verifies page, error and byte-identical installer responses with the built policy', async () => {

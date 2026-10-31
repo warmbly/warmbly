@@ -2,13 +2,14 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-export function previewURL(deployments, project, branch, sha) {
-  const matches = deployments.filter(deployment => deployment.environment === 'preview'
-    && deployment.deployment_trigger?.metadata?.branch === branch
+export function previewURL(entries, project, sha) {
+  const matches = entries.filter(deployment => deployment.type === 'pages-deploy-detailed'
+    && deployment.version === 1
+    && deployment.pages_project === project
+    && deployment.environment === 'preview'
     && deployment.deployment_trigger?.metadata?.commit_hash === sha
-    && deployment.latest_stage?.name === 'deploy'
-    && deployment.latest_stage?.status === 'success');
-  assert.equal(matches.length, 1, 'Require one successful preview for this run and commit');
+    && typeof deployment.deployment_id === 'string' && deployment.deployment_id.length > 0);
+  assert.equal(matches.length, 1, 'Require one Wrangler preview receipt for this project and commit');
   const url = new URL(matches[0].url);
   assert.equal(url.protocol, 'https:');
   assert.ok(url.hostname.endsWith(`.${project}.pages.dev`), 'Require the configured Pages project');
@@ -32,16 +33,10 @@ export async function verifyPreview(url, policy, request = fetch, directory = ne
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const { CLOUDFLARE_ACCOUNT_ID: account, CLOUDFLARE_PAGES_PROJECT_NAME: project,
-    CLOUDFLARE_API_TOKEN: token, PREVIEW_BRANCH: branch, GITHUB_SHA: sha } = process.env;
-  assert.ok(account && project && token && branch && sha, 'Require preview deployment configuration');
-  const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/pages/projects/${project}/deployments?env=preview&per_page=100`, {
-    headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30000),
-  });
-  assert.ok(response.ok, `Pages deployment lookup returned ${response.status}`);
-  const data = await response.json();
-  assert.equal(data.success, true, 'Pages deployment lookup must succeed');
-  const url = previewURL(data.result, project, branch, sha);
+  const { CLOUDFLARE_PAGES_PROJECT_NAME: project, WRANGLER_OUTPUT_FILE_PATH: receipt, GITHUB_SHA: sha } = process.env;
+  assert.ok(project && receipt && sha, 'Require preview deployment configuration');
+  const entries = (await readFile(receipt, 'utf8')).split(/\r?\n/).filter(line => line.trim()).map(line => JSON.parse(line));
+  const url = previewURL(entries, project, sha);
   const headers = await readFile(new URL('../../site/dist/_headers', import.meta.url), 'utf8');
   const policies = [...headers.matchAll(/^\s+Content-Security-Policy: (.+)$/gm)];
   assert.equal(policies.length, 1, 'Require one built policy');
