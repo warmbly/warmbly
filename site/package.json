@@ -16,7 +16,7 @@
     "@astrojs/sitemap": "^3.7.4",
     "@fontsource/inter": "^5.2.6",
     "@tailwindcss/vite": "^4.1.10",
-    "astro": "^7.2.8",
+    "astro": "^7.4.4",
     "motion": "^12.34.0",
     "reading-time": "^1.5.0",
     "sharp": "0.35.5",
