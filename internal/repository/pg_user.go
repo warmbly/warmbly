@@ -51,7 +51,7 @@ type UserRepository interface {
 	// holding an issued password, the password too. It reports whether it did.
 	RevokeTester(ctx context.Context, id uuid.UUID) (passwordCleared bool, err error)
 
-	// IsCreatedTester reports whether the account was created as a tester; ErrUserNotFound when it does not exist.
+	// IsCreatedTester reports whether the account was created as a tester and is still one; ErrUserNotFound when it does not exist.
 	IsCreatedTester(ctx context.Context, id uuid.UUID) (bool, error)
 	// ReissueTesterPassword stores a new initial password on an account created
 	// as a tester, valid 48 hours, and returns its expiry; ErrNotTester otherwise.
@@ -511,12 +511,15 @@ func (r *userRepository) RevokeTester(ctx context.Context, id uuid.UUID) (bool, 
 // createdTesterSQL matches a users row created through the admin tester flow.
 const createdTesterSQL = `EXISTS (SELECT 1 FROM admin_audit_logs a WHERE a.action = 'create_tester' AND a.target_id = users.id)`
 
+// activeTesterSQL is a tester that has not been revoked, the only one a new password may go to.
+const activeTesterSQL = `users.login_code_exempt AND ` + createdTesterSQL
+
 // ErrNotTester refuses a tester-only action on an account not created as a tester.
 var ErrNotTester = errors.New("account was not created as a tester")
 
 func (r *userRepository) IsCreatedTester(ctx context.Context, id uuid.UUID) (bool, error) {
 	var tester bool
-	err := r.DB.QueryRow(ctx, `SELECT `+createdTesterSQL+` FROM users WHERE id = $1`, id).Scan(&tester)
+	err := r.DB.QueryRow(ctx, `SELECT `+activeTesterSQL+` FROM users WHERE id = $1`, id).Scan(&tester)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, ErrUserNotFound
 	}
@@ -529,7 +532,7 @@ func (r *userRepository) ReissueTesterPassword(ctx context.Context, id uuid.UUID
 		UPDATE users
 		SET password_hash = $2, password_expires_at = now() + interval '48 hours',
 		    password_changed_at = now(), updated_at = now()
-		WHERE id = $1 AND `+createdTesterSQL+`
+		WHERE id = $1 AND `+activeTesterSQL+`
 		RETURNING password_expires_at`, id, passwordHash).Scan(&until)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return time.Time{}, ErrNotTester

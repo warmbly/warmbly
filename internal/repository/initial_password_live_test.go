@@ -151,4 +151,17 @@ func TestLiveReissueTesterPassword(t *testing.T) {
 	if pending, xerr := auth.InitialPasswordPending(ctx, u.ID); xerr != nil || !pending {
 		t.Fatalf("the re-issued password is not an initial one: %v, %v", pending, xerr)
 	}
+
+	if _, err := users.RevokeTester(ctx, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	if tester, err := users.IsCreatedTester(ctx, u.ID); err != nil || tester {
+		t.Fatalf("a revoked tester reads as a tester: %v, %v", tester, err)
+	}
+	if _, err := users.ReissueTesterPassword(ctx, u.ID, freshHash); !errors.Is(err, ErrNotTester) {
+		t.Fatalf("re-issue on a revoked tester answered %v", err)
+	}
+	if _, xerr := auth.IsValidCredentials(ctx, address, fresh); xerr == nil {
+		t.Fatal("a revoked tester was given a working password")
+	}
 }

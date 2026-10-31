@@ -87,6 +87,35 @@ defmodule Realtime.ServeTLSTest do
     :ssl.close(listen)
   end
 
+  test "inline SERVE_TLS_CERT keeps every certificate of the chain" do
+    {:ok, generated} =
+      ServeTLS.endpoint_overrides(env([{"SERVE_TLS", "self-signed"}, {"SERVE_TLS_PORT", "8443"}]))
+
+    https = generated[:https]
+    {key_type, key_der} = https[:key]
+    cert = https[:cert]
+
+    chain =
+      :public_key.pem_encode([
+        {:Certificate, cert, :not_encrypted},
+        {:Certificate, cert, :not_encrypted}
+      ])
+
+    key = :public_key.pem_encode([{key_type, key_der, :not_encrypted}])
+
+    {:ok, overrides} =
+      ServeTLS.endpoint_overrides(
+        env([
+          {"SERVE_TLS", "supplied"},
+          {"SERVE_TLS_PORT", "8443"},
+          {"SERVE_TLS_CERT", chain},
+          {"SERVE_TLS_KEY", key}
+        ])
+      )
+
+    assert overrides[:https][:cert] == [https[:cert], https[:cert]]
+  end
+
   test "refuses incomplete settings" do
     for pairs <- [
           [{"SERVE_TLS", "self-signed"}],

@@ -137,6 +137,8 @@ type InitialPasswordPending struct {
 	Nonce         string    `json:"nonce"`
 	Email         string    `json:"email"`
 	AnomalyReason string    `json:"anomaly_reason,omitempty"`
+	// PasswordDigest is a SHA-256 of the issued password hash the challenge was opened with.
+	PasswordDigest string `json:"password_digest,omitempty"`
 }
 
 type LoginSession struct {

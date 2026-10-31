@@ -326,3 +326,26 @@ func TestSSOLinkRefusesAnInitialPassword(t *testing.T) {
 		t.Fatal("an issued password completed a provider link")
 	}
 }
+
+// A new password issued while a challenge is open voids it: only the reissued password can sign in.
+func TestInitialPasswordReissueVoidsOpenChallenge(t *testing.T) {
+	s, repo, tokens := initialFixture(t, 48*time.Hour)
+	res, err := signIn(s, repo.acct.email, issuedPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reissued, herr := argon2.Hash("Tester-" + strings.Repeat("r", 20))
+	if herr != nil {
+		t.Fatal(herr)
+	}
+	repo.mu.Lock()
+	repo.acct.hash = reissued
+	repo.mu.Unlock()
+
+	if _, xerr := choose(s, res.PendingToken, chosenPassword); xerr != errx.ErrPasswordChangeExpired {
+		t.Fatalf("a challenge opened before the reissue answered %v", xerr)
+	}
+	if repo.acct.hash != reissued || repo.acct.expiresAt == nil || tokens.sessions != 0 {
+		t.Fatal("a challenge opened before the reissue replaced the reissued password")
+	}
+}

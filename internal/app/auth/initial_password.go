@@ -2,6 +2,9 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"time"
@@ -26,7 +29,18 @@ func getInitialPasswordKey(sessionID uuid.UUID) string {
 
 // createInitialPasswordChallenge parks a password sign-in made with an issued
 // initial password behind a single-use token only CompleteInitialPassword takes.
-func (s *authService) createInitialPasswordChallenge(ctx context.Context, userID uuid.UUID, email string, verdict authrisk.Verdict) (*models.AuthSession, *errx.Error) {
+func (s *authService) createInitialPasswordChallenge(ctx context.Context, userID uuid.UUID, email, password string, verdict authrisk.Verdict) (*models.AuthSession, *errx.Error) {
+	// The challenge is bound to the password that opened it, so a reissue voids it.
+	hash, herr := s.authRepository.GetPasswordHash(ctx, userID)
+	if herr != nil {
+		return nil, herr
+	}
+	if hash == "" {
+		return nil, errx.ErrCredentials
+	}
+	if ok, verr := argon2.Verify(password, hash); verr != nil || !ok {
+		return nil, errx.ErrCredentials
+	}
 	sid := uuid.New()
 	nonce, err := crypt.Nonce()
 	if err != nil {
@@ -39,7 +53,7 @@ func (s *authService) createInitialPasswordChallenge(ctx context.Context, userID
 		errs.CaptureException(xerr)
 		return nil, errx.InternalError()
 	}
-	pending := &models.InitialPasswordPending{UserID: userID, Nonce: nonce, Email: email, AnomalyReason: verdict.Reason}
+	pending := &models.InitialPasswordPending{UserID: userID, Nonce: nonce, Email: email, AnomalyReason: verdict.Reason, PasswordDigest: passwordDigest(hash)}
 	data, merr := json.Marshal(pending)
 	if merr != nil {
 		errs.CaptureException(merr)
@@ -103,7 +117,7 @@ func (s *authService) CompleteInitialPassword(ctx context.Context, data *Initial
 	if xerr != nil {
 		return nil, xerr
 	}
-	if oldHash == "" {
+	if oldHash == "" || pend.PasswordDigest == "" || subtle.ConstantTimeCompare([]byte(passwordDigest(oldHash)), []byte(pend.PasswordDigest)) != 1 {
 		return nil, errx.ErrPasswordChangeExpired
 	}
 	same, verr := argon2.Verify(data.Password, oldHash)
@@ -144,4 +158,10 @@ func (s *authService) CompleteInitialPassword(ctx context.Context, data *Initial
 
 	verdict := authrisk.Verdict{Flagged: pend.AnomalyReason != "", Reason: pend.AnomalyReason}
 	return s.continuePasswordLogin(ctx, pend.UserID, pend.Email, data.DeviceToken, verdict, ipaddr, userAgent)
+}
+
+// passwordDigest names a stored hash without keeping it in the cache.
+func passwordDigest(hash string) string {
+	sum := sha256.Sum256([]byte(hash))
+	return hex.EncodeToString(sum[:])
 }

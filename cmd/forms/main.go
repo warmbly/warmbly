@@ -41,7 +41,7 @@ func main() {
 
 	backendRoots, err := servetls.ClientRoots(strings.TrimSpace(os.Getenv("BACKEND_INTERNAL_CA")), strings.TrimSpace(os.Getenv("BACKEND_INTERNAL_CA_FILE")))
 	if err != nil {
-		log.Fatalf("invalid BACKEND_INTERNAL_CA: %v", err)
+		log.Fatalf("invalid BACKEND_INTERNAL_CA or BACKEND_INTERNAL_CA_FILE: %v", err)
 	}
 
 	submitLimit := 0

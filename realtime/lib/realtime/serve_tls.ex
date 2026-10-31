@@ -125,7 +125,7 @@ defmodule Realtime.ServeTLS do
 
   defp cert_option({:pem, pem}) do
     case for({:Certificate, der, _} <- :public_key.pem_decode(pem), do: der) do
-      [leaf | _] -> [cert: leaf]
+      [_ | _] = chain -> [cert: chain]
       [] -> raise "SERVE_TLS_CERT holds no PEM certificate"
     end
   end

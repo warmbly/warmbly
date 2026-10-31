@@ -61,7 +61,7 @@ func (s *authService) LoginStart(ctx context.Context, data *AuthData, ipaddr, us
 		return nil, xerr
 	}
 	if pending {
-		return s.createInitialPasswordChallenge(ctx, uid, data.Email, verdict)
+		return s.createInitialPasswordChallenge(ctx, uid, data.Email, data.Password, verdict)
 	}
 
 	return s.continuePasswordLogin(ctx, uid, data.Email, data.DeviceToken, verdict, ipaddr, userAgent)
