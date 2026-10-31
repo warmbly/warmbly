@@ -501,7 +501,9 @@ type UniboxOverview struct {
 	// AwaitingAgentDraft is the count of threads with a pending inbox-agent draft
 	// waiting for human review (M10).
 	AwaitingAgentDraft int64 `json:"awaiting_agent_draft"`
-	ScheduledPending   int64 `json:"scheduled_pending"`
+	// Drafts counts each visible thread once across mailbox and pending agent drafts.
+	Drafts           int64 `json:"drafts"`
+	ScheduledPending int64 `json:"scheduled_pending"`
 	// ScheduledPendingMax is the hard cap on pending scheduled email
 	// tasks per workspace. The dashboard shows current/max so the user
 	// sees how close they are to the limit before hitting it.

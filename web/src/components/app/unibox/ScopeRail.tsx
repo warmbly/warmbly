@@ -274,14 +274,15 @@ export function ScopeRail({ scope, onChange, browseKey = "desktop" }: ScopeRailP
 
   const folderRow = (folder: UniboxFolder, label: string, icon: React.ReactNode): RailRow => {
     const counts = folderCounts.get(folder);
-    // Drafts reads better as a total; everywhere else the number is unread.
-    const count = folder === "drafts" ? counts?.total : counts?.unread;
+    // Drafts reads better as a total, pending agent drafts included; everywhere else the number is unread.
+    const agentDrafts = folder === "drafts" ? (data?.awaiting_agent_draft ?? 0) : 0;
+    const count = folder === "drafts" ? (data?.drafts ?? counts?.total) : counts?.unread;
     return {
       key: `folder:${folder}`,
       label,
       icon,
       count: count || undefined,
-      accent: folder !== "drafts" && !!count,
+      accent: folder === "drafts" ? agentDrafts > 0 : !!count,
       noun: "folder",
       onOpen: () => onChange({ kind: "folder", folder }),
       onMarkAllRead: readOnly ? undefined : () => markSeen.mutate({ folder, seen: true }),

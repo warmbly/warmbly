@@ -142,6 +142,13 @@ Recording against a stack the harness did not start is possible but explicit:
 whatever happens to answer on the default ports, which is usually another
 session's stack.
 
+## Unibox Drafts proof fixtures
+
+Apply `fixtures/unibox-drafts.sql` to this worktree's isolated rich-seed database,
+then run `QA_UNIBOX_DRAFTS_FIXTURES=1 pnpm proof unibox-drafts`. The fixture adds
+one inert pending agent reply and places one synthetic mailbox message in Drafts.
+The walkthrough opens the agent reply for review without sending it.
+
 ## Fleet admin proof fixtures
 
 `flows/fleet-telemetry.flow.ts` is opt-in: apply `fixtures/fleet-telemetry.sql`

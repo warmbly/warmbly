@@ -626,7 +626,7 @@ jobs:
         if: matrix.suite == 'live-1'
         env:
           WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
-        run: go test -race -v -p 1 ./internal/repository ./internal/infrastructure/db -run '^TestLiveUnibox(Search|ReadStream|SearchUpgrade|GetBySender)' -count=1
+        run: go test -race -v -p 1 ./internal/repository ./internal/infrastructure/db -run '^TestLiveUnibox(Search|ReadStream|SearchUpgrade|GetBySender|ScopeDraftsCount)' -count=1
 
       - name: Notification digest authorization retries (Redis)
         if: matrix.suite == 'live-3'

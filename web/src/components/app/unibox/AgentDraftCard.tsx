@@ -30,6 +30,7 @@ export default function AgentDraftCard({ threadId }: { threadId: string }) {
     const refresh = () => {
         void queryClient.invalidateQueries({ queryKey: ["unibox", "agent-drafts"] });
         void queryClient.invalidateQueries({ queryKey: ["unibox", "overview"] });
+        void queryClient.invalidateQueries({ queryKey: ["unibox", "search"] });
         void queryClient.invalidateQueries({ queryKey: ["unibox", "thread", threadId] });
     };
 
