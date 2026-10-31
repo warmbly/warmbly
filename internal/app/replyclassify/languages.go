@@ -39,6 +39,8 @@ type langRules struct {
 	// phrases, and never after a negator or condition in its sentence. positiveAsWritten
 	// keeps its accents, where folding would change the meaning.
 	positive, positiveAsWritten []string
+	// postverbalNegation reads French pas after an interest phrase, including intervening adverbs.
+	postverbalNegation bool
 }
 
 var baseRules = langRules{
@@ -151,9 +153,10 @@ var languageRules = map[string]langRules{
 		},
 	},
 	"fr": {
-		quote:      []quoteMarker{{re: headerBlock(`de ?`, `envoyé ?|date ?`)}},
-		separators: []string{`message d'origine`, `message transféré`},
-		ooo:        []string{"absent du bureau", "absente du bureau"},
+		postverbalNegation: true,
+		quote:              []quoteMarker{{re: headerBlock(`de ?`, `envoyé ?|date ?`)}},
+		separators:         []string{`message d'origine`, `message transféré`},
+		ooo:                []string{"absent du bureau", "absente du bureau"},
 		declined: []string{
 			"pas intéressé", "pas intéressée", "pas intéressés", "pas intéressées", "aucun intérêt",
 			"nous intéresse pas", "m'intéresse pas", "ne m'intéresse plus", "ne nous intéresse plus",
@@ -467,7 +470,9 @@ type phrase struct {
 	// negatable phrases do not count after a negator or condition in the same sentence.
 	negatable bool
 	// asWritten phrases keep their accents, because folding them changes the meaning ("sí" is not "si").
-	asWritten bool
+	asWritten          bool
+	postverbalNegation bool
+	unlessNextWord     string
 }
 
 // negators are the words that, earlier in the sentence, turn an interest phrase around.
@@ -482,8 +487,12 @@ func negatedOrConditionalAt(text string, start int) bool {
 	if i := strings.LastIndexAny(head, ".!?;"); i >= 0 {
 		head = head[i+1:]
 	}
-	for _, word := range strings.FieldsFunc(head, func(r rune) bool { return !unicode.IsLetter(r) && r != '\'' }) {
+	words := strings.FieldsFunc(head, func(r rune) bool { return !unicode.IsLetter(r) && r != '\'' })
+	for i, word := range words {
 		word = strings.Trim(word, "'")
+		if word == "s'il" && i+2 < len(words) && (words[i+1] == "vous" || words[i+1] == "te") && accentFolder.Replace(strings.Trim(words[i+2], "'")) == "plait" {
+			continue
+		}
 		if word == "s'il" || word == "s'ils" {
 			return true
 		}
@@ -524,6 +533,21 @@ func refusedAfter(text string, end int) bool {
 	return false
 }
 
+var frenchPostverbalNegation = regexp.MustCompile(`^\s+(?:(?:vraiment|absolument|franchement|certainement|tellement|beaucoup)\s+)*pas\b(?:\s+(\p{L}+))?`)
+
+// frenchNegatedAfter keeps post-verbal pas distinct from the affirmative idiom pas mal.
+func frenchNegatedAfter(text string, end int) bool {
+	match := frenchPostverbalNegation.FindStringSubmatch(text[end:])
+	return match != nil && match[1] != "mal"
+}
+
+func followedByWord(text string, end int, word string) bool {
+	tail := strings.TrimLeftFunc(text[end:], unicode.IsSpace)
+	rest, found := strings.CutPrefix(tail, word)
+	next, _ := utf8.DecodeRuneInString(rest)
+	return found && !wordRune(next)
+}
+
 // in matches an English base phrase against the text as written and a chosen
 // language's phrase, whole words only, against its accent-folded form.
 func (p phrase) in(text, folded string) bool {
@@ -542,12 +566,12 @@ func (p phrase) in(text, folded string) bool {
 		start, end := i+j, i+j+len(p.text)
 		before, _ := utf8.DecodeLastRuneInString(text[:start])
 		after, _ := utf8.DecodeRuneInString(text[end:])
-		if !wordRune(before) && !wordRune(after) {
+		if !wordRune(before) && !wordRune(after) && !(p.unlessNextWord != "" && followedByWord(text, end, p.unlessNextWord)) {
 			originalStart := start
 			if p.negatable && !p.asWritten {
 				originalStart = unfoldedOffset(original, start)
 			}
-			if !p.negatable || !(negatedOrConditionalAt(original, originalStart) || refusedAfter(text, end)) {
+			if !p.negatable || !(negatedOrConditionalAt(original, originalStart) || refusedAfter(text, end) || (p.postverbalNegation && frenchNegatedAfter(text, end))) {
 				return true
 			}
 		}
@@ -608,13 +632,17 @@ func compileRules(parts []langRules) *ruleSet {
 		rs.bounce = append(rs.bounce, p.bounce...)
 		// parts[0] is always baseRules.
 		for _, d := range p.declined {
-			rs.declined = append(rs.declined, phrase{text: accentFolder.Replace(strings.ToLower(d)), bounded: i > 0})
+			declined := phrase{text: accentFolder.Replace(strings.ToLower(d)), bounded: i > 0}
+			if p.postverbalNegation && strings.HasSuffix(declined.text, " pas") {
+				declined.unlessNextWord = "mal"
+			}
+			rs.declined = append(rs.declined, declined)
 		}
 		for _, n := range p.negative {
 			rs.negative = append(rs.negative, phrase{text: accentFolder.Replace(strings.ToLower(n)), bounded: i > 0})
 		}
 		for _, pos := range p.positive {
-			rs.positive = append(rs.positive, phrase{text: accentFolder.Replace(strings.ToLower(pos)), bounded: i > 0, negatable: i > 0})
+			rs.positive = append(rs.positive, phrase{text: accentFolder.Replace(strings.ToLower(pos)), bounded: i > 0, negatable: i > 0, postverbalNegation: p.postverbalNegation})
 		}
 		for _, pos := range p.positiveAsWritten {
 			rs.positive = append(rs.positive, phrase{text: strings.ToLower(pos), bounded: true, negatable: true, asWritten: true})
