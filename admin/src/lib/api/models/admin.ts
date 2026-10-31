@@ -1015,6 +1015,17 @@ export interface LoginCodeExemption {
     password_expires_at?: string | null;
     test_workspace_id?: string | null;
     sample_data_seeded_at?: string | null;
+    /** Created through the tester flow, so it can be issued a new password. */
+    created_as_tester?: boolean;
+}
+
+/** A fresh initial password for an existing tester, readable this once. */
+export interface ReissuedTesterPassword {
+    user_id: string;
+    password: string;
+    /** 48 hours after issuance. */
+    password_expires_at: string;
+    password_change_required: boolean;
 }
 
 /** The one time the password is readable. It is not stored in a form anyone

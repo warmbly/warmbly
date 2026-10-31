@@ -32,7 +32,12 @@ func TestInitialPasswordGuardCapsAndRefusesExtension(t *testing.T) {
 	if _, err := conn.Exec(ctx, "SET search_path TO "+schema); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := conn.Exec(ctx, `CREATE TABLE users (id text PRIMARY KEY, password_hash text, password_expires_at timestamptz)`); err != nil {
+	if _, err := conn.Exec(ctx, `CREATE TABLE users (id text PRIMARY KEY, password_hash text, password_expires_at timestamptz, updated_at timestamptz NOT NULL DEFAULT now());
+		INSERT INTO users (id, password_hash, password_expires_at) VALUES
+			('legacy', 'h0', now() + interval '30 days'),
+			('legacy_short', 'h0', now() + interval '6 hours'),
+			('legacy_ended', 'h0', now() - interval '1 day'),
+			('legacy_chosen', 'h0', NULL)`); err != nil {
 		t.Fatal(err)
 	}
 	up, err := migrationsFS.ReadFile("migrations/000336_initial_password_guard.up.sql")
@@ -72,6 +77,17 @@ func TestInitialPasswordGuardCapsAndRefusesExtension(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "cannot be extended") {
 			t.Fatalf("%s: got %v, want a refusal", what, err)
 		}
+	}
+
+	capped("legacy")
+	if d := left("legacy_short"); d == nil || *d > 6*time.Hour || *d < 5*time.Hour {
+		t.Fatalf("a short expiry moved to %v", d)
+	}
+	if d := left("legacy_ended"); d == nil || *d > -23*time.Hour {
+		t.Fatalf("an ended password moved to %v", d)
+	}
+	if left("legacy_chosen") != nil {
+		t.Fatal("the migration gave a chosen password an expiry")
 	}
 
 	if err := exec(`INSERT INTO users VALUES ('issued', 'h1', now() + interval '30 days'), ('member', 'h2', NULL)`); err != nil {

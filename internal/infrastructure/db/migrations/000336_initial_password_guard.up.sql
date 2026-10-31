@@ -1,5 +1,10 @@
 -- A non-NULL users.password_expires_at marks an issued initial password: capped at 48 hours from the write
 -- that issued it, and moved later or cleared only together with a new password hash, whatever writes the row.
+-- Rows already stored are bounded first, before the trigger exists to refuse a later expiry.
+UPDATE users
+   SET password_expires_at = now() + interval '48 hours', updated_at = now()
+ WHERE password_expires_at > now() + interval '48 hours';
+
 CREATE OR REPLACE FUNCTION users_initial_password_guard() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN

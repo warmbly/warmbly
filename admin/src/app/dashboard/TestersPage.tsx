@@ -18,7 +18,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { AlertTriangle, CopyIcon, FlaskConicalIcon, RotateCw, TrashIcon } from "lucide-react";
+import { AlertTriangle, CopyIcon, FlaskConicalIcon, KeyRoundIcon, RotateCw, TrashIcon } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,10 +29,11 @@ import { Callout, EmptyState, Panel, Segmented, StatusBadge } from "@/components
 import { cn } from "@/lib/utils";
 import { useAdminPerm } from "@/hooks/useAdminPerm";
 import { AdminPerm } from "@/lib/auth/permissions";
-import { createTester, listTesters, listOrganizationRoles, revokeTester, seedTesterWorkspace } from "@/lib/api/client/admin/testers";
+import { createTester, listTesters, listOrganizationRoles, reissueTesterPassword, revokeTester, seedTesterWorkspace } from "@/lib/api/client/admin/testers";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { listOrganizations } from "@/lib/api/client/admin/organizations";
 import { DASHBOARD_URL } from "@/lib/env";
-import type { AdminOrgListItem, CreatedTester } from "@/lib/api/models/admin";
+import type { AdminOrgListItem, CreatedTester, ReissuedTesterPassword } from "@/lib/api/models/admin";
 
 function fmt(ts?: string | null) {
     if (!ts) return "—";
@@ -54,6 +55,9 @@ export default function TestersPage() {
     // Held in state, never refetched: the server returns it once and cannot
     // produce it again.
     const [created, setCreated] = useState<CreatedTester | null>(null);
+    // Same rule for a re-issued password: shown once, from state only.
+    const [reissued, setReissued] = useState<(ReissuedTesterPassword & { email: string }) | null>(null);
+    const confirm = useConfirm();
     const [sampleTarget, setSampleTarget] = useState<{ organizationID: string; email: string } | null>(null);
 
     const testers = useQuery({
@@ -115,6 +119,27 @@ export default function TestersPage() {
         },
         onError: (e: Error) => toast.error(e.message || "Could not revoke the exemption"),
     });
+
+    const reissue = useMutation({
+        mutationFn: (t: { id: string; email: string }) => reissueTesterPassword(t.id),
+        onSuccess: (r, t) => {
+            setReissued({ ...r, email: t.email });
+            qc.invalidateQueries({ queryKey: ["admin", "testers"] });
+            toast.success("New initial password issued; every session was signed out");
+        },
+        onError: (e: Error) => toast.error(e.message || "Could not issue a new password"),
+    });
+
+    async function onReissue(id: string, email: string) {
+        const ok = await confirm({
+            title: `Issue a new password for ${email}?`,
+            description:
+                "The account's current password stops working and every session it holds is signed out. The new password is shown once, is valid for 48 hours and must be changed at first sign-in.",
+            confirmLabel: "Issue new password",
+            destructive: true,
+        });
+        if (ok) await reissue.mutateAsync({ id, email }).catch(() => undefined);
+    }
 
     const seed = useMutation({
         mutationFn: (orgID: string) => seedTesterWorkspace(orgID),
@@ -223,6 +248,46 @@ export default function TestersPage() {
                 </div>
             )}
 
+            {reissued && (
+                <div className="mb-8 overflow-hidden rounded-lg border border-amber-500/25 bg-amber-500/[0.07]">
+                    <div className="flex items-start gap-3 px-4 py-3">
+                        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                        <div className="min-w-0 flex-1">
+                            <div className="text-[13px] font-medium text-foreground">
+                                Copy this now. The password is not stored anywhere readable.
+                            </div>
+                            <div className="mt-0.5 text-[12.5px] text-muted-foreground">
+                                A new initial password for {reissued.email}. It is valid until {fmt(reissued.password_expires_at)} (48
+                                hours) and must be changed at first sign-in. The previous password no longer works.
+                            </div>
+                        </div>
+                        <Button size="sm" variant="outline" onClick={() => setReissued(null)}>
+                            Done
+                        </Button>
+                    </div>
+                    <dl className="divide-y divide-border/70 border-t border-amber-500/20 bg-card">
+                        {[
+                            ["Email", reissued.email],
+                            ["Password", reissued.password],
+                            ["Valid until", fmt(reissued.password_expires_at)],
+                        ].map(([k, v]) => (
+                            <div key={k} className="flex min-h-10 items-center gap-3 px-4 py-1.5 text-[13px]">
+                                <dt className="w-24 shrink-0 text-muted-foreground">{k}</dt>
+                                <dd
+                                    className="min-w-0 flex-1 font-mono text-[12.5px] break-all text-foreground"
+                                    data-ph-mask={k === "Password" ? "" : undefined}
+                                >
+                                    {v}
+                                </dd>
+                                <Button size="icon-xs" variant="ghost" onClick={() => copy(String(v))} aria-label={`Copy ${k}`}>
+                                    <CopyIcon className="size-3" />
+                                </Button>
+                            </div>
+                        ))}
+                    </dl>
+                </div>
+            )}
+
             <div className={cn("grid items-start gap-8", canManage && "lg:grid-cols-[minmax(0,1fr)_380px]")}>
                 <section className="min-w-0">
                     <h2 className="mb-3 text-[13px] font-semibold text-foreground">
@@ -311,6 +376,17 @@ export default function TestersPage() {
                                                         onClick={() => setSampleTarget({ organizationID: t.test_workspace_id!, email: t.email })}
                                                     >
                                                         {t.sample_data_seeded_at ? "Sample data added" : "Add sample data"}
+                                                    </Button>
+                                                )}
+                                                {t.created_as_tester && (
+                                                    <Button
+                                                        size="xs"
+                                                        variant="outline"
+                                                        disabled={reissue.isPending || revoke.isPending || seed.isPending}
+                                                        aria-label={`Issue new password for ${t.email}`}
+                                                        onClick={() => void onReissue(t.user_id, t.email)}
+                                                    >
+                                                        <KeyRoundIcon className="size-3" /> Issue new password
                                                     </Button>
                                                 )}
                                                 <Button

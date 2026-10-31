@@ -77,6 +77,8 @@ type LoginCodeExemption struct {
 	PasswordExpiresAt  *time.Time `json:"password_expires_at,omitempty"`
 	TestWorkspaceID    *uuid.UUID `json:"test_workspace_id,omitempty"`
 	SampleDataSeededAt *time.Time `json:"sample_data_seeded_at,omitempty"`
+	// CreatedAsTester marks an account the tester flow created, which alone can be issued a new password.
+	CreatedAsTester bool `json:"created_as_tester"`
 }
 
 type TesterSampleData struct {

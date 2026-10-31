@@ -1860,6 +1860,8 @@ func Run(
 		adminRoutes.POST("/testers", middleware.RequireAdminPermission(models.AdminPermManageTesters), h.AdminCreateTester)
 		adminRoutes.POST("/organizations/:id/sample-data", middleware.RequireAdminPermission(models.AdminPermManageTesters), h.AdminSeedTesterWorkspace)
 		adminRoutes.DELETE("/testers/:id", middleware.RequireAdminPermission(models.AdminPermManageTesters), h.AdminRevokeTester)
+		// A fresh initial password changes who can get in.
+		adminRoutes.POST("/testers/:id/password", middleware.RequireAdminPermission(models.AdminPermManageTesters), middleware.RequireFreshAuth(), h.AdminReissueTesterPassword)
 		// Removing a sign-in step from an account changes who can get in.
 		adminRoutes.PUT("/users/:id/login-code-exempt", middleware.RequireAdminPermission(models.AdminPermManageTesters), middleware.RequireFreshAuth(), h.AdminSetLoginCodeExempt)
 		adminRoutes.POST("/users/:id/ban", middleware.RequireAdminPermission(models.AdminPermBanUsers), h.AdminBanUser)
