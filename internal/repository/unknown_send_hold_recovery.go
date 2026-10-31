@@ -13,6 +13,9 @@ import (
 const liveUnknownSend = `t.send_result_state='unknown' AND t.warmup_send_retired_at IS NULL
 	AND t.campaign_send_isolated_at IS NULL AND t.send_hold_lifted_at IS NULL`
 
+// unresolvedUnknownSend also matches a lifted send, so a hold an older replica put back is lifted again.
+const unresolvedUnknownSend = `t.send_result_state='unknown' AND t.warmup_send_retired_at IS NULL AND t.campaign_send_isolated_at IS NULL`
+
 // unstartedHeldSend never reached the provider: BeginOutbound refuses it once released under the same lock.
 const unstartedHeldSend = `t.task_type IN ('campaign','email','placement') AND t.status='completed'
 	AND t.send_result_applied_at IS NULL AND t.send_released_at IS NULL
@@ -33,7 +36,7 @@ const liftableHeldSend = `t.task_type IN ('email','placement','cloud_warmup')
 const recoverableUnknownHold = `ea.send_recovery_hold AND ea.send_recovery_reason='unknown' AND ea.send_recovery_task_id IS NOT NULL
 	AND (t.id IS NULL
 	 OR COALESCE((` + liveUnknownSend + `) AND (` + unstartedHeldSend + `),false)
-	 OR COALESCE((` + liveUnknownSend + `) AND (` + liftableHeldSend + `),false))`
+	 OR COALESCE((` + unresolvedUnknownSend + `) AND (` + liftableHeldSend + `),false))`
 
 // RecoverUnknownSendHolds frees mailboxes held by a send that can never run again or never started.
 // Campaign and warmup sends that did start keep their own isolation and retirement paths.
@@ -60,16 +63,22 @@ func (r *taskRepository) RecoverUnknownSendHolds(ctx context.Context, startedBef
 		return 0, err
 	}
 	recovered := 0
+	var errs []error
 	for _, h := range candidates {
+		if ctx.Err() != nil {
+			break
+		}
+		// One mailbox that cannot be recovered must not stop the ones after it.
 		ok, err := r.recoverUnknownSendHold(ctx, h.mailbox, h.task, startedBefore, unstartedBefore)
 		if err != nil {
-			return recovered, err
+			errs = append(errs, err)
+			continue
 		}
 		if ok {
 			recovered++
 		}
 	}
-	return recovered, nil
+	return recovered, errors.Join(append(errs, ctx.Err())...)
 }
 
 func (r *taskRepository) recoverUnknownSendHold(ctx context.Context, mailbox, task uuid.UUID, startedBefore, unstartedBefore time.Time) (bool, error) {
@@ -85,7 +94,7 @@ func (r *taskRepository) recoverUnknownSendHold(ctx context.Context, mailbox, ta
 	var worker, nonce *uuid.UUID
 	err = tx.QueryRow(ctx, `SELECT t.id IS NULL,
 		COALESCE(t.id IS NOT NULL AND (`+liveUnknownSend+`) AND (`+unstartedHeldSend+`),false),
-		COALESCE(t.id IS NOT NULL AND (`+liveUnknownSend+`) AND (`+liftableHeldSend+`),false),
+		COALESCE(t.id IS NOT NULL AND (`+unresolvedUnknownSend+`) AND (`+liftableHeldSend+`),false),
 		t.send_executor_worker,t.send_executor_nonce
 		FROM email_accounts ea LEFT JOIN tasks t ON t.id=ea.send_recovery_task_id AND t.email_account_id=ea.id
 		WHERE ea.id=$3 AND ea.send_recovery_task_id=$4 AND `+recoverableUnknownHold+`
@@ -106,7 +115,7 @@ func (r *taskRepository) recoverUnknownSendHold(ctx context.Context, mailbox, ta
 		// The ordinary release path walks the reservation back and refreshes the hold.
 		return true, r.cancelOutbound(ctx, task, mailbox, *worker, *nonce, nil)
 	case liftable:
-		if _, err = tx.Exec(ctx, `UPDATE tasks SET send_hold_lifted_at=NOW(),updated_at=NOW() WHERE id=$1`, task); err != nil {
+		if _, err = tx.Exec(ctx, `UPDATE tasks SET send_hold_lifted_at=COALESCE(send_hold_lifted_at,NOW()),updated_at=NOW() WHERE id=$1`, task); err != nil {
 			return false, err
 		}
 		if err = resolveSendDeadLetter(ctx, tx, task); err != nil {

@@ -464,7 +464,7 @@ func sendRecoveryHoldMessage(hold repository.SendRecoveryHold) string {
 		if hold.Warmup {
 			return "Sending is paused after an unconfirmed warmup send. Warmbly checks it automatically and, when safe, retires that message so new sends can resume. The uncertain message is never retried."
 		}
-		return "Sending is briefly paused while Warmbly confirms whether an earlier email went out, so nothing is sent twice. This clears on its own, usually within 30 minutes. No action is needed."
+		return "Sending is briefly paused because Warmbly cannot yet tell whether an earlier email went out. That email is never retried, so nothing is sent twice. The pause clears on its own, usually within 30 minutes, even if that email's outcome stays unknown. No action is needed."
 	case "authentication":
 		return "Sending is paused because the mail server refused this mailbox's login when it last sent. Reconnect the mailbox (re-authorize it, or enter its current password or app password); once the server accepts the login, sending resumes unless another send safety hold is still pending."
 	default:

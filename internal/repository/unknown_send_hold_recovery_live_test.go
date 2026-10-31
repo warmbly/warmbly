@@ -68,6 +68,20 @@ func TestLiveStartedManualSendLiftsHoldWithoutRunningAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertMailboxFree(t, f)
+	var lifted time.Time
+	if err := f.pool.QueryRow(t.Context(), `SELECT send_hold_lifted_at FROM tasks WHERE id=$1`, task).Scan(&lifted); err != nil {
+		t.Fatal(err)
+	}
+	// An older replica that does not know the lift can put the hold back; the next sweep lifts it again.
+	f.exec(t, `UPDATE email_accounts SET send_recovery_hold=true,send_recovery_reason='unknown',send_recovery_task_id=$2 WHERE id=$1`, f.sender, task)
+	if n := recoverHolds(t, f); n != 1 {
+		t.Fatalf("re-held lifted send recovered=%d", n)
+	}
+	assertMailboxFree(t, f)
+	var relifted time.Time
+	if err := f.pool.QueryRow(t.Context(), `SELECT send_hold_lifted_at FROM tasks WHERE id=$1`, task).Scan(&relifted); err != nil || !relifted.Equal(lifted) {
+		t.Fatalf("the first lift was not kept: %v -> %v %v", lifted, relifted, err)
+	}
 	state, err := f.r.InspectOutbound(t.Context(), task, f.sender, f.worker)
 	if err != nil || state.State != "started" {
 		t.Fatalf("lifted send became runnable: %+v %v", state, err)
