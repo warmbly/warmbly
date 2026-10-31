@@ -33,6 +33,8 @@ test('restricts executable sources while preserving configured analytics and inl
 test('emits one catch-all header from every generated page and refuses oversized or duplicate policies', async () => {
   const root = await mkdtemp(join(tmpdir(), 'marketing-csp-'));
   const dir = pathToFileURL(`${root}/`);
+  const inherited = Object.entries(process.env).filter(([name]) => name.startsWith('PUBLIC_POSTHOG_'));
+  for (const [name] of inherited) delete process.env[name];
   try {
     await writeFile(join(root, '.env.production'), 'PUBLIC_POSTHOG_KEY=test\nPUBLIC_POSTHOG_HOST=https://analytics.example.com/ingest\n');
     await mkdir(join(root, 'terms'));
@@ -41,7 +43,9 @@ test('emits one catch-all header from every generated page and refuses oversized
     const baseline = '/*\n  X-Frame-Options: DENY\n/_astro/*\n  Cache-Control: public\n';
     await writeFile(join(root, '_headers'), baseline);
     const { hooks } = integration();
-    hooks['astro:config:setup']({ config: { root: dir }, mode: 'production' });
+    let vite;
+    hooks['astro:config:setup']({ updateConfig: config => { vite = config.vite; } });
+    vite.plugins[0].configResolved({ mode: 'production', envDir: root });
     const build = () => hooks['astro:build:done']({ dir, logger: { info() {} } });
     await build();
     const headers = await readFile(join(root, '_headers'), 'utf8');
@@ -53,11 +57,37 @@ test('emits one catch-all header from every generated page and refuses oversized
     assert.ok(headers.includes('X-Frame-Options: DENY'));
     assert.ok(headers.includes('/_astro/*\n  Cache-Control: public'));
     await assert.rejects(build(), /already configured/);
+    const assetsOnly = '/_astro/*\n  Cache-Control: public\n';
+    await writeFile(join(root, '_headers'), assetsOnly);
+    await assert.rejects(build(), /catch-all rule/);
+    assert.equal(await readFile(join(root, '_headers'), 'utf8'), assetsOnly);
+    const reordered = '/_astro/*\r\n  Cache-Control: public\r\n/* \t\r\n  X-Frame-Options: DENY\r\n';
+    await writeFile(join(root, '_headers'), reordered);
+    await build();
+    const reorderedHeaders = await readFile(join(root, '_headers'), 'utf8');
+    assert.ok(reorderedHeaders.startsWith('/_astro/*\r\n  Cache-Control: public\r\n/* \t\r\n  Content-Security-Policy:'));
+    assert.ok(reorderedHeaders.includes('\r\n  X-Frame-Options: DENY\r\n'));
+    await mkdir(join(root, 'config'));
+    await writeFile(join(root, 'config/.env.staging'), 'PUBLIC_POSTHOG_KEY=test\nPUBLIC_POSTHOG_HOST=https://staging-analytics.example.com\n');
+    vite.plugins[0].configResolved({ mode: 'staging', envDir: join(root, 'config') });
+    await writeFile(join(root, '_headers'), baseline);
+    await build();
+    const stagingHeaders = await readFile(join(root, '_headers'), 'utf8');
+    assert.ok(stagingHeaders.includes('https://staging-analytics.example.com'));
+    assert.ok(!stagingHeaders.includes('https://analytics.example.com'));
+    process.env.PUBLIC_POSTHOG_KEY = 'test';
+    process.env.PUBLIC_POSTHOG_HOST = 'https://configured-analytics.example.com';
+    vite.plugins[0].configResolved({ mode: 'production', envDir: root });
+    await writeFile(join(root, '_headers'), baseline);
+    await build();
+    assert.ok((await readFile(join(root, '_headers'), 'utf8')).includes('https://configured-analytics.example.com'));
     await writeFile(join(root, '_headers'), baseline);
     await writeFile(join(root, 'index.html'), Array.from({ length: 40 }, (_, i) => `<script>window.page=${i}</script>`).join(''));
     await assert.rejects(build(), /header limit/);
     assert.equal(await readFile(join(root, '_headers'), 'utf8'), baseline);
   } finally {
+    for (const name of Object.keys(process.env).filter(name => name.startsWith('PUBLIC_POSTHOG_'))) delete process.env[name];
+    for (const [name, value] of inherited) process.env[name] = value;
     await rm(root, { recursive: true, force: true });
   }
 });

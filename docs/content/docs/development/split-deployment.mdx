@@ -271,6 +271,8 @@ The configured PostHog HTTPS origin and its regional asset host are allowed when
 analytics is enabled. Cloudflare's analytics beacon has its own explicit origin.
 Changes to scripts or analytics configuration require a fresh build. A policy
 that exceeds Pages' 2,000-character header limit fails the build.
+The policy reads analytics settings using Vite's resolved build mode and
+environment directory, including mode-specific environment files.
 
 For a marketing-only update without a release tag, run **Deploy marketing Pages**
 on `main`, passing its reviewed full commit SHA as `expected_sha`. The manual

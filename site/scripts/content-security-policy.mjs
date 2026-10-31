@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { parse } from 'parse5';
 import { loadEnv } from 'vite';
-import { fileURLToPath } from 'node:url';
 
 export function inlineHashes(html) {
   const scripts = new Set();
@@ -55,9 +54,14 @@ export default function contentSecurityPolicyHeaders() {
   return {
     name: 'marketing-content-security-policy',
     hooks: {
-      'astro:config:setup': ({ config, mode }) => {
-        const env = loadEnv(mode, fileURLToPath(config.root), 'PUBLIC_POSTHOG_');
-        analyticsHost = env.PUBLIC_POSTHOG_KEY ? env.PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com' : undefined;
+      'astro:config:setup': ({ updateConfig }) => {
+        updateConfig({ vite: { plugins: [{
+          name: 'marketing-csp-environment',
+          configResolved: ({ mode, envDir }) => {
+            const env = loadEnv(mode, envDir, 'PUBLIC_POSTHOG_');
+            analyticsHost = env.PUBLIC_POSTHOG_KEY ? env.PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com' : undefined;
+          },
+        }] } });
       },
       'astro:build:done': async ({ dir, logger }) => {
         const hashes = new Set();
@@ -74,8 +78,9 @@ export default function contentSecurityPolicyHeaders() {
         const file = new URL('_headers', dir);
         const headers = await readFile(file, 'utf8');
         if (/Content-Security-Policy:/i.test(headers)) throw new Error('Marketing CSP header already configured');
-        if (!headers.includes('/*\n')) throw new Error('Marketing headers require a catch-all rule');
-        await writeFile(file, headers.replace('/*\n', `/*\n${header}\n`));
+        const catchAll = /^\/\*[ \t]*(\r?\n)/m;
+        if (!catchAll.test(headers)) throw new Error('Marketing headers require a catch-all rule');
+        await writeFile(file, headers.replace(catchAll, (rule, newline) => `${rule}${header}${newline}`));
         logger.info(`Generated CSP for all marketing routes (${hashes.size} script hashes)`);
       },
     },
