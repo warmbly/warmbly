@@ -87,6 +87,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/monitoring"
 	"github.com/warmbly/warmbly/internal/app/nativeactions"
 	"github.com/warmbly/warmbly/internal/app/nodelogs"
+	"github.com/warmbly/warmbly/internal/app/nodescope"
 	"github.com/warmbly/warmbly/internal/app/notification"
 	"github.com/warmbly/warmbly/internal/app/oauth"
 	"github.com/warmbly/warmbly/internal/app/oidcauth"
@@ -227,6 +228,7 @@ func main() {
 	var fleetNodeRepo repository.FleetNodeRepository
 	var fleetSettingsRepo repository.FleetSettingsRepository
 	var fleetNodeService *fleetnode.Service
+	var nodeScopeService *nodescope.Service
 	var keyStatusDB keystatus.DB
 	var tasksService tasks.TasksService
 	var advancedService advanced.Service
@@ -1212,6 +1214,7 @@ func main() {
 		fleetNodeRepo = repository.NewFleetNodeRepository(primaryDB)
 		fleetSettingsRepo = repository.NewFleetSettingsRepository(primaryDB)
 		fleetNodeService = fleetnode.New(fleetNodeRepo, workerRepository, fleetSettingsRepo)
+		nodeScopeService = nodescope.New(repository.NewNodeScopeRepository(primaryDB), cache.Client)
 		// Idle unless a staged rollout was started; every replica may run it.
 		go fleetNodeService.RunRolloutLoop(ctx, 30*time.Second)
 		settingsRegistrar := settings.NewRegistrar(storageBackendRepo)
@@ -2642,6 +2645,7 @@ func main() {
 		FleetNodeRepo:          fleetNodeRepo,
 		FleetSettingsRepo:      fleetSettingsRepo,
 		FleetNodes:             fleetNodeService,
+		NodeScope:              nodeScopeService,
 		KeyStatusDB:            keyStatusDB,
 
 		// Danger zone

@@ -335,6 +335,10 @@ func (h *Handler) InternalCloudLinkToken(c *gin.Context) {
 		errx.JSON(c, errx.ErrUuid)
 		return
 	}
+	if !h.nodeMailbox(c, "cloud_link.token", http.StatusNotFound, uuid.Nil, id) {
+		logBrokerAccess(c, "cloud_link.token", id.String(), false, "mailbox outside the node's assignment")
+		return
+	}
 	// A mailbox under an administrator's grant is minted for here, not by the cloud.
 	if h.DelegationService != nil {
 		tok, handled, xerr := h.DelegationService.AccessToken(c.Request.Context(), id)

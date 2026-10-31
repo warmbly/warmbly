@@ -1,12 +1,14 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/infrastructure/storage"
 )
 
@@ -99,6 +101,12 @@ func (h *Handler) InternalPresignBlob(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": "key " + req.Key + " is outside the prefixes a node may reach",
 		})
+		return
+	}
+	if !h.nodeInScope(c, "blob.presign", http.StatusForbidden, func(ctx context.Context, node uuid.UUID) (bool, error) {
+		return h.NodeScope.BlobKey(ctx, node, req.Key)
+	}) {
+		logBrokerAccess(c, "blob.presign."+string(op), req.Key, false, "key outside the node's assignment")
 		return
 	}
 	logBrokerAccess(c, "blob.presign."+string(op), req.Key, true, "")
