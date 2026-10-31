@@ -39,6 +39,8 @@ type langRules struct {
 	// phrases, and never after a negator or condition in its sentence. positiveAsWritten
 	// keeps its accents, where folding would change the meaning.
 	positive, positiveAsWritten []string
+	// positiveRequests express a request; a trailing qualifier need not negate it.
+	positiveRequests []string
 	// postverbalNegation reads French pas after an interest phrase, including intervening adverbs.
 	postverbalNegation bool
 }
@@ -170,7 +172,10 @@ var languageRules = map[string]langRules{
 		positive: []string{
 			"je suis intéressé", "je suis intéressée", "nous sommes intéressés", "nous sommes intéressées",
 			"ça m'intéresse", "cela m'intéresse", "ça nous intéresse", "cela nous intéresse",
-			"ça a l'air intéressant", "cela semble intéressant", "prenons rendez-vous",
+			"ça a l'air intéressant", "cela semble intéressant",
+		},
+		positiveRequests: []string{
+			"prenons rendez-vous",
 			"envoyez-moi plus d'informations", "envoyez-moi une offre", "envoyez-moi un devis",
 			"quel est le tarif", "quels sont vos tarifs",
 		},
@@ -533,7 +538,9 @@ func refusedAfter(text string, end int) bool {
 	return false
 }
 
-var frenchPostverbalNegation = regexp.MustCompile(`^\s+(?:(?:vraiment|absolument|franchement|certainement|tellement|beaucoup)\s+)*pas\b(?:\s+(\p{L}+))?`)
+const sentimentWhitespace = `[[:space:]\p{Z}\x{0085}]`
+
+var frenchPostverbalNegation = regexp.MustCompile(`^` + sentimentWhitespace + `+(?:(?:vraiment|absolument|franchement|certainement|tellement|beaucoup)` + sentimentWhitespace + `+)*pas\b(?:` + sentimentWhitespace + `+(\p{L}+))?`)
 
 // frenchNegatedAfter keeps post-verbal pas distinct from the affirmative idiom pas mal.
 func frenchNegatedAfter(text string, end int) bool {
@@ -643,6 +650,9 @@ func compileRules(parts []langRules) *ruleSet {
 		}
 		for _, pos := range p.positive {
 			rs.positive = append(rs.positive, phrase{text: accentFolder.Replace(strings.ToLower(pos)), bounded: i > 0, negatable: i > 0, postverbalNegation: p.postverbalNegation})
+		}
+		for _, pos := range p.positiveRequests {
+			rs.positive = append(rs.positive, phrase{text: accentFolder.Replace(strings.ToLower(pos)), bounded: i > 0, negatable: i > 0})
 		}
 		for _, pos := range p.positiveAsWritten {
 			rs.positive = append(rs.positive, phrase{text: strings.ToLower(pos), bounded: true, negatable: true, asWritten: true})

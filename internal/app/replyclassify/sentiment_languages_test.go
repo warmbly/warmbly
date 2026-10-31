@@ -202,6 +202,9 @@ func TestInterestedRepliesByLanguage(t *testing.T) {
 			"Nous sommes intéressés, prenons rendez-vous.",
 			"Cela semble intéressant.",
 			"Envoyez-moi un devis s'il vous plaît.",
+			"Envoyez-moi une offre pas trop chère.",
+			"Envoyez-moi un devis pas trop cher.",
+			"Envoyez-moi plus d'informations pas trop techniques.",
 			"S'il vous plaît, envoyez-moi un devis.",
 			"S’il vous plaît, envoyez-moi un devis.",
 			"S'il vous plait, envoyez-moi un devis.",
@@ -238,6 +241,21 @@ func TestInterestedRepliesByLanguage(t *testing.T) {
 			in.Languages = nil
 			if got := ClassifyOffline(in); got.Class == ClassPositive {
 				t.Errorf("%s %q read as positive without %s chosen", lang, body, lang)
+			}
+		}
+	}
+}
+
+func TestFrenchInterestWithUnicodeWhitespace(t *testing.T) {
+	for _, space := range []string{"\t", "\n", "\v", "\f", "\r", " ", "\u0085", "\u00a0", "\u1680", "\u2000", "\u2001", "\u2002", "\u2003", "\u2004", "\u2005", "\u2006", "\u2007", "\u2008", "\u2009", "\u200a", "\u2028", "\u2029", "\u202f", "\u205f", "\u3000"} {
+		for body, wantPositive := range map[string]bool{
+			"Cela nous intéresse" + space + "vraiment pas.":     false,
+			"Cela nous intéresse vraiment" + space + "pas.":     false,
+			"Cela nous intéresse vraiment pas" + space + "mal.": true,
+		} {
+			got := ClassifyOffline(Input{BodyText: body, Languages: []string{"fr"}})
+			if (got.Class == ClassPositive) != wantPositive {
+				t.Errorf("%q = %q, want positive: %v", body, got.Class, wantPositive)
 			}
 		}
 	}
