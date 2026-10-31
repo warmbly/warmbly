@@ -98,15 +98,16 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           PREVIEW_BRANCH: marketing-check-${{ github.run_id }}-${{ github.run_attempt }}
           PRODUCTION_BRANCH: ${{ steps.config.outputs.production_branch }}
+          WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/marketing-preview-${{ github.run_id }}-${{ github.run_attempt }}.ndjson
         run: |
           test "$PREVIEW_BRANCH" != "$PRODUCTION_BRANCH"
+          test ! -e "$WRANGLER_OUTPUT_FILE_PATH"
           pnpm dlx wrangler@4.45.0 pages deploy site/dist \
             --project-name "$CLOUDFLARE_PAGES_PROJECT_NAME" \
             --branch "$PREVIEW_BRANCH" --commit-hash "$GITHUB_SHA"
       - name: Verify preview responses before production
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          PREVIEW_BRANCH: marketing-check-${{ github.run_id }}-${{ github.run_attempt }}
+          WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/marketing-preview-${{ github.run_id }}-${{ github.run_attempt }}.ndjson
         run: node .github/scripts/pages-marketing-preview.mjs
       - name: Publish the verified marketing artifact
         env:

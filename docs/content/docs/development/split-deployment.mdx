@@ -284,6 +284,8 @@ the same artifact is uploaded to the production branch. A failed preview leaves
 production unchanged. The workflow shares the release concurrency lock and
 deploys only the marketing site. The existing Pages deployment enable flag
 applies to this workflow too.
+Preview verification reads Wrangler's structured deployment receipt for that
+run and checks its project, environment and commit before requesting its URL.
 
 ## Anything the control plane cannot know
 
