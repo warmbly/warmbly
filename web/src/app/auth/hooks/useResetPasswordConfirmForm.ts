@@ -12,12 +12,12 @@ import { resetLinkToken } from "@/lib/resetLinkToken";
 
 export function useResetPasswordConfirmForm() {
     // The link token is exchanged for a reset session held in memory, and cleared from the address bar.
-    const [params, setParams] = useSearchParams();
+    const [, setParams] = useSearchParams();
     const navigate = useNavigate();
     const resetConfirm = useResetPasswordConfirm();
     const { evaluate } = usePasswordStrength();
 
-    const [linkToken] = useState(() => resetLinkToken(window.location.hash, params));
+    const [linkToken] = useState(() => resetLinkToken(window.location.hash));
     const [session, setSession] = useState("");
     const [linkState, setLinkState] = useState<"checking" | "ready" | "invalid">(linkToken ? "checking" : "invalid");
     const isValidToken = linkState !== "invalid";

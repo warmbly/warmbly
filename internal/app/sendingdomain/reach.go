@@ -153,8 +153,19 @@ func proxyOf(res *http.Response, body []byte) string {
 
 // proxyOfCertificate recognises the placeholder certificate Traefik serves for a name it has no route for.
 func proxyOfCertificate(err error) string {
+	var leaf *x509.Certificate
 	var hostname x509.HostnameError
-	if errors.As(err, &hostname) && hostname.Certificate != nil && hostname.Certificate.Subject.CommonName == "TRAEFIK DEFAULT CERT" {
+	var authority x509.UnknownAuthorityError
+	var verify *tls.CertificateVerificationError
+	switch {
+	case errors.As(err, &verify) && len(verify.UnverifiedCertificates) > 0:
+		leaf = verify.UnverifiedCertificates[0]
+	case errors.As(err, &hostname):
+		leaf = hostname.Certificate
+	case errors.As(err, &authority):
+		leaf = authority.Cert
+	}
+	if leaf != nil && leaf.Subject.CommonName == "TRAEFIK DEFAULT CERT" {
 		return "traefik"
 	}
 	return ""

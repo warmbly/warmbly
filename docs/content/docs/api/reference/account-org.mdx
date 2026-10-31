@@ -205,7 +205,7 @@ Auth: public (not available to API keys).
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `token` | string | yes | The `session` value from the emailed reset link, carried in its fragment (`#session=`); a link from older mail carries it in the query. |
+| `token` | string | yes | The `session` value from the emailed reset link, carried in its fragment (`#session=`), which a browser never sends to a server. |
 
 #### Response
 
@@ -386,6 +386,12 @@ Self-service session management for the signed-in user. Revoking by id can only 
 `POST /auth/logout`
 
 Revokes the current session and closes the user's open realtime connections. Returns `204 No Content`.
+
+The body is optional. `device_tokens` (an array of up to 16 strings) names the remembered-device tokens the signing-out browser holds; each one that belongs to this account is forgotten, so the next sign-in from that browser asks for the emailed code. A token of another account changes nothing.
+
+```json
+{ "device_tokens": ["<token>"] }
+```
 
 Auth: Session only (not available to API keys).
 

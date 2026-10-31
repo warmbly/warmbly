@@ -114,16 +114,40 @@ func (h *Handler) RefreshToken(c *gin.Context) {
 	c.JSON(http.StatusOK, token)
 }
 
+// logoutRequest optionally names the remembered-device tokens this browser holds, so signing out forgets them.
+type logoutRequest struct {
+	DeviceTokens []string `json:"device_tokens"`
+}
+
 func (h *Handler) Logout(c *gin.Context) {
 	accessToken := middleware.GetAccessToken(c)
+
+	var req logoutRequest
+	if c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			errx.Handle(c, errx.InvalidBody(err))
+			return
+		}
+		if len(req.DeviceTokens) > maxLogoutDeviceTokens {
+			req.DeviceTokens = req.DeviceTokens[:maxLogoutDeviceTokens]
+		}
+	}
 
 	if err := h.TokenService.RevokeSession(c.Request.Context(), accessToken); err != nil {
 		errx.Handle(c, err)
 		return
 	}
+	if uid, err := middleware.GetUserUUID(c); err == nil && len(req.DeviceTokens) > 0 {
+		if ferr := h.AuthService.ForgetTrustedDevice(c.Request.Context(), uid, req.DeviceTokens); ferr != nil {
+			errx.Handle(c, ferr)
+			return
+		}
+	}
 
 	c.Status(http.StatusNoContent)
 }
+
+const maxLogoutDeviceTokens = 16
 
 func (h *Handler) LogoutAll(c *gin.Context) {
 	accessToken := middleware.GetAccessToken(c)

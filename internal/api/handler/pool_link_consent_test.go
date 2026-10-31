@@ -115,8 +115,11 @@ func TestBrokeredSigninCompletesOnlyInTheBrowserThatContinued(t *testing.T) {
 		t.Fatalf("continue from the page = %d, bound %q", w.Code, f.bound)
 	}
 	f.bound = ""
-	if w := serve(t, h.PoolLinkOAuthContinue, "/addresses/connect/continue?state=pl_x&t="+token, cookies[0]); w.Code != http.StatusFound || f.bound != token {
-		t.Fatalf("continue from a page rendered by the previous release = %d, bound %q", w.Code, f.bound)
+	if w := serve(t, h.PoolLinkOAuthContinue, "/addresses/connect/continue?state=pl_x&t="+token, cookies[0]); w.Code == http.StatusFound || w.Code == http.StatusSeeOther || f.bound != "" {
+		t.Fatalf("continue with the binding value in the URL = %d, bound %q", w.Code, f.bound)
+	}
+	if w := servePost(t, h.PoolLinkOAuthContinue, url.Values{"state": {"pl_x"}, "t": {token}}, cookies[0]); w.Code != http.StatusSeeOther || f.bound != token {
+		t.Fatalf("continue from the page again = %d, bound %q", w.Code, f.bound)
 	}
 
 	if w := serve(t, h.EmailOAuthCallbackGmail, "/addresses/google/callback?state=pl_x&code=c"); w.Code == http.StatusFound || strings.Contains(w.Body.String(), "postMessage") {

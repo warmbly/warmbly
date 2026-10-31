@@ -124,6 +124,8 @@ type AuthService interface {
 	// ForgetTrustedDevices drops every browser the user asked to remember, so
 	// each asks for an emailed login code again.
 	ForgetTrustedDevices(ctx context.Context, userID uuid.UUID) *errx.Error
+	// ForgetTrustedDevice drops the remembered devices whose tokens a signing-out browser presents.
+	ForgetTrustedDevice(ctx context.Context, userID uuid.UUID, tokens []string) *errx.Error
 
 	// Policy is the resolved per-deployment auth behavior, exposed so the
 	// public /auth/config endpoint can report it to the login screen.
