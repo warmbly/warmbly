@@ -36,7 +36,7 @@ type langRules struct {
 	// negative is any other clear no. Both are phrases, never single words.
 	declined, negative []string
 	// positive is clear interest. A chosen language's is read after its no
-	// phrases, and never in a sentence with a negating word before it. positiveAsWritten
+	// phrases, and never after a negator or condition in its sentence. positiveAsWritten
 	// keeps its accents, where folding would change the meaning.
 	positive, positiveAsWritten []string
 }
@@ -464,7 +464,7 @@ type ruleSet struct {
 type phrase struct {
 	text    string
 	bounded bool
-	// negatable phrases do not count after a negating word in the same sentence ("no me interesa mucho").
+	// negatable phrases do not count after a negator or condition in the same sentence.
 	negatable bool
 	// asWritten phrases keep their accents, because folding them changes the meaning ("sí" is not "si").
 	asWritten bool
@@ -476,15 +476,14 @@ var negators = map[string]bool{
 	"pas": true, "ne": true, "non": true, "niet": true, "geen": true, "nao": true, "nunca": true, "jamas": true,
 }
 
-// negatedAt reports a negator earlier in the sentence that holds start. Commas and
-// line breaks do not end it ("je ne crois pas, honnêtement, que cela nous intéresse").
-func negatedAt(text string, start int) bool {
+// negatedOrConditionalAt keeps a qualified phrase from counting as definite interest.
+func negatedOrConditionalAt(text string, start int) bool {
 	head := text[:start]
 	if i := strings.LastIndexAny(head, ".!?;"); i >= 0 {
 		head = head[i+1:]
 	}
 	for _, word := range strings.FieldsFunc(head, func(r rune) bool { return !unicode.IsLetter(r) }) {
-		if negators[word] {
+		if negators[word] || word == "si" || word == "wenn" || word == "falls" || word == "sofern" {
 			return true
 		}
 	}
@@ -525,7 +524,7 @@ func (p phrase) in(text, folded string) bool {
 		start, end := i+j, i+j+len(p.text)
 		before, _ := utf8.DecodeLastRuneInString(text[:start])
 		after, _ := utf8.DecodeRuneInString(text[end:])
-		if !wordRune(before) && !wordRune(after) && !(p.negatable && (negatedAt(text, start) || refusedAfter(text, end))) {
+		if !wordRune(before) && !wordRune(after) && !(p.negatable && (negatedOrConditionalAt(text, start) || refusedAfter(text, end))) {
 			return true
 		}
 		_, size := utf8.DecodeRuneInString(text[start:])

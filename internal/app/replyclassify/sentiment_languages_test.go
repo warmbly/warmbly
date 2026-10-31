@@ -246,6 +246,10 @@ func TestNegatedAndHedgedInterestIsNotPositive(t *testing.T) {
 		"No estoy muy interesado.",
 		"Gracias, pero no estamos muy interesados.",
 		"Si me interesa, les aviso.",
+		"Si me interesa mucho, les aviso.",
+		"Si cela m'intéresse, je vous contacterai.",
+		"Si ça m'intéresse, je vous recontacte.",
+		"Falls es passt, können wir telefonieren.",
 		"No\nme interesa mucho.",
 		"No quiero agendar una llamada.",
 		"Wir wollen nicht gleich einen Termin vereinbaren.",
@@ -264,21 +268,22 @@ func TestNegatedAndHedgedInterestIsNotPositive(t *testing.T) {
 	}
 }
 
-// A negating word anywhere earlier in the sentence turns the phrase around.
-func TestNegatedAtReadsTheSentence(t *testing.T) {
+// A negator or condition earlier in the sentence qualifies the interest.
+func TestNegatedOrConditionalAtReadsTheSentence(t *testing.T) {
 	for text, want := range map[string]bool{
 		"no me interesa mucho":          true,
 		"no, me interesa mucho":         true,
 		"pero no  me interesa mucho":    true,
 		"no\nme interesa mucho":         true,
 		"no a b c me interesa mucho":    true,
+		"si me interesa mucho":          true,
 		"bueno me interesa mucho":       false,
 		"me interesa mucho":             false,
 		"no. me interesa mucho":         false,
 		"por que no? me interesa mucho": false,
 	} {
-		if got := negatedAt(text, len(text)-len("me interesa mucho")); got != want {
-			t.Errorf("negatedAt(%q) = %v, want %v", text, got, want)
+		if got := negatedOrConditionalAt(text, len(text)-len("me interesa mucho")); got != want {
+			t.Errorf("negatedOrConditionalAt(%q) = %v, want %v", text, got, want)
 		}
 	}
 }
