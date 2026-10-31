@@ -1,0 +1,109 @@
+name: Finalize runtime TLS
+
+on:
+  workflow_dispatch:
+    inputs:
+      vars_version:
+        description: S3 version ID of the reviewed runtime-tls.tfvars.json snapshot at stage both
+        required: true
+        type: string
+      release:
+        description: Currently deployed release, retained for the service redeploy
+        required: true
+        type: string
+  pull_request:
+    paths:
+      - '.github/workflows/runtime-tls.yml'
+      - '.github/scripts/runtime-tls*'
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  TF_IN_AUTOMATION: "1"
+  TF_INPUT: "0"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: shellcheck .github/scripts/runtime-tls.sh
+      - run: bash .github/scripts/runtime-tls.test.sh
+
+  plan:
+    needs: check
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: aws-infrastructure-plan
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      digest: ${{ steps.plan.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.16.5"
+          terraform_wrapper: false
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_TERRAFORM_PLAN_ROLE_ARN }}
+          aws-region: us-east-1
+      - id: plan
+        env:
+          STATE_BUCKET: ${{ vars.AWS_TERRAFORM_STATE_BUCKET }}
+          WORK: ${{ runner.temp }}/runtime-tls
+          VARS_VERSION: ${{ inputs.vars_version }}
+          RELEASE: ${{ inputs.release }}
+        run: .github/scripts/runtime-tls.sh plan
+
+  apply:
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: aws-infrastructure-approval
+    concurrency:
+      group: aws-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.16.5"
+          terraform_wrapper: false
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_TERRAFORM_APPLY_ROLE_ARN }}
+          aws-region: us-east-1
+      - env:
+          STATE_BUCKET: ${{ vars.AWS_TERRAFORM_STATE_BUCKET }}
+          WORK: ${{ runner.temp }}/runtime-tls
+          VARS_VERSION: ${{ inputs.vars_version }}
+          RELEASE: ${{ inputs.release }}
+          APPROVED_DIGEST: ${{ needs.plan.outputs.digest }}
+        run: .github/scripts/runtime-tls.sh apply
+
+  redeploy:
+    needs: apply
+    permissions:
+      contents: read
+      id-token: write
+      attestations: read
+    uses: ./.github/workflows/deploy-aws.yml
+    with:
+      tag: ${{ inputs.release }}
+      mode: redeploy
+      services: backend,forms,tracking,realtime
+      fleet: false
+    secrets: inherit

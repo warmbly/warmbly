@@ -411,6 +411,26 @@ one is `serve` or `both`. Stepping back from `on` is not supported, because it
 would forward to an HTTP target group that has no tasks yet; roll back images
 among releases that support `SERVE_TLS` instead.
 
+### Finalize TLS independently
+
+The manual **Finalize runtime TLS** workflow advances `both` to `on` without
+applying other infrastructure changes. After verifying the pinned backend hop
+and every HTTPS target, upload the reviewed `both` runtime var file to
+`warmbly/production/vars/runtime-tls.tfvars.json` in the private state bucket.
+Keep its S3 version ID: the workflow reads that exact version in both jobs.
+
+Dispatch the workflow from `main` with that version ID and the currently
+deployed release tag. It prints resource addresses and actions for review and
+waits in `aws-infrastructure-approval`. After approval it rechecks HTTPS target
+health, replans and requires the complete resource changes to match the approved
+digest. Its scope guard permits only the TLS switch, including loopback listener
+settings, and refuses changes to other task definitions or infrastructure.
+
+After applying, it redeploys the same release to backend, forms, tracking and
+realtime through the normal attestation, secret comparison, alarm and bake gates.
+It does not start a worker rollout. Persist `target_tls=on` in the authoritative
+runtime var file after success, then verify HTTPS target health and routes.
+
 ## One-time GitHub setup
 
 1. On the `aws-production` environment, allow the `v*.*.*` tag pattern next to
