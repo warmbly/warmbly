@@ -183,3 +183,159 @@ func TestEnglishPhrasesReadTheTextAsWritten(t *testing.T) {
 		t.Errorf("English reply with an accent = %q, want it read as before", got.Class)
 	}
 }
+
+// Replies that show interest, in each language as people write them. Each is
+// positive once its language is chosen and not positive without it.
+func TestInterestedRepliesByLanguage(t *testing.T) {
+	positive := map[string][]string{
+		"de": {
+			"Klingt gut, lassen Sie uns telefonieren.",
+			"Ich bin interessiert, was kostet das?",
+			"Klingt interessant!",
+			"Wir sind interessiert.",
+			"Gerne mehr erfahren.",
+			"Können wir telefonieren?",
+		},
+		"fr": {
+			"Ça m'intéresse, quel est le tarif ?",
+			"Je suis intéressée.",
+			"Nous sommes intéressés, prenons rendez-vous.",
+			"Cela semble intéressant.",
+			"Envoyez-moi un devis s'il vous plaît.",
+			"Envoyez-moi une offre pas trop chère.",
+			"Envoyez-moi un devis pas trop cher.",
+			"Envoyez-moi plus d'informations pas trop techniques.",
+			"S'il vous plaît, envoyez-moi un devis.",
+			"S’il vous plaît, envoyez-moi un devis.",
+			"S'il vous plait, envoyez-moi un devis.",
+			"S'il te plaît, envoyez-moi un devis.",
+			"S'il\nvous plaît, envoyez-moi un devis.",
+			"Cela nous intéresse vraiment pas mal.",
+			"Ça nous intéresse pas mal.",
+			"Ça m'intéresse pas mal.",
+			"Je suis intéressé, pas de problème.",
+			"Ca nous interesse.",
+		},
+		"es": {
+			"Me interesa mucho.",
+			"Sí, me interesa.",
+			"Sí, nos interesa mucho.",
+			"Sí nos interesa mucho.",
+			"Sí, José, nos interesa mucho.",
+			"Sí, Müller, nos interesa mucho.",
+			"Sí, Ægir, nos interesa mucho.",
+			"Sí, İpek, nos interesa mucho.",
+			"Estoy muy interesado, ¿cuánto cuesta?",
+			"Agendemos una llamada.",
+			"Envíeme más información, por favor.",
+			"Estamos muy interesados.",
+			"Me interesa mucho, pero tengo una pregunta.",
+		},
+	}
+	for lang, replies := range positive {
+		for _, body := range replies {
+			in := Input{Subject: "Re: Hallo", BodyText: body, Languages: []string{lang}}
+			if got := ClassifyOffline(in); got.Class != ClassPositive {
+				t.Errorf("%s %q = %q, want positive", lang, body, got.Class)
+			}
+			in.Languages = nil
+			if got := ClassifyOffline(in); got.Class == ClassPositive {
+				t.Errorf("%s %q read as positive without %s chosen", lang, body, lang)
+			}
+		}
+	}
+}
+
+func TestFrenchInterestWithUnicodeWhitespace(t *testing.T) {
+	for _, space := range []string{"\t", "\n", "\v", "\f", "\r", " ", "\u0085", "\u00a0", "\u1680", "\u2000", "\u2001", "\u2002", "\u2003", "\u2004", "\u2005", "\u2006", "\u2007", "\u2008", "\u2009", "\u200a", "\u2028", "\u2029", "\u202f", "\u205f", "\u3000"} {
+		for body, wantPositive := range map[string]bool{
+			"Cela nous intéresse" + space + "vraiment pas.":     false,
+			"Cela nous intéresse vraiment" + space + "pas.":     false,
+			"Cela nous intéresse vraiment pas" + space + "mal.": true,
+		} {
+			got := ClassifyOffline(Input{BodyText: body, Languages: []string{"fr"}})
+			if (got.Class == ClassPositive) != wantPositive {
+				t.Errorf("%q = %q, want positive: %v", body, got.Class, wantPositive)
+			}
+		}
+	}
+}
+
+// An interest phrase that is negated, outweighed by a no, or only conditional
+// never reads as interest.
+func TestNegatedAndHedgedInterestIsNotPositive(t *testing.T) {
+	all := []string{"de", "fr", "es", "nl", "it", "pt"}
+	for _, body := range []string{
+		"Ich bin nicht interessiert.",
+		"Klingt gut, aber wir haben keinen Bedarf.",
+		"Wir möchten keinen Termin vereinbaren.",
+		"Wir wären interessiert, wenn der Preis stimmt.",
+		"Falls Interesse besteht, melden wir uns.",
+		"Ça m'intéresse pas.",
+		"Cela nous intéresse vraiment pas.",
+		"Ça nous intéresse absolument pas.",
+		"Je suis intéressé vraiment pas.",
+		"Cela ne nous intéresse plus.",
+		"Je ne suis pas intéressé.",
+		"Nous ne sommes pas intéressés.",
+		"No me interesa mucho.",
+		"No estoy muy interesado.",
+		"Gracias, pero no estamos muy interesados.",
+		"Si me interesa, les aviso.",
+		"Si me interesa mucho, les aviso.",
+		"Si cela m'intéresse, je vous contacterai.",
+		"Si ça m'intéresse, je vous recontacte.",
+		"S'il s'avère que cela nous intéresse, nous vous recontacterons.",
+		"S’ils confirment que cela nous intéresse, nous vous recontacterons.",
+		"S'il vous plaît, si cela nous intéresse, nous vous recontacterons.",
+		"S'il vous convient que cela nous intéresse, nous vous recontacterons.",
+		"Sí, José. Si nos interesa mucho, les aviso.",
+		"Sí, Müller. Si nos interesa mucho, les aviso.",
+		"Sí, Ægir. Si nos interesa mucho, les aviso.",
+		"Sí, İpek. Si nos interesa mucho, les aviso.",
+		"Falls es passt, können wir telefonieren.",
+		"No\nme interesa mucho.",
+		"No quiero agendar una llamada.",
+		"Wir wollen nicht gleich einen Termin vereinbaren.",
+		"Ich glaube nicht, dass wir einen Termin vereinbaren sollten.",
+		"No me parece buena idea programar una llamada.",
+		"No sé todavía si nos interesa mucho.",
+		"Je ne crois pas, honnêtement, que cela nous intéresse.",
+		"Me interesa mucho, pero no ahora.",
+		"Me interesa mucho. Pero no este año.",
+		"Klingt interessant, aber nicht vor dem nächsten Quartal.",
+		"Ça m'intéresse, mais pas maintenant.",
+	} {
+		if got := ClassifyOffline(Input{Subject: "Re: Hallo", BodyText: body, Languages: all}); got.Class == ClassPositive {
+			t.Errorf("%q read as positive", body)
+		}
+	}
+}
+
+// A negator or condition earlier in the sentence qualifies the interest.
+func TestNegatedOrConditionalAtReadsTheSentence(t *testing.T) {
+	for text, want := range map[string]bool{
+		"no me interesa mucho":          true,
+		"no, me interesa mucho":         true,
+		"pero no  me interesa mucho":    true,
+		"no\nme interesa mucho":         true,
+		"no a b c me interesa mucho":    true,
+		"si me interesa mucho":          true,
+		"bueno me interesa mucho":       false,
+		"me interesa mucho":             false,
+		"no. me interesa mucho":         false,
+		"por que no? me interesa mucho": false,
+	} {
+		if got := negatedOrConditionalAt(text, len(text)-len("me interesa mucho")); got != want {
+			t.Errorf("negatedOrConditionalAt(%q) = %v, want %v", text, got, want)
+		}
+	}
+}
+
+// A negator in the subject never turns the body's interest around.
+func TestSubjectNegatorDoesNotReachTheBody(t *testing.T) {
+	in := Input{Subject: "Re: No-code platform", BodyText: "Me interesa mucho.", Languages: []string{"es"}}
+	if got := ClassifyOffline(in); got.Class != ClassPositive {
+		t.Errorf("%q under %q = %q, want positive", in.BodyText, in.Subject, got.Class)
+	}
+}
