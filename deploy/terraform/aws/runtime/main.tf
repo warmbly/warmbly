@@ -84,12 +84,12 @@ variable "services" {
 }
 
 variable "target_tls" {
-  description = "Stage of the move to TLS behind the load balancer: off, serve, both, on. Advance one stage per apply and let each redeploy finish"
+  description = "Stage of the move to TLS behind the load balancer: off, serve, both, route, drain, on. Advance one stage per apply and let each redeploy finish"
   type        = string
   default     = "off"
   validation {
-    condition     = contains(["off", "serve", "both", "on"], var.target_tls)
-    error_message = "target_tls is off, serve, both or on."
+    condition     = contains(["off", "serve", "both", "route", "drain", "on"], var.target_tls)
+    error_message = "target_tls is off, serve, both, route, drain or on."
   }
 }
 variable "target_tls_port" {
@@ -129,7 +129,7 @@ locals {
   # Each stage keeps the previous one's listeners, so a rolling deploy never meets a task that cannot answer.
   tls_serving  = var.target_tls != "off"
   http_targets = var.target_tls != "on"
-  tls_targets  = contains(["both", "on"], var.target_tls)
+  tls_targets  = contains(["both", "route", "drain", "on"], var.target_tls)
   tls_services = {
     for name, service in var.services : name => service if service.port != null && (contains(keys(local.public_services), name) || name == "backend")
   }
@@ -342,7 +342,7 @@ resource "aws_lb_target_group" "service_tls" {
 }
 locals {
   # The group the listener sends traffic to; in both, the TLS group is attached at weight 0 while it fills.
-  serving_target_groups = var.target_tls == "on" ? aws_lb_target_group.service_tls : aws_lb_target_group.service
+  serving_target_groups = contains(["route", "drain", "on"], var.target_tls) ? aws_lb_target_group.service_tls : aws_lb_target_group.service
 }
 resource "aws_lb_listener" "https" {
   load_balancer_arn = aws_lb.main.arn
@@ -373,17 +373,17 @@ resource "aws_lb_listener_rule" "service" {
   }
   action {
     type             = "forward"
-    target_group_arn = var.target_tls == "both" ? null : local.serving_target_groups[each.key].arn
+    target_group_arn = contains(["both", "route"], var.target_tls) ? null : local.serving_target_groups[each.key].arn
     dynamic "forward" {
-      for_each = var.target_tls == "both" ? [each.key] : []
+      for_each = contains(["both", "route"], var.target_tls) ? [each.key] : []
       content {
         target_group {
           arn    = aws_lb_target_group.service[forward.value].arn
-          weight = 1
+          weight = var.target_tls == "both" ? 1 : 0
         }
         target_group {
           arn    = aws_lb_target_group.service_tls[forward.value].arn
-          weight = 0
+          weight = var.target_tls == "route" ? 1 : 0
         }
       }
     }
@@ -510,7 +510,7 @@ resource "aws_ecs_service" "service" {
     assign_public_ip = true
   }
   dynamic "load_balancer" {
-    for_each = contains(keys(local.public_services), each.key) && local.http_targets ? [each.value.port] : []
+    for_each = contains(keys(local.public_services), each.key) && local.http_targets && var.target_tls != "drain" ? [each.value.port] : []
     content {
       target_group_arn = aws_lb_target_group.service[each.key].arn
       container_name   = each.key

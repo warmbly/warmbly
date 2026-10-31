@@ -28,6 +28,14 @@ mock_provider "aws" {
   }
 }
 
+override_resource {
+  target = aws_lb_target_group.service["tracking"]
+  values = {
+    arn        = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/http/1"
+    arn_suffix = "targetgroup/http/1"
+  }
+}
+
 override_data {
   target = data.terraform_remote_state.foundation
   values = {
@@ -56,6 +64,7 @@ variables {
   state_bucket                 = "state"
   certificate_primary_domain   = "warmbly.com"
   origin_ipv4_cidrs            = ["173.245.48.0/20"]
+  tracking_additional_hosts    = ["link.example.com"]
   backend_internal_certificate = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
   services = {
     backend  = { image = "r/backend@sha256:0000000000000000000000000000000000000000000000000000000000000000", cpu = 256, memory = 512, port = 8080, host = "api.warmbly.com", secret_version_id = "v", secret_keys = ["SERVE_TLS_KEY"] }
@@ -124,6 +133,70 @@ run "both_attaches_the_tls_group_at_weight_zero" {
   assert {
     condition     = strcontains(aws_ecs_task_definition.service["tracking"].container_definitions, "https://backend.warmbly.internal:8443")
     error_message = "both moves the internal hop to TLS"
+  }
+}
+
+run "route_preserves_healthy_http_fallback" {
+  command = apply
+  variables {
+    target_tls = "route"
+  }
+  assert {
+    condition     = length(aws_lb_target_group.service) == 4 && length(aws_vpc_security_group_ingress_rule.service) == 4 && length(aws_vpc_security_group_ingress_rule.internal_backend) == 1
+    error_message = "route retains every HTTP target group and network rule"
+  }
+  assert {
+    condition     = alltrue([for service in aws_ecs_service.service : length(service.load_balancer) == 0 || length(service.load_balancer) == 2])
+    error_message = "route keeps both target registrations ready"
+  }
+  assert {
+    condition     = alltrue([for group in aws_lb_listener_rule.service["tracking"].action[0].forward[0].target_group : group.arn == aws_lb_target_group.service_tls["tracking"].arn ? group.weight == 1 : group.weight == 0])
+    error_message = "route sends traffic to HTTPS only"
+  }
+  assert {
+    condition     = length(aws_lb_listener_rule.tracking_alias["0"].action[0].forward[0].target_group) == 2 && !strcontains(aws_ecs_task_definition.service["backend"].container_definitions, "SERVE_HTTP_LOOPBACK_ONLY")
+    error_message = "aliases retain fallback and HTTP remains available during route bake"
+  }
+}
+
+run "route_can_return_to_healthy_http" {
+  command = apply
+  variables {
+    target_tls = "both"
+  }
+  assert {
+    condition     = length(aws_ecs_service.service["tracking"].load_balancer) == 2 && alltrue([for group in aws_lb_listener_rule.service["tracking"].action[0].forward[0].target_group : group.arn == aws_lb_target_group.service["tracking"].arn ? group.weight == 1 : group.weight == 0])
+    error_message = "returning to both routes to the retained HTTP registrations"
+  }
+}
+
+run "restore_route_before_drain" {
+  command = apply
+  variables {
+    target_tls = "route"
+  }
+  assert {
+    condition     = length(aws_ecs_service.service["tracking"].load_balancer) == 2 && length(aws_lb_target_group.service) == 4
+    error_message = "restoring route retains the HTTP fallback"
+  }
+}
+
+run "drain_removes_registrations_before_resources" {
+  command = apply
+  variables {
+    target_tls = "drain"
+  }
+  assert {
+    condition     = length(aws_lb_target_group.service) == 4 && length(aws_vpc_security_group_ingress_rule.service) == 4 && length(aws_vpc_security_group_ingress_rule.internal_backend) == 1
+    error_message = "drain retains HTTP resources until registrations have drained"
+  }
+  assert {
+    condition     = alltrue([for service in aws_ecs_service.service : length(service.load_balancer) == 0 || alltrue([for lb in service.load_balancer : lb.container_port == 8443])])
+    error_message = "drain registers only HTTPS targets"
+  }
+  assert {
+    condition     = aws_lb_listener_rule.service["tracking"].action[0].target_group_arn == aws_lb_target_group.service_tls["tracking"].arn && aws_lb_listener_rule.tracking_alias["0"].action[0].target_group_arn == aws_lb_target_group.service_tls["tracking"].arn
+    error_message = "primary and alias listeners have only HTTPS references before cleanup"
   }
 }
 

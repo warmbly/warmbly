@@ -1,11 +1,22 @@
 name: Finalize runtime TLS
+run-name: Runtime TLS ${{ inputs.stage }} ${{ inputs.release }}
 
 on:
   workflow_dispatch:
     inputs:
       vars_version:
-        description: S3 version ID of the reviewed runtime-tls.tfvars.json snapshot at stage both
+        description: S3 version ID of the reviewed runtime-tls.tfvars.json snapshot at the previous stage
         required: true
+        type: string
+      stage:
+        description: Advance one verified stage while preserving the previous traffic path
+        required: true
+        default: route
+        type: choice
+        options: [route, drain, on]
+      previous_run:
+        description: Successful preceding stage workflow run ID (required for drain and on)
+        required: false
         type: string
       release:
         description: Currently deployed release, retained for the service redeploy
@@ -31,7 +42,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - run: shellcheck .github/scripts/runtime-tls.sh
+      - run: shellcheck .github/scripts/runtime-tls.sh .github/scripts/runtime-tls.test.sh
       - run: bash .github/scripts/runtime-tls.test.sh
 
   plan:
@@ -42,6 +53,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      actions: read
     outputs:
       digest: ${{ steps.plan.outputs.digest }}
     steps:
@@ -62,6 +74,9 @@ jobs:
           WORK: ${{ runner.temp }}/runtime-tls
           VARS_VERSION: ${{ inputs.vars_version }}
           RELEASE: ${{ inputs.release }}
+          STAGE: ${{ inputs.stage }}
+          PREVIOUS_RUN: ${{ inputs.previous_run }}
+          GH_TOKEN: ${{ github.token }}
         run: .github/scripts/runtime-tls.sh plan
 
   apply:
@@ -74,6 +89,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      actions: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -92,6 +108,9 @@ jobs:
           VARS_VERSION: ${{ inputs.vars_version }}
           RELEASE: ${{ inputs.release }}
           APPROVED_DIGEST: ${{ needs.plan.outputs.digest }}
+          STAGE: ${{ inputs.stage }}
+          PREVIOUS_RUN: ${{ inputs.previous_run }}
+          GH_TOKEN: ${{ github.token }}
         run: .github/scripts/runtime-tls.sh apply
 
   redeploy:
