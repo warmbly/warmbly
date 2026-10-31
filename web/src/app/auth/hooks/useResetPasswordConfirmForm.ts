@@ -11,6 +11,7 @@ import buildError from "@/lib/helper/buildError";
 import resetPasswordSession from "@/lib/api/client/auth/resetPasswordSession";
 import { resetLinkToken } from "@/lib/resetLinkToken";
 import getToken from "@/lib/helper/getToken";
+import { TOKENS } from "@/lib/auth";
 import { clearClientSession } from "@/lib/session";
 
 export function useResetPasswordConfirmForm() {
@@ -72,7 +73,7 @@ export function useResetPasswordConfirmForm() {
                 { loading: "Loading...", success: "Password successfully changed", error: (err: AppError) => buildError(err) }
             );
             // The reset ended every session, this browser's included.
-            if (getToken()) clearClientSession(queryClient);
+            if (getToken() || TOKENS.some((key) => localStorage.getItem(key))) clearClientSession(queryClient);
             navigate({ to: "/auth/login", search: { action: "1" } });
         } catch (err) {
             // The link died meanwhile (used, expired, or the password changed): show the request-a-new-one screen.

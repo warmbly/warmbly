@@ -290,7 +290,7 @@ func TestUnlinkIdentityMapsRefusals(t *testing.T) {
 	cases := map[error]*errx.Error{
 		nil:                             nil,
 		repository.ErrIdentityNotLinked: nil,
-		repository.ErrLastSignInMethod:  ErrLastSignInMethod,
+		repository.ErrLastSignInMethod:  errx.ErrLastSignInMethod,
 	}
 	for in, want := range cases {
 		s := &authService{identities: &unlinkStub{err: in}}

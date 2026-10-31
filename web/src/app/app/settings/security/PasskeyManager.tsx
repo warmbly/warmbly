@@ -9,6 +9,8 @@ import useDeletePasskey from "@/lib/api/hooks/auth/useDeletePasskey";
 import useRenamePasskey from "@/lib/api/hooks/auth/useRenamePasskey";
 import { registerPasskey, passkeySupported, PasskeyCancelled } from "@/lib/passkey";
 import type Passkey from "@/lib/api/models/auth/Passkey";
+import type { AppError } from "@/lib/api/client/normalizeError";
+import buildError from "@/lib/helper/buildError";
 
 const fmt = (d: Date | string) =>
     new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
@@ -63,8 +65,9 @@ export default function PasskeyManager() {
             try {
                 await del.mutateAsync(p.id);
                 toast.success("Passkey removed");
-            } catch {
-                toast.error("Couldn't remove passkey.");
+            } catch (err) {
+                // The server refuses removing the last way to sign in, and says so.
+                toast.error(buildError(err as AppError) || "Couldn't remove passkey.");
             }
         });
     };

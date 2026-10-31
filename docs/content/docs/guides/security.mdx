@@ -77,6 +77,8 @@ To stop using a provider (for example when an Apple ID or a Google Workspace acc
 4. Optionally add a passkey or turn on two-factor authentication on the same page.
 5. Under **Sign-in methods**, choose **Remove** next to the provider. Warmbly asks you to confirm it is you first, refuses if the provider is still your only way in, and signs out every other device that signed in with it.
 
+Warmbly never removes your last way in. A provider or passkey can only be removed while a password, another passkey or another provider remains.
+
 The address on the account does not change, so it must keep receiving mail (a forward is fine): sign-in codes and password reset links are sent there. If you signed up with Apple's **Hide My Email**, the address is an `@privaterelay.appleid.com` relay that only forwards while Warmbly stays connected to your Apple ID, so do not disconnect Warmbly on Apple's side. With any other address, you can also disconnect Warmbly in your Apple ID or Google account settings after removing the provider here.
 
 Signing in to Warmbly is separate from any Gmail, Workspace or iCloud mailbox you connected for sending; removing a sign-in method does not affect it, and retiring that mailbox affects its sending and sync, not your sign-in. See [mailboxes](/guides/mailboxes/).

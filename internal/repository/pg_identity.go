@@ -137,36 +137,39 @@ func (r *identityRepository) Unlink(ctx context.Context, userID uuid.UUID, provi
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	// The user row lock serialises two removals so they cannot each count the
-	// other as the remaining way in.
-	var hasPassword bool
-	err = tx.QueryRow(ctx, `SELECT COALESCE(`+livePasswordHash+`, '') <> '' FROM users WHERE id = $1 FOR UPDATE`, userID).Scan(&hasPassword)
+	remains, err := signInMethodRemains(ctx, tx, userID, provider, uuid.Nil)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrIdentityNotLinked
 	}
 	if err != nil {
 		return err
 	}
-
-	var linked, others, passkeys bool
-	err = tx.QueryRow(ctx, `
-		SELECT
-			EXISTS (SELECT 1 FROM user_identities WHERE user_id = $1 AND provider = $2),
-			EXISTS (SELECT 1 FROM user_identities WHERE user_id = $1 AND provider <> $2),
-			EXISTS (SELECT 1 FROM webauthn_credentials WHERE user_id = $1)
-	`, userID, provider).Scan(&linked, &others, &passkeys)
+	tag, err := tx.Exec(ctx, `DELETE FROM user_identities WHERE user_id = $1 AND provider = $2`, userID, provider)
 	if err != nil {
 		return err
 	}
-	if !linked {
+	if tag.RowsAffected() == 0 {
 		return ErrIdentityNotLinked
 	}
-	if !hasPassword && !passkeys && !others {
+	if !remains {
 		return ErrLastSignInMethod
 	}
-
-	if _, err := tx.Exec(ctx, `DELETE FROM user_identities WHERE user_id = $1 AND provider = $2`, userID, provider); err != nil {
-		return err
-	}
 	return tx.Commit(ctx)
+}
+
+// signInMethodRemains locks the user row, which every removal of a way in
+// takes first, and reports whether one remains besides the given provider or
+// passkey. pgx.ErrNoRows means the user does not exist.
+func signInMethodRemains(ctx context.Context, tx pgx.Tx, userID uuid.UUID, provider string, passkeyID uuid.UUID) (bool, error) {
+	var hasPassword bool
+	err := tx.QueryRow(ctx, `SELECT COALESCE(`+livePasswordHash+`, '') <> '' FROM users WHERE id = $1 FOR UPDATE`, userID).Scan(&hasPassword)
+	if err != nil || hasPassword {
+		return hasPassword, err
+	}
+	var remains bool
+	err = tx.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM user_identities WHERE user_id = $1 AND provider <> $2)
+		    OR EXISTS (SELECT 1 FROM webauthn_credentials WHERE user_id = $1 AND id <> $3)
+	`, userID, provider, passkeyID).Scan(&remains)
+	return remains, err
 }

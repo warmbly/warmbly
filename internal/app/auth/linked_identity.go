@@ -26,10 +26,6 @@ type LinkedIdentity struct {
 var ErrIdentityNotFound = errx.NewWithIdentifier(errx.NotFound, "identity_not_found",
 	"That sign-in method is not linked to your account.")
 
-// ErrLastSignInMethod refuses a removal that would leave no way to sign in.
-var ErrLastSignInMethod = errx.NewWithIdentifier(errx.Conflict, "last_sign_in_method",
-	"This is the only way you sign in. Set a password or add a passkey first, then remove it.")
-
 var identityLabels = map[string]string{
 	models.IdentityProviderGoogle: "Google",
 	models.IdentityProviderApple:  "Apple",
@@ -79,7 +75,7 @@ func (s *authService) UnlinkIdentity(ctx context.Context, userID, currentSession
 	switch {
 	case err == nil, errors.Is(err, repository.ErrIdentityNotLinked):
 	case errors.Is(err, repository.ErrLastSignInMethod):
-		return ErrLastSignInMethod
+		return errx.ErrLastSignInMethod
 	default:
 		errs.CaptureException(err)
 		return errx.InternalError()

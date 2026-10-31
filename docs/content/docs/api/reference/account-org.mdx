@@ -1011,7 +1011,7 @@ Auth: Session only (not available to API keys).
 
 `DELETE /auth/passkey/credentials/:id`
 
-Removes a stored passkey. Returns `204 No Content`.
+Removes a stored passkey. Returns `204 No Content`. Refused with `409` `last_sign_in_method` when it is the account's only way to sign in (no password and no linked provider); set a password or link a provider first.
 
 Auth: Session only (not available to API keys).
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
@@ -27,6 +28,7 @@ func TestLiveIdentityUnlinkKeepsAWayIn(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM user_identities WHERE user_id = $1`, user)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM webauthn_credentials WHERE user_id = $1`, user)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id = $1`, user)
 	})
 	link := func(provider, issuer string) {
@@ -46,6 +48,23 @@ func TestLiveIdentityUnlinkKeepsAWayIn(t *testing.T) {
 	}
 	if err := repo.Unlink(ctx, user, models.IdentityProviderApple); !errors.Is(err, ErrLastSignInMethod) {
 		t.Fatalf("unlink of the only method: %v, want ErrLastSignInMethod", err)
+	}
+
+	// A passkey is a way in too, and the last one cannot go either.
+	passkeys := NewWebAuthnRepository(handle)
+	passkey := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO webauthn_credentials (id, user_id) VALUES ($1, $2)`, passkey, user); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Unlink(ctx, user, models.IdentityProviderApple); err != nil {
+		t.Fatalf("unlink with a passkey remaining: %v", err)
+	}
+	if xerr := passkeys.Delete(ctx, user, passkey); xerr != errx.ErrLastSignInMethod {
+		t.Fatalf("delete of the only passkey: %v, want ErrLastSignInMethod", xerr)
+	}
+	link(models.IdentityProviderApple, "https://appleid.apple.com")
+	if xerr := passkeys.Delete(ctx, user, passkey); xerr != nil {
+		t.Fatalf("delete with Apple remaining: %v", xerr)
 	}
 
 	if _, err := pool.Exec(ctx, `UPDATE users SET password_hash = 'x' WHERE id = $1`, user); err != nil {

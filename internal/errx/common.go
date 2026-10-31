@@ -105,8 +105,11 @@ var (
 	ErrPasskeySession  = New(BadRequest, "Your passkey request expired. Please start again.")
 	ErrPasskeyName     = New(BadRequest, "Passkey name must be between 1 and 60 characters.")
 	ErrPasskeyNotFound = New(NotFound, "Passkey not found.")
-	ErrPasskeyExists   = New(Conflict, "This passkey is already registered.")
-	ErrPasskeyNone     = New(BadRequest, "No passkey was found for this account.")
+	// ErrLastSignInMethod refuses removing a passkey or provider that is the
+	// account's only way to sign in.
+	ErrLastSignInMethod = NewWithIdentifier(Conflict, "last_sign_in_method", "This is the only way you sign in. Set a password or add a passkey first, then remove it.")
+	ErrPasskeyExists    = New(Conflict, "This passkey is already registered.")
+	ErrPasskeyNone      = New(BadRequest, "No passkey was found for this account.")
 	// A passkey sign-in counts as multi-factor, so the authenticator must verify the user.
 	ErrPasskeyUserVerification = NewWithIdentifier(BadRequest, "passkey_user_verification_required", "This passkey didn’t ask for a PIN or biometric. Set a PIN on the security key, or sign in another way.")
 
