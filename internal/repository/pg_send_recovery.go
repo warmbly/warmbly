@@ -367,7 +367,7 @@ func refreshSendHold(ctx context.Context, tx pgx.Tx, mailboxID uuid.UUID, taskID
 	_, err := tx.Exec(ctx, `WITH next_hold AS (
 			SELECT id,reason FROM (
 			 SELECT t.id,'unknown' AS reason,1 AS priority,t.created_at FROM tasks t
-			 WHERE t.email_account_id=$1 AND t.send_result_state='unknown' AND t.warmup_send_retired_at IS NULL AND t.campaign_send_isolated_at IS NULL
+			 WHERE t.email_account_id=$1 AND t.send_result_state='unknown' AND t.warmup_send_retired_at IS NULL AND t.campaign_send_isolated_at IS NULL AND t.send_hold_lifted_at IS NULL
 			 UNION ALL
 			 SELECT t.id,'conflict',2,t.created_at FROM send_recovery_resolutions r JOIN tasks t ON t.id=r.recovery_task_id
 			 WHERE t.email_account_id=$1 AND (r.previous_reason='unknown' OR r.evidence_type='authoritative_result_conflict')
@@ -399,7 +399,7 @@ func persistSendHold(ctx context.Context, tx pgx.Tx, mailboxID uuid.UUID, result
 		_, err := tx.Exec(ctx, `UPDATE email_accounts SET send_recovery_hold = true, send_recovery_task_id = $2,
 			send_recovery_reason = 'unknown', send_cooldown_provider = provider::text
 			WHERE id = $1 AND (NOT send_recovery_hold OR send_recovery_reason = 'unknown')
-			AND EXISTS(SELECT 1 FROM tasks t WHERE t.id=$2 AND t.campaign_send_isolated_at IS NULL)`, mailboxID, result.TaskID)
+			AND EXISTS(SELECT 1 FROM tasks t WHERE t.id=$2 AND t.campaign_send_isolated_at IS NULL AND t.send_hold_lifted_at IS NULL)`, mailboxID, result.TaskID)
 		return err
 	}
 	if f == nil {

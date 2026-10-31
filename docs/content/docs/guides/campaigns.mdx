@@ -126,7 +126,7 @@ Follow-ups that are due go out before new leads start, and the total assumes nob
 
 An unresolved send from one mailbox does not stop other healthy mailboxes from sending. A follow-up normally uses the address its lead first heard from, but can move to another eligible mailbox when that address is held or cooling. The launch plan and day plan show the hold or cooldown separately from the normal daily limit.
 
-On instances with automatic campaign recovery enabled, after ten minutes Warmbly isolates an authorized campaign send whose outcome is still unknown. The mailbox can send to other contacts again. Only the affected contact waits for confirmation, independently of any manual pause. No customer action is needed, and the uncertain email is never retried. A late confirmed result updates the contact automatically. A timeout or missing Sent copy never counts as proof of failure. Legacy sends without durable execution authorization still require [provider-confirmed resolution](/development/send-safety/#resolving-an-unknown-send).
+After ten minutes Warmbly isolates an authorized campaign send whose outcome is still unknown. The mailbox can send to other contacts again. Only the affected contact waits for confirmation, independently of any manual pause. No customer action is needed, and the uncertain email is never retried. A late confirmed result updates the contact automatically. A timeout or missing Sent copy never counts as proof of failure. A send the worker never started is handed back after 30 minutes and the step is sent fresh, because it provably never left. Legacy sends without durable execution authorization still require [provider-confirmed resolution](/development/send-safety/#resolving-an-unknown-send).
 
 </Fold>
 

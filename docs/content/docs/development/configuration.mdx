@@ -297,7 +297,7 @@ The backend refuses to start without `EMAIL_ADDRESS` and `EMAIL_NAME`. The consu
 
 | Variable | What it does | Default | Restart needed |
 |---|---|---|---|
-| `CAMPAIGN_SEND_ISOLATION_ENABLED` | Enables automatic isolation of authorized campaign sends with unknown outcomes after ten minutes. Set on backends and consumers only after every control-plane replica and the supported rollback release understand recovery pauses. Keep disabled during the initial compatibility rollout. See [activation and rollback](/development/send-safety/#automatic-campaign-isolation) | `false` | yes |
+| `CAMPAIGN_SEND_ISOLATION_ENABLED` | Automatic isolation of authorized campaign sends with unknown outcomes after ten minutes. On unless set to `false`; set it on backends and consumers alike. See [activation and rollback](/development/send-safety/#automatic-campaign-isolation) | `true` | yes |
 
 ## Pre-send verification
 
