@@ -6,8 +6,8 @@ import (
 	"strings"
 )
 
-// CampaignSendIsolationEnabled stays off until recovery-aware replicas form the rollback floor.
+// CampaignSendIsolationEnabled is on unless explicitly disabled; every supported rollback release reads recovery pauses.
 func CampaignSendIsolationEnabled() bool {
 	enabled, err := strconv.ParseBool(strings.TrimSpace(os.Getenv("CAMPAIGN_SEND_ISOLATION_ENABLED")))
-	return err == nil && enabled
+	return err != nil || enabled
 }

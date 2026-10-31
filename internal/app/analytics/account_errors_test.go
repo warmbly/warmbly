@@ -44,8 +44,8 @@ func TestSendSafetyHoldCannotAppearHealthyOrPromiseAutomaticSendRetries(t *testi
 					if strings.Contains(action, "retries automatically") || !strings.Contains(action, "paused") {
 						t.Fatalf("held sending must not promise retries: %s", action)
 					}
-					if reason == "unknown" && (!strings.Contains(action, "Provider confirmation") || !strings.Contains(action, "duplicate")) {
-						t.Fatalf("unknown outcome requires confirmation, not blind retry: %s", action)
+					if reason == "unknown" && (!strings.Contains(action, "sent twice") || !strings.Contains(action, "on its own") || strings.Contains(action, "Provider confirmation")) {
+						t.Fatalf("unknown outcome recovers automatically without a resend: %s", action)
 					}
 				}
 			}
