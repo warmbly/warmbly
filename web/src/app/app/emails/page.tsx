@@ -5,6 +5,7 @@ import { browseString, mailboxSort, mailboxTab, type MailboxTab } from "@/lib/br
 import { useSearchParams } from "@/hooks/useSearchParams";
 import useMailboxTagFilter from "@/hooks/useMailboxTagFilter";
 import groupMailboxes from "@/lib/groupMailboxes";
+import { utcToday } from "@/lib/campaignPeriod";
 import { cloudStandingUnavailable as cloudHealthUnavailable, mailboxColdActivity, reputationOnlyWarning } from "@/lib/mailboxStatus";
 import { useAppStore } from "@/stores/useAppStore";
 import toast from "react-hot-toast/headless";
@@ -116,6 +117,10 @@ const DefaultFolder = {
 const HEALTH_RANK: Record<string, number> = { healthy: 0, warning: 1, error: 2 };
 const LAST_REPORTED_ISSUE_MS = 5 * 60_000;
 
+function dailyUsageOn(status: AccountStatus | undefined, day: string) {
+    return status?.daily_usage?.date === day ? status.daily_usage : undefined;
+}
+
 function healthTone(status?: AccountStatus): { dot: string; text: string; label: string; pulse: boolean } {
     const h = status?.health;
     if (!h) return { dot: "bg-slate-300", text: "text-slate-500", label: "—", pulse: false };
@@ -204,6 +209,7 @@ export default function AddressesPage() {
         () => (!cloudChecking && Array.isArray(statuses.data) ? statuses.data : []),
         [cloudChecking, statuses.data],
     );
+    const today = utcToday();
     const statusById = useMemo(() => {
         const m = new Map<string, AccountStatus>();
         for (const s of accountStatuses) m.set(s.id, s);
@@ -449,12 +455,12 @@ export default function AddressesPage() {
         const value = col.sortValue;
         const dir = sort.reverse ? 1 : -1;
         return [...list].sort((a, b) => {
-            const x = value(a, statusById.get(a.id));
-            const y = value(b, statusById.get(b.id));
+            const x = value(a, statusById.get(a.id), today);
+            const y = value(b, statusById.get(b.id), today);
             if (x === y) return 0;
             return (x > y ? 1 : -1) * dir;
         });
-    }, [emailsData.emails, sort, statusById, p.user.tags]);
+    }, [emailsData.emails, sort, statusById, p.user.tags, today]);
 
     if (!canView) {
         return <NoAccess feature="email accounts" permissionLabel="Manage mailboxes" />;
@@ -913,6 +919,7 @@ function MailboxRow({
     const displayedHealth = historicalIssue?.status ?? status;
     const tone = healthTone(displayedHealth);
     const ws = status?.warmup_status;
+    const dailyUsage = dailyUsageOn(status, utcToday());
     const inCampaign = status?.in_campaign;
 
     const cloudEnroll = useEnrollCloudLinkMailbox();
@@ -1166,15 +1173,15 @@ function MailboxRow({
                 <MailboxStatusPill box={box} status={status} stale={stale} historicalIssue={historicalIssue} warming={inCloud ? !cloudPaused : warming} pending={statusPending} />
             </td>
             <td className={`px-3 overflow-hidden ${colShow("sent")}`}>
-                {status?.daily_usage ? (
+                {dailyUsage ? (
                     <span
-                        className={`inline-flex items-center gap-1.5 font-mono text-[12px] tabular-nums ${status.daily_usage.campaign_sent > 0 ? "text-sky-700" : "text-slate-500"}`}
-                        title={`${status.daily_usage.campaign_sent} of ${status.daily_usage.campaign_limit || box.campaign_limit} campaign emails sent today`}
+                        className={`inline-flex items-center gap-1.5 font-mono text-[12px] tabular-nums ${dailyUsage.campaign_sent > 0 ? "text-sky-700" : "text-slate-500"}`}
+                        title={`${dailyUsage.campaign_sent} of ${dailyUsage.campaign_limit || box.campaign_limit} campaign emails sent today`}
                     >
                         <SendIcon className="w-3 h-3 shrink-0 text-sky-500" />
                         <span>
-                            <AnimatedNumber value={status.daily_usage.campaign_sent} />
-                            <span className="text-slate-400">/{status.daily_usage.campaign_limit || box.campaign_limit}</span>
+                            <AnimatedNumber value={dailyUsage.campaign_sent} />
+                            <span className="text-slate-400">/{dailyUsage.campaign_limit || box.campaign_limit}</span>
                         </span>
                     </span>
                 ) : (
@@ -1367,7 +1374,7 @@ interface MailboxColumn {
     align?: "right";
     // Whether the first click sorts ascending (text) rather than descending.
     sortAsc?: boolean;
-    sortValue?: (box: Inbox, status?: AccountStatus) => string | number;
+    sortValue?: (box: Inbox, status: AccountStatus | undefined, today: string) => string | number;
 }
 
 interface MailboxSort {
@@ -1400,7 +1407,7 @@ const MAILBOX_COLUMNS: MailboxColumn[] = [
         header: <InfoHeader label="Sent today" title="Campaign emails sent from this mailbox today, against its daily cap." aria="How sends are counted" />,
         className: "w-32",
         show: "hidden @5xl:table-cell",
-        sortValue: (_, s) => s?.daily_usage?.campaign_sent ?? -1,
+        sortValue: (_, s, today) => dailyUsageOn(s, today)?.campaign_sent ?? -1,
     },
     {
         id: "warmup",
@@ -1493,11 +1500,13 @@ function MailboxStatusPill({ box, status, stale, historicalIssue, warming, compa
     }
     if (problem) {
         const { Icon } = problem;
+        const cachedError = stale && box.status === "active";
+        const label = cachedError ? `Last observed: ${problem.label}` : problem.label;
         return (
-            <span className={`inline-flex items-center gap-1.5 max-w-full text-[10.5px] font-medium uppercase tracking-[0.08em] ${problem.text}`} title={problem.title}>
+            <span className={`inline-flex items-center gap-1.5 max-w-full text-[10.5px] font-medium uppercase tracking-[0.08em] ${problem.text}`} title={cachedError ? `Last observed: ${problem.title}. Current status unconfirmed.` : problem.title}>
                 <Icon className="w-3 h-3 shrink-0" />
-                <span className="sr-only">{problem.label}</span>
-                <span aria-hidden className={`${compact ? "inline" : "hidden @4xl:inline"} truncate`}>{problem.label}</span>
+                <span className="sr-only">{label}</span>
+                <span aria-hidden className={`${compact ? "inline" : "hidden @4xl:inline"} truncate`}>{label}</span>
             </span>
         );
     }
