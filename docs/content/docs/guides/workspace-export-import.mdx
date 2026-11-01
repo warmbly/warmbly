@@ -92,6 +92,8 @@ The data is split into groups. Every export includes **Workspace**; the rest are
 | Logs | Audit log, campaign logs, and notifications |
 | Billing history | Subscription, credit ledger, and referral records |
 
+[CompanyEnrich](/guides/companyenrich/) connections travel with integrations, and their encrypted API keys travel only when credentials are included. The contact fields filled by enrichment travel with contacts. On-demand queries add no saved import or background job to restart.
+
 Inbox, send history, delivery events, and logs are the ones that grow without limit. Turn them off and you get a small archive that still rebuilds a working workspace; leave them on for a faithful copy.
 
 The pending warmup-filing queue stays on its source instance. The destination resyncs mail and files recognized warmup messages using its own workers and the mailbox's placement setting.

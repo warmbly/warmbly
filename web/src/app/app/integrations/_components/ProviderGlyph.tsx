@@ -4,6 +4,7 @@
 // usable square mark get a solid tile in the brand color, then a neutral initial.
 
 import { cn } from "@/lib/utils";
+import companyEnrichLogo from "@/assets/companyenrich.svg";
 
 import { RAW_BRAND_LOGOS } from "./brandLogos";
 import { GLYPH_DIMS, type GlyphSize } from "./glyphSize";
@@ -60,6 +61,10 @@ export default function ProviderGlyph({
     size?: GlyphSize;
 }) {
     const { tile: tileDim, icon: iconDim, text: textDim } = GLYPH_DIMS[size];
+
+    if (provider === "companyenrich") {
+        return <img src={companyEnrichLogo} alt={name} className={cn("shrink-0", tileDim)} />;
+    }
 
     const raw = RAW_BRAND_LOGOS[provider];
     if (raw) {

@@ -42,6 +42,7 @@ interface FieldDef {
 
 // Credential fields for non-OAuth providers only. OAuth providers never paste.
 const FIELDS_BY_PROVIDER: Record<string, FieldDef[]> = {
+    companyenrich: [{ key: "api_key", label: "CompanyEnrich API key", type: "password", required: true, helper: "Copy your API key from app.companyenrich.com. Connecting checks your key for free; research and enrichment requests can use credits." }],
     apollo: [
         {
             key: "api_key",
@@ -98,6 +99,7 @@ const NEXT_STEP: Record<string, string> = {
     pipedrive: "Finish the CRM setup: what syncs, and in which direction.",
     salesforce: "Finish the setup: sync rules, field mapping and the first import.",
     apollo: "Import your first Apollo list, or enrich contacts you already have.",
+    companyenrich: "Research companies and people, or fill empty fields on an existing contact.",
     discord: "Choose which Warmbly events post to the channel.",
 };
 

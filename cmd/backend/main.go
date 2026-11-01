@@ -48,6 +48,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/clay"
 	"github.com/warmbly/warmbly/internal/app/cliauth"
 	"github.com/warmbly/warmbly/internal/app/cloudlink"
+	"github.com/warmbly/warmbly/internal/app/companyenrich"
 	"github.com/warmbly/warmbly/internal/app/compose"
 	"github.com/warmbly/warmbly/internal/app/contact"
 	"github.com/warmbly/warmbly/internal/app/contactimport"
@@ -380,6 +381,7 @@ func main() {
 	var leadSyncServiceForHandler leadsync.Service
 	var salesforceServiceForHandler *salesforce.Service
 	var apolloServiceForHandler *apollo.Service
+	var companyEnrichServiceForHandler *companyenrich.Service
 	var clayServiceForHandler *clay.Service
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1760,6 +1762,12 @@ func main() {
 
 		// Apollo list imports and enrichment, and Clay's inbound rows; both run
 		// through the contact importer.
+		companyEnrichServiceForHandler = companyenrich.NewService(companyenrich.Deps{
+			Integrations: integrationServiceForHandler,
+			Contacts:     repository.NewCompanyEnrichContactRepository(primaryDB, contactRepostory),
+		})
+		integrationServiceForHandler.SetCredentialCheck(models.IntegrationCompanyEnrich, companyEnrichServiceForHandler.CredentialCheck)
+
 		apolloServiceForHandler = apollo.NewService(apollo.Deps{
 			Repo:         repository.NewApolloRepository(primaryDB.Pool),
 			Integrations: integrationServiceForHandler,
@@ -2617,9 +2625,10 @@ func main() {
 		LeadSyncService: leadSyncServiceForHandler,
 
 		// Native Salesforce sync
-		SalesforceService: salesforceServiceForHandler,
-		ApolloService:     apolloServiceForHandler,
-		ClayService:       clayServiceForHandler,
+		SalesforceService:    salesforceServiceForHandler,
+		ApolloService:        apolloServiceForHandler,
+		CompanyEnrichService: companyEnrichServiceForHandler,
+		ClayService:          clayServiceForHandler,
 
 		WebsocketURI: websocketURI,
 

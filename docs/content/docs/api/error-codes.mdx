@@ -589,6 +589,27 @@ The [Apollo](/guides/apollo/) and [Clay](/guides/clay/) endpoints answer with th
 | `apollo_key_missing` | 422 | The Apollo connection has no API key |
 | `apollo_rate_limited` | 429 | Apollo's rate limit for the account was reached. Retry later |
 
+#### CompanyEnrich refusals
+
+The [CompanyEnrich query and contact-enrichment endpoints](/api/reference/integrations/#query-companyenrich) use these codes. Provider errors are sanitized and do not include API keys or upstream response bodies.
+
+| `code` | Status | Meaning |
+| --- | --- | --- |
+| `companyenrich_invalid_input` | 400 | Unsupported operation, missing or invalid input, invalid identifier, or exceeded request, batch, query, or pagination limits. Correct the specified input before another request. |
+| `companyenrich_not_found` | 404 | CompanyEnrich did not find a matching record. An unknown or inaccessible Warmbly connection or contact instead uses the standard `not_found` response. |
+| `companyenrich_contact_changed` | 409 | The contact changed during enrichment, or its merged custom fields would exceed the size limit. The lookup may have consumed credits, but the result was not applied. Review the contact before a new request. |
+| `companyenrich_not_connected` | 422 | The connection is disconnected or has not finished connecting. Connect CompanyEnrich first. |
+| `companyenrich_key_rejected` | 422 | The saved key is missing or CompanyEnrich rejected it. Replace the connection's key. |
+| `companyenrich_forbidden` | 422 | The CompanyEnrich account cannot perform the selected operation. Check the provider account's access. |
+| `companyenrich_credits_required` | 422 | The CompanyEnrich account has insufficient credits. Add credits there before another request. |
+| `companyenrich_request_rejected` | 422 | CompanyEnrich refused the request. Review the operation inputs and account capabilities. |
+| `companyenrich_invalid_response` | 422 | The provider response was invalid or exceeded the response-size limit. A charge may already have occurred. |
+| `companyenrich_unavailable` | 422 | The provider request failed or timed out. Check the provider before another request; the original attempt may have consumed credits. |
+| `companyenrich_save_failed` | 422 | The provider lookup completed but the contact update could not be saved. Check the contact before making another paid request. |
+| `companyenrich_rate_limited` | 429 | The provider's rate limit was reached. Wait before explicitly running another request. |
+
+Warmbly does not automatically retry CompanyEnrich data requests. A contact-save failure does not undo a completed provider lookup or refund its charge.
+
 #### Automation refusals
 
 | `code` | Status | Meaning |

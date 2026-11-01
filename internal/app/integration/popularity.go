@@ -22,6 +22,7 @@ var curatedOrder = []models.IntegrationProvider{
 	models.IntegrationApollo,
 	models.IntegrationCalendly,
 	models.IntegrationClay,
+	models.IntegrationCompanyEnrich,
 	models.IntegrationZapier,
 	models.IntegrationSalesforce,
 	models.IntegrationPipedrive,

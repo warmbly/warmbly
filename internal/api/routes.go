@@ -1281,6 +1281,12 @@ func Run(
 				ap.POST("/enrichments", operate, m.RequireAccess(models.PermManageContacts, models.APIPermBulkContacts), h.StartApolloEnrichment)
 				ap.GET("/enrichments/:runId", read, h.GetApolloEnrichment)
 
+				// CompanyEnrich research spends provider credits; contact enrichment
+				// additionally requires permission to edit the selected contact.
+				ce := integrations.Group("/companyenrich/:id")
+				ce.POST("/query", operate, h.CompanyEnrichQuery)
+				ce.POST("/enrich-contact", operate, m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.EnrichCompanyEnrichContact)
+
 				// Clay (:id is the connection).
 				cl := integrations.Group("/clay/:id")
 				cl.GET("", read, h.GetClaySettings)
