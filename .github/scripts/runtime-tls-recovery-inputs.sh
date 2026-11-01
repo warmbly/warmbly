@@ -16,7 +16,7 @@ check_contract() {
 }
 
 collect_inputs() {
-  local baseline=$1 work=$2 bucket key version digest kind
+  local baseline=$1 work=$2 require_latest=${3:-true} bucket key version digest kind
   check_contract "$baseline"
   umask 077
   mkdir "$work"
@@ -47,11 +47,13 @@ collect_inputs() {
   jq -e '.target_tls == "on" and .name == "warmbly-production"' "$work/snapshot.json" >/dev/null || {
     echo 'Recovery vars must select the reviewed production cleanup stage' >&2; return 1;
   }
-  aws s3api head-object --region us-east-1 --bucket "$bucket" --key warmbly/production/runtime.tfstate \
-    --expected-bucket-owner 925323749693 >"$work/latest-state.json"
-  jq -e --slurpfile baseline "$baseline" '.VersionId == $baseline[0].state.versionId' "$work/latest-state.json" >/dev/null || {
-    echo 'Recovery state advanced beyond the reviewed version' >&2; return 1;
-  }
+  if [ "$require_latest" = true ]; then
+    aws s3api head-object --region us-east-1 --bucket "$bucket" --key warmbly/production/runtime.tfstate \
+      --expected-bucket-owner 925323749693 >"$work/latest-state.json"
+    jq -e --slurpfile baseline "$baseline" '.VersionId == $baseline[0].state.versionId' "$work/latest-state.json" >/dev/null || {
+      echo 'Recovery state advanced beyond the reviewed version' >&2; return 1;
+    }
+  fi
   jq '{account,region,bucket,state:{key:.state.key,versionId:.state.versionId,sha256:.state.sha256,lineage:.state.lineage,serial:.state.serial},snapshot}' \
     "$baseline" >"$work/inputs.json"
 }
@@ -59,5 +61,6 @@ collect_inputs() {
 case "${1:-}" in
   check-contract) check_contract "${2:?}" ;;
   collect) collect_inputs "${2:?}" "${3:?}" ;;
+  collect-archived) collect_inputs "${2:?}" "${3:?}" false ;;
   *) echo 'Only read-only recovery input validation and collection are supported' >&2; exit 1 ;;
 esac

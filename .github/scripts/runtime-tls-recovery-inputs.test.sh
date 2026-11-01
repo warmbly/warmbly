@@ -89,6 +89,9 @@ for mode in account api-failure hash version encryption deleted advanced; do
   fi
   [ ! -e "$work/$mode/inputs.json" ]
 done
+PATH="$work/bin:$PATH" FIXTURES="$work" MODE=advanced bash "$guard" collect-archived "$work/reviewed.json" "$work/archived"
+cmp "$work/state.json" "$work/archived/state.json"
+[ ! -e "$work/archived/latest-state.json" ]
 if PATH="$work/bin:$PATH" FIXTURES="$work" bash "$guard" collect "$work/reviewed.json" "$work/collected" 2>/dev/null; then
   echo 'Recovery overwrote an existing input collection' >&2; exit 1
 fi
