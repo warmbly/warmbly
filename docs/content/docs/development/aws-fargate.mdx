@@ -472,6 +472,20 @@ release tag and full commit history so the checker can verify the tag and
 drain-to-ON-to-release ancestry. Collection writes a new private directory and
 refuses to overwrite a prior collection.
 
+`runtime-tls-recovery-inputs.sh` collects the private S3 inputs using only STS
+identity and S3 get/head operations. The baseline names the production `bucket`,
+the state `key`, version and hash, and a `snapshot` with its `key`, `versionId`,
+`sha256` and declared `releaseTag`. The cleanup vars use a new key under
+`warmbly/production/vars/runtime-tls-recovery/`, separate from the normal stage
+snapshot. Collection requires the expected account and bucket owner, exact
+version metadata, server-side encryption and matching file hashes. It validates
+the raw state identities and requires the latest state version to remain the
+reviewed one. The vars must name `warmbly-production` and `target_tls=on`.
+The resulting private directory contains raw state and vars and must remain
+private. Its `inputs.json` binds the selected versions and hashes; it does not
+establish that the declared release matches the live services or that those
+services are healthy.
+
 These checks neither relabel an earlier release's drain nor change the normal
 workflow's predecessor requirements. A complete recovery workflow must also
 collect current service, TLS, route and target health, bind the immutable vars

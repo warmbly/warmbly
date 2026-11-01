@@ -48,6 +48,8 @@ jobs:
       - run: bash .github/scripts/runtime-tls-recovery.test.sh
       - run: shellcheck .github/scripts/runtime-tls-recovery-lineage.sh .github/scripts/runtime-tls-recovery-lineage.test.sh
       - run: bash .github/scripts/runtime-tls-recovery-lineage.test.sh
+      - run: shellcheck .github/scripts/runtime-tls-recovery-inputs.sh .github/scripts/runtime-tls-recovery-inputs.test.sh
+      - run: bash .github/scripts/runtime-tls-recovery-inputs.test.sh
 
   plan:
     needs: check
