@@ -3,11 +3,14 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/infrastructure/db"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
@@ -77,4 +80,47 @@ func (r *emailAccountErrorRepository) RecordTransportSuccess(ctx context.Context
 		return errx.InternalError()
 	}
 	return nil
+}
+
+// LastTransportSuccess returns each mailbox's latest proven sync and send.
+func (r *emailAccountErrorRepository) LastTransportSuccess(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]map[models.MailTransportOperation]time.Time, *errx.Error) {
+	out := make(map[uuid.UUID]map[models.MailTransportOperation]time.Time, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	query := `SELECT email_account_id, operation, recovered_at FROM email_account_transport_recovery WHERE email_account_id = ANY($1::uuid[])`
+	rows, err := r.DB.Query(ctx, query, ids)
+	if err != nil {
+		db.CaptureError(err, query, nil, "query")
+		return nil, errx.InternalError()
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id uuid.UUID
+		var op models.MailTransportOperation
+		var at time.Time
+		if err := rows.Scan(&id, &op, &at); err != nil {
+			return nil, errx.InternalError()
+		}
+		if out[id] == nil {
+			out[id] = map[models.MailTransportOperation]time.Time{}
+		}
+		out[id][op] = at
+	}
+	if rows.Err() != nil {
+		return nil, errx.InternalError()
+	}
+	return out, nil
+}
+
+// mailTransientBlipSQL is models.MailTransientBlip for an email_account_errors row aliased as alias.
+func mailTransientBlipSQL(alias string) string {
+	return fmt.Sprintf(`(%[1]s.severity = 'WARNING' AND %[1]s.error_code IN ('%[2]s') AND NOT EXISTS (
+		SELECT 1 FROM (VALUES ('sync'), ('send')) need(op)
+		WHERE (need.op = %[1]s.operation OR %[1]s.operation NOT IN ('sync', 'send') OR %[1]s.observation_source = 'unknown')
+		  AND NOT EXISTS (
+			SELECT 1 FROM email_account_transport_recovery blip_rec
+			WHERE blip_rec.email_account_id = %[1]s.email_account_id AND blip_rec.operation = need.op
+			  AND blip_rec.recovered_at >= NOW() - INTERVAL '%[3]d seconds')))`,
+		alias, strings.Join(models.MailTransientErrorCodes, "', '"), int(models.MailTransientErrorGrace/time.Second))
 }

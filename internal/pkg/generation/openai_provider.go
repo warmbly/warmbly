@@ -532,9 +532,10 @@ func (p *openAIProvider) RunAgent(ctx context.Context, req AgentRequest) (*Agent
 	// messages is the durable transcript; we mutate a copy so the caller's
 	// slice is not aliased.
 	messages := append([]AgentMessage(nil), req.Messages...)
-	result := &AgentResult{Model: model}
+	result := &AgentResult{Model: model, StopReason: "error"}
 
 	for iter := 0; iter < maxIter; iter++ {
+		result.Messages = messages
 		if req.PreIteration != nil {
 			if err := req.PreIteration(ctx, iter+1); err != nil {
 				result.Messages = messages
@@ -554,18 +555,24 @@ func (p *openAIProvider) RunAgent(ctx context.Context, req AgentRequest) (*Agent
 		if catalog != nil {
 			available = catalog.definitions()
 		}
+		iterationSystem := system
+		finalTurn := req.ReserveFinalResponse && iter == maxIter-1
+		if finalTurn {
+			available = nil
+			iterationSystem += agentFinalResponseInstructions
+		}
 		wireTools := toolDefsToWire(available)
 		var resp *oaiResponse
 		var err error
 		if req.OnEvent != nil {
-			resp, err = p.completeStream(ctx, model, maxTokens, transcriptToWire(system, messages), wireTools, nil, func(delta string) {
+			resp, err = p.completeStream(ctx, model, maxTokens, transcriptToWire(iterationSystem, messages), wireTools, nil, func(delta string) {
 				req.OnEvent(AgentEvent{Type: EventTextDelta, Text: delta})
 			})
 		} else {
-			resp, err = p.complete(ctx, model, maxTokens, transcriptToWire(system, messages), wireTools, nil)
+			resp, err = p.complete(ctx, model, maxTokens, transcriptToWire(iterationSystem, messages), wireTools, nil)
 		}
 		if err != nil {
-			return nil, err
+			return result, err
 		}
 		result.TokensUsed += resp.Usage.TotalTokens
 		choice := resp.Choices[0]
@@ -573,6 +580,9 @@ func (p *openAIProvider) RunAgent(ctx context.Context, req AgentRequest) (*Agent
 		// No tool calls: final answer.
 		if len(choice.Message.ToolCalls) == 0 {
 			text := strings.TrimSpace(choice.Message.Content)
+			if text == "" && req.ReserveFinalResponse {
+				return result, errors.New("openai: empty agent response")
+			}
 			messages = append(messages, AgentMessage{Role: "assistant", Content: text})
 			if req.OnEvent != nil && text != "" {
 				req.OnEvent(AgentEvent{Type: EventText, Text: text})
@@ -580,7 +590,13 @@ func (p *openAIProvider) RunAgent(ctx context.Context, req AgentRequest) (*Agent
 			result.Text = text
 			result.Messages = messages
 			result.StopReason = "stop"
+			if finalTurn {
+				result.StopReason = "max_iterations"
+			}
 			return result, nil
+		}
+		if finalTurn {
+			return result, errors.New("openai: unexpected tool call in final response")
 		}
 
 		// Commentary alongside tool calls streams too; close its block so the
@@ -612,7 +628,7 @@ func (p *openAIProvider) RunAgent(ctx context.Context, req AgentRequest) (*Agent
 						result.Pending = &PendingToolCall{Call: call, Risk: tool.Risk}
 						return result, nil
 					}
-					return nil, err
+					return result, err
 				}
 			}
 		}

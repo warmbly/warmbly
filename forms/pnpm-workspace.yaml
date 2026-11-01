@@ -9,3 +9,5 @@ allowBuilds:
 
 overrides:
   dompurify: ^3.4.17
+  # Floor transitive dependencies at their patched releases.
+  seroval: ^1.6.11

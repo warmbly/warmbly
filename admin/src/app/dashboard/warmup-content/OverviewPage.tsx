@@ -63,22 +63,22 @@ function pipelineSteps(d: WarmupContentOverview): PipelineStep[] {
             label: "AI content enabled",
             ok: d.ai_enabled,
             detail: d.ai_enabled
-                ? `${d.ai_selection_share}% of warmup sends draw AI content`
-                : "Static fallback is active",
+                ? "Approved pool reuses plans without mailbox repeats"
+                : "New conversations wait for fresh approved content",
         },
         {
             label: "Scheduled top-up",
             ok: d.schedule_enabled,
             detail: d.schedule_enabled
                 ? `Tops the library up every ${d.cadence_hours}h`
-                : "Static fallback is active",
+                : "Automatic replenishment off; eligible pooled plans remain available",
         },
         {
             label: "Library stocked",
             ok: stocked,
             detail:
                 totalTarget > 0
-                    ? `${totalStock.toLocaleString()} of ${totalTarget.toLocaleString()} target threads active`
+                    ? `${totalStock.toLocaleString()} of ${totalTarget.toLocaleString()} target eligible plans ready`
                     : "Waiting for demand history",
         },
     ];
@@ -121,7 +121,7 @@ function AutomationPanel({ data }: { data: WarmupContentOverview }) {
                 {allOk
                     ? data.refresh_enabled
                         ? "Scheduled generation preserves canonical content and reviews complete rendered diagnostic threads before activating them."
-                        : "The library tops itself up to the target. Continuous refresh is off, so generation pauses once the target is reached."
+                        : "The library tops itself up to the target. Consumed threads trigger automatic replenishment even when refresh is off."
                     : "Not fully automatic yet. Fix the first amber step below and the library will keep itself stocked without manual runs."}
             </p>
 
@@ -166,18 +166,18 @@ function AutomationPanel({ data }: { data: WarmupContentOverview }) {
                 <Property label="Continuous refresh">
                     {data.refresh_enabled ? (
                         <span>
-                            On, recycles the <span className="tabular-nums">{data.refresh_per_run}</span> most-used threads
+                            On, recycles the <span className="tabular-nums">{data.refresh_per_run}</span> unused plans
                             each run
                         </span>
                     ) : (
-                        <span className="text-muted-foreground">Static fallback active</span>
+                        <span className="text-muted-foreground">Optional refresh off</span>
                     )}
                 </Property>
             </PropertyList>
 
             <p className="border-t border-border px-4 py-3 text-xs leading-relaxed text-muted-foreground">
-                Generated threads are humanized, lint-gated, and any send that fails the gate falls back to the static
-                library. Threads with a meaningful sample and unsafe spam placement are archived automatically.
+                Generated plans pass structural checks and a separate content review. Plans remain reusable with other mailboxes,
+                without repeating for either participant. Sending waits when no eligible plan is available.
             </p>
         </Panel>
     );
@@ -226,14 +226,14 @@ function StockTable({ data }: { data: WarmupContentOverview }) {
     return (
         <Section
             title="Stock vs target"
-            description="The target is calculated from the last seven days of total warmup sends. The controller keeps at least 200 shared threads, expands the bank automatically, and submits at most 250 new threads in one batch."
+            description="Ready stock accounts for mailbox history. The busiest mailbox’s demand over the last seven days adjusts the target, with a default floor of 200 eligible plans and at most 250 new plans per batch."
         >
             <TableShell>
                 <thead>
                     <tr className="border-b border-border">
                         <Th>Segment</Th>
                         <Th right>Daily demand</Th>
-                        <Th right>Active</Th>
+                        <Th right>Ready</Th>
                         <Th right>Target</Th>
                         <Th>Fill</Th>
                     </tr>
@@ -411,7 +411,7 @@ export default function OverviewPage() {
                             <EmptyRow
                                 cols={4}
                                 title="No generated content yet"
-                                hint="The controller will submit a batch automatically; static content is active meanwhile."
+                                hint="The controller submits batches automatically; new sending waits for eligible approved content."
                             />
                         )}
                     </tbody>

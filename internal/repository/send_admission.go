@@ -129,6 +129,7 @@ func sendAuthority(ctx context.Context, tx pgx.Tx, task, mailbox, org, worker uu
 	  OR ($4=`+nilUUIDSQL+` AND t.task_type='warmup' AND `+selfExecutionLiveSQL("ea.id")+`))
 	 AND (t.task_type NOT IN ('warmup','placement','cloud_warmup') OR ea.test_mode IS NULL OR ea.test_mode='legacy' OR ea.test_mode='diagnostic' AND ea.test_send_enabled)
 	 AND t.send_result_applied_at IS NULL AND ((NOT $6 AND t.status='active') OR ($6 AND t.status='completed'))
+	 AND t.campaign_send_isolated_at IS NULL
 	 FROM tasks t JOIN email_accounts ea ON ea.id=t.email_account_id JOIN organizations o ON o.id=ea.organization_id
 	 WHERE t.id=$1 AND ea.id=$2`, task, mailbox, org, worker, provider, ownReservation).Scan(&lane, &allowed)
 	if err != nil {
@@ -385,7 +386,7 @@ func checkMailboxSendingPlan(ctx context.Context, tx pgx.Tx, task, mailbox uuid.
 	 AND (p.lunch_start_minute IS NULL OR EXTRACT(EPOCH FROM (NOW() AT TIME ZONE p.timezone)::time)/60<p.lunch_start_minute
 	 OR EXTRACT(EPOCH FROM (NOW() AT TIME ZONE p.timezone)::time)/60>=p.lunch_end_minute)
 	 AND (SELECT COUNT(*)<p.daily_limit AND COUNT(*) FILTER(WHERE t.completed_at>=date_trunc('hour',NOW() AT TIME ZONE p.timezone) AT TIME ZONE p.timezone)<p.hourly_limit
-	 FROM tasks t WHERE t.email_account_id=ea.id AND t.id<>$2 AND t.task_type IN ('campaign','placement') AND t.status='completed'
+	 FROM tasks t WHERE t.email_account_id=ea.id AND t.id<>$2 AND t.task_type IN ('campaign','placement') AND `+taskConsumesSendBudget+`
 	 AND (t.completed_at AT TIME ZONE p.timezone)::date=p.plan_date AND `+taskDispatchedEmail+`))
 	 FROM email_accounts ea JOIN organizations o ON o.id=ea.organization_id
 	 LEFT JOIN email_account_behavior b ON b.email_account_id=ea.id
@@ -412,6 +413,7 @@ func checkCampaignReservation(ctx context.Context, tx pgx.Tx, task uuid.UUID) er
 	err := tx.QueryRow(ctx, `SELECT c.status='active' AND (c.end_date IS NULL OR c.end_date>=NOW())
 	 AND NOT recipient_suppressed(c.organization_id,contact.email) AND contact.subscribed IS DISTINCT FROM false
 	 AND NOT EXISTS(SELECT 1 FROM campaign_leads h WHERE h.campaign_id=c.id AND h.contact_id=ct.contact_id AND h.paused_at IS NOT NULL AND (h.paused_until IS NULL OR h.paused_until>NOW()))
+	 AND NOT EXISTS(SELECT 1 FROM campaign_leads recovery WHERE recovery.campaign_id=c.id AND recovery.contact_id=ct.contact_id AND recovery.send_outcome_pending_at IS NOT NULL)
 	 AND c.organization_id=ea.organization_id AND contact.organization_id=c.organization_id
 	 AND EXISTS(SELECT 1 FROM campaign_contact_progress p WHERE p.campaign_id=c.id AND p.contact_id=ct.contact_id AND p.sequence_id=ct.sequence_id AND p.dispatch_task_id=t.id),
 	 c.daily_limit<=0 OR (SELECT COUNT(*) FROM tasks t JOIN campaign_tasks sent ON sent.task_id=t.id
@@ -437,7 +439,7 @@ func (r *taskRepository) InspectOutbound(ctx context.Context, task, mailbox, wor
 	var raw []byte
 	var org *uuid.UUID
 	var recipients []string
-	err := r.db.QueryRow(ctx, `SELECT t.send_executor_nonce,t.send_executor_started_at,t.send_executor_result,t.send_released_at IS NOT NULL,t.status='cancelled',ea.organization_id,t.send_recipients FROM tasks t JOIN email_accounts ea ON ea.id=t.email_account_id WHERE t.id=$1 AND t.email_account_id=$2 AND (t.send_executor_nonce IS NULL OR t.send_executor_worker=$3)`, task, mailbox, worker).Scan(&nonce, &started, &raw, &released, &cancelled, &org, &recipients)
+	err := r.db.QueryRow(ctx, `SELECT t.send_executor_nonce,t.send_executor_started_at,t.send_executor_result,t.send_released_at IS NOT NULL,t.status='cancelled' OR t.campaign_send_isolated_at IS NOT NULL,ea.organization_id,t.send_recipients FROM tasks t JOIN email_accounts ea ON ea.id=t.email_account_id WHERE t.id=$1 AND t.email_account_id=$2 AND (t.send_executor_nonce IS NULL OR t.send_executor_worker=$3)`, task, mailbox, worker).Scan(&nonce, &started, &raw, &released, &cancelled, &org, &recipients)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return &WarmupDispatchState{State: "denied"}, nil
 	}
@@ -563,22 +565,36 @@ func (r *taskRepository) FinishOutbound(ctx context.Context, task, mailbox, work
 	if err != nil {
 		return err
 	}
-	tag, err := r.db.Exec(ctx, `UPDATE tasks SET send_executor_result=$4 WHERE id=$1 AND email_account_id=$2 AND send_executor_worker=$3 AND send_executor_started_at IS NOT NULL AND send_executor_result IS NULL`, task, mailbox, worker, raw)
+	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() > 0 {
-		return nil
+	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,268))`, task.String()); err != nil {
+		return err
 	}
-	state, err := r.InspectOutbound(ctx, task, mailbox, worker)
+	var previous []byte
+	err = tx.QueryRow(ctx, `SELECT send_executor_result FROM tasks WHERE id=$1 AND email_account_id=$2 AND send_executor_worker=$3 AND send_executor_started_at IS NOT NULL FOR UPDATE`, task, mailbox, worker).Scan(&previous)
 	if err != nil {
 		return err
 	}
-	previous, _ := json.Marshal(state.Result)
-	if state.State != "finished" || string(previous) != string(raw) {
-		return errors.New("conflicting or unstarted dispatch result")
+	if len(previous) > 0 {
+		var recorded models.SendEmailResult
+		if json.Unmarshal(previous, &recorded) != nil || recorded.TaskID != task {
+			return errors.New("invalid stored dispatch result")
+		}
+		canonical, _ := json.Marshal(recorded)
+		if string(canonical) == string(raw) {
+			return nil
+		}
+		if resultState(recorded) != "unknown" || resultState(result) == "unknown" {
+			return errors.New("conflicting dispatch result")
+		}
 	}
-	return nil
+	if _, err = tx.Exec(ctx, `UPDATE tasks SET send_executor_result=$2 WHERE id=$1`, task, raw); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *taskRepository) CancelOutbound(ctx context.Context, task, mailbox, worker, nonce uuid.UUID) error {

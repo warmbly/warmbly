@@ -100,6 +100,8 @@ type AgentRequest struct {
 	// MaxIterations bounds tool-use rounds (each model call is one iteration).
 	// Zero uses the provider default.
 	MaxIterations int
+	// ReserveFinalResponse makes the last iteration answer from existing evidence without tools.
+	ReserveFinalResponse bool
 	// MaxTokens caps a single completion. Zero uses the provider default.
 	MaxTokens int
 	// OnEvent, if set, receives streamed step events. Optional.
@@ -124,10 +126,9 @@ type PendingToolCall struct {
 	Risk RiskClass
 }
 
-// AgentResult is the final output of a RunAgent run.
+// AgentResult includes completed turns even when RunAgent returns a later error.
 type AgentResult struct {
-	// Text is the model's final assistant text (empty when the run stopped for
-	// approval before producing final text).
+	// Text is the final assistant text, including a budget-limited summary when requested.
 	Text string
 	// Messages is the full transcript including this run's new turns, so a
 	// caller can persist it and resume.
@@ -136,8 +137,7 @@ type AgentResult struct {
 	// TokensUsed is the summed input+output tokens across all iterations.
 	TokensUsed int
 	Iterations int
-	// StopReason is "stop" (final text), "max_iterations", or
-	// "approval_required".
+	// StopReason is "stop", "max_iterations", "approval_required", "stopped", or "error".
 	StopReason string
 	// Pending is set only when StopReason == "approval_required".
 	Pending *PendingToolCall
@@ -219,8 +219,9 @@ var ErrProviderNotConfigured = errors.New("no LLM provider configured: set AI_PR
 
 // Default agent-loop bounds, applied when a request leaves them zero.
 const (
-	defaultMaxIterations = 12
-	defaultAgentTokens   = 2048
+	defaultMaxIterations           = 12
+	defaultAgentTokens             = 2048
+	agentFinalResponseInstructions = "\n\nThis is the final turn within this run's budget. No more tools are available. Answer the user's question in their language using only the evidence already gathered. Clearly distinguish confirmed findings from uncertainty. If the cause or answer could not be verified, say so and name the missing evidence or next step. Do not invent findings or claim unperformed actions."
 )
 
 // ProviderConfig configures provider construction. Only the keys and optional

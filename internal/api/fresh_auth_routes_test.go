@@ -31,6 +31,7 @@ func TestRoutesThatNeedAFreshConfirmation(t *testing.T) {
 		"org POST /members/invite":                    false,
 		"org POST /transfer-ownership":                false,
 		"org POST /current/danger-zone/delete":        false,
+		"adminRoutes POST /testers/:id/password":      false,
 		"protectedAuth POST /passkey/register/finish": false,
 	}
 	file, err := parser.ParseFile(token.NewFileSet(), "routes.go", nil, 0)

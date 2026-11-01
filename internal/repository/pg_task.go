@@ -489,7 +489,13 @@ func (r *taskRepository) GetEmailTask(ctx context.Context, taskID uuid.UUID) (*E
 const taskDispatchedEmail = `(t.task_type <> 'campaign' OR t.message_id <> '' OR EXISTS (
 		SELECT 1 FROM campaign_contact_progress ccp WHERE ccp.dispatch_task_id = t.id))`
 
-const campaignSendToday = `t.status = 'completed' AND t.task_type = 'campaign'
+const taskConsumesSendBudget = `(t.status='completed' OR (t.campaign_send_isolated_at IS NOT NULL AND t.send_released_at IS NULL))`
+
+func completedSendTaskSQL(alias string) string {
+	return "(" + alias + ".status='completed' OR (" + alias + ".campaign_send_isolated_at IS NOT NULL AND " + alias + ".send_result_state='sent' AND " + alias + ".send_result_applied_at IS NOT NULL))"
+}
+
+const campaignSendToday = taskConsumesSendBudget + ` AND t.task_type = 'campaign'
 	AND t.completed_at >= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date::timestamp AT TIME ZONE 'UTC'
 	AND t.completed_at < ((CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date + 1)::timestamp AT TIME ZONE 'UTC'
 	AND ` + taskDispatchedEmail

@@ -42,6 +42,7 @@ type CloudExecution interface {
 }
 
 type JobsService struct {
+	CampaignIsolationEnabled bool
 	// Bus delivers the jobs.worker-events stream (Kafka or NATS).
 	Bus eventbus.EventBus
 	// Codec decodes bus payloads (jobs.worker-events); it must match the

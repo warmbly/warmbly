@@ -237,6 +237,12 @@ does, and `deploy/config/env.example` for the bare-binary template). Saving a Go
 re-running the target recompiles in a second or two against the warm build
 cache.
 
+The dev worker presents its own node credential, a published dev value that the
+seed fixtures register for its id, so it keeps working when you start the backend
+with `NODE_REQUIRE_NODE_CREDENTIAL=true` to try the strict mode. A second worker
+started with `make worker WORKER_ID=<uuid>` has no credential and needs that
+setting off. The dev consumer reads keys from Postgres and calls no node route.
+
 ### Tracking (Rust) and realtime (Elixir)
 
 `make dev` runs both as containers; `make run` does not include them. The native

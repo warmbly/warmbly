@@ -55,6 +55,26 @@ func (h *Handler) LoginConfirm(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+// LoginInitialPassword answers a password_change_required sign-in. Public
+// like /login/confirm: the single-use challenge from LoginStart is the proof.
+func (h *Handler) LoginInitialPassword(c *gin.Context) {
+	var data auth.InitialPasswordData
+	if err := c.ShouldBindJSON(&data); err != nil {
+		errx.Handle(c, errx.InvalidBody(err))
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), authRequestTimeout)
+	defer cancel()
+
+	resp, err := h.AuthService.CompleteInitialPassword(ctx, &data, c.ClientIP(), c.Request.UserAgent())
+	if err != nil {
+		errx.Handle(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
 func (h *Handler) RegistrationStart(c *gin.Context) {
 	var data auth.AuthData
 
@@ -114,16 +134,40 @@ func (h *Handler) RefreshToken(c *gin.Context) {
 	c.JSON(http.StatusOK, token)
 }
 
+// logoutRequest optionally names the remembered-device tokens this browser holds, so signing out forgets them.
+type logoutRequest struct {
+	DeviceTokens []string `json:"device_tokens"`
+}
+
 func (h *Handler) Logout(c *gin.Context) {
 	accessToken := middleware.GetAccessToken(c)
+
+	var req logoutRequest
+	if c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			errx.Handle(c, errx.InvalidBody(err))
+			return
+		}
+		if len(req.DeviceTokens) > maxLogoutDeviceTokens {
+			req.DeviceTokens = req.DeviceTokens[:maxLogoutDeviceTokens]
+		}
+	}
 
 	if err := h.TokenService.RevokeSession(c.Request.Context(), accessToken); err != nil {
 		errx.Handle(c, err)
 		return
 	}
+	if uid, err := middleware.GetUserUUID(c); err == nil && len(req.DeviceTokens) > 0 {
+		if ferr := h.AuthService.ForgetTrustedDevice(c.Request.Context(), uid, req.DeviceTokens); ferr != nil {
+			errx.Handle(c, ferr)
+			return
+		}
+	}
 
 	c.Status(http.StatusNoContent)
 }
+
+const maxLogoutDeviceTokens = 16
 
 func (h *Handler) LogoutAll(c *gin.Context) {
 	accessToken := middleware.GetAccessToken(c)
@@ -277,6 +321,58 @@ func (h *Handler) ResetPasswordConfirm(c *gin.Context) {
 	}
 
 	c.Status(http.StatusOK)
+}
+
+// SendPasswordLink emails the signed-in user a link to set a password.
+func (h *Handler) SendPasswordLink(c *gin.Context) {
+	uid, err := uuid.Parse(middleware.GetUserID(c))
+	if err != nil {
+		errx.Handle(c, errx.ErrUnauthorized)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), authRequestTimeout)
+	defer cancel()
+
+	if xerr := h.AuthService.SendPasswordLink(ctx, uid); xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	c.Status(http.StatusOK)
+}
+
+// LinkedIdentities lists the providers the signed-in user can sign in with.
+func (h *Handler) LinkedIdentities(c *gin.Context) {
+	uid, err := uuid.Parse(middleware.GetUserID(c))
+	if err != nil {
+		errx.Handle(c, errx.ErrUnauthorized)
+		return
+	}
+	ids, xerr := h.AuthService.LinkedIdentities(c.Request.Context(), uid)
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": ids})
+}
+
+// UnlinkIdentity removes one provider from the signed-in user's sign-in methods.
+func (h *Handler) UnlinkIdentity(c *gin.Context) {
+	uid, err := uuid.Parse(middleware.GetUserID(c))
+	if err != nil {
+		errx.Handle(c, errx.ErrUnauthorized)
+		return
+	}
+	session := middleware.GetSession(c)
+	if session == nil || session.UserID != uid {
+		errx.Handle(c, errx.ErrUnauthorized)
+		return
+	}
+	if xerr := h.AuthService.UnlinkIdentity(c.Request.Context(), uid, session.ID, c.Param("provider")); xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 // ChangePassword updates the signed-in user's password (current + new). Every

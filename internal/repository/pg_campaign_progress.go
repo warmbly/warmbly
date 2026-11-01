@@ -421,7 +421,7 @@ func (r *campaignProgressRepository) ReserveSend(ctx context.Context, campaignID
 	// lock order between them and deadlock.
 	var held bool
 	err = tx.QueryRow(ctx, `
-		SELECT `+liveHold("campaign_leads")+`
+		SELECT `+effectiveLeadHold("campaign_leads")+`
 		FROM campaign_leads WHERE campaign_id = $1 AND contact_id = $2
 		FOR UPDATE
 	`, campaignID, contactID).Scan(&held)
@@ -662,7 +662,7 @@ func (r *campaignProgressRepository) LastSenderForLead(ctx context.Context, camp
 		FROM campaign_tasks ct
 		JOIN tasks t ON t.id = ct.task_id
 		WHERE ct.campaign_id = $1 AND ct.contact_id = $2
-		  AND t.task_type = 'campaign' AND t.status = 'completed'
+		  AND t.task_type = 'campaign' AND `+completedSendTaskSQL("t")+`
 		ORDER BY t.created_at DESC
 		LIMIT 1
 	`, campaignID, contactID).Scan(&id)
@@ -701,7 +701,7 @@ func (r *campaignProgressRepository) ThreadParentForLead(ctx context.Context, ca
 		JOIN tasks t ON t.id = ct.task_id
 		LEFT JOIN sequences s ON s.id = ct.sequence_id
 		WHERE ct.campaign_id = $1 AND ct.contact_id = $2
-		  AND t.task_type = 'campaign' AND t.status = 'completed'
+		  AND t.task_type = 'campaign' AND `+completedSendTaskSQL("t")+`
 		  AND t.message_id <> ''
 		ORDER BY t.created_at DESC
 		LIMIT $3
@@ -895,7 +895,7 @@ func (r *campaignProgressRepository) CampaignContactSentFromAccount(ctx context.
 			WHERE campaign_task.campaign_id = $1
 			  AND campaign_task.contact_id = $2
 			  AND task.task_type = 'campaign'
-			  AND task.status = 'completed'
+			  AND `+completedSendTaskSQL("task")+`
 			  AND task.email_account_id = $3
 		)
 	`, campaignID, contactID, emailAccountID).Scan(&sent)
@@ -1845,7 +1845,7 @@ type routeInput struct {
 // single-contact route cannot drift apart on what a held lead looks like.
 // CountUndeliverableLeads deliberately does not select it: a lead verification
 // refuses is refused whether or not somebody also parked it.
-const leadHoldColumns = `cl.paused_at, cl.paused_until, COALESCE(cl.pause_reason, ''), COALESCE(cl.pause_source, '')`
+var leadHoldColumns = effectiveLeadHoldColumns("cl")
 
 // heldShift is how much of the hold fell inside the wait the next step is
 // serving: from the later of the hold's start and the last step's send, to the
@@ -2124,6 +2124,10 @@ func (cr *campaignRouter) routeReplyOnly(fromID uuid.UUID, prog *CampaignContact
 // the loop guard and the step's wait applied.
 func (cr *campaignRouter) route(campaignID, contactID uuid.UUID, in routeInput) ContactRoute {
 	out := ContactRoute{LastSentStep: in.lastSeq, IsNewLead: in.lastSeq == nil}
+	if in.pauseSource == "send_recovery" {
+		out.Hold = in.liveHold(cr.now)
+		return out
+	}
 	var res routeResult
 	if out.IsNewLead {
 		e := cr.entry
@@ -2616,9 +2620,9 @@ func (r *campaignProgressRepository) CountHeldLeads(ctx context.Context, campaig
 	var n int
 	err := resultDB(ctx, r.db).QueryRow(ctx, `
 		SELECT COUNT(*) FROM campaign_leads cl
-		WHERE cl.campaign_id = $1 AND `+liveHold("cl")+`
+		WHERE cl.campaign_id = $1 AND (`+recoveryPausedLeadSQL("cl")+` OR (`+liveHold("cl")+`
 		  -- Reached in another lead's thread: nothing is left to wait for.
-		  AND cl.pause_source IS DISTINCT FROM 'cc'`,
+		  AND cl.pause_source IS DISTINCT FROM 'cc'))`,
 		campaignID).Scan(&n)
 	return n, err
 }
@@ -2723,7 +2727,7 @@ func (r *campaignProgressRepository) LeadSupply(ctx context.Context, campaignID 
 	}
 	// Order-free (only counts and a minimum), and a lead whose last step ends the
 	// flow routes to nothing, so neither is paid for.
-	rows, err := resultDB(ctx, r.db).Query(ctx, routedLeadsQuery("", " AND (lp.sequence_id IS NULL OR lp.sequence_id <> ALL($3))"), campaignID, config.CampaignSendMaxAttempts, router.endSteps())
+	rows, err := resultDB(ctx, r.db).Query(ctx, routedLeadsQuery("", " AND (lp.sequence_id IS NULL OR lp.sequence_id <> ALL($3) OR "+recoveryPausedLeadSQL("cl")+")"), campaignID, config.CampaignSendMaxAttempts, router.endSteps())
 	if err != nil {
 		return nil, err
 	}

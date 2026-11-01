@@ -738,7 +738,7 @@ func (r *advancedOutreachRepository) GetDeliverabilityDashboard(ctx context.Cont
 	sentQuery := `
 		SELECT COUNT(*) FROM tasks t
 		JOIN email_accounts ea ON ea.id = t.email_account_id
-		WHERE ea.organization_id = $1 AND t.task_type = 'campaign' AND t.status = 'completed'
+		WHERE ea.organization_id = $1 AND t.task_type = 'campaign' AND ` + completedSendTaskSQL("t") + `
 		  AND t.completed_at >= $2 AND t.completed_at <= $3
 		  AND ` + taskDispatchedEmail
 	_ = resultDB(ctx, r.db).QueryRow(ctx, sentQuery, organizationID, from, to).Scan(&out.EmailsSent)
@@ -905,7 +905,7 @@ func (r *advancedOutreachRepository) deliverabilityTimeseries(ctx context.Contex
 	sentQ := `
 		SELECT (t.completed_at AT TIME ZONE 'UTC')::date, COUNT(*)
 		FROM tasks t JOIN email_accounts ea ON ea.id = t.email_account_id
-		WHERE ea.organization_id=$1 AND t.task_type='campaign' AND t.status='completed'
+		WHERE ea.organization_id=$1 AND t.task_type='campaign' AND ` + completedSendTaskSQL("t") + `
 		  AND t.completed_at >= $2 AND t.completed_at <= $3
 		GROUP BY 1`
 	if rows, err := resultDB(ctx, r.db).Query(ctx, sentQ, orgID, from, to); err == nil {
@@ -1033,7 +1033,7 @@ func (r *advancedOutreachRepository) deliverabilityByMailbox(ctx context.Context
 	sq := `
 		SELECT t.email_account_id, COUNT(*)
 		FROM tasks t JOIN email_accounts ea ON ea.id = t.email_account_id
-		WHERE ea.organization_id=$1 AND t.task_type='campaign' AND t.status='completed'
+		WHERE ea.organization_id=$1 AND t.task_type='campaign' AND ` + completedSendTaskSQL("t") + `
 		  AND t.completed_at >= $2 AND t.completed_at <= $3
 		GROUP BY t.email_account_id`
 	if srows, serr := resultDB(ctx, r.db).Query(ctx, sq, orgID, from, to); serr == nil {

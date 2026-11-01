@@ -46,8 +46,10 @@ function configuration(env) {
   }
   const bake = Number(String(env.DEPLOY_BAKE_SECONDS ?? "").trim() || 300);
   if (!Number.isInteger(bake) || bake < 0 || bake > 3600) throw new Error("DEPLOY_BAKE_SECONDS must be 0 through 3600");
+  const fleetBake = Number(String(env.DEPLOY_FLEET_BAKE_SECONDS ?? "").trim() || 300);
+  if (!Number.isInteger(fleetBake) || fleetBake < 300 || fleetBake > 3600) throw new Error("DEPLOY_FLEET_BAKE_SECONDS must be 300 through 3600");
   return {
-    cluster, prefix, mode, tag, services, allServices: raw === "all", secretVersions, bake,
+    cluster, prefix, mode, tag, services, allServices: raw === "all", secretVersions, bake, fleetBake,
     fleet: env.DEPLOY_FLEET !== "false",
     allowDroppedSecrets: env.DEPLOY_ALLOW_DROPPED_SECRETS === "true",
     images: env.DEPLOY_IMAGES_JSON ? JSON.parse(readFileSync(env.DEPLOY_IMAGES_JSON, "utf8")) : null,
@@ -169,8 +171,9 @@ async function logTail(clients, definition, task, report, quiet) {
 
 // runTask runs a one-off task to completion; capture may be a predicate the log tail must meet.
 async function runTask(clients, config, network, arn, definition, label, sleep, report, options = {}) {
-  const { command, environment, capture } = Array.isArray(options) ? { command: options } : options;
-  const token = createHash("sha256").update(`${config.run}/${arn}/${label}/${JSON.stringify(command || [])}/${JSON.stringify(environment || [])}`).digest("hex");
+  const { command, environment, capture, imagePullRetries = 0, pullAttempt = 0 } = Array.isArray(options) ? { command: options } : options;
+  const identity = `${config.run}/${arn}/${label}/${JSON.stringify(command || [])}/${JSON.stringify(environment || [])}`;
+  const token = createHash("sha256").update(identity + (pullAttempt ? `/pull-retry-${pullAttempt}` : "")).digest("hex");
   const name = definition.containerDefinitions[0].name;
   const override = { name, ...(command ? { command } : {}), ...(environment ? { environment } : {}) };
   const started = assertResponse(await clients.ecs.send(new RunTaskCommand({
@@ -189,7 +192,16 @@ async function runTask(clients, config, network, arn, definition, label, sleep, 
       const container = status.containers?.find((c) => c.name === name);
       const ok = status.stopCode === "EssentialContainerExited" && container?.exitCode === 0;
       let lines = !ok || command || capture ? await logTail(clients, definition, task, report, ok && capture) : [];
-      if (!ok) throw new Error(`${label} failed; its log tail is above`);
+      if (!ok) {
+        const neverStarted = !status.startedAt && status.containers?.length > 0 && status.containers.every((c) => c.exitCode === undefined);
+        const pullFailure = status.stopCode === "TaskFailedToStart" && /^CannotPullContainerError:/.test(status.stoppedReason || "");
+        if (neverStarted && pullFailure && pullAttempt < imagePullRetries) {
+          report(`${label} image pull failed before execution; retry ${pullAttempt + 1}/${imagePullRetries} with the same definition and overrides`);
+          await sleep(30000 * (pullAttempt + 1));
+          return runTask(clients, config, network, arn, definition, label, sleep, report, { ...options, pullAttempt: pullAttempt + 1 });
+        }
+        throw new Error(`${label} failed (${status.stopCode || "unknown stop code"}); inspect stopped task ${task}; its log tail is above`);
+      }
       // Log delivery can trail the task stopping by a few seconds.
       for (let retry = 0; typeof capture === "function" && !capture(lines) && retry < 6; retry++) {
         await sleep(5000);
@@ -383,10 +395,10 @@ async function deploy(clients, config, sleep = (ms) => new Promise((r) => setTim
     const digests = ["worker", "worker-kafka", "consumer", "consumer-kafka"]
       .filter((k) => DIGEST_RE.test(config.images.images?.[k] || ""))
       .map((k) => `${k}=${config.images.images[k]}`);
-    const command = ["fleet", "rollout", "start", tag, "--canary", "1", "--waves", "100", "--bake", "30m"];
+    const command = ["fleet", "rollout", "start", tag, "--canary", "1", "--waves", "100", "--bake", `${config.fleetBake}s`];
     if (digests.length) command.push("--digests", digests.join(","));
-    await runTask(clients, config, network, arns.ops, rendered.ops, "Fleet rollout", sleep, report, { command });
-    report(`Workers move to ${tag} in canary waves; follow with \`warmblyctl fleet rollout status\``);
+    await runTask(clients, config, network, arns.ops, rendered.ops, "Fleet rollout", sleep, report, { command, imagePullRetries: 2 });
+    report(`Workers move to ${tag}: one canary, then all remaining hosts, with ${config.fleetBake}s of healthy uptime per stage plus update time; follow with \`warmblyctl fleet rollout status\``);
   }
   return { tag, arns, pins: Object.fromEntries(Object.entries(pins).map(([arn, v]) => [secretService(arn, config.prefix) || arn, v])) };
 }

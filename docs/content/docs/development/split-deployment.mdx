@@ -79,6 +79,15 @@ That credential is `NODE_BROKER_TOKEN`, and it covers every internal route only 
 
 Upgrading a fleet that already sets `NODE_BROKER_TOKEN` needs no extra step. A node on an older release may still send `INTERNAL_API_TOKEN`; its heartbeat is answered with the version it should run and nothing else, so it updates itself and comes back on `NODE_BROKER_TOKEN`, which its join already wrote to `node.env`. Until then its sync lookups are refused for the few minutes the update takes. A worker stays live meanwhile, because its Redis heartbeat needs no token, so its mailboxes are not moved. A node joined before `NODE_BROKER_TOKEN` was set has no copy of it and is only ever told its version, which the backend logs with the node's id: join it again. To keep older nodes syncing through the upgrade, set `NODE_ACCEPT_INTERNAL_TOKEN=true` on the control plane first and remove it once every node has updated.
 
+Each node also holds its own `NODE_CREDENTIAL`, issued at join, and sends it with its id next to `NODE_BROKER_TOKEN`; the control plane admits the call as that node. To stop accepting the shared token on these routes, in this order:
+
+1. Deploy the backend release that checks node credentials. Nothing changes for any node yet.
+2. Let every node update to that release; the release sends the credential.
+3. Join again any node the backend still logs as `node heartbeats without its own node credential` (one that predates node credentials holds none). A re-join keeps the node's id and `node.local.env`.
+4. Once a full heartbeat interval passes with no such line, set `NODE_REQUIRE_NODE_CREDENTIAL=true` on the control plane and restart it. A node that is then refused shows as not live in the Fleet section; join it again, or unset the setting to restore the shared token at once.
+
+A rollback of the backend to a release before this check simply ignores the credential headers, and a node rolled back to an older release sends only the shared token, so keep the setting off until no node can be rolled back that far.
+
 ## Building it
 
 <Steps>
@@ -252,6 +261,31 @@ The deployment is part of the existing release workflow, not a separate `release
 A Pages deploy hook would reuse Cloudflare's build configuration too, but it builds the latest commit on its configured branch. These jobs deliberately build the tagged release commit instead, so changes merged while a release is building cannot slip into production. Retries use the same release commit with the current Pages production configuration. Builds use the repository's scripts and output paths in the table, not arbitrary build commands stored in Cloudflare.
 
 Projects deploy independently, not atomically: one failed build or upload leaves that project's previous deployment live and does not cancel the other projects. After fixing the configuration, use **Re-run failed jobs** on that release run to retry the same release commit without creating another tag or rebuilding successful jobs. Do not retry an older release after a newer one has deployed unless you intend a rollback. To pause release uploads, set `CLOUDFLARE_PAGES_DEPLOY_ENABLED` to `false`; this leaves current deployments live and does not re-enable Cloudflare's automatic deployments. This workflow deploys only the listed static frontends; it does not deploy backend services.
+
+The marketing build generates a Content Security Policy in `site/dist/_headers`
+from the inline scripts in every rendered page, including the error page. Serve
+that header with the generated files when hosting outside Pages. Scripts require
+a build-generated hash or an allowed origin; inline event handlers and dynamic
+code evaluation are refused. Inline styles remain allowed for page presentation.
+The configured PostHog HTTPS origin and its regional asset host are allowed when
+analytics is enabled. Cloudflare's analytics beacon has its own explicit origin.
+Changes to scripts or analytics configuration require a fresh build. A policy
+that exceeds Pages' 2,000-character header limit fails the build.
+The policy reads analytics settings using Vite's resolved build mode and
+environment directory, including mode-specific environment files.
+
+For a marketing-only update without a release tag, run **Deploy marketing Pages**
+on `main`, passing its reviewed full commit SHA as `expected_sha`. The manual
+workflow uses `site-production` and the existing Pages production variables. It
+requires exactly one `site` project in `CLOUDFLARE_PAGES_PROJECTS`, runs the site
+checks, and builds once. An isolated preview must serve the built CSP on the
+home, legal and error pages and preserve the published installer bytes before
+the same artifact is uploaded to the production branch. A failed preview leaves
+production unchanged. The workflow shares the release concurrency lock and
+deploys only the marketing site. The existing Pages deployment enable flag
+applies to this workflow too.
+Preview verification reads Wrangler's structured deployment receipt for that
+run and checks its project, environment and commit before requesting its URL.
 
 ## Anything the control plane cannot know
 

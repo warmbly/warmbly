@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const { mkdtempSync, writeFileSync } = require("node:fs");
 const { join } = require("node:path");
 const { tmpdir } = require("node:os");
-const { configuration, deploy, compareTags, parseRef } = require("./aws-deploy.cjs");
+const { configuration, deploy, runTask, compareTags, parseRef } = require("./aws-deploy.cjs");
 
 const root = "arn:aws:ecs:us-east-1:000000000000:";
 const registry = "ghcr.io/warmbly/warmbly";
@@ -149,6 +149,11 @@ const valueFrom = (def, key) => def.containerDefinitions[0].secrets.find((s) => 
 test("configuration refuses prereleases, bad modes and secret pins outside refresh-secrets", () => {
   assert.throws(() => config({ DEPLOY_TAG: "v1.3.0-rc.1" }), /prereleases never deploy/);
   assert.throws(() => config({ DEPLOY_MODE: "yolo" }), /DEPLOY_MODE/);
+  for (const value of ["0", "299", "3601", "NaN", "300.5"]) {
+    assert.throws(() => config({ DEPLOY_FLEET_BAKE_SECONDS: value }), /DEPLOY_FLEET_BAKE_SECONDS/);
+  }
+  assert.equal(config().fleetBake, 300);
+  assert.equal(config({ DEPLOY_FLEET_BAKE_SECONDS: "1800" }).fleetBake, 1800);
   assert.throws(() => config({ DEPLOY_SERVICES: "backend,worker" }), /DEPLOY_SERVICES/);
   assert.throws(() => config({ DEPLOY_SECRET_VERSIONS: JSON.stringify({ backend: "a".repeat(36) }) }), /refresh-secrets/);
   assert.throws(() => config({ DEPLOY_MODE: "refresh-secrets", DEPLOY_SECRET_VERSIONS: JSON.stringify({ backend: "x" }) }), /secret version id/);
@@ -286,8 +291,64 @@ test("the fleet rollout gets the worker and consumer digests per variant", async
   const ops = runs(f).find((r) => r.overrides);
   const command = ops.overrides.containerOverrides[0].command;
   assert.deepEqual(command.slice(0, 4), ["fleet", "rollout", "start", "v1.3.0"]);
+  assert.equal(command[command.indexOf("--bake") + 1], "300s");
   assert.equal(command[command.indexOf("--digests") + 1], `worker=${d("b")},worker-kafka=${d("c")},consumer=${d("b")},consumer-kafka=${d("c")}`);
   assert.equal(ops.overrides.containerOverrides[0].name, "ops");
+});
+
+test("hosted fleet rollout carries a configured longer bake", async () => {
+  const f = fixture();
+  await run(f, config({ DEPLOY_FLEET_BAKE_SECONDS: "1800" }));
+  const command = runs(f).find((r) => r.overrides).overrides.containerOverrides[0].command;
+  assert.equal(command[command.indexOf("--bake") + 1], "1800s");
+});
+
+test("fleet startup retries only confirmed image-pull failures before execution, with stable retry tokens", async () => {
+  const pullFailure = { lastStatus: "STOPPED", stopCode: "TaskFailedToStart", stoppedReason: "CannotPullContainerError: manifest not found", containers: [{ name: "ops", runtimeId: "allocated-before-pull" }] };
+  const success = { lastStatus: "STOPPED", stopCode: "EssentialContainerExited", containers: [{ name: "ops", exitCode: 0 }] };
+  async function attempt(statuses, options = {}) {
+    const requests = [], sleeps = [];
+    const clients = {
+      ecs: { async send(command) {
+        if (command.constructor.name === "RunTaskCommand") {
+          requests.push(command.input);
+          return { tasks: [{ taskArn: `${root}task/fixture/${requests.length}` }] };
+        }
+        return { tasks: [statuses[Math.min(requests.length - 1, statuses.length - 1)]] };
+      } },
+      logs: { async send() { return { events: [] }; } },
+    };
+    const execute = () => runTask(clients, config(), {}, "fixture-ops:3", definition("ops", 3, {}), "Fleet rollout", async (ms) => sleeps.push(ms), () => {}, { command: ["fleet", "rollout", "start", "v1.3.0"], imagePullRetries: 2, ...options });
+    return { execute, requests, sleeps };
+  }
+  const recovered = await attempt([pullFailure, success]);
+  await recovered.execute();
+  assert.equal(recovered.requests.length, 2);
+  assert.deepEqual(recovered.sleeps, [30000]);
+  assert.deepEqual(recovered.requests[0].overrides, recovered.requests[1].overrides);
+  assert.equal(recovered.requests[0].taskDefinition, recovered.requests[1].taskDefinition);
+  assert.notEqual(recovered.requests[0].clientToken, recovered.requests[1].clientToken);
+  const replay = await attempt([pullFailure, success]);
+  await replay.execute();
+  assert.deepEqual(replay.requests.map((r) => r.clientToken), recovered.requests.map((r) => r.clientToken));
+  const exhausted = await attempt([pullFailure]);
+  await assert.rejects(exhausted.execute(), /Fleet rollout failed/);
+  assert.equal(exhausted.requests.length, 3);
+  assert.deepEqual(exhausted.sleeps, [30000, 60000]);
+  for (const failure of [
+    { ...success, containers: [{ name: "ops", exitCode: 1 }] },
+    { ...pullFailure, startedAt: new Date() },
+    { ...pullFailure, containers: [{ name: "ops", exitCode: 1 }] },
+    { ...pullFailure, containers: [] },
+    { ...pullFailure, stoppedReason: "ResourceInitializationError: unavailable" },
+  ]) {
+    const failed = await attempt([failure]);
+    await assert.rejects(failed.execute(), /Fleet rollout failed/);
+    assert.equal(failed.requests.length, 1);
+  }
+  const migration = await attempt([pullFailure], { imagePullRetries: 0 });
+  await assert.rejects(migration.execute(), /failed/);
+  assert.equal(migration.requests.length, 1);
 });
 
 test("an unchanged definition reuses its revision and redeploy forces a fresh deployment", async () => {

@@ -7,6 +7,7 @@ package warmupcontent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -26,10 +27,15 @@ var ErrGenerationStopped = errors.New("warmup content generation is stopped")
 
 // defaultThemes seed topic variety when a generation run doesn't pin a theme.
 var defaultThemes = []string{
-	"productivity", "learning", "collaboration", "industry trends", "tools",
-	"networking", "feedback", "planning", "reading", "wellness", "events",
-	"career growth", "remote work", "meetings", "automation", "team culture",
-	"customer success", "writing", "travel", "community",
+	"productivity", "learning a new skill", "collaboration", "industry trends", "tools and workflow",
+	"networking", "giving feedback", "quarterly planning", "book recommendations", "wellness",
+	"conferences and meetups", "career growth", "remote work setups", "meetings", "team culture",
+	"customer support", "writing clearly", "travel tips", "local community", "hiring and interviews",
+	"mentoring", "documentation", "podcasts", "cooking", "weekend hobbies", "running and cycling",
+	"home office", "coffee and tea", "language learning", "photography", "gardening", "moving house",
+	"volunteering", "presentations", "note-taking", "project handoffs", "freelancing", "small business seasons",
+	"design and layout", "spreadsheets", "naming things", "backing up files", "onboarding new teammates",
+	"retrospectives", "saying no to extra scope", "time off and rest", "music practice", "board games",
 }
 
 // maxPerBatch bounds a single Batch API submission. Batch is async and cheap so
@@ -40,19 +46,17 @@ const maxPerBatch = 2000
 const (
 	minimumAdaptiveThreads = 200
 	maximumAdaptiveThreads = 5000
-	usesPerThreadPerDay    = 20
 	scheduledBatchMax      = 250
 )
 
 // AdaptiveThreadTarget sizes the bank from recent demand while bounding model
 // spend. The configured target is a floor, not an ongoing tuning obligation.
-func AdaptiveThreadTarget(sevenDaySends, aiSelectionShare, configuredFloor int) int {
+func AdaptiveThreadTarget(sevenDaySends, configuredFloor int) int {
 	if configuredFloor <= 0 {
 		configuredFloor = minimumAdaptiveThreads
 	}
 	averageDaily := (sevenDaySends + 6) / 7
-	aiDaily := (averageDaily*aiSelectionShare + 99) / 100
-	target := (aiDaily + usesPerThreadPerDay - 1) / usesPerThreadPerDay
+	target := averageDaily
 	if target < configuredFloor {
 		target = configuredFloor
 	}
@@ -95,7 +99,7 @@ type Service interface {
 	RunScheduled(ctx context.Context) error
 	// Enabled reports whether an AI client is configured.
 	Enabled() bool
-	// WireJudge adds the TypeSafe judgment on generated threads; nil turns it off.
+	// WireJudge selects TypeSafe review; nil uses a separate OpenAI review.
 	WireJudge(asker typesafe.Asker)
 }
 
@@ -103,7 +107,7 @@ type service struct {
 	repo repository.WarmupContentRepository
 	gen  generationBackend
 	// judge rejects generated threads that carry a pitch or read as filler.
-	// Nil means the deterministic lints are the only gate.
+	// Without TypeSafe, the configured generator performs a separate review.
 	judge typesafe.Asker
 }
 
@@ -113,6 +117,7 @@ type generationBackend interface {
 	GetBatch(context.Context, string) (generation.BatchState, error)
 	CancelBatch(context.Context, string) error
 	FetchBatchResults(context.Context, string) ([]generation.BatchResult, error)
+	ReviewConversation(context.Context, generation.Conversation, string) (*generation.WarmupReview, error)
 }
 
 // NewService creates the generation service. gen may be nil (provider not OpenAI),
@@ -158,11 +163,12 @@ func (s *service) RunScheduled(ctx context.Context) error {
 		return nil
 	}
 
-	totalDemand, err := s.repo.WarmupSendsSince(ctx, time.Now().AddDate(0, 0, -7))
+	mailboxDemand, err := s.repo.WarmupMailboxDemandSince(ctx, time.Now().AddDate(0, 0, -7))
 	if err != nil {
 		return err
 	}
 
+	var scheduleErr error
 	for _, pool := range settings.Pools {
 		if !pool.Enabled {
 			continue
@@ -172,16 +178,13 @@ func (s *service) RunScheduled(ctx context.Context) error {
 			segmentSet[segment] = struct{}{}
 		}
 		for segment := range segmentSet {
-			active, err := s.repo.CountActiveConversations(ctx, pool.PoolType, segment)
+			active, err := s.repo.CountAvailableConversations(ctx, pool.PoolType, segment)
 			if err != nil {
 				return err
 			}
-			target := AdaptiveThreadTarget(totalDemand, settings.AISelectionShare, pool.TargetActiveThreads)
+			target := AdaptiveThreadTarget(mailboxDemand, pool.TargetActiveThreads)
 
-			// Continuous refresh: once the library is at target, retire the
-			// most-used AI threads so the top-up below mints fresh replacements.
-			// Retire only what today's budget can regenerate, so the library
-			// never shrinks without being refilled.
+			// Refresh unused stock within the replacement budget; preserve ongoing threads.
 			if settings.RefreshEnabled && active >= target {
 				recycle := settings.RefreshPerRun
 				if recycle > 25 {
@@ -191,12 +194,12 @@ func (s *service) RunScheduled(ctx context.Context) error {
 					recycle = remaining
 				}
 				if recycle > 0 {
-					retired, err := s.repo.RetireMostUsedConversations(ctx, pool.PoolType, segment, recycle)
+					retired, err := s.repo.RefreshUnusedConversations(ctx, pool.PoolType, segment, recycle)
 					if err != nil {
 						log.Warn().Err(err).Str("segment", segment).Msg("warmup generation: refresh retirement failed")
 					} else if retired > 0 {
 						active -= retired
-						log.Info().Int("retired", retired).Str("segment", segment).Msg("warmup generation: recycled most-used threads for refresh")
+						log.Info().Int("retired", retired).Str("segment", segment).Msg("warmup generation: recycled unused threads for refresh")
 					}
 				}
 			}
@@ -227,18 +230,19 @@ func (s *service) RunScheduled(ctx context.Context) error {
 				Count:    count,
 			})
 			if err != nil {
-				log.Debug().Err(err).Str("segment", segment).Msg("warmup generation: scheduled batch not submitted")
+				log.Warn().Err(err).Str("segment", segment).Msg("warmup generation: scheduled batch not submitted")
+				scheduleErr = errors.Join(scheduleErr, fmt.Errorf("warmup batch submission failed for segment %q", segment))
 				continue
 			}
 			if settings.DailyGenerationCap > 0 {
 				remaining -= count
 				if remaining <= 0 {
-					return nil
+					return scheduleErr
 				}
 			}
 		}
 	}
-	return nil
+	return scheduleErr
 }
 
 func cleanMessages(in []string) []string {

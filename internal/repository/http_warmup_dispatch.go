@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/nodeauth"
 )
 
 type WorkerWarmupDispatch interface {
@@ -31,7 +32,7 @@ func (r *httpSyncContextRepository) WarmupDispatch(ctx context.Context, task, ma
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+r.token)
+	nodeauth.Authorize(req, r.token)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := r.client.Do(req)
 	if err != nil {

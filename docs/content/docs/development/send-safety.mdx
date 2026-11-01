@@ -78,9 +78,31 @@ Warmup-only unknown sends have an automatic alternative to confirming the old ou
 
 Retirement records `tasks.warmup_send_retired_at`, cancels execution permanently, preserves `send_result_state='unknown'`, and keeps all original reservation, charge, message ID, nonce, worker and result evidence. It neither refunds nor reconstructs charges, marks the message sent or failed, nor retries it. Late results cannot apply accounting, reauthorize the retired task or change a later task's hold. Other unresolved sends and conflict, authentication or permanent holds remain restrictive. The normal scheduler respects all existing warmup eligibility, cooldown and volume limits.
 
-This recovery includes eligible historical holds after upgrade. Legacy sends without execution fencing, messages with confirmed receipt/provider evidence, and tasks with a definitive result or operator confirmation awaiting reconciliation are not retired. Campaign and other non-warmup sends keep the provider-confirmation-only policy below. No additional customer action or configuration is required for eligible warmup sends.
+This recovery includes eligible historical holds after upgrade. Legacy sends without execution fencing, messages with confirmed receipt/provider evidence, and tasks with a definitive result or operator confirmation awaiting reconciliation are not retired. Authorized campaign sends use the automatic isolation policy below. Other sends keep the provider-confirmation-only policy. No additional customer action or configuration is required for eligible warmup sends.
 
 Apply migration 315 before running the updated backend, consumer and scheduler. Upgrade all control-plane replicas before relying on the new policy. An old replica may temporarily reassert a retired task's unknown hold; the updated scheduler repairs that hold without replaying the task or touching a newer restrictive hold. Whole-instance backups and organization send-history exports retain the retirement marker. The down migration refuses to remove recorded retirements; retain the schema and roll forward rather than discarding the replay fence.
+
+#### Automatic campaign isolation
+
+After ten minutes, the result-recovery loop isolates a durably authorized, started campaign send whose outcome remains unknown. It permanently cancels the original command and releases only its matching unknown mailbox hold. Other contacts can use the mailbox while the affected campaign contact waits for confirmation. The recovery pause is independent of manual or automatic lead pauses, and ordinary resume cannot clear it.
+
+Isolation preserves the unknown outcome, original reservation, attempt history, and capacity charge. It never retries the uncertain email or infers failure from age or a missing Sent copy. A late definitive result is stored durably and applies the normal result effects once. That confirmed result removes the recovery pause while preserving an independent manual pause. A confirmed failure can permit a fresh task, but the original command remains permanently blocked.
+
+Migration 331 adds task execution protection and a portable campaign-membership recovery timestamp. It shipped in v0.6.68 with isolation off, so that release already reads recovery pauses. From the release after it, `CAMPAIGN_SEND_ISOLATION_ENABLED` defaults to on and only `false` turns it off. Roll back no further than v0.6.68 once isolation has run. An instance upgrading straight from a release older than v0.6.68 should stop its old control-plane replicas before starting new ones (the default Compose upgrade does), or set the variable to `false` until the old replicas have drained. Customers do not need to change anything on the hosted service.
+
+Database guards prevent replacement email reservations and executor starts, including alternate email branches. They cannot stop an older scheduler from executing a non-email action before writing progress, so activating while older replicas can run is unsupported. After activation, roll back only to a recovery-aware release and retain the expanded schema. No event or worker protocol changes are required. Self-hosts get the same recovery loop by default, with no cloud services.
+
+The campaign-membership protection travels with **Campaigns**, even without **Send history**. Imported task execution handles reset, and uncertain commands remain blocked. If the source result history is omitted, the destination retains the contact's protection rather than assuming delivery. The down migration refuses to discard isolation history or pending contact protection. Retain the expanded schema during rollback.
+
+#### Other held sends
+
+The same result-recovery loop frees a mailbox held by a send that can never run again or never started:
+
+- **Never started.** A campaign, Unibox or placement-test send reserved over 30 minutes ago with no executor start, attempt or result is released through the ordinary unstarted-release path under the send lock, so the worker's start check refuses it afterwards. A campaign step is handed back and sent as a fresh task.
+- **Started, outcome unknown.** A Unibox, placement-test or Warmbly Cloud send started over ten minutes ago gets `tasks.send_hold_lifted_at` (migrations 334 and 335) and stops holding its mailbox. It already cannot start a second time. Its unknown state, reservation, charge and attempt history are kept, and a late definitive result still applies once. A repeated unknown report does not hold the mailbox again.
+- **Gone.** An unknown hold whose task no longer exists is recomputed from the sends that are still unresolved. A hold left by an applied result stays until that result is resolved.
+
+Campaign and warmup sends that started keep the isolation and retirement rules above. An older replica may re-hold a lifted send during a rolling upgrade or rollback; the loop lifts it again on its next pass and keeps the first lift time. One mailbox that cannot be recovered does not hold up the others. The down migration refuses to remove recorded lifts.
 
 #### Provider-confirmed resolution
 

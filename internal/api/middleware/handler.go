@@ -26,4 +26,6 @@ type Handler struct {
 	Cache *cache.Cache
 	// PoolLinkService authenticates linked instances; nil-safe, routes answer 501.
 	PoolLinkService poollink.Service
+	// NodeCredentials verifies a fleet node's own credential on the node-only routes; nil admits none.
+	NodeCredentials NodeCredentialVerifier
 }

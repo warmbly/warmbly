@@ -64,6 +64,7 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/pkg/geo"
 	"github.com/warmbly/warmbly/internal/pkg/nodeagent"
+	"github.com/warmbly/warmbly/internal/pkg/nodeauth"
 	"github.com/warmbly/warmbly/internal/pkg/typesafe"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/tasks"
@@ -543,6 +544,7 @@ func main() {
 	}
 
 	jobsService := &jobs.JobsService{
+		CampaignIsolationEnabled:    config.CampaignSendIsolationEnabled(),
 		Bus:                         consumerBus,
 		Codec:                       consumerCodec,
 		UniboxRepository:            uniboxRepo,
@@ -767,6 +769,7 @@ func newConsumerAgent() *nodeagent.Agent {
 		Version:           os.Getenv("WARMBLY_VERSION"),
 		BaseURL:           consumerBackendURL(),
 		Token:             config.NodeAPIToken(),
+		Credential:        nodeauth.FromEnv().Credential,
 		TargetVersionPath: os.Getenv("WARMBLY_TARGET_VERSION_PATH"),
 	})
 }

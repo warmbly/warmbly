@@ -1743,7 +1743,7 @@ func (r *emailRepository) Update(ctx context.Context, orgID, emailAccountID stri
 		 FROM email_accounts ea LEFT JOIN tasks t ON t.id=ea.send_recovery_task_id
 		 WHERE ea.organization_id=$1 AND ea.id=$2 AND ea.status='active' AND ea.send_recovery_hold AND ea.send_recovery_task_id=$6 AND ea.send_recovery_reason=$7 AND ea.send_recovery_reason IN('authentication','permanent','conflict')
 		 AND (ea.send_cooldown_provider IS NULL OR ea.send_cooldown_provider=ea.provider::text) FOR UPDATE OF ea),
-		 valid AS(SELECT * FROM held WHERE NOT EXISTS(SELECT 1 FROM tasks u WHERE u.email_account_id=held.id AND u.send_result_state='unknown' AND u.send_result_applied_at IS NULL AND u.warmup_send_retired_at IS NULL)
+		 valid AS(SELECT * FROM held WHERE NOT EXISTS(SELECT 1 FROM tasks u WHERE u.email_account_id=held.id AND u.send_result_state='unknown' AND u.send_result_applied_at IS NULL AND u.warmup_send_retired_at IS NULL AND u.campaign_send_isolated_at IS NULL AND u.send_hold_lifted_at IS NULL)
 		 AND (($3='authentication_repaired' AND held.send_recovery_reason='authentication' AND $4::uuid IS NOT NULL
 		 AND EXISTS(SELECT 1 FROM tasks e WHERE e.id=$4 AND e.email_account_id=held.id AND e.send_result_state='sent' AND e.send_result_applied_at>held.completed_at AND e.send_executor_started_at>held.completed_at))
 		 OR ($3='operator_provider_confirmation' AND held.send_recovery_reason IN('authentication','permanent','conflict') AND length($5)>0 AND $4::uuid IS NOT NULL

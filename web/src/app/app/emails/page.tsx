@@ -1470,7 +1470,9 @@ function MailboxTh({ col, sort, onSort }: { col: MailboxColumn; sort: MailboxSor
 // compact spells a problem out, since it is the one reading a phone must not miss.
 function MailboxStatusPill({ box, status, historicalIssue, warming, compact = false, pending = false }: { box: Inbox; status?: AccountStatus; historicalIssue?: { status: AccountStatus; observedAt: number }; warming: boolean; compact?: boolean; pending?: boolean }) {
     if (!status && historicalIssue && box.status === "active") return <span className="text-[10.5px] text-amber-700" title={`Last observed ${new Date(historicalIssue.observedAt).toLocaleString()}. Current status unavailable.`}>Last reported issue</span>;
-    const error = status?.errors?.[0];
+    const critical = status?.errors?.find((e) => e.severity?.toUpperCase() === "CRITICAL");
+    const error = critical ?? status?.errors?.[0];
+    const stopped = !!critical || status?.health?.status === "error";
     const lifecycle = status?.send_lifecycle;
     const inCampaign = !!status?.in_campaign;
     const { resting, sending } = mailboxColdActivity(status);
@@ -1478,7 +1480,13 @@ function MailboxStatusPill({ box, status, historicalIssue, warming, compact = fa
     let problem: { label: string; text: string; Icon: LucideIcon; title: string } | null = null;
     if (box.status === "revoked") problem = { label: "Reconnect", text: "text-rose-600", Icon: UnplugIcon, title: "Access was revoked at the provider. Reconnect the mailbox to send and warm again." };
     else if (box.status !== "active") problem = { label: "Off", text: "text-slate-500", Icon: CircleSlashIcon, title: "Switched off: it neither sends, warms nor syncs. Switch it back on from the row's menu or its Settings tab." };
-    else if (error) problem = { label: "Error", text: "text-rose-600", Icon: AlertTriangleIcon, title: error.action_required ? `${error.title}. ${error.action_required}` : error.title };
+    else if (error) {
+        const title = error.action_required ? `${error.title}. ${error.action_required}` : error.title;
+        // Only a critical report stops the mailbox; a warning (a dropped connection, a busy server) is retried on its own.
+        problem = stopped
+            ? { label: "Error", text: "text-rose-600", Icon: AlertTriangleIcon, title }
+            : { label: "Retrying", text: "text-amber-600", Icon: RotateCcwIcon, title };
+    }
     if (problem) {
         const { Icon } = problem;
         return (

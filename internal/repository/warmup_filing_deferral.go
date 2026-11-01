@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/nodeauth"
 )
 
 type WarmupFilingDeferralAuthority interface {
@@ -79,7 +80,7 @@ func (r *httpSyncContextRepository) DeferWarmupFiling(ctx context.Context, reque
 	if err != nil {
 		return out, err
 	}
-	req.Header.Set("Authorization", "Bearer "+r.token)
+	nodeauth.Authorize(req, r.token)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := r.client.Do(req)
 	if err != nil {

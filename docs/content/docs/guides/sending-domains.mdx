@@ -126,7 +126,7 @@ Warmbly serves the redirect from this instance's tracking service once DNS prove
 
 ### Set one up
 
-Enter the website to send visitors to, such as `https://yourcompany.com`. It must be an `http` or `https` address on one of your workspace's own domains: a domain you have a mailbox on, a verified tracking host, your verified [forms domain](/guides/forms/), or a subdomain of one of them. Any other address is refused with `redirect_target_not_own_domain`, and so is a redirect back to the same domain or its `www`. A destination saved earlier that no longer qualifies, for example after the last mailbox on its domain is removed, is kept but shows **Not in use**, and the domain answers as if it had no redirect until you change it. **Include www** is on by default. Warmbly then lists the records to add at your DNS provider:
+Enter the website to send visitors to, such as `https://yourcompany.com`. It must be an `http` or `https` address on one of your workspace's own domains: a domain you have a mailbox on, a verified tracking host, your verified [forms domain](/guides/forms/), a website you [confirmed](#confirm-your-website), or a subdomain of one of them. A redirect back to the same domain or its `www` is refused. A destination saved earlier that no longer qualifies, for example after the last mailbox on its domain is removed, is kept but shows **Not in use**, and the domain answers as if it had no redirect until you change it or confirm the website. **Include www** is on by default. Warmbly then lists the records to add at your DNS provider:
 
 | Purpose | Type | Name | Value | Needed to verify |
 | --- | --- | --- | --- | --- |
@@ -139,6 +139,18 @@ The ownership value is unique to your workspace and the domain on this instance,
 When the tracking host has no public address to list, the root record is shown as an `ALIAS` to the tracking host instead. A provider that offers `ALIAS`, `ANAME` or a flattened `CNAME` at the root can use that in place of the address records either way: Warmbly compares the addresses the root resolves to.
 
 The root of a domain has to point here for the redirect to work, so a domain whose root already serves a website is not a candidate. Mail is unaffected: `MX`, SPF, DKIM and DMARC records live beside these and nothing here changes them.
+
+### Confirm your website
+
+Most teams keep their main website's domain out of cold outreach, so it is usually not a domain the workspace sends from. Confirm it once with a `TXT` record at that website's DNS provider:
+
+| Type | Name | Value |
+| --- | --- | --- |
+| `TXT` | `_warmbly.<website domain>` | `warmbly-verify=<value>` |
+
+The record goes on the website's registrable domain (`yourcompany.com` for `https://www.yourcompany.com`), and confirming it covers every page and subdomain under it. Saving a redirect to a website that is not confirmed yet shows the record to add instead of saving; once it is in place, **Check and save** saves it. The value is unique to your workspace on this instance, like the ownership value, so another workspace's record confirms nothing for yours. Adding it changes nothing about how your website is served. One confirmation covers every sending domain that redirects there, and [form redirects](/guides/forms/#settings) too.
+
+Warmbly looks for the record again every 6 hours. When it is definitively gone, the website is no longer confirmed and redirects to it stop, showing the record to add again; a DNS lookup that fails or times out changes nothing. While a website is not confirmed, the redirect's progress shows that step with the record, and Warmbly does not open the domain to check what visitors get, since it is holding the redirect back itself.
 
 ### Verification
 
@@ -201,7 +213,7 @@ On a self-hosted instance [linked to Warmbly Cloud](/guides/warmbly-cloud/), a r
 ### Limits
 
 - The workspace must have a mailbox on the domain.
-- The website must be on one of the workspace's own domains, as described in [set one up](#set-one-up).
+- The website must be on one of the workspace's own domains or a [confirmed website](#confirm-your-website), as described in [set one up](#set-one-up).
 - Domains of shared email providers, such as `gmail.com` or `outlook.com`, are refused.
 - One workspace per domain on an instance. While one workspace's redirect for a domain is verified, another workspace's redirect for it is refused with `domain_redirect_taken` and does not verify.
 - The instance needs a tracking host (`TRACKING_DOMAIN`), because the tracking service is what answers. Without one, redirects are not offered, except from Warmbly Cloud on a linked instance.
@@ -242,7 +254,7 @@ The vendor's domain list is read with the workspace's own API key, only for conn
 
 ## What travels in an export
 
-Redirects travel in a [workspace export](/guides/workspace-export-import/). They arrive unverified and are served once the destination's own check sees both records. One Warmbly Cloud served for the source arrives served by the destination itself. The ownership value belongs to the workspace on the instance that issued it, so the destination lists its own value: publish that value in the `TXT` record, and point the root at the destination. A tracking host is part of each mailbox's settings and travels with the mailbox; it arrives unverified, and the destination's hourly check verifies it once the `CNAME` points at the destination and the destination's ownership value is published. Forwarding set through a vendor lives at the vendor and is unaffected by a move.
+Redirects travel in a [workspace export](/guides/workspace-export-import/). They arrive unverified and are served once the destination's own check sees both records. One Warmbly Cloud served for the source arrives served by the destination itself. The ownership value belongs to the workspace on the instance that issued it, so the destination lists its own value: publish that value in the `TXT` record, and point the root at the destination. A tracking host is part of each mailbox's settings and travels with the mailbox; it arrives unverified, and the destination's hourly check verifies it once the `CNAME` points at the destination and the destination's ownership value is published. Forwarding set through a vendor lives at the vendor and is unaffected by a move. [Confirmed websites](#confirm-your-website) do not travel: their record is bound to the source workspace, so the destination shows its own record to add for each website its redirects point at.
 
 </Fold>
 

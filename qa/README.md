@@ -142,6 +142,13 @@ Recording against a stack the harness did not start is possible but explicit:
 whatever happens to answer on the default ports, which is usually another
 session's stack.
 
+## Unibox Drafts proof fixtures
+
+Apply `fixtures/unibox-drafts.sql` to this worktree's isolated rich-seed database,
+then run `QA_UNIBOX_DRAFTS_FIXTURES=1 pnpm proof unibox-drafts`. The fixture adds
+one inert pending agent reply and places one synthetic mailbox message in Drafts.
+The walkthrough opens the agent reply for review without sending it.
+
 ## Fleet admin proof fixtures
 
 `flows/fleet-telemetry.flow.ts` is opt-in: apply `fixtures/fleet-telemetry.sql`
@@ -186,6 +193,21 @@ page. Clear the stack's private Redis afterwards so the cached user is re-read.
 docker exec -i warmbly-postgres-1 psql -U warmbly -d warmbly_qa_<worktree> < fixtures/campaign-estimate.sql
 docker exec wqa-<worktree>-redis redis-cli FLUSHDB
 QA_CAMPAIGN_ESTIMATE_FIXTURES=1 pnpm proof campaign-estimate
+```
+
+## Sign-in methods proof fixtures
+
+`flows/signin-methods.flow.ts` is opt-in: apply `fixtures/signin-methods.sql` to
+this worktree's rich-seed database after the stack has signed in. It turns the
+seeded owner into an account with Apple and Google linked and no password, and
+stamps the saved session as freshly confirmed for five minutes, so record right
+away. Clear the stack's private Redis afterwards, and `pnpm stack reset-data`
+once you are done, because the owner no longer has a password.
+
+```bash
+docker exec -i warmbly-postgres-1 psql -U warmbly -d warmbly_qa_<worktree> < fixtures/signin-methods.sql
+docker exec wqa-<worktree>-redis redis-cli FLUSHDB
+QA_SIGNIN_METHODS_FIXTURES=1 pnpm proof signin-methods
 ```
 
 ## Tester sample data proof

@@ -109,9 +109,9 @@ func (s *Service) ownDomains() *owndomain.Resolver {
 	return owndomain.New(s.mailboxes, nil)
 }
 
-// ownTarget refuses a redirect destination outside the workspace's own domains.
+// ownTarget refuses a redirect destination outside the workspace's own domains, looking for a website's TXT proof first.
 func (s *Service) ownTarget(ctx context.Context, orgID uuid.UUID, target string) *errx.Error {
-	ok, xerr := s.ownDomains().Allows(ctx, orgID, target)
+	ok, xerr := s.ownDomains().Admit(ctx, orgID, target)
 	if xerr != nil {
 		return xerr
 	}
@@ -121,19 +121,69 @@ func (s *Service) ownTarget(ctx context.Context, orgID uuid.UUID, target string)
 	return nil
 }
 
-// markTarget records on the row whether its destination is on one of the workspace's own domains, and so served.
-func markTarget(r *models.DomainRedirect, own []string) {
+// markTarget records on the row whether its destination is on one of the workspace's own domains, and so served,
+// with the website's TXT record when that is what proves it.
+func (s *Service) markTarget(r *models.DomainRedirect, own owndomain.Set) {
 	if r == nil || r.LinkedInstanceID != nil || r.TargetURL == "" {
 		return
 	}
-	active := owndomain.Within(owndomain.TargetHost(r.TargetURL), own)
+	host := owndomain.TargetHost(r.TargetURL)
+	active := own.Allows(host)
 	r.TargetActive = &active
+	if !owndomain.Within(host, own.Base) {
+		r.Website = s.website(r.OrganizationID, r.TargetURL, active)
+	}
 	if !active {
 		r.TargetInactiveReason = targetInactiveMessage
+		if r.Website != nil {
+			r.TargetInactiveReason = websiteUnprovedMessage(r.Website.Domain)
+		}
 	}
 }
 
+// website is the destination's proof as the dashboard shows it, nil when websites cannot be proved here.
+func (s *Service) website(orgID uuid.UUID, target string, verified bool) *models.RedirectWebsite {
+	p := s.ownDomains().Record(orgID, target)
+	if p == nil {
+		return nil
+	}
+	return &models.RedirectWebsite{Domain: p.Domain, Verified: verified,
+		Record: &models.DNSRecord{Purpose: "website", Type: "TXT", Name: p.Name, Value: p.Value, OK: verified}}
+}
+
 const targetInactiveMessage = "Not in use: the destination is no longer on one of this workspace's own domains, so visitors get the domain's default page instead. This happens when the mailbox or verified domain it relied on was removed. Point the redirect at a page on a domain the workspace has a mailbox on, its verified tracking domain, or its verified forms domain, or reconnect that domain."
+
+func websiteUnprovedMessage(site string) string {
+	return "Not served yet: add the TXT record for " + site + " at its DNS provider to prove the website is this workspace's. Until then visitors get the domain's default page."
+}
+
+// WebsiteProof is the TXT record that makes the destination's website the workspace's, checked now.
+func (s *Service) WebsiteProof(ctx context.Context, orgID uuid.UUID, domain, target string) (*models.RedirectWebsite, *errx.Error) {
+	domain = normalizeDomain(domain)
+	if xerr := s.ownDomain(ctx, orgID, domain); xerr != nil {
+		return nil, xerr
+	}
+	cleaned, xerr := cleanTarget(target, domain)
+	if xerr != nil {
+		return nil, xerr
+	}
+	set, xerr := s.ownDomains().Set(ctx, orgID)
+	if xerr != nil {
+		return nil, xerr
+	}
+	host := owndomain.TargetHost(cleaned)
+	if owndomain.Within(host, set.Base) {
+		return &models.RedirectWebsite{Domain: owndomain.Website(host), Verified: true}, nil
+	}
+	proof, xerr := s.ownDomains().Prove(ctx, orgID, cleaned)
+	if xerr != nil {
+		return nil, xerr
+	}
+	if proof == nil {
+		return nil, owndomain.Refusal()
+	}
+	return s.website(orgID, cleaned, proof.Verified || set.Allows(host)), nil
+}
 
 func normalizeDomain(d string) string {
 	return mailhost.NormalizeDomain(strings.TrimPrefix(strings.ToLower(strings.TrimSpace(d)), "www."))
@@ -149,7 +199,7 @@ func (s *Service) Overview(ctx context.Context, orgID uuid.UUID) ([]models.Sendi
 	if err != nil {
 		return nil, errx.InternalError()
 	}
-	own, xerr := s.ownDomains().Domains(ctx, orgID)
+	own, xerr := s.ownDomains().Set(ctx, orgID)
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -157,7 +207,7 @@ func (s *Service) Overview(ctx context.Context, orgID uuid.UUID) ([]models.Sendi
 	for i := range redirects {
 		r := redirects[i]
 		s.decorate(&r, nil)
-		markTarget(&r, own)
+		s.markTarget(&r, own)
 		byDomain[r.Domain] = &r
 	}
 	var links map[string]models.VendorDomainLink
@@ -439,13 +489,18 @@ func (s *Service) probe(ctx context.Context, r *models.DomainRedirect) probe {
 // only drops when DNS says so definitively, never on a lookup that failed.
 // force asks Cloud to check again rather than report its last verdict.
 func (s *Service) check(ctx context.Context, r *models.DomainRedirect, force bool) (*models.DomainRedirect, *errx.Error) {
+	ownTarget, ownErr := s.ownDomains().Admit(ctx, r.OrganizationID, r.TargetURL)
 	if r.ServedBy == models.RedirectServedByCloud {
 		// Cloud cannot see this workspace's domains, so a destination that is no longer its own stops being served there from here.
-		if ok, xerr := s.ownDomains().Allows(ctx, r.OrganizationID, r.TargetURL); xerr == nil && !ok {
+		if ownErr == nil && !ownTarget {
 			if xerr := s.releaseCloud(ctx, r.OrganizationID, r.Domain); xerr != nil {
 				log.Warn().Str("domain", r.Domain).Str("code", xerr.ResponseCode()).Msg("domain redirect: could not stop Cloud serving a destination off the workspace's domains")
 			}
-			return s.stop(ctx, r, targetInactiveMessage)
+			msg := targetInactiveMessage
+			if w := s.website(r.OrganizationID, r.TargetURL, false); w != nil {
+				msg = websiteUnprovedMessage(w.Domain)
+			}
+			return s.stop(ctx, r, msg)
 		}
 		return s.checkCloud(ctx, r, force)
 	}
@@ -469,9 +524,9 @@ func (s *Service) check(ctx context.Context, r *models.DomainRedirect, force boo
 		}
 		return nil, errx.InternalError()
 	}
-	// DNS proves the name points here; opening it proves a visitor gets the redirect.
+	// DNS proves the name points here; opening it proves a visitor gets the redirect, which is withheld until the destination is the workspace's.
 	var reach *models.RedirectReach
-	if verified && s.reach != nil {
+	if verified && s.reach != nil && ownErr == nil && ownTarget {
 		got := s.reach.Probe(ctx, r.Domain, r.TargetURL)
 		// Tracking forgets a miss within a minute, so one that outlasts that is a real answer: this tracking service has no redirect for the name.
 		if got.Hint == models.RedirectHintSettling && r.Verified && r.VerifiedAt != nil && time.Since(*r.VerifiedAt) > settleGrace {
@@ -504,8 +559,8 @@ func (s *Service) finish(ctx context.Context, before *models.DomainRedirect, p *
 	}
 	s.decorate(fresh, p)
 	if fresh.LinkedInstanceID == nil {
-		if own, xerr := s.ownDomains().Domains(ctx, fresh.OrganizationID); xerr == nil {
-			markTarget(fresh, own)
+		if own, xerr := s.ownDomains().Set(ctx, fresh.OrganizationID); xerr == nil {
+			s.markTarget(fresh, own)
 		}
 	}
 	return fresh, nil
@@ -619,6 +674,7 @@ func (s *Service) StartSweep(ctx context.Context) {
 		}
 		wg.Wait()
 		s.reconcileCloud(ctx)
+		s.ownDomains().Recheck(ctx)
 		return nil
 	})
 }

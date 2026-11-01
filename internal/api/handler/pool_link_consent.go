@@ -128,11 +128,11 @@ func (h *Handler) PoolLinkOAuthContinue(c *gin.Context) {
 		return
 	}
 	// The form posts the cookie's value, which only the consent page rendered in this browser knows.
-	// A GET with query values is still taken for a page rendered by the previous release.
-	state, sent := c.Query("state"), c.Query("t")
-	if c.Request.Method == http.MethodPost {
-		state, sent = c.PostForm("state"), c.PostForm("t")
+	if c.Request.Method != http.MethodPost {
+		renderBrokerNotice(c, poollink.ErrOAuthBrowser)
+		return
 	}
+	state, sent := c.PostForm("state"), c.PostForm("t")
 	cookie, _ := c.Cookie(brokerCookieName)
 	if cookie == "" || subtle.ConstantTimeCompare([]byte(cookie), []byte(sent)) != 1 {
 		renderBrokerNotice(c, poollink.ErrOAuthBrowser)
@@ -143,9 +143,5 @@ func (h *Handler) PoolLinkOAuthContinue(c *gin.Context) {
 		renderBrokerNotice(c, xerr)
 		return
 	}
-	code := http.StatusFound
-	if c.Request.Method == http.MethodPost {
-		code = http.StatusSeeOther
-	}
-	c.Redirect(code, to)
+	c.Redirect(http.StatusSeeOther, to)
 }

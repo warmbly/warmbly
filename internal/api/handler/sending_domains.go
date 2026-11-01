@@ -148,6 +148,30 @@ func (h *Handler) VerifyDomainRedirect(c *gin.Context) {
 	c.JSON(http.StatusOK, r)
 }
 
+type websiteProofRequest struct {
+	TargetURL string `json:"target_url"`
+}
+
+// VerifyRedirectWebsite is POST /emails/domains/:domain/redirect/website: the
+// TXT record that makes the destination's website the workspace's, checked now. Safe to repeat.
+func (h *Handler) VerifyRedirectWebsite(c *gin.Context) {
+	orgID, _, ok := importCaller(c)
+	if !ok {
+		return
+	}
+	var req websiteProofRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errx.Handle(c, errx.ErrInvalid)
+		return
+	}
+	w, xerr := h.SendingDomainService.WebsiteProof(c.Request.Context(), orgID, c.Param("domain"), req.TargetURL)
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, w)
+}
+
 // DeleteDomainRedirect is DELETE /emails/domains/:domain/redirect.
 func (h *Handler) DeleteDomainRedirect(c *gin.Context) {
 	orgID, _, ok := importCaller(c)

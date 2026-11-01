@@ -1010,11 +1010,22 @@ export interface LoginCodeExemption {
     email: string;
     reason?: string | null;
     granted_at?: string | null;
-    /** When the handed-out password stops working; absent for an account
-     *  exempted without one. */
+    /** When the issued initial password stops working; absent once the holder
+     *  has chosen their own, or for an account exempted without one. */
     password_expires_at?: string | null;
     test_workspace_id?: string | null;
     sample_data_seeded_at?: string | null;
+    /** Created through the tester flow, so it can be issued a new password. */
+    created_as_tester?: boolean;
+}
+
+/** A fresh initial password for an existing tester, readable this once. */
+export interface ReissuedTesterPassword {
+    user_id: string;
+    password: string;
+    /** 48 hours after issuance. */
+    password_expires_at: string;
+    password_change_required: boolean;
 }
 
 /** The one time the password is readable. It is not stored in a form anyone
@@ -1024,8 +1035,10 @@ export interface CreatedTester {
     email: string;
     organization_id: string;
     password: string;
-    /** When the password stops working. */
+    /** When the password stops working, 48 hours after issuance at most. */
     password_expires_at: string;
+    /** Always true: the holder replaces this initial password at first sign-in. */
+    password_change_required?: boolean;
     /** True when the tester joined a workspace that already existed rather
      *  than one minted for it. */
     joined_existing: boolean;

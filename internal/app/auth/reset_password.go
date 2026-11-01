@@ -77,7 +77,39 @@ func (s *authService) startPasswordReset(ctx context.Context, data *ResetPasswor
 		errs.CaptureException(xerr)
 		return errx.InternalError()
 	}
+	return s.emailResetLink(ctx, u, data.Email)
+}
 
+// ErrPasswordLoginDisabled refuses a password link on a deployment that turned
+// password sign-in off, where the password could never be used.
+var ErrPasswordLoginDisabled = errx.NewWithIdentifier(errx.Forbidden, "password_login_disabled",
+	"Password sign-in is turned off on this server, so a password cannot be set.")
+
+// SendPasswordLink emails the signed-in user a link to set a password, so an
+// account created through a provider can move to email sign-in in place.
+func (s *authService) SendPasswordLink(ctx context.Context, userID uuid.UUID) *errx.Error {
+	if s.policy != nil && s.policy.DisablePasswordLogin {
+		return ErrPasswordLoginDisabled
+	}
+	u, xerr := s.userService.GetUser(ctx, userID)
+	if xerr != nil {
+		return xerr
+	}
+	// Same budget as Forgot password, keyed on the same address.
+	address := normalizeEmail(u.Email)
+	if err := s.passwordResetLimit(ctx, address); err != nil {
+		return err
+	}
+	if err := s.emailResetLink(ctx, u, address); err != nil {
+		s.refundPasswordResetLimit(ctx, address)
+		return err
+	}
+	return nil
+}
+
+// emailResetLink mints a single-use reset link for the account and mails it to
+// address, which must be the account's own.
+func (s *authService) emailResetLink(ctx context.Context, u *models.User, address string) *errx.Error {
 	sessionID := uuid.New()
 	nonce, err := crypt.Nonce()
 	if err != nil {
@@ -88,7 +120,7 @@ func (s *authService) startPasswordReset(ctx context.Context, data *ResetPasswor
 	issuedAt := time.Now()
 	expiresAt := issuedAt.Add(PasswordResetTTL)
 
-	token, err := s.tokenService.GenerateTokenFor(tokenpkg.PurposePasswordReset, user.ID, sessionID, data.Email, nonce, issuedAt, expiresAt)
+	token, err := s.tokenService.GenerateTokenFor(tokenpkg.PurposePasswordReset, u.ID, sessionID, address, nonce, issuedAt, expiresAt)
 	if err != nil {
 		errs.CaptureException(err)
 		return errx.InternalError()

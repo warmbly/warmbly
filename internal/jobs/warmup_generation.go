@@ -47,17 +47,16 @@ func (j *WarmupGenerationJob) Run(ctx context.Context) error {
 
 	cadence := time.Duration(settings.CadenceHours) * time.Hour
 	j.mu.Lock()
+	defer j.mu.Unlock()
 	if !j.lastRun.IsZero() && cadence > 0 && time.Since(j.lastRun) < cadence {
-		j.mu.Unlock()
 		return nil
 	}
-	j.lastRun = time.Now()
-	j.mu.Unlock()
 
 	if err := j.svc.RunScheduled(ctx); err != nil {
 		errs.CaptureException(err)
 		return err
 	}
+	j.lastRun = time.Now()
 	return nil
 }
 

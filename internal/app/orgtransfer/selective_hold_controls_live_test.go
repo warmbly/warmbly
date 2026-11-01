@@ -207,7 +207,8 @@ func nativeWarmupArchiveFixture(t *testing.T, reply bool) (*selectiveHoldReviewF
 		if err := lineage.RecordVerifiedWarmupParent(t.Context(), parent, f.mailbox, receipt, "native-local-thread", repository.WarmupReceiptProof{SenderAddress: recipient.String() + "@fixture.invalid", MessageID: result.MessageID}); err != nil {
 			t.Fatal(err)
 		}
-		if bound, err := lineage.BindWarmupSuccessor(t.Context(), parent, f.mailbox, receipt, time.Now().Add(-time.Second)); err != nil || !bound {
+		f.exec(t, `UPDATE tasks SET scheduled_at=NOW()+INTERVAL '1 hour' WHERE id=$1`, f.task)
+		if bound, err := lineage.BindWarmupSuccessor(t.Context(), parent, f.mailbox, receipt, time.Now().Add(time.Hour)); err != nil || !bound {
 			t.Fatalf("native receipt did not bind current reply: %v %v", bound, err)
 		}
 		if err := lineage.RescheduleWarmupTask(t.Context(), f.task, time.Now().Add(-time.Minute)); err != nil {

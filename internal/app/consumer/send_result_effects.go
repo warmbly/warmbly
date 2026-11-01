@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -109,6 +110,24 @@ func (s *JobsService) reconcileRecordedSendResults(ctx context.Context) {
 		}
 		if err != nil {
 			log.Warn().Err(err).Str("task_id", result.TaskID.String()).Msg("recorded send outcome reconciliation deferred")
+		}
+	}
+	if isolator, ok := s.TaskRepo.(interface {
+		IsolateUnknownCampaignSends(context.Context, time.Time, int) (int, error)
+	}); ok && s.CampaignIsolationEnabled {
+		if _, err := isolator.IsolateUnknownCampaignSends(ctx, time.Now().Add(-10*time.Minute), 200); err != nil {
+			log.Warn().Err(err).Msg("automatic campaign send recovery deferred")
+		}
+	}
+	if holds, ok := s.TaskRepo.(interface {
+		RecoverUnknownSendHolds(context.Context, time.Time, time.Time, int) (int, error)
+	}); ok {
+		now := time.Now()
+		n, err := holds.RecoverUnknownSendHolds(ctx, now.Add(-10*time.Minute), now.Add(-time.Duration(config.CampaignSendReclaimAfterMinutes)*time.Minute), 200)
+		if err != nil {
+			log.Warn().Err(err).Msg("unknown send hold recovery deferred")
+		} else if n > 0 {
+			log.Info().Int("recovered", n).Msg("released mailboxes held by unknown sends that can never run again")
 		}
 	}
 }

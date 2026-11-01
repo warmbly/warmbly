@@ -12,6 +12,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/generation"
+	"github.com/warmbly/warmbly/internal/pkg/nodeauth"
 )
 
 type DiagnosticAuthAuthority interface {
@@ -36,7 +38,7 @@ func (r *taskRepository) DiagnosticAuth(ctx context.Context, req models.Diagnost
  JOIN warmup_pool_participants wpp ON wpp.email_account_id=ea.id
  JOIN warmup_pools wp ON wp.id=wpp.pool_id JOIN fleet_nodes n ON n.id=ea.worker_id
  WHERE wt.token=$1 AND ea.id=$2 AND ea.worker_id=$3 AND n.role='worker' AND n.active AND n.warmup_send_protocol>=2 AND n.last_seen_at>NOW()-INTERVAL '10 minutes'
- AND w.lineage_version=1 AND w.scenario_version='diagnostic-v1' AND w.rendering_version='canonical-v1'
+ AND w.lineage_version=1 AND w.scenario_version IN ('`+generation.DiagnosticScenarioVersion+`','`+generation.WarmupScenarioVersion+`') AND w.rendering_version='`+generation.CanonicalRenderingVersion+`'
  AND wt.expires_at>NOW() AND wt.sent_retired_at IS NULL AND wt.sent_message_id<>''
  AND EXISTS(SELECT 1 FROM tasks sent WHERE sent.id=wt.task_id AND sent.status='completed' AND sent.email_account_id=wt.sender_account_id)
  AND (btrim(wt.sent_message_id,'<>')=$4 OR EXISTS(SELECT 1 FROM warmup_received wr
@@ -119,7 +121,7 @@ func (r *httpSyncContextRepository) DiagnosticAuth(ctx context.Context, in model
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+r.token)
+	nodeauth.Authorize(req, r.token)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := r.client.Do(req)
 	if err != nil {

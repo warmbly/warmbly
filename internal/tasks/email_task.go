@@ -13,6 +13,7 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
+	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/pkg/mailhost"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/scheduler"
@@ -351,10 +352,18 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 		}
 	}
 
-	// STEP 7: Build a new warmup message when not replying. Content comes from
-	// the AI bank (segment-aware) when enabled, else the static library.
+	// STEP 7: Draw content neither mailbox has seen recently; only a database failure retries.
 	if !shouldReply {
-		content = s.pickNewWarmupContent(ctx, *account)
+		var contentErr error
+		content, contentErr = s.pickNewWarmupContent(ctx, *account, partner.ID, taskID)
+		if contentErr != nil {
+			if !errors.Is(contentErr, errWarmupContentUnavailable) {
+				errs.CaptureException(contentErr)
+				return errx.InternalError()
+			}
+			log.Warn().Str("email_account_id", account.ID.String()).Msg("Warmup has no content to send; the static library is empty")
+			return s.closeWarmupThread(ctx, taskID, account.ID)
+		}
 	}
 	subject, emailBody, conversationTheme, contentSource, conversationID = content.subject, content.body, content.theme, content.contentSource, content.conversationID
 
@@ -1119,223 +1128,21 @@ func (s *tasksService) publishWarmupEmailSentEvent(ctx context.Context, task *Ta
 	}
 }
 
-// generateWarmupSubject picks a warmup subject. To reduce content
-// fingerprinting risk, ~40% of the time we synthesize a subject from
-// slot templates (yielding thousands of unique strings) instead of
-// returning a literal from the static set.
-func generateWarmupSubject() string {
-	if rand.Float64() < 0.4 {
-		if s := synthesizeWarmupSubject(); s != "" {
-			return s
-		}
-	}
-	subjects := warmupSubjectLiterals()
-	return subjects[rand.Intn(len(subjects))]
-}
-
-// synthesizeWarmupSubject composes a subject from slot fragments. With
-// the current slot dictionaries this yields several thousand distinct
-// strings, which is harder for a vendor corpus-classifier to fingerprint.
-func synthesizeWarmupSubject() string {
-	templates := []string{
-		"{adj} {noun}",
-		"{adj} {noun} {timeRef}",
-		"{verb} {noun}",
-		"{verb} on {noun}",
-		"{question} about {noun}",
-		"{timeRef} {noun}",
-		"{noun} {timeRef}",
-		// NB: no "Re:"/"Fwd:" template here — a fabricated reply prefix on a
-		// first-touch send is a deception signal and CAN-SPAM exposure. The
-		// genuine reply path adds "Re:" itself when there is a real
-		// In-Reply-To header.
-	}
-	adj := []string{"quick", "small", "short", "tiny", "casual", "friendly", "useful", "interesting", "brief", "minor"}
-	noun := []string{"check-in", "follow up", "note", "ping", "thought", "update", "idea", "heads up", "favor", "question", "nudge", "share"}
-	verb := []string{"Following up", "Circling back", "Wanted your take", "Touching base", "Picking up", "Adding"}
-	question := []string{"Quick question", "Curious", "Wanted your view", "Thought"}
-	timeRef := []string{"this week", "before EOD", "when free", "this morning", "today", "later", "if useful"}
-
-	tpl := templates[rand.Intn(len(templates))]
-	r := strings.NewReplacer(
-		"{adj}", capitalize(adj[rand.Intn(len(adj))]),
-		"{noun}", noun[rand.Intn(len(noun))],
-		"{verb}", verb[rand.Intn(len(verb))],
-		"{question}", question[rand.Intn(len(question))],
-		"{timeRef}", timeRef[rand.Intn(len(timeRef))],
-	)
-	return strings.TrimSpace(r.Replace(tpl))
-}
-
-func capitalize(s string) string {
-	if s == "" {
-		return ""
-	}
-	return strings.ToUpper(s[:1]) + s[1:]
-}
-
-func warmupSubjectLiterals() []string {
-	return []string{
-		// Casual check-ins
-		"Quick question",
-		"Following up",
-		"Checking in",
-		"Quick update",
-		"Hope your week is going well",
-		"Touching base",
-		"Small update",
-		"Just wanted to say hi",
-		"How have you been?",
-		"Long time no chat",
-
-		// Sharing / referencing
-		"Thought you might find this interesting",
-		"Wanted to share this",
-		"Good read I came across",
-		"Saw this and thought of you",
-		"Worth a look",
-		"You might like this",
-		"Had to share this with you",
-		"Reminded me of our last chat",
-		"Came across something relevant",
-
-		// Engagement / questions
-		"Any thoughts on this?",
-		"A quick favor",
-		"When you get a chance",
-		"Just a thought",
-		"Would love your input",
-		"Curious what you think",
-		"Got a minute?",
-		"Need a quick opinion",
-
-		// Thread-like / follow-up
-		"Re: our conversation",
-		"One more thing",
-		"Circling back",
-		"Heads up",
-		"Forgot to mention",
-		"One thing I meant to ask",
-		"Adding to what we discussed",
-		"Quick follow up from earlier",
-
-		// Seasonal / time-based
-		"Happy Monday",
-		"End of week thought",
-		"Midweek check-in",
-		"Hope the quarter is going well",
-		"Starting the week strong",
-
-		// Professional / value-add
-		"Resource you might find useful",
-		"Something worth bookmarking",
-		"Interesting perspective on this",
-		"Quick tip I picked up",
-		"Thought this was insightful",
-	}
-}
-
-// conversationForTheme returns a conversation matching the requested theme,
-// falling back to a random conversation if the theme is empty or unknown.
-// Use this when replying so the reply body stays on-topic with the original
-// thread instead of jumping subjects mid-conversation.
-func conversationForTheme(theme string) Conversation {
-	if theme == "" {
-		return randomWarmupConversation()
-	}
-	var matches []Conversation
-	for _, c := range warmupConversations() {
-		if c.Theme == theme {
-			matches = append(matches, c)
-		}
-	}
-	if len(matches) == 0 {
-		return randomWarmupConversation()
-	}
-	return matches[rand.Intn(len(matches))]
-}
-
-func randomWarmupConversation() Conversation {
-	conversations := warmupConversations()
-	return conversations[rand.Intn(len(conversations))]
-}
-
-// staticConvID derives a STABLE id for a static-library conversation from its
-// content. Previously each call to warmupConversations() minted fresh uuid.New()
-// ids, so the conversation_id recorded on a warmup token never matched across
-// sends — defeating cohort correlation and dedupe. A deterministic id makes the
-// static library traceable the same way the AI bank rows are.
+// staticConvID derives a stable id for a static-library conversation from its content.
 func staticConvID(theme, description string) uuid.UUID {
 	return uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmup-static:"+theme+"|"+description))
 }
 
+// warmupConversations is the hand-written library that keeps warmup sending when no AI bank is configured.
 func warmupConversations() []Conversation {
-	conversations := []Conversation{
-		// Productivity & workflow
-		{Theme: "productivity", Description: "I have been trying a few workflow changes and wondered what worked best for your week.", Messages: []string{"How do you structure focused work blocks?", "Do you batch similar tasks or tackle them as they come?"}},
-		{Theme: "productivity", Description: "I started time-blocking my calendar this month and the results have been interesting so far.", Messages: []string{"Have you tried any time management methods that actually stuck?", "What does your typical morning routine look like?"}},
-		{Theme: "automation", Description: "I automated a couple of repetitive tasks recently and it freed up more time than I expected.", Messages: []string{"Are there any repetitive tasks in your day that you have managed to streamline?"}},
-
-		// Learning & growth
-		{Theme: "learning", Description: "I came across a useful article and it got me curious about what resources you rely on lately.", Messages: []string{"Any newsletter or podcast you consistently recommend?", "What is the best thing you have learned recently?"}},
-		{Theme: "learning", Description: "I have been dedicating an hour each week to learning something new and it has been surprisingly rewarding.", Messages: []string{"How do you make time for professional development?"}},
-		{Theme: "courses", Description: "I just wrapped up an online course that was really practical and well-structured.", Messages: []string{"Have you taken any courses lately that were worth the investment?"}},
-
-		// Collaboration & teams
-		{Theme: "collaboration", Description: "I was thinking about how teams keep communication clear when work gets busy.", Messages: []string{"What has helped your team keep projects moving smoothly?", "How do you handle async communication across time zones?"}},
-		{Theme: "meetings", Description: "We cut our meeting load in half last month and the team seems more productive overall.", Messages: []string{"How do you decide which meetings are actually necessary?", "Have you found a good balance between sync and async?"}},
-
-		// Industry & trends
-		{Theme: "industry", Description: "I noticed a shift in how people are approaching this topic and wanted to get your take.", Messages: []string{"Have you seen any changes in how your industry handles this?", "What trends are you paying attention to right now?"}},
-		{Theme: "market", Description: "The market has been moving fast lately and I have been trying to figure out what matters most.", Messages: []string{"How are you adapting your approach given recent changes?"}},
-
-		// Tools & technology
-		{Theme: "tools", Description: "I recently switched up a few tools in my daily workflow and the difference has been noticeable.", Messages: []string{"What tools have made the biggest impact for you this year?", "Have you found a good alternative for that?"}},
-		{Theme: "software", Description: "I have been testing a new project management setup and wondering if I am overcomplicating things.", Messages: []string{"What is your go-to for keeping projects organized?", "Do you prefer simple tools or full-featured platforms?"}},
-
-		// Networking & catch-ups
-		{Theme: "networking", Description: "It has been a while since we last connected and I wanted to see how things are going on your end.", Messages: []string{"Any new projects or goals you are excited about?", "What has been keeping you busy lately?"}},
-		{Theme: "catchup", Description: "I was cleaning up my contacts list and realized we have not caught up in ages.", Messages: []string{"How has your year been going so far?", "Anything interesting happening on your side?"}},
-		{Theme: "introduction", Description: "I met someone recently who reminded me of the work you do and thought you two should connect.", Messages: []string{"Would you be open to a quick intro?"}},
-
-		// Feedback & advice
-		{Theme: "feedback", Description: "I have been working on something and would really value a second opinion before moving forward.", Messages: []string{"Would you mind taking a quick look when you have a moment?", "I would appreciate your honest feedback on this."}},
-		{Theme: "advice", Description: "I am facing a decision and I think your perspective could really help me think it through.", Messages: []string{"Have you dealt with anything similar before?", "What would you do in this situation?"}},
-
-		// Planning & strategy
-		{Theme: "planning", Description: "I am mapping out priorities for the next quarter and trying to stay realistic about what is achievable.", Messages: []string{"How do you decide what to focus on when everything feels urgent?", "What is your process for setting quarterly goals?"}},
-		{Theme: "strategy", Description: "I have been rethinking how we allocate resources across projects and it is harder than it sounds.", Messages: []string{"How do you balance long-term bets with short-term wins?"}},
-
-		// Reading & content
-		{Theme: "reading", Description: "I just finished a great book that changed how I think about a few things at work.", Messages: []string{"Read anything good lately that stuck with you?", "Any books you keep recommending to people?"}},
-		{Theme: "content", Description: "I have been curating a reading list and looking for suggestions outside my usual topics.", Messages: []string{"What is the most surprising thing you have read recently?"}},
-
-		// Travel & experiences
-		{Theme: "travel", Description: "I am starting to plan a trip and looking for recommendations from people who have been there.", Messages: []string{"Any travel tips or favorite destinations you would suggest?", "Where was the last place you traveled that exceeded expectations?"}},
-		{Theme: "food", Description: "I tried a new restaurant last week that was genuinely impressive and thought you might enjoy it too.", Messages: []string{"Have you discovered any great spots lately?"}},
-
-		// Wellness & balance
-		{Theme: "wellness", Description: "I have been trying to be more intentional about work-life balance and curious how others handle it.", Messages: []string{"What do you do to recharge after a busy stretch?", "Have you found any habits that help you stay consistent?"}},
-		{Theme: "fitness", Description: "I recently picked up a new workout routine and it has been making a real difference in my energy levels.", Messages: []string{"Do you have a go-to way to stay active during busy weeks?"}},
-
-		// Events & community
-		{Theme: "events", Description: "I saw a conference coming up that might be relevant and wanted to flag it for you.", Messages: []string{"Are you attending any events or meetups soon?", "What was the last event you went to that was actually worthwhile?"}},
-		{Theme: "community", Description: "I have been getting more involved in a professional community and it has been a great source of ideas.", Messages: []string{"Are you part of any groups or communities you find valuable?"}},
-
-		// Hiring & careers
-		{Theme: "hiring", Description: "We have been expanding the team and I have been learning a lot about what makes a strong hire.", Messages: []string{"What do you look for when bringing someone new on board?"}},
-		{Theme: "career", Description: "I have been reflecting on where I want to be in the next few years and it is a useful exercise.", Messages: []string{"How do you think about career growth without burning out?"}},
-
-		// Gratitude & appreciation
-		{Theme: "gratitude", Description: "I was thinking about the people who have been helpful to me this year and you came to mind.", Messages: []string{"Just wanted to say thanks for being a great connection.", "Appreciate you always being willing to share your perspective."}},
-	}
-
-	// Assign stable, content-derived ids so a given static conversation has the
-	// same id on every send (see staticConvID).
+	conversations := make([]Conversation, 0, len(warmupLibraryWork)+len(warmupLibraryLife)+len(warmupLibraryCraft))
+	conversations = append(conversations, warmupLibraryWork...)
+	conversations = append(conversations, warmupLibraryLife...)
+	conversations = append(conversations, warmupLibraryCraft...)
 	for i := range conversations {
 		conversations[i].ID = staticConvID(conversations[i].Theme, conversations[i].Description)
+		conversations[i].Version = generation.WarmupScenarioVersion
 	}
-
 	return conversations
 }
 

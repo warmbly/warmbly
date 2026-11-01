@@ -49,6 +49,7 @@ jobs:
           filters: |
             go-services:
               - '.github/workflows/ci.yml'
+              - '.github/scripts/live-tests-summary*.mjs'
               - 'go.mod'
               - 'go.sum'
               - 'internal/**'
@@ -211,6 +212,10 @@ jobs:
       - name: Run golangci-lint
         if: matrix.suite == 'lint'
         run: make lint
+
+      - name: Check live-test reporting
+        if: matrix.suite == 'lint'
+        run: node --test .github/scripts/live-tests-summary.test.mjs
 
       - name: Verify protobuf files are up to date
         if: matrix.suite == 'lint'
@@ -417,6 +422,32 @@ jobs:
             grep -q "^--- PASS: $test " monitoring-clock.log
           done
 
+      - name: Approved warmup content and queued source regressions (PostgreSQL)
+        if: matrix.suite == 'live-2'
+        env:
+          WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
+        run: |
+          set -euo pipefail
+          go test -race -v ./internal/repository -run '^TestLiveContentPool' -count=1 | tee content-pool.log
+          go test -race -v ./internal/tasks -run '^TestLiveWarmupDispatchRechecksOpeningSourceAndExactRecipient$' -count=1 | tee -a content-pool.log
+          if grep -q -- '--- SKIP:' content-pool.log; then
+            echo "Warmup content and queued source regressions must execute without skips"
+            exit 1
+          fi
+          for test in TestLiveContentPoolRejectsDuplicateBatchContentUnderConcurrency \
+            TestLiveContentPoolRetryReservesOnceAndReplenishesForExposedMailboxes \
+            TestLiveContentPoolPreservesPlansForFutureDistinctMailboxes \
+            TestLiveContentPoolConcurrentPairsAlwaysReceiveContent \
+            TestLiveContentPoolPrefersLessUsedEligiblePlans \
+            TestLiveContentPoolPrefersWhatNeitherMailboxSawRecently \
+            TestLiveContentPoolExhaustedPairRepeatsTheLeastRecentlySeen \
+            TestLiveContentPoolTokenCleanupKeepsExposure \
+            TestLiveContentPoolStaticRowsOnlyFromTheCurrentLibrary \
+            TestLiveContentPoolDemandCountsPlansRatherThanReplies \
+            TestLiveWarmupDispatchRechecksOpeningSourceAndExactRecipient; do
+            grep -q "^--- PASS: $test " content-pool.log
+          done
+
       - name: Warmup generic execution authority regressions (PostgreSQL)
         if: matrix.suite == 'live-2'
         env:
@@ -431,7 +462,8 @@ jobs:
             TestLiveWarmupGenericCancellationPreservesOtherHolds \
             TestLiveWarmupGenericStartAndLateResult \
             TestLiveWarmupGenericStartAfterCompatibleOverwrite \
-            TestLiveWarmupGenericCannotRepeatStartedWarmupClaim; do
+            TestLiveWarmupGenericCannotRepeatStartedWarmupClaim \
+            TestLiveWarmupGenericDeniesHistoricalDiagnosticContent; do
             grep -q "^--- PASS: $test " warmup-generic-execution.log
           done
 
@@ -594,7 +626,7 @@ jobs:
         if: matrix.suite == 'live-1'
         env:
           WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
-        run: go test -race -v -p 1 ./internal/repository ./internal/infrastructure/db -run '^TestLiveUnibox(Search|ReadStream|SearchUpgrade|GetBySender)' -count=1
+        run: go test -race -v -p 1 ./internal/repository ./internal/infrastructure/db -run '^TestLiveUnibox(Search|ReadStream|SearchUpgrade|GetBySender|ScopeDraftsCount)' -count=1
 
       - name: Notification digest authorization retries (Redis)
         if: matrix.suite == 'live-3'
@@ -616,6 +648,70 @@ jobs:
           files: coverage.out
           flags: go
           fail_ci_if_error: false
+
+  # Keep advisory coverage separate until #1078's failure inventory is resolved.
+  go-live-advisory:
+    name: PostgreSQL catch-all (advisory)
+    needs: changes
+    if: needs.changes.outputs.go-services == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    continue-on-error: true
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: warmbly
+          POSTGRES_PASSWORD: warmbly
+          POSTGRES_DB: warmbly_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U warmbly -d warmbly_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Prepare isolated regression database
+        env:
+          PRIMARY_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
+        run: go run ./cmd/migrate
+      - name: Run every TestLive test
+        id: live
+        timeout-minutes: 35
+        env:
+          WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
+          WARMBLY_TEST_REDIS: redis://127.0.0.1:6379/15
+        run: |
+          set -o pipefail
+          go test -json -race -p 1 -timeout 10m -count=1 -run '^TestLive' ./... 2>&1 | tee live-tests.jsonl
+      - name: Summarize advisory results
+        if: always()
+        env:
+          LIVE_TEST_OUTCOME: ${{ steps.live.outcome }}
+        run: node .github/scripts/live-tests-summary.mjs live-tests.jsonl
+      - name: Retain complete live-test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-live-advisory-${{ github.run_attempt }}
+          path: live-tests.jsonl
+          if-no-files-found: warn
+          retention-days: 14
 
   web-ci:
     name: Web CI

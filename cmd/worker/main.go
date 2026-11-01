@@ -28,6 +28,7 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability"
 	"github.com/warmbly/warmbly/internal/pkg/nodeagent"
+	"github.com/warmbly/warmbly/internal/pkg/nodeauth"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -259,6 +260,7 @@ func newNodeAgent(workerID uuid.UUID, bindIP string) *nodeagent.Agent {
 		Version:            buildVersion(),
 		BaseURL:            os.Getenv("ENCRYPTED_KEYS_BACKEND_URL"),
 		Token:              config.NodeAPIToken(),
+		Credential:         nodeauth.FromEnv().Credential,
 		// Written for the host-side updater installed by `warmbly join`.
 		TargetVersionPath: os.Getenv("WARMBLY_TARGET_VERSION_PATH"),
 		Condition:         wsmtp.EgressCondition,

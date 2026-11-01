@@ -527,11 +527,12 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 		voiceBlock = s.voice.VoiceInstructions(ctx, inv.OrgID)
 	}
 	req := generation.AgentRequest{
-		System:        s.systemPrompt(sess, voiceBlock, skillsBlock),
-		Messages:      genMsgs,
-		Tools:         s.boundTools(ctx, inv, emit),
-		Model:         model,
-		MaxIterations: DefaultRunBudget,
+		System:               s.systemPrompt(sess, voiceBlock, skillsBlock),
+		Messages:             genMsgs,
+		Tools:                s.boundTools(ctx, inv, emit),
+		Model:                model,
+		MaxIterations:        DefaultRunBudget,
+		ReserveFinalResponse: true,
 		OnEvent: func(ev generation.AgentEvent) {
 			switch ev.Type {
 			case generation.EventText:
@@ -603,6 +604,15 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 	}
 
 	result, rerr := s.provider.RunAgent(ctx, req)
+	// Receipts and refunds get a bounded window after request cancellation.
+	finalizeCtx, cancelFinalize := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancelFinalize()
+	// Preserve completed tool actions even when a later provider call fails.
+	if result != nil && len(result.Messages) > baseline {
+		if perr := s.persist(finalizeCtx, sess.OrgID, sess.UserID, sess.ID, result.Messages[baseline:], result.TokensUsed); perr != nil {
+			log.Printf("aiagent: transcript persist failed (org=%s session=%s): %v", inv.OrgID, sess.ID, perr)
+		}
+	}
 	if rerr != nil {
 		// The client only ever sees the generic message; the real cause goes to
 		// the server log so a failing provider is debuggable.
@@ -611,7 +621,7 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 		// (PreIteration); refund it so the user is not billed for output they
 		// never received. Nothing to refund on the free/local path.
 		if chargeCredits {
-			if bal, gerr := s.credits.Grant(ctx, inv.OrgID, credits.CostAgentIteration, "agent_iteration_refund"); gerr == nil {
+			if bal, gerr := s.credits.Grant(finalizeCtx, inv.OrgID, credits.CostAgentIteration, "agent_iteration_refund"); gerr == nil {
 				lastRemaining = bal
 			}
 		}
@@ -627,13 +637,6 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 		mctx := models.WithCreditMeta(ctx, models.CreditMeta{ActorID: inv.UserID, Context: models.CreditContext{SessionID: sess.ID.String()}})
 		if extra, serr := s.credits.SettleUsage(mctx, inv.OrgID, result.Iterations*credits.CostAgentIteration, model, result.TokensUsed, "agent_iteration", messageID+":usage"); serr == nil && extra > 0 {
 			lastRemaining -= extra
-		}
-	}
-
-	// Persist the new transcript tail.
-	if len(result.Messages) > baseline {
-		if perr := s.persist(ctx, sess.OrgID, sess.UserID, sess.ID, result.Messages[baseline:], result.TokensUsed); perr != nil {
-			log.Printf("aiagent: transcript persist failed (org=%s session=%s): %v", inv.OrgID, sess.ID, perr)
 		}
 	}
 
@@ -1004,10 +1007,10 @@ func summarize(tool, result string) string {
 		if _, ok := m["withheld"]; ok {
 			return "result withheld"
 		}
-		if id, ok := m["campaign_id"]; ok {
+		if id, ok := m["campaign_id"]; ok && tool == "create_campaign_draft" {
 			return fmt.Sprintf("created campaign %v", id)
 		}
-		if id, ok := m["automation_id"]; ok {
+		if id, ok := m["automation_id"]; ok && tool == "create_automation_draft" {
 			return fmt.Sprintf("created automation %v", id)
 		}
 	}

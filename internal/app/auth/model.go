@@ -79,3 +79,12 @@ type SSOLinkData struct {
 	PendingToken string `json:"pending_token"`
 	Password     string `json:"password"`
 }
+
+// InitialPasswordData is what POST /auth/login/initial-password takes: the
+// challenge a password_change_required sign-in returned and the new password.
+type InitialPasswordData struct {
+	PendingToken string `json:"pending_token"`
+	Password     string `json:"password"`
+	// DeviceToken is the remembered-browser token LoginStart takes, for the emailed-code step that follows.
+	DeviceToken string `json:"device_token"`
+}

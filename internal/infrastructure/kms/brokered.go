@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/warmbly/warmbly/internal/pkg/nodeauth"
 )
 
 // BrokeredProvider is the node-side KMS: it holds no key material and no cloud
@@ -91,7 +93,7 @@ func (p *BrokeredProvider) GetDecryptedKey(ctx context.Context, ciphertextB64 st
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+p.token)
+	nodeauth.Authorize(req, p.token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "warmbly-node/kms-brokered")
 

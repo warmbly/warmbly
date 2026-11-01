@@ -322,11 +322,14 @@ func (s *service) Update(ctx context.Context, orgID, id uuid.UUID, in *models.Fo
 			return nil, xerr
 		}
 		if u != "" && u != f.RedirectURL {
-			own, xerr := s.ownDomains(ctx, orgID)
+			if s.own == nil {
+				return nil, owndomain.Refusal()
+			}
+			ok, xerr := s.own.Admit(ctx, orgID, u)
 			if xerr != nil {
 				return nil, xerr
 			}
-			if !owndomain.Within(owndomain.TargetHost(u), own) {
+			if !ok {
 				return nil, owndomain.Refusal()
 			}
 		}

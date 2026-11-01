@@ -217,7 +217,7 @@ These records back the engagement rows on a contact's [activity timeline](/guide
 | Warmup status | Whether warmup is on, actual volume today, the target the scheduler is using, max volume, configured reply target, and elapsed warmup days |
 | Warmup health | Pool standing: healthy, watch, throttled, quarantined, or blocked, with the score and reason the band decided, and the block expiry |
 
-The overview calls the configured percentage **Reply target** because it controls how much synthetic warmup mail should receive a reply. The Analytics tab reports the measured reply rate from actual sends and replies. Its **Target met** percentage is actual warmup sends divided by planned target volume across the active days in the selected range; it can exceed 100% when volume beats the plan.
+The overview calls the configured percentage **Reply target**. It controls the chance that the mailbox answers an eligible incoming warmup message, rather than guaranteeing a fixed measured percentage. The Analytics tab's warmup reply rate is warmup replies sent by the mailbox divided by all its warmup sends in the selected range. It does not measure how many of the mailbox's outgoing messages received an answer. Its **Target met** percentage is actual warmup sends divided by planned target volume across the active days in the selected range; it can exceed 100% when volume beats the plan.
 
 Use this to find the one mailbox dragging down a campaign's bounce rate instead of blaming the campaign.
 

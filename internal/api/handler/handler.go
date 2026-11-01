@@ -49,6 +49,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/mcp"
 	"github.com/warmbly/warmbly/internal/app/monitoring"
 	"github.com/warmbly/warmbly/internal/app/nodelogs"
+	"github.com/warmbly/warmbly/internal/app/nodescope"
 	"github.com/warmbly/warmbly/internal/app/notification"
 	"github.com/warmbly/warmbly/internal/app/oauth"
 	"github.com/warmbly/warmbly/internal/app/opsnotify"
@@ -201,6 +202,8 @@ type Handler struct {
 	// Fleet. Nodes enrol with the join token and pull everything else; the
 	// control plane never reaches into a machine.
 	FleetNodes *fleetnode.Service
+	// NodeScope binds a worker node's internal calls to its assignment; nil binds nothing.
+	NodeScope *nodescope.Service
 	// KeyStatusDB is the pool the admin key status scans read through. Nil turns the page off.
 	KeyStatusDB       keystatus.DB
 	NodeLogs          nodelogs.Store

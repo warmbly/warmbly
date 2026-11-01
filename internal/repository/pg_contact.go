@@ -1689,10 +1689,7 @@ func (r *contactRepository) Search(
 						'sender', (SELECT ea.email FROM email_accounts ea WHERE ea.id = hl.email_account_id),
 						-- Contacts copied on every email to this lead.
 						'cc', %[5]s,
-						'hold', CASE WHEN %[4]s THEN json_build_object(
-							'since', hl.paused_at, 'until', hl.paused_until,
-							'reason', COALESCE(hl.pause_reason, ''), 'source', COALESCE(hl.pause_source, '')
-						) END
+						'hold', %[4]s
 					)
 					FROM campaign_leads hl
 					WHERE hl.campaign_id = %[1]s AND hl.contact_id = c.id
@@ -1728,7 +1725,7 @@ func (r *contactRepository) Search(
 			)
 			FROM campaign_contact_progress p
 			WHERE p.campaign_id = %[1]s AND p.contact_id = c.id
-		)`, singleCampaignPlaceholder, config.CampaignSendMaxAttempts, undeliverableClause(singleCampaignPlaceholder), liveHold("hl"), leadCCJSONSQL(singleCampaignPlaceholder))
+		)`, singleCampaignPlaceholder, config.CampaignSendMaxAttempts, undeliverableClause(singleCampaignPlaceholder), effectiveLeadHoldJSON("hl"), leadCCJSONSQL(singleCampaignPlaceholder))
 	}
 
 	// campaign_count is only ever read by the min/max filters and the
@@ -1893,6 +1890,8 @@ func (r *contactRepository) Search(
 				status = models.LeadStatusReplied
 			case lp.Failed > 0:
 				status = models.LeadStatusFailed
+			case lead.Hold != nil && lead.Hold.Source == "send_recovery":
+				status = models.LeadStatusPaused
 			case lp.Sent > 0 && lp.TotalSteps > 0 && lp.Sent >= lp.TotalSteps:
 				// Every email step has been sent and the contact hasn't replied
 				// or bounced: the sequence is exhausted, so the lead is done.
@@ -2194,6 +2193,7 @@ func leadStatusClause(status, cp string) string {
 	)
 	undeliverable := undeliverableClause(cp)
 	held := leadHeldClause(cp)
+	allSent = "(" + allSent + " AND NOT EXISTS (SELECT 1 FROM campaign_leads recovery WHERE recovery.campaign_id=" + cp + " AND recovery.contact_id=c.id AND recovery.send_outcome_pending_at IS NOT NULL))"
 	switch status {
 	case models.LeadStatusUnsubscribed:
 		return "NOT c.subscribed"
@@ -2230,7 +2230,7 @@ func leadStatusClause(status, cp string) string {
 func leadHeldClause(cp string) string {
 	return fmt.Sprintf(
 		"EXISTS (SELECT 1 FROM campaign_leads hl WHERE hl.campaign_id = %s AND hl.contact_id = c.id AND %s)",
-		cp, liveHold("hl"),
+		cp, effectiveLeadHold("hl"),
 	)
 }
 
@@ -2282,10 +2282,10 @@ func leadEngagementClause(engagement, cp string) string {
 func (r *contactRepository) CampaignLeadCounts(ctx context.Context, orgID, campaignID string) (*models.CampaignLeadCounts, *errx.Error) {
 	// A lead is "done" (completed) when every email step has been sent and it
 	// hasn't replied or bounced; "processing" when some but not all steps sent.
-	const done = "ts.total_steps > 0 AND COALESCE(pr.sent_steps, 0) >= ts.total_steps"
+	done := "(ts.total_steps > 0 AND COALESCE(pr.sent_steps, 0) >= ts.total_steps) AND NOT " + recoveryPausedLeadSQL("cl")
 	const live = "c.subscribed AND NOT COALESCE(pr.has_bounced, false) AND NOT COALESCE(pr.has_replied, false) AND NOT COALESCE(pr.has_failed, false)"
 	// The same definition of live the row status and the status filter read.
-	held := "(" + liveHold("cl") + ")"
+	held := effectiveLeadHold("cl")
 	query := fmt.Sprintf(`
 		SELECT
 			COUNT(*) AS total,

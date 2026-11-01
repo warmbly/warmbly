@@ -44,8 +44,8 @@ func TestSendSafetyHoldCannotAppearHealthyOrPromiseAutomaticSendRetries(t *testi
 					if strings.Contains(action, "retries automatically") || !strings.Contains(action, "paused") {
 						t.Fatalf("held sending must not promise retries: %s", action)
 					}
-					if reason == "unknown" && (!strings.Contains(action, "Provider confirmation") || !strings.Contains(action, "duplicate")) {
-						t.Fatalf("unknown outcome requires confirmation, not blind retry: %s", action)
+					if reason == "unknown" && (!strings.Contains(action, "sent twice") || !strings.Contains(action, "on its own") || strings.Contains(action, "Provider confirmation")) {
+						t.Fatalf("unknown outcome recovers automatically without a resend: %s", action)
 					}
 				}
 			}
@@ -65,6 +65,15 @@ func TestUnknownWarmupHoldExplainsAutomaticRetirementWithoutPromisingResend(t *t
 	for _, message := range []string{status.Health.Issues[len(status.Health.Issues)-1], *status.Errors[0].ActionRequired} {
 		if !strings.Contains(message, "automatically") || !strings.Contains(message, "new sends") || !strings.Contains(message, "never retried") || strings.Contains(message, "Provider confirmation is required") {
 			t.Fatalf("incorrect warmup recovery guidance: %s", message)
+		}
+	}
+}
+
+func TestUnknownCampaignHoldExplainsAutomaticIsolation(t *testing.T) {
+	message := sendRecoveryHoldMessage(repository.SendRecoveryHold{Reason: "unknown", Campaign: true})
+	for _, required := range []string{"automatically", "other contacts", "never retried", "No action is needed"} {
+		if !strings.Contains(message, required) {
+			t.Fatalf("campaign recovery guidance missing %q: %s", required, message)
 		}
 	}
 }

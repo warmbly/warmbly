@@ -84,12 +84,9 @@ func (s *tokenService) RevokeSessionByID(ctx context.Context, userID, sessionID,
 		return errx.ErrSessionNotFound
 	}
 
-	if err := s.evictRevoked(ctx, sessionID, userID, time.Now()); err != nil {
-		return err
-	}
+	err = s.evictRevoked(ctx, sessionID, userID, time.Now())
 	s.notifyRevoked(ctx, userID)
-
-	return nil
+	return err
 }
 
 // RevokeOtherSessions ends every active session except the caller's current

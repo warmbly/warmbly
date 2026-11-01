@@ -23,7 +23,7 @@ func (s *tokenService) StampReauth(ctx context.Context, sessionID uuid.UUID) *er
 		errs.CaptureException(err)
 		return errx.InternalError()
 	}
-	// The cached copy still says "never", and the middleware reads the cache.
+	// Invalidate copies used by older processes during rolling deployments.
 	if err := s.deleteSession(ctx, sessionID); err != nil {
 		return err
 	}

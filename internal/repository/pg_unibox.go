@@ -869,8 +869,10 @@ func uniboxSearchQuery(orgID uuid.UUID, params *models.MailSearchParams) (string
 		inner += ` AND NOT ` + ownAddressSQL("ue.from_addr", "$1")
 	}
 
+	agentMailboxScope := ""
 	if len(params.EmailAccountIDs) > 0 {
 		inner += fmt.Sprintf(` AND ue.email_id = ANY($%d)`, argPos)
+		agentMailboxScope = fmt.Sprintf(` AND d.email_account_id = ANY($%d)`, argPos)
 		args = append(args, params.EmailAccountIDs)
 		argPos++
 	}
@@ -903,6 +905,7 @@ func uniboxSearchQuery(orgID uuid.UUID, params *models.MailSearchParams) (string
 				WHERE d.organization_id = $1
 				  AND d.thread_id = b.thread_id
 				  AND d.status = 'pending'
+				  AND d.email_account_id IN (SELECT id FROM email_accounts WHERE organization_id = $1)` + agentMailboxScope + `
 			)`
 	}
 
@@ -1743,6 +1746,12 @@ func (r *uniboxRepository) overview(ctx context.Context, orgID uuid.UUID, accoun
 				e.internal_date,
 				e.seen,
 				e.automated,
+				e.folder = 'drafts' AS is_draft,
+				EXISTS (
+					SELECT 1 FROM ai_thread_drafts d
+					WHERE d.organization_id = $1 AND d.thread_id = e.thread_id AND d.status = 'pending'
+					  AND d.email_account_id IN `+mailboxes+`
+				) AS has_agent_draft,
 				e.folder IN ('sent', 'drafts') AS is_ours,
 				e.folder = 'archive' AS is_archived,
 				EXISTS (
@@ -1760,6 +1769,7 @@ func (r *uniboxRepository) overview(ctx context.Context, orgID uuid.UUID, accoun
 				tkey,
 				bool_or(is_snoozed)                             AS is_snoozed,
 				bool_or(NOT is_archived)                        AS working,
+				bool_or((is_draft OR (NOT is_archived AND has_agent_draft)) AND NOT is_snoozed) AS has_draft,
 				bool_or(NOT seen) FILTER (WHERE NOT is_archived) AS has_unread,
 				max(internal_date) FILTER (WHERE NOT is_archived) AS last_date,
 				-- The same rule as automatedThreadSQL, over rows already in hand.
@@ -1783,7 +1793,8 @@ func (r *uniboxRepository) overview(ctx context.Context, orgID uuid.UUID, accoun
 			COUNT(*) FILTER (WHERE NOT t.is_snoozed AND t.working AND t.is_automated AND t.has_unread)          AS automated_unread,
 			(SELECT COUNT(*) FROM latest_per_thread l WHERE `+ownAddressSQL("l.from_addr", "$1")+`) AS awaiting,
 			(SELECT COUNT(*) FROM ai_thread_drafts d
-				WHERE d.organization_id = $1 AND d.status = 'pending'`+onlyMailboxes("d.email_account_id")+`) AS awaiting_agent_draft
+				WHERE d.organization_id = $1 AND d.status = 'pending' AND d.email_account_id IN `+mailboxes+`) AS awaiting_agent_draft,
+			COUNT(*) FILTER (WHERE t.has_draft) AS drafts
 		FROM threads t
 	`, orgID, todayStart, weekStart).Scan(
 		&overview.Total,
@@ -1795,6 +1806,7 @@ func (r *uniboxRepository) overview(ctx context.Context, orgID uuid.UUID, accoun
 		&overview.AutomatedUnread,
 		&overview.AwaitingReply,
 		&overview.AwaitingAgentDraft,
+		&overview.Drafts,
 	)
 	if err != nil {
 		return nil, err

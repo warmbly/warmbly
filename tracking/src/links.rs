@@ -82,7 +82,7 @@ pub struct LinkResolver {
 impl LinkResolver {
     pub fn new(backend_url: String, internal_token: String) -> Self {
         Self {
-            http: reqwest::Client::builder()
+            http: crate::serve_tls::backend_client()
                 .timeout(Duration::from_secs(3))
                 .build()
                 .expect("reqwest client"),

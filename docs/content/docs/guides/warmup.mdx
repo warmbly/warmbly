@@ -1,9 +1,9 @@
 ---
 title: Warmup
-description: "Disclosed diagnostics, placement evidence, participation and conservative pacing."
+description: "Natural warmup threads, placement evidence, participation and conservative pacing."
 ---
 
-Warmup sends short, disclosed test messages between participating mailboxes and records where they land. It reveals configuration and delivery problems, but it does not guarantee inbox placement.
+Warmup sends ordinary-looking plain-text threads between participating mailboxes and records where they land. It reveals configuration and delivery problems, but it does not guarantee inbox placement.
 
 ![A mailbox's Warmup tab: participation, today's sends against the ramp target, pool standing and the ramp settings](/guides/mailbox-warmup.webp)
 
@@ -49,7 +49,7 @@ Pause to stop both sending and receiving warmup mail, or Stop to also turn diagn
 
 ## What warmup is and who gets it
 
-Warmup sends disclosed automated diagnostics between participating mailboxes. It measures observed placement and bounded actual-message DKIM evidence. It does not establish organic engagement or guarantee reputation improvement or inbox placement.
+Warmup sends natural plain-text threads between participating mailboxes. It measures observed placement and bounded actual-message DKIM evidence. It does not establish organic engagement or guarantee reputation improvement or inbox placement.
 
 <Callout type="info" title="Warmup is a paid feature">
   Free organizations can connect mailboxes, but no warmup traffic is scheduled for them; pending warmup activity is skipped rather than sent.
@@ -71,13 +71,13 @@ Diagnostics reveal configuration and delivery problems, not whether real recipie
 
 With warmup enabled, Warmbly repeatedly picks a partner mailbox (avoiding recent ones), decides whether to start a thread or reply to one, sends a short plaintext message through that mailbox's worker, then records stats and schedules the next send.
 
-Diagnostics carry task/sender/recipient-bound application tokens and disclose automation and hypothetical scenarios. They use configured mailbox identities and no open/click pixels.
+Warmup messages carry task/sender/recipient-bound application tokens. They use configured mailbox identities and no open/click pixels.
 
 Providers may strip headers or replace identifiers. Exact authorized lineage and send-result identifiers correlate diagnostics; missing or ambiguous lineage stays closed. Tokens identify application-owned traffic, not cryptographic authentication.
 
 When an SMTP relay rewrites a Message-ID, a valid recipient-bound verification token, the expected sender address and a confirmed send can authorize one received copy. Replies and message-specific DKIM verification use that copy's received identifier. Headerless arrivals still require an exact confirmed identifier for new diagnostic lineage; a matching subject or mailbox pair alone does not authorize a reply. Arrivals held before send confirmation or during a verification outage are retained and retried automatically while their token remains valid.
 
-New mailboxes default off. Independent send/receive controls and shared daily/rolling limits are on the Warmup tab. Start/resume enables disclosed automated sending and, when starting from Off or legacy, receiving with provider-supported spam rescue, reads, importance and stars or flags. Pause stops receiving as well as sending, and Stop disables both participation directions, each while retaining ramp history and holds. A mailbox whose warmup is paused or was never started receives no warmup mail, whatever its receive setting; the send and receive settings only narrow participation while warmup is on. Recipient-only (sending off, receiving on, warmup on) keeps receiving and cannot reply. Sender-only does not authorize recipient engagement. Existing receive-enabled diagnostic mailboxes also use these actions after the consumer, backend and workers are upgraded; no new setting or data migration is needed. Existing NULL stays legacy until explicit action; unrelated edits do not relabel it. Cloud controls require updated Cloud replicas. See [send safety](/development/send-safety/).
+New mailboxes default off. Independent send/receive controls and shared daily/rolling limits are on the Warmup tab. Start/resume enables warmup sending and, when starting from Off or legacy, receiving with provider-supported spam rescue, reads, importance and stars or flags. Pause stops receiving as well as sending, and Stop disables both participation directions, each while retaining ramp history and holds. A mailbox whose warmup is paused or was never started receives no warmup mail, whatever its receive setting; the send and receive settings only narrow participation while warmup is on. Recipient-only (sending off, receiving on, warmup on) keeps receiving and cannot reply. Sender-only does not authorize recipient engagement. Existing receive-enabled diagnostic mailboxes also use these actions after the consumer, backend and workers are upgraded; no new setting or data migration is needed. Existing NULL stays legacy until explicit action; unrelated edits do not relabel it. Cloud controls require updated Cloud replicas. See [send safety](/development/send-safety/).
 
 ### When a send fails
 
@@ -105,11 +105,13 @@ Recovery does not bypass paused participation, provider limits or deliverability
 
 ### Where the content comes from
 
-Message generation stays off the live sending path. When an AI provider is configured, a background batch builds complete conversation plans (a subject, an opening, and five alternating reply turns), each validated against a strict schema, checked for robotic language, and passed through a safety lint before entering the active bank. When the operator has also configured TypeSafe (`TYPESAFE_API_KEY`), each thread is judged for pitches and generated-sounding filler before entering the bank, and the thread text is sent to TypeSafe for that.
+Warmup mail reads like ordinary correspondence: a short, specific subject, an opening and up to five alternating replies between two people who know each other loosely. It never says it is automated, generated or a warmup, and any turn that does is refused before it sends. Topics, tone, structure and length vary from thread to thread, and replies keep the same subject and the real sender names.
 
-Canonical turns use actual alternating configured identities and pinned subject/source/version. Exact-parent continuation preserves facts and closes exhausted, retired or missing threads. A varied vetted bank of disclosed hypothetical exercises supplies fallback. Generated prose never claims a provider check passed.
+Every instance ships with a hand-written library of about seventy threads, so warmup works with no AI provider at all. With an OpenAI key configured and `AI_PROVIDER` unset or set to `openai`, background batches add generated threads. Each passes structural and wording checks, then a separate review of the complete thread (TypeSafe when configured, otherwise OpenAI) before it can be used. An unavailable, incomplete or uncertain review never approves content.
 
-The controller runs every six hours against the last seven days of demand: at least 200 active threads, up to 5,000, refreshing the most-used content, at most 250 threads per batch and 1,000 per day. Threads are retired automatically when at least 3 of 20 or more sampled deliveries land in spam and the rate is `15%` or higher. Admins monitor it but never refill it by hand.
+For each new thread, Warmbly picks a conversation neither mailbox has seen in the last 30 days, as sender or recipient, preferring ones neither has ever seen and the least used. When a pair has seen everything recently, it reuses the one they saw longest ago instead of waiting, so a generation outage never pauses warmup. Duplicate subjects or openings are rejected across the library and every approved batch. Threads started with the retired "Simulated diagnostic" wording stop at their next reply, and the mailbox carries on with new content.
+
+The generator refills the AI bank every six hours toward a target of at least 200 threads, rising with demand up to 5,000, in batches of at most 250 and within a default budget of 1,000 a day. Operators can adjust cadence, targets and budgets in the admin content controls; see [generation configuration](/development/warmup-generation/). None of this guarantees inbox placement or reputation improvement.
 
 </Fold>
 
@@ -218,7 +220,7 @@ The partner cap exists because a mailbox never writes to the same partner twice 
 
 Warmup hours are read in the mailbox's timezone: its own when one is set on the **Settings** tab of its drawer, otherwise the workspace timezone under **Settings > Profile > Timezones**, and UTC when neither is set. Set the workspace timezone once and every mailbox that follows it reads its warmup hours in the team's day. A mailbox with its own timezone keeps it, and changing the workspace timezone does not change any mailbox's hours.
 
-While [Sending behavior](/guides/sending-behavior/) is on, which it is for a newly connected mailbox, warmup only sends when both the warmup hours and that workday allow it, and the Warmup tab says so above the hours. A mailbox connected after its workday ends therefore sends its first warmup email the next working morning. Switch the mailbox to **Fixed schedule** on its **Sending** tab to use the warmup hours alone. Changing the warmup hours, days or timezone (the mailbox's own, or the workspace's for a mailbox that follows it), or switching sending behavior on or off, moves the queued warmup send at once. The mailbox list shows when the next warmup send is queued under the day's count.
+While [Sending behavior](/guides/sending-behavior/) is on, which it is for a newly connected mailbox (a warmup-only mailbox enrolled from a self-hosted instance starts with it off), warmup only sends when both the warmup hours and that workday allow it, and the Warmup tab says so above the hours. A mailbox connected after its workday ends therefore sends its first warmup email the next working morning. The workday's working days default to Monday to Friday, so warmup skips the weekend even when the warmup days include it. When that happens the Warmup tab names the skipped days, with a button that adds them to the working days (for example **Work Saturday and Sunday too**). Switch the mailbox to **Fixed schedule** on its **Sending** tab to send on the warmup hours and days alone, without the workday. Changing the warmup hours, days or timezone (the mailbox's own, or the workspace's for a mailbox that follows it), or switching sending behavior on or off, moves the queued warmup send at once. The mailbox list shows when the next warmup send is queued under the day's count.
 
 Warmup hours must end later than they start on the same day. Equal or reversed hours are rejected, including a change to only one endpoint that would invalidate the stored window. Existing invalid windows are not widened or corrected automatically: pending sends stay unstarted and recheck after five minutes, while admin monitoring shows **Invalid warmup sending hours** until the configured window is corrected. Other send protections still apply after correction; this does not replay uncertain sends or confirm mailbox recovery.
 
@@ -248,11 +250,13 @@ Placement slowdown and ramp pause have different windows. The drawer shows obser
 
 ## Replies
 
-Configured diagnostic turns continue disclosed scenarios, not organic relationships. Exact pinned plans and subjects are reloaded, each parent is answered once, and exhausted, retired or missing threads close.
+Replies continue the exact pinned thread and subject, each parent is answered once, and exhausted, retired or missing threads close.
 
 Replies thread properly with a real `Re:` subject and `In-Reply-To` header, and candidates must be between 45 minutes and seven days old, so nothing is answered instantly or revived indefinitely.
 
 Receiving warmup mail can also prompt an answer directly. When a verified warmup email arrives, the recipient sometimes points its next scheduled send back at whoever wrote, 45 minutes to 5 hours later and inside its own warmup hours. That is a re-pointing, not extra work: each mailbox has one warmup send queued at a time, so a reply-back moves that send earlier and aims it, and can never push a send the mailbox had already planned sooner. When that send is already answering someone, the new email is not answered, so replies never crowd out new threads. A reply is held to the same daily receiving cap as any other warmup email: when the inbox it answers is full for the day, the thread ends there and the mailbox goes on with its normal schedule, so one busy partner never stops a mailbox's warmup. The chance is the recipient's own reply rate (raised for a sender in [recovery](#recovery-engagement), which includes every free Gmail and Outlook.com mailbox and every mailbox backing a live campaign), drawn once when the reply is scheduled rather than again when it sends, and it stops before a thread reaches its message cap so replies cannot answer replies indefinitely. A reply crosses the free and paid tiers like the mail it answers: a paid mailbox answers a free partner that wrote to it, and a free mailbox answers a paid one while it is healthy and its workspace is in good standing.
+
+If the next send is already scheduled earlier than the reply's drawn time, it keeps that time when it is at least 45 minutes after the receipt. If it is due before that minimum delay, it stays a new send rather than being postponed for a reply. The configured percentage is a chance to answer eligible messages, so sending windows, thread limits and available capacity can make the measured rate differ from it.
 
 Scheduling respects windows, provider feedback, shared limits and spacing. Jitter distributes load, not human identities. Receiving participation allows probabilistic spam rescue, reads, importance and stars or flags on verified warmup messages. Filing and selected spam rescues are requested immediately; reads, importance and stars are durably scheduled after a randomized dwell. Current receiving permission and worker assignment are checked again at execution time. These actions are automation, not human feedback or a guaranteed reputation improvement.
 

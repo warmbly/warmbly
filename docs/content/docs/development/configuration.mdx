@@ -60,10 +60,11 @@ Five values protect the whole instance. Compose ships a working default for each
 |---|---|---|---|
 | `AUTH_SECRET` | 32 characters or more, enforced at boot | JWT and session signing. The realtime service reads the same value as `JWT_SECRET` and applies the same floor. Both refuse to start below it: a shorter HS256 key can be recovered offline from any token the service has issued. By default it also supplies the MFA sealing, unsubscribe signing and DNS ownership-proof keys. Configure the separate purpose keys below before rotating sessions when those values must remain stable | yes |
 | `INTERNAL_API_TOKEN` | any random string | The backend's `/api/v1/internal/` routes the tracking and forms services call (click tickets, root redirects, page views, hosted forms). Fleet nodes authenticate with it too when `NODE_BROKER_TOKEN` is unset | yes |
-| `NODE_BROKER_TOKEN` | any random string | Every internal route only a fleet node calls: organization data keys (read, store and open), blob signing, provider access tokens for a mailbox Warmbly Cloud manages, the message map and sync lookups, worker config and the node heartbeat. Optional, and falls back to `INTERNAL_API_TOKEN`. The same value has to be set on the control plane and on every node, or those routes answer 401; a node joined after it is set receives it in `node.env` in place of `INTERNAL_API_TOKEN`, and a node joined before has to join again. The installer generates one for a new install; an existing install keeps the shared token until you set one | yes |
+| `NODE_BROKER_TOKEN` | any random string | Every internal route only a fleet node calls: organization data keys (read, store and open), blob signing, provider access tokens for a mailbox Warmbly Cloud manages, the message map and sync lookups, worker config and the node heartbeat. Optional, and falls back to `INTERNAL_API_TOKEN`. The same value has to be set on the control plane and on every node, or those routes answer 401; a node joined after it is set receives it in `node.env` in place of `INTERNAL_API_TOKEN`, and a node joined before has to join again. The installer generates one for a new install; an existing install keeps the shared token until you set one. Each node also sends its own `NODE_CREDENTIAL`, and with `NODE_REQUIRE_NODE_CREDENTIAL=true` only that is accepted | yes |
 | `NODE_ACCEPT_INTERNAL_TOKEN` | `true` or unset | While `true`, the node-only routes other than the key and blob brokers also accept `INTERNAL_API_TOKEN`. An upgrade does not need it: a heartbeat sent with `INTERNAL_API_TOKEN` is always answered with the node's version and nothing is recorded, so an older node updates itself. Set it only to keep older nodes syncing until they have updated, then remove it: while it is on, the tracking and forms services' token reaches those routes | no |
 | `NODE_LOG_TOKEN` | enrollment-issued 43-character base64url secret, different per node | Only node-specific log ingestion. Issued in the protected fleet join environment, hashed in primary Redis, never derived/exchanged from the fleet-wide broker/internal credential. Rejoin rotates only this evidence credential; deletion revokes it. Deploy backend before upgrading nodes, then rerun authenticated join using the same config directory and UUID, keeping local overrides. No fleet deletion, mailbox reassignment or manual secret copying is required; the script restarts the service. Upgrade alone does not fill unavailable coverage and no historical logs are backfilled. Never share one value fleet-wide | yes |
-| `NODE_CREDENTIAL` | join-issued 43-character base64url secret, different per node | Proves which node is asking when the host updater fetches that node's env. Issued in the protected fleet join environment; only its SHA-256 is stored, in the `fleet_nodes` table, so nothing a node can reach can rewrite it. A rejoin replaces it and deleting the node revokes it. A node joined before this setting existed holds none: a worker keeps refreshing its env without it, and a consumer's env is handed out only against it, so join a consumer again (same config directory, so it keeps its id and `node.local.env`) to resume env refresh. Kept across an env refresh; never copy it to another machine | yes |
+| `NODE_CREDENTIAL` | join-issued 43-character base64url secret, different per node | Proves which node is asking. A node sends it with its id (`X-Warmbly-Node-Id` and `X-Warmbly-Node-Credential`) on every internal route only a node calls: the key and blob brokers, data keys, the message map, sync lookups, worker config, the heartbeat and its env. The backend checks it against the node's enrolled row, names that node in the broker access log, and lets a node heartbeat and fetch an env only as itself. A worker admitted this way acts only on what it is assigned: its own worker id, and the mailboxes, organizations, data keys and mailbox or campaign blobs of the mailboxes placed on it, plus those moved off it within the last 30 minutes so in-flight work finishes ([architecture](/development/architecture/#node-configuration)). A consumer serves every organization. Issued in the protected fleet join environment; only its SHA-256 is stored, in the `fleet_nodes` table, so nothing a node can reach can rewrite it. A rejoin replaces it and deleting the node revokes it. A node joined before this setting existed holds none and falls back to the fleet token until it joins again (same config directory, so it keeps its id and `node.local.env`); a consumer's env is handed out only against it. Kept across an env refresh; never copy it to another machine | yes |
+| `NODE_REQUIRE_NODE_CREDENTIAL` | `true` or unset | Backend only. While `true`, the node-only internal routes accept only a node's own `NODE_CREDENTIAL`: `NODE_BROKER_TOKEN`, `INTERNAL_API_TOKEN` and the update-only heartbeat are refused with 401. Unset keeps today's behaviour, where a node without a credential is still admitted on the fleet token. Turn it on only after every node runs a release that sends its credential and none was joined before node credentials existed: the backend logs `node heartbeats without its own node credential` once per node still on the fleet token, so an empty log after a full beat interval is the signal. Turning it off again restores fleet-token access at once | no |
 | `SECRET_KEY_BASE` | 64 characters or more | Phoenix session signing in the realtime service | yes |
 | `KMS_LOCAL_MASTER_KEY` | base64, exactly 32 bytes | The root key that seals every per-organization data key | yes |
 | `CREDENTIALS_ENCRYPTION_KEY` | exactly 64 hex characters | Mailbox credentials at rest: SMTP and IMAP passwords, and Gmail and Outlook OAuth access and refresh tokens | yes |
@@ -177,6 +178,22 @@ Empty is correct for a directly exposed backend. Behind a reverse proxy it is no
 ```bash
 TRUSTED_PROXIES=10.0.0.0/8,172.16.0.0/12
 ```
+
+### TLS listeners
+
+The backend, forms, tracking and realtime services listen on plain HTTP, and that stays the default everywhere: Compose, the installer and local development need nothing from this table. Set `SERVE_TLS` on a service and it also listens with TLS 1.2 or later on `SERVE_TLS_PORT`, for a load balancer or an internal caller that should reach it encrypted. The plain listener stays up beside it, so the container health check and any caller not yet moved keep working.
+
+| Variable | What it does | Default | Restart needed |
+|---|---|---|---|
+| `SERVE_TLS` | `self-signed` generates an ECDSA P-256 certificate in memory at boot, for a load balancer that does not validate its targets (an AWS Application Load Balancer does not). `supplied` serves the certificate and key below, for a caller that verifies the server. Unset or `off` adds no TLS listener | unset | yes |
+| `SERVE_TLS_PORT` | The TLS listener's port. Required with `SERVE_TLS` | none | yes |
+| `SERVE_TLS_CERT`, `SERVE_TLS_CERT_FILE` | With `supplied`, the PEM certificate, given inline or as a file path. Set exactly one | none | yes |
+| `SERVE_TLS_KEY`, `SERVE_TLS_KEY_FILE` | With `supplied`, the PEM private key, given inline or as a file path. Set exactly one, and keep it with your other secrets | none | yes |
+| `SERVE_HTTP_LOOPBACK_ONLY` | `true` binds the plain listener to `127.0.0.1`, so from outside the container the TLS port is the only way in while the health check still reaches the plain one. Needs `SERVE_TLS` | `false` | yes |
+
+A service refuses to start on an incomplete combination rather than serving something other than what was asked for. The backend logs a line at boot when the certificate it serves expires within 30 days.
+
+The forms and tracking services verify the backend's certificate whenever `BACKEND_INTERNAL_URL` is `https://`. `BACKEND_INTERNAL_CA` (PEM) or `BACKEND_INTERNAL_CA_FILE` replaces the system roots with exactly the certificates given, which is how they trust a backend serving a private certificate through `SERVE_TLS=supplied`. That certificate has to name the host in `BACKEND_INTERNAL_URL`.
 
 ## Authentication
 
@@ -292,6 +309,12 @@ docker compose -p warmbly logs backend | grep -B2 -A12 "MAIL_TRANSPORT=log"
 <Callout type="warn" title="The consumer only warns">
 The backend refuses to start without `EMAIL_ADDRESS` and `EMAIL_NAME`. The consumer logs a warning and silently disables all notification and digest email, so an instance can look healthy while sending nothing. Set both on every process.
 </Callout>
+
+## Automatic campaign send recovery
+
+| Variable | What it does | Default | Restart needed |
+|---|---|---|---|
+| `CAMPAIGN_SEND_ISOLATION_ENABLED` | Automatic isolation of authorized campaign sends with unknown outcomes after ten minutes. On unless set to `false`; set it on backends and consumers alike. See [activation and rollback](/development/send-safety/#automatic-campaign-isolation) | `true` | yes |
 
 ## Pre-send verification
 
@@ -737,7 +760,7 @@ Salesforce reads `SALESFORCE_OAUTH_CLIENT_ID` and `SALESFORCE_OAUTH_CLIENT_SECRE
 
 | Variable | What it does | Default |
 |---|---|---|
-| `AI_PROVIDER` | `openai`, `openrouter`, `groq`, `ollama`, `anthropic` or `custom`. Omit every AI variable to run with AI off, in which case AI endpoints return a clean `503` | unset |
+| `AI_PROVIDER` | `openai`, `openrouter`, `groq`, `ollama`, `anthropic` or `custom`. Omit every AI variable to run with AI off, in which case AI endpoints return a clean `503` and warmup uses only its built-in conversation library. Warmup batch generation requires `openai` or an unset provider with an OpenAI key | unset |
 | `AI_API_KEY` | Provider key. Not needed for `ollama` | unset |
 | `AI_MODEL`, `AI_MODEL_TRIAL`, `AI_MODEL_PAID` | Model selection, optionally split by plan | provider preset |
 | `AI_BASE_URL` | Required for `custom`. Any OpenAI compatible endpoint | unset |
@@ -745,7 +768,7 @@ Salesforce reads `SALESFORCE_OAUTH_CLIENT_ID` and `SALESFORCE_OAUTH_CLIENT_SECRE
 | `SEARCH_PROVIDER`, `SEARCH_API_URL`, `SEARCH_API_KEY` | Web search for the assistant (`serper` or `searxng`) | unset |
 | `MAILHOST_ISPDB` | `true` lets mailbox server detection ask Mozilla's Thunderbird ISPDB (`autoconfig.thunderbird.net`) about a domain whose MX records and own autoconfig file name no known provider. Only the domain name is sent. See [data control](/development/data-control/#outbound-calls) | `false` on a self-host, `true` on Warmbly Cloud |
 | `MAILVENDOR_SANDBOX_URL` | Development only. Points every inbox vendor client at the [sandbox's mock vendor API](/development/sandbox/#mock-inbox-vendors) (`<url>/inboxkit`, `<url>/mailforge`) instead of the real vendors. Ignored unless `APP_ENV` is `dev` | unset |
-| `TYPESAFE_API_KEY` | TypeSafe API key. Turns on the typed judgments: reply classification, the copy judgment in the Advisor and the editor, warmup content lint, bounce classification, import column mapping and per-form triage. Inbox tagging needs the switch below as well. See [data control](/development/data-control/#typesafe-judgments) for what each one sends | unset |
+| `TYPESAFE_API_KEY` | TypeSafe API key. Turns on the typed judgments: reply classification, the copy judgment in the Advisor and the editor, warmup content review (otherwise performed by OpenAI when its generator is configured), bounce classification, import column mapping and per-form triage. Inbox tagging needs the switch below as well. See [data control](/development/data-control/#typesafe-judgments) for what each one sends | unset |
 | `INBOX_TAGGING_ENABLED` | `true` enables automatic inbox tagging when `TYPESAFE_API_KEY` is also set. Message subject, current body, and the previous outbound body are sent to TypeSafe | `false` |
 
 <Callout type="warn" title="An unset provider still uses a key">
@@ -920,6 +943,7 @@ The public face of hosted forms (`cmd/forms`): it serves the React (TanStack) fo
 | `FORMS_PORT` | Listen port | `8090` |
 | `FORMS_STATIC_DIR` | The built forms app (`pnpm build` output). The service exits at boot when `index.html` is missing there | `forms/dist` |
 | `BACKEND_INTERNAL_URL` | Where the service resolves forms and forwards submissions, the same variable the tracking service uses. **Required**: the service exits at boot without it | none |
+| `BACKEND_INTERNAL_CA`, `BACKEND_INTERNAL_CA_FILE` | PEM certificates that replace the system roots when verifying an `https://` `BACKEND_INTERNAL_URL`. See [TLS listeners](/development/configuration/#tls-listeners) | unset (system roots) |
 | `INTERNAL_API_TOKEN` | Bearer token for those calls, matching the backend's. **Required**: the service exits at boot on an empty value | none |
 | `FORM_IP_RATE_LIMIT` | Public form submissions allowed per source IP per 10 minutes, per forms-service instance | `30` |
 | `POSTHOG_KEY`, `POSTHOG_HOST`, `POSTHOG_ERROR_TRACKING` | The service's own error tracking. Unset means none | unset |
@@ -938,6 +962,7 @@ Run a single copy of it. Its event deduplication, its per-source rate limits and
 |---|---|---|
 | `TRACKING_HOST`, `TRACKING_PORT` | Listen address | `0.0.0.0`, `3000` |
 | `BACKEND_INTERNAL_URL` | Where tracking resolves opaque `/c/<id>` click tickets. **Required**: the service exits at boot without it | none |
+| `BACKEND_INTERNAL_CA`, `BACKEND_INTERNAL_CA_FILE` | PEM certificates that replace the system roots when verifying an `https://` `BACKEND_INTERNAL_URL`. See [TLS listeners](/development/configuration/#tls-listeners) | unset (system roots) |
 | `INTERNAL_API_TOKEN` | Bearer token for that lookup. **Required**: the service exits at boot on an empty value | none |
 | `TRACKING_RATE_LIMIT_PER_MIN` | Counted pixel and click requests per source per minute. Over budget, pixels are still served but not counted, and click redirects get `429` | `300` |
 | `TRACKING_PAGEHIT_RATE_LIMIT_PER_MIN` | Website page views accepted per source per minute, on top of the shared budget above. Over budget, the snippet gets `429` | `60` |
@@ -1029,7 +1054,7 @@ These are the only settings a browser can change, and no environment variable ow
 | `tracking.machine_window_probable_seconds` | integer, 1 to 86400 | `600` | The window used instead of the two above when the tracking service recognised the source as a mail-security network that also renders clicked pages for people, which Proofpoint, Mimecast and Cisco do through browser isolation. Such a match cannot settle whether a person is behind the request, so it widens the window rather than deciding: inside it the event is the delivery-time scan, past it the recipient who got to the mail later. Never applied shorter than the window for the kind of event in hand, so naming a network can only ever catch more scans. Its ceiling reaches a day because how long a vendor takes to detonate a link is the vendor's property, not the instance's |
 | `deliverability.enforce_domain_auth` | boolean | `true` | Whether a sending domain that fails SPF or DMARC stops cold campaign sending and warmup sending from every mailbox on it. Off keeps the check running and still shows the state and the Advisor card, it just never blocks |
 | `deliverability.auth_grace_hours` | integer, 1 to 720 | `72` | How long a domain must stay failing before the gate applies. The clock starts when the background check first sees the failure, so this is also how much warning the owner gets |
-| `warmup_generation` | object | Existing saved provider/model configuration, with generation enabled and bounded control defaults | Effective provider, cadence, stop, daily reservation cap, AI selection share, pools and canonical reply-count controls. See [all supported fields and defaults](/development/warmup-generation/) before editing; do not remove credentials while batches drain |
+| `warmup_generation` | object | Existing saved model and generation policy, with generation enabled and bounded control defaults | Effective model, cadence, stop, daily reservation cap, available-capacity targets and canonical reply-count controls. Provider selection uses `AI_PROVIDER` and `AI_API_KEY` from the AI environment variables above. A mailbox does not see the same conversation again within 30 days in either role while unseen ones remain; optional refresh defaults off to preserve usable stock; legacy AI selection share is retained for rollback. See [all supported fields and defaults](/development/warmup-generation/) before editing; do not remove credentials while batches drain |
 | `placement.tests_per_month_trial` | integer, 1 to 100000 | `3` | How many free [placement tests](/guides/placement-tests/) a workspace on a free trial may run per calendar month on the instance seed panel. Only an instance running with `DEPLOYMENT_MODE=cloud` meters; a self-hosted instance never counts its own tests. Tests on a workspace's own seed inboxes are never counted |
 | `placement.tests_per_month_paid` | integer, 1 to 100000 | `40` | The same free allowance for a workspace on a paid plan. Past it, a test costs `placement.credits_per_test` credits |
 | `placement.seeds_per_test` | integer, 1 to 100 | `20` | The most seed inboxes one test sends to. Every copy is a send from the sending mailbox's daily limit, so this is also how much of that limit one test takes. A test is sized down to what the mailbox has left that day, and refused below five seeds |
@@ -1067,6 +1092,12 @@ Changing them is audited, and every value is validated and clamped server side o
 | `CAPTCHA_PROVIDER` | Read, but derived when unset rather than defaulting to a constant. See [captcha](#captcha) |
 
 ## See also
+
+Hosted AWS deployment automation accepts `DEPLOY_FLEET_BAKE_SECONDS` (300 through
+3600, default 300) in its deployment client. The workflow supplies it from
+`fleet_bake_seconds` or the `AWS_FLEET_BAKE_SECONDS` GitHub repository variable.
+It controls healthy uptime per stage for future worker rollouts, not application
+startup or existing self-host settings. See [AWS deployment](/development/aws-fargate/).
 
 - [Install](/development/install/) for the one-command install that writes all of this for you
 - [Data control](/development/data-control/) for where each store lives and what each retention window governs

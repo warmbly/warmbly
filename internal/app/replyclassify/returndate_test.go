@@ -151,3 +151,47 @@ func TestFindReturnDatePhrase(t *testing.T) {
 		})
 	}
 }
+
+// Return dates as away messages write them in each language. The date is found
+// once the language is chosen, and not the same way without it.
+func TestReturnDateCuesByLanguage(t *testing.T) {
+	now := time.Date(2026, 9, 4, 10, 0, 0, 0, time.UTC)
+	cases := []struct {
+		lang, body, want string
+	}{
+		{"sv", "Jag är tillbaka den 14 september.", "2026-09-14"},
+		{"sv", "Jag är ledig till och med 18 september.", "2026-09-19"},
+		{"sv", "Åter på kontoret den 7 oktober.", "2026-10-07"},
+		{"sv", "Jag nås igen den 21.9.", "2026-09-21"},
+		{"da", "Jeg er tilbage den 14. september.", "2026-09-14"},
+		{"da", "Jeg holder ferie til og med 18. september.", "2026-09-19"},
+		{"da", "Jeg træffes igen den 7. oktober.", "2026-10-07"},
+		{"nb", "Jeg er tilbake den 14. september.", "2026-09-14"},
+		{"nb", "Jeg er på ferie til og med 18. september.", "2026-09-19"},
+		{"nb", "Tilgjengelig igjen den 2. desember.", "2026-12-02"},
+		{"fi", "Palaan toimistolle 14.9.", "2026-09-14"},
+		{"fi", "Olen takaisin 21. syyskuuta.", "2026-09-21"},
+		{"fi", "Tavoitettavissa jälleen 7. lokakuuta.", "2026-10-07"},
+		{"pl", "Wracam 14 września.", "2026-09-14"},
+		{"pl", "Będę z powrotem 7 października.", "2026-10-07"},
+		{"pl", "Jestem nieobecny do dnia 21.09.2026.", "2026-09-21"},
+		{"cs", "Budu zpět 14. září.", "2026-09-14"},
+		{"cs", "Vracím se 7. října.", "2026-10-07"},
+		{"cs", "Zpět v kanceláři 21.9.2026.", "2026-09-21"},
+	}
+	for _, tc := range cases {
+		day := func(langs ...string) string {
+			back, ok := ParseReturnDate("Re: Hello", tc.body, now, langs...)
+			if !ok {
+				return ""
+			}
+			return back.Format("2006-01-02")
+		}
+		if got := day(tc.lang); got != tc.want {
+			t.Errorf("%s %q = %q, want %q", tc.lang, tc.body, got, tc.want)
+		}
+		if got := day(); got == tc.want {
+			t.Errorf("%s %q read as %q without %s chosen", tc.lang, tc.body, got, tc.lang)
+		}
+	}
+}

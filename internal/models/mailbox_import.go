@@ -401,6 +401,8 @@ type DomainRedirect struct {
 	TargetActive *bool `json:"target_active,omitempty"`
 	// TargetInactiveReason says why, when TargetActive is false.
 	TargetInactiveReason string `json:"target_inactive_reason,omitempty"`
+	// Website is set when the destination is the workspace's only once it publishes its TXT proof there.
+	Website *RedirectWebsite `json:"website,omitempty"`
 	// VerifyToken is written into the TXT record; never serialized on its own.
 	VerifyToken    string     `json:"-"`
 	OrganizationID uuid.UUID  `json:"-"`
@@ -410,6 +412,14 @@ type DomainRedirect struct {
 	RemoteHost    string      `json:"-"`
 	// LinkedInstanceID marks, on Cloud, a row served for a linked instance.
 	LinkedInstanceID *uuid.UUID `json:"-"`
+}
+
+// RedirectWebsite is a destination website and the TXT record that proves it is the workspace's.
+type RedirectWebsite struct {
+	Domain   string `json:"domain"`
+	Verified bool   `json:"verified"`
+	// Record is the TXT record to publish at the website's DNS; absent when the website needs none.
+	Record *DNSRecord `json:"record,omitempty"`
 }
 
 // DomainRedirectLookup is what serving a host needs: the destination and whose rule it answers to.

@@ -87,6 +87,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/monitoring"
 	"github.com/warmbly/warmbly/internal/app/nativeactions"
 	"github.com/warmbly/warmbly/internal/app/nodelogs"
+	"github.com/warmbly/warmbly/internal/app/nodescope"
 	"github.com/warmbly/warmbly/internal/app/notification"
 	"github.com/warmbly/warmbly/internal/app/oauth"
 	"github.com/warmbly/warmbly/internal/app/oidcauth"
@@ -162,6 +163,7 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/idtoken"
 	"github.com/warmbly/warmbly/internal/pkg/mailhost"
 	"github.com/warmbly/warmbly/internal/pkg/mailvendor"
+	"github.com/warmbly/warmbly/internal/pkg/servetls"
 	"github.com/warmbly/warmbly/internal/pkg/typesafe"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/scheduler"
@@ -226,6 +228,7 @@ func main() {
 	var fleetNodeRepo repository.FleetNodeRepository
 	var fleetSettingsRepo repository.FleetSettingsRepository
 	var fleetNodeService *fleetnode.Service
+	var nodeScopeService *nodescope.Service
 	var keyStatusDB keystatus.DB
 	var tasksService tasks.TasksService
 	var advancedService advanced.Service
@@ -796,8 +799,7 @@ func main() {
 
 		// Warmup content bank + offline AI generator. The generator rides OpenAI's
 		// Batch API specifically, so it only runs when the selected provider is
-		// OpenAI itself; otherwise the live send path keeps using the static
-		// library and admin generation returns "not configured".
+		// OpenAI itself; otherwise new threads wait for fresh approved content.
 		var generationClient *generation.GenerationClient
 		if (aiProviderName == "" || aiProviderName == "openai") && aiKey != "" {
 			generationClient = generation.NewClient(aiKey)
@@ -1212,6 +1214,7 @@ func main() {
 		fleetNodeRepo = repository.NewFleetNodeRepository(primaryDB)
 		fleetSettingsRepo = repository.NewFleetSettingsRepository(primaryDB)
 		fleetNodeService = fleetnode.New(fleetNodeRepo, workerRepository, fleetSettingsRepo)
+		nodeScopeService = nodescope.New(repository.NewNodeScopeRepository(primaryDB), cache.Client)
 		// Idle unless a staged rollout was started; every replica may run it.
 		go fleetNodeService.RunRolloutLoop(ctx, 30*time.Second)
 		settingsRegistrar := settings.NewRegistrar(storageBackendRepo)
@@ -1976,6 +1979,8 @@ func main() {
 		// Sending domains: tracking host per domain and the bare-domain redirect.
 		sendingDomainService = sendingdomain.NewService(repository.NewDomainRedirectRepository(primaryDB), emailRepostory, nil, domainProver)
 		sendingDomainService.WireAuditor(auditService)
+		// A website the workspace proves with its TXT record becomes one of its own domains too.
+		ownDomains.WireWebsites(repository.NewWebsiteDomainRepository(primaryDB), domainProver, nil)
 		sendingDomainService.WireOwnDomains(ownDomains)
 		sendingDomainService.WireCustomHosts(customHosts)
 		// A linked self-hosted instance can have Warmbly Cloud serve a redirect instead.
@@ -2640,6 +2645,7 @@ func main() {
 		FleetNodeRepo:          fleetNodeRepo,
 		FleetSettingsRepo:      fleetSettingsRepo,
 		FleetNodes:             fleetNodeService,
+		NodeScope:              nodeScopeService,
 		KeyStatusDB:            keyStatusDB,
 
 		// Danger zone
@@ -2672,6 +2678,9 @@ func main() {
 		Cache:               authCache,
 		PoolLinkService:     poolLinkService,
 	}
+	if fleetNodeService != nil {
+		m.NodeCredentials = fleetNodeService
+	}
 
 	oidcH := &middleware.OidcHandler{
 		ServiceAccount: serviceAccount,
@@ -2684,19 +2693,30 @@ func main() {
 
 	router := api.Run(h, m, oidcH, addr, ginMode, allowedOrigins)
 
-	srv := &http.Server{
-		Addr:    addr,
-		Handler: router,
+	tlsListen, err := servetls.FromEnv(os.Getenv)
+	if err != nil {
+		log.Fatalf("Invalid TLS listener setting: %v", err)
+	}
+	srv, tlsSrv, err := tlsListen.Servers(addr, router)
+	if err != nil {
+		log.Fatalf("TLS listener: %v", err)
+	}
+	servers := []*http.Server{srv}
+	if tlsSrv != nil {
+		servers = append(servers, tlsSrv)
+		if exp := servetls.Expiry(tlsSrv.TLSConfig); time.Until(exp) < 30*24*time.Hour {
+			log.Printf("TLS listener certificate expires %s; replace it before then", exp.Format(time.RFC3339))
+		}
 	}
 
-	// Start server in a goroutine
-	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server error: %v", err)
-		}
-	}()
-
-	log.Println("Backend started on", addr)
+	for _, s := range servers {
+		go func(s *http.Server) {
+			if err := servetls.ListenAndServe(s); err != nil && err != http.ErrServerClosed {
+				log.Fatalf("Server error: %v", err)
+			}
+		}(s)
+		log.Println("Backend started on", s.Addr)
+	}
 
 	// Wait for interrupt signal for graceful shutdown
 	sigCh := make(chan os.Signal, 1)
@@ -2723,8 +2743,10 @@ func main() {
 			}
 		}()
 	}
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("Server shutdown error: %v", err)
+	for _, s := range servers {
+		if err := s.Shutdown(shutdownCtx); err != nil {
+			log.Printf("Server shutdown error: %v", err)
+		}
 	}
 	drained.Wait()
 

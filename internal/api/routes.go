@@ -133,7 +133,6 @@ func Run(
 	// A linked instance's brokered sign-in opens here first: the page names who is asking and binds the browser.
 	r.GET("/addresses/connect", m.PublicIPRateLimitMiddleware(), h.PoolLinkOAuthConsentPage)
 	r.POST("/addresses/connect/continue", m.PublicIPRateLimitMiddleware(), h.PoolLinkOAuthContinue)
-	r.GET("/addresses/connect/continue", m.PublicIPRateLimitMiddleware(), h.PoolLinkOAuthContinue)
 
 	// Public OAuth callback bouncer for third-party integrations (HubSpot,
 	// Slack, Google, Pipedrive, …). The provider redirects here; the page
@@ -399,6 +398,8 @@ func Run(
 
 		auth.POST("/login", h.LoginStart)
 		auth.POST("/login/confirm", h.LoginConfirm)
+		// An issued initial password is replaced here before the sign-in continues.
+		auth.POST("/login/initial-password", h.LoginInitialPassword)
 		auth.POST("/register", h.RegistrationStart)
 		auth.POST("/register/confirm", h.RegistrationConfirm)
 		auth.POST("/refresh", h.RefreshToken)
@@ -473,6 +474,11 @@ func Run(
 		protectedAuth.POST("/me/avatar", h.UploadUserAvatar)
 		protectedAuth.DELETE("/me/avatar", h.DeleteUserAvatar)
 		protectedAuth.POST("/me/password", m.RateLimitMiddleware(models.RateLimitWrite), h.ChangePassword)
+		// No Idempotency-Key: a repeat mails another single-use link on the capped reset budget.
+		protectedAuth.POST("/me/password/link", m.RateLimitMiddleware(models.RateLimitWrite), h.SendPasswordLink)
+		// Removing a sign-in method changes who can get in. A repeat converges, so it takes no Idempotency-Key.
+		protectedAuth.GET("/me/identities", h.LinkedIdentities)
+		protectedAuth.DELETE("/me/identities/:provider", middleware.RequireFreshAuth(), m.RateLimitMiddleware(models.RateLimitWrite), h.UnlinkIdentity)
 		// Undo-send window (user-scoped; current value rides /auth/me).
 		protectedAuth.PUT("/me/send-preferences", h.UpdateSendPreferences)
 
@@ -680,6 +686,7 @@ func Run(
 				sendingDomains.PUT("/:domain/tracking", h.SetDomainTracking)
 				sendingDomains.PUT("/:domain/redirect", h.SetDomainRedirect)
 				sendingDomains.POST("/:domain/redirect/verify", h.VerifyDomainRedirect)
+				sendingDomains.POST("/:domain/redirect/website", h.VerifyRedirectWebsite)
 				sendingDomains.DELETE("/:domain/redirect", h.DeleteDomainRedirect)
 				sendingDomains.PUT("/:domain/vendor-forwarding", h.SetDomainVendorForwarding)
 				sendingDomains.POST("/:domain/vendor-tracking", h.SetDomainVendorTracking)
@@ -1858,6 +1865,8 @@ func Run(
 		adminRoutes.POST("/testers", middleware.RequireAdminPermission(models.AdminPermManageTesters), h.AdminCreateTester)
 		adminRoutes.POST("/organizations/:id/sample-data", middleware.RequireAdminPermission(models.AdminPermManageTesters), h.AdminSeedTesterWorkspace)
 		adminRoutes.DELETE("/testers/:id", middleware.RequireAdminPermission(models.AdminPermManageTesters), h.AdminRevokeTester)
+		// A fresh initial password changes who can get in.
+		adminRoutes.POST("/testers/:id/password", middleware.RequireAdminPermission(models.AdminPermManageTesters), middleware.RequireFreshAuth(), h.AdminReissueTesterPassword)
 		// Removing a sign-in step from an account changes who can get in.
 		adminRoutes.PUT("/users/:id/login-code-exempt", middleware.RequireAdminPermission(models.AdminPermManageTesters), middleware.RequireFreshAuth(), h.AdminSetLoginCodeExempt)
 		adminRoutes.POST("/users/:id/ban", middleware.RequireAdminPermission(models.AdminPermBanUsers), h.AdminBanUser)

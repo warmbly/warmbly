@@ -66,7 +66,7 @@ Relative ages use your browser's current clock when a snapshot arrives, with per
 | **Sync** | The platform copy of each mailbox's backfill progress and fair-use throttle, with clear-throttle and restart-backfill. The budgets it enforces are the four `sync.*` values under [Configuration > Settings](/development/configuration/#settings-stored-in-the-database); the worker-side engine is the sync governor described under [anti-abuse layers](/development/architecture/#anti-abuse-layers) |
 | **Warmup** | The pools, the blocked list, and the block and unblock history |
 | **Warmup appeals** | Appeals from blocked mailboxes, to approve or reject |
-| **Warmup content** | The generated and reviewed [diagnostic conversation bank](/development/warmup-generation/), effective generation controls, library and generation jobs. Changing effective controls requires `manage_settings`; existing library reads still require `view_warmup_pool` |
+| **Warmup content** | The generated and reviewed [warmup conversation bank](/development/warmup-generation/), effective generation controls, library and generation jobs. Changing effective controls requires `manage_settings`; existing library reads still require `view_warmup_pool` |
 | **Seed panel** | The instance's placement seed inboxes by provider, adding and removing them, every workspace's recent [placement tests](/guides/placement-tests/) with their results, and an operator test that counts against no allowance |
 | **Campaigns** | Every campaign on the instance with its state and owner |
 | **Sends** | In-flight reservations no worker has answered, and the reclaimer that resolves them after 30 minutes; mailboxes held from sending, with a [resolve action](/development/send-safety/#from-the-admin-panel); dead letters with replay limited to non-sending campaign wakeups; task failures; customer webhook delivery health, with reclaim |
@@ -186,7 +186,7 @@ Detail pages need the same bit as the list they open from. Actions inside a page
 
 On a user's detail page, `manage_testers` also allows turning **Skip emailed sign-in code** on or off for that account, for an App Store or OAuth reviewer; see [excusing one account](/development/accounts-and-access/#excusing-one-account).
 
-On **Admins > Testers**, `manage_testers` allows creating or revoking reviewer accounts and adding [sample data](/development/accounts-and-access/#adding-sample-data) to active dedicated Test workspaces. The confirmation lists what will be added; a seeded row shows its timestamp. It never creates a mailbox or sends email, and it cannot populate a customer workspace that a tester joined.
+On **Admins > Testers**, `manage_testers` allows creating or revoking reviewer accounts, and **Issue new password** on a tester row (which also needs a recent confirmation of your identity). An issued password is valid for at most 48 hours, cannot be extended, is shown once and must be changed at first sign-in; see [initial passwords](/development/accounts-and-access/#initial-passwords). The same permission allows adding [sample data](/development/accounts-and-access/#adding-sample-data) to active dedicated Test workspaces. The confirmation lists what will be added; a seeded row shows its timestamp. It never creates a mailbox or sends email, and it cannot populate a customer workspace that a tester joined.
 
 ## See also
 

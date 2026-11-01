@@ -18,12 +18,19 @@ import {
     Loader2Icon,
     MinusIcon,
     MousePointerClickIcon,
-    RefreshCwIcon,
+    ShieldCheckIcon,
     Trash2Icon,
     XIcon,
     ZapIcon,
 } from "lucide-react";
-import type { SendingDomain, DNSRecord, DomainRedirect, RedirectServer, VendorDomainLink } from "@/lib/api/models/app/emails/SendingDomain";
+import type {
+    SendingDomain,
+    DNSRecord,
+    DomainRedirect,
+    RedirectServer,
+    RedirectWebsite,
+    VendorDomainLink,
+} from "@/lib/api/models/app/emails/SendingDomain";
 import type TrackingDomain from "@/lib/api/models/app/emails/TrackingDomain";
 import {
     useDeleteDomainRedirect,
@@ -33,6 +40,7 @@ import {
     useSetVendorTracking,
     useTrackingSuggestion,
     useVerifyDomainRedirect,
+    useVerifyRedirectWebsite,
 } from "@/lib/api/hooks/app/emails/useSendingDomains";
 import { vendorLabel } from "@/lib/api/models/app/emails/MailboxSources";
 import { Label, TextInput } from "@/components/ui/field";
@@ -44,7 +52,7 @@ import buildError from "@/lib/helper/buildError";
 import { mailHostLabel } from "@/lib/mailHost";
 import { cn } from "@/lib/utils";
 import { DnsRecordsTable, StatusPill, VendorChip, type RecordRow } from "./parts";
-import { ReachFix, RedirectStatusBanner, ServedByPicker } from "./RedirectServing";
+import { ReachFix, RedirectProgress, ServedByPicker } from "./RedirectServing";
 import { defaultServer, useCloudServing } from "./cloudServing";
 import CloudConnectDialog from "@/components/app/cloud/CloudConnectDialog";
 import {
@@ -61,7 +69,19 @@ import {
     trackingRecord,
     trackingState,
     vendorCanCname,
+    websiteUnproved,
 } from "./rules";
+
+/** The lower-case host of a typed website address, or "". */
+function hostOf(raw: string): string {
+    const t = raw.trim();
+    if (!t) return "";
+    try {
+        return new URL(t.includes("://") ? t : `https://${t}`).hostname.toLowerCase();
+    } catch {
+        return "";
+    }
+}
 
 export type DomainTab = "overview" | "tracking" | "redirect";
 
@@ -998,11 +1018,12 @@ function DnsRedirect({
     const save = useSetDomainRedirect();
     const verify = useVerifyDomainRedirect();
     const remove = useDeleteDomainRedirect();
+    const proveSite = useVerifyRedirectWebsite();
     const cloud = useCloudServing();
     const [checked, setChecked] = React.useState<DomainRedirect | null>(null);
     const [tried, setTried] = React.useState(false);
-    // The API's refusal of the destination, shown under the field until it is edited.
-    const [refused, setRefused] = React.useState("");
+    // The record that confirms the typed website is the workspace's, once a save was refused for lack of it.
+    const [proof, setProof] = React.useState<RedirectWebsite | null>(null);
     // "serve" came from a redirect visitors do not reach, so linking moves it; "pick" only selects Cloud.
     const [connecting, setConnecting] = React.useState<"pick" | "serve" | null>(null);
 
@@ -1019,7 +1040,7 @@ function DnsRedirect({
     const toCloud = server === "cloud";
 
     function resetDrafts() {
-        setRefused("");
+        setProof(null);
         setUrlDraft(null);
         setWwwDraft(null);
         setServedDraft(null);
@@ -1033,7 +1054,7 @@ function DnsRedirect({
         });
         setChecked(r);
         resetDrafts();
-        if (r.verified && !redirectBlocked(r)) toast.success("Redirect saved and live");
+        if (r.verified && r.target_active !== false && !redirectBlocked(r)) toast.success("Redirect saved and live");
         else if (r.verified) toast("Saved. DNS is in place, but visitors do not reach the redirect yet.");
         else if (r.served_by === "cloud") toast.success("Saved. Add the records below to point the domain at Warmbly Cloud.");
         else toast.success("Redirect saved. Add the DNS records below to switch it on.");
@@ -1047,8 +1068,23 @@ function DnsRedirect({
                 await persist(url.trim(), www, server);
             } catch (e) {
                 const err = e as AppError;
-                if (err.code === REDIRECT_NOT_OWN_DOMAIN) setRefused(err.message);
-                toast.error(buildError(err));
+                if (err.code !== REDIRECT_NOT_OWN_DOMAIN) {
+                    toast.error(buildError(err));
+                    return;
+                }
+                // Not refused for good: the website only has to carry the workspace's TXT record.
+                try {
+                    const w = await proveSite.mutateAsync({ domain: domain.domain, url: url.trim() });
+                    if (w.verified) {
+                        await persist(url.trim(), www, server);
+                        return;
+                    }
+                    // A second press means the record was asked for already and is still not there.
+                    if (proof) toast(`The TXT record for ${w.domain} is not visible yet. It can take a few minutes to appear.`);
+                    setProof(w);
+                } catch (pe) {
+                    toast.error(buildError(pe as AppError));
+                }
             }
         };
         // Moving a redirect changes its records, so a live one stops until the new ones are in place.
@@ -1098,7 +1134,8 @@ function DnsRedirect({
         try {
             const r = await verify.mutateAsync(domain.domain);
             setChecked(r);
-            if (r.verified && !redirectBlocked(r)) toast.success("The redirect is live.");
+            if (websiteUnproved(r)) toast(`The TXT record for ${r.website!.domain} is not visible yet. It can take a few minutes to appear.`);
+            else if (r.verified && !redirectBlocked(r)) toast.success("The redirect is live.");
             else if (r.verified) toast("DNS is in place, but visitors do not reach the redirect yet.");
             else toast("Not every record is visible yet. It keeps checking by itself.");
         } catch (e) {
@@ -1123,53 +1160,73 @@ function DnsRedirect({
         });
     }
 
+    // A proof card for a website other than the one now typed would ask for the wrong record.
+    const typedHost = hostOf(url);
+    const shownProof = proof && (typedHost === proof.domain || typedHost.endsWith(`.${proof.domain}`)) ? proof : null;
+    const savedUnproved = websiteUnproved(redirect);
+
     return (
         <div className="space-y-5">
             {redirect && (
-                <div className="space-y-2.5">
-                    <RedirectStatusBanner domain={domain.domain} redirect={redirect} />
-                    <ReachFix
-                        key={redirect.reach?.proxy ?? ""}
-                        domain={domain.domain}
-                        redirect={redirect}
-                        cloud={cloud}
-                        onServeFromCloud={serveFromCloud}
-                        onConnect={() => setConnecting("serve")}
-                        switching={save.isPending}
-                    />
-                </div>
+                <RedirectProgress
+                    domain={domain.domain}
+                    redirect={redirect}
+                    onCheck={() => void checkNow()}
+                    checking={verify.isPending}
+                    fix={
+                        <ReachFix
+                            key={redirect.reach?.proxy ?? ""}
+                            domain={domain.domain}
+                            redirect={redirect}
+                            cloud={cloud}
+                            onServeFromCloud={serveFromCloud}
+                            onConnect={() => setConnecting("serve")}
+                            switching={save.isPending}
+                        />
+                    }
+                />
             )}
 
             <div className="space-y-2.5">
+                {redirect && <Eyebrow>Settings</Eyebrow>}
                 <div>
-                    <Label>Website</Label>
+                    <Label>Send visitors to</Label>
                     <TextInput
                         value={url}
-                        onChange={(v) => {
-                            setRefused("");
-                            setUrlDraft(v);
-                        }}
+                        onChange={setUrlDraft}
                         placeholder="https://yourcompany.com"
                         className="w-full"
-                        invalid={(tried && !!problem) || refused !== ""}
+                        invalid={tried && !!problem}
                         onKeyDown={(e) => {
                             if (e.key === "Enter") void submit();
                         }}
                     />
                     {tried && problem ? (
                         <p className="mt-1 text-[11px] text-rose-700">{problem}</p>
-                    ) : refused ? (
-                        <p className="mt-1 text-[11px] text-rose-700" role="alert">
-                            {refused}
-                        </p>
-                    ) : redirect?.target_active === false && url.trim() === redirect.target_url ? (
-                        <p className="mt-1 text-[11px] text-amber-800 leading-relaxed">
-                            {redirect.target_inactive_reason ||
-                                "Not in use: the destination is no longer on one of this workspace's own domains, so visitors get the domain's default page instead. This happens when the mailbox or verified domain it relied on was removed; point it at one of your own domains or reconnect that domain."}
-                        </p>
+                    ) : redirect?.target_active === false && !savedUnproved && url.trim() === redirect.target_url ? (
+                        <p className="mt-1 text-[11px] text-amber-800 leading-relaxed">{redirect.target_inactive_reason}</p>
                     ) : null}
-                    <p className="mt-1 text-[11px] text-slate-500 leading-relaxed">{OWN_DOMAIN_HINT}</p>
+                    {!shownProof && <p className="mt-1 text-[11px] text-slate-500 leading-relaxed">{OWN_DOMAIN_HINT}</p>}
                 </div>
+                {shownProof?.record && !shownProof.verified && (
+                    <div className="rounded-md border border-sky-200 bg-sky-50/50 px-3 py-2.5 space-y-2" role="status">
+                        <div className="flex items-start gap-2">
+                            <ShieldCheckIcon className="w-3.5 h-3.5 text-sky-700 mt-0.5 shrink-0" />
+                            <div className="min-w-0 text-[11.5px] text-slate-600 leading-relaxed">
+                                <p className="text-[12.5px] font-medium text-slate-900">Confirm {shownProof.domain} is your website</p>
+                                <p>
+                                    Redirects only send visitors to websites this workspace controls. Add this TXT record where {shownProof.domain}
+                                    &apos;s DNS is managed, then save again. It does not change your website, and you only do it once for every
+                                    domain that redirects there.
+                                </p>
+                            </div>
+                        </div>
+                        <DnsRecordsTable
+                            records={[{ key: "website", type: shownProof.record.type, name: shownProof.record.name, value: shownProof.record.value }]}
+                            className="bg-white"
+                        />
+                    </div>
+                )}
                 <div className="flex items-center gap-2">
                     <div className="min-w-0 flex-1">
                         <div className="text-[12.5px] text-slate-900">Include www.{domain.domain}</div>
@@ -1190,11 +1247,19 @@ function DnsRedirect({
                     <button
                         type="button"
                         onClick={() => void submit()}
-                        disabled={save.isPending || (!!redirect && !changed)}
+                        disabled={save.isPending || proveSite.isPending || (!!redirect && !changed)}
                         className="h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
                     >
-                        {save.isPending && <Loader2Icon className="w-3 h-3 animate-spin" />}
-                        {!redirect ? "Save redirect" : moving ? (toCloud ? "Move to Warmbly Cloud" : "Move to this server") : "Update redirect"}
+                        {(save.isPending || proveSite.isPending) && <Loader2Icon className="w-3 h-3 animate-spin" />}
+                        {shownProof
+                            ? "Check and save"
+                            : !redirect
+                              ? "Save redirect"
+                              : moving
+                                ? toCloud
+                                    ? "Move to Warmbly Cloud"
+                                    : "Move to this server"
+                                : "Update redirect"}
                     </button>
                     {redirect && changed && (
                         <button
@@ -1210,23 +1275,12 @@ function DnsRedirect({
 
             {redirect && (
                 <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                        <Eyebrow>DNS records for {domain.domain}</Eyebrow>
-                        <button
-                            type="button"
-                            onClick={() => void checkNow()}
-                            disabled={verify.isPending}
-                            className="ml-auto h-6 px-2 rounded-md border border-slate-200 text-[11.5px] text-slate-700 hover:bg-slate-50 inline-flex items-center gap-1 transition-colors disabled:opacity-50"
-                        >
-                            <RefreshCwIcon className={cn("w-3 h-3", verify.isPending && "animate-spin")} />
-                            Check now
-                        </button>
-                    </div>
+                    <Eyebrow>DNS records for {domain.domain}</Eyebrow>
                     <DnsRecordsTable records={records} />
                     <p className="text-[11.5px] text-slate-500 leading-relaxed">
                         {redirect.served_by === "cloud"
-                            ? `The root records point ${domain.domain} at Warmbly Cloud and replace whatever it serves today. New records can take from a few minutes to a few hours to appear. Warmbly Cloud checks by itself every 10 minutes and switches the redirect on once the ownership and root records are in place.`
-                            : `The root records replace whatever ${domain.domain} serves today. New records can take from a few minutes to a few hours to appear. Warmbly checks by itself every 10 minutes and switches the redirect on once the ownership and root records are in place, then opens the domain to make sure visitors get it.`}
+                            ? `These point ${domain.domain} at Warmbly Cloud and replace whatever it serves today. New records can take a few minutes to a few hours to show up.`
+                            : `These point ${domain.domain} at this server and replace whatever it serves today. New records can take a few minutes to a few hours to show up.`}
                     </p>
                 </div>
             )}

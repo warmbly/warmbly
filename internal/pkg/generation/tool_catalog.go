@@ -81,9 +81,10 @@ func (c *toolCatalog) instructions() string {
 }
 
 type toolSearchMatch struct {
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	Risk        RiskClass `json:"risk"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Risk        RiskClass      `json:"risk"`
+	InputSchema map[string]any `json:"input_schema"`
 }
 
 type toolSearchResult struct {
@@ -92,6 +93,7 @@ type toolSearchResult struct {
 	NextOffset   *int              `json:"next_offset,omitempty"`
 }
 
+// find preserves matching argument schemas in the transcript while replacing the active tool page.
 func (c *toolCatalog) find(_ context.Context, args json.RawMessage) (string, error) {
 	var input struct {
 		Query  string `json:"query"`
@@ -136,7 +138,7 @@ func (c *toolCatalog) find(_ context.Context, args json.RawMessage) (string, err
 	for _, match := range matches[start:end] {
 		tool := match.tool
 		c.active = append(c.active, tool)
-		result.Tools = append(result.Tools, toolSearchMatch{Name: tool.Name, Description: tool.Description, Risk: tool.Risk})
+		result.Tools = append(result.Tools, toolSearchMatch{Name: tool.Name, Description: tool.Description, Risk: tool.Risk, InputSchema: tool.InputSchema})
 	}
 	out, err := json.Marshal(result)
 	return string(out), err

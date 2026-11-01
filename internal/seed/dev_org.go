@@ -29,6 +29,9 @@ var (
 	DevMailboxPartnersID = uuid.MustParse("33333333-0000-0000-0000-0000dddd0004")
 )
 
+// DevNodeCredential is the dev worker's published node credential, which `make worker` presents.
+const DevNodeCredential = "dev-node-credential-not-for-production"
+
 // Dev-org entity IDs ("dddd" prefix, one hex block per domain).
 var (
 	devFolderOutbound = uuid.MustParse("dddd0a00-0000-0000-0000-000000000001")

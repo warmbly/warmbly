@@ -276,7 +276,34 @@ func (s *analyticsService) accountErrors(ctx context.Context, accountID uuid.UUI
 	if err != nil {
 		return make([]models.AccountError, 0)
 	}
-	return toAccountErrors(dbErrors)
+	success := s.lastTransportSuccess(ctx, []uuid.UUID{accountID})
+	return toAccountErrors(withoutTransientBlips(dbErrors, success[accountID], time.Now()))
+}
+
+// lastTransportSuccess reads when each mailbox last synced and sent; a failed read hides nothing.
+func (s *analyticsService) lastTransportSuccess(ctx context.Context, ids []uuid.UUID) map[uuid.UUID]map[models.MailTransportOperation]time.Time {
+	reader, ok := s.emailAccountErrorsRepo.(interface {
+		LastTransportSuccess(context.Context, []uuid.UUID) (map[uuid.UUID]map[models.MailTransportOperation]time.Time, *errx.Error)
+	})
+	if !ok {
+		return nil
+	}
+	success, xerr := reader.LastTransportSuccess(ctx, ids)
+	if xerr != nil {
+		return nil
+	}
+	return success
+}
+
+// withoutTransientBlips drops temporary failures on a mailbox that is still working, so a passing blip never reads as a fault.
+func withoutTransientBlips(rows []repository.EmailAccountError, success map[models.MailTransportOperation]time.Time, now time.Time) []repository.EmailAccountError {
+	out := rows[:0:0]
+	for _, row := range rows {
+		if !models.MailTransientBlip(row.Severity, row.ErrorCode, row.Operation, row.ObservationSource, success, now) {
+			out = append(out, row)
+		}
+	}
+	return out
 }
 
 // toAccountErrors maps stored error rows into the API shape, never nil.
@@ -458,10 +485,13 @@ func (s *analyticsService) assembleAccountStatus(ctx context.Context, email *mod
 func sendRecoveryHoldMessage(hold repository.SendRecoveryHold) string {
 	switch hold.Reason {
 	case "unknown":
+		if hold.Campaign {
+			return "Warmbly is checking an unconfirmed campaign send automatically. When safe, it isolates that email so this mailbox can continue sending to other contacts. The affected contact waits for confirmation, and the uncertain email is never retried. No action is needed."
+		}
 		if hold.Warmup {
 			return "Sending is paused after an unconfirmed warmup send. Warmbly checks it automatically and, when safe, retires that message so new sends can resume. The uncertain message is never retried."
 		}
-		return "Sending is paused because the previous send outcome is unconfirmed. Warmbly will not retry it automatically, to avoid duplicate mail. Provider confirmation is required to resolve this hold; a successful inbox sync does not confirm the send."
+		return "Sending is briefly paused because Warmbly cannot yet tell whether an earlier email went out. That email is never retried, so nothing is sent twice. The pause clears on its own, usually within 30 minutes, even if that email's outcome stays unknown. No action is needed."
 	case "authentication":
 		return "Sending is paused because the mail server refused this mailbox's login when it last sent. Reconnect the mailbox (re-authorize it, or enter its current password or app password); once the server accepts the login, sending resumes unless another send safety hold is still pending."
 	default:
@@ -645,8 +675,9 @@ func (s *analyticsService) accountStatusesPage(ctx context.Context, orgID uuid.U
 		if xerr != nil {
 			return nil, xerr
 		}
+		success := s.lastTransportSuccess(ctx, ids)
 		for id, rows := range raw {
-			errsByID[id] = toAccountErrors(rows)
+			errsByID[id] = toAccountErrors(withoutTransientBlips(rows, success[id], now))
 		}
 	}
 

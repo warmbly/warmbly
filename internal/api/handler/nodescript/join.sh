@@ -672,7 +672,10 @@ fetch_env() {
   cred=$(env_value NODE_CREDENTIAL)
   code=$( {
     printf 'header = "Authorization: Bearer %s"\n' "$token"
-    if [ -n "$cred" ]; then printf 'header = "X-Warmbly-Node-Credential: %s"\n' "$cred"; fi
+    if [ -n "$cred" ]; then
+      printf 'header = "X-Warmbly-Node-Id: %s"\n' "$id"
+      printf 'header = "X-Warmbly-Node-Credential: %s"\n' "$cred"
+    fi
   } | curl -sS -K - --max-time 30 -o "$1" -w '%{http_code}' \
       "${url%/}/api/v1/internal/fleet/node-env?node_id=$id&role=$role") || code=000
   if [ "$code" != "200" ]; then

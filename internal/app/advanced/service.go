@@ -1614,7 +1614,7 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 
 	var held *time.Time
 	if campaignID != nil && contactID != nil && !senderIsCopy && verdict.Class == replyclassify.ClassOutOfOffice && settings.ReplyIntent.HoldOnOutOfOffice {
-		held = s.holdForOutOfOffice(ctx, *account.OrganizationID, *contactID, settings.ReplyIntent, msg)
+		held = s.holdForOutOfOffice(ctx, *account.OrganizationID, *contactID, settings.ReplyIntent, msg, settings.InboxTagging.Languages...)
 	}
 
 	actionTaken := ""
@@ -1806,7 +1806,7 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 // one this reply was attributed to. An empty desk is an empty desk: holding
 // one sequence while a second kept mailing them was issue #470 again, narrowed
 // to the second campaign (issue #518).
-func (s *service) holdForOutOfOffice(ctx context.Context, orgID, contactID uuid.UUID, cfg models.ReplyIntentSettings, msg *models.EmailMessageStoreData) *time.Time {
+func (s *service) holdForOutOfOffice(ctx context.Context, orgID, contactID uuid.UUID, cfg models.ReplyIntentSettings, msg *models.EmailMessageStoreData, langs ...string) *time.Time {
 	if s.campaignProgressRepo == nil {
 		return nil
 	}
@@ -1820,7 +1820,7 @@ func (s *service) holdForOutOfOffice(ctx context.Context, orgID, contactID uuid.
 		return now.AddDate(0, 0, days), "auto-reply, no return date"
 	}
 	until, reason := fallback()
-	if back, ok := replyclassify.ParseReturnDate(msg.Subject, body, now); ok {
+	if back, ok := replyclassify.ParseReturnDate(msg.Subject, body, now, langs...); ok {
 		if s.returnDateDoubted(ctx, orgID, msg.MessageID, back) {
 			until, reason = now.AddDate(0, 0, days), "auto-reply, return date unclear"
 		} else {

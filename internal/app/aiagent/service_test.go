@@ -103,6 +103,38 @@ func TestForReaderWithholdsResultsOfToolsTheReaderCannotRun(t *testing.T) {
 	}
 }
 
+// TestTranscriptOnlyDescribesDraftToolsAsCreation keeps read results from being presented as newly created resources.
+func TestTranscriptOnlyDescribesDraftToolsAsCreation(t *testing.T) {
+	for _, tc := range []struct{ tool, result, want string }{
+		{"get_campaign_stats", `{"campaign_id":"c1","emails_sent":4}`, `{"campaign_id":"c1","emails_sent":4}`},
+		{"get_automation", `{"automation_id":"a1"}`, `{"automation_id":"a1"}`},
+		{"create_campaign_draft", `{"campaign_id":"c1"}`, "created campaign c1"},
+		{"create_automation_draft", `{"automation_id":"a1"}`, "created automation a1"},
+	} {
+		t.Run(tc.tool, func(t *testing.T) {
+			repo := &runRepository{session: models.AgentSession{ID: uuid.New(), OrgID: uuid.New(), UserID: uuid.New()}}
+			for _, message := range []generation.AgentMessage{
+				{Role: "assistant", ToolCalls: []generation.ToolCall{{ID: "call", Name: tc.tool}}},
+				{Role: "tool", ToolCallID: "call", Content: tc.result},
+			} {
+				content, err := json.Marshal(message)
+				if err != nil {
+					t.Fatal(err)
+				}
+				repo.rows = append(repo.rows, models.AgentMessageRow{Role: message.Role, Content: content})
+			}
+			svc := NewService(repo, nil, nil, nil, nil, nil, nil, nil, nil)
+			turns, _, xerr := svc.Transcript(context.Background(), aitools.Invocation{OrgID: repo.session.OrgID, UserID: repo.session.UserID}, repo.session.ID)
+			if xerr != nil {
+				t.Fatal(xerr)
+			}
+			if got := turns[0].Blocks[0].Result; got != tc.want {
+				t.Errorf("tool summary = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 type transcriptRepo struct {
 	repository.AgentRepository
 	rows []models.AgentMessageRow

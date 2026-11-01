@@ -198,9 +198,15 @@ Avatars, OAuth app logos, form logos, covers and backgrounds, and images placed 
 |--------|--------|---------|
 | `password_breached` | 400 | The password appears in a public list of breached passwords and was refused. Choose one that does not |
 | `sso_link_expired` | 400 | The pending token from a `link_required` sign-in is unknown, expired (ten minutes), already used, or has had three wrong passwords. Start the provider sign-in again |
+| `password_reused` | 400 | `POST /auth/login/initial-password` was given the issued initial password itself. Choose a password of your own |
+| `password_change_expired` | 400 | The pending token from a `password_change_required` sign-in is unknown, expired (ten minutes) or already used, or the issued password it was for has run out. Sign in again; an issued password past its 48 hours is refused like a wrong password, so ask whoever issued it for a new one |
+| `password_change_required` | 403 | `POST /auth/sso/link` was given an issued initial password. Sign in with email and password first, which asks you to choose your own, then link the provider |
 | `reset_link_invalid` | 401 | `POST /auth/reset-password/session` or `/confirm` was given a reset link or reset session that expired, was already used, or was issued before the password last changed. Request a new link |
 | `api_credentials_revoke_unsupported` | 400 | `POST /auth/reset-password/confirm` or `POST /auth/me/password` asked to end connected apps and API keys (`revoke_api_credentials`) on a server that cannot. The password was not changed. Send it again without that option, then remove apps and keys from Settings |
-| `sessions_not_ended` | 503 | The same two routes could not sign out every device on the account, so the password was not changed. The response carries `Retry-After`; retry after it |
+| `sessions_not_ended` | 503 | The same two routes could not sign out every device on the account, so the password was not changed. From `DELETE /auth/me/identities/:provider` it means the provider was removed but not every device that signed in with it was signed out; repeating the request finishes it. The response carries `Retry-After`; retry after it |
+| `identity_not_found` | 404 | `DELETE /auth/me/identities/:provider` named something other than `google`, `apple` or `oidc` |
+| `last_sign_in_method` | 409 | `DELETE /auth/me/identities/:provider` or `DELETE /auth/passkey/credentials/:id` would leave the account with no password, no passkey and no other provider. Nothing was removed. Set a password (`POST /auth/me/password/link`) or add a passkey first |
+| `password_login_disabled` | 403 | `POST /auth/me/password/link` was called on a server that turned password sign-in off (`DISABLE_PASSWORD_LOGIN`), so a password could never be used. No link was sent |
 
 A password must be 8 to 128 characters. There is no composition rule, but it is checked against the 100,000 most commonly breached passwords published by the UK National Cyber Security Centre, case-insensitively.
 
@@ -357,13 +363,14 @@ A redirect may only send visitors to a page on one of the workspace's own domain
 - a domain the workspace has a mailbox on, other than a shared email provider such as `gmail.com`
 - a verified tracking host of one of its mailboxes
 - the workspace's custom forms domain, once it is verified
+- a website the workspace confirmed by publishing its `_warmbly` `TXT` record on the website's registrable domain. Saving looks for the record before refusing, and `POST /emails/domains/:domain/redirect/website` returns the record to publish. See [confirm your website](/guides/sending-domains/#confirm-your-website)
 
 Hosts are compared in lowercase, without a trailing dot and in their ASCII form, so `bücher.de` and `xn--bcher-kva.de` are the same domain. A subdomain matches its parent (`shop.acme.com` is on `acme.com`), but a name that only starts or ends the same way does not (`acme.com.example.net` and `notacme.com` are not on `acme.com`). An empty value still means no redirect.
 
 ```json
 {
   "error": "Bad Request",
-  "message": "The redirect has to go to a page on one of this workspace's own domains: a domain it has a mailbox on (not a shared provider such as gmail.com), its verified tracking domain, its verified forms domain, or a subdomain of one of them. Use an address on one of those, or connect a mailbox or verify a domain first.",
+  "message": "The redirect has to go to a page on one of this workspace's own domains: a domain it has a mailbox on (not a shared provider such as gmail.com), its verified tracking domain, its verified forms domain, a website it verified with its TXT record, or a subdomain of one of them. Verify the website under Sending domains > Redirect, or use an address on one of those.",
   "code": "redirect_target_not_own_domain",
   "request_id": "4bbbd1b2-8f86-47dd-8a7f-9476501ad20e"
 }

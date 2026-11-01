@@ -229,6 +229,59 @@
         }
       }
     },
+    "/auth/login/initial-password": {
+      "post": {
+        "operationId": "auth_login_initial_password",
+        "summary": "Replace an issued initial password and continue signing in",
+        "description": "Answers a /auth/login result with password_change_required. Takes the single-use pending_token (ten minute lifetime) and the holder's own password, stores it in place of the issued one, signs out every other session, then continues the sign-in exactly as /auth/login would: an emailed code, a 2FA challenge or the session. Refusals: the password rules (8 to 128 characters, password_breached), password_reused for the issued password itself, and password_change_expired for a token that is unknown, expired, already used or whose issued password ran out.",
+        "tags": [
+          "auth"
+        ],
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InitialPasswordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The sign-in continues, in the same shape /auth/login returns.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The new password was refused, or the challenge expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/register": {
       "post": {
         "operationId": "auth_register_start",
@@ -31749,14 +31802,53 @@
       },
       "AuthSession": {
         "type": "object",
-        "description": "Opaque session handle returned by login/register start; pass it to the matching confirm call.",
-        "required": [
-          "session"
-        ],
+        "description": "Returned by login/register start. With code_required, pass session to the matching confirm call. Without it, the sign-in completed (token), needs a 2FA code (two_fa_required with pending_token), or used an issued initial password that has to be replaced first (password_change_required with pending_token for /auth/login/initial-password).",
         "properties": {
           "session": {
             "type": "string",
             "description": "Opaque session handle."
+          },
+          "code_required": {
+            "type": "boolean",
+            "description": "True when a code was emailed and session goes to the confirm call."
+          },
+          "two_fa_required": {
+            "type": "boolean"
+          },
+          "password_change_required": {
+            "type": "boolean",
+            "description": "True when the password was an issued initial password. No session exists; post pending_token and a new password to /auth/login/initial-password."
+          },
+          "pending_token": {
+            "type": "string",
+            "description": "Single-use pending token for /auth/2fa/verify or /auth/login/initial-password."
+          },
+          "expires_in": {
+            "type": "integer",
+            "description": "Seconds until pending_token expires."
+          }
+        }
+      },
+      "InitialPasswordRequest": {
+        "type": "object",
+        "description": "Request body for /auth/login/initial-password.",
+        "required": [
+          "pending_token",
+          "password"
+        ],
+        "properties": {
+          "pending_token": {
+            "type": "string",
+            "description": "The pending_token from a password_change_required sign-in."
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "description": "The new password, 8 to 128 characters, not on the breached list and not the issued password."
+          },
+          "device_token": {
+            "type": "string",
+            "description": "The remembered-browser token, as sent to /auth/login."
           }
         }
       },

@@ -758,7 +758,7 @@ func (r *organizationRepository) GetEmailsSentTodayCount(ctx context.Context, or
 		JOIN email_accounts ea ON ea.id = t.email_account_id
 		WHERE ea.organization_id = $1
 		  AND t.task_type = 'campaign'
-		  AND t.status = 'completed'
+		  AND `+completedSendTaskSQL("t")+`
 		  AND t.completed_at >= CURRENT_DATE
 		  AND `+taskDispatchedEmail+`
 	`, orgID).Scan(&count)

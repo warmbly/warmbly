@@ -63,11 +63,11 @@ func TestSendCarriesReplyToOnlyOutsideWarmup(t *testing.T) {
 func TestWarmupSendPreservesConfiguredIdentity(t *testing.T) {
 	worker, org := uuid.New(), uuid.New()
 	account := models.Email{ID: uuid.New(), OrganizationID: &org, WorkerID: &worker, Email: "support@example.test", Name: "Árvíztűrő Support <EMEA> {Ops}!!!"}
-	body, err := generation.RenderCanonicalTurn("This hypothetical example is closed.", account.Name)
+	body, err := generation.RenderCanonicalTurn("That works for me, thanks for sorting it out.", account.Name)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := lintDiagnosticContent("Diagnostic example", body, false, account); err != nil {
+	if err := lintDiagnosticContent("Label wording", body, false, account); err != nil {
 		t.Fatal(err)
 	}
 	pub := &capturingPublisher{}

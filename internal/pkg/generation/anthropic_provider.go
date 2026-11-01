@@ -236,9 +236,10 @@ func (p *anthropicProvider) RunAgent(ctx context.Context, req AgentRequest) (*Ag
 	tools := antToolsFromDefs(req.Tools, false)
 
 	messages := append([]AgentMessage(nil), req.Messages...)
-	result := &AgentResult{Model: model}
+	result := &AgentResult{Model: model, StopReason: "error"}
 
 	for iter := 0; iter < maxIter; iter++ {
+		result.Messages = messages
 		if req.PreIteration != nil {
 			if err := req.PreIteration(ctx, iter+1); err != nil {
 				result.Messages = messages
@@ -251,9 +252,15 @@ func (p *anthropicProvider) RunAgent(ctx context.Context, req AgentRequest) (*Ag
 			req.OnEvent(AgentEvent{Type: EventIteration, Iteration: result.Iterations})
 		}
 
-		resp, err := p.complete(ctx, model, maxTokens, req.System, transcriptToAnthropic(messages), tools, nil)
+		iterationTools, system := tools, req.System
+		finalTurn := req.ReserveFinalResponse && iter == maxIter-1
+		if finalTurn {
+			iterationTools = nil
+			system += agentFinalResponseInstructions
+		}
+		resp, err := p.complete(ctx, model, maxTokens, system, transcriptToAnthropic(messages), iterationTools, nil)
 		if err != nil {
-			return nil, err
+			return result, err
 		}
 		result.TokensUsed += resp.Usage.InputTokens + resp.Usage.OutputTokens
 
@@ -271,6 +278,9 @@ func (p *anthropicProvider) RunAgent(ctx context.Context, req AgentRequest) (*Ag
 
 		if len(calls) == 0 {
 			final := strings.TrimSpace(text.String())
+			if final == "" && req.ReserveFinalResponse {
+				return result, errors.New("anthropic: empty agent response")
+			}
 			messages = append(messages, AgentMessage{Role: "assistant", Content: final})
 			if req.OnEvent != nil && final != "" {
 				req.OnEvent(AgentEvent{Type: EventText, Text: final})
@@ -278,7 +288,13 @@ func (p *anthropicProvider) RunAgent(ctx context.Context, req AgentRequest) (*Ag
 			result.Text = final
 			result.Messages = messages
 			result.StopReason = "stop"
+			if finalTurn {
+				result.StopReason = "max_iterations"
+			}
 			return result, nil
+		}
+		if finalTurn {
+			return result, errors.New("anthropic: unexpected tool call in final response")
 		}
 
 		// Approval gate before executing any tool (see OpenAI provider).
@@ -295,7 +311,7 @@ func (p *anthropicProvider) RunAgent(ctx context.Context, req AgentRequest) (*Ag
 						result.Pending = &PendingToolCall{Call: call, Risk: tool.Risk}
 						return result, nil
 					}
-					return nil, err
+					return result, err
 				}
 			}
 		}

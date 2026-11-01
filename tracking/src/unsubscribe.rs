@@ -45,7 +45,7 @@ pub struct UnsubscribeProxy {
 impl UnsubscribeProxy {
     pub fn new(backend_url: String) -> Self {
         Self {
-            http: reqwest::Client::builder()
+            http: crate::serve_tls::backend_client()
                 .timeout(Duration::from_secs(5))
                 // A redirect would take the recipient off this host; the
                 // backend's own pages are same-path forms, so there is

@@ -21,7 +21,7 @@ func (r *contactRepository) ListCampaignStates(ctx context.Context, orgID, conta
 	campQuery := `
 		SELECT cam.id, cam.name, cam.status, c.subscribed, ` + undeliverableClause("cam.id") + `,
 		       cl.email_account_id, COALESCE(sender.email, ''),
-		       cl.paused_at, cl.paused_until, COALESCE(cl.pause_reason, ''), COALESCE(cl.pause_source, '')
+		       ` + leadHoldColumns + `
 		FROM campaign_leads cl
 		JOIN campaigns cam ON cam.id = cl.campaign_id AND cam.organization_id = $2
 		JOIN contacts c ON c.id = cl.contact_id AND c.organization_id = $2
@@ -137,6 +137,8 @@ func (r *contactRepository) ListCampaignStates(ctx context.Context, orgID, conta
 			st.LeadStatus = models.LeadStatusReplied
 		case failed:
 			st.LeadStatus = models.LeadStatusFailed
+		case cr.state.Hold != nil && cr.state.Hold.Source == "send_recovery":
+			st.LeadStatus = models.LeadStatusPaused
 		case sent && emailSteps > 0 && emailSent >= emailSteps:
 			st.LeadStatus = models.LeadStatusCompleted
 		case cr.held:

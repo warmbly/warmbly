@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/scheduler"
@@ -104,10 +105,17 @@ func TestLiveWarmupDispatchRechecksOpeningSourceAndExactRecipient(t *testing.T) 
 	exec(`UPDATE organizations SET risk_state='trusted' WHERE id=$1`, f.org)
 	exec(`UPDATE email_accounts SET test_mode='diagnostic',test_send_enabled=true,test_receive_enabled=true,warmup=NOW()-INTERVAL '30 days',warmup_pool_type='free',warmup_days=127,warmup_start_time='00:00',warmup_end_time='23:59',warmup_base=20,warmup_max=20,name='Ádám Support <EMEA>' WHERE organization_id=$1`, f.org)
 	task := uuid.New()
-	source := VettedDiagnosticConversations()[0]
+	source := Conversation{ID: uuid.New(), Version: generation.WarmupScenarioVersion, Subject: "A wording choice", Description: "I'm rewording the labels on our intake form and can't pick between two options. Which one reads clearer to you?", Messages: []string{"The shorter one, I think. It scans faster.", "Agreed, I'll go with that. Thanks for the quick read."}}
+	contentRepo := repository.NewWarmupContentRepository(f.pool)
+	rendering := generation.CanonicalRenderingVersion
+	if err := contentRepo.InsertConversation(ctx, &models.WarmupConversation{ID: source.ID, PoolType: "premium", Source: models.WarmupContentSourceAI, Subject: source.Subject, Description: source.Description, Messages: source.Messages, Status: models.WarmupConversationActive, LintPassed: true, ReplyEligible: true, ScenarioVersion: &source.Version, RenderingVersion: &rendering, SemanticReview: "passed"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = contentRepo.DeleteConversation(context.Background(), source.ID) })
+	f.svc.warmupContentRepo = contentRepo
 	exec(`INSERT INTO tasks(id,task_type,email_account_id,status,message_id,scheduled_at)VALUES($1,'warmup',$2,'active','',NOW())`, task, f.sender.ID)
 	exec(`INSERT INTO warmup_tasks(task_id,lineage_version,subject,scenario_version,rendering_version,max_turns)VALUES($1,1,$2,$3,$4,$5)`, task, source.Subject, source.Version, generation.CanonicalRenderingVersion, len(source.Messages)+1)
-	exec(`INSERT INTO warmup_tokens(token,task_id,sender_account_id,recipient_account_id,subject,content_source,conversation_id,conversation_turn)VALUES($1,$2,$3,$4,$5,'static',$6,0)`, uuid.New(), task, f.sender.ID, f.atWorkspace, source.Subject, source.ID)
+	exec(`INSERT INTO warmup_tokens(token,task_id,sender_account_id,recipient_account_id,subject,content_source,conversation_id,conversation_turn)VALUES($1,$2,$3,$4,$5,'ai',$6,0)`, uuid.New(), task, f.sender.ID, f.atWorkspace, source.Subject, source.ID)
 	f.svc.taskRepo = repository.NewTaskRepository(f.pool)
 	f.svc.scheduler = scheduler.NewSchedulerService(f.svc.taskRepo, f.svc.warmupRepo, nil, f.svc.emailRepo, nil, nil, nil)
 	if err := f.svc.ValidateWarmupExecution(ctx, task); err != nil {
@@ -132,6 +140,18 @@ func TestLiveWarmupDispatchRechecksOpeningSourceAndExactRecipient(t *testing.T) 
 		t.Fatal("missing source continued")
 	}
 	exec(`UPDATE warmup_tokens SET conversation_id=$2 WHERE task_id=$1`, task, source.ID)
+	for _, turn := range []int{0, 1} {
+		exec(`UPDATE warmup_tokens SET conversation_turn=$2 WHERE task_id=$1`, task, turn)
+		if err := f.svc.ValidateWarmupExecution(ctx, task); err != nil {
+			t.Fatalf("approved queued turn %d rejected: %v", turn, err)
+		}
+		exec(`UPDATE warmup_conversations SET description=$2 WHERE id=$1`, source.ID, source.Description+" Simulated diagnostic.")
+		if err := f.svc.ValidateWarmupExecution(ctx, task); err == nil {
+			t.Fatalf("queued historical AI turn %d authorized", turn)
+		}
+		exec(`UPDATE warmup_conversations SET description=$2 WHERE id=$1`, source.ID, source.Description)
+	}
+	exec(`UPDATE warmup_tokens SET conversation_turn=0 WHERE task_id=$1`, task)
 	exec(`UPDATE warmup_pool_participants SET participant_role='recipient_only' WHERE email_account_id=$1`, f.sender.ID)
 	if err := f.svc.ValidateWarmupExecution(ctx, task); err == nil {
 		t.Fatal("recipient-only mailbox promoted to sending")

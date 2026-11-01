@@ -24,6 +24,14 @@ store lives, what is kept and for how long, how it is backed up. The script is
 
 ## Working In This Repo
 
+### Warmup content and deliverability
+
+- Warmup mail reads as ordinary correspondence and never describes itself. `generation.ValidateWarmupWording` refuses any outgoing turn that calls itself simulated, diagnostic, hypothetical, fictional, automated, generated, a test message or a warmup; generation, review and the hand-written library all have to pass it. No fixed phrases, shared subject prefixes or repeated footers.
+- Content never runs out. New threads draw from the hand-written library (`internal/tasks/warmup_library_*.go`) and the AI bank together, preferring what neither mailbox saw in `repository.WarmupContentRepeatWindow`, then the least recently seen. Do not add a path that defers sending for lack of fresh content, and do not reintroduce a lifetime per-mailbox exclusion.
+- A library thread's ID is derived from its theme and opening, so editing one retires it and threads in flight on it close. Keep the library above the floor `TestStaticLibraryReadsAsOrdinaryMail` enforces.
+- Do not add random strings, fabricated reply prefixes, invented relationships or other cosmetic variation to disguise repetition. Content variation never bypasses mailbox consent, authentication checks, provider limits, suppression or pacing.
+- Do not claim that wording or local checks guarantee inbox placement, improve reputation or prevent provider suspensions.
+
 CI is strict. `go build ./...` succeeding is not enough — `golangci-lint` runs `gofmt` as part of its checks, and a single unformatted import block or mis-indented doc comment will fail the PR even when the code compiles cleanly. Before declaring any Go change done:
 
 - run `gofmt -w` on every Go file you touched (or `gofmt -w internal/ cmd/` to be safe)

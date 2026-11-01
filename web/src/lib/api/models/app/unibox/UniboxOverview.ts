@@ -46,6 +46,8 @@ export default interface UniboxOverview {
   automated_unread: number;
   /** Threads with a pending inbox-agent draft awaiting human review. */
   awaiting_agent_draft: number;
+  /** Distinct conversations across mailbox drafts and visible pending agent replies; absent on older servers. */
+  drafts?: number;
   /** Pending outbound email tasks queued from the workspace's mailboxes. */
   scheduled_pending: number;
   /**

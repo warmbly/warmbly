@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
@@ -89,7 +90,7 @@ func (r *taskRepository) ListPendingSendResults(ctx context.Context, after uuid.
 		WHERE id>$1 AND send_executor_result IS NOT NULL AND send_executor_started_at IS NOT NULL
 		AND send_executor_nonce IS NOT NULL
 		AND send_result_applied_at IS NULL AND (send_result_state IS NULL OR send_result_state='unknown')
-		AND status<>'cancelled' ORDER BY id LIMIT $2`, after, min(max(limit, 1), 200))
+		AND (status<>'cancelled' OR campaign_send_isolated_at IS NOT NULL) ORDER BY id LIMIT $2`, after, min(max(limit, 1), 200))
 	if err != nil {
 		return nil, err
 	}
@@ -116,13 +117,16 @@ type SendAdmission struct {
 }
 
 type SendRecoveryHold struct {
-	Reason string
-	Warmup bool
+	Reason   string
+	Warmup   bool
+	Campaign bool
 }
 
 func (r *emailRepository) GetSendRecoveryHolds(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]SendRecoveryHold, error) {
 	// Normal in-flight sends also hold admission; only surface settled or stuck ones.
-	query := `SELECT ea.id,COALESCE(ea.send_recovery_reason,''),COALESCE(t.task_type='warmup',false) FROM email_accounts ea
+	query := `SELECT ea.id,COALESCE(ea.send_recovery_reason,''),COALESCE(t.task_type='warmup',false),
+		COALESCE(t.task_type='campaign' AND t.send_executor_nonce IS NOT NULL AND t.send_executor_started_at IS NOT NULL
+		AND EXISTS(SELECT 1 FROM campaign_tasks ct WHERE ct.task_id=t.id),false) FROM email_accounts ea
 		LEFT JOIN tasks t ON t.id=ea.send_recovery_task_id AND t.email_account_id=ea.id
 		WHERE ea.id=ANY($1) AND ea.send_recovery_hold
 		AND (ea.send_recovery_reason IS DISTINCT FROM 'unknown' OR t.id IS NULL
@@ -143,9 +147,10 @@ func (r *emailRepository) GetSendRecoveryHolds(ctx context.Context, ids []uuid.U
 	for rows.Next() {
 		var id uuid.UUID
 		var hold SendRecoveryHold
-		if err := rows.Scan(&id, &hold.Reason, &hold.Warmup); err != nil {
+		if err := rows.Scan(&id, &hold.Reason, &hold.Warmup, &hold.Campaign); err != nil {
 			return nil, err
 		}
+		hold.Campaign = hold.Campaign && config.CampaignSendIsolationEnabled()
 		holds[id] = hold
 	}
 	return holds, rows.Err()
@@ -209,8 +214,9 @@ func (r *taskRepository) ApplySendResult(ctx context.Context, result models.Send
 	var applied *time.Time
 	var mailboxID uuid.UUID
 	var status string
-	err = tx.QueryRow(ctx, `SELECT send_result_state, send_result_applied_at, email_account_id, status::text
-	 FROM tasks WHERE id = $1`, result.TaskID).Scan(&previous, &applied, &mailboxID, &status)
+	var isolated bool
+	err = tx.QueryRow(ctx, `SELECT send_result_state, send_result_applied_at, email_account_id, status::text,campaign_send_isolated_at IS NOT NULL
+	 FROM tasks WHERE id = $1`, result.TaskID).Scan(&previous, &applied, &mailboxID, &status, &isolated)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
@@ -268,7 +274,7 @@ func (r *taskRepository) ApplySendResult(ctx context.Context, result models.Send
 		}
 		return nil
 	}
-	if status == "cancelled" {
+	if status == "cancelled" && (!isolated || state == "unknown") {
 		return nil
 	}
 	if state == "failed" && status == "active" {
@@ -287,6 +293,12 @@ func (r *taskRepository) ApplySendResult(ctx context.Context, result models.Send
 	var effects []func(context.Context)
 	var effectError error
 	if state != "unknown" {
+		// Reconcile late evidence without giving the isolated command execution authority.
+		if isolated {
+			if _, err = tx.Exec(ctx, `UPDATE tasks SET status='completed' WHERE id=$1`, result.TaskID); err != nil {
+				return err
+			}
+		}
 		if status == "dead_lettered" && state == "sent" {
 			sentAt := result.SentAt
 			if sentAt.IsZero() {
@@ -305,6 +317,23 @@ func (r *taskRepository) ApplySendResult(ctx context.Context, result models.Send
 		}
 		if _, err = tx.Exec(ctx, `UPDATE tasks SET send_result_applied_at = NOW(), send_released_at=CASE WHEN send_result_state='failed' THEN NOW() ELSE send_released_at END WHERE id = $1`, result.TaskID); err != nil {
 			return err
+		}
+		if isolated {
+			// Serialize confirmations from different mailboxes before checking remaining contact protection.
+			if _, err = tx.Exec(ctx, `SELECT 1 FROM campaign_leads cl JOIN campaign_tasks ct
+				ON ct.campaign_id=cl.campaign_id AND ct.contact_id=cl.contact_id WHERE ct.task_id=$1 FOR UPDATE OF cl`, result.TaskID); err != nil {
+				return err
+			}
+			if _, err = tx.Exec(ctx, `UPDATE campaign_leads cl SET send_outcome_pending_at=NULL
+				FROM campaign_tasks ct WHERE ct.task_id=$1 AND cl.campaign_id=ct.campaign_id AND cl.contact_id=ct.contact_id
+				AND NOT EXISTS(SELECT 1 FROM campaign_tasks other_ct JOIN tasks other_t ON other_t.id=other_ct.task_id
+				 WHERE other_ct.campaign_id=cl.campaign_id AND other_ct.contact_id=cl.contact_id
+				 AND other_t.campaign_send_isolated_at IS NOT NULL AND other_t.send_result_applied_at IS NULL)`, result.TaskID); err != nil {
+				return err
+			}
+			if _, err = tx.Exec(ctx, `UPDATE tasks SET status='cancelled' WHERE id=$1`, result.TaskID); err != nil {
+				return err
+			}
 		}
 		if err = resolveSendDeadLetter(ctx, tx, result.TaskID); err != nil {
 			return err
@@ -338,7 +367,7 @@ func refreshSendHold(ctx context.Context, tx pgx.Tx, mailboxID uuid.UUID, taskID
 	_, err := tx.Exec(ctx, `WITH next_hold AS (
 			SELECT id,reason FROM (
 			 SELECT t.id,'unknown' AS reason,1 AS priority,t.created_at FROM tasks t
-			 WHERE t.email_account_id=$1 AND t.send_result_state='unknown' AND t.warmup_send_retired_at IS NULL
+			 WHERE t.email_account_id=$1 AND t.send_result_state='unknown' AND t.warmup_send_retired_at IS NULL AND t.campaign_send_isolated_at IS NULL AND t.send_hold_lifted_at IS NULL
 			 UNION ALL
 			 SELECT t.id,'conflict',2,t.created_at FROM send_recovery_resolutions r JOIN tasks t ON t.id=r.recovery_task_id
 			 WHERE t.email_account_id=$1 AND (r.previous_reason='unknown' OR r.evidence_type='authoritative_result_conflict')
@@ -369,7 +398,8 @@ func persistSendHold(ctx context.Context, tx pgx.Tx, mailboxID uuid.UUID, result
 	if state == "unknown" {
 		_, err := tx.Exec(ctx, `UPDATE email_accounts SET send_recovery_hold = true, send_recovery_task_id = $2,
 			send_recovery_reason = 'unknown', send_cooldown_provider = provider::text
-			WHERE id = $1 AND (NOT send_recovery_hold OR send_recovery_reason = 'unknown')`, mailboxID, result.TaskID)
+			WHERE id = $1 AND (NOT send_recovery_hold OR send_recovery_reason = 'unknown')
+			AND EXISTS(SELECT 1 FROM tasks t WHERE t.id=$2 AND t.campaign_send_isolated_at IS NULL AND t.send_hold_lifted_at IS NULL)`, mailboxID, result.TaskID)
 		return err
 	}
 	if f == nil {

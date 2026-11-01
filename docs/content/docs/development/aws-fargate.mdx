@@ -220,7 +220,18 @@ references, sizes, health checks) and the workflow owns only the image. A deploy
    stable.
 5. Starts a [canary rollout](/development/warmblyctl/#fleet) of the worker and
    consumer hosts from the `ops` task. The first host moves alone and the rest
-   follow after it has stayed healthy for 30 minutes.
+   follow after it has stayed healthy for five minutes by default. Every host
+   must then finish the same healthy-uptime bake before the rollout completes.
+   Two stages therefore need at least ten minutes, plus image pulls, restarts
+   and heartbeat delivery. Missing heartbeats, host rollback and repeated
+   restarts still stop admission. Self-hosted CLI rollout defaults remain
+   unchanged at 30 minutes per stage.
+
+The fleet-start task retries an image-pull failure at most twice, after 30 and
+60 seconds, only when ECS confirms the task stopped before its command ran.
+It reuses the exact task definition and command with an idempotent token per
+attempt. An executed command failure or unresolved task requires inspection;
+migration tasks are never automatically retried by this recovery path.
 
 During the bake, a service fails when one of its alarms fires or ECS rolls it
 back. Each public service has two alarms, which ECS also uses to roll back on
@@ -250,7 +261,11 @@ change to a value they hold once their env refreshes
 ([keeping a node's env current](/development/configuration/#keeping-a-nodes-env-current)).
 
 `services` limits a run to some of the five services, and `bake_seconds` changes
-the bake. Releases published before build provenance existed fail the provenance
+the ECS service bake. `fleet_bake_seconds` sets the healthy uptime required per
+worker stage, from 300 through 3600 seconds. Automatic releases use the
+`AWS_FLEET_BAKE_SECONDS` repository variable, defaulting to 300. Set it to 1800
+for a longer observation window. This changes future rollouts; the policy of an
+active rollout stays fixed. Releases published before build provenance existed fail the provenance
 check; dispatch those once with `require_attestation` off. The automatic
 redeploy after a Terraform apply cannot turn it off, so until a release with
 provenance is running it stops at that check and changes nothing.
@@ -328,6 +343,109 @@ plan reaches a log, a comment or an artifact.
 The bootstrap stack stays manual. So does any change to the CI roles themselves: the apply role cannot
 change its own permissions or trust, or the plan role's, so an administrator
 applies those by hand.
+
+## Encrypt traffic inside the VPC
+
+The load balancer terminates the public TLS connection. With `target_tls` set,
+the hops behind it are TLS too: the load balancer reaches each task over HTTPS
+with HTTPS health checks, and the forms and tracking services reach the
+backend's internal API at `https://backend.<namespace>:<target_tls_port>`,
+verifying its certificate. The services read the settings described under
+[TLS listeners](/development/configuration/#tls-listeners).
+
+The two hops trust different things. A load balancer does not validate its
+targets' certificates, so forms, tracking and realtime serve a certificate
+generated in memory at boot. The forms and tracking services do verify the
+backend, so it serves a certificate you supply, and they trust exactly that
+certificate (`BACKEND_INTERNAL_CA`) rather than any public authority. The
+internal hop stays on the private service-discovery name, so the internal API
+token never leaves the VPC.
+
+### Prepare the backend certificate
+
+Create a key pair naming the private host. Use the runtime `namespace`
+(`warmbly.internal` by default):
+
+```bash
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 825 \
+  -subj "/CN=backend.warmbly.internal" \
+  -addext "subjectAltName=DNS:backend.warmbly.internal" \
+  -addext "basicConstraints=critical,CA:FALSE" \
+  -addext "keyUsage=critical,digitalSignature" \
+  -addext "extendedKeyUsage=serverAuth" \
+  -keyout key.pem -out cert.pem
+```
+
+Add the contents of `key.pem` to a new version of the backend secret as
+`SERVE_TLS_KEY`, add `SERVE_TLS_KEY` to the backend's `secret_keys` and point
+its `secret_version_id` at that version. Put the contents of `cert.pem` in the
+runtime var file as `backend_internal_certificate`; it is public. The plan
+refuses `target_tls` without both. Replace the pair before it expires: the
+backend logs a line at boot inside the last 30 days, and an expired certificate
+stops click tracking and hosted forms.
+
+### Move through the stages
+
+`target_tls` takes six values. Change it one stage at a time, and let each
+merge finish its apply and redeploy before the next:
+
+| Stage | What changes |
+|---|---|
+| `off` | Nothing; tasks serve plain HTTP only |
+| `serve` | Every load-balanced task also serves TLS on `target_tls_port` (default `8443`), and the security groups open that port to the load balancer and between tasks. Traffic is unchanged |
+| `both` | An HTTPS target group per service is attached to its listener rule at weight 0 and the tasks register in both groups. The forms and tracking services move to the backend's TLS port |
+| `route` | Listener rules forward to HTTPS and alarms watch the HTTPS groups. The HTTP groups, healthy registrations and network rules remain ready while the new path bakes |
+| `drain` | After the route deployment and bakes pass, ECS stops registering HTTP targets and listeners drop their HTTP references. The groups and network rules remain while connections drain |
+| `on` | After the drain deployment and bakes pass, the empty HTTP groups, the plain-port security group rules and the internal `8080` rule are removed. Every plain listener is bound to loopback for the container health check only |
+
+Each stage keeps the listeners the previous one used, so a rolling deploy never
+meets a task that cannot answer. `serve` and `both` only add task definition
+revisions and resources, so they apply on their own. `route` performs the traffic
+switch without deleting network rules or target groups. It must finish its normal
+release redeploy and bakes before a separately approved `drain` run. Cleanup checks
+that the HTTP groups have no load balancer references or registered targets and
+that every public service uses only its HTTPS target group. ECS waits for a steady
+state during these stages.
+
+Before `serve`, the running release has to support `SERVE_TLS`. An older image
+ignores the setting and keeps working in `serve`, but not in `both` or `on`, so
+advance past `serve` only once rolling back to a release without it is no longer
+needed. A stage can be undone by setting the previous one while the current
+one is `serve` or `both`. From `route`, returning to `both` sends traffic to the
+still-registered HTTP targets. From `drain`, return to `route` first and wait for
+healthy HTTP registrations before returning to `both`. Stepping back from `on` is not supported, because it
+would forward to an HTTP target group that has no tasks yet; roll back images
+among releases that support `SERVE_TLS` instead.
+
+### Finalize TLS independently
+
+The manual **Finalize runtime TLS** workflow advances `both` to `route`, then
+`drain` and `on` in separate approved runs without applying other infrastructure
+changes. After verifying the pinned backend hop
+and every HTTPS target, upload the reviewed `both` runtime var file to
+`warmbly/production/vars/runtime-tls.tfvars.json` in the private state bucket.
+Keep its S3 version ID: the workflow reads that exact version in both jobs.
+
+Dispatch the workflow from `main` with stage `route`, that version ID and the
+currently deployed release tag. It prints resource addresses and actions for review and
+waits in `aws-infrastructure-approval`. After approval it rechecks HTTPS target
+health, replans and requires the complete resource changes to match the approved
+digest. Each job first requires all four services to be stable on the selected
+release with compatible TLS listeners and registrations. Route also requires
+healthy HTTP fallback targets. Route and drain plans refuse target-group and security-rule deletions. The scope
+guard refuses changes to other task definitions or infrastructure.
+
+After applying, it redeploys the same release to backend, forms, tracking and
+realtime through the normal attestation, secret comparison, alarm and bake gates.
+It does not start a worker rollout. After that run succeeds, persist
+`target_tls=route`, verify HTTPS health and routes, and upload a new versioned
+snapshot. Dispatch stage `drain` with that snapshot and the successful route run ID
+as `previous_run`. After the drain run succeeds, persist `target_tls=drain`, upload
+a new snapshot, and dispatch `on` with the successful drain run ID. Each stage
+verifies the preceding workflow completed all bakes. Cleanup is refused until
+HTTP references and registrations have drained. Review and approve each
+plan separately. Persist `target_tls=on` only after it succeeds, then verify the
+effective loopback listeners and HTTPS routes.
 
 ## One-time GitHub setup
 

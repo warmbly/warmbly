@@ -11,7 +11,7 @@ export interface TrackingDomainUse {
     mailboxes: number;
 }
 
-export type DNSRecordPurpose = "ownership" | "root" | "www";
+export type DNSRecordPurpose = "ownership" | "root" | "www" | "website";
 
 /** One record to add at the DNS provider, and whether it is in place. */
 export interface DNSRecord {
@@ -62,6 +62,16 @@ export interface DomainRedirect {
     target_active?: boolean;
     /** Why the saved destination is not in use, when target_active is false. */
     target_inactive_reason?: string;
+    /** Set when the destination is the workspace's only once its website carries the workspace's TXT record. */
+    website?: RedirectWebsite | null;
+}
+
+/** A destination website and the TXT record, at the website's own DNS, that proves it is the workspace's. */
+export interface RedirectWebsite {
+    domain: string;
+    verified: boolean;
+    /** Absent when the website is already one of the workspace's domains. */
+    record?: DNSRecord | null;
 }
 
 export interface SendingDomain {

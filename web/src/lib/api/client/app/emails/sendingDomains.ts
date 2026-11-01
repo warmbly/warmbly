@@ -4,6 +4,7 @@ import type {
     BulkDomainResult,
     BulkDomainSetupRequest,
     DomainRedirect,
+    RedirectWebsite,
     SendingDomain,
     SetDomainRedirectRequest,
     SetDomainTrackingResult,
@@ -45,6 +46,17 @@ export async function setDomainRedirect(domain: string, body: SetDomainRedirectR
         data: body,
         authorization: true,
         timeout: 30_000,
+    });
+}
+
+// Looks for the TXT record that makes the destination's website the workspace's, now.
+export async function verifyRedirectWebsite(domain: string, targetUrl: string): Promise<RedirectWebsite> {
+    return await Request<RedirectWebsite>({
+        method: "POST",
+        url: `${base(domain)}/redirect/website`,
+        data: { target_url: targetUrl },
+        authorization: true,
+        timeout: 15_000,
     });
 }
 

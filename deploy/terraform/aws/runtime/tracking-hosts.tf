@@ -21,6 +21,20 @@ resource "aws_lb_listener_rule" "tracking_alias" {
   }
   action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.service["tracking"].arn
+    target_group_arn = contains(["both", "route"], var.target_tls) ? null : local.serving_target_groups["tracking"].arn
+    dynamic "forward" {
+      for_each = contains(["both", "route"], var.target_tls) ? ["tracking"] : []
+      content {
+        target_group {
+          arn    = aws_lb_target_group.service[forward.value].arn
+          weight = var.target_tls == "both" ? 1 : 0
+        }
+        target_group {
+          arn    = aws_lb_target_group.service_tls[forward.value].arn
+          weight = var.target_tls == "route" ? 1 : 0
+        }
+      }
+    }
   }
+  depends_on = [aws_vpc_security_group_ingress_rule.service, aws_vpc_security_group_ingress_rule.service_tls]
 }

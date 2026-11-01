@@ -80,17 +80,9 @@ func (s *tokenService) RefreshToken(ctx context.Context, refreshToken string) (*
 		return nil, errx.InternalError()
 	}
 
-	// Invalidate the cached session. Postgres now has the new nonces, but
-	// Redis still has the old ones from when the session was last read. The
-	// very next API call would arrive with the NEW access nonce, GetSession
-	// would return the stale cached row with the OLD access nonce, the
-	// mismatch check would 401, and the frontend would log the user out.
-	// Dropping the cache forces the next GetSession to re-read from the
-	// updated Postgres row.
+	// Invalidate copies used by older processes during rolling deployments.
 	if err := s.deleteSession(ctx, sess.ID); err != nil {
 		errs.CaptureException(err)
-		// Don't fail the refresh — the worst case if the delete somehow
-		// failed is the user retries; we already returned the new tokens.
 	}
 
 	return &models.Token{
