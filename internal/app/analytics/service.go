@@ -276,7 +276,34 @@ func (s *analyticsService) accountErrors(ctx context.Context, accountID uuid.UUI
 	if err != nil {
 		return make([]models.AccountError, 0)
 	}
-	return toAccountErrors(dbErrors)
+	success := s.lastTransportSuccess(ctx, []uuid.UUID{accountID})
+	return toAccountErrors(withoutTransientBlips(dbErrors, success[accountID], time.Now()))
+}
+
+// lastTransportSuccess reads when each mailbox last synced and sent; a failed read hides nothing.
+func (s *analyticsService) lastTransportSuccess(ctx context.Context, ids []uuid.UUID) map[uuid.UUID]map[models.MailTransportOperation]time.Time {
+	reader, ok := s.emailAccountErrorsRepo.(interface {
+		LastTransportSuccess(context.Context, []uuid.UUID) (map[uuid.UUID]map[models.MailTransportOperation]time.Time, *errx.Error)
+	})
+	if !ok {
+		return nil
+	}
+	success, xerr := reader.LastTransportSuccess(ctx, ids)
+	if xerr != nil {
+		return nil
+	}
+	return success
+}
+
+// withoutTransientBlips drops temporary failures on a mailbox that is still working, so a passing blip never reads as a fault.
+func withoutTransientBlips(rows []repository.EmailAccountError, success map[models.MailTransportOperation]time.Time, now time.Time) []repository.EmailAccountError {
+	out := rows[:0:0]
+	for _, row := range rows {
+		if !models.MailTransientBlip(row.Severity, row.ErrorCode, row.Operation, row.ObservationSource, success, now) {
+			out = append(out, row)
+		}
+	}
+	return out
 }
 
 // toAccountErrors maps stored error rows into the API shape, never nil.
@@ -648,8 +675,9 @@ func (s *analyticsService) accountStatusesPage(ctx context.Context, orgID uuid.U
 		if xerr != nil {
 			return nil, xerr
 		}
+		success := s.lastTransportSuccess(ctx, ids)
 		for id, rows := range raw {
-			errsByID[id] = toAccountErrors(rows)
+			errsByID[id] = toAccountErrors(withoutTransientBlips(rows, success[id], now))
 		}
 	}
 

@@ -1068,6 +1068,7 @@ func (r *analyticsRepository) GetAccountHealthSummary(ctx context.Context, orgID
 						SELECT 1 FROM email_account_errors eae
 						WHERE eae.email_account_id = ea.id
 						  AND eae.resolved_at IS NULL AND eae.severity = 'WARNING'
+						  AND NOT ` + mailTransientBlipSQL("eae") + `
 					) THEN 'warning'
 				ELSE 'healthy'
 			END AS status
