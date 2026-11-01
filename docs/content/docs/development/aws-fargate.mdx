@@ -444,7 +444,11 @@ as `previous_run`. After the drain run succeeds, persist `target_tls=drain`, upl
 a new snapshot, and dispatch `on` with the successful drain run ID. Each stage
 verifies the preceding workflow completed all bakes. Cleanup is refused until
 HTTP references and registrations have drained. Review and approve each
-plan separately. Persist `target_tls=on` only after it succeeds, then verify the
+plan separately. The scoped plan explicitly targets the HTTP groups, and an
+`on` plan must delete exactly the four groups for backend, forms, tracking and
+realtime. A plan that omits any group is refused. This check expects the normal
+drain-to-on transition; a partially completed transition requires a separately
+reviewed recovery path rather than an unchanged retry. Persist `target_tls=on` only after it succeeds, then verify the
 effective loopback listeners and HTTPS routes.
 
 ## One-time GitHub setup
