@@ -1,21 +1,21 @@
 name: Terraform AWS
 
 # Pull requests get a plan summary comment. On main, a stack whose plan only
-# creates or updates applies on its own; one that replaces or destroys waits in
-# the aws-infrastructure-approval environment. Var files live in the private
+# creates or updates applies on its own; destructive or protected evidence IAM
+# changes wait in aws-infrastructure-approval. Var files live in the private
 # state bucket, and no plan body ever reaches a log, a comment or an artifact.
 on:
   pull_request:
     paths:
       - 'deploy/terraform/aws/**'
       - '.github/workflows/terraform-aws.yml'
-      - '.github/scripts/terraform-stack.sh'
+      - '.github/scripts/terraform-stack*.sh'
   push:
     branches: [main]
     paths:
       - 'deploy/terraform/aws/**'
       - '.github/workflows/terraform-aws.yml'
-      - '.github/scripts/terraform-stack.sh'
+      - '.github/scripts/terraform-stack*.sh'
   workflow_dispatch:
 
 permissions:
@@ -48,7 +48,8 @@ jobs:
           done
       # Mocked provider: no credentials, nothing created.
       - run: terraform -chdir=deploy/terraform/aws/runtime test -no-color
-      - run: shellcheck .github/scripts/terraform-stack.sh
+      - run: shellcheck .github/scripts/terraform-stack*.sh
+      - run: bash .github/scripts/terraform-stack.test.sh
 
   plan:
     name: Plan summary
@@ -92,7 +93,7 @@ jobs:
               case "$class" in
                 none) echo "**$stack**: no changes" ;;
                 safe) echo "**$stack**: applies on merge" ;;
-                gated) echo "**$stack**: replaces or destroys, so it waits for approval in aws-infrastructure-approval" ;;
+                gated) echo "**$stack**: destructive or protected IAM changes wait for approval in aws-infrastructure-approval" ;;
               esac
               if [ "$class" != none ]; then
                 echo '```'

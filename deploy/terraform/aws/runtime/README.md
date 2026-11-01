@@ -102,6 +102,15 @@ trust is applied by an administrator by hand. Var files stay in
 the state bucket under `warmbly/production/vars/`; only resource addresses and
 actions are ever printed.
 
+`tls_recovery_evidence_writer` is a separate hosted-only opt-in, defaulting to
+`false`. It creates the dedicated `warmbly-production-tls-recovery-evidence` role
+and one conditional private S3 upload policy, with no read, delete or deployment
+access. It requires the production account, bucket and name, the Warmbly
+repository and `terraform_ci`. Every managed change to this role or its policy
+requires `aws-infrastructure-approval`, including creation. Its optional output
+is `tls_recovery_evidence_role_arn`. Provisioning does not enable recovery; the
+runbook in `aws-fargate.mdx` describes the separate configuration and review.
+
 The runtime sets `DB_MIGRATIONS_ON_START=false` for the backend. New application
 images must support that setting and schema readiness before activation. Keep
 migrations additive and compatible with the previous release throughout rollout
