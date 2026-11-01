@@ -40,7 +40,9 @@ jq -n '{resource_changes:[{address:"aws_ecs_service.service[\"forms\"]",change:{
   after:{load_balancer:[{target_group_arn:"forms-tls/2",container_port:8443}]}}}]}' >"$work/plan.json"
 bash .github/scripts/runtime-tls.sh check-plan "$work/plan.json" drain
 for stage in route on; do
-  if bash .github/scripts/runtime-tls.sh check-plan "$work/plan.json" "$stage" 2>/dev/null; then
+  cp "$work/plan.json" "$work/registration-$stage.json"
+  if [ "$stage" = on ]; then complete_cleanup "$work/registration-$stage.json"; fi
+  if bash .github/scripts/runtime-tls.sh check-plan "$work/registration-$stage.json" "$stage" 2>/dev/null; then
     echo 'Registration detached outside the drain stage' >&2
     exit 1
   fi
@@ -69,10 +71,11 @@ if bash .github/scripts/runtime-tls.sh check-plan "$work/changed.json" route 2>/
   echo 'Network change accepted as metadata normalization' >&2
   exit 1
 fi
-jq -n '{resource_changes:[{address:"aws_ecs_task_definition.service[\"backend\"]",change:{actions:["delete","create"],before:{container_definitions:([{image:"pinned",environment:[]}]|tojson)},after:{container_definitions:([{image:"pinned",environment:[{name:"SERVE_HTTP_LOOPBACK_ONLY",value:"true"}]}]|tojson)}}}]}' >"$work/plan.json"
+jq -n '{resource_changes:[{address:"aws_ecs_task_definition.service[\"backend\"]",change:{actions:["delete","create"],before:{container_definitions:([{image:"pinned",environment:[]}]|tojson)},after:{container_definitions:([{image:"pinned",environment:[{name:"SERVE_HTTP_LOOPBACK_ONLY",value:"true"}]}]|tojson)}}}]}' >"$work/loopback-only.json"
+cp "$work/loopback-only.json" "$work/plan.json"
 complete_cleanup "$work/plan.json"
 bash .github/scripts/runtime-tls.sh check-plan "$work/plan.json" on
-if bash .github/scripts/runtime-tls.sh check-plan "$work/plan.json" route 2>/dev/null; then
+if bash .github/scripts/runtime-tls.sh check-plan "$work/loopback-only.json" route 2>/dev/null; then
   echo 'Loopback-only listener accepted before HTTP registrations drained' >&2
   exit 1
 fi
