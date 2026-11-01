@@ -6,5 +6,8 @@ export default function useAccountStatus(id: string) {
         queryKey: ["analytics", "accounts", id],
         queryFn: () => getAccountStatus(id),
         enabled: !!id,
-    })
+        // Routine recovery persists without a realtime event.
+        refetchInterval: 60_000,
+        refetchOnWindowFocus: true,
+    });
 }
