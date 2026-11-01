@@ -10,11 +10,6 @@ export function cloudSendFailure(state?: PoolLinkMailboxState | null): WarmupSen
     return open ? { ...failure, message: [open.title, open.message, open.action_required].filter(Boolean).join(". ") } : failure;
 }
 
-// Not warming on the cloud: paused, or reported with warmup never started there. Resume starts either.
-export function cloudWarmupPaused(state?: PoolLinkMailboxState | null): boolean {
-    return !!state && (!state.warmup || state.warmup.paused || !!state.participation && (state.participation.mode === "off" || !state.participation.send));
-}
-
 // Warmbly Cloud owns these for a mailbox it warms; an edit is sent to it and its answer is what shows.
 export const cloudOwnedWarmupFields = [
     "warmup_base", "warmup_max", "warmup_increase", "warmup_reply_rate",

@@ -70,6 +70,8 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import useCrmProvider from "@/hooks/useCrmProvider";
 import { CrmMark } from "@/components/app/crm/crmProviders";
+import useCloudPool from "@/hooks/useCloudPool";
+import { resolveMailboxWarmup, warmupUnknown } from "@/lib/mailboxWarmup";
 
 // Stable (module-level) empty contacts search so the sidebar's contact-count
 // query key never changes identity between renders (which would refetch-loop).
@@ -518,7 +520,7 @@ function TabDualStat({
     title,
 }: {
     total: number;
-    active: number;
+    active: number | null;
     activeGlyph: ReactNode;
     activeClass: string;
     title?: string;
@@ -534,17 +536,17 @@ function TabDualStat({
                 (campaigns, accounts, tasks) shows both numbers consistently. */}
             <span className="h-3 w-px shrink-0 bg-slate-200" aria-hidden />
             <span
-                className={`inline-flex items-center gap-1 ${active > 0 ? activeClass : "text-slate-300"}`}
+                className={`inline-flex items-center gap-1 ${(active ?? 0) > 0 ? activeClass : "text-slate-300"}`}
             >
                 {/* The motif (sending dot-grid / warming flame / overdue ping) only
                     appears when there's actually a live subset; at 0 it's a calm
                     muted number. */}
-                {active > 0 && activeGlyph}
-                <AnimatedNumber
+                {(active ?? 0) > 0 && activeGlyph}
+                {active === null ? <span>—</span> : <AnimatedNumber
                     value={active}
                     format={compactN}
                     className="text-[10.5px] font-semibold tabular-nums leading-none"
-                />
+                />}
             </span>
         </span>
     );
@@ -572,26 +574,24 @@ function CampaignActivity() {
     );
 }
 
-// MailboxActivity is the Accounts-row indicator — deliberately a DIFFERENT
-// motif than the campaigns dot-grid: a flickering flame + count of mailboxes
-// warming up right now (warmup enabled and not paused). Hidden when none are
-// warming. Counts come from the shared emails-list cache, which the realtime
-// layer invalidates on account/warmup events, so it stays live.
+// The count follows the warmup owner, independently of the local ramp anchor.
 function MailboxActivity() {
-    const { emails } = useEmails({ query: "", tag: "" });
-    const warming = useMemo(
-        () => emails.filter((e) => !!e.warmup && !e.warmup_paused_at).length,
-        [emails],
-    );
+    const inventory = useEmails({ query: "", tag: "" });
+    const { emails } = inventory;
+    const pool = useCloudPool();
+    const states = emails.map((mailbox) => resolveMailboxWarmup(mailbox, undefined, pool));
+    const checking = inventory.isLoading || inventory.isLoadingRest || pool.loading;
+    const unknown = inventory.isLoading || inventory.isLoadingRest || inventory.isError || inventory.isIncomplete || pool.loading || states.some(warmupUnknown);
+    const warming = states.filter((state) => state.activity === "active").length;
     return (
         <TabDualStat
             total={emails.length}
-            active={warming}
+            active={unknown ? null : warming}
             activeClass="text-orange-500"
             activeGlyph={
                 <FlameIcon className="w-3.5 h-3.5 flame-flicker" strokeWidth={2.2} />
             }
-            title={`${emails.length} mailbox${emails.length === 1 ? "" : "es"}${warming > 0 ? `, ${warming} warming up` : ""}`}
+            title={`${emails.length} mailbox${emails.length === 1 ? "" : "es"}${unknown ? `, warmup status ${checking ? "checking" : "unavailable"}` : `, ${warming} warming up`}`}
         />
     );
 }

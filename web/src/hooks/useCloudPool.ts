@@ -40,9 +40,10 @@ export default function useCloudPool() {
         enrolledCount,
         rowFor,
         isEnrolled: (id: string) => byId.get(id)?.enrolled === true,
-        loading: manageable && (status.isPending || (connected && mailboxes.isPending)),
+        loading: authConfig.isLoading || manageable && (status.isPending || (connected && mailboxes.isPending)),
         refreshing: manageable && (status.isFetching || (connected && mailboxes.isFetching)),
-        unavailable: manageable && (status.isError || (connected && mailboxes.isError)),
+        unavailable: authConfig.isError || manageable && (status.isError || (connected && mailboxes.isError)),
+        reportsUnavailable: connected && mailboxes.isError,
         observedAt: connected ? mailboxes.dataUpdatedAt : 0,
     };
 }

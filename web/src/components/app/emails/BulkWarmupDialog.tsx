@@ -11,6 +11,7 @@ import { Loading } from "@/components/loader";
 import updateEmail from "@/lib/api/client/app/emails/updateEmail";
 import warmupLifecycle from "@/lib/api/client/app/emails/warmupLifecycle";
 import type Inbox from "@/lib/api/models/app/emails/Inbox";
+import { cloudLinkScope, invalidateWarmupReports } from "@/lib/api/hooks/app/cloudlink/warmupReports";
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
@@ -52,6 +53,7 @@ export default function BulkWarmupDialog({
             return;
         }
         setBusy(true);
+        const scope = cloudLinkScope(queryClient);
         const patch: Partial<Inbox> = {
             warmup_base: base,
             warmup_increase: increase,
@@ -73,7 +75,7 @@ export default function BulkWarmupDialog({
         );
         const failed = results.filter((r) => r.status === "rejected").length;
         await queryClient.invalidateQueries({ queryKey: ["emails"] });
-        await queryClient.invalidateQueries({ queryKey: ["analytics", "accounts"] });
+        await invalidateWarmupReports(queryClient, scope);
         setBusy(false);
         if (failed > 0) {
             toast.error(`${failed} of ${n} mailbox${n > 1 ? "es" : ""} couldn't start`);

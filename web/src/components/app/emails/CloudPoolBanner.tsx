@@ -8,17 +8,26 @@ import React from "react";
 import { Link } from "@tanstack/react-router";
 import { ArrowRightIcon, CloudIcon, ExternalLinkIcon, MailCheckIcon, TrendingUpIcon, XIcon } from "lucide-react";
 import useCloudPool from "@/hooks/useCloudPool";
+import useEmails from "@/lib/api/hooks/app/emails/useEmails";
+import { resolveMailboxWarmup, warmupUnknown } from "@/lib/mailboxWarmup";
 
 const DISMISS_KEY = "warmbly.cloud-pool-banner.dismissed";
 
-export default function CloudPoolBanner({ onConnect, mailboxCount }: { onConnect: () => void; mailboxCount: number }) {
+export default function CloudPoolBanner({ onConnect }: { onConnect: () => void }) {
     const pool = useCloudPool();
+    const inventory = useEmails({ query: "", tag: "", enabled: pool.connected });
+    const mailboxCount = inventory.emails.length;
+    const enrolled = inventory.emails.filter((mailbox) => pool.rowFor(mailbox.id)?.enrolled);
+    const states = inventory.emails.map((mailbox) => resolveMailboxWarmup(mailbox, undefined, pool));
+    const unknown = inventory.isPending || inventory.isLoadingRest || inventory.isError || inventory.isIncomplete || states.some(warmupUnknown);
+    const active = states.filter((state) => state.source === "cloud" && state.activity === "active").length;
     const [dismissed, setDismissed] = React.useState(() => localStorage.getItem(DISMISS_KEY) === "1");
 
     if (!pool.manageable || pool.loading) return null;
+    if (!pool.connected && pool.unavailable) return <p className="text-xs text-slate-500">Cloud warmup status unavailable.</p>;
 
     if (pool.connected && !pool.workspaceConnected) {
-        return <div className="px-3 py-2 text-[12.5px] text-slate-600">Existing Cloud mailboxes keep warming. <Link to="/app/settings/warmbly-cloud" className="font-medium text-sky-700 underline">Connect this workspace</Link> to add more.</div>;
+        return <div className="px-3 py-2 text-[12.5px] text-slate-600">This instance has a shared Cloud connection. <Link to="/app/settings/warmbly-cloud" className="font-medium text-sky-700 underline">Connect this workspace</Link> to add more.</div>;
     }
     if (pool.connected) {
         const plan = pool.plan;
@@ -27,7 +36,7 @@ export default function CloudPoolBanner({ onConnect, mailboxCount }: { onConnect
         // The allowance is per cloud workspace, so the cloud's count is the
         // one that decides, not this instance's own enrolled count.
         const used = plan?.enrolled ?? pool.enrolledCount;
-        const atLimit = !premium && limit !== null && used >= limit && mailboxCount > pool.enrolledCount;
+        const atLimit = !unknown && !premium && limit !== null && used >= limit && mailboxCount > enrolled.length;
         if (atLimit && plan?.upgrade_url) {
             return (
                 <div>
@@ -60,9 +69,9 @@ export default function CloudPoolBanner({ onConnect, mailboxCount }: { onConnect
                     <CloudIcon className="w-4 h-4 shrink-0 text-sky-600" />
                     <span className="min-w-0 flex-1 leading-snug">
                         <span className="font-medium">
-                            {pool.enrolledCount === 0
-                                ? "No mailbox is warming in Warmbly Cloud yet."
-                                : `${pool.enrolledCount} of ${mailboxCount} mailboxes warm in Warmbly Cloud.`}
+                            {unknown
+                                ? "Cloud warmup status unavailable."
+                                : `${enrolled.length} of ${mailboxCount} mailboxes connected to Warmbly Cloud. ${active} warming.`}
                         </span>{" "}
                         <span className="text-slate-500">
                             {premium ? "Premium pool." : limit === null ? "Unlimited." : `${used} of ${limit} free.`}

@@ -14,22 +14,29 @@ import { useCloudLinkMailboxLifecycle, useEnrollCloudLinkMailbox, useUnenrollClo
 import { providerSupported } from "@/app/app/settings/warmbly-cloud/providers";
 import WarmupPartnerDiversity from "./WarmupPartnerDiversity";
 import WarmupSendFailureNote from "./WarmupSendFailureNote";
-import { cloudSendFailure, cloudWarmupPaused } from "@/lib/cloudWarmup";
+import { cloudSendFailure } from "@/lib/cloudWarmup";
+import { resolveMailboxWarmup, warmupUnknown } from "@/lib/mailboxWarmup";
 import { cloudStandingUnavailable } from "@/lib/mailboxStatus";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { setCloudLinkParticipation } from "@/lib/api/client/app/cloudlink/cloudLink";
 import type { DiagnosticParticipation } from "@/lib/api/models/app/cloudlink/CloudLink";
 import { Toggle } from "@/components/app/campaigns/preferences/components/CampaignPreferenceBoolBox";
 import { cloudMailboxPickerOpened } from "@/lib/cloudMailboxConnect";
+import { cloudLinkScope, invalidateWarmupReports } from "@/lib/api/hooks/app/cloudlink/warmupReports";
+import type Inbox from "@/lib/api/models/app/emails/Inbox";
 
-export default function CloudWarmupCard({ mailboxId, email, provider }: { mailboxId: string; email: string; provider: string }) {
+export default function CloudWarmupCard({ mailboxId, email, provider, status }: { mailboxId: string; email: string; provider: string; status: Inbox["status"] }) {
     const pool = useCloudPool();
     const enroll = useEnrollCloudLinkMailbox();
     const unenroll = useUnenrollCloudLinkMailbox();
     const lifecycle = useCloudLinkMailboxLifecycle();
     const confirm = useConfirm();
     const qc = useQueryClient();
-    const participation = useMutation({ mutationFn: (p: DiagnosticParticipation) => setCloudLinkParticipation(mailboxId, p), onSuccess: () => qc.invalidateQueries({ queryKey: ["cloud-link"] }) });
+    const participation = useMutation({
+        mutationFn: (p: DiagnosticParticipation) => setCloudLinkParticipation(mailboxId, p),
+        onMutate: () => cloudLinkScope(qc),
+        onSettled: (_data, _error, _patch, scope) => invalidateWarmupReports(qc, scope ?? cloudLinkScope(qc)),
+    });
     const busy = enroll.isPending || unenroll.isPending || lifecycle.isPending || participation.isPending;
 
     if (!pool.manageable) return null;
@@ -43,6 +50,8 @@ export default function CloudWarmupCard({ mailboxId, email, provider }: { mailbo
         }
     };
 
+    const warmup = resolveMailboxWarmup({ id: mailboxId, status }, undefined, pool);
+    if (warmup.source === "unknown") return <p className="px-5 py-3 text-xs text-slate-500">Cloud warmup status {warmup.activity === "checking" ? "checking…" : "unavailable"}</p>;
     if (!pool.connected) {
         return (
             <div className="px-5 py-3 flex items-center gap-2.5 text-[12px] text-slate-500">
@@ -83,7 +92,10 @@ export default function CloudWarmupCard({ mailboxId, email, provider }: { mailbo
     }
 
     const p = cloud?.participation;
-    const paused = cloudWarmupPaused(cloud) || !!p && !p.send;
+    const unknown = warmupUnknown(warmup);
+    const cloudActivity = warmup.cloudActivity ?? warmup.activity;
+    const paused = cloudActivity === "paused" || cloudActivity === "receive_only";
+    const resume = paused || cloudActivity === "off";
     const health = cloudStandingUnavailable(cloud?.health) ? "status unavailable" : cloud?.health?.state;
     return (
         <div className="px-5 py-4">
@@ -94,29 +106,29 @@ export default function CloudWarmupCard({ mailboxId, email, provider }: { mailbo
                     </span>
                     <div className="min-w-0 flex-1">
                         <div className="text-[12.5px] font-medium text-slate-900">
-                            {p?.mode === "off" ? "Diagnostics off in Warmbly Cloud" : paused ? "Diagnostic sending paused in Cloud" : row.managed ? "Signed in through Warmbly Cloud" : "Automated diagnostics in Warmbly Cloud"}
+                            {warmup.activity === "connecting" ? "Cloud enrollment pending" : warmup.activity === "removing" ? "Cloud removal pending" : unknown ? "Cloud warmup status unavailable" : warmup.activity === "off" ? "Diagnostics off in Warmbly Cloud" : warmup.activity === "inactive" ? row.executor === "instance" && status !== "active" ? "Mailbox off on this server" : "Cloud mailbox off" : paused ? "Diagnostic sending paused in Cloud" : row.managed ? "Signed in through Warmbly Cloud" : "Automated diagnostics in Warmbly Cloud"}
                         </div>
                         <div className="text-[11px] text-slate-500 truncate">
-                            {cloud
+                            {!unknown && cloud
                                 ? `${cloud.sent_today} of ${cloud.warmup?.target_volume ?? cloud.settings.base} today · ${cloud.sent_7d} in 7 days${cloud.spam_placed_7d ? ` · ${cloud.spam_placed_7d} landed in spam` : ""}${health ? ` · ${health}` : ""}`
                                 : "Waiting for the cloud to report"}
                         </div>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
-                        {cloud && (
+                        {!unknown && cloud && cloudActivity !== "inactive" && (
                             <button
                                 type="button"
                                 disabled={busy}
-                                onClick={() => void run(() => lifecycle.mutateAsync({ id: mailboxId, action: paused ? "resume" : "pause" }), paused ? "Warmup resumed" : "Warmup paused")}
+                                onClick={() => void run(() => lifecycle.mutateAsync({ id: mailboxId, action: resume ? "resume" : "pause" }), resume ? "Warmup resumed" : "Warmup paused")}
                                 className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 bg-white text-[12px] font-medium text-slate-700 inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
                             >
-                                {paused ? <PlayIcon className="w-3 h-3" /> : <PauseIcon className="w-3 h-3" />}
-                                {paused ? "Resume" : "Pause"}
+                                {resume ? <PlayIcon className="w-3 h-3" /> : <PauseIcon className="w-3 h-3" />}
+                                {resume ? "Resume" : "Pause"}
                             </button>
                         )}
                         <button
                             type="button"
-                            disabled={busy}
+                            disabled={busy || warmup.activity === "connecting" || warmup.activity === "removing"}
                             onClick={() =>
                                 confirm.show(
                                     row.managed
@@ -137,8 +149,8 @@ export default function CloudWarmupCard({ mailboxId, email, provider }: { mailbo
                         </button>
                     </div>
                 </div>
-                {sendFailure && <WarmupSendFailureNote failure={sendFailure} provider={provider} cloud className="pl-10" />}
-                {p && <div className="mt-3 pl-10 space-y-2 text-xs">
+                {!unknown && sendFailure && <WarmupSendFailureNote failure={sendFailure} provider={provider} cloud className="pl-10" />}
+                {!unknown && p && <div className="mt-3 pl-10 space-y-2 text-xs">
                     <label className="flex justify-between">Allow disclosed diagnostic sending<Toggle disabled={busy} value={p.send} onChange={(send) => {
                         const apply = () => void run(() => participation.mutateAsync({ ...p, mode: "diagnostic", send }), "Diagnostic sending updated");
                         if (send) confirm.show("Authorize automated diagnostic sends and replies? Provider policies and safety holds still apply.", apply); else apply();
@@ -147,15 +159,15 @@ export default function CloudWarmupCard({ mailboxId, email, provider }: { mailbo
                     <button disabled={busy} onClick={() => void run(() => participation.mutateAsync({ ...p, mode: "off", send: false, receive: false }), "Cloud diagnostics stopped")}>Stop all diagnostic participation</button>
                     <p className="text-slate-500">Receiving allows probabilistic spam rescue, reads, importance and stars or flags where supported. Receive-only does not authorize replies. These are automated actions, not a guaranteed reputation improvement. Shared limits are managed on the cloud-owned mailbox. Accepted provider sends cannot be recalled.</p>
                 </div>}
-                {!p && <p className="mt-2 text-xs text-slate-500">Cloud participation controls require an updated Cloud. Legacy state is not proof of diagnostic consent.</p>}
-                {cloud?.warmup?.partner_limit && !sendFailure && (
+                {!unknown && !p && <p className="mt-2 text-xs text-slate-500">Cloud participation controls require an updated Cloud. Legacy state is not proof of diagnostic consent.</p>}
+                {!unknown && cloud?.warmup?.partner_limit && !sendFailure && (
                     <p className="mt-2 pl-10 text-[11.5px] text-slate-500 leading-relaxed">
                         {cloud.warmup.partner_limit.reachable === 0
                             ? "No partner in the pool can take this mailbox's warmup right now, so nothing goes out until one frees up. The cloud checks again every few hours."
                             : `The ramp is at ${cloud.warmup.partner_limit.ramp_target} today, but only ${cloud.warmup.partner_limit.reachable} ${cloud.warmup.partner_limit.reachable === 1 ? "partner is" : "partners are"} available, and a mailbox never writes to the same partner twice in a day.`}
                     </p>
                 )}
-                {cloud?.health && <WarmupPartnerDiversity health={cloud.health} className="pl-10" />}
+                {!unknown && cloud?.health && <WarmupPartnerDiversity health={cloud.health} className="pl-10" />}
             </div>
         </div>
     );
