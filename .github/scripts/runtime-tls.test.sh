@@ -3,9 +3,19 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
+complete_cleanup() {
+  jq '
+    [.resource_changes[].address] as $present |
+    .resource_changes += [ ["backend", "forms", "tracking", "realtime"][] |
+      {address:("aws_lb_target_group.service[\"" + . + "\"]"),change:{actions:["delete"]}} |
+      select(.address as $address | $present | index($address) == null)]
+  ' "$1" >"$work/complete.json"
+  mv "$work/complete.json" "$1"
+}
 expect() {
   local want=$1 address=$2 actions=$3 stage=${4:-route}
   jq -n --arg address "$address" --argjson actions "$actions" '{resource_changes:[{address:$address,change:{actions:$actions}}]}' >"$work/plan.json"
+  if [ "$stage" = on ]; then complete_cleanup "$work/plan.json"; fi
   if bash .github/scripts/runtime-tls.sh check-plan "$work/plan.json" "$stage" 2>/dev/null; then
     [ "$want" = pass ]
   else
@@ -30,7 +40,9 @@ jq -n '{resource_changes:[{address:"aws_ecs_service.service[\"forms\"]",change:{
   after:{load_balancer:[{target_group_arn:"forms-tls/2",container_port:8443}]}}}]}' >"$work/plan.json"
 bash .github/scripts/runtime-tls.sh check-plan "$work/plan.json" drain
 for stage in route on; do
-  if bash .github/scripts/runtime-tls.sh check-plan "$work/plan.json" "$stage" 2>/dev/null; then
+  cp "$work/plan.json" "$work/registration-$stage.json"
+  if [ "$stage" = on ]; then complete_cleanup "$work/registration-$stage.json"; fi
+  if bash .github/scripts/runtime-tls.sh check-plan "$work/registration-$stage.json" "$stage" 2>/dev/null; then
     echo 'Registration detached outside the drain stage' >&2
     exit 1
   fi
@@ -59,13 +71,16 @@ if bash .github/scripts/runtime-tls.sh check-plan "$work/changed.json" route 2>/
   echo 'Network change accepted as metadata normalization' >&2
   exit 1
 fi
-jq -n '{resource_changes:[{address:"aws_ecs_task_definition.service[\"backend\"]",change:{actions:["delete","create"],before:{container_definitions:([{image:"pinned",environment:[]}]|tojson)},after:{container_definitions:([{image:"pinned",environment:[{name:"SERVE_HTTP_LOOPBACK_ONLY",value:"true"}]}]|tojson)}}}]}' >"$work/plan.json"
+jq -n '{resource_changes:[{address:"aws_ecs_task_definition.service[\"backend\"]",change:{actions:["delete","create"],before:{container_definitions:([{image:"pinned",environment:[]}]|tojson)},after:{container_definitions:([{image:"pinned",environment:[{name:"SERVE_HTTP_LOOPBACK_ONLY",value:"true"}]}]|tojson)}}}]}' >"$work/loopback-only.json"
+cp "$work/loopback-only.json" "$work/plan.json"
+complete_cleanup "$work/plan.json"
 bash .github/scripts/runtime-tls.sh check-plan "$work/plan.json" on
-if bash .github/scripts/runtime-tls.sh check-plan "$work/plan.json" route 2>/dev/null; then
+if bash .github/scripts/runtime-tls.sh check-plan "$work/loopback-only.json" route 2>/dev/null; then
   echo 'Loopback-only listener accepted before HTTP registrations drained' >&2
   exit 1
 fi
-jq '.resource_changes[0].change |= ({actions:.actions,before:.after,after:.before})' "$work/plan.json" >"$work/route.json"
+jq '.resource_changes |= map(select(.address | startswith("aws_ecs_task_definition"))) |
+  .resource_changes[0].change |= ({actions:.actions,before:.after,after:.before})' "$work/plan.json" >"$work/route.json"
 bash .github/scripts/runtime-tls.sh check-plan "$work/route.json" route
 jq '.resource_changes[0].change.after.container_definitions |= (fromjson | .[0].image = "changed" | tojson)' "$work/plan.json" >"$work/changed.json"
 if bash .github/scripts/runtime-tls.sh check-plan "$work/changed.json" on 2>/dev/null; then
@@ -109,6 +124,19 @@ for change in '.services.services[0].pendingCount=1' '.services.services[0].depl
   jq "$change" "$work/live.json" >"$work/changed.json"
   if bash .github/scripts/runtime-tls.sh check-live "$work/changed.json" route v0.6.70 8443 test 2>/dev/null; then
     echo 'Incompatible or unstable live services accepted' >&2
+    exit 1
+  fi
+done
+jq -n '{resource_changes:[]}' >"$work/deletions.json"
+complete_cleanup "$work/deletions.json"
+bash .github/scripts/runtime-tls.sh check-plan "$work/deletions.json" on
+for change in '.resource_changes=[]' '.resource_changes|=.[1:]' \
+  '.resource_changes[0].change.actions=["no-op"]' \
+  '.resource_changes[0].change.actions=["delete","create"]' \
+  '.resource_changes[0].address="aws_lb_target_group.service[\"consumer\"]"'; do
+  jq "$change" "$work/deletions.json" >"$work/changed.json"
+  if bash .github/scripts/runtime-tls.sh check-plan "$work/changed.json" on 2>/dev/null; then
+    echo 'ON accepted without the exact four HTTP group deletions' >&2
     exit 1
   fi
 done
