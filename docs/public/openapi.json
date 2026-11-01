@@ -1238,6 +1238,16 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -1375,6 +1385,16 @@
           },
           "503": {
             "description": "`sessions_not_ended`: the provider was removed but its sessions could not all be ended. Repeat the request to finish.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
             "content": {
               "application/json": {
                 "schema": {
