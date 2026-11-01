@@ -110,6 +110,7 @@ import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
 import { Toggle } from "@/components/app/campaigns/preferences/components/CampaignPreferenceBoolBox";
 import setDirectTracking from "@/lib/api/client/app/emails/setDirectTracking";
 import useSendingBehavior from "@/lib/api/hooks/app/emails/useSendingBehavior";
+import useUpdateSendingBehavior from "@/lib/api/hooks/app/emails/useUpdateSendingBehavior";
 import useSendingPlan from "@/lib/api/hooks/app/emails/useSendingPlan";
 import { minutesToClock, secondsToLabel } from "@/lib/api/models/app/emails/SendingBehavior";
 import TagSelector from "../popup/select/TagSelector";
@@ -834,20 +835,23 @@ function OverviewTab({ status, loading, mailbox }: { status?: import("@/lib/api/
                 <div className="px-5 py-4">
                     <Eyebrow>Needs attention</Eyebrow>
                     <div className="mt-2 space-y-2">
-                        {status.errors.map((e: AccountError) => (
-                            <div key={e.id} className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2">
-                                <div className="text-[12px] font-medium text-rose-800">{e.title}</div>
-                                <div className="text-[10px] text-rose-700/80 mt-0.5">Reported {new Date(e.created_at).toLocaleString()}{e.operation === "send" ? " · Sending" : e.operation === "sync" ? " · Mailbox sync" : ""}</div>
-                                <div className="text-[11px] text-rose-700/90 mt-0.5 leading-relaxed">{e.message}</div>
-                                {e.action_required && <div className="text-[11px] text-rose-900 mt-1 font-medium">{e.action_required}</div>}
-                                {e.id === firstCredentialErrorId &&
-                                    (mailbox.auth_method === "delegated" ? (
-                                        <DelegatedGrantNotice mailbox={mailbox} inError />
-                                    ) : (
-                                        <ReconnectAction mailbox={mailbox} />
-                                    ))}
-                            </div>
-                        ))}
+                        {status.errors.map((e: AccountError) => {
+                            const tone = e.severity?.toUpperCase() === "CRITICAL" ? errorTone.critical : errorTone.warning;
+                            return (
+                                <div key={e.id} className={`rounded-md border px-3 py-2 ${tone.box}`}>
+                                    <div className={`text-[12px] font-medium ${tone.title}`}>{e.title}</div>
+                                    <div className={`text-[10px] mt-0.5 ${tone.meta}`}>Reported {new Date(e.created_at).toLocaleString()}{e.operation === "send" ? " · Sending" : e.operation === "sync" ? " · Mailbox sync" : ""}</div>
+                                    <div className={`text-[11px] mt-0.5 leading-relaxed ${tone.body}`}>{e.message}</div>
+                                    {e.action_required && <div className={`text-[11px] mt-1 font-medium ${tone.action}`}>{e.action_required}</div>}
+                                    {e.id === firstCredentialErrorId &&
+                                        (mailbox.auth_method === "delegated" ? (
+                                            <DelegatedGrantNotice mailbox={mailbox} inError />
+                                        ) : (
+                                            <ReconnectAction mailbox={mailbox} />
+                                        ))}
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
             )}
@@ -995,6 +999,12 @@ function AnalyticsTab({ warmup, loading, failed, retry }: { warmup?: import("@/l
 /* ── Warmup (editable) ─────────────────────── */
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+// A critical report stops the mailbox; a warning is retried on its own, so it reads as amber, not red.
+const errorTone = {
+    critical: { box: "border-rose-200 bg-rose-50", title: "text-rose-800", meta: "text-rose-700/80", body: "text-rose-700/90", action: "text-rose-900" },
+    warning: { box: "border-amber-200 bg-amber-50", title: "text-amber-900", meta: "text-amber-700/80", body: "text-amber-800/90", action: "text-amber-900" },
+};
 
 const warmupStateTone: Record<string, { text: string; bar: string; label: string }> = {
     healthy: { text: "text-emerald-600", bar: "bg-emerald-500", label: "Healthy" },
@@ -1294,11 +1304,65 @@ function AuthCheckPanel({ mailbox }: { mailbox: Inbox }) {
     );
 }
 
+const ALL_DAYS = 127;
+
+const listDays = (mask: number) => {
+    const names = WEEKDAYS.filter((_, i) => (mask & (1 << i)) !== 0);
+    return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names.join("");
+};
+
+// Warmup sends only on days both calendars allow, so a day ticked here that the persona does not work is silently skipped.
+function WarmupDaysNotice({ mailboxId, warmupDays, personaDays }: { mailboxId: string; warmupDays: number; personaDays: number }) {
+    const wanted = warmupDays || ALL_DAYS;
+    const skipped = wanted & ~personaDays;
+    const canManage = usePermission("MANAGE_EMAILS");
+    const queryClient = useQueryClient();
+    const mutation = useUpdateSendingBehavior(mailboxId);
+    if (skipped === 0) return null;
+
+    const workDays = async () => {
+        try {
+            await mutation.mutateAsync({ weekdays: personaDays | skipped });
+            await queryClient.invalidateQueries({ queryKey: ["analytics", "accounts"] });
+            toast.success(`Warmup now sends on ${listDays(skipped)} too`);
+        } catch (e) {
+            toast.error(buildError(e as unknown as AppError));
+        }
+    };
+
+    return (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 flex items-start gap-2">
+            <AlertTriangleIcon className="w-3.5 h-3.5 mt-px shrink-0 text-amber-600" />
+            <div className="min-w-0">
+                <p className="text-[12.5px] font-medium text-amber-900">
+                    {(wanted & personaDays) === 0 ? "Warmup has no day to send on" : `Warmup skips ${listDays(skipped)}`}
+                </p>
+                <p className="text-[11.5px] text-amber-800/90 leading-relaxed mt-0.5">
+                    Sending behaviour only works {personaDays ? listDays(personaDays) : "no days"}, and warmup follows its workdays as well as the
+                    days picked here.
+                </p>
+                {canManage && (
+                    <button
+                        type="button"
+                        onClick={workDays}
+                        disabled={mutation.isPending}
+                        className="mt-2 h-7 px-2.5 rounded-md border border-amber-300 bg-white hover:bg-amber-100/60 text-amber-900 text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
+                    >
+                        {mutation.isPending && <Loading className="!w-3 h-3" />}
+                        Work {listDays(skipped)} too
+                    </button>
+                )}
+            </div>
+        </div>
+    );
+}
+
 function WarmupTab({ form, update, status, mailbox, canWarmup = true }: { form: Inbox; update: (p: Partial<Inbox>) => void; status?: AccountStatusModel; mailbox: Inbox; canWarmup?: boolean }) {
     const ws = status?.warmup_status;
     const wh = status?.warmup_health;
     const whUnavailable = cloudStandingUnavailable(wh);
-    const behaviorOn = !!useSendingBehavior(mailbox.id).data?.enabled;
+    const persona = useSendingBehavior(mailbox.id).data;
+    const behaviorOn = !!persona?.enabled;
     const inCampaign = status?.in_campaign;
 
     // Warmup on/off is a lifecycle action (immediate), not a saved form field —
@@ -1598,6 +1662,9 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true }: { form: 
                         />
                     </div>
                 </FieldShell>
+                {behaviorOn && persona && (
+                    <WarmupDaysNotice mailboxId={mailbox.id} warmupDays={form.warmup_days ?? 0} personaDays={persona.weekdays} />
+                )}
             </div>
         </div>
     );
