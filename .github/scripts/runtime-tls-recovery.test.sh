@@ -22,6 +22,51 @@ jq '.httpGroups |= reverse' "$work/baseline.json" >"$work/reordered-baseline.jso
 jq '.resource_changes |= reverse |
   .resource_changes += [{address:"data.aws_caller_identity.current",change:{actions:["read"]}}]' "$work/plan.json" >"$work/reordered-plan.json"
 bash "$guard" check-plan "$work/reordered-plan.json" "$work/reordered-baseline.json"
+jq '{version:4,lineage:.state.lineage,serial:.state.serial,resources:[{
+  mode:"managed",type:"aws_lb_target_group",name:"service",instances:[.state.httpGroups[] | {
+    index_key:(.TargetGroupName | ltrimstr("warmbly-production-")),
+    attributes:{arn:.TargetGroupArn,id:.TargetGroupArn,name:.TargetGroupName,protocol:.Protocol,port:.Port,vpc_id:.VpcId}
+  }]
+}]}' "$work/baseline.json" >"$work/state.json"
+digest=$(sha256sum "$work/state.json" | cut -d' ' -f1)
+jq --arg digest "$digest" '.state.sha256=$digest' "$work/baseline.json" >"$work/state-baseline.json"
+bash "$guard" check-state "$work/state.json" "$work/state-baseline.json"
+jq -c . "$work/state.json" >"$work/reformatted-state.json"
+if bash "$guard" check-state "$work/reformatted-state.json" "$work/state-baseline.json" 2>/dev/null; then
+  echo 'Recovery accepted changed state bytes under the original hash' >&2
+  exit 1
+fi
+jq '.resources[0].instances |= reverse |
+  .resources += [{mode:"managed",type:"aws_ecs_service",name:"service",instances:[]}]' \
+  "$work/state.json" >"$work/reordered-state.json"
+digest=$(sha256sum "$work/reordered-state.json" | cut -d' ' -f1)
+jq --arg digest "$digest" '.state.sha256=$digest' "$work/baseline.json" >"$work/reordered-state-baseline.json"
+bash "$guard" check-state "$work/reordered-state.json" "$work/reordered-state-baseline.json"
+if bash "$guard" check-state "$work/state.json" "$work/baseline.json" 2>/dev/null; then
+  echo 'Recovery accepted state bytes with a different reviewed hash' >&2
+  exit 1
+fi
+for change in '.version=3' '.lineage="11111111-89ab-cdef-0123-456789abcdef"' '.serial+=1' \
+  '.resources=[]' '.resources+=.resources' \
+  '.resources[0].module="module.other"' '.resources[0].mode="data"' \
+  '.resources[0].instances|=.[1:]' \
+  '.resources[0].instances[0]=.resources[0].instances[1]' \
+  '.resources[0].instances[0].index_key="other"' \
+  '.resources[0].instances[0].deposed="old"' '.resources[0].instances[0].status="tainted"' \
+  '.resources[0].instances[0].attributes.id="different"' \
+  '.resources[0].instances[0].attributes.arn="different"' \
+  '.resources[0].instances[0].attributes.name="different"' \
+  '.resources[0].instances[0].attributes.protocol="HTTPS"' \
+  '.resources[0].instances[0].attributes.port=465' \
+  '.resources[0].instances[0].attributes.vpc_id="vpc-11111111"'; do
+  jq "$change" "$work/state.json" >"$work/changed-state.json"
+  digest=$(sha256sum "$work/changed-state.json" | cut -d' ' -f1)
+  jq --arg digest "$digest" '.state.sha256=$digest' "$work/baseline.json" >"$work/changed-state-baseline.json"
+  if bash "$guard" check-state "$work/changed-state.json" "$work/changed-state-baseline.json" 2>/dev/null; then
+    echo "Recovery accepted different state identities despite a matching file hash: $change" >&2
+    exit 1
+  fi
+done
 for change in '.account="123456789012"' '.region="us-west-2"' \
   '.httpGroups|=.[1:]' '.httpGroups[0]=.httpGroups[1]' \
   '.httpGroups[0].LoadBalancerArns=["still-referenced"]' \

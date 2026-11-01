@@ -30,6 +30,31 @@ check_baseline() {
   ' "$1" >/dev/null || { echo 'Recovery requires four identified, drained HTTP groups matching reviewed state' >&2; return 1; }
 }
 
+check_state() {
+  check_baseline "$2"
+  local digest
+  digest=$(sha256sum "$1" | cut -d' ' -f1)
+  [ "$digest" = "$(jq -r '.state.sha256' "$2")" ] || { echo 'Recovery state bytes differ from the reviewed hash' >&2; return 1; }
+  jq -e --slurpfile baseline "$2" '
+    .version == 4 and .lineage == $baseline[0].state.lineage and .serial == $baseline[0].state.serial and
+    ([.resources[] | select(.mode == "managed" and .type == "aws_lb_target_group" and .name == "service")] as $resources |
+      [$resources[].instances[] | {
+        key:.index_key, deposed:.deposed, status:.status,
+        id:.attributes.id, TargetGroupArn:.attributes.arn, TargetGroupName:.attributes.name,
+        Protocol:.attributes.protocol, Port:.attributes.port, VpcId:.attributes.vpc_id
+      }] as $groups |
+      ($resources | length == 1) and
+      all($resources[]; (.module == null) and (.instances | type == "array" and length == 4)) and
+      ($groups | map(.key) | sort) == (["backend", "forms", "tracking", "realtime"] | sort) and
+      all($groups[];
+        . as $group | .deposed == null and .status == null and .id == .TargetGroupArn and
+        any($baseline[0].state.httpGroups[];
+          .TargetGroupName == ("warmbly-production-" + $group.key) and
+          .TargetGroupArn == $group.TargetGroupArn and .TargetGroupName == $group.TargetGroupName and
+          .Protocol == $group.Protocol and .Port == $group.Port and .VpcId == $group.VpcId)))
+  ' "$1" >/dev/null || { echo 'Recovery state identity differs from the reviewed baseline' >&2; return 1; }
+}
+
 check_plan() {
   check_baseline "$2"
   jq -e --slurpfile baseline "$2" '
@@ -58,6 +83,7 @@ check_plan() {
 
 case "${1:-}" in
   check-baseline) check_baseline "${2:?}" ;;
+  check-state) check_state "${2:?}" "${3:?}" ;;
   check-plan) check_plan "${2:?}" "${3:?}" ;;
   *) echo 'Only read-only recovery validation is supported' >&2; exit 1 ;;
 esac
