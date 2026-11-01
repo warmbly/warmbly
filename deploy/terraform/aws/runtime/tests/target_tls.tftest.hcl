@@ -225,3 +225,128 @@ run "tls_needs_the_backend_key" {
   }
   expect_failures = [aws_ecs_task_definition.service]
 }
+
+run "evidence_writer_is_disabled_by_default" {
+  command = plan
+  assert {
+    condition     = length(aws_iam_role.tls_recovery_evidence) == 0 && length(aws_iam_role_policy.tls_recovery_evidence) == 0 && output.tls_recovery_evidence_role_arn == null
+    error_message = "Existing installations create no evidence writer without opting in."
+  }
+}
+
+run "existing_ci_does_not_enable_the_evidence_writer" {
+  command = plan
+  variables {
+    terraform_ci      = true
+    github_repository = "warmbly/warmbly"
+  }
+  assert {
+    condition     = length(aws_iam_role.tls_recovery_evidence) == 0 && length(aws_iam_role_policy.tls_recovery_evidence) == 0
+    error_message = "Existing CI configuration grants no evidence upload permission."
+  }
+}
+
+run "enabled_evidence_writer_has_only_conditional_archive_access" {
+  command = apply
+  override_data {
+    target = data.aws_caller_identity.current
+    values = { account_id = "925323749693" }
+  }
+  variables {
+    terraform_ci                 = true
+    github_repository            = "warmbly/warmbly"
+    state_bucket                 = "warmbly-terraform-use1-925323749693"
+    tls_recovery_evidence_writer = true
+  }
+  assert {
+    condition     = length(aws_iam_role.tls_recovery_evidence) == 1 && aws_iam_role.tls_recovery_evidence[0].name == "warmbly-production-tls-recovery-evidence" && aws_iam_role.tls_recovery_evidence[0].max_session_duration == 3600
+    error_message = "The opt-in creates one bounded-session dedicated role."
+  }
+  assert {
+    condition = jsondecode(aws_iam_role.tls_recovery_evidence[0].assume_role_policy) == {
+      Version = "2012-10-17"
+      Statement = [{
+        Sid       = "MainRepositoryRecoveryEnvironments"
+        Effect    = "Allow"
+        Principal = { Federated = aws_iam_openid_connect_provider.github[0].arn }
+        Action    = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          StringEquals = {
+            "token.actions.githubusercontent.com:aud"                 = "sts.amazonaws.com"
+            "token.actions.githubusercontent.com:repository_id"       = "1136203389"
+            "token.actions.githubusercontent.com:repository_owner_id" = "216286592"
+            "token.actions.githubusercontent.com:ref"                 = "refs/heads/main"
+            "token.actions.githubusercontent.com:sub" = [
+              "repo:warmbly/warmbly:environment:aws-infrastructure-plan",
+              "repo:warmbly/warmbly:environment:aws-infrastructure-approval",
+            ]
+          }
+        }
+      }]
+    }
+    error_message = "Only the expected immutable repository identity on main in the two recovery environments can assume the role."
+  }
+  assert {
+    condition = jsondecode(aws_iam_role_policy.tls_recovery_evidence[0].policy) == {
+      Version = "2012-10-17"
+      Statement = [{
+        Sid    = "WriteNewEncryptedRecoveryEvidence"
+        Effect = "Allow"
+        Action = "s3:PutObject"
+        Resource = [
+          "arn:aws:s3:::warmbly-terraform-use1-925323749693/warmbly/production/diagnostics/runtime-tls-recovery/*/1/plan.tgz",
+          "arn:aws:s3:::warmbly-terraform-use1-925323749693/warmbly/production/diagnostics/runtime-tls-recovery/*/1/apply.tgz",
+          "arn:aws:s3:::warmbly-terraform-use1-925323749693/warmbly/production/diagnostics/runtime-tls-recovery/*/1/verify.tgz",
+        ]
+        Condition = {
+          StringEquals = { "s3:x-amz-server-side-encryption" = "AES256", "s3:ResourceAccount" = "925323749693" }
+          Bool         = { "aws:SecureTransport" = "true" }
+          Null         = { "s3:if-none-match" = "false" }
+        }
+      }]
+    }
+    error_message = "The writer grants only conditional encrypted archive uploads, with no read, delete, state, IAM or deployment permission."
+  }
+}
+
+run "evidence_writer_requires_ci" {
+  command = plan
+  variables {
+    github_repository            = "warmbly/warmbly"
+    state_bucket                 = "warmbly-terraform-use1-925323749693"
+    tls_recovery_evidence_writer = true
+  }
+  expect_failures = [var.tls_recovery_evidence_writer]
+}
+
+run "evidence_writer_refuses_other_repositories" {
+  command = plan
+  variables {
+    terraform_ci                 = true
+    github_repository            = "example/other"
+    state_bucket                 = "warmbly-terraform-use1-925323749693"
+    tls_recovery_evidence_writer = true
+  }
+  expect_failures = [var.tls_recovery_evidence_writer]
+}
+
+run "evidence_writer_refuses_other_buckets" {
+  command = plan
+  variables {
+    terraform_ci                 = true
+    github_repository            = "warmbly/warmbly"
+    tls_recovery_evidence_writer = true
+  }
+  expect_failures = [var.tls_recovery_evidence_writer]
+}
+
+run "evidence_writer_refuses_other_accounts" {
+  command = plan
+  variables {
+    terraform_ci                 = true
+    github_repository            = "warmbly/warmbly"
+    state_bucket                 = "warmbly-terraform-use1-925323749693"
+    tls_recovery_evidence_writer = true
+  }
+  expect_failures = [aws_iam_role.tls_recovery_evidence]
+}

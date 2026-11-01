@@ -7,6 +7,9 @@ check_plan() {
   [[ "$stage" = route || "$stage" = drain || "$stage" = on ]]
   jq -e --arg stage "$stage" '
     def service: "\\[\\\"(backend|forms|tracking|realtime)\\\"\\]";
+    def http_groups:
+      ["backend", "forms", "tracking", "realtime"] |
+      map("aws_lb_target_group.service[\"" + . + "\"]") | sort;
     def normalize:
       map(.mountPoints //= [] | .systemControls //= [] | .volumesFrom //= [] |
         .portMappings = ((.portMappings // []) | map(.hostPort //= .containerPort)));
@@ -31,6 +34,9 @@ check_plan() {
         any(.environment[]; .name == "SERVE_HTTP_LOOPBACK_ONLY" and .value == "true")
         else all(.environment[]; .name != "SERVE_HTTP_LOOPBACK_ONLY") end);
     [.resource_changes[]? | select(.change.actions != ["no-op"] and .change.actions != ["read"])] as $changes |
+    ($stage != "on" or
+      ([$changes[] | select(.change.actions == ["delete"] and
+        (.address | test("^aws_lb_target_group\\.service" + service + "$"))) | .address] | sort) == http_groups) and
     all($changes[];
       if (.address | test("^aws_ecs_task_definition\\.service" + service + "$")) then
         .change.actions == ["delete", "create"] and same_container_except_loopback and same_task_settings
@@ -168,6 +174,7 @@ main() {
   terraform -chdir="$dir" plan -input=false -no-color -lock-timeout=5m -var-file="$vars" \
     -var="state_bucket=$STATE_BUCKET" -var="target_tls=$STAGE" \
     -target=aws_ecs_service.service -target=aws_lb_listener_rule.tracking_alias \
+    -target=aws_lb_target_group.service \
     -target=aws_vpc_security_group_ingress_rule.service -target=aws_vpc_security_group_ingress_rule.internal_backend \
     -out="$WORK/runtime.tfplan" >>"$log" 2>&1 || { echo 'Runtime TLS plan failed; inspect the private runner log' >&2; return 1; }
   terraform -chdir="$dir" show -json "$WORK/runtime.tfplan" >"$WORK/runtime.json"

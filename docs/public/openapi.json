@@ -1192,6 +1192,220 @@
         }
       }
     },
+    "/auth/me/password/link": {
+      "post": {
+        "operationId": "auth_send_password_link",
+        "summary": "Send a set-password link",
+        "description": "Emails the signed-in user a single-use link to set a password, to the address on the account. It is how an account created through Google, Apple or single sign-on adds email and password sign-in. The link is the one Forgot password sends: it expires after one hour, setting the password through it ends every session, and it shares that flow's budget of 2 links per address per 4 hours. No request body. Takes no Idempotency-Key, because a repeat mails another link. Requires a user session token (not an API key).",
+        "tags": [
+          "auth"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The link was sent."
+          },
+          "400": {
+            "description": "The link budget for this address is spent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Password sign-in is turned off on this server (`password_login_disabled`), or the caller is not a user session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/me/identities": {
+      "get": {
+        "operationId": "auth_list_identities",
+        "summary": "List sign-in methods",
+        "description": "The providers linked to the signed-in user: Google, Apple or the deployment's single sign-on. A password and passkeys are not listed here. Requires a user session token (not an API key).",
+        "tags": [
+          "auth"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The linked providers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LinkedIdentity"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/me/identities/{provider}": {
+      "delete": {
+        "operationId": "auth_remove_identity",
+        "summary": "Remove a sign-in method",
+        "description": "Stops the provider signing in to this account and ends every other session that signed in through it; the calling session stays signed in. Requires a fresh confirmation (`reauth_required` otherwise). A repeat converges and also returns 204, so it takes no Idempotency-Key. Refused with 409 `last_sign_in_method` when the account would be left with no password, no passkey and no other provider. Requires a user session token (not an API key).",
+        "tags": [
+          "auth"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "google",
+                "apple",
+                "oidc"
+              ]
+            },
+            "description": "The provider to remove."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The provider is no longer a sign-in method, also when it was already removed."
+          },
+          "401": {
+            "description": "Missing or invalid session token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Fresh confirmation required (`reauth_required`) or not a user session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`identity_not_found`: the provider is not google, apple or oidc.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`last_sign_in_method`: this is the account's only way to sign in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`sessions_not_ended`: the provider was removed but its sessions could not all be ended. Repeat the request to finish.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/me/password": {
       "post": {
         "operationId": "auth_change_password",
@@ -38018,6 +38232,39 @@
           }
         }
       },
+      "LinkedIdentity": {
+        "type": "object",
+        "required": [
+          "provider",
+          "label",
+          "created_at"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "google",
+              "apple",
+              "oidc"
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "description": "The address the provider reported. For Apple it can be a Hide My Email relay address."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_login_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "UniboxOverview": {
         "type": "object",
         "required": [
@@ -38055,6 +38302,10 @@
           "automated_unread": {
             "type": "integer",
             "description": "Automated conversations with an unread message."
+          },
+          "drafts": {
+            "type": "integer",
+            "description": "Visible threads with a mailbox draft or a pending agent draft, each counted once."
           },
           "scheduled_pending": {
             "type": "integer"

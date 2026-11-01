@@ -86,7 +86,7 @@ Returns the number of unread conversations in the Inbox folder, optionally scope
 
 `GET /unibox/overview`
 
-Rolls up the scope rail and top metric strip in one call: unread, today, week, snoozed, awaiting-reply, and pending-scheduled counts, plus per-folder, per-mailbox, per-tag, and per-conversation-label breakdowns. The `folders` array always lists all six canonical folders, zero-filled, in sidebar order; the headline counts exclude `spam` and `trash`. All counts are threads, not messages, except `scheduled_pending`, which counts the sends queued from the organization's mailboxes against the workspace cap in `scheduled_pending_max`. Automated conversations are counted in `automated` and `automated_unread` and left out of `unread`, `today`, `week`, the `inbox` folder and the per-mailbox and per-tag counts; `total` and the label counts still include them. Concurrent requests from the same organization share one computation, and its result is served for up to one second after it started (`generated_at` is when it started). Auth: **Scope** `READ_UNIBOX` · **Org permission** `access_unibox`.
+Rolls up the scope rail and top metric strip in one call: unread, today, week, snoozed, awaiting-reply, draft (`drafts`, each visible thread once whether it holds a mailbox draft or a pending agent draft), and pending-scheduled counts, plus per-folder, per-mailbox, per-tag, and per-conversation-label breakdowns. The `folders` array always lists all six canonical folders, zero-filled, in sidebar order; the headline counts exclude `spam` and `trash`. All counts are threads, not messages, except `scheduled_pending`, which counts the sends queued from the organization's mailboxes against the workspace cap in `scheduled_pending_max`. Automated conversations are counted in `automated` and `automated_unread` and left out of `unread`, `today`, `week`, the `inbox` folder and the per-mailbox and per-tag counts; `total` and the label counts still include them. Concurrent requests from the same organization share one computation, and its result is served for up to one second after it started (`generated_at` is when it started). Auth: **Scope** `READ_UNIBOX` · **Org permission** `access_unibox`.
 
 ### Response
 
@@ -100,6 +100,7 @@ Rolls up the scope rail and top metric strip in one call: unread, today, week, s
   "awaiting_reply": 9,
   "automated": 41,
   "automated_unread": 6,
+  "drafts": 4,
   "scheduled_pending": 2,
   "scheduled_pending_max": 10000,
   "folders": [

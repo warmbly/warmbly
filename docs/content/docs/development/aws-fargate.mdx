@@ -332,7 +332,8 @@ plan reaches a log, a comment or an artifact.
   password, which the plan role may not.
 - On merge, each stack is planned in order: foundation, runtime, workers. A
   stack that only creates and updates applies on its own. One that replaces or
-  destroys anything stops and waits for approval in the
+  destroys anything, or changes the dedicated recovery evidence IAM role or its
+  inline policy, stops and waits for approval in the
   `aws-infrastructure-approval` environment, and the stacks after it wait too.
   On approval it plans again and applies only if the plan is still the one that
   was approved. A new task definition revision counts as an update, because the
@@ -343,6 +344,44 @@ plan reaches a log, a comment or an artifact.
 The bootstrap stack stays manual. So does any change to the CI roles themselves: the apply role cannot
 change its own permissions or trust, or the plan role's, so an administrator
 applies those by hand.
+
+## Private recovery evidence writer
+
+The hosted runtime supports a separate private archive writer with
+`tls_recovery_evidence_writer = true`. It defaults to `false`, including when
+`terraform_ci` is already enabled, and changes no existing self-host configuration.
+It requires the hosted production account, deployment name, state bucket,
+`github_repository = "warmbly/warmbly"` and `terraform_ci = true`.
+
+The setting creates `warmbly-production-tls-recovery-evidence` and one inline
+policy. The role accepts GitHub OIDC only for the immutable Warmbly repository
+and owner IDs, `main`, and the `aws-infrastructure-plan` or
+`aws-infrastructure-approval` environments. These claims do not uniquely identify
+a workflow file; reviewed main source and environment controls remain required.
+The role has no managed-policy attachments and its sessions are limited to one hour.
+
+Uploads are limited to `plan.tgz`, `apply.tgz` and `verify.tgz` under
+`warmbly/production/diagnostics/runtime-tls-recovery/*/1/` in the hosted state
+bucket. Each request must use TLS, specify AES256 encryption and the expected
+resource account, and include `If-None-Match` for conditional creation. The
+uploader validates its SHA-256 checksum and the returned S3 version. The IAM
+wildcard does not validate numeric run IDs; the uploader must check the run and
+attempt. This role grants no object reads, deletes, state writes or deployment
+permissions. It does not establish Object Lock or retention protection against
+other principals.
+
+Any managed change to this role or policy, including creation, requires the
+existing `aws-infrastructure-approval` gate. Review the complete plan and require
+only the two expected create-only resources when provisioning the writer.
+After approval, read back its trust, inline policy and attachments before use.
+The `tls_recovery_evidence_role_arn` output is present only when enabled.
+
+Provisioning the role does not enable or dispatch recovery. Configure its ARN as
+`AWS_TLS_RECOVERY_EVIDENCE_ROLE_ARN` where both recovery job environments can read
+it. A recovery workflow, its immutable private contract and snapshots, required
+reviewers, self-review prevention and administrator-bypass restrictions need
+separate review before enablement. Keep recovery disabled until those checks pass.
+An existing environment is not proof that these additional controls are configured.
 
 ## Encrypt traffic inside the VPC
 
@@ -444,7 +483,11 @@ as `previous_run`. After the drain run succeeds, persist `target_tls=drain`, upl
 a new snapshot, and dispatch `on` with the successful drain run ID. Each stage
 verifies the preceding workflow completed all bakes. Cleanup is refused until
 HTTP references and registrations have drained. Review and approve each
-plan separately. Persist `target_tls=on` only after it succeeds, then verify the
+plan separately. The scoped plan explicitly targets the HTTP groups, and an
+`on` plan must delete exactly the four groups for backend, forms, tracking and
+realtime. A plan that omits any group is refused. This check expects the normal
+drain-to-on transition; a partially completed transition requires a separately
+reviewed recovery path rather than an unchanged retry. Persist `target_tls=on` only after it succeeds, then verify the
 effective loopback listeners and HTTPS routes.
 
 ### Validate recovery evidence
