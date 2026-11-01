@@ -201,14 +201,18 @@ export default function AddressesPage() {
     // Coerce to an array defensively: a wrong-shape (non-array) response must
     // never reach a `for…of`, which would throw "{} is not iterable".
     const accountStatuses = useMemo(
-        () => (!cloudChecking && !statuses.isError && !statuses.isFetching && Array.isArray(statuses.data) ? statuses.data : []),
-        [cloudChecking, statuses.data, statuses.isError, statuses.isFetching],
+        () => (!cloudChecking && Array.isArray(statuses.data) ? statuses.data : []),
+        [cloudChecking, statuses.data],
     );
     const statusById = useMemo(() => {
         const m = new Map<string, AccountStatus>();
         for (const s of accountStatuses) m.set(s.id, s);
         return m;
     }, [accountStatuses]);
+    const currentStatusIds = useMemo(
+        () => new Set(statuses.observations.filter((observation) => observation.current).map(({ status }) => status.id)),
+        [statuses.observations],
+    );
     const statusChecking = emailsData.isLoading || cloudChecking || statuses.isLoading || statuses.isFetching;
     const cloudStandingUnavailable = cloud.connected && (emailsData.emails ?? []).some((box) => {
         const row = cloud.rowFor(box.id);
@@ -248,21 +252,20 @@ export default function AddressesPage() {
     // Proactively notify the user when a mailbox's health drops.
     const prevHealth = useRef<Map<string, string>>(new Map());
     useEffect(() => {
-        if (accountStatuses.length === 0) return;
+        if (cloudChecking || cloudUnavailable) return;
         const prev = prevHealth.current;
-        const next = new Map<string, string>();
-        for (const s of accountStatuses) {
+        for (const { status: s, current } of statuses.observations) {
+            if (!current) continue;
             const cur = s.health?.status ?? "healthy";
-            next.set(s.id, cur);
             const before = prev.get(s.id);
             // A reputation slowdown is on the row and recovers by itself; a toast reads as the mailbox stopping.
             if (before && (HEALTH_RANK[cur] ?? 0) > (HEALTH_RANK[before] ?? 0) && !reputationOnlyWarning(s)) {
                 const reason = (!cloudHealthUnavailable(s.warmup_health) && s.warmup_health?.reason) || s.health?.issues?.[0];
                 toast.error(`${s.email} health dropped to ${cur}${reason ? ` — ${reason}` : ""}`);
             }
+            prev.set(s.id, cur);
         }
-        prevHealth.current = next;
-    }, [accountStatuses]);
+    }, [statuses.observations, cloudChecking, cloudUnavailable]);
 
     const removeSelected = () => {
         if (selected.length === 0 || removing || cloudRemovalPending) return;
@@ -628,6 +631,7 @@ export default function AddressesPage() {
                                         box={box}
                                         tags={p?.user.tags ?? []}
                                         status={(cloud.unavailable || cloudStandingUnavailable) && statusById.get(box.id)?.health?.status === "healthy" && !statusById.get(box.id)?.errors?.length ? undefined : statusById.get(box.id)}
+                                        statusCurrent={!cloudChecking && !cloud.unavailable && !cloudStandingUnavailable && currentStatusIds.has(box.id)}
                                         lastReportedIssue={lastReportedIssues.get(box.id)}
                                         statusPending={statusChecking && !statusUnavailable}
                                         cloudStatusPending={cloudChecking || cloud.unavailable || cloudStandingUnavailable}
@@ -822,6 +826,7 @@ function MailboxRow({
     box,
     tags,
     status,
+    statusCurrent,
     lastReportedIssue,
     statusPending,
     cloudStatusPending,
@@ -839,6 +844,7 @@ function MailboxRow({
     box: Inbox;
     tags: Tag[];
     status?: AccountStatus;
+    statusCurrent: boolean;
     lastReportedIssue?: { status: AccountStatus; observedAt: number };
     statusPending: boolean;
     cloudStatusPending: boolean;
@@ -902,8 +908,10 @@ function MailboxRow({
     // Warmup only runs on a mailbox that is on, whatever its warmup setting says.
     const warming = active && box.status === "active";
 
-    const historicalIssue = !status && lastReportedIssue && Date.now() - lastReportedIssue.observedAt <= LAST_REPORTED_ISSUE_MS ? lastReportedIssue : undefined;
-    const tone = healthTone(status ?? historicalIssue?.status);
+    const historicalIssue = !statusCurrent && lastReportedIssue && Date.now() - lastReportedIssue.observedAt <= LAST_REPORTED_ISSUE_MS ? lastReportedIssue : undefined;
+    const stale = !!status && !statusCurrent;
+    const displayedHealth = historicalIssue?.status ?? status;
+    const tone = healthTone(displayedHealth);
     const ws = status?.warmup_status;
     const inCampaign = status?.in_campaign;
 
@@ -1130,7 +1138,7 @@ function MailboxRow({
                         </div>
                         {/* Too narrow for the metric columns: the same readings, labelled, under the address. */}
                         <div className="@2xl:hidden mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0 leading-tight">
-                            <MailboxStatusPill box={box} status={status} historicalIssue={historicalIssue} warming={inCloud ? !cloudPaused : warming} compact pending={statusPending} />
+                            <MailboxStatusPill box={box} status={status} stale={stale} historicalIssue={historicalIssue} warming={inCloud ? !cloudPaused : warming} compact pending={statusPending} />
                             <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                                 <span className="text-[10.5px] text-slate-400">Warmup</span>
                                 <span className={`font-mono text-[11.5px] tabular-nums ${warmupTone}`}>{cloudStatusPending ? statusPending ? "Checking…" : "Unavailable" : warmupCell}</span>
@@ -1143,8 +1151,8 @@ function MailboxRow({
                                 <span className="text-[10.5px] text-slate-400">Health</span>
                                 <span className={`inline-flex items-center gap-1 font-mono text-[11.5px] font-medium tabular-nums ${tone.text}`}>
                                     <span className={`inline-flex w-1.5 h-1.5 rounded-full ${tone.dot}`} />
-                                    {historicalIssue && <span className="text-slate-500">Last observed</span>}
-                                    {status?.health?.score ?? historicalIssue?.status.health?.score ?? "—"}
+                                    {(historicalIssue || stale) && <span className="text-slate-500">Last observed</span>}
+                                    {displayedHealth?.health?.score ?? "—"}
                                 </span>
                             </span>
                         </div>
@@ -1155,7 +1163,7 @@ function MailboxRow({
                 </div>
             </td>
             <td className={`px-3 overflow-hidden ${colShow("status")}`}>
-                <MailboxStatusPill box={box} status={status} historicalIssue={historicalIssue} warming={inCloud ? !cloudPaused : warming} pending={statusPending} />
+                <MailboxStatusPill box={box} status={status} stale={stale} historicalIssue={historicalIssue} warming={inCloud ? !cloudPaused : warming} pending={statusPending} />
             </td>
             <td className={`px-3 overflow-hidden ${colShow("sent")}`}>
                 {status?.daily_usage ? (
@@ -1192,10 +1200,10 @@ function MailboxRow({
                     type="button"
                     onClick={(e) => { e.stopPropagation(); onOpen(box.id, "overview"); }}
                     className={`inline-flex items-center gap-1.5 text-[11px] font-medium max-w-full ${tone.text}`}
-                    title={historicalIssue ? `Last observed ${new Date(historicalIssue.observedAt).toLocaleString()}. Current health unavailable.` : status?.health?.issues?.join("\n") || "View mailbox health"}
+                    title={historicalIssue ? `Last observed ${new Date(historicalIssue.observedAt).toLocaleString()}. Current health unavailable.` : stale ? "Last known measurements. Current status is unconfirmed until a successful refresh." : status?.health?.issues?.join("\n") || "View mailbox health"}
                 >
                     <span className={`inline-flex w-1.5 h-1.5 rounded-full shrink-0 ${tone.dot}`} />
-                    <span className={`uppercase tracking-[0.08em] hidden @4xl:inline truncate ${tone.pulse && !historicalIssue ? "text-shimmer" : ""}`}>{historicalIssue && "Last observed: "}{tone.label}</span>
+                    <span className={`uppercase tracking-[0.08em] hidden @4xl:inline truncate ${tone.pulse && statusCurrent ? "text-shimmer" : ""}`}>{(historicalIssue || stale) && "Last observed: "}{tone.label}</span>
                 </button>
             </td>
             <td className="px-3" onClick={(e) => e.stopPropagation()}>
@@ -1464,8 +1472,8 @@ function MailboxTh({ col, sort, onSort }: { col: MailboxColumn; sort: MailboxSor
 // What the mailbox is doing right now. Cold sending and warmup run side by
 // side, so both show when both are on; a problem that stops it wins.
 // compact spells a problem out, since it is the one reading a phone must not miss.
-function MailboxStatusPill({ box, status, historicalIssue, warming, compact = false, pending = false }: { box: Inbox; status?: AccountStatus; historicalIssue?: { status: AccountStatus; observedAt: number }; warming: boolean; compact?: boolean; pending?: boolean }) {
-    if (!status && historicalIssue && box.status === "active") return <span className="text-[10.5px] text-amber-700" title={`Last observed ${new Date(historicalIssue.observedAt).toLocaleString()}. Current status unavailable.`}>Last reported issue</span>;
+function MailboxStatusPill({ box, status, stale, historicalIssue, warming, compact = false, pending = false }: { box: Inbox; status?: AccountStatus; stale: boolean; historicalIssue?: { status: AccountStatus; observedAt: number }; warming: boolean; compact?: boolean; pending?: boolean }) {
+    if (historicalIssue && box.status === "active") return <span className="text-[10.5px] text-amber-700" title={`Last observed ${new Date(historicalIssue.observedAt).toLocaleString()}. Current status unavailable.`}>Last reported issue</span>;
     const critical = status?.errors?.find((e) => e.severity?.toUpperCase() === "CRITICAL");
     const error = critical ?? status?.errors?.[0];
     const stopped = !!critical || status?.health?.status === "error";
@@ -1510,15 +1518,15 @@ function MailboxStatusPill({ box, status, historicalIssue, warming, compact = fa
     ].join(", ");
     const text = sending ? "text-sky-700" : resting ? "text-violet-600" : warming ? "text-orange-600" : "text-slate-400";
     return (
-        <span className={`inline-flex items-center gap-1.5 max-w-full text-[10.5px] font-medium uppercase tracking-[0.08em] ${text}`} title={title}>
+        <span className={`inline-flex items-center gap-1.5 max-w-full text-[10.5px] font-medium uppercase tracking-[0.08em] ${text}`} title={stale ? `Last observed: ${title}. Current status unconfirmed.` : title}>
             <span className="inline-flex items-center gap-0.5 shrink-0">
                 {sending && <SendIcon className="w-3 h-3 text-sky-600" />}
                 {resting && <MoonIcon className="w-3 h-3 text-violet-500" />}
                 {warming && <FlameIcon className="w-3 h-3 text-orange-500" />}
                 {!sending && !resting && !warming && <CircleSlashIcon className="w-3 h-3" />}
             </span>
-            <span className="sr-only">{label}</span>
-            <span aria-hidden className={`hidden @4xl:inline truncate ${sending || warming ? "text-shimmer" : ""}`}>{label}</span>
+            <span className="sr-only">{stale && "Last observed: "}{label}</span>
+            <span aria-hidden className={`hidden @4xl:inline truncate ${!stale && (sending || warming) ? "text-shimmer" : ""}`}>{stale && "Last observed: "}{label}</span>
         </span>
     );
 }
