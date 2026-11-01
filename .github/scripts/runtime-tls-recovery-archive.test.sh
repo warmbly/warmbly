@@ -19,7 +19,7 @@ while [ "$#" -gt 0 ]; do
   case "$1" in --checksum-sha256) checksum=$2; shift 2 ;; --body) body=$2; shift 2 ;; *) shift ;; esac
 done
 [ "$checksum" = "$(openssl dgst -sha256 -binary "$body" | openssl base64 -A)" ]
-tar -tzf "$body" | rg -q '^./full-raw.json$'
+tar -tzf "$body" | grep -Fx './full-raw.json' >/dev/null
 if [ "${MODE:-}" = upload ]; then exit 1; fi
 jq -n --arg checksum "$checksum" --arg mode "${MODE:-}" '{VersionId:"evidence-version",ServerSideEncryption:"AES256",ChecksumSHA256:(if $mode=="checksum" then "other" else $checksum end)}'
 SH

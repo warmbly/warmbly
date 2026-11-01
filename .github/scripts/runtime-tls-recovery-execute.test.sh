@@ -142,7 +142,7 @@ for mode in bypass self-review artifact provenance live advanced scope changes; 
   if WORK="$work/$mode" MODE=$mode APPROVED_DIGEST="$approved" bash "$guard" apply 2>/dev/null; then
     echo "Recovery applied incompatible evidence: $mode" >&2; exit 1
   fi
-  if rg -q '^terraform .* apply ' "$work/requests.log"; then echo "Recovery reached apply for $mode" >&2; exit 1; fi
+  if grep -q '^terraform .* apply ' "$work/requests.log"; then echo "Recovery reached apply for $mode" >&2; exit 1; fi
 done
 if WORK="$work/wrong-approval" APPROVED_DIGEST=other bash "$guard" apply 2>/dev/null; then echo 'Recovery accepted another approval digest' >&2; exit 1; fi
 if WORK="$work/retry" GITHUB_RUN_ATTEMPT=2 bash "$guard" plan 2>/dev/null; then echo 'Recovery accepted a rerun' >&2; exit 1; fi
@@ -152,12 +152,12 @@ if WORK="$work/apply-failure" MODE=apply-failure APPROVED_DIGEST="$approved" bas
   echo 'Recovery continued after an apply failure' >&2; exit 1
 fi
 [ ! -e "$work/applied" ]
-if rg -q '^live collect-final$' "$work/requests.log"; then echo 'Recovery verified a failed apply as complete' >&2; exit 1; fi
+if grep -q '^live collect-final$' "$work/requests.log"; then echo 'Recovery verified a failed apply as complete' >&2; exit 1; fi
 : >"$work/requests.log"
 WORK="$work/apply" APPROVED_DIGEST="$approved" bash "$guard" apply
-[ "$(rg -c '^live collect$' "$work/requests.log")" = 2 ]
-[ "$(rg -c '^live collect-final$' "$work/requests.log")" = 1 ]
-[ "$(rg -c '^gh attestation verify ' "$work/requests.log")" = 10 ]
+[ "$(grep -c '^live collect$' "$work/requests.log")" = 2 ]
+[ "$(grep -c '^live collect-final$' "$work/requests.log")" = 1 ]
+[ "$(grep -c '^gh attestation verify ' "$work/requests.log")" = 10 ]
 WORK="$work/verify" bash "$guard" verify
 jq '.resources[0].instances[0].attributes.arn="different"' "$work/final-state.json" >"$work/changed-state.json"
 if bash "$guard" check-final-state "$work/changed-state.json" "$work/state.json" 2>/dev/null; then
