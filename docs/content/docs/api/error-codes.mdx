@@ -163,6 +163,10 @@ Resource IDs on email, campaign and contact routes must be UUIDs. Email `tags` a
 | `invalid_recipient` | `POST /emails/:id/send`, `POST /unibox/reply` or `POST /unibox/compose` was given a `to`, `cc` or `bcc` entry that is not exactly one email address (`ana@example.com` or `Ana <ana@example.com>`), or no `to` address at all. Put each address in its own entry |
 | `recipient_suppressed` | `POST /emails/:id/send`, `POST /unibox/reply` or `POST /unibox/compose` named a `to`, `cc` or `bcc` address on the workspace [suppression list](/guides/unsubscribe/#the-suppression-list), directly or through its domain. The `message` names the address and the entry. Nothing was queued. A forward (`POST /unibox/reply` with `forward_message_id`) is not checked against the list |
 | `invalid_message_id` | `POST /emails/:id/send` or `POST /unibox/reply` was given an `in_reply_to` entry that is not one Message-ID: printable characters with no spaces or line breaks, with or without the surrounding `<` and `>` |
+| `invalid_draft` | `PUT /unibox/ai-drafts/by-thread` was given a missing or oversized `thread_id`, a `body` that is empty or longer than 8000 characters, a `source` that is empty, longer than 40 characters or not letters, digits, dots, dashes and underscores, an `intent_class` longer than 40 characters, or a `confidence` outside 0 to 1 |
+| `thread_not_found` | `PUT /unibox/ai-drafts/by-thread` named a thread with no inbound message in this workspace |
+| `already_sent` | `PUT /unibox/ai-drafts/by-thread` found an approved draft that already answers the newest inbound message on the thread. Nothing was changed |
+| `draft_discarded` | `PUT /unibox/ai-drafts/by-thread` found a discarded draft that already covers the newest inbound message on the thread. Nothing was changed |
 
 #### Image upload refusals
 

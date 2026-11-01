@@ -1051,6 +1051,9 @@ func Run(
 				unibox.GET("/agent-drafts", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.ListAgentDrafts)
 				unibox.POST("/agent-drafts/:id/approve", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.ApproveAgentDraft)
 				unibox.POST("/agent-drafts/:id/discard", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.DiscardAgentDraft)
+				// External drafts (an API key writing the reply it generated): upsert the
+				// thread's pending draft so the team reviews it in the same Drafts view.
+				unibox.PUT("/ai-drafts/by-thread", m.RequireOrganization(), m.RequireAccess(models.PermAccessUnibox, models.APIPermWriteUnibox), h.UpsertThreadDraft)
 
 				// Snoozes — POST/DELETE on a thread, GET lists active ones.
 				unibox.GET("/snoozes", m.RequireAccess(models.PermAccessUnibox, models.APIPermReadUnibox), h.ListUniboxSnoozes)
