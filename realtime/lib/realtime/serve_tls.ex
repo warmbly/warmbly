@@ -36,6 +36,18 @@ defmodule Realtime.ServeTLS do
     end
   end
 
+  defp merge_listener(:http, old, [ip: {127, 0, 0, 1}] = new) when is_list(old) do
+    transport = Keyword.get(old, :transport_options, [])
+
+    sockets =
+      transport
+      |> Keyword.get(:socket_opts, [])
+      |> Enum.reject(&(&1 in [:inet, :inet6]))
+
+    Keyword.merge(old, new)
+    |> Keyword.put(:transport_options, Keyword.put(transport, :socket_opts, [:inet | sockets]))
+  end
+
   defp merge_listener(_key, old, new) when is_list(old) and is_list(new),
     do: Keyword.merge(old, new)
 
