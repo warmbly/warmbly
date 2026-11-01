@@ -6,6 +6,7 @@ import type Inbox from "@/lib/api/models/app/emails/Inbox";
 import type Tag from "@/lib/api/models/app/Tag";
 import type * as UserModule from "@/hooks/context/user";
 import type AccountStatus from "@/lib/api/models/app/analytics/AccountStatus";
+import { utcToday } from "@/lib/campaignPeriod";
 import AddressesPage from "./page";
 
 const { tags, rows, statusState, confirm } = vi.hoisted(() => ({
@@ -33,7 +34,7 @@ vi.mock("@/hooks/usePermission", () => ({ usePermission: () => true }));
 vi.mock("@/lib/api/hooks/app/emails/useEmails", () => ({
     default: ({ tag }: { tag: string }) => ({ emails: statusState.emailsLoading || statusState.emailsError ? [] : tag ? rows.filter((row) => row.tags.includes(tag)) : rows, isLoading: statusState.emailsLoading, isPending: statusState.emailsLoading, isError: statusState.emailsError || statusState.emailsIncomplete, isIncomplete: statusState.emailsIncomplete, refetch: vi.fn() }),
 }));
-vi.mock("@/lib/api/hooks/app/analytics/useAccountStatuses", () => ({ default: () => statusState }));
+vi.mock("@/lib/api/hooks/app/analytics/useAccountStatuses", () => ({ default: () => ({ ...statusState, observations: statusState.observations.length ? statusState.observations : statusState.data.map((status) => ({ status, observedAt: 0, current: !statusState.isFetching && !statusState.isError })) }) }));
 vi.mock("@/lib/api/hooks/app/subscription/useFeatureStatus", () => ({ default: () => ({ data: { can_use_warmup: true } }) }));
 vi.mock("@/lib/api/hooks/auth/useAuthConfig", () => ({ default: () => ({ data: {}, isLoading: false }) }));
 vi.mock("@/lib/api/hooks/app/emails/useMailboxGrants", () => ({ useSigninMigration: () => ({ data: { data: [] } }) }));
@@ -74,7 +75,7 @@ function orderedEmails() {
 }
 
 function measuredStatus(row: Inbox): AccountStatus {
-    return { id: row.id, email: row.email, provider: "gmail", status: "active", last_synced_at: null, health: { status: "healthy", score: 100 }, errors: [], daily_usage: { date: "2026-10-09", campaign_sent: 0, campaign_limit: 50 }, in_campaign: false };
+    return { id: row.id, email: row.email, provider: "gmail", status: "active", last_synced_at: null, health: { status: "healthy", score: 100 }, errors: [], daily_usage: { date: utcToday(), campaign_sent: 0, campaign_limit: 50 }, in_campaign: false };
 }
 
 describe("mailbox ordering with a tag filter", () => {
@@ -215,12 +216,102 @@ describe("mailbox status while account and Cloud checks settle", () => {
         statusState.isFetching = true;
         await renderPage();
         expect(screen.queryByText("Healthy 100")).not.toBeInTheDocument();
+        expect(screen.getByText("Last observed: Healthy 100")).toBeInTheDocument();
+        expect(screen.getByTitle("0 of 50 campaign emails sent today")).toBeInTheDocument();
         statusState.isFetching = false;
         fireEvent.click(screen.getByRole("button", { name: "Mailbox" }));
         expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(0);
         statusState.isError = true;
         fireEvent.click(screen.getByRole("button", { name: "Mailbox" }));
         expect(screen.queryByText("Healthy 100")).not.toBeInTheDocument();
+        expect(screen.getByText("Last observed: Healthy 100")).toBeInTheDocument();
+        expect(screen.getByTitle("0 of 50 campaign emails sent today")).toBeInTheDocument();
+    });
+
+    it.each(["isFetching", "isError"] as const)("retains cached row metrics and marks only unconfirmed chunks stale during %s", async (state) => {
+        statusState.data = rows.map(measuredStatus);
+        statusState.data[0].daily_usage = { date: utcToday(), campaign_sent: 7, campaign_limit: 50 };
+        statusState.observations = statusState.data.map((status) => ({ status, observedAt: Date.now(), current: true }));
+        await renderPage();
+
+        statusState[state] = true;
+        statusState.observations = statusState.observations.map((observation) => ({ ...observation, current: observation.status.id !== rows[0].id }));
+        fireEvent.click(screen.getByRole("button", { name: "Mailbox" }));
+        const sara = screen.getByText(rows[0].email).closest("tr");
+        const kavya = screen.getByText(rows[1].email).closest("tr");
+        expect(sara).not.toBeNull();
+        expect(kavya).not.toBeNull();
+        expect(within(sara!).getByTitle("7 of 50 campaign emails sent today")).toBeInTheDocument();
+        expect(within(sara!).getByText("Last observed: Healthy 100")).toBeInTheDocument();
+        expect(within(sara!).queryByText("Checking…")).not.toBeInTheDocument();
+        expect(within(kavya!).getByText("Healthy 100")).toBeInTheDocument();
+        expect(within(kavya!).queryByText("Last observed: Healthy 100")).not.toBeInTheDocument();
+    });
+
+    it("withholds prior-day campaign totals after UTC midnight until current usage arrives", async () => {
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(new Date("2026-11-01T19:59:59-04:00"));
+        try {
+            statusState.data = rows.map(measuredStatus);
+            statusState.data[0].daily_usage = { date: "2026-11-01", campaign_sent: 49, campaign_limit: 50 };
+            await renderPage();
+            expect(screen.getByTitle("49 of 50 campaign emails sent today")).toBeInTheDocument();
+
+            vi.setSystemTime(new Date("2026-11-01T20:00:01-04:00"));
+            statusState.isError = true;
+            statusState.data = statusState.data.map((status) => status.id === rows[1].id ? { ...status, daily_usage: { date: "2026-11-02", campaign_sent: 2, campaign_limit: 50 } } : status);
+            fireEvent.click(screen.getByRole("button", { name: /^Sent today/ }));
+            expect(screen.queryByTitle("49 of 50 campaign emails sent today")).not.toBeInTheDocument();
+            expect(screen.getByTitle("2 of 50 campaign emails sent today")).toBeInTheDocument();
+            expect(orderedEmails()[0]).toBe(rows[1].email);
+            expect(statusState.data[0].daily_usage?.campaign_sent).toBe(49);
+
+            statusState.isError = false;
+            statusState.data = [{ ...measuredStatus(rows[0]), daily_usage: { date: "2026-11-02", campaign_sent: 1, campaign_limit: 50 } }];
+            fireEvent.click(screen.getByRole("button", { name: "Mailbox" }));
+            expect(screen.getByTitle("1 of 50 campaign emails sent today")).toBeInTheDocument();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it.each(["revoked", "inactive"])("keeps inventory %s status authoritative when account measurements are stale", async (status) => {
+        const original = rows[0].status;
+        rows[0].status = status;
+        try {
+            statusState.data = rows.map(measuredStatus);
+            statusState.isError = true;
+            await renderPage();
+            const mailbox = within(screen.getByText(rows[0].email).closest("tr")!);
+            const label = status === "revoked" ? "Reconnect" : "Off";
+            expect(mailbox.getAllByText(label).length).toBeGreaterThan(0);
+            expect(mailbox.queryByText(`Last observed: ${label}`)).not.toBeInTheDocument();
+        } finally {
+            rows[0].status = original;
+        }
+    });
+
+    it("keeps a retained issue ahead of cached healthy data until a fresh recovery arrives", async () => {
+        const failed = { ...measuredStatus(rows[0]), health: { status: "error", score: 40 } } satisfies AccountStatus;
+        statusState.data = [failed];
+        statusState.observations = [{ status: failed, observedAt: Date.now(), current: true }];
+        await renderPage();
+
+        const recovered = measuredStatus(rows[0]);
+        statusState.data = [recovered];
+        statusState.isError = true;
+        statusState.observations = [{ status: recovered, observedAt: Date.now() + 1, current: false }];
+        fireEvent.click(screen.getByRole("button", { name: "Mailbox" }));
+        expect(screen.getAllByText("Last reported issue").length).toBeGreaterThan(0);
+        expect(screen.getByText("Last observed: Issue 40")).toBeInTheDocument();
+        expect(screen.queryByText("Last observed: Healthy 100")).not.toBeInTheDocument();
+        expect(screen.getByTitle("0 of 50 campaign emails sent today")).toBeInTheDocument();
+
+        statusState.isError = false;
+        statusState.observations = [{ status: recovered, observedAt: Date.now() + 2, current: true }];
+        fireEvent.click(screen.getByRole("button", { name: "Mailbox" }));
+        await waitFor(() => expect(screen.queryAllByText("Last reported issue")).toHaveLength(0));
+        expect(screen.getByText("Healthy 100")).toBeInTheDocument();
     });
 
     it("does not assume local-only health when the Cloud connection lookup failed", async () => {
@@ -230,7 +321,7 @@ describe("mailbox status while account and Cloud checks settle", () => {
         await renderPage();
         expect(screen.queryByText("Healthy 100")).not.toBeInTheDocument();
         const sara = screen.getAllByRole("row").find((row) => row.textContent?.includes(rows[0].email));
-        expect(within(sara!).getByText("Issue 40")).toBeInTheDocument();
+        expect(within(sara!).getByText("Last observed: Issue 40")).toBeInTheDocument();
         expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(0);
     });
 
@@ -241,10 +332,11 @@ describe("mailbox status while account and Cloud checks settle", () => {
         await renderPage();
         expect(screen.getByText("Issue 40")).toBeInTheDocument();
         statusState.isFetching = true;
+        statusState.observations = statusState.observations.map((observation) => ({ ...observation, current: false }));
         fireEvent.click(screen.getByRole("button", { name: "Mailbox" }));
         expect(screen.getAllByText("Last reported issue").length).toBeGreaterThan(0);
         expect(screen.getByText("Last observed: Issue 40")).toBeInTheDocument();
-        expect(screen.queryByTitle("0 of 50 campaign emails sent today")).not.toBeInTheDocument();
+        expect(screen.getAllByTitle("0 of 50 campaign emails sent today")).toHaveLength(rows.length);
 
         statusState.isFetching = false;
         statusState.cloudLoading = true;
@@ -261,18 +353,26 @@ describe("mailbox status while account and Cloud checks settle", () => {
         expect(screen.getAllByText("Healthy 100").length).toBeGreaterThan(0);
     });
 
-    it("expires an old unverified issue rather than displaying it indefinitely", async () => {
+    it.each([
+        { severity: "critical", health: "error", label: "Error" },
+        { severity: "warning", health: "warning", label: "Retrying" },
+    ] as const)("keeps expired cached $label reports visibly unconfirmed", async ({ severity, health, label }) => {
         statusState.data = rows.map(measuredStatus);
-        statusState.data[0] = { ...measuredStatus(rows[0]), health: { status: "error", score: 40 }, errors: [{ id: "error-1", error_code: "PROVIDER_UNAVAILABLE", severity: "critical", title: "Provider unavailable", message: "Provider refused the last attempt", created_at: new Date("2026-10-09T00:00:00Z") }] };
+        statusState.data[0] = { ...measuredStatus(rows[0]), health: { status: health, score: 40 }, errors: [{ id: "error-1", error_code: "PROVIDER_UNAVAILABLE", severity, title: "Provider unavailable", message: "Provider refused the last attempt", created_at: new Date("2026-10-09T00:00:00Z") }] };
         const observedAt = Date.now();
         statusState.observations = statusState.data.map((status) => ({ status, observedAt, current: true }));
         await renderPage();
         statusState.isFetching = true;
+        statusState.observations = statusState.observations.map((observation) => ({ ...observation, current: false }));
         fireEvent.click(screen.getByRole("button", { name: "Mailbox" }));
         expect(screen.getAllByText("Last reported issue").length).toBeGreaterThan(0);
         const clock = vi.spyOn(Date, "now").mockReturnValue(observedAt + 5 * 60_000 + 1);
         fireEvent.click(screen.getByRole("button", { name: "Mailbox" }));
         expect(screen.queryAllByText("Last reported issue")).toHaveLength(0);
+        const mailbox = within(screen.getByText(rows[0].email).closest("tr")!);
+        expect(mailbox.getAllByText(`Last observed: ${label}`).length).toBeGreaterThan(0);
+        expect(mailbox.queryByText(label)).not.toBeInTheDocument();
+        expect(mailbox.getAllByTitle("Last observed: Provider unavailable. Current status unconfirmed.").length).toBeGreaterThan(0);
         clock.mockRestore();
     });
 
