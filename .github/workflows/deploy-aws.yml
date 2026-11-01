@@ -26,6 +26,10 @@ on:
         description: Refuse images without build provenance (only releases before provenance need false)
         default: true
         type: boolean
+      bake_seconds:
+        description: Optional explicit service bake duration; empty retains the configured default
+        default: ""
+        type: string
   workflow_dispatch:
     inputs:
       tag:

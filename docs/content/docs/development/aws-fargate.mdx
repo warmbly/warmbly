@@ -492,9 +492,8 @@ effective loopback listeners and HTTPS routes.
 
 ### Validate recovery evidence
 
-The read-only recovery validators keep a recovery contract separate from the
-normal route, drain and on transition checks. They do not provide a production
-recovery execution workflow. The baseline identifies four drained HTTP groups
+The recovery validators keep a recovery contract separate from the normal
+route, drain and on transition checks. The baseline identifies four drained HTTP groups
 and their reviewed state projection. `check-state` verifies a supplied raw
 Terraform state file against the baseline SHA-256, lineage, serial and exact
 group identities. `check-plan` permits only the four corresponding deletions
@@ -529,12 +528,96 @@ private. Its `inputs.json` binds the selected versions and hashes; it does not
 establish that the declared release matches the live services or that those
 services are healthy.
 
-These checks neither relabel an earlier release's drain nor change the normal
-workflow's predecessor requirements. A complete recovery workflow must also
-collect current service, TLS, route and target health, bind the immutable vars
-snapshot and state version, and preserve separate protected approval, production
-serialization, plan digest comparison, attested redeployment and final effective
-verification. Do not use these validators as an alternative to those gates.
+`runtime-tls-recovery-live.sh` collects current service and task descriptions,
+target health, listener rules, task security groups, alarms and public health
+responses. The reviewed raw state identifies the five services, four HTTPS
+groups, listener, nine forwarding rules and task security groups. All services
+must be stable with running tasks on the declared release's digest-pinned
+images. The four HTTP services require healthy tasks. A consumer definition
+without a health check has the explicit ECS `UNKNOWN` status rather than a
+synthetic healthy result. Registry manifest bytes are checked against their digest.
+A task may report the pinned index digest or its matching Linux platform digest;
+an index must contain the task definition's CPU architecture. An index report
+does not independently identify the resolved platform digest. The collector requires configured TLS,
+loopback-only HTTP, the reviewed backend certificate and pinned forms and tracking
+backend URL and CA. HTTPS targets must match running task addresses. It also
+requires nine HTTPS-only forwarding rules, no task ingress on the old HTTP ports,
+eight OK alarms and five HTTP 200 public responses. These observations verify
+configuration and health at collection time; they do not replace inspection of
+deployment logs or independent internal certificate-handshake evidence.
+
+### Review and run partial cleanup
+
+`runtime-tls-recovery.yml` is a separate manual recovery path. Normal TLS stage
+and predecessor checks remain unchanged. It never relabels an earlier release's
+drain, creates a release or starts a worker rollout. Existing self-host deployment
+and upgrade paths are unaffected.
+
+The recovery contract combines the baseline, S3 input and workflow-lineage
+fields above. Its `release.imagesSha256` binds the exact published `images.json`
+bytes. `planChangesSha256` binds the complete privately reviewed plan changes,
+including read and no-op entries and refresh drift. Calculate this hash from
+the private candidate plan with:
+
+```sh
+jq -cS '{resource_changes:(.resource_changes | sort_by(.address)),resource_drift:(.resource_drift // [] | sort_by(.address))}' \
+  private-plan.json | sha256sum
+```
+
+The private full plan must be inspected before this hash is accepted. Keep it,
+the contract, state and vars outside the checkout and public workflow artifacts.
+The workflow publishes only hashes and a scope summary. A dedicated evidence
+role archives complete runner files, including raw collections and Terraform
+logs, to a new private S3 object after each plan, apply and final verification,
+including failed attempts. Archives require encryption, checksum agreement,
+versioning and conditional creation without replacement. Archive failure blocks
+the next job. No raw evidence is uploaded to public workflow artifacts.
+
+Store the reviewed contract at a new key under
+`warmbly/production/vars/runtime-tls-recovery/` ending in `.contract.json`.
+Dispatch accepts its exact key, S3 version and file SHA-256. Repository variable
+`AWS_TLS_RECOVERY_ENABLED=true` explicitly enables this hosted-only path; it is
+disabled when unset. The approval environment must have required reviewers,
+prevent self-review and disallow administrator bypass. Missing configuration or
+unavailable environment metadata stops recovery. No role or environment policy
+is changed by the workflow.
+
+Before enabling recovery, provision and review the dedicated
+`warmbly-production-tls-recovery-evidence` role through the normal infrastructure
+approval process, then set `AWS_TLS_RECOVERY_EVIDENCE_ROLE_ARN` to its ARN in
+account `925323749693`. Its OIDC trust permits only this repository's
+`aws-infrastructure-plan` and `aws-infrastructure-approval` environments. Grant
+only `s3:PutObject` on
+`warmbly-terraform-use1-925323749693/warmbly/production/diagnostics/runtime-tls-recovery/*`,
+requiring AES256 server-side encryption. It needs no object read/delete or
+production management permissions. The existing plan role's state-lock-only
+write policy remains unchanged. The workflow refuses a missing or differently
+named evidence role; it does not create or grant permissions to that role.
+
+Plan and apply each re-collect exact workflow lineage, versioned S3 inputs and
+fresh live evidence. All ten published image variants require release-workflow
+provenance for the declared source commit. The only Terraform target is
+`aws_lb_target_group.service`, and the only permitted mutations are exactly four
+reviewed HTTP group deletions. Complete changes must match the contract's hash.
+Approval binds that hash, the exact contract bytes and workflow source. Apply
+uses `aws-infrastructure-approval` and the existing `aws-production` concurrency
+group, replans after approval and repeats live checks immediately before applying
+the saved plan. State advancement or any digest mismatch stops the run.
+
+After apply, state must retain every other resource unchanged and AWS must have
+no matching HTTP groups. A same-release redeploy uses the normal attested
+deployment path for all five services with explicit 300-second bakes, migration
+and secret checks, dropped-secret allowance disabled and `fleet=false`. The final
+job repeats state and live checks. Its `collect-archived` input mode reads the
+original reviewed state version solely for comparison with the new state; normal
+plan and apply collection still requires the reviewed state to be latest.
+
+Workflow reruns and local execution are refused. After a failure, inspect the
+private plan, state and logs and prepare a new reviewed recovery contract rather
+than retrying unchanged. Workflow success does not itself update a local TLS
+stage or attest worker broker credentials. Inspect actual provenance, migration
+and bake logs, preserve independent TLS and worker proof, and verify effective
+production state before recording ON as complete.
 
 ## One-time GitHub setup
 
