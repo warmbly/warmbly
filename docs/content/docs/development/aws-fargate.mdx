@@ -490,6 +490,52 @@ drain-to-on transition; a partially completed transition requires a separately
 reviewed recovery path rather than an unchanged retry. Persist `target_tls=on` only after it succeeds, then verify the
 effective loopback listeners and HTTPS routes.
 
+### Validate recovery evidence
+
+The read-only recovery validators keep a recovery contract separate from the
+normal route, drain and on transition checks. They do not provide a production
+recovery execution workflow. The baseline identifies four drained HTTP groups
+and their reviewed state projection. `check-state` verifies a supplied raw
+Terraform state file against the baseline SHA-256, lineage, serial and exact
+group identities. `check-plan` permits only the four corresponding deletions
+without refresh drift. The baseline and state version must come from a trusted,
+reviewed collection process; matching a file hash alone does not establish that
+provenance.
+
+`runtime-tls-recovery-lineage.sh` collects and checks the GitHub portion of a
+recovery contract. Its version 1 contract names `warmbly/warmbly` and three
+identities, `release`, `drain` and `failedOn`, each with a stable release `tag`,
+40-character commit `source`, numeric `runId` and numeric `attempt`. The current
+release is distinct from the historical release retained by both TLS runs.
+Collection reads the exact run attempts and the complete failed ON job inventory.
+It requires the current release and historical drain to have succeeded, the ON
+apply to have succeeded before a failed redeploy, and each workflow path, branch,
+title and source to match its declared role. The local checkout must include the
+release tag and full commit history so the checker can verify the tag and
+drain-to-ON-to-release ancestry. Collection writes a new private directory and
+refuses to overwrite a prior collection.
+
+`runtime-tls-recovery-inputs.sh` collects the private S3 inputs using only STS
+identity and S3 get/head operations. The baseline names the production `bucket`,
+the state `key`, version and hash, and a `snapshot` with its `key`, `versionId`,
+`sha256` and declared `releaseTag`. The cleanup vars use a new key under
+`warmbly/production/vars/runtime-tls-recovery/`, separate from the normal stage
+snapshot. Collection requires the expected account and bucket owner, exact
+version metadata, server-side encryption and matching file hashes. It validates
+the raw state identities and requires the latest state version to remain the
+reviewed one. The vars must name `warmbly-production` and `target_tls=on`.
+The resulting private directory contains raw state and vars and must remain
+private. Its `inputs.json` binds the selected versions and hashes; it does not
+establish that the declared release matches the live services or that those
+services are healthy.
+
+These checks neither relabel an earlier release's drain nor change the normal
+workflow's predecessor requirements. A complete recovery workflow must also
+collect current service, TLS, route and target health, bind the immutable vars
+snapshot and state version, and preserve separate protected approval, production
+serialization, plan digest comparison, attested redeployment and final effective
+verification. Do not use these validators as an alternative to those gates.
+
 ## One-time GitHub setup
 
 1. On the `aws-production` environment, allow the `v*.*.*` tag pattern next to
