@@ -34,9 +34,10 @@ const (
 	IntegrationCalCom   IntegrationProvider = "cal_com"
 
 	// Data
-	IntegrationGoogleSheets IntegrationProvider = "google_sheets"
-	IntegrationApollo       IntegrationProvider = "apollo"
-	IntegrationClay         IntegrationProvider = "clay"
+	IntegrationGoogleSheets  IntegrationProvider = "google_sheets"
+	IntegrationApollo        IntegrationProvider = "apollo"
+	IntegrationCompanyEnrich IntegrationProvider = "companyenrich"
+	IntegrationClay          IntegrationProvider = "clay"
 
 	// Lead finder place providers; a connection holds the workspace's own key.
 	IntegrationGooglePlaces IntegrationProvider = "google_places"
@@ -68,6 +69,7 @@ var AllIntegrationProviders = []IntegrationProvider{
 	IntegrationCalCom,
 	IntegrationGoogleSheets,
 	IntegrationApollo,
+	IntegrationCompanyEnrich,
 	IntegrationClay,
 	IntegrationGooglePlaces,
 	IntegrationFoursquare,

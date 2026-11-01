@@ -202,6 +202,20 @@ func Catalog() []models.IntegrationCatalogEntry {
 
 		// Data ----------------------------------------------------------------
 		{
+			Provider:   models.IntegrationCompanyEnrich,
+			Name:       "CompanyEnrich",
+			Tagline:    "Research companies and people, and fill missing contact details.",
+			Category:   models.IntegrationCategoryData,
+			AuthMethod: string(models.IntegrationAuthAPIKey),
+			DocsURL:    "https://docs.warmbly.com/guides/companyenrich/",
+			Highlights: []string{
+				"Connect with your own CompanyEnrich API key",
+				"Search companies and people, find lookalikes and explore workforce data",
+				"Enrich by domain, company properties or a batch of domains",
+				"Fill missing details on existing contacts without changing their email or subscription status",
+			},
+		},
+		{
 			Provider:   models.IntegrationApollo,
 			Name:       "Apollo",
 			Tagline:    "Import Apollo lists and enrich your contacts from Apollo's database.",

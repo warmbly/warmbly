@@ -1,0 +1,86 @@
+---
+title: CompanyEnrich
+description: "Research companies and people on demand, and enrich an existing contact using your own CompanyEnrich API key."
+---
+
+CompanyEnrich adds company and people research to Warmbly. Connect your own CompanyEnrich account, run a query when you need data, or fill missing information on one existing contact. Requests use your CompanyEnrich plan and credits.
+
+## Connect CompanyEnrich
+
+1. Get an API key from your [CompanyEnrich account](https://app.companyenrich.com/).
+2. In Warmbly, open **Integrations > CompanyEnrich > Connect** and paste the key.
+3. Warmbly validates the key with an account request before saving it. Open the connection to run a query or enrich a contact.
+
+Connecting requires **Manage settings**. Running a query requires **Use integrations**. Enriching an existing contact also requires **Manage contacts**, because it changes that contact. Integrations require a paid Warmbly plan.
+
+The saved key is encrypted and is never included in query results or connection responses. When calling Warmbly's API, use a Warmbly credential; the connection supplies the CompanyEnrich key internally.
+
+## Research companies and people
+
+Choose an operation, enter its inputs, and run it explicitly. A query returns data for review and does not create contacts, enroll anyone in a campaign, or send email.
+
+| Operation | What you can look up |
+| --- | --- |
+| Enrich company | A company profile from its domain |
+| Search companies | Companies matching a literal query, a semantic description, or structured filters |
+| Similar companies | Lookalikes of one to ten seed company domains |
+| Search people | People matching name, role, seniority, location, education, and company filters |
+| Look up person | A person and company match using an email address you already have |
+| Company workforce | Workforce information for a company domain or CompanyEnrich company ID |
+| Enrich company by properties | A company matched by its name or supported social profile properties |
+| Batch enrich companies | Company profiles for one to fifty domains |
+| Get company | One company by its CompanyEnrich UUID |
+| Get person | One person by their CompanyEnrich person ID |
+| Count companies | The number of companies matching company search filters |
+| Count similar companies | The number of lookalikes matching seed domains and filters |
+
+<Callout type="info" title="People search does not provide email addresses">
+CompanyEnrich people search returns professional profiles, not email addresses. Person lookup starts with an address you already have. The beta email-finding endpoints are outside this integration, so search results cannot automatically become an email-ready contact list.
+</Callout>
+
+### Filters, expansions, and pages
+
+Company search accepts `query` for a literal company name or domain, and `semanticQuery` for a natural-language description. They are separate fields. Structured filters belong directly in the request `body`, including nested people `companyFilter` and `education` filters. See the [query API and operation table](/api/reference/integrations/#query-companyenrich) for the exact field names and where each input goes.
+
+Company and people searches return one page per request. The default is page 1 with 10 results. Page size can be 1 to 100, and `page × pageSize` cannot exceed 10,000. Requesting another page is another explicit request and may use more credits. Literal queries allow up to 250 characters; semantic company descriptions allow up to 500.
+
+Supported company operations can request `expand: ["workforce"]` in `query`. Supported people operations can request `expand: ["education"]`. Expansions can spend additional CompanyEnrich credits. Counts and the workforce operation do not accept `expand`.
+
+Company IDs are UUIDs. Person IDs are positive 64-bit integers; pass a decimal string such as `"9223372036854775807"` to preserve large IDs exactly.
+
+Results retain all provider fields, pagination metadata, similarity scores, arrays, and numeric counts of zero. Integer values outside JavaScript's exact range are returned as decimal strings to avoid rounding. A missing field remains missing; it is not evidence that a value is zero or that a person has a verified address.
+
+## Enrich an existing contact
+
+Choose a contact already in your workspace and choose **Person** or **Company** enrichment. Person enrichment looks up the contact's existing email address. Company enrichment checks the custom fields `company_domain`, `companyenrich_domain`, then `website`, using the first nonempty field. If none is present, it uses the contact's email domain. An invalid stored domain or website must be corrected before enrichment. For a contact with a personal email address, set `company_domain` to the employer's domain first so the lookup does not target the email provider.
+
+The dashboard fills blank mapped fields. The API also defaults to `overwrite: false`; API callers can set `overwrite: true` to replace mapped fields for which CompanyEnrich returned a nonempty value. Unrelated fields remain unchanged, and an empty provider value never clears a contact field.
+
+Enrichment can fill the contact's name and company and store CompanyEnrich attributes in prefixed custom fields. It never changes the contact's email address, subscription or suppression state, verification status, or campaign membership. Review the returned `updated_fields` to see what changed. A successful request can update no fields when the contact already has the mapped values or the provider returns no matching information.
+
+The [contact-enrichment API](/api/reference/integrations/#enrich-a-contact-with-companyenrich) handles one existing contact per request. It is not a bulk import or a background enrichment job.
+
+### Fields that can change
+
+Only nonempty values are mapped, with a maximum of 500 characters per saved value. A person's company comes from the first current work experience that includes a matched company.
+
+| Enrichment | Contact fields | Custom fields |
+| --- | --- | --- |
+| Person | `first_name`, `last_name`, `company` | `companyenrich_person_id`, `companyenrich_position`, `companyenrich_seniority`, `companyenrich_department`, `companyenrich_person_linkedin_url`, `companyenrich_company_id`, `companyenrich_domain` |
+| Company | `company` | `companyenrich_company_id`, `companyenrich_domain`, `companyenrich_website`, `companyenrich_industry`, `companyenrich_employees`, `companyenrich_revenue`, `companyenrich_founded_year`, `companyenrich_company_linkedin_url` |
+
+Custom-field names in `updated_fields` include their prefix, for example `custom_fields.companyenrich_position`. CompanyEnrich's documented person profile does not provide a phone field, so this integration does not fill phone numbers.
+
+## Credits and request behavior
+
+Each query or contact enrichment makes one CompanyEnrich data request. Your CompanyEnrich account is charged under that operation's rules; a search with no matches or an optional expansion can still have a cost. Check the provider's [API reference](https://docs.companyenrich.com/reference) for current pricing and limits.
+
+Warmbly includes `credits_consumed` only when CompanyEnrich explicitly reports a charge. If the field is absent, the cost is unknown, not zero.
+
+Warmbly does not automatically retry a failed data request, fetch further pages, poll a job, download a result URL, import contacts, or send messages. Resolve an error before choosing to run again. If a request times out, the provider may still have processed it; another attempt can spend more credits.
+
+The integration exposes the twelve operations above. Beta email discovery, asynchronous jobs and exports, saved-list administration, and account responses are outside its query interface.
+
+## What moves with a workspace export
+
+The connection moves with [workspace integrations](/guides/workspace-export-import/). Its API key travels only when credentials are included; otherwise reconnect it on the destination. Enriched contact fields move with contacts. Queries do not create a saved list or a background job to resume after the move.

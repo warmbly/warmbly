@@ -42,6 +42,7 @@ interface FieldDef {
 
 // Credential fields for non-OAuth providers only. OAuth providers never paste.
 const FIELDS_BY_PROVIDER: Record<string, FieldDef[]> = {
+    companyenrich: [{ key: "api_key", label: "CompanyEnrich API key", type: "password", required: true, helper: "Copy your API key from app.companyenrich.com. Connecting checks your key for free; research and enrichment requests can use credits." }],
     apollo: [
         {
             key: "api_key",
@@ -128,6 +129,7 @@ const NEXT_STEP: Record<string, string> = {
     google_places: "Open the Lead finder and pick Google Places as the source.",
     foursquare: "Open the Lead finder and pick Foursquare as the source.",
     outscraper: "Open the Lead finder and pick Outscraper as the source.",
+    companyenrich: "Research companies and people, or fill empty fields on an existing contact.",
     discord: "Choose which Warmbly events post to the channel.",
 };
 
