@@ -22,6 +22,10 @@ on:
         description: Start a canary rollout of the workers and consumers after the services
         default: true
         type: boolean
+      require_attestation:
+        description: Refuse images without build provenance (only releases before provenance need false)
+        default: true
+        type: boolean
   workflow_dispatch:
     inputs:
       tag:

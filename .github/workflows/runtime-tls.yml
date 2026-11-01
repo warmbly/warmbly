@@ -125,4 +125,5 @@ jobs:
       mode: redeploy
       services: backend,forms,tracking,realtime
       fleet: false
+      require_attestation: true
     secrets: inherit
