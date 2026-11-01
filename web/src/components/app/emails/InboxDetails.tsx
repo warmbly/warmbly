@@ -836,7 +836,7 @@ function OverviewTab({ status, loading, mailbox }: { status?: import("@/lib/api/
                     <Eyebrow>Needs attention</Eyebrow>
                     <div className="mt-2 space-y-2">
                         {status.errors.map((e: AccountError) => {
-                            const tone = e.severity === "CRITICAL" ? errorTone.critical : errorTone.warning;
+                            const tone = e.severity?.toUpperCase() === "CRITICAL" ? errorTone.critical : errorTone.warning;
                             return (
                                 <div key={e.id} className={`rounded-md border px-3 py-2 ${tone.box}`}>
                                     <div className={`text-[12px] font-medium ${tone.title}`}>{e.title}</div>

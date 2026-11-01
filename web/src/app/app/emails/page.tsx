@@ -1466,8 +1466,9 @@ function MailboxTh({ col, sort, onSort }: { col: MailboxColumn; sort: MailboxSor
 // compact spells a problem out, since it is the one reading a phone must not miss.
 function MailboxStatusPill({ box, status, historicalIssue, warming, compact = false, pending = false }: { box: Inbox; status?: AccountStatus; historicalIssue?: { status: AccountStatus; observedAt: number }; warming: boolean; compact?: boolean; pending?: boolean }) {
     if (!status && historicalIssue && box.status === "active") return <span className="text-[10.5px] text-amber-700" title={`Last observed ${new Date(historicalIssue.observedAt).toLocaleString()}. Current status unavailable.`}>Last reported issue</span>;
-    const critical = status?.errors?.find((e) => e.severity === "CRITICAL");
+    const critical = status?.errors?.find((e) => e.severity?.toUpperCase() === "CRITICAL");
     const error = critical ?? status?.errors?.[0];
+    const stopped = !!critical || status?.health?.status === "error";
     const lifecycle = status?.send_lifecycle;
     const inCampaign = !!status?.in_campaign;
     const { resting, sending } = mailboxColdActivity(status);
@@ -1478,7 +1479,7 @@ function MailboxStatusPill({ box, status, historicalIssue, warming, compact = fa
     else if (error) {
         const title = error.action_required ? `${error.title}. ${error.action_required}` : error.title;
         // Only a critical report stops the mailbox; a warning (a dropped connection, a busy server) is retried on its own.
-        problem = critical
+        problem = stopped
             ? { label: "Error", text: "text-rose-600", Icon: AlertTriangleIcon, title }
             : { label: "Retrying", text: "text-amber-600", Icon: RotateCcwIcon, title };
     }
