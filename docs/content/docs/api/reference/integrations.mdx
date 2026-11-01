@@ -1,9 +1,9 @@
 ---
 title: Integrations, automations, meetings
-description: Connect third-party apps, build automation flows, capture booked meetings, and run on-demand Google Sheets lead syncs.
+description: Connect third-party apps, build automation flows, capture booked meetings, run CompanyEnrich research and contact enrichment, and run on-demand Google Sheets lead syncs.
 ---
 
-These endpoints cover Warmbly's integration layer: the provider catalog and connection lifecycle, per-connection event subscriptions and field mappings, the visual automation flow builder, the booked-meetings list, and on-demand Google Sheets lead sync. Most reads are reachable by operational integration users (`use_integrations` / `INTEGRATIONS`), while connecting and configuring is a settings action (`manage_settings`).
+These endpoints cover Warmbly's integration layer: the provider catalog and connection lifecycle, per-connection event subscriptions and field mappings, the visual automation flow builder, the booked-meetings list, on-demand CompanyEnrich queries and contact enrichment, and on-demand Google Sheets lead sync. Most reads are reachable by operational integration users (`use_integrations` / `INTEGRATIONS`), while connecting and configuring is a settings action (`manage_settings`).
 
 Integrations are a paid-plan feature. Browsing the catalog and listing connections is open so non-paid orgs see the upsell, but any mutating call (connect, authorize, configure, push, test, automations write) returns `403` with a "Integrations are available on paid plans" message when the organization is not on a paid plan.
 
@@ -591,6 +591,119 @@ Auth: **Scope** `INTEGRATIONS` · **Org permission** `use_integrations`.
 ```
 
 A connection whose token can no longer be refreshed returns `409 Conflict` with a "needs to be reconnected" message.
+
+## Query CompanyEnrich
+
+`POST /integrations/companyenrich/:id/query`
+
+Runs one of twelve CompanyEnrich operations using a saved CompanyEnrich connection in the caller's workspace. The `id` is the Warmbly connection UUID. This is an on-demand data request and can spend the connected account's CompanyEnrich credits. It does not create or update Warmbly contacts.
+
+Auth: **Scope** `INTEGRATIONS` · **Org permission** `use_integrations`.
+
+Create the connection with `POST /integrations/connections`, `provider: "companyenrich"`, and `config: { "api_key": "YOUR_COMPANYENRICH_KEY" }`. Connection management requires `manage_settings`. The key is encrypted and excluded from connection responses. Authenticate this query with a Warmbly credential; do not include a CompanyEnrich key in it.
+
+### Request body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `operation` | string | Yes | One selector from the table below. |
+| `body` | object | No | CompanyEnrich JSON body fields, including full structured filters. Omit for provider GET operations. |
+| `query` | object | No | CompanyEnrich query parameters such as `id`, `domain`, `expand`, or `waitForEnrichment`, where supported. |
+
+Warmbly fixes the provider host, method, and path from `operation`. Arbitrary URLs, custom headers, beta email operations, job creation or polling, saved-list administration, and account endpoints are not accepted.
+
+| `operation` | CompanyEnrich endpoint | Inputs |
+| --- | --- | --- |
+| `enrich_company` | `GET /companies/enrich` | Required `query.domain`; optional `query.expand: ["workforce"]` and boolean `query.waitForEnrichment`. |
+| `search_companies` | `POST /companies/search` | `body` contains literal `query`, `semanticQuery`, company filters, `page`, and `pageSize`; optional `query.expand: ["workforce"]`. |
+| `similar_companies` | `POST /companies/similar` | `body.domains` with 1 to 10 nonempty domains, company filters, `page`, and `pageSize`; optional `query.expand: ["workforce"]` and boolean `query.waitForEnrichment`. |
+| `search_people` | `POST /people/search` | `body` contains `query`, `positionQuery`, `seniority`, `department`, location or education filters, nested `companyFilter`, `page`, and `pageSize`; optional `query.expand: ["education"]`. |
+| `lookup_person` | `POST /people/lookup` | Required `body.email`, an address already known to the caller; optional `query.expand: ["education"]`. |
+| `workforce` | `GET /companies/workforce` | Exactly one of `query.id` (company UUID) or `query.domain`. |
+| `enrich_company_properties` | `POST /companies/enrich` | At least one nonempty body property: `name`, `linkedinUrl`, `linkedinId`, `twitterUrl`, `facebookUrl`, `instagramUrl`, or `youTubeUrl`; optional `query.expand: ["workforce"]`. |
+| `enrich_companies_batch` | `POST /companies/enrich/batch` | Required `body.domains` with 1 to 50 nonempty domains; optional `query.expand: ["workforce"]`. |
+| `get_company` | `GET /companies` | Required `query.id` (company UUID); optional `query.expand: ["workforce"]`. |
+| `get_person` | `GET /people` | Required `query.id` (positive int64); use a decimal string for large IDs. Optional `query.expand: ["education"]`. |
+| `count_companies` | `POST /companies/search/count` | Company search filters in `body`, without pagination or expansion. |
+| `count_similar` | `POST /companies/similar/count` | Required `body.domains` with 1 to 10 nonempty domains and optional company filters; optional boolean `query.waitForEnrichment`. No pagination or expansion. |
+
+The outer `query` object contains URL parameters. A literal search is the separate `body.query` field. Company `body.semanticQuery` is a natural-language description. Put filters directly in `body`, not inside a second `filters` property. Body fields retain their provider spelling and case, including `companyFilter`, `pageSize`, and `youTubeUrl`.
+
+Paginated searches default to `page: 1` and `pageSize: 10`. Both must be integers, page must be positive, page size must be 1 to 100, and `page × pageSize` must not exceed 10,000. Literal queries allow 250 characters and semantic descriptions 500. Boolean strings such as `"false"` are not boolean values. Person IDs must be from 1 through 9223372036854775807; quote them in JSON when a client cannot represent the integer exactly.
+
+The JSON request is limited to 256 KiB. The server validates the operation, required inputs, shapes, query names, identifiers, and bounds before making the request. CompanyEnrich remains authoritative for evolving filter semantics. See the [CompanyEnrich API reference](https://docs.companyenrich.com/reference) for the full filters and provider credit rules.
+
+```json
+{
+  "operation": "search_companies",
+  "body": {
+    "query": "software",
+    "semanticQuery": "B2B software companies",
+    "countries": ["US"],
+    "technologies": ["React"],
+    "page": 1,
+    "pageSize": 10
+  },
+  "query": {
+    "expand": ["workforce"]
+  }
+}
+```
+
+### Response
+
+`200 OK` with `{ "data": ... }` and optional `credits_consumed`. `data` preserves the complete provider JSON value: an object for a profile or search page, an array for batch enrichment, or a number for a count. It retains pagination metadata, similarity scores, and future nested fields. Integer values outside JavaScript's safe range, including large person IDs, are returned as decimal strings; other JSON values keep their type.
+
+For example, a company count can return:
+
+```json
+{
+  "data": 0
+}
+```
+
+`credits_consumed` is present only when the provider explicitly reports it. Omission means the charge is unknown, not zero. People search returns professional profiles without email addresses; it is not an email-finding or automatic contact-import endpoint.
+
+Each invocation makes one data request. There are no automatic retries, pagination loops, background jobs, result-URL downloads, contact imports, or sends. Choose another page or retry explicitly; an upstream timeout may still have consumed credits.
+
+## Enrich a contact with CompanyEnrich
+
+`POST /integrations/companyenrich/:id/enrich-contact`
+
+Enriches one existing Warmbly contact in the same workspace using the saved connection. Person enrichment uses the contact's stored email for CompanyEnrich person lookup. Company enrichment uses the first nonempty custom field among `company_domain`, `companyenrich_domain`, and `website`, or falls back to the stored email domain, then performs company domain enrichment. An invalid selected domain or website is rejected. For a personal email address, store the intended employer domain first.
+
+Auth: **Scopes** `INTEGRATIONS` and `WRITE_CONTACTS` · **Org permissions** `use_integrations` and `manage_contacts`.
+
+### Request body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `contact_id` | UUID | Yes | An existing contact in the caller's workspace. |
+| `kind` | string | Yes | `person` or `company`. |
+| `overwrite` | boolean | No | Defaults to `false`, which fills blank mapped fields. `true` replaces mapped fields only when the provider returned a nonempty value. |
+
+```json
+{
+  "contact_id": "a22dc53c-d45d-4534-b9da-5a2461839aa3",
+  "kind": "person",
+  "overwrite": false
+}
+```
+
+Enrichment can update the contact's name and company and the [documented CompanyEnrich custom fields](/guides/companyenrich/#fields-that-can-change). Saved values are limited to 500 characters. It preserves the contact's email, subscription and suppression state, verification status, campaign membership, and unrelated custom fields. Empty provider values never erase a field. The caller cannot use the request to create a contact or supply a different lookup address.
+
+### Response
+
+`200 OK` with:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `contact` | Contact | The contact after applying nonempty mapped values. |
+| `data` | any JSON value | The CompanyEnrich response, with large integer values represented as decimal strings. |
+| `updated_fields` | string array | Fields actually changed, such as `company` or `custom_fields.companyenrich_domain`; an empty array is a valid result. |
+| `credits_consumed` | number, optional | Explicit provider-reported charge only. Omitted when unknown. |
+
+One request enriches one contact. There is no background run, bulk import, campaign enrollment, or sending. The same request and credit rules as [query CompanyEnrich](#query-companyenrich) apply. A contact change or save failure after the provider lookup can still have consumed credits; inspect the contact before starting a fresh request. See [CompanyEnrich errors](/api/error-codes/#companyenrich-refusals). See the [CompanyEnrich guide](/guides/companyenrich/) for field mapping and setup.
 
 ## Salesforce sync
 

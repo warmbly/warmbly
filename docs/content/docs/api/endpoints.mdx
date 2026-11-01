@@ -474,6 +474,8 @@ The `listing` routes publish an app to the [community directory](/api/oauth/#pub
 | POST | `/integrations/apollo/:id/import-sources/:sourceId/run` | `INTEGRATIONS` |
 | GET | `/integrations/apollo/:id/enrichments[/:runId]` | `INTEGRATIONS` |
 | POST | `/integrations/apollo/:id/enrichments` | `INTEGRATIONS` and `BULK_CONTACTS` |
+| POST | `/integrations/companyenrich/:id/query` | `INTEGRATIONS` |
+| POST | `/integrations/companyenrich/:id/enrich-contact` | `INTEGRATIONS` and `WRITE_CONTACTS` |
 | GET/PATCH | `/integrations/clay/:id` | `INTEGRATIONS` |
 | GET/POST/PATCH/DELETE | `/automations[/:id]` | `INTEGRATIONS` |
 | PATCH | `/automations/:id/layout` | `INTEGRATIONS` |
@@ -482,6 +484,8 @@ A signed-in member needs `manage_settings` to create, edit, enable or delete an 
 
 Starting an [Apollo](/guides/apollo/) enrichment writes contacts and spends the workspace's Apollo credits, so it needs `BULK_CONTACTS` as well as `INTEGRATIONS` (for a member, `use_integrations` and `manage_contacts`). Saving the key, imports and Clay settings need `manage_settings`; previewing and running an import need `use_integrations`. `POST /integrations/inbound/clay/:secret` is the URL a [Clay](/guides/clay/) table posts rows to. It takes no API key, because the secret in its path is the credential.
 | GET/POST/PATCH/DELETE | `/warmup/routing[/:id]` | `WARMUP_ROUTING` |
+
+[CompanyEnrich](/guides/companyenrich/) queries use the saved connection's API key and can spend its credits. A query needs `use_integrations` for a signed-in member. Enriching one existing contact also needs `manage_contacts`; API keys need both `INTEGRATIONS` and `WRITE_CONTACTS`. Both routes are on demand, with no automatic retries, import, campaign enrollment, or sending. See [query CompanyEnrich](/api/reference/integrations/#query-companyenrich).
 
 ### Retry safety
 

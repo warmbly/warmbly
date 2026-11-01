@@ -21,6 +21,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/clay"
 	"github.com/warmbly/warmbly/internal/app/cliauth"
 	"github.com/warmbly/warmbly/internal/app/cloudlink"
+	"github.com/warmbly/warmbly/internal/app/companyenrich"
 	"github.com/warmbly/warmbly/internal/app/compose"
 	"github.com/warmbly/warmbly/internal/app/contact"
 	"github.com/warmbly/warmbly/internal/app/contactimport"
@@ -337,7 +338,8 @@ type Handler struct {
 	SalesforceService *salesforce.Service
 
 	// ApolloService imports Apollo lists and enriches contacts through Apollo.
-	ApolloService *apollo.Service
+	ApolloService        *apollo.Service
+	CompanyEnrichService *companyenrich.Service
 	// ClayService takes rows from Clay tables and sends events back to them.
 	ClayService *clay.Service
 

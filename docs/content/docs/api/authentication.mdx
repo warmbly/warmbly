@@ -55,6 +55,8 @@ curl -X GET "https://api.warmbly.com/v1/api-keys" \
 
 For mutation retries, include an `Idempotency-Key` header with a unique value per logical operation. Warmbly stores completed mutation responses for 24 hours per organization and key, then replays matching retries instead of performing the operation again.
 
+A provider API key is separate from a Warmbly credential. For [CompanyEnrich](/guides/companyenrich/), save the provider key in an integration connection, then call Warmbly with a scoped Warmbly API key or OAuth token. Querying requires `INTEGRATIONS`; enriching a contact also requires `WRITE_CONTACTS`. Do not pass the CompanyEnrich key in query or enrichment request bodies.
+
 ## Verifying a credential
 
 To check that a credential is valid and see who it belongs to, call `GET /v1/me`. It works with an API key, an OAuth access token, or a dashboard session, requires no specific permission, and returns the caller's identity:
