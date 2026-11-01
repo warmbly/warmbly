@@ -35,6 +35,22 @@ for stage in route on; do
     exit 1
   fi
 done
+jq '.resource_changes[0].change |= (
+  .before.load_balancer |= map(. + {elb_name:"",advanced_configuration:[]}) |
+  .after.load_balancer |= map(. + {elb_name:null,advanced_configuration:[]}))' "$work/plan.json" >"$work/normalized.json"
+bash .github/scripts/runtime-tls.sh check-plan "$work/normalized.json" drain
+for change in '.after.load_balancer[0].elb_name="classic-lb"' \
+  '.before.load_balancer[1].elb_name="classic-lb"' \
+  '.after.load_balancer[0].container_port=9443' \
+  '.after.load_balancer[0].container_name="other"' \
+  '.after.load_balancer[0].target_group_arn="other-tls/3"' \
+  '.after.load_balancer[0].advanced_configuration=[{alternate_target_group_arn:"other-tls/3"}]'; do
+  jq ".resource_changes[0].change |= ($change)" "$work/normalized.json" >"$work/changed.json"
+  if bash .github/scripts/runtime-tls.sh check-plan "$work/changed.json" drain 2>/dev/null; then
+    echo 'Changed HTTPS registration accepted as empty ELB name normalization' >&2
+    exit 1
+  fi
+done
 jq -n '{resource_changes:[{address:"aws_vpc_security_group_ingress_rule.service[\"backend\"]",change:{actions:["update"],
   before:{description:"",from_port:8080},after:{description:null,from_port:8080}}}]}' >"$work/plan.json"
 bash .github/scripts/runtime-tls.sh check-plan "$work/plan.json" route

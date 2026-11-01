@@ -15,6 +15,8 @@ check_plan() {
     def normalize_empty_description:
       .change.actions == ["update"] and same_except(["description"]) and
       .change.before.description == "" and .change.after.description == null;
+    def normalize_registration:
+      if .elb_name == "" then .elb_name = null else . end;
     def task_settings:
       del(.arn, .arn_without_revision, .id, .revision, .container_definitions) |
       .enable_fault_injection //= false | .ipc_mode //= "" | .pid_mode //= "";
@@ -37,9 +39,9 @@ check_plan() {
         ($stage == "drain") and
         (.change.before.load_balancer | length == 2) and
         (.change.after.load_balancer | length == 1) and
-        (.change.after.load_balancer[0] as $tls |
+        ((.change.after.load_balancer[0] | normalize_registration) as $tls |
           ($tls.target_group_arn | contains("-tls/")) and
-          (.change.before.load_balancer | index($tls) != null))
+          (.change.before.load_balancer | map(normalize_registration) | index($tls) != null))
       elif (.address | test("^aws_cloudwatch_metric_alarm\\.target_5xx" + service + "$")) then
         .change.actions == ["update"] and same_except(["metric_query"])
       elif (.address | test("^aws_cloudwatch_metric_alarm\\.unhealthy_hosts" + service + "$")) then
