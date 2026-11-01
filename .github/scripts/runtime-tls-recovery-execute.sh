@@ -13,13 +13,15 @@ check_contract() {
 }
 
 check_context() {
-  [ "${GITHUB_ACTIONS:-}" = true ] && [ "${GITHUB_REPOSITORY:-}" = warmbly/warmbly ] &&
+  if [ "${GITHUB_ACTIONS:-}" = true ] && [ "${GITHUB_REPOSITORY:-}" = warmbly/warmbly ] &&
     [ "${GITHUB_REF:-}" = refs/heads/main ] && [ "${GITHUB_EVENT_NAME:-}" = workflow_dispatch ] &&
     [ "${GITHUB_WORKFLOW_REF:-}" = warmbly/warmbly/.github/workflows/runtime-tls-recovery.yml@refs/heads/main ] &&
-    [ "${GITHUB_RUN_ATTEMPT:-}" = 1 ] && [[ "${GITHUB_RUN_ID:-}" =~ ^[1-9][0-9]*$ ]] || {
-    echo 'Recovery execution requires a new protected main workflow run; reruns are refused' >&2; return 1;
-  }
-  [ "${GITHUB_SHA:?}" = "$(git rev-parse HEAD)" ]
+    [ "${GITHUB_RUN_ATTEMPT:-}" = 1 ] && [[ "${GITHUB_RUN_ID:-}" =~ ^[1-9][0-9]*$ ]]; then
+    [ "${GITHUB_SHA:?}" = "$(git rev-parse HEAD)" ]
+    return
+  fi
+  echo 'Recovery execution requires a new protected main workflow run; reruns are refused' >&2
+  return 1
 }
 
 check_approval_environment() {
