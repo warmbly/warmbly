@@ -7,6 +7,7 @@
     "install",
     "deployment-guide",
     "aws-fargate",
+    "aws-nats",
     "coolify",
     "bare-metal",
     "split-deployment",

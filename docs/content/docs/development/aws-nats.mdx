@@ -1,0 +1,144 @@
+---
+title: Private NATS on AWS
+description: Provision JetStream alongside Kafka and migrate through compatible releases.
+---
+
+The optional `deploy/terraform/aws/nats` root creates three small ARM instances
+in three availability zones in the existing AWS VPC. NATS client access is limited
+to the application and worker security groups. Routes require mutual TLS;
+clients use verified TLS and JWT credentials. Monitoring listens on loopback.
+Public IPv4 addresses provide outbound package, secret and Systems Manager access;
+there is no public inbound broker or SSH rule and no NAT gateway.
+
+Existing self-host configuration and defaults remain supported. No AWS settings
+are required for a local NATS deployment.
+
+## Provision without changing application traffic
+
+Use the same private Terraform state bucket as the foundation. Keep tfvars,
+plans, certificate keys and credential files outside the checkout. The stack
+owns a separate `warmbly/production/nats.tfstate`; it does not modify the running
+application services, worker instances or Kafka configuration. CI validates this
+root; production applies are currently operator-driven, separate from the three
+existing automatic foundation, runtime and workers stacks.
+
+Supply `state_bucket`, `worker_security_group_id` and the official SHA256 for
+the pinned NATS Linux ARM64 archive. The bootstrap verifies that checksum before
+installing the server. Run `bootstrap.go` with a new private directory to generate
+the CA, one certificate per server, operator/account keys and a client credential.
+It refuses an existing directory. Preserve those keys for certificate and
+credential rotation; do not regenerate them during a restart.
+
+Populate each node's Secrets Manager container with its generated JSON file,
+the client container with `client.json`, and the separate authority container
+with `authority.json`. Broker and application roles cannot read the authority.
+Secret values never enter Terraform
+state or user data. The service retries startup while its secret is unavailable.
+Validate the server configuration and all three JetStream members before moving
+any application traffic. Retain both old and new credentials during rotation.
+
+The initial client settings request three replicas, a 64 GiB stream limit and
+`DiscardNew`. Each node has a 128 GiB encrypted volume and a 96 GB server storage
+limit. These are starting bounds, not a measured throughput guarantee. Measure
+payload size, retention growth, peak rate and consumer lag before cutover.
+Rejecting new writes at capacity protects older queued work, but the seven-day
+retention period still expires messages. Monitor lag against that deadline.
+The logical stream limit is per replica, so the account allows 256 GiB across
+the cluster. Increasing EBS capacity also requires growing the host filesystem;
+increasing account limits requires updating its signed JWT on every broker.
+
+## Compatible rollout
+
+Changing `EVENTBUS_PROVIDER` alone is not a safe migration. The source Kafka
+consumer offsets, existing Avro backlog, per-worker command routes and all live
+publishers must be accounted for. Do not mirror every message into both brokers:
+two active consumers can then execute the same command twice.
+
+The supported rollback window has two stages:
+
+1. Deploy a compatibility release to every backend, consumer and worker while
+   continuing to publish Kafka/Avro. Configure `EVENTBUS_READ_BOTH=true` and
+   `CODEC_READ_BOTH=true` and `EVENTBUS_HOLD_READS=nats`, with both brokers and the existing Schema Registry
+   available. Keep the Kafka image variant. Tracking remains on Kafka. The
+   previous Kafka-only release remains a valid rollback at this stage because
+   no production publisher has moved.
+2. Only after every node has proven its Kafka subscription and NATS connection, and the compatibility
+   release is the retained rollback release, start moving publishers. Keep both
+   read settings, the NATS read hold and both sets of credentials. A rollback now targets that
+   compatibility release, which reads writes accepted by either configuration.
+   A Kafka-only release is no longer a direct rollback target.
+
+Subscriptions retain their original group names and offsets. A migration
+consumer publishes each event to one broker only; it does not fall back to the
+other broker after an ambiguous publish timeout. Normal at-least-once delivery
+still requires duplicate-safe handlers.
+
+There is no shared ordering guarantee between brokers. `EVENTBUS_HOLD_READS=nats`
+keeps new NATS commands queued while Kafka consumption continues. Keep that hold
+on every Go reader while moving publishers to NATS. Wait for every old process
+to exit, every fleet node to report the new env revision, and every required
+Kafka group's committed offsets to reach the final partition end offsets.
+Include pending handlers, failed work and all worker command routes in that
+check. A momentary zero lag while an old publisher can still write is insufficient.
+Only then clear the hold through a rolling env refresh. The API stays available;
+background execution waits while the queues drain. Rehearse this sequence before
+production cutover. The hold does not fence producers or verify offsets for you.
+The default broker diagnostics observe the publishing transport, or the draining
+transport when publishing to a held queue. They do not aggregate both backlogs;
+inventory both brokers separately before releasing a hold.
+
+Existing hosts must opt into the pull-based env updater before this rollout.
+An empty fleet env revision is unverified configuration, not evidence that a
+node received the settings. On each host, use the existing join script's
+`--adopt --env-refresh` preflight, preserve any host-only settings it names in
+`node.local.env`, and restart that node. Work one host at a time and keep its
+identity and public address. Do not push changes into workers or replace the
+fleet to change its broker.
+
+Tracking's NATS publisher emits JSON, so all Go readers must accept JSON before
+it moves. Keep Schema Registry available while either broker or the application
+dead-letter store can still contain Avro, including blob-backed payloads.
+
+## Cutover evidence
+
+Before any production publisher moves, verify:
+
+- All three members and all three stream replicas are current. Publishing,
+  acknowledged consumption, redelivery and consumer recovery work through a
+  single-node stop and restart.
+- Every live fleet node reports the intended env revision and runs a compatible
+  Kafka-capable image. An unreachable node is held back, not silently switched.
+- Each Kafka consumer group, each worker topic and every retained application
+  dead letter is inventoried. Pending, in-flight and failed work is accounted for.
+- Real command/result codec fixtures pass for the previous and compatibility
+  releases, including send outcomes, mailbox sync and tracking.
+- The per-route drain barrier, rollback to the compatibility release and mail
+  duplicate protection have been rehearsed with representative fixtures.
+- NATS lag, disk headroom, CPU credits and application error rates remain healthy
+  during a representative observation period.
+
+Keep Kafka running throughout these checks, the final drain and the agreed
+rollback window. Retention alone is not evidence of an empty backlog. Before
+disabling Kafka reads, prove there are no old publishers and every required
+group has consumed its backlog. Before disabling NATS reads during a rollback,
+hold Kafka reads, switch publishers back to Kafka and drain NATS using the
+compatibility release, then clear the hold. Never enable both uncoordinated
+publisher directions during a handoff.
+
+## Recovery and maintenance
+
+The stack installs Systems Manager access without SSH, one-minute health/disk
+metrics and CloudWatch alarms. Alarm actions must be connected to the operator's
+existing alert destination before relying on notifications. Daily encrypted EBS
+snapshots retain seven recovery points; these are crash-consistent volume
+recovery points, not a coordinated JetStream stream export or a proven restore.
+Keep periodic JetStream exports and rehearse restoring them on an isolated
+cluster before production use.
+
+Instance destruction is blocked and data volumes are retained on termination.
+Do not replace all brokers or restore three independent volume snapshots as a
+running cluster. Recover a lost replica from the surviving quorum; full-cluster
+restore follows the NATS backup procedure and must be verified separately.
+Upgrade or restart one server at a time and wait for replica catch-up before
+touching the next. Renew node certificates before their one-year expiry, keeping
+old and new CAs trusted together when rotating the CA.

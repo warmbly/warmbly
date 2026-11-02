@@ -132,11 +132,10 @@ func main() {
 	}
 	log.Printf("Codec: %s", codecImpl.Name())
 
-	// Event bus (NATS default; Kafka when EVENTBUS_PROVIDER=kafka). Kafka
-	// bootstrap/SASL is only loaded for the Kafka provider.
+	// Dual readers retain Kafka credentials until its backlog and rollback window close.
 	var kafkaBootstrapServers string
 	var kafkaSaslConfig *kafka.SASLConfig
-	if config.EventBusProvider() == "kafka" {
+	if config.EventBusUsesKafka() {
 		kafkaBootstrapServers, err = cfg.LoadKafkaBootstrapServers(ctx)
 		if err != nil {
 			log.Fatal(err)

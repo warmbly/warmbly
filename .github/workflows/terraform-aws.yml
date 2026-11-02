@@ -42,7 +42,7 @@ jobs:
       - name: Validate
         run: |
           set -euo pipefail
-          for stack in bootstrap foundation runtime workers; do
+          for stack in bootstrap foundation runtime workers nats; do
             terraform -chdir="deploy/terraform/aws/$stack" init -backend=false -input=false >/dev/null
             terraform -chdir="deploy/terraform/aws/$stack" validate -no-color
           done

@@ -368,16 +368,22 @@ On `filesystem`, a remote worker writes blobs to its own disk rather than a volu
 | Variable | What it does | Default | Restart needed |
 |---|---|---|---|
 | `EVENTBUS_PROVIDER` | `nats` or `kafka`. Kafka needs the `-kafka` images, or a build with `GO_TAGS=kafka` | `nats` under compose, `kafka` for a bare binary | yes |
+| `EVENTBUS_READ_BOTH` | Migration setting for Go services: consume both Kafka and NATS, publishing only to `EVENTBUS_PROVIDER`. Requires Kafka builds and both connections. Keep enabled through backlog draining and the rollback window. See [AWS NATS migration](/development/aws-nats/) | `false` | yes |
+| `EVENTBUS_HOLD_READS` | Migration drain barrier: hold consumption on `nats` or `kafka` while the other transport drains. Requires `EVENTBUS_READ_BOTH=true`. Publishing continues to the selected provider; held work remains queued. Clear only after all old publishers are fenced and their consumer groups have drained | unset | yes |
 | `FLEET_IMAGE_VARIANT` | Tag suffix appended to the version handed to fleet nodes, so they pull a build that can talk to this instance's event bus. Defaults to `-kafka` when `EVENTBUS_PROVIDER=kafka` and nothing otherwise; set it empty to turn it off | derived from `EVENTBUS_PROVIDER` | no |
 | `NATS_URL` | JetStream address. Credentials in the URL are honored by every service, including the Rust tracking publisher: `nats://user:pass@host:4222` for a user, `nats://token@host:4222` for a token, `tls://` for TLS | `nats://nats:4222` | yes |
 | `NATS_CREDS` | Path to a NATS credentials file (user JWT plus nkey seed), for a bus that authenticates with JWT rather than a token. Synadia Cloud and any nsc-managed account issue one | unset | yes |
 | `NATS_CREDS_B64` | The same file, base64 encoded, as a single line. This is the form the fleet uses: a node receives environment variables rather than files, and the env file docker reads cannot express a multi-line value. Takes precedence over `NATS_CREDS` | unset | yes |
 | `NATS_MAX_BYTES` | Ceiling on the stream's size on disk. Accepts a plain byte count or a size (`2GiB`, `512MB`, `1G`). Unset leaves the stream bounded only by `NATS_STREAM_MAX_AGE` and the account's own quota, which a managed bus may refuse: Synadia's "Max Bytes Required" rejects any stream created without one | unset (unlimited) | yes |
 | `NATS_STREAM_NAME`, `NATS_SUBJECT_PREFIX` | Stream and subject naming | `warmbly` | yes |
+| `NATS_REPLICAS` | Copies of the JetStream stream, from 1 to 5. Set `3` on a three-node hosted cluster. Unset preserves an existing stream's replication; a new stream defaults to one copy | unset | yes |
+| `NATS_DISCARD_NEW` | Reject new publications when the stream reaches its size limit, preserving existing queued work. Producers must surface or retry that error. Time-based retention still applies | `false`; preserves an existing stream's policy | yes |
+| `NATS_TLS_CA_B64` | Base64 PEM certificate authority for a private NATS deployment. Go adds it to system trust; tracking uses it as the explicit NATS trust bundle. Certificate and hostname verification remain enabled | unset | yes |
 | `KAFKA_BOOTSTRAP_SERVERS` | Broker list when `EVENTBUS_PROVIDER=kafka` | unset | yes |
 | `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD` | Broker credentials | unset | yes |
 | `SCHEMA_REGISTRY_URL`, `SCHEMA_REGISTRY_KEY`, `SCHEMA_REGISTRY_SECRET` | Registry for the Avro codec | unset | yes |
 | `CODEC_PROVIDER` | `json` or `avro` | `json` under compose, `avro` for a bare binary | yes |
+| `CODEC_READ_BOTH` | Migration setting for Go services: read JSON and Confluent-framed Avro while writing only `CODEC_PROVIDER`. Requires Kafka builds and the old Schema Registry until all retained Avro has drained | `false` | yes |
 | `EVENTBUS_HANDLER_TIMEOUT` | How long one handler may take before the delivery is abandoned. A subscription that needs longer carries its own budget, never shorter than this one: a worker's command subscription runs under 195s, because a send is given 120s (the SMTP client's 90s conversation plus the checks before it) and then records its result. On NATS the ack wait is the subscription's budget plus 5s | `30s` | yes |
 | `PUBSUB_ENABLED` | `false` uses the Redis bridge for realtime fanout, `true` uses Google Pub/Sub | `false` | yes |
 | `GCP_PROJECT_ID` | Project when `PUBSUB_ENABLED=true` | unset | yes |
@@ -977,6 +983,7 @@ Run a single copy of it. Its event deduplication, its per-source rate limits and
 | `TRACKING_SCANNER_ASN_HEADER` | Header a trusted proxy sets with the source ASN, an alternative to the database above and preferred over it where both are set. Read only from a proxy in `TRACKING_TRUSTED_PROXIES`. On Cloudflare, a transform rule writing `ip.src.asnum` | empty |
 | `EVENTBUS_PROVIDER` | `nats` or `kafka`. Kafka needs the `tracking:*-kafka` image, or a build with `CARGO_FEATURES=kafka` | `nats` |
 | `NATS_URL`, `NATS_SUBJECT_PREFIX` | JetStream address and subject prefix. The publish subject is `<prefix>.<topic>` | `nats://localhost:4222`, `warmbly` |
+| `NATS_TLS_CA_B64` | Base64 PEM trust bundle for private NATS TLS. Accepts multiple CA certificates for rotation; certificate and hostname checks remain enabled | unset |
 | `CODEC_PROVIDER` | `json` or `avro`, and it has to match the consumer's. `avro` is refused at boot without `SCHEMA_REGISTRY_URL` | `json` |
 | `KAFKA_TRACKING_TOPIC` | Event topic, read by the Rust publisher **and** the Go subscriber | `tracking-events` |
 | `KAFKA_BOOTSTRAP_SERVERS`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD` | Broker transport when `EVENTBUS_PROVIDER=kafka` | unset |

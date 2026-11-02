@@ -147,14 +147,10 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Event bus + codec. Kafka bootstrap/SASL is only loaded for
-	// EVENTBUS_PROVIDER=kafka; codec.FromEnv owns serialization (Avro pulls
-	// SCHEMA_REGISTRY_URL from env, JSON needs nothing). The bus drives both the
-	// inbound worker-events subscription and outbound publishing, so a NATS +
-	// JSON self-host needs no Kafka or Schema Registry config.
+	// Dual readers retain Kafka credentials until its backlog and rollback window close.
 	var kafkaBootstrapServers string
 	var kafkaSaslConfig *kafka.SASLConfig
-	if config.EventBusProvider() == "kafka" {
+	if config.EventBusUsesKafka() {
 		kafkaBootstrapServers, err = cfg.LoadKafkaBootstrapServers(ctx)
 		if err != nil {
 			log.Fatal(err)
