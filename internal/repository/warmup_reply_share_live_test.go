@@ -28,12 +28,12 @@ func TestLiveReplyShareAnswersOwedMailOnAClaimedSend(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	owed, err := r.OwedWarmupReplies(ctx, f.recipient, 8)
+	owed, err := r.OwedWarmupReplies(ctx, f.recipient, 8, WarmupReplyExclusions{})
 	if err != nil || len(owed) != 0 {
 		t.Fatalf("mail younger than the reply delay was offered: %d %v", len(owed), err)
 	}
 	exec(`UPDATE warmup_received SET created_at=NOW()-INTERVAL '2 hours' WHERE internal_id=$1`, receipt)
-	owed, err = r.OwedWarmupReplies(ctx, f.recipient, 8)
+	owed, err = r.OwedWarmupReplies(ctx, f.recipient, 8, WarmupReplyExclusions{})
 	if err != nil || len(owed) != 1 || owed[0].ParentTaskID != f.task || owed[0].SenderID != f.sender || owed[0].Parent.MessageID != "[EMAIL]" {
 		t.Fatalf("owed reply not offered: %+v %v", owed, err)
 	}
@@ -64,7 +64,7 @@ func TestLiveReplyShareAnswersOwedMailOnAClaimedSend(t *testing.T) {
 	if c, err := r.ExactWarmupParent(ctx, claimed); err != nil || c == nil {
 		t.Fatalf("bound reply has no exact parent: %v %v", c, err)
 	}
-	if owed, err := r.OwedWarmupReplies(ctx, f.recipient, 8); err != nil || len(owed) != 0 {
+	if owed, err := r.OwedWarmupReplies(ctx, f.recipient, 8, WarmupReplyExclusions{}); err != nil || len(owed) != 0 {
 		t.Fatalf("answered mail still offered: %d %v", len(owed), err)
 	}
 
@@ -127,7 +127,7 @@ func TestLiveReplySharePrioritizesRecoveryBeforeCandidateLimit(t *testing.T) {
 			for i := range 8 {
 				seed(uuid.New(), normal, time.Hour+time.Duration(i)*time.Minute)
 			}
-			owed, err := r.OwedWarmupReplies(ctx, f.recipient, 8)
+			owed, err := r.OwedWarmupReplies(ctx, f.recipient, 8, WarmupReplyExclusions{})
 			if err != nil || len(owed) != 8 || owed[0].SenderID != normal || owed[7].SenderID != normal {
 				t.Fatalf("ordinary messages not ordered newest first: %+v %v", owed, err)
 			}
@@ -148,9 +148,21 @@ func TestLiveReplySharePrioritizesRecoveryBeforeCandidateLimit(t *testing.T) {
 					}
 				})
 			}
-			owed, err = r.OwedWarmupReplies(ctx, f.recipient, 8)
+			owed, err = r.OwedWarmupReplies(ctx, f.recipient, 8, WarmupReplyExclusions{})
 			if err != nil || len(owed) != 8 || owed[0].ParentTaskID != newerRecovery || owed[1].ParentTaskID != f.task || owed[2].SenderID != normal {
 				t.Fatalf("older recovery mail not prioritized before the limit: %+v %v", owed, err)
+			}
+			excluded := WarmupReplyExclusions{}
+			for _, o := range owed {
+				excluded.Parents = append(excluded.Parents, o.ParentTaskID)
+			}
+			remaining, err := r.OwedWarmupReplies(ctx, f.recipient, 8, excluded)
+			if err != nil || len(remaining) != 2 || remaining[0].SenderID != normal || remaining[1].SenderID != normal {
+				t.Fatalf("next batch did not advance past attempted parents: %+v %v", remaining, err)
+			}
+			remaining, err = r.OwedWarmupReplies(ctx, f.recipient, 8, WarmupReplyExclusions{Senders: []uuid.UUID{f.sender}})
+			if err != nil || len(remaining) != 8 || remaining[0].SenderID != normal || remaining[7].SenderID != normal {
+				t.Fatalf("unavailable recovery sender hid ordinary mail: %+v %v", remaining, err)
 			}
 		})
 	}

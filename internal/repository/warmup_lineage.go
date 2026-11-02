@@ -166,7 +166,7 @@ const warmupAnswerableSQL = `ea.status='active' AND ea.warmup IS NOT NULL AND ea
 // WarmupReplyShareRepository holds a mailbox's warmup replies to its configured share of its sends.
 type WarmupReplyShareRepository interface {
 	WarmupReplyShare(context.Context, uuid.UUID) (int, int, error)
-	OwedWarmupReplies(context.Context, uuid.UUID, int) ([]WarmupOwedReply, error)
+	OwedWarmupReplies(context.Context, uuid.UUID, int, WarmupReplyExclusions) ([]WarmupOwedReply, error)
 	BindClaimedWarmupReply(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) (bool, error)
 }
 
@@ -176,6 +176,12 @@ type WarmupOwedReply struct {
 	ReceivedID   uuid.UUID
 	SenderID     uuid.UUID
 	Parent       WarmupReplyCandidate
+}
+
+// WarmupReplyExclusions keeps rejected messages and unavailable senders from occupying later batches.
+type WarmupReplyExclusions struct {
+	Parents []uuid.UUID
+	Senders []uuid.UUID
 }
 
 // WarmupReplyShare is the mailbox's warmup sends and replies over the share window, as the analytics count them.
@@ -191,15 +197,17 @@ const owedWarmupRepliesFromSQL = `FROM warmup_received wr
         JOIN warmup_tasks original ON original.task_id=wt.task_id
         JOIN email_accounts ea ON ea.id=wr.email_account_id
         WHERE wr.email_account_id=$1 AND wr.created_at<=NOW()-INTERVAL '45 minutes'
+        AND wt.task_id<>ALL(COALESCE($2::uuid[],'{}'::uuid[]))
+        AND wt.sender_account_id<>ALL(COALESCE($3::uuid[],'{}'::uuid[]))
         AND ` + warmupAnswerableSQL
 
 // recoveringWarmupReplySenders classifies every eligible sender before limiting the messages considered for a reply.
-func (r *taskRepository) recoveringWarmupReplySenders(ctx context.Context, recipient uuid.UUID) ([]uuid.UUID, error) {
+func (r *taskRepository) recoveringWarmupReplySenders(ctx context.Context, recipient uuid.UUID, excluded WarmupReplyExclusions) ([]uuid.UUID, error) {
 	rows, err := r.db.Query(ctx, `WITH senders AS (SELECT DISTINCT wt.sender_account_id AS id `+owedWarmupRepliesFromSQL+`)
         SELECT sender.id, sender.mail_host, sender.provider, sender.email, COALESCE(h.health_state,'healthy'),
         EXISTS (`+strings.ReplaceAll(activeCampaignsForAccountSQL, "$1", "s.id")+`)
         FROM senders s JOIN email_accounts sender ON sender.id=s.id
-        LEFT JOIN LATERAL (`+warmupGateStandingSQL("s.id")+`) h ON true`, recipient)
+        LEFT JOIN LATERAL (`+warmupGateStandingSQL("s.id")+`) h ON true`, recipient, excluded.Parents, excluded.Senders)
 	if err != nil {
 		return nil, err
 	}
@@ -220,8 +228,8 @@ func (r *taskRepository) recoveringWarmupReplySenders(ctx context.Context, recip
 }
 
 // OwedWarmupReplies applies recovery priority before the limit, then orders eligible messages newest first.
-func (r *taskRepository) OwedWarmupReplies(ctx context.Context, recipient uuid.UUID, limit int) ([]WarmupOwedReply, error) {
-	priority, err := r.recoveringWarmupReplySenders(ctx, recipient)
+func (r *taskRepository) OwedWarmupReplies(ctx context.Context, recipient uuid.UUID, limit int, excluded WarmupReplyExclusions) ([]WarmupOwedReply, error) {
+	priority, err := r.recoveringWarmupReplySenders(ctx, recipient, excluded)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +238,7 @@ func (r *taskRepository) OwedWarmupReplies(ctx context.Context, recipient uuid.U
         COALESCE(wt.conversation_theme,''),COALESCE(wt.content_source,''),wt.conversation_id,wt.conversation_turn,
         COALESCE(original.reference_ids,'{}'::text[]),original.scenario_version,original.rendering_version,original.max_turns
         `+owedWarmupRepliesFromSQL+`
-        ORDER BY (wt.sender_account_id=ANY($3::uuid[])) DESC, wr.created_at DESC, wt.task_id LIMIT $2`, recipient, limit, priority)
+        ORDER BY (wt.sender_account_id=ANY($5::uuid[])) DESC, wr.created_at DESC, wt.task_id LIMIT $4`, recipient, excluded.Parents, excluded.Senders, limit, priority)
 	if err != nil {
 		return nil, err
 	}
