@@ -1,7 +1,59 @@
 ---
-title: Private NATS on AWS
-description: Provision JetStream alongside Kafka and migrate through compatible releases.
+title: NATS deployment and Kafka migration
+description: Choose managed or private JetStream and migrate through compatible releases.
 ---
+
+## Choose who operates the broker
+
+A hosted service such as [Synadia Cloud](https://www.synadia.com/cloud) operates
+the NATS servers for you. The Terraform root below is self-managed: its snapshots,
+alarms and bootstrap automate parts of deployment, but an operator still owns
+upgrades, recovery, certificate renewal and capacity. Use the hosted path when
+you do not want that responsibility.
+
+Before selecting a managed plan, verify its R3 JetStream capacity, connection and
+consumer limits, maximum message size, region, support contract and recovery
+responsibilities. Confirm private data-plane connectivity separately. Synadia's
+management feature named Private Link does not establish AWS PrivateLink support
+for a shared cloud account. Its managed Platform offering supports private cloud
+deployments under a separate contract.
+
+Warmbly continues to own scheduled tasks and execution state in its configured
+database and task provider. Changing the event bus does not replace that scheduler.
+
+## Connect a managed service
+
+The application uses the same NATS client and migration settings with a managed
+endpoint. No broker EC2 instances or private CA are required for a service using
+a publicly trusted TLS certificate. Store its issued client credentials in the
+existing secret delivery path as `NATS_CREDS_B64`; keep them out of Terraform
+variables, state and the repository. Leave `NATS_TLS_CA_B64` unset when the service
+uses public certificate authorities. Never disable certificate verification.
+
+For Synadia Cloud, the documented default endpoint is
+`tls://connect.ngs.global`. Verify current [connection endpoints](https://docs.synadia.com/cloud/resources/connection-endpoints)
+and [placement tags](https://docs.synadia.com/cloud/resources/placement-tags)
+before provisioning. Pre-create the stream with the approved placement because
+connecting to a regional endpoint alone does not enforce storage placement.
+Warmbly preserves an existing stream's placement when applying its limits.
+
+Use a dedicated account and the `warmbly` file stream with subjects `warmbly.>`,
+limits retention, seven-day maximum age, three replicas and `DiscardNew`.
+Configure `NATS_REPLICAS=3`, `NATS_DISCARD_NEW=true` and an explicit
+`NATS_MAX_BYTES` within the purchased quota. The private stack's 64 GiB logical
+limit is a starting bound, not a measured managed-plan requirement. Replicas
+consume additional account storage; confirm how the vendor meters HA storage
+and reserves stream capacity before purchasing it. Measure JSON payload sizes,
+peak traffic and retained backlog before reducing the limit.
+
+Follow the compatible rollout below while publishers remain on Kafka. Validate
+TLS authentication, publish acknowledgements, durable consumption, redelivery,
+client reconnection and the provider's recovery procedure in an isolated account
+before production. Shared managed brokers cannot be stopped by the customer for
+the private stack's server-failure rehearsal. Obtain provider failover evidence
+and agree on backup ownership and restore procedures instead.
+
+## Operate a private AWS cluster
 
 The optional `deploy/terraform/aws/nats` root creates three small ARM instances
 in three availability zones in the existing AWS VPC. NATS client access is limited
@@ -103,9 +155,10 @@ dead-letter store can still contain Avro, including blob-backed payloads.
 
 Before any production publisher moves, verify:
 
-- All three members and all three stream replicas are current. Publishing,
+- For the private cluster, all three members and stream replicas are current. Publishing,
   acknowledged consumption, redelivery and consumer recovery work through a
-  single-node stop and restart.
+  single-node stop and restart. For a managed service, use the client recovery
+  checks and provider failover evidence described above.
 - Every live fleet node reports the intended env revision and runs a compatible
   Kafka-capable image. An unreachable node is held back, not silently switched.
 - Each Kafka consumer group, each worker topic and every retained application
