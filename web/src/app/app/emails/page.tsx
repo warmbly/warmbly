@@ -42,6 +42,7 @@ import { cloudSendFailure, cloudWarmupPaused } from "@/lib/cloudWarmup";
 import buildError from "@/lib/helper/buildError";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import BulkWarmupDialog from "@/components/app/emails/BulkWarmupDialog";
+import { warmupDaysLabel } from "@/lib/warmupSchedule";
 import BulkTagPopover from "@/components/app/emails/BulkTagPopover";
 import BulkSignatureDialog from "@/components/app/emails/BulkSignatureDialog";
 import MailboxImportsMenu from "@/components/app/emails/import/MailboxImportsMenu";
@@ -783,6 +784,7 @@ export default function AddressesPage() {
             <BulkWarmupDialog
                 open={bulkStart}
                 ids={selected}
+                allowFollow={!selected.some((id) => cloud.isEnrolled(id))}
                 onClose={() => setBulkStart(false)}
                 onComplete={() => setSelected([])}
             />
@@ -1047,6 +1049,7 @@ function MailboxRow({
                 {nextWarmup && !sendFailure && (
                     <span className="font-sans text-[10.5px] text-slate-400 truncate">next {nextWarmup}</span>
                 )}
+                <span className="font-sans text-[10.5px] text-slate-400 truncate">{warmupDaysLabel(box.warmup_days ?? 0)}</span>
             </span>
         ) : (
             <span

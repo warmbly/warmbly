@@ -37,6 +37,7 @@ export default function useUpdateEmail(id: string, serverOwned: readonly (keyof 
                 ["emails", id],
                 data
             );
+            void queryClient.invalidateQueries({ queryKey: ["analytics", "accounts"] });
         }
     })
 }

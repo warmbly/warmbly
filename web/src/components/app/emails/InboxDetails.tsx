@@ -110,15 +110,14 @@ import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
 import { Toggle } from "@/components/app/campaigns/preferences/components/CampaignPreferenceBoolBox";
 import setDirectTracking from "@/lib/api/client/app/emails/setDirectTracking";
 import useSendingBehavior from "@/lib/api/hooks/app/emails/useSendingBehavior";
-import useUpdateSendingBehavior from "@/lib/api/hooks/app/emails/useUpdateSendingBehavior";
 import useSendingPlan from "@/lib/api/hooks/app/emails/useSendingPlan";
-import { minutesToClock, secondsToLabel } from "@/lib/api/models/app/emails/SendingBehavior";
+import { clockToMinutes, minutesToClock, secondsToLabel } from "@/lib/api/models/app/emails/SendingBehavior";
 import TagSelector from "../popup/select/TagSelector";
 import { useAppStore } from "@/stores";
 import { repliesGoTo } from "@/lib/unibox/replyInbox";
 import TimeSelect from "@/components/ui/TimeSelect";
 import { DitherBarChart } from "@/components/ui/dither";
-import WeekdayBitmask from "../campaigns/schedule/WeekdayBitmask";
+import WarmupDaysPicker from "./WarmupDaysPicker";
 import { Loading } from "@/components/loader";
 import { NumberInput, TextInput } from "@/components/ui/field";
 import { clampWarmupRetentionDays } from "@/lib/warmupRetention";
@@ -425,12 +424,14 @@ function Detail({ mailbox, onClose, initialTab, tabIntentKey, onTabIntentConsume
         }
     }, [initialTab, tabIntentKey, onTabIntentConsumed, setTab]);
     const [form, setForm] = useState<Inbox>(mailbox);
+    const [daysToApply, setDaysToApply] = useState<number | null>(null);
     // Fields the user has edited since the last save; a refresh never overwrites them.
     const touched = React.useRef(new Set<keyof Inbox>());
     const update = (patch: Partial<Inbox>) => {
-        // A field put back to the stored value is untouched again, so a refresh can still reach it.
+        // Choosing warmup days reapplies the schedule even when the saved selection is unchanged.
+        if (patch.warmup_days !== undefined) setDaysToApply(patch.warmup_days);
         for (const k of Object.keys(patch) as (keyof Inbox)[]) {
-            if (JSON.stringify(patch[k]) === JSON.stringify(mailbox[k])) touched.current.delete(k);
+            if (k !== "warmup_days" && JSON.stringify(patch[k]) === JSON.stringify(mailbox[k])) touched.current.delete(k);
             else touched.current.add(k);
         }
         setForm((f) => ({ ...f, ...patch }));
@@ -449,6 +450,7 @@ function Detail({ mailbox, onClose, initialTab, tabIntentKey, onTabIntentConsume
     }, [mailbox]);
     const discard = () => {
         touched.current.clear();
+        setDaysToApply(null);
         setForm(mailbox);
     };
 
@@ -467,8 +469,8 @@ function Detail({ mailbox, onClose, initialTab, tabIntentKey, onTabIntentConsume
     const mutation = useUpdateEmail(mailbox.id, pool.connected && pool.isEnrolled(mailbox.id) ? cloudOwnedWarmupFields : undefined);
 
     const dirty = useMemo(
-        () => EDITABLE.some((k) => JSON.stringify(form[k]) !== JSON.stringify(mailbox[k])),
-        [form, mailbox],
+        () => daysToApply !== null || EDITABLE.some((k) => JSON.stringify(form[k]) !== JSON.stringify(mailbox[k])),
+        [daysToApply, form, mailbox],
     );
 
     const save = async () => {
@@ -478,8 +480,10 @@ function Detail({ mailbox, onClose, initialTab, tabIntentKey, onTabIntentConsume
                 (patch as Record<string, unknown>)[k] = form[k];
             }
         }
+        if (daysToApply !== null) patch.warmup_days = daysToApply;
         try {
             const saved = await mutation.mutateAsync(patch);
+            setDaysToApply((current) => current === patch.warmup_days ? null : current);
             // The answer is what was stored (for a Cloud mailbox, what Warmbly Cloud applied).
             setForm((f) => {
                 const next = { ...f } as Record<string, unknown>;
@@ -814,7 +818,7 @@ function OverviewTab({ status, loading, mailbox }: { status?: import("@/lib/api/
                         today
                             ? today.is_working_day
                                 ? `of ${today.daily_limit} rolled for today`
-                                : "not a sending day"
+                                : "not a campaign sending day"
                             : usage
                                 ? `of ${usage.campaign_limit}/day cap`
                                 : undefined
@@ -998,7 +1002,6 @@ function AnalyticsTab({ warmup, loading, failed, retry }: { warmup?: import("@/l
 
 /* ── Warmup (editable) ─────────────────────── */
 
-const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 // A critical report stops the mailbox; a warning is retried on its own, so it reads as amber, not red.
 const errorTone = {
@@ -1304,59 +1307,6 @@ function AuthCheckPanel({ mailbox }: { mailbox: Inbox }) {
     );
 }
 
-const ALL_DAYS = 127;
-
-const listDays = (mask: number) => {
-    const names = WEEKDAYS.filter((_, i) => (mask & (1 << i)) !== 0);
-    return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names.join("");
-};
-
-// Warmup sends only on days both calendars allow, so a day ticked here that the persona does not work is silently skipped.
-function WarmupDaysNotice({ mailboxId, warmupDays, personaDays }: { mailboxId: string; warmupDays: number; personaDays: number }) {
-    const wanted = warmupDays || ALL_DAYS;
-    const skipped = wanted & ~personaDays;
-    const canManage = usePermission("MANAGE_EMAILS");
-    const queryClient = useQueryClient();
-    const mutation = useUpdateSendingBehavior(mailboxId);
-    if (skipped === 0) return null;
-
-    const workDays = async () => {
-        try {
-            await mutation.mutateAsync({ weekdays: personaDays | skipped });
-            await queryClient.invalidateQueries({ queryKey: ["analytics", "accounts"] });
-            toast.success(`Warmup now sends on ${listDays(skipped)} too`);
-        } catch (e) {
-            toast.error(buildError(e as unknown as AppError));
-        }
-    };
-
-    return (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 flex items-start gap-2">
-            <AlertTriangleIcon className="w-3.5 h-3.5 mt-px shrink-0 text-amber-600" />
-            <div className="min-w-0">
-                <p className="text-[12.5px] font-medium text-amber-900">
-                    {(wanted & personaDays) === 0 ? "Warmup has no day to send on" : `Warmup skips ${listDays(skipped)}`}
-                </p>
-                <p className="text-[11.5px] text-amber-800/90 leading-relaxed mt-0.5">
-                    Sending behaviour only works {personaDays ? listDays(personaDays) : "no days"}, and warmup follows its workdays as well as the
-                    days picked here.
-                </p>
-                {canManage && (
-                    <button
-                        type="button"
-                        onClick={workDays}
-                        disabled={mutation.isPending}
-                        className="mt-2 h-7 px-2.5 rounded-md border border-amber-300 bg-white hover:bg-amber-100/60 text-amber-900 text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
-                    >
-                        {mutation.isPending && <Loading className="!w-3 h-3" />}
-                        Work {listDays(skipped)} too
-                    </button>
-                )}
-            </div>
-        </div>
-    );
-}
-
 function WarmupTab({ form, update, status, mailbox, canWarmup = true }: { form: Inbox; update: (p: Partial<Inbox>) => void; status?: AccountStatusModel; mailbox: Inbox; canWarmup?: boolean }) {
     const ws = status?.warmup_status;
     const wh = status?.warmup_health;
@@ -1381,6 +1331,10 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true }: { form: 
     const cloudRow = inCloud ? pool.rowFor(mailbox.id) : undefined;
     // Warmbly Cloud skips a 0 sent from an instance, so the form does not offer one.
     const cloudMin = inCloud ? 1 : 0;
+    const startMinute = clockToMinutes(form.warmup_start_time || "08:00");
+    const endMinute = clockToMinutes(form.warmup_end_time || "20:00");
+    const noOverlap = !inCloud && persona?.enabled && startMinute !== null && endMinute !== null &&
+        (startMinute >= persona.work_end_max || endMinute <= persona.work_start_min);
 
     const run = (action: "start" | "pause" | "resume" | "stop", verb: string) => {
         const execute = () => life.mutate(action, {
@@ -1639,10 +1593,12 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true }: { form: 
             {/* Schedule */}
             <div className="px-5 py-5 space-y-5">
                 <Eyebrow>Sending window</Eyebrow>
-                {behaviorOn && (
+                {behaviorOn && !inCloud && (
                     <p className="text-[11.5px] text-slate-500 leading-relaxed">
-                        Sending behaviour is on for this mailbox, so warmup only sends when both this window and the workday on the Sending tab
-                        allow it. Switch it to Fixed schedule there to use these hours alone.
+                        Sending behaviour is on. Warmup uses the overlap between these hours and the varied workday on the Sending tab,
+                        including its break. The workday starts between {minutesToClock(persona.work_start_min)} and {minutesToClock(persona.work_start_max)} and
+                        ends between {minutesToClock(persona.work_end_min)} and {minutesToClock(persona.work_end_max)}.
+                        Switch to Fixed schedule on the Sending tab to use these hours alone.
                     </p>
                 )}
                 <div className="grid grid-cols-2 gap-3">
@@ -1653,18 +1609,20 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true }: { form: 
                         <TimeSelect value={form.warmup_end_time || "20:00"} onChange={(v) => update({ warmup_end_time: v })} />
                     </FieldShell>
                 </div>
-                <FieldShell label="Sending days" hint="Days warmup mail goes out. Leave all unselected to send every day.">
-                    <div className="mt-1">
-                        <WeekdayBitmask
-                            weekdays={WEEKDAYS}
-                            value={form.warmup_days ?? 0}
-                            setValue={(v) => update({ warmup_days: v })}
-                        />
-                    </div>
-                </FieldShell>
-                {behaviorOn && persona && (
-                    <WarmupDaysNotice mailboxId={mailbox.id} warmupDays={form.warmup_days ?? 0} personaDays={persona.weekdays} />
+                {noOverlap && (
+                    <p role="status" className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-[11.5px] text-amber-900 leading-relaxed">
+                        These hours do not overlap the sending plan, so warmup has no time to send. Extend this window or switch
+                        to Fixed schedule on the Sending tab.
+                    </p>
                 )}
+                <FieldShell label="Sending days" hint="These days control warmup only. Choose Every day to include Saturday and Sunday.">
+                    <WarmupDaysPicker
+                        value={inCloud ? (form.warmup_days || 127) : (form.warmup_days ?? 0)}
+                        onChange={(warmup_days) => update({ warmup_days })}
+                        inheritedDays={persona ? (persona.enabled ? persona.weekdays : 127) : undefined}
+                        allowFollow={!inCloud}
+                    />
+                </FieldShell>
             </div>
         </div>
     );

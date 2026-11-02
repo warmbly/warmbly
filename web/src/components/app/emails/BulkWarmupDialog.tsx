@@ -6,13 +6,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Label, NumberInput, TextInput } from "@/components/ui/field";
 import { OptionSelect } from "@/components/app/campaigns/preferences/components/CampaignPreferenceBoolBox";
 import TimeSelect from "@/components/ui/TimeSelect";
-import WeekdayBitmask from "@/components/app/campaigns/schedule/WeekdayBitmask";
+import WarmupDaysPicker from "./WarmupDaysPicker";
 import { Loading } from "@/components/loader";
 import updateEmail from "@/lib/api/client/app/emails/updateEmail";
 import warmupLifecycle from "@/lib/api/client/app/emails/warmupLifecycle";
 import type Inbox from "@/lib/api/models/app/emails/Inbox";
-
-const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 // Bulk warmup-start dialog. Lets the user optionally apply one set of warmup
 // settings to every selected mailbox before starting — useful when onboarding a
@@ -22,11 +20,13 @@ export default function BulkWarmupDialog({
     ids,
     onClose,
     onComplete,
+    allowFollow = true,
 }: {
     open: boolean;
     ids: string[];
     onClose: () => void;
     onComplete: () => void;
+    allowFollow?: boolean;
 }) {
     const queryClient = useQueryClient();
     const [customize, setCustomize] = useState(true);
@@ -44,6 +44,7 @@ export default function BulkWarmupDialog({
 
     const n = ids.length;
     const baseOverMax = base > max;
+    const sendingDays = allowFollow ? days : (days || 127);
 
     const start = async () => {
         if (busy || n === 0) return;
@@ -59,7 +60,7 @@ export default function BulkWarmupDialog({
             warmup_reply_rate: replyRate,
             warmup_start_time: startTime,
             warmup_end_time: endTime,
-            warmup_days: days,
+            warmup_days: sendingDays,
             warmup_placement: placement,
             warmup_folder: folder.trim(),
         };
@@ -167,10 +168,8 @@ export default function BulkWarmupDialog({
                                     </div>
                                     <div>
                                         <Label>Sending days</Label>
-                                        <WeekdayBitmask weekdays={WEEKDAYS} value={days} setValue={setDays} />
-                                        <p className="text-[11px] text-slate-400 mt-1.5">
-                                            Leave all unselected to send every day.
-                                        </p>
+                                        <WarmupDaysPicker value={sendingDays} onChange={setDays} allowFollow={allowFollow} />
+                                        {!allowFollow && <p className="text-[11px] text-slate-500 mt-1.5">Cloud-linked mailboxes need explicit sending days.</p>}
                                     </div>
                                     <div>
                                         <Label>Warmup mail in the mailbox</Label>

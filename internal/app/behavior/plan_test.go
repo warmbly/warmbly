@@ -38,6 +38,30 @@ func profile() models.SendingBehavior {
 	return b
 }
 
+func TestExplicitWarmupWeekendKeepsBreakAndLeavesCampaignClosed(t *testing.T) {
+	b := profile()
+	b.WorkStartMin, b.WorkStartMax = 9*60, 9*60
+	b.WorkEndMin, b.WorkEndMax = 17*60, 17*60
+	b.LunchEnabled = true
+	b.LunchEarliest, b.LunchLatest = 12*60, 12*60
+	b.LunchMinMinutes, b.LunchMaxMinutes = 60, 60
+	cold := NewStandalone(b, time.UTC)
+	warmup := cold.ForWarmup(models.BehaviorWeekdaysAll)
+	sunday := time.Date(2026, time.October, 11, 12, 30, 0, 0, time.UTC)
+	at, plan, ok := warmup.NextOpen(sunday)
+	if !ok || !at.Equal(sunday.Add(30*time.Minute)) || plan.DailyLimit <= 0 || plan.HourlyLimit <= 0 {
+		t.Fatalf("weekend warmup lost its break or budget: at=%v plan=%+v ok=%v", at, plan, ok)
+	}
+	at, _, ok = cold.NextOpen(sunday)
+	if !ok || at.Weekday() != time.Monday {
+		t.Fatalf("warmup opened campaign working days: at=%v ok=%v", at, ok)
+	}
+	at, _, ok = cold.ForWarmup(0).NextOpen(sunday)
+	if !ok || at.Weekday() != time.Monday {
+		t.Fatalf("unconfigured warmup stopped inheriting working days: at=%v ok=%v", at, ok)
+	}
+}
+
 func day(t *testing.T, loc *time.Location, y int, m time.Month, d int) time.Time {
 	t.Helper()
 	return time.Date(y, m, d, 0, 0, 0, 0, loc)

@@ -43,7 +43,7 @@ func (s *schedulerService) WarmupExecutionNotBefore(ctx context.Context, id, tas
 		if err != nil {
 			return time.Time{}, err
 		}
-		bhv = behavior.NewStandalone(profile, loadLocation(a.ClockTimezone()))
+		bhv = behavior.NewStandalone(profile, loadLocation(a.ClockTimezone())).ForWarmup(a.WarmupDays)
 	}
 	at, err := warmupDispatchWindow(a, bhv, now)
 	if err != nil {
@@ -128,6 +128,7 @@ func (s *schedulerService) WarmupExecutionNotBefore(ctx context.Context, id, tas
 }
 
 func warmupDispatchWindow(a *models.Email, bhv behavior.Resolved, desired time.Time) (time.Time, error) {
+	bhv = bhv.ForWarmup(a.WarmupDays)
 	loc := loadLocation(a.ClockTimezone())
 	at := desired
 	for i := 0; i < 32; i++ {

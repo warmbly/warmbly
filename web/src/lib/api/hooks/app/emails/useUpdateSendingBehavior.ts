@@ -13,6 +13,7 @@ export default function useUpdateSendingBehavior(id: string) {
             // Today's plan keeps whatever it already rolled, but the ranges it
             // will roll from tomorrow have changed, so drop the cached view.
             queryClient.invalidateQueries({ queryKey: ["emails", id, "behavior", "plan"] });
+            void queryClient.invalidateQueries({ queryKey: ["analytics", "accounts"] });
         },
     });
 }

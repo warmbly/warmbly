@@ -155,6 +155,10 @@ func warmupOnDay(p *projectedSender, localNoon time.Time, inCampaign bool) (int,
 	if a.WarmupDays > 0 && !bitmask.HasWeekday(uint8(a.WarmupDays), localNoon.Weekday()) {
 		return 0, nil
 	}
+	bhv := p.bhv.ForWarmup(a.WarmupDays)
+	if bhv.Enabled && !bhv.PlanOn(behavior.PlanDateFor(localNoon, bhv.Loc)).IsWorkingDay {
+		return 0, nil
+	}
 	days := 0
 	if a.Warmup != nil {
 		days = max(0, int(localNoon.Sub(*a.Warmup).Hours()/24))
@@ -162,9 +166,12 @@ func warmupOnDay(p *projectedSender, localNoon time.Time, inCampaign bool) (int,
 	n := warmupramp.Target(true, a.WarmupBase, a.WarmupIncrease, a.WarmupMax, days, inCampaign)
 	n = warmupramp.Apply(n, warmupramp.HealthVolumeMultiplier(p.health))
 	startMin, endMin := parseTimeOfDay(a.WarmupStartTime), parseTimeOfDay(a.WarmupEndTime)
-	if p.bhv.Enabled {
-		plan := p.bhv.PlanOn(behavior.PlanDateFor(localNoon, p.bhv.Loc))
-		startMin, endMin = plan.WorkStartMinute, plan.WorkEndMinute
+	if bhv.Enabled {
+		plan := bhv.PlanOn(behavior.PlanDateFor(localNoon, bhv.Loc))
+		startMin, endMin = max(startMin, plan.WorkStartMinute), min(endMin, plan.WorkEndMinute)
+		if endMin <= startMin {
+			return 0, nil
+		}
 	}
 	if startMin == 0 && endMin <= startMin {
 		startMin, endMin = defaultWarmupStartMinute, defaultWarmupEndMinute
