@@ -123,6 +123,8 @@ The admin panel has the same thing under **Testers**: create one, see the passwo
 
 #### Initial passwords
 
+Admin-issued passwords have 27 characters: `Tester-` followed by 19 cryptographically random alphanumeric characters and one cryptographically random digit. Generation uses Go's `crypto/rand` with uniform selection. Passwords are shown once, stored as Argon2id hashes and replaced by the holder at first sign-in.
+
 A password Warmbly generates for somebody else is an initial password: a way in for the first sign-in, not a credential to keep. Today the only one is the password **Testers** issues; `warmblyctl user create`, `user reset-password --password-stdin` and the bootstrap owner all take a password the operator chose, and those do not expire.
 
 - **It lasts at most 48 hours from issuance.** The database caps the expiry on every write, so no path can store a longer one, and an expiry can never be moved later or cleared without writing a new password. Upgrading to the release that introduced this shortens any issued password that had longer left to 48 hours from the upgrade. Extending an issued password is not possible: issue a new one instead, which starts its own 48 hours.

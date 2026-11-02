@@ -3,6 +3,7 @@ package handler
 import (
 	"crypto/rand"
 	"errors"
+	"io"
 	"math/big"
 	"net/http"
 	"net/mail"
@@ -88,15 +89,22 @@ type adminCreateTesterResponse struct {
 const testerPasswordAlphabet = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 func testerPassword() (string, error) {
+	return testerPasswordFrom(rand.Reader)
+}
+
+func testerPasswordFrom(reader io.Reader) (string, error) {
 	const length = 20
 	b := make([]byte, length)
-	max := big.NewInt(int64(len(testerPasswordAlphabet)))
 	for i := range b {
-		n, err := rand.Int(rand.Reader, max)
+		alphabet := testerPasswordAlphabet
+		if i == len(b)-1 {
+			alphabet = "23456789"
+		}
+		n, err := rand.Int(reader, big.NewInt(int64(len(alphabet))))
 		if err != nil {
 			return "", err
 		}
-		b[i] = testerPasswordAlphabet[n.Int64()]
+		b[i] = alphabet[n.Int64()]
 	}
 	return "Tester-" + string(b), nil
 }
