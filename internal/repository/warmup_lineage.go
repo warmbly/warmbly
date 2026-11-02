@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/warmbly/warmbly/internal/app/warmupramp"
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/mailhdr"
 )
 
@@ -185,19 +186,51 @@ func (r *taskRepository) WarmupReplyShare(ctx context.Context, mailbox uuid.UUID
 	return sent, replied, err
 }
 
-// OwedWarmupReplies lists verified warmup mail the mailbox received at least 45 minutes ago and can still answer, newest first.
-func (r *taskRepository) OwedWarmupReplies(ctx context.Context, recipient uuid.UUID, limit int) ([]WarmupOwedReply, error) {
-	rows, err := r.db.Query(ctx, `SELECT wt.task_id, wr.internal_id, wt.sender_account_id,
-        wr.message_id, original.subject, wr.provider_thread_id,
-        COALESCE(wt.conversation_theme,''),COALESCE(wt.content_source,''),wt.conversation_id,wt.conversation_turn,
-        COALESCE(original.reference_ids,'{}'::text[]),original.scenario_version,original.rendering_version,original.max_turns
-        FROM warmup_received wr
+const owedWarmupRepliesFromSQL = `FROM warmup_received wr
         JOIN warmup_tokens wt ON wt.task_id=wr.task_id AND wt.recipient_account_id=wr.email_account_id
         JOIN warmup_tasks original ON original.task_id=wt.task_id
         JOIN email_accounts ea ON ea.id=wr.email_account_id
         WHERE wr.email_account_id=$1 AND wr.created_at<=NOW()-INTERVAL '45 minutes'
-        AND `+warmupAnswerableSQL+`
-        ORDER BY wr.created_at DESC LIMIT $2`, recipient, limit)
+        AND ` + warmupAnswerableSQL
+
+// recoveringWarmupReplySenders classifies every eligible sender before limiting the messages considered for a reply.
+func (r *taskRepository) recoveringWarmupReplySenders(ctx context.Context, recipient uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := r.db.Query(ctx, `WITH senders AS (SELECT DISTINCT wt.sender_account_id AS id `+owedWarmupRepliesFromSQL+`)
+        SELECT sender.id, sender.mail_host, sender.provider, sender.email, COALESCE(h.health_state,'healthy'),
+        EXISTS (`+strings.ReplaceAll(activeCampaignsForAccountSQL, "$1", "s.id")+`)
+        FROM senders s JOIN email_accounts sender ON sender.id=s.id
+        LEFT JOIN LATERAL (`+warmupGateStandingSQL("s.id")+`) h ON true`, recipient)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	priority := []uuid.UUID{}
+	for rows.Next() {
+		var sender models.Email
+		var health models.WarmupHealthState
+		var campaigning bool
+		if err := rows.Scan(&sender.ID, &sender.MailHost, &sender.Provider, &sender.Email, &health, &campaigning); err != nil {
+			return nil, err
+		}
+		if health == models.WarmupHealthWatch || health == models.WarmupHealthThrottled || sender.ConsumerMailbox() || campaigning {
+			priority = append(priority, sender.ID)
+		}
+	}
+	return priority, rows.Err()
+}
+
+// OwedWarmupReplies applies recovery priority before the limit, then orders eligible messages newest first.
+func (r *taskRepository) OwedWarmupReplies(ctx context.Context, recipient uuid.UUID, limit int) ([]WarmupOwedReply, error) {
+	priority, err := r.recoveringWarmupReplySenders(ctx, recipient)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.db.Query(ctx, `SELECT wt.task_id, wr.internal_id, wt.sender_account_id,
+        wr.message_id, original.subject, wr.provider_thread_id,
+        COALESCE(wt.conversation_theme,''),COALESCE(wt.content_source,''),wt.conversation_id,wt.conversation_turn,
+        COALESCE(original.reference_ids,'{}'::text[]),original.scenario_version,original.rendering_version,original.max_turns
+        `+owedWarmupRepliesFromSQL+`
+        ORDER BY (wt.sender_account_id=ANY($3::uuid[])) DESC, wr.created_at DESC, wt.task_id LIMIT $2`, recipient, limit, priority)
 	if err != nil {
 		return nil, err
 	}

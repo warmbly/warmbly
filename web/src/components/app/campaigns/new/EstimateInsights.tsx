@@ -30,7 +30,7 @@ export function WarmupNote({ e, className }: { e: CampaignEstimateResult; classN
             <span>
                 Warmup keeps running on {plural(w.mailboxes, "mailbox", "mailboxes")}
                 {without > now ? `, down from about ${without} to ${now} a day each` : `, about ${now} a day each`} while this runs.
-                {w.reply_rate ? " Pool partners answer it before other warmup mail." : ""}
+                {w.reply_rate ? " Pool partners prioritize replies to it within their own reply settings." : ""}
             </span>
         </p>
     );

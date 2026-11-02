@@ -3,7 +3,6 @@ package tasks
 import (
 	"context"
 	"math/rand"
-	"sort"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
@@ -34,24 +33,6 @@ func (s *tasksService) owedWarmupReply(ctx context.Context, taskID uuid.UUID, ac
 	if err != nil || len(owed) == 0 {
 		return nil
 	}
-	signals := warmupramp.RecoverySignals{}
-	if s.warmupRepo != nil {
-		signals.Health = s.warmupRepo
-	}
-	if s.emailRepo != nil {
-		signals.Mailboxes = s.emailRepo
-	}
-	if s.campaignRepo != nil {
-		signals.Campaigns = s.campaignRepo
-	}
-	recovering := make(map[uuid.UUID]bool, len(owed))
-	for _, o := range owed {
-		if _, seen := recovering[o.SenderID]; !seen {
-			recovering[o.SenderID] = signals.Recovering(ctx, o.SenderID)
-		}
-	}
-	sort.SliceStable(owed, func(i, j int) bool { return recovering[owed[i].SenderID] && !recovering[owed[j].SenderID] })
-
 	for _, o := range owed {
 		if _, _, _, err := s.exactReplyContent(ctx, &o.Parent, *account); err != nil {
 			continue
