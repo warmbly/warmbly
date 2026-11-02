@@ -159,7 +159,7 @@ Auth: **Scope** `WRITE_EMAILS` · **Org permission** `manage_emails`
 | `warmup_base` | integer | no | Warmup starting volume per day. |
 | `warmup_max` | integer | no | Warmup daily ceiling. |
 | `warmup_increase` | integer | no | Per-day warmup ramp increment. |
-| `warmup_reply_rate` | integer | no | Percentage of warmup threads to reply to. |
+| `warmup_reply_rate` | integer | no | Target percentage of the mailbox's own warmup sends that are replies over its last seven UTC days. Eligible received mail and partner availability can limit the measured rate. `0` turns warmup replies off. |
 | `warmup_tag` | string | no | Tag applied to warmup threads. |
 | `warmup_start_time` | string | no | Daily warmup window start, `HH:MM`. |
 | `warmup_end_time` | string | no | Daily warmup window end, `HH:MM`. |

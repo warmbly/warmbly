@@ -303,6 +303,10 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 	if warmupTask.TargetAccountID != nil && (warmupTask.ParentTaskID == nil || partner == nil) {
 		return s.closeWarmupThread(ctx, taskID, account.ID)
 	}
+	// A plain send answers owed mail while the mailbox's reply share is behind its setting.
+	if partner == nil {
+		partner = s.owedWarmupReply(ctx, taskID, account, poolType)
+	}
 	// A directed task IS the reply; the reply-rate draw already happened when
 	// it was scheduled. Rolling again here would square the rate, so a 30%
 	// reply rate would answer 9% of the time.
@@ -1156,8 +1160,11 @@ func (s *tasksService) directedWarmupPartner(ctx context.Context, taskID uuid.UU
 	if err != nil || warmupTask == nil || warmupTask.TargetAccountID == nil {
 		return nil
 	}
-	target := *warmupTask.TargetAccountID
+	return s.replyPartner(ctx, taskID, *warmupTask.TargetAccountID, account, poolType)
+}
 
+// replyPartner is target when this mailbox may answer it now, or nil.
+func (s *tasksService) replyPartner(ctx context.Context, taskID, target uuid.UUID, account *Email, poolType string) *Email {
 	if s.warmupHealth != nil {
 		ok, reason, herr := s.warmupHealth.CanParticipate(ctx, target, poolType)
 		if herr != nil {

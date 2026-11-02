@@ -350,8 +350,8 @@ jobs:
           WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
         run: |
           set -o pipefail
-          go test -race ./internal/repository -run '^TestLive(Monitoring|LastWarmupSendFailure|PersistentMailboxLoadingFailure|DispatchRetry|LineageQueueRevisions|AdminPlatformOverview|WarmupRecoversOldPreparation|WarmupPreparationRecoveryRetains|WarmupFilingRequiresAcknowledgement|WarmupFilingAuthority|WarmupTimeWindow|WarmupInvalidWindow|StoppedRecipientIsNeverAddressed)' -count=1
-          go test -race -v ./internal/tasks -run '^Test(LiveWarmup(SafetyHoldReschedules|Recovery|UnknownRetirement|TaskDoesNotApplyResults|DispatchDefersInvalidHours)|WarmupSenderDistinguishes)' -count=1 | tee warmup-recovery.log
+          go test -race ./internal/repository -run '^TestLive(Monitoring|LastWarmupSendFailure|PersistentMailboxLoadingFailure|DispatchRetry|LineageQueueRevisions|ReplyShare|AdminPlatformOverview|WarmupRecoversOldPreparation|WarmupPreparationRecoveryRetains|WarmupFilingRequiresAcknowledgement|WarmupFilingAuthority|WarmupTimeWindow|WarmupInvalidWindow|StoppedRecipientIsNeverAddressed)' -count=1
+          go test -race -v ./internal/tasks -run '^Test(LiveWarmup(SafetyHoldReschedules|Recovery|UnknownRetirement|TaskDoesNotApplyResults|DispatchDefersInvalidHours|ReplyShare)|WarmupSenderDistinguishes)' -count=1 | tee warmup-recovery.log
           if grep -q -- '--- SKIP: TestLiveWarmupUnknownRetirement' warmup-recovery.log; then exit 1; fi
           for test in TestLiveWarmupUnknownRetirementPreservesEvidenceAndFencesReplayOnce TestLiveWarmupUnknownRetirementAllowsDistinctNewSendAndKeepsCooldown TestLiveWarmupUnknownRetirementAndDefinitiveResultSerialize TestLiveWarmupUnknownRetirementSkipsProtectedRowsWithoutStarvingLaterMailboxes TestLiveWarmupUnknownRetirementReconcilerSeedsOnceAndClearsActiveWarnings; do
             grep -q -- "--- PASS: $test " warmup-recovery.log || exit 1

@@ -59,22 +59,17 @@ const (
 // its standing is watch or throttled, it is a consumer Gmail or Outlook.com mailbox,
 // or it backs a live campaign, whose cold mail draws few replies.
 func (s *JobsService) senderGetsRecoveryEngagement(ctx context.Context, senderID uuid.UUID) bool {
+	signals := warmupramp.RecoverySignals{}
 	if s.WarmupRepo != nil {
-		state, _, err := s.WarmupRepo.GetHealthState(ctx, senderID)
-		if err == nil && (state == models.WarmupHealthWatch || state == models.WarmupHealthThrottled) {
-			return true
-		}
+		signals.Health = s.WarmupRepo
 	}
 	if s.EmailRepository != nil {
-		if sender, xerr := s.EmailRepository.GetByID(ctx, senderID); xerr == nil && sender.ConsumerMailbox() {
-			return true
-		}
+		signals.Mailboxes = s.EmailRepository
 	}
-	if s.CampaignRepo == nil {
-		return false
+	if s.CampaignRepo != nil {
+		signals.Campaigns = s.CampaignRepo
 	}
-	n, err := s.CampaignRepo.CountActiveCampaignsForAccount(ctx, senderID)
-	return err == nil && n > 0
+	return signals.Recovering(ctx, senderID)
 }
 
 // recoveryEngagement raises the positive signals for a recovering sender's mail and never lowers them.
@@ -85,7 +80,7 @@ func recoveryEngagement(e models.WarmupEngagementSettings) models.WarmupEngageme
 	return e
 }
 
-// recoveryReplyChance is the recipient's reply rate, raised for a recovering sender unless the owner turned replies off.
+// recoveryReplyChance is the arrival chance of a reply, raised for a recovering sender unless the owner turned replies off.
 func recoveryReplyChance(rate int, recovering bool) int {
 	if recovering && rate > 0 {
 		return max(rate, recoveryReplyRate)
