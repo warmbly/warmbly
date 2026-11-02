@@ -1613,7 +1613,7 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true }: { form: 
                 {baseOverMax && (
                     <p className="text-[11px] text-rose-600 -mt-3">Starting volume can't exceed the maximum.</p>
                 )}
-                <FieldShell label="Reply rate" hint="Share of warmup mail that gets a reply, to mimic real conversation.">
+                <FieldShell label="Reply rate" hint="Share of this mailbox's warmup sends that are replies, held over the last 7 days.">
                     <NumField value={form.warmup_reply_rate} onChange={(v) => update({ warmup_reply_rate: v })} suffix="%" min={cloudMin} />
                 </FieldShell>
                 {/* Warmbly Cloud writes its own content, so the segment only applies to warmup sent from here. */}

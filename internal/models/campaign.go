@@ -375,8 +375,8 @@ type CampaignEstimateWarmup struct {
 	PerDay    int `json:"per_day"`
 	// PerDayWithout is what the same mailboxes warm at with no live campaign.
 	PerDayWithout int `json:"per_day_without"`
-	// ReplyRate is the least share of their warmup mail pool partners answer
-	// while the campaign runs, where the partner allows replies.
+	// ReplyRate is the least chance a pool partner with reply share left answers
+	// this warmup on arrival while the campaign runs; partners answer it first.
 	ReplyRate int `json:"reply_rate"`
 }
 

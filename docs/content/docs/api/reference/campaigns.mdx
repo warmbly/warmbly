@@ -140,7 +140,7 @@ Project an audience against a sender pool before a campaign exists. The campaign
 | `steps`, `total_sends` | Emails per contact, and `recipients` times `steps`. |
 | `first_touch_finish_at` | The day the last contact gets their first email. |
 | `ramping`, `held` | Mailboxes still climbing their graduation ceiling, and mailboxes that send nothing today. |
-| `warmup` | `{mailboxes, per_day, per_day_without, reply_rate}`: the warmup mail running alongside the campaign, what the same mailboxes warm at with no live campaign, and the least share of it (in percent) pool partners reply to while the campaign runs. |
+| `warmup` | `{mailboxes, per_day, per_day_without, reply_rate}`: the warmup mail running alongside the campaign, what the same mailboxes warm at with no live campaign, and the least chance (in percent) that a pool partner with reply share left answers it on arrival while the campaign runs. Partners answer this warmup before other warmup mail, within their own reply rate. |
 | `other_campaigns_per_day` | What the pool's mailboxes sent for other campaigns on an average day over the last week. |
 | `bottleneck` | The clamp that costs the most sends on the first full sending day: `campaign_limit`, `warmup_graduation`, `spacing`, `other_campaigns`, `health`, `held`, `workspace_risk`, `org_daily_limit` or `sending_behavior`. Empty when the mailboxes' own caps are the limit. |
 | `timeline` | Up to 120 days from the start: `date`, `sending_day`, `capacity`, `sends`, `first_emails`, `follow_ups`, `warmup`. |
