@@ -886,6 +886,7 @@ export default function LoginPage() {
                         <SignInStep
                             email={email}
                             pending={pending}
+                            passwordLogin={authConfig.password_login}
                             ssoEnabled={authConfig.providers.includes("oidc")}
                             ssoLabel={authConfig.provider_labels?.oidc}
                             onSSO={handleSSO}
@@ -1312,6 +1313,7 @@ function SignupUnavailable({
 function SignInStep({
     email,
     pending,
+    passwordLogin,
     ssoEnabled,
     ssoLabel,
     onSSO,
@@ -1321,6 +1323,7 @@ function SignInStep({
 }: {
     email: string;
     pending: boolean;
+    passwordLogin: boolean;
     ssoEnabled: boolean;
     ssoLabel?: string;
     onSSO: () => void;
@@ -1331,6 +1334,34 @@ function SignInStep({
     const { register, handleSubmit, formState: { errors } } = useForm<z.infer<typeof signInSchema>>({
         resolver: zodResolver(signInSchema),
     });
+
+    const ssoButton = (
+        <button
+            type="button"
+            onClick={onSSO}
+            disabled={pending}
+            className="w-full h-10 rounded-md border border-slate-200 text-[13px] font-medium text-slate-700 hover:bg-slate-50 focus:border-sky-400 focus:ring-2 focus:ring-sky-100 transition-colors disabled:opacity-50"
+        >
+            Continue with {ssoLabel || "single sign-on"}
+        </button>
+    );
+
+    // DISABLE_PASSWORD_LOGIN: the server refuses passwords and reset links, so
+    // offering a password field would only lead to an error.
+    if (!passwordLogin) {
+        return (
+            <div>
+                <div className="text-center mb-6">
+                    <EmailPill email={email} onEdit={onBack} />
+                    <h1 className="text-[28px] font-bold text-slate-900 tracking-tight leading-tight">Welcome back</h1>
+                    <p className="text-sm text-slate-400 mt-1.5">
+                        {ssoEnabled ? `Sign in with ${ssoLabel || "single sign-on"} to continue` : "Password sign-in is turned off on this server"}
+                    </p>
+                </div>
+                {ssoEnabled && ssoButton}
+            </div>
+        );
+    }
 
     return (
         <div>
@@ -1373,14 +1404,7 @@ function SignInStep({
                         <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400">or</span>
                         <div className="h-px flex-1 bg-slate-200" />
                     </div>
-                    <button
-                        type="button"
-                        onClick={onSSO}
-                        disabled={pending}
-                        className="w-full h-10 rounded-md border border-slate-200 text-[13px] font-medium text-slate-700 hover:bg-slate-50 focus:border-sky-400 focus:ring-2 focus:ring-sky-100 transition-colors disabled:opacity-50"
-                    >
-                        Continue with {ssoLabel || "single sign-on"}
-                    </button>
+                    {ssoButton}
                 </>
             )}
         </div>

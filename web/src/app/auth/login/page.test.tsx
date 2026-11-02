@@ -10,7 +10,9 @@ const mocks = vi.hoisted(() => ({
     confirm: vi.fn(),
     login: vi.fn(),
     evaluate: vi.fn().mockResolvedValue({ score: 4, warning: "", suggestions: [] }),
+    config: {} as Record<string, unknown>,
 }));
+const baseConfig = { registration: "invite_only", captcha: false, passkeys: false, password_login: true, providers: [] as string[], mail_delivers: true, brand: { name: "Warmbly" } };
 
 vi.mock("@tanstack/react-router", () => ({
     useNavigate: () => mocks.navigate,
@@ -19,7 +21,7 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 vi.mock("@/lib/api/hooks/auth/useAuthConfig", () => ({ default: () => ({
     ready: true, unreachable: false,
-    config: { registration: "invite_only", captcha: false, passkeys: false, password_login: true, providers: [], mail_delivers: true, brand: { name: "Warmbly" } },
+    config: mocks.config,
 }) }));
 vi.mock("@/hooks/usePasswordStrength", () => ({ usePasswordStrength: () => ({ evaluate: mocks.evaluate, loading: false }) }));
 vi.mock("@/lib/api/hooks/auth/useRegister", () => ({ default: () => ({ isPending: false, mutateAsync: mocks.register }) }));
@@ -37,6 +39,7 @@ const token = { access_token: "access", refresh_token: "refresh" };
 
 beforeEach(() => {
     vi.clearAllMocks();
+    mocks.config = { ...baseConfig };
     mocks.register.mockResolvedValue({ code_required: false, token });
     mocks.confirm.mockResolvedValue({ code_required: false, token });
     mocks.login.mockResolvedValue({ code_required: false, token });
@@ -110,5 +113,37 @@ describe("invited signup completion", () => {
         await submitLogin();
         await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith({ to: "/app/emails", search: {} }));
         expect(new URLSearchParams(window.location.search).has("invite")).toBe(false);
+    });
+});
+
+describe("sign-in with password login disabled", () => {
+    function enterEmail() {
+        window.history.replaceState({}, "", "/auth/login");
+        render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><LoginPage /></QueryClientProvider>);
+        fireEvent.change(screen.getByPlaceholderText("name@company.com"), { target: { value: "member@acme.com" } });
+        fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    }
+
+    it("offers only single sign-on, with no password field or reset link", async () => {
+        mocks.config = { ...baseConfig, password_login: false, providers: ["oidc"], provider_labels: { oidc: "Acme SSO" } };
+        enterEmail();
+        expect(await screen.findByRole("button", { name: "Continue with Acme SSO" })).toBeTruthy();
+        expect(screen.queryByPlaceholderText("Enter your password")).toBeNull();
+        expect(screen.queryByText("Forgot password?")).toBeNull();
+        expect(screen.queryByRole("button", { name: "Sign in" })).toBeNull();
+    });
+
+    it("explains that password sign-in is off when no provider is configured", async () => {
+        mocks.config = { ...baseConfig, password_login: false, providers: [] };
+        enterEmail();
+        expect(await screen.findByText("Password sign-in is turned off on this server")).toBeTruthy();
+        expect(screen.queryByPlaceholderText("Enter your password")).toBeNull();
+    });
+
+    it("keeps the password form when password login is enabled", async () => {
+        mocks.config = { ...baseConfig, providers: ["oidc"] };
+        enterEmail();
+        expect(await screen.findByPlaceholderText("Enter your password")).toBeTruthy();
+        expect(screen.getByRole("button", { name: "Continue with single sign-on" })).toBeTruthy();
     });
 });
