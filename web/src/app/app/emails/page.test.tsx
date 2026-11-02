@@ -41,7 +41,7 @@ vi.mock("@/lib/api/hooks/app/subscription/useFeatureStatus", () => ({ default: (
 vi.mock("@/lib/api/hooks/auth/useAuthConfig", () => ({ default: () => ({ data: {}, isLoading: false }) }));
 vi.mock("@/lib/api/hooks/app/emails/useMailboxGrants", () => ({ useSigninMigration: () => ({ data: { data: [] } }) }));
 vi.mock("@/lib/api/hooks/app/advisor/useAdvisor", () => ({ useAdvisorEntityIndex: () => ({ get: () => [] }) }));
-vi.mock("@/hooks/useCloudPool", () => ({ default: () => ({ selfHosted: false, connected: statusState.cloudConnected, loading: statusState.cloudLoading, unavailable: statusState.cloudUnavailable, observedAt: 0, rowFor: (id: string) => cloudRows.get(id) }) }));
+vi.mock("@/hooks/useCloudPool", () => ({ default: () => ({ selfHosted: false, connected: statusState.cloudConnected, loading: statusState.cloudLoading, unavailable: statusState.cloudUnavailable, observedAt: 0, rowFor: (id: string) => cloudRows.get(id), isEnrolled: (id: string) => cloudRows.get(id)?.enrolled === true }) }));
 vi.mock("@/lib/api/hooks/app/cloudlink/useCloudLink", () => ({
     useEnrollCloudLinkMailbox: () => ({}), useUnenrollCloudLinkMailbox: () => ({}), useCloudLinkMailboxLifecycle: () => ({}),
 }));
@@ -108,17 +108,21 @@ describe("mailbox ordering with a tag filter", () => {
         expect(orderedEmails()).toEqual(["ananya@serveblink.example", "julie@serveblink.example", "kavya@serveblink.example", "sara@virevow.example"]);
     });
 
-    it.each(["cloudLoading", "cloudUnavailable"] as const)("defers disconnect and bulk removal while ownership is %s", async (unknown) => {
+    it.each(["cloudLoading", "cloudUnavailable"] as const)("defers disconnect, bulk removal and warmup start while ownership is %s", async (unknown) => {
         statusState[unknown] = true;
         await renderPage();
         const row = screen.getAllByRole("row")[1];
         fireEvent.click(within(row).getByRole("checkbox"));
         expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled();
+        expect(screen.getByRole("button", { name: "Start warmup" })).toBeDisabled();
         fireEvent.click(within(row).getByRole("button", { name: "Mailbox actions" }));
         const disconnect = screen.getByRole("menuitem", { name: "Disconnect mailbox" });
         expect(disconnect).toBeDisabled();
         fireEvent.click(disconnect);
         expect(confirm).not.toHaveBeenCalled();
+        statusState[unknown] = false;
+        fireEvent.click(screen.getByRole("button", { name: "Mailbox" }));
+        expect(screen.getByRole("button", { name: "Start warmup" })).toBeEnabled();
     });
 
     it("keeps that order when a specific tag returns rows in creation order", async () => {

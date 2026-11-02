@@ -92,8 +92,8 @@ func TestWarmupSelectedDaysKeepHoursAndBreaks(t *testing.T) {
 		})
 	}
 	a := &models.Email{WarmupDays: 127, WarmupStartTime: "18:00", WarmupEndTime: "20:00"}
-	if _, err := warmupDispatchWindow(a, behavior.NewStandalone(b, time.UTC), sunday); err == nil {
-		t.Fatal("disjoint hours must stay closed")
+	if at, err := warmupDispatchWindow(a, behavior.NewStandalone(b, time.UTC), sunday); !errors.Is(err, ErrWarmupTimeWindowInvalid) || !at.IsZero() {
+		t.Fatalf("disjoint hours must defer as a configuration error: at=%v err=%v", at, err)
 	}
 }
 

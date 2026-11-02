@@ -40,5 +40,9 @@ test("choose weekend warmup while campaigns keep weekday working days", async ({
   await page.getByRole("button", { name: "Warmup", exact: true }).click();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "Every day", exact: true }).scrollIntoViewIfNeeded();
+  await expect(page.getByRole("button", { name: "Every day", exact: true })).toHaveAttribute("aria-pressed", "true");
+  for (const day of ["Saturday", "Sunday"]) {
+    await expect(page.getByRole("button", { name: day, exact: true })).toHaveAttribute("aria-pressed", "true");
+  }
   await proof.shot("warmup-days-phone", { caption: "The same presets, selected days and explanation on a phone." });
 });

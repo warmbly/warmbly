@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -139,7 +140,7 @@ func warmupDispatchWindow(a *models.Email, bhv behavior.Resolved, desired time.T
 		if bhv.Enabled {
 			open, _, ok := bhv.NextOpen(at)
 			if !ok {
-				return time.Time{}, errors.New("warmup behavior has no working days")
+				return time.Time{}, fmt.Errorf("%w: sending plan has no working days", ErrWarmupTimeWindowInvalid)
 			}
 			at = open
 		}
@@ -161,7 +162,7 @@ func warmupDispatchWindow(a *models.Email, bhv behavior.Resolved, desired time.T
 		if bhv.Enabled {
 			open, _, ok := bhv.NextOpen(at)
 			if !ok {
-				return time.Time{}, errors.New("warmup behavior has no working days")
+				return time.Time{}, fmt.Errorf("%w: sending plan has no working days", ErrWarmupTimeWindowInvalid)
 			}
 			if open.After(at) {
 				at = open
@@ -173,5 +174,5 @@ func warmupDispatchWindow(a *models.Email, bhv behavior.Resolved, desired time.T
 		}
 		at = valid
 	}
-	return time.Time{}, errors.New("warmup calendars have no reachable intersection")
+	return time.Time{}, fmt.Errorf("%w: no reachable overlap with sending plan", ErrWarmupTimeWindowInvalid)
 }

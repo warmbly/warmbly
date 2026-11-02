@@ -696,7 +696,9 @@ export default function AddressesPage() {
                             <button
                                 type="button"
                                 onClick={() => setBulkStart(true)}
-                                className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded text-[12px] font-medium text-orange-600 hover:bg-orange-50 transition-colors"
+                                disabled={cloudRemovalPending}
+                                title={cloudRemovalPending ? "Waiting for Cloud mailbox ownership to be confirmed" : undefined}
+                                className="disabled:opacity-50 inline-flex items-center gap-1.5 h-7 px-2.5 rounded text-[12px] font-medium text-orange-600 hover:bg-orange-50 transition-colors"
                             >
                                 <PlayIcon className="w-3.5 h-3.5" />
                                 Start warmup
@@ -782,7 +784,7 @@ export default function AddressesPage() {
             />
 
             <BulkWarmupDialog
-                open={bulkStart}
+                open={bulkStart && !cloudRemovalPending}
                 ids={selected}
                 allowFollow={!selected.some((id) => cloud.isEnrolled(id))}
                 onClose={() => setBulkStart(false)}
