@@ -9,11 +9,12 @@ import type AccountStatus from "@/lib/api/models/app/analytics/AccountStatus";
 import type { CloudLinkMailboxRow } from "@/lib/api/models/app/cloudlink/CloudLink";
 import { utcToday } from "@/lib/campaignPeriod";
 import AddressesPage from "./page";
+import type BulkWarmupDialog from "@/components/app/emails/BulkWarmupDialog";
 
 const { tags, rows, statusState, confirm, cloudRows } = vi.hoisted(() => ({
     confirm: vi.fn(),
     cloudRows: new Map<string, CloudLinkMailboxRow>(),
-    statusState: { data: [] as AccountStatus[], observations: [] as { status: AccountStatus; observedAt: number; current: boolean }[], isLoading: false, isFetching: false, isError: false, cloudConnected: false, cloudLoading: false, cloudUnavailable: false, emailsLoading: false, emailsError: false, emailsIncomplete: false },
+    statusState: { data: [] as AccountStatus[], observations: [] as { status: AccountStatus; observedAt: number; current: boolean }[], isLoading: false, isFetching: false, isError: false, cloudConnected: false, cloudLoading: false, cloudRefreshing: false, cloudUnavailable: false, emailsLoading: false, emailsError: false, emailsIncomplete: false },
     tags: [
         { id: "sending", title: "Sending account", color: "#0088cc", position: 0 },
         { id: "serveblink", title: "Serveblink.com", color: "#008800", position: 1 },
@@ -41,7 +42,7 @@ vi.mock("@/lib/api/hooks/app/subscription/useFeatureStatus", () => ({ default: (
 vi.mock("@/lib/api/hooks/auth/useAuthConfig", () => ({ default: () => ({ data: {}, isLoading: false }) }));
 vi.mock("@/lib/api/hooks/app/emails/useMailboxGrants", () => ({ useSigninMigration: () => ({ data: { data: [] } }) }));
 vi.mock("@/lib/api/hooks/app/advisor/useAdvisor", () => ({ useAdvisorEntityIndex: () => ({ get: () => [] }) }));
-vi.mock("@/hooks/useCloudPool", () => ({ default: () => ({ selfHosted: false, connected: statusState.cloudConnected, loading: statusState.cloudLoading, unavailable: statusState.cloudUnavailable, observedAt: 0, rowFor: (id: string) => cloudRows.get(id), isEnrolled: (id: string) => cloudRows.get(id)?.enrolled === true }) }));
+vi.mock("@/hooks/useCloudPool", () => ({ default: () => ({ selfHosted: false, connected: statusState.cloudConnected, loading: statusState.cloudLoading, refreshing: statusState.cloudRefreshing, unavailable: statusState.cloudUnavailable, observedAt: 0, rowFor: (id: string) => cloudRows.get(id), isEnrolled: (id: string) => cloudRows.get(id)?.enrolled === true }) }));
 vi.mock("@/lib/api/hooks/app/cloudlink/useCloudLink", () => ({
     useEnrollCloudLinkMailbox: () => ({}), useUnenrollCloudLinkMailbox: () => ({}), useCloudLinkMailboxLifecycle: () => ({}),
 }));
@@ -49,7 +50,7 @@ vi.mock("@/lib/api/hooks/app/emails/useWarmupLifecycle", () => ({ default: () =>
 vi.mock("@/lib/api/hooks/app/emails/useRemoveEmail", () => ({ default: () => ({}) }));
 vi.mock("@/components/app/emails/useMailboxSwitch", () => ({ default: () => ({}), switchOffPrompt: vi.fn() }));
 vi.mock("@/components/app/emails/InboxDetails", () => ({ default: () => null }));
-vi.mock("@/components/app/emails/BulkWarmupDialog", () => ({ default: () => null }));
+vi.mock("@/components/app/emails/BulkWarmupDialog", () => ({ default: ({ open, ids }: Parameters<typeof BulkWarmupDialog>[0]) => open ? <div role="dialog" aria-label="Bulk warmup">{ids.join(",")}</div> : null }));
 vi.mock("@/components/app/emails/migration/SigninMigrationDialog", () => ({ default: () => null }));
 vi.mock("@/components/app/emails/import/grants/MailboxGrantDialog", () => ({ default: () => null }));
 vi.mock("@/components/app/cloud/CloudConnectDialog", () => ({ default: () => null }));
@@ -95,6 +96,7 @@ describe("mailbox ordering with a tag filter", () => {
         statusState.isFetching = false;
         statusState.isError = false;
         statusState.cloudLoading = false;
+        statusState.cloudRefreshing = false;
         statusState.cloudUnavailable = false;
         vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     });
@@ -123,6 +125,24 @@ describe("mailbox ordering with a tag filter", () => {
         statusState[unknown] = false;
         fireEvent.click(screen.getByRole("button", { name: "Mailbox" }));
         expect(screen.getByRole("button", { name: "Start warmup" })).toBeEnabled();
+    });
+
+    it.each(["cloudLoading", "cloudRefreshing", "cloudUnavailable"] as const)("closes bulk start during %s and requires reopening after selection changes", async (unknown) => {
+        await renderPage();
+        fireEvent.click(within(screen.getAllByRole("row")[1]).getByRole("checkbox"));
+        fireEvent.click(screen.getByRole("button", { name: "Start warmup" }));
+        expect(screen.getByRole("dialog", { name: "Bulk warmup" })).toHaveTextContent("ananya");
+
+        statusState[unknown] = true;
+        fireEvent.click(screen.getByRole("button", { name: "Mailbox" }));
+        expect(screen.queryByRole("dialog", { name: "Bulk warmup" })).not.toBeInTheDocument();
+        fireEvent.click(within(screen.getAllByRole("row")[2]).getByRole("checkbox"));
+
+        statusState[unknown] = false;
+        fireEvent.click(screen.getByRole("button", { name: "Mailbox" }));
+        expect(screen.queryByRole("dialog", { name: "Bulk warmup" })).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Start warmup" }));
+        expect(screen.getByRole("dialog", { name: "Bulk warmup" })).toHaveTextContent("ananya,julie");
     });
 
     it("keeps that order when a specific tag returns rows in creation order", async () => {

@@ -200,6 +200,7 @@ export default function AddressesPage() {
     );
     const cloudChecking = authConfigLoading || cloud.loading || cloud.refreshing;
     const cloudRemovalPending = cloudChecking || authConfig.isError || cloud.unavailable;
+    if (bulkStart && cloudRemovalPending) setBulkStart(false);
     const statuses = useAccountStatuses(visibleEmailIds, {
         enabled: !cloudChecking,
         sourceRevision: cloud.observedAt,
