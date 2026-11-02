@@ -193,7 +193,7 @@ resource "aws_instance" "node" {
   }
   credit_specification { cpu_credits = "standard" }
   root_block_device {
-    volume_size           = 128
+    volume_size           = each.key == "nats1" ? 192 : 128
     volume_type           = "gp3"
     encrypted             = true
     delete_on_termination = false
@@ -203,7 +203,7 @@ resource "aws_instance" "node" {
     node       = each.key, version = var.server_version, sha256 = var.server_sha256,
     secret_arn = aws_secretsmanager_secret.node[each.key].arn
   })
-  tags = { Name = "${var.name}-${each.key}", Role = "nats" }
+  tags = { Name = "${var.name}-${each.key}", Role = "nats", PatchGroup = "${var.name}-nats" }
   lifecycle {
     prevent_destroy = true
     ignore_changes  = [ami, user_data]
@@ -222,6 +222,8 @@ resource "aws_cloudwatch_metric_alarm" "status" {
   threshold           = 0
   treat_missing_data  = "missing"
   dimensions          = { InstanceId = aws_instance.node[each.key].id }
+  alarm_actions       = [aws_sns_topic.operations.arn]
+  ok_actions          = [aws_sns_topic.operations.arn]
 }
 resource "aws_cloudwatch_metric_alarm" "health" {
   for_each            = local.nodes
@@ -235,6 +237,8 @@ resource "aws_cloudwatch_metric_alarm" "health" {
   threshold           = 1
   treat_missing_data  = "breaching"
   dimensions          = { Node = each.key }
+  alarm_actions       = [aws_sns_topic.operations.arn]
+  ok_actions          = [aws_sns_topic.operations.arn]
 }
 resource "aws_cloudwatch_metric_alarm" "disk" {
   for_each            = local.nodes
@@ -248,6 +252,8 @@ resource "aws_cloudwatch_metric_alarm" "disk" {
   threshold           = 20
   treat_missing_data  = "breaching"
   dimensions          = { Node = each.key }
+  alarm_actions       = [aws_sns_topic.operations.arn]
+  ok_actions          = [aws_sns_topic.operations.arn]
 }
 output "nodes" {
   value = { for name, node in aws_instance.node : name => {

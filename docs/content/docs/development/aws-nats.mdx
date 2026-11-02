@@ -90,8 +90,10 @@ Validate the server configuration and all three JetStream members before moving
 any application traffic. Retain both old and new credentials during rotation.
 
 The initial client settings request three replicas, a 64 GiB stream limit and
-`DiscardNew`. Each node has a 128 GiB encrypted volume and a 96 GB server storage
-limit. These are starting bounds, not a measured throughput guarantee. Measure
+`DiscardNew`. The backup node has a 192 GiB encrypted volume; the other two have
+128 GiB each. Each server allows 96 GB for JetStream. The backup node reserves
+space for a complete snapshot beside its live replica. These are starting bounds,
+not a measured throughput guarantee. Measure
 payload size, retention growth, peak rate and consumer lag before cutover.
 Rejecting new writes at capacity protects older queued work, but the seven-day
 retention period still expires messages. Monitor lag against that deadline.
@@ -181,17 +183,47 @@ publisher directions during a handoff.
 ## Recovery and maintenance
 
 The stack installs Systems Manager access without SSH, one-minute health/disk
-metrics and CloudWatch alarms. Alarm actions must be connected to the operator's
-existing alert destination before relying on notifications. Daily encrypted EBS
-snapshots retain seven recovery points; these are crash-consistent volume
-recovery points, not a coordinated JetStream stream export or a proven restore.
-Keep periodic JetStream exports and rehearse restoring them on an isolated
-cluster before production use.
+metrics and CloudWatch alarms. Health, disk, certificate and backup-age alarms
+publish to the stack's SNS operations topic. Set the optional Terraform input
+`notification_email` and confirm the subscription before relying on email
+notifications. Without a confirmed subscriber, the topic delivers no email.
+
+Daily encrypted EBS snapshots retain seven recovery points. Separately, the
+backup node runs a daily native JetStream snapshot at 02:00 UTC, with up to five
+minutes of jitter. It includes durable consumer state, validates the snapshot
+and uploads it to a private, encrypted S3 bucket with seven-day retention. An
+`_COMPLETE` object is uploaded last; use only prefixes containing that marker.
+The backup-age alarm trips after 30 hours without a completed upload.
+
+Generate a snapshot-only user with `backup-user.go`, using the preserved private
+account signing key. Populate the separate backup secret from its private JSON
+file. That credential can inspect and snapshot `warmbly` but cannot publish
+application events, restore or delete streams. Only the backup node's instance
+role can read it, and that role can upload but cannot delete backup objects.
+The operations association installs a checksum-verified CLI and systemd timer;
+it does not restart the broker. A missing secret leaves backup runs failing
+until an operator populates it.
+
+EBS snapshots are crash-consistent volume recovery points. A native stream
+snapshot is the stream recovery path. Download a complete S3 prefix, validate
+it with `nats backup validate`, and rehearse `nats backup restore stream` against
+an isolated cluster with its own credentials. A standalone rehearsal can use
+`--replicas=1`; production recovery must return to three current replicas.
+Verify message content, pending deliveries and acknowledgement state after
+restore. Never restore over a live stream as a routine repair. Preserve the
+separate signing keys and CA; stream snapshots do not replace those credentials.
 
 Instance destruction is blocked and data volumes are retained on termination.
 Do not replace all brokers or restore three independent volume snapshots as a
 running cluster. Recover a lost replica from the surviving quorum; full-cluster
 restore follows the NATS backup procedure and must be verified separately.
-Upgrade or restart one server at a time and wait for replica catch-up before
-touching the next. Renew node certificates before their one-year expiry, keeping
-old and new CAs trusted together when rotating the CA.
+The weekly OS patch automation runs Sunday at 04:00 UTC. It approves critical
+and important security patches after seven days, handles one broker at a time,
+and checks every broker before and after each patch. Each broker verifies local
+health; the stream and metadata leaders verify that their followers are current.
+A failed check aborts the remaining brokers. Patch Manager reboots
+only when needed. The pinned NATS binary is upgraded separately through a
+reviewed version and checksum change, one server at a time with replica catch-up.
+Do not start overlapping maintenance executions. Certificate alarms warn 30 days
+before expiry. Renew certificates before their one-year expiry, keeping old and
+new CAs trusted together when rotating the CA.
