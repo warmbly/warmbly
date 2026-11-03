@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/textproto"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -33,6 +34,8 @@ func TestServerThrottledNamesOnlyAddressRefusals(t *testing.T) {
 		{"rcpt 421", throttleReply("rcpt to", 421), true},
 		{"dropped handshake", startTLSFailure(io.EOF), true},
 		{"reset handshake", startTLSFailure(&net.OpError{Op: "read", Err: syscall.ECONNRESET}), true},
+		{"dropped implicit TLS", dialFailure("smtp.example.test:465", io.EOF), true},
+		{"refused dial", dialFailure("smtp.example.test:465", &net.OpError{Op: "dial", Err: syscall.ECONNREFUSED}), false},
 		{"handshake alert", startTLSFailure(errors.New("remote error: tls: protocol version not supported")), false},
 		{"refused certificate", sendFailure(errx.ErrMailServerUnreachableAt("starttls", errors.New(errx.MailConnectionReasonCertificate)), io.EOF, "starttls", "mailbox"), false},
 		{"no STARTTLS", sendFailure(errx.ErrMailServerUnreachableAt("starttls", errNoSTARTTLS), errNoSTARTTLS, "starttls", "mailbox"), false},
@@ -150,7 +153,7 @@ func TestPaceForKeysOnServerAndWorkerAddress(t *testing.T) {
 	if paceFor("smtp.example.test", &net.TCPAddr{IP: net.IPv4(192, 0, 2, 2)}) == a || paceFor("smtp.example.test", nil) == a {
 		t.Fatal("another worker address shared the pace")
 	}
-	if paceFor("::1", nil) != nil || paceFor("localhost", nil) != nil {
+	if paceFor("::1", nil) != nil || paceFor("localhost", nil) != nil || paceFor("LocalHost.", nil) != nil {
 		t.Fatal("a relay on this machine was paced")
 	}
 }
@@ -159,9 +162,21 @@ func TestHostPaceReservationYieldsToALaterCooldown(t *testing.T) {
 	p := &hostPace{}
 	now := time.Now()
 	p.pacedUntil = now.Add(pacedWindow)
-	p.nextStart = now.Add(50 * time.Millisecond)
+	p.nextStart = now.Add(time.Second)
 	done := make(chan *errx.MailError, 1)
 	go func() { done <- p.wait(context.Background(), now) }()
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		p.mu.Lock()
+		reserved := p.nextStart.After(now.Add(time.Second))
+		p.mu.Unlock()
+		if reserved {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("wait did not reserve its start")
+		}
+		runtime.Gosched()
+	}
 	p.mu.Lock()
 	p.coolUntil = now.Add(time.Minute)
 	p.mu.Unlock()

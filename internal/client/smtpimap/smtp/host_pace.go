@@ -24,7 +24,7 @@ const (
 	paceMaxWait      = 10 * time.Second
 	// PaceStage marks a send held on the worker without contacting the server.
 	PaceStage = "pacing"
-	// causeDroppedHandshake marks a STARTTLS the server closed mid-handshake, as opposed to one it refused with a reason.
+	// causeDroppedHandshake marks a TLS handshake the server closed, as opposed to one it refused with a reason.
 	causeDroppedHandshake = "dropped_handshake"
 )
 
@@ -41,10 +41,11 @@ var hostPaces sync.Map
 
 // paceFor keys on the server, not the port, so a 587 fallback shares the 465 standing; a relay on this machine has none.
 func paceFor(host string, local *net.TCPAddr) *hostPace {
+	host = strings.ToLower(strings.TrimSuffix(models.NormalizeMailHost(host), "."))
 	if models.LoopbackMailHost(host) {
 		return nil
 	}
-	key := strings.ToLower(strings.TrimSuffix(models.NormalizeMailHost(host), ".")) + "|"
+	key := host + "|"
 	if local != nil {
 		key += local.IP.String()
 	}
@@ -136,7 +137,7 @@ func serverThrottled(err *errx.MailError) bool {
 		return true
 	case f.Stage == "auth" && f.Status == 454:
 		return true
-	case f.Stage == "starttls" && f.Status == 0:
+	case (f.Stage == "starttls" || f.Stage == "dial") && f.Status == 0:
 		return f.Cause == causeDroppedHandshake
 	}
 	return false
@@ -154,13 +155,17 @@ func throttledFailure(err *errx.MailError, retryAt time.Time) *errx.MailError {
 	f.RetryAt = &retryAt
 	f.Cause = ""
 	switch f.Stage {
-	case "greeting", "ehlo", "starttls", "auth", "mail from":
+	case "dial", "greeting", "ehlo", "starttls", "auth", "mail from":
 		// Refused before any recipient was offered, so the send costs the lead nothing.
 		f.Cause = errx.SendCauseServerPacing
 	}
 	out.Failure = &f
 	out.RetryAfter = retryAt.Sub(f.ObservedAt)
-	out.Message = errx.MailServerThrottlingMessage + strings.TrimPrefix(err.Message, errx.ErrMailServerUnreachable.Message)
+	detail := strings.TrimPrefix(err.Message, errx.ErrMailServerUnreachable.Message)
+	if detail == err.Message {
+		detail = " " + detail
+	}
+	out.Message = errx.MailServerThrottlingMessage + detail
 	return &out
 }
 
