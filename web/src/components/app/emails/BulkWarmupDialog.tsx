@@ -20,12 +20,14 @@ export default function BulkWarmupDialog({
     ids,
     onClose,
     onComplete,
+    ownershipPending,
     allowFollow = true,
 }: {
     open: boolean;
     ids: string[];
     onClose: () => void;
-    onComplete: () => void;
+    onComplete: (ids: string[]) => void;
+    ownershipPending: boolean;
     allowFollow?: boolean;
 }) {
     const queryClient = useQueryClient();
@@ -47,7 +49,7 @@ export default function BulkWarmupDialog({
     const sendingDays = allowFollow ? days : (days || 127);
 
     const start = async () => {
-        if (busy || n === 0) return;
+        if (busy || ownershipPending || n === 0) return;
         if (customize && baseOverMax) {
             toast.error("Starting volume can't exceed the maximum.");
             return;
@@ -81,7 +83,7 @@ export default function BulkWarmupDialog({
         } else {
             toast.success(`Warmup started for ${n} mailbox${n > 1 ? "es" : ""}`);
         }
-        onComplete();
+        onComplete(ids);
         onClose();
     };
 
@@ -99,6 +101,9 @@ export default function BulkWarmupDialog({
                     />
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
                         <motion.div
+                            role="dialog"
+                            aria-modal="true"
+                            aria-label="Start warmup"
                             initial={{ opacity: 0, scale: 0.97, y: 8 }}
                             animate={{ opacity: 1, scale: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.97, y: 8 }}
@@ -127,7 +132,12 @@ export default function BulkWarmupDialog({
                             </div>
 
                             {/* Body */}
-                            <div className="px-5 py-4 space-y-4">
+                            <fieldset disabled={busy || ownershipPending} className="px-5 py-4 space-y-4 min-w-0">
+                                {ownershipPending && (
+                                    <p role="status" className="text-[11.5px] text-slate-600 leading-relaxed">
+                                        Waiting for mailbox ownership to be confirmed.
+                                    </p>
+                                )}
                                 <label className="flex items-center gap-2.5 cursor-pointer select-none">
                                     <Toggle on={customize} onChange={setCustomize} />
                                     <span className="text-[12.5px] text-slate-700">
@@ -197,7 +207,7 @@ export default function BulkWarmupDialog({
                                         </div>
                                     )}
                                 </div>
-                            </div>
+                            </fieldset>
 
                             {/* Footer */}
                             <div className="px-5 h-14 flex items-center justify-end gap-2 border-t border-slate-200 bg-slate-50/60">
@@ -210,7 +220,7 @@ export default function BulkWarmupDialog({
                                 </button>
                                 <button
                                     onClick={start}
-                                    disabled={busy || n === 0}
+                                    disabled={busy || ownershipPending || n === 0}
                                     className="h-8 px-3.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
                                 >
                                     {busy && <Loading className="!w-3.5 h-3.5 text-white" />}

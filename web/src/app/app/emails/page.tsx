@@ -153,7 +153,7 @@ export default function AddressesPage() {
     const [tabIntentKey, setTabIntentKey] = React.useState(0);
     const consumeTabIntent = React.useCallback(() => setViewTab(undefined), []);
     const [removing, setRemoving] = React.useState(false);
-    const [bulkStart, setBulkStart] = React.useState(false);
+    const [bulkStart, setBulkStart] = React.useState<string[] | null>(null);
     const [bulkSignature, setBulkSignature] = React.useState(false);
     const [searchParams, setSearchParams] = useSearchParams();
     const queryClient = useQueryClient();
@@ -200,7 +200,6 @@ export default function AddressesPage() {
     );
     const cloudChecking = authConfigLoading || cloud.loading || cloud.refreshing;
     const cloudRemovalPending = cloudChecking || authConfig.isError || cloud.unavailable;
-    if (bulkStart && cloudRemovalPending) setBulkStart(false);
     const statuses = useAccountStatuses(visibleEmailIds, {
         enabled: !cloudChecking,
         sourceRevision: cloud.observedAt,
@@ -696,8 +695,8 @@ export default function AddressesPage() {
                         {canWarmup && (
                             <button
                                 type="button"
-                                onClick={() => setBulkStart(true)}
-                                disabled={cloudRemovalPending}
+                                onClick={() => setBulkStart(selected)}
+                                disabled={cloudRemovalPending || bulkStart !== null}
                                 title={cloudRemovalPending ? "Waiting for Cloud mailbox ownership to be confirmed" : undefined}
                                 className="disabled:opacity-50 inline-flex items-center gap-1.5 h-7 px-2.5 rounded text-[12px] font-medium text-orange-600 hover:bg-orange-50 transition-colors"
                             >
@@ -785,11 +784,12 @@ export default function AddressesPage() {
             />
 
             <BulkWarmupDialog
-                open={bulkStart && !cloudRemovalPending}
-                ids={selected}
-                allowFollow={!selected.some((id) => cloud.isEnrolled(id))}
-                onClose={() => setBulkStart(false)}
-                onComplete={() => setSelected([])}
+                open={bulkStart !== null}
+                ids={bulkStart ?? []}
+                ownershipPending={cloudRemovalPending}
+                allowFollow={!(bulkStart ?? []).some((id) => cloud.isEnrolled(id))}
+                onClose={() => setBulkStart(null)}
+                onComplete={(ids) => setSelected((current) => current.filter((id) => !ids.includes(id)))}
             />
 
             <BulkSignatureDialog

@@ -228,6 +228,8 @@ While [Sending behavior](/guides/sending-behavior/) is on, warmup uses the overl
 
 Changing warmup hours, days or timezone, or switching sending behavior on or off, moves the queued warmup send to the new schedule as soon as you save. To recalculate an existing queued time, choose its day preset again and save. The mailbox list refreshes its queued time and shows whether warmup follows the sending plan or an explicit set of days. **Start warmup** for several mailboxes offers the same day presets; **Follow sending plan** resolves separately for each locally warmed mailbox and is hidden when the selection includes a Cloud-linked mailbox. Volume, consent, health and provider restrictions still apply on every selected day.
 
+Bulk start waits until mailbox ownership is confirmed. If ownership refreshes while the dialog is open, your settings stay visible and new submissions wait for the check to finish. An operation already in progress finishes for its original mailbox selection and leaves any other selected mailboxes alone.
+
 Warmup hours must end later than they start on the same day. Equal or reversed hours are rejected, including a change to only one endpoint that would invalidate the stored window. Existing invalid windows are not widened or corrected automatically: pending sends stay unstarted and recheck after five minutes, while admin monitoring shows **Invalid warmup sending hours** until the configured window is corrected. Other send protections still apply after correction; this does not replay uncertain sends or confirm mailbox recovery.
 
 ### Holding the ramp on an early signal

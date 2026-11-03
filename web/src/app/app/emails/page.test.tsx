@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, createRootRoute, createRouter, RouterProvider } from "@tanstack/react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,10 +9,11 @@ import type AccountStatus from "@/lib/api/models/app/analytics/AccountStatus";
 import type { CloudLinkMailboxRow } from "@/lib/api/models/app/cloudlink/CloudLink";
 import { utcToday } from "@/lib/campaignPeriod";
 import AddressesPage from "./page";
-import type BulkWarmupDialog from "@/components/app/emails/BulkWarmupDialog";
 
-const { tags, rows, statusState, confirm, cloudRows } = vi.hoisted(() => ({
+const { tags, rows, statusState, confirm, cloudRows, warmupUpdate, warmupStart } = vi.hoisted(() => ({
     confirm: vi.fn(),
+    warmupUpdate: vi.fn(),
+    warmupStart: vi.fn(),
     cloudRows: new Map<string, CloudLinkMailboxRow>(),
     statusState: { data: [] as AccountStatus[], observations: [] as { status: AccountStatus; observedAt: number; current: boolean }[], isLoading: false, isFetching: false, isError: false, cloudConnected: false, cloudLoading: false, cloudRefreshing: false, cloudUnavailable: false, emailsLoading: false, emailsError: false, emailsIncomplete: false },
     tags: [
@@ -50,7 +51,8 @@ vi.mock("@/lib/api/hooks/app/emails/useWarmupLifecycle", () => ({ default: () =>
 vi.mock("@/lib/api/hooks/app/emails/useRemoveEmail", () => ({ default: () => ({}) }));
 vi.mock("@/components/app/emails/useMailboxSwitch", () => ({ default: () => ({}), switchOffPrompt: vi.fn() }));
 vi.mock("@/components/app/emails/InboxDetails", () => ({ default: () => null }));
-vi.mock("@/components/app/emails/BulkWarmupDialog", () => ({ default: ({ open, ids }: Parameters<typeof BulkWarmupDialog>[0]) => open ? <div role="dialog" aria-label="Bulk warmup">{ids.join(",")}</div> : null }));
+vi.mock("@/lib/api/client/app/emails/updateEmail", () => ({ default: warmupUpdate }));
+vi.mock("@/lib/api/client/app/emails/warmupLifecycle", () => ({ default: warmupStart }));
 vi.mock("@/components/app/emails/migration/SigninMigrationDialog", () => ({ default: () => null }));
 vi.mock("@/components/app/emails/import/grants/MailboxGrantDialog", () => ({ default: () => null }));
 vi.mock("@/components/app/cloud/CloudConnectDialog", () => ({ default: () => null }));
@@ -89,6 +91,8 @@ beforeEach(() => {
 describe("mailbox ordering with a tag filter", () => {
     beforeEach(() => {
         confirm.mockReset();
+        warmupUpdate.mockReset().mockResolvedValue({});
+        warmupStart.mockReset().mockResolvedValue({});
         sessionStorage.clear();
         statusState.data = [];
         statusState.observations = [];
@@ -127,22 +131,55 @@ describe("mailbox ordering with a tag filter", () => {
         expect(screen.getByRole("button", { name: "Start warmup" })).toBeEnabled();
     });
 
-    it.each(["cloudLoading", "cloudRefreshing", "cloudUnavailable"] as const)("closes bulk start during %s and requires reopening after selection changes", async (unknown) => {
+    it.each(["cloudLoading", "cloudRefreshing", "cloudUnavailable"] as const)("preserves bulk warmup settings and waits for ownership during %s", async (unknown) => {
         await renderPage();
         fireEvent.click(within(screen.getAllByRole("row")[1]).getByRole("checkbox"));
         fireEvent.click(screen.getByRole("button", { name: "Start warmup" }));
-        expect(screen.getByRole("dialog", { name: "Bulk warmup" })).toHaveTextContent("ananya");
+        const dialog = screen.getByRole("dialog", { name: "Start warmup" });
+        fireEvent.click(within(dialog).getByRole("button", { name: "Weekdays" }));
 
         statusState[unknown] = true;
         fireEvent.click(screen.getByRole("button", { name: "Mailbox" }));
-        expect(screen.queryByRole("dialog", { name: "Bulk warmup" })).not.toBeInTheDocument();
-        fireEvent.click(within(screen.getAllByRole("row")[2]).getByRole("checkbox"));
+        expect(within(dialog).getByRole("status")).toHaveTextContent("Waiting for mailbox ownership to be confirmed.");
+        expect(within(dialog).getByRole("button", { name: "Start warmup" })).toBeDisabled();
+        fireEvent.click(within(dialog).getByRole("button", { name: "Start warmup" }));
+        expect(warmupUpdate).not.toHaveBeenCalled();
+        expect(warmupStart).not.toHaveBeenCalled();
 
         statusState[unknown] = false;
         fireEvent.click(screen.getByRole("button", { name: "Mailbox" }));
-        expect(screen.queryByRole("dialog", { name: "Bulk warmup" })).not.toBeInTheDocument();
+        expect(screen.getByRole("dialog", { name: "Start warmup" })).toBe(dialog);
+        expect(within(dialog).getByRole("button", { name: "Weekdays" })).toHaveAttribute("aria-pressed", "true");
+        expect(within(dialog).getByRole("button", { name: "Start warmup" })).toBeEnabled();
+    });
+
+    it("keeps an in-flight bulk start visible through a refresh and preserves other selections on completion", async () => {
+        let finishStart = () => {};
+        warmupStart.mockImplementation(() => new Promise<void>((resolve) => { finishStart = resolve; }));
+        await renderPage();
+        fireEvent.click(within(screen.getByRole("row", { name: /ananya@serveblink.example/ })).getByRole("checkbox"));
         fireEvent.click(screen.getByRole("button", { name: "Start warmup" }));
-        expect(screen.getByRole("dialog", { name: "Bulk warmup" })).toHaveTextContent("ananya,julie");
+        const dialog = screen.getByRole("dialog", { name: "Start warmup" });
+        fireEvent.click(within(dialog).getByRole("button", { name: "Start warmup" }));
+        await waitFor(() => expect(warmupStart).toHaveBeenCalledWith("ananya", "start"));
+        try {
+            statusState.cloudRefreshing = true;
+            fireEvent.click(screen.getByRole("button", { name: "Mailbox" }));
+            expect(within(dialog).getByRole("button", { name: "Close" })).toBeDisabled();
+            fireEvent.click(within(screen.getByRole("row", { name: /julie@serveblink.example/ })).getByRole("checkbox"));
+            expect(dialog).toHaveTextContent("1 mailbox selected.");
+
+            statusState.cloudRefreshing = false;
+            fireEvent.click(screen.getByRole("button", { name: "Mailbox" }));
+            expect(screen.getByRole("dialog", { name: "Start warmup" })).toBe(dialog);
+            expect(within(dialog).getByRole("button", { name: "Start warmup" })).toBeDisabled();
+            expect(warmupStart).toHaveBeenCalledTimes(1);
+        } finally {
+            await act(async () => { finishStart(); });
+        }
+        await waitFor(() => expect(screen.queryByRole("dialog", { name: "Start warmup" })).not.toBeInTheDocument());
+        expect(screen.getByText("1 selected")).toBeInTheDocument();
+        expect(within(screen.getByRole("row", { name: /julie@serveblink.example/ })).getByRole("checkbox")).toBeChecked();
     });
 
     it("keeps that order when a specific tag returns rows in creation order", async () => {

@@ -46,3 +46,60 @@ test("choose weekend warmup while campaigns keep weekday working days", async ({
   }
   await proof.shot("warmup-days-phone", { caption: "The same presets, selected days and explanation on a phone." });
 });
+
+test("keep bulk warmup visible while ownership refreshes and the original start finishes", async ({ page, context, proof }) => {
+  let holdOwnership = false;
+  let releaseOwnership = () => {};
+  let releaseStart = () => {};
+  const ownershipReady = new Promise<void>((resolve) => { releaseOwnership = resolve; });
+  const startReady = new Promise<void>((resolve) => { releaseStart = resolve; });
+  await page.route("**/v1/cloud-link", async (route) => {
+    if (holdOwnership) await ownershipReady;
+    await route.continue();
+  });
+  await page.route("**/v1/emails/*/warmup/start", async (route) => {
+    await startReady;
+    await route.continue();
+  });
+
+  await page.goto("/app/emails");
+  await page.getByRole("row", { name: /dev\.outbound@warmbly\.test/ }).getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Start warmup", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Start warmup", exact: true });
+  await dialog.getByRole("button", { name: "Weekdays", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "Weekdays", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await proof.chapter("Bulk warmup during a connection refresh", "Local seed data with delayed ownership and start responses. No sending worker runs in this stack.");
+  await proof.shot("bulk-warmup-settings", { caption: "The bulk-start dialog keeps the chosen weekdays and original mailbox selection." });
+  // Cloud ownership reads become stale after ten seconds and refetch on reconnection.
+  await proof.dwell(11_000);
+
+  try {
+    const starting = page.waitForRequest((request) => request.url().endsWith("/warmup/start") && request.method() === "POST");
+    await dialog.getByRole("button", { name: "Start warmup", exact: true }).click();
+    await starting;
+    holdOwnership = true;
+    const refreshing = page.waitForRequest((request) => request.url().endsWith("/v1/cloud-link") && request.method() === "GET");
+    await context.setOffline(true);
+    await context.setOffline(false);
+    await refreshing;
+    await expect(dialog.getByRole("status")).toHaveText("Waiting for mailbox ownership to be confirmed.");
+    await expect(dialog.getByRole("button", { name: "Start warmup", exact: true })).toBeDisabled();
+    await expect(dialog.getByRole("button", { name: "Close", exact: true })).toBeDisabled();
+    await expect(dialog).toContainText("1 mailbox selected.");
+    await proof.shot("bulk-warmup-ownership-refresh", { caption: "A connection refresh keeps the in-flight dialog visible and prevents another submission." });
+
+    holdOwnership = false;
+    releaseOwnership();
+    await expect(dialog.getByRole("status")).toBeHidden();
+    await expect(dialog.getByRole("button", { name: "Start warmup", exact: true })).toBeDisabled();
+    await expect(dialog.getByRole("button", { name: "Weekdays", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await proof.shot("bulk-warmup-still-starting", { caption: "After ownership is confirmed, the original start remains in progress with the same settings." });
+    releaseStart();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText("Warmup started for 1 mailbox", { exact: true })).toBeVisible();
+  } finally {
+    releaseOwnership();
+    releaseStart();
+    await context.setOffline(false);
+  }
+});
