@@ -25,9 +25,12 @@ func (r *verificationRepo) Get(context.Context, uuid.UUID) (*models.UserTOTP, er
 	return r.row, r.getErr
 }
 
-func (r *verificationRepo) ConsumeTOTPStep(_ context.Context, _ uuid.UUID, step uint64) (bool, error) {
+func (r *verificationRepo) ConsumeTOTPStep(_ context.Context, _ uuid.UUID, step uint64, sealedSecret string) (bool, error) {
 	if r.consumeErr != nil {
 		return false, r.consumeErr
+	}
+	if sealedSecret != r.row.SecretSealed {
+		return false, repository.ErrTOTPEnrollmentChanged
 	}
 	if step <= r.lastStep {
 		return false, nil
@@ -117,5 +120,35 @@ func TestRecoveryVerificationDistinguishesConcurrentUseFromStorageFailure(t *tes
 		} else if xerr.Code != errx.Internal {
 			t.Fatalf("storage failure: %v", xerr)
 		}
+	}
+}
+
+func TestRecoveryVerificationRequiresReadableHashesOrMatchingCode(t *testing.T) {
+	hash, err := argon2.Hash("abcde-fghij")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, matching := range []bool{false, true} {
+		s, r, _ := verificationFixture(t)
+		r.codes = []models.RecoveryCode{{ID: uuid.New(), CodeHash: "unreadable"}}
+		if matching {
+			r.codes = append(r.codes, models.RecoveryCode{ID: uuid.New(), CodeHash: hash})
+		}
+		ok, xerr := s.VerifyCurrentCode(t.Context(), r.row.UserID, "abcde-fghij")
+		if matching {
+			if !ok || xerr != nil {
+				t.Fatalf("readable matching code: accepted=%t error=%v", ok, xerr)
+			}
+		} else if ok || xerr == nil || xerr.Code != errx.Internal {
+			t.Fatalf("unreadable evidence: accepted=%t error=%v", ok, xerr)
+		}
+	}
+}
+
+func TestAuthenticatorVerificationRequiresCurrentEnrollment(t *testing.T) {
+	s, r, code := verificationFixture(t)
+	r.consumeErr = repository.ErrTOTPEnrollmentChanged
+	if ok, xerr := s.VerifyCurrentCode(t.Context(), r.row.UserID, code); ok || xerr != nil {
+		t.Fatalf("changed enrollment: accepted=%t error=%v", ok, xerr)
 	}
 }

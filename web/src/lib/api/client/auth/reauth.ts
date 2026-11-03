@@ -19,7 +19,7 @@ export default function reauth(body: ReauthBody) {
         data: body,
         authorization: true,
         // Never retried through the reauth prompt: this IS the prompt, and a
-        // failure here means the credential was wrong.
+        // failure here must reach the confirmation dialog.
         skipReauthPrompt: true,
     });
 }

@@ -96,8 +96,10 @@ func (r *pgEmailSyncStateRepository) Put(ctx context.Context, userID, emailID uu
 			throttled_until = EXCLUDED.throttled_until,
 			throttle_reason = EXCLUDED.throttle_reason,
 			deferred = EXCLUDED.deferred,
-			folders_skipped_cap = EXCLUDED.folders_skipped_cap,
-			folders_skipped_conflict = EXCLUDED.folders_skipped_conflict,
+			folders_skipped_cap = CASE WHEN EXCLUDED.last_synced_at IS NULL OR email_sync_state.last_synced_at IS NULL OR EXCLUDED.last_synced_at >= email_sync_state.last_synced_at
+			    THEN EXCLUDED.folders_skipped_cap ELSE email_sync_state.folders_skipped_cap END,
+			folders_skipped_conflict = CASE WHEN EXCLUDED.last_synced_at IS NULL OR email_sync_state.last_synced_at IS NULL OR EXCLUDED.last_synced_at >= email_sync_state.last_synced_at
+			    THEN EXCLUDED.folders_skipped_conflict ELSE email_sync_state.folders_skipped_conflict END,
 			last_synced_at = GREATEST(EXCLUDED.last_synced_at, email_sync_state.last_synced_at),
 			updated_at = now()
 	`

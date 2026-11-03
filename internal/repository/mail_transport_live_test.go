@@ -647,3 +647,46 @@ func TestLiveMailTransportSyncFolderCoveragePersistsAndClears(t *testing.T) {
 	}
 	assertCoverage(0, 0)
 }
+
+func TestLiveMailTransportSyncFolderCoverageRejectsOlderCompletion(t *testing.T) {
+	f := newTransportFixture(t)
+	repo := NewEmailSyncStateRepository(f.db)
+	completed := time.Now().UTC().Add(-2 * time.Minute).Truncate(time.Microsecond)
+	older := completed.Add(-time.Minute)
+	for _, state := range []*models.SyncState{
+		{LastSyncedAt: &completed, FoldersSkippedCap: 17, FoldersSkippedConflict: 2},
+		{LastSyncedAt: &older},
+	} {
+		if err := repo.Put(t.Context(), f.user, f.account, state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := repo.Get(t.Context(), f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FoldersSkippedCap != 17 || got.FoldersSkippedConflict != 2 || got.LastSyncedAt == nil || !got.LastSyncedAt.Equal(completed) {
+		t.Fatalf("older completion replaced current coverage: %+v", got)
+	}
+	if err := repo.Put(t.Context(), f.user, f.account, &models.SyncState{FoldersSkippedCap: 4, FoldersSkippedConflict: 1}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = repo.Get(t.Context(), f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FoldersSkippedCap != 4 || got.FoldersSkippedConflict != 1 {
+		t.Fatalf("progress counters: %+v", got)
+	}
+	newer := completed.Add(time.Minute)
+	if err := repo.Put(t.Context(), f.user, f.account, &models.SyncState{LastSyncedAt: &newer}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = repo.Get(t.Context(), f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FoldersSkippedCap != 0 || got.FoldersSkippedConflict != 0 {
+		t.Fatalf("new completion counters: %+v", got)
+	}
+}

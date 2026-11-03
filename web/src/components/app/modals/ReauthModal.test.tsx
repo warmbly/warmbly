@@ -59,6 +59,24 @@ function overlayLayer(dialog: HTMLElement) {
 }
 
 describe("ReauthModal", () => {
+    it.each([
+        ["two_fa_code_used", "Wait for a new authenticator code, then try again."],
+        ["internal_error", "We couldn't verify your confirmation right now. Try again shortly."],
+        ["service_unavailable", "We couldn't verify your confirmation right now. Try again shortly."],
+        [undefined, "We couldn't verify your confirmation right now. Try again shortly."],
+        ["credentials", "That did not match. Try again."],
+    ])("explains %s without confirming the waiting action", async (code, message) => {
+        methods.mockResolvedValue({ ...none, totp: true });
+        reauth.mockRejectedValue({ code });
+        render(<ReauthModal />);
+        const { resolve, reject } = ask();
+        fireEvent.change(await screen.findByLabelText("Two-factor or recovery code"), { target: { value: "123456" } });
+        fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+        expect(await screen.findByRole("alert")).toHaveTextContent(message);
+        expect(resolve).not.toHaveBeenCalled();
+        expect(reject).not.toHaveBeenCalled();
+    });
+
     beforeEach(() => {
         vi.clearAllMocks();
         vi.mocked(getToken).mockReturnValue({

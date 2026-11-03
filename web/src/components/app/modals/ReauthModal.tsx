@@ -45,7 +45,11 @@ const POPUP_NAME = "warmbly-reauth";
 type MethodsState = ReauthMethods | "unknown" | null;
 
 function errorOf(err: unknown): { code?: string; message?: string } {
-    return (err as { code?: string; message?: string } | undefined) ?? {};
+    if (typeof err !== "object" || err === null) return {};
+    return {
+        code: "code" in err && typeof err.code === "string" ? err.code : undefined,
+        message: "message" in err && typeof err.message === "string" ? err.message : undefined,
+    };
 }
 
 export default function ReauthModal() {
@@ -153,9 +157,11 @@ export default function ReauthModal() {
             // These say nothing about which factor matched, so their own words are safe to show.
             if (errCode === "reauth_no_factor" || errCode === "reauth_limited" || errCode === "attempt_check_unavailable") {
                 setError(message ?? "That did not work. Try again.");
+            } else if (errCode === "two_fa_code_used") {
+                setError("Wait for a new authenticator code, then try again.");
+            } else if (!errCode || errCode === "internal_error" || errCode === "service_unavailable") {
+                setError("We couldn't verify your confirmation right now. Try again shortly.");
             } else {
-                // One message for both factors: which one matched is not something
-                // to spell out to whoever is sitting at the keyboard.
                 setError("That did not match. Try again.");
             }
             setBusy(null);

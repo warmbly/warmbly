@@ -56,12 +56,16 @@ export function ReauthDialog() {
             pending.resolve();
             setPending(null);
         } catch (err) {
-            // One message for both factors; which one matched is not worth saying.
-            setError(
-                err instanceof APIError && (err.code === "reauth_no_factor" || err.code === "reauth_limited")
-                    ? err.message
-                    : "That did not match. Try again.",
-            );
+            const errCode = err instanceof APIError ? err.code : undefined;
+            if (err instanceof APIError && (errCode === "reauth_no_factor" || errCode === "reauth_limited" || errCode === "attempt_check_unavailable")) {
+                setError(err.message);
+            } else if (errCode === "two_fa_code_used") {
+                setError("Wait for a new authenticator code, then try again.");
+            } else if (!errCode || errCode === "internal_error" || errCode === "service_unavailable") {
+                setError("We couldn't verify your confirmation right now. Try again shortly.");
+            } else {
+                setError("That did not match. Try again.");
+            }
             setBusy(false);
         }
     }
@@ -128,7 +132,7 @@ export function ReauthDialog() {
                                 )}
                             </div>
                         ) : null}
-                        {error && <p className="text-sm text-[var(--admin-danger)]">{error}</p>}
+                        {error && <p role="alert" className="text-sm text-[var(--admin-danger)]">{error}</p>}
                         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                             <Button type="button" variant="outline" onClick={cancel}>
                                 Cancel

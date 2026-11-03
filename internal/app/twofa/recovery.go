@@ -48,8 +48,14 @@ func (s *service) tryConsumeRecoveryCode(ctx context.Context, userID uuid.UUID, 
 		errs.CaptureException(err)
 		return errx.InternalError()
 	}
+	var verifyErr error
 	for _, rc := range rows {
-		if ok, verr := argon2.Verify(code, rc.CodeHash); verr == nil && ok {
+		ok, verr := argon2.Verify(code, rc.CodeHash)
+		if verr != nil {
+			verifyErr = verr
+			continue
+		}
+		if ok {
 			if cerr := s.repo.ConsumeRecoveryCode(ctx, rc.ID); cerr != nil {
 				if errors.Is(cerr, repository.ErrRecoveryCodeUsed) {
 					return ErrInvalidCode()
@@ -59,6 +65,10 @@ func (s *service) tryConsumeRecoveryCode(ctx context.Context, userID uuid.UUID, 
 			}
 			return nil
 		}
+	}
+	if verifyErr != nil {
+		errs.CaptureException(verifyErr)
+		return errx.InternalError()
 	}
 	return ErrInvalidCode()
 }

@@ -219,16 +219,17 @@ func (s *service) checkCode(ctx context.Context, userID uuid.UUID, row *models.U
 	if !ok {
 		return ErrInvalidCode()
 	}
-	// A correct code is only accepted once. Its step is retired here, so the
-	// same digits presented again inside their ±1-step validity window are
-	// refused rather than signing someone in a second time.
-	fresh, cerr := s.repo.ConsumeTOTPStep(ctx, userID, step)
+	// Consume against the same enrollment whose code was verified.
+	fresh, cerr := s.repo.ConsumeTOTPStep(ctx, userID, step, row.SecretSealed)
 	if cerr != nil {
+		if errors.Is(cerr, repository.ErrTOTPEnrollmentChanged) {
+			return ErrInvalidCode()
+		}
 		errs.CaptureException(cerr)
 		return errx.InternalError()
 	}
 	if !fresh {
-		return errx.NewWithIdentifier(errx.BadRequest, UsedCodeID, "That authenticator code has already been used. Wait for the next code in your authenticator, then try again.")
+		return errx.NewWithIdentifier(errx.BadRequest, UsedCodeID, "Wait for a new authenticator code, then try again.")
 	}
 	return nil
 }
