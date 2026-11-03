@@ -32,7 +32,7 @@ async function withDatabase(connectionString, fn) {
   client.on("error", () => {});
   try {
     await client.connect();
-    await client.query("BEGIN READ ONLY");
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     await client.query("SET LOCAL statement_timeout = '15s'");
     return await fn(client);
   } finally {
