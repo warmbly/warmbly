@@ -5,8 +5,6 @@ import type {
     CloudLinkExecutor,
     CloudLinkMailboxRow,
     CloudLinkOAuthStart,
-    CloudLinkPendingConnect,
-    CloudLinkPollResult,
     CloudLinkStatus,
     PoolLinkWorkspaceMailbox,
     DiagnosticParticipation,
@@ -15,19 +13,6 @@ import type Inbox from "@/lib/api/models/app/emails/Inbox";
 
 export async function getCloudLinkStatus(): Promise<CloudLinkStatus> {
     return await Request<CloudLinkStatus>({ method: "GET", url: "/cloud-link", authorization: true });
-}
-
-export async function startCloudLinkConnect(cloudUrl?: string): Promise<CloudLinkPendingConnect> {
-    return await Request<CloudLinkPendingConnect>({
-        method: "POST",
-        url: "/cloud-link/connect",
-        data: { cloud_url: cloudUrl ?? "" },
-        authorization: true,
-    });
-}
-
-export async function pollCloudLinkConnect(): Promise<CloudLinkPollResult> {
-    return await Request<CloudLinkPollResult>({ method: "POST", url: "/cloud-link/connect/poll", authorization: true });
 }
 
 export async function disconnectCloudLink(legacy = false): Promise<void> {

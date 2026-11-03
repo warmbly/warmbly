@@ -45,7 +45,6 @@ import { TextInput } from "@/components/ui/field";
 import BillingIntervalToggle from "@/components/app/billing/BillingIntervalToggle";
 import PlanCard from "@/components/app/billing/PlanCard";
 import EnterpriseInquiryDialog from "@/components/app/billing/EnterpriseInquiryDialog";
-import WarmupPlanDialog from "@/components/app/billing/WarmupPlanDialog";
 import { Row, Section, SectionShell, TableSurface } from "../_components/SectionShell";
 import { PAID_PLANS, getPlan, planOrder, type PlanID } from "@/lib/plans";
 import { describeDiscount, fmtMoney, fromMinorUnits, type BillingInterval } from "@/lib/pricing";
@@ -83,6 +82,15 @@ export default function BillingSettingsPage() {
     // in-app upgrade dialog.
     const flow = useUpgradeFlow();
     const upgradeDialog = useUpgradeDialog();
+    // Overview's "Change plan" opens the same full-screen chooser the locked
+    // surfaces use, so there is one upgrade experience everywhere.
+    const openPlanChooser = React.useCallback(() => {
+        upgradeDialog.open({
+            feature: "Your plan",
+            minPlan: "starter",
+            blurb: "Compare every plan, switch billing interval, and change your subscription in one step.",
+        });
+    }, [upgradeDialog]);
     const openPortal = flow.openPortal;
     const redemptions = useAppliedDiscounts();
     const { tab: tabSlug } = useParams({ from: "/app/settings/billing/{-$tab}" });
@@ -93,13 +101,10 @@ export default function BillingSettingsPage() {
         useBrowseState<BillingInterval>("settings.billing.interval", "annual", billingIntervalSchema);
     const [salesOpen, setSalesOpen] = React.useState(false);
 
-    // ?pool=1 is where a linked instance's "Premium" button lands (and what
-    // the overview's warmup-only row opens), and ?pool=done is where Stripe
-    // returns. Both are consumed once and stripped, so a refresh or a back
-    // navigation does not replay them.
+    // ?pool=1 is where older linked instances' upgrade button lands, now the plan chooser since the Warmup plan is retired;
+    // ?pool=done is where an earlier Warmup checkout returns. Both are consumed once and stripped.
     const [searchParams, setSearchParams] = useSearchParams();
     const poolParam = searchParams.get("pool");
-    const [poolOpen, setPoolOpen] = React.useState(false);
     const offerParam = searchParams.get("offer");
     React.useEffect(() => {
         if (offerParam !== "done") return;
@@ -110,14 +115,14 @@ export default function BillingSettingsPage() {
     }, [offerParam, searchParams, setSearchParams]);
     React.useEffect(() => {
         if (!poolParam) return;
-        if (poolParam === "1") setPoolOpen(true);
+        if (poolParam === "1") openPlanChooser();
         if (poolParam === "done") {
             toast.success("Payment received. The Warmup plan applies as soon as Stripe confirms.");
         }
         const next = new URLSearchParams(searchParams);
         next.delete("pool");
         setSearchParams(next, { replace: true });
-    }, [poolParam, searchParams, setSearchParams]);
+    }, [poolParam, searchParams, setSearchParams, openPlanChooser]);
 
     const resolvedTab = tabForSlug(tabSlug);
     const tab: BillingTab = resolvedTab ?? "overview";
@@ -189,15 +194,6 @@ export default function BillingSettingsPage() {
             (id) => getPlan(id).featured && planOrder(id) > planOrder(currentPlan.id),
         ) ?? PAID_PLANS.find((id) => planOrder(id) > planOrder(currentPlan.id));
 
-    // Overview's "Change plan" opens the same full-screen chooser the locked
-    // surfaces use, so there is one upgrade experience everywhere.
-    function openPlanChooser() {
-        upgradeDialog.open({
-            feature: "Your plan",
-            minPlan: "starter",
-            blurb: "Compare every plan, switch billing interval, and change your subscription in one step.",
-        });
-    }
 
     // Upgrade/switch to a plan. A valid promo code rides along to Stripe; the
     // flow picks Checkout, an in-place change, or the portal.
@@ -263,7 +259,7 @@ export default function BillingSettingsPage() {
                         className="divide-y divide-slate-200/70"
                     >
                         {tab === "overview" && (
-                            <OverviewTab onChangePlan={openPlanChooser} onWarmupPlan={() => setPoolOpen(true)} />
+                            <OverviewTab onChangePlan={openPlanChooser} />
                         )}
 
                         {tab === "plans" && (
@@ -478,7 +474,6 @@ export default function BillingSettingsPage() {
                 </AnimatePresence>
             </div>
             <EnterpriseInquiryDialog open={salesOpen} onClose={() => setSalesOpen(false)} />
-            <WarmupPlanDialog open={poolOpen} onClose={() => setPoolOpen(false)} />
         </SectionShell>
     );
 }

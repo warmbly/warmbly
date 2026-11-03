@@ -127,30 +127,46 @@ func (freeConnectionGate) HasPremiumWarmup(context.Context, uuid.UUID) (bool, *e
 	return false, nil
 }
 
-func TestExistingServerConnectionEnrollsWithinItsCloudWorkspaceAllowance(t *testing.T) {
+type paidConnectionGate struct{ feature.FeatureGateService }
+
+func (paidConnectionGate) HasPremiumWarmup(context.Context, uuid.UUID) (bool, *errx.Error) {
+	return true, nil
+}
+
+// A free workspace keeps what it enrolled but its connection adds no new mailbox; a paid one does.
+func TestExistingServerConnectionEnrollsOnlyOnAPaidCloudWorkspace(t *testing.T) {
 	t.Setenv("BILLING_PROVIDER", "stripe")
-	org, owner := uuid.New(), uuid.New()
-	r := &adoptLinkRepo{}
-	accounts := &existingConnectionAccounts{managedOpsEmails: managedOpsEmails{accounts: map[uuid.UUID]*models.Email{}}}
-	emails := &adoptEmails{org: org}
-	s := &service{repo: r, emails: accounts, emailSvc: emails, gate: freeConnectionGate{}}
-	inst := &models.PoolLinkInstance{ID: uuid.New(), OrganizationID: org, CreatedBy: &owner}
-	tls := &models.Service{Host: "mail.example.test", Port: 993, Security: models.MailSecurityTLS}
-	req := models.PoolLinkEnrollRequest{RemoteID: uuid.New(), Email: "sender@example.test", Provider: models.InboxProviderSMTPIMAP, SMTPIMAP: &models.SmtpImap{SMTP: tls, IMAP: tls}}
-	got, xerr := s.Enroll(context.Background(), inst, req)
-	if xerr != nil || got == nil || r.enrolled.InstanceID != inst.ID || accounts.createdOrg != org || !emails.started {
-		t.Fatalf("enrollment on existing connection = %+v, %v", got, xerr)
-	}
-	if !accounts.disableBehavior {
-		t.Fatal("gateway warmup inherited Cloud's weekday workday")
-	}
-	for len(accounts.accounts) < models.FreeWorkspaceMailboxLimit {
-		accounts.accounts[uuid.New()] = &models.Email{}
-	}
-	r.enrolled = nil
-	req.RemoteID = uuid.New()
-	if _, xerr := s.Enroll(context.Background(), inst, req); xerr != ErrMailboxLimit {
-		t.Fatalf("existing connection bypassed allowance: %v", xerr)
+	for _, tc := range []struct {
+		name string
+		gate feature.FeatureGateService
+		want *errx.Error
+	}{{"free", freeConnectionGate{}, ErrMailboxSubscription}, {"paid", paidConnectionGate{}, nil}} {
+		t.Run(tc.name, func(t *testing.T) {
+			org, owner := uuid.New(), uuid.New()
+			r := &adoptLinkRepo{}
+			accounts := &existingConnectionAccounts{managedOpsEmails: managedOpsEmails{accounts: map[uuid.UUID]*models.Email{}}}
+			emails := &adoptEmails{org: org}
+			s := &service{repo: r, emails: accounts, emailSvc: emails, gate: tc.gate}
+			inst := &models.PoolLinkInstance{ID: uuid.New(), OrganizationID: org, CreatedBy: &owner}
+			tls := &models.Service{Host: "mail.example.test", Port: 993, Security: models.MailSecurityTLS}
+			req := models.PoolLinkEnrollRequest{RemoteID: uuid.New(), Email: "[EMAIL]", Provider: models.InboxProviderSMTPIMAP, SMTPIMAP: &models.SmtpImap{SMTP: tls, IMAP: tls}}
+			got, xerr := s.Enroll(context.Background(), inst, req)
+			if xerr != tc.want {
+				t.Fatalf("enrollment on existing connection = %+v, %v; want %v", got, xerr, tc.want)
+			}
+			if tc.want != nil {
+				if got != nil || r.enrolled != nil || accounts.createdOrg != uuid.Nil || emails.started {
+					t.Fatalf("refused enrollment still created state: %+v", got)
+				}
+				return
+			}
+			if got == nil || r.enrolled.InstanceID != inst.ID || accounts.createdOrg != org || !emails.started {
+				t.Fatalf("enrollment on existing connection = %+v", got)
+			}
+			if !accounts.disableBehavior {
+				t.Fatal("gateway warmup inherited Cloud's weekday workday")
+			}
+		})
 	}
 }
 
@@ -175,31 +191,15 @@ func (e *adoptEmails) SetWarmupLifecycle(_ context.Context, orgID, _, action str
 
 func (e *adoptEmails) LoadAccountOntoWorker(context.Context, uuid.UUID) error { return nil }
 
-type conflictApprovalRepo struct{ repository.PoolLinkRepository }
-
-func (conflictApprovalRepo) GetMailboxByRemote(context.Context, uuid.UUID, uuid.UUID) (*models.PoolLinkMailbox, error) {
-	return nil, nil
-}
-
-func (conflictApprovalRepo) GetCodeByUserCode(context.Context, string) (*models.PoolLinkCode, error) {
-	org := uuid.New()
-	return &models.PoolLinkCode{UserCode: "ABCD-EFGH", Status: models.PoolLinkCodePending, RemoteOrganizationID: &org}, nil
-}
-func (conflictApprovalRepo) CreateInstance(context.Context, *models.PoolLinkInstance, string) error {
-	return repository.ErrCloudWorkspaceLinked
-}
-
-func TestApprovalExplainsThatCloudWorkspaceIsAlreadyConnected(t *testing.T) {
-	s := &service{repo: conflictApprovalRepo{}}
-	if _, xerr := s.ApproveCode(context.Background(), "ABCD-EFGH", uuid.New(), uuid.New()); xerr != ErrWorkspaceLinked {
-		t.Fatalf("duplicate approval = %v", xerr)
+// No plan links a new instance: the handshake is refused at both ends, even for a code issued earlier.
+func TestNewLinksAreClosed(t *testing.T) {
+	t.Setenv("BILLING_PROVIDER", "stripe")
+	s := &service{gate: paidConnectionGate{}}
+	if _, xerr := s.StartCode(context.Background(), models.PoolLinkStartRequest{InstanceName: "Self-hosted", RemoteOrganizationID: uuid.New()}); xerr != ErrLinkClosed {
+		t.Fatalf("start = %v", xerr)
 	}
-}
-
-func TestNewConnectionsStillRequireWorkspaceScope(t *testing.T) {
-	s := &service{repo: conflictApprovalRepo{}}
-	if _, xerr := s.StartCode(context.Background(), models.PoolLinkStartRequest{InstanceName: "Legacy"}); xerr != ErrLegacyLink {
-		t.Fatalf("legacy device handshake = %v", xerr)
+	if _, xerr := s.ApproveCode(context.Background(), "ABCD-EFGH", uuid.New(), uuid.New()); xerr != ErrLinkClosed {
+		t.Fatalf("approval on a paid workspace = %v", xerr)
 	}
 }
 
@@ -221,5 +221,23 @@ func TestExistingServerConnectionAdoptsAndStartsWarmupInItsCloudWorkspace(t *tes
 	acc.OrganizationID = &other
 	if _, xerr := s.Adopt(context.Background(), inst, models.PoolLinkAdoptRequest{RemoteID: uuid.New(), EmailAccountID: acc.ID}); xerr != ErrNotAdoptable {
 		t.Fatalf("another workspace's mailbox was accepted: %v", xerr)
+	}
+}
+
+// A free workspace linked earlier keeps re-signing in what it holds, and adds nothing new.
+func TestFreeLinkedWorkspaceRenewsHeldMailboxesOnly(t *testing.T) {
+	t.Setenv("BILLING_PROVIDER", "stripe")
+	inst := &models.PoolLinkInstance{ID: uuid.New(), OrganizationID: uuid.New()}
+	held := &service{repo: &adoptLinkRepo{enrolled: &models.PoolLinkMailbox{InstanceID: inst.ID, RemoteID: uuid.New()}}, gate: freeConnectionGate{}}
+	if xerr := held.managedCapacity(context.Background(), inst, uuid.New()); xerr != nil {
+		t.Fatalf("held mailbox refused: %v", xerr)
+	}
+	fresh := &service{repo: &adoptLinkRepo{}, gate: freeConnectionGate{}}
+	if xerr := fresh.managedCapacity(context.Background(), inst, uuid.New()); xerr != ErrMailboxSubscription {
+		t.Fatalf("new mailbox = %v", xerr)
+	}
+	paid := &service{repo: &adoptLinkRepo{}, gate: paidConnectionGate{}}
+	if xerr := paid.managedCapacity(context.Background(), inst, uuid.New()); xerr != nil {
+		t.Fatalf("paid workspace refused: %v", xerr)
 	}
 }

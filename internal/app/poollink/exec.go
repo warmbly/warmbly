@@ -233,8 +233,8 @@ func (s *service) enrollInstanceExecuted(ctx context.Context, inst *models.PoolL
 	if !plan.WarmupEntitled {
 		return nil, ErrWarmupNotEntitled
 	}
-	if plan.MailboxLimit != nil && plan.Enrolled >= *plan.MailboxLimit {
-		return nil, ErrMailboxLimit
+	if xerr := admitNewMailbox(plan); xerr != nil {
+		return nil, xerr
 	}
 	userID, xerr := s.ownerUserID(ctx, inst)
 	if xerr != nil {

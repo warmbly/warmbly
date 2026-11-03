@@ -24,7 +24,7 @@ const DefaultCloudURL = "https://api.warmbly.com"
 var (
 	ErrLegacyLink      = errx.NewWithIdentifier(errx.Conflict, "cloud_link_workspace_required", "This connection is shared across this server's workspaces. Confirm disconnecting the server-wide connection.")
 	ErrNotConnected    = errx.NewWithIdentifier(errx.Conflict, "cloud_link_not_connected", "This workspace is not connected to Warmbly Cloud.")
-	ErrAlreadyLinked   = errx.NewWithIdentifier(errx.Conflict, "cloud_link_connected", "This workspace is already connected. Disconnect first to link a different Cloud workspace.")
+	ErrAlreadyLinked   = errx.NewWithIdentifier(errx.Conflict, "cloud_link_connected", "This workspace is already connected to Warmbly Cloud.")
 	ErrNoPendingCode   = errx.NewWithIdentifier(errx.NotFound, "cloud_link_no_pending", "No connection in progress. Start again.")
 	ErrCodeExpired     = errx.NewWithIdentifier(errx.NotFound, "cloud_link_code_expired", "The code expired before it was approved. Start again.")
 	ErrOAuthMailbox    = errx.NewWithIdentifier(errx.Unprocessable, "cloud_link_oauth_mailbox", "Google and Microsoft sign-in mailboxes cannot be warmed by Warmbly Cloud yet, because their refresh grant is bound to this instance's own OAuth app. Connect the mailbox with SMTP/IMAP (an app password) to enroll it.")

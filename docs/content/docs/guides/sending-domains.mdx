@@ -122,7 +122,7 @@ While any domain still uses the shared tracking host or has no redirect, the top
 
 A domain bought for cold email usually answers nothing when someone types it into a browser. A recipient who checks who wrote to them, or a filter that looks at the domain, finds an empty page or an error, which reads as a throwaway domain. A redirect sends visitors to the bare domain (and its `www`) on to your company's main website instead, so the domain looks like what it is: part of a real business.
 
-Warmbly serves the redirect from this instance's tracking service once DNS proves two things: that you control the domain, and that its root points here. A self-hosted instance linked to Warmbly Cloud can [have Cloud serve it](#serve-it-from-warmbly-cloud) instead, with nothing to set up on its own server.
+Warmbly serves the redirect from this instance's tracking service once DNS proves two things: that you control the domain, and that its root points here. A self-hosted instance already linked to Warmbly Cloud can [have Cloud serve it](#serve-it-from-warmbly-cloud) instead, with nothing to set up on its own server.
 
 ### Set one up
 
@@ -195,13 +195,13 @@ server_name t.example.com acme.io www.acme.io;
 proxy_set_header Host $host;
 ```
 
-On a self-hosted instance linked to Warmbly Cloud, the same tab also offers to skip all of this and [serve the redirect from Warmbly Cloud](#serve-it-from-warmbly-cloud).
+On a self-hosted instance already linked to Warmbly Cloud, the same tab also offers to skip all of this and [serve the redirect from Warmbly Cloud](#serve-it-from-warmbly-cloud).
 
 ### Serve it from Warmbly Cloud
 
-On a self-hosted instance [linked to Warmbly Cloud](/guides/warmbly-cloud/), a redirect has a **Served from** choice: **This server** or **Warmbly Cloud**. Cloud serves the redirect and its certificate from its own tracking service, so nothing on your server has to route the domain. You point the root at the addresses Cloud lists and publish the ownership value it lists, which is Cloud's own and differs from your instance's.
+On a self-hosted instance already [linked to Warmbly Cloud](/guides/warmbly-cloud/), a redirect has a **Served from** choice: **This server** or **Warmbly Cloud**. Cloud serves the redirect and its certificate from its own tracking service, so nothing on your server has to route the domain. You point the root at the addresses Cloud lists and publish the ownership value it lists, which is Cloud's own and differs from your instance's.
 
-- An instance that is not linked yet can link from right there: **Connect Warmbly Cloud** under **Served from**, or in the fix for a redirect that is not reaching visitors, shows the code to approve on Warmbly Cloud, and approving it moves on to serving the redirect from Cloud. When redirects are not reaching visitors, the top of the page offers the same for all of them at once.
+- Warmbly Cloud no longer links new self-hosted instances, so an instance that is not linked has no **Served from** choice and serves every redirect itself, through its own tracking host and proxy.
 - While the instance is linked, the dashboard picks Warmbly Cloud for a new redirect (the API keeps this instance unless `served_by` says otherwise). Bulk setup has the same choice; there, a domain that already has a redirect keeps where it is served from unless you pick a server, and the dashboard asks before moving a live one.
 - Cloud checks the records and opens the domain on its own schedule, the same one described above. Your instance shows Cloud's verdict, records and last visit, and reads them again on its own schedule and on **Check now**.
 - Moving a redirect between this server and Cloud changes its root records, so a live redirect pauses until the new records are in place. The dashboard asks before it moves one.
