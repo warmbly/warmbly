@@ -89,15 +89,18 @@ func runInboxTagBackfill(ctx context.Context, args []string) error {
 
 	repo := repository.NewInboxTagRepository(c.db.Pool)
 	categories := repository.NewTagCategoryStore(c.db.Pool)
-	endpoint, err := config.TypeSafeEndpoint()
-	if err != nil {
-		return err
+	key := config.TypeSafeAPIKey()
+	var endpoint string
+	if key != "" {
+		if endpoint, err = config.TypeSafeEndpoint(); err != nil {
+			return err
+		}
 	}
 
 	// The asker is nil-safe on a dry run, but constructing it is what proves a
 	// key is present, so it is built either way.
 	svc := inboxtag.NewService(
-		inboxtag.NewClient(config.TypeSafeAPIKey(), typesafe.WithEndpoint(endpoint)),
+		inboxtag.NewClient(key, typesafe.WithEndpoint(endpoint)),
 		repo,
 		categories,
 		categories,

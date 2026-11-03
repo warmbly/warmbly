@@ -93,9 +93,24 @@ var transientMarkers = []string{
 	"too many",
 }
 
-// sessionMarkers name the SENDER as the problem: its greeting, envelope
-// sender, connecting IP, authentication or reputation, or a policy applied to
-// the session. A refusal carrying one says nothing about the mailbox.
+// senderScopedMarkers scope a refusal to the SENDER's address or domain. They decide
+// before any recipient wording, because Postfix's sender verification answers
+// "Sender address rejected: User unknown in local recipient table".
+var senderScopedMarkers = []string{
+	"sender address",
+	"sender domain",
+	"sender's domain",
+	"domain of sender",
+	"envelope sender",
+	"sender rejected",
+	"sender verify failed",
+	"sender not allowed",
+	"mail from",
+}
+
+// sessionMarkers name the SENDER as the problem: its greeting, connecting IP,
+// authentication or reputation, or a policy applied to the session. A refusal
+// carrying one says nothing about the mailbox.
 var sessionMarkers = []string{
 	"helo",
 	"ehlo",
@@ -108,14 +123,6 @@ var sessionMarkers = []string{
 	"unable to relay",
 	"client host rejected",
 	"client host blocked",
-	"sender address",
-	"sender domain",
-	"sender's domain",
-	"domain of sender",
-	"envelope sender",
-	"sender rejected",
-	"sender verify failed",
-	"sender not allowed",
 	"authentication required",
 	"auth required",
 	"not authenticated",
@@ -199,6 +206,9 @@ func Blame(text string) Cause {
 
 	if hasStatus && status.Class == 4 {
 		return CauseTransient
+	}
+	if containsAny(lower, senderScopedMarkers) {
+		return CauseReputationBlock
 	}
 	if hasStatus && status.Class == 5 && status.Subject == 2 && status.Detail == 2 || containsAny(lower, mailboxFullMarkers) {
 		return CauseMailboxFull
