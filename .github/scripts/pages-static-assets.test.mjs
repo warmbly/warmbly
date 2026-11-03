@@ -75,3 +75,12 @@ test("changed admin redirect behavior requires explicit review", () => {
     assert.throws(() => prepareStaticAssets({ target, sourceRoot: root, destination, sourceSha: sha, release: "v0.6.74" }));
   });
 });
+
+test("requires regular frontend entrypoint and response header files", () => {
+  for (const name of ["index.html", "_headers"]) fixture("web", ({ root, target, output, destination }) => {
+    rmSync(join(output, name));
+    mkdirSync(join(output, name));
+    assert.throws(() => prepareStaticAssets({ target, sourceRoot: root, destination, sourceSha: sha, release: "v0.6.74" }), /Frontend index and response headers required/);
+    assert.equal(existsSync(destination), false);
+  });
+});

@@ -693,7 +693,9 @@ Self-hosted containers and their configuration are unchanged.
 
 For example, a staging entry is
 `[{"project":"dashboard-project","worker":"dashboard-assets-stage","domains":["assets-stage.example.com"]}]`.
-No wildcard domain is accepted. Empty domains publish an unattached artifact;
+No wildcard domain is accepted. Empty domains do not attach a new domain or
+detach a custom domain attached by an earlier deployment. Remove an existing
+binding in the Worker's **Settings > Domains & Routes** page when needed.
 `workers.dev` and preview URLs stay disabled. The publisher preserves
 `_headers` and the dashboard's `_redirects`. For admin it replaces the Pages
 catch-all rewrite with the platform's SPA fallback and keeps the other
@@ -701,7 +703,9 @@ frontends' 404 behavior. It rejects symlinks, Pages Functions, files above 25 Mi
 and artifacts exceeding the Free plan's 20,000-file limit.
 
 The manual **Publish released static assets** workflow rebuilds an existing
-stable release using its tag and exact commit SHA. It does not create a tag,
+published stable release using its tag and exact commit SHA. It supports
+v0.6.28 and later releases containing the public Pages configuration importer;
+older tags fail the source check before publishing. It does not create a tag,
 release, application deployment or worker-fleet update. It uses current public
 Pages configuration, so a rebuilt artifact can differ from the earlier build if
 that configuration changed. The deployed artifact includes
@@ -713,8 +717,10 @@ account's current limits and pricing before enabling any other Workers feature.
 Before moving a production hostname, verify the staging site's certificate,
 TLS policy, root and nested routes, assets, response headers and redirects.
 Archive its existing Pages association and DNS. If verification fails after a
-cutover, restore that association and DNS, or deploy the saved asset artifact to
-the same Worker name. Keep the Pages deployment and its configuration available
+cutover, remove the Worker's custom-domain binding and restore that Pages
+association and DNS. Redeploying the saved asset artifact to the same Worker
+reapplies its custom-domain routes; it does not restore Pages or DNS. Keep the
+Pages deployment and its configuration available
 through the rollback window. A source merge alone does not attach a domain.
 
 ### Whole-domain connects

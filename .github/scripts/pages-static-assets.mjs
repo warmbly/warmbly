@@ -42,7 +42,8 @@ export function prepareStaticAssets({ target, sourceRoot, destination, sourceSha
     }
   }
   check(output);
-  if (!existsSync(join(output, "index.html")) || !existsSync(join(output, "_headers"))) throw new Error("Frontend index and response headers required");
+  const isRegularFile = (name) => existsSync(join(output, name)) && lstatSync(join(output, name)).isFile();
+  if (!isRegularFile("index.html") || !isRegularFile("_headers")) throw new Error("Frontend index and response headers required");
   if (existsSync(join(output, "_worker.js")) || existsSync(join(output, "_routes.json"))) throw new Error("Only static artifacts are supported");
   mkdirSync(dest, { recursive: true });
   cpSync(output, join(dest, "assets"), { recursive: true });

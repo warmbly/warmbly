@@ -61,11 +61,19 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Pin the existing release source
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          gh release view "$RELEASE_TAG" --json isDraft,isPrerelease,publishedAt \
+            | jq -e '.isDraft == false and .isPrerelease == false and .publishedAt != null' >/dev/null
           test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$SOURCE_SHA"
           git merge-base --is-ancestor "$SOURCE_SHA" origin/main
+          if ! git cat-file -e "$SOURCE_SHA:.github/scripts/pages-production-config.mjs"; then
+            echo '::error::Release does not support public Pages configuration import; select a supported release.'
+            exit 1
+          fi
           git worktree add --detach "$RUNNER_TEMP/frontend-source" "$SOURCE_SHA"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
