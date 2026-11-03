@@ -2,13 +2,16 @@ package smtp
 
 import (
 	"context"
+	"errors"
+	"io"
 	"net"
-	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/models"
 )
 
 // A server limiting connections from one client address refuses every mailbox
@@ -21,6 +24,8 @@ const (
 	paceMaxWait      = 10 * time.Second
 	// PaceStage marks a send held on the worker without contacting the server.
 	PaceStage = "pacing"
+	// causeDroppedHandshake marks a STARTTLS the server closed mid-handshake, as opposed to one it refused with a reason.
+	causeDroppedHandshake = "dropped_handshake"
 )
 
 // hostPace is one worker address's standing with one SMTP server.
@@ -34,8 +39,12 @@ type hostPace struct {
 
 var hostPaces sync.Map
 
-func paceFor(host string, port int, local *net.TCPAddr) *hostPace {
-	key := net.JoinHostPort(strings.ToLower(host), strconv.Itoa(port)) + "|"
+// paceFor keys on the server, not the port, so a 587 fallback shares the 465 standing; a relay on this machine has none.
+func paceFor(host string, local *net.TCPAddr) *hostPace {
+	if models.LoopbackMailHost(host) {
+		return nil
+	}
+	key := strings.ToLower(strings.TrimSuffix(models.NormalizeMailHost(host), ".")) + "|"
 	if local != nil {
 		key += local.IP.String()
 	}
@@ -77,10 +86,20 @@ func (p *hostPace) wait(ctx context.Context, now time.Time) *errx.MailError {
 	defer timer.Stop()
 	select {
 	case <-timer.C:
-		return nil
+		return p.heldIfCooling(time.Now())
 	case <-ctx.Done():
 		return pacedHold(now, now.Add(wait))
 	}
+}
+
+// heldIfCooling refuses a reserved start that a refusal since the reservation put inside a cooldown.
+func (p *hostPace) heldIfCooling(now time.Time) *errx.MailError {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if now.Before(p.coolUntil) {
+		return pacedHold(now, p.coolUntil)
+	}
+	return nil
 }
 
 // observe records a session's outcome; one burst of refusals counts as one strike.
@@ -102,7 +121,7 @@ func (p *hostPace) observe(now time.Time, err *errx.MailError) *errx.MailError {
 		}
 		p.coolUntil = now.Add(cool)
 	}
-	p.pacedUntil = now.Add(pacedWindow)
+	p.pacedUntil = p.coolUntil.Add(pacedWindow)
 	return throttledFailure(err, p.coolUntil)
 }
 
@@ -118,16 +137,22 @@ func serverThrottled(err *errx.MailError) bool {
 	case f.Stage == "auth" && f.Status == 454:
 		return true
 	case f.Stage == "starttls" && f.Status == 0:
-		// A dropped handshake; a refused certificate or a port without STARTTLS carries its own reason.
-		return strings.HasPrefix(err.Message, errx.ErrMailServerUnreachable.Message)
+		return f.Cause == causeDroppedHandshake
 	}
 	return false
+}
+
+// droppedConnection is the server closing or resetting the connection, never a TLS alert or a certificate refusal.
+func droppedConnection(err error) bool {
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNABORTED) || errors.Is(err, syscall.EPIPE)
 }
 
 func throttledFailure(err *errx.MailError, retryAt time.Time) *errx.MailError {
 	out := *err
 	f := *err.Failure
 	f.RetryAt = &retryAt
+	f.Cause = ""
 	switch f.Stage {
 	case "greeting", "ehlo", "starttls", "auth", "mail from":
 		// Refused before any recipient was offered, so the send costs the lead nothing.

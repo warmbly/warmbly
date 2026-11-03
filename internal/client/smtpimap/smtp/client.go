@@ -44,6 +44,15 @@ func tlsFailure(base *errx.MailError, stage string, err error) *errx.MailError {
 	return sendFailure(base, err, stage, "mailbox")
 }
 
+// startTLSFailure marks a handshake the server closed, which is how some servers shed connections.
+func startTLSFailure(err error) *errx.MailError {
+	failure := tlsFailure(errx.ErrMailServerUnreachable, "starttls", err)
+	if droppedConnection(err) && failure.Failure != nil {
+		failure.Failure.Cause = causeDroppedHandshake
+	}
+	return failure
+}
+
 // pinFailure reports a pinned certificate refusal as a retryable mailbox
 // connection error, never as a credentials failure.
 func pinFailure(perr *mailtls.PinError) *errx.MailError {
@@ -359,11 +368,12 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 	if resolved == models.MailSecurityNone && !models.CleartextMailAllowed(host) {
 		return errx.ErrMailInsecureRemoteHost
 	}
-	pace := paceFor(host, port, c.BindIP)
-	if held := pace.wait(ctx, time.Now()); held != nil {
-		return held
+	if pace := paceFor(host, c.BindIP); pace != nil {
+		if held := pace.wait(ctx, time.Now()); held != nil {
+			return held
+		}
+		defer func() { result = pace.observe(time.Now(), result) }()
 	}
-	defer func() { result = pace.observe(time.Now(), result) }()
 	// The socket may be 587 with STARTTLS when the mailbox's 465 never
 	// answered; the mode to speak is the one the dial reports.
 	dialed, err := DialSubmission(ctx, c.BindIP, host, port, security)
@@ -431,7 +441,7 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 				if perr := mailtls.AsPinError(err, capture); perr != nil {
 					return pinFailure(perr)
 				}
-				return tlsFailure(errx.ErrMailServerUnreachable, "starttls", err)
+				return startTLSFailure(err)
 			}
 		} else if !netbind.InsecureTLS() && !c.plaintext {
 			return sendFailure(errx.ErrMailServerUnreachableAt("starttls", errNoSTARTTLS), errNoSTARTTLS, "starttls", "mailbox")

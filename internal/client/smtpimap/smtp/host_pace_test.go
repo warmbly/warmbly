@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/textproto"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -30,7 +31,9 @@ func TestServerThrottledNamesOnlyAddressRefusals(t *testing.T) {
 		{"greeting 421", throttleReply("greeting", 421), true},
 		{"auth 454", throttleReply("auth", 454), true},
 		{"rcpt 421", throttleReply("rcpt to", 421), true},
-		{"dropped handshake", tlsFailure(errx.ErrMailServerUnreachable, "starttls", io.EOF), true},
+		{"dropped handshake", startTLSFailure(io.EOF), true},
+		{"reset handshake", startTLSFailure(&net.OpError{Op: "read", Err: syscall.ECONNRESET}), true},
+		{"handshake alert", startTLSFailure(errors.New("remote error: tls: protocol version not supported")), false},
 		{"refused certificate", sendFailure(errx.ErrMailServerUnreachableAt("starttls", errors.New(errx.MailConnectionReasonCertificate)), io.EOF, "starttls", "mailbox"), false},
 		{"no STARTTLS", sendFailure(errx.ErrMailServerUnreachableAt("starttls", errNoSTARTTLS), errNoSTARTTLS, "starttls", "mailbox"), false},
 		{"lost auth connection", throttleReply("auth", 0), false},
@@ -50,7 +53,7 @@ func TestHostPaceCoolsOncePerBurstAndBacksOff(t *testing.T) {
 	p := &hostPace{}
 	t0 := time.Date(2026, 11, 3, 18, 0, 0, 0, time.UTC)
 
-	first := p.observe(t0, throttleReply("starttls", 0))
+	first := p.observe(t0, startTLSFailure(io.EOF))
 	if !first.Failure.RetryAt.Equal(t0.Add(paceCooldownBase)) || first.Failure.Cause != errx.SendCauseServerPacing {
 		t.Fatalf("first refusal = %+v", first.Failure)
 	}
@@ -74,8 +77,13 @@ func TestHostPaceCoolsOncePerBurstAndBacksOff(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		p.observe(p.coolUntil, throttleReply("greeting", 421))
 	}
-	if got := p.coolUntil.Sub(p.pacedUntil.Add(-pacedWindow)); got != paceCooldownMax {
+	last := p.coolUntil.Add(-paceCooldownMax)
+	p.observe(p.coolUntil, startTLSFailure(io.EOF))
+	if got := p.coolUntil.Sub(last.Add(paceCooldownMax)); got != paceCooldownMax {
 		t.Fatalf("cooldown not capped: %v", got)
+	}
+	if !p.pacedUntil.Equal(p.coolUntil.Add(pacedWindow)) {
+		t.Fatalf("spacing not measured from the end of the cooldown: paced=%v cool=%v", p.pacedUntil, p.coolUntil)
 	}
 }
 
@@ -113,7 +121,7 @@ func TestHostPaceSpacesSessionsAfterARefusalUntilItRecovers(t *testing.T) {
 func TestHostPaceHoldIsARetryThatNeverReachedTheServer(t *testing.T) {
 	p := &hostPace{}
 	t0 := time.Now()
-	p.observe(t0, throttleReply("starttls", 0))
+	p.observe(t0, startTLSFailure(io.EOF))
 	held := p.wait(context.Background(), t0)
 	if held == nil || held.Failure == nil {
 		t.Fatal("cooling host admitted a session")
@@ -135,11 +143,30 @@ func TestHostPaceRefusalAfterRecipientsCostsTheLeadAnAttempt(t *testing.T) {
 }
 
 func TestPaceForKeysOnServerAndWorkerAddress(t *testing.T) {
-	a := paceFor("SMTP.Example.test", 587, &net.TCPAddr{IP: net.IPv4(192, 0, 2, 1)})
-	if paceFor("smtp.example.test", 587, &net.TCPAddr{IP: net.IPv4(192, 0, 2, 1)}) != a {
-		t.Fatal("host case split the pace")
+	a := paceFor("SMTP.Example.test", &net.TCPAddr{IP: net.IPv4(192, 0, 2, 1)})
+	if paceFor("smtp.example.test.", &net.TCPAddr{IP: net.IPv4(192, 0, 2, 1)}) != a {
+		t.Fatal("host spelling split the pace")
 	}
-	if paceFor("smtp.example.test", 587, &net.TCPAddr{IP: net.IPv4(192, 0, 2, 2)}) == a || paceFor("smtp.example.test", 587, nil) == a {
+	if paceFor("smtp.example.test", &net.TCPAddr{IP: net.IPv4(192, 0, 2, 2)}) == a || paceFor("smtp.example.test", nil) == a {
 		t.Fatal("another worker address shared the pace")
+	}
+	if paceFor("::1", nil) != nil || paceFor("localhost", nil) != nil {
+		t.Fatal("a relay on this machine was paced")
+	}
+}
+
+func TestHostPaceReservationYieldsToALaterCooldown(t *testing.T) {
+	p := &hostPace{}
+	now := time.Now()
+	p.pacedUntil = now.Add(pacedWindow)
+	p.nextStart = now.Add(50 * time.Millisecond)
+	done := make(chan *errx.MailError, 1)
+	go func() { done <- p.wait(context.Background(), now) }()
+	p.mu.Lock()
+	p.coolUntil = now.Add(time.Minute)
+	p.mu.Unlock()
+	held := <-done
+	if held == nil || held.Failure.Stage != PaceStage || !held.Failure.RetryAt.Equal(now.Add(time.Minute)) {
+		t.Fatalf("reserved start ran inside a cooldown: %+v", held)
 	}
 }
