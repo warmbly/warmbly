@@ -23,6 +23,7 @@ export default function WeekdayBitmask({
                         key={day}
                         type="button"
                         aria-pressed={active}
+                        aria-label={day}
                         title={day}
                         onClick={() => setValue(value ^ mask)}
                         className={`h-12 rounded-md border flex flex-col items-center justify-center transition-colors ${

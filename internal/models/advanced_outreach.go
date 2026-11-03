@@ -59,7 +59,15 @@ type ReplyIntentSettings struct {
 	// OutOfOfficeHoldDays is the hold applied when the auto-reply carries no
 	// return date we can read. Clamped to OOOHoldDaysMin..OOOHoldDaysMax.
 	OutOfOfficeHoldDays int `json:"out_of_office_hold_days"`
+	// StopAllCampaignsOnReply holds a contact in every other campaign they are
+	// a lead of when they reply to one, for ReplyHoldOtherCampaignsDays.
+	// Off by default: a reply stops only the campaign it answered.
+	StopAllCampaignsOnReply bool `json:"stop_all_campaigns_on_reply"`
 }
+
+// ReplyHoldOtherCampaignsDays is how long a reply holds the contact's other
+// campaigns. Finite like every automatic hold; a member resumes it sooner.
+const ReplyHoldOtherCampaignsDays = 365
 
 // InboxTaggingSettings are the actions a workspace lets a classified reply
 // take. The three reversible ones default on; the suppression defaults off,
@@ -702,6 +710,9 @@ type IngestDeliverabilityEventRequest struct {
 	Reason         string                  `json:"reason,omitempty"`
 	IdempotencyKey string                  `json:"idempotency_key,omitempty"`
 	Metadata       map[string]interface{}  `json:"metadata,omitempty"`
+	// AddressKept is set by ingestion when a bounce did not blame the address,
+	// so the lead stays in its campaign. Never read from a request body.
+	AddressKept bool `json:"-"`
 }
 
 type SuppressedRecipient struct {
@@ -733,8 +744,10 @@ type CampaignABVariant struct {
 	IsControl  bool                   `json:"is_control"`
 	IsActive   bool                   `json:"is_active"`
 	Metadata   map[string]interface{} `json:"metadata,omitempty"`
-	CreatedAt  time.Time              `json:"created_at"`
-	UpdatedAt  time.Time              `json:"updated_at"`
+	// PromotedAt is set when auto-promotion made this arm its step's winner.
+	PromotedAt *time.Time `json:"promoted_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
 }
 
 type CreateCampaignABVariantRequest struct {
@@ -765,6 +778,29 @@ type VariantSelection struct {
 	Subject   string     `json:"subject"`
 	BodyHTML  string     `json:"body_html"`
 	BodyPlain string     `json:"body_plain"`
+	// StepArm is the step-scoped split arm this contact drew; nil when no split ran.
+	StepArm *StepABArm `json:"step_arm,omitempty"`
+}
+
+// ABArmKind is campaign_contact_progress.ab_arm.
+type ABArmKind string
+
+const (
+	ABArmControl ABArmKind = "control"
+	ABArmVariant ABArmKind = "variant"
+)
+
+// StepABArm is one arm of a step's A/B split. A nil VariantID is the Original (control).
+type StepABArm struct {
+	VariantID *uuid.UUID `json:"variant_id"`
+}
+
+// Kind is the stored discriminator for the arm.
+func (a StepABArm) Kind() ABArmKind {
+	if a.VariantID == nil {
+		return ABArmControl
+	}
+	return ABArmVariant
 }
 
 type TaskDeadLetter struct {
@@ -1018,6 +1054,60 @@ type ABWinnerAnalysis struct {
 	WinnerName  string           `json:"winner_name,omitempty"`
 	WinningRule string           `json:"winning_rule"`
 	Confidence  string           `json:"confidence"`
+	// Steps is the contact-based result of every step-scoped split.
+	Steps []ABStepAnalysis `json:"steps"`
+}
+
+// ABStepArmCounts is what the stats query reads for one (step, arm): contacts, not sends.
+type ABStepArmCounts struct {
+	SequenceID uuid.UUID
+	VariantID  *uuid.UUID
+	Sent       int
+	Bounced    int
+	Opened     int
+	Clicked    int
+	Replied    int
+}
+
+// ABStepArmStats is one arm of a step split. Rates are over delivered contacts (sent minus bounced).
+type ABStepArmStats struct {
+	VariantID  *uuid.UUID `json:"variant_id"`
+	Name       string     `json:"name"`
+	IsControl  bool       `json:"is_control"`
+	IsActive   bool       `json:"is_active"`
+	Sent       int        `json:"sent"`
+	Bounced    int        `json:"bounced"`
+	Delivered  int        `json:"delivered"`
+	Opened     int        `json:"opened"`
+	Clicked    int        `json:"clicked"`
+	Replied    int        `json:"replied"`
+	OpenRate   float64    `json:"open_rate"`
+	ClickRate  float64    `json:"click_rate"`
+	ReplyRate  float64    `json:"reply_rate"`
+	BounceRate float64    `json:"bounce_rate"`
+}
+
+// ABStepWinner names the winning arm of a step; VariantID is nil when the Original won.
+type ABStepWinner struct {
+	VariantID *uuid.UUID `json:"variant_id"`
+	IsControl bool       `json:"is_control"`
+	Name      string     `json:"name"`
+}
+
+// ABStepAnalysis is one step's split: every arm, and the winner once the lead is significant.
+type ABStepAnalysis struct {
+	StepID     uuid.UUID        `json:"step_id"`
+	Arms       []ABStepArmStats `json:"arms"`
+	Winner     *ABStepWinner    `json:"winner,omitempty"`
+	Confidence string           `json:"confidence"`
+	PValue     *float64         `json:"p_value,omitempty"`
+	PromotedAt *time.Time       `json:"promoted_at,omitempty"`
+}
+
+// ABAutoPromoteCandidate is a campaign with an unpromoted step split still running.
+type ABAutoPromoteCandidate struct {
+	CampaignID     uuid.UUID
+	OrganizationID uuid.UUID
 }
 
 func DefaultAdvancedOutreachSettings() AdvancedOutreachSettings {
@@ -1066,6 +1156,7 @@ func DefaultAdvancedOutreachSettings() AdvancedOutreachSettings {
 			AutoSuppressOnUnsubWord: true,
 			HoldOnOutOfOffice:       true,
 			OutOfOfficeHoldDays:     OOOHoldDaysDefault,
+			StopAllCampaignsOnReply: false,
 		},
 		InboxTagging: InboxTaggingSettings{
 			// The reversible actions are on from the start, so a classified

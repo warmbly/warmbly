@@ -282,7 +282,19 @@ Open a step's editor and click **A/B test this step**.
 - Select an arm to edit its name, subject, and body. Leave a variant's subject or body blank to reuse the step's own. On a step that replies in the thread, a variant's subject is ignored: the conversation owns it. On a step that opens a conversation, the variant's subject becomes the conversation's for every contact it is sent to, so the follow-ups threading on it reply under that subject.
 - A first variant starts at 50/50. Marking one **inactive** drops it from the split without deleting it; deleting the last one returns the step to a single send.
 
-Once variants have sent, each card shows Sent, Open rate, Reply rate, and Bounce rate. When Warmbly finds a **winner**, a banner names it with the rule and confidence used, and the winning card gets a trophy.
+### Results
+
+Once the step has sent, a **Results by contact** table under the split shows every arm, the Original included: how many contacts were sent that arm at this step, its open, click and reply rates, and how many bounced. Click a row to edit that arm.
+
+- Every number counts contacts, not emails, and each contact counts at most once per metric.
+- Rates are over delivered contacts: bounced contacts are left out of the denominator and shown as their own count.
+- An open, click or reply belongs to the step the contact had most recently been sent when it happened. A reply that lands after the next step went out counts for that next step, even when it answers the earlier email's thread.
+- Automated opens (Apple Mail Privacy Protection, security scanners) are not counted.
+- Arms are recorded as each email is sent, so contacts sent before a step had variants, or before this feature existed, are not counted.
+
+**Winner.** Warmbly ranks arms on the winning rule from outreach settings (**reply rate** by default). It names a winner only when every arm that has sent reached the minimum sample (`30` delivered contacts by default) and the leader beats each other arm in a two-proportion z-test at 95% confidence, corrected for the number of comparisons (Bonferroni). At 99% the confidence reads high. The winning row gets a trophy.
+
+**Auto-promote.** Turn on **Promote the winner automatically** under Settings > Sending (or set `ab_testing.auto_promote_winner` through the [outreach settings API](/api/reference/deliverability-ops/)) and Warmbly hands each step to its winner once the winner is significant, checking about every 15 minutes: new contacts at that step all get the winning arm and the other arms are paused, including the Original when a variant won. The results table marks the step as promoted and the change is recorded in the audit log. A step is promoted once: resume any arm to split traffic again (the Original has a **Resume** button in the results table), and auto-promote leaves that step alone from then on.
 
 </Fold>
 
@@ -336,6 +348,12 @@ When a campaign rotates between sender accounts, a real inbound reply still link
 A new email from a contact that answers no thread of yours counts toward the last campaign email you sent them before it arrived. Mail that arrived before any of your emails to them counts toward none, so importing older mail never stops a sequence.
 
 A reply that lands in the mailbox a send's reply-to named counts the same way, although that mailbox never wrote to the contact. That is what a [shared reply inbox](/guides/mailboxes/#a-shared-reply-inbox) relies on: the reply stops the sequence, runs the reply branch, and is credited to the mailbox that sent the email.
+
+### Other campaigns the contact is in
+
+By default a reply stops only the campaign it answered. A contact who is also a lead of another campaign keeps receiving that campaign's steps. To stop those too, turn on **Settings > Sending > Replies > Hold the contact in every other campaign**. A human reply then holds the contact in every other campaign they are a lead of that has not completed, for a year. Out-of-office and other automatic replies never trigger it. The campaign they answered is left to its own **Stop on reply** and reply branches.
+
+The hold works like any other: it shows on each campaign's **Leads** tab with the reason "replied to another campaign", and **Resume now** lifts it. It never shortens or replaces a pause a member set by hand. The setting is `reply_intent.stop_all_campaigns_on_reply` in the [outreach settings](/api/reference/deliverability-ops/).
 
 When an upgrade repairs a reply marker that was provably created by a synchronized Sent message, the contact resumes at the next due step and the campaign reply totals update with it. An upgrade also restores provable human replies that were received by one campaign mailbox but referenced a thread started by another mailbox in the workspace. Warmbly recalculates address verification from the corrected delivery, open, click, reply, and bounce evidence. It leaves ambiguous historical replies untouched.
 

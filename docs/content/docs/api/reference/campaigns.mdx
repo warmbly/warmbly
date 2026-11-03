@@ -392,7 +392,8 @@ A `CampaignAdvancedSettings` object: the campaign id, the `overrides` block, and
       "auto_pause_on_negative": false,
       "auto_suppress_on_unsubscribe_keyword": true,
       "hold_on_out_of_office": true,
-      "out_of_office_hold_days": 7
+      "out_of_office_hold_days": 7,
+      "stop_all_campaigns_on_reply": false
     },
     "send_time_optimization": {
       "enabled": false,
@@ -439,7 +440,7 @@ Replace the campaign's advanced overrides. **Scope** `WRITE_CAMPAIGNS` · **Org 
     "bounce_pipeline": { "enabled": true, "auto_suppress_on_bounce": true, "auto_suppress_on_complaint": true, "auto_suppress_on_unsubscribe": true, "auto_pause_campaign_on_spike": true, "pause_bounce_rate_threshold": 8, "pause_complaint_rate_threshold": 1.5 },
     "task_reliability": { "enabled": true, "dlq_enabled": true, "max_attempts": 5, "execution_window_seconds": 300 },
     "ab_testing": { "enabled": true, "default_winning_rule": "reply_rate", "auto_promote_winner": false, "min_sample_size": 30 },
-    "reply_intent": { "enabled": true, "positive_keywords": [], "negative_keywords": [], "out_of_office_keywords": [], "question_keywords": [], "auto_create_crm_task": true, "crm_task_intents": ["positive", "question", "neutral", "negative"], "auto_pause_on_negative": false, "auto_suppress_on_unsubscribe_keyword": true, "hold_on_out_of_office": true, "out_of_office_hold_days": 7 },
+    "reply_intent": { "enabled": true, "positive_keywords": [], "negative_keywords": [], "out_of_office_keywords": [], "question_keywords": [], "auto_create_crm_task": true, "crm_task_intents": ["positive", "question", "neutral", "negative"], "auto_pause_on_negative": false, "auto_suppress_on_unsubscribe_keyword": true, "hold_on_out_of_office": true, "out_of_office_hold_days": 7, "stop_all_campaigns_on_reply": false },
     "send_time_optimization": { "enabled": true, "use_contact_timezone": true, "default_contact_timezone": "UTC", "preferred_hours": [9, 14], "weekend_weight_multiplier": 0.5 },
     "preflight": { "enabled": true, "check_tracking_domain": true, "check_unsubscribe_header": true, "check_ab_variant_configured": false, "check_daily_limit": true, "check_schedule_window": true, "check_content_score": true, "min_content_score": 60 },
     "dashboard": { "enabled": true, "show_suppression_log": true, "show_intent_summary": true, "show_dlq_stats": true }
@@ -458,7 +459,7 @@ Replace the campaign's advanced overrides. **Scope** `WRITE_CAMPAIGNS` · **Org 
 List the campaign's A/B variants. A variant scoped to a `step_id` applies to one step, a `null` sequence id is campaign-level. **Scope** `READ_CAMPAIGNS` · **Org permission** `view_campaigns`.
 
 <Callout type="info" title="The Original is a weighted arm">
-For a step-scoped test the step's own email is the Original (control) arm. By default it carries an even share, but you can give it an explicit share by creating one `is_control: true` variant on that `step_id` whose `weight` is the Original's share. That row's `subject`/`body` are ignored; when the control wins, the step's own content is sent. Control rows are excluded from the A/B analysis variant list.
+For a step-scoped test the step's own email is the Original (control) arm. By default it carries an even share, but you can give it an explicit share by creating one `is_control: true` variant on that `step_id` whose `weight` is the Original's share. That row's `subject`/`body` are ignored; when the control wins, the step's own content is sent. Setting that row's `is_active` to `false` takes the Original out of the split, which is how a promoted variant gets every new contact. Control rows are excluded from the campaign-level `variants` list of the A/B analysis; the Original is an arm of its step in `steps`.
 </Callout>
 
 | Parameter | In | Type | Description |
@@ -483,12 +484,15 @@ A `data` array of `CampaignABVariant` objects (no pagination wrapper).
       "body_plain": "Hi {{first_name}}...",
       "is_control": false,
       "is_active": true,
+      "promoted_at": null,
       "created_at": "2026-06-02T10:00:00Z",
       "updated_at": "2026-06-02T10:00:00Z"
     }
   ]
 }
 ```
+
+`promoted_at` is set on the arm that [auto-promotion](#get-ab-analysis) handed its step to (on the `is_control` row when the Original won), and is absent otherwise.
 
 ## Create an A/B variant
 
@@ -572,7 +576,7 @@ Remove a variant. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_sett
 
 `GET /campaigns/:id/ab-analysis`
 
-Return per-variant engagement stats plus the computed winner for the campaign. **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`.
+Return the campaign's A/B results and winners: `steps` holds one entry per step-scoped test, counted in contacts, and `variants` the per-send summary of campaign-level variants. **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`.
 
 | Parameter | In | Type | Description |
 | --- | --- | --- | --- |
@@ -603,9 +607,61 @@ An `ABWinnerAnalysis` object.
   "winner_id": "c1a2...",
   "winner_name": "Subject A",
   "winning_rule": "reply_rate",
-  "confidence": "low"
+  "confidence": "low",
+  "steps": [
+    {
+      "step_id": "7e3b...",
+      "arms": [
+        {
+          "variant_id": null,
+          "name": "Original",
+          "is_control": true,
+          "is_active": true,
+          "sent": 412,
+          "bounced": 6,
+          "delivered": 406,
+          "opened": 221,
+          "clicked": 18,
+          "replied": 14,
+          "open_rate": 54.4,
+          "click_rate": 4.4,
+          "reply_rate": 3.4,
+          "bounce_rate": 1.5
+        },
+        {
+          "variant_id": "c1a2...",
+          "name": "Subject B",
+          "is_control": false,
+          "is_active": true,
+          "sent": 405,
+          "bounced": 4,
+          "delivered": 401,
+          "opened": 236,
+          "clicked": 22,
+          "replied": 33,
+          "open_rate": 58.9,
+          "click_rate": 5.5,
+          "reply_rate": 8.2,
+          "bounce_rate": 1.0
+        }
+      ],
+      "winner": { "variant_id": "c1a2...", "is_control": false, "name": "Subject B" },
+      "confidence": "high",
+      "p_value": 0.0034
+    }
+  ]
 }
 ```
+
+Each step entry lists the Original (`variant_id: null`) and every variant of that step, including paused ones.
+
+- `sent` is the number of contacts sent that arm at this step. Arms are recorded as each email is sent, so contacts sent before the step had variants are not counted.
+- `opened`, `clicked` and `replied` count contacts, at most once each. An event is credited to the step the contact had most recently been sent when it happened, so a reply after the next step went out belongs to that next step. Automated opens are not counted.
+- Rates are percentages of `delivered` (`sent` minus `bounced`); `bounce_rate` is of `sent`.
+- `winner` is present once every arm that has sent has at least `ab_testing.min_sample_size` delivered contacts and the leader on `winning_rule` beats each other arm in a two-sided two-proportion z-test. `p_value` is the largest of those p-values times the number of comparisons (Bonferroni), capped at `1`. `confidence` is `high` below `0.01`, `medium` below `0.05`, `low` otherwise (no winner), and `none` before any contact was sent.
+- `promoted_at` is set once auto-promotion handed the step to its winner. With `ab_testing.auto_promote_winner` on, a significant winner gets every new contact at its step and the other arms, the Original included, are set inactive. A step is promoted at most once, and the change is audited as a campaign update.
+
+The top-level `winner_id`, `winner_name` and `confidence` describe campaign-level variants only.
 
 ## List attachments
 
@@ -822,7 +878,7 @@ Read whether one contact's flow inside this campaign is currently held. A hold p
 }
 ```
 
-`hold` is absent when the lead is not held, including for a dated hold that has since expired. `until` is absent when the hold has no end, in which case only a resume lifts it. `source` is `out_of_office`, `inbox_tagging`, `manual`, or `cc` while the contact is [copied on another lead's emails](#set-a-leads-cc) in this campaign; a `cc` hold's `reason` is that lead's address.
+`hold` is absent when the lead is not held, including for a dated hold that has since expired. `until` is absent when the hold has no end, in which case only a resume lifts it. `source` is `out_of_office`, `inbox_tagging` (a classified reply, or with `reply_intent.stop_all_campaigns_on_reply` on, a reply to another campaign), `manual`, or `cc` while the contact is [copied on another lead's emails](#set-a-leads-cc) in this campaign; a `cc` hold's `reason` is that lead's address.
 
 ### Errors
 

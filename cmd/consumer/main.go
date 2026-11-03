@@ -253,6 +253,7 @@ func main() {
 	integrationRepoC := repository.NewIntegrationRepository(primaryDB.Pool)
 	integrationServiceC := integration.NewService(integrationRepoC, cipherService, integration.NewOAuthManager())
 	webhookService.WireDispatchSink(integrationServiceC.DispatchAny)
+	integrationServiceC.SetEvents(webhookService)
 	// Replies, opens and clicks are raised here, so the Salesforce outbox
 	// records them here too; the backend drains it. Automation upserts take
 	// the native path as well.
@@ -305,7 +306,11 @@ func main() {
 	// no key is configured, and every feature that reads it stays off.
 	var typeSafeClient *typesafe.Client
 	if key := config.TypeSafeAPIKey(); key != "" {
-		typeSafeClient = typesafe.NewClient(key, typesafe.WithBillingRedis(redisCache.Client))
+		endpoint, err := config.TypeSafeEndpoint()
+		if err != nil {
+			log.Fatal(err)
+		}
+		typeSafeClient = typesafe.NewClient(key, typesafe.WithBillingRedis(redisCache.Client), typesafe.WithEndpoint(endpoint))
 	}
 	if aiProviderC != nil {
 		replyclassify.SetModelClassifier(func(ctx context.Context, system, user string) (string, error) {
@@ -602,6 +607,9 @@ func main() {
 
 	// Start DLQ auto-retry loop in background (every 60 seconds)
 	go jobsService.StartDLQRetryLoop(ctx, 60*time.Second)
+
+	// Hand significant step A/B winners their step when auto-promote is on.
+	go jobsService.StartABAutoPromoteLoop(ctx, 15*time.Minute)
 
 	// Start warmup health evaluation sweep (every hour)
 	go jobsService.StartWarmupHealthSweep(ctx, 1*time.Hour)

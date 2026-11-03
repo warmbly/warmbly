@@ -31,7 +31,7 @@ Choose where warmup mail is filed: **Its own folder** (the default), **Leave it 
 
 <Step>
 
-Pause to stop both sending and receiving warmup mail, or Stop to also turn diagnostic participation off, both while keeping the ramp history.
+Pause to stop both sending and receiving warmup mail, or Stop to also turn diagnostic participation off, both while keeping the ramp history. Stop also lifts the [cold sending ceiling](#graduating-to-cold-sending); Pause keeps it.
 
 </Step>
 
@@ -220,7 +220,15 @@ The partner cap exists because a mailbox never writes to the same partner twice 
 
 Warmup hours are read in the mailbox's timezone: its own when one is set on the **Settings** tab of its drawer, otherwise the workspace timezone under **Settings > Profile > Timezones**, and UTC when neither is set. Set the workspace timezone once and every mailbox that follows it reads its warmup hours in the team's day. A mailbox with its own timezone keeps it, and changing the workspace timezone does not change any mailbox's hours.
 
-While [Sending behavior](/guides/sending-behavior/) is on, which it is for a newly connected mailbox (a warmup-only mailbox enrolled from a self-hosted instance starts with it off), warmup only sends when both the warmup hours and that workday allow it, and the Warmup tab says so above the hours. A mailbox connected after its workday ends therefore sends its first warmup email the next working morning. The workday's working days default to Monday to Friday, so warmup skips the weekend even when the warmup days include it. When that happens the Warmup tab names the skipped days, with a button that adds them to the working days (for example **Work Saturday and Sunday too**). Switch the mailbox to **Fixed schedule** on its **Sending** tab to send on the warmup hours and days alone, without the workday. Changing the warmup hours, days or timezone (the mailbox's own, or the workspace's for a mailbox that follows it), or switching sending behavior on or off, moves the queued warmup send at once. The mailbox list shows when the next warmup send is queued under the day's count.
+Choose **Sending days** on the **Warmup** tab. **Every day** explicitly includes Saturday and Sunday; **Weekdays** selects Monday to Friday. You can also select individual days. Every selected day applies to warmup, even when the sending plan's working days exclude it. This does not change campaign working days.
+
+**Follow sending plan** uses the working days on the **Sending** tab, which default to Monday to Friday. With **Fixed schedule**, it means every day. Existing mailboxes with no selected warmup days keep this inherited schedule. The day picker shows the days that apply; selecting a day switches to an explicit warmup schedule.
+
+While [Sending behavior](/guides/sending-behavior/) is on, warmup uses the overlap between its configured hours and the day's varied workday, including the break. A warmup window starting at 08:00 still waits until 09:15 if that day's workday opens then. On an explicitly selected weekend day, warmup rolls the same hours and break without opening that day for campaigns. The Warmup tab shows the workday's start and end ranges and warns when the hours cannot overlap. Pending sends wait and recheck after five minutes until the settings allow sending. Switch to **Fixed schedule** on the **Sending** tab to use the warmup hours alone.
+
+Changing warmup hours, days or timezone, or switching sending behavior on or off, moves the queued warmup send to the new schedule as soon as you save. To recalculate an existing queued time, choose its day preset again and save. The mailbox list refreshes its queued time and shows whether warmup follows the sending plan or an explicit set of days. **Start warmup** for several mailboxes offers the same day presets; **Follow sending plan** resolves separately for each locally warmed mailbox and is hidden when the selection includes a Cloud-linked mailbox. Volume, consent, health and provider restrictions still apply on every selected day.
+
+Bulk start waits until mailbox ownership is confirmed. If ownership refreshes while the dialog is open, your settings stay visible and new submissions wait for the check to finish. An operation already in progress finishes for its original mailbox selection and leaves any other selected mailboxes alone. Mailboxes that fail to start remain selected for retry.
 
 Warmup hours must end later than they start on the same day. Equal or reversed hours are rejected, including a change to only one endpoint that would invalidate the stored window. Existing invalid windows are not widened or corrected automatically: pending sends stay unstarted and recheck after five minutes, while admin monitoring shows **Invalid warmup sending hours** until the configured window is corrected. Other send protections still apply after correction; this does not replay uncertain sends or confirm mailbox recovery.
 
@@ -398,7 +406,7 @@ The standing follows the address, not the connection. Removing a mailbox from th
 
 ## Graduating to cold sending
 
-Diagnostic-history mailboxes start cold sending at a conservative ceiling of five/day. Synthetic age never increases it. Recent confirmed human replies to actual campaign recipients permit bounded increases, subject to calendar days and negative feedback. Missing evidence leaves readiness/full-cap dates unknown. This product policy is not a provider-approved safe volume. See [campaign pacing](/guides/campaigns/).
+Diagnostic-history mailboxes start cold sending at a conservative ceiling of five/day. Synthetic age never increases it. Recent confirmed human replies to actual campaign recipients permit bounded increases, subject to calendar days and negative feedback. Missing evidence leaves readiness/full-cap dates unknown. This product policy is not a provider-approved safe volume. The ceiling applies while warmup is running or paused. Stopping warmup removes it, leaving the mailbox's own daily cap and minimum gap, and starting warmup again restores it from the recent reply evidence. See [easing out of warmup](/guides/campaigns/#easing-out-of-warmup).
 
 </Fold>
 

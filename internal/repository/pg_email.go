@@ -2238,7 +2238,8 @@ func (r *emailRepository) deleteOnce(ctx context.Context, orgID, emailAccountID 
 //     paused mailbox shifts its anchor forward by the paused duration so the
 //     ramp continues where it left off; an already-active mailbox is a no-op.
 //   - pause: stamps warmup_paused_at only while actively warming.
-//   - disable: clears warmup entirely (next restart begins a fresh ramp).
+//   - disable/stop: pauses the anchor and stamps warmup_stopped_at, which
+//     lifts the cold ceiling; warmup history is kept, so a restart resumes.
 func (r *emailRepository) SetWarmupLifecycle(ctx context.Context, orgID, emailAccountID, action string) (*models.Email, *errx.Error) {
 	var setClause string
 	switch action {

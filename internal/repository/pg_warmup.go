@@ -949,7 +949,19 @@ type ColdRampState struct {
 	ConfirmedReplies  int
 	WarmupStartedAt   *time.Time
 	ColdRampStartedAt *time.Time
-	Placements        []time.Time
+	// WarmupStoppedAt is set only in the Stop state (test_mode off); a pause,
+	// even of a stopped mailbox, or a status-only stamp does not count.
+	WarmupStoppedAt *time.Time
+	Placements      []time.Time
+}
+
+// CeilingApplies is the one gate every reader of the cold ceiling asks: a
+// mailbox that warmed, unless its latest warmup lifecycle event is a stop.
+func (s ColdRampState) CeilingApplies() bool {
+	if s.WarmupStartedAt == nil {
+		return false
+	}
+	return s.WarmupStoppedAt == nil || s.WarmupStoppedAt.Before(*s.WarmupStartedAt)
 }
 
 func (s ColdRampState) WithKnownWarmup(startedAt *time.Time) ColdRampState {
@@ -966,7 +978,8 @@ func (r *warmupRepository) ColdRampStateForAccounts(ctx context.Context, account
 	}
 
 	rows, err := resultDB(ctx, r.db).Query(ctx, `
-		SELECT id, warmup, cold_ramp_started_at
+		SELECT id, warmup, cold_ramp_started_at,
+		       CASE WHEN test_mode='off' THEN warmup_stopped_at END
 		FROM email_accounts
 		WHERE id = ANY($1::uuid[])
 	`, accountIDs)
@@ -977,7 +990,7 @@ func (r *warmupRepository) ColdRampStateForAccounts(ctx context.Context, account
 	for rows.Next() {
 		var id uuid.UUID
 		var state ColdRampState
-		if err := rows.Scan(&id, &state.WarmupStartedAt, &state.ColdRampStartedAt); err != nil {
+		if err := rows.Scan(&id, &state.WarmupStartedAt, &state.ColdRampStartedAt, &state.WarmupStoppedAt); err != nil {
 			return nil, err
 		}
 		out[id] = state

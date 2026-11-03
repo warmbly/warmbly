@@ -44,6 +44,46 @@ func (h *Handler) gateUnibox(c *gin.Context) bool {
 	return true
 }
 
+func invalidUniboxFilter(msg string) *errx.Error {
+	return errx.NewWithIdentifier(errx.BadRequest, "invalid_filter", msg)
+}
+
+// parseUniboxTime reads YYYY-MM-DD as UTC midnight (dateOnly) or an RFC 3339
+// instant; a query string decodes an unescaped "+" offset to a space.
+func parseUniboxTime(raw string) (t time.Time, dateOnly bool, ok bool) {
+	raw = strings.TrimSpace(raw)
+	if d, err := time.ParseInLocation(time.DateOnly, raw, time.UTC); err == nil {
+		return d, true, true
+	}
+	if ts, err := time.Parse(time.RFC3339Nano, strings.Replace(raw, " ", "+", 1)); err == nil {
+		return ts, false, true
+	}
+	return time.Time{}, false, false
+}
+
+// parseUniboxWindow turns since/until into [since, before). A date-only until
+// keeps that whole UTC day; an RFC 3339 until is the exclusive instant.
+func parseUniboxWindow(sinceRaw, untilRaw string) (since, before *time.Time, xerr *errx.Error) {
+	if sinceRaw != "" {
+		t, _, ok := parseUniboxTime(sinceRaw)
+		if !ok {
+			return nil, nil, invalidUniboxFilter("since must be a date (YYYY-MM-DD) or an RFC 3339 timestamp.")
+		}
+		since = &t
+	}
+	if untilRaw != "" {
+		t, dateOnly, ok := parseUniboxTime(untilRaw)
+		if !ok {
+			return nil, nil, invalidUniboxFilter("until must be a date (YYYY-MM-DD) or an RFC 3339 timestamp.")
+		}
+		if dateOnly {
+			t = t.AddDate(0, 0, 1)
+		}
+		before = &t
+	}
+	return since, before, nil
+}
+
 func (h *Handler) GetUniboxIncoming(c *gin.Context) {
 	defer boundUniboxRead(c)()
 
@@ -144,16 +184,27 @@ func (h *Handler) GetUniboxIncoming(c *gin.Context) {
 		params.AgentDraft = &v
 	}
 
-	// Parse date filters
-	if sinceStr := c.Query("since"); sinceStr != "" {
-		if since, err := time.Parse("2006-01-02", sinceStr); err == nil {
-			params.Since = &since
-		}
+	since, before, xerr := parseUniboxWindow(c.Query("since"), c.Query("until"))
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
 	}
-	if untilStr := c.Query("until"); untilStr != "" {
-		if until, err := time.Parse("2006-01-02", untilStr); err == nil {
-			params.Until = &until
+	params.Since, params.Before = since, before
+
+	for _, f := range []struct {
+		name string
+		dst  **uuid.UUID
+	}{{"campaign_id", &params.CampaignID}, {"contact_id", &params.ContactID}} {
+		raw := strings.TrimSpace(c.Query(f.name))
+		if raw == "" {
+			continue
 		}
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			errx.Handle(c, invalidUniboxFilter(f.name+" must be a UUID."))
+			return
+		}
+		*f.dst = &id
 	}
 
 	// Parse email account filter. Accepts either:

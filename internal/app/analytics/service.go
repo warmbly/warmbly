@@ -1041,6 +1041,9 @@ func coldRampNotice(email *models.Email, states map[uuid.UUID]repository.ColdRam
 		return nil
 	}
 	state := states[email.ID].WithKnownWarmup(email.Warmup)
+	if !state.CeilingApplies() {
+		return nil
+	}
 	info := warmupramp.Notice(state.WarmupStartedAt, state.ColdRampStartedAt, state.Placements, email.CampaignLimit, now, state.ConfirmedReplies)
 	if info == nil || info.Ceiling >= email.CampaignLimit {
 		return nil

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"math/rand"
 	"net/mail"
 	"regexp"
@@ -15,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/pkg/dsn"
 	"github.com/warmbly/warmbly/internal/pkg/emailverify"
 	"github.com/warmbly/warmbly/internal/pkg/typesafe"
 	"github.com/warmbly/warmbly/internal/utils/validate"
@@ -94,6 +96,8 @@ type Service interface {
 
 	ProcessIncomingReply(ctx context.Context, emailAccountID uuid.UUID, msg *models.EmailMessageStoreData) *errx.Error
 	GetABWinnerAnalysis(ctx context.Context, organizationID, campaignID uuid.UUID) (*models.ABWinnerAnalysis, *errx.Error)
+	// PromoteStepWinners applies auto_promote_winner to every running step split; returns how many it promoted.
+	PromoteStepWinners(ctx context.Context) (int, *errx.Error)
 
 	// CreateContactTask creates a CRM task for a contact, used by the campaign
 	// "create task" action node. createdBy is the campaign owner; the task's
@@ -916,42 +920,39 @@ func (s *service) SelectVariant(ctx context.Context, organizationID, campaignID,
 	if err != nil {
 		return nil, toErrx(err)
 	}
-	// Partition active variants into step-scoped (this step) and campaign-level.
-	var stepVariants, campaignVariants []models.CampaignABVariant
+	// Partition variants into this step's rows (paused ones too: a paused
+	// Original takes the step's own copy out of the split) and active campaign-level ones.
+	var stepRows, campaignVariants []models.CampaignABVariant
 	for _, v := range variants {
-		if !v.IsActive {
-			continue
-		}
 		if v.SequenceID != nil {
 			if *v.SequenceID == sequenceID {
-				stepVariants = append(stepVariants, v)
+				stepRows = append(stepRows, v)
 			}
-		} else {
+		} else if v.IsActive {
 			campaignVariants = append(campaignVariants, v)
 		}
 	}
 
 	var selected *models.CampaignABVariant
-	if len(stepVariants) > 0 {
-		// Step-scoped: the step's own content is the control arm. Contacts split
-		// across the original PLUS the active variants by weight, deterministically
-		// per (contact, step). The original's share is the weight of its is_control
-		// row when the user has set one, otherwise the default control weight. The
-		// control arm carries the zero id (or an is_control row, whose content is
-		// ignored); if it wins we send the step's own content.
-		controlWeight := abControlWeight
-		arms := make([]models.CampaignABVariant, 0, len(stepVariants))
-		for _, v := range stepVariants {
-			if v.IsControl {
-				controlWeight = v.Weight
-				continue
-			}
-			arms = append(arms, v)
-		}
-		pool := append([]models.CampaignABVariant{{Weight: controlWeight}}, arms...)
-		selected = pickVariantDeterministic(pool, contactID.String()+":"+sequenceID.String())
-		if selected != nil && (selected.ID == uuid.Nil || selected.IsControl) {
+	var stepArm *models.StepABArm
+	if pool, handled := stepSplitPool(stepRows); handled {
+		// Step-scoped: the step's own content is the control arm (zero id).
+		// Contacts split across the Original plus the active variants by weight,
+		// deterministically per (contact, step). The arm is reported only when
+		// two or more arms are in the draw, so a promoted step stops counting.
+		if len(pool) == 0 {
 			return &models.VariantSelection{Subject: subject, BodyHTML: bodyHTML, BodyPlain: bodyPlain}, nil
+		}
+		selected = pickVariantDeterministic(pool, contactID.String()+":"+sequenceID.String())
+		if selected != nil && len(pool) > 1 {
+			stepArm = &models.StepABArm{}
+			if selected.ID != uuid.Nil {
+				id := selected.ID
+				stepArm.VariantID = &id
+			}
+		}
+		if selected == nil || selected.ID == uuid.Nil {
+			return &models.VariantSelection{Subject: subject, BodyHTML: bodyHTML, BodyPlain: bodyPlain, StepArm: stepArm}, nil
 		}
 	} else if len(campaignVariants) > 0 {
 		// Campaign-level (legacy): keep the assignment-based selection so a
@@ -991,6 +992,7 @@ func (s *service) SelectVariant(ctx context.Context, organizationID, campaignID,
 		Subject:   finalSubject,
 		BodyHTML:  finalHTML,
 		BodyPlain: finalPlain,
+		StepArm:   stepArm,
 	}, nil
 }
 
@@ -1300,7 +1302,8 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 	// when an out-of-office hold lifts, for the notification to name.
 	replyClaimToken := uuid.Nil
 	replyClaimCompleted := false
-
+	// heldOthers is a reply that held the contact in their other campaigns.
+	heldOthers := false
 	var campaignID *uuid.UUID
 	var sequenceID *uuid.UUID
 	var contactID *uuid.UUID
@@ -1502,6 +1505,14 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 				}
 				return nil
 			}
+			// Before the processed marker, so a failed hold leaves the reply to be retried.
+			if settings.ReplyIntent.Enabled && settings.ReplyIntent.StopAllCampaignsOnReply {
+				held, err := s.holdOtherCampaigns(ctx, ctID, cID)
+				if err != nil {
+					return toErrx(err)
+				}
+				heldOthers = held
+			}
 		}
 		if s.evidence != nil {
 			kind := "replied"
@@ -1618,9 +1629,16 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 	}
 
 	actionTaken := ""
+	if heldOthers {
+		actionTaken = "held_other_campaigns"
+	}
 	if settings.ReplyIntent.AutoPauseOnNegative && intent == models.ReplyIntentNegative && campaignID != nil {
 		_ = s.campaignRepo.UpdateStatus(ctx, *campaignID, "paused")
-		actionTaken = "paused_campaign"
+		if actionTaken == "" {
+			actionTaken = "paused_campaign"
+		} else {
+			actionTaken += ",paused_campaign"
+		}
 	}
 
 	// Reply-based opt-out is what makes the plain "just reply and I'll stop"
@@ -1758,6 +1776,11 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 	}
 	addTagVerdict(payload, tagged)
 	s.emit(ctx, *account.OrganizationID, models.WebhookEventCampaignReplyReceived, payload)
+	if !models.IsAutomatedIntent(intent) && s.answersWorkspaceSend(ctx, msg, *account.OrganizationID) {
+		inbox := maps.Clone(payload)
+		inbox["trigger"] = "inbox_reply"
+		s.emit(ctx, *account.OrganizationID, models.WebhookEventInboxReplyReceived, inbox)
+	}
 	if intent == models.ReplyIntentNegative {
 		// Negative/unsubscribe-leaning replies also fire the unsubscribe event
 		// only when we actually suppressed; otherwise the reply event is enough.
@@ -1793,6 +1816,26 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 	}
 
 	return nil
+}
+
+// answersWorkspaceSend reports whether the message's In-Reply-To names a
+// campaign step or composed email one of the organization's mailboxes sent.
+func (s *service) answersWorkspaceSend(ctx context.Context, msg *models.EmailMessageStoreData, orgID uuid.UUID) bool {
+	for _, mid := range msg.InReplyTo {
+		candidate := cleanMessageID(mid)
+		if candidate == "" {
+			continue
+		}
+		task, err := s.taskRepo.GetTaskByMessageID(ctx, candidate)
+		if err != nil || task == nil || (task.TaskType != "campaign" && task.TaskType != "email") {
+			continue
+		}
+		sender, xerr := s.emailRepo.GetByID(ctx, task.EmailAccountID)
+		if xerr == nil && sender != nil && sender.OrganizationID != nil && *sender.OrganizationID == orgID {
+			return true
+		}
+	}
+	return false
 }
 
 // holdForOutOfOffice parks the contact's next step until they are back: the
@@ -1853,6 +1896,19 @@ func (s *service) holdForOutOfOffice(ctx context.Context, orgID, contactID uuid.
 
 func ptrTime(t time.Time) *time.Time {
 	return &t
+}
+
+// holdOtherCampaigns parks a contact who replied in every other campaign they
+// are a lead of, as a dated automatic hold a member resumes from the Leads tab.
+// Idempotent, so a failure is returned and the unprocessed reply is retried.
+func (s *service) holdOtherCampaigns(ctx context.Context, contactID, answered uuid.UUID) (bool, error) {
+	until := time.Now().UTC().AddDate(0, 0, models.ReplyHoldOtherCampaignsDays)
+	held, err := s.campaignProgressRepo.HoldLeadElsewhere(ctx, contactID, answered, &until,
+		"replied to another campaign", models.LeadHoldSourceInboxTagging)
+	if err != nil {
+		return false, err
+	}
+	return len(held) > 0, nil
 }
 
 // verifyEventOwnership refuses a deliverability event whose campaign, contact
@@ -1949,30 +2005,41 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 		provider = "manual"
 	}
 
-	// A bounce reason that does not name the recipient is classified so a
-	// reputation or policy block is not held against the address. The verdict
-	// goes in metadata only: the reason text is the contract downstream
-	// classifiers read. One call per ambiguous bounce, no cache.
-	var verdict *bounceclass.Verdict
-	if eventType == models.DeliverabilityEventBounce && s.bounceJudge != nil &&
-		strings.TrimSpace(req.Reason) != "" && !emailverify.NamesRecipient(req.Reason) {
-		// Bounded: a bounce storm must not queue behind a rate-limited judge.
-		jctx, cancel := context.WithTimeout(typesafe.WithUsage(ctx, "bounce_classification", organizationID.String()), bounceJudgeTimeout)
-		v, vErr := bounceclass.Classify(jctx, s.bounceJudge, req.Reason)
-		cancel()
-		switch {
-		case vErr != nil:
-			log.Debug().Err(vErr).Str("recipient", req.RecipientEmail).Msg("bounce reason not classified")
-		case v != nil:
-			verdict = v
+	// A bounce's status code and wording decide first whether the address is
+	// what failed; the judge only classifies a reason they cannot place. The
+	// cause goes in metadata only: the reason text is the contract downstream
+	// classifiers read. One judge call per ambiguous bounce, no cache.
+	var cause string
+	addressFine := false
+	if eventType == models.DeliverabilityEventBounce {
+		rule := dsn.Blame(req.Reason)
+		cause, addressFine = string(rule), rule.AddressIsFine()
+		source := "rule"
+		if rule == dsn.CauseUnknown && s.bounceJudge != nil && strings.TrimSpace(req.Reason) != "" {
+			// Bounded: a bounce storm must not queue behind a rate-limited judge.
+			jctx, cancel := context.WithTimeout(typesafe.WithUsage(ctx, "bounce_classification", organizationID.String()), bounceJudgeTimeout)
+			v, vErr := bounceclass.Classify(jctx, s.bounceJudge, req.Reason)
+			cancel()
+			switch {
+			case vErr != nil:
+				log.Debug().Err(vErr).Str("recipient", req.RecipientEmail).Msg("bounce reason not classified")
+			case v != nil:
+				cause, addressFine, source = v.Cause, v.AddressIsFine(), "judge"
+				if req.Metadata == nil {
+					req.Metadata = map[string]interface{}{}
+				}
+				req.Metadata["bounce_cause_confidence"] = v.Confidence
+			}
+		}
+		if cause != "" {
 			if req.Metadata == nil {
 				req.Metadata = map[string]interface{}{}
 			}
-			req.Metadata["bounce_cause"] = v.Cause
-			req.Metadata["bounce_cause_confidence"] = v.Confidence
+			req.Metadata["bounce_cause"] = cause
+			req.Metadata["bounce_cause_source"] = source
 		}
 	}
-	addressFine := verdict.AddressIsFine()
+	req.AddressKept = addressFine
 
 	if err := s.repo.CreateDeliverabilityEvent(ctx, &models.DeliverabilityEvent{
 		OrganizationID: organizationID,
@@ -2005,9 +2072,8 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 		log.Info().
 			Str("organization_id", organizationID.String()).
 			Str("recipient", req.RecipientEmail).
-			Str("bounce_cause", verdict.Cause).
-			Float64("confidence", verdict.Confidence).
-			Msg("bounce classified as not about the address; recipient not suppressed and lead kept")
+			Str("bounce_cause", cause).
+			Msg("bounce not about the address; recipient not suppressed and lead kept")
 	}
 
 	if shouldSuppress {
@@ -2119,7 +2185,7 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 				title := "Bounce: " + req.RecipientEmail
 				// A reputation block is about the mailbox, not the lead, so
 				// the title says who refused rather than who bounced.
-				if addressFine && verdict.Cause == bounceclass.CauseReputationBlock {
+				if addressFine && cause == bounceclass.CauseReputationBlock {
 					title = "Provider refused mail from " + displayname.DisplayableOr(camp.Name, "a campaign")
 				}
 				if eventType == models.DeliverabilityEventComplaint {
@@ -2671,6 +2737,11 @@ func (s *service) GetABWinnerAnalysis(ctx context.Context, organizationID, campa
 		Variants:    stats,
 		WinningRule: settings.ABTesting.DefaultWinningRule,
 	}
+	steps, err := s.stepAnalyses(ctx, campaignID, settings)
+	if err != nil {
+		return nil, toErrx(err)
+	}
+	analysis.Steps = steps
 
 	if len(stats) == 0 {
 		analysis.Confidence = "none"

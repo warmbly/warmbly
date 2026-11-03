@@ -41,8 +41,8 @@ Check today's rolled workday at the top of the tab to see when the mailbox will 
 - It can only lower volume or delay a send. It never raises a mailbox above its own daily cap.
 - Times are local to the mailbox's timezone, or the workspace timezone when it has none.
 - Editing the ranges does not change today. The new ranges apply from the next roll.
-- Warmup keeps the same working days and hours, but does not count against the cold limits.
-- Warmup waits for the workday too, so a mailbox connected after its hours end sends its first warmup email at the start of the next working day. The mailbox list shows when the next one is queued.
+- Warmup uses the workday hours and break within its own sending window. It follows working days only when its **Sending days** is set to **Follow sending plan**. Explicit warmup days, including weekends, take precedence for warmup alone.
+- Warmup waits for the workday too, so a mailbox connected after its hours end sends its first warmup email at the next allowed warmup window. The mailbox list shows when the next one is queued.
 - Switching to Fixed schedule, back again, or changing the working days moves the mailbox's queued warmup send, and the next send of every active campaign it backs, straight away onto whichever schedule now applies.
 
 <Fold>
@@ -75,7 +75,7 @@ While it is off, the rest of the tab is greyed out and read-only, because none o
 
 | Setting | Default range | What it controls |
 |---------|---------------|------------------|
-| Working days | Mon-Fri | Days this mailbox sends anything at all, cold and warmup alike |
+| Working days | Mon-Fri | Campaign working days; also warmup days when following the sending plan |
 | Workday start | `09:03` to `09:27` | The mailbox opens at a different minute each day |
 | Workday finish | `17:18` to `17:56` | Nothing is scheduled after the day's rolled finish |
 | Lunch break | starts `12:00`-`13:30`, lasts `30`-`60` min | A quiet gap in the middle of the day |
@@ -112,7 +112,7 @@ Sending behavior can only ever **lower** volume or **delay** a send. It can neve
 - The day's rolled target is applied as a minimum against the mailbox's daily cap and the campaign's daily limit. If the mailbox and campaign are capped at `50` and the day rolls `31`, the day is at most `31`. Setting a ceiling of `30` clips any higher roll to `30`; raise the ceiling if you want the whole configured range available. More capacity does not guarantee more sends: leads, windows, warmup graduation and other safety controls still apply.
 - The delay range replaces the mailbox's fixed minimum gap while behavior is on.
 - A campaign's own sending windows still apply. A send has to satisfy both calendars: the campaign's window in the campaign timezone, and the mailbox's workday in the mailbox timezone.
-- Warmup follows the same working days, hours, and break, so warmup mail is not arriving at 03:00 from a mailbox whose campaign mail keeps office hours. Warmup is **not** charged against the cold daily or hourly ceilings; it has its own ramp.
+- Warmup follows the same hours and break within its own sending window. Its selected days apply independently; **Follow sending plan** inherits the campaign working days. Warmup is **not** charged against the cold daily or hourly ceilings; it has its own ramp.
 - Smart send for your own replies follows the workday but is never charged against the cold budgets.
 
 <Callout type="warn" title="The hourly ceiling is doing real work">

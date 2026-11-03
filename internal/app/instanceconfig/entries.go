@@ -137,6 +137,12 @@ var table = []Entry{
 		Resolve:    envValue("TYPESAFE_API_KEY"),
 	},
 	{
+		Key: "TYPESAFE_ENDPOINT", Group: GroupDeployment, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "URL the TypeSafe judgments are sent to.",
+		DocsAnchor: docsAI,
+		Resolve:    envOr("TYPESAFE_ENDPOINT", "https://api.typesafe.ai/v1/systemone"),
+	},
+	{
 		Key: "INBOX_TAGGING_ENABLED", Group: GroupDeployment, RuntimeChangeable: ChangeBootOnly,
 		Effect:     "Enables TypeSafe classification of inbound message content when its API key is configured.",
 		DocsAnchor: docsAI,

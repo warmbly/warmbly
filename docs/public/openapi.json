@@ -10222,6 +10222,28 @@
             }
           },
           {
+            "name": "address",
+            "in": "query",
+            "required": false,
+            "description": "Conversations with this address in either direction: messages from it or sent to it (substring of the From or To entries).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "required": false,
+            "description": "`sent` returns only messages from one of your mailboxes, `received` only the rest. Omit for both.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "sent",
+                "received"
+              ]
+            }
+          },
+          {
             "name": "subject",
             "in": "query",
             "required": false,
@@ -10296,20 +10318,38 @@
             "name": "since",
             "in": "query",
             "required": false,
-            "description": "Lower bound on date, `YYYY-MM-DD`.",
+            "description": "Earliest message date, inclusive. A date (`YYYY-MM-DD`) starts at 00:00 UTC that day; an RFC 3339 timestamp is used exactly. Any other value returns `400` with code `invalid_filter`.",
             "schema": {
-              "type": "string",
-              "format": "date"
+              "type": "string"
             }
           },
           {
             "name": "until",
             "in": "query",
             "required": false,
-            "description": "Upper bound on date, `YYYY-MM-DD`.",
+            "description": "Latest message date. A date (`YYYY-MM-DD`) includes that whole UTC day; an RFC 3339 timestamp is an exclusive bound. Any other value returns `400` with code `invalid_filter`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "campaign_id",
+            "in": "query",
+            "required": false,
+            "description": "Only conversations tied to one of this campaign's sends: the sent copy, a reply naming it, and anything threaded with either. A malformed id returns `400` (`invalid_filter`); a campaign outside the workspace returns `404`.",
             "schema": {
               "type": "string",
-              "format": "date"
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "contact_id",
+            "in": "query",
+            "required": false,
+            "description": "Only conversations tied to a campaign send to this contact, plus mail from or to the contact's address. With `campaign_id`, only that campaign's conversations with the contact, without the address match. A malformed id returns `400` (`invalid_filter`); a contact outside the workspace returns `404`.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -10353,7 +10393,7 @@
             }
           },
           "400": {
-            "description": "Invalid cursor, limit, or no organization selected.",
+            "description": "Invalid cursor, limit, folder, date, `campaign_id` or `contact_id`, or no organization selected.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10374,6 +10414,16 @@
           },
           "403": {
             "description": "Missing scope/permission, or organization lacks unified-inbox access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`campaign_id` or `contact_id` names no campaign or contact in the workspace.",
             "content": {
               "application/json": {
                 "schema": {
@@ -34447,6 +34497,14 @@
             "type": "object",
             "additionalProperties": true
           },
+          "promoted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When auto-promotion handed this arm's step to it; on the is_control row when the Original won."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -34611,7 +34669,118 @@
           },
           "confidence": {
             "type": "string",
-            "description": "Winner confidence (e.g. low, medium, high)."
+            "description": "Winner confidence for campaign-level variants (e.g. low, medium, high)."
+          },
+          "steps": {
+            "type": "array",
+            "description": "One entry per step-scoped A/B test, counted in contacts.",
+            "items": {
+              "type": "object",
+              "required": [
+                "step_id",
+                "arms",
+                "confidence"
+              ],
+              "properties": {
+                "step_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "arms": {
+                  "type": "array",
+                  "description": "The Original (variant_id null) and every variant of the step.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "variant_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "uuid"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "is_control": {
+                        "type": "boolean"
+                      },
+                      "is_active": {
+                        "type": "boolean"
+                      },
+                      "sent": {
+                        "type": "integer",
+                        "description": "Contacts sent this arm at this step."
+                      },
+                      "bounced": {
+                        "type": "integer"
+                      },
+                      "delivered": {
+                        "type": "integer",
+                        "description": "sent minus bounced; the denominator of the open, click and reply rates."
+                      },
+                      "opened": {
+                        "type": "integer"
+                      },
+                      "clicked": {
+                        "type": "integer"
+                      },
+                      "replied": {
+                        "type": "integer"
+                      },
+                      "open_rate": {
+                        "type": "number"
+                      },
+                      "click_rate": {
+                        "type": "number"
+                      },
+                      "reply_rate": {
+                        "type": "number"
+                      },
+                      "bounce_rate": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                },
+                "winner": {
+                  "type": "object",
+                  "description": "Present once the leader on winning_rule is significant.",
+                  "properties": {
+                    "variant_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "is_control": {
+                      "type": "boolean"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "confidence": {
+                  "type": "string",
+                  "enum": [
+                    "none",
+                    "low",
+                    "medium",
+                    "high"
+                  ]
+                },
+                "p_value": {
+                  "type": "number",
+                  "description": "Bonferroni-adjusted two-proportion z-test p-value of the leader against the other arms."
+                },
+                "promoted_at": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
           }
         }
       },
@@ -35185,7 +35354,8 @@
                 "type": "string"
               },
               "auto_promote_winner": {
-                "type": "boolean"
+                "type": "boolean",
+                "description": "Hand each step A/B test to its winner once the winner is significant: the other arms are paused. Each step is promoted once."
               },
               "min_sample_size": {
                 "type": "integer"
@@ -37877,6 +38047,11 @@
             "items": {
               "$ref": "#/components/schemas/UniboxLabel"
             }
+          },
+          "campaign_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The campaign whose send this conversation holds or answers: the latest such message's, or the filtered campaign when `campaign_id` is set. Absent when there is none."
           }
         }
       },

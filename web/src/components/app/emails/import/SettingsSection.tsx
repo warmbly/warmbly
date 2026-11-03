@@ -7,7 +7,7 @@ import type { MailboxImportSettings, OnExisting } from "@/lib/api/models/app/ema
 import { Label, NumberInput, TextInput } from "@/components/ui/field";
 import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
 import TagSelector from "@/components/app/popup/select/TagSelector";
-import { OptionSelect, Toggle } from "@/components/app/campaigns/preferences/components/CampaignPreferenceBoolBox";
+import { OptionSelect } from "@/components/app/campaigns/preferences/components/CampaignPreferenceBoolBox";
 import useFeatureStatus from "@/lib/api/hooks/app/subscription/useFeatureStatus";
 import { useUserProfile } from "@/hooks/context/user";
 import { cn } from "@/lib/utils";
@@ -22,6 +22,8 @@ const DEFAULTS = {
     warmup_increase: 1,
     warmup_reply_rate: 30,
 };
+
+type WarmupChoice = "rows" | "on" | "off";
 
 // What "update" replaces depends on what the rows carry.
 const UPDATE_COPY: Record<"file" | "vendor" | "grant", { label: string; hint: string }> = {
@@ -61,11 +63,14 @@ export function SettingsSection({
     settings,
     setSettings,
     note,
+    fromFile = false,
 }: {
     settings: MailboxImportSettings;
     setSettings: React.Dispatch<React.SetStateAction<MailboxImportSettings>>;
     /** A line under the header, e.g. what wins over these values. */
     note?: string;
+    /** The rows come from a file whose columns can carry their own settings. */
+    fromFile?: boolean;
 }) {
     const [open, setOpen] = React.useState(false);
     const profile = useUserProfile();
@@ -82,7 +87,9 @@ export function SettingsSection({
     const tagIds = settings.tag_ids ?? [];
     const dailyLimit = settings.daily_limit ?? DEFAULTS.daily_limit;
     const minutes = Math.round((settings.min_wait ?? DEFAULTS.min_wait) / 60);
-    const warmup = canWarmup && (settings.warmup ?? true);
+    // Unset leaves each row's own warmup value (or the mailbox) as it is; an explicit off wins over every row.
+    const warmupChoice: WarmupChoice = settings.warmup === undefined ? "rows" : settings.warmup ? "on" : "off";
+    const warmup = canWarmup && warmupChoice !== "off";
     const changed = Object.keys(settings).length;
 
     const timezoneOptions = React.useMemo<SelectOption[]>(
@@ -141,15 +148,27 @@ export function SettingsSection({
                                 </div>
                             </div>
                             <div className="rounded-md border border-slate-200 p-2.5 space-y-2.5">
-                                <div className="flex items-center gap-2">
-                                    <div className="min-w-0 flex-1">
-                                        <div className="text-[12.5px] text-slate-900 font-medium">Warmup</div>
-                                        <div className="text-[11.5px] text-slate-500">
-                                            {canWarmup ? "Starts on every new mailbox and ramps up slowly." : "Warmup is available on paid plans."}
-                                        </div>
-                                    </div>
-                                    <Toggle value={warmup} onChange={(v) => set("warmup", v)} disabled={!canWarmup} ariaLabel="Warmup" />
+                                <div className="min-w-0">
+                                    <div className="text-[12.5px] text-slate-900 font-medium">Warmup</div>
+                                    {!canWarmup && <div className="text-[11.5px] text-slate-500">Warmup is available on paid plans.</div>}
                                 </div>
+                                {canWarmup && (
+                                    <OptionSelect<WarmupChoice>
+                                        value={warmupChoice}
+                                        onChange={(v) => set("warmup", v === "rows" ? undefined : v === "on")}
+                                        cols={3}
+                                        aria-label="Warmup"
+                                        options={[
+                                            {
+                                                value: "rows",
+                                                label: fromFile ? "As each row says" : "Leave as it is",
+                                                hint: fromFile ? "A row's warmup column decides. Without one, warmup is left as it is." : "New mailboxes start without warmup; connected ones keep theirs.",
+                                            },
+                                            { value: "on", label: "On", hint: fromFile ? "Starts and ramps up slowly, unless a row turns it off." : "Starts on every mailbox and ramps up slowly." },
+                                            { value: "off", label: "Off", hint: fromFile ? "Off on every mailbox the import touches, whatever a row says." : "Off on every mailbox the import touches." },
+                                        ]}
+                                    />
+                                )}
                                 {warmup && (
                                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                                         <div>

@@ -7,6 +7,7 @@ import { Loader2Icon, MegaphoneIcon, XIcon } from "lucide-react";
 import toast from "react-hot-toast/headless";
 
 import { SearchInput } from "@/components/ui/field";
+import { Checkbox } from "@/components/ui/checkbox";
 import { campaignStatusLabel, campaignStatusTone } from "@/components/app/campaigns/status";
 import useCampaigns from "@/lib/api/hooks/app/campaigns/useCampaigns";
 import { useAddSegmentToCampaign } from "@/lib/api/hooks/app/segments";
@@ -27,12 +28,14 @@ export default function AddSegmentToCampaignDialog({
     const add = useAddSegmentToCampaign();
     const [query, setQuery] = React.useState("");
     const [picked, setPicked] = React.useState<string | null>(null);
+    const [skipActive, setSkipActive] = React.useState(false);
     const campaigns = useCampaigns({ query: query.trim(), folder: "", enabled: open });
 
     React.useEffect(() => {
         if (!open) {
             setQuery("");
             setPicked(null);
+            setSkipActive(false);
         }
     }, [open]);
 
@@ -56,10 +59,14 @@ export default function AddSegmentToCampaignDialog({
         if (!picked || busy) return;
         const target = campaigns.campaigns.find((c) => c.id === picked);
         try {
-            const res = await add.mutateAsync({ id: segment.id, campaignId: picked });
+            const res = await add.mutateAsync({ id: segment.id, campaignId: picked, skipActiveInOtherCampaigns: skipActive });
             toast.success(
                 res.added === 0
-                    ? `Every member of ${segment.name} is already a lead in ${target?.name ?? "the campaign"}`
+                    ? res.members === 0
+                        ? `${segment.name} has no members to add`
+                        : skipActive
+                          ? `No new leads for ${target?.name ?? "the campaign"}: every member is already a lead or running elsewhere`
+                          : `Every member of ${segment.name} is already a lead in ${target?.name ?? "the campaign"}`
                     : `Added ${res.added.toLocaleString()} lead${res.added === 1 ? "" : "s"} to ${target?.name ?? "the campaign"}`,
             );
             onClose();
@@ -178,6 +185,13 @@ export default function AddSegmentToCampaignDialog({
                                 </ul>
                             )}
                         </div>
+                        <label className="px-4 py-2.5 border-t border-slate-100 flex items-start gap-1.5 text-[11.5px] text-slate-700 cursor-pointer select-none shrink-0">
+                            <Checkbox tone="slate" className="mt-px" checked={skipActive} onChange={(e) => setSkipActive(e.target.checked)} />
+                            <span>
+                                Skip contacts already running in another campaign
+                                <span className="block text-slate-500">Members another campaign is still emailing are left out.</span>
+                            </span>
+                        </label>
                         {/* Wraps instead of clipping: the hint takes its own row when the
                             buttons need the width, so neither is ever cut mid-word. */}
                         <footer className="px-3 py-2 min-h-12 border-t border-slate-200 flex flex-wrap items-center gap-x-2 gap-y-1.5 shrink-0 bg-slate-50/30">

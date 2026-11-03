@@ -662,6 +662,21 @@ Existing Google OAuth mailboxes can still re-authorize with the frontend flag of
 Hiding the button does not prevent an authenticated client from calling the API. Use `BOX_GOOGLE_OAUTH_CONNECT=false` to disable new Google OAuth connects on the backend. A frontend flag does not change Google's restricted-scope verification or security assessment requirements, and a second dashboard on the same backend shares its data. Agree the assessment scope and reviewer account with your assessor before scanning.
 </Callout>
 
+### Optional hosted static edge
+
+The optional Worker in `deploy/cloudflare/` serves public frontend files through
+an explicitly configured custom domain. It is independent of the application
+containers and is not required by self-hosts.
+
+| Binding | What it does | Default |
+|---|---|---|
+| `PAGES_ORIGINS` | Worker-only JSON object mapping exact public hostnames to their HTTPS Pages production origins. Only configured hostnames are served. The Worker removes application authorization and cookies before requesting static files; API traffic continues to use its existing host | `{}` |
+
+Deploying the checked-in Worker configuration attaches no domains or routes.
+Stage each hostname, verify effective TLS and frontend responses, and retain the
+Pages association and DNS needed for rollback before moving production traffic.
+The deployment procedure is in `deploy/cloudflare/README.md`.
+
 ### Whole-domain connects
 
 A workspace can connect every mailbox on a [Google Workspace domain or Microsoft 365 organization](/guides/mailbox-import/#connect-a-whole-google-workspace-domain) through one administrator's grant (**Add account > Google > Whole Workspace domain**, **Add account > Microsoft > Whole organization**). These are read by the backend only: it mints every token for those mailboxes itself and hands them to workers per use, so workers need nothing here. The complete setup, step by step, is in [whole-domain mailbox connects](/development/whole-domain-connect/).
@@ -778,6 +793,7 @@ Salesforce reads `SALESFORCE_OAUTH_CLIENT_ID` and `SALESFORCE_OAUTH_CLIENT_SECRE
 | `MAILHOST_ISPDB` | `true` lets mailbox server detection ask Mozilla's Thunderbird ISPDB (`autoconfig.thunderbird.net`) about a domain whose MX records and own autoconfig file name no known provider. Only the domain name is sent. See [data control](/development/data-control/#outbound-calls) | `false` on a self-host, `true` on Warmbly Cloud |
 | `MAILVENDOR_SANDBOX_URL` | Development only. Points every inbox vendor client at the [sandbox's mock vendor API](/development/sandbox/#mock-inbox-vendors) (`<url>/inboxkit`, `<url>/mailforge`) instead of the real vendors. Ignored unless `APP_ENV` is `dev` | unset |
 | `TYPESAFE_API_KEY` | TypeSafe API key. Turns on the typed judgments: reply classification, the copy judgment in the Advisor and the editor, warmup content review (otherwise performed by OpenAI when its generator is configured), bounce classification, import column mapping and per-form triage. Inbox tagging needs the switch below as well. See [data control](/development/data-control/#typesafe-judgments) for what each one sends | unset |
+| `TYPESAFE_ENDPOINT` | URL the TypeSafe judgments are posted to, for a regional or proxied TypeSafe endpoint. Read by the backend, the consumer and `warmblyctl inbox-tag`; has no effect without `TYPESAFE_API_KEY`. Must be `https`, except `http` to a loopback or private-network host; any other value stops the service at startup | `https://api.typesafe.ai/v1/systemone` |
 | `INBOX_TAGGING_ENABLED` | `true` enables automatic inbox tagging when `TYPESAFE_API_KEY` is also set. Message subject, current body, and the previous outbound body are sent to TypeSafe | `false` |
 
 <Callout type="warn" title="An unset provider still uses a key">

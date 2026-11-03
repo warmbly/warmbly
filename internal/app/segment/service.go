@@ -344,7 +344,7 @@ func (s *service) AddToCampaign(ctx context.Context, orgID uuid.UUID, actor stri
 	if err != nil {
 		return nil, errx.New(errx.BadRequest, "invalid campaign id")
 	}
-	res, xerr := s.repo.AddToCampaign(ctx, orgID, actor, id, campaignID)
+	res, xerr := s.repo.AddToCampaign(ctx, orgID, actor, id, campaignID, in.SkipActiveInOtherCampaigns)
 	if xerr != nil {
 		return nil, xerr
 	}

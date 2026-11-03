@@ -147,7 +147,7 @@ func TestRelaySendsOnlyTheRequestedFieldsAndMirrorsCloudsAnswer(t *testing.T) {
 	if !ok || mirrored.Base != 15 || mirrored.Max != 40 || mirrored.StartTime != "08:00:00" {
 		t.Fatalf("mirrored %+v, want the cloud's whole answer", mirrored)
 	}
-	if got.Base != 15 || got.Days != 0 || got.StartTime != "08:00" || got.EndTime != "20:00" {
+	if got.Base != 15 || got.Days != models.WarmupEveryDay || got.StartTime != "08:00" || got.EndTime != "20:00" {
 		t.Fatalf("returned %+v, want the cloud's values in local form", got)
 	}
 }
