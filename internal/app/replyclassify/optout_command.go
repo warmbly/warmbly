@@ -45,7 +45,8 @@ var proseWords = wordSet("i", "me", "my", "we", "us", "our", "you", "your", "it"
 	"do", "would", "could", "can", "will", "if", "so", "just", "actually", "love", "like", "want", "let", "lets",
 	"interested", "please", "call", "send", "tell", "talk", "great", "sounds", "meeting", "demo", "price", "pricing",
 	"yes", "no", "sure", "ok", "okay", "maybe", "later", "today", "tomorrow", "monday", "tuesday", "wednesday", "thursday",
-	"friday", "saturday", "sunday", "noon", "the", "a", "an", "at", "of", "and", "for", "to", "in", "on", "with",
+	"friday", "saturday", "sunday", "noon", "next", "week", "month", "year", "soon", "now", "asap", "time", "here", "there",
+	"the", "a", "an", "at", "of", "and", "for", "to", "in", "on", "with",
 	"ich", "wir", "sie", "ist", "aber", "nicht")
 
 // commandPronouns is a pronoun note after a name: "(she/her)".
@@ -93,17 +94,17 @@ func isOptOutCommand(body string) bool {
 }
 
 // signatureOnly is a closed whitelist of what may follow the command: blank
-// lines, sign-off lines, name lines, and a "--" delimiter or a whole mobile
-// footer, below which nothing is read. Any other line means it is not an
+// lines, whole mobile footers, sign-off lines, name lines, and a "--"
+// delimiter, below which nothing is read. Any other line means it is not an
 // opt-out.
 func signatureOnly(lines []string) bool {
 	n := 0
 	for _, raw := range lines {
 		ln := strings.TrimSpace(raw)
 		switch {
-		case ln == "":
+		case ln == "" || commandFooters[commandText(ln)]:
 			continue
-		case ln == "--" || commandFooters[commandText(ln)]:
+		case ln == "--":
 			return true
 		}
 		if n++; n > commandMaxLines {
@@ -131,7 +132,7 @@ func ledByName(raw string, phrases map[string]bool) bool {
 // nameLine is one to three capitalized name words or initials, optionally
 // followed by a pronoun note; a trailing comma or period is allowed.
 func nameLine(tokens []string) bool {
-	if len(tokens) > 0 && commandPronouns.MatchString(tokens[len(tokens)-1]) {
+	if len(tokens) > 0 && commandPronouns.MatchString(strings.TrimRight(tokens[len(tokens)-1], ",.")) {
 		tokens = tokens[:len(tokens)-1]
 	}
 	if len(tokens) == 0 || len(tokens) > 3 {

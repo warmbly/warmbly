@@ -37,6 +37,7 @@ func TestIsOptOutCommandReply(t *testing.T) {
 		"german footer":   "Stopp\n\nVon meinem iPhone gesendet",
 		"notice":          "Remove\n\n--\nCONFIDENTIALITY NOTICE: The contents of this message are private.",
 		"pronouns":        "STOP\nJane Doe (she/her)",
+		"pronouns comma":  "STOP\nJane Doe (she/her),",
 		"sign-off name":   "Stop\n\nBest regards, J. Smith",
 	}
 	for name, body := range optOut {
@@ -82,6 +83,8 @@ func TestIsOptOutCommandReply(t *testing.T) {
 		"title-cased":      "Stop\nMeeting at Noon",
 		"too many lines":   "Stop\nJohn\nJane\nJim\nJoe\nJack",
 		"footer prefix":    "Stop\nSent from my iPhone because I want a demo",
+		"after footer":     "Stop\nSent from my iPhone\nActually I'd like a demo",
+		"next week":        "Stop\nNext Week",
 	}
 	for name, body := range notOptOut {
 		if IsOptOut("Re: Stop", body) {
