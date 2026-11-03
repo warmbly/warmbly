@@ -20,7 +20,7 @@ const (
 var optOutCommand = regexp.MustCompile(`^(?:` + commandPolite + ` )*` + commandWords + `(?: (?:` + commandWords + `|` + commandPolite + `))*$`)
 
 // commandGreetings and commandSignOffs open a salutation or sign-off line,
-// read through commandText; only name-like words may follow them.
+// read through commandText; only a name may follow them on the line.
 var (
 	commandGreetings = wordSet("hi", "hello", "hey", "dear", "hallo", "hola", "bonjour", "hej", "good morning", "good afternoon", "guten tag", "moin")
 	commandSignOffs  = wordSet("thanks", "thank you", "thx", "ty", "many thanks", "cheers", "regards", "best", "best regards", "kind regards",
@@ -29,22 +29,30 @@ var (
 		"groeten", "mvh", "hilsen", "med vanlig halsning")
 )
 
-// commandFooter is a whole mobile-client footer line, read through commandText.
-var commandFooter = regexp.MustCompile(`^(?:sent from my (?:\S+ ?){1,3}|sent from (?:outlook|yahoo mail|mail for windows|gmail)(?: for (?:ios|android|windows|mac))?|get outlook for (?:ios|android)|sent (?:via|with) \S+(?: \S+)?|von meinem (?:\S+ ?){1,3}gesendet|gesendet von meinem (?:\S+ ?){1,3}|enviado desde mi (?:\S+ ?){1,3}|envoye de mon (?:\S+ ?){1,3}|verzonden vanaf mijn (?:\S+ ?){1,3}|skickat fran min (?:\S+ ?){1,3}|inviato dal mio (?:\S+ ?){1,3})$`)
+// commandFooters are whole mobile-client footer lines, read through commandText.
+var commandFooters = wordSet(
+	"sent from my iphone", "sent from my ipad", "sent from my android", "sent from my android phone", "sent from my mobile",
+	"sent from my mobile device", "sent from my phone", "sent from my samsung galaxy smartphone", "sent from my blackberry",
+	"sent from mail for windows", "sent from mail for windows 10", "sent from outlook for ios", "sent from outlook for android",
+	"get outlook for ios", "get outlook for android", "sent from yahoo mail for iphone", "sent from yahoo mail on android",
+	"sent from gmail mobile", "von meinem iphone gesendet", "von meinem ipad gesendet", "von meinem smartphone gesendet",
+	"enviado desde mi iphone", "enviado desde mi ipad", "envoye de mon iphone", "envoye de mon ipad",
+	"verzonden vanaf mijn iphone", "verstuurd vanaf mijn iphone", "skickat fran min iphone", "sendt fra min iphone",
+)
 
-// commandDisclaimer opens a legal disclaimer, whose text below is boilerplate.
-var commandDisclaimer = regexp.MustCompile(`^(?:confidentiality notice(?: |$)|(?:confidentiality|disclaimer)$|(?:this|the information (?:contained )?in this) (?:e mail|email|message)(?: and any (?:attachments?|files)(?: transmitted with it)?)? (?:is|are|may be|contains?) (?:strictly )?(?:confidential|privileged|intended))`)
-
-// proseWords mark a sentence rather than a signature line, even capitalized.
+// proseWords are words no name carries, even capitalized.
 var proseWords = wordSet("i", "me", "my", "we", "us", "our", "you", "your", "it", "is", "are", "am", "was", "be", "but", "not",
-	"don", "do", "would", "could", "can", "will", "if", "so", "just", "actually", "love", "like", "want", "let", "lets",
-	"interested", "please", "call", "send", "tell", "talk", "great", "sounds", "ich", "wir", "sie", "ist", "aber", "nicht")
+	"do", "would", "could", "can", "will", "if", "so", "just", "actually", "love", "like", "want", "let", "lets",
+	"interested", "please", "call", "send", "tell", "talk", "great", "sounds", "meeting", "demo", "price", "pricing",
+	"yes", "no", "sure", "ok", "okay", "maybe", "later", "today", "tomorrow", "monday", "tuesday", "wednesday", "thursday",
+	"friday", "saturday", "sunday", "noon", "the", "a", "an", "at", "of", "and", "for", "to", "in", "on", "with",
+	"ich", "wir", "sie", "ist", "aber", "nicht")
 
-// signatureConnectors are the lowercase words a title or company name carries.
-var signatureConnectors = wordSet("of", "and", "at", "for", "the", "de", "van", "von", "der", "la", "le", "&")
+// commandPronouns is a pronoun note after a name: "(she/her)".
+var commandPronouns = regexp.MustCompile(`(?i)^\((?:she|he|they|ze|xe)/(?:her|him|them|hers|his|theirs|zir|xem)(?:/[a-z]+)?\)$`)
 
-// signatureMaxLines bounds the signature a command may carry.
-const signatureMaxLines = 8
+// commandMaxLines bounds the lines a command may carry above a delimiter.
+const commandMaxLines = 4
 
 func wordSet(words ...string) map[string]bool {
 	out := make(map[string]bool, len(words))
@@ -68,14 +76,14 @@ func commandText(line string) string {
 
 // isOptOutCommand reports a reply, quoted history already cut, that says
 // nothing but an opt-out command: its first line after any greeting is the
-// command, and every line below is a sign-off, a footer or a signature.
+// command, and the lines below pass signatureOnly.
 func isOptOutCommand(body string) bool {
 	lines := strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n")
 	for i, raw := range lines {
 		switch {
 		case optOutCommand.MatchString(commandText(raw)):
 			return signatureOnly(lines[i+1:])
-		case strings.TrimSpace(raw) == "" || ledByNames(raw, commandGreetings):
+		case strings.TrimSpace(raw) == "" || ledByName(raw, commandGreetings):
 			continue
 		default:
 			return false
@@ -84,120 +92,75 @@ func isOptOutCommand(body string) bool {
 	return false
 }
 
-// signatureOnly reports whether the lines under the command are only a
-// sign-off, footers and a name-like signature. A "-- " delimiter or a
-// disclaimer ends the reading; anything else unrecognised is prose.
+// signatureOnly is a closed whitelist of what may follow the command: blank
+// lines, sign-off lines, name lines, and a "--" delimiter or a whole mobile
+// footer, below which nothing is read. Any other line means it is not an
+// opt-out.
 func signatureOnly(lines []string) bool {
 	n := 0
 	for _, raw := range lines {
 		ln := strings.TrimSpace(raw)
-		if ln == "" {
+		switch {
+		case ln == "":
 			continue
-		}
-		if strings.HasPrefix(ln, "--") || strings.HasPrefix(ln, "__") {
+		case ln == "--" || commandFooters[commandText(ln)]:
 			return true
 		}
-		text := commandText(ln)
-		if commandDisclaimer.MatchString(text) {
-			return true
+		if n++; n > commandMaxLines {
+			return false
 		}
-		if commandFooter.MatchString(text) || ledByNames(ln, commandSignOffs) {
-			continue
-		}
-		if n++; n > signatureMaxLines || !signatureLine(ln) {
+		if !ledByName(ln, commandSignOffs) && !nameLine(strings.Fields(ln)) {
 			return false
 		}
 	}
 	return true
 }
 
-// ledByNames reports a line that opens with one of the phrases and carries at
-// most three name-like words after it: "Thanks, John", "Hi Jane,".
-func ledByNames(raw string, phrases map[string]bool) bool {
+// ledByName reports a line that is one of the phrases, optionally followed by
+// a name: "Thanks,", "Best regards, Jane", "Hi Jane,".
+func ledByName(raw string, phrases map[string]bool) bool {
 	tokens := strings.Fields(raw)
 	for k := min(len(tokens), 4); k > 0; k-- {
-		if !phrases[commandText(strings.Join(tokens[:k], " "))] {
-			continue
+		if phrases[commandText(strings.Join(tokens[:k], " "))] {
+			return k == len(tokens) || nameLine(tokens[k:])
 		}
-		rest := tokens[k:]
-		if len(rest) > 3 {
-			return false
-		}
-		for _, t := range rest {
-			if !nameLike(t) {
-				return false
-			}
-		}
-		return true
 	}
 	return false
 }
 
-// signatureLine is a short line made only of name-like tokens: a name, a
-// title, a company, a phone number, an address or a link.
-func signatureLine(raw string) bool {
-	tokens := strings.Fields(raw)
-	if len(tokens) == 0 || len(tokens) > 6 {
+// nameLine is one to three capitalized name words or initials, optionally
+// followed by a pronoun note; a trailing comma or period is allowed.
+func nameLine(tokens []string) bool {
+	if len(tokens) > 0 && commandPronouns.MatchString(tokens[len(tokens)-1]) {
+		tokens = tokens[:len(tokens)-1]
+	}
+	if len(tokens) == 0 || len(tokens) > 3 {
 		return false
 	}
-	for _, t := range tokens {
-		if !nameLike(t) {
+	for i, t := range tokens {
+		if i == len(tokens)-1 {
+			t = strings.TrimRight(t, ",.")
+		}
+		if !nameWord(t) {
 			return false
 		}
 	}
 	return true
 }
 
-// nameLike is one signature token: a capitalized word or initial, a short
-// abbreviation, a connector, a separator, a phone number, an address or a link.
-func nameLike(token string) bool {
-	t := strings.TrimRight(token, ",;:")
-	if t == "" || strings.Trim(t, "|-–—·/•") == "" {
-		return true
+// nameWord is a capitalized letters-only word, or an initial such as "J.".
+func nameWord(t string) bool {
+	if word, ok := strings.CutSuffix(t, "."); ok && utf8.RuneCountInString(word) == 1 {
+		t = word
 	}
-	if strings.ContainsAny(t, "'’`?!") {
+	first, _ := utf8.DecodeRuneInString(t)
+	if t == "" || !unicode.IsUpper(first) || proseWords[strings.ToLower(t)] {
 		return false
 	}
-	lower := strings.ToLower(t)
-	if strings.Contains(t, "@") || strings.HasPrefix(lower, "http") || strings.HasPrefix(lower, "www.") {
-		return true
-	}
-	if phoneLike(t) {
-		return true
-	}
-	if signatureConnectors[lower] {
-		return true
-	}
-	word, dotted := strings.CutSuffix(t, ".")
-	if word == "" || proseWords[strings.ToLower(word)] {
-		return false
-	}
-	if dotted && utf8.RuneCountInString(word) > 3 {
-		return false
-	}
-	first, _ := utf8.DecodeRuneInString(word)
-	if !unicode.IsUpper(first) {
-		return false
-	}
-	for _, r := range word {
-		if !unicode.IsLetter(r) && !unicode.Is(unicode.Mn, r) && r != '-' && r != '.' && r != '&' {
-			return false
-		}
-	}
-	return true
-}
-
-// phoneLike is a token of digits and the punctuation phone numbers carry.
-func phoneLike(t string) bool {
-	digit := false
 	for _, r := range t {
-		switch {
-		case unicode.IsDigit(r):
-			digit = true
-		case strings.ContainsRune("+()-./x", r):
-		default:
+		if !unicode.IsLetter(r) && !unicode.Is(unicode.Mn, r) {
 			return false
 		}
 	}
-	return digit
+	return true
 }

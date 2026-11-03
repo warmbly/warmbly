@@ -22,7 +22,7 @@ func TestIsOptOutCommandReply(t *testing.T) {
 		"iphone footer":   "Stop\n\nSent from my iPhone",
 		"outlook footer":  "STOP\r\n\r\nGet Outlook for Android",
 		"sign-off":        "Stop.\n\nThanks,\nJohn",
-		"signature":       "Stop\n\nJohn Smith\nVP Sales, Acme Inc\n+1 555 123 4567",
+		"signature":       "Stop\n\nJohn Smith\n--\nVP Sales, Acme Inc\n+1 555 123 4567",
 		"delimiter":       "stop\n-- \nJohn Smith\nThis line is a long company tagline that goes on and on about the company",
 		"greeting":        "Hi Jane,\n\nStop.\n\nBest,\nJohn",
 		"quoted history":  "STOP\n\nOn Tue, Sep 1, 2026 Jane <jane@example.com> wrote:\n> Do you have ten minutes next week?",
@@ -30,12 +30,14 @@ func TestIsOptOutCommandReply(t *testing.T) {
 		"leading blank":   "\n\n  stop  \n",
 		"thanks after":    "Remove, thanks",
 		"repeated":        "stop stop stop",
-		"disclaimer foot": "Stop\n\nThis email and any attachments are confidential and intended solely for the addressee.",
+		"disclaimer foot": "Stop\n\n-- \nThis email and any attachments are confidential and intended solely for the addressee.",
 		"full signature":  "STOP\n\nThanks,\nJohn Smith\nSent from my iPhone",
 		"dash delimiter":  "Stop.\n--\nJane Doe | Acme",
-		"title and phone": "Stop\n\nBest regards,\nJane Doe\nHead of Sales, Acme Inc.\n+49 (30) 1234-567\njane@acme.example",
+		"title and phone": "Stop\n\nBest regards,\nJane Doe\n--\nHead of Sales, Acme Inc.\n+49 (30) 1234-567\njane@acme.example",
 		"german footer":   "Stopp\n\nVon meinem iPhone gesendet",
-		"notice":          "Remove\n\nCONFIDENTIALITY NOTICE: The contents of this message are private.",
+		"notice":          "Remove\n\n--\nCONFIDENTIALITY NOTICE: The contents of this message are private.",
+		"pronouns":        "STOP\nJane Doe (she/her)",
+		"sign-off name":   "Stop\n\nBest regards, J. Smith",
 	}
 	for name, body := range optOut {
 		if !IsOptOut("Re: Quick question", body) {
@@ -73,6 +75,13 @@ func TestIsOptOutCommandReply(t *testing.T) {
 		"sign-off prose":   "Stop\nBest time to call is Monday",
 		"greeting prose":   "Hey can we talk\nStop",
 		"name then prose":  "Stop\n\nJohn\nwhen are you free",
+		"title no delim":   "Stop\n\nJohn Smith\nVP Sales, Acme Inc",
+		"disclaimer bare":  "Stop\n\nThis email and any attachments are confidential and intended solely for the addressee.",
+		"disclaimer prose": "Stop\nThis email is confidential, but please call me",
+		"dash prose":       "Stop\n-- actually, I'd like a demo",
+		"title-cased":      "Stop\nMeeting at Noon",
+		"too many lines":   "Stop\nJohn\nJane\nJim\nJoe\nJack",
+		"footer prefix":    "Stop\nSent from my iPhone because I want a demo",
 	}
 	for name, body := range notOptOut {
 		if IsOptOut("Re: Stop", body) {
