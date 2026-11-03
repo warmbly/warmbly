@@ -566,7 +566,7 @@ func TestLiveLeadHoldIsRefusedByTheReservation(t *testing.T) {
 	if hold, err := repo.HoldLead(ctx, f.campaign, f.leads[0], &until, "away", "manual"); err != nil || hold == nil {
 		t.Fatalf("HoldLead = %v, %v", hold, err)
 	}
-	ok, err := repo.ReserveSend(ctx, f.campaign, f.leads[0], f.step, uuid.New(), f.mailbox, true)
+	ok, err := repo.ReserveSend(ctx, f.campaign, f.leads[0], f.step, uuid.New(), f.mailbox, true, nil)
 	if err != nil {
 		t.Fatalf("ReserveSend: %v", err)
 	}
@@ -588,7 +588,7 @@ func TestLiveLeadHoldIsRefusedByTheReservation(t *testing.T) {
 	if _, err := repo.ResumeLead(ctx, f.campaign, f.leads[0]); err != nil {
 		t.Fatalf("resume: %v", err)
 	}
-	if ok, err := repo.ReserveSend(ctx, f.campaign, f.leads[0], f.step, uuid.New(), f.mailbox, true); err != nil || !ok {
+	if ok, err := repo.ReserveSend(ctx, f.campaign, f.leads[0], f.step, uuid.New(), f.mailbox, true, nil); err != nil || !ok {
 		t.Fatalf("ReserveSend after the resume = %v, %v; want the claim to succeed", ok, err)
 	}
 }
@@ -604,7 +604,7 @@ func TestLiveReserveSendRefusesAContactThatIsNotALead(t *testing.T) {
 		f.campaign, f.leads[0]); err != nil {
 		t.Fatalf("drop the lead: %v", err)
 	}
-	if ok, err := repo.ReserveSend(ctx, f.campaign, f.leads[0], f.step, uuid.New(), f.mailbox, true); err != nil || ok {
+	if ok, err := repo.ReserveSend(ctx, f.campaign, f.leads[0], f.step, uuid.New(), f.mailbox, true, nil); err != nil || ok {
 		t.Fatalf("ReserveSend for a non-lead = %v, %v; want it refused", ok, err)
 	}
 }

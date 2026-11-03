@@ -282,7 +282,19 @@ Open a step's editor and click **A/B test this step**.
 - Select an arm to edit its name, subject, and body. Leave a variant's subject or body blank to reuse the step's own. On a step that replies in the thread, a variant's subject is ignored: the conversation owns it. On a step that opens a conversation, the variant's subject becomes the conversation's for every contact it is sent to, so the follow-ups threading on it reply under that subject.
 - A first variant starts at 50/50. Marking one **inactive** drops it from the split without deleting it; deleting the last one returns the step to a single send.
 
-Once variants have sent, each card shows Sent, Open rate, Reply rate, and Bounce rate. When Warmbly finds a **winner**, a banner names it with the rule and confidence used, and the winning card gets a trophy.
+### Results
+
+Once the step has sent, a **Results by contact** table under the split shows every arm, the Original included: how many contacts were sent that arm at this step, its open, click and reply rates, and how many bounced. Click a row to edit that arm.
+
+- Every number counts contacts, not emails, and each contact counts at most once per metric.
+- Rates are over delivered contacts: bounced contacts are left out of the denominator and shown as their own count.
+- An open, click or reply belongs to the step the contact had most recently been sent when it happened. A reply that lands after the next step went out counts for that next step, even when it answers the earlier email's thread.
+- Automated opens (Apple Mail Privacy Protection, security scanners) are not counted.
+- Arms are recorded as each email is sent, so contacts sent before a step had variants, or before this feature existed, are not counted.
+
+**Winner.** Warmbly ranks arms on the winning rule from outreach settings (**reply rate** by default). It names a winner only when every arm that has sent reached the minimum sample (`30` delivered contacts by default) and the leader beats each other arm in a two-proportion z-test at 95% confidence, corrected for the number of comparisons (Bonferroni). At 99% the confidence reads high. The winning row gets a trophy.
+
+**Auto-promote.** Turn on **Promote the winner automatically** under Settings > Sending (or set `ab_testing.auto_promote_winner` through the [outreach settings API](/api/reference/deliverability-ops/)) and Warmbly hands each step to its winner once the winner is significant, checking about every 15 minutes: new contacts at that step all get the winning arm and the other arms are paused, including the Original when a variant won. The results table marks the step as promoted and the change is recorded in the audit log. A step is promoted once: resume any arm to split traffic again (the Original has a **Resume** button in the results table), and auto-promote leaves that step alone from then on.
 
 </Fold>
 

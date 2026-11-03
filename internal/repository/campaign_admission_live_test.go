@@ -57,7 +57,7 @@ func (f *campaignAdmissionFixture) request(t *testing.T, mailbox uuid.UUID) (Out
 	id, contact := uuid.New(), f.contact(t)
 	f.exec(t, `INSERT INTO tasks(id,task_type,email_account_id,status,message_id) VALUES($1,'campaign',$2,'active','')`, id, mailbox)
 	f.exec(t, `INSERT INTO campaign_tasks(task_id,campaign_id,sequence_id,contact_id) VALUES($1,$2,$3,$4)`, id, f.campaign, f.step, contact)
-	claimed, err := NewCampaignProgressRepository(f.pool).ReserveSend(t.Context(), f.campaign, contact, f.step, id, mailbox, true)
+	claimed, err := NewCampaignProgressRepository(f.pool).ReserveSend(t.Context(), f.campaign, contact, f.step, id, mailbox, true, nil)
 	if err != nil || !claimed {
 		t.Fatalf("reserve lead: %v %v", claimed, err)
 	}

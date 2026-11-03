@@ -234,10 +234,20 @@ export const DEFAULT_UNSUBSCRIBE: UnsubscribeSettings = {
     link_text: "Unsubscribe",
 };
 
+export type ABWinningRule = "reply_rate" | "open_rate" | "click_rate";
+
+// How step A/B tests pick and apply a winner (see the A/B variants guide).
+export interface ABTestingSettings {
+    enabled: boolean;
+    default_winning_rule: ABWinningRule;
+    auto_promote_winner: boolean;
+    min_sample_size: number;
+}
+
 export interface OutreachSettings {
     bounce_pipeline: Record<string, unknown>;
     task_reliability: Record<string, unknown>;
-    ab_testing: Record<string, unknown>;
+    ab_testing: ABTestingSettings;
     reply_intent: ReplyIntentSettings;
     inbox_tagging?: InboxTaggingSettings;
     send_time_optimization: SendTimeOptimizationSettings;

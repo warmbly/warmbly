@@ -34447,6 +34447,14 @@
             "type": "object",
             "additionalProperties": true
           },
+          "promoted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When auto-promotion handed this arm's step to it; on the is_control row when the Original won."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -34611,7 +34619,118 @@
           },
           "confidence": {
             "type": "string",
-            "description": "Winner confidence (e.g. low, medium, high)."
+            "description": "Winner confidence for campaign-level variants (e.g. low, medium, high)."
+          },
+          "steps": {
+            "type": "array",
+            "description": "One entry per step-scoped A/B test, counted in contacts.",
+            "items": {
+              "type": "object",
+              "required": [
+                "step_id",
+                "arms",
+                "confidence"
+              ],
+              "properties": {
+                "step_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "arms": {
+                  "type": "array",
+                  "description": "The Original (variant_id null) and every variant of the step.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "variant_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "uuid"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "is_control": {
+                        "type": "boolean"
+                      },
+                      "is_active": {
+                        "type": "boolean"
+                      },
+                      "sent": {
+                        "type": "integer",
+                        "description": "Contacts sent this arm at this step."
+                      },
+                      "bounced": {
+                        "type": "integer"
+                      },
+                      "delivered": {
+                        "type": "integer",
+                        "description": "sent minus bounced; the denominator of the open, click and reply rates."
+                      },
+                      "opened": {
+                        "type": "integer"
+                      },
+                      "clicked": {
+                        "type": "integer"
+                      },
+                      "replied": {
+                        "type": "integer"
+                      },
+                      "open_rate": {
+                        "type": "number"
+                      },
+                      "click_rate": {
+                        "type": "number"
+                      },
+                      "reply_rate": {
+                        "type": "number"
+                      },
+                      "bounce_rate": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                },
+                "winner": {
+                  "type": "object",
+                  "description": "Present once the leader on winning_rule is significant.",
+                  "properties": {
+                    "variant_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "is_control": {
+                      "type": "boolean"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "confidence": {
+                  "type": "string",
+                  "enum": [
+                    "none",
+                    "low",
+                    "medium",
+                    "high"
+                  ]
+                },
+                "p_value": {
+                  "type": "number",
+                  "description": "Bonferroni-adjusted two-proportion z-test p-value of the leader against the other arms."
+                },
+                "promoted_at": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
           }
         }
       },
@@ -35185,7 +35304,8 @@
                 "type": "string"
               },
               "auto_promote_winner": {
-                "type": "boolean"
+                "type": "boolean",
+                "description": "Hand each step A/B test to its winner once the winner is significant: the other arms are paused. Each step is promoted once."
               },
               "min_sample_size": {
                 "type": "integer"
