@@ -662,6 +662,21 @@ Existing Google OAuth mailboxes can still re-authorize with the frontend flag of
 Hiding the button does not prevent an authenticated client from calling the API. Use `BOX_GOOGLE_OAUTH_CONNECT=false` to disable new Google OAuth connects on the backend. A frontend flag does not change Google's restricted-scope verification or security assessment requirements, and a second dashboard on the same backend shares its data. Agree the assessment scope and reviewer account with your assessor before scanning.
 </Callout>
 
+### Optional hosted static edge
+
+The optional Worker in `deploy/cloudflare/` serves public frontend files through
+an explicitly configured custom domain. It is independent of the application
+containers and is not required by self-hosts.
+
+| Binding | What it does | Default |
+|---|---|---|
+| `PAGES_ORIGINS` | Worker-only JSON object mapping exact public hostnames to their HTTPS Pages production origins. Only configured hostnames are served. The Worker removes application authorization and cookies before requesting static files; API traffic continues to use its existing host | `{}` |
+
+Deploying the checked-in Worker configuration attaches no domains or routes.
+Stage each hostname, verify effective TLS and frontend responses, and retain the
+Pages association and DNS needed for rollback before moving production traffic.
+The deployment procedure is in `deploy/cloudflare/README.md`.
+
 ### Whole-domain connects
 
 A workspace can connect every mailbox on a [Google Workspace domain or Microsoft 365 organization](/guides/mailbox-import/#connect-a-whole-google-workspace-domain) through one administrator's grant (**Add account > Google > Whole Workspace domain**, **Add account > Microsoft > Whole organization**). These are read by the backend only: it mints every token for those mailboxes itself and hands them to workers per use, so workers need nothing here. The complete setup, step by step, is in [whole-domain mailbox connects](/development/whole-domain-connect/).
