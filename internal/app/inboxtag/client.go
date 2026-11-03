@@ -27,8 +27,8 @@ type Client struct {
 }
 
 // NewClient builds a client for one API key.
-func NewClient(apiKey string) *Client {
-	return &Client{inner: typesafe.NewClient(apiKey)}
+func NewClient(apiKey string, options ...typesafe.Option) *Client {
+	return &Client{inner: typesafe.NewClient(apiKey, options...)}
 }
 
 // NewAsker wraps an already-built client, so one process shares one HTTP

@@ -1,6 +1,6 @@
 // Package bounceclass names what a bounce is about when the reason text does
 // not say so, so a rejection aimed at the sending mailbox is not held against
-// the recipient. Only reasons that do not name the recipient reach it.
+// the recipient. Only reasons dsn.Blame cannot place reach it.
 package bounceclass
 
 import (
@@ -8,17 +8,18 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/warmbly/warmbly/internal/pkg/dsn"
 	"github.com/warmbly/warmbly/internal/pkg/typesafe"
 )
 
 // Cause is the mutually exclusive answer: what the receiving server refused.
 // These identifiers are stored in event metadata, so changing one changes
-// history.
+// history. They share dsn's names, so a rule and a verdict read alike.
 const (
-	CauseRecipientInvalid = "recipient_invalid"
-	CauseMailboxFull      = "mailbox_full"
-	CauseReputationBlock  = "reputation_block"
-	CauseTransient        = "transient"
+	CauseRecipientInvalid = string(dsn.CauseRecipientInvalid)
+	CauseMailboxFull      = string(dsn.CauseMailboxFull)
+	CauseReputationBlock  = string(dsn.CauseReputationBlock)
+	CauseTransient        = string(dsn.CauseTransient)
 	CauseOther            = "other"
 )
 

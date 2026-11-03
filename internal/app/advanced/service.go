@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/pkg/dsn"
 	"github.com/warmbly/warmbly/internal/pkg/emailverify"
 	"github.com/warmbly/warmbly/internal/pkg/typesafe"
 	"github.com/warmbly/warmbly/internal/utils/validate"
@@ -1975,30 +1976,41 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 		provider = "manual"
 	}
 
-	// A bounce reason that does not name the recipient is classified so a
-	// reputation or policy block is not held against the address. The verdict
-	// goes in metadata only: the reason text is the contract downstream
-	// classifiers read. One call per ambiguous bounce, no cache.
-	var verdict *bounceclass.Verdict
-	if eventType == models.DeliverabilityEventBounce && s.bounceJudge != nil &&
-		strings.TrimSpace(req.Reason) != "" && !emailverify.NamesRecipient(req.Reason) {
-		// Bounded: a bounce storm must not queue behind a rate-limited judge.
-		jctx, cancel := context.WithTimeout(typesafe.WithUsage(ctx, "bounce_classification", organizationID.String()), bounceJudgeTimeout)
-		v, vErr := bounceclass.Classify(jctx, s.bounceJudge, req.Reason)
-		cancel()
-		switch {
-		case vErr != nil:
-			log.Debug().Err(vErr).Str("recipient", req.RecipientEmail).Msg("bounce reason not classified")
-		case v != nil:
-			verdict = v
+	// A bounce's status code and wording decide first whether the address is
+	// what failed; the judge only classifies a reason they cannot place. The
+	// cause goes in metadata only: the reason text is the contract downstream
+	// classifiers read. One judge call per ambiguous bounce, no cache.
+	var cause string
+	addressFine := false
+	if eventType == models.DeliverabilityEventBounce {
+		rule := dsn.Blame(req.Reason)
+		cause, addressFine = string(rule), rule.AddressIsFine()
+		source := "rule"
+		if rule == dsn.CauseUnknown && s.bounceJudge != nil && strings.TrimSpace(req.Reason) != "" {
+			// Bounded: a bounce storm must not queue behind a rate-limited judge.
+			jctx, cancel := context.WithTimeout(typesafe.WithUsage(ctx, "bounce_classification", organizationID.String()), bounceJudgeTimeout)
+			v, vErr := bounceclass.Classify(jctx, s.bounceJudge, req.Reason)
+			cancel()
+			switch {
+			case vErr != nil:
+				log.Debug().Err(vErr).Str("recipient", req.RecipientEmail).Msg("bounce reason not classified")
+			case v != nil:
+				cause, addressFine, source = v.Cause, v.AddressIsFine(), "judge"
+				if req.Metadata == nil {
+					req.Metadata = map[string]interface{}{}
+				}
+				req.Metadata["bounce_cause_confidence"] = v.Confidence
+			}
+		}
+		if cause != "" {
 			if req.Metadata == nil {
 				req.Metadata = map[string]interface{}{}
 			}
-			req.Metadata["bounce_cause"] = v.Cause
-			req.Metadata["bounce_cause_confidence"] = v.Confidence
+			req.Metadata["bounce_cause"] = cause
+			req.Metadata["bounce_cause_source"] = source
 		}
 	}
-	addressFine := verdict.AddressIsFine()
+	req.AddressKept = addressFine
 
 	if err := s.repo.CreateDeliverabilityEvent(ctx, &models.DeliverabilityEvent{
 		OrganizationID: organizationID,
@@ -2031,9 +2043,8 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 		log.Info().
 			Str("organization_id", organizationID.String()).
 			Str("recipient", req.RecipientEmail).
-			Str("bounce_cause", verdict.Cause).
-			Float64("confidence", verdict.Confidence).
-			Msg("bounce classified as not about the address; recipient not suppressed and lead kept")
+			Str("bounce_cause", cause).
+			Msg("bounce not about the address; recipient not suppressed and lead kept")
 	}
 
 	if shouldSuppress {
@@ -2145,7 +2156,7 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 				title := "Bounce: " + req.RecipientEmail
 				// A reputation block is about the mailbox, not the lead, so
 				// the title says who refused rather than who bounced.
-				if addressFine && verdict.Cause == bounceclass.CauseReputationBlock {
+				if addressFine && cause == bounceclass.CauseReputationBlock {
 					title = "Provider refused mail from " + displayname.DisplayableOr(camp.Name, "a campaign")
 				}
 				if eventType == models.DeliverabilityEventComplaint {

@@ -702,6 +702,9 @@ type IngestDeliverabilityEventRequest struct {
 	Reason         string                  `json:"reason,omitempty"`
 	IdempotencyKey string                  `json:"idempotency_key,omitempty"`
 	Metadata       map[string]interface{}  `json:"metadata,omitempty"`
+	// AddressKept is set by ingestion when a bounce did not blame the address,
+	// so the lead stays in its campaign. Never read from a request body.
+	AddressKept bool `json:"-"`
 }
 
 type SuppressedRecipient struct {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/warmbly/warmbly/internal/app/inboxtag"
 	"github.com/warmbly/warmbly/internal/config"
+	"github.com/warmbly/warmbly/internal/pkg/typesafe"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -88,11 +89,18 @@ func runInboxTagBackfill(ctx context.Context, args []string) error {
 
 	repo := repository.NewInboxTagRepository(c.db.Pool)
 	categories := repository.NewTagCategoryStore(c.db.Pool)
+	key := config.TypeSafeAPIKey()
+	var endpoint string
+	if key != "" {
+		if endpoint, err = config.TypeSafeEndpoint(); err != nil {
+			return err
+		}
+	}
 
 	// The asker is nil-safe on a dry run, but constructing it is what proves a
 	// key is present, so it is built either way.
 	svc := inboxtag.NewService(
-		inboxtag.NewClient(config.TypeSafeAPIKey()),
+		inboxtag.NewClient(key, typesafe.WithEndpoint(endpoint)),
 		repo,
 		categories,
 		categories,

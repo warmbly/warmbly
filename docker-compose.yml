@@ -381,6 +381,7 @@ services:
       # review page from it, the consumer does the classifying. Both halves are
       # required, so an instance that sets neither never reaches the network.
       TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+      TYPESAFE_ENDPOINT: ${TYPESAFE_ENDPOINT:-}
       INBOX_TAGGING_ENABLED: ${INBOX_TAGGING_ENABLED:-false}
       # Gmail mailbox OAuth (leave unset to connect only SMTP/IMAP + Outlook
       # mailboxes). See the self-hosting docs for the Google Cloud setup.
@@ -506,6 +507,7 @@ services:
       # key set only here still works; the backend needs it to report whether
       # the feature is on. Off unless both are set.
       TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+      TYPESAFE_ENDPOINT: ${TYPESAFE_ENDPOINT:-}
       INBOX_TAGGING_ENABLED: ${INBOX_TAGGING_ENABLED:-false}
     volumes:
       - ${WARMBLY_BLOBS:-blobs}:/data/blobs

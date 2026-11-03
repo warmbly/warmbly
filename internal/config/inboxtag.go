@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -18,6 +20,30 @@ import (
 //	silently start classifying production mail.
 func TypeSafeAPIKey() string {
 	return strings.TrimSpace(os.Getenv("TYPESAFE_API_KEY"))
+}
+
+// TypeSafeEndpoint overrides the TypeSafe API URL; empty keeps the default.
+// The key and message text ride it, so plain http is refused outside
+// loopback and private hosts.
+func TypeSafeEndpoint() (string, error) {
+	raw := strings.TrimSpace(os.Getenv("TYPESAFE_ENDPOINT"))
+	if raw == "" {
+		return "", nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return "", fmt.Errorf("TYPESAFE_ENDPOINT is not an absolute URL")
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "https":
+	case "http":
+		if publicScheme(u.Host) != "http" {
+			return "", fmt.Errorf("TYPESAFE_ENDPOINT must use https for a public host")
+		}
+	default:
+		return "", fmt.Errorf("TYPESAFE_ENDPOINT must be an https URL")
+	}
+	return raw, nil
 }
 
 // InboxTaggingEnabled reports whether the feature should run. Both halves are

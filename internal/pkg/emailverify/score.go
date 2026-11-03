@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/warmbly/warmbly/internal/pkg/dsn"
 )
 
 // Evidence kinds. Positive kinds prove the mailbox is live; the recipient
@@ -291,19 +293,5 @@ func clamp(n int) int {
 // reputation rejection or a greeting the server disliked. Only the former is
 // evidence against the address.
 func NamesRecipient(text string) bool {
-	lower := strings.ToLower(text)
-	if containsAny(lower, recipientMarkers) {
-		return true
-	}
-	if containsAny(lower, probeMarkers) {
-		return false
-	}
-	// Enhanced status anywhere in the text: 5.1.1 / 5.1.2 / 5.1.3 / 5.1.6 /
-	// 5.1.10 address errors and 5.2.1 disabled mailbox.
-	for _, code := range []string{"5.1.1", "5.1.2", "5.1.3", "5.1.6", "5.1.10", "5.2.1"} {
-		if strings.Contains(lower, code+" ") || strings.HasSuffix(lower, code) || strings.Contains(lower, code+":") {
-			return true
-		}
-	}
-	return false
+	return dsn.Blame(text) == dsn.CauseRecipientInvalid
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/dsn"
 	"github.com/warmbly/warmbly/internal/pkg/emailverify"
 	"github.com/warmbly/warmbly/internal/pkg/mailhdr"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -336,17 +337,17 @@ func (s *JobsService) failCampaignSend(ctx context.Context, task *repository.Tas
 		}
 	}
 
-	// A recipient the mail server refused at RCPT is a hard bounce that simply
-	// arrived synchronously. Retrying it from the same mailbox only spends
-	// reputation, so it goes through the bounce pipeline (progress, optional
-	// suppression, guardrails, warmup health, webhooks) and the lead is
-	// dropped as bounced instead of being offered again.
+	// A recipient the mail server refused at RCPT is a bounce that simply
+	// arrived synchronously, so it goes through the bounce pipeline (progress,
+	// optional suppression, guardrails, warmup health, webhooks). The lead is
+	// dropped as bounced only when the refusal blames the address; a kept lead
+	// takes the retry path below, which reopens a campaign that completed.
 	if rolledBack && !copyRefused && code == string(errx.MailErrorCodeRecipientRejected) {
-		recorded, err := s.recordSynchronousBounce(ctx, task, ct, campaign, recipient, reason)
+		recorded, kept, err := s.recordSynchronousBounce(ctx, task, ct, campaign, recipient, reason)
 		if err != nil {
 			return err
 		}
-		if recorded {
+		if recorded && !kept {
 			s.logCampaignSendFailure(ctx, campaignID, ct, recipient, reason, code, attempts, false, false, false)
 			s.publishCampaignUpdated(ctx, campaign, campaignID, "")
 			log.Info().Str("task_id", task.ID.String()).Str("campaign_id", campaignID.String()).Msg("campaign send refused at RCPT; recorded as bounce")
@@ -384,12 +385,12 @@ func (s *JobsService) failCampaignSend(ctx context.Context, task *repository.Tas
 }
 
 // recordSynchronousBounce feeds a RCPT-refused send into the deliverability
-// pipeline as a bounce. Returns false when the bounce could not be attributed
-// (no org, no recipient), in which case the caller falls back to the retry
-// path.
-func (s *JobsService) recordSynchronousBounce(ctx context.Context, task *repository.Task, ct *repository.CampaignTask, campaign *models.Campaign, recipient, reason string) (bool, error) {
+// pipeline as a bounce, and reports whether ingestion kept the address.
+// Returns false when the bounce could not be attributed (no org, no
+// recipient), in which case the caller falls back to the retry path.
+func (s *JobsService) recordSynchronousBounce(ctx context.Context, task *repository.Task, ct *repository.CampaignTask, campaign *models.Campaign, recipient, reason string) (recorded, kept bool, err error) {
 	if s.AdvancedService == nil || campaign == nil || campaign.OrganizationID == nil || recipient == "" {
-		return false, nil
+		return false, false, nil
 	}
 	taskID := task.ID
 	req := &models.IngestDeliverabilityEventRequest{
@@ -404,9 +405,9 @@ func (s *JobsService) recordSynchronousBounce(ctx context.Context, task *reposit
 	}
 	if xerr := s.AdvancedService.IngestDeliverabilityEvent(ctx, *campaign.OrganizationID, req); xerr != nil {
 		log.Warn().Str("task_id", taskID.String()).Str("error", xerr.Message).Msg("could not record refused recipient as a bounce")
-		return false, xerr
+		return false, false, xerr
 	}
-	return true, nil
+	return true, req.AddressKept, nil
 }
 
 // recordRefusedCopy feeds a copied address the server refused at RCPT into
@@ -484,7 +485,7 @@ func (s *JobsService) logCampaignSendFailure(ctx context.Context, campaignID uui
 	}
 	var msg string
 	switch {
-	case code == string(errx.MailErrorCodeRecipientRejected):
+	case code == string(errx.MailErrorCodeRecipientRejected) && !rolledBack:
 		msg = fmt.Sprintf("The mail server refused %s (hard bounce): %s", who, reason)
 	case code == string(errx.MailErrorCodeDomainAuthRejected):
 		msg = fmt.Sprintf("The receiving server refused the message because your sending domain failed its authentication checks, not because of %s. Fix the domain's SPF, DKIM and DMARC records: %s", who, reason)
@@ -504,7 +505,7 @@ func (s *JobsService) logCampaignSendFailure(ctx context.Context, campaignID uui
 		"error":        reason,
 		"attempts":     attempts,
 		"max_attempts": config.CampaignSendMaxAttempts,
-		"will_retry":   rolledBack && !exhausted && code != string(errx.MailErrorCodeRecipientRejected),
+		"will_retry":   rolledBack && !exhausted,
 		"task_id":      ct.TaskID.String(),
 	}
 	if ct.ContactID != nil {
@@ -556,6 +557,12 @@ func sendFailureReason(result models.SendEmailResult) (reason, code string) {
 		reason = strings.TrimSpace(result.Error.Message)
 		if reason == "" {
 			reason = strings.TrimSpace(result.Error.UserMessage)
+		}
+		// The enhanced status is what decides whether a refusal blames the address.
+		if f := result.Error.Failure; f != nil && len(f.EnhancedStatus) <= 11 && !strings.Contains(reason, f.EnhancedStatus) {
+			if _, ok := dsn.StatusIn(f.EnhancedStatus); ok {
+				reason = strings.TrimSpace(reason + "; enhanced status " + f.EnhancedStatus)
+			}
 		}
 	}
 	if reason == "" {

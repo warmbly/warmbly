@@ -56,7 +56,7 @@ func (w *WMail) bounceReport(msg *models.EmailMessageData) *models.JobEventInbou
 		EmailID:           w.ID,
 		OriginalMessageID: strings.Trim(originalID, "<>"),
 		FailedRecipient:   report.FailedRecipient,
-		Reason:            msg.Subject,
+		Reason:            report.Reason(msg.Subject),
 	}
 }
 
