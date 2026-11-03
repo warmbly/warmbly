@@ -603,6 +603,9 @@ func main() {
 	// Start DLQ auto-retry loop in background (every 60 seconds)
 	go jobsService.StartDLQRetryLoop(ctx, 60*time.Second)
 
+	// Hand significant step A/B winners their step when auto-promote is on.
+	go jobsService.StartABAutoPromoteLoop(ctx, 15*time.Minute)
+
 	// Start warmup health evaluation sweep (every hour)
 	go jobsService.StartWarmupHealthSweep(ctx, 1*time.Hour)
 

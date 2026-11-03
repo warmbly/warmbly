@@ -127,6 +127,13 @@ function SendingSettings() {
         [],
     );
 
+    const patchABTesting = React.useCallback(
+        (next: Partial<OutreachSettings["ab_testing"]>) => {
+            setDraft((prev) => (prev ? { ...prev, ab_testing: { ...prev.ab_testing, ...next } } : prev));
+        },
+        [],
+    );
+
     const patch = React.useCallback(
         (next: Partial<NonNullable<typeof sto>>) => {
             setDraft((prev) =>
@@ -256,6 +263,25 @@ function SendingSettings() {
                             </>
                         )}
                     </>
+                )}
+            </Section>
+
+            <Section
+                eyebrow="A/B tests"
+                description="By default a step's A/B test names a winner once every arm has 30 delivered contacts and the leader's reply rate is ahead at 95% confidence. Results count contacts, and a reply counts for the step the contact had most recently been sent."
+            >
+                {isLoading || !draft ? (
+                    <div className="h-7 w-40 rounded bg-slate-100 animate-pulse" />
+                ) : (
+                    <Row
+                        label="Promote the winner automatically"
+                        description="Once a step's winner is significant, every new contact at that step gets it and the other arms are paused. Each step is promoted once, and you can resume any arm afterwards."
+                    >
+                        <Toggle
+                            on={!!draft.ab_testing?.auto_promote_winner}
+                            onChange={(on) => patchABTesting({ auto_promote_winner: on })}
+                        />
+                    </Row>
                 )}
             </Section>
 

@@ -729,7 +729,7 @@ func TestLiveInFlightSendIsNotOfferedAgain(t *testing.T) {
 
 	// A's send was reserved and dispatched; the stamp never landed.
 	progress := repository.NewCampaignProgressRepository(pool)
-	reserved, err := progress.ReserveSend(ctx, f.campaign, leadA, step1, uuid.New(), uuid.Nil, true)
+	reserved, err := progress.ReserveSend(ctx, f.campaign, leadA, step1, uuid.New(), uuid.Nil, true, nil)
 	if err != nil || !reserved {
 		t.Fatalf("reserve A's send: reserved=%v err=%v", reserved, err)
 	}
@@ -745,7 +745,7 @@ func TestLiveInFlightSendIsNotOfferedAgain(t *testing.T) {
 
 	// With B dispatched too, nothing is left: the campaign completes rather than
 	// re-offering either in-flight step.
-	if reserved, err := progress.ReserveSend(ctx, f.campaign, leadB, step1, uuid.New(), uuid.Nil, true); err != nil || !reserved {
+	if reserved, err := progress.ReserveSend(ctx, f.campaign, leadB, step1, uuid.New(), uuid.Nil, true, nil); err != nil || !reserved {
 		t.Fatalf("reserve B's send: reserved=%v err=%v", reserved, err)
 	}
 	if _, pair, _, err = s.CalculateNextCampaignTime(ctx, f.campaign); !errors.Is(err, ErrCampaignCompleted) || pair != nil {
@@ -799,7 +799,7 @@ func TestLiveInFlightFollowUpIsNotOfferedAgain(t *testing.T) {
 		t.Fatalf("precondition: step 2 should be due, got pair=%v err=%v", pair, err)
 	}
 	// ...so dispatch it, and lose the stamp.
-	if reserved, err := progress.ReserveSend(ctx, f.campaign, contact, step2, uuid.New(), uuid.Nil, false); err != nil || !reserved {
+	if reserved, err := progress.ReserveSend(ctx, f.campaign, contact, step2, uuid.New(), uuid.Nil, false, nil); err != nil || !reserved {
 		t.Fatalf("reserve the follow-up: reserved=%v err=%v", reserved, err)
 	}
 	if _, pair, _, err := s.CalculateNextCampaignTime(ctx, f.campaign); !errors.Is(err, ErrCampaignCompleted) || pair != nil {

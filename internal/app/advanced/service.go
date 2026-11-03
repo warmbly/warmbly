@@ -94,6 +94,8 @@ type Service interface {
 
 	ProcessIncomingReply(ctx context.Context, emailAccountID uuid.UUID, msg *models.EmailMessageStoreData) *errx.Error
 	GetABWinnerAnalysis(ctx context.Context, organizationID, campaignID uuid.UUID) (*models.ABWinnerAnalysis, *errx.Error)
+	// PromoteStepWinners applies auto_promote_winner to every running step split; returns how many it promoted.
+	PromoteStepWinners(ctx context.Context) (int, *errx.Error)
 
 	// CreateContactTask creates a CRM task for a contact, used by the campaign
 	// "create task" action node. createdBy is the campaign owner; the task's
@@ -916,42 +918,39 @@ func (s *service) SelectVariant(ctx context.Context, organizationID, campaignID,
 	if err != nil {
 		return nil, toErrx(err)
 	}
-	// Partition active variants into step-scoped (this step) and campaign-level.
-	var stepVariants, campaignVariants []models.CampaignABVariant
+	// Partition variants into this step's rows (paused ones too: a paused
+	// Original takes the step's own copy out of the split) and active campaign-level ones.
+	var stepRows, campaignVariants []models.CampaignABVariant
 	for _, v := range variants {
-		if !v.IsActive {
-			continue
-		}
 		if v.SequenceID != nil {
 			if *v.SequenceID == sequenceID {
-				stepVariants = append(stepVariants, v)
+				stepRows = append(stepRows, v)
 			}
-		} else {
+		} else if v.IsActive {
 			campaignVariants = append(campaignVariants, v)
 		}
 	}
 
 	var selected *models.CampaignABVariant
-	if len(stepVariants) > 0 {
-		// Step-scoped: the step's own content is the control arm. Contacts split
-		// across the original PLUS the active variants by weight, deterministically
-		// per (contact, step). The original's share is the weight of its is_control
-		// row when the user has set one, otherwise the default control weight. The
-		// control arm carries the zero id (or an is_control row, whose content is
-		// ignored); if it wins we send the step's own content.
-		controlWeight := abControlWeight
-		arms := make([]models.CampaignABVariant, 0, len(stepVariants))
-		for _, v := range stepVariants {
-			if v.IsControl {
-				controlWeight = v.Weight
-				continue
-			}
-			arms = append(arms, v)
-		}
-		pool := append([]models.CampaignABVariant{{Weight: controlWeight}}, arms...)
-		selected = pickVariantDeterministic(pool, contactID.String()+":"+sequenceID.String())
-		if selected != nil && (selected.ID == uuid.Nil || selected.IsControl) {
+	var stepArm *models.StepABArm
+	if pool, handled := stepSplitPool(stepRows); handled {
+		// Step-scoped: the step's own content is the control arm (zero id).
+		// Contacts split across the Original plus the active variants by weight,
+		// deterministically per (contact, step). The arm is reported only when
+		// two or more arms are in the draw, so a promoted step stops counting.
+		if len(pool) == 0 {
 			return &models.VariantSelection{Subject: subject, BodyHTML: bodyHTML, BodyPlain: bodyPlain}, nil
+		}
+		selected = pickVariantDeterministic(pool, contactID.String()+":"+sequenceID.String())
+		if selected != nil && len(pool) > 1 {
+			stepArm = &models.StepABArm{}
+			if selected.ID != uuid.Nil {
+				id := selected.ID
+				stepArm.VariantID = &id
+			}
+		}
+		if selected == nil || selected.ID == uuid.Nil {
+			return &models.VariantSelection{Subject: subject, BodyHTML: bodyHTML, BodyPlain: bodyPlain, StepArm: stepArm}, nil
 		}
 	} else if len(campaignVariants) > 0 {
 		// Campaign-level (legacy): keep the assignment-based selection so a
@@ -991,6 +990,7 @@ func (s *service) SelectVariant(ctx context.Context, organizationID, campaignID,
 		Subject:   finalSubject,
 		BodyHTML:  finalHTML,
 		BodyPlain: finalPlain,
+		StepArm:   stepArm,
 	}, nil
 }
 
@@ -2671,6 +2671,11 @@ func (s *service) GetABWinnerAnalysis(ctx context.Context, organizationID, campa
 		Variants:    stats,
 		WinningRule: settings.ABTesting.DefaultWinningRule,
 	}
+	steps, err := s.stepAnalyses(ctx, campaignID, settings)
+	if err != nil {
+		return nil, toErrx(err)
+	}
+	analysis.Steps = steps
 
 	if len(stats) == 0 {
 		analysis.Confidence = "none"
