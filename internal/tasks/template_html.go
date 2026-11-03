@@ -72,7 +72,7 @@ func compiledHTMLTemplate(tmpl string) *htmlBody {
 		return body
 	}
 	src, comments := shieldComments(strings.ReplaceAll(tmpl, "\x00", ""))
-	t, err := tmplfuncs.CompileHTML("body", rewriteSpacedFieldRefs(src))
+	t, err := tmplfuncs.CompileHTML("body", normalizeTemplate(src))
 	if err != nil {
 		htmlTmplCache.Store(tmpl, nil)
 		return nil

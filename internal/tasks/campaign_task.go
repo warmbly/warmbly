@@ -1532,7 +1532,7 @@ func (s *tasksService) executeActionNode(ctx context.Context, campaign *models.C
 		if perr != nil {
 			return nil
 		}
-		// Deal name supports the same {{first_name}}/{{company}} templating other
+		// Deal name supports the same {{.FirstName}}/{{.Company}} templating other
 		// campaign copy uses; fall back to a contact-derived name when blank.
 		name := RenderTemplate(strings.TrimSpace(cfg.DealName), *contact)
 		if name == "" {

@@ -759,6 +759,21 @@ func TestUnparseableTemplateIsFlagged(t *testing.T) {
 	}
 }
 
+func TestUnparseableHTMLBodyIsFlagged(t *testing.T) {
+	campaignID := uuid.New()
+	snap := snapshotOf()
+	snap.Campaigns = []repository.AdvisorCampaign{{ID: campaignID, Name: "Outbound", Status: "paused"}}
+	snap.Steps = []repository.AdvisorStep{{
+		ID: uuid.New(), CampaignID: campaignID, Kind: "email", Position: 1,
+		Subject:   "quick question",
+		BodyPlain: "Hi {{.FirstName}}",
+		BodyHTML:  "<p>Hi {{if .FirstName}}{{.FirstName}}</p>",
+	}}
+	if _, fired := findingsByKey(Detect(snap, defaults()))["copy_broken_template"]; !fired {
+		t.Fatal("a broken HTML body should be flagged: it is the part most clients show")
+	}
+}
+
 func TestMissingFirstNameOnlyFiresWhenTheCopyUsesIt(t *testing.T) {
 	campaignID := uuid.New()
 	build := func(body string) *repository.AdvisorSnapshot {

@@ -5,7 +5,7 @@ import "testing"
 // Issue #207: this rule used to be ^[A-Za-z0-9_]+$, so a CSV column called
 // "Company Mobile" failed every row of the import even though the campaign
 // template engine has always been able to resolve a spaced key. The set below
-// is exactly what tasks.rewriteSpacedFieldRefs can address, and the same rule
+// is exactly what tmplvars.Normalize can address, and the same rule
 // is mirrored in web/src/components/app/contacts/importShared.ts.
 func TestIsValidJSONKey(t *testing.T) {
 	valid := []string{"role", "Job_Title", "Company Mobile", "first-name", "plan tier 2", "a"}

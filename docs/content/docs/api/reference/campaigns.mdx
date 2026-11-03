@@ -226,7 +226,7 @@ Create a campaign. Only `name` is required, every other field is optional and ap
 | `continuous` | boolean | no | Keep running for new leads: out of leads, the campaign stays `active` and waits instead of finishing. Linking a segment, a form or an automation that enrols leads turns it on, and so does starting a campaign whose every lead has finished. Default `false`. |
 | `tracking_domain` | string | no | Campaign-scoped tracking domain (honored only once verified). |
 | `steps` | object[] | no | Initial sequence steps in order (see create sequence input below). They are connected in order: each step routes unconditionally to the next, waiting that step's `wait_after` days. The first step's `wait_after` defaults to `0`, follow-ups to `3`. A step given no `subject`, or the same one as the conversation so far, defaults to `thread_reply: true` and is sent as a reply carrying that conversation's subject; a step with a subject of its own defaults to `false` and opens a new conversation. Set `thread_reply` explicitly to override either. |
-| `variants` | object[] | no | A/B variants for the first step (same shape as create A/B variant). |
+| `variants` | object[] | no | A/B variants for the first step (same shape as create A/B variant). A step or variant whose copy would not render as written refuses the whole request with `invalid_template`, naming it, and creates nothing. |
 | `advanced_overrides` | object | no | Advanced outreach overrides, see [advanced settings](#get-advanced-settings). |
 
 `schedule_windows` may also be supplied as a 7-element array (indexed by `time.Weekday`, Sunday = 0) of `{start, end}` minute intervals. When non-empty it supersedes `days`/`start_time`/`end_time`.
@@ -249,7 +249,7 @@ Create a campaign. Only `name` is required, every other field is optional and ap
   "ramp_increment": 2,
   "ramp_ceiling": 40,
   "steps": [
-    { "name": "Step 1", "subject": "Quick question, {{first_name}}", "body_plain": "Hi {{first_name}}...", "wait_after": 0 },
+    { "name": "Step 1", "subject": "Quick question, {{.FirstName}}", "body_plain": "Hi {{.FirstName}}...", "wait_after": 0 },
     { "name": "Step 2", "subject": "", "body_plain": "Just bumping this...", "wait_after": 3 }
   ]
 }
@@ -479,9 +479,9 @@ A `data` array of `CampaignABVariant` objects (no pagination wrapper).
       "step_id": "7e3b...",
       "name": "Subject B",
       "weight": 50,
-      "subject": "Worth a look, {{first_name}}?",
-      "body_html": "<p>Hi {{first_name}}...</p>",
-      "body_plain": "Hi {{first_name}}...",
+      "subject": "Worth a look, {{.FirstName}}?",
+      "body_html": "<p>Hi {{.FirstName}}...</p>",
+      "body_plain": "Hi {{.FirstName}}...",
       "is_control": false,
       "is_active": true,
       "promoted_at": null,
@@ -523,12 +523,14 @@ Add a variant to the campaign (or to one step via `step_id`). **Scope** `WRITE_C
   "name": "Subject B",
   "step_id": "7e3b...",
   "weight": 50,
-  "subject": "Worth a look, {{first_name}}?",
-  "body_plain": "Hi {{first_name}}...",
+  "subject": "Worth a look, {{.FirstName}}?",
+  "body_plain": "Hi {{.FirstName}}...",
   "is_control": false,
   "is_active": true
 }
 ```
+
+A `subject`, `body_html` or `body_plain` that would not render as written answers `400` with `code: "invalid_template"`, as for [a step](#update-a-sequence). The same check applies to an update.
 
 ### Response
 
@@ -826,7 +828,7 @@ Start (activate) the campaign so it begins sending real mail. Works from `draft`
 
 A start refused because every remaining lead was refused by address verification answers `leads_undeliverable` and parks the campaign at `paused_undeliverable`; re-verify the leads or mark them deliverable with [`POST /contacts/verification`](/api/reference/contacts/#verify-or-override-contacts), which resumes it.
 
-A campaign whose email step has nothing in either body is refused with `empty_step_body` rather than started, because it would send a blank message to every lead it reached.
+A campaign whose email step has nothing in either body is refused with `empty_step_body` rather than started, because it would send a blank message to every lead it reached. A step whose copy would not render as written (saved before the check on write existed) is refused with `invalid_template`, naming the step, the field, the line and the problem.
 
 ### Response
 
@@ -1335,9 +1337,9 @@ A bare array of `Sequence` objects (no envelope).
   {
     "id": "7e3b...",
     "name": "Step 1",
-    "subject": "Quick question, {{first_name}}",
-    "body_plain": "Hi {{first_name}}...",
-    "body_html": "<p>Hi {{first_name}}...</p>",
+    "subject": "Quick question, {{.FirstName}}",
+    "body_plain": "Hi {{.FirstName}}...",
+    "body_html": "<p>Hi {{.FirstName}}...</p>",
     "body_sync": true,
     "body_code": false,
     "wait_after": 0,
@@ -1367,7 +1369,7 @@ Optional. It takes the same fields as [update a sequence](#update-a-sequence), a
 ```json
 {
   "subject": "Quick question",
-  "body_plain": "Hi {{first_name}}, ...",
+  "body_plain": "Hi {{.FirstName}}, ...",
   "wait_after": 3
 }
 ```
@@ -1408,7 +1410,7 @@ All fields optional.
 ```json
 {
   "name": "Step 2",
-  "subject": "Following up, {{first_name}}",
+  "subject": "Following up, {{.FirstName}}",
   "body_plain": "Just bumping this...",
   "wait_after": 2,
   "conditions": {
@@ -1422,6 +1424,8 @@ All fields optional.
   }
 }
 ```
+
+`subject`, `body_plain` and `body_html` are checked before anything is saved, on a running campaign too. Copy that would not render as written answers `400` with `code: "invalid_template"` and a `message` naming the field, the line and the problem: an `{{if}}` with no `{{end}}`, an unknown function, an unknown sender field, or a bare name that is not a built-in field. Built-in fields are accepted as `{{.FirstName}}` or in their snake_case, camelCase and lowercase spellings (`{{first_name}}`); see [personalization](/guides/expressions/).
 
 ### Response
 
@@ -1463,8 +1467,8 @@ Render subject and body templates for a contact exactly as the send path would, 
 
 ```json
 {
-  "subject": "Hi {{first_name}} at {{company}}",
-  "body_html": "<p>Hey {{first_name}}, I saw {{company}} is hiring. {{unknown_token}}</p>",
+  "subject": "Hi {{.FirstName}} at {{.Company}}",
+  "body_html": "<p>Hey {{.FirstName}}, I saw {{.Company}} is hiring. {{unknown_token}}</p>",
   "contact_id": "9a2c...",
   "campaign_id": "8f1d...",
   "account_id": "5c7d..."
@@ -1480,6 +1484,7 @@ A `TemplatePreview` object. `errors` lists template parse errors that would bloc
   "subject": "Hi Sam at Globex",
   "body_html": "<p>Hey Sam, I saw Globex is hiring. {{unknown_token}}</p><br><br><p>Best, Ana</p><p style=\"font-size:12px;color:#64748b\">Don't want these emails? <a href=\"https://app.example.com/u/...\">Unsubscribe</a></p>",
   "body_plain": "Hey Sam, I saw Globex is hiring. {{unknown_token}}\n\nBest, Ana\n\nDon't want these emails? https://app.example.com/u/...",
+  "errors": ["body: line 1: unknown variable \"unknown_token\": write a contact field with a leading dot, like {{.unknown_token}}; the built-in fields are FirstName, LastName, Email, Company, Phone, Sender, UnsubscribeLink"],
   "unresolved": ["{{unknown_token}}"],
   "from": { "name": "Ana Silva", "email": "ana@globex.com" },
   "attachments": [
@@ -1516,7 +1521,7 @@ Generate outreach copy with the AI writing assistant. Gated to paid and free-tri
 
 ```json
 {
-  "text": "Hi {{first_name}},\n\nNoticed {{company}} is scaling outbound...\n\nWorth a quick chat?",
+  "text": "Hi {{.FirstName}},\n\nNoticed {{.Company}} is scaling outbound...\n\nWorth a quick chat?",
   "credits_remaining": 248,
   "model": "claude-..."
 }
@@ -1562,7 +1567,7 @@ Generate the recipient-specific snippet a per-recipient AI variable block would 
 | `context_after` | string | no | The email text immediately after the block. |
 
 ```json
-{ "mode": "instant", "prompt": "One line noting something specific about {{company}}.", "contact_id": "4f6c..." }
+{ "mode": "instant", "prompt": "One line noting something specific about {{.Company}}.", "contact_id": "4f6c..." }
 ```
 
 ### Response

@@ -154,8 +154,9 @@ func detectBrokenTemplate(s *repository.AdvisorSnapshot) []Finding {
 	for _, sc := range emailSteps(s) {
 		broken := map[string]string{}
 		for field, text := range map[string]string{
-			"subject": sc.step.Subject,
-			"body":    sc.step.BodyPlain,
+			"subject":         sc.step.Subject,
+			"body":            sc.step.BodyHTML,
+			"plain-text body": sc.step.BodyPlain,
 		} {
 			if text == "" {
 				continue
@@ -202,7 +203,7 @@ func detectBrokenTemplate(s *repository.AdvisorSnapshot) []Finding {
 				fmt.Sprintf("Open the campaign and go to %s.", stepLabel(sc)),
 				fmt.Sprintf("The parser stopped here: %s.", broken[fields[0]]),
 				"Every {{if}} and {{range}} needs its own {{end}}. A missing {{end}} is the most common cause and the error usually points past it, not at it.",
-				"Field names are case-sensitive and start with a dot: {{.FirstName}}, not {{firstname}}. For a custom field use {{index . \"city\"}}.",
+				"Write a field with a leading dot, like {{.FirstName}}; the first_name and firstName spellings of built-in fields work too. A custom field is {{.city}}, or {{index . \"city\"}}.",
 				"Save, then use the preview to check it renders against a real contact rather than trusting that it looks right.",
 			},
 			Evidence: map[string]any{

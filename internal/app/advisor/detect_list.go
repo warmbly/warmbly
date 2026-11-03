@@ -278,14 +278,10 @@ func detectUnsubscribedEnrolled(s *repository.AdvisorSnapshot) []Finding {
 	return out
 }
 
-// usesFirstName reports whether the copy actually greets people by first name.
-// Warmbly templates are Go templates, so the field is written `.FirstName`
-// (`{{.FirstName}}`, `{{if .FirstName}}`, `{{.FirstName | title}}`) or, for the
-// index form a spaced custom key would take, `"first_name"`. Checking the
-// property rather than one literal spelling keeps this from silently never
-// firing the way a `{{first_name}}` assumption would.
+// usesFirstName reports whether the copy greets people by first name, in any
+// spelling the renderer accepts (`.FirstName`, `first_name`, `firstName`).
 func usesFirstName(text string) bool {
-	for _, form := range []string{".FirstName", `"first_name"`} {
+	for _, form := range []string{"firstname", "first_name"} {
 		if indexFold(text, form) >= 0 {
 			return true
 		}

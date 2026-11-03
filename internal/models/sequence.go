@@ -123,7 +123,7 @@ type ActionConfig struct {
 	//   move_deal_stage: move the contact's most-recent OPEN deal in
 	//     DealPipelineID to DealStageID; a contact with no open deal in that
 	//     pipeline is a logged no-op (not an error).
-	// DealName supports the same {{first_name}}/{{company}} templating other
+	// DealName supports the same {{.FirstName}}/{{.Company}} templating other
 	// campaign copy uses. DealValue is optional; DealCurrency defaults to "USD".
 	DealPipelineID *uuid.UUID `json:"deal_pipeline_id,omitempty"`
 	DealStageID    *uuid.UUID `json:"deal_stage_id,omitempty"`

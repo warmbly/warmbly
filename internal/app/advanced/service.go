@@ -18,6 +18,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/pkg/dsn"
 	"github.com/warmbly/warmbly/internal/pkg/emailverify"
+	"github.com/warmbly/warmbly/internal/pkg/tmplvars"
 	"github.com/warmbly/warmbly/internal/pkg/typesafe"
 	"github.com/warmbly/warmbly/internal/utils/validate"
 
@@ -365,6 +366,13 @@ func (s *service) CreateABVariant(ctx context.Context, campaignID uuid.UUID, req
 	if req == nil || strings.TrimSpace(req.Name) == "" {
 		return nil, errx.New(errx.BadRequest, "variant name is required")
 	}
+	if err := tmplvars.CheckCopy(
+		tmplvars.Part{Name: "variant subject", Text: req.Subject},
+		tmplvars.Part{Name: "variant body", Text: req.BodyHTML},
+		tmplvars.Part{Name: "variant plain-text body", Text: req.BodyPlain},
+	); err != nil {
+		return nil, errx.InvalidTemplate(err)
+	}
 	out, err := s.repo.CreateABVariant(ctx, campaignID, req)
 	if err != nil {
 		return nil, toErrx(err)
@@ -373,11 +381,27 @@ func (s *service) CreateABVariant(ctx context.Context, campaignID uuid.UUID, req
 }
 
 func (s *service) UpdateABVariant(ctx context.Context, campaignID, variantID uuid.UUID, req *models.UpdateCampaignABVariantRequest) (*models.CampaignABVariant, *errx.Error) {
+	if req != nil {
+		if err := tmplvars.CheckCopy(
+			tmplvars.Part{Name: "variant subject", Text: deref(req.Subject)},
+			tmplvars.Part{Name: "variant body", Text: deref(req.BodyHTML)},
+			tmplvars.Part{Name: "variant plain-text body", Text: deref(req.BodyPlain)},
+		); err != nil {
+			return nil, errx.InvalidTemplate(err)
+		}
+	}
 	out, err := s.repo.UpdateABVariant(ctx, campaignID, variantID, req)
 	if err != nil {
 		return nil, toErrx(err)
 	}
 	return out, nil
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 func (s *service) DeleteABVariant(ctx context.Context, campaignID, variantID uuid.UUID) *errx.Error {

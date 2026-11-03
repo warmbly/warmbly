@@ -23,6 +23,7 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
 	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
+	"github.com/warmbly/warmbly/internal/pkg/tmplvars"
 	"github.com/warmbly/warmbly/internal/pkg/trackdns"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/scheduler"
@@ -45,6 +46,9 @@ func (s *campaignService) Create(ctx context.Context, userID string, orgID *uuid
 	// without one would skip every one of them at send time.
 	if orgID == nil {
 		return nil, errx.ErrNoOrganization
+	}
+	if err := checkCreateCopy(data); err != nil {
+		return nil, errx.InvalidTemplate(err)
 	}
 
 	// Daily creation throttle (config.DailyThrottleNewCampaigns). Caps
@@ -520,15 +524,8 @@ func (s *campaignService) StartCampaign(ctx context.Context, orgID uuid.UUID, ca
 		return errx.InternalError()
 	}
 	for i, seq := range seqs {
-		for _, f := range []struct {
-			name, val string
-		}{{"subject", seq.Subject}, {"body", seq.BodyHTML}, {"plain-text body", seq.BodyPlain}} {
-			if terr := tasks.TemplateError(f.val); terr != nil {
-				return errx.New(errx.BadRequest, fmt.Sprintf(
-					"Step %d's %s has a template error — fix the {{if}}/{{end}} or {{eq}} syntax before starting.",
-					i+1, f.name,
-				))
-			}
+		if terr := tmplvars.CheckCopy(stepCopy(fmt.Sprintf("step %d", i+1), seq.Subject, seq.BodyHTML, seq.BodyPlain)...); terr != nil {
+			return errx.InvalidTemplate(terr)
 		}
 		// An email step with nothing in either body sends a blank message
 		// to every lead it reaches. A step created through the API carries

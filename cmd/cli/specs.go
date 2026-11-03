@@ -144,7 +144,7 @@ ask before they do it.`,
 				Name: "add-step", Short: "Add a sequence step",
 				Method: http.MethodPost, Path: "/campaigns/{id}/steps", Body: bodyRequired,
 				Args:    []argSpec{{Name: "id", Help: "The campaign's id"}},
-				Example: "  $ warmbly campaign add-step CAMPAIGN_ID --subject \"Quick question\" --body-html \"<p>Hi {{first_name}}</p>\"",
+				Example: "  $ warmbly campaign add-step CAMPAIGN_ID --subject \"Quick question\" --body-html \"<p>Hi {{.FirstName}}</p>\"",
 				Flag: []flagSpec{
 					{Name: "subject", Help: "Subject line"},
 					{Name: "body-html", Help: "HTML body"},

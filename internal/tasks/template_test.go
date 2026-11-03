@@ -244,6 +244,38 @@ func TestRenderTemplate_BasicVariables(t *testing.T) {
 	}
 }
 
+func TestRenderTemplate_AliasSpellings(t *testing.T) {
+	contact := models.Contact{FirstName: "Sam", LastName: "Lee", Company: "Acme", Email: "[EMAIL]", Phone: "555"}
+	cases := []struct{ tmpl, want string }{
+		{"{{.FirstName}}", "Sam"},
+		{"{{first_name}}", "Sam"},
+		{"{{ firstName }}", "Sam"},
+		{"{{.firstName}}", "Sam"},
+		{"{{.first_name}} {{last_name}}", "Sam Lee"},
+		{"{{company_name}}/{{.company}}/{{companyName}}", "Acme/Acme/Acme"},
+		{"{{email}} {{phone}}", "[EMAIL] 555"},
+		{"{{if first_name}}Hi {{first_name}}{{else}}Hi there{{end}}", "Hi Sam"},
+		{`{{.nickname | default "friend"}}`, "friend"},
+		{`{{first_name | upper}}`, "SAM"},
+		{"Write {first_name} or first_name literally", "Write {first_name} or first_name literally"},
+	}
+	for _, tc := range cases {
+		if got := RenderTemplate(tc.tmpl, contact); got != tc.want {
+			t.Errorf("%q: got %q, want %q", tc.tmpl, got, tc.want)
+		}
+		if got := RenderHTMLTemplateWith(tc.tmpl, contact, TemplateContext{}); got != tc.want {
+			t.Errorf("html %q: got %q, want %q", tc.tmpl, got, tc.want)
+		}
+	}
+}
+
+func TestRenderTemplate_CustomFieldBeatsAlias(t *testing.T) {
+	contact := models.Contact{FirstName: "Sam", CustomFields: map[string]string{"first_name": "Samantha"}}
+	if got := RenderTemplate("{{first_name}} {{.first_name}} {{firstName}} {{.FirstName}}", contact); got != "Samantha Samantha Sam Sam" {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestRenderTemplate_CustomFields(t *testing.T) {
 	contact := models.Contact{
 		FirstName:    "Bob",
