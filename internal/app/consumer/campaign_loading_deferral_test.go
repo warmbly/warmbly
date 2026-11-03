@@ -125,3 +125,27 @@ func TestLiveCampaignMailboxLoadingDefersWithoutSpendingAttempts(t *testing.T) {
 		t.Fatalf("provider failure must stay actionable: %+v err=%v", logs, err)
 	}
 }
+
+func TestServerPacingNeedsAnSMTPRefusalBeforeTheRecipient(t *testing.T) {
+	unreachable := string(errx.MailErrorCodeServerUnreachable)
+	for _, tc := range []struct {
+		name    string
+		code    string
+		failure *errx.SendFailure
+		pacing  bool
+	}{
+		{name: "held on the worker", code: unreachable, failure: &errx.SendFailure{Protocol: "smtp", Stage: "pacing", Cause: errx.SendCauseServerPacing, Disposition: errx.SendRetry}, pacing: true},
+		{name: "refused at sign-in", code: unreachable, failure: &errx.SendFailure{Protocol: "smtp", Stage: "auth", Status: 454, Cause: errx.SendCauseServerPacing, Disposition: errx.SendRetry}, pacing: true},
+		{name: "plain connection failure", code: unreachable, failure: &errx.SendFailure{Protocol: "smtp", Stage: "starttls", Disposition: errx.SendRetry}},
+		{name: "other protocol", code: unreachable, failure: &errx.SendFailure{Protocol: "graph", Cause: errx.SendCauseServerPacing, Disposition: errx.SendRetry}},
+		{name: "not a retry", code: unreachable, failure: &errx.SendFailure{Protocol: "smtp", Cause: errx.SendCauseServerPacing, Disposition: errx.SendPermanent}},
+		{name: "other code", code: string(errx.MailErrorCodeInvalidCredentials), failure: &errx.SendFailure{Protocol: "smtp", Cause: errx.SendCauseServerPacing, Disposition: errx.SendRetry}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, code := sendFailureReason(models.SendEmailResult{Error: &models.EmailSendError{Code: tc.code, Message: "refused", Failure: tc.failure}})
+			if (code == models.ServerPacingCode) != tc.pacing {
+				t.Fatalf("code=%s, pacing=%t", code, tc.pacing)
+			}
+		})
+	}
+}
