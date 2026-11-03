@@ -837,14 +837,14 @@ func (s *JobsService) notifyActionRequired(orgID uuid.UUID, mailbox string, m *m
 	if s.Notifier == nil {
 		return
 	}
-	title := "Action required in a mailbox"
+	title := "Message to review in a mailbox"
 	if mailbox != "" {
-		title = "Action required in " + mailbox
+		title = "Message to review in " + mailbox
 	}
 	notify := func(ctx context.Context) {
 		s.Notifier.NotifyOrgAboutMessage(ctx, orgID, models.PermManageEmails|models.PermAccessUnibox, m.ID,
 			models.NotifInboxActionRequired, title,
-			"An automated message in this mailbox says something needs someone to act. Open it in the inbox.",
+			"An incoming message was marked for review. Its claims are unverified. This is an inbox notice, not a Warmbly connection check. Review it in the inbox.",
 			advanced.UniboxThreadLink(m.ThreadID), map[string]any{
 				"email_account_id": m.EmailID.String(),
 				"thread_id":        m.ThreadID,

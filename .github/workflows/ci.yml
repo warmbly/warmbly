@@ -564,6 +564,8 @@ jobs:
             grep -q "^--- PASS: $test " mailbox-transport-runtime.log
           done
           if grep -q -- '--- SKIP:' mailbox-transport-runtime.log; then exit 1; fi
+          go test -race -v -p 1 ./internal/repository -run '^TestLiveAuthenticatorStepRequiresActiveEnrollment$' -count=1 | tee authenticator-verification.log
+          grep -q '^--- PASS: TestLiveAuthenticatorStepRequiresActiveEnrollment ' authenticator-verification.log
           grep -q '^--- PASS: TestLiveImportMailTransportWholeArchiveSendResultLockOrder ' mailbox-transport-runtime.log
           for logfile in mailbox-transport-upgrade.log mailbox-transport-runtime.log; do
             test "$(grep -c '^=== RUN' "$logfile")" -gt 0

@@ -322,6 +322,8 @@ If Gmail expires its history checkpoint after a mailbox has been offline, Warmbl
 
 Nested folders are followed as well, so mail in a subfolder of the inbox or under a label group arrives like anything else. Up to `100` folders per mailbox are synced. Past that the inbox, sent, drafts, spam, trash and archive are always kept and the rest are taken in the order the server lists them, with a note in the mailbox drawer's **Sync** card saying how many were left out. The note goes away by itself once the mailbox is back under the limit.
 
+The last reported counts of folders omitted by the cap or a folder identity conflict are saved across backend and worker restarts. Updated workers timestamp folder-coverage changes separately, so delayed or repeated reports do not replace a newer observation. Their sync reports also identify the reporting worker. For identified reports, the database checks the current mailbox assignment and holds it through error recovery, sync-state persistence and the mailbox timestamp update in one transaction. A report from a superseded worker does not change that state or resolve transport warnings. During rollout, older workers omit this identity and retain timestamp-based fallback; deploy updated consumers before workers. Keep this compatibility path until v0.6.72 workers, retained events and retries have drained and the rollback window has closed; removing it requires a later release. Coverage ordering keeps the original worker timestamp and accepts up to five seconds ahead of the database clock. It never replaces that timestamp with the time of receipt, including on replay. Timestamps farther ahead or at or before the Unix epoch are ignored along with their counters; a later heartbeat may accept the original timestamp once it enters the allowed window. Keep worker clocks synchronized. This allowance applies only to folder coverage, not to the last successful sync. During an upgrade or rollback with v0.6.72 workers, reports without that timestamp use the last successful sync as a fallback; an unstamped progress report cannot replace a timestamped observation. A legacy completion must also be at least as recent as the stored successful sync. A partial pass does not advance **Last synced**. The cap applies to the provider's folder listing before your exclusions, so excluding a folder does not remove that limit. Provider-confirmed sends alone do not establish complete sync coverage.
+
 On IMAP, folders are identified by the standard attributes a server publishes, and by name when it publishes none. The common names are recognized in a dozen languages, so a mailbox whose Sent folder is called "Gesendete Elemente" or "Éléments envoyés" still files sent mail as sent rather than as inbox.
 
 ### Folders you do not want synced
@@ -637,6 +639,8 @@ This is not the same as the risk band that decides which sending worker and IP h
 <Fold>
 
 ## Health
+
+If Warmbly cannot read a mailbox's error reports, its current status is unavailable. A failed lookup does not establish that the mailbox has no errors or that it recovered.
 
 Each Cloud mailbox uses its own current health report. A missing report shows **Unavailable** for that mailbox while other mailboxes keep their reported readings. Summary counts remain unavailable until every listed mailbox has a current status.
 

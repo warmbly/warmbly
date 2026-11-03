@@ -20,14 +20,15 @@ type TOTPRepository interface {
 	InsertRecoveryCodes(ctx context.Context, userID uuid.UUID, hashes []string) error
 	ListUnusedRecoveryCodes(ctx context.Context, userID uuid.UUID) ([]models.RecoveryCode, error)
 	ConsumeRecoveryCode(ctx context.Context, codeID uuid.UUID) error
-	// ConsumeTOTPStep records that this time step has been spent, and reports
-	// whether it was still available. It is compare-and-swap so two requests
-	// racing with the same code cannot both win.
-	ConsumeTOTPStep(ctx context.Context, userID uuid.UUID, step uint64) (bool, error)
+	// ConsumeTOTPStep atomically accepts a step only for the verified active enrollment.
+	ConsumeTOTPStep(ctx context.Context, userID uuid.UUID, step uint64, sealedSecret string) (bool, error)
 	// CountRecoveryCodes reports how many recovery codes the user has left
 	// unused, and how many were issued with the current set.
 	CountRecoveryCodes(ctx context.Context, userID uuid.UUID) (unused, total int, err error)
 }
+
+var ErrRecoveryCodeUsed = errors.New("recovery code already used")
+var ErrTOTPEnrollmentChanged = errors.New("authenticator enrollment changed")
 
 type totpRepository struct {
 	db *pgxpool.Pool
@@ -139,22 +140,31 @@ func (r *totpRepository) ConsumeRecoveryCode(ctx context.Context, codeID uuid.UU
 	// 0 rows = the code was already consumed by a concurrent request. Returning
 	// an error makes the caller treat the attempt as a miss (no double-spend).
 	if tag.RowsAffected() == 0 {
-		return errors.New("recovery code already used")
+		return ErrRecoveryCodeUsed
 	}
 	return nil
 }
 
-// ConsumeTOTPStep retires a TOTP time step for a user.
-//
-// The guard is in the WHERE clause rather than a read-then-write, so two
-// sign-ins presenting the same code at the same moment cannot both pass: only
-// the statement that actually updates a row returns true.
-func (r *totpRepository) ConsumeTOTPStep(ctx context.Context, userID uuid.UUID, step uint64) (bool, error) {
+// ConsumeTOTPStep accepts each increasing step once for the verified active enrollment.
+func (r *totpRepository) ConsumeTOTPStep(ctx context.Context, userID uuid.UUID, step uint64, sealedSecret string) (bool, error) {
 	tag, err := r.db.Exec(ctx,
-		`UPDATE user_totp_settings SET last_used_step = $2 WHERE user_id = $1 AND last_used_step < $2`,
-		userID, int64(step))
+		`UPDATE user_totp_settings SET last_used_step = $2 WHERE user_id = $1 AND totp_enabled AND last_used_step < $2 AND totp_secret_sealed = $3`,
+		userID, int64(step), sealedSecret)
 	if err != nil {
 		return false, err
 	}
-	return tag.RowsAffected() == 1, nil
+	if tag.RowsAffected() == 1 {
+		return true, nil
+	}
+	var used bool
+	if err := r.db.QueryRow(ctx, `SELECT last_used_step >= $2 FROM user_totp_settings WHERE user_id = $1 AND totp_enabled AND totp_secret_sealed = $3`, userID, int64(step), sealedSecret).Scan(&used); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, ErrTOTPEnrollmentChanged
+		}
+		return false, err
+	}
+	if !used {
+		return false, errors.New("authenticator step unavailable")
+	}
+	return false, nil
 }

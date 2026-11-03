@@ -58,11 +58,14 @@ func TestNotifyActionRequiredReachesMailboxManagers(t *testing.T) {
 	if got.perm != models.PermManageEmails|models.PermAccessUnibox {
 		t.Fatalf("perm = %b, want manage mailboxes and use the inbox", got.perm)
 	}
-	if got.title != "Action required in sales@acme.test" || got.link != "/app/unibox/all/thread%2F1" || got.groupKey == "" {
+	if got.title != "Message to review in sales@acme.test" || got.link != "/app/unibox/all/thread%2F1" || got.groupKey == "" {
 		t.Fatalf("notice = %+v", got)
 	}
 	if strings.Contains(got.title+got.body, "evil.example") {
 		t.Fatalf("the sender's subject reached the notification: %+v", got)
+	}
+	if !strings.Contains(got.body, "unverified") || !strings.Contains(got.body, "not a Warmbly connection check") {
+		t.Fatalf("the notification must distinguish an incoming claim from Warmbly's own diagnosis: %+v", got)
 	}
 }
 

@@ -521,7 +521,14 @@ func (s *service) AccessToken(ctx context.Context, inst *models.PoolLinkInstance
 		return nil, ErrMailboxNotManaged
 	}
 	if s.analytics != nil {
-		if status, xerr := s.analytics.GetAccountStatus(ctx, inst.OrganizationID, acc.ID); xerr == nil && status != nil && status.WarmupHealth != nil && status.WarmupHealth.State == "blocked" {
+		status, xerr := s.analytics.GetAccountStatus(ctx, inst.OrganizationID, acc.ID)
+		if xerr != nil {
+			return nil, xerr
+		}
+		if status == nil {
+			return nil, errx.InternalError()
+		}
+		if status.WarmupHealth != nil && status.WarmupHealth.State == "blocked" {
 			return nil, ErrMailboxBlocked
 		}
 	}

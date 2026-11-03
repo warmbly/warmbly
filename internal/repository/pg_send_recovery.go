@@ -49,6 +49,9 @@ type sendResultBeginner interface {
 }
 
 func beginResultTx(ctx context.Context, fallback sendResultBeginner) (pgx.Tx, error) {
+	if tx, ok := ctx.Value(syncReportKey{}).(pgx.Tx); ok {
+		return tx.Begin(ctx)
+	}
 	if state, ok := ctx.Value(sendResultKey{}).(sendResultContext); ok {
 		return state.tx.Begin(ctx)
 	}

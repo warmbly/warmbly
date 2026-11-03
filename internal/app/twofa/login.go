@@ -88,8 +88,8 @@ func (s *service) VerifyLogin(ctx context.Context, pendingToken, code, ipaddr, u
 		return nil, errx.New(errx.BadRequest, "2FA is not enabled")
 	}
 
-	if !s.validCode(ctx, claims.UserID, row, code) {
-		return nil, ErrInvalidCode()
+	if xerr := s.checkCode(ctx, claims.UserID, row, code); xerr != nil {
+		return nil, xerr
 	}
 	_ = s.cache.Del(ctx, userTriesKey(claims.UserID)).Err()
 
