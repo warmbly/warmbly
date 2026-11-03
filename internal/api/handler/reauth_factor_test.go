@@ -56,10 +56,11 @@ type reauthHTTPAuth struct {
 	auth.AuthService
 	cleared bool
 	hash    string
+	hashErr *errx.Error
 }
 
 func (a *reauthHTTPAuth) PasswordHashFor(context.Context, uuid.UUID) (string, *errx.Error) {
-	return a.hash, nil
+	return a.hash, a.hashErr
 }
 func (*reauthHTTPAuth) ReauthIdentities(context.Context, uuid.UUID) ([]string, []string, *errx.Error) {
 	return nil, nil, nil
@@ -143,6 +144,17 @@ func TestReauthUsedCodeRetainsPasswordFallback(t *testing.T) {
 	}
 }
 
+func TestReauthPropagatesPasswordHashLookupFailure(t *testing.T) {
+	lookup := errx.InternalError()
+	h := &Handler{AuthService: &reauthHTTPAuth{hashErr: lookup}, TwoFAService: reauthFactorStub{}}
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/reauth", nil)
+	valid, xerr := h.reauthProofValid(c, uuid.New(), reauthRequest{Password: "correct-password"})
+	if valid || xerr != lookup {
+		t.Fatalf("accepted=%t error=%v; want accepted=false error=%v", valid, xerr, lookup)
+	}
+}
+
 func TestReauthHTTPStampsSessionOnValidProof(t *testing.T) {
 	a := &reauthHTTPAuth{}
 	tokens := &reauthHTTPToken{}
@@ -156,6 +168,31 @@ func TestReauthHTTPStampsSessionOnValidProof(t *testing.T) {
 	r.POST("/v1/auth/reauth", h.Reauth)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/auth/reauth", strings.NewReader(`{"code":"123456"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || !tokens.stamped || !a.cleared {
+		t.Fatalf("status=%d stamped=%t cleared=%t", w.Code, tokens.stamped, a.cleared)
+	}
+}
+
+func TestReauthHTTPFallsBackToPasswordAfterUsedCode(t *testing.T) {
+	hash, err := argon2.Hash("correct-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &reauthHTTPAuth{hash: hash}
+	tokens := &reauthHTTPToken{}
+	used := errx.NewWithIdentifier(errx.BadRequest, twofa.UsedCodeID, "Wait for a new authenticator code, then try again.")
+	h := &Handler{AuthService: a, TokenService: tokens, TwoFAService: reauthFactorStub{xerr: used}}
+	r := gin.New()
+	uid := uuid.New()
+	r.Use(func(c *gin.Context) {
+		c.Set(middleware.UserIDKey, uid.String())
+		c.Set(middleware.SessionKey, &models.Session{ID: uuid.New(), UserID: uid})
+	})
+	r.POST("/v1/auth/reauth", h.Reauth)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/auth/reauth", strings.NewReader(`{"code":"123456","password":"correct-password"}`))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK || !tokens.stamped || !a.cleared {

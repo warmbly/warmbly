@@ -731,11 +731,60 @@ func TestLiveMailTransportSyncFolderCoverageOrdersProgressObservations(t *testin
 	put(models.SyncState{LastSyncedAt: &completed, FoldersSkippedCap: 17, FoldersSkippedConflict: 2})
 	put(models.SyncState{FoldersSkippedCap: 17, FoldersSkippedConflict: 2})
 	assertCoverage(0, 0, &latest)
-	newer := latest.Add(time.Minute)
+	delayed := latest.Add(time.Minute)
+	completed = delayed.Add(time.Minute)
+	put(models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &latest})
+	put(models.SyncState{LastSyncedAt: &delayed, FoldersSkippedCap: 17, FoldersSkippedConflict: 2})
+	assertCoverage(0, 0, &latest)
+	got, err := repo.Get(t.Context(), f.account)
+	if err != nil || got.LastSyncedAt == nil || !got.LastSyncedAt.Equal(completed) {
+		t.Fatalf("latest completion: %+v %v", got, err)
+	}
+	newer := completed.Add(time.Minute)
 	put(models.SyncState{LastSyncedAt: &newer, FoldersSkippedCap: 4, FoldersSkippedConflict: 1})
 	assertCoverage(4, 1, nil)
 	put(models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &latest})
 	assertCoverage(4, 1, nil)
 	put(models.SyncState{FoldersSkippedCap: 3})
 	assertCoverage(3, 0, nil)
+}
+
+func TestLiveMailTransportSyncFolderCoverageRejectsInvalidObservation(t *testing.T) {
+	for _, invalid := range []time.Time{time.Now().Add(time.Hour), {}, time.Unix(0, 0)} {
+		t.Run(invalid.String(), func(t *testing.T) {
+			f := newTransportFixture(t)
+			repo := NewEmailSyncStateRepository(f.db)
+			completed := time.Now().UTC().Add(-time.Hour).Truncate(time.Millisecond)
+			first := completed.Add(time.Minute)
+			latest := first.Add(time.Minute)
+			bad := models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &invalid, FoldersSkippedCap: 17, FoldersSkippedConflict: 2}
+			put := func(state models.SyncState) {
+				t.Helper()
+				if err := repo.Put(t.Context(), f.user, f.account, &state); err != nil {
+					t.Fatal(err)
+				}
+			}
+			assertCoverage := func(capCount int, observed *time.Time) {
+				t.Helper()
+				got, err := repo.Get(t.Context(), f.account)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got == nil || got.FoldersSkippedCap != capCount || got.FoldersSkippedConflict != 0 || got.LastSyncedAt == nil || !got.LastSyncedAt.Equal(completed) {
+					t.Fatalf("coverage or completion: %+v", got)
+				}
+				if (observed == nil) != (got.FolderCoverageObservedAt == nil) || (observed != nil && !got.FolderCoverageObservedAt.Equal(*observed)) {
+					t.Fatalf("observation: %+v; want %v", got, observed)
+				}
+			}
+			put(bad)
+			assertCoverage(0, nil)
+			put(models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &first, FoldersSkippedCap: 4})
+			put(bad)
+			assertCoverage(4, &first)
+			put(models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &latest, FoldersSkippedCap: 3})
+			put(bad)
+			assertCoverage(3, &latest)
+		})
+	}
 }

@@ -78,13 +78,20 @@ func (r *pgEmailSyncStateRepository) Put(ctx context.Context, userID, emailID uu
 		status = models.SyncBackfillPending
 	}
 	const q = `
+		WITH coverage AS (
+			SELECT $15::timestamptz IS NULL OR ($15 > to_timestamp(0) AND $15 <= now()) AS valid
+		)
 		INSERT INTO email_sync_state (
 			email_id, user_id, backfill_status, backfill_cursor, backfill_synced,
 			backfill_since, backfill_started_at, backfill_completed_at,
 			throttled_until, throttle_reason, deferred, last_synced_at,
 			folders_skipped_cap, folders_skipped_conflict, folder_coverage_observed_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-		    CASE WHEN $12::timestamptz > to_timestamp(0) AND $12 <= now() THEN $12 END, $13, $14, $15, now())
+		) SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+		    CASE WHEN $12::timestamptz > to_timestamp(0) AND $12 <= now() THEN $12 END,
+		    CASE WHEN valid THEN $13 ELSE 0 END, CASE WHEN valid THEN $14 ELSE 0 END,
+		    CASE WHEN valid THEN $15::timestamptz END, now()
+		FROM coverage
+		WHERE true
 		ON CONFLICT (email_id) DO UPDATE SET
 			user_id = EXCLUDED.user_id,
 			backfill_status = EXCLUDED.backfill_status,
@@ -102,11 +109,13 @@ func (r *pgEmailSyncStateRepository) Put(ctx context.Context, userID, emailID uu
 					CASE WHEN fresh THEN EXCLUDED.folders_skipped_conflict ELSE email_sync_state.folders_skipped_conflict END,
 					CASE WHEN fresh THEN EXCLUDED.folder_coverage_observed_at ELSE email_sync_state.folder_coverage_observed_at END
 				FROM (SELECT CASE
+					WHEN NOT (SELECT valid FROM coverage) THEN false
 					WHEN EXCLUDED.folder_coverage_observed_at IS NOT NULL THEN
 						(email_sync_state.folder_coverage_observed_at IS NULL AND email_sync_state.last_synced_at IS NULL)
 						OR EXCLUDED.folder_coverage_observed_at > GREATEST(email_sync_state.folder_coverage_observed_at, email_sync_state.last_synced_at)
 					WHEN email_sync_state.folder_coverage_observed_at IS NOT NULL THEN
 						EXCLUDED.last_synced_at > email_sync_state.folder_coverage_observed_at
+						AND (email_sync_state.last_synced_at IS NULL OR EXCLUDED.last_synced_at >= email_sync_state.last_synced_at)
 					ELSE EXCLUDED.last_synced_at IS NULL OR email_sync_state.last_synced_at IS NULL OR EXCLUDED.last_synced_at >= email_sync_state.last_synced_at
 				END AS fresh) coverage
 			),
