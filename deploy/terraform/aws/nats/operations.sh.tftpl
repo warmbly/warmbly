@@ -17,6 +17,11 @@ metrics=$(jq -cn --arg node "$node" --argjson healthy "$healthy" --argjson free 
    {MetricName:"DiskFreePercent",Value:$free,Unit:"Percent"},
    {MetricName:"CertificateDaysRemaining",Value:$days,Unit:"Count"}]
   | map(. + {Dimensions:[{Name:"Node",Value:$node}]})')
+if capacity=$(curl -fsS --max-time 5 'http://127.0.0.1:8222/jsz?accounts=true&streams=true&config=true' | jq -er '
+  [.account_details[]?.stream_detail[]? | select(.name == "warmbly" and .config.max_bytes > 0) | (.state.bytes * 100 / .config.max_bytes)]
+  | if length == 1 then .[0] else error("stream capacity unavailable") end'); then
+  metrics=$(jq -c --arg node "$node" --argjson capacity "$capacity" '. + [{MetricName:"StreamUsagePercent",Value:$capacity,Unit:"Percent",Dimensions:[{Name:"Node",Value:$node}]}]' <<< "$metrics")
+fi
 if [ "$node" = nats1 ]; then
   age=1000000000
   if [ -f /var/lib/nats-backup/last-success ]; then age=$(( $(date +%s) - $(stat -c %Y /var/lib/nats-backup/last-success) )); fi
