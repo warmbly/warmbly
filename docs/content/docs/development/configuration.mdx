@@ -677,6 +677,46 @@ Stage each hostname, verify effective TLS and frontend responses, and retain the
 Pages association and DNS needed for rollback before moving production traffic.
 The deployment procedure is in `deploy/cloudflare/README.md`.
 
+### Optional hosted static assets
+
+Workers Static Assets can serve the same built frontend files directly, without a
+request Worker. This is a separate opt-in delivery path. The existing Pages
+projects remain the public build-configuration source and the rollback copy.
+Self-hosted containers and their configuration are unchanged.
+
+| GitHub variable or secret | What it does | Default |
+|---|---|---|
+| `CLOUDFLARE_STATIC_ASSETS_DEPLOY_ENABLED` | Set the repository variable to `true` to enable configured static asset deployments alongside release Pages uploads, and permit the manual frontend-only workflow | unset |
+| `CLOUDFLARE_STATIC_ASSETS_TARGETS` | Repository variable containing JSON entries with `project`, `worker` and explicit `domains`. Projects must already appear in `CLOUDFLARE_PAGES_PROJECTS`. Domains are Worker custom-domain bindings; use a staging domain before any production hostname | `[]` |
+| `CLOUDFLARE_STATIC_ASSETS_ACCOUNT_ID` | Cloudflare account that owns the Workers custom domains, configured in the corresponding frontend's GitHub environment | unset |
+| `CLOUDFLARE_STATIC_ASSETS_API_TOKEN` | GitHub environment secret permitting Workers asset deployment and the explicitly configured custom domains in that account | unset |
+
+For example, a staging entry is
+`[{"project":"dashboard-project","worker":"dashboard-assets-stage","domains":["assets-stage.example.com"]}]`.
+No wildcard domain is accepted. Empty domains publish an unattached artifact;
+`workers.dev` and preview URLs stay disabled. The publisher preserves
+`_headers` and the dashboard's `_redirects`. For admin it replaces the Pages
+catch-all rewrite with the platform's SPA fallback and keeps the other
+frontends' 404 behavior. It rejects symlinks, Pages Functions, files above 25 MiB
+and artifacts exceeding the Free plan's 20,000-file limit.
+
+The manual **Publish released static assets** workflow rebuilds an existing
+stable release using its tag and exact commit SHA. It does not create a tag,
+release, application deployment or worker-fleet update. It uses current public
+Pages configuration, so a rebuilt artifact can differ from the earlier build if
+that configuration changed. The deployed artifact includes
+`/.well-known/warmbly-release.json` and is retained as a workflow artifact.
+Subsequent releases publish the same built files to Pages and configured static
+asset targets. Static asset requests do not invoke a Worker script; confirm the
+account's current limits and pricing before enabling any other Workers feature.
+
+Before moving a production hostname, verify the staging site's certificate,
+TLS policy, root and nested routes, assets, response headers and redirects.
+Archive its existing Pages association and DNS. If verification fails after a
+cutover, restore that association and DNS, or deploy the saved asset artifact to
+the same Worker name. Keep the Pages deployment and its configuration available
+through the rollback window. A source merge alone does not attach a domain.
+
 ### Whole-domain connects
 
 A workspace can connect every mailbox on a [Google Workspace domain or Microsoft 365 organization](/guides/mailbox-import/#connect-a-whole-google-workspace-domain) through one administrator's grant (**Add account > Google > Whole Workspace domain**, **Add account > Microsoft > Whole organization**). These are read by the backend only: it mints every token for those mailboxes itself and hands them to workers per use, so workers need nothing here. The complete setup, step by step, is in [whole-domain mailbox connects](/development/whole-domain-connect/).
