@@ -182,6 +182,37 @@ describe("mailbox ordering with a tag filter", () => {
         expect(within(screen.getByRole("row", { name: /julie@serveblink.example/ })).getByRole("checkbox")).toBeChecked();
     });
 
+    it("keeps failed bulk starts selected so retry only sends requests for those mailboxes", async () => {
+        warmupUpdate.mockImplementation(async (id: string) => {
+            if (id === "julie") throw new Error("Settings unavailable");
+        });
+        warmupStart.mockImplementation(async (id: string) => {
+            if (id === "kavya") throw new Error("Start unavailable");
+        });
+        await renderPage();
+        const checkbox = (email: string) => within(screen.getByRole("row", { name: new RegExp(email.replaceAll(".", "\\.")) })).getByRole("checkbox");
+        for (const row of rows.filter((row) => row.id !== "sara")) fireEvent.click(checkbox(row.email));
+        fireEvent.click(screen.getByRole("button", { name: "Start warmup" }));
+        fireEvent.click(within(screen.getByRole("dialog", { name: "Start warmup" })).getByRole("button", { name: "Start warmup" }));
+        await waitFor(() => expect(screen.queryByRole("dialog", { name: "Start warmup" })).not.toBeInTheDocument());
+        expect(screen.getByText("2 selected")).toBeInTheDocument();
+        expect(checkbox(rows[2].email)).not.toBeChecked();
+        expect(checkbox(rows[1].email)).toBeChecked();
+        expect(checkbox(rows[3].email)).toBeChecked();
+        expect(warmupStart).not.toHaveBeenCalledWith("julie", "start");
+
+        warmupUpdate.mockReset().mockResolvedValue({});
+        warmupStart.mockReset().mockResolvedValue({});
+        fireEvent.click(screen.getByRole("button", { name: "Start warmup" }));
+        fireEvent.click(within(screen.getByRole("dialog", { name: "Start warmup" })).getByRole("button", { name: "Start warmup" }));
+        await waitFor(() => expect(screen.queryByRole("dialog", { name: "Start warmup" })).not.toBeInTheDocument());
+        expect(warmupUpdate).toHaveBeenCalledTimes(2);
+        expect(warmupStart).toHaveBeenCalledTimes(2);
+        expect(warmupStart).toHaveBeenCalledWith("julie", "start");
+        expect(warmupStart).toHaveBeenCalledWith("kavya", "start");
+        expect(screen.queryByText(/\d+ selected/)).not.toBeInTheDocument();
+    });
+
     it("keeps that order when a specific tag returns rows in creation order", async () => {
         await renderPage("serveblink");
         expect(orderedEmails()).toEqual(["ananya@serveblink.example", "julie@serveblink.example", "kavya@serveblink.example"]);

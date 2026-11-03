@@ -74,7 +74,8 @@ export default function BulkWarmupDialog({
                 await warmupLifecycle(id, "start");
             }),
         );
-        const failed = results.filter((r) => r.status === "rejected").length;
+        const started = ids.filter((_, index) => results[index].status === "fulfilled");
+        const failed = n - started.length;
         await queryClient.invalidateQueries({ queryKey: ["emails"] });
         await queryClient.invalidateQueries({ queryKey: ["analytics", "accounts"] });
         setBusy(false);
@@ -83,7 +84,7 @@ export default function BulkWarmupDialog({
         } else {
             toast.success(`Warmup started for ${n} mailbox${n > 1 ? "es" : ""}`);
         }
-        onComplete(ids);
+        onComplete(started);
         onClose();
     };
 
