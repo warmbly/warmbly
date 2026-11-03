@@ -198,10 +198,16 @@ Failed, timed-out and cancelled patch executions notify the operations topic.
 Quorum checks include each durable consumer as well as stream and metadata state.
 
 The stack installs Systems Manager access without SSH, one-minute health/disk
-metrics and CloudWatch alarms. Health, disk, certificate and backup-age alarms
+metrics and CloudWatch alarms. Health, disk, stream-capacity, certificate and backup-age alarms
 publish to the stack's SNS operations topic. Set the optional Terraform input
 `notification_email` and confirm the subscription before relying on email
 notifications. Without a confirmed subscriber, the topic delivers no email.
+
+Stream-capacity monitoring measures the logical JetStream limit separately from
+filesystem free space and alerts above 75 percent for three one-minute periods.
+Review retention, consumer backlog and disk headroom before raising that limit.
+Missing capacity metrics also alert, so verify the stream exists and monitoring
+has reported before sending production traffic.
 
 Daily encrypted EBS snapshots retain seven recovery points. Separately, the
 backup node runs a daily native JetStream snapshot at 02:00 UTC, with up to five
