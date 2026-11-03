@@ -46,8 +46,7 @@ var mailboxFullMarkers = []string{
 
 // recipientMarkers name the RECIPIENT as the problem. They are decisive
 // regardless of the numeric code, because providers disagree about which code
-// carries them (Microsoft answers a missing mailbox with 5.4.1, some Exim
-// builds with 554).
+// carries them (some Exim builds answer a missing mailbox with 554).
 var recipientMarkers = []string{
 	"user unknown",
 	"unknown user",
@@ -58,26 +57,30 @@ var recipientMarkers = []string{
 	"recipient not found",
 	"recipient unknown",
 	"unknown recipient",
-	"recipient address rejected",
-	"recipient rejected",
 	"invalid recipient",
 	"invalid mailbox",
-	"mailbox unavailable",
 	"mailbox not found",
-	"mailbox does not exist",
 	"mailbox is disabled",
 	"mailbox disabled",
 	"account has been disabled",
 	"account is disabled",
-	"account does not exist",
-	"address does not exist",
-	"does not exist",
-	"doesn't exist",
 	"unrouteable address",
 	"unroutable address",
 	"no mailbox here",
 	"not a valid mailbox",
 	"user doesn't have an account",
+}
+
+// weakRecipientMarkers blame the recipient only when nothing in the text
+// blames the sender or a policy: "Recipient address rejected: policy
+// restriction" and "sender domain does not exist" are not about the address,
+// while Microsoft's "Recipient address rejected: Access denied" is.
+var weakRecipientMarkers = []string{
+	"recipient address rejected",
+	"recipient rejected",
+	"mailbox unavailable",
+	"does not exist",
+	"doesn't exist",
 }
 
 // transientMarkers say the sender should try again later.
@@ -105,7 +108,11 @@ var sessionMarkers = []string{
 	"unable to relay",
 	"client host rejected",
 	"client host blocked",
-	"sender address rejected",
+	"sender address",
+	"sender domain",
+	"sender's domain",
+	"domain of sender",
+	"envelope sender",
 	"sender rejected",
 	"sender verify failed",
 	"sender not allowed",
@@ -118,12 +125,11 @@ var sessionMarkers = []string{
 	"blocked using",
 	"listed in",
 	"spamhaus",
+	"spam",
 	"reputation",
 	"service unavailable",
 	"connection refused",
-	"policy reasons",
-	"local policy",
-	"security policy",
+	"policy",
 }
 
 // Status is an RFC 3463 enhanced status code (class.subject.detail).
@@ -131,25 +137,39 @@ type Status struct {
 	Class, Subject, Detail int
 }
 
-// StatusIn returns the most specific enhanced status code in text: the first
-// that is not an undefined x.0.0, else the first. Tokens are whole, so an IP
-// address or a version string never reads as one.
+// StatusIn returns the enhanced status code that decides a refusal: the first
+// permanent (5.x.x) one, since a 4.x.x quoted beside it is earlier history,
+// else the first other code; an undefined x.0.0 only when nothing is more
+// specific. Tokens are whole, so an IP address never reads as one.
 func StatusIn(text string) (Status, bool) {
-	var first Status
-	found := false
+	var permanent, specific, first Status
+	var hasPermanent, hasSpecific, hasFirst bool
 	for _, tok := range strings.FieldsFunc(text, func(r rune) bool { return !unicode.IsDigit(r) && r != '.' }) {
 		s, ok := parseStatus(strings.Trim(tok, "."))
 		if !ok {
 			continue
 		}
-		if s.Subject != 0 || s.Detail != 0 {
-			return s, true
+		if !hasFirst {
+			first, hasFirst = s, true
 		}
-		if !found {
-			first, found = s, true
+		if s.Subject == 0 && s.Detail == 0 {
+			continue
+		}
+		if s.Class == 5 {
+			permanent, hasPermanent = s, true
+			break
+		}
+		if !hasSpecific {
+			specific, hasSpecific = s, true
 		}
 	}
-	return first, found
+	switch {
+	case hasPermanent:
+		return permanent, true
+	case hasSpecific:
+		return specific, true
+	}
+	return first, hasFirst
 }
 
 func parseStatus(tok string) (Status, bool) {
@@ -191,6 +211,9 @@ func Blame(text string) Cause {
 	}
 	if containsAny(lower, sessionMarkers) {
 		return CauseReputationBlock
+	}
+	if containsAny(lower, weakRecipientMarkers) {
+		return CauseRecipientInvalid
 	}
 	if !hasStatus || status.Class != 5 {
 		return CauseUnknown

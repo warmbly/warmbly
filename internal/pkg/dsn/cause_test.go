@@ -9,15 +9,23 @@ func TestBlame(t *testing.T) {
 	}{
 		// The address is what failed.
 		{"gmail no such user", "550-5.1.1 The email account that you tried to reach does not exist. Please try double-checking the recipient's email address for typos or unnecessary spaces. https://support.google.com/mail/?p=NoSuchUser", CauseRecipientInvalid},
-		{"postfix user unknown", "smtp; 550 5.1.1 <[EMAIL]>: Recipient address rejected: User unknown in virtual mailbox table", CauseRecipientInvalid},
+		{"postfix user unknown", "smtp; 550 5.1.1 <lead@example.com>: Recipient address rejected: User unknown in virtual mailbox table", CauseRecipientInvalid},
 		{"bare 5.1.1", "5.1.1", CauseRecipientInvalid},
 		{"no such domain", "5.1.2 smtp; 550 5.1.2 Host unknown", CauseRecipientInvalid},
 		{"exchange missing mailbox under 5.4.1", "550 5.4.1 Recipient address rejected: Access denied. AS(201806281) [DB5EUR03FT012.eop-EUR03.prod.protection.outlook.com]", CauseRecipientInvalid},
 		{"exchange resolver", "550 5.1.10 RESOLVER.ADR.RecipientNotFound; Recipient not found by SMTP address lookup", CauseRecipientInvalid},
 		{"gmail disabled", "550 5.2.1 The email account that you tried to reach is disabled.", CauseRecipientInvalid},
 		{"exim unrouteable", "550 Unrouteable address", CauseRecipientInvalid},
+		{"bare recipient rejection", "550 Recipient address rejected", CauseRecipientInvalid},
+		{"permanent code after a quoted deferral", "451 4.7.1 try later, then 550 5.1.1 user unknown", CauseRecipientInvalid},
+		{"deferral quoted after the permanent code", "550 5.1.1 <a@b>: rejected (earlier 451 4.7.1)", CauseRecipientInvalid},
 
 		// Something other than the address failed.
+		{"recipient rejection with a policy tail", "550 5.7.1 Recipient address rejected: policy restriction", CauseReputationBlock},
+		{"recipient rejection while greylisting", "450 Recipient address rejected: Greylisted", CauseTransient},
+		{"sender domain does not exist", "550 5.1.0 Sender domain does not exist", CauseReputationBlock},
+		{"sender address does not exist", "553 sender address does not exist", CauseReputationBlock},
+		{"spam without a status", "550 Message rejected as spam", CauseReputationBlock},
 		{"gmail blocked", "550-5.7.1 [[IP]] Our system has detected an unusual rate of unsolicited mail originating from your IP address. To protect our users from spam, mail sent from your IP address has been blocked.", CauseReputationBlock},
 		{"microsoft spamhaus", "550 5.7.1 Service unavailable, Client host [[IP]] blocked using Spamhaus. To request removal from this list see https://www.spamhaus.org/query/ip/[IP] (AS3130)", CauseReputationBlock},
 		{"microsoft ip reputation", "550 5.7.1 Unfortunately, messages from [[IP]] weren't sent. Please contact your Internet service provider", CauseReputationBlock},
@@ -26,7 +34,7 @@ func TestBlame(t *testing.T) {
 		{"message too large", "552 5.2.3 Message size exceeds fixed maximum message size", CauseReputationBlock},
 		{"mailbox full", "552 5.2.2 Mailbox full", CauseMailboxFull},
 		{"gmail over quota", "552-5.2.2 The email account that you tried to reach is over quota.", CauseMailboxFull},
-		{"quota policy names the recipient field", "552 <[EMAIL]>: Recipient address rejected: Mailbox full", CauseMailboxFull},
+		{"quota policy names the recipient field", "552 <lead@example.com>: Recipient address rejected: Mailbox full", CauseMailboxFull},
 		{"system problem", "554 5.3.0 Other mail system problem", CauseTransient},
 		{"routing loop", "554 5.4.6 Routing loop detected", CauseTransient},
 		{"greylisted", "451 4.7.1 Greylisted, try again later", CauseTransient},

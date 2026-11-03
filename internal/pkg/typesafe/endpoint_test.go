@@ -17,7 +17,7 @@ func TestWithEndpoint(t *testing.T) {
 		_, _ = w.Write([]byte(`{"model":"jev-1.13.0","answers":{"q":{"type":"noul","noul":0.9}}}`))
 	}))
 	defer srv.Close()
-	if _, err := NewClient("k", WithEndpoint(srv.URL)).Ask(context.Background(), map[string]string{"a": "b"}, map[string]Question{"q": Noul("x")}); err != nil {
+	if _, err := NewClient("k", WithEndpoint("  "+srv.URL+"  ")).Ask(context.Background(), map[string]string{"a": "b"}, map[string]Question{"q": Noul("x")}); err != nil {
 		t.Fatal(err)
 	}
 	if !hit {

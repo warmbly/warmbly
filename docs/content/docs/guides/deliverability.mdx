@@ -190,11 +190,13 @@ If a campaign has already been paused because every one of its mailboxes was gat
 
 | The bounce says | Examples | Address suppressed, lead dropped from campaigns |
 |---|---|---|
-| The address does not exist or is disabled | `5.1.1` user unknown, `5.1.2` no such domain, `5.2.1` mailbox disabled, "no such user", "does not exist", Microsoft's `5.4.1` "Recipient address rejected: Access denied" | Yes |
+| The address does not exist or is disabled | `5.1.1` user unknown, `5.1.2` no such domain, `5.2.1` mailbox disabled, "no such user", Microsoft's `5.4.1` "Recipient address rejected: Access denied". Looser wording ("Recipient address rejected", "does not exist", "mailbox unavailable") counts only when nothing in the reply blames the sender or a policy | Yes |
 | The mailbox is full | `5.2.2`, "mailbox full", "over quota" | No |
-| The sender was refused for policy, reputation or authentication | `5.7.x` without wording about the recipient, "blocked using Spamhaus", "client host rejected", `5.1.7`/`5.1.8` sender address | No |
+| The sender was refused for policy, reputation or authentication | `5.7.x` without wording about the recipient, "blocked using Spamhaus", "client host rejected", "rejected as spam", "Recipient address rejected: policy restriction", "sender domain does not exist", `5.1.7`/`5.1.8` sender address | No |
 | The receiving system had a problem | `5.3.x`, `5.4.x` other than `5.4.1` and `5.4.4`, any `4.x.x` | No |
-| Nothing telling | No status code and no recognisable wording | Yes, unless TypeSafe classifies it (below) |
+| Nothing telling | No recognisable wording, and no status code or only `5.4.1` or `5.4.4` | Yes, unless TypeSafe classifies it (below) |
+
+A failure notice's own `Status` field decides over any other code its diagnostic quotes, and when a notice reports several recipients, the status, reply and address are read from the same recipient's entry.
 
 A bounce that is not about the address still records the bounce, and still counts toward the campaign breaker and mailbox health, but does not suppress the address and does not drop the lead from its campaign: the step is offered again later. When the operator has configured TypeSafe (`TYPESAFE_API_KEY`), a bounce in the last row is classified, and its reason text is sent to TypeSafe for this. A reputation or policy block, a full mailbox, or a temporary failure at 80% confidence or more is then treated like the rows above it. The list, with anything you add by hand (addresses or whole domains), is under **Contacts > Suppression list**.
 

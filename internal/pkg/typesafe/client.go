@@ -139,10 +139,12 @@ type Client struct {
 
 type Option func(*Client)
 
-// WithEndpoint replaces the default endpoint; an empty value keeps it.
+// WithEndpoint replaces the default endpoint; an empty value keeps it. The
+// caller validates the scheme (config.TypeSafeEndpoint).
 func WithEndpoint(endpoint string) Option {
+	endpoint = strings.TrimSpace(endpoint)
 	return func(c *Client) {
-		if endpoint = strings.TrimSpace(endpoint); endpoint != "" {
+		if endpoint != "" {
 			c.endpoint = endpoint
 		}
 	}

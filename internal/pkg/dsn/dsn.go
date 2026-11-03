@@ -118,7 +118,6 @@ func Parse(body string) Report {
 	}
 	if a := reAction.FindStringSubmatch(body); a != nil {
 		r.IsBounce = true
-		r.Action = strings.ToLower(a[1])
 		if strings.EqualFold(a[1], "failed") && r.hasNo4xx(body) {
 			// "failed" is permanent per RFC 3464, but a co-present 4.x.x status
 			// (retry-then-fail) means transient — defer to the status code.
@@ -134,12 +133,37 @@ func Parse(body string) Report {
 	if ids := reMessageID.FindAllStringSubmatch(body, -1); len(ids) > 0 {
 		r.OriginalMessageID = strings.TrimSpace(ids[len(ids)-1][1])
 	}
-	if m := reStatusCode.FindStringSubmatch(body); m != nil {
+	// Recipient, status and diagnostic come from one per-recipient group.
+	group := failedGroup(body)
+	if m := reFinalRcpt.FindStringSubmatch(group); m != nil {
+		r.FailedRecipient = strings.TrimSpace(m[1])
+	}
+	if a := reAction.FindStringSubmatch(group); a != nil {
+		r.Action = strings.ToLower(a[1])
+	}
+	if m := reStatusCode.FindStringSubmatch(group); m != nil {
 		r.Status = m[1]
 	}
-	r.Diagnostic = diagnosticText(body)
+	r.Diagnostic = diagnosticText(group)
 
 	return r
+}
+
+var reBlankLine = regexp.MustCompile(`\r?\n[ \t]*\r?\n`)
+
+// failedGroup is the per-recipient field group a notice reports: the first
+// with a permanent status, else the first with a status or diagnostic.
+func failedGroup(body string) string {
+	first := ""
+	for _, g := range reBlankLine.Split(body, -1) {
+		if m := reStatusCode.FindStringSubmatch(g); m != nil && m[1][0] == '5' {
+			return g
+		}
+		if first == "" && (reStatusCode.MatchString(g) || reDiagField.MatchString(g)) {
+			first = g
+		}
+	}
+	return first
 }
 
 // diagnosticText reads the first Diagnostic-Code value with its folded
@@ -171,10 +195,12 @@ func bound(s string) string {
 }
 
 // Reason is the notice's own account of the failure, its status code and the
-// remote server's reply, or fallback when the notice carries neither.
+// remote server's reply, or fallback when the notice carries neither. The
+// Status field leads unless the reply's own deciding code is the same, so it
+// is the code StatusIn reads.
 func (r Report) Reason(fallback string) string {
 	switch {
-	case r.Diagnostic != "" && (r.Status == "" || strings.Contains(r.Diagnostic, r.Status)):
+	case r.Diagnostic != "" && (r.Status == "" || sameStatus(r.Diagnostic, r.Status)):
 		return r.Diagnostic
 	case r.Diagnostic != "":
 		return bound(r.Status + " " + r.Diagnostic)
@@ -182,6 +208,12 @@ func (r Report) Reason(fallback string) string {
 		return r.Status
 	}
 	return bound(fallback)
+}
+
+func sameStatus(text, status string) bool {
+	got, ok := StatusIn(text)
+	want, wok := parseStatus(status)
+	return ok && wok && got == want
 }
 
 func (r Report) hasNo4xx(body string) bool {

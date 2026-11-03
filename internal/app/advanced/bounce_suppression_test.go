@@ -51,7 +51,7 @@ func TestBounceSuppressesOnlyWhenTheAddressFailed(t *testing.T) {
 		suppress     bool
 		judgeCalls   int
 	}{
-		{"user unknown", "550 5.1.1 <[EMAIL]>: Recipient address rejected: User unknown", "reputation_block", true, 0},
+		{"user unknown", "550 5.1.1 <lead@example.com>: Recipient address rejected: User unknown", "reputation_block", true, 0},
 		{"exchange missing mailbox", "550 5.4.1 Recipient address rejected: Access denied. AS(201806281)", "reputation_block", true, 0},
 		{"gmail policy block", "550-5.7.1 Our system has detected an unusual rate of unsolicited mail originating from your IP address.", "recipient_invalid", false, 0},
 		{"spamhaus", "550 5.7.1 Service unavailable, Client host [[IP]] blocked using Spamhaus", "recipient_invalid", false, 0},
@@ -65,7 +65,7 @@ func TestBounceSuppressesOnlyWhenTheAddressFailed(t *testing.T) {
 			judge := &countingJudge{answer: tc.judge}
 			s := &service{repo: repo, bounceJudge: judge}
 			if xerr := s.IngestDeliverabilityEvent(context.Background(), uuid.New(), &models.IngestDeliverabilityEventRequest{
-				EventType: models.DeliverabilityEventBounce, RecipientEmail: "[EMAIL]", Reason: tc.reason,
+				EventType: models.DeliverabilityEventBounce, RecipientEmail: "lead@example.com", Reason: tc.reason,
 			}); xerr != nil {
 				t.Fatal(xerr)
 			}
@@ -85,7 +85,7 @@ func TestBounceSuppressesOnlyWhenTheAddressFailed(t *testing.T) {
 	repo := &suppressionRepo{}
 	s := &service{repo: repo}
 	if xerr := s.IngestDeliverabilityEvent(context.Background(), uuid.New(), &models.IngestDeliverabilityEventRequest{
-		EventType: models.DeliverabilityEventBounce, RecipientEmail: "[EMAIL]", Reason: "554 Transaction failed",
+		EventType: models.DeliverabilityEventBounce, RecipientEmail: "lead@example.com", Reason: "554 Transaction failed",
 	}); xerr != nil {
 		t.Fatal(xerr)
 	}

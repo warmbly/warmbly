@@ -1984,6 +1984,7 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 			req.Metadata["bounce_cause_source"] = source
 		}
 	}
+	req.AddressKept = addressFine
 
 	if err := s.repo.CreateDeliverabilityEvent(ctx, &models.DeliverabilityEvent{
 		OrganizationID: organizationID,
