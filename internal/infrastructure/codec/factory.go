@@ -3,6 +3,7 @@ package codec
 import (
 	"fmt"
 	"os"
+	"strconv"
 )
 
 // FromEnv constructs the active Codec from environment variables.
@@ -23,6 +24,29 @@ func FromEnv() (Codec, error) {
 	if provider == "" {
 		provider = "avro"
 	}
+	readBoth := false
+	if raw := os.Getenv("CODEC_READ_BOTH"); raw != "" {
+		var err error
+		readBoth, err = strconv.ParseBool(raw)
+		if err != nil {
+			return nil, fmt.Errorf("codec: CODEC_READ_BOTH must be a boolean")
+		}
+	}
+	writer, err := codecFromEnv(provider)
+	if err != nil || !readBoth {
+		return writer, err
+	}
+	avroCodec := writer
+	if provider != "avro" {
+		avroCodec, err = codecFromEnv("avro")
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &migrationCodec{writer: writer, avro: avroCodec, json: NewJSON()}, nil
+}
+
+func codecFromEnv(provider string) (Codec, error) {
 	switch provider {
 	case "avro":
 		url := os.Getenv("SCHEMA_REGISTRY_URL")

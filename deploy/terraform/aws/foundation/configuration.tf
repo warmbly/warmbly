@@ -13,6 +13,9 @@ variable "service_configuration" {
             "TRACKING_DOMAIN", "WEBSOCKET_URL", "CORS_ALLOW_ORIGINS",
             "CHECK_ORIGIN_HOSTS", "PHX_HOST", "PORT", "FORMS_PORT", "TRACKING_HOST",
             "EVENTBUS_PROVIDER", "CODEC_PROVIDER", "KAFKA_BOOTSTRAP_SERVERS",
+            "NATS_URL", "NATS_STREAM_NAME", "NATS_SUBJECT_PREFIX", "NATS_MAX_BYTES",
+            "NATS_REPLICAS", "NATS_DISCARD_NEW", "NATS_TLS_CA_B64",
+            "EVENTBUS_READ_BOTH", "EVENTBUS_HOLD_READS", "CODEC_READ_BOTH",
             "SCHEMA_REGISTRY_URL", "KMS_PROVIDER", "KMS_AWS_KEY_ID",
             "ENCRYPTED_KEYS_PROVIDER", "BLOB_PROVIDER", "BLOB_BUCKET",
             "BLOB_PUBLIC_BASE_URL", "AWS_REGION", "MAIL_TRANSPORT", "EMAIL_NAME",
@@ -20,7 +23,7 @@ variable "service_configuration" {
             "WEBAUTHN_RP_ORIGINS", "INBOX_TAGGING_ENABLED", "RELEASES_ENABLED",
             "GEODB_PATH", "DATABASE_POOL_SIZE", "DATABASE_SSL_CA_FILE",
             "SEARCH_PROVIDER", "AI_PROVIDER", "AI_MODEL"
-          ], key) && !can(regex("://[^/@]+:[^/@]+@", value)) && !can(regex("(?i)(password|secret|token|api_key)=", value))
+          ], key) && !can(regex("://[^/@]+@", value)) && !can(regex("(?i)(password|secret|token|api_key)=", value))
         ])
       ]
     ]))

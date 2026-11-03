@@ -1,0 +1,90 @@
+#!/bin/bash
+set -euo pipefail
+umask 077
+dnf install -y jq tar gzip
+id nats >/dev/null 2>&1 || useradd --system --home-dir /var/lib/nats --shell /sbin/nologin nats
+install -d -m 750 -o root -g nats /etc/nats
+install -d -m 750 -o nats -g nats /var/lib/nats
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+archive='nats-server-v${version}-linux-arm64.tar.gz'
+curl --fail --silent --show-error --location --retry 5 \
+  "https://github.com/nats-io/nats-server/releases/download/v${version}/$archive" -o "$work/$archive"
+printf '%s  %s\n' '${sha256}' "$work/$archive" | sha256sum -c -
+tar -xzf "$work/$archive" -C "$work"
+install -m 755 "$work/nats-server-v${version}-linux-arm64/nats-server" /usr/local/bin/nats-server
+
+cat > /usr/local/sbin/nats-load-config <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+umask 077
+stage=$(mktemp -d /etc/nats/.config.XXXXXX)
+trap 'rm -rf "$stage"' EXIT
+aws secretsmanager get-secret-value --region us-east-1 --secret-id '${secret_arn}' --query SecretString --output text > "$stage/bundle"
+for file in server.conf server.crt server.key ca.crt; do
+  jq -er --arg file "$file" '.[$file] | select(type == "string" and length > 0)' "$stage/bundle" > "$stage/$file"
+  chown root:nats "$stage/$file"
+  chmod 640 "$stage/$file"
+done
+sed "s|/etc/nats/|$stage/|g" "$stage/server.conf" > "$stage/validate.conf"
+/usr/local/bin/nats-server -t --config "$stage/validate.conf"
+for file in server.crt server.key ca.crt server.conf; do
+  mv "$stage/$file" "/etc/nats/$file"
+done
+SCRIPT
+chmod 700 /usr/local/sbin/nats-load-config
+
+cat > /etc/systemd/system/nats.service <<'UNIT'
+[Unit]
+Description=Private Warmbly NATS JetStream
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+[Service]
+User=nats
+Group=nats
+ExecStartPre=+/usr/local/sbin/nats-load-config
+ExecStart=/usr/local/bin/nats-server --config /etc/nats/server.conf
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=15
+TimeoutStopSec=120
+KillSignal=SIGTERM
+LimitNOFILE=65536
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/nats /etc/nats /run
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+cat > /usr/local/sbin/nats-health <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+healthy=0
+curl --fail --silent --max-time 5 'http://127.0.0.1:8222/healthz?js-enabled-only=true' >/dev/null && healthy=1
+free=$(df --output=pcent /var/lib/nats | tail -1 | tr -dc '0-9')
+aws cloudwatch put-metric-data --region us-east-1 --namespace Warmbly/NATS --metric-data \
+  "[{\"MetricName\":\"Healthy\",\"Value\":$healthy,\"Unit\":\"Count\",\"Dimensions\":[{\"Name\":\"Node\",\"Value\":\"${node}\"}]},{\"MetricName\":\"DiskFreePercent\",\"Value\":$((100-free)),\"Unit\":\"Percent\",\"Dimensions\":[{\"Name\":\"Node\",\"Value\":\"${node}\"}]}]"
+SCRIPT
+chmod 700 /usr/local/sbin/nats-health
+cat > /etc/systemd/system/nats-health.service <<'UNIT'
+[Unit]
+Description=Publish NATS health metrics
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/nats-health
+UNIT
+cat > /etc/systemd/system/nats-health.timer <<'UNIT'
+[Unit]
+Description=Check NATS each minute
+[Timer]
+OnBootSec=120
+OnUnitActiveSec=60
+[Install]
+WantedBy=timers.target
+UNIT
+systemctl daemon-reload
+systemctl enable --now amazon-ssm-agent nats.service nats-health.timer

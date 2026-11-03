@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 	"strings"
 	"sync/atomic"
 )
@@ -20,6 +21,12 @@ func BlobProvider() string { return providerOr("BLOB_PROVIDER", "s3") }
 // EventBusProvider returns the selected event bus ("kafka" | "nats").
 // Default kafka.
 func EventBusProvider() string { return providerOr("EVENTBUS_PROVIDER", "kafka") }
+
+// EventBusUsesKafka includes the old transport kept for a staged migration.
+func EventBusUsesKafka() bool {
+	readBoth, _ := strconv.ParseBool(os.Getenv("EVENTBUS_READ_BOTH"))
+	return EventBusProvider() == "kafka" || readBoth
+}
 
 // CodecProvider returns the selected codec ("avro" | "json"). Default avro.
 func CodecProvider() string { return providerOr("CODEC_PROVIDER", "avro") }
