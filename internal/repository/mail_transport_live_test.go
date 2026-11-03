@@ -613,3 +613,37 @@ func TestLiveMailTransportSyncTimestampIsMonotonic(t *testing.T) {
 		t.Fatalf("account/table clocks diverged: %v %v", accountAt, err)
 	}
 }
+
+func TestLiveMailTransportSyncFolderCoveragePersistsAndClears(t *testing.T) {
+	f := newTransportFixture(t)
+	repo := NewEmailSyncStateRepository(f.db)
+	if _, err := f.pool.Exec(t.Context(), `INSERT INTO email_sync_state(email_id,user_id) VALUES($1,$2)`, f.account, f.user); err != nil {
+		t.Fatal(err)
+	}
+	assertCoverage := func(capCount, conflicts int) {
+		t.Helper()
+		state, err := repo.Get(t.Context(), f.account)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if state == nil || state.FoldersSkippedCap != capCount || state.FoldersSkippedConflict != conflicts || state.LastSyncedAt != nil {
+			t.Fatalf("unexpected folder coverage or successful sync: %+v", state)
+		}
+	}
+	assertCoverage(0, 0)
+	if _, err := f.pool.Exec(t.Context(), `DELETE FROM email_sync_state WHERE email_id=$1`, f.account); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Put(t.Context(), f.user, f.account, &models.SyncState{FoldersSkippedCap: 17, FoldersSkippedConflict: 2}); err != nil {
+		t.Fatal(err)
+	}
+	assertCoverage(17, 2)
+	if _, err := f.pool.Exec(t.Context(), `UPDATE email_sync_state SET deferred=1 WHERE email_id=$1`, f.account); err != nil {
+		t.Fatal(err)
+	}
+	assertCoverage(17, 2)
+	if err := repo.Put(t.Context(), f.user, f.account, &models.SyncState{}); err != nil {
+		t.Fatal(err)
+	}
+	assertCoverage(0, 0)
+}

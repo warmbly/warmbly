@@ -81,9 +81,10 @@ func (r *pgEmailSyncStateRepository) Put(ctx context.Context, userID, emailID uu
 		INSERT INTO email_sync_state (
 			email_id, user_id, backfill_status, backfill_cursor, backfill_synced,
 			backfill_since, backfill_started_at, backfill_completed_at,
-			throttled_until, throttle_reason, deferred, last_synced_at, updated_at
+			throttled_until, throttle_reason, deferred, last_synced_at,
+			folders_skipped_cap, folders_skipped_conflict, updated_at
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-		    CASE WHEN $12::timestamptz > to_timestamp(0) AND $12 <= now() THEN $12 END, now())
+		    CASE WHEN $12::timestamptz > to_timestamp(0) AND $12 <= now() THEN $12 END, $13, $14, now())
 		ON CONFLICT (email_id) DO UPDATE SET
 			user_id = EXCLUDED.user_id,
 			backfill_status = EXCLUDED.backfill_status,
@@ -95,6 +96,8 @@ func (r *pgEmailSyncStateRepository) Put(ctx context.Context, userID, emailID uu
 			throttled_until = EXCLUDED.throttled_until,
 			throttle_reason = EXCLUDED.throttle_reason,
 			deferred = EXCLUDED.deferred,
+			folders_skipped_cap = EXCLUDED.folders_skipped_cap,
+			folders_skipped_conflict = EXCLUDED.folders_skipped_conflict,
 			last_synced_at = GREATEST(EXCLUDED.last_synced_at, email_sync_state.last_synced_at),
 			updated_at = now()
 	`
@@ -102,6 +105,7 @@ func (r *pgEmailSyncStateRepository) Put(ctx context.Context, userID, emailID uu
 		emailID, userID, string(status), cursor, state.BackfillSynced,
 		state.BackfillSince, state.BackfillStartedAt, state.BackfillCompletedAt,
 		state.ThrottledUntil, state.ThrottleReason, state.Deferred, state.LastSyncedAt,
+		state.FoldersSkippedCap, state.FoldersSkippedConflict,
 	); err != nil {
 		// A deleted mailbox refuses this as a foreign-key violation; the consumer evicts it.
 		return fmt.Errorf("email_sync_state: put: %w", err)
@@ -120,7 +124,8 @@ func (r *pgEmailSyncStateRepository) Get(ctx context.Context, emailID uuid.UUID)
 	const q = `
 		SELECT backfill_status, backfill_cursor, backfill_synced,
 		       backfill_since, backfill_started_at, backfill_completed_at,
-		       throttled_until, throttle_reason, deferred, last_synced_at
+		       throttled_until, throttle_reason, deferred, last_synced_at,
+		       folders_skipped_cap, folders_skipped_conflict
 		FROM email_sync_state
 		WHERE email_id = $1
 	`
@@ -133,6 +138,7 @@ func (r *pgEmailSyncStateRepository) Get(ctx context.Context, emailID uuid.UUID)
 		&status, &cursor, &st.BackfillSynced,
 		&st.BackfillSince, &st.BackfillStartedAt, &st.BackfillCompletedAt,
 		&st.ThrottledUntil, &st.ThrottleReason, &st.Deferred, &st.LastSyncedAt,
+		&st.FoldersSkippedCap, &st.FoldersSkippedConflict,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil

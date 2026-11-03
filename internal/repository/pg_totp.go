@@ -29,6 +29,8 @@ type TOTPRepository interface {
 	CountRecoveryCodes(ctx context.Context, userID uuid.UUID) (unused, total int, err error)
 }
 
+var ErrRecoveryCodeUsed = errors.New("recovery code already used")
+
 type totpRepository struct {
 	db *pgxpool.Pool
 }
@@ -139,7 +141,7 @@ func (r *totpRepository) ConsumeRecoveryCode(ctx context.Context, codeID uuid.UU
 	// 0 rows = the code was already consumed by a concurrent request. Returning
 	// an error makes the caller treat the attempt as a miss (no double-spend).
 	if tag.RowsAffected() == 0 {
-		return errors.New("recovery code already used")
+		return ErrRecoveryCodeUsed
 	}
 	return nil
 }
@@ -151,10 +153,20 @@ func (r *totpRepository) ConsumeRecoveryCode(ctx context.Context, codeID uuid.UU
 // the statement that actually updates a row returns true.
 func (r *totpRepository) ConsumeTOTPStep(ctx context.Context, userID uuid.UUID, step uint64) (bool, error) {
 	tag, err := r.db.Exec(ctx,
-		`UPDATE user_totp_settings SET last_used_step = $2 WHERE user_id = $1 AND last_used_step < $2`,
+		`UPDATE user_totp_settings SET last_used_step = $2 WHERE user_id = $1 AND totp_enabled AND last_used_step < $2`,
 		userID, int64(step))
 	if err != nil {
 		return false, err
 	}
-	return tag.RowsAffected() == 1, nil
+	if tag.RowsAffected() == 1 {
+		return true, nil
+	}
+	var used bool
+	if err := r.db.QueryRow(ctx, `SELECT last_used_step >= $2 FROM user_totp_settings WHERE user_id = $1 AND totp_enabled`, userID, int64(step)).Scan(&used); err != nil {
+		return false, err
+	}
+	if !used {
+		return false, errors.New("authenticator step unavailable")
+	}
+	return false, nil
 }

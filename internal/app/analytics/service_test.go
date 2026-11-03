@@ -156,6 +156,36 @@ func TestAccountStatusListDoesNotHideUsageErrors(t *testing.T) {
 	}
 }
 
+type availableStatusUsageRepo struct {
+	repository.AnalyticsRepository
+}
+
+func (availableStatusUsageRepo) GetAccountDailyUsage(context.Context, uuid.UUID, time.Time) (*models.AccountDailyUsage, *errx.Error) {
+	return &models.AccountDailyUsage{}, nil
+}
+
+type unavailableStatusErrorsRepo struct {
+	repository.EmailAccountErrorRepository
+}
+
+func (unavailableStatusErrorsRepo) GetByAccountID(context.Context, uuid.UUID, bool) ([]repository.EmailAccountError, *errx.Error) {
+	return nil, errx.InternalError()
+}
+
+func TestAccountStatusDoesNotReportHealthWhenErrorsAreUnavailable(t *testing.T) {
+	svc := &analyticsService{
+		analyticsRepo:          availableStatusUsageRepo{},
+		emailRepo:              accountStatusEmailRepoStub{emailID: uuid.New()},
+		emailAccountErrorsRepo: unavailableStatusErrorsRepo{},
+	}
+	for _, detail := range []bool{false, true} {
+		status, xerr := svc.accountStatus(t.Context(), uuid.New(), uuid.New(), nil, detail)
+		if xerr == nil || status != nil {
+			t.Fatalf("detail=%t: status=%+v error=%v; unavailable errors must not produce a health score", detail, status, xerr)
+		}
+	}
+}
+
 func TestDashboardUsesTheSameSevenCalendarDaysForCardsAndTrend(t *testing.T) {
 	repo := &dashboardAnalyticsRepoStub{}
 	svc := &analyticsService{analyticsRepo: repo}

@@ -84,7 +84,12 @@ func (h *Handler) Reauth(c *gin.Context) {
 	}
 
 	// The reserved attempt stays charged on a miss.
-	if !h.reauthProofValid(c, uid, req) {
+	valid, xerr := h.reauthProofValid(c, uid, req)
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	if !valid {
 		// One message for both factors: which one matched is not something an
 		// attacker holding a token should learn here.
 		errx.Handle(c, errx.ErrCredentials)
@@ -359,23 +364,26 @@ func (h *Handler) ReauthNative(c *gin.Context) {
 }
 
 // reauthProofValid checks whichever factor the caller offered.
-func (h *Handler) reauthProofValid(c *gin.Context, uid uuid.UUID, req reauthRequest) bool {
+func (h *Handler) reauthProofValid(c *gin.Context, uid uuid.UUID, req reauthRequest) (bool, *errx.Error) {
 	ctx := c.Request.Context()
 
 	if req.Code != "" && h.TwoFAService != nil {
-		if h.TwoFAService.VerifyCurrentCode(ctx, uid, req.Code) {
-			return true
+		if valid, xerr := h.TwoFAService.VerifyCurrentCode(ctx, uid, req.Code); valid || xerr != nil {
+			return valid, xerr
 		}
 	}
 
 	if req.Password != "" {
 		hash, xerr := h.AuthService.PasswordHashFor(ctx, uid)
-		if xerr != nil || hash == "" {
-			return false
+		if xerr != nil {
+			return false, xerr
+		}
+		if hash == "" {
+			return false, nil
 		}
 		ok, verr := argon2.Verify(req.Password, hash)
-		return verr == nil && ok
+		return verr == nil && ok, nil
 	}
 
-	return false
+	return false, nil
 }

@@ -530,7 +530,8 @@ These never accept an API key. They depend on a human-bound session: billing flo
 With [multiple dashboards sharing a backend](/development/configuration/#google-sign-in-per-dashboard-deployment), password-reset and invitation emails, referral links and billing returns use the initiating browser's exact configured dashboard origin. Without a trusted origin they use the primary dashboard. Mailbox, administrator-grant, integration and Slack identity OAuth callbacks recover their target from live server-side state, never from callback query parameters. Expired or consumed routing state is not forwarded to another dashboard.
 
 - `POST /auth/login`, `/auth/login/confirm`, `/auth/register`, `/auth/register/confirm`, `/auth/refresh`, `/auth/reset-password`, `/auth/reset-password/session`, `/auth/reset-password/confirm`
-- `POST /auth/reauth` (re-prove the account holder behind a live session, for the changes that require a recent confirmation)
+- `POST /auth/2fa/verify` (exchange a pending login challenge and a single-use authenticator or recovery code for a session; a spent authenticator step answers `two_fa_code_used`, while unavailable verification answers a server error)
+- `POST /auth/reauth` (re-prove the account holder behind a live session, for the changes that require a recent confirmation; a spent authenticator step answers `two_fa_code_used`, while unavailable verification answers a server error)
 - `GET /auth/reauth/methods` (which ways this account can confirm: password, two-factor code, passkey, and the linked sign-in providers it can re-verify)
 - `POST /auth/reauth/passkey/begin`, `/auth/reauth/passkey/finish` (confirm with one of the account's own passkeys)
 - `POST /auth/reauth/sso/begin`, `/auth/reauth/sso/finish` (confirm through the Google, Apple or single sign-on identity linked to the account, in a browser window)
