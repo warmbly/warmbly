@@ -151,7 +151,7 @@ export default function ReviewStep({
 
             <OnExistingChoice source="file" value={onExisting} onChange={setOnExisting} />
 
-            <SettingsSection settings={settings} setSettings={setSettings} note="A value in the file wins over these for its row." />
+            <SettingsSection settings={settings} setSettings={setSettings} fromFile note="A value in the file wins over these for its row, except warmup set to Off." />
         </div>
     );
 }

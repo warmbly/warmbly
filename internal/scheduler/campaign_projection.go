@@ -205,7 +205,7 @@ func projectSenderDay(p *projectedSender, spans []span, midnight, rampStart time
 	}
 
 	// Graduation: a warmed mailbox climbs from its starting volume.
-	if p.hasCold && p.cold.WarmupStartedAt != nil {
+	if p.hasCold && p.cold.CeilingApplies() {
 		start := rampStart
 		if p.cold.ColdRampStartedAt != nil {
 			start = *p.cold.ColdRampStartedAt
@@ -345,7 +345,7 @@ func (s *schedulerService) ProjectCampaign(ctx context.Context, in CampaignProje
 			}
 		}
 		p.cold = pass.coldRamp[acct.ID].WithKnownWarmup(acct.Warmup)
-		p.hasCold = p.cold.WarmupStartedAt != nil
+		p.hasCold = p.cold.CeilingApplies()
 		h := s.healthFor(ctx, pass, acct.ID)
 		if h.known {
 			p.health = h.state
@@ -651,7 +651,7 @@ func (s *schedulerService) ProjectCampaign(ctx context.Context, in CampaignProje
 
 func fullCapacityEvidenceKnown(senders []*projectedSender) bool {
 	for _, p := range senders {
-		if p.hasCold && p.cold.WarmupStartedAt != nil && coldCeilingFor(p.cold, p.cap) < p.cap {
+		if p.hasCold && coldCeilingFor(p.cold, p.cap) < p.cap {
 			return false
 		}
 	}

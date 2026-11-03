@@ -433,7 +433,8 @@ func rowSettings(get func(models.MailboxImportField) string) (models.MailboxImpo
 	return s, tags, ""
 }
 
-// mergeSettings lays a row's own settings over the import's batch settings.
+// mergeSettings lays a row's own settings over the import's batch settings,
+// except that warmup switched off for the batch stays off on every row.
 func mergeSettings(batch, row models.MailboxImportSettings) models.MailboxImportSettings {
 	out := batch
 	if row.DailyLimit != nil {
@@ -442,7 +443,7 @@ func mergeSettings(batch, row models.MailboxImportSettings) models.MailboxImport
 	if row.MinWait != nil {
 		out.MinWait = row.MinWait
 	}
-	if row.Warmup != nil {
+	if row.Warmup != nil && (batch.Warmup == nil || *batch.Warmup) {
 		out.Warmup = row.Warmup
 	}
 	if row.WarmupStart != nil {
