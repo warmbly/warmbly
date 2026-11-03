@@ -205,6 +205,8 @@ Apply a saved template to a step, or save a step as a reusable one from the comp
 
 ### Attachments
 
+Private attachments carry business documents, images, spreadsheets and archives. They are stored as bytes and sent as email attachments, with executable and script filename extensions refused. When your instance enables the attachment download proxy, selecting a filename downloads it through a short-lived file link; the response is an attachment, is not cached, and includes browser MIME-sniffing and document sandbox protections.
+
 Upload attachments for a step below its composer by dragging and dropping files or clicking the upload area. A file uploaded there is sent with every email from that step and from no other step, and can be removed in the same place. Files attached to the campaign itself rather than to a step, which can only be added through the API, ride every step: they are listed under **Sent with every step** so each step shows everything it carries. Attachments count against your workspace storage limit, shown under **Settings > Billing**; an upload that would pass it is refused with `storage_limit_reached`, and two uploads racing for the last of the quota cannot both get in. Removing a step deletes the files scoped to it.
 
 ### Action steps

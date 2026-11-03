@@ -13,6 +13,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/apollo"
 	"github.com/warmbly/warmbly/internal/app/appattest"
 	"github.com/warmbly/warmbly/internal/app/appdirectory"
+	"github.com/warmbly/warmbly/internal/app/attachmentdownload"
 	"github.com/warmbly/warmbly/internal/app/audit"
 	"github.com/warmbly/warmbly/internal/app/auth"
 	"github.com/warmbly/warmbly/internal/app/behavior"
@@ -106,9 +107,10 @@ import (
 )
 
 type Handler struct {
-	AuthService    auth.AuthService
-	TokenService   token.TokenService
-	PasskeyService passkey.Service
+	AuthService         auth.AuthService
+	TokenService        token.TokenService
+	AttachmentDownloads *attachmentdownload.Signer
+	PasskeyService      passkey.Service
 	// AppAttestService registers native app keys. Nil when no app id is configured.
 	AppAttestService *appattest.Service
 

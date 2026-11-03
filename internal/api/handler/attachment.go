@@ -1,6 +1,6 @@
 // Campaign email attachment handlers — upload, list, delete. Binary lives in
-// object storage (private; surfaced to the browser via short-lived presigned
-// URLs and fetched by the worker at send time). Overall storage is capped per
+// object storage (private; downloaded through a short-lived scoped API link
+// and fetched by the worker at send time). Overall storage is capped per
 // organization by the plan-based quota (feature gate).
 
 package handler
@@ -21,6 +21,7 @@ import (
 	"github.com/warmbly/warmbly/internal/observability/errs"
 
 	"github.com/warmbly/warmbly/internal/api/middleware"
+	"github.com/warmbly/warmbly/internal/app/attachmentdownload"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/storage"
 	"github.com/warmbly/warmbly/internal/models"
@@ -284,7 +285,10 @@ func (h *Handler) DeleteCampaignAttachment(c *gin.Context) {
 
 func (h *Handler) attachmentResponse(c *gin.Context, att *models.CampaignAttachment) gin.H {
 	url := ""
-	if h.Storage != nil {
+	if org := middleware.GetOrganizationID(c); org != nil && h.Storage != nil && h.AttachmentDownloads != nil {
+		claims := attachmentdownload.Claims{OrganizationID: *org, CampaignID: att.CampaignID, AttachmentID: att.ID}
+		url = publicAPIBaseURL(c) + "/v1/campaign-attachments/download/" + h.AttachmentDownloads.Token(claims, time.Now())
+	} else if h.Storage != nil && h.AttachmentDownloads == nil {
 		if u, err := h.Storage.PresignedGetURL(c.Request.Context(), att.S3Key, attachmentURLTTL, storage.Download{Filename: att.Filename, ContentType: att.MimeType}); err == nil {
 			url = u
 		}
@@ -299,4 +303,40 @@ func (h *Handler) attachmentResponse(c *gin.Context, att *models.CampaignAttachm
 		"url":         url,
 		"created_at":  att.CreatedAt,
 	}
+}
+
+func (h *Handler) DownloadCampaignAttachment(c *gin.Context) {
+	claims, err := h.AttachmentDownloads.Verify(c.Param("token"), time.Now())
+	if err != nil {
+		errx.JSON(c, errx.ErrNotFound)
+		return
+	}
+	if _, xerr := h.CampaignService.Get(c.Request.Context(), claims.OrganizationID.String(), claims.CampaignID.String()); xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	att, err := h.AttachmentRepo.GetByID(c.Request.Context(), claims.AttachmentID)
+	if err != nil {
+		errx.JSON(c, errx.InternalError())
+		return
+	}
+	if att == nil || att.CampaignID != claims.CampaignID {
+		errx.JSON(c, errx.ErrNotFound)
+		return
+	}
+	if h.Storage == nil {
+		errx.JSON(c, errx.New(errx.ServiceUnavailable, "object storage not configured"))
+		return
+	}
+	body, err := h.Storage.Get(c.Request.Context(), att.S3Key)
+	if err != nil {
+		errx.JSON(c, errx.InternalError())
+		return
+	}
+	defer body.Close()
+	c.Header("Cache-Control", "no-store")
+	c.Header("Content-Disposition", storage.DownloadDisposition(att.Filename))
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Content-Security-Policy", "default-src 'none'; sandbox; frame-ancestors 'none'")
+	c.DataFromReader(http.StatusOK, att.Size, storage.DownloadType(att.MimeType), body, nil)
 }
