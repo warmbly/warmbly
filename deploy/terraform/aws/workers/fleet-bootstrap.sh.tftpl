@@ -99,12 +99,23 @@ WantedBy=multi-user.target
 UNIT
 }
 
-# join.sh creates node.local.env only when absent, so writing it first sets this worker's capacity.
+# Leaves a fifth of the machine to the host and Docker, so the worker's GC runs before the kernel OOM killer does.
+go_memory_limit_mib() {
+  awk '/^MemTotal:/ { printf "%d\n", $2 * 0.8 / 1024 }' /proc/meminfo
+}
+
+# join.sh creates node.local.env only when absent, so writing it first sets this worker's capacity and memory limit.
 write_local_env() {
   install -d -m 700 /etc/warmbly
   if [ ! -e /etc/warmbly/node.local.env ]; then
+    mem_limit=$(go_memory_limit_mib || true)
     umask 077
     printf '%s\n' '# Written by the fleet launch template; join.sh never rewrites this file.' "WARMBLY_WORKER_CAPACITY=$CAPACITY" > /etc/warmbly/node.local.env
+    # The Go runtime refuses to start on a malformed GOMEMLIMIT, so an unreadable MemTotal leaves it unset.
+    case "$mem_limit" in
+      '' | *[!0-9]* | 0) log "MemTotal unreadable; GOMEMLIMIT left unset" ;;
+      *) printf 'GOMEMLIMIT=%sMiB\n' "$mem_limit" >> /etc/warmbly/node.local.env ;;
+    esac
     chmod 600 /etc/warmbly/node.local.env
   fi
 }

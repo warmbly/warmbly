@@ -1,6 +1,6 @@
 ---
 title: AWS worker fleet
-description: Run mail workers in an Auto Scaling group with no public IPv4 address, scale them on mailbox load, and retire fixed worker hosts.
+description: Run mail workers in an Auto Scaling group with no public IPv4 address, scale them on memory and CPU, and retire fixed worker hosts.
 ---
 
 The workers root in `deploy/terraform/aws/workers/` can run mail workers as an
@@ -42,8 +42,11 @@ At first boot the user data:
 2. Restricts instance metadata to root, so the worker container, which shares
    the host network, cannot use the instance role.
 3. Writes `/etc/warmbly/node.local.env` with
-   `WARMBLY_WORKER_CAPACITY=<fleet_worker_capacity>`. `join.sh` never rewrites
-   that file.
+   `WARMBLY_WORKER_CAPACITY=<fleet_worker_capacity>` and `GOMEMLIMIT` set to
+   80% of the instance's memory, read from `/proc/meminfo` at boot (about
+   3,000 MiB on a `t4g.medium`). The limit makes the worker's garbage
+   collector work within the machine, leaving the rest to the host and Docker.
+   `join.sh` never rewrites that file.
 4. Reads the join token from Parameter Store, downloads `join.sh` from the
    Warmbly instance and runs it with `--role worker`. The node is named
    `<name>-fleet-<instance id>`. The token is held in memory only and is not
@@ -115,14 +118,15 @@ token parameter, the metric contract and `nat_ipv4_addresses`. Workers appear in
 | `fleet_min_size` | `2` | Smallest fleet |
 | `fleet_max_size` | `10` | Largest fleet |
 | `fleet_desired_capacity` | `null` | Starting size; scaling owns it afterwards. `null` starts at the minimum |
-| `fleet_worker_capacity` | `2000` | `WARMBLY_WORKER_CAPACITY` on every fleet worker |
+| `fleet_worker_capacity` | `auto` | `WARMBLY_WORKER_CAPACITY` on every fleet worker: `auto`, or a positive whole number of mailboxes |
 | `fleet_region_label` | empty | Optional `--region` label for placement |
 | `fleet_image_repository` | `ghcr.io/warmbly/warmbly` | Repository `join.sh` pulls the worker image from |
-| `fleet_target_utilization` | `70` | Target for `WorkerUtilizationPercent` |
+| `fleet_target_memory` | `65` | Target for `WorkerMemoryPercent`, the fleet's memory in use |
 | `fleet_target_cpu` | `60` | Target average CPU percent |
-| `fleet_scale_in_below` | `30` | Utilization the fleet must stay under before it shrinks |
+| `fleet_scale_in_memory_below` | `35` | Fleet memory percent the fleet must stay under before it shrinks |
+| `fleet_scale_in_memory_max_below` | `60` | Memory percent the fullest worker must stay under before the fleet shrinks |
 | `fleet_scale_in_cpu_below` | `30` | CPU percent the busiest worker must stay under before the fleet shrinks |
-| `fleet_scale_in_after_hours` | `3` | How long both must hold, and the pause between removals (1 to 24) |
+| `fleet_scale_in_after_hours` | `3` | How long all three must hold, and the pause between removals (1 to 24) |
 | `fleet_termination_hook_seconds` | `900` | How long a terminating worker is held after it stops |
 | `fleet_instance_warmup_seconds` | `900` | Seconds before a new worker's metrics count toward scaling |
 | `fleet_refresh_warmup_seconds` | `1800` | Seconds an instance refresh waits after each replacement |
@@ -133,27 +137,51 @@ token parameter, the metric contract and `nat_ipv4_addresses`. Workers appear in
 
 ## How the fleet scales
 
+The fleet scales on what its machines are using: memory, which is what a
+worker's mailbox sessions consume, and CPU. Mailbox counts do not move it.
 Moving a mailbox to another worker changes the address its provider sees and
 forces a reconnect, so the fleet grows readily and shrinks rarely.
 
 **Scale-out** comes from two target-tracking policies, both with scale-in
 disabled:
 
-- `WorkerUtilizationPercent` held at `fleet_target_utilization`
+- `WorkerMemoryPercent`, the fleet's memory in use, held at
+  `fleet_target_memory`
 - the group's average CPU held at `fleet_target_cpu`
 
 With `standard` CPU credits, a `t4g` worker that has spent its credits runs at
 its baseline (20% for `t4g.medium`), so the CPU signal mostly reacts to bursts.
-Mailbox utilization is the primary signal.
+Memory is the primary signal.
+
+**A full worker is a placement matter, not a fleet-size one.** Adding a worker
+does not relieve a full one, because mailboxes already placed stay where they
+are, so no rule grows the fleet for one hot machine. With
+`WARMBLY_WORKER_CAPACITY=auto` a worker's mailbox target falls as its memory
+fills, so placement stops sending it new mailboxes and the rotation loop moves
+mailboxes off a worker that stays over its target. `WorkerMemoryMaxPercent`
+still keeps the fleet from shrinking while any worker is full.
 
 **Scale-in** is one simple policy that removes one worker, driven by one alarm.
-The alarm fires only when fleet utilization stays below `fleet_scale_in_below`
-and the busiest worker's CPU stays below `fleet_scale_in_cpu_below` for
-`fleet_scale_in_after_hours`. The policy's cooldown is the same length, so the
-next removal needs another quiet period. Missing utilization data never counts
-as quiet, so the fleet does not shrink while the metric is not published. The
-group removes its newest worker, which has the fewest mailboxes, and zone
-rebalancing is suspended so the group never moves workers for symmetry alone.
+The alarm fires only when all of these stay true for
+`fleet_scale_in_after_hours`:
+
+- `WorkerMemoryPercent` stays below `fleet_scale_in_memory_below`
+- the fullest worker's memory stays below `fleet_scale_in_memory_max_below`
+- the busiest worker's EC2 CPU stays below `fleet_scale_in_cpu_below`
+
+Each is read at its highest value in every five minutes. The policy's cooldown
+is the same length as the quiet period, so the next removal needs another quiet
+period, and the group never goes below `fleet_min_size`. Missing data never
+counts as quiet, so the fleet does not shrink while the metrics are not
+published. The group removes its newest worker, which has the fewest mailboxes,
+and zone rebalancing is suspended so the group never moves workers for symmetry
+alone.
+
+**Worker capacity.** With `fleet_worker_capacity` left at `auto`, each worker
+sizes its own mailbox target from its memory, so a larger instance type takes
+more mailboxes without a change here. A whole number fixes the target on every
+fleet worker instead. Either way, the target guides placement; it does not
+scale the fleet.
 
 **Termination.** A terminating worker is held by a lifecycle hook for
 `fleet_termination_hook_seconds`. The worker watches its own lifecycle state in
@@ -170,20 +198,31 @@ existing ones. Health checks are EC2 status checks.
 
 ### Metric contract
 
-The backend publishes the utilization metric when its
+The backend publishes the fleet's metrics every minute when its
 [`FLEET_METRICS_CLOUDWATCH`](/development/configuration/#workers) is set to the
-root's `name`. The fleet scales on it only when every field matches:
+root's `name`. It uses the AWS default credential chain, so the backend's role
+needs `cloudwatch:PutMetricData`. The values come from worker heartbeats: each
+worker reports its host's memory in use and in total about every 100 seconds.
 
 | Field | Value |
 |---|---|
 | Namespace | `Warmbly/Fleet` |
-| Metric name | `WorkerUtilizationPercent` |
 | Dimension | `Fleet` = the root's `name` (default `warmbly-production`) |
-| Value | Assigned mailboxes across the fleet divided by the fleet's capacity target, times 100 |
-| Unit | `Percent`, or none |
+| Unit | `Percent` |
 
-The policies read it at the deployment's own `Fleet` value only, so two
-deployments in one account do not scale on each other's load.
+| Metric | Value | Used for |
+|---|---|---|
+| `WorkerMemoryPercent` | Memory in use across live workers divided by their total memory, times 100 | Scale-out target and scale-in |
+| `WorkerMemoryMaxPercent` | Memory percent of the fullest live worker | Scale-in guard |
+| `WorkerUtilizationPercent` | Assigned mailboxes divided by the fleet's planned capacity, times 100 | Reading only; nothing scales on it |
+
+When no live worker reports memory, the backend publishes nothing. Missing data
+triggers no scale-out and never counts as quiet for scale-in, so a fleet whose
+workers stop reporting holds its size until they report again.
+
+The policies and alarms read the metrics at the deployment's own `Fleet` value
+only, so two deployments in one account do not scale on each other's load. The
+`fleet` output lists the namespace, dimension and all three metric names.
 
 ## Egress addresses
 

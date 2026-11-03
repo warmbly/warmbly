@@ -264,6 +264,18 @@ jobs:
           grep -q '^--- PASS: TestLiveCampaignLoadingLogsKeepHistoryWithoutCustomerAlerts ' campaign-reconnect.log
           if grep -q -- '--- SKIP:' campaign-reconnect.log; then exit 1; fi
 
+      - name: Mailbox push channels and fleet usage (PostgreSQL)
+        if: matrix.suite == 'live-1'
+        env:
+          WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
+        run: |
+          set -o pipefail
+          go test -race -v -p 1 ./internal/repository ./internal/app/fleetmetrics -run '^TestLive(MailboxPushChannelsRoundTripAndScopeToTheOwner|WakeTargetsSkipWorkersThatCannotActOnAWake|ReadTakesMemoryFromHeartbeats)$' -count=1 | tee mailbox-push.log
+          for test in TestLiveMailboxPushChannelsRoundTripAndScopeToTheOwner TestLiveWakeTargetsSkipWorkersThatCannotActOnAWake TestLiveReadTakesMemoryFromHeartbeats; do
+            grep -q -- "--- PASS: $test " mailbox-push.log
+          done
+          if grep -q -- '--- SKIP:' mailbox-push.log; then exit 1; fi
+
       - name: Contact campaign empty-step regression (PostgreSQL)
         if: matrix.suite == 'live-1'
         env:

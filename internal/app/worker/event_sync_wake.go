@@ -17,3 +17,11 @@ func (w *WorkerService) HandleSyncWake(_ context.Context, e *models.SyncWake) er
 	}
 	return nil
 }
+
+// MailboxCount is how many mailboxes this worker holds, zero before it is initialised.
+func (w *WorkerService) MailboxCount() int {
+	if w.mailManager == nil {
+		return 0
+	}
+	return w.mailManager.Count()
+}

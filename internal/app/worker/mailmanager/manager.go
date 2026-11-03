@@ -80,6 +80,13 @@ func (m *MailManager) Get(id uuid.UUID) *wmail.WMail {
 	return m.Emails[id]
 }
 
+// Count is how many mailboxes the manager holds.
+func (m *MailManager) Count() int {
+	m.RLock()
+	defer m.RUnlock()
+	return len(m.Emails)
+}
+
 // Has returns true if the manager already has this email account
 func (m *MailManager) Has(id uuid.UUID) bool {
 	m.RLock()

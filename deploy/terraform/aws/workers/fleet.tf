@@ -75,12 +75,12 @@ variable "fleet_desired_capacity" {
 }
 
 variable "fleet_worker_capacity" {
-  description = "WARMBLY_WORKER_CAPACITY on every fleet worker: assigned mailboxes each one is planned for"
-  type        = number
-  default     = 2000
+  description = "WARMBLY_WORKER_CAPACITY on every fleet worker: auto sizes the mailbox target from the machine's memory, a whole number fixes it"
+  type        = string
+  default     = "auto"
   validation {
-    condition     = var.fleet_worker_capacity >= 1 && floor(var.fleet_worker_capacity) == var.fleet_worker_capacity
-    error_message = "Use a positive whole number."
+    condition     = var.fleet_worker_capacity == "auto" || can(regex("^[1-9][0-9]*$", var.fleet_worker_capacity))
+    error_message = "Use auto or a positive whole number."
   }
 }
 
@@ -104,32 +104,58 @@ variable "fleet_image_repository" {
   }
 }
 
-variable "fleet_target_utilization" {
-  description = "Target for WorkerUtilizationPercent; the fleet scales out above it"
+variable "fleet_target_memory" {
+  description = "Target for WorkerMemoryPercent, the fleet's memory in use; the fleet scales out above it"
   type        = number
-  default     = 70
+  default     = 65
+  validation {
+    condition     = var.fleet_target_memory > 0 && var.fleet_target_memory <= 100
+    error_message = "Use a percentage."
+  }
 }
 
 variable "fleet_target_cpu" {
   description = "Target average CPU percent across the fleet; the second scale-out signal"
   type        = number
   default     = 60
+  validation {
+    condition     = var.fleet_target_cpu > 0 && var.fleet_target_cpu <= 100
+    error_message = "Use a percentage."
+  }
 }
 
-variable "fleet_scale_in_below" {
-  description = "Scale in only while WorkerUtilizationPercent stays below this"
+variable "fleet_scale_in_memory_below" {
+  description = "Scale in only while WorkerMemoryPercent stays below this"
   type        = number
-  default     = 30
+  default     = 35
+  validation {
+    condition     = var.fleet_scale_in_memory_below > 0 && var.fleet_scale_in_memory_below <= 100
+    error_message = "Use a percentage."
+  }
+}
+
+variable "fleet_scale_in_memory_max_below" {
+  description = "Scale in only while the fullest worker's memory percent also stays below this"
+  type        = number
+  default     = 60
+  validation {
+    condition     = var.fleet_scale_in_memory_max_below > 0 && var.fleet_scale_in_memory_max_below <= 100
+    error_message = "Use a percentage."
+  }
 }
 
 variable "fleet_scale_in_cpu_below" {
   description = "Scale in only while the busiest worker's CPU percent also stays below this"
   type        = number
   default     = 30
+  validation {
+    condition     = var.fleet_scale_in_cpu_below > 0 && var.fleet_scale_in_cpu_below <= 100
+    error_message = "Use a percentage."
+  }
 }
 
 variable "fleet_scale_in_after_hours" {
-  description = "How long both scale-in conditions must hold before one worker is removed, and the pause before the next"
+  description = "How long all scale-in conditions must hold before one worker is removed, and the pause before the next"
   type        = number
   default     = 3
   validation {
@@ -170,8 +196,13 @@ locals {
   fleet                 = var.fleet_enabled
   fleet_join_token_name = coalesce(var.fleet_join_token_parameter, "/${var.name}/fleet/join-token")
   # Resolved at each launch, so new workers boot a current AMI without a template change refreshing the fleet.
-  al2023_arm64          = "resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64"
-  fleet_metric          = { namespace = "Warmbly/Fleet", name = "WorkerUtilizationPercent", dimension = { Fleet = var.name } }
+  al2023_arm64 = "resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64"
+  fleet_metric = {
+    namespace = "Warmbly/Fleet"
+    dimension = { Fleet = var.name }
+    # Memory drives scaling; utilization is mailboxes over planned capacity and is published for reading only.
+    names = { memory = "WorkerMemoryPercent", memory_max = "WorkerMemoryMaxPercent", utilization = "WorkerUtilizationPercent" }
+  }
   fleet_scale_in_points = var.fleet_scale_in_after_hours * 12
 }
 
@@ -329,8 +360,8 @@ resource "aws_launch_template" "fleet" {
       error_message = "Use 1 <= fleet_min_size <= fleet_desired_capacity <= fleet_max_size."
     }
     precondition {
-      condition     = var.fleet_scale_in_below < var.fleet_target_utilization && var.fleet_target_utilization > 0 && var.fleet_target_utilization <= 100 && var.fleet_target_cpu > 0 && var.fleet_target_cpu <= 100
-      error_message = "Targets are percentages, and fleet_scale_in_below must sit under fleet_target_utilization."
+      condition     = var.fleet_scale_in_memory_below < var.fleet_target_memory && var.fleet_scale_in_cpu_below < var.fleet_target_cpu
+      error_message = "Each scale-in threshold must sit under its scale-out counterpart."
     }
   }
 }
@@ -382,17 +413,17 @@ resource "aws_autoscaling_group" "fleet" {
   }
 }
 
-resource "aws_autoscaling_policy" "fleet_utilization" {
+resource "aws_autoscaling_policy" "fleet_memory" {
   count                  = local.fleet ? 1 : 0
-  name                   = "mailbox-utilization"
+  name                   = "memory"
   autoscaling_group_name = aws_autoscaling_group.fleet[0].name
   policy_type            = "TargetTrackingScaling"
   target_tracking_configuration {
-    target_value     = var.fleet_target_utilization
+    target_value     = var.fleet_target_memory
     disable_scale_in = true
     customized_metric_specification {
       namespace   = local.fleet_metric.namespace
-      metric_name = local.fleet_metric.name
+      metric_name = local.fleet_metric.names.memory
       statistic   = "Average"
       metric_dimension {
         name  = "Fleet"
@@ -427,11 +458,11 @@ resource "aws_autoscaling_policy" "fleet_scale_in" {
   cooldown               = var.fleet_scale_in_after_hours * 3600
 }
 
-# Missing utilization never counts as quiet, so the fleet cannot shrink while the publisher is down.
+# Missing data never counts as quiet, so the fleet cannot shrink while the publisher is down.
 resource "aws_cloudwatch_metric_alarm" "fleet_scale_in" {
   count               = local.fleet ? 1 : 0
   alarm_name          = "${var.name}-fleet-scale-in"
-  alarm_description   = "Fleet utilization and the busiest worker's CPU stayed low for ${var.fleet_scale_in_after_hours}h; removes one worker"
+  alarm_description   = "Fleet memory, the fullest worker's memory and the busiest worker's CPU stayed low for ${var.fleet_scale_in_after_hours}h; removes one worker"
   comparison_operator = "GreaterThanOrEqualToThreshold"
   threshold           = 1
   evaluation_periods  = local.fleet_scale_in_points
@@ -440,15 +471,25 @@ resource "aws_cloudwatch_metric_alarm" "fleet_scale_in" {
   alarm_actions       = [aws_autoscaling_policy.fleet_scale_in[0].arn]
   metric_query {
     id          = "quiet"
-    expression  = "IF(util < ${var.fleet_scale_in_below} AND cpu < ${var.fleet_scale_in_cpu_below}, 1, 0)"
+    expression  = "IF(mem < ${var.fleet_scale_in_memory_below} AND memmax < ${var.fleet_scale_in_memory_max_below} AND cpu < ${var.fleet_scale_in_cpu_below}, 1, 0)"
     label       = "Quiet"
     return_data = true
   }
   metric_query {
-    id = "util"
+    id = "mem"
     metric {
       namespace   = local.fleet_metric.namespace
-      metric_name = local.fleet_metric.name
+      metric_name = local.fleet_metric.names.memory
+      dimensions  = local.fleet_metric.dimension
+      period      = 300
+      stat        = "Maximum"
+    }
+  }
+  metric_query {
+    id = "memmax"
+    metric {
+      namespace   = local.fleet_metric.namespace
+      metric_name = local.fleet_metric.names.memory_max
       dimensions  = local.fleet_metric.dimension
       period      = 300
       stat        = "Maximum"
