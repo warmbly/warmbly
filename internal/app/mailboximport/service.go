@@ -473,6 +473,7 @@ func (s *Service) Create(ctx context.Context, c CreateInput) (*models.MailboxImp
 		// enough to retry it; a row no fix can repair keeps nothing.
 		if ins.Status != models.ImportRowSkipped && !unfixable[r.cause] {
 			r.payload.TrackingDomain, r.payload.RedirectURL = domainChoices(c.Options, r.domain)
+			r.payload.Settings = storedRowSettings(c.Options.Settings, r.payload.Settings)
 			raw, _ := json.Marshal(r.payload)
 			sealed, err := ciph.Encrypt(ctx, string(raw))
 			if err != nil {

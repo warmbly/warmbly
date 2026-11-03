@@ -949,8 +949,8 @@ type ColdRampState struct {
 	ConfirmedReplies  int
 	WarmupStartedAt   *time.Time
 	ColdRampStartedAt *time.Time
-	// WarmupStoppedAt is set only while participation is still off, so a
-	// status-only stamp on a mailbox warming again does not count.
+	// WarmupStoppedAt is set only in the Stop state (test_mode off); a pause,
+	// even of a stopped mailbox, or a status-only stamp does not count.
 	WarmupStoppedAt *time.Time
 	Placements      []time.Time
 }
@@ -979,8 +979,7 @@ func (r *warmupRepository) ColdRampStateForAccounts(ctx context.Context, account
 
 	rows, err := resultDB(ctx, r.db).Query(ctx, `
 		SELECT id, warmup, cold_ramp_started_at,
-		       CASE WHEN test_mode='off' OR test_mode='diagnostic' AND NOT test_send_enabled AND NOT test_receive_enabled
-		            THEN warmup_stopped_at END
+		       CASE WHEN test_mode='off' THEN warmup_stopped_at END
 		FROM email_accounts
 		WHERE id = ANY($1::uuid[])
 	`, accountIDs)
