@@ -1,0 +1,125 @@
+name: Publish released static assets
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing stable release tag to rebuild (no new release)
+        required: true
+        type: string
+      expected_sha:
+        description: Full commit SHA of that release
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  targets:
+    if: github.ref == 'refs/heads/main' && vars.CLOUDFLARE_STATIC_ASSETS_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.targets.outputs.matrix }}
+      enabled: ${{ steps.targets.outputs.enabled }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+      - run: node --test .github/scripts/pages-*.test.mjs
+      - id: targets
+        env:
+          CLOUDFLARE_PAGES_PROJECTS: ${{ vars.CLOUDFLARE_PAGES_PROJECTS }}
+          CLOUDFLARE_STATIC_ASSETS_TARGETS: ${{ vars.CLOUDFLARE_STATIC_ASSETS_TARGETS }}
+        run: node .github/scripts/pages-static-assets.mjs
+
+  publish:
+    needs: targets
+    if: needs.targets.outputs.enabled == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.targets.outputs.matrix) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ matrix.environment }}
+    env:
+      PAGES_APP: ${{ matrix.app }}
+      CLOUDFLARE_PAGES_PROJECT_NAME: ${{ matrix.project }}
+      SOURCE_SHA: ${{ inputs.expected_sha }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Pin the existing release source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          gh release view "$RELEASE_TAG" --json isDraft,isPrerelease,publishedAt \
+            | jq -e '.isDraft == false and .isPrerelease == false and .publishedAt != null' >/dev/null
+          test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$SOURCE_SHA"
+          git merge-base --is-ancestor "$SOURCE_SHA" origin/main
+          if ! git cat-file -e "$SOURCE_SHA:.github/scripts/pages-production-config.mjs"; then
+            echo '::error::Release does not support public Pages configuration import; select a supported release.'
+            exit 1
+          fi
+          git worktree add --detach "$RUNNER_TEMP/frontend-source" "$SOURCE_SHA"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+      - name: Load existing public frontend configuration
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_PAGES_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_PAGES_ACCOUNT_ID"
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_PAGES_ACCOUNT_ID/pages/projects/$CLOUDFLARE_PAGES_PROJECT_NAME" \
+            | node "$RUNNER_TEMP/frontend-source/.github/scripts/pages-production-config.mjs"
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: "11.9.0"
+      - name: Build the released frontend artifact
+        env:
+          APP_DIRECTORY: ${{ matrix.directory }}
+          BUILD_SCRIPT: ${{ matrix.build_script }}
+          VITE_SENTRY_RELEASE: ${{ inputs.release_tag }}
+        run: |
+          cd "$RUNNER_TEMP/frontend-source/$APP_DIRECTORY"
+          pnpm install --frozen-lockfile
+          pnpm run "$BUILD_SCRIPT"
+      - name: Prepare the configured static asset deployment
+        env:
+          CLOUDFLARE_PAGES_PROJECTS: ${{ vars.CLOUDFLARE_PAGES_PROJECTS }}
+          CLOUDFLARE_STATIC_ASSETS_TARGETS: ${{ vars.CLOUDFLARE_STATIC_ASSETS_TARGETS }}
+        run: |
+          export STATIC_ASSETS_ARTIFACT_DIR="$RUNNER_TEMP/static-assets"
+          cd "$RUNNER_TEMP/frontend-source"
+          node "$GITHUB_WORKSPACE/.github/scripts/pages-static-assets.mjs" prepare
+      - name: Publish assets without a request Worker
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_STATIC_ASSETS_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_STATIC_ASSETS_API_TOKEN }}
+        run: |
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test -n "$CLOUDFLARE_API_TOKEN"
+          pnpm dlx wrangler@4.45.0 deploy --config "$RUNNER_TEMP/static-assets/wrangler.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: static-assets-${{ matrix.project }}-${{ inputs.release_tag }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/static-assets
+          include-hidden-files: true
+          retention-days: 30

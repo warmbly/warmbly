@@ -110,6 +110,7 @@ jobs:
               - 'scripts/check-cli-installer.sh'
               - 'scripts/build-cli.sh'
             pages:
+              - '.github/workflows/static-assets.yml'
               - 'deploy/cloudflare/**'
               - '.github/scripts/pages-*'
               - '.github/workflows/release.yml'
