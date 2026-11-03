@@ -702,6 +702,11 @@
             },
             {
               "default": "",
+              "name": "report_generation",
+              "type": "string"
+            },
+            {
+              "default": "",
               "name": "user_id",
               "type": "string"
             },
