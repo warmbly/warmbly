@@ -110,6 +110,7 @@ jobs:
               - 'scripts/check-cli-installer.sh'
               - 'scripts/build-cli.sh'
             pages:
+              - 'deploy/cloudflare/**'
               - '.github/scripts/pages-*'
               - '.github/workflows/release.yml'
               - '.github/workflows/ci.yml'
@@ -132,7 +133,7 @@ jobs:
         with:
           node-version: "22"
       - name: Check production configuration import
-        run: node --test .github/scripts/pages-*.test.mjs
+        run: node --test .github/scripts/pages-*.test.mjs deploy/cloudflare/static-edge.test.mjs
 
   migrations-ci:
     name: Migrations
