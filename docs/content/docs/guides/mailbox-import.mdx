@@ -315,13 +315,15 @@ A mailbox connected with Google or Microsoft sign-in only takes the settings; th
 
 ## Settings for every mailbox
 
-The dialog sets these for every mailbox the import connects or updates. A mapped column wins over them for its own row.
+The dialog sets these for every mailbox the import connects or updates. A mapped column wins over them for its own row, except for warmup switched off.
 
 - tags
 - daily limit
 - time between sends (in minutes in the dialog; the `min_wait` column is in seconds)
-- warmup on or off, with its start, maximum, daily increase and reply rate
+- warmup, with its start, maximum, daily increase and reply rate
 - reply-to, signature and time zone
+
+Warmup has three choices. **As each row says** (the default) uses the file's warmup column, such as Instantly's `Warmup Enabled`, and leaves warmup as it is on a row without one, so a new mailbox starts without it. **On** starts warmup on every mailbox except rows whose column says no. **Off** turns it off on every mailbox the import connects or updates and ignores every warmup column in the file. An import from an inbox vendor or an administrator grant has no file, so its default is **Leave as it is**.
 
 Tags are added to the ones a mailbox already has. A tag named in the `tags` column that does not exist yet is created. A setting that cannot be applied never fails its row: the mailbox is connected and the row's message says what did not apply. A value that cannot be read at all, such as text in a limit column, fails that row before it is tried. See [sending behavior](/guides/sending-behavior/) and [warmup](/guides/warmup/) for sensible values.
 

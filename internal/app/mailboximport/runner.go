@@ -176,9 +176,7 @@ func (s *Service) process(ctx context.Context, w repository.ImportWorkRow) {
 		return
 	}
 	p.email, p.importID = w.Email, w.ImportID
-	var batch models.MailboxImportSettings
-	_ = json.Unmarshal(w.Settings, &batch)
-	settings := mergeSettings(batch, p.Settings)
+	settings := workSettings(w, p)
 	userID := w.CreatedBy.String()
 	orgID := w.OrgID
 
@@ -660,6 +658,13 @@ func (s *Service) refineCause(ctx context.Context, fallback, host, detail string
 	return out
 }
 
+// workSettings is what a claimed row applies: its import's batch settings with the row's own laid over them.
+func workSettings(w repository.ImportWorkRow, p payload) models.MailboxImportSettings {
+	var batch models.MailboxImportSettings
+	_ = json.Unmarshal(w.Settings, &batch)
+	return mergeSettings(batch, p.Settings)
+}
+
 func (s *Service) finish(ctx context.Context, w repository.ImportWorkRow, status, code, cause, message string, accountID *uuid.UUID, keepPayload bool) {
 	if err := s.repo.FinishRow(ctx, w.ImportID, w.Line, w.Attempts, status, code, cause, message, accountID, keepPayload); err != nil {
 		log.Error().Err(err).Str("import_id", w.ImportID.String()).Int("line", w.Line).Msg("mailbox import: recording a row failed")
@@ -800,9 +805,7 @@ func (s *Service) ResolveSignin(ctx context.Context, orgID uuid.UUID, email stri
 			if ciph, err := s.cipher.Cipher(ctx, orgID); err == nil {
 				if p, xerr := unseal(ctx, ciph, w.Payload); xerr == nil {
 					p.email, p.importID = w.Email, w.ImportID
-					var batch models.MailboxImportSettings
-					_ = json.Unmarshal(w.Settings, &batch)
-					if note := s.applySettings(ctx, orgID, w.CreatedBy.String(), accountID, p, mergeSettings(batch, p.Settings), false); note != "" {
+					if note := s.applySettings(ctx, orgID, w.CreatedBy.String(), accountID, p, workSettings(w, p), false); note != "" {
 						_ = s.repo.FinishRow(ctx, w.ImportID, w.Line, 0, models.ImportRowConnected, "", "", note, &accountID, false)
 					}
 				}

@@ -433,9 +433,27 @@ func rowSettings(get func(models.MailboxImportField) string) (models.MailboxImpo
 	return s, tags, ""
 }
 
-// mergeSettings lays a row's own settings over the import's batch settings.
+// storedRowSettings is what a queued row keeps: a batch warmup Off is written
+// into the row, since the previous release's runner lets a row's value win.
+func storedRowSettings(batch, row models.MailboxImportSettings) models.MailboxImportSettings {
+	if batchWarmupOff(batch) {
+		row.Warmup = batch.Warmup
+		row.WarmupStart, row.WarmupMax, row.WarmupIncrease, row.WarmupReplyRate = nil, nil, nil, nil
+	}
+	return row
+}
+
+func batchWarmupOff(batch models.MailboxImportSettings) bool {
+	return batch.Warmup != nil && !*batch.Warmup
+}
+
+// mergeSettings lays a row's own settings over the import's batch settings,
+// except that warmup switched off for the batch ignores every row warmup value.
 func mergeSettings(batch, row models.MailboxImportSettings) models.MailboxImportSettings {
 	out := batch
+	if batchWarmupOff(batch) {
+		row.Warmup, row.WarmupStart, row.WarmupMax, row.WarmupIncrease, row.WarmupReplyRate = nil, nil, nil, nil, nil
+	}
 	if row.DailyLimit != nil {
 		out.DailyLimit = row.DailyLimit
 	}
