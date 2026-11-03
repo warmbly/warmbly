@@ -20,20 +20,28 @@ Returns the inbox list, collapsed to one row per thread (the newest message), wi
 | `cursor` | query | string | Opaque pagination cursor from a previous response. |
 | `limit` | query | integer | Page size. Clamped to the server's min/max. |
 | `from` | query | string | Filter by sender address (substring). |
+| `address` | query | string | Conversations with this address in either direction: messages from it or sent to it (substring of the `From` or `To` entries). |
+| `direction` | query | string | `sent` returns only messages from one of your mailboxes, `received` only the rest. Omit for both. |
+| `campaign_id` | query | string | Campaign UUID. Returns only conversations tied to one of the campaign's sends: the sent copy, a reply naming it in `In-Reply-To`, and anything threaded with either. A malformed id returns `400`; a campaign outside your workspace returns `404`. |
+| `contact_id` | query | string | Contact UUID. Returns the conversations tied to a campaign send to this contact, plus any mail from or to the contact's email address. Combined with `campaign_id`, only that campaign's conversations with the contact are returned, without the address match. A malformed id returns `400`; a contact outside your workspace returns `404`. |
 | `folder` | query | string | One of `inbox`, `sent`, `drafts`, `archive`, `spam`, `trash`. Omit for every folder except `spam` and `trash` (junk never bleeds into the combined view). An unknown value returns `400`. |
 | `subject` | query | string | Filter by subject (substring). |
 | `unseen` | query | boolean | `true` returns only threads with unread messages. |
 | `awaiting_reply` | query | boolean | `true` returns only threads where the latest message was sent by you (recipient has not replied). |
 | `snoozed` | query | string | `true` returns only snoozed threads. Omit to exclude snoozed threads (default). |
-| `since` | query | string | Lower bound on date, `YYYY-MM-DD`. |
-| `until` | query | string | Upper bound on date, `YYYY-MM-DD`. |
+| `since` | query | string | Earliest message date, inclusive. A date (`YYYY-MM-DD`) starts at 00:00 UTC that day; an RFC 3339 timestamp (`2026-06-11T09:00:00+02:00`) is used exactly. |
+| `until` | query | string | Latest message date. A date (`YYYY-MM-DD`) includes that whole UTC day; an RFC 3339 timestamp is an exclusive bound, so a message at exactly that instant is left out. |
 | `email_id` | query | string | Restrict to a single mailbox by UUID. |
 | `email_ids` | query | string | Comma-separated mailbox UUIDs. A thread matches if it landed in any of them. Invalid UUIDs are dropped. |
 | `category_ids` | query | string | Comma-separated conversation-label UUIDs. A thread matches if it carries any of them. |
 | `uncategorized` | query | boolean | `true` returns only threads carrying no conversation labels. |
 | `automated` | query | boolean | `true` returns only conversations no person wrote in: security alerts, notifications, bounces and auto-replies, as judged by [automatic inbox tagging](/guides/inbox-tagging/). `false` leaves them out, which is how the dashboard's Inbox reads. Omit for both. A conversation counts as automated only while every message in it that is not yours was judged automated, so a reply brings it back. |
 
-The response is a `data` plus `pagination` envelope. Each row summarises the whole thread behind it (`message_count`, `has_unread`) plus the conversation's labels.
+The response is a `data` plus `pagination` envelope. Each row summarises the whole thread behind it (`message_count`, `has_unread`) plus the conversation's labels. When one of the thread's messages is a campaign send or names one, the row carries that campaign's `campaign_id` (the latest such message wins; with a `campaign_id` filter, that campaign). Rows with no campaign send omit the field.
+
+`since` and `until` take a `YYYY-MM-DD` date or an RFC 3339 timestamp, and dates are read in UTC. Any other value returns `400` with code `invalid_filter`, as does a `campaign_id` or `contact_id` that is not a UUID. A window that ends before it starts matches nothing.
+
+A conversation counts toward `campaign_id` and `contact_id` through the campaign sends recorded for them. A send whose contact has since been deleted is no longer linked to any campaign conversation.
 
 ### Response
 
@@ -54,7 +62,8 @@ The response is a `data` plus `pagination` envelope. Each row summarises the who
       "has_unread": true,
       "labels": [
         { "id": "c0ffee00-0000-4000-8000-000000000001", "title": "Interested", "color": "#16a34a" }
-      ]
+      ],
+      "campaign_id": "5d1e2f3a-4b5c-4d6e-8f70-81a2b3c4d5e6"
     }
   ],
   "pagination": {
