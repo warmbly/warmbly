@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast/headless";
 import { SearchInput } from "@/components/ui/field";
+import { Checkbox } from "@/components/ui/checkbox";
 import CategoryPicker from "./CategoryPicker";
 import useSearchContacts from "@/lib/api/hooks/app/contacts/useSearchContacts";
 import useUpdateContactsBulk from "@/lib/api/hooks/app/contacts/useUpdateContactsBulk";
@@ -74,6 +75,7 @@ export default function AddFromContactsDialog({ open, onClose, campaign: campaig
     // Ticked rows, or the search itself minus what was unticked after it; the
     // same two shapes the contacts table uses (./selection).
     const [rowSel, setRowSel] = React.useState<RowSelection>(rowSelection.emptySelection);
+    const [skipActive, setSkipActive] = React.useState(false);
 
     // Debounce the query so a fast typist does not fire a search per keystroke.
     const debounced = useBrowseDebouncedValue(query.trim(), browseName, 200);
@@ -96,6 +98,7 @@ export default function AddFromContactsDialog({ open, onClose, campaign: campaig
     React.useEffect(() => {
         if (!open) {
             setRowSel(rowSelection.emptySelection);
+            setSkipActive(false);
         }
     }, [open]);
 
@@ -135,9 +138,14 @@ export default function AddFromContactsDialog({ open, onClose, campaign: campaig
                     ...selection,
                     add_campaigns: [target.campaign.id],
                     remove_campaigns: [],
+                    skip_active_in_other_campaigns: skipActive || undefined,
                     fields: [],
                 });
-                toast.success(`Added ${count.toLocaleString()} lead${count === 1 ? "" : "s"} to ${target.campaign.name}`);
+                toast.success(
+                    skipActive
+                        ? `Added to ${target.campaign.name}, leaving out anyone running in another campaign`
+                        : `Added ${count.toLocaleString()} lead${count === 1 ? "" : "s"} to ${target.campaign.name}`,
+                );
             } else {
                 const added = await members.mutateAsync({ id: target.segment.id, selection, mode: "include" });
                 toast.success(`Added ${added.toLocaleString()} contact${added === 1 ? "" : "s"} to ${target.segment.name}`);
@@ -377,11 +385,19 @@ export default function AddFromContactsDialog({ open, onClose, campaign: campaig
                         </div>
 
                         <footer className="px-3 min-h-12 py-1.5 sm:py-0 sm:h-12 border-t border-slate-200 flex items-center gap-2 shrink-0 bg-slate-50/30">
-                            <span className="text-[11px] text-slate-400 min-w-0 truncate">
-                                {target.kind === "campaign"
-                                    ? "Contacts already in this campaign are skipped."
-                                    : "Added contacts stay in the segment whatever its conditions say."}
-                            </span>
+                            {target.kind === "campaign" ? (
+                                <label
+                                    className="inline-flex items-center gap-1.5 text-[11px] text-slate-600 min-w-0 cursor-pointer select-none"
+                                    title="Contacts already in this campaign are skipped either way."
+                                >
+                                    <Checkbox tone="slate" checked={skipActive} onChange={(e) => setSkipActive(e.target.checked)} />
+                                    <span className="truncate">Skip anyone running in another campaign</span>
+                                </label>
+                            ) : (
+                                <span className="text-[11px] text-slate-400 min-w-0 truncate">
+                                    Added contacts stay in the segment whatever its conditions say.
+                                </span>
+                            )}
                             <button
                                 type="button"
                                 onClick={requestClose}

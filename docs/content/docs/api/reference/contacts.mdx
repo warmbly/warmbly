@@ -262,6 +262,7 @@ Auth: **Scope** `BULK_CONTACTS` · **Org permission** `manage_contacts`
 | `contacts` | string[] | Yes, unless `all` | Contact IDs to edit (1 to 10,000). |
 | `all`, `filters`, `exclude` | — | No | Select by filter instead; see [selecting contacts](#selecting-contacts-for-a-bulk-action). |
 | `add_campaigns` | string[] | No | Campaign IDs to add. |
+| `skip_active_in_other_campaigns` | boolean | No | Leave a contact out of `add_campaigns` while their sequence is still running in another campaign: queued, sending, or held, in a campaign that is not a draft and not completed. Contacts who replied, bounced, unsubscribed, failed or finished every step elsewhere are added. Defaults to `false`. |
 | `remove_campaigns` | string[] | No | Campaign IDs to remove. |
 | `add_categories` | string[] | No | Label IDs to add. |
 | `remove_categories` | string[] | No | Label IDs to remove. |
@@ -428,6 +429,7 @@ Send `multipart/form-data` with a `file` field and an `options` field containing
 | `has_header` | boolean | Yes | Whether the first row is a header. |
 | `category_ids` | string[] | No | Label IDs to put on imported contacts. |
 | `campaign_ids` | string[] | No | Campaigns to add imported contacts to. |
+| `skip_active_in_other_campaigns` | boolean | No | Keep a contact who already exists out of `campaign_ids` while their sequence is still running in another campaign, as `skip_active_in_other_campaigns` on a [bulk update](#bulk-update-contacts) defines it. The row is still imported or updated under `dedup`, and still gets its labels and segments. Defaults to `false`. |
 | `segment_ids` | string[] | No | Segments to pin imported contacts into, as a manual include override. Applies to imported, updated, and skipped-but-linked contacts alike. An id that is not a valid UUID, or that names no segment in the organization, is rejected with `400` before any row is written. |
 | `subscribed_default` | boolean | No | Subscription state for new contacts when no subscribed column is mapped. Defaults to true. |
 
@@ -1316,9 +1318,9 @@ Sequence action steps `add_to_segment` and `remove_from_segment` take a `segment
 `POST /segments/:id/add-to-campaign`
 
 ```json
-{ "campaign_id": "…" }
+{ "campaign_id": "…", "skip_active_in_other_campaigns": true }
 ```
 
-Enrols every current member as a lead. Contacts already in the campaign are skipped, each new lead gets a `campaign_added` activity, and a running campaign is woken so the leads are scheduled. Returns `{ "campaign_id", "added", "members" }`. This is a snapshot: later members are not added until the call is repeated. Safe to retry. It counts as choosing the leads it adds, so it clears any hand-made removal and the rows it writes are never withdrawn by [detaching a segment](/api/reference/campaigns/#replace-linked-segments). Members that are already leads are left exactly as they are, provenance included. For a live link that keeps enrolling members as they join the segment, see [linked segments](/api/reference/campaigns/#list-linked-segments).
+Enrols every current member as a lead. Contacts already in the campaign are skipped, each new lead gets a `campaign_added` activity, and a running campaign is woken so the leads are scheduled. With `skip_active_in_other_campaigns` (optional, default `false`), a member whose sequence is still running in another campaign is left out too, as on a [bulk update](#bulk-update-contacts), and keeps any hand-made removal. Returns `{ "campaign_id", "added", "members" }`. This is a snapshot: later members are not added until the call is repeated. Safe to retry. It counts as choosing the leads it adds, so it clears any hand-made removal and the rows it writes are never withdrawn by [detaching a segment](/api/reference/campaigns/#replace-linked-segments). Members that are already leads are left exactly as they are, provenance included. For a live link that keeps enrolling members as they join the segment, see [linked segments](/api/reference/campaigns/#list-linked-segments).
 
 Auth: **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`

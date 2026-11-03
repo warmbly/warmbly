@@ -724,9 +724,10 @@ func (s *contactService) applyImportChunk(
 			continue
 		}
 		if _, xerr := s.contactRepository.BulkUpdate(ctx, plan.userID, plan.orgID, &models.BulkEditContactsData{
-			ContactSelection: models.ContactSelection{Contacts: group.contactIDs},
-			AddCampaigns:     group.campaigns,
-			AddCategories:    group.categories,
+			ContactSelection:           models.ContactSelection{Contacts: group.contactIDs},
+			AddCampaigns:               group.campaigns,
+			SkipActiveInOtherCampaigns: plan.opts.SkipActiveInOtherCampaigns,
+			AddCategories:              group.categories,
 		}); xerr != nil {
 			for _, i := range group.members {
 				linkErr[i] = xerr.Message

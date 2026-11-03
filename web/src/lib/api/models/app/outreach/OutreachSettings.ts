@@ -47,6 +47,8 @@ export interface ReplyIntentSettings {
     hold_on_out_of_office: boolean;
     // The fallback hold, used when the auto-reply names no return date.
     out_of_office_hold_days: number;
+    // Hold a contact who replies in every other campaign they are in.
+    stop_all_campaigns_on_reply?: boolean;
 }
 
 // What a classified reply may do beyond labelling, from automatic inbox

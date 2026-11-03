@@ -248,6 +248,9 @@ type SegmentMembersWrite struct {
 // SegmentAddToCampaign enrols the segment's current members as leads.
 type SegmentAddToCampaign struct {
 	CampaignID string `json:"campaign_id"`
+	// SkipActiveInOtherCampaigns leaves out a member whose sequence is still
+	// running in another campaign.
+	SkipActiveInOtherCampaigns bool `json:"skip_active_in_other_campaigns,omitempty"`
 }
 
 // SegmentAddToCampaignResult reports how many leads were actually new.

@@ -20,6 +20,7 @@ type incomingReplyAdvancedRepo struct {
 	intents   int
 	intentOff bool
 	holdOff   bool
+	stopAll   bool
 	languages []string
 }
 
@@ -129,6 +130,7 @@ func (r *incomingReplyAdvancedRepo) GetOutreachSettings(context.Context, uuid.UU
 	settings := models.DefaultAdvancedOutreachSettings()
 	settings.ReplyIntent.Enabled = !r.intentOff
 	settings.ReplyIntent.HoldOnOutOfOffice = !r.holdOff
+	settings.ReplyIntent.StopAllCampaignsOnReply = r.stopAll
 	settings.InboxTagging.Languages = r.languages
 	return &settings, nil
 }

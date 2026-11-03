@@ -20,13 +20,14 @@ import (
 //  4. Clear rejection phrases => negative.
 func classifyLexicon(in Input) (Result, bool) {
 	// The subject ends its own sentence, so a negator there never reaches the body.
-	text := quoteFolder.Replace(strings.ToLower(strings.TrimSpace(in.Subject + ".\n" + StripQuoted(in.BodyText, slices.Concat(in.Languages, optOutLanguages)...))))
+	body := StripQuoted(in.BodyText, slices.Concat(in.Languages, optOutLanguages)...)
+	text := quoteFolder.Replace(strings.ToLower(strings.TrimSpace(in.Subject + ".\n" + body)))
 	if text == "" {
 		return Result{}, false
 	}
 
 	// 1. Compliance / opt-out (highest priority).
-	if matchesOptOut(text) {
+	if matchesOptOut(text) || isOptOutCommand(body) {
 		return Result{Class: ClassUnsubscribe, Confidence: 0.9, Source: SourceLexicon}, true
 	}
 
@@ -66,7 +67,8 @@ func classifyLexicon(in Input) (Result, bool) {
 
 // unsubscribeKeywords are explicit opt-out requests. Compliance-first: any of
 // these short-circuits to "unsubscribe" before sentiment is considered. Each
-// is matched on word boundaries, so "stop" alone never fires on "stop by".
+// is matched on word boundaries, so "stop" alone never fires on "stop by"; a
+// reply that is only the word is isOptOutCommand's.
 var unsubscribeKeywords = []string{
 	"unsubscribe",
 	"opt out",
@@ -229,7 +231,7 @@ func matchesOptOut(lowerText string) bool {
 // included. It is not a decision: it finds the message an earlier reading of
 // the whole body acted on.
 func MentionsOptOut(subject, body string) bool {
-	return matchesOptOut(strings.ToLower(subject + "\n" + body))
+	return matchesOptOut(strings.ToLower(subject+"\n"+body)) || isOptOutCommand(StripQuoted(body, optOutLanguages...))
 }
 
 // IsOptOut reports whether a reply, read without its quoted history, asks to
@@ -237,11 +239,12 @@ func MentionsOptOut(subject, body string) bool {
 // the quoted original carries the sender's own opt-out line, so matching the
 // whole body would opt out everyone who replies.
 func IsOptOut(subject, body string) bool {
-	text := strings.ToLower(strings.TrimSpace(subject + "\n" + StripQuoted(body, optOutLanguages...)))
+	reply := StripQuoted(body, optOutLanguages...)
+	text := strings.ToLower(strings.TrimSpace(subject + "\n" + reply))
 	if text == "" {
 		return false
 	}
-	return matchesOptOut(text)
+	return matchesOptOut(text) || isOptOutCommand(reply)
 }
 
 // quoteMarker begins the quoted history a mail client appends to a reply.

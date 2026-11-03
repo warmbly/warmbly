@@ -1300,7 +1300,8 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 	// when an out-of-office hold lifts, for the notification to name.
 	replyClaimToken := uuid.Nil
 	replyClaimCompleted := false
-
+	// humanReply is a reply recorded as the lead's answer to a campaign.
+	humanReply := false
 	var campaignID *uuid.UUID
 	var sequenceID *uuid.UUID
 	var contactID *uuid.UUID
@@ -1502,6 +1503,7 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 				}
 				return nil
 			}
+			humanReply = true
 		}
 		if s.evidence != nil {
 			kind := "replied"
@@ -1618,9 +1620,16 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 	}
 
 	actionTaken := ""
+	if humanReply && settings.ReplyIntent.StopAllCampaignsOnReply && s.holdOtherCampaigns(ctx, *contactID, *campaignID) {
+		actionTaken = "held_other_campaigns"
+	}
 	if settings.ReplyIntent.AutoPauseOnNegative && intent == models.ReplyIntentNegative && campaignID != nil {
 		_ = s.campaignRepo.UpdateStatus(ctx, *campaignID, "paused")
-		actionTaken = "paused_campaign"
+		if actionTaken == "" {
+			actionTaken = "paused_campaign"
+		} else {
+			actionTaken += ",paused_campaign"
+		}
 	}
 
 	// Reply-based opt-out is what makes the plain "just reply and I'll stop"
@@ -1853,6 +1862,23 @@ func (s *service) holdForOutOfOffice(ctx context.Context, orgID, contactID uuid.
 
 func ptrTime(t time.Time) *time.Time {
 	return &t
+}
+
+// holdOtherCampaigns parks a contact who replied in every other campaign they
+// are a lead of, as a dated automatic hold a member resumes from the Leads tab.
+// Best-effort, like every reply action; reports whether any campaign was held.
+func (s *service) holdOtherCampaigns(ctx context.Context, contactID, answered uuid.UUID) bool {
+	if s.campaignProgressRepo == nil {
+		return false
+	}
+	until := time.Now().UTC().AddDate(0, 0, models.ReplyHoldOtherCampaignsDays)
+	held, err := s.campaignProgressRepo.HoldLeadElsewhere(ctx, contactID, answered, &until,
+		"replied to another campaign", models.LeadHoldSourceInboxTagging)
+	if err != nil {
+		log.Warn().Err(err).Str("contact_id", contactID.String()).Msg("reply hold: other campaigns could not be held")
+		return false
+	}
+	return len(held) > 0
 }
 
 // verifyEventOwnership refuses a deliverability event whose campaign, contact

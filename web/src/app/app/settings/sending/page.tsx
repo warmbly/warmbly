@@ -270,7 +270,7 @@ function SendingSettings() {
                         <UnsubscribeRows value={draft.unsubscribe ?? DEFAULT_UNSUBSCRIBE} onChange={patchUnsubscribe} />
                         <Row
                             label="Honour replies that ask to stop"
-                            description="A reply saying unsubscribe, remove me, stop emailing me and the like puts the sender on the suppression list at once. This is what makes the reply-to-opt-out line a real mechanism."
+                            description="A reply saying unsubscribe, remove me, stop emailing me and the like, or a reply that is just STOP, puts the sender on the suppression list at once. This is what makes the reply-to-opt-out line a real mechanism."
                         >
                             <Toggle
                                 on={draft.reply_intent?.auto_suppress_on_unsubscribe_keyword !== false}
@@ -278,6 +278,25 @@ function SendingSettings() {
                             />
                         </Row>
                     </>
+                )}
+            </Section>
+
+            <Section
+                eyebrow="Replies"
+                description="A reply from a person always stops the campaign they answered (when that campaign stops on reply). Auto-replies and out-of-office messages never count as a reply."
+            >
+                {isLoading || !draft ? (
+                    <div className="h-7 w-40 rounded bg-slate-100 animate-pulse" />
+                ) : (
+                    <Row
+                        label="Hold the contact in every other campaign"
+                        description="Off by default. When on, a reply also holds the contact in every other campaign they are a lead of, for a year. The hold shows on each campaign's Leads tab, where you can resume it."
+                    >
+                        <Toggle
+                            on={draft.reply_intent?.stop_all_campaigns_on_reply === true}
+                            onChange={(on) => patchReplyIntent({ stop_all_campaigns_on_reply: on })}
+                        />
+                    </Row>
                 )}
             </Section>
 

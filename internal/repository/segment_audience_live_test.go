@@ -315,7 +315,7 @@ func TestLiveCampaignAudienceAReimportClaimsASegmentLead(t *testing.T) {
 	// The one-shot "add to campaign" adds nobody here and changes nobody's
 	// provenance: re-stamping a whole linked audience because somebody pressed
 	// "Add back" is what would put the old list back for good.
-	out, xerr := segments.AddToCampaign(ctx, f.org, f.owner.String(), segA, f.campaign)
+	out, xerr := segments.AddToCampaign(ctx, f.org, f.owner.String(), segA, f.campaign, false)
 	if xerr != nil || out.Added != 0 {
 		t.Fatalf("one-shot enrol = %+v, %v", out, xerr)
 	}
