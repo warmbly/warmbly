@@ -44,22 +44,9 @@ func tlsFailure(base *errx.MailError, stage string, err error) *errx.MailError {
 	return sendFailure(base, err, stage, "mailbox")
 }
 
-// dialFailure marks an implicit-TLS port closed mid-handshake, which sheds connections like a dropped STARTTLS.
-func dialFailure(addr string, err error) *errx.MailError {
-	cause := dialCause(err)
-	if errors.Is(err, netbind.ErrPrivateMailHost) {
-		cause = errors.New(errx.MailConnectionReasonPrivateHost)
-	}
-	failure := sendFailure(errx.ErrMailServerUnreachableAt("dial "+addr, cause), err, "dial", "mailbox")
-	if droppedConnection(err) && failure.Failure != nil {
-		failure.Failure.Cause = causeDroppedHandshake
-	}
-	return failure
-}
-
-// startTLSFailure marks a handshake the server closed, which is how some servers shed connections.
-func startTLSFailure(err error) *errx.MailError {
-	failure := tlsFailure(errx.ErrMailServerUnreachable, "starttls", err)
+// handshakeFailure marks a TLS handshake the server closed, which is how some servers shed connections.
+func handshakeFailure(base *errx.MailError, stage string, err error) *errx.MailError {
+	failure := tlsFailure(base, stage, err)
 	if droppedConnection(err) && failure.Failure != nil {
 		failure.Failure.Cause = causeDroppedHandshake
 	}
@@ -397,7 +384,11 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 		if err == nil {
 			err = errors.New("dial returned no connection")
 		}
-		return dialFailure(addr, err)
+		cause := dialCause(err)
+		if errors.Is(err, netbind.ErrPrivateMailHost) {
+			cause = errors.New(errx.MailConnectionReasonPrivateHost)
+		}
+		return sendFailure(errx.ErrMailServerUnreachableAt("dial "+addr, cause), err, "dial", "mailbox")
 	}
 	conn := dialed.Conn
 	defer conn.Close()
@@ -418,7 +409,7 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 			if perr := mailtls.AsPinError(err, capture); perr != nil {
 				return pinFailure(perr)
 			}
-			return tlsFailure(errx.ErrMailServerUnreachableAt("dial "+addr, err), "dial", err)
+			return handshakeFailure(errx.ErrMailServerUnreachableAt("dial "+addr, err), "dial", err)
 		}
 		conn = tlsConn
 	}
@@ -450,7 +441,7 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 				if perr := mailtls.AsPinError(err, capture); perr != nil {
 					return pinFailure(perr)
 				}
-				return startTLSFailure(err)
+				return handshakeFailure(errx.ErrMailServerUnreachable, "starttls", err)
 			}
 		} else if !netbind.InsecureTLS() && !c.plaintext {
 			return sendFailure(errx.ErrMailServerUnreachableAt("starttls", errNoSTARTTLS), errNoSTARTTLS, "starttls", "mailbox")

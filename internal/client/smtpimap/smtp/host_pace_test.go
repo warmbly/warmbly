@@ -6,13 +6,13 @@ import (
 	"io"
 	"net"
 	"net/textproto"
-	"runtime"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/models"
 )
 
 func throttleReply(stage string, status int) *errx.MailError {
@@ -21,6 +21,10 @@ func throttleReply(stage string, status int) *errx.MailError {
 		native = &textproto.Error{Code: status, Msg: "4.7.0 too many connections from your IP"}
 	}
 	return sendFailure(errx.ErrMailServerUnreachable, native, stage, "mailbox")
+}
+
+func starttlsDrop(err error) *errx.MailError {
+	return handshakeFailure(errx.ErrMailServerUnreachable, "starttls", err)
 }
 
 func TestServerThrottledNamesOnlyAddressRefusals(t *testing.T) {
@@ -32,11 +36,11 @@ func TestServerThrottledNamesOnlyAddressRefusals(t *testing.T) {
 		{"greeting 421", throttleReply("greeting", 421), true},
 		{"auth 454", throttleReply("auth", 454), true},
 		{"rcpt 421", throttleReply("rcpt to", 421), true},
-		{"dropped handshake", startTLSFailure(io.EOF), true},
-		{"reset handshake", startTLSFailure(&net.OpError{Op: "read", Err: syscall.ECONNRESET}), true},
-		{"dropped implicit TLS", dialFailure("smtp.example.test:465", io.EOF), true},
-		{"refused dial", dialFailure("smtp.example.test:465", &net.OpError{Op: "dial", Err: syscall.ECONNREFUSED}), false},
-		{"handshake alert", startTLSFailure(errors.New("remote error: tls: protocol version not supported")), false},
+		{"dropped handshake", starttlsDrop(io.EOF), true},
+		{"reset handshake", starttlsDrop(&net.OpError{Op: "read", Err: syscall.ECONNRESET}), true},
+		{"dropped implicit TLS", handshakeFailure(errx.ErrMailServerUnreachableAt("dial smtp.example.test:465", io.EOF), "dial", io.EOF), true},
+		{"refused dial", sendFailure(errx.ErrMailServerUnreachableAt("dial smtp.example.test:465", syscall.ECONNREFUSED), &net.OpError{Op: "dial", Err: syscall.ECONNREFUSED}, "dial", "mailbox"), false},
+		{"handshake alert", starttlsDrop(errors.New("remote error: tls: protocol version not supported")), false},
 		{"refused certificate", sendFailure(errx.ErrMailServerUnreachableAt("starttls", errors.New(errx.MailConnectionReasonCertificate)), io.EOF, "starttls", "mailbox"), false},
 		{"no STARTTLS", sendFailure(errx.ErrMailServerUnreachableAt("starttls", errNoSTARTTLS), errNoSTARTTLS, "starttls", "mailbox"), false},
 		{"lost auth connection", throttleReply("auth", 0), false},
@@ -56,7 +60,7 @@ func TestHostPaceCoolsOncePerBurstAndBacksOff(t *testing.T) {
 	p := &hostPace{}
 	t0 := time.Date(2026, 11, 3, 18, 0, 0, 0, time.UTC)
 
-	first := p.observe(t0, startTLSFailure(io.EOF))
+	first := p.observe(t0, starttlsDrop(io.EOF))
 	if !first.Failure.RetryAt.Equal(t0.Add(paceCooldownBase)) || first.Failure.Cause != errx.SendCauseServerPacing {
 		t.Fatalf("first refusal = %+v", first.Failure)
 	}
@@ -81,7 +85,7 @@ func TestHostPaceCoolsOncePerBurstAndBacksOff(t *testing.T) {
 		p.observe(p.coolUntil, throttleReply("greeting", 421))
 	}
 	last := p.coolUntil.Add(-paceCooldownMax)
-	p.observe(p.coolUntil, startTLSFailure(io.EOF))
+	p.observe(p.coolUntil, starttlsDrop(io.EOF))
 	if got := p.coolUntil.Sub(last.Add(paceCooldownMax)); got != paceCooldownMax {
 		t.Fatalf("cooldown not capped: %v", got)
 	}
@@ -124,7 +128,7 @@ func TestHostPaceSpacesSessionsAfterARefusalUntilItRecovers(t *testing.T) {
 func TestHostPaceHoldIsARetryThatNeverReachedTheServer(t *testing.T) {
 	p := &hostPace{}
 	t0 := time.Now()
-	p.observe(t0, startTLSFailure(io.EOF))
+	p.observe(t0, starttlsDrop(io.EOF))
 	held := p.wait(context.Background(), t0)
 	if held == nil || held.Failure == nil {
 		t.Fatal("cooling host admitted a session")
@@ -159,29 +163,51 @@ func TestPaceForKeysOnServerAndWorkerAddress(t *testing.T) {
 }
 
 func TestHostPaceReservationYieldsToALaterCooldown(t *testing.T) {
+	fire := make(chan time.Time)
+	reserved := make(chan struct{})
+	paceAfter = func(time.Duration) <-chan time.Time { close(reserved); return fire }
+	t.Cleanup(func() { paceAfter = time.After })
 	p := &hostPace{}
 	now := time.Now()
 	p.pacedUntil = now.Add(pacedWindow)
 	p.nextStart = now.Add(time.Second)
 	done := make(chan *errx.MailError, 1)
 	go func() { done <- p.wait(context.Background(), now) }()
-	for deadline := time.Now().Add(5 * time.Second); ; {
-		p.mu.Lock()
-		reserved := p.nextStart.After(now.Add(time.Second))
-		p.mu.Unlock()
-		if reserved {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("wait did not reserve its start")
-		}
-		runtime.Gosched()
-	}
+	<-reserved
 	p.mu.Lock()
-	p.coolUntil = now.Add(time.Minute)
+	p.coolUntil = time.Now().Add(time.Minute)
+	cool := p.coolUntil
 	p.mu.Unlock()
+	fire <- time.Now()
 	held := <-done
-	if held == nil || held.Failure.Stage != PaceStage || !held.Failure.RetryAt.Equal(now.Add(time.Minute)) {
+	if held == nil || held.Failure.Stage != PaceStage || !held.Failure.RetryAt.Equal(cool) {
 		t.Fatalf("reserved start ran inside a cooldown: %+v", held)
+	}
+}
+
+func TestSendRawMarksAnImplicitTLSHandshakeTheServerClosed(t *testing.T) {
+	ln, err := net.Listen("tcp", net.JoinHostPort("::1", "0"))
+	if err != nil {
+		ln, err = net.Listen("tcp", net.JoinHostPort("localhost", "0"))
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			_ = conn.Close()
+		}
+	}()
+	addr := ln.Addr().(*net.TCPAddr)
+	c := newTestClient(addr.IP.String(), addr.Port)
+	c.Credentials.Security = models.MailSecurityTLS
+	got := c.sendRaw(t.Context(), "a@example.test", []string{"b@example.test"}, []byte("Subject: hi\r\n\r\nbody\r\n"))
+	if got == nil || got.Failure == nil || got.Failure.Stage != "dial" || !serverThrottled(got) {
+		t.Fatalf("closed implicit-TLS handshake not read as the server shedding connections: %+v", got)
 	}
 }

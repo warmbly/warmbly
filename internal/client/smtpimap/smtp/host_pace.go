@@ -39,6 +39,9 @@ type hostPace struct {
 
 var hostPaces sync.Map
 
+// paceAfter is the reserved-start timer, replaceable so a test can order a refusal before it fires.
+var paceAfter = time.After
+
 // paceFor keys on the server, not the port, so a 587 fallback shares the 465 standing; a relay on this machine has none.
 func paceFor(host string, local *net.TCPAddr) *hostPace {
 	host = strings.ToLower(strings.TrimSuffix(models.NormalizeMailHost(host), "."))
@@ -83,10 +86,8 @@ func (p *hostPace) wait(ctx context.Context, now time.Time) *errx.MailError {
 	if wait <= 0 {
 		return nil
 	}
-	timer := time.NewTimer(wait)
-	defer timer.Stop()
 	select {
-	case <-timer.C:
+	case <-paceAfter(wait):
 		return p.heldIfCooling(time.Now())
 	case <-ctx.Done():
 		return pacedHold(now, now.Add(wait))
