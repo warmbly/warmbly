@@ -47,6 +47,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/keystatus"
 	"github.com/warmbly/warmbly/internal/app/leadsync"
 	"github.com/warmbly/warmbly/internal/app/mailboximport"
+	"github.com/warmbly/warmbly/internal/app/mailpush"
 	"github.com/warmbly/warmbly/internal/app/mcp"
 	"github.com/warmbly/warmbly/internal/app/monitoring"
 	"github.com/warmbly/warmbly/internal/app/nodelogs"
@@ -309,6 +310,11 @@ type Handler struct {
 	// SlackService is the Slack app (request URLs and the dashboard's Slack
 	// panel). Nil answers slack_not_configured.
 	SlackService *slackapp.Service
+
+	// MailPush authenticates provider change notifications and MailPushWaker
+	// wakes the worker holding the mailbox. Nil leaves every mailbox polling.
+	MailPush      *mailpush.Settings
+	MailPushWaker *mailpush.Waker
 
 	// HubSpot runs a workspace's CRM on HubSpot when it chooses so. Nil on
 	// processes built without it.

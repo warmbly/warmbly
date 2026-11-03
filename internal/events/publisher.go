@@ -49,6 +49,8 @@ type Publisher interface {
 	// Worker change notifications
 	PublishAddEmail(ctx context.Context, workerID uuid.UUID, email *models.AddWorkerEmail) error
 	PublishRemoveEmail(ctx context.Context, workerID uuid.UUID, remove *models.RemoveWorkerEmail) error
+	// PublishSyncWake asks the worker holding a mailbox to sync it now.
+	PublishSyncWake(ctx context.Context, workerID uuid.UUID, wake *models.SyncWake) error
 
 	// PublishEmailValidation sends a mailbox credential-validation request to the
 	// worker. Routed through the bus+codec like every other worker event, so it
@@ -392,6 +394,15 @@ func (p *publisher) PublishRemoveEmail(ctx context.Context, workerID uuid.UUID, 
 
 	workerTopic := kafka.GetWorkerTopic(workerID.String())
 	return p.publish(workerTopic, remove.EmailID, workerEvent)
+}
+
+// PublishSyncWake asks a worker to sync one mailbox now, keyed by that mailbox.
+func (p *publisher) PublishSyncWake(ctx context.Context, workerID uuid.UUID, wake *models.SyncWake) error {
+	workerEvent := models.WorkerEvent{
+		Type: models.WorkerEventTypeSyncWake,
+		Body: wake,
+	}
+	return p.publish(kafka.GetWorkerTopic(workerID.String()), wake.EmailID.String(), workerEvent)
 }
 
 // PublishEmailValidation publishes a credential-validation request to the worker.

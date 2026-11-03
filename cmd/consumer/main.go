@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/warmbly/warmbly/internal/app/cloudlink"
 	emailverifyapp "github.com/warmbly/warmbly/internal/app/emailverify"
+	"github.com/warmbly/warmbly/internal/app/mailpush"
 	"github.com/warmbly/warmbly/internal/app/slackapp"
 	"log"
 	"os"
@@ -554,6 +555,7 @@ func main() {
 		EmailHistoryIDRepository:    emailHistoryIDRepo,
 		EmailGraphDeltaRepository:   emailGraphDeltaRepo,
 		EmailSyncStateRepository:    repository.NewEmailSyncStateRepository(primaryDB),
+		MailboxPushRepository:       repository.NewMailboxPushRepository(primaryDB),
 		ArrivalOutbox:               repository.NewDurableEmailMessageMapRepository(primaryDB, cipherService),
 		EmailAccountErrorRepository: emailAccountErrorRepo,
 		WarmupRepo:                  warmupRepo,
@@ -653,6 +655,26 @@ func main() {
 	// Resolve campaign sends that were reserved and dispatched but whose worker
 	// result never came back, so a lead is never held in flight forever.
 	go jobsService.StartStuckSendReclaimer(ctx, 5*time.Minute)
+
+	// Gmail push: the watch notifications each Gmail mailbox's worker opened arrive on
+	// this Pub/Sub subscription and wake that worker. Unset keeps Gmail polling.
+	if subscription := config.GmailPushSubscription(); subscription != "" {
+		waker := mailpush.NewWaker(repository.NewMailboxPushRepository(primaryDB), eventsPublisher, redisCache)
+		go func() {
+			for ctx.Err() == nil {
+				err := mailpush.RunGmailSubscriber(ctx, subscription, os.Getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"), waker)
+				if ctx.Err() != nil {
+					return
+				}
+				log.Printf("Warning: Gmail push subscriber stopped, restarting in 30s: %v", err)
+				select {
+				case <-ctx.Done():
+				case <-time.After(30 * time.Second):
+				}
+			}
+		}()
+		log.Println("Gmail push: reading watch notifications from " + subscription)
+	}
 
 	if mailboxCredentials.Reseals() {
 		// Moves credentials onto workspace keys, or seals legacy plaintext OAuth tokens under the instance key.

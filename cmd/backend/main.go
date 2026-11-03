@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/warmbly/warmbly/internal/app/fleetmetrics"
+	"github.com/warmbly/warmbly/internal/app/mailpush"
 	"log"
 	"net/http"
 	"net/url"
@@ -339,6 +341,8 @@ func main() {
 
 	// Pub/Sub for realtime streaming
 	var streamingPublisher *pubsub.StreamingPublisher
+	var mailPushSettings *mailpush.Settings
+	var mailPushWaker *mailpush.Waker
 
 	// Surfaced into the handler for avatar uploads and other direct
 	// repository / object-storage needs. Declared up here so they
@@ -1286,6 +1290,14 @@ func main() {
 			UpdaterToken: getenvDefault("UPDATER_TOKEN", os.Getenv("INTERNAL_API_TOKEN")),
 		})
 		updatesService.Start(ctx)
+		// The worker Auto Scaling Group scales on this; unset on every other deployment.
+		if fleet := fleetmetrics.FleetName(); fleet != "" {
+			go func() {
+				if err := fleetmetrics.Run(ctx, primaryDB, fleet); err != nil {
+					log.Printf("Warning: fleet utilization metric disabled: %v", err)
+				}
+			}()
+		}
 
 		// Warmup for a mailbox a linked instance runs is queued for that instance instead of a worker.
 		eventsPublisher := poollink.NewSelfExecutionPublisher(events.NewPublisher(bus, s3, codecImpl, cipherService),
@@ -1316,6 +1328,11 @@ func main() {
 		emailService.WireMailboxCredentials(mailboxCredentials)
 		// Seed Graph delta cursors when the reconciler reloads mailboxes.
 		emailService.WireGraphDelta(repository.NewEmailGraphDeltaRepository(primaryDB))
+		// Provider push: Graph webhooks and Gmail watches wake the worker holding the mailbox.
+		mailPushRepository := repository.NewMailboxPushRepository(primaryDB)
+		mailPushSettings = mailpush.NewSettings(authCfg.AuthSecret, mailPushRepository)
+		mailPushWaker = mailpush.NewWaker(mailPushRepository, eventsPublisher, cache)
+		emailService.WirePush(mailPushSettings)
 		// The Gmail equivalent: without it a reloaded mailbox re-bootstraps its
 		// history cursor and skips everything that arrived since the last sync.
 		emailService.WireEmailHistoryID(repository.NewEmailHistoryIDRepository(primaryDB))
@@ -2594,6 +2611,8 @@ func main() {
 		AITools:          aiToolRegistry,
 		AIAgentService:   aiAgentService,
 		SlackService:     slackService,
+		MailPush:         mailPushSettings,
+		MailPushWaker:    mailPushWaker,
 		ResearchService:  researchService,
 		SkillsService:    skillsService,
 		MCPService:       mcpService,

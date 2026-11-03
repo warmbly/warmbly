@@ -129,9 +129,12 @@ func (r *pgEmailMessageMapRepository) DeliverArrivals(ctx context.Context, deliv
 	return deliverArrivalBatch(ctx, func() (bool, error) { return r.deliverArrival(ctx, nil, deliver) })
 }
 
+// ArrivalBatchSize is the most rows one DeliverArrivals call claims.
+const ArrivalBatchSize = 32
+
 func deliverArrivalBatch(ctx context.Context, deliverOne func() (bool, error)) error {
 	var first error
-	for i := 0; i < 32; i++ {
+	for i := 0; i < ArrivalBatchSize; i++ {
 		found, err := deliverOne()
 		if err != nil && first == nil {
 			first = err

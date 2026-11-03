@@ -1,0 +1,130 @@
+---
+title: Realtime mailbox sync
+description: How IMAP IDLE and provider change notifications wake a mailbox's worker within seconds, how to turn on Gmail and Microsoft push, and what keeps polling as the safety net.
+---
+
+The worker that holds a mailbox syncs it on a timer. When the mailbox's provider can announce a change, the worker is woken and syncs within seconds instead. Polling never stops: it is the safety net for a notification that arrives late or not at all, because every provider documents that both can happen.
+
+## What each mailbox gets
+
+| Mailbox | Change signal | Poll while the signal holds | Default |
+|---|---|---|---|
+| IMAP and SMTP | `IDLE` on INBOX, on a second connection | every 3 minutes, for the other folders | on; `IMAP_IDLE=false` turns it off |
+| Microsoft 365 and Outlook | Microsoft Graph change notifications | `SYNC_PUSH_FALLBACK_INTERVAL` (10 minutes) | off until `GRAPH_PUSH=true` and a public HTTPS backend URL |
+| Gmail and Google Workspace | Gmail `users.watch` into Cloud Pub/Sub | `SYNC_PUSH_FALLBACK_INTERVAL` (10 minutes) | off until `GMAIL_PUSH_TOPIC` and `GMAIL_PUSH_SUBSCRIPTION` are set |
+
+A mailbox without a live signal is polled every minute, as before. That covers an IMAP server without `IDLE`, a Gmail or Outlook mailbox on an instance that has not configured push, and any mailbox whose channel the provider refused.
+
+A self-host therefore gets IMAP `IDLE` after an upgrade and nothing else changes. Gmail and Microsoft push are opt-in because each needs something only the operator can set up: a Google Cloud topic, or a backend Microsoft can reach. Every variable is listed in the [configuration reference](/development/configuration/#mailbox-sync).
+
+Each variable is read by one service: `GRAPH_PUSH` and `GMAIL_PUSH_TOPIC` by the backend, `GMAIL_PUSH_SUBSCRIPTION` and `GOOGLE_APPLICATION_CREDENTIALS_JSON` by the consumer, `IMAP_IDLE` and `SYNC_PUSH_FALLBACK_INTERVAL` by the workers. With the installer's Compose file every service reads `.env`. A joined worker node receives `IMAP_IDLE` and `SYNC_PUSH_FALLBACK_INTERVAL` from the control plane's own environment. A joined consumer is not handed the Gmail settings, because they carry a Google credential, so set those in its `/etc/warmbly/node.local.env` ([settings the control plane cannot know](/development/configuration/#settings-the-control-plane-cannot-know)).
+
+## How a wake reaches the worker
+
+1. The provider signals a change. Graph posts to the backend, Gmail publishes to Pub/Sub where the consumer pulls it, and an IMAP `IDLE` session runs inside the worker itself.
+2. The backend or consumer finds the worker holding the mailbox and sends it a [`SYNC_WAKE`](/development/events/#worker-commands) command on that worker's `w.<worker-id>` topic. Repeat wakes for one mailbox within 2 seconds are dropped. That check uses Redis, and when Redis is unavailable every wake is sent.
+3. The worker waits 2 seconds so one pass covers a burst of changes, then runs the ordinary sync pass: Gmail history, Graph delta or IMAP CONDSTORE.
+4. New mail the pass stores reaches the dashboard through the consumer, which drains stored arrivals in batches of 32 and starts the next batch at once while full ones are waiting, rather than pausing between them.
+
+A wake carries no mail. The pass reads the provider exactly as a timed pass does, under the same [sync budgets](/guides/mailboxes/#what-gets-synced), so an extra wake costs one pass and a lost one is caught by the poll. A wake never shortens a backoff: after a failed pass, or inside a retry window the provider asked for, the worker waits it out.
+
+Only workers that report `sync_wake_protocol` 1 on their heartbeat are sent `SYNC_WAKE`, and only for active mailboxes on a worker that is heartbeating.
+
+## IMAP IDLE
+
+Every IMAP mailbox with sync turned on opens a second connection that does nothing but hold INBOX open read-only in `IDLE`. The sync connection is unchanged. The watcher wakes the sync when mail arrives in INBOX, is removed from it, or has its flags changed, and re-issues `IDLE` every 20 minutes, inside the 29 minutes RFC 2177 allows a server to wait.
+
+- **Servers without `IDLE`** (no `IDLE` or `IMAP4rev2` capability) keep the one-minute poll. The watcher stops for that mailbox until it is loaded again.
+- **Other folders** (sent, spam, archive and your own) are still found by polling, every 3 minutes while `IDLE` holds and every minute when it does not.
+- **A dropped session** reconnects with backoff, from 30 seconds up to 30 minutes. A refused login waits 30 minutes, since the sync connection reports credential problems on its own.
+- **Logins are paced.** Each mailbox's first `IDLE` login lands at a random point in the minute after it loads, and a worker opens at most about 20 per second, so restarting a worker does not sign every mailbox in at once.
+
+Each IMAP mailbox now holds two connections to its server. A host that caps concurrent IMAP sessions per account counts both. If a host refuses the second one, the mailbox keeps syncing on the poll; set `IMAP_IDLE=false` on the workers to stop the attempts.
+
+## Microsoft 365 and Outlook
+
+With push on, the worker holding each Outlook mailbox opens a Microsoft Graph subscription on all of the mailbox's messages (created, updated and deleted) whatever folder they are in. Graph posts notifications and lifecycle events to:
+
+```
+<BACKEND_PUBLIC_URL>/api/v1/mailbox-push/graph/<mailbox-id>
+```
+
+To turn it on, set on the backend:
+
+```bash
+GRAPH_PUSH=true
+BACKEND_PUBLIC_URL=https://api.example.com   # or API_PUBLIC_URL when they are the same
+```
+
+Push stays off unless the resolved URL starts with `https://`. Microsoft must be able to reach it from the internet, so an instance served only on a private network or a tailnet cannot use Graph push; its Outlook mailboxes keep polling. No new Microsoft permission is needed: the `Mail.ReadWrite` the mailbox already granted covers subscriptions, for single-mailbox sign-in and [whole-organization grants](/development/whole-domain-connect/) alike.
+
+How the channel behaves:
+
+- Each notification is authenticated by a client state derived from `AUTH_SECRET` and the mailbox id. An item without the matching value is ignored.
+- The endpoint answers `202` well inside Graph's 3-second limit. When the wake cannot be sent it answers `503`, and Graph retries for up to 4 hours.
+- A subscription lasts just under 7 days and is renewed with 2 days left. A `reauthorizationRequired` or `subscriptionRemoved` lifecycle event renews or reopens it at once; a `missed` event triggers a sync pass.
+- Changing `AUTH_SECRET` changes every client state. Workers reopen their subscriptions the next time the mailbox is reloaded, within about 30 minutes, and the 10-minute fallback poll covers the gap.
+- A subscription Microsoft refuses is retried every 30 minutes while the mailbox polls every minute.
+
+## Gmail and Google Workspace
+
+With push on, the worker holding each Gmail mailbox calls `users.watch` daily (a watch lasts 7 days), and Gmail publishes a small notification to a Cloud Pub/Sub topic whenever the mailbox changes. The consumer reads those through a pull subscription, so no public endpoint is involved. Mailboxes connected with an app password are IMAP mailboxes and use `IDLE` instead.
+
+Set up, once per instance, in the Google Cloud project that holds the Gmail OAuth client (`BOX_GOOGLE_CLIENT_ID`). Gmail only accepts a topic in the project making the watch call, so a [whole-domain grant's](/development/whole-domain-connect/) delegation service account must live in the same project:
+
+1. Under **APIs & Services > Library**, enable the **Cloud Pub/Sub API**.
+2. Under **Pub/Sub > Topics**, create a topic, for example `gmail-push`. Its full name is `projects/<project>/topics/gmail-push`.
+3. On the topic's **Permissions**, grant the **Pub/Sub Publisher** role to `[EMAIL]`, Gmail's push service account. An organization policy that restricts sharing to your own domain (**Domain restricted sharing**) refuses this grant; ask an Organization Policy Administrator for an exception on this project.
+4. Create a **pull** subscription on the topic, for example `warmbly-consumer`. Its full name is `projects/<project>/subscriptions/warmbly-consumer`.
+5. Give the identity the consumer runs as the **Pub/Sub Subscriber** role on that subscription. That is either a service account whose JSON key you pass as `GOOGLE_APPLICATION_CREDENTIALS_JSON`, or the Application Default Credentials of the machine the consumer runs on.
+
+Then set:
+
+```bash
+# backend: workers are told to watch into this topic
+GMAIL_PUSH_TOPIC=projects/<project>/topics/gmail-push
+
+# consumer: where it reads notifications, and as whom
+GMAIL_PUSH_SUBSCRIPTION=projects/<project>/subscriptions/warmbly-consumer
+GOOGLE_APPLICATION_CREDENTIALS_JSON='{"type":"service_account",...}'   # optional with ADC
+```
+
+No new Google scope is needed: `users.watch` accepts the `gmail.modify` grant mailboxes already have. A notification names only the mailbox address, so the consumer wakes every watched Gmail mailbox with that address and the pass works out what changed.
+
+Pub/Sub is billed by Google by volume (a list price of about $40 per TiB, with a 1 KB minimum per message). Each notification is one small message per mailbox change, so this stays small; check current pricing. The Gmail API quota per message synced is unchanged, and most of the once-a-minute history polling goes away.
+
+A consumer that loses its Pub/Sub connection restarts the subscriber after 30 seconds. Unacknowledged notifications stay in the subscription and are delivered when it reconnects.
+
+## Turning push off
+
+Unset `GRAPH_PUSH` or `GMAIL_PUSH_TOPIC` on the backend and restart it. Each worker closes the channel it holds for a mailbox the next time that mailbox is reloaded, within about 30 minutes, and returns it to the one-minute poll. `IMAP_IDLE=false` on a worker stops its `IDLE` sessions when it restarts.
+
+## Upgrades and rollback
+
+Migration `000339` adds `fleet_nodes.sync_wake_protocol` (default `0`) and the `mailbox_push_channels` table. The previous release ignores both.
+
+- **Workers that have not upgraded** report protocol `0` and are never sent `SYNC_WAKE`. They ignore the push settings inside `ADD_EMAIL` and keep polling every minute.
+- **Upgrade the backend and consumer before the workers**, as with any release. A worker reports each channel it opens, renews or closes as a `PUSH_STATE` event, which the consumer stores in `mailbox_push_channels`. The backend hands it back in every `ADD_EMAIL`, so a reloaded or moved mailbox renews the same channel instead of opening another. A consumer from before this release drops `PUSH_STATE`; a mailbox that moves meanwhile opens a fresh channel, and a subscription nobody tracks expires on its own within 7 days.
+- **Rolling back** leaves open channels to expire on their own, within 7 days. Until then an older backend has no Graph route and Graph's posts fail, and Gmail notifications wait unread in the subscription. Mailboxes poll every minute either way.
+
+`mailbox_push_channels` does not travel in a [workspace export](/guides/workspace-export-import/#what-does-not-travel): a channel points at the instance that opened it, and the destination's workers open their own.
+
+## Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| Outlook mail still takes about a minute | Check that `GRAPH_PUSH=true` and that `BACKEND_PUBLIC_URL` (or `API_PUBLIC_URL`) is an `https://` URL. Plain `http` leaves push off. From outside your network, `curl -X POST '<url>/api/v1/mailbox-push/graph/x?validationToken=ok'` must answer `ok`; Microsoft sends the same request when it creates a subscription |
+| Graph subscriptions are never created | Microsoft cannot reach the URL, or the proxy in front of the backend does not forward `/api/v1/mailbox-push/`. Workers retry every 30 minutes and log the refusal at debug level |
+| Gmail watch fails with `Invalid topicName` | The topic is in a different project from the OAuth client or delegation service account making the call. Create it in that project |
+| Gmail watch fails with a permission error | Gmail's push service account `[EMAIL]` lacks **Pub/Sub Publisher** on the topic, often because domain restricted sharing refused the grant |
+| Consumer logs `Gmail push subscriber stopped` | `GMAIL_PUSH_SUBSCRIPTION` is not `projects/<project>/subscriptions/<id>`, the subscription does not exist, or the consumer's identity lacks **Pub/Sub Subscriber** on it |
+| An IMAP mailbox stays on the one-minute poll | Its server does not offer `IDLE`, refuses a second session for the account, or `IMAP_IDLE=false` is set on the worker |
+| Mailboxes on one worker never react to push | The worker predates this release, so it reports `sync_wake_protocol` 0. Update it |
+
+## Code references
+
+- Settings and wake coalescing: `internal/config/mailbox_push.go`, `internal/app/mailpush/`
+- Graph endpoint: `internal/api/handler/mailbox_push.go`
+- Worker channels and `IDLE` watcher: `internal/app/worker/wmail/push.go`, `internal/client/smtpimap/imap/watch.go`
+- Provider calls: `internal/client/msgraph/subscription.go`, `internal/client/goog/watch.go`
+- Stored channels: `internal/repository/pg_mailbox_push.go`

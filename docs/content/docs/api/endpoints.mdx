@@ -855,6 +855,10 @@ On the backend's host but outside `/v1`, called by Slack and never by an API key
 
 - `POST /api/v1/integrations/slack/events`, `POST /api/v1/integrations/slack/interactivity` (Slack signature). Each request must carry a valid Slack `X-Slack-Signature` made with the instance's signing secret over a timestamp within five minutes, and its body is capped at 1 MiB. A bad signature is `401` `unauthorized`, and nothing in the body is parsed before the signature checks out. With no `SLACK_SIGNING_SECRET` set they answer `503` `slack_not_configured`. They answer Slack within its three-second limit and do the work afterwards. See [Slack app](/development/slack-app/)
 
+On the backend's host but outside `/v1`, called by Microsoft Graph and never by an API key or a session:
+
+- `POST /api/v1/mailbox-push/graph/:emailId` (Microsoft Graph change and lifecycle notifications for one mailbox, used when `GRAPH_PUSH` is on). A request carrying `validationToken` gets the token echoed as `text/plain`, which is how Graph confirms a new subscription. Otherwise each notification item is accepted only with the client state issued for that mailbox, and items without it are ignored. The body is capped at 1 MiB. The answer is `202` once the mailbox's worker has been woken, also for a body with nothing to act on, and `503` when the wake could not be sent, so Graph retries. See [realtime mailbox sync](/development/mailbox-push/)
+
 On the tracking service (the `TRACKING_DOMAIN` host, not the API), also public and rate-limited per source:
 
 - `GET /t/o/:task_id.png` (open pixel), `GET /c/:link_id` (click redirect)

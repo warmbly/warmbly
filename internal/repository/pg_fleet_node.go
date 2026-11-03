@@ -94,8 +94,8 @@ func (r *fleetNodeRepository) UpsertOnHeartbeat(ctx context.Context, beat models
 			id, role, name, region, address, capacity_target, version, active, last_seen_at,
 			cpu_percent, memory_mb, goroutines, uptime_seconds, last_error,
 			cpu_scope, memory_scope, memory_used_mb, memory_limit_mb, resident_mb, warmup_send_protocol,
-			update_failed, env_revision
-		) VALUES ($1, $2, $3, $4, $5, COALESCE(NULLIF($6, 0), 100), $7, TRUE, now(), $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+			update_failed, env_revision, sync_wake_protocol
+		) VALUES ($1, $2, $3, $4, $5, COALESCE(NULLIF($6, 0), 100), $7, TRUE, now(), $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
 		ON CONFLICT (id) DO UPDATE SET
 			-- Role is NOT updated. A node that re-registers under a different
 			-- role would keep its workers row and the mailboxes assigned to
@@ -119,6 +119,7 @@ func (r *fleetNodeRepository) UpsertOnHeartbeat(ctx context.Context, beat models
 			memory_limit_mb = EXCLUDED.memory_limit_mb,
 			resident_mb    = EXCLUDED.resident_mb,
 			warmup_send_protocol = EXCLUDED.warmup_send_protocol,
+			sync_wake_protocol   = EXCLUDED.sync_wake_protocol,
 			last_error   = EXCLUDED.last_error,
 			update_failed = EXCLUDED.update_failed,
 			-- An updater that does not report one keeps the last revision it did.
@@ -131,7 +132,7 @@ func (r *fleetNodeRepository) UpsertOnHeartbeat(ctx context.Context, beat models
 		beat.LastError,
 		beat.Usage.CPUScope, beat.Usage.MemoryScope, beat.Usage.MemoryUsedMB, beat.Usage.MemoryLimitMB, beat.Usage.ResidentMB,
 		beat.WarmupSendProtocol,
-		beat.UpdateFailed, beat.EnvRevision,
+		beat.UpdateFailed, beat.EnvRevision, beat.SyncWakeProtocol,
 	)
 	return err
 }

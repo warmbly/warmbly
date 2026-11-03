@@ -45,7 +45,9 @@ terraform -chdir=deploy/terraform/aws/foundation apply \
 
 Resources:
 
-- A dedicated VPC with public and isolated private subnets in two zones.
+- A dedicated VPC with public and isolated private subnets in two zones, and an
+  Amazon-provided IPv6 block that the optional autoscaling worker fleet in
+  `workers/` uses for its dual-stack subnets.
 - A free S3 gateway endpoint. No NAT gateway or load balancer is started.
 - An optional two-zone PlanetScale interface endpoint. Endpoint hours and data
   processing are billed by AWS; PlanetScale also bills private traffic.

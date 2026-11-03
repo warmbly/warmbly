@@ -35,6 +35,7 @@ const DefaultInterval = 90 * time.Second
 type Config struct {
 	LogToken           string
 	WarmupSendProtocol int
+	SyncWakeProtocol   int
 	NodeID             uuid.UUID
 	Role               models.NodeRole
 	Name               string
@@ -162,6 +163,7 @@ func paceFrom(livenessSeconds int) time.Duration {
 func (a *Agent) beat(ctx context.Context, booted, stopping bool) *models.NodeHeartbeatReply {
 	beat := models.NodeHeartbeat{
 		WarmupSendProtocol: a.cfg.WarmupSendProtocol,
+		SyncWakeProtocol:   a.cfg.SyncWakeProtocol,
 		NodeID:             a.cfg.NodeID,
 		Role:               a.cfg.Role,
 		Name:               a.cfg.Name,

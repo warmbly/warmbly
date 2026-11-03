@@ -71,6 +71,8 @@ var NodeEnvKeys = []string{
 	"POSTHOG_HOST",
 	"POSTHOG_ERROR_TRACKING",
 	"SENTRY_DSN",
+	"IMAP_IDLE",
+	"SYNC_PUSH_FALLBACK_INTERVAL",
 }
 
 // consumerEnvKeys reach a consumer and never a worker. A consumer runs the

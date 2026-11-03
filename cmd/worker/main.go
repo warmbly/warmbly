@@ -250,6 +250,7 @@ func newNodeAgent(workerID uuid.UUID, bindIP string) *nodeagent.Agent {
 	}
 	return nodeagent.New(nodeagent.Config{
 		WarmupSendProtocol: 2,
+		SyncWakeProtocol:   1,
 		NodeID:             workerID,
 		Role:               models.NodeRoleWorker,
 		Name:               os.Getenv("WARMBLY_NODE_NAME"),
