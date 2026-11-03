@@ -21,8 +21,9 @@ import (
 
 type reauthFactorStub struct {
 	twofa.Service
-	valid bool
-	xerr  *errx.Error
+	valid    bool
+	xerr     *errx.Error
+	disabled bool
 }
 
 func (s reauthFactorStub) VerifyCurrentCode(context.Context, uuid.UUID, string) (bool, *errx.Error) {
@@ -54,9 +55,10 @@ func TestReauthPreservesAuthenticatorVerificationOutcome(t *testing.T) {
 
 type reauthHTTPAuth struct {
 	auth.AuthService
-	cleared bool
-	hash    string
-	hashErr *errx.Error
+	cleared    bool
+	clearedFor uuid.UUID
+	hash       string
+	hashErr    *errx.Error
 }
 
 func (a *reauthHTTPAuth) PasswordHashFor(context.Context, uuid.UUID) (string, *errx.Error) {
@@ -69,17 +71,24 @@ func (*reauthHTTPAuth) FederatedProviderLabels() map[string]string { return nil 
 func (*reauthHTTPAuth) ReserveReauthAttempt(context.Context, uuid.UUID) (bool, *errx.Error) {
 	return true, nil
 }
-func (a *reauthHTTPAuth) ClearReauthFailures(context.Context, uuid.UUID) { a.cleared = true }
+func (a *reauthHTTPAuth) ClearReauthFailures(_ context.Context, uid uuid.UUID) {
+	a.cleared = true
+	a.clearedFor = uid
+}
 
-func (reauthFactorStub) IsEnabled(context.Context, uuid.UUID) (bool, error) { return true, nil }
+func (s reauthFactorStub) IsEnabled(context.Context, uuid.UUID) (bool, error) {
+	return !s.disabled, nil
+}
 
 type reauthHTTPToken struct {
 	token.TokenService
-	stamped bool
+	stamped    bool
+	stampedFor uuid.UUID
 }
 
-func (s *reauthHTTPToken) StampReauth(context.Context, uuid.UUID) *errx.Error {
+func (s *reauthHTTPToken) StampReauth(_ context.Context, sid uuid.UUID) *errx.Error {
 	s.stamped = true
+	s.stampedFor = sid
 	return nil
 }
 
@@ -161,17 +170,18 @@ func TestReauthHTTPStampsSessionOnValidProof(t *testing.T) {
 	h := &Handler{AuthService: a, TokenService: tokens, TwoFAService: reauthFactorStub{valid: true}}
 	r := gin.New()
 	uid := uuid.New()
+	sid := uuid.New()
 	r.Use(func(c *gin.Context) {
 		c.Set(middleware.UserIDKey, uid.String())
-		c.Set(middleware.SessionKey, &models.Session{ID: uuid.New(), UserID: uid})
+		c.Set(middleware.SessionKey, &models.Session{ID: sid, UserID: uid})
 	})
 	r.POST("/v1/auth/reauth", h.Reauth)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/auth/reauth", strings.NewReader(`{"code":"123456"}`))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
-	if w.Code != http.StatusOK || !tokens.stamped || !a.cleared {
-		t.Fatalf("status=%d stamped=%t cleared=%t", w.Code, tokens.stamped, a.cleared)
+	if w.Code != http.StatusOK || !tokens.stamped || tokens.stampedFor != sid || !a.cleared || a.clearedFor != uid {
+		t.Fatalf("status=%d stamped=%t stampedFor=%s cleared=%t clearedFor=%s", w.Code, tokens.stamped, tokens.stampedFor, a.cleared, a.clearedFor)
 	}
 }
 
@@ -186,16 +196,55 @@ func TestReauthHTTPFallsBackToPasswordAfterUsedCode(t *testing.T) {
 	h := &Handler{AuthService: a, TokenService: tokens, TwoFAService: reauthFactorStub{xerr: used}}
 	r := gin.New()
 	uid := uuid.New()
+	sid := uuid.New()
 	r.Use(func(c *gin.Context) {
 		c.Set(middleware.UserIDKey, uid.String())
-		c.Set(middleware.SessionKey, &models.Session{ID: uuid.New(), UserID: uid})
+		c.Set(middleware.SessionKey, &models.Session{ID: sid, UserID: uid})
 	})
 	r.POST("/v1/auth/reauth", h.Reauth)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/auth/reauth", strings.NewReader(`{"code":"123456","password":"correct-password"}`))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
-	if w.Code != http.StatusOK || !tokens.stamped || !a.cleared {
-		t.Fatalf("status=%d stamped=%t cleared=%t", w.Code, tokens.stamped, a.cleared)
+	if w.Code != http.StatusOK || !tokens.stamped || tokens.stampedFor != sid || !a.cleared || a.clearedFor != uid {
+		t.Fatalf("status=%d stamped=%t stampedFor=%s cleared=%t clearedFor=%s", w.Code, tokens.stamped, tokens.stampedFor, a.cleared, a.clearedFor)
+	}
+}
+
+func TestReauthHTTPPreservesPasswordAvailabilityFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		xerr   *errx.Error
+		status int
+		code   string
+	}{
+		{name: "unavailable", xerr: errx.InternalError(), status: http.StatusInternalServerError, code: "internal_error"},
+		{name: "no_factor", status: http.StatusBadRequest, code: "reauth_no_factor"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &reauthHTTPAuth{hashErr: tc.xerr}
+			tokens := &reauthHTTPToken{}
+			h := &Handler{AuthService: a, TokenService: tokens, TwoFAService: reauthFactorStub{disabled: true}}
+			r := gin.New()
+			uid := uuid.New()
+			r.Use(func(c *gin.Context) {
+				c.Set(middleware.UserIDKey, uid.String())
+				c.Set(middleware.SessionKey, &models.Session{ID: uuid.New(), UserID: uid})
+			})
+			r.POST("/v1/auth/reauth", h.Reauth)
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/v1/auth/reauth", strings.NewReader(`{"password":"correct-password"}`))
+			req.Header.Set("Content-Type", "application/json")
+			r.ServeHTTP(w, req)
+			var body struct {
+				Code string `json:"code"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if w.Code != tc.status || body.Code != tc.code || tokens.stamped || a.cleared {
+				t.Fatalf("status=%d body=%s stamped=%t cleared=%t", w.Code, w.Body, tokens.stamped, a.cleared)
+			}
+		})
 	}
 }

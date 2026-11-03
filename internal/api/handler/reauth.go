@@ -60,8 +60,16 @@ func (h *Handler) Reauth(c *gin.Context) {
 	// instead would turn a stolen token into a permanent API key, so point it
 	// at what it does have rather than refusing a credential it lacks.
 	if m := h.reauthMethods(c, uid); !m.Password && !m.TOTP {
-		errx.Handle(c, errReauthNoFactor(m.any()))
-		return
+		// Confirm password absence before reporting that no factor exists.
+		hash, xerr := h.AuthService.PasswordHashFor(c.Request.Context(), uid)
+		if xerr != nil {
+			errx.Handle(c, xerr)
+			return
+		}
+		if hash == "" {
+			errx.Handle(c, errReauthNoFactor(m.any()))
+			return
+		}
 	}
 
 	if req.Password == "" && req.Code == "" {

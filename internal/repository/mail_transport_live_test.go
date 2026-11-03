@@ -788,3 +788,38 @@ func TestLiveMailTransportSyncFolderCoverageRejectsInvalidObservation(t *testing
 		})
 	}
 }
+
+func TestLiveMailTransportSyncFolderCoverageAllowsBoundedClockSkew(t *testing.T) {
+	f := newTransportFixture(t)
+	repo := NewEmailSyncStateRepository(f.db)
+	var observed time.Time
+	if err := f.pool.QueryRow(t.Context(), `SELECT now() + interval '4 seconds'`).Scan(&observed); err != nil {
+		t.Fatal(err)
+	}
+	completed := observed.Add(-time.Hour)
+	first := models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &observed, FoldersSkippedCap: 4}
+	if err := repo.Put(t.Context(), f.user, f.account, &first); err != nil {
+		t.Fatal(err)
+	}
+	got, err := repo.Get(t.Context(), f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FoldersSkippedCap != 4 || got.FolderCoverageObservedAt == nil || !got.FolderCoverageObservedAt.Equal(observed) {
+		t.Fatalf("bounded lead was dropped or restamped: %+v", got)
+	}
+	latest := observed.Add(time.Millisecond)
+	if err := repo.Put(t.Context(), f.user, f.account, &models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &latest, FoldersSkippedCap: 3}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Put(t.Context(), f.user, f.account, &first); err != nil {
+		t.Fatal(err)
+	}
+	got, err = repo.Get(t.Context(), f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FoldersSkippedCap != 3 || got.FolderCoverageObservedAt == nil || !got.FolderCoverageObservedAt.Equal(latest) || got.LastSyncedAt == nil || !got.LastSyncedAt.Equal(completed) {
+		t.Fatalf("replay ordering or successful-sync clock changed: %+v", got)
+	}
+}

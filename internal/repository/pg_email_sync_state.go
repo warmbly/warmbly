@@ -78,8 +78,9 @@ func (r *pgEmailSyncStateRepository) Put(ctx context.Context, userID, emailID uu
 		status = models.SyncBackfillPending
 	}
 	const q = `
+		-- Retain original coverage clocks for replay ordering, allowing at most five seconds of lead.
 		WITH coverage AS (
-			SELECT $15::timestamptz IS NULL OR ($15 > to_timestamp(0) AND $15 <= now()) AS valid
+			SELECT $15::timestamptz IS NULL OR ($15 > to_timestamp(0) AND $15 <= now() + interval '5 seconds') AS valid
 		)
 		INSERT INTO email_sync_state (
 			email_id, user_id, backfill_status, backfill_cursor, backfill_synced,
