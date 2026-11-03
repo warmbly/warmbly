@@ -27,6 +27,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/adminoutreach"
 	"github.com/warmbly/warmbly/internal/app/advanced"
 	"github.com/warmbly/warmbly/internal/app/appattest"
+	"github.com/warmbly/warmbly/internal/app/attachmentdownload"
 	"github.com/warmbly/warmbly/internal/app/unsublink"
 	"github.com/warmbly/warmbly/internal/observability/errs"
 
@@ -233,6 +234,7 @@ func main() {
 	var tasksService tasks.TasksService
 	var advancedService advanced.Service
 	var unsubSigner *unsublink.Signer
+	var attachmentDownloads *attachmentdownload.Signer
 	var warmupContentRepo repository.WarmupContentRepository
 	var warmupContentService warmupcontent.Service
 	var creditRepository repository.CreditRepository
@@ -921,6 +923,9 @@ func main() {
 		}
 
 		tokenService = token.NewService(primaryDB, tokenRepostory, cache, geoloc, authCfg.AuthSecret)
+		if os.Getenv("CAMPAIGN_ATTACHMENT_DOWNLOAD_PROXY") == "true" {
+			attachmentDownloads = attachmentdownload.New(authCfg.AuthSecret)
+		}
 		adminDevice = admindevice.New(cache, tokenService, oauthPublicBaseURL(apiCfg.Hostname), authCfg.AuthSecret)
 		// A revoked session takes the user's open sockets with it.
 		if streamingPublisher != nil {
@@ -2565,8 +2570,9 @@ func main() {
 		EmailNotificationService: emailNotificationService,
 
 		// Advanced outreach controls
-		AdvancedService:  advancedService,
-		UnsubscribeLinks: unsubSigner,
+		AdvancedService:     advancedService,
+		UnsubscribeLinks:    unsubSigner,
+		AttachmentDownloads: attachmentDownloads,
 
 		// Warmup health
 		WarmupService:     warmupService,

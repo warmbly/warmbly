@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -18,6 +19,19 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
+
+func TestIssuedPasswordAlwaysContainsLettersAndNumbers(t *testing.T) {
+	password, err := testerPasswordFrom(bytes.NewReader(make([]byte, 40)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(password) != 27 || !strings.HasPrefix(password, "Tester-") || !strings.ContainsAny(password, "23456789") {
+		t.Fatalf("issued password format was not satisfied")
+	}
+	if _, err := testerPasswordFrom(bytes.NewReader(nil)); err == nil {
+		t.Fatal("a failed entropy source issued a password")
+	}
+}
 
 type testerUsers struct {
 	repository.UserRepository

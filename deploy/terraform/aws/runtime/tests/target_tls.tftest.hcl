@@ -81,6 +81,10 @@ run "off_is_unchanged" {
     target_tls = "off"
   }
   assert {
+    condition     = aws_lb_listener.https.ssl_policy == "ELBSecurityPolicy-TLS13-1-2-Res-2021-06"
+    error_message = "The public HTTPS listener uses TLS 1.2 ECDHE AEAD and TLS 1.3 cipher suites."
+  }
+  assert {
     condition     = aws_lb_target_group.service["backend"].protocol == "HTTP" && length(aws_lb_target_group.service_tls) == 0
     error_message = "off keeps the HTTP target groups only"
   }
