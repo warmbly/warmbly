@@ -14,6 +14,7 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/dsn"
 	"github.com/warmbly/warmbly/internal/pkg/emailverify"
 	"github.com/warmbly/warmbly/internal/pkg/mailhdr"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -336,11 +337,10 @@ func (s *JobsService) failCampaignSend(ctx context.Context, task *repository.Tas
 		}
 	}
 
-	// A recipient the mail server refused at RCPT is a hard bounce that simply
-	// arrived synchronously. Retrying it from the same mailbox only spends
-	// reputation, so it goes through the bounce pipeline (progress, optional
-	// suppression, guardrails, warmup health, webhooks) and the lead is
-	// dropped as bounced instead of being offered again.
+	// A recipient the mail server refused at RCPT is a bounce that simply
+	// arrived synchronously, so it goes through the bounce pipeline (progress,
+	// optional suppression, guardrails, warmup health, webhooks). The lead is
+	// dropped as bounced only when the refusal blames the address.
 	if rolledBack && !copyRefused && code == string(errx.MailErrorCodeRecipientRejected) {
 		recorded, err := s.recordSynchronousBounce(ctx, task, ct, campaign, recipient, reason)
 		if err != nil {
@@ -556,6 +556,12 @@ func sendFailureReason(result models.SendEmailResult) (reason, code string) {
 		reason = strings.TrimSpace(result.Error.Message)
 		if reason == "" {
 			reason = strings.TrimSpace(result.Error.UserMessage)
+		}
+		// The enhanced status is what decides whether a refusal blames the address.
+		if f := result.Error.Failure; f != nil && len(f.EnhancedStatus) <= 11 && !strings.Contains(reason, f.EnhancedStatus) {
+			if _, ok := dsn.StatusIn(f.EnhancedStatus); ok {
+				reason = strings.TrimSpace(reason + "; enhanced status " + f.EnhancedStatus)
+			}
 		}
 	}
 	if reason == "" {

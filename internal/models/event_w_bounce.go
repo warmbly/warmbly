@@ -15,6 +15,7 @@ type JobEventInboundBounce struct {
 	OriginalMessageID string `json:"original_message_id" avro:"original_message_id"`
 	// FailedRecipient is the address that bounced, when the DSN exposed it.
 	FailedRecipient string `json:"failed_recipient" avro:"failed_recipient"`
-	// Reason is a short human string (the bounce subject) for the event record.
+	// Reason is the DSN's status and diagnostic, or its subject when it has
+	// neither (older workers always send the subject).
 	Reason string `json:"reason" avro:"reason"`
 }

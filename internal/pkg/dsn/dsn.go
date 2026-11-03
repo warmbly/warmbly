@@ -8,6 +8,7 @@ package dsn
 import (
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 // Report is the extracted result of parsing a bounce message.
@@ -23,10 +24,23 @@ type Report struct {
 	// OriginalMessageID is the Message-ID of the original outbound message the
 	// bounce concerns, recovered from the returned headers section.
 	OriginalMessageID string
+	// Status is the first recipient's enhanced status code, e.g. "5.2.2".
+	Status string
+	// Action is the first recipient's Action field, lowercased.
+	Action string
+	// Diagnostic is the remote server's reply from Diagnostic-Code without its
+	// type prefix, whitespace collapsed and bounded by ReasonLimit.
+	Diagnostic string
 }
+
+// ReasonLimit bounds Report.Reason in runes; a notice can paste a whole transcript.
+const ReasonLimit = 500
 
 var (
 	reStatus     = regexp.MustCompile(`(?im)^\s*Status:\s*([245])\.\d{1,3}\.\d{1,3}`)
+	reStatusCode = regexp.MustCompile(`(?im)^\s*Status:\s*([245]\.\d{1,3}\.\d{1,3})`)
+	reDiagField  = regexp.MustCompile(`(?im)^[ \t]*Diagnostic-Code:[^;\r\n]*;[ \t]*(.*)$`)
+	reFieldName  = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]*:`)
 	reAction     = regexp.MustCompile(`(?im)^\s*Action:\s*(failed|delayed|delivered|relayed|expanded)`)
 	reFinalRcpt  = regexp.MustCompile(`(?im)^\s*(?:Final|Original)-Recipient:\s*[^;\r\n]*;\s*<?([^\s<>]+@[^\s<>]+?)>?\s*$`)
 	reMessageID  = regexp.MustCompile(`(?im)^\s*Message-ID:\s*<([^>\s]+)>`)
@@ -104,6 +118,7 @@ func Parse(body string) Report {
 	}
 	if a := reAction.FindStringSubmatch(body); a != nil {
 		r.IsBounce = true
+		r.Action = strings.ToLower(a[1])
 		if strings.EqualFold(a[1], "failed") && r.hasNo4xx(body) {
 			// "failed" is permanent per RFC 3464, but a co-present 4.x.x status
 			// (retry-then-fail) means transient — defer to the status code.
@@ -119,8 +134,54 @@ func Parse(body string) Report {
 	if ids := reMessageID.FindAllStringSubmatch(body, -1); len(ids) > 0 {
 		r.OriginalMessageID = strings.TrimSpace(ids[len(ids)-1][1])
 	}
+	if m := reStatusCode.FindStringSubmatch(body); m != nil {
+		r.Status = m[1]
+	}
+	r.Diagnostic = diagnosticText(body)
 
 	return r
+}
+
+// diagnosticText reads the first Diagnostic-Code value with its folded
+// continuation lines.
+func diagnosticText(body string) string {
+	loc := reDiagField.FindStringSubmatchIndex(body)
+	if loc == nil {
+		return ""
+	}
+	parts := []string{body[loc[2]:loc[3]]}
+	for _, line := range strings.Split(body[loc[1]:], "\n")[1:] {
+		line = strings.TrimRight(line, "\r")
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || (line[0] != ' ' && line[0] != '\t') || reFieldName.MatchString(trimmed) {
+			break
+		}
+		parts = append(parts, trimmed)
+	}
+	return bound(strings.Join(parts, " "))
+}
+
+// bound collapses whitespace, drops control characters and caps the length.
+func bound(s string) string {
+	s = strings.Join(strings.FieldsFunc(s, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }), " ")
+	if r := []rune(s); len(r) > ReasonLimit {
+		s = string(r[:ReasonLimit])
+	}
+	return s
+}
+
+// Reason is the notice's own account of the failure, its status code and the
+// remote server's reply, or fallback when the notice carries neither.
+func (r Report) Reason(fallback string) string {
+	switch {
+	case r.Diagnostic != "" && (r.Status == "" || strings.Contains(r.Diagnostic, r.Status)):
+		return r.Diagnostic
+	case r.Diagnostic != "":
+		return bound(r.Status + " " + r.Diagnostic)
+	case r.Status != "":
+		return r.Status
+	}
+	return bound(fallback)
 }
 
 func (r Report) hasNo4xx(body string) bool {

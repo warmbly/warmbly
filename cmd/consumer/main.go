@@ -305,7 +305,7 @@ func main() {
 	// no key is configured, and every feature that reads it stays off.
 	var typeSafeClient *typesafe.Client
 	if key := config.TypeSafeAPIKey(); key != "" {
-		typeSafeClient = typesafe.NewClient(key, typesafe.WithBillingRedis(redisCache.Client))
+		typeSafeClient = typesafe.NewClient(key, typesafe.WithBillingRedis(redisCache.Client), typesafe.WithEndpoint(config.TypeSafeEndpoint()))
 	}
 	if aiProviderC != nil {
 		replyclassify.SetModelClassifier(func(ctx context.Context, system, user string) (string, error) {

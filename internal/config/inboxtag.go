@@ -20,6 +20,11 @@ func TypeSafeAPIKey() string {
 	return strings.TrimSpace(os.Getenv("TYPESAFE_API_KEY"))
 }
 
+// TypeSafeEndpoint overrides the TypeSafe API URL; empty keeps the default.
+func TypeSafeEndpoint() string {
+	return strings.TrimSpace(os.Getenv("TYPESAFE_ENDPOINT"))
+}
+
 // InboxTaggingEnabled reports whether the feature should run. Both halves are
 // required, and the key check is here rather than at the call site so there is
 // one answer to "is this on" for the API, the consumer and the dashboard.

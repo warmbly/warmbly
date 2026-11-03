@@ -711,7 +711,7 @@ func main() {
 		inboxTagRepository = repository.NewInboxTagRepository(primaryDB.Pool)
 		if key := config.TypeSafeAPIKey(); key != "" {
 			// One TypeSafe client for every typed judgment in this process.
-			typeSafeClient = typesafe.NewClient(key, typesafe.WithBillingRedis(cache.Client))
+			typeSafeClient = typesafe.NewClient(key, typesafe.WithBillingRedis(cache.Client), typesafe.WithEndpoint(config.TypeSafeEndpoint()))
 		}
 		unsubscribeLinkRepository = repository.NewUnsubscribeLinkRepository(primaryDB.Pool)
 		customDomainRepository = repository.NewCustomDomainRepository(primaryDB.Pool)

@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -137,6 +138,15 @@ type Client struct {
 }
 
 type Option func(*Client)
+
+// WithEndpoint replaces the default endpoint; an empty value keeps it.
+func WithEndpoint(endpoint string) Option {
+	return func(c *Client) {
+		if endpoint = strings.TrimSpace(endpoint); endpoint != "" {
+			c.endpoint = endpoint
+		}
+	}
+}
 
 func NewClient(apiKey string, options ...Option) *Client {
 	c := &Client{
