@@ -15,6 +15,43 @@ import (
 // graphPostLimit bounds one notification POST; Graph batches but never near this.
 const graphPostLimit = 1 << 20
 
+// gmailPushLimit bounds one Pub/Sub push body; a Gmail notification is under a kilobyte.
+const gmailPushLimit = 64 << 10
+
+// MailboxPushGmail — POST /api/v1/mailbox-push/gmail
+//
+// A Pub/Sub push subscription delivers Gmail watch notifications here. A 2xx
+// acknowledges the message; anything else makes Pub/Sub retry it with backoff.
+func (h *Handler) MailboxPushGmail(c *gin.Context) {
+	if h.GmailPush == nil || h.MailPushWaker == nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	if err := h.GmailPush.Verify(c.Request.Context(), c.GetHeader("Authorization")); err != nil {
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(c.Request.Body, gmailPushLimit))
+	if err != nil {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+	address, ok := mailpush.GmailPushAddress(body)
+	if !ok {
+		// Nothing a retry would fix; acknowledge it.
+		c.Status(http.StatusNoContent)
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+	defer cancel()
+	if err := h.MailPushWaker.WakeGmail(ctx, address); err != nil {
+		log.Warn().Err(err).Msg("gmail notification could not wake the mailbox; Pub/Sub will retry")
+		c.Status(http.StatusServiceUnavailable)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 // MailboxPushGraph — POST /api/v1/mailbox-push/graph/:emailId
 //
 // Microsoft Graph posts a mailbox's change notifications here. Each item is

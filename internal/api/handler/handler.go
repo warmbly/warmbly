@@ -315,6 +315,8 @@ type Handler struct {
 	// wakes the worker holding the mailbox. Nil leaves every mailbox polling.
 	MailPush      *mailpush.Settings
 	MailPushWaker *mailpush.Waker
+	// GmailPush authenticates Pub/Sub push requests; nil when Gmail push is not delivered here.
+	GmailPush *mailpush.GmailPush
 
 	// HubSpot runs a workspace's CRM on HubSpot when it chooses so. Nil on
 	// processes built without it.

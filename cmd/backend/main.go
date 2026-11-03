@@ -2613,6 +2613,7 @@ func main() {
 		SlackService:     slackService,
 		MailPush:         mailPushSettings,
 		MailPushWaker:    mailPushWaker,
+		GmailPush:        mailpush.NewGmailPush(),
 		ResearchService:  researchService,
 		SkillsService:    skillsService,
 		MCPService:       mcpService,

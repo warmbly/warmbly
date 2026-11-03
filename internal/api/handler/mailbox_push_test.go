@@ -61,3 +61,31 @@ func TestMailboxPushGraph(t *testing.T) {
 		t.Fatalf("an authentic lifecycle event answered %d, wakes %+v", rec.Code, wakes.got)
 	}
 }
+
+func TestMailboxPushGmailRefusesUnsignedRequests(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	t.Setenv("BACKEND_PUBLIC_URL", "https://api.example.com")
+	t.Setenv("GMAIL_PUSH_SERVICE_ACCOUNT", "push@p.iam.gserviceaccount.com")
+	wakes := &pushWakes{}
+	post := func(h *Handler, auth string) int {
+		r := gin.New()
+		r.POST("/api/v1/mailbox-push/gmail", h.MailboxPushGmail)
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/mailbox-push/gmail", strings.NewReader(`{"message":{"data":"e30="}}`))
+		req.Header.Set("Authorization", auth)
+		r.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if code := post(&Handler{MailPushWaker: mailpush.NewWaker(pushTargets{}, wakes, nil)}, "Bearer x"); code != http.StatusNotFound {
+		t.Fatalf("unconfigured endpoint answered %d", code)
+	}
+	h := &Handler{GmailPush: mailpush.NewGmailPush(), MailPushWaker: mailpush.NewWaker(pushTargets{}, wakes, nil)}
+	for _, auth := range []string{"", "Bearer not-a-jwt", "Basic abc"} {
+		if code := post(h, auth); code != http.StatusUnauthorized {
+			t.Fatalf("authorization %q answered %d", auth, code)
+		}
+	}
+	if len(wakes.got) != 0 {
+		t.Fatal("an unsigned request woke a mailbox")
+	}
+}

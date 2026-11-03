@@ -833,8 +833,14 @@ var table = []Entry{
 		Resolve:    envValue("GMAIL_PUSH_TOPIC"),
 	},
 	{
+		Key: "GMAIL_PUSH_SERVICE_ACCOUNT", Group: GroupWorkers, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "The service account a Pub/Sub push subscription signs with. Set, the backend accepts Gmail watch notifications at its public HTTPS URL.",
+		DocsAnchor: docsMailboxSync,
+		Resolve:    envValue("GMAIL_PUSH_SERVICE_ACCOUNT"),
+	},
+	{
 		Key: "GMAIL_PUSH_SUBSCRIPTION", Group: GroupWorkers, RuntimeChangeable: ChangeBootOnly,
-		Effect:     "The pull subscription the consumer reads Gmail watch notifications from.",
+		Effect:     "A pull subscription the consumer reads Gmail watch notifications from, for an instance Pub/Sub cannot push to.",
 		DocsAnchor: docsMailboxSync,
 		Resolve:    envValue("GMAIL_PUSH_SUBSCRIPTION"),
 	},

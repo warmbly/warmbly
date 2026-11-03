@@ -48,7 +48,14 @@ func GmailPushTopic() string {
 	return strings.TrimSpace(os.Getenv("GMAIL_PUSH_TOPIC"))
 }
 
-// GmailPushSubscription is the pull subscription on GmailPushTopic the consumer reads.
+// GmailPushServiceAccount is the service account a Pub/Sub push subscription
+// signs its requests to the backend with; set, the backend accepts Gmail push.
+func GmailPushServiceAccount() string {
+	return strings.TrimSpace(os.Getenv("GMAIL_PUSH_SERVICE_ACCOUNT"))
+}
+
+// GmailPushSubscription is the pull subscription on GmailPushTopic the consumer
+// reads, for an instance Pub/Sub cannot push to.
 func GmailPushSubscription() string {
 	return strings.TrimSpace(os.Getenv("GMAIL_PUSH_SUBSCRIPTION"))
 }
