@@ -66,7 +66,7 @@ func TestMailTransportCodecJSONCompatibility(t *testing.T) {
 				body = models.AddWorkerEmail{ID: mailbox, TransportGeneration: generation}
 				eventType = models.JobEventType(models.WorkerEventTypeAddEmail)
 			case "sync":
-				body = &models.JobEventSyncState{EmailID: mailbox, State: models.SyncState{LastSyncedAt: &at, FolderCoverageObservedAt: &at, TransportGeneration: generation}}
+				body = &models.JobEventSyncState{WorkerID: &generation, EmailID: mailbox, State: models.SyncState{LastSyncedAt: &at, FolderCoverageObservedAt: &at, TransportGeneration: generation}}
 				eventType = models.JobEventTypeSyncState
 			case "error":
 				body = models.EmailErrorEvent{EmailAccountID: mailbox.String(), TransportGeneration: generation, Operation: models.MailTransportSync}
@@ -100,6 +100,7 @@ func TestMailTransportCodecJSONCompatibility(t *testing.T) {
 			oldBody := old["body"].(map[string]any)
 			delete(oldBody, "transport_generation")
 			delete(oldBody, "operation")
+			delete(oldBody, "worker_id")
 			if state, ok := oldBody["state"].(map[string]any); ok {
 				delete(state, "transport_generation")
 				delete(state, "folder_coverage_observed_at")
@@ -122,7 +123,7 @@ func TestMailTransportCodecJSONCompatibility(t *testing.T) {
 				if err := c.Deserialize(t.Context(), "transport", payload, &current); err != nil {
 					t.Fatal(err)
 				}
-				if current.Body.State.TransportGeneration != uuid.Nil || current.Body.State.FolderCoverageObservedAt != nil || current.Body.State.LastSyncedAt == nil || !current.Body.State.LastSyncedAt.Equal(at) {
+				if current.Body.WorkerID != nil || current.Body.State.TransportGeneration != uuid.Nil || current.Body.State.FolderCoverageObservedAt != nil || current.Body.State.LastSyncedAt == nil || !current.Body.State.LastSyncedAt.Equal(at) {
 					t.Fatal("old sync changed checkpoint/proof")
 				}
 			case "error":

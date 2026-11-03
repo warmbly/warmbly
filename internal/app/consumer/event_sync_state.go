@@ -34,12 +34,21 @@ func (s *JobsService) HandleSyncState(ctx context.Context, e *models.JobEventSyn
 		}
 	}
 
-	if err := s.EmailSyncStateRepository.Put(ctx, e.UserID, e.EmailID, &e.State); err != nil {
+	accepted := true
+	if e.WorkerID != nil {
+		accepted, err = s.EmailSyncStateRepository.PutFromWorker(ctx, e.UserID, e.EmailID, *e.WorkerID, &e.State)
+	} else {
+		err = s.EmailSyncStateRepository.Put(ctx, e.UserID, e.EmailID, &e.State)
+	}
+	if err != nil {
 		if s.dropForDeletedMailbox(ctx, e.UserID, e.EmailID, err) {
 			return nil
 		}
 		CaptureError(e.UserID, e.EmailID, err)
 		return err
+	}
+	if !accepted {
+		return nil
 	}
 
 	if s.StreamingPublisher == nil {

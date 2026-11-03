@@ -51,7 +51,7 @@ func priorTransportSchema(t *testing.T, schema avro.Schema) avro.Schema {
 				kept := fields[:0]
 				for _, f := range fields {
 					record := f.(map[string]any)
-					if record["name"] == "transport_generation" || record["name"] == "folder_coverage_observed_at" || x["name"] == "EmailErrorEvent" && record["name"] == "operation" {
+					if record["name"] == "transport_generation" || record["name"] == "folder_coverage_observed_at" || x["name"] == "EmailErrorEvent" && record["name"] == "operation" || x["name"] == "JobEventSyncState" && record["name"] == "worker_id" {
 						continue
 					}
 					strip(f)

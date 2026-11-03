@@ -248,3 +248,40 @@ func TestReauthHTTPPreservesPasswordAvailabilityFailure(t *testing.T) {
 		})
 	}
 }
+
+type reauthSequencedHashAuth struct {
+	reauthHTTPAuth
+	calls int
+}
+
+func (a *reauthSequencedHashAuth) PasswordHashFor(context.Context, uuid.UUID) (string, *errx.Error) {
+	a.calls++
+	if a.calls == 1 {
+		return "", errx.InternalError()
+	}
+	return a.hash, nil
+}
+
+func TestReauthHTTPStampsSessionOnPasswordAfterFailedLookup(t *testing.T) {
+	hash, err := argon2.Hash("correct-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &reauthSequencedHashAuth{reauthHTTPAuth: reauthHTTPAuth{hash: hash}}
+	tokens := &reauthHTTPToken{}
+	h := &Handler{AuthService: a, TokenService: tokens, TwoFAService: reauthFactorStub{disabled: true}}
+	r := gin.New()
+	uid, sid := uuid.New(), uuid.New()
+	r.Use(func(c *gin.Context) {
+		c.Set(middleware.UserIDKey, uid.String())
+		c.Set(middleware.SessionKey, &models.Session{ID: sid, UserID: uid})
+	})
+	r.POST("/v1/auth/reauth", h.Reauth)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/auth/reauth", strings.NewReader(`{"password":"correct-password"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || !tokens.stamped || tokens.stampedFor != sid || !a.cleared || a.clearedFor != uid {
+		t.Fatalf("status=%d stamped=%t stampedFor=%s cleared=%t clearedFor=%s", w.Code, tokens.stamped, tokens.stampedFor, a.cleared, a.clearedFor)
+	}
+}

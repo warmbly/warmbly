@@ -823,3 +823,69 @@ func TestLiveMailTransportSyncFolderCoverageAllowsBoundedClockSkew(t *testing.T)
 		t.Fatalf("replay ordering or successful-sync clock changed: %+v", got)
 	}
 }
+
+func TestLiveMailTransportSyncFolderCoverageRequiresCurrentWorker(t *testing.T) {
+	f := newTransportFixture(t)
+	repo := NewEmailSyncStateRepository(f.db)
+	oldWorker, currentWorker := uuid.New(), uuid.New()
+	if _, err := f.pool.Exec(t.Context(), `INSERT INTO fleet_nodes(id,role) VALUES($1,'worker'),($2,'worker')`, oldWorker, currentWorker); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := f.pool.Exec(context.Background(), `DELETE FROM fleet_nodes WHERE id IN ($1,$2)`, oldWorker, currentWorker); err != nil {
+			t.Error(err)
+		}
+	})
+	if _, err := f.pool.Exec(t.Context(), `INSERT INTO workers(id) VALUES($1),($2)`, oldWorker, currentWorker); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := f.pool.Exec(context.Background(), `DELETE FROM workers WHERE id IN ($1,$2)`, oldWorker, currentWorker); err != nil {
+			t.Error(err)
+		}
+	})
+	assign := func(worker *uuid.UUID) {
+		t.Helper()
+		if _, err := f.pool.Exec(t.Context(), `UPDATE email_accounts SET worker_id=$2 WHERE id=$1`, f.account, worker); err != nil {
+			t.Fatal(err)
+		}
+	}
+	completed := time.Now().UTC().Add(-time.Hour).Truncate(time.Millisecond)
+	first := completed.Add(time.Minute)
+	latestOld := first.Add(2 * time.Minute)
+	oldReport := models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &first, FoldersSkippedCap: 4}
+	put := func(worker uuid.UUID, state *models.SyncState, want bool) {
+		t.Helper()
+		accepted, err := repo.PutFromWorker(t.Context(), f.user, f.account, worker, state)
+		if err != nil || accepted != want {
+			t.Fatalf("accepted=%t want=%t err=%v", accepted, want, err)
+		}
+	}
+	put(oldWorker, &oldReport, false)
+	assign(&oldWorker)
+	put(oldWorker, &oldReport, true)
+	seed, err := repo.Get(t.Context(), f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assign(&currentWorker)
+	oldReport.FolderCoverageObservedAt = &latestOld
+	oldReport.FoldersSkippedCap = 17
+	oldReport.BackfillSynced = 99
+	put(oldWorker, &oldReport, false)
+	put(uuid.Nil, &oldReport, false)
+	currentObservation := first.Add(time.Minute)
+	seed.FolderCoverageObservedAt = &currentObservation
+	seed.FoldersSkippedCap = 0
+	put(currentWorker, seed, true)
+	put(oldWorker, &oldReport, false)
+	got, err := repo.Get(t.Context(), f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FoldersSkippedCap != 0 || got.BackfillSynced != 0 || got.FolderCoverageObservedAt == nil || !got.FolderCoverageObservedAt.Equal(currentObservation) {
+		t.Fatalf("current owner's report: %+v", got)
+	}
+	assign(nil)
+	put(currentWorker, &oldReport, false)
+}

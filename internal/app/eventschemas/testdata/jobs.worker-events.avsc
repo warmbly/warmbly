@@ -693,6 +693,14 @@
         {
           "fields": [
             {
+              "default": null,
+              "name": "worker_id",
+              "type": [
+                "null",
+                "string"
+              ]
+            },
+            {
               "default": "",
               "name": "user_id",
               "type": "string"

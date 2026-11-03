@@ -17,9 +17,11 @@ var syncTestGeneration = uuid.New()
 // stubSyncStateRepo accepts what the worker relays.
 type stubSyncStateRepo struct {
 	repository.EmailSyncStateRepository
-	put    *models.SyncState
-	saved  *models.SyncState
-	getErr error
+	put            *models.SyncState
+	saved          *models.SyncState
+	getErr         error
+	reportWorker   uuid.UUID
+	reportAccepted bool
 }
 
 func (s *stubSyncStateRepo) Get(context.Context, uuid.UUID) (*models.SyncState, error) {
@@ -29,6 +31,29 @@ func (s *stubSyncStateRepo) Get(context.Context, uuid.UUID) (*models.SyncState, 
 func (s *stubSyncStateRepo) Put(_ context.Context, _, _ uuid.UUID, st *models.SyncState) error {
 	s.put = st
 	return nil
+}
+
+func (s *stubSyncStateRepo) PutFromWorker(_ context.Context, _, _, workerID uuid.UUID, st *models.SyncState) (bool, error) {
+	s.reportWorker = workerID
+	if s.reportAccepted {
+		s.put = st
+	}
+	return s.reportAccepted, nil
+}
+
+func TestSyncStateChecksReportingWorkerBeforeSaving(t *testing.T) {
+	for _, accepted := range []bool{false, true} {
+		repo := &stubSyncStateRepo{reportAccepted: accepted}
+		s := &JobsService{EmailSyncStateRepository: repo}
+		workerID := uuid.New()
+		event := &models.JobEventSyncState{WorkerID: &workerID, EmailID: uuid.New(), State: models.SyncState{FoldersSkippedCap: 4}}
+		if err := s.HandleSyncState(t.Context(), event); err != nil {
+			t.Fatal(err)
+		}
+		if repo.reportWorker != workerID || (repo.put != nil) != accepted {
+			t.Fatalf("worker=%s accepted=%t saved=%+v", repo.reportWorker, accepted, repo.put)
+		}
+	}
 }
 
 // stubErrorRepo records which codes were resolved and how far back.

@@ -144,7 +144,8 @@ type AddWorkerEmailSyncData struct {
 // JobEventSyncState is the worker's SYNC_STATE relay: the full current state,
 // not a delta, so a lost event is repaired by the next one.
 type JobEventSyncState struct {
-	UserID  uuid.UUID `json:"user_id" avro:"user_id"`
-	EmailID uuid.UUID `json:"email_id" avro:"email_id"`
-	State   SyncState `json:"state" avro:"state"`
+	WorkerID *uuid.UUID `json:"worker_id,omitempty" avro:"worker_id"`
+	UserID   uuid.UUID  `json:"user_id" avro:"user_id"`
+	EmailID  uuid.UUID  `json:"email_id" avro:"email_id"`
+	State    SyncState  `json:"state" avro:"state"`
 }

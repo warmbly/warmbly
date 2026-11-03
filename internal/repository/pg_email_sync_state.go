@@ -21,6 +21,8 @@ type EmailSyncStateRepository interface {
 	// Put stores the full state and stamps email_accounts.last_synced_at, the
 	// column the admin and dashboard "Last synced" surfaces read.
 	Put(ctx context.Context, userID, emailID uuid.UUID, state *models.SyncState) error
+	// PutFromWorker stores a report only while the reporting worker owns the mailbox.
+	PutFromWorker(ctx context.Context, userID, emailID, workerID uuid.UUID, state *models.SyncState) (bool, error)
 	// Get returns nil, nil when the mailbox has never reported.
 	Get(ctx context.Context, emailID uuid.UUID) (*models.SyncState, error)
 	// IsOwnConversation reports whether any of the RFC message ids or the
@@ -66,12 +68,24 @@ func NewEmailSyncStateRepository(d *db.DB) EmailSyncStateRepository {
 }
 
 func (r *pgEmailSyncStateRepository) Put(ctx context.Context, userID, emailID uuid.UUID, state *models.SyncState) error {
+	_, err := r.put(ctx, userID, emailID, nil, state)
+	return err
+}
+
+func (r *pgEmailSyncStateRepository) PutFromWorker(ctx context.Context, userID, emailID, workerID uuid.UUID, state *models.SyncState) (bool, error) {
+	if workerID == uuid.Nil {
+		return false, nil
+	}
+	return r.put(ctx, userID, emailID, &workerID, state)
+}
+
+func (r *pgEmailSyncStateRepository) put(ctx context.Context, userID, emailID uuid.UUID, workerID *uuid.UUID, state *models.SyncState) (bool, error) {
 	if state == nil {
-		return nil
+		return false, nil
 	}
 	cursor, err := json.Marshal(state.BackfillCursor)
 	if err != nil {
-		return fmt.Errorf("email_sync_state: cursor: %w", err)
+		return false, fmt.Errorf("email_sync_state: cursor: %w", err)
 	}
 	status := state.BackfillStatus
 	if status == "" {
@@ -79,7 +93,9 @@ func (r *pgEmailSyncStateRepository) Put(ctx context.Context, userID, emailID uu
 	}
 	const q = `
 		-- Retain original coverage clocks for replay ordering, allowing at most five seconds of lead.
-		WITH coverage AS (
+		WITH owner AS (
+			SELECT id FROM email_accounts WHERE id = $1 AND ($16::uuid IS NULL OR worker_id = $16) FOR UPDATE
+		), coverage AS (
 			SELECT $15::timestamptz IS NULL OR ($15 > to_timestamp(0) AND $15 <= now() + interval '5 seconds') AS valid
 		)
 		INSERT INTO email_sync_state (
@@ -91,8 +107,8 @@ func (r *pgEmailSyncStateRepository) Put(ctx context.Context, userID, emailID uu
 		    CASE WHEN $12::timestamptz > to_timestamp(0) AND $12 <= now() THEN $12 END,
 		    CASE WHEN valid THEN $13 ELSE 0 END, CASE WHEN valid THEN $14 ELSE 0 END,
 		    CASE WHEN valid THEN $15::timestamptz END, now()
-		FROM coverage
-		WHERE true
+		FROM coverage LEFT JOIN owner ON true
+		WHERE $16::uuid IS NULL OR owner.id IS NOT NULL
 		ON CONFLICT (email_id) DO UPDATE SET
 			user_id = EXCLUDED.user_id,
 			backfill_status = EXCLUDED.backfill_status,
@@ -123,23 +139,26 @@ func (r *pgEmailSyncStateRepository) Put(ctx context.Context, userID, emailID uu
 			last_synced_at = GREATEST(EXCLUDED.last_synced_at, email_sync_state.last_synced_at),
 			updated_at = now()
 	`
-	if _, err := r.db.Exec(ctx, q,
+	command, err := r.db.Exec(ctx, q,
 		emailID, userID, string(status), cursor, state.BackfillSynced,
 		state.BackfillSince, state.BackfillStartedAt, state.BackfillCompletedAt,
 		state.ThrottledUntil, state.ThrottleReason, state.Deferred, state.LastSyncedAt,
-		state.FoldersSkippedCap, state.FoldersSkippedConflict, state.FolderCoverageObservedAt,
-	); err != nil {
-		// A deleted mailbox refuses this as a foreign-key violation; the consumer evicts it.
-		return fmt.Errorf("email_sync_state: put: %w", err)
+		state.FoldersSkippedCap, state.FoldersSkippedConflict, state.FolderCoverageObservedAt, workerID,
+	)
+	if err != nil {
+		return false, fmt.Errorf("email_sync_state: put: %w", err)
+	}
+	if command.RowsAffected() == 0 {
+		return false, nil
 	}
 	if state.LastSyncedAt != nil {
 		const touch = `UPDATE email_accounts SET last_synced_at = $2 WHERE id = $1 AND (last_synced_at IS NULL OR last_synced_at < $2)
-		    AND $2::timestamptz > to_timestamp(0) AND $2 <= now()`
-		if _, err := r.db.Exec(ctx, touch, emailID, *state.LastSyncedAt); err != nil {
-			return fmt.Errorf("email_sync_state: touch last_synced_at: %w", err)
+		    AND $2::timestamptz > to_timestamp(0) AND $2 <= now() AND ($3::uuid IS NULL OR worker_id = $3)`
+		if _, err := r.db.Exec(ctx, touch, emailID, *state.LastSyncedAt, workerID); err != nil {
+			return false, fmt.Errorf("email_sync_state: touch last_synced_at: %w", err)
 		}
 	}
-	return nil
+	return true, nil
 }
 
 func (r *pgEmailSyncStateRepository) Get(ctx context.Context, emailID uuid.UUID) (*models.SyncState, error) {
