@@ -16,6 +16,7 @@ resource "aws_sns_topic_subscription" "operations" {
 }
 data "aws_iam_policy_document" "notifications" {
   statement {
+    sid       = "MaintenanceFailures"
     actions   = ["sns:Publish"]
     resources = [aws_sns_topic.operations.arn]
     principals {
@@ -34,6 +35,7 @@ data "aws_iam_policy_document" "notifications" {
     }
   }
   statement {
+    sid       = "CloudWatchAlarms"
     actions   = ["sns:Publish"]
     resources = [aws_sns_topic.operations.arn]
     principals {
