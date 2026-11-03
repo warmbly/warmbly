@@ -53,7 +53,8 @@ Returns the `AdvancedOutreachSettings` object directly (not wrapped in an envelo
     "auto_pause_on_negative": false,
     "auto_suppress_on_unsubscribe_keyword": true,
     "hold_on_out_of_office": true,
-    "out_of_office_hold_days": 7
+    "out_of_office_hold_days": 7,
+    "stop_all_campaigns_on_reply": false
   },
   "send_time_optimization": {
     "enabled": false,
@@ -100,6 +101,10 @@ The `unsubscribe` block is the workspace default for the opt-out appended after 
 
 <Callout type="info" title="Out-of-office holds are on by default">
 `reply_intent.hold_on_out_of_office` defaults to `true`. When a recipient's mailbox answers a campaign step with an away message, the contact's next step in that campaign is held until they are back: the return date in the auto-reply when one can be read, plus a working day, and `out_of_office_hold_days` (1 to 90, default `7`) when none can. An auto-reply is never counted as a human reply, so without this the follow-up goes out on schedule while the person is away. `out_of_office_keywords` feeds the reply-intent record and is workspace-editable; detection itself carries its own multilingual vocabulary and does not depend on it. See [out of office and pausing one lead](/guides/campaigns/#out-of-office-and-pausing-one-lead) and [pause a lead](/api/reference/campaigns/#pause-a-lead).
+</Callout>
+
+<Callout type="info" title="A reply stops only its own campaign by default">
+`reply_intent.stop_all_campaigns_on_reply` defaults to `false`. It takes effect only while `reply_intent.enabled` is `true` (the default): with reply automation off, no reply holds anything. Set it to `true` and a human reply also holds the contact in every other campaign they are a lead of that has not completed, for 365 days, with the reason `replied to another campaign` and the source `inbox_tagging`. Automatic replies never trigger it, the answered campaign is left to its own stop on reply, and a member's own pause is never replaced. Lift it like any hold, with [resume a lead](/api/reference/campaigns/#pause-a-lead). Omitting the field keeps it off. See [other campaigns the contact is in](/guides/sequences/#other-campaigns-the-contact-is-in).
 </Callout>
 
 <Callout type="info" title="Send-time optimization is off by default">

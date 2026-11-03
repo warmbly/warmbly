@@ -59,7 +59,15 @@ type ReplyIntentSettings struct {
 	// OutOfOfficeHoldDays is the hold applied when the auto-reply carries no
 	// return date we can read. Clamped to OOOHoldDaysMin..OOOHoldDaysMax.
 	OutOfOfficeHoldDays int `json:"out_of_office_hold_days"`
+	// StopAllCampaignsOnReply holds a contact in every other campaign they are
+	// a lead of when they reply to one, for ReplyHoldOtherCampaignsDays.
+	// Off by default: a reply stops only the campaign it answered.
+	StopAllCampaignsOnReply bool `json:"stop_all_campaigns_on_reply"`
 }
+
+// ReplyHoldOtherCampaignsDays is how long a reply holds the contact's other
+// campaigns. Finite like every automatic hold; a member resumes it sooner.
+const ReplyHoldOtherCampaignsDays = 365
 
 // InboxTaggingSettings are the actions a workspace lets a classified reply
 // take. The three reversible ones default on; the suppression defaults off,
@@ -1148,6 +1156,7 @@ func DefaultAdvancedOutreachSettings() AdvancedOutreachSettings {
 			AutoSuppressOnUnsubWord: true,
 			HoldOnOutOfOffice:       true,
 			OutOfOfficeHoldDays:     OOOHoldDaysDefault,
+			StopAllCampaignsOnReply: false,
 		},
 		InboxTagging: InboxTaggingSettings{
 			// The reversible actions are on from the start, so a classified

@@ -22,6 +22,7 @@ import type { ContactImportAnalysis } from "@/lib/api/models/app/contacts/Contac
 import CategoryPicker from "../CategoryPicker";
 import { CampaignMultiPicker, SegmentMultiPicker } from "@/components/app/segments/SegmentPickers";
 import { Toggle } from "@/components/app/campaigns/preferences/components/CampaignPreferenceBoolBox";
+import { Checkbox } from "@/components/ui/checkbox";
 import { describeError } from "../importShared";
 
 const n = (v: number) => v.toLocaleString();
@@ -41,6 +42,8 @@ export default function ReviewStep({
     setCategoryIds,
     campaignIds,
     setCampaignIds,
+    skipActiveElsewhere,
+    setSkipActiveElsewhere,
     segmentIds,
     setSegmentIds,
     lockedCampaign,
@@ -60,6 +63,8 @@ export default function ReviewStep({
     setCategoryIds: (v: string[]) => void;
     campaignIds: string[];
     setCampaignIds: (v: string[]) => void;
+    skipActiveElsewhere: boolean;
+    setSkipActiveElsewhere: (v: boolean) => void;
     segmentIds: string[];
     setSegmentIds: (v: string[]) => void;
     // From a campaign's Leads tab the target campaign is fixed.
@@ -142,6 +147,22 @@ export default function ReviewStep({
                         </div>
                     ) : (
                         <CampaignMultiPicker value={campaignIds} onChange={setCampaignIds} />
+                    )}
+                    {(lockedCampaign || campaignIds.length > 0) && (
+                        <label className="mt-2 flex items-start gap-1.5 text-[11.5px] text-slate-700 cursor-pointer select-none">
+                            <Checkbox
+                                tone="slate"
+                                className="mt-px"
+                                checked={skipActiveElsewhere}
+                                onChange={(e) => setSkipActiveElsewhere(e.target.checked)}
+                            />
+                            <span>
+                                Skip contacts already running in another campaign
+                                <span className="block text-slate-500">
+                                    They are still imported, just not enrolled while another campaign is emailing them.
+                                </span>
+                            </span>
+                        </label>
                     )}
                 </Row>
             </section>

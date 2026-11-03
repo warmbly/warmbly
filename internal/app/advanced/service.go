@@ -1302,7 +1302,8 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 	// when an out-of-office hold lifts, for the notification to name.
 	replyClaimToken := uuid.Nil
 	replyClaimCompleted := false
-
+	// heldOthers is a reply that held the contact in their other campaigns.
+	heldOthers := false
 	var campaignID *uuid.UUID
 	var sequenceID *uuid.UUID
 	var contactID *uuid.UUID
@@ -1504,6 +1505,14 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 				}
 				return nil
 			}
+			// Before the processed marker, so a failed hold leaves the reply to be retried.
+			if settings.ReplyIntent.Enabled && settings.ReplyIntent.StopAllCampaignsOnReply {
+				held, err := s.holdOtherCampaigns(ctx, ctID, cID)
+				if err != nil {
+					return toErrx(err)
+				}
+				heldOthers = held
+			}
 		}
 		if s.evidence != nil {
 			kind := "replied"
@@ -1620,9 +1629,16 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 	}
 
 	actionTaken := ""
+	if heldOthers {
+		actionTaken = "held_other_campaigns"
+	}
 	if settings.ReplyIntent.AutoPauseOnNegative && intent == models.ReplyIntentNegative && campaignID != nil {
 		_ = s.campaignRepo.UpdateStatus(ctx, *campaignID, "paused")
-		actionTaken = "paused_campaign"
+		if actionTaken == "" {
+			actionTaken = "paused_campaign"
+		} else {
+			actionTaken += ",paused_campaign"
+		}
 	}
 
 	// Reply-based opt-out is what makes the plain "just reply and I'll stop"
@@ -1880,6 +1896,19 @@ func (s *service) holdForOutOfOffice(ctx context.Context, orgID, contactID uuid.
 
 func ptrTime(t time.Time) *time.Time {
 	return &t
+}
+
+// holdOtherCampaigns parks a contact who replied in every other campaign they
+// are a lead of, as a dated automatic hold a member resumes from the Leads tab.
+// Idempotent, so a failure is returned and the unprocessed reply is retried.
+func (s *service) holdOtherCampaigns(ctx context.Context, contactID, answered uuid.UUID) (bool, error) {
+	until := time.Now().UTC().AddDate(0, 0, models.ReplyHoldOtherCampaignsDays)
+	held, err := s.campaignProgressRepo.HoldLeadElsewhere(ctx, contactID, answered, &until,
+		"replied to another campaign", models.LeadHoldSourceInboxTagging)
+	if err != nil {
+		return false, err
+	}
+	return len(held) > 0, nil
 }
 
 // verifyEventOwnership refuses a deliverability event whose campaign, contact

@@ -138,6 +138,10 @@ type ContactImportCommit struct {
 	HasHeader   bool                         `json:"has_header"`
 	CategoryIDs []string                     `json:"category_ids,omitempty"`
 	CampaignIDs []string                     `json:"campaign_ids,omitempty"`
+	// SkipActiveInOtherCampaigns keeps an existing contact out of
+	// CampaignIDs while their sequence is still running in another campaign.
+	// The row itself is imported as usual.
+	SkipActiveInOtherCampaigns bool `json:"skip_active_in_other_campaigns,omitempty"`
 	// SegmentIDs pins every imported row into these segments as a manual
 	// include override, the same write the "Add to segment" bulk action does.
 	SegmentIDs []string `json:"segment_ids,omitempty"`

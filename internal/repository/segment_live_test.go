@@ -217,14 +217,14 @@ func TestLiveSegmentOverridesNestingAndCampaign(t *testing.T) {
 	}
 
 	// Enrolling the segment adds only the members not already leads.
-	out, xerr := repo.AddToCampaign(ctx, f.org, f.mate.String(), acme.ID, f.other)
+	out, xerr := repo.AddToCampaign(ctx, f.org, f.mate.String(), acme.ID, f.other, false)
 	if xerr != nil {
 		t.Fatalf("add to campaign: %v", xerr)
 	}
 	if out.Added != 2 || out.Members != 2 {
 		t.Fatalf("add to campaign = %+v", out)
 	}
-	out, xerr = repo.AddToCampaign(ctx, f.org, f.mate.String(), acme.ID, f.other)
+	out, xerr = repo.AddToCampaign(ctx, f.org, f.mate.String(), acme.ID, f.other, false)
 	if xerr != nil || out.Added != 0 {
 		t.Fatalf("second add = %+v, %v", out, xerr)
 	}
@@ -326,7 +326,7 @@ func TestLiveSegmentCampaignLinks(t *testing.T) {
 	if _, xerr := contacts.BulkUpdate(ctx, f.owner.String(), f.org, removeBob); xerr != nil {
 		t.Fatalf("remove again: %v", xerr)
 	}
-	out, xerr := repo.AddToCampaign(ctx, f.org, f.owner.String(), acme.ID, f.other)
+	out, xerr := repo.AddToCampaign(ctx, f.org, f.owner.String(), acme.ID, f.other, false)
 	if xerr != nil || out.Added != 1 {
 		t.Fatalf("one-shot after removal = %+v, %v", out, xerr)
 	}

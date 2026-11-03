@@ -157,7 +157,8 @@ export function useSetCampaignSegments() {
 export function useAddSegmentToCampaign() {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: ({ id, campaignId }: { id: string; campaignId: string }) => addSegmentToCampaign(id, campaignId),
+        mutationFn: ({ id, campaignId, skipActiveInOtherCampaigns }: { id: string; campaignId: string; skipActiveInOtherCampaigns?: boolean }) =>
+            addSegmentToCampaign(id, campaignId, skipActiveInOtherCampaigns),
         onSuccess: () =>
             Promise.all([
                 queryClient.invalidateQueries({ queryKey: ["contacts"] }),

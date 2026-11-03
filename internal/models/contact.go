@@ -933,6 +933,10 @@ type BulkEditContactsData struct {
 	Fields           []BulkEditContactsField `json:"fields"`
 	Subscribe        *bool                   `json:"subscribe"`
 
+	// SkipActiveInOtherCampaigns leaves out of add_campaigns a contact whose
+	// sequence is still running in another campaign.
+	SkipActiveInOtherCampaigns bool `json:"skip_active_in_other_campaigns,omitempty"`
+
 	// SkipRows suppresses the hydrated rows in the response. Set by the
 	// handler for a filter-shaped selection, which can name far more contacts
 	// than are worth serializing back. Never part of the request body.

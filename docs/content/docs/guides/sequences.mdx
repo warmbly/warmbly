@@ -349,6 +349,12 @@ A new email from a contact that answers no thread of yours counts toward the las
 
 A reply that lands in the mailbox a send's reply-to named counts the same way, although that mailbox never wrote to the contact. That is what a [shared reply inbox](/guides/mailboxes/#a-shared-reply-inbox) relies on: the reply stops the sequence, runs the reply branch, and is credited to the mailbox that sent the email.
 
+### Other campaigns the contact is in
+
+By default a reply stops only the campaign it answered. A contact who is also a lead of another campaign keeps receiving that campaign's steps. To stop those too, turn on **Settings > Sending > Replies > Hold the contact in every other campaign**. A human reply then holds the contact in every other campaign they are a lead of that has not completed, for a year. Out-of-office and other automatic replies never trigger it. The campaign they answered is left to its own **Stop on reply** and reply branches.
+
+The hold works like any other: it shows on each campaign's **Leads** tab with the reason "replied to another campaign", and **Resume now** lifts it. It never shortens or replaces a pause a member set by hand. The setting is `reply_intent.stop_all_campaigns_on_reply` in the [outreach settings](/api/reference/deliverability-ops/).
+
 When an upgrade repairs a reply marker that was provably created by a synchronized Sent message, the contact resumes at the next due step and the campaign reply totals update with it. An upgrade also restores provable human replies that were received by one campaign mailbox but referenced a thread started by another mailbox in the workspace. Warmbly recalculates address verification from the corrected delivery, open, click, reply, and bounce evidence. It leaves ambiguous historical replies untouched.
 
 <Callout type="warn" title="Turn on stop on reply">

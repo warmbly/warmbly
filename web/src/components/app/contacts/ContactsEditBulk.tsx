@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast/headless";
 import { TextInput } from "@/components/ui/field";
+import { Checkbox } from "@/components/ui/checkbox";
 import useUpdateContactsBulk from "@/lib/api/hooks/app/contacts/useUpdateContactsBulk";
 import useCustomFieldKeys from "@/lib/api/hooks/app/contacts/useCustomFieldKeys";
 import type ContactSelection from "@/lib/api/models/app/contacts/ContactSelection";
@@ -81,6 +82,7 @@ export default function ContactsEditBulk({
     scope?: { kind: "segment" | "campaign"; name: string };
 }) {
     const [campaignsAdd, setCampaignsAdd] = React.useState<string[]>([]);
+    const [skipActive, setSkipActive] = React.useState(false);
     const [campaignsRemove, setCampaignsRemove] = React.useState<string[]>([]);
     const [categoriesAdd, setCategoriesAdd] = React.useState<string[]>([]);
     const [categoriesRemove, setCategoriesRemove] = React.useState<string[]>([]);
@@ -92,6 +94,7 @@ export default function ContactsEditBulk({
 
     const reset = React.useCallback(() => {
         setCampaignsAdd([]);
+        setSkipActive(false);
         setCampaignsRemove([]);
         setCategoriesAdd([]);
         setCategoriesRemove([]);
@@ -138,6 +141,7 @@ export default function ContactsEditBulk({
                 update.mutateAsync({
                     ...selection,
                     add_campaigns: campaignsAdd,
+                    skip_active_in_other_campaigns: campaignsAdd.length > 0 && skipActive ? true : undefined,
                     remove_campaigns: campaignsRemove,
                     add_categories: categoriesAdd,
                     remove_categories: categoriesRemove,
@@ -226,6 +230,12 @@ export default function ContactsEditBulk({
                             <Section title="Campaigns" subtitle="Membership changes apply to every selected contact.">
                                 <PickerRow direction="add" label="Add to">
                                     <CampaignMultiPicker value={campaignsAdd} onChange={setCampaignsAdd} />
+                                    {campaignsAdd.length > 0 && (
+                                        <label className="mt-1.5 flex items-center gap-1.5 text-[11.5px] text-slate-600 cursor-pointer select-none">
+                                            <Checkbox tone="slate" checked={skipActive} onChange={(e) => setSkipActive(e.target.checked)} />
+                                            Skip contacts already running in another campaign
+                                        </label>
+                                    )}
                                 </PickerRow>
                                 <PickerRow direction="remove" label="Remove from">
                                     <CampaignMultiPicker value={campaignsRemove} onChange={setCampaignsRemove} />

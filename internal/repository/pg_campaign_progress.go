@@ -332,6 +332,8 @@ type CampaignProgressRepository interface {
 	// in two live campaigns used to have one of them held while the other kept
 	// writing to the empty desk (issue #518).
 	HoldLeadEverywhere(ctx context.Context, contactID uuid.UUID, until *time.Time, reason, source string) ([]uuid.UUID, error)
+	// HoldLeadElsewhere is HoldLeadEverywhere except in exceptCampaignID.
+	HoldLeadElsewhere(ctx context.Context, contactID, exceptCampaignID uuid.UUID, until *time.Time, reason, source string) ([]uuid.UUID, error)
 	// ResumeLead lifts the hold now and reports whether there was one to lift.
 	// The held time is dropped rather than carried, because "resume now" means
 	// now: the step's remaining wait is only preserved when a hold ends on its
@@ -2547,6 +2549,12 @@ func (r *campaignProgressRepository) HoldLead(ctx context.Context, campaignID, c
 // desk. Every automatic hold carries an end, so one written into a campaign
 // that never launches expires on its own.
 func (r *campaignProgressRepository) HoldLeadEverywhere(ctx context.Context, contactID uuid.UUID, until *time.Time, reason, source string) ([]uuid.UUID, error) {
+	return r.HoldLeadElsewhere(ctx, contactID, uuid.Nil, until, reason, source)
+}
+
+// HoldLeadElsewhere is HoldLeadEverywhere leaving out one campaign, the one a
+// reply answered, whose own flow decides what that reply does.
+func (r *campaignProgressRepository) HoldLeadElsewhere(ctx context.Context, contactID, exceptCampaignID uuid.UUID, until *time.Time, reason, source string) ([]uuid.UUID, error) {
 	guard := ""
 	if automaticHoldSource(source) {
 		guard = automaticHoldGuard("cl", "$2")
@@ -2562,9 +2570,10 @@ func (r *campaignProgressRepository) HoldLeadEverywhere(ctx context.Context, con
 		FROM campaigns c
 		WHERE cl.contact_id = $1
 		  AND c.id = cl.campaign_id
+		  AND cl.campaign_id <> $5
 		  AND c.status <> 'completed'`+guard+`
 		RETURNING cl.campaign_id`,
-		contactID, until, reason, source)
+		contactID, until, reason, source, exceptCampaignID)
 	if err != nil {
 		return nil, err
 	}

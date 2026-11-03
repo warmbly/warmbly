@@ -59,6 +59,8 @@ export interface ImportCommitOptions {
     has_header: boolean;
     category_ids?: string[];
     campaign_ids?: string[];
+    // Leave an existing contact out of campaign_ids while their sequence runs in another campaign.
+    skip_active_in_other_campaigns?: boolean;
     segment_ids?: string[];
     subscribed_default?: boolean;
 }
