@@ -366,13 +366,12 @@ func (s *service) CreateABVariant(ctx context.Context, campaignID uuid.UUID, req
 	if req == nil || strings.TrimSpace(req.Name) == "" {
 		return nil, errx.New(errx.BadRequest, "variant name is required")
 	}
-	if err := tmplvars.CheckCopy(
-		tmplvars.Part{Name: "variant subject", Text: req.Subject},
-		tmplvars.Part{Name: "variant body", Text: req.BodyHTML},
-		tmplvars.Part{Name: "variant plain-text body", Text: req.BodyPlain},
-	); err != nil {
-		return nil, errx.InvalidTemplate(err)
+	if models.VariantSendsOwnCopy(req.SequenceID, req.IsControl) {
+		if err := checkVariantCopy(req.Subject, req.BodyHTML, req.BodyPlain); err != nil {
+			return nil, errx.InvalidTemplate(err)
+		}
 	}
+	tmplvars.CanonicalizeAll(&req.Subject, &req.BodyHTML, &req.BodyPlain)
 	out, err := s.repo.CreateABVariant(ctx, campaignID, req)
 	if err != nil {
 		return nil, toErrx(err)
@@ -381,20 +380,50 @@ func (s *service) CreateABVariant(ctx context.Context, campaignID uuid.UUID, req
 }
 
 func (s *service) UpdateABVariant(ctx context.Context, campaignID, variantID uuid.UUID, req *models.UpdateCampaignABVariantRequest) (*models.CampaignABVariant, *errx.Error) {
-	if req != nil {
-		if err := tmplvars.CheckCopy(
-			tmplvars.Part{Name: "variant subject", Text: deref(req.Subject)},
-			tmplvars.Part{Name: "variant body", Text: deref(req.BodyHTML)},
-			tmplvars.Part{Name: "variant plain-text body", Text: deref(req.BodyPlain)},
-		); err != nil {
-			return nil, errx.InvalidTemplate(err)
+	if req != nil && (req.Subject != nil || req.BodyHTML != nil || req.BodyPlain != nil || req.IsControl != nil) {
+		sendsOwn, xerr := s.variantSendsOwnCopy(ctx, campaignID, variantID, req.IsControl)
+		if xerr != nil {
+			return nil, xerr
 		}
+		if sendsOwn {
+			if err := checkVariantCopy(deref(req.Subject), deref(req.BodyHTML), deref(req.BodyPlain)); err != nil {
+				return nil, errx.InvalidTemplate(err)
+			}
+		}
+		tmplvars.CanonicalizeAll(req.Subject, req.BodyHTML, req.BodyPlain)
 	}
 	out, err := s.repo.UpdateABVariant(ctx, campaignID, variantID, req)
 	if err != nil {
 		return nil, toErrx(err)
 	}
 	return out, nil
+}
+
+func checkVariantCopy(subject, bodyHTML, bodyPlain string) error {
+	return tmplvars.CheckCopy(
+		tmplvars.Part{Name: "variant subject", Text: subject},
+		tmplvars.Part{Name: "variant body", Text: bodyHTML, HTML: true},
+		tmplvars.Part{Name: "variant plain-text body", Text: bodyPlain},
+	)
+}
+
+// variantSendsOwnCopy reads whether the variant, with isControl applied, sends its own copy.
+// A variant that is not found is checked, and the update reports the miss.
+func (s *service) variantSendsOwnCopy(ctx context.Context, campaignID, variantID uuid.UUID, isControl *bool) (bool, *errx.Error) {
+	variants, err := s.repo.ListABVariants(ctx, campaignID)
+	if err != nil {
+		return false, toErrx(err)
+	}
+	for _, v := range variants {
+		if v.ID == variantID {
+			control := v.IsControl
+			if isControl != nil {
+				control = *isControl
+			}
+			return models.VariantSendsOwnCopy(v.SequenceID, control), nil
+		}
+	}
+	return true, nil
 }
 
 func deref(s *string) string {

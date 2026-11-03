@@ -11,7 +11,7 @@ import (
 func stepCopy(owner, subject, bodyHTML, bodyPlain string) []tmplvars.Part {
 	return []tmplvars.Part{
 		{Name: owner + " subject", Text: subject},
-		{Name: owner + " body", Text: bodyHTML},
+		{Name: owner + " body", Text: bodyHTML, HTML: true},
 		{Name: owner + " plain-text body", Text: bodyPlain},
 	}
 }
@@ -28,11 +28,23 @@ func checkCreateCopy(data *models.CreateCampaign) error {
 	return tmplvars.CheckCopy(parts...)
 }
 
-// checkActiveVariantCopy refuses a start while an active variant's copy would not render; a control arm sends the step's copy.
+// canonicalizeCreateCopy stores the new campaign's copy in canonical form.
+func canonicalizeCreateCopy(data *models.CreateCampaign) {
+	for i := range data.Sequences {
+		seq := &data.Sequences[i]
+		tmplvars.CanonicalizeAll(&seq.Subject, &seq.BodyHTML, &seq.BodyPlain)
+	}
+	for i := range data.Variants {
+		v := &data.Variants[i]
+		tmplvars.CanonicalizeAll(&v.Subject, &v.BodyHTML, &v.BodyPlain)
+	}
+}
+
+// checkActiveVariantCopy refuses a start while an active variant that sends its own copy would not render.
 func checkActiveVariantCopy(variants []models.CampaignABVariant) error {
 	var parts []tmplvars.Part
 	for _, v := range variants {
-		if v.IsActive && !v.IsControl {
+		if v.IsActive && models.VariantSendsOwnCopy(v.SequenceID, v.IsControl) {
 			parts = append(parts, stepCopy(fmt.Sprintf("variant %q", v.Name), v.Subject, v.BodyHTML, v.BodyPlain)...)
 		}
 	}

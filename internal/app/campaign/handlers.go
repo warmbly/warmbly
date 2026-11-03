@@ -50,6 +50,7 @@ func (s *campaignService) Create(ctx context.Context, userID string, orgID *uuid
 	if err := checkCreateCopy(data); err != nil {
 		return nil, errx.InvalidTemplate(err)
 	}
+	canonicalizeCreateCopy(data)
 
 	// Daily creation throttle (config.DailyThrottleNewCampaigns). Caps
 	// per-day new-campaign rate per org so an unlimited plan can't be

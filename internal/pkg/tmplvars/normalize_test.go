@@ -8,27 +8,29 @@ import (
 func TestNormalize(t *testing.T) {
 	cases := []struct{ name, in, want string }{
 		{"canonical untouched", "Hi {{.FirstName}}", "Hi {{.FirstName}}"},
-		{"bare snake", "Hi {{first_name}}", "Hi {{$.first_name}}"},
-		{"bare camel", "Hi {{ firstName }}", "Hi {{ $.firstName }}"},
-		{"bare lowercase", "{{company}} / {{company_name}}", "{{$.company}} / {{$.company_name}}"},
+		{"bare snake", "Hi {{first_name}}", "Hi {{.first_name}}"},
+		{"bare camel", "Hi {{ firstName }}", "Hi {{ .firstName }}"},
+		{"bare lowercase", "{{company}} / {{company_name}}", "{{.company}} / {{.company_name}}"},
 		{"dotted alias is a field already", "{{.first_name}}", "{{.first_name}}"},
-		{"bare in if", "{{if first_name}}x{{end}}", "{{if $.first_name}}x{{end}}"},
-		{"bare in pipe", `{{first_name | default "there"}}`, `{{$.first_name | default "there"}}`},
-		{"bare as argument", `{{default "there" first_name}}`, `{{default "there" $.first_name}}`},
-		{"bare in eq", `{{if eq company "Acme"}}y{{end}}`, `{{if eq $.company "Acme"}}y{{end}}`},
+		{"bare in if", "{{if first_name}}x{{end}}", "{{if .first_name}}x{{end}}"},
+		{"bare in pipe", `{{first_name | default "there"}}`, `{{.first_name | default "there"}}`},
+		{"bare as argument", `{{default "there" first_name}}`, `{{default "there" .first_name}}`},
+		{"bare in eq", `{{if eq company "Acme"}}y{{end}}`, `{{if eq .company "Acme"}}y{{end}}`},
 		{"literal braces outside actions", "Use first_name or {first_name} in text", "Use first_name or {first_name} in text"},
 		{"string literal untouched", `{{default "first_name" .X}}`, `{{default "first_name" .X}}`},
 		{"spaced custom field", "{{.job title}}", `{{(index . "job title")}}`},
 		{"sender alias", "{{.Sender.first_name}}", "{{.Sender.FirstName}}"},
-		{"sender bare", "{{sender.first_name}}", "{{$.Sender.FirstName}}"},
+		{"sender bare", "{{sender.first_name}}", "{{.Sender.FirstName}}"},
 		{"sender variable", "{{$.sender.signature_html}}", "{{$.Sender.SignatureHTML}}"},
 		{"function untouched", "{{upper .FirstName}}", "{{upper .FirstName}}"},
-		{"unsubscribe alias", "{{unsubscribe_link}}", "{{$.unsubscribe_link}}"},
+		{"unsubscribe alias", "{{unsubscribe_link}}", "{{.unsubscribe_link}}"},
 		{"sender through a variable", "{{$s := .Sender}}{{$s.first_name}}", "{{$s := .Sender}}{{$s.FirstName}}"},
 		{"sender through with", "{{with .sender}}{{.signature_html}}{{end}}", "{{with .sender}}{{.SignatureHTML}}{{end}}"},
 		{"sender through root variable", "{{$r := .}}{{$r.Sender.email}}", "{{$r := .}}{{$r.Sender.Email}}"},
 		{"range element untouched", "{{range .Sender.Tags}}{{.}}{{end}}", "{{range .Sender.Tags}}{{.}}{{end}}"},
 		{"range variables untouched", "{{range $k, $v := .}}{{$k}}={{$v}}{{end}}", "{{range $k, $v := .}}{{$k}}={{$v}}{{end}}"},
+		{"bare inside with uses the root", "{{with .Sender}}{{first_name}}{{end}}", "{{with .Sender}}{{$.first_name}}{{end}}"},
+		{"sender through parentheses", "{{with (.Sender)}}{{.first_name}}{{end}}", "{{with (.Sender)}}{{.FirstName}}{{end}}"},
 	}
 	for _, tc := range cases {
 		got, err := Normalize(tc.in)
@@ -52,6 +54,9 @@ func TestCheckRefusesWhatCannotRender(t *testing.T) {
 		{"{{$s := .Sender}}{{$s.Bogus}}", `unknown sender field "Bogus"`},
 		{"{{with .Sender}}{{.Bogus}}{{end}}", `unknown sender field "Bogus"`},
 		{"{{range $k, $v := .}}{{$v.x}}{{end}}", "fields of $v cannot be checked"},
+		{"{{.FirstName.Bogus}}", `field FirstName has no field "Bogus"`},
+		{"{{first_name.Bogus}}", `field first_name has no field "Bogus"`},
+		{`{{with .Sender | default .Sender}}{{.first_name}}{{end}}`, "fields of this value cannot be checked"},
 	}
 	for _, tc := range cases {
 		err := Check(tc.in)
@@ -98,5 +103,77 @@ func TestAddAliasesLetsCustomFieldWin(t *testing.T) {
 	AddAliases(data, map[string]string{"first_name": "custom"})
 	if data["first_name"] != "custom" || data["firstName"] != "Sam" {
 		t.Fatalf("got %v", data)
+	}
+}
+
+func TestCheckScopesBranchVariables(t *testing.T) {
+	for _, ok := range []string{
+		"{{$s := .Sender}}{{if .Company}}{{$s = .Company}}{{else}}{{$s.Email}}{{end}}",
+		"{{$s := .Sender}}{{if .X}}{{$s := .Other}}{{else}}{{$s.first_name}}{{end}}{{$s.Email}}",
+		"{{$s := .Sender}}{{with .Company}}{{$s := .}}{{else}}{{$s.Email}}{{end}}{{$s.Name}}",
+		"{{$s := .Sender}}{{range .Sender.Tags}}{{$s := .}}{{$s}}{{end}}{{$s.Name}}",
+	} {
+		if err := Check(ok); err != nil {
+			t.Errorf("%q: unexpected error %v", ok, err)
+		}
+	}
+	// A reassignment in a branch leaves the variable unknown after the structure.
+	if err := Check("{{$s := .Sender}}{{if .Company}}{{$s = .Company}}{{end}}{{$s.Email}}"); err == nil {
+		t.Error("a field of a variable a branch reassigned should be refused")
+	}
+}
+
+func TestCanonicalizeStoresBareAliasesInCanonicalForm(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"Hi {{first_name}}", "Hi {{.FirstName}}"},
+		{"{{ company_name }} and {{companyName}}", "{{ .Company }} and {{.Company}}"},
+		{`{{if first_name}}{{first_name | default "there"}}{{end}}`, `{{if .FirstName}}{{.FirstName | default "there"}}{{end}}`},
+		{"{{with .Sender}}{{first_name}} / {{.first_name}}{{end}}", "{{with .Sender}}{{$.FirstName}} / {{.FirstName}}{{end}}"},
+		{"{{.first_name}} {{.firstName}}", "{{.first_name}} {{.firstName}}"},
+		{"{{sender.email}}", "{{.Sender.Email}}"},
+		{"{{.job title}} {{first_name}} {{.dept-name}} {{last_name}}", "{{.job title}} {{.FirstName}} {{.dept-name}} {{.LastName}}"},
+		{"first_name {first_name} {{form_link:abc123}} {{first_name}}", "first_name {first_name} {{form_link:abc123}} {{.FirstName}}"},
+		{"{{if .X}}broken {{first_name}}", "{{if .X}}broken {{first_name}}"},
+		{"no actions", "no actions"},
+	}
+	for _, tc := range cases {
+		if got := Canonicalize(tc.in); got != tc.want {
+			t.Errorf("%q: got %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestCheckHTMLRefusesEscaperBeforePipe(t *testing.T) {
+	if err := CheckHTML(`<p>{{html .FirstName | printf "%s"}}</p>`); err == nil {
+		t.Error("an html escaper before a pipe should be refused in an HTML body")
+	}
+	for _, ok := range []string{"", "<p>Hi {{.FirstName}}</p>", `<a href="{{.website}}">x</a>`, "<!-- {{.FirstName}} --><p>{{.missing}}</p>", `<p>{{.FirstName | html}}</p>`} {
+		if err := CheckHTML(ok); err != nil {
+			t.Errorf("%q: unexpected error %v", ok, err)
+		}
+	}
+	if err := CheckCopy(Part{Name: "body", Text: `{{urlquery .X | printf "%s"}}`, HTML: true}); err == nil || !strings.Contains(err.Error(), "the body") {
+		t.Errorf("CheckCopy should run the HTML check on an HTML part: %v", err)
+	}
+}
+
+func TestReferences(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"Hi {{.FirstName}}", true},
+		{"Hi {{first_name}}", true},
+		{`{{.firstName | default "there"}}`, true},
+		{`{{$.first_name}}`, true},
+		{`{{printf "firstname"}}`, false},
+		{"{{.firstname_source}}", false},
+		{"{{.Sender.FirstName}}", false},
+		{"firstname in prose", false},
+	}
+	for _, tc := range cases {
+		if got := References(tc.in)["FirstName"]; got != tc.want {
+			t.Errorf("%q: got %v, want %v", tc.in, got, tc.want)
+		}
 	}
 }

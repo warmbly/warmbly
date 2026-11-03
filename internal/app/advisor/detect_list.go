@@ -200,7 +200,7 @@ func detectMissingPersonalizationData(s *repository.AdvisorSnapshot) []Finding {
 			if st.CampaignID != cl.Campaign.ID {
 				continue
 			}
-			if usesFirstName(st.Subject + st.BodyPlain + st.BodyHTML) {
+			if usesFirstName(st.Subject, st.BodyPlain, st.BodyHTML) {
 				uses = true
 				break
 			}
@@ -279,44 +279,13 @@ func detectUnsubscribedEnrolled(s *repository.AdvisorSnapshot) []Finding {
 	return out
 }
 
-// usesFirstName reports whether a template action in the copy names the first
-// name, in any spelling the renderer accepts (`.FirstName`, `first_name`, `firstName`).
-func usesFirstName(text string) bool {
-	for _, action := range tmplvars.ActionPattern.FindAllString(text, -1) {
-		for _, form := range []string{"firstname", "first_name"} {
-			if indexFold(action, form) >= 0 {
-				return true
-			}
+// usesFirstName reports whether any part reads the contact's first name, in
+// any spelling the renderer accepts (`.FirstName`, `first_name`, `firstName`).
+func usesFirstName(parts ...string) bool {
+	for _, p := range parts {
+		if tmplvars.References(p)["FirstName"] {
+			return true
 		}
 	}
 	return false
-}
-
-// indexFold is a case-insensitive substring search that avoids allocating a
-// lowered copy of every email body on every run.
-func indexFold(haystack, needle string) int {
-	n, h := len(needle), len(haystack)
-	if n == 0 || n > h {
-		return -1
-	}
-	for i := 0; i+n <= h; i++ {
-		match := true
-		for j := 0; j < n; j++ {
-			a, b := haystack[i+j], needle[j]
-			if 'A' <= a && a <= 'Z' {
-				a += 'a' - 'A'
-			}
-			if 'A' <= b && b <= 'Z' {
-				b += 'a' - 'A'
-			}
-			if a != b {
-				match = false
-				break
-			}
-		}
-		if match {
-			return i
-		}
-	}
-	return -1
 }

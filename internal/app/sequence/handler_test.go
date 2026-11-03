@@ -57,8 +57,9 @@ func TestUpdateAcceptsAliasesAndCustomFields(t *testing.T) {
 	if _, xerr := NewService(repo).Update(context.Background(), "org", "c", "s", &models.UpdateSequence{BodyHTML: &body}); xerr != nil {
 		t.Fatalf("valid copy refused: %v", xerr)
 	}
-	if repo.saved == nil || *repo.saved.BodyHTML != body {
-		t.Fatal("copy must be stored as written, not rewritten")
+	want := `<p>Hi {{.FirstName}}, {{if .company_name}}at {{.company_name}}{{end}} {{.job title}} {{.anything_custom | default "x"}}</p>`
+	if repo.saved == nil || *repo.saved.BodyHTML != want {
+		t.Fatalf("only the bare alias is stored in canonical form, got %q", *repo.saved.BodyHTML)
 	}
 }
 
@@ -69,12 +70,25 @@ func TestUpdateDerivesHTMLForPlainOnlyCopy(t *testing.T) {
 	if _, xerr := NewService(repo).Update(context.Background(), "org", "c", id.String(), &models.UpdateSequence{BodyPlain: &plain}); xerr != nil {
 		t.Fatalf("valid plain-only copy refused: %v", xerr)
 	}
-	if repo.saved == nil || repo.saved.BodyHTML == nil || *repo.saved.BodyHTML != mailhtml.FromText(plain) {
+	canonical := "Hi {{.FirstName}},\n\nWorth a chat?"
+	if repo.saved == nil || *repo.saved.BodyPlain != canonical || repo.saved.BodyHTML == nil || *repo.saved.BodyHTML != mailhtml.FromText(canonical) {
 		t.Fatalf("plain-only copy must store HTML derived from it, got %+v", repo.saved)
 	}
 	broken := "Hi {{if .Company}}"
 	repo = &recordingRepo{steps: []models.Sequence{{ID: id}}}
 	if _, xerr := NewService(repo).Update(context.Background(), "org", "c", id.String(), &models.UpdateSequence{BodyPlain: &broken}); xerr == nil || repo.saved != nil {
 		t.Fatal("broken plain-only copy must be refused before any HTML is derived or saved")
+	}
+}
+
+func TestUpdateRefusesEscaperBeforePipeInHTMLOnly(t *testing.T) {
+	body := `{{html .FirstName | printf "%s"}}`
+	repo := &recordingRepo{}
+	if _, xerr := NewService(repo).Update(context.Background(), "org", "c", "s", &models.UpdateSequence{BodyHTML: &body}); xerr == nil || xerr.Identifier != "invalid_template" {
+		t.Fatalf("an HTML body the HTML renderer refuses should be refused, got %v", xerr)
+	}
+	repo = &recordingRepo{}
+	if _, xerr := NewService(repo).Update(context.Background(), "org", "c", "s", &models.UpdateSequence{Subject: &body}); xerr != nil {
+		t.Fatalf("the same text in a plain subject renders, got %v", xerr)
 	}
 }

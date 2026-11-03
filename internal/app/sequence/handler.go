@@ -26,6 +26,9 @@ func (s *sequenceService) Update(ctx context.Context, orgID, campaignID, sequenc
 	if err := checkCopy(data); err != nil {
 		return nil, errx.InvalidTemplate(err)
 	}
+	if data != nil {
+		tmplvars.CanonicalizeAll(data.Subject, data.BodyHTML, data.BodyPlain)
+	}
 	s.deriveBodyHTML(ctx, orgID, campaignID, sequenceID, data)
 	// Branch routing is resolved (and made safe against deleted/dangling targets
 	// and loops) at schedule time in the repository's finder; the repository also
@@ -45,7 +48,7 @@ func checkCopy(data *models.UpdateSequence) error {
 		val  *string
 	}{{"subject", data.Subject}, {"body", data.BodyHTML}, {"plain-text body", data.BodyPlain}} {
 		if f.val != nil {
-			parts = append(parts, tmplvars.Part{Name: f.name, Text: *f.val})
+			parts = append(parts, tmplvars.Part{Name: f.name, Text: *f.val, HTML: f.val == data.BodyHTML})
 		}
 	}
 	return tmplvars.CheckCopy(parts...)

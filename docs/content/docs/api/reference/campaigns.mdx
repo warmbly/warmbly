@@ -1425,7 +1425,7 @@ All fields optional.
 }
 ```
 
-`subject`, `body_plain` and `body_html` are checked before anything is saved, on a running campaign too. Copy that would not render as written answers `400` with `code: "invalid_template"` and a `message` naming the field, the line and the problem: an `{{if}}` with no `{{end}}`, an unknown function, an unknown sender field, or a bare name that is not a built-in field. Built-in fields are accepted as `{{.FirstName}}` or in their snake_case, camelCase and lowercase spellings (`{{first_name}}`); see [personalization](/guides/expressions/).
+`subject`, `body_plain` and `body_html` are checked before anything is saved, on a running campaign too. Copy that would not render as written answers `400` with `code: "invalid_template"` and a `message` naming the field, the line and the problem: an `{{if}}` with no `{{end}}`, an unknown function, an unknown sender field, or a bare name that is not a built-in field. Built-in fields are accepted as `{{.FirstName}}` or in their snake_case, camelCase and lowercase spellings. A spelling without the dot is saved in canonical form (`{{first_name}}` is stored and returned as `{{.FirstName}}`), as are sender fields; see [personalization](/guides/expressions/). The same applies to campaign creation with `steps` and to A/B variants. A step's control arm (`is_control` with a `step_id`) sends the step's copy, so its own copy is not checked.
 
 ### Response
 

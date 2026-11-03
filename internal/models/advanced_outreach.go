@@ -750,6 +750,11 @@ type CampaignABVariant struct {
 	UpdatedAt  time.Time  `json:"updated_at"`
 }
 
+// VariantSendsOwnCopy is false only for a step's control arm, which sends the step's copy.
+func VariantSendsOwnCopy(sequenceID *uuid.UUID, isControl bool) bool {
+	return !isControl || sequenceID == nil
+}
+
 type CreateCampaignABVariantRequest struct {
 	Name       string                 `json:"name" binding:"required"`
 	SequenceID *uuid.UUID             `json:"step_id,omitempty"`

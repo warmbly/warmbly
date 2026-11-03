@@ -74,7 +74,7 @@ Hi {{.FirstName}}, I noticed {{.Company}} is hiring and wanted to reach out.
 ```
 
 <Callout title="Other spellings of the built-in fields">
-Campaign copy also accepts the snake_case, camelCase and lowercase spellings of every built-in field, with or without the dot: `{{first_name}}`, `{{.firstName}}`, `{{firstname}}`, `{{last_name}}`, `{{email}}`, `{{company}}`, `{{company_name}}`, `{{phone}}`, `{{unsubscribe_link}}`, and `{{.Sender.first_name}}` for sender fields. They work inside conditions and helpers as well (`{{if first_name}}`, `{{first_name | default "there"}}`). A contact's own custom field with one of these names keeps its value. `{{.FIRSTNAME}}` is not one of them.
+Campaign copy also accepts the snake_case, camelCase and lowercase spellings of every built-in field, with or without the dot: `{{first_name}}`, `{{.firstName}}`, `{{firstname}}`, `{{last_name}}`, `{{email}}`, `{{company}}`, `{{company_name}}`, `{{phone}}`, `{{unsubscribe_link}}`, and `{{.Sender.first_name}}` for sender fields. They work inside conditions and helpers as well (`{{if first_name}}`, `{{first_name | default "there"}}`). A spelling without the dot is saved in canonical form, so `{{first_name}}` is stored as `{{.FirstName}}` and always reads the built-in field, and sender fields are saved under their canonical names. A dotted spelling such as `{{.first_name}}` is kept as written, and a contact's own custom field with that name keeps its value. `{{.FIRSTNAME}}` is not one of them.
 </Callout>
 
 **Custom fields** work the same way with a dot: `{{.industry}}`, `{{.account_owner}}`. Names containing spaces or dashes also work as written (`{{if .job title}}...{{end}}`) and resolve everywhere, including inside conditions and helpers, because Warmbly rewrites them to an `index` lookup for you.
@@ -94,7 +94,7 @@ Values come from the **mailbox actually sending that message**, including campai
 
 `{{.Sender.Email}}` is the recipient-visible From address, including a configured send-as alias. `{{.Sender.MailboxEmail}}` is the underlying connected mailbox address. `{{.Sender.ReplyTo}}` is the explicit Reply-To header; it is empty when replies simply go to the sender.
 
-Prefix each name below with `.Sender.`, for example `{{.Sender.Provider}}`. The names are written as shown; campaign copy also accepts their snake_case, camelCase and lowercase spellings (`{{.Sender.first_name}}`), and any other capitalization is refused:
+Prefix each name below with `.Sender.`, for example `{{.Sender.Provider}}`. The names are written as shown; campaign copy also accepts their snake_case, camelCase and lowercase spellings (`{{.Sender.first_name}}`, saved as `{{.Sender.FirstName}}`), and any other capitalization is refused. A sender field is text, a flag or a number, so a selector after it (`{{.Sender.Email.Domain}}`) is refused too:
 
 | Details | Fields |
 | --- | --- |
