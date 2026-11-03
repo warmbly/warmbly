@@ -1206,6 +1206,7 @@ func main() {
 		// Fan platform events (replies, bounces, warmup health, booked meetings)
 		// out to integration actions alongside customer webhooks.
 		webhookService.WireDispatchSink(integrationServiceForHandler.DispatchAny)
+		integrationServiceForHandler.SetEvents(webhookService)
 
 		// Reflect the active infrastructure backends into storage_backends so
 		// the admin UI can display what's running. Read-only entries — they
@@ -2253,6 +2254,7 @@ func main() {
 				Repo:      repository.NewContactImportRepository(primaryDB),
 				Contacts:  contactService,
 				Publisher: streamingPublisher,
+				Events:    webhookServiceForHandler,
 				// New addresses are checked right away rather than on the next tick.
 				Kicked: emailVerifyService.Kick,
 			})

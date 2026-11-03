@@ -33,7 +33,7 @@ const (
 	// bounce/complaint rate enters the early-warning band (half the pause
 	// threshold) — a graduated signal short of an auto-pause.
 	WebhookEventCampaignDeliverabilityWarning WebhookEventType = "campaign.deliverability_warning"
-	// campaign.action fires from a "notify" action node in a sequence flow.
+	// campaign.action is the trigger of automations a campaign step launches; never delivered.
 	WebhookEventCampaignAction WebhookEventType = "campaign.action"
 
 	// Warmup
@@ -223,12 +223,27 @@ var firehoseEvents = map[WebhookEventType]bool{
 	WebhookEventInboxEmailReceived:     true,
 	WebhookEventInboxEmailUpdated:      true,
 	WebhookEventInboxEmailDeleted:      true,
-	WebhookEventEmailAccountSynced:     true,
+	WebhookEventAutomationRun:          true,
 }
 
 // IsFirehoseEvent reports whether an event is high-volume and therefore
 // opt-in-only (excluded from the empty-filter "all events" subscription).
 func IsFirehoseEvent(t WebhookEventType) bool { return firehoseEvents[t] }
+
+// deprecatedEvents are never delivered. They stay valid in event_types and as
+// triggers so saved subscriptions keep saving; TestCatalogEventsAreEmitted
+// fails when a catalog event is neither emitted nor listed here.
+var deprecatedEvents = map[WebhookEventType]bool{
+	WebhookEventCampaignEmailDelivered:    true,
+	WebhookEventCampaignAction:            true,
+	WebhookEventInboxEmailUpdated:         true,
+	WebhookEventInboxEmailDeleted:         true,
+	WebhookEventEmailAccountHealthChanged: true,
+}
+
+// IsDeprecatedWebhookEvent reports whether an event is kept only for
+// compatibility and is never delivered.
+func IsDeprecatedWebhookEvent(t WebhookEventType) bool { return deprecatedEvents[t] }
 
 // WebhookEventCategory groups events for the picker UI and the public catalog.
 type WebhookEventCategory string
@@ -257,6 +272,8 @@ type WebhookEventDescriptor struct {
 	Category    WebhookEventCategory `json:"category"`
 	Description string               `json:"description"`
 	Firehose    bool                 `json:"firehose"`
+	// Deprecated events are never delivered; the description names the replacement.
+	Deprecated bool `json:"deprecated"`
 }
 
 // WebhookEventCatalog is the ordered, described list of every outbound event.
@@ -272,19 +289,22 @@ func buildWebhookEventCatalog() []WebhookEventDescriptor {
 	rows := []row{
 		{WebhookEventCampaignStarted, WebhookCatCampaign, "A campaign began sending."},
 		{WebhookEventCampaignPaused, WebhookCatCampaign, "A campaign was paused (manually or by deliverability guardrails)."},
-		{WebhookEventCampaignCompleted, WebhookCatCampaign, "A campaign finished its last scheduled send."},
+		{WebhookEventCampaignCompleted, WebhookCatCampaign, "A campaign finished: every lead is done, or it reached its end date."},
 		{WebhookEventCampaignCreated, WebhookCatCampaign, "A campaign was created."},
 		{WebhookEventCampaignUpdated, WebhookCatCampaign, "A campaign's settings or steps changed."},
 		{WebhookEventCampaignDeleted, WebhookCatCampaign, "A campaign was deleted."},
+		{WebhookEventTemplateCreated, WebhookCatCampaign, "An email template was created."},
+		{WebhookEventTemplateUpdated, WebhookCatCampaign, "An email template was updated."},
+		{WebhookEventTemplateDeleted, WebhookCatCampaign, "An email template was deleted."},
 		{WebhookEventCampaignEmailSent, WebhookCatCampaign, "A campaign email was sent to a contact."},
-		{WebhookEventCampaignEmailDelivered, WebhookCatCampaign, "A campaign email was accepted by the receiving server."},
+		{WebhookEventCampaignEmailDelivered, WebhookCatCampaign, "Deprecated, never delivered: Warmbly cannot observe delivery. Use campaign.email_sent and campaign.email_bounced."},
 		{WebhookEventCampaignEmailOpened, WebhookCatCampaign, "A campaign email was opened."},
 		{WebhookEventCampaignEmailClicked, WebhookCatCampaign, "A link in a campaign email was clicked."},
 		{WebhookEventCampaignEmailBounced, WebhookCatCampaign, "A campaign email bounced."},
 		{WebhookEventCampaignReplyReceived, WebhookCatCampaign, "A contact replied to a campaign email."},
 		{WebhookEventCampaignUnsubscribed, WebhookCatCampaign, "A contact unsubscribed from a campaign."},
 		{WebhookEventCampaignDeliverabilityWarning, WebhookCatCampaign, "A campaign entered the deliverability early-warning band."},
-		{WebhookEventCampaignAction, WebhookCatCampaign, "A campaign sequence \"notify\" action fired."},
+		{WebhookEventCampaignAction, WebhookCatCampaign, "Deprecated, never delivered: the trigger of automations a campaign step runs."},
 		{WebhookEventWarmupEmailSent, WebhookCatWarmup, "A warmup email was sent."},
 		{WebhookEventWarmupHealthChanged, WebhookCatWarmup, "A mailbox's warmup health state changed."},
 		{WebhookEventWarmupPlacementInSpam, WebhookCatWarmup, "A warmup email landed in spam."},
@@ -293,15 +313,15 @@ func buildWebhookEventCatalog() []WebhookEventDescriptor {
 		{WebhookEventDeliverabilityBounce, WebhookCatDeliverability, "A bounce was recorded (any source)."},
 		{WebhookEventDeliverabilityComplaint, WebhookCatDeliverability, "A spam complaint was recorded."},
 		{WebhookEventInboxEmailReceived, WebhookCatInbox, "A new email arrived in a connected mailbox."},
-		{WebhookEventInboxEmailUpdated, WebhookCatInbox, "An inbox email changed (read state, labels, category)."},
-		{WebhookEventInboxEmailDeleted, WebhookCatInbox, "An inbox email was deleted."},
-		{WebhookEventInboxReplyReceived, WebhookCatInbox, "A human reply was received (including non-campaign replies)."},
+		{WebhookEventInboxEmailUpdated, WebhookCatInbox, "Deprecated, never delivered: per-message inbox changes are not sent as webhooks."},
+		{WebhookEventInboxEmailDeleted, WebhookCatInbox, "Deprecated, never delivered: per-message inbox changes are not sent as webhooks."},
+		{WebhookEventInboxReplyReceived, WebhookCatInbox, "A person (not an auto-reply) answered a campaign email or an email sent from the inbox."},
 		{WebhookEventEmailAccountConnected, WebhookCatEmailAccount, "A mailbox was connected."},
-		{WebhookEventEmailAccountDisconnected, WebhookCatEmailAccount, "A mailbox was disconnected."},
+		{WebhookEventEmailAccountDisconnected, WebhookCatEmailAccount, "A mailbox stopped working and was paused (sign-in refused, account disabled, fair-use stop)."},
 		{WebhookEventEmailAccountRemoved, WebhookCatEmailAccount, "A mailbox was removed."},
-		{WebhookEventEmailAccountError, WebhookCatEmailAccount, "A mailbox hit an auth or sync error."},
-		{WebhookEventEmailAccountSynced, WebhookCatEmailAccount, "A mailbox finished a sync."},
-		{WebhookEventEmailAccountHealthChanged, WebhookCatEmailAccount, "A mailbox's health state changed."},
+		{WebhookEventEmailAccountError, WebhookCatEmailAccount, "A mailbox hit a new temporary sending or sync error."},
+		{WebhookEventEmailAccountSynced, WebhookCatEmailAccount, "A mailbox finished importing its existing mail."},
+		{WebhookEventEmailAccountHealthChanged, WebhookCatEmailAccount, "Deprecated, never delivered: use warmup.health_changed, which carries the same transition."},
 		{WebhookEventContactCreated, WebhookCatContact, "A contact was created."},
 		{WebhookEventContactUpdated, WebhookCatContact, "A contact was updated."},
 		{WebhookEventContactDeleted, WebhookCatContact, "A contact was deleted."},
@@ -316,7 +336,7 @@ func buildWebhookEventCatalog() []WebhookEventDescriptor {
 		{WebhookEventAutomationCreated, WebhookCatAutomation, "An automation was created."},
 		{WebhookEventAutomationUpdated, WebhookCatAutomation, "An automation was updated."},
 		{WebhookEventAutomationDeleted, WebhookCatAutomation, "An automation was deleted."},
-		{WebhookEventAutomationRun, WebhookCatAutomation, "An automation run completed."},
+		{WebhookEventAutomationRun, WebhookCatAutomation, "An automation finished a run."},
 		{WebhookEventMeetingBooked, WebhookCatMeeting, "A meeting was booked."},
 		{WebhookEventMeetingRescheduled, WebhookCatMeeting, "A meeting was rescheduled."},
 		{WebhookEventMeetingCanceled, WebhookCatMeeting, "A meeting was canceled."},
@@ -325,9 +345,9 @@ func buildWebhookEventCatalog() []WebhookEventDescriptor {
 		{WebhookEventRoleCreated, WebhookCatTeam, "A role was created."},
 		{WebhookEventRoleUpdated, WebhookCatTeam, "A role was updated."},
 		{WebhookEventRoleDeleted, WebhookCatTeam, "A role was deleted."},
-		{WebhookEventBulkOperationStarted, WebhookCatBulk, "A bulk import/export started."},
-		{WebhookEventBulkOperationCompleted, WebhookCatBulk, "A bulk import/export completed."},
-		{WebhookEventBulkOperationFailed, WebhookCatBulk, "A bulk import/export failed."},
+		{WebhookEventBulkOperationStarted, WebhookCatBulk, "A contact file import was started."},
+		{WebhookEventBulkOperationCompleted, WebhookCatBulk, "A contact file import finished."},
+		{WebhookEventBulkOperationFailed, WebhookCatBulk, "A contact file import stopped with an error."},
 		{WebhookEventLeadSyncSourceUpdated, WebhookCatWorkspace, "A lead-sync source changed."},
 		{WebhookEventSettingsUpdated, WebhookCatWorkspace, "Workspace settings changed."},
 		{WebhookEventSubscriptionUpdated, WebhookCatWorkspace, "The plan or subscription changed."},
@@ -340,6 +360,7 @@ func buildWebhookEventCatalog() []WebhookEventDescriptor {
 			Category:    r.cat,
 			Description: r.desc,
 			Firehose:    firehoseEvents[r.t],
+			Deprecated:  deprecatedEvents[r.t],
 		})
 	}
 	return out
@@ -396,10 +417,10 @@ func AppSubscribedEventTypes(wanted []string, scopes uint64) []string {
 		}
 		return out
 	}
-	// Empty filter: every non-firehose event the scopes allow.
+	// Empty filter: every non-firehose, delivered event the scopes allow.
 	out := make([]string, 0, len(AllWebhookEventTypes))
 	for _, t := range AllWebhookEventTypes {
-		if IsFirehoseEvent(t) || t == WebhookEventInboundWebhook {
+		if IsFirehoseEvent(t) || IsDeprecatedWebhookEvent(t) || t == WebhookEventInboundWebhook {
 			continue
 		}
 		if EventAllowedByScopes(t, scopes) {

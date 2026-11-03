@@ -253,6 +253,7 @@ func main() {
 	integrationRepoC := repository.NewIntegrationRepository(primaryDB.Pool)
 	integrationServiceC := integration.NewService(integrationRepoC, cipherService, integration.NewOAuthManager())
 	webhookService.WireDispatchSink(integrationServiceC.DispatchAny)
+	integrationServiceC.SetEvents(webhookService)
 	// Replies, opens and clicks are raised here, so the Salesforce outbox
 	// records them here too; the backend drains it. Automation upserts take
 	// the native path as well.

@@ -42,11 +42,16 @@ func (s *JobsService) HandleSyncState(ctx context.Context, e *models.JobEventSyn
 		return err
 	}
 
+	completed := e.State.BackfillStatus == models.SyncBackfillComplete &&
+		(prev == nil || prev.BackfillStatus != models.SyncBackfillComplete)
+	if completed {
+		s.emitMailboxEvent(ctx, e.EmailID, models.WebhookEventEmailAccountSynced, map[string]any{
+			"backfill_status": string(e.State.BackfillStatus),
+		})
+	}
 	if s.StreamingPublisher == nil {
 		return nil
 	}
-	completed := e.State.BackfillStatus == models.SyncBackfillComplete &&
-		(prev == nil || prev.BackfillStatus != models.SyncBackfillComplete)
 	throttleFlipped := (e.State.ThrottledUntil != nil) != (prev != nil && prev.ThrottledUntil != nil)
 	if !completed && !throttleFlipped {
 		return nil
