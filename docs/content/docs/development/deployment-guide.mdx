@@ -844,6 +844,12 @@ make upgrade                 # git pull --ff-only, then make up; migrations appl
 
 Upgrading is safe with data in place: migrations are forward-only and apply on backend boot.
 
+### Warmup day selection across versions
+
+Explicit warmup-day selection uses the existing `warmup_days` mask, with no migration or new worker message. The current and immediately previous application releases can read each other's values and queued tasks. A rollback preserves saved day selections. A zero mask retains inherited working days with an enabled sending plan and every day with Fixed schedule.
+
+Upgrade the backend and consumer together, including Cloud's copies when it owns warmup. An older scheduler still intersects explicit warmup days with the sending plan's working days, and an older Cloud-sync reader can normalize all seven days to zero. Explicit weekend sending is consistent once those older processes have drained. Rolling back restores the previous scheduling policy without deleting selected days; keep all writers on the current release to preserve explicit all-day choices through Cloud sync.
+
 ### Updates without lost work
 
 A service being replaced finishes what it started, as long as the platform gives it the time to:

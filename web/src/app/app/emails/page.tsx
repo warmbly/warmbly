@@ -42,6 +42,7 @@ import { cloudSendFailure, cloudWarmupPaused } from "@/lib/cloudWarmup";
 import buildError from "@/lib/helper/buildError";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import BulkWarmupDialog from "@/components/app/emails/BulkWarmupDialog";
+import { warmupDaysLabel } from "@/lib/warmupSchedule";
 import BulkTagPopover from "@/components/app/emails/BulkTagPopover";
 import BulkSignatureDialog from "@/components/app/emails/BulkSignatureDialog";
 import MailboxImportsMenu from "@/components/app/emails/import/MailboxImportsMenu";
@@ -152,7 +153,7 @@ export default function AddressesPage() {
     const [tabIntentKey, setTabIntentKey] = React.useState(0);
     const consumeTabIntent = React.useCallback(() => setViewTab(undefined), []);
     const [removing, setRemoving] = React.useState(false);
-    const [bulkStart, setBulkStart] = React.useState(false);
+    const [bulkStart, setBulkStart] = React.useState<string[] | null>(null);
     const [bulkSignature, setBulkSignature] = React.useState(false);
     const [searchParams, setSearchParams] = useSearchParams();
     const queryClient = useQueryClient();
@@ -694,8 +695,10 @@ export default function AddressesPage() {
                         {canWarmup && (
                             <button
                                 type="button"
-                                onClick={() => setBulkStart(true)}
-                                className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded text-[12px] font-medium text-orange-600 hover:bg-orange-50 transition-colors"
+                                onClick={() => setBulkStart(selected)}
+                                disabled={cloudRemovalPending || bulkStart !== null}
+                                title={cloudRemovalPending ? "Waiting for Cloud mailbox ownership to be confirmed" : undefined}
+                                className="disabled:opacity-50 inline-flex items-center gap-1.5 h-7 px-2.5 rounded text-[12px] font-medium text-orange-600 hover:bg-orange-50 transition-colors"
                             >
                                 <PlayIcon className="w-3.5 h-3.5" />
                                 Start warmup
@@ -781,10 +784,12 @@ export default function AddressesPage() {
             />
 
             <BulkWarmupDialog
-                open={bulkStart}
-                ids={selected}
-                onClose={() => setBulkStart(false)}
-                onComplete={() => setSelected([])}
+                open={bulkStart !== null}
+                ids={bulkStart ?? []}
+                ownershipPending={cloudRemovalPending}
+                allowFollow={!(bulkStart ?? []).some((id) => cloud.isEnrolled(id))}
+                onClose={() => setBulkStart(null)}
+                onComplete={(ids) => setSelected((current) => current.filter((id) => !ids.includes(id)))}
             />
 
             <BulkSignatureDialog
@@ -1047,6 +1052,7 @@ function MailboxRow({
                 {nextWarmup && !sendFailure && (
                     <span className="font-sans text-[10.5px] text-slate-400 truncate">next {nextWarmup}</span>
                 )}
+                <span className="font-sans text-[10.5px] text-slate-400 truncate">{warmupDaysLabel(box.warmup_days ?? 0)}</span>
             </span>
         ) : (
             <span

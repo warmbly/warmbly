@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/warmbly/warmbly/internal/bitmask"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -161,10 +162,11 @@ type Resolved struct {
 	Behavior models.SendingBehavior
 	Loc      *time.Location
 
-	accountID uuid.UUID
-	svc       *service
-	ctx       context.Context
-	cache     map[string]models.DailyPlan
+	accountID  uuid.UUID
+	svc        *service
+	ctx        context.Context
+	cache      map[string]models.DailyPlan
+	warmupDays int
 }
 
 // PlanOn returns the plan for a local day. Today's plan is read from (and
@@ -172,6 +174,19 @@ type Resolved struct {
 // are rolled on the fly, since persisting a plan for a day the mailbox has not
 // reached yet would only freeze settings the customer may still change.
 func (r Resolved) PlanOn(day time.Time) models.DailyPlan {
+	if r.warmupDays > 0 {
+		cold := r
+		cold.warmupDays = 0
+		plan := cold.PlanOn(day)
+		if !bitmask.HasWeekday(uint8(r.warmupDays), day.Weekday()) {
+			plan.IsWorkingDay = false
+		} else if !plan.IsWorkingDay {
+			b := r.Behavior
+			b.Weekdays = r.warmupDays
+			plan = RollPlan(b, day)
+		}
+		return plan
+	}
 	key := day.Format("2006-01-02")
 	if r.cache == nil {
 		// A Resolved built without the constructor (NewStandalone, or a zero
@@ -209,6 +224,14 @@ func NewStandalone(b models.SendingBehavior, loc *time.Location) Resolved {
 		loc = time.UTC
 	}
 	return Resolved{Enabled: b.Enabled, Behavior: b, Loc: loc, accountID: b.EmailAccountID}
+}
+
+// ForWarmup keeps the plan's hours and breaks while honoring explicitly chosen warmup days.
+func (r Resolved) ForWarmup(days int) Resolved {
+	if r.Enabled {
+		r.warmupDays = days
+	}
+	return r
 }
 
 // NextOpen is Resolved's binding of the package-level window search.
