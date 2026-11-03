@@ -538,6 +538,17 @@
                             },
                             {
                               "default": null,
+                              "name": "folder_coverage_observed_at",
+                              "type": [
+                                "null",
+                                {
+                                  "logicalType": "timestamp-millis",
+                                  "type": "long"
+                                }
+                              ]
+                            },
+                            {
+                              "default": null,
                               "name": "last_synced_at",
                               "type": [
                                 "null",
