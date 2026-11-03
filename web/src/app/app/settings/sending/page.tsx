@@ -295,6 +295,7 @@ function SendingSettings() {
                         <Toggle
                             on={draft.reply_intent?.stop_all_campaigns_on_reply === true}
                             onChange={(on) => patchReplyIntent({ stop_all_campaigns_on_reply: on })}
+                            label="Hold the contact in every other campaign"
                         />
                     </Row>
                 )}

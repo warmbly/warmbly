@@ -62,9 +62,11 @@ export default function AddSegmentToCampaignDialog({
             const res = await add.mutateAsync({ id: segment.id, campaignId: picked, skipActiveInOtherCampaigns: skipActive });
             toast.success(
                 res.added === 0
-                    ? skipActive
-                        ? `No new leads for ${target?.name ?? "the campaign"}: every member is already a lead or running elsewhere`
-                        : `Every member of ${segment.name} is already a lead in ${target?.name ?? "the campaign"}`
+                    ? res.members === 0
+                        ? `${segment.name} has no members to add`
+                        : skipActive
+                          ? `No new leads for ${target?.name ?? "the campaign"}: every member is already a lead or running elsewhere`
+                          : `Every member of ${segment.name} is already a lead in ${target?.name ?? "the campaign"}`
                     : `Added ${res.added.toLocaleString()} lead${res.added === 1 ? "" : "s"} to ${target?.name ?? "the campaign"}`,
             );
             onClose();

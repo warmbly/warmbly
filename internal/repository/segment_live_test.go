@@ -224,8 +224,7 @@ func TestLiveSegmentOverridesNestingAndCampaign(t *testing.T) {
 	if out.Added != 2 || out.Members != 2 {
 		t.Fatalf("add to campaign = %+v", out)
 	}
-	// The skip filter runs on the same statement; nobody new is added either way.
-	out, xerr = repo.AddToCampaign(ctx, f.org, f.mate.String(), acme.ID, f.other, true)
+	out, xerr = repo.AddToCampaign(ctx, f.org, f.mate.String(), acme.ID, f.other, false)
 	if xerr != nil || out.Added != 0 {
 		t.Fatalf("second add = %+v, %v", out, xerr)
 	}

@@ -2,6 +2,7 @@ package advanced
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -13,15 +14,21 @@ import (
 // elsewhereRecorder records the holds a reply writes across campaigns.
 type elsewhereRecorder struct {
 	*incomingReplyProgressRepo
+	contacts   []uuid.UUID
 	except     []uuid.UUID
 	until      *time.Time
 	source     string
 	everywhere int
+	failWith   error
 }
 
-func (r *elsewhereRecorder) HoldLeadElsewhere(_ context.Context, _, except uuid.UUID, until *time.Time, _, source string) ([]uuid.UUID, error) {
+func (r *elsewhereRecorder) HoldLeadElsewhere(_ context.Context, contact, except uuid.UUID, until *time.Time, _, source string) ([]uuid.UUID, error) {
+	r.contacts = append(r.contacts, contact)
 	r.except = append(r.except, except)
 	r.until, r.source = until, source
+	if r.failWith != nil {
+		return nil, r.failWith
+	}
 	return []uuid.UUID{uuid.New()}, nil
 }
 
@@ -30,14 +37,23 @@ func (r *elsewhereRecorder) HoldLeadEverywhere(context.Context, uuid.UUID, *time
 	return nil, nil
 }
 
-func newReplyHoldService(stopAll bool) (*service, *elsewhereRecorder, uuid.UUID, uuid.UUID) {
+type replyHoldFixture struct {
+	svc       *service
+	rec       *elsewhereRecorder
+	accountID uuid.UUID
+	contactID uuid.UUID
+	answered  uuid.UUID
+}
+
+func newReplyHoldService(stopAll bool) replyHoldFixture {
 	orgID, accountID, contactID := uuid.New(), uuid.New(), uuid.New()
 	account := &models.Email{ID: accountID, OrganizationID: &orgID, Email: "owner@acme.test"}
 	svc, progress := newIncomingReplyService(account, &models.Contact{ID: contactID, Email: "lead@example.com"}, contactID)
 	progress.advanced.stopAll = stopAll
 	rec := &elsewhereRecorder{incomingReplyProgressRepo: progress}
 	svc.campaignProgressRepo = rec
-	return svc, rec, accountID, *svc.taskRepo.(incomingReplyTaskRepo).campaign.CampaignID
+	return replyHoldFixture{svc: svc, rec: rec, accountID: accountID, contactID: contactID,
+		answered: *svc.taskRepo.(incomingReplyTaskRepo).campaign.CampaignID}
 }
 
 func replyFromLead(accountID uuid.UUID, subject, body string, flags []string) *models.EmailMessageStoreData {
@@ -54,19 +70,35 @@ func replyFromLead(accountID uuid.UUID, subject, body string, flags []string) *m
 // With the setting on, a human reply holds the contact in every campaign but
 // the one it answered, as a dated automatic hold.
 func TestHumanReplyHoldsOtherCampaignsWhenEnabled(t *testing.T) {
-	svc, rec, accountID, answered := newReplyHoldService(true)
-	if xerr := svc.ProcessIncomingReply(context.Background(), accountID,
-		replyFromLead(accountID, "Re: Hello", "Sounds good, let's talk Tuesday.", nil)); xerr != nil {
+	f := newReplyHoldService(true)
+	if xerr := f.svc.ProcessIncomingReply(context.Background(), f.accountID,
+		replyFromLead(f.accountID, "Re: Hello", "Sounds good, let's talk Tuesday.", nil)); xerr != nil {
 		t.Fatal(xerr)
 	}
-	if len(rec.except) != 1 || rec.except[0] != answered {
-		t.Fatalf("HoldLeadElsewhere excepts %v, want once for the answered campaign %s", rec.except, answered)
+	if len(f.rec.except) != 1 || f.rec.except[0] != f.answered {
+		t.Fatalf("HoldLeadElsewhere excepts %v, want once for the answered campaign %s", f.rec.except, f.answered)
 	}
-	if rec.source != models.LeadHoldSourceInboxTagging {
-		t.Fatalf("hold source = %q, want an automatic hold a member can resume", rec.source)
+	if f.rec.contacts[0] != f.contactID {
+		t.Fatalf("held contact %s, want the replying contact %s", f.rec.contacts[0], f.contactID)
 	}
-	if rec.until == nil || time.Until(*rec.until) < 300*24*time.Hour {
-		t.Fatalf("hold lifts at %v, want about a year out", rec.until)
+	if f.rec.source != models.LeadHoldSourceInboxTagging {
+		t.Fatalf("hold source = %q, want an automatic hold a member can resume", f.rec.source)
+	}
+	if f.rec.until == nil || time.Until(*f.rec.until) < 300*24*time.Hour {
+		t.Fatalf("hold lifts at %v, want about a year out", f.rec.until)
+	}
+}
+
+// A hold that cannot be written leaves the reply unprocessed, so it is retried.
+func TestFailedReplyHoldLeavesTheReplyToRetry(t *testing.T) {
+	f := newReplyHoldService(true)
+	f.rec.failWith = errors.New("connection reset")
+	if xerr := f.svc.ProcessIncomingReply(context.Background(), f.accountID,
+		replyFromLead(f.accountID, "Re: Hello", "Sounds good, let's talk Tuesday.", nil)); xerr == nil {
+		t.Fatal("a failed hold was swallowed")
+	}
+	if f.rec.completed != 0 {
+		t.Fatalf("the reply was marked processed %d times after a failed hold", f.rec.completed)
 	}
 }
 
@@ -75,28 +107,32 @@ func TestHumanReplyHoldsNothingElseByDefault(t *testing.T) {
 	if models.DefaultAdvancedOutreachSettings().ReplyIntent.StopAllCampaignsOnReply {
 		t.Fatal("stop_all_campaigns_on_reply defaults on, want off")
 	}
-	svc, rec, accountID, _ := newReplyHoldService(false)
-	if xerr := svc.ProcessIncomingReply(context.Background(), accountID,
-		replyFromLead(accountID, "Re: Hello", "Sounds good, let's talk Tuesday.", nil)); xerr != nil {
+	f := newReplyHoldService(false)
+	if xerr := f.svc.ProcessIncomingReply(context.Background(), f.accountID,
+		replyFromLead(f.accountID, "Re: Hello", "Sounds good, let's talk Tuesday.", nil)); xerr != nil {
 		t.Fatal(xerr)
 	}
-	if len(rec.except) != 0 {
-		t.Fatalf("HoldLeadElsewhere called %d times with the setting off", len(rec.except))
+	if len(f.rec.except) != 0 {
+		t.Fatalf("HoldLeadElsewhere called %d times with the setting off", len(f.rec.except))
 	}
 }
 
-// An auto-reply is not the person answering, so it never holds other campaigns.
+// An auto-reply is not the person answering, so it never holds other
+// campaigns; an away message holds the lead through its own path instead.
 func TestAutoReplyHoldsNoOtherCampaigns(t *testing.T) {
-	svc, rec, accountID, _ := newReplyHoldService(true)
-	if xerr := svc.ProcessIncomingReply(context.Background(), accountID,
-		replyFromLead(accountID, "Automatic reply: Hello", "I am out of the office until Monday.",
+	f := newReplyHoldService(true)
+	if xerr := f.svc.ProcessIncomingReply(context.Background(), f.accountID,
+		replyFromLead(f.accountID, "Automatic reply: Hello", "I am out of the office until Monday.",
 			[]string{"Auto-Submitted:auto-replied"})); xerr != nil {
 		t.Fatal(xerr)
 	}
-	if rec.replied != 0 || rec.classified != 1 {
-		t.Fatalf("auto-reply not read as automated: replied=%d classified=%d", rec.replied, rec.classified)
+	if f.rec.replied != 0 || f.rec.classified != 1 {
+		t.Fatalf("auto-reply not read as automated: replied=%d classified=%d", f.rec.replied, f.rec.classified)
 	}
-	if len(rec.except) != 0 {
-		t.Fatalf("an auto-reply held other campaigns %d times", len(rec.except))
+	if len(f.rec.except) != 0 {
+		t.Fatalf("an auto-reply held other campaigns %d times", len(f.rec.except))
+	}
+	if f.rec.everywhere != 1 {
+		t.Fatalf("an out-of-office auto-reply held the lead everywhere %d times, want once", f.rec.everywhere)
 	}
 }

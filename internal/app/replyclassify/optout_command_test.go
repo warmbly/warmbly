@@ -31,6 +31,11 @@ func TestIsOptOutCommandReply(t *testing.T) {
 		"thanks after":    "Remove, thanks",
 		"repeated":        "stop stop stop",
 		"disclaimer foot": "Stop\n\nThis email and any attachments are confidential and intended solely for the addressee.",
+		"full signature":  "STOP\n\nThanks,\nJohn Smith\nSent from my iPhone",
+		"dash delimiter":  "Stop.\n--\nJane Doe | Acme",
+		"title and phone": "Stop\n\nBest regards,\nJane Doe\nHead of Sales, Acme Inc.\n+49 (30) 1234-567\njane@acme.example",
+		"german footer":   "Stopp\n\nVon meinem iPhone gesendet",
+		"notice":          "Remove\n\nCONFIDENTIALITY NOTICE: The contents of this message are private.",
 	}
 	for name, body := range optOut {
 		if !IsOptOut("Re: Quick question", body) {
@@ -59,10 +64,25 @@ func TestIsOptOutCommandReply(t *testing.T) {
 		"greeting only":    "Hi Jane,",
 		"bus stop":         "bus stop",
 		"long text below":  "Stop\n\nWe looked at this last quarter and decided to build it in house instead",
+		"thanks lets talk": "Stop\nThanks, let's talk.",
+		"great deal":       "Stop\nGreat deal, let's talk.",
+		"prose after sign": "Stop\nThanks,\nActually I'd love a demo",
+		"this email prose": "Stop\nThis email is great, call me",
+		"confidential":     "Stop\nConfidential: we are evaluating vendors now",
+		"disclaimer word":  "Stop\nDisclaimer I want a demo",
+		"sign-off prose":   "Stop\nBest time to call is Monday",
+		"greeting prose":   "Hey can we talk\nStop",
+		"name then prose":  "Stop\n\nJohn\nwhen are you free",
 	}
 	for name, body := range notOptOut {
 		if IsOptOut("Re: Stop", body) {
 			t.Errorf("%s: IsOptOut(%q) = true, want false", name, body)
+		}
+		if MentionsOptOut("Re: Stop", body) {
+			t.Errorf("%s: MentionsOptOut(%q) = true, want false", name, body)
+		}
+		if r, ok := classifyLexicon(Input{BodyText: body}); ok && r.Class == ClassUnsubscribe {
+			t.Errorf("%s: classifyLexicon(%q) = %+v, want no unsubscribe", name, body, r)
 		}
 	}
 }

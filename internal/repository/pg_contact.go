@@ -2969,7 +2969,12 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, orgID
 		}
 		// Claims leads a linked segment had enrolled, so detaching that
 		// segment later leaves hand-picked leads alone.
-		if _, err := tx.Exec(ctx, claimLeadsManualSQL, data.AddCampaigns, data.Contacts, orgID); err != nil {
+		claim := claimLeadsManualSQL
+		if data.SkipActiveInOtherCampaigns {
+			claim += ` AND NOT EXISTS (SELECT 1 FROM contacts c WHERE c.id = campaign_leads.contact_id AND ` +
+				activeElsewhereClause("campaign_leads.campaign_id") + `)`
+		}
+		if _, err := tx.Exec(ctx, claim, data.AddCampaigns, data.Contacts, orgID); err != nil {
 			db.CaptureError(err, "", nil, "campaign_leads claim")
 			return nil, errx.InternalError()
 		}
