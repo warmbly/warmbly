@@ -143,9 +143,16 @@ to exit, every fleet node to report the new env revision, and every required
 Kafka group's committed offsets to reach the final partition end offsets.
 Include pending handlers, failed work and all worker command routes in that
 check. A momentary zero lag while an old publisher can still write is insufficient.
-Only then clear the hold through a rolling env refresh. The API stays available;
-background execution waits while the queues drain. Rehearse this sequence before
-production cutover. The hold does not fence producers or verify offsets for you.
+Only then remove `EVENTBUS_HOLD_READS` and set `EVENTBUS_READ_BOTH=false` through
+a rolling env refresh. Keep `CODEC_READ_BOTH=true`, Kafka-capable images and both
+sets of credentials throughout the retained-Avro and rollback window. Verify every
+node's applied revision again, then check NATS consumer pending messages and
+acknowledgments. NATS is now the only active bus; its total retained message count
+includes acknowledged messages and is not the consumer backlog.
+
+The API stays available; background execution waits while the queues drain.
+Rehearse this sequence before production cutover. The hold does not fence
+producers or verify offsets for you.
 The default broker diagnostics observe the publishing transport, or the draining
 transport when publishing to a held queue. They do not aggregate both backlogs;
 inventory both brokers separately before releasing a hold.
@@ -184,10 +191,15 @@ Before any production publisher moves, verify:
 Keep Kafka running throughout these checks, the final drain and the agreed
 rollback window. Retention alone is not evidence of an empty backlog. Before
 disabling Kafka reads, prove there are no old publishers and every required
-group has consumed its backlog. Before disabling NATS reads during a rollback,
-hold Kafka reads, switch publishers back to Kafka and drain NATS using the
-compatibility release, then clear the hold. Never enable both uncoordinated
-publisher directions during a handoff.
+group has consumed its backlog.
+
+To roll back from the NATS-only bus configuration, first restore
+`EVENTBUS_READ_BOTH=true` and set `EVENTBUS_HOLD_READS=kafka` everywhere while
+publishing remains on NATS. Verify every service and worker revision before
+switching publishers back to Kafka. Use the compatibility release, keep
+`CODEC_READ_BOTH=true`, fence every old NATS publisher and drain NATS pending
+messages and acknowledgments before clearing the Kafka hold. Never enable both
+uncoordinated publisher directions during a handoff.
 
 ## Recovery and maintenance
 
