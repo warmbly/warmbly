@@ -47,6 +47,8 @@ type CampaignRepository interface {
 	Overview(ctx context.Context, orgID string, allowed []uuid.UUID) (*models.CampaignsOverview, error)
 	Update(ctx context.Context, orgID, query string, data *models.UpdateCampaign) (*models.Campaign, *errx.Error)
 	UpdateStatus(ctx context.Context, campaignID uuid.UUID, status string) error
+	// MarkCompleted moves an active campaign to completed; true only for the call that made the change.
+	MarkCompleted(ctx context.Context, campaignID uuid.UUID) (bool, error)
 	UpdateStatusWithLock(ctx context.Context, campaignID uuid.UUID, status string) error
 	// Delete removes the campaign, its cascading data and every pending task
 	// parked for it, in one transaction. Tenancy is the caller's job.
@@ -1591,6 +1593,17 @@ func (r *campaignRepository) UpdateStatus(ctx context.Context, campaignID uuid.U
 
 	_, err := resultDB(ctx, r.DB).Exec(ctx, query, status, campaignID)
 	return err
+}
+
+// MarkCompleted is the compare-and-swap form of active -> completed, so
+// concurrent completers can tell which one closed the campaign.
+func (r *campaignRepository) MarkCompleted(ctx context.Context, campaignID uuid.UUID) (bool, error) {
+	query := `UPDATE campaigns SET status = 'completed', idle_since = NULL, updated_at = NOW() WHERE id = $1 AND status = 'active'`
+	tag, err := resultDB(ctx, r.DB).Exec(ctx, query, campaignID)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
 }
 
 // StartCampaign sets campaign status to active and updates last_status_change_at.

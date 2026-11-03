@@ -110,7 +110,9 @@ func (s *tasksService) ReconcileCampaignSchedules(ctx context.Context, limit int
 					continue
 				}
 			}
-			s.campaignRepo.UpdateStatus(ctx, id, "completed")
+			if err := s.completeCampaign(ctx, campaign, completionReason(cerr)); err != nil {
+				log.Warn().Err(err).Str("campaign_id", id.String()).Msg("campaign reconcile: could not mark campaign completed")
+			}
 		default:
 			// Transient error (DB blip): leave it; the next pass retries.
 			log.Warn().Err(cerr).Str("campaign_id", id.String()).Msg("campaign reconcile: next-time calc failed; will retry")

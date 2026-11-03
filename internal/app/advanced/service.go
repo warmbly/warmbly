@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"math/rand"
 	"net/mail"
 	"regexp"
@@ -1758,6 +1759,11 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 	}
 	addTagVerdict(payload, tagged)
 	s.emit(ctx, *account.OrganizationID, models.WebhookEventCampaignReplyReceived, payload)
+	if !models.IsAutomatedIntent(intent) && s.answersWorkspaceSend(ctx, msg, *account.OrganizationID) {
+		inbox := maps.Clone(payload)
+		inbox["trigger"] = "inbox_reply"
+		s.emit(ctx, *account.OrganizationID, models.WebhookEventInboxReplyReceived, inbox)
+	}
 	if intent == models.ReplyIntentNegative {
 		// Negative/unsubscribe-leaning replies also fire the unsubscribe event
 		// only when we actually suppressed; otherwise the reply event is enough.
@@ -1793,6 +1799,26 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 	}
 
 	return nil
+}
+
+// answersWorkspaceSend reports whether the message's In-Reply-To names a
+// campaign step or composed email one of the organization's mailboxes sent.
+func (s *service) answersWorkspaceSend(ctx context.Context, msg *models.EmailMessageStoreData, orgID uuid.UUID) bool {
+	for _, mid := range msg.InReplyTo {
+		candidate := cleanMessageID(mid)
+		if candidate == "" {
+			continue
+		}
+		task, err := s.taskRepo.GetTaskByMessageID(ctx, candidate)
+		if err != nil || task == nil || (task.TaskType != "campaign" && task.TaskType != "email") {
+			continue
+		}
+		sender, xerr := s.emailRepo.GetByID(ctx, task.EmailAccountID)
+		if xerr == nil && sender != nil && sender.OrganizationID != nil && *sender.OrganizationID == orgID {
+			return true
+		}
+	}
+	return false
 }
 
 // holdForOutOfOffice parks the contact's next step until they are back: the

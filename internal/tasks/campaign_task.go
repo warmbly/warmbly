@@ -281,7 +281,9 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 				executionStatus = "completed"
 				return nil
 			}
-			s.campaignRepo.UpdateStatus(ctx, campaign.ID, "completed")
+			if cerr := s.completeCampaign(ctx, campaign, completionReason(err)); cerr != nil {
+				log.Warn().Err(cerr).Str("campaign_id", campaign.ID.String()).Msg("Failed to mark campaign completed")
+			}
 			if s.campaignLogRepo != nil {
 				s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
 					CampaignID: campaign.ID,
@@ -1179,6 +1181,31 @@ func autoPauseReason(err error) string {
 // because verification refused every remaining lead.
 func UndeliverablePauseReason(n int) string {
 	return fmt.Sprintf("Campaign paused: %d remaining lead(s) were refused by address verification. Re-verify them or mark them deliverable to continue", n)
+}
+
+// completeCampaign closes a finished campaign and delivers campaign.completed
+// only from the call that closed it, so concurrent completers announce once.
+func (s *tasksService) completeCampaign(ctx context.Context, campaign *models.Campaign, reason string) error {
+	closed, err := s.campaignRepo.MarkCompleted(ctx, campaign.ID)
+	if err != nil || !closed {
+		return err
+	}
+	if s.advanced != nil && campaign.OrganizationID != nil {
+		s.advanced.EmitCampaignEvent(ctx, *campaign.OrganizationID, models.WebhookEventCampaignCompleted, map[string]any{
+			"campaign_id":   campaign.ID.String(),
+			"campaign_name": campaign.Name,
+			"reason":        reason,
+		})
+	}
+	return nil
+}
+
+// completionReason names why the scheduler ended a campaign: all_sent or end_date.
+func completionReason(err error) string {
+	if errors.Is(err, scheduler.ErrCampaignEnded) {
+		return "end_date"
+	}
+	return "all_sent"
 }
 
 // pauseUndeliverable parks a campaign whose only remaining leads were refused

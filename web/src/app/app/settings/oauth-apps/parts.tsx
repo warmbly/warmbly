@@ -49,14 +49,16 @@ export function EventPicker({
 
     const filtered = React.useMemo(() => {
         const needle = q.trim().toLowerCase();
-        if (!needle) return catalog;
-        return catalog.filter(
+        // A deprecated event is never delivered, so it is offered only to untick.
+        const offered = catalog.filter((d) => !d.deprecated || value.includes(d.type));
+        if (!needle) return offered;
+        return offered.filter(
             (d) =>
                 d.type.toLowerCase().includes(needle) ||
                 d.category.toLowerCase().includes(needle) ||
                 d.description.toLowerCase().includes(needle),
         );
-    }, [catalog, q]);
+    }, [catalog, q, value]);
 
     const grouped = React.useMemo(() => {
         const g: Record<string, WebhookEventDescriptor[]> = {};
