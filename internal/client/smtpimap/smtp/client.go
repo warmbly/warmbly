@@ -319,7 +319,7 @@ func writeBase64Wrapped(w io.Writer, data []byte) {
 
 // ---------- Internal helpers ----------
 
-func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []byte) *errx.MailError {
+func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []byte) (result *errx.MailError) {
 	var host string
 	var port int
 	var security string
@@ -359,6 +359,11 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 	if resolved == models.MailSecurityNone && !models.CleartextMailAllowed(host) {
 		return errx.ErrMailInsecureRemoteHost
 	}
+	pace := paceFor(host, port, c.BindIP)
+	if held := pace.wait(ctx, time.Now()); held != nil {
+		return held
+	}
+	defer func() { result = pace.observe(time.Now(), result) }()
 	// The socket may be 587 with STARTTLS when the mailbox's 465 never
 	// answered; the mode to speak is the one the dial reports.
 	dialed, err := DialSubmission(ctx, c.BindIP, host, port, security)

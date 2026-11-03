@@ -187,6 +187,10 @@ const (
 	MailCertificateHint = "The server's certificate is not one a recognised certificate authority vouches for, has expired, or is for another host name. Use the host name the certificate is issued for. For a server with its own certificate, choose Update credentials on the mailbox and trust the certificate when the test offers it."
 	// MailCleartextAuthMessage is the refusal to sign in over a link that is not encrypted.
 	MailCleartextAuthMessage = "This mail server only offers sign-in over an unencrypted connection, and Warmbly never sends a mailbox password unencrypted. Use the server's SSL/TLS port (usually 465) or a port that offers STARTTLS (usually 587)."
+	// MailServerThrottlingMessage replaces the generic connection text when the server limited this worker's address.
+	MailServerThrottlingMessage = "The mail server temporarily refused new connections or sign-ins from Warmbly's sending address, which providers do when many mailboxes they host connect from the same address. Warmbly now spaces its connections to this server and retries on its own; nothing needs to change on the mailbox."
+	// MailServerPacedMessage is a send held back without contacting a server that is limiting Warmbly's address.
+	MailServerPacedMessage = "Not sent yet: this mailbox's mail server is limiting connections from Warmbly's sending address, so Warmbly is holding the send briefly instead of adding to them. It is retried automatically."
 	// MailNoSTARTTLSHint is what a mailbox owner reads when the port offers no encryption.
 	MailNoSTARTTLSHint = "The server offers no STARTTLS on this port, and Warmbly only signs in over an encrypted connection. Use the server's SSL/TLS port (usually 465) or a port that offers STARTTLS (usually 587)."
 )

@@ -292,7 +292,7 @@ func (s *JobsService) failCampaignSend(ctx context.Context, task *repository.Tas
 
 	// Only permanent recipient refusals are bounce evidence; deferrals may use the same wording.
 	if s.Evidence != nil && ct.ContactID != nil && ct.SequenceID != nil && !copyRefused &&
-		code != string(errx.MailErrorCodeServerUnreachable) && emailverify.NamesRecipient(reason) {
+		code != string(errx.MailErrorCodeServerUnreachable) && code != models.ServerPacingCode && emailverify.NamesRecipient(reason) {
 		s.Evidence.RecordEvidence(ctx, *ct.ContactID, models.Step(&campaignID, ct.SequenceID), "bounced_recipient", "send:"+ct.SequenceID.String(), reason)
 	}
 
@@ -308,7 +308,7 @@ func (s *JobsService) failCampaignSend(ctx context.Context, task *repository.Tas
 
 	attempts, exhausted, rolledBack := 0, false, false
 	if ct.ContactID != nil && ct.SequenceID != nil && s.CampaignProgressRepo != nil {
-		if copyExcluded || code == models.MailboxLoadingCode {
+		if copyExcluded || code == models.MailboxLoadingCode || code == models.ServerPacingCode {
 			attempts, exhausted, rolledBack, err = s.CampaignProgressRepo.WalkBackSend(ctx, campaignID, *ct.ContactID, *ct.SequenceID, reason, false)
 		} else {
 			attempts, exhausted, rolledBack, err = s.CampaignProgressRepo.RecordSendFailure(ctx, campaignID, *ct.ContactID, *ct.SequenceID, reason)
@@ -524,6 +524,11 @@ func (s *JobsService) logCampaignSendFailure(ctx context.Context, campaignID uui
 		meta["mailbox_loading_retry"] = true
 		msg = fmt.Sprintf("Sending to %s was delayed while the mailbox reconnected. An automatic retry was scheduled.", who)
 	}
+	if code == models.ServerPacingCode && rolledBack && !exhausted {
+		eventType = "email_deferred"
+		meta["level"] = "info"
+		msg = fmt.Sprintf("Sending to %s was delayed because the mailbox's mail server is limiting connections from Warmbly's sending address. Nothing was sent yet; an automatic retry was scheduled.", who)
+	}
 	_ = s.CampaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
 		CampaignID: campaignID,
 		EventType:  eventType,
@@ -580,10 +585,21 @@ func sendFailureReason(result models.SendEmailResult) (reason, code string) {
 			code = models.MailboxLoadingCode
 		}
 	}
+	if f := failureOf(result); f != nil && f.Protocol == "smtp" && f.Cause == errx.SendCauseServerPacing && f.Disposition == errx.SendRetry &&
+		code == string(errx.MailErrorCodeServerUnreachable) {
+		code = models.ServerPacingCode
+	}
 	if code == "" {
 		code = "SEND_FAILED"
 	}
 	return reason, code
+}
+
+func failureOf(result models.SendEmailResult) *errx.SendFailure {
+	if result.Error == nil {
+		return nil
+	}
+	return result.Error.Failure
 }
 
 // campaignOrgID returns the campaign's organization id for org-scoped
