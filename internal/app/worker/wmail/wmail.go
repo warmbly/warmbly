@@ -205,9 +205,10 @@ func NewWMail(
 	mail.gov = newGovernor(data.ID, data.OrganizationID, gcache, policy)
 	mail.tracker = newSyncTracker(seed, func(st models.SyncState) error {
 		return mail.onEvent(models.JobEventTypeSyncState, &models.JobEventSyncState{
-			UserID:  mail.UserID,
-			EmailID: mail.ID,
-			State:   st,
+			ReportGeneration: mail.TransportGeneration,
+			UserID:           mail.UserID,
+			EmailID:          mail.ID,
+			State:            st,
 		})
 	})
 	mail.tracker.transportGeneration = mail.TransportGeneration

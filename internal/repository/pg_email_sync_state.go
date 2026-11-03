@@ -21,8 +21,8 @@ type EmailSyncStateRepository interface {
 	// Put stores the full state and stamps email_accounts.last_synced_at, the
 	// column the admin and dashboard "Last synced" surfaces read.
 	Put(ctx context.Context, userID, emailID uuid.UUID, state *models.SyncState) error
-	// PutFromWorker stores a report only while the reporting worker owns the mailbox.
-	PutFromWorker(ctx context.Context, userID, emailID, workerID uuid.UUID, state *models.SyncState, before func(context.Context) error) (bool, error)
+	// PutFromWorker stores a report only while the reporting worker owns the mailbox at the reported generation.
+	PutFromWorker(ctx context.Context, userID, emailID, workerID, generation uuid.UUID, state *models.SyncState, before func(context.Context) error) (bool, error)
 	// Get returns nil, nil when the mailbox has never reported.
 	Get(ctx context.Context, emailID uuid.UUID) (*models.SyncState, error)
 	// IsOwnConversation reports whether any of the RFC message ids or the
@@ -70,18 +70,18 @@ func NewEmailSyncStateRepository(d *db.DB) EmailSyncStateRepository {
 }
 
 func (r *pgEmailSyncStateRepository) Put(ctx context.Context, userID, emailID uuid.UUID, state *models.SyncState) error {
-	_, err := r.put(ctx, userID, emailID, nil, state, nil)
+	_, err := r.put(ctx, userID, emailID, nil, uuid.Nil, state, nil)
 	return err
 }
 
-func (r *pgEmailSyncStateRepository) PutFromWorker(ctx context.Context, userID, emailID, workerID uuid.UUID, state *models.SyncState, before func(context.Context) error) (bool, error) {
+func (r *pgEmailSyncStateRepository) PutFromWorker(ctx context.Context, userID, emailID, workerID, generation uuid.UUID, state *models.SyncState, before func(context.Context) error) (bool, error) {
 	if workerID == uuid.Nil {
 		return false, nil
 	}
-	return r.put(ctx, userID, emailID, &workerID, state, before)
+	return r.put(ctx, userID, emailID, &workerID, generation, state, before)
 }
 
-func (r *pgEmailSyncStateRepository) put(ctx context.Context, userID, emailID uuid.UUID, workerID *uuid.UUID, state *models.SyncState, before func(context.Context) error) (bool, error) {
+func (r *pgEmailSyncStateRepository) put(ctx context.Context, userID, emailID uuid.UUID, workerID *uuid.UUID, generation uuid.UUID, state *models.SyncState, before func(context.Context) error) (bool, error) {
 	if state == nil {
 		return false, nil
 	}
@@ -102,16 +102,19 @@ func (r *pgEmailSyncStateRepository) put(ctx context.Context, userID, emailID uu
 		return false, fmt.Errorf("email_sync_state: lock: %w", err)
 	}
 	var assigned *uuid.UUID
-	var generation uuid.UUID
-	err = tx.QueryRow(ctx, `SELECT worker_id, transport_generation FROM email_accounts WHERE id=$1 FOR UPDATE`, emailID).Scan(&assigned, &generation)
+	var current uuid.UUID
+	err = tx.QueryRow(ctx, `SELECT worker_id, transport_generation FROM email_accounts WHERE id=$1 FOR UPDATE`, emailID).Scan(&assigned, &current)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return false, fmt.Errorf("email_sync_state: owner: %w", err)
 	}
 	if workerID != nil && (assigned == nil || *assigned != *workerID) {
 		return false, nil
 	}
-	// A seeded incarnation reports a nil generation until its first completed pass.
-	if state.TransportGeneration != uuid.Nil && err == nil && state.TransportGeneration != generation {
+	// Reports from releases that predate the incarnation generation carry only the completed-pass one, or none.
+	if generation == uuid.Nil {
+		generation = state.TransportGeneration
+	}
+	if generation != uuid.Nil && err == nil && generation != current {
 		return false, nil
 	}
 	if before != nil {

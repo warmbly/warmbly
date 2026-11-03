@@ -51,7 +51,7 @@ func priorTransportSchema(t *testing.T, schema avro.Schema) avro.Schema {
 				kept := fields[:0]
 				for _, f := range fields {
 					record := f.(map[string]any)
-					if record["name"] == "transport_generation" || record["name"] == "folder_coverage_observed_at" || x["name"] == "warmbly.events.EmailErrorEvent" && record["name"] == "operation" || x["name"] == "warmbly.events.JobEventSyncState" && record["name"] == "worker_id" {
+					if record["name"] == "transport_generation" || record["name"] == "folder_coverage_observed_at" || x["name"] == "warmbly.events.EmailErrorEvent" && record["name"] == "operation" || x["name"] == "warmbly.events.JobEventSyncState" && (record["name"] == "worker_id" || record["name"] == "report_generation") {
 						continue
 					}
 					strip(f)
@@ -98,12 +98,14 @@ func TestPriorTransportSchemaOmitsReportingIdentity(t *testing.T) {
 				continue
 			}
 			found = true
-			present := false
-			for _, field := range record.Fields() {
-				present = present || field.Name() == "worker_id"
-			}
-			if present != tc.present {
-				t.Fatalf("worker_id present=%t want=%t", present, tc.present)
+			for _, name := range []string{"worker_id", "report_generation"} {
+				present := false
+				for _, field := range record.Fields() {
+					present = present || field.Name() == name
+				}
+				if present != tc.present {
+					t.Fatalf("%s present=%t want=%t", name, present, tc.present)
+				}
 			}
 		}
 		if !found {
@@ -186,7 +188,7 @@ func TestMailTransportCodecRegistryCompatibility(t *testing.T) {
 			return v.(*models.WorkerEvent).Body.(*models.AddWorkerEmail).TransportGeneration
 		}},
 		{"send", models.JobEvent{Type: models.JobEventTypeEmailSent, Body: models.SendEmailResult{TaskID: task, Success: true, SentAt: at, TransportGeneration: generation}}, models.JobEvent{}.Schema(), func() any { return &models.JobEvent{} }, func(v any) uuid.UUID { return v.(*models.JobEvent).Body.(models.SendEmailResult).TransportGeneration }},
-		{"sync", models.JobEvent{Type: models.JobEventTypeSyncState, Body: &models.JobEventSyncState{WorkerID: &generation, EmailID: mailbox, State: models.SyncState{LastSyncedAt: &at, FolderCoverageObservedAt: &at, TransportGeneration: generation}}}, models.JobEvent{}.Schema(), func() any { return &models.JobEvent{} }, func(v any) uuid.UUID {
+		{"sync", models.JobEvent{Type: models.JobEventTypeSyncState, Body: &models.JobEventSyncState{WorkerID: &generation, ReportGeneration: generation, EmailID: mailbox, State: models.SyncState{LastSyncedAt: &at, FolderCoverageObservedAt: &at, TransportGeneration: generation}}}, models.JobEvent{}.Schema(), func() any { return &models.JobEvent{} }, func(v any) uuid.UUID {
 			return v.(*models.JobEvent).Body.(*models.JobEventSyncState).State.TransportGeneration
 		}},
 		{"error", models.JobEvent{Type: models.JobEventTypeEmailServerError, Body: models.EmailErrorEvent{EmailAccountID: mailbox.String(), Operation: models.MailTransportSync, TransportGeneration: generation}}, models.JobEvent{}.Schema(), func() any { return &models.JobEvent{} }, func(v any) uuid.UUID { return v.(*models.JobEvent).Body.(models.EmailErrorEvent).TransportGeneration }},

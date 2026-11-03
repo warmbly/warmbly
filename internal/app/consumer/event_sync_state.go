@@ -36,7 +36,7 @@ func (s *JobsService) HandleSyncState(ctx context.Context, e *models.JobEventSyn
 
 	accepted := true
 	if e.WorkerID != nil {
-		accepted, err = s.EmailSyncStateRepository.PutFromWorker(ctx, e.UserID, e.EmailID, *e.WorkerID, &e.State, recover)
+		accepted, err = s.EmailSyncStateRepository.PutFromWorker(ctx, e.UserID, e.EmailID, *e.WorkerID, e.ReportGeneration, &e.State, recover)
 	} else {
 		// Retained v0.6.72 reports remain supported through the rollback window.
 		err = recover(ctx)

@@ -856,7 +856,7 @@ func TestLiveMailTransportSyncFolderCoverageRequiresCurrentWorker(t *testing.T) 
 	oldReport := models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &first, FoldersSkippedCap: 4}
 	put := func(worker uuid.UUID, state *models.SyncState, want bool) {
 		t.Helper()
-		accepted, err := repo.PutFromWorker(t.Context(), f.user, f.account, worker, state, nil)
+		accepted, err := repo.PutFromWorker(t.Context(), f.user, f.account, worker, uuid.Nil, state, nil)
 		if err != nil || accepted != want {
 			t.Fatalf("accepted=%t want=%t err=%v", accepted, want, err)
 		}
@@ -908,14 +908,14 @@ func TestLiveMailTransportSyncReportRequiresCurrentGeneration(t *testing.T) {
 	if _, err := f.pool.Exec(t.Context(), `UPDATE email_accounts SET worker_id=$2 WHERE id=$1`, f.account, worker); err != nil {
 		t.Fatal(err)
 	}
-	put := func(state models.SyncState, want bool) {
+	put := func(report uuid.UUID, state models.SyncState, want bool) {
 		t.Helper()
-		accepted, err := repo.PutFromWorker(t.Context(), f.user, f.account, worker, &state, nil)
+		accepted, err := repo.PutFromWorker(t.Context(), f.user, f.account, worker, report, &state, nil)
 		if err != nil || accepted != want {
-			t.Fatalf("generation=%s accepted=%t want=%t err=%v", state.TransportGeneration, accepted, want, err)
+			t.Fatalf("report=%s pass=%s accepted=%t want=%t err=%v", report, state.TransportGeneration, accepted, want, err)
 		}
 	}
-	put(models.SyncState{TransportGeneration: f.generation, BackfillStatus: models.SyncBackfillRunning, BackfillSynced: 3}, true)
+	put(f.generation, models.SyncState{TransportGeneration: f.generation, BackfillStatus: models.SyncBackfillRunning, BackfillSynced: 3}, true)
 	var current uuid.UUID
 	if err := f.pool.QueryRow(t.Context(), `UPDATE email_accounts SET transport_generation=gen_random_uuid() WHERE id=$1 RETURNING transport_generation`, f.account).Scan(&current); err != nil {
 		t.Fatal(err)
@@ -923,13 +923,15 @@ func TestLiveMailTransportSyncReportRequiresCurrentGeneration(t *testing.T) {
 	if _, err := f.pool.Exec(t.Context(), `UPDATE email_sync_state SET backfill_status='complete', backfill_synced=0 WHERE email_id=$1`, f.account); err != nil {
 		t.Fatal(err)
 	}
-	put(models.SyncState{TransportGeneration: f.generation, BackfillStatus: models.SyncBackfillRunning, BackfillSynced: 9}, false)
+	put(uuid.Nil, models.SyncState{TransportGeneration: f.generation, BackfillStatus: models.SyncBackfillRunning, BackfillSynced: 9}, false)
+	put(f.generation, models.SyncState{BackfillStatus: models.SyncBackfillRunning, BackfillSynced: 9}, false)
 	got, err := repo.Get(t.Context(), f.account)
 	if err != nil || got.BackfillStatus != models.SyncBackfillComplete || got.BackfillSynced != 0 {
 		t.Fatalf("superseded generation wrote: %+v err=%v", got, err)
 	}
-	put(models.SyncState{BackfillStatus: models.SyncBackfillComplete, BackfillSynced: 1}, true)
-	put(models.SyncState{TransportGeneration: current, BackfillStatus: models.SyncBackfillComplete, BackfillSynced: 2}, true)
+	put(current, models.SyncState{BackfillStatus: models.SyncBackfillComplete, BackfillSynced: 1}, true)
+	put(uuid.Nil, models.SyncState{BackfillStatus: models.SyncBackfillComplete, BackfillSynced: 2}, true)
+	put(current, models.SyncState{TransportGeneration: current, BackfillStatus: models.SyncBackfillComplete, BackfillSynced: 3}, true)
 }
 
 func TestLiveMailTransportSyncReportCommitsRecoveryAndBothClocks(t *testing.T) {
@@ -964,10 +966,10 @@ func TestLiveMailTransportSyncReportCommitsRecoveryAndBothClocks(t *testing.T) {
 		}
 		return nil
 	}
-	if accepted, err := repo.PutFromWorker(t.Context(), f.user, f.account, uuid.New(), state, recover); err != nil || accepted || calls != 0 {
+	if accepted, err := repo.PutFromWorker(t.Context(), f.user, f.account, uuid.New(), uuid.Nil, state, recover); err != nil || accepted || calls != 0 {
 		t.Fatalf("declined report recovered: accepted=%t calls=%d err=%v", accepted, calls, err)
 	}
-	if accepted, err := repo.PutFromWorker(t.Context(), f.user, f.account, worker, state, recover); err == nil || accepted {
+	if accepted, err := repo.PutFromWorker(t.Context(), f.user, f.account, worker, uuid.Nil, state, recover); err == nil || accepted {
 		t.Fatalf("invalid state committed: accepted=%t err=%v", accepted, err)
 	}
 	var accountAt *time.Time
@@ -983,7 +985,7 @@ func TestLiveMailTransportSyncReportCommitsRecoveryAndBothClocks(t *testing.T) {
 		t.Fatalf("failed state escaped rollback: state=%+v account=%v recoveries=%d calls=%d err=%v", got, accountAt, recoveries, calls, err)
 	}
 	state.FoldersSkippedCap = 4
-	if accepted, err := repo.PutFromWorker(t.Context(), f.user, f.account, worker, state, recover); err != nil || !accepted {
+	if accepted, err := repo.PutFromWorker(t.Context(), f.user, f.account, worker, uuid.Nil, state, recover); err != nil || !accepted {
 		t.Fatalf("accepted=%t err=%v", accepted, err)
 	}
 	got, err = repo.Get(t.Context(), f.account)
