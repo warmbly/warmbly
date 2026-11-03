@@ -175,7 +175,7 @@ func TestMailTransportCodecRegistryCompatibility(t *testing.T) {
 	if url == "" {
 		t.Skip("SR_URL must name an isolated local Schema Registry")
 	}
-	generation, worker, task, mailbox := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	generation, reportGeneration, worker, task, mailbox := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	at := time.Now().UTC().Truncate(time.Millisecond)
 	for _, tc := range []struct {
 		name   string
@@ -188,7 +188,7 @@ func TestMailTransportCodecRegistryCompatibility(t *testing.T) {
 			return v.(*models.WorkerEvent).Body.(*models.AddWorkerEmail).TransportGeneration
 		}},
 		{"send", models.JobEvent{Type: models.JobEventTypeEmailSent, Body: models.SendEmailResult{TaskID: task, Success: true, SentAt: at, TransportGeneration: generation}}, models.JobEvent{}.Schema(), func() any { return &models.JobEvent{} }, func(v any) uuid.UUID { return v.(*models.JobEvent).Body.(models.SendEmailResult).TransportGeneration }},
-		{"sync", models.JobEvent{Type: models.JobEventTypeSyncState, Body: &models.JobEventSyncState{WorkerID: &worker, ReportGeneration: generation, EmailID: mailbox, State: models.SyncState{LastSyncedAt: &at, FolderCoverageObservedAt: &at, TransportGeneration: generation}}}, models.JobEvent{}.Schema(), func() any { return &models.JobEvent{} }, func(v any) uuid.UUID {
+		{"sync", models.JobEvent{Type: models.JobEventTypeSyncState, Body: &models.JobEventSyncState{WorkerID: &worker, ReportGeneration: reportGeneration, EmailID: mailbox, State: models.SyncState{LastSyncedAt: &at, FolderCoverageObservedAt: &at, TransportGeneration: generation}}}, models.JobEvent{}.Schema(), func() any { return &models.JobEvent{} }, func(v any) uuid.UUID {
 			return v.(*models.JobEvent).Body.(*models.JobEventSyncState).State.TransportGeneration
 		}},
 		{"error", models.JobEvent{Type: models.JobEventTypeEmailServerError, Body: models.EmailErrorEvent{EmailAccountID: mailbox.String(), Operation: models.MailTransportSync, TransportGeneration: generation}}, models.JobEvent{}.Schema(), func() any { return &models.JobEvent{} }, func(v any) uuid.UUID { return v.(*models.JobEvent).Body.(models.EmailErrorEvent).TransportGeneration }},
@@ -242,8 +242,11 @@ func TestMailTransportCodecRegistryCompatibility(t *testing.T) {
 				if report.WorkerID == nil || *report.WorkerID != worker {
 					t.Fatal("typed wire lost reporting worker")
 				}
-				if report.ReportGeneration != generation {
+				if report.ReportGeneration != reportGeneration {
 					t.Fatal("typed wire lost report generation")
+				}
+				if report.State.FolderCoverageObservedAt == nil || !report.State.FolderCoverageObservedAt.Equal(at) {
+					t.Fatal("typed wire lost folder coverage observation")
 				}
 			}
 			id := mailbox
