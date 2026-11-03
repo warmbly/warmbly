@@ -215,6 +215,9 @@ type EmailMessageStoreDataPreview struct {
 	// message replies to, when that is not the mailbox holding it: a reply
 	// that landed in a shared reply inbox. Thread reads only.
 	AnswersMailboxID *uuid.UUID `json:"answers_mailbox_id,omitempty"`
+
+	// CampaignID is the campaign a send in this conversation belongs to. List reads only.
+	CampaignID *uuid.UUID `json:"campaign_id,omitempty"`
 }
 
 // MessageGrounding is one message rendered for an AI prompt: the stored body
@@ -365,8 +368,15 @@ type MailSearchParams struct {
 	Direction *string
 	Unseen    *bool
 	Subject   *string
-	Since     *time.Time
-	Until     *time.Time
+	// Since is the inclusive lower bound on internal_date.
+	Since *time.Time
+	// Before is the exclusive upper bound on internal_date.
+	Before *time.Time
+	// CampaignID narrows to conversations traced to one of the campaign's sends.
+	CampaignID *uuid.UUID
+	// ContactID narrows to conversations traced to a campaign send to the
+	// contact, or, without CampaignID, exchanged with the contact's address.
+	ContactID *uuid.UUID
 	// EmailAccountIDs restricts results to messages received by one of
 	// these mailboxes. Empty = no account filter. The frontend tag
 	// filter resolves client-side to the matching account IDs and

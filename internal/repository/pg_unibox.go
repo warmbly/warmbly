@@ -52,6 +52,8 @@ type UniboxRepository interface {
 	// GetBySender is the organization's mail from sender, newest first, across every mailbox.
 	GetBySender(ctx context.Context, orgID uuid.UUID, sender string, limit int, cursor string) (*models.MailSearchResult, error)
 	Search(ctx context.Context, orgID uuid.UUID, params *models.MailSearchParams) (*models.MailSearchResult, error)
+	// SearchScopeOwned reports whether each given campaign and contact belongs to the organization; a nil id passes.
+	SearchScopeOwned(ctx context.Context, orgID uuid.UUID, campaignID, contactID *uuid.UUID) (campaign, contact bool, err error)
 	GetUnseenCount(ctx context.Context, orgID uuid.UUID, emailAccountID *uuid.UUID) (int64, error)
 	MarkSeen(ctx context.Context, userID, id uuid.UUID, seen bool) error
 	// MarkSeenBulk flips the read state of the given messages and returns the
@@ -716,6 +718,15 @@ func (r *uniboxRepository) Search(ctx context.Context, orgID uuid.UUID, params *
 	return r.queryThreadList(ctx, query, args, params.PageSize)
 }
 
+func (r *uniboxRepository) SearchScopeOwned(ctx context.Context, orgID uuid.UUID, campaignID, contactID *uuid.UUID) (bool, bool, error) {
+	var campaign, contact bool
+	err := r.db.QueryRow(ctx, `
+		SELECT $2::uuid IS NULL OR EXISTS (SELECT 1 FROM campaigns WHERE id = $2 AND organization_id = $1),
+		       $3::uuid IS NULL OR EXISTS (SELECT 1 FROM contacts WHERE id = $3 AND organization_id = $1)`,
+		orgID, campaignID, contactID).Scan(&campaign, &contact)
+	return campaign, contact, err
+}
+
 func uniboxSearchQuery(orgID uuid.UUID, params *models.MailSearchParams) (string, []any) {
 	previewCols := make([]string, len(mailFieldsPreview))
 	for i, c := range mailFieldsPreview {
@@ -778,9 +789,9 @@ func uniboxSearchQuery(orgID uuid.UUID, params *models.MailSearchParams) (string
 		argPos++
 	}
 
-	if params.Until != nil {
-		inner += fmt.Sprintf(` AND ue.internal_date <= $%d`, argPos)
-		args = append(args, *params.Until)
+	if params.Before != nil {
+		inner += fmt.Sprintf(` AND ue.internal_date < $%d`, argPos)
+		args = append(args, *params.Before)
 		argPos++
 	}
 
@@ -869,10 +880,17 @@ func uniboxSearchQuery(orgID uuid.UUID, params *models.MailSearchParams) (string
 		inner += ` AND NOT ` + ownAddressSQL("ue.from_addr", "$1")
 	}
 
-	agentMailboxScope := ""
+	scopeCTEs := ""
+	campaignPos := 0
+	if params.CampaignID != nil || params.ContactID != nil {
+		scopeCTEs, campaignPos, args, argPos = conversationScopeCTEs(params, args, argPos)
+	}
+
+	agentMailboxScope, campaignMailboxScope := "", ""
 	if len(params.EmailAccountIDs) > 0 {
 		inner += fmt.Sprintf(` AND ue.email_id = ANY($%d)`, argPos)
 		agentMailboxScope = fmt.Sprintf(` AND d.email_account_id = ANY($%d)`, argPos)
+		campaignMailboxScope = fmt.Sprintf(` AND cm.email_id = ANY($%d)`, argPos)
 		args = append(args, params.EmailAccountIDs)
 		argPos++
 	}
@@ -882,13 +900,21 @@ func uniboxSearchQuery(orgID uuid.UUID, params *models.MailSearchParams) (string
 		outerCols[i] = "b." + c
 	}
 	// Probe only a candidate's thread, instead of windowing every matching body.
-	query := fmt.Sprintf(`WITH matched AS NOT MATERIALIZED (%s), page AS MATERIALIZED (
+	query := fmt.Sprintf(`WITH %smatched AS NOT MATERIALIZED (%s), page AS MATERIALIZED (
 		SELECT b.* FROM matched b
 		WHERE (b.thread_id = '' OR NOT EXISTS (
 			SELECT 1 FROM matched newer
 			WHERE newer.thread_id = b.thread_id
 			  AND (newer.internal_date, newer.id) > (b.internal_date, b.id)
-		))`, inner)
+		))`, scopeCTEs, inner)
+
+	// The scope holds whole conversations, so only the representative row needs
+	// it, and as arrays it drives an index scan instead of probing every message.
+	if scopeCTEs != "" {
+		query += `
+			AND (b.thread_id = ANY(ARRAY(SELECT DISTINCT thread_id FROM scope_hits WHERE thread_id <> ''))
+			  OR b.id = ANY(ARRAY(SELECT id FROM scope_hits WHERE thread_id = '')))`
+	}
 
 	// Awaiting reply: the representative (latest) message is from one of
 	// the user's own mailboxes — i.e. they're waiting on the recipient.
@@ -956,6 +982,12 @@ func uniboxSearchQuery(orgID uuid.UUID, params *models.MailSearchParams) (string
 	query += fmt.Sprintf(` ORDER BY b.internal_date DESC, b.id DESC LIMIT $%d`, argPos)
 	args = append(args, params.PageSize+1)
 
+	// The filtered campaign wins when a conversation answers more than one.
+	campaignOrder := ""
+	if campaignPos > 0 {
+		campaignOrder = fmt.Sprintf(`ct.campaign_id = $%d DESC, `, campaignPos)
+	}
+
 	query += fmt.Sprintf(`
 		)
 		SELECT %s, stats.message_count, stats.has_unread,
@@ -964,7 +996,8 @@ func uniboxSearchQuery(orgID uuid.UUID, params *models.MailSearchParams) (string
 				FROM unibox_thread_labels utl
 				JOIN categories c ON c.id = utl.category_id AND c.organization_id = utl.organization_id
 				WHERE utl.organization_id = $1 AND utl.thread_id = b.thread_id
-			), '[]'::json) AS labels
+			), '[]'::json) AS labels,
+			camp.campaign_id
 		FROM page b
 		CROSS JOIN LATERAL (
 			SELECT COUNT(*) AS message_count, bool_or(NOT m.seen) AS has_unread
@@ -972,8 +1005,102 @@ func uniboxSearchQuery(orgID uuid.UUID, params *models.MailSearchParams) (string
 			WHERE (b.thread_id <> '' AND m.thread_id = b.thread_id)
 			   OR (b.thread_id = '' AND m.id = b.id)
 		) stats
-		ORDER BY b.internal_date DESC, b.id DESC`, strings.Join(outerCols, ", "))
+		LEFT JOIN LATERAL (
+			SELECT ct.campaign_id
+			FROM unibox_emails cm
+			CROSS JOIN LATERAL (SELECT %s AS keys) k
+			JOIN tasks t ON t.task_type = 'campaign'
+			 AND ((t.message_id <> '' AND t.message_id = ANY(k.keys))
+			   OR (cm.thread_id <> '' AND t.thread_id <> '' AND t.email_account_id = cm.email_id AND t.thread_id = cm.thread_id))
+			JOIN campaign_tasks ct ON ct.task_id = t.id
+			JOIN campaigns cc ON cc.id = ct.campaign_id AND cc.organization_id = $1
+			WHERE cm.email_id = ANY(ARRAY(SELECT id FROM email_accounts WHERE organization_id = $1))%s
+			  AND ((b.thread_id <> '' AND cm.thread_id = b.thread_id) OR cm.id = b.id)
+			ORDER BY %scm.internal_date DESC, t.created_at DESC
+			LIMIT 1
+		) camp ON true
+		ORDER BY b.internal_date DESC, b.id DESC`, strings.Join(outerCols, ", "), messageKeysSQL("cm"), campaignMailboxScope, campaignOrder)
 	return query, args
+}
+
+// messageKeysSQL is every RFC Message-ID a stored message names (its own, its
+// In-Reply-To and its thread root), bare and bracketed, as tasks.message_id may hold either.
+func messageKeysSQL(alias string) string {
+	return fmt.Sprintf(`ARRAY(
+				SELECT f.v
+				FROM unnest(%[1]s.in_reply_to || ARRAY[%[1]s.message_id, %[1]s.thread_id]) AS x(ref)
+				CROSS JOIN LATERAL (VALUES (BTRIM(x.ref, '<> ')), ('<' || BTRIM(x.ref, '<> ') || '>')) AS f(v)
+				WHERE BTRIM(x.ref, '<> ') <> ''
+			)`, alias)
+}
+
+// conversationScopeCTEs materializes the campaign sends a campaign_id or
+// contact_id filter selects and the stored messages tied to them. Each branch
+// is an index lookup or a hash join, so the cost follows the scope's size.
+func conversationScopeCTEs(params *models.MailSearchParams, args []any, argPos int) (string, int, []any, int) {
+	sendFilter := ""
+	campaignPos := 0
+	if params.CampaignID != nil {
+		campaignPos = argPos
+		sendFilter += fmt.Sprintf(` AND ct.campaign_id = $%d`, argPos)
+		args = append(args, *params.CampaignID)
+		argPos++
+	}
+	contactCTE, contactHits := "", ""
+	if params.ContactID != nil {
+		sendFilter += fmt.Sprintf(` AND ct.contact_id = $%d`, argPos)
+		if params.CampaignID == nil {
+			// Mail exchanged with the contact's address: the trigram index finds
+			// candidates, the parsed address decides.
+			contactCTE = fmt.Sprintf(`scope_contact AS MATERIALIZED (
+			SELECT lower(btrim(email)) AS addr,
+			       '%%' || replace(replace(replace(lower(btrim(email)), '\', '\\'), '%%', '\%%'), '_', '\_') || '%%' AS pattern
+			FROM contacts WHERE id = $%d AND organization_id = $1 AND btrim(email) <> ''
+		), `, argPos)
+			contactHits = fmt.Sprintf(`
+			UNION
+			SELECT m.id, m.thread_id FROM unibox_emails m, scope_contact sc
+			WHERE m.email_id = ANY(ARRAY(SELECT id FROM email_accounts WHERE organization_id = $1))
+			  AND public.unibox_participants(m.from_addr, m.to_addr, m.cc) ILIKE sc.pattern ESCAPE '\'
+			  AND EXISTS (SELECT 1 FROM unnest(m.from_addr || m.to_addr) AS p(addr) WHERE %s = sc.addr)`, bareAddrSQL("p.addr"))
+		}
+		args = append(args, *params.ContactID)
+		argPos++
+	}
+
+	ctes := `scope_sends AS MATERIALIZED (
+			SELECT t.email_account_id, BTRIM(t.message_id, '<> ') AS message_id, t.thread_id, t.created_at
+			FROM campaign_tasks ct
+			JOIN tasks t ON t.id = ct.task_id
+			WHERE ct.campaign_id IS NOT NULL AND ct.contact_id IS NOT NULL
+			  AND ct.campaign_id = ANY(ARRAY(SELECT id FROM campaigns WHERE organization_id = $1))
+			  AND t.task_type = 'campaign'
+			  AND t.email_account_id = ANY(ARRAY(SELECT id FROM email_accounts WHERE organization_id = $1))` + sendFilter + `
+		), scope_ids AS MATERIALIZED (
+			SELECT DISTINCT message_id AS id FROM scope_sends WHERE message_id <> ''
+		), scope_recent AS NOT MATERIALIZED (
+			SELECT m.id, m.thread_id, m.message_id, m.in_reply_to FROM unibox_emails m
+			WHERE m.email_id = ANY(ARRAY(SELECT id FROM email_accounts WHERE organization_id = $1))
+			  AND m.internal_date >= (SELECT min(created_at) - INTERVAL '1 day' FROM scope_sends)
+		), ` + contactCTE + `scope_hits AS MATERIALIZED (
+			-- A conversation rooted on the send, as IMAP threads it.
+			SELECT m.id, m.thread_id FROM unibox_emails m
+			WHERE m.thread_id = ANY(ARRAY(SELECT id FROM scope_ids UNION ALL SELECT '<' || id || '>' FROM scope_ids))
+			  AND m.email_id = ANY(ARRAY(SELECT id FROM email_accounts WHERE organization_id = $1))
+			UNION
+			-- The provider's conversation handle the send reported (Gmail).
+			SELECT m.id, m.thread_id FROM scope_sends s
+			JOIN unibox_emails m ON m.thread_id = s.thread_id AND m.email_id = s.email_account_id
+			WHERE s.thread_id <> ''
+			UNION
+			-- The send's own copy, or a reply naming it, in mail since the first send.
+			SELECT m.id, m.thread_id FROM scope_recent m JOIN scope_ids s ON s.id = BTRIM(m.message_id, '<> ')
+			UNION
+			SELECT m.id, m.thread_id FROM scope_recent m
+			CROSS JOIN LATERAL unnest(m.in_reply_to) AS r(ref)
+			JOIN scope_ids s ON s.id = BTRIM(r.ref, '<> ')` + contactHits + `
+		), `
+	return ctes, campaignPos, args, argPos
 }
 
 func (r *uniboxRepository) GetUnseenCount(ctx context.Context, orgID uuid.UUID, emailAccountID *uuid.UUID) (int64, error) {
@@ -1403,7 +1530,7 @@ func (r *uniboxRepository) queryThreadList(ctx context.Context, query string, ar
 		if err := rows.Scan(
 			&e.ID, &e.EmailID, &e.ThreadID, &e.FromAddr, &e.ToAddr,
 			&e.Subject, &e.Snippet, &e.InternalDate, &e.Seen,
-			&e.MessageCount, &e.HasUnread, &labelsJSON,
+			&e.MessageCount, &e.HasUnread, &labelsJSON, &e.CampaignID,
 		); err != nil {
 			return nil, err
 		}
