@@ -21,7 +21,6 @@ import { Chip } from "./parts";
 import { PerDomainList, type DomainOverride, type PerDomainRow } from "./PerDomainList";
 import { ServedByPicker } from "./RedirectServing";
 import { defaultServer, useCloudServing } from "./cloudServing";
-import CloudConnectDialog from "@/components/app/cloud/CloudConnectDialog";
 
 export interface BulkSetupIntent {
     domains: string[];
@@ -68,7 +67,6 @@ function Dialog({
     const [url, setUrl] = React.useState(website);
     const cloud = useCloudServing();
     const [servedPick, setServedPick] = React.useState<RedirectServer | null>(null);
-    const [connecting, setConnecting] = React.useState(false);
     // A Cloud pick Cloud can no longer take falls back, so what is shown is what is sent.
     const server = servedPick === "cloud" && !cloud.canServe ? "instance" : (servedPick ?? defaultServer(cloud));
     const [phase, setPhase] = React.useState<Phase>("form");
@@ -348,7 +346,7 @@ function Dialog({
                                 {up && url.trim() !== "" && <p className="text-[11px] text-rose-700">{up}</p>}
                                 <p className="text-[11px] text-slate-500 leading-relaxed">{OWN_DOMAIN_HINT}</p>
                                 {cloud.choosable && (
-                                    <ServedByPicker value={server} onChange={setServedPick} onConnect={() => setConnecting(true)} cloud={cloud} />
+                                    <ServedByPicker value={server} onChange={setServedPick} cloud={cloud} />
                                 )}
                                 {keeping > 0 && (
                                     <p className="text-[11px] text-slate-500 leading-relaxed">
@@ -529,17 +527,6 @@ function Dialog({
                     )}
                 </div>
             </motion.div>
-            <CloudConnectDialog
-                open={connecting}
-                onClose={() => setConnecting(false)}
-                autoStart
-                intro="Link this instance to a Warmbly Cloud workspace, free to create, and Cloud serves these redirects and their certificates. Nothing on your server changes: you only point each domain's DNS at Cloud. Approve the code below on Warmbly Cloud to finish."
-                doneLabel="Use Warmbly Cloud"
-                onDone={() => {
-                    setConnecting(false);
-                    setServedPick("cloud");
-                }}
-            />
         </motion.div>
     );
 }

@@ -1359,7 +1359,7 @@ func main() {
 		// codes and runs enrolled mailboxes as warmup-only accounts; the
 		// self-hosted side keeps the link and mirrors the cloud's state.
 		poolLinkRepository := repository.NewPoolLinkRepository(primaryDB.Pool, primaryDB.ConnectSession)
-		poolLinkService = poollink.NewService(poolLinkRepository, emailRepostory, emailService, analyticsService, warmupRepository, featureGateService, organizationService, planRepository)
+		poolLinkService = poollink.NewService(poolLinkRepository, emailRepostory, emailService, analyticsService, warmupRepository, featureGateService, organizationService)
 		emailService.WirePoolLink(poolLinkRepository)
 		if g, ok := featureGateService.(interface{ WirePoolLink(feature.PoolLinkReader) }); ok {
 			g.WirePoolLink(poolLinkService)

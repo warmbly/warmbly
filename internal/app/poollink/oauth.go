@@ -27,7 +27,7 @@ import (
 
 var (
 	ErrOAuthReturnURL    = errx.NewWithIdentifier(errx.BadRequest, "pool_link_return_url", "The return URL must be an http(s) URL on the address this instance registered when it was linked.")
-	ErrOAuthInstanceURL  = errx.NewWithIdentifier(errx.Unprocessable, "pool_link_instance_url", "This instance was linked without its own address, so Warmbly Cloud has nowhere to send a sign-in back to. Set APP_URL on the instance, then disconnect it and link it again.")
+	ErrOAuthInstanceURL  = errx.NewWithIdentifier(errx.Unprocessable, "pool_link_instance_url", "This instance was linked without its own address, so Warmbly Cloud has nowhere to send a sign-in back to. Connect Google and Microsoft mailboxes with this instance's own OAuth apps instead.")
 	ErrOAuthPending      = errx.NewWithIdentifier(errx.Conflict, "pool_link_oauth_pending", "The sign-in has not completed yet.")
 	ErrOAuthSession      = errx.NewWithIdentifier(errx.NotFound, "pool_link_oauth_session", "That sign-in session is unknown or has expired. Start again.")
 	ErrOAuthBrowser      = errx.NewWithIdentifier(errx.BadRequest, "pool_link_oauth_browser", "The sign-in was not continued from the Warmbly Cloud page that started it, in this browser. Start again from your instance.")
@@ -137,12 +137,9 @@ func (s *service) StartOAuth(ctx context.Context, inst *models.PoolLinkInstance,
 	if !returnURLAllowed(req.ReturnURL, inst.URL) {
 		return nil, ErrOAuthReturnURL
 	}
-	plan, xerr := s.Plan(ctx, inst.OrganizationID)
-	if xerr != nil {
+	// Signing in a mailbox the link already holds again is not a new one.
+	if xerr := s.managedCapacity(ctx, inst, req.RemoteID); xerr != nil {
 		return nil, xerr
-	}
-	if plan.MailboxLimit != nil && plan.Enrolled >= *plan.MailboxLimit {
-		return nil, ErrMailboxLimit
 	}
 	origin, xerr := s.emailSvc.OAuthCallbackOrigin(req.Provider)
 	if xerr != nil {
@@ -591,6 +588,9 @@ func (s *service) Adopt(ctx context.Context, inst *models.PoolLinkInstance, req 
 		return nil, errx.InternalError()
 	} else if existing != nil {
 		return nil, ErrAlreadyAdopted
+	}
+	if xerr := s.newMailboxAdmitted(ctx, inst.OrganizationID); xerr != nil {
+		return nil, xerr
 	}
 	if err := s.repo.EnrollMailbox(ctx, &models.PoolLinkMailbox{InstanceID: inst.ID, RemoteID: req.RemoteID, EmailAccountID: acc.ID, Managed: true}); err != nil {
 		return nil, enrollError(err)

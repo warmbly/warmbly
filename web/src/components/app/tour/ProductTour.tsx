@@ -30,7 +30,7 @@ import { RemieCard, SlideCopy } from "./TourCopy";
 import { CloudCallout, PlanChoose, PlanCompare, PlanIncluded } from "./PlanSlides";
 import { TOUR_SLIDES, type FlatSlide } from "./tourSteps";
 import { SHOTS } from "./tourShots";
-import { CLOUD_DOCS, PRIMARY, SECONDARY, billingPreview, hostedPlanURL } from "./tourUi";
+import { PRIMARY, SECONDARY, billingPreview, hostedPlanURL } from "./tourUi";
 
 const CLOSE =
     "h-7 pl-2 pr-2.5 rounded-full inline-flex items-center gap-1 bg-white/85 text-[12px] text-slate-500 ring-1 ring-slate-900/[0.06] backdrop-blur-sm transition-colors hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400";
@@ -399,10 +399,7 @@ export default function ProductTour() {
                                                 hrefFor={hostedPlanURL}
                                                 onOpen={(id) => capture("product_tour_hosted_plan", { plan: id })}
                                             >
-                                                <CloudCallout
-                                                    docs={CLOUD_DOCS}
-                                                    onLink={canSettings ? () => act("link_cloud", () => navigate({ to: "/app/settings/warmbly-cloud" })) : undefined}
-                                                />
+                                                <CloudCallout />
                                             </PlanChoose>
                                         ) : (
                                             <PlanChoose
@@ -417,7 +414,7 @@ export default function ProductTour() {
                                                 note={
                                                     access.paid
                                                         ? undefined
-                                                        : "Only warming for now? Free keeps up to 10 mailboxes warming, no card needed, and the Warmup plan puts every mailbox in the premium pool for $15 a month."
+                                                        : "Only warming for now? Free keeps up to 10 mailboxes warming, no card needed. Every paid plan puts them in the premium pool."
                                                 }
                                             />
                                         )

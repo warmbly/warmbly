@@ -25,40 +25,18 @@ export function ServedByPicker({
     value,
     current,
     onChange,
-    onConnect,
     cloud,
 }: {
     value: RedirectServer;
     /** Where it is served today, so an existing Cloud redirect stays selectable at the limit. */
     current?: RedirectServer;
     onChange: (v: RedirectServer) => void;
-    /** Opens the link to Warmbly Cloud in place. */
-    onConnect: () => void;
     cloud: CloudServing;
 }) {
     // A redirect already on Cloud stays selectable at the limit, never once the link or the offer is gone.
     const cloudOpen = cloud.canServe || (current === "cloud" && cloud.connected && !!cloud.offer?.available);
     let cloudBody: React.ReactNode;
-    if (!cloud.connected) {
-        cloudBody = (
-            <>
-                Link this instance to a free Warmbly Cloud workspace and it serves the redirect, with nothing to set up here.
-                <span className="block mt-1.5">
-                    <button
-                        type="button"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onConnect();
-                        }}
-                        className="h-6 px-2 rounded-md border border-sky-200 bg-white text-[11.5px] font-medium text-sky-700 hover:bg-sky-50 inline-flex items-center gap-1 transition-colors"
-                    >
-                        <CloudIcon className="w-3 h-3" />
-                        Connect Warmbly Cloud
-                    </button>
-                </span>
-            </>
-        );
-    } else if (!cloud.offer?.available) {
+    if (!cloud.offer?.available) {
         cloudBody = "Warmbly Cloud does not serve redirects for this instance right now.";
     } else if (!cloudOpen && cloud.offer.used >= cloud.offer.limit) {
         cloudBody = `Warmbly Cloud serves up to ${cloud.offer.limit} redirects for one instance, and this one has reached it.`;
@@ -417,15 +395,12 @@ export function ReachFix({
     redirect,
     cloud,
     onServeFromCloud,
-    onConnect,
     switching,
 }: {
     domain: string;
     redirect: DomainRedirect;
     cloud: CloudServing;
     onServeFromCloud: () => void;
-    /** Opens the link to Warmbly Cloud in place; serving from it follows. */
-    onConnect: () => void;
     switching: boolean;
 }) {
     const reach = redirect.reach;
@@ -517,37 +492,22 @@ export function ReachFix({
                 )}
                 <p className="text-[11px] text-slate-500">After changing it, press Check now. Warmbly also checks again every 10 minutes.</p>
             </div>
-            {redirect.served_by !== "cloud" && cloud.choosable && (cloud.canServe || !cloud.connected) && (
+            {redirect.served_by !== "cloud" && cloud.canServe && (
                 <div className="border-t border-slate-100 px-3 py-2.5 flex items-start gap-2.5 bg-slate-50/60 rounded-b-md">
                     <CloudIcon className="w-3.5 h-3.5 text-sky-600 mt-0.5 shrink-0" />
                     <div className="min-w-0 flex-1 text-[11.5px] text-slate-600 leading-relaxed">
                         <p className="text-[12px] font-medium text-slate-900">Or skip the proxy work</p>
-                        <p>
-                            {cloud.canServe
-                                ? "Warmbly Cloud can serve this redirect and its certificate. You replace the root records; nothing changes on your server."
-                                : "Link this instance to a free Warmbly Cloud workspace and it can serve this redirect and its certificate, with nothing to change on your server. It takes about a minute."}
-                        </p>
+                        <p>Warmbly Cloud can serve this redirect and its certificate. You replace the root records; nothing changes on your server.</p>
                         <div className="mt-2">
-                            {cloud.canServe ? (
-                                <button
-                                    type="button"
-                                    onClick={onServeFromCloud}
-                                    disabled={switching}
-                                    className="h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
-                                >
-                                    {switching ? <Loader2Icon className="w-3 h-3 animate-spin" /> : <ZapIcon className="w-3 h-3" />}
-                                    Serve from Warmbly Cloud
-                                </button>
-                            ) : (
-                                <button
-                                    type="button"
-                                    onClick={onConnect}
-                                    className="h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
-                                >
-                                    <CloudIcon className="w-3 h-3" />
-                                    Connect Warmbly Cloud
-                                </button>
-                            )}
+                            <button
+                                type="button"
+                                onClick={onServeFromCloud}
+                                disabled={switching}
+                                className="h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                            >
+                                {switching ? <Loader2Icon className="w-3 h-3 animate-spin" /> : <ZapIcon className="w-3 h-3" />}
+                                Serve from Warmbly Cloud
+                            </button>
                         </div>
                     </div>
                 </div>

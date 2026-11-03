@@ -91,7 +91,7 @@ export default function SubscriptionLockedScreen({ feature }: { feature: string 
                         <a href={SELF_HOST_DOCS} target="_blank" rel="noreferrer" className="font-medium text-slate-700 hover:text-slate-900">
                             Self-host for free
                         </a>{" "}
-                        and link it here to warm its mailboxes.
+                        on your own: local warmup is limited and Warmbly does not support self-hosted instances.
                     </span>
                     {!isOwner && <span>Only the workspace owner can choose a plan.</span>}
                 </div>

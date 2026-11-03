@@ -40,8 +40,8 @@ Anything flagged on [Instance health](/development/instance-health/) links back 
 | `ALLOW_INSECURE_DEFAULTS` | `true` lets the backend boot even when a secret still holds its published default. Only for a throwaway instance | unset | yes |
 | `GIN_MODE` | `debug` or `release` | `release` | yes |
 | `ENV_LABEL` | A label the admin panel shows next to the instance name | unset | yes (container start) |
-| `WARMBLY_CLOUD_URL` | The Warmbly Cloud API a self-hosted instance links to for the hosted warmup pool ([guide](/guides/warmbly-cloud/)). Outbound HTTPS only | `https://api.warmbly.com` | no |
-| `INSTANCE_NAME` | The name shown on the Warmbly Cloud approval page when linking this instance | the hostname | no |
+| `WARMBLY_CLOUD_URL` | The Warmbly Cloud API an already linked self-hosted instance talks to for the hosted warmup pool ([guide](/guides/warmbly-cloud/)). Warmbly Cloud links no new instances. Outbound HTTPS only | `https://api.warmbly.com` | no |
+| `INSTANCE_NAME` | The name an instance gave Warmbly Cloud when it linked. Warmbly Cloud no longer links new instances, so it has no effect on one that is not linked | the hostname | no |
 | `WARMBLY_VERSION` | Version string reported to Warmbly Cloud on link requests | `dev` | no |
 | `WARMBLY_ALLOW_UNSAFE_WEBHOOK_URLS` | `true` lets customer webhooks point at `http://` and private addresses. Honoured only on a self-hosted (`DEPLOYMENT_MODE=self_hosted`) or development (`APP_ENV=dev`) instance; a hosted production instance ignores it. It lets any workspace member make the backend reach into your internal network, so only set it where you control that network | `false` | yes |
 | `APP_VERSION` | Release name written into a workspace export archive's manifest (`source_app_version`). Informational only: an import never keys off it | unset | yes |

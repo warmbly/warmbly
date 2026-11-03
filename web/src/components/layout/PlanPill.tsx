@@ -12,13 +12,13 @@ import { usePermission } from "@/hooks/usePermission";
 import { PLAN_ACCENT_CLASSES, getPlan } from "@/lib/plans";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores";
+import { cloudAddsNeedSubscription } from "@/lib/cloudPlan";
 
 export function PlanPill() {
     const access = useFeatureAccess();
     const pool = useCloudPool();
-    // The Warmbly Cloud page is manage-settings gated; everyone else lands
-    // on their profile rather than on a "no access" screen.
-    const cloudTo = usePermission("MANAGE_SETTINGS") ? "/app/settings/warmbly-cloud" : "/app/settings/profile";
+    // The Warmbly Cloud page is manage-settings gated and only exists for a linked instance; everyone else lands on their profile.
+    const cloudTo = usePermission("MANAGE_SETTINGS") && pool.connected ? "/app/settings/warmbly-cloud" : "/app/settings/profile";
     const isTest = useAppStore((s) => s.currentOrganization?.category === "test");
     if (isTest) {
         return (
@@ -52,7 +52,9 @@ export function PlanPill() {
                     title={
                         premium
                             ? "Warmbly Cloud Premium: better deliverability for every mailbox"
-                            : `Warmbly Cloud: ${pool.plan.enrolled} of ${pool.plan.mailbox_limit ?? 10} free pool mailboxes used`
+                            : cloudAddsNeedSubscription(pool.plan)
+                              ? `Warmbly Cloud: ${pool.plan.enrolled} mailboxes keep warming. Subscribe to add more`
+                              : `Warmbly Cloud: ${pool.plan.enrolled} of ${pool.plan.mailbox_limit ?? 10} free pool mailboxes used`
                     }
                     icon={premium}
                 />
@@ -64,7 +66,7 @@ export function PlanPill() {
                 className="bg-indigo-50 text-indigo-700 border-indigo-100"
                 dot="bg-indigo-500"
                 label="Self-hosted"
-                title="Self-hosted: every feature is unlocked. Warm your mailboxes in the Warmbly pool"
+                title="Self-hosted: every feature is unlocked, with no support from Warmbly"
                 icon
             />
         );

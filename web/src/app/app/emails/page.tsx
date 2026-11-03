@@ -29,7 +29,6 @@ import InboxDetails from "@/components/app/emails/InboxDetails";
 import WarmupCoverageNotice from "@/components/app/emails/WarmupCoverageNotice";
 import CloudPoolBanner from "@/components/app/emails/CloudPoolBanner";
 import CloudPathsPanel from "@/components/app/emails/CloudPathsPanel";
-import CloudConnectDialog from "@/components/app/cloud/CloudConnectDialog";
 import useCloudPool from "@/hooks/useCloudPool";
 import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
 import { useEnrollCloudLinkMailbox, useUnenrollCloudLinkMailbox, useCloudLinkMailboxLifecycle } from "@/lib/api/hooks/app/cloudlink/useCloudLink";
@@ -183,7 +182,6 @@ export default function AddressesPage() {
     // row badges and menu items below key off this.
     const cloud = useCloudPool();
     const { connected: cloudConnected, rowFor: cloudRowFor, unavailable: cloudUnavailable } = cloud;
-    const [cloudDialog, setCloudDialog] = React.useState(false);
     const authConfig = useAuthConfig();
     const authConfigLoading = authConfig.isLoading;
 
@@ -547,7 +545,7 @@ export default function AddressesPage() {
                 <div className="px-5 py-3 flex flex-col gap-2 empty:hidden">
                     <AdvisorSummaryBar surface="emails" noun="mailbox" nounPlural="mailboxes" />
                     <SigninMigrationBanner total={migration.data?.total ?? 0} onOpen={() => openMigration()} />
-                    <CloudPoolBanner onConnect={() => setCloudDialog(true)} mailboxCount={stats.total} />
+                    <CloudPoolBanner mailboxCount={stats.total} />
                     {!emailsData.isLoading && <CloudPathsPanel mailboxCount={stats.total} onAdd={() => p?.setAddEmail(true)} />}
                     {/* Hosted, the pool is thousands of mailboxes: the pool-size advice is self-host only. */}
                     {cloud.selfHosted && (
@@ -556,12 +554,10 @@ export default function AddressesPage() {
                             totalCount={stats.total}
                             canWarmup={canWarmup}
                             onAdd={() => p?.setAddEmail(true)}
-                            onConnectCloud={cloud.manageable && !cloud.connected ? () => setCloudDialog(true) : undefined}
                             cloudConnected={cloud.connected}
                         />
                     )}
                 </div>
-                <CloudConnectDialog open={cloudDialog} onClose={() => setCloudDialog(false)} />
                 {emailsData.isLoading ? (
                     <div className="divide-y divide-slate-200/60">
                         {Array.from({ length: 6 }).map((_, i) => (

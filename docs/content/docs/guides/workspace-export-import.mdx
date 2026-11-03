@@ -176,7 +176,7 @@ Anyone in the archive without an account on the destination has their rows reass
 
 ### What deliberately does not import
 
-Cloud connections and mailbox enrollments never travel, including workspace-scoped connections and retained legacy links. That covers whether a mailbox keeps its credential on this server, the warmup commands Cloud leased to this instance and the results still owed to it. Connect the destination workspace separately to its own Cloud workspace. Cloud-served redirects arrive served locally with their source connection association cleared.
+Cloud connections and mailbox enrollments never travel, including workspace-scoped connections and retained legacy links. That covers whether a mailbox keeps its credential on this server, the warmup commands Cloud leased to this instance and the results still owed to it. Warmbly Cloud no longer links new self-hosted instances, so the destination has no Cloud connection: its mailboxes warm locally, or move to a hosted workspace for the hosted pool. Cloud-served redirects arrive served locally with their source connection association cleared.
 
 For a Google Workspace mailbox adopted from Cloud, the domain grant and Cloud warmup history remain on Cloud. Local campaigns, imported messages and local history travel with their selected archive groups. The local mirror has no mailbox credential to export, including when adoption replaced an app-password connection. An archive carries neither Cloud access tokens nor authority to use its domain grant.
 
@@ -252,7 +252,7 @@ Pending mailbox arrivals and their delivery queue are instance-local. Provider m
 
 The Test workspace classification is instance-local. Importing an archive does not classify the destination as Test or grant a managed Test plan or testing credits.
 
-A few things belong to the instance rather than the workspace and are left out on purpose: the instance's link to Warmbly Cloud and which mailboxes it enrolled in the hosted pool ([Warmbly Cloud](/guides/warmbly-cloud/)), linked self-hosted instances on a cloud workspace (with the warmup commands queued for them, the warmup mail they reported and how far their placement reports were trusted), Google Workspace and Microsoft 365 admin grants, live sessions, in-flight OAuth handshakes and the organization's wrapped data key. Reconnect to Warmbly Cloud and make each admin grant again after the move.
+A few things belong to the instance rather than the workspace and are left out on purpose: the instance's link to Warmbly Cloud and which mailboxes it enrolled in the hosted pool ([Warmbly Cloud](/guides/warmbly-cloud/)), linked self-hosted instances on a cloud workspace (with the warmup commands queued for them, the warmup mail they reported and how far their placement reports were trusted), Google Workspace and Microsoft 365 admin grants, live sessions, in-flight OAuth handshakes and the organization's wrapped data key. Make each admin grant again after the move. A Cloud link cannot be made again, since Warmbly Cloud no longer links new instances.
 
 [Mailbox imports](/guides/mailbox-import/) do not travel either, finished or running: an import is work the source instance is doing, and its rows hold credentials in flight. The mailboxes an import connected are ordinary mailboxes and move with the Workspace group, and the saved column mappings come too, so the same file maps itself on the destination. Let a running import finish before exporting: rows it has not connected yet are not in the archive.
 
