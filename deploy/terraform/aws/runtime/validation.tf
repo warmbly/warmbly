@@ -52,7 +52,7 @@ resource "aws_ecs_task_definition" "validation" {
     environment = concat([
       { name = "AWS_REGION", value = "us-east-1" },
       { name = "CACHE_HOST", value = data.terraform_remote_state.foundation.outputs.cache.endpoint },
-      { name = "CHECK_SOURCE", value = file("${path.module}/checks/dependencies.cjs") }
+      { name = "CHECK_SOURCE", value = join("\n", [file("${path.module}/checks/credentials.cjs"), file("${path.module}/checks/dependencies.cjs")]) }
     ], [for key, value in local.service_environment["backend"] : { name = key, value = value } if contains(local.validation_configuration_names, key)])
     secrets = concat([
       for key in ["PRIMARY_DB", "CREDENTIALS_ENCRYPTION_KEY", "AUTH_SECRET", "REDIS", "KAFKA_SASL_USERNAME", "KAFKA_SASL_PASSWORD", "SCHEMA_REGISTRY_KEY", "SCHEMA_REGISTRY_SECRET", "NATS_CREDS_B64"] : {

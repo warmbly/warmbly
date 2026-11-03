@@ -1,4 +1,3 @@
-const crypto = require("node:crypto");
 const dns = require("node:dns/promises");
 const https = require("node:https");
 const { Client } = require("pg");
@@ -26,32 +25,6 @@ async function check(name, fn) {
     results.push({ name, ok: false });
     console.error(JSON.stringify(results.at(-1)));
   }
-}
-
-function readSecrets(variable) {
-  const values = JSON.parse(process.env[variable] || "[]");
-  if (!Array.isArray(values) || values.length > 4 || values.some((value) => typeof value !== "string" || !value)) throw new Error("Invalid read keys");
-  return values;
-}
-
-function verifyCipher(keys, encoded, encoding) {
-  const raw = Buffer.from(encoded, encoding);
-  if (raw.length < 28) throw new Error("Invalid ciphertext");
-  for (const key of keys) {
-    const parts = [];
-    try {
-      const decipher = crypto.createDecipheriv("aes-256-gcm", key, raw.subarray(0, 12));
-      decipher.setAuthTag(raw.subarray(raw.length - 16));
-      parts.push(decipher.update(raw.subarray(12, raw.length - 16)));
-      parts.push(decipher.final());
-      return;
-    } catch {
-      // Try the next explicitly configured reader.
-    } finally {
-      parts.forEach((part) => part.fill(0));
-    }
-  }
-  throw new Error("Ciphertext verification failed");
 }
 
 async function withDatabase(connectionString, fn) {
@@ -99,32 +72,7 @@ async function main() {
     }));
   }
 
-  await check("stored_credentials_and_kms", () => withDatabase(process.env.PRIMARY_DB, async (db) => {
-    const keys = [process.env.CREDENTIALS_ENCRYPTION_KEY, ...readSecrets("CREDENTIALS_ENCRYPTION_READ_KEYS")].map((value) => Buffer.from(value, "hex"));
-    const mfaKeys = [process.env.TWOFA_SECRET || process.env.AUTH_SECRET, ...readSecrets("TWOFA_READ_SECRETS")].map((value) => crypto.createHash("sha256").update(value).digest());
-    try {
-      const fields = await db.query("SELECT v AS value,false AS signing_secret FROM email_accounts_smtp_imap CROSS JOIN LATERAL (VALUES (smtp_host),(smtp_user),(smtp_password),(imap_host),(imap_user),(imap_password)) fields(v) WHERE v IS NOT NULL AND v<>'' UNION ALL SELECT v,false FROM email_accounts_oauth CROSS JOIN LATERAL (VALUES(access_token),(refresh_token)) fields(v) WHERE v IS NOT NULL AND v<>'' UNION ALL SELECT secret,true FROM webhook_endpoints WHERE secret IS NOT NULL AND secret<>'' UNION ALL SELECT webhook_secret,true FROM oauth_applications WHERE webhook_secret IS NOT NULL AND webhook_secret<>'' UNION ALL SELECT token,false FROM cloud_link WHERE token IS NOT NULL AND token<>'' UNION ALL SELECT refresh_token,false FROM mailbox_erasures WHERE refresh_token IS NOT NULL AND refresh_token<>''");
-      let legacySigningFields = 0;
-      for (const row of fields.rows) {
-        if (row.signing_secret && row.value.startsWith("whsec_")) legacySigningFields++;
-        else verifyCipher(keys, row.value, "hex");
-      }
-      const mfa = await db.query("SELECT totp_secret_sealed FROM user_totp_settings WHERE totp_secret_sealed IS NOT NULL AND totp_secret_sealed<>''");
-      for (const row of mfa.rows) verifyCipher(mfaKeys, row.totp_secret_sealed, "base64");
-      const wrapped = await db.query("SELECT encrypted_data_key FROM organization_encrypted_keys");
-      if (!wrapped.rowCount) throw new Error("No data key available to verify");
-      for (let offset = 0; offset < wrapped.rowCount; offset += 5) {
-        await Promise.all(wrapped.rows.slice(offset, offset + 5).map(async (row) => {
-          const out = await kms.send(new DecryptCommand({ CiphertextBlob: Buffer.from(row.encrypted_data_key, "base64") }));
-          try { if (out.Plaintext?.length !== 32) throw new Error("Invalid data key"); }
-          finally { out.Plaintext?.fill(0); }
-        }));
-      }
-      return { credential_fields: fields.rowCount - legacySigningFields, legacy_signing_fields: legacySigningFields, mfa_enrollments: mfa.rowCount, organization_keys: wrapped.rowCount, kms_decrypt_as_task_role: true };
-    } finally {
-      [...keys, ...mfaKeys].forEach((key) => key.fill(0));
-    }
-  }));
+  await check("stored_credentials_and_kms", () => withDatabase(process.env.PRIMARY_DB, (db) => verifyStoredCredentials(db, kms, DecryptCommand, process.env)));
 
   await check("existing_shared_cache", async () => {
     const client = createClient({ url: process.env.REDIS, socket: { connectTimeout: 10000, reconnectStrategy: false } });
