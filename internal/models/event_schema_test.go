@@ -130,7 +130,7 @@ func preTransportSchema(t *testing.T, schema avro.Schema) avro.Schema {
 				kept := fields[:0]
 				for _, f := range fields {
 					field := f.(map[string]any)
-					if slices.Contains(fieldsAfterFixtures, field["name"]) || x["name"] == "EmailErrorEvent" && field["name"] == "operation" || x["name"] == "JobEventSyncState" && field["name"] == "worker_id" {
+					if slices.Contains(fieldsAfterFixtures, field["name"]) || x["name"] == "warmbly.events.EmailErrorEvent" && field["name"] == "operation" || x["name"] == "warmbly.events.JobEventSyncState" && field["name"] == "worker_id" {
 						continue
 					}
 					strip(f)

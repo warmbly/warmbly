@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -33,25 +34,56 @@ func (s *stubSyncStateRepo) Put(_ context.Context, _, _ uuid.UUID, st *models.Sy
 	return nil
 }
 
-func (s *stubSyncStateRepo) PutFromWorker(_ context.Context, _, _, workerID uuid.UUID, st *models.SyncState) (bool, error) {
+func (s *stubSyncStateRepo) PutFromWorker(ctx context.Context, _, _, workerID uuid.UUID, st *models.SyncState, before func(context.Context) error) (bool, error) {
 	s.reportWorker = workerID
 	if s.reportAccepted {
+		if before != nil {
+			if err := before(ctx); err != nil {
+				return false, err
+			}
+		}
 		s.put = st
 	}
 	return s.reportAccepted, nil
 }
 
+type syncStateBus struct{ calls int }
+
+func (b *syncStateBus) Publish(context.Context, string, any, map[string]string) error {
+	b.calls++
+	return nil
+}
+
+type syncStateEmailRepo struct {
+	repository.EmailRepository
+	account *models.Email
+}
+
+func (r syncStateEmailRepo) GetByID(context.Context, uuid.UUID) (*models.Email, *errx.Error) {
+	return r.account, nil
+}
+
 func TestSyncStateChecksReportingWorkerBeforeSaving(t *testing.T) {
 	for _, accepted := range []bool{false, true} {
 		repo := &stubSyncStateRepo{reportAccepted: accepted}
-		s := &JobsService{EmailSyncStateRepository: repo}
+		errRepo := &stubErrorRepo{}
+		bus := &syncStateBus{}
+		org := uuid.New()
+		s := &JobsService{EmailSyncStateRepository: repo, EmailAccountErrorRepository: errRepo,
+			EmailRepository:    syncStateEmailRepo{account: &models.Email{OrganizationID: &org}},
+			StreamingPublisher: pubsub.NewStreamingPublisher(bus, removeSyncAudience{org: org})}
 		workerID := uuid.New()
-		event := &models.JobEventSyncState{WorkerID: &workerID, EmailID: uuid.New(), State: models.SyncState{FoldersSkippedCap: 4}}
+		at := time.Now().Add(-time.Minute)
+		event := &models.JobEventSyncState{WorkerID: &workerID, UserID: uuid.New(), EmailID: uuid.New(),
+			State: models.SyncState{TransportGeneration: syncTestGeneration, LastSyncedAt: &at, BackfillStatus: models.SyncBackfillComplete, FoldersSkippedCap: 4}}
 		if err := s.HandleSyncState(t.Context(), event); err != nil {
 			t.Fatal(err)
 		}
 		if repo.reportWorker != workerID || (repo.put != nil) != accepted {
 			t.Fatalf("worker=%s accepted=%t saved=%+v", repo.reportWorker, accepted, repo.put)
+		}
+		if (bus.calls > 0) != accepted || (errRepo.calls > 0) != accepted {
+			t.Fatalf("accepted=%t published=%d recovery=%d", accepted, bus.calls, errRepo.calls)
 		}
 	}
 }

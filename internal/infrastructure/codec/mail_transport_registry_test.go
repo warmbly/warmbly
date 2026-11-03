@@ -51,7 +51,7 @@ func priorTransportSchema(t *testing.T, schema avro.Schema) avro.Schema {
 				kept := fields[:0]
 				for _, f := range fields {
 					record := f.(map[string]any)
-					if record["name"] == "transport_generation" || record["name"] == "folder_coverage_observed_at" || x["name"] == "EmailErrorEvent" && record["name"] == "operation" || x["name"] == "JobEventSyncState" && record["name"] == "worker_id" {
+					if record["name"] == "transport_generation" || record["name"] == "folder_coverage_observed_at" || x["name"] == "warmbly.events.EmailErrorEvent" && record["name"] == "operation" || x["name"] == "warmbly.events.JobEventSyncState" && record["name"] == "worker_id" {
 						continue
 					}
 					strip(f)
@@ -80,6 +80,36 @@ func priorTransportSchema(t *testing.T, schema avro.Schema) avro.Schema {
 		t.Fatal(err)
 	}
 	return parsed
+}
+
+func TestPriorTransportSchemaOmitsReportingIdentity(t *testing.T) {
+	current := models.JobEvent{}.Schema()
+	for _, tc := range []struct {
+		schema  avro.Schema
+		present bool
+	}{
+		{current, true}, {priorTransportSchema(t, current), false},
+	} {
+		found := false
+		branches := tc.schema.(*avro.RecordSchema).Fields()[1].Type().(*avro.UnionSchema).Types()
+		for _, branch := range branches {
+			record, ok := branch.(*avro.RecordSchema)
+			if !ok || record.FullName() != "warmbly.events.JobEventSyncState" {
+				continue
+			}
+			found = true
+			present := false
+			for _, field := range record.Fields() {
+				present = present || field.Name() == "worker_id"
+			}
+			if present != tc.present {
+				t.Fatalf("worker_id present=%t want=%t", present, tc.present)
+			}
+		}
+		if !found {
+			t.Fatal("sync record missing from schema")
+		}
+	}
 }
 
 func TestMailTransportCodecRegistryCompatibility(t *testing.T) {
@@ -156,7 +186,7 @@ func TestMailTransportCodecRegistryCompatibility(t *testing.T) {
 			return v.(*models.WorkerEvent).Body.(*models.AddWorkerEmail).TransportGeneration
 		}},
 		{"send", models.JobEvent{Type: models.JobEventTypeEmailSent, Body: models.SendEmailResult{TaskID: task, Success: true, SentAt: at, TransportGeneration: generation}}, models.JobEvent{}.Schema(), func() any { return &models.JobEvent{} }, func(v any) uuid.UUID { return v.(*models.JobEvent).Body.(models.SendEmailResult).TransportGeneration }},
-		{"sync", models.JobEvent{Type: models.JobEventTypeSyncState, Body: &models.JobEventSyncState{EmailID: mailbox, State: models.SyncState{LastSyncedAt: &at, FolderCoverageObservedAt: &at, TransportGeneration: generation}}}, models.JobEvent{}.Schema(), func() any { return &models.JobEvent{} }, func(v any) uuid.UUID {
+		{"sync", models.JobEvent{Type: models.JobEventTypeSyncState, Body: &models.JobEventSyncState{WorkerID: &generation, EmailID: mailbox, State: models.SyncState{LastSyncedAt: &at, FolderCoverageObservedAt: &at, TransportGeneration: generation}}}, models.JobEvent{}.Schema(), func() any { return &models.JobEvent{} }, func(v any) uuid.UUID {
 			return v.(*models.JobEvent).Body.(*models.JobEventSyncState).State.TransportGeneration
 		}},
 		{"error", models.JobEvent{Type: models.JobEventTypeEmailServerError, Body: models.EmailErrorEvent{EmailAccountID: mailbox.String(), Operation: models.MailTransportSync, TransportGeneration: generation}}, models.JobEvent{}.Schema(), func() any { return &models.JobEvent{} }, func(v any) uuid.UUID { return v.(*models.JobEvent).Body.(models.EmailErrorEvent).TransportGeneration }},
@@ -188,6 +218,9 @@ func TestMailTransportCodecRegistryCompatibility(t *testing.T) {
 			if tc.proof(target) != uuid.Nil {
 				t.Fatal("old payload fabricated proof")
 			}
+			if tc.name == "sync" && target.(*models.JobEvent).Body.(*models.JobEventSyncState).WorkerID != nil {
+				t.Fatal("old sync payload manufactured a reporting worker")
+			}
 			fresh, err := writer.Serialize(t.Context(), topic, tc.value)
 			if err != nil {
 				t.Fatal("FULL_TRANSITIVE registry rejected additive schema", err)
@@ -198,6 +231,12 @@ func TestMailTransportCodecRegistryCompatibility(t *testing.T) {
 			}
 			if tc.proof(target) != generation {
 				t.Fatal("typed wire lost generation")
+			}
+			if tc.name == "sync" {
+				workerID := target.(*models.JobEvent).Body.(*models.JobEventSyncState).WorkerID
+				if workerID == nil || *workerID != generation {
+					t.Fatal("typed wire lost reporting worker")
+				}
 			}
 			id := mailbox
 			if tc.name == "send" {

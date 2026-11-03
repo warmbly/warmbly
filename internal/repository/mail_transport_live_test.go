@@ -856,7 +856,7 @@ func TestLiveMailTransportSyncFolderCoverageRequiresCurrentWorker(t *testing.T) 
 	oldReport := models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &first, FoldersSkippedCap: 4}
 	put := func(worker uuid.UUID, state *models.SyncState, want bool) {
 		t.Helper()
-		accepted, err := repo.PutFromWorker(t.Context(), f.user, f.account, worker, state)
+		accepted, err := repo.PutFromWorker(t.Context(), f.user, f.account, worker, state, nil)
 		if err != nil || accepted != want {
 			t.Fatalf("accepted=%t want=%t err=%v", accepted, want, err)
 		}
@@ -888,4 +888,70 @@ func TestLiveMailTransportSyncFolderCoverageRequiresCurrentWorker(t *testing.T) 
 	}
 	assign(nil)
 	put(currentWorker, &oldReport, false)
+}
+
+func TestLiveMailTransportSyncReportCommitsRecoveryAndBothClocks(t *testing.T) {
+	f := newTransportFixture(t)
+	repo := NewEmailSyncStateRepository(f.db)
+	worker := uuid.New()
+	if _, err := f.pool.Exec(t.Context(), `INSERT INTO fleet_nodes(id,role) VALUES($1,'worker')`, worker); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := f.pool.Exec(context.Background(), `DELETE FROM fleet_nodes WHERE id=$1`, worker); err != nil {
+			t.Error(err)
+		}
+	})
+	if _, err := f.pool.Exec(t.Context(), `INSERT INTO workers(id) VALUES($1)`, worker); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(t.Context(), `UPDATE email_accounts SET worker_id=$2 WHERE id=$1`, f.account, worker); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().UTC().Add(-time.Hour).Truncate(time.Millisecond)
+	if _, err := f.repo.CreateOnce(t.Context(), f.report(models.MailTransportSync, &old)); err != nil {
+		t.Fatal(err)
+	}
+	synced := old.Add(time.Minute)
+	state := &models.SyncState{LastSyncedAt: &synced, FolderCoverageObservedAt: &synced, FoldersSkippedCap: -1}
+	calls := 0
+	recover := func(ctx context.Context) error {
+		calls++
+		if xerr := f.repo.RecordTransportSuccess(ctx, f.account, models.MailTransportSync, synced, nil, f.generation); xerr != nil {
+			return xerr
+		}
+		return nil
+	}
+	if accepted, err := repo.PutFromWorker(t.Context(), f.user, f.account, uuid.New(), state, recover); err != nil || accepted || calls != 0 {
+		t.Fatalf("declined report recovered: accepted=%t calls=%d err=%v", accepted, calls, err)
+	}
+	if accepted, err := repo.PutFromWorker(t.Context(), f.user, f.account, worker, state, recover); err == nil || accepted {
+		t.Fatalf("invalid state committed: accepted=%t err=%v", accepted, err)
+	}
+	var accountAt *time.Time
+	var recoveries int
+	if err := f.pool.QueryRow(t.Context(), `SELECT last_synced_at FROM email_accounts WHERE id=$1`, f.account).Scan(&accountAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.pool.QueryRow(t.Context(), `SELECT count(*) FROM email_account_transport_recovery WHERE email_account_id=$1`, f.account).Scan(&recoveries); err != nil {
+		t.Fatal(err)
+	}
+	got, err := repo.Get(t.Context(), f.account)
+	if err != nil || got != nil || accountAt != nil || recoveries != 0 || len(f.errors(t, true)) != 1 || calls != 1 {
+		t.Fatalf("failed state escaped rollback: state=%+v account=%v recoveries=%d calls=%d err=%v", got, accountAt, recoveries, calls, err)
+	}
+	state.FoldersSkippedCap = 4
+	if accepted, err := repo.PutFromWorker(t.Context(), f.user, f.account, worker, state, recover); err != nil || !accepted {
+		t.Fatalf("accepted=%t err=%v", accepted, err)
+	}
+	got, err = repo.Get(t.Context(), f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.pool.QueryRow(t.Context(), `SELECT last_synced_at FROM email_accounts WHERE id=$1`, f.account).Scan(&accountAt); err != nil {
+		t.Fatal(err)
+	}
+	if got.LastSyncedAt == nil || accountAt == nil || !got.LastSyncedAt.Equal(synced) || !accountAt.Equal(synced) || len(f.errors(t, true)) != 0 || calls != 2 {
+		t.Fatalf("accepted clocks/recovery: state=%+v account=%v calls=%d", got, accountAt, calls)
+	}
 }
