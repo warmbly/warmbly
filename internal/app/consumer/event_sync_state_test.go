@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -47,10 +48,26 @@ func (s *stubSyncStateRepo) PutFromWorker(ctx context.Context, _, _, workerID uu
 	return s.reportAccepted, nil
 }
 
-type syncStateBus struct{ calls int }
+type syncStateBus struct {
+	calls  int
+	types  []string
+	status []string
+}
 
-func (b *syncStateBus) Publish(context.Context, string, any, map[string]string) error {
+func (b *syncStateBus) Publish(_ context.Context, _ string, event any, attrs map[string]string) error {
 	b.calls++
+	b.types = append(b.types, attrs["event_type"])
+	var body struct {
+		Status string `json:"status"`
+	}
+	data, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(data, &body); err != nil {
+		return err
+	}
+	b.status = append(b.status, body.Status)
 	return nil
 }
 
@@ -84,6 +101,9 @@ func TestSyncStateChecksReportingWorkerBeforeSaving(t *testing.T) {
 		}
 		if (bus.calls > 0) != accepted || (errRepo.calls > 0) != accepted {
 			t.Fatalf("accepted=%t published=%d recovery=%d", accepted, bus.calls, errRepo.calls)
+		}
+		if accepted && (len(bus.types) == 0 || bus.types[0] != string(pubsub.EventAccountSyncState) || bus.status[0] != string(models.SyncBackfillComplete)) {
+			t.Fatalf("published types=%v status=%v", bus.types, bus.status)
 		}
 	}
 }

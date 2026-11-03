@@ -890,6 +890,48 @@ func TestLiveMailTransportSyncFolderCoverageRequiresCurrentWorker(t *testing.T) 
 	put(currentWorker, &oldReport, false)
 }
 
+func TestLiveMailTransportSyncReportRequiresCurrentGeneration(t *testing.T) {
+	f := newTransportFixture(t)
+	repo := NewEmailSyncStateRepository(f.db)
+	worker := uuid.New()
+	if _, err := f.pool.Exec(t.Context(), `INSERT INTO fleet_nodes(id,role) VALUES($1,'worker')`, worker); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := f.pool.Exec(context.Background(), `DELETE FROM fleet_nodes WHERE id=$1`, worker); err != nil {
+			t.Error(err)
+		}
+	})
+	if _, err := f.pool.Exec(t.Context(), `INSERT INTO workers(id) VALUES($1)`, worker); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(t.Context(), `UPDATE email_accounts SET worker_id=$2 WHERE id=$1`, f.account, worker); err != nil {
+		t.Fatal(err)
+	}
+	put := func(state models.SyncState, want bool) {
+		t.Helper()
+		accepted, err := repo.PutFromWorker(t.Context(), f.user, f.account, worker, &state, nil)
+		if err != nil || accepted != want {
+			t.Fatalf("generation=%s accepted=%t want=%t err=%v", state.TransportGeneration, accepted, want, err)
+		}
+	}
+	put(models.SyncState{TransportGeneration: f.generation, BackfillStatus: models.SyncBackfillRunning, BackfillSynced: 3}, true)
+	var current uuid.UUID
+	if err := f.pool.QueryRow(t.Context(), `UPDATE email_accounts SET transport_generation=gen_random_uuid() WHERE id=$1 RETURNING transport_generation`, f.account).Scan(&current); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(t.Context(), `UPDATE email_sync_state SET backfill_status='complete', backfill_synced=0 WHERE email_id=$1`, f.account); err != nil {
+		t.Fatal(err)
+	}
+	put(models.SyncState{TransportGeneration: f.generation, BackfillStatus: models.SyncBackfillRunning, BackfillSynced: 9}, false)
+	got, err := repo.Get(t.Context(), f.account)
+	if err != nil || got.BackfillStatus != models.SyncBackfillComplete || got.BackfillSynced != 0 {
+		t.Fatalf("superseded generation wrote: %+v err=%v", got, err)
+	}
+	put(models.SyncState{BackfillStatus: models.SyncBackfillComplete, BackfillSynced: 1}, true)
+	put(models.SyncState{TransportGeneration: current, BackfillStatus: models.SyncBackfillComplete, BackfillSynced: 2}, true)
+}
+
 func TestLiveMailTransportSyncReportCommitsRecoveryAndBothClocks(t *testing.T) {
 	f := newTransportFixture(t)
 	repo := NewEmailSyncStateRepository(f.db)

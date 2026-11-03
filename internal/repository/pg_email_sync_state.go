@@ -102,11 +102,16 @@ func (r *pgEmailSyncStateRepository) put(ctx context.Context, userID, emailID uu
 		return false, fmt.Errorf("email_sync_state: lock: %w", err)
 	}
 	var assigned *uuid.UUID
-	err = tx.QueryRow(ctx, `SELECT worker_id FROM email_accounts WHERE id=$1 FOR UPDATE`, emailID).Scan(&assigned)
+	var generation uuid.UUID
+	err = tx.QueryRow(ctx, `SELECT worker_id, transport_generation FROM email_accounts WHERE id=$1 FOR UPDATE`, emailID).Scan(&assigned, &generation)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return false, fmt.Errorf("email_sync_state: owner: %w", err)
 	}
 	if workerID != nil && (assigned == nil || *assigned != *workerID) {
+		return false, nil
+	}
+	// A seeded incarnation reports a nil generation until its first completed pass.
+	if state.TransportGeneration != uuid.Nil && err == nil && state.TransportGeneration != generation {
 		return false, nil
 	}
 	if before != nil {
