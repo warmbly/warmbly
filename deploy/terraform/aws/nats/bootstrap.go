@@ -66,7 +66,9 @@ func main() {
 	systemJWT := must(jwt.NewAccountClaims(must(system.PublicKey())).Encode(operator))
 	user := must(nkeys.CreateUser())
 	userClaim := jwt.NewUserClaims(must(user.PublicKey()))
-	userClaim.Pub.Allow.Add("warmbly.>", "$JS.API.>", "$JS.ACK.>", "_INBOX.>")
+	userClaim.Pub.Allow.Add("warmbly.>", "$JS.ACK.>", "_INBOX.>",
+		"$JS.API.INFO", "$JS.API.STREAM.INFO.warmbly", "$JS.API.STREAM.CREATE.warmbly", "$JS.API.STREAM.UPDATE.warmbly",
+		"$JS.API.CONSUMER.CREATE.warmbly.>", "$JS.API.CONSUMER.INFO.warmbly.>", "$JS.API.CONSUMER.MSG.NEXT.warmbly.>")
 	userClaim.Sub.Allow.Add("warmbly.>", "_INBOX.>")
 	creds := must(jwt.FormatUserConfig(must(userClaim.Encode(account)), must(user.Seed())))
 	write("client.creds", creds)

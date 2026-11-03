@@ -104,9 +104,27 @@ resource "aws_ssm_document" "maintenance" {
   })
   depends_on = [aws_iam_role_policy.maintenance]
 }
+variable "maintenance_enabled" {
+  type    = bool
+  default = false
+}
 resource "aws_cloudwatch_event_rule" "maintenance" {
   name                = "${var.name}-nats-weekly-security-patches"
   schedule_expression = "cron(0 4 ? * SUN *)"
+  state               = var.maintenance_enabled ? "ENABLED" : "DISABLED"
+}
+resource "aws_cloudwatch_event_rule" "maintenance_failure" {
+  name = "${var.name}-nats-security-patch-failure"
+  event_pattern = jsonencode({
+    source        = ["aws.ssm"]
+    "detail-type" = ["EC2 Automation Execution Status-change Notification"]
+    detail        = { Definition = [aws_ssm_document.maintenance.name], Status = ["Failed", "TimedOut", "Cancelled"] }
+  })
+}
+resource "aws_cloudwatch_event_target" "maintenance_failure" {
+  rule       = aws_cloudwatch_event_rule.maintenance_failure.name
+  arn        = aws_sns_topic.operations.arn
+  depends_on = [aws_sns_topic_policy.operations]
 }
 data "aws_iam_policy_document" "maintenance_schedule_trust" {
   statement {

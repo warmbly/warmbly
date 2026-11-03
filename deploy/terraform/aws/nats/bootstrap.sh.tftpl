@@ -18,16 +18,19 @@ cat > /usr/local/sbin/nats-load-config <<'SCRIPT'
 #!/bin/bash
 set -euo pipefail
 umask 077
-bundle=$(mktemp /run/nats-config.XXXXXX)
-trap 'rm -f "$bundle"' EXIT
-aws secretsmanager get-secret-value --region us-east-1 --secret-id '${secret_arn}' --query SecretString --output text > "$bundle"
+stage=$(mktemp -d /etc/nats/.config.XXXXXX)
+trap 'rm -rf "$stage"' EXIT
+aws secretsmanager get-secret-value --region us-east-1 --secret-id '${secret_arn}' --query SecretString --output text > "$stage/bundle"
 for file in server.conf server.crt server.key ca.crt; do
-  jq -er --arg file "$file" '.[$file]' "$bundle" > "/etc/nats/$file.new"
-  chown root:nats "/etc/nats/$file.new"
-  chmod 640 "/etc/nats/$file.new"
-  mv "/etc/nats/$file.new" "/etc/nats/$file"
+  jq -er --arg file "$file" '.[$file] | select(type == "string" and length > 0)' "$stage/bundle" > "$stage/$file"
+  chown root:nats "$stage/$file"
+  chmod 640 "$stage/$file"
 done
-/usr/local/bin/nats-server -t --config /etc/nats/server.conf
+sed "s|/etc/nats/|$stage/|g" "$stage/server.conf" > "$stage/validate.conf"
+/usr/local/bin/nats-server -t --config "$stage/validate.conf"
+for file in server.crt server.key ca.crt server.conf; do
+  mv "$stage/$file" "/etc/nats/$file"
+done
 SCRIPT
 chmod 700 /usr/local/sbin/nats-load-config
 

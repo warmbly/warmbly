@@ -23,7 +23,7 @@ variable "service_configuration" {
             "WEBAUTHN_RP_ORIGINS", "INBOX_TAGGING_ENABLED", "RELEASES_ENABLED",
             "GEODB_PATH", "DATABASE_POOL_SIZE", "DATABASE_SSL_CA_FILE",
             "SEARCH_PROVIDER", "AI_PROVIDER", "AI_MODEL"
-          ], key) && !can(regex("://[^/@]+:[^/@]+@", value)) && !can(regex("(?i)(password|secret|token|api_key)=", value))
+          ], key) && !can(regex("://[^/@]+@", value)) && !can(regex("(?i)(password|secret|token|api_key)=", value))
         ])
       ]
     ]))

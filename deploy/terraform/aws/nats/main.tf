@@ -99,6 +99,12 @@ resource "aws_vpc_security_group_ingress_rule" "clients" {
   ip_protocol                  = "tcp"
   from_port                    = 4222
   to_port                      = 4222
+  lifecycle {
+    precondition {
+      condition     = var.worker_security_group_id != data.terraform_remote_state.foundation.outputs.runtime.tasks_sg_id
+      error_message = "Use distinct worker and task security groups."
+    }
+  }
 }
 resource "aws_vpc_security_group_ingress_rule" "routes" {
   security_group_id            = aws_security_group.nats.id

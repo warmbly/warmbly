@@ -205,12 +205,17 @@ func (b *NATSBus) ensureStream(ctx context.Context) error {
 		config.MaxAge = 7 * 24 * time.Hour
 	}
 	stream, err := b.js.Stream(cctx, b.stream)
+	var unchanged bool
 	if err == nil {
 		info, infoErr := stream.Info(cctx)
 		if infoErr != nil {
 			return fmt.Errorf("eventbus nats: read stream configuration: %w", infoErr)
 		}
 		config = info.Config
+		unchanged = (b.maxAge == 0 || config.MaxAge == b.maxAge) &&
+			(b.maxBytes == 0 || config.MaxBytes == b.maxBytes) &&
+			(b.replicas == 0 || config.Replicas == b.replicas) &&
+			(!b.discardNew || config.Discard == jetstream.DiscardNew)
 		if !slices.Contains(config.Subjects, filter) {
 			return fmt.Errorf("eventbus nats: stream %q does not cover configured subject prefix", b.stream)
 		}
@@ -228,6 +233,10 @@ func (b *NATSBus) ensureStream(ctx context.Context) error {
 	}
 	if b.discardNew {
 		config.Discard = jetstream.DiscardNew
+	}
+	if unchanged {
+		b.streamReady = true
+		return nil
 	}
 	_, err = b.js.CreateOrUpdateStream(cctx, config)
 	if err != nil {

@@ -62,6 +62,12 @@ clients use verified TLS and JWT credentials. Monitoring listens on loopback.
 Public IPv4 addresses provide outbound package, secret and Systems Manager access;
 there is no public inbound broker or SSH rule and no NAT gateway.
 
+The stack pins host address 40 in each selected subnet. For a new installation,
+verify those addresses are free before applying and reserve them for these
+brokers. Existing instances own their addresses; preserve their ENIs and disks
+during maintenance. Moving a deployed broker into a different subnet requires
+a separate, serial replacement plan.
+
 Existing self-host configuration and defaults remain supported. No AWS settings
 are required for a local NATS deployment.
 
@@ -86,8 +92,11 @@ the client container with `client.json`, and the separate authority container
 with `authority.json`. Broker and application roles cannot read the authority.
 Secret values never enter Terraform
 state or user data. The service retries startup while its secret is unavailable.
-Validate the server configuration and all three JetStream members before moving
-any application traffic. Retain both old and new credentials during rotation.
+After populating node and backup secrets, explicitly rerun the operations association
+with `aws ssm start-associations-once --association-ids <operations-association-id>`
+and verify successful execution on all three nodes. An initial association run
+can precede secret population. Validate the server configuration and all three
+JetStream members before moving any application traffic. Retain both old and new credentials during rotation.
 
 The initial client settings request three replicas, a 64 GiB stream limit and
 `DiscardNew`. The backup node has a 192 GiB encrypted volume; the other two have
@@ -181,6 +190,12 @@ compatibility release, then clear the hold. Never enable both uncoordinated
 publisher directions during a handoff.
 
 ## Recovery and maintenance
+
+Set `maintenance_enabled=true` only after creating the `warmbly` stream and
+verifying its three replicas, installing operations on all brokers and rehearsing
+the maintenance checks. The schedule defaults to disabled for a new cluster.
+Failed, timed-out and cancelled patch executions notify the operations topic.
+Quorum checks include each durable consumer as well as stream and metadata state.
 
 The stack installs Systems Manager access without SSH, one-minute health/disk
 metrics and CloudWatch alarms. Health, disk, certificate and backup-age alarms

@@ -108,7 +108,7 @@ async function main() {
     const nc = await connect({
       servers: process.env.NATS_URL.split(","),
       authenticator: credsAuthenticator(Buffer.from(process.env.NATS_CREDS_B64, "base64")),
-      tls: { ca: Buffer.from(process.env.NATS_TLS_CA_B64, "base64").toString("utf8") },
+      tls: process.env.NATS_TLS_CA_B64 ? { ca: Buffer.from(process.env.NATS_TLS_CA_B64, "base64").toString("utf8") } : {},
       maxReconnectAttempts: 0, timeout: 10000,
     });
     try {

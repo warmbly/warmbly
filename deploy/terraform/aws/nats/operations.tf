@@ -20,6 +20,24 @@ data "aws_iam_policy_document" "notifications" {
     resources = [aws_sns_topic.operations.arn]
     principals {
       type        = "Service"
+      identifiers = ["events.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+    condition {
+      test     = "ArnEquals"
+      variable = "aws:SourceArn"
+      values   = [aws_cloudwatch_event_rule.maintenance_failure.arn]
+    }
+  }
+  statement {
+    actions   = ["sns:Publish"]
+    resources = [aws_sns_topic.operations.arn]
+    principals {
+      type        = "Service"
       identifiers = ["cloudwatch.amazonaws.com"]
     }
     condition {

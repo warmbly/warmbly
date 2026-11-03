@@ -8,7 +8,7 @@ while [ "$attempt" -lt 60 ]; do
   attempt=$((attempt + 1))
   if systemctl is-active --quiet nats &&
     curl -fsS --max-time 5 'http://127.0.0.1:8222/healthz?js-enabled-only=true' >/dev/null &&
-    curl -fsS --max-time 5 'http://127.0.0.1:8222/jsz?accounts=true&streams=true' |
+    curl -fsS --max-time 5 'http://127.0.0.1:8222/jsz?accounts=true&streams=true&consumers=true' |
     jq -e --arg node "$node" '
       def ready:
         (.leader | length) > 0 and
@@ -18,7 +18,8 @@ while [ "$attempt" -lt 60 ]; do
       (.meta_cluster | ready) and
       any(.account_details[]?.stream_detail[]?;
         .name == "warmbly" and
-        (.cluster | ready))
+        (.cluster | ready) and
+        all(.consumer_detail[]?; .cluster | ready))
     ' >/dev/null; then
     stable=$((stable + 1))
     if [ "$stable" -ge 3 ]; then echo 'Local replica health and leader-owned quorum checks passed'; exit 0; fi
