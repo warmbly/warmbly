@@ -828,7 +828,7 @@ Start (activate) the campaign so it begins sending real mail. Works from `draft`
 
 A start refused because every remaining lead was refused by address verification answers `leads_undeliverable` and parks the campaign at `paused_undeliverable`; re-verify the leads or mark them deliverable with [`POST /contacts/verification`](/api/reference/contacts/#verify-or-override-contacts), which resumes it.
 
-A campaign whose email step has nothing in either body is refused with `empty_step_body` rather than started, because it would send a blank message to every lead it reached. A step whose copy would not render as written (saved before the check on write existed) is refused with `invalid_template`, naming the step, the field, the line and the problem.
+A campaign whose email step has nothing in either body is refused with `empty_step_body` rather than started, because it would send a blank message to every lead it reached. A step or active A/B variant whose copy would not render as written (saved before the check on write existed) is refused with `invalid_template`, naming it, the field, the line and the problem.
 
 ### Response
 

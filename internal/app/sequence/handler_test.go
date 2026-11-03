@@ -5,14 +5,22 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
 type recordingRepo struct {
 	repository.SequenceRepository
 	saved *models.UpdateSequence
+	steps []models.Sequence
+}
+
+func (r *recordingRepo) Get(_ context.Context, _, _ string) ([]models.Sequence, *errx.Error) {
+	return r.steps, nil
 }
 
 func (r *recordingRepo) Update(_ context.Context, _, _, _ string, data *models.UpdateSequence) (*models.Sequence, *errx.Error) {
@@ -51,5 +59,22 @@ func TestUpdateAcceptsAliasesAndCustomFields(t *testing.T) {
 	}
 	if repo.saved == nil || *repo.saved.BodyHTML != body {
 		t.Fatal("copy must be stored as written, not rewritten")
+	}
+}
+
+func TestUpdateDerivesHTMLForPlainOnlyCopy(t *testing.T) {
+	id := uuid.New()
+	plain := "Hi {{first_name}},\n\nWorth a chat?"
+	repo := &recordingRepo{steps: []models.Sequence{{ID: id}}}
+	if _, xerr := NewService(repo).Update(context.Background(), "org", "c", id.String(), &models.UpdateSequence{BodyPlain: &plain}); xerr != nil {
+		t.Fatalf("valid plain-only copy refused: %v", xerr)
+	}
+	if repo.saved == nil || repo.saved.BodyHTML == nil || *repo.saved.BodyHTML != mailhtml.FromText(plain) {
+		t.Fatalf("plain-only copy must store HTML derived from it, got %+v", repo.saved)
+	}
+	broken := "Hi {{if .Company}}"
+	repo = &recordingRepo{steps: []models.Sequence{{ID: id}}}
+	if _, xerr := NewService(repo).Update(context.Background(), "org", "c", id.String(), &models.UpdateSequence{BodyPlain: &broken}); xerr == nil || repo.saved != nil {
+		t.Fatal("broken plain-only copy must be refused before any HTML is derived or saved")
 	}
 }

@@ -26,3 +26,19 @@ func TestCheckCreateCopyNamesTheBrokenStepAndVariant(t *testing.T) {
 		t.Errorf("valid copy refused: %v", err)
 	}
 }
+
+func TestCheckActiveVariantCopySkipsInactiveAndControl(t *testing.T) {
+	broken := "{{if .Company}}x"
+	variants := []models.CampaignABVariant{
+		{Name: "off", BodyPlain: broken, IsActive: false},
+		{Name: "control", BodyPlain: broken, IsActive: true, IsControl: true},
+		{Name: "ok", Subject: "Hi {{first_name}}", IsActive: true},
+	}
+	if err := checkActiveVariantCopy(variants); err != nil {
+		t.Fatalf("inactive or control arms refused: %v", err)
+	}
+	variants = append(variants, models.CampaignABVariant{Name: "B", BodyHTML: "<p>" + broken + "</p>", IsActive: true})
+	if err := checkActiveVariantCopy(variants); err == nil || !strings.Contains(err.Error(), `variant "B" body`) {
+		t.Fatalf("got %v, want the broken active variant named", err)
+	}
+}

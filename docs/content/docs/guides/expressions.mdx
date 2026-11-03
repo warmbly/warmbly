@@ -94,7 +94,7 @@ Values come from the **mailbox actually sending that message**, including campai
 
 `{{.Sender.Email}}` is the recipient-visible From address, including a configured send-as alias. `{{.Sender.MailboxEmail}}` is the underlying connected mailbox address. `{{.Sender.ReplyTo}}` is the explicit Reply-To header; it is empty when replies simply go to the sender.
 
-Every field is case-sensitive. Prefix each name below with `.Sender.`, for example `{{.Sender.Provider}}`:
+Prefix each name below with `.Sender.`, for example `{{.Sender.Provider}}`. The names are written as shown; campaign copy also accepts their snake_case, camelCase and lowercase spellings (`{{.Sender.first_name}}`), and any other capitalization is refused:
 
 | Details | Fields |
 | --- | --- |

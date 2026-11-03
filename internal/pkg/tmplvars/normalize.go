@@ -53,7 +53,7 @@ func Normalize(src string) (string, error) {
 	if _, err := tree.Parse(src, "", "", trees); err != nil {
 		return src, nil // the compiler reports the syntax error itself
 	}
-	w := &walker{src: src}
+	w := &walker{src: src, vars: map[string]scope{"$": scopeRoot}}
 	names := make([]string, 0, len(trees))
 	for name := range trees {
 		names = append(names, name)
@@ -61,7 +61,7 @@ func Normalize(src string) (string, error) {
 	sort.Strings(names)
 	for _, name := range names {
 		if t := trees[name]; t != nil && t.Root != nil {
-			w.node(t.Root)
+			w.node(t.Root, scopeRoot)
 		}
 	}
 	return w.apply(), w.err
@@ -73,7 +73,10 @@ func Check(src string) error {
 	if src == "" {
 		return nil
 	}
-	norm, err := Normalize(FormLinkMarker.ReplaceAllString(src, ""))
+	// A marker is dropped for the check, keeping its line breaks so line numbers stay true.
+	norm, err := Normalize(FormLinkMarker.ReplaceAllStringFunc(src, func(m string) string {
+		return strings.Repeat("\n", strings.Count(m, "\n"))
+	}))
 	if err != nil {
 		return err
 	}
@@ -101,10 +104,20 @@ type edit struct {
 	text       string
 }
 
+// scope is what a dot or a variable holds, as far as the walker can tell.
+type scope int
+
+const (
+	scopeOther  scope = iota // a value whose fields the walker does not know
+	scopeRoot                // the template data
+	scopeSender              // the typed Sender value
+)
+
 type walker struct {
 	src   string
 	edits []edit
 	err   error
+	vars  map[string]scope
 }
 
 func (w *walker) fail(pos int, format string, args ...any) {
@@ -114,71 +127,115 @@ func (w *walker) fail(pos int, format string, args ...any) {
 	}
 }
 
-func (w *walker) node(n parse.Node) {
+func (w *walker) node(n parse.Node, dot scope) {
 	switch x := n.(type) {
 	case *parse.ListNode:
 		if x == nil {
 			return
 		}
 		for _, c := range x.Nodes {
-			w.node(c)
+			w.node(c, dot)
 		}
 	case *parse.ActionNode:
-		w.pipe(x.Pipe)
+		w.pipe(x.Pipe, dot, false)
 	case *parse.IfNode:
-		w.branch(&x.BranchNode)
+		w.pipe(x.Pipe, dot, false)
+		w.node(x.List, dot)
+		w.node(x.ElseList, dot)
 	case *parse.RangeNode:
-		w.branch(&x.BranchNode)
+		w.pipe(x.Pipe, dot, true)
+		w.node(x.List, scopeOther)
+		w.node(x.ElseList, dot)
 	case *parse.WithNode:
-		w.branch(&x.BranchNode)
+		inner := w.pipe(x.Pipe, dot, false)
+		w.node(x.List, inner)
+		w.node(x.ElseList, dot)
 	case *parse.TemplateNode:
-		w.pipe(x.Pipe)
+		w.pipe(x.Pipe, dot, false)
 	}
 }
 
-func (w *walker) branch(b *parse.BranchNode) {
-	w.pipe(b.Pipe)
-	w.node(b.List)
-	if b.ElseList != nil {
-		w.node(b.ElseList)
-	}
-}
-
-func (w *walker) pipe(p *parse.PipeNode) {
+// pipe visits a pipeline, records what its declared variables hold, and
+// returns what the pipeline evaluates to.
+func (w *walker) pipe(p *parse.PipeNode, dot scope, ranged bool) scope {
 	if p == nil {
-		return
+		return scopeOther
 	}
 	for _, cmd := range p.Cmds {
 		for i, arg := range cmd.Args {
-			w.arg(arg, i == 0 && len(cmd.Args) > 1)
+			w.arg(arg, i == 0 && len(cmd.Args) > 1, dot)
 		}
 	}
+	value := w.valueOf(p, dot)
+	for _, v := range p.Decl {
+		if ranged {
+			w.vars[v.Ident[0]] = scopeOther
+		} else {
+			w.vars[v.Ident[0]] = value
+		}
+	}
+	return value
+}
+
+// valueOf is what a pipeline of one bare operand holds; anything else is scopeOther.
+func (w *walker) valueOf(p *parse.PipeNode, dot scope) scope {
+	if len(p.Cmds) != 1 || len(p.Cmds[0].Args) != 1 {
+		return scopeOther
+	}
+	switch x := p.Cmds[0].Args[0].(type) {
+	case *parse.DotNode:
+		return dot
+	case *parse.IdentifierNode:
+		if topNames[x.Ident] == SenderField {
+			return scopeSender
+		}
+	case *parse.FieldNode:
+		if dot == scopeRoot && len(x.Ident) == 1 && topNames[x.Ident[0]] == SenderField {
+			return scopeSender
+		}
+	case *parse.VariableNode:
+		held := w.vars[x.Ident[0]]
+		if len(x.Ident) == 1 {
+			return held
+		}
+		if held == scopeRoot && len(x.Ident) == 2 && topNames[x.Ident[1]] == SenderField {
+			return scopeSender
+		}
+	}
+	return scopeOther
 }
 
 // arg visits one operand; calls is whether it is a command head given arguments.
-func (w *walker) arg(n parse.Node, calls bool) {
+func (w *walker) arg(n parse.Node, calls bool, dot scope) {
 	switch x := n.(type) {
 	case *parse.PipeNode:
-		w.pipe(x)
+		w.pipe(x, dot, false)
 	case *parse.IdentifierNode:
 		w.identifier(x, calls)
 	case *parse.FieldNode:
-		w.chain(int(x.Pos), "."+strings.Join(x.Ident, "."), ".", x.Ident)
+		w.fields(int(x.Pos), "."+strings.Join(x.Ident, "."), "", dot, x.Ident)
 	case *parse.VariableNode:
-		if len(x.Ident) > 1 && x.Ident[0] == "$" {
-			w.chain(int(x.Pos), strings.Join(x.Ident, "."), "$.", x.Ident[1:])
+		name := x.Ident[0]
+		held, known := w.vars[name]
+		if len(x.Ident) == 1 {
+			return
 		}
+		if !known || held == scopeOther {
+			w.fail(int(x.Pos), "fields of %s cannot be checked; refer to the field directly, like {{.Sender.Email}}", name)
+			return
+		}
+		w.fields(int(x.Pos), strings.Join(x.Ident, "."), name, held, x.Ident[1:])
 	case *parse.ChainNode:
 		switch inner := x.Node.(type) {
 		case *parse.IdentifierNode:
-			if canonical := topNames[inner.Ident]; canonical == SenderField {
+			if topNames[inner.Ident] == SenderField {
 				text := inner.Ident + "." + strings.Join(x.Field, ".")
-				w.chain(int(inner.Pos), text, "$.", append([]string{inner.Ident}, x.Field...))
+				w.fields(int(inner.Pos), text, "$", scopeRoot, append([]string{inner.Ident}, x.Field...))
 				return
 			}
 			w.identifier(inner, false)
 		case *parse.PipeNode:
-			w.pipe(inner)
+			w.pipe(inner, dot, false)
 		}
 	}
 }
@@ -202,27 +259,37 @@ func (w *walker) identifier(x *parse.IdentifierNode, calls bool) {
 	}
 }
 
-// chain canonicalises a reference into Sender, whose field set is fixed. idents
-// starts at the root field; text is the reference as written, rewritten as
-// prefix plus the canonical idents.
-func (w *walker) chain(pos int, text, prefix string, idents []string) {
-	if len(idents) < 2 {
-		return
-	}
-	if canonical, ok := topNames[idents[0]]; !ok || canonical != SenderField {
+// fields checks a selector chain on a value held in scope and canonicalises the
+// part that reaches into Sender, whose field set is fixed. text is the chain as
+// written, head the variable it starts from ("" for dot).
+func (w *walker) fields(pos int, text, head string, held scope, idents []string) {
+	var sender []string
+	prefix := head
+	switch held {
+	case scopeRoot:
+		if len(idents) < 2 || topNames[idents[0]] != SenderField {
+			return
+		}
+		sender, prefix = idents[1:], head+"."+SenderField
+	case scopeSender:
+		sender = idents
+	default:
 		return
 	}
 	start := w.locate(pos, text)
 	if start < 0 {
 		return
 	}
-	field, ok := senderNames[idents[1]]
+	field, ok := senderNames[sender[0]]
 	if !ok {
-		w.fail(start, "unknown sender field %q; the sender fields are %s", idents[1], senderList)
+		w.fail(start, "unknown sender field %q; the sender fields are %s", sender[0], senderList)
 		return
 	}
-	out := append([]string{SenderField, field}, idents[2:]...)
-	if rewritten := prefix + strings.Join(out, "."); rewritten != text {
+	if len(sender) > 1 {
+		w.fail(start, "sender field %s has no field %q", field, sender[1])
+		return
+	}
+	if rewritten := prefix + "." + field; rewritten != text {
 		w.edits = append(w.edits, edit{start, start + len(text), rewritten})
 	}
 }

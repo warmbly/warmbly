@@ -31,7 +31,7 @@ func TestSendRendersContactDataOnce(t *testing.T) {
 	for name, picker := range map[string]variantSelector{"no A/B": nil, "control arm": passThrough{}, "variant": passThrough{variant: variant}} {
 		t.Run(name, func(t *testing.T) {
 			rendered, xerr := selectAndRender(context.Background(), picker, uuid.New(), uuid.New(), uuid.New(), contact, TemplateContext{}, "",
-				"Hi {{.FirstName}}", "<p>Hi {{.FirstName}}</p>", "Hi {{.FirstName}}")
+				"Hi {{.FirstName}}", "<p>Hi {{.FirstName}}</p>", "Hi {{.FirstName}}", nil)
 			if xerr != nil {
 				t.Fatal(xerr)
 			}
@@ -45,5 +45,25 @@ func TestSendRendersContactDataOnce(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A variant's own form-link markers are resolved, not sent as literal text.
+func TestSendResolvesFormLinksInTheChosenVariant(t *testing.T) {
+	variant := &models.VariantSelection{Subject: "Book {{form_link:abc123}}", BodyHTML: "<p>{{form_link:abc123}}</p>", BodyPlain: "{{form_link:abc123}}"}
+	resolve := func(parts ...*string) {
+		for _, p := range parts {
+			*p = models.FormLinkMarkerRE.ReplaceAllString(*p, "https://forms.example/f")
+		}
+	}
+	rendered, xerr := selectAndRender(context.Background(), passThrough{variant: variant}, uuid.New(), uuid.New(), uuid.New(), models.Contact{ID: uuid.New()}, TemplateContext{}, "",
+		"step", "<p>step</p>", "step", resolve)
+	if xerr != nil {
+		t.Fatal(xerr)
+	}
+	for _, out := range []string{rendered.Subject, rendered.BodyHTML, rendered.BodyPlain} {
+		if strings.Contains(out, "form_link") || !strings.Contains(out, "https://forms.example/f") {
+			t.Fatalf("variant marker not resolved: %q", out)
+		}
 	}
 }

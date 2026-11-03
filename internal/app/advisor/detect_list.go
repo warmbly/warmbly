@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/tmplvars"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -278,12 +279,14 @@ func detectUnsubscribedEnrolled(s *repository.AdvisorSnapshot) []Finding {
 	return out
 }
 
-// usesFirstName reports whether the copy greets people by first name, in any
-// spelling the renderer accepts (`.FirstName`, `first_name`, `firstName`).
+// usesFirstName reports whether a template action in the copy names the first
+// name, in any spelling the renderer accepts (`.FirstName`, `first_name`, `firstName`).
 func usesFirstName(text string) bool {
-	for _, form := range []string{"firstname", "first_name"} {
-		if indexFold(text, form) >= 0 {
-			return true
+	for _, action := range tmplvars.ActionPattern.FindAllString(text, -1) {
+		for _, form := range []string{"firstname", "first_name"} {
+			if indexFold(action, form) >= 0 {
+				return true
+			}
 		}
 	}
 	return false

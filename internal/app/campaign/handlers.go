@@ -527,6 +527,18 @@ func (s *campaignService) StartCampaign(ctx context.Context, orgID uuid.UUID, ca
 		if terr := tmplvars.CheckCopy(stepCopy(fmt.Sprintf("step %d", i+1), seq.Subject, seq.BodyHTML, seq.BodyPlain)...); terr != nil {
 			return errx.InvalidTemplate(terr)
 		}
+	}
+	if s.variants != nil {
+		variants, verr := s.variants.ListABVariants(ctx, cID)
+		if verr != nil {
+			errs.CaptureException(verr)
+			return errx.InternalError()
+		}
+		if terr := checkActiveVariantCopy(variants); terr != nil {
+			return errx.InvalidTemplate(terr)
+		}
+	}
+	for i, seq := range seqs {
 		// An email step with nothing in either body sends a blank message
 		// to every lead it reaches. A step created through the API carries
 		// the composer's empty placeholder, which is not an empty string,

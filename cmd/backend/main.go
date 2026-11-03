@@ -1554,6 +1554,10 @@ func main() {
 		if aware, ok := campaignService.(campaign.AudienceAware); ok {
 			aware.WireAudience(campaignAudienceRepository)
 		}
+		// A start checks the copy of every active A/B variant, not only the steps.
+		if aware, ok := campaignService.(campaign.VariantAware); ok {
+			aware.WireVariants(advancedRepository)
+		}
 		// A start with nothing left to send says whether verification is why.
 		if aware, ok := campaignService.(campaign.ProgressAware); ok {
 			aware.WireProgress(campaignProgressRepository)

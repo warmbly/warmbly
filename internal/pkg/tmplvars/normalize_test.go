@@ -24,6 +24,11 @@ func TestNormalize(t *testing.T) {
 		{"sender variable", "{{$.sender.signature_html}}", "{{$.Sender.SignatureHTML}}"},
 		{"function untouched", "{{upper .FirstName}}", "{{upper .FirstName}}"},
 		{"unsubscribe alias", "{{unsubscribe_link}}", "{{$.unsubscribe_link}}"},
+		{"sender through a variable", "{{$s := .Sender}}{{$s.first_name}}", "{{$s := .Sender}}{{$s.FirstName}}"},
+		{"sender through with", "{{with .sender}}{{.signature_html}}{{end}}", "{{with .sender}}{{.SignatureHTML}}{{end}}"},
+		{"sender through root variable", "{{$r := .}}{{$r.Sender.email}}", "{{$r := .}}{{$r.Sender.Email}}"},
+		{"range element untouched", "{{range .Sender.Tags}}{{.}}{{end}}", "{{range .Sender.Tags}}{{.}}{{end}}"},
+		{"range variables untouched", "{{range $k, $v := .}}{{$k}}={{$v}}{{end}}", "{{range $k, $v := .}}{{$k}}={{$v}}{{end}}"},
 	}
 	for _, tc := range cases {
 		got, err := Normalize(tc.in)
@@ -43,6 +48,10 @@ func TestCheckRefusesWhatCannotRender(t *testing.T) {
 		{"{{if .FirstName}}open", "unexpected EOF"},
 		{"{{.Sender.Bogus}}", `unknown sender field "Bogus"`},
 		{"{{shout .FirstName}}", `function "shout" is not defined`},
+		{"{{.Sender.Email.Bogus}}", `sender field Email has no field "Bogus"`},
+		{"{{$s := .Sender}}{{$s.Bogus}}", `unknown sender field "Bogus"`},
+		{"{{with .Sender}}{{.Bogus}}{{end}}", `unknown sender field "Bogus"`},
+		{"{{range $k, $v := .}}{{$v.x}}{{end}}", "fields of $v cannot be checked"},
 	}
 	for _, tc := range cases {
 		err := Check(tc.in)
@@ -61,6 +70,11 @@ func TestCheckNamesTheLine(t *testing.T) {
 	err := Check("line one\n{{if .X}}")
 	if err == nil || !strings.HasPrefix(err.Error(), "line 2:") {
 		t.Fatalf("got %v", err)
+	}
+	// A form-link marker spanning lines keeps the lines after it numbered as written.
+	err = Check("{{\nform_link:abc123\n}}\n{{frist_name}}")
+	if err == nil || !strings.HasPrefix(err.Error(), "line 4:") {
+		t.Fatalf("marker shifted the line: %v", err)
 	}
 }
 

@@ -27,3 +27,14 @@ func checkCreateCopy(data *models.CreateCampaign) error {
 	}
 	return tmplvars.CheckCopy(parts...)
 }
+
+// checkActiveVariantCopy refuses a start while an active variant's copy would not render; a control arm sends the step's copy.
+func checkActiveVariantCopy(variants []models.CampaignABVariant) error {
+	var parts []tmplvars.Part
+	for _, v := range variants {
+		if v.IsActive && !v.IsControl {
+			parts = append(parts, stepCopy(fmt.Sprintf("variant %q", v.Name), v.Subject, v.BodyHTML, v.BodyPlain)...)
+		}
+	}
+	return tmplvars.CheckCopy(parts...)
+}
