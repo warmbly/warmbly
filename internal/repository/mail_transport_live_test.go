@@ -638,7 +638,7 @@ func TestLiveMailTransportSyncFolderCoveragePersistsAndClears(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertCoverage(17, 2)
-	if _, err := f.pool.Exec(t.Context(), `UPDATE email_sync_state SET deferred=1 WHERE email_id=$1`, f.account); err != nil {
+	if err := repo.Put(t.Context(), f.user, f.account, &models.SyncState{Deferred: 1, FoldersSkippedCap: 17, FoldersSkippedConflict: 2}); err != nil {
 		t.Fatal(err)
 	}
 	assertCoverage(17, 2)
@@ -689,4 +689,53 @@ func TestLiveMailTransportSyncFolderCoverageRejectsOlderCompletion(t *testing.T)
 	if got.FoldersSkippedCap != 0 || got.FoldersSkippedConflict != 0 {
 		t.Fatalf("new completion counters: %+v", got)
 	}
+}
+
+func TestLiveMailTransportSyncFolderCoverageOrdersProgressObservations(t *testing.T) {
+	f := newTransportFixture(t)
+	repo := NewEmailSyncStateRepository(f.db)
+	completed := time.Now().UTC().Add(-time.Hour).Truncate(time.Millisecond)
+	first := completed.Add(time.Minute)
+	latest := first.Add(time.Minute)
+	put := func(state models.SyncState) {
+		t.Helper()
+		if err := repo.Put(t.Context(), f.user, f.account, &state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertCoverage := func(capCount, conflicts int, observed *time.Time) {
+		t.Helper()
+		got, err := repo.Get(t.Context(), f.account)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got == nil || got.FoldersSkippedCap != capCount || got.FoldersSkippedConflict != conflicts {
+			t.Fatalf("coverage: %+v", got)
+		}
+		if observed == nil {
+			if got.FolderCoverageObservedAt != nil {
+				t.Fatalf("legacy observation manufactured: %+v", got)
+			}
+		} else if got.FolderCoverageObservedAt == nil || !got.FolderCoverageObservedAt.Equal(*observed) {
+			t.Fatalf("observation: %+v", got)
+		}
+	}
+	put(models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &first, FoldersSkippedCap: 17, FoldersSkippedConflict: 2})
+	put(models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &latest})
+	put(models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &first, FoldersSkippedCap: 17, FoldersSkippedConflict: 2})
+	assertCoverage(0, 0, &latest)
+	put(models.SyncState{FolderCoverageObservedAt: &first, FoldersSkippedCap: 17, FoldersSkippedConflict: 2})
+	assertCoverage(0, 0, &latest)
+	put(models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &latest, FoldersSkippedCap: 17, FoldersSkippedConflict: 2})
+	assertCoverage(0, 0, &latest)
+	put(models.SyncState{LastSyncedAt: &completed, FoldersSkippedCap: 17, FoldersSkippedConflict: 2})
+	put(models.SyncState{FoldersSkippedCap: 17, FoldersSkippedConflict: 2})
+	assertCoverage(0, 0, &latest)
+	newer := latest.Add(time.Minute)
+	put(models.SyncState{LastSyncedAt: &newer, FoldersSkippedCap: 4, FoldersSkippedConflict: 1})
+	assertCoverage(4, 1, nil)
+	put(models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &latest})
+	assertCoverage(4, 1, nil)
+	put(models.SyncState{FoldersSkippedCap: 3})
+	assertCoverage(3, 0, nil)
 }

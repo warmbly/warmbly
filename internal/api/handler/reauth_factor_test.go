@@ -16,6 +16,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/twofa"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/argon2"
 )
 
 type reauthFactorStub struct {
@@ -54,10 +55,11 @@ func TestReauthPreservesAuthenticatorVerificationOutcome(t *testing.T) {
 type reauthHTTPAuth struct {
 	auth.AuthService
 	cleared bool
+	hash    string
 }
 
-func (*reauthHTTPAuth) PasswordHashFor(context.Context, uuid.UUID) (string, *errx.Error) {
-	return "", nil
+func (a *reauthHTTPAuth) PasswordHashFor(context.Context, uuid.UUID) (string, *errx.Error) {
+	return a.hash, nil
 }
 func (*reauthHTTPAuth) ReauthIdentities(context.Context, uuid.UUID) ([]string, []string, *errx.Error) {
 	return nil, nil, nil
@@ -115,5 +117,48 @@ func TestReauthHTTPPreservesVerificationFailureWithoutStampingSession(t *testing
 				t.Fatalf("status=%d body=%s stamped=%t cleared=%t", w.Code, w.Body, tokens.stamped, a.cleared)
 			}
 		})
+	}
+}
+
+func TestReauthUsedCodeRetainsPasswordFallback(t *testing.T) {
+	hash, err := argon2.Hash("correct-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	used := errx.NewWithIdentifier(errx.BadRequest, twofa.UsedCodeID, "Wait for a new authenticator code.")
+	for _, password := range []string{"", "incorrect-password", "correct-password"} {
+		t.Run(password, func(t *testing.T) {
+			h := &Handler{AuthService: &reauthHTTPAuth{hash: hash}, TwoFAService: reauthFactorStub{xerr: used}}
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/reauth", nil)
+			valid, xerr := h.reauthProofValid(c, uuid.New(), reauthRequest{Code: "123456", Password: password})
+			if password == "correct-password" {
+				if !valid || xerr != nil {
+					t.Fatalf("password fallback: accepted=%t err=%v", valid, xerr)
+				}
+			} else if valid || xerr != used {
+				t.Fatalf("used code: accepted=%t err=%v", valid, xerr)
+			}
+		})
+	}
+}
+
+func TestReauthHTTPStampsSessionOnValidProof(t *testing.T) {
+	a := &reauthHTTPAuth{}
+	tokens := &reauthHTTPToken{}
+	h := &Handler{AuthService: a, TokenService: tokens, TwoFAService: reauthFactorStub{valid: true}}
+	r := gin.New()
+	uid := uuid.New()
+	r.Use(func(c *gin.Context) {
+		c.Set(middleware.UserIDKey, uid.String())
+		c.Set(middleware.SessionKey, &models.Session{ID: uuid.New(), UserID: uid})
+	})
+	r.POST("/v1/auth/reauth", h.Reauth)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/auth/reauth", strings.NewReader(`{"code":"123456"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || !tokens.stamped || !a.cleared {
+		t.Fatalf("status=%d stamped=%t cleared=%t", w.Code, tokens.stamped, a.cleared)
 	}
 }

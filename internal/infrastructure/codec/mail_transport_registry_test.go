@@ -51,7 +51,7 @@ func priorTransportSchema(t *testing.T, schema avro.Schema) avro.Schema {
 				kept := fields[:0]
 				for _, f := range fields {
 					record := f.(map[string]any)
-					if record["name"] == "transport_generation" || x["name"] == "EmailErrorEvent" && record["name"] == "operation" {
+					if record["name"] == "transport_generation" || record["name"] == "folder_coverage_observed_at" || x["name"] == "EmailErrorEvent" && record["name"] == "operation" {
 						continue
 					}
 					strip(f)
@@ -156,7 +156,7 @@ func TestMailTransportCodecRegistryCompatibility(t *testing.T) {
 			return v.(*models.WorkerEvent).Body.(*models.AddWorkerEmail).TransportGeneration
 		}},
 		{"send", models.JobEvent{Type: models.JobEventTypeEmailSent, Body: models.SendEmailResult{TaskID: task, Success: true, SentAt: at, TransportGeneration: generation}}, models.JobEvent{}.Schema(), func() any { return &models.JobEvent{} }, func(v any) uuid.UUID { return v.(*models.JobEvent).Body.(models.SendEmailResult).TransportGeneration }},
-		{"sync", models.JobEvent{Type: models.JobEventTypeSyncState, Body: &models.JobEventSyncState{EmailID: mailbox, State: models.SyncState{LastSyncedAt: &at, TransportGeneration: generation}}}, models.JobEvent{}.Schema(), func() any { return &models.JobEvent{} }, func(v any) uuid.UUID {
+		{"sync", models.JobEvent{Type: models.JobEventTypeSyncState, Body: &models.JobEventSyncState{EmailID: mailbox, State: models.SyncState{LastSyncedAt: &at, FolderCoverageObservedAt: &at, TransportGeneration: generation}}}, models.JobEvent{}.Schema(), func() any { return &models.JobEvent{} }, func(v any) uuid.UUID {
 			return v.(*models.JobEvent).Body.(*models.JobEventSyncState).State.TransportGeneration
 		}},
 		{"error", models.JobEvent{Type: models.JobEventTypeEmailServerError, Body: models.EmailErrorEvent{EmailAccountID: mailbox.String(), Operation: models.MailTransportSync, TransportGeneration: generation}}, models.JobEvent{}.Schema(), func() any { return &models.JobEvent{} }, func(v any) uuid.UUID { return v.(*models.JobEvent).Body.(models.EmailErrorEvent).TransportGeneration }},

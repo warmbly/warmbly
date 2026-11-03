@@ -50,13 +50,13 @@ func TestLiveAuthenticatorStepRequiresActiveEnrollment(t *testing.T) {
 	if _, err := f.pool.Exec(t.Context(), `UPDATE user_totp_settings SET totp_enabled=false WHERE user_id=$1`, f.user); err != nil {
 		t.Fatal(err)
 	}
-	if fresh, err := repo.ConsumeTOTPStep(t.Context(), f.user, 102, "test-sealed"); fresh || err == nil {
+	if fresh, err := repo.ConsumeTOTPStep(t.Context(), f.user, 102, "test-sealed"); fresh || !errors.Is(err, ErrTOTPEnrollmentChanged) {
 		t.Fatalf("inactive enrollment: fresh=%t err=%v", fresh, err)
 	}
 	if _, err := f.pool.Exec(t.Context(), `DELETE FROM user_totp_settings WHERE user_id=$1`, f.user); err != nil {
 		t.Fatal(err)
 	}
-	if fresh, err := repo.ConsumeTOTPStep(t.Context(), f.user, 102, "test-sealed"); fresh || err == nil {
+	if fresh, err := repo.ConsumeTOTPStep(t.Context(), f.user, 102, "test-sealed"); fresh || !errors.Is(err, ErrTOTPEnrollmentChanged) {
 		t.Fatalf("missing enrollment: fresh=%t err=%v", fresh, err)
 	}
 }

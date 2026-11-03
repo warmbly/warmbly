@@ -118,6 +118,8 @@ type SyncState struct {
 	// when the user fixes it.
 	FoldersSkippedCap      int `json:"folders_skipped_cap,omitempty" avro:"folders_skipped_cap"`
 	FoldersSkippedConflict int `json:"folders_skipped_conflict,omitempty" avro:"folders_skipped_conflict"`
+	// FolderCoverageObservedAt orders counter changes independently of completed syncs.
+	FolderCoverageObservedAt *time.Time `json:"folder_coverage_observed_at,omitempty" avro:"folder_coverage_observed_at"`
 
 	LastSyncedAt *time.Time `json:"last_synced_at,omitempty" avro:"last_synced_at"`
 }

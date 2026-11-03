@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/app/token"
+	"github.com/warmbly/warmbly/internal/app/twofa"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/argon2"
@@ -366,11 +367,14 @@ func (h *Handler) ReauthNative(c *gin.Context) {
 // reauthProofValid checks whichever factor the caller offered.
 func (h *Handler) reauthProofValid(c *gin.Context, uid uuid.UUID, req reauthRequest) (bool, *errx.Error) {
 	ctx := c.Request.Context()
+	var codeErr *errx.Error
 
 	if req.Code != "" && h.TwoFAService != nil {
-		if valid, xerr := h.TwoFAService.VerifyCurrentCode(ctx, uid, req.Code); valid || xerr != nil {
+		valid, xerr := h.TwoFAService.VerifyCurrentCode(ctx, uid, req.Code)
+		if valid || xerr != nil && xerr.Identifier != twofa.UsedCodeID {
 			return valid, xerr
 		}
+		codeErr = xerr
 	}
 
 	if req.Password != "" {
@@ -379,11 +383,13 @@ func (h *Handler) reauthProofValid(c *gin.Context, uid uuid.UUID, req reauthRequ
 			return false, xerr
 		}
 		if hash == "" {
-			return false, nil
+			return false, codeErr
 		}
 		ok, verr := argon2.Verify(req.Password, hash)
-		return verr == nil && ok, nil
+		if verr == nil && ok {
+			return true, nil
+		}
 	}
 
-	return false, nil
+	return false, codeErr
 }

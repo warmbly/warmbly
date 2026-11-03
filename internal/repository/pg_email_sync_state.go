@@ -82,9 +82,9 @@ func (r *pgEmailSyncStateRepository) Put(ctx context.Context, userID, emailID uu
 			email_id, user_id, backfill_status, backfill_cursor, backfill_synced,
 			backfill_since, backfill_started_at, backfill_completed_at,
 			throttled_until, throttle_reason, deferred, last_synced_at,
-			folders_skipped_cap, folders_skipped_conflict, updated_at
+			folders_skipped_cap, folders_skipped_conflict, folder_coverage_observed_at, updated_at
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-		    CASE WHEN $12::timestamptz > to_timestamp(0) AND $12 <= now() THEN $12 END, $13, $14, now())
+		    CASE WHEN $12::timestamptz > to_timestamp(0) AND $12 <= now() THEN $12 END, $13, $14, $15, now())
 		ON CONFLICT (email_id) DO UPDATE SET
 			user_id = EXCLUDED.user_id,
 			backfill_status = EXCLUDED.backfill_status,
@@ -96,10 +96,20 @@ func (r *pgEmailSyncStateRepository) Put(ctx context.Context, userID, emailID uu
 			throttled_until = EXCLUDED.throttled_until,
 			throttle_reason = EXCLUDED.throttle_reason,
 			deferred = EXCLUDED.deferred,
-			folders_skipped_cap = CASE WHEN EXCLUDED.last_synced_at IS NULL OR email_sync_state.last_synced_at IS NULL OR EXCLUDED.last_synced_at >= email_sync_state.last_synced_at
-			    THEN EXCLUDED.folders_skipped_cap ELSE email_sync_state.folders_skipped_cap END,
-			folders_skipped_conflict = CASE WHEN EXCLUDED.last_synced_at IS NULL OR email_sync_state.last_synced_at IS NULL OR EXCLUDED.last_synced_at >= email_sync_state.last_synced_at
-			    THEN EXCLUDED.folders_skipped_conflict ELSE email_sync_state.folders_skipped_conflict END,
+			(folders_skipped_cap, folders_skipped_conflict, folder_coverage_observed_at) = (
+				SELECT
+					CASE WHEN fresh THEN EXCLUDED.folders_skipped_cap ELSE email_sync_state.folders_skipped_cap END,
+					CASE WHEN fresh THEN EXCLUDED.folders_skipped_conflict ELSE email_sync_state.folders_skipped_conflict END,
+					CASE WHEN fresh THEN EXCLUDED.folder_coverage_observed_at ELSE email_sync_state.folder_coverage_observed_at END
+				FROM (SELECT CASE
+					WHEN EXCLUDED.folder_coverage_observed_at IS NOT NULL THEN
+						(email_sync_state.folder_coverage_observed_at IS NULL AND email_sync_state.last_synced_at IS NULL)
+						OR EXCLUDED.folder_coverage_observed_at > GREATEST(email_sync_state.folder_coverage_observed_at, email_sync_state.last_synced_at)
+					WHEN email_sync_state.folder_coverage_observed_at IS NOT NULL THEN
+						EXCLUDED.last_synced_at > email_sync_state.folder_coverage_observed_at
+					ELSE EXCLUDED.last_synced_at IS NULL OR email_sync_state.last_synced_at IS NULL OR EXCLUDED.last_synced_at >= email_sync_state.last_synced_at
+				END AS fresh) coverage
+			),
 			last_synced_at = GREATEST(EXCLUDED.last_synced_at, email_sync_state.last_synced_at),
 			updated_at = now()
 	`
@@ -107,7 +117,7 @@ func (r *pgEmailSyncStateRepository) Put(ctx context.Context, userID, emailID uu
 		emailID, userID, string(status), cursor, state.BackfillSynced,
 		state.BackfillSince, state.BackfillStartedAt, state.BackfillCompletedAt,
 		state.ThrottledUntil, state.ThrottleReason, state.Deferred, state.LastSyncedAt,
-		state.FoldersSkippedCap, state.FoldersSkippedConflict,
+		state.FoldersSkippedCap, state.FoldersSkippedConflict, state.FolderCoverageObservedAt,
 	); err != nil {
 		// A deleted mailbox refuses this as a foreign-key violation; the consumer evicts it.
 		return fmt.Errorf("email_sync_state: put: %w", err)
@@ -127,7 +137,7 @@ func (r *pgEmailSyncStateRepository) Get(ctx context.Context, emailID uuid.UUID)
 		SELECT backfill_status, backfill_cursor, backfill_synced,
 		       backfill_since, backfill_started_at, backfill_completed_at,
 		       throttled_until, throttle_reason, deferred, last_synced_at,
-		       folders_skipped_cap, folders_skipped_conflict
+		       folders_skipped_cap, folders_skipped_conflict, folder_coverage_observed_at
 		FROM email_sync_state
 		WHERE email_id = $1
 	`
@@ -140,7 +150,7 @@ func (r *pgEmailSyncStateRepository) Get(ctx context.Context, emailID uuid.UUID)
 		&status, &cursor, &st.BackfillSynced,
 		&st.BackfillSince, &st.BackfillStartedAt, &st.BackfillCompletedAt,
 		&st.ThrottledUntil, &st.ThrottleReason, &st.Deferred, &st.LastSyncedAt,
-		&st.FoldersSkippedCap, &st.FoldersSkippedConflict,
+		&st.FoldersSkippedCap, &st.FoldersSkippedConflict, &st.FolderCoverageObservedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil

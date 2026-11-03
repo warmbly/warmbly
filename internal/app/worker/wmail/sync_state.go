@@ -78,9 +78,17 @@ func (t *syncTracker) setDeferred(n int) {
 // are conditions the user can fix, so they are relayed every pass and clear
 // themselves rather than leaving a warning nobody can withdraw.
 func (t *syncTracker) setFoldersSkipped(cap, conflict int) {
-	if t.state.FoldersSkippedCap != cap || t.state.FoldersSkippedConflict != conflict {
+	if t.state.FolderCoverageObservedAt == nil || t.state.FoldersSkippedCap != cap || t.state.FoldersSkippedConflict != conflict {
 		t.state.FoldersSkippedCap = cap
 		t.state.FoldersSkippedConflict = conflict
+		stamp := time.Now().UTC().Truncate(time.Millisecond)
+		// Ordering survives reload and Avro's millisecond timestamp precision.
+		for _, previous := range []*time.Time{t.state.FolderCoverageObservedAt, t.state.LastSyncedAt} {
+			if previous != nil && !stamp.After(*previous) {
+				stamp = previous.Truncate(time.Millisecond).Add(time.Millisecond)
+			}
+		}
+		t.state.FolderCoverageObservedAt = &stamp
 		t.dirty = true
 	}
 }
