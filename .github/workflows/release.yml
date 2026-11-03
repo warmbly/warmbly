@@ -686,4 +686,5 @@ jobs:
         with:
           name: static-assets-${{ matrix.project }}-${{ github.ref_name }}-${{ github.run_id }}
           path: ${{ runner.temp }}/static-assets
+          include-hidden-files: true
           retention-days: 30
