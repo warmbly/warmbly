@@ -214,3 +214,82 @@ background jobs immediately; its desired count is the
 activation control. Preserve compatible images, encryption material and shared
 coordination while the previous deployment drains. Verify target health and
 HTTPS routes before switching DNS. New injected values require replacing tasks.
+
+## Disposable origin TLS diagnostic
+
+`probe-origin-tls-aws.yml` verifies the hosted origin's TLS negotiation from the
+existing application task security group. It uses `aws-infrastructure`, its main
+branch restriction, `AWS_TERRAFORM_APPLY_ROLE_ARN`,
+`AWS_TERRAFORM_STATE_BUCKET`, and the shared `aws-production` queue. It makes no
+listener, service, security group, IAM or Terraform changes. Existing deployment
+and self-host configuration remain compatible; no application release is needed.
+
+The dedicated Fargate definition has no task role, secrets, repository credentials,
+mounts or ports. It uses the existing validation execution role and validation
+log group, without running the dependency validation definition. The client is
+the official Docker Library Node 22 bookworm ARM64 image at
+`sha256:a288699fc0f9676950742fae6efcd015180aa7ef2bf8a6477e4b0a8cc0ab1b3f`
+(official manifest from `node:22-bookworm`, source revision
+`80f02a542da739e6a662451d1db66456a0dea253`). OpenSSL and the Debian public CA bundle
+must be present. Nothing is installed at runtime. The source and image pin pass
+through normal review; there is no image or command override input.
+
+Operator procedure:
+
+1. Merge the reviewed source normally. Complete the separate normal origin ALB
+   policy procedure first. The diagnostic requires the bound HTTPS listener's
+   `ELBSecurityPolicy-TLS13-1-2-Res-2021-06` readback.
+2. Confirm the existing infrastructure OIDC role can register/list/deregister
+   this run's `warmbly-production-origin-tls-<run-id>` task family; run one task
+   in `warmbly-production`; list/describe/stop its tasks; and pass only
+   `warmbly-production-validation-execution` to ECS. It also needs the ALB,
+   listener, network interface, subnet and backend service describe calls in
+   `.github/scripts/aws-origin-tls.cjs`, plus `logs:GetLogEvents` on
+   `/ecs/warmbly-production/validation` and conditional `s3:PutObject` on
+   `warmbly/production/diagnostics/origin-tls/<run-id>/1/*` in the private state
+   bucket. The workflow's session policy only restricts existing permissions.
+   Missing access requires the normal IAM process; the workflow never expands
+   a role or switches environments. Read-only TLS metadata does not require
+   access to secret values, SSM parameters or application task credentials.
+3. The existing execution role must already support logging to that group. The
+   existing application subnets must support Fargate ARM64 platform `1.4.0`,
+   public image pulls and CloudWatch Logs, with the existing application task
+   security group reaching the ALB private interfaces on TCP 443. The workflow
+   reuses the backend's existing public-subnet network configuration. It does
+   not add a network path or enable ECS Exec.
+4. Dispatch exactly once on merged `main`:
+   `gh workflow run probe-origin-tls-aws.yml --repo warmbly/warmbly --ref main`.
+   Apply the environment's normal protection/reviewer process. Reruns are
+   refused; investigate the private result before starting a new dispatch.
+5. Read the run summary for the private result's exact S3 version ID and
+   SHA-256. Retrieve `intent.json` and `result.json` privately from
+   `warmbly/production/diagnostics/origin-tls/<run-id>/1/`. Both use conditional
+   creation, AES256 encryption, SHA-256 and a non-null version ID. Do not attach
+   raw output to a public issue, PR or Actions artifact. The result retains
+   UTC times, exact ALB/ENI/AZ identities, image and source identities, task
+   metadata, client version, arguments, exit status, stdout, stderr and peer
+   certificate chains. Success requires the complete raw handshake evidence,
+   exact task image digest and confirmed diagnostic cleanup.
+
+The transport targets are freshly described private interfaces of the exact
+ALB, never the public API DNS address. The SNI and verified hostname stay
+`api.warmbly.com`; the client trusts its system public CAs. Each interface gets
+both TLS 1.2 RSA AES-GCM positives and a TLS 1.3 AES-GCM positive, then separate
+CBC-only TLS 1.2 offers, then fresh TLS 1.2 and TLS 1.3 positives. Only explicit
+peer handshake-failure alerts without a negotiated cipher, bracketed by those
+trusted positives, establish refusal. Timeout, reset alone, unavailable local
+ciphers, missing CA, certificate errors or incomplete evidence are inconclusive.
+The task sends TLS handshakes only, with empty stdin and no HTTP or authentication.
+
+Each OpenSSL process has a 12-second kill bound, and the container command has a
+210-second hard kill bound after it starts. The probe step is limited to ten
+minutes. An `always()` final step has eight minutes to recover lost task/definition
+responses, stop only this run's diagnostic tasks, confirm they stopped,
+deregister only this run's diagnostic definitions, and privately archive logs and
+cleanup results. Cleanup failure fails the workflow, even after successful
+handshakes. Cancellation, runner loss or AWS API/access failures cannot guarantee
+control-plane cleanup; the in-container limit still bounds a running client.
+If the finalizer cannot complete, use the archived diagnostic ARNs (or list tasks
+by `startedBy=origin-tls-<run-id>` and definitions by the exact family) to stop,
+confirm STOPPED and deregister only those resources through normal operator
+access. Do not delete log groups, ENIs, security groups or application resources.
