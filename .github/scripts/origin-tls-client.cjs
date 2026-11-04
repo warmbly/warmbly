@@ -118,16 +118,19 @@ function peerRefusal(stdout, stderr, cipher) {
 }
 
 function classify(result, version, cipher, negative = false) {
-  if (result.error || result.signal) return "inconclusive";
   const output = result.stdout + result.stderr;
   const negotiated = /New, (TLSv1\.[23]), Cipher is ([^\s]+)/.exec(output);
   if (negative) {
     if (/certificate verify failed|Verification error|verify error|no cipher match|unexpected eof|reset by peer|connect:errno/i.test(output)) return "inconclusive";
-    if (negotiated && negotiated[2] !== "(NONE)" && negotiated[2] !== "0000") return "accepted";
+    const deadline = result.error === "ETIMEDOUT" && result.status === null && (!result.signal || result.signal === "SIGKILL");
+    if (negotiated && negotiated[2] !== "(NONE)" && negotiated[2] !== "0000" &&
+      ((!result.error && !result.signal) || deadline)) return "accepted";
+    if (result.error || result.signal) return "inconclusive";
     return result.status === 1 && peerRefusal(result.stdout || "", result.stderr || "", cipher) &&
       !/-----BEGIN CERTIFICATE-----/.test(output) && /no peer certificate available/.test(output) &&
       /New, \(NONE\), Cipher is \(NONE\)/.test(output) ? "refused" : "inconclusive";
   }
+  if (result.error || result.signal) return "inconclusive";
   return result.status === 0 && negotiated?.[1] === version && negotiated[2] === cipher &&
     /Verify return code: 0 \(ok\)/.test(output) && /-----BEGIN CERTIFICATE-----/.test(output) ? "trusted" : "inconclusive";
 }

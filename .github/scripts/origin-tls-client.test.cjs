@@ -48,6 +48,27 @@ function fixture(change = () => {}) {
   return { rows, run };
 }
 
+test("completed negative negotiations retain their outcome at the process deadline", () => {
+  for (const cipher of CBC) {
+    const negotiated = { ...trusted(cipher), status: null, error: "ETIMEDOUT", signal: "SIGKILL" };
+    assert.equal(classify(negotiated, "TLSv1.2", cipher, true), "accepted");
+    assert.equal(classify({ ...negotiated, signal: null }, "TLSv1.2", cipher, true), "accepted");
+    for (const altered of [
+      { ...negotiated, error: "ENOBUFS" }, { ...negotiated, error: "EIO" },
+      { ...negotiated, error: null }, { ...negotiated, signal: "SIGTERM" }, { ...negotiated, status: 0 },
+      { ...negotiated, stderr: "certificate verify failed" },
+      { ...negotiated, stdout: refused(cipher).stdout },
+    ]) assert.equal(classify(altered, "TLSv1.2", cipher, true), "inconclusive");
+    assert.equal(classify(negotiated, "TLSv1.2", cipher), "inconclusive");
+  }
+  const f = fixture((row, index) => {
+    if (index === 4) Object.assign(row, trusted(CBC[0]), { status: null, error: "ETIMEDOUT", signal: "SIGKILL" });
+  });
+  assert.equal(probe(["10.42.0.85", "10.42.1.12"], f.run, (row) => f.rows.push(row)), false);
+  assert.equal(f.rows.find((row) => row.kind === "handshake" && row.negative).outcome, "accepted");
+  assert.equal(f.rows.at(-1).success, false);
+});
+
 test("every private target has fresh trusted positives around both explicit CBC offers", () => {
   const f = fixture();
   assert.equal(probe(["10.42.0.85", "10.42.1.12"], f.run, (row) => f.rows.push(row)), true);
@@ -206,14 +227,17 @@ test("loopback TLS and alert peers preserve strict refusal and trusted positive 
   assert.equal(generated.status, 0, generated.stderr);
   const f = fixture();
   probe(["10.42.0.85", "10.42.1.12"], f.run, (row) => f.rows.push(row));
-  for (const mode of ["tls", "fatal", "close_notify", "eof", "reset", "silent"]) {
+  for (const mode of ["tls", "tls_held", "fatal", "close_notify", "eof", "reset", "silent"]) {
     await t.test(mode, async () => {
       const worker = new Worker(`
         const { parentPort, workerData: d } = require("node:worker_threads");
         const net = require("node:net");
         const tls = require("node:tls");
-        const server = d.mode === "tls" ? tls.createServer({ key: d.key, cert: d.cert,
-          minVersion: "TLSv1.2", maxVersion: "TLSv1.2", ciphers: d.cipher }, (s) => s.end()) : net.createServer((s) => {
+        const server = d.mode.startsWith("tls") ? tls.createServer({ key: d.key, cert: d.cert,
+          minVersion: "TLSv1.2", maxVersion: "TLSv1.2", ciphers: d.cipher }, (s) => {
+            s.on("error", () => {});
+            if (d.mode === "tls") s.end();
+          }) : net.createServer((s) => {
           let input = Buffer.alloc(0);
           s.on("error", () => {});
           s.on("data", (b) => {
@@ -227,7 +251,7 @@ test("loopback TLS and alert peers preserve strict refusal and trusted positive 
         });
         server.on("tlsClientError", () => {});
         server.listen(0, "127.0.0.1", () => parentPort.postMessage(server.address().port));
-      `, { eval: true, workerData: { mode, key: readFileSync(key), cert: readFileSync(cert), cipher: GCM[0] } });
+      `, { eval: true, workerData: { mode, key: readFileSync(key), cert: readFileSync(cert), cipher: mode === "tls_held" ? CBC.join(":") : GCM[0] } });
       try {
         const port = await new Promise((resolve, reject) => { worker.once("message", resolve); worker.once("error", reject); });
         const localArgs = (cipher) => {
@@ -238,9 +262,15 @@ test("loopback TLS and alert peers preserve strict refusal and trusted positive 
         };
         for (const cipher of CBC) {
           const result = invoke(localArgs(cipher), (command, args, options) => spawnSync(command, args,
-            { ...options, timeout: mode === "silent" ? 300 : options.timeout }));
-          assert.equal(classify(result, "TLSv1.2", cipher, true), ["tls", "fatal"].includes(mode) ? "refused" : "inconclusive",
+            { ...options, timeout: mode === "tls_held" ? 500 : mode === "silent" ? 300 : options.timeout }));
+          assert.equal(classify(result, "TLSv1.2", cipher, true), mode === "tls_held" ? "accepted" : ["tls", "fatal"].includes(mode) ? "refused" : "inconclusive",
             JSON.stringify(result));
+          if (mode === "tls_held") {
+            assert.equal(result.error, "ETIMEDOUT");
+            assert.equal(result.signal, "SIGKILL");
+            assert.ok(result.stdout.includes(`New, TLSv1.2, Cipher is ${cipher}`));
+            assert.match(result.stdout, /Verify return code: 0 \(ok\)/);
+          }
           if (mode === "close_notify") {
             assert.match(result.stdout, /<<< TLS 1.2, Alert \[length 0002\], warning close_notify\n\s+01 00/);
             const summaryOnly = invoke(localArgs(cipher).filter((arg) => !["-ign_eof", "-state", "-msg"].includes(arg)));
