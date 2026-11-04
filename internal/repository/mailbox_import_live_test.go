@@ -188,7 +188,9 @@ func TestLiveMailboxImportLifecycle(t *testing.T) {
 		if other, _ := repo.Retryable(ctx, f.other, id, "", nil); len(other) != 0 {
 			t.Fatal("another workspace saw retryable rows")
 		}
-		mustImport(t, repo.Requeue(ctx, id, 3, "resealed"))
+		if queued, err := repo.Requeue(ctx, id, 3, "resealed"); err != nil || !queued {
+			t.Fatalf("requeue = %v, %v", queued, err)
+		}
 		mustImport(t, repo.Reopen(ctx, f.org, id))
 		row, payload, err := repo.GetRow(ctx, f.org, id, 3)
 		if err != nil || row.Status != models.ImportRowQueued || payload != "resealed" || row.Cause != "" {

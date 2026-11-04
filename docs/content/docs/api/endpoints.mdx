@@ -627,7 +627,7 @@ Alongside them, `api_url` is this API's own public base (for a copyable example 
   - `GET /emails/imports`: the workspace's imports, newest first
   - `GET /emails/imports/:id`: one import with its counts and its failures grouped by `cause`
   - `GET /emails/imports/:id/rows`: an import's rows by line, filtered by `status` (comma-separated) and `cause`
-  - `PATCH /emails/imports/:id/rows/:line`: correct one failed row (`password`, `app_password`, `username`, `smtp`, `imap`) and queue it again
+  - `PATCH /emails/imports/:id/rows/:line`: correct one failed row, or give a row waiting for sign-in a password instead (`password`, `app_password`, `username`, `smtp`, `imap`), and queue it again
   - `POST /emails/imports/:id/retry`: requeue failed rows, all of them or those with one `cause` or the listed `lines`, optionally with one new `password` for all
   - `POST /emails/imports/:id/cancel`: stop the rows not yet started; rows already connecting finish
   - `POST /emails/imports/:id/dismiss`: hide the import from `GET /emails/imports` for the workspace, stopping it first when it is still running. Its rows and history stay, and `GET /emails/imports/:id` still reads it. Answers `204`; a repeat changes nothing
