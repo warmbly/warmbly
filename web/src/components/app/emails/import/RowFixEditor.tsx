@@ -18,8 +18,11 @@ import { cn } from "@/lib/utils";
 // Hosts that take only an app password over IMAP and SMTP.
 const APP_PASSWORD_HOSTS = new Set(["google_workspace", "gmail", "yahoo", "aol", "icloud", "fastmail", "yandex"]);
 
-// Mirrors mailhost.LooksLikeGoogleAppPassword: 16 letters, spaces ignored.
-const looksLikeGoogleAppPassword = (s: string) => /^[a-z]{16}$/i.test(s.replace(/\s/g, ""));
+// Mirrors mailhost.LooksLikeGoogleAppPassword: 16 letters, ends trimmed, spaces ignored.
+const looksLikeGoogleAppPassword = (s: string) => /^[a-z]{16}$/i.test(s.trim().replace(/ /g, ""));
+
+// Mirrors mailhost.FromServer for Google's servers.
+const isGoogleServer = (host: string) => /(^|\.)(google|gmail|googlemail)\.com\.?$/i.test(host.trim());
 
 interface LegDraft {
     host: string;
@@ -65,7 +68,7 @@ export default function RowFixEditor({
     if (smtpFix) body.smtp = smtpFix;
     if (imapFix) body.imap = imapFix;
     const empty = Object.keys(body).length === 0;
-    const googleRow = (row.mail_host === "google_workspace" || row.mail_host === "gmail") && !smtp.host.trim();
+    const googleRow = smtp.host.trim() ? isGoogleServer(smtp.host) : row.mail_host === "google_workspace" || row.mail_host === "gmail";
     const notAppPassword = googleRow && !!secret && !looksLikeGoogleAppPassword(secret);
 
     async function save() {

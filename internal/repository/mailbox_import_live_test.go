@@ -224,6 +224,30 @@ func TestLiveMailboxImportLifecycle(t *testing.T) {
 		}
 	})
 
+	t.Run("a row waiting for sign-in is requeued unless its vendor is authorizing it", func(t *testing.T) {
+		park := func(cause string) {
+			t.Helper()
+			if _, err := pool.Exec(ctx, `UPDATE mailbox_import_rows SET status = 'needs_signin', cause = $3, payload = 'sealed'
+				WHERE import_id = $1 AND line = $2`, id, 4, cause); err != nil {
+				t.Fatal(err)
+			}
+		}
+		park(ParkedVendorCause)
+		if queued, err := repo.Requeue(ctx, id, 4, "resealed"); err != nil || queued {
+			t.Fatalf("a vendor-parked row requeued = %v, %v", queued, err)
+		}
+		if row, payload, _ := repo.GetRow(ctx, f.org, id, 4); row.Status != models.ImportRowNeedsSignin || payload != "sealed" {
+			t.Fatalf("row = %+v payload = %q", row, payload)
+		}
+		park("google_signin")
+		if queued, err := repo.Requeue(ctx, id, 4, "resealed"); err != nil || !queued {
+			t.Fatalf("a sign-in row requeued = %v, %v", queued, err)
+		}
+		if row, payload, _ := repo.GetRow(ctx, f.org, id, 4); row.Status != models.ImportRowQueued || payload != "resealed" || row.Cause != "" {
+			t.Fatalf("row = %+v payload = %q", row, payload)
+		}
+	})
+
 	t.Run("cancel stops what has not started and drops its credentials", func(t *testing.T) {
 		mustImport(t, repo.Cancel(ctx, f.org, id))
 		row, payload, _ := repo.GetRow(ctx, f.org, id, 3)
