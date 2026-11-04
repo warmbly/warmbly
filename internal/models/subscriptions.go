@@ -169,6 +169,9 @@ type Subscription struct {
 	// Enterprise flag
 	IsEnterprise bool `json:"is_enterprise"`
 
+	// KeepsFreeWarmup marks a workspace that had the free warmup allowance before it was withdrawn from new ones.
+	KeepsFreeWarmup bool `json:"keeps_free_warmup"`
+
 	// Joined data
 	Plan *Plan `json:"plan,omitempty"`
 
@@ -276,10 +279,18 @@ func (s *Subscription) CanSendEmails() bool {
 	return false
 }
 
-// CanUseWarmup: every workspace may warm its mailboxes (free ones in the free
-// pool, up to FreeWorkspaceMailboxLimit connected mailboxes).
+// CanUseWarmup: a paid plan, or a workspace that kept the free allowance
+// (the free pool, up to FreeWorkspaceMailboxLimit connected mailboxes).
 func (s *Subscription) CanUseWarmup() bool {
-	return true
+	return s.HasPaidSubscription() || s.KeepsFreeWarmup
+}
+
+// FreeMailboxLimit is the mailboxes an unsubscribed workspace may hold: none unless it kept the free allowance.
+func (s *Subscription) FreeMailboxLimit() int {
+	if s != nil && s.KeepsFreeWarmup {
+		return FreeWorkspaceMailboxLimit
+	}
+	return 0
 }
 
 // CanUseUnibox returns true if user can use unibox feature.

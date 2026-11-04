@@ -243,7 +243,8 @@ Mailboxes are unlimited on every paid plan. What keeps that honest is a fair-use
 
 | Plan | Sends per day | Mailboxes |
 | --- | --- | --- |
-| Free workspace | none | `10` |
+| No paid plan | none | `0` |
+| Free plan kept from before | none | `10` |
 | Starter | `150` | `150` |
 | Grow | `3,000` | `3,000` |
 | Business | `15,000` | `15,000` |
@@ -251,7 +252,7 @@ Mailboxes are unlimited on every paid plan. What keeps that honest is a fair-use
 
 That is deliberately far more than safe sending ever needs: at the recommended `30` to `50` sends a day per mailbox, a Business workspace fills its volume with a few hundred mailboxes and still has room for tens of thousands. The allowance exists so that it is never the reason to run a mailbox hotter. A plan whose daily sends are uncapped holds unlimited mailboxes, and a self-hosted instance without billing never counts.
 
-**A free workspace.** Subscribe to any plan to warm more than `10` mailboxes here. A [self-hosted instance](/development/install/) has no mailbox cap, but its warmup only pairs its own mailboxes and Warmbly Cloud no longer links new instances, so the hosted pool is only reached from a hosted workspace.
+**Without a paid plan.** A new workspace connects no mailboxes until it picks a plan; the connect is refused with [`mailbox_allowance_reached`](/api/error-codes/#mailbox_allowance_reached). A workspace that had the free plan before it closed to new workspaces keeps `10` mailboxes warming in the free pool; subscribe to any plan to hold more. A [self-hosted instance](/development/install/) has no mailbox cap, but its warmup only pairs its own mailboxes, with no shared pool, so it does far less for deliverability. Warmbly Cloud no longer links new instances, so the hosted pool is only reached from a hosted workspace.
 
 The connect dialog shows the allowance up front: a quiet count while there is room, a warning near the cap, and a clear full state that leads to the request flow instead of letting you type credentials that would be refused. When a connect is refused the answer is the same dialog, not an error toast.
 
@@ -527,7 +528,7 @@ Keep warmup running after campaigns begin rather than switching it off once a ma
 A mailbox marked as a [placement seed inbox](/guides/placement-tests/#your-own-seed-inboxes) is the exception: it never warms up (starting warmup on it is refused until it is unmarked) and never sends campaign mail, because a test inbox has to stay a stranger to your senders.
 
 <Callout type="info" title="Warmup is a paid feature">
-  The model still supports separate free and premium pools, but access is gated to paid workspaces today.
+  On Warmbly Cloud every paid plan warms in the premium pool. Only a workspace that had the free plan before it closed to new workspaces warms without one, up to `10` mailboxes in the free pool.
 </Callout>
 
 </Fold>

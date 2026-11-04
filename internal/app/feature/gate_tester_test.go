@@ -28,14 +28,12 @@ func TestTestPlanAccessEndsWithReviewerExpiry(t *testing.T) {
 			"Unibox":            gate.CanUseUnibox,
 			"writing assistant": gate.CanUseWritingAssistant,
 			"inbox agent":       gate.CanUseInboxAgent,
+			"warmup":            gate.CanUseWarmup,
 		} {
 			allowed, xerr := check(ctx, orgID)
 			if xerr != nil || allowed == expired {
 				t.Errorf("%s with expired=%v: allowed=%v, error=%v", name, expired, allowed, xerr)
 			}
-		}
-		if allowed, xerr := gate.CanUseWarmup(ctx, orgID); xerr != nil || !allowed {
-			t.Error("expiry must not remove normal free-pool warmup access")
 		}
 	}
 }

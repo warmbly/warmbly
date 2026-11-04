@@ -865,6 +865,11 @@ func (s *JobsService) tagInboundMessage(ctx context.Context, e *models.JobEventN
 	}
 }
 
+// UniboxGate answers whether a workspace's plan opens the inbox.
+type UniboxGate interface {
+	CanUseUnibox(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error)
+}
+
 // notifyActionRequired tells the members who keep mailboxes running that one
 // received mail needing action, since nobody may be reading that mailbox. The
 // sender's subject stays out: this mail is phishing-shaped by selection.
@@ -877,6 +882,12 @@ func (s *JobsService) notifyActionRequired(orgID uuid.UUID, mailbox string, m *m
 		title = "Message to review in " + mailbox
 	}
 	notify := func(ctx context.Context) {
+		// An unknown answer still notifies: a missed notice costs a paying workspace more.
+		if s.UniboxAccess != nil {
+			if ok, xerr := s.UniboxAccess.CanUseUnibox(ctx, orgID); xerr == nil && !ok {
+				return
+			}
+		}
 		s.Notifier.NotifyOrgAboutMessage(ctx, orgID, models.PermManageEmails|models.PermAccessUnibox, m.ID,
 			models.NotifInboxActionRequired, title,
 			"An incoming message was marked for review. Its claims are unverified. This is an inbox notice, not a Warmbly connection check. Review it in the inbox.",

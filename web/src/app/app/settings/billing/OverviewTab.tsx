@@ -402,7 +402,11 @@ export default function OverviewTab({ onChangePlan }: { onChangePlan: () => void
                         "A meter with no cap means the limit is unmetered on this plan. Warmup volume is governed per mailbox and is not capped here."
                     ) : (
                         <span>
-                            {access.warmupOnly ? `The ${plan.label} plan` : "A free workspace"} warms mailboxes and does not send.
+                            {access.warmupOnly
+                                ? `The ${plan.label} plan warms mailboxes and does not send.`
+                                : access.keptFreeWarmup
+                                ? "Your free plan warms mailboxes and does not send."
+                                : "Without a plan, this workspace connects no mailboxes and does not send."}
                             Campaigns, contacts, the unified inbox and the team come with a{" "}
                             <button type="button" onClick={onChangePlan} className="font-medium text-slate-600 hover:text-slate-900 underline-offset-2 hover:underline">
                                 plan that sends
@@ -495,7 +499,9 @@ function mailboxHint(a: OrganizationLimits["mailboxes"] | undefined): string {
         case "override":
             return "Raised for this workspace by an approved request";
         case "free":
-            return "Free workspace allowance; a paid plan holds one mailbox for every send a day it includes";
+            return a.allowance
+                ? "Free plan allowance; a paid plan holds one mailbox for every send a day it includes"
+                : "Connecting mailboxes starts with a plan; a paid plan holds one mailbox for every send a day it includes";
         case "plan":
             return "Set by your plan";
         default:

@@ -116,6 +116,9 @@ type JobsService struct {
 	// dead-worker job moves or strands their mailboxes. Nil disables it.
 	Notifier OrgNotifier
 
+	// UniboxAccess keeps inbox notices from workspaces whose plan locks the inbox. Nil skips the check.
+	UniboxAccess UniboxGate
+
 	// OpsNotifier raises instance-wide operator alerts, which are a different
 	// audience from Notifier: the operator hears about the fleet, the tenant
 	// hears about their mailboxes. Nil disables it.
