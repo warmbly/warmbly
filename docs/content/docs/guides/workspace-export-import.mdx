@@ -282,3 +282,9 @@ Reply and forward drafts kept in your browser are also excluded. Finish or copy 
 - An archive can be imported into any instance running the same or a newer release. A newer archive on an older instance is refused, with the version in the message.
 
 </Fold>
+
+## Campaign attachment compatibility
+
+Campaign attachments travel with their original bytes and metadata, including files accepted by v0.6.75 and formats outside the [new-upload profile](/guides/campaigns/#campaign-attachments). Workspace and admin import use the same preservation policy. Preflight and import report that restoring private campaign files does not certify their content. Those members are retained rather than omitted because of their format. Review them before using imported campaigns. Public images keep their separate image-validation policy.
+
+Archive format and row contracts stay compatible with v0.6.75. The new-upload policy adds no required archive field, validation certificate or send hold. An archive filename or source version is not evidence that every private member passed that policy.

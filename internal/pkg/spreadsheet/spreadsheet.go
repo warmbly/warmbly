@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/warmbly/warmbly/internal/pkg/textcontent"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -46,6 +47,9 @@ func parse(r io.Reader, filename string, maxRows int) ([][]string, string, error
 		data, err := io.ReadAll(r)
 		if err != nil {
 			return nil, "csv", errors.New("failed to read the file: " + err.Error())
+		}
+		if err := textcontent.Validate(data); err != nil {
+			return nil, "csv", err
 		}
 		reader := csv.NewReader(bytes.NewReader(data))
 		reader.FieldsPerRecord = -1 // tolerate ragged rows; callers pad

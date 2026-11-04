@@ -403,3 +403,7 @@ This is the safe default response to a bad signal: stop sending rather than keep
   <Card title="Deliverability" href="/guides/deliverability/" />
   <Card title="Automations" href="/guides/automations/" />
 </Cards>
+
+## Text import encoding
+
+Delimited CSV, TSV and TXT imports, including supported extensionless text files, use UTF-8 with an optional UTF-8 BOM. Unicode, comma/semicolon detection, tab-separated input, quoted multiline cells and ragged rows retain their existing parsing behavior. Binary control characters, NUL bytes and invalid UTF-8 are refused before row parsing. XLSX and XLSM imports retain their existing workbook parser and decompression limits; their support is separate from campaign attachment uploads.
