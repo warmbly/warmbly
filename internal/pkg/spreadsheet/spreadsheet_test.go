@@ -1,10 +1,14 @@
 package spreadsheet
 
 import (
+	"archive/zip"
 	"bytes"
-	"github.com/xuri/excelize/v2"
+	"io"
+	"os"
 	"strings"
 	"testing"
+
+	"github.com/xuri/excelize/v2"
 )
 
 func TestDelimiterFollowsTheHeader(t *testing.T) {
@@ -60,10 +64,50 @@ func TestWorkbookImportProfilesRemainSupported(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, filename := range []string{"contacts.xlsx", "contacts.xlsm"} {
-		rows, kind, err := Parse(bytes.NewReader(data.Bytes()), filename, 2)
-		if err != nil || kind != "xlsx" || len(rows) != 1 || rows[0][0] != "Renée 東京" {
-			t.Fatalf("%s: %q %s %v", filename, rows, kind, err)
+	rows, kind, err := Parse(bytes.NewReader(data.Bytes()), "contacts.xlsx", 2)
+	if err != nil || kind != "xlsx" || len(rows) != 1 || len(rows[0]) != 1 || rows[0][0] != "Renée 東京" {
+		t.Fatalf("%q %s %v", rows, kind, err)
+	}
+}
+
+func TestMacroEnabledWorkbookImport(t *testing.T) {
+	data, err := os.ReadFile("testdata/macro01.xlsm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	macroType, vba := false, false
+	for _, part := range pkg.File {
+		if part.Name != "[Content_Types].xml" && part.Name != "xl/vbaProject.bin" {
+			continue
 		}
+		r, err := part.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, readErr := io.ReadAll(r)
+		closeErr := r.Close()
+		if readErr != nil || closeErr != nil {
+			t.Fatalf("%s: read=%v close=%v", part.Name, readErr, closeErr)
+		}
+		if part.Name == "[Content_Types].xml" {
+			macroType = bytes.Contains(body, []byte(`ContentType="application/vnd.ms-excel.sheet.macroEnabled.main+xml"`))
+		} else {
+			vba = bytes.HasPrefix(body, []byte{0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1})
+		}
+	}
+	if !macroType || !vba {
+		t.Fatal("fixture must contain a macro-enabled workbook and a VBA project")
+	}
+	before := bytes.Clone(data)
+	rows, kind, err := Parse(bytes.NewReader(data), "contacts.xlsm", 2)
+	if err != nil || kind != "xlsx" || len(rows) != 1 || len(rows[0]) != 1 || rows[0][0] != "123" {
+		t.Fatalf("%q %s %v", rows, kind, err)
+	}
+	if !bytes.Equal(data, before) {
+		t.Fatal("workbook bytes changed")
 	}
 }

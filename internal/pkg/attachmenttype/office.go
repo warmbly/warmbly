@@ -39,6 +39,7 @@ func parseXML(b []byte) (xmlPart, error) {
 		return nil, ErrInvalid
 	}
 	depth, tokens, roots := 0, 0, 0
+	var list xml.Name
 	out := xmlPart{links: map[string]bool{}}
 	for {
 		t, err := d.Token()
@@ -54,11 +55,6 @@ func parseXML(b []byte) (xmlPart, error) {
 		}
 		switch v := t.(type) {
 		case xml.StartElement:
-			for _, a := range v.Attr {
-				if a.Name.Space == strings.TrimSuffix(officeNS, "/") && a.Name.Local == "id" {
-					out.links[a.Value] = true
-				}
-			}
 			depth++
 			if depth > 64 {
 				return out, ErrInvalid
@@ -68,7 +64,16 @@ func parseXML(b []byte) (xmlPart, error) {
 				out.root = v.Name
 			}
 			if depth == 2 {
+				list = v.Name
 				out.children = append(out.children, xml.CopyToken(v).(xml.StartElement))
+			}
+			listedSlide := depth == 3 && list == (xml.Name{Space: out.root.Space, Local: "sldIdLst"}) && v.Name == (xml.Name{Space: out.root.Space, Local: "sldId"})
+			if out.root.Local != "presentation" || listedSlide {
+				for _, a := range v.Attr {
+					if a.Name.Space == strings.TrimSuffix(officeNS, "/") && a.Name.Local == "id" {
+						out.links[a.Value] = true
+					}
+				}
 			}
 		case xml.EndElement:
 			depth--
@@ -163,14 +168,16 @@ func officeType(body []byte, ext string) (string, bool) {
 			parsed[name] = p
 		}
 	}
-	var main, mime, root, ns, child, member, memberRoot, relation string
+	var main, mime, root, ns, child, member, memberRoot, memberType, relation string
 	switch ext {
 	case ".docx":
 		main, mime, root, ns, child = "word/document.xml", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "document", "http://schemas.openxmlformats.org/wordprocessingml/2006/main", "body"
 	case ".xlsx":
 		main, mime, root, ns, child, member, memberRoot, relation = "xl/workbook.xml", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "workbook", "http://schemas.openxmlformats.org/spreadsheetml/2006/main", "sheets", "xl/", "worksheet", "worksheet"
+		memberType = "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"
 	case ".pptx":
 		main, mime, root, ns, child, member, memberRoot, relation = "ppt/presentation.xml", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "presentation", "http://schemas.openxmlformats.org/presentationml/2006/main", "sldIdLst", "ppt/", "sld", "slide"
+		memberType = "application/vnd.openxmlformats-officedocument.presentationml.slide+xml"
 	default:
 		return "", false
 	}
@@ -184,7 +191,7 @@ func officeType(body []byte, ext string) (string, bool) {
 		if strings.Contains(strings.ToLower(v), "macroenabled") || strings.Contains(strings.ToLower(v), "vbaproject") {
 			return "", false
 		}
-		if e.Name.Local == "Override" && attr(e, "PartName") == "/"+main && v == mime+".main+xml" {
+		if e.Name == (xml.Name{Space: ct.root.Space, Local: "Override"}) && attr(e, "PartName") == "/"+main && v == mime+".main+xml" {
 			found = true
 		}
 	}
@@ -208,7 +215,7 @@ func officeType(body []byte, ext string) (string, bool) {
 		found = false
 		rels := parsed[path.Dir(main)+"/_rels/"+path.Base(main)+".rels"]
 		for name, part := range parsed {
-			if strings.HasPrefix(name, member) && part.root == (xml.Name{Space: ns, Local: memberRoot}) && relationship(rels, path.Dir(main), officeNS+relation, name, p.links) {
+			if strings.HasPrefix(name, member) && part.root == (xml.Name{Space: ns, Local: memberRoot}) && relationship(rels, path.Dir(main), officeNS+relation, name, p.links) && partContentType(ct, name) == memberType {
 				found = true
 				break
 			}
@@ -218,6 +225,35 @@ func officeType(body []byte, ext string) (string, bool) {
 		}
 	}
 	return mime, true
+}
+
+func partContentType(p xmlPart, name string) string {
+	override, fallback := "", ""
+	for _, e := range p.children {
+		switch e.Name {
+		case xml.Name{Space: p.root.Space, Local: "Override"}:
+			if attr(e, "PartName") == "/"+name {
+				if override != "" {
+					return ""
+				}
+				override = attr(e, "ContentType")
+				if override == "" {
+					return ""
+				}
+			}
+		case xml.Name{Space: p.root.Space, Local: "Default"}:
+			if strings.EqualFold(attr(e, "Extension"), strings.TrimPrefix(path.Ext(name), ".")) {
+				if fallback != "" {
+					return ""
+				}
+				fallback = attr(e, "ContentType")
+			}
+		}
+	}
+	if override != "" {
+		return override
+	}
+	return fallback
 }
 
 func relationship(p xmlPart, base, kind, target string, declared map[string]bool) bool {

@@ -65,12 +65,14 @@ func TestAttachmentUploadUsesContentPolicyBeforeStorageAndReservation(t *testing
 		name, filename, clientMIME string
 		body                       []byte
 		want                       int
+		canonicalMIME              string
 	}{
-		{"generic client type", "people.csv", "application/octet-stream", []byte("name;city\nRenée;東京\n"), http.StatusCreated},
-		{"forged client type", "people.csv", "text/html", []byte("name,city\nRenée,東京\n"), http.StatusCreated},
-		{"renamed binary", "document.pdf", "application/pdf", []byte("MZ\x00binary"), http.StatusBadRequest},
-		{"unknown", "file.unknown", "text/plain", []byte("ordinary text"), http.StatusBadRequest},
-		{"invalid container", "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", []byte("PK\x03\x04malformed"), http.StatusBadRequest},
+		{"generic client type", "people.csv", "application/octet-stream", []byte("name;city\nRenée;東京\n"), http.StatusCreated, "text/csv"},
+		{"forged client type", "people.csv", "text/html", []byte("name,city\nRenée,東京\n"), http.StatusCreated, "text/csv"},
+		{"Unicode text", "notes.txt", "application/octet-stream", []byte("Notes for Renée in 東京.\n"), http.StatusCreated, "text/plain"},
+		{"renamed binary", "document.pdf", "application/pdf", []byte("MZ\x00binary"), http.StatusBadRequest, ""},
+		{"unknown", "file.unknown", "text/plain", []byte("ordinary text"), http.StatusBadRequest, ""},
+		{"invalid container", "document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", []byte("PK\x03\x04malformed"), http.StatusBadRequest, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			files, err := storage.NewFilesystem(t.TempDir(), "")
@@ -108,7 +110,7 @@ func TestAttachmentUploadUsesContentPolicyBeforeStorageAndReservation(t *testing
 				t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 			}
 			if tc.want == http.StatusCreated {
-				if repo.row == nil || repo.row.MimeType != "text/csv" || repo.row.Size != int64(len(tc.body)) {
+				if repo.row == nil || repo.row.MimeType != tc.canonicalMIME || repo.row.Size != int64(len(tc.body)) {
 					t.Fatalf("canonical metadata=%+v", repo.row)
 				}
 				r, err := files.Get(t.Context(), repo.row.S3Key)

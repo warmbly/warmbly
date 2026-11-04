@@ -43,6 +43,7 @@ func validPDF(b []byte) bool {
 	p := &pdfReader{data: b, entries: map[int]pdfEntry{}, objects: map[int]any{}, loading: map[int]bool{}}
 	seen := map[int]bool{}
 	var root pdfRef
+	newerSize := 100_000
 	for revision := 0; ; revision++ {
 		if revision >= 32 || offset < 0 || offset >= len(b) || seen[offset] {
 			return false
@@ -52,6 +53,7 @@ func validPDF(b []byte) bool {
 		if c.word() != "xref" {
 			return false
 		}
+		maxInUse := -1
 		for {
 			w := c.word()
 			if w == "trailer" {
@@ -69,6 +71,9 @@ func validPDF(b []byte) bool {
 				if e1 != nil || e2 != nil || off < 0 || gen < 0 || gen > 65535 || (state != "n" && state != "f") {
 					return false
 				}
+				if state == "n" && first+i > maxInUse {
+					maxInUse = first + i
+				}
 				if _, exists := p.entries[first+i]; !exists {
 					if state == "n" {
 						if off >= len(b) {
@@ -84,9 +89,11 @@ func validPDF(b []byte) bool {
 		value, ok := c.value(0)
 		trailer, dict := value.(pdfDict)
 		size, sized := pdfInt(trailer["Size"])
-		if !ok || !dict || !sized || size < 1 || size > 100_000 || trailer["Encrypt"] != nil || trailer["XRefStm"] != nil {
+		if !ok || !dict || !sized || size < 1 || size > newerSize || maxInUse >= size || trailer["Encrypt"] != nil || trailer["XRefStm"] != nil {
 			return false
 		}
+		// Allocated object numbers remain in Size across incremental revisions.
+		newerSize = size
 		if revision == 0 {
 			var yes bool
 			root, yes = trailer["Root"].(pdfRef)
