@@ -2,7 +2,7 @@ const { spawnSync } = require("node:child_process");
 const { appendFileSync, mkdirSync, readFileSync, writeFileSync, existsSync } = require("node:fs");
 const { join } = require("node:path");
 const { ACCOUNT, BUCKET, ROLE, LB, LISTENER, DESIRED, hash, canonical } = require("./aws-origin-alb.cjs");
-const { CBC, GCM, TLS13, classify } = require("./origin-tls-client.cjs");
+const { CBC, GCM, TLS13, classify, validTargets } = require("./origin-tls-client.cjs");
 
 const REGION = "us-east-1";
 const ECS = `arn:aws:ecs:${REGION}:${ACCOUNT}`;
@@ -18,6 +18,8 @@ const PREFIX = "warmbly/production/diagnostics/origin-tls";
 const IMAGE = "docker.io/library/node@sha256:a288699fc0f9676950742fae6efcd015180aa7ef2bf8a6477e4b0a8cc0ab1b3f";
 const requireThat = (ok, message) => { if (!ok) throw new Error(message); };
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const originIdentity = (enis) => canonical(enis.map((e) =>
+  [e.NetworkInterfaceId, e.PrivateIpAddress, e.AvailabilityZone, e.SubnetId]).sort());
 
 function configuration(env) {
   requireThat(env.GITHUB_ACTIONS === "true" && env.GITHUB_REPOSITORY === "warmbly/warmbly" &&
@@ -38,7 +40,7 @@ function sessionPolicy(config) {
     { Effect: "Allow", Action: "ecs:DescribeServices", Resource: SERVICE },
     { Effect: "Allow", Action: "ecs:RunTask", Resource: `${ECS}:task-definition/${config.family}:*`,
       Condition: { ArnEquals: { "ecs:cluster": CLUSTER } } },
-    { Effect: "Allow", Action: "ecs:DeregisterTaskDefinition", Resource: `${ECS}:task-definition/${config.family}:*` },
+    { Effect: "Allow", Action: "ecs:DeregisterTaskDefinition", Resource: "*" },
     { Effect: "Allow", Action: ["ecs:DescribeTasks", "ecs:StopTask"], Resource: `${ECS}:task/warmbly-production/*` },
     { Effect: "Allow", Action: "iam:PassRole", Resource: EXECUTION,
       Condition: { StringEquals: { "iam:PassedToService": "ecs-tasks.amazonaws.com" } } },
@@ -68,19 +70,22 @@ async function discover(aws) {
   "Bound HTTPS listener must have the reviewed restricted policy");
   const enis = (await aws("ec2", "describe-network-interfaces", ["--filters",
     "Name=description,Values=ELB app/warmbly-production-ingress/19d5c82c1651c871", `Name=vpc-id,Values=${VPC}`])).NetworkInterfaces;
-  requireThat(enis?.length === 2 && new Set(enis.map((e) => e.AvailabilityZone)).size === 2 &&
-    new Set(enis.map((e) => e.PrivateIpAddress)).size === 2 && enis.every((e) => e.VpcId === VPC && e.Status === "in-use" &&
+  requireThat(enis?.length >= 2 && lb[0].AvailabilityZones?.length === 2 &&
+    new Set(enis.map((e) => e.AvailabilityZone)).size === 2 && new Set(enis.map((e) => e.SubnetId)).size === 2 &&
+    new Set(enis.map((e) => e.NetworkInterfaceId)).size === enis.length && validTargets(enis.map((e) => e.PrivateIpAddress)) &&
+    enis.every((e) => /^eni-[a-f0-9]+$/.test(e.NetworkInterfaceId || "") && e.VpcId === VPC && e.Status === "in-use" &&
       e.RequesterManaged === true && e.OwnerId === ACCOUNT && e.Description === "ELB app/warmbly-production-ingress/19d5c82c1651c871" &&
       e.Groups?.length === 1 && e.Groups[0].GroupId === ALB_SG &&
-      /^10\.42\.(0|1)\.(\d{1,3})$/.test(e.PrivateIpAddress) &&
       lb[0].AvailabilityZones?.some((z) => z.ZoneName === e.AvailabilityZone && z.SubnetId === e.SubnetId)), "Complete exact-ALB private ENIs required");
   const service = (await aws("ecs", "describe-services", ["--cluster", CLUSTER, "--services", SERVICE])).services;
   const network = service?.[0]?.networkConfiguration?.awsvpcConfiguration;
   requireThat(service?.length === 1 && service[0].serviceArn === SERVICE && service[0].status === "ACTIVE" &&
     network?.assignPublicIp === "ENABLED" && canonical(network.securityGroups) === canonical([SG]) &&
-    network.subnets?.length === 2, "Existing application task network required");
+    network.subnets?.length === 2 && new Set(network.subnets).size === 2 &&
+    enis.every((e) => network.subnets.includes(e.SubnetId)), "Existing application task network required");
   const subnets = (await aws("ec2", "describe-subnets", ["--subnet-ids", ...network.subnets])).Subnets;
-  requireThat(subnets?.length === 2 && subnets.every((s) => s.VpcId === VPC && s.State === "available" &&
+  requireThat(subnets?.length === 2 && new Set(subnets.map((s) => s.SubnetId)).size === 2 &&
+    subnets.every((s) => s.VpcId === VPC && s.State === "available" &&
     enis.some((e) => e.SubnetId === s.SubnetId)), "Existing application/ALB subnets required");
   return { at: new Date().toISOString(), lb: lb[0], listener: listener[0], enis, network };
 }
@@ -130,7 +135,7 @@ async function execute(aws, config, pause = sleep) {
     save(config, evidence);
     // Refresh immediately before launch; a changed address requires a new dispatch.
     evidence.prelaunch = await discover(aws);
-    requireThat(canonical(evidence.prelaunch.enis.map((e) => e.PrivateIpAddress).sort()) === canonical(targets) &&
+    requireThat(originIdentity(evidence.prelaunch.enis) === originIdentity(evidence.before.enis) &&
       canonical(evidence.prelaunch.network) === canonical(evidence.before.network), "Origin/task network changed before launch");
     const request = { cluster: CLUSTER, taskDefinition: evidence.definitionArn, launchType: "FARGATE", platformVersion: "1.4.0",
       count: 1, startedBy: config.startedBy, clientToken: config.startedBy, enableExecuteCommand: false,
@@ -157,7 +162,8 @@ async function execute(aws, config, pause = sleep) {
       evidence.task.containers[0].name === "probe" && evidence.task.containers[0].imageDigest === IMAGE.split("@")[1] &&
       evidence.task.containers[0].exitCode === 0, "Probe incomplete or inconclusive; inspect private evidence");
     evidence.after = await discover(aws);
-    requireThat(canonical(evidence.after.enis.map((e) => e.PrivateIpAddress).sort()) === canonical(targets), "Origin addresses changed during probe");
+    requireThat(originIdentity(evidence.after.enis) === originIdentity(evidence.before.enis) &&
+      canonical(evidence.after.network) === canonical(evidence.before.network), "Origin interfaces or task network changed during probe");
     evidence.success = true;
   } catch (error) {
     evidence.failure = error.message;
@@ -253,7 +259,8 @@ async function finish(aws, config, pause = sleep) {
 
 function verifiedLogs(events, targets) {
   const rows = events.map((e) => { try { return JSON.parse(e.message); } catch { return null; } }).filter(Boolean);
-  if (targets.length !== 2 || !rows.some((r) => r.kind === "complete" && r.success === true)) return false;
+  if (!validTargets(targets) || !rows.some((r) => r.kind === "complete" && r.success === true) ||
+    rows.some((r) => r.kind === "handshake" && !targets.includes(r.ip))) return false;
   return targets.every((ip) => {
     const handshakes = rows.filter((r) => r.kind === "handshake" && r.ip === ip);
     return canonical(handshakes.map((r) => r.cipher)) === canonical([GCM[0], GCM[1], TLS13, ...CBC, GCM[0], TLS13]) &&

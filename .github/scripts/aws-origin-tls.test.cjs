@@ -1,15 +1,17 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { mkdtempSync, readFileSync, rmSync } = require("node:fs");
+const { mkdtempSync, readFileSync, rmSync, writeFileSync } = require("node:fs");
 const { tmpdir } = require("node:os");
 const { join } = require("node:path");
 const { ACCOUNT, BUCKET, ROLE, LB, LISTENER, DESIRED } = require("./aws-origin-alb.cjs");
-const { configuration, sessionPolicy, discover, definition, execute, finish, verifiedLogs, IMAGE, CLUSTER, SERVICE, EXECUTION, SG, ALB_SG, VPC, ECS } = require("./aws-origin-tls.cjs");
+const { configuration, sessionPolicy, discover, definition, execute, finish, verifiedLogs, IMAGE, CLUSTER, SERVICE, EXECUTION, SG, ALB_SG, VPC, ECS, LOG } = require("./aws-origin-tls.cjs");
 const { probe, CBC, TLS13 } = require("./origin-tls-client.cjs");
 
-function logFixture() {
+const scaledTargets = ["10.42.0.85", "10.42.1.12", "10.42.0.86", "10.42.1.13"];
+
+function logFixture(targets = ["10.42.0.85", "10.42.1.12"]) {
   const events = [];
-  probe(["10.42.0.85", "10.42.1.12"], (args) => {
+  probe(targets, (args) => {
     if (args[0] === "version") return { status: 0, stdout: "OpenSSL fixture" };
     if (args[0] === "ciphers") return { status: 0, stdout: CBC.join(":") };
     const cipher = args.at(-1);
@@ -25,7 +27,7 @@ const env = () => ({ GITHUB_ACTIONS: "true", GITHUB_REPOSITORY: "warmbly/warmbly
   GITHUB_RUN_ATTEMPT: "1", GITHUB_RUN_ID: "123456", GITHUB_SHA: "a".repeat(40), STATE_BUCKET: BUCKET, APPLY_ROLE: ROLE,
   WORK: "/tmp/fixture", GITHUB_OUTPUT: "/tmp/output", GITHUB_STEP_SUMMARY: "/tmp/summary" });
 
-function fixture(t, change = () => {}) {
+function fixture(t, change = () => {}, targets = ["10.42.0.85", "10.42.1.12"]) {
   const work = mkdtempSync(join(tmpdir(), "origin-tls-test-"));
   t.after(() => rmSync(work, { recursive: true, force: true }));
   const config = configuration({ ...env(), WORK: work });
@@ -45,9 +47,12 @@ function fixture(t, change = () => {}) {
       case "describe-load-balancers": result = { LoadBalancers: [{ LoadBalancerArn: LB, VpcId: VPC,
         Type: "application", IpAddressType: "ipv4", State: { Code: "active" }, SecurityGroups: [ALB_SG], AvailabilityZones: zones }] }; break;
       case "describe-listeners": result = { Listeners: [{ ListenerArn: LISTENER, LoadBalancerArn: LB, Protocol: "HTTPS", Port: 443, SslPolicy: DESIRED }] }; break;
-      case "describe-network-interfaces": result = { NetworkInterfaces: zones.map((z, i) => ({ Description: "ELB app/warmbly-production-ingress/19d5c82c1651c871",
-        AvailabilityZone: z.ZoneName, SubnetId: z.SubnetId, VpcId: VPC, Status: "in-use", RequesterManaged: true, OwnerId: ACCOUNT,
-        PrivateIpAddress: i ? "10.42.1.12" : "10.42.0.85", Groups: [{ GroupId: ALB_SG }] })) }; break;
+      case "describe-network-interfaces": result = { NetworkInterfaces: targets.map((ip, i) => {
+        const z = zones[i % 2];
+        return { Description: "ELB app/warmbly-production-ingress/19d5c82c1651c871", NetworkInterfaceId: `eni-${i + 1}`,
+          AvailabilityZone: z.ZoneName, SubnetId: z.SubnetId, VpcId: VPC, Status: "in-use", RequesterManaged: true, OwnerId: ACCOUNT,
+          PrivateIpAddress: ip, Groups: [{ GroupId: ALB_SG }] };
+      }) }; break;
       case "describe-services": result = { services: [{ serviceArn: SERVICE, status: "ACTIVE", networkConfiguration: { awsvpcConfiguration: network } }] }; break;
       case "describe-subnets": result = { Subnets: zones.map((z) => ({ SubnetId: z.SubnetId, VpcId: VPC, State: "available" })) }; break;
       case "put-object": result = { ServerSideEncryption: "AES256", ChecksumSHA256: args[args.indexOf("--checksum-sha256") + 1], VersionId: "private-version" }; break;
@@ -68,7 +73,7 @@ function fixture(t, change = () => {}) {
       case "stop-task": state.lastStatus = "STOPPED"; result = { task: state }; break;
       case "list-task-definitions": result = { taskDefinitionArns: [arn] }; break;
       case "deregister-task-definition": result = { taskDefinition: { taskDefinitionArn: arn, status: "INACTIVE" } }; break;
-      case "get-log-events": result = { events: args.includes("--next-token") ? [] : logFixture(), nextForwardToken: "end" }; break;
+      case "get-log-events": result = { events: args.includes("--next-token") ? [] : logFixture(targets), nextForwardToken: "end" }; break;
       default: throw new Error(`Unexpected ${service} ${action}`);
     }
     result = structuredClone(result);
@@ -102,6 +107,23 @@ test("session policy admits only diagnostics, bound roles, cluster and encrypted
   assert.equal(put.Condition.Null["s3:if-none-match"], "false");
 });
 
+test("diagnostic actions use provider-supported resource scopes", () => {
+  const config = configuration(env());
+  const statements = sessionPolicy(config).Statement;
+  const granting = (action) => statements.filter((s) => [s.Action].flat().includes(action));
+  assert.deepEqual(granting("ecs:DeregisterTaskDefinition"), [
+    { Effect: "Allow", Action: "ecs:DeregisterTaskDefinition", Resource: "*" },
+  ]);
+  assert.deepEqual(granting("ecs:RunTask"), [
+    { Effect: "Allow", Action: "ecs:RunTask", Resource: `${ECS}:task-definition/${config.family}:*`,
+      Condition: { ArnEquals: { "ecs:cluster": CLUSTER } } },
+  ]);
+  assert.deepEqual(granting("logs:GetLogEvents"), [
+    { Effect: "Allow", Action: "logs:GetLogEvents",
+      Resource: `arn:aws:logs:us-east-1:${ACCOUNT}:log-group:${LOG}:log-stream:origin-tls-${config.run}/*` },
+  ]);
+});
+
 test("fresh definition contains only the official digest, hard-bounded TLS client and existing execution/log facilities", () => {
   const task = definition(configuration(env()), ["10.42.0.85", "10.42.1.12"]);
   assert.deepEqual(Object.keys(task).sort(), ["family", "networkMode", "requiresCompatibilities", "cpu", "memory", "executionRoleArn", "runtimePlatform", "containerDefinitions"].sort());
@@ -127,13 +149,66 @@ test("only the exact active ALB, restricted listener, managed private ENIs and e
     ["describe-network-interfaces", (r) => { r.NetworkInterfaces[0].Description = "another ALB"; }],
     ["describe-network-interfaces", (r) => { r.NetworkInterfaces[0].Groups[0].GroupId = SG; }],
     ["describe-network-interfaces", (r) => { r.NetworkInterfaces[0].RequesterManaged = false; }],
+    ["describe-network-interfaces", (r) => { r.NetworkInterfaces[0].OwnerId = "000000000000"; }],
+    ["describe-network-interfaces", (r) => { r.NetworkInterfaces[0].VpcId = "vpc-other"; }],
+    ["describe-network-interfaces", (r) => { r.NetworkInterfaces[0].Status = "available"; }],
+    ["describe-network-interfaces", (r) => { r.NetworkInterfaces[0].SubnetId = "subnet-other"; }],
+    ["describe-network-interfaces", (r) => { r.NetworkInterfaces[0].AvailabilityZone = "us-east-1c"; }],
+    ["describe-network-interfaces", (r) => { r.NetworkInterfaces[0].NetworkInterfaceId = r.NetworkInterfaces[1].NetworkInterfaceId; }],
+    ["describe-network-interfaces", (r) => { r.NetworkInterfaces[0].PrivateIpAddress = r.NetworkInterfaces[1].PrivateIpAddress; }],
+    ["describe-network-interfaces", (r) => { delete r.NetworkInterfaces[0].NetworkInterfaceId; }],
+    ["describe-network-interfaces", (r) => { r.NetworkInterfaces[0].PrivateIpAddress = "10.42.0.999"; }],
     ["describe-services", (r) => { r.services[0].networkConfiguration.awsvpcConfiguration.securityGroups = ["sg-worker"]; }],
+    ["describe-services", (r) => { r.services[0].networkConfiguration.awsvpcConfiguration.subnets = ["subnet-a", "subnet-a"]; }],
     ["describe-subnets", (r) => { r.Subnets[0].VpcId = "vpc-other"; }],
+    ["describe-subnets", (r) => { r.Subnets[0] = r.Subnets[1]; }],
   ];
   for (const [target, mutate] of changes) {
     const f = fixture(t, (action, result) => { if (action === target) mutate(result); });
     await assert.rejects(discover(f.aws));
     assert.ok(!f.calls.some((c) => c.action === "run-task"));
+  }
+});
+
+test("all current ALB interfaces across both zones are pinned, verified and privately archived", async (t) => {
+  let reads = 0;
+  const f = fixture(t, (action, result) => {
+    if (action === "describe-network-interfaces" && ++reads % 2) result.NetworkInterfaces.reverse();
+  }, scaledTargets);
+  const oldSummary = process.env.GITHUB_STEP_SUMMARY;
+  process.env.GITHUB_STEP_SUMMARY = join(f.config.work, "summary");
+  t.after(() => { if (oldSummary === undefined) delete process.env.GITHUB_STEP_SUMMARY; else process.env.GITHUB_STEP_SUMMARY = oldSummary; });
+  await execute(f.aws, f.config, async () => {});
+  const evidence = f.evidence();
+  assert.equal(evidence.before.enis.length, 4);
+  const targets = JSON.parse(evidence.definition.containerDefinitions[0].environment.find((e) => e.name === "ORIGIN_TLS_TARGETS").value);
+  assert.deepEqual(targets, [...scaledTargets].sort());
+  await finish(f.aws, f.config, async () => {});
+  assert.equal(f.evidence().success, true);
+  assert.equal(verifiedLogs(f.evidence().logs, targets), true);
+  for (const ip of targets) {
+    assert.equal(verifiedLogs(f.evidence().logs.filter((e) => JSON.parse(e.message).ip !== ip), targets), false);
+  }
+  assert.equal(verifiedLogs(f.evidence().logs, [...targets, targets[0]]), false);
+  assert.equal(verifiedLogs([...f.evidence().logs, ...logFixture(["10.42.0.87", "10.42.1.14"])], targets), false);
+});
+
+test("every interface remains stable before launch and after the diagnostic", async (t) => {
+  for (const phase of [2, 3]) {
+    for (const mutate of [
+      (enis) => { enis.pop(); },
+      (enis) => { enis.push({ ...enis[0], NetworkInterfaceId: "eni-a", PrivateIpAddress: "10.42.0.87" }); },
+      (enis) => { enis[0].NetworkInterfaceId = "eni-b"; },
+      (enis) => { enis[0].PrivateIpAddress = "10.42.0.87"; },
+    ]) {
+      let reads = 0;
+      const f = fixture(t, (action, result) => {
+        if (action === "describe-network-interfaces" && ++reads === phase) mutate(result.NetworkInterfaces);
+      }, scaledTargets);
+      await assert.rejects(execute(f.aws, f.config, async () => {}), /changed/);
+      assert.equal(f.evidence().success, false);
+      assert.equal(f.calls.filter((c) => c.action === "run-task").length, phase === 2 ? 0 : 1);
+    }
   }
 });
 
@@ -342,6 +417,41 @@ test("a task that never stops and absent logs fail within bounded polling and pr
   assert.equal(sleeps, 62);
   assert.equal(f.evidence().cleanup.stopped, false);
   assert.equal(f.calls.at(-1).action, "put-object");
+});
+
+test("deregistration validates saved and discovered definitions against the exact run family, account, region and revision", async (t) => {
+  const oldSummary = process.env.GITHUB_STEP_SUMMARY;
+  t.after(() => { if (oldSummary === undefined) delete process.env.GITHUB_STEP_SUMMARY; else process.env.GITHUB_STEP_SUMMARY = oldSummary; });
+  const config = configuration(env());
+  const invalid = [
+    `${ECS}:task-definition/${config.family}7:1`,
+    `${ECS}:task-definition/${config.family}-other:1`,
+    `${ECS}:task-definition/warmbly-production-backend:1`,
+    `arn:aws:ecs:us-west-2:${ACCOUNT}:task-definition/${config.family}:1`,
+    `arn:aws:ecs:us-east-1:000000000000:task-definition/${config.family}:1`,
+    `${ECS}:task-definition/${config.family}:latest`,
+    `${ECS}:task-definition/${config.family}:1/suffix`,
+  ];
+  for (const saved of invalid) {
+    const f = fixture(t, (action, result, calls) => {
+      if (action === "register-task-definition") throw new Error("Fixture lost response");
+      if (action === "list-task-definitions") {
+        assert.deepEqual(calls.at(-1).args, ["--family-prefix", config.family, "--status", "ACTIVE"]);
+        result.taskDefinitionArns = [f.arn, ...invalid, `${ECS}:task-definition/${config.family}:2`, f.arn, null, 42];
+      }
+      if (action === "deregister-task-definition") result.taskDefinition.taskDefinitionArn = calls.at(-1).args[1];
+    });
+    process.env.GITHUB_STEP_SUMMARY = join(f.config.work, "summary");
+    await assert.rejects(execute(f.aws, f.config, async () => {}), /lost response/);
+    writeFileSync(join(f.config.work, "evidence.json"), JSON.stringify({ ...f.evidence(), definitionArn: saved }));
+    await assert.rejects(finish(f.aws, f.config, async () => {}), /incomplete/);
+    const expected = [f.arn, `${ECS}:task-definition/${config.family}:2`];
+    assert.deepEqual(f.calls.filter((c) => c.action === "deregister-task-definition").map((c) => c.args),
+      expected.map((arn) => ["--task-definition", arn]));
+    assert.deepEqual(f.evidence().cleanup.definitionArns, expected);
+    assert.equal(f.evidence().cleanup.deregistered, true);
+    assert.equal(f.calls.at(-1).action, "put-object");
+  }
 });
 
 test("cleanup failure stays bounded, still deregisters and archives, and never touches a neighboring family", async (t) => {

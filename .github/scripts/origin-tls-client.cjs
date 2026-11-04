@@ -6,6 +6,8 @@ const CA = "/etc/ssl/certs/ca-certificates.crt";
 const CBC = ["ECDHE-RSA-AES128-SHA256", "ECDHE-RSA-AES256-SHA384"];
 const GCM = ["ECDHE-RSA-AES128-GCM-SHA256", "ECDHE-RSA-AES256-GCM-SHA384"];
 const TLS13 = "TLS_AES_128_GCM_SHA256";
+const validTargets = (targets) => Array.isArray(targets) && targets.length >= 2 && new Set(targets).size === targets.length &&
+  targets.every((ip) => typeof ip === "string" && /^10\.42\.(?:0|1)\.(?:[1-9]\d?|1\d\d|2[0-4]\d|25[0-4])$/.test(ip));
 
 function invoke(args, spawn = spawnSync) {
   const result = spawn("openssl", args, { encoding: "utf8", input: "", timeout: 12000,
@@ -29,13 +31,18 @@ function classify(result, version, cipher, negative = false) {
     /Verify return code: 0 \(ok\)/.test(output) && /-----BEGIN CERTIFICATE-----/.test(output) ? "trusted" : "inconclusive";
 }
 
-function probe(targets, run = invoke, emit = (row) => console.log(JSON.stringify(row))) {
-  if (!Array.isArray(targets) || targets.length !== 2 || new Set(targets).size !== 2 ||
-    targets.some((ip) => !/^10\.42\.(?:0|1)\.(?:[1-9]\d?|1\d\d|2[0-4]\d|25[0-4])$/.test(ip))) throw new Error("Two pinned origin IPv4 targets required");
-  const version = run(["version", "-a"]);
+function probe(targets, run = invoke, emit = (row) => console.log(JSON.stringify(row)), now = () => performance.now()) {
+  if (!validTargets(targets)) throw new Error("Unique pinned origin IPv4 targets required");
+  const started = now();
+  const bounded = (args) => {
+    // Reserve one 12-second invocation within 180 seconds and the outer 210-second task limit.
+    if (now() - started >= 168000) throw new Error("Origin TLS client runtime budget exhausted");
+    return run(args);
+  };
+  const version = bounded(["version", "-a"]);
   emit({ kind: "client", ...version });
   if (version.status !== 0 || version.error || version.signal) throw new Error("OpenSSL unavailable");
-  const support = run(["ciphers", "-s", "-tls1_2", CBC.join(":")]);
+  const support = bounded(["ciphers", "-s", "-tls1_2", CBC.join(":")]);
   emit({ kind: "support", ...support });
   if (support.status !== 0 || support.error || support.signal ||
     support.stdout.trim().split(":").sort().join(":") !== [...CBC].sort().join(":")) throw new Error("Both CBC offers must be locally supported");
@@ -43,7 +50,7 @@ function probe(targets, run = invoke, emit = (row) => console.log(JSON.stringify
   for (const ip of targets) {
     const handshake = (cipher, negative = false) => {
       const tls13 = cipher === TLS13;
-      const result = run(["s_client", "-connect", `${ip}:443`, "-servername", HOST, "-verify_hostname", HOST,
+      const result = bounded(["s_client", "-connect", `${ip}:443`, "-servername", HOST, "-verify_hostname", HOST,
         "-verify_return_error", "-CAfile", CA, "-showcerts", tls13 ? "-tls1_3" : "-tls1_2",
         tls13 ? "-ciphersuites" : "-cipher", cipher]);
       const outcome = classify(result, tls13 ? "TLSv1.3" : "TLSv1.2", cipher, negative);
@@ -70,4 +77,4 @@ if (process.env.ORIGIN_TLS_TASK === "1") {
     process.exitCode = 1;
   }
 }
-module.exports = { HOST, CA, CBC, GCM, TLS13, invoke, classify, probe };
+module.exports = { HOST, CA, CBC, GCM, TLS13, invoke, classify, probe, validTargets };

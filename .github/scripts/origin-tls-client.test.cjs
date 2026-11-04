@@ -64,6 +64,35 @@ test("every private target has fresh trusted positives around both explicit CBC 
   assert.deepEqual(f.rows.at(-1).success, true);
 });
 
+test("all current private interfaces receive the full handshake sequence", () => {
+  const targets = ["10.42.0.85", "10.42.1.12", "10.42.0.86", "10.42.1.13"];
+  const f = fixture();
+  assert.equal(probe(targets, f.run, (row) => f.rows.push(row)), true);
+  const handshakes = f.rows.filter((r) => r.kind === "handshake");
+  assert.equal(handshakes.length, 28);
+  for (const ip of targets) {
+    assert.deepEqual(handshakes.filter((r) => r.ip === ip).map((r) => r.cipher),
+      [GCM[0], GCM[1], TLS13, ...CBC, GCM[0], TLS13]);
+  }
+  assert.equal(f.rows.at(-1).success, true);
+});
+
+test("larger target sets share one fixed runtime budget and cannot complete with partial evidence", () => {
+  const f = fixture();
+  let elapsed = 0;
+  let calls = 0;
+  const run = (args) => {
+    calls++;
+    elapsed += 12000;
+    return f.run(args);
+  };
+  assert.throws(() => probe(["10.42.0.85", "10.42.1.12", "10.42.0.86", "10.42.1.13"],
+    run, (row) => f.rows.push(row), () => elapsed), /runtime budget exhausted/);
+  assert.equal(calls, 14);
+  assert.equal(elapsed, 168000);
+  assert.ok(!f.rows.some((r) => r.kind === "complete"));
+});
+
 test("timeout or broken trailing positive makes the whole run inconclusive", () => {
   for (const index of [4, 6, 14]) {
     const f = fixture((result, n) => { if (n === index) result.error = "ETIMEDOUT"; });
