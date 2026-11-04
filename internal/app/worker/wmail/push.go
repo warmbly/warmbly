@@ -45,6 +45,8 @@ type pushChannel struct {
 	failing atomic.Bool
 	// unsent is set while the control plane has not taken the current state.
 	unsent atomic.Bool
+	// closed is the last channel this worker closed, so a stored copy a consumer never cleared is not adopted.
+	closed *models.MailboxPushState
 	// imapIdle is set while the IMAP watcher holds INBOX in IDLE.
 	imapIdle atomic.Bool
 	imapCred *models.Service
@@ -56,7 +58,7 @@ func (w *WMail) ApplyPush(data *models.AddWorkerEmailPushData) {
 	defer w.push.mu.Unlock()
 	w.push.want = data
 	// A report the control plane has not taken yet is newer than the row it hands back.
-	if w.push.state == nil && !w.push.unsent.Load() && data != nil && data.State != nil {
+	if w.push.state == nil && !w.push.unsent.Load() && data != nil && data.State != nil && !closedChannel(w.push.closed, data.State) {
 		s := *data.State
 		w.push.state = &s
 	}
@@ -148,9 +150,24 @@ func (w *WMail) maintainPush(ctx context.Context) {
 	}
 	w.push.mu.Lock()
 	w.push.unsent.Store(true)
+	if state != nil && (next == nil || next.Provider != state.Provider || next.SubscriptionID != state.SubscriptionID) {
+		w.push.closed = state
+	}
 	w.push.state = next
 	w.push.mu.Unlock()
 	w.reportPush(next)
+}
+
+// closedChannel reports a stored row describing a channel this worker already closed: the same Graph
+// subscription, or a Gmail watch no newer than the closed one (a renewal only moves the expiry later).
+func closedChannel(closed, row *models.MailboxPushState) bool {
+	if closed == nil || row == nil || closed.Provider != row.Provider {
+		return false
+	}
+	if closed.SubscriptionID != "" || row.SubscriptionID != "" {
+		return closed.SubscriptionID == row.SubscriptionID
+	}
+	return !row.ExpiresAt.After(closed.ExpiresAt)
 }
 
 // reportPush sends the channel state to the control plane; unsent stays set until it is taken.
