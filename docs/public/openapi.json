@@ -22302,6 +22302,570 @@
         }
       }
     },
+    "/warmup/templates": {
+        "get": {
+          "operationId": "deliverability-ops_list_warmup_templates",
+          "summary": "List warmup templates",
+          "description": "Returns the organization's active warmup templates, newest first. A warmup template is a subject plus an opening body the workspace submitted itself; the warmup pool sends it verbatim. Requires WARMUP_TEMPLATES scope and manage_settings permission.",
+          "tags": [
+            "deliverability-ops"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "description": "Trailing window for placement in days, 1 to 90 (default 30).",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 90
+            }
+          }
+        ],
+          "responses": {
+            "200": {
+              "description": "Templates under a `templates` array (never null).",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/WarmupTemplateList"
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            },
+            "403": {
+              "description": "Forbidden",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            },
+            "429": {
+              "description": "Rate limited",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "post": {
+          "operationId": "deliverability-ops_create_warmup_template",
+          "summary": "Create a warmup template",
+          "description": "Stores a warmup template for the organization. The copy is validated against the send path's guardrails: subject up to 200 characters without markup or newlines, body up to 50 KB, the shared wording check, and the warmup send gate (a template the pool would refuse to send is rejected with 400 and the reason). No cap on templates per organization. Requires WARMUP_TEMPLATES scope and manage_settings permission.",
+          "tags": [
+            "deliverability-ops"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "$ref": "#/components/parameters/IdempotencyKey"
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WarmupTemplateInput"
+                }
+              }
+            }
+          },
+          "responses": {
+            "201": {
+              "description": "Template created; the stored template and its static analysis.",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/WarmupTemplateCreated"
+                  }
+                }
+              }
+            },
+            "400": {
+              "description": "Invalid payload (missing subject or body, bounds exceeded, wording check failed)",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            },
+            "409": {
+              "description": "Subject or body already exists in the organization's own templates",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            },
+            "403": {
+              "description": "Forbidden",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            },
+            "429": {
+              "description": "Rate limited",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+    "/warmup/templates/settings": {
+      "get": {
+        "operationId": "deliverability-ops_get_warmup_template_settings",
+        "summary": "Get warmup template settings",
+        "description": "How much of the organization's warmup carries its own templates. Requires WARMUP_TEMPLATES scope and manage_settings permission.",
+        "tags": [
+          "deliverability-ops"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Template settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WarmupTemplateSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "deliverability-ops_update_warmup_template_settings",
+        "summary": "Update warmup template settings",
+        "description": "Sets the template share (0 to 100) and the templates-only switch. Requires WARMUP_TEMPLATES scope and manage_settings permission.",
+        "tags": [
+          "deliverability-ops"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WarmupTemplateSettings"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WarmupTemplateSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "template_share outside 0 to 100",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/warmup/templates/{id}/stats": {
+      "get": {
+        "operationId": "deliverability-ops_get_warmup_template_stats",
+        "summary": "Warmup template placement by provider",
+        "description": "One template's sends and where they landed, split by recipient provider group, over a trailing window. Requires WARMUP_TEMPLATES scope and manage_settings permission.",
+        "tags": [
+          "deliverability-ops"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The template ID.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "description": "Trailing window in days, 1 to 90 (default 30).",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 90
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Placement by provider group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WarmupTemplateStats"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid template id or days",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Warmup template not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/warmup/templates/check": {
+        "post": {
+          "operationId": "deliverability-ops_check_warmup_template",
+          "summary": "Check a warmup template",
+          "description": "Runs the static analyzer over a draft subject and body without storing anything. Requires WARMUP_TEMPLATES scope and manage_settings permission.",
+          "tags": [
+            "deliverability-ops"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "$ref": "#/components/parameters/IdempotencyKey"
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WarmupTemplateCheckInput"
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "The static analysis of the draft.",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/WarmupTemplateCheckResult"
+                  }
+                }
+              }
+            },
+            "400": {
+              "description": "Subject exceeds 200 characters or body exceeds 50 KB",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            },
+            "403": {
+              "description": "Forbidden",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            },
+            "429": {
+              "description": "Rate limited",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+    "/warmup/templates/{id}": {
+        "delete": {
+          "operationId": "deliverability-ops_delete_warmup_template",
+          "summary": "Delete a warmup template",
+          "description": "Retires one of the organization's own templates; senders stop receiving it for new sends. Requires WARMUP_TEMPLATES scope and manage_settings permission.",
+          "tags": [
+            "deliverability-ops"
+          ],
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "parameters": [
+            {
+              "name": "id",
+              "in": "path",
+              "required": true,
+              "description": "The template ID.",
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            {
+              "$ref": "#/components/parameters/IdempotencyKey"
+            }
+          ],
+          "responses": {
+            "204": {
+              "description": "Template retired"
+            },
+            "400": {
+              "description": "Invalid template id",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            },
+            "404": {
+              "description": "Warmup template not found",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            },
+            "403": {
+              "description": "Forbidden",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            },
+            "429": {
+              "description": "Rate limited",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
     "/templates": {
       "get": {
         "operationId": "deliverability-ops_list_templates",
@@ -44305,6 +44869,260 @@
           }
         }
       },
+      "WarmupTemplate": {
+          "type": "object",
+          "description": "An organization-supplied warmup template: a subject plus opening body sent verbatim through that workspace's warmup pool.",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": {
+              "type": "string"
+            },
+            "subject": {
+              "type": "string"
+            },
+            "body": {
+              "type": "string",
+              "description": "Present on create responses only."
+            },
+            "segment": {
+              "type": "string"
+            },
+            "usage_count": {
+              "type": "integer"
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "placement": {
+              "description": "Present on list responses: placement over the requested window.",
+              "$ref": "#/components/schemas/WarmupTemplatePlacement"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "subject",
+            "segment",
+            "usage_count",
+            "created_at"
+          ]
+        },
+      "WarmupTemplateList": {
+          "type": "object",
+          "description": "Warmup templates under a `templates` key (always an array, never null), each with its placement over the `days` window. Not cursor-paginated.",
+          "required": [
+            "templates",
+            "days"
+          ],
+          "properties": {
+            "templates": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/WarmupTemplate"
+              }
+            },
+            "days": {
+              "type": "integer",
+              "description": "The trailing window the placement counts cover."
+            }
+          }
+        },
+      "WarmupTemplateInput": {
+          "type": "object",
+          "description": "Create payload for a warmup template.",
+          "required": [
+            "subject",
+            "body"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Label for the template, shown in listings."
+            },
+            "subject": {
+              "type": "string",
+              "description": "The exact subject sent with the template."
+            },
+            "body": {
+              "type": "string",
+              "description": "The exact opening body sent with the template."
+            },
+            "segment": {
+              "type": "string",
+              "description": "Restrict the template to senders tagged with this warmup segment."
+            }
+          }
+        },
+      "WarmupTemplateSettings": {
+          "type": "object",
+          "required": [
+            "template_share",
+            "templates_only"
+          ],
+          "properties": {
+            "template_share": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Percentage of new warmup openings drawn from the organization's templates when one is eligible. Default 50."
+            },
+            "templates_only": {
+              "type": "boolean",
+              "description": "Send only the organization's templates; an opening with no eligible template is skipped."
+            }
+          }
+        },
+      "WarmupTemplatePlacement": {
+          "type": "object",
+          "description": "Sends of a template and where the recipient mailboxes reported them landing.",
+          "required": [
+            "sent",
+            "inbox",
+            "tabs",
+            "spam",
+            "rescued"
+          ],
+          "properties": {
+            "sent": {
+              "type": "integer"
+            },
+            "inbox": {
+              "type": "integer"
+            },
+            "tabs": {
+              "type": "integer"
+            },
+            "spam": {
+              "type": "integer"
+            },
+            "rescued": {
+              "type": "integer"
+            }
+          }
+        },
+      "WarmupTemplateGroupPlacement": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/WarmupTemplatePlacement"
+            },
+            {
+              "type": "object",
+              "required": [
+                "group"
+              ],
+              "properties": {
+                "group": {
+                  "type": "string",
+                  "enum": [
+                    "google",
+                    "microsoft",
+                    "yahoo",
+                    "other"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+      "WarmupTemplateStats": {
+          "type": "object",
+          "required": [
+            "template_id",
+            "days",
+            "total",
+            "groups"
+          ],
+          "properties": {
+            "template_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "days": {
+              "type": "integer"
+            },
+            "total": {
+              "$ref": "#/components/schemas/WarmupTemplatePlacement"
+            },
+            "groups": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/WarmupTemplateGroupPlacement"
+              }
+            }
+          }
+        },
+      "WarmupTemplateCheckInput": {
+          "type": "object",
+          "required": [
+            "subject",
+            "body"
+          ],
+          "properties": {
+            "subject": {
+              "type": "string"
+            },
+            "body": {
+              "type": "string"
+            }
+          }
+        },
+      "WarmupTemplateCheckResult": {
+          "type": "object",
+          "properties": {
+            "subject_length": {
+              "type": "integer"
+            },
+            "word_count": {
+              "type": "integer"
+            },
+            "reading_time_seconds": {
+              "type": "integer"
+            },
+            "link_count": {
+              "type": "integer"
+            },
+            "question_count": {
+              "type": "integer"
+            },
+            "spam_trigger_hits": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "blocked_reason": {
+              "type": "string",
+              "description": "Set when the warmup send gate would refuse this copy; create requests with a blocked template fail with 400."
+            }
+          },
+          "required": [
+            "subject_length",
+            "word_count",
+            "reading_time_seconds",
+            "link_count",
+            "question_count",
+            "spam_trigger_hits"
+          ]
+        },
+      "WarmupTemplateCreated": {
+          "type": "object",
+          "required": [
+            "template",
+            "check"
+          ],
+          "properties": {
+            "template": {
+              "$ref": "#/components/schemas/WarmupTemplate"
+            },
+            "check": {
+              "$ref": "#/components/schemas/WarmupTemplateCheckResult"
+            }
+          }
+        },
       "ReplyTemplate": {
         "type": "object",
         "properties": {

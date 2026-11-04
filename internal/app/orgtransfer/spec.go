@@ -741,6 +741,15 @@ var Tables = []Table{
 		Scope: scopeOrg,
 	},
 	{
+		Name: "warmup_conversations", Group: models.OrgDataGroupWarmup,
+		Scope: scopeOrg,
+		Note:  "Only organization-scoped rows travel: the warmup templates a workspace submitted itself. Shared library rows carry no organization_id and stay instance-global.",
+	},
+	{
+		Name: "warmup_template_settings", Group: models.OrgDataGroupWarmup,
+		Scope: scopeOrg,
+	},
+	{
 		Name: "warmup_statistics", Group: models.OrgDataGroupWarmup,
 		Scope: `email_account_id IN ` + orgMailboxes,
 		Note:  "Warmup volume history travels so the destination resumes the ramp instead of restarting at the floor.",
@@ -1105,7 +1114,6 @@ var ExcludedTables = map[string]string{
 	"cloud_link_commands":              "Warmup commands Warmbly Cloud leased to this instance, sealed with the workspace key. They are bound to this instance's link and expire within minutes.",
 	"cloud_link_reports":               "Undelivered command results and observations owed to Warmbly Cloud over this instance's link, which does not travel.",
 	"cloud_link_warmup_messages":       "Handles this instance gave Warmbly Cloud for warmup mail, bound to its link and to provider coordinates on this instance.",
-	"warmup_conversations":             "The instance's shared warmup content library, not workspace data.",
 	"copy_judgments":                   "A cache of copy judgments keyed by the hash of the words judged. The destination re-reads a step the first time its Advisor runs.",
 	"warmup_thread_messages":           "Message identifiers this instance recognised as turns of a warmup conversation, so the reply to each is recognised too. The destination syncs provider mail afresh and rebuilds it from the warmup tokens, which do travel.",
 	"sessions":                         "Live login sessions. They are bound to the source instance's signing key and must not survive a move.",

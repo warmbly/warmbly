@@ -15,12 +15,13 @@ import (
 
 // ConversationFilter narrows a warmup_conversations listing.
 type ConversationFilter struct {
-	PoolType string
-	Segment  string
-	Source   string
-	Status   string
-	Limit    int
-	Offset   int
+	PoolType       string
+	Segment        string
+	Source         string
+	Status         string
+	OrganizationID *uuid.UUID
+	Limit          int
+	Offset         int
 }
 
 // WarmupConversationStat is a grouped count for the admin overview.
@@ -44,6 +45,12 @@ type WarmupContentPick struct {
 	TaskID      uuid.UUID
 	SenderID    uuid.UUID
 	RecipientID uuid.UUID
+	// OrganizationID names the picking sender's organization, whose own
+	// source="template" rows are the only ones a template draw may return.
+	OrganizationID *uuid.UUID
+	// TemplatesOnly draws from the organization's templates alone; otherwise
+	// templates are left out and the shared bank is drawn from.
+	TemplatesOnly bool
 	// IncludeAI admits generated threads; static rows are admitted only when listed in StaticIDs.
 	IncludeAI bool
 	StaticIDs []uuid.UUID
@@ -67,6 +74,18 @@ type WarmupContentRepository interface {
 	GetConversation(ctx context.Context, id uuid.UUID) (*models.WarmupConversation, error)
 	ListConversations(ctx context.Context, f ConversationFilter) ([]models.WarmupConversation, int, error)
 	SetConversationStatus(ctx context.Context, id uuid.UUID, status string) error
+	// ArchiveOrgTemplateConversation retires one organization's own template
+	// row; it reports false when the row is missing or belongs elsewhere.
+	ArchiveOrgTemplateConversation(ctx context.Context, id, orgID uuid.UUID) (bool, error)
+	// GetOrgTemplateConversation loads one organization's own template row; nil when missing or owned elsewhere.
+	GetOrgTemplateConversation(ctx context.Context, id, orgID uuid.UUID) (*models.WarmupConversation, error)
+	// GetTemplateSettings is one organization's template mix; defaults when unset.
+	GetTemplateSettings(ctx context.Context, orgID uuid.UUID) (models.WarmupTemplateSettings, error)
+	UpsertTemplateSettings(ctx context.Context, orgID uuid.UUID, s models.WarmupTemplateSettings) error
+	// TemplatePlacement is where each of one organization's templates landed since a time, keyed by conversation.
+	TemplatePlacement(ctx context.Context, orgID uuid.UUID, since time.Time) (map[uuid.UUID]models.WarmupTemplatePlacement, error)
+	// TemplatePlacementByGroup is one template's landing split by recipient provider group.
+	TemplatePlacementByGroup(ctx context.Context, id, orgID uuid.UUID, since time.Time) ([]models.WarmupTemplateGroupPlacement, error)
 	// RefreshUnusedConversations replaces unused stock without retiring active threads.
 	RefreshUnusedConversations(ctx context.Context, poolType, segment string, n int) (int, error)
 	RetireRiskyConversations(ctx context.Context, since time.Time, minSends, minSpamPlacements int, maxSpamRate float64) (int, error)
@@ -129,10 +148,11 @@ func (r *warmupContentRepository) InsertConversation(ctx context.Context, c *mod
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('warmbly:approved-warmup-content',0))`); err != nil {
 			return err
 		}
+		// Duplicates are checked within one owner: the shared library against itself, an organization's templates against its own.
 		var duplicate bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM warmup_conversations WHERE id<>$3 AND semantic_review='passed' AND (
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM warmup_conversations WHERE id<>$3 AND semantic_review='passed' AND organization_id IS NOT DISTINCT FROM $4 AND (source <> 'template' OR status = 'active') AND (
  lower(btrim(regexp_replace(subject,'\s+',' ','g')))=lower(btrim(regexp_replace($1::text,'\s+',' ','g'))) OR
- lower(btrim(regexp_replace(description,'\s+',' ','g')))=lower(btrim(regexp_replace($2::text,'\s+',' ','g')))))`, c.Subject, c.Description, c.ID).Scan(&duplicate); err != nil {
+ lower(btrim(regexp_replace(description,'\s+',' ','g')))=lower(btrim(regexp_replace($2::text,'\s+',' ','g')))))`, c.Subject, c.Description, c.ID, c.OrganizationID).Scan(&duplicate); err != nil {
 			return err
 		}
 		if duplicate {
@@ -141,13 +161,14 @@ func (r *warmupContentRepository) InsertConversation(ctx context.Context, c *mod
 	}
 	query := `
 		INSERT INTO warmup_conversations
-			(id, pool_type, segment, source, theme, subject, description, messages, status, lint_passed, reply_eligible, usage_count, generated_by_job_id, scenario_version, rendering_version, semantic_review)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, COALESCE(NULLIF($16, ''), 'legacy_unknown'))
+			(id, pool_type, segment, source, theme, subject, description, messages, status, lint_passed, reply_eligible, usage_count, generated_by_job_id, scenario_version, rendering_version, semantic_review, organization_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, COALESCE(NULLIF($16, ''), 'legacy_unknown'), $17)
 		ON CONFLICT (id) DO NOTHING
 	`
 	_, err = tx.Exec(ctx, query,
 		c.ID, c.PoolType, c.Segment, c.Source, c.Theme, c.Subject, c.Description,
 		msgs, c.Status, c.LintPassed, c.ReplyEligible, c.UsageCount, c.GeneratedByJob, c.ScenarioVersion, c.RenderingVersion, c.SemanticReview,
+		c.OrganizationID,
 	)
 	if err != nil {
 		return err
@@ -160,7 +181,7 @@ func scanConversation(row pgx.Row) (*models.WarmupConversation, error) {
 	var msgs []byte
 	err := row.Scan(
 		&c.ID, &c.PoolType, &c.Segment, &c.Source, &c.Theme, &c.Subject, &c.Description,
-		&msgs, &c.Status, &c.LintPassed, &c.ReplyEligible, &c.UsageCount, &c.GeneratedByJob, &c.CreatedAt, &c.UpdatedAt, &c.ScenarioVersion, &c.RenderingVersion, &c.SemanticReview,
+		&msgs, &c.Status, &c.LintPassed, &c.ReplyEligible, &c.UsageCount, &c.GeneratedByJob, &c.CreatedAt, &c.UpdatedAt, &c.ScenarioVersion, &c.RenderingVersion, &c.SemanticReview, &c.OrganizationID,
 	)
 	if err != nil {
 		return nil, err
@@ -171,8 +192,8 @@ func scanConversation(row pgx.Row) (*models.WarmupConversation, error) {
 	return &c, nil
 }
 
-const conversationCols = `id, pool_type, segment, source, theme, subject, description, messages, status, lint_passed, reply_eligible, usage_count, generated_by_job_id, created_at, updated_at, scenario_version, rendering_version, semantic_review`
-const qualifiedConversationCols = `c.id, c.pool_type, c.segment, c.source, c.theme, c.subject, c.description, c.messages, c.status, c.lint_passed, c.reply_eligible, c.usage_count, c.generated_by_job_id, c.created_at, c.updated_at, c.scenario_version, c.rendering_version, c.semantic_review`
+const conversationCols = `id, pool_type, segment, source, theme, subject, description, messages, status, lint_passed, reply_eligible, usage_count, generated_by_job_id, created_at, updated_at, scenario_version, rendering_version, semantic_review, organization_id`
+const qualifiedConversationCols = `c.id, c.pool_type, c.segment, c.source, c.theme, c.subject, c.description, c.messages, c.status, c.lint_passed, c.reply_eligible, c.usage_count, c.generated_by_job_id, c.created_at, c.updated_at, c.scenario_version, c.rendering_version, c.semantic_review, c.organization_id`
 
 // Opening eligibility is independent of existing threads' continuation authority.
 // openingConversationWhere is the eligibility predicate for a new thread, qualified by table alias t.
@@ -225,7 +246,8 @@ func (r *warmupContentRepository) PickConversation(ctx context.Context, pick War
 			FROM warmup_conversations c
 			LEFT JOIN seen ON seen.conversation_id = c.id
 			WHERE ` + openingConversationWhere("c.") + ` AND (c.segment = $1 OR c.segment = '')
-			  AND ((c.source = 'ai' AND $4) OR (c.source = 'static' AND c.id = ANY($5)))
+			  AND ((NOT $8 AND c.organization_id IS NULL AND c.source = 'ai' AND $4) OR (NOT $8 AND c.organization_id IS NULL AND c.source = 'static' AND c.id = ANY($5))
+			    OR ($8 AND c.source = 'template' AND c.organization_id = $7 AND (seen.last_seen IS NULL OR seen.last_seen < NOW() - INTERVAL '1 day')))
 			ORDER BY (seen.last_seen IS NOT NULL AND seen.last_seen > NOW() - $6::interval), (c.segment = $1) DESC,
 			         seen.last_seen ASC NULLS FIRST, c.usage_count ASC, random()
 			LIMIT 1
@@ -238,7 +260,7 @@ func (r *warmupContentRepository) PickConversation(ctx context.Context, pick War
 		WHERE c.id = picked.id
 		RETURNING ` + qualifiedConversationCols + `
 	`
-	c, err := scanConversation(tx.QueryRow(ctx, query, pick.Segment, pick.SenderID, pick.RecipientID, pick.IncludeAI, staticIDs, WarmupContentRepeatWindow.String()))
+	c, err := scanConversation(tx.QueryRow(ctx, query, pick.Segment, pick.SenderID, pick.RecipientID, pick.IncludeAI, staticIDs, WarmupContentRepeatWindow.String(), pick.OrganizationID, pick.TemplatesOnly))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -299,6 +321,9 @@ func (r *warmupContentRepository) ListConversations(ctx context.Context, f Conve
 	if f.Status != "" {
 		add(" AND status = $"+itoa(len(args)+1), f.Status)
 	}
+	if f.OrganizationID != nil {
+		add(" AND organization_id = $"+itoa(len(args)+1), *f.OrganizationID)
+	}
 
 	var total int
 	if err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM warmup_conversations `+where, args...).Scan(&total); err != nil {
@@ -339,6 +364,100 @@ func (r *warmupContentRepository) SetConversationStatus(ctx context.Context, id 
 		return errors.New("conversation missing or semantic review does not permit activation")
 	}
 	return err
+}
+
+func (r *warmupContentRepository) ArchiveOrgTemplateConversation(ctx context.Context, id, orgID uuid.UUID) (bool, error) {
+	tag, err := r.db.Exec(ctx, `UPDATE warmup_conversations SET status = 'archived', reply_eligible = false, updated_at = NOW()
+		WHERE id = $1 AND organization_id = $2 AND source = 'template' AND status = 'active'`, id, orgID)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+func (r *warmupContentRepository) GetOrgTemplateConversation(ctx context.Context, id, orgID uuid.UUID) (*models.WarmupConversation, error) {
+	c, err := scanConversation(r.db.QueryRow(ctx, `SELECT `+conversationCols+` FROM warmup_conversations WHERE id = $1 AND organization_id = $2 AND source = 'template'`, id, orgID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return c, err
+}
+
+func (r *warmupContentRepository) GetTemplateSettings(ctx context.Context, orgID uuid.UUID) (models.WarmupTemplateSettings, error) {
+	s := models.DefaultWarmupTemplateSettings()
+	err := r.db.QueryRow(ctx, `SELECT template_share, templates_only FROM warmup_template_settings WHERE organization_id = $1`, orgID).Scan(&s.TemplateShare, &s.TemplatesOnly)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return models.DefaultWarmupTemplateSettings(), nil
+	}
+	return s, err
+}
+
+func (r *warmupContentRepository) UpsertTemplateSettings(ctx context.Context, orgID uuid.UUID, s models.WarmupTemplateSettings) error {
+	_, err := r.db.Exec(ctx, `INSERT INTO warmup_template_settings (organization_id, template_share, templates_only, updated_at)
+		VALUES ($1, $2, $3, NOW())
+		ON CONFLICT (organization_id) DO UPDATE SET template_share = EXCLUDED.template_share, templates_only = EXCLUDED.templates_only, updated_at = NOW()`,
+		orgID, s.TemplateShare, s.TemplatesOnly)
+	return err
+}
+
+// templatePlacementSQL joins each template send to the receipt its recipient
+// filed, matched on the provider Message-ID, and tags the recipient's group.
+// A send with no receipt yet counts as sent only.
+func templatePlacementSQL(where string) string {
+	return `
+		SELECT wt.conversation_id, ` + recipientGroupSQL("rec") + ` AS grp,
+		       COUNT(*)::int AS sent,
+		       COUNT(*) FILTER (WHERE wr.first_landing = 'inbox')::int AS inbox,
+		       COUNT(*) FILTER (WHERE wr.first_landing = 'tabs')::int AS tabs,
+		       COUNT(*) FILTER (WHERE wr.first_landing = 'spam' OR wr.landed_spam)::int AS spam,
+		       COUNT(*) FILTER (WHERE wr.rescue_outcome IN ('moved', 'already_out'))::int AS rescued
+		FROM warmup_tokens wt
+		JOIN warmup_conversations c ON c.id = wt.conversation_id AND c.source = 'template' AND c.organization_id = $1
+		JOIN email_accounts rec ON rec.id = wt.recipient_account_id
+		LEFT JOIN warmup_received wr ON wr.sender_account_id = wt.sender_account_id
+		     AND wr.email_account_id = wt.recipient_account_id
+		     AND wt.sent_message_id <> '' AND btrim(wr.message_id, '<>') = btrim(wt.sent_message_id, '<>')
+		WHERE wt.content_source = 'template' AND wt.sent_message_id <> '' AND wt.created_at >= $2 ` + where + `
+		GROUP BY 1, 2`
+}
+
+func (r *warmupContentRepository) TemplatePlacement(ctx context.Context, orgID uuid.UUID, since time.Time) (map[uuid.UUID]models.WarmupTemplatePlacement, error) {
+	rows, err := r.db.Query(ctx, templatePlacementSQL(""), orgID, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[uuid.UUID]models.WarmupTemplatePlacement{}
+	for rows.Next() {
+		var id uuid.UUID
+		var grp string
+		var p models.WarmupTemplatePlacement
+		if err := rows.Scan(&id, &grp, &p.Sent, &p.Inbox, &p.Tabs, &p.Spam, &p.Rescued); err != nil {
+			return nil, err
+		}
+		t := out[id]
+		t.Sent, t.Inbox, t.Tabs, t.Spam, t.Rescued = t.Sent+p.Sent, t.Inbox+p.Inbox, t.Tabs+p.Tabs, t.Spam+p.Spam, t.Rescued+p.Rescued
+		out[id] = t
+	}
+	return out, rows.Err()
+}
+
+func (r *warmupContentRepository) TemplatePlacementByGroup(ctx context.Context, id, orgID uuid.UUID, since time.Time) ([]models.WarmupTemplateGroupPlacement, error) {
+	rows, err := r.db.Query(ctx, templatePlacementSQL("AND wt.conversation_id = $3")+" ORDER BY 2", orgID, since, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []models.WarmupTemplateGroupPlacement{}
+	for rows.Next() {
+		var conv uuid.UUID
+		var g models.WarmupTemplateGroupPlacement
+		if err := rows.Scan(&conv, &g.Group, &g.Sent, &g.Inbox, &g.Tabs, &g.Spam, &g.Rescued); err != nil {
+			return nil, err
+		}
+		out = append(out, g)
+	}
+	return out, rows.Err()
 }
 
 func (r *warmupContentRepository) RefreshUnusedConversations(ctx context.Context, poolType, segment string, n int) (int, error) {

@@ -66,7 +66,29 @@ func (s *tasksService) pickNewWarmupContent(ctx context.Context, account Email, 
 		for i, c := range library {
 			staticIDs[i] = c.ID
 		}
-		conv, err := s.warmupContentRepo.PickConversation(ctx, repository.WarmupContentPick{Segment: strings.TrimSpace(account.WarmupTag), TaskID: taskID, SenderID: account.ID, RecipientID: recipientID, IncludeAI: settings.Enabled, StaticIDs: staticIDs})
+		pick := repository.WarmupContentPick{Segment: strings.TrimSpace(account.WarmupTag), TaskID: taskID, SenderID: account.ID, RecipientID: recipientID, OrganizationID: account.OrganizationID, IncludeAI: settings.Enabled, StaticIDs: staticIDs}
+		templates, only, err := s.templateDraw(ctx, account)
+		if err != nil {
+			return warmupContent{}, err
+		}
+		if templates {
+			pick.TemplatesOnly = true
+			conv, err := s.warmupContentRepo.PickConversation(ctx, pick)
+			if err != nil {
+				return warmupContent{}, err
+			}
+			if conv != nil {
+				if content, ok := pickedWarmupContent(conv, account); ok {
+					return content, nil
+				}
+			}
+			if only {
+				// Templates-only with nothing eligible skips the send rather than substituting bank content.
+				return warmupContent{}, errWarmupContentUnavailable
+			}
+			pick.TemplatesOnly = false
+		}
+		conv, err := s.warmupContentRepo.PickConversation(ctx, pick)
 		if err != nil {
 			return warmupContent{}, err
 		}
@@ -82,6 +104,30 @@ func (s *tasksService) pickNewWarmupContent(ctx context.Context, account Email, 
 	return staticWarmupContent(library[rand.Intn(len(library))], account), nil
 }
 
+// templateDraw decides whether this opening is drawn from the organization's
+// own templates, and whether the bank may stand in when none is eligible.
+// A failed settings read is returned so the send retries instead of silently
+// drawing from the bank against a templates-only workspace.
+func (s *tasksService) templateDraw(ctx context.Context, account Email) (templates, only bool, err error) {
+	if account.OrganizationID == nil {
+		return false, false, nil
+	}
+	settings, err := s.warmupContentRepo.GetTemplateSettings(ctx, *account.OrganizationID)
+	if err != nil {
+		return false, false, err
+	}
+	templates, only = drawTemplates(settings, rand.Intn(100))
+	return templates, only, nil
+}
+
+// drawTemplates applies the template mix to one roll in [0,100).
+func drawTemplates(settings models.WarmupTemplateSettings, roll int) (templates, only bool) {
+	if settings.TemplatesOnly {
+		return true, true
+	}
+	return roll < settings.TemplateShare, false
+}
+
 func pickedWarmupContent(conv *models.WarmupConversation, account Email) (warmupContent, bool) {
 	if conv.Source == models.WarmupContentSourceStatic {
 		c, ok := resolveStaticConversation(conv.ID)
@@ -89,6 +135,28 @@ func pickedWarmupContent(conv *models.WarmupConversation, account Email) (warmup
 	}
 	if conv.ScenarioVersion == nil || conv.RenderingVersion == nil || conv.Status != models.WarmupConversationActive || !conv.ReplyEligible || !conv.LintPassed || conv.SemanticReview != "passed" {
 		return warmupContent{}, false
+	}
+	if conv.Source == models.WarmupContentSourceTemplate {
+		// Templates send verbatim: the stored subject and opening are the whole turn.
+		subject := strings.TrimSpace(conv.Subject)
+		body := strings.TrimSpace(conv.Description)
+		if subject == "" || body == "" || strings.ContainsAny(subject, "<>{}\x00\r\n") || strings.IndexByte(body, 0) >= 0 {
+			return warmupContent{}, false
+		}
+		if generation.ValidateWarmupWording(subject, body) != nil {
+			return warmupContent{}, false
+		}
+		id := conv.ID
+		return warmupContent{
+			subject:          subject,
+			body:             body,
+			theme:            conv.Theme,
+			contentSource:    models.WarmupContentSourceTemplate,
+			conversationID:   &id,
+			scenarioVersion:  *conv.ScenarioVersion,
+			renderingVersion: *conv.RenderingVersion,
+			maxTurns:         1,
+		}, true
 	}
 	if generation.ValidateFreshWarmup(generation.Conversation{Subject: conv.Subject, Description: conv.Description, Messages: conv.Messages}) != nil {
 		return warmupContent{}, false

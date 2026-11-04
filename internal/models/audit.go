@@ -87,6 +87,7 @@ const (
 	AuditEntityWebhook           AuditEntityType = "webhook"
 	AuditEntityIntegration       AuditEntityType = "integration"
 	AuditEntityWarmupRoutingRule AuditEntityType = "warmup_routing_rule"
+	AuditEntityWarmupTemplate    AuditEntityType = "warmup_template"
 	AuditEntityFolder            AuditEntityType = "folder"
 	AuditEntityTag               AuditEntityType = "tag"
 	AuditEntityCategory          AuditEntityType = "category"

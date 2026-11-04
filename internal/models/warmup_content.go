@@ -8,10 +8,12 @@ import (
 )
 
 // Content sources for warmup message bodies. "static" is the in-code library;
-// "ai" is a thread drawn from the offline-generated warmup_conversations bank.
+// "ai" is a thread drawn from the offline-generated warmup_conversations bank;
+// "template" is an organization-supplied subject + opening sent verbatim.
 const (
-	WarmupContentSourceStatic = "static"
-	WarmupContentSourceAI     = "ai"
+	WarmupContentSourceStatic   = "static"
+	WarmupContentSourceAI       = "ai"
+	WarmupContentSourceTemplate = "template"
 )
 
 // AdminSettingsKeyWarmupGeneration is the admin_settings key under which the
@@ -39,6 +41,42 @@ type WarmupConversation struct {
 	ScenarioVersion  *string    `json:"scenario_version,omitempty"`
 	RenderingVersion *string    `json:"rendering_version,omitempty"`
 	SemanticReview   string     `json:"semantic_review"`
+	// OrganizationID is set only on source="template" rows: the workspace that
+	// submitted the template. Shared library rows keep it NULL.
+	OrganizationID *uuid.UUID `json:"organization_id,omitempty"`
+}
+
+// WarmupTemplateSettings is how much of one organization's warmup carries its
+// own templates. TemplateShare is the percentage of new openings drawn from
+// the organization's templates when at least one is eligible; TemplatesOnly
+// sends nothing else, and an opening with no eligible template is skipped.
+type WarmupTemplateSettings struct {
+	TemplateShare int  `json:"template_share"`
+	TemplatesOnly bool `json:"templates_only"`
+}
+
+// DefaultWarmupTemplateSettings mirrors the mix the warmup pool applies when
+// an organization has templates but never changed the setting.
+func DefaultWarmupTemplateSettings() WarmupTemplateSettings {
+	return WarmupTemplateSettings{TemplateShare: 50}
+}
+
+// WarmupTemplatePlacement counts where one template's sends landed, as the
+// recipient mailboxes reported them. Sent counts every dispatched token;
+// the landing counters cover the receipts that came back.
+type WarmupTemplatePlacement struct {
+	Sent    int `json:"sent"`
+	Inbox   int `json:"inbox"`
+	Tabs    int `json:"tabs"`
+	Spam    int `json:"spam"`
+	Rescued int `json:"rescued"`
+}
+
+// WarmupTemplateGroupPlacement is WarmupTemplatePlacement for one recipient
+// provider group (google, microsoft, yahoo, other).
+type WarmupTemplateGroupPlacement struct {
+	Group string `json:"group"`
+	WarmupTemplatePlacement
 }
 
 // Warmup generation job modes. "sync" runs every model call inline (the

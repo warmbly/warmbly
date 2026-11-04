@@ -50,6 +50,7 @@ export type AuditEntityType =
     | "webhook"
     | "integration"
     | "warmup_routing_rule"
+    | "warmup_template"
     | "folder"
     | "tag"
     | "category"

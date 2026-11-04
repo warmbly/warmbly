@@ -6,6 +6,7 @@ package warmlint
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -316,7 +317,7 @@ func trimURL(u string) string {
 	return strings.TrimRight(u, ".,;:!?)]}\"'")
 }
 
-func countTriggerTerms(text string) int {
+func triggerTermSet(text string) map[string]struct{} {
 	lower := strings.ToLower(text)
 	found := map[string]struct{}{}
 	for _, w := range wordToken.FindAllString(lower, -1) {
@@ -329,5 +330,22 @@ func countTriggerTerms(text string) int {
 			found[p] = struct{}{}
 		}
 	}
-	return len(found)
+	return found
+}
+
+func countTriggerTerms(text string) int {
+	return len(triggerTermSet(text))
+}
+
+// TriggerTerms returns the distinct spam-trigger terms and phrases in text,
+// sorted, for callers that report findings rather than gate on a count. URLs
+// are masked first so link slugs do not read as copy.
+func TriggerTerms(text string) []string {
+	found := triggerTermSet(withoutURLs(text))
+	hits := make([]string, 0, len(found))
+	for t := range found {
+		hits = append(hits, t)
+	}
+	sort.Strings(hits)
+	return hits
 }

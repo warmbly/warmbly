@@ -490,6 +490,188 @@ Auth: **Scope** `WARMUP_ROUTING` · **Org permission** `manage_settings`
 
 `204 No Content`.
 
+## List warmup templates
+
+`GET /warmup/templates`
+
+Returns the organization's active warmup templates, newest first, each with its placement over a trailing window. A warmup template is a subject plus an opening body the workspace submitted itself; the warmup pool sends it verbatim, so where it lands is a real placement read on that exact copy.
+
+Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
+
+### Query parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `days` | integer | `30` | Trailing window for `placement`, 1 to 90. |
+
+### Response
+
+Returns the templates under a `templates` key (always an array, never null) and the window under `days`. `placement.sent` counts every send of the template in the window; `inbox`, `tabs`, `spam` and `rescued` count the receipts the recipient mailboxes filed against those sends, so a send whose receipt has not arrived yet counts in `sent` only.
+
+```json
+{
+  "days": 30,
+  "templates": [
+    {
+      "id": "c1d2e3f4-5061-7283-94a5-b6c7d8e9f0a1",
+      "name": "Q4 intro copy",
+      "subject": "Quick question about your Q4 plans",
+      "segment": "",
+      "usage_count": 12,
+      "created_at": "2026-06-01T09:00:00Z",
+      "placement": { "sent": 12, "inbox": 10, "tabs": 1, "spam": 1, "rescued": 1 }
+    }
+  ]
+}
+```
+
+## Warmup template placement by provider
+
+`GET /warmup/templates/:id/stats`
+
+Splits one template's placement by the recipient's provider group, so copy that reaches the inbox at Google and the junk folder at Microsoft shows up as exactly that.
+
+Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The template ID. |
+| `days` | query | integer | Trailing window, 1 to 90 (default `30`). |
+
+### Response
+
+```json
+{
+  "template_id": "c1d2e3f4-5061-7283-94a5-b6c7d8e9f0a1",
+  "days": 30,
+  "total": { "sent": 12, "inbox": 10, "tabs": 1, "spam": 1, "rescued": 1 },
+  "groups": [
+    { "group": "google", "sent": 7, "inbox": 6, "tabs": 1, "spam": 0, "rescued": 0 },
+    { "group": "microsoft", "sent": 5, "inbox": 4, "tabs": 0, "spam": 1, "rescued": 1 }
+  ]
+}
+```
+
+`groups` is always an array; a group with no sends in the window is absent. `404 Not Found` when the template is missing or belongs to another organization.
+
+## Get warmup template settings
+
+`GET /warmup/templates/settings`
+
+Returns how much of the organization's warmup carries its own templates.
+
+Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
+
+### Response
+
+```json
+{
+  "template_share": 50,
+  "templates_only": false
+}
+```
+
+`template_share` is the percentage of a mailbox's new warmup openings drawn from the organization's templates when at least one is eligible (default `50`); the rest come from the shared bank. Templates are spread evenly, least used first, and each sender sends a given template at most once a day. `templates_only` sends nothing but templates; an opening with no eligible template is then skipped rather than filled from the bank.
+
+## Update warmup template settings
+
+`PUT /warmup/templates/settings`
+
+Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `template_share` | integer | Yes | 0 to 100. |
+| `templates_only` | boolean | Yes | Send only the organization's templates. |
+
+### Response
+
+`200 OK` with the stored settings. `400 Bad Request` when `template_share` is outside 0 to 100.
+
+## Create a warmup template
+
+`POST /warmup/templates`
+
+Stores a warmup template for the organization. The copy is validated against the same guardrails the send path keeps: a non-empty subject of at most 200 characters without markup or newlines, a non-empty body of at most 50 KB, the shared wording check that refuses content describing itself as generated or a warmup, and the warmup send gate (no fabricated `Re:` prefix, no all-caps subject, no stacked punctuation, fewer than three spam-trigger terms). A template that fails the send gate is refused with `400 Bad Request` and the reason, so every stored template is one the pool will actually send. There is no cap on how many templates a workspace keeps.
+
+Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | No | Label for the template, shown in listings. |
+| `subject` | string | Yes | The exact subject sent with the template. |
+| `body` | string | Yes | The exact opening body sent with the template. Markup and newlines are preserved. |
+| `segment` | string | No | Restrict the template to senders tagged with this warmup segment. |
+
+### Response
+
+`201 Created` with the stored template under `template` and its static analysis under `check`.
+
+```json
+{
+  "template": {
+    "id": "c1d2e3f4-5061-7283-94a5-b6c7d8e9f0a1",
+    "name": "Q4 intro copy",
+    "subject": "Quick question about your Q4 plans",
+    "body": "Hi Sam, saw your post on outbound. Are you still comparing tools?",
+    "segment": "",
+    "usage_count": 0,
+    "created_at": "2026-06-01T09:00:00Z"
+  },
+  "check": {
+    "subject_length": 34,
+    "word_count": 18,
+    "reading_time_seconds": 5,
+    "link_count": 0,
+    "question_count": 1,
+    "spam_trigger_hits": []
+  }
+}
+```
+
+`check.blocked_reason` is present only when the send gate would refuse the copy, which a create request never reaches because it is rejected first; it matters for `POST /warmup/templates/check`.
+
+`409 Conflict` when the subject or body already exists in the organization's own templates.
+
+## Check a warmup template
+
+`POST /warmup/templates/check`
+
+Runs the static analyzer over a draft subject and body without storing anything.
+
+Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `subject` | string | Yes | The draft subject. |
+| `body` | string | Yes | The draft body. |
+
+### Response
+
+`200 OK` with the analysis fields described above. When the warmup send gate would refuse the copy, `blocked_reason` carries the reason; a create request with that copy fails with `400 Bad Request`.
+
+## Delete a warmup template
+
+`DELETE /warmup/templates/:id`
+
+Retires one of the organization's own templates; senders stop receiving it for new sends.
+
+Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | uuid | The template ID. |
+
+### Response
+
+`204 No Content`. `404 Not Found` when the template is missing or belongs to another organization.
+
 ## List reply templates
 
 `GET /templates`

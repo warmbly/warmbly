@@ -598,6 +598,7 @@ export function useRealtimeEvents() {
           crm_deal: [['crm', 'deals'], ['contacts']],
           crm_task: [['crm', 'tasks'], ['crm', 'deals']],
           warmup_routing_rule: [['analytics', 'warmup']],
+          warmup_template: [['analytics', 'warmup']],
           // Placement tests started or stopped and campaign monitors changed.
           placement_test: [['placement']],
           placement_monitor: [['placement']],
