@@ -219,16 +219,31 @@ async function finish(aws, config, pause = sleep) {
   evidence.cleanup.recovery = !evidence.runAttempted ? "not-required" :
     verified.size > 0 && verified.size === tasks.length ? "resolved" : "unresolved";
   if (evidence.cleanup.recovery === "unresolved") evidence.cleanup.errors.push("Diagnostic task identity unresolved");
-  const definitions = evidence.registerAttempted ? await attempt(() => aws("ecs", "list-task-definitions", ["--family-prefix", config.family, "--status", "ACTIVE"])) : { taskDefinitionArns: [] };
-  const arns = [...new Set([evidence.definitionArn, ...(definitions?.taskDefinitionArns || [])].filter((arn) =>
-    typeof arn === "string" && new RegExp(`^${ECS}:task-definition/${config.family}:\\d+$`).test(arn)))];
-  evidence.cleanup.definitionArns = arns;
+  const definitionPattern = new RegExp(`^${ECS}:task-definition/${config.family}:\\d+$`);
+  const isRunDefinition = (arn) => typeof arn === "string" && definitionPattern.exec(arn)?.[0] === arn;
+  const arns = new Set([evidence.definitionArn].filter(isRunDefinition));
+  let definitions;
+  if (evidence.registerAttempted) {
+    for (let i = 0; i < 3; i++) {
+      definitions = await attempt(async () => {
+        const result = await aws("ecs", "list-task-definitions", ["--family-prefix", config.family, "--status", "ACTIVE"]);
+        requireThat(Array.isArray(result?.taskDefinitionArns), "Diagnostic definition discovery unconfirmed");
+        return result;
+      });
+      for (const arn of (definitions?.taskDefinitionArns || []).filter(isRunDefinition)) arns.add(arn);
+      if (arns.size) break;
+      if (i < 2) await pause(5000);
+    }
+  }
+  evidence.cleanup.definitionArns = [...arns];
+  evidence.cleanup.definitionRecovery = !evidence.registerAttempted ? "not-required" : arns.size ? "resolved" : "unresolved";
+  if (evidence.cleanup.definitionRecovery === "unresolved") evidence.cleanup.errors.push("Diagnostic definition identity unresolved");
   save(config, evidence);
   for (const arn of arns) {
     const result = await attempt(() => aws("ecs", "deregister-task-definition", ["--task-definition", arn]));
     if (result?.taskDefinition?.taskDefinitionArn !== arn || result?.taskDefinition?.status !== "INACTIVE") evidence.cleanup.errors.push("Diagnostic definition deregistration unconfirmed");
   }
-  evidence.cleanup.deregistered = !!definitions && evidence.cleanup.errors.length === 0;
+  evidence.cleanup.deregistered = (!evidence.registerAttempted || !!definitions && arns.size > 0) && evidence.cleanup.errors.length === 0;
   evidence.logs = [];
   for (const task of verified) {
     let token;

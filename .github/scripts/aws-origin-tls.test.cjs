@@ -419,6 +419,142 @@ test("a task that never stops and absent logs fail within bounded polling and pr
   assert.equal(f.calls.at(-1).action, "put-object");
 });
 
+test("definition recovery confirms exact run identities within a fixed discovery budget and archives every outcome", async (t) => {
+  const oldSummary = process.env.GITHUB_STEP_SUMMARY;
+  t.after(() => { if (oldSummary === undefined) delete process.env.GITHUB_STEP_SUMMARY; else process.env.GITHUB_STEP_SUMMARY = oldSummary; });
+  for (const [name, discoveredAt, includeInvalid] of [
+    ["empty discovery remains unresolved", Infinity, false],
+    ["neighboring and malformed identities remain unresolved", Infinity, true],
+    ["exact identity on second discovery is confirmed", 2, true],
+    ["exact identity on final discovery is confirmed", 3, true],
+  ]) {
+    await t.test(name, async (t) => {
+      let reads = 0;
+      const f = fixture(t, (action, result, calls) => {
+        if (action === "register-task-definition") throw new Error("Fixture registration response unavailable");
+        if (action === "list-task-definitions") {
+          assert.deepEqual(calls.at(-1).args, ["--family-prefix", f.config.family, "--status", "ACTIVE"]);
+          const invalid = [
+            `${ECS}:task-definition/${f.config.family}7:1`,
+            `${ECS}:task-definition/${f.config.family}-other:1`,
+            `arn:aws:ecs:us-west-2:${ACCOUNT}:task-definition/${f.config.family}:1`,
+            `arn:aws:ecs:us-east-1:000000000000:task-definition/${f.config.family}:1`,
+            `${ECS}:task-definition/${f.config.family}:latest`,
+            `${f.arn}/suffix`, `${f.arn}\n`, `${f.arn}\r\n`, null, 42,
+          ];
+          result.taskDefinitionArns = [
+            ...(includeInvalid ? invalid : []), ...(++reads >= discoveredAt ? [f.arn, f.arn] : []),
+          ];
+        }
+      });
+      process.env.GITHUB_STEP_SUMMARY = join(f.config.work, "summary");
+      await assert.rejects(execute(f.aws, f.config, async () => {}), /registration response unavailable/);
+      const delays = [];
+      await assert.rejects(finish(f.aws, f.config, async (ms) => { delays.push(ms); }), /incomplete/);
+      const resolved = Number.isFinite(discoveredAt);
+      const evidence = f.evidence();
+      assert.equal(reads, Math.min(discoveredAt, 3));
+      assert.deepEqual(delays, Array(reads - 1).fill(5000));
+      assert.deepEqual(evidence.cleanup.definitionArns, resolved ? [f.arn] : []);
+      assert.equal(evidence.cleanup.definitionRecovery, resolved ? "resolved" : "unresolved");
+      assert.equal(evidence.cleanup.deregistered, resolved);
+      assert.equal(evidence.cleanup.errors.includes("Diagnostic definition identity unresolved"), !resolved);
+      assert.deepEqual(f.calls.filter((c) => c.action === "deregister-task-definition").map((c) => c.args),
+        resolved ? [["--task-definition", f.arn]] : []);
+      assert.equal(f.calls.filter((c) => c.action === "register-task-definition").length, 1);
+      assert.ok(!f.calls.some((c) => ["run-task", "stop-task", "get-log-events"].includes(c.action)));
+      assert.equal(evidence.success, false);
+      assert.deepEqual(JSON.parse(readFileSync(join(f.config.work, "result.json"))), evidence);
+      assert.equal(f.calls.filter((c) => c.action === "put-object").length, 2);
+      assert.equal(f.calls.at(-1).action, "put-object");
+    });
+  }
+});
+
+test("definition discovery errors remain inconclusive even when a later exact identity can be cleaned", async (t) => {
+  const oldSummary = process.env.GITHUB_STEP_SUMMARY;
+  t.after(() => { if (oldSummary === undefined) delete process.env.GITHUB_STEP_SUMMARY; else process.env.GITHUB_STEP_SUMMARY = oldSummary; });
+  for (const malformed of [false, true]) {
+    let reads = 0;
+    const f = fixture(t, (action, result) => {
+      if (action === "register-task-definition") throw new Error("Fixture registration response unavailable");
+      if (action === "list-task-definitions" && ++reads === 1) {
+        if (malformed) result.taskDefinitionArns = {};
+        else throw new Error("Fixture discovery response unavailable");
+      }
+    });
+    process.env.GITHUB_STEP_SUMMARY = join(f.config.work, "summary");
+    await assert.rejects(execute(f.aws, f.config, async () => {}), /registration response unavailable/);
+    await assert.rejects(finish(f.aws, f.config, async () => {}), /incomplete/);
+    assert.equal(reads, 2);
+    assert.equal(f.evidence().cleanup.definitionRecovery, "resolved");
+    assert.equal(f.evidence().cleanup.deregistered, false);
+    assert.ok(f.evidence().cleanup.errors.includes(malformed ? "Diagnostic definition discovery unconfirmed" : "Fixture discovery response unavailable"));
+    assert.deepEqual(f.calls.filter((c) => c.action === "deregister-task-definition").map((c) => c.args[1]), [f.arn]);
+    assert.ok(!f.calls.some((c) => c.action === "run-task"));
+    assert.equal(f.evidence().success, false);
+    assert.deepEqual(JSON.parse(readFileSync(join(f.config.work, "result.json"))), f.evidence());
+    assert.equal(f.calls.at(-1).action, "put-object");
+  }
+});
+
+test("definition cleanup is not required when registration was never attempted", async (t) => {
+  const f = fixture(t, (action, result) => { if (action === "get-caller-identity") result.Account = "000000000000"; });
+  const oldSummary = process.env.GITHUB_STEP_SUMMARY;
+  process.env.GITHUB_STEP_SUMMARY = join(f.config.work, "summary");
+  t.after(() => { if (oldSummary === undefined) delete process.env.GITHUB_STEP_SUMMARY; else process.env.GITHUB_STEP_SUMMARY = oldSummary; });
+  await assert.rejects(execute(f.aws, f.config, async () => {}), /identity required/);
+  await assert.rejects(finish(f.aws, f.config, async () => { assert.fail("No registration needs no discovery delay"); }), /incomplete/);
+  assert.ok(!f.calls.some((c) => ["register-task-definition", "list-task-definitions", "deregister-task-definition", "run-task"].includes(c.action)));
+  assert.deepEqual(f.evidence().cleanup.definitionArns, []);
+  assert.equal(f.evidence().cleanup.definitionRecovery, "not-required");
+  assert.equal(f.evidence().cleanup.deregistered, true);
+  assert.equal(f.evidence().success, false);
+  assert.deepEqual(JSON.parse(readFileSync(join(f.config.work, "result.json"))), f.evidence());
+  assert.equal(f.calls.at(-1).action, "put-object");
+});
+
+test("a saved exact definition permits confirmed cleanup with empty active discovery", async (t) => {
+  const f = fixture(t, (action, result) => { if (action === "list-task-definitions") result.taskDefinitionArns = []; });
+  const oldSummary = process.env.GITHUB_STEP_SUMMARY;
+  process.env.GITHUB_STEP_SUMMARY = join(f.config.work, "summary");
+  t.after(() => { if (oldSummary === undefined) delete process.env.GITHUB_STEP_SUMMARY; else process.env.GITHUB_STEP_SUMMARY = oldSummary; });
+  await execute(f.aws, f.config, async () => {});
+  await finish(f.aws, f.config, async () => { assert.fail("Saved identity needs no discovery delay"); });
+  assert.equal(f.calls.filter((c) => c.action === "list-task-definitions").length, 1);
+  assert.deepEqual(f.calls.filter((c) => c.action === "deregister-task-definition").map((c) => c.args[1]), [f.arn]);
+  assert.equal(f.evidence().cleanup.definitionRecovery, "resolved");
+  assert.equal(f.evidence().cleanup.deregistered, true);
+  assert.equal(f.evidence().success, true);
+  assert.equal(f.calls.filter((c) => c.action === "run-task").length, 1);
+});
+
+test("definition cleanup confirms only matching inactive readbacks and privately archives unconfirmed responses", async (t) => {
+  const oldSummary = process.env.GITHUB_STEP_SUMMARY;
+  t.after(() => { if (oldSummary === undefined) delete process.env.GITHUB_STEP_SUMMARY; else process.env.GITHUB_STEP_SUMMARY = oldSummary; });
+  for (const response of ["unavailable", "neighbor", "active"]) {
+    const f = fixture(t, (action, result) => {
+      if (action === "deregister-task-definition") {
+        if (response === "unavailable") throw new Error("Fixture deregistration response unavailable");
+        if (response === "neighbor") result.taskDefinition.taskDefinitionArn = `${ECS}:task-definition/${f.config.family}7:1`;
+        if (response === "active") result.taskDefinition.status = "ACTIVE";
+      }
+    });
+    process.env.GITHUB_STEP_SUMMARY = join(f.config.work, "summary");
+    await execute(f.aws, f.config, async () => {});
+    await assert.rejects(finish(f.aws, f.config, async () => {}), /incomplete/);
+    assert.equal(f.evidence().cleanup.definitionRecovery, "resolved");
+    assert.equal(f.evidence().cleanup.deregistered, false);
+    assert.ok(f.evidence().cleanup.errors.includes("Diagnostic definition deregistration unconfirmed"));
+    assert.equal(f.calls.filter((c) => c.action === "deregister-task-definition").length, 1);
+    assert.equal(f.calls.filter((c) => c.action === "register-task-definition").length, 1);
+    assert.equal(f.calls.filter((c) => c.action === "run-task").length, 1);
+    assert.equal(f.evidence().success, false);
+    assert.deepEqual(JSON.parse(readFileSync(join(f.config.work, "result.json"))), f.evidence());
+    assert.equal(f.calls.at(-1).action, "put-object");
+  }
+});
+
 test("deregistration validates saved and discovered definitions against the exact run family, account, region and revision", async (t) => {
   const oldSummary = process.env.GITHUB_STEP_SUMMARY;
   t.after(() => { if (oldSummary === undefined) delete process.env.GITHUB_STEP_SUMMARY; else process.env.GITHUB_STEP_SUMMARY = oldSummary; });
@@ -431,6 +567,7 @@ test("deregistration validates saved and discovered definitions against the exac
     `arn:aws:ecs:us-east-1:000000000000:task-definition/${config.family}:1`,
     `${ECS}:task-definition/${config.family}:latest`,
     `${ECS}:task-definition/${config.family}:1/suffix`,
+    `${ECS}:task-definition/${config.family}:1\n`,
   ];
   for (const saved of invalid) {
     const f = fixture(t, (action, result, calls) => {
