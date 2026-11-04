@@ -266,6 +266,15 @@ func TestLiveLoadingIncidentNonLoadingBoundary(t *testing.T) {
 	}
 }
 
+// claimDueForTest claims every due task and hands the claims straight back, so tests sharing the database keep theirs.
+func claimDueForTest(ctx context.Context, repo *taskRepository) ([]uuid.UUID, error) {
+	ids, err := repo.ClaimDueTaskIDs(ctx, 10000, time.Minute)
+	if err != nil {
+		return nil, err
+	}
+	return ids, repo.ReleaseDispatchClaims(ctx, ids)
+}
+
 func TestLiveDispatchRetrySuccessfulPendingNoopDoesNotStarveNewerTask(t *testing.T) {
 	_, pool := liveContactDB(t)
 	ctx, now := t.Context(), time.Now().UTC().Truncate(time.Microsecond)
@@ -277,7 +286,7 @@ func TestLiveDispatchRetrySuccessfulPendingNoopDoesNotStarveNewerTask(t *testing
 	if err := repo.RecordDispatchAttempt(ctx, old, false, now.Add(5*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	ids, err := repo.ListDuePendingTaskIDs(ctx, 10000)
+	ids, err := claimDueForTest(ctx, repo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +307,7 @@ func TestLiveDispatchRetrySuccessfulPendingNoopDoesNotStarveNewerTask(t *testing
 		t.Fatalf("no-op changed schedule/state or manufactured failure: %v %v %s %v %v %v", scheduled, retry, status, failureSince, failureAt, err)
 	}
 	f.exec(`UPDATE tasks SET dispatch_retry_at=NOW()-INTERVAL '1 second' WHERE id=$1`, old)
-	ids, err = repo.ListDuePendingTaskIDs(ctx, 10000)
+	ids, err = claimDueForTest(ctx, repo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,7 +381,7 @@ func TestLiveDispatchRetryDoesNotStarveNewerTask(t *testing.T) {
 	if err := repo.RecordDispatchAttempt(ctx, old, true, now.Add(5*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	ids, err := repo.ListDuePendingTaskIDs(ctx, 10000)
+	ids, err := claimDueForTest(ctx, repo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,7 +416,7 @@ func TestLiveDispatchRetryDoesNotStarveNewerTask(t *testing.T) {
 		t.Fatalf("retry changed intended schedule or send state: %v %s %v", scheduled, status, err)
 	}
 	f.exec(`UPDATE tasks SET dispatch_retry_at=NOW()-INTERVAL '1 second' WHERE id=$1`, old)
-	ids, err = repo.ListDuePendingTaskIDs(ctx, 10000)
+	ids, err = claimDueForTest(ctx, repo)
 	if err != nil {
 		t.Fatal(err)
 	}

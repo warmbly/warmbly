@@ -867,6 +867,10 @@ func main() {
 			Cache:      cache,
 			AppDomains: oauthService.AllowedWebhookDomains,
 		})
+		// An enqueue here wakes the worker, so an idle queue's slower poll never delays a delivery.
+		if w, ok := webhookService.(interface{ WireDeliveryWake(func()) }); ok {
+			w.WireDeliveryWake(webhookWorker.Wake)
+		}
 		go webhookWorker.Run(ctx)
 		campaignProgressRepository := repository.NewCampaignProgressRepository(primaryDB.Pool)
 		warmupService = warmupapp.NewService(warmupRepository)

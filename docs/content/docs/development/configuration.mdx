@@ -862,7 +862,7 @@ Per-mailbox `test_mode`, `test_send_enabled` and `test_receive_enabled` separate
 
 | Variable | What it does | Default |
 |---|---|---|
-| `TASKS_PROVIDER` | `local` (an in-process Postgres poller) or `gcloud` (Cloud Tasks) | `local` |
+| `TASKS_PROVIDER` | `local` (an in-process Postgres poller; each backend replica claims the due tasks it runs) or `gcloud` (Cloud Tasks) | `local` |
 | `TASKS_LOCAL_POLL_INTERVAL` | How often the local poller looks for due work | `1s` |
 | `SEND_PLAN_SNAPSHOT_INTERVAL` | How often the backend re-walks the send plan of every active campaign whose stored plan is out of date. Each walk reads all of that campaign's leads, so a longer interval lowers database load on large campaigns | `1m` |
 | `SEND_PLAN_SNAPSHOT_MAX_AGE` | How old a stored send plan may be before it counts as out of date. An out-of-date plan is still served, with `stale: true`, while a fresh one is computed in the background | three times `SEND_PLAN_SNAPSHOT_INTERVAL` (`3m`) |

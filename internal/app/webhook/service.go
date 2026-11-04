@@ -26,6 +26,7 @@ import (
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/idlepoll"
 	"github.com/warmbly/warmbly/internal/pkg/safehttp"
 	"github.com/warmbly/warmbly/internal/pkg/whdomain"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -139,10 +140,21 @@ type service struct {
 	cache        *cache.Cache
 	resolveLimit func(ctx context.Context, orgID uuid.UUID) int
 	appDomains   AppDomainResolver
+	// wake asks this process's delivery worker to poll now; nil when it runs elsewhere.
+	wake func()
 }
 
 func NewService(repo repository.WebhookRepository) Service {
 	return &service{repo: repo, now: time.Now}
+}
+
+// WireDeliveryWake lets an enqueue start this process's delivery worker at once.
+func (s *service) WireDeliveryWake(wake func()) { s.wake = wake }
+
+func (s *service) enqueued() {
+	if s.wake != nil {
+		s.wake()
+	}
 }
 
 func (s *service) WireDispatchSink(sink DispatchSink) {
@@ -283,6 +295,9 @@ func (s *service) Dispatch(ctx context.Context, orgID uuid.UUID, eventType model
 			log.Warn().Err(err).Str("endpoint_id", endpoints[i].ID.String()).Msg("Failed to enqueue webhook delivery")
 			return eventID, err
 		}
+	}
+	if len(endpoints) > 0 {
+		s.enqueued()
 	}
 	return eventID, nil
 }
@@ -526,7 +541,9 @@ func (s *service) enqueueChallenge(ctx context.Context, endpoint *models.Webhook
 	}
 	if err := s.repo.EnqueueDelivery(ctx, delivery); err != nil {
 		log.Warn().Err(err).Str("endpoint_id", endpoint.ID.String()).Msg("Failed to enqueue webhook challenge")
+		return
 	}
+	s.enqueued()
 }
 
 // generateSecret returns a 32-byte cryptographically-random hex string.
@@ -650,6 +667,7 @@ type DeliveryWorker struct {
 	reapEvery        time.Duration
 	autoDisableAfter time.Duration
 	lastReap         time.Time
+	wake             chan struct{}
 }
 
 // DeliveryWorkerOptions configures the worker. Sensible defaults are
@@ -710,27 +728,42 @@ func NewDeliveryWorker(repo repository.WebhookRepository, opts DeliveryWorkerOpt
 		leaseTimeout:     opts.LeaseTimeout,
 		reapEvery:        time.Minute,
 		autoDisableAfter: opts.AutoDisableAfter,
+		wake:             make(chan struct{}, 1),
 	}
 }
 
-// Run blocks until ctx is cancelled, draining the delivery queue on a
-// fixed interval. Errors are logged but do not stop the loop — the queue
-// stays in Postgres, so a crashed dispatcher resumes on restart.
+// Wake makes Run poll now instead of waiting out an idle interval.
+func (w *DeliveryWorker) Wake() {
+	select {
+	case w.wake <- struct{}{}:
+	default:
+	}
+}
+
+// Run blocks until ctx is cancelled, draining the delivery queue: at once
+// while batches come back full, slowing to 5x the poll interval while empty.
+// Errors are logged but do not stop the loop — the queue stays in Postgres,
+// so a crashed dispatcher resumes on restart.
 func (w *DeliveryWorker) Run(ctx context.Context) {
-	t := time.NewTicker(w.pollEvery)
+	pace := idlepoll.Pace{Min: w.pollEvery, Max: 5 * w.pollEvery}
+	t := time.NewTimer(w.pollEvery)
 	defer t.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-w.wake:
+			n := w.tick(ctx)
+			t.Reset(pace.Next(n, n >= w.batchSize))
 		case <-t.C:
-			w.tick(ctx)
+			n := w.tick(ctx)
+			t.Reset(pace.Next(n, n >= w.batchSize))
 		}
 	}
 }
 
-func (w *DeliveryWorker) tick(ctx context.Context) {
+func (w *DeliveryWorker) tick(ctx context.Context) int {
 	// Periodically re-queue deliveries stranded in_flight by a crashed worker.
 	if now := time.Now(); now.Sub(w.lastReap) >= w.reapEvery {
 		w.lastReap = now
@@ -744,11 +777,12 @@ func (w *DeliveryWorker) tick(ctx context.Context) {
 	deliveries, err := w.repo.ClaimDueDeliveries(ctx, w.batchSize)
 	if err != nil {
 		log.Warn().Err(err).Msg("Failed to claim webhook deliveries")
-		return
+		return 0
 	}
 	for i := range deliveries {
 		w.deliver(ctx, &deliveries[i])
 	}
+	return len(deliveries)
 }
 
 // rateLimited reports whether the endpoint is over its per-second delivery

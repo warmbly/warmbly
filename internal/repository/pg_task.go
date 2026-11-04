@@ -145,11 +145,12 @@ type TaskRepository interface {
 	// whole sender pool. Accounts that have never sent are absent from the map.
 	GetLastSendTimes(ctx context.Context, accountIDs []uuid.UUID, taskType string) (map[uuid.UUID]time.Time, error)
 	GetBookedSendsForAccount(ctx context.Context, accountID uuid.UUID, around time.Time) ([]Task, error)
-	// ListDuePendingTaskIDs returns pending tasks whose scheduled_at has passed,
-	// oldest first, capped at limit. Drives the in-process (TASKS_PROVIDER=local)
-	// dispatcher, which fires each due task by id.
-	ListDuePendingTaskIDs(ctx context.Context, limit int) ([]uuid.UUID, error)
+	// ClaimDueTaskIDs leases pending tasks whose slot has arrived, oldest first,
+	// capped at limit. Drives the in-process (TASKS_PROVIDER=local) dispatcher,
+	// which fires each claimed task by id.
+	ClaimDueTaskIDs(ctx context.Context, limit int, lease time.Duration) ([]uuid.UUID, error)
 	RecordDispatchAttempt(ctx context.Context, taskID uuid.UUID, failed bool, retryAt time.Time) error
+	ReleaseDispatchClaims(ctx context.Context, taskIDs []uuid.UUID) error
 	ListOverdueWarmupDispatches(ctx context.Context, now time.Time) ([]MailboxLoadingIncident, error)
 
 	// Update operations
@@ -896,19 +897,27 @@ func (r *taskRepository) CancelOverduePendingTasks(ctx context.Context, taskType
 	return tag.RowsAffected(), nil
 }
 
-// ListDuePendingTaskIDs returns pending tasks whose slot has arrived, oldest
-// first. The in-process dispatcher fires each; rows stay pending until their
-// handler flips the status, so this is safe to call on a short interval.
-func (r *taskRepository) ListDuePendingTaskIDs(ctx context.Context, limit int) ([]uuid.UUID, error) {
+// ClaimDueTaskIDs claims up to limit pending tasks whose slot has arrived, oldest
+// first, for lease. Another replica skips a claimed task until RecordDispatchAttempt
+// releases it or the lease lapses, so each due task is fired by one dispatcher.
+func (r *taskRepository) ClaimDueTaskIDs(ctx context.Context, limit int, lease time.Duration) ([]uuid.UUID, error) {
 	query := `
-		SELECT id
-		FROM tasks
-		WHERE status = 'pending'
-		  AND GREATEST(scheduled_at, COALESCE(dispatch_retry_at, scheduled_at)) <= NOW()
-		ORDER BY GREATEST(scheduled_at, COALESCE(dispatch_retry_at, scheduled_at)), id
-		LIMIT $1
+		UPDATE tasks t
+		SET dispatch_claimed_until = NOW() + make_interval(secs => $2)
+		FROM (
+			SELECT id
+			FROM tasks
+			WHERE status = 'pending'
+			  AND GREATEST(scheduled_at, COALESCE(dispatch_retry_at, scheduled_at)) <= NOW()
+			  AND (dispatch_claimed_until IS NULL OR dispatch_claimed_until <= NOW())
+			ORDER BY GREATEST(scheduled_at, COALESCE(dispatch_retry_at, scheduled_at)), id
+			LIMIT $1
+			FOR UPDATE SKIP LOCKED
+		) due
+		WHERE t.id = due.id
+		RETURNING t.id
 	`
-	rows, err := r.db.Query(ctx, query, limit)
+	rows, err := r.db.Query(ctx, query, limit, lease.Seconds())
 	if err != nil {
 		return nil, err
 	}
@@ -929,14 +938,24 @@ func (r *taskRepository) ListDuePendingTaskIDs(ctx context.Context, limit int) (
 func (r *taskRepository) RecordDispatchAttempt(ctx context.Context, taskID uuid.UUID, failed bool, retryAt time.Time) error {
 	if failed {
 		_, err := r.db.Exec(ctx, `UPDATE tasks SET dispatch_retry_at=$2,
-		    dispatch_failure_since=COALESCE(dispatch_failure_since,NOW()),dispatch_failure_at=NOW()
+		    dispatch_failure_since=COALESCE(dispatch_failure_since,NOW()),dispatch_failure_at=NOW(),
+		    dispatch_claimed_until=NULL
 		    WHERE id=$1 AND status='pending'`, taskID, retryAt)
 		return err
 	}
 	_, err := r.db.Exec(ctx, `UPDATE tasks SET dispatch_retry_at=CASE
 	    WHEN status='pending' AND scheduled_at<=NOW() THEN GREATEST(dispatch_retry_at,$2)
 	    ELSE NULL END,
-	    dispatch_failure_since=NULL,dispatch_failure_at=NULL WHERE id=$1`, taskID, retryAt)
+	    dispatch_failure_since=NULL,dispatch_failure_at=NULL,dispatch_claimed_until=NULL WHERE id=$1`, taskID, retryAt)
+	return err
+}
+
+// ReleaseDispatchClaims hands claimed tasks that never ran back to the next poll.
+func (r *taskRepository) ReleaseDispatchClaims(ctx context.Context, taskIDs []uuid.UUID) error {
+	if len(taskIDs) == 0 {
+		return nil
+	}
+	_, err := r.db.Exec(ctx, `UPDATE tasks SET dispatch_claimed_until=NULL WHERE id = ANY($1) AND dispatch_claimed_until IS NOT NULL`, taskIDs)
 	return err
 }
 
