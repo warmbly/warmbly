@@ -219,6 +219,8 @@ async function run(aws, config, report) {
   mkdirSync(config.work, { mode: 0o700 });
   const evidence = { mode: config.mode, source: config.source, run: config.currentRun, success: false, writeAttempted: false,
     reviewedPlan: { run: config.run, version: config.version, sha256: config.digest } };
+  let message;
+  let failure;
   try {
     const identity = await aws("sts", "get-caller-identity");
     requireThat(identity.Account === ACCOUNT && /^arn:aws:sts::925323749693:assumed-role\/warmbly-production-terraform-apply\/[^/]+$/.test(identity.Arn || ""),
@@ -229,19 +231,26 @@ async function run(aws, config, report) {
       const plan = makePlan(evidence.readback, config);
       evidence.health = await health(aws, evidence.readback);
       const record = await put(aws, config, "plan.json", plan);
-      report(`Plan only: one in-place origin listener SslPolicy update.\n\nPlan run: ${config.currentRun}\n\nPlan version: ${record.version}\n\nComplete plan SHA-256: ${record.sha256}\n\nReview the full private plan before a separate apply dispatch. No configuration write occurred.`);
+      message = `Plan only: one in-place origin listener SslPolicy update.\n\nPlan run: ${config.currentRun}\n\nPlan version: ${record.version}\n\nComplete plan SHA-256: ${record.sha256}\n\nReview the full private plan before a separate apply dispatch. No configuration write occurred.`;
     } else {
       const plan = await loadPlan(aws, config);
       await execute(aws, config, plan, evidence);
-      report(`Origin policy ${config.mode} completed. Exact listener, certificates, attributes, rules, target groups and security groups read back unchanged apart from SslPolicy; routed HTTPS targets are healthy. Retain separate authorized origin handshake evidence.`);
+      message = `Origin policy ${config.mode} completed. Exact listener, certificates, attributes, rules, target groups and security groups read back unchanged apart from SslPolicy; routed HTTPS targets are healthy. Retain separate authorized origin handshake evidence.`;
     }
     evidence.success = true;
   } catch (error) {
     evidence.error = error.message;
-    throw error;
-  } finally {
-    await put(aws, config, "result.json", evidence);
+    failure = error;
   }
+  try {
+    await put(aws, config, "result.json", evidence);
+  } catch {
+    const archiveFailure = `Result evidence archive failed; writeAttempted=${evidence.writeAttempted}`;
+    if (!failure) throw new Error(archiveFailure);
+    console.error(archiveFailure);
+  }
+  if (failure) throw failure;
+  report(message);
 }
 
 if (require.main === module) {

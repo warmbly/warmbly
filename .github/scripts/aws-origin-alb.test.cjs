@@ -80,7 +80,10 @@ function fixture(t) {
   const writeCalls = () => calls.filter((c) => c.action === "modify-listener");
   const reports = [];
   const plan = async () => {
-    await run(aws, config, (s) => reports.push(s));
+    await run(aws, config, (s) => {
+      assert.ok(objects.has(`${PREFIX}/100/1/result.json`));
+      reports.push(s);
+    });
     const object = objects.get(`${PREFIX}/100/1/plan.json`);
     return { mode: "apply", source: SOURCE, currentRun: "200", run: "100", version: object.metadata.VersionId,
       digest: hash(object.bytes), work: join(dir, "apply") };
@@ -177,7 +180,10 @@ test("apply changes only ssl policy after immutable intent and verifies the enti
   const f = fixture(t);
   const config = await f.plan();
   const before = structuredClone(f.live);
-  await run(f.aws, config, (s) => f.reports.push(s));
+  await run(f.aws, config, (s) => {
+    assert.ok(f.objects.has(`${PREFIX}/200/1/result.json`));
+    f.reports.push(s);
+  });
   const expected = structuredClone(before);
   expected.listeners[0].SslPolicy = DESIRED;
   assert.deepEqual(f.live, expected);
@@ -186,6 +192,70 @@ test("apply changes only ssl policy after immutable intent and verifies the enti
   const writeIndex = f.calls.findIndex((c) => c.action === "modify-listener");
   assert.ok(intentIndex >= 0 && intentIndex < writeIndex);
   assert.equal(JSON.parse(f.objects.get(`${PREFIX}/200/1/result.json`).bytes).success, true);
+});
+
+for (const mode of ["plan", "apply", "rollback"]) test(`${mode} completion requires a successful result archive`, async (t) => {
+  const f = fixture(t);
+  let config = f.config;
+  if (mode !== "plan") config = await f.plan();
+  if (mode === "rollback") {
+    await run(f.aws, config, () => {});
+    config = { ...config, mode, currentRun: "300", work: join(f.dir, "rollback") };
+  }
+  const resultKey = `${PREFIX}/${config.currentRun}/1/result.json`;
+  const reports = [];
+  const logs = [];
+  let archivedEvidence;
+  let reportsAtArchive;
+  t.mock.method(console, "error", (...args) => logs.push(args));
+  const aws = async (service, action, args) => {
+    if (action === "put-object" && args.includes(resultKey)) {
+      reportsAtArchive = [...reports];
+      archivedEvidence = JSON.parse(readFileSync(args[args.indexOf("--body") + 1]));
+      throw new Error("Private archive provider response\ncredential=fixture-secret");
+    }
+    return f.aws(service, action, args);
+  };
+  await assert.rejects(run(aws, config, (s) => reports.push(s)), {
+    message: `Result evidence archive failed; writeAttempted=${mode !== "plan"}`,
+  });
+  assert.equal(archivedEvidence.success, true);
+  assert.equal(archivedEvidence.writeAttempted, mode !== "plan");
+  assert.deepEqual(reportsAtArchive, []);
+  assert.deepEqual(reports, []);
+  assert.deepEqual(logs, []);
+  assert.ok(!f.objects.has(resultKey));
+  assert.equal(f.live.listeners[0].SslPolicy, mode === "apply" ? DESIRED : BASELINE);
+  assert.equal(f.writeCalls().length, mode === "plan" ? 0 : mode === "apply" ? 1 : 2);
+});
+
+for (const writeAttempted of [false, true]) test(`operation error survives result archive failure with writeAttempted=${writeAttempted}`, async (t) => {
+  const f = fixture(t);
+  const config = await f.plan();
+  const resultKey = `${PREFIX}/200/1/result.json`;
+  const operationError = new Error("Origin policy operation failed");
+  const reports = [];
+  const logs = [];
+  let archivedEvidence;
+  t.mock.method(console, "error", (...args) => logs.push(args));
+  const aws = async (service, action, args) => {
+    if (!writeAttempted && action === "get-caller-identity") throw operationError;
+    if (action === "put-object" && args.includes(resultKey)) {
+      archivedEvidence = JSON.parse(readFileSync(args[args.indexOf("--body") + 1]));
+      throw new Error("Private archive provider response\ncredential=fixture-secret");
+    }
+    const response = await f.aws(service, action, args);
+    if (action === "modify-listener") throw operationError;
+    return response;
+  };
+  await assert.rejects(run(aws, config, (s) => reports.push(s)), (error) => error === operationError);
+  assert.equal(archivedEvidence.success, false);
+  assert.equal(archivedEvidence.error, operationError.message);
+  assert.equal(archivedEvidence.writeAttempted, writeAttempted);
+  assert.deepEqual(reports, []);
+  assert.deepEqual(logs, [[`Result evidence archive failed; writeAttempted=${writeAttempted}`]]);
+  assert.ok(!f.objects.has(resultKey));
+  assert.equal(f.writeCalls().length, writeAttempted ? 1 : 0);
 });
 
 test("scoped rollback uses the same exact reviewed plan and restores only the baseline policy", async (t) => {
