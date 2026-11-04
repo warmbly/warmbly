@@ -270,6 +270,9 @@ const (
 	// it must stay well clear of a slow provider handshake.
 	CampaignSendReclaimAfterMinutes = 30
 
+	// UnknownSendHoldVisibleAfterMinutes keeps an unconfirmed send out of mailbox health until it outlasts automatic recovery.
+	UnknownSendHoldVisibleAfterMinutes = 2 * CampaignSendReclaimAfterMinutes
+
 	// WorkerReleaseGraceMinutes keeps a mailbox in its previous worker's scope after a move, until the reclaimer has resolved any send it left unanswered.
 	WorkerReleaseGraceMinutes = CampaignSendReclaimAfterMinutes
 

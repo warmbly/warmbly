@@ -415,7 +415,13 @@ func (s *analyticsService) assembleAccountStatus(ctx context.Context, email *mod
 		placement = &r
 	}
 	applyWarmupPlacement(&health, placement)
-	if held {
+	if held && hold.Reason == "unknown" {
+		// Recovery is automatic and says nothing about the mailbox, so it never costs health.
+		if health.Status == "healthy" {
+			health.Status = "warning"
+		}
+		health.Issues = append(health.Issues, sendRecoveryHoldMessage(hold))
+	} else if held {
 		health.Status = "error"
 		health.Score = min(health.Score, 50)
 		health.Issues = append(health.Issues, sendRecoveryHoldMessage(hold))
