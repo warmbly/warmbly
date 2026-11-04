@@ -74,6 +74,13 @@ function sorted(rows, key) {
   return rows.sort((a, b) => a[key].localeCompare(b[key]));
 }
 
+function sortedCertificates(rows) {
+  requireThat(Array.isArray(rows) && rows.every((row) => typeof row.CertificateArn === "string" && typeof row.IsDefault === "boolean") &&
+    new Set(rows.map((row) => canonical([row.CertificateArn, row.IsDefault]))).size === rows.length,
+  "Incomplete or duplicate ALB certificate response");
+  return rows.sort((a, b) => a.CertificateArn.localeCompare(b.CertificateArn) || Number(a.IsDefault) - Number(b.IsDefault));
+}
+
 async function collect(aws) {
   const lb = await aws("elbv2", "describe-load-balancers", ["--load-balancer-arns", LB]);
   requireThat(lb.LoadBalancers?.length === 1 && lb.LoadBalancers[0].LoadBalancerArn === LB &&
@@ -85,7 +92,7 @@ async function collect(aws) {
     const details = { arn: listener.ListenerArn,
       attributes: sorted((await aws("elbv2", "describe-listener-attributes", ["--listener-arn", listener.ListenerArn])).Attributes, "Key"),
       rules: sorted((await aws("elbv2", "describe-rules", ["--listener-arn", listener.ListenerArn])).Rules, "RuleArn") };
-    if (listener.Protocol === "HTTPS") details.certificates = sorted((await aws("elbv2", "describe-listener-certificates", ["--listener-arn", listener.ListenerArn])).Certificates, "CertificateArn");
+    if (listener.Protocol === "HTTPS") details.certificates = sortedCertificates((await aws("elbv2", "describe-listener-certificates", ["--listener-arn", listener.ListenerArn])).Certificates);
     listenerDetails.push(details);
   }
   const targetGroups = sorted((await aws("elbv2", "describe-target-groups", ["--load-balancer-arn", LB])).TargetGroups, "TargetGroupArn");

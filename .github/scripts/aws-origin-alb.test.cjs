@@ -198,6 +198,46 @@ test("scoped rollback uses the same exact reviewed plan and restores only the ba
   assert.deepEqual(f.writeCalls().map((c) => c.args), [["--listener-arn", LISTENER, "--ssl-policy", DESIRED], ["--listener-arn", LISTENER, "--ssl-policy", BASELINE]]);
 });
 
+for (const defaultFirst of [true, false]) test(`plan, apply and rollback preserve default and SNI certificate entries with default first: ${defaultFirst}`, async (t) => {
+  const f = fixture(t);
+  const certificates = [{ CertificateArn: CERT, IsDefault: false }, { CertificateArn: CERT, IsDefault: true }];
+  const inventory = f.live.listenerDetails.find((d) => d.arn === LISTENER);
+  inventory.certificates = structuredClone(certificates);
+  if (defaultFirst) inventory.certificates.reverse();
+  const baseline = structuredClone(f.live);
+  const config = await f.plan();
+  assert.deepEqual(f.live, baseline);
+  assert.equal(f.writeCalls().length, 0);
+  const plan = JSON.parse(f.objects.get(`${PREFIX}/100/1/plan.json`).bytes);
+  checkPlan(plan, { source: SOURCE, run: "100" });
+  for (const snapshot of [plan.before, plan.after]) {
+    assert.deepEqual(snapshot.listenerDetails.find((d) => d.arn === LISTENER).certificates, certificates);
+  }
+  for (const [mode, currentRun, policy] of [["apply", "200", DESIRED], ["rollback", "300", BASELINE]]) {
+    inventory.certificates.reverse();
+    const expected = structuredClone(f.live);
+    expected.listeners[0].SslPolicy = policy;
+    await run(f.aws, { ...config, mode, currentRun, work: join(f.dir, mode) }, () => {});
+    assert.deepEqual(f.live, expected);
+    const result = JSON.parse(f.objects.get(`${PREFIX}/${currentRun}/1/result.json`).bytes);
+    assert.equal(result.success, true);
+    assert.deepEqual(result.readback.listenerDetails.find((d) => d.arn === LISTENER).certificates, certificates);
+  }
+  assert.deepEqual(f.live, baseline);
+  assert.deepEqual(f.writeCalls().map((c) => c.args), [["--listener-arn", LISTENER, "--ssl-policy", DESIRED], ["--listener-arn", LISTENER, "--ssl-policy", BASELINE]]);
+});
+
+test("certificate inventory requires distinct ARN and default-status pairs with boolean status", async (t) => {
+  for (const status of [true, false, undefined, "true"]) {
+    const f = fixture(t);
+    f.live.listenerDetails[0].certificates = [
+      { CertificateArn: CERT, IsDefault: status }, { CertificateArn: CERT, IsDefault: status },
+    ];
+    await assert.rejects(collect(f.aws), /Incomplete or duplicate ALB certificate response/);
+    assert.equal(f.writeCalls().length, 0);
+  }
+});
+
 for (const [label, drift] of [
   ["policy", (f) => { f.live.listeners[0].SslPolicy = DESIRED; }],
   ["certificate", (f) => { f.live.listeners[0].Certificates = []; }],
