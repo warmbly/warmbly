@@ -80,6 +80,7 @@ func TestEventAvroReadsPreUpgradeEnvelopes(t *testing.T) {
 		want := sample(WorkerEventBodies[WorkerEventTypeAddEmail]).(*AddWorkerEmail)
 		want.TransportGeneration = [16]byte{}
 		want.SealedSecrets = ""
+		want.Push = nil
 		want.Sync.State.TransportGeneration = [16]byte{}
 		want.Sync.State.FolderCoverageObservedAt = nil
 		for _, svc := range []*Service{want.SmtpImap.Credentials.SMTP, want.SmtpImap.Credentials.IMAP} {
@@ -107,10 +108,10 @@ func TestEventAvroReadsPreUpgradeEnvelopes(t *testing.T) {
 
 // Unframed fixtures need their writer schema, just as registry decoding does.
 // branchesAfterFixtures are union branches added after the fixtures were written.
-var branchesAfterFixtures = []any{"warmbly.events.JobEventWarmupRescued"}
+var branchesAfterFixtures = []any{"warmbly.events.JobEventWarmupRescued", "warmbly.events.JobEventPushState", "warmbly.events.SyncWake"}
 
 // fieldsAfterFixtures are record fields added after the fixtures were written.
-var fieldsAfterFixtures = []any{"transport_generation", "sealed_secrets", "tls_unverified", "tls_pin", "folder_coverage_observed_at"}
+var fieldsAfterFixtures = []any{"transport_generation", "sealed_secrets", "tls_unverified", "tls_pin", "push", "folder_coverage_observed_at"}
 
 func preTransportSchema(t *testing.T, schema avro.Schema) avro.Schema {
 	t.Helper()

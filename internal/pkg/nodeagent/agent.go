@@ -35,6 +35,7 @@ const DefaultInterval = 90 * time.Second
 type Config struct {
 	LogToken           string
 	WarmupSendProtocol int
+	SyncWakeProtocol   int
 	NodeID             uuid.UUID
 	Role               models.NodeRole
 	Name               string
@@ -43,6 +44,9 @@ type Config struct {
 	// CapacityTarget is meaningful for workers only. Zero leaves the control
 	// plane's stored/default target unchanged.
 	CapacityTarget float64
+	// Capacity, when set, replaces CapacityTarget with a target derived from
+	// each beat's usage; a zero result keeps CapacityTarget.
+	Capacity func(models.NodeUsage) float64
 	// Version is what this build reports. Empty means "unknown", which the
 	// control plane must not read as "needs updating".
 	Version string
@@ -160,16 +164,24 @@ func paceFrom(livenessSeconds int) time.Duration {
 }
 
 func (a *Agent) beat(ctx context.Context, booted, stopping bool) *models.NodeHeartbeatReply {
+	usage := a.sampleUsage()
+	capacity := a.cfg.CapacityTarget
+	if a.cfg.Capacity != nil {
+		if v := a.cfg.Capacity(usage); v > 0 {
+			capacity = v
+		}
+	}
 	beat := models.NodeHeartbeat{
 		WarmupSendProtocol: a.cfg.WarmupSendProtocol,
+		SyncWakeProtocol:   a.cfg.SyncWakeProtocol,
 		NodeID:             a.cfg.NodeID,
 		Role:               a.cfg.Role,
 		Name:               a.cfg.Name,
 		Region:             a.cfg.Region,
 		Address:            a.address,
-		CapacityTarget:     a.cfg.CapacityTarget,
+		CapacityTarget:     capacity,
 		Version:            a.cfg.Version,
-		Usage:              a.sampleUsage(),
+		Usage:              usage,
 		Booted:             booted,
 		Stopping:           stopping,
 	}

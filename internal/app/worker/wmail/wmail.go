@@ -137,6 +137,10 @@ type WMail struct {
 	transportFailures int
 	syncStartupError  *errx.MailError
 
+	// wake runs the next sync pass early; push is the provider channel that fills it.
+	wake chan struct{}
+	push pushChannel
+
 	Ctx           context.Context
 	Cancel        context.CancelFunc
 	TerminateFunc func()
@@ -174,6 +178,7 @@ func NewWMail(
 		Ctx:           mailCtx,
 		Cancel:        cancel,
 		TerminateFunc: terminate,
+		wake:          make(chan struct{}, 1),
 
 		Cache:                     cache,
 		Storage:                   storage,
@@ -182,6 +187,7 @@ func NewWMail(
 		CipherService:             cipherService,
 	}
 	mail.rememberExecution(data)
+	mail.ApplyPush(data.Push)
 	ready := false
 	defer func() {
 		if !ready {
@@ -314,6 +320,7 @@ func NewWMail(
 				Credentials: data.SmtpImap.Credentials.IMAP,
 			}
 			mail.SmtpImapData.ImapClient = conn
+			mail.push.imapCred = data.SmtpImap.Credentials.IMAP
 			if err := conn.Connect(); err != nil {
 				if !isTransportError(err) && err.Code != errx.MailErrorCodeSendingTooFast {
 					return nil, err

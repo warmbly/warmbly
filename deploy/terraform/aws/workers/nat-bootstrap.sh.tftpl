@@ -1,0 +1,112 @@
+#!/bin/sh
+# IPv4 NAT for one zone of the worker fleet: forward and masquerade the fleet
+# subnets, then claim this zone's Elastic IP and default route.
+set -eu
+
+REGION='${region}'
+ALLOCATION_ID='${allocation_id}'
+ROUTE_TABLE_ID='${route_table_id}'
+SOURCE_CIDRS='${source_cidrs}'
+CONNTRACK_MAX='${conntrack_max}'
+TCP_ESTABLISHED='${tcp_established}'
+
+log() { printf 'warmbly-nat: %s\n' "$*"; }
+
+retry() {
+  attempts=0
+  while ! "$@"; do
+    attempts=$((attempts + 1))
+    if [ "$attempts" -ge 60 ]; then return 1; fi
+    sleep 5
+  done
+  return 0
+}
+
+imds() {
+  token=$(curl -fsS -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 300' http://169.254.169.254/latest/api/token) || return 1
+  curl -fsS -H "X-aws-ec2-metadata-token: $token" "http://169.254.169.254/latest/$1"
+}
+
+write_kernel_settings() {
+  printf '%s\n' nf_conntrack > /etc/modules-load.d/warmbly-nat.conf
+  printf 'options nf_conntrack hashsize=%s\n' "$((CONNTRACK_MAX / 4))" > /etc/modprobe.d/warmbly-nat.conf
+  cat > /etc/sysctl.d/90-warmbly-nat.conf <<SYSCTL
+net.ipv4.ip_forward = 1
+net.netfilter.nf_conntrack_max = $CONNTRACK_MAX
+net.netfilter.nf_conntrack_tcp_timeout_established = $TCP_ESTABLISHED
+SYSCTL
+}
+
+# The rules live in a boot unit, so a reboot restores them before traffic returns.
+write_rules_unit() {
+  cat > /usr/local/sbin/warmbly-nat-rules <<RULES
+#!/bin/sh
+set -eu
+modprobe nf_conntrack
+printf '%s\n' "$((CONNTRACK_MAX / 4))" > /sys/module/nf_conntrack/parameters/hashsize
+sysctl -q -p /etc/sysctl.d/90-warmbly-nat.conf
+dev=\$(ip -o route show default | awk '{print \$5; exit}')
+iptables -w -P FORWARD DROP
+iptables -w -F FORWARD
+iptables -w -t nat -F POSTROUTING
+iptables -w -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+for cidr in $SOURCE_CIDRS; do
+  iptables -w -A FORWARD -s "\$cidr" -o "\$dev" -j ACCEPT
+  iptables -w -t nat -A POSTROUTING -s "\$cidr" -o "\$dev" -j MASQUERADE
+done
+RULES
+  chmod 0755 /usr/local/sbin/warmbly-nat-rules
+  cat > /etc/systemd/system/warmbly-nat.service <<'UNIT'
+[Unit]
+Description=Warmbly fleet IPv4 NAT rules
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/warmbly-nat-rules
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+}
+
+# The address is claimed before the route, so the fleet never egresses from this instance's temporary one.
+claim() {
+  instance_id=$(retry imds meta-data/instance-id)
+  mac=$(retry imds meta-data/mac)
+  eni=$(retry imds "meta-data/network/interfaces/macs/$mac/interface-id")
+  retry aws ec2 modify-instance-attribute --region "$REGION" --instance-id "$instance_id" --no-source-dest-check
+  retry aws ec2 associate-address --region "$REGION" --allocation-id "$ALLOCATION_ID" --network-interface-id "$eni" --allow-reassociation >/dev/null
+  log "claimed $ALLOCATION_ID"
+  retry replace_route "$eni"
+  log "routing $ROUTE_TABLE_ID through $eni"
+}
+
+replace_route() {
+  aws ec2 replace-route --region "$REGION" --route-table-id "$ROUTE_TABLE_ID" --destination-cidr-block 0.0.0.0/0 --network-interface-id "$1" 2>/dev/null ||
+    aws ec2 create-route --region "$REGION" --route-table-id "$ROUTE_TABLE_ID" --destination-cidr-block 0.0.0.0/0 --network-interface-id "$1" >/dev/null
+}
+
+# A boot that fails leaves the zone without egress, so power off and let the group replace the instance.
+on_exit() {
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    log "boot failed with status $rc; powering off"
+    shutdown -h now || true
+  fi
+}
+
+main() {
+  trap on_exit EXIT
+  retry dnf -y --setopt=retries=20 install iptables-nft
+  write_kernel_settings
+  write_rules_unit
+  systemctl daemon-reload
+  systemctl enable --now warmbly-nat.service
+  claim
+  return 0
+}
+
+main "$@"

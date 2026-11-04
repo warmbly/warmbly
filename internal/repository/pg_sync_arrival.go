@@ -121,12 +121,12 @@ func (r *pgEmailMessageMapRepository) HasPendingArrival(ctx context.Context, use
 	return pending, err
 }
 
-// arrivalBatch is how many stored arrivals one claim leases; the lease outlives the 30 second pass.
-const arrivalBatch = 32
+// ArrivalBatchSize is how many stored arrivals one claim leases, and the most one DeliverArrivals call delivers; the lease outlives the 30 second pass.
+const ArrivalBatchSize = 32
 
 // DeliverArrivals invokes the existing consumer handlers, retaining every failed stage.
 func (r *pgEmailMessageMapRepository) DeliverArrivals(ctx context.Context, deliver func(context.Context, models.JobEventType, any) error) error {
-	claimed, err := r.claimArrivals(ctx, nil, arrivalBatch)
+	claimed, err := r.claimArrivals(ctx, nil, ArrivalBatchSize)
 	if err != nil {
 		return err
 	}
@@ -144,7 +144,7 @@ func (r *pgEmailMessageMapRepository) DeliverArrivals(ctx context.Context, deliv
 
 func deliverArrivalBatch(ctx context.Context, deliverOne func() (bool, error)) error {
 	var first error
-	for i := 0; i < arrivalBatch; i++ {
+	for i := 0; i < ArrivalBatchSize; i++ {
 		found, err := deliverOne()
 		if err != nil && first == nil {
 			first = err

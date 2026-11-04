@@ -223,6 +223,13 @@ func (p *selfExecPublisher) PublishRemoveEmail(ctx context.Context, workerID uui
 	return p.Publisher.PublishRemoveEmail(ctx, workerID, remove)
 }
 
+func (p *selfExecPublisher) PublishSyncWake(ctx context.Context, workerID uuid.UUID, wake *models.SyncWake) error {
+	if workerID == uuid.Nil {
+		return errNoExecutor
+	}
+	return p.Publisher.PublishSyncWake(ctx, workerID, wake)
+}
+
 func (p *selfExecPublisher) PublishEmailValidation(ctx context.Context, workerID string, body models.EventWorkerEmailValidation) error {
 	if id, err := uuid.Parse(workerID); err == nil && id == uuid.Nil {
 		return errNoExecutor

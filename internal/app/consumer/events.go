@@ -55,6 +55,7 @@ func (w *JobsService) InitEvents() {
 	Register(w, models.JobEventTypeHistoryIDUpdate, w.HandleHistoryIDUpdate)
 	Register(w, models.JobEventTypeGraphDeltaUpdate, w.HandleGraphDeltaUpdate)
 	Register(w, models.JobEventTypeSyncState, w.HandleSyncState)
+	Register(w, models.JobEventTypePushState, w.HandlePushState)
 	Register(w, models.JobEventTypeTokenUpdate, w.HandleTokenUpdate)
 	Register(w, models.JobEventTypeWarmupRemovalChecked, w.HandleWarmupRemovalChecked)
 	Register(w, models.JobEventTypeWarmupFiled, w.HandleWarmupFiled)

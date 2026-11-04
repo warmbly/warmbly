@@ -3,6 +3,7 @@ package email
 import (
 	"context"
 	"fmt"
+	"github.com/warmbly/warmbly/internal/app/mailpush"
 	"slices"
 	"sort"
 	"strings"
@@ -120,6 +121,8 @@ type EmailService interface {
 	// WireGraphDelta attaches the Graph delta-cursor repository so the worker
 	// reconciler can seed a mailbox's saved cursors when loading it.
 	WireGraphDelta(repo repository.EmailGraphDeltaRepository)
+	// WirePush attaches the provider push settings each ADD_EMAIL carries.
+	WirePush(settings *mailpush.Settings)
 	// WireEmailHistoryID attaches the Gmail history-cursor repository, the
 	// Google counterpart of WireGraphDelta, so a reloaded mailbox resumes from
 	// its saved checkpoint instead of re-bootstrapping.
@@ -202,6 +205,7 @@ type emailService struct {
 	workerAssignment   worker.WorkerAssignmentService
 	allowance          MailboxAllowanceSource
 	graphDelta         repository.EmailGraphDeltaRepository
+	push               *mailpush.Settings
 	historyID          repository.EmailHistoryIDRepository
 	syncState          repository.EmailSyncStateRepository
 	mailboxes          repository.MailboxRepository

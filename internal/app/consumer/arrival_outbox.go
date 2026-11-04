@@ -26,7 +26,10 @@ func (s *JobsService) runArrivalOutbox(ctx context.Context) {
 		}
 	}()
 	for {
-		s.runArrivalOutboxPass(ctx, &diagnostics, &failedSince, &lastAlert)
+		// A full batch means more rows are likely waiting, so the next pass starts at once.
+		if s.runArrivalOutboxPass(ctx, &diagnostics, &failedSince, &lastAlert) >= repository.ArrivalBatchSize && ctx.Err() == nil {
+			continue
+		}
 		select {
 		case <-ctx.Done():
 			return
@@ -35,11 +38,12 @@ func (s *JobsService) runArrivalOutbox(ctx context.Context) {
 	}
 }
 
-func (s *JobsService) runArrivalOutboxPass(ctx context.Context, diagnostics *arrivaldiag.Window, failedSince, lastAlert *time.Time) {
+func (s *JobsService) runArrivalOutboxPass(ctx context.Context, diagnostics *arrivaldiag.Window, failedSince, lastAlert *time.Time) (delivered int) {
 	pass, cancel := context.WithTimeout(ctx, 30*time.Second)
 	pass, measurements := arrivaldiag.WithPass(pass)
 	started := time.Now()
 	err := s.ArrivalOutbox.DeliverArrivals(pass, func(ctx context.Context, kind models.JobEventType, body any) error {
+		delivered++
 		return s.deliverArrivalEvent(ctx, kind, body)
 	})
 	if err != nil {
@@ -53,6 +57,7 @@ func (s *JobsService) runArrivalOutboxPass(ctx context.Context, diagnostics *arr
 		summary.Log()
 	}
 	cancel()
+	return delivered
 }
 
 // arrivalBacklogInterval spaces the queue count; the alert it feeds waits minutes anyway.
