@@ -58,6 +58,7 @@ function fixture(t, options = {}) {
     case "RegisterTaskDefinitionCommand": {
       latest = arn(defs.size + 1);
       const { tags: nextTags, ...input } = structuredClone(command.input);
+      if (options.reorderEnvironment) input.containerDefinitions[0].environment.reverse();
       defs.set(latest, { definition: { ...input, status: "ACTIVE", taskDefinitionArn: latest }, tags: nextTags });
       return { taskDefinition: { taskDefinitionArn: latest } };
     }
@@ -106,6 +107,23 @@ test("only the allowlisted flag and ownership tag change; every live task is che
   assert.equal((await f.run()).changed, false);
   assert.equal(mutations(f).length, count, "repeated request is a no-op even with its original expected revision");
   assert.equal(f.sleeps.reduce((a, b) => a + b, 0), 600000, "an interrupted bake is always observed afresh without rolling again");
+});
+
+test("provider environment ordering preserves a successful full bake without rollback", async (t) => {
+  const f = fixture(t, { reorderEnvironment: true });
+  assert.equal((await f.run()).changed, true);
+  assert.equal(f.live.taskDefinition, arn(2));
+  assert.deepEqual(f.calls.filter((c) => c.name === "UpdateServiceCommand").map((c) => c.input.taskDefinition), [arn(2)]);
+  assert.equal(f.sleeps.reduce((a, b) => a + b, 0), 300000);
+});
+
+test("a prepared definition with reordered environment bindings is reused", async (t) => {
+  const f = fixture(t);
+  const prepared = structuredClone(f.base);
+  prepared.containerDefinitions[0].environment.unshift({ name: ATTACHMENT_PROXY, value: "true" });
+  f.prepare(prepared, [...f.tags, { key: ATTACHMENT_PROXY_TAG, value: "true" }]);
+  assert.equal((await f.run()).taskDefinition, arn(2));
+  assert.ok(!f.calls.some((c) => c.name === "RegisterTaskDefinitionCommand"));
 });
 
 test("disabling is explicit and preserves the remainder of the running definition", async (t) => {
