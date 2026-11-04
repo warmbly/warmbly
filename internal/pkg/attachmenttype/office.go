@@ -7,7 +7,10 @@ import (
 	"encoding/xml"
 	"io"
 	"path"
+	"sort"
 	"strings"
+	"unicode/utf16"
+	"unicode/utf8"
 )
 
 const (
@@ -18,7 +21,7 @@ const (
 	officeNS    = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/"
 )
 
-// readZIP verifies every member's compression and CRC within shared expansion limits.
+// readZIP verifies member identity, compressed work, expansion and CRC within shared limits.
 func readZIP(body []byte) (map[string][]byte, error) {
 	if !bytes.HasPrefix(body, []byte("PK\x03\x04")) && !bytes.HasPrefix(body, []byte("PK\x05\x06")) {
 		return nil, ErrInvalid
@@ -39,6 +42,9 @@ func readZIP(body []byte) (map[string][]byte, error) {
 	if count > maxEntries || binary.LittleEndian.Uint16(e[4:6]) != 0 || binary.LittleEndian.Uint16(e[6:8]) != 0 || int(binary.LittleEndian.Uint16(e[8:10])) != count || uint64(binary.LittleEndian.Uint32(e[12:16]))+uint64(binary.LittleEndian.Uint32(e[16:20])) != uint64(end) {
 		return nil, ErrInvalid
 	}
+	if !zipLayout(body, int(binary.LittleEndian.Uint32(e[16:20])), end, count) {
+		return nil, ErrInvalid
+	}
 	z, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
 	if err != nil || len(z.File) != count {
 		return nil, ErrInvalid
@@ -49,9 +55,15 @@ func readZIP(body []byte) (map[string][]byte, error) {
 		if _, duplicate := parts[f.Name]; duplicate || f.Flags&1 != 0 || f.UncompressedSize64 > maxPart {
 			return nil, ErrInvalid
 		}
-		if f.Name == "" || strings.Contains(f.Name, "\\") || strings.HasPrefix(f.Name, "/") || strings.Contains(f.Name, "../") {
+		if f.Name == "" || strings.Contains(f.Name, "\\") || strings.HasPrefix(f.Name, "/") || (len(f.Name) >= 2 && f.Name[1] == ':') {
 			return nil, ErrInvalid
 		}
+		for _, segment := range strings.Split(f.Name, "/") {
+			if segment == ".." {
+				return nil, ErrInvalid
+			}
+		}
+		// Open confines decompression to this member's preflighted compressed section.
 		r, err := f.Open()
 		if err != nil {
 			return nil, ErrInvalid
@@ -67,6 +79,69 @@ func readZIP(body []byte) (map[string][]byte, error) {
 	return parts, nil
 }
 
+func zipLayout(body []byte, start, end, count int) bool {
+	type span struct{ start, end int }
+	spans := make([]span, 0, count)
+	at, compressed := start, uint64(0)
+	for i := 0; i < count; i++ {
+		if at < 0 || end-at < 46 || string(body[at:at+4]) != "PK\x01\x02" {
+			return false
+		}
+		c := body[at : at+46]
+		names, extra, comment := int(binary.LittleEndian.Uint16(c[28:30])), int(binary.LittleEndian.Uint16(c[30:32])), int(binary.LittleEndian.Uint16(c[32:34]))
+		if names+extra+comment > end-at-46 || binary.LittleEndian.Uint16(c[34:36]) != 0 {
+			return false
+		}
+		local := int(binary.LittleEndian.Uint32(c[42:46]))
+		if local < 0 || local > start || start-local < 30 || string(body[local:local+4]) != "PK\x03\x04" {
+			return false
+		}
+		l := body[local : local+30]
+		ln, le := int(binary.LittleEndian.Uint16(l[26:28])), int(binary.LittleEndian.Uint16(l[28:30]))
+		if ln != names || ln+le > start-local-30 || !bytes.Equal(c[8:12], l[6:10]) || !bytes.Equal(body[at+46:at+46+names], body[local+30:local+30+ln]) {
+			return false
+		}
+		size := uint64(binary.LittleEndian.Uint32(c[20:24]))
+		compressed += size
+		data := local + 30 + ln + le
+		if compressed > MaxBytes || size > uint64(start-data) {
+			return false
+		}
+		finish := data + int(size)
+		if binary.LittleEndian.Uint16(c[8:10])&8 == 0 {
+			if !bytes.Equal(c[16:28], l[14:26]) {
+				return false
+			}
+		} else {
+			for field := 0; field < 3; field++ {
+				v := binary.LittleEndian.Uint32(l[14+field*4:])
+				if v != 0 && v != binary.LittleEndian.Uint32(c[16+field*4:]) {
+					return false
+				}
+			}
+			if start-finish >= 4 && string(body[finish:finish+4]) == "PK\x07\x08" {
+				finish += 4
+			}
+			if start-finish < 12 || !bytes.Equal(body[finish:finish+12], c[16:28]) {
+				return false
+			}
+			finish += 12
+		}
+		spans = append(spans, span{local, finish})
+		at += 46 + names + extra + comment
+	}
+	if at != end {
+		return false
+	}
+	sort.Slice(spans, func(i, j int) bool { return spans[i].start < spans[j].start })
+	for i := 1; i < len(spans); i++ {
+		if spans[i].start < spans[i-1].end {
+			return false
+		}
+	}
+	return true
+}
+
 type xmlPart struct {
 	root     xml.Name
 	children []xml.StartElement
@@ -74,7 +149,18 @@ type xmlPart struct {
 }
 
 func parseXML(b []byte) (xmlPart, error) {
-	d := xml.NewDecoder(bytes.NewReader(b))
+	decoded, encoding, err := xmlBytes(b)
+	if err != nil {
+		return xmlPart{}, err
+	}
+	d := xml.NewDecoder(bytes.NewReader(decoded))
+	d.CharsetReader = func(label string, input io.Reader) (io.Reader, error) {
+		label = strings.ToLower(label)
+		if encoding != "" && (label == "utf-16" || label == encoding) {
+			return input, nil
+		}
+		return nil, ErrInvalid
+	}
 	depth, tokens, roots := 0, 0, 0
 	out := xmlPart{links: map[string]bool{}}
 	for {
@@ -125,6 +211,51 @@ func parseXML(b []byte) (xmlPart, error) {
 		return out, ErrInvalid
 	}
 	return out, nil
+}
+
+func xmlBytes(b []byte) ([]byte, string, error) {
+	if len(b) > maxPart {
+		return nil, "", ErrInvalid
+	}
+	if bytes.HasPrefix(b, []byte{0xef, 0xbb, 0xbf}) {
+		return b[3:], "", nil
+	}
+	var order binary.ByteOrder
+	encoding := ""
+	switch {
+	case bytes.HasPrefix(b, []byte{0xff, 0xfe}):
+		order, encoding, b = binary.LittleEndian, "utf-16le", b[2:]
+	case bytes.HasPrefix(b, []byte{0xfe, 0xff}):
+		order, encoding, b = binary.BigEndian, "utf-16be", b[2:]
+	case bytes.HasPrefix(b, []byte{'<', 0, '?', 0}):
+		order, encoding = binary.LittleEndian, "utf-16le"
+	case bytes.HasPrefix(b, []byte{0, '<', 0, '?'}):
+		order, encoding = binary.BigEndian, "utf-16be"
+	default:
+		return b, "", nil
+	}
+	if len(b)%2 != 0 {
+		return nil, "", ErrInvalid
+	}
+	out := make([]byte, 0, len(b))
+	for i := 0; i < len(b); i += 2 {
+		r := rune(order.Uint16(b[i:]))
+		if utf16.IsSurrogate(r) {
+			if i+4 > len(b) {
+				return nil, "", ErrInvalid
+			}
+			r = utf16.DecodeRune(r, rune(order.Uint16(b[i+2:])))
+			if r == utf8.RuneError {
+				return nil, "", ErrInvalid
+			}
+			i += 2
+		}
+		out = utf8.AppendRune(out, r)
+		if len(out) > maxPart {
+			return nil, "", ErrInvalid
+		}
+	}
+	return out, encoding, nil
 }
 
 func attr(e xml.StartElement, key string) string {

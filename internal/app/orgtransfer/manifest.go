@@ -178,5 +178,5 @@ func (m *Manifest) attachmentCompatibilityWarnings() []string {
 			return []string{"Campaign attachments are restored as portable existing files, including formats outside the new-upload policy. Restore preserves their bytes and does not certify their content. Review these files before using imported campaigns."}
 		}
 	}
-	return nil
+	return []string{}
 }

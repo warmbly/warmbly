@@ -434,27 +434,29 @@ Every campaign has a **⋯** menu, on its row in the list and in the header of i
 
 **Duplicate** creates a new draft from the campaign's configuration and opens its settings so you can rename it (it starts as `name (copy)`), pick a different audience, change the copy, or adjust the schedule before starting it. The copy keeps every setting, the steps with their branching, the sending accounts, folders, tags, A/B variants and attachments. It does not keep leads, progress, statistics, activity, the ramp level, an auto-pause, or a start or end date that has already passed. The original is not touched, and the two campaigns are independent from then on. A duplicate counts as a new campaign for the daily creation limit.
 
+**Delete** asks for confirmation that spells out what goes: the campaign, its steps, lead progress and activity. Contacts and emails already sent stay. A running campaign can be deleted directly; the confirmation says so, and sending stops immediately because every task waiting for the campaign is cancelled together with it. The same action is available at the bottom of the campaign's **Settings**. Deletion cannot be undone.
+
+</Fold>
+
+<Fold>
+
 ## Campaign attachments
 
-Attach a file to one step in its composer, or upload a campaign-wide file through the API. Each file is at most 15 MiB. Warmbly checks a new upload's bytes against its final filename extension, derives the outgoing MIME type, and preserves the approved bytes. The client's MIME header does not choose the type.
+Attach a file to one step in its composer, or upload a campaign-wide file through the API. Each file must contain between 1 byte and 15 MiB. Warmbly checks a new upload's bytes against its final filename extension, chooses the outgoing file type from the content, and keeps the original bytes.
 
 | Extensions | Supported content and limits |
 | --- | --- |
-| `.pdf` | Unencrypted PDF 1.0–1.7 or 2.0 with classic cross-reference tables, indirect objects and a catalog/page tree. Cross-reference streams and compressed object streams are outside this upload profile. Export a PDF with classic cross-reference tables when needed. |
-| `.docx`, `.xlsx`, `.pptx` | Modern Office ZIP packages with matching content types, package relationships and document, workbook or presentation XML parts. XLSX needs a related worksheet; PPTX needs a related slide. Macro-enabled and encrypted packages, legacy DOC/XLS/PPT, and other Office variants are outside this profile. |
+| `.pdf` | A limited subset of unencrypted PDFs with classic cross-reference tables and a catalog/page tree. Modern PDFs using cross-reference streams, hybrid cross-reference tables or compressed object streams are currently unsupported. A PDF version label alone does not establish support. |
+| `.docx`, `.xlsx`, `.pptx` | Transitional OOXML Office packages with matching document, workbook or presentation content. XML parts may use UTF-8 (with or without a BOM) or UTF-16. XLSX needs a related worksheet; PPTX needs a related slide. Strict OOXML, macro-enabled and encrypted packages, legacy DOC/XLS/PPT, and other Office variants are currently unsupported. |
 | `.csv`, `.tsv`, `.txt` | UTF-8 text, including a UTF-8 BOM and Unicode, without binary control characters. CSV supports comma, semicolon and tab separators; TSV uses tabs. CSV/TSV quoting must parse. Content sniffed as an HTML or XML document is outside this text profile. |
 | `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp` | Matching raster content with a successful decoder, at most 8192 pixels per side and 16 million pixels. GIFs have at most 256 frames and 16 million pixels across frames. WebP uses the supported static image decoder. |
-| `.zip` | A single-volume ZIP with no executable prefix, at most 2048 entries, 16 MiB per expanded member and 64 MiB expanded in total. ZIP64 and encrypted members are outside this profile. Members remain opaque recipient content; Warmbly does not extract them for execution. |
+| `.zip` | A single-volume ZIP with consistent, separate member records and relative member names, no executable prefix, at most 2048 entries, 15 MiB of compressed member data in total, 16 MiB per expanded member and 64 MiB expanded in total. ZIP64 and encrypted members are outside this profile. Members remain opaque recipient content; Warmbly does not extract them for execution. |
 
-Office packages share the ZIP limits, with at most 64 XML nesting levels and 200,000 tokens per XML part. PDF parsing is bounded to 100,000 object numbers, 32 revisions/nesting levels, 200,000 values and a 64 MiB parsing-work budget. Unsupported extensions, mismatched names, malformed content and files beyond these limits receive `400 invalid_attachment`. Re-export the file in a supported profile and upload it with its matching extension. Format checks do not certify that a document or archive is harmless. Download responses continue to force attachment handling.
+Office packages share the ZIP limits. Each XML part is limited to 16 MiB after character decoding, 64 nesting levels and 200,000 tokens. PDF checks allow at most 100,000 object numbers, 32 revisions, nesting levels or indirect-reference steps, 200,000 values, 200,000 value-resolution steps and 64 MiB of parsing work. Unsupported extensions, mismatched names, malformed content and files beyond these format limits receive `400 invalid_attachment`. Empty files and files over 15 MiB receive `400 bad_request`. Use the file's matching extension; renaming an unsupported format does not convert it. Format checks do not certify that a document or archive is harmless. Downloads are served as attachments.
 
 ### Existing files and portable workspaces
 
-Existing attachments retain their bytes and outgoing metadata, including formats outside the new-upload profile. Campaign duplication and [workspace archive import/export](/guides/workspace-export-import/) preserve those files, and accepted queued sends continue to use them. Archive preflight and import explain that restored private files are existing content, not a new-upload validation certificate. Review imported files before using a campaign.
-
-This staged write-boundary policy supports v0.6.75 readers and rollback to that release. Mixed-version deployments can accept uploads through either version's policy until all writers run the new release; rollback restores that release's upload behavior. There is no schema, event-envelope or required worker-field change. A later transition to validation-based send eligibility requires additive provenance/hold state, portable archival retention, coordinated readers and workers, resumable classification, and a closed rollback window before enforcement. Current stored files, duplication, archive restore and internal blob capabilities must not be treated as universally content-validated.
-
-**Delete** asks for confirmation that spells out what goes: the campaign, its steps, lead progress and activity. Contacts and emails already sent stay. A running campaign can be deleted directly; the confirmation says so, and sending stops immediately because every task waiting for the campaign is cancelled together with it. The same action is available at the bottom of the campaign's **Settings**. Deletion cannot be undone.
+Existing attachments keep their bytes and outgoing file information, including formats outside the new-upload profile. Campaign duplication and [workspace archive import/export](/guides/workspace-export-import/) preserve those files, and emails already queued continue to use them. The archive preview and import report explain that restoring a file does not certify its content or check it against the new-upload formats. Review imported files before using a campaign.
 
 </Fold>
 

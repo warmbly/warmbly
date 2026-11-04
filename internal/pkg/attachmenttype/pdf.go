@@ -17,6 +17,7 @@ type pdfReader struct {
 	objects      map[int]any
 	loading      map[int]bool
 	work, tokens int
+	resolutions  int
 }
 type pdfCursor struct {
 	p  *pdfReader
@@ -113,7 +114,8 @@ func validPDF(b []byte) bool {
 	}
 	v, ok := p.object(root)
 	catalog, dict := v.(pdfDict)
-	if !ok || !dict || catalog["Type"] != pdfName("Catalog") {
+	kind, resolved := p.resolve(catalog["Type"])
+	if !ok || !dict || !resolved || kind != pdfName("Catalog") {
 		return false
 	}
 	pages, ok := catalog["Pages"].(pdfRef)
@@ -303,7 +305,7 @@ func (c *pdfCursor) value(depth int) (any, bool) {
 }
 func (p *pdfReader) object(ref pdfRef) (any, bool) {
 	entry, ok := p.entries[ref.id]
-	if !ok || entry.offset < 0 || entry.gen != ref.gen || p.loading[ref.id] {
+	if !ok || entry.offset < 0 || entry.gen != ref.gen || p.loading[ref.id] || len(p.loading) >= 32 {
 		return nil, false
 	}
 	if v, ok := p.objects[ref.id]; ok {
@@ -325,12 +327,9 @@ func (p *pdfReader) object(ref pdfRef) (any, bool) {
 		if !ok {
 			return nil, false
 		}
-		length := d["Length"]
-		if r, ref := length.(pdfRef); ref {
-			length, ok = p.object(r)
-			if !ok {
-				return nil, false
-			}
+		length, ok := p.resolve(d["Length"])
+		if !ok {
+			return nil, false
 		}
 		n, ok := pdfInt(length)
 		if !ok || n < 0 || c.at >= len(p.data) {
@@ -359,6 +358,30 @@ func (p *pdfReader) object(ref pdfRef) (any, bool) {
 	p.objects[ref.id] = v
 	return v, true
 }
+
+func (p *pdfReader) resolve(v any) (any, bool) {
+	seen := map[pdfRef]bool{}
+	for {
+		p.resolutions++
+		if p.resolutions > 200_000 || p.work > maxExpanded {
+			return nil, false
+		}
+		r, indirect := v.(pdfRef)
+		if !indirect {
+			return v, true
+		}
+		if len(seen) >= 32 || seen[r] {
+			return nil, false
+		}
+		seen[r] = true
+		var ok bool
+		v, ok = p.object(r)
+		if !ok {
+			return nil, false
+		}
+	}
+}
+
 func (p *pdfReader) pages(ref, parent pdfRef, media bool, seen map[int]bool, depth int) (int, bool) {
 	if depth > 32 || seen[ref.id] {
 		return 0, false
@@ -373,11 +396,9 @@ func (p *pdfReader) pages(ref, parent pdfRef, media bool, seen map[int]bool, dep
 		return 0, false
 	}
 	if box, exists := d["MediaBox"]; exists {
-		if r, indirect := box.(pdfRef); indirect {
-			box, ok = p.object(r)
-			if !ok {
-				return 0, false
-			}
+		box, ok = p.resolve(box)
+		if !ok {
+			return 0, false
 		}
 		coords, array := box.([]any)
 		if !array || len(coords) != 4 {
@@ -385,6 +406,10 @@ func (p *pdfReader) pages(ref, parent pdfRef, media bool, seen map[int]bool, dep
 		}
 		var values [4]float64
 		for i, v := range coords {
+			v, ok = p.resolve(v)
+			if !ok {
+				return 0, false
+			}
 			switch n := v.(type) {
 			case int:
 				values[i] = float64(n)
@@ -399,14 +424,19 @@ func (p *pdfReader) pages(ref, parent pdfRef, media bool, seen map[int]bool, dep
 		}
 		media = true
 	}
-	if d["Type"] == pdfName("Page") {
-		return 1, media
-	}
-	if d["Type"] != pdfName("Pages") {
+	kind, ok := p.resolve(d["Type"])
+	if !ok {
 		return 0, false
 	}
-	kids, ok := d["Kids"].([]any)
-	if !ok {
+	if kind == pdfName("Page") {
+		return 1, media
+	}
+	if kind != pdfName("Pages") {
+		return 0, false
+	}
+	children, resolved := p.resolve(d["Kids"])
+	kids, ok := children.([]any)
+	if !ok || !resolved {
 		return 0, false
 	}
 	total := 0
@@ -421,8 +451,9 @@ func (p *pdfReader) pages(ref, parent pdfRef, media bool, seen map[int]bool, dep
 		}
 		total += n
 	}
-	count, ok := pdfInt(d["Count"])
-	return total, ok && total > 0 && count == total
+	value, resolved := p.resolve(d["Count"])
+	count, ok := pdfInt(value)
+	return total, resolved && ok && total > 0 && count == total
 }
 
 func (p *pdfReader) references(v any) bool {
