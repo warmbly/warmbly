@@ -134,8 +134,27 @@ function repin(container, pins) {
   }
 }
 
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+  return value;
+}
+
+function comparableDefinition(definition) {
+  return REGISTER_FIELDS.map((field) => {
+    let value = definition[field] ?? null;
+    if (field === "containerDefinitions" && value) value = value.map((container) => {
+      const copy = { ...container };
+      // ECS may reorder named bindings; command and other array order stays significant.
+      for (const key of ["environment", "secrets"]) if (copy[key]) copy[key] = [...copy[key]].sort((a, b) => a.name.localeCompare(b.name));
+      return copy;
+    });
+    return canonical(value);
+  });
+}
+
 function same(a, b) {
-  return JSON.stringify(REGISTER_FIELDS.map((f) => a[f] ?? null)) === JSON.stringify(REGISTER_FIELDS.map((f) => b[f] ?? null));
+  return JSON.stringify(comparableDefinition(a)) === JSON.stringify(comparableDefinition(b));
 }
 
 const canonicalTags = (tags) => JSON.stringify(tags.filter((t) => !t.key.startsWith("aws:")).sort((a, b) => a.key.localeCompare(b.key)));

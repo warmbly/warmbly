@@ -3,7 +3,32 @@ const assert = require("node:assert/strict");
 const { mkdtempSync, writeFileSync } = require("node:fs");
 const { join } = require("node:path");
 const { tmpdir } = require("node:os");
-const { configuration, deploy, runTask, compareTags, parseRef, ATTACHMENT_PROXY, ATTACHMENT_PROXY_TAG } = require("./aws-deploy.cjs");
+const { configuration, deploy, runTask, compareTags, parseRef, same, ATTACHMENT_PROXY, ATTACHMENT_PROXY_TAG } = require("./aws-deploy.cjs");
+
+test("definition equality compares named bindings while preserving every value and command order", () => {
+  const base = { family: "fixture", containerDefinitions: [{ name: "backend", image: "fixture@sha256:fixed",
+    command: ["serve", "--tls"], environment: [{ name: "TLS_ONLY", value: "true" }, { name: "REGION", value: "fixture" }],
+    secrets: [{ name: "PRIMARY_DB", valueFrom: "database:version-one" }, { name: "AUTH_SECRET", valueFrom: "auth:version-one" }] }] };
+  const reordered = structuredClone(base);
+  reordered.containerDefinitions[0].environment.reverse();
+  reordered.containerDefinitions[0].secrets.reverse();
+  reordered.containerDefinitions[0].environment = reordered.containerDefinitions[0].environment.map(({ name, value }) => ({ value, name }));
+  assert.ok(same(base, reordered));
+  for (const mutate of [
+    (c) => { c.environment[0].value = "false"; },
+    (c) => { c.environment[0].name = "OTHER"; },
+    (c) => { c.environment.pop(); },
+    (c) => { c.environment.push({ ...c.environment[0] }); },
+    (c) => { c.secrets[0].valueFrom = "database:version-two"; },
+    (c) => { c.secrets.pop(); },
+    (c) => { c.command.reverse(); },
+    (c) => { c.image = "other@sha256:fixed"; },
+  ]) {
+    const changed = structuredClone(base);
+    mutate(changed.containerDefinitions[0]);
+    assert.equal(same(base, changed), false);
+  }
+});
 
 const root = "arn:aws:ecs:us-east-1:000000000000:";
 const registry = "ghcr.io/warmbly/warmbly";
