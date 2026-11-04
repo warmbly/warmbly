@@ -22,10 +22,36 @@ func readZIP(body []byte) (map[string][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Both supported decompressors share this reader-local compressed-input budget.
+	remaining := int64(MaxBytes)
+	decompressors := map[uint16]zip.Decompressor{
+		zip.Store: func(r io.Reader) io.ReadCloser {
+			return io.NopCloser(&zipBudgetReader{r, &remaining})
+		},
+		zip.Deflate: func(r io.Reader) io.ReadCloser {
+			return flate.NewReader(&zipBudgetReader{r, &remaining})
+		},
+	}
+	for method, decompressor := range decompressors {
+		z.RegisterDecompressor(method, decompressor)
+	}
 	parts := make(map[string][]byte, len(z.File))
 	total := 0
 	for _, f := range z.File {
-		r, err := f.Open()
+		var r io.ReadCloser
+		if strings.HasSuffix(f.Name, "/") {
+			// Directory entries must validate their physical streams as empty content.
+			if f.UncompressedSize64 != 0 {
+				return nil, ErrInvalid
+			}
+			raw, openErr := f.OpenRaw()
+			if openErr != nil {
+				return nil, ErrInvalid
+			}
+			r = decompressors[f.Method](raw)
+		} else {
+			r, err = f.Open()
+		}
 		if err != nil {
 			return nil, ErrInvalid
 		}
@@ -41,6 +67,10 @@ func readZIP(body []byte) (map[string][]byte, error) {
 }
 
 func validatedZIP(body []byte) (*zip.Reader, error) {
+	return newValidatedZIP(body, zip.NewReader)
+}
+
+func newValidatedZIP(body []byte, newReader func(io.ReaderAt, int64) (*zip.Reader, error)) (*zip.Reader, error) {
 	if len(body) > MaxBytes || (!bytes.HasPrefix(body, []byte("PK\x03\x04")) && !bytes.HasPrefix(body, []byte("PK\x05\x06"))) {
 		return nil, ErrInvalid
 	}
@@ -63,18 +93,10 @@ func validatedZIP(body []byte) (*zip.Reader, error) {
 	if !ok {
 		return nil, ErrInvalid
 	}
-	z, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	z, err := newReader(bytes.NewReader(body), int64(len(body)))
 	if err != nil || !sameZIPView(z, members, string(e[22:])) {
 		return nil, ErrInvalid
 	}
-	// Both supported decompressors share this reader-local compressed-input budget.
-	remaining := int64(MaxBytes)
-	z.RegisterDecompressor(zip.Store, func(r io.Reader) io.ReadCloser {
-		return io.NopCloser(&zipBudgetReader{r, &remaining})
-	})
-	z.RegisterDecompressor(zip.Deflate, func(r io.Reader) io.ReadCloser {
-		return flate.NewReader(&zipBudgetReader{r, &remaining})
-	})
 	return z, nil
 }
 
