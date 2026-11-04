@@ -389,8 +389,9 @@ The [mailbox import](/guides/mailbox-import/) routes (`/emails/imports`) answer 
 | `mailbox_import_too_large` | 400 | More than 5,000 mailboxes, a file over 10 MB, a pasted list over 2 MB, or a body that is not multipart form data. Split the file and import the rest separately |
 | `mailbox_import_no_email_column` | 400 | `POST /emails/imports` with a mapping in which no column is `email` |
 | `mailbox_import_row_incomplete` | 400 | `PATCH /emails/imports/:id/rows/:line` left the row without an SMTP and IMAP server or without a password. The `message` says which |
+| `google_app_password_required` | 400 | `PATCH /emails/imports/:id/rows/:line` or `POST /emails/imports/:id/retry` gave a Google row a password that is not a 16-letter app password. Google refuses the account password over IMAP and SMTP. A retry refuses the whole batch and queues none of it |
 | `invalid_cursor` | 400 | `GET /emails/imports` or `GET /emails/imports/:id/rows` was given a `cursor` this API did not issue. Start again without one |
-| `mailbox_import_row_not_failed` | 409 | Only a row that did not connect can be fixed; this one is queued, running, connected, updated, skipped, cancelled or waiting for sign-in |
+| `mailbox_import_row_not_failed` | 409 | Only a row that did not connect or is waiting for sign-in can be fixed; this one is queued, running, connected, updated, skipped, cancelled, or still being authorized by its inbox vendor |
 | `mailbox_import_credentials_expired` | 409 | The row's credentials were deleted 7 days after the import finished, so it cannot be retried. Import it again |
 | `mailbox_import_nothing_to_retry` | 409 | `POST /emails/imports/:id/retry` matched no failed row that still holds its credentials |
 
