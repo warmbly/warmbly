@@ -122,6 +122,28 @@ func TestLiveJoiningTheOtherPoolMovesTheMailboxRatherThanDuplicatingIt(t *testin
 	}
 }
 
+// A mailbox that has not consented to test mail is never admitted to a pool.
+func TestLiveMoveToPoolRefusesAMailboxWithoutTestMailConsent(t *testing.T) {
+	for name, consent := range map[string]string{
+		"test mail off":                      `test_mode = 'off'`,
+		"diagnostic without send or receive": `test_send_enabled = false, test_receive_enabled = false`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			repo, handle := liveWarmupRepo(t)
+			f := newPoolMailbox(t, handle, "")
+			ctx := context.Background()
+			execSQL(t, handle.Pool, `UPDATE email_accounts SET `+consent+` WHERE id = $1`, f.account)
+
+			if err := repo.MoveToPool(ctx, models.WarmupPoolFreeID, f.account, "sender_receiver"); err == nil {
+				t.Fatal("admitted a mailbox without test mail consent")
+			}
+			if got := f.memberships(t); len(got) != 0 {
+				t.Fatalf("memberships %v, want none", got)
+			}
+		})
+	}
+}
+
 // Moving pools must not launder a penalty. A fresh row would start healthy,
 // which is how a blocked mailbox could have re-entered the pool it was
 // blocked out of.
