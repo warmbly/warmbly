@@ -75,7 +75,11 @@ function fixture(t, options = {}) {
     return { MetricAlarms: options.alarm && live.taskDefinition !== arn(1) ? [{ AlarmName: "fixture-backend-5xx" }] : [] };
   } };
   const run = () => configure({ ecs, cloudwatch }, cfg, async (ms) => sleeps.push(ms), () => {});
-  return { env, cfg, live, base, tags, defs, calls, sleeps, run };
+  const prepare = (definition, nextTags) => {
+    latest = arn(defs.size + 1);
+    defs.set(latest, { definition: { ...structuredClone(definition), taskDefinitionArn: latest }, tags: structuredClone(nextTags) });
+  };
+  return { env, cfg, live, base, tags, defs, calls, sleeps, run, prepare };
 }
 
 const mutations = (f) => f.calls.filter((c) => ["RegisterTaskDefinitionCommand", "UpdateServiceCommand"].includes(c.name));
@@ -114,6 +118,44 @@ test("disabling is explicit and preserves the remainder of the running definitio
   const current = f.defs.get(arn(3));
   assert.equal(current.definition.containerDefinitions[0].environment.find((e) => e.name === ATTACHMENT_PROXY).value, "false");
   assert.equal(current.tags.find((tag) => tag.key === ATTACHMENT_PROXY_TAG).value, "false");
+});
+
+test("an enabled no-change request requires a deployment source that owns the setting", async (t) => {
+  const f = fixture(t);
+  f.prepare(f.base, f.tags);
+  f.base.containerDefinitions[0].environment.push({ name: ATTACHMENT_PROXY, value: "true" });
+  await assert.rejects(f.run(), /requires a management tag or an explicit Terraform value/);
+  assert.deepEqual(mutations(f), []);
+  assert.deepEqual(f.sleeps, []);
+});
+
+for (const value of ["true", "false"]) test(`an explicit Terraform ${value} value owns an enabled no-change request`, async (t) => {
+  const f = fixture(t);
+  const template = structuredClone(f.base);
+  template.containerDefinitions[0].environment.push({ name: ATTACHMENT_PROXY, value });
+  f.prepare(template, f.tags);
+  f.base.containerDefinitions[0].environment.push({ name: ATTACHMENT_PROXY, value: "true" });
+  assert.equal((await f.run()).changed, false);
+  assert.deepEqual(mutations(f), []);
+  assert.equal(f.sleeps.reduce((a, b) => a + b, 0), 300000);
+});
+
+test("a live managed enabled setting remains owned when the latest template omits it", async (t) => {
+  const f = fixture(t);
+  f.prepare(f.base, f.tags);
+  f.base.containerDefinitions[0].environment.push({ name: ATTACHMENT_PROXY, value: "true" });
+  f.tags.push({ key: ATTACHMENT_PROXY_TAG, value: "true" });
+  assert.equal((await f.run()).changed, false);
+  assert.deepEqual(mutations(f), []);
+  assert.equal(f.sleeps.reduce((a, b) => a + b, 0), 300000);
+});
+
+test("an absent false setting needs no ownership change", async (t) => {
+  const f = fixture(t);
+  f.cfg.value = "false";
+  assert.equal((await f.run()).changed, false);
+  assert.deepEqual(mutations(f), []);
+  assert.equal(f.sleeps.reduce((a, b) => a + b, 0), 300000);
 });
 
 test("every preflight task is described within the API batch limit", async (t) => {

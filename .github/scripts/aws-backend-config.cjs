@@ -104,6 +104,13 @@ async function configure(clients, config, sleep = (ms) => new Promise((resolve) 
   await verifyTasks(clients.ecs, config, live, definition);
   await alarms(clients, config);
   if ((values[0]?.value || "false") === config.value) {
+    if (config.value === "true" && managed === undefined) {
+      const latest = await describe(clients.ecs, definition.family);
+      const explicit = latest.definition.containerDefinitions?.[0]?.environment?.some((e) => e.name === ATTACHMENT_PROXY);
+      if (tagValue(latest.tags, ATTACHMENT_PROXY_TAG) === undefined && !explicit) {
+        throw new Error("Enabled attachment configuration requires a management tag or an explicit Terraform value before a no-change request");
+      }
+    }
     report("Backend already has the requested attachment configuration; no change");
     await observe(clients, config, definition, live.desiredCount, sleep, report);
     return { taskDefinition: live.taskDefinition, previous: live.taskDefinition, changed: false };

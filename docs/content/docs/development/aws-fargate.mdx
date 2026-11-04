@@ -299,7 +299,9 @@ count change stops automatic rollback for operator inspection. It runs no
 migration, one-off task or fleet rollout and does not modify another service.
 Refresh the task snapshot before a repeated request. A stale, missing, duplicate,
 foreign or draining task is refused. A request for the existing setting observes
-another full bake without rolling again.
+another full bake without rolling again. An already enabled setting requires
+either its live management tag or a value in the latest deployment definition.
+If neither owns it, set the value explicitly in Terraform before requesting no change.
 
 The task definition records the setting in
 `warmbly-config-attachment-download-proxy`. Future deployments and secret
