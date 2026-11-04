@@ -87,7 +87,10 @@ func Run(ctx context.Context, d *db.DB, fleet string) error {
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	for {
+	publish := func() {
+		// A stalled read or request must not hold back the next minute's sample.
+		ctx, cancel := context.WithTimeout(ctx, interval)
+		defer cancel()
 		if u, err := Read(ctx, d); err != nil {
 			log.Warn().Err(err).Msg("fleet usage not published")
 		} else if !u.Known {
@@ -102,6 +105,9 @@ func Run(ctx context.Context, d *db.DB, fleet string) error {
 		}); err != nil {
 			log.Warn().Err(err).Msg("fleet usage not published")
 		}
+	}
+	for {
+		publish()
 		select {
 		case <-ctx.Done():
 			return nil

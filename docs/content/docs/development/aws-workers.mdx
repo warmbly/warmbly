@@ -78,8 +78,8 @@ The parameter name defaults to `/<name>/fleet/join-token` and can be changed
 with `fleet_join_token_parameter`. A join token works for at most 30 days, and
 issuing a new one revokes the previous one. Joined workers are unaffected, but a
 worker launched with an expired token cannot join. Issue and store a new token
-before the old one expires, at least monthly, or scale-out stops producing
-working workers.
+before the old one expires, for example every three weeks, or scale-out stops
+producing working workers.
 
 ## Enable the fleet
 
@@ -100,6 +100,11 @@ working workers.
 `nats_security_group_id` is the NATS root's broker security group. Leave it
 unset only when workers reach the event bus some other way.
 
+4. Set `FLEET_METRICS_CLOUDWATCH` on the backend to the root's `name` and give
+   its role `cloudwatch:PutMetricData` (see the [metric contract](#metric-contract)).
+   Without it nothing publishes `WorkerMemoryPercent`, so the fleet scales out
+   on CPU only and never scales in.
+
 The `fleet` output names the group, its subnets and security group, the join
 token parameter, the metric contract and `nat_ipv4_addresses`. Workers appear in
 `warmblyctl fleet list` within a few minutes of launching.
@@ -118,7 +123,7 @@ token parameter, the metric contract and `nat_ipv4_addresses`. Workers appear in
 | `fleet_min_size` | `2` | Smallest fleet |
 | `fleet_max_size` | `10` | Largest fleet |
 | `fleet_desired_capacity` | `null` | Starting size; scaling owns it afterwards. `null` starts at the minimum |
-| `fleet_worker_capacity` | `auto` | `WARMBLY_WORKER_CAPACITY` on every fleet worker: `auto`, or a positive whole number of mailboxes |
+| `fleet_worker_capacity` | `auto` | `WARMBLY_WORKER_CAPACITY` on every fleet worker: `auto`, or a whole number of mailboxes from 1 to 99999999 |
 | `fleet_region_label` | empty | Optional `--region` label for placement |
 | `fleet_image_repository` | `ghcr.io/warmbly/warmbly` | Repository `join.sh` pulls the worker image from |
 | `fleet_target_memory` | `65` | Target for `WorkerMemoryPercent`, the fleet's memory in use |

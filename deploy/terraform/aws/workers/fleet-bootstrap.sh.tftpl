@@ -72,7 +72,8 @@ imds() {
 main() {
   while :; do
     if [ "$(imds meta-data/autoscaling/target-lifecycle-state 2>/dev/null || true)" = "Terminated" ]; then
-      systemctl stop warmbly-node-update.timer || true
+      # Stopping the service too ends an update in flight, whose rollback would restart the worker.
+      systemctl stop warmbly-node-update.timer warmbly-node-update.service || true
       systemctl stop warmbly-worker || true
       printf '%s\n' 'warmbly-lifecycle-watch: instance is terminating; worker stopped'
       return 0
@@ -120,6 +121,16 @@ write_local_env() {
   fi
 }
 
+# Until the join succeeds, a failed step powers off, and the group replaces the instance.
+on_exit() {
+  rc=$?
+  rm -f /run/warmbly-join.sh
+  if [ "$rc" -ne 0 ]; then
+    log "boot failed with status $rc; powering off"
+    systemctl poweroff || true
+  fi
+}
+
 join_once() {
   token=$(aws ssm get-parameter --region "$REGION" --name "$TOKEN_PARAMETER" --with-decryption --query Parameter.Value --output text) || return 1
   [ -n "$token" ] || return 1
@@ -132,6 +143,7 @@ join_once() {
 }
 
 main() {
+  trap on_exit EXIT
   instance_id=$(retry imds meta-data/instance-id)
   NODE_NAME="$NAME_PREFIX-$instance_id"
   hostnamectl set-hostname "$NODE_NAME"
@@ -149,15 +161,11 @@ main() {
   until join_once; do
     attempts=$((attempts + 1))
     if [ "$attempts" -ge 20 ]; then
-      # Terminating lets the group launch a replacement instead of carrying a worker that never joined.
       log "join failed $attempts times; check the join token in $TOKEN_PARAMETER and $INSTANCE_URL"
-      rm -f /run/warmbly-join.sh
-      systemctl poweroff
       return 1
     fi
     sleep 30
   done
-  rm -f /run/warmbly-join.sh
   log "joined as $NODE_NAME"
   return 0
 }

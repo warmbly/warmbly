@@ -169,6 +169,16 @@ run "fleet_worker_capacity_rejects_garbage" {
   expect_failures = [var.fleet_worker_capacity]
 }
 
+run "fleet_worker_capacity_rejects_what_the_worker_discards" {
+  command = plan
+  variables {
+    fleet_enabled         = true
+    fleet_instance_url    = "https://app.example.com"
+    fleet_worker_capacity = "100000000"
+  }
+  expect_failures = [var.fleet_worker_capacity]
+}
+
 run "fleet_scale_in_sits_under_scale_out" {
   command = plan
   variables {

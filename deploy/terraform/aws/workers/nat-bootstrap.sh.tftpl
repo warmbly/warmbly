@@ -89,7 +89,17 @@ replace_route() {
     aws ec2 create-route --region "$REGION" --route-table-id "$ROUTE_TABLE_ID" --destination-cidr-block 0.0.0.0/0 --network-interface-id "$1" >/dev/null
 }
 
+# A boot that fails leaves the zone without egress, so power off and let the group replace the instance.
+on_exit() {
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    log "boot failed with status $rc; powering off"
+    shutdown -h now || true
+  fi
+}
+
 main() {
+  trap on_exit EXIT
   retry dnf -y --setopt=retries=20 install iptables-nft
   write_kernel_settings
   write_rules_unit

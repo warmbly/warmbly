@@ -2,7 +2,7 @@
 # main.tf, which keep running until an operator retires them.
 
 variable "fleet_enabled" {
-  description = "Create the autoscaling worker fleet and its network"
+  description = "Create the autoscaling worker fleet and its network; the backend also needs FLEET_METRICS_CLOUDWATCH set to name, or the memory metrics it scales on are never published"
   type        = bool
   default     = false
 }
@@ -79,8 +79,8 @@ variable "fleet_worker_capacity" {
   type        = string
   default     = "auto"
   validation {
-    condition     = var.fleet_worker_capacity == "auto" || can(regex("^[1-9][0-9]*$", var.fleet_worker_capacity))
-    error_message = "Use auto or a positive whole number."
+    condition     = var.fleet_worker_capacity == "auto" || can(regex("^[1-9][0-9]{0,7}$", var.fleet_worker_capacity))
+    error_message = "Use auto or a whole number from 1 to 99999999, the largest the worker accepts."
   }
 }
 
