@@ -308,6 +308,15 @@ test("certificate inventory requires distinct ARN and default-status pairs with 
   }
 });
 
+test("certificate inventory rejects a single certificate with non-boolean default status", async (t) => {
+  for (const status of [undefined, "true"]) {
+    const f = fixture(t);
+    f.live.listenerDetails[0].certificates = [{ CertificateArn: CERT, IsDefault: status }];
+    await assert.rejects(collect(f.aws), /Incomplete or duplicate ALB certificate response/);
+    assert.equal(f.writeCalls().length, 0);
+  }
+});
+
 for (const [label, drift] of [
   ["policy", (f) => { f.live.listeners[0].SslPolicy = DESIRED; }],
   ["certificate", (f) => { f.live.listeners[0].Certificates = []; }],
