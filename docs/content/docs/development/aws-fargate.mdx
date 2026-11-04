@@ -275,19 +275,31 @@ provenance is running it stops at that check and changes nothing.
 
 After every backend runs a published release at least `v0.6.75`, dispatch
 **Configure AWS backend** on `main`. Supply the running release tag, exact live
-backend task definition ARN and the desired `attachment_download_proxy` boolean.
+backend task definition ARN, a JSON array of every current running backend task
+ARN in `expected_backend_tasks`, and the desired `attachment_download_proxy` boolean.
 The workflow requires `AWS_DEPLOY_ENABLED=true`, uses `aws-production` and shares
-the deployment queue. Provision the runtime deploy role's cluster-scoped
-`ecs:ListTasks` read permission through the normal infrastructure approval first.
+the deployment queue. Collect the task identities through the operator's normal
+read-only inventory access. The workflow uses the existing deployment role's
+task-description and service-update permissions.
 
-The operation verifies release provenance and every running backend task, then
+Keep backend configuration changes exclusive for the entire run. Routine writers
+use the shared `aws-production` queue. Before an emergency console or CLI change,
+stop and settle the active workflow and inspect the current service. The expected
+revision is a snapshot check: ECS `UpdateService` has no atomic expected-revision
+precondition to fence a writer outside that queue.
+
+The operation verifies release provenance and every supplied backend task against
+the service's complete deployment and running count, then
 clones the live definition and changes only `CAMPAIGN_ATTACHMENT_DOWNLOAD_PROXY`.
 It preserves images, roles, secret references and version pins, TLS settings,
 resources, health checks, stop timeout and desired count. It watches the stable
-service and alarms for 300 seconds, verifies every resulting task, and restores
-and verifies the exact previous revision on failure. A concurrent revision or
+service and alarms for 300 seconds, reads back the definition, and restores
+and verifies the exact previous revision and service counts on failure. A concurrent revision or
 count change stops automatic rollback for operator inspection. It runs no
 migration, one-off task or fleet rollout and does not modify another service.
+Refresh the task snapshot before a repeated request. A stale, missing, duplicate,
+foreign or draining task is refused. A request for the existing setting observes
+another full bake without rolling again.
 
 The task definition records the setting in
 `warmbly-config-attachment-download-proxy`. Future deployments and secret
@@ -296,8 +308,10 @@ the environment variable. An explicit Terraform `true` or `false` value takes
 ownership. A prepared revision that never reached the service cannot activate
 the setting during a later release. To roll back below `v0.6.75`, explicitly
 disable the proxy first; confirm existing download links have expired before
-removing route support. Successful rollout is followed by an authorized download
-check of the bytes and response headers. Self-host configuration remains opt-in
+removing route support. After rollout, independently inventory and describe every
+new running task, confirm the expected task definition and image, then perform an
+authorized download check of the bytes and response headers. Workflow success
+alone does not complete those independent checks. Self-host configuration remains opt-in
 and defaults to `false`.
 
 ## Rotate keys
@@ -362,8 +376,8 @@ plan reaches a log, a comment or an artifact.
   password, which the plan role may not.
 - On merge, each stack is planned in order: foundation, runtime, workers. A
   stack that only creates and updates applies on its own. One that replaces or
-  destroys anything, or changes the deployment or dedicated recovery evidence
-  IAM roles or their inline policies, stops and waits for approval in the
+  destroys anything, or changes the dedicated recovery evidence IAM role or its
+  inline policy, stops and waits for approval in the
   `aws-infrastructure-approval` environment, and the stacks after it wait too.
   On approval it plans again and applies only if the plan is still the one that
   was approved. A new task definition revision counts as an update, because the

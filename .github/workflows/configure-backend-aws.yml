@@ -11,6 +11,10 @@ on:
         description: Exact currently running backend task definition ARN
         required: true
         type: string
+      expected_backend_tasks:
+        description: JSON array of every current RUNNING backend task ARN from the read-only preflight
+        required: true
+        type: string
       attachment_download_proxy:
         description: Serve private campaign attachments through the backend download route
         required: true
@@ -80,5 +84,6 @@ jobs:
           DEPLOY_TAG: ${{ inputs.tag }}
           DEPLOY_IMAGES_JSON: /tmp/backend-config-release/images.json
           CONFIG_EXPECTED_TASK_DEFINITION: ${{ inputs.expected_task_definition }}
+          CONFIG_EXPECTED_TASKS: ${{ inputs.expected_backend_tasks }}
           CONFIG_ATTACHMENT_DOWNLOAD_PROXY: ${{ inputs.attachment_download_proxy }}
         run: node .github/scripts/aws-backend-config.cjs

@@ -1,5 +1,5 @@
 const {
-  ECSClient, DescribeServicesCommand, DescribeTasksCommand, UpdateServiceCommand, paginateListTasks,
+  ECSClient, DescribeServicesCommand, DescribeTasksCommand, UpdateServiceCommand,
 } = require("@aws-sdk/client-ecs");
 const { CloudWatchClient, DescribeAlarmsCommand } = require("@aws-sdk/client-cloudwatch");
 const {
@@ -22,7 +22,11 @@ function configuration(env) {
     throw new Error("CONFIG_EXPECTED_TASK_DEFINITION must identify this cluster's backend revision");
   }
   if (!["true", "false"].includes(env.CONFIG_ATTACHMENT_DOWNLOAD_PROXY)) throw new Error("CONFIG_ATTACHMENT_DOWNLOAD_PROXY must be true or false");
-  return { ...config, expected, value: env.CONFIG_ATTACHMENT_DOWNLOAD_PROXY };
+  const tasks = JSON.parse(env.CONFIG_EXPECTED_TASKS || "null");
+  const taskPrefix = `arn:aws:ecs:us-east-1:${account}:task/${config.cluster.split("/").pop()}/`;
+  if (!Array.isArray(tasks) || !tasks.length || tasks.some((task) => typeof task !== "string" || !task.startsWith(taskPrefix) || !/^[a-f0-9]{32}$/.test(task.slice(taskPrefix.length))) ||
+      new Set(tasks).size !== tasks.length) throw new Error("CONFIG_EXPECTED_TASKS must list unique current task ARNs from this cluster's read-only preflight");
+  return { ...config, expected, tasks, value: env.CONFIG_ATTACHMENT_DOWNLOAD_PROXY };
 }
 
 async function service(ecs, config) {
@@ -33,17 +37,16 @@ async function service(ecs, config) {
 }
 
 function stable(live, expected, count) {
-  if (live.taskDefinition !== expected || live.desiredCount < 1 || live.runningCount !== live.desiredCount || live.pendingCount !== 0 ||
+  if (live.taskDefinition !== expected || !Number.isInteger(live.desiredCount) || live.desiredCount < 1 || live.runningCount !== live.desiredCount || live.pendingCount !== 0 ||
       live.deployments?.length !== 1 || live.deployments[0].rolloutState !== "COMPLETED" ||
+      live.deployments[0].taskDefinition !== expected || live.deployments[0].runningCount !== live.desiredCount ||
+      live.deployments[0].desiredCount !== live.desiredCount || live.deployments[0].pendingCount !== 0 ||
       (count !== undefined && live.desiredCount !== count)) throw new Error("Backend must be stable on the expected revision and task count");
 }
 
 async function verifyTasks(ecs, config, live, definition) {
   stable(live, definition.taskDefinitionArn);
-  const arns = [];
-  for await (const page of paginateListTasks({ client: ecs, pageSize: 100, stopOnSameToken: true }, {
-    cluster: config.cluster, serviceName: live.serviceName, desiredStatus: "RUNNING",
-  })) arns.push(...(page.taskArns || []));
+  const arns = config.tasks;
   if (new Set(arns).size !== live.desiredCount || arns.length !== live.desiredCount) throw new Error("Every running backend task must be accounted for");
   for (let offset = 0; offset < arns.length; offset += 100) {
     const batch = arns.slice(offset, offset + 100);
@@ -74,8 +77,9 @@ async function observe(clients, config, definition, count, sleep, report) {
     await alarms(clients, config);
     if (waited < 300) await sleep(15000);
   }
-  await verifyTasks(clients.ecs, config, await service(clients.ecs, config), definition);
-  report("Backend configuration baked for 300s; every running task verified");
+  const current = await describe(clients.ecs, definition.taskDefinitionArn);
+  if (!same(current.definition, definition)) throw new Error("Backend configuration readback does not match the expected definition");
+  report("Backend configuration and service counts verified after a 300s bake; independently inspect the resulting tasks and download responses");
 }
 
 async function configure(clients, config, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), report = console.log) {
@@ -115,6 +119,7 @@ async function configure(clients, config, sleep = (ms) => new Promise((resolve) 
   const next = prepared ? latest.definition.taskDefinitionArn : await register(clients.ecs, source, rendered, tags, config.tag, report);
   stable(await service(clients.ecs, config), live.taskDefinition, live.desiredCount);
   try {
+    // Every backend writer must use the shared deployment queue.
     await clients.ecs.send(new UpdateServiceCommand({ cluster: config.cluster, service: live.serviceName, taskDefinition: next }));
     await waitForService(clients.ecs, config, "backend", next, sleep);
     await observe(clients, config, { ...rendered, taskDefinitionArn: next }, live.desiredCount, sleep, report);
@@ -127,8 +132,9 @@ async function configure(clients, config, sleep = (ms) => new Promise((resolve) 
       }
       if (current.taskDefinition === next) await clients.ecs.send(new UpdateServiceCommand({ cluster: config.cluster, service: live.serviceName, taskDefinition: live.taskDefinition }));
       await waitForService(clients.ecs, config, "backend", live.taskDefinition, sleep);
-      await verifyTasks(clients.ecs, config, await service(clients.ecs, config), definition);
-      report("Restored and verified the exact previous backend revision");
+      stable(await service(clients.ecs, config), live.taskDefinition, live.desiredCount);
+      if (!same((await describe(clients.ecs, live.taskDefinition)).definition, definition)) throw new Error("Previous backend definition readback changed");
+      report("Restored and verified the exact previous backend revision and service counts; independently inspect its current tasks");
     } catch {
       throw new Error("Configuration rollout failed and rollback could not be verified; inspect the backend before any further change", { cause: error });
     }

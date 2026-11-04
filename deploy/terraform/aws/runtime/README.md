@@ -32,13 +32,16 @@ when activating them.
 attachment-download setting unless Terraform explicitly supplies its environment
 value. The opt-in `.github/workflows/configure-backend-aws.yml` changes only
 `CAMPAIGN_ATTACHMENT_DOWNLOAD_PROXY` from a verified live backend definition,
-using release provenance, individual task checks, a fixed 300-second bake and
-verified rollback. Its `warmbly-config-attachment-download-proxy` task tag records
+using release provenance, preflight task identities checked against the service
+count and deployment, a fixed 300-second bake and verified revision/count rollback.
+Its `warmbly-config-attachment-download-proxy` task tag records
 ownership across later deploys and secret refreshes. Explicit Terraform `true` or
 `false` takes ownership; a rollback below v0.6.75 requires disabling the proxy
-first and waiting for existing links to expire. The deploy role's cluster-scoped
-`ecs:ListTasks` permission must be provisioned through infrastructure approval
-before using this workflow. It does not provision permissions itself.
+first and waiting for existing links to expire. The operator collects current
+task ARNs through normal read-only inventory access and supplies them to the
+workflow, which uses existing deployment permissions. After the bake, independently
+inspect every new running task and the actual private-download response before
+claiming end-to-end verification. No additional IAM policy is provisioned.
 
 A stable release tag on
 `main` reaches it from `release.yml` when the repository variable

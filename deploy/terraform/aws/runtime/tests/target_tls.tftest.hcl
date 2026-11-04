@@ -75,22 +75,6 @@ variables {
   }
 }
 
-run "deployment_inventory_is_cluster_scoped" {
-  command = plan
-  variables {
-    github_repository = "warmbly/warmbly"
-  }
-  assert {
-    condition = anytrue([for statement in data.aws_iam_policy_document.github_deploy[0].statement :
-      statement.actions == toset(["ecs:ListTasks"]) && statement.resources == toset(["*"]) &&
-      anytrue([for condition in statement.condition :
-        condition.test == "ArnEquals" && condition.variable == "ecs:cluster" && condition.values == tolist([local.foundation.cluster_arn])
-      ])
-    ])
-    error_message = "Deployment task inventory reads must be restricted to this runtime cluster."
-  }
-}
-
 run "off_is_unchanged" {
   command = apply
   variables {

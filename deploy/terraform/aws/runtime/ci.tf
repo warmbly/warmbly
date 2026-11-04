@@ -91,15 +91,6 @@ data "aws_iam_policy_document" "github_deploy" {
     resources = ["${local.ecs_arn}:task/${var.name}/*"]
   }
   statement {
-    actions   = ["ecs:ListTasks"]
-    resources = ["*"]
-    condition {
-      test     = "ArnEquals"
-      variable = "ecs:cluster"
-      values   = [local.foundation.cluster_arn]
-    }
-  }
-  statement {
     actions   = ["ecs:RunTask"]
     resources = [for task in keys(local.github_tasks) : "${local.ecs_arn}:task-definition/${var.name}-${task}:*"]
     condition {

@@ -3,24 +3,26 @@ const assert = require("node:assert/strict");
 const { mkdtempSync, writeFileSync, rmSync } = require("node:fs");
 const { tmpdir } = require("node:os");
 const { join } = require("node:path");
-const { ECSClient } = require("@aws-sdk/client-ecs");
 const { configuration, configure } = require("./aws-backend-config.cjs");
 const { REGISTER_FIELDS, ATTACHMENT_PROXY, ATTACHMENT_PROXY_TAG } = require("./aws-deploy.cjs");
 
 const root = "arn:aws:ecs:us-east-1:000000000000:";
 const arn = (revision) => `${root}task-definition/fixture-backend:${revision}`;
+const task = (number) => `${root}task/fixture/${number.toString(16).padStart(32, "0")}`;
+const runningTasks = (revision, count = 2) => Array.from({ length: count }, (_, i) => task(revision * 1000 + i + 1));
 const image = `ghcr.io/warmbly/warmbly/backend@sha256:${"a".repeat(64)}`;
 
 function fixture(t, options = {}) {
+  const count = options.taskCount || 2;
   const dir = mkdtempSync(join(tmpdir(), "backend-config-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const manifest = { tag: "v0.6.75", registry: "ghcr.io/warmbly/warmbly", images: { "backend-kafka": `sha256:${"a".repeat(64)}` } };
   writeFileSync(join(dir, "images.json"), JSON.stringify(manifest));
   const env = { AWS_ECS_CLUSTER: root + "cluster/fixture", DEPLOY_TAG: manifest.tag, DEPLOY_IMAGES_JSON: join(dir, "images.json"),
-    CONFIG_EXPECTED_TASK_DEFINITION: arn(1), CONFIG_ATTACHMENT_DOWNLOAD_PROXY: "true" };
+    CONFIG_EXPECTED_TASK_DEFINITION: arn(1), CONFIG_EXPECTED_TASKS: JSON.stringify(runningTasks(1, count)), CONFIG_ATTACHMENT_DOWNLOAD_PROXY: "true" };
   const cfg = configuration(env);
-  const live = { serviceName: "fixture-backend", status: "ACTIVE", taskDefinition: arn(1), desiredCount: 2, runningCount: 2, pendingCount: 0,
-    deployments: [{ rolloutState: "COMPLETED" }] };
+  const live = { serviceName: "fixture-backend", status: "ACTIVE", taskDefinition: arn(1), desiredCount: count, runningCount: count, pendingCount: 0,
+    deployments: [{ rolloutState: "COMPLETED", taskDefinition: arn(1), desiredCount: count, runningCount: count, pendingCount: 0 }] };
   const base = { family: "fixture-backend", status: "ACTIVE", revision: 1, taskDefinitionArn: arn(1),
     taskRoleArn: root + "role/task", executionRoleArn: root + "role/execution", networkMode: "awsvpc", cpu: "256", memory: "512",
     requiresCompatibilities: ["FARGATE"], runtimePlatform: { cpuArchitecture: "ARM64", operatingSystemFamily: "LINUX" },
@@ -35,8 +37,7 @@ function fixture(t, options = {}) {
   const calls = [];
   const sleeps = [];
   let latest = arn(1);
-  const ecs = new ECSClient({ region: "us-east-1" });
-  t.after(() => ecs.destroy());
+  const ecs = {};
   ecs.send = async (command) => {
     const name = command.constructor.name;
     calls.push({ name, input: structuredClone(command.input) });
@@ -47,12 +48,11 @@ function fixture(t, options = {}) {
       const entry = defs.get(command.input.taskDefinition === "fixture-backend" ? latest : command.input.taskDefinition);
       return { taskDefinition: structuredClone(entry.definition), tags: structuredClone(entry.tags) };
     }
-    case "ListTasksCommand":
-      if (options.pagination && !command.input.nextToken) return { taskArns: [root + "task/fixture/one"], nextToken: "next" };
-      return { taskArns: options.pagination ? [root + "task/fixture/two"] : [root + "task/fixture/one", root + "task/fixture/two"] };
-    case "DescribeTasksCommand": return { tasks: command.input.tasks.map((taskArn) => ({
+    case "DescribeTasksCommand": return { tasks: (options.missingTask ? command.input.tasks.slice(1) : command.input.tasks).map((taskArn) => ({
       taskArn, taskDefinitionArn: options.wrongTask ? arn(99) : live.taskDefinition,
-      group: "service:fixture-backend", lastStatus: "RUNNING", desiredStatus: options.drainingTask ? "STOPPED" : "RUNNING", healthStatus: options.unhealthyTask ? "UNHEALTHY" : "HEALTHY",
+      group: options.foreignGroup ? "service:fixture-foreign" : "service:fixture-backend", lastStatus: "RUNNING",
+      desiredStatus: options.drainingTask || !runningTasks(Number(live.taskDefinition.split(":").pop()), count).includes(taskArn) ? "STOPPED" : "RUNNING",
+      healthStatus: options.unhealthyTask ? "UNHEALTHY" : "HEALTHY",
       containers: [{ name: "backend", image }], overrides: { containerOverrides: options.override ? [{ name: "backend", command: ["other"] }] : [{ name: "backend" }] },
     })) };
     case "RegisterTaskDefinitionCommand": {
@@ -63,8 +63,8 @@ function fixture(t, options = {}) {
     }
     case "UpdateServiceCommand": {
       live.taskDefinition = command.input.taskDefinition;
-      if (options.failedRoll && live.taskDefinition !== arn(1)) live.deployments = [{ rolloutState: "FAILED" }];
-      else live.deployments = [{ rolloutState: "COMPLETED" }];
+      live.deployments = [{ rolloutState: options.failedRoll && live.taskDefinition !== arn(1) ? "FAILED" : "COMPLETED",
+        taskDefinition: live.taskDefinition, desiredCount: count, runningCount: count, pendingCount: 0 }];
       return {};
     }
     default: throw new Error(`Unexpected ${name}`);
@@ -81,7 +81,7 @@ function fixture(t, options = {}) {
 const mutations = (f) => f.calls.filter((c) => ["RegisterTaskDefinitionCommand", "UpdateServiceCommand"].includes(c.name));
 
 test("only the allowlisted flag and ownership tag change; every live task is checked and a full bake completes", async (t) => {
-  const f = fixture(t, { pagination: true });
+  const f = fixture(t);
   const previous = structuredClone(f.base);
   const result = await f.run();
   assert.equal(result.changed, true);
@@ -95,8 +95,10 @@ test("only the allowlisted flag and ownership tag change; every live task is che
   assert.deepEqual(f.calls.filter((c) => c.name === "UpdateServiceCommand").map((c) => c.input), [{ cluster: f.cfg.cluster, service: "fixture-backend", taskDefinition: arn(2) }]);
   assert.equal(f.sleeps.reduce((a, b) => a + b, 0), 300000);
   assert.equal(f.calls.filter((c) => c.name === "DescribeAlarmsCommand").length, 22);
-  assert.ok(f.calls.some((c) => c.name === "ListTasksCommand" && c.input.nextToken === "next"));
+  assert.ok(!f.calls.some((c) => c.name === "ListTasksCommand"), "the operation uses existing deployment permissions");
   const count = mutations(f).length;
+  await assert.rejects(f.run(), /unmodified service configuration/, "an old task snapshot must be refreshed before retrying");
+  f.cfg.tasks = runningTasks(2);
   assert.equal((await f.run()).changed, false);
   assert.equal(mutations(f).length, count, "repeated request is a no-op even with its original expected revision");
   assert.equal(f.sleeps.reduce((a, b) => a + b, 0), 600000, "an interrupted bake is always observed afresh without rolling again");
@@ -106,6 +108,7 @@ test("disabling is explicit and preserves the remainder of the running definitio
   const f = fixture(t);
   await f.run();
   f.cfg.expected = arn(2);
+  f.cfg.tasks = runningTasks(2);
   f.cfg.value = "false";
   await f.run();
   const current = f.defs.get(arn(3));
@@ -113,14 +116,28 @@ test("disabling is explicit and preserves the remainder of the running definitio
   assert.equal(current.tags.find((tag) => tag.key === ATTACHMENT_PROXY_TAG).value, "false");
 });
 
+test("every preflight task is described within the API batch limit", async (t) => {
+  const f = fixture(t, { taskCount: 101 });
+  await f.run();
+  const descriptions = f.calls.filter((c) => c.name === "DescribeTasksCommand");
+  assert.deepEqual(descriptions.map((c) => c.input.tasks.length), [100, 1]);
+  assert.deepEqual(descriptions.flatMap((c) => c.input.tasks), f.cfg.tasks);
+});
+
 for (const [name, options, mutate] of [
   ["mixed task definitions", { wrongTask: true }], ["unhealthy task", { unhealthyTask: true }], ["task override", { override: true }],
   ["draining task", { drainingTask: true }],
+  ["missing described task", { missingTask: true }], ["foreign task group", { foreignGroup: true }],
+  ["incomplete preflight", {}, (f) => { f.cfg.tasks.pop(); }],
+  ["duplicate preflight task", {}, (f) => { f.cfg.tasks[1] = f.cfg.tasks[0]; }],
   ["stale expected revision", {}, (f) => { f.cfg.expected = arn(99); }],
   ["wrong image", {}, (f) => { f.base.containerDefinitions[0].image += "bad"; }],
   ["wrong release", {}, (f) => { f.tags[0].value = "v0.6.74"; }],
   ["missing variant", {}, (f) => { f.tags.splice(1, 1); }],
   ["zero tasks", {}, (f) => { f.live.desiredCount = f.live.runningCount = 0; }],
+  ["unknown desired count", {}, (f) => { f.live.desiredCount = f.live.runningCount = undefined; }],
+  ["deployment count mismatch", {}, (f) => { f.live.deployments[0].runningCount = 1; }],
+  ["deployment revision mismatch", {}, (f) => { f.live.deployments[0].taskDefinition = arn(99); }],
   ["active rollout", {}, (f) => { f.live.deployments[0].rolloutState = "IN_PROGRESS"; }],
   ["duplicate flag", {}, (f) => { f.base.containerDefinitions[0].environment.push(...["true", "false"].map((value) => ({ name: ATTACHMENT_PROXY, value }))); }],
   ["secret-backed flag", {}, (f) => { f.base.containerDefinitions[0].secrets.push({ name: ATTACHMENT_PROXY, valueFrom: "secret" }); }],
@@ -137,7 +154,20 @@ for (const options of [{ alarm: true }, { failedRoll: true }]) test(`${JSON.stri
   await assert.rejects(f.run());
   assert.equal(f.live.taskDefinition, arn(1));
   assert.deepEqual(f.calls.filter((c) => c.name === "UpdateServiceCommand").map((c) => c.input.taskDefinition), [arn(2), arn(1)]);
-  assert.equal(f.calls.at(-1).name, "DescribeTasksCommand");
+  assert.equal(f.calls.at(-1).name, "DescribeTaskDefinitionCommand");
+});
+
+test("a desired-count change during rollback prevents a successful restore report", async (t) => {
+  const f = fixture(t, { alarm: true, hook: (name, { live, calls }) => {
+    if (name === "DescribeServicesCommand" && calls.filter((c) => c.name === "UpdateServiceCommand").length === 2) {
+      live.desiredCount = live.runningCount = 3;
+      live.deployments[0].desiredCount = live.deployments[0].runningCount = 3;
+    }
+  } });
+  await assert.rejects(f.run(), /rollback could not be verified/);
+  assert.equal(f.live.taskDefinition, arn(1));
+  assert.equal(f.live.desiredCount, 3, "another writer's count is preserved for operator inspection");
+  assert.ok(f.calls.filter((c) => c.name === "UpdateServiceCommand").every((c) => !Object.hasOwn(c.input, "desiredCount")));
 });
 
 test("a concurrent change before update is preserved", async (t) => {
@@ -177,6 +207,10 @@ test("configuration requires a supported release, exact backend ARN and explicit
     { DEPLOY_TAG: "v0.6.74" }, { DEPLOY_TAG: "" }, { CONFIG_ATTACHMENT_DOWNLOAD_PROXY: "yes" },
     { CONFIG_EXPECTED_TASK_DEFINITION: arn(1).replace("fixture-backend", "fixture-consumer") },
     { CONFIG_EXPECTED_TASK_DEFINITION: arn(1).replace("000000000000", "111111111111") },
+    { CONFIG_EXPECTED_TASKS: "[]" }, { CONFIG_EXPECTED_TASKS: "null" },
+    { CONFIG_EXPECTED_TASKS: JSON.stringify([task(1), task(1)]) },
+    { CONFIG_EXPECTED_TASKS: JSON.stringify([task(1).replace("000000000000", "111111111111")]) },
+    { CONFIG_EXPECTED_TASKS: JSON.stringify([task(1).replace("/fixture/", "/foreign/")]) },
   ]) assert.throws(() => configuration({ ...f.env, ...overrides }));
   assert.equal(configuration({ ...f.env, DEPLOY_BAKE_SECONDS: "0", DEPLOY_FLEET: "true" }).bake, 300);
   assert.equal(configuration(f.env).fleet, false);
