@@ -71,6 +71,14 @@ function completeClientHelloTail(sent, offset) {
     const kind = sent.readUInt16BE(offset);
     const length = sent.readUInt16BE(offset + 2);
     if (extensions.has(kind) || offset + 4 + length > sent.length) return false;
+    if (kind === 43) {
+      if (length < 3 || sent[offset + 4] !== length - 1 || (length - 1) % 2) return false;
+      let tls12 = false;
+      for (let at = offset + 5; at < offset + 4 + length; at += 2) {
+        if (sent.readUInt16BE(at) === 0x0303) tls12 = true;
+      }
+      if (!tls12) return false;
+    }
     extensions.add(kind);
     offset += 4 + length;
   }

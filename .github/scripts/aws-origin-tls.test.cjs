@@ -513,6 +513,17 @@ test("refusal evidence accounts for complete traces, framing and both captured s
             cipher, expected, "complete ClientHello vectors");
         }
       }
+      for (const [expected, versions] of [
+        [true, [2, 3, 3]], [true, [4, 3, 4, 3, 3]], [true, [4, 3, 3, 3, 4]],
+        [false, []], [false, [0]], [false, [1, 3]], [false, [2, 3]],
+        [false, [2, 3, 4]], [false, [4, 3, 3]], [false, [2, 3, 3, 3, 4]],
+      ]) {
+        const extensions = Buffer.from([0, 43, 0, versions.length, ...versions]);
+        const message = Buffer.concat([bytes, Buffer.from([0, extensions.length]), extensions]);
+        message.writeUIntBE(message.length - 4, 1, 3);
+        check({ ...result, stdout: trace(">>>", "Handshake", "ClientHello", message) + alert + summary },
+          cipher, expected, "ClientHello version selection includes TLS 1.2");
+      }
       for (const extra of [
         alert.slice(0, alert.indexOf("[length") + 3),
         alert.slice(0, alert.indexOf("\n") + 1),
