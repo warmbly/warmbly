@@ -274,6 +274,26 @@ func TestApplyFixTurnsSigninRowIntoPasswordConnect(t *testing.T) {
 	}
 }
 
+func TestCheckGooglePassword(t *testing.T) {
+	grant := uuid.New()
+	cases := []struct {
+		name string
+		p    payload
+		want bool
+	}{
+		{"app password", payload{MailHost: "gmail", SMTP: &models.Service{Password: "abcdefghijklmnop"}, IMAP: &models.Service{Password: "abcd efgh ijkl mnop"}}, true},
+		{"account password on smtp", payload{MailHost: "google_workspace", SMTP: &models.Service{Password: "hunter2"}, IMAP: &models.Service{Password: "abcdefghijklmnop"}}, false},
+		{"account password on imap", payload{MailHost: "google_workspace", SMTP: &models.Service{Password: "abcdefghijklmnop"}, IMAP: &models.Service{Password: "hunter2"}}, false},
+		{"grant row", payload{MailHost: "google_workspace", GrantID: &grant, SMTP: &models.Service{Password: "hunter2"}}, true},
+		{"another host", payload{MailHost: "zoho", SMTP: &models.Service{Password: "hunter2"}, IMAP: &models.Service{Password: "hunter2"}}, true},
+	}
+	for _, c := range cases {
+		if got := checkGooglePassword(c.p) == nil; got != c.want {
+			t.Errorf("%s: accepted = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
 func TestFixableRows(t *testing.T) {
 	cases := []struct {
 		status, cause string

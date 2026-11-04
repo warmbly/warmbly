@@ -719,13 +719,8 @@ func (s *Service) FixRow(ctx context.Context, orgID, userID, id uuid.UUID, line 
 	if (p.SMTP.Password == "" || p.IMAP.Password == "") && p.VendorConnectionID == nil {
 		return nil, errx.NewWithIdentifier(errx.BadRequest, "mailbox_import_row_incomplete", "Add a password for this row.")
 	}
-	if mailhost.Host(p.MailHost).Google() && p.GrantID == nil {
-		for _, pw := range []string{p.SMTP.Password, p.IMAP.Password} {
-			if pw != "" && !mailhost.LooksLikeGoogleAppPassword(pw) {
-				return nil, errx.NewWithIdentifier(errx.BadRequest, "google_app_password_required",
-					"Google needs a 16-letter app password here, not the account password.")
-			}
-		}
+	if xerr := checkGooglePassword(p); xerr != nil {
+		return nil, xerr
 	}
 	raw, _ := json.Marshal(p)
 	resealed, err := ciph.Encrypt(ctx, string(raw))
@@ -830,6 +825,22 @@ func applyFix(p *payload, email string, fix models.MailboxImportRowFix) {
 	p.Signin = false
 }
 
+var errGoogleAppPassword = errx.NewWithIdentifier(errx.BadRequest, "google_app_password_required",
+	"Google needs a 16-letter app password here, not the account password.")
+
+// checkGooglePassword refuses a Google row's password that is not an app password; Google would refuse it too.
+func checkGooglePassword(p payload) *errx.Error {
+	if !mailhost.Host(p.MailHost).Google() || p.GrantID != nil {
+		return nil
+	}
+	for _, svc := range []*models.Service{p.SMTP, p.IMAP} {
+		if svc != nil && svc.Password != "" && !mailhost.LooksLikeGoogleAppPassword(svc.Password) {
+			return errGoogleAppPassword
+		}
+	}
+	return nil
+}
+
 // fillLeg gives a leg with no server the host's known one.
 func fillLeg(svc *models.Service, e mailhost.Endpoint) {
 	if svc.Host != "" || e.Host == "" {
@@ -866,23 +877,29 @@ func (s *Service) Retry(ctx context.Context, orgID, userID, id uuid.UUID, req mo
 		}
 		ciph = c
 	}
-	requeued := 0
-	for _, w := range rows {
-		resealed := ""
-		if ciph != nil {
+	// Every row is resealed and checked before any is queued, so a refusal leaves no partial batch.
+	resealed := make([]string, len(rows))
+	if ciph != nil {
+		for i, w := range rows {
 			p, xerr := unseal(ctx, ciph, w.Payload)
 			if xerr != nil {
 				return nil, xerr
 			}
 			pw := req.Password
 			applyFix(&p, w.Email, models.MailboxImportRowFix{Password: &pw})
+			if xerr := checkGooglePassword(p); xerr != nil {
+				return nil, xerr
+			}
 			raw, _ := json.Marshal(p)
-			if resealed, err = ciph.Encrypt(ctx, string(raw)); err != nil {
+			if resealed[i], err = ciph.Encrypt(ctx, string(raw)); err != nil {
 				errs.CaptureException(err)
 				return nil, errx.InternalError()
 			}
 		}
-		queued, err := s.repo.Requeue(ctx, id, w.Line, resealed)
+	}
+	requeued := 0
+	for i, w := range rows {
+		queued, err := s.repo.Requeue(ctx, id, w.Line, resealed[i])
 		if err != nil {
 			return nil, errx.InternalError()
 		}

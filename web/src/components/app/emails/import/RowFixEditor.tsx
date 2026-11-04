@@ -14,15 +14,10 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import { mailHostLabel } from "@/lib/mailHost";
 import { cn } from "@/lib/utils";
+import { isGoogleServer, looksLikeGoogleAppPassword } from "./importFields";
 
 // Hosts that take only an app password over IMAP and SMTP.
 const APP_PASSWORD_HOSTS = new Set(["google_workspace", "gmail", "yahoo", "aol", "icloud", "fastmail", "yandex"]);
-
-// Mirrors mailhost.LooksLikeGoogleAppPassword: 16 letters, ends trimmed, spaces ignored.
-const looksLikeGoogleAppPassword = (s: string) => /^[a-z]{16}$/i.test(s.trim().replace(/ /g, ""));
-
-// Mirrors mailhost.FromServer for Google's servers.
-const isGoogleServer = (host: string) => /(^|\.)(google|gmail|googlemail)\.com\.?$/i.test(host.trim());
 
 interface LegDraft {
     host: string;

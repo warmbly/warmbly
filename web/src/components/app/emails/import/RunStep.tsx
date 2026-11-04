@@ -57,6 +57,7 @@ import {
     importSourceName,
     isPasswordCause,
     isSigninCause,
+    looksLikeGoogleAppPassword,
     plural,
 } from "./importFields";
 import { Banner, HostMark, Linkified, Pill, SectionLabel, StatCard } from "./parts";
@@ -690,6 +691,8 @@ function CauseCard({
     const canRetry = cause.retryable && !signin;
     const passwordCause = isPasswordCause(cause.cause);
     const appPassword = /app_password/.test(cause.cause);
+    // Google causes are named google_*; the server refuses anything but an app password for them.
+    const notAppPassword = cause.cause.startsWith("google_") && !!password && !looksLikeGoogleAppPassword(password);
     return (
         <div className={cn("rounded-md border px-3 py-2.5", active ? "border-sky-300 bg-sky-50/40" : "border-slate-200")}>
             <div className="flex items-baseline gap-2">
@@ -727,7 +730,7 @@ function CauseCard({
                     className="mt-2 flex items-center gap-1.5"
                     onSubmit={(e) => {
                         e.preventDefault();
-                        if (!password || busy) return;
+                        if (!password || notAppPassword || busy) return;
                         void onRetryWithPassword(password).then(() => setPassword(""));
                     }}
                 >
@@ -742,12 +745,15 @@ function CauseCard({
                     />
                     <button
                         type="submit"
-                        disabled={!password || busy}
+                        disabled={!password || notAppPassword || busy}
                         className="h-7 px-2.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium inline-flex items-center gap-1 transition-colors disabled:opacity-50 shrink-0"
                     >
                         Retry with it
                     </button>
                 </form>
+            )}
+            {passwordCause && canRetry && notAppPassword && (
+                <p className="mt-1 text-[11px] text-rose-600">Google needs the 16-letter app password, not the account password.</p>
             )}
         </div>
     );
