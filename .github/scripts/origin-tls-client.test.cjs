@@ -166,6 +166,36 @@ test("archived output retains certificate and refusal evidence without session s
   assert.doesNotMatch(result.stdout + result.stderr, /SECRET|Master-Key|Resumption PSK|session ticket|NewSessionTicket|04 00 00 00|ab cd ef/);
 });
 
+test("captured ticket and session regions retain only approved evidence at every cutoff", () => {
+  const prefix = trusted().stdout;
+  const header = "<<< TLS 1.2, Handshake [length 000e], NewSessionTicket\n";
+  const body = "    04 00 00 0a 71 82 93 a4\n    b5 c6 d7 e8 f9 0a\ncapture-tail";
+  const resumed = "<<< TLS 1.2, Alert [length 0002], warning close_notify\n    01 00\n";
+  const session = "SSL-Session:\n    Master-Key: SYNTHETIC_MAPLE\n    Resumption PSK: SYNTHETIC_BIRCH\n";
+  for (const stream of ["stdout", "stderr"]) {
+    for (const execution of [{ status: 0 }, { status: null, error: { code: "ENOBUFS" } },
+      { status: null, error: { code: "ETIMEDOUT" }, signal: "SIGKILL" }]) {
+      const capture = (output) => invoke([], () => ({ stdout: "", stderr: "", ...execution, [stream]: output }));
+      for (let cutoff = 0; cutoff <= body.length; cutoff++) {
+        const output = prefix + header + body.slice(0, cutoff);
+        assert.equal(capture(output)[stream], prefix + "[TLS message omitted]", `${stream} ticket cutoff ${cutoff}`);
+        assert.equal(capture(output + "\n" + resumed)[stream], prefix + "[TLS message omitted]\n" + resumed,
+          `${stream} trace recovery ${cutoff}`);
+      }
+      for (let cutoff = 0; cutoff <= session.length; cutoff++) {
+        const output = prefix + session.slice(0, cutoff);
+        if (cutoff < "SSL-Session:\n".length) continue;
+        assert.equal(capture(output)[stream], prefix.trimEnd(), `${stream} session cutoff ${cutoff}`);
+      }
+      const verification = "    Verify return code: 0 (ok)\n";
+      assert.equal(capture(prefix + session + verification + "---\n" + resumed)[stream],
+        prefix + verification + "---\n" + resumed);
+      assert.equal(classify(capture(prefix + session + verification), "TLSv1.2", GCM[0]),
+        execution.status === 0 ? "trusted" : "inconclusive");
+    }
+  }
+});
+
 test("loopback TLS and alert peers preserve strict refusal and trusted positive behavior", { timeout: 20000 }, async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "origin-tls-local-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
