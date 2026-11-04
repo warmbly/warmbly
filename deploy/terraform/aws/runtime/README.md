@@ -105,6 +105,64 @@ those versions and runs `warmblyctl` in the `ops` task to prove each step before
 the old value is retired. No value passes through GitHub or a log. The runbook
 is in `aws-fargate.mdx`.
 
+## Isolated origin ALB policy configuration
+
+`configure-origin-alb-aws.yml` implements the ordinary in-place-update category
+for the hosted origin HTTPS listener. It uses `aws-infrastructure`, its existing
+main branch restriction, the existing Terraform apply OIDC role, and the shared
+`aws-production` queue. Environment protection settings and the general Terraform
+workflow remain unchanged. This workflow does not enable the general stack
+workflow or perform a service or fleet deployment.
+
+Set the existing nonsecret environment variables `AWS_TERRAFORM_APPLY_ROLE_ARN`
+and `AWS_TERRAFORM_STATE_BUCKET` in `aws-infrastructure` through normal operator
+configuration. Missing values stop the run. There is no fallback to another
+environment. The existing role is intersected with a session policy: plan mode
+can describe infrastructure and create private evidence; apply and rollback add
+only `ModifyListener` on the bound listener and versioned reads of the selected
+plan. Missing permissions require the normal IAM approval process, never an
+automatic policy expansion. No secret value or Terraform variable file is read.
+
+1. Merge the reviewed source, then dispatch on `main` with `mode=plan` (the
+   default) and leave the three plan selectors empty. This is a dry readback and
+   plan, with no infrastructure configuration write.
+2. Privately review the complete `plan.json` in the state bucket under
+   `warmbly/production/diagnostics/origin-alb-policy/<run-id>/1/`. The summary
+   reports its exact version ID and SHA-256. The plan binds the workflow source,
+   origin identity and complete before/after snapshots. Only the bound HTTPS
+   listener's `SslPolicy` may change from
+   `ELBSecurityPolicy-TLS13-1-2-2021-06` to
+   `ELBSecurityPolicy-TLS13-1-2-Res-2021-06`.
+3. Dispatch `mode=apply` on the same main source with `plan_run_id`,
+   `plan_version` and `plan_sha256` from that review. The complete plan must be
+   no more than 24 hours old. A moved main source, changed policy baseline or any
+   other origin configuration drift requires a new plan and review.
+4. Inspect the private `intent.json` and `result.json` for the apply run. The
+   intent must be archived before the write. Every object uses conditional
+   creation, SHA-256, AES256 encryption and a non-null S3 version ID. Raw
+   snapshots stay in the private bucket and runner directory, never public logs
+   or Actions artifacts. Listener certificates, mutual authentication, listener
+   and ALB attributes, rules, target group configuration and security groups
+   must match the plan. Routed HTTPS targets must be healthy before and after.
+5. Independently check public application health and retain certificate-verified
+   TLS 1.2 AEAD and TLS 1.3 origin handshakes plus CBC-only refusal from an
+   authorized origin-access network. An edge handshake or a timeout does not
+   establish origin policy behavior.
+
+For scoped rollback within the same 24-hour plan window, dispatch
+`mode=rollback` with the same reviewed plan selectors and workflow source.
+The entire live origin must match that plan's desired snapshot before only
+`SslPolicy` is restored to its recorded baseline. Rollback verifies the complete
+original snapshot and HTTPS target health. It does not restore rules, certificates,
+target groups, security groups or application state. Any drift stops it for
+operator review. Failed writes and readbacks produce private failure evidence;
+they do not trigger an automatic rollback or retry. Rerunning a workflow attempt
+is refused; inspect the evidence before a new dispatch. This configuration path
+supports the current and previous application releases without changing their
+data, task definitions, credentials or protocols. Terraform's declared desired
+policy remains the restricted policy; a scoped rollback must be reconciled
+through a fresh reviewed configuration plan before a later stack apply.
+
 ## Terraform in CI
 
 Set `terraform_ci = true` to create the `<name>-terraform-plan` and
