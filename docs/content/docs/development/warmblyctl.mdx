@@ -247,6 +247,7 @@ The [shared authentication reference](/api/authentication/) remains the backend 
 | [`org list`](#org-list) | Lists the workspaces on this instance with their id, owner, and size |
 | [`org export`](#org-export) | Writes a whole workspace to a portable archive file |
 | [`org import`](#org-import) | Applies an archive to a workspace on this instance |
+| [`db load`](#db-load) | Shows what the database is busy with: connections by service, costliest queries, largest tables |
 
 `warmblyctl --help` lists them, and `warmblyctl <command> --help` prints one command's flags with an example. The [API commands](#the-api-commands) are further down, because they authenticate differently.
 
@@ -694,6 +695,22 @@ Every one of these runs `warmblyctl` inside the backend container of a compose i
 | `make cli ARGS="..."` | Any command, with a TTY attached so prompts work |
 | `make grant-admin EMAIL=... ROLE=...` | `user grant-admin` |
 | `make revoke-admin EMAIL=...` | `user revoke-admin` |
+
+## db load
+
+Shows what the database is busy with. It only reads the statistics views and changes nothing.
+
+```bash
+warmblyctl db load
+warmblyctl db load --limit 30 --json
+```
+
+It prints four sections:
+
+- **Connections** grouped by the service that opened them and their state, against `max_connections`. Every Go service names its connections `warmbly-<binary>` (`warmbly-backend`, `warmbly-consumer`, `warmbly-warmblyctl`), unless the connection string sets its own `application_name`.
+- **Longest-running sessions**, with how long each has been in its transaction and what it is waiting on. Query text is left out, because it can hold literal values.
+- **Costliest statements** by total execution time, read from `pg_stat_statements`. Its text is normalized, so it holds no values. When the extension is not installed, the section says how to enable it.
+- **Largest tables** with live and dead rows, sequential scans and the last autovacuum.
 
 ## See also
 
