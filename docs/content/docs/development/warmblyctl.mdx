@@ -707,7 +707,7 @@ warmblyctl db load --limit 30 --json
 
 It prints four sections:
 
-- **Connections** to the whole server, grouped by the service that opened them and their state, against `max_connections`. Every Go service names its connections `warmbly-<binary>` (`warmbly-backend`, `warmbly-consumer`, `warmbly-warmblyctl`), unless the connection string sets its own `application_name`.
+- **Connections** to the whole server, grouped by the service that opened them and their state, against `max_connections`. Postgres's own background processes are listed but not counted, because they have their own slots. Every Go service names its connections `warmbly-<binary>` (`warmbly-backend`, `warmbly-consumer`, `warmbly-warmblyctl`), unless the connection string sets its own `application_name`.
 - **Longest-running sessions**, with how long each has been in its transaction and what it is waiting on. Query text is left out, because it can hold literal values.
 - **Costliest statements** by total execution time, read from `pg_stat_statements`, with each statement's `queryid`. Text is shown only for queries, whose constants Postgres replaces with placeholders; other statements such as `ALTER ROLE` can keep literal values, so they show their `queryid` alone. When the extension is not installed, the section says how to enable it.
 - **Largest tables** with live and dead rows, sequential scans and the last autovacuum.

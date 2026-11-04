@@ -221,9 +221,12 @@ func readStatements(ctx context.Context, pool *pgxpool.Pool, limit int, load *db
 func printDBLoad(w io.Writer, load *dbLoad) {
 	used := 0
 	for _, c := range load.Connections {
-		used += c.Count
+		// Background processes have their own slots, outside max_connections.
+		if c.State != "(background)" {
+			used += c.Count
+		}
 	}
-	fmt.Fprintf(w, "Connections to the server, not counting this one: %d of max_connections %d\n", used, load.MaxConnections)
+	fmt.Fprintf(w, "Client connections to the server, not counting this one: %d of max_connections %d\n", used, load.MaxConnections)
 	tw := tabwriter.NewWriter(w, 2, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "  APPLICATION\tSTATE\tCOUNT")
 	for _, c := range load.Connections {

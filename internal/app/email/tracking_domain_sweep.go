@@ -54,7 +54,7 @@ func (s *emailService) runTrackingDomainSweep(ctx context.Context, staleAfter ti
 	var verified, revoked, failed int
 	for _, t := range due {
 		if ctx.Err() != nil {
-			return nil
+			break
 		}
 
 		lookupCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
