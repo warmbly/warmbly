@@ -226,7 +226,7 @@ func (s *service) Preflight(
 	out := &models.OrgImportPreflight{
 		Archive:   manifest.Info(),
 		Conflicts: map[string]int64{},
-		Warnings:  []string{},
+		Warnings:  manifest.attachmentCompatibilityWarnings(),
 	}
 
 	if manifest.Secrets != nil && passphrase != "" {

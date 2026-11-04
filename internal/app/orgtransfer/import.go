@@ -73,7 +73,7 @@ func (s *service) ImportFrom(
 		return nil, err
 	}
 
-	result := &ImportResult{RowCounts: map[string]int64{}}
+	result := &ImportResult{RowCounts: map[string]int64{}, Warnings: manifest.attachmentCompatibilityWarnings()}
 
 	archiveKey, err := s.resolveArchiveKey(manifest, opts.Passphrase)
 	if err != nil {
@@ -865,7 +865,8 @@ func (s *service) restoreBlobs(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, 
 				}
 			}
 		} else {
-			err = s.blobs.Put(ctx, destKey, rc, "")
+			// Preserve portable private files independently of the new-upload policy.
+			err = s.blobs.Put(ctx, destKey, rc, storage.DownloadType(""))
 		}
 		_ = rc.Close()
 		if err != nil {

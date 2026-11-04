@@ -10,7 +10,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"mime"
 	"net/http"
 	"path"
 	"strings"
@@ -25,23 +24,15 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/storage"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/attachmenttype"
 )
 
 const (
 	// Per-file cap. Kept under provider message ceilings (Gmail/Outlook ~25 MB
 	// total, and base64 inflates ~37%), so a single attachment always fits.
-	attachmentMaxBytes int64 = 15 * 1024 * 1024
+	attachmentMaxBytes int64 = attachmenttype.MaxBytes
 	attachmentURLTTL         = 15 * time.Minute
 )
-
-// Executable / script types that must never ride an outbound email. Everything
-// else (images, PDF, office docs, CSV, archives, …) is allowed.
-var blockedAttachmentExt = map[string]bool{
-	".exe": true, ".bat": true, ".cmd": true, ".com": true, ".msi": true,
-	".scr": true, ".js": true, ".jse": true, ".vbs": true, ".vbe": true,
-	".ps1": true, ".sh": true, ".jar": true, ".app": true, ".dll": true,
-	".cpl": true, ".hta": true, ".wsf": true, ".pif": true,
-}
 
 func sanitizeFilename(name string) string {
 	name = path.Base(strings.ReplaceAll(name, "\\", "/"))
@@ -140,10 +131,23 @@ func (h *Handler) UploadCampaignAttachment(c *gin.Context) {
 		return
 	}
 	filename := sanitizeFilename(fh.Filename)
-	if blockedAttachmentExt[strings.ToLower(path.Ext(filename))] {
-		errx.JSON(c, errx.New(errx.BadRequest, "that file type can't be attached to email"))
+	src, err := fh.Open()
+	if err != nil {
+		errx.JSON(c, errx.InternalError())
 		return
 	}
+	defer src.Close()
+	body, err := io.ReadAll(io.LimitReader(src, attachmentMaxBytes+1))
+	if err != nil {
+		errx.JSON(c, errx.InternalError())
+		return
+	}
+	validated, err := attachmenttype.Validate(filename, body)
+	if err != nil {
+		errx.JSON(c, errx.NewWithIdentifier(errx.BadRequest, "invalid_attachment", "Use a supported attachment with matching content and filename: PDF, DOCX, XLSX, PPTX, CSV, TSV, TXT, PNG, JPEG, GIF, WebP or ZIP. See the campaign attachment format limits."))
+		return
+	}
+	mimeType := validated.MIME
 
 	// Plan-based overall storage quota (org-wide). This read is only a fast
 	// refusal before the bytes are copied to storage; the check that counts
@@ -163,27 +167,8 @@ func (h *Handler) UploadCampaignAttachment(c *gin.Context) {
 		return
 	}
 
-	src, err := fh.Open()
-	if err != nil {
-		errx.JSON(c, errx.InternalError())
-		return
-	}
-	defer src.Close()
-	buf := &bytes.Buffer{}
-	if _, err := io.Copy(buf, src); err != nil {
-		errx.JSON(c, errx.InternalError())
-		return
-	}
-	body := buf.Bytes()
-	// Only the bare media type is kept: it is written into the part's headers at send.
-	mimeType, _, err := mime.ParseMediaType(fh.Header.Get("Content-Type"))
-	if err != nil {
-		mimeType = http.DetectContentType(body)
-	}
-
 	key := models.AttachmentObjectKey(campaignID, filename)
-	// The row keeps the declared type for the outgoing MIME part; the object
-	// itself is never stored as something a browser would run.
+	// Delivery metadata is canonical; storage retains forced-download protection.
 	if err := h.Storage.Put(c.Request.Context(), key, bytes.NewReader(body), storage.DownloadType(mimeType)); err != nil {
 		errx.JSON(c, errx.InternalError())
 		return
@@ -194,7 +179,7 @@ func (h *Handler) UploadCampaignAttachment(c *gin.Context) {
 		SequenceID: seqID,
 		UserID:     userID,
 		Filename:   filename,
-		Size:       fh.Size,
+		Size:       int64(len(body)),
 		MimeType:   mimeType,
 		S3Key:      key,
 	}

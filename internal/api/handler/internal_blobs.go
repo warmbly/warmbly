@@ -74,7 +74,7 @@ type blobPresignResponse struct {
 	ExpiresIn int    `json:"expires_in"`
 }
 
-// InternalPresignBlob signs one blob operation for a node.
+// InternalPresignBlob authorizes transport, not content, for one scoped node operation.
 func (h *Handler) InternalPresignBlob(c *gin.Context) {
 	if h.Storage == nil {
 		c.JSON(http.StatusNotImplemented, gin.H{"error": "no blob store configured"})

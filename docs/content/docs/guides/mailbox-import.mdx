@@ -460,3 +460,7 @@ The import is available to a signed-in session under `/emails/imports`, never to
   <Card title="Warmup" href="/guides/warmup/" />
   <Card title="Export and import" href="/guides/workspace-export-import/" />
 </Cards>
+
+## Text import encoding
+
+File-based CSV, TSV and TXT imports, including supported extensionless text files, use UTF-8 with an optional UTF-8 BOM. Unicode, comma/semicolon detection, tab-separated input, quoted multiline cells and ragged rows retain their existing parsing behavior. Binary control characters, NUL bytes and invalid UTF-8 are refused before row parsing. XLSX and XLSM imports retain their existing workbook parser and decompression limits; their support is separate from campaign attachment uploads.

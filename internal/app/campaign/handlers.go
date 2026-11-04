@@ -388,6 +388,7 @@ func (s *campaignService) copyAttachments(ctx context.Context, orgID, src, dst u
 			errs.CaptureException(fmt.Errorf("campaign %s duplicate: read %s: %w", src, att.S3Key, err))
 			continue
 		}
+		// Duplication preserves accepted files, including those from previous releases.
 		key := models.AttachmentObjectKey(dst, att.Filename)
 		err = s.storage.Put(ctx, key, body, storage.DownloadType(att.MimeType))
 		body.Close()

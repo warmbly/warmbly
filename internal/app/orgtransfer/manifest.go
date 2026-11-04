@@ -170,3 +170,13 @@ func blobArchivePath(index int, key string) string {
 	}
 	return fmt.Sprintf("%s%06d-%s", blobPrefix, index, base)
 }
+
+// attachmentCompatibilityWarnings describes private-file preservation without attesting content.
+func (m *Manifest) attachmentCompatibilityWarnings() []string {
+	for _, b := range m.Blobs {
+		if strings.HasPrefix(b.Key, "attachments/") {
+			return []string{"Campaign attachments are restored as portable existing files, including formats outside the new-upload policy. Restore preserves their bytes and does not certify their content. Review these files before using imported campaigns."}
+		}
+	}
+	return []string{}
+}
