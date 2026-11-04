@@ -33,18 +33,24 @@ function configuration(env) {
     family: `warmbly-production-origin-tls-${env.GITHUB_RUN_ID}`, startedBy: `origin-tls-${env.GITHUB_RUN_ID}` };
 }
 
-function sessionPolicy(config) {
-  return { Version: "2012-10-17", Statement: [
+function sessionPolicy(config, phase) {
+  requireThat(phase === "probe" || phase === "cleanup", "Explicit diagnostic credential phase required");
+  const statements = phase === "probe" ? [
     { Effect: "Allow", Action: ["elasticloadbalancing:DescribeLoadBalancers", "elasticloadbalancing:DescribeListeners",
-      "ec2:DescribeNetworkInterfaces", "ec2:DescribeSubnets", "ecs:RegisterTaskDefinition", "ecs:ListTaskDefinitions", "ecs:ListTasks"], Resource: "*" },
+      "ec2:DescribeNetworkInterfaces", "ec2:DescribeSubnets", "ecs:RegisterTaskDefinition"], Resource: "*" },
     { Effect: "Allow", Action: "ecs:DescribeServices", Resource: SERVICE },
     { Effect: "Allow", Action: "ecs:RunTask", Resource: `${ECS}:task-definition/${config.family}:*`,
       Condition: { ArnEquals: { "ecs:cluster": CLUSTER } } },
-    { Effect: "Allow", Action: "ecs:DeregisterTaskDefinition", Resource: "*" },
-    { Effect: "Allow", Action: ["ecs:DescribeTasks", "ecs:StopTask"], Resource: `${ECS}:task/warmbly-production/*` },
+    { Effect: "Allow", Action: "ecs:DescribeTasks", Resource: `${ECS}:task/warmbly-production/*` },
     { Effect: "Allow", Action: "iam:PassRole", Resource: EXECUTION,
       Condition: { StringEquals: { "iam:PassedToService": "ecs-tasks.amazonaws.com" } } },
+  ] : [
+    { Effect: "Allow", Action: ["ecs:ListTaskDefinitions", "ecs:ListTasks"], Resource: "*" },
+    { Effect: "Allow", Action: "ecs:DeregisterTaskDefinition", Resource: "*" },
+    { Effect: "Allow", Action: ["ecs:DescribeTasks", "ecs:StopTask"], Resource: `${ECS}:task/warmbly-production/*` },
     { Effect: "Allow", Action: "logs:GetLogEvents", Resource: `arn:aws:logs:${REGION}:${ACCOUNT}:log-group:${LOG}:log-stream:origin-tls-${config.run}/*` },
+  ];
+  return { Version: "2012-10-17", Statement: [...statements,
     { Effect: "Allow", Action: "s3:PutObject", Resource: `arn:aws:s3:::${BUCKET}/${PREFIX}/${config.run}/1/*`,
       Condition: { StringEquals: { "s3:x-amz-server-side-encryption": "AES256", "s3:ResourceAccount": ACCOUNT },
         Bool: { "aws:SecureTransport": "true" }, Null: { "s3:if-none-match": "false" } } },
@@ -290,8 +296,9 @@ if (require.main === module) {
     const config = configuration(process.env);
     const source = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" });
     requireThat(source.status === 0 && source.stdout.trim() === config.source, "Checkout must match main workflow source");
-    if (process.argv[2] === "session-policy") appendFileSync(process.env.GITHUB_OUTPUT, `policy=${canonical(sessionPolicy(config))}\n`);
-    else if (process.argv[2] === "probe") await execute(awsCLI, config);
+    if (process.argv[2] === "session-policy") {
+      for (const phase of ["probe", "cleanup"]) appendFileSync(process.env.GITHUB_OUTPUT, `${phase}_policy=${canonical(sessionPolicy(config, phase))}\n`);
+    } else if (process.argv[2] === "probe") await execute(awsCLI, config);
     else if (process.argv[2] === "finish") await finish(awsCLI, config);
     else throw new Error("Unknown diagnostic command");
   }).catch((error) => { console.error(`Origin TLS diagnostic stopped: ${error.message}`); process.exitCode = 1; });

@@ -1,5 +1,6 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
+const { spawnSync } = require("node:child_process");
 const { mkdtempSync, readFileSync, rmSync, writeFileSync } = require("node:fs");
 const { tmpdir } = require("node:os");
 const { join } = require("node:path");
@@ -92,37 +93,95 @@ test("only fresh main dispatches under normal infrastructure configuration are a
   }
 });
 
-test("session policy admits only diagnostics, bound roles, cluster and encrypted conditional private archives", () => {
+test("each credential phase grants exactly its required operations and resource scopes", () => {
   const config = configuration(env());
-  const policy = sessionPolicy(config);
-  assert.ok(JSON.stringify(policy).length < 2048);
-  const all = policy.Statement.flatMap((s) => s.Action);
-  for (const forbidden of ["ecs:UpdateService", "ecs:ExecuteCommand", "secretsmanager:GetSecretValue", "ssm:GetParameters",
-    "iam:PutRolePolicy", "elasticloadbalancing:ModifyListener", "ec2:AuthorizeSecurityGroupIngress"]) assert.ok(!all.includes(forbidden));
-  assert.deepEqual(policy.Statement.find((s) => s.Action === "iam:PassRole").Resource, EXECUTION);
-  assert.equal(policy.Statement.find((s) => s.Action === "ecs:RunTask").Condition.ArnEquals["ecs:cluster"], CLUSTER);
-  const put = policy.Statement.find((s) => s.Action === "s3:PutObject");
-  assert.ok(put.Resource.endsWith(`/origin-tls/${config.run}/1/*`));
-  assert.equal(put.Condition.StringEquals["s3:x-amz-server-side-encryption"], "AES256");
-  assert.equal(put.Condition.Null["s3:if-none-match"], "false");
+  const allow = (Action, Resource, Condition) => ({ Effect: "Allow", Action, Resource, ...(Condition ? { Condition } : {}) });
+  const archive = allow("s3:PutObject", `arn:aws:s3:::${BUCKET}/warmbly/production/diagnostics/origin-tls/${config.run}/1/*`, {
+    StringEquals: { "s3:x-amz-server-side-encryption": "AES256", "s3:ResourceAccount": ACCOUNT },
+    Bool: { "aws:SecureTransport": "true" }, Null: { "s3:if-none-match": "false" },
+  });
+  const expected = {
+    probe: [
+      allow(["elasticloadbalancing:DescribeLoadBalancers", "elasticloadbalancing:DescribeListeners",
+        "ec2:DescribeNetworkInterfaces", "ec2:DescribeSubnets", "ecs:RegisterTaskDefinition"], "*"),
+      allow("ecs:DescribeServices", SERVICE),
+      allow("ecs:RunTask", `${ECS}:task-definition/${config.family}:*`, { ArnEquals: { "ecs:cluster": CLUSTER } }),
+      allow("ecs:DescribeTasks", `${ECS}:task/warmbly-production/*`),
+      allow("iam:PassRole", EXECUTION, { StringEquals: { "iam:PassedToService": "ecs-tasks.amazonaws.com" } }),
+      archive,
+    ],
+    cleanup: [
+      allow(["ecs:ListTaskDefinitions", "ecs:ListTasks"], "*"),
+      allow("ecs:DeregisterTaskDefinition", "*"),
+      allow(["ecs:DescribeTasks", "ecs:StopTask"], `${ECS}:task/warmbly-production/*`),
+      allow("logs:GetLogEvents", `arn:aws:logs:us-east-1:${ACCOUNT}:log-group:${LOG}:log-stream:origin-tls-${config.run}/*`),
+      archive,
+    ],
+  };
+  for (const phase of ["probe", "cleanup"]) {
+    const policy = sessionPolicy(config, phase);
+    assert.deepEqual(policy, { Version: "2012-10-17", Statement: expected[phase] });
+    assert.ok(JSON.stringify(policy).length < 2048);
+  }
+  for (const phase of [undefined, "", "finish", "all"]) assert.throws(() => sessionPolicy(config, phase), /credential phase/);
 });
 
-test("diagnostic actions use provider-supported resource scopes", () => {
-  const config = configuration(env());
-  const statements = sessionPolicy(config).Statement;
-  const granting = (action) => statements.filter((s) => [s.Action].flat().includes(action));
-  assert.deepEqual(granting("ecs:DeregisterTaskDefinition"), [
-    { Effect: "Allow", Action: "ecs:DeregisterTaskDefinition", Resource: "*" },
-  ]);
-  assert.deepEqual(granting("ecs:RunTask"), [
-    { Effect: "Allow", Action: "ecs:RunTask", Resource: `${ECS}:task-definition/${config.family}:*`,
-      Condition: { ArnEquals: { "ecs:cluster": CLUSTER } } },
-  ]);
-  assert.deepEqual(granting("logs:GetLogEvents"), [
-    { Effect: "Allow", Action: "logs:GetLogEvents",
-      Resource: `arn:aws:logs:us-east-1:${ACCOUNT}:log-group:${LOG}:log-stream:origin-tls-${config.run}/*` },
-  ]);
+test("the source gate emits distinct phase policies and refuses an unverified checkout", (t) => {
+  const f = fixture(t);
+  const revision = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" });
+  assert.equal(revision.status, 0);
+  const output = join(f.config.work, "output");
+  const childEnv = { ...process.env, ...env(), WORK: f.config.work, GITHUB_OUTPUT: output, GITHUB_SHA: revision.stdout.trim() };
+  const run = () => spawnSync(process.execPath, [join(__dirname, "aws-origin-tls.cjs"), "session-policy"], { env: childEnv, encoding: "utf8" });
+  assert.equal(run().status, 0);
+  const policies = Object.fromEntries(readFileSync(output, "utf8").trim().split("\n").map((line) => {
+    const equals = line.indexOf("=");
+    return [line.slice(0, equals), JSON.parse(line.slice(equals + 1))];
+  }));
+  assert.deepEqual(policies, { probe_policy: sessionPolicy(f.config, "probe"), cleanup_policy: sessionPolicy(f.config, "cleanup") });
+  writeFileSync(output, "");
+  childEnv.GITHUB_SHA = "0".repeat(40);
+  assert.equal(run().status, 1);
+  assert.equal(readFileSync(output, "utf8"), "");
 });
+
+function phaseAWS(f, phase) {
+  const actions = sessionPolicy(f.config, phase).Statement.flatMap((s) => s.Action);
+  return (service, action, args) => {
+    const prefix = { elbv2: "elasticloadbalancing", s3api: "s3" }[service] || service;
+    const name = action.split("-").map((word) => word[0].toUpperCase() + word.slice(1)).join("");
+    if (service !== "sts" || action !== "get-caller-identity") assert.ok(actions.includes(`${prefix}:${name}`), `${phase} must permit ${service} ${action}`);
+    return f.aws(service, action, args);
+  };
+}
+
+for (const failure of [null, "register-task-definition", "run-task", "describe-tasks"]) {
+  test(`phase sessions support ${failure || "successful probe"} cleanup with one registration and launch at most`, async (t) => {
+    let lost = false;
+    const f = fixture(t, (action) => {
+      if (action === failure && !lost) { lost = true; throw new Error("Fixture lost response"); }
+    });
+    const oldSummary = process.env.GITHUB_STEP_SUMMARY;
+    process.env.GITHUB_STEP_SUMMARY = join(f.config.work, "summary");
+    t.after(() => { if (oldSummary === undefined) delete process.env.GITHUB_STEP_SUMMARY; else process.env.GITHUB_STEP_SUMMARY = oldSummary; });
+    const probeRun = execute(phaseAWS(f, "probe"), f.config, async () => {});
+    if (failure) await assert.rejects(probeRun, /lost response/);
+    else await probeRun;
+    const boundary = f.calls.length;
+    if (failure && failure !== "register-task-definition") f.state.lastStatus = "RUNNING";
+    const cleanup = finish(phaseAWS(f, "cleanup"), f.config, async () => {});
+    if (failure) await assert.rejects(cleanup, /incomplete/);
+    else await cleanup;
+    assert.ok(!f.calls.slice(0, boundary).some((c) => c.action === "deregister-task-definition"));
+    assert.ok(!f.calls.slice(boundary).some((c) => ["register-task-definition", "run-task"].includes(c.action)));
+    assert.equal(f.calls.filter((c) => c.action === "register-task-definition").length, 1);
+    assert.equal(f.calls.filter((c) => c.action === "run-task").length, failure === "register-task-definition" ? 0 : 1);
+    assert.equal(f.evidence().cleanup.deregistered, true);
+    assert.equal(f.evidence().success, !failure);
+    assert.equal(f.calls.at(-1).action, "put-object");
+    assert.deepEqual(JSON.parse(readFileSync(join(f.config.work, "result.json"))), f.evidence());
+  });
+}
 
 test("fresh definition contains only the official digest, hard-bounded TLS client and existing execution/log facilities", () => {
   const task = definition(configuration(env()), ["10.42.0.85", "10.42.1.12"]);

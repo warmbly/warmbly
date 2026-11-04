@@ -247,7 +247,8 @@ Operator procedure:
    `.github/scripts/aws-origin-tls.cjs`, plus `logs:GetLogEvents` on
    `/ecs/warmbly-production/validation` and conditional `s3:PutObject` on
    `warmbly/production/diagnostics/origin-tls/<run-id>/1/*` in the private state
-   bucket. The workflow's session policy only restricts existing permissions.
+   bucket. The workflow's phase-specific sessions only restrict existing
+   permissions.
    Missing access requires the normal IAM process; the workflow never expands
    a role or switches environments. Read-only TLS metadata does not require
    access to secret values, SSM parameters or application task credentials.
@@ -270,6 +271,18 @@ Operator procedure:
    metadata, client version, arguments, exit status, stdout, stderr and peer
    certificate chains. Success requires the complete raw handshake evidence,
    exact task image digest and confirmed diagnostic cleanup.
+
+Probe credentials permit discovery, one registration and launch, task readback
+and private intent archival. Cleanup uses a separate OIDC session acquired
+immediately before the finalizer, with only task/definition discovery, task
+readback and stop, deregistration, exact-run log retrieval and private archival.
+It cannot register definitions, launch tasks or pass roles. AWS requires
+`ecs:DeregisterTaskDefinition` on `Resource: "*"`; the application validates
+every deregistration candidate against the exact account, region and run family
+with a numeric revision. The Logs ARN names only this run's streams.
+Both credential steps clear existing credentials before acquisition. Cleanup
+credential acquisition runs after probe failure, and the finalizer requires its
+success. Credential failures fail the workflow without reusing an earlier session.
 
 The transport targets are freshly described private interfaces of the exact
 ALB, never the public API DNS address. The SNI and verified hostname stay
