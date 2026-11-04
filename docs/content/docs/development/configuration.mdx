@@ -357,7 +357,7 @@ An empty `CREDENTIALS_ENCRYPTION_KEY` does not fail at boot. It disables sealing
 | `BLOB_FS_ROOT` | Directory for stored bodies, attachments, avatars and email body images. The backend, the consumer and every worker on the host must share it | `/data/blobs` | yes |
 | `BLOB_BUCKET` | Bucket name when `BLOB_PROVIDER=s3` | unset | yes |
 | `BLOB_PUBLIC_BASE_URL` | Public base for the backend's `/public` route. Images placed in an email body are served from here, so it has to be an address a recipient's mail client can reach | derived | yes |
-| `CAMPAIGN_ATTACHMENT_DOWNLOAD_PROXY` | `true` serves private campaign downloads through the API with `nosniff`, attachment disposition and a 15-minute file-scoped capability. Upgrade every backend before enabling it | `false` | yes |
+| `CAMPAIGN_ATTACHMENT_DOWNLOAD_PROXY` | `true` serves private campaign downloads through the API with `nosniff`, attachment disposition and a 15-minute file-scoped capability. Upgrade every backend before enabling it. Hosted operators can use the [scoped backend configuration workflow](/development/aws-fargate/#configure-private-attachment-downloads) | `false` | yes |
 | `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Credentials for S3 or SES | unset | yes |
 | `AWS_ENDPOINT_URL_S3` | Non-AWS S3 endpoint (MinIO, R2, B2) | unset | yes |
 | `AWS_CONFIG_ENABLED` | `true` reads secrets from AWS SSM or Secrets Manager | `false` | yes |

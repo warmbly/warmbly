@@ -70,8 +70,10 @@ jobs:
             aws-deployment:
               - '.github/workflows/ci.yml'
               - '.github/workflows/deploy-aws.yml'
+              - '.github/workflows/configure-backend-aws.yml'
               - '.github/workflows/rotate-keys.yml'
               - '.github/scripts/aws-deploy*.cjs'
+              - '.github/scripts/aws-backend-config*.cjs'
               - '.github/scripts/aws-rotate*.cjs'
               - '.github/aws-deploy/**'
               - 'deploy/terraform/aws/runtime/rotate/**'
@@ -1089,7 +1091,7 @@ jobs:
       - name: Check deploy, rollback and rotation gates
         env:
           NODE_PATH: ${{ github.workspace }}/.github/aws-deploy/node_modules
-        run: node --test .github/scripts/aws-deploy.test.cjs .github/scripts/aws-rotate.test.cjs deploy/terraform/aws/runtime/rotate/rotate.test.cjs
+        run: node --test .github/scripts/aws-deploy.test.cjs .github/scripts/aws-backend-config.test.cjs .github/scripts/aws-rotate.test.cjs deploy/terraform/aws/runtime/rotate/rotate.test.cjs
 
   ci-status:
     name: CI Status
