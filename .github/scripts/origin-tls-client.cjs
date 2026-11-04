@@ -6,18 +6,24 @@ const CA = "/etc/ssl/certs/ca-certificates.crt";
 const CBC = ["ECDHE-RSA-AES128-SHA256", "ECDHE-RSA-AES256-SHA384"];
 const GCM = ["ECDHE-RSA-AES128-GCM-SHA256", "ECDHE-RSA-AES256-GCM-SHA384"];
 const TLS13 = "TLS_AES_128_GCM_SHA256";
+const TRACE_HEADER = /^(>>>|<<<) TLS (1\.[0-3]), (RecordHeader|Handshake|Alert) \[length ([a-f\d]{4})\](?:, ([^\r\n]+))?$/i;
+const OMITTED_MESSAGE = "[TLS message omitted]";
 const validTargets = (targets) => Array.isArray(targets) && targets.length >= 2 && new Set(targets).size === targets.length &&
   targets.every((ip) => typeof ip === "string" && /^10\.42\.(?:0|1)\.(?:[1-9]\d?|1\d\d|2[0-4]\d|25[0-4])$/.test(ip));
 
 function sanitize(output) {
   let session = false;
   let ticket = false;
-  return output.split("\n").filter((line) => {
+  return output.split("\n").flatMap((line) => {
     if (/^SSL-Session:/.test(line)) session = true;
     if (/^---$/.test(line)) session = false;
-    if (/^(?:>>>|<<<) /.test(line)) ticket = /, NewSessionTicket$/.test(line);
-    if (ticket && (/^(?:>>>|<<<) .*NewSessionTicket$/.test(line) || /^\s+(?:[a-f\d]{2}\s*)+$/i.test(line))) return false;
-    return !session || /^\s*Verify return code:/.test(line);
+    if (/^(?:>>>|<<<) .*\bNewSessionTicket\b/.test(line)) {
+      ticket = true;
+      return [OMITTED_MESSAGE];
+    }
+    if (TRACE_HEADER.test(line)) ticket = false;
+    if (ticket) return [];
+    return !session || /^\s*Verify return code:/.test(line) ? [line] : [];
   }).join("\n");
 }
 
@@ -29,15 +35,48 @@ function invoke(args, spawn = spawnSync) {
     stdout: sanitize(result.stdout || ""), stderr: sanitize(result.stderr || "") };
 }
 
-function peerRefusal(output, cipher) {
-  const messages = [...output.matchAll(/^(>>>|<<<) TLS[^\n]*, (Handshake|Alert) \[length ([a-f\d]+)\], ([^\n]+)\n((?:[ \t]+(?:[a-f\d]{2}[ \t]*)+\n)+)/gmi)];
-  if (messages.length !== 2) return false;
+function traceMessages(output) {
+  const lines = output.split("\n");
+  const messages = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^[ \t]*[<>]/.test(line)) {
+      const header = TRACE_HEADER.exec(line);
+      if (!header || i === lines.length - 1 || (header[3] === "RecordHeader" ? header[5] : !header[5])) return null;
+      let hex = "";
+      while (i + 1 < lines.length && /^[ \t]+\S/.test(lines[i + 1])) {
+        const body = lines[++i];
+        if (i === lines.length - 1 || !/^[ \t]+(?:[a-f\d]{2}[ \t]+)*[a-f\d]{2}[ \t]*$/i.test(body)) return null;
+        hex += body.replace(/[ \t]/g, "");
+      }
+      const bytes = Buffer.from(hex, "hex");
+      if (!bytes.length || bytes.length !== parseInt(header[4], 16)) return null;
+      messages.push({ direction: header[1], version: header[2], kind: header[3], name: header[5], bytes });
+    } else if (line === OMITTED_MESSAGE || (/^[ \t]+\S/.test(line) && !/^[ \t]+Verify return code:/.test(line)) ||
+      /\b(?:RecordHeader|Handshake|Alert) \[length\b/.test(line) ||
+      /^[a-f\d]+(?:[ \t]|$)/i.test(line)) return null;
+  }
+  return messages;
+}
+
+function peerRefusal(stdout, stderr, cipher) {
+  const trace = traceMessages(stdout);
+  const diagnosticTrace = traceMessages(stderr);
+  if (!trace || !diagnosticTrace || diagnosticTrace.length) return false;
+  const messages = trace.filter((message) => message.kind !== "RecordHeader");
+  if (messages.length !== 2 || ![2, 4].includes(trace.length)) return false;
+  if (trace.length === 4 && !messages.every((message, i) => {
+    const record = trace[i * 2];
+    return trace[i * 2 + 1] === message && record.kind === "RecordHeader" && record.direction === message.direction &&
+      record.bytes.length === 5 && record.bytes[0] === (i === 0 ? 22 : 21) &&
+      record.bytes.readUInt16BE(1) === 0x0301 + Number(record.version.at(-1)) &&
+      record.bytes.readUInt16BE(3) === message.bytes.length;
+  })) return false;
   const [hello, alert] = messages;
-  const bytes = (message) => Buffer.from(message[5].replace(/\s/g, ""), "hex");
-  const sent = bytes(hello);
-  const received = bytes(alert);
-  if (hello[1] !== ">>>" || hello[2] !== "Handshake" || hello[4] !== "ClientHello" ||
-    sent.length !== parseInt(hello[3], 16) || sent.length < 41 || sent[0] !== 1 ||
+  const sent = hello.bytes;
+  const received = alert.bytes;
+  if (hello.direction !== ">>>" || hello.version !== "1.2" || hello.kind !== "Handshake" || hello.name !== "ClientHello" ||
+    sent.length < 41 || sent[0] !== 1 ||
     sent.readUIntBE(1, 3) !== sent.length - 4 || sent.readUInt16BE(4) !== 0x0303) return false;
   const offset = 39 + sent[38];
   if (offset + 2 > sent.length) return false;
@@ -47,8 +86,8 @@ function peerRefusal(output, cipher) {
   // The sole negotiable suite may be followed by the renegotiation signalling value.
   return intended && length >= 2 && offset + 2 + length < sent.length &&
     (offers === intended || offers === intended + "00ff") &&
-    alert[1] === "<<<" && alert[2] === "Alert" && alert[4] === "fatal handshake_failure" &&
-    parseInt(alert[3], 16) === 2 && received.equals(Buffer.from([2, 40]));
+    alert.direction === "<<<" && alert.version === "1.2" && alert.kind === "Alert" && alert.name === "fatal handshake_failure" &&
+    received.equals(Buffer.from([2, 40]));
 }
 
 function classify(result, version, cipher, negative = false) {
@@ -58,7 +97,7 @@ function classify(result, version, cipher, negative = false) {
   if (negative) {
     if (/certificate verify failed|Verification error|verify error|no cipher match|unexpected eof|reset by peer|connect:errno/i.test(output)) return "inconclusive";
     if (negotiated && negotiated[2] !== "(NONE)" && negotiated[2] !== "0000") return "accepted";
-    return result.status === 1 && peerRefusal(result.stdout || "", cipher) &&
+    return result.status === 1 && peerRefusal(result.stdout || "", result.stderr || "", cipher) &&
       !/-----BEGIN CERTIFICATE-----/.test(output) && /no peer certificate available/.test(output) &&
       /New, \(NONE\), Cipher is \(NONE\)/.test(output) ? "refused" : "inconclusive";
   }
