@@ -10,14 +10,14 @@
 #
 # plan writes $WORK/<stack>.summary (one "action address" per line) and prints
 # safe, gated or none. Safe means only creates, in-place updates, and new
-# revisions of task definitions, excluding protected recovery evidence IAM changes.
+# revisions of task definitions, excluding protected deployment and evidence IAM changes.
 set -euo pipefail
 
 classify() {
   jq -r '
     [.resource_changes[]? | select(.change.actions != ["no-op"] and .change.actions != ["read"])] as $c |
     if ($c | length) == 0 then "none"
-    elif any($c[]; .name == "tls_recovery_evidence" and
+    elif any($c[]; (.name == "tls_recovery_evidence" or .name == "github_deploy") and
       (.type == "aws_iam_role" or .type == "aws_iam_role_policy")) then "gated"
     elif any($c[]; (.change.actions | index("delete")) and
       ((.type == "aws_ecs_task_definition" and (.change.actions | length) == 2) | not)) then "gated"

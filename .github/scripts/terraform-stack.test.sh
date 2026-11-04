@@ -20,12 +20,15 @@ check() {
 for type in aws_iam_role aws_iam_role_policy; do
   for actions in '["create"]' '["update"]' '["delete"]' '["delete","create"]'; do
     check gated "$type" tls_recovery_evidence "$actions"
+    check gated "$type" github_deploy "$actions"
   done
   check none "$type" tls_recovery_evidence '["no-op"]'
   check none "$type" tls_recovery_evidence '["read"]'
+  check none "$type" github_deploy '["no-op"]'
+  check none "$type" github_deploy '["read"]'
 done
 check safe aws_iam_role existing_role '["create"]'
 check safe aws_ecs_task_definition service '["delete","create"]'
 check gated aws_lb_target_group service '["delete"]'
 check safe aws_cloudwatch_metric_alarm service '["update"]'
-echo 'Protected evidence IAM changes require approval; existing plan classifications remain unchanged'
+echo 'Deployment and evidence IAM changes require approval; existing plan classifications remain unchanged'

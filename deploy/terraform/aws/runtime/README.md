@@ -28,7 +28,19 @@ service creation, and its task definition outputs describe prepared revisions,
 not necessarily running ones. Start new services at zero and use explicit counts
 when activating them.
 
-`.github/workflows/deploy-aws.yml` owns only the image. A stable release tag on
+`.github/workflows/deploy-aws.yml` selects the image and preserves the live managed
+attachment-download setting unless Terraform explicitly supplies its environment
+value. The opt-in `.github/workflows/configure-backend-aws.yml` changes only
+`CAMPAIGN_ATTACHMENT_DOWNLOAD_PROXY` from a verified live backend definition,
+using release provenance, individual task checks, a fixed 300-second bake and
+verified rollback. Its `warmbly-config-attachment-download-proxy` task tag records
+ownership across later deploys and secret refreshes. Explicit Terraform `true` or
+`false` takes ownership; a rollback below v0.6.75 requires disabling the proxy
+first and waiting for existing links to expire. The deploy role's cluster-scoped
+`ecs:ListTasks` permission must be provisioned through infrastructure approval
+before using this workflow. It does not provision permissions itself.
+
+A stable release tag on
 `main` reaches it from `release.yml` when the repository variable
 `AWS_DEPLOY_ENABLED` is `true`; dispatch it by hand to redeploy, roll back or
 roll out changed secret values. Each run verifies the release's build

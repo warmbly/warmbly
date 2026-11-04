@@ -1,7 +1,7 @@
 name: Terraform AWS
 
 # Pull requests get a plan summary comment. On main, a stack whose plan only
-# creates or updates applies on its own; destructive or protected evidence IAM
+# creates or updates applies on its own; destructive or protected deployment/evidence IAM
 # changes wait in aws-infrastructure-approval. Var files live in the private
 # state bucket, and no plan body ever reaches a log, a comment or an artifact.
 on:
