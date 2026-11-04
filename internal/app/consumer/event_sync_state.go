@@ -26,20 +26,33 @@ func (s *JobsService) HandleSyncState(ctx context.Context, e *models.JobEventSyn
 		return err
 	}
 
-	// Persist recovery before state, so a failed proof write remains retryable.
-	if e.State.LastSyncedAt != nil && e.State.Deferred == 0 && e.State.BackfillCursor.GoogleRecovery == nil &&
-		(prev == nil || prev.LastSyncedAt == nil || !models.ValidMailTransportTime(*prev.LastSyncedAt, time.Now()) || e.State.LastSyncedAt.After(*prev.LastSyncedAt)) {
-		if err := s.resolveTransientMailErrors(ctx, e.EmailID, e.State.LastSyncedAt, e.State.TransportGeneration); err != nil {
-			return err
+	recover := func(ctx context.Context) error {
+		if e.State.LastSyncedAt != nil && e.State.Deferred == 0 && e.State.BackfillCursor.GoogleRecovery == nil &&
+			(prev == nil || prev.LastSyncedAt == nil || !models.ValidMailTransportTime(*prev.LastSyncedAt, time.Now()) || e.State.LastSyncedAt.After(*prev.LastSyncedAt)) {
+			return s.resolveTransientMailErrors(ctx, e.EmailID, e.State.LastSyncedAt, e.State.TransportGeneration)
 		}
+		return nil
 	}
 
-	if err := s.EmailSyncStateRepository.Put(ctx, e.UserID, e.EmailID, &e.State); err != nil {
+	accepted := true
+	if e.WorkerID != nil {
+		accepted, err = s.EmailSyncStateRepository.PutFromWorker(ctx, e.UserID, e.EmailID, *e.WorkerID, e.ReportGeneration, &e.State, recover)
+	} else {
+		// Retained v0.6.72 reports remain supported through the rollback window.
+		err = recover(ctx)
+		if err == nil {
+			err = s.EmailSyncStateRepository.Put(ctx, e.UserID, e.EmailID, &e.State)
+		}
+	}
+	if err != nil {
 		if s.dropForDeletedMailbox(ctx, e.UserID, e.EmailID, err) {
 			return nil
 		}
 		CaptureError(e.UserID, e.EmailID, err)
 		return err
+	}
+	if !accepted {
+		return nil
 	}
 
 	completed := e.State.BackfillStatus == models.SyncBackfillComplete &&

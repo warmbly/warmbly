@@ -82,6 +82,7 @@ func TestEventAvroReadsPreUpgradeEnvelopes(t *testing.T) {
 		want.SealedSecrets = ""
 		want.Push = nil
 		want.Sync.State.TransportGeneration = [16]byte{}
+		want.Sync.State.FolderCoverageObservedAt = nil
 		for _, svc := range []*Service{want.SmtpImap.Credentials.SMTP, want.SmtpImap.Credentials.IMAP} {
 			svc.TLSUnverified, svc.TLSPin = false, ""
 		}
@@ -110,7 +111,7 @@ func TestEventAvroReadsPreUpgradeEnvelopes(t *testing.T) {
 var branchesAfterFixtures = []any{"warmbly.events.JobEventWarmupRescued", "warmbly.events.JobEventPushState", "warmbly.events.SyncWake"}
 
 // fieldsAfterFixtures are record fields added after the fixtures were written.
-var fieldsAfterFixtures = []any{"transport_generation", "sealed_secrets", "tls_unverified", "tls_pin", "push"}
+var fieldsAfterFixtures = []any{"transport_generation", "sealed_secrets", "tls_unverified", "tls_pin", "push", "folder_coverage_observed_at"}
 
 func preTransportSchema(t *testing.T, schema avro.Schema) avro.Schema {
 	t.Helper()
@@ -130,7 +131,7 @@ func preTransportSchema(t *testing.T, schema avro.Schema) avro.Schema {
 				kept := fields[:0]
 				for _, f := range fields {
 					field := f.(map[string]any)
-					if slices.Contains(fieldsAfterFixtures, field["name"]) || x["name"] == "EmailErrorEvent" && field["name"] == "operation" {
+					if slices.Contains(fieldsAfterFixtures, field["name"]) || x["name"] == "warmbly.events.EmailErrorEvent" && field["name"] == "operation" || x["name"] == "warmbly.events.JobEventSyncState" && (field["name"] == "worker_id" || field["name"] == "report_generation") {
 						continue
 					}
 					strip(f)

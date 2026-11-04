@@ -65,7 +65,7 @@ export const PLAN_CATALOG: Record<PlanID, PlanDef> = {
     partnership: {
         id: "partnership",
         label: "Partnership",
-        description: "The Warmup plan for partners: the premium warmup pool and no mailbox cap, offered by Warmbly.",
+        description: "The premium warmup pool and no mailbox cap, offered by Warmbly to partners.",
         priceMonthly: 90,
         priceAnnual: null,
         sendsPerDay: 0,

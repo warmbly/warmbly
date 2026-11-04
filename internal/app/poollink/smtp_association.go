@@ -62,6 +62,9 @@ func (s *service) AssociateSMTPIMAP(ctx context.Context, inst *models.PoolLinkIn
 	} else if busy {
 		return nil, ErrMailboxConflict
 	}
+	if xerr := s.newMailboxAdmitted(ctx, inst.OrganizationID); xerr != nil {
+		return nil, xerr
+	}
 	if err := s.repo.EnrollMailbox(ctx, &models.PoolLinkMailbox{InstanceID: inst.ID, RemoteID: req.RemoteID, EmailAccountID: acc.ID, Managed: true}); err != nil {
 		return nil, enrollError(err)
 	}

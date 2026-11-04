@@ -59,11 +59,18 @@ func TestLivePasswordCredentials(t *testing.T) {
 		assertRejected(t, "missing-"+email, "arbitrary password")
 	})
 
-	t.Run("malformed nonempty hash remains an internal error", func(t *testing.T) {
+	t.Run("malformed nonempty hash cannot be verified", func(t *testing.T) {
 		if xerr := repo.ResetPassword(ctx, user.ID, "malformed"); xerr != nil {
 			t.Fatal(xerr)
 		}
-		id, xerr := repo.IsValidCredentials(ctx, email, "arbitrary password")
+		// The unparseable hash is reported to error tracking; the caller gets the uniform refusal.
+		assertRejected(t, email, "arbitrary password")
+	})
+
+	t.Run("a database fault is an internal error, not a refusal", func(t *testing.T) {
+		failed, cancel := context.WithCancel(ctx)
+		cancel()
+		id, xerr := repo.IsValidCredentials(failed, email, "arbitrary password")
 		if id != uuid.Nil || xerr == nil || xerr.Code != errx.InternalError().Code {
 			t.Fatalf("credentials = (%v, %v), want nil ID and internal error", id, xerr)
 		}

@@ -31,6 +31,8 @@ const (
 // InvalidCodeID is the response code for a TOTP or recovery code that did not match.
 const InvalidCodeID = "two_fa_invalid_code"
 
+const UsedCodeID = "two_fa_code_used"
+
 // ErrInvalidCode is the answer to a TOTP or recovery code that did not match.
 // It carries a stable identifier so a client can show an inline "try again"
 // instead of a generic failure.
@@ -73,7 +75,7 @@ type Service interface {
 	// endpoint so someone with 2FA on can confirm with their authenticator
 	// rather than retyping a password they may not have (passkey and SSO
 	// accounts often have none).
-	VerifyCurrentCode(ctx context.Context, userID uuid.UUID, code string) bool
+	VerifyCurrentCode(ctx context.Context, userID uuid.UUID, code string) (bool, *errx.Error)
 	// CreatePendingChallenge mints a short-lived single-use pending token for a
 	// 2FA login challenge. authProvider is what the session will record; link,
 	// when set, is a federated identity attached only once the code passes.
@@ -149,8 +151,8 @@ func (s *service) RegenerateRecoveryCodes(ctx context.Context, userID uuid.UUID,
 	if row == nil || !row.Enabled {
 		return nil, errx.New(errx.BadRequest, "2FA is not enabled")
 	}
-	if !s.validCode(ctx, userID, row, code) {
-		return nil, ErrInvalidCode()
+	if xerr := s.checkCode(ctx, userID, row, code); xerr != nil {
+		return nil, xerr
 	}
 	codes, hashes, err := generateRecoveryCodes()
 	if err != nil {
@@ -172,8 +174,8 @@ func (s *service) Disable(ctx context.Context, userID uuid.UUID, code string) *e
 	if row == nil || !row.Enabled {
 		return errx.New(errx.BadRequest, "2FA is not enabled")
 	}
-	if !s.validCode(ctx, userID, row, code) {
-		return ErrInvalidCode()
+	if xerr := s.checkCode(ctx, userID, row, code); xerr != nil {
+		return xerr
 	}
 	if err := s.repo.Delete(ctx, userID); err != nil {
 		return errx.InternalError()
@@ -185,37 +187,51 @@ func (s *service) Disable(ctx context.Context, userID uuid.UUID, code string) *e
 // for this user right now. A recovery code is consumed, and a TOTP step is
 // retired, exactly as they are at sign-in: a code that has confirmed something
 // must not confirm a second thing.
-func (s *service) VerifyCurrentCode(ctx context.Context, userID uuid.UUID, code string) bool {
+func (s *service) VerifyCurrentCode(ctx context.Context, userID uuid.UUID, code string) (bool, *errx.Error) {
 	row, err := s.repo.Get(ctx, userID)
-	if err != nil || row == nil || !row.Enabled {
-		return false
+	if err != nil {
+		errs.CaptureException(err)
+		return false, errx.InternalError()
 	}
-	return s.validCode(ctx, userID, row, code)
+	if row == nil || !row.Enabled {
+		return false, nil
+	}
+	if xerr := s.checkCode(ctx, userID, row, code); xerr != nil {
+		if xerr.Identifier == InvalidCodeID {
+			return false, nil
+		}
+		return false, xerr
+	}
+	return true, nil
 }
 
-// validCode checks a code against the user's TOTP secret OR consumes a matching
-// recovery code. Used by both Disable and VerifyLogin.
-func (s *service) validCode(ctx context.Context, userID uuid.UUID, row *models.UserTOTP, code string) bool {
+// checkCode accepts each authenticator step or recovery code once.
+func (s *service) checkCode(ctx context.Context, userID uuid.UUID, row *models.UserTOTP, code string) *errx.Error {
 	if isRecoveryFormat(code) {
 		return s.tryConsumeRecoveryCode(ctx, userID, code)
 	}
 	secret, err := s.openSecret(row.SecretSealed)
 	if err != nil {
-		return false
+		errs.CaptureException(ErrUnreadableSecret)
+		return errx.InternalError()
 	}
 	step, ok := ValidateCodeStep(secret, code)
 	if !ok {
-		return false
+		return ErrInvalidCode()
 	}
-	// A correct code is only accepted once. Its step is retired here, so the
-	// same digits presented again inside their ±1-step validity window are
-	// refused rather than signing someone in a second time.
-	fresh, cerr := s.repo.ConsumeTOTPStep(ctx, userID, step)
+	// Consume against the same enrollment whose code was verified.
+	fresh, cerr := s.repo.ConsumeTOTPStep(ctx, userID, step, row.SecretSealed)
 	if cerr != nil {
+		if errors.Is(cerr, repository.ErrTOTPEnrollmentChanged) {
+			return ErrInvalidCode()
+		}
 		errs.CaptureException(cerr)
-		return false
+		return errx.InternalError()
 	}
-	return fresh
+	if !fresh {
+		return errx.NewWithIdentifier(errx.BadRequest, UsedCodeID, "Wait for a new authenticator code, then try again.")
+	}
+	return nil
 }
 
 // --- pending-challenge cache (Redis, mirrors the auth login_sess pattern) ---

@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/app/token"
+	"github.com/warmbly/warmbly/internal/app/twofa"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/argon2"
@@ -59,8 +60,16 @@ func (h *Handler) Reauth(c *gin.Context) {
 	// instead would turn a stolen token into a permanent API key, so point it
 	// at what it does have rather than refusing a credential it lacks.
 	if m := h.reauthMethods(c, uid); !m.Password && !m.TOTP {
-		errx.Handle(c, errReauthNoFactor(m.any()))
-		return
+		// Confirm password absence before reporting that no factor exists.
+		hash, xerr := h.AuthService.PasswordHashFor(c.Request.Context(), uid)
+		if xerr != nil {
+			errx.Handle(c, xerr)
+			return
+		}
+		if hash == "" {
+			errx.Handle(c, errReauthNoFactor(m.any()))
+			return
+		}
 	}
 
 	if req.Password == "" && req.Code == "" {
@@ -84,7 +93,12 @@ func (h *Handler) Reauth(c *gin.Context) {
 	}
 
 	// The reserved attempt stays charged on a miss.
-	if !h.reauthProofValid(c, uid, req) {
+	valid, xerr := h.reauthProofValid(c, uid, req)
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	if !valid {
 		// One message for both factors: which one matched is not something an
 		// attacker holding a token should learn here.
 		errx.Handle(c, errx.ErrCredentials)
@@ -359,23 +373,31 @@ func (h *Handler) ReauthNative(c *gin.Context) {
 }
 
 // reauthProofValid checks whichever factor the caller offered.
-func (h *Handler) reauthProofValid(c *gin.Context, uid uuid.UUID, req reauthRequest) bool {
+func (h *Handler) reauthProofValid(c *gin.Context, uid uuid.UUID, req reauthRequest) (bool, *errx.Error) {
 	ctx := c.Request.Context()
+	var codeErr *errx.Error
 
 	if req.Code != "" && h.TwoFAService != nil {
-		if h.TwoFAService.VerifyCurrentCode(ctx, uid, req.Code) {
-			return true
+		valid, xerr := h.TwoFAService.VerifyCurrentCode(ctx, uid, req.Code)
+		if valid || xerr != nil && xerr.Identifier != twofa.UsedCodeID {
+			return valid, xerr
 		}
+		codeErr = xerr
 	}
 
 	if req.Password != "" {
 		hash, xerr := h.AuthService.PasswordHashFor(ctx, uid)
-		if xerr != nil || hash == "" {
-			return false
+		if xerr != nil {
+			return false, xerr
+		}
+		if hash == "" {
+			return false, codeErr
 		}
 		ok, verr := argon2.Verify(req.Password, hash)
-		return verr == nil && ok
+		if verr == nil && ok {
+			return true, nil
+		}
 	}
 
-	return false
+	return false, codeErr
 }

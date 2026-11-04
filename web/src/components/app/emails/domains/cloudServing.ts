@@ -6,7 +6,7 @@ import type { PoolLinkRedirectOffer } from "@/lib/api/models/app/cloudlink/Cloud
 import type { RedirectServer } from "@/lib/api/models/app/emails/SendingDomain";
 
 export interface CloudServing {
-    /** Only a self-hosted instance's administrator picks, since it forwards credentials off the server; Warmbly Cloud always serves its own. */
+    /** Only an already-linked self-hosted instance's administrator picks; Warmbly Cloud always serves its own. */
     choosable: boolean;
     connected: boolean;
     offer: PoolLinkRedirectOffer | null;
@@ -17,12 +17,13 @@ export interface CloudServing {
 export function useCloudServing(): CloudServing {
     const auth = useAuthConfig();
     const instanceAdmin = useInstanceAdmin();
-    const choosable = !!auth.data?.self_hosted && instanceAdmin.allowed;
-    const status = useCloudLinkStatus(choosable, 60_000);
-    const offer = choosable ? (status.data?.info?.redirects ?? null) : null;
-    const connected = choosable && !!status.data?.connected;
+    const admin = !!auth.data?.self_hosted && instanceAdmin.allowed;
+    const status = useCloudLinkStatus(admin, 60_000);
+    const connected = admin && !!status.data?.connected;
+    const offer = connected ? (status.data?.info?.redirects ?? null) : null;
     return {
-        choosable,
+        // Only an existing link serves redirects; Warmbly Cloud links no new instances.
+        choosable: connected,
         connected,
         offer,
         canServe: connected && !!status.data?.link?.organization_id && !!offer?.available && offer.used < offer.limit,

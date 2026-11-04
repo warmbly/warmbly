@@ -5,7 +5,6 @@
 import type { ReactNode } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import {
-    ArrowRightIcon,
     ArrowUpRightIcon,
     CheckIcon,
     CloudIcon,
@@ -33,6 +32,7 @@ import { EASE } from "./sceneTokens";
 import { Title } from "./TourCopy";
 import type { FlatSlide } from "./tourSteps";
 import { EYEBROW } from "./tourUi";
+import { COMMUNITY_URL } from "@/lib/cloudPlan";
 
 // Monthly AI credits per plan, from the allowance table in the AI credits guide.
 const AI_CREDITS: Partial<Record<PlanID, string>> = {
@@ -385,8 +385,8 @@ export function PlanChoose({
     );
 }
 
-/** Keeping the instance: its mailboxes can still warm in the hosted pool. */
-export function CloudCallout({ onLink, docs }: { onLink?: () => void; docs: string }) {
+/** Keeping the instance: it runs on its own, and the plans above are where the shared pool is. */
+export function CloudCallout() {
     const cls =
         "h-9 shrink-0 px-3.5 rounded-full inline-flex items-center justify-center gap-1.5 bg-white text-[12.5px] font-medium text-slate-800 ring-1 ring-slate-200 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400";
     return (
@@ -395,22 +395,15 @@ export function CloudCallout({ onLink, docs }: { onLink?: () => void; docs: stri
                 <CloudIcon className="size-4" />
             </span>
             <div className="min-w-0 flex-1">
-                <p className="text-[13.5px] font-medium text-slate-900">Keeping this instance? Warm it in our pool.</p>
+                <p className="text-[13.5px] font-medium text-slate-900">Keeping this instance? It runs on its own.</p>
                 <p className="mt-0.5 text-[12.5px] leading-[1.5] text-slate-500">
-                    Link it to Warmbly Cloud and its mailboxes warm against thousands of real inboxes, while campaigns, contacts and mail stay on your server. Free for up to 10 mailboxes, or $15 a month for the premium pool with no cap.
+                    Warmup here only pairs your own mailboxes, which is not effective. A pool of thousands of real mailboxes comes with the Warmbly Cloud plans above. Warmbly does not support self-hosted instances; the community helps on Discord.
                 </p>
             </div>
-            {onLink ? (
-                <button type="button" onClick={onLink} className={cls}>
-                    Link Warmbly Cloud
-                    <ArrowRightIcon className="size-3.5" />
-                </button>
-            ) : (
-                <a href={docs} target="_blank" rel="noopener noreferrer" className={cls}>
-                    How it works
-                    <ArrowUpRightIcon className="size-3.5" />
-                </a>
-            )}
+            <a href={COMMUNITY_URL} target="_blank" rel="noopener noreferrer" className={cls}>
+                Community on Discord
+                <ArrowUpRightIcon className="size-3.5" />
+            </a>
         </div>
     );
 }

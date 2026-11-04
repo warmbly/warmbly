@@ -111,6 +111,10 @@ At sign-in, the code submits automatically once six digits are in. Without your 
 
 Each code works once. An authenticator code stays valid for about a minute so a slow connection still works, but once it has signed you in, that same code is spent and cannot be used again.
 
+The website and admin panel on the same instance share your authenticator enrollment and the single-use rule. After using a code on one, wait for the next code before using the other. A self-host and Warmbly Cloud have separate enrollments, even when you use the same email address. Choose the authenticator entry for the instance you are signing in to, and keep your device's date and time automatic.
+
+An authenticator step at or before the last accepted step answers `two_fa_code_used` with instructions to wait for a new code. Reauthentication can also succeed with a valid password when a supplied authenticator step is used or superseded. The website and admin confirmation dialogs show that guidance and distinguish unavailable verification from a mismatch. A verification service failure answers a server error with a request ID rather than saying the code did not match. The instance's operator can use that ID to investigate and run `warmblyctl keys status` to check whether its configured keys can open existing enrollments. Preserve the existing MFA key and any read keys when upgrading.
+
 Wrong codes are limited three ways: five per sign-in attempt, after which you sign in again from the start; twenty per network address in fifteen minutes; and ten per account in fifteen minutes, however many times the password is entered in between. A correct code clears the account count.
 
 **Turn off** asks for a current code or a recovery code first, then an explicit confirmation. With 2FA off you are protected only by your password plus the emailed code, your recovery codes stop working, and setting it up again issues a fresh secret and new recovery codes.

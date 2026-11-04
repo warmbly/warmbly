@@ -37,14 +37,14 @@ With no subscription yet, finish in Stripe Checkout. An existing subscription sw
 - Annual billing is 20% off the monthly price.
 - Only the workspace owner can change the plan.
 - Cancelling keeps the plan active until the end of the paid period, and the workspace keeps its mailboxes, warmup and settings.
-- A workspace that only warms can take the Warmup plan: $15 a month, or $144 a year.
+- The Warmup plan is no longer sold. A workspace already on it keeps it while it stays subscribed.
 - Some plans, like the Partnership plan, are private and can be bought only once Warmbly has [offered them](#plans-offered-to-a-workspace) to your workspace.
 
 <Fold>
 
 ## What the free workspace includes
 
-Every hosted workspace starts free. The free workspace warms up to 10 mailboxes, connected on the cloud or through a linked self-hosted instance. Sending from Warmbly Cloud, the unified inbox, contacts, the CRM, automations and integrations turn on with a paid plan. A workspace that only warms can take the [Warmup plan](#the-warmup-plan) instead.
+Every hosted workspace starts free. The free workspace warms up to 10 mailboxes connected on the cloud. Warmbly Cloud no longer links new self-hosted instances on any plan; a free workspace [linked earlier](/guides/warmbly-cloud/#free-workspaces-linked-earlier) keeps what it already enrolled but adds no new mailboxes until it picks a plan. Sending from Warmbly Cloud, the unified inbox, contacts, the CRM, automations and integrations turn on with a paid plan.
 
 </Fold>
 
@@ -67,20 +67,13 @@ Unlimited mailboxes means exactly that, under a fair-use allowance of one mailbo
 
 ### The Warmup plan
 
-The Warmup plan is for a workspace that only warms mailboxes and does not send from Warmbly Cloud: $15 a month, or $144 a year. It moves the workspace's mailboxes into the premium warmup pool, which is built for inbox placement:
+The Warmup plan is no longer sold, to hosted or self-hosted workspaces. A workspace already on it keeps it, unchanged, for as long as it stays subscribed; once cancelled it cannot be bought again, and the workspace picks one of the plans above instead.
 
-- **Better deliverability.** Warmup mail is exchanged with paying senders first. A free mailbox is let in only after it has been a healthy pool member for at least three days, in a workspace in good standing.
-- **Reputation protected.** A partner that complains, bounces or tampers with warmup mail is pulled from the pool well before mailbox providers would act, and one landing in spam is slowed down, so a struggling mailbox cannot drag yours down. See [pool safety](/guides/warmup/#pool-safety).
-- **Priority matching.** Premium mailboxes are given partners before the free pool is.
-- **No mailbox cap.** Every mailbox the workspace holds warms, whether it is connected on the cloud or through a linked self-hosted instance.
-
-It is not a self-hosting plan; it is the plan for warmup on its own. Everything else is exactly as on a free workspace: sending, the unified inbox, contacts, the CRM, automations, integrations, AI and team invitations still need one of the plans above. The dashboard keeps those pages locked, and the server refuses sending, the inbox, AI, integrations and placement tests to a Warmup workspace the same way it refuses them to a free one. Any of those plans includes everything the Warmup plan does.
-
-It has no card in the plans grid. The ways in are the **Upgrade** button on the **Mailboxes** page, the **Only need warmup?** row on the billing overview of a free workspace, and the **Premium** button on a linked instance's **Settings > Warmbly Cloud** page. Each opens the same dialog: pick monthly or yearly, then checkout. Once active the header badge reads **Warmup**, and the overview shows it like any other plan, with the same cancel and resume controls. Its usage section shows the one limit it has, mailboxes, which reads unlimited.
+The plan warms mailboxes and does not send from Warmbly Cloud. It puts every mailbox the workspace holds, connected on the cloud or through a [linked self-hosted instance](/guides/warmbly-cloud/), into the premium warmup pool with no mailbox cap, and counts as a paid plan for a link that already exists. Sending, the unified inbox, contacts, the CRM, automations, integrations, AI and team invitations stay locked as on a free workspace, and the server refuses them the same way. Its header badge reads **Warmup**, and the billing overview shows it with the usual cancel and resume controls.
 
 ### The Partnership plan
 
-The Partnership plan is the Warmup plan for partners: the same premium warmup pool, the same reputation protection and no mailbox cap, at $90 a month. Like the Warmup plan it warms only, so sending, the inbox, AI and integrations stay locked and the server refuses them the same way.
+The Partnership plan is a warmup-only plan for partners: the premium warmup pool, its reputation protection and no mailbox cap, at $90 a month. It warms only, so sending, the inbox, AI and integrations stay locked and the server refuses them the same way.
 
 It is not for sale to everyone. A workspace can buy it only after Warmbly has [offered it](#plans-offered-to-a-workspace), and it then appears on that workspace's billing overview. Once active the header badge reads **Partnership**.
 
@@ -153,7 +146,7 @@ One thing a grant does not do: monthly AI credits are granted when an invoice is
 
 ## Plans offered to a workspace
 
-Some plans are private: they are not in the plans grid and the checkout refuses them, unless Warmbly has offered that plan to your workspace. The Partnership plan is one. The Warmup plan is private too, but it has its own checkout and needs no offer.
+Some plans are private: they are not in the plans grid and the checkout refuses them, unless Warmbly has offered that plan to your workspace. The Partnership plan is one. The retired Warmup plan cannot be offered.
 
 When an offer is open, the billing overview shows a row for it under the plan card, with its name and price. Opening it shows what the plan includes and, if it has a yearly price, a monthly or yearly choice:
 
@@ -170,6 +163,6 @@ An offer is a decision by Warmbly's operators on this instance, so it does not t
 
 ## Self-hosted deployments
 
-A self-hosted instance running without a billing provider has every feature unlocked and no billing page. See [Warmbly Cloud](/guides/warmbly-cloud/) for how a self-hosted instance links to a hosted workspace.
+A self-hosted instance running without a billing provider has every feature unlocked and no billing page. Warmbly Cloud plans are hosted only: Warmbly Cloud no longer links new self-hosted instances, and an instance [linked earlier](/guides/warmbly-cloud/) keeps its connection while its Cloud workspace stays subscribed. For the hosted warmup pool, use a workspace on [app.warmbly.com](https://app.warmbly.com).
 
 </Fold>

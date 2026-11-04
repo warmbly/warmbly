@@ -1,19 +1,16 @@
 // Hosted workspace, Accounts page: how to get mailboxes warming. A free
-// workspace gets one card (connect a mailbox, 10 are free) with the Warmup
-// plan as the way past the allowance; self-hosting is a footnote, not a
-// column, because it is optional and reads as the point of the plan when it
-// sits beside it. A subscribed workspace gets a one-line strip. Full panel
-// when the list is empty, one strip once mailboxes exist.
+// workspace gets one card (connect a mailbox, 10 are free) with a paid plan
+// as the way past the allowance; self-hosting is a footnote, not a column.
+// A subscribed workspace gets a one-line strip. Full panel when the list is
+// empty, one strip once mailboxes exist.
 
-import React from "react";
 import { Link } from "@tanstack/react-router";
 import { motion } from "framer-motion";
 import { CloudIcon, InboxIcon, PlusIcon } from "lucide-react";
 import useFeatureAccess from "@/hooks/useFeatureAccess";
 import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
 import { usePoolLinkInstances } from "@/lib/api/hooks/app/cloudlink/useCloudLink";
-import { getPlan, isWarmupOnlyPlan } from "@/lib/plans";
-import WarmupPlanDialog from "@/components/app/billing/WarmupPlanDialog";
+import { isWarmupOnlyPlan } from "@/lib/plans";
 
 const FREE_MAILBOXES = 10;
 
@@ -22,7 +19,6 @@ export default function CloudPathsPanel({ mailboxCount, onAdd }: { mailboxCount:
     const access = useFeatureAccess();
     const hosted = authConfig.data?.self_hosted === false;
     const instances = usePoolLinkInstances(hosted);
-    const [planOpen, setPlanOpen] = React.useState(false);
     // Both hops are optional: a list endpoint whose rows come back as a nil
     // slice serialises `data` as null, not [], so the inner one throws.
     const linked = instances.data?.data?.length ?? 0;
@@ -40,10 +36,7 @@ export default function CloudPathsPanel({ mailboxCount, onAdd }: { mailboxCount:
     const free = limit !== null;
     const allowance = limit ?? FREE_MAILBOXES;
     const canBuy = free && access.billing && access.isOwner;
-    const warmup = getPlan("warmup");
     const onWarmupPlan = isWarmupOnlyPlan(access.plan);
-
-    const dialog = <WarmupPlanDialog open={planOpen} onClose={() => setPlanOpen(false)} />;
 
     if (total === 0 && linked === 0) {
         return (
@@ -66,21 +59,13 @@ export default function CloudPathsPanel({ mailboxCount, onAdd }: { mailboxCount:
                                 <PlusIcon className="w-3.5 h-3.5" /> Add account
                             </button>
                             {canBuy && (
-                                <button type="button" onClick={() => setPlanOpen(true)} className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-slate-200 hover:border-slate-300 text-[12.5px] font-medium text-slate-800 transition-colors">
-                                    <InboxIcon className="w-3.5 h-3.5 text-sky-600" /> Better deliverability, ${warmup.priceMonthly}/mo
-                                </button>
+                                <Link to="/app/settings/billing/{-$tab}" params={{ tab: undefined }} className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-slate-200 hover:border-slate-300 text-[12.5px] font-medium text-slate-800 transition-colors">
+                                    <InboxIcon className="w-3.5 h-3.5 text-sky-600" /> Premium pool on a paid plan
+                                </Link>
                             )}
                         </div>
                     </div>
-                    <div className="px-6 py-2.5 border-t border-slate-200/70 text-center text-[11.5px] text-slate-400">
-                        Running Warmbly on your own server? It can warm its mailboxes here too:{" "}
-                        <Link to="/connect" className="font-medium text-slate-600 hover:text-slate-900">
-                            link your instance
-                        </Link>
-                        .
-                    </div>
                 </motion.div>
-                {dialog}
             </div>
         );
     }
@@ -108,18 +93,18 @@ export default function CloudPathsPanel({ mailboxCount, onAdd }: { mailboxCount:
                     {(linkedLabel || (free && canBuy)) && (
                         <span className="text-slate-500">
                             {linkedLabel}
-                            {free && canBuy ? ` Premium gives every mailbox better deliverability, $${warmup.priceMonthly}/mo.` : ""}
+                            {free && canBuy ? " Paid plans warm every mailbox in the premium pool." : ""}
                         </span>
                     )}
                 </span>
                 {canBuy && (
-                    <button
-                        type="button"
-                        onClick={() => setPlanOpen(true)}
-                        className="shrink-0 h-6 px-2 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium transition-colors"
+                    <Link
+                        to="/app/settings/billing/{-$tab}"
+                        params={{ tab: undefined }}
+                        className="shrink-0 h-6 px-2 inline-flex items-center rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium transition-colors"
                     >
                         Upgrade
-                    </button>
+                    </Link>
                 )}
                 {linked > 0 && (
                     <Link to="/app/settings/warmbly-cloud" className="shrink-0 text-[12px] font-medium text-sky-700 hover:text-sky-900 underline underline-offset-2">
@@ -127,7 +112,6 @@ export default function CloudPathsPanel({ mailboxCount, onAdd }: { mailboxCount:
                     </Link>
                 )}
             </div>
-            {dialog}
         </div>
     );
 }

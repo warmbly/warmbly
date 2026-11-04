@@ -125,6 +125,8 @@ So every notification is also asked one question: does it tell the recipient abo
 - it sorts with the replies due today when the inbox is sorted by relevance
 - members who can both manage mailboxes and use the inbox get a **Mail that needs action** [notification](/guides/notifications/), by email too unless they turned it off. It names the mailbox and links to the conversation but never quotes the message, since mail that claims an account is suspended is also what phishing looks like. It is tied to the message, so reading the message reads the notification
 
+The notification is titled **Message to review in [mailbox]**. It reports an unverified claim made by incoming mail, not a Warmbly connection error or a verified account problem. The label does not authenticate the sender. Review the message and check any claimed problem through the service's official app or website before acting.
+
 Routine notices are not affected: a sign-in code, a receipt, a newsletter or a "your settings were changed" confirmation still goes to Automated. Archive the conversation once the problem is dealt with. The label is an ordinary label: removing it takes the conversation out of the **Action required** view but leaves it in the inbox.
 
 A notification recognised offline by its sender alone costs one small call for this question and nothing else; a notification the model judged has it in the same call as every other question. If that call fails, the notification is filed under Automated as it was before the check existed, and `--recheck-notifications` (below) asks it later.

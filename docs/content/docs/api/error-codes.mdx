@@ -245,11 +245,9 @@ Each registered key may make 30 protected calls per hour. Past that the call ans
 | `code` | Status | Meaning |
 |--------|--------|---------|
 | `cloud_link_workspace_required` | 409 | Disconnecting a shared server connection requires explicit confirmation of the server-wide scope; it affects all local workspaces using that connection |
-| `pool_link_workspace_required` | 409 | Cloud refused a new connection request without local workspace scope. Update the self-hosted instance before creating a new connection; existing connections can still enroll mailboxes and start placement tests |
-| `pool_link_workspace_connected` | 409 | The Cloud workspace already has an active self-hosted connection, including a legacy link. Use another Cloud workspace and plan, or disconnect the existing link first |
 | `cloud_link_upgrade_required` | 409 | This Cloud deployment does not support workspace-scoped connections. Upgrade Cloud first |
 | `organization_cloud_connected` | 409 | Disconnect the workspace's Cloud connection before deleting it or scheduling deletion of it or its owner account |
-| `cloud_link_connected` | 409 | The workspace is already connected to Warmbly Cloud. Disconnect first to link a different Cloud workspace |
+| `cloud_link_connected` | 409 | The workspace is already connected to Warmbly Cloud. Warmbly Cloud links no new instances, so a disconnected workspace cannot link another Cloud workspace |
 | `cloud_link_not_connected` | 409 | The workspace is not connected to Warmbly Cloud, so there is nothing to change or disconnect |
 | `cloud_link_no_key` | 409 | The instance has no `CREDENTIALS_ENCRYPTION_KEY`, so it cannot store the Warmbly Cloud token. Set one and restart the backend before connecting |
 | `cloud_link_url` | 400 | The Cloud URL does not start with `https://` |
@@ -274,10 +272,12 @@ These come from Warmbly Cloud's side of the connection (`/v1/pool-link/*`), whic
 | `pool_link_code_not_found` | 404 | The connection code is unknown or has expired. Start the connection again from the instance |
 | `pool_link_code_used` | 409 | The connection code has already been used |
 | `pool_link_denied` | 403 | The connection was declined in Warmbly Cloud |
-| `pool_link_revoked` | 401 | The instance's link has been revoked. Reconnect from the instance's settings |
+| `pool_link_revoked` | 401 | The instance's link has been revoked. Warmbly Cloud links no new instances, so it cannot be linked again |
 | `pool_link_instance_not_found` | 404 | The linked instance no longer exists in Warmbly Cloud |
 | `pool_link_mailbox_not_found` | 404 | The mailbox is not enrolled in Warmbly Cloud |
-| `pool_link_mailbox_limit` | 402 | The Cloud workspace has used its free allowance of linked mailboxes. Upgrade to the pool plan for unlimited mailboxes |
+| `pool_link_closed` | 403 | Warmbly Cloud no longer links new self-hosted instances, on any plan. Returned when an instance asks for a connection code and when a code is approved on `app.warmbly.com/connect`, for every workspace. Existing connections keep working. Use a hosted workspace on [app.warmbly.com](https://app.warmbly.com) for the hosted warmup pool; see [Warmbly Cloud](/guides/warmbly-cloud/) |
+| `pool_link_subscription_required` | 402 | The [Warmbly Cloud](/guides/warmbly-cloud/) workspace an instance is already linked to is free. A [free workspace linked earlier](/guides/warmbly-cloud/#free-workspaces-linked-earlier) keeps its enrolled mailboxes warming, but adding one (an SMTP/IMAP enrollment, a Google or Microsoft sign-in through Warmbly Cloud, or connecting an existing Cloud mailbox) is refused until that linked workspace moves to a paid plan, which lifts the restriction without reconnecting. Keep warming the mailbox on the instance, or choose a plan for the linked workspace |
+| `warmup_plan_retired` | 409 | `POST /pool-link/checkout` was called, but the Warmup plan is no longer sold. Choose a plan on the [billing page](/guides/billing/). Workspaces already on it keep it while they stay subscribed |
 | `pool_link_already_adopted` | 409 | The mailbox is already linked to an instance |
 | `pool_link_not_adoptable` | 422 | Only active Google and Microsoft mailboxes in the Cloud workspace can be linked to an instance |
 | `pool_link_not_managed` | 403 | The mailbox's credential is held by the instance, not by Warmbly Cloud, so Cloud cannot act on it |
@@ -438,7 +438,7 @@ The [inbox vendor](/guides/mailbox-import/#import-from-an-inbox-vendor) routes (
 | `pool_link_cleartext_mailbox` | 422 | Enrolling a mailbox in [Warmbly Cloud](/guides/warmbly-cloud/), or updating its credential there: SMTP or IMAP uses security `none`. Cloud reaches the mail server over the internet and needs TLS or STARTTLS on both legs. Switch the mailbox to TLS, or keep warming it on the instance |
 | `pool_link_mailbox_conflict` | 409 | Enrollment found the address already connected in the linked Cloud workspace and could not attach it. Automatic SMTP/IMAP association requires an active SMTP/IMAP Cloud mailbox, exactly matching credentials, no active Cloud campaign using it and no other instance enrollment. For an existing Google or Microsoft OAuth mailbox, or a delegated Google Workspace mailbox, an instance administrator uses **Add account > In your Warmbly Cloud workspace > Connect** instead. This explicit adoption keeps Cloud history and can switch an existing local app-password mailbox in place. Nothing is attached by address alone. Contact support for other associations; do not delete or recreate the Cloud mailbox |
 | `pool_link_not_adoptable` | 422 | The selected Cloud mailbox is not active in the linked workspace, is not Google or Microsoft, or uses a Microsoft whole-organization grant. Google Workspace delegated mailboxes and per-mailbox Google or Microsoft OAuth mailboxes can be adopted |
-| `pool_link_instance_url` | 422 | Starting a Google or Microsoft sign-in through [Warmbly Cloud](/guides/warmbly-cloud/#google-and-microsoft-mailboxes-sign-in-through-warmbly-cloud) from an instance that registered no address of its own when it was linked, so Cloud has nowhere to return the sign-in to. Set `APP_URL` on the instance, disconnect it and link it again |
+| `pool_link_instance_url` | 422 | Starting a Google or Microsoft sign-in through [Warmbly Cloud](/guides/warmbly-cloud/#google-and-microsoft-mailboxes-sign-in-through-warmbly-cloud) from an instance that registered no address of its own when it was linked, so Cloud has nowhere to return the sign-in to. Linking again is no longer possible, so connect the mailbox with the instance's own OAuth app or an app password |
 | `pool_link_return_url` | 400 | The same sign-in named a return address that is not on the instance's registered address (same scheme and host) |
 | `pool_link_oauth_browser` | 400 | The brokered sign-in was not continued from the Warmbly Cloud page that started it, or returned to a different browser. Nothing was connected. Start again from the instance |
 | `cloud_link_managed_protocol` | 409 | Cloud does not advertise durable managed-consent protocol 1. Upgrade all Cloud control-plane replicas before opening a new managed connection or adoption. Existing mailboxes are unchanged |
@@ -706,7 +706,7 @@ A `403` whose `code` is `mailbox_gmail_oauth_disabled` comes from `POST /emails/
 
 #### `plan_offer_required`
 
-A `403` whose `code` is `plan_offer_required` comes from `POST /subscription/checkout`, `POST /subscription/change-plan` or `POST /subscription/offers/:planId/checkout`. Those routes sell public plans, and a private plan only to a workspace Warmbly has offered it to. The workspace holds no open offer for the chosen plan: it was never offered, or the offer has ended or been withdrawn. The Warmup plan is sold through `POST /pool-link/checkout` and is refused here too.
+A `403` whose `code` is `plan_offer_required` comes from `POST /subscription/checkout`, `POST /subscription/change-plan` or `POST /subscription/offers/:planId/checkout`. Those routes sell public plans, and a private plan only to a workspace Warmbly has offered it to. The workspace holds no open offer for the chosen plan: it was never offered, or the offer has ended or been withdrawn. The Warmup plan is no longer sold anywhere: it is refused here too, and `POST /pool-link/checkout` answers `409` with `warmup_plan_retired`.
 
 ```json
 {
@@ -777,6 +777,7 @@ An account or workspace that support or the instance's administrators have restr
 | `admin_mfa_required` | 403 | An admin route was reached by a session that did not present a second factor. Turn on 2FA or add a passkey, then sign in again |
 | `passkey_user_verification_required` | 400 | A passkey sign-in came from an authenticator that did not verify the user with a PIN or biometric. Set a PIN on the security key, or sign in another way |
 | `two_fa_invalid_code` | 400 | The authenticator or recovery code did not match. Wait for a fresh code and try again; the login challenge allows five attempts per pending session |
+| `two_fa_code_used` | 400 | This instance already accepted that authenticator step or a later one. Wait for a new code before signing in or confirming another action. A website and admin panel backed by the same instance share this single-use rule |
 | `password_changed_sign_in_again` | 409 | `POST /auth/me/password` stored the new password but could not issue the calling device a new session. Every earlier token is invalid; discard them and sign in again with the new password |
 
 `reauth_required` guards the changes that hand out a durable credential, reveal a signing secret, change who can get in, move money, cannot be undone, or reach a whole domain's mail. The full list is under [actions that need a recent confirmation](/api/endpoints/#actions-that-need-a-recent-confirmation). List the ways the account can confirm with `GET /v1/auth/reauth/methods` (a passkey and a linked Google, Apple or single sign-on identity are among them; see [endpoints](/api/endpoints/#actions-that-need-a-recent-confirmation)). With a password or a current two-factor code:

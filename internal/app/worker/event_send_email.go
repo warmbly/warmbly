@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/app/worker/wmail"
+	"github.com/warmbly/warmbly/internal/client/smtpimap/smtp"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/emsg"
@@ -396,6 +397,10 @@ func (w *WorkerService) failUnopenedSend(ctx context.Context, sendEmail models.S
 
 // Account-level refusals additionally raise their typed mailbox event.
 func (w *WorkerService) sendMailboxError(taskID uuid.UUID, emailID uuid.UUID, mail *wmail.WMail, mailErr *errx.MailError) {
+	// A send held on the worker never reached the server, so it says nothing about the mailbox.
+	if mailErr.Failure != nil && mailErr.Failure.Protocol == "smtp" && mailErr.Failure.Stage == smtp.PaceStage {
+		return
+	}
 	// Determine the appropriate event type based on error
 	eventType := wmail.DetermineErrorEventType(mailErr)
 

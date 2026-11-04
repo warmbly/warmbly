@@ -64,7 +64,8 @@ func newRampFixture(t *testing.T, daysWarming, base, increase, max int) *rampFix
 	      VALUES ($1, $2, $3, $4, 'Ramp', '', '', 'smtp_imap', 'active', 50, 600, 'UTC',
 	              $5, $6, $7, $8)`,
 		f.mailbox, f.user, f.org, "ramp-"+f.mailbox.String()[:8]+"@test.local",
-		time.Now().Add(-time.Duration(daysWarming)*24*time.Hour), base, increase, max)
+		// timestamp without time zone: pgx writes the wall clock, so anchor in UTC, 6h off the day boundary.
+		time.Now().UTC().Add(-time.Duration(daysWarming)*24*time.Hour-6*time.Hour), base, increase, max)
 	exec(`INSERT INTO email_accounts (id, user_id, organization_id, email, name, signature_plain,
 	          signature_html, provider, status, campaign_limit, min_wait_time, timezone)
 	      VALUES ($1, $2, $3, $4, 'Partner', '', '', 'gmail', 'active', 50, 600, 'UTC')`,
@@ -252,13 +253,17 @@ func TestLiveWarmupTargetIsCappedByReachablePartners(t *testing.T) {
 	})
 	exec(`INSERT INTO organizations (id, name, slug, owner_user_id) VALUES ($1, 'Ramp partners', $2, $3)`,
 		other, "ramp-p-"+other.String()[:8], f.user)
+	exec(`UPDATE email_accounts SET test_mode = 'diagnostic', test_send_enabled = true, test_receive_enabled = true WHERE id = $1`, f.mailbox)
 	ids := []uuid.UUID{f.mailbox}
 	for i := 0; i < 3; i++ {
 		id := uuid.New()
+		// The state a warmup start writes: warmup on, diagnostic sending and receiving.
 		exec(`INSERT INTO email_accounts (id, user_id, organization_id, email, name, signature_plain,
-		          signature_html, provider, status, campaign_limit, min_wait_time, timezone)
-		      VALUES ($1, $2, $3, $4, 'Partner', '', '', 'smtp_imap', 'active', 50, 600, 'UTC')`,
-			id, f.user, other, "ramp-p-"+id.String()[:8]+"@test.local")
+		          signature_html, provider, status, campaign_limit, min_wait_time, timezone, warmup,
+		          test_mode, test_send_enabled, test_receive_enabled)
+		      VALUES ($1, $2, $3, $4, 'Partner', '', '', 'smtp_imap', 'active', 50, 600, 'UTC', $5,
+		              'diagnostic', true, true)`,
+			id, f.user, other, "ramp-p-"+id.String()[:8]+"@test.local", time.Now().UTC())
 		ids = append(ids, id)
 	}
 	for _, id := range ids {

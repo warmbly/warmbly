@@ -55,7 +55,6 @@ vi.mock("@/lib/api/client/app/emails/updateEmail", () => ({ default: warmupUpdat
 vi.mock("@/lib/api/client/app/emails/warmupLifecycle", () => ({ default: warmupStart }));
 vi.mock("@/components/app/emails/migration/SigninMigrationDialog", () => ({ default: () => null }));
 vi.mock("@/components/app/emails/import/grants/MailboxGrantDialog", () => ({ default: () => null }));
-vi.mock("@/components/app/cloud/CloudConnectDialog", () => ({ default: () => null }));
 vi.mock("@/components/app/emails/import/MailboxImportsMenu", () => ({ default: () => null }));
 vi.mock("@/components/app/emails/CloudPathsPanel", () => ({ default: () => null }));
 vi.mock("@/components/app/advisor/AdvisorRowFlag", () => ({ default: () => null }));

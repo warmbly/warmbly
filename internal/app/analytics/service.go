@@ -245,7 +245,10 @@ func (s *analyticsService) accountStatus(ctx context.Context, orgID, accountID u
 		return nil, xerr
 	}
 
-	errs := s.accountErrors(ctx, accountID)
+	errs, xerr := s.accountErrors(ctx, accountID)
+	if xerr != nil {
+		return nil, xerr
+	}
 	var participant *models.WarmupParticipantHealth
 	if s.warmupRepo != nil {
 		if p, err := s.warmupRepo.GetParticipantHealthForAccount(ctx, accountID); err == nil {
@@ -265,19 +268,17 @@ func (s *analyticsService) accountStatus(ctx context.Context, orgID, accountID u
 	return s.assembleAccountStatus(ctx, email, usage, errs, warmupHealth, inCampaign, rates, withPartners, reads), nil
 }
 
-// accountErrors reads a mailbox's active errors in the API shape, never nil.
-// Error surfacing is best-effort: a failed read is an empty list, not a 500 on
-// the whole status.
-func (s *analyticsService) accountErrors(ctx context.Context, accountID uuid.UUID) []models.AccountError {
+// accountErrors requires a successful read before reporting a mailbox's active errors.
+func (s *analyticsService) accountErrors(ctx context.Context, accountID uuid.UUID) ([]models.AccountError, *errx.Error) {
 	if s.emailAccountErrorsRepo == nil {
-		return make([]models.AccountError, 0)
+		return make([]models.AccountError, 0), nil
 	}
 	dbErrors, err := s.emailAccountErrorsRepo.GetByAccountID(ctx, accountID, true)
 	if err != nil {
-		return make([]models.AccountError, 0)
+		return nil, err
 	}
 	success := s.lastTransportSuccess(ctx, []uuid.UUID{accountID})
-	return toAccountErrors(withoutTransientBlips(dbErrors, success[accountID], time.Now()))
+	return toAccountErrors(withoutTransientBlips(dbErrors, success[accountID], time.Now())), nil
 }
 
 // lastTransportSuccess reads when each mailbox last synced and sent; a failed read hides nothing.

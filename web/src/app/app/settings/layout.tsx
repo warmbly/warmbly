@@ -38,6 +38,7 @@ import { useAccessRestricted, usePermission, type PermissionKey } from "@/hooks/
 import { Page, PageTopbar } from "@/components/layout/Page";
 import useFeatureAccess from "@/hooks/useFeatureAccess";
 import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
+import { useCloudLinkStatus, usePoolLinkInstances } from "@/lib/api/hooks/app/cloudlink/useCloudLink";
 
 interface SectionDef {
     path: string;
@@ -114,9 +115,16 @@ export default function SettingsLayout() {
 function SettingsLayoutInner() {
     const pathname = useLocation({ select: (l) => l.pathname });
     const access = useFeatureAccess();
-    const hosted = useAuthConfig().data?.self_hosted === false;
+    const selfHosted = useAuthConfig().data?.self_hosted;
+    const hosted = selfHosted === false;
     const canManageApiKeys = usePermission("MANAGE_API_KEYS");
     const canManageSettings = usePermission("MANAGE_SETTINGS");
+    // Warmbly Cloud only shows where a link exists: an instance linked to it, or a hosted workspace with linked instances.
+    const cloudStatus = useCloudLinkStatus(selfHosted === true && canManageSettings);
+    const linkedInstances = usePoolLinkInstances(hosted && canManageSettings);
+    const hasCloudLink = hosted
+        ? (linkedInstances.data?.data ?? []).some((i) => !i.revoked_at)
+        : !!(cloudStatus.data?.connected || cloudStatus.data?.legacy_connected);
     const canViewAnalytics = usePermission("VIEW_ANALYTICS");
     const restricted = useAccessRestricted();
     const navRef = React.useRef<HTMLElement>(null);
@@ -181,6 +189,7 @@ function SettingsLayoutInner() {
                     (!restricted || s.scoped) &&
                     (!s.ownerOnly || access.isOwner) &&
                     (!s.billingOnly || access.billing) &&
+                    (s.path !== "warmbly-cloud" || hasCloudLink) &&
                     (s.permission !== "MANAGE_API_KEYS" || canManageApiKeys) &&
                     (s.permission !== "MANAGE_SETTINGS" || canManageSettings) &&
                     (s.permission !== "VIEW_ANALYTICS" || canViewAnalytics),

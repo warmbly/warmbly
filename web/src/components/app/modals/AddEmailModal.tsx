@@ -34,7 +34,6 @@ import {
     Building2Icon,
     CheckIcon,
     ChevronRightIcon,
-    CloudIcon,
     FileSpreadsheetIcon,
     InboxIcon,
     KeyRoundIcon,
@@ -327,7 +326,7 @@ export default function AddEmailModal() {
                                     )}
                                     {view === "gmail" && (
                                         notConfigured === "gmail" ? (
-                                            <ProviderNotConfigured provider="gmail" selfHosted={oauth.selfHosted} />
+                                            <ProviderNotConfigured provider="gmail" />
                                         ) : (
                                             <OAuthPanel
                                                 provider="gmail"
@@ -349,7 +348,7 @@ export default function AddEmailModal() {
                                     )}
                                     {view === "outlook" && (
                                         notConfigured === "outlook" ? (
-                                            <ProviderNotConfigured provider="outlook" selfHosted={oauth.selfHosted} />
+                                            <ProviderNotConfigured provider="outlook" />
                                         ) : (
                                             <OAuthPanel
                                                 provider="outlook"
@@ -542,24 +541,10 @@ const PROVIDER_SETUP: Record<OAuthProvider, { label: string; vars: string[] }> =
     },
 };
 
-function ProviderNotConfigured({ provider, selfHosted }: { provider: OAuthProvider; selfHosted: boolean }) {
+function ProviderNotConfigured({ provider }: { provider: OAuthProvider }) {
     const { label, vars } = PROVIDER_SETUP[provider];
     return (
         <div className="p-4">
-            {selfHosted && (
-                <div className="mb-3 rounded-md border border-sky-200 bg-sky-50 p-3 flex items-start gap-2.5">
-                    <CloudIcon className="w-4 h-4 text-sky-600 mt-0.5 shrink-0" />
-                    <div className="min-w-0">
-                        <p className="text-[12.5px] font-medium text-sky-900">Skip the OAuth setup: connect Warmbly Cloud</p>
-                        <p className="text-[12.5px] text-sky-800 mt-1">
-                            Linked instances sign mailboxes in through Warmbly's own Google and Microsoft apps, and the cloud warms them. Free for 10 mailboxes.
-                        </p>
-                        <a href="/app/settings/warmbly-cloud" className="mt-2 inline-flex h-7 px-2.5 items-center gap-1.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium transition-colors">
-                            Connect Warmbly Cloud
-                        </a>
-                    </div>
-                </div>
-            )}
             <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
                 <div className="flex items-start gap-2.5">
                     <SettingsIcon className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />

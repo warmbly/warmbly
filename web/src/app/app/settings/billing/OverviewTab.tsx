@@ -17,7 +17,6 @@ import {
     CheckIcon,
     CreditCardIcon,
     FileTextIcon,
-    FlameIcon,
     GiftIcon,
     InfoIcon,
     Loader2Icon,
@@ -47,7 +46,7 @@ import { PLAN_ACCENT_CLASSES, getPlan } from "@/lib/plans";
 import type OrganizationLimits from "@/lib/api/models/app/organizations/OrganizationLimits";
 import { Section } from "../_components/SectionShell";
 
-export default function OverviewTab({ onChangePlan, onWarmupPlan }: { onChangePlan: () => void; onWarmupPlan: () => void }) {
+export default function OverviewTab({ onChangePlan }: { onChangePlan: () => void }) {
     const access = useFeatureAccess();
     const sub = useSubscription();
     const trial = useTrialStatus();
@@ -78,7 +77,6 @@ export default function OverviewTab({ onChangePlan, onWarmupPlan }: { onChangePl
     // Free and the Warmup plan both warm without sending, so neither has
     // send, contact, campaign or seat limits worth metering.
     const sends = !access.locked;
-    const warmupPlan = getPlan("warmup");
     const yearly = isYearly(sub.data, periodEnd);
     const serverPlan = sub.data?.plan;
     const yearlyPrice =
@@ -288,29 +286,6 @@ export default function OverviewTab({ onChangePlan, onWarmupPlan }: { onChangePl
                             )}
                         </div>
                     </div>
-                )}
-
-                {/* Only warming, no sending: the one plan that is not in the
-                    grid. Free workspaces only; anything paid already has it. */}
-                {!sub.isPending && onFreeTier && (
-                    <button
-                        type="button"
-                        onClick={onWarmupPlan}
-                        className="mt-3 w-full rounded-lg border border-slate-200 hover:border-sky-300 bg-white px-4 py-3 flex items-center gap-3 text-left transition-colors group"
-                    >
-                        <span className="size-8 rounded-md bg-sky-50 text-sky-600 inline-flex items-center justify-center shrink-0">
-                            <FlameIcon className="w-4 h-4" />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                            <span className="block text-[12.5px] font-medium text-slate-900">
-                                Only need warmup? {warmupPlan.label} plan, ${warmupPlan.priceMonthly}/mo
-                            </span>
-                            <span className="block text-[12px] text-slate-500 leading-relaxed">
-                                {warmupPlan.description} Works for mailboxes connected here or on a linked instance.
-                            </span>
-                        </span>
-                        <ArrowRightIcon className="w-3.5 h-3.5 text-slate-400 group-hover:text-sky-600 shrink-0 transition-colors" />
-                    </button>
                 )}
 
                 {/* Private plans Warmbly offered this workspace; not in the grid. */}

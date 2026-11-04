@@ -323,7 +323,22 @@ func offerPriceFor(plan *models.Plan, interval string) string {
 	if interval == "year" && (plan == nil || plan.PriceYearly == nil) {
 		return ""
 	}
-	return poolPriceFor(plan, interval)
+	return stripePriceFor(plan, interval)
+}
+
+// stripePriceFor picks the Stripe price for a billing period; empty means none, never the other period's.
+func stripePriceFor(plan *models.Plan, interval string) string {
+	if plan == nil {
+		return ""
+	}
+	id := plan.StripePriceID
+	if interval == "year" {
+		id = plan.StripePriceIDYearly
+	}
+	if id == nil {
+		return ""
+	}
+	return strings.TrimSpace(*id)
 }
 
 // Stripe accepts a checkout session lifetime between 30 minutes and 24 hours; a minute of margin each side.

@@ -190,7 +190,7 @@ func newManagedOpsService(t *testing.T) (*service, *managedOpsRepo, *managedOpsE
 	r := &managedOpsRepo{instance: &models.PoolLinkInstance{ID: uuid.New(), OrganizationID: org, CreatedBy: &user, URL: "https://self.test"}}
 	emails := &managedOpsEmails{accounts: map[uuid.UUID]*models.Email{}}
 	e := &managedOpsEmailService{emails: emails}
-	s := NewService(r, emails, e, nil, nil, nil, &managedOpsOrgs{org: &models.Organization{ID: org, OwnerUserID: user}}, nil).(*service)
+	s := NewService(r, emails, e, nil, nil, nil, &managedOpsOrgs{org: &models.Organization{ID: org, OwnerUserID: user}}).(*service)
 	s.WireCache(c)
 	return s, r, e
 }
