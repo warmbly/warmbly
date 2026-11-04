@@ -174,6 +174,11 @@ func TestLiveMailboxImportLifecycle(t *testing.T) {
 		if len(got.Causes) != 2 {
 			t.Fatalf("causes = %+v", got.Causes)
 		}
+		for _, c := range got.Causes {
+			if !c.Google {
+				t.Fatalf("cause %s on Google rows is not marked google", c.Cause)
+			}
+		}
 		rows, err := repo.ListRows(ctx, f.org, id, []string{models.ImportRowConnected}, "", 0, 10)
 		if err != nil || len(rows) != 1 || rows[0].Retryable || rows[0].EmailAccountID == nil {
 			t.Fatalf("connected rows = %+v, %v", rows, err)

@@ -822,6 +822,9 @@ func applyFix(p *payload, email string, fix models.MailboxImportRowFix) {
 	} else if p.Signin || p.AuthMethod == models.MailAuthOAuth {
 		p.AuthMethod = mailhost.AuthMethodFor(host, "")
 	}
+	final := mailhost.Host(p.MailHost)
+	p.SMTP.Password = mailhost.NormalizeAppPassword(final, p.SMTP.Password)
+	p.IMAP.Password = mailhost.NormalizeAppPassword(final, p.IMAP.Password)
 	p.Signin = false
 }
 

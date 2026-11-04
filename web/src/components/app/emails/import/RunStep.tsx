@@ -691,8 +691,9 @@ function CauseCard({
     const canRetry = cause.retryable && !signin;
     const passwordCause = isPasswordCause(cause.cause);
     const appPassword = /app_password/.test(cause.cause);
-    // Google causes are named google_*; the server refuses anything but an app password for them.
-    const notAppPassword = cause.cause.startsWith("google_") && !!password && !looksLikeGoogleAppPassword(password);
+    // The server refuses anything but an app password when a Google row is in the batch.
+    const googleRows = cause.google === true || cause.cause.startsWith("google_");
+    const notAppPassword = googleRows && !!password && !looksLikeGoogleAppPassword(password);
     return (
         <div className={cn("rounded-md border px-3 py-2.5", active ? "border-sky-300 bg-sky-50/40" : "border-slate-200")}>
             <div className="flex items-baseline gap-2">

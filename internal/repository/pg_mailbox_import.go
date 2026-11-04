@@ -261,7 +261,7 @@ func (r *mailboxImportRepository) fillCounts(ctx context.Context, imp *models.Ma
 	}
 
 	query = `
-		SELECT cause, count(*), bool_or(payload <> '' AND status = 'failed')
+		SELECT cause, count(*), bool_or(payload <> '' AND status = 'failed'), bool_or(mail_host IN ('gmail', 'google_workspace'))
 		FROM mailbox_import_rows
 		WHERE import_id = $1 AND status IN ('failed', 'needs_signin') AND cause <> ''
 		GROUP BY cause
@@ -275,7 +275,7 @@ func (r *mailboxImportRepository) fillCounts(ctx context.Context, imp *models.Ma
 	imp.Causes = make([]models.MailboxImportCause, 0)
 	for rows.Next() {
 		var c models.MailboxImportCause
-		if err := rows.Scan(&c.Cause, &c.Count, &c.Retryable); err != nil {
+		if err := rows.Scan(&c.Cause, &c.Count, &c.Retryable, &c.Google); err != nil {
 			db.CaptureError(err, query, nil, "scan")
 			return err
 		}

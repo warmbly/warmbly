@@ -294,6 +294,18 @@ func TestCheckGooglePassword(t *testing.T) {
 	}
 }
 
+func TestApplyFixNormalizesPerLegGooglePasswords(t *testing.T) {
+	p := payload{MailHost: string(mailhost.Gmail)}
+	smtpPw, imapPw := "abcd efgh ijkl mnop", "ponm lkji hgfe dcba"
+	applyFix(&p, "[EMAIL]", models.MailboxImportRowFix{
+		SMTP: &models.MailboxImportLegFix{Password: &smtpPw},
+		IMAP: &models.MailboxImportLegFix{Password: &imapPw},
+	})
+	if p.SMTP.Password != "abcdefghijklmnop" || p.IMAP.Password != "ponmlkjihgfedcba" {
+		t.Fatalf("passwords = %q %q", p.SMTP.Password, p.IMAP.Password)
+	}
+}
+
 func TestFixableRows(t *testing.T) {
 	cases := []struct {
 		status, cause string

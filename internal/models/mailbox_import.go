@@ -212,6 +212,8 @@ type MailboxImportCause struct {
 	Fix       string `json:"fix"`
 	Count     int    `json:"count"`
 	Retryable bool   `json:"retryable"`
+	// Google is true when any row under the cause is on Gmail or Google Workspace.
+	Google bool `json:"google,omitempty"`
 }
 
 type MailboxImport struct {
