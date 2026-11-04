@@ -93,7 +93,7 @@ func (s *emailService) OAuthStart(ctx context.Context, userID string, orgID *uui
 }
 
 // guardInboxLimit refuses a connect that would take the workspace past its
-// mailbox allowance (fair use for paid plans, FreeWorkspaceMailboxLimit for
+// mailbox allowance (fair use for paid plans, Subscription.FreeMailboxLimit for
 // free ones, unlimited without billing) and returns the resolved allowance so
 // the insert can enforce it again under the organization's lock. The
 // allowance is counted per org, so no org means it cannot be applied and the

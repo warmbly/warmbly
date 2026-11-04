@@ -137,3 +137,34 @@ func TestPartnershipPlanWarmsLikeTheWarmupPlan(t *testing.T) {
 		t.Errorf("granted Partnership plan: warmupOnly=%v product=%v, want true false", sub.IsWarmupOnly(), sub.HasProductPlan())
 	}
 }
+
+// A free workspace warms only if it kept the free allowance; a new one needs a plan.
+func TestFreeWarmupFollowsTheKeptAllowance(t *testing.T) {
+	ctx := context.Background()
+	org := uuid.New()
+	must := noError(t)
+
+	kept := &featureGateService{subRepo: stubSubs{sub: &models.Subscription{KeepsFreeWarmup: true}}}
+	if !must(kept.CanUseWarmup(ctx, org)) {
+		t.Error("a workspace that kept the free allowance must still warm")
+	}
+	if !must(kept.CanAddInbox(ctx, org, models.FreeWorkspaceMailboxLimit-1)) || must(kept.CanAddInbox(ctx, org, models.FreeWorkspaceMailboxLimit)) {
+		t.Errorf("a kept free workspace must hold exactly %d mailboxes", models.FreeWorkspaceMailboxLimit)
+	}
+	if must(kept.HasPremiumWarmup(ctx, org)) {
+		t.Error("a kept free workspace warms in the free pool, not the premium one")
+	}
+
+	fresh := &featureGateService{subRepo: stubSubs{sub: &models.Subscription{}}}
+	if must(fresh.CanUseWarmup(ctx, org)) {
+		t.Error("a new free workspace must not warm without a plan")
+	}
+	if must(fresh.CanAddInbox(ctx, org, 0)) {
+		t.Error("a new free workspace must not connect a mailbox without a plan")
+	}
+
+	none := &featureGateService{subRepo: stubSubs{}}
+	if must(none.CanUseWarmup(ctx, org)) || must(none.CanAddInbox(ctx, org, 0)) {
+		t.Error("a workspace with no subscription row must not warm or connect mailboxes")
+	}
+}

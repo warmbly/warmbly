@@ -95,7 +95,7 @@ A free Cloud workspace that already has a linked instance keeps it, and every ma
 
 That connection adds no new mailbox to Cloud until the workspace subscribes to a paid Warmbly Cloud plan. Enrolling an SMTP/IMAP mailbox, signing in a Google or Microsoft mailbox through Warmbly Cloud, and connecting an existing Cloud workspace mailbox into the instance are refused with `pool_link_subscription_required` (402). New mailboxes warm locally on the instance instead. It follows that a mailbox you unenroll cannot be enrolled again without the plan.
 
-**Settings > Warmbly Cloud** shows how many mailboxes the workspace keeps, and the **Mailboxes** page says when new ones warm locally, with a **See plans** button. Moving the linked Cloud workspace to a paid plan lifts the restriction on the existing connection; nothing needs reconnecting. This applies only to linked instances: a free workspace still warms up to 10 mailboxes connected directly on Warmbly Cloud.
+**Settings > Warmbly Cloud** shows how many mailboxes the workspace keeps, and the **Mailboxes** page says when new ones warm locally, with a **See plans** button. Moving the linked Cloud workspace to a paid plan lifts the restriction on the existing connection; nothing needs reconnecting. This applies only to linked instances: a workspace that kept the free plan still warms up to 10 mailboxes connected directly on Warmbly Cloud. A new workspace has no free plan to keep and needs a paid plan to connect mailboxes; see [billing](/guides/billing/#without-a-paid-plan).
 
 Deploy the Cloud backend before upgrading self-hosted instances. Older self-hosted versions keep working against it; on a free workspace they show the refusal when they try to add a mailbox.
 

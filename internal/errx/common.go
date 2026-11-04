@@ -319,6 +319,10 @@ var (
 // workspace holds its whole allowance. The identifier is stable so the
 // dashboard can open the request-more flow instead of showing the text.
 func MailboxAllowanceReached(used, allowance int, paid bool) *Error {
+	if !paid && allowance == 0 {
+		return NewWithIdentifier(Forbidden, "mailbox_allowance_reached",
+			"Connecting and warming mailboxes needs a plan. Choose one to add a mailbox.")
+	}
 	if !paid {
 		return NewWithIdentifier(Forbidden, "mailbox_allowance_reached",
 			fmt.Sprintf("A free workspace holds up to %d mailboxes. Choose a plan to add more.", allowance))

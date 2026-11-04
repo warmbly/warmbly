@@ -414,7 +414,9 @@ export default function ProductTour() {
                                                 note={
                                                     access.paid
                                                         ? undefined
-                                                        : "Only warming for now? Free keeps up to 10 mailboxes warming, no card needed. Every paid plan puts them in the premium pool."
+                                                        : access.keptFreeWarmup
+                                                        ? "Only warming for now? Your free plan keeps up to 10 mailboxes warming. Every paid plan puts them in the premium pool."
+                                                        : "Mailboxes and warmup start with a plan. Every paid plan warms them in the premium pool."
                                                 }
                                             />
                                         )
