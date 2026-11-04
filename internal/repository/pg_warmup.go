@@ -1986,6 +1986,9 @@ func (r *warmupRepository) GetWarmupReceived(ctx context.Context, accountID, int
 	return &w, nil
 }
 
+// WarmupRetirePerMailbox bounds one mailbox's share of a retirement batch, so a long backlog cannot queue a whole batch on one worker.
+const WarmupRetirePerMailbox = 50
+
 // ListWarmupMailToRetire lists received warmup copies past their window:
 // the mailbox's own when it set one, else the instance default handed in as
 // $1, on active mailboxes that have a worker to act. The provider key comes
@@ -2002,7 +2005,7 @@ func (r *warmupRepository) ListWarmupMailToRetire(ctx context.Context, defaultDa
 			WHERE r.email_account_id = ea.id AND r.retired_at IS NULL
 			  AND r.created_at < NOW() - make_interval(days => COALESCE(ea.warmup_retention_days, $1))
 			ORDER BY r.created_at
-			LIMIT $2
+			LIMIT LEAST($2, ` + strconv.Itoa(WarmupRetirePerMailbox) + `)
 		) wr
 		LEFT JOIN LATERAL (
 			SELECT em.message_id FROM email_message_map em
@@ -2033,7 +2036,7 @@ func (r *warmupRepository) ListWarmupSentCopiesToRetire(ctx context.Context, def
 			WHERE t.sender_account_id = ea.id AND t.sent_message_id <> '' AND t.sent_retired_at IS NULL
 			  AND t.created_at < NOW() - make_interval(days => COALESCE(ea.warmup_retention_days, $1))
 			ORDER BY t.created_at
-			LIMIT $2
+			LIMIT LEAST($2, ` + strconv.Itoa(WarmupRetirePerMailbox) + `)
 		) wt
 		LEFT JOIN LATERAL (
 			SELECT em.message_id FROM email_message_map em

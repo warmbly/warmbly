@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/config"
@@ -34,7 +35,9 @@ import (
 // retention.warmup_event_days once a full pass has completed.
 
 const (
-	warmupRetentionBatch = 100
+	warmupRetentionBatch = 500
+	// warmupRetentionRunBudget is how long one run keeps taking batches, so a backlog clears in hours, not weeks.
+	warmupRetentionRunBudget = 40 * time.Second
 	// warmupRetentionPassEvery is how often a completed pass is repeated. The
 	// windows are whole days, so nothing is gained by walking the tables
 	// more often than this.
@@ -52,11 +55,20 @@ func (s *JobsService) StartWarmupMailRetention(ctx context.Context) {
 		if time.Now().Before(nextPass) {
 			return nil
 		}
-		batchCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+		batchCtx, cancel := context.WithTimeout(ctx, 55*time.Second)
 		defer cancel()
-		done, err := s.retireWarmupMailBatch(batchCtx)
-		if err != nil || !done {
-			return err
+		started := time.Now()
+		for {
+			done, err := s.retireWarmupMailBatch(batchCtx)
+			if err != nil {
+				return err
+			}
+			if done {
+				break
+			}
+			if time.Since(started) > warmupRetentionRunBudget {
+				return nil
+			}
 		}
 		if err := s.pruneWarmupEvents(batchCtx); err != nil {
 			return err
@@ -83,8 +95,7 @@ func (s *JobsService) warmupRetentionDays(ctx context.Context) (mail, events int
 }
 
 // retireWarmupMailBatch offers one batch of received copies and one of sent
-// copies to the workers. It reports done when both listings came back short,
-// which means nothing older is waiting.
+// copies to the workers. It reports done when both listings came back drained.
 func (s *JobsService) retireWarmupMailBatch(ctx context.Context) (bool, error) {
 	days, _ := s.warmupRetentionDays(ctx)
 
@@ -124,7 +135,21 @@ func (s *JobsService) retireWarmupMailBatch(ctx context.Context) (bool, error) {
 		// the pass is not complete until every row of the batch went.
 		return false, errors.Join(failures...)
 	}
-	return len(received) < warmupRetentionBatch && len(sent) < warmupRetentionBatch, nil
+	return drained(received) && drained(sent), nil
+}
+
+// drained is a listing that came back short with no mailbox at its per-mailbox share, so nothing older is waiting.
+func drained(batch []repository.WarmupMailToRetire) bool {
+	if len(batch) >= warmupRetentionBatch {
+		return false
+	}
+	per := map[uuid.UUID]int{}
+	for _, m := range batch {
+		if per[m.EmailAccountID]++; per[m.EmailAccountID] >= repository.WarmupRetirePerMailbox {
+			return false
+		}
+	}
+	return true
 }
 
 // publishWarmupDelete sends the delete for one message to the worker holding

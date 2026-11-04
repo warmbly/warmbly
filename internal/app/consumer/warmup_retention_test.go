@@ -412,3 +412,18 @@ func TestPruneWarmupEventsUsesTheInstanceWindow(t *testing.T) {
 		t.Fatalf("pruned before %v, want about %v", repo.pruned, want)
 	}
 }
+
+// A mailbox at its per-mailbox share may hold more, so the pass is not done even when the batch is short.
+func TestRetirementPassWaitsForAMailboxAtItsShare(t *testing.T) {
+	busy := uuid.New()
+	var batch []repository.WarmupMailToRetire
+	for range repository.WarmupRetirePerMailbox {
+		batch = append(batch, repository.WarmupMailToRetire{EmailAccountID: busy})
+	}
+	if drained(batch) {
+		t.Fatal("a mailbox that filled its share was treated as caught up")
+	}
+	if !drained(batch[:repository.WarmupRetirePerMailbox-1]) {
+		t.Fatal("a short batch below every share must complete the pass")
+	}
+}
