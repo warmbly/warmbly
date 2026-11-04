@@ -11,6 +11,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -122,7 +123,9 @@ func readDBLoad(ctx context.Context, pool *pgxpool.Pool, limit int) (*dbLoad, er
 		}
 	}
 
-	rows, err := pool.Query(ctx, `SELECT COALESCE(NULLIF(application_name, ''), '(unnamed)'), COALESCE(state, '(background)'), count(*)::int
+	// A client session another role owns shows no state to a role without pg_read_all_stats.
+	rows, err := pool.Query(ctx, `SELECT COALESCE(NULLIF(application_name, ''), '(unnamed)'),
+			CASE WHEN backend_type IS DISTINCT FROM 'client backend' THEN '(background)' ELSE COALESCE(state, '(hidden)') END, count(*)::int
 		FROM pg_stat_activity WHERE pid <> pg_backend_pid()
 		GROUP BY 1, 2 ORDER BY 3 DESC, 1, 2`)
 	if err != nil {
@@ -180,18 +183,19 @@ func readDBLoad(ctx context.Context, pool *pgxpool.Pool, limit int) (*dbLoad, er
 
 // readStatements reads pg_stat_statements when the server has it. Only a query's text has its constants replaced, so other statements show their queryid alone.
 func readStatements(ctx context.Context, pool *pgxpool.Pool, limit int, load *dbLoad) error {
-	var installed bool
-	if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_stat_statements')`).Scan(&installed); err != nil {
+	var schema string
+	err := pool.QueryRow(ctx, `SELECT n.nspname FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace WHERE e.extname = 'pg_stat_statements'`).Scan(&schema)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("check pg_stat_statements: %w", err)
 	}
-	if !installed {
+	if errors.Is(err, pgx.ErrNoRows) {
 		load.StatementsNote = "pg_stat_statements is not installed; run CREATE EXTENSION pg_stat_statements as a superuser to see the costliest queries"
 		return nil
 	}
 	rows, err := pool.Query(ctx, `SELECT COALESCE(queryid, 0), calls, total_exec_time, mean_exec_time, rows,
 			CASE WHEN query ~* '^\s*(select|insert|update|delete|with|merge|values|table)\M'
 			     THEN left(regexp_replace(query, '\s+', ' ', 'g'), 200) ELSE '(not a query; text withheld)' END
-		FROM pg_stat_statements WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
+		FROM `+pgx.Identifier{schema, "pg_stat_statements"}.Sanitize()+` WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
 		ORDER BY total_exec_time DESC LIMIT $1`, limit)
 	if err != nil {
 		load.StatementsNote = "pg_stat_statements could not be read by this role: " + err.Error()
@@ -208,7 +212,7 @@ func readStatements(ctx context.Context, pool *pgxpool.Pool, limit int, load *db
 		return err
 	}
 	var since time.Time
-	if err := pool.QueryRow(ctx, `SELECT stats_reset FROM pg_stat_statements_info`).Scan(&since); err == nil {
+	if err := pool.QueryRow(ctx, `SELECT stats_reset FROM `+pgx.Identifier{schema, "pg_stat_statements_info"}.Sanitize()).Scan(&since); err == nil {
 		load.Since = &since
 	}
 	return nil
@@ -219,7 +223,7 @@ func printDBLoad(w io.Writer, load *dbLoad) {
 	for _, c := range load.Connections {
 		used += c.Count
 	}
-	fmt.Fprintf(w, "Connections to the server: %d of max_connections %d\n", used, load.MaxConnections)
+	fmt.Fprintf(w, "Connections to the server, not counting this one: %d of max_connections %d\n", used, load.MaxConnections)
 	tw := tabwriter.NewWriter(w, 2, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "  APPLICATION\tSTATE\tCOUNT")
 	for _, c := range load.Connections {

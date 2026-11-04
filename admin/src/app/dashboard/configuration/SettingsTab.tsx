@@ -403,7 +403,7 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
         !!server &&
         !!form &&
         RETENTION_FIELDS.some(
-            (f) => form.retention[f.key] !== String(server.retention[f.setting]),
+            (f) => form.retention[f.key] !== String(server.retention[f.setting] ?? 0),
         );
     const trackingDirty =
         !!server &&

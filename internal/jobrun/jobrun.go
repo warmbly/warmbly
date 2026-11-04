@@ -242,7 +242,10 @@ func takeRequests(ctx context.Context) {
 	watchMu.Unlock()
 	// The loop stopped here after the poll began; the request goes back for whichever process runs it now.
 	for _, name := range orphaned {
-		if _, err := st.RequestRun(pollCtx, name); err != nil {
+		handCtx, cancelHand := context.WithTimeout(ctx, requestPoll)
+		_, err := st.RequestRun(handCtx, name)
+		cancelHand()
+		if err != nil {
 			log.Warn().Err(err).Str("job", name).Msg("jobrun: could not hand a run request back")
 		}
 	}

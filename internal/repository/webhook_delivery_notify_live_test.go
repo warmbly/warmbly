@@ -11,7 +11,7 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/encrypt"
 )
 
-func TestLiveWebhookEnqueueWakesListeningWorkers(t *testing.T) {
+func TestLiveWebhookEnqueueNotifiesAndStoresTheDelivery(t *testing.T) {
 	_, pool := liveContactDB(t)
 	f := newSharedOrgFixture(t, pool)
 	ctx := t.Context()

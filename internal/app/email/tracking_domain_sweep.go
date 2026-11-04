@@ -51,7 +51,7 @@ func (s *emailService) runTrackingDomainSweep(ctx context.Context, staleAfter ti
 		return fmt.Errorf("tracking-domain sweep: list due mailboxes: %s", xerr.Error())
 	}
 
-	var verified, revoked int
+	var verified, revoked, failed int
 	for _, t := range due {
 		if ctx.Err() != nil {
 			return nil
@@ -78,6 +78,7 @@ func (s *emailService) runTrackingDomainSweep(ctx context.Context, staleAfter ti
 					continue
 				}
 				log.Warn().Str("domain", t.Domain).Str("error", err.Error()).Msg("tracking-domain sweep: failed to persist")
+				failed++
 				continue
 			}
 			if !t.Verified {
@@ -86,6 +87,7 @@ func (s *emailService) runTrackingDomainSweep(ctx context.Context, staleAfter ti
 		case t.Verified:
 			if err := s.emailRepository.SetTrackingDomainVerified(ctx, t.ID, false, nil); err != nil {
 				log.Warn().Str("domain", t.Domain).Str("error", err.Error()).Msg("tracking-domain sweep: failed to persist")
+				failed++
 				continue
 			}
 			revoked++
@@ -95,6 +97,9 @@ func (s *emailService) runTrackingDomainSweep(ctx context.Context, staleAfter ti
 
 	if verified > 0 || revoked > 0 {
 		log.Info().Int("checked", len(due)).Int("newly_verified", verified).Int("revoked", revoked).Msg("tracking-domain sweep completed")
+	}
+	if failed > 0 {
+		return fmt.Errorf("tracking-domain sweep: %d of %d verdicts could not be saved", failed, len(due))
 	}
 	return nil
 }
