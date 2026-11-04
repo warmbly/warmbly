@@ -8,6 +8,7 @@ import (
 
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/pkg/trackdns"
 )
 
@@ -29,19 +30,12 @@ func (s *emailService) StartTrackingDomainSweep(ctx context.Context, interval, s
 		return
 	}
 
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			sweepCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-			s.runTrackingDomainSweep(sweepCtx, staleAfter)
-			cancel()
-		}
-	}
+	jobrun.Loop(ctx, "tracking_domain_sweep", interval, false, func(ctx context.Context) error {
+		sweepCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
+		s.runTrackingDomainSweep(sweepCtx, staleAfter)
+		return nil
+	})
 }
 
 func (s *emailService) runTrackingDomainSweep(ctx context.Context, staleAfter time.Duration) {

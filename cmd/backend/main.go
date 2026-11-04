@@ -150,6 +150,7 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/storage"
 	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/jobs"
+	"github.com/warmbly/warmbly/internal/leader"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/notify"
 	"github.com/warmbly/warmbly/internal/observability"
@@ -2140,20 +2141,26 @@ func main() {
 			go segmentService.StartCampaignSegmentSync(ctx, 2*time.Minute)
 		}
 
+		// Loops that keep their place in memory run on one backend at a time, the
+		// same one for as long as it holds the lock, so a fleet of replicas does
+		// the work once instead of once per replica.
+		elector := leader.New(primaryDB, "backend")
+
 		// Worker reconciler: assign + (re)load every active mailbox onto its
 		// worker. Workers hold accounts in memory only, so this is what makes a
 		// freshly onboarded account send/sync and re-seeds a restarted worker.
-		go emailService.StartWorkerReconciler(ctx, 60*time.Second)
+		elector.Go("worker_reconciler", func(ctx context.Context) { emailService.StartWorkerReconciler(ctx, 60*time.Second) })
 
 		// Unibox search backfill: record the searchable text of messages synced
 		// before bodies were indexed, so search covers the whole archive and not
 		// just new mail. Walks the table once, then returns.
-		go uniboxService.StartBodyTextBackfill(ctx)
+		elector.Go("unibox_body_backfill", uniboxService.StartBodyTextBackfill)
 
 		// Automation signing secrets live in each connection's sealed config.
 		if m, ok := integrationServiceForHandler.(interface{ StartSigningSecretMigration(context.Context) }); ok {
-			go m.StartSigningSecretMigration(ctx)
+			elector.Go("signing_secret_migration", m.StartSigningSecretMigration)
 		}
+		go elector.Run(ctx)
 
 		// Danger zone: schedule + execute delayed deletions (orgs, accounts).
 		dangerZoneRepository := repository.NewDangerZoneRepository(primaryDB.Pool)

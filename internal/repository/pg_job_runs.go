@@ -19,7 +19,7 @@ type JobRunRepository interface {
 	MarkStarted(ctx context.Context, name string, at time.Time) error
 	MarkFinished(ctx context.Context, name string, startedAt, finishedAt time.Time, runErr error) error
 	RequestRun(ctx context.Context, name string) (bool, error)
-	TakeRunRequest(ctx context.Context, name string) (bool, error)
+	TakeRunRequests(ctx context.Context, names []string) ([]string, error)
 	List(ctx context.Context) ([]models.ScheduledJobRun, error)
 }
 
@@ -126,15 +126,16 @@ func (r *jobRunRepository) RequestRun(ctx context.Context, name string) (bool, e
 	return tag.RowsAffected() > 0, nil
 }
 
-func (r *jobRunRepository) TakeRunRequest(ctx context.Context, name string) (bool, error) {
-	tag, err := r.db.Exec(ctx, `
+func (r *jobRunRepository) TakeRunRequests(ctx context.Context, names []string) ([]string, error) {
+	rows, err := r.db.Query(ctx, `
 		UPDATE scheduled_job_runs SET run_requested_at = NULL, updated_at = now()
-		WHERE name = $1 AND run_requested_at IS NOT NULL AND retired_at IS NULL
-	`, name)
+		WHERE name = ANY($1) AND run_requested_at IS NOT NULL AND retired_at IS NULL
+		RETURNING name
+	`, names)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	return tag.RowsAffected() > 0, nil
+	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
 func (r *jobRunRepository) List(ctx context.Context) ([]models.ScheduledJobRun, error) {

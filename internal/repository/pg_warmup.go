@@ -187,7 +187,7 @@ type WarmupRepository interface {
 	SumWarmupSentSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 
 	// Health sweep
-	GetAllParticipantAccountIDs(ctx context.Context) ([]uuid.UUID, error)
+	ListParticipantMemberships(ctx context.Context) ([]WarmupParticipantMembership, error)
 	GetPoolHealthCounts(ctx context.Context) (map[string]int, float64, error)
 
 	// Spam tracking
@@ -2471,23 +2471,38 @@ func (r *warmupRepository) GetLatestReplyCandidate(ctx context.Context, senderAc
 	return candidate, nil
 }
 
-// GetAllParticipantAccountIDs returns all unique account IDs across all warmup pools
-func (r *warmupRepository) GetAllParticipantAccountIDs(ctx context.Context) ([]uuid.UUID, error) {
-	rows, err := resultDB(ctx, r.db).Query(ctx, `SELECT DISTINCT email_account_id FROM warmup_pool_participants`)
+// WarmupParticipantMembership is one participating mailbox, what decides its pool, and the pools it sits in.
+type WarmupParticipantMembership struct {
+	EmailAccountID uuid.UUID
+	Status         string
+	OrganizationID *uuid.UUID
+	WarmupPoolType string
+	PoolTypes      []string
+}
+
+// ListParticipantMemberships reads every participant with its mailbox in one query.
+func (r *warmupRepository) ListParticipantMemberships(ctx context.Context) ([]WarmupParticipantMembership, error) {
+	rows, err := resultDB(ctx, r.db).Query(ctx, `
+		SELECT p.email_account_id, ea.status::text, ea.organization_id, COALESCE(ea.warmup_pool_type, ''),
+		       array_agg(DISTINCT wp.pool_type::text)
+		  FROM warmup_pool_participants p
+		  JOIN warmup_pools wp ON wp.id = p.pool_id
+		  JOIN email_accounts ea ON ea.id = p.email_account_id
+		 GROUP BY p.email_account_id, ea.id`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var ids []uuid.UUID
+	var out []WarmupParticipantMembership
 	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
+		var m WarmupParticipantMembership
+		if err := rows.Scan(&m.EmailAccountID, &m.Status, &m.OrganizationID, &m.WarmupPoolType, &m.PoolTypes); err != nil {
 			return nil, err
 		}
-		ids = append(ids, id)
+		out = append(out, m)
 	}
-	return ids, rows.Err()
+	return out, rows.Err()
 }
 
 // GetPoolHealthCounts returns counts per health state and the average band score

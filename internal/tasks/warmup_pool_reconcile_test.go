@@ -19,21 +19,29 @@ import (
 
 type poolReconcileWarmupRepo struct {
 	repository.WarmupRepository
-	participants []uuid.UUID
-	listErr      error
+	members []repository.WarmupParticipantMembership
+	listErr error
 }
 
-func (r *poolReconcileWarmupRepo) GetAllParticipantAccountIDs(_ context.Context) ([]uuid.UUID, error) {
-	return r.participants, r.listErr
+func (r *poolReconcileWarmupRepo) ListParticipantMemberships(_ context.Context) ([]repository.WarmupParticipantMembership, error) {
+	return r.members, r.listErr
 }
 
-type poolReconcileEmailRepo struct {
-	repository.EmailRepository
-	accounts map[uuid.UUID]*models.Email
+type poolReconcileRisk struct {
+	repository.OrgRiskRepository
+	states map[uuid.UUID]models.OrgRiskState
+	calls  int
 }
 
-func (r *poolReconcileEmailRepo) GetByID(_ context.Context, id uuid.UUID) (*models.Email, *errx.Error) {
-	return r.accounts[id], nil
+func (r *poolReconcileRisk) GetOrgRiskStates(_ context.Context, ids []uuid.UUID) (map[uuid.UUID]models.OrgRiskState, error) {
+	r.calls++
+	out := map[uuid.UUID]models.OrgRiskState{}
+	for _, id := range ids {
+		if st, ok := r.states[id]; ok {
+			out[id] = st
+		}
+	}
+	return out, nil
 }
 
 type poolReconcileGate struct {
@@ -76,18 +84,21 @@ func (w *poolReconcileWarmup) RemoveFromAllPools(_ context.Context, accountID uu
 }
 
 type poolReconcileFixture struct {
-	svc     *tasksService
-	gate    *poolReconcileGate
-	warmup  *poolReconcileWarmup
-	emails  *poolReconcileEmailRepo
-	orgPaid uuid.UUID
-	orgFree uuid.UUID
+	svc      *tasksService
+	gate     *poolReconcileGate
+	warmup   *poolReconcileWarmup
+	risk     *poolReconcileRisk
+	accounts map[uuid.UUID]*repository.WarmupParticipantMembership
+	orgPaid  uuid.UUID
+	orgFree  uuid.UUID
 }
 
 func newPoolReconcileFixture() *poolReconcileFixture {
 	f := &poolReconcileFixture{
-		orgPaid: uuid.New(),
-		orgFree: uuid.New(),
+		orgPaid:  uuid.New(),
+		orgFree:  uuid.New(),
+		accounts: map[uuid.UUID]*repository.WarmupParticipantMembership{},
+		risk:     &poolReconcileRisk{states: map[uuid.UUID]models.OrgRiskState{}},
 	}
 	f.gate = &poolReconcileGate{entitled: map[uuid.UUID]bool{}}
 	f.warmup = &poolReconcileWarmup{
@@ -95,7 +106,6 @@ func newPoolReconcileFixture() *poolReconcileFixture {
 		removed: map[uuid.UUID]bool{},
 		inPool:  map[uuid.UUID]string{},
 	}
-	f.emails = &poolReconcileEmailRepo{accounts: map[uuid.UUID]*models.Email{}}
 	f.gate.entitled[f.orgPaid] = true
 	f.gate.entitled[f.orgFree] = false
 	return f
@@ -105,8 +115,8 @@ func newPoolReconcileFixture() *poolReconcileFixture {
 func (f *poolReconcileFixture) mailbox(orgID uuid.UUID, poolType, sittingIn string) uuid.UUID {
 	id := uuid.New()
 	org := orgID
-	f.emails.accounts[id] = &models.Email{
-		ID:             id,
+	f.accounts[id] = &repository.WarmupParticipantMembership{
+		EmailAccountID: id,
 		OrganizationID: &org,
 		Status:         "active",
 		WarmupPoolType: poolType,
@@ -117,15 +127,17 @@ func (f *poolReconcileFixture) mailbox(orgID uuid.UUID, poolType, sittingIn stri
 
 func (f *poolReconcileFixture) run(t *testing.T) (int, int) {
 	t.Helper()
-	participants := make([]uuid.UUID, 0, len(f.warmup.inPool))
-	for id := range f.warmup.inPool {
-		participants = append(participants, id)
+	members := make([]repository.WarmupParticipantMembership, 0, len(f.warmup.inPool))
+	for id, pool := range f.warmup.inPool {
+		m := *f.accounts[id]
+		m.PoolTypes = []string{pool}
+		members = append(members, m)
 	}
 	f.svc = &tasksService{
-		warmupRepo:   &poolReconcileWarmupRepo{participants: participants},
-		emailRepo:    f.emails,
+		warmupRepo:   &poolReconcileWarmupRepo{members: members},
 		featureGate:  f.gate,
 		warmupHealth: f.warmup,
+		orgRiskRepo:  f.risk,
 	}
 	moved, removed, err := f.svc.ReconcileWarmupPoolMembership(context.Background())
 	if err != nil {
@@ -199,26 +211,21 @@ func TestPoolReconcileLeavesMembershipAloneWhenEntitlementCannotBeRead(t *testin
 	}
 }
 
-// A participant row whose mailbox is gone, suspended, or has no workspace has
-// nothing left to check an entitlement against, so it leaves the shared pool.
+// A participant whose mailbox is suspended or has no workspace has nothing left
+// to check an entitlement against, so it leaves the shared pool. A deleted
+// mailbox takes its participant rows with it (ON DELETE CASCADE).
 func TestPoolReconcileEvictsMailboxesItCannotVouchFor(t *testing.T) {
 	for _, c := range []struct {
-		name    string
-		account func(id uuid.UUID) *models.Email
+		name   string
+		adjust func(m *repository.WarmupParticipantMembership)
 	}{
-		{"deleted", func(uuid.UUID) *models.Email { return nil }},
-		{"inactive", func(id uuid.UUID) *models.Email {
-			org := uuid.New()
-			return &models.Email{ID: id, OrganizationID: &org, Status: "inactive", WarmupPoolType: "premium"}
-		}},
-		{"no workspace", func(id uuid.UUID) *models.Email {
-			return &models.Email{ID: id, Status: "active", WarmupPoolType: "premium"}
-		}},
+		{"inactive", func(m *repository.WarmupParticipantMembership) { m.Status = "inactive" }},
+		{"no workspace", func(m *repository.WarmupParticipantMembership) { m.OrganizationID = nil }},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			f := newPoolReconcileFixture()
 			id := f.mailbox(f.orgPaid, "premium", "premium")
-			f.emails.accounts[id] = c.account(id)
+			c.adjust(f.accounts[id])
 
 			_, removed := f.run(t)
 
@@ -247,7 +254,6 @@ func TestPoolReconcileAsksAboutEachOrganizationOnce(t *testing.T) {
 func TestPoolReconcileReportsAListingFailure(t *testing.T) {
 	svc := &tasksService{
 		warmupRepo:   &poolReconcileWarmupRepo{listErr: errors.New("connection reset by peer")},
-		emailRepo:    &poolReconcileEmailRepo{},
 		warmupHealth: &poolReconcileWarmup{},
 	}
 

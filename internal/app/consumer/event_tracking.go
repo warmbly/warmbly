@@ -18,6 +18,7 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/codec"
 	"github.com/warmbly/warmbly/internal/infrastructure/eventbus"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
+	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/geo"
 	"github.com/warmbly/warmbly/internal/pkg/mailclient"
@@ -203,13 +204,12 @@ func (tc *TrackingConsumer) sweepPendingClicks(ctx context.Context) {
 }
 
 // pruneEngagementLogs deletes opens and clicks older than the retention
-// window, at start and then daily. The progress-row summary stays, so
-// nothing a count, filter or branch reads is affected.
+// window, at start and then daily, on one replica per pass. The progress-row
+// summary stays, so nothing a count, filter or branch reads is affected.
 func (tc *TrackingConsumer) pruneEngagementLogs(ctx context.Context) {
-	ticker := time.NewTicker(24 * time.Hour)
-	defer ticker.Stop()
-	for {
+	jobrun.Loop(ctx, "engagement_log_prune", 24*time.Hour, true, func(ctx context.Context) error {
 		pctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
 		days := tc.engagementRetentionDays(pctx)
 		if tc.opens != nil {
 			if n, err := tc.opens.Cleanup(pctx, days); err != nil {
@@ -225,13 +225,8 @@ func (tc *TrackingConsumer) pruneEngagementLogs(ctx context.Context) {
 				log.Info().Int64("deleted", n).Msg("click log pruned")
 			}
 		}
-		cancel()
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-	}
+		return nil
+	})
 }
 
 // Close is a no-op: the event bus lifecycle is owned by the consumer main,

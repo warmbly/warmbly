@@ -20,9 +20,13 @@ type memStore struct {
 	// write behind each one landed anyway.
 	failClaims  int
 	applyFailed bool
+	requested   map[string]bool
+	polls       int
 }
 
-func newMemStore() *memStore { return &memStore{due: map[string]time.Time{}} }
+func newMemStore() *memStore {
+	return &memStore{due: map[string]time.Time{}, requested: map[string]bool{}}
+}
 
 func (m *memStore) Register(_ context.Context, name, _ string, _ time.Duration, next, earliest time.Time) (time.Time, error) {
 	m.mu.Lock()
@@ -76,8 +80,25 @@ func (m *memStore) MarkStarted(context.Context, string, time.Time) error { retur
 func (m *memStore) MarkFinished(context.Context, string, time.Time, time.Time, error) error {
 	return nil
 }
-func (m *memStore) RequestRun(context.Context, string) (bool, error)     { return false, nil }
-func (m *memStore) TakeRunRequest(context.Context, string) (bool, error) { return false, nil }
+func (m *memStore) RequestRun(_ context.Context, name string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.requested[name] = true
+	return true, nil
+}
+func (m *memStore) TakeRunRequests(_ context.Context, names []string) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.polls++
+	var taken []string
+	for _, n := range names {
+		if m.requested[n] {
+			delete(m.requested, n)
+			taken = append(taken, n)
+		}
+	}
+	return taken, nil
+}
 func (m *memStore) List(context.Context) ([]models.ScheduledJobRun, error) {
 	return nil, nil
 }
@@ -277,4 +298,34 @@ func TestNextDueKeepsTheCadenceAndDropsMissedSlots(t *testing.T) {
 			t.Errorf("nextDue at %s = %s, want %s", c.at, got, c.want)
 		}
 	}
+}
+
+// A process asks for every loop's run requests in one query per poll, and only the requested loop runs.
+func TestRunRequestsArePolledOncePerProcess(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		store := newMemStore()
+		useStore(t, store)
+
+		var wanted, other atomic.Int32
+		stopWanted := startLoop("wanted", 24*time.Hour, false, &wanted)
+		defer stopWanted()
+		stopOther := startLoop("other", 24*time.Hour, false, &other)
+		defer stopOther()
+
+		if _, err := store.RequestRun(context.Background(), "wanted"); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(requestPoll + time.Millisecond)
+		synctest.Wait()
+
+		if wanted.Load() != 1 || other.Load() != 0 {
+			t.Fatalf("requested job ran %d times and the other %d, want 1 and 0", wanted.Load(), other.Load())
+		}
+		store.mu.Lock()
+		polls := store.polls
+		store.mu.Unlock()
+		if polls != 1 {
+			t.Fatalf("two loops polled for requests %d times in one interval, want 1", polls)
+		}
+	})
 }
