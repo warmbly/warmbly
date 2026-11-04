@@ -35,7 +35,6 @@ func TestLiveTableRetentionPrunesOnlyPastWindow(t *testing.T) {
 	exec(`INSERT INTO tasks (id, task_type, email_account_id, status, message_id) VALUES ($1, 'campaign', $2, 'completed', '<retention@x>')`, task, account)
 	t.Cleanup(func() {
 		c := context.Background()
-		_, _ = pool.Exec(c, `DELETE FROM tracking_events_processed WHERE task_id = $1`, task)
 		_, _ = pool.Exec(c, `DELETE FROM tasks WHERE id = $1`, task)
 		_, _ = pool.Exec(c, `DELETE FROM email_accounts WHERE id = $1`, account)
 		_, _ = pool.Exec(c, `DELETE FROM workers WHERE id = $1`, worker)
@@ -57,16 +56,14 @@ func TestLiveTableRetentionPrunesOnlyPastWindow(t *testing.T) {
 	exec(`INSERT INTO send_result_effects (task_id, effect_key, organization_id, kind, payload, delivered_at)
 	      VALUES ($1, 'old', $2, 'webhook', '{}', $3), ($1, 'undelivered', $2, 'webhook', '{}', NULL), ($1, 'fresh', $2, 'webhook', '{}', $4)`, task, org, old, fresh)
 	// More than one batch, so the loop has to come back for the rest.
-	exec(`INSERT INTO tracking_events_processed (task_id, event_type, url_hash, processed_at)
-	      SELECT $1, 'click', g::text, $2 FROM generate_series(1, $3::int) g`, task, old, PruneBatch+7)
-	exec(`INSERT INTO tracking_events_processed (task_id, event_type, url_hash, processed_at) VALUES ($1, 'open', '', $2)`, task, fresh)
+	exec(`INSERT INTO worker_health_samples (worker_id, observed_at) SELECT $1, $2::timestamptz - g * interval '1 second' FROM generate_series(1, $3::int) g`, worker, old, PruneBatch+7)
 
 	repo := NewTableRetentionRepository(pool)
 	before := time.Now().AddDate(0, 0, -ancientDays)
 	for name, prune := range map[string]func(context.Context, time.Time) (int64, error){
 		"campaign_logs": repo.PruneCampaignLogs, "notifications": repo.PruneNotifications, "webhook_deliveries": repo.PruneWebhookDeliveries,
-		"tracking_events_processed": repo.PruneTrackingDedupe, "worker_health_samples": repo.PruneWorkerHealthSamples,
-		"send_result_effects": repo.PruneDeliveredSendResultEffects,
+		"worker_health_samples": repo.PruneWorkerHealthSamples,
+		"send_result_effects":   repo.PruneDeliveredSendResultEffects,
 	} {
 		if _, err := prune(ctx, before); err != nil {
 			t.Fatalf("%s: %v", name, err)
@@ -93,9 +90,8 @@ func TestLiveTableRetentionPrunesOnlyPastWindow(t *testing.T) {
 		{"notifications drop the old one", `SELECT count(*) FROM notifications WHERE user_id = $1`, user, 2},
 		{"webhook log keeps the retrying and fresh deliveries", `SELECT count(*) FROM webhook_deliveries WHERE endpoint_id = $1 AND event_type IN ('retrying', 'fresh')`, endpoint, 2},
 		{"webhook log drops the old settled delivery", `SELECT count(*) FROM webhook_deliveries WHERE endpoint_id = $1`, endpoint, 2},
-		{"health samples keep the fresh one", `SELECT count(*) FROM worker_health_samples WHERE worker_id = $1`, worker, 1},
+		{"health samples keep only the fresh one, across batches", `SELECT count(*) FROM worker_health_samples WHERE worker_id = $1`, worker, 1},
 		{"effects keep the undelivered and fresh ones", `SELECT count(*) FROM send_result_effects WHERE task_id = $1`, task, 2},
-		{"dedupe marks keep only the fresh one, across batches", `SELECT count(*) FROM tracking_events_processed WHERE task_id = $1`, task, 1},
 	} {
 		if got := count(c.query, c.arg); got != c.want {
 			t.Errorf("%s: got %d rows, want %d", c.what, got, c.want)
@@ -124,9 +120,9 @@ func TestLiveRetentionPrunesUseTheirIndexes(t *testing.T) {
 		{`SELECT ctid FROM campaign_logs WHERE created_at < NOW() LIMIT 5000`, "idx_campaign_logs_created"},
 		{`SELECT ctid FROM notifications WHERE created_at < NOW() AND email_state NOT IN ('pending', 'sending') LIMIT 5000`, "idx_notifications_created"},
 		{`SELECT ctid FROM webhook_deliveries WHERE status IN ('delivered', 'failed', 'abandoned') AND updated_at < NOW() LIMIT 5000`, "idx_webhook_deliveries_settled"},
-		{`SELECT ctid FROM tracking_events_processed WHERE processed_at < NOW() LIMIT 5000`, "idx_tracking_processed_cleanup"},
 		{`SELECT ctid FROM worker_health_samples WHERE observed_at < NOW() LIMIT 5000`, "idx_worker_health_samples_observed"},
-		{`SELECT worker_id, sum(sends_attempted) FROM worker_health_samples WHERE observed_at > now() - interval '1 hour' GROUP BY worker_id`, "idx_worker_health_samples_observed"},
+		// Either index answers the one-hour window; which one depends on the table's statistics.
+		{`SELECT worker_id, sum(sends_attempted) FROM worker_health_samples WHERE observed_at > now() - interval '1 hour' GROUP BY worker_id`, "idx_worker_health_samples_"},
 		{`SELECT ctid FROM send_result_effects WHERE delivered_at IS NOT NULL AND delivered_at < NOW() LIMIT 5000`, "idx_send_result_effects_delivered"},
 		{`SELECT internal_id FROM warmup_received WHERE email_account_id = '00000000-0000-0000-0000-000000000001' AND retired_at IS NULL AND created_at < NOW() ORDER BY created_at LIMIT 100`, "idx_warmup_received_account_live"},
 		{`SELECT token FROM warmup_tokens WHERE sender_account_id = '00000000-0000-0000-0000-000000000001' AND sent_message_id <> '' AND sent_retired_at IS NULL AND created_at < NOW() ORDER BY created_at LIMIT 100`, "idx_warmup_tokens_sender_live"},
@@ -144,7 +140,7 @@ func TestLiveRetentionPrunesUseTheirIndexes(t *testing.T) {
 			plan.WriteString(line + "\n")
 		}
 		rows.Close()
-		if !strings.Contains(plan.String(), c.index) {
+		if !strings.Contains(plan.String(), c.index) || strings.Contains(plan.String(), "Seq Scan") {
 			t.Errorf("%s is not used by %q:\n%s", c.index, c.query, plan.String())
 		}
 	}

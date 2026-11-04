@@ -305,9 +305,9 @@ type WarmupRepository interface {
 	// mailboxes that have a worker to act. ListWarmupSentCopiesToRetire is
 	// the same for the sender's own copy of each send. RetireWarmupReceived
 	// and RetireWarmupSentCopy stamp the row once the deletion is on the bus.
-	ListWarmupMailToRetire(ctx context.Context, defaultDays, limit int) ([]WarmupMailToRetire, error)
+	ListWarmupMailToRetire(ctx context.Context, defaultDays, limit int, skip []uuid.UUID) ([]WarmupMailToRetire, error)
 	RetireWarmupReceived(ctx context.Context, accountID, internalID uuid.UUID) error
-	ListWarmupSentCopiesToRetire(ctx context.Context, defaultDays, limit int) ([]WarmupMailToRetire, error)
+	ListWarmupSentCopiesToRetire(ctx context.Context, defaultDays, limit int, skip []uuid.UUID) ([]WarmupMailToRetire, error)
 	RetireWarmupSentCopy(ctx context.Context, token uuid.UUID) error
 	// PruneWarmupEventsBefore drops per-message records older than before:
 	// tampering events, spam reports, retired receipts, and tokens whose sent
@@ -1986,7 +1986,7 @@ func (r *warmupRepository) GetWarmupReceived(ctx context.Context, accountID, int
 	return &w, nil
 }
 
-// WarmupRetirePerMailbox bounds one mailbox's share of a retirement batch, so a long backlog cannot queue a whole batch on one worker.
+// WarmupRetirePerMailbox bounds one mailbox's share of a retirement run; the sweep skips a mailbox it already served that run.
 const WarmupRetirePerMailbox = 50
 
 // ListWarmupMailToRetire lists received warmup copies past their window:
@@ -1995,7 +1995,7 @@ const WarmupRetirePerMailbox = 50
 // from the message map by the internal id, which is what the worker's remove
 // and flag events are keyed on. It starts from the mailboxes, so receipts
 // held by a mailbox that cannot act are never walked.
-func (r *warmupRepository) ListWarmupMailToRetire(ctx context.Context, defaultDays, limit int) ([]WarmupMailToRetire, error) {
+func (r *warmupRepository) ListWarmupMailToRetire(ctx context.Context, defaultDays, limit int, skip []uuid.UUID) ([]WarmupMailToRetire, error) {
 	query := `
 		SELECT ea.user_id, ea.id, ` + actionWorkerSQL("ea") + `, wr.internal_id, wr.message_id,
 		       COALESCE(m.message_id, ''), ea.warmup_placement, ea.warmup_folder
@@ -2012,11 +2012,11 @@ func (r *warmupRepository) ListWarmupMailToRetire(ctx context.Context, defaultDa
 			WHERE em.email_id = ea.id AND em.id = wr.internal_id
 			LIMIT 1
 		) m ON true
-		WHERE ea.status = 'active'
+		WHERE ea.status = 'active' AND NOT (ea.id = ANY($3::uuid[]))
 		  AND ` + actionRoutableSQL("ea") + `
 		ORDER BY wr.created_at
 		LIMIT $2`
-	return r.scanMailToRetire(ctx, query, defaultDays, limit, false)
+	return r.scanMailToRetire(ctx, query, defaultDays, limit, skip, false)
 }
 
 // ListWarmupSentCopiesToRetire lists the sender's own copies past their
@@ -2026,7 +2026,7 @@ func (r *warmupRepository) ListWarmupMailToRetire(ctx context.Context, defaultDa
 // exist. The map is keyed by the provider's id on Gmail and Graph, so the key
 // is usually empty there and the worker searches by Message-ID instead.
 // Like the received side it starts from the mailboxes that can act.
-func (r *warmupRepository) ListWarmupSentCopiesToRetire(ctx context.Context, defaultDays, limit int) ([]WarmupMailToRetire, error) {
+func (r *warmupRepository) ListWarmupSentCopiesToRetire(ctx context.Context, defaultDays, limit int, skip []uuid.UUID) ([]WarmupMailToRetire, error) {
 	query := `
 		SELECT ea.user_id, ea.id, ` + actionWorkerSQL("ea") + `, wt.token, wt.sent_message_id,
 		       COALESCE(m.message_id, ''), ea.warmup_placement, ea.warmup_folder
@@ -2043,16 +2043,19 @@ func (r *warmupRepository) ListWarmupSentCopiesToRetire(ctx context.Context, def
 			WHERE em.email_id = ea.id AND em.message_id = wt.sent_message_id
 			LIMIT 1
 		) m ON true
-		WHERE ea.status = 'active'
+		WHERE ea.status = 'active' AND NOT (ea.id = ANY($3::uuid[]))
 		  AND ` + actionRoutableSQL("ea") + `
 		  AND ea.provider <> 'smtp_imap'
 		ORDER BY wt.created_at
 		LIMIT $2`
-	return r.scanMailToRetire(ctx, query, defaultDays, limit, true)
+	return r.scanMailToRetire(ctx, query, defaultDays, limit, skip, true)
 }
 
-func (r *warmupRepository) scanMailToRetire(ctx context.Context, query string, defaultDays, limit int, sent bool) ([]WarmupMailToRetire, error) {
-	rows, err := resultDB(ctx, r.db).Query(ctx, query, defaultDays, limit)
+func (r *warmupRepository) scanMailToRetire(ctx context.Context, query string, defaultDays, limit int, skip []uuid.UUID, sent bool) ([]WarmupMailToRetire, error) {
+	if skip == nil {
+		skip = []uuid.UUID{}
+	}
+	rows, err := resultDB(ctx, r.db).Query(ctx, query, defaultDays, limit, skip)
 	if err != nil {
 		return nil, err
 	}
@@ -2116,8 +2119,6 @@ func (r *warmupRepository) PruneWarmupEventsBefore(ctx context.Context, before t
 		   AND (sent_message_id = '' OR sent_retired_at IS NOT NULL
 		        OR sender_account_id IN (SELECT id FROM email_accounts WHERE provider = 'smtp_imap'))`, []any{before}},
 		{`DELETE FROM pool_link_commands WHERE status IN ('answered', 'expired', 'cancelled') AND created_at < $1`, []any{before}},
-		// Thread turns go at the age of the receipts and tokens they chain back to.
-		{`DELETE FROM warmup_thread_messages WHERE created_at < $1`, []any{before}},
 		// An arrival's handle is how a retiring delete reaches the instance, so it outlives the copy it names.
 		{`DELETE FROM pool_link_arrivals a WHERE a.reported_at < $1
 		 AND NOT EXISTS (SELECT 1 FROM warmup_received wr WHERE wr.email_account_id = a.email_account_id
@@ -2128,6 +2129,16 @@ func (r *warmupRepository) PruneWarmupEventsBefore(ctx context.Context, before t
 			return total, err
 		}
 		total += cmd.RowsAffected()
+	}
+	// A thread turn outlives the event window while its mailbox still keeps that mail, because replies are matched against it.
+	n, err := DeleteInBatches(ctx, r.db, "warmup_thread_messages",
+		`SELECT m.ctid FROM warmup_thread_messages m JOIN email_accounts ea ON ea.id = m.email_account_id
+		  WHERE m.created_at < $2
+		    AND (ea.warmup_retention_days IS NULL OR m.created_at < NOW() - make_interval(days => ea.warmup_retention_days))
+		  LIMIT $1`, before)
+	total += n
+	if err != nil {
+		return total, err
 	}
 	return total, nil
 }

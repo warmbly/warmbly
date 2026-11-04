@@ -68,12 +68,6 @@ func (r *TableRetentionRepository) PruneWebhookDeliveries(ctx context.Context, b
 		   AND updated_at < $2 LIMIT $1`, before)
 }
 
-// PruneTrackingDedupe drops consumer-side tracking dedupe marks older than before.
-func (r *TableRetentionRepository) PruneTrackingDedupe(ctx context.Context, before time.Time) (int64, error) {
-	return DeleteInBatches(ctx, r.db, "tracking_events_processed",
-		`SELECT ctid FROM tracking_events_processed WHERE processed_at < $2 LIMIT $1`, before)
-}
-
 // PruneWorkerHealthSamples drops worker health samples older than before.
 func (r *TableRetentionRepository) PruneWorkerHealthSamples(ctx context.Context, before time.Time) (int64, error) {
 	return DeleteInBatches(ctx, r.db, "worker_health_samples",

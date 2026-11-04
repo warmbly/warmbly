@@ -90,7 +90,7 @@ func TestLiveSyncReportWritesOnlyWhatChanged(t *testing.T) {
 	}
 }
 
-func TestLiveSyncRecoveryClockSkipsQuietRewritesButNeverAPendingError(t *testing.T) {
+func TestLiveSyncRecoveryClockStaysExactAndSkipsOnlyStaleReports(t *testing.T) {
 	f, worker := ownedTransportFixture(t)
 	repo := NewEmailSyncStateRepository(f.db)
 	const recoveryRow = `SELECT xmin::text FROM email_account_transport_recovery WHERE email_account_id=$1 AND operation='sync'`
@@ -112,11 +112,15 @@ func TestLiveSyncRecoveryClockSkipsQuietRewritesButNeverAPendingError(t *testing
 	base := time.Now().UTC().Add(-time.Hour).Truncate(time.Millisecond)
 	put(base)
 	quiet := rowVersion(t, f, recoveryRow)
-	put(base.Add(20 * time.Second))
+	put(base.Add(-time.Second))
 	if rowVersion(t, f, recoveryRow) != quiet {
-		t.Fatal("a healthy mailbox rewrote its recovery clock inside the minute")
+		t.Fatal("a report older than the recovery clock rewrote it")
 	}
-	// An error raised now is cleared by the very next pass, minute or not.
+	put(base.Add(20 * time.Second))
+	if rowVersion(t, f, recoveryRow) == quiet {
+		t.Fatal("a newer pass did not move the recovery clock, so a late error would be judged against a stale one")
+	}
+	// An error raised now is cleared by the very next pass.
 	errAt := base.Add(30 * time.Second)
 	if _, err := f.repo.CreateOnce(t.Context(), f.report(models.MailTransportSync, &errAt)); err != nil {
 		t.Fatal(err)

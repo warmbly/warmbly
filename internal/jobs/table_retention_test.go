@@ -31,9 +31,6 @@ func (f *fakeTableRetention) PruneNotifications(_ context.Context, b time.Time) 
 func (f *fakeTableRetention) PruneWebhookDeliveries(_ context.Context, b time.Time) (int64, error) {
 	return f.record("webhook_deliveries", b)
 }
-func (f *fakeTableRetention) PruneTrackingDedupe(_ context.Context, b time.Time) (int64, error) {
-	return f.record("tracking_events_processed", b)
-}
 func (f *fakeTableRetention) PruneWorkerHealthSamples(_ context.Context, b time.Time) (int64, error) {
 	return f.record("worker_health_samples", b)
 }
@@ -50,21 +47,37 @@ func (r fixedRetention) RetentionWindows(context.Context) instancesettings.Reten
 func TestTableRetentionReadsWindowsAndSurvivesAFailingTable(t *testing.T) {
 	store := &fakeTableRetention{before: map[string]time.Time{}, fail: "notifications"}
 	windows := instancesettings.DefaultRetention()
-	windows.CampaignLogDays, windows.WebhookDeliveryDays, windows.EngagementEventDays = 10, 20, 30
+	windows.CampaignLogDays, windows.NotificationDays, windows.WebhookDeliveryDays = 10, 15, 20
 	err := NewTableRetentionJob(store, fixedRetention(windows)).Run(context.Background())
 	if err == nil {
 		t.Fatal("a failing table was not reported")
 	}
-	if len(store.before) != 6 {
-		t.Fatalf("pruned %d tables, want all six despite the failure: %v", len(store.before), store.before)
+	if len(store.before) != 5 {
+		t.Fatalf("pruned %d tables, want all five despite the failure: %v", len(store.before), store.before)
 	}
 	for table, days := range map[string]int{
-		"campaign_logs": 10, "webhook_deliveries": 20, "tracking_events_processed": 30,
+		"campaign_logs": 10, "webhook_deliveries": 20,
 		"worker_health_samples": workerHealthSampleKeepDays, "send_result_effects": sendResultEffectKeepDays,
 	} {
 		age := time.Since(store.before[table])
 		if want := time.Duration(days) * 24 * time.Hour; age < want-2*time.Hour || age > want+2*time.Hour {
 			t.Errorf("%s pruned before %v ago, want %d days", table, age, days)
 		}
+	}
+}
+
+// An instance that never chose a feed window keeps its feeds; only bookkeeping is pruned.
+func TestTableRetentionKeepsFeedsByDefault(t *testing.T) {
+	store := &fakeTableRetention{before: map[string]time.Time{}}
+	if err := NewTableRetentionJob(store, fixedRetention(instancesettings.DefaultRetention())).Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, feed := range []string{"campaign_logs", "notifications", "webhook_deliveries"} {
+		if _, pruned := store.before[feed]; pruned {
+			t.Errorf("%s was pruned with no window set", feed)
+		}
+	}
+	if len(store.before) != 2 {
+		t.Fatalf("pruned %v, want only the worker health samples and delivered effects", store.before)
 	}
 }

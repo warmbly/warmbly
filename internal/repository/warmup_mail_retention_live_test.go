@@ -97,7 +97,7 @@ func TestLiveWarmupMailRetention(t *testing.T) {
 
 	repo := &warmupRepository{db: pool}
 
-	rows, err := repo.ListWarmupMailToRetire(ctx, 30, 100)
+	rows, err := repo.ListWarmupMailToRetire(ctx, 30, 100, nil)
 	if err != nil {
 		t.Fatalf("ListWarmupMailToRetire: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestLiveWarmupMailRetention(t *testing.T) {
 	if err != nil || rec == nil || rec.RetiredAt == nil {
 		t.Fatalf("GetWarmupReceived after retiring = %+v, %v; want retired_at set", rec, err)
 	}
-	rows, err = repo.ListWarmupMailToRetire(ctx, 30, 100)
+	rows, err = repo.ListWarmupMailToRetire(ctx, 30, 100, nil)
 	if err != nil {
 		t.Fatalf("ListWarmupMailToRetire again: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestLiveWarmupMailRetention(t *testing.T) {
 
 	// The sender's own copies follow the same window, and the map resolves
 	// the provider key where it is keyed by Message-ID.
-	sent, err := repo.ListWarmupSentCopiesToRetire(ctx, 30, 100)
+	sent, err := repo.ListWarmupSentCopiesToRetire(ctx, 30, 100, nil)
 	if err != nil {
 		t.Fatalf("ListWarmupSentCopiesToRetire: %v", err)
 	}

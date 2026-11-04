@@ -75,11 +75,11 @@ type Retention struct {
 	// receipts, tampering and spam reports) are kept. The daily warmup
 	// statistics behind the analytics are separate and never pruned.
 	WarmupEventDays int `json:"warmup_event_days"`
-	// CampaignLogDays is how long a campaign's activity feed keeps an entry.
+	// CampaignLogDays is how long a campaign's activity feed keeps an entry; 0 keeps every entry.
 	CampaignLogDays int `json:"campaign_log_days"`
-	// NotificationDays is how long in-app notifications are kept, read or not.
+	// NotificationDays is how long in-app notifications are kept, read or not; 0 keeps them all.
 	NotificationDays int `json:"notification_days"`
-	// WebhookDeliveryDays is how long a settled webhook delivery stays in its endpoint's log.
+	// WebhookDeliveryDays is how long a settled webhook delivery stays in its endpoint's log; 0 keeps them all.
 	WebhookDeliveryDays int `json:"webhook_delivery_days"`
 }
 
@@ -383,9 +383,16 @@ func (r *Retention) Normalize() {
 	// the thirty-day health bands that read them.
 	r.WarmupMailDays = clamp(r.WarmupMailDays, config.WarmupMailRetentionDaysDefault, config.WarmupMailRetentionDaysMin)
 	r.WarmupEventDays = clamp(r.WarmupEventDays, config.WarmupEventRetentionDaysDefault, config.WarmupEventRetentionDaysMin)
-	r.CampaignLogDays = clamp(r.CampaignLogDays, config.CampaignLogRetentionDaysDefault, config.RetentionDaysMin)
-	r.NotificationDays = clamp(r.NotificationDays, config.NotificationRetentionDaysDefault, config.RetentionDaysMin)
-	r.WebhookDeliveryDays = clamp(r.WebhookDeliveryDays, config.WebhookDeliveryRetentionDaysDefault, config.RetentionDaysMin)
+	// The feed windows treat 0 as keep everything, which is also their default.
+	optional := func(v int) int {
+		if v <= 0 {
+			return 0
+		}
+		return clamp(v, 0, config.RetentionDaysMin)
+	}
+	r.CampaignLogDays = optional(r.CampaignLogDays)
+	r.NotificationDays = optional(r.NotificationDays)
+	r.WebhookDeliveryDays = optional(r.WebhookDeliveryDays)
 }
 
 // Normalize clamps a document into its accepted range. It is applied on read

@@ -58,7 +58,7 @@ func (r *emailAccountErrorRepository) RecordTransportSuccess(ctx context.Context
 
 // recordTransportSuccess runs under the mailbox's transport lock and account row lock.
 func recordTransportSuccess(ctx context.Context, tx pgx.Tx, accountID uuid.UUID, operation models.MailTransportOperation, at time.Time, taskID *uuid.UUID, generation uuid.UUID) *errx.Error {
-	// A healthy mailbox's sync clock moves at most once a minute; a pending error always gets the exact one.
+	// The sync clock is exact, because a late error is judged against it; a report that is not newer writes nothing.
 	var resolve bool
 	err := tx.QueryRow(ctx, `WITH account AS (SELECT id FROM email_accounts WHERE id=$1 AND transport_generation=$5),
 	    pending AS (SELECT EXISTS(SELECT 1 FROM email_account_errors WHERE email_account_id=$1 AND resolved_at IS NULL
@@ -69,7 +69,7 @@ func recordTransportSuccess(ctx context.Context, tx pgx.Tx, accountID uuid.UUID,
 	    ON CONFLICT(email_account_id,operation) DO UPDATE
 	        SET recovered_at=GREATEST(existing.recovered_at,EXCLUDED.recovered_at),
 	        source_task_id=CASE WHEN EXCLUDED.recovered_at >= existing.recovered_at THEN EXCLUDED.source_task_id ELSE existing.source_task_id END
-	        WHERE EXCLUDED.operation<>'sync' OR (SELECT open FROM pending) OR existing.recovered_at < EXCLUDED.recovered_at - INTERVAL '1 minute')
+	        WHERE existing.recovered_at < EXCLUDED.recovered_at OR EXCLUDED.operation<>'sync')
 	    SELECT EXISTS(SELECT 1 FROM account) AND (SELECT open FROM pending)`, accountID, operation, at.UTC(), taskID, generation).Scan(&resolve)
 	if err != nil {
 		return errx.InternalError()

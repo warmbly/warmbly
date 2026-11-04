@@ -101,9 +101,9 @@ See [Automatic inbox tagging](/guides/inbox-tagging/), [Advisor](/guides/advisor
 | `retention.audit_log_days` | 90 | The audit trail: actor, IP address, user agent, change payload |
 | `retention.warmup_mail_days` | 30 | Warmup mail in the mailboxes themselves, and the stored copy of each message's body. Deleted by the platform once older than this, wherever the mailbox files it; a mailbox can set its own window |
 | `retention.warmup_event_days` | 365 | Per-message warmup records: tokens, receipts, tampering events, spam moves and their attribution, spam reports, and which messages belong to a warmup thread, and for a linked instance that runs its own mailboxes, the commands Cloud queued for it once they are closed and the warmup mail it reported once retired. The daily sent and received counts behind the analytics are kept. When each mailbox's owner last acted in it (five-minute marks, no message content) is kept 30 days whatever this is set to |
-| `retention.campaign_log_days` | 365 | Each campaign's activity feed: failed and deferred sends, pauses and their reasons |
-| `retention.notification_days` | 180 | In-app notifications, read or unread. One still waiting to be emailed is kept until it is sent or skipped |
-| `retention.webhook_delivery_days` | 90 | Each webhook endpoint's delivery log of settled deliveries, with the payload and the response excerpt. A delivery still being retried is kept until it settles |
+| `retention.campaign_log_days` | 0 (kept) | Each campaign's activity feed: failed and deferred sends, pauses and their reasons |
+| `retention.notification_days` | 0 (kept) | In-app notifications, read or unread. One still waiting to be emailed is kept until it is sent or skipped |
+| `retention.webhook_delivery_days` | 0 (kept) | Each webhook endpoint's delivery log of settled deliveries, with the payload and the response excerpt. A delivery still being retried is kept until it settles |
 
 The event logs and the three history feeds are between 1 and 3,650 days, and they are the settings a retention or privacy policy applies to, because each window is also how long the personal data in that log is held. The warmup mail window starts at 3 days and the warmup records window at 30, the least the engagement legs and the pool health bands need.
 

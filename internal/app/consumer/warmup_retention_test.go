@@ -334,11 +334,11 @@ type retentionRepo struct {
 	pruned   *time.Time
 }
 
-func (r *retentionRepo) ListWarmupMailToRetire(context.Context, int, int) ([]repository.WarmupMailToRetire, error) {
+func (r *retentionRepo) ListWarmupMailToRetire(context.Context, int, int, []uuid.UUID) ([]repository.WarmupMailToRetire, error) {
 	return r.received, nil
 }
 
-func (r *retentionRepo) ListWarmupSentCopiesToRetire(context.Context, int, int) ([]repository.WarmupMailToRetire, error) {
+func (r *retentionRepo) ListWarmupSentCopiesToRetire(context.Context, int, int, []uuid.UUID) ([]repository.WarmupMailToRetire, error) {
 	return r.sent, nil
 }
 
@@ -374,7 +374,7 @@ func TestRetireWarmupMailBatchPublishesAndRetires(t *testing.T) {
 	pub := &retentionPublisher{}
 	s := &JobsService{WarmupRepo: repo, Publisher: pub}
 
-	done, err := s.retireWarmupMailBatch(context.Background())
+	done, err := s.retireWarmupMailBatch(context.Background(), newRetireRun())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -425,5 +425,21 @@ func TestRetirementPassWaitsForAMailboxAtItsShare(t *testing.T) {
 	}
 	if !drained(batch[:repository.WarmupRetirePerMailbox-1]) {
 		t.Fatal("a short batch below every share must complete the pass")
+	}
+}
+
+// A mailbox that took its whole share leaves the pass open, so the event prune waits for its backlog.
+func TestRetireRunKeepsThePassOpenForAMailboxAtItsShare(t *testing.T) {
+	busy := uuid.New()
+	var batch []repository.WarmupMailToRetire
+	for range repository.WarmupRetirePerMailbox {
+		batch = append(batch, repository.WarmupMailToRetire{EmailAccountID: busy})
+	}
+	run := newRetireRun()
+	if !run.take(run.received, batch) {
+		t.Fatal("a short listing should end the run's batches")
+	}
+	if !run.full || !run.received[busy] {
+		t.Fatalf("the busy mailbox was not held for the next run: %+v", run)
 	}
 }

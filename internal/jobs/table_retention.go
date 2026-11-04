@@ -23,7 +23,6 @@ type TableRetentionStore interface {
 	PruneCampaignLogs(ctx context.Context, before time.Time) (int64, error)
 	PruneNotifications(ctx context.Context, before time.Time) (int64, error)
 	PruneWebhookDeliveries(ctx context.Context, before time.Time) (int64, error)
-	PruneTrackingDedupe(ctx context.Context, before time.Time) (int64, error)
 	PruneWorkerHealthSamples(ctx context.Context, before time.Time) (int64, error)
 	PruneDeliveredSendResultEffects(ctx context.Context, before time.Time) (int64, error)
 }
@@ -63,8 +62,6 @@ func (j *TableRetentionJob) Run(ctx context.Context) error {
 		{"campaign_logs", j.store.PruneCampaignLogs, windows.CampaignLogDays},
 		{"notifications", j.store.PruneNotifications, windows.NotificationDays},
 		{"webhook_deliveries", j.store.PruneWebhookDeliveries, windows.WebhookDeliveryDays},
-		// A dedupe mark only matters while the open and click logs it guards are kept.
-		{"tracking_events_processed", j.store.PruneTrackingDedupe, windows.EngagementEventDays},
 		{"worker_health_samples", j.store.PruneWorkerHealthSamples, workerHealthSampleKeepDays},
 		{"send_result_effects", j.store.PruneDeliveredSendResultEffects, sendResultEffectKeepDays},
 	}
