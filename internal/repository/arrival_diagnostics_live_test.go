@@ -100,7 +100,8 @@ func TestLiveArrivalDiagnosticsPreserveStageRetryAndKeyCalls(t *testing.T) {
 				t.Fatal(err)
 			}
 			stages := record["stages"].(map[string]any)
-			for name, want := range map[string]float64{"claim": 4, "key_lookup": 2, "decrypt": 2, "decode": 2, "new_email": 1, "bounce": 2, "complaint": 1, "checkpoint": 3, "retry": 1, "retire": 1} {
+			// One batched claim per pass; a checkpoint only where a later stage still has to run.
+			for name, want := range map[string]float64{"claim": 2, "key_lookup": 2, "decrypt": 2, "decode": 2, "new_email": 1, "bounce": 2, "complaint": 1, "checkpoint": 2, "retry": 1, "retire": 1} {
 				if stages[name].(map[string]any)["attempts"] != want {
 					t.Fatalf("%s count was not an attempt count: %v", name, stages[name])
 				}

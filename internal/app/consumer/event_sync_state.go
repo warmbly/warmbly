@@ -9,6 +9,7 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/repository"
 )
 
 // HandleSyncState persists the worker's SYNC_STATE relay and tells the
@@ -21,12 +22,7 @@ func (s *JobsService) HandleSyncState(ctx context.Context, e *models.JobEventSyn
 		return nil
 	}
 
-	prev, err := s.EmailSyncStateRepository.Get(ctx, e.EmailID)
-	if err != nil {
-		return err
-	}
-
-	recover := func(ctx context.Context) error {
+	recover := func(ctx context.Context, prev *repository.SyncStatePrior) error {
 		if e.State.LastSyncedAt != nil && e.State.Deferred == 0 && e.State.BackfillCursor.GoogleRecovery == nil &&
 			(prev == nil || prev.LastSyncedAt == nil || !models.ValidMailTransportTime(*prev.LastSyncedAt, time.Now()) || e.State.LastSyncedAt.After(*prev.LastSyncedAt)) {
 			return s.resolveTransientMailErrors(ctx, e.EmailID, e.State.LastSyncedAt, e.State.TransportGeneration)
@@ -35,11 +31,18 @@ func (s *JobsService) HandleSyncState(ctx context.Context, e *models.JobEventSyn
 	}
 
 	accepted := true
+	var prev *repository.SyncStatePrior
+	var err error
 	if e.WorkerID != nil {
-		accepted, err = s.EmailSyncStateRepository.PutFromWorker(ctx, e.UserID, e.EmailID, *e.WorkerID, e.ReportGeneration, &e.State, recover)
+		accepted, prev, err = s.EmailSyncStateRepository.PutFromWorker(ctx, e.UserID, e.EmailID, *e.WorkerID, e.ReportGeneration, &e.State, recover)
 	} else {
 		// Retained v0.6.72 reports remain supported through the rollback window.
-		err = recover(ctx)
+		stored, getErr := s.EmailSyncStateRepository.Get(ctx, e.EmailID)
+		if getErr != nil {
+			return getErr
+		}
+		prev = repository.PriorOf(stored)
+		err = recover(ctx, prev)
 		if err == nil {
 			err = s.EmailSyncStateRepository.Put(ctx, e.UserID, e.EmailID, &e.State)
 		}

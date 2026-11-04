@@ -36,18 +36,19 @@ func (s *stubSyncStateRepo) Put(_ context.Context, _, _ uuid.UUID, st *models.Sy
 	return nil
 }
 
-func (s *stubSyncStateRepo) PutFromWorker(ctx context.Context, _, _, workerID, generation uuid.UUID, st *models.SyncState, before func(context.Context) error) (bool, error) {
+func (s *stubSyncStateRepo) PutFromWorker(ctx context.Context, _, _, workerID, generation uuid.UUID, st *models.SyncState, before func(context.Context, *repository.SyncStatePrior) error) (bool, *repository.SyncStatePrior, error) {
 	s.reportWorker = workerID
 	s.reportGeneration = generation
+	prior := repository.PriorOf(s.saved)
 	if s.reportAccepted {
 		if before != nil {
-			if err := before(ctx); err != nil {
-				return false, err
+			if err := before(ctx, prior); err != nil {
+				return false, nil, err
 			}
 		}
 		s.put = st
 	}
-	return s.reportAccepted, nil
+	return s.reportAccepted, prior, nil
 }
 
 type syncStateBus struct {
