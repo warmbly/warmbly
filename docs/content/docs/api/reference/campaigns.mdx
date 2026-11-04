@@ -530,7 +530,7 @@ Add a variant to the campaign (or to one step via `step_id`). **Scope** `WRITE_C
 }
 ```
 
-A `subject`, `body_html` or `body_plain` that would not render as written answers `400` with `code: "invalid_template"`, as for [a step](#update-a-sequence). The same check applies to an update.
+A `subject`, `body_html` or `body_plain` that would not render as written answers `400` with `code: "invalid_template"`, as for [a step](#update-a-sequence). The same check applies to an update, against the copy the variant will hold once the update lands, so re-activating a paused variant checks its stored copy. A step's control arm (`is_control` with a `step_id`) sends the step's copy, so its own is not checked.
 
 ### Response
 

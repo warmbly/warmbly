@@ -380,13 +380,13 @@ func (s *service) CreateABVariant(ctx context.Context, campaignID uuid.UUID, req
 }
 
 func (s *service) UpdateABVariant(ctx context.Context, campaignID, variantID uuid.UUID, req *models.UpdateCampaignABVariantRequest) (*models.CampaignABVariant, *errx.Error) {
-	if req != nil && (req.Subject != nil || req.BodyHTML != nil || req.BodyPlain != nil || req.IsControl != nil) {
-		sendsOwn, xerr := s.variantSendsOwnCopy(ctx, campaignID, variantID, req.IsControl)
+	if req != nil && (req.Subject != nil || req.BodyHTML != nil || req.BodyPlain != nil || req.IsControl != nil || req.IsActive != nil) {
+		merged, xerr := s.mergedVariant(ctx, campaignID, variantID, req)
 		if xerr != nil {
 			return nil, xerr
 		}
-		if sendsOwn {
-			if err := checkVariantCopy(deref(req.Subject), deref(req.BodyHTML), deref(req.BodyPlain)); err != nil {
+		if models.VariantSendsOwnCopy(merged.SequenceID, merged.IsControl) {
+			if err := checkVariantCopy(merged.Subject, merged.BodyHTML, merged.BodyPlain); err != nil {
 				return nil, errx.InvalidTemplate(err)
 			}
 		}
@@ -407,23 +407,32 @@ func checkVariantCopy(subject, bodyHTML, bodyPlain string) error {
 	)
 }
 
-// variantSendsOwnCopy reads whether the variant, with isControl applied, sends its own copy.
-// A variant that is not found is checked, and the update reports the miss.
-func (s *service) variantSendsOwnCopy(ctx context.Context, campaignID, variantID uuid.UUID, isControl *bool) (bool, *errx.Error) {
+// mergedVariant is the stored variant with req applied, the copy it would send
+// once the update lands; a variant not found is empty, and the update reports the miss.
+func (s *service) mergedVariant(ctx context.Context, campaignID, variantID uuid.UUID, req *models.UpdateCampaignABVariantRequest) (models.CampaignABVariant, *errx.Error) {
 	variants, err := s.repo.ListABVariants(ctx, campaignID)
 	if err != nil {
-		return false, toErrx(err)
+		return models.CampaignABVariant{}, toErrx(err)
 	}
-	for _, v := range variants {
-		if v.ID == variantID {
-			control := v.IsControl
-			if isControl != nil {
-				control = *isControl
-			}
-			return models.VariantSendsOwnCopy(v.SequenceID, control), nil
+	var v models.CampaignABVariant
+	for _, row := range variants {
+		if row.ID == variantID {
+			v = row
+			break
 		}
 	}
-	return true, nil
+	for _, f := range []struct {
+		dst *string
+		src *string
+	}{{&v.Subject, req.Subject}, {&v.BodyHTML, req.BodyHTML}, {&v.BodyPlain, req.BodyPlain}} {
+		if f.src != nil {
+			*f.dst = *f.src
+		}
+	}
+	if req.IsControl != nil {
+		v.IsControl = *req.IsControl
+	}
+	return v, nil
 }
 
 func deref(s *string) string {

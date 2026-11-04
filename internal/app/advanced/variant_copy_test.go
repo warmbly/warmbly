@@ -62,6 +62,17 @@ func TestVariantCopyIsCheckedUnlessItIsAStepControlArm(t *testing.T) {
 	if _, xerr := svc.UpdateABVariant(ctx, campaign, id, &models.UpdateCampaignABVariantRequest{BodyPlain: &broken, IsControl: &off}); xerr == nil {
 		t.Fatal("turning the control off makes it send its copy, so the copy is checked")
 	}
+	// Re-activating a paused variant checks the copy it stores, which it would start sending.
+	paused := uuid.New()
+	repo.rows = append(repo.rows, models.CampaignABVariant{ID: paused, BodyHTML: "<p>" + broken + "</p>"})
+	on := true
+	if _, xerr := svc.UpdateABVariant(ctx, campaign, paused, &models.UpdateCampaignABVariantRequest{IsActive: &on}); xerr == nil || xerr.Identifier != "invalid_template" {
+		t.Fatalf("re-activating a variant with broken stored copy: got %v", xerr)
+	}
+	weight := 70
+	if _, xerr := svc.UpdateABVariant(ctx, campaign, paused, &models.UpdateCampaignABVariantRequest{Weight: &weight}); xerr != nil {
+		t.Fatalf("a weight change does not touch copy: %v", xerr)
+	}
 	plain := "{{company_name}}"
 	if _, xerr := svc.UpdateABVariant(ctx, campaign, id, &models.UpdateCampaignABVariantRequest{BodyPlain: &plain, IsControl: &off}); xerr != nil || *repo.updated.BodyPlain != "{{.Company}}" {
 		t.Fatalf("a bare alias should be stored canonical on update: %v", xerr)

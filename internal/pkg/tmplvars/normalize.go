@@ -26,6 +26,73 @@ var FormLinkMarker = regexp.MustCompile(`\{\{\s*form_link:([a-z0-9]{1,64})\s*\}\
 // a valid selector and is rewritten to `(index . "key")`.
 var spacedFieldRefAt = regexp.MustCompile(`^\.[A-Za-z0-9_]+(?:[ \-]+[A-Za-z0-9_]+)+`)
 
+// keySegment splits a spaced reference into its separators and words.
+var keySegment = regexp.MustCompile(`([ \-]+)([A-Za-z0-9_]+)`)
+
+// keywords are the words text/template reads inside an action.
+var keywords = map[string]bool{
+	"if": true, "else": true, "end": true, "range": true, "with": true, "template": true, "block": true,
+	"define": true, "break": true, "continue": true, "nil": true, "true": true, "false": true,
+}
+
+// reserved is a word that is an operand on its own: a built-in alias, a function or a keyword.
+func reserved(word string) bool {
+	_, builtin := topNames[word]
+	return builtin || isFunc(word) || keywords[word]
+}
+
+// spacedKeyAt is the spaced or dashed custom-field reference starting at i, or
+// "". As an argument, a space before a reserved word ends the key, so
+// {{and .Company first_name}} keeps two operands; at the head of a command a
+// field can take no arguments, so the whole run is the key.
+func spacedKeyAt(src string, from, i, to int) string {
+	m := spacedFieldRefAt.FindString(src[i:to])
+	if m == "" || commandHead(src, from, i) {
+		return m
+	}
+	first := strings.IndexAny(m, " -")
+	end := first
+	for _, seg := range keySegment.FindAllStringSubmatchIndex(m[first:], -1) {
+		sep, word := m[first+seg[2]:first+seg[3]], m[first+seg[4]:first+seg[5]]
+		if strings.Contains(sep, " ") && reserved(word) {
+			break
+		}
+		end = first + seg[1]
+	}
+	if end == first {
+		return ""
+	}
+	return m[:end]
+}
+
+// commandHead reports whether the operand at i starts a command: it follows
+// the action's opening, a parenthesis, a pipe, a declaration or a keyword.
+func commandHead(src string, from, i int) bool {
+	j := i
+	for j > from && strings.ContainsRune(" \t\r\n", rune(src[j-1])) {
+		j--
+	}
+	if j <= from+2 {
+		return true // straight after {{
+	}
+	switch src[j-1] {
+	case '(', '|', '=':
+		return true
+	case '-':
+		return j-1 == from+2 // {{- trim marker
+	}
+	k := j
+	for k > from && (isWordByte(src[k-1])) {
+		k--
+	}
+	word := src[k:j]
+	return word == "if" || word == "with" || word == "range" || word == "else"
+}
+
+func isWordByte(c byte) bool {
+	return c == '_' || c >= '0' && c <= '9' || c|0x20 >= 'a' && c|0x20 <= 'z'
+}
+
 var htmlComment = regexp.MustCompile(`(?s)<!--.*?-->`)
 
 // builtinFuncs are text/template's own functions, which a bare name may call.
@@ -40,24 +107,14 @@ func isFunc(name string) bool {
 	return ok || builtinFuncs[name]
 }
 
-// mode is what the walker's rewrites are for.
-type mode int
-
-const (
-	// forRender keeps a bare alias's spelling, so a custom field of that name wins.
-	forRender mode = iota
-	// forStore writes a bare alias as its canonical field, which every release renders.
-	forStore
-)
-
 // Normalize rewrites the accepted spellings of campaign copy into the form the
 // engine compiles: spaced and dashed custom-field keys become index calls, a
-// bare built-in name ({{first_name}}) becomes a field of the root, and Sender
+// bare built-in alias ({{first_name}}) becomes its canonical field, and Sender
 // fields take their canonical names. Text outside actions and string literals
 // are never touched. The error names a reference that can never resolve; the
 // returned source is usable either way, so a renderer may ignore it.
 func Normalize(src string) (string, error) {
-	w, rewritten, _ := analyze(src, forRender)
+	w, rewritten, _ := analyze(src)
 	if w == nil {
 		return rewritten, nil // the compiler reports a syntax error itself
 	}
@@ -69,7 +126,7 @@ func Normalize(src string) (string, error) {
 // their canonical names, so the previous release renders it too. Dotted aliases
 // and everything outside actions are kept as written.
 func Canonicalize(src string) string {
-	w, _, spans := analyze(src, forStore)
+	w, _, spans := analyze(src)
 	if w == nil || w.err != nil || len(w.edits) == 0 {
 		return src
 	}
@@ -95,7 +152,7 @@ func CanonicalizeAll(fields ...*string) {
 
 // References lists the canonical built-in fields src reads from the contact.
 func References(src string) map[string]bool {
-	w, _, _ := analyze(src, forRender)
+	w, _, _ := analyze(src)
 	if w == nil {
 		return nil
 	}
@@ -104,7 +161,7 @@ func References(src string) map[string]bool {
 
 // analyze parses src with spaced references rewritten and form-link markers
 // blanked, and walks it. A nil walker means src does not parse.
-func analyze(src string, m mode) (*walker, string, []span) {
+func analyze(src string) (*walker, string, []span) {
 	if !strings.Contains(src, "{{") {
 		return nil, src, nil
 	}
@@ -115,7 +172,7 @@ func analyze(src string, m mode) (*walker, string, []span) {
 	if _, err := tree.Parse(maskMarkers(rewritten), "", "", trees); err != nil {
 		return nil, rewritten, spans
 	}
-	w := &walker{src: rewritten, mode: m, vars: map[string]scope{"$": scopeRoot}, refs: map[string]bool{}}
+	w := &walker{src: rewritten, vars: map[string]scope{"$": scopeRoot}, refs: map[string]bool{}}
 	names := make([]string, 0, len(trees))
 	for name := range trees {
 		names = append(names, name)
@@ -159,8 +216,8 @@ func Check(src string) error {
 	return nil
 }
 
-// CheckHTML reports an HTML body the HTML renderer refuses although it parses:
-// a predefined escaper (html, urlquery) placed before a pipe.
+// CheckHTML reports an HTML body the HTML renderer refuses although it parses,
+// such as branches ending in different contexts or an escaper before a pipe.
 func CheckHTML(src string) error {
 	if !strings.Contains(src, "{{") {
 		return nil
@@ -168,7 +225,7 @@ func CheckHTML(src string) error {
 	// Comments are shielded as the renderer shields them: a comment holding an action renders as text.
 	src = htmlComment.ReplaceAllStringFunc(src, func(c string) string {
 		if strings.Contains(c, "{{") {
-			return "    " + c[4:len(c)-3] + "   "
+			return "    " + strings.ReplaceAll(c[4:len(c)-3], "<![", "   ") + "   "
 		}
 		return blank(c)
 	})
@@ -182,7 +239,7 @@ func CheckHTML(src string) error {
 	}
 	_, err = tmplfuncs.Execute(t, map[string]any{})
 	var he *htmltemplate.Error
-	if errors.As(err, &he) && he.ErrorCode == htmltemplate.ErrPredefinedEscaper {
+	if errors.As(err, &he) {
 		return fmt.Errorf("line %d: %s", he.Line, he.Description)
 	}
 	return nil
@@ -261,7 +318,6 @@ const (
 
 type walker struct {
 	src      string
-	mode     mode
 	edits    []edit
 	err      error
 	vars     map[string]scope
@@ -400,6 +456,7 @@ func (w *walker) arg(n parse.Node, calls bool, dot scope) {
 			w.fields(int(inner.Pos), text, head, scopeRoot, append([]string{inner.Ident}, x.Field...))
 		case *parse.PipeNode:
 			w.pipe(inner, dot, false)
+			w.fields(int(x.Pos), "."+strings.Join(x.Field, "."), "", w.valueOf(inner, dot), x.Field)
 		}
 	}
 }
@@ -426,11 +483,8 @@ func (w *walker) identifier(x *parse.IdentifierNode, calls bool, dot scope) {
 	if dot == scopeRoot {
 		prefix = "."
 	}
-	name := x.Ident // the alias spelling, so a custom field of that name still wins
-	if w.mode == forStore {
-		name = canonical
-	}
-	w.edits = append(w.edits, edit{pos, pos + len(x.Ident), prefix + name})
+	// A bare alias is the built-in field; only a dotted alias defers to a custom field.
+	w.edits = append(w.edits, edit{pos, pos + len(x.Ident), prefix + canonical})
 }
 
 // fields checks a selector chain on a value held in scope and canonicalises the
@@ -539,7 +593,7 @@ func rewriteSpacedInAction(b *strings.Builder, src string, from, to int, spans *
 		case c == '.':
 			// A nested struct selector must not consume the following function argument.
 			fieldStart := i == from || strings.ContainsRune("{( \t\r\n", rune(src[i-1]))
-			if m := spacedFieldRefAt.FindString(src[i:to]); fieldStart && m != "" {
+			if m := spacedKeyAt(src, from, i, to); fieldStart && m != "" {
 				repl := `(index . "` + m[1:] + `")`
 				*spans = append(*spans, span{i, i + len(m), b.Len(), b.Len() + len(repl)})
 				b.WriteString(repl)

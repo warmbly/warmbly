@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/tmplvars"
 )
 
 func TestCompiledTemplateCachesRawSource(t *testing.T) {
@@ -271,8 +272,13 @@ func TestRenderTemplate_AliasSpellings(t *testing.T) {
 
 func TestRenderTemplate_CustomFieldBeatsAlias(t *testing.T) {
 	contact := models.Contact{FirstName: "Sam", CustomFields: map[string]string{"first_name": "Samantha"}}
-	if got := RenderTemplate("{{first_name}} {{.first_name}} {{firstName}} {{.FirstName}}", contact); got != "Samantha Samantha Sam Sam" {
+	// A dotted alias defers to a custom field; a bare one is the built-in field, as it is once saved.
+	tmpl := "{{first_name}} {{.first_name}} {{firstName}} {{.FirstName}}"
+	if got := RenderTemplate(tmpl, contact); got != "Sam Samantha Sam Sam" {
 		t.Fatalf("got %q", got)
+	}
+	if preview := PreviewTemplates(tmpl, "", "", contact); preview.Subject != RenderTemplate(tmplvars.Canonicalize(tmpl), contact) {
+		t.Fatalf("preview %q differs from the saved copy's render", preview.Subject)
 	}
 }
 

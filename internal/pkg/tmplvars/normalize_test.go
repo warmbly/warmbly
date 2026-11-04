@@ -8,14 +8,14 @@ import (
 func TestNormalize(t *testing.T) {
 	cases := []struct{ name, in, want string }{
 		{"canonical untouched", "Hi {{.FirstName}}", "Hi {{.FirstName}}"},
-		{"bare snake", "Hi {{first_name}}", "Hi {{.first_name}}"},
-		{"bare camel", "Hi {{ firstName }}", "Hi {{ .firstName }}"},
-		{"bare lowercase", "{{company}} / {{company_name}}", "{{.company}} / {{.company_name}}"},
+		{"bare snake", "Hi {{first_name}}", "Hi {{.FirstName}}"},
+		{"bare camel", "Hi {{ firstName }}", "Hi {{ .FirstName }}"},
+		{"bare lowercase", "{{company}} / {{company_name}}", "{{.Company}} / {{.Company}}"},
 		{"dotted alias is a field already", "{{.first_name}}", "{{.first_name}}"},
-		{"bare in if", "{{if first_name}}x{{end}}", "{{if .first_name}}x{{end}}"},
-		{"bare in pipe", `{{first_name | default "there"}}`, `{{.first_name | default "there"}}`},
-		{"bare as argument", `{{default "there" first_name}}`, `{{default "there" .first_name}}`},
-		{"bare in eq", `{{if eq company "Acme"}}y{{end}}`, `{{if eq .company "Acme"}}y{{end}}`},
+		{"bare in if", "{{if first_name}}x{{end}}", "{{if .FirstName}}x{{end}}"},
+		{"bare in pipe", `{{first_name | default "there"}}`, `{{.FirstName | default "there"}}`},
+		{"bare as argument", `{{default "there" first_name}}`, `{{default "there" .FirstName}}`},
+		{"bare in eq", `{{if eq company "Acme"}}y{{end}}`, `{{if eq .Company "Acme"}}y{{end}}`},
 		{"literal braces outside actions", "Use first_name or {first_name} in text", "Use first_name or {first_name} in text"},
 		{"string literal untouched", `{{default "first_name" .X}}`, `{{default "first_name" .X}}`},
 		{"spaced custom field", "{{.job title}}", `{{(index . "job title")}}`},
@@ -23,14 +23,20 @@ func TestNormalize(t *testing.T) {
 		{"sender bare", "{{sender.first_name}}", "{{.Sender.FirstName}}"},
 		{"sender variable", "{{$.sender.signature_html}}", "{{$.Sender.SignatureHTML}}"},
 		{"function untouched", "{{upper .FirstName}}", "{{upper .FirstName}}"},
-		{"unsubscribe alias", "{{unsubscribe_link}}", "{{.unsubscribe_link}}"},
+		{"unsubscribe alias", "{{unsubscribe_link}}", "{{.UnsubscribeLink}}"},
 		{"sender through a variable", "{{$s := .Sender}}{{$s.first_name}}", "{{$s := .Sender}}{{$s.FirstName}}"},
 		{"sender through with", "{{with .sender}}{{.signature_html}}{{end}}", "{{with .sender}}{{.SignatureHTML}}{{end}}"},
 		{"sender through root variable", "{{$r := .}}{{$r.Sender.email}}", "{{$r := .}}{{$r.Sender.Email}}"},
 		{"range element untouched", "{{range .Sender.Tags}}{{.}}{{end}}", "{{range .Sender.Tags}}{{.}}{{end}}"},
 		{"range variables untouched", "{{range $k, $v := .}}{{$k}}={{$v}}{{end}}", "{{range $k, $v := .}}{{$k}}={{$v}}{{end}}"},
-		{"bare inside with uses the root", "{{with .Sender}}{{first_name}}{{end}}", "{{with .Sender}}{{$.first_name}}{{end}}"},
+		{"bare inside with uses the root", "{{with .Sender}}{{first_name}}{{end}}", "{{with .Sender}}{{$.FirstName}}{{end}}"},
 		{"sender through parentheses", "{{with (.Sender)}}{{.first_name}}{{end}}", "{{with (.Sender)}}{{.FirstName}}{{end}}"},
+		{"selector after parenthesised sender", "{{(.Sender).first_name}}", "{{(.Sender).FirstName}}"},
+		{"spaced key stops before an alias operand", "{{if and .Company first_name}}y{{end}}", "{{if and .Company .FirstName}}y{{end}}"},
+		{"spaced key as an argument", `{{eq .job role "x"}}`, `{{eq (index . "job role") "x"}}`},
+		{"spaced key stops before a function word", `{{and .job title}}`, `{{and .job title}}`},
+		{"spaced key at the head keeps every word", "{{.Company Email}} {{if .Work Phone}}y{{end}}", `{{(index . "Company Email")}} {{if (index . "Work Phone")}}y{{end}}`},
+		{"dashed key keeps an alias word", "{{and .X .job-email}}", `{{and .X (index . "job-email")}}`},
 	}
 	for _, tc := range cases {
 		got, err := Normalize(tc.in)
@@ -55,6 +61,7 @@ func TestCheckRefusesWhatCannotRender(t *testing.T) {
 		{"{{with .Sender}}{{.Bogus}}{{end}}", `unknown sender field "Bogus"`},
 		{"{{range $k, $v := .}}{{$v.x}}{{end}}", "fields of $v cannot be checked"},
 		{"{{.FirstName.Bogus}}", `field FirstName has no field "Bogus"`},
+		{"{{(.Sender).Bogus}}", `unknown sender field "Bogus"`},
 		{"{{first_name.Bogus}}", `field first_name has no field "Bogus"`},
 		{`{{with .Sender | default .Sender}}{{.first_name}}{{end}}`, "fields of this value cannot be checked"},
 	}
@@ -144,8 +151,23 @@ func TestCanonicalizeStoresBareAliasesInCanonicalForm(t *testing.T) {
 }
 
 func TestCheckHTMLRefusesEscaperBeforePipe(t *testing.T) {
-	if err := CheckHTML(`<p>{{html .FirstName | printf "%s"}}</p>`); err == nil {
-		t.Error("an html escaper before a pipe should be refused in an HTML body")
+	for _, bad := range []string{
+		`<p>{{html .FirstName | printf "%s"}}</p>`,
+		`{{if .Company}}<a href="{{else}}<p>{{end}}x</p>`,
+		`<a {{if .X}}href="{{end}}x">`,
+	} {
+		if err := CheckHTML(bad); err == nil {
+			t.Errorf("%q: the HTML renderer refuses it, so the check should too", bad)
+		}
+	}
+	for _, ok := range []string{
+		`<!--[if mso]><table width="{{.width}}"><![endif]--><p>{{if .Company}}At <b>{{.Company}}</b>{{else}}Hi{{end}}</p>`,
+		`<a href="https://example.com/?n={{.FirstName}}">{{.Sender.Name}}</a><style>p{color:{{.color}}}</style>`,
+		`<p>Hi {{.FirstName | default "there"}},</p>{{.Sender.SignatureHTML}}`,
+	} {
+		if err := CheckHTML(ok); err != nil {
+			t.Errorf("%q: unexpected error %v", ok, err)
+		}
 	}
 	for _, ok := range []string{"", "<p>Hi {{.FirstName}}</p>", `<a href="{{.website}}">x</a>`, "<!-- {{.FirstName}} --><p>{{.missing}}</p>", `<p>{{.FirstName | html}}</p>`} {
 		if err := CheckHTML(ok); err != nil {
