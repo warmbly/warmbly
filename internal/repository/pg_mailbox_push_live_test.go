@@ -117,7 +117,9 @@ func TestLiveWakeTargetsSkipWorkersThatCannotActOnAWake(t *testing.T) {
 		t.Fatalf("targets %+v, want only the mailbox on the wake-capable worker", targets)
 	}
 
-	if got, _ := repo.GmailWakeTargets(ctx, f.gmailAddress); len(got) != 0 {
+	if got, err := repo.GmailWakeTargets(ctx, f.gmailAddress); err != nil {
+		t.Fatal(err)
+	} else if len(got) != 0 {
 		t.Fatalf("a Gmail mailbox with no watch was woken: %+v", got)
 	}
 	if err := repo.PutPushState(ctx, f.user, f.gmail, &models.MailboxPushState{Provider: models.MailboxPushGmail, ExpiresAt: time.Now().Add(time.Hour)}); err != nil {

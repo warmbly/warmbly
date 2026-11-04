@@ -43,6 +43,8 @@ type pushChannel struct {
 	renew   atomic.Bool
 	// failing keeps a refused channel to one warning until it opens again.
 	failing atomic.Bool
+	// unsent is set while the control plane has not taken the current state.
+	unsent atomic.Bool
 	// imapIdle is set while the IMAP watcher holds INBOX in IDLE.
 	imapIdle atomic.Bool
 	imapCred *models.Service
@@ -133,18 +135,22 @@ func (w *WMail) maintainPush(ctx context.Context) {
 			event = log.Warn()
 		}
 		event.Err(err).Str("email_id", w.ID.String()).Msg("mailbox push channel not opened; polling continues")
-		return
+	} else {
+		w.push.failing.Store(false)
 	}
-	w.push.failing.Store(false)
-	if samePush(state, next) {
+	// A failed open still reports a channel it closed on the way, and a lost report is sent again next pass.
+	if samePush(state, next) && !w.push.unsent.Load() {
 		return
 	}
 	w.push.mu.Lock()
 	w.push.state = next
 	w.push.mu.Unlock()
 	if err := w.onEvent(models.JobEventTypePushState, &models.JobEventPushState{UserID: w.UserID, EmailID: w.ID, State: next}); err != nil {
+		w.push.unsent.Store(true)
 		log.Debug().Err(err).Str("email_id", w.ID.String()).Msg("could not record mailbox push channel")
+		return
 	}
+	w.push.unsent.Store(false)
 }
 
 func samePush(a, b *models.MailboxPushState) bool {
@@ -179,8 +185,9 @@ func (w *WMail) maintainGraphPush(ctx context.Context, want *models.AddWorkerEma
 		if !msgraph.SubscriptionGone(err) {
 			return state, err
 		}
-	} else if state != nil && state.SubscriptionID != "" {
-		_ = client.DeleteSubscription(ctx, state.SubscriptionID)
+		state = nil
+	} else if state != nil && state.SubscriptionID != "" && client.DeleteSubscription(ctx, state.SubscriptionID) == nil {
+		state = nil
 	}
 	sub, err := client.CreateSubscription(ctx, want.GraphNotificationURL, want.GraphClientState, now)
 	if msgraph.SubscriptionConflict(err) {

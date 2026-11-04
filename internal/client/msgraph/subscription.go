@@ -2,6 +2,7 @@ package msgraph
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -67,16 +68,35 @@ func (c *Client) DeleteSubscription(ctx context.Context, id string) error {
 	return err
 }
 
+// subscriptionListMaxPages bounds how many continuations ListSubscriptions follows.
+const subscriptionListMaxPages = 20
+
 // ListSubscriptions returns the subscriptions this app holds for the signed-in mailbox.
 func (c *Client) ListSubscriptions(ctx context.Context) ([]Subscription, error) {
-	var out struct {
-		Value []Subscription `json:"value"`
+	var subs []Subscription
+	next := graphBase + "/subscriptions"
+	for range subscriptionListMaxPages {
+		var page struct {
+			Value    []Subscription  `json:"value"`
+			NextLink json.RawMessage `json:"@odata.nextLink"`
+		}
+		if err := c.doJSON(ctx, http.MethodGet, next, nil, &page); err != nil {
+			return nil, err
+		}
+		subs = append(subs, page.Value...)
+		if page.NextLink == nil {
+			return subs, nil
+		}
+		link, ok := graphContinuation(page.NextLink)
+		if !ok {
+			return nil, errSubscriptionListIncomplete
+		}
+		next = link
 	}
-	if err := c.doJSON(ctx, http.MethodGet, graphBase+"/subscriptions", nil, &out); err != nil {
-		return nil, err
-	}
-	return out.Value, nil
+	return nil, errSubscriptionListIncomplete
 }
+
+var errSubscriptionListIncomplete = errors.New("msgraph: subscription list continuation was not followed to its end")
 
 // SubscriptionGone reports a subscription Graph no longer has.
 func SubscriptionGone(err error) bool {

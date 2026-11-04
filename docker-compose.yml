@@ -559,6 +559,8 @@ services:
       BOX_GOOGLE_CLIENT_SECRET: ${BOX_GOOGLE_CLIENT_SECRET:-}
       BOX_OUTLOOK_CLIENT_ID: ${BOX_OUTLOOK_CLIENT_ID:-}
       BOX_OUTLOOK_CLIENT_SECRET: ${BOX_OUTLOOK_CLIENT_SECRET:-}
+      # A worker holds no cloud credential; only the consumer reads this one.
+      GOOGLE_APPLICATION_CREDENTIALS_JSON: ""
     volumes:
       - ${WARMBLY_BLOBS:-blobs}:/data/blobs
       - ${WARMBLY_WORKER_STATE:-worker_state}:/data/state

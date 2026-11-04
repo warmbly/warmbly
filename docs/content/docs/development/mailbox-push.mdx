@@ -11,7 +11,7 @@ The worker that holds a mailbox syncs it on a timer. When the mailbox's provider
 |---|---|---|---|
 | IMAP and SMTP | `IDLE` on INBOX, on a second connection | every 3 minutes, for the other folders | on; `IMAP_IDLE=false` turns it off |
 | Microsoft 365 and Outlook | Microsoft Graph change notifications | `SYNC_PUSH_FALLBACK_INTERVAL` (10 minutes) | off until `GRAPH_PUSH=true` and a public HTTPS backend URL |
-| Gmail and Google Workspace | Gmail `users.watch` into Cloud Pub/Sub | `SYNC_PUSH_FALLBACK_INTERVAL` (10 minutes) | off until `GMAIL_PUSH_TOPIC` and either `GMAIL_PUSH_SERVICE_ACCOUNT` (push) or `GMAIL_PUSH_SUBSCRIPTION` (pull) are set |
+| Gmail and Google Workspace | Gmail `users.watch` into Cloud Pub/Sub | `SYNC_PUSH_FALLBACK_INTERVAL` (10 minutes) | off until `GMAIL_PUSH_TOPIC` is set on the backend |
 
 A mailbox without a live signal is polled every minute, as before. That covers an IMAP server without `IDLE`, a Gmail or Outlook mailbox on an instance that has not configured push, and any mailbox whose channel the provider refused.
 
@@ -75,13 +75,15 @@ Pub/Sub delivers notifications one of two ways:
 - **Push to the backend** (use this when the backend has a public HTTPS URL). Pub/Sub POSTs each notification to `<BACKEND_PUBLIC_URL>/api/v1/mailbox-push/gmail`. Every request carries a token Google signs for a service account you choose; the backend accepts it only when Google's signature checks out, the audience is that URL and the sender is `GMAIL_PUSH_SERVICE_ACCOUNT`. It answers 204 once the worker is woken and 503 when it cannot be, and Pub/Sub retries with backoff until it gets a 2xx.
 - **Pull from the consumer** (for an instance Pub/Sub cannot reach). The consumer holds a streaming connection to a pull subscription and reads notifications from it.
 
-Both end the same way: the mailbox's worker is sent `SYNC_WAKE` and runs its usual Gmail sync. Only one of the two should be set up for a topic.
+Both end the same way: the mailbox's worker is sent `SYNC_WAKE` and runs its usual Gmail sync. Only one of the two should be set up for a topic. `GMAIL_PUSH_TOPIC` alone turns the watch on and moves Gmail mailboxes to the 10-minute poll, and the backend cannot tell whether anything reads the topic. Set it only once a push subscription with `GMAIL_PUSH_SERVICE_ACCOUNT` or a pull subscription with `GMAIL_PUSH_SUBSCRIPTION` is in place, or Gmail mail can take up to 10 minutes to appear.
+
+Gmail names a mailbox only by its address, so a notification reaches a mailbox once its channel is stored. When the consumer stores a Gmail channel it wakes that mailbox once, so a change that landed while the watch was opening is not left for the poll.
 
 Set up, once per instance, in the Google Cloud project that holds the Gmail OAuth client (`BOX_GOOGLE_CLIENT_ID`). Gmail only accepts a topic in the project making the watch call, so a [whole-domain grant's](/development/whole-domain-connect/) delegation service account must live in the same project:
 
 1. Under **APIs & Services > Library**, enable the **Cloud Pub/Sub API**.
 2. Under **Pub/Sub > Topics**, create a topic, for example `gmail-push`. Its full name is `projects/<project>/topics/gmail-push`.
-3. On the topic's **Permissions**, grant the **Pub/Sub Publisher** role to `[EMAIL]`, Gmail's push service account. An organization policy that restricts sharing to your own domain (**Domain restricted sharing**) refuses this grant; ask an Organization Policy Administrator for an exception on this project.
+3. On the topic's **Permissions**, grant the **Pub/Sub Publisher** role to `gmail-api-push@system.gserviceaccount.com`, Gmail's push service account. An organization policy that restricts sharing to your own domain (**Domain restricted sharing**) refuses this grant; ask an Organization Policy Administrator for an exception on this project.
 4. Create the subscription:
    - **Push:** create a service account for signing, for example `gmail-push-signer`, and a **push** subscription on the topic with endpoint `<BACKEND_PUBLIC_URL>/api/v1/mailbox-push/gmail`, **Enable authentication** on, that service account, and the audience left empty (it defaults to the endpoint). The Pub/Sub service agent needs **Service Account Token Creator** on that account, which the console offers to grant.
    - **Pull:** create a **pull** subscription, for example `warmbly-consumer`, and give the identity the consumer runs as the **Pub/Sub Subscriber** role on it. That is either a service account whose JSON key you pass as `GOOGLE_APPLICATION_CREDENTIALS_JSON`, or the Application Default Credentials of the machine the consumer runs on.
@@ -132,7 +134,7 @@ Migration `000341` adds `fleet_nodes.sync_wake_protocol` (default `0`) and the `
 | Outlook mail still takes about a minute | Check that `GRAPH_PUSH=true` and that `BACKEND_PUBLIC_URL` (or `API_PUBLIC_URL`) is an `https://` URL. Plain `http` leaves push off. From outside your network, `curl -X POST '<url>/api/v1/mailbox-push/graph/x?validationToken=ok'` must answer `ok`; Microsoft sends the same request when it creates a subscription |
 | Graph subscriptions are never created | Microsoft cannot reach the URL, or the proxy in front of the backend does not forward `/api/v1/mailbox-push/`. Workers retry every 30 minutes and log the refusal at debug level |
 | Gmail watch fails with `Invalid topicName` | The topic is in a different project from the OAuth client or delegation service account making the call. Create it in that project |
-| Gmail watch fails with a permission error | Gmail's push service account `[EMAIL]` lacks **Pub/Sub Publisher** on the topic, often because domain restricted sharing refused the grant |
+| Gmail watch fails with a permission error | Gmail's push service account `gmail-api-push@system.gserviceaccount.com` lacks **Pub/Sub Publisher** on the topic, often because domain restricted sharing refused the grant |
 | Pub/Sub shows push deliveries failing with `401` | The subscription signs with a different service account than `GMAIL_PUSH_SERVICE_ACCOUNT`, authentication is off, or its audience was set to something other than the endpoint URL |
 | Pub/Sub shows push deliveries failing with `404` | `GMAIL_PUSH_SERVICE_ACCOUNT` is unset on the backend, or `BACKEND_PUBLIC_URL` is not `https` |
 | Consumer logs `Gmail push subscriber stopped` | `GMAIL_PUSH_SUBSCRIPTION` is not `projects/<project>/subscriptions/<id>`, the subscription does not exist, or the consumer's identity lacks **Pub/Sub Subscriber** on it |

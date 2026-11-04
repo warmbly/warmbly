@@ -402,7 +402,8 @@ func (p *publisher) PublishSyncWake(ctx context.Context, workerID uuid.UUID, wak
 		Type: models.WorkerEventTypeSyncWake,
 		Body: wake,
 	}
-	return p.publish(kafka.GetWorkerTopic(workerID.String()), wake.EmailID.String(), workerEvent)
+	// The caller's deadline holds here: a wake answers a provider that stops waiting within seconds.
+	return p.publishCtx(ctx, kafka.GetWorkerTopic(workerID.String()), wake.EmailID.String(), workerEvent)
 }
 
 // PublishEmailValidation publishes a credential-validation request to the worker.
@@ -437,6 +438,10 @@ func (p *publisher) reportPublishFailure(topic string, err error) {
 
 // publish serializes (via codec) and publishes (via bus) an event.
 func (p *publisher) publish(topic, key string, event interface{}) error {
+	return p.publishCtx(context.Background(), topic, key, event)
+}
+
+func (p *publisher) publishCtx(ctx context.Context, topic, key string, event interface{}) error {
 	if p.bus == nil {
 		// Bus not configured, skip publishing.
 		return nil
@@ -447,15 +452,14 @@ func (p *publisher) publish(topic, key string, event interface{}) error {
 		return fmt.Errorf("codec not configured")
 	}
 
-	ctx := context.Background()
 	data, err := p.codec.Serialize(ctx, topic, event)
 	if err != nil {
 		errs.CaptureException(fmt.Errorf("failed to serialize event: %w", err))
 		return err
 	}
 	if err := p.bus.Publish(ctx, topic, key, data); err != nil {
-		// A bus closed under us is shutdown, not a fault worth an issue.
-		if !errors.Is(err, eventbus.ErrBusClosed) {
+		// A bus closed under us is shutdown, and a caller's expired deadline is the caller's; neither is worth an issue.
+		if !errors.Is(err, eventbus.ErrBusClosed) && ctx.Err() == nil {
 			p.reportPublishFailure(topic, err)
 		}
 		return err

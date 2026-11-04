@@ -62,6 +62,11 @@ func (w *WMail) waitForPass(ctx context.Context, delay time.Duration, wakeable b
 	case <-ctx.Done():
 		return false
 	case <-timer.C:
+		// The pass about to run covers any wake that queued during the wait.
+		select {
+		case <-w.wake:
+		default:
+		}
 		return true
 	case <-wake:
 		// Let the rest of a burst land so one pass covers it.

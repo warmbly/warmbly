@@ -27,6 +27,9 @@ func TestWakeRunsTheNextPassEarlyOnlyAfterACleanPass(t *testing.T) {
 	if time.Since(started) < 50*time.Millisecond {
 		t.Fatal("a wake cut short the backoff after a failed pass")
 	}
+	if len(w.wake) != 0 {
+		t.Fatal("a wake the timed pass covers was left for another pass")
+	}
 }
 
 func TestWakesCoalesce(t *testing.T) {
