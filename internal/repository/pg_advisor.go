@@ -184,7 +184,7 @@ type AdvisorListStats struct {
 	Suppressed int
 	// Unsubscribed counts contacts with subscribed=false.
 	Unsubscribed int
-	// MissingFirstName counts contacts that would render an empty {{first_name}}.
+	// MissingFirstName counts contacts that would render an empty {{.FirstName}}.
 	MissingFirstName int
 }
 

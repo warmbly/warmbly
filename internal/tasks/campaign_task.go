@@ -631,7 +631,8 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 	// STEP 10: Pick the copy, then render it with contact variables exactly
 	// once and expand any {a|b|c} spintax per-recipient. Rendering happens after
 	// the variant pick so a contact value is never parsed as template text.
-	rendered, sxerr := s.selectAndRender(ctx, orgID, campaign.ID, sequence.ID, *contact, extra, threadSubject, rawSubject, rawBodyHTML, rawBodyPlain)
+	resolveLinks := func(parts ...*string) { s.resolveFormLinks(ctx, orgID, campaign, contact, parts...) }
+	rendered, sxerr := s.selectAndRender(ctx, orgID, campaign.ID, sequence.ID, *contact, extra, threadSubject, rawSubject, rawBodyHTML, rawBodyPlain, resolveLinks)
 	if sxerr != nil {
 		return sxerr
 	}
@@ -1532,7 +1533,7 @@ func (s *tasksService) executeActionNode(ctx context.Context, campaign *models.C
 		if perr != nil {
 			return nil
 		}
-		// Deal name supports the same {{first_name}}/{{company}} templating other
+		// Deal name supports the same {{.FirstName}}/{{.Company}} templating other
 		// campaign copy uses; fall back to a contact-derived name when blank.
 		name := RenderTemplate(strings.TrimSpace(cfg.DealName), *contact)
 		if name == "" {
@@ -1898,15 +1899,16 @@ type renderedCopy struct {
 }
 
 // selectAndRender picks the step's copy or an A/B variant from template text, then renders it once.
-func (s *tasksService) selectAndRender(ctx context.Context, orgID, campaignID, sequenceID uuid.UUID, contact models.Contact, extra TemplateContext, threadSubject, rawSubject, rawBodyHTML, rawBodyPlain string) (renderedCopy, *errx.Error) {
+// resolveLinks resolves form-link markers in the chosen copy, which a variant brings unresolved.
+func (s *tasksService) selectAndRender(ctx context.Context, orgID, campaignID, sequenceID uuid.UUID, contact models.Contact, extra TemplateContext, threadSubject, rawSubject, rawBodyHTML, rawBodyPlain string, resolveLinks func(...*string)) (renderedCopy, *errx.Error) {
 	var picker variantSelector
 	if s.advanced != nil {
 		picker = s.advanced
 	}
-	return selectAndRender(ctx, picker, orgID, campaignID, sequenceID, contact, extra, threadSubject, rawSubject, rawBodyHTML, rawBodyPlain)
+	return selectAndRender(ctx, picker, orgID, campaignID, sequenceID, contact, extra, threadSubject, rawSubject, rawBodyHTML, rawBodyPlain, resolveLinks)
 }
 
-func selectAndRender(ctx context.Context, picker variantSelector, orgID, campaignID, sequenceID uuid.UUID, contact models.Contact, extra TemplateContext, threadSubject, rawSubject, rawBodyHTML, rawBodyPlain string) (renderedCopy, *errx.Error) {
+func selectAndRender(ctx context.Context, picker variantSelector, orgID, campaignID, sequenceID uuid.UUID, contact models.Contact, extra TemplateContext, threadSubject, rawSubject, rawBodyHTML, rawBodyPlain string, resolveLinks func(...*string)) (renderedCopy, *errx.Error) {
 	var arm *models.StepABArm
 	if picker != nil {
 		selection, xerr := picker.SelectVariant(ctx, orgID, campaignID, contact.ID, sequenceID, rawSubject, rawBodyHTML, rawBodyPlain)
@@ -1921,6 +1923,9 @@ func selectAndRender(ctx context.Context, picker variantSelector, orgID, campaig
 			rawBodyHTML, rawBodyPlain = selection.BodyHTML, selection.BodyPlain
 			arm = selection.StepArm
 		}
+	}
+	if resolveLinks != nil {
+		resolveLinks(&rawSubject, &rawBodyHTML, &rawBodyPlain)
 	}
 	out := renderedCopy{
 		Subject:   expandSpintax(RenderTemplateWith(rawSubject, contact, extra)),

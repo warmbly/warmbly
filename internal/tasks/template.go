@@ -14,6 +14,7 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
 	"github.com/warmbly/warmbly/internal/pkg/tmplfuncs"
+	"github.com/warmbly/warmbly/internal/pkg/tmplvars"
 	"github.com/warmbly/warmbly/internal/pkg/warmpersona"
 )
 
@@ -34,15 +35,7 @@ type TemplateContext struct {
 }
 
 // templateAction matches a single {{ ... }} action (no nested braces).
-var templateAction = regexp.MustCompile(`\{\{[^{}]*\}\}`)
-
-// spacedFieldRefAt matches, anchored at the start of the slice, a dotted field
-// reference whose key contains an internal space or dash (e.g. ".job title" or
-// ".first-name"). Such a key is not a valid Go-template identifier, so it cannot
-// be written as a `.Selector`. We rewrite it to the equivalent `(index . "key")`,
-// which IS valid everywhere — standalone, inside {{if}}, and inside eq/and/... —
-// giving custom fields with spaces full Go-template support.
-var spacedFieldRefAt = regexp.MustCompile(`^\.[A-Za-z0-9_]+(?:[ \-]+[A-Za-z0-9_]+)+`)
+var templateAction = tmplvars.ActionPattern
 
 // tmplCache caches parsed templates keyed by the raw template string. A stored
 // nil is a "known-bad" sentinel: that body failed to compile, so future renders
@@ -53,7 +46,7 @@ var tmplCache tmplfuncs.Cache
 
 // Standard fields and the typed Sender namespace take precedence over custom fields.
 func buildTemplateData(contact models.Contact, context TemplateContext) map[string]any {
-	data := make(map[string]any, len(contact.CustomFields)+7)
+	data := make(map[string]any, len(contact.CustomFields)+7+tmplvars.AliasCount())
 	for k, v := range contact.CustomFields {
 		data[k] = v
 	}
@@ -64,62 +57,14 @@ func buildTemplateData(contact models.Contact, context TemplateContext) map[stri
 	data["Phone"] = contact.Phone
 	data["Sender"] = context.Sender
 	data[UnsubscribeLinkVar] = context.UnsubscribeLink
+	tmplvars.AddAliases(data, contact.CustomFields)
 	return data
 }
 
-// rewriteSpacedFieldRefs rewrites a dotted custom-field reference whose key has
-// a space or dash (`.job title`, `.first-name`) into `(index . "key")` inside
-// each {{ }} action, so those fields work EVERYWHERE — standalone, inside
-// {{if}}, and inside eq/and/printf/... — not just as a literal substitution.
-// Plain identifier selectors ({{.FirstName}}) and any text outside an action are
-// left untouched, and quoted string literals inside an action are skipped so a
-// value like ".NET" is never mangled. No data is needed: the rewrite is purely
-// syntactic, so it works identically at render time and at validation time.
-func rewriteSpacedFieldRefs(tmpl string) string {
-	if !strings.Contains(tmpl, "{{") {
-		return tmpl
-	}
-	return templateAction.ReplaceAllStringFunc(tmpl, rewriteSpacedInAction)
-}
-
-func rewriteSpacedInAction(action string) string {
-	var b strings.Builder
-	b.Grow(len(action))
-	var quote byte // 0 = not in a string literal; '"' or '`' otherwise
-	for i := 0; i < len(action); {
-		c := action[i]
-		switch {
-		case quote != 0:
-			b.WriteByte(c)
-			if c == '\\' && quote == '"' && i+1 < len(action) {
-				b.WriteByte(action[i+1]) // keep an escaped char verbatim
-				i += 2
-				continue
-			}
-			if c == quote {
-				quote = 0
-			}
-			i++
-		case c == '"' || c == '`':
-			quote = c
-			b.WriteByte(c)
-			i++
-		case c == '.':
-			// A nested struct selector must not consume the following function argument.
-			fieldStart := i == 0 || strings.ContainsRune("{( \t\r\n", rune(action[i-1]))
-			if m := spacedFieldRefAt.FindString(action[i:]); fieldStart && m != "" {
-				b.WriteString(`(index . "` + m[1:] + `")`)
-				i += len(m)
-				continue
-			}
-			b.WriteByte(c)
-			i++
-		default:
-			b.WriteByte(c)
-			i++
-		}
-	}
-	return b.String()
+// normalizeTemplate is the one rewrite every campaign compile goes through.
+func normalizeTemplate(tmpl string) string {
+	out, _ := tmplvars.Normalize(tmpl)
+	return out
 }
 
 // compiledTemplate returns a parsed, cached template for tmpl, or nil if the
@@ -131,7 +76,7 @@ func compiledTemplate(tmpl string) *template.Template {
 	if t, ok := tmplCache.Load(tmpl); ok {
 		return t // may be nil (known-bad)
 	}
-	t, err := tmplfuncs.Compile("body", rewriteSpacedFieldRefs(tmpl))
+	t, err := tmplfuncs.Compile("body", normalizeTemplate(tmpl))
 	if err != nil {
 		tmplCache.Store(tmpl, nil)
 		return nil
@@ -140,18 +85,10 @@ func compiledTemplate(tmpl string) *template.Template {
 	return t
 }
 
-// TemplateError returns a parse error when a template's control syntax is
-// malformed (e.g. an {{if}} with no {{end}}, or a bad {{eq}}), or nil when it is
-// valid. Spaced/dashed custom-field references are rewritten to their `index`
-// form first (exactly as the renderer does), so a valid template that uses them
-// inside {{if}} does not false-fail validation. Used to block starting a
-// campaign with a template that would degrade to literal {{if}} text on send.
+// TemplateError reports why a template would not render as written (a parse
+// error, or a reference that can never resolve), or nil when it is valid.
 func TemplateError(tmpl string) error {
-	if tmpl == "" {
-		return nil
-	}
-	_, err := tmplfuncs.Compile("validate", rewriteSpacedFieldRefs(tmpl))
-	return err
+	return tmplvars.Check(tmpl)
 }
 
 // RenderTemplate renders a sequence template against a contact, supporting Go

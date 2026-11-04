@@ -1,6 +1,10 @@
 package models
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/google/uuid"
+)
 
 // The content-score floor reaches the API as a plain integer. Left unclamped, a
 // floor above 100 flags every campaign forever and a floor at or below 0 is a
@@ -108,5 +112,15 @@ func TestNilIntentListStaysNilThroughNormalize(t *testing.T) {
 	s.Normalize()
 	if s.ReplyIntent.CRMTaskIntents != nil {
 		t.Error("Normalize turned an unset list into an empty one, which means none")
+	}
+}
+
+func TestVariantSendsOwnCopy(t *testing.T) {
+	step := uuid.New()
+	if VariantSendsOwnCopy(&step, true) {
+		t.Error("a step's control arm sends the step's copy")
+	}
+	if !VariantSendsOwnCopy(nil, true) || !VariantSendsOwnCopy(&step, false) || !VariantSendsOwnCopy(nil, false) {
+		t.Error("every other variant sends its own copy")
 	}
 }

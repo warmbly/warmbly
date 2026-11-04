@@ -1,16 +1,14 @@
 package models
 
 import (
-	"regexp"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/pkg/tmplvars"
 )
 
-// FormLinkMarkerRE matches the {{form_link:<public_id>}} marker the campaign
-// editor inserts; the send pipeline resolves it per recipient. Keep in sync
-// with FORM_LINK_RE in web/src/lib/templateVars.ts.
-var FormLinkMarkerRE = regexp.MustCompile(`\{\{\s*form_link:([a-z0-9]{1,64})\s*\}\}`)
+// FormLinkMarkerRE matches the {{form_link:<public_id>}} marker; see tmplvars.FormLinkMarker.
+var FormLinkMarkerRE = tmplvars.FormLinkMarker
 
 // FormLink is a per-contact form URL ticket: the row id is the opaque token
 // in ?t=, so possession of the link identifies the contact (same posture as

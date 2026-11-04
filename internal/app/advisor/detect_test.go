@@ -759,6 +759,21 @@ func TestUnparseableTemplateIsFlagged(t *testing.T) {
 	}
 }
 
+func TestUnparseableHTMLBodyIsFlagged(t *testing.T) {
+	campaignID := uuid.New()
+	snap := snapshotOf()
+	snap.Campaigns = []repository.AdvisorCampaign{{ID: campaignID, Name: "Outbound", Status: "paused"}}
+	snap.Steps = []repository.AdvisorStep{{
+		ID: uuid.New(), CampaignID: campaignID, Kind: "email", Position: 1,
+		Subject:   "quick question",
+		BodyPlain: "Hi {{.FirstName}}",
+		BodyHTML:  "<p>Hi {{if .FirstName}}{{.FirstName}}</p>",
+	}}
+	if _, fired := findingsByKey(Detect(snap, defaults()))["copy_broken_template"]; !fired {
+		t.Fatal("a broken HTML body should be flagged: it is the part most clients show")
+	}
+}
+
 func TestMissingFirstNameOnlyFiresWhenTheCopyUsesIt(t *testing.T) {
 	campaignID := uuid.New()
 	build := func(body string) *repository.AdvisorSnapshot {
@@ -777,10 +792,13 @@ func TestMissingFirstNameOnlyFiresWhenTheCopyUsesIt(t *testing.T) {
 		t.Error("missing-first-name fired on copy that never greets by name")
 	}
 
-	// The real merge syntax in this product is {{.FirstName}}, not
-	// {{first_name}} — this is the case a literal-spelling check would miss.
-	if _, fired := findingsByKey(Detect(build("Hi {{.FirstName}}, worth a chat?"), defaults()))["list_missing_personalization_data"]; !fired {
-		t.Error("missing-first-name did not fire on copy that does greet by name")
+	for _, body := range []string{"Hi {{.FirstName}}, worth a chat?", "Hi {{first_name}}, worth a chat?", "Hi {{.firstName | default \"there\"}}"} {
+		if _, fired := findingsByKey(Detect(build(body), defaults()))["list_missing_personalization_data"]; !fired {
+			t.Errorf("missing-first-name did not fire on copy that greets by name: %q", body)
+		}
+	}
+	if _, fired := findingsByKey(Detect(build("Update the firstname on file, or first_name in your CRM."), defaults()))["list_missing_personalization_data"]; fired {
+		t.Error("missing-first-name fired on prose that only mentions the field")
 	}
 }
 

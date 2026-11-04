@@ -18,6 +18,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/pkg/dsn"
 	"github.com/warmbly/warmbly/internal/pkg/emailverify"
+	"github.com/warmbly/warmbly/internal/pkg/tmplvars"
 	"github.com/warmbly/warmbly/internal/pkg/typesafe"
 	"github.com/warmbly/warmbly/internal/utils/validate"
 
@@ -365,6 +366,12 @@ func (s *service) CreateABVariant(ctx context.Context, campaignID uuid.UUID, req
 	if req == nil || strings.TrimSpace(req.Name) == "" {
 		return nil, errx.New(errx.BadRequest, "variant name is required")
 	}
+	if models.VariantSendsOwnCopy(req.SequenceID, req.IsControl) {
+		if err := checkVariantCopy(req.Subject, req.BodyHTML, req.BodyPlain); err != nil {
+			return nil, errx.InvalidTemplate(err)
+		}
+	}
+	tmplvars.CanonicalizeAll(&req.Subject, &req.BodyHTML, &req.BodyPlain)
 	out, err := s.repo.CreateABVariant(ctx, campaignID, req)
 	if err != nil {
 		return nil, toErrx(err)
@@ -373,11 +380,66 @@ func (s *service) CreateABVariant(ctx context.Context, campaignID uuid.UUID, req
 }
 
 func (s *service) UpdateABVariant(ctx context.Context, campaignID, variantID uuid.UUID, req *models.UpdateCampaignABVariantRequest) (*models.CampaignABVariant, *errx.Error) {
+	if req != nil && (req.Subject != nil || req.BodyHTML != nil || req.BodyPlain != nil || req.IsControl != nil || req.IsActive != nil) {
+		merged, xerr := s.mergedVariant(ctx, campaignID, variantID, req)
+		if xerr != nil {
+			return nil, xerr
+		}
+		if models.VariantSendsOwnCopy(merged.SequenceID, merged.IsControl) {
+			if err := checkVariantCopy(merged.Subject, merged.BodyHTML, merged.BodyPlain); err != nil {
+				return nil, errx.InvalidTemplate(err)
+			}
+		}
+		tmplvars.CanonicalizeAll(req.Subject, req.BodyHTML, req.BodyPlain)
+	}
 	out, err := s.repo.UpdateABVariant(ctx, campaignID, variantID, req)
 	if err != nil {
 		return nil, toErrx(err)
 	}
 	return out, nil
+}
+
+func checkVariantCopy(subject, bodyHTML, bodyPlain string) error {
+	return tmplvars.CheckCopy(
+		tmplvars.Part{Name: "variant subject", Text: subject},
+		tmplvars.Part{Name: "variant body", Text: bodyHTML, HTML: true},
+		tmplvars.Part{Name: "variant plain-text body", Text: bodyPlain},
+	)
+}
+
+// mergedVariant is the stored variant with req applied, the copy it would send
+// once the update lands; a variant not found is empty, and the update reports the miss.
+func (s *service) mergedVariant(ctx context.Context, campaignID, variantID uuid.UUID, req *models.UpdateCampaignABVariantRequest) (models.CampaignABVariant, *errx.Error) {
+	variants, err := s.repo.ListABVariants(ctx, campaignID)
+	if err != nil {
+		return models.CampaignABVariant{}, toErrx(err)
+	}
+	var v models.CampaignABVariant
+	for _, row := range variants {
+		if row.ID == variantID {
+			v = row
+			break
+		}
+	}
+	for _, f := range []struct {
+		dst *string
+		src *string
+	}{{&v.Subject, req.Subject}, {&v.BodyHTML, req.BodyHTML}, {&v.BodyPlain, req.BodyPlain}} {
+		if f.src != nil {
+			*f.dst = *f.src
+		}
+	}
+	if req.IsControl != nil {
+		v.IsControl = *req.IsControl
+	}
+	return v, nil
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 func (s *service) DeleteABVariant(ctx context.Context, campaignID, variantID uuid.UUID) *errx.Error {

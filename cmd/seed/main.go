@@ -348,12 +348,12 @@ func seedRich(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 	seq1 := uuid.MustParse("55555555-0000-0000-0000-000000000001")
 	seq2 := uuid.MustParse("55555555-0000-0000-0000-000000000002")
-	if err := upsertSequence(ctx, pool, seq1, campaignID, orgBeta, "Intro", "Quick question, {{first_name}}",
-		"Hi {{first_name}}, ...intro body...", 0); err != nil {
+	if err := upsertSequence(ctx, pool, seq1, campaignID, orgBeta, "Intro", "Quick question, {{.FirstName}}",
+		"Hi {{.FirstName}}, ...intro body...", 0); err != nil {
 		return err
 	}
 	if err := upsertSequence(ctx, pool, seq2, campaignID, orgBeta, "Follow-up", "Re: Quick question",
-		"Hi {{first_name}}, following up...", 3); err != nil {
+		"Hi {{.FirstName}}, following up...", 3); err != nil {
 		return err
 	}
 
