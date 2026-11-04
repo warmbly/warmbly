@@ -196,3 +196,16 @@ run "fleet_needs_instance_url" {
   }
   expect_failures = [aws_launch_template.fleet[0]]
 }
+
+run "fleet_worker_capacity_takes_the_upper_bound" {
+  command = plan
+  variables {
+    fleet_enabled         = true
+    fleet_instance_url    = "https://app.example.com"
+    fleet_worker_capacity = "99999999"
+  }
+  assert {
+    condition     = strcontains(base64decode(aws_launch_template.fleet[0].user_data), "CAPACITY='99999999'")
+    error_message = "The largest accepted capacity reaches the worker."
+  }
+}

@@ -55,7 +55,8 @@ func (w *WMail) ApplyPush(data *models.AddWorkerEmailPushData) {
 	w.push.mu.Lock()
 	defer w.push.mu.Unlock()
 	w.push.want = data
-	if w.push.state == nil && data != nil && data.State != nil {
+	// A report the control plane has not taken yet is newer than the row it hands back.
+	if w.push.state == nil && !w.push.unsent.Load() && data != nil && data.State != nil {
 		s := *data.State
 		w.push.state = &s
 	}
@@ -108,6 +109,9 @@ func (w *WMail) maintainPush(ctx context.Context) {
 	w.push.mu.Unlock()
 	renew := w.push.renew.Swap(false)
 	if !renew && now.Before(retryAt) {
+		if w.push.unsent.Load() {
+			w.reportPush(state)
+		}
 		return
 	}
 	var next *models.MailboxPushState
@@ -143,10 +147,15 @@ func (w *WMail) maintainPush(ctx context.Context) {
 		return
 	}
 	w.push.mu.Lock()
+	w.push.unsent.Store(true)
 	w.push.state = next
 	w.push.mu.Unlock()
-	if err := w.onEvent(models.JobEventTypePushState, &models.JobEventPushState{UserID: w.UserID, EmailID: w.ID, State: next}); err != nil {
-		w.push.unsent.Store(true)
+	w.reportPush(next)
+}
+
+// reportPush sends the channel state to the control plane; unsent stays set until it is taken.
+func (w *WMail) reportPush(state *models.MailboxPushState) {
+	if err := w.onEvent(models.JobEventTypePushState, &models.JobEventPushState{UserID: w.UserID, EmailID: w.ID, State: state}); err != nil {
 		log.Debug().Err(err).Str("email_id", w.ID.String()).Msg("could not record mailbox push channel")
 		return
 	}

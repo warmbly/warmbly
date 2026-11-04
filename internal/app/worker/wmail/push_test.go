@@ -1,6 +1,7 @@
 package wmail
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -67,5 +68,34 @@ func TestWakeRenewIsRemembered(t *testing.T) {
 	w.Wake(true)
 	if !w.push.renew.Load() {
 		t.Fatal("a renew wake was dropped")
+	}
+}
+
+func TestAnUnsentChannelReportOutranksTheControlPlanesRow(t *testing.T) {
+	var refuse bool
+	var sent []*models.MailboxPushState
+	w := &WMail{wake: make(chan struct{}, 1), onEvent: func(_ models.JobEventType, body any) error {
+		if refuse {
+			return errors.New("bus down")
+		}
+		sent = append(sent, body.(*models.JobEventPushState).State)
+		return nil
+	}}
+	// The channel was closed, and the report saying so was refused.
+	refuse = true
+	w.push.unsent.Store(true)
+	w.reportPush(nil)
+	if !w.push.unsent.Load() {
+		t.Fatal("a refused report was marked taken")
+	}
+	w.ApplyPush(&models.AddWorkerEmailPushData{GraphNotificationURL: "https://x", GraphClientState: "s",
+		State: &models.MailboxPushState{Provider: models.MailboxPushGraph, SubscriptionID: "closed", ExpiresAt: time.Now().Add(time.Hour)}})
+	if w.push.state != nil {
+		t.Fatal("the control plane's stale row replaced a channel this worker closed")
+	}
+	refuse = false
+	w.reportPush(nil)
+	if w.push.unsent.Load() || len(sent) != 1 || sent[0] != nil {
+		t.Fatalf("the retried report was not taken: unsent=%v sent=%v", w.push.unsent.Load(), sent)
 	}
 }
