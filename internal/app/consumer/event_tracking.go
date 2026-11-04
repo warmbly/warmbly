@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/netip"
 	"strings"
 	"time"
@@ -211,21 +213,22 @@ func (tc *TrackingConsumer) pruneEngagementLogs(ctx context.Context) {
 		pctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 		defer cancel()
 		days := tc.engagementRetentionDays(pctx)
+		var failures []error
 		if tc.opens != nil {
 			if n, err := tc.opens.Cleanup(pctx, days); err != nil {
-				log.Warn().Err(err).Msg("open log prune failed")
+				failures = append(failures, fmt.Errorf("open log prune: %w", err))
 			} else if n > 0 {
 				log.Info().Int64("deleted", n).Msg("open log pruned")
 			}
 		}
 		if tc.linkClicks != nil {
 			if n, err := tc.linkClicks.Cleanup(pctx, days); err != nil {
-				log.Warn().Err(err).Msg("click log prune failed")
+				failures = append(failures, fmt.Errorf("click log prune: %w", err))
 			} else if n > 0 {
 				log.Info().Int64("deleted", n).Msg("click log pruned")
 			}
 		}
-		return nil
+		return errors.Join(failures...)
 	})
 }
 

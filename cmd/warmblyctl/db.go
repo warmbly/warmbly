@@ -62,6 +62,7 @@ type dbBusy struct {
 }
 
 type dbStatement struct {
+	QueryID int64   `json:"queryid"`
 	Calls   int64   `json:"calls"`
 	TotalMS float64 `json:"total_ms"`
 	MeanMS  float64 `json:"mean_ms"`
@@ -122,7 +123,7 @@ func readDBLoad(ctx context.Context, pool *pgxpool.Pool, limit int) (*dbLoad, er
 	}
 
 	rows, err := pool.Query(ctx, `SELECT COALESCE(NULLIF(application_name, ''), '(unnamed)'), COALESCE(state, '(background)'), count(*)::int
-		FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()
+		FROM pg_stat_activity WHERE pid <> pg_backend_pid()
 		GROUP BY 1, 2 ORDER BY 3 DESC, 1, 2`)
 	if err != nil {
 		return nil, fmt.Errorf("read connections: %w", err)
@@ -177,7 +178,7 @@ func readDBLoad(ctx context.Context, pool *pgxpool.Pool, limit int) (*dbLoad, er
 	return load, rows.Err()
 }
 
-// readStatements reads pg_stat_statements when the server has it; its text is normalized, so it holds no values.
+// readStatements reads pg_stat_statements when the server has it. Only a query's text has its constants replaced, so other statements show their queryid alone.
 func readStatements(ctx context.Context, pool *pgxpool.Pool, limit int, load *dbLoad) error {
 	var installed bool
 	if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_stat_statements')`).Scan(&installed); err != nil {
@@ -187,7 +188,9 @@ func readStatements(ctx context.Context, pool *pgxpool.Pool, limit int, load *db
 		load.StatementsNote = "pg_stat_statements is not installed; run CREATE EXTENSION pg_stat_statements as a superuser to see the costliest queries"
 		return nil
 	}
-	rows, err := pool.Query(ctx, `SELECT calls, total_exec_time, mean_exec_time, rows, left(regexp_replace(query, '\s+', ' ', 'g'), 200)
+	rows, err := pool.Query(ctx, `SELECT COALESCE(queryid, 0), calls, total_exec_time, mean_exec_time, rows,
+			CASE WHEN query ~* '^\s*(select|insert|update|delete|with|merge|values|table)\M'
+			     THEN left(regexp_replace(query, '\s+', ' ', 'g'), 200) ELSE '(not a query; text withheld)' END
 		FROM pg_stat_statements WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
 		ORDER BY total_exec_time DESC LIMIT $1`, limit)
 	if err != nil {
@@ -196,7 +199,7 @@ func readStatements(ctx context.Context, pool *pgxpool.Pool, limit int, load *db
 	}
 	for rows.Next() {
 		var r dbStatement
-		if err := rows.Scan(&r.Calls, &r.TotalMS, &r.MeanMS, &r.Rows, &r.Query); err != nil {
+		if err := rows.Scan(&r.QueryID, &r.Calls, &r.TotalMS, &r.MeanMS, &r.Rows, &r.Query); err != nil {
 			return err
 		}
 		load.Statements = append(load.Statements, r)
@@ -216,7 +219,7 @@ func printDBLoad(w io.Writer, load *dbLoad) {
 	for _, c := range load.Connections {
 		used += c.Count
 	}
-	fmt.Fprintf(w, "Connections: %d of max_connections %d\n", used, load.MaxConnections)
+	fmt.Fprintf(w, "Connections to the server: %d of max_connections %d\n", used, load.MaxConnections)
 	tw := tabwriter.NewWriter(w, 2, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "  APPLICATION\tSTATE\tCOUNT")
 	for _, c := range load.Connections {
@@ -246,10 +249,10 @@ func printDBLoad(w io.Writer, load *dbLoad) {
 	}
 	tw = tabwriter.NewWriter(w, 2, 4, 2, ' ', 0)
 	if len(load.Statements) > 0 {
-		fmt.Fprintln(tw, "  TOTAL MS\tCALLS\tMEAN MS\tROWS\tQUERY")
+		fmt.Fprintln(tw, "  TOTAL MS\tCALLS\tMEAN MS\tROWS\tQUERYID\tQUERY")
 	}
 	for _, s := range load.Statements {
-		fmt.Fprintf(tw, "  %.0f\t%d\t%.2f\t%d\t%s\n", s.TotalMS, s.Calls, s.MeanMS, s.Rows, strings.TrimSpace(s.Query))
+		fmt.Fprintf(tw, "  %.0f\t%d\t%.2f\t%d\t%d\t%s\n", s.TotalMS, s.Calls, s.MeanMS, s.Rows, s.QueryID, strings.TrimSpace(s.Query))
 	}
 	tw.Flush()
 

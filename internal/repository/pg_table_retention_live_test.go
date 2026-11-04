@@ -16,7 +16,7 @@ const ancientDays = 4000
 func TestLiveTableRetentionPrunesOnlyPastWindow(t *testing.T) {
 	_, pool := liveContactDB(t)
 	ctx := context.Background()
-	user, org, campaign, worker, endpoint, account, task := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	user, org, campaign, worker, endpoint, account, task, repairable := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	exec := func(query string, args ...any) {
 		t.Helper()
 		if _, err := pool.Exec(ctx, query, args...); err != nil {
@@ -32,10 +32,11 @@ func TestLiveTableRetentionPrunesOnlyPastWindow(t *testing.T) {
 	exec(`INSERT INTO webhook_endpoints (id, organization_id, url, secret) VALUES ($1, $2, 'https://example.test/hook', 's')`, endpoint, org)
 	exec(`INSERT INTO email_accounts (id, user_id, organization_id, email, name, signature_plain, signature_html, provider)
 	      VALUES ($1, $2, $3, $4, 'Retention', '', '', 'smtp_imap')`, account, user, org, "table-retention-"+uuid.NewString()+"@example.test")
-	exec(`INSERT INTO tasks (id, task_type, email_account_id, status, message_id) VALUES ($1, 'campaign', $2, 'completed', '<retention@x>')`, task, account)
+	exec(`INSERT INTO tasks (id, task_type, email_account_id, status, message_id, send_result_state, send_result_applied_at)
+	      VALUES ($1, 'campaign', $3, 'completed', '<retention@x>', 'sent', NOW()), ($2, 'campaign', $3, 'dead_lettered', '<repairable@x>', 'sent', NOW())`, task, repairable, account)
 	t.Cleanup(func() {
 		c := context.Background()
-		_, _ = pool.Exec(c, `DELETE FROM tasks WHERE id = $1`, task)
+		_, _ = pool.Exec(c, `DELETE FROM tasks WHERE id = ANY($1)`, []uuid.UUID{task, repairable})
 		_, _ = pool.Exec(c, `DELETE FROM email_accounts WHERE id = $1`, account)
 		_, _ = pool.Exec(c, `DELETE FROM workers WHERE id = $1`, worker)
 		_, _ = pool.Exec(c, `DELETE FROM fleet_nodes WHERE id = $1`, worker)
@@ -54,7 +55,8 @@ func TestLiveTableRetentionPrunesOnlyPastWindow(t *testing.T) {
 	             ($1, $2, 'fresh', gen_random_uuid(), '{}', 'abandoned', $4)`, endpoint, org, old, fresh)
 	exec(`INSERT INTO worker_health_samples (worker_id, observed_at) VALUES ($1, $2), ($1, $3)`, worker, old, fresh)
 	exec(`INSERT INTO send_result_effects (task_id, effect_key, organization_id, kind, payload, delivered_at)
-	      VALUES ($1, 'old', $2, 'webhook', '{}', $3), ($1, 'undelivered', $2, 'webhook', '{}', NULL), ($1, 'fresh', $2, 'webhook', '{}', $4)`, task, org, old, fresh)
+	      VALUES ($1, 'old', $2, 'webhook', '{}', $3), ($1, 'undelivered', $2, 'webhook', '{}', NULL), ($1, 'fresh', $2, 'webhook', '{}', $4),
+	             ($5, 'old', $2, 'webhook', '{}', $3)`, task, org, old, fresh, repairable)
 	// More than one batch, so the loop has to come back for the rest.
 	exec(`INSERT INTO worker_health_samples (worker_id, observed_at) SELECT $1, $2::timestamptz - g * interval '1 second' FROM generate_series(1, $3::int) g`, worker, old, PruneBatch+7)
 
@@ -92,6 +94,7 @@ func TestLiveTableRetentionPrunesOnlyPastWindow(t *testing.T) {
 		{"webhook log drops the old settled delivery", `SELECT count(*) FROM webhook_deliveries WHERE endpoint_id = $1`, endpoint, 2},
 		{"health samples keep only the fresh one, across batches", `SELECT count(*) FROM worker_health_samples WHERE worker_id = $1`, worker, 1},
 		{"effects keep the undelivered and fresh ones", `SELECT count(*) FROM send_result_effects WHERE task_id = $1`, task, 2},
+		{"effects keep an old one whose dead-lettered task can apply its result again", `SELECT count(*) FROM send_result_effects WHERE task_id = $1`, repairable, 1},
 	} {
 		if got := count(c.query, c.arg); got != c.want {
 			t.Errorf("%s: got %d rows, want %d", c.what, got, c.want)
@@ -123,7 +126,8 @@ func TestLiveRetentionPrunesUseTheirIndexes(t *testing.T) {
 		{`SELECT ctid FROM worker_health_samples WHERE observed_at < NOW() LIMIT 5000`, "idx_worker_health_samples_observed"},
 		// Either index answers the one-hour window; which one depends on the table's statistics.
 		{`SELECT worker_id, sum(sends_attempted) FROM worker_health_samples WHERE observed_at > now() - interval '1 hour' GROUP BY worker_id`, "idx_worker_health_samples_"},
-		{`SELECT ctid FROM send_result_effects WHERE delivered_at IS NOT NULL AND delivered_at < NOW() LIMIT 5000`, "idx_send_result_effects_delivered"},
+		{`SELECT e.ctid FROM send_result_effects e WHERE e.delivered_at IS NOT NULL AND e.delivered_at < NOW()
+		   AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = e.task_id AND (t.send_result_applied_at IS NULL OR t.status = 'dead_lettered')) LIMIT 5000`, "idx_send_result_effects_delivered"},
 		{`SELECT internal_id FROM warmup_received WHERE email_account_id = '00000000-0000-0000-0000-000000000001' AND retired_at IS NULL AND created_at < NOW() ORDER BY created_at LIMIT 100`, "idx_warmup_received_account_live"},
 		{`SELECT token FROM warmup_tokens WHERE sender_account_id = '00000000-0000-0000-0000-000000000001' AND sent_message_id <> '' AND sent_retired_at IS NULL AND created_at < NOW() ORDER BY created_at LIMIT 100`, "idx_warmup_tokens_sender_live"},
 	} {

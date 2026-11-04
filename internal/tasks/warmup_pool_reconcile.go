@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/jobrun"
+	"github.com/warmbly/warmbly/internal/repository"
 )
 
 // warmupPoolReconcileInterval spaces the membership pass; the warmup task corrects the mailboxes it runs for in between.
@@ -85,11 +87,21 @@ func (s *tasksService) ReconcileWarmupPoolMembership(ctx context.Context) (moved
 		}
 		return v[0], v[1]
 	}
+	// A failed write is logged and the pass moves on; the run still reports it.
+	var failed int
+	var lastErr error
+	fail := func(m repository.WarmupParticipantMembership, action string, xerr error) {
+		failed++
+		lastErr = xerr
+		log.Warn().Str("email_account_id", m.EmailAccountID.String()).Str("action", action).Str("error", xerr.Error()).Msg("warmup reconcile: could not update a mailbox's membership")
+	}
 
 	for _, m := range members {
 		if m.Status != "active" || m.OrganizationID == nil {
 			// Nothing left to check an entitlement against, so it does not belong in a shared pool.
-			if xerr := s.warmupHealth.RemoveFromAllPools(ctx, m.EmailAccountID); xerr == nil {
+			if xerr := s.warmupHealth.RemoveFromAllPools(ctx, m.EmailAccountID); xerr != nil {
+				fail(m, "leave", xerr)
+			} else {
 				removed++
 			}
 			continue
@@ -108,7 +120,9 @@ func (s *tasksService) ReconcileWarmupPoolMembership(ctx context.Context) (moved
 				entitled[org] = ok
 			}
 			if !ok {
-				if xerr := s.warmupHealth.RemoveFromAllPools(ctx, m.EmailAccountID); xerr == nil {
+				if xerr := s.warmupHealth.RemoveFromAllPools(ctx, m.EmailAccountID); xerr != nil {
+					fail(m, "leave", xerr)
+				} else {
 					removed++
 					log.Info().
 						Str("email_account_id", m.EmailAccountID.String()).
@@ -125,6 +139,7 @@ func (s *tasksService) ReconcileWarmupPoolMembership(ctx context.Context) (moved
 		}
 		didMove, xerr := s.warmupHealth.MovePoolMembership(ctx, m.EmailAccountID, poolType)
 		if xerr != nil {
+			fail(m, "move to "+poolType, xerr)
 			continue
 		}
 		if didMove {
@@ -136,6 +151,9 @@ func (s *tasksService) ReconcileWarmupPoolMembership(ctx context.Context) (moved
 		}
 	}
 
+	if failed > 0 {
+		return moved, removed, fmt.Errorf("%d warmup pool membership updates failed, last: %w", failed, lastErr)
+	}
 	return moved, removed, nil
 }
 

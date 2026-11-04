@@ -22,6 +22,8 @@ type memStore struct {
 	applyFailed bool
 	requested   map[string]bool
 	polls       int
+	// onTake runs as a poll takes its requests, before they are delivered.
+	onTake func()
 }
 
 func newMemStore() *memStore {
@@ -88,7 +90,6 @@ func (m *memStore) RequestRun(_ context.Context, name string) (bool, error) {
 }
 func (m *memStore) TakeRunRequests(_ context.Context, names []string) ([]string, error) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.polls++
 	var taken []string
 	for _, n := range names {
@@ -96,6 +97,11 @@ func (m *memStore) TakeRunRequests(_ context.Context, names []string) ([]string,
 			delete(m.requested, n)
 			taken = append(taken, n)
 		}
+	}
+	onTake := m.onTake
+	m.mu.Unlock()
+	if onTake != nil {
+		onTake()
 	}
 	return taken, nil
 }
@@ -328,4 +334,21 @@ func TestRunRequestsArePolledOncePerProcess(t *testing.T) {
 			t.Fatalf("two loops polled for requests %d times in one interval, want 1", polls)
 		}
 	})
+}
+
+// A request taken just as its loop stopped here goes back to the store for the process that runs the loop now.
+func TestRunRequestForAStoppedLoopIsHandedBack(t *testing.T) {
+	store := newMemStore()
+	useStore(t, store)
+	ch := watchRequests("moved")
+	store.requested["moved"] = true
+	store.onTake = func() { unwatchRequests("moved", ch) }
+
+	takeRequests(context.Background())
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if !store.requested["moved"] {
+		t.Fatal("a run request taken for a loop that had stopped was lost")
+	}
 }

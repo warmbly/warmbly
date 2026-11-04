@@ -147,10 +147,11 @@ type TaskRepository interface {
 	GetBookedSendsForAccount(ctx context.Context, accountID uuid.UUID, around time.Time) ([]Task, error)
 	// ClaimDueTaskIDs leases pending tasks whose slot has arrived, oldest first,
 	// capped at limit. Drives the in-process (TASKS_PROVIDER=local) dispatcher,
-	// which fires each claimed task by id.
-	ClaimDueTaskIDs(ctx context.Context, limit int, lease time.Duration) ([]uuid.UUID, error)
-	RecordDispatchAttempt(ctx context.Context, taskID uuid.UUID, failed bool, retryAt time.Time) error
-	ReleaseDispatchClaims(ctx context.Context, taskIDs []uuid.UUID) error
+	// which fires each claimed task by id. The returned claim is the lease's end,
+	// and identifies the claim when it is recorded or released.
+	ClaimDueTaskIDs(ctx context.Context, limit int, lease time.Duration) ([]uuid.UUID, time.Time, error)
+	RecordDispatchAttempt(ctx context.Context, taskID uuid.UUID, claim time.Time, failed bool, retryAt time.Time) error
+	ReleaseDispatchClaims(ctx context.Context, taskIDs []uuid.UUID, claim time.Time) error
 	ListOverdueWarmupDispatches(ctx context.Context, now time.Time) ([]MailboxLoadingIncident, error)
 
 	// Update operations
@@ -900,7 +901,7 @@ func (r *taskRepository) CancelOverduePendingTasks(ctx context.Context, taskType
 // ClaimDueTaskIDs claims up to limit pending tasks whose slot has arrived, oldest
 // first, for lease. Another replica skips a claimed task until RecordDispatchAttempt
 // releases it or the lease lapses, so each due task is fired by one dispatcher.
-func (r *taskRepository) ClaimDueTaskIDs(ctx context.Context, limit int, lease time.Duration) ([]uuid.UUID, error) {
+func (r *taskRepository) ClaimDueTaskIDs(ctx context.Context, limit int, lease time.Duration) ([]uuid.UUID, time.Time, error) {
 	query := `
 		UPDATE tasks t
 		SET dispatch_claimed_until = NOW() + make_interval(secs => $2)
@@ -915,47 +916,50 @@ func (r *taskRepository) ClaimDueTaskIDs(ctx context.Context, limit int, lease t
 			FOR UPDATE SKIP LOCKED
 		) due
 		WHERE t.id = due.id
-		RETURNING t.id
+		RETURNING t.id, t.dispatch_claimed_until
 	`
 	rows, err := r.db.Query(ctx, query, limit, lease.Seconds())
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
 	defer rows.Close()
 
 	var ids []uuid.UUID
+	var claim time.Time
 	for rows.Next() {
 		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
+		if err := rows.Scan(&id, &claim); err != nil {
+			return nil, time.Time{}, err
 		}
 		ids = append(ids, id)
 	}
-	return ids, rows.Err()
+	return ids, claim, rows.Err()
 }
 
 // Retry metadata never changes the send's reservation, outcome, or intended schedule.
-func (r *taskRepository) RecordDispatchAttempt(ctx context.Context, taskID uuid.UUID, failed bool, retryAt time.Time) error {
+func (r *taskRepository) RecordDispatchAttempt(ctx context.Context, taskID uuid.UUID, claim time.Time, failed bool, retryAt time.Time) error {
+	// A lease that lapsed and was taken again belongs to the other replica now; only our own claim is cleared.
+	const release = `dispatch_claimed_until=CASE WHEN dispatch_claimed_until=$3 THEN NULL ELSE dispatch_claimed_until END`
 	if failed {
 		_, err := r.db.Exec(ctx, `UPDATE tasks SET dispatch_retry_at=$2,
 		    dispatch_failure_since=COALESCE(dispatch_failure_since,NOW()),dispatch_failure_at=NOW(),
-		    dispatch_claimed_until=NULL
-		    WHERE id=$1 AND status='pending'`, taskID, retryAt)
+		    `+release+`
+		    WHERE id=$1 AND status='pending'`, taskID, retryAt, claim)
 		return err
 	}
 	_, err := r.db.Exec(ctx, `UPDATE tasks SET dispatch_retry_at=CASE
 	    WHEN status='pending' AND scheduled_at<=NOW() THEN GREATEST(dispatch_retry_at,$2)
 	    ELSE NULL END,
-	    dispatch_failure_since=NULL,dispatch_failure_at=NULL,dispatch_claimed_until=NULL WHERE id=$1`, taskID, retryAt)
+	    dispatch_failure_since=NULL,dispatch_failure_at=NULL,`+release+` WHERE id=$1`, taskID, retryAt, claim)
 	return err
 }
 
-// ReleaseDispatchClaims hands claimed tasks that never ran back to the next poll.
-func (r *taskRepository) ReleaseDispatchClaims(ctx context.Context, taskIDs []uuid.UUID) error {
+// ReleaseDispatchClaims hands claimed tasks that never ran back to the next poll, unless another replica has claimed them since.
+func (r *taskRepository) ReleaseDispatchClaims(ctx context.Context, taskIDs []uuid.UUID, claim time.Time) error {
 	if len(taskIDs) == 0 {
 		return nil
 	}
-	_, err := r.db.Exec(ctx, `UPDATE tasks SET dispatch_claimed_until=NULL WHERE id = ANY($1) AND dispatch_claimed_until IS NOT NULL`, taskIDs)
+	_, err := r.db.Exec(ctx, `UPDATE tasks SET dispatch_claimed_until=NULL WHERE id = ANY($1) AND dispatch_claimed_until = $2`, taskIDs, claim)
 	return err
 }
 

@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/config"
@@ -140,21 +141,10 @@ type service struct {
 	cache        *cache.Cache
 	resolveLimit func(ctx context.Context, orgID uuid.UUID) int
 	appDomains   AppDomainResolver
-	// wake asks this process's delivery worker to poll now; nil when it runs elsewhere.
-	wake func()
 }
 
 func NewService(repo repository.WebhookRepository) Service {
 	return &service{repo: repo, now: time.Now}
-}
-
-// WireDeliveryWake lets an enqueue start this process's delivery worker at once.
-func (s *service) WireDeliveryWake(wake func()) { s.wake = wake }
-
-func (s *service) enqueued() {
-	if s.wake != nil {
-		s.wake()
-	}
 }
 
 func (s *service) WireDispatchSink(sink DispatchSink) {
@@ -295,9 +285,6 @@ func (s *service) Dispatch(ctx context.Context, orgID uuid.UUID, eventType model
 			log.Warn().Err(err).Str("endpoint_id", endpoints[i].ID.String()).Msg("Failed to enqueue webhook delivery")
 			return eventID, err
 		}
-	}
-	if len(endpoints) > 0 {
-		s.enqueued()
 	}
 	return eventID, nil
 }
@@ -541,9 +528,7 @@ func (s *service) enqueueChallenge(ctx context.Context, endpoint *models.Webhook
 	}
 	if err := s.repo.EnqueueDelivery(ctx, delivery); err != nil {
 		log.Warn().Err(err).Str("endpoint_id", endpoint.ID.String()).Msg("Failed to enqueue webhook challenge")
-		return
 	}
-	s.enqueued()
 }
 
 // generateSecret returns a 32-byte cryptographically-random hex string.
@@ -737,6 +722,48 @@ func (w *DeliveryWorker) Wake() {
 	select {
 	case w.wake <- struct{}{}:
 	default:
+	}
+}
+
+// listenRetry is how long Listen waits before reopening a lost connection; the poll covers the gap.
+const listenRetry = 30 * time.Second
+
+// Listen wakes the worker on every enqueue from any process, through
+// LISTEN on a direct connection, until ctx ends.
+func (w *DeliveryWorker) Listen(ctx context.Context, connect func(context.Context) (*pgx.Conn, error)) {
+	for ctx.Err() == nil {
+		if err := w.listenOnce(ctx, connect); err != nil && ctx.Err() == nil {
+			log.Warn().Err(err).Msg("webhook: delivery listener stopped; polling until it reconnects")
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(listenRetry):
+		}
+	}
+}
+
+func (w *DeliveryWorker) listenOnce(ctx context.Context, connect func(context.Context) (*pgx.Conn, error)) error {
+	dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	conn, err := connect(dialCtx)
+	cancel()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		_ = conn.Close(closeCtx)
+	}()
+	if _, err := conn.Exec(ctx, "LISTEN "+repository.WebhookDeliveryChannel); err != nil {
+		return err
+	}
+	// Anything enqueued before LISTEN took effect is picked up by this poll.
+	w.Wake()
+	for {
+		if _, err := conn.WaitForNotification(ctx); err != nil {
+			return err
+		}
+		w.Wake()
 	}
 }
 

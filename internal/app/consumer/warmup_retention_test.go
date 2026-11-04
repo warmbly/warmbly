@@ -352,7 +352,7 @@ func (r *retentionRepo) RetireWarmupSentCopy(_ context.Context, token uuid.UUID)
 	return nil
 }
 
-func (r *retentionRepo) PruneWarmupEventsBefore(_ context.Context, before time.Time) (int64, error) {
+func (r *retentionRepo) PruneWarmupEventsBefore(_ context.Context, before time.Time, _ int) (int64, error) {
 	r.pruned = &before
 	return 0, nil
 }

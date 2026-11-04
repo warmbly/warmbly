@@ -313,7 +313,8 @@ type WarmupRepository interface {
 	// tampering events, spam reports, retired receipts, and tokens whose sent
 	// copy is gone. A receipt or token whose mail is still in the mailbox is
 	// kept, so a removal seen later can still be told apart from tampering.
-	PruneWarmupEventsBefore(ctx context.Context, before time.Time) (int64, error)
+	// mailDays is the instance mail window, which a thread turn also outlives.
+	PruneWarmupEventsBefore(ctx context.Context, before time.Time, mailDays int) (int64, error)
 
 	// Appeals (user-facing submission; admin review lives in the admin repo).
 	CreateWarmupAppeal(ctx context.Context, accountID, userID uuid.UUID, reason string) (uuid.UUID, error)
@@ -2094,11 +2095,14 @@ func (r *warmupRepository) RetireWarmupSentCopy(ctx context.Context, token uuid.
 	return err
 }
 
+// warmupRecoveryIdentifierDays matches the expiry remember_warmup_identifier gives (migration 000265).
+const warmupRecoveryIdentifierDays = 90
+
 // PruneWarmupEventsBefore drops the per-message warmup records older than
 // before. Receipts and tokens are kept while their mail may still be in the
 // mailbox (not yet retired), so the retention sweep can still reach it and a
 // removal seen later is still recognised as warmup rather than tampering.
-func (r *warmupRepository) PruneWarmupEventsBefore(ctx context.Context, before time.Time) (int64, error) {
+func (r *warmupRepository) PruneWarmupEventsBefore(ctx context.Context, before time.Time, mailDays int) (int64, error) {
 	var total int64
 	// Each statement gets only the arguments it references; pgx refuses an extra one.
 	for _, st := range []struct {
@@ -2130,12 +2134,11 @@ func (r *warmupRepository) PruneWarmupEventsBefore(ctx context.Context, before t
 		}
 		total += cmd.RowsAffected()
 	}
-	// A thread turn outlives the event window while its mailbox still keeps that mail, because replies are matched against it.
+	// Replies are matched against a thread turn, so it outlives the event window, its mailbox's mail window and the recovery identifiers.
 	n, err := DeleteInBatches(ctx, r.db, "warmup_thread_messages",
 		`SELECT m.ctid FROM warmup_thread_messages m JOIN email_accounts ea ON ea.id = m.email_account_id
-		  WHERE m.created_at < $2
-		    AND (ea.warmup_retention_days IS NULL OR m.created_at < NOW() - make_interval(days => ea.warmup_retention_days))
-		  LIMIT $1`, before)
+		  WHERE m.created_at < LEAST($2, NOW() - make_interval(days => GREATEST(`+strconv.Itoa(warmupRecoveryIdentifierDays)+`, COALESCE(ea.warmup_retention_days, $3))))
+		  LIMIT $1`, before, mailDays)
 	total += n
 	if err != nil {
 		return total, err

@@ -81,8 +81,9 @@ func TestLiveALostLockConnectionStopsTheLoops(t *testing.T) {
 	handle := liveDB(t)
 	e := New(handle, "leader-test-lost-"+time.Now().Format("150405.000000000"))
 	e.retry, e.ping = 50*time.Millisecond, 50*time.Millisecond
-	var stopped atomic.Int32
+	var started, stopped atomic.Int32
 	e.Go("probe", func(ctx context.Context) {
+		started.Add(1)
 		<-ctx.Done()
 		stopped.Add(1)
 	})
@@ -96,7 +97,8 @@ func TestLiveALostLockConnectionStopsTheLoops(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "the loop to stop with its lock", func() bool { return stopped.Load() >= 1 })
-	waitFor(t, "leadership to be won back", e.Leading)
+	// A second start is a new term; Leading alone can still read true from the old one.
+	waitFor(t, "leadership to be won back", func() bool { return started.Load() >= 2 && e.Leading() })
 }
 
 func TestRunWithNoLoopsReturnsWithoutConnecting(t *testing.T) {

@@ -331,9 +331,9 @@ function toForm(s: InstanceSettings): FormState {
             auditDays: String(s.retention.audit_log_days),
             warmupMailDays: String(s.retention.warmup_mail_days),
             warmupEventDays: String(s.retention.warmup_event_days),
-            campaignLogDays: String(s.retention.campaign_log_days),
-            notificationDays: String(s.retention.notification_days),
-            webhookDeliveryDays: String(s.retention.webhook_delivery_days),
+            campaignLogDays: String(s.retention.campaign_log_days ?? 0),
+            notificationDays: String(s.retention.notification_days ?? 0),
+            webhookDeliveryDays: String(s.retention.webhook_delivery_days ?? 0),
         },
         tracking: {
             machineWindowOpen: String(s.tracking.machine_window_open_seconds),

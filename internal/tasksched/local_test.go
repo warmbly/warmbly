@@ -19,11 +19,11 @@ type localTestRepo struct {
 	released []uuid.UUID
 }
 
-func (r *localTestRepo) ClaimDueTaskIDs(_ context.Context, limit int, lease time.Duration) ([]uuid.UUID, error) {
+func (r *localTestRepo) ClaimDueTaskIDs(_ context.Context, limit int, lease time.Duration) ([]uuid.UUID, time.Time, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if lease <= 0 {
-		return nil, errors.New("claim without a lease")
+		return nil, time.Time{}, errors.New("claim without a lease")
 	}
 	r.limits = append(r.limits, limit)
 	var ids []uuid.UUID
@@ -35,10 +35,10 @@ func (r *localTestRepo) ClaimDueTaskIDs(_ context.Context, limit int, lease time
 			break
 		}
 	}
-	return ids, nil
+	return ids, time.Now().Add(lease), nil
 }
 
-func (r *localTestRepo) RecordDispatchAttempt(_ context.Context, id uuid.UUID, failed bool, at time.Time) error {
+func (r *localTestRepo) RecordDispatchAttempt(_ context.Context, id uuid.UUID, _ time.Time, failed bool, at time.Time) error {
 	r.mu.Lock()
 	r.retries[id] = failed
 	r.mu.Unlock()
@@ -49,7 +49,7 @@ func (r *localTestRepo) RecordDispatchAttempt(_ context.Context, id uuid.UUID, f
 	return nil
 }
 
-func (r *localTestRepo) ReleaseDispatchClaims(_ context.Context, ids []uuid.UUID) error {
+func (r *localTestRepo) ReleaseDispatchClaims(_ context.Context, ids []uuid.UUID, _ time.Time) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.released = append(r.released, ids...)

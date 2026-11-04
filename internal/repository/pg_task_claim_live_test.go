@@ -26,19 +26,21 @@ func TestLiveConcurrentDispatchersNeverClaimTheSameTask(t *testing.T) {
 	var mu sync.Mutex
 	owner := map[uuid.UUID]int{}
 	var foreign []uuid.UUID
+	claims := map[uuid.UUID]time.Time{}
 	var wg sync.WaitGroup
 	for d := range 2 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for range 40 {
-				got, err := repo.ClaimDueTaskIDs(ctx, 5, time.Minute)
+				got, claim, err := repo.ClaimDueTaskIDs(ctx, 5, time.Minute)
 				if err != nil {
 					t.Error(err)
 					return
 				}
 				mu.Lock()
 				for _, id := range got {
+					claims[id] = claim
 					if !mine[id] {
 						foreign = append(foreign, id)
 						continue
@@ -58,8 +60,10 @@ func TestLiveConcurrentDispatchersNeverClaimTheSameTask(t *testing.T) {
 	}
 	wg.Wait()
 	// Other tests' due tasks share the table; hand theirs back untouched.
-	if err := repo.ReleaseDispatchClaims(ctx, foreign); err != nil {
-		t.Fatal(err)
+	for _, id := range foreign {
+		if err := repo.ReleaseDispatchClaims(ctx, []uuid.UUID{id}, claims[id]); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if len(owner) != len(ids) {
 		t.Fatalf("two dispatchers claimed %d of %d due tasks", len(owner), len(ids))
@@ -67,7 +71,7 @@ func TestLiveConcurrentDispatchersNeverClaimTheSameTask(t *testing.T) {
 
 	claimable := func() map[uuid.UUID]bool {
 		t.Helper()
-		got, err := repo.ClaimDueTaskIDs(ctx, 100000, time.Minute)
+		got, claim, err := repo.ClaimDueTaskIDs(ctx, 100000, time.Minute)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -80,8 +84,11 @@ func TestLiveConcurrentDispatchersNeverClaimTheSameTask(t *testing.T) {
 				theirs = append(theirs, id)
 			}
 		}
-		if err := repo.ReleaseDispatchClaims(ctx, theirs); err != nil {
+		if err := repo.ReleaseDispatchClaims(ctx, theirs, claim); err != nil {
 			t.Fatal(err)
+		}
+		for id := range out {
+			claims[id] = claim
 		}
 		return out
 	}
@@ -93,21 +100,36 @@ func TestLiveConcurrentDispatchersNeverClaimTheSameTask(t *testing.T) {
 
 	// A lapsed lease, as left by a replica that died mid-task, is claimed again; a live one is not.
 	lapsed := ids[0]
+	stale := claims[lapsed]
 	f.exec(`UPDATE tasks SET dispatch_claimed_until = NOW() - INTERVAL '1 second' WHERE id = $1`, lapsed)
 	if got := claimable(); len(got) != 1 || !got[lapsed] {
 		t.Fatalf("claimed %v, want only the task whose lease lapsed", got)
 	}
 
+	// The replica whose lease lapsed cannot clear the claim another replica took since.
+	if err := repo.ReleaseDispatchClaims(ctx, []uuid.UUID{lapsed}, stale); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RecordDispatchAttempt(ctx, lapsed, stale, false, time.Now().Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	var held *time.Time
+	if err := pool.QueryRow(ctx, `SELECT dispatch_claimed_until FROM tasks WHERE id = $1`, lapsed).Scan(&held); err != nil || held == nil {
+		t.Fatalf("a stale claim released the current one: %v, %v", held, err)
+	}
+
 	// Recording an attempt releases the claim, and so does handing a claim back.
-	if err := repo.RecordDispatchAttempt(ctx, ids[1], false, time.Now().Add(-time.Hour)); err != nil {
+	if err := repo.RecordDispatchAttempt(ctx, ids[1], claims[ids[1]], false, time.Now().Add(-time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 	var claimed *time.Time
 	if err := pool.QueryRow(ctx, `SELECT dispatch_claimed_until FROM tasks WHERE id = $1`, ids[1]).Scan(&claimed); err != nil || claimed != nil {
 		t.Fatalf("recorded attempt kept its claim: %v, %v", claimed, err)
 	}
-	if err := repo.ReleaseDispatchClaims(ctx, ids[2:]); err != nil {
-		t.Fatal(err)
+	for _, id := range ids[2:] {
+		if err := repo.ReleaseDispatchClaims(ctx, []uuid.UUID{id}, claims[id]); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if got := claimable(); len(got) != len(ids)-1 || got[lapsed] {
 		t.Fatalf("after release %d of %d tasks claimable, want all but the one still leased", len(got), len(ids)-1)

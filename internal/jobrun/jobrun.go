@@ -226,14 +226,24 @@ func takeRequests(ctx context.Context) {
 		log.Warn().Err(err).Msg("jobrun: run request poll failed")
 		return
 	}
+	var orphaned []string
 	watchMu.Lock()
-	defer watchMu.Unlock()
 	for _, name := range taken {
+		if len(watchers[name]) == 0 {
+			orphaned = append(orphaned, name)
+		}
 		for _, ch := range watchers[name] {
 			select {
 			case ch <- struct{}{}:
 			default:
 			}
+		}
+	}
+	watchMu.Unlock()
+	// The loop stopped here after the poll began; the request goes back for whichever process runs it now.
+	for _, name := range orphaned {
+		if _, err := st.RequestRun(pollCtx, name); err != nil {
+			log.Warn().Err(err).Str("job", name).Msg("jobrun: could not hand a run request back")
 		}
 	}
 }

@@ -219,9 +219,9 @@ func (s *JobsService) publishWarmupDelete(ctx context.Context, m *repository.War
 // window. Runs after a complete retention pass, so a record is only ever
 // pruned once the mail it describes has been retired.
 func (s *JobsService) pruneWarmupEvents(ctx context.Context) error {
-	_, days := s.warmupRetentionDays(ctx)
+	mailDays, days := s.warmupRetentionDays(ctx)
 	before := time.Now().AddDate(0, 0, -days)
-	pruned, err := s.WarmupRepo.PruneWarmupEventsBefore(ctx, before)
+	pruned, err := s.WarmupRepo.PruneWarmupEventsBefore(ctx, before, mailDays)
 	if err != nil {
 		return err
 	}

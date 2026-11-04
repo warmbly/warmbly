@@ -74,8 +74,12 @@ func (r *TableRetentionRepository) PruneWorkerHealthSamples(ctx context.Context,
 		`SELECT ctid FROM worker_health_samples WHERE observed_at < $2 LIMIT $1`, before)
 }
 
-// PruneDeliveredSendResultEffects drops send-result effects delivered before before.
+// PruneDeliveredSendResultEffects drops send-result effects delivered before before. An effect whose
+// task could still apply a result again (not applied, or dead-lettered and repairable) stays, so it is never re-sent.
 func (r *TableRetentionRepository) PruneDeliveredSendResultEffects(ctx context.Context, before time.Time) (int64, error) {
 	return DeleteInBatches(ctx, r.db, "send_result_effects",
-		`SELECT ctid FROM send_result_effects WHERE delivered_at IS NOT NULL AND delivered_at < $2 LIMIT $1`, before)
+		`SELECT e.ctid FROM send_result_effects e WHERE e.delivered_at IS NOT NULL AND e.delivered_at < $2
+		   AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = e.task_id
+		                   AND (t.send_result_applied_at IS NULL OR t.status = 'dead_lettered'))
+		 LIMIT $1`, before)
 }

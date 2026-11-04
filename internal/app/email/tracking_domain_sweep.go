@@ -2,6 +2,7 @@ package email
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -33,29 +34,27 @@ func (s *emailService) StartTrackingDomainSweep(ctx context.Context, interval, s
 	jobrun.Loop(ctx, "tracking_domain_sweep", interval, false, func(ctx context.Context) error {
 		sweepCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 		defer cancel()
-		s.runTrackingDomainSweep(sweepCtx, staleAfter)
-		return nil
+		return s.runTrackingDomainSweep(sweepCtx, staleAfter)
 	})
 }
 
-func (s *emailService) runTrackingDomainSweep(ctx context.Context, staleAfter time.Duration) {
+func (s *emailService) runTrackingDomainSweep(ctx context.Context, staleAfter time.Duration) error {
 	target := config.TrackingHostname()
 	if target == "" {
 		// Nothing to compare against. Unverifying every mailbox because this
 		// install has no tracking host would be the worst of both worlds.
-		return
+		return nil
 	}
 
 	due, xerr := s.emailRepository.ListTrackingDomainCheckDue(ctx, time.Now().Add(-staleAfter), trackingDomainSweepBatch)
 	if xerr != nil {
-		log.Warn().Str("error", xerr.Error()).Msg("tracking-domain sweep: failed to list due mailboxes")
-		return
+		return fmt.Errorf("tracking-domain sweep: list due mailboxes: %s", xerr.Error())
 	}
 
 	var verified, revoked int
 	for _, t := range due {
 		if ctx.Err() != nil {
-			return
+			return nil
 		}
 
 		lookupCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -97,4 +96,5 @@ func (s *emailService) runTrackingDomainSweep(ctx context.Context, staleAfter ti
 	if verified > 0 || revoked > 0 {
 		log.Info().Int("checked", len(due)).Int("newly_verified", verified).Int("revoked", revoked).Msg("tracking-domain sweep completed")
 	}
+	return nil
 }

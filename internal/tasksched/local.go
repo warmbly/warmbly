@@ -14,9 +14,9 @@ import (
 // DueTaskLister claims pending tasks whose slot has arrived.
 // repository.TaskRepository satisfies it.
 type DueTaskLister interface {
-	ClaimDueTaskIDs(ctx context.Context, limit int, lease time.Duration) ([]uuid.UUID, error)
-	RecordDispatchAttempt(ctx context.Context, taskID uuid.UUID, failed bool, retryAt time.Time) error
-	ReleaseDispatchClaims(ctx context.Context, taskIDs []uuid.UUID) error
+	ClaimDueTaskIDs(ctx context.Context, limit int, lease time.Duration) ([]uuid.UUID, time.Time, error)
+	RecordDispatchAttempt(ctx context.Context, taskID uuid.UUID, claim time.Time, failed bool, retryAt time.Time) error
+	ReleaseDispatchClaims(ctx context.Context, taskIDs []uuid.UUID, claim time.Time) error
 }
 
 const (
@@ -48,7 +48,8 @@ type Local struct {
 	interval time.Duration
 	batch    int
 	slots    chan struct{}
-	inflight sync.Map // taskID string -> struct{}, dedups across overlapping ticks
+	mu       sync.Mutex
+	inflight map[uuid.UUID]time.Time // task -> its latest claim, dedups across overlapping ticks
 }
 
 // NewLocal builds a Local poller. interval<=0 defaults to 1s; batch<=0 to 200.
@@ -59,7 +60,7 @@ func NewLocal(repo DueTaskLister, interval time.Duration, batch int, options ...
 	if batch <= 0 {
 		batch = 200
 	}
-	l := &Local{repo: repo, interval: interval, batch: batch, slots: make(chan struct{}, defaultLocalConcurrency)}
+	l := &Local{repo: repo, interval: interval, batch: batch, slots: make(chan struct{}, defaultLocalConcurrency), inflight: map[uuid.UUID]time.Time{}}
 	for _, option := range options {
 		option(l)
 	}
@@ -102,52 +103,68 @@ func (l *Local) tick(ctx context.Context, handle func(taskID string) error) {
 	if ctx.Err() != nil || free <= 0 {
 		return
 	}
-	ids, err := l.repo.ClaimDueTaskIDs(ctx, min(l.batch, free), dispatchClaimLease)
+	ids, claim, err := l.repo.ClaimDueTaskIDs(ctx, min(l.batch, free), dispatchClaimLease)
 	if err != nil {
 		log.Error().Err(err).Msg("tasksched: claim due tasks")
 		return
 	}
 	for i, id := range ids {
 		if ctx.Err() != nil {
-			l.release(ids[i:])
+			l.release(ids[i:], claim)
 			return
 		}
 		select {
 		case l.slots <- struct{}{}:
 		default:
-			l.release(ids[i:])
+			l.release(ids[i:], claim)
 			return
 		}
-		key := id.String()
-		// Still running here from an earlier claim; the new lease covers it.
-		if _, busy := l.inflight.LoadOrStore(key, struct{}{}); busy {
+		// Still running here from an earlier claim; the new lease covers it and is the one recorded.
+		if l.track(id, claim) {
 			<-l.slots
 			continue
 		}
-		go func(taskID string) {
+		go func(id uuid.UUID) {
 			defer func() { <-l.slots }()
-			defer l.inflight.Delete(taskID)
 			if ctx.Err() != nil {
-				l.release([]uuid.UUID{id})
+				l.release([]uuid.UUID{id}, l.untrack(id))
 				return
 			}
-			err := handle(taskID)
+			err := handle(id.String())
+			claim := l.untrack(id)
 			if ctx.Err() != nil {
-				l.release([]uuid.UUID{id})
+				l.release([]uuid.UUID{id}, claim)
 				return
 			}
-			if saveErr := l.repo.RecordDispatchAttempt(ctx, id, err != nil, time.Now().Add(dispatchRetryDelay)); saveErr != nil {
+			if saveErr := l.repo.RecordDispatchAttempt(ctx, id, claim, err != nil, time.Now().Add(dispatchRetryDelay)); saveErr != nil {
 				log.Error().Err(saveErr).Msg("tasksched: record dispatch retry")
 			}
-		}(key)
+		}(id)
 	}
 }
 
+// track records the task's latest claim and reports whether it was already running here.
+func (l *Local) track(id uuid.UUID, claim time.Time) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	_, busy := l.inflight[id]
+	l.inflight[id] = claim
+	return busy
+}
+
+func (l *Local) untrack(id uuid.UUID) time.Time {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	claim := l.inflight[id]
+	delete(l.inflight, id)
+	return claim
+}
+
 // release hands claims back so another replica need not wait out the lease, even during shutdown.
-func (l *Local) release(ids []uuid.UUID) {
+func (l *Local) release(ids []uuid.UUID, claim time.Time) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := l.repo.ReleaseDispatchClaims(ctx, ids); err != nil {
+	if err := l.repo.ReleaseDispatchClaims(ctx, ids, claim); err != nil {
 		log.Warn().Err(err).Msg("tasksched: release dispatch claims")
 	}
 }
