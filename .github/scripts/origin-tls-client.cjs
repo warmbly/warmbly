@@ -9,12 +9,46 @@ const TLS13 = "TLS_AES_128_GCM_SHA256";
 const validTargets = (targets) => Array.isArray(targets) && targets.length >= 2 && new Set(targets).size === targets.length &&
   targets.every((ip) => typeof ip === "string" && /^10\.42\.(?:0|1)\.(?:[1-9]\d?|1\d\d|2[0-4]\d|25[0-4])$/.test(ip));
 
+function sanitize(output) {
+  let session = false;
+  let ticket = false;
+  return output.split("\n").filter((line) => {
+    if (/^SSL-Session:/.test(line)) session = true;
+    if (/^---$/.test(line)) session = false;
+    if (/^(?:>>>|<<<) /.test(line)) ticket = /, NewSessionTicket$/.test(line);
+    if (ticket && (/^(?:>>>|<<<) .*NewSessionTicket$/.test(line) || /^\s+(?:[a-f\d]{2}\s*)+$/i.test(line))) return false;
+    return !session || /^\s*Verify return code:/.test(line);
+  }).join("\n");
+}
+
 function invoke(args, spawn = spawnSync) {
   const result = spawn("openssl", args, { encoding: "utf8", input: "", timeout: 12000,
     killSignal: "SIGKILL", maxBuffer: 128 * 1024 });
   return { at: new Date().toISOString(), command: ["openssl", ...args], status: result.status,
     signal: result.signal || null, error: result.error?.code || null,
-    stdout: result.stdout || "", stderr: result.stderr || "" };
+    stdout: sanitize(result.stdout || ""), stderr: sanitize(result.stderr || "") };
+}
+
+function peerRefusal(output, cipher) {
+  const messages = [...output.matchAll(/^(>>>|<<<) TLS[^\n]*, (Handshake|Alert) \[length ([a-f\d]+)\], ([^\n]+)\n((?:[ \t]+(?:[a-f\d]{2}[ \t]*)+\n)+)/gmi)];
+  if (messages.length !== 2) return false;
+  const [hello, alert] = messages;
+  const bytes = (message) => Buffer.from(message[5].replace(/\s/g, ""), "hex");
+  const sent = bytes(hello);
+  const received = bytes(alert);
+  if (hello[1] !== ">>>" || hello[2] !== "Handshake" || hello[4] !== "ClientHello" ||
+    sent.length !== parseInt(hello[3], 16) || sent.length < 41 || sent[0] !== 1 ||
+    sent.readUIntBE(1, 3) !== sent.length - 4 || sent.readUInt16BE(4) !== 0x0303) return false;
+  const offset = 39 + sent[38];
+  if (offset + 2 > sent.length) return false;
+  const length = sent.readUInt16BE(offset);
+  const offers = sent.subarray(offset + 2, offset + 2 + length).toString("hex");
+  const intended = { [CBC[0]]: "c027", [CBC[1]]: "c028" }[cipher];
+  // The sole negotiable suite may be followed by the renegotiation signalling value.
+  return intended && length >= 2 && offset + 2 + length < sent.length &&
+    (offers === intended || offers === intended + "00ff") &&
+    alert[1] === "<<<" && alert[2] === "Alert" && alert[4] === "fatal handshake_failure" &&
+    parseInt(alert[3], 16) === 2 && received.equals(Buffer.from([2, 40]));
 }
 
 function classify(result, version, cipher, negative = false) {
@@ -22,10 +56,11 @@ function classify(result, version, cipher, negative = false) {
   const output = result.stdout + result.stderr;
   const negotiated = /New, (TLSv1\.[23]), Cipher is ([^\s]+)/.exec(output);
   if (negative) {
-    if (/certificate verify failed|Verification error|verify error|no cipher match/i.test(output)) return "inconclusive";
+    if (/certificate verify failed|Verification error|verify error|no cipher match|unexpected eof|reset by peer|connect:errno/i.test(output)) return "inconclusive";
     if (negotiated && negotiated[2] !== "(NONE)" && negotiated[2] !== "0000") return "accepted";
-    return result.status !== 0 && /(?:sslv3|tlsv1) alert handshake failure|SSL alert number 40/i.test(output) &&
-      /Cipher (?:is|:) (?:\(NONE\)|0000)/.test(output) ? "refused" : "inconclusive";
+    return result.status === 1 && peerRefusal(result.stdout || "", cipher) &&
+      !/-----BEGIN CERTIFICATE-----/.test(output) && /no peer certificate available/.test(output) &&
+      /New, \(NONE\), Cipher is \(NONE\)/.test(output) ? "refused" : "inconclusive";
   }
   return result.status === 0 && negotiated?.[1] === version && negotiated[2] === cipher &&
     /Verify return code: 0 \(ok\)/.test(output) && /-----BEGIN CERTIFICATE-----/.test(output) ? "trusted" : "inconclusive";
@@ -51,7 +86,8 @@ function probe(targets, run = invoke, emit = (row) => console.log(JSON.stringify
     const handshake = (cipher, negative = false) => {
       const tls13 = cipher === TLS13;
       const result = bounded(["s_client", "-connect", `${ip}:443`, "-servername", HOST, "-verify_hostname", HOST,
-        "-verify_return_error", "-CAfile", CA, "-showcerts", tls13 ? "-tls1_3" : "-tls1_2",
+        "-verify_return_error", "-CAfile", CA, "-showcerts", "-no_ticket",
+        ...(negative ? ["-ign_eof", "-state", "-msg"] : []), tls13 ? "-tls1_3" : "-tls1_2",
         tls13 ? "-ciphersuites" : "-cipher", cipher]);
       const outcome = classify(result, tls13 ? "TLSv1.3" : "TLSv1.2", cipher, negative);
       emit({ kind: "handshake", ip, cipher, negative, outcome, ...result });

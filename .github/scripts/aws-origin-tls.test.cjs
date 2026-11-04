@@ -7,6 +7,7 @@ const { join } = require("node:path");
 const { ACCOUNT, BUCKET, ROLE, LB, LISTENER, DESIRED } = require("./aws-origin-alb.cjs");
 const { configuration, sessionPolicy, discover, definition, execute, finish, verifiedLogs, IMAGE, CLUSTER, SERVICE, EXECUTION, SG, ALB_SG, VPC, ECS, LOG } = require("./aws-origin-tls.cjs");
 const { probe, CBC, TLS13 } = require("./origin-tls-client.cjs");
+const { refused } = require("./origin-tls-client.fixture.cjs");
 
 const scaledTargets = ["10.42.0.85", "10.42.1.12", "10.42.0.86", "10.42.1.13"];
 
@@ -17,7 +18,7 @@ function logFixture(targets = ["10.42.0.85", "10.42.1.12"]) {
     if (args[0] === "ciphers") return { status: 0, stdout: CBC.join(":") };
     const cipher = args.at(-1);
     return { command: ["openssl", ...args], ...(CBC.includes(cipher) ?
-      { status: 1, stdout: "New, (NONE), Cipher is (NONE)", stderr: "sslv3 alert handshake failure" } :
+      refused(cipher) :
       { status: 0, stdout: `-----BEGIN CERTIFICATE-----\nfixture\nNew, ${cipher === TLS13 ? "TLSv1.3" : "TLSv1.2"}, Cipher is ${cipher}\nVerify return code: 0 (ok)`, stderr: "" }) };
   }, (row) => events.push({ message: JSON.stringify(row) }));
   return events;
@@ -446,6 +447,24 @@ test("missing or truncated raw handshake logs cannot be rescued by a successful 
   const logs = logFixture();
   logs[2].message = logs[2].message.replace("return code: 0 (ok)", "return code: 62 (hostname mismatch)");
   assert.equal(verifiedLogs(logs, targets), false);
+});
+
+test("private archive verification reclassifies ambiguous or altered negative evidence", () => {
+  const targets = ["10.42.0.85", "10.42.1.12"];
+  for (const alter of [
+    (r) => { r.stdout = "CONNECTED\nclosed\nno peer certificate available\nNew, (NONE), Cipher is (NONE)\n"; r.status = 0; },
+    (r) => { r.stdout = r.stdout.replace("<<<", ">>>"); },
+    (r) => { r.stdout = r.stdout.replace("02 28", "01 00"); },
+    (r) => { r.stdout = r.stdout.replace("c0 27", "c0 2f"); },
+  ]) {
+    const logs = logFixture();
+    const index = logs.findIndex((e) => JSON.parse(e.message).negative);
+    const row = JSON.parse(logs[index].message);
+    alter(row);
+    assert.equal(row.outcome, "refused");
+    logs[index].message = JSON.stringify(row);
+    assert.equal(verifiedLogs(logs, targets), false);
+  }
 });
 
 test("delayed log delivery is retried within a fixed page budget before verification", async (t) => {

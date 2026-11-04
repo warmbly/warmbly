@@ -292,6 +292,13 @@ CBC-only TLS 1.2 offers, then fresh TLS 1.2 and TLS 1.3 positives. Only explicit
 peer handshake-failure alerts without a negotiated cipher, bracketed by those
 trusted positives, establish refusal. Timeout, reset alone, unavailable local
 ciphers, missing CA, certificate errors or incomplete evidence are inconclusive.
+Negative offers ignore stdin EOF and retain bounded OpenSSL state and message
+traces. Refusal requires the transmitted TLS 1.2 ClientHello to contain only the
+intended CBC suite (plus optional renegotiation signalling) followed by an inbound
+fatal `handshake_failure` alert with matching bytes, no certificate and no cipher.
+`close_notify` and bare EOF remain inconclusive. Session summaries and ticket
+message bodies are omitted from new logs; certificate and verification evidence
+is retained, and session tickets are disabled in the client.
 The task sends TLS handshakes only, with empty stdin and no HTTP or authentication.
 
 Each OpenSSL process has a 12-second kill bound, and the container command has a
