@@ -490,9 +490,18 @@ func TestLiveMailboxSourcesSigninConversions(t *testing.T) {
 		}
 	})
 
+	// An enrollment belongs to the workspace's Cloud link, kept for every later subtest.
+	instance := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO cloud_link (cloud_url, instance_id, token, organization_id) VALUES ('https://cloud.test', $1, 'fixture', $2)`, instance, f.org); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM cloud_link WHERE instance_id = $1`, instance)
+	})
+
 	t.Run("a mailbox managed elsewhere is never offered or moved", func(t *testing.T) {
 		box := signin("managed-" + f.org.String()[:8] + "@conv.io")
-		if _, err := pool.Exec(ctx, `INSERT INTO cloud_link_mailboxes (email_account_id, remote_id, managed) VALUES ($1, $2, true)`, box, uuid.New()); err != nil {
+		if _, err := pool.Exec(ctx, `INSERT INTO cloud_link_mailboxes (email_account_id, remote_id, managed, instance_id) VALUES ($1, $2, true, $3)`, box, uuid.New(), instance); err != nil {
 			t.Fatal(err)
 		}
 		list, _ := emails.ListSigninRetiring(ctx, f.org)

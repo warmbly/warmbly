@@ -30,7 +30,7 @@ func (tr *monitoringClockTrace) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, 
 	}
 }
 
-func monitoringClockPool(t *testing.T, pool *pgxpool.Pool, trace *monitoringClockTrace) *pgxpool.Pool {
+func monitoringClockPool(t *testing.T, pool *pgxpool.Pool, trace *monitoringClockTrace, scope monitoringScope) *pgxpool.Pool {
 	t.Helper()
 	cfg := pool.Config().Copy()
 	cfg.MaxConns = 1
@@ -39,6 +39,7 @@ func monitoringClockPool(t *testing.T, pool *pgxpool.Pool, trace *monitoringCloc
 	cfg.ConnConfig.RuntimeParams["statement_timeout"] = "3000"
 	cfg.ConnConfig.RuntimeParams["timezone"] = "America/Los_Angeles"
 	cfg.ConnConfig.Tracer = trace
+	scope.isolate(cfg)
 	ro, err := pgxpool.NewWithConfig(t.Context(), cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -91,7 +92,7 @@ func TestLiveMonitoringDatabaseClockAfterRequestStart(t *testing.T) {
 				t.Fatal("fixture receipt did not follow request start")
 			}
 			trace := &monitoringClockTrace{}
-			ro := monitoringClockPool(t, pool, trace)
+			ro := monitoringClockPool(t, pool, trace, monitoringScope{nodes: []uuid.UUID{worker}, orgs: []uuid.UUID{f.org}})
 			before := monitoringWorkerClock(t, pool)
 			got := collectMonitoring(t, NewMonitoringRepository(ro), source, requested)
 			after := monitoringWorkerClock(t, pool)
@@ -122,7 +123,7 @@ func TestLiveMonitoringDatabaseClockWarningSemantics(t *testing.T) {
 	f.exec(`UPDATE email_accounts SET status='active',worker_id=$2 WHERE id=$1`, f.account, worker)
 	now := monitoringWorkerClock(t, pool)
 	stale, future, expired := now.Add(-time.Hour), now.Add(time.Hour), now.Add(-time.Second)
-	r := NewMonitoringRepository(monitoringClockPool(t, pool, &monitoringClockTrace{}))
+	r := NewMonitoringRepository(monitoringClockPool(t, pool, &monitoringClockTrace{}, monitoringScope{nodes: []uuid.UUID{worker}, orgs: []uuid.UUID{f.org}}))
 	for _, tc := range []struct {
 		name, provider, metric string
 		last, hold             *time.Time
@@ -277,7 +278,7 @@ func TestLiveMonitoringDatabaseClockSingleSnapshot(t *testing.T) {
 	old := monitoringWorkerClock(t, pool).Add(-time.Hour)
 	f.exec(`INSERT INTO email_sync_state(email_id,user_id,last_synced_at) VALUES($1,$2,$3)`, f.account, f.user, old)
 	trace := &monitoringClockTrace{}
-	ro := monitoringClockPool(t, pool, trace)
+	ro := monitoringClockPool(t, pool, trace, monitoringScope{nodes: []uuid.UUID{worker}, orgs: []uuid.UUID{f.org}})
 	var pid int
 	if err := ro.QueryRow(t.Context(), `SELECT pg_backend_pid()`).Scan(&pid); err != nil {
 		t.Fatal(err)

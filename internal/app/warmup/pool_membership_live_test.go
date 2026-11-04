@@ -48,9 +48,11 @@ func newPoolMailbox(t *testing.T, handle *db.DB, poolType string) *poolMailbox {
 		f.user, "wp-"+f.user.String()[:8]+"@test.local")
 	exec(`INSERT INTO organizations (id, name, slug, owner_user_id) VALUES ($1, 'Warmup Pool Live', $2, $3)`,
 		f.org, "wp-"+f.org.String()[:8], f.user)
+	// MoveToPool admits only a mailbox that consented to send and receive test mail (000273).
 	exec(`INSERT INTO email_accounts (id, user_id, organization_id, email, name,
-	          signature_plain, signature_html, provider, status, campaign_limit, min_wait_time, timezone, warmup_pool_type)
-	      VALUES ($1, $2, $3, $4, 'Pool', '', '', 'smtp_imap', 'active', 50, 600, 'UTC', $5)`,
+	          signature_plain, signature_html, provider, status, campaign_limit, min_wait_time, timezone, warmup_pool_type,
+	          test_mode, test_send_enabled, test_receive_enabled)
+	      VALUES ($1, $2, $3, $4, 'Pool', '', '', 'smtp_imap', 'active', 50, 600, 'UTC', $5, 'diagnostic', true, true)`,
 		f.account, f.user, f.org, "wp-"+f.account.String()[:8]+"@test.local", poolType)
 
 	if poolType != "" {

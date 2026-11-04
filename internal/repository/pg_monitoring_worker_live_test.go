@@ -35,11 +35,45 @@ func (tr *monitoringWorkerTrace) TraceQueryEnd(ctx context.Context, _ *pgx.Conn,
 	}
 }
 
-func monitoringTracedWorkerPool(t *testing.T, pool *pgxpool.Pool, trace *monitoringWorkerTrace) *pgxpool.Pool {
+// monitoringScope is the fleet and the workspaces a test owns in the shared database.
+type monitoringScope struct{ nodes, orgs []uuid.UUID }
+
+func monitoringUUIDArray(ids []uuid.UUID) string {
+	parts := make([]string, len(ids))
+	for i, id := range ids {
+		parts[i] = id.String()
+	}
+	return "'{" + strings.Join(parts, ",") + "}'::uuid[]"
+}
+
+// isolate shadows the instance-wide tables with temp views, so unmodified monitoring SQL sees only this test's rows.
+func (s monitoringScope) isolate(cfg *pgxpool.Config) {
+	nodes, orgs := monitoringUUIDArray(s.nodes), monitoringUUIDArray(s.orgs)
+	ddl := `BEGIN READ WRITE;
+		CREATE TEMP VIEW fleet_nodes AS SELECT * FROM public.fleet_nodes WHERE id = ANY (` + nodes + `);
+		CREATE TEMP VIEW worker_health_samples AS SELECT * FROM public.worker_health_samples WHERE worker_id = ANY (` + nodes + `);
+		CREATE TEMP VIEW email_accounts AS SELECT * FROM public.email_accounts WHERE organization_id = ANY (` + orgs + `);
+		CREATE TEMP VIEW email_sync_state AS SELECT s.* FROM public.email_sync_state s JOIN email_accounts e ON e.id = s.email_id;
+		COMMIT`
+	cfg.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+		_, err := conn.Exec(ctx, ddl)
+		return err
+	}
+}
+
+func monitoringScopedReadOnlyPool(t *testing.T, pool *pgxpool.Pool, scope monitoringScope) *pgxpool.Pool {
+	t.Helper()
+	return monitoringTracedWorkerPool(t, pool, nil, scope)
+}
+
+func monitoringTracedWorkerPool(t *testing.T, pool *pgxpool.Pool, trace *monitoringWorkerTrace, scope monitoringScope) *pgxpool.Pool {
 	t.Helper()
 	cfg := pool.Config().Copy()
 	cfg.ConnConfig.RuntimeParams["default_transaction_read_only"] = "on"
-	cfg.ConnConfig.Tracer = trace
+	if trace != nil {
+		cfg.ConnConfig.Tracer = trace
+	}
+	scope.isolate(cfg)
 	ro, err := pgxpool.NewWithConfig(t.Context(), cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -86,7 +120,7 @@ func TestLiveMonitoringWorkerHeartbeatAfterRefreshStart(t *testing.T) {
 	if err := fleet.UpsertOnHeartbeat(t.Context(), models.NodeHeartbeat{NodeID: id, Role: models.NodeRoleWorker}); err != nil {
 		t.Fatal(err)
 	}
-	got := collectMonitoring(t, NewMonitoringRepository(monitoringReadOnlyPool(t, pool)), "workers", at)
+	got := collectMonitoring(t, NewMonitoringRepository(monitoringScopedReadOnlyPool(t, pool, monitoringScope{nodes: []uuid.UUID{id}})), "workers", at)
 	m := measuredMonitoring(t, got, "workers_missing_heartbeat")
 	if *m.Count != 0 || len(got.Metrics) != 1 || *got.ExpectedScopes != 0 || *got.MeasuredScopes != 0 {
 		t.Fatalf("in-collection native heartbeat classified missing/future: %+v", got)
@@ -107,7 +141,7 @@ func TestLiveMonitoringWorkerHeartbeatSingleSnapshot(t *testing.T) {
 			t.Fatal(err)
 		}
 	}}
-	got := collectMonitoring(t, NewMonitoringRepository(monitoringTracedWorkerPool(t, pool, trace)), "workers", at)
+	got := collectMonitoring(t, NewMonitoringRepository(monitoringTracedWorkerPool(t, pool, trace, monitoringScope{nodes: []uuid.UUID{id}})), "workers", at)
 	m := measuredMonitoring(t, got, "workers_missing_heartbeat")
 	if *m.Count != 0 || len(got.Metrics) != 1 || *got.ExpectedScopes != 0 || *got.MeasuredScopes != 0 || trace.queries.Load() != 1 {
 		t.Fatalf("aggregate/details observed different heartbeats (queries=%d): %+v", trace.queries.Load(), got)
@@ -150,7 +184,7 @@ func TestLiveMonitoringWorkerHeartbeatStatesAndClockBoundary(t *testing.T) {
 			}
 			f := newWarmupUsageFixture(t, pool)
 			f.exec(`UPDATE email_accounts SET worker_id=$1 WHERE id=$2`, id, f.account)
-			r := NewMonitoringRepository(monitoringReadOnlyPool(t, pool))
+			r := NewMonitoringRepository(monitoringScopedReadOnlyPool(t, pool, monitoringScope{nodes: []uuid.UUID{id}, orgs: []uuid.UUID{f.org}}))
 			snapshot := monitoring.New([]monitoring.Source{r.workerSource()}).Snapshot(t.Context(), models.AdminPermViewWorkers)
 			got := snapshot.Sources[0]
 			m := measuredMonitoring(t, got, "workers_missing_heartbeat")
@@ -230,18 +264,22 @@ func TestLiveMonitoringWorkerHeartbeatAggregateClockUncertainty(t *testing.T) {
 				ids[i] = monitoringWorkerNode(t, pool, "worker", true, &future)
 				conditions[ids[i].String()] = models.MonitoringUnknown
 			}
+			scope := monitoringScope{nodes: slices.Clone(ids)}
 			if tc.stale {
 				id := monitoringWorkerNode(t, pool, "worker", true, &stale)
 				conditions[id.String()] = models.MonitoringTelemetryStale
+				scope.nodes = append(scope.nodes, id)
 			}
 			if tc.missing {
 				id := monitoringWorkerNode(t, pool, "worker", true, nil)
 				conditions[id.String()] = models.MonitoringTelemetryStale
+				scope.nodes = append(scope.nodes, id)
 			}
 			f := newWarmupUsageFixture(t, pool)
+			scope.orgs = []uuid.UUID{f.org}
 			f.exec(`UPDATE email_accounts SET worker_id=$1 WHERE id=$2`, ids[0], f.account)
 			trace := &monitoringWorkerTrace{}
-			r := NewMonitoringRepository(monitoringTracedWorkerPool(t, pool, trace))
+			r := NewMonitoringRepository(monitoringTracedWorkerPool(t, pool, trace, scope))
 			got := monitoring.New([]monitoring.Source{r.workerSource()}).Snapshot(t.Context(), models.AdminPermViewWorkers).Sources[0]
 			m := measuredMonitoring(t, got, "workers_missing_heartbeat")
 			total := int64(len(conditions))
@@ -274,8 +312,10 @@ func TestLiveMonitoringWorkerHeartbeatSampleAndAssignments(t *testing.T) {
 				ids[i] = monitoringWorkerNode(t, pool, "worker", true, nil)
 			}
 			slices.SortFunc(ids, func(a, b uuid.UUID) int { return bytes.Compare(a[:], b[:]) })
+			scope := monitoringScope{nodes: ids}
 			if total > 0 {
 				f, other := newWarmupUsageFixture(t, pool), newWarmupUsageFixture(t, pool)
+				scope.orgs = []uuid.UUID{f.org, other.org}
 				f.exec(`UPDATE email_accounts SET worker_id=$1 WHERE id=$2`, ids[0], f.account)
 				other.exec(`UPDATE email_accounts SET worker_id=$1 WHERE id=$2`, ids[len(ids)-1], other.account)
 				copyID := uuid.New()
@@ -283,7 +323,7 @@ func TestLiveMonitoringWorkerHeartbeatSampleAndAssignments(t *testing.T) {
 				f.exec(`UPDATE email_accounts SET worker_id=$1 WHERE id=$2`, ids[0], copyID)
 				t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM email_accounts WHERE id=$1`, copyID) })
 			}
-			r := NewMonitoringRepository(monitoringReadOnlyPool(t, pool))
+			r := NewMonitoringRepository(monitoringScopedReadOnlyPool(t, pool, scope))
 			got := monitoring.New([]monitoring.Source{r.workerSource()}).Snapshot(t.Context(), models.AdminPermViewWorkers).Sources[0]
 			m := measuredMonitoring(t, got, "workers_missing_heartbeat")
 			if *m.Count != total || *got.ExpectedScopes != total || *got.MeasuredScopes != min(total, 20) || len(got.Metrics) != int(min(total, 20))+1 {
@@ -340,7 +380,7 @@ func TestLiveMonitoringWorkerHeartbeatConcurrentRead(t *testing.T) {
 		}
 	}
 	trace := &monitoringWorkerTrace{}
-	r := NewMonitoringRepository(monitoringTracedWorkerPool(t, pool, trace))
+	r := NewMonitoringRepository(monitoringTracedWorkerPool(t, pool, trace, monitoringScope{nodes: ids, orgs: []uuid.UUID{f.org}}))
 	stop, started, done := make(chan struct{}), make(chan struct{}), make(chan error, 1)
 	writerCtx, cancel := context.WithCancel(context.Background())
 	var writes atomic.Int64
