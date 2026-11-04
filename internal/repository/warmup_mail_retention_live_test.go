@@ -97,7 +97,7 @@ func TestLiveWarmupMailRetention(t *testing.T) {
 
 	repo := &warmupRepository{db: pool}
 
-	rows, err := repo.ListWarmupMailToRetire(ctx, 30, 100)
+	rows, err := repo.ListWarmupMailToRetire(ctx, 30, 100, nil)
 	if err != nil {
 		t.Fatalf("ListWarmupMailToRetire: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestLiveWarmupMailRetention(t *testing.T) {
 	if err != nil || rec == nil || rec.RetiredAt == nil {
 		t.Fatalf("GetWarmupReceived after retiring = %+v, %v; want retired_at set", rec, err)
 	}
-	rows, err = repo.ListWarmupMailToRetire(ctx, 30, 100)
+	rows, err = repo.ListWarmupMailToRetire(ctx, 30, 100, nil)
 	if err != nil {
 		t.Fatalf("ListWarmupMailToRetire again: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestLiveWarmupMailRetention(t *testing.T) {
 
 	// The sender's own copies follow the same window, and the map resolves
 	// the provider key where it is keyed by Message-ID.
-	sent, err := repo.ListWarmupSentCopiesToRetire(ctx, 30, 100)
+	sent, err := repo.ListWarmupSentCopiesToRetire(ctx, 30, 100, nil)
 	if err != nil {
 		t.Fatalf("ListWarmupSentCopiesToRetire: %v", err)
 	}
@@ -180,7 +180,12 @@ func TestLiveWarmupMailRetention(t *testing.T) {
 	exec(`INSERT INTO mailbox_owner_activity (email_account_id, bucket) VALUES
 	        ($1, NOW() - make_interval(days => $2::int + 1)), ($1, NOW() - interval '1 day')`,
 		following, config.WarmupOwnerActivityKeepDays)
-	if _, err := repo.PruneWarmupEventsBefore(ctx, time.Now().AddDate(0, 0, -365)); err != nil {
+	// A thread turn goes with the event window unless its mailbox still keeps that mail.
+	exec(`UPDATE email_accounts SET warmup_retention_days = 500 WHERE id = $1`, idle)
+	exec(`INSERT INTO warmup_thread_messages (email_account_id, message_id, created_at) VALUES
+	        ($1, 'turn-past-every-window@example.test', NOW() - interval '400 days'),
+	        ($2, 'turn-in-its-mail-window@example.test', NOW() - interval '400 days')`, following, idle)
+	if _, err := repo.PruneWarmupEventsBefore(ctx, time.Now().AddDate(0, 0, -365), 30); err != nil {
 		t.Fatalf("PruneWarmupEventsBefore: %v", err)
 	}
 	if rec, _ := repo.GetWarmupReceived(ctx, following, oldFollowing); rec != nil {
@@ -192,6 +197,13 @@ func TestLiveWarmupMailRetention(t *testing.T) {
 	var tokens int
 	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM warmup_tokens WHERE token IN ($1, $2)`, oldSent, smtpSent).Scan(&tokens); err != nil || tokens != 0 {
 		t.Fatalf("retired and SMTP tokens past the window: count=%d err=%v, want both pruned", tokens, err)
+	}
+	var turns []string
+	if err := pool.QueryRow(ctx, `SELECT COALESCE(array_agg(message_id), '{}') FROM warmup_thread_messages WHERE email_account_id IN ($1, $2)`, following, idle).Scan(&turns); err != nil {
+		t.Fatal(err)
+	}
+	if len(turns) != 1 || turns[0] != "turn-in-its-mail-window@example.test" {
+		t.Fatalf("thread turns after the prune: %v, want only the one its mailbox still keeps", turns)
 	}
 	var buckets int
 	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM mailbox_owner_activity WHERE email_account_id = $1`, following).Scan(&buckets); err != nil || buckets != 1 {

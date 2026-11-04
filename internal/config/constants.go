@@ -342,6 +342,11 @@ const (
 	// shortens it under Instance settings.
 	AuditLogRetentionDaysDefault = 90
 
+	// The feed windows default to 0, keep everything, so an upgrade deletes no history an operator did not ask to prune.
+	CampaignLogRetentionDaysDefault     = 0
+	NotificationRetentionDaysDefault    = 0
+	WebhookDeliveryRetentionDaysDefault = 0
+
 	// Ten years is the ceiling every retention window shares. It is not a
 	// recommendation: it is the point past which "keep it" and "keep it
 	// forever" stop differing, and it bounds a typo. One day is the floor, so

@@ -164,3 +164,40 @@ func TestDurableArrivalBacklogAlertsAreAgedAndDeduplicated(t *testing.T) {
 		t.Fatal("operator notice exposed an error or fabricated unavailable counts")
 	}
 }
+
+func TestArrivalBacklogIsCountedOncePerIntervalAndFailuresStillAge(t *testing.T) {
+	now := time.Now()
+	outbox := &countedBacklogStub{}
+	ops := &arrivalOperatorStub{}
+	s := &JobsService{ArrivalOutbox: outbox, OpsNotifier: ops}
+	var failed, alerted time.Time
+	for i := range 6 {
+		s.observeArrivalBacklog(t.Context(), nil, now.Add(time.Duration(i)*5*time.Second), &failed, &alerted)
+	}
+	if outbox.reads != 1 {
+		t.Fatalf("queue counted %d times in 25 seconds", outbox.reads)
+	}
+	s.observeArrivalBacklog(t.Context(), nil, now.Add(arrivalBacklogInterval), &failed, &alerted)
+	if outbox.reads != 2 {
+		t.Fatal("the next interval did not count the queue")
+	}
+	// A failure between readings starts the clock; the reading after a minute of it alerts.
+	failing := errors.New("delivery down")
+	start := now.Add(time.Minute)
+	for at := start; !at.After(start.Add(90 * time.Second)); at = at.Add(5 * time.Second) {
+		s.observeArrivalBacklog(t.Context(), failing, at, &failed, &alerted)
+	}
+	if !failed.Equal(start) || ops.calls != 1 {
+		t.Fatalf("failure since %v (want %v), alerts %d", failed, start, ops.calls)
+	}
+}
+
+type countedBacklogStub struct {
+	repository.ArrivalOutbox
+	reads int
+}
+
+func (s *countedBacklogStub) ArrivalBacklog(context.Context) (repository.ArrivalBacklog, error) {
+	s.reads++
+	return repository.ArrivalBacklog{}, nil
+}

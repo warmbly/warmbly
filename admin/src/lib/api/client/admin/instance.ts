@@ -135,6 +135,11 @@ export interface InstanceSettings {
         // second. The daily warmup statistics are never pruned.
         warmup_mail_days: number;
         warmup_event_days: number;
+        // History shown in the product: a campaign's activity feed, in-app
+        // notifications, and each webhook endpoint's delivery log.
+        campaign_log_days: number;
+        notification_days: number;
+        webhook_delivery_days: number;
     };
     // How soon after a send an open or click is recorded as automated. The
     // clock starts at dispatch to the worker, so the window also covers the

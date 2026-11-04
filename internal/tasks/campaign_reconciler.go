@@ -9,6 +9,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/config"
+	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/scheduler"
 )
 
@@ -181,24 +182,13 @@ func (s *tasksService) repark(ctx context.Context, limit int) {
 }
 
 // StartCampaignReconciler runs ReconcileCampaignSchedules on an interval until
-// the context is cancelled. Mirrors StartWarmupReconciler and is started from
-// the backend, which owns Cloud Tasks.
+// the context is cancelled, one replica per pass. Started from the backend,
+// which owns Cloud Tasks; seeded on boot so chains recover promptly.
 func (s *tasksService) StartCampaignReconciler(ctx context.Context, interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	// Seed once on boot so chains recover promptly after a restart instead of
-	// waiting a full interval.
-	s.reconcileCampaignsOnce(ctx)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			s.reconcileCampaignsOnce(ctx)
-		}
-	}
+	jobrun.Loop(ctx, "campaign_reconcile", interval, true, func(ctx context.Context) error {
+		s.reconcileCampaignsOnce(ctx)
+		return nil
+	})
 }
 
 func (s *tasksService) reconcileCampaignsOnce(ctx context.Context) {
