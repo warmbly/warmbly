@@ -78,8 +78,7 @@ func (r *advancedOutreachRepository) DeliverSendResultEffects(ctx context.Contex
 			break
 		}
 	}
-	_, err := r.db.Exec(ctx, `DELETE FROM send_result_effects WHERE delivered_at<NOW()-INTERVAL '7 days'`)
-	return err
+	return nil
 }
 
 // claimSendResultEffects leases up to limit pending effects, oldest first.

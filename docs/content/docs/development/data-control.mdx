@@ -100,17 +100,24 @@ See [Automatic inbox tagging](/guides/inbox-tagging/), [Advisor](/guides/advisor
 | `retention.form_event_days` | 180 | Form funnel events: views, starts, field-level drop-off |
 | `retention.audit_log_days` | 90 | The audit trail: actor, IP address, user agent, change payload |
 | `retention.warmup_mail_days` | 30 | Warmup mail in the mailboxes themselves, and the stored copy of each message's body. Deleted by the platform once older than this, wherever the mailbox files it; a mailbox can set its own window |
-| `retention.warmup_event_days` | 365 | Per-message warmup records: tokens, receipts, tampering events, spam moves and their attribution, spam reports, and for a linked instance that runs its own mailboxes, the commands Cloud queued for it once they are closed and the warmup mail it reported once retired. The daily sent and received counts behind the analytics are kept. When each mailbox's owner last acted in it (five-minute marks, no message content) is kept 30 days whatever this is set to |
+| `retention.warmup_event_days` | 365 | Per-message warmup records: tokens, receipts, tampering events, spam moves and their attribution, spam reports, and which messages belong to a warmup thread, and for a linked instance that runs its own mailboxes, the commands Cloud queued for it once they are closed and the warmup mail it reported once retired. The daily sent and received counts behind the analytics are kept. When each mailbox's owner last acted in it (five-minute marks, no message content) is kept 30 days whatever this is set to |
+| `retention.campaign_log_days` | 365 | Each campaign's activity feed: failed and deferred sends, pauses and their reasons |
+| `retention.notification_days` | 180 | In-app notifications, read or unread. One still waiting to be emailed is kept until it is sent or skipped |
+| `retention.webhook_delivery_days` | 90 | Each webhook endpoint's delivery log of settled deliveries, with the payload and the response excerpt. A delivery still being retried is kept until it settles |
 
-The first three are between 1 and 3,650 days, and they are the settings a retention or privacy policy applies to, because each window is also how long the personal data in that log is held. The warmup mail window starts at 3 days and the warmup records window at 30, the least the engagement legs and the pool health bands need.
+The event logs and the three history feeds are between 1 and 3,650 days, and they are the settings a retention or privacy policy applies to, because each window is also how long the personal data in that log is held. The warmup mail window starts at 3 days and the warmup records window at 30, the least the engagement legs and the pool health bands need.
 
 None of them change a number anyone reads. Campaign progress keeps its own summary of opens and clicks that outlives the per-event log, so counts, filters and branching are unaffected by shortening any of these. What gets shorter is what a contact's timeline can show, how far a funnel report reaches, and how far back an admin can audit.
+
+The history feeds are the same: a campaign's stats and sent mail are not in its activity feed, and an old notification that was never read stops counting toward the unread badge when it goes. A webhook delivery past its window can no longer be redelivered from the log.
+
+A few bookkeeping tables are trimmed on fixed windows with no setting: the marks the consumer uses to count each open or click once follow `retention.engagement_event_days`, worker health samples are kept 7 days, and a send's queued follow-up effects 7 days after they ran. The send record itself (each task and its message, which tracking, threading and campaign stats read), the message map and synced mail have no window and stay until their mailbox, campaign or workspace is deleted.
 
 <Callout type="warn" title="Shortening a window deletes on the next sweep">
 There is no grace period and no copy. Take a backup first if you are not sure.
 </Callout>
 
-The **minimal retention** preset in the admin panel and in the installer sets the three event logs to 30 days, warmup mail to 7 and warmup records to 30.
+The **minimal retention** preset in the admin panel and in the installer sets the three event logs to 30 days, warmup mail to 7 and warmup records to 30. The admin panel's preset also sets the three history feeds to 30; an install leaves them at their defaults.
 
 ### Warmup mail in mailboxes
 

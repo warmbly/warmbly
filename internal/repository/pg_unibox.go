@@ -155,6 +155,9 @@ type UniboxRepository interface {
 	// over message text would only ever work for mail synced from now on.
 	ListMissingBodyText(ctx context.Context, afterID uuid.UUID, limit int) ([]UniboxBodyTarget, error)
 	SetBodyText(ctx context.Context, id uuid.UUID, bodyText string) error
+	// BodyBackfillProgress and SaveBodyBackfillProgress keep the walk's place across restarts.
+	BodyBackfillProgress(ctx context.Context) (UniboxBodyBackfill, error)
+	SaveBodyBackfillProgress(ctx context.Context, p UniboxBodyBackfill) error
 
 	// GroundingByThread and GroundingByAddress return message text for AI
 	// prompts. They are separate from the preview queries because they select
@@ -2151,6 +2154,41 @@ func (r *uniboxRepository) ListMissingBodyText(ctx context.Context, afterID uuid
 		out = append(out, t)
 	}
 	return out, rows.Err()
+}
+
+// uniboxBodyBackfillKey is the admin_settings row holding the backfill's place.
+const uniboxBodyBackfillKey = "unibox.body_text_backfill"
+
+// UniboxBodyBackfill is how far the body text backfill has walked, and whether it finished.
+type UniboxBodyBackfill struct {
+	After uuid.UUID `json:"after"`
+	Done  bool      `json:"done"`
+}
+
+// BodyBackfillProgress returns the stored place, or the start when none is stored.
+func (r *uniboxRepository) BodyBackfillProgress(ctx context.Context) (UniboxBodyBackfill, error) {
+	var p UniboxBodyBackfill
+	var raw []byte
+	err := r.db.QueryRow(ctx, `SELECT value FROM admin_settings WHERE key = $1`, uniboxBodyBackfillKey).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return p, nil
+	}
+	if err != nil {
+		return p, err
+	}
+	return p, json.Unmarshal(raw, &p)
+}
+
+// SaveBodyBackfillProgress stores the place reached.
+func (r *uniboxRepository) SaveBodyBackfillProgress(ctx context.Context, p UniboxBodyBackfill) error {
+	raw, err := json.Marshal(p)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(ctx, `
+		INSERT INTO admin_settings (key, value, updated_at) VALUES ($1, $2, now())
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`, uniboxBodyBackfillKey, raw)
+	return err
 }
 
 // SetBodyText records the searchable rendering of a message body.

@@ -98,13 +98,8 @@ func (r *emailOpenRepository) HasHumanOpen(ctx context.Context, campaignID, cont
 }
 
 func (r *emailOpenRepository) Cleanup(ctx context.Context, olderThanDays int) (int64, error) {
-	tag, err := r.db.Exec(ctx,
-		`DELETE FROM email_opens WHERE opened_at < NOW() - $1 * INTERVAL '1 day'`,
-		olderThanDays)
-	if err != nil {
-		return 0, err
-	}
-	return tag.RowsAffected(), nil
+	return DeleteInBatches(ctx, r.db, "email_opens",
+		`SELECT ctid FROM email_opens WHERE opened_at < NOW() - $2 * INTERVAL '1 day' LIMIT $1`, olderThanDays)
 }
 
 // OriginDeriver re-reads one logged event's origin from its stored user agent

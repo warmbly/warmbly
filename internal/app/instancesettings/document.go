@@ -75,6 +75,12 @@ type Retention struct {
 	// receipts, tampering and spam reports) are kept. The daily warmup
 	// statistics behind the analytics are separate and never pruned.
 	WarmupEventDays int `json:"warmup_event_days"`
+	// CampaignLogDays is how long a campaign's activity feed keeps an entry.
+	CampaignLogDays int `json:"campaign_log_days"`
+	// NotificationDays is how long in-app notifications are kept, read or not.
+	NotificationDays int `json:"notification_days"`
+	// WebhookDeliveryDays is how long a settled webhook delivery stays in its endpoint's log.
+	WebhookDeliveryDays int `json:"webhook_delivery_days"`
 }
 
 // Tracking holds the engagement-classification windows. Zero means "compiled
@@ -346,6 +352,9 @@ func DefaultRetention() Retention {
 		AuditLogDays:        config.AuditLogRetentionDaysDefault,
 		WarmupMailDays:      config.WarmupMailRetentionDaysDefault,
 		WarmupEventDays:     config.WarmupEventRetentionDaysDefault,
+		CampaignLogDays:     config.CampaignLogRetentionDaysDefault,
+		NotificationDays:    config.NotificationRetentionDaysDefault,
+		WebhookDeliveryDays: config.WebhookDeliveryRetentionDaysDefault,
 	}
 }
 
@@ -374,6 +383,9 @@ func (r *Retention) Normalize() {
 	// the thirty-day health bands that read them.
 	r.WarmupMailDays = clamp(r.WarmupMailDays, config.WarmupMailRetentionDaysDefault, config.WarmupMailRetentionDaysMin)
 	r.WarmupEventDays = clamp(r.WarmupEventDays, config.WarmupEventRetentionDaysDefault, config.WarmupEventRetentionDaysMin)
+	r.CampaignLogDays = clamp(r.CampaignLogDays, config.CampaignLogRetentionDaysDefault, config.RetentionDaysMin)
+	r.NotificationDays = clamp(r.NotificationDays, config.NotificationRetentionDaysDefault, config.RetentionDaysMin)
+	r.WebhookDeliveryDays = clamp(r.WebhookDeliveryDays, config.WebhookDeliveryRetentionDaysDefault, config.RetentionDaysMin)
 }
 
 // Normalize clamps a document into its accepted range. It is applied on read
@@ -463,6 +475,9 @@ type Patch struct {
 		AuditLogDays        *int `json:"audit_log_days"`
 		WarmupMailDays      *int `json:"warmup_mail_days"`
 		WarmupEventDays     *int `json:"warmup_event_days"`
+		CampaignLogDays     *int `json:"campaign_log_days"`
+		NotificationDays    *int `json:"notification_days"`
+		WebhookDeliveryDays *int `json:"webhook_delivery_days"`
 	} `json:"retention"`
 	Tracking *struct {
 		MachineWindowOpenSeconds     *int `json:"machine_window_open_seconds"`
@@ -540,6 +555,15 @@ func (p Patch) Apply(doc Document) Document {
 		}
 		if p.Retention.WarmupEventDays != nil {
 			doc.Retention.WarmupEventDays = *p.Retention.WarmupEventDays
+		}
+		if p.Retention.CampaignLogDays != nil {
+			doc.Retention.CampaignLogDays = *p.Retention.CampaignLogDays
+		}
+		if p.Retention.NotificationDays != nil {
+			doc.Retention.NotificationDays = *p.Retention.NotificationDays
+		}
+		if p.Retention.WebhookDeliveryDays != nil {
+			doc.Retention.WebhookDeliveryDays = *p.Retention.WebhookDeliveryDays
 		}
 	}
 	if p.Tracking != nil {

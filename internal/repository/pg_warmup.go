@@ -1990,13 +1990,20 @@ func (r *warmupRepository) GetWarmupReceived(ctx context.Context, accountID, int
 // the mailbox's own when it set one, else the instance default handed in as
 // $1, on active mailboxes that have a worker to act. The provider key comes
 // from the message map by the internal id, which is what the worker's remove
-// and flag events are keyed on.
+// and flag events are keyed on. It starts from the mailboxes, so receipts
+// held by a mailbox that cannot act are never walked.
 func (r *warmupRepository) ListWarmupMailToRetire(ctx context.Context, defaultDays, limit int) ([]WarmupMailToRetire, error) {
 	query := `
 		SELECT ea.user_id, ea.id, ` + actionWorkerSQL("ea") + `, wr.internal_id, wr.message_id,
 		       COALESCE(m.message_id, ''), ea.warmup_placement, ea.warmup_folder
-		FROM warmup_received wr
-		JOIN email_accounts ea ON ea.id = wr.email_account_id
+		FROM email_accounts ea
+		CROSS JOIN LATERAL (
+			SELECT r.internal_id, r.message_id, r.created_at FROM warmup_received r
+			WHERE r.email_account_id = ea.id AND r.retired_at IS NULL
+			  AND r.created_at < NOW() - make_interval(days => COALESCE(ea.warmup_retention_days, $1))
+			ORDER BY r.created_at
+			LIMIT $2
+		) wr
 		LEFT JOIN LATERAL (
 			SELECT em.message_id FROM email_message_map em
 			WHERE em.email_id = ea.id AND em.id = wr.internal_id
@@ -2004,8 +2011,6 @@ func (r *warmupRepository) ListWarmupMailToRetire(ctx context.Context, defaultDa
 		) m ON true
 		WHERE ea.status = 'active'
 		  AND ` + actionRoutableSQL("ea") + `
-		  AND wr.retired_at IS NULL
-		  AND wr.created_at < NOW() - make_interval(days => COALESCE(ea.warmup_retention_days, $1))
 		ORDER BY wr.created_at
 		LIMIT $2`
 	return r.scanMailToRetire(ctx, query, defaultDays, limit, false)
@@ -2017,12 +2022,19 @@ func (r *warmupRepository) ListWarmupMailToRetire(ctx context.Context, defaultDa
 // senders are left out rather than searched for a message that does not
 // exist. The map is keyed by the provider's id on Gmail and Graph, so the key
 // is usually empty there and the worker searches by Message-ID instead.
+// Like the received side it starts from the mailboxes that can act.
 func (r *warmupRepository) ListWarmupSentCopiesToRetire(ctx context.Context, defaultDays, limit int) ([]WarmupMailToRetire, error) {
 	query := `
 		SELECT ea.user_id, ea.id, ` + actionWorkerSQL("ea") + `, wt.token, wt.sent_message_id,
 		       COALESCE(m.message_id, ''), ea.warmup_placement, ea.warmup_folder
-		FROM warmup_tokens wt
-		JOIN email_accounts ea ON ea.id = wt.sender_account_id
+		FROM email_accounts ea
+		CROSS JOIN LATERAL (
+			SELECT t.token, t.sent_message_id, t.created_at FROM warmup_tokens t
+			WHERE t.sender_account_id = ea.id AND t.sent_message_id <> '' AND t.sent_retired_at IS NULL
+			  AND t.created_at < NOW() - make_interval(days => COALESCE(ea.warmup_retention_days, $1))
+			ORDER BY t.created_at
+			LIMIT $2
+		) wt
 		LEFT JOIN LATERAL (
 			SELECT em.message_id FROM email_message_map em
 			WHERE em.email_id = ea.id AND em.message_id = wt.sent_message_id
@@ -2031,9 +2043,6 @@ func (r *warmupRepository) ListWarmupSentCopiesToRetire(ctx context.Context, def
 		WHERE ea.status = 'active'
 		  AND ` + actionRoutableSQL("ea") + `
 		  AND ea.provider <> 'smtp_imap'
-		  AND wt.sent_message_id <> ''
-		  AND wt.sent_retired_at IS NULL
-		  AND wt.created_at < NOW() - make_interval(days => COALESCE(ea.warmup_retention_days, $1))
 		ORDER BY wt.created_at
 		LIMIT $2`
 	return r.scanMailToRetire(ctx, query, defaultDays, limit, true)
@@ -2104,6 +2113,8 @@ func (r *warmupRepository) PruneWarmupEventsBefore(ctx context.Context, before t
 		   AND (sent_message_id = '' OR sent_retired_at IS NOT NULL
 		        OR sender_account_id IN (SELECT id FROM email_accounts WHERE provider = 'smtp_imap'))`, []any{before}},
 		{`DELETE FROM pool_link_commands WHERE status IN ('answered', 'expired', 'cancelled') AND created_at < $1`, []any{before}},
+		// Thread turns go at the age of the receipts and tokens they chain back to.
+		{`DELETE FROM warmup_thread_messages WHERE created_at < $1`, []any{before}},
 		// An arrival's handle is how a retiring delete reaches the instance, so it outlives the copy it names.
 		{`DELETE FROM pool_link_arrivals a WHERE a.reported_at < $1
 		 AND NOT EXISTS (SELECT 1 FROM warmup_received wr WHERE wr.email_account_id = a.email_account_id

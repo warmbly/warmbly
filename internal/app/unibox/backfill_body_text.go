@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
+	"github.com/warmbly/warmbly/internal/repository"
 )
 
 // Backfill pacing. A pass is one query plus one object-storage read per row, so
@@ -22,15 +22,23 @@ const (
 // bodies were indexed, so unibox search covers the whole archive rather than
 // only mail that arrives from now on.
 //
-// The sweep walks the table once per process: it pages by id, and stops for
-// good when a pass turns up no rows left to visit. Rows whose stored body
-// really is empty stay at body_text = ” and are simply re-visited after the
-// next restart, which is cheaper than inventing a "tried and failed" marker.
+// The sweep walks the table once per instance: it pages by id, stores its
+// place after every page, and records itself done when a page comes back
+// empty, so a restart resumes rather than re-reading rows whose stored body
+// really is empty. New mail is written with its text, so finishing leaves
+// nothing behind.
 func (s *uniboxService) StartBodyTextBackfill(ctx context.Context) {
+	progress, err := s.uniboxRepository.BodyBackfillProgress(ctx)
+	if err != nil {
+		log.Warn().Err(err).Msg("unibox body backfill: progress unreadable, starting over")
+	}
+	if progress.Done {
+		return
+	}
 	ticker := time.NewTicker(bodyBackfillInterval)
 	defer ticker.Stop()
 
-	var cursor uuid.UUID
+	cursor := progress.After
 	var filled int
 	for {
 		select {
@@ -45,6 +53,9 @@ func (s *uniboxService) StartBodyTextBackfill(ctx context.Context) {
 			continue
 		}
 		if len(targets) == 0 {
+			if serr := s.uniboxRepository.SaveBodyBackfillProgress(ctx, repository.UniboxBodyBackfill{After: cursor, Done: true}); serr != nil {
+				log.Warn().Err(serr).Msg("unibox body backfill: could not record completion")
+			}
 			if filled > 0 {
 				log.Info().Int("messages", filled).Msg("unibox body backfill: complete")
 			}
@@ -68,6 +79,9 @@ func (s *uniboxService) StartBodyTextBackfill(ctx context.Context) {
 				continue
 			}
 			filled++
+		}
+		if serr := s.uniboxRepository.SaveBodyBackfillProgress(ctx, repository.UniboxBodyBackfill{After: cursor}); serr != nil {
+			log.Warn().Err(serr).Msg("unibox body backfill: could not record progress")
 		}
 	}
 }

@@ -2218,6 +2218,9 @@ func main() {
 		auditRetentionScheduler := jobs.NewAuditRetentionScheduler(auditRetentionJob, 6*time.Hour)
 		go auditRetentionScheduler.Start(ctx)
 
+		// Feeds, logs and finished bookkeeping rows past their windows, in batches.
+		go jobs.NewTableRetentionJob(repository.NewTableRetentionRepository(primaryDB.Pool), instanceSettings).Start(ctx, 6*time.Hour)
+
 		// Website tracking: the snippet's settings, the ingest path the tracking
 		// service forwards page views to, and the per-workspace retention sweep
 		// that keeps the window promised on the settings page.

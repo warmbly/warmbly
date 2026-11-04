@@ -11,7 +11,6 @@ import (
 type TrackingDedupeRepository interface {
 	IsProcessed(ctx context.Context, taskID uuid.UUID, eventType, urlHash string) (bool, error)
 	MarkProcessed(ctx context.Context, taskID uuid.UUID, eventType, urlHash string) error
-	Cleanup(ctx context.Context, olderThanDays int) (int64, error)
 }
 
 type trackingDedupeRepository struct {
@@ -62,19 +61,4 @@ func (r *trackingDedupeRepository) MarkProcessed(ctx context.Context, taskID uui
 
 	_, err := r.db.Exec(ctx, query, taskID, eventType, urlHash)
 	return err
-}
-
-// Cleanup removes old processed tracking events (for scheduled job)
-func (r *trackingDedupeRepository) Cleanup(ctx context.Context, olderThanDays int) (int64, error) {
-	query := `
-		DELETE FROM tracking_events_processed
-		WHERE processed_at < NOW() - $1 * INTERVAL '1 day'
-	`
-
-	result, err := r.db.Exec(ctx, query, olderThanDays)
-	if err != nil {
-		return 0, err
-	}
-
-	return result.RowsAffected(), nil
 }

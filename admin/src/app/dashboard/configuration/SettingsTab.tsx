@@ -109,7 +109,28 @@ const RETENTION_FIELDS = [
         setting: "warmup_event_days",
         label: "Warmup records (days)",
         min: 30,
-        help: "Per-message warmup records: tokens, receipts, tampering events and spam reports. The pool health bands read the last 30 days, which is the floor. The daily sent and received counts behind the analytics are separate and never pruned.",
+        help: "Per-message warmup records: tokens, receipts, tampering events, spam reports and the record of which messages belong to a warmup thread. The pool health bands read the last 30 days, which is the floor. The daily sent and received counts behind the analytics are separate and never pruned.",
+    },
+    {
+        key: "campaignLogDays",
+        setting: "campaign_log_days",
+        label: "Campaign activity feed (days)",
+        min: RETENTION_MIN_DAYS,
+        help: "Entries in each campaign's activity feed: sends that failed or were deferred, pauses and the reasons for them. Campaign stats, progress and sent mail are separate and unaffected.",
+    },
+    {
+        key: "notificationDays",
+        setting: "notification_days",
+        label: "Notifications (days)",
+        min: RETENTION_MIN_DAYS,
+        help: "In-app notifications, read or unread. One still waiting to be emailed is kept until it is sent or skipped.",
+    },
+    {
+        key: "webhookDeliveryDays",
+        setting: "webhook_delivery_days",
+        label: "Webhook delivery log (days)",
+        min: RETENTION_MIN_DAYS,
+        help: "Delivered and abandoned webhook deliveries, with the payload and the endpoint's response excerpt. A delivery still being retried is kept until it settles. A delivery past this window can no longer be redelivered from the log.",
     },
 ] as const;
 
@@ -120,25 +141,31 @@ const RETENTION_PRESETS = [
     {
         id: "default",
         label: "Defaults",
-        description: "365 / 180 / 90 days, warmup 30 / 365",
+        description: "365 / 180 / 90 days, warmup 30 / 365, feeds 365 / 180 / 90",
         values: {
             engagementDays: "365",
             formDays: "180",
             auditDays: "90",
             warmupMailDays: "30",
             warmupEventDays: "365",
+            campaignLogDays: "365",
+            notificationDays: "180",
+            webhookDeliveryDays: "90",
         },
     },
     {
         id: "minimal",
         label: "Minimal retention",
-        description: "30 / 30 / 30 days, warmup 7 / 30",
+        description: "30 / 30 / 30 days, warmup 7 / 30, feeds 30 / 30 / 30",
         values: {
             engagementDays: "30",
             formDays: "30",
             auditDays: "30",
             warmupMailDays: "7",
             warmupEventDays: "30",
+            campaignLogDays: "30",
+            notificationDays: "30",
+            webhookDeliveryDays: "30",
         },
     },
 ] as const;
@@ -304,6 +331,9 @@ function toForm(s: InstanceSettings): FormState {
             auditDays: String(s.retention.audit_log_days),
             warmupMailDays: String(s.retention.warmup_mail_days),
             warmupEventDays: String(s.retention.warmup_event_days),
+            campaignLogDays: String(s.retention.campaign_log_days),
+            notificationDays: String(s.retention.notification_days),
+            webhookDeliveryDays: String(s.retention.webhook_delivery_days),
         },
         tracking: {
             machineWindowOpen: String(s.tracking.machine_window_open_seconds),
@@ -482,6 +512,9 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
                 audit_log_days: Number(form.retention.auditDays),
                 warmup_mail_days: Number(form.retention.warmupMailDays),
                 warmup_event_days: Number(form.retention.warmupEventDays),
+                campaign_log_days: Number(form.retention.campaignLogDays),
+                notification_days: Number(form.retention.notificationDays),
+                webhook_delivery_days: Number(form.retention.webhookDeliveryDays),
             },
             tracking: {
                 machine_window_open_seconds: Number(form.tracking.machineWindowOpen),

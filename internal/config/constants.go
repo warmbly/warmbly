@@ -339,6 +339,13 @@ const (
 	// shortens it under Instance settings.
 	AuditLogRetentionDaysDefault = 90
 
+	// CampaignLogRetentionDaysDefault is how long a campaign's activity feed keeps an entry.
+	CampaignLogRetentionDaysDefault = 365
+	// NotificationRetentionDaysDefault is how long in-app notifications are kept, read or not.
+	NotificationRetentionDaysDefault = 180
+	// WebhookDeliveryRetentionDaysDefault is how long a settled delivery stays in an endpoint's log.
+	WebhookDeliveryRetentionDaysDefault = 90
+
 	// Ten years is the ceiling every retention window shares. It is not a
 	// recommendation: it is the point past which "keep it" and "keep it
 	// forever" stop differing, and it bounds a typo. One day is the floor, so
