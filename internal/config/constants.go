@@ -270,6 +270,9 @@ const (
 	// it must stay well clear of a slow provider handshake.
 	CampaignSendReclaimAfterMinutes = 30
 
+	// UnknownSendHoldVisibleAfterMinutes keeps an unconfirmed send out of mailbox health until it outlasts automatic recovery.
+	UnknownSendHoldVisibleAfterMinutes = 2 * CampaignSendReclaimAfterMinutes
+
 	// WorkerReleaseGraceMinutes keeps a mailbox in its previous worker's scope after a move, until the reclaimer has resolved any send it left unanswered.
 	WorkerReleaseGraceMinutes = CampaignSendReclaimAfterMinutes
 
@@ -338,6 +341,11 @@ const (
 	// window is also how long that PII is held; a privacy-conscious operator
 	// shortens it under Instance settings.
 	AuditLogRetentionDaysDefault = 90
+
+	// The feed windows default to 0, keep everything, so an upgrade deletes no history an operator did not ask to prune.
+	CampaignLogRetentionDaysDefault     = 0
+	NotificationRetentionDaysDefault    = 0
+	WebhookDeliveryRetentionDaysDefault = 0
 
 	// Ten years is the ceiling every retention window shares. It is not a
 	// recommendation: it is the point past which "keep it" and "keep it

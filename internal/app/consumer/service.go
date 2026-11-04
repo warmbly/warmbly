@@ -134,6 +134,8 @@ type JobsService struct {
 	Evidence advanced.EvidenceRecorder
 
 	eventHandlers map[models.JobEventType]func(ctx context.Context, body any) error
+	// arrivalBacklogAt is when the arrival loop last counted its queue; only that loop touches it.
+	arrivalBacklogAt time.Time
 }
 
 func (s *JobsService) Start(ctx context.Context) {

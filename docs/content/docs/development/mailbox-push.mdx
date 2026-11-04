@@ -119,7 +119,7 @@ Unset `GRAPH_PUSH` or `GMAIL_PUSH_TOPIC` on the backend and restart it. Each wor
 
 ## Upgrades and rollback
 
-Migration `000341` adds `fleet_nodes.sync_wake_protocol` (default `0`) and the `mailbox_push_channels` table. The previous release ignores both.
+Migration `000351` adds `fleet_nodes.sync_wake_protocol` (default `0`) and the `mailbox_push_channels` table. The previous release ignores both.
 
 - **Workers that have not upgraded** report protocol `0` and are never sent `SYNC_WAKE`. They ignore the push settings inside `ADD_EMAIL` and keep polling every minute.
 - **Upgrade the backend and consumer before the workers**, as with any release. A worker reports each channel it opens, renews or closes as a `PUSH_STATE` event, which the consumer stores in `mailbox_push_channels`. The backend hands it back in every `ADD_EMAIL`, so a reloaded or moved mailbox renews the same channel instead of opening another. A consumer from before this release drops `PUSH_STATE`; a mailbox that moves meanwhile opens a fresh channel, and a subscription nobody tracks expires on its own within 7 days.

@@ -60,10 +60,21 @@ func (s *JobsService) runArrivalOutboxPass(ctx context.Context, diagnostics *arr
 	return delivered
 }
 
+// arrivalBacklogInterval spaces the queue count; the alert it feeds waits minutes anyway.
+const arrivalBacklogInterval = 30 * time.Second
+
 func (s *JobsService) observeArrivalBacklog(ctx context.Context, deliveryErr error, now time.Time, failedSince, lastAlert *time.Time) {
 	backlog := repository.ArrivalBacklog{}
 	known := false
 	if stats, ok := s.ArrivalOutbox.(repository.ArrivalBacklogRepository); ok {
+		if !s.arrivalBacklogAt.IsZero() && now.Sub(s.arrivalBacklogAt) < arrivalBacklogInterval {
+			// Between readings a failure can start the clock but only a reading can stop it.
+			if deliveryErr != nil && failedSince.IsZero() {
+				*failedSince = now
+			}
+			return
+		}
+		s.arrivalBacklogAt = now
 		var err error
 		backlog, err = stats.ArrivalBacklog(ctx)
 		if err != nil {

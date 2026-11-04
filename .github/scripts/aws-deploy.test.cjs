@@ -3,7 +3,32 @@ const assert = require("node:assert/strict");
 const { mkdtempSync, writeFileSync } = require("node:fs");
 const { join } = require("node:path");
 const { tmpdir } = require("node:os");
-const { configuration, deploy, runTask, compareTags, parseRef } = require("./aws-deploy.cjs");
+const { configuration, deploy, runTask, compareTags, parseRef, same, ATTACHMENT_PROXY, ATTACHMENT_PROXY_TAG } = require("./aws-deploy.cjs");
+
+test("definition equality compares named bindings while preserving every value and command order", () => {
+  const base = { family: "fixture", containerDefinitions: [{ name: "backend", image: "fixture@sha256:fixed",
+    command: ["serve", "--tls"], environment: [{ name: "TLS_ONLY", value: "true" }, { name: "REGION", value: "fixture" }],
+    secrets: [{ name: "PRIMARY_DB", valueFrom: "database:version-one" }, { name: "AUTH_SECRET", valueFrom: "auth:version-one" }] }] };
+  const reordered = structuredClone(base);
+  reordered.containerDefinitions[0].environment.reverse();
+  reordered.containerDefinitions[0].secrets.reverse();
+  reordered.containerDefinitions[0].environment = reordered.containerDefinitions[0].environment.map(({ name, value }) => ({ value, name }));
+  assert.ok(same(base, reordered));
+  for (const mutate of [
+    (c) => { c.environment[0].value = "false"; },
+    (c) => { c.environment[0].name = "OTHER"; },
+    (c) => { c.environment.pop(); },
+    (c) => { c.environment.push({ ...c.environment[0] }); },
+    (c) => { c.secrets[0].valueFrom = "database:version-two"; },
+    (c) => { c.secrets.pop(); },
+    (c) => { c.command.reverse(); },
+    (c) => { c.image = "other@sha256:fixed"; },
+  ]) {
+    const changed = structuredClone(base);
+    mutate(changed.containerDefinitions[0]);
+    assert.equal(same(base, changed), false);
+  }
+});
 
 const root = "arn:aws:ecs:us-east-1:000000000000:";
 const registry = "ghcr.io/warmbly/warmbly";
@@ -176,6 +201,56 @@ test("a release renders from the latest revision, swaps variant digests and carr
     assert.deepEqual(r.tags.filter((t) => t.key === "warmbly-release"), [{ key: "warmbly-release", value: "v1.3.0" }]);
     assert.equal(r.cpu, "256");
   }
+});
+
+function manageAttachments(f, revision, value) {
+  const arn = `${root}task-definition/fixture-backend:${revision}`;
+  f.defs[arn].containerDefinitions[0].environment.push({ name: ATTACHMENT_PROXY, value });
+  f.tagsOf[arn].push({ key: ATTACHMENT_PROXY_TAG, value });
+}
+
+for (const mode of ["deploy", "refresh-secrets"]) test(`${mode} preserves the live managed attachment setting`, async () => {
+  const f = fixture();
+  manageAttachments(f, 1, "true");
+  await run(f, config({ DEPLOY_MODE: mode }));
+  const backend = registered(f).find((r) => r.family === "fixture-backend");
+  assert.deepEqual(backend.containerDefinitions[0].environment.filter((e) => e.name === ATTACHMENT_PROXY), [{ name: ATTACHMENT_PROXY, value: "true" }]);
+  assert.equal(backend.tags.find((t) => t.key === ATTACHMENT_PROXY_TAG).value, "true");
+  assert.ok(registered(f).filter((r) => r.family !== "fixture-backend").every((r) => !r.tags.some((t) => t.key === ATTACHMENT_PROXY_TAG)));
+});
+
+test("an explicit Terraform attachment value takes ownership", async () => {
+  const f = fixture();
+  manageAttachments(f, 1, "true");
+  f.defs[`${root}task-definition/fixture-backend:2`].containerDefinitions[0].environment.push({ name: ATTACHMENT_PROXY, value: "false" });
+  await run(f, config());
+  const backend = registered(f).find((r) => r.family === "fixture-backend");
+  assert.equal(backend.containerDefinitions[0].environment.find((e) => e.name === ATTACHMENT_PROXY).value, "false");
+  assert.ok(!backend.tags.some((t) => t.key === ATTACHMENT_PROXY_TAG));
+});
+
+test("an attachment configuration prepared but never activated is not adopted by a release", async () => {
+  const f = fixture();
+  manageAttachments(f, 2, "true");
+  await run(f, config());
+  const backend = registered(f).find((r) => r.family === "fixture-backend");
+  assert.equal(backend.containerDefinitions[0].environment.find((e) => e.name === ATTACHMENT_PROXY).value, "false");
+  assert.ok(!backend.tags.some((t) => t.key === ATTACHMENT_PROXY_TAG));
+});
+
+test("managed attachment configuration must agree with its environment", async () => {
+  const f = fixture();
+  manageAttachments(f, 1, "true");
+  f.defs[`${root}task-definition/fixture-backend:1`].containerDefinitions[0].environment.find((e) => e.name === ATTACHMENT_PROXY).value = "false";
+  await assert.rejects(run(f, config()), /tag and environment must agree/);
+  assert.equal(registered(f).length, 0);
+});
+
+test("a rollback below route support requires explicitly disabling the attachment proxy", async () => {
+  const f = fixture({ liveTag: "v0.6.75" });
+  manageAttachments(f, 1, "true");
+  await assert.rejects(run(f, config({ DEPLOY_TAG: "v0.6.74", DEPLOY_MODE: "rollback" })), /Disable the attachment proxy explicitly/);
+  assert.equal(registered(f).length, 0);
 });
 
 test("the newest pinned secret version wins so a stale Terraform pin cannot undo a rotation", async () => {

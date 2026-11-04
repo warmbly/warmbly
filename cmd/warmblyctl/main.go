@@ -90,6 +90,8 @@ func dispatch(ctx context.Context, args []string) error {
 		return runInboxTag(ctx, args[1:])
 	case "keys":
 		return runKeys(ctx, args[1:])
+	case "db":
+		return runDB(ctx, args[1:])
 	}
 	if _, ok := apiFamilies[args[0]]; ok {
 		return runAPIResource(ctx, args[0], args[1:])
@@ -138,6 +140,7 @@ var commands = []command{
 	{"fleet rollout start", "Move the fleet to a tag in stages: one canary, then waves", composeExec + "fleet rollout start v1.4.2 --bake 30m"},
 	{"fleet rollout status", "Show a staged rollout's stage, admitted nodes and halt reason", composeExec + "fleet rollout status"},
 	{"fleet env-status", "Whether every live node has applied the current rendered env", composeExec + "fleet env-status"},
+	{"db load", "Show what the database is busy with: connections by service, costliest queries, largest tables", composeExec + "db load"},
 }
 
 func usage(w *os.File) {

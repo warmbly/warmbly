@@ -30,8 +30,14 @@ func TestSendSafetyHoldCannotAppearHealthyOrPromiseAutomaticSendRetries(t *testi
 				status := s.assembleAccountStatus(context.Background(), &models.Email{ID: id, Status: "active", Provider: "smtp_imap"},
 					&models.AccountDailyUsage{}, errs, nil, false, nil, false,
 					&statusReads{sendHolds: map[uuid.UUID]repository.SendRecoveryHold{id: {Reason: reason}}})
-				if status.Health.Status != "error" || status.Health.Score > 50 || len(status.Health.Issues) == 0 {
+				if status.Health.Status == "healthy" || len(status.Health.Issues) == 0 {
 					t.Fatalf("held mailbox cannot look healthy, even without an error row: %+v", status.Health)
+				}
+				if reason == "unknown" && (status.Health.Status != "warning" || status.Health.Score != 100) {
+					t.Fatalf("an unconfirmed send recovers on its own and must not cost health: %+v", status.Health)
+				}
+				if reason != "unknown" && (status.Health.Status != "error" || status.Health.Score > 50) {
+					t.Fatalf("a hold that needs the owner is an error: %+v", status.Health)
 				}
 				if !withError {
 					continue
@@ -59,8 +65,8 @@ func TestUnknownWarmupHoldExplainsAutomaticRetirementWithoutPromisingResend(t *t
 	status := s.assembleAccountStatus(t.Context(), &models.Email{ID: id, Status: "active", Provider: "smtp_imap"},
 		&models.AccountDailyUsage{}, []models.AccountError{{ErrorCode: string(errx.MailErrorCodeServerUnreachable), Operation: models.MailTransportSend}},
 		nil, false, nil, false, &statusReads{sendHolds: map[uuid.UUID]repository.SendRecoveryHold{id: {Reason: "unknown", Warmup: true}}})
-	if status.Health.Status != "error" || status.Health.Score > 50 {
-		t.Fatalf("recovery has not completed: %+v", status.Health)
+	if status.Health.Status != "warning" || status.Health.Score != 100 {
+		t.Fatalf("an unconfirmed warmup send must not cost health: %+v", status.Health)
 	}
 	for _, message := range []string{status.Health.Issues[len(status.Health.Issues)-1], *status.Errors[0].ActionRequired} {
 		if !strings.Contains(message, "automatically") || !strings.Contains(message, "new sends") || !strings.Contains(message, "never retried") || strings.Contains(message, "Provider confirmation is required") {

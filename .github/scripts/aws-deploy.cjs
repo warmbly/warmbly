@@ -21,6 +21,8 @@ const VARIANT_TAG = "warmbly-image-variant";
 const TAG_RE = /^v(\d+)\.(\d+)\.(\d+)$/;
 const DIGEST_RE = /^sha256:[a-f0-9]{64}$/;
 const VERSION_RE = /^[A-Za-z0-9-]{32,64}$/;
+const ATTACHMENT_PROXY = "CAMPAIGN_ATTACHMENT_DOWNLOAD_PROXY";
+const ATTACHMENT_PROXY_TAG = "warmbly-config-attachment-download-proxy";
 
 function configuration(env) {
   const cluster = env.AWS_ECS_CLUSTER;
@@ -132,14 +134,35 @@ function repin(container, pins) {
   }
 }
 
-function same(a, b) {
-  return JSON.stringify(REGISTER_FIELDS.map((f) => a[f] ?? null)) === JSON.stringify(REGISTER_FIELDS.map((f) => b[f] ?? null));
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+  return value;
 }
+
+function comparableDefinition(definition) {
+  return REGISTER_FIELDS.map((field) => {
+    let value = definition[field] ?? null;
+    if (field === "containerDefinitions" && value) value = value.map((container) => {
+      const copy = { ...container };
+      // ECS may reorder named bindings; command and other array order stays significant.
+      for (const key of ["environment", "secrets"]) if (copy[key]) copy[key] = [...copy[key]].sort((a, b) => a.name.localeCompare(b.name));
+      return copy;
+    });
+    return canonical(value);
+  });
+}
+
+function same(a, b) {
+  return JSON.stringify(comparableDefinition(a)) === JSON.stringify(comparableDefinition(b));
+}
+
+const canonicalTags = (tags) => JSON.stringify(tags.filter((t) => !t.key.startsWith("aws:")).sort((a, b) => a.key.localeCompare(b.key)));
 
 async function register(client, source, rendered, tags, release, report) {
   const carried = tags.filter((t) => t.key !== RELEASE_TAG && !t.key.startsWith("aws:"));
   if (release) carried.push({ key: RELEASE_TAG, value: release });
-  if (same(source.definition, rendered) && tagValue(source.tags, RELEASE_TAG) === release) return source.definition.taskDefinitionArn;
+  if (same(source.definition, rendered) && canonicalTags(source.tags) === canonicalTags(carried)) return source.definition.taskDefinitionArn;
   const input = {};
   for (const f of REGISTER_FIELDS) if (rendered[f] !== undefined && rendered[f] !== null) input[f] = rendered[f];
   input.tags = carried;
@@ -248,6 +271,38 @@ function imageFor(config, key, fallback) {
   return `${config.images.registry}/${key.replace(/-kafka$/, "")}@${digest}`;
 }
 
+function preserveBackendConfiguration(source, live, rendered, release) {
+  const managed = tagValue(live.tags, ATTACHMENT_PROXY_TAG);
+  const explicitValues = source.definition.containerDefinitions[0].environment?.filter((e) => e.name === ATTACHMENT_PROXY) || [];
+  const explicit = explicitValues[0];
+  const sourceManaged = tagValue(source.tags, ATTACHMENT_PROXY_TAG);
+  const current = live.definition.containerDefinitions[0].environment?.filter((e) => e.name === ATTACHMENT_PROXY) || [];
+  if (explicitValues.length > 1 || source.definition.containerDefinitions[0].secrets?.some((s) => s.name === ATTACHMENT_PROXY) ||
+      (sourceManaged !== undefined && (explicitValues.length !== 1 || sourceManaged !== explicit.value))) {
+    throw new Error("Backend attachment source configuration is ambiguous");
+  }
+  if (managed !== undefined) {
+    if (!["true", "false"].includes(managed) || current.length !== 1 || current[0].value !== managed) {
+      throw new Error("Backend attachment configuration tag and environment must agree");
+    }
+  }
+  // An explicit Terraform value takes ownership; otherwise the live managed value survives rendering.
+  const value = explicit && sourceManaged === undefined ? explicit.value
+    : managed ?? (sourceManaged !== undefined ? current[0]?.value || "false" : undefined);
+  if (value !== undefined && !["true", "false"].includes(value)) throw new Error("Backend attachment configuration must be true or false");
+  if (value === "true" && compareTags(release, "v0.6.75") < 0) {
+    throw new Error("Disable the attachment proxy explicitly before deploying a release older than v0.6.75");
+  }
+  const tags = source.tags.filter((t) => t.key !== ATTACHMENT_PROXY_TAG);
+  if (value !== undefined) {
+    const container = rendered.containerDefinitions[0];
+    container.environment = (container.environment || []).filter((e) => e.name !== ATTACHMENT_PROXY);
+    container.environment.push({ name: ATTACHMENT_PROXY, value });
+    if (!(explicit && sourceManaged === undefined) && managed !== undefined) tags.push({ key: ATTACHMENT_PROXY_TAG, value });
+  }
+  return tags;
+}
+
 async function deploy(clients, config, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), report = console.log) {
   const ecs = clients.ecs;
   const names = SERVICES.map((s) => `${config.prefix}-${s}`);
@@ -313,6 +368,7 @@ async function deploy(clients, config, sleep = (ms) => new Promise((r) => setTim
   };
   const backendKey = deployBackend || families.includes("ops") ? `backend${variant(deployBackend ? "backend" : "ops") === "kafka" ? "-kafka" : ""}` : null;
   const rendered = {};
+  const renderedTags = {};
   for (const name of families) {
     const def = structuredClone(sources[name].definition);
     const container = def.containerDefinitions?.[0];
@@ -328,6 +384,9 @@ async function deploy(clients, config, sleep = (ms) => new Promise((r) => setTim
     } else if (name !== "validation") {
       container.image = imageFor(config, backendKey, liveDefs.backend.definition.containerDefinitions[0].image);
     }
+    renderedTags[name] = name === "backend"
+      ? preserveBackendConfiguration(sources[name], liveDefs.backend, def, tag)
+      : sources[name].tags;
     rendered[name] = def;
   }
 
@@ -349,7 +408,7 @@ async function deploy(clients, config, sleep = (ms) => new Promise((r) => setTim
   }
 
   const arns = {};
-  for (const name of families) arns[name] = await register(ecs, sources[name], rendered[name], sources[name].tags, tag, report);
+  for (const name of families) arns[name] = await register(ecs, sources[name], rendered[name], renderedTags[name], tag, report);
 
   const network = backend.networkConfiguration;
   if (arns.validation) await runTask(clients, config, network, arns.validation, rendered.validation, "Dependency check", sleep, report);
@@ -423,4 +482,5 @@ if (require.main === module) {
   });
 }
 
-module.exports = { configuration, deploy, runTask, describe, compareTags, parseRef, secretService, SERVICES };
+module.exports = { configuration, deploy, runTask, describe, compareTags, parseRef, secretService, SERVICES,
+  REGISTER_FIELDS, same, register, waitForService, ATTACHMENT_PROXY, ATTACHMENT_PROXY_TAG };

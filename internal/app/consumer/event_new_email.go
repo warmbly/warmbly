@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,6 +15,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/advanced"
 	"github.com/warmbly/warmbly/internal/app/inboxtag"
 	"github.com/warmbly/warmbly/internal/config"
+	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/arrivaldiag"
@@ -23,6 +25,7 @@ import (
 )
 
 func (s *JobsService) HandleNewEmail(ctx context.Context, e *models.JobEventNewEmail) error {
+	ctx = withMailboxMemo(ctx)
 	err := s.ingestNewEmail(ctx, e)
 	if errors.Is(err, errWarmupVerification) && s.UniboxRepository != nil {
 		finish := arrivaldiag.Begin(ctx, arrivaldiag.WarmupDefer)
@@ -183,7 +186,7 @@ func (s *JobsService) ingestNewEmail(ctx context.Context, e *models.JobEventNewE
 
 	if s.SlackInbox != nil && e.Message.MayBeInbound() {
 		finish = arrivaldiag.Begin(ctx, arrivaldiag.Slack)
-		if account, aerr := s.EmailRepository.GetByID(ctx, e.Message.EmailID); aerr == nil && account != nil && account.OrganizationID != nil {
+		if account, aerr := s.mailbox(ctx, e.Message.EmailID); aerr == nil && account != nil && account.OrganizationID != nil {
 			s.SlackInbox.InboundMessage(ctx, *account.OrganizationID, account, e.Message)
 		}
 		finish()
@@ -209,7 +212,7 @@ func (s *JobsService) publishEmailUpdated(ctx context.Context, userID uuid.UUID,
 // so every teammate's unibox updates live, not just the mailbox owner's.
 func (s *JobsService) emailInboxEvent(ctx context.Context, userID uuid.UUID, message *models.EmailMessageStoreData) *pubsub.EmailInboxEvent {
 	var orgID string
-	if account, err := s.EmailRepository.GetByID(ctx, message.EmailID); err == nil && account != nil && account.OrganizationID != nil {
+	if account, err := s.mailbox(ctx, message.EmailID); err == nil && account != nil && account.OrganizationID != nil {
 		orgID = account.OrganizationID.String()
 	}
 	return &pubsub.EmailInboxEvent{
@@ -754,11 +757,43 @@ func (s *JobsService) recipientAccount(ctx context.Context, accountID uuid.UUID)
 	if s.EmailRepository == nil {
 		return nil
 	}
-	acc, err := s.EmailRepository.GetByID(ctx, accountID)
+	acc, err := s.mailbox(ctx, accountID)
 	if err != nil {
 		return nil
 	}
 	return acc
+}
+
+type mailboxMemoKey struct{}
+
+type mailboxMemo struct {
+	mu       sync.Mutex
+	accounts map[uuid.UUID]*models.Email
+}
+
+// withMailboxMemo makes one event load each mailbox row once.
+func withMailboxMemo(ctx context.Context) context.Context {
+	return context.WithValue(ctx, mailboxMemoKey{}, &mailboxMemo{accounts: map[uuid.UUID]*models.Email{}})
+}
+
+// mailbox reads through the event's memo when there is one.
+func (s *JobsService) mailbox(ctx context.Context, accountID uuid.UUID) (*models.Email, *errx.Error) {
+	memo, _ := ctx.Value(mailboxMemoKey{}).(*mailboxMemo)
+	if memo != nil {
+		memo.mu.Lock()
+		acc, ok := memo.accounts[accountID]
+		memo.mu.Unlock()
+		if ok {
+			return acc, nil
+		}
+	}
+	acc, err := s.EmailRepository.GetByID(ctx, accountID)
+	if err == nil && acc != nil && memo != nil {
+		memo.mu.Lock()
+		memo.accounts[accountID] = acc
+		memo.mu.Unlock()
+	}
+	return acc, err
 }
 
 // recipientProviderDomain is a recipient mailbox's connect provider

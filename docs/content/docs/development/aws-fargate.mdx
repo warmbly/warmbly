@@ -206,7 +206,8 @@ Terraform applies share one queue, so only one change reaches production at a
 time and none is cancelled by the next.
 
 Terraform owns the shape of every task definition (environment, secret
-references, sizes, health checks) and the workflow owns only the image. A deploy:
+references, sizes, health checks). The deployment workflow selects images and
+preserves the narrowly scoped attachment setting described below. A deploy:
 
 1. Checks that the tag's commit is on `main`, that every image digest carries
    build provenance from the release workflow, and that the tag is not older
@@ -271,6 +272,51 @@ active rollout stays fixed. Releases published before build provenance existed f
 check; dispatch those once with `require_attestation` off. The automatic
 redeploy after a Terraform apply cannot turn it off, so until a release with
 provenance is running it stops at that check and changes nothing.
+
+### Configure private attachment downloads
+
+After every backend runs a published release at least `v0.6.75`, dispatch
+**Configure AWS backend** on `main`. Supply the running release tag, exact live
+backend task definition ARN, a JSON array of every current running backend task
+ARN in `expected_backend_tasks`, and the desired `attachment_download_proxy` boolean.
+The workflow requires `AWS_DEPLOY_ENABLED=true`, uses `aws-production` and shares
+the deployment queue. Collect the task identities through the operator's normal
+read-only inventory access. The workflow uses the existing deployment role's
+task-description and service-update permissions.
+
+Keep backend configuration changes exclusive for the entire run. Routine writers
+use the shared `aws-production` queue. Before an emergency console or CLI change,
+stop and settle the active workflow and inspect the current service. The expected
+revision is a snapshot check: ECS `UpdateService` has no atomic expected-revision
+precondition to fence a writer outside that queue.
+
+The operation verifies release provenance and every supplied backend task against
+the service's complete deployment and running count, then
+clones the live definition and changes only `CAMPAIGN_ATTACHMENT_DOWNLOAD_PROXY`.
+It preserves images, roles, secret references and version pins, TLS settings,
+resources, health checks, stop timeout and desired count. It watches the stable
+service and alarms for 300 seconds, reads back the definition, and restores
+and verifies the exact previous revision and service counts on failure. A concurrent revision or
+count change stops automatic rollback for operator inspection. It runs no
+migration, one-off task or fleet rollout and does not modify another service.
+Refresh the task snapshot before a repeated request. A stale, missing, duplicate,
+foreign or draining task is refused. A request for the existing setting observes
+another full bake without rolling again. An already enabled setting requires
+either its live management tag or a value in the latest deployment definition.
+If neither owns it, set the value explicitly in Terraform before requesting no change.
+
+The task definition records the setting in
+`warmbly-config-attachment-download-proxy`. Future deployments and secret
+refreshes carry the live managed value when Terraform does not explicitly set
+the environment variable. An explicit Terraform `true` or `false` value takes
+ownership. A prepared revision that never reached the service cannot activate
+the setting during a later release. To roll back below `v0.6.75`, explicitly
+disable the proxy first; confirm existing download links have expired before
+removing route support. After rollout, independently inventory and describe every
+new running task, confirm the expected task definition and image, then perform an
+authorized download check of the bytes and response headers. Workflow success
+alone does not complete those independent checks. Self-host configuration remains opt-in
+and defaults to `false`.
 
 ## Rotate keys
 

@@ -15,11 +15,17 @@ type localTestRepo struct {
 	ids      []uuid.UUID
 	retries  map[uuid.UUID]bool
 	attempts chan uuid.UUID
+	limits   []int
+	released []uuid.UUID
 }
 
-func (r *localTestRepo) ListDuePendingTaskIDs(_ context.Context, limit int) ([]uuid.UUID, error) {
+func (r *localTestRepo) ClaimDueTaskIDs(_ context.Context, limit int, lease time.Duration) ([]uuid.UUID, time.Time, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if lease <= 0 {
+		return nil, time.Time{}, errors.New("claim without a lease")
+	}
+	r.limits = append(r.limits, limit)
 	var ids []uuid.UUID
 	for _, id := range r.ids {
 		if !r.retries[id] {
@@ -29,10 +35,10 @@ func (r *localTestRepo) ListDuePendingTaskIDs(_ context.Context, limit int) ([]u
 			break
 		}
 	}
-	return ids, nil
+	return ids, time.Now().Add(lease), nil
 }
 
-func (r *localTestRepo) RecordDispatchAttempt(_ context.Context, id uuid.UUID, failed bool, at time.Time) error {
+func (r *localTestRepo) RecordDispatchAttempt(_ context.Context, id uuid.UUID, _ time.Time, failed bool, at time.Time) error {
 	r.mu.Lock()
 	r.retries[id] = failed
 	r.mu.Unlock()
@@ -41,6 +47,55 @@ func (r *localTestRepo) RecordDispatchAttempt(_ context.Context, id uuid.UUID, f
 	}
 	r.attempts <- id
 	return nil
+}
+
+func (r *localTestRepo) ReleaseDispatchClaims(_ context.Context, ids []uuid.UUID, _ time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.released = append(r.released, ids...)
+	return nil
+}
+
+func TestLocalClaimsOnlyWhatItsFreeSlotsCanRun(t *testing.T) {
+	ids := []uuid.UUID{uuid.New(), uuid.New(), uuid.New()}
+	r := &localTestRepo{ids: ids, retries: make(map[uuid.UUID]bool), attempts: make(chan uuid.UUID, 3)}
+	l := NewLocal(r, time.Second, 200, WithConcurrency(3))
+	entered, release := make(chan struct{}, 3), make(chan struct{})
+	defer close(release)
+	handle := func(string) error { entered <- struct{}{}; <-release; return nil }
+	l.slots <- struct{}{}
+	l.tick(t.Context(), handle)
+	<-entered
+	<-entered
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.limits) != 1 || r.limits[0] != 2 {
+		t.Fatalf("claimed with limits %v, want one claim of the 2 free slots", r.limits)
+	}
+}
+
+func TestLocalReleasesClaimsItCannotStart(t *testing.T) {
+	id := uuid.New()
+	r := &localTestRepo{ids: []uuid.UUID{id}, retries: make(map[uuid.UUID]bool), attempts: make(chan uuid.UUID, 1)}
+	l := NewLocal(r, time.Second, 1)
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	handle := func(string) error { cancel(); close(done); return errors.New("shutting down") }
+	l.tick(ctx, handle)
+	<-done
+	deadline := time.Now().Add(time.Second)
+	for {
+		r.mu.Lock()
+		released, stamped := len(r.released), len(r.retries)
+		r.mu.Unlock()
+		if released == 1 && stamped == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("released %d claims and stamped %d, want the claim handed back unstamped", released, stamped)
+		}
+		time.Sleep(time.Millisecond)
+	}
 }
 
 func TestLocalFailedBatchDoesNotStarveLaterTasks(t *testing.T) {
