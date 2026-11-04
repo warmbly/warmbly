@@ -494,6 +494,25 @@ test("refusal evidence accounts for complete traces, framing and both captured s
       const result = { status: 1, stdout: hello + alert + summary, stderr: "SSL_connect:reading peer alert\n" };
       check(result, cipher, true, "complete message trace");
       check({ ...result, stdout: sent + hello + received + alert + summary }, cipher, true, "complete record trace");
+      for (const size of [0, 32, 33]) {
+        const message = Buffer.concat([bytes.subarray(0, 38), Buffer.from([size]), Buffer.alloc(size, 0x5a), bytes.subarray(39)]);
+        message.writeUIntBE(message.length - 4, 1, 3);
+        check({ ...result, stdout: trace(">>>", "Handshake", "ClientHello", message) + alert + summary },
+          cipher, size <= 32, "bounded ClientHello session identifier");
+      }
+      for (const [expected, tails] of [
+        [true, [[1, 0], [1, 0, 0, 0], [1, 0, 0, 5, 0xfa, 0xce, 0, 1, 0xaa]]],
+        [false, [[], [0], [1], [2, 0], [1, 1], [1, 0, 0], [1, 0, 0, 1],
+          [1, 0, 0, 1, 0], [1, 0, 0, 5, 0xfa, 0xce, 0, 2, 0xaa],
+          [1, 0, 0, 8, 0xfa, 0xce, 0, 0, 0xfa, 0xce, 0, 0]]],
+      ]) {
+        for (const tail of tails) {
+          const message = Buffer.concat([bytes.subarray(0, -2), Buffer.from(tail)]);
+          message.writeUIntBE(message.length - 4, 1, 3);
+          check({ ...result, stdout: trace(">>>", "Handshake", "ClientHello", message) + alert + summary },
+            cipher, expected, "complete ClientHello vectors");
+        }
+      }
       for (const extra of [
         alert.slice(0, alert.indexOf("[length") + 3),
         alert.slice(0, alert.indexOf("\n") + 1),

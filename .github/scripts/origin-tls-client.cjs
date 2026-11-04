@@ -59,6 +59,24 @@ function traceMessages(output) {
   return messages;
 }
 
+function completeClientHelloTail(sent, offset) {
+  if (offset + 2 > sent.length || sent[offset] !== 1 || sent[offset + 1] !== 0) return false;
+  offset += 2;
+  if (offset === sent.length) return true;
+  if (offset + 2 > sent.length || offset + 2 + sent.readUInt16BE(offset) !== sent.length) return false;
+  offset += 2;
+  const extensions = new Set();
+  while (offset < sent.length) {
+    if (offset + 4 > sent.length) return false;
+    const kind = sent.readUInt16BE(offset);
+    const length = sent.readUInt16BE(offset + 2);
+    if (extensions.has(kind) || offset + 4 + length > sent.length) return false;
+    extensions.add(kind);
+    offset += 4 + length;
+  }
+  return true;
+}
+
 function peerRefusal(stdout, stderr, cipher) {
   const trace = traceMessages(stdout);
   const diagnosticTrace = traceMessages(stderr);
@@ -76,7 +94,7 @@ function peerRefusal(stdout, stderr, cipher) {
   const sent = hello.bytes;
   const received = alert.bytes;
   if (hello.direction !== ">>>" || hello.version !== "1.2" || hello.kind !== "Handshake" || hello.name !== "ClientHello" ||
-    sent.length < 41 || sent[0] !== 1 ||
+    sent.length < 41 || sent[0] !== 1 || sent[38] > 32 ||
     sent.readUIntBE(1, 3) !== sent.length - 4 || sent.readUInt16BE(4) !== 0x0303) return false;
   const offset = 39 + sent[38];
   if (offset + 2 > sent.length) return false;
@@ -85,6 +103,7 @@ function peerRefusal(stdout, stderr, cipher) {
   const intended = { [CBC[0]]: "c027", [CBC[1]]: "c028" }[cipher];
   // The sole negotiable suite may be followed by the renegotiation signalling value.
   return intended && length >= 2 && offset + 2 + length < sent.length &&
+    completeClientHelloTail(sent, offset + 2 + length) &&
     (offers === intended || offers === intended + "00ff") &&
     alert.direction === "<<<" && alert.version === "1.2" && alert.kind === "Alert" && alert.name === "fatal handshake_failure" &&
     received.equals(Buffer.from([2, 40]));
