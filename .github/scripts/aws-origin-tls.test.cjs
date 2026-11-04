@@ -6,7 +6,8 @@ const { tmpdir } = require("node:os");
 const { join } = require("node:path");
 const { ACCOUNT, BUCKET, ROLE, LB, LISTENER, DESIRED } = require("./aws-origin-alb.cjs");
 const { configuration, sessionPolicy, discover, definition, execute, finish, verifiedLogs, IMAGE, CLUSTER, SERVICE, EXECUTION, SG, ALB_SG, VPC, ECS, LOG } = require("./aws-origin-tls.cjs");
-const { probe, CBC, TLS13 } = require("./origin-tls-client.cjs");
+const { probe, classify, invoke, CBC, TLS13 } = require("./origin-tls-client.cjs");
+const { refused } = require("./origin-tls-client.fixture.cjs");
 
 const scaledTargets = ["10.42.0.85", "10.42.1.12", "10.42.0.86", "10.42.1.13"];
 
@@ -17,7 +18,7 @@ function logFixture(targets = ["10.42.0.85", "10.42.1.12"]) {
     if (args[0] === "ciphers") return { status: 0, stdout: CBC.join(":") };
     const cipher = args.at(-1);
     return { command: ["openssl", ...args], ...(CBC.includes(cipher) ?
-      { status: 1, stdout: "New, (NONE), Cipher is (NONE)", stderr: "sslv3 alert handshake failure" } :
+      refused(cipher) :
       { status: 0, stdout: `-----BEGIN CERTIFICATE-----\nfixture\nNew, ${cipher === TLS13 ? "TLSv1.3" : "TLSv1.2"}, Cipher is ${cipher}\nVerify return code: 0 (ok)`, stderr: "" }) };
   }, (row) => events.push({ message: JSON.stringify(row) }));
   return events;
@@ -446,6 +447,116 @@ test("missing or truncated raw handshake logs cannot be rescued by a successful 
   const logs = logFixture();
   logs[2].message = logs[2].message.replace("return code: 0 (ok)", "return code: 62 (hostname mismatch)");
   assert.equal(verifiedLogs(logs, targets), false);
+});
+
+test("private archive verification reclassifies ambiguous or altered negative evidence", () => {
+  const targets = ["10.42.0.85", "10.42.1.12"];
+  for (const alter of [
+    (r) => { r.stdout = "CONNECTED\nclosed\nno peer certificate available\nNew, (NONE), Cipher is (NONE)\n"; r.status = 0; },
+    (r) => { r.stdout = r.stdout.replace("<<<", ">>>"); },
+    (r) => { r.stdout = r.stdout.replace("02 28", "01 00"); },
+    (r) => { r.stdout = r.stdout.replace("c0 27", "c0 2f"); },
+  ]) {
+    const logs = logFixture();
+    const index = logs.findIndex((e) => JSON.parse(e.message).negative);
+    const row = JSON.parse(logs[index].message);
+    alter(row);
+    assert.equal(row.outcome, "refused");
+    logs[index].message = JSON.stringify(row);
+    assert.equal(verifiedLogs(logs, targets), false);
+  }
+});
+
+test("refusal evidence accounts for complete traces, framing and both captured streams", () => {
+  const targets = ["10.42.0.85", "10.42.1.12"];
+  const trace = (direction, kind, name, bytes, version = "1.2") =>
+    `${direction} TLS ${version}, ${kind} [length ${bytes.length.toString(16).padStart(4, "0")}]${name ? `, ${name}` : ""}\n` +
+    `    ${bytes.toString("hex").match(/../g).join(" ")}\n`;
+  const check = (result, cipher, expected, label) => {
+    assert.equal(classify(result, "TLSv1.2", cipher, true), expected ? "refused" : "inconclusive", label);
+    const logs = logFixture();
+    const index = logs.findIndex((e) => { const row = JSON.parse(e.message); return row.negative && row.cipher === cipher; });
+    const row = JSON.parse(logs[index].message);
+    assert.equal(row.outcome, "refused");
+    logs[index].message = JSON.stringify({ ...row, ...result });
+    assert.equal(verifiedLogs(logs, targets), expected, label);
+  };
+  for (const cipher of CBC) {
+    for (const scsv of [false, true]) {
+      const suites = [0xc0, cipher === CBC[0] ? 0x27 : 0x28, ...(scsv ? [0, 0xff] : [])];
+      const bytes = Buffer.from([1, 0, 0, 39 + suites.length, 3, 3,
+        ...Array.from({ length: 32 }, (_, i) => 0x60 + i), 0, 0, suites.length, ...suites, 1, 0]);
+      const hello = trace(">>>", "Handshake", "ClientHello", bytes);
+      const alert = trace("<<<", "Alert", "fatal handshake_failure", Buffer.from([2, 40]));
+      const sent = trace(">>>", "RecordHeader", "", Buffer.from([22, 3, 1, 0, bytes.length]), "1.0");
+      const received = trace("<<<", "RecordHeader", "", Buffer.from([21, 3, 3, 0, 2]));
+      const summary = "no peer certificate available\nNew, (NONE), Cipher is (NONE)\n";
+      const result = { status: 1, stdout: hello + alert + summary, stderr: "SSL_connect:reading peer alert\n" };
+      check(result, cipher, true, "complete message trace");
+      check({ ...result, stdout: sent + hello + received + alert + summary }, cipher, true, "complete record trace");
+      for (const size of [0, 32, 33]) {
+        const message = Buffer.concat([bytes.subarray(0, 38), Buffer.from([size]), Buffer.alloc(size, 0x5a), bytes.subarray(39)]);
+        message.writeUIntBE(message.length - 4, 1, 3);
+        check({ ...result, stdout: trace(">>>", "Handshake", "ClientHello", message) + alert + summary },
+          cipher, size <= 32, "bounded ClientHello session identifier");
+      }
+      for (const [expected, tails] of [
+        [true, [[1, 0], [1, 0, 0, 0], [1, 0, 0, 5, 0xfa, 0xce, 0, 1, 0xaa]]],
+        [false, [[], [0], [1], [2, 0], [1, 1], [1, 0, 0], [1, 0, 0, 1],
+          [1, 0, 0, 1, 0], [1, 0, 0, 5, 0xfa, 0xce, 0, 2, 0xaa],
+          [1, 0, 0, 8, 0xfa, 0xce, 0, 0, 0xfa, 0xce, 0, 0]]],
+      ]) {
+        for (const tail of tails) {
+          const message = Buffer.concat([bytes.subarray(0, -2), Buffer.from(tail)]);
+          message.writeUIntBE(message.length - 4, 1, 3);
+          check({ ...result, stdout: trace(">>>", "Handshake", "ClientHello", message) + alert + summary },
+            cipher, expected, "complete ClientHello vectors");
+        }
+      }
+      for (const [expected, versions] of [
+        [true, [2, 3, 3]], [true, [4, 3, 4, 3, 3]], [true, [4, 3, 3, 3, 4]],
+        [false, []], [false, [0]], [false, [1, 3]], [false, [2, 3]],
+        [false, [2, 3, 4]], [false, [4, 3, 3]], [false, [2, 3, 3, 3, 4]],
+      ]) {
+        const extensions = Buffer.from([0, 43, 0, versions.length, ...versions]);
+        const message = Buffer.concat([bytes, Buffer.from([0, extensions.length]), extensions]);
+        message.writeUIntBE(message.length - 4, 1, 3);
+        check({ ...result, stdout: trace(">>>", "Handshake", "ClientHello", message) + alert + summary },
+          cipher, expected, "ClientHello version selection includes TLS 1.2");
+      }
+      for (const extra of [
+        alert.slice(0, alert.indexOf("[length") + 3),
+        alert.slice(0, alert.indexOf("\n") + 1),
+        trace("<<<", "Handshake", "ServerHello", Buffer.from([2, 0, 0, 0])),
+        "    91 a2 b3\n",
+        "[TLS message omitted]\n",
+      ]) {
+        for (const stream of ["stdout", "stderr"]) {
+          for (const position of ["before", "after"]) {
+            const output = position === "before" ? extra + result[stream] : result[stream] + extra;
+            check({ ...result, [stream]: output }, cipher, false, `${stream} ${position} envelope`);
+          }
+        }
+      }
+      for (const [label, stdout] of [
+        ["record count", sent + hello + alert + summary],
+        ["record order", sent + received + hello + alert + summary],
+        ["record direction", sent + hello + received.replace("<<<", ">>>") + alert + summary],
+        ["record content type", sent.replace("16 03", "15 03") + hello + received + alert + summary],
+        ["record version", sent.replace("TLS 1.0", "TLS 1.2") + hello + received + alert + summary],
+        ["record payload length", sent + hello + received.replace("00 02", "00 03") + alert + summary],
+        ["message declared length", hello + alert.replace("length 0002", "length 0003") + summary],
+        ["message line termination", summary + hello + alert.trimEnd()],
+        ["intervening message", hello + "[TLS message omitted]\n" + alert + summary],
+      ]) check({ ...result, stdout }, cipher, false, label);
+      for (const stream of ["stdout", "stderr"]) {
+        const ticket = trace("<<<", "Handshake", "NewSessionTicket", Buffer.from([4, 0, 0, 2, 0x95, 0xa6]));
+        const sanitized = invoke([], () => ({ ...result, [stream]: result[stream] + ticket }));
+        assert.match(sanitized[stream], /\[TLS message omitted\]/);
+        check(sanitized, cipher, false, `${stream} omitted message`);
+      }
+    }
+  }
 });
 
 test("delayed log delivery is retried within a fixed page budget before verification", async (t) => {
