@@ -3,7 +3,6 @@ package attachmenttype
 
 import (
 	"bytes"
-	"encoding/csv"
 	"errors"
 	"image"
 	"image/gif"
@@ -16,12 +15,15 @@ import (
 
 	"golang.org/x/image/webp"
 
+	csv "github.com/warmbly/warmbly/internal/pkg/boundedcsv"
 	"github.com/warmbly/warmbly/internal/pkg/imagetype"
 	"github.com/warmbly/warmbly/internal/pkg/spreadsheet"
 	"github.com/warmbly/warmbly/internal/pkg/textcontent"
 )
 
 const MaxBytes = 15 << 20
+
+const maxDelimitedFieldsPerRecord = 4096
 
 // Type is the canonical outgoing media type of a validated file.
 type Type struct {
@@ -59,6 +61,7 @@ func Validate(filename string, body []byte) (Type, error) {
 			}
 			r := csv.NewReader(bytes.NewReader(bytes.TrimPrefix(body, []byte("\ufeff"))))
 			r.FieldsPerRecord = -1
+			r.MaxFieldsPerRecord = maxDelimitedFieldsPerRecord
 			r.Comma = spreadsheet.Delimiter(body)
 			if ext == ".tsv" {
 				r.Comma = '\t'

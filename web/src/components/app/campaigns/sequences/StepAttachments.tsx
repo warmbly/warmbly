@@ -161,7 +161,7 @@ export default function StepAttachments({
                         {upload.isPending ? "Uploading…" : "Drag files here or click to upload"}
                     </span>
                     <span className="text-[10.5px] text-slate-400">
-                        PDF, DOCX, XLSX, PPTX, text, raster images or ZIP. Up to 15 MB per file.
+                        PDF, DOCX, XLSX, PPTX, text, raster images or ZIP. Up to 15 MB per file. CSV/TSV: up to 4096 fields per logical record.
                     </span>
                 </button>
 
