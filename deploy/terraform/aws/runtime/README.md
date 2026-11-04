@@ -284,12 +284,19 @@ The task sends TLS handshakes only, with empty stdin and no HTTP or authenticati
 Each OpenSSL process has a 12-second kill bound, and the container command has a
 210-second hard kill bound after it starts. The probe step is limited to ten
 minutes. An `always()` final step has eight minutes to recover lost task/definition
-responses, stop only this run's diagnostic tasks, confirm they stopped,
+responses, verify task cluster, `startedBy` and exact definition before stopping
+tasks or collecting their logs, confirm they stopped,
 deregister only this run's diagnostic definitions, and privately archive logs and
-cleanup results. Cleanup failure fails the workflow, even after successful
+cleanup results. Recovery lists running tasks by this run's `startedBy` and
+stopped tasks by the exact run-specific family with `desiredStatus=STOPPED`.
+The `startedBy` query has no additional filter. An ambiguous launch with no
+verified task identity remains unresolved and does not confirm stopped cleanup.
+Cleanup failure fails the workflow, even after successful
 handshakes. Cancellation, runner loss or AWS API/access failures cannot guarantee
 control-plane cleanup; the in-container limit still bounds a running client.
-If the finalizer cannot complete, use the archived diagnostic ARNs (or list tasks
-by `startedBy=origin-tls-<run-id>` and definitions by the exact family) to stop,
-confirm STOPPED and deregister only those resources through normal operator
-access. Do not delete log groups, ENIs, security groups or application resources.
+If the finalizer cannot complete, use the archived diagnostic ARNs or those
+running/stopped task queries and list definitions by the exact family. Describe
+each task and verify its cluster, `startedBy` and exact run definition before
+stopping it or retrieving logs. Confirm STOPPED and deregister only those
+resources through normal operator access. Do not delete log groups, ENIs,
+security groups or application resources.

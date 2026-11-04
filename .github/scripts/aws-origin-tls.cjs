@@ -171,29 +171,48 @@ async function finish(aws, config, pause = sleep) {
   evidence.cleanup = { errors: [], stopped: false, deregistered: false };
   const attempt = async (action) => { try { return await action(); } catch (error) { evidence.cleanup.errors.push(error.message); return null; } };
   // Recover identities even when a registration or launch response was lost.
-  let listed = { taskArns: [] };
+  const candidates = new Set([evidence.taskArn].filter(Boolean));
   if (evidence.runAttempted) {
     for (let i = 0; i < 3; i++) {
-      listed = await attempt(() => aws("ecs", "list-tasks", ["--cluster", CLUSTER, "--started-by", config.startedBy]));
-      if (listed?.taskArns?.length || evidence.taskArn) break;
+      const running = await attempt(() => aws("ecs", "list-tasks", ["--cluster", CLUSTER, "--started-by", config.startedBy]));
+      // startedBy cannot be combined with another ListTasks filter.
+      const stopped = await attempt(() => aws("ecs", "list-tasks", ["--cluster", CLUSTER, "--family", config.family, "--desired-status", "STOPPED"]));
+      for (const task of [...(running?.taskArns || []), ...(stopped?.taskArns || [])]) candidates.add(task);
+      if (candidates.size) break;
       await pause(5000);
     }
   }
-  const tasks = [...new Set([evidence.taskArn, ...(listed?.taskArns || [])].filter(Boolean))];
-  evidence.cleanup.taskArns = tasks;
+  const tasks = [...candidates];
+  const verified = new Set();
+  const stopAttempted = new Set();
+  evidence.cleanup.candidateTaskArns = tasks;
   save(config, evidence);
-  for (const task of tasks) await attempt(() => aws("ecs", "stop-task", ["--cluster", CLUSTER, "--task", task, "--reason", "Bounded origin TLS diagnostic cleanup"]));
-  if (listed) {
+  if (tasks.length) {
     for (let i = 0; i < 12; i++) {
-      const state = tasks.length ? await attempt(() => aws("ecs", "describe-tasks", ["--cluster", CLUSTER, "--tasks", ...tasks])) : { tasks: [] };
+      const state = await attempt(() => aws("ecs", "describe-tasks", ["--cluster", CLUSTER, "--tasks", ...tasks]));
       evidence.cleanup.tasks = state;
-      if (state && !state.failures?.length && state.tasks?.length === tasks.length && state.tasks.every((t) => t.lastStatus === "STOPPED")) {
+      const owned = (state?.tasks || []).filter((t) => candidates.has(t.taskArn) && t.clusterArn === CLUSTER &&
+        t.startedBy === config.startedBy && typeof evidence.definitionArn === "string" && t.taskDefinitionArn === evidence.definitionArn);
+      for (const task of owned) {
+        verified.add(task.taskArn);
+        if (task.lastStatus !== "STOPPED" && !stopAttempted.has(task.taskArn)) {
+          stopAttempted.add(task.taskArn);
+          await attempt(() => aws("ecs", "stop-task", ["--cluster", CLUSTER, "--task", task.taskArn, "--reason", "Bounded origin TLS diagnostic cleanup"]));
+        }
+      }
+      if (state && !state.failures?.length && new Set(owned.map((t) => t.taskArn)).size === tasks.length && owned.every((t) => t.lastStatus === "STOPPED")) {
         evidence.cleanup.stopped = true;
         break;
       }
       await pause(5000);
     }
+  } else if (!evidence.runAttempted) {
+    evidence.cleanup.stopped = true;
   }
+  evidence.cleanup.taskArns = [...verified];
+  evidence.cleanup.recovery = !evidence.runAttempted ? "not-required" :
+    verified.size > 0 && verified.size === tasks.length ? "resolved" : "unresolved";
+  if (evidence.cleanup.recovery === "unresolved") evidence.cleanup.errors.push("Diagnostic task identity unresolved");
   const definitions = evidence.registerAttempted ? await attempt(() => aws("ecs", "list-task-definitions", ["--family-prefix", config.family, "--status", "ACTIVE"])) : { taskDefinitionArns: [] };
   const arns = [...new Set([evidence.definitionArn, ...(definitions?.taskDefinitionArns || [])].filter((arn) =>
     typeof arn === "string" && new RegExp(`^${ECS}:task-definition/${config.family}:\\d+$`).test(arn)))];
@@ -205,7 +224,7 @@ async function finish(aws, config, pause = sleep) {
   }
   evidence.cleanup.deregistered = !!definitions && evidence.cleanup.errors.length === 0;
   evidence.logs = [];
-  for (const task of tasks) {
+  for (const task of verified) {
     let token;
     for (let i = 0; i < 6; i++) {
       const page = await attempt(() => aws("logs", "get-log-events", ["--log-group-name", LOG,

@@ -54,13 +54,24 @@ function fixture(t, change = () => {}) {
       case "register-task-definition": result = { taskDefinition: { taskDefinitionArn: arn } }; break;
       case "run-task": result = { tasks: [state] }; break;
       case "describe-tasks": result = { tasks: [state] }; break;
-      case "list-tasks": result = { taskArns: [task] }; break;
-      case "stop-task": result = { task: state }; break;
+      case "list-tasks": {
+        assert.equal(args[1], CLUSTER);
+        if (args.includes("--started-by")) {
+          assert.deepEqual(args, ["--cluster", CLUSTER, "--started-by", config.startedBy]);
+          result = { taskArns: state.lastStatus === "STOPPED" ? [] : [task] };
+        } else {
+          assert.deepEqual(args, ["--cluster", CLUSTER, "--family", config.family, "--desired-status", "STOPPED"]);
+          result = { taskArns: state.lastStatus === "STOPPED" ? [task] : [] };
+        }
+        break;
+      }
+      case "stop-task": state.lastStatus = "STOPPED"; result = { task: state }; break;
       case "list-task-definitions": result = { taskDefinitionArns: [arn] }; break;
       case "deregister-task-definition": result = { taskDefinition: { taskDefinitionArn: arn, status: "INACTIVE" } }; break;
       case "get-log-events": result = { events: args.includes("--next-token") ? [] : logFixture(), nextForwardToken: "end" }; break;
       default: throw new Error(`Unexpected ${service} ${action}`);
     }
+    result = structuredClone(result);
     await change(action, result, calls);
     return result;
   };
@@ -134,7 +145,7 @@ test("archive requires encryption, checksum and a real version before admitting 
   }
 });
 
-test("successful lifecycle archives intent first, launches only one secretless task, stops/deregisters and retains private logs", async (t) => {
+test("successful lifecycle archives intent first, launches one secretless task, confirms cleanup and retains private logs", async (t) => {
   const f = fixture(t);
   const oldSummary = process.env.GITHUB_STEP_SUMMARY;
   process.env.GITHUB_STEP_SUMMARY = join(f.config.work, "summary");
@@ -151,7 +162,8 @@ test("successful lifecycle archives intent first, launches only one secretless t
   assert.equal(request.clientToken, f.config.startedBy);
   assert.equal(request.overrides, undefined);
   assert.deepEqual(request.networkConfiguration.awsvpcConfiguration.securityGroups, [SG]);
-  assert.ok(actions.indexOf("stop-task") < actions.indexOf("deregister-task-definition"));
+  assert.ok(!actions.includes("stop-task"));
+  assert.ok(actions.indexOf("describe-tasks") < actions.indexOf("deregister-task-definition"));
   assert.equal(f.evidence().cleanup.stopped, true);
   assert.equal(f.evidence().cleanup.deregistered, true);
   assert.ok(f.evidence().logs.length > 0);
@@ -166,14 +178,115 @@ for (const failure of ["register-task-definition", "run-task", "describe-tasks"]
     process.env.GITHUB_STEP_SUMMARY = join(f.config.work, "summary");
     t.after(() => { if (oldSummary === undefined) delete process.env.GITHUB_STEP_SUMMARY; else process.env.GITHUB_STEP_SUMMARY = oldSummary; });
     await assert.rejects(execute(f.aws, f.config, async () => {}), /lost response/);
+    if (failure !== "register-task-definition") f.state.lastStatus = "RUNNING";
     await assert.rejects(finish(f.aws, f.config, async () => {}), /incomplete/);
     assert.ok(f.calls.some((c) => c.action === "deregister-task-definition"));
     if (failure !== "register-task-definition") assert.ok(f.calls.some((c) => c.action === "stop-task"));
+    if (failure !== "register-task-definition") {
+      const stop = f.calls.findIndex((c) => c.action === "stop-task");
+      assert.ok(f.calls.slice(0, stop).some((c) => c.action === "describe-tasks"));
+      assert.equal(f.evidence().cleanup.recovery, "resolved");
+      assert.equal(f.evidence().cleanup.stopped, true);
+    }
     assert.equal(f.evidence().success, false);
     assert.equal(f.calls.filter((c) => c.action === "put-object").length, 2);
     assert.equal(f.calls.filter((c) => c.action === "run-task").length, failure === "register-task-definition" ? 0 : 1);
   });
 }
+
+test("stopped diagnostic recovery verifies exact identity and privately archives its logs", async (t) => {
+  const f = fixture(t, (action) => { if (action === "run-task") throw new Error("Fixture lost response"); });
+  const oldSummary = process.env.GITHUB_STEP_SUMMARY;
+  process.env.GITHUB_STEP_SUMMARY = join(f.config.work, "summary");
+  t.after(() => { if (oldSummary === undefined) delete process.env.GITHUB_STEP_SUMMARY; else process.env.GITHUB_STEP_SUMMARY = oldSummary; });
+  await assert.rejects(execute(f.aws, f.config, async () => {}), /lost response/);
+  assert.equal(f.evidence().taskArn, undefined);
+  await assert.rejects(finish(f.aws, f.config, async () => {}), /incomplete/);
+  const evidence = f.evidence();
+  assert.equal(evidence.cleanup.recovery, "resolved");
+  assert.equal(evidence.cleanup.stopped, true);
+  assert.deepEqual(evidence.cleanup.taskArns, [f.task]);
+  assert.deepEqual(evidence.cleanup.tasks.tasks, [f.state]);
+  assert.equal(verifiedLogs(evidence.logs, evidence.before.enis.map((e) => e.PrivateIpAddress)), true);
+  assert.ok(!f.calls.some((c) => c.action === "stop-task"));
+  const described = f.calls.findIndex((c) => c.action === "describe-tasks");
+  assert.ok(described < f.calls.findIndex((c) => c.action === "get-log-events"));
+  assert.equal(evidence.success, false);
+  const archived = JSON.parse(readFileSync(join(f.config.work, "result.json")));
+  assert.deepEqual(archived, evidence);
+  assert.equal(f.calls.at(-1).action, "put-object");
+});
+
+test("ambiguous diagnostic recovery retains an unresolved private outcome within its discovery budget", async (t) => {
+  const f = fixture(t, (action, result) => {
+    if (action === "run-task") throw new Error("Fixture lost response");
+    if (action === "list-tasks") result.taskArns = [];
+  });
+  const oldSummary = process.env.GITHUB_STEP_SUMMARY;
+  process.env.GITHUB_STEP_SUMMARY = join(f.config.work, "summary");
+  t.after(() => { if (oldSummary === undefined) delete process.env.GITHUB_STEP_SUMMARY; else process.env.GITHUB_STEP_SUMMARY = oldSummary; });
+  await assert.rejects(execute(f.aws, f.config, async () => {}), /lost response/);
+  let sleeps = 0;
+  await assert.rejects(finish(f.aws, f.config, async () => { sleeps++; }), /incomplete/);
+  const evidence = f.evidence();
+  assert.equal(evidence.cleanup.recovery, "unresolved");
+  assert.equal(evidence.cleanup.stopped, false);
+  assert.deepEqual(evidence.cleanup.taskArns, []);
+  assert.deepEqual(evidence.logs, []);
+  assert.ok(evidence.cleanup.errors.includes("Diagnostic task identity unresolved"));
+  assert.equal(sleeps, 3);
+  assert.equal(f.calls.filter((c) => c.action === "list-tasks").length, 6);
+  assert.ok(!f.calls.some((c) => ["describe-tasks", "stop-task", "get-log-events"].includes(c.action)));
+  assert.deepEqual(f.calls.filter((c) => c.action === "deregister-task-definition").map((c) => c.args[1]), [f.arn]);
+  assert.equal(evidence.success, false);
+  assert.deepEqual(JSON.parse(readFileSync(join(f.config.work, "result.json"))), evidence);
+  assert.equal(f.calls.at(-1).action, "put-object");
+});
+
+for (const field of ["taskArn", "clusterArn", "startedBy", "taskDefinitionArn"]) {
+  test(`diagnostic cleanup requires exact ${field} readback before stopping or collecting logs`, async (t) => {
+    const f = fixture(t, (action, result) => {
+      if (action === "run-task") throw new Error("Fixture lost response");
+      if (action === "describe-tasks") result.tasks[0][field] += "7";
+    });
+    const oldSummary = process.env.GITHUB_STEP_SUMMARY;
+    process.env.GITHUB_STEP_SUMMARY = join(f.config.work, "summary");
+    t.after(() => { if (oldSummary === undefined) delete process.env.GITHUB_STEP_SUMMARY; else process.env.GITHUB_STEP_SUMMARY = oldSummary; });
+    await assert.rejects(execute(f.aws, f.config, async () => {}), /lost response/);
+    f.state.lastStatus = "RUNNING";
+    await assert.rejects(finish(f.aws, f.config, async () => {}), /incomplete/);
+    assert.ok(!f.calls.some((c) => ["stop-task", "get-log-events"].includes(c.action)));
+    assert.equal(f.calls.filter((c) => c.action === "describe-tasks").length, 12);
+    assert.deepEqual(f.evidence().cleanup.taskArns, []);
+    assert.equal(f.evidence().cleanup.stopped, false);
+    assert.equal(f.evidence().cleanup.recovery, "unresolved");
+    assert.equal(f.calls.at(-1).action, "put-object");
+  });
+}
+
+test("diagnostic recovery cleans and archives only verified tasks among mixed candidates", async (t) => {
+  const other = `${ECS}:task/warmbly-production/${"2".repeat(32)}`;
+  const f = fixture(t, (action, result, calls) => {
+    if (action === "run-task") throw new Error("Fixture lost response");
+    if (action === "list-tasks" && calls.at(-1).args.includes("STOPPED")) result.taskArns.push(other);
+    if (action === "describe-tasks") result.tasks.push({ ...f.state, taskArn: other, startedBy: `${f.config.startedBy}7`, lastStatus: "STOPPED" });
+  });
+  const oldSummary = process.env.GITHUB_STEP_SUMMARY;
+  process.env.GITHUB_STEP_SUMMARY = join(f.config.work, "summary");
+  t.after(() => { if (oldSummary === undefined) delete process.env.GITHUB_STEP_SUMMARY; else process.env.GITHUB_STEP_SUMMARY = oldSummary; });
+  await assert.rejects(execute(f.aws, f.config, async () => {}), /lost response/);
+  f.state.lastStatus = "RUNNING";
+  await assert.rejects(finish(f.aws, f.config, async () => {}), /incomplete/);
+  assert.deepEqual(f.calls.filter((c) => c.action === "stop-task").map((c) => c.args[3]), [f.task]);
+  assert.ok(f.calls.filter((c) => c.action === "get-log-events").every((c) =>
+    c.args[3] === `origin-tls-${f.config.run}/probe/${f.task.split("/").pop()}`));
+  assert.deepEqual(f.evidence().cleanup.taskArns, [f.task]);
+  assert.equal(verifiedLogs(f.evidence().logs, f.evidence().before.enis.map((e) => e.PrivateIpAddress)), true);
+  assert.equal(f.evidence().cleanup.stopped, false);
+  assert.equal(f.evidence().cleanup.recovery, "unresolved");
+  assert.equal(f.calls.filter((c) => c.action === "stop-task").length, 1);
+  assert.equal(f.calls.at(-1).action, "put-object");
+});
 
 test("network drift after registration prevents launch and remains eligible for cleanup", async (t) => {
   let reads = 0;
@@ -240,6 +353,7 @@ test("cleanup failure stays bounded, still deregisters and archives, and never t
   process.env.GITHUB_STEP_SUMMARY = join(f.config.work, "summary");
   t.after(() => { if (oldSummary === undefined) delete process.env.GITHUB_STEP_SUMMARY; else process.env.GITHUB_STEP_SUMMARY = oldSummary; });
   await execute(f.aws, f.config, async () => {});
+  f.state.lastStatus = "RUNNING";
   await assert.rejects(finish(f.aws, f.config, async () => {}), /cleanup failed/);
   assert.deepEqual(f.calls.filter((c) => c.action === "deregister-task-definition").map((c) => c.args[1]), [f.arn]);
   assert.ok(f.evidence().cleanup.errors.includes("Fixture stop denied"));
