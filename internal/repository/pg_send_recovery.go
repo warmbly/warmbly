@@ -126,21 +126,22 @@ type SendRecoveryHold struct {
 }
 
 func (r *emailRepository) GetSendRecoveryHolds(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]SendRecoveryHold, error) {
-	// Normal in-flight sends also hold admission; only surface settled or stuck ones.
+	// Every send holds its mailbox in flight; an unknown outcome surfaces only once it outlasts automatic recovery.
 	query := `SELECT ea.id,COALESCE(ea.send_recovery_reason,''),COALESCE(t.task_type='warmup',false),
 		COALESCE(t.task_type='campaign' AND t.send_executor_nonce IS NOT NULL AND t.send_executor_started_at IS NOT NULL
 		AND EXISTS(SELECT 1 FROM campaign_tasks ct WHERE ct.task_id=t.id),false) FROM email_accounts ea
 		LEFT JOIN tasks t ON t.id=ea.send_recovery_task_id AND t.email_account_id=ea.id
+		LEFT JOIN warmup_tasks w ON w.task_id=t.id
 		WHERE ea.id=ANY($1) AND ea.send_recovery_hold
-		AND (ea.send_recovery_reason IS DISTINCT FROM 'unknown' OR t.id IS NULL
-		 OR t.send_result_applied_at IS NOT NULL OR t.send_result_evidence IS NOT NULL
-		 OR COALESCE(t.send_reserved_at,t.completed_at,t.updated_at)<NOW()-INTERVAL '10 minutes')`
+		AND (ea.send_recovery_reason IS DISTINCT FROM 'unknown'
+		 OR COALESCE(GREATEST(t.send_reserved_at,t.completed_at,t.send_executor_started_at,w.dispatch_started_at),t.updated_at)
+		  <NOW()-make_interval(mins=>$2))`
 	var rows pgx.Rows
 	var err error
 	if r.transportSnapshot != nil {
-		rows, err = r.transportSnapshot.Query(ctx, query, ids)
+		rows, err = r.transportSnapshot.Query(ctx, query, ids, config.UnknownSendHoldVisibleAfterMinutes)
 	} else {
-		rows, err = r.DB.Query(ctx, query, ids)
+		rows, err = r.DB.Query(ctx, query, ids, config.UnknownSendHoldVisibleAfterMinutes)
 	}
 	if err != nil {
 		return nil, err
