@@ -559,7 +559,7 @@ Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
 
 `GET /warmup/templates/campaign-copy`
 
-Lists the opening steps of the organization's campaigns that warmup carries while they run, one entry per arm: the step's own copy (`variant_id` null) and each active A/B variant, with a paused Original left out. An opening step is the campaign's first email step or any step that starts its own thread; follow-ups that reply in the lead's thread are never warmed. Running campaigns are listed, plus any other campaign warmup carried within the window, so placement stays readable after a pause. Each warmup send renders the step for its recipient as the campaign would for a lead (merge fields, spintax, HTML, signature, opt-out line, UTM tags) with open and click tracking off.
+Lists the opening steps of the organization's campaigns that warmup carries while they run, one entry per arm: the step's own copy (`variant_id` null) and each active A/B variant, with a paused Original left out. An opening step is the campaign's first email step or any step that starts its own thread; follow-ups that reply in the lead's thread are never warmed. Running campaigns are listed, plus any other campaign warmup carried within the window, so placement stays readable after a pause. Each warmup send renders the step for its recipient as the campaign would for a lead (merge fields, spintax, HTML, signature, opt-out line, UTM tags, and the open pixel and wrapped links on the campaign's tracking domain when it tracks them). Opens and clicks on warmup mail never count in campaign analytics.
 
 Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
 

@@ -148,3 +148,44 @@ func TestCampaignCopyRendersTheStepForTheRecipient(t *testing.T) {
 
 // addr joins an address from its parts.
 func addr(local, domain string) string { return local + "@" + domain }
+
+type copyTickets struct {
+	repository.TrackedLinkRepository
+	created []repository.TrackedLink
+}
+
+func (r *copyTickets) CreateBatch(_ context.Context, links []repository.TrackedLink) error {
+	r.created = append(r.created, links...)
+	return nil
+}
+
+// Campaign copy carries the campaign's open pixel and wrapped links on its
+// tracking domain, with tickets that name no campaign.
+func TestCampaignCopyKeepsTheCampaignsTrackingDomain(t *testing.T) {
+	org, campaignID, step, taskID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	warmedSince := time.Now().AddDate(0, 0, -30)
+	repo := &qualityContentRepo{
+		templateSettings: models.WarmupTemplateSettings{TemplateShare: 100, CampaignCopy: true},
+		campaignCopy: []models.WarmupCampaignCopyCandidate{{CampaignID: campaignID, SequenceID: step, Subject: "Plans for Q4?",
+			BodyHTML: `<p>Hi {{.FirstName}}, here is the deck: <a href="https://acme.example/deck">deck</a></p>`}},
+	}
+	campaign := &models.Campaign{ID: campaignID, OrganizationID: &org, OpenTracking: true, LinkTracking: true, UnsubscribeMode: "off",
+		TrackingDomain: "t.acme.example", TrackingDomainVerified: true}
+	tickets := &copyTickets{}
+	s := &tasksService{warmupContentRepo: repo, campaignRepo: &copyCampaigns{byID: map[uuid.UUID]*models.Campaign{campaignID: campaign}}, trackedLinkRepo: tickets}
+	account := Email{ID: uuid.New(), OrganizationID: &org, Name: "Ada Byron", Email: addr("ada", "acme.example"), Warmup: &warmedSince}
+
+	content, err := s.pickNewWarmupContent(t.Context(), account, &Email{ID: uuid.New(), Name: "Jane Doe", Email: addr("jane", "northridge.com")}, taskID)
+	if err != nil || content.contentSource != models.WarmupContentSourceCampaign {
+		t.Fatalf("no campaign copy: %+v %v", content, err)
+	}
+	if !strings.Contains(content.bodyHTML, "https://t.acme.example/c/") || strings.Contains(content.bodyHTML, `href="https://acme.example/deck"`) {
+		t.Fatalf("links not wrapped on the campaign's tracking domain: %s", content.bodyHTML)
+	}
+	if !strings.Contains(content.bodyHTML, "t.acme.example") || content.tracking == nil || !content.tracking.OpenTracking {
+		t.Fatalf("open pixel missing: %s %+v", content.bodyHTML, content.tracking)
+	}
+	if len(tickets.created) != 1 || tickets.created[0].TaskID != taskID || tickets.created[0].CampaignID != uuid.Nil {
+		t.Fatalf("tickets must belong to the warmup task and no campaign: %+v", tickets.created)
+	}
+}

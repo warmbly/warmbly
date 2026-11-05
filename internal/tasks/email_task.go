@@ -432,7 +432,7 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 		ThreadID:       threadID,
 		MessageID:      messageID,
 		IsWarmup:       true,
-		Tracking:       nil, // No tracking for warmup
+		Tracking:       content.tracking, // campaign copy keeps its campaign's tracking
 		WarmupToken:    warmupTokenStr,
 	}
 

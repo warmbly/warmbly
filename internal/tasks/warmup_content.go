@@ -29,6 +29,7 @@ type warmupContent struct {
 	// campaign would send, and the step and arm it came from.
 	bodyHTML       string
 	unsubscribeURL string
+	tracking       *models.TrackingInfo
 	sequenceID     *uuid.UUID
 	variantID      *uuid.UUID
 }
@@ -80,7 +81,7 @@ func (s *tasksService) pickNewWarmupContent(ctx context.Context, account Email, 
 		if own.draw {
 			// The copy about to reach prospects comes first; templates take the share it leaves.
 			if own.settings.CampaignCopy {
-				content, ok, err := s.campaignCopyContent(ctx, account, recipient)
+				content, ok, err := s.campaignCopyContent(ctx, account, recipient, taskID)
 				if err != nil {
 					return warmupContent{}, err
 				}

@@ -129,10 +129,10 @@ func copyFillable(c models.Contact, parts ...string) bool {
 
 // campaignCopyContent renders the least recently carried opening arm of the
 // sender's running campaigns for this recipient, exactly as the campaign
-// renders it (merge fields, spintax, plain-text rule, signature, opt-out and
-// UTM tags), skipping any arm warmup cannot carry faithfully. ok is false
-// when no arm qualifies.
-func (s *tasksService) campaignCopyContent(ctx context.Context, account Email, recipient *Email) (warmupContent, bool, error) {
+// renders it (merge fields, spintax, plain-text rule, signature, opt-out, UTM
+// tags, and the open pixel and wrapped links on its tracking domain), skipping
+// any arm warmup cannot carry faithfully. ok is false when no arm qualifies.
+func (s *tasksService) campaignCopyContent(ctx context.Context, account Email, recipient *Email, taskID uuid.UUID) (warmupContent, bool, error) {
 	if account.OrganizationID == nil || recipient == nil || s.campaignRepo == nil {
 		return warmupContent{}, false, nil
 	}
@@ -162,7 +162,9 @@ func (s *tasksService) campaignCopyContent(ctx context.Context, account Email, r
 		if base.Refusal != "" {
 			continue
 		}
-		bodyHTML, bodyPlain, _ := s.finishPlacementProbe(ctx, base, uuid.Nil, false, false)
+		// Tickets name no campaign: an open or click on warmup mail is not a lead's, and the consumer drops it.
+		base.CampaignID = uuid.Nil
+		bodyHTML, bodyPlain, tracking := s.finishPlacementProbe(ctx, base, taskID, campaign.OpenTracking, campaign.LinkTracking)
 		subject := strings.TrimSpace(base.Subject)
 		if bodyPlain == "" && bodyHTML != "" {
 			bodyPlain = ExtractPlainTextFromHTML(bodyHTML)
@@ -180,6 +182,7 @@ func (s *tasksService) campaignCopyContent(ctx context.Context, account Email, r
 			body:             bodyPlain,
 			bodyHTML:         bodyHTML,
 			unsubscribeURL:   base.HeaderURL,
+			tracking:         tracking,
 			contentSource:    models.WarmupContentSourceCampaign,
 			sequenceID:       &sequenceID,
 			variantID:        c.VariantID,
