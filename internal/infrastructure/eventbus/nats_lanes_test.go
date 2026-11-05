@@ -274,7 +274,14 @@ func TestNATSBus_KeyedLanesKeepSaturatedMessagesAlive(t *testing.T) {
 	select {
 	case <-allHandled:
 	case <-time.After(20 * time.Second):
-		t.Fatal("not every saturated-lane message was handled")
+		mu.Lock()
+		redelivered := 0
+		for _, attempts := range seen {
+			redelivered += len(attempts) - 1
+		}
+		handled, distinct := len(order), len(seen)
+		mu.Unlock()
+		t.Fatalf("not every saturated-lane message was handled: %d distinct of %d, %d handlings, %d redeliveries", distinct, messages, handled, redelivered)
 	}
 	// Give already-prefetched redeliveries time to reach the handler too.
 	time.Sleep(2 * ackWait)
