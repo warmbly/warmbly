@@ -561,7 +561,7 @@ Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
 
 Lists the opening steps of the organization's campaigns that warmup carries while they run, one entry per arm: the step's own copy (`variant_id` null) and each active A/B variant, with a paused Original left out. An opening step is the campaign's first email step or any step that starts its own thread; follow-ups that reply in the lead's thread are never warmed. Running campaigns are listed, plus any other campaign warmup carried within the window, so placement stays readable after a pause. Each warmup send renders the step for its recipient as the campaign would for a lead (merge fields, spintax, HTML, signature, opt-out line, UTM tags, and the open pixel and wrapped links on the campaign's tracking domain when it tracks them). Opens and clicks on warmup mail never count in campaign analytics.
 
-Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
+Auth: **Scope** `WARMUP_TEMPLATES` and `READ_CAMPAIGNS` · **Org permission** `manage_settings` and `view_campaigns`, since the list names campaigns and their subjects
 
 ### Query parameters
 
@@ -631,7 +631,7 @@ Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
 }
 ```
 
-`template_share` is the percentage of a mailbox's new warmup openings drawn from the organization's own copy when some is eligible (default `25`); the rest come from the shared bank. Campaign copy is drawn first and templates fill the share it leaves. A sender carries a given step, variant or template at most once a day, preferring the one it carried longest ago. `campaign_copy` (default `true`) lets warmup carry the opening steps of the campaigns each mailbox sends for; see [List campaign copy](#list-campaign-copy). `templates_only` sends nothing but the organization's own copy; an opening with none eligible is then skipped rather than filled from the bank. A mailbox carries own copy only after its first 7 days of warmup, whatever these settings say.
+`template_share` is the percentage of a mailbox's new warmup openings drawn from the organization's own copy when some is eligible (default `25`); the rest come from the shared bank. Campaign copy is drawn first and templates fill the share it leaves. A sender carries a given step, variant or template at most once a day, preferring the one it carried longest ago. `campaign_copy` (default `true`) lets warmup carry the opening steps of the campaigns each mailbox sends for; see [List campaign copy](#list-campaign-copy). `templates_only` sends nothing but the organization's own copy: once the mailbox has sent every piece today it repeats the one it sent longest ago, and it uses the shared bank only when the organization has no eligible own copy at all, so a send is never skipped. A mailbox carries own copy only after its first 7 days of warmup, whatever these settings say.
 
 ## Update warmup template settings
 

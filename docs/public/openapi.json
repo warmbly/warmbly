@@ -22603,7 +22603,7 @@
       "get": {
         "operationId": "deliverability-ops_list_warmup_campaign_copy",
         "summary": "List campaign copy",
-        "description": "The opening steps (and active A/B arms) of the organization's campaigns that warmup carries while they run, whether each can be carried as the campaign sends it, and where its warmup sends landed over a trailing window. Requires WARMUP_TEMPLATES scope and manage_settings permission.",
+        "description": "The opening steps (and active A/B arms) of the organization's campaigns that warmup carries while they run, whether each can be carried as the campaign sends it, and where its warmup sends landed over a trailing window. Requires WARMUP_TEMPLATES and READ_CAMPAIGNS scopes and manage_settings and view_campaigns permissions.",
         "tags": [
           "deliverability-ops"
         ],
@@ -45023,7 +45023,7 @@
             },
             "templates_only": {
               "type": "boolean",
-              "description": "Send only the organization's own copy; an opening with none eligible is skipped."
+              "description": "Send only the organization's own copy, repeating the least recently sent piece before falling back to the shared bank, which happens only when no own copy is eligible."
             },
             "campaign_copy": {
               "type": "boolean",

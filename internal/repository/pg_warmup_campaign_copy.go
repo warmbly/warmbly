@@ -40,7 +40,7 @@ func campaignOpenerArmsSQL(campaignsSQL string) string {
 		)`
 }
 
-func (r *warmupContentRepository) CampaignCopyCandidates(ctx context.Context, orgID, senderID uuid.UUID) ([]models.WarmupCampaignCopyCandidate, error) {
+func (r *warmupContentRepository) CampaignCopyCandidates(ctx context.Context, orgID, senderID uuid.UUID, allowRepeat bool) ([]models.WarmupCampaignCopyCandidate, error) {
 	active := `SELECT a.id FROM (` + activeCampaignsForAccountSQL + `) a JOIN campaigns c ON c.id = a.id AND c.organization_id = $2`
 	query := `
 		WITH ` + campaignOpenerArmsSQL(active) + `,
@@ -53,10 +53,10 @@ func (r *warmupContentRepository) CampaignCopyCandidates(ctx context.Context, or
 		SELECT a.campaign_id, a.sequence_id, a.variant_id, a.subject, a.body_html, a.body_plain, sent.last_sent
 		FROM arms a
 		LEFT JOIN sent ON sent.sequence_id = a.sequence_id AND sent.variant_id IS NOT DISTINCT FROM a.variant_id
-		WHERE sent.last_sent IS NULL OR sent.last_sent < NOW() - INTERVAL '1 day'
+		WHERE $3 OR sent.last_sent IS NULL OR sent.last_sent < NOW() - INTERVAL '1 day'
 		ORDER BY sent.last_sent ASC NULLS FIRST, random()
 		LIMIT 20`
-	rows, err := r.db.Query(ctx, query, senderID, orgID)
+	rows, err := r.db.Query(ctx, query, senderID, orgID, allowRepeat)
 	if err != nil {
 		return nil, err
 	}

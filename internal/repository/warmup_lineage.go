@@ -315,7 +315,7 @@ func (r *taskRepository) WarmupExecutionContext(ctx context.Context, task uuid.U
         FROM warmup_tasks w JOIN warmup_tokens wt ON wt.task_id=w.task_id JOIN tasks t ON t.id=w.task_id
         JOIN email_accounts sender ON sender.id=t.email_account_id JOIN email_accounts receiver ON receiver.id=wt.recipient_account_id
         WHERE w.task_id=$1 AND wt.sender_account_id=t.email_account_id AND w.lineage_version=1
-        AND wt.expires_at>NOW() AND wt.sent_retired_at IS NULL AND wt.conversation_id IS NOT NULL
+        AND wt.expires_at>NOW() AND wt.sent_retired_at IS NULL AND (wt.conversation_id IS NOT NULL OR wt.content_source='campaign')
         AND NOT recipient_suppressed(sender.organization_id,receiver.email)`, task).Scan(&recipient, &c.Subject, &c.ContentSource, &c.ConversationID, &c.ConversationTurn, &c.ScenarioVersion, &c.RenderingVersion, &c.MaxTurns)
 	return recipient, c, err
 }

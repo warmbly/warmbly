@@ -265,7 +265,7 @@ export const warmupCopyLoader = pageLoader((qc, { search }) => {
     const days = parseWarmupCopyDays(search.days);
     return [
         qc.prefetchQuery(warmupCopySettingsQuery),
-        qc.prefetchQuery(warmupCampaignCopyQuery(days)),
+        can("VIEW_CAMPAIGNS") && qc.prefetchQuery(warmupCampaignCopyQuery(days)),
         qc.prefetchQuery(warmupTemplatesQuery(days)),
     ];
 });

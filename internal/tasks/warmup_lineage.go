@@ -3,6 +3,7 @@ package tasks
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -198,19 +199,8 @@ func (s *tasksService) ValidateWarmupExecution(ctx context.Context, taskID uuid.
 	if !account.TestSendingAllowed() {
 		return errors.New("diagnostic sending stopped")
 	}
-	source, err := s.diagnosticSource(ctx, current)
-	if err != nil {
+	if err := s.executableWarmupSource(ctx, current, account); err != nil {
 		return err
-	}
-	if current.ConversationTurn < 0 || current.ConversationTurn >= current.MaxTurns {
-		return errors.New("diagnostic source exhausted")
-	}
-	if current.ConversationTurn == 0 {
-		if GenerateConversationOpeningEmail(source, *account) == "" {
-			return errors.New("diagnostic opening unavailable")
-		}
-	} else if _, ok := GenerateConversationReplyEmail(source, *account, current.ConversationTurn); !ok {
-		return errors.New("diagnostic turn unavailable")
 	}
 	reader, ok := s.warmupRepo.(interface {
 		WarmupExecutionCandidates(context.Context, string, uuid.UUID, uuid.UUID) ([]models.WarmupPartnerCandidate, error)
@@ -265,6 +255,52 @@ func (s *tasksService) ValidateWarmupExecution(ctx context.Context, taskID uuid.
 		if _, _, _, err = s.exactReplyContent(ctx, parent, *account); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// executableWarmupSource confirms the content a dispatch carries may still be
+// sent. A workspace's own copy is a single opening with no conversation plan:
+// a template must still be active and its sender's, and campaign copy names no
+// bank conversation at all.
+func (s *tasksService) executableWarmupSource(ctx context.Context, current *repository.WarmupReplyCandidate, account *models.Email) error {
+	switch current.ContentSource {
+	case models.WarmupContentSourceTemplate, models.WarmupContentSourceCampaign:
+		if current.ConversationTurn != 0 || current.MaxTurns != 1 {
+			return errors.New("own copy is a single opening")
+		}
+		if current.ContentSource == models.WarmupContentSourceCampaign {
+			if current.ConversationID != nil {
+				return errors.New("campaign copy names no conversation")
+			}
+			return nil
+		}
+		if current.ConversationID == nil || s.warmupContentRepo == nil || account.OrganizationID == nil {
+			return errors.New("warmup template unavailable")
+		}
+		row, err := s.warmupContentRepo.GetConversation(ctx, *current.ConversationID)
+		if err != nil {
+			return err
+		}
+		if row == nil || row.Source != models.WarmupContentSourceTemplate || row.Status != models.WarmupConversationActive ||
+			row.OrganizationID == nil || *row.OrganizationID != *account.OrganizationID || strings.TrimSpace(row.Subject) != current.Subject {
+			return errors.New("warmup template retired or not the sender's")
+		}
+		return nil
+	}
+	source, err := s.diagnosticSource(ctx, current)
+	if err != nil {
+		return err
+	}
+	if current.ConversationTurn < 0 || current.ConversationTurn >= current.MaxTurns {
+		return errors.New("diagnostic source exhausted")
+	}
+	if current.ConversationTurn == 0 {
+		if GenerateConversationOpeningEmail(source, *account) == "" {
+			return errors.New("diagnostic opening unavailable")
+		}
+	} else if _, ok := GenerateConversationReplyEmail(source, *account, current.ConversationTurn); !ok {
+		return errors.New("diagnostic turn unavailable")
 	}
 	return nil
 }

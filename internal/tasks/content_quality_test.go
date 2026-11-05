@@ -45,7 +45,7 @@ func (r *qualityContentRepo) SeedStaticConversations(_ context.Context, rows []m
 func (r *qualityContentRepo) GetTemplateSettings(context.Context, uuid.UUID) (models.WarmupTemplateSettings, error) {
 	return r.templateSettings, nil
 }
-func (r *qualityContentRepo) CampaignCopyCandidates(context.Context, uuid.UUID, uuid.UUID) ([]models.WarmupCampaignCopyCandidate, error) {
+func (r *qualityContentRepo) CampaignCopyCandidates(context.Context, uuid.UUID, uuid.UUID, bool) ([]models.WarmupCampaignCopyCandidate, error) {
 	return r.campaignCopy, nil
 }
 
@@ -211,12 +211,20 @@ func TestWarmupContentTemplateDrawFallsBackToBankUnlessOnly(t *testing.T) {
 		t.Fatalf("template draw lost the organization: %+v", repo.picks[0])
 	}
 
+	if repo.picks[0].AllowRepeat {
+		t.Fatal("a shared draw must not repeat a template sent within the day; the bank takes that opening")
+	}
+
+	// Own copy only: fresh first, then whatever was carried longest ago, and
+	// ordinary content only when the workspace has no own copy at all. A send
+	// is never skipped for lack of fresh content.
 	only := &qualityContentRepo{templateSettings: models.WarmupTemplateSettings{TemplatesOnly: true}}
 	s = &tasksService{warmupContentRepo: only}
-	if _, err := s.pickNewWarmupContent(t.Context(), account, &Email{ID: uuid.New()}, uuid.New()); !errors.Is(err, errWarmupContentUnavailable) {
-		t.Fatalf("templates-only with no template must skip the send, got %v", err)
+	if _, err := s.pickNewWarmupContent(t.Context(), account, &Email{ID: uuid.New()}, uuid.New()); err != nil {
+		t.Fatalf("own-copy-only with no copy at all must still send: %v", err)
 	}
-	if len(only.picks) != 1 || !only.picks[0].TemplatesOnly {
-		t.Fatalf("templates-only must not draw from the bank: %+v", only.picks)
+	if len(only.picks) != 3 || !only.picks[0].TemplatesOnly || only.picks[0].AllowRepeat ||
+		!only.picks[1].TemplatesOnly || !only.picks[1].AllowRepeat || only.picks[2].TemplatesOnly {
+		t.Fatalf("want a fresh template draw, a repeat draw, then the bank: %+v", only.picks)
 	}
 }

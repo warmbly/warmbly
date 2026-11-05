@@ -53,6 +53,7 @@ func TestCompanyFromAddressNamesBusinessDomainsOnly(t *testing.T) {
 		addr("sales", "mail.acme.co.uk"): "Acme",
 		addr("jane", "gmail.com"):        "",
 		addr("jane", "outlook.com"):      "",
+		addr("info", "xn--bcher-kva.de"): "",
 		"not-an-address":                 "",
 	}
 	for in, want := range cases {
@@ -187,5 +188,58 @@ func TestCampaignCopyKeepsTheCampaignsTrackingDomain(t *testing.T) {
 	}
 	if len(tickets.created) != 1 || tickets.created[0].TaskID != taskID || tickets.created[0].CampaignID != uuid.Nil {
 		t.Fatalf("tickets must belong to the warmup task and no campaign: %+v", tickets.created)
+	}
+}
+
+func TestRecipientNameReachesCopyOnlyWhenSafe(t *testing.T) {
+	if c := warmupRecipientContact(&Email{Name: "Jane Doe", Email: addr("jane", "northridge.com")}); c.FirstName != "Jane" || c.LastName != "Doe" {
+		t.Fatalf("a plain name was dropped: %+v", c)
+	}
+	if c := warmupRecipientContact(&Email{Name: "Visit evil.example now", Email: addr("x", "gmail.com")}); c.FirstName != "" || c.LastName != "" {
+		t.Fatalf("a name carrying a hostname reached the copy: %+v", c)
+	}
+}
+
+type ownCopyRows struct {
+	repository.WarmupContentRepository
+	row *models.WarmupConversation
+}
+
+func (r *ownCopyRows) GetConversation(_ context.Context, id uuid.UUID) (*models.WarmupConversation, error) {
+	if r.row != nil && r.row.ID == id {
+		return r.row, nil
+	}
+	return nil, nil
+}
+
+// Own copy passes the dispatch-time check as a single opening: a template
+// while it is active and the sender's, campaign copy with no conversation.
+func TestExecutableWarmupSourceAdmitsOwnCopy(t *testing.T) {
+	org, other := uuid.New(), uuid.New()
+	tmpl := &models.WarmupConversation{ID: uuid.New(), Source: models.WarmupContentSourceTemplate, Status: models.WarmupConversationActive, OrganizationID: &org, Subject: "Plans for Q4?"}
+	s := &tasksService{warmupContentRepo: &ownCopyRows{row: tmpl}}
+	account := &models.Email{OrganizationID: &org}
+	id := tmpl.ID
+	opening := func(source string, conv *uuid.UUID) *repository.WarmupReplyCandidate {
+		return &repository.WarmupReplyCandidate{ContentSource: source, ConversationID: conv, Subject: "Plans for Q4?", MaxTurns: 1}
+	}
+
+	if err := s.executableWarmupSource(t.Context(), opening(models.WarmupContentSourceTemplate, &id), account); err != nil {
+		t.Fatalf("an active template of the sender's was refused: %v", err)
+	}
+	if err := s.executableWarmupSource(t.Context(), opening(models.WarmupContentSourceCampaign, nil), account); err != nil {
+		t.Fatalf("campaign copy was refused: %v", err)
+	}
+	if err := s.executableWarmupSource(t.Context(), opening(models.WarmupContentSourceTemplate, &id), &models.Email{OrganizationID: &other}); err == nil {
+		t.Fatal("another workspace's template was admitted")
+	}
+	reply := opening(models.WarmupContentSourceCampaign, nil)
+	reply.ConversationTurn = 1
+	if err := s.executableWarmupSource(t.Context(), reply, account); err == nil {
+		t.Fatal("a reply turn on own copy was admitted")
+	}
+	tmpl.Status = models.WarmupConversationArchived
+	if err := s.executableWarmupSource(t.Context(), opening(models.WarmupContentSourceTemplate, &id), account); err == nil {
+		t.Fatal("a retired template was admitted")
 	}
 }

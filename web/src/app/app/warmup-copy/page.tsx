@@ -34,6 +34,8 @@ function WarmupCopy() {
     const [params, setParams] = useSearchParams();
     const days = parseWarmupCopyDays(params.get("days"));
     const settings = useWarmupCopySettings();
+    // Campaign copy names campaigns and their subjects, so it follows campaign access.
+    const canViewCampaigns = usePermission("VIEW_CAMPAIGNS");
     const [creating, setCreating] = React.useState(false);
 
     const setDays = (d: string) => {
@@ -65,7 +67,13 @@ function WarmupCopy() {
                 <CopyPlacementLegend className="ml-auto" />
             </div>
 
-            <CampaignCopySection days={days} enabled={settings.data?.campaign_copy ?? true} />
+            {canViewCampaigns ? (
+                <CampaignCopySection days={days} enabled={settings.data?.campaign_copy ?? true} />
+            ) : (
+                <p className="px-5 py-3 border-b border-slate-200 text-[11.5px] text-slate-500">
+                    Running campaign steps are listed for members who can view campaigns.
+                </p>
+            )}
             <TemplatesSection days={days} onNew={() => setCreating(true)} />
 
             <p className="px-5 py-4 text-[11px] text-slate-400 leading-relaxed max-w-[80ch]">{HEADLINE_NOTE}</p>

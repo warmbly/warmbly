@@ -83,7 +83,7 @@ export default function WarmupCopySettingsCard() {
             />
             <SettingRow
                 title="Only send my own copy"
-                description="A new thread with no eligible campaign step or template is skipped instead of using an ordinary conversation."
+                description="Every new thread uses a campaign step or template, repeating the one sent longest ago when needed. Ordinary conversations are used only if there is no eligible copy at all."
                 control={
                     <Toggle
                         value={saved.templates_only}

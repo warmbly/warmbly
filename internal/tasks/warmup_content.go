@@ -79,31 +79,34 @@ func (s *tasksService) pickNewWarmupContent(ctx context.Context, account Email, 
 			return warmupContent{}, err
 		}
 		if own.draw {
-			// The copy about to reach prospects comes first; templates take the share it leaves.
-			if own.settings.CampaignCopy {
-				content, ok, err := s.campaignCopyContent(ctx, account, recipient, taskID)
+			// Fresh copy first; own-copy-only then repeats what the sender carried longest ago rather than skip a send.
+			for _, repeat := range []bool{false, true} {
+				if repeat && !own.settings.TemplatesOnly {
+					break
+				}
+				// The copy about to reach prospects comes first; templates take the share it leaves.
+				if own.settings.CampaignCopy {
+					content, ok, err := s.campaignCopyContent(ctx, account, recipient, taskID, repeat)
+					if err != nil {
+						return warmupContent{}, err
+					}
+					if ok {
+						return content, nil
+					}
+				}
+				pick.TemplatesOnly, pick.AllowRepeat = true, repeat
+				conv, err := s.warmupContentRepo.PickConversation(ctx, pick)
 				if err != nil {
 					return warmupContent{}, err
 				}
-				if ok {
-					return content, nil
+				if conv != nil {
+					if content, ok := pickedWarmupContent(conv, account); ok {
+						return content, nil
+					}
 				}
 			}
-			pick.TemplatesOnly = true
-			conv, err := s.warmupContentRepo.PickConversation(ctx, pick)
-			if err != nil {
-				return warmupContent{}, err
-			}
-			if conv != nil {
-				if content, ok := pickedWarmupContent(conv, account); ok {
-					return content, nil
-				}
-			}
-			if own.settings.TemplatesOnly {
-				// Own copy only, with nothing eligible: skip the send rather than substitute bank content.
-				return warmupContent{}, errWarmupContentUnavailable
-			}
-			pick.TemplatesOnly = false
+			// No eligible own copy at all: warmup carries on with ordinary conversations.
+			pick.TemplatesOnly, pick.AllowRepeat = false, false
 		}
 		conv, err := s.warmupContentRepo.PickConversation(ctx, pick)
 		if err != nil {

@@ -111,13 +111,13 @@ type WarmupCampaignCopyStep struct {
 // recipient mailboxes reported them. Sent counts every dispatched token;
 // the landing counters cover the receipts that came back.
 type WarmupTemplatePlacement struct {
-	Sent    int `json:"sent"`
+	Sent int `json:"sent"`
 	// Reported counts the sends whose recipient filed a receipt; landing rates are read over it.
 	Reported int `json:"reported"`
-	Inbox   int `json:"inbox"`
-	Tabs    int `json:"tabs"`
-	Spam    int `json:"spam"`
-	Rescued int `json:"rescued"`
+	Inbox    int `json:"inbox"`
+	Tabs     int `json:"tabs"`
+	Spam     int `json:"spam"`
+	Rescued  int `json:"rescued"`
 }
 
 // WarmupTemplateGroupPlacement is WarmupTemplatePlacement for one recipient

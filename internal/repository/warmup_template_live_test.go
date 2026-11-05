@@ -73,6 +73,21 @@ func TestLiveTemplatePickScopesToOrgAndCapsPerDay(t *testing.T) {
 	if again, err := r.PickConversation(ctx, templatePick(t, f, segment, f.sender, f.recipient)); err != nil || again != nil {
 		t.Fatalf("template resent within the day: %+v %v", again, err)
 	}
+	// Own-copy-only repeats it rather than leave the opening empty.
+	repeat := templatePick(t, f, segment, f.sender, f.recipient)
+	repeat.AllowRepeat = true
+	if again, err := r.PickConversation(ctx, repeat); err != nil || again == nil || again.ID != template {
+		t.Fatalf("a repeat draw did not return the template: %+v %v", again, err)
+	}
+
+	// A recipient's own history does not hide it from another sender.
+	second := uuid.New()
+	if _, err := f.pool.Exec(ctx, `INSERT INTO email_accounts (id, user_id, organization_id, email, name, signature_plain, signature_html, provider, status, campaign_limit, min_wait_time, timezone, warmup) SELECT $1, user_id, organization_id, $3, 'O', '', '', 'smtp_imap', 'active', 50, 600, 'UTC', NOW() FROM email_accounts WHERE id = $2`, second, f.sender, "o-"+second.String()[:8]+"@test.local"); err != nil {
+		t.Fatal(err)
+	}
+	if fresh, err := r.PickConversation(ctx, templatePick(t, f, segment, second, f.recipient)); err != nil || fresh == nil || fresh.ID != template {
+		t.Fatalf("another sender lost the template to the recipient's history: %+v %v", fresh, err)
+	}
 
 	// A day later it is eligible again.
 	if _, err := f.pool.Exec(ctx, `UPDATE warmup_conversation_mailboxes SET created_at = NOW() - INTERVAL '2 days' WHERE conversation_id=$1`, template); err != nil {

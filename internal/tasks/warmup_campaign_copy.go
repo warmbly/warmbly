@@ -9,6 +9,7 @@ import (
 	"golang.org/x/net/publicsuffix"
 
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/displayname"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/pkg/mailhost"
 	"github.com/warmbly/warmbly/internal/pkg/tmplvars"
@@ -74,8 +75,10 @@ func CampaignCopyIneligible(subject, bodyHTML, bodyPlain string) string {
 }
 
 // warmupRecipientContact is a pool recipient as campaign copy addresses it.
+// The name is another workspace's, so it reaches the copy only when it is safe
+// to show; otherwise the fields stay empty and copy that needs them waits.
 func warmupRecipientContact(recipient *Email) models.Contact {
-	first, last := splitSenderName(recipient.Name)
+	first, last := splitSenderName(displayname.Displayable(recipient.Name))
 	return models.Contact{
 		ID:        recipient.ID,
 		FirstName: first,
@@ -102,13 +105,16 @@ func companyFromAddress(address string) string {
 		return ""
 	}
 	label, _, _ := strings.Cut(etld1, ".")
+	if strings.HasPrefix(label, "xn--") {
+		return ""
+	}
 	words := strings.FieldsFunc(label, func(r rune) bool { return r == '-' || r == '_' })
 	for i, w := range words {
 		r := []rune(w)
 		r[0] = unicode.ToUpper(r[0])
 		words[i] = string(r)
 	}
-	return strings.Join(words, " ")
+	return displayname.Displayable(strings.Join(words, " "))
 }
 
 // copyFillable reports whether the contact has a value for every built-in
@@ -131,13 +137,14 @@ func copyFillable(c models.Contact, parts ...string) bool {
 // sender's running campaigns for this recipient, exactly as the campaign
 // renders it (merge fields, spintax, plain-text rule, signature, opt-out, UTM
 // tags, and the open pixel and wrapped links on its tracking domain), skipping
-// any arm warmup cannot carry faithfully. ok is false when no arm qualifies.
-func (s *tasksService) campaignCopyContent(ctx context.Context, account Email, recipient *Email, taskID uuid.UUID) (warmupContent, bool, error) {
+// any arm warmup cannot carry faithfully. Arms carried within the day are
+// offered only on a repeat pass. ok is false when no arm qualifies.
+func (s *tasksService) campaignCopyContent(ctx context.Context, account Email, recipient *Email, taskID uuid.UUID, repeat bool) (warmupContent, bool, error) {
 	if account.OrganizationID == nil || recipient == nil || s.campaignRepo == nil {
 		return warmupContent{}, false, nil
 	}
 	orgID := *account.OrganizationID
-	candidates, err := s.warmupContentRepo.CampaignCopyCandidates(ctx, orgID, account.ID)
+	candidates, err := s.warmupContentRepo.CampaignCopyCandidates(ctx, orgID, account.ID, repeat)
 	if err != nil {
 		return warmupContent{}, false, err
 	}
@@ -162,18 +169,19 @@ func (s *tasksService) campaignCopyContent(ctx context.Context, account Email, r
 		if base.Refusal != "" {
 			continue
 		}
+		subject := strings.TrimSpace(base.Subject)
+		// Spintax and merge values are only known now; checking before tracking mints no tickets for refused copy.
+		if !renderedCopySendable(subject, base.BodyHTML, base.BodyPlain) {
+			continue
+		}
 		// Tickets name no campaign: an open or click on warmup mail is not a lead's, and the consumer drops it.
 		base.CampaignID = uuid.Nil
 		bodyHTML, bodyPlain, tracking := s.finishPlacementProbe(ctx, base, taskID, campaign.OpenTracking, campaign.LinkTracking)
-		subject := strings.TrimSpace(base.Subject)
 		if bodyPlain == "" && bodyHTML != "" {
 			bodyPlain = ExtractPlainTextFromHTML(bodyHTML)
 		}
-		if subject == "" || strings.ContainsAny(subject, "\r\n\x00") || strings.TrimSpace(bodyPlain) == "" || strings.IndexByte(bodyPlain, 0) >= 0 {
-			continue
-		}
-		// Spintax and merge values are only known now, so the rendered copy is held to the same gate.
-		if generation.ValidateWarmupWording(subject, bodyPlain) != nil || warmlint.Check(subject, bodyPlain, false) != nil {
+		// The signature and opt-out go on last, and the send path lints the whole body.
+		if !renderedCopySendable(subject, "", bodyPlain) {
 			continue
 		}
 		sequenceID := c.SequenceID
@@ -192,4 +200,15 @@ func (s *tasksService) campaignCopyContent(ctx context.Context, account Email, r
 		}, true, nil
 	}
 	return warmupContent{}, false, nil
+}
+
+// renderedCopySendable holds rendered copy to the gates the warmup send path applies.
+func renderedCopySendable(subject, bodyHTML, bodyPlain string) bool {
+	if bodyPlain == "" && bodyHTML != "" {
+		bodyPlain = ExtractPlainTextFromHTML(bodyHTML)
+	}
+	if subject == "" || strings.ContainsAny(subject, "\r\n\x00") || strings.TrimSpace(bodyPlain) == "" || strings.IndexByte(bodyPlain, 0) >= 0 {
+		return false
+	}
+	return generation.ValidateWarmupWording(subject, bodyPlain) == nil && warmlint.Check(subject, bodyPlain, false) == nil
 }

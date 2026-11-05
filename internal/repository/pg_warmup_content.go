@@ -51,6 +51,8 @@ type WarmupContentPick struct {
 	// TemplatesOnly draws from the organization's templates alone; otherwise
 	// templates are left out and the shared bank is drawn from.
 	TemplatesOnly bool
+	// AllowRepeat lets a template draw return one the sender sent within the day.
+	AllowRepeat bool
 	// IncludeAI admits generated threads; static rows are admitted only when listed in StaticIDs.
 	IncludeAI bool
 	StaticIDs []uuid.UUID
@@ -87,7 +89,7 @@ type WarmupContentRepository interface {
 	// TemplatePlacementByGroup is one template's landing split by recipient provider group.
 	TemplatePlacementByGroup(ctx context.Context, id, orgID uuid.UUID, since time.Time) ([]models.WarmupTemplateGroupPlacement, error)
 	// CampaignCopyCandidates lists the opening-step arms of the sender's running campaigns it has not carried in a day, least recently carried first.
-	CampaignCopyCandidates(ctx context.Context, orgID, senderID uuid.UUID) ([]models.WarmupCampaignCopyCandidate, error)
+	CampaignCopyCandidates(ctx context.Context, orgID, senderID uuid.UUID, allowRepeat bool) ([]models.WarmupCampaignCopyCandidate, error)
 	// CampaignCopySteps lists the organization's opening-step arms with their warmup placement since a time.
 	CampaignCopySteps(ctx context.Context, orgID uuid.UUID, since time.Time) ([]models.WarmupCampaignCopyStep, error)
 	// RefreshUnusedConversations replaces unused stock without retiring active threads.
@@ -251,9 +253,9 @@ func (r *warmupContentRepository) PickConversation(ctx context.Context, pick War
 			LEFT JOIN seen ON seen.conversation_id = c.id
 			WHERE ` + openingConversationWhere("c.") + ` AND (c.segment = $1 OR c.segment = '')
 			  AND ((NOT $8 AND c.organization_id IS NULL AND c.source = 'ai' AND $4) OR (NOT $8 AND c.organization_id IS NULL AND c.source = 'static' AND c.id = ANY($5))
-			    OR ($8 AND c.source = 'template' AND c.organization_id = $7 AND NOT EXISTS (
+			    OR ($8 AND c.source = 'template' AND c.organization_id = $7 AND ($9 OR NOT EXISTS (
 			        SELECT 1 FROM warmup_conversation_mailboxes own
-			        WHERE own.conversation_id = c.id AND own.email_account_id = $2 AND own.created_at > NOW() - INTERVAL '1 day')))
+			        WHERE own.conversation_id = c.id AND own.email_account_id = $2 AND own.created_at > NOW() - INTERVAL '1 day'))))
 			ORDER BY (seen.last_seen IS NOT NULL AND seen.last_seen > NOW() - $6::interval), (c.segment = $1) DESC,
 			         seen.last_seen ASC NULLS FIRST, c.usage_count ASC, random()
 			LIMIT 1
@@ -266,7 +268,7 @@ func (r *warmupContentRepository) PickConversation(ctx context.Context, pick War
 		WHERE c.id = picked.id
 		RETURNING ` + qualifiedConversationCols + `
 	`
-	c, err := scanConversation(tx.QueryRow(ctx, query, pick.Segment, pick.SenderID, pick.RecipientID, pick.IncludeAI, staticIDs, WarmupContentRepeatWindow.String(), pick.OrganizationID, pick.TemplatesOnly))
+	c, err := scanConversation(tx.QueryRow(ctx, query, pick.Segment, pick.SenderID, pick.RecipientID, pick.IncludeAI, staticIDs, WarmupContentRepeatWindow.String(), pick.OrganizationID, pick.TemplatesOnly, pick.AllowRepeat))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}

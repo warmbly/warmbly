@@ -70,7 +70,7 @@ func TestLiveCampaignCopyCandidatesFollowRunningOpeners(t *testing.T) {
 	r := NewWarmupContentRepository(f.pool)
 	ctx := t.Context()
 
-	got, err := r.CampaignCopyCandidates(ctx, f.org, f.sender)
+	got, err := r.CampaignCopyCandidates(ctx, f.org, f.sender, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,23 +100,27 @@ func TestLiveCampaignCopyCandidatesFollowRunningOpeners(t *testing.T) {
 		VALUES ($1, $2, $3, 'campaign', $4)`, f.task, f.sender, f.recipient, c.s3); err != nil {
 		t.Fatal(err)
 	}
-	got, err = r.CampaignCopyCandidates(ctx, f.org, f.sender)
+	got, err = r.CampaignCopyCandidates(ctx, f.org, f.sender, false)
 	if err != nil || len(got) != 1 || got[0].SequenceID != c.s1 {
 		t.Fatalf("an arm carried today came back: %+v %v", got, err)
 	}
+	// A repeat pass offers it again, after the arm not yet carried.
+	if got, err = r.CampaignCopyCandidates(ctx, f.org, f.sender, true); err != nil || len(got) != 2 || got[0].SequenceID != c.s1 || got[1].SequenceID != c.s3 {
+		t.Fatalf("a repeat pass must offer every arm, least recently carried last: %+v %v", got, err)
+	}
 
 	other := newPoolLinkFixture(t)
-	if foreign, err := r.CampaignCopyCandidates(ctx, other.org, other.sender); err != nil || len(foreign) != 0 {
+	if foreign, err := r.CampaignCopyCandidates(ctx, other.org, other.sender, false); err != nil || len(foreign) != 0 {
 		t.Fatalf("another workspace's sender drew this campaign's copy: %+v %v", foreign, err)
 	}
-	if foreign, err := r.CampaignCopyCandidates(ctx, other.org, f.sender); err != nil || len(foreign) != 0 {
+	if foreign, err := r.CampaignCopyCandidates(ctx, other.org, f.sender, false); err != nil || len(foreign) != 0 {
 		t.Fatalf("a sender drew copy under an organization it does not belong to: %+v %v", foreign, err)
 	}
 
 	if _, err := f.pool.Exec(ctx, `UPDATE campaigns SET status = 'paused' WHERE id = $1`, c.campaign); err != nil {
 		t.Fatal(err)
 	}
-	if got, err = r.CampaignCopyCandidates(ctx, f.org, f.sender); err != nil || len(got) != 0 {
+	if got, err = r.CampaignCopyCandidates(ctx, f.org, f.sender, false); err != nil || len(got) != 0 {
 		t.Fatalf("a paused campaign's copy is still warmed: %+v %v", got, err)
 	}
 }
@@ -177,5 +181,28 @@ func TestLiveCampaignCopyStepsReportPlacement(t *testing.T) {
 	other := newPoolLinkFixture(t)
 	if foreign, err := r.CampaignCopySteps(ctx, other.org, since); err != nil || len(foreign) != 0 {
 		t.Fatalf("another workspace read this campaign's copy: %+v %v", foreign, err)
+	}
+}
+
+// The dispatch-time lookup admits a campaign-copy send, which names no bank
+// conversation, and still refuses any other send without one.
+func TestLiveExecutionContextAdmitsCampaignCopy(t *testing.T) {
+	f, r := lineageFixture(t)
+	ctx := t.Context()
+	if _, err := f.pool.Exec(ctx, `INSERT INTO warmup_tasks(task_id,lineage_version,subject,scenario_version,rendering_version,max_turns) VALUES($1,1,'Hiring at Northridge?','natural-v1','canonical-v1',1)`, f.task); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(ctx, `INSERT INTO warmup_tokens(task_id,sender_account_id,recipient_account_id,content_source,sequence_id) VALUES($1,$2,$3,'campaign',$4)`, f.task, f.sender, f.recipient, uuid.New()); err != nil {
+		t.Fatal(err)
+	}
+	recipient, c, err := r.WarmupExecutionContext(ctx, f.task)
+	if err != nil || recipient != f.recipient || c.ContentSource != "campaign" || c.ConversationID != nil || c.MaxTurns != 1 {
+		t.Fatalf("campaign copy refused at dispatch: %v %+v %v", recipient, c, err)
+	}
+	if _, err := f.pool.Exec(ctx, `UPDATE warmup_tokens SET content_source='ai' WHERE task_id=$1`, f.task); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := r.WarmupExecutionContext(ctx, f.task); err == nil {
+		t.Fatal("a bank send with no conversation was admitted")
 	}
 }
