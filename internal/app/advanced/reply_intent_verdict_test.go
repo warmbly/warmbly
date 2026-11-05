@@ -2,6 +2,7 @@ package advanced
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -56,6 +57,7 @@ func TestProcessIncomingReplyRecordsTheTaggerVerdictEverywhere(t *testing.T) {
 		name       string
 		stored     *repository.InboxTagResult
 		noCampaign bool
+		body       string
 		wantClass  string
 		wantIntent string
 	}{
@@ -64,6 +66,13 @@ func TestProcessIncomingReplyRecordsTheTaggerVerdictEverywhere(t *testing.T) {
 			stored:     &repository.InboxTagResult{Kind: inboxtag.KindHumanReply, KindConfidence: 1, Intent: inboxtag.IntentWantsPricing, IntentConfidence: 0.92},
 			wantClass:  replyclassify.ClassPositive,
 			wantIntent: string(models.ReplyIntentPositive),
+		},
+		{
+			name:       "opt-out past the preview",
+			stored:     &repository.InboxTagResult{Kind: inboxtag.KindHumanReply, KindConfidence: 1, Intent: inboxtag.IntentWantsPricing, IntentConfidence: 0.92},
+			body:       "How much is it? Not looking to spend a lot, send details. " + strings.Repeat("We compared a few vendors last quarter and kept notes. ", 5) + "Actually, please remove me from your list.",
+			wantClass:  replyclassify.ClassUnsubscribe,
+			wantIntent: string(models.ReplyIntentNegative),
 		},
 		{
 			name:       "contact writing in with no campaign",
@@ -88,6 +97,9 @@ func TestProcessIncomingReplyRecordsTheTaggerVerdictEverywhere(t *testing.T) {
 			if tc.noCampaign {
 				service.taskRepo = incomingReplyTaskRepo{}
 			}
+			// An opt-out suppresses the sender and clears the contact's flag.
+			service.repo = &optOutAdvancedRepo{incomingReplyAdvancedRepo: progress.advanced}
+			service.contactRepo = &optOutContactRepo{incomingReplyContactRepo: service.contactRepo.(incomingReplyContactRepo)}
 			replyclassify.SetTypedClassifier(inboxtag.ReplyClassifier(nil, store))
 			t.Cleanup(func() { replyclassify.SetTypedClassifier(nil) })
 			events := &capturedEvents{}
@@ -103,6 +115,7 @@ func TestProcessIncomingReplyRecordsTheTaggerVerdictEverywhere(t *testing.T) {
 				InReplyTo: []string{"<step-1" + "@" + "warmbly.test>"},
 				Subject:   "Re: Hello",
 				Snippet:   "How much is it? Not looking to spend a lot, send details.",
+				BodyText:  tc.body,
 			})
 			if xerr != nil {
 				t.Fatal(xerr)

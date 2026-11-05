@@ -92,7 +92,7 @@ func classifyModel(ctx context.Context, in Input) (Result, bool) {
 		return Result{}, false
 	}
 
-	user := strings.TrimSpace("Subject: " + in.Subject + "\n\n" + in.BodyText)
+	user := strings.TrimSpace("Subject: " + in.Subject + "\n\n" + modelBody(in))
 	if user == "" {
 		return Result{}, false
 	}
@@ -115,6 +115,18 @@ func classifyModel(ctx context.Context, in Input) (Result, bool) {
 	default:
 		return Result{}, false
 	}
+}
+
+// modelBodyRunes caps the reply text one completion reads.
+const modelBodyRunes = 4000
+
+// modelBody is the reply without its quoted history, capped.
+func modelBody(in Input) string {
+	body := []rune(StripQuoted(in.BodyText, in.Languages...))
+	if len(body) > modelBodyRunes {
+		body = body[:modelBodyRunes]
+	}
+	return string(body)
 }
 
 // normalizeModelLabel reduces the model's free text to one of the three allowed

@@ -2,6 +2,7 @@ package replyclassify
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -129,5 +130,21 @@ func TestGateIsConsultedOnce(t *testing.T) {
 	ClassifyGated(context.Background(), Input{Subject: "Re: Quick question", BodyText: "Can you walk me through it next week?"}, gate)
 	if calls != 1 {
 		t.Fatalf("gate consulted %d times, want 1", calls)
+	}
+}
+
+func TestModelReadsTheReplyNotTheQuotedHistory(t *testing.T) {
+	var seen string
+	SetModelClassifier(func(_ context.Context, _, user string) (string, error) { seen = user; return "positive", nil })
+	t.Cleanup(func() { SetModelClassifier(nil) })
+
+	body := "Can you walk me through it next week? " + strings.Repeat("x", 2*modelBodyRunes) +
+		"\n\nOn Mon, Nov 3, 2025 at 9:14 AM Sender <sender@warmbly.test> wrote:\n> Not the right time? No need to reply."
+	ClassifyContext(context.Background(), Input{Subject: "Re: Quick question", BodyText: body})
+	if strings.Contains(seen, "No need to reply") {
+		t.Fatal("the model was shown our quoted message")
+	}
+	if n := len([]rune(seen)); n > modelBodyRunes+len("Subject: Re: Quick question\n\n") {
+		t.Fatalf("the model read %d runes, cap is %d", n, modelBodyRunes)
 	}
 }

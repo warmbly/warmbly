@@ -1549,9 +1549,10 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 		replyResult := verdict
 		if replyResult.Class == "" {
 			replyResult = replyclassify.ClassifyGated(ctx, replyclassify.Input{
-				Headers:  buildReplyHeaders(msg),
-				Subject:  msg.Subject,
-				BodyText: msg.Snippet,
+				Headers: buildReplyHeaders(msg),
+				Subject: msg.Subject,
+				// The whole reply, so an opt-out past the preview is read.
+				BodyText: firstNonEmpty(msg.BodyText, msg.Snippet),
 				// The typed layer answers from the tagger's stored verdict for
 				// this message, so a reply is judged once.
 				OrganizationID: *account.OrganizationID,
