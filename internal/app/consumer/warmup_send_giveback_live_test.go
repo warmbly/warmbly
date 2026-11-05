@@ -127,7 +127,8 @@ func TestLiveWarmupSendFailureGivesTheDayBack(t *testing.T) {
 	}
 
 	// Reported usage and the cap must read the same delivered-send count.
-	capCount, err := s.TaskRepo.CountWarmupEmailsSentToday(ctx, f.mailbox)
+	utcDay := day.UTC().Truncate(24 * time.Hour)
+	capCount, err := s.TaskRepo.CountWarmupEmailsSentBetween(ctx, f.mailbox, utcDay, utcDay.Add(24*time.Hour))
 	if err != nil {
 		t.Fatalf("count: %v", err)
 	}
