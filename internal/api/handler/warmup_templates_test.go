@@ -22,6 +22,8 @@ func TestValidateTemplatePayload(t *testing.T) {
 		{name: "NUL in body refused", payload: warmupTemplatePayload{Subject: "s", Body: "a\x00b"}, wantErr: true},
 		{name: "warmup wording refused", payload: warmupTemplatePayload{Subject: "s", Body: "this is a warmup email test"}, wantErr: true},
 		{name: "copy the send gate would block is refused", payload: warmupTemplatePayload{Subject: "Free cash bonus", Body: "Act now to claim your free cash bonus."}, wantErr: true},
+		{name: "merge fields refused, since nothing renders them", payload: warmupTemplatePayload{Subject: "Hiring?", Body: "Hi {{.FirstName}}, are you hiring?"}, wantErr: true},
+		{name: "AI blocks refused", payload: warmupTemplatePayload{Subject: "Hiring?", Body: "Saw [[ai:icebreaker]], are you hiring?"}, wantErr: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

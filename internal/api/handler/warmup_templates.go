@@ -111,6 +111,10 @@ func validateTemplatePayload(p *warmupTemplatePayload) *errx.Error {
 	if strings.IndexByte(p.Body, 0) >= 0 {
 		return errx.New(errx.BadRequest, "body contains invalid characters")
 	}
+	// A template is sent as written; personalised copy is warmed from the running campaign instead.
+	if strings.Contains(p.Body, "{{") || strings.Contains(p.Body, "[[ai:") {
+		return errx.New(errx.BadRequest, "templates are sent exactly as written, so merge fields and AI blocks are not allowed; run personalised copy in a campaign and warmup carries it from there")
+	}
 	if utf8.RuneCountInString(p.Segment) > warmupTemplateMaxSubject {
 		return errx.New(errx.BadRequest, "segment exceeds 200 characters")
 	}

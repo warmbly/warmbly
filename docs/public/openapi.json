@@ -22599,6 +22599,56 @@
         }
       }
     },
+    "/warmup/templates/campaign-copy": {
+      "get": {
+        "operationId": "deliverability-ops_list_warmup_campaign_copy",
+        "summary": "List campaign copy",
+        "description": "The opening steps (and active A/B arms) of the organization's campaigns that warmup carries while they run, whether each can be carried as the campaign sends it, and where its warmup sends landed over a trailing window. Requires WARMUP_TEMPLATES scope and manage_settings permission.",
+        "tags": [
+          "deliverability-ops"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "description": "Trailing window in days, 1 to 90 (default 30).",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 90
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Campaign copy with placement",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WarmupCampaignCopyList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid days",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/warmup/templates/{id}/stats": {
       "get": {
         "operationId": "deliverability-ops_get_warmup_template_stats",
@@ -44961,18 +45011,23 @@
           "type": "object",
           "required": [
             "template_share",
-            "templates_only"
+            "templates_only",
+            "campaign_copy"
           ],
           "properties": {
             "template_share": {
               "type": "integer",
               "minimum": 0,
               "maximum": 100,
-              "description": "Percentage of new warmup openings drawn from the organization's templates when one is eligible. Default 50."
+              "description": "Percentage of new warmup openings drawn from the organization's own copy (running campaign copy first, then templates) when some is eligible. Default 25."
             },
             "templates_only": {
               "type": "boolean",
-              "description": "Send only the organization's templates; an opening with no eligible template is skipped."
+              "description": "Send only the organization's own copy; an opening with none eligible is skipped."
+            },
+            "campaign_copy": {
+              "type": "boolean",
+              "description": "Warm up the opening steps of the campaigns each mailbox sends for, rendered per recipient as the campaign renders them. Default true."
             }
           }
         },
@@ -45045,12 +45100,101 @@
               "type": "integer"
             },
             "total": {
-              "$ref": "#/components/schemas/WarmupTemplatePlacement"
+              "$ref": "#/components/schemas/WarmupTemplatePlacement",
+              "description": "Google, Microsoft and Yahoo groups only."
             },
             "groups": {
               "type": "array",
               "items": {
                 "$ref": "#/components/schemas/WarmupTemplateGroupPlacement"
+              }
+            }
+          }
+        },
+      "WarmupCampaignCopyStep": {
+          "type": "object",
+          "description": "One arm of an opening campaign step that warmup carries while the campaign runs.",
+          "required": [
+            "campaign_id",
+            "campaign_name",
+            "campaign_status",
+            "sequence_id",
+            "step_name",
+            "position",
+            "variant_id",
+            "variant_name",
+            "subject",
+            "eligible",
+            "placement",
+            "by_group"
+          ],
+          "properties": {
+            "campaign_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "campaign_name": {
+              "type": "string"
+            },
+            "campaign_status": {
+              "type": "string"
+            },
+            "sequence_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "step_name": {
+              "type": "string"
+            },
+            "position": {
+              "type": "integer"
+            },
+            "variant_id": {
+              "type": ["string", "null"],
+              "format": "uuid",
+              "description": "The A/B variant; null for the step's own copy."
+            },
+            "variant_name": {
+              "type": "string"
+            },
+            "subject": {
+              "type": "string",
+              "description": "The raw subject, before rendering."
+            },
+            "eligible": {
+              "type": "boolean",
+              "description": "False when warmup cannot carry the copy as the campaign sends it."
+            },
+            "ineligible_reason": {
+              "type": "string",
+              "description": "Why the copy cannot be warmed, in one sentence. Present only when eligible is false."
+            },
+            "placement": {
+              "$ref": "#/components/schemas/WarmupTemplatePlacement",
+              "description": "Google, Microsoft and Yahoo recipients only."
+            },
+            "by_group": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/WarmupTemplateGroupPlacement"
+              }
+            }
+          }
+        },
+      "WarmupCampaignCopyList": {
+          "type": "object",
+          "required": [
+            "days",
+            "data"
+          ],
+          "properties": {
+            "days": {
+              "type": "integer"
+            },
+            "data": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/WarmupCampaignCopyStep"
               }
             }
           }

@@ -506,7 +506,7 @@ Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
 
 ### Response
 
-Returns the templates under a `templates` key (always an array, never null) and the window under `days`. `placement.sent` counts every send of the template in the window; `inbox`, `tabs`, `spam` and `rescued` count the receipts the recipient mailboxes filed against those sends, so a send whose receipt has not arrived yet counts in `sent` only.
+Returns the templates under a `templates` key (always an array, never null) and the window under `days`. `placement` counts only recipients at Google, Microsoft and Yahoo, which filter on sender reputation; the stats endpoint below includes other hosts. `placement.sent` counts those sends of the template in the window; `inbox`, `tabs`, `spam` and `rescued` count the receipts the recipient mailboxes filed against those sends, so a send whose receipt has not arrived yet counts in `sent` only.
 
 ```json
 {
@@ -547,18 +547,77 @@ Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
   "total": { "sent": 12, "inbox": 10, "tabs": 1, "spam": 1, "rescued": 1 },
   "groups": [
     { "group": "google", "sent": 7, "inbox": 6, "tabs": 1, "spam": 0, "rescued": 0 },
-    { "group": "microsoft", "sent": 5, "inbox": 4, "tabs": 0, "spam": 1, "rescued": 1 }
+    { "group": "microsoft", "sent": 5, "inbox": 4, "tabs": 0, "spam": 1, "rescued": 1 },
+    { "group": "other", "sent": 2, "inbox": 2, "tabs": 0, "spam": 0, "rescued": 0 }
   ]
 }
 ```
 
-`groups` is always an array; a group with no sends in the window is absent. `404 Not Found` when the template is missing or belongs to another organization.
+`total` sums the `google`, `microsoft` and `yahoo` groups only; `other` is listed but a small host's spam folder is its own filter's verdict, so it never counts toward the total. `groups` is always an array; a group with no sends in the window is absent. `404 Not Found` when the template is missing or belongs to another organization.
+
+## List campaign copy
+
+`GET /warmup/templates/campaign-copy`
+
+Lists the opening steps of the organization's campaigns that warmup carries while they run, one entry per arm: the step's own copy (`variant_id` null) and each active A/B variant, with a paused Original left out. An opening step is the campaign's first email step or any step that starts its own thread; follow-ups that reply in the lead's thread are never warmed. Running campaigns are listed, plus any other campaign warmup carried within the window, so placement stays readable after a pause. Each warmup send renders the step for its recipient as the campaign would for a lead (merge fields, spintax, HTML, signature, opt-out line, UTM tags) with open and click tracking off.
+
+Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
+
+### Query parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `days` | integer | `30` | Trailing window for `placement` and `by_group`, 1 to 90. |
+
+### Response
+
+```json
+{
+  "days": 30,
+  "data": [
+    {
+      "campaign_id": "0b6f1a2c-3d4e-4f50-8a61-7b2c3d4e5f60",
+      "campaign_name": "Q4 outbound",
+      "campaign_status": "active",
+      "sequence_id": "5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d",
+      "step_name": "Intro",
+      "position": 1,
+      "variant_id": null,
+      "variant_name": "",
+      "subject": "Hiring at {{.Company}}?",
+      "eligible": true,
+      "placement": { "sent": 9, "inbox": 7, "tabs": 1, "spam": 1, "rescued": 1 },
+      "by_group": [
+        { "group": "google", "sent": 6, "inbox": 5, "tabs": 1, "spam": 0, "rescued": 0 },
+        { "group": "microsoft", "sent": 3, "inbox": 2, "tabs": 0, "spam": 1, "rescued": 1 }
+      ]
+    },
+    {
+      "campaign_id": "0b6f1a2c-3d4e-4f50-8a61-7b2c3d4e5f60",
+      "campaign_name": "Q4 outbound",
+      "campaign_status": "active",
+      "sequence_id": "9c8b7a6d-5e4f-4321-8fed-cba987654321",
+      "step_name": "New angle",
+      "position": 3,
+      "variant_id": null,
+      "variant_name": "",
+      "subject": "About {{.industry}}",
+      "eligible": false,
+      "ineligible_reason": "It uses custom fields, which a warmup recipient does not have.",
+      "placement": { "sent": 0, "inbox": 0, "tabs": 0, "spam": 0, "rescued": 0 },
+      "by_group": []
+    }
+  ]
+}
+```
+
+`subject` is the step's raw subject, before rendering. `eligible` is false when warmup cannot carry the copy as the campaign sends it, and `ineligible_reason` says why: AI blocks or form links (written for each lead), a custom field or the lead's phone number (a warmup recipient has neither), wording that calls itself automated or a test, or copy the warmup content checks refuse. An eligible step can still be skipped for a recipient who lacks a field it uses, such as a company for an address on a consumer mail domain. `placement` counts only recipients at Google, Microsoft and Yahoo; `by_group` lists every group, `other` included, and is always an array.
 
 ## Get warmup template settings
 
 `GET /warmup/templates/settings`
 
-Returns how much of the organization's warmup carries its own templates.
+Returns how much of the organization's warmup carries its own copy: its templates and the opening steps of its running campaigns.
 
 Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
 
@@ -566,12 +625,13 @@ Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
 
 ```json
 {
-  "template_share": 50,
-  "templates_only": false
+  "template_share": 25,
+  "templates_only": false,
+  "campaign_copy": true
 }
 ```
 
-`template_share` is the percentage of a mailbox's new warmup openings drawn from the organization's templates when at least one is eligible (default `50`); the rest come from the shared bank. Templates are spread evenly, least used first, and each sender sends a given template at most once a day. `templates_only` sends nothing but templates; an opening with no eligible template is then skipped rather than filled from the bank.
+`template_share` is the percentage of a mailbox's new warmup openings drawn from the organization's own copy when some is eligible (default `25`); the rest come from the shared bank. Campaign copy is drawn first and templates fill the share it leaves. A sender carries a given step, variant or template at most once a day, preferring the one it carried longest ago. `campaign_copy` (default `true`) lets warmup carry the opening steps of the campaigns each mailbox sends for; see [List campaign copy](#list-campaign-copy). `templates_only` sends nothing but the organization's own copy; an opening with none eligible is then skipped rather than filled from the bank. A mailbox carries own copy only after its first 7 days of warmup, whatever these settings say.
 
 ## Update warmup template settings
 
@@ -584,11 +644,12 @@ Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `template_share` | integer | Yes | 0 to 100. |
-| `templates_only` | boolean | Yes | Send only the organization's templates. |
+| `templates_only` | boolean | Yes | Send only the organization's own copy. |
+| `campaign_copy` | boolean | Yes | Warm up the opening steps of running campaigns. |
 
 ### Response
 
-`200 OK` with the stored settings. `400 Bad Request` when `template_share` is outside 0 to 100.
+`200 OK` with the stored settings. `400 Bad Request` when a field is missing or `template_share` is outside 0 to 100.
 
 ## Create a warmup template
 
@@ -604,7 +665,7 @@ Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
 |-------|------|----------|-------------|
 | `name` | string | No | Label for the template, shown in listings. |
 | `subject` | string | Yes | The exact subject sent with the template. |
-| `body` | string | Yes | The exact opening body sent with the template. Markup and newlines are preserved. |
+| `body` | string | Yes | The exact opening body sent with the template. Leading and trailing whitespace is trimmed; markup and newlines inside are preserved. Merge fields (`{{...}}`) and AI blocks are refused, because nothing renders a template: personalised copy is warmed from the campaign that runs it. |
 | `segment` | string | No | Restrict the template to senders tagged with this warmup segment. |
 
 ### Response
@@ -641,8 +702,7 @@ Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
 
 `POST /warmup/templates/check`
 
-Runs the static analyzer over a draft subject and body without storing anything.
-
+Runs the static analyzer over a draft subject and body without storing anything. Both fields must be present (`400 Bad Request` otherwise); an empty string is analyzed as written.
 Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
 
 ### Request body
