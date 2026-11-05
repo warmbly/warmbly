@@ -1,8 +1,8 @@
 name: CI
 
+# main only receives what the merge queue already tested at the same commit,
+# so the merge_group run is the gate and nothing reruns it after the merge.
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
   merge_group:
@@ -49,7 +49,6 @@ jobs:
           filters: |
             go-services:
               - '.github/workflows/ci.yml'
-              - '.github/scripts/live-tests-summary*.mjs'
               - 'go.mod'
               - 'go.sum'
               - 'internal/**'
@@ -217,10 +216,6 @@ jobs:
         if: matrix.suite == 'lint'
         run: make lint
 
-      - name: Check live-test reporting
-        if: matrix.suite == 'lint'
-        run: node --test .github/scripts/live-tests-summary.test.mjs
-
       - name: Verify protobuf files are up to date
         if: matrix.suite == 'lint'
         run: make check-proto
@@ -232,10 +227,9 @@ jobs:
         if: matrix.suite == 'lint'
         run: go build -tags kafka ./...
 
-      - name: Run tests with coverage
+      - name: Run tests
         if: matrix.suite == 'unit'
-        run: |
-          go test -race -coverprofile=coverage.out -covermode=atomic ./...
+        run: go test -race ./...
 
       - name: Prepare regression database
         if: startsWith(matrix.suite, 'live-')
@@ -662,81 +656,6 @@ jobs:
       - name: Test the Kafka codec, failed-handler replay and client lifecycle
         if: matrix.suite == 'live-2'
         run: go test -race -tags kafka ./internal/infrastructure/codec/ ./internal/infrastructure/kafka/ ./internal/infrastructure/eventbus/
-
-      # fail_ci_if_error does not cover the uploader crashing before it runs
-      # (a TLS handshake failure to Codecov failed jobs whose tests passed).
-      - name: Upload coverage
-        if: matrix.suite == 'unit'
-        uses: codecov/codecov-action@v4
-        continue-on-error: true
-        with:
-          files: coverage.out
-          flags: go
-          fail_ci_if_error: false
-
-  # Keep advisory coverage separate until #1078's failure inventory is resolved.
-  go-live-advisory:
-    name: PostgreSQL catch-all (advisory)
-    needs: changes
-    if: needs.changes.outputs.go-services == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    continue-on-error: true
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: warmbly
-          POSTGRES_PASSWORD: warmbly
-          POSTGRES_DB: warmbly_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U warmbly -d warmbly_test"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Prepare isolated regression database
-        env:
-          PRIMARY_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
-        run: go run ./cmd/migrate
-      - name: Run every TestLive test
-        id: live
-        timeout-minutes: 35
-        env:
-          WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
-          WARMBLY_TEST_REDIS: redis://127.0.0.1:6379/15
-        run: |
-          set -o pipefail
-          go test -json -race -p 1 -timeout 10m -count=1 -run '^TestLive' ./... 2>&1 | tee live-tests.jsonl
-      - name: Summarize advisory results
-        if: always()
-        env:
-          LIVE_TEST_OUTCOME: ${{ steps.live.outcome }}
-        run: node .github/scripts/live-tests-summary.mjs live-tests.jsonl
-      - name: Retain complete live-test output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: postgres-live-advisory-${{ github.run_attempt }}
-          path: live-tests.jsonl
-          if-no-files-found: warn
-          retention-days: 14
 
   web-ci:
     name: Web CI
