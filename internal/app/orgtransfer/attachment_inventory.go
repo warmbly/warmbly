@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"strings"
 
@@ -79,7 +80,10 @@ func InventoryAttachments(ctx context.Context, archive ReaderAtSizer, opts Attac
 	if opts.SHA256 != "" && !strings.EqualFold(opts.SHA256, digest) {
 		return nil, errors.New("archive SHA-256 differs from the requested inventory")
 	}
-	zr, err := zip.NewReader(archive, archive.Size())
+	zr, err := zip.NewReader(inventoryContextReaderAt{ctx, archive}, archive.Size())
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 	if err != nil {
 		return nil, errors.New("archive is not a readable ZIP")
 	}
@@ -100,7 +104,7 @@ func InventoryAttachments(ctx context.Context, archive ReaderAtSizer, opts Attac
 	}
 	manifestBody, readErr := io.ReadAll(io.LimitReader(inventoryContextReader{ctx, mr}, maxManifestBytes+1))
 	_ = mr.Close()
-	if readErr != nil || len(manifestBody) > maxManifestBytes {
+	if readErr != nil || len(manifestBody) > maxManifestBytes || crc32.ChecksumIEEE(manifestBody) != manifestEntry.CRC32 {
 		return nil, errors.New("cannot read archive manifest within the 64 MiB limit")
 	}
 	var m Manifest
@@ -200,7 +204,7 @@ func inventoryContent(ctx context.Context, entry *zip.File, item AttachmentInven
 	}
 	defer r.Close()
 	body, err := io.ReadAll(io.LimitReader(inventoryContextReader{ctx, r}, attachmenttype.MaxBytes+1))
-	if err != nil {
+	if err != nil || crc32.ChecksumIEEE(body) != entry.CRC32 {
 		return item
 	}
 	if int64(len(body)) != item.StoredBytes {
@@ -243,7 +247,8 @@ func inventoryRows(ctx context.Context, entries map[string]*zip.File, m *Manifes
 		return fmt.Errorf("cannot open %s metadata", table)
 	}
 	defer r.Close()
-	limited := &io.LimitedReader{R: inventoryContextReader{ctx, r}, N: maxInventoryTableBytes + 1}
+	checksum := crc32.NewIEEE()
+	limited := &io.LimitedReader{R: io.TeeReader(inventoryContextReader{ctx, r}, checksum), N: maxInventoryTableBytes + 1}
 	scanner := bufio.NewScanner(limited)
 	scanner.Buffer(make([]byte, 64<<10), 1<<20)
 	var rows int64
@@ -261,6 +266,9 @@ func inventoryRows(ctx context.Context, entries map[string]*zip.File, m *Manifes
 	}
 	if limited.N == 0 || rows != mt.Rows {
 		return fmt.Errorf("%s metadata size or row count differs from the manifest", table)
+	}
+	if checksum.Sum32() != entry.CRC32 {
+		return fmt.Errorf("cannot verify %s metadata integrity", table)
 	}
 	return nil
 }
@@ -281,6 +289,18 @@ func inventoryDigest(ctx context.Context, archive ReaderAtSizer) (string, error)
 type inventoryContextReader struct {
 	ctx context.Context
 	r   io.Reader
+}
+
+type inventoryContextReaderAt struct {
+	ctx context.Context
+	r   io.ReaderAt
+}
+
+func (r inventoryContextReaderAt) ReadAt(b []byte, off int64) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.r.ReadAt(b, off)
 }
 
 func (r inventoryContextReader) Read(b []byte) (int, error) {

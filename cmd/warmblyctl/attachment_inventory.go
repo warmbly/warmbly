@@ -24,7 +24,14 @@ func runOrgAttachmentsPreflight(ctx context.Context, args []string) error {
 	if *file == "" {
 		return errors.New("--file is required")
 	}
-	f, err := os.Open(*file)
+	pathInfo, err := os.Stat(*file)
+	if err != nil {
+		return err
+	}
+	if !pathInfo.Mode().IsRegular() {
+		return errors.New("--file must name a regular local archive")
+	}
+	f, err := openInventoryFile(*file)
 	if err != nil {
 		return err
 	}
@@ -35,6 +42,9 @@ func runOrgAttachmentsPreflight(ctx context.Context, args []string) error {
 	}
 	if !info.Mode().IsRegular() {
 		return errors.New("--file must name a regular local archive")
+	}
+	if !os.SameFile(pathInfo, info) {
+		return errors.New("archive changed before inventory; retry with an immutable file")
 	}
 	report, err := orgtransfer.InventoryAttachments(ctx, &fileArchive{f: f, size: info.Size()}, orgtransfer.AttachmentInventoryOptions{
 		After: *after, Limit: *limit, SHA256: *digest,
