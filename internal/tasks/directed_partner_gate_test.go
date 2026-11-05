@@ -224,27 +224,39 @@ func (cappedCandidatesRepo) WarmupExecutionCandidates(context.Context, string, u
 	return nil, nil
 }
 
+// failingRuleRepo cannot read the organization's routing rules.
+type failingRuleRepo struct {
+	repository.WarmupRoutingRepository
+}
+
+func (failingRuleRepo) ListForOrganization(context.Context, uuid.UUID) ([]models.WarmupRoutingRule, error) {
+	return nil, errors.New("db down")
+}
+
 // A reply is rechecked at execution by the rule that chose its partner, so an
 // inbox whose day is full of new threads still gets it; a new thread does not.
 func TestWarmupExecutionHoldsRepliesToTheReplyRule(t *testing.T) {
-	recipient := uuid.New()
+	recipient, org := uuid.New(), uuid.New()
 	for _, tc := range []struct {
-		name  string
-		reply bool
-		pool  string
-		want  bool
+		name   string
+		reply  bool
+		pool   string
+		routes repository.WarmupRoutingRepository
+		want   bool
 	}{
-		{"a reply to a capped inbox goes out", true, "premium", true},
-		{"a new thread to a capped inbox does not", false, "premium", false},
-		{"a reply to a mailbox that left the pool does not", true, "", false},
+		{"a reply to a capped inbox goes out", true, "premium", ruleRepo{}, true},
+		{"a new thread to a capped inbox does not", false, "premium", ruleRepo{}, false},
+		{"a reply to a mailbox that left the pool does not", true, "", ruleRepo{}, false},
+		{"a reply whose routing rules cannot be read does not", true, "premium", failingRuleRepo{}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := &tasksService{
-				emailRepo:    directedEmailRepo{},
-				warmupRepo:   cappedCandidatesRepo{standingRepo{state: models.WarmupHealthHealthy}},
-				warmupHealth: &pinnedGate{poolOf: map[uuid.UUID]string{recipient: tc.pool}},
+				emailRepo:         directedEmailRepo{},
+				warmupRepo:        cappedCandidatesRepo{standingRepo{state: models.WarmupHealthHealthy}},
+				warmupHealth:      &pinnedGate{poolOf: map[uuid.UUID]string{recipient: tc.pool}},
+				warmupRoutingRepo: tc.routes,
 			}
-			err := s.validateWarmupRecipient(context.Background(), uuid.New(), tc.reply, recipient, &Email{ID: uuid.New()}, "premium")
+			err := s.validateWarmupRecipient(context.Background(), uuid.New(), tc.reply, recipient, &Email{ID: uuid.New(), OrganizationID: &org}, "premium")
 			if (err == nil) != tc.want {
 				t.Fatalf("validate = %v, want allowed %v", err, tc.want)
 			}

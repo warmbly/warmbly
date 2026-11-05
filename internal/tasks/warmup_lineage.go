@@ -244,6 +244,12 @@ func (s *tasksService) ValidateWarmupExecution(ctx context.Context, taskID uuid.
 // sent and so is outside the new-thread cap the draw applies.
 func (s *tasksService) validateWarmupRecipient(ctx context.Context, taskID uuid.UUID, reply bool, recipientID uuid.UUID, account *Email, pool string) error {
 	if reply && s.warmupHealth != nil {
+		// replyPartner reads unavailable routing rules as none, so the execution recheck fails closed on them first.
+		if pool == "premium" && s.warmupRoutingRepo != nil && account.OrganizationID != nil {
+			if _, err := s.warmupRoutingRepo.ListForOrganization(ctx, *account.OrganizationID); err != nil {
+				return err
+			}
+		}
 		if partner := s.replyPartner(ctx, recipientID, account, pool); partner == nil || partner.ID != recipientID {
 			return errors.New("warmup recipient no longer eligible")
 		}
