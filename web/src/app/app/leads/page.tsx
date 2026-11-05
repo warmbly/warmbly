@@ -67,6 +67,8 @@ interface Prefs {
     style: StyleChoice;
     tilt: boolean;
     view: { center: LatLng; zoom: number };
+    // The source last picked in the dropdown; a saved search opening its own does not change it.
+    provider?: LeadProvider;
 }
 
 const PREFS_KEY = "wb.leadFinder.prefs";
@@ -119,7 +121,13 @@ function Finder({ config }: { config: LeadFinderConfig }) {
     const [query, setQuery] = useState("");
     const [category, setCategory] = useState("");
     const [location, setLocation] = useState("");
-    const [provider, setProvider] = useState<LeadProvider>(config.default_provider);
+    const [provider, setProvider] = useState<LeadProvider>(() =>
+        prefs.provider && config.providers.some((p) => p.id === prefs.provider && p.available) ? prefs.provider : config.default_provider,
+    );
+    const pickProvider = (p: LeadProvider) => {
+        setProvider(p);
+        patchPrefs({ provider: p });
+    };
     const [area, setArea] = useState<LeadArea | null>(null);
     const [tool, setTool] = useState<MapTool>("pan");
     const [view, setView] = useState<MapView | null>(null);
@@ -380,7 +388,7 @@ function Finder({ config }: { config: LeadFinderConfig }) {
                         onPlace={onPlace}
                         near={view && view.zoom >= 9 ? view.center : null}
                         provider={provider}
-                        onProvider={setProvider}
+                        onProvider={pickProvider}
                         area={area}
                         onClearArea={() => setArea(null)}
                         onTool={(t) => {
