@@ -1137,6 +1137,10 @@ func (s *tasksService) publishWarmupEmailSentEvent(ctx context.Context, task *Ta
 		}
 	}
 
+	if s.streamingPublisher != nil && account != nil && account.OrganizationID != nil {
+		s.streamingPublisher.PublishWarmupActivity(ctx, account.OrganizationID.String(), account.UserID, account.ID.String(), account.Email)
+	}
+
 	if s.advanced != nil && account != nil && account.OrganizationID != nil {
 		s.advanced.EmitCampaignEvent(ctx, *account.OrganizationID, models.WebhookEventWarmupEmailSent, map[string]any{
 			"email_account_id": account.ID.String(),
@@ -1173,11 +1177,11 @@ func (s *tasksService) directedWarmupPartner(ctx context.Context, taskID uuid.UU
 	if err != nil || warmupTask == nil || warmupTask.TargetAccountID == nil {
 		return nil
 	}
-	return s.replyPartner(ctx, taskID, *warmupTask.TargetAccountID, account, poolType)
+	return s.replyPartner(ctx, *warmupTask.TargetAccountID, account, poolType)
 }
 
 // replyPartner is target when this mailbox may answer it now, or nil.
-func (s *tasksService) replyPartner(ctx context.Context, taskID, target uuid.UUID, account *Email, poolType string) *Email {
+func (s *tasksService) replyPartner(ctx context.Context, target uuid.UUID, account *Email, poolType string) *Email {
 	if s.warmupHealth != nil {
 		ok, reason, herr := s.warmupHealth.CanParticipate(ctx, target, poolType)
 		if herr != nil {
@@ -1208,15 +1212,6 @@ func (s *tasksService) replyPartner(ctx context.Context, taskID, target uuid.UUI
 	// too; the thread exists because the other side started it (#501).
 	if rules := s.warmupRoutingRules(ctx, account, poolType); len(rules) > 0 {
 		if routingMultiplier(rules, account.Email, partner.Email) <= 0 {
-			return nil
-		}
-	}
-	// A reply holds the mailbox's only warmup task, so one to a full inbox ends the thread rather than waiting on the reservation's refusal.
-	if room, ok := s.warmupRepo.(interface {
-		WarmupInboxHasRoom(context.Context, uuid.UUID, string) (bool, error)
-	}); ok {
-		if has, err := room.WarmupInboxHasRoom(ctx, partner.ID, poolType); err == nil && !has {
-			log.Info().Str("task_id", taskID.String()).Str("email_account_id", account.ID.String()).Msg("warmup reply closed: the recipient's inbox is full today")
 			return nil
 		}
 	}

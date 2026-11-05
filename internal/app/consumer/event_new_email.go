@@ -614,6 +614,9 @@ func (s *JobsService) recordWarmupPlacement(ctx context.Context, e *models.JobEv
 		return
 	}
 	s.StreamingPublisher.PublishWarmupPlacement(ctx, sender.OrgID.String(), sender.UserID, sender.ID.String(), sender.Email, landed)
+	if recipient != nil && recipient.OrganizationID != nil {
+		s.StreamingPublisher.PublishWarmupActivity(ctx, recipient.OrganizationID.String(), recipient.UserID, recipient.ID.String(), recipient.Email)
+	}
 }
 
 // placementRecipient is the group and host a receipt is counted under.

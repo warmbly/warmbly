@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -231,49 +232,95 @@ func TestLiveWarmupPartnerCandidatesDropAnUnreachableRecipient(t *testing.T) {
 	}
 }
 
-// A reply's pre-check and the send reservation read one rule, so a reply the
-// reservation would refuse is known to be refused before it holds the slot.
-func TestLiveWarmupInboxHasRoomMatchesTheReservation(t *testing.T) {
+// The reservation holds a new thread to its sender tier's share of the inbox's day.
+func TestLiveWarmupReservationHoldsEachTierToItsShare(t *testing.T) {
 	f := newPartnerOrgFixture(t)
 	ctx := context.Background()
-	repo := &warmupRepository{db: f.pool}
-	room := func(pool string) bool {
-		t.Helper()
-		has, err := repo.WarmupInboxHasRoom(ctx, f.sibling, pool)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return has
-	}
 	reserve := func(pool string) bool {
 		t.Helper()
 		var allowed bool
-		if err := f.pool.QueryRow(ctx, warmupInboxRoomSQL, f.sibling, inboundSharePercent(pool), 0).Scan(&allowed); err != nil {
+		if err := f.pool.QueryRow(ctx, warmupInboxRoomSQL, f.sibling, inboundSharePercent(pool)).Scan(&allowed); err != nil {
 			t.Fatal(err)
 		}
 		return allowed
 	}
 	freeCap := config.WarmupInboundDailyFloor * config.WarmupFreeInboundSharePercent / 100
-	for i := 0; i < freeCap-1; i++ {
+	for range freeCap {
 		f.received(t, f.sibling, f.outside, time.Now().Add(-time.Second))
-	}
-	if !room("free") || !room("premium") {
-		t.Fatal("an inbox one short of the free share has no room")
-	}
-	f.received(t, f.sibling, f.outside, time.Now().Add(-time.Second))
-	if room("free") {
-		t.Fatal("a free sender sees room past its share of the inbox")
 	}
 	if !reserve("free") {
 		t.Fatal("the reservation refused a send already counted inside the free share")
 	}
-	if !room("premium") {
+	f.received(t, f.sibling, f.outside, time.Now().Add(-time.Second))
+	if reserve("free") {
+		t.Fatal("a free sender reserved past its share of the inbox")
+	}
+	if !reserve("premium") {
 		t.Fatal("a paying sender lost the rest of the inbox's day")
 	}
-	for i := freeCap; i < config.WarmupInboundDailyFloor; i++ {
+	for i := freeCap + 1; i <= config.WarmupInboundDailyFloor; i++ {
 		f.received(t, f.sibling, f.outside, time.Now().Add(-time.Second))
 	}
-	if room("premium") || reserve("free") {
+	if reserve("premium") {
 		t.Fatal("a full inbox still has room")
+	}
+}
+
+// A reply answers mail its recipient sent, so it reaches an inbox whose day is
+// already full of new threads; a new thread to the same inbox is still refused.
+func TestLiveWarmupReplyIsAdmittedToAFullInbox(t *testing.T) {
+	for _, reply := range []bool{false, true} {
+		t.Run(map[bool]string{false: "new thread", true: "reply"}[reply], func(t *testing.T) {
+			f, r, worker, _ := newWarmupChargeFixture(t, reply)
+			ctx := t.Context()
+			if _, err := f.pool.Exec(ctx, `INSERT INTO warmup_received(email_account_id,internal_id,sender_account_id,message_id)
+				SELECT $1,gen_random_uuid(),$2,'' FROM generate_series(1,$3::int)`, f.recipient, f.sender, config.WarmupInboundDailyCeiling+1); err != nil {
+				t.Fatal(err)
+			}
+			address := "pl-" + f.recipient.String()[:8] + "@test.local"
+			_, err := r.ReserveOutbound(ctx, OutboundReservation{TaskID: f.task, MailboxID: f.sender, OrganizationID: f.org, WorkerID: worker, Provider: models.InboxProviderSMTPIMAP, Recipients: []string{address}})
+			if reply && err != nil {
+				t.Fatal("a reply to a full inbox was refused", err)
+			}
+			if !reply && !errors.Is(err, ErrSendAdmissionDenied) {
+				t.Fatal("a new thread to a full inbox was admitted", err)
+			}
+		})
+	}
+}
+
+// Replies land outside an inbox's count, so a day full of them leaves every
+// tier's share of new threads, in the draw and at the reservation, untouched.
+func TestLiveWarmupRepliesLeaveTheNewThreadCapUntouched(t *testing.T) {
+	f := newPartnerOrgFixture(t)
+	ctx := context.Background()
+	repo := &warmupRepository{db: f.pool}
+	t.Cleanup(func() {
+		f.exec(`DELETE FROM warmup_received WHERE email_account_id = $1`, f.sibling)
+		f.exec(`DELETE FROM tasks WHERE email_account_id IN ($1, $2)`, f.sibling, f.outside)
+	})
+	for range config.WarmupInboundDailyCeiling + 1 {
+		parent, reply := uuid.New(), uuid.New()
+		f.exec(`INSERT INTO tasks (id, task_type, email_account_id, status, message_id) VALUES ($1, 'warmup', $2, 'completed', '')`, parent, f.sibling)
+		f.exec(`INSERT INTO tasks (id, task_type, email_account_id, status, message_id) VALUES ($1, 'warmup', $2, 'completed', '')`, reply, f.outside)
+		f.exec(`INSERT INTO warmup_tasks (task_id, parent_task_id) VALUES ($1, $2)`, reply, parent)
+		f.exec(`INSERT INTO warmup_received (email_account_id, internal_id, message_id, sender_account_id, task_id)
+		        VALUES ($1, gen_random_uuid(), $2, $3, $4)`, f.sibling, "<"+uuid.NewString()+"@test.local>", f.outside, reply)
+	}
+	for _, pool := range []string{"free", "premium"} {
+		var allowed bool
+		if err := f.pool.QueryRow(ctx, warmupInboxRoomSQL, f.sibling, inboundSharePercent(pool)).Scan(&allowed); err != nil {
+			t.Fatal(err)
+		}
+		if !allowed {
+			t.Fatalf("a %s sender lost an inbox's new-thread room to replies", pool)
+		}
+	}
+	got, err := repo.WarmupPartnerCandidates(ctx, "premium", f.sender)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := candidateByID(got, f.sibling); !ok {
+		t.Fatal("an inbox whose day is all replies was left out of the draw")
 	}
 }
