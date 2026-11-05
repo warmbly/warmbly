@@ -149,6 +149,7 @@ export function DeliverabilitySection({
                 control={
                     <Toggle
                         id="campaign-pref-stop-on-meeting"
+                        ariaLabel="Stop on meeting booked"
                         value={newCampaign.stop_on_meeting}
                         onChange={(v) => setNewCampaign((bef) => ({ ...bef, stop_on_meeting: v }))}
                     />
