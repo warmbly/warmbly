@@ -45033,9 +45033,10 @@
         },
       "WarmupTemplatePlacement": {
           "type": "object",
-          "description": "Sends of a template and where the recipient mailboxes reported them landing.",
+          "description": "Sends of a piece of own copy and where the recipient mailboxes reported them landing. Read landing rates over reported, not sent.",
           "required": [
             "sent",
+            "reported",
             "inbox",
             "tabs",
             "spam",
@@ -45044,6 +45045,10 @@
           "properties": {
             "sent": {
               "type": "integer"
+            },
+            "reported": {
+              "type": "integer",
+              "description": "Sends whose recipient has filed a receipt."
             },
             "inbox": {
               "type": "integer"

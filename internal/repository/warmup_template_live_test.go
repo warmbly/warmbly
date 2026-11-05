@@ -171,7 +171,7 @@ func TestLiveTemplatePlacementCountsReceipts(t *testing.T) {
 		t.Fatal(err)
 	}
 	all, err := r.TemplatePlacement(ctx, f.org, since)
-	if err != nil || all[template].Sent != 1 || all[template].Inbox != 0 {
+	if err != nil || all[template].Sent != 1 || all[template].Reported != 0 || all[template].Inbox != 0 {
 		t.Fatalf("sent-only token: %+v %v", all[template], err)
 	}
 	if _, err := f.pool.Exec(ctx, `INSERT INTO warmup_received(email_account_id,internal_id,message_id,sender_account_id,first_landing)
@@ -182,7 +182,7 @@ func TestLiveTemplatePlacementCountsReceipts(t *testing.T) {
 		_, _ = f.pool.Exec(context.Background(), `DELETE FROM warmup_received WHERE message_id=$1`, msgID)
 	})
 	all, err = r.TemplatePlacement(ctx, f.org, since)
-	if err != nil || all[template].Sent != 1 || all[template].Inbox != 1 {
+	if err != nil || all[template].Sent != 1 || all[template].Reported != 1 || all[template].Inbox != 1 {
 		t.Fatalf("receipt not counted: %+v %v", all[template], err)
 	}
 	groups, err := r.TemplatePlacementByGroup(ctx, template, f.org, since)

@@ -162,7 +162,7 @@ func TestLiveCampaignCopyStepsReportPlacement(t *testing.T) {
 			}
 			found = true
 			p := s.Placement
-			if p.Sent != 1 || p.Spam != 1 || p.Rescued != 1 || p.Inbox != 0 || len(s.ByGroup) != 1 || s.ByGroup[0].Group != "google" {
+			if p.Sent != 1 || p.Reported != 1 || p.Spam != 1 || p.Rescued != 1 || p.Inbox != 0 || len(s.ByGroup) != 1 || s.ByGroup[0].Group != "google" {
 				t.Fatalf("%s campaign: placement %+v by group %+v", status, p, s.ByGroup)
 			}
 			if s.CampaignName != "Copy warmup" || s.StepName != "Intro" || s.VariantName != "B" || s.CampaignStatus != status {

@@ -413,6 +413,7 @@ func templatePlacementSQL(where string) string {
 	return `
 		SELECT wt.conversation_id, ` + recipientGroupSQL("rec") + ` AS grp,
 		       COUNT(*)::int AS sent,
+		       COUNT(wr.email_account_id)::int AS reported,
 		       COUNT(*) FILTER (WHERE wr.first_landing = 'inbox')::int AS inbox,
 		       COUNT(*) FILTER (WHERE wr.first_landing = 'tabs')::int AS tabs,
 		       COUNT(*) FILTER (WHERE wr.first_landing = 'spam' OR wr.landed_spam)::int AS spam,
@@ -437,13 +438,10 @@ func (r *warmupContentRepository) TemplatePlacement(ctx context.Context, orgID u
 	for rows.Next() {
 		var id uuid.UUID
 		var g models.WarmupTemplateGroupPlacement
-		if err := rows.Scan(&id, &g.Group, &g.Sent, &g.Inbox, &g.Tabs, &g.Spam, &g.Rescued); err != nil {
+		if err := rows.Scan(&id, &g.Group, &g.Sent, &g.Reported, &g.Inbox, &g.Tabs, &g.Spam, &g.Rescued); err != nil {
 			return nil, err
 		}
-		t := out[id]
-		add := models.MajorProviderPlacement([]models.WarmupTemplateGroupPlacement{g})
-		t.Sent, t.Inbox, t.Tabs, t.Spam, t.Rescued = t.Sent+add.Sent, t.Inbox+add.Inbox, t.Tabs+add.Tabs, t.Spam+add.Spam, t.Rescued+add.Rescued
-		out[id] = t
+		out[id] = models.MajorProviderPlacement([]models.WarmupTemplateGroupPlacement{{WarmupTemplatePlacement: out[id]}, g})
 	}
 	return out, rows.Err()
 }
@@ -458,7 +456,7 @@ func (r *warmupContentRepository) TemplatePlacementByGroup(ctx context.Context, 
 	for rows.Next() {
 		var conv uuid.UUID
 		var g models.WarmupTemplateGroupPlacement
-		if err := rows.Scan(&conv, &g.Group, &g.Sent, &g.Inbox, &g.Tabs, &g.Spam, &g.Rescued); err != nil {
+		if err := rows.Scan(&conv, &g.Group, &g.Sent, &g.Reported, &g.Inbox, &g.Tabs, &g.Spam, &g.Rescued); err != nil {
 			return nil, err
 		}
 		out = append(out, g)

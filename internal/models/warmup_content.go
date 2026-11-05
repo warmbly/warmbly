@@ -112,6 +112,8 @@ type WarmupCampaignCopyStep struct {
 // the landing counters cover the receipts that came back.
 type WarmupTemplatePlacement struct {
 	Sent    int `json:"sent"`
+	// Reported counts the sends whose recipient filed a receipt; landing rates are read over it.
+	Reported int `json:"reported"`
 	Inbox   int `json:"inbox"`
 	Tabs    int `json:"tabs"`
 	Spam    int `json:"spam"`
@@ -335,6 +337,7 @@ func MajorProviderPlacement(groups []WarmupTemplateGroupPlacement) WarmupTemplat
 			continue
 		}
 		t.Sent += g.Sent
+		t.Reported += g.Reported
 		t.Inbox += g.Inbox
 		t.Tabs += g.Tabs
 		t.Spam += g.Spam

@@ -506,7 +506,7 @@ Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
 
 ### Response
 
-Returns the templates under a `templates` key (always an array, never null) and the window under `days`. `placement` counts only recipients at Google, Microsoft and Yahoo, which filter on sender reputation; the stats endpoint below includes other hosts. `placement.sent` counts those sends of the template in the window; `inbox`, `tabs`, `spam` and `rescued` count the receipts the recipient mailboxes filed against those sends, so a send whose receipt has not arrived yet counts in `sent` only.
+Returns the templates under a `templates` key (always an array, never null) and the window under `days`. `placement` counts only recipients at Google, Microsoft and Yahoo, which filter on sender reputation; the stats endpoint below includes other hosts. `placement.sent` counts those sends of the template in the window and `reported` how many of them the recipient has filed a receipt for; `inbox`, `tabs`, `spam` and `rescued` count within those receipts, so read landing rates over `reported`. A send whose receipt has not arrived yet counts in `sent` only.
 
 ```json
 {
@@ -519,7 +519,7 @@ Returns the templates under a `templates` key (always an array, never null) and 
       "segment": "",
       "usage_count": 12,
       "created_at": "2026-06-01T09:00:00Z",
-      "placement": { "sent": 12, "inbox": 10, "tabs": 1, "spam": 1, "rescued": 1 }
+      "placement": { "sent": 12, "reported": 12, "inbox": 10, "tabs": 1, "spam": 1, "rescued": 1 }
     }
   ]
 }
@@ -544,11 +544,11 @@ Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
 {
   "template_id": "c1d2e3f4-5061-7283-94a5-b6c7d8e9f0a1",
   "days": 30,
-  "total": { "sent": 12, "inbox": 10, "tabs": 1, "spam": 1, "rescued": 1 },
+  "total": { "sent": 12, "reported": 12, "inbox": 10, "tabs": 1, "spam": 1, "rescued": 1 },
   "groups": [
-    { "group": "google", "sent": 7, "inbox": 6, "tabs": 1, "spam": 0, "rescued": 0 },
-    { "group": "microsoft", "sent": 5, "inbox": 4, "tabs": 0, "spam": 1, "rescued": 1 },
-    { "group": "other", "sent": 2, "inbox": 2, "tabs": 0, "spam": 0, "rescued": 0 }
+    { "group": "google", "sent": 7, "reported": 7, "inbox": 6, "tabs": 1, "spam": 0, "rescued": 0 },
+    { "group": "microsoft", "sent": 5, "reported": 5, "inbox": 4, "tabs": 0, "spam": 1, "rescued": 1 },
+    { "group": "other", "sent": 2, "reported": 2, "inbox": 2, "tabs": 0, "spam": 0, "rescued": 0 }
   ]
 }
 ```
@@ -586,10 +586,10 @@ Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
       "variant_name": "",
       "subject": "Hiring at {{.Company}}?",
       "eligible": true,
-      "placement": { "sent": 9, "inbox": 7, "tabs": 1, "spam": 1, "rescued": 1 },
+      "placement": { "sent": 9, "reported": 9, "inbox": 7, "tabs": 1, "spam": 1, "rescued": 1 },
       "by_group": [
-        { "group": "google", "sent": 6, "inbox": 5, "tabs": 1, "spam": 0, "rescued": 0 },
-        { "group": "microsoft", "sent": 3, "inbox": 2, "tabs": 0, "spam": 1, "rescued": 1 }
+        { "group": "google", "sent": 6, "reported": 6, "inbox": 5, "tabs": 1, "spam": 0, "rescued": 0 },
+        { "group": "microsoft", "sent": 3, "reported": 3, "inbox": 2, "tabs": 0, "spam": 1, "rescued": 1 }
       ]
     },
     {
@@ -604,7 +604,7 @@ Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
       "subject": "About {{.industry}}",
       "eligible": false,
       "ineligible_reason": "It uses custom fields, which a warmup recipient does not have.",
-      "placement": { "sent": 0, "inbox": 0, "tabs": 0, "spam": 0, "rescued": 0 },
+      "placement": { "sent": 0, "reported": 0, "inbox": 0, "tabs": 0, "spam": 0, "rescued": 0 },
       "by_group": []
     }
   ]
@@ -694,7 +694,7 @@ Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
 }
 ```
 
-`check.blocked_reason` is present only when the send gate would refuse the copy, which a create request never reaches because it is rejected first; it matters for `POST /warmup/templates/check`.
+`check.blocked_reason` is present only when a create request with the copy would be refused, which a successful create never reaches; it matters for `POST /warmup/templates/check`.
 
 `409 Conflict` when the subject or body already exists in the organization's own templates.
 
@@ -714,7 +714,7 @@ Auth: **Scope** `WARMUP_TEMPLATES` · **Org permission** `manage_settings`
 
 ### Response
 
-`200 OK` with the analysis fields described above. When the warmup send gate would refuse the copy, `blocked_reason` carries the reason; a create request with that copy fails with `400 Bad Request`.
+`200 OK` with the analysis fields described above. When a create request with the copy would be refused for any reason (wording, the send gate, merge fields, length or characters), `blocked_reason` carries the same message the create would return with its `400 Bad Request`.
 
 ## Delete a warmup template
 

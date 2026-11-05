@@ -79,6 +79,7 @@ func campaignCopyPlacementSQL() string {
 	return `
 		SELECT wt.sequence_id, wt.variant_id, ` + recipientGroupSQL("rec") + ` AS grp,
 		       COUNT(*)::int AS sent,
+		       COUNT(wr.email_account_id)::int AS reported,
 		       COUNT(*) FILTER (WHERE wr.first_landing = 'inbox')::int AS inbox,
 		       COUNT(*) FILTER (WHERE wr.first_landing = 'tabs')::int AS tabs,
 		       COUNT(*) FILTER (WHERE wr.first_landing = 'spam' OR wr.landed_spam)::int AS spam,
@@ -119,7 +120,7 @@ func (r *warmupContentRepository) CampaignCopySteps(ctx context.Context, orgID u
 		var seq uuid.UUID
 		var variant *uuid.UUID
 		var g models.WarmupTemplateGroupPlacement
-		if err := rows.Scan(&seq, &variant, &g.Group, &g.Sent, &g.Inbox, &g.Tabs, &g.Spam, &g.Rescued); err != nil {
+		if err := rows.Scan(&seq, &variant, &g.Group, &g.Sent, &g.Reported, &g.Inbox, &g.Tabs, &g.Spam, &g.Rescued); err != nil {
 			return nil, err
 		}
 		k := armKey(seq, variant)

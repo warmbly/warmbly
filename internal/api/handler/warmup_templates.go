@@ -370,7 +370,13 @@ func (h *Handler) CheckWarmupTemplate(c *gin.Context) {
 		errx.JSON(c, errx.New(errx.BadRequest, "subject exceeds 200 characters or body exceeds 50 KB"))
 		return
 	}
-	c.JSON(http.StatusOK, warmupcheck.Check(*payload.Subject, *payload.Body))
+	analysis := warmupcheck.Check(*payload.Subject, *payload.Body)
+	// The answer a create would give: every refusal, not only the send gate's.
+	draft := warmupTemplatePayload{Subject: *payload.Subject, Body: *payload.Body}
+	if xerr := validateTemplatePayload(&draft); xerr != nil {
+		analysis.BlockedReason = xerr.Message
+	}
+	c.JSON(http.StatusOK, analysis)
 }
 
 // ListWarmupCampaignCopy reports the opening steps (and A/B arms) of the
