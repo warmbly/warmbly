@@ -85,6 +85,7 @@ const campaign = {
     sender_strategy: "tags",
     daily_limit: 50,
     stop_on_reply: true,
+    stop_on_meeting: true,
     open_tracking: true,
     link_tracking: true,
     utm_tracking: true,

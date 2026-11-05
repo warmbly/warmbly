@@ -51,6 +51,7 @@ export interface CampaignRaw {
     status: CampaignStatus;
 
     stop_on_reply: boolean;
+    stop_on_meeting: boolean;
     open_tracking: boolean;
     link_tracking: boolean;
     utm_tracking: boolean;

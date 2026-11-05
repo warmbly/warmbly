@@ -36,6 +36,7 @@ export type Draft = {
     emailTagIds: string[];
     dailyLimit: number;
     stopOnReply: boolean;
+    stopOnMeeting: boolean;
     openTracking: boolean;
     linkTracking: boolean;
     utmTracking: boolean;
@@ -83,6 +84,7 @@ export const initialDraft = (timezone: string): Draft => ({
     emailTagIds: [],
     dailyLimit: 50,
     stopOnReply: true,
+    stopOnMeeting: true,
     openTracking: true,
     linkTracking: true,
     utmTracking: true,
@@ -201,6 +203,7 @@ export function toCreateInput(d: Draft, name: string): CreateCampaignInput {
         name,
         description: d.description.trim(),
         stop_on_reply: d.stopOnReply,
+        stop_on_meeting: d.stopOnMeeting,
         timezone: d.timezone,
         days: d.days,
         start_time: d.startTime,
@@ -264,9 +267,15 @@ export function plural(n: number, one: string, many = `${one}s`): string {
     return `${n.toLocaleString()} ${n === 1 ? one : many}`;
 }
 
+// The stop rules that are on, joined for the sentence they end ("replied or booked a meeting").
+export function stopRulePhrase(d: Draft, reply: string, meeting: string): string {
+    return [d.stopOnReply && reply, d.stopOnMeeting && meeting].filter(Boolean).join(" or ");
+}
+
 export function trackingSummary(d: Draft): string {
     const on = [
         d.stopOnReply && "stop on reply",
+        d.stopOnMeeting && "stop on meeting",
         d.openTracking && "opens",
         d.linkTracking && "clicks",
         d.utmTracking && "UTM",

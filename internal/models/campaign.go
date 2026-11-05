@@ -97,6 +97,7 @@ type Campaign struct {
 	Status      string `json:"status"`
 
 	StopOnReply       bool `json:"stop_on_reply"`
+	StopOnMeeting     bool `json:"stop_on_meeting"`
 	OpenTracking      bool `json:"open_tracking"`
 	LinkTracking      bool `json:"link_tracking"`
 	TextOnly          bool `json:"text_only"`
@@ -416,6 +417,7 @@ type UpdateCampaign struct {
 	Status      *string `json:"status,omitempty"`
 
 	StopOnReply       *bool   `json:"stop_on_reply"`
+	StopOnMeeting     *bool   `json:"stop_on_meeting"`
 	OpenTracking      *bool   `json:"open_tracking"`
 	LinkTracking      *bool   `json:"link_tracking"`
 	TextOnly          *bool   `json:"text_only"`
@@ -503,6 +505,7 @@ type CreateCampaign struct {
 	Description string `json:"description"`
 	// Sending rules / tracking
 	StopOnReply       *bool   `json:"stop_on_reply,omitempty"`
+	StopOnMeeting     *bool   `json:"stop_on_meeting,omitempty"`
 	OpenTracking      *bool   `json:"open_tracking,omitempty"`
 	LinkTracking      *bool   `json:"link_tracking,omitempty"`
 	TextOnly          *bool   `json:"text_only,omitempty"`

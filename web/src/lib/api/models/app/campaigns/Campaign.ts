@@ -11,6 +11,7 @@ export default interface Campaign {
     status: string;
 
     stop_on_reply: boolean;
+    stop_on_meeting: boolean;
     open_tracking: boolean;
     link_tracking: boolean;
     text_only: boolean;

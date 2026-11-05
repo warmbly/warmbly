@@ -55,6 +55,7 @@ func TestRoutedPairsPruneNeverDropsWhatRouteWouldOffer(t *testing.T) {
 			now:               now,
 			dueBy:             now.Add(time.Minute),
 			stopOnReply:       rng.Intn(2) == 0,
+			stopOnMeeting:     rng.Intn(2) == 0,
 			entryDelay:        []time.Duration{0, 0, time.Hour, 72 * time.Hour}[rng.Intn(4)],
 			campaignCreatedAt: now.Add(-48 * time.Hour),
 		}
@@ -88,7 +89,7 @@ func TestRoutedPairsPruneNeverDropsWhatRouteWouldOffer(t *testing.T) {
 		cr.entry = ids[0]
 		floors := cr.dueFloors()
 
-		in := routeInput{addedAt: maybe(ago(96)), hasReplied: rng.Intn(3) == 0}
+		in := routeInput{addedAt: maybe(ago(96)), hasReplied: rng.Intn(3) == 0, hasBooked: rng.Intn(3) == 0}
 		if rng.Intn(4) > 0 {
 			last := pick()
 			in.lastSeq = &last
