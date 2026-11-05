@@ -540,7 +540,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 		return errx.InternalError()
 	}
 
-	// stop_on_reply is enforced inside FindRoutedPairs (STEP 6), and it is now
+	// stop_on_reply and stop_on_meeting are enforced inside FindRoutedPairs (STEP 6), and are
 	// ROUTE-AWARE: a contact who replied is only handed back when their next step
 	// is part of the reply flow (the reply branch's own path). The normal cold
 	// sequence stops there, so there is no longer a blanket "contact has replied,

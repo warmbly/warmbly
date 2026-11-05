@@ -1711,7 +1711,7 @@ func (r *campaignProgressRepository) hydrateRoutedLeads(ctx context.Context, que
 	for rows.Next() {
 		var in routeInput
 		var contactID uuid.UUID
-		if serr := rows.Scan(&contactID, &in.addedAt, &in.sender, &in.lastSeq, &in.sentAt, &in.openedAt, &in.clickedAt, &in.repliedAt, &in.replyClass, &in.aiLabel, &in.replyIntent, &in.sentIDs, &in.hasReplied,
+		if serr := rows.Scan(&contactID, &in.addedAt, &in.sender, &in.lastSeq, &in.sentAt, &in.openedAt, &in.clickedAt, &in.repliedAt, &in.replyClass, &in.aiLabel, &in.replyIntent, &in.sentIDs, &in.hasReplied, &in.hasBooked,
 			&in.pausedAt, &in.pausedUntil, &in.pauseReason, &in.pauseSource); serr != nil {
 			return nil, serr
 		}
@@ -1750,7 +1750,15 @@ type ContactRoute struct {
 	// and one with no end reports no DueAt at all, because nothing but a
 	// person lifts it.
 	Hold *models.LeadHold
+	// StoppedBy names the campaign stop rule that ended the flow, empty when none did.
+	StoppedBy string
 }
+
+// The campaign stop rules a ContactRoute.StoppedBy can name.
+const (
+	StoppedByReply   = "replied"
+	StoppedByMeeting = "meeting_booked"
+)
 
 // RouteContact runs the campaign's routing for ONE contact and reports where
 // their flow goes next, including the gate that would exclude them. It reads
@@ -1770,6 +1778,7 @@ func (r *campaignProgressRepository) RouteContact(ctx context.Context, campaignI
 		         SELECT 1 FROM campaign_contact_progress rp
 		         WHERE rp.campaign_id = $1 AND rp.contact_id = cl.contact_id AND rp.replied_at IS NOT NULL
 		       ) AS has_replied,
+		       ` + hasBookedColumn + `,
 		       EXISTS (
 		         SELECT 1 FROM campaign_contact_progress b
 		         WHERE b.contact_id = cl.contact_id AND b.bounced_at IS NOT NULL
@@ -1806,7 +1815,7 @@ func (r *campaignProgressRepository) RouteContact(ctx context.Context, campaignI
 	err = resultDB(ctx, r.db).QueryRow(ctx, query, campaignID, config.CampaignSendMaxAttempts, contactID).Scan(
 		&in.addedAt, &in.sender, &in.lastSeq, &in.sentAt, &in.openedAt, &in.clickedAt, &in.repliedAt, &in.replyClass, &in.aiLabel, &in.replyIntent, &in.sentIDs,
 		&in.pausedAt, &in.pausedUntil, &in.pauseReason, &in.pauseSource,
-		&in.hasReplied, &bounced, &failed, &suppressed, &undeliverable,
+		&in.hasReplied, &in.hasBooked, &bounced, &failed, &suppressed, &undeliverable,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return &ContactRoute{Excluded: "not_a_lead"}, nil
@@ -1830,7 +1839,7 @@ func (r *campaignProgressRepository) RouteContact(ctx context.Context, campaignI
 	}
 	res := router.route(campaignID, contactID, in)
 	out.Target, out.IsNewLead, out.Instant, out.DueAt, out.WaitUntil = res.Target, res.IsNewLead, res.Instant, res.DueAt, res.WaitUntil
-	out.Hold = res.Hold
+	out.Hold, out.StoppedBy = res.Hold, res.StoppedBy
 	return out, nil
 }
 
@@ -1847,6 +1856,8 @@ type routeInput struct {
 	replyClass, aiLabel, replyIntent string
 	sentIDs                          []uuid.UUID
 	hasReplied                       bool
+	// hasBooked is a meeting booked since the lead entered; stop_on_meeting reads it.
+	hasBooked bool
 	// The per-lead hold. pausedAt non-nil is the hold itself; pausedUntil nil
 	// means it has no end and only a person lifts it.
 	pausedAt, pausedUntil    *time.Time
@@ -1859,6 +1870,14 @@ type routeInput struct {
 // CountUndeliverableLeads deliberately does not select it: a lead verification
 // refuses is refused whether or not somebody also parked it.
 var leadHoldColumns = effectiveLeadHoldColumns("cl")
+
+// hasBookedColumn is the routing queries' has_booked: any meeting the contact booked, whatever became of it, since entering the campaign.
+const hasBookedColumn = `EXISTS (
+		         SELECT 1 FROM meeting_bookings mb
+		         WHERE mb.contact_id = cl.contact_id
+		           AND mb.organization_id = (SELECT organization_id FROM campaigns WHERE id = $1)
+		           AND mb.created_at >= COALESCE(cl.added_at, (SELECT created_at FROM campaigns WHERE id = $1))
+		       ) AS has_booked`
 
 // heldShift is how much of the hold fell inside the wait the next step is
 // serving: from the later of the hold's start and the last step's send, to the
@@ -1922,6 +1941,7 @@ type campaignRouter struct {
 	// task fires at (or a breath before) the slot it was scheduled for.
 	dueBy          time.Time
 	stopOnReply    bool
+	stopOnMeeting  bool
 	replyFlowSteps map[uuid.UUID]bool
 	// entryDelay holds a new lead's first email back for this long after they
 	// entered the campaign; zero means the first step is due immediately.
@@ -1998,12 +2018,12 @@ func (r *campaignProgressRepository) loadRouter(ctx context.Context, campaignID 
 	// completion. Compute the reply-flow step set once and load the flag.
 	var entryDelayMinutes int
 	if serr := resultDB(ctx, r.db).QueryRow(ctx,
-		`SELECT stop_on_reply, entry_delay_minutes, created_at FROM campaigns WHERE id = $1`,
-		campaignID).Scan(&cr.stopOnReply, &entryDelayMinutes, &cr.campaignCreatedAt); serr != nil {
+		`SELECT stop_on_reply, stop_on_meeting, entry_delay_minutes, created_at FROM campaigns WHERE id = $1`,
+		campaignID).Scan(&cr.stopOnReply, &cr.stopOnMeeting, &entryDelayMinutes, &cr.campaignCreatedAt); serr != nil {
 		return nil, serr
 	}
 	cr.entryDelay = time.Duration(entryDelayMinutes) * time.Minute
-	if cr.stopOnReply {
+	if cr.stopOnReply || cr.stopOnMeeting {
 		steps := cr.steps
 		idxByID := cr.idxByID
 		// bfs walks a directed reachability closure from `seeds`, following the
@@ -2143,6 +2163,10 @@ func (cr *campaignRouter) route(campaignID, contactID uuid.UUID, in routeInput) 
 	}
 	var res routeResult
 	if out.IsNewLead {
+		if cr.stopOnMeeting && in.hasBooked {
+			out.StoppedBy = StoppedByMeeting
+			return out
+		}
 		e := cr.entry
 		res = routeResult{target: &e}
 	} else {
@@ -2157,7 +2181,8 @@ func (cr *campaignRouter) route(campaignID, contactID uuid.UUID, in routeInput) 
 		}
 		res = cr.routeNext(*in.lastSeq, prog, sa)
 
-		// Route-aware stop_on_reply for a contact who has replied:
+		// Route-aware stop for a contact who has replied (stop_on_reply) or
+		// booked a meeting (stop_on_meeting):
 		//   - still on the cold trunk (lastSeq not in the reply flow): they may
 		//     only ENTER the reply flow via a positive-reply branch. Any cold
 		//     route, an undecided cold window, or a stop ends them here — no cold
@@ -2165,11 +2190,15 @@ func (cr *campaignRouter) route(campaignID, contactID uuid.UUID, in routeInput) 
 		//   - already inside the reply flow: keep the reply flow's own routing
 		//     (its waits are legitimate), but if it would route back out into the
 		//     cold sequence, stop instead.
-		if cr.stopOnReply && in.hasReplied {
+		if stop := cr.stopReason(in); stop != "" {
+			before := res
 			if !cr.replyFlowSteps[*in.lastSeq] {
 				res = cr.routeReplyOnly(*in.lastSeq, prog, sa)
 			} else if res.target != nil && !cr.replyFlowSteps[*res.target] {
 				res = routeResult{stop: true}
+			}
+			if res.target == nil && res.wait == nil && (before.target != nil || before.wait != nil) {
+				out.StoppedBy = stop
 			}
 		}
 	}
@@ -2217,6 +2246,17 @@ func (cr *campaignRouter) route(campaignID, contactID uuid.UUID, in routeInput) 
 	}
 	cr.applyHold(&out, in)
 	return out
+}
+
+// stopReason names the stop rule that ends this contact's cold sequence, or "" when none applies.
+func (cr *campaignRouter) stopReason(in routeInput) string {
+	switch {
+	case cr.stopOnMeeting && in.hasBooked:
+		return StoppedByMeeting
+	case cr.stopOnReply && in.hasReplied:
+		return StoppedByReply
+	}
+	return ""
 }
 
 // applyHold folds a per-lead hold into the route. Two things happen, and they
@@ -2387,7 +2427,8 @@ func (r *campaignProgressRepository) CountUndeliverableLeads(ctx context.Context
 		       EXISTS (
 		         SELECT 1 FROM campaign_contact_progress rp
 		         WHERE rp.campaign_id = $1 AND rp.contact_id = cl.contact_id AND rp.replied_at IS NOT NULL
-		       ) AS has_replied
+		       ) AS has_replied,
+		       ` + hasBookedColumn + `
 		FROM campaign_leads cl
 		JOIN contacts c ON c.id = cl.contact_id
 		LEFT JOIN LATERAL (
@@ -2431,7 +2472,7 @@ func (r *campaignProgressRepository) CountUndeliverableLeads(ctx context.Context
 	for rows.Next() {
 		var in routeInput
 		var contactID uuid.UUID
-		if serr := rows.Scan(&contactID, &in.addedAt, &in.lastSeq, &in.sentAt, &in.openedAt, &in.clickedAt, &in.repliedAt, &in.replyClass, &in.aiLabel, &in.replyIntent, &in.sentIDs, &in.hasReplied); serr != nil {
+		if serr := rows.Scan(&contactID, &in.addedAt, &in.lastSeq, &in.sentAt, &in.openedAt, &in.clickedAt, &in.repliedAt, &in.replyClass, &in.aiLabel, &in.replyIntent, &in.sentIDs, &in.hasReplied, &in.hasBooked); serr != nil {
 			return 0, serr
 		}
 		res := router.route(campaignID, contactID, in)
@@ -2663,6 +2704,7 @@ func routedLeadsQuery(order, extraWhere string) string {
 		         SELECT 1 FROM campaign_contact_progress rp
 		         WHERE rp.campaign_id = $1 AND rp.contact_id = cl.contact_id AND rp.replied_at IS NOT NULL
 		       ) AS has_replied,
+		       ` + hasBookedColumn + `,
 		       ` + leadHoldColumns + `
 		FROM campaign_leads cl
 		JOIN contacts c ON c.id = cl.contact_id
@@ -2761,7 +2803,7 @@ func (r *campaignProgressRepository) LeadSupply(ctx context.Context, campaignID 
 	for rows.Next() {
 		var in routeInput
 		var contactID uuid.UUID
-		if serr := rows.Scan(&contactID, &in.addedAt, &in.sender, &in.lastSeq, &in.sentAt, &in.openedAt, &in.clickedAt, &in.repliedAt, &in.replyClass, &in.aiLabel, &in.replyIntent, &in.sentIDs, &in.hasReplied,
+		if serr := rows.Scan(&contactID, &in.addedAt, &in.sender, &in.lastSeq, &in.sentAt, &in.openedAt, &in.clickedAt, &in.repliedAt, &in.replyClass, &in.aiLabel, &in.replyIntent, &in.sentIDs, &in.hasReplied, &in.hasBooked,
 			&in.pausedAt, &in.pausedUntil, &in.pauseReason, &in.pauseSource); serr != nil {
 			return nil, serr
 		}
