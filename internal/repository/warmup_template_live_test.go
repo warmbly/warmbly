@@ -163,6 +163,13 @@ func TestLiveTemplatePlacementCountsReceipts(t *testing.T) {
 		_, _ = f.pool.Exec(context.Background(), `DELETE FROM warmup_tokens WHERE task_id=$1`, pick.TaskID)
 	})
 	since := time.Now().Add(-time.Hour)
+	// A small host judges by its own filter, so it never reaches the headline.
+	if all, err := r.TemplatePlacement(ctx, f.org, since); err != nil || all[template].Sent != 0 {
+		t.Fatalf("a small-host recipient counted toward the headline: %+v %v", all[template], err)
+	}
+	if _, err := f.pool.Exec(ctx, `UPDATE email_accounts SET mail_host = 'gmail' WHERE id = $1`, f.recipient); err != nil {
+		t.Fatal(err)
+	}
 	all, err := r.TemplatePlacement(ctx, f.org, since)
 	if err != nil || all[template].Sent != 1 || all[template].Inbox != 0 {
 		t.Fatalf("sent-only token: %+v %v", all[template], err)
@@ -179,7 +186,7 @@ func TestLiveTemplatePlacementCountsReceipts(t *testing.T) {
 		t.Fatalf("receipt not counted: %+v %v", all[template], err)
 	}
 	groups, err := r.TemplatePlacementByGroup(ctx, template, f.org, since)
-	if err != nil || len(groups) != 1 || groups[0].Inbox != 1 || groups[0].Group == "" {
+	if err != nil || len(groups) != 1 || groups[0].Inbox != 1 || groups[0].Group != "google" {
 		t.Fatalf("by group: %+v %v", groups, err)
 	}
 	other := newPoolLinkFixture(t)
