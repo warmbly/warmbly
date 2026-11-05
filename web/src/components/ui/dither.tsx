@@ -742,7 +742,7 @@ export function DitherMultiAreaChart({
     height?: number;
     className?: string;
     renderTooltip?: (i: number) => React.ReactNode;
-    /** Top of the y scale; defaults to the largest value. */
+    /** Lowest top of the y scale; values above it still raise the scale. */
     max?: number;
     /** Controlled crosshair: the parent owns pointer, guide line and tooltip; only the dots draw here. */
     hover?: number | null;

@@ -99,8 +99,10 @@ function fillDays(
 ): { days: string[]; series: TrendSeries[] } {
     const keys = labels.map((l) => l.slice(0, 10));
     const sorted = [...keys].sort();
-    const from = range?.from ?? sorted[0];
-    const to = range?.to ?? sorted[sorted.length - 1];
+    // A day the server returned outside the window widens it rather than being dropped.
+    const ends = [range?.from, range?.to, sorted[0], sorted[sorted.length - 1]].filter((d): d is string => !!d).sort();
+    const from = ends[0];
+    const to = ends[ends.length - 1];
     if (!from || !to) return { days: [], series };
     const days: string[] = [];
     const end = dayDate(to).getTime();
@@ -159,7 +161,8 @@ export function MultiTrend({
     volumeKey?: string;
 }) {
     const [wrapRef, { w }] = useMeasure<HTMLDivElement>();
-    const [hover, setHover] = React.useState<number | null>(null);
+    const [pointer, setHover] = React.useState<number | null>(null);
+    const [tipW, setTipW] = React.useState(160);
 
     // Keyed on content: callers rebuild these arrays every render, and a new
     // identity would replay the bars' entrance on each one.
@@ -181,6 +184,8 @@ export function MultiTrend({
     const isEmpty = days.length === 0 || filled.series.length === 0 || total === 0;
 
     const n = days.length;
+    // The index from the last pointer move can outlive a shorter window.
+    const hover = pointer !== null && pointer < n ? pointer : null;
     const plotW = Math.max(0, w - GUTTER);
     const slot = n > 0 ? plotW / n : 0;
     const plotH = height - TICK_H;
@@ -208,7 +213,9 @@ export function MultiTrend({
         setHover(i >= 0 && i < n ? i : null);
     };
 
-    const flip = hover !== null && cx(hover) > GUTTER + plotW / 2;
+    // Right of the crosshair when the card fits, else left of it, else pinned inside the chart.
+    const tipLeft = (x: number) =>
+        x + 10 + tipW <= w ? x + 10 : x - 10 - tipW >= 0 ? x - 10 - tipW : Math.max(0, w - tipW);
     const volAt = hover !== null && volume ? volume.values[hover] : 0;
 
     return (
@@ -302,11 +309,11 @@ export function MultiTrend({
                                 style={{ left: cx(hover), height: plotH }}
                             />
                             <div
-                                className={cn(
-                                    "pointer-events-none absolute top-1 z-10 min-w-[140px] rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] text-slate-600 shadow-sm",
-                                    flip && "-translate-x-full",
-                                )}
-                                style={{ left: flip ? cx(hover) - 10 : cx(hover) + 10 }}
+                                ref={(el) => {
+                                    if (el && el.offsetWidth !== tipW) setTipW(el.offsetWidth);
+                                }}
+                                className="pointer-events-none absolute top-1 z-10 min-w-[140px] rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] text-slate-600 shadow-sm"
+                                style={{ left: tipLeft(cx(hover)) }}
                             >
                                 <div className="mb-1 whitespace-nowrap font-medium text-slate-900">{longDate(days[hover])}</div>
                                 {volume && <TipRow tone={volume.tone} label={volume.label} value={volAt} />}
