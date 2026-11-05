@@ -10,13 +10,15 @@ import type { WarmupCampaignCopyStep } from "@/lib/api/models/app/warmup/WarmupC
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import { cn } from "@/lib/utils";
+import { campaignStatusBucket, campaignStatusLabel } from "@/components/app/campaigns/status";
 import { CopyPlacementSummary, GroupBreakdown } from "./copyParts";
 
-const STATUS_PILL: Record<string, { label: string; cls: string }> = {
-    active: { label: "Active", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-    paused: { label: "Paused", cls: "bg-amber-50 text-amber-700 border-amber-200" },
-    completed: { label: "Completed", cls: "bg-slate-100 text-slate-600 border-slate-200" },
-    draft: { label: "Draft", cls: "bg-slate-100 text-slate-600 border-slate-200" },
+// Pill colours by status bucket; the words come from the shared campaign status labels.
+const STATUS_PILL_CLASS: Record<ReturnType<typeof campaignStatusBucket>, string> = {
+    active: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    paused: "bg-amber-50 text-amber-700 border-amber-200",
+    completed: "bg-slate-100 text-slate-600 border-slate-200",
+    draft: "bg-slate-100 text-slate-600 border-slate-200",
 };
 
 interface CampaignGroup {
@@ -118,10 +120,9 @@ export default function CampaignCopySection({ days, enabled }: { days: number; e
 }
 
 function StatusPill({ status }: { status: string }) {
-    const s = STATUS_PILL[status] ?? { label: status, cls: "bg-slate-100 text-slate-600 border-slate-200" };
     return (
-        <span className={cn("shrink-0 inline-flex items-center h-5 px-1.5 rounded-md border text-[10.5px] font-medium capitalize", s.cls)}>
-            {s.label}
+        <span className={cn("shrink-0 inline-flex items-center h-5 px-1.5 rounded-md border text-[10.5px] font-medium first-letter:uppercase", STATUS_PILL_CLASS[campaignStatusBucket(status)])}>
+            {campaignStatusLabel(status)}
         </span>
     );
 }

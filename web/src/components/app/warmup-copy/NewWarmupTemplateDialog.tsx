@@ -44,9 +44,9 @@ export default function NewWarmupTemplateDialog({ open, onClose }: { open: boole
         setError(null);
     }, [open]);
 
-    // Memoized so the debounce sees a new value only when the text changes.
+    // Memoized so the debounce sees a new value only when the text changes; a half-written draft is not checked.
     const draft = React.useMemo(
-        () => (open && (subject.trim() || body.trim()) ? { subject, body } : null),
+        () => (open && subject.trim() && body.trim() ? { subject, body } : null),
         [open, subject, body],
     );
     const debounced = useDebouncedValue(draft, 400);
@@ -237,7 +237,7 @@ function AnalysisPanel({ result, loading, error }: { result: WarmupTemplateCheck
             {error ? (
                 <p className="text-[11.5px] text-rose-600">{error}</p>
             ) : !result ? (
-                <p className="text-[11.5px] text-slate-400 leading-relaxed">Start writing and the draft is checked as you go.</p>
+                <p className="text-[11.5px] text-slate-400 leading-relaxed">Write a subject and a body and the draft is checked as you go.</p>
             ) : (
                 <>
                     {result.blocked_reason ? (
