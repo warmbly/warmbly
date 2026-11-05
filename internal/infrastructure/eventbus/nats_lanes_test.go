@@ -354,18 +354,21 @@ func TestNATSBus_KeyedLanesKeepMessagesWaitingForRoomAlive(t *testing.T) {
 	}
 }
 
-// Closing the bus ends a pull waiting for room behind handlers that have not finished.
+// Closing the bus ends a pull waiting for room behind handlers that have not
+// finished, and hands back what is queued instead of starting it.
 func TestNATSBus_CloseDoesNotWaitForLaneRoom(t *testing.T) {
 	bus := newTestNATSBus(t)
 	topic := "w.close"
 	release := make(chan struct{})
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
 	var started atomic.Int32
 	subscribeInBackground(t, t.Context(), bus, topic, "close", 2, payloadKey, func(context.Context, Message) error {
 		started.Add(1)
 		<-release
 		return nil
 	})
-	t.Cleanup(func() { close(release) })
+	t.Cleanup(unblock)
 	waitForConsumer(t, bus, bus.durable("close", []string{topic}))
 	for i := 0; i < 2*natsLaneBuffer+8; i++ {
 		if err := bus.Publish(t.Context(), topic, "k", fmt.Appendf(nil, "%c%02d", 'a'+i%2, i)); err != nil {
@@ -388,5 +391,11 @@ func TestNATSBus_CloseDoesNotWaitForLaneRoom(t *testing.T) {
 	case <-closed:
 	case <-time.After(3 * time.Second):
 		t.Fatal("Close waited for room in the lanes")
+	}
+	before := started.Load()
+	unblock()
+	time.Sleep(500 * time.Millisecond)
+	if after := started.Load(); after != before {
+		t.Fatalf("%d queued deliveries started after Close", after-before)
 	}
 }

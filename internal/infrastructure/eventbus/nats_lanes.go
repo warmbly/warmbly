@@ -48,20 +48,22 @@ func newNATSLanes(lanes int, ackWait time.Duration, deliver func(jetstream.Msg))
 	return p
 }
 
-// natsPull stops a lanes' pull loop, in the shape Consume hands back.
+// natsPull stops a lanes' pull loop, in the shape Consume hands back. Stopping
+// halts the lanes too, so a queued delivery is handed back rather than started.
 type natsPull struct {
 	cancel context.CancelFunc
+	halt   func()
 	closed chan struct{}
 }
 
-func (h *natsPull) Stop()                   { h.cancel() }
-func (h *natsPull) Drain()                  { h.cancel() }
+func (h *natsPull) Stop()                   { h.halt(); h.cancel() }
+func (h *natsPull) Drain()                  { h.Stop() }
 func (h *natsPull) Closed() <-chan struct{} { return h.closed }
 
 // start runs pull until ctx ends or the returned handle is stopped.
 func (p *natsLanes) start(ctx context.Context, cons jetstream.Consumer, key func(jetstream.Msg) (string, error)) jetstream.ConsumeContext {
 	ctx, cancel := context.WithCancel(ctx)
-	h := &natsPull{cancel: cancel, closed: make(chan struct{})}
+	h := &natsPull{cancel: cancel, halt: p.halt, closed: make(chan struct{})}
 	go func() {
 		defer close(h.closed)
 		p.pull(ctx, cons, key)
