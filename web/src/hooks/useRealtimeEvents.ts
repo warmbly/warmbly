@@ -512,11 +512,12 @@ export function useRealtimeEvents() {
           suppression: [['suppressions'], ['contacts'], ['analytics']],
           segment: [['segments'], ['contacts', 'list']],
           form: [['forms']],
-          campaign: [['campaigns'], ['analytics']],
+          // A campaign starting, pausing or being renamed moves the warmup copy list.
+          campaign: [['campaigns'], ['analytics'], ['warmup-copy', 'campaign-copy']],
           // One lead paused or resumed inside one campaign: the Leads list and
           // its scope-chip counts move, and so does the contact drawer.
           campaign_lead: [['contacts'], ['campaigns']],
-          step: [['campaigns']],
+          step: [['campaigns'], ['warmup-copy', 'campaign-copy']],
           // ['emails'] rather than ['emails', 'list']: it prefix-matches the
           // per-mailbox detail reads too (['emails', id, 'behavior'] and its
           // rolled plan), so a teammate retuning a mailbox's sending behaviour
@@ -599,7 +600,8 @@ export function useRealtimeEvents() {
           crm_deal: [['crm', 'deals'], ['contacts']],
           crm_task: [['crm', 'tasks'], ['crm', 'deals']],
           warmup_routing_rule: [['analytics', 'warmup']],
-          warmup_template: [['analytics', 'warmup']],
+          // Templates and the own-copy settings on the warmup copy page.
+          warmup_template: [['analytics', 'warmup'], ['warmup-copy']],
           // Placement tests started or stopped and campaign monitors changed.
           placement_test: [['placement']],
           placement_monitor: [['placement']],

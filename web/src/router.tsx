@@ -70,6 +70,7 @@ export const dashboardPages = {
     placement: () => import("./app/app/placement/page"),
     placementTest: () => import("./app/app/placement/[id]/page"),
     placementBatch: () => import("./app/app/placement/batches/[id]/page"),
+    warmupCopy: () => import("./app/app/warmup-copy/page"),
     pipelines: () => import("./app/app/crm/pipelines/page"),
     deals: () => import("./app/app/crm/deals/page"),
     tasks: () => import("./app/app/crm/tasks/page"),
@@ -317,6 +318,8 @@ const placementIndex = dash(placementRoute, "/", dashboardPages.placement, "Plac
 const placementBatch = dash(placementRoute, "batches/$id", dashboardPages.placementBatch, "Placement batch", loaders.placementBatchLoader);
 const placementTest = dash(placementRoute, "$id", dashboardPages.placementTest, "Placement test", loaders.placementTestLoader);
 
+const warmupCopyRoute = dash(appRoute, "warmup-copy", dashboardPages.warmupCopy, "Warmup copy", loaders.warmupCopyLoader);
+
 const crmRoute = createRoute({ getParentRoute: () => appRoute, path: "crm" });
 const crmIndex = forward(crmRoute, "/", "/app/crm/pipelines");
 const pipelinesRoute = dash(crmRoute, "pipelines", dashboardPages.pipelines, "Pipelines", loaders.pipelinesLoader);
@@ -432,6 +435,7 @@ const routeTree = rootRoute.addChildren([
         analyticsRoute,
         deliverabilityRoute,
         placementRoute.addChildren([placementIndex, placementBatch, placementTest]),
+        warmupCopyRoute,
         crmRoute.addChildren([crmIndex, pipelinesRoute, dealsRoute, tasksRoute, meetingsRoute]),
         templatesRoute,
         apiKeysRoute,
