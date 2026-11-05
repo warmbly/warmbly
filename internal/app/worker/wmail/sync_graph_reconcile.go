@@ -265,6 +265,8 @@ func (w *WMail) graphReconcileMessage(ctx context.Context, internalID, providerI
 	if err != nil {
 		return err
 	}
+	// Whatever is relayed below replaces what the relay cache remembers.
+	w.relayCache.forget(providerID)
 	if full == nil {
 		return w.onEvent(models.JobEventTypeRemoveEmail, &models.JobEventRemoveEmail{UserID: w.UserID, EmailID: w.ID, ID: id})
 	}
@@ -277,7 +279,13 @@ func (w *WMail) graphReconcileMessage(ctx context.Context, internalID, providerI
 			return err
 		}
 	}
-	return w.onGraphFlagsChange(ctx, providerID, full.IsRead)
+	if err := w.onGraphFlagsChange(ctx, providerID, full.IsRead); err != nil {
+		return err
+	}
+	if fallback != "" && folder == (&msgraph.GraphMessage{}).ToEmailData(fallback).Folder {
+		w.relayCache.put(providerID, relayState{seen: full.IsRead, folder: fallback})
+	}
+	return nil
 }
 
 func (w *WMail) graphReconcileFolder(ctx context.Context, folder string) (bool, error) {
