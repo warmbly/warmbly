@@ -57,7 +57,12 @@ type AttachmentInventoryItem struct {
 }
 
 // InventoryAttachments reads archive bytes without a database, storage client or importer.
-func InventoryAttachments(ctx context.Context, archive ReaderAtSizer, opts AttachmentInventoryOptions) (*AttachmentInventory, error) {
+func InventoryAttachments(ctx context.Context, archive ReaderAtSizer, opts AttachmentInventoryOptions) (result *AttachmentInventory, resultErr error) {
+	defer func() {
+		if err := ctx.Err(); err != nil {
+			result, resultErr = nil, err
+		}
+	}()
 	if opts.After < 0 || opts.Limit < 1 || opts.Limit > 100 {
 		return nil, errors.New("after must be nonnegative and limit must be between 1 and 100")
 	}

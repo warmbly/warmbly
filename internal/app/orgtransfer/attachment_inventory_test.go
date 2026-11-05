@@ -12,6 +12,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -382,7 +383,7 @@ type inventoryCancelArchive struct {
 }
 
 func (a *inventoryCancelArchive) ReadAt(p []byte, off int64) (int, error) {
-	if !a.started && off == a.target && len(p) == a.requestSize {
+	if !a.started && off == a.target && (a.requestSize == 0 || len(p) == a.requestSize) {
 		a.started = true
 		a.cancel()
 	} else if a.started {
@@ -428,5 +429,39 @@ func TestAttachmentInventoryCancelsArchiveSourceReads(t *testing.T) {
 				t.Fatalf("archive must stop source reads after cancellation, got %d further reads", a.readsAfterCancel)
 			}
 		})
+	}
+}
+
+func TestAttachmentInventoryPreservesManifestInterruption(t *testing.T) {
+	source := inventoryFixture(t, nil)
+	b, offset := rewriteInventoryMember(t, source, manifestPath, func(_ *zip.FileHeader, body []byte) []byte { return body })
+	for _, stage := range []string{"header", "body"} {
+		for _, cause := range []string{"canceled", "deadline"} {
+			t.Run(stage+"/"+cause, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(t.Context())
+				interrupt := cancel
+				want := context.Canceled
+				if cause == "deadline" {
+					cancel()
+					ctx, cancel = context.WithTimeout(t.Context(), time.Second)
+					interrupt = func() { <-ctx.Done() }
+					want = context.DeadlineExceeded
+				}
+				defer cancel()
+				target, request := offset, 0
+				if stage == "header" {
+					target -= int64(30 + len(manifestPath))
+					request = 30
+				}
+				a := &inventoryCancelArchive{Reader: bytes.NewReader(b), target: target, requestSize: request, cancel: interrupt}
+				report, err := InventoryAttachments(ctx, a, AttachmentInventoryOptions{Limit: 1})
+				if !a.started || report != nil || !errors.Is(err, want) {
+					t.Fatalf("manifest interruption: triggered=%v report=%v error=%v, want %v", a.started, report, err, want)
+				}
+				if a.readsAfterCancel != 0 {
+					t.Fatalf("archive read after manifest interruption: %d", a.readsAfterCancel)
+				}
+			})
+		}
 	}
 }
