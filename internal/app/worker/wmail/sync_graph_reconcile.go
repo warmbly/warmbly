@@ -282,7 +282,7 @@ func (w *WMail) graphReconcileMessage(ctx context.Context, internalID, providerI
 	if err := w.onGraphFlagsChange(ctx, providerID, full.IsRead); err != nil {
 		return err
 	}
-	if fallback != "" {
+	if fallback != "" && folder == (&msgraph.GraphMessage{}).ToEmailData(fallback).Folder {
 		w.relayCache.put(providerID, relayState{seen: full.IsRead, folder: fallback})
 	}
 	return nil

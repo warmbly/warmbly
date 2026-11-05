@@ -184,6 +184,8 @@ func (w *WMail) relayKnownGraphMessage(ctx context.Context, known *repository.Em
 	if w.GraphData.Client.ImmutableIDMode() {
 		return w.graphReconcileMessage(ctx, known.ID, providerID, folder)
 	}
+	// Cleared first, so a relay that fails halfway is relayed in full next time.
+	w.relayCache.forget(providerID)
 	if err := w.emitGraphFlagsChange(known, seen); err != nil {
 		return err
 	}
