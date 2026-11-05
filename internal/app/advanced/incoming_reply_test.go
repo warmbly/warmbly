@@ -194,6 +194,7 @@ type incomingReplyProgressRepo struct {
 	replied       int
 	classified    int
 	class         string
+	intent        string
 	claims        int
 	completed     int
 	latest        *repository.CampaignSequencePair
@@ -234,7 +235,8 @@ func (r *incomingReplyProgressRepo) GetLatestReplyClass(context.Context, uuid.UU
 	return "", nil
 }
 
-func (r *incomingReplyProgressRepo) RecordReplyIntent(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, string) error {
+func (r *incomingReplyProgressRepo) RecordReplyIntent(_ context.Context, _, _, _ uuid.UUID, intent string) error {
+	r.intent = intent
 	return nil
 }
 

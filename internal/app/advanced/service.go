@@ -1176,6 +1176,28 @@ func automatedIntent(r replyclassify.Result) (models.ReplyIntentType, float64) {
 	return models.ReplyIntentAutomated, r.Confidence
 }
 
+// verdictIntent maps a reply classifier verdict onto the recorded intent
+// vocabulary. ok is false when no layer decided. A model verdict too unsure
+// to name a class is neutral, matching the Needs review the inbox shows.
+func verdictIntent(r replyclassify.Result) (models.ReplyIntentType, float64, bool) {
+	switch r.Class {
+	case replyclassify.ClassPositive:
+		return models.ReplyIntentPositive, r.Confidence, true
+	case replyclassify.ClassNegative, replyclassify.ClassUnsubscribe:
+		return models.ReplyIntentNegative, r.Confidence, true
+	case replyclassify.ClassNeutral:
+		return models.ReplyIntentNeutral, r.Confidence, true
+	case replyclassify.ClassOutOfOffice, replyclassify.ClassAutoReply:
+		intent, conf := automatedIntent(r)
+		return intent, conf, true
+	case replyclassify.ClassUnknown:
+		if r.Source == replyclassify.SourceModel {
+			return models.ReplyIntentNeutral, r.Confidence, true
+		}
+	}
+	return "", 0, false
+}
+
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {
 		if strings.TrimSpace(v) != "" {
@@ -1527,9 +1549,10 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 		replyResult := verdict
 		if replyResult.Class == "" {
 			replyResult = replyclassify.ClassifyGated(ctx, replyclassify.Input{
-				Headers:  buildReplyHeaders(msg),
-				Subject:  msg.Subject,
-				BodyText: msg.Snippet,
+				Headers: buildReplyHeaders(msg),
+				Subject: msg.Subject,
+				// The whole reply, so an opt-out past the preview is read.
+				BodyText: firstNonEmpty(msg.BodyText, msg.Snippet),
 				// The typed layer answers from the tagger's stored verdict for
 				// this message, so a reply is judged once.
 				OrganizationID: *account.OrganizationID,
@@ -1547,7 +1570,7 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 		// The tagging verdict for this message was stored before this hook ran;
 		// copy a confident human-reply intent so reply_intent branches can route on
 		// it, ahead of the instant matcher below.
-		s.recordReplyIntent(ctx, *account.OrganizationID, msg.MessageID, cID, ctID, sID)
+		s.recordReplyIntent(ctx, *account.OrganizationID, msg.MessageID, replyResult.Class, cID, ctID, sID)
 
 		// OOO trap fix: only a HUMAN reply stamps replied_at. An auto_reply /
 		// out_of_office must NOT count as a reply, or it would (a) trip
@@ -1653,11 +1676,13 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 	// address. The header and lexicon layers are free, so answer "is this a
 	// human" for every inbound message; only the model layer is worth gating.
 	if verdict.Class == "" {
-		verdict = replyclassify.ClassifyOffline(replyclassify.Input{
-			Headers:   buildReplyHeaders(msg),
-			Subject:   msg.Subject,
-			BodyText:  firstNonEmpty(msg.BodyText, msg.Snippet),
-			Languages: settings.InboxTagging.Languages,
+		verdict = replyclassify.ClassifyKnown(ctx, replyclassify.Input{
+			Headers:        buildReplyHeaders(msg),
+			Subject:        msg.Subject,
+			BodyText:       firstNonEmpty(msg.BodyText, msg.Snippet),
+			OrganizationID: *account.OrganizationID,
+			MessageID:      msg.MessageID,
+			Languages:      settings.InboxTagging.Languages,
 		})
 	}
 	if replyClaimToken == uuid.Nil && !replyClaimCompleted {
@@ -1671,13 +1696,12 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 		replyClaimToken = claimToken
 	}
 
-	intent, confidence := classifyReply(text, settings.ReplyIntent)
-	// The layered classifier reads auto-reply headers and a multilingual
-	// out-of-office vocabulary the workspace's own keyword list does not, so
-	// its verdict settles the case the keywords missed. Only the automated
-	// classes are folded in: sentiment stays the keyword list's call.
-	if replyclassify.IsAutomated(verdict.Class) {
-		intent, confidence = automatedIntent(verdict)
+	// The recorded intent is the classifier's verdict, so a webhook, the
+	// timeline and a CRM task agree with the campaign's reply counts; the
+	// workspace's keyword lists decide only a reply nothing else decided.
+	intent, confidence, decided := verdictIntent(verdict)
+	if !decided {
+		intent, confidence = classifyReply(text, settings.ReplyIntent)
 	}
 	if !replyClaimCompleted {
 		if err := s.campaignProgressRepo.CompleteIncomingReply(ctx, emailAccountID, msg.ID, replyClaimToken); err != nil {

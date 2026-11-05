@@ -360,7 +360,7 @@ There is no `version` field in the payload. If an event's payload ever changes i
 
 ### Reply received payload
 
-`campaign.reply_received` carries `contact_email`, `intent` and `confidence` (the workspace keyword list's reading), `subject`, `snippet`, `action_taken`, `thread_id` and `email_account_id`. `contact_id` and `campaign_id` are optional, included only when the reply is linked to the corresponding contact or campaign. When [inbox tagging](/guides/inbox-tagging/) judged the message it also carries the stored verdict:
+`campaign.reply_received` carries `contact_email`, `intent` and `confidence` (the reply classifier's verdict, the same one the campaign's reply counts show; the workspace keyword lists decide only a reply the classifier could not), `subject`, `snippet`, `action_taken`, `thread_id` and `email_account_id`. `contact_id` and `campaign_id` are optional, included only when the reply is linked to the corresponding contact or campaign. When [inbox tagging](/guides/inbox-tagging/) judged the message it also carries the stored verdict:
 
 ```json
 {
