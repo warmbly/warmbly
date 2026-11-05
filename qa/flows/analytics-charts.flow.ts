@@ -27,6 +27,8 @@ test("daily charts keep every day of the window, with sends in their own strip",
   await page.goto("/app/analytics");
   await expect(page.getByText("Email performance")).toBeVisible();
   await page.getByRole("button", { name: "30d", exact: true }).click();
+  // The previous range stays on screen, marked "Updating", until the 30-day data arrives.
+  await expect(page.getByLabel("Updating")).toBeHidden();
   await expect(page.getByText("Sent per day").first()).toBeVisible();
   await proof.chapter("Workspace analytics", "The same chart over the last 30 days");
   await proof.dwell();
