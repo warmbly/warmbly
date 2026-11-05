@@ -22,10 +22,20 @@ func ReplyDeficit(target, sent, replied int) float64 {
 	return float64(min(target, 100))/100*float64(sent+1) - float64(replied)
 }
 
-// ReplyDue reports whether the next send should be a reply. roll is uniform in
-// [0,1), so a fractional deficit is a chance and a whole one is certain.
-func ReplyDue(deficit, roll float64) bool {
-	return deficit >= 1 || (deficit > 0 && roll < deficit)
+// ReplyChance is the chance the next plain send answers owed mail: the target
+// corrected by the window's drift, held within half the target either side so a
+// shortfall is repaid over days instead of in one burst of replies, and a
+// surplus slows replies without stopping conversations.
+func ReplyChance(target, sent, replied int) float64 {
+	if target <= 0 {
+		return 0
+	}
+	t := float64(min(target, 100)) / 100
+	if sent <= 0 {
+		return t
+	}
+	share := float64(replied) / float64(sent)
+	return min(max(2*t-share, t/2), 1.5*t, 1)
 }
 
 // RecoverySignals are the reads that decide whether a sender gets recovery

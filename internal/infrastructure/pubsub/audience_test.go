@@ -175,3 +175,28 @@ func TestPersonalAndWorkspaceNotificationAudience(t *testing.T) {
 		t.Fatalf("personal events must survive without resolver: %+v", bus.events)
 	}
 }
+
+// Warmup events reach the mailbox's whole organization, never one checked against another.
+func TestWarmupEventsReachTheOrganization(t *testing.T) {
+	org, user, mailbox := uuid.New(), uuid.New(), uuid.New()
+	for _, owner := range []uuid.UUID{org, uuid.New()} {
+		bus := &audienceBus{}
+		p := NewStreamingPublisher(bus, &audienceStub{org: owner, allowed: true})
+		p.PublishWarmupActivity(context.Background(), org.String(), user.String(), mailbox.String(), "a@example.test")
+		p.PublishWarmupPlacement(context.Background(), org.String(), user.String(), mailbox.String(), "a@example.test", "inbox")
+		if owner != org {
+			if len(bus.events) != 0 {
+				t.Fatal("a warmup event was published for a mailbox outside its organization")
+			}
+			continue
+		}
+		if len(bus.events) != 2 {
+			t.Fatalf("published %d warmup events, want 2", len(bus.events))
+		}
+		for i, e := range bus.events {
+			if e["org_id"] != org.String() || bus.attrs[i]["org_id"] != org.String() {
+				t.Fatalf("warmup event narrowed to its owner: event=%+v attrs=%+v", e, bus.attrs[i])
+			}
+		}
+	}
+}

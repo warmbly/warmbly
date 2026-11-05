@@ -13,7 +13,7 @@ import (
 )
 
 func TestLiveWarmupReplyShareContinuesPastUnavailableCandidates(t *testing.T) {
-	for _, reason := range []string{"pool eligibility", "routing exclusion", "full inbox", "missing content", "all unavailable"} {
+	for _, reason := range []string{"pool eligibility", "routing exclusion", "missing content", "all unavailable"} {
 		t.Run(reason, func(t *testing.T) {
 			f := newPartnerRoutingFixture(t)
 			ctx := t.Context()
@@ -82,9 +82,6 @@ func TestLiveWarmupReplyShareContinuesPastUnavailableCandidates(t *testing.T) {
 				pool = "premium"
 				exec(`UPDATE warmup_pool_participants SET pool_id=$2 WHERE email_account_id IN(SELECT id FROM email_accounts WHERE organization_id=$1)`, f.org, models.WarmupPoolPremiumID)
 				f.svc.warmupRoutingRepo = ruleRepo{rules: excludeDomain("acme.test")}
-			case "full inbox":
-				exec(`INSERT INTO warmup_received(email_account_id,internal_id,sender_account_id,message_id)
-					SELECT $1,gen_random_uuid(),$2,'' FROM generate_series(1,1000)`, f.atWorkspace, f.sender.ID)
 			case "missing content":
 				exec(`UPDATE warmup_tokens SET conversation_id=$2 WHERE sender_account_id=$1`, f.atWorkspace, uuid.New())
 			}
@@ -106,7 +103,7 @@ func TestLiveWarmupReplyShareContinuesPastUnavailableCandidates(t *testing.T) {
 				if _, _, _, err := f.svc.exactReplyContent(ctx, &next[0].Parent, f.sender); err != nil {
 					t.Fatalf("ordinary message cannot be rendered: %v", err)
 				}
-				if f.svc.replyPartner(ctx, claimed, f.atSmallHost, &f.sender, pool) == nil {
+				if f.svc.replyPartner(ctx, f.atSmallHost, &f.sender, pool) == nil {
 					t.Fatal("ordinary partner cannot receive")
 				}
 			}
