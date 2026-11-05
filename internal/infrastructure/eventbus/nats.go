@@ -346,30 +346,13 @@ func (b *NATSBus) SubscribeKeyed(ctx context.Context, topics []string, group str
 	}
 
 	var pool *natsLanes
-	callback := deliver
-	var opts []jetstream.PullConsumeOpt
+	var cc jetstream.ConsumeContext
 	if lanes > 1 {
 		pool = newNATSLanes(lanes, ackWait, deliver)
-		callback = func(m jetstream.Msg) {
-			laneKey, err := resolveKey(ctx, key, b.envelope(m))
-			if err != nil {
-				log.Error().Err(err).Str("subject", m.Subject()).Msg("eventbus nats key resolution failed")
-				if nakErr := m.NakWithDelay(time.Second); nakErr != nil {
-					log.Warn().Err(nakErr).Msg("eventbus nats nak failed")
-				}
-				return
-			}
-			pool.dispatch(m, laneKey)
-		}
-		// Fetch again only after dispatch tracks this delivery, even when a lane is full.
-		opts = append(opts, jetstream.PullMaxMessages(1))
-	}
-
-	cc, err := cons.Consume(callback, opts...)
-	if err != nil {
-		if pool != nil {
-			pool.stop()
-		}
+		cc = pool.start(ctx, cons, func(m jetstream.Msg) (string, error) {
+			return resolveKey(ctx, key, b.envelope(m))
+		})
+	} else if cc, err = cons.Consume(deliver); err != nil {
 		return fmt.Errorf("eventbus nats: consume: %w", err)
 	}
 

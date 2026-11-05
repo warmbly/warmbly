@@ -553,6 +553,7 @@ func main() {
 
 	jobsService := &jobs.JobsService{
 		CampaignIsolationEnabled:    config.CampaignSendIsolationEnabled(),
+		DBConns:                     primaryDB.Pool.Config().MaxConns,
 		Bus:                         consumerBus,
 		Codec:                       consumerCodec,
 		UniboxRepository:            uniboxRepo,
