@@ -4,7 +4,7 @@ DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM public.warmup_conversations WHERE source = 'template')
        OR EXISTS (SELECT 1 FROM public.warmup_template_settings) THEN
-        RAISE EXCEPTION 'warmup template rows or settings exist; delete them (archived templates included) before rolling back 000341';
+        RAISE EXCEPTION 'warmup template rows or settings exist; delete them (archived templates included) before rolling back 000355';
     END IF;
 END $$;
 
