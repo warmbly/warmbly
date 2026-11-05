@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/warmbly/warmbly/internal/app/integration"
+	"github.com/warmbly/warmbly/internal/app/replyclassify"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -273,28 +274,37 @@ func TestInboxWants(t *testing.T) {
 		Subject:   "Re: quick question",
 		BodyText:  "Sounds good, let's talk Tuesday.",
 	}
-	if !inboxWants(models.SlackInboxScopeReplies, acct, reply) {
+	if !inboxWants(models.SlackInboxScopeReplies, acct, reply, offline(reply)) {
 		t.Fatal("a human reply must be mirrored")
 	}
 	own := *reply
 	own.FromAddr = []string{"Me <ME@ours.com>"}
-	if inboxWants(models.SlackInboxScopeAll, acct, &own) {
+	if inboxWants(models.SlackInboxScopeAll, acct, &own, offline(&own)) {
 		t.Fatal("the mailbox's own mail must never be mirrored")
 	}
 	fresh := *reply
 	fresh.InReplyTo = nil
-	if inboxWants(models.SlackInboxScopeReplies, acct, &fresh) {
+	if inboxWants(models.SlackInboxScopeReplies, acct, &fresh, offline(&fresh)) {
 		t.Fatal("a message that answers nothing is not a reply")
 	}
-	if !inboxWants(models.SlackInboxScopeAll, acct, &fresh) {
+	if !inboxWants(models.SlackInboxScopeAll, acct, &fresh, offline(&fresh)) {
 		t.Fatal("scope all mirrors every inbound message")
 	}
 	ooo := *reply
 	ooo.Flags = []string{"Auto-Submitted:auto-replied"}
 	ooo.Subject = "Out of office"
-	if inboxWants(models.SlackInboxScopeReplies, acct, &ooo) {
+	if inboxWants(models.SlackInboxScopeReplies, acct, &ooo, offline(&ooo)) {
 		t.Fatal("an auto-reply must not be mirrored as a reply")
 	}
+	// The tagger's stored verdict decides over the offline layers.
+	filed := replyclassify.Result{Class: replyclassify.ClassAutoReply, Source: replyclassify.SourceModel}
+	if inboxWants(models.SlackInboxScopeReplies, acct, reply, filed) {
+		t.Fatal("a reply the inbox filed as automated must not be mirrored as a reply")
+	}
+}
+
+func offline(m *models.EmailMessageStoreData) replyclassify.Result {
+	return replyclassify.ClassifyOffline(classifyInput(m))
 }
 
 func TestWithStateLine(t *testing.T) {
@@ -536,5 +546,59 @@ func TestPromptLinkInChannelUsesDM(t *testing.T) {
 	}
 	if _, ok := (*bodies)[2]["thread_ts"]; ok {
 		t.Error("the channel note names a thread that does not exist yet")
+	}
+}
+
+// The inbox card reads a reply the way the campaign does: an opt-out first,
+// then the tagger's stored verdict, never a keyword guess over it.
+func TestInboxCardReadsTheCampaignVerdict(t *testing.T) {
+	org := uuid.New()
+	acct := &models.Email{Email: "mailbox" + "@" + "warmbly.test"}
+	var stored replyclassify.Result
+	replyclassify.SetTypedClassifier(func(_ context.Context, in replyclassify.Input, _ func() bool) (replyclassify.Result, bool) {
+		if in.OrganizationID != org || in.MessageID != "<reply-1@prospect.test>" {
+			return replyclassify.Result{}, false
+		}
+		return stored, true
+	})
+	t.Cleanup(func() { replyclassify.SetTypedClassifier(nil) })
+
+	reply := func(body string) *models.EmailMessageStoreData {
+		return &models.EmailMessageStoreData{
+			MessageID: "<reply-1@prospect.test>",
+			FromAddr:  []string{"Lead <lead" + "@" + "prospect.test>"},
+			InReplyTo: []string{"<step-1@warmbly.test>"},
+			Subject:   "Re: quick question",
+			BodyText:  body,
+		}
+	}
+	p := &InboxPoster{}
+	for _, tc := range []struct {
+		name    string
+		stored  replyclassify.Result
+		body    string
+		tag     string
+		mirrors bool
+	}{
+		{"pricing the keywords read as negative", replyclassify.Result{Class: replyclassify.ClassPositive, Source: replyclassify.SourceModel},
+			"How much is it? Not looking to spend a lot, send details.", "Positive", true},
+		{"an opt-out wins over the stored verdict", replyclassify.Result{Class: replyclassify.ClassNegative, Source: replyclassify.SourceModel},
+			"Not interested. Please remove me from your list.", "Unsubscribe", true},
+		{"unsure verdict carries no keyword tag", replyclassify.Result{Class: replyclassify.ClassUnknown, Source: replyclassify.SourceModel},
+			"No need for a long deck, just the numbers.", "", true},
+		{"filed as automated is not a reply", replyclassify.Result{Class: replyclassify.ClassAutoReply, Source: replyclassify.SourceModel},
+			"Thanks for reaching out, we will get back to you.", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stored = tc.stored
+			msg := reply(tc.body)
+			verdict := replyVerdict(context.Background(), org, msg)
+			if got := inboxWants(models.SlackInboxScopeReplies, acct, msg, verdict); got != tc.mirrors {
+				t.Fatalf("mirrored = %v, want %v (verdict %s)", got, tc.mirrors, verdict.Class)
+			}
+			if got := p.describe(context.Background(), org, acct, msg, verdict).Intent; got != tc.tag {
+				t.Fatalf("card tag = %q, want %q", got, tc.tag)
+			}
+		})
 	}
 }
