@@ -9,12 +9,18 @@ import (
 
 // Content sources for warmup message bodies. "static" is the in-code library;
 // "ai" is a thread drawn from the offline-generated warmup_conversations bank;
-// "template" is an organization-supplied subject + opening sent verbatim.
+// "template" is an organization-supplied subject + opening; "campaign" is the
+// opening step of one of the sender's running campaigns, rendered as it sends.
 const (
 	WarmupContentSourceStatic   = "static"
 	WarmupContentSourceAI       = "ai"
 	WarmupContentSourceTemplate = "template"
+	WarmupContentSourceCampaign = "campaign"
 )
+
+// WarmupOwnCopyMinDays is how long a mailbox warms on ordinary conversations
+// before any of its workspace's own copy goes through it.
+const WarmupOwnCopyMinDays = 7
 
 // AdminSettingsKeyWarmupGeneration is the admin_settings key under which the
 // warmup generation + engagement config document is stored.
@@ -47,18 +53,58 @@ type WarmupConversation struct {
 }
 
 // WarmupTemplateSettings is how much of one organization's warmup carries its
-// own templates. TemplateShare is the percentage of new openings drawn from
-// the organization's templates when at least one is eligible; TemplatesOnly
-// sends nothing else, and an opening with no eligible template is skipped.
+// own copy: its templates and, with CampaignCopy, the opening steps of the
+// campaigns each sender is running. TemplateShare is the percentage of new
+// openings drawn from that copy when some is eligible; TemplatesOnly sends
+// nothing else, and an opening with no eligible copy is skipped.
 type WarmupTemplateSettings struct {
 	TemplateShare int  `json:"template_share"`
 	TemplatesOnly bool `json:"templates_only"`
+	CampaignCopy  bool `json:"campaign_copy"`
 }
 
 // DefaultWarmupTemplateSettings mirrors the mix the warmup pool applies when
-// an organization has templates but never changed the setting.
+// an organization never changed the setting.
 func DefaultWarmupTemplateSettings() WarmupTemplateSettings {
-	return WarmupTemplateSettings{TemplateShare: 50}
+	return WarmupTemplateSettings{TemplateShare: 25, CampaignCopy: true}
+}
+
+// WarmupCampaignCopyCandidate is one arm of an opening campaign step that a
+// sender's warmup may carry: the step's own copy (VariantID nil) or one of
+// its active A/B variants, as written, before rendering.
+type WarmupCampaignCopyCandidate struct {
+	CampaignID uuid.UUID
+	SequenceID uuid.UUID
+	VariantID  *uuid.UUID
+	Subject    string
+	BodyHTML   string
+	BodyPlain  string
+	// LastSent is when this sender last carried this arm in warmup.
+	LastSent *time.Time
+}
+
+// WarmupCampaignCopyStep is one arm of an opening step of the workspace's
+// campaigns as the copy endpoint reports it: what it is, whether warmup can
+// carry it, and where its warmup sends landed.
+type WarmupCampaignCopyStep struct {
+	CampaignID     uuid.UUID  `json:"campaign_id"`
+	CampaignName   string     `json:"campaign_name"`
+	CampaignStatus string     `json:"campaign_status"`
+	SequenceID     uuid.UUID  `json:"sequence_id"`
+	StepName       string     `json:"step_name"`
+	Position       int        `json:"position"`
+	VariantID      *uuid.UUID `json:"variant_id"`
+	VariantName    string     `json:"variant_name"`
+	Subject        string     `json:"subject"`
+	// Eligible is false when warmup cannot carry this copy faithfully;
+	// IneligibleReason says why in a sentence.
+	Eligible         bool   `json:"eligible"`
+	IneligibleReason string `json:"ineligible_reason,omitempty"`
+	// Placement counts recipients at Google, Microsoft and Yahoo only; ByGroup has every group.
+	Placement WarmupTemplatePlacement        `json:"placement"`
+	ByGroup   []WarmupTemplateGroupPlacement `json:"by_group"`
+	BodyHTML  string                         `json:"-"`
+	BodyPlain string                         `json:"-"`
 }
 
 // WarmupTemplatePlacement counts where one template's sends landed, as the
@@ -277,4 +323,22 @@ func (s *WarmupGenerationSettings) PoolConfig(poolType string) (WarmupGeneration
 		}
 	}
 	return WarmupGenerationPoolConfig{}, false
+}
+
+// MajorProviderPlacement totals the google, microsoft and yahoo groups. Those
+// filter on sender reputation; a small host's spam folder is its own filter's
+// verdict, so it never counts toward a copy's headline.
+func MajorProviderPlacement(groups []WarmupTemplateGroupPlacement) WarmupTemplatePlacement {
+	var t WarmupTemplatePlacement
+	for _, g := range groups {
+		if g.Group == "other" {
+			continue
+		}
+		t.Sent += g.Sent
+		t.Inbox += g.Inbox
+		t.Tabs += g.Tabs
+		t.Spam += g.Spam
+		t.Rescued += g.Rescued
+	}
+	return t
 }

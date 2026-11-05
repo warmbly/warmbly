@@ -18,6 +18,7 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/warmlint"
 	"github.com/warmbly/warmbly/internal/pkg/warmupcheck"
 	"github.com/warmbly/warmbly/internal/repository"
+	"github.com/warmbly/warmbly/internal/tasks"
 )
 
 // Bounds for an organization-supplied warmup template. Templates go into the
@@ -266,19 +267,11 @@ func (h *Handler) GetWarmupTemplateStats(c *gin.Context) {
 		errx.JSON(c, errx.New(errx.Internal, err.Error()))
 		return
 	}
-	var total models.WarmupTemplatePlacement
-	for _, g := range groups {
-		total.Sent += g.Sent
-		total.Inbox += g.Inbox
-		total.Tabs += g.Tabs
-		total.Spam += g.Spam
-		total.Rescued += g.Rescued
-	}
-	c.JSON(http.StatusOK, gin.H{"template_id": templateID, "days": days, "total": total, "groups": groups})
+	c.JSON(http.StatusOK, gin.H{"template_id": templateID, "days": days, "total": models.MajorProviderPlacement(groups), "groups": groups})
 }
 
 // GetWarmupTemplateSettings returns how much of the organization's warmup
-// carries its own templates.
+// carries its own copy.
 func (h *Handler) GetWarmupTemplateSettings(c *gin.Context) {
 	orgID, ok := requireOrgID(c)
 	if !ok {
@@ -292,8 +285,8 @@ func (h *Handler) GetWarmupTemplateSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, settings)
 }
 
-// UpdateWarmupTemplateSettings sets the template share (0 to 100) and the
-// templates-only switch for the organization.
+// UpdateWarmupTemplateSettings replaces the organization's own-copy mix: the
+// share (0 to 100), the own-copy-only switch and campaign copy.
 func (h *Handler) UpdateWarmupTemplateSettings(c *gin.Context) {
 	orgID, ok := requireOrgID(c)
 	if !ok {
@@ -302,16 +295,17 @@ func (h *Handler) UpdateWarmupTemplateSettings(c *gin.Context) {
 	var payload struct {
 		TemplateShare *int  `json:"template_share"`
 		TemplatesOnly *bool `json:"templates_only"`
+		CampaignCopy  *bool `json:"campaign_copy"`
 	}
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		errx.JSON(c, errx.InvalidBody(err))
 		return
 	}
-	if payload.TemplateShare == nil || payload.TemplatesOnly == nil {
-		errx.JSON(c, errx.New(errx.BadRequest, "template_share and templates_only are required"))
+	if payload.TemplateShare == nil || payload.TemplatesOnly == nil || payload.CampaignCopy == nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "template_share, templates_only and campaign_copy are required"))
 		return
 	}
-	settings := models.WarmupTemplateSettings{TemplateShare: *payload.TemplateShare, TemplatesOnly: *payload.TemplatesOnly}
+	settings := models.WarmupTemplateSettings{TemplateShare: *payload.TemplateShare, TemplatesOnly: *payload.TemplatesOnly, CampaignCopy: *payload.CampaignCopy}
 	if settings.TemplateShare < 0 || settings.TemplateShare > 100 {
 		errx.JSON(c, errx.New(errx.BadRequest, "template_share must be between 0 and 100"))
 		return
@@ -323,6 +317,7 @@ func (h *Handler) UpdateWarmupTemplateSettings(c *gin.Context) {
 	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityWarmupTemplate, nil, nil, map[string]string{
 		"template_share": strconv.Itoa(settings.TemplateShare),
 		"templates_only": strconv.FormatBool(settings.TemplatesOnly),
+		"campaign_copy":  strconv.FormatBool(settings.CampaignCopy),
 	})
 	c.JSON(http.StatusOK, settings)
 }
@@ -359,14 +354,42 @@ func (h *Handler) CheckWarmupTemplate(c *gin.Context) {
 	if _, ok := requireOrgID(c); !ok {
 		return
 	}
-	var payload warmupTemplatePayload
+	var payload struct {
+		Subject *string `json:"subject" binding:"required"`
+		Body    *string `json:"body" binding:"required"`
+	}
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		errx.JSON(c, errx.InvalidBody(err))
 		return
 	}
-	if utf8.RuneCountInString(payload.Subject) > warmupTemplateMaxSubject || len(payload.Body) > warmupTemplateMaxBody {
+	if utf8.RuneCountInString(*payload.Subject) > warmupTemplateMaxSubject || len(*payload.Body) > warmupTemplateMaxBody {
 		errx.JSON(c, errx.New(errx.BadRequest, "subject exceeds 200 characters or body exceeds 50 KB"))
 		return
 	}
-	c.JSON(http.StatusOK, warmupcheck.Check(payload.Subject, payload.Body))
+	c.JSON(http.StatusOK, warmupcheck.Check(*payload.Subject, *payload.Body))
+}
+
+// ListWarmupCampaignCopy reports the opening steps (and A/B arms) of the
+// organization's campaigns that warmup carries while they run: whether each
+// can be carried as the campaign sends it, and where its warmup sends landed
+// over the trailing window (days, default 30).
+func (h *Handler) ListWarmupCampaignCopy(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	since, days, ok := templateStatsSince(c)
+	if !ok {
+		return
+	}
+	steps, err := h.WarmupContentRepo.CampaignCopySteps(c.Request.Context(), orgID, since)
+	if err != nil {
+		errx.JSON(c, errx.New(errx.Internal, err.Error()))
+		return
+	}
+	for i := range steps {
+		steps[i].IneligibleReason = tasks.CampaignCopyIneligible(steps[i].Subject, steps[i].BodyHTML, steps[i].BodyPlain)
+		steps[i].Eligible = steps[i].IneligibleReason == ""
+	}
+	c.JSON(http.StatusOK, gin.H{"data": steps, "days": days})
 }

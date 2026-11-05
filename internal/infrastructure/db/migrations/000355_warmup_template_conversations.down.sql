@@ -1,5 +1,6 @@
 -- Rolling back with workspace templates on file would discard customer data;
 -- refuse and leave the operator to roll forward instead.
+LOCK TABLE public.warmup_template_settings IN ACCESS EXCLUSIVE MODE;
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM public.warmup_conversations WHERE source = 'template')
@@ -8,12 +9,14 @@ BEGIN
     END IF;
 END $$;
 
+ALTER TABLE public.warmup_tokens
+    DROP COLUMN IF EXISTS variant_id,
+    DROP COLUMN IF EXISTS sequence_id;
+
 DROP TABLE IF EXISTS public.warmup_template_settings;
 
 ALTER TABLE ONLY public.warmup_conversations
     DROP CONSTRAINT warmup_conversations_template_owner_check;
-
-DROP INDEX public.idx_warmup_conversations_org;
 
 ALTER TABLE ONLY public.warmup_conversations
     DROP CONSTRAINT warmup_conversations_source_check;

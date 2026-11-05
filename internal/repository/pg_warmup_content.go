@@ -86,6 +86,10 @@ type WarmupContentRepository interface {
 	TemplatePlacement(ctx context.Context, orgID uuid.UUID, since time.Time) (map[uuid.UUID]models.WarmupTemplatePlacement, error)
 	// TemplatePlacementByGroup is one template's landing split by recipient provider group.
 	TemplatePlacementByGroup(ctx context.Context, id, orgID uuid.UUID, since time.Time) ([]models.WarmupTemplateGroupPlacement, error)
+	// CampaignCopyCandidates lists the opening-step arms of the sender's running campaigns it has not carried in a day, least recently carried first.
+	CampaignCopyCandidates(ctx context.Context, orgID, senderID uuid.UUID) ([]models.WarmupCampaignCopyCandidate, error)
+	// CampaignCopySteps lists the organization's opening-step arms with their warmup placement since a time.
+	CampaignCopySteps(ctx context.Context, orgID uuid.UUID, since time.Time) ([]models.WarmupCampaignCopyStep, error)
 	// RefreshUnusedConversations replaces unused stock without retiring active threads.
 	RefreshUnusedConversations(ctx context.Context, poolType, segment string, n int) (int, error)
 	RetireRiskyConversations(ctx context.Context, since time.Time, minSends, minSpamPlacements int, maxSpamRate float64) (int, error)
@@ -247,7 +251,9 @@ func (r *warmupContentRepository) PickConversation(ctx context.Context, pick War
 			LEFT JOIN seen ON seen.conversation_id = c.id
 			WHERE ` + openingConversationWhere("c.") + ` AND (c.segment = $1 OR c.segment = '')
 			  AND ((NOT $8 AND c.organization_id IS NULL AND c.source = 'ai' AND $4) OR (NOT $8 AND c.organization_id IS NULL AND c.source = 'static' AND c.id = ANY($5))
-			    OR ($8 AND c.source = 'template' AND c.organization_id = $7 AND (seen.last_seen IS NULL OR seen.last_seen < NOW() - INTERVAL '1 day')))
+			    OR ($8 AND c.source = 'template' AND c.organization_id = $7 AND NOT EXISTS (
+			        SELECT 1 FROM warmup_conversation_mailboxes own
+			        WHERE own.conversation_id = c.id AND own.email_account_id = $2 AND own.created_at > NOW() - INTERVAL '1 day')))
 			ORDER BY (seen.last_seen IS NOT NULL AND seen.last_seen > NOW() - $6::interval), (c.segment = $1) DESC,
 			         seen.last_seen ASC NULLS FIRST, c.usage_count ASC, random()
 			LIMIT 1
@@ -385,7 +391,7 @@ func (r *warmupContentRepository) GetOrgTemplateConversation(ctx context.Context
 
 func (r *warmupContentRepository) GetTemplateSettings(ctx context.Context, orgID uuid.UUID) (models.WarmupTemplateSettings, error) {
 	s := models.DefaultWarmupTemplateSettings()
-	err := r.db.QueryRow(ctx, `SELECT template_share, templates_only FROM warmup_template_settings WHERE organization_id = $1`, orgID).Scan(&s.TemplateShare, &s.TemplatesOnly)
+	err := r.db.QueryRow(ctx, `SELECT template_share, templates_only, campaign_copy FROM warmup_template_settings WHERE organization_id = $1`, orgID).Scan(&s.TemplateShare, &s.TemplatesOnly, &s.CampaignCopy)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return models.DefaultWarmupTemplateSettings(), nil
 	}
@@ -393,10 +399,10 @@ func (r *warmupContentRepository) GetTemplateSettings(ctx context.Context, orgID
 }
 
 func (r *warmupContentRepository) UpsertTemplateSettings(ctx context.Context, orgID uuid.UUID, s models.WarmupTemplateSettings) error {
-	_, err := r.db.Exec(ctx, `INSERT INTO warmup_template_settings (organization_id, template_share, templates_only, updated_at)
-		VALUES ($1, $2, $3, NOW())
-		ON CONFLICT (organization_id) DO UPDATE SET template_share = EXCLUDED.template_share, templates_only = EXCLUDED.templates_only, updated_at = NOW()`,
-		orgID, s.TemplateShare, s.TemplatesOnly)
+	_, err := r.db.Exec(ctx, `INSERT INTO warmup_template_settings (organization_id, template_share, templates_only, campaign_copy, updated_at)
+		VALUES ($1, $2, $3, $4, NOW())
+		ON CONFLICT (organization_id) DO UPDATE SET template_share = EXCLUDED.template_share, templates_only = EXCLUDED.templates_only, campaign_copy = EXCLUDED.campaign_copy, updated_at = NOW()`,
+		orgID, s.TemplateShare, s.TemplatesOnly, s.CampaignCopy)
 	return err
 }
 
@@ -430,13 +436,13 @@ func (r *warmupContentRepository) TemplatePlacement(ctx context.Context, orgID u
 	out := map[uuid.UUID]models.WarmupTemplatePlacement{}
 	for rows.Next() {
 		var id uuid.UUID
-		var grp string
-		var p models.WarmupTemplatePlacement
-		if err := rows.Scan(&id, &grp, &p.Sent, &p.Inbox, &p.Tabs, &p.Spam, &p.Rescued); err != nil {
+		var g models.WarmupTemplateGroupPlacement
+		if err := rows.Scan(&id, &g.Group, &g.Sent, &g.Inbox, &g.Tabs, &g.Spam, &g.Rescued); err != nil {
 			return nil, err
 		}
 		t := out[id]
-		t.Sent, t.Inbox, t.Tabs, t.Spam, t.Rescued = t.Sent+p.Sent, t.Inbox+p.Inbox, t.Tabs+p.Tabs, t.Spam+p.Spam, t.Rescued+p.Rescued
+		add := models.MajorProviderPlacement([]models.WarmupTemplateGroupPlacement{g})
+		t.Sent, t.Inbox, t.Tabs, t.Spam, t.Rescued = t.Sent+add.Sent, t.Inbox+add.Inbox, t.Tabs+add.Tabs, t.Spam+add.Spam, t.Rescued+add.Rescued
 		out[id] = t
 	}
 	return out, rows.Err()

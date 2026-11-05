@@ -1578,8 +1578,8 @@ func (r *warmupRepository) GetOrCreateDailyStats(ctx context.Context, accountID 
 // CreateWarmupToken creates a warmup verification token
 func (r *warmupRepository) CreateWarmupToken(ctx context.Context, token *models.WarmupToken) error {
 	query := `
-		INSERT INTO warmup_tokens (token, task_id, sender_account_id, recipient_account_id, conversation_theme, content_source, conversation_id, conversation_turn, subject, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO warmup_tokens (token, task_id, sender_account_id, recipient_account_id, conversation_theme, content_source, conversation_id, conversation_turn, subject, expires_at, sequence_id, variant_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`
 	_, err := resultDB(ctx, r.db).Exec(ctx, query,
 		token.Token,
@@ -1592,6 +1592,8 @@ func (r *warmupRepository) CreateWarmupToken(ctx context.Context, token *models.
 		token.ConversationTurn,
 		token.Subject,
 		token.ExpiresAt,
+		token.SequenceID,
+		token.VariantID,
 	)
 	return err
 }

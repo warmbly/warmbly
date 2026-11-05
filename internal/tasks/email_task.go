@@ -359,7 +359,7 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 	// STEP 7: Draw content neither mailbox has seen recently; only a database failure retries.
 	if !shouldReply {
 		var contentErr error
-		content, contentErr = s.pickNewWarmupContent(ctx, *account, partner.ID, taskID)
+		content, contentErr = s.pickNewWarmupContent(ctx, *account, partner, taskID)
 		if contentErr != nil {
 			if !errors.Is(contentErr, errWarmupContentUnavailable) {
 				errs.CaptureException(contentErr)
@@ -395,6 +395,8 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 		ContentSource:      contentSource,
 		ConversationID:     conversationID,
 		ConversationTurn:   conversationTurn,
+		SequenceID:         content.sequenceID,
+		VariantID:          content.variantID,
 		// The recipient falls back to matching on the subject when the verify
 		// header does not survive delivery (Graph strips it).
 		Subject:   subject,
@@ -419,18 +421,19 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 
 	// STEP 10: Send warmup email to worker via Kafka
 	emailMsg := EmailMessage{
-		From:        account.Email,
-		To:          []string{partner.Email},
-		Subject:     subject,
-		BodyHTML:    "", // Warmup emails are plaintext only
-		BodyPlain:   emailBody,
-		InReplyTo:   inReplyTo,
-		References:  references,
-		ThreadID:    threadID,
-		MessageID:   messageID,
-		IsWarmup:    true,
-		Tracking:    nil, // No tracking for warmup
-		WarmupToken: warmupTokenStr,
+		From:           account.Email,
+		To:             []string{partner.Email},
+		Subject:        subject,
+		BodyHTML:       content.bodyHTML, // only campaign copy carries HTML
+		BodyPlain:      emailBody,
+		UnsubscribeURL: content.unsubscribeURL,
+		InReplyTo:      inReplyTo,
+		References:     references,
+		ThreadID:       threadID,
+		MessageID:      messageID,
+		IsWarmup:       true,
+		Tracking:       nil, // No tracking for warmup
+		WarmupToken:    warmupTokenStr,
 	}
 
 	if err := s.validateWarmupPair(ctx, account, partner, poolType, shouldReply); err != nil {

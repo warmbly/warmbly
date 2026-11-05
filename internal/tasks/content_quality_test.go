@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/models"
@@ -21,6 +22,8 @@ type qualityContentRepo struct {
 	seeded       []models.WarmupConversation
 	// templateSettings is what GetTemplateSettings returns.
 	templateSettings models.WarmupTemplateSettings
+	// campaignCopy is what CampaignCopyCandidates returns.
+	campaignCopy []models.WarmupCampaignCopyCandidate
 }
 
 func (r *qualityContentRepo) GetGenerationSettings(context.Context) (*models.WarmupGenerationSettings, error) {
@@ -42,11 +45,14 @@ func (r *qualityContentRepo) SeedStaticConversations(_ context.Context, rows []m
 func (r *qualityContentRepo) GetTemplateSettings(context.Context, uuid.UUID) (models.WarmupTemplateSettings, error) {
 	return r.templateSettings, nil
 }
+func (r *qualityContentRepo) CampaignCopyCandidates(context.Context, uuid.UUID, uuid.UUID) ([]models.WarmupCampaignCopyCandidate, error) {
+	return r.campaignCopy, nil
+}
 
 func TestWarmupContentPreservesRepositoryFailure(t *testing.T) {
 	want := errors.New("temporary content repository failure")
 	s := &tasksService{warmupContentRepo: &qualityContentRepo{pickErr: want}}
-	_, err := s.pickNewWarmupContent(t.Context(), Email{ID: uuid.New()}, uuid.New(), uuid.New())
+	_, err := s.pickNewWarmupContent(t.Context(), Email{ID: uuid.New()}, &Email{ID: uuid.New()}, uuid.New())
 	if !errors.Is(err, want) || errors.Is(err, errWarmupContentUnavailable) {
 		t.Fatalf("repository failure became content exhaustion: %v", err)
 	}
@@ -106,7 +112,7 @@ func TestAISelectionPreservesSubjectAndCanonicalBody(t *testing.T) {
 	conv.SemanticReview = "passed"
 	repo := &qualityContentRepo{conversation: conv}
 	s := &tasksService{warmupContentRepo: repo}
-	got, err := s.pickNewWarmupContent(context.Background(), Email{Name: "Ada A", Email: "[EMAIL]"}, uuid.New(), uuid.New())
+	got, err := s.pickNewWarmupContent(context.Background(), Email{Name: "Ada A", Email: "[EMAIL]"}, &Email{ID: uuid.New()}, uuid.New())
 	if err != nil || got.contentSource != models.WarmupContentSourceAI || *got.conversationID != conv.ID || got.subject != conv.Subject || got.body != conv.Description+"\n\nAda A" {
 		t.Fatal("AI subject, body, signature or ID changed")
 	}
@@ -128,7 +134,7 @@ func TestNewWarmupFallsBackToTheStaticLibrary(t *testing.T) {
 			if repo != nil {
 				s.warmupContentRepo = repo
 			}
-			content, err := s.pickNewWarmupContent(t.Context(), Email{Name: "Ada", Email: "[EMAIL]"}, uuid.New(), uuid.New())
+			content, err := s.pickNewWarmupContent(t.Context(), Email{Name: "Ada", Email: "[EMAIL]"}, &Email{ID: uuid.New()}, uuid.New())
 			if err != nil || content.contentSource != models.WarmupContentSourceStatic || content.conversationID == nil || content.body == "" {
 				t.Fatalf("warmup did not fall back to the static library: %+v, %v", content, err)
 			}
@@ -142,7 +148,7 @@ func TestNewWarmupFallsBackToTheStaticLibrary(t *testing.T) {
 func TestStaticPickFromBankRendersTheInCodeConversation(t *testing.T) {
 	source := warmupConversations()[3]
 	s := &tasksService{warmupContentRepo: &qualityContentRepo{conversation: &models.WarmupConversation{ID: source.ID, Source: models.WarmupContentSourceStatic, Subject: "stale copy"}}}
-	got, err := s.pickNewWarmupContent(t.Context(), Email{Name: "Ada"}, uuid.New(), uuid.New())
+	got, err := s.pickNewWarmupContent(t.Context(), Email{Name: "Ada"}, &Email{ID: uuid.New()}, uuid.New())
 	if err != nil || got.subject != source.Subject || got.contentSource != models.WarmupContentSourceStatic || got.scenarioVersion != generation.WarmupScenarioVersion || *got.conversationID != source.ID {
 		t.Fatal("static bank row did not render the current in-code conversation")
 	}
@@ -190,11 +196,12 @@ func TestDrawTemplatesFollowsShareAndOnlySwitch(t *testing.T) {
 
 func TestWarmupContentTemplateDrawFallsBackToBankUnlessOnly(t *testing.T) {
 	org := uuid.New()
-	account := Email{ID: uuid.New(), OrganizationID: &org, Name: "Ada"}
+	warmedSince := time.Now().AddDate(0, 0, -models.WarmupOwnCopyMinDays-1)
+	account := Email{ID: uuid.New(), OrganizationID: &org, Name: "Ada", Warmup: &warmedSince}
 	repo := &qualityContentRepo{templateSettings: models.WarmupTemplateSettings{TemplateShare: 100}}
 	s := &tasksService{warmupContentRepo: repo}
 	// Nothing in the repo: the template draw returns nil and the bank draw runs next.
-	if _, err := s.pickNewWarmupContent(t.Context(), account, uuid.New(), uuid.New()); err != nil {
+	if _, err := s.pickNewWarmupContent(t.Context(), account, &Email{ID: uuid.New()}, uuid.New()); err != nil {
 		t.Fatalf("static fallback failed: %v", err)
 	}
 	if len(repo.picks) != 2 || !repo.picks[0].TemplatesOnly || repo.picks[1].TemplatesOnly {
@@ -206,7 +213,7 @@ func TestWarmupContentTemplateDrawFallsBackToBankUnlessOnly(t *testing.T) {
 
 	only := &qualityContentRepo{templateSettings: models.WarmupTemplateSettings{TemplatesOnly: true}}
 	s = &tasksService{warmupContentRepo: only}
-	if _, err := s.pickNewWarmupContent(t.Context(), account, uuid.New(), uuid.New()); !errors.Is(err, errWarmupContentUnavailable) {
+	if _, err := s.pickNewWarmupContent(t.Context(), account, &Email{ID: uuid.New()}, uuid.New()); !errors.Is(err, errWarmupContentUnavailable) {
 		t.Fatalf("templates-only with no template must skip the send, got %v", err)
 	}
 	if len(only.picks) != 1 || !only.picks[0].TemplatesOnly {

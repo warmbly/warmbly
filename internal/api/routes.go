@@ -1421,6 +1421,7 @@ func Run(
 				warmupTemplates.POST("/check", h.CheckWarmupTemplate)
 				warmupTemplates.GET("/settings", h.GetWarmupTemplateSettings)
 				warmupTemplates.PUT("/settings", h.UpdateWarmupTemplateSettings)
+				warmupTemplates.GET("/campaign-copy", h.ListWarmupCampaignCopy)
 				warmupTemplates.GET("/:id/stats", h.GetWarmupTemplateStats)
 				warmupTemplates.DELETE("/:id", h.DeleteWarmupTemplate)
 			}

@@ -25,6 +25,12 @@ type warmupContent struct {
 	scenarioVersion  string
 	renderingVersion string
 	maxTurns         int
+	// Campaign copy only: the HTML part and List-Unsubscribe target the
+	// campaign would send, and the step and arm it came from.
+	bodyHTML       string
+	unsubscribeURL string
+	sequenceID     *uuid.UUID
+	variantID      *uuid.UUID
 }
 
 // getWarmupSettings caches selection settings briefly between warmup sends.
@@ -57,7 +63,7 @@ func (s *tasksService) getWarmupSettings(ctx context.Context) models.WarmupGener
 var errWarmupContentUnavailable = errors.New("warmup content is unavailable")
 
 // pickNewWarmupContent prefers a conversation neither mailbox has seen recently and always yields one.
-func (s *tasksService) pickNewWarmupContent(ctx context.Context, account Email, recipientID, taskID uuid.UUID) (warmupContent, error) {
+func (s *tasksService) pickNewWarmupContent(ctx context.Context, account Email, recipient *Email, taskID uuid.UUID) (warmupContent, error) {
 	library := warmupConversations()
 	if s.warmupContentRepo != nil {
 		settings := s.getWarmupSettings(ctx)
@@ -66,12 +72,22 @@ func (s *tasksService) pickNewWarmupContent(ctx context.Context, account Email, 
 		for i, c := range library {
 			staticIDs[i] = c.ID
 		}
-		pick := repository.WarmupContentPick{Segment: strings.TrimSpace(account.WarmupTag), TaskID: taskID, SenderID: account.ID, RecipientID: recipientID, OrganizationID: account.OrganizationID, IncludeAI: settings.Enabled, StaticIDs: staticIDs}
-		templates, only, err := s.templateDraw(ctx, account)
+		pick := repository.WarmupContentPick{Segment: strings.TrimSpace(account.WarmupTag), TaskID: taskID, SenderID: account.ID, RecipientID: recipient.ID, OrganizationID: account.OrganizationID, IncludeAI: settings.Enabled, StaticIDs: staticIDs}
+		own, err := s.ownCopyDraw(ctx, account, time.Now())
 		if err != nil {
 			return warmupContent{}, err
 		}
-		if templates {
+		if own.draw {
+			// The copy about to reach prospects comes first; templates take the share it leaves.
+			if own.settings.CampaignCopy {
+				content, ok, err := s.campaignCopyContent(ctx, account, recipient)
+				if err != nil {
+					return warmupContent{}, err
+				}
+				if ok {
+					return content, nil
+				}
+			}
 			pick.TemplatesOnly = true
 			conv, err := s.warmupContentRepo.PickConversation(ctx, pick)
 			if err != nil {
@@ -82,8 +98,8 @@ func (s *tasksService) pickNewWarmupContent(ctx context.Context, account Email, 
 					return content, nil
 				}
 			}
-			if only {
-				// Templates-only with nothing eligible skips the send rather than substituting bank content.
+			if own.settings.TemplatesOnly {
+				// Own copy only, with nothing eligible: skip the send rather than substitute bank content.
 				return warmupContent{}, errWarmupContentUnavailable
 			}
 			pick.TemplatesOnly = false
@@ -104,20 +120,32 @@ func (s *tasksService) pickNewWarmupContent(ctx context.Context, account Email, 
 	return staticWarmupContent(library[rand.Intn(len(library))], account), nil
 }
 
-// templateDraw decides whether this opening is drawn from the organization's
-// own templates, and whether the bank may stand in when none is eligible.
+// ownCopy is one opening's draw against the organization's own-copy mix.
+type ownCopy struct {
+	draw     bool
+	settings models.WarmupTemplateSettings
+}
+
+// ownCopyDraw decides whether this opening carries the organization's own
+// copy. A mailbox in its first WarmupOwnCopyMinDays of warmup never does,
+// whatever the setting, so sales copy never rides a mailbox with no history.
 // A failed settings read is returned so the send retries instead of silently
 // drawing from the bank against a templates-only workspace.
-func (s *tasksService) templateDraw(ctx context.Context, account Email) (templates, only bool, err error) {
-	if account.OrganizationID == nil {
-		return false, false, nil
+func (s *tasksService) ownCopyDraw(ctx context.Context, account Email, now time.Time) (ownCopy, error) {
+	if account.OrganizationID == nil || !ownCopyMature(account, now) {
+		return ownCopy{}, nil
 	}
 	settings, err := s.warmupContentRepo.GetTemplateSettings(ctx, *account.OrganizationID)
 	if err != nil {
-		return false, false, err
+		return ownCopy{}, err
 	}
-	templates, only = drawTemplates(settings, rand.Intn(100))
-	return templates, only, nil
+	draw, _ := drawTemplates(settings, rand.Intn(100))
+	return ownCopy{draw: draw, settings: settings}, nil
+}
+
+// ownCopyMature reports whether the mailbox has warmed long enough to carry its workspace's own copy.
+func ownCopyMature(account Email, now time.Time) bool {
+	return account.Warmup != nil && !account.Warmup.After(now.AddDate(0, 0, -models.WarmupOwnCopyMinDays))
 }
 
 // drawTemplates applies the template mix to one roll in [0,100).
