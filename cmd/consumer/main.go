@@ -220,6 +220,12 @@ func main() {
 	emailGraphDeltaRepo := repository.NewEmailGraphDeltaRepository(primaryDB)
 	emailAccountErrorRepo := repository.NewEmailAccountErrorRepository(primaryDB)
 	warmupRepo := repository.NewWarmupRepository(primaryDB.Pool)
+	// Behind a transaction pooler a receipt's lock waits on a direct session, never on a pooled connection.
+	if locks, err := primaryDB.SessionLocks(); err != nil {
+		log.Fatalf("Failed to prepare direct database sessions for warmup receipt locks: %v", err)
+	} else if locks != nil {
+		warmupRepo.(repository.WarmupSessionLocker).UseSessionLocks(locks)
+	}
 	warmupService := warmupapp.NewService(warmupRepo)
 	// Push warmup-health transitions live to the dashboard. The health sweep
 	// runs in this process, so the realtime publisher is wired here.

@@ -151,7 +151,9 @@ func (s *JobsService) Start(ctx context.Context) {
 	go s.runStoredSendResults(ctx)
 	go s.runArrivalOutbox(ctx)
 
-	if err := s.Bus.Subscribe(ctx, []string{kafka.TopicWorkerEvents}, "consumer-group", s.receive); err != nil {
+	lanes := WorkerEventConcurrency()
+	log.Info().Int("lanes", lanes).Msg("consumer: worker-events ordered mailbox lanes")
+	if err := eventbus.SubscribeKeyed(ctx, s.Bus, []string{kafka.TopicWorkerEvents}, "consumer-group", lanes, workerEventKey, s.receive); err != nil {
 		log.Error().Err(err).Msg("consumer: worker-events subscription ended")
 	}
 }

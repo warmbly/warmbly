@@ -325,6 +325,8 @@ type warmupRepository struct {
 	db           *pgxpool.Pool
 	receiptOnce  sync.Once
 	receiptSlots chan struct{}
+	// sessionLocks is set behind a transaction pooler; see UseSessionLocks.
+	sessionLocks *pgxpool.Pool
 	// partnerWeeks7d is nil in tests that build the struct directly, which
 	// then read every candidate's counts exactly.
 	partnerWeeks7d *partnerWeekCache
@@ -1616,7 +1618,18 @@ type WarmupReceiptProcessor interface {
 
 var ErrWarmupReceiptBusy = errors.New("warmup receipt is already being processed")
 
+// WarmupSessionLocker moves receipt locks onto direct sessions when the pool is a transaction pooler.
+type WarmupSessionLocker interface {
+	UseSessionLocks(*pgxpool.Pool)
+}
+
+// UseSessionLocks holds each receipt's lock on a direct connection from locks instead of a pooled transaction.
+func (r *warmupRepository) UseSessionLocks(locks *pgxpool.Pool) { r.sessionLocks = locks }
+
 func (r *warmupRepository) ProcessWarmupReceipt(ctx context.Context, tokenID, recipient uuid.UUID, proof WarmupReceiptProof, accept func(*models.WarmupToken) error) (bool, error) {
+	if r.sessionLocks != nil {
+		return r.processReceiptUnderSessionLock(ctx, tokenID, recipient, proof, accept)
+	}
 	if r.db.Config().MaxConns < 2 {
 		return false, errors.New("warmup receipt processing requires at least two database connections")
 	}
@@ -1641,7 +1654,44 @@ func (r *warmupRepository) ProcessWarmupReceipt(ctx context.Context, tokenID, re
 	if !locked {
 		return false, ErrWarmupReceiptBusy
 	}
-	token, err := scanWarmupToken(tx.QueryRow(ctx, `SELECT `+warmupTokenColumns+` FROM warmup_tokens wt
+	return r.acceptReceipt(ctx, tx, tokenID, recipient, proof, accept)
+}
+
+// processReceiptUnderSessionLock takes the same advisory key as the transaction path, so the two exclude each other
+// during a rolling deploy, but on a direct session: a pooler connection is never held while acceptance needs another.
+func (r *warmupRepository) processReceiptUnderSessionLock(ctx context.Context, tokenID, recipient uuid.UUID, proof WarmupReceiptProof, accept func(*models.WarmupToken) error) (bool, error) {
+	conn, err := r.sessionLocks.Acquire(ctx)
+	if err != nil {
+		return false, err
+	}
+	var locked bool
+	if err := conn.QueryRow(ctx, `SELECT pg_try_advisory_lock(hashtext('warmup_receipt_' || $1::text))`, tokenID).Scan(&locked); err != nil {
+		// The session's state is unknown, and closing it drops any lock it took.
+		_ = conn.Hijack().Close(context.WithoutCancel(ctx))
+		return false, err
+	}
+	if !locked {
+		conn.Release()
+		return false, ErrWarmupReceiptBusy
+	}
+	defer func() {
+		unlockCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		var released bool
+		if err := conn.QueryRow(unlockCtx, `SELECT pg_advisory_unlock(hashtext('warmup_receipt_' || $1::text))`, tokenID).Scan(&released); err != nil || !released {
+			_ = conn.Hijack().Close(unlockCtx)
+			return
+		}
+		conn.Release()
+	}()
+	return r.acceptReceipt(ctx, r.db, tokenID, recipient, proof, accept)
+}
+
+// acceptReceipt decides a receipt while its lock is held and runs acceptance when the token still applies.
+func (r *warmupRepository) acceptReceipt(ctx context.Context, q interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}, tokenID, recipient uuid.UUID, proof WarmupReceiptProof, accept func(*models.WarmupToken) error) (bool, error) {
+	token, err := scanWarmupToken(q.QueryRow(ctx, `SELECT `+warmupTokenColumns+` FROM warmup_tokens wt
 		WHERE wt.token=$1 AND wt.recipient_account_id=$2
 		AND EXISTS(SELECT 1 FROM email_accounts sender WHERE sender.id=wt.sender_account_id AND lower(sender.email)=lower($3))`,
 		tokenID, recipient, strings.TrimSpace(proof.SenderAddress)))
@@ -1652,7 +1702,7 @@ func (r *warmupRepository) ProcessWarmupReceipt(ctx context.Context, tokenID, re
 		return true, nil
 	}
 	var lineage, awaitingSend, retired bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM warmup_tasks WHERE task_id=$1 AND lineage_version=1),
+	if err = q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM warmup_tasks WHERE task_id=$1 AND lineage_version=1),
 		EXISTS(SELECT 1 FROM warmup_tasks w JOIN tasks sent ON sent.id=w.task_id
 		WHERE w.task_id=$1 AND w.lineage_version=1 AND (sent.status<>'completed' OR $2='')),
 		EXISTS(SELECT 1 FROM warmup_tokens WHERE token=$3 AND sent_retired_at IS NOT NULL)
