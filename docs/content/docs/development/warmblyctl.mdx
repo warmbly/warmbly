@@ -611,10 +611,15 @@ Billing history, plan overrides, worker placement, mailbox sync checkpoints and 
 
 ## org attachments-preflight
 
+With `jq` installed, inspect the first page and resume only when its `done` field is false:
+
 ```bash
 warmblyctl org attachments-preflight --file ./workspace.warmbly.zip --limit 25 > page-1.json
-warmblyctl org attachments-preflight --file ./workspace.warmbly.zip \
-  --after 25 --expect-sha256 <archive_sha256-from-page-1> --limit 25 > page-2.json
+if [ "$(jq -r '.done' page-1.json)" = false ]; then
+  warmblyctl org attachments-preflight --file ./workspace.warmbly.zip \
+    --after "$(jq -r '.next_after' page-1.json)" \
+    --expect-sha256 "$(jq -r '.archive_sha256' page-1.json)" --limit 25 > page-2.json
+fi
 ```
 
 Reads private campaign attachment rows and their bytes from an **existing local workspace archive**, comparing each selected file with the [new-upload profile](/guides/campaigns/#campaign-attachments). This command works offline without `PRIMARY_DB`, a storage client, credentials or a destination workspace. It opens the archive for reading and prints JSON to stdout. Keep the archive immutable and protect reports as workspace data: they contain filenames, identifiers and content fingerprints. Obtaining an archive is a separate, authorized export operation; this command does not create or download one.
