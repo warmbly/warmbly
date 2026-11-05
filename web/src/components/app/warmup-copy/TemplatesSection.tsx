@@ -7,7 +7,7 @@ import toast from "react-hot-toast/headless";
 import { EmptyBlock, SectionBar } from "@/components/layout/Page";
 import { PopoverMenu, PopoverMenuContent, PopoverMenuItem, PopoverMenuTrigger } from "@/components/ui/popover-menu";
 import { useConfirm } from "@/hooks/context/confirm";
-import { useDeleteWarmupTemplate, useWarmupTemplateStats, useWarmupTemplates } from "@/lib/api/hooks/app/warmup/useWarmupCopy";
+import { useDeleteWarmupTemplate, useWarmupTemplate, useWarmupTemplateStats, useWarmupTemplates } from "@/lib/api/hooks/app/warmup/useWarmupCopy";
 import type { WarmupTemplate } from "@/lib/api/models/app/warmup/WarmupCopy";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
@@ -149,6 +149,7 @@ function SegmentChip({ segment }: { segment: string }) {
 
 function TemplateDrawer({ template, days, onClose }: { template: WarmupTemplate; days: number; onClose: () => void }) {
     const stats = useWarmupTemplateStats(template.id, days);
+    const full = useWarmupTemplate(template.id);
     const askDelete = useAskDelete(onClose);
 
     React.useEffect(() => {
@@ -212,6 +213,17 @@ function TemplateDrawer({ template, days, onClose }: { template: WarmupTemplate;
                         <dt className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium pt-0.5">Times used</dt>
                         <dd className="text-slate-700 tabular-nums">{template.usage_count.toLocaleString()}</dd>
                     </dl>
+
+                    <div className="px-5 py-4 border-b border-slate-200">
+                        <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium mb-2">Body</div>
+                        {full.data?.body ? (
+                            <p className="whitespace-pre-wrap break-words rounded-md border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-[12.5px] leading-relaxed text-slate-700">
+                                {full.data.body}
+                            </p>
+                        ) : (
+                            <div className="h-16 rounded-md bg-slate-50 animate-pulse" />
+                        )}
+                    </div>
 
                     <div className="px-5 py-4 border-b border-slate-200">
                         <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium mb-2">

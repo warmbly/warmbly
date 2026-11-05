@@ -1422,6 +1422,7 @@ func Run(
 				warmupTemplates.GET("/settings", h.GetWarmupTemplateSettings)
 				warmupTemplates.PUT("/settings", h.UpdateWarmupTemplateSettings)
 				warmupTemplates.GET("/campaign-copy", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.ListWarmupCampaignCopy)
+				warmupTemplates.GET("/:id", h.GetWarmupTemplate)
 				warmupTemplates.GET("/:id/stats", h.GetWarmupTemplateStats)
 				warmupTemplates.DELETE("/:id", h.DeleteWarmupTemplate)
 			}

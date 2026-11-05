@@ -74,7 +74,7 @@ func (s *tasksService) pickNewWarmupContent(ctx context.Context, account Email, 
 			staticIDs[i] = c.ID
 		}
 		pick := repository.WarmupContentPick{Segment: strings.TrimSpace(account.WarmupTag), TaskID: taskID, SenderID: account.ID, RecipientID: recipient.ID, OrganizationID: account.OrganizationID, IncludeAI: settings.Enabled, StaticIDs: staticIDs}
-		own, err := s.ownCopyDraw(ctx, account, time.Now())
+		own, err := s.ownCopyDraw(ctx, account, recipient, time.Now())
 		if err != nil {
 			return warmupContent{}, err
 		}
@@ -133,10 +133,12 @@ type ownCopy struct {
 // ownCopyDraw decides whether this opening carries the organization's own
 // copy. A mailbox in its first WarmupOwnCopyMinDays of warmup never does,
 // whatever the setting, so sales copy never rides a mailbox with no history.
+// Nor is it sent to a recipient that leaves warmup mail in its inbox, where a
+// person reads it: there, someone else's sales copy is unsolicited mail.
 // A failed settings read is returned so the send retries instead of silently
 // drawing from the bank against a templates-only workspace.
-func (s *tasksService) ownCopyDraw(ctx context.Context, account Email, now time.Time) (ownCopy, error) {
-	if account.OrganizationID == nil || !ownCopyMature(account, now) {
+func (s *tasksService) ownCopyDraw(ctx context.Context, account Email, recipient *Email, now time.Time) (ownCopy, error) {
+	if account.OrganizationID == nil || !ownCopyMature(account, now) || !ownCopyRecipient(recipient) {
 		return ownCopy{}, nil
 	}
 	settings, err := s.warmupContentRepo.GetTemplateSettings(ctx, *account.OrganizationID)
@@ -145,6 +147,15 @@ func (s *tasksService) ownCopyDraw(ctx context.Context, account Email, now time.
 	}
 	draw, _ := drawTemplates(settings, rand.Intn(100))
 	return ownCopy{draw: draw, settings: settings}, nil
+}
+
+// ownCopyRecipient reports whether the recipient files warmup mail out of its inbox.
+func ownCopyRecipient(recipient *Email) bool {
+	if recipient == nil {
+		return false
+	}
+	placement, _ := recipient.WarmupFiling()
+	return placement != models.WarmupPlacementInbox
 }
 
 // ownCopyMature reports whether the mailbox has warmed long enough to carry its workspace's own copy.

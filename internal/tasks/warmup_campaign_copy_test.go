@@ -243,3 +243,28 @@ func TestExecutableWarmupSourceAdmitsOwnCopy(t *testing.T) {
 		t.Fatal("a retired template was admitted")
 	}
 }
+
+// A recipient that leaves warmup mail in its inbox is never sent a workspace's own copy.
+func TestOwnCopySkipsRecipientsReadingWarmupInTheInbox(t *testing.T) {
+	org := uuid.New()
+	warmedSince := time.Now().AddDate(0, 0, -30)
+	repo := &qualityContentRepo{templateSettings: models.WarmupTemplateSettings{TemplatesOnly: true}}
+	s := &tasksService{warmupContentRepo: repo}
+	account := Email{ID: uuid.New(), OrganizationID: &org, Name: "Ada", Warmup: &warmedSince}
+	inbox := &Email{ID: uuid.New(), WarmupPlacement: models.WarmupPlacementInbox}
+	if _, err := s.pickNewWarmupContent(t.Context(), account, inbox, uuid.New()); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range repo.picks {
+		if p.TemplatesOnly {
+			t.Fatal("own copy was drawn for a recipient that reads warmup in its inbox")
+		}
+	}
+	repo.picks = nil
+	if _, err := s.pickNewWarmupContent(t.Context(), account, &Email{ID: uuid.New()}, uuid.New()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.picks) == 0 || !repo.picks[0].TemplatesOnly {
+		t.Fatalf("a recipient filing warmup into its folder should get own copy first: %+v", repo.picks)
+	}
+}

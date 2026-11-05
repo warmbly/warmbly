@@ -8,6 +8,7 @@ import {
     deleteWarmupTemplate,
     getWarmupCopySettings,
     getWarmupTemplateStats,
+    getWarmupTemplate,
     listWarmupCampaignCopy,
     listWarmupTemplates,
     putWarmupCopySettings,
@@ -74,6 +75,16 @@ export function useWarmupTemplateStats(id: string | null, days: number) {
         enabled: !!id,
         placeholderData: keepPreviousData,
     });
+}
+
+export const warmupTemplateQuery = (id: string) =>
+    queryOptions({
+        queryKey: [...WARMUP_COPY_KEY, "template", id],
+        queryFn: () => getWarmupTemplate(id),
+    });
+
+export function useWarmupTemplate(id: string | null) {
+    return useQuery({ ...warmupTemplateQuery(id ?? ""), enabled: !!id });
 }
 
 // Outside WARMUP_COPY_KEY so a teammate's audit event does not re-run a draft's analysis.

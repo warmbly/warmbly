@@ -22832,6 +22832,61 @@
         }
       },
     "/warmup/templates/{id}": {
+      "get": {
+        "operationId": "deliverability-ops_get_warmup_template",
+        "summary": "Get a warmup template",
+        "description": "One of the organization's active templates with its body, which the list leaves out. Requires WARMUP_TEMPLATES scope and manage_settings permission.",
+        "tags": [
+          "deliverability-ops"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The template ID.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The template",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "template"
+                  ],
+                  "properties": {
+                    "template": {
+                      "$ref": "#/components/schemas/WarmupTemplate"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Warmup template not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
         "delete": {
           "operationId": "deliverability-ops_delete_warmup_template",
           "summary": "Delete a warmup template",

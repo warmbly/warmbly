@@ -54,7 +54,7 @@ export interface WarmupTemplate {
     id: string;
     name: string;
     subject: string;
-    // Only returned on create.
+    // Returned on create and by the single-template read, never in the list.
     body?: string;
     segment: string;
     usage_count: number;

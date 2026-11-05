@@ -403,3 +403,26 @@ func (h *Handler) ListWarmupCampaignCopy(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"data": steps, "days": days})
 }
+
+// GetWarmupTemplate returns one of the organization's templates with its body.
+func (h *Handler) GetWarmupTemplate(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	templateID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid template id"))
+		return
+	}
+	conv, err := h.WarmupContentRepo.GetOrgTemplateConversation(c.Request.Context(), templateID, orgID)
+	if err != nil {
+		errx.JSON(c, errx.New(errx.Internal, err.Error()))
+		return
+	}
+	if conv == nil || conv.Status != models.WarmupConversationActive {
+		errx.JSON(c, errx.New(errx.NotFound, "warmup template not found"))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"template": templateResponse(*conv, true)})
+}

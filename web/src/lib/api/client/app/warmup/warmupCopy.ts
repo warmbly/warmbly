@@ -4,6 +4,7 @@ import type {
     WarmupCopySettings,
     WarmupTemplateCheck,
     WarmupTemplateInput,
+    WarmupTemplate,
     WarmupTemplateList,
     WarmupTemplateStats,
 } from "@/lib/api/models/app/warmup/WarmupCopy";
@@ -80,4 +81,13 @@ export async function deleteWarmupTemplate(id: string): Promise<void> {
         url: `/warmup/templates/${id}`,
         authorization: true,
     });
+}
+
+export async function getWarmupTemplate(id: string): Promise<WarmupTemplate> {
+    const res = await Request<{ template: WarmupTemplate }>({
+        method: "GET",
+        url: `/warmup/templates/${id}`,
+        authorization: true,
+    });
+    return res.template;
 }
