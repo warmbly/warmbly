@@ -1,6 +1,8 @@
 package eventbus
 
 import (
+	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -10,6 +12,9 @@ import (
 
 // natsLaneBuffer is how many deliveries each lane may hold, running or queued, before fetching pauses.
 const natsLaneBuffer = 32
+
+// natsFetchWait bounds one pull request, so a stop is seen promptly while nothing arrives.
+const natsFetchWait = 5 * time.Second
 
 // natsLanes runs a keyed subscription: each key's messages in order, up to
 // lanes keys at once, so a slow key holds one lane and never another key.
@@ -43,18 +48,106 @@ func newNATSLanes(lanes int, ackWait time.Duration, deliver func(jetstream.Msg))
 	return p
 }
 
-// dispatch queues m behind every earlier message with the same key, waiting
-// for room when the lanes already hold their share.
-func (p *natsLanes) dispatch(m jetstream.Msg, key string) {
-	// Held first, so the heartbeat keeps it alive while it waits for room.
-	p.hold(m)
+// natsPull stops a lanes' pull loop, in the shape Consume hands back.
+type natsPull struct {
+	cancel context.CancelFunc
+	closed chan struct{}
+}
+
+func (h *natsPull) Stop()                   { h.cancel() }
+func (h *natsPull) Drain()                  { h.cancel() }
+func (h *natsPull) Closed() <-chan struct{} { return h.closed }
+
+// start runs pull until ctx ends or the returned handle is stopped.
+func (p *natsLanes) start(ctx context.Context, cons jetstream.Consumer, key func(jetstream.Msg) (string, error)) jetstream.ConsumeContext {
+	ctx, cancel := context.WithCancel(ctx)
+	h := &natsPull{cancel: cancel, closed: make(chan struct{})}
+	go func() {
+		defer close(h.closed)
+		p.pull(ctx, cons, key)
+	}()
+	return h
+}
+
+// pull fetches only as many messages as the lanes have room for and
+// dispatches each by key until ctx ends or the lanes halt. Every fetch is
+// asked for after the previous one ends, so none is skipped and nothing is
+// fetched that the lanes could not hold and heartbeat at once.
+func (p *natsLanes) pull(ctx context.Context, cons jetstream.Consumer, key func(jetstream.Msg) (string, error)) {
+	for ctx.Err() == nil {
+		n := p.reserve(cap(p.slots))
+		if n == 0 {
+			return
+		}
+		p.unreserve(n - p.fetch(ctx, cons, n, key))
+	}
+}
+
+// fetch dispatches up to n messages and reports how many it dispatched.
+func (p *natsLanes) fetch(ctx context.Context, cons jetstream.Consumer, n int, key func(jetstream.Msg) (string, error)) int {
+	fctx, cancel := context.WithTimeout(ctx, natsFetchWait)
+	defer cancel()
+	batch, err := cons.Fetch(n, jetstream.FetchContext(fctx))
+	if err != nil {
+		fetchFailed(ctx, err)
+		return 0
+	}
+	dispatched := 0
+	for m := range batch.Messages() {
+		k, err := key(m)
+		if err != nil {
+			log.Error().Err(err).Str("subject", m.Subject()).Msg("eventbus nats key resolution failed")
+			if nakErr := m.NakWithDelay(time.Second); nakErr != nil {
+				log.Warn().Err(nakErr).Msg("eventbus nats nak failed")
+			}
+			continue
+		}
+		p.dispatch(m, k)
+		dispatched++
+	}
+	if err := batch.Error(); err != nil && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+		fetchFailed(ctx, err)
+	}
+	return dispatched
+}
+
+// fetchFailed logs a failed pull and pauses briefly, so an unreachable server is not hot-looped.
+func fetchFailed(ctx context.Context, err error) {
+	log.Warn().Err(err).Msg("eventbus nats fetch failed")
+	select {
+	case <-ctx.Done():
+	case <-time.After(time.Second):
+	}
+}
+
+// reserve waits for room for one more delivery and takes up to limit, or none once halted.
+func (p *natsLanes) reserve(limit int) int {
 	select {
 	case p.room <- struct{}{}:
 	case <-p.halted:
-		p.unhold(m)
-		nak(m)
-		return
+		return 0
 	}
+	n := 1
+	for n < limit {
+		select {
+		case p.room <- struct{}{}:
+			n++
+		default:
+			return n
+		}
+	}
+	return n
+}
+
+func (p *natsLanes) unreserve(n int) {
+	for range n {
+		<-p.room
+	}
+}
+
+// dispatch queues m, for which room is reserved, behind every earlier message with the same key.
+func (p *natsLanes) dispatch(m jetstream.Msg, key string) {
+	p.hold(m)
 	if p.isHalted() {
 		p.abandon(m)
 		return
