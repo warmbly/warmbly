@@ -16,13 +16,14 @@ export function nextSlotLabel(at: Date | string, now: Date = new Date(), timeZon
     return `${d.toLocaleDateString([], { month: "short", day: "numeric", timeZone: zone })} ${time}`;
 }
 
+/** A zone the browser cannot read falls back to UTC, as the scheduler does for one it cannot load. */
 function validZone(zone?: string): string | undefined {
     if (!zone) return undefined;
     try {
         new Intl.DateTimeFormat("en-US", { timeZone: zone });
         return zone;
     } catch {
-        return undefined;
+        return "UTC";
     }
 }
 
