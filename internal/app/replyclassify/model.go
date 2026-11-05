@@ -120,9 +120,14 @@ func classifyModel(ctx context.Context, in Input) (Result, bool) {
 // modelBodyRunes caps the reply text one completion reads.
 const modelBodyRunes = 4000
 
-// modelBody is the reply without its quoted history, capped.
+// modelBody is the reply without its quoted history, capped. A reply written
+// below the quote strips to nothing, so it is read whole instead.
 func modelBody(in Input) string {
-	body := []rune(StripQuoted(in.BodyText, in.Languages...))
+	stripped := StripQuoted(in.BodyText, in.Languages...)
+	if strings.TrimSpace(stripped) == "" {
+		stripped = in.BodyText
+	}
+	body := []rune(stripped)
 	if len(body) > modelBodyRunes {
 		body = body[:modelBodyRunes]
 	}

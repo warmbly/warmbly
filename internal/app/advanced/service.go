@@ -1570,7 +1570,7 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 		// The tagging verdict for this message was stored before this hook ran;
 		// copy a confident human-reply intent so reply_intent branches can route on
 		// it, ahead of the instant matcher below.
-		s.recordReplyIntent(ctx, *account.OrganizationID, msg.MessageID, cID, ctID, sID)
+		s.recordReplyIntent(ctx, *account.OrganizationID, msg.MessageID, replyResult.Class, cID, ctID, sID)
 
 		// OOO trap fix: only a HUMAN reply stamps replied_at. An auto_reply /
 		// out_of_office must NOT count as a reply, or it would (a) trip

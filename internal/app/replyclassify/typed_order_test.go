@@ -137,14 +137,29 @@ func TestModelReadsTheReplyNotTheQuotedHistory(t *testing.T) {
 	var seen string
 	SetModelClassifier(func(_ context.Context, _, user string) (string, error) { seen = user; return "positive", nil })
 	t.Cleanup(func() { SetModelClassifier(nil) })
+	read := func(body string) string {
+		seen = ""
+		ClassifyContext(context.Background(), Input{Subject: "Re: Quick question", BodyText: body})
+		return seen
+	}
+	quote := "\n\nOn Mon, Nov 3, 2025 at 9:14 AM Sender <sender@warmbly.test> wrote:\n> Not the right time? No need to reply."
 
-	body := "Can you walk me through it next week? " + strings.Repeat("x", 2*modelBodyRunes) +
-		"\n\nOn Mon, Nov 3, 2025 at 9:14 AM Sender <sender@warmbly.test> wrote:\n> Not the right time? No need to reply."
-	ClassifyContext(context.Background(), Input{Subject: "Re: Quick question", BodyText: body})
-	if strings.Contains(seen, "No need to reply") {
-		t.Fatal("the model was shown our quoted message")
-	}
-	if n := len([]rune(seen)); n > modelBodyRunes+len("Subject: Re: Quick question\n\n") {
-		t.Fatalf("the model read %d runes, cap is %d", n, modelBodyRunes)
-	}
+	t.Run("quoted history is dropped", func(t *testing.T) {
+		got := read("Can you walk me through it next week?" + quote)
+		if !strings.Contains(got, "walk me through it") || strings.Contains(got, "No need to reply") {
+			t.Fatalf("model input %q", got)
+		}
+	})
+	t.Run("a reply below the quote is read", func(t *testing.T) {
+		got := read(strings.TrimSpace(quote) + "\n\nWhat is the price for ten seats?")
+		if !strings.Contains(got, "What is the price") {
+			t.Fatalf("model input %q lost the reply", got)
+		}
+	})
+	t.Run("a long reply is capped", func(t *testing.T) {
+		got := read("Can you walk me through it? " + strings.Repeat("x", 2*modelBodyRunes))
+		if n := len([]rune(got)); n > modelBodyRunes+len("Subject: Re: Quick question\n\n") {
+			t.Fatalf("the model read %d runes, cap is %d", n, modelBodyRunes)
+		}
+	})
 }

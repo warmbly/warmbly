@@ -60,12 +60,14 @@ func TestProcessIncomingReplyRecordsTheTaggerVerdictEverywhere(t *testing.T) {
 		body       string
 		wantClass  string
 		wantIntent string
+		wantStored string
 	}{
 		{
 			name:       "pricing request",
 			stored:     &repository.InboxTagResult{Kind: inboxtag.KindHumanReply, KindConfidence: 1, Intent: inboxtag.IntentWantsPricing, IntentConfidence: 0.92},
 			wantClass:  replyclassify.ClassPositive,
 			wantIntent: string(models.ReplyIntentPositive),
+			wantStored: inboxtag.IntentWantsPricing,
 		},
 		{
 			name:       "opt-out past the preview",
@@ -73,6 +75,7 @@ func TestProcessIncomingReplyRecordsTheTaggerVerdictEverywhere(t *testing.T) {
 			body:       "How much is it? Not looking to spend a lot, send details. " + strings.Repeat("We compared a few vendors last quarter and kept notes. ", 5) + "Actually, please remove me from your list.",
 			wantClass:  replyclassify.ClassUnsubscribe,
 			wantIntent: string(models.ReplyIntentNegative),
+			wantStored: inboxtag.IntentOptOut,
 		},
 		{
 			name:       "contact writing in with no campaign",
@@ -122,6 +125,9 @@ func TestProcessIncomingReplyRecordsTheTaggerVerdictEverywhere(t *testing.T) {
 			}
 			if progress.class != tc.wantClass {
 				t.Errorf("reply_class = %q, want %q", progress.class, tc.wantClass)
+			}
+			if progress.intent != tc.wantStored {
+				t.Errorf("reply_intent = %q, want %q", progress.intent, tc.wantStored)
 			}
 			reply := events.data[models.WebhookEventCampaignReplyReceived]
 			if reply == nil {
