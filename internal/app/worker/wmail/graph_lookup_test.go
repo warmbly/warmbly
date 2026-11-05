@@ -165,3 +165,37 @@ func TestGraphKnownMessageRelaysOnlyChanges(t *testing.T) {
 	seen(msgraph.FolderInbox, false)
 	expect("state relayed again after a removal", removed+2)
 }
+
+// A reconcile relays the read state it fetched, and that is what a later walk compares against.
+func TestGraphReconcileReplacesTheRelayedState(t *testing.T) {
+	var events []captured
+	var relayed []models.SyncState
+	w := newGraphTestMail(t, newFakeGraph().serve(t), &events, &relayed)
+	id := uuid.NewString()
+	w.EmailMessageMapRepository = &countingGraphMap{recoveryMessageMap: recoveryMessageMap{data: map[string]repository.EmailMessageData{
+		"known": {ID: id, MessageID: "known"},
+	}}}
+	if _, err := w.onGraphMessageSeen(t.Context(), msgraph.FolderInbox, "known", true); err != nil {
+		t.Fatal(err)
+	}
+	// The fake mailbox reports the message unread, so the reconcile relays unread.
+	if err := w.graphReconcileMessage(t.Context(), id, "known", msgraph.FolderInbox); err != nil {
+		t.Fatal(err)
+	}
+	if last := events[len(events)-1]; last.eventType != models.JobEventTypeFlagsRemove {
+		t.Fatalf("reconcile relayed %s, want the fetched unread state", last.eventType)
+	}
+	before := len(events)
+	if _, err := w.onGraphMessageSeen(t.Context(), msgraph.FolderInbox, "known", true); err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != before+2 || events[before].eventType != models.JobEventTypeFlagsAdd {
+		t.Fatalf("read state after a reconcile relayed unread was not relayed: %v", events[before:])
+	}
+	if _, err := w.onGraphMessageSeen(t.Context(), msgraph.FolderInbox, "known", true); err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != before+2 {
+		t.Fatalf("unchanged state relayed again: %v", events[before:])
+	}
+}

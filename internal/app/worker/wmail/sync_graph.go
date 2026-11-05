@@ -91,14 +91,12 @@ func (w *WMail) onGraphMessageSeen(ctx context.Context, folder, providerID strin
 		return false, msgraph.ErrStop
 	}
 	if known != nil {
-		state := relayState{seen: seen, folder: folder}
-		if w.relayCache.unchanged(providerID, state) {
+		if w.relayCache.unchanged(providerID, relayState{seen: seen, folder: folder}) {
 			return true, nil
 		}
 		if err := w.relayKnownGraphMessage(ctx, known, providerID, folder, seen); err != nil {
 			return false, err
 		}
-		w.relayCache.put(providerID, state)
 		return true, nil
 	}
 
@@ -193,7 +191,11 @@ func (w *WMail) relayKnownGraphMessage(ctx context.Context, known *repository.Em
 	if err != nil {
 		return err
 	}
-	return w.emitFolder(id, (&msgraph.GraphMessage{}).ToEmailData(folder).Folder)
+	if err := w.emitFolder(id, (&msgraph.GraphMessage{}).ToEmailData(folder).Folder); err != nil {
+		return err
+	}
+	w.relayCache.put(providerID, relayState{seen: seen, folder: folder})
+	return nil
 }
 
 // graphStore mirrors googleStore. The opaque Graph message id rides in
