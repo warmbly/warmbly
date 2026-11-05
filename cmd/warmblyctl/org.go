@@ -31,6 +31,8 @@ func runOrg(ctx context.Context, args []string) error {
 		return runOrgExport(ctx, args[1:])
 	case "import":
 		return runOrgImport(ctx, args[1:])
+	case "attachments-preflight":
+		return runOrgAttachmentsPreflight(ctx, args[1:])
 	}
 
 	orgUsage(os.Stderr)
@@ -38,7 +40,7 @@ func runOrg(ctx context.Context, args []string) error {
 }
 
 func orgUsage(w *os.File) {
-	fmt.Fprint(w, "Move a workspace between instances.\n\nUsage:\n  warmblyctl org <subcommand> [flags]\n\nSubcommands:\n")
+	fmt.Fprint(w, "Move a workspace between instances or inspect a local archive.\n\nUsage:\n  warmblyctl org <subcommand> [flags]\n\nSubcommands:\n")
 	for _, c := range commands {
 		if !strings.HasPrefix(c.name, "org ") {
 			continue
