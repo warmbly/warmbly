@@ -46,13 +46,15 @@ func newNATSLanes(lanes int, ackWait time.Duration, deliver func(jetstream.Msg))
 // dispatch queues m behind every earlier message with the same key, waiting
 // for room when the lanes already hold their share.
 func (p *natsLanes) dispatch(m jetstream.Msg, key string) {
+	// Held first, so the heartbeat keeps it alive while it waits for room.
+	p.hold(m)
 	select {
 	case p.room <- struct{}{}:
 	case <-p.halted:
+		p.unhold(m)
 		nak(m)
 		return
 	}
-	p.hold(m)
 	if p.isHalted() {
 		p.abandon(m)
 		return
@@ -109,10 +111,14 @@ func (p *natsLanes) hold(m jetstream.Msg) {
 }
 
 func (p *natsLanes) release(m jetstream.Msg) {
+	p.unhold(m)
+	<-p.room
+}
+
+func (p *natsLanes) unhold(m jetstream.Msg) {
 	p.mu.Lock()
 	delete(p.held, m)
 	p.mu.Unlock()
-	<-p.room
 }
 
 // abandon hands back a message that will not be handled here, so it is

@@ -293,3 +293,55 @@ func TestNATSBus_KeyedLanesKeepSaturatedMessagesAlive(t *testing.T) {
 		t.Errorf("handled %d messages, want %d", len(order), messages)
 	}
 }
+
+// A delivery waiting for room behind a full lane is heartbeated too, so a slow
+// handler ahead of it does not let JetStream hand it out a second time.
+func TestNATSBus_KeyedLanesKeepMessagesWaitingForRoomAlive(t *testing.T) {
+	grace := natsAckGrace
+	natsAckGrace = 200 * time.Millisecond
+	t.Cleanup(func() { natsAckGrace = grace })
+	t.Setenv("EVENTBUS_HANDLER_TIMEOUT", "300ms")
+
+	bus := newTestNATSBus(t)
+	topic := "w.room"
+	// Two lanes, since one runs without the pool; one key fills both lanes' room.
+	const messages = 2*natsLaneBuffer + 4
+	var mu sync.Mutex
+	seen := map[string][]int{}
+	subscribeInBackground(t, t.Context(), bus, topic, "room", 2, payloadKey, func(_ context.Context, msg Message) error {
+		p := string(msg.Payload)
+		mu.Lock()
+		seen[p] = append(seen[p], msg.Attempt)
+		mu.Unlock()
+		if p == "a00" {
+			// Well past the 500ms ack wait while the lane's room is full.
+			time.Sleep(1500 * time.Millisecond)
+		}
+		return nil
+	})
+	ackWait := waitForConsumer(t, bus, bus.durable("room", []string{topic}))
+	for i := 0; i < messages; i++ {
+		if err := bus.Publish(t.Context(), topic, "a", fmt.Appendf(nil, "a%02d", i)); err != nil {
+			t.Fatalf("publish %d: %v", i, err)
+		}
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		mu.Lock()
+		n := len(seen)
+		mu.Unlock()
+		if n == messages || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	time.Sleep(2 * ackWait)
+	mu.Lock()
+	defer mu.Unlock()
+	for i := 0; i < messages; i++ {
+		p := fmt.Sprintf("a%02d", i)
+		if got := seen[p]; len(got) != 1 || got[0] != 1 {
+			t.Errorf("%s handled with attempts %v, want exactly one first delivery", p, got)
+		}
+	}
+}
