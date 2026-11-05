@@ -245,8 +245,9 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 		minWaitSeconds = int(float64(minWaitSeconds)*adj.minWaitMultiplier + 0.5)
 	}
 
-	// STEP 3: Count emails already sent today
-	emailsSentToday, err := s.taskRepo.CountWarmupEmailsSentToday(ctx, accountID)
+	// STEP 3: Count emails already sent on the mailbox's local day, the day the dispatch gate counts.
+	dayStart := behavior.PlanDateFor(time.Now(), loadLocation(account.ClockTimezone()))
+	emailsSentToday, err := s.taskRepo.CountWarmupEmailsSentBetween(ctx, accountID, dayStart, dayStart.AddDate(0, 0, 1))
 	if err != nil {
 		return time.Time{}, err
 	}
