@@ -212,13 +212,49 @@ func (s *tasksService) ValidateWarmupExecution(ctx context.Context, taskID uuid.
 	} else if _, ok := GenerateConversationReplyEmail(source, *account, current.ConversationTurn); !ok {
 		return errors.New("diagnostic turn unavailable")
 	}
+	pool := s.resolveWarmupPoolType(ctx, account)
+	if err := s.validateWarmupRecipient(ctx, taskID, warmup.ParentTaskID != nil, recipientID, account, pool); err != nil {
+		return err
+	}
+	if warmup.ParentTaskID != nil {
+		lineage, ok := s.taskRepo.(repository.WarmupLineageRepository)
+		if !ok {
+			return errors.New("warmup lineage authority unavailable")
+		}
+		parent, err := lineage.ExactWarmupParent(ctx, taskID)
+		if err != nil {
+			return err
+		}
+		account, xerr := s.emailRepo.GetByID(ctx, task.EmailAccountID)
+		if xerr != nil {
+			return xerr
+		}
+		if account == nil {
+			return errors.New("warmup mailbox unavailable")
+		}
+		if _, _, _, err = s.exactReplyContent(ctx, parent, *account); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateWarmupRecipient re-checks the recipient at execution. A reply is held
+// to the rule that chose its partner, because it answers mail its recipient
+// sent and so is outside the new-thread cap the draw applies.
+func (s *tasksService) validateWarmupRecipient(ctx context.Context, taskID uuid.UUID, reply bool, recipientID uuid.UUID, account *Email, pool string) error {
+	if reply && s.warmupHealth != nil {
+		if partner := s.replyPartner(ctx, recipientID, account, pool); partner == nil || partner.ID != recipientID {
+			return errors.New("warmup recipient no longer eligible")
+		}
+		return nil
+	}
 	reader, ok := s.warmupRepo.(interface {
 		WarmupExecutionCandidates(context.Context, string, uuid.UUID, uuid.UUID) ([]models.WarmupPartnerCandidate, error)
 	})
 	if !ok {
 		return errors.New("warmup recipient capacity unavailable")
 	}
-	pool := s.resolveWarmupPoolType(ctx, account)
 	candidates, err := reader.WarmupExecutionCandidates(ctx, pool, account.ID, taskID)
 	if err != nil {
 		return err
@@ -244,26 +280,6 @@ func (s *tasksService) ValidateWarmupExecution(ctx context.Context, taskID uuid.
 		}
 		if recipient == nil || routingMultiplier(rules, account.Email, recipient.Email) <= 0 {
 			return errors.New("warmup recipient excluded")
-		}
-	}
-	if warmup.ParentTaskID != nil {
-		lineage, ok := s.taskRepo.(repository.WarmupLineageRepository)
-		if !ok {
-			return errors.New("warmup lineage authority unavailable")
-		}
-		parent, err := lineage.ExactWarmupParent(ctx, taskID)
-		if err != nil {
-			return err
-		}
-		account, xerr := s.emailRepo.GetByID(ctx, task.EmailAccountID)
-		if xerr != nil {
-			return xerr
-		}
-		if account == nil {
-			return errors.New("warmup mailbox unavailable")
-		}
-		if _, _, _, err = s.exactReplyContent(ctx, parent, *account); err != nil {
-			return err
 		}
 	}
 	return nil

@@ -214,3 +214,40 @@ func TestDirectedWarmupPartnerRefusesTwoSelfExecutedMailboxes(t *testing.T) {
 		}
 	}
 }
+
+// cappedCandidatesRepo is a draw whose new-thread cap has left the recipient out.
+type cappedCandidatesRepo struct {
+	standingRepo
+}
+
+func (cappedCandidatesRepo) WarmupExecutionCandidates(context.Context, string, uuid.UUID, uuid.UUID) ([]models.WarmupPartnerCandidate, error) {
+	return nil, nil
+}
+
+// A reply is rechecked at execution by the rule that chose its partner, so an
+// inbox whose day is full of new threads still gets it; a new thread does not.
+func TestWarmupExecutionHoldsRepliesToTheReplyRule(t *testing.T) {
+	recipient := uuid.New()
+	for _, tc := range []struct {
+		name  string
+		reply bool
+		pool  string
+		want  bool
+	}{
+		{"a reply to a capped inbox goes out", true, "premium", true},
+		{"a new thread to a capped inbox does not", false, "premium", false},
+		{"a reply to a mailbox that left the pool does not", true, "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &tasksService{
+				emailRepo:    directedEmailRepo{},
+				warmupRepo:   cappedCandidatesRepo{standingRepo{state: models.WarmupHealthHealthy}},
+				warmupHealth: &pinnedGate{poolOf: map[uuid.UUID]string{recipient: tc.pool}},
+			}
+			err := s.validateWarmupRecipient(context.Background(), uuid.New(), tc.reply, recipient, &Email{ID: uuid.New()}, "premium")
+			if (err == nil) != tc.want {
+				t.Fatalf("validate = %v, want allowed %v", err, tc.want)
+			}
+		})
+	}
+}

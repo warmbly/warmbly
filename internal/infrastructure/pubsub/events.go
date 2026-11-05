@@ -555,7 +555,7 @@ func (p *StreamingPublisher) PublishWarmupPlacement(ctx context.Context, orgID, 
 	if p == nil || p.client == nil || orgID == "" {
 		return
 	}
-	p.PublishAccountEvent(ctx, &AccountEvent{
+	p.publishWarmupEvent(ctx, &AccountEvent{
 		BaseEvent:      BaseEvent{EventType: EventWarmupPlacement, UserID: userID},
 		OrgID:          orgID,
 		EmailAccountID: accountID,
@@ -569,12 +569,25 @@ func (p *StreamingPublisher) PublishWarmupActivity(ctx context.Context, orgID, u
 	if p == nil || p.client == nil || orgID == "" {
 		return
 	}
-	p.PublishAccountEvent(ctx, &AccountEvent{
+	p.publishWarmupEvent(ctx, &AccountEvent{
 		BaseEvent:      BaseEvent{EventType: EventWarmupActivity, UserID: userID},
 		OrgID:          orgID,
 		EmailAccountID: accountID,
 		Email:          email,
 	})
+}
+
+// publishWarmupEvent sends a mailbox's warmup event to its whole organization;
+// the user-events topic would narrow it to the mailbox's owner.
+func (p *StreamingPublisher) publishWarmupEvent(ctx context.Context, event *AccountEvent) {
+	event.Timestamp = time.Now()
+	attrs := map[string]string{
+		"user_id":    event.UserID,
+		"org_id":     event.OrgID,
+		"account_id": event.EmailAccountID,
+		"event_type": string(event.EventType),
+	}
+	_ = p.publish(ctx, TopicWarmupUpdate, event, attrs)
 }
 
 // AuditEvent signals that a new audit-trail entry was recorded. It is
