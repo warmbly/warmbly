@@ -131,6 +131,7 @@ var commands = []command{
 	{"org list", "List the workspaces on this instance with their id, owner, and size", composeExec + "org list"},
 	{"org export", "Write a whole workspace to a portable archive file", composeExec + "org export --org you@example.com --out /tmp/workspace.warmbly.zip"},
 	{"org import", "Apply an archive to a workspace on this instance", composeExec + "org import --org you@example.com --file /tmp/workspace.warmbly.zip"},
+	{"org attachments-preflight", "Read one page of private attachment type results from a local archive, offline", "warmblyctl org attachments-preflight --file ./workspace.warmbly.zip --limit 25"},
 	{"fleet join-token", "Issue the token a machine needs to join the fleet. Shown once", composeExec + "fleet join-token"},
 	{"fleet list", "Every worker and consumer: role, version, liveness and usage", composeExec + "fleet list"},
 	{"fleet version", "Show or set the version every node should be running", composeExec + "fleet version v1.4.2"},
@@ -191,7 +192,7 @@ Anything piped into a container needs exec -T, which is what turns the TTY off.
 Anything that prompts needs a TTY, so run it without -T.
 
 Environment:
-  PRIMARY_DB       Postgres connection string. Every operator command except hash-password needs it.
+  PRIMARY_DB       Postgres connection string. Not needed by hash-password or org attachments-preflight.
   REDIS            Redis URL. setup-link needs it, and reset-password needs it to mint a link.
   APP_URL          Base URL every printed link is built from.
   WARMBLY_API_KEY  API key (wmbly_...) for the API commands.
