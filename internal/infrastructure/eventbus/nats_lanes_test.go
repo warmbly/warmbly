@@ -116,10 +116,6 @@ func TestNATSBus_KeyedLanesKeepKeyOrderAndRunKeysConcurrently(t *testing.T) {
 		}
 		return nil
 	})
-	// a and b must not share a lane for the concurrency half to mean anything.
-	if natsLane("a", 4) == natsLane("b", 4) {
-		t.Fatal("test keys hash to the same lane")
-	}
 	waitForConsumer(t, bus, bus.durable("lanes", []string{topic}))
 	for _, p := range []string{"a1", "a2", "a3", "b1"} {
 		if err := bus.Publish(t.Context(), topic, "", []byte(p)); err != nil {
@@ -138,6 +134,54 @@ func TestNATSBus_KeyedLanesKeepKeyOrderAndRunKeysConcurrently(t *testing.T) {
 	}
 	if got := order[1:]; got[0] != "a1" || got[1] != "a2" || got[2] != "a3" {
 		t.Fatalf("one key's messages ran out of order: %v", order)
+	}
+}
+
+// A slow key takes one lane and no more: with two lanes, every other key keeps
+// moving through the second while the first is held.
+func TestNATSBus_KeyedLanesNeverQueueOneKeyBehindAnother(t *testing.T) {
+	bus := newTestNATSBus(t)
+	topic := "w.blocking"
+
+	releaseA := make(chan struct{})
+	handled := make(chan string, 8)
+	subscribeInBackground(t, t.Context(), bus, topic, "blocking", 2, payloadKey, func(_ context.Context, msg Message) error {
+		p := string(msg.Payload)
+		if p == "a1" {
+			select {
+			case <-releaseA:
+			case <-time.After(5 * time.Second):
+			}
+		}
+		handled <- p
+		return nil
+	})
+	waitForConsumer(t, bus, bus.durable("blocking", []string{topic}))
+	for _, p := range []string{"a1", "b1", "c1", "d1", "e1"} {
+		if err := bus.Publish(t.Context(), topic, "", []byte(p)); err != nil {
+			t.Fatalf("publish %s: %v", p, err)
+		}
+	}
+	others := map[string]bool{}
+	for len(others) < 4 {
+		select {
+		case p := <-handled:
+			if p == "a1" {
+				t.Fatalf("a1 finished before the other keys: %v", others)
+			}
+			others[p] = true
+		case <-time.After(5 * time.Second):
+			t.Fatalf("keys waited behind a held one: handled %v", others)
+		}
+	}
+	close(releaseA)
+	select {
+	case p := <-handled:
+		if p != "a1" {
+			t.Fatalf("handled %s, want a1", p)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("a1 never finished")
 	}
 }
 

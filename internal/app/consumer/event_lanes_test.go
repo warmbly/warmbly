@@ -7,11 +7,18 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/eventbus"
 )
 
-func TestWorkerEventConcurrencyDefaultsAndBounds(t *testing.T) {
-	for raw, want := range map[string]int{"": 8, "1": 1, "64": 64, "0": 8, "65": 8, "many": 8} {
-		t.Setenv("CONSUMER_EVENT_CONCURRENCY", raw)
-		if got := WorkerEventConcurrency(); got != want {
-			t.Errorf("CONSUMER_EVENT_CONCURRENCY=%q: got %d lanes, want %d", raw, got, want)
+func TestWorkerEventConcurrencyFollowsThePoolUnlessSet(t *testing.T) {
+	for _, c := range []struct {
+		env  string
+		pool int32
+		want int
+	}{
+		{"", 25, 25}, {"", 4, 4}, {"", 0, 1}, {"", 200, 64},
+		{"1", 25, 1}, {"64", 4, 64}, {"0", 25, 25}, {"65", 25, 25}, {"many", 10, 10},
+	} {
+		t.Setenv("CONSUMER_EVENT_CONCURRENCY", c.env)
+		if got := WorkerEventConcurrency(c.pool); got != c.want {
+			t.Errorf("CONSUMER_EVENT_CONCURRENCY=%q pool=%d: got %d lanes, want %d", c.env, c.pool, got, c.want)
 		}
 	}
 }
