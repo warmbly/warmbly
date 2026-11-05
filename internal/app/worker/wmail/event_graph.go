@@ -11,6 +11,7 @@ import (
 // onGraphMessageRemove emits REMOVE_EMAIL for a message deleted or moved out of a
 // tracked folder. providerID is the Graph message id.
 func (w *WMail) onGraphMessageRemove(ctx context.Context, providerID string) error {
+	w.relayCache.forget(providerID)
 	internalMessage, err := w.graphMessageMap(ctx, providerID)
 	if err != nil {
 		return err

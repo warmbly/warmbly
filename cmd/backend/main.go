@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/warmbly/warmbly/internal/app/fleetmetrics"
+	"github.com/warmbly/warmbly/internal/app/mailpush"
 	"log"
 	"net/http"
 	"net/url"
@@ -150,6 +152,7 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/storage"
 	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/jobs"
+	"github.com/warmbly/warmbly/internal/leader"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/notify"
 	"github.com/warmbly/warmbly/internal/observability"
@@ -339,6 +342,8 @@ func main() {
 
 	// Pub/Sub for realtime streaming
 	var streamingPublisher *pubsub.StreamingPublisher
+	var mailPushSettings *mailpush.Settings
+	var mailPushWaker *mailpush.Waker
 
 	// Surfaced into the handler for avatar uploads and other direct
 	// repository / object-storage needs. Declared up here so they
@@ -866,6 +871,8 @@ func main() {
 			Cache:      cache,
 			AppDomains: oauthService.AllowedWebhookDomains,
 		})
+		// An enqueue in any process wakes the worker, so an idle queue's slower poll never delays a delivery.
+		go webhookWorker.Listen(ctx, primaryDB.ConnectSession)
 		go webhookWorker.Run(ctx)
 		campaignProgressRepository := repository.NewCampaignProgressRepository(primaryDB.Pool)
 		warmupService = warmupapp.NewService(warmupRepository)
@@ -1286,6 +1293,14 @@ func main() {
 			UpdaterToken: getenvDefault("UPDATER_TOKEN", os.Getenv("INTERNAL_API_TOKEN")),
 		})
 		updatesService.Start(ctx)
+		// The worker Auto Scaling Group scales on this; unset on every other deployment.
+		if fleet := fleetmetrics.FleetName(); fleet != "" {
+			go func() {
+				if err := fleetmetrics.Run(ctx, primaryDB, fleet); err != nil {
+					log.Printf("Warning: fleet utilization metric disabled: %v", err)
+				}
+			}()
+		}
 
 		// Warmup for a mailbox a linked instance runs is queued for that instance instead of a worker.
 		eventsPublisher := poollink.NewSelfExecutionPublisher(events.NewPublisher(bus, s3, codecImpl, cipherService),
@@ -1316,6 +1331,11 @@ func main() {
 		emailService.WireMailboxCredentials(mailboxCredentials)
 		// Seed Graph delta cursors when the reconciler reloads mailboxes.
 		emailService.WireGraphDelta(repository.NewEmailGraphDeltaRepository(primaryDB))
+		// Provider push: Graph webhooks and Gmail watches wake the worker holding the mailbox.
+		mailPushRepository := repository.NewMailboxPushRepository(primaryDB)
+		mailPushSettings = mailpush.NewSettings(authCfg.AuthSecret, mailPushRepository)
+		mailPushWaker = mailpush.NewWaker(mailPushRepository, eventsPublisher, cache)
+		emailService.WirePush(mailPushSettings)
 		// The Gmail equivalent: without it a reloaded mailbox re-bootstraps its
 		// history cursor and skips everything that arrived since the last sync.
 		emailService.WireEmailHistoryID(repository.NewEmailHistoryIDRepository(primaryDB))
@@ -1553,6 +1573,10 @@ func main() {
 		// undeliverable, using the same projection preflight reports.
 		if aware, ok := campaignService.(campaign.AudienceAware); ok {
 			aware.WireAudience(campaignAudienceRepository)
+		}
+		// A start checks the copy of every active A/B variant, not only the steps.
+		if aware, ok := campaignService.(campaign.VariantAware); ok {
+			aware.WireVariants(advancedRepository)
 		}
 		// A start with nothing left to send says whether verification is why.
 		if aware, ok := campaignService.(campaign.ProgressAware); ok {
@@ -2140,20 +2164,26 @@ func main() {
 			go segmentService.StartCampaignSegmentSync(ctx, 2*time.Minute)
 		}
 
+		// Loops that keep their place in memory run on one backend at a time, the
+		// same one for as long as it holds the lock, so a fleet of replicas does
+		// the work once instead of once per replica.
+		elector := leader.New(primaryDB, "backend")
+
 		// Worker reconciler: assign + (re)load every active mailbox onto its
 		// worker. Workers hold accounts in memory only, so this is what makes a
 		// freshly onboarded account send/sync and re-seeds a restarted worker.
-		go emailService.StartWorkerReconciler(ctx, 60*time.Second)
+		elector.Go("worker_reconciler", func(ctx context.Context) { emailService.StartWorkerReconciler(ctx, 60*time.Second) })
 
 		// Unibox search backfill: record the searchable text of messages synced
 		// before bodies were indexed, so search covers the whole archive and not
 		// just new mail. Walks the table once, then returns.
-		go uniboxService.StartBodyTextBackfill(ctx)
+		elector.Go("unibox_body_backfill", uniboxService.StartBodyTextBackfill)
 
 		// Automation signing secrets live in each connection's sealed config.
 		if m, ok := integrationServiceForHandler.(interface{ StartSigningSecretMigration(context.Context) }); ok {
-			go m.StartSigningSecretMigration(ctx)
+			elector.Go("signing_secret_migration", m.StartSigningSecretMigration)
 		}
+		go elector.Run(ctx)
 
 		// Danger zone: schedule + execute delayed deletions (orgs, accounts).
 		dangerZoneRepository := repository.NewDangerZoneRepository(primaryDB.Pool)
@@ -2206,6 +2236,9 @@ func main() {
 		auditRetentionJob := jobs.NewAuditRetentionJob(auditRepository).WireRetention(instanceSettings)
 		auditRetentionScheduler := jobs.NewAuditRetentionScheduler(auditRetentionJob, 6*time.Hour)
 		go auditRetentionScheduler.Start(ctx)
+
+		// Feeds, logs and finished bookkeeping rows past their windows, in batches.
+		go jobs.NewTableRetentionJob(repository.NewTableRetentionRepository(primaryDB.Pool), instanceSettings).Start(ctx, 6*time.Hour)
 
 		// Website tracking: the snippet's settings, the ingest path the tracking
 		// service forwards page views to, and the per-workspace retention sweep
@@ -2594,6 +2627,9 @@ func main() {
 		AITools:          aiToolRegistry,
 		AIAgentService:   aiAgentService,
 		SlackService:     slackService,
+		MailPush:         mailPushSettings,
+		MailPushWaker:    mailPushWaker,
+		GmailPush:        mailpush.NewGmailPush(),
 		ResearchService:  researchService,
 		SkillsService:    skillsService,
 		MCPService:       mcpService,

@@ -106,6 +106,7 @@ type WMail struct {
 	// laneCache remembers deferred messages' lanes across passes; googleTick
 	// and graphTick carry the running pass's stats into provider callbacks.
 	laneCache  laneCache
+	relayCache relayCache
 	googleTick *tickStats
 	graphTick  *tickStats
 	// googleReconciledAt is when the Gmail folder reconciliation last ran;
@@ -136,6 +137,10 @@ type WMail struct {
 	// mail server, which paces the retry and keeps one outage to one warning.
 	transportFailures int
 	syncStartupError  *errx.MailError
+
+	// wake runs the next sync pass early; push is the provider channel that fills it.
+	wake chan struct{}
+	push pushChannel
 
 	Ctx           context.Context
 	Cancel        context.CancelFunc
@@ -174,6 +179,7 @@ func NewWMail(
 		Ctx:           mailCtx,
 		Cancel:        cancel,
 		TerminateFunc: terminate,
+		wake:          make(chan struct{}, 1),
 
 		Cache:                     cache,
 		Storage:                   storage,
@@ -182,6 +188,7 @@ func NewWMail(
 		CipherService:             cipherService,
 	}
 	mail.rememberExecution(data)
+	mail.ApplyPush(data.Push)
 	ready := false
 	defer func() {
 		if !ready {
@@ -314,6 +321,7 @@ func NewWMail(
 				Credentials: data.SmtpImap.Credentials.IMAP,
 			}
 			mail.SmtpImapData.ImapClient = conn
+			mail.push.imapCred = data.SmtpImap.Credentials.IMAP
 			if err := conn.Connect(); err != nil {
 				if !isTransportError(err) && err.Code != errx.MailErrorCodeSendingTooFast {
 					return nil, err

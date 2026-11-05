@@ -31,9 +31,9 @@ Open the Preview to check it renders as expected, with no leftover `{{...}}` tok
 
 ## Good to know
 
-- Field names are case-sensitive: `{{.FirstName}}` works, `{{.firstname}}` does not.
-- Unknown variables render empty rather than erroring.
-- Every `{{if}}` must close with `{{end}}`. A broken one blocks launching the campaign.
+- Write fields as `{{.FirstName}}`. In campaign copy, the snake_case, camelCase and lowercase spellings of the built-in fields work too: `{{first_name}}`, `{{.firstName}}`, `{{company_name}}`.
+- A custom field nobody filled in renders empty rather than erroring.
+- Every `{{if}}` must close with `{{end}}`. A step or variant with a broken template cannot be saved.
 - Spintax such as `{Hi|Hey|Hello}` varies wording in campaign subjects and bodies only.
 - Automations use the trigger's lowercase keys, such as `{{.contact_email}}`, still with the leading dot.
 
@@ -67,14 +67,14 @@ Write one email and have it come out personalized for every contact, using merge
 
 ### Contact fields (campaigns)
 
-Exact names, **capitalized**, with a leading dot: `{{.FirstName}}`, `{{.LastName}}`, `{{.Email}}`, `{{.Company}}`, `{{.Phone}}`.
+Capitalized names with a leading dot: `{{.FirstName}}`, `{{.LastName}}`, `{{.Email}}`, `{{.Company}}`, `{{.Phone}}`.
 
 ```
 Hi {{.FirstName}}, I noticed {{.Company}} is hiring and wanted to reach out.
 ```
 
-<Callout type="warn" title="Field names are case-sensitive">
-`{{.FirstName}}` works. `{{.firstname}}`, `{{.firstName}}`, and `{{.FIRSTNAME}}` do not, and leave an empty value or a leftover token in your email.
+<Callout title="Other spellings of the built-in fields">
+Campaign copy also accepts the snake_case, camelCase and lowercase spellings of every built-in field, with or without the dot: `{{first_name}}`, `{{.firstName}}`, `{{firstname}}`, `{{last_name}}`, `{{email}}`, `{{company}}`, `{{company_name}}`, `{{phone}}`, `{{unsubscribe_link}}`, and `{{.Sender.first_name}}` for sender fields. They work inside conditions and helpers as well (`{{if first_name}}`, `{{first_name | default "there"}}`). A spelling without the dot always reads the built-in field, in the preview and in the sent email, and is saved in canonical form (`{{first_name}}` is stored as `{{.FirstName}}`); sender fields are saved under their canonical names. A dotted spelling such as `{{.first_name}}` is kept as written, and a contact's own custom field with that name keeps its value. `{{.FIRSTNAME}}` is not one of them.
 </Callout>
 
 **Custom fields** work the same way with a dot: `{{.industry}}`, `{{.account_owner}}`. Names containing spaces or dashes also work as written (`{{if .job title}}...{{end}}`) and resolve everywhere, including inside conditions and helpers, because Warmbly rewrites them to an `index` lookup for you.
@@ -94,7 +94,7 @@ Values come from the **mailbox actually sending that message**, including campai
 
 `{{.Sender.Email}}` is the recipient-visible From address, including a configured send-as alias. `{{.Sender.MailboxEmail}}` is the underlying connected mailbox address. `{{.Sender.ReplyTo}}` is the explicit Reply-To header; it is empty when replies simply go to the sender.
 
-Every field is case-sensitive. Prefix each name below with `.Sender.`, for example `{{.Sender.Provider}}`:
+Prefix each name below with `.Sender.`, for example `{{.Sender.Provider}}`. The names are written as shown; campaign copy also accepts their snake_case, camelCase and lowercase spellings (`{{.Sender.first_name}}`, saved as `{{.Sender.FirstName}}`), and any other capitalization is refused. A sender field is text, a flag or a number, so a selector after it (`{{.Sender.Email.Domain}}`) is refused too:
 
 | Details | Fields |
 | --- | --- |
@@ -263,12 +263,12 @@ hasSuffix .contact_email "@acme.com"
 
 ## Gotchas
 
-- Standard fields are case-sensitive: `{{.FirstName}}`, not `{{.firstname}}`.
+- Standard fields are written `{{.FirstName}}`; `first_name`, `firstName` and `firstname` are accepted in campaign copy, other capitalizations are not.
 - `{a|b}` is spintax (campaigns only); `{{...}}` is a variable, condition, or function.
 - Always close `{{if}}` with `{{end}}`, and quote text values.
 - If a comparison on a custom field behaves oddly, switch `gt`/`lt` to `gtf`/`ltf`, or wrap the value in `num`.
-- Unknown variables render empty rather than erroring. A leftover `{{...}}` usually means a typo or wrong capitalization.
-- In action text keep the leading dot. It is standard Go `text/template`, so a bare `{{contact_email}}` is invalid.
+- A dotted field nobody filled in renders empty rather than erroring. A bare name that is not a built-in field, like `{{frist_name}}`, is refused when the step is saved; write a custom field with the dot, `{{.city}}`.
+- In automation action text keep the leading dot. It is standard Go `text/template`, so a bare `{{contact_email}}` is invalid.
 
 </Fold>
 
@@ -276,7 +276,7 @@ hasSuffix .contact_email "@acme.com"
 
 ## Preview and validation
 
-**Campaigns**: the composer's live Preview renders against a sample contact exactly as the real send does (variables, conditionals, functions, then spintax). It flags errors like a broken `{{if}}`, which block launching, and unresolved tokens left after rendering.
+**Campaigns**: the composer's live Preview renders against a sample contact exactly as the real send does (variables, conditionals, functions, then spintax). It flags errors like a broken `{{if}}` and unresolved tokens left after rendering. Saving a step, an A/B variant or a new campaign checks the subject, HTML body and plain-text body, and refuses copy that would not render as written with `invalid_template`, naming the field, the line and the problem.
 
 **Automations**: an advanced expression is validated on save, so a condition that does not parse cannot be saved. The **Reference** button lists every variable and function inline.
 

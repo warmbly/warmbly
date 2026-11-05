@@ -116,6 +116,8 @@ IP per worker. The root uses standard CPU credits to cap burst charges. Bootstra
 prepares each host without starting its worker, so identity and credentials can
 be checked before a sequential handover. Check mailbox authentication when the
 outbound IP changes, and preserve each worker ID throughout the move.
+The same root can instead run an autoscaling fleet with no public IPv4 address
+on any worker; see [AWS worker fleet](/development/aws-workers/).
 
 ## Prepare configuration
 

@@ -174,7 +174,7 @@ const CAMPAIGN_SELECT = `id, name, description, status,
 		  guardrail_tripped_at, guardrail_reason,
 		  utm_tracking, utm_source, utm_medium, utm_campaign,
 		  unsubscribe_mode,
-		  continuous, idle_since`
+		  continuous, idle_since, stop_on_meeting`
 
 func getCampaign(rows db.Scannable, campaign *models.Campaign, extra ...any) error {
 	var dest []any = []any{
@@ -195,7 +195,7 @@ func getCampaign(rows db.Scannable, campaign *models.Campaign, extra ...any) err
 		&campaign.GuardrailTrippedAt, &campaign.GuardrailReason,
 		&campaign.UTMTracking, &campaign.UTMSource, &campaign.UTMMedium, &campaign.UTMCampaign,
 		&campaign.UnsubscribeMode,
-		&campaign.Continuous, &campaign.IdleSince,
+		&campaign.Continuous, &campaign.IdleSince, &campaign.StopOnMeeting,
 	}
 	dest = append(dest, extra...)
 	return rows.Scan(
@@ -221,7 +221,7 @@ const CAMPAIGN_SELECT_FULL = `
 	c.guardrail_tripped_at, c.guardrail_reason,
 	c.utm_tracking, c.utm_source, c.utm_medium, c.utm_campaign,
 	c.unsubscribe_mode,
-	c.continuous, c.idle_since,
+	c.continuous, c.idle_since, c.stop_on_meeting,
 	COALESCE(array_agg(cet.tag_id) FILTER (WHERE cet.tag_id IS NOT NULL), '{}') AS email_tag_ids,
 	COALESCE(array_agg(cec.folder_id) FILTER (WHERE cec.folder_id IS NOT NULL), '{}') AS email_folder_ids
 `
@@ -348,6 +348,10 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 	stopOnReply := true
 	if data.StopOnReply != nil {
 		stopOnReply = *data.StopOnReply
+	}
+	stopOnMeeting := true
+	if data.StopOnMeeting != nil {
+		stopOnMeeting = *data.StopOnMeeting
 	}
 	openTracking := false
 	if data.OpenTracking != nil {
@@ -505,6 +509,7 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 			tracking_domain,
 			utm_tracking, utm_source, utm_medium, utm_campaign,
 			unsubscribe_mode, continuous, entry_delay_minutes,
+			stop_on_meeting,
 			created_at, updated_at
 		) VALUES (
 			gen_random_uuid(), $1, $2, $3, $4,
@@ -518,6 +523,7 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 			$30,
 			$31, $32, $33, $34,
 			$35, $36, $37,
+			$38,
 			NOW(), NOW()
 		)
 		RETURNING %s
@@ -561,6 +567,7 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 		unsubMode,          // $35
 		continuous,         // $36
 		entryDelay,         // $37
+		stopOnMeeting,      // $38
 	}
 
 	row := tx.QueryRow(ctx, insertSQL, params...)
@@ -984,6 +991,11 @@ func (r *campaignRepository) Update(ctx context.Context, orgID, campaignID strin
 	if data.StopOnReply != nil {
 		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "stop_on_reply", argPos))
 		args = append(args, *data.StopOnReply)
+		argPos++
+	}
+	if data.StopOnMeeting != nil {
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "stop_on_meeting", argPos))
+		args = append(args, *data.StopOnMeeting)
 		argPos++
 	}
 	if data.OpenTracking != nil {
@@ -1456,7 +1468,7 @@ func (r *campaignRepository) GetByID(ctx context.Context, campaignID uuid.UUID) 
 		&campaign.GuardrailTrippedAt, &campaign.GuardrailReason,
 		&campaign.UTMTracking, &campaign.UTMSource, &campaign.UTMMedium, &campaign.UTMCampaign,
 		&campaign.UnsubscribeMode,
-		&campaign.Continuous, &campaign.IdleSince,
+		&campaign.Continuous, &campaign.IdleSince, &campaign.StopOnMeeting,
 		&campaign.EmailTags, &campaign.Folders,
 	)
 	if err != nil {

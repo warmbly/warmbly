@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
@@ -72,4 +73,40 @@ func TestNotifyActionRequiredReachesMailboxManagers(t *testing.T) {
 func TestNotifyActionRequiredWithoutNotifierIsQuiet(t *testing.T) {
 	s := &JobsService{}
 	s.notifyActionRequired(uuid.New(), "", &models.EmailMessageStoreData{ID: uuid.New()})
+}
+
+type fixedUnibox struct {
+	ok   bool
+	xerr *errx.Error
+}
+
+func (f fixedUnibox) CanUseUnibox(context.Context, uuid.UUID) (bool, *errx.Error) {
+	return f.ok, f.xerr
+}
+
+// A workspace whose plan locks the inbox gets no notice pointing into it; an unknown answer still notifies.
+func TestNotifyActionRequiredFollowsInboxAccess(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		gate fixedUnibox
+		want bool
+	}{
+		{"inbox locked", fixedUnibox{ok: false}, false},
+		{"inbox open", fixedUnibox{ok: true}, true},
+		{"access unknown", fixedUnibox{xerr: errx.New(errx.Internal, "down")}, true},
+	} {
+		n := &captureOrgNotifier{got: make(chan capturedOrgNotice, 1)}
+		s := &JobsService{Notifier: n, UniboxAccess: tc.gate}
+		s.notifyActionRequired(uuid.New(), "[EMAIL]", &models.EmailMessageStoreData{ID: uuid.New(), ThreadID: "t"})
+		select {
+		case <-n.got:
+			if !tc.want {
+				t.Errorf("%s: notified, want silent", tc.name)
+			}
+		case <-time.After(300 * time.Millisecond):
+			if tc.want {
+				t.Errorf("%s: silent, want a notice", tc.name)
+			}
+		}
+	}
 }

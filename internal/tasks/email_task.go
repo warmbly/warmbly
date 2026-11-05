@@ -935,26 +935,39 @@ func (s *tasksService) resolveWarmupPoolType(ctx context.Context, account *Email
 	if account == nil {
 		return "premium"
 	}
+	return warmupPoolTypeFor(account.OrganizationID, account.WarmupPoolType,
+		func(org uuid.UUID) bool { return s.orgSuspendedOrRestricted(ctx, org) },
+		func(org uuid.UUID) (bool, bool) { return s.hasPremiumWarmup(ctx, org) })
+}
+
+// warmupPoolTypeFor is the pool a mailbox belongs in, given lookups for its organization.
+func warmupPoolTypeFor(orgID *uuid.UUID, stored string, restricted func(uuid.UUID) bool, premium func(uuid.UUID) (paid, known bool)) string {
 	// No organization means no entitlement to check, so the mailbox gets the
 	// lower-trust pool rather than defaulting into the paid one.
-	if account.OrganizationID == nil {
+	if orgID == nil {
 		return "free"
 	}
 	// A restricted organization leaves the paid pool whatever it pays. Checked
 	// before the stored tier, which is never empty and would short-circuit it.
-	if s.orgSuspendedOrRestricted(ctx, *account.OrganizationID) {
+	if restricted(*orgID) {
 		return "free"
 	}
-	if account.WarmupPoolType != "" {
-		return account.WarmupPoolType
+	if stored != "" {
+		return stored
 	}
-	if s.featureGate != nil {
-		isPaid, xerr := s.featureGate.HasPremiumWarmup(ctx, *account.OrganizationID)
-		if xerr == nil && !isPaid {
-			return "free"
-		}
+	if paid, known := premium(*orgID); known && !paid {
+		return "free"
 	}
 	return "premium"
+}
+
+// hasPremiumWarmup reports the organization's paid warmup, and whether it could be read.
+func (s *tasksService) hasPremiumWarmup(ctx context.Context, orgID uuid.UUID) (bool, bool) {
+	if s.featureGate == nil {
+		return false, false
+	}
+	isPaid, xerr := s.featureGate.HasPremiumWarmup(ctx, orgID)
+	return isPaid, xerr == nil
 }
 
 func (s *tasksService) scheduleWarmupRecovery(ctx context.Context, accountID uuid.UUID, poolType string) {

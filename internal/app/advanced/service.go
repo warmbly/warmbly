@@ -18,6 +18,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/pkg/dsn"
 	"github.com/warmbly/warmbly/internal/pkg/emailverify"
+	"github.com/warmbly/warmbly/internal/pkg/tmplvars"
 	"github.com/warmbly/warmbly/internal/pkg/typesafe"
 	"github.com/warmbly/warmbly/internal/utils/validate"
 
@@ -365,6 +366,12 @@ func (s *service) CreateABVariant(ctx context.Context, campaignID uuid.UUID, req
 	if req == nil || strings.TrimSpace(req.Name) == "" {
 		return nil, errx.New(errx.BadRequest, "variant name is required")
 	}
+	if models.VariantSendsOwnCopy(req.SequenceID, req.IsControl) {
+		if err := checkVariantCopy(req.Subject, req.BodyHTML, req.BodyPlain); err != nil {
+			return nil, errx.InvalidTemplate(err)
+		}
+	}
+	tmplvars.CanonicalizeAll(&req.Subject, &req.BodyHTML, &req.BodyPlain)
 	out, err := s.repo.CreateABVariant(ctx, campaignID, req)
 	if err != nil {
 		return nil, toErrx(err)
@@ -373,11 +380,66 @@ func (s *service) CreateABVariant(ctx context.Context, campaignID uuid.UUID, req
 }
 
 func (s *service) UpdateABVariant(ctx context.Context, campaignID, variantID uuid.UUID, req *models.UpdateCampaignABVariantRequest) (*models.CampaignABVariant, *errx.Error) {
+	if req != nil && (req.Subject != nil || req.BodyHTML != nil || req.BodyPlain != nil || req.IsControl != nil || req.IsActive != nil) {
+		merged, xerr := s.mergedVariant(ctx, campaignID, variantID, req)
+		if xerr != nil {
+			return nil, xerr
+		}
+		if models.VariantSendsOwnCopy(merged.SequenceID, merged.IsControl) {
+			if err := checkVariantCopy(merged.Subject, merged.BodyHTML, merged.BodyPlain); err != nil {
+				return nil, errx.InvalidTemplate(err)
+			}
+		}
+		tmplvars.CanonicalizeAll(req.Subject, req.BodyHTML, req.BodyPlain)
+	}
 	out, err := s.repo.UpdateABVariant(ctx, campaignID, variantID, req)
 	if err != nil {
 		return nil, toErrx(err)
 	}
 	return out, nil
+}
+
+func checkVariantCopy(subject, bodyHTML, bodyPlain string) error {
+	return tmplvars.CheckCopy(
+		tmplvars.Part{Name: "variant subject", Text: subject},
+		tmplvars.Part{Name: "variant body", Text: bodyHTML, HTML: true},
+		tmplvars.Part{Name: "variant plain-text body", Text: bodyPlain},
+	)
+}
+
+// mergedVariant is the stored variant with req applied, the copy it would send
+// once the update lands; a variant not found is empty, and the update reports the miss.
+func (s *service) mergedVariant(ctx context.Context, campaignID, variantID uuid.UUID, req *models.UpdateCampaignABVariantRequest) (models.CampaignABVariant, *errx.Error) {
+	variants, err := s.repo.ListABVariants(ctx, campaignID)
+	if err != nil {
+		return models.CampaignABVariant{}, toErrx(err)
+	}
+	var v models.CampaignABVariant
+	for _, row := range variants {
+		if row.ID == variantID {
+			v = row
+			break
+		}
+	}
+	for _, f := range []struct {
+		dst *string
+		src *string
+	}{{&v.Subject, req.Subject}, {&v.BodyHTML, req.BodyHTML}, {&v.BodyPlain, req.BodyPlain}} {
+		if f.src != nil {
+			*f.dst = *f.src
+		}
+	}
+	if req.IsControl != nil {
+		v.IsControl = *req.IsControl
+	}
+	return v, nil
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 func (s *service) DeleteABVariant(ctx context.Context, campaignID, variantID uuid.UUID) *errx.Error {
@@ -1114,6 +1176,28 @@ func automatedIntent(r replyclassify.Result) (models.ReplyIntentType, float64) {
 	return models.ReplyIntentAutomated, r.Confidence
 }
 
+// verdictIntent maps a reply classifier verdict onto the recorded intent
+// vocabulary. ok is false when no layer decided. A model verdict too unsure
+// to name a class is neutral, matching the Needs review the inbox shows.
+func verdictIntent(r replyclassify.Result) (models.ReplyIntentType, float64, bool) {
+	switch r.Class {
+	case replyclassify.ClassPositive:
+		return models.ReplyIntentPositive, r.Confidence, true
+	case replyclassify.ClassNegative, replyclassify.ClassUnsubscribe:
+		return models.ReplyIntentNegative, r.Confidence, true
+	case replyclassify.ClassNeutral:
+		return models.ReplyIntentNeutral, r.Confidence, true
+	case replyclassify.ClassOutOfOffice, replyclassify.ClassAutoReply:
+		intent, conf := automatedIntent(r)
+		return intent, conf, true
+	case replyclassify.ClassUnknown:
+		if r.Source == replyclassify.SourceModel {
+			return models.ReplyIntentNeutral, r.Confidence, true
+		}
+	}
+	return "", 0, false
+}
+
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {
 		if strings.TrimSpace(v) != "" {
@@ -1465,9 +1549,10 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 		replyResult := verdict
 		if replyResult.Class == "" {
 			replyResult = replyclassify.ClassifyGated(ctx, replyclassify.Input{
-				Headers:  buildReplyHeaders(msg),
-				Subject:  msg.Subject,
-				BodyText: msg.Snippet,
+				Headers: buildReplyHeaders(msg),
+				Subject: msg.Subject,
+				// The whole reply, so an opt-out past the preview is read.
+				BodyText: firstNonEmpty(msg.BodyText, msg.Snippet),
 				// The typed layer answers from the tagger's stored verdict for
 				// this message, so a reply is judged once.
 				OrganizationID: *account.OrganizationID,
@@ -1485,7 +1570,7 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 		// The tagging verdict for this message was stored before this hook ran;
 		// copy a confident human-reply intent so reply_intent branches can route on
 		// it, ahead of the instant matcher below.
-		s.recordReplyIntent(ctx, *account.OrganizationID, msg.MessageID, cID, ctID, sID)
+		s.recordReplyIntent(ctx, *account.OrganizationID, msg.MessageID, replyResult.Class, cID, ctID, sID)
 
 		// OOO trap fix: only a HUMAN reply stamps replied_at. An auto_reply /
 		// out_of_office must NOT count as a reply, or it would (a) trip
@@ -1591,11 +1676,13 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 	// address. The header and lexicon layers are free, so answer "is this a
 	// human" for every inbound message; only the model layer is worth gating.
 	if verdict.Class == "" {
-		verdict = replyclassify.ClassifyOffline(replyclassify.Input{
-			Headers:   buildReplyHeaders(msg),
-			Subject:   msg.Subject,
-			BodyText:  firstNonEmpty(msg.BodyText, msg.Snippet),
-			Languages: settings.InboxTagging.Languages,
+		verdict = replyclassify.ClassifyKnown(ctx, replyclassify.Input{
+			Headers:        buildReplyHeaders(msg),
+			Subject:        msg.Subject,
+			BodyText:       firstNonEmpty(msg.BodyText, msg.Snippet),
+			OrganizationID: *account.OrganizationID,
+			MessageID:      msg.MessageID,
+			Languages:      settings.InboxTagging.Languages,
 		})
 	}
 	if replyClaimToken == uuid.Nil && !replyClaimCompleted {
@@ -1609,13 +1696,12 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 		replyClaimToken = claimToken
 	}
 
-	intent, confidence := classifyReply(text, settings.ReplyIntent)
-	// The layered classifier reads auto-reply headers and a multilingual
-	// out-of-office vocabulary the workspace's own keyword list does not, so
-	// its verdict settles the case the keywords missed. Only the automated
-	// classes are folded in: sentiment stays the keyword list's call.
-	if replyclassify.IsAutomated(verdict.Class) {
-		intent, confidence = automatedIntent(verdict)
+	// The recorded intent is the classifier's verdict, so a webhook, the
+	// timeline and a CRM task agree with the campaign's reply counts; the
+	// workspace's keyword lists decide only a reply nothing else decided.
+	intent, confidence, decided := verdictIntent(verdict)
+	if !decided {
+		intent, confidence = classifyReply(text, settings.ReplyIntent)
 	}
 	if !replyClaimCompleted {
 		if err := s.campaignProgressRepo.CompleteIncomingReply(ctx, emailAccountID, msg.ID, replyClaimToken); err != nil {

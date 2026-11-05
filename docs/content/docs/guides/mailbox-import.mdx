@@ -157,7 +157,7 @@ Each mailbox is labelled with where it is hosted and how it signs in. The [API](
 
 A Google row whose password is not a 16-letter app password is flagged in the preview before anything is tried: Google refuses the account password over IMAP and SMTP. On an instance that connects new Gmail mailboxes with Google sign-in (`gmail_oauth_connect` in `GET /auth/config`), such a row waits for sign-in instead, like a Microsoft row.
 
-Google rows waiting for Google sign-in offer a **Sign in** action only on deployments where [Google mailbox OAuth is enabled](/development/configuration/#google-sign-in-per-dashboard-deployment). Otherwise use an app password or an admin grant. Microsoft sign-in is unaffected by that flag.
+Google rows waiting for Google sign-in offer a **Sign in** action only on deployments where [Google mailbox OAuth is enabled](/development/configuration/#google-sign-in-per-dashboard-deployment). Otherwise use **Fix** on the row to give it a 16-letter app password, which connects it over IMAP and SMTP with Google's servers, or use an admin grant. Microsoft sign-in is unaffected by that flag.
 
 ### Microsoft
 
@@ -460,3 +460,7 @@ The import is available to a signed-in session under `/emails/imports`, never to
   <Card title="Warmup" href="/guides/warmup/" />
   <Card title="Export and import" href="/guides/workspace-export-import/" />
 </Cards>
+
+## Text import encoding
+
+File-based CSV, TSV and TXT imports, including supported extensionless text files, use UTF-8 with an optional UTF-8 BOM. Unicode, comma/semicolon detection, tab-separated input, quoted multiline cells and ragged rows retain their existing parsing behavior. Binary control characters, NUL bytes and invalid UTF-8 are refused before row parsing. XLSX and XLSM imports retain their existing workbook parser and decompression limits; their support is separate from campaign attachment uploads.

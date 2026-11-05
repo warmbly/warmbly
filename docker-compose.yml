@@ -235,6 +235,16 @@ x-selfhost-env: &selfhost-env
   SLACK_OAUTH_CLIENT_SECRET: ${SLACK_OAUTH_CLIENT_SECRET:-}
   SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:-}
 
+  # Realtime mailbox sync. IMAP IDLE is on by default; Graph and Gmail push are
+  # off until configured, and every mailbox keeps polling as the safety net.
+  IMAP_IDLE: ${IMAP_IDLE:-}
+  SYNC_PUSH_FALLBACK_INTERVAL: ${SYNC_PUSH_FALLBACK_INTERVAL:-}
+  GRAPH_PUSH: ${GRAPH_PUSH:-}
+  GMAIL_PUSH_TOPIC: ${GMAIL_PUSH_TOPIC:-}
+  GMAIL_PUSH_SERVICE_ACCOUNT: ${GMAIL_PUSH_SERVICE_ACCOUNT:-}
+  GMAIL_PUSH_SUBSCRIPTION: ${GMAIL_PUSH_SUBSCRIPTION:-}
+  GOOGLE_APPLICATION_CREDENTIALS_JSON: ${GOOGLE_APPLICATION_CREDENTIALS_JSON:-}
+
   # Mobile push. Partial config disables push with a warning, never a crash.
   APNS_KEY: ${APNS_KEY:-}
   APNS_KEY_ID: ${APNS_KEY_ID:-}
@@ -549,6 +559,8 @@ services:
       BOX_GOOGLE_CLIENT_SECRET: ${BOX_GOOGLE_CLIENT_SECRET:-}
       BOX_OUTLOOK_CLIENT_ID: ${BOX_OUTLOOK_CLIENT_ID:-}
       BOX_OUTLOOK_CLIENT_SECRET: ${BOX_OUTLOOK_CLIENT_SECRET:-}
+      # A worker holds no cloud credential; only the consumer reads this one.
+      GOOGLE_APPLICATION_CREDENTIALS_JSON: ""
     volumes:
       - ${WARMBLY_BLOBS:-blobs}:/data/blobs
       - ${WARMBLY_WORKER_STATE:-worker_state}:/data/state

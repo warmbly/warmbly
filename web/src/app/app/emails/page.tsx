@@ -136,6 +136,7 @@ import type { AdvisorFinding } from "@/lib/api/models/app/advisor/Advisor";
 import { Checkbox } from "@/components/ui/checkbox";
 import { labelInk } from "@/lib/utils";
 import { nextSlotLabel } from "@/lib/helper/nextSlot";
+import useCurrentOrganization from "@/lib/api/hooks/app/organizations/useCurrentOrganization";
 
 export default function AddressesPage() {
     const p = useUserProfile();
@@ -874,6 +875,7 @@ function MailboxRow({
     const life = useWarmupLifecycle(box.id);
     const confirm = useConfirm();
     const remove = useRemoveEmail(box.id);
+    const workspaceZone = useCurrentOrganization().data?.timezone;
     const power = useMailboxSwitch(box.id, box.email);
     // Switched off by its owner or the platform; a revoked one needs a reconnect instead.
     const switchedOff = box.status === "inactive";
@@ -944,7 +946,7 @@ function MailboxRow({
 
     // A refused send outranks the count: it is why the count is not moving.
     const sendFailure = inCloud ? cloudSendFailure(cloud?.cloud) : warming ? ws?.send_failure : undefined;
-    const nextWarmup = warming && ws?.next_send_at ? nextSlotLabel(ws.next_send_at) : undefined;
+    const nextWarmup = warming && ws?.next_send_at ? nextSlotLabel(ws.next_send_at, undefined, box.timezone || workspaceZone || "UTC") : undefined;
 
     // Warmup column: what's flowing today and why.
     const warmupLabel = inCloud

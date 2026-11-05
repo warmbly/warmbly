@@ -179,13 +179,8 @@ func (r *linkClickRepository) ListPendingAnnouncements(ctx context.Context, befo
 }
 
 func (r *linkClickRepository) Cleanup(ctx context.Context, olderThanDays int) (int64, error) {
-	tag, err := r.db.Exec(ctx,
-		`DELETE FROM email_link_clicks WHERE clicked_at < NOW() - $1 * INTERVAL '1 day'`,
-		olderThanDays)
-	if err != nil {
-		return 0, err
-	}
-	return tag.RowsAffected(), nil
+	return DeleteInBatches(ctx, r.db, "email_link_clicks",
+		`SELECT ctid FROM email_link_clicks WHERE clicked_at < NOW() - $2 * INTERVAL '1 day' LIMIT $1`, olderThanDays)
 }
 
 func (r *linkClickRepository) CountRecentOtherLinks(ctx context.Context, taskID uuid.UUID, ipHash string, linkID *uuid.UUID, destination string, since time.Time) (int, error) {

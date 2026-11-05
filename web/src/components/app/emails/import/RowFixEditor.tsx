@@ -1,4 +1,4 @@
-// RowFixEditor: a failed row's new password or servers, saved with PATCH
+// RowFixEditor: a failed or sign-in row's new password or servers, saved with PATCH
 // /emails/imports/:id/rows/:line, which re-seals the row and queues it again.
 import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -14,6 +14,7 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import { mailHostLabel } from "@/lib/mailHost";
 import { cn } from "@/lib/utils";
+import { isGoogleServer, looksLikeGoogleAppPassword } from "./importFields";
 
 // Hosts that take only an app password over IMAP and SMTP.
 const APP_PASSWORD_HOSTS = new Set(["google_workspace", "gmail", "yahoo", "aol", "icloud", "fastmail", "yandex"]);
@@ -62,9 +63,11 @@ export default function RowFixEditor({
     if (smtpFix) body.smtp = smtpFix;
     if (imapFix) body.imap = imapFix;
     const empty = Object.keys(body).length === 0;
+    const googleRow = smtp.host.trim() ? isGoogleServer(smtp.host) : row.mail_host === "google_workspace" || row.mail_host === "gmail";
+    const notAppPassword = googleRow && !!secret && !looksLikeGoogleAppPassword(secret);
 
     async function save() {
-        if (empty || fix.isPending) return;
+        if (empty || notAppPassword || fix.isPending) return;
         try {
             await fix.mutateAsync({ line: row.line, fix: body });
             toast.success(`${row.email || `Line ${row.line}`} is queued again`);
@@ -154,8 +157,12 @@ export default function RowFixEditor({
             </AnimatePresence>
 
             <div className="flex items-center gap-2">
-                <span className="text-[11px] text-slate-500 min-w-0 truncate">
-                    {empty ? "Enter a new password or change a server to retry this row." : "The row is checked again right after saving."}
+                <span className={cn("text-[11px] min-w-0 truncate", notAppPassword ? "text-rose-600" : "text-slate-500")}>
+                    {notAppPassword
+                        ? "Google needs the 16-letter app password, not the account password."
+                        : empty
+                          ? "Enter a new password or change a server to retry this row."
+                          : "The row is checked again right after saving."}
                 </span>
                 <button
                     type="button"
@@ -167,7 +174,7 @@ export default function RowFixEditor({
                 <button
                     type="button"
                     onClick={() => void save()}
-                    disabled={empty || fix.isPending}
+                    disabled={empty || notAppPassword || fix.isPending}
                     className="h-7 px-3 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-50 shrink-0"
                 >
                     {fix.isPending ? <Loader2Icon className="w-3 h-3 animate-spin" /> : <RotateCcwIcon className="w-3 h-3" />}

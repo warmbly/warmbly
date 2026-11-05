@@ -39,7 +39,8 @@ Pause to stop both sending and receiving warmup mail, or Stop to also turn diagn
 
 ## Good to know
 
-- Warmup is a paid feature: free organizations can connect mailboxes, but no warmup traffic is scheduled for them.
+- On Warmbly Cloud, warmup needs a paid plan, and every paid plan warms unlimited mailboxes in the premium pool. A workspace that had the free plan before it closed to new workspaces keeps warming up to 10 mailboxes in the free pool.
+- A self-hosted instance warms every mailbox, but only against the other mailboxes on that instance, with no shared pool.
 - New mailboxes start with warmup off. Once on, it starts at `10` emails a day by default and climbs by `+1` a day to a ceiling of `40`.
 - Keep warmup on after campaigns start. A mailbox backing a live campaign drops to at most five warmup messages a day, and the pool replies to more of them.
 - Warmup mail never appears in the unibox, and it is removed from the mailbox after 30 days by default.
@@ -52,7 +53,7 @@ Pause to stop both sending and receiving warmup mail, or Stop to also turn diagn
 Warmup sends natural plain-text threads between participating mailboxes. It measures observed placement and bounded actual-message DKIM evidence. It does not establish organic engagement or guarantee reputation improvement or inbox placement.
 
 <Callout type="info" title="Warmup is a paid feature">
-  Free organizations can connect mailboxes, but no warmup traffic is scheduled for them; pending warmup activity is skipped rather than sent.
+  On Warmbly Cloud a workspace without a paid plan cannot connect mailboxes, and no warmup traffic is scheduled for it; pending warmup activity is skipped rather than sent. A workspace that had the free plan before it closed to new workspaces keeps warming up to 10 mailboxes in the free pool. See [billing](/guides/billing/#without-a-paid-plan).
 </Callout>
 
 </Fold>
@@ -130,7 +131,7 @@ A pool is the set of mailboxes that warm each other. Your mailbox exchanges warm
 | Pool | Who is in it |
 |------|--------------|
 | `premium` | Paid organizations' mailboxes. The default for paid accounts, isolated from lower-trust traffic. |
-| `free` | Lower-trust or trial mailboxes, kept separate so free traffic does not mix into premium reputation. |
+| `free` | Mailboxes of workspaces that kept the earlier free plan, and lower-trust mailboxes, kept separate so free traffic does not mix into premium reputation. New workspaces do not join it without a plan. |
 
 A mailbox belongs to exactly one pool at a time. When its plan changes the mailbox moves between pools rather than joining a second one, and it takes its warmup standing with it, so a quarantine or block is not cleared by changing tier.
 
@@ -224,7 +225,7 @@ Four things shape the real daily number: sends are spread across your warmup hou
 
 The partner cap exists because a mailbox never writes to the same partner twice in a day. When it applies, the **Warmup** tab of the mailbox drawer says so: it shows the ramp's number next to how many partners are available to the mailbox today, and the target it reports is the lower of the two. The count can fall during the day as partners reach their daily limit, and it recovers the next day. The same tab names the pool the mailbox warms in.
 
-Warmup hours are read in the mailbox's timezone: its own when one is set on the **Settings** tab of its drawer, otherwise the workspace timezone under **Settings > Profile > Timezones**, and UTC when neither is set. Set the workspace timezone once and every mailbox that follows it reads its warmup hours in the team's day. A mailbox with its own timezone keeps it, and changing the workspace timezone does not change any mailbox's hours.
+Warmup hours are read in the mailbox's timezone: its own when one is set on the **Settings** tab of its drawer, otherwise the workspace timezone under **Settings > Profile > Timezones**, and UTC when neither is set. Set the workspace timezone once and every mailbox that follows it reads its warmup hours in the team's day. A mailbox with its own timezone keeps it, and changing the workspace timezone does not change any mailbox's hours. The day's warmup count also resets at midnight in that timezone. The queued send in the mailbox list and the Warmup tab is shown on the same clock, with the zone named when it differs from your browser's, so a mailbox on London hours shows `09:12 GMT` rather than the same moment in your own time.
 
 Choose **Sending days** on the **Warmup** tab. **Every day** explicitly includes Saturday and Sunday; **Weekdays** selects Monday to Friday. You can also select individual days. Every selected day applies to warmup, even when the sending plan's working days exclude it. This does not change campaign working days.
 

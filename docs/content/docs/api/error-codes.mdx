@@ -146,6 +146,7 @@ Resource IDs on email, campaign and contact routes must be UUIDs. Email `tags` a
 | `list_bounce_risk` | `POST /campaigns/:id/start` refused the launch on the list's projected bounce rate. Clean or verify the list, or repeat the request with `acknowledge_list_risk: true` |
 | `leads_undeliverable` | `POST /campaigns/:id/start` found nothing to send because address verification refused every remaining lead; the campaign is parked at `paused_undeliverable` until they are re-verified or marked deliverable |
 | `empty_step_body` | `POST /campaigns/:id/start` found an email step with nothing in either body, so it would send a blank message to every lead it reached. Write the step's body and start again |
+| `invalid_template` | A step, A/B variant or new campaign was written (or a campaign started) with a subject, HTML body or plain-text body that would not render as written: an `{{if}}` with no `{{end}}`, an unknown function, an unknown `.Sender` field, or a bare name such as `{{frist_name}}` that is not a built-in field. The `message` names the field, the line and the problem. Fix the copy and send it again; see [personalization](/guides/expressions/) |
 | `no_leads` | `POST /campaigns/:id/start` on a campaign that has never had a lead, with `continuous` off. Add contacts, or set `continuous` so it starts empty and waits for them. A campaign whose leads have all finished is a different case: it starts and waits |
 | `no_remaining_leads` | A platform-initiated restart of a campaign with nothing left to send and `continuous` off found nothing to do; the campaign is `completed` again. A start you request never answers this: it turns `continuous` on and waits |
 | `too_many_tasks` | `PATCH /crm/tasks` or `DELETE /crm/tasks` was given more than `1000` ids in one request, or more than `50,000` exclusions. Split it into batches |
@@ -388,8 +389,9 @@ The [mailbox import](/guides/mailbox-import/) routes (`/emails/imports`) answer 
 | `mailbox_import_too_large` | 400 | More than 5,000 mailboxes, a file over 10 MB, a pasted list over 2 MB, or a body that is not multipart form data. Split the file and import the rest separately |
 | `mailbox_import_no_email_column` | 400 | `POST /emails/imports` with a mapping in which no column is `email` |
 | `mailbox_import_row_incomplete` | 400 | `PATCH /emails/imports/:id/rows/:line` left the row without an SMTP and IMAP server or without a password. The `message` says which |
+| `google_app_password_required` | 400 | `PATCH /emails/imports/:id/rows/:line` or `POST /emails/imports/:id/retry` gave a Google row a password that is not a 16-letter app password. Google refuses the account password over IMAP and SMTP. A retry refuses the whole batch and queues none of it |
 | `invalid_cursor` | 400 | `GET /emails/imports` or `GET /emails/imports/:id/rows` was given a `cursor` this API did not issue. Start again without one |
-| `mailbox_import_row_not_failed` | 409 | Only a row that did not connect can be fixed; this one is queued, running, connected, updated, skipped, cancelled or waiting for sign-in |
+| `mailbox_import_row_not_failed` | 409 | Only a row that did not connect or is waiting for sign-in can be fixed; this one is queued, running, connected, updated, skipped, cancelled, or still being authorized by its inbox vendor |
 | `mailbox_import_credentials_expired` | 409 | The row's credentials were deleted 7 days after the import finished, so it cannot be retried. Import it again |
 | `mailbox_import_nothing_to_retry` | 409 | `POST /emails/imports/:id/retry` matched no failed row that still holds its credentials |
 
@@ -1069,7 +1071,7 @@ Those request URLs answer `401` `unauthorized` to a request whose Slack signatur
 
 #### `mailbox_allowance_reached`
 
-A `403` whose `code` is `mailbox_allowance_reached` comes from every path that connects a mailbox: `POST /emails/onboarding/oauth/start`, `POST /emails/onboarding/oauth/finish`, `POST /emails/onboarding/smtp-imap`, and per row inside `POST /emails/onboarding/smtp-imap/bulk`. A [mailbox import](/guides/mailbox-import/) does not answer it over HTTP: the rows past the allowance fail with the `cause` `allowance_reached` and can be retried once it is raised. It is not a permission problem: the workspace holds its whole [mailbox allowance](/guides/mailboxes/#mailbox-allowance), which on a paid plan is one mailbox for every send a day the plan includes, and `10` on a free workspace. Nothing was connected.
+A `403` whose `code` is `mailbox_allowance_reached` comes from every path that connects a mailbox: `POST /emails/onboarding/oauth/start`, `POST /emails/onboarding/oauth/finish`, `POST /emails/onboarding/smtp-imap`, and per row inside `POST /emails/onboarding/smtp-imap/bulk`. A [mailbox import](/guides/mailbox-import/) does not answer it over HTTP: the rows past the allowance fail with the `cause` `allowance_reached` and can be retried once it is raised. It is not a permission problem: the workspace holds its whole [mailbox allowance](/guides/mailboxes/#mailbox-allowance), which on a paid plan is one mailbox for every send a day the plan includes, `0` on a workspace without a paid plan, and `10` on a workspace that kept the earlier free plan. On a workspace without a plan the message says a plan is needed to connect mailboxes. Nothing was connected.
 
 ```json
 {
@@ -1082,8 +1084,13 @@ A `403` whose `code` is `mailbox_allowance_reached` comes from every path that c
 
 **How to fix:**
 - Read `GET /emails/allowance` first: `remaining` says how many connects will succeed, and `pending_request` whether an increase is already asked for
+- Without a paid plan, choose one: every paid plan connects mailboxes
 - Submit a limit-increase request for `max_email_accounts` via `POST /organization/:orgId/limit-requests`, or move to a plan with more daily sends. An approved request raises the allowance immediately; retry the connect then
 - Reconnecting an existing mailbox never returns this code
+
+#### `invalid_attachment`
+
+A `400` from `POST /campaigns/:id/attachments` means the new file is unsupported, malformed, outside the [documented format limits](/guides/campaigns/#campaign-attachments), or does not match its final filename extension. Supported extensions are PDF, DOCX, XLSX, PPTX, CSV, TSV, TXT, PNG, JPG/JPEG, GIF, WebP and ZIP. New CSV/TSV attachments allow at most 4096 fields per logical record, including a trailing empty field; quoted separators and newlines stay within their field. Export the file in a supported profile with its matching extension and try again. Changing the client MIME header does not change the detected type. This refusal stores no object and reserves no storage quota. Existing stored files and portable archive restoration keep their compatibility policy.
 
 #### `storage_limit_reached`
 

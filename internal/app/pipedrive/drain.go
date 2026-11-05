@@ -12,12 +12,15 @@ import (
 
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/idlepoll"
 )
 
 // Jobs are claimed one at a time under a lease longer than a job may run, so
-// a lease never lapses while its job is still working.
+// a lease never lapses while its job is still working. An empty outbox is
+// polled less often, up to drainIdleMax.
 const (
 	drainEvery    = 2 * time.Second
+	drainIdleMax  = 10 * time.Second
 	drainPerTick  = 50
 	jobTimeout    = 2 * time.Minute
 	drainLease    = jobTimeout + time.Minute
@@ -30,14 +33,16 @@ var retryDelays = []time.Duration{time.Minute, 5 * time.Minute, 30 * time.Minute
 // RunDrainer works the Pipedrive outbox until ctx ends. Safe to run in
 // several processes.
 func (s *Service) RunDrainer(ctx context.Context) {
-	t := time.NewTicker(drainEvery)
+	pace := idlepoll.Pace{Min: drainEvery, Max: drainIdleMax}
+	t := time.NewTimer(drainEvery)
 	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			for n := 0; n < drainPerTick && ctx.Err() == nil; n++ {
+			ran := 0
+			for ran < drainPerTick && ctx.Err() == nil {
 				jobs, err := s.d.Repo.ClaimJobs(ctx, provider, 1, drainLease)
 				if err != nil {
 					log.Warn().Err(err).Msg("pipedrive: claim jobs")
@@ -47,7 +52,9 @@ func (s *Service) RunDrainer(ctx context.Context) {
 					break
 				}
 				s.runJob(ctx, &jobs[0])
+				ran++
 			}
+			t.Reset(pace.Next(ran, ran >= drainPerTick))
 		}
 	}
 }

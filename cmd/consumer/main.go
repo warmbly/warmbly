@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/warmbly/warmbly/internal/app/cloudlink"
 	emailverifyapp "github.com/warmbly/warmbly/internal/app/emailverify"
+	"github.com/warmbly/warmbly/internal/app/mailpush"
 	"github.com/warmbly/warmbly/internal/app/slackapp"
 	"log"
 	"os"
@@ -219,6 +220,12 @@ func main() {
 	emailGraphDeltaRepo := repository.NewEmailGraphDeltaRepository(primaryDB)
 	emailAccountErrorRepo := repository.NewEmailAccountErrorRepository(primaryDB)
 	warmupRepo := repository.NewWarmupRepository(primaryDB.Pool)
+	// Behind a transaction pooler a receipt's lock waits on a direct session, never on a pooled connection.
+	if locks, err := primaryDB.SessionLocks(); err != nil {
+		log.Fatalf("Failed to prepare direct database sessions for warmup receipt locks: %v", err)
+	} else if locks != nil {
+		warmupRepo.(repository.WarmupSessionLocker).UseSessionLocks(locks)
+	}
 	warmupService := warmupapp.NewService(warmupRepo)
 	// Push warmup-health transitions live to the dashboard. The health sweep
 	// runs in this process, so the realtime publisher is wired here.
@@ -554,6 +561,7 @@ func main() {
 		EmailHistoryIDRepository:    emailHistoryIDRepo,
 		EmailGraphDeltaRepository:   emailGraphDeltaRepo,
 		EmailSyncStateRepository:    repository.NewEmailSyncStateRepository(primaryDB),
+		MailboxPushRepository:       repository.NewMailboxPushRepository(primaryDB),
 		ArrivalOutbox:               repository.NewDurableEmailMessageMapRepository(primaryDB, cipherService),
 		EmailAccountErrorRepository: emailAccountErrorRepo,
 		WarmupRepo:                  warmupRepo,
@@ -578,6 +586,7 @@ func main() {
 		AdminRepo:                   repository.NewAdminRepository(primaryDB.Pool),
 		AssignmentService:           workerAssignmentSvc,
 		Notifier:                    notificationService,
+		UniboxAccess:                feature.NewService(subscriptionRepoConsumer, planRepoConsumer),
 		OpsNotifier:                 opsNotifierC,
 		TaskRepo:                    taskRepo,
 		CampaignRepo:                campaignRepo,
@@ -653,6 +662,26 @@ func main() {
 	// Resolve campaign sends that were reserved and dispatched but whose worker
 	// result never came back, so a lead is never held in flight forever.
 	go jobsService.StartStuckSendReclaimer(ctx, 5*time.Minute)
+
+	// Gmail push: the watch notifications each Gmail mailbox's worker opened arrive on
+	// this Pub/Sub subscription and wake that worker. Unset keeps Gmail polling.
+	if subscription := config.GmailPushSubscription(); subscription != "" {
+		waker := mailpush.NewWaker(repository.NewMailboxPushRepository(primaryDB), eventsPublisher, redisCache)
+		go func() {
+			for ctx.Err() == nil {
+				err := mailpush.RunGmailSubscriber(ctx, subscription, os.Getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"), waker)
+				if ctx.Err() != nil {
+					return
+				}
+				log.Printf("Warning: Gmail push subscriber stopped, restarting in 30s: %v", err)
+				select {
+				case <-ctx.Done():
+				case <-time.After(30 * time.Second):
+				}
+			}
+		}()
+		log.Println("Gmail push: reading watch notifications from " + subscription)
+	}
 
 	if mailboxCredentials.Reseals() {
 		// Moves credentials onto workspace keys, or seals legacy plaintext OAuth tokens under the instance key.

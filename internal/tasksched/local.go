@@ -11,15 +11,18 @@ import (
 	"github.com/warmbly/warmbly/internal/tasks/proto"
 )
 
-// DueTaskLister returns the ids of pending tasks whose scheduled_at has passed.
+// DueTaskLister claims pending tasks whose slot has arrived.
 // repository.TaskRepository satisfies it.
 type DueTaskLister interface {
-	ListDuePendingTaskIDs(ctx context.Context, limit int) ([]uuid.UUID, error)
-	RecordDispatchAttempt(ctx context.Context, taskID uuid.UUID, failed bool, retryAt time.Time) error
+	ClaimDueTaskIDs(ctx context.Context, limit int, lease time.Duration) ([]uuid.UUID, time.Time, error)
+	RecordDispatchAttempt(ctx context.Context, taskID uuid.UUID, claim time.Time, failed bool, retryAt time.Time) error
+	ReleaseDispatchClaims(ctx context.Context, taskIDs []uuid.UUID, claim time.Time) error
 }
 
 const (
-	dispatchRetryDelay      = 5 * time.Minute
+	dispatchRetryDelay = 5 * time.Minute
+	// dispatchClaimLease is how long a replica that died mid-task holds it from the others.
+	dispatchClaimLease      = 2 * time.Minute
 	defaultLocalConcurrency = 8
 )
 
@@ -45,7 +48,8 @@ type Local struct {
 	interval time.Duration
 	batch    int
 	slots    chan struct{}
-	inflight sync.Map // taskID string -> struct{}, dedups across overlapping ticks
+	mu       sync.Mutex
+	inflight map[uuid.UUID]time.Time // task -> its latest claim, dedups across overlapping ticks
 }
 
 // NewLocal builds a Local poller. interval<=0 defaults to 1s; batch<=0 to 200.
@@ -56,7 +60,7 @@ func NewLocal(repo DueTaskLister, interval time.Duration, batch int, options ...
 	if batch <= 0 {
 		batch = 200
 	}
-	l := &Local{repo: repo, interval: interval, batch: batch, slots: make(chan struct{}, defaultLocalConcurrency)}
+	l := &Local{repo: repo, interval: interval, batch: batch, slots: make(chan struct{}, defaultLocalConcurrency), inflight: map[uuid.UUID]time.Time{}}
 	for _, option := range options {
 		option(l)
 	}
@@ -74,11 +78,12 @@ func (l *Local) CreateTask(_ context.Context, taskData *proto.ProcessTask, _ tim
 // poller only fires rows that are still pending.
 func (l *Local) DeleteTask(_ context.Context, _ string) error { return nil }
 
-// Run polls for due tasks until ctx is cancelled, invoking handle(taskID) for
-// each. handle must be idempotent: rows stay pending until handle flips their
-// status, and the per-type handlers short-circuit on a non-pending status, so a
-// row re-selected before handle finished is a no-op. The in-flight guard keeps
-// a single node from re-dispatching a task it is already handling.
+// Run claims due tasks until ctx is cancelled, invoking handle(taskID) for
+// each. A claim keeps other replicas off a task while it runs, but handle must
+// still be idempotent: a lapsed lease, or a replica on an older release that
+// does not claim, can fire the same row again, and the per-type handlers
+// short-circuit on a non-pending status. The in-flight guard keeps a single
+// node from re-dispatching a task it is already handling.
 func (l *Local) Run(ctx context.Context, handle func(taskID string) error) {
 	ticker := time.NewTicker(l.interval)
 	defer ticker.Stop()
@@ -94,41 +99,72 @@ func (l *Local) Run(ctx context.Context, handle func(taskID string) error) {
 }
 
 func (l *Local) tick(ctx context.Context, handle func(taskID string) error) {
-	if ctx.Err() != nil || len(l.slots) == cap(l.slots) {
+	free := cap(l.slots) - len(l.slots)
+	if ctx.Err() != nil || free <= 0 {
 		return
 	}
-	ids, err := l.repo.ListDuePendingTaskIDs(ctx, l.batch)
+	ids, claim, err := l.repo.ClaimDueTaskIDs(ctx, min(l.batch, free), dispatchClaimLease)
 	if err != nil {
-		log.Error().Err(err).Msg("tasksched: list due tasks")
+		log.Error().Err(err).Msg("tasksched: claim due tasks")
 		return
 	}
-	for _, id := range ids {
+	for i, id := range ids {
 		if ctx.Err() != nil {
+			l.release(ids[i:], claim)
 			return
 		}
 		select {
 		case l.slots <- struct{}{}:
 		default:
+			l.release(ids[i:], claim)
 			return
 		}
-		key := id.String()
-		if _, busy := l.inflight.LoadOrStore(key, struct{}{}); busy {
+		// Still running here from an earlier claim; the new lease covers it and is the one recorded.
+		if l.track(id, claim) {
 			<-l.slots
 			continue
 		}
-		go func(taskID string) {
+		go func(id uuid.UUID) {
 			defer func() { <-l.slots }()
-			defer l.inflight.Delete(taskID)
 			if ctx.Err() != nil {
+				l.release([]uuid.UUID{id}, l.untrack(id))
 				return
 			}
-			err := handle(taskID)
+			err := handle(id.String())
+			claim := l.untrack(id)
 			if ctx.Err() != nil {
+				l.release([]uuid.UUID{id}, claim)
 				return
 			}
-			if saveErr := l.repo.RecordDispatchAttempt(ctx, id, err != nil, time.Now().Add(dispatchRetryDelay)); saveErr != nil {
+			if saveErr := l.repo.RecordDispatchAttempt(ctx, id, claim, err != nil, time.Now().Add(dispatchRetryDelay)); saveErr != nil {
 				log.Error().Err(saveErr).Msg("tasksched: record dispatch retry")
 			}
-		}(key)
+		}(id)
+	}
+}
+
+// track records the task's latest claim and reports whether it was already running here.
+func (l *Local) track(id uuid.UUID, claim time.Time) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	_, busy := l.inflight[id]
+	l.inflight[id] = claim
+	return busy
+}
+
+func (l *Local) untrack(id uuid.UUID) time.Time {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	claim := l.inflight[id]
+	delete(l.inflight, id)
+	return claim
+}
+
+// release hands claims back so another replica need not wait out the lease, even during shutdown.
+func (l *Local) release(ids []uuid.UUID, claim time.Time) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := l.repo.ReleaseDispatchClaims(ctx, ids, claim); err != nil {
+		log.Warn().Err(err).Msg("tasksched: release dispatch claims")
 	}
 }

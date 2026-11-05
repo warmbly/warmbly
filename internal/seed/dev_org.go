@@ -371,19 +371,19 @@ func seedDevCampaigns(ctx context.Context, pool *pgxpool.Pool) error {
 		waitAfter int
 	}{
 		{devSeqStep1, DevCampaignActiveID, "Step 1 - intro",
-			"Quick question about outbound at {{company}}",
-			"Hi {{firstName}},\n\nSaw {{company}} is scaling its sales team. Most teams we talk to run cold outbound across a handful of mailboxes and only find out something landed in spam when replies dry up.\n\nWe keep every mailbox warm, spread sends across senders, and flag deliverability dips before they hurt. Teams like yours usually see reply rates climb within two weeks.\n\nWorth a quick look? Happy to share a two-minute walkthrough.\n\nBest,\nDev", 0},
+			"Quick question about outbound at {{.Company}}",
+			"Hi {{.FirstName}},\n\nSaw {{.Company}} is scaling its sales team. Most teams we talk to run cold outbound across a handful of mailboxes and only find out something landed in spam when replies dry up.\n\nWe keep every mailbox warm, spread sends across senders, and flag deliverability dips before they hurt. Teams like yours usually see reply rates climb within two weeks.\n\nWorth a quick look? Happy to share a two-minute walkthrough.\n\nBest,\nDev", 0},
 		// Carries the personalized form link, so the campaign Forms panel and
 		// the form's campaign attribution both have live data to show.
 		{devSeqStep2, DevCampaignActiveID, "Step 2 - bump",
-			"Re: Quick question about outbound at {{company}}",
-			"Hi {{firstName}},\n\nBumping this in case it got buried. The short version: we help outbound teams stay out of spam without slowing down sending.\n\nIf deliverability is not a problem for {{company}} right now, no worries at all. If it is, grab a slot that suits you: {{form_link:" + devFormDemoPublicID + "}}\n\nBest,\nDev", 3},
+			"Re: Quick question about outbound at {{.Company}}",
+			"Hi {{.FirstName}},\n\nBumping this in case it got buried. The short version: we help outbound teams stay out of spam without slowing down sending.\n\nIf deliverability is not a problem for {{.Company}} right now, no worries at all. If it is, grab a slot that suits you: {{form_link:" + devFormDemoPublicID + "}}\n\nBest,\nDev", 3},
 		{devSeqStep3, DevCampaignActiveID, "Step 3 - break-up",
 			"Closing the loop",
-			"Hi {{firstName}},\n\nClosing the loop on my side. If inbox placement becomes a priority later this quarter, just reply to this thread and I will pick it right back up.\n\nEither way, good luck with the outbound push at {{company}}.\n\nBest,\nDev", 4},
+			"Hi {{.FirstName}},\n\nClosing the loop on my side. If inbox placement becomes a priority later this quarter, just reply to this thread and I will pick it right back up.\n\nEither way, good luck with the outbound push at {{.Company}}.\n\nBest,\nDev", 4},
 		{devSeqDraft, DevCampaignDraftID, "Partner intro",
-			"White-label outbound for {{company}} clients",
-			"Hi {{firstName}},\n\nAgencies use us to run warmed, monitored sending for their clients under their own brand. Would a partner walkthrough be useful?\n\nBest,\nDev", 0},
+			"White-label outbound for {{.Company}} clients",
+			"Hi {{.FirstName}},\n\nAgencies use us to run warmed, monitored sending for their clients under their own brand. Would a partner walkthrough be useful?\n\nBest,\nDev", 0},
 	}
 	for _, s := range steps {
 		bodyHTML := "<p>" + s.bodyPlain + "</p>"

@@ -50,7 +50,19 @@ The frontend talks to the backend over REST + JWT, and to the realtime service o
 
 Realtime fanout is a separate channel: backend and consumer publish JSON events over Redis pub/sub (or Google Cloud Pub/Sub when `PUBSUB_ENABLED=true`); the Elixir realtime service subscribes and pushes to connected WebSocket clients.
 
+Mailbox sync is pull-based with push as a shortcut. Each worker runs a sync loop per mailbox it holds and polls once a minute. When the provider announces changes, the worker is woken instead: an IMAP mailbox holds its INBOX in `IDLE` on a second connection inside the worker, Microsoft Graph posts change notifications to the backend, and Gmail publishes watch notifications to Cloud Pub/Sub, which pushes them to the backend (or, where Pub/Sub cannot reach the backend, the consumer pulls them). The backend or consumer then sends `SYNC_WAKE` on the holding worker's `w.<uuid>` topic and the worker runs its ordinary pass within seconds. The poll stays on as the safety net, every 3 minutes behind `IDLE` and every 10 by default behind a Gmail watch or Graph subscription. See [realtime mailbox sync](/development/mailbox-push/).
+
 Object storage: encrypted email bodies (EMSG format) live in the blob store (filesystem by default, S3-compatible opt-in).
+
+### Background loops across replicas
+
+The backend and the consumer can each run as several replicas, and their background loops do their work once rather than once per replica:
+
+- **Scheduled jobs** claim each run in `scheduled_job_runs`, so one replica runs each slot. They are listed under **Jobs** in the [admin panel](/development/admin-panel/). Each process asks for pending **Run now** requests for all its jobs in one query every 15 seconds.
+- **Loops that keep their place in memory** (the worker reconciler, the unibox search backfill and the signing-secret migration) run on whichever backend holds a Postgres session advisory lock. That backend keeps them until it stops or its lock connection breaks; another replica then takes over within about 30 seconds and starts them from the beginning, as a restart would. The lock costs each backend one direct connection while it leads and a short one every 30 seconds while it waits.
+- **Queues** that claim rows with `FOR UPDATE SKIP LOCKED` or a lease (webhook deliveries, CRM sync jobs, the arrival outbox) run on every replica and share the work.
+
+A single backend wins the lock at boot and runs everything, as before. During a rolling deploy, replicas still on the previous release run their loops unconditionally until they are replaced, which is safe because every loop is idempotent.
 
 ## Data stores
 

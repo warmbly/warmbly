@@ -48,6 +48,7 @@ jobs:
           done
       # Mocked provider: no credentials, nothing created.
       - run: terraform -chdir=deploy/terraform/aws/runtime test -no-color
+      - run: terraform -chdir=deploy/terraform/aws/workers test -no-color
       - run: node --test deploy/terraform/aws/runtime/checks/credentials.test.cjs
       - run: shellcheck .github/scripts/terraform-stack*.sh
       - run: bash .github/scripts/terraform-stack.test.sh

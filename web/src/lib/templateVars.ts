@@ -16,7 +16,7 @@ export const STANDARD_VARS: TemplateVar[] = [
     { token: "{{.Phone}}", key: "Phone", label: "Phone", desc: "The contact's phone number", sample: "+1 555-0100" },
 ];
 
-// Keep in sync with the explicit allowlist in internal/tasks/template_sender.go.
+// Keep in sync with the explicit allowlist in internal/pkg/tmplvars/sender.go.
 export const SENDER_VARS: TemplateVar[] = [
     ["Name", "Sender name", "The sending mailbox's configured display name", "Jamie Morgan"],
     ["FirstName", "Sender first name", "The first word of the sending mailbox's display name", "Jamie"],
@@ -157,7 +157,7 @@ export function tokenLabel(token: string): string {
     return parsed ? parsed.key : token;
 }
 
-// keep in sync with FormLinkMarkerRE in internal/models/form_event.go
+// keep in sync with FormLinkMarker in internal/pkg/tmplvars/normalize.go
 export const FORM_LINK_RE = /\{\{\s*form_link:([a-z0-9]{1,64})\s*\}\}/g;
 
 // buildFormLinkToken assembles the literal personalized-form-link marker the Go

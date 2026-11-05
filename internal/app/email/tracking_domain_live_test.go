@@ -226,7 +226,9 @@ func TestLiveTrackingDomainSweep(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	svc.runTrackingDomainSweep(ctx, time.Hour)
+	if err := svc.runTrackingDomainSweep(ctx, time.Hour); err != nil {
+		t.Fatal(err)
+	}
 
 	if domain, verified := f.stored(t); domain != "www.wikipedia.org" || !verified {
 		t.Fatalf("the sweep should have verified it without anybody asking: %q verified=%v", domain, verified)
@@ -241,7 +243,9 @@ func TestLiveTrackingDomainSweep(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	svc.runTrackingDomainSweep(ctx, time.Hour)
+	if err := svc.runTrackingDomainSweep(ctx, time.Hour); err != nil {
+		t.Fatal(err)
+	}
 
 	if _, verified := f.stored(t); verified {
 		t.Fatalf("a domain pointing somewhere else must not stay verified")
@@ -264,7 +268,9 @@ func TestLiveTrackingDomainSweepDoesNothingWithoutATarget(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	svc.runTrackingDomainSweep(ctx, time.Hour)
+	if err := svc.runTrackingDomainSweep(ctx, time.Hour); err != nil {
+		t.Fatal(err)
+	}
 
 	if _, verified := f.stored(t); !verified {
 		t.Fatalf("the sweep must leave everything alone when it has no target")

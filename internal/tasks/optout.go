@@ -11,11 +11,12 @@ import (
 	"github.com/warmbly/warmbly/internal/app/unsublink"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
+	"github.com/warmbly/warmbly/internal/pkg/tmplvars"
 )
 
 // UnsubscribeLinkVar is the template variable a step can place by hand
 // ({{.UnsubscribeLink}}); it resolves to the recipient's own opt-out link.
-const UnsubscribeLinkVar = "UnsubscribeLink"
+const UnsubscribeLinkVar = tmplvars.UnsubscribeLink
 
 // unsubscribePathMarker is the path segment every minted link carries, on the
 // API origin and on a workspace's own tracking domain alike. Click tracking

@@ -26,7 +26,10 @@ func (s *JobsService) runArrivalOutbox(ctx context.Context) {
 		}
 	}()
 	for {
-		s.runArrivalOutboxPass(ctx, &diagnostics, &failedSince, &lastAlert)
+		// A full batch means more rows are likely waiting, so the next pass starts at once.
+		if s.runArrivalOutboxPass(ctx, &diagnostics, &failedSince, &lastAlert) >= repository.ArrivalBatchSize && ctx.Err() == nil {
+			continue
+		}
 		select {
 		case <-ctx.Done():
 			return
@@ -35,11 +38,12 @@ func (s *JobsService) runArrivalOutbox(ctx context.Context) {
 	}
 }
 
-func (s *JobsService) runArrivalOutboxPass(ctx context.Context, diagnostics *arrivaldiag.Window, failedSince, lastAlert *time.Time) {
+func (s *JobsService) runArrivalOutboxPass(ctx context.Context, diagnostics *arrivaldiag.Window, failedSince, lastAlert *time.Time) (delivered int) {
 	pass, cancel := context.WithTimeout(ctx, 30*time.Second)
 	pass, measurements := arrivaldiag.WithPass(pass)
 	started := time.Now()
 	err := s.ArrivalOutbox.DeliverArrivals(pass, func(ctx context.Context, kind models.JobEventType, body any) error {
+		delivered++
 		return s.deliverArrivalEvent(ctx, kind, body)
 	})
 	if err != nil {
@@ -53,12 +57,24 @@ func (s *JobsService) runArrivalOutboxPass(ctx context.Context, diagnostics *arr
 		summary.Log()
 	}
 	cancel()
+	return delivered
 }
+
+// arrivalBacklogInterval spaces the queue count; the alert it feeds waits minutes anyway.
+const arrivalBacklogInterval = 30 * time.Second
 
 func (s *JobsService) observeArrivalBacklog(ctx context.Context, deliveryErr error, now time.Time, failedSince, lastAlert *time.Time) {
 	backlog := repository.ArrivalBacklog{}
 	known := false
 	if stats, ok := s.ArrivalOutbox.(repository.ArrivalBacklogRepository); ok {
+		if !s.arrivalBacklogAt.IsZero() && now.Sub(s.arrivalBacklogAt) < arrivalBacklogInterval {
+			// Between readings a failure can start the clock but only a reading can stop it.
+			if deliveryErr != nil && failedSince.IsZero() {
+				*failedSince = now
+			}
+			return
+		}
+		s.arrivalBacklogAt = now
 		var err error
 		backlog, err = stats.ArrivalBacklog(ctx)
 		if err != nil {

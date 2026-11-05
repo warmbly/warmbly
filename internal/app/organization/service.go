@@ -1280,7 +1280,7 @@ func (s *organizationService) CanAddCampaign(ctx context.Context, orgID uuid.UUI
 //
 //  1. no billing provider: unlimited
 //  2. an operator override: the override
-//  3. no paid subscription: FreeWorkspaceMailboxLimit
+//  3. no paid subscription: Subscription.FreeMailboxLimit (none for new workspaces)
 //  4. the plan's explicit mailbox column, when it carries one
 //  5. the plan's daily sends divided by FairUseSendsPerMailbox
 //  6. a plan with no daily send cap: unlimited
@@ -1336,7 +1336,7 @@ func (s *organizationService) MailboxAllowance(ctx context.Context, orgID uuid.U
 	case override != nil && override.MaxEmailAccounts > 0:
 		set(override.MaxEmailAccounts, models.MailboxAllowanceOverride)
 	case !a.Paid:
-		set(models.FreeWorkspaceMailboxLimit, models.MailboxAllowanceFree)
+		set(sub.FreeMailboxLimit(), models.MailboxAllowanceFree)
 	case sub.Plan != nil && sub.Plan.MaxEmailAccounts != nil && *sub.Plan.MaxEmailAccounts > 0:
 		set(*sub.Plan.MaxEmailAccounts, models.MailboxAllowancePlan)
 	case a.PlanDailySends != nil:

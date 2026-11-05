@@ -128,6 +128,7 @@ export default function StepAttachments({
                 <input
                     ref={inputRef}
                     type="file"
+                    accept=".pdf,.docx,.xlsx,.pptx,.csv,.tsv,.txt,.png,.jpg,.jpeg,.gif,.webp,.zip"
                     multiple
                     className="hidden"
                     onChange={(e) => {
@@ -160,7 +161,7 @@ export default function StepAttachments({
                         {upload.isPending ? "Uploading…" : "Drag files here or click to upload"}
                     </span>
                     <span className="text-[10.5px] text-slate-400">
-                        Sent with every email from this step, and no other step.
+                        PDF, DOCX, XLSX, PPTX, text, raster images or ZIP. Up to 15 MB per file. CSV/TSV: up to 4096 fields per logical record.
                     </span>
                 </button>
 

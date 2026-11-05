@@ -27,6 +27,7 @@ var WorkerEventBodies = map[WorkerEventType]any{
 	WorkerEventTypeMessageSeen:     (*MessageSeenAction)(nil),
 	WorkerEventTypeMessageFolder:   (*MessageFolderAction)(nil),
 	WorkerEventTypeMailboxIdentity: EventWorkerMailboxIdentity{},
+	WorkerEventTypeSyncWake:        (*SyncWake)(nil),
 }
 
 // JobEventBodies is the same for everything a worker reports back.
@@ -51,6 +52,7 @@ var JobEventBodies = map[JobEventType]any{
 	JobEventTypeHistoryIDUpdate:  (*JobEventHistoryIDUpdate)(nil),
 	JobEventTypeGraphDeltaUpdate: (*JobEventGraphDeltaUpdate)(nil),
 	JobEventTypeSyncState:        (*JobEventSyncState)(nil),
+	JobEventTypePushState:        (*JobEventPushState)(nil),
 	JobEventTypeTokenUpdate:      (*JobEventTokenUpdate)(nil),
 	JobEventTypeEmailSent:        SendEmailResult{},
 	JobEventTypeEmailFailed:      SendEmailResult{},

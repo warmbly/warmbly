@@ -1,0 +1,82 @@
+name: Configure AWS origin ALB policy
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/configure-origin-alb-aws.yml'
+      - '.github/scripts/aws-origin-alb*'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Plan only by default; apply or rollback consumes an exact private plan
+        type: choice
+        options: [plan, apply, rollback]
+        default: plan
+        required: true
+      plan_run_id:
+        description: Run ID that produced the reviewed private plan (apply and rollback only)
+        type: string
+      plan_version:
+        description: Exact private S3 plan version ID (apply and rollback only)
+        type: string
+      plan_sha256:
+        description: SHA-256 of the complete reviewed private plan (apply and rollback only)
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node --test .github/scripts/aws-origin-alb.test.cjs
+      - run: shellcheck .github/scripts/aws-origin-alb-workflow.test.sh
+      - run: bash .github/scripts/aws-origin-alb-workflow.test.sh
+
+  configure:
+    needs: check
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: aws-infrastructure
+    concurrency:
+      group: aws-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ORIGIN_ALB_MODE: ${{ inputs.mode }}
+      ORIGIN_ALB_PLAN_RUN_ID: ${{ inputs.plan_run_id }}
+      ORIGIN_ALB_PLAN_VERSION: ${{ inputs.plan_version }}
+      ORIGIN_ALB_PLAN_SHA256: ${{ inputs.plan_sha256 }}
+      STATE_BUCKET: ${{ vars.AWS_TERRAFORM_STATE_BUCKET }}
+      APPLY_ROLE: ${{ vars.AWS_TERRAFORM_APPLY_ROLE_ARN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check main, ordinary role configuration and exact input scope
+        id: scope
+        env:
+          WORK: ${{ runner.temp }}/origin-alb-policy
+        run: node .github/scripts/aws-origin-alb.cjs session-policy
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_TERRAFORM_APPLY_ROLE_ARN }}
+          aws-region: us-east-1
+          inline-session-policy: ${{ steps.scope.outputs.policy }}
+      - name: Plan or execute the exact listener policy change
+        env:
+          WORK: ${{ runner.temp }}/origin-alb-policy
+        run: node .github/scripts/aws-origin-alb.cjs configure

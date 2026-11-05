@@ -49,6 +49,8 @@ type Publisher interface {
 	// Worker change notifications
 	PublishAddEmail(ctx context.Context, workerID uuid.UUID, email *models.AddWorkerEmail) error
 	PublishRemoveEmail(ctx context.Context, workerID uuid.UUID, remove *models.RemoveWorkerEmail) error
+	// PublishSyncWake asks the worker holding a mailbox to sync it now.
+	PublishSyncWake(ctx context.Context, workerID uuid.UUID, wake *models.SyncWake) error
 
 	// PublishEmailValidation sends a mailbox credential-validation request to the
 	// worker. Routed through the bus+codec like every other worker event, so it
@@ -394,6 +396,16 @@ func (p *publisher) PublishRemoveEmail(ctx context.Context, workerID uuid.UUID, 
 	return p.publish(workerTopic, remove.EmailID, workerEvent)
 }
 
+// PublishSyncWake asks a worker to sync one mailbox now, keyed by that mailbox.
+func (p *publisher) PublishSyncWake(ctx context.Context, workerID uuid.UUID, wake *models.SyncWake) error {
+	workerEvent := models.WorkerEvent{
+		Type: models.WorkerEventTypeSyncWake,
+		Body: wake,
+	}
+	// The caller's deadline holds here: a wake answers a provider that stops waiting within seconds.
+	return p.publishCtx(ctx, kafka.GetWorkerTopic(workerID.String()), wake.EmailID.String(), workerEvent)
+}
+
 // PublishEmailValidation publishes a credential-validation request to the worker.
 func (p *publisher) PublishEmailValidation(ctx context.Context, workerID string, body models.EventWorkerEmailValidation) error {
 	workerEvent := models.WorkerEvent{
@@ -426,6 +438,10 @@ func (p *publisher) reportPublishFailure(topic string, err error) {
 
 // publish serializes (via codec) and publishes (via bus) an event.
 func (p *publisher) publish(topic, key string, event interface{}) error {
+	return p.publishCtx(context.Background(), topic, key, event)
+}
+
+func (p *publisher) publishCtx(ctx context.Context, topic, key string, event interface{}) error {
 	if p.bus == nil {
 		// Bus not configured, skip publishing.
 		return nil
@@ -436,15 +452,14 @@ func (p *publisher) publish(topic, key string, event interface{}) error {
 		return fmt.Errorf("codec not configured")
 	}
 
-	ctx := context.Background()
 	data, err := p.codec.Serialize(ctx, topic, event)
 	if err != nil {
 		errs.CaptureException(fmt.Errorf("failed to serialize event: %w", err))
 		return err
 	}
 	if err := p.bus.Publish(ctx, topic, key, data); err != nil {
-		// A bus closed under us is shutdown, not a fault worth an issue.
-		if !errors.Is(err, eventbus.ErrBusClosed) {
+		// A bus closed under us is shutdown, and a caller's expired deadline is the caller's; neither is worth an issue.
+		if !errors.Is(err, eventbus.ErrBusClosed) && ctx.Err() == nil {
 			p.reportPublishFailure(topic, err)
 		}
 		return err

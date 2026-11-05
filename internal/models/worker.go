@@ -179,6 +179,8 @@ type AddWorkerEmail struct {
 	// Sync is the fair-use budget and resume state. Nil only from a publisher
 	// older than the sync policy; the worker then applies compiled defaults.
 	Sync *AddWorkerEmailSyncData `json:"sync" avro:"sync"`
+	// Push asks the worker to keep a provider push channel open; nil keeps polling only.
+	Push *AddWorkerEmailPushData `json:"push,omitempty" avro:"push"`
 	// Brokered: no credential travels; the worker fetches access tokens from the backend.
 	Brokered bool `json:"brokered" avro:"brokered"`
 	// SealedSecrets carries the token or SMTP/IMAP login sealed under the

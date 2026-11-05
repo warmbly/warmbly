@@ -80,6 +80,12 @@ func Run(
 	// Slack app request URLs. No session: every request is verified against
 	// SLACK_SIGNING_SECRET before its body is parsed.
 	r.POST("/api/v1/integrations/slack/events", h.SlackEvents)
+	// Microsoft Graph change notifications, one URL per mailbox, each item
+	// authenticated by the client state issued for that mailbox.
+	r.POST("/api/v1/mailbox-push/graph/:emailId", h.MailboxPushGraph)
+	// Gmail watch notifications from a Pub/Sub push subscription, each request
+	// carrying a Google-signed token for the configured service account.
+	r.POST("/api/v1/mailbox-push/gmail", h.MailboxPushGmail)
 	r.POST("/api/v1/integrations/slack/interactivity", h.SlackInteractivity)
 	// HubSpot app webhooks: one URL for every portal, authenticated by the
 	// X-HubSpot-Signature-v3 HMAC over the client secret.

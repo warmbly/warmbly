@@ -243,7 +243,8 @@ Mailboxes are unlimited on every paid plan. What keeps that honest is a fair-use
 
 | Plan | Sends per day | Mailboxes |
 | --- | --- | --- |
-| Free workspace | none | `10` |
+| No paid plan | none | `0` |
+| Free plan kept from before | none | `10` |
 | Starter | `150` | `150` |
 | Grow | `3,000` | `3,000` |
 | Business | `15,000` | `15,000` |
@@ -251,7 +252,7 @@ Mailboxes are unlimited on every paid plan. What keeps that honest is a fair-use
 
 That is deliberately far more than safe sending ever needs: at the recommended `30` to `50` sends a day per mailbox, a Business workspace fills its volume with a few hundred mailboxes and still has room for tens of thousands. The allowance exists so that it is never the reason to run a mailbox hotter. A plan whose daily sends are uncapped holds unlimited mailboxes, and a self-hosted instance without billing never counts.
 
-**A free workspace.** Subscribe to any plan to warm more than `10` mailboxes here. A [self-hosted instance](/development/install/) has no mailbox cap, but its warmup only pairs its own mailboxes and Warmbly Cloud no longer links new instances, so the hosted pool is only reached from a hosted workspace.
+**Without a paid plan.** A new workspace connects no mailboxes until it picks a plan; the connect is refused with [`mailbox_allowance_reached`](/api/error-codes/#mailbox_allowance_reached). A workspace that had the free plan before it closed to new workspaces keeps `10` mailboxes warming in the free pool; subscribe to any plan to hold more. A [self-hosted instance](/development/install/) has no mailbox cap, but its warmup only pairs its own mailboxes, with no shared pool, so it does far less for deliverability. Warmbly Cloud no longer links new instances, so the hosted pool is only reached from a hosted workspace.
 
 The connect dialog shows the allowance up front: a quiet count while there is room, a warning near the cap, and a clear full state that leads to the request flow instead of letting you type credentials that would be refused. When a connect is refused the answer is the same dialog, not an error toast.
 
@@ -305,6 +306,8 @@ Connecting a mailbox does two things: it imports the mailbox's recent history, a
 **The import** brings in the last `90` days, newest first, up to `5,000` messages per mailbox (the defaults; a self-hosted instance can change both under Instance settings). It reads the inbox, sent mail and archive (plus your own folders on Gmail and IMAP), and skips trash, drafts, spam and Gmail's "All Mail". You can watch it in the mailbox drawer's **Sync** card: a progress bar with a running count while it works, then "Up to date" with what was imported. Because it runs newest first, the mail you would look for is there within the first minute; a large mailbox finishes over the next while at a steady pace. A few IMAP servers (Seznam.cz, for one) refuse to search a folder by date; on those the import reads each message's arrival date instead, which makes the first pass over a large folder a little slower and changes nothing else.
 
 **Live sync** follows the provider's supported folders, including junk (so placement problems are visible) and sent mail (so a conversation shows both sides). Outlook follows Inbox, Sent, Junk, Drafts and Archive where Archive is available; it does not follow every custom Graph folder. Read state, flags, deletions and moves are mirrored too.
+
+New mail usually appears within seconds when the provider tells Warmbly about it: an IMAP server that supports `IDLE` does this for the inbox, and Gmail and Outlook do it on instances whose operator has turned on [push notifications](/development/mailbox-push/). Mail is also picked up by a regular check: about once a minute for a mailbox without one of those signals, every 3 minutes for the other folders of an IMAP mailbox whose inbox is held in `IDLE`, and every 10 minutes (the default) for a Gmail or Outlook mailbox with push on. Providers do not promise when they announce a change, so neither does Warmbly; the regular check always runs as well.
 
 The Sync card distinguishes a completed history import from a recent successful live check. An unfinished pass, provider failure, recovery scan or budget hold does not refresh the last successful check or erase the last observed deferred count. That count is an observation from sync, not a measurement of all mail still on the provider. A worker heartbeat alone is not evidence that a mailbox is current. Repeated connection failures refresh the warning's observation time without generating a new notification each pass; no later successful check means recovery is unverified.
 
@@ -525,7 +528,7 @@ Keep warmup running after campaigns begin rather than switching it off once a ma
 A mailbox marked as a [placement seed inbox](/guides/placement-tests/#your-own-seed-inboxes) is the exception: it never warms up (starting warmup on it is refused until it is unmarked) and never sends campaign mail, because a test inbox has to stay a stranger to your senders.
 
 <Callout type="info" title="Warmup is a paid feature">
-  The model still supports separate free and premium pools, but access is gated to paid workspaces today.
+  On Warmbly Cloud every paid plan warms in the premium pool. Only a workspace that had the free plan before it closed to new workspaces warms without one, up to `10` mailboxes in the free pool.
 </Callout>
 
 </Fold>

@@ -187,7 +187,7 @@ type WarmupRepository interface {
 	SumWarmupSentSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 
 	// Health sweep
-	GetAllParticipantAccountIDs(ctx context.Context) ([]uuid.UUID, error)
+	ListParticipantMemberships(ctx context.Context) ([]WarmupParticipantMembership, error)
 	GetPoolHealthCounts(ctx context.Context) (map[string]int, float64, error)
 
 	// Spam tracking
@@ -305,15 +305,16 @@ type WarmupRepository interface {
 	// mailboxes that have a worker to act. ListWarmupSentCopiesToRetire is
 	// the same for the sender's own copy of each send. RetireWarmupReceived
 	// and RetireWarmupSentCopy stamp the row once the deletion is on the bus.
-	ListWarmupMailToRetire(ctx context.Context, defaultDays, limit int) ([]WarmupMailToRetire, error)
+	ListWarmupMailToRetire(ctx context.Context, defaultDays, limit int, skip []uuid.UUID) ([]WarmupMailToRetire, error)
 	RetireWarmupReceived(ctx context.Context, accountID, internalID uuid.UUID) error
-	ListWarmupSentCopiesToRetire(ctx context.Context, defaultDays, limit int) ([]WarmupMailToRetire, error)
+	ListWarmupSentCopiesToRetire(ctx context.Context, defaultDays, limit int, skip []uuid.UUID) ([]WarmupMailToRetire, error)
 	RetireWarmupSentCopy(ctx context.Context, token uuid.UUID) error
 	// PruneWarmupEventsBefore drops per-message records older than before:
 	// tampering events, spam reports, retired receipts, and tokens whose sent
 	// copy is gone. A receipt or token whose mail is still in the mailbox is
 	// kept, so a removal seen later can still be told apart from tampering.
-	PruneWarmupEventsBefore(ctx context.Context, before time.Time) (int64, error)
+	// mailDays is the instance mail window, which a thread turn also outlives.
+	PruneWarmupEventsBefore(ctx context.Context, before time.Time, mailDays int) (int64, error)
 
 	// Appeals (user-facing submission; admin review lives in the admin repo).
 	CreateWarmupAppeal(ctx context.Context, accountID, userID uuid.UUID, reason string) (uuid.UUID, error)
@@ -324,6 +325,8 @@ type warmupRepository struct {
 	db           *pgxpool.Pool
 	receiptOnce  sync.Once
 	receiptSlots chan struct{}
+	// sessionLocks is set behind a transaction pooler; see UseSessionLocks.
+	sessionLocks *pgxpool.Pool
 	// partnerWeeks7d is nil in tests that build the struct directly, which
 	// then read every candidate's counts exactly.
 	partnerWeeks7d *partnerWeekCache
@@ -1615,7 +1618,18 @@ type WarmupReceiptProcessor interface {
 
 var ErrWarmupReceiptBusy = errors.New("warmup receipt is already being processed")
 
+// WarmupSessionLocker moves receipt locks onto direct sessions when the pool is a transaction pooler.
+type WarmupSessionLocker interface {
+	UseSessionLocks(*pgxpool.Pool)
+}
+
+// UseSessionLocks holds each receipt's lock on a direct connection from locks instead of a pooled transaction.
+func (r *warmupRepository) UseSessionLocks(locks *pgxpool.Pool) { r.sessionLocks = locks }
+
 func (r *warmupRepository) ProcessWarmupReceipt(ctx context.Context, tokenID, recipient uuid.UUID, proof WarmupReceiptProof, accept func(*models.WarmupToken) error) (bool, error) {
+	if r.sessionLocks != nil {
+		return r.processReceiptUnderSessionLock(ctx, tokenID, recipient, proof, accept)
+	}
 	if r.db.Config().MaxConns < 2 {
 		return false, errors.New("warmup receipt processing requires at least two database connections")
 	}
@@ -1640,7 +1654,44 @@ func (r *warmupRepository) ProcessWarmupReceipt(ctx context.Context, tokenID, re
 	if !locked {
 		return false, ErrWarmupReceiptBusy
 	}
-	token, err := scanWarmupToken(tx.QueryRow(ctx, `SELECT `+warmupTokenColumns+` FROM warmup_tokens wt
+	return r.acceptReceipt(ctx, tx, tokenID, recipient, proof, accept)
+}
+
+// processReceiptUnderSessionLock takes the same advisory key as the transaction path, so the two exclude each other
+// during a rolling deploy, but on a direct session: a pooler connection is never held while acceptance needs another.
+func (r *warmupRepository) processReceiptUnderSessionLock(ctx context.Context, tokenID, recipient uuid.UUID, proof WarmupReceiptProof, accept func(*models.WarmupToken) error) (bool, error) {
+	conn, err := r.sessionLocks.Acquire(ctx)
+	if err != nil {
+		return false, err
+	}
+	var locked bool
+	if err := conn.QueryRow(ctx, `SELECT pg_try_advisory_lock(hashtext('warmup_receipt_' || $1::text))`, tokenID).Scan(&locked); err != nil {
+		// The session's state is unknown, and closing it drops any lock it took.
+		_ = conn.Hijack().Close(context.WithoutCancel(ctx))
+		return false, err
+	}
+	if !locked {
+		conn.Release()
+		return false, ErrWarmupReceiptBusy
+	}
+	defer func() {
+		unlockCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		var released bool
+		if err := conn.QueryRow(unlockCtx, `SELECT pg_advisory_unlock(hashtext('warmup_receipt_' || $1::text))`, tokenID).Scan(&released); err != nil || !released {
+			_ = conn.Hijack().Close(unlockCtx)
+			return
+		}
+		conn.Release()
+	}()
+	return r.acceptReceipt(ctx, r.db, tokenID, recipient, proof, accept)
+}
+
+// acceptReceipt decides a receipt while its lock is held and runs acceptance when the token still applies.
+func (r *warmupRepository) acceptReceipt(ctx context.Context, q interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}, tokenID, recipient uuid.UUID, proof WarmupReceiptProof, accept func(*models.WarmupToken) error) (bool, error) {
+	token, err := scanWarmupToken(q.QueryRow(ctx, `SELECT `+warmupTokenColumns+` FROM warmup_tokens wt
 		WHERE wt.token=$1 AND wt.recipient_account_id=$2
 		AND EXISTS(SELECT 1 FROM email_accounts sender WHERE sender.id=wt.sender_account_id AND lower(sender.email)=lower($3))`,
 		tokenID, recipient, strings.TrimSpace(proof.SenderAddress)))
@@ -1651,7 +1702,7 @@ func (r *warmupRepository) ProcessWarmupReceipt(ctx context.Context, tokenID, re
 		return true, nil
 	}
 	var lineage, awaitingSend, retired bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM warmup_tasks WHERE task_id=$1 AND lineage_version=1),
+	if err = q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM warmup_tasks WHERE task_id=$1 AND lineage_version=1),
 		EXISTS(SELECT 1 FROM warmup_tasks w JOIN tasks sent ON sent.id=w.task_id
 		WHERE w.task_id=$1 AND w.lineage_version=1 AND (sent.status<>'completed' OR $2='')),
 		EXISTS(SELECT 1 FROM warmup_tokens WHERE token=$3 AND sent_retired_at IS NOT NULL)
@@ -1986,29 +2037,37 @@ func (r *warmupRepository) GetWarmupReceived(ctx context.Context, accountID, int
 	return &w, nil
 }
 
+// WarmupRetirePerMailbox bounds one mailbox's share of a retirement run; the sweep skips a mailbox it already served that run.
+const WarmupRetirePerMailbox = 50
+
 // ListWarmupMailToRetire lists received warmup copies past their window:
 // the mailbox's own when it set one, else the instance default handed in as
 // $1, on active mailboxes that have a worker to act. The provider key comes
 // from the message map by the internal id, which is what the worker's remove
-// and flag events are keyed on.
-func (r *warmupRepository) ListWarmupMailToRetire(ctx context.Context, defaultDays, limit int) ([]WarmupMailToRetire, error) {
+// and flag events are keyed on. It starts from the mailboxes, so receipts
+// held by a mailbox that cannot act are never walked.
+func (r *warmupRepository) ListWarmupMailToRetire(ctx context.Context, defaultDays, limit int, skip []uuid.UUID) ([]WarmupMailToRetire, error) {
 	query := `
 		SELECT ea.user_id, ea.id, ` + actionWorkerSQL("ea") + `, wr.internal_id, wr.message_id,
 		       COALESCE(m.message_id, ''), ea.warmup_placement, ea.warmup_folder
-		FROM warmup_received wr
-		JOIN email_accounts ea ON ea.id = wr.email_account_id
+		FROM email_accounts ea
+		CROSS JOIN LATERAL (
+			SELECT r.internal_id, r.message_id, r.created_at FROM warmup_received r
+			WHERE r.email_account_id = ea.id AND r.retired_at IS NULL
+			  AND r.created_at < NOW() - make_interval(days => COALESCE(ea.warmup_retention_days, $1))
+			ORDER BY r.created_at
+			LIMIT LEAST($2, ` + strconv.Itoa(WarmupRetirePerMailbox) + `)
+		) wr
 		LEFT JOIN LATERAL (
 			SELECT em.message_id FROM email_message_map em
 			WHERE em.email_id = ea.id AND em.id = wr.internal_id
 			LIMIT 1
 		) m ON true
-		WHERE ea.status = 'active'
+		WHERE ea.status = 'active' AND NOT (ea.id = ANY($3::uuid[]))
 		  AND ` + actionRoutableSQL("ea") + `
-		  AND wr.retired_at IS NULL
-		  AND wr.created_at < NOW() - make_interval(days => COALESCE(ea.warmup_retention_days, $1))
 		ORDER BY wr.created_at
 		LIMIT $2`
-	return r.scanMailToRetire(ctx, query, defaultDays, limit, false)
+	return r.scanMailToRetire(ctx, query, defaultDays, limit, skip, false)
 }
 
 // ListWarmupSentCopiesToRetire lists the sender's own copies past their
@@ -2017,30 +2076,37 @@ func (r *warmupRepository) ListWarmupMailToRetire(ctx context.Context, defaultDa
 // senders are left out rather than searched for a message that does not
 // exist. The map is keyed by the provider's id on Gmail and Graph, so the key
 // is usually empty there and the worker searches by Message-ID instead.
-func (r *warmupRepository) ListWarmupSentCopiesToRetire(ctx context.Context, defaultDays, limit int) ([]WarmupMailToRetire, error) {
+// Like the received side it starts from the mailboxes that can act.
+func (r *warmupRepository) ListWarmupSentCopiesToRetire(ctx context.Context, defaultDays, limit int, skip []uuid.UUID) ([]WarmupMailToRetire, error) {
 	query := `
 		SELECT ea.user_id, ea.id, ` + actionWorkerSQL("ea") + `, wt.token, wt.sent_message_id,
 		       COALESCE(m.message_id, ''), ea.warmup_placement, ea.warmup_folder
-		FROM warmup_tokens wt
-		JOIN email_accounts ea ON ea.id = wt.sender_account_id
+		FROM email_accounts ea
+		CROSS JOIN LATERAL (
+			SELECT t.token, t.sent_message_id, t.created_at FROM warmup_tokens t
+			WHERE t.sender_account_id = ea.id AND t.sent_message_id <> '' AND t.sent_retired_at IS NULL
+			  AND t.created_at < NOW() - make_interval(days => COALESCE(ea.warmup_retention_days, $1))
+			ORDER BY t.created_at
+			LIMIT LEAST($2, ` + strconv.Itoa(WarmupRetirePerMailbox) + `)
+		) wt
 		LEFT JOIN LATERAL (
 			SELECT em.message_id FROM email_message_map em
 			WHERE em.email_id = ea.id AND em.message_id = wt.sent_message_id
 			LIMIT 1
 		) m ON true
-		WHERE ea.status = 'active'
+		WHERE ea.status = 'active' AND NOT (ea.id = ANY($3::uuid[]))
 		  AND ` + actionRoutableSQL("ea") + `
 		  AND ea.provider <> 'smtp_imap'
-		  AND wt.sent_message_id <> ''
-		  AND wt.sent_retired_at IS NULL
-		  AND wt.created_at < NOW() - make_interval(days => COALESCE(ea.warmup_retention_days, $1))
 		ORDER BY wt.created_at
 		LIMIT $2`
-	return r.scanMailToRetire(ctx, query, defaultDays, limit, true)
+	return r.scanMailToRetire(ctx, query, defaultDays, limit, skip, true)
 }
 
-func (r *warmupRepository) scanMailToRetire(ctx context.Context, query string, defaultDays, limit int, sent bool) ([]WarmupMailToRetire, error) {
-	rows, err := resultDB(ctx, r.db).Query(ctx, query, defaultDays, limit)
+func (r *warmupRepository) scanMailToRetire(ctx context.Context, query string, defaultDays, limit int, skip []uuid.UUID, sent bool) ([]WarmupMailToRetire, error) {
+	if skip == nil {
+		skip = []uuid.UUID{}
+	}
+	rows, err := resultDB(ctx, r.db).Query(ctx, query, defaultDays, limit, skip)
 	if err != nil {
 		return nil, err
 	}
@@ -2079,11 +2145,14 @@ func (r *warmupRepository) RetireWarmupSentCopy(ctx context.Context, token uuid.
 	return err
 }
 
+// warmupRecoveryIdentifierDays matches the expiry remember_warmup_identifier gives (migration 000265).
+const warmupRecoveryIdentifierDays = 90
+
 // PruneWarmupEventsBefore drops the per-message warmup records older than
 // before. Receipts and tokens are kept while their mail may still be in the
 // mailbox (not yet retired), so the retention sweep can still reach it and a
 // removal seen later is still recognised as warmup rather than tampering.
-func (r *warmupRepository) PruneWarmupEventsBefore(ctx context.Context, before time.Time) (int64, error) {
+func (r *warmupRepository) PruneWarmupEventsBefore(ctx context.Context, before time.Time, mailDays int) (int64, error) {
 	var total int64
 	// Each statement gets only the arguments it references; pgx refuses an extra one.
 	for _, st := range []struct {
@@ -2114,6 +2183,15 @@ func (r *warmupRepository) PruneWarmupEventsBefore(ctx context.Context, before t
 			return total, err
 		}
 		total += cmd.RowsAffected()
+	}
+	// Replies are matched against a thread turn, so it outlives the event window, its mailbox's mail window and the recovery identifiers.
+	n, err := DeleteInBatches(ctx, r.db, "warmup_thread_messages",
+		`SELECT m.ctid FROM warmup_thread_messages m JOIN email_accounts ea ON ea.id = m.email_account_id
+		  WHERE m.created_at < LEAST($2, NOW() - make_interval(days => GREATEST(`+strconv.Itoa(warmupRecoveryIdentifierDays)+`, COALESCE(ea.warmup_retention_days, $3))))
+		  LIMIT $1`, before, mailDays)
+	total += n
+	if err != nil {
+		return total, err
 	}
 	return total, nil
 }
@@ -2471,23 +2549,38 @@ func (r *warmupRepository) GetLatestReplyCandidate(ctx context.Context, senderAc
 	return candidate, nil
 }
 
-// GetAllParticipantAccountIDs returns all unique account IDs across all warmup pools
-func (r *warmupRepository) GetAllParticipantAccountIDs(ctx context.Context) ([]uuid.UUID, error) {
-	rows, err := resultDB(ctx, r.db).Query(ctx, `SELECT DISTINCT email_account_id FROM warmup_pool_participants`)
+// WarmupParticipantMembership is one participating mailbox, what decides its pool, and the pools it sits in.
+type WarmupParticipantMembership struct {
+	EmailAccountID uuid.UUID
+	Status         string
+	OrganizationID *uuid.UUID
+	WarmupPoolType string
+	PoolTypes      []string
+}
+
+// ListParticipantMemberships reads every participant with its mailbox in one query.
+func (r *warmupRepository) ListParticipantMemberships(ctx context.Context) ([]WarmupParticipantMembership, error) {
+	rows, err := resultDB(ctx, r.db).Query(ctx, `
+		SELECT p.email_account_id, ea.status::text, ea.organization_id, COALESCE(ea.warmup_pool_type, ''),
+		       array_agg(DISTINCT wp.pool_type::text)
+		  FROM warmup_pool_participants p
+		  JOIN warmup_pools wp ON wp.id = p.pool_id
+		  JOIN email_accounts ea ON ea.id = p.email_account_id
+		 GROUP BY p.email_account_id, ea.id`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var ids []uuid.UUID
+	var out []WarmupParticipantMembership
 	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
+		var m WarmupParticipantMembership
+		if err := rows.Scan(&m.EmailAccountID, &m.Status, &m.OrganizationID, &m.WarmupPoolType, &m.PoolTypes); err != nil {
 			return nil, err
 		}
-		ids = append(ids, id)
+		out = append(out, m)
 	}
-	return ids, rows.Err()
+	return out, rows.Err()
 }
 
 // GetPoolHealthCounts returns counts per health state and the average band score

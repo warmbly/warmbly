@@ -28,8 +28,8 @@ type FeatureGateService interface {
 	// CanSendCampaignEmail checks if an organization can send campaign emails
 	CanSendCampaignEmail(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error)
 
-	// CanUseWarmup checks if an organization can use the warmup feature.
-	// Free-trial orgs may use warmup during their 14-day window.
+	// CanUseWarmup checks if an organization can use the warmup feature:
+	// a paid plan, or a free workspace that kept the free allowance.
 	CanUseWarmup(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error)
 
 	// CanUseUnibox checks if an organization can use the unibox feature.
@@ -37,7 +37,7 @@ type FeatureGateService interface {
 	CanUseUnibox(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error)
 
 	// CanAddInbox returns whether the org may connect another email account.
-	// Free workspaces are capped at FreeWorkspaceMailboxLimit connected mailboxes.
+	// Free workspaces are capped at their Subscription.FreeMailboxLimit.
 	// Paid orgs are not gated here (plan limits govern sending volume).
 	CanAddInbox(ctx context.Context, orgID uuid.UUID, currentCount int) (bool, *errx.Error)
 
@@ -200,7 +200,7 @@ func (s *featureGateService) CanUseUnibox(ctx context.Context, orgID uuid.UUID) 
 	return sub.CanUseUnibox(), nil
 }
 
-// CanAddInbox: paid workspaces are uncapped, free ones get FreeWorkspaceMailboxLimit.
+// CanAddInbox: paid workspaces are uncapped, free ones get their FreeMailboxLimit.
 func (s *featureGateService) CanAddInbox(ctx context.Context, orgID uuid.UUID, currentCount int) (bool, *errx.Error) {
 	if s.selfHost {
 		return true, nil
@@ -212,7 +212,7 @@ func (s *featureGateService) CanAddInbox(ctx context.Context, orgID uuid.UUID, c
 	if sub != nil && sub.HasPaidSubscription() {
 		return true, nil
 	}
-	return currentCount < models.FreeWorkspaceMailboxLimit, nil
+	return currentCount < sub.FreeMailboxLimit(), nil
 }
 
 // GetDailyEmailLimit returns the daily email limit for an organization

@@ -1,0 +1,84 @@
+name: Probe AWS origin TLS
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/probe-origin-tls-aws.yml'
+      - '.github/scripts/aws-origin-tls*'
+      - '.github/scripts/origin-tls-client*'
+      - '.github/scripts/aws-origin-alb.cjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node --test .github/scripts/aws-origin-tls.test.cjs .github/scripts/origin-tls-client.test.cjs
+      - run: shellcheck .github/scripts/aws-origin-tls-workflow.test.sh
+      - run: bash .github/scripts/aws-origin-tls-workflow.test.sh
+
+  probe:
+    needs: check
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: aws-infrastructure
+    concurrency:
+      group: aws-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      STATE_BUCKET: ${{ vars.AWS_TERRAFORM_STATE_BUCKET }}
+      APPLY_ROLE: ${{ vars.AWS_TERRAFORM_APPLY_ROLE_ARN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check main and ordinary infrastructure configuration
+        id: scope
+        env:
+          WORK: ${{ runner.temp }}/origin-tls
+        run: node .github/scripts/aws-origin-tls.cjs session-policy
+      - uses: aws-actions/configure-aws-credentials@v4
+        id: credentials
+        with:
+          role-to-assume: ${{ vars.AWS_TERRAFORM_APPLY_ROLE_ARN }}
+          aws-region: us-east-1
+          unset-current-credentials: true
+          inline-session-policy: ${{ steps.scope.outputs.probe_policy }}
+      - name: Run disposable secretless TLS diagnostic
+        if: success() && steps.credentials.outcome == 'success'
+        timeout-minutes: 10
+        env:
+          WORK: ${{ runner.temp }}/origin-tls
+        run: node .github/scripts/aws-origin-tls.cjs probe
+      - name: Acquire cleanup-only diagnostic credentials
+        if: always() && steps.scope.outcome == 'success'
+        timeout-minutes: 2
+        uses: aws-actions/configure-aws-credentials@v4
+        id: cleanup_credentials
+        with:
+          role-to-assume: ${{ vars.AWS_TERRAFORM_APPLY_ROLE_ARN }}
+          aws-region: us-east-1
+          unset-current-credentials: true
+          inline-session-policy: ${{ steps.scope.outputs.cleanup_policy }}
+      - name: Stop, deregister and privately archive diagnostic evidence
+        if: always() && steps.cleanup_credentials.outcome == 'success'
+        timeout-minutes: 8
+        env:
+          WORK: ${{ runner.temp }}/origin-tls
+        run: node .github/scripts/aws-origin-tls.cjs finish

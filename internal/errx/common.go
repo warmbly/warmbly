@@ -2,6 +2,7 @@ package errx
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/warmbly/warmbly/internal/config"
 )
@@ -318,6 +319,10 @@ var (
 // workspace holds its whole allowance. The identifier is stable so the
 // dashboard can open the request-more flow instead of showing the text.
 func MailboxAllowanceReached(used, allowance int, paid bool) *Error {
+	if !paid && allowance == 0 {
+		return NewWithIdentifier(Forbidden, "mailbox_allowance_reached",
+			"Connecting and warming mailboxes needs a plan. Choose one to add a mailbox.")
+	}
 	if !paid {
 		return NewWithIdentifier(Forbidden, "mailbox_allowance_reached",
 			fmt.Sprintf("A free workspace holds up to %d mailboxes. Choose a plan to add more.", allowance))
@@ -334,4 +339,14 @@ func StorageLimitReached(usedBytes, limitBytes, addingBytes int64) *Error {
 	return NewWithIdentifier(BadRequest, "storage_limit_reached",
 		fmt.Sprintf("Storage limit reached: %d MB of %d MB used, %d MB to add. Remove attachments or images, or upgrade your plan.",
 			usedBytes/mb, limitBytes/mb, addingBytes/mb))
+}
+
+// InvalidTemplate refuses campaign copy that would not render as written; the
+// message is the validator's own, naming the field, the line and the variable.
+func InvalidTemplate(err error) *Error {
+	msg := err.Error()
+	if msg != "" {
+		msg = strings.ToUpper(msg[:1]) + msg[1:]
+	}
+	return NewWithIdentifier(BadRequest, "invalid_template", msg+".")
 }

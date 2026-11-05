@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -68,6 +69,7 @@ func connectionConfigs(endpoint, directEndpoint string) (*pgxpool.Config, *pgx.C
 		return nil, nil, false, errors.New("invalid PRIMARY_DB_DIRECT connection configuration")
 	}
 	direct := directPool.ConnConfig
+	nameConnections(pool.ConnConfig, direct)
 	direct.ConnectTimeout = defaultConnectTimeout
 	direct.RuntimeParams["idle_in_transaction_session_timeout"] = idleInTxnTimeoutMs
 	direct.RuntimeParams["statement_timeout"] = statementTimeoutMs
@@ -80,6 +82,16 @@ func connectionConfigs(endpoint, directEndpoint string) (*pgxpool.Config, *pgx.C
 		pool.ConnConfig.RuntimeParams["statement_timeout"] = statementTimeoutMs
 	}
 	return pool, direct, pooled, nil
+}
+
+// nameConnections labels each connection with the binary that opened it, so pg_stat_activity shows who holds the slots; a DSN's own application_name wins.
+func nameConnections(configs ...*pgx.ConnConfig) {
+	name := "warmbly-" + filepath.Base(os.Args[0])
+	for _, c := range configs {
+		if c.RuntimeParams["application_name"] == "" {
+			c.RuntimeParams["application_name"] = name
+		}
+	}
 }
 
 // Transaction pooling relies on role defaults, which must apply to every server connection.

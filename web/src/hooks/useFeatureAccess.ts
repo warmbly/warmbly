@@ -48,6 +48,8 @@ export interface FeatureAccess {
     /** On a warming-only plan (Warmup, Partnership): the premium pool and no mailbox cap, nothing else.
      *  Every surface a free workspace cannot use stays locked. */
     warmupOnly: boolean;
+    /** Unpaid workspace that kept the free allowance: 10 mailboxes in the free pool. A new one gets none. */
+    keptFreeWarmup: boolean;
     /** Hosted workspace without a plan that sends (free, or the Warmup plan):
      *  only mailboxes, the Warmbly Cloud link and settings are open; everything
      *  else waits for a plan. */
@@ -96,6 +98,7 @@ export default function useFeatureAccess(): FeatureAccess {
             billing: false,
             paid: true,
             warmupOnly: false,
+            keptFreeWarmup: false,
             locked: false,
             hasInbox: true,
             hasAdvanced: true,
@@ -145,6 +148,7 @@ export default function useFeatureAccess(): FeatureAccess {
         billing: true,
         paid: isPaid,
         warmupOnly,
+        keptFreeWarmup: !isPaid && sub.data?.keeps_free_warmup === true,
         locked: !sub.isPending && !authConfig.isLoading && !productPaid,
         // Unified inbox is included on every plan that sends, so gate it on
         // the subscription (productPaid) rather than the plan-name → catalog

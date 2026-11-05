@@ -159,6 +159,16 @@ export function isSigninCause(cause: string): boolean {
     return SIGNIN_CAUSE.test(cause);
 }
 
+/** Mirrors mailhost.LooksLikeGoogleAppPassword: 16 letters, ends trimmed, spaces ignored. */
+export function looksLikeGoogleAppPassword(s: string): boolean {
+    return /^[a-z]{16}$/i.test(s.trim().replace(/ /g, ""));
+}
+
+/** Mirrors mailhost.FromServer for Google's servers. */
+export function isGoogleServer(host: string): boolean {
+    return /(^|\.)(google|gmail|googlemail)\.com\.?$/i.test(host.trim());
+}
+
 /** "3, 7, 9 and 12 more" for a list of line numbers. */
 export function linesText(lines: number[], total: number, shown = 6): string {
     const head = lines.slice(0, shown).join(", ");

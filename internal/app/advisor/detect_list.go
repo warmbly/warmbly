@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/tmplvars"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -199,7 +200,7 @@ func detectMissingPersonalizationData(s *repository.AdvisorSnapshot) []Finding {
 			if st.CampaignID != cl.Campaign.ID {
 				continue
 			}
-			if usesFirstName(st.Subject + st.BodyPlain + st.BodyHTML) {
+			if usesFirstName(st.Subject, st.BodyPlain, st.BodyHTML) {
 				uses = true
 				break
 			}
@@ -278,46 +279,13 @@ func detectUnsubscribedEnrolled(s *repository.AdvisorSnapshot) []Finding {
 	return out
 }
 
-// usesFirstName reports whether the copy actually greets people by first name.
-// Warmbly templates are Go templates, so the field is written `.FirstName`
-// (`{{.FirstName}}`, `{{if .FirstName}}`, `{{.FirstName | title}}`) or, for the
-// index form a spaced custom key would take, `"first_name"`. Checking the
-// property rather than one literal spelling keeps this from silently never
-// firing the way a `{{first_name}}` assumption would.
-func usesFirstName(text string) bool {
-	for _, form := range []string{".FirstName", `"first_name"`} {
-		if indexFold(text, form) >= 0 {
+// usesFirstName reports whether any part reads the contact's first name, in
+// any spelling the renderer accepts (`.FirstName`, `first_name`, `firstName`).
+func usesFirstName(parts ...string) bool {
+	for _, p := range parts {
+		if tmplvars.References(p)["FirstName"] {
 			return true
 		}
 	}
 	return false
-}
-
-// indexFold is a case-insensitive substring search that avoids allocating a
-// lowered copy of every email body on every run.
-func indexFold(haystack, needle string) int {
-	n, h := len(needle), len(haystack)
-	if n == 0 || n > h {
-		return -1
-	}
-	for i := 0; i+n <= h; i++ {
-		match := true
-		for j := 0; j < n; j++ {
-			a, b := haystack[i+j], needle[j]
-			if 'A' <= a && a <= 'Z' {
-				a += 'a' - 'A'
-			}
-			if 'A' <= b && b <= 'Z' {
-				b += 'a' - 'A'
-			}
-			if a != b {
-				match = false
-				break
-			}
-		}
-		if match {
-			return i
-		}
-	}
-	return -1
 }
