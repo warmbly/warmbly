@@ -597,9 +597,13 @@ func (s *JobsService) acceptWarmupEmail(ctx context.Context, e *models.JobEventN
 	return nil
 }
 
-// recordWarmupPlacement adds the arrival to the sender's daily placement
-// history and tells the sender's workspace it moved.
+// recordWarmupPlacement tells the recipient's workspace the arrival landed, adds
+// it to the sender's daily placement history and tells the sender's workspace.
 func (s *JobsService) recordWarmupPlacement(ctx context.Context, e *models.JobEventNewEmail, recipient *models.Email, landed string, rescued bool) {
+	// The receipt is already stored, so the recipient's counts moved whatever the placement claim does.
+	if s.StreamingPublisher != nil && recipient != nil && recipient.OrganizationID != nil {
+		s.StreamingPublisher.PublishWarmupActivity(ctx, recipient.OrganizationID.String(), recipient.UserID, recipient.ID.String(), recipient.Email)
+	}
 	if s.WarmupPlacementRepo == nil || e.Message == nil {
 		return
 	}
@@ -614,9 +618,6 @@ func (s *JobsService) recordWarmupPlacement(ctx context.Context, e *models.JobEv
 		return
 	}
 	s.StreamingPublisher.PublishWarmupPlacement(ctx, sender.OrgID.String(), sender.UserID, sender.ID.String(), sender.Email, landed)
-	if recipient != nil && recipient.OrganizationID != nil {
-		s.StreamingPublisher.PublishWarmupActivity(ctx, recipient.OrganizationID.String(), recipient.UserID, recipient.ID.String(), recipient.Email)
-	}
 }
 
 // placementRecipient is the group and host a receipt is counted under.
