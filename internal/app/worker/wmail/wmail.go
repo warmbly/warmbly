@@ -106,6 +106,7 @@ type WMail struct {
 	// laneCache remembers deferred messages' lanes across passes; googleTick
 	// and graphTick carry the running pass's stats into provider callbacks.
 	laneCache  laneCache
+	relayCache relayCache
 	googleTick *tickStats
 	graphTick  *tickStats
 	// googleReconciledAt is when the Gmail folder reconciliation last ran;

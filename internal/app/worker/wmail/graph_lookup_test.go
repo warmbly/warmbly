@@ -110,3 +110,58 @@ func BenchmarkGraphKnownMessage(b *testing.B) {
 	}
 	b.ReportMetric(float64(maps.gets)/float64(b.N), "lookups/op")
 }
+
+// A walk that re-reads a folder relays a known message's state only when it changed.
+func TestGraphKnownMessageRelaysOnlyChanges(t *testing.T) {
+	var events []captured
+	var relayed []models.SyncState
+	w := newGraphTestMail(t, newFakeGraph().serve(t), &events, &relayed)
+	w.EmailMessageMapRepository = &countingGraphMap{recoveryMessageMap: recoveryMessageMap{data: map[string]repository.EmailMessageData{
+		"known": {ID: uuid.NewString(), MessageID: "known"},
+	}}}
+	injected := errors.New("injected failure")
+	fail := false
+	emit := w.onEvent
+	w.onEvent = func(typ models.JobEventType, body any) error {
+		if fail {
+			return injected
+		}
+		return emit(typ, body)
+	}
+	seen := func(folder string, read bool) {
+		t.Helper()
+		if added, err := w.onGraphMessageSeen(t.Context(), folder, "known", read); err != nil || !added {
+			t.Fatalf("seen %s read=%v: added=%v err=%v", folder, read, added, err)
+		}
+	}
+	expect := func(step string, n int) {
+		t.Helper()
+		if len(events) != n {
+			t.Fatalf("%s: %d events relayed, want %d", step, len(events), n)
+		}
+	}
+
+	seen(msgraph.FolderSent, true)
+	seen(msgraph.FolderSent, true)
+	seen(msgraph.FolderSent, true)
+	expect("unchanged walks", 2)
+	seen(msgraph.FolderSent, false)
+	expect("read state changed", 4)
+	seen(msgraph.FolderArchive, false)
+	expect("folder changed", 6)
+
+	fail = true
+	if _, err := w.onGraphMessageSeen(t.Context(), msgraph.FolderInbox, "known", false); !errors.Is(err, injected) {
+		t.Fatalf("publish failure not propagated: %v", err)
+	}
+	fail = false
+	seen(msgraph.FolderInbox, false)
+	expect("relay retried after a failed publish", 8)
+
+	if err := w.onGraphMessageRemove(t.Context(), "known"); err != nil {
+		t.Fatal(err)
+	}
+	removed := len(events)
+	seen(msgraph.FolderInbox, false)
+	expect("state relayed again after a removal", removed+2)
+}

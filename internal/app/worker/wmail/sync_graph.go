@@ -91,17 +91,15 @@ func (w *WMail) onGraphMessageSeen(ctx context.Context, folder, providerID strin
 		return false, msgraph.ErrStop
 	}
 	if known != nil {
-		if !w.GraphData.Client.ImmutableIDMode() {
-			if err := w.emitGraphFlagsChange(known, seen); err != nil {
-				return false, err
-			}
-			id, err := uuid.Parse(known.ID)
-			if err != nil {
-				return false, err
-			}
-			return true, w.emitFolder(id, (&msgraph.GraphMessage{}).ToEmailData(folder).Folder)
+		state := relayState{seen: seen, folder: folder}
+		if w.relayCache.unchanged(providerID, state) {
+			return true, nil
 		}
-		return true, w.graphReconcileMessage(ctx, known.ID, providerID, folder)
+		if err := w.relayKnownGraphMessage(ctx, known, providerID, folder, seen); err != nil {
+			return false, err
+		}
+		w.relayCache.put(providerID, state)
+		return true, nil
 	}
 
 	lane, cached := w.laneCache.get(providerID)
@@ -181,6 +179,21 @@ func (w *WMail) onGraphMessageSeen(ctx context.Context, folder, providerID strin
 		w.setGraphRecovery(folder, recovery)
 	}
 	return true, nil
+}
+
+// relayKnownGraphMessage relays a known message's read state and folder.
+func (w *WMail) relayKnownGraphMessage(ctx context.Context, known *repository.EmailMessageData, providerID, folder string, seen bool) error {
+	if w.GraphData.Client.ImmutableIDMode() {
+		return w.graphReconcileMessage(ctx, known.ID, providerID, folder)
+	}
+	if err := w.emitGraphFlagsChange(known, seen); err != nil {
+		return err
+	}
+	id, err := uuid.Parse(known.ID)
+	if err != nil {
+		return err
+	}
+	return w.emitFolder(id, (&msgraph.GraphMessage{}).ToEmailData(folder).Folder)
 }
 
 // graphStore mirrors googleStore. The opaque Graph message id rides in
