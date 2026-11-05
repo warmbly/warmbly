@@ -229,6 +229,15 @@ x-selfhost-env: &selfhost-env
   SEARCH_API_URL: ${SEARCH_API_URL:-}
   SEARCH_API_KEY: ${SEARCH_API_KEY:-}
 
+  # Lead finder. All optional: OpenStreetMap, Photon and OpenFreeMap work keyless.
+  LEAD_FINDER_OVERPASS_URL: ${LEAD_FINDER_OVERPASS_URL:-}
+  LEAD_FINDER_GEOCODER_URL: ${LEAD_FINDER_GEOCODER_URL:-}
+  LEAD_FINDER_MAP_STYLE_URL: ${LEAD_FINDER_MAP_STYLE_URL:-}
+  LEAD_FINDER_MAP_STYLE_DARK_URL: ${LEAD_FINDER_MAP_STYLE_DARK_URL:-}
+  LEAD_FINDER_GOOGLE_PLACES_API_KEY: ${LEAD_FINDER_GOOGLE_PLACES_API_KEY:-}
+  LEAD_FINDER_FOURSQUARE_API_KEY: ${LEAD_FINDER_FOURSQUARE_API_KEY:-}
+  LEAD_FINDER_OUTSCRAPER_API_KEY: ${LEAD_FINDER_OUTSCRAPER_API_KEY:-}
+
   # Slack app. The OAuth pair lets workspaces connect for notifications; the
   # signing secret turns on the assistant, the inbox and buttons.
   SLACK_OAUTH_CLIENT_ID: ${SLACK_OAUTH_CLIENT_ID:-}

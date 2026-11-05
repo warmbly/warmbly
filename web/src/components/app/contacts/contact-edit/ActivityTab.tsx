@@ -1574,6 +1574,8 @@ export function sourceLabel(source?: string | null): string {
             return "Imported from Apollo";
         case "clay":
             return "Sent from Clay";
+        case "lead_finder":
+            return "Found with the lead finder";
         case "unknown":
         case undefined:
         case null:
@@ -1653,6 +1655,8 @@ function createdLabel(source?: string | null): string {
             return "Imported from Apollo";
         case "clay":
             return "Sent from Clay";
+        case "lead_finder":
+            return "Added from the lead finder";
         case "manual":
             return "Created manually";
         default:

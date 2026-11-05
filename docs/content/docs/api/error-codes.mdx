@@ -603,6 +603,25 @@ The [Apollo](/guides/apollo/) and [Clay](/guides/clay/) endpoints answer with th
 | `apollo_key_missing` | 422 | The Apollo connection has no API key |
 | `apollo_rate_limited` | 429 | Apollo's rate limit for the account was reached. Retry later |
 
+#### Lead finder refusals
+
+The [lead finder](/guides/lead-finder/) endpoints answer with their own codes.
+
+| `code` | Status | Meaning |
+|--------|--------|---------|
+| `lead_search_empty` | 400 | `POST /leads/search` named neither a `query` nor a `category` |
+| `lead_search_area` | 400 | The search `area` is not a usable rectangle, circle (50 m to 50 km) or shape (3 to 200 points), or it is larger than the source searches at once |
+| `lead_search_exhausted` | 400 | `POST /leads/search` asked for the next page of a search that has no more results |
+| `lead_provider_not_connected` | 400 | The chosen source needs an API key and neither the workspace nor the instance has one. Connect it under Integrations |
+| `lead_provider_key` | 400 | The source refused the API key. Replace the key on its integration |
+| `lead_selection_too_large` | 400 | A bulk call named more than 5,000 `lead_ids` |
+| `lead_person_no_domain` | 400 | A person was added or searched for without an `email` on a lead with no website, so there is no domain to work an address out at |
+| `lead_person_exists` | 409 | Renaming a person would give them the name of someone already on the lead |
+| `lead_provider_quota` | 429 | The source is rate limiting the key or its quota is used up. Retry later |
+| `lead_provider_unavailable` | 503 | The source did not answer, took too long, or (OpenStreetMap) every server is busy. Retry, or search a smaller area |
+
+A search through a source the instance pays for answers `402` with `insufficient_credits` past the credit balance and `429` with `usage_cap_exceeded` past a spend limit, and charges nothing. An enrichment run charges as it reads each website; one that reaches either limit stops with `status: "error"` and the reason in `last_error`, and leaves the remaining leads untouched.
+
 #### Automation refusals
 
 | `code` | Status | Meaning |

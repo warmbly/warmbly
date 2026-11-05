@@ -566,6 +566,8 @@ export function useRealtimeEvents() {
             ['crm', 'owners'],
           ],
           lead_sync_source: [['lead-sync', 'sources']],
+          lead: [['leads']],
+          lead_search: [['leads', 'searches']],
           meeting: [['meetings'], ['meetings', 'summary']],
           subscription: [['subscription'], ['organizations', 'limits']],
           referral_credit: [['subscription']],

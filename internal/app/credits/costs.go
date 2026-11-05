@@ -36,6 +36,18 @@ const (
 	// CostSpamAnalysis is one AI spam analysis of a campaign template
 	// (POST /templates/analyze, and every Re-check after an edit).
 	CostSpamAnalysis = 2
+
+	// CostLeadEnrich is reading one lead's website for emails, socials and the
+	// people it names; a site that never answers is refunded.
+	CostLeadEnrich = 1
+
+	// CostLeadPersonEmail is finding one named person's address at a lead's
+	// domain on request; refunded when no address is found.
+	CostLeadPersonEmail = 1
+
+	// CostLeadSearchPage is one page of a lead search through a provider key the
+	// operator pays for. A workspace's own key and OpenStreetMap cost nothing.
+	CostLeadSearchPage = 1
 )
 
 // Usage-based metering. The per-feature constants above are the up-front

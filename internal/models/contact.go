@@ -853,6 +853,9 @@ const (
 	// ContactSourceClay is a contact a Clay table sent in; the detail names the
 	// connection.
 	ContactSourceClay ContactSource = "clay"
+	// ContactSourceLeadFinder is a business found on the lead finder map; the
+	// detail names the search.
+	ContactSourceLeadFinder ContactSource = "lead_finder"
 )
 
 // Valid reports whether the value is one the database accepts.
@@ -860,7 +863,8 @@ func (s ContactSource) Valid() bool {
 	switch s {
 	case ContactSourceUnknown, ContactSourceManual, ContactSourceCampaign, ContactSourceImport,
 		ContactSourceSheetSync, ContactSourceAPI, ContactSourceAIAssistant, ContactSourceForm,
-		ContactSourceAutomation, ContactSourceCRMSync, ContactSourceApollo, ContactSourceClay:
+		ContactSourceAutomation, ContactSourceCRMSync, ContactSourceApollo, ContactSourceClay,
+		ContactSourceLeadFinder:
 		return true
 	}
 	return false

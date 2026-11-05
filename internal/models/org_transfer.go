@@ -119,7 +119,7 @@ type OrgDataGroupInfo struct {
 // blanks those when their target is not part of the run.
 var OrgDataGroupCatalog = []OrgDataGroupInfo{
 	{Key: OrgDataGroupCore, Label: "Workspace", Description: "Organization, members, roles, teams, mailboxes, mailbox tags, API keys, webhooks, and settings.", Required: true},
-	{Key: OrgDataGroupContacts, Label: "Contacts", Description: "Contacts, categories, notes, activities, and the suppression list."},
+	{Key: OrgDataGroupContacts, Label: "Contacts", Description: "Contacts, categories, notes, activities, lead finder leads, and the suppression list."},
 	{Key: OrgDataGroupCampaigns, Label: "Campaigns", Description: "Campaigns, folders, sequences, senders, attachments, and per-campaign settings.", Requires: []OrgDataGroup{OrgDataGroupContacts}},
 	{Key: OrgDataGroupCRM, Label: "CRM", Description: "Pipelines, deals, tasks, and meeting bookings."},
 	{Key: OrgDataGroupAutomations, Label: "Automations", Description: "Automations, connected integrations, and lead sync sources."},

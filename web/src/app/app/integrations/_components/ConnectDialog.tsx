@@ -51,6 +51,33 @@ const FIELDS_BY_PROVIDER: Record<string, FieldDef[]> = {
             helper: "Settings → Integrations → API in Apollo. Use a master key, or one with access to lists, contact search and people enrichment. It is checked before it is saved.",
         },
     ],
+    google_places: [
+        {
+            key: "api_key",
+            label: "Google Maps Platform API key",
+            type: "password",
+            required: true,
+            helper: "Google Cloud console → APIs and services → Credentials. Enable Places API (New) for the key. One small search checks it before it is saved.",
+        },
+    ],
+    foursquare: [
+        {
+            key: "api_key",
+            label: "Foursquare service key",
+            type: "password",
+            required: true,
+            helper: "Foursquare developer console → your project → Service API keys. One small search checks it before it is saved.",
+        },
+    ],
+    outscraper: [
+        {
+            key: "api_key",
+            label: "Outscraper API key",
+            type: "password",
+            required: true,
+            helper: "Outscraper → Profile → API token. Searches and the email lookup are billed to your Outscraper balance.",
+        },
+    ],
     cleanmylist: [
         {
             key: "api_key",
@@ -98,6 +125,9 @@ const NEXT_STEP: Record<string, string> = {
     pipedrive: "Finish the CRM setup: what syncs, and in which direction.",
     salesforce: "Finish the setup: sync rules, field mapping and the first import.",
     apollo: "Import your first Apollo list, or enrich contacts you already have.",
+    google_places: "Open the Lead finder and pick Google Places as the source.",
+    foursquare: "Open the Lead finder and pick Foursquare as the source.",
+    outscraper: "Open the Lead finder and pick Outscraper as the source.",
     discord: "Choose which Warmbly events post to the channel.",
 };
 

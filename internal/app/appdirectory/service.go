@@ -54,6 +54,7 @@ var reservedSlugs = func() map[string]bool {
 		models.IntegrationZapier, models.IntegrationMake, models.IntegrationN8N, models.IntegrationSlack,
 		models.IntegrationDiscord, models.IntegrationCalendly, models.IntegrationCalCom, models.IntegrationGoogleSheets,
 		models.IntegrationMillionVerifier, models.IntegrationCleanMyList,
+		models.IntegrationGooglePlaces, models.IntegrationFoursquare, models.IntegrationOutscraper,
 	} {
 		out[string(p)] = true
 		out[strings.ReplaceAll(string(p), "_", "-")] = true

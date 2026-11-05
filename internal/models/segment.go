@@ -141,7 +141,7 @@ var SegmentFieldCatalog = []SegmentFieldSpec{
 	{Field: "phone", Label: "Phone", Group: "Contact", Kind: SegmentFieldText},
 	{Field: "subscribed", Label: "Subscribed", Group: "Contact", Kind: SegmentFieldBool},
 	{Field: "suppressed", Label: "On the suppression list", Group: "Contact", Kind: SegmentFieldBool},
-	{Field: "source", Label: "Source", Group: "Contact", Kind: SegmentFieldEnum, Options: []string{"unknown", "manual", "campaign", "import", "sheet_sync", "api", "ai_assistant", "form", "apollo", "clay"}},
+	{Field: "source", Label: "Source", Group: "Contact", Kind: SegmentFieldEnum, Options: []string{"unknown", "manual", "campaign", "import", "sheet_sync", "api", "ai_assistant", "form", "apollo", "clay", "lead_finder"}},
 	{Field: "verification_status", Label: "Verification status", Group: "Contact", Kind: SegmentFieldEnum, Options: []string{"valid", "risky", "invalid", "unknown"}},
 	{Field: "is_catch_all", Label: "Catch-all domain", Group: "Contact", Kind: SegmentFieldBool},
 	{Field: "mail_host", Label: "Email provider", Group: "Contact", Kind: SegmentFieldEnum, Options: mailHostOptions(), OptionLabels: mailHostLabels()},

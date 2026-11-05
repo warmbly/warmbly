@@ -30,6 +30,7 @@ import { readCachedView, viewPreferencesQuery } from "./lib/api/hooks/app/views/
 import { labelCountQuery, segmentFieldsQuery, segmentQuery, segmentsListQuery } from "./lib/api/hooks/app/segments";
 import { apolloOverviewQuery, apolloSourcesQuery } from "./lib/api/hooks/app/integrations/useApollo";
 import { claySettingsQuery } from "./lib/api/hooks/app/integrations/useClay";
+import { leadFinderConfigQuery, leadSearchesQuery } from "./lib/api/hooks/app/leads/useLeads";
 import { suppressionsListQuery } from "./lib/api/hooks/app/suppressions/useSuppressions";
 import { formQuery, formsListQuery } from "./lib/api/hooks/app/forms";
 import { campaignsListQuery } from "./lib/api/hooks/app/campaigns/useCampaigns";
@@ -318,6 +319,11 @@ export const apolloLoader = pageLoader((qc, { params }) =>
 );
 
 export const clayLoader = pageLoader((qc, { params }) => [!!params.id && qc.prefetchQuery(claySettingsQuery(params.id))]);
+
+export const leadsLoader = pageLoader((qc) => [
+    can("VIEW_CONTACTS") && qc.prefetchQuery(leadFinderConfigQuery),
+    can("VIEW_CONTACTS") && qc.prefetchQuery(leadSearchesQuery),
+]);
 
 export const auditLoader = pageLoader((qc) => [canManageTeam() && qc.prefetchQuery(auditLogsQuery({ limit: 50 }))]);
 

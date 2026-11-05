@@ -17,6 +17,9 @@ export type IntegrationProvider =
     | "google_sheets"
     | "apollo"
     | "clay"
+    | "google_places"
+    | "foursquare"
+    | "outscraper"
     | "millionverifier"
     | "cleanmylist";
 
@@ -375,6 +378,9 @@ export const PROVIDER_LABELS: Record<IntegrationProvider, string> = {
     google_sheets: "Google Sheets",
     apollo: "Apollo",
     clay: "Clay",
+    google_places: "Google Places",
+    foursquare: "Foursquare",
+    outscraper: "Outscraper",
     millionverifier: "MillionVerifier",
     cleanmylist: "CleanMyList",
 };
