@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -350,5 +351,42 @@ func TestNATSBus_KeyedLanesKeepMessagesWaitingForRoomAlive(t *testing.T) {
 		if got := seen[p]; len(got) != 1 || got[0] != 1 {
 			t.Errorf("%s handled with attempts %v, want exactly one first delivery", p, got)
 		}
+	}
+}
+
+// Closing the bus ends a pull waiting for room behind handlers that have not finished.
+func TestNATSBus_CloseDoesNotWaitForLaneRoom(t *testing.T) {
+	bus := newTestNATSBus(t)
+	topic := "w.close"
+	release := make(chan struct{})
+	var started atomic.Int32
+	subscribeInBackground(t, t.Context(), bus, topic, "close", 2, payloadKey, func(context.Context, Message) error {
+		started.Add(1)
+		<-release
+		return nil
+	})
+	t.Cleanup(func() { close(release) })
+	waitForConsumer(t, bus, bus.durable("close", []string{topic}))
+	for i := 0; i < 2*natsLaneBuffer+8; i++ {
+		if err := bus.Publish(t.Context(), topic, "k", fmt.Appendf(nil, "%c%02d", 'a'+i%2, i)); err != nil {
+			t.Fatalf("publish %d: %v", i, err)
+		}
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for started.Load() < 2 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	// Let the pull fill the lanes' room and wait for more.
+	time.Sleep(500 * time.Millisecond)
+
+	closed := make(chan struct{})
+	go func() {
+		_ = bus.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Close waited for room in the lanes")
 	}
 }

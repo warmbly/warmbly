@@ -75,7 +75,7 @@ func (p *natsLanes) start(ctx context.Context, cons jetstream.Consumer, key func
 // fetched that the lanes could not hold and heartbeat at once.
 func (p *natsLanes) pull(ctx context.Context, cons jetstream.Consumer, key func(jetstream.Msg) (string, error)) {
 	for ctx.Err() == nil {
-		n := p.reserve(cap(p.slots))
+		n := p.reserve(ctx, cap(p.slots))
 		if n == 0 {
 			return
 		}
@@ -120,11 +120,13 @@ func fetchFailed(ctx context.Context, err error) {
 	}
 }
 
-// reserve waits for room for one more delivery and takes up to limit, or none once halted.
-func (p *natsLanes) reserve(limit int) int {
+// reserve waits for room for one more delivery and takes up to limit, or none once halted or stopped.
+func (p *natsLanes) reserve(ctx context.Context, limit int) int {
 	select {
 	case p.room <- struct{}{}:
 	case <-p.halted:
+		return 0
+	case <-ctx.Done():
 		return 0
 	}
 	n := 1
