@@ -50,6 +50,11 @@ export interface FeatureAccess {
     warmupOnly: boolean;
     /** Unpaid workspace that kept the free allowance: 10 mailboxes in the free pool. A new one gets none. */
     keptFreeWarmup: boolean;
+    /** Unpaid workspace inside its free trial: sending, the inbox and a small mailbox allowance, until trialEndsAt. */
+    trial: boolean;
+    /** Unpaid workspace whose free trial is over: sending and warmup are paused until it picks a plan. */
+    trialEnded: boolean;
+    trialEndsAt: Date | null;
     /** Hosted workspace without a plan that sends (free, or the Warmup plan):
      *  only mailboxes, the Warmbly Cloud link and settings are open; everything
      *  else waits for a plan. */
@@ -99,6 +104,9 @@ export default function useFeatureAccess(): FeatureAccess {
             paid: true,
             warmupOnly: false,
             keptFreeWarmup: false,
+            trial: false,
+            trialEnded: false,
+            trialEndsAt: null,
             locked: false,
             hasInbox: true,
             hasAdvanced: true,
@@ -140,6 +148,10 @@ export default function useFeatureAccess(): FeatureAccess {
     // server refuses sending, the inbox and AI to them as it does to a free workspace.
     const warmupOnly = isPaid && isWarmupOnlyPlan(plan);
     const productPaid = isPaid && !warmupOnly;
+    const trialEndsAt = !isPaid && sub.data?.free_trial_ends_at ? new Date(sub.data.free_trial_ends_at) : null;
+    const trial = !!trialEndsAt && trialEndsAt.getTime() > Date.now();
+    // The trial opens what the server opens to it: sending, the inbox, contacts and campaigns.
+    const opened = productPaid || trial;
 
     return {
         loading: sub.isPending || authConfig.isLoading,
@@ -149,12 +161,15 @@ export default function useFeatureAccess(): FeatureAccess {
         paid: isPaid,
         warmupOnly,
         keptFreeWarmup: !isPaid && sub.data?.keeps_free_warmup === true,
-        locked: !sub.isPending && !authConfig.isLoading && !productPaid,
+        trial,
+        trialEnded: !!trialEndsAt && !trial,
+        trialEndsAt,
+        locked: !sub.isPending && !authConfig.isLoading && !opened,
         // Unified inbox is included on every plan that sends, so gate it on
         // the subscription (productPaid) rather than the plan-name → catalog
         // map, which doesn't recognise server plan names like "Pro" / "Free
         // Trial" and would wrongly lock paid orgs.
-        hasInbox: productPaid,
+        hasInbox: opened,
         hasAdvanced: productPaid && isAtLeast(plan, "business"),
         hasIsolatedSending: productPaid && isAtLeast(plan, "business"),
         hasRealtime: true,

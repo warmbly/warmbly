@@ -23,6 +23,7 @@ import { AppHeader } from "./AppHeader";
 import { AppNav } from "./AppNav";
 import PendingDeletionBar from "./PendingDeletionBar";
 import SendingRestrictedBar from "./SendingRestrictedBar";
+import TrialBar from "./TrialBar";
 import { RouteBoundary } from "./ErrorBoundary";
 import { ShortcutsModal } from "@/components/shared/ShortcutsModal";
 import { CommandPalette } from "@/components/shared/CommandPalette";
@@ -67,6 +68,7 @@ export function AppShell() {
                     own account is scheduled for deletion. */}
                 <SendingRestrictedBar />
                 <PendingDeletionBar />
+                <TrialBar />
 
                 <AppHeader onMenu={() => setNavOpen(true)} />
 

@@ -3,7 +3,7 @@ title: Plans and billing
 description: How plans unlock features, how to upgrade from anywhere in the dashboard, and what changes when you switch.
 ---
 
-Signing up for a hosted workspace is free, and so is looking around the dashboard. Connecting and warming mailboxes needs a paid plan, which also turns on sending from Warmbly Cloud, the unified inbox, contacts, the CRM, automations and integrations.
+Every new hosted workspace starts with a 14-day [free trial](#the-free-trial), no card needed: two mailboxes warming, `20` sends a day, the unified inbox, contacts and campaigns. After the trial, connecting and warming mailboxes needs a paid plan, which also turns on sending from Warmbly Cloud, the unified inbox, contacts, the CRM, automations and integrations.
 
 ![Settings > Billing: the plan card, usage against limits, and the subscription actions](/guides/billing.webp)
 
@@ -33,7 +33,8 @@ With no subscription yet, finish in Stripe Checkout. An existing subscription sw
 
 ## Good to know
 
-- A new workspace without a paid plan cannot connect or warm mailboxes. Paid plans start at $29 a month with unlimited mailboxes and unlimited warmup in the premium pool.
+- A new workspace gets a 14-day free trial with up to 2 mailboxes, once per owner. Every other workspace that owner creates starts without one.
+- After the trial, a workspace without a paid plan cannot connect or warm mailboxes. Paid plans start at $29 a month with unlimited mailboxes and unlimited warmup in the premium pool.
 - A workspace that already had the free plan keeps it: up to 10 mailboxes warming in the free pool, no card and no time limit.
 - Annual billing is 20% off the monthly price.
 - Only the workspace owner can change the plan.
@@ -43,9 +44,30 @@ With no subscription yet, finish in Stripe Checkout. An existing subscription sw
 
 <Fold>
 
+## The free trial
+
+A new hosted workspace starts on a 14-day free trial the moment it is created. No card is asked for, and nothing is charged when it ends.
+
+| During the trial | |
+| --- | --- |
+| Mailboxes | Up to `2`, warming in the free pool |
+| Campaign sends | `20` a day across the workspace |
+| Unified inbox, contacts, campaigns | Included, within the trial limits shown under **Settings > Billing** |
+| AI features and integrations | Need a paid plan |
+
+Each owner gets one trial. It goes to the first workspace they create, whether at sign-up or later from the workspace switcher, and every workspace after that starts without one and needs a plan to connect mailboxes. Joining someone else's workspace as a member does not use it.
+
+The dashboard counts the days down in a bar across the top and on **Settings > Billing**. Pick a plan at any point and the trial ends there: the plan takes over at once and every mailbox moves to the premium pool.
+
+**When the trial ends without a plan**, nothing is deleted. Active campaigns are paused as **paused, trial expired**, warmup stops and the mailboxes leave the free pool, and members with billing access get a notice. Mailboxes keep their warmup settings, so choosing a plan picks warmup up where it stopped; resume the paused campaigns from their pages.
+
+</Fold>
+
+<Fold>
+
 ## Without a paid plan
 
-Warmbly Cloud has no free plan for new workspaces. Anyone can sign up and explore the dashboard, but a workspace without a paid plan has a [mailbox allowance](/guides/mailboxes/#mailbox-allowance) of `0`: connecting a mailbox is refused with [`mailbox_allowance_reached`](/api/error-codes/#mailbox_allowance_reached), and no warmup is scheduled. Choosing any plan lifts both.
+Warmbly Cloud has no free plan for new workspaces. After its trial, or from the start on a workspace that owner created after their trial, a workspace without a paid plan has a [mailbox allowance](/guides/mailboxes/#mailbox-allowance) of `0`: connecting a mailbox is refused with [`mailbox_allowance_reached`](/api/error-codes/#mailbox_allowance_reached), and no warmup is scheduled. Choosing any plan lifts both.
 
 Workspaces that had the free plan before it closed to new workspaces keep it, unchanged, for as long as they like: up to 10 mailboxes connected on the cloud, warming in the free pool, with no card. Subscribing moves those mailboxes to the premium pool with no cap. Warmbly Cloud no longer links new self-hosted instances on any plan; a free workspace [linked earlier](/guides/warmbly-cloud/#free-workspaces-linked-earlier) keeps what it already enrolled but adds no new mailboxes until it picks a plan. Sending from Warmbly Cloud, the unified inbox, contacts, the CRM, automations and integrations turn on with a paid plan.
 
@@ -112,8 +134,8 @@ Only the workspace owner can change the plan. Other members see the same compari
 
 - The plan card shows the plan, its status, the price (per year on a yearly subscription), and the renewal or end date. Change plan opens the same chooser the locked features use.
 - Cancel plan schedules the cancellation for the end of the paid period. The plan stays fully active until then, and Resume clears it with one click. Nothing is deleted either way: the workspace keeps its mailboxes and settings, and warmup stops until it picks a plan again (a workspace that kept the earlier free plan returns to it).
-- Usage and limits shows live counts against the limits the server actually enforces, for mailboxes, sends today (the cap the sender applies, or unlimited on a plan without one), contacts, campaigns, team members, attachment storage, sends this period, and API calls. A meter turns amber past 70% and red past 90%. A meter with no cap means that limit is unmetered on your plan. A workspace that does not send (free, or on the Warmup or Partnership plan) sees only the mailbox meter, because none of the others applies to it. The mailbox meter says where its number comes from (fair use, an approved request, or the free allowance, which is `0` for a new workspace without a plan), and the storage meter says so when a plan change left the workspace over its quota: existing attachments keep sending, and new uploads wait until you are back under.
-- Banners appear only when something needs a decision: a failed payment, a scheduled cancellation, or a trial about to end.
+- Usage and limits shows live counts against the limits the server actually enforces, for mailboxes, sends today (the cap the sender applies, or unlimited on a plan without one), contacts, campaigns, team members, attachment storage, sends this period, and API calls. A meter turns amber past 70% and red past 90%. A meter with no cap means that limit is unmetered on your plan. A workspace that does not send (free, or on the Warmup or Partnership plan) sees only the mailbox meter, because none of the others applies to it. The mailbox meter says where its number comes from (fair use, an approved request, or the free allowance: `2` during the free trial, `0` after it on a workspace without a plan), and the storage meter says so when a plan change left the workspace over its quota: existing attachments keep sending, and new uploads wait until you are back under.
+- Banners appear only when something needs a decision: a failed payment, a scheduled cancellation, or the days left in a free trial.
 
 Need a single limit raised without moving plan? Request an increase from **Settings > Limits**, linked from the usage section, or straight from the connect dialog when it is mailboxes you need. An operator reviews it and the approved limit takes effect on the workspace, including the daily send allowance the sender enforces. The page shows how much of each limit the workspace uses, and a limit your plan leaves unlimited (mailboxes, on a plan whose daily sends are uncapped) is not offered, because there is nothing to raise. A workspace that does not send can only ask for more mailboxes.
 

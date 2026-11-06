@@ -279,16 +279,22 @@ func (s *Subscription) CanSendEmails() bool {
 	return false
 }
 
-// CanUseWarmup: a paid plan, or a workspace that kept the free allowance
-// (the free pool, up to FreeWorkspaceMailboxLimit connected mailboxes).
+// CanUseWarmup: a paid plan, a free trial in progress, or a workspace that
+// kept the free allowance. Unpaid ones warm in the free pool.
 func (s *Subscription) CanUseWarmup() bool {
-	return s.HasPaidSubscription() || s.KeepsFreeWarmup
+	return s.HasPaidSubscription() || s.KeepsFreeWarmup || s.IsInFreeTrial()
 }
 
-// FreeMailboxLimit is the mailboxes an unsubscribed workspace may hold: none unless it kept the free allowance.
+// FreeMailboxLimit is the mailboxes an unsubscribed workspace may hold: the
+// kept free allowance, TrialMailboxLimit during a trial, otherwise none.
 func (s *Subscription) FreeMailboxLimit() int {
-	if s != nil && s.KeepsFreeWarmup {
+	switch {
+	case s == nil:
+		return 0
+	case s.KeepsFreeWarmup:
 		return FreeWorkspaceMailboxLimit
+	case s.IsInFreeTrial():
+		return TrialMailboxLimit
 	}
 	return 0
 }
@@ -303,6 +309,9 @@ func (s *Subscription) CanUseUnibox() bool {
 // FreeWorkspaceMailboxLimit caps the mailboxes an unsubscribed workspace may
 // hold, connected directly or through a linked self-hosted instance.
 const FreeWorkspaceMailboxLimit = 10
+
+// TrialMailboxLimit caps the mailboxes a workspace may hold during its free trial.
+const TrialMailboxLimit = 2
 
 // SubscriptionWithLimits includes rate limits for the subscription
 type SubscriptionWithLimits struct {

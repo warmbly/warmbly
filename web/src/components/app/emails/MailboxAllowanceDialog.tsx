@@ -30,6 +30,7 @@ import {
     XIcon,
 } from "lucide-react";
 import { useUpgradeDialog } from "@/hooks/context/upgrade";
+import useFeatureAccess from "@/hooks/useFeatureAccess";
 import { useConfirm } from "@/hooks/context/confirm";
 import { useCurrentOrg } from "@/stores/useAppStore";
 import { DitherMeter, type DitherTone } from "@/components/ui/dither";
@@ -185,6 +186,7 @@ function Body({
     onClose: () => void;
 }) {
     const upgrade = useUpgradeDialog();
+    const trial = useFeatureAccess().trial;
     const cap = a.allowance;
     const full = cap != null && (a.remaining ?? 0) <= 0;
     const pct = cap ? Math.min(100, Math.round((a.used / cap) * 100)) : 0;
@@ -222,7 +224,7 @@ function Body({
             <div>
                 <h2 className="text-[15px] font-semibold text-slate-900 leading-snug">{title}</h2>
                 <p className="text-[12.5px] text-slate-600 mt-1 leading-relaxed">
-                    <Explanation a={a} planLabel={planLabel} />
+                    <Explanation a={a} planLabel={planLabel} trial={trial} />
                 </p>
             </div>
 
@@ -242,7 +244,9 @@ function Body({
                             : a.basis === "override"
                               ? "Raised for this workspace by an approved request"
                               : a.basis === "free"
-                                ? "Free plan"
+                                ? trial
+                                    ? "Free trial"
+                                    : "Free plan"
                                 : `Set by ${planLabel}`}
                     </div>
                 </div>
@@ -273,6 +277,8 @@ function Body({
                                 "starter",
                                 needsPlan
                                     ? "A paid plan holds one mailbox for every send a day it includes, and more on request. Every plan warms its mailboxes in the premium pool."
+                                    : trial
+                                    ? `Your trial holds ${cap?.toLocaleString() ?? "2"} mailboxes. A paid plan holds one for every send a day it includes, and more on request.`
                                     : `Your free plan holds ${cap?.toLocaleString() ?? "10"} mailboxes. A paid plan holds one for every send a day it includes, and more on request.`,
                             )
                         }
@@ -335,11 +341,19 @@ function Body({
     );
 }
 
-function Explanation({ a, planLabel }: { a: MailboxAllowance; planLabel: string }) {
+function Explanation({ a, planLabel, trial }: { a: MailboxAllowance; planLabel: string; trial: boolean }) {
     switch (a.basis) {
         case "unlimited":
             return <>There is no cap on mailboxes here. Connect as many as you need.</>;
         case "free":
+            if (trial) {
+                return (
+                    <>
+                        Your free trial holds up to {a.allowance?.toLocaleString()} mailboxes, warming in the free pool. A
+                        paid plan holds more and warms them in the premium pool.
+                    </>
+                );
+            }
             return a.allowance ? (
                 <>
                     Your free plan holds up to {a.allowance.toLocaleString()} mailboxes for warmup. Sending, and mailboxes

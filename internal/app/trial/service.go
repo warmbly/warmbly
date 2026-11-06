@@ -60,18 +60,10 @@ func NewService(subRepo repository.SubscriptionRepository, userRepo repository.U
 	}
 }
 
-// StartFreeTrialWithOrg creates a new free trial subscription linked to an organization
+// StartFreeTrialWithOrg gives the workspace a TrialDuration trial on the free
+// plan, once per user: a workspace created after the user's trial is claimed
+// has no subscription until it pays.
 func (s *trialService) StartFreeTrialWithOrg(ctx context.Context, userID uuid.UUID, orgID uuid.UUID) error {
-	// Check if user already used their free trial
-	user, err := s.userRepo.GetUser(ctx, userID)
-	if err != nil {
-		return err
-	}
-	if user != nil && user.FreeTrialUsed {
-		return nil // No-op: user already used their free trial
-	}
-
-	// Check if org already has a subscription
 	existing, err := s.subRepo.GetByOrganizationID(ctx, orgID)
 	if err != nil {
 		return err
@@ -80,18 +72,25 @@ func (s *trialService) StartFreeTrialWithOrg(ctx context.Context, userID uuid.UU
 		return nil
 	}
 
-	// A new workspace starts on the free plan with no trial: mailboxes and
-	// warmup (up to the free allowance) work, everything else waits for a
-	// subscription.
+	// Claimed before the row exists, so concurrent workspace creations cannot both get one.
+	claimed, err := s.userRepo.ClaimFreeTrial(ctx, userID)
+	if err != nil || !claimed {
+		return err
+	}
+
 	freePlanUUID, _ := uuid.Parse(FreePlanID)
+	startedAt := time.Now()
+	endsAt := startedAt.Add(TrialDuration)
 
 	sub := &models.Subscription{
-		ID:               uuid.New(),
-		UserID:           userID,
-		OrganizationID:   orgID,
-		PlanID:           freePlanUUID,
-		StripeCustomerID: "", // Will be set when user subscribes
-		Status:           models.SubscriptionStatusIncomplete,
+		ID:                 uuid.New(),
+		UserID:             userID,
+		OrganizationID:     orgID,
+		PlanID:             freePlanUUID,
+		StripeCustomerID:   "", // Will be set when user subscribes
+		Status:             models.SubscriptionStatusIncomplete,
+		FreeTrialStartedAt: &startedAt,
+		FreeTrialEndsAt:    &endsAt,
 	}
 
 	if err := s.subRepo.Create(ctx, sub); err != nil {
@@ -106,12 +105,6 @@ func (s *trialService) StartFreeTrialWithOrg(ctx context.Context, userID uuid.UU
 		if plan, perr := s.planRepo.GetByID(ctx, freePlanUUID); perr == nil && plan != nil && plan.MonthlyCredits > 0 {
 			_ = s.credits.ResetMonthlyAllowance(ctx, orgID, plan.MonthlyCredits, "trial_grant:"+orgID.String())
 		}
-	}
-
-	// Mark the user's free trial as used
-	if err := s.userRepo.SetFreeTrialUsed(ctx, userID); err != nil {
-		// Log but don't fail - the subscription was created successfully
-		return nil
 	}
 
 	return nil

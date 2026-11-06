@@ -608,6 +608,8 @@ func GetExpiredTrialsWithoutPayment(ctx context.Context, db *pgxpool.Pool) ([]mo
 		WHERE s.free_trial_ends_at IS NOT NULL
 		  AND s.free_trial_ends_at < NOW()
 		  AND s.stripe_subscription_id IS NULL
+		  -- An operator-granted plan in force is paid without Stripe; its trial has nothing to expire.
+		  AND NOT (s.managed_at IS NOT NULL AND (s.managed_until IS NULL OR s.managed_until > NOW()))
 		  AND s.status NOT IN ('canceled', 'incomplete_expired')
 	`
 
@@ -639,13 +641,6 @@ func GetExpiredTrialsWithoutPayment(ctx context.Context, db *pgxpool.Pool) ([]mo
 func PauseCampaignsByOrganizationID(ctx context.Context, db *pgxpool.Pool, orgID uuid.UUID, reason string) error {
 	query := `UPDATE campaigns SET status = $1, updated_at = NOW() WHERE organization_id = $2 AND status = 'active'`
 	_, err := db.Exec(ctx, query, reason, orgID)
-	return err
-}
-
-// DisableWarmupByOrganizationID disables warmup for all email accounts belonging to an organization
-func DisableWarmupByOrganizationID(ctx context.Context, db *pgxpool.Pool, orgID uuid.UUID) error {
-	query := `UPDATE email_accounts SET warmup = NULL, updated_at = NOW() WHERE organization_id = $1`
-	_, err := db.Exec(ctx, query, orgID)
 	return err
 }
 

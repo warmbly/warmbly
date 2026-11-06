@@ -168,3 +168,29 @@ func TestFreeWarmupFollowsTheKeptAllowance(t *testing.T) {
 		t.Error("a workspace with no subscription row must not warm or connect mailboxes")
 	}
 }
+
+// A trial warms in the free pool and holds TrialMailboxLimit mailboxes; once it ends, both stop.
+func TestTrialWarmsTwoMailboxesUntilItEnds(t *testing.T) {
+	ctx := context.Background()
+	org := uuid.New()
+	must := noError(t)
+
+	trial := &featureGateService{subRepo: stubSubs{sub: trialSub()}}
+	if !must(trial.CanUseWarmup(ctx, org)) {
+		t.Error("a workspace in its trial must warm")
+	}
+	if must(trial.HasPremiumWarmup(ctx, org)) {
+		t.Error("a trial warms in the free pool, not the premium one")
+	}
+	if !must(trial.CanAddInbox(ctx, org, models.TrialMailboxLimit-1)) || must(trial.CanAddInbox(ctx, org, models.TrialMailboxLimit)) {
+		t.Errorf("a trial must hold exactly %d mailboxes", models.TrialMailboxLimit)
+	}
+
+	past := time.Now().Add(-time.Hour)
+	ended := trialSub()
+	ended.FreeTrialEndsAt = &past
+	over := &featureGateService{subRepo: stubSubs{sub: ended}}
+	if must(over.CanUseWarmup(ctx, org)) || must(over.CanAddInbox(ctx, org, 0)) {
+		t.Error("an ended trial must neither warm nor connect mailboxes")
+	}
+}
