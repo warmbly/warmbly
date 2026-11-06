@@ -71,3 +71,29 @@ func TestOnlyWarmblyRateLimitDeactivatesMailbox(t *testing.T) {
 		})
 	}
 }
+
+// A refused password or grant reaches its owner through the relay and stops the mailbox; it is not an application error.
+func TestCredentialRefusalsRelayOnceWithoutReport(t *testing.T) {
+	for _, mailErr := range []*errx.MailError{
+		errx.ErrMailGoogleAuth,
+		errx.ErrMailInvalidCredentials,
+		errx.ErrMailWrongServer("[ALERT] The server details you are using seems incorrect."),
+	} {
+		if reportable(mailErr) {
+			t.Errorf("%s was reportable; the owner is told through the relay", mailErr.Code)
+		}
+		var kinds []models.JobEventType
+		w := &WMail{onEvent: func(kind models.JobEventType, _ any) error {
+			kinds = append(kinds, kind)
+			return nil
+		}}
+		w.captureSyncError(mailErr)
+		w.captureSyncError(mailErr)
+		if len(kinds) != 1 || kinds[0] != models.JobEventTypeEmailAuthError {
+			t.Errorf("%s relayed %v, want one %s and the sync stopped", mailErr.Code, kinds, models.JobEventTypeEmailAuthError)
+		}
+	}
+	if !reportable(errx.ErrMailAuthenticationFailed) {
+		t.Error("an OAuth failure our own client could cause must stay reportable")
+	}
+}
