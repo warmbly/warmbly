@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -416,5 +417,69 @@ func TestLiveAccountDeletionAsksTheProviderAboutAnEndingSubscription(t *testing.
 	}
 	if _, err := f.repo.HardDeleteUser(ctx, f.user, func(context.Context, []string) error { return nil }); err != nil {
 		t.Fatalf("a subscription the provider confirms is ending still held the deletion: %v", err)
+	}
+}
+
+// A mailbox attached to the user in another workspace after the shared-work
+// check must not be erased by the deletion: the insert waits for the deletion
+// and then fails on the foreign key.
+func TestLiveAccountDeletionHoldsOffAMailboxAddedMidway(t *testing.T) {
+	f := newDangerLiveFixture(t)
+	ctx := context.Background()
+	other, otherOrg, late := uuid.New(), uuid.New(), uuid.New()
+	for _, q := range []struct {
+		sql  string
+		args []any
+	}{
+		{`INSERT INTO users (id, email, first_name, last_name) VALUES ($1, $2, 'Other', 'Owner')`, []any{other, "danger-" + other.String()[:8] + "@test.local"}},
+		{`INSERT INTO organizations (id, name, slug, owner_user_id) VALUES ($1, 'Other', $2, $3)`, []any{otherOrg, "danger-" + otherOrg.String()[:8], other}},
+		// A subscription ending at period end, so the provider check runs and gives the test its moment.
+		{`INSERT INTO subscriptions (user_id, organization_id, plan_id, stripe_customer_id, stripe_subscription_id, status, cancel_at_period_end)
+		  VALUES ($1, $2, '00000000-0000-0000-0000-000000000001', 'cus_test', 'sub_ending', 'active', true)`, []any{f.user, f.org}},
+	} {
+		if _, err := f.handle.Pool.Exec(ctx, q.sql, q.args...); err != nil {
+			t.Fatalf("fixture %q: %v", q.sql, err)
+		}
+	}
+	t.Cleanup(func() {
+		c := context.Background()
+		for _, q := range []struct {
+			sql string
+			arg any
+		}{
+			{`DELETE FROM email_accounts WHERE id = $1`, late},
+			{`DELETE FROM organizations WHERE id = $1`, otherOrg},
+			{`DELETE FROM users WHERE id = $1`, other},
+		} {
+			if _, err := f.handle.Pool.Exec(c, q.sql, q.arg); err != nil {
+				t.Errorf("cleanup %q: %v", q.sql, err)
+			}
+		}
+	})
+
+	inserted := make(chan error, 1)
+	midway := func(context.Context, []string) error {
+		go func() {
+			_, err := f.handle.Pool.Exec(context.Background(), `
+				INSERT INTO email_accounts (id, user_id, organization_id, email, name, signature_plain, signature_html, provider, status, campaign_limit, min_wait_time)
+				VALUES ($1, $2, $3, $4, 'Late', '', '', 'gmail', 'active', 50, 600)`,
+				late, f.user, otherOrg, "danger-"+late.String()[:8]+"@test.local")
+			inserted <- err
+		}()
+		select {
+		case err := <-inserted:
+			return fmt.Errorf("the mailbox was attached while the deletion was running (err=%v)", err)
+		case <-time.After(300 * time.Millisecond):
+			return nil
+		}
+	}
+	if _, err := f.repo.HardDeleteUser(ctx, f.user, midway); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-inserted; !IsForeignKeyViolation(err) {
+		t.Errorf("the late mailbox insert: got %v, want a foreign key violation", err)
+	}
+	if n := f.count(t, `SELECT count(*) FROM mailbox_erasures WHERE email_account_id = $1`, late); n != 0 {
+		t.Error("a mailbox in another workspace was queued for erasure")
 	}
 }

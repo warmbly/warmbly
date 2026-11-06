@@ -405,6 +405,11 @@ func (r *dangerZoneRepository) HardDeleteUser(ctx context.Context, userID uuid.U
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
+	// Conflicts with the key-share lock every insert referencing the user takes,
+	// so nothing new can be attached to it between the checks and the delete.
+	if _, err := tx.Exec(ctx, `SELECT 1 FROM users WHERE id = $1 FOR UPDATE`, userID); err != nil {
+		return nil, err
+	}
 	// Locked so an ownership transfer cannot take a workspace out from under the erasure queued for it.
 	owned, err := ownedWorkspaces(ctx, tx, userID, true)
 	if err != nil {
