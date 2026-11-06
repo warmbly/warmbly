@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -73,9 +74,18 @@ func connectReason(err error) string {
 	if errors.As(err, &pe) {
 		return " (SQLSTATE " + pe.SQLState() + ")"
 	}
+	// A DNS error names the host and the resolver, so it is reduced to its kind.
+	var dns *net.DNSError
+	if errors.As(err, &dns) {
+		return ": dns lookup failed"
+	}
+	var sys *os.SyscallError
+	if errors.As(err, &sys) {
+		return ": " + sys.Error()
+	}
 	var op *net.OpError
-	if errors.As(err, &op) && op.Err != nil {
-		return ": " + op.Op + ": " + op.Err.Error()
+	if errors.As(err, &op) {
+		return ": " + op.Op + " failed"
 	}
 	return ""
 }

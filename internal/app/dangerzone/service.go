@@ -268,7 +268,7 @@ func (s *service) ScheduleUserDeletion(ctx context.Context, userID uuid.UUID, re
 			return nil, errx.NewWithIdentifier(errx.Conflict, "organization_cloud_connected", "Disconnect owned workspaces from Warmbly Cloud before scheduling deletion.")
 		}
 		if errors.Is(err, repository.ErrAccountHoldsSharedWork) {
-			return nil, errx.NewWithIdentifier(errx.Conflict, "account_has_shared_work", "Remove the mailboxes, contacts, campaigns, templates, API keys, apps and shared assistant conversations you added to workspaces you do not own before deleting your account.")
+			return nil, errx.NewWithIdentifier(errx.Conflict, "account_has_shared_work", "Remove the mailboxes, contacts, campaigns, campaign attachments, templates, API keys, apps and shared assistant conversations you added to workspaces you do not own before deleting your account.")
 		}
 		if errors.Is(err, repository.ErrOwnedWorkspaceBilled) {
 			return nil, errx.NewWithIdentifier(errx.Conflict, "workspace_subscription_active", "Cancel the subscription of every workspace you own before deleting your account.")
@@ -381,12 +381,16 @@ func (s *service) ExecuteDuePendingDeletions(ctx context.Context) (int, int, err
 			// A refusal waits for the account to change, so it is recorded and rechecked daily, not reported.
 			if errors.Is(err, repository.ErrAccountHoldsSharedWork) || errors.Is(err, repository.ErrOwnedWorkspaceBilled) {
 				log.Info().Err(err).Str("deletion_id", d.ID.String()).Msg("scheduled account deletion is waiting")
-				_ = s.repo.MarkWaiting(ctx, d.ID, err.Error(), time.Now().Add(24*time.Hour))
+				if merr := s.repo.MarkWaiting(ctx, d.ID, err.Error(), time.Now().Add(24*time.Hour)); merr != nil {
+					errs.CaptureException(fmt.Errorf("record waiting deletion %s: %w", d.ID, merr))
+				}
 				failed++
 				continue
 			}
 			errs.CaptureException(err)
-			_ = s.repo.MarkFailed(ctx, d.ID, err.Error())
+			if merr := s.repo.MarkFailed(ctx, d.ID, err.Error()); merr != nil {
+				errs.CaptureException(fmt.Errorf("record failed deletion %s: %w", d.ID, merr))
+			}
 			failed++
 			continue
 		}

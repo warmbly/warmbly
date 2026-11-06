@@ -339,6 +339,20 @@ func TestLiveAccountDeletionRefusesWhileHoldingAnotherWorkspacesMailbox(t *testi
 	if _, err := f.repo.HardDeleteUser(ctx, f.user, nil); !errors.Is(err, ErrAccountHoldsSharedWork) {
 		t.Fatalf("shared conversation: got %v, want ErrAccountHoldsSharedWork", err)
 	}
+	// So does an attachment on another workspace's campaign, once the conversation is private again.
+	if _, err := f.handle.Pool.Exec(ctx, `UPDATE organizations SET assistant_shared_history = false WHERE id = $1`, otherOrg); err != nil {
+		t.Fatal(err)
+	}
+	campaign := uuid.New()
+	if _, err := f.handle.Pool.Exec(ctx, `INSERT INTO campaigns (id, user_id, organization_id, name, description, days, created_at, updated_at) VALUES ($1, $2, $3, 'Shared', '', 127, now(), now())`, campaign, other, otherOrg); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.handle.Pool.Exec(ctx, `INSERT INTO campaign_attachments (campaign_id, user_id, filename, size, mime_type, s3_key) VALUES ($1, $2, 'a.pdf', 1, 'application/pdf', 'k')`, campaign, f.user); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.repo.HardDeleteUser(ctx, f.user, nil); !errors.Is(err, ErrAccountHoldsSharedWork) {
+		t.Fatalf("shared attachment: got %v, want ErrAccountHoldsSharedWork", err)
+	}
 	if n := f.count(t, `SELECT count(*) FROM email_accounts WHERE id = $1`, shared); n != 1 {
 		t.Error("the other workspace lost its mailbox")
 	}

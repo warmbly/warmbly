@@ -247,7 +247,7 @@ Scheduling an account deletion is refused with one of these codes, or with `orga
 
 | `code` | Status | Meaning |
 |--------|--------|---------|
-| `account_has_shared_work` | 409 | The account still holds mailboxes, contacts, campaigns, reply templates, API keys, apps or shared assistant conversations in a workspace it does not own. Remove them before scheduling deletion of the account |
+| `account_has_shared_work` | 409 | The account still holds mailboxes, contacts, campaigns, campaign attachments, reply templates, API keys, apps or shared assistant conversations in a workspace it does not own. Remove them before scheduling deletion of the account |
 | `workspace_subscription_active` | 409 | A workspace the account owns has a subscription that will renew. Cancel it before scheduling deletion of the account |
 
 #### Cloud connection refusals

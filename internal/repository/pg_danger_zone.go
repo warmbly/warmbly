@@ -456,8 +456,8 @@ func (r *dangerZoneRepository) HardDeleteUser(ctx context.Context, userID uuid.U
 }
 
 // ErrAccountHoldsSharedWork refuses an account deletion that would take a
-// workspace's assets with it: the user's mailboxes, contacts, campaigns,
-// templates, API keys, apps and shared assistant conversations cascade with
+// workspace's assets with it: the user's mailboxes, contacts, campaigns and
+// their attachments, templates, API keys, apps and shared assistant conversations cascade with
 // the user row, in every workspace, owned or not.
 var ErrAccountHoldsSharedWork = errors.New("account holds assets in workspaces it does not own")
 
@@ -491,6 +491,8 @@ func accountDeletable(ctx context.Context, tx pgx.Tx, userID uuid.UUID, owned []
 			OR EXISTS (SELECT 1 FROM reply_templates x WHERE x.user_id = $1 AND x.organization_id <> ALL($2))
 			OR EXISTS (SELECT 1 FROM api_keys x WHERE x.user_id = $1 AND x.organization_id <> ALL($2))
 			OR EXISTS (SELECT 1 FROM oauth_applications x WHERE x.created_by = $1 AND x.organization_id <> ALL($2))
+			OR EXISTS (SELECT 1 FROM campaign_attachments x JOIN campaigns c ON c.id = x.campaign_id
+				WHERE x.user_id = $1 AND c.organization_id <> ALL($2))
 			OR EXISTS (SELECT 1 FROM agent_sessions x JOIN organizations o ON o.id = x.org_id
 				WHERE x.user_id = $1 AND x.org_id <> ALL($2) AND o.assistant_shared_history),
 			EXISTS (SELECT 1 FROM subscriptions s WHERE s.organization_id = ANY($2)
