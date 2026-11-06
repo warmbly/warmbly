@@ -4,7 +4,7 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { SparklesIcon } from "lucide-react";
-import useFeatureAccess from "@/hooks/useFeatureAccess";
+import useFeatureAccess, { trialDaysLeft } from "@/hooks/useFeatureAccess";
 import { useUpgradeDialog } from "@/hooks/context/upgrade";
 
 export default function TrialBar() {
@@ -23,8 +23,7 @@ export default function TrialBar() {
 
     if (endsAt == null) return null;
 
-    // Rounded up, as the server's days_remaining is, so the billing banner shows the same count.
-    const days = Math.max(1, Math.ceil((endsAt - Date.now()) / 86_400_000));
+    const days = trialDaysLeft(new Date(endsAt));
 
     return (
         <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 border-b bg-sky-50 border-sky-200 text-sky-900">

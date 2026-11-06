@@ -180,3 +180,8 @@ export default function useFeatureAccess(): FeatureAccess {
         canManage,
     };
 }
+
+/** Whole days left in a trial, rounded up and never below 1 while it runs; every countdown reads this. */
+export function trialDaysLeft(endsAt: Date, now = Date.now()): number {
+    return Math.max(1, Math.ceil((endsAt.getTime() - now) / 86_400_000));
+}

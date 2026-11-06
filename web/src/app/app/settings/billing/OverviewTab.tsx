@@ -4,7 +4,7 @@
 // Everything here reads real server state rather than the marketing catalog:
 // limits, counts, the mailbox allowance and storage come from
 // /organization/current/limits, capability flags from /subscription/features,
-// the trial countdown from /subscription/trial. The catalog is only used for
+// the trial countdown from the subscription's trial end. The catalog is only used for
 // labels and colours.
 
 import React from "react";
@@ -25,14 +25,13 @@ import {
     SparklesIcon,
     XIcon,
 } from "lucide-react";
-import useFeatureAccess from "@/hooks/useFeatureAccess";
+import useFeatureAccess, { trialDaysLeft } from "@/hooks/useFeatureAccess";
 import useUpgradeFlow from "@/hooks/useUpgradeFlow";
 import { useConfirm } from "@/hooks/context/confirm";
 import useSubscription from "@/lib/api/hooks/app/subscription/useSubscription";
 import usePlanOffers from "@/lib/api/hooks/app/subscription/usePlanOffers";
 import type PlanOffer from "@/lib/api/models/app/subscription/PlanOffer";
 import OfferedPlanDialog from "@/components/app/billing/OfferedPlanDialog";
-import useTrialStatus from "@/lib/api/hooks/app/subscription/useTrialStatus";
 import useCancelSubscription from "@/lib/api/hooks/app/subscription/useCancelSubscription";
 import useOrganizationLimits from "@/lib/api/hooks/app/organizations/useOrganizationLimits";
 import useUsageOverview from "@/lib/api/hooks/app/analytics/useUsageOverview";
@@ -49,7 +48,6 @@ import { Section } from "../_components/SectionShell";
 export default function OverviewTab({ onChangePlan }: { onChangePlan: () => void }) {
     const access = useFeatureAccess();
     const sub = useSubscription();
-    const trial = useTrialStatus();
     const orgLimits = useOrganizationLimits();
     const limits = orgLimits.data?.limits;
     const counts = orgLimits.data?.counts;
@@ -131,13 +129,13 @@ export default function OverviewTab({ onChangePlan }: { onChangePlan: () => void
                         action={{ label: cancel.isPending ? "Resuming…" : "Resume subscription", onClick: resume }}
                     />
                 )}
-                {trial.data?.is_in_trial && (
+                {access.trial && access.trialEndsAt && (
                     <Banner
                         key="trial"
                         tone="sky"
                         icon={SparklesIcon}
-                        title={`${trial.data.days_remaining} ${trial.data.days_remaining === 1 ? "day" : "days"} left in your trial`}
-                        body={`Your trial ends on ${fmtDate(toDate(trial.data.trial_ends_at)) || "its end date"}. Pick a plan before then to keep sending and warming without a pause.`}
+                        title={`${trialDaysLeft(access.trialEndsAt)} ${trialDaysLeft(access.trialEndsAt) === 1 ? "day" : "days"} left in your trial`}
+                        body={`Your trial ends on ${fmtDate(access.trialEndsAt) || "its end date"}. Pick a plan before then to keep sending and warming without a pause.`}
                         action={{ label: "Choose a plan", onClick: onChangePlan }}
                     />
                 )}
@@ -613,12 +611,6 @@ function StatusPill({
 }
 
 /* ── helpers ─────────────────────────────────────────────────────── */
-
-function toDate(v: Date | string | undefined): Date | null {
-    if (!v) return null;
-    const d = v instanceof Date ? v : new Date(v);
-    return Number.isNaN(d.getTime()) ? null : d;
-}
 
 function fmtDate(d: Date | null): string {
     if (!d || Number.isNaN(d.getTime())) return "";
