@@ -133,7 +133,9 @@ not listed keeps the count it was given by hand.
   `30`) with nothing waiting, one task is removed. The consumer publishes the
   backlog every minute through `CONSUMER_METRICS_CLOUDWATCH`, which the root
   sets along with permission to publish it. A missing metric neither adds nor
-  removes tasks. A task keeps each mailbox's events in order among the ones it
+  removes tasks, and a consumer image from before the publisher (including one
+  restored by a rollback) publishes nothing, so after a deploy or rollback check
+  that `WorkerEventBacklog` still has fresh data points. A task keeps each mailbox's events in order among the ones it
   took; with more than one task, two events for one mailbox can be handled at
   the same time by different tasks.
 - `backend`, `tracking` and `forms` scale on average CPU when listed, at `cpu`
