@@ -93,7 +93,7 @@ async function runBoot(queryClient: QueryClient, location: { pathname: string; h
             syncedOrgId = orgs[0].id;
             store.setCurrentOrganization(orgs[0]);
         } else {
-            throw redirect({ to: "/select-org", replace: true });
+            throw redirect({ to: "/select-org", search: { next: location.href }, replace: true });
         }
 
         // Identity carries the workspace's folders and labels, so it follows the switch.

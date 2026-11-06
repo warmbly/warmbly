@@ -2,6 +2,9 @@
 
 import type { PoolLinkPlan } from "@/lib/api/models/app/cloudlink/CloudLink";
 
+/** Warmbly Cloud's dashboard; the link API (`default_cloud_url`) lives on another host. */
+export const CLOUD_APP_URL = "https://app.warmbly.com";
+
 /** The community server, the only help a self-hosted instance gets. */
 export const COMMUNITY_URL = "https://dc.warmbly.com";
 

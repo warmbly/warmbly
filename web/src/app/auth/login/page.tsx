@@ -31,7 +31,7 @@ import type { SSOLinkChallenge } from "@/lib/api/models/auth/LoginResult";
 import beginSSO from "@/lib/api/client/auth/beginSSO";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
-import { postAuthNext } from "@/lib/helper/safeNext";
+import { postAuthNext, rememberSSONext } from "@/lib/helper/safeNext";
 import { hrefTarget } from "@/lib/routerSearch";
 import { captureException } from "@/lib/observability";
 import { isEmpty, readAcquisition } from "@/lib/acquisition";
@@ -559,6 +559,7 @@ export default function LoginPage() {
     const handleProvider = useCallback(async (provider: string) => {
         try {
             const { url } = await beginSSO(provider);
+            rememberSSONext(new URLSearchParams(window.location.search).get("next"));
             window.location.href = url;
         } catch (e) {
             toast.error(buildError(e as AppError));

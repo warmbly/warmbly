@@ -27,6 +27,13 @@ describe("postAuthNext", () => {
         expect(postAuthNext("/invite?token=pending")).toBe("/invite?token=pending");
     });
 
+    it("never sends a finished onboarding back to itself", () => {
+        for (const next of ["/onboarding", "/onboarding/?next=/onboarding", "/auth/../onboarding"]) {
+            expect(postAuthNext(next)).toBe("/app/emails");
+        }
+        expect(postAuthNext("/app/settings/billing?pool=1")).toBe("/app/settings/billing?pool=1");
+    });
+
     it("preserves other safe destinations and rejects external redirects", () => {
         expect(postAuthNext("/cli?code=ABCD-EFGH", true)).toBe("/cli?code=ABCD-EFGH");
         expect(postAuthNext("/app/emails", true)).toBe("/app/emails");

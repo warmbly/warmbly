@@ -7,7 +7,7 @@ import React from "react";
 import { Link } from "@tanstack/react-router";
 import { ArrowRightIcon, CloudIcon, ExternalLinkIcon, MessagesSquareIcon, ServerIcon, XIcon } from "lucide-react";
 import useCloudPool from "@/hooks/useCloudPool";
-import { COMMUNITY_URL, cloudAddsNeedSubscription } from "@/lib/cloudPlan";
+import { CLOUD_APP_URL, COMMUNITY_URL, cloudAddsNeedSubscription } from "@/lib/cloudPlan";
 
 // A new key, so instances that dismissed the old free offer see this notice once.
 const DISMISS_KEY = "warmbly.selfHostNotice.dismissed";
@@ -86,7 +86,7 @@ export default function CloudPoolBanner({ mailboxCount }: { mailboxCount: number
             }
             actions={
                 <>
-                    <a href={`${pool.cloudURL}/auth/register?next=${encodeURIComponent(CLOUD_PLANS_PATH)}`} target="_blank" rel="noreferrer" className={PRIMARY}>
+                    <a href={`${CLOUD_APP_URL}/auth/register?next=${encodeURIComponent(CLOUD_PLANS_PATH)}`} target="_blank" rel="noreferrer" className={PRIMARY}>
                         Upgrade on Warmbly Cloud
                         <ArrowRightIcon className="w-3 h-3" />
                     </a>

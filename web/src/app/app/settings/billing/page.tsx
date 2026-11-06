@@ -114,8 +114,9 @@ export default function BillingSettingsPage() {
         setSearchParams(next, { replace: true });
     }, [offerParam, searchParams, setSearchParams]);
     React.useEffect(() => {
-        if (!poolParam) return;
-        if (poolParam === "1") {
+        // Billing availability decides whether the chooser can do anything here.
+        if (!poolParam || access.loading) return;
+        if (poolParam === "1" && access.billing) {
             upgradeDialog.open({
                 feature: "Premium warmup",
                 minPlan: "starter",
@@ -128,7 +129,7 @@ export default function BillingSettingsPage() {
         const next = new URLSearchParams(searchParams);
         next.delete("pool");
         setSearchParams(next, { replace: true });
-    }, [poolParam, searchParams, setSearchParams, upgradeDialog]);
+    }, [poolParam, searchParams, setSearchParams, upgradeDialog, access.loading, access.billing]);
 
     const resolvedTab = tabForSlug(tabSlug);
     const tab: BillingTab = resolvedTab ?? "overview";
