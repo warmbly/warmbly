@@ -10,6 +10,7 @@ BEGIN
   END IF;
 END $$;
 
+DELETE FROM lead_enrichment_runs WHERE organization_id = '22222222-0000-0000-0000-000000000001' AND id::text LIKE '86300000-%';
 DELETE FROM lead_searches WHERE organization_id = '22222222-0000-0000-0000-000000000001' AND id::text LIKE '86300000-%';
 DELETE FROM leads WHERE organization_id = '22222222-0000-0000-0000-000000000001' AND id::text LIKE '86300000-%';
 
@@ -111,6 +112,19 @@ WHERE id::text LIKE '86300000-%' AND domain <> '';
 
 INSERT INTO lead_search_hits (search_id, lead_id)
 SELECT '86300000-0000-0000-0000-000000000000', id FROM leads WHERE id::text LIKE '86300000-%';
+
+-- One website the listing lacked, worked out from the name.
+UPDATE leads SET site = site || '{"found_website": true}'::jsonb WHERE id = '86300000-0000-0000-0000-000000000002';
+
+-- A website run part way through: four businesses still being read. The backend leaves a
+-- running run alone for 15 minutes, longer than a recording takes.
+UPDATE leads SET enrichment_status = 'queued'
+WHERE id IN ('86300000-0000-0000-0000-000000000004', '86300000-0000-0000-0000-000000000006',
+             '86300000-0000-0000-0000-000000000009', '86300000-0000-0000-0000-000000000010');
+INSERT INTO lead_enrichment_runs (id, organization_id, requested_by_user_id, lead_ids, status, total, processed, emails_found, people_found, started_at)
+SELECT '86300000-0000-0000-0000-0000000e0001', '22222222-0000-0000-0000-000000000001', '11111111-0000-0000-0000-000000000001',
+       array_agg(id ORDER BY id), 'running', 12, 7, 5, 6, NOW()
+FROM leads WHERE id::text LIKE '86300000-%' AND right(id::text, 12)::int BETWEEN 1 AND 12;
 
 -- The product tour would cover the page; the flow records the lead finder, not the tour.
 UPDATE users SET product_tour_completed_at = now()

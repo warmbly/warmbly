@@ -20,7 +20,7 @@ import {
     updateLeadSearch,
     updateLeads,
 } from "@/lib/api/client/app/leads/leads";
-import type { Lead, LeadFilter, LeadPatch, LeadPerson, LeadPersonInput, LeadPoint, LeadSearch, LeadSort } from "@/lib/api/models/app/leads/Lead";
+import type { Lead, LeadEnrichmentRun, LeadFilter, LeadPatch, LeadPerson, LeadPersonInput, LeadPoint, LeadSearch, LeadSort } from "@/lib/api/models/app/leads/Lead";
 
 // Everything under ["leads"] is refreshed by the realtime spine on entity_type "lead".
 export const LEADS_KEY = ["leads"] as const;
@@ -73,8 +73,9 @@ export function useLeadSearches() {
     return useQuery(leadSearchesQuery);
 }
 
-export function useLeadsList(filter: LeadFilter, sort: LeadSort) {
-    return useInfiniteQuery(leadsListQuery(filter, sort));
+// live refetches while a website run is going, so each row turns over as its lead is read.
+export function useLeadsList(filter: LeadFilter, sort: LeadSort, live = false) {
+    return useInfiniteQuery({ ...leadsListQuery(filter, sort), refetchInterval: live ? 3_000 : false });
 }
 
 export function useLeadPoints(filter: LeadFilter) {
@@ -89,13 +90,15 @@ export function useLead(id: string | null) {
     return useQuery({ ...leadQuery(id ?? ""), enabled: !!id });
 }
 
+export const runActive = (r: LeadEnrichmentRun) => r.status === "queued" || r.status === "running";
+
 // Website reads report progress only by polling: there is no per-lead event.
 export function useLeadEnrichments() {
     return useQuery({
         queryKey: [...LEADS_KEY, "enrichments"],
         queryFn: listLeadEnrichments,
         staleTime: 2_000,
-        refetchInterval: (q) => ((q.state.data ?? []).some((r) => r.status === "queued" || r.status === "running") ? 2_000 : false),
+        refetchInterval: (q) => ((q.state.data ?? []).some(runActive) ? 2_000 : false),
     });
 }
 

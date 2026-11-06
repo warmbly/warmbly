@@ -55,6 +55,7 @@ type Crawler struct {
 	client    *http.Client
 	userAgent string
 	now       func() time.Time
+	lookup    func(ctx context.Context, host string) ([]string, error)
 }
 
 // NewCrawler builds a crawler over the SSRF-hardened transport. Plain-http
@@ -63,6 +64,7 @@ func NewCrawler(userAgent string) *Crawler {
 	return &Crawler{
 		userAgent: userAgent,
 		now:       time.Now,
+		lookup:    defaultLookup,
 		client: &http.Client{
 			Timeout:   crawlPageTimeout,
 			Transport: safehttp.NewTransport("80", "443"),

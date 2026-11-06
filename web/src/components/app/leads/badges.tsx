@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { STATUS_LABEL, emailVerdict } from "./verdict";
 
 const STATUS_STYLE: Record<LeadStatus, string> = {
-    new: "bg-sky-50 text-sky-700",
+    new: "bg-slate-100 text-slate-600",
     saved: "bg-violet-50 text-violet-700",
     contacted: "bg-emerald-50 text-emerald-700",
     dismissed: "bg-slate-100 text-slate-500",

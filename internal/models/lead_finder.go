@@ -133,9 +133,12 @@ type LeadSite struct {
 	EmailPattern string `json:"email_pattern,omitempty"`
 	// AcceptsAll is set when the domain's mail server accepts any address, so a
 	// guessed address cannot be confirmed.
-	AcceptsAll bool       `json:"accepts_all,omitempty"`
-	Error      string     `json:"error,omitempty"`
-	CheckedAt  *time.Time `json:"checked_at,omitempty"`
+	AcceptsAll bool `json:"accepts_all,omitempty"`
+	// FoundWebsite is set when the listing had no website and the finder
+	// confirmed one worked out from the business's name.
+	FoundWebsite bool       `json:"found_website,omitempty"`
+	Error        string     `json:"error,omitempty"`
+	CheckedAt    *time.Time `json:"checked_at,omitempty"`
 }
 
 // Lead is one business in a workspace's lead finder.

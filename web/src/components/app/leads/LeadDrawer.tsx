@@ -129,7 +129,7 @@ function Body({
     const findEmails = async () => {
         try {
             await enrich.mutateAsync({ lead_ids: [lead.id], verify: true, people: true });
-            toast.success(lead.website ? `Reading ${lead.domain || "the website"} for people and contact details` : "Checking the address on file");
+            toast.success(lead.website ? `Reading ${lead.domain || "the website"} for people and contact details` : `Looking for ${lead.name}'s website`);
         } catch (e) {
             toast.error(buildError(e as AppError));
         }
@@ -183,8 +183,14 @@ function Body({
                         disabled={enrich.isPending || lead.enrichment_status === "queued"}
                         className="h-7 px-2.5 rounded-md bg-sky-600 text-white text-[12px] font-medium inline-flex items-center gap-1.5 hover:bg-sky-700 disabled:opacity-60"
                     >
-                        {lead.enrichment_status === "queued" || enrich.isPending ? <Loader2Icon className="size-3.5 animate-spin" /> : <SparklesIcon className="size-3.5" />}
-                        {lead.enrichment_status === "queued" ? "Reading website…" : lead.enriched_at ? "Read again" : "Find people and emails"}
+                        {lead.enrichment_status === "queued" ? (
+                            <span className="campaign-grid text-white" aria-hidden />
+                        ) : enrich.isPending ? (
+                            <Loader2Icon className="size-3.5 animate-spin" />
+                        ) : (
+                            <SparklesIcon className="size-3.5" />
+                        )}
+                        {lead.enrichment_status === "queued" ? (lead.website ? "Reading website…" : "Looking for a website…") : lead.enriched_at ? "Read again" : "Find people and emails"}
                     </button>
                     {lead.contact_id ? (
                         <Link
@@ -296,7 +302,7 @@ function Overview({ lead, provider, onPeople }: { lead: Lead; provider: string; 
                 {lead.emails.length === 0 ? (
                     <p className="text-[12px] text-slate-500">
                         {lead.enrichment_status === "no_website"
-                            ? "No website to read, and the source listed no address."
+                            ? "The listing has no website, and none could be confirmed from the business's name."
                             : lead.enrichment_status === "done"
                               ? "The website lists no email address."
                               : lead.enrichment_status === "failed"
@@ -354,6 +360,7 @@ function Overview({ lead, provider, onPeople }: { lead: Lead; provider: string; 
                                 {lead.domain || lead.website}
                                 <ExternalLinkIcon className="size-3" />
                             </a>
+                            {lead.site.found_website && <span className="ml-1.5 text-[11px] text-slate-400">Found from the name, confirmed on the site</span>}
                         </Fact>
                     )}
                     {lead.address && (
@@ -442,7 +449,14 @@ function Fact({ icon, children }: { icon: React.ReactNode; children: React.React
 
 function Website({ lead }: { lead: Lead }) {
     const s = lead.site;
-    if (!lead.website) return <p className="text-[12px] text-slate-500">This business lists no website. That alone can be the reason to reach out.</p>;
+    if (!lead.website)
+        return (
+            <p className="text-[12px] text-slate-500">
+                {lead.enrichment_status === "no_website"
+                    ? "No website could be found for this business. That alone can be the reason to reach out."
+                    : "The listing has no website. Find people and emails looks for one from the business's name first."}
+            </p>
+        );
     if (!s.checked_at) return <p className="text-[12px] text-slate-500">Not read yet. Find people and emails reads the site and reports what it runs on.</p>;
     if (!s.reachable) return <p className="text-[12px] text-rose-700">The website could not be read{s.error ? `: ${s.error}` : "."}</p>;
     return (

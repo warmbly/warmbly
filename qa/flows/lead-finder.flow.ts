@@ -18,6 +18,13 @@ test.describe("lead finder", () => {
     await proof.dwell();
     await proof.shot("saved-search", { caption: "A saved search: its area on the map, pins colored by how each business can be reached, the list sorted best first" });
 
+    await page.getByRole("button", { name: "List", exact: true }).click();
+    await expect(page.getByText("Finding people and emails")).toBeVisible();
+    await expect(page.getByText("Reading the website").first()).toBeVisible();
+    await proof.dwell();
+    await proof.shot("list-progress", { caption: "A website run going in the background: progress above the list, and each business being read marked in its row" });
+    await page.getByRole("button", { name: "Split", exact: true }).click();
+
     await page.getByRole("button", { name: "Map layers" }).click();
     await page.getByRole("menuitem", { name: "Score" }).click();
     await expect(page.getByText("100", { exact: true }).last()).toBeVisible();
@@ -71,8 +78,10 @@ test.describe("lead finder", () => {
     await page.getByRole("button", { name: "Add to contacts" }).click();
     const addDialog = page.getByRole("dialog", { name: /leads?$/ });
     await expect(addDialog.getByText("Only verified addresses")).toBeVisible();
+    await expect(addDialog.getByText("Segments", { exact: true })).toBeVisible();
+    await expect(addDialog.getByText("Contacts you already have")).toBeVisible();
     await proof.dwell();
-    await proof.shot("add-to-contacts", { caption: "Add the selection to contacts, and to a campaign in the same step" });
+    await proof.shot("add-to-contacts", { caption: "Add the selection to contacts, with segments, labels and campaigns in the same step, and what to do with contacts you already have" });
     await addDialog.getByRole("button", { name: "Cancel" }).click();
   });
 

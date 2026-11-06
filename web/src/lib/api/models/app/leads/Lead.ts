@@ -45,6 +45,8 @@ export interface LeadSite {
     email_pattern?: string;
     // The mail server accepts any address, so a worked-out one cannot be confirmed.
     accepts_all?: boolean;
+    // The listing had no website; the finder worked this one out from the name and confirmed it.
+    found_website?: boolean;
     error?: string;
     checked_at?: string;
 }
@@ -309,6 +311,9 @@ export interface AddLeadsToContactsRequest extends LeadSelection {
     verified_only?: boolean;
     who?: LeadContactsWho;
     include_guessed?: boolean;
+    // Leave contacts already in the workspace as they are.
+    keep_existing?: boolean;
+    skip_active_in_other_campaigns?: boolean;
 }
 
 export type LeadContactsWho = "business" | "people" | "both";

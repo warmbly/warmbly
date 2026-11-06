@@ -187,6 +187,11 @@ func (s *Service) enrichLead(ctx context.Context, run *models.LeadEnrichmentRun,
 	lctx, cancel := context.WithTimeout(ctx, enrichLeadTimeout)
 	defer cancel()
 	l.OrganizationID = run.OrganizationID
+	found := l.Site.FoundWebsite
+	if l.Website == "" {
+		l.Website, l.Domain = s.crawler.FindWebsite(lctx, l)
+		found = l.Website != ""
+	}
 	if l.Website == "" {
 		l.EnrichmentStatus = models.LeadEnrichmentNoWebsite
 		s.finishEmails(lctx, run, l, nil)
@@ -213,6 +218,7 @@ func (s *Service) enrichLead(ctx context.Context, run *models.LeadEnrichmentRun,
 		l.Site.EmailPattern = prev.EmailPattern
 	}
 	l.Site.AcceptsAll = prev.AcceptsAll
+	l.Site.FoundWebsite = found
 	outcome := outcomeCharged
 	if res.Site.Reachable {
 		l.EnrichmentStatus = models.LeadEnrichmentDone
@@ -238,15 +244,15 @@ func (s *Service) enrichLead(ctx context.Context, run *models.LeadEnrichmentRun,
 		l.Phone = res.Site.Phones[0]
 	}
 	s.finishEmails(lctx, run, l, res.Emails)
-	found := 0
+	people := 0
 	if run.People && res.Site.Reachable {
 		n, err := s.enrichPeople(lctx, run, l, res.People)
 		if err != nil {
 			log.Warn().Err(err).Str("lead", l.ID.String()).Msg("leadfinder: could not save a lead's people")
 		}
-		found = n
+		people = n
 	}
-	return outcome, found, s.Repo.SaveEnrichment(lctx, l)
+	return outcome, people, s.Repo.SaveEnrichment(lctx, l)
 }
 
 // finishEmails merges found addresses into the lead, verifies the best few

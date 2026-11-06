@@ -43,6 +43,8 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import {
     useDeleteLeads,
     useEnrichLeads,
+    useLeadEnrichments,
+    runActive,
     useLeadFacets,
     useLeadFinderConfig,
     useLeadPoints,
@@ -169,7 +171,9 @@ function Finder({ config }: { config: LeadFinderConfig }) {
         return f;
     }, [refine, searchId, text, roundedBounds]);
 
-    const list = useLeadsList(filter, sort);
+    const runs = useLeadEnrichments();
+    const runList = useMemo(() => runs.data ?? [], [runs.data]);
+    const list = useLeadsList(filter, sort, runList.some(runActive));
     const points = useLeadPoints(filter);
     const facets = useLeadFacets(searchId ? { search_id: searchId } : {});
     const leads = useMemo(() => list.data?.pages.flatMap((p) => p.data) ?? [], [list.data]);
@@ -187,6 +191,8 @@ function Finder({ config }: { config: LeadFinderConfig }) {
     const remove = useDeleteLeads();
 
     const providerInfo = config.providers.find((p) => p.id === provider);
+    const lookingFor = query.trim() || config.categories.find((c) => c.id === category)?.label || "businesses";
+    const searchingLabel = search.isPending ? `Searching ${providerInfo?.name ?? "the map"} for ${lookingFor.toLowerCase()}…` : null;
     const searchArea: LeadArea | null = area ?? (view ? { kind: "bbox", bounds: view.bounds } : null);
     const blockedReason = !query.trim() && !category
         ? "Pick a category or type what to look for."
@@ -492,6 +498,7 @@ function Finder({ config }: { config: LeadFinderConfig }) {
                 {sideOpen && <div className="md:hidden absolute inset-0 z-30 bg-white">{sidebar}</div>}
 
                 <div className="relative flex min-w-0 flex-1 flex-col">
+                    {!showList && <EnrichmentProgress runs={runList} searching={searchingLabel} />}
                     {showMap && (
                         <div className={cn("relative min-h-0", showList ? "h-[48%] lg:h-[56%] border-b border-slate-200" : "flex-1")}>
                             <LeadMap
@@ -547,7 +554,6 @@ function Finder({ config }: { config: LeadFinderConfig }) {
                                 </div>
                             )}
                             <Legend colorBy={prefs.colorBy} layer={prefs.layer} count={points.data?.data.length ?? 0} truncated={!!points.data?.truncated} />
-                            <EnrichmentProgress />
                             {points.isFetching && (
                                 <div className="absolute left-3 bottom-12 z-10 inline-flex items-center gap-1.5 rounded-full bg-white/90 px-2 py-1 text-[11px] text-slate-500 shadow-sm">
                                     <Loader2Icon className="size-3 animate-spin" />
@@ -583,6 +589,7 @@ function Finder({ config }: { config: LeadFinderConfig }) {
                                     if (l && showMap) flyTo({ center: { lat: l.latitude, lng: l.longitude }, zoom: 15 });
                                 }}
                                 onHover={setHoverId}
+                                banner={<EnrichmentProgress runs={runList} searching={searchingLabel} />}
                             />
                         </div>
                     )}
@@ -612,6 +619,7 @@ function Finder({ config }: { config: LeadFinderConfig }) {
                 onClose={() => setDialog(null)}
                 selection={dialog?.selection ?? {}}
                 count={dialog?.count ?? 0}
+                suggestedSegment={currentSearch?.name}
             />
             <ExportDialog open={dialog?.kind === "export"} onClose={() => setDialog(null)} selection={dialog?.selection ?? {}} count={dialog?.count ?? 0} config={config} />
         </div>

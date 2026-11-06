@@ -561,10 +561,11 @@ func (r *leadFinderRepository) SaveEnrichment(ctx context.Context, l *models.Lea
 	_, err := r.db.Exec(ctx, `
 		UPDATE leads SET
 			email = $3, emails = $4, socials = $5, site = $6, phone = $7, enrichment_status = $8,
+			website = COALESCE(NULLIF($9, ''), website), domain = COALESCE(NULLIF($10, ''), domain),
 			enriched_at = NOW(), updated_at = NOW()
 		WHERE organization_id = $1 AND id = $2`,
 		l.OrganizationID, l.ID, l.Email, jsonOr(l.Emails, "[]"), jsonOr(l.Socials, "{}"), jsonOr(l.Site, "{}"),
-		l.Phone, l.EnrichmentStatus)
+		l.Phone, l.EnrichmentStatus, l.Website, l.Domain)
 	if err != nil {
 		return err
 	}

@@ -76,9 +76,11 @@ Hovering a pin shows its name, rating and how it can be reached. Clicking one op
 - phone numbers, when the source had none
 - what the site is built with, and signals worth knowing before you reach out: no HTTPS, not mobile friendly, no analytics, an outdated copyright year, online booking, live chat or an online store
 
+When a listing has no website, the finder first looks for one from the business's name: a few likely domains (the name run together or hyphenated, with the town added, on the country's own ending and `.com`). A domain counts only when its home page shows the business's phone number, or its full name together with its town, street or postcode, so a parked domain or a namesake elsewhere is never taken. Many small businesses use a domain that cannot be guessed from their name, so this finds some of the missing websites, not all of them. A website found this way is marked with a sparkle in the list and costs the same as any other read; looking costs nothing.
+
 Up to three addresses per lead are then checked with the same verification your contacts get. The best one becomes the lead's primary email: a valid address on the business's own domain first, a front desk address such as `info@` before a named person's, and never an invalid, `noreply` or suppressed address.
 
-Reading a website costs one [credit](/guides/ai-credits/). A site that never answers is refunded, and a lead with no website costs nothing. A self-hosted instance without billing charges no credits for the lead finder at all. Progress shows in the corner of the map and the list updates as each run finishes. A run stops early, leaving the rest untouched, when the workspace runs out of credits.
+Reading a website costs one [credit](/guides/ai-credits/). A site that never answers is refunded, and a lead with no website, even after looking for one, costs nothing. A self-hosted instance without billing charges no credits for the lead finder at all. Runs keep going in the background when you leave the page. Progress shows in a strip above the list, each business being read is marked in its row, and rows update as they are read. A run stops early, leaving the rest untouched, when the workspace runs out of credits.
 
 ## People
 
@@ -129,7 +131,7 @@ Every search lands in the **Searches** tab. Star one to keep it at the top, rena
 
 ## Add to contacts
 
-**Add to contacts** turns the selected leads into contacts, and can add them to a campaign at the same time. Choose who becomes a contact:
+**Add to contacts** turns the selected leads into contacts, and can add them to segments, labels and campaigns at the same time. A new segment can be made on the spot, named after the search by default. When you add them to a campaign, contacts another campaign is already emailing are added but not enrolled, unless you untick that. Choose who becomes a contact:
 
 - **The people**: everyone found at each business with an address. Each contact gets their first and last name, the business as the company, their phone (or the business's) and the verification result, plus `job_title`, `seniority`, `linkedin_url`, `company_linkedin_url`, `website`, `business_category`, `address`, `city`, `state`, `country`, `map_url` and `lead_score` as custom fields. Addresses that were worked out but not confirmed are left out unless you turn on **Include unconfirmed guesses**
 - **The business**: each lead's own primary address, as described below
@@ -141,7 +143,7 @@ For the business, each contact gets:
 - the verification result, when the address was checked
 - `website`, `business_category`, `address`, `city`, `state`, `postcode`, `country`, `rating`, `review_count`, `map_url`, `facebook_url`, `instagram_url`, `linkedin_url`, `website_platform` and `lead_score` as [custom fields](/guides/contacts-crm/), ready for [variables](/guides/ai-variables/) in your emails
 
-A lead without an email is left out, as is a suppressed address. **Only verified addresses** also leaves out every lead whose address did not check as valid. A contact who already exists is updated, never duplicated, and keeps its existing values where the lead has none. Leads that became contacts show a check in the list.
+A lead without an email is left out, as is a suppressed address. **Only verified addresses** also leaves out every lead whose address did not check as valid. A contact who already exists is never duplicated: by default the lead fills in its empty details and nothing it has is erased, and **Leave as is** keeps it exactly as it was. Either way it gets the segments, labels and campaigns you picked. Leads that became contacts show a check in the list.
 
 ## Export
 

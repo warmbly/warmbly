@@ -26,6 +26,11 @@ type AddToContactsRequest struct {
 	Who string `json:"who"`
 	// IncludeGuessed adds people whose address was worked out but not confirmed.
 	IncludeGuessed bool `json:"include_guessed"`
+	// KeepExisting leaves a contact already in the workspace as it is; it
+	// still gets the segments, labels and campaigns.
+	KeepExisting bool `json:"keep_existing"`
+	// SkipActiveInOtherCampaigns enrolls nobody another campaign is emailing.
+	SkipActiveInOtherCampaigns bool `json:"skip_active_in_other_campaigns"`
 }
 
 // AddToContactsResult says what became of the selection.
@@ -284,14 +289,19 @@ func (s *Service) AddToContacts(ctx context.Context, orgID, userID uuid.UUID, re
 
 func (s *Service) importOptions(req *AddToContactsRequest) *models.ContactImportCommit {
 	subscribed := true
+	dedup := models.ContactImportDedupUpdate
+	if req.KeepExisting {
+		dedup = models.ContactImportDedupSkip
+	}
 	return &models.ContactImportCommit{
-		Dedup:             models.ContactImportDedupUpdate,
-		CategoryIDs:       req.CategoryIDs,
-		CampaignIDs:       req.CampaignIDs,
-		SegmentIDs:        req.SegmentIDs,
-		SubscribedDefault: &subscribed,
-		Source:            models.ContactSourceLeadFinder,
-		SourceDetail:      "Lead finder",
+		Dedup:                      dedup,
+		CategoryIDs:                req.CategoryIDs,
+		CampaignIDs:                req.CampaignIDs,
+		SegmentIDs:                 req.SegmentIDs,
+		SkipActiveInOtherCampaigns: req.SkipActiveInOtherCampaigns,
+		SubscribedDefault:          &subscribed,
+		Source:                     models.ContactSourceLeadFinder,
+		SourceDetail:               "Lead finder",
 	}
 }
 
