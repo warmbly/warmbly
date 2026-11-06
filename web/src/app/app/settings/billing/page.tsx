@@ -101,7 +101,7 @@ export default function BillingSettingsPage() {
         useBrowseState<BillingInterval>("settings.billing.interval", "annual", billingIntervalSchema);
     const [salesOpen, setSalesOpen] = React.useState(false);
 
-    // ?pool=1 is where older linked instances' upgrade button lands, now the plan chooser since the Warmup plan is retired;
+    // ?pool=1 is where a self-hosted instance's upgrade links land, opening the plan chooser;
     // ?pool=done is where an earlier Warmup checkout returns. Both are consumed once and stripped.
     const [searchParams, setSearchParams] = useSearchParams();
     const poolParam = searchParams.get("pool");
@@ -114,15 +114,22 @@ export default function BillingSettingsPage() {
         setSearchParams(next, { replace: true });
     }, [offerParam, searchParams, setSearchParams]);
     React.useEffect(() => {
-        if (!poolParam) return;
-        if (poolParam === "1") openPlanChooser();
+        // Billing availability decides whether the chooser can do anything here.
+        if (!poolParam || access.loading) return;
+        if (poolParam === "1" && access.billing) {
+            upgradeDialog.open({
+                feature: "Premium warmup",
+                minPlan: "starter",
+                blurb: "Every plan warms all of its mailboxes in the premium pool, including the ones a linked self-hosted instance adds.",
+            });
+        }
         if (poolParam === "done") {
             toast.success("Payment received. The Warmup plan applies as soon as Stripe confirms.");
         }
         const next = new URLSearchParams(searchParams);
         next.delete("pool");
         setSearchParams(next, { replace: true });
-    }, [poolParam, searchParams, setSearchParams, openPlanChooser]);
+    }, [poolParam, searchParams, setSearchParams, upgradeDialog, access.loading, access.billing]);
 
     const resolvedTab = tabForSlug(tabSlug);
     const tab: BillingTab = resolvedTab ?? "overview";
