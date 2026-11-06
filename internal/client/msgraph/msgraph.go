@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"time"
 
 	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/errx"
@@ -167,7 +168,7 @@ func (c *Client) doJSON(ctx context.Context, method, url string, in, out any) er
 			if errors.As(err, &networkError) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 				return transportError(err)
 			}
-			return err
+			return unreadableResponse(resp, err)
 		}
 		var trailing json.RawMessage
 		if err := decoder.Decode(&trailing); err != io.EOF {
@@ -186,6 +187,20 @@ func (c *Client) doJSON(ctx context.Context, method, url string, in, out any) er
 }
 
 var errGraphTrailingJSON = errors.New("graph: response contains extra JSON data")
+
+// unreadableResponse is a success status whose body is not the JSON Graph
+// promised: the provider's fault for this pass, retried like a 5xx. The body is
+// never logged, because it can carry mail content.
+func unreadableResponse(resp *http.Response, err error) *errx.MailError {
+	log.Warn().Err(err).
+		Int("status", resp.StatusCode).
+		Str("content_type", resp.Header.Get("Content-Type")).
+		Str("content_encoding", resp.Header.Get("Content-Encoding")).
+		Msg("graph: success response could not be decoded")
+	now := time.Now().UTC()
+	return errx.WithSendFailure(errx.ErrMailServerUnreachable, errx.SendFailure{Provider: "microsoft", Protocol: "http",
+		Status: resp.StatusCode, Cause: "unreadable_response", Scope: "mailbox", ObservedAt: now, Disposition: errx.SendRetry})
+}
 
 // transportError classifies a failure of the HTTP call itself. The client's
 // token source runs inside it, so a grant the provider has revoked arrives

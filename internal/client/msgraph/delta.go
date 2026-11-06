@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -266,7 +267,11 @@ func (c *Client) FetchMessage(ctx context.Context, folder, id string) (*GraphMes
 	}
 	var msg GraphMessage
 	if err := json.NewDecoder(resp.Body).Decode(&msg); err != nil {
-		return nil, err
+		var networkError net.Error
+		if errors.As(err, &networkError) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			return nil, transportError(err)
+		}
+		return nil, unreadableResponse(resp, err)
 	}
 	return &msg, nil
 }
