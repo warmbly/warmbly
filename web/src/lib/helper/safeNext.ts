@@ -9,10 +9,11 @@ export default function safeNext(next: string | null | undefined, fallback: stri
 
 export function postAuthNext(next: string | null | undefined, invitationConsumed = false): string {
     const target = safeNext(next, "/app/emails");
-    const path = new URL(target, "https://warmbly.invalid").pathname.replace(/\/+$/, "");
+    const url = new URL(target, "https://warmbly.invalid");
+    const path = url.pathname.replace(/\/+$/, "");
     if (invitationConsumed && path === "/invite") return "/app/emails";
-    // Onboarding sends people on to next, so landing back on it would loop.
-    if (path === "/onboarding") return "/app/emails";
+    // Onboarding forwards to its own next, so go there; boot returns an unfinished account to onboarding with it.
+    if (path === "/onboarding") return postAuthNext(url.searchParams.get("next"), invitationConsumed);
     return target;
 }
 

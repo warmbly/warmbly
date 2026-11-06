@@ -28,10 +28,16 @@ describe("postAuthNext", () => {
     });
 
     it("never sends a finished onboarding back to itself", () => {
-        for (const next of ["/onboarding", "/onboarding/?next=/onboarding", "/auth/../onboarding"]) {
+        for (const next of ["/onboarding", "/onboarding/?next=/onboarding", "/auth/../onboarding", "/onboarding?next=https://evil.example"]) {
             expect(postAuthNext(next)).toBe("/app/emails");
         }
         expect(postAuthNext("/app/settings/billing?pool=1")).toBe("/app/settings/billing?pool=1");
+    });
+
+    it("keeps the destination onboarding was carrying when sign-in resumes it", () => {
+        const billing = "/app/settings/billing?pool=1";
+        expect(postAuthNext(`/onboarding?next=${encodeURIComponent(billing)}`)).toBe(billing);
+        expect(postAuthNext(`/onboarding?next=${encodeURIComponent(`/onboarding?next=${encodeURIComponent(billing)}`)}`)).toBe(billing);
     });
 
     it("preserves other safe destinations and rejects external redirects", () => {
