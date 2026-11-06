@@ -39,6 +39,8 @@ export interface MailboxOAuthOptions {
     onAllowance?: () => void;
     /** The deployment has no OAuth client for the provider. Toasts when absent. */
     onNotConfigured?: (provider: MailboxOAuthProvider) => void;
+    /** A personal Gmail address was refused sign-in; it connects with an app password. Toasts when absent. */
+    onPersonalGmail?: () => void;
     /** Toast copy while the finish call runs and when it lands. */
     messages?: { loading?: string; success?: string };
 }
@@ -47,6 +49,9 @@ export interface MailboxOAuthOptions {
 export function isAllowanceError(e: unknown): boolean {
     return (e as AppError | undefined)?.code === "mailbox_allowance_reached";
 }
+
+/** The refusal a personal Gmail hint gets from the sign-in start. */
+export const PERSONAL_GMAIL_CODE = "google_personal_app_password";
 
 /** Admin grant states (Google "gac_", Microsoft "mac_"); the callback page posts them like a mailbox sign-in. */
 export function isAdminConsentState(state: string | undefined | null): boolean {
@@ -81,6 +86,8 @@ export default function useMailboxOAuth(options: MailboxOAuthOptions = {}) {
     const [busy, setBusy] = React.useState<MailboxOAuthProvider | null>(null);
     // Microsoft only: forwarded to an administrator when the organization requires approval.
     const [adminConsentUrl, setAdminConsentUrl] = React.useState<string | null>(null);
+    // A direct sign-in whose window closed or was denied without connecting; the panel explains a Workspace block.
+    const [unfinished, setUnfinished] = React.useState<MailboxOAuthProvider | null>(null);
     const pendingState = React.useRef<{ provider: MailboxOAuthProvider; state: string } | null>(null);
     // A consent running on Warmbly Cloud's app; redeemed by session, not code.
     const pendingCloud = React.useRef<{ provider: MailboxOAuthProvider; session: string } | null>(null);
@@ -154,6 +161,7 @@ export default function useMailboxOAuth(options: MailboxOAuthOptions = {}) {
 
             if (data.error || !data.code) {
                 setBusy(null);
+                setUnfinished(expected.provider);
                 if (data.error !== "access_denied") {
                     toast.error(data.error ? `Provider error: ${data.error}` : "Connection was cancelled.");
                 }
@@ -193,6 +201,8 @@ export default function useMailboxOAuth(options: MailboxOAuthOptions = {}) {
                 if (popupRef.current === p) {
                     popupRef.current = null;
                     setBusy(null);
+                    const direct = pendingState.current;
+                    if (direct) setUnfinished(direct.provider);
                 }
             }, 1000);
         }, 500);
@@ -235,6 +245,7 @@ export default function useMailboxOAuth(options: MailboxOAuthOptions = {}) {
             const name = `connect-${provider}`;
             const reserved = reservePopup(name);
             setBusy(provider);
+            setUnfinished(null);
             pendingState.current = null;
             pendingCloud.current = null;
             if (viaCloud) {
@@ -278,6 +289,10 @@ export default function useMailboxOAuth(options: MailboxOAuthOptions = {}) {
                     optionsRef.current.onAllowance?.();
                     return;
                 }
+                if (e.code === PERSONAL_GMAIL_CODE && optionsRef.current.onPersonalGmail) {
+                    optionsRef.current.onPersonalGmail();
+                    return;
+                }
                 toast.error(buildError(e));
             }
         },
@@ -288,10 +303,11 @@ export default function useMailboxOAuth(options: MailboxOAuthOptions = {}) {
     const reset = React.useCallback(() => {
         setBusy(null);
         setAdminConsentUrl(null);
+        setUnfinished(null);
         pendingState.current = null;
         pendingCloud.current = null;
         popupRef.current = null;
     }, []);
 
-    return { busy, start, reset, viaCloud, gmailAvailable, selfHosted: pool.selfHosted, adminConsentUrl };
+    return { busy, start, reset, viaCloud, gmailAvailable, selfHosted: pool.selfHosted, adminConsentUrl, unfinished };
 }

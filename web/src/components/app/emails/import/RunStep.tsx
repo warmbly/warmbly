@@ -48,7 +48,7 @@ import { useConfirm } from "@/hooks/context/confirm";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import timeAgo from "@/lib/helper/timeAgo";
-import { mailHostLabel, mailHostOAuthProvider } from "@/lib/mailHost";
+import { isPersonalGmail, mailHostLabel, mailHostOAuthProvider } from "@/lib/mailHost";
 import { cn } from "@/lib/utils";
 import {
     AUTHORIZING_STATUS,
@@ -176,7 +176,8 @@ export default function RunStep({
     const signInProvider = (row: ImportRow) => {
         const provider = mailHostOAuthProvider(row.mail_host);
         if (!provider) return null;
-        if (provider === "gmail" && !oauth.gmailAvailable) return null;
+        // Personal Gmail connects with an app password, never Google sign-in.
+        if (provider === "gmail" && (!oauth.gmailAvailable || row.mail_host === "gmail" || isPersonalGmail(row.email))) return null;
         return provider;
     };
 

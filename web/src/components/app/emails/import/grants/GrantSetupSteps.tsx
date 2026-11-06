@@ -33,7 +33,7 @@ function StepHeader({ provider, title, sub }: { provider: "google" | "microsoft"
     );
 }
 
-function Instruction({ n, children }: { n: number; children: React.ReactNode }) {
+export function Instruction({ n, children }: { n: number; children: React.ReactNode }) {
     return (
         <motion.li
             initial={{ opacity: 0, y: 4 }}
@@ -49,7 +49,7 @@ function Instruction({ n, children }: { n: number; children: React.ReactNode }) 
     );
 }
 
-function Crumbs({ items }: { items: string[] }) {
+export function Crumbs({ items }: { items: string[] }) {
     return (
         <span className="inline-flex flex-wrap items-center gap-1 align-middle">
             {items.map((c, i) => (

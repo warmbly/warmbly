@@ -6,19 +6,20 @@
 // triptych.
 //
 // Flow:
-//   provider picker ─► Google ─► whole Workspace domain ─► /emails/grants (GrantImportWizard)
-//                    │         ├► app password walkthrough ─► /emails/onboarding/smtp-imap
-//                    │         └► Sign in with Google ────────┐ (when frontend and backend allow it)
+//   provider picker ─► Google ─► Workspace: whole domain (delegation) ─► /emails/grants (GrantImportWizard)
+//                    │         ├► personal Gmail: app password walkthrough ─► /emails/onboarding/smtp-imap
+//                    │         └► Workspace: Sign in with Google ─┐ (trusted app; when frontend and backend allow it)
 //                    ├► Microsoft ─► whole organization ─► /emails/grants (GrantImportWizard)
-//                    │            └► sign in one mailbox ──────┴► /emails/onboarding/oauth/finish
+//                    │            └► sign in one mailbox ─────────┴► /emails/onboarding/oauth/finish
 //                    ├► smtp/imap form ──────────► /emails/onboarding/smtp-imap
 //                    ├► mailbox import ──────────► /emails/imports (MailboxImportWizard)
 //                    └► inbox vendor ────────────► /emails/vendors (VendorImportWizard)
 //
-// Google and Microsoft each open a method chooser. The admin grant is the
-// recommended method wherever the instance has it set up, and is left out
-// where it is not. Per-mailbox Google sign-in requires the frontend's opt-in
-// and either a confirmed backend capability or a Warmbly Cloud connection.
+// Google and Microsoft each open a method chooser. Google splits Workspace
+// (sign in each mailbox once the admin trusts the app, or a delegation grant)
+// from personal Gmail (app password). Per-mailbox Google sign-in requires the
+// frontend's opt-in and either a confirmed backend capability or a Warmbly
+// Cloud connection; a personal Gmail address is always sent to app passwords.
 //
 // Every path can run into the workspace's mailbox allowance; that answer
 // (code mailbox_allowance_reached) opens MailboxAllowanceDialog instead of a
@@ -78,6 +79,7 @@ import { allowanceFull } from "@/lib/api/models/app/emails/MailboxAllowance";
 import type MailboxAllowance from "@/lib/api/models/app/emails/MailboxAllowance";
 import MailboxAllowanceDialog from "@/components/app/emails/MailboxAllowanceDialog";
 import GmailAppPasswordPanel from "@/components/app/emails/GmailAppPasswordPanel";
+import GoogleWorkspaceSigninPanel from "@/components/app/emails/GoogleWorkspaceSigninPanel";
 import MailboxImportWizard from "@/components/app/emails/import/MailboxImportWizard";
 import VendorImportWizard from "@/components/app/emails/import/vendors/VendorImportWizard";
 import GrantImportWizard from "@/components/app/emails/import/grants/GrantImportWizard";
@@ -133,6 +135,8 @@ export default function AddEmailModal() {
 
     const [view, setView] = React.useState<View>("pick");
     const [cloudAddress, setCloudAddress] = React.useState("");
+    // A personal Gmail address typed on the sign-in panel, carried into the app-password walkthrough.
+    const [appPasswordEmail, setAppPasswordEmail] = React.useState("");
     // The CSV import is reached from the picker and from the Google chooser; Back returns to whichever opened it.
     const [bulkFrom, setBulkFrom] = React.useState<View>("pick");
     // Deeper views slide in from the right, shallower ones from the left.
@@ -176,7 +180,9 @@ export default function AddEmailModal() {
         onConnected: () => user.setAddEmail(false),
         onAllowance: () => openAllowance(true),
         onNotConfigured: setNotConfigured,
+        onPersonalGmail: () => navigate("gmail_app_password"),
     });
+    const grantConfig = useGrantConfig(user.addEmail);
     const oauthBusy = oauth.busy;
     const viaCloud = oauth.viaCloud;
     const gmailOAuth = oauth.gmailAvailable;
@@ -186,6 +192,7 @@ export default function AddEmailModal() {
     React.useEffect(() => {
         if (!user.addEmail) {
             setCloudAddress("");
+            setAppPasswordEmail("");
             setView("pick");
             setDir(1);
             setNotConfigured(null);
@@ -201,9 +208,9 @@ export default function AddEmailModal() {
         user.setAddEmail(false);
     };
 
-    function startOAuth(provider: OAuthProvider) {
+    function startOAuth(provider: OAuthProvider, loginHint?: string) {
         setNotConfigured(null);
-        void oauth.start(provider);
+        void oauth.start(provider, { loginHint });
     }
 
     // Every way out of the modal (close, backdrop, Escape, back to the picker)
@@ -328,17 +335,27 @@ export default function AddEmailModal() {
                                         notConfigured === "gmail" ? (
                                             <ProviderNotConfigured provider="gmail" />
                                         ) : (
-                                            <OAuthPanel
-                                                provider="gmail"
+                                            <GoogleWorkspaceSigninPanel
                                                 busy={oauthBusy === "gmail"}
                                                 viaCloud={viaCloud}
-                                                onConnect={() => startOAuth("gmail")}
+                                                clientId={grantConfig.data?.google_mailbox_client_id}
+                                                unfinished={oauth.unfinished === "gmail"}
+                                                onConnect={(address) => {
+                                                    setAppPasswordEmail(address);
+                                                    startOAuth("gmail", address);
+                                                }}
+                                                onPersonalGmail={(address) => {
+                                                    setAppPasswordEmail(address);
+                                                    navigate("gmail_app_password");
+                                                }}
                                                 onUseAppPassword={() => navigate("gmail_app_password")}
+                                                onUseDelegation={grantConfig.data?.google_enabled ? () => navigate("grant_google") : undefined}
                                             />
                                         )
                                     )}
                                     {view === "gmail_app_password" && (
                                         <GmailAppPasswordPanel
+                                            initialEmail={appPasswordEmail}
                                             onDone={() => {
                                                 qc.invalidateQueries({ queryKey: ["emails", "list"] });
                                                 user.setAddEmail(false);
@@ -675,10 +692,15 @@ interface Method {
     title: string;
     sub: string;
     pill?: { label: string; tone: "sky" | "amber" };
+    /** The kind of account it is for; a heading is drawn where it changes. */
+    section?: { title: string; sub: string };
 }
 
-// The ways to connect a Google or Microsoft mailbox. The admin grant leads
-// wherever the instance has it set up and is left out where it is not.
+const WORKSPACE_SECTION = { title: "Google Workspace", sub: "A mailbox on your company's own domain" };
+const PERSONAL_GMAIL_SECTION = { title: "Personal Gmail", sub: "An @gmail.com or @googlemail.com account" };
+
+// The ways to connect a Google or Microsoft mailbox. Google separates a
+// Workspace domain from personal Gmail, which only connects with an app password.
 function MethodChooser({
     provider,
     onPick,
@@ -697,29 +719,38 @@ function MethodChooser({
     const busy = useMailboxSourceBusy();
     const methods: Method[] = [];
     if (provider === "google") {
+        if (gmailOAuth) {
+            methods.push({
+                view: "gmail",
+                icon: <ProviderLogo id="google" size="md" framed={false} />,
+                title: "Sign in with Google",
+                sub: viaCloud
+                    ? "One mailbox at a time, through Warmbly Cloud."
+                    : "Your Workspace admin marks Warmbly as a trusted app once, then each mailbox signs in with Google.",
+                pill: { label: "Recommended", tone: "sky" },
+                section: WORKSPACE_SECTION,
+            });
+        }
         if (grantConfig.data?.google_enabled) {
             methods.push({
                 view: "grant_google",
                 icon: <Building2Icon className="w-4 h-4 text-slate-700" />,
                 title: "Whole Workspace domain",
-                sub: "A super admin authorizes Warmbly once, then you pick the mailboxes. No app passwords.",
-                pill: { label: "Recommended", tone: "sky" },
+                sub: "Domain-wide delegation: a super admin authorizes Warmbly once, then you pick the mailboxes. No mailbox signs in.",
+                pill: gmailOAuth ? undefined : { label: "Recommended", tone: "sky" },
+                section: WORKSPACE_SECTION,
             });
         }
         methods.push({
             view: "gmail_app_password",
             icon: <KeyRoundIcon className="w-4 h-4 text-slate-700" />,
             title: "App password",
-            sub: "One mailbox over IMAP and SMTP, in about two minutes. Works for any Gmail or Workspace account.",
+            sub:
+                methods.length > 0
+                    ? "Guided: turn on 2-Step Verification, create a 16-letter app password, connect. Also works for one Workspace mailbox."
+                    : "Guided, in about two minutes over IMAP and SMTP. The way in for personal Gmail, and it works for any Workspace mailbox too.",
+            section: methods.length > 0 ? PERSONAL_GMAIL_SECTION : { title: "Personal Gmail or Workspace", sub: "Any Gmail or Workspace account" },
         });
-        if (gmailOAuth) {
-            methods.push({
-                view: "gmail",
-                icon: <ProviderLogo id="google" size="md" framed={false} />,
-                title: "Sign in with Google",
-                sub: viaCloud ? "One mailbox at a time, through Warmbly Cloud." : "One mailbox at a time, through Google's consent screen.",
-            });
-        }
     } else {
         if (grantConfig.data?.microsoft_enabled) {
             methods.push({
@@ -748,7 +779,7 @@ function MethodChooser({
                 <div className="min-w-0">
                     <p className="text-[13px] font-medium text-slate-900">How should Warmbly connect?</p>
                     <p className="text-[11.5px] text-slate-500">
-                        {provider === "google" ? (gmailOAuth ? "Connect one mailbox with Google sign-in or an app password." : "Personal @gmail.com? Use an app password.") : "Personal @outlook.com or @hotmail.com? Sign in one mailbox."}
+                        {provider === "google" ? (gmailOAuth ? "Workspace mailboxes sign in with Google. Personal Gmail uses an app password." : "Personal @gmail.com? Use an app password.") : "Personal @outlook.com or @hotmail.com? Sign in one mailbox."}
                     </p>
                 </div>
             </div>
@@ -758,39 +789,46 @@ function MethodChooser({
                 </div>
             )}
             {methods.map((m, i) => (
-                <motion.button
-                    key={m.view}
-                    type="button"
-                    disabled={busy}
-                    onClick={() => onPick(m.view)}
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.04 + i * 0.05, duration: 0.18, ease: "easeOut" }}
-                    className="w-full rounded-md border px-3 py-3 flex items-start gap-3 text-left group transition-colors border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
-                >
-                    <div
-                        className="size-8 rounded-md border border-slate-200 bg-white flex items-center justify-center shrink-0"
-                    >
-                        {m.icon}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                            <span className="text-[13px] font-medium text-slate-900">{m.title}</span>
-                            {m.pill && (
-                                <span
-                                    className={cn(
-                                        "shrink-0 h-[18px] px-1.5 rounded-full border text-[10px] font-medium inline-flex items-center",
-                                        m.pill.tone === "sky" ? "bg-sky-50 border-sky-200 text-sky-700" : "bg-amber-50 border-amber-200 text-amber-700",
-                                    )}
-                                >
-                                    {m.pill.label}
-                                </span>
-                            )}
+                <React.Fragment key={m.view}>
+                    {m.section && m.section.title !== methods[i - 1]?.section?.title && (
+                        <div className="pt-2 flex items-baseline gap-2 min-w-0">
+                            <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium shrink-0">{m.section.title}</span>
+                            <span className="text-[11px] text-slate-400 truncate">{m.section.sub}</span>
                         </div>
-                        <p className="text-[11.5px] text-slate-500 leading-relaxed">{m.sub}</p>
-                    </div>
-                    <ChevronRightIcon className="w-4 h-4 text-slate-300 shrink-0 self-center group-hover:text-slate-500 group-hover:translate-x-0.5 transition-all" />
-                </motion.button>
+                    )}
+                    <motion.button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => onPick(m.view)}
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.04 + i * 0.05, duration: 0.18, ease: "easeOut" }}
+                        className="w-full rounded-md border px-3 py-3 flex items-start gap-3 text-left group transition-colors border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                    >
+                        <div
+                            className="size-8 rounded-md border border-slate-200 bg-white flex items-center justify-center shrink-0"
+                        >
+                            {m.icon}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                                <span className="text-[13px] font-medium text-slate-900">{m.title}</span>
+                                {m.pill && (
+                                    <span
+                                        className={cn(
+                                            "shrink-0 h-[18px] px-1.5 rounded-full border text-[10px] font-medium inline-flex items-center",
+                                            m.pill.tone === "sky" ? "bg-sky-50 border-sky-200 text-sky-700" : "bg-amber-50 border-amber-200 text-amber-700",
+                                        )}
+                                    >
+                                        {m.pill.label}
+                                    </span>
+                                )}
+                            </div>
+                            <p className="text-[11.5px] text-slate-500 leading-relaxed">{m.sub}</p>
+                        </div>
+                        <ChevronRightIcon className="w-4 h-4 text-slate-300 shrink-0 self-center group-hover:text-slate-500 group-hover:translate-x-0.5 transition-all" />
+                    </motion.button>
+                </React.Fragment>
             ))}
             {provider === "google" && (
                 <p className="pt-1 text-[11.5px] text-slate-500">
@@ -813,7 +851,6 @@ function OAuthPanel({
     busy,
     viaCloud,
     onConnect,
-    onUseAppPassword,
     adminApprovalUrl,
 }: {
     provider: OAuthProvider;
@@ -822,8 +859,6 @@ function OAuthPanel({
     onConnect: () => void;
     /** Microsoft only, after a first try: the approval page to forward to an administrator. */
     adminApprovalUrl?: string | null;
-    /** Gmail only: the same mailbox over IMAP and SMTP, for whoever prefers it. */
-    onUseAppPassword?: () => void;
 }) {
     const label = provider === "gmail" ? "Google" : "Microsoft";
     const Icon = provider === "gmail" ? Google : Outlook;
@@ -888,19 +923,6 @@ function OAuthPanel({
                     </p>
                     <CopyValue label="Approval link for your administrator" value={adminApprovalUrl} display="login.microsoftonline.com/organizations/v2.0/adminconsent" />
                 </motion.div>
-            )}
-
-            {onUseAppPassword && (
-                <p className="text-[11.5px] text-slate-500 text-center">
-                    Prefer not to use Google sign-in?{" "}
-                    <button
-                        type="button"
-                        onClick={onUseAppPassword}
-                        className="text-sky-700 underline decoration-sky-300 hover:decoration-sky-600 transition-colors"
-                    >
-                        Connect it with an app password instead
-                    </button>
-                </p>
             )}
         </div>
     );

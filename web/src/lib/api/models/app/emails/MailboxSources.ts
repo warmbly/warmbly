@@ -84,6 +84,8 @@ export interface GrantConfig {
     /** Settings an operator still has to set; empty when enabled. */
     google_missing?: string[];
     microsoft_missing?: string[];
+    /** The per-mailbox Google sign-in client a Workspace admin marks Trusted; absent when sign-in is off. */
+    google_mailbox_client_id?: string;
 }
 
 /**
