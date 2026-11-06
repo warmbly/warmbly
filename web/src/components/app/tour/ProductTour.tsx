@@ -414,6 +414,8 @@ export default function ProductTour() {
                                                 note={
                                                     access.paid
                                                         ? undefined
+                                                        : access.trial
+                                                        ? "Your trial warms up to 2 mailboxes in the free pool and sends 20 a day. Every paid plan warms them in the premium pool."
                                                         : access.keptFreeWarmup
                                                         ? "Only warming for now? Your free plan keeps up to 10 mailboxes warming. Every paid plan puts them in the premium pool."
                                                         : "Mailboxes and warmup start with a plan. Every paid plan warms them in the premium pool."

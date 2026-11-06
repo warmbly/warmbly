@@ -21,6 +21,8 @@ const subscriptionColumns = `id, user_id, organization_id, plan_id, stripe_custo
 
 type SubscriptionRepository interface {
 	Create(ctx context.Context, sub *models.Subscription) error
+	// CreateTrial writes a trial subscription only if it also claims the owner's one free trial, in one statement.
+	CreateTrial(ctx context.Context, sub *models.Subscription) (bool, error)
 	Update(ctx context.Context, sub *models.Subscription) error
 	GetByID(ctx context.Context, id uuid.UUID) (*models.Subscription, error)
 	GetByUserID(ctx context.Context, userID uuid.UUID) (*models.Subscription, error)
@@ -38,6 +40,9 @@ type SubscriptionRepository interface {
 
 	// Enterprise
 	SetEnterprise(ctx context.Context, orgID uuid.UUID, isEnterprise bool) error
+
+	// ResumeTrialWarmup resumes the mailboxes the trial expiry paused, keeping their ramp where it stopped.
+	ResumeTrialWarmup(ctx context.Context, orgID uuid.UUID) error
 
 	// Webhook idempotency
 	WebhookEventExists(ctx context.Context, eventID string) (bool, error)
@@ -74,6 +79,27 @@ func (r *subscriptionRepository) Create(ctx context.Context, sub *models.Subscri
 		sub.IsEnterprise, now, now,
 	)
 	return err
+}
+
+func (r *subscriptionRepository) CreateTrial(ctx context.Context, sub *models.Subscription) (bool, error) {
+	// One statement, so the claim and the row commit or fail together.
+	const q = `
+		WITH claim AS (
+			UPDATE users SET free_trial_used = TRUE, updated_at = now()
+			WHERE id = $2 AND NOT free_trial_used
+			RETURNING id
+		)
+		INSERT INTO subscriptions (
+			id, user_id, organization_id, plan_id, stripe_customer_id, status,
+			free_trial_started_at, free_trial_ends_at
+		)
+		SELECT $1, claim.id, $3, $4, '', $5, $6, $7 FROM claim`
+	tag, err := r.db.Exec(ctx, q, sub.ID, sub.UserID, sub.OrganizationID, sub.PlanID, sub.Status,
+		sub.FreeTrialStartedAt, sub.FreeTrialEndsAt)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
 }
 
 func (r *subscriptionRepository) Update(ctx context.Context, sub *models.Subscription) error {
@@ -197,6 +223,17 @@ func (r *subscriptionRepository) GetWithLimits(ctx context.Context, orgID uuid.U
 func (r *subscriptionRepository) SetEnterprise(ctx context.Context, orgID uuid.UUID, isEnterprise bool) error {
 	query := `UPDATE subscriptions SET is_enterprise = $2, updated_at = $3 WHERE organization_id = $1`
 	_, err := r.db.Exec(ctx, query, orgID, isEnterprise, time.Now())
+	return err
+}
+
+func (r *subscriptionRepository) ResumeTrialWarmup(ctx context.Context, orgID uuid.UUID) error {
+	// The expiry stamps the trial end as the pause time, which no manual pause carries.
+	const q = `UPDATE email_accounts ea
+		SET warmup = ea.warmup + (now() - ea.warmup_paused_at), warmup_paused_at = NULL, updated_at = now()
+		FROM subscriptions s
+		WHERE s.organization_id = $1 AND ea.organization_id = $1
+		  AND ea.warmup IS NOT NULL AND ea.warmup_paused_at = s.free_trial_ends_at`
+	_, err := r.db.Exec(ctx, q, orgID)
 	return err
 }
 

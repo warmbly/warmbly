@@ -4,7 +4,7 @@
 // Everything here reads real server state rather than the marketing catalog:
 // limits, counts, the mailbox allowance and storage come from
 // /organization/current/limits, capability flags from /subscription/features,
-// the trial countdown from /subscription/trial. The catalog is only used for
+// the trial countdown from the subscription's trial end. The catalog is only used for
 // labels and colours.
 
 import React from "react";
@@ -25,14 +25,13 @@ import {
     SparklesIcon,
     XIcon,
 } from "lucide-react";
-import useFeatureAccess from "@/hooks/useFeatureAccess";
+import useFeatureAccess, { useTrialDaysLeft } from "@/hooks/useFeatureAccess";
 import useUpgradeFlow from "@/hooks/useUpgradeFlow";
 import { useConfirm } from "@/hooks/context/confirm";
 import useSubscription from "@/lib/api/hooks/app/subscription/useSubscription";
 import usePlanOffers from "@/lib/api/hooks/app/subscription/usePlanOffers";
 import type PlanOffer from "@/lib/api/models/app/subscription/PlanOffer";
 import OfferedPlanDialog from "@/components/app/billing/OfferedPlanDialog";
-import useTrialStatus from "@/lib/api/hooks/app/subscription/useTrialStatus";
 import useCancelSubscription from "@/lib/api/hooks/app/subscription/useCancelSubscription";
 import useOrganizationLimits from "@/lib/api/hooks/app/organizations/useOrganizationLimits";
 import useUsageOverview from "@/lib/api/hooks/app/analytics/useUsageOverview";
@@ -48,8 +47,8 @@ import { Section } from "../_components/SectionShell";
 
 export default function OverviewTab({ onChangePlan }: { onChangePlan: () => void }) {
     const access = useFeatureAccess();
+    const trialDays = useTrialDaysLeft(access.trial ? access.trialEndsAt : null);
     const sub = useSubscription();
-    const trial = useTrialStatus();
     const orgLimits = useOrganizationLimits();
     const limits = orgLimits.data?.limits;
     const counts = orgLimits.data?.counts;
@@ -131,13 +130,13 @@ export default function OverviewTab({ onChangePlan }: { onChangePlan: () => void
                         action={{ label: cancel.isPending ? "Resuming…" : "Resume subscription", onClick: resume }}
                     />
                 )}
-                {trial.data?.is_trial && (trial.data.days_remaining ?? 0) >= 0 && (
+                {access.trial && access.trialEndsAt && (
                     <Banner
                         key="trial"
                         tone="sky"
                         icon={SparklesIcon}
-                        title={`${trial.data.days_remaining ?? 0} ${(trial.data.days_remaining ?? 0) === 1 ? "day" : "days"} left in your trial`}
-                        body={`Your trial ends on ${fmtDate(toDate(trial.data.trial_end)) || "its end date"}. Pick a plan before then to keep sending without interruption.`}
+                        title={`${trialDays} ${trialDays === 1 ? "day" : "days"} left in your trial`}
+                        body={`Your trial ends on ${fmtDate(access.trialEndsAt) || "its end date"}. Pick a plan before then to keep sending and warming without a pause.`}
                         action={{ label: "Choose a plan", onClick: onChangePlan }}
                     />
                 )}
@@ -159,12 +158,16 @@ export default function OverviewTab({ onChangePlan }: { onChangePlan: () => void
                             <div className="min-w-0 flex-1 basis-[220px]">
                                 <div className="flex items-center gap-2 flex-wrap">
                                     <span className="text-[17px] font-semibold text-slate-900 tracking-tight">
-                                        {plan.label}
+                                        {access.trial ? "Free trial" : plan.label}
                                     </span>
                                     <StatusPill status={status} cancelAtEnd={cancelAtEnd} />
                                 </div>
                                 <p className="text-[12px] text-slate-500 mt-1 leading-relaxed max-w-md">
-                                    {plan.description}
+                                    {access.trial
+                                        ? "Two mailboxes warming in the free pool, 20 sends a day, the unified inbox, contacts and campaigns."
+                                        : access.trialEnded
+                                        ? "Your trial has ended. Sending and warmup are paused until you choose a plan; your mailboxes and campaigns are kept."
+                                        : plan.description}
                                 </p>
                             </div>
                             <div className="flex flex-wrap gap-x-6 gap-y-2 shrink-0">
@@ -185,11 +188,15 @@ export default function OverviewTab({ onChangePlan }: { onChangePlan: () => void
                                               : "per month"
                                     }
                                 />
-                                <Stat
-                                    label={cancelAtEnd ? "Ends" : "Renews"}
-                                    value={fmtDate(periodEnd) || "—"}
-                                    sub={periodEnd ? relativeDays(periodEnd) : onFreeTier ? "no subscription" : ""}
-                                />
+                                {access.trial && !periodEnd ? (
+                                    <Stat label="Trial ends" value={fmtDate(access.trialEndsAt) || "—"} sub={access.trialEndsAt ? relativeDays(access.trialEndsAt) : ""} />
+                                ) : (
+                                    <Stat
+                                        label={cancelAtEnd ? "Ends" : "Renews"}
+                                        value={fmtDate(periodEnd) || "—"}
+                                        sub={periodEnd ? relativeDays(periodEnd) : onFreeTier ? "no subscription" : ""}
+                                    />
+                                )}
                                 {access.warmupOnly ? (
                                     <Stat
                                         label="Mailboxes"
@@ -338,7 +345,7 @@ export default function OverviewTab({ onChangePlan }: { onChangePlan: () => void
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
                         <UsageMeter
                             label="Mailboxes"
-                            hint={mailboxHint(mailboxes)}
+                            hint={mailboxHint(mailboxes, access.trial)}
                             current={mailboxes?.used ?? counts?.email_accounts ?? 0}
                             max={mailboxes?.allowance}
                             unmetered="unlimited"
@@ -489,7 +496,7 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
 
 // mailboxHint explains the number rather than only stating it, because the
 // allowance is fair use and the reader should know what raises it.
-function mailboxHint(a: OrganizationLimits["mailboxes"] | undefined): string {
+function mailboxHint(a: OrganizationLimits["mailboxes"] | undefined, trial: boolean): string {
     if (!a) return "Connected sending and warmup mailboxes";
     switch (a.basis) {
         case "fair_use":
@@ -499,6 +506,7 @@ function mailboxHint(a: OrganizationLimits["mailboxes"] | undefined): string {
         case "override":
             return "Raised for this workspace by an approved request";
         case "free":
+            if (trial) return "Free trial allowance; a paid plan holds one mailbox for every send a day it includes";
             return a.allowance
                 ? "Free plan allowance; a paid plan holds one mailbox for every send a day it includes"
                 : "Connecting mailboxes starts with a plan; a paid plan holds one mailbox for every send a day it includes";
@@ -604,12 +612,6 @@ function StatusPill({
 }
 
 /* ── helpers ─────────────────────────────────────────────────────── */
-
-function toDate(v: Date | string | undefined): Date | null {
-    if (!v) return null;
-    const d = v instanceof Date ? v : new Date(v);
-    return Number.isNaN(d.getTime()) ? null : d;
-}
 
 function fmtDate(d: Date | null): string {
     if (!d || Number.isNaN(d.getTime())) return "";

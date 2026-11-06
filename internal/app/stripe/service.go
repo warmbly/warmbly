@@ -1304,6 +1304,11 @@ func (s *stripeService) handleSubscriptionUpdated(ctx context.Context, event *st
 			return errx.New(errx.Internal, "failed to update mailbox warmup tier")
 		}
 	}
+	if sub.HasPaidSubscription() && sub.FreeTrialEndsAt != nil {
+		if err := s.subRepo.ResumeTrialWarmup(ctx, sub.OrganizationID); err != nil {
+			return errx.New(errx.Internal, "failed to resume trial warmup")
+		}
+	}
 
 	// The workspace has started paying. Reported after the write, so a failed
 	// update never counts as a start, and keyed off the same transition the

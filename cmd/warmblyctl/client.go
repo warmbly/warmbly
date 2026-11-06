@@ -126,7 +126,6 @@ func (c *conn) trialService() trial.TrialService {
 	)
 	return trial.NewService(
 		repository.NewSubscriptionRepository(c.db.Pool),
-		c.users,
 		repository.NewPlanRepository(c.db.Pool),
 		creditSvc,
 	)

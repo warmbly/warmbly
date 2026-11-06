@@ -76,7 +76,6 @@ import { auditLogsQuery } from "./lib/api/hooks/app/audit/useAuditLogs";
 import { uniboxOverviewQuery } from "./lib/api/hooks/app/unibox/useUniboxOverview";
 import { uniboxSearchQuery } from "./lib/api/hooks/app/unibox/useUniboxSearch";
 import { webhookDropsQuery, webhooksListQuery } from "./lib/api/hooks/app/webhooks/useWebhooks";
-import { trialStatusQuery } from "./lib/api/hooks/app/subscription/useTrialStatus";
 import { appliedDiscountsQuery } from "./lib/api/hooks/app/subscription/useAppliedDiscounts";
 import { planOffersQuery } from "./lib/api/hooks/app/subscription/usePlanOffers";
 
@@ -391,7 +390,6 @@ export const billingLoader = pageLoader((qc, { params }) => {
     if (useAppStore.getState().currentOrganization?.role !== "owner") return [];
     if (qc.getQueryData(authConfigQuery.queryKey)?.billing_enabled === false) return [];
     return [
-        qc.prefetchQuery(trialStatusQuery),
         qc.prefetchQuery(organizationLimitsQuery),
         qc.prefetchQuery(usageOverviewQuery("month")),
         qc.prefetchQuery(appliedDiscountsQuery()),
