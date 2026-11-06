@@ -64,51 +64,26 @@ func (s *tasksService) getWarmupSettings(ctx context.Context) models.WarmupGener
 var errWarmupContentUnavailable = errors.New("warmup content is unavailable")
 
 // pickNewWarmupContent prefers a conversation neither mailbox has seen recently and always yields one.
+// A mature sender opens a share of its threads with its own running campaign copy instead.
 func (s *tasksService) pickNewWarmupContent(ctx context.Context, account Email, recipient *Email, taskID uuid.UUID) (warmupContent, error) {
 	library := warmupConversations()
 	if s.warmupContentRepo != nil {
+		if ownCopyDraw(account, recipient, time.Now(), rand.Intn(100)) {
+			content, ok, err := s.campaignCopyContent(ctx, account, recipient, taskID)
+			if err != nil {
+				return warmupContent{}, err
+			}
+			if ok {
+				return content, nil
+			}
+		}
 		settings := s.getWarmupSettings(ctx)
 		s.seedStaticWarmupLibrary(ctx, library)
 		staticIDs := make([]uuid.UUID, len(library))
 		for i, c := range library {
 			staticIDs[i] = c.ID
 		}
-		pick := repository.WarmupContentPick{Segment: strings.TrimSpace(account.WarmupTag), TaskID: taskID, SenderID: account.ID, RecipientID: recipient.ID, OrganizationID: account.OrganizationID, IncludeAI: settings.Enabled, StaticIDs: staticIDs}
-		own, err := s.ownCopyDraw(ctx, account, recipient, time.Now())
-		if err != nil {
-			return warmupContent{}, err
-		}
-		if own.draw {
-			// Fresh copy first; own-copy-only then repeats what the sender carried longest ago rather than skip a send.
-			for _, repeat := range []bool{false, true} {
-				if repeat && !own.settings.TemplatesOnly {
-					break
-				}
-				// The copy about to reach prospects comes first; templates take the share it leaves.
-				if own.settings.CampaignCopy {
-					content, ok, err := s.campaignCopyContent(ctx, account, recipient, taskID, repeat)
-					if err != nil {
-						return warmupContent{}, err
-					}
-					if ok {
-						return content, nil
-					}
-				}
-				pick.TemplatesOnly, pick.AllowRepeat = true, repeat
-				conv, err := s.warmupContentRepo.PickConversation(ctx, pick)
-				if err != nil {
-					return warmupContent{}, err
-				}
-				if conv != nil {
-					if content, ok := pickedWarmupContent(conv, account); ok {
-						return content, nil
-					}
-				}
-			}
-			// No eligible own copy at all: warmup carries on with ordinary conversations.
-			pick.TemplatesOnly, pick.AllowRepeat = false, false
-		}
-		conv, err := s.warmupContentRepo.PickConversation(ctx, pick)
+		conv, err := s.warmupContentRepo.PickConversation(ctx, repository.WarmupContentPick{Segment: strings.TrimSpace(account.WarmupTag), TaskID: taskID, SenderID: account.ID, RecipientID: recipient.ID, IncludeAI: settings.Enabled, StaticIDs: staticIDs})
 		if err != nil {
 			return warmupContent{}, err
 		}
@@ -124,29 +99,13 @@ func (s *tasksService) pickNewWarmupContent(ctx context.Context, account Email, 
 	return staticWarmupContent(library[rand.Intn(len(library))], account), nil
 }
 
-// ownCopy is one opening's draw against the organization's own-copy mix.
-type ownCopy struct {
-	draw     bool
-	settings models.WarmupTemplateSettings
-}
-
-// ownCopyDraw decides whether this opening carries the organization's own
-// copy. A mailbox in its first WarmupOwnCopyMinDays of warmup never does,
-// whatever the setting, so sales copy never rides a mailbox with no history.
-// Nor is it sent to a recipient that leaves warmup mail in its inbox, where a
-// person reads it: there, someone else's sales copy is unsolicited mail.
-// A failed settings read is returned so the send retries instead of silently
-// drawing from the bank against a templates-only workspace.
-func (s *tasksService) ownCopyDraw(ctx context.Context, account Email, recipient *Email, now time.Time) (ownCopy, error) {
-	if account.OrganizationID == nil || !ownCopyMature(account, now) || !ownCopyRecipient(recipient) {
-		return ownCopy{}, nil
-	}
-	settings, err := s.warmupContentRepo.GetTemplateSettings(ctx, *account.OrganizationID)
-	if err != nil {
-		return ownCopy{}, err
-	}
-	draw, _ := drawTemplates(settings, rand.Intn(100))
-	return ownCopy{draw: draw, settings: settings}, nil
+// ownCopyDraw decides whether a new thread opens with the sender's campaign
+// copy. A mailbox in its first WarmupOwnCopyMinDays of warmup never carries
+// it, so sales copy never rides a mailbox with no history. Nor does a
+// recipient that leaves warmup mail in its inbox, where a person reads it and
+// someone else's sales copy is unsolicited mail.
+func ownCopyDraw(account Email, recipient *Email, now time.Time, roll int) bool {
+	return account.OrganizationID != nil && ownCopyMature(account, now) && ownCopyRecipient(recipient) && roll < models.WarmupOwnCopySharePercent
 }
 
 // ownCopyRecipient reports whether the recipient files warmup mail out of its inbox.
@@ -158,17 +117,9 @@ func ownCopyRecipient(recipient *Email) bool {
 	return placement != models.WarmupPlacementInbox
 }
 
-// ownCopyMature reports whether the mailbox has warmed long enough to carry its workspace's own copy.
+// ownCopyMature reports whether the mailbox has warmed long enough to carry its own campaign copy.
 func ownCopyMature(account Email, now time.Time) bool {
 	return account.Warmup != nil && !account.Warmup.After(now.AddDate(0, 0, -models.WarmupOwnCopyMinDays))
-}
-
-// drawTemplates applies the template mix to one roll in [0,100).
-func drawTemplates(settings models.WarmupTemplateSettings, roll int) (templates, only bool) {
-	if settings.TemplatesOnly {
-		return true, true
-	}
-	return roll < settings.TemplateShare, false
 }
 
 func pickedWarmupContent(conv *models.WarmupConversation, account Email) (warmupContent, bool) {
@@ -178,28 +129,6 @@ func pickedWarmupContent(conv *models.WarmupConversation, account Email) (warmup
 	}
 	if conv.ScenarioVersion == nil || conv.RenderingVersion == nil || conv.Status != models.WarmupConversationActive || !conv.ReplyEligible || !conv.LintPassed || conv.SemanticReview != "passed" {
 		return warmupContent{}, false
-	}
-	if conv.Source == models.WarmupContentSourceTemplate {
-		// Templates send verbatim: the stored subject and opening are the whole turn.
-		subject := strings.TrimSpace(conv.Subject)
-		body := strings.TrimSpace(conv.Description)
-		if subject == "" || body == "" || strings.ContainsAny(subject, "<>{}\x00\r\n") || strings.IndexByte(body, 0) >= 0 {
-			return warmupContent{}, false
-		}
-		if generation.ValidateWarmupWording(subject, body) != nil {
-			return warmupContent{}, false
-		}
-		id := conv.ID
-		return warmupContent{
-			subject:          subject,
-			body:             body,
-			theme:            conv.Theme,
-			contentSource:    models.WarmupContentSourceTemplate,
-			conversationID:   &id,
-			scenarioVersion:  *conv.ScenarioVersion,
-			renderingVersion: *conv.RenderingVersion,
-			maxTurns:         1,
-		}, true
 	}
 	if generation.ValidateFreshWarmup(generation.Conversation{Subject: conv.Subject, Description: conv.Description, Messages: conv.Messages}) != nil {
 		return warmupContent{}, false

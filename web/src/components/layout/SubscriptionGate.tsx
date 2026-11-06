@@ -16,7 +16,6 @@ const FEATURE_BY_PREFIX: [string, string][] = [
     ["/app/contacts", "Contacts"],
     ["/app/analytics", "Analytics"],
     ["/app/deliverability", "Deliverability"],
-    ["/app/warmup-copy", "Warmup copy"],
     ["/app/crm", "The CRM"],
     ["/app/templates", "Templates"],
     ["/app/integrations", "Integrations"],

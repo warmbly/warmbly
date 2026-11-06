@@ -3,7 +3,6 @@ package tasks
 import (
 	"context"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -38,6 +37,9 @@ func lintDiagnosticContent(subject, body string, reply bool, account Email) erro
 }
 
 func (s *tasksService) exactReplyContent(ctx context.Context, c *repository.WarmupReplyCandidate, account Email) (warmupContent, string, []string, error) {
+	if c != nil && c.ContentSource == models.WarmupContentSourceCampaign {
+		return campaignReplyContent(c, account)
+	}
 	if c == nil || c.ConversationID == nil || c.MessageID == "" || c.Subject == "" || c.ConversationTurn+1 >= c.MaxTurns || c.RenderingVersion != generation.CanonicalRenderingVersion {
 		return warmupContent{}, "", nil, errors.New("diagnostic parent unavailable")
 	}
@@ -260,31 +262,13 @@ func (s *tasksService) ValidateWarmupExecution(ctx context.Context, taskID uuid.
 }
 
 // executableWarmupSource confirms the content a dispatch carries may still be
-// sent. A workspace's own copy is a single opening with no conversation plan:
-// a template must still be active and its sender's, and campaign copy names no
-// bank conversation at all.
+// sent. A thread opened with campaign copy names no bank conversation: the
+// opening was rendered at send time and its replies come from the prospect
+// exchanges.
 func (s *tasksService) executableWarmupSource(ctx context.Context, current *repository.WarmupReplyCandidate, account *models.Email) error {
-	switch current.ContentSource {
-	case models.WarmupContentSourceTemplate, models.WarmupContentSourceCampaign:
-		if current.ConversationTurn != 0 || current.MaxTurns != 1 {
-			return errors.New("own copy is a single opening")
-		}
-		if current.ContentSource == models.WarmupContentSourceCampaign {
-			if current.ConversationID != nil {
-				return errors.New("campaign copy names no conversation")
-			}
-			return nil
-		}
-		if current.ConversationID == nil || s.warmupContentRepo == nil || account.OrganizationID == nil {
-			return errors.New("warmup template unavailable")
-		}
-		row, err := s.warmupContentRepo.GetConversation(ctx, *current.ConversationID)
-		if err != nil {
-			return err
-		}
-		if row == nil || row.Source != models.WarmupContentSourceTemplate || row.Status != models.WarmupConversationActive ||
-			row.OrganizationID == nil || *row.OrganizationID != *account.OrganizationID || strings.TrimSpace(row.Subject) != current.Subject {
-			return errors.New("warmup template retired or not the sender's")
+	if current.ContentSource == models.WarmupContentSourceCampaign {
+		if current.ConversationID != nil || current.MaxTurns < 1 || current.MaxTurns > models.WarmupOwnCopyTurns || current.ConversationTurn < 0 || current.ConversationTurn >= current.MaxTurns {
+			return errors.New("campaign copy thread out of shape")
 		}
 		return nil
 	}

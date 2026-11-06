@@ -5,7 +5,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/models"
@@ -20,8 +19,6 @@ type qualityContentRepo struct {
 	lastPick     repository.WarmupContentPick
 	picks        []repository.WarmupContentPick
 	seeded       []models.WarmupConversation
-	// templateSettings is what GetTemplateSettings returns.
-	templateSettings models.WarmupTemplateSettings
 	// campaignCopy is what CampaignCopyCandidates returns.
 	campaignCopy []models.WarmupCampaignCopyCandidate
 }
@@ -33,19 +30,13 @@ func (r *qualityContentRepo) GetGenerationSettings(context.Context) (*models.War
 func (r *qualityContentRepo) PickConversation(_ context.Context, pick repository.WarmupContentPick) (*models.WarmupConversation, error) {
 	r.lastPick = pick
 	r.picks = append(r.picks, pick)
-	if pick.TemplatesOnly && r.conversation != nil && r.conversation.Source != models.WarmupContentSourceTemplate {
-		return nil, r.pickErr
-	}
 	return r.conversation, r.pickErr
 }
 func (r *qualityContentRepo) SeedStaticConversations(_ context.Context, rows []models.WarmupConversation) error {
 	r.seeded = rows
 	return nil
 }
-func (r *qualityContentRepo) GetTemplateSettings(context.Context, uuid.UUID) (models.WarmupTemplateSettings, error) {
-	return r.templateSettings, nil
-}
-func (r *qualityContentRepo) CampaignCopyCandidates(context.Context, uuid.UUID, uuid.UUID, bool) ([]models.WarmupCampaignCopyCandidate, error) {
+func (r *qualityContentRepo) CampaignCopyCandidates(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) ([]models.WarmupCampaignCopyCandidate, error) {
 	return r.campaignCopy, nil
 }
 
@@ -175,56 +166,5 @@ func TestSenderIdentityIsNotHeldToTheWordingRule(t *testing.T) {
 		if err := lintDiagnosticContent(c.Subject, GenerateConversationOpeningEmail(c, sender), false, sender); err != nil {
 			t.Fatalf("%q: a sender's own name stopped its warmup: %v", sender.Name+sender.Email, err)
 		}
-	}
-}
-
-func TestDrawTemplatesFollowsShareAndOnlySwitch(t *testing.T) {
-	share := models.WarmupTemplateSettings{TemplateShare: 50}
-	if got, only := drawTemplates(share, 49); !got || only {
-		t.Fatalf("roll under the share must draw templates: %v %v", got, only)
-	}
-	if got, _ := drawTemplates(share, 50); got {
-		t.Fatal("roll at the share must draw from the bank")
-	}
-	if got, _ := drawTemplates(models.WarmupTemplateSettings{TemplateShare: 0}, 0); got {
-		t.Fatal("zero share never draws templates")
-	}
-	if got, only := drawTemplates(models.WarmupTemplateSettings{TemplateShare: 0, TemplatesOnly: true}, 99); !got || !only {
-		t.Fatal("templates-only overrides the share")
-	}
-}
-
-func TestWarmupContentTemplateDrawFallsBackToBankUnlessOnly(t *testing.T) {
-	org := uuid.New()
-	warmedSince := time.Now().AddDate(0, 0, -models.WarmupOwnCopyMinDays-1)
-	account := Email{ID: uuid.New(), OrganizationID: &org, Name: "Ada", Warmup: &warmedSince}
-	repo := &qualityContentRepo{templateSettings: models.WarmupTemplateSettings{TemplateShare: 100}}
-	s := &tasksService{warmupContentRepo: repo}
-	// Nothing in the repo: the template draw returns nil and the bank draw runs next.
-	if _, err := s.pickNewWarmupContent(t.Context(), account, &Email{ID: uuid.New()}, uuid.New()); err != nil {
-		t.Fatalf("static fallback failed: %v", err)
-	}
-	if len(repo.picks) != 2 || !repo.picks[0].TemplatesOnly || repo.picks[1].TemplatesOnly {
-		t.Fatalf("expected a template draw then a bank draw, got %+v", repo.picks)
-	}
-	if repo.picks[0].OrganizationID == nil || *repo.picks[0].OrganizationID != org {
-		t.Fatalf("template draw lost the organization: %+v", repo.picks[0])
-	}
-
-	if repo.picks[0].AllowRepeat {
-		t.Fatal("a shared draw must not repeat a template sent within the day; the bank takes that opening")
-	}
-
-	// Own copy only: fresh first, then whatever was carried longest ago, and
-	// ordinary content only when the workspace has no own copy at all. A send
-	// is never skipped for lack of fresh content.
-	only := &qualityContentRepo{templateSettings: models.WarmupTemplateSettings{TemplatesOnly: true}}
-	s = &tasksService{warmupContentRepo: only}
-	if _, err := s.pickNewWarmupContent(t.Context(), account, &Email{ID: uuid.New()}, uuid.New()); err != nil {
-		t.Fatalf("own-copy-only with no copy at all must still send: %v", err)
-	}
-	if len(only.picks) != 3 || !only.picks[0].TemplatesOnly || only.picks[0].AllowRepeat ||
-		!only.picks[1].TemplatesOnly || !only.picks[1].AllowRepeat || only.picks[2].TemplatesOnly {
-		t.Fatalf("want a fresh template draw, a repeat draw, then the bank: %+v", only.picks)
 	}
 }

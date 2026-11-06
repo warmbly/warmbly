@@ -157,7 +157,7 @@ func (r *taskRepository) BindWarmupSuccessor(ctx context.Context, parent, recipi
 // warmupAnswerableSQL is when received warmup mail may still be answered, over aliases wt, original, wr and ea (the recipient).
 const warmupAnswerableSQL = `ea.status='active' AND ea.warmup IS NOT NULL AND ea.warmup_paused_at IS NULL
         AND wr.retired_at IS NULL AND wr.created_at>NOW()-INTERVAL '7 days'
-        AND original.lineage_version=1 AND original.subject<>'' AND wt.conversation_id IS NOT NULL
+        AND original.lineage_version=1 AND original.subject<>'' AND (wt.conversation_id IS NOT NULL OR wt.content_source='campaign')
         AND wt.expires_at>NOW() AND wt.sent_retired_at IS NULL
         AND wt.conversation_turn+1<original.max_turns AND wr.message_id<>''
         AND wt.sent_message_id<>'' AND wr.sender_account_id=wt.sender_account_id

@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -76,23 +78,27 @@ func TestCopyFillableSkipsRecipientsMissingAField(t *testing.T) {
 	}
 }
 
-func TestOwnCopyWaitsForAMatureMailbox(t *testing.T) {
+func TestOwnCopyDrawNeedsAMatureSenderAndAnOutOfInboxRecipient(t *testing.T) {
 	org := uuid.New()
-	fresh := time.Now().AddDate(0, 0, -1)
-	repo := &qualityContentRepo{templateSettings: models.WarmupTemplateSettings{TemplatesOnly: true, CampaignCopy: true}}
-	s := &tasksService{warmupContentRepo: repo}
-	account := Email{ID: uuid.New(), OrganizationID: &org, Name: "Ada", Warmup: &fresh}
-	content, err := s.pickNewWarmupContent(t.Context(), account, &Email{ID: uuid.New()}, uuid.New())
-	if err != nil {
-		t.Fatalf("a new mailbox must still warm on ordinary conversations: %v", err)
+	now := time.Now()
+	mature := now.AddDate(0, 0, -models.WarmupOwnCopyMinDays)
+	young := now.AddDate(0, 0, -models.WarmupOwnCopyMinDays+1)
+	sender := Email{OrganizationID: &org, Warmup: &mature}
+	folder := &Email{}
+	if !ownCopyDraw(sender, folder, now, models.WarmupOwnCopySharePercent-1) {
+		t.Fatal("a roll under the share did not draw own copy")
 	}
-	if content.contentSource == models.WarmupContentSourceTemplate || content.contentSource == models.WarmupContentSourceCampaign {
-		t.Fatalf("a %d-day-old mailbox carried its workspace's own copy", 1)
+	if ownCopyDraw(sender, folder, now, models.WarmupOwnCopySharePercent) {
+		t.Fatal("a roll at the share drew own copy")
 	}
-	for _, p := range repo.picks {
-		if p.TemplatesOnly {
-			t.Fatal("a new mailbox drew from the workspace's templates")
-		}
+	if ownCopyDraw(Email{OrganizationID: &org, Warmup: &young}, folder, now, 0) {
+		t.Fatalf("a mailbox under %d days of warmup carried its own copy", models.WarmupOwnCopyMinDays)
+	}
+	if ownCopyDraw(sender, &Email{WarmupPlacement: models.WarmupPlacementInbox}, now, 0) {
+		t.Fatal("own copy went to a recipient that reads warmup in its inbox")
+	}
+	if ownCopyDraw(Email{Warmup: &mature}, folder, now, 0) || ownCopyDraw(sender, nil, now, 0) {
+		t.Fatal("own copy drawn with no workspace or no recipient")
 	}
 }
 
@@ -100,7 +106,6 @@ func TestCampaignCopyRendersTheStepForTheRecipient(t *testing.T) {
 	org, campaignID, opener, other := uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	warmedSince := time.Now().AddDate(0, 0, -30)
 	repo := &qualityContentRepo{
-		templateSettings: models.WarmupTemplateSettings{TemplateShare: 100, CampaignCopy: true},
 		campaignCopy: []models.WarmupCampaignCopyCandidate{
 			// Least recently carried, but warmup has no value for the custom field.
 			{CampaignID: campaignID, SequenceID: other, Subject: "About {{.industry}}", BodyPlain: "Hi {{.FirstName}}, how is {{.industry}}?"},
@@ -112,9 +117,9 @@ func TestCampaignCopyRendersTheStepForTheRecipient(t *testing.T) {
 	account := Email{ID: uuid.New(), OrganizationID: &org, Name: "Ada Byron", Email: addr("ada", "byron.dev"), Warmup: &warmedSince}
 	recipient := &Email{ID: uuid.New(), Name: "Jane Doe", Email: addr("jane", "northridge.com")}
 
-	content, err := s.pickNewWarmupContent(t.Context(), account, recipient, uuid.New())
-	if err != nil {
-		t.Fatal(err)
+	content, ok, err := s.campaignCopyContent(t.Context(), account, recipient, uuid.New())
+	if err != nil || !ok {
+		t.Fatalf("no campaign copy: %v", err)
 	}
 	if content.contentSource != models.WarmupContentSourceCampaign || content.sequenceID == nil || *content.sequenceID != opener {
 		t.Fatalf("want the eligible opener as campaign copy, got source %q step %v", content.contentSource, content.sequenceID)
@@ -125,25 +130,14 @@ func TestCampaignCopyRendersTheStepForTheRecipient(t *testing.T) {
 	if content.bodyHTML != "" {
 		t.Fatalf("a text-only campaign sent an HTML part: %q", content.bodyHTML)
 	}
-	if content.maxTurns != 1 || content.conversationID != nil {
-		t.Fatal("campaign copy must be a single opening with no bank conversation behind it")
-	}
-	if len(repo.picks) != 0 {
-		t.Fatalf("campaign copy was available, yet a template or bank draw ran: %+v", repo.picks)
+	if content.maxTurns != models.WarmupOwnCopyTurns || content.conversationID != nil {
+		t.Fatal("campaign copy opens a reply thread with no bank conversation behind it")
 	}
 
-	// A recipient on a consumer domain cannot fill the company, so warmup falls back to templates, then the bank.
-	repo.picks = nil
+	// A recipient on a consumer domain cannot fill the company, so this thread opens with ordinary content.
 	gmail := &Email{ID: uuid.New(), Name: "Sam Lee", Email: addr("sam", "gmail.com")}
-	content, err = s.pickNewWarmupContent(t.Context(), account, gmail, uuid.New())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if content.contentSource == models.WarmupContentSourceCampaign {
-		t.Fatalf("copy naming a company went to a recipient with none: %q", content.subject)
-	}
-	if len(repo.picks) != 2 || !repo.picks[0].TemplatesOnly {
-		t.Fatalf("want a template draw then a bank draw, got %+v", repo.picks)
+	if content, ok, err = s.campaignCopyContent(t.Context(), account, gmail, uuid.New()); err != nil || ok {
+		t.Fatalf("copy naming a company went to a recipient with none: %q %v", content.subject, err)
 	}
 }
 
@@ -166,7 +160,6 @@ func TestCampaignCopyKeepsTheCampaignsTrackingDomain(t *testing.T) {
 	org, campaignID, step, taskID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	warmedSince := time.Now().AddDate(0, 0, -30)
 	repo := &qualityContentRepo{
-		templateSettings: models.WarmupTemplateSettings{TemplateShare: 100, CampaignCopy: true},
 		campaignCopy: []models.WarmupCampaignCopyCandidate{{CampaignID: campaignID, SequenceID: step, Subject: "Plans for Q4?",
 			BodyHTML: `<p>Hi {{.FirstName}}, here is the deck: <a href="https://acme.example/deck">deck</a></p>`}},
 	}
@@ -176,8 +169,8 @@ func TestCampaignCopyKeepsTheCampaignsTrackingDomain(t *testing.T) {
 	s := &tasksService{warmupContentRepo: repo, campaignRepo: &copyCampaigns{byID: map[uuid.UUID]*models.Campaign{campaignID: campaign}}, trackedLinkRepo: tickets}
 	account := Email{ID: uuid.New(), OrganizationID: &org, Name: "Ada Byron", Email: addr("ada", "acme.example"), Warmup: &warmedSince}
 
-	content, err := s.pickNewWarmupContent(t.Context(), account, &Email{ID: uuid.New(), Name: "Jane Doe", Email: addr("jane", "northridge.com")}, taskID)
-	if err != nil || content.contentSource != models.WarmupContentSourceCampaign {
+	content, ok, err := s.campaignCopyContent(t.Context(), account, &Email{ID: uuid.New(), Name: "Jane Doe", Email: addr("jane", "northridge.com")}, taskID)
+	if err != nil || !ok {
 		t.Fatalf("no campaign copy: %+v %v", content, err)
 	}
 	if !strings.Contains(content.bodyHTML, "https://t.acme.example/c/") || strings.Contains(content.bodyHTML, `href="https://acme.example/deck"`) {
@@ -200,71 +193,105 @@ func TestRecipientNameReachesCopyOnlyWhenSafe(t *testing.T) {
 	}
 }
 
-type ownCopyRows struct {
-	repository.WarmupContentRepository
-	row *models.WarmupConversation
-}
-
-func (r *ownCopyRows) GetConversation(_ context.Context, id uuid.UUID) (*models.WarmupConversation, error) {
-	if r.row != nil && r.row.ID == id {
-		return r.row, nil
+// A campaign copy thread passes the dispatch-time check on every turn it plans, with no conversation behind it.
+func TestExecutableWarmupSourceAdmitsCampaignCopyThreads(t *testing.T) {
+	s := &tasksService{}
+	turn := func(n int, conv *uuid.UUID) *repository.WarmupReplyCandidate {
+		return &repository.WarmupReplyCandidate{ContentSource: models.WarmupContentSourceCampaign, ConversationID: conv, ConversationTurn: n, Subject: "Plans for Q4?", MaxTurns: models.WarmupOwnCopyTurns}
 	}
-	return nil, nil
-}
-
-// Own copy passes the dispatch-time check as a single opening: a template
-// while it is active and the sender's, campaign copy with no conversation.
-func TestExecutableWarmupSourceAdmitsOwnCopy(t *testing.T) {
-	org, other := uuid.New(), uuid.New()
-	tmpl := &models.WarmupConversation{ID: uuid.New(), Source: models.WarmupContentSourceTemplate, Status: models.WarmupConversationActive, OrganizationID: &org, Subject: "Plans for Q4?"}
-	s := &tasksService{warmupContentRepo: &ownCopyRows{row: tmpl}}
-	account := &models.Email{OrganizationID: &org}
-	id := tmpl.ID
-	opening := func(source string, conv *uuid.UUID) *repository.WarmupReplyCandidate {
-		return &repository.WarmupReplyCandidate{ContentSource: source, ConversationID: conv, Subject: "Plans for Q4?", MaxTurns: 1}
-	}
-
-	if err := s.executableWarmupSource(t.Context(), opening(models.WarmupContentSourceTemplate, &id), account); err != nil {
-		t.Fatalf("an active template of the sender's was refused: %v", err)
-	}
-	if err := s.executableWarmupSource(t.Context(), opening(models.WarmupContentSourceCampaign, nil), account); err != nil {
-		t.Fatalf("campaign copy was refused: %v", err)
-	}
-	if err := s.executableWarmupSource(t.Context(), opening(models.WarmupContentSourceTemplate, &id), &models.Email{OrganizationID: &other}); err == nil {
-		t.Fatal("another workspace's template was admitted")
-	}
-	reply := opening(models.WarmupContentSourceCampaign, nil)
-	reply.ConversationTurn = 1
-	if err := s.executableWarmupSource(t.Context(), reply, account); err == nil {
-		t.Fatal("a reply turn on own copy was admitted")
-	}
-	tmpl.Status = models.WarmupConversationArchived
-	if err := s.executableWarmupSource(t.Context(), opening(models.WarmupContentSourceTemplate, &id), account); err == nil {
-		t.Fatal("a retired template was admitted")
-	}
-}
-
-// A recipient that leaves warmup mail in its inbox is never sent a workspace's own copy.
-func TestOwnCopySkipsRecipientsReadingWarmupInTheInbox(t *testing.T) {
-	org := uuid.New()
-	warmedSince := time.Now().AddDate(0, 0, -30)
-	repo := &qualityContentRepo{templateSettings: models.WarmupTemplateSettings{TemplatesOnly: true}}
-	s := &tasksService{warmupContentRepo: repo}
-	account := Email{ID: uuid.New(), OrganizationID: &org, Name: "Ada", Warmup: &warmedSince}
-	inbox := &Email{ID: uuid.New(), WarmupPlacement: models.WarmupPlacementInbox}
-	if _, err := s.pickNewWarmupContent(t.Context(), account, inbox, uuid.New()); err != nil {
-		t.Fatal(err)
-	}
-	for _, p := range repo.picks {
-		if p.TemplatesOnly {
-			t.Fatal("own copy was drawn for a recipient that reads warmup in its inbox")
+	for n := range models.WarmupOwnCopyTurns {
+		if err := s.executableWarmupSource(t.Context(), turn(n, nil), &models.Email{}); err != nil {
+			t.Fatalf("turn %d of a campaign copy thread was refused: %v", n, err)
 		}
 	}
-	repo.picks = nil
-	if _, err := s.pickNewWarmupContent(t.Context(), account, &Email{ID: uuid.New()}, uuid.New()); err != nil {
+	if err := s.executableWarmupSource(t.Context(), turn(models.WarmupOwnCopyTurns, nil), &models.Email{}); err == nil {
+		t.Fatal("a turn past the thread's length was admitted")
+	}
+	id := uuid.New()
+	if err := s.executableWarmupSource(t.Context(), turn(0, &id), &models.Email{}); err == nil {
+		t.Fatal("campaign copy naming a bank conversation was admitted")
+	}
+}
+
+// Every prospect line reads as ordinary mail and passes the checks every warmup turn is held to.
+func TestProspectExchangesPassTheWarmupChecks(t *testing.T) {
+	seen := map[string]bool{}
+	sender := Email{Name: "Jane Doe"}
+	for i, ex := range prospectExchanges {
+		if len(ex.replies) < 4 || len(ex.answers) < 4 {
+			t.Fatalf("exchange %d is too thin to keep threads apart", i)
+		}
+		for _, line := range append(append([]string{}, ex.replies...), ex.answers...) {
+			if seen[line] {
+				t.Fatalf("line repeated: %q", line)
+			}
+			seen[line] = true
+			if strings.ContainsAny(line, "<>{}\r—") {
+				t.Fatalf("line carries markup, a merge field or an em dash: %q", line)
+			}
+			body, err := generation.RenderCanonicalTurn(line, sender.Name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := lintDiagnosticContent("Re: Plans for Q4?", body, true, sender); err != nil {
+				t.Fatalf("%q: %v", line, err)
+			}
+		}
+	}
+}
+
+// A thread's reply and answer come from one exchange, picked from the opening,
+// and the same turn always writes the same words.
+func TestCampaignReplyContinuesTheThreadAsAProspect(t *testing.T) {
+	opening := &repository.WarmupReplyCandidate{ContentSource: models.WarmupContentSourceCampaign, MessageID: "<" + addr("a1", "acme.example") + ">",
+		Subject: "Plans for Q4?", MaxTurns: models.WarmupOwnCopyTurns, ScenarioVersion: generation.WarmupScenarioVersion, RenderingVersion: generation.CanonicalRenderingVersion}
+	reply, inReplyTo, refs, err := campaignReplyContent(opening, Email{Name: "Jane Doe"})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if len(repo.picks) == 0 || !repo.picks[0].TemplatesOnly {
-		t.Fatalf("a recipient filing warmup into its folder should get own copy first: %+v", repo.picks)
+	if inReplyTo != opening.MessageID || len(refs) != 1 || reply.maxTurns != models.WarmupOwnCopyTurns || reply.subject != opening.Subject || !strings.HasSuffix(reply.body, "Jane Doe") {
+		t.Fatalf("reply does not continue the thread: %+v %q %v", reply, inReplyTo, refs)
+	}
+	again, _, _, _ := campaignReplyContent(opening, Email{Name: "Jane Doe"})
+	if again.body != reply.body {
+		t.Fatal("a retried turn wrote different words")
+	}
+
+	answerTurn := &repository.WarmupReplyCandidate{ContentSource: models.WarmupContentSourceCampaign, MessageID: addr("b2", "northridge.example"), References: refs, ConversationTurn: 1,
+		Subject: opening.Subject, MaxTurns: models.WarmupOwnCopyTurns, ScenarioVersion: generation.WarmupScenarioVersion, RenderingVersion: generation.CanonicalRenderingVersion}
+	answer, _, _, err := campaignReplyContent(answerTurn, Email{Name: "Ada Byron"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := strings.TrimSuffix(strings.TrimSuffix(answer.body, "Ada Byron"), "\n")
+	replyLine := strings.TrimSuffix(strings.TrimSuffix(reply.body, "Jane Doe"), "\n")
+	matched := false
+	for _, ex := range prospectExchanges {
+		if slices.Contains(ex.replies, strings.TrimSpace(replyLine)) && slices.Contains(ex.answers, strings.TrimSpace(line)) {
+			matched = true
+		}
+	}
+	if !matched {
+		t.Fatalf("the answer does not belong to the reply's exchange: %q / %q", replyLine, line)
+	}
+
+	answerTurn.ConversationTurn = 2
+	if _, _, _, err := campaignReplyContent(answerTurn, Email{Name: "Ada Byron"}); err == nil {
+		t.Fatal("a thread ran past its planned length")
+	}
+}
+
+// Threads drawn from different openings spread across the exchanges.
+func TestProspectRepliesVaryAcrossThreads(t *testing.T) {
+	lines := map[string]bool{}
+	for i := range 200 {
+		line, ok := prospectLine(addr(uuid.NewString(), "acme.example"), 1)
+		if !ok {
+			t.Fatalf("thread %d got no reply", i)
+		}
+		lines[line] = true
+	}
+	if len(lines) < 20 {
+		t.Fatalf("200 threads used only %d distinct replies", len(lines))
 	}
 }

@@ -137,14 +137,14 @@ func copyFillable(c models.Contact, parts ...string) bool {
 // sender's running campaigns for this recipient, exactly as the campaign
 // renders it (merge fields, spintax, plain-text rule, signature, opt-out, UTM
 // tags, and the open pixel and wrapped links on its tracking domain), skipping
-// any arm warmup cannot carry faithfully. Arms carried within the day are
-// offered only on a repeat pass. ok is false when no arm qualifies.
-func (s *tasksService) campaignCopyContent(ctx context.Context, account Email, recipient *Email, taskID uuid.UUID, repeat bool) (warmupContent, bool, error) {
+// any arm warmup cannot carry faithfully. ok is false when no arm qualifies,
+// and the thread opens with ordinary content instead.
+func (s *tasksService) campaignCopyContent(ctx context.Context, account Email, recipient *Email, taskID uuid.UUID) (warmupContent, bool, error) {
 	if account.OrganizationID == nil || recipient == nil || s.campaignRepo == nil {
 		return warmupContent{}, false, nil
 	}
 	orgID := *account.OrganizationID
-	candidates, err := s.warmupContentRepo.CampaignCopyCandidates(ctx, orgID, account.ID, repeat)
+	candidates, err := s.warmupContentRepo.CampaignCopyCandidates(ctx, orgID, account.ID, recipient.ID)
 	if err != nil {
 		return warmupContent{}, false, err
 	}
@@ -196,7 +196,7 @@ func (s *tasksService) campaignCopyContent(ctx context.Context, account Email, r
 			variantID:        c.VariantID,
 			scenarioVersion:  generation.WarmupScenarioVersion,
 			renderingVersion: generation.CanonicalRenderingVersion,
-			maxTurns:         1,
+			maxTurns:         models.WarmupOwnCopyTurns,
 		}, true, nil
 	}
 	return warmupContent{}, false, nil

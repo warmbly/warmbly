@@ -51,9 +51,6 @@ const (
 	// AI
 	APIPermAIAgent    // Run the AI assistant / agent (dashboard agent + MCP)
 	APIPermAIResearch // Run AI contact research
-
-	// Warmup templates submitted by the organization itself
-	APIPermWarmupTemplates // Manage warmup templates
 )
 
 // AllAPIPermissionsMask is the OR of every defined permission bit.
@@ -71,8 +68,7 @@ const AllAPIPermissionsMask uint64 = APIPermReadEmails | APIPermReadCampaigns |
 	APIPermReadCRM | APIPermWriteCRM |
 	APIPermReadAuditLogs |
 	APIPermIntegrations | APIPermWarmupRouting |
-	APIPermAIAgent | APIPermAIResearch |
-	APIPermWarmupTemplates
+	APIPermAIAgent | APIPermAIResearch
 
 // Preset permission sets surfaced via GET /api-keys/permissions so a
 // caller can grant a sane default without picking bits by hand.
@@ -89,8 +85,7 @@ var (
 		APIPermWriteTemplates | APIPermWriteCRM |
 		APIPermRealtimeSubscribe | APIPermWebhooks | APIPermAPIKeys |
 		APIPermIntegrations | APIPermWarmupRouting |
-		APIPermAIAgent | APIPermAIResearch |
-		APIPermWarmupTemplates
+		APIPermAIAgent | APIPermAIResearch
 )
 
 type APIPermission struct {
@@ -125,7 +120,6 @@ var AllAPIPermissions = []APIPermission{
 	{"WARMUP_ROUTING", APIPermWarmupRouting, "Manage warmup routing rules", "special"},
 	{"AI_AGENT", APIPermAIAgent, "Run the AI assistant and MCP tools", "special"},
 	{"AI_RESEARCH", APIPermAIResearch, "Run AI contact research", "special"},
-	{"WARMUP_TEMPLATES", APIPermWarmupTemplates, "Manage warmup templates", "special"},
 }
 
 // HasAPIPermission reports whether the bitmask grants every bit in `required`.
@@ -164,7 +158,6 @@ var apiPermissionRoleNeeds = map[uint64]OrganizationPermission{
 	APIPermWarmupRouting:     PermManageSettings,
 	APIPermAIAgent:           PermUseAI,
 	APIPermAIResearch:        PermViewContacts | PermUseAI,
-	APIPermWarmupTemplates:   PermManageSettings,
 }
 
 // APIPermissionsForMember is the widest API scope set a member may delegate to a key or an app.

@@ -24,7 +24,6 @@ import {
     type LucideIcon,
     MailIcon,
     MailCheckIcon,
-    MailPlusIcon,
     MegaphoneIcon,
     SettingsIcon,
     ShieldCheckIcon,
@@ -167,7 +166,6 @@ const sections: NavSection[] = [
             { title: "Analytics", scoped: true, requires: "subscription", url: "/app/analytics", icon: BarChart3Icon, indicator: "analytics", permission: "VIEW_ANALYTICS", permissionLabel: "View analytics" },
             { title: "Deliverability", requires: "subscription", url: "/app/deliverability", icon: ShieldCheckIcon, advisorSurface: "deliverability", permission: "VIEW_ANALYTICS", permissionLabel: "View analytics" },
             { title: "Placement tests", requires: "subscription", url: "/app/placement", icon: MailCheckIcon, permission: "VIEW_ANALYTICS", permissionLabel: "View analytics" },
-            { title: "Warmup copy", requires: "subscription", url: "/app/warmup-copy", icon: MailPlusIcon, permission: "MANAGE_SETTINGS", permissionLabel: "Manage settings" },
         ],
     },
     {

@@ -50,8 +50,6 @@ import {
     placementTestQuery,
     placementTestsQuery,
 } from "./lib/api/hooks/app/placement/usePlacement";
-import { warmupCampaignCopyQuery, warmupCopySettingsQuery, warmupTemplatesQuery } from "./lib/api/hooks/app/warmup/useWarmupCopy";
-import { parseWarmupCopyDays } from "./lib/api/models/app/warmup/WarmupCopy";
 import { pipelinesQuery } from "./lib/api/hooks/app/crm/pipelines/usePipelines";
 import { dealsSearchQuery } from "./lib/api/hooks/app/crm/deals/useSearchDeals";
 import { dealsSummaryQuery } from "./lib/api/hooks/app/crm/deals/useDealsSummary";
@@ -256,17 +254,6 @@ export const placementLoader = pageLoader((qc, { search }) => {
         tab !== "seeds" && qc.prefetchQuery(placementCoverageQuery),
         onTests && qc.prefetchInfiniteQuery(placementTestsQuery(campaignId)),
         onTests && !!campaignId && qc.prefetchQuery(campaignQuery(campaignId)),
-    ];
-});
-
-// The page is MANAGE_SETTINGS only; the days window comes from the URL.
-export const warmupCopyLoader = pageLoader((qc, { search }) => {
-    if (!can("MANAGE_SETTINGS")) return [];
-    const days = parseWarmupCopyDays(search.days);
-    return [
-        qc.prefetchQuery(warmupCopySettingsQuery),
-        can("VIEW_CAMPAIGNS") && qc.prefetchQuery(warmupCampaignCopyQuery(days)),
-        qc.prefetchQuery(warmupTemplatesQuery(days)),
     ];
 });
 

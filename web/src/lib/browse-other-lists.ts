@@ -15,7 +15,7 @@ export const auditActionSchema = z.enum([
 ]);
 export const auditEntitySchema = z.enum([
     "campaign", "campaign_lead", "contact", "email_account", "step", "template", "email_image",
-    "api_key", "webhook", "integration", "warmup_routing_rule", "warmup_template", "organization", "organization_member", "invitation",
+    "api_key", "webhook", "integration", "warmup_routing_rule", "organization", "organization_member", "invitation",
     "folder", "tag", "category", "subscription", "settings", "crm_pipeline", "crm_stage", "crm_deal", "crm_task", "crm_note",
     "unibox", "user",
 ]);

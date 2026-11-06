@@ -777,6 +777,8 @@ func Run(
 				campaigns.DELETE("/:id/attachments/:attachmentId", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.DeleteCampaignAttachment)
 				campaigns.POST("/:id/preflight", m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns), h.RunCampaignPreflight)
 				campaigns.GET("/:id/ab-analysis", m.RequireOrganization(), m.RequireAccess(models.PermViewAnalytics, models.APIPermReadAnalytics), h.GetCampaignABAnalysis)
+				// Where each opening step landed when the senders' warmup carried its copy.
+				campaigns.GET("/:id/warmup-placement", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.GetCampaignWarmupPlacement)
 				campaigns.POST("/:id/test-email", m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns), h.SendTestEmail)
 				// The campaign's scheduled placement test. PUT is a full-state
 				// write, so a retry lands on the same monitor.
@@ -1408,23 +1410,6 @@ func Run(
 				warmupRouting.POST("", h.CreateWarmupRoutingRule)
 				warmupRouting.PATCH("/:id", h.UpdateWarmupRoutingRule)
 				warmupRouting.DELETE("/:id", h.DeleteWarmupRoutingRule)
-			}
-
-			// Warmup templates (org-scoped). A workspace submits its own
-			// subject + opening body; the pick path sends it verbatim through
-			// that workspace's warmup pool, at most once per sender per day.
-			warmupTemplates := protected.Group("/warmup/templates")
-			warmupTemplates.Use(m.RequireOrganization(), m.RequireAccess(models.PermManageSettings, models.APIPermWarmupTemplates), m.RateLimitMiddleware(models.RateLimitWrite))
-			{
-				warmupTemplates.GET("", h.ListWarmupTemplates)
-				warmupTemplates.POST("", h.CreateWarmupTemplate)
-				warmupTemplates.POST("/check", h.CheckWarmupTemplate)
-				warmupTemplates.GET("/settings", h.GetWarmupTemplateSettings)
-				warmupTemplates.PUT("/settings", h.UpdateWarmupTemplateSettings)
-				warmupTemplates.GET("/campaign-copy", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.ListWarmupCampaignCopy)
-				warmupTemplates.GET("/:id", h.GetWarmupTemplate)
-				warmupTemplates.GET("/:id/stats", h.GetWarmupTemplateStats)
-				warmupTemplates.DELETE("/:id", h.DeleteWarmupTemplate)
 			}
 
 			// Reply templates (org-scoped)

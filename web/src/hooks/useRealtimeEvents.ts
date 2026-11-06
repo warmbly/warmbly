@@ -367,6 +367,13 @@ export function useRealtimeEvents() {
         return
       }
 
+      // A mailbox sent or received warmup mail: only its own counts moved.
+      if (event === 'WARMUP_ACTIVITY') {
+        const accountId = getString('email_account_id')
+        if (accountId) accountRefresh.add([['analytics', 'warmup', accountId], ['analytics', 'accounts', accountId]])
+        return
+      }
+
       if (includes('ACCOUNT', 'EMAIL_STATUS', 'EMAIL_ERROR', 'WARMUP')) {
         // ACCOUNT_SYNC_STATE: the mailbox's import finished or fair use
         // started/stopped holding it; the drawer's sync card refetches.
@@ -512,12 +519,11 @@ export function useRealtimeEvents() {
           suppression: [['suppressions'], ['contacts'], ['analytics']],
           segment: [['segments'], ['contacts', 'list']],
           form: [['forms']],
-          // A campaign starting, pausing or being renamed moves the warmup copy list.
-          campaign: [['campaigns'], ['analytics'], ['warmup-copy', 'campaign-copy']],
+          campaign: [['campaigns'], ['analytics']],
           // One lead paused or resumed inside one campaign: the Leads list and
           // its scope-chip counts move, and so does the contact drawer.
           campaign_lead: [['contacts'], ['campaigns']],
-          step: [['campaigns'], ['warmup-copy', 'campaign-copy']],
+          step: [['campaigns']],
           // ['emails'] rather than ['emails', 'list']: it prefix-matches the
           // per-mailbox detail reads too (['emails', id, 'behavior'] and its
           // rolled plan), so a teammate retuning a mailbox's sending behaviour
@@ -600,8 +606,6 @@ export function useRealtimeEvents() {
           crm_deal: [['crm', 'deals'], ['contacts']],
           crm_task: [['crm', 'tasks'], ['crm', 'deals']],
           warmup_routing_rule: [['analytics', 'warmup']],
-          // Templates and the own-copy settings on the warmup copy page.
-          warmup_template: [['analytics', 'warmup'], ['warmup-copy']],
           // Placement tests started or stopped and campaign monitors changed.
           placement_test: [['placement']],
           placement_monitor: [['placement']],

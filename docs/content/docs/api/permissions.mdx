@@ -1,6 +1,6 @@
 ---
 title: Permissions reference
-description: Complete reference for the 25 API permissions available in Warmbly.
+description: Complete reference for the 22 API permissions available in Warmbly.
 ---
 
 Warmbly uses a bitmask system for API permissions. Each permission is one bit in a `uint64`, so a single integer can express any combination of the permissions below.
@@ -35,7 +35,6 @@ These same permissions are the [OAuth](/api/oauth/) scopes, lowercased: `READ_EM
 | `WARMUP_ROUTING` | 21 | 2097152 | special | Manage warmup routing rules |
 | `AI_AGENT` | 22 | 4194304 | special | Run the AI assistant and MCP tools |
 | `AI_RESEARCH` | 23 | 8388608 | special | Run AI contact research |
-| `WARMUP_TEMPLATES` | 24 | 16777216 | special | Manage warmup templates |
 
 `AI_AGENT` gates the web and playbook tools (`search_web`, `fetch_url`, `load_skill`) on [`/v1/mcp`](/api/mcp/) and [`/ai/tools`](/api/agent-tools/); every other tool there checks its own scope. It also gates the [AI skills](/api/endpoints/#ai-skills) endpoints for keys; creating, editing or deleting a playbook with a key further needs the member who created the key to hold `manage_settings`.
 
@@ -57,7 +56,7 @@ High-volume operations. These can touch large numbers of rows in a single reques
 
 ### Special
 
-Realtime subscriptions, webhooks, integrations, warmup routing and templates, AI assistant / MCP access, AI contact research, and self-service key management. Grant individually.
+Realtime subscriptions, webhooks, integrations, warmup routing, AI assistant / MCP access, AI contact research, and self-service key management. Grant individually.
 
 ## What a role can delegate
 
@@ -73,7 +72,7 @@ An API key or an OAuth grant acts for a member of the workspace, so it never hol
 | `WRITE_CAMPAIGNS`, `WRITE_TEMPLATES`, `BULK_CAMPAIGNS` | `manage_campaigns` |
 | `WRITE_CONTACTS`, `WRITE_CRM`, `BULK_CONTACTS` | `manage_contacts` |
 | `SEND_CAMPAIGNS` | `send_campaigns` |
-| `WEBHOOKS`, `WARMUP_ROUTING`, `WARMUP_TEMPLATES` | `manage_settings` |
+| `WEBHOOKS`, `WARMUP_ROUTING` | `manage_settings` |
 | `API_KEYS` | `manage_api_keys` |
 | `INTEGRATIONS` | `use_integrations` |
 | `AI_AGENT` | `use_ai` |
@@ -102,12 +101,12 @@ READ_EMAILS | READ_CAMPAIGNS | READ_CONTACTS | READ_UNIBOX | READ_ANALYTICS
 = 688159
 ```
 
-### Full access (33554431)
+### Full access (16777215)
 
-All 25 permissions:
+All 24 permissions:
 
 ```
-(1 << 25) - 1 = 33554431
+(1 << 24) - 1 = 16777215
 ```
 
 ## Working with bitmasks
@@ -136,7 +135,7 @@ hasPermission(16387, 64);    // false: WRITE_CAMPAIGNS missing
 
 ### Rejecting unknown bits
 
-`POST /api-keys` rejects any request whose `permissions` field has bits outside the known set, so a stale client can't accidentally request a future permission. The current mask of valid bits is `33554431`.
+`POST /api-keys` rejects any request whose `permissions` field has bits outside the known set, so a stale client can't accidentally request a future permission. The current mask of valid bits is `4194303`.
 
 ## Common permission sets
 
@@ -218,7 +217,6 @@ export const Permissions = {
   WARMUP_ROUTING: 2097152,
   AI_AGENT: 4194304,
   AI_RESEARCH: 8388608,
-  WARMUP_TEMPLATES: 16777216,
 } as const;
 ```
 
@@ -252,7 +250,6 @@ class Permissions:
     WARMUP_ROUTING = 2097152
     AI_AGENT = 4194304
     AI_RESEARCH = 8388608
-    WARMUP_TEMPLATES = 16777216
 ```
 
 </Tab>
@@ -285,7 +282,6 @@ const (
     APIPermWarmupRouting                        // 2097152
     APIPermAIAgent                              // 4194304
     APIPermAIResearch                           // 8388608
-    APIPermWarmupTemplates                      // 16777216
 )
 ```
 
