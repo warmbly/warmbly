@@ -5,15 +5,14 @@
 // on its own. A personal Gmail address goes to the app-password walkthrough.
 
 import React from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { CheckIcon, ChevronDownIcon, ExternalLinkIcon, KeyRoundIcon, Loader2Icon, ShieldAlertIcon, ShieldCheckIcon } from "lucide-react";
+import { motion } from "framer-motion";
+import { CheckIcon, ExternalLinkIcon, KeyRoundIcon, Loader2Icon, ShieldAlertIcon, ShieldCheckIcon } from "lucide-react";
 
 import { Google } from "@/components/svg";
 import { TextInput } from "@/components/ui/field";
 import { CopyValue } from "@/components/app/emails/import/parts";
 import { Crumbs, Instruction } from "@/components/app/emails/import/grants/GrantSetupSteps";
 import { isPersonalGmail } from "@/lib/mailHost";
-import { cn } from "@/lib/utils";
 
 /** Admin console > Security > Access and data control > API controls > Manage Third-Party App Access. */
 export const GOOGLE_THIRD_PARTY_APPS_URL = "https://admin.google.com/ac/owl/list?tab=configuredApps";
@@ -30,7 +29,6 @@ export default function GoogleWorkspaceSigninPanel({
     onConnect,
     onPersonalGmail,
     onUseAppPassword,
-    onUseDelegation,
 }: {
     busy: boolean;
     viaCloud: boolean;
@@ -41,16 +39,13 @@ export default function GoogleWorkspaceSigninPanel({
     onConnect: (address: string) => void;
     onPersonalGmail: (address: string) => void;
     onUseAppPassword: () => void;
-    /** Offered when the instance takes whole-domain delegation grants. */
-    onUseDelegation?: () => void;
 }) {
     const [address, setAddress] = React.useState("");
-    const [adminOpen, setAdminOpen] = React.useState(true);
     const trimmed = address.trim();
     const personal = isPersonalGmail(trimmed);
     const valid = ADDRESS_RE.test(trimmed);
     // Brokered through Warmbly Cloud, the consent runs on the cloud's client, not this one.
-    const showAdmin = !viaCloud && !!clientId;
+    const showAdmin = !viaCloud;
 
     function submit() {
         if (busy || !valid) return;
@@ -75,49 +70,16 @@ export default function GoogleWorkspaceSigninPanel({
             </div>
 
             {showAdmin && (
-                <div className="rounded-md border border-slate-200 bg-white">
-                    <button
-                        type="button"
-                        onClick={() => setAdminOpen((o) => !o)}
-                        aria-expanded={adminOpen}
-                        className="w-full px-3 h-9 flex items-center gap-2 text-left"
-                    >
-                        <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Step 1</span>
-                        <span className="text-[12.5px] font-medium text-slate-900 min-w-0 truncate">Your Workspace admin trusts Warmbly, once per domain</span>
-                        <ChevronDownIcon className={cn("ml-auto w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform", adminOpen && "rotate-180")} />
-                    </button>
-                    <AnimatePresence initial={false}>
-                        {adminOpen && (
-                            <motion.div
-                                initial={{ height: 0, opacity: 0 }}
-                                animate={{ height: "auto", opacity: 1 }}
-                                exit={{ height: 0, opacity: 0 }}
-                                transition={{ duration: 0.18, ease: "easeOut" }}
-                                className="overflow-hidden"
-                            >
-                                <div className="px-3 pb-3 pt-1 space-y-3 border-t border-slate-100">
-                                    <p className="text-[11.5px] text-slate-500 leading-relaxed pt-2">
-                                        Marking Warmbly as a trusted app is what lets mailboxes on your domain connect. Without it, Google can show
-                                        &ldquo;Access blocked&rdquo; when a mailbox signs in. Already done for this domain? Skip to step 2.
-                                    </p>
-                                    <TrustedAppSteps clientId={clientId} />
-                                    {onUseDelegation && (
-                                        <p className="text-[11.5px] text-slate-500 leading-relaxed">
-                                            Rather not sign in each mailbox?{" "}
-                                            <button
-                                                type="button"
-                                                onClick={onUseDelegation}
-                                                className="text-sky-700 underline decoration-sky-300 hover:decoration-sky-600 transition-colors"
-                                            >
-                                                Connect the whole domain with delegation
-                                            </button>
-                                            : a super admin authorizes Warmbly once and no mailbox signs in.
-                                        </p>
-                                    )}
-                                </div>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
+                <div className="rounded-md border border-slate-200 bg-white px-3 py-3 space-y-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium shrink-0">Step 1</span>
+                        <span className="text-[12.5px] font-medium text-slate-900 min-w-0">Your Workspace admin trusts Warmbly, once per domain</span>
+                    </div>
+                    <p className="text-[11.5px] text-slate-500 leading-relaxed">
+                        Marking Warmbly as a trusted app is what lets mailboxes on your domain connect. Without it, Google can show
+                        &ldquo;Access blocked&rdquo; when a mailbox signs in. Already done for this domain? Go on to step 2.
+                    </p>
+                    <TrustedAppSteps clientId={clientId} />
                 </div>
             )}
 

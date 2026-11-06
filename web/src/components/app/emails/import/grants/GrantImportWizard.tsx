@@ -1,21 +1,19 @@
 // GrantImportWizard: the whole-domain (Google) and whole-organization
 // (Microsoft) routes of the connect modal, and the grant view the mailbox
-// drawer and the sign-in migration open. A new grant is a guided checklist
-// (Google: Authorize -> Verify, Microsoft: Admin approval); a workspace that
-// already holds grants starts at the list of them. Then Mailboxes (the granted
-// directory) -> Settings -> Import, the last being the file import's result screen.
+// drawer opens. A new Microsoft grant is one admin approval; new Google
+// delegation grants are retired, so Google only lists the grants already held.
+// Then Mailboxes (the granted directory) -> Settings -> Import, the last being
+// the file import's result screen.
 import React from "react";
 import { useConnectGrantUsers, useGrantConfig, useGrantUsers, useGrants } from "@/lib/api/hooks/app/emails/useMailboxGrants";
 import { domainOf, grantName, type DirectoryUser, type DomainGrant, type GrantProvider } from "@/lib/api/models/app/emails/MailboxSources";
-import useGoogleAdminSignin from "@/hooks/useGoogleAdminSignin";
 import useMicrosoftAdminConsent from "@/hooks/useMicrosoftAdminConsent";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import type { PickItem } from "../PickTable";
 import SourceImportWizard, { type SetupStep } from "../SourceImportWizard";
 import GrantAdminStep from "./GrantAdminStep";
-import { GoogleAuthorizeStep, GoogleVerifyStep, MicrosoftConsentStep } from "./GrantSetupSteps";
-import { useGoogleDraft } from "./googleDraft";
+import { MicrosoftConsentStep } from "./GrantSetupSteps";
 
 function toItem(u: DirectoryUser): PickItem {
     return {
@@ -33,7 +31,6 @@ function toItem(u: DirectoryUser): PickItem {
 export default function GrantImportWizard({
     provider,
     initialGrantId,
-    initialDomain,
     onDone,
     onAllowance,
     onDirtyChange,
@@ -41,8 +38,6 @@ export default function GrantImportWizard({
     provider: GrantProvider;
     /** Opens with this grant picked, e.g. from a mailbox connected through it. */
     initialGrantId?: string;
-    /** Google: opens the setup of a new domain with this one filled in. */
-    initialDomain?: string;
     onDone: () => void;
     onAllowance?: () => void;
     onDirtyChange?: (dirty: boolean) => void;
@@ -61,29 +56,22 @@ export default function GrantImportWizard({
 
     const enabled = provider === "google" ? config.data?.google_enabled === true : config.data?.microsoft_enabled === true;
     const loading = list.isLoading || config.isLoading;
-    // A new grant is set up step by step; with grants already here the list comes first.
-    const [adding, setAdding] = React.useState(!!initialDomain);
-    const noGrants = enabled && !loading && grants.length === 0;
+    // Only Microsoft takes a new grant; with grants already here the list comes first.
+    const canAdd = provider === "microsoft";
+    const [adding, setAdding] = React.useState(false);
+    const noGrants = canAdd && enabled && !loading && grants.length === 0;
     React.useEffect(() => {
         if (noGrants) setAdding(true);
     }, [noGrants]);
-    const setupMode = enabled && adding;
+    const setupMode = canAdd && enabled && adding;
     const cancelSetup = grants.length > 0 ? () => setAdding(false) : undefined;
 
-    const draft = useGoogleDraft(initialDomain ?? "");
     const [msError, setMsError] = React.useState<string | null>(null);
 
     const granted = React.useCallback((g: DomainGrant) => {
         setGrantId(g.id);
         if (g.status === "active") goRef.current?.("pick");
     }, []);
-    const googleSignin = useGoogleAdminSignin(
-        (g) => {
-            draft.reset();
-            granted(g);
-        },
-        (text, code) => draft.setError({ text, code }),
-    );
     const msConsent = useMicrosoftAdminConsent((g) => {
         setMsError(null);
         granted(g);
@@ -97,33 +85,7 @@ export default function GrantImportWizard({
           : null;
 
     let setupSteps: SetupStep[];
-    if (setupMode && provider === "google") {
-        setupSteps = [
-            {
-                key: "authorize",
-                label: "Authorize",
-                issue: null,
-                cta: "I've authorized it",
-                render: () => <GoogleAuthorizeStep config={config.data} onCancel={cancelSetup} />,
-            },
-            {
-                key: "verify",
-                label: "Verify domain",
-                issue: grant ? grantIssue : "Prove the domain is yours first: sign in as its super admin, or check the DNS record.",
-                render: (_next, goTo) => (
-                    <GoogleVerifyStep
-                        draft={draft}
-                        signin={googleSignin}
-                        onGranted={(g) => {
-                            draft.reset();
-                            granted(g);
-                        }}
-                        onBackToAuthorize={() => goTo("authorize")}
-                    />
-                ),
-            },
-        ];
-    } else if (setupMode) {
+    if (setupMode) {
         setupSteps = [
             {
                 key: "consent",
@@ -137,7 +99,7 @@ export default function GrantImportWizard({
             {
                 key: "source",
                 label: provider === "google" ? "Domain" : "Organization",
-                issue: grant ? grantIssue : `Connect a ${noun} first, or pick one.`,
+                issue: grant ? grantIssue : canAdd ? `Connect a ${noun} first, or pick one.` : `Pick a ${noun} first.`,
                 render: (next) => (
                     <GrantAdminStep
                         provider={provider}
@@ -149,10 +111,14 @@ export default function GrantImportWizard({
                             setGrantId(g?.id ?? null);
                             if (g && advance) next();
                         }}
-                        onAddNew={() => {
-                            setGrantId(null);
-                            setAdding(true);
-                        }}
+                        onAddNew={
+                            canAdd
+                                ? () => {
+                                      setGrantId(null);
+                                      setAdding(true);
+                                  }
+                                : undefined
+                        }
                     />
                 ),
             },
@@ -167,7 +133,6 @@ export default function GrantImportWizard({
                 if (grants.length > 0) setAdding(false);
             }}
             sourceKey={grantId}
-            sourceDirty={provider === "google" && setupMode && !grant && draft.dirty}
             pickNote={() =>
                 grant ? (
                     <p className="text-[11.5px] text-slate-500">

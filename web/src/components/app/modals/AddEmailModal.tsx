@@ -6,7 +6,7 @@
 // triptych.
 //
 // Flow:
-//   provider picker ─► Google ─► Workspace: whole domain (delegation) ─► /emails/grants (GrantImportWizard)
+//   provider picker ─► Google ─► Workspace: existing delegation grants only ─► /emails/grants (GrantImportWizard)
 //                    │         ├► personal Gmail: app password walkthrough ─► /emails/onboarding/smtp-imap
 //                    │         └► Workspace: Sign in with Google ─┐ (trusted app; when frontend and backend allow it)
 //                    ├► Microsoft ─► whole organization ─► /emails/grants (GrantImportWizard)
@@ -16,8 +16,8 @@
 //                    └► inbox vendor ────────────► /emails/vendors (VendorImportWizard)
 //
 // Google and Microsoft each open a method chooser. Google splits Workspace
-// (sign in each mailbox once the admin trusts the app, or a delegation grant)
-// from personal Gmail (app password). Per-mailbox Google sign-in requires the
+// (sign in each mailbox once the admin trusts the app; delegation only for
+// grants already held) from personal Gmail (app password). Per-mailbox Google sign-in requires the
 // frontend's opt-in and either a confirmed backend capability or a Warmbly
 // Cloud connection; a personal Gmail address is always sent to app passwords.
 //
@@ -84,7 +84,7 @@ import MailboxImportWizard from "@/components/app/emails/import/MailboxImportWiz
 import VendorImportWizard from "@/components/app/emails/import/vendors/VendorImportWizard";
 import GrantImportWizard from "@/components/app/emails/import/grants/GrantImportWizard";
 import ProviderLogo, { LogoStack } from "@/components/app/emails/ProviderLogo";
-import { useGrantConfig } from "@/lib/api/hooks/app/emails/useMailboxGrants";
+import { useGrantConfig, useGrants } from "@/lib/api/hooks/app/emails/useMailboxGrants";
 import { useMailboxSourceBusy } from "@/lib/api/hooks/app/emails/mailboxSourceBusy";
 import { useVendorCatalog } from "@/lib/api/hooks/app/emails/useMailboxVendors";
 import { DitherMeter, type DitherTone } from "@/components/ui/dither";
@@ -349,7 +349,6 @@ export default function AddEmailModal() {
                                                     navigate("gmail_app_password");
                                                 }}
                                                 onUseAppPassword={() => navigate("gmail_app_password")}
-                                                onUseDelegation={grantConfig.data?.google_enabled ? () => navigate("grant_google") : undefined}
                                             />
                                         )
                                     )}
@@ -716,6 +715,7 @@ function MethodChooser({
     open: boolean;
 }) {
     const grantConfig = useGrantConfig(open);
+    const googleGrants = (useGrants(open && provider === "google").data?.data ?? []).some((g) => g.provider === "google");
     const busy = useMailboxSourceBusy();
     const methods: Method[] = [];
     if (provider === "google") {
@@ -731,13 +731,13 @@ function MethodChooser({
                 section: WORKSPACE_SECTION,
             });
         }
-        if (grantConfig.data?.google_enabled) {
+        // New delegation grants are retired; the domains already granted stay reachable.
+        if (grantConfig.data?.google_enabled && googleGrants) {
             methods.push({
                 view: "grant_google",
                 icon: <Building2Icon className="w-4 h-4 text-slate-700" />,
                 title: "Whole Workspace domain",
-                sub: "Domain-wide delegation: a super admin authorizes Warmbly once, then you pick the mailboxes. No mailbox signs in.",
-                pill: gmailOAuth ? undefined : { label: "Recommended", tone: "sky" },
+                sub: "Your existing domain-wide delegation grants: connect more of their mailboxes, check or remove a grant.",
                 section: WORKSPACE_SECTION,
             });
         }

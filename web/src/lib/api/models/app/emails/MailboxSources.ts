@@ -84,23 +84,9 @@ export interface GrantConfig {
     /** Settings an operator still has to set; empty when enabled. */
     google_missing?: string[];
     microsoft_missing?: string[];
-    /** The per-mailbox Google sign-in client a Workspace admin marks Trusted; absent when sign-in is off. */
+    /** The per-mailbox Google sign-in client a Workspace admin marks Trusted; absent with no client configured. */
     google_mailbox_client_id?: string;
 }
-
-/**
- * How a workspace proves it controls a Workspace domain. "signin" opens `url`
- * for the administrator; the DNS record works either way.
- */
-export interface GoogleGrantStart {
-    method: "signin" | "dns";
-    url?: string;
-    state?: string;
-    txt_name: string;
-    txt_value: string;
-}
-
-export type GoogleGrantFinish = { state: string; code: string } | { domain: string; admin_email: string };
 
 export interface DomainGrant {
     id: string;

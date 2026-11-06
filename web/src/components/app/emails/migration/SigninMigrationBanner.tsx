@@ -43,8 +43,9 @@ export default function SigninMigrationBanner({ total, onOpen }: { total: number
             <div className="flex items-center gap-2 min-w-0 flex-1">
                 <AlertTriangleIcon className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                 <p className="text-[12px] text-amber-900 min-w-0">
-                    {total === 1 ? "1 mailbox connects" : `${total.toLocaleString()} mailboxes connect`} with Google sign-in.
-                    You can optionally switch to an admin grant or an app password without losing history.
+                    {total === 1 ? "1 mailbox connects" : `${total.toLocaleString()} mailboxes connect`} with the older Google sign-in.
+                    You can reconnect with the new Google sign-in once your Workspace admin trusts Warmbly, or switch to an app
+                    password, without losing history.
                 </p>
             </div>
             <div className="flex items-center gap-1 shrink-0 ml-auto">
@@ -60,7 +61,7 @@ export default function SigninMigrationBanner({ total, onOpen }: { total: number
                     onClick={onOpen}
                     className="h-7 px-2.5 rounded-md bg-amber-600 hover:bg-amber-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
                 >
-                    Move mailboxes
+                    Review mailboxes
                     <ArrowRightIcon className="w-3 h-3" />
                 </button>
             </div>
@@ -77,7 +78,7 @@ export function SigninRetiringChip({ onClick, className }: { onClick: () => void
                 e.stopPropagation();
                 onClick();
             }}
-            title="This mailbox uses Google sign-in. You can optionally switch its connection method."
+            title="This mailbox uses the older Google sign-in. You can reconnect it with the new Google sign-in or switch to an app password."
             aria-label="Google sign-in: switch connection method"
             className={cn(
                 "inline-flex items-center gap-1 h-[18px] pl-0.5 pr-0.5 md:pr-1.5 rounded-full border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors shrink-0",
