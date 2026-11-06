@@ -274,7 +274,6 @@ func main() {
 	var subscriptionService subscription.SubscriptionService
 	var stripeService stripe.StripeService
 	var discountService discount.DiscountService
-	var referralService referral.Service
 	var organizationService organization.OrganizationService
 	// Private plan offers and the credential-free Cloud warmup grant; selfExecutionGrants is shared with the pool link.
 	var planOfferService planoffer.Service
@@ -1160,22 +1159,17 @@ func main() {
 			GoogleIOSClientID: authCfg.GoogleIOSClientID,
 		}
 
-		// Referral program. Wired bidirectionally with Stripe (webhooks reward and
-		// claw back; the earnings ledger nets onto the referrer's customer balance)
-		// and into auth so a signup carrying ?ref= is attributed to its referrer.
-		referralRepository := repository.NewReferralRepository(primaryDB.Pool)
-		referralService = referral.NewService(
-			referralRepository,
-			discountCodeRepository,
+		// Referrals already attributed are still rewarded and clawed back by the
+		// Stripe webhooks, onto the referrer's customer balance.
+		referralService := referral.NewService(
+			repository.NewReferralRepository(primaryDB.Pool),
 			planRepository,
 			subscriptionRepository,
 			userRepostory,
 			auditService,
-			os.Getenv("APP_URL"),
 		)
 		stripeService.WireReferral(referralService)
 		referralService.WireBalancer(stripeService)
-		authService.WireReferral(referralService)
 		var passkeyErr error
 		passkeyService, passkeyErr = passkey.New(passkey.Deps{
 			Repo:          webauthnRepository,
@@ -2568,7 +2562,6 @@ func main() {
 		SubscriptionService: subscriptionService,
 		StripeService:       stripeService,
 		DiscountService:     discountService,
-		ReferralService:     referralService,
 		PlanOfferService:    planOfferService,
 
 		// Trial & feature gates

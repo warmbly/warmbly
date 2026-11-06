@@ -34,14 +34,13 @@ type SignupOrigin struct {
 	UserAgent string
 }
 
-// SignupAttribution is everything the signup link carried: who sent the person
-// (a referral code or a team invitation) and where they came from. All three
-// are captured at RegistrationStart, held on the registration session across
-// the emailed code, and applied once the account and its organization exist.
+// SignupAttribution is everything the signup link carried: the team invitation
+// it may hold and where the person came from. Both are captured at
+// RegistrationStart, held on the registration session across the emailed
+// code, and applied once the account and its organization exist.
 type SignupAttribution struct {
-	ReferralCode string
-	Invite       string
-	Acquisition  models.OrgAcquisition
+	Invite      string
+	Acquisition models.OrgAcquisition
 }
 
 func (s *authService) createAccount(ctx context.Context, address, passwordHash string, attr SignupAttribution, origin SignupOrigin) (*models.User, *errx.Error) {
@@ -145,14 +144,6 @@ func (s *authService) createAccount(ctx context.Context, address, passwordHash s
 		}
 	}
 
-	// Attribute the signup to a referrer if a referral code rode along.
-	// Best-effort: a bad or self-referral code never fails registration.
-	if s.referral != nil && org != nil && attr.ReferralCode != "" {
-		if xerr := s.referral.AttributeSignup(ctx, attr.ReferralCode, org.ID, u.ID); xerr != nil {
-			errs.CaptureException(xerr)
-		}
-	}
-
 	workspace := ""
 	if org != nil {
 		workspace = org.Name
@@ -212,8 +203,7 @@ func (s *authService) countSignup(u *models.User, org *models.Organization, attr
 		channel["referrer_host"] = acq.ReferrerHost
 	}
 	props := map[string]any{
-		"invited":  attr.Invite != "",
-		"referred": attr.ReferralCode != "",
+		"invited": attr.Invite != "",
 	}
 	for k, v := range channel {
 		props[k] = v

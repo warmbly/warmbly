@@ -338,7 +338,6 @@ final class RealtimeService {
         "lead_sync_source": [.integrations, .contacts],
         "meeting": [.meetings, .crm],
         "subscription": [.billing],
-        "referral": [.billing],
         "referral_credit": [.billing],
         "settings": [.settings],
         "unibox": [.unibox],

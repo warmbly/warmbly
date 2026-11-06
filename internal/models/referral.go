@@ -82,33 +82,3 @@ type ReferralEarningsTransaction struct {
 	IdempotencyKey             *string    `json:"idempotency_key,omitempty"`
 	CreatedAt                  time.Time  `json:"created_at"`
 }
-
-// ReferralSummary is the dashboard payload: the user's share code/link, their
-// earnings totals, and a breakdown of where their referrals stand.
-type ReferralSummary struct {
-	Code              string `json:"code"`
-	ShareURL          string `json:"share_url"`
-	Currency          string `json:"currency"`
-	InviteePercentOff int    `json:"invitee_percent_off"`
-	InviteeMonths     int    `json:"invitee_months"`
-
-	BalanceCents        int64 `json:"balance_cents"`
-	LifetimeEarnedCents int64 `json:"lifetime_earned_cents"`
-
-	TotalReferred int `json:"total_referred"`
-	Pending       int `json:"pending"`
-	Qualified     int `json:"qualified"`
-	Rewarded      int `json:"rewarded"`
-}
-
-// ReferralAttributionsResult is a paginated list of a referrer's attributions.
-type ReferralAttributionsResult struct {
-	Data       []ReferralAttribution `json:"data"`
-	Pagination CPagination           `json:"pagination"`
-}
-
-// ReferralEarningsResult is a paginated list of a referrer's earnings trail.
-type ReferralEarningsResult struct {
-	Data       []ReferralEarningsTransaction `json:"data"`
-	Pagination CPagination                   `json:"pagination"`
-}

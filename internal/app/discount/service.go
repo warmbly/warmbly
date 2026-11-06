@@ -348,6 +348,14 @@ func (s *service) resolve(ctx context.Context, orgID uuid.UUID, code string, pla
 	if dc == nil {
 		return nil, "That discount code doesn't exist.", nil
 	}
+	held, err := s.codeRepo.ReferralHeldFrom(ctx, dc.ID, orgID)
+	if err != nil {
+		errs.CaptureException(err)
+		return nil, "", errx.New(errx.Internal, "failed to validate discount code")
+	}
+	if held {
+		return nil, "That discount code doesn't exist.", nil
+	}
 
 	if dc.Status != models.DiscountCodeStatusActive {
 		return dc, "This discount code is no longer active.", nil
