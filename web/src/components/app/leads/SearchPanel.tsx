@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
+import { AnimatePresence, motion } from "framer-motion";
 import {
     CheckIcon,
     ChevronDownIcon,
@@ -81,12 +82,14 @@ export default function SearchPanel({
                     />
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1">
-                    {picked && !QUICK.includes(picked.id) && (
-                        <Chip on onClick={() => onCategory("")}>
-                            {picked.label}
-                            <XIcon className="size-3" />
-                        </Chip>
-                    )}
+                    <AnimatePresence initial={false} mode="popLayout">
+                        {picked && !QUICK.includes(picked.id) && (
+                            <Chip key={picked.id} on onClick={() => onCategory("")}>
+                                {picked.label}
+                                <XIcon className="size-3" />
+                            </Chip>
+                        )}
+                    </AnimatePresence>
                     {quick.map((c) => (
                         <Chip key={c.id} on={category === c.id} onClick={() => onCategory(category === c.id ? "" : c.id)}>
                             {c.label}
@@ -100,8 +103,19 @@ export default function SearchPanel({
                 <div className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Where</div>
                 <LocationSearch value={location} onChange={onLocation} near={near} onPick={onPlace} />
                 <div className="mt-2 flex items-center gap-1.5">
-                    <span className="min-w-0 flex-1 truncate text-[11.5px] text-slate-500">
-                        {area ? describeArea(area) : "The visible map, or draw an area"}
+                    <span className="relative min-w-0 flex-1 overflow-hidden text-[11.5px]">
+                        <AnimatePresence mode="wait" initial={false}>
+                            <motion.span
+                                key={area ? describeArea(area) : "view"}
+                                initial={{ opacity: 0, y: 4 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -4 }}
+                                transition={{ duration: 0.14 }}
+                                className={cn("block truncate", area ? "font-medium text-sky-700" : "text-slate-500")}
+                            >
+                                {area ? describeArea(area) : "The visible map, or draw an area"}
+                            </motion.span>
+                        </AnimatePresence>
                     </span>
                     <ToolButton label="Draw a rectangle" onClick={() => onTool("rect")}>
                         <SquareIcon className="size-3.5" />
@@ -112,11 +126,15 @@ export default function SearchPanel({
                     <ToolButton label="Draw a shape" onClick={() => onTool("polygon")}>
                         <PentagonIcon className="size-3.5" />
                     </ToolButton>
-                    {area && (
-                        <ToolButton label="Use the visible map instead" onClick={onClearArea}>
-                            <XIcon className="size-3.5" />
-                        </ToolButton>
-                    )}
+                    <AnimatePresence initial={false}>
+                        {area && (
+                            <motion.span key="clear" initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.6 }} transition={{ duration: 0.14 }}>
+                                <ToolButton label="Use the visible map instead" onClick={onClearArea}>
+                                    <XIcon className="size-3.5" />
+                                </ToolButton>
+                            </motion.span>
+                        )}
+                    </AnimatePresence>
                 </div>
             </div>
 
@@ -167,20 +185,58 @@ export default function SearchPanel({
                         </div>
                     </PopoverMenuContent>
                 </PopoverMenu>
-                {current && <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">{current.description}</p>}
+                <AnimatePresence mode="wait" initial={false}>
+                    {current && (
+                        <motion.p
+                            key={current.id}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.14 }}
+                            className="mt-1.5 text-[11px] leading-relaxed text-slate-400"
+                        >
+                            {current.description}
+                        </motion.p>
+                    )}
+                </AnimatePresence>
             </div>
 
             <div>
-                <button
+                <motion.button
                     type="button"
                     disabled={searching || !!blockedReason}
                     onClick={onSearch}
-                    className="h-8 w-full rounded-md bg-sky-600 text-white text-[12.5px] font-medium inline-flex items-center justify-center gap-1.5 hover:bg-sky-700 disabled:opacity-50 disabled:hover:bg-sky-600 transition-colors"
+                    whileTap={searching || blockedReason ? undefined : { scale: 0.98 }}
+                    className="relative h-8 w-full overflow-hidden rounded-md bg-sky-600 text-white text-[12.5px] font-medium inline-flex items-center justify-center gap-1.5 hover:bg-sky-700 disabled:opacity-50 disabled:hover:bg-sky-600 transition-colors"
                 >
-                    {searching ? <Loader2Icon className="size-3.5 animate-spin" /> : <SearchIcon className="size-3.5" />}
-                    {searching ? "Searching…" : area ? "Search this area" : "Search the visible map"}
-                </button>
-                {blockedReason && <p className="mt-1.5 text-[11px] text-amber-700">{blockedReason}</p>}
+                    {searching && <span className="absolute inset-y-0 w-1/3 bg-white/20 progress-sweep" aria-hidden />}
+                    <AnimatePresence mode="wait" initial={false}>
+                        <motion.span
+                            key={searching ? "busy" : area ? "area" : "view"}
+                            initial={{ opacity: 0, y: 5 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -5 }}
+                            transition={{ duration: 0.14 }}
+                            className="relative inline-flex items-center gap-1.5"
+                        >
+                            {searching ? <Loader2Icon className="size-3.5 animate-spin" /> : <SearchIcon className="size-3.5" />}
+                            {searching ? "Searching…" : area ? "Search this area" : "Search the visible map"}
+                        </motion.span>
+                    </AnimatePresence>
+                </motion.button>
+                <AnimatePresence initial={false}>
+                    {blockedReason && (
+                        <motion.p
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.18 }}
+                            className="overflow-hidden pt-1.5 text-[11px] text-amber-700"
+                        >
+                            {blockedReason}
+                        </motion.p>
+                    )}
+                </AnimatePresence>
             </div>
         </div>
     );
@@ -188,17 +244,23 @@ export default function SearchPanel({
 
 function Chip({ on, onClick, children }: { on?: boolean; onClick: () => void; children: React.ReactNode }) {
     return (
-        <button
+        <motion.button
+            layout
             type="button"
             onClick={onClick}
             aria-pressed={!!on}
+            initial={{ opacity: 0, scale: 0.85 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.85 }}
+            whileTap={{ scale: 0.94 }}
+            transition={{ type: "spring", stiffness: 520, damping: 34, mass: 0.6 }}
             className={cn(
                 "h-6 px-2 rounded-full border text-[11.5px] inline-flex items-center gap-1 transition-colors",
                 on ? "border-sky-300 bg-sky-50 text-sky-700" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900",
             )}
         >
             {children}
-        </button>
+        </motion.button>
     );
 }
 

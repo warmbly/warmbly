@@ -72,3 +72,43 @@ export function refineCount(r: Refine): number {
     );
 }
 
+
+export interface RefineChip {
+    key: string;
+    label: string;
+    clear: (r: Refine) => Refine;
+}
+
+const REACH_LABEL: Record<ReachFilter, string> = {
+    email: "Has email",
+    people: "Has people",
+    website: "Has website",
+    phone: "Has phone",
+    socials: "Has socials",
+    no_website: "No website",
+};
+
+const STATUS_LABEL: Record<LeadStatus, string> = { new: "New", saved: "Saved", contacted: "Contacted", dismissed: "Dismissed" };
+
+// refineChips lists each active filter as something the filter bar can show and clear.
+export function refineChips(r: Refine): RefineChip[] {
+    const out: RefineChip[] = r.reach.map((id) => ({
+        key: `reach:${id}`,
+        label: REACH_LABEL[id],
+        clear: (x) => ({ ...x, reach: x.reach.filter((v) => v !== id) }),
+    }));
+    if (r.minRating != null) out.push({ key: "rating", label: `${r.minRating}+ stars`, clear: (x) => ({ ...x, minRating: null }) });
+    if (r.minReviews > 0) out.push({ key: "minReviews", label: `${r.minReviews}+ reviews`, clear: (x) => ({ ...x, minReviews: 0 }) });
+    if (r.maxReviews > 0) out.push({ key: "maxReviews", label: `Up to ${r.maxReviews} reviews`, clear: (x) => ({ ...x, maxReviews: 0 }) });
+    if (r.minScore > 0) out.push({ key: "minScore", label: `Score ${r.minScore}+`, clear: (x) => ({ ...x, minScore: 0 }) });
+    for (const s of r.statuses) {
+        out.push({ key: `status:${s}`, label: STATUS_LABEL[s], clear: (x) => ({ ...x, statuses: x.statuses.filter((v) => v !== s) }) });
+    }
+    if (r.category) out.push({ key: "category", label: r.category, clear: (x) => ({ ...x, category: "" }) });
+    if (r.tag) out.push({ key: "tag", label: `#${r.tag}`, clear: (x) => ({ ...x, tag: "" }) });
+    if (r.inView) out.push({ key: "inView", label: "In map view", clear: (x) => ({ ...x, inView: false }) });
+    if (r.hideContacts) out.push({ key: "hideContacts", label: "Not in contacts", clear: (x) => ({ ...x, hideContacts: false }) });
+    if (r.excludeChains) out.push({ key: "excludeChains", label: "No chains", clear: (x) => ({ ...x, excludeChains: false }) });
+    if (!r.hideDismissed && r.statuses.length === 0) out.push({ key: "dismissed", label: "Dismissed shown", clear: (x) => ({ ...x, hideDismissed: true }) });
+    return out;
+}

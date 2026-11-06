@@ -1,6 +1,7 @@
 import { useState } from "react";
+import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import toast from "react-hot-toast/headless";
-import { BookmarkIcon, HistoryIcon, MoreHorizontalIcon, PencilIcon, Trash2Icon } from "lucide-react";
+import { BookmarkIcon, ChevronDownIcon, HistoryIcon, MoreHorizontalIcon, PencilIcon, Trash2Icon } from "lucide-react";
 import { PopoverMenu, PopoverMenuContent, PopoverMenuItem, PopoverMenuSeparator, PopoverMenuTrigger } from "@/components/ui/popover-menu";
 import { useConfirm } from "@/hooks/context/confirm";
 import type { AppError } from "@/lib/api/client/normalizeError";
@@ -35,18 +36,24 @@ export default function SavedSearches({
     }
     if (!list.length) {
         return (
-            <div className="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center">
-                <HistoryIcon className="mx-auto size-5 text-slate-300" />
-                <p className="mt-2 text-[12.5px] font-medium text-slate-900">No searches yet</p>
-                <p className="mt-0.5 text-[11.5px] text-slate-400">Every search lands here. Star one to keep it at the top.</p>
+            <div className="flex items-start gap-2.5 rounded-lg border border-dashed border-slate-200 px-3 py-3">
+                <HistoryIcon className="mt-0.5 size-4 shrink-0 text-slate-300" />
+                <p className="text-[11.5px] leading-relaxed text-slate-500">
+                    Your searches show up here, so you can open one again later. Bookmark the ones you come back to.
+                </p>
             </div>
         );
     }
+    // One layout group, so a bookmarked search glides from Recent up into Saved.
     return (
-        <div className="space-y-4">
-            {saved.length > 0 && <Section title="Saved" items={saved} config={config} activeId={activeId} onOpen={onOpen} />}
-            {recent.length > 0 && <Section title="Recent" items={recent} config={config} activeId={activeId} onOpen={onOpen} />}
-        </div>
+        <LayoutGroup>
+            <div className="space-y-4">
+                <AnimatePresence initial={false}>
+                    {saved.length > 0 && <Section key="saved" title="Saved" items={saved} config={config} activeId={activeId} onOpen={onOpen} />}
+                </AnimatePresence>
+                {recent.length > 0 && <Section title="Recent" items={recent} config={config} activeId={activeId} onOpen={onOpen} cap={4} />}
+            </div>
+        </LayoutGroup>
     );
 }
 
@@ -56,22 +63,44 @@ function Section({
     config,
     activeId,
     onOpen,
+    cap,
 }: {
     title: string;
     items: LeadSearch[];
     config: LeadFinderConfig;
     activeId: string | null;
     onOpen: (s: LeadSearch) => void;
+    /** Show this many until the list is opened up. */
+    cap?: number;
 }) {
+    const [all, setAll] = useState(false);
+    const hidden = cap && !all ? Math.max(items.length - cap, 0) : 0;
+    const shown = hidden ? items.slice(0, cap) : items;
     return (
-        <div>
-            <div className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">{title}</div>
+        <motion.div layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
+            <motion.div layout="position" className="mb-1.5 flex items-center text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">
+                {title}
+                <span className="ml-1.5 tabular-nums text-slate-300">{items.length}</span>
+            </motion.div>
             <ul className="space-y-1">
-                {items.map((s) => (
-                    <SearchRow key={s.id} search={s} config={config} active={s.id === activeId} onOpen={() => onOpen(s)} />
-                ))}
+                <AnimatePresence initial={false}>
+                    {shown.map((s) => (
+                        <SearchRow key={s.id} search={s} config={config} active={s.id === activeId} onOpen={() => onOpen(s)} />
+                    ))}
+                </AnimatePresence>
             </ul>
-        </div>
+            {cap && items.length > cap && (
+                <motion.button
+                    layout="position"
+                    type="button"
+                    onClick={() => setAll((v) => !v)}
+                    className="mt-1.5 inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11.5px] text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                >
+                    {all ? "Show fewer" : `Show ${hidden} more`}
+                    <ChevronDownIcon className={cn("size-3 transition-transform duration-200", all && "rotate-180")} />
+                </motion.button>
+            )}
+        </motion.div>
     );
 }
 
@@ -94,7 +123,13 @@ function SearchRow({ search, config, active, onOpen }: { search: LeadSearch; con
     };
 
     return (
-        <li
+        <motion.li
+            layout
+            layoutId={`lead-search-${search.id}`}
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.97 }}
+            transition={{ type: "spring", stiffness: 480, damping: 38, mass: 0.7 }}
             onClick={() => !editing && onOpen()}
             className={cn(
                 "group rounded-md border px-2.5 py-2 cursor-pointer transition-colors",
@@ -177,6 +212,6 @@ function SearchRow({ search, config, active, onOpen }: { search: LeadSearch; con
                 <span className="truncate">{provider}</span>
                 <span className="ml-auto shrink-0 text-slate-400">{timeAgo(search.last_run_at)}</span>
             </div>
-        </li>
+        </motion.li>
     );
 }

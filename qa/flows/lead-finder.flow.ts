@@ -11,7 +11,6 @@ test.describe("lead finder", () => {
     await expect(page.getByRole("heading", { name: "Lead finder" })).toBeVisible();
     await proof.chapter("Lead finder", "Local businesses on a map, enriched from their own websites");
 
-    await page.getByRole("button", { name: "Searches" }).click();
     await page.getByText("Dentists in downtown Austin").click();
     await expect(page.getByText("Bright Smiles Dental").first()).toBeVisible();
     await expect(page.getByText(/36 on map/)).toBeVisible();
@@ -52,17 +51,21 @@ test.describe("lead finder", () => {
 
   test("filter to verified, well rated leads, select them and export or add them to contacts", async ({ page, proof }) => {
     await page.goto("/app/leads");
-    await page.getByRole("button", { name: "Searches" }).click();
     await page.getByText("Dentists in downtown Austin").click();
     await expect(page.getByText("Bright Smiles Dental").first()).toBeVisible();
     await proof.chapter("Refine and act", "Filter the list, then work the whole selection at once");
 
-    await page.getByRole("button", { name: "Filter", exact: true }).click();
     await page.getByRole("button", { name: "Has email" }).click();
     await page.getByRole("button", { name: "4+", exact: true }).click();
     await expect(page.getByText(/\d+ leads?$/).first()).toBeVisible();
     await proof.dwell();
     await proof.shot("filtered", { caption: "Only leads with an email and four stars or more, on the map and in the list" });
+
+    await page.getByRole("button", { name: /^Filters/ }).click();
+    await expect(page.getByRole("dialog", { name: "Filters" }).getByText("Reachability")).toBeVisible();
+    await proof.dwell();
+    await proof.shot("filter-panel", { caption: "Every other filter one click away above the results, no switching away from the search" });
+    await page.keyboard.press("Escape");
 
     await page.getByRole("checkbox", { name: "Select every lead on screen" }).check();
     await expect(page.getByText(/selected$/)).toBeVisible();
@@ -87,7 +90,6 @@ test.describe("lead finder", () => {
 
   test("see who runs a business, ask for someone's email and pick where businesses come from", async ({ page, proof }) => {
     await page.goto("/app/leads");
-    await page.getByRole("button", { name: "Searches" }).click();
     await page.getByText("Dentists in downtown Austin").click();
     await expect(page.getByText("Bright Smiles Dental").first()).toBeVisible();
     await proof.chapter("People", "Who runs each business, and how to reach them");
@@ -109,7 +111,6 @@ test.describe("lead finder", () => {
     await proof.shot("find-someone", { caption: "Name anyone at the business and their address is worked out from the domain and checked" });
     await drawer.getByRole("button", { name: "Close" }).click();
 
-    await page.getByRole("main").getByRole("button", { name: "Search", exact: true }).click();
     await page.getByRole("button", { name: /OpenStreetMap/ }).click();
     await expect(page.getByRole("menuitem", { name: /Google Places/ })).toBeVisible();
     await proof.dwell();

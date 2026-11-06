@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast/headless";
+import { motion } from "framer-motion";
 import {
-    BookmarkIcon,
     CheckIcon,
     FocusIcon,
     HandIcon,
@@ -16,8 +16,6 @@ import {
     PentagonIcon,
     PlusIcon,
     RotateCw,
-    SearchIcon,
-    SlidersHorizontalIcon,
     SquareIcon,
     CircleIcon,
     XIcon,
@@ -28,8 +26,8 @@ import { PopoverMenu, PopoverMenuContent, PopoverMenuItem, PopoverMenuLabel, Pop
 import AddToContactsDialog from "@/components/app/leads/AddToContactsDialog";
 import EnrichmentProgress from "@/components/app/leads/EnrichmentProgress";
 import ExportDialog from "@/components/app/leads/ExportDialog";
-import FilterPanel from "@/components/app/leads/FilterPanel";
-import { EMPTY_REFINE, refineCount, refineFilter, type Refine } from "@/components/app/leads/refine";
+import LeadFilterBar from "@/components/app/leads/LeadFilterBar";
+import { EMPTY_REFINE, refineFilter, type Refine } from "@/components/app/leads/refine";
 import { LEGEND } from "@/components/app/leads/legend";
 import LeadDrawer from "@/components/app/leads/LeadDrawer";
 import LeadMap, { type ColorBy, type FlyTarget, type MapControls, type MapLayerMode, type MapTool, type MapView } from "@/components/app/leads/LeadMap";
@@ -59,7 +57,6 @@ import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores";
 
 type ViewMode = "split" | "map" | "list";
-type SideTab = "search" | "filter" | "saved";
 type StyleChoice = "auto" | "light" | "dark" | "streets";
 
 interface Prefs {
@@ -142,7 +139,6 @@ function Finder({ config }: { config: LeadFinderConfig }) {
     const [refine, setRefine] = useState<Refine>(EMPTY_REFINE);
     const [text, setText] = useState("");
     const [sort, setSort] = useState<LeadSort>("score");
-    const [side, setSide] = useState<SideTab>("search");
     const [sideOpen, setSideOpen] = useState(false);
 
     // Selection and detail.
@@ -346,82 +342,68 @@ function Finder({ config }: { config: LeadFinderConfig }) {
         return s;
     }, [selected, hoverId]);
 
-    const sideCount = refineCount(refine);
     const showMap = prefs.mode !== "list";
     const showList = prefs.mode !== "map";
 
+    // One column, no switching: the search form, then every past search under it.
     const sidebar = (
         <div className="flex h-full flex-col">
-            <div className="shrink-0 h-10 px-2 flex items-center gap-1 border-b border-slate-200">
-                {(
-                    [
-                        ["search", "Search", SearchIcon],
-                        ["filter", "Filter", SlidersHorizontalIcon],
-                        ["saved", "Searches", BookmarkIcon],
-                    ] as const
-                ).map(([key, label, Icon]) => (
-                    <button
-                        key={key}
-                        type="button"
-                        onClick={() => setSide(key)}
-                        className={cn("relative h-10 px-2.5 inline-flex items-center gap-1.5 text-[12.5px]", side === key ? "text-slate-900 font-medium" : "text-slate-500 hover:text-slate-900")}
-                    >
-                        <Icon className="size-3.5" />
-                        {label}
-                        {key === "filter" && sideCount > 0 && <span className="rounded-full bg-sky-600 px-1.5 text-[10px] leading-4 text-white">{sideCount}</span>}
-                        {side === key && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-sky-600" />}
-                    </button>
-                ))}
+            <div className="md:hidden shrink-0 h-11 px-3 flex items-center border-b border-slate-200">
+                <span className="text-[13px] font-semibold text-slate-900">Find businesses</span>
                 <button
                     type="button"
                     aria-label="Close panel"
                     onClick={() => setSideOpen(false)}
-                    className="ml-auto md:hidden size-7 rounded-md text-slate-500 hover:bg-slate-100 inline-flex items-center justify-center"
+                    className="ml-auto size-7 rounded-md text-slate-500 hover:bg-slate-100 inline-flex items-center justify-center"
                 >
                     <XIcon className="size-3.5" />
                 </button>
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3">
-                {side === "search" && (
-                    <SearchPanel
+            <div className="flex-1 min-h-0 overflow-y-auto">
+                <motion.section
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                    className="px-3 pt-3 pb-4"
+                >
+                        <SearchPanel
+                            config={config}
+                            query={query}
+                            onQuery={setQuery}
+                            category={category}
+                            onCategory={setCategory}
+                            location={location}
+                            onLocation={setLocation}
+                            onPlace={onPlace}
+                            near={view && view.zoom >= 9 ? view.center : null}
+                            provider={provider}
+                            onProvider={pickProvider}
+                            area={area}
+                            onClearArea={() => setArea(null)}
+                            onTool={(t) => {
+                                setTool(t);
+                                setSideOpen(false);
+                            }}
+                            searching={search.isPending}
+                            onSearch={runSearch}
+                            blockedReason={blockedReason}
+                        />
+                </motion.section>
+                <motion.section
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.24, delay: 0.06, ease: [0.22, 1, 0.36, 1] }}
+                    className="border-t border-slate-100 px-3 pt-3 pb-4"
+                >
+                    <SavedSearches
                         config={config}
-                        query={query}
-                        onQuery={setQuery}
-                        category={category}
-                        onCategory={setCategory}
-                        location={location}
-                        onLocation={setLocation}
-                        onPlace={onPlace}
-                        near={view && view.zoom >= 9 ? view.center : null}
-                        provider={provider}
-                        onProvider={pickProvider}
-                        area={area}
-                        onClearArea={() => setArea(null)}
-                        onTool={(t) => {
-                            setTool(t);
+                        activeId={searchId}
+                        onOpen={(s) => {
+                            openSearch(s);
                             setSideOpen(false);
                         }}
-                        searching={search.isPending}
-                        onSearch={runSearch}
-                        blockedReason={blockedReason}
                     />
-                )}
-                {side === "filter" && (
-                    <div className="space-y-3.5">
-                        <div className="relative">
-                            <SearchIcon className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-slate-400" />
-                            <input
-                                value={text}
-                                onChange={(e) => setText(e.target.value)}
-                                placeholder="Filter by name, email, domain…"
-                                aria-label="Filter leads"
-                                className="h-8 w-full rounded-md border border-slate-200 pl-7 pr-2 text-[12.5px] outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
-                            />
-                        </div>
-                        <FilterPanel value={refine} onChange={setRefine} facets={facets.data} />
-                    </div>
-                )}
-                {side === "saved" && <SavedSearches config={config} activeId={searchId} onOpen={openSearch} />}
+                </motion.section>
             </div>
         </div>
     );
@@ -431,7 +413,7 @@ function Finder({ config }: { config: LeadFinderConfig }) {
             <header className="shrink-0 h-12 px-3 md:px-4 flex items-center gap-2 border-b border-slate-200">
                 <button
                     type="button"
-                    aria-label="Search and filters"
+                    aria-label="Find businesses"
                     onClick={() => setSideOpen(true)}
                     className="md:hidden size-7 rounded-md text-slate-600 hover:bg-slate-100 inline-flex items-center justify-center"
                 >
@@ -498,6 +480,7 @@ function Finder({ config }: { config: LeadFinderConfig }) {
                 {sideOpen && <div className="md:hidden absolute inset-0 z-30 bg-white">{sidebar}</div>}
 
                 <div className="relative flex min-w-0 flex-1 flex-col">
+                    <LeadFilterBar text={text} onText={setText} value={refine} onChange={setRefine} facets={facets.data} />
                     {!showList && <EnrichmentProgress runs={runList} searching={searchingLabel} />}
                     {showMap && (
                         <div className={cn("relative min-h-0", showList ? "h-[48%] lg:h-[56%] border-b border-slate-200" : "flex-1")}>
@@ -517,10 +500,7 @@ function Finder({ config }: { config: LeadFinderConfig }) {
                                 initialView={prefs.view}
                                 fly={fly}
                                 onToolDone={() => setTool("pan")}
-                                onArea={(a) => {
-                                    setArea(a);
-                                    setSide("search");
-                                }}
+                                onArea={setArea}
                                 onLasso={onLasso}
                                 onPick={pickPoint}
                                 onView={(v) => {
