@@ -30,6 +30,14 @@ func GoogleOAuthConnect() bool {
 	return err == nil && b
 }
 
+// GoogleOAuthAppName is the Google client's app name as its consent screen shows it, which an inbox vendor checks.
+func GoogleOAuthAppName() string {
+	if v := strings.TrimSpace(os.Getenv("BOX_GOOGLE_APP_NAME")); v != "" {
+		return v
+	}
+	return "Warmbly"
+}
+
 func GoogleOauth2Inbox(baseURL string) *oauth2.Config {
 	return &oauth2.Config{
 		ClientID:     os.Getenv("BOX_GOOGLE_CLIENT_ID"),

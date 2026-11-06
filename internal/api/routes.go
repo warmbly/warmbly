@@ -710,6 +710,8 @@ func Run(
 				mailboxVendors.DELETE("/:id", h.DeleteMailboxVendor)
 				mailboxVendors.GET("/:id/mailboxes", h.ListMailboxVendorMailboxes)
 				mailboxVendors.POST("/:id/import", h.ImportMailboxVendorMailboxes)
+				mailboxVendors.POST("/:id/reconnect", h.ReconnectMailboxVendorMailboxes)
+				mailboxVendors.GET("/:id/reconnect", h.MailboxVendorReconnectStatus)
 			}
 
 			// Integration OAuth handshake is JWT-only — it writes user-encrypted

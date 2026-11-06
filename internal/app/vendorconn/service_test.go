@@ -41,7 +41,8 @@ func (f *fakeClient) Credentials(_ context.Context, m mailvendor.Mailbox) (mailv
 }
 
 type memVendors struct {
-	conns map[uuid.UUID]*models.VendorConnection
+	conns  map[uuid.UUID]*models.VendorConnection
+	linked []repository.VendorReconnect
 }
 
 func (m *memVendors) Create(_ context.Context, c *models.VendorConnection, _ uuid.UUID) error {
@@ -94,6 +95,15 @@ func (m *memVendors) SetStatus(_ context.Context, id uuid.UUID, status, last str
 }
 func (m *memVendors) ReconnectCandidates(context.Context, int) ([]repository.VendorReconnect, error) {
 	return nil, nil
+}
+func (m *memVendors) LinkedGoogleMailboxes(_ context.Context, org, conn uuid.UUID) ([]repository.VendorReconnect, error) {
+	var out []repository.VendorReconnect
+	for _, l := range m.linked {
+		if l.OrgID == org && l.ConnectionID == conn {
+			out = append(out, l)
+		}
+	}
+	return out, nil
 }
 
 type fakeMailboxes struct {

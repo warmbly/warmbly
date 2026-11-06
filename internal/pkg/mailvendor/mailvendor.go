@@ -52,6 +52,8 @@ var (
 	ErrUnknownVendor = errors.New("mailvendor: unknown vendor")
 	ErrInvalidConfig = errors.New("mailvendor: invalid configuration")
 	ErrNoWorkspace   = errors.New("mailvendor: key reaches no workspace")
+	// ErrInProgress is a request the vendor refused because one for the same mailbox is still open.
+	ErrInProgress = errors.New("mailvendor: a request is already in progress")
 )
 
 // Field is a credential the customer must enter, keyed by Key.
@@ -156,6 +158,35 @@ type AuthorizationStatus struct {
 type AppAuthorizer interface {
 	AuthorizeApp(ctx context.Context, a AppAuthorization) (requestID string, err error)
 	AuthorizationStatus(ctx context.Context, requestID string) (AuthorizationStatus, error)
+}
+
+// AppTrust asks a vendor to mark an OAuth client trusted on a Google domain it administers.
+type AppTrust struct {
+	Domain string
+	// Mailbox is any listed mailbox on the domain; its id names the vendor workspace.
+	Mailbox  Mailbox
+	ClientID string
+	// AppName is the client's app name as its Google consent screen shows it; Zapmail checks it.
+	AppName string
+}
+
+// ConsentRequest asks a vendor to complete one Google mailbox's own OAuth consent at URL.
+type ConsentRequest struct {
+	Mailbox  Mailbox
+	URL      string
+	ClientID string
+	AppName  string
+}
+
+// ConsentRequester is a vendor that trusts an OAuth client on a Google domain it
+// administers, then signs in as each mailbox and approves that client at a link.
+type ConsentRequester interface {
+	TrustApp(ctx context.Context, a AppTrust) (requestID string, err error)
+	TrustStatus(ctx context.Context, requestID string) (AuthorizationStatus, error)
+	RequestConsent(ctx context.Context, r ConsentRequest) (requestID string, err error)
+	ConsentStatus(ctx context.Context, requestID string) (AuthorizationStatus, error)
+	// ConsentBudget is how many consent requests one mailbox may be sent per window; zero is unlimited.
+	ConsentBudget() (n int, window time.Duration)
 }
 
 // Option configures New.

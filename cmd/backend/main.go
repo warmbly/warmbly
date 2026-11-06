@@ -2008,6 +2008,7 @@ func main() {
 			Mailboxes: emailRepostory,
 			Reconnect: emailService,
 			Grants:    delegationService,
+			Consent:   emailService,
 			Cache:     cache,
 			NewClient: sandboxVendors,
 		})

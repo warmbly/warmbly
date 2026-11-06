@@ -210,6 +210,8 @@ type VendorConnectionRepository interface {
 	SetStatus(ctx context.Context, id uuid.UUID, status, lastError string) error
 	// ReconnectCandidates are vendor-linked SMTP/IMAP mailboxes out of work on a credential error.
 	ReconnectCandidates(ctx context.Context, limit int) ([]VendorReconnect, error)
+	// LinkedGoogleMailboxes are the organization's Google mailboxes linked to one vendor connection.
+	LinkedGoogleMailboxes(ctx context.Context, orgID, connectionID uuid.UUID) ([]VendorReconnect, error)
 }
 
 type vendorConnectionRepository struct{ DB *db.DB }
@@ -304,6 +306,30 @@ func (r *vendorConnectionRepository) SetStatus(ctx context.Context, id uuid.UUID
 		return err
 	}
 	return nil
+}
+
+func (r *vendorConnectionRepository) LinkedGoogleMailboxes(ctx context.Context, orgID, connectionID uuid.UUID) ([]VendorReconnect, error) {
+	query := `
+		SELECT ea.id, ea.organization_id, ea.vendor_connection_id, ea.vendor_mailbox_id, ea.email
+		FROM email_accounts ea
+		WHERE ea.organization_id = $1 AND ea.vendor_connection_id = $2 AND ea.vendor_mailbox_id <> ''
+		  AND (ea.provider = 'gmail' OR (ea.provider = 'smtp_imap' AND ea.mail_host IN ('google_workspace', 'gmail')))
+		ORDER BY lower(ea.email)`
+	rows, err := r.DB.Query(ctx, query, orgID, connectionID)
+	if err != nil {
+		db.CaptureError(err, query, nil, "query")
+		return nil, err
+	}
+	defer rows.Close()
+	var out []VendorReconnect
+	for rows.Next() {
+		var v VendorReconnect
+		if err := rows.Scan(&v.AccountID, &v.OrgID, &v.ConnectionID, &v.VendorMailboxID, &v.Email); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
 }
 
 func (r *vendorConnectionRepository) ReconnectCandidates(ctx context.Context, limit int) ([]VendorReconnect, error) {

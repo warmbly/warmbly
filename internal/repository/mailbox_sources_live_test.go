@@ -545,4 +545,35 @@ func TestLiveMailboxSourcesSigninConversions(t *testing.T) {
 			t.Fatalf("still retiring: %+v", list)
 		}
 	})
+
+	t.Run("back onto its own Google sign-in, in place", func(t *testing.T) {
+		exp := time.Now().Add(time.Hour)
+		if ok, _ := emails.ConvertToGoogleOAuth(ctx, f.other, me, "a", "r", exp, ""); ok {
+			t.Fatal("another workspace converted the mailbox")
+		}
+		if ok, _ := emails.ConvertToGoogleOAuth(ctx, f.org, me, "a", "", exp, ""); ok {
+			t.Fatal("converted without a refresh token")
+		}
+		for _, id := range []uuid.UUID{me, alex} {
+			ok, xerr := emails.ConvertToGoogleOAuth(ctx, f.org, id, "access-"+id.String(), "refresh-"+id.String(), exp, "")
+			if xerr != nil || !ok {
+				t.Fatalf("convert %s = %v, %v", id, ok, xerr)
+			}
+			var provider, auth, subject string
+			var grant *uuid.UUID
+			_ = pool.QueryRow(ctx, `SELECT provider, auth_method, domain_grant_id, delegated_subject FROM email_accounts WHERE id = $1`, id).Scan(&provider, &auth, &grant, &subject)
+			if provider != "gmail" || auth != models.MailAuthOAuth || grant != nil || subject != "" {
+				t.Fatalf("after = %s %s %v %q", provider, auth, grant, subject)
+			}
+			var smtp int
+			_ = pool.QueryRow(ctx, `SELECT count(*) FROM email_accounts_smtp_imap WHERE email_account_id = $1`, id).Scan(&smtp)
+			creds, xerr := emails.GetOAuthCredentials(ctx, id)
+			if smtp != 0 || xerr != nil || creds == nil || creds.RefreshToken != "refresh-"+id.String() {
+				t.Fatalf("stored = %d smtp rows, %+v, %v", smtp, creds, xerr)
+			}
+		}
+		if ok, _ := emails.ConvertToGoogleOAuth(ctx, f.org, me, "a", "r", exp, ""); ok {
+			t.Fatal("a mailbox already on its own sign-in was converted again")
+		}
+	})
 }

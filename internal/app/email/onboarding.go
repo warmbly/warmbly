@@ -223,6 +223,12 @@ func (s *emailService) OAuthFinish(ctx context.Context, userID, code, state stri
 		return nil, false, errx.ErrEmailOnboardAlreadyExists
 	}
 
+	acc, xerr := s.createOAuthMailbox(ctx, userID, sess.OrganizationID, allowance, provider, tok, owner)
+	return acc, false, xerr
+}
+
+// createOAuthMailbox stores a first-connect OAuth mailbox and puts it to work.
+func (s *emailService) createOAuthMailbox(ctx context.Context, userID string, orgID *uuid.UUID, allowance *models.MailboxAllowance, provider models.InboxProvider, tok *oauth2.Token, owner *inboxOwner) (*models.Email, *errx.Error) {
 	// A first connect with no refresh token is a mailbox with about an hour to
 	// live: the access token expires and nothing can renew it. reauth.go
 	// deliberately tolerates an absent one because it keeps the stored value,
@@ -234,7 +240,7 @@ func (s *emailService) OAuthFinish(ctx context.Context, userID, code, state stri
 			Msg("mailbox onboarding: first connect returned no refresh token")
 		errs.CaptureMessageContext(ctx, fmt.Sprintf("%s first connect returned no refresh token", provider),
 			errs.Tag("provider", string(provider)))
-		return nil, false, errx.New(errx.BadRequest,
+		return nil, errx.New(errx.BadRequest,
 			"The provider did not return a long-lived token for this mailbox, so it would stop working within the hour. "+
 				"Remove Warmbly's access in your account settings and connect it again.")
 	}
@@ -245,7 +251,7 @@ func (s *emailService) OAuthFinish(ctx context.Context, userID, code, state stri
 	}
 
 	acc, xerr := s.emailRepository.NewOauthAccount(ctx, userID, models.NewOauthAccount{
-		OrganizationID: sess.OrganizationID,
+		OrganizationID: orgID,
 		Allowance:      allowance,
 		Provider:       provider,
 		Name:           name,
@@ -260,15 +266,15 @@ func (s *emailService) OAuthFinish(ctx context.Context, userID, code, state stri
 		s.captureAvatar(acc, provider, tok)
 		s.syncWarmupPoolMembership(ctx, acc)
 		s.publishAccountEvent(ctx, pubsub.EventAccountConnected, acc)
-		s.dispatchAccountConnected(ctx, sess.OrganizationID, acc)
-		if sess.OrganizationID != nil {
-			s.resolveImportSignin(ctx, *sess.OrganizationID, acc)
+		s.dispatchAccountConnected(ctx, orgID, acc)
+		if orgID != nil {
+			s.resolveImportSignin(ctx, *orgID, acc)
 		}
 		// Assign a worker and load the mailbox so it starts sending/syncing
 		// immediately; the reconciler is the fallback if this fails.
 		s.loadAccountBestEffort(ctx, acc.ID)
 	}
-	return acc, false, xerr
+	return acc, xerr
 }
 
 // OnboardSMTPIMAP validates the supplied SMTP/IMAP credentials against a live worker, then

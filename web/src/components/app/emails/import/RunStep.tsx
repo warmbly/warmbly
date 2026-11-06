@@ -360,9 +360,10 @@ export default function RunStep({
                                 {plural(authorizing, "mailbox", "mailboxes")}
                             </p>
                             <p className="text-[11.5px] text-sky-800/90 leading-relaxed mt-0.5">
-                                It approves Warmbly through the admin mailbox it holds on each domain, so nobody has to sign in. This can
-                                take up to an hour; each row shows where its request is. The rows connect on their own, and switch to Sign in
-                                if it is not done within 2 hours. You can close this window.
+                                It approves Warmbly through the admin mailbox it holds on each domain, so nobody has to sign in. For Google
+                                mailboxes it first adds Warmbly as a trusted app on the domain, then signs in to each mailbox to approve it.
+                                This can take up to an hour; each row shows its stage (Authorizing, then Signing in) and where its request is.
+                                The rows connect on their own, and switch to Sign in if it is not done in time. You can close this window.
                             </p>
                             <div className="mt-2 pt-2 border-t border-sky-200/70">
                                 <p className="text-[11.5px] font-medium text-sky-900">Want it faster?</p>

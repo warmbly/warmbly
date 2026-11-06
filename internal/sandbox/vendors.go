@@ -17,7 +17,10 @@ import (
 // InboxKit holds Google Workspace mailboxes (password only, as the real API
 // returns) across two workspaces, scopes every call but the workspace list by
 // X-Workspace-Id as the real API does, and lets its domains be forwarded and
-// their DNS written. Mailforge
+// their DNS written. Its client-id requests complete after a few seconds; its
+// consent requests fail after a few more, because nothing here can sign in to
+// Google, so an import shows the vendor sign-in stages and then falls back to
+// Sign in. Mailforge
 // hosts its own SMTP/IMAP, pointed here at the sandbox's mailpit and dovecot so
 // its mailboxes import and connect for real, and only forwards domains.
 type VendorMock struct {
@@ -28,7 +31,20 @@ type VendorMock struct {
 	imap    endpoint
 	nextID  int
 	latency time.Duration
+	// requests are InboxKit's client-id and consent requests, by uid.
+	requests map[string]mockRequest
 }
+
+type mockRequest struct {
+	Kind, Workspace string
+	Created         time.Time
+}
+
+// Sandbox request timings: trusting completes, signing in fails, since no mailbox here is a real Google account.
+const (
+	mockTrustAfter   = 5 * time.Second
+	mockConsentAfter = 20 * time.Second
+)
 
 type endpoint struct {
 	Host string
@@ -60,10 +76,11 @@ var inboxKitWorkspaces = []struct{ UID, Name string }{
 // NewVendorMock seeds both vendors; smtp and imap are where Mailforge's mailboxes connect.
 func NewVendorMock(cfg Config) *VendorMock {
 	m := &VendorMock{
-		domains: map[string]*mockDomain{},
-		smtp:    endpoint{cfg.SMTPHost, cfg.SMTPPort},
-		imap:    endpoint{cfg.IMAPHost, cfg.IMAPPort},
-		latency: cfg.VendorLatency,
+		domains:  map[string]*mockDomain{},
+		smtp:     endpoint{cfg.SMTPHost, cfg.SMTPPort},
+		imap:     endpoint{cfg.IMAPHost, cfg.IMAPPort},
+		latency:  cfg.VendorLatency,
+		requests: map[string]mockRequest{},
 	}
 	for _, d := range []mockDomain{
 		{ID: "ik-d1", Vendor: "inboxkit", Workspace: inboxKitWorkspaces[0].UID, Name: "sunrise-outbound.test", Forwarding: "https://sunriselabs.test"},
@@ -136,10 +153,14 @@ func (m *VendorMock) inboxKit(w http.ResponseWriter, r *http.Request, path strin
 	switch path {
 	case "/v1/api/mailboxes/list":
 		var out []map[string]any
+		admins := map[string]bool{}
 		for _, b := range m.boxes {
 			if b.Vendor == "inboxkit" && b.Workspace == ws {
+				// The first mailbox of each domain stands in as its admin.
+				admin := !admins[b.Domain]
+				admins[b.Domain] = true
 				out = append(out, map[string]any{"uid": b.ID, "domain_name": b.Domain, "first_name": b.First, "last_name": b.Last,
-					"username": b.User, "platform": b.Platform, "status": "active"})
+					"username": b.User, "platform": b.Platform, "status": "active", "is_admin": admin})
 			}
 		}
 		writeMock(w, http.StatusOK, map[string]any{"error": false, "mailboxes": out, "pages": 1, "current_page": 1})
@@ -152,6 +173,15 @@ func (m *VendorMock) inboxKit(w http.ResponseWriter, r *http.Request, path strin
 			}
 		}
 		writeMock(w, http.StatusNotFound, map[string]any{"error": true, "message": "Mailbox not found"})
+	case "/v1/api/mailboxes/client-id-request/initiate", "/v1/api/mailboxes/consent-request/initiate":
+		kind := "client_id"
+		if strings.Contains(path, "consent") {
+			kind = "consent"
+		}
+		m.nextID++
+		uid := "req-" + strconv.Itoa(m.nextID)
+		m.requests[uid] = mockRequest{Kind: kind, Workspace: ws, Created: time.Now()}
+		writeMock(w, http.StatusOK, map[string]any{"error": false, "data": map[string]any{"uid": uid, "status": "queued"}})
 	case "/v1/api/domains/list":
 		var out []map[string]any
 		for _, d := range m.vendorDomains("inboxkit") {
@@ -185,8 +215,34 @@ func (m *VendorMock) inboxKit(w http.ResponseWriter, r *http.Request, path strin
 		m.applyDNS(d, path, body)
 		writeMock(w, http.StatusOK, map[string]any{"error": false})
 	default:
+		if uid, ok := strings.CutPrefix(path, "/v1/api/mailboxes/client-id-request/status/"); ok {
+			m.requestStatus(w, ws, "client_id", uid)
+			return
+		}
+		if uid, ok := strings.CutPrefix(path, "/v1/api/mailboxes/consent-request/status/"); ok {
+			m.requestStatus(w, ws, "consent", uid)
+			return
+		}
 		http.NotFound(w, r)
 	}
+}
+
+// requestStatus answers an InboxKit request's status the way the real API shapes it.
+func (m *VendorMock) requestStatus(w http.ResponseWriter, ws, kind, uid string) {
+	req, ok := m.requests[uid]
+	if !ok || req.Kind != kind || req.Workspace != ws {
+		writeMock(w, http.StatusNotFound, map[string]any{"error": true, "message": "Request not found"})
+		return
+	}
+	age := time.Since(req.Created)
+	data := map[string]any{"uid": uid, "status": "processing", "created_at": req.Created.UTC().Format(time.RFC3339), "updated_at": req.Created.UTC().Format(time.RFC3339)}
+	switch {
+	case kind == "client_id" && age >= mockTrustAfter:
+		data["status"] = "completed"
+	case kind == "consent" && age >= mockConsentAfter:
+		data["status"], data["status_reason"] = "failed", "the sandbox cannot sign in to Google"
+	}
+	writeMock(w, http.StatusOK, map[string]any{"error": false, "data": data})
 }
 
 func (m *VendorMock) applyDNS(d *mockDomain, path string, body map[string]any) {

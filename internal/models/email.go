@@ -742,6 +742,34 @@ type EmailOnboardingState struct {
 	CodeVerifier string `json:"code_verifier,omitempty"`
 }
 
+// VendorConsentRequest names the import row, or the existing mailbox, an inbox vendor is asked to sign in for.
+type VendorConsentRequest struct {
+	OrganizationID uuid.UUID
+	UserID         uuid.UUID
+	ImportID       uuid.UUID
+	Line           int
+	ConnectionID   uuid.UUID
+	Email          string
+	// EmailAccountID re-authorizes this mailbox in place instead of connecting a new one.
+	EmailAccountID *uuid.UUID
+}
+
+// VendorConsentState is a Google sign-in an inbox vendor completes for one import
+// row with no Warmbly session. It lives server-side, single use, under its own key.
+type VendorConsentState struct {
+	OrganizationID uuid.UUID `json:"organization_id"`
+	UserID         uuid.UUID `json:"user_id"`
+	ImportID       uuid.UUID `json:"import_id"`
+	Line           int       `json:"line"`
+	ConnectionID   uuid.UUID `json:"connection_id"`
+	// Email is the only mailbox the sign-in may connect.
+	Email        string    `json:"email"`
+	CodeVerifier string    `json:"code_verifier"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	// EmailAccountID is the existing mailbox the sign-in renews or converts in place; nil connects a new one.
+	EmailAccountID *uuid.UUID `json:"email_account_id,omitempty"`
+}
+
 // EmailOnboardingStartResponse is returned from POST /emails/onboarding/oauth/start.
 type EmailOnboardingStartResponse struct {
 	URL   string `json:"url"`

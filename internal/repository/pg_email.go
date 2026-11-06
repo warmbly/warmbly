@@ -187,6 +187,8 @@ type EmailRepository interface {
 	ConvertToDelegated(ctx context.Context, orgID, accountID uuid.UUID, provider models.InboxProvider, grantID uuid.UUID, subject, mailHost string) (bool, *errx.Error)
 	// ConvertGoogleToAppPassword moves a per-mailbox Google sign-in onto an app password in place; false when it was not one.
 	ConvertGoogleToAppPassword(ctx context.Context, orgID, accountID uuid.UUID, creds *models.SmtpImap, mailHost string) (bool, *errx.Error)
+	// ConvertToGoogleOAuth moves a delegated or app-password Google mailbox onto its own Google sign-in in place; false when it was neither.
+	ConvertToGoogleOAuth(ctx context.Context, orgID, accountID uuid.UUID, accessToken, refreshToken string, expiresAt time.Time, mailHost string) (bool, *errx.Error)
 	// ListSigninRetiring is the workspace's mailboxes still on per-mailbox Google sign-in.
 	ListSigninRetiring(ctx context.Context, orgID uuid.UUID) ([]models.MigrationMailbox, *errx.Error)
 	// RelinkDelegated points an existing delegated mailbox at a grant again (one that arrived in an archive without it).
@@ -468,6 +470,49 @@ func (r *emailRepository) ConvertGoogleToAppPassword(ctx context.Context, orgID,
 type txStep struct {
 	q    string
 	args []any
+}
+
+// ConvertToGoogleOAuth moves a Google mailbox reached through a grant or an app
+// password onto its own Google sign-in in place, so history, campaigns and
+// warmup stay. An IMAP mailbox's history is already imported, so its walk is marked done.
+func (r *emailRepository) ConvertToGoogleOAuth(ctx context.Context, orgID, accountID uuid.UUID, accessToken, refreshToken string, expiresAt time.Time, mailHost string) (bool, *errx.Error) {
+	if strings.TrimSpace(accessToken) == "" || strings.TrimSpace(refreshToken) == "" {
+		return false, errx.ErrInvalid
+	}
+	sealed, err := r.sealCredentials(ctx, &orgID, accessToken, refreshToken)
+	if err != nil {
+		db.CaptureError(err, "", nil, "encrypt-oauth-tokens")
+		return false, errx.InternalError()
+	}
+	var wasIMAP bool
+	if err := r.DB.QueryRow(ctx, `SELECT provider = 'smtp_imap' FROM email_accounts WHERE organization_id = $1 AND id = $2`, orgID, accountID).Scan(&wasIMAP); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		db.CaptureError(err, "", nil, "queryrow")
+		return false, errx.InternalError()
+	}
+	query := `UPDATE email_accounts ea SET provider = 'gmail', auth_method = 'oauth', domain_grant_id = NULL, delegated_subject = '',
+		       mail_host = CASE WHEN $3 = '' THEN mail_host ELSE $3 END,
+		       last_id = CASE WHEN ea.provider = 'smtp_imap' THEN NULL ELSE last_id END,
+		       transport_generation = gen_random_uuid(), updated_at = now()
+		WHERE organization_id = $1 AND id = $2 AND NOT ` + managedExpr + `
+		  AND ((provider = 'gmail' AND auth_method = 'delegated') OR (provider = 'smtp_imap' AND $4))`
+	steps := []txStep{
+		{`DELETE FROM email_accounts_smtp_imap WHERE email_account_id = $1`, []any{accountID}},
+		{`INSERT INTO email_accounts_oauth (email_account_id, access_token, refresh_token, expires_at) VALUES ($1, $2, $3, $4)
+		  ON CONFLICT (email_account_id) DO UPDATE SET access_token = EXCLUDED.access_token, refresh_token = EXCLUDED.refresh_token,
+		      expires_at = EXCLUDED.expires_at, updated_at = now()`, []any{accountID, sealed[0], sealed[1], expiresAt}},
+	}
+	if wasIMAP {
+		steps = append(steps,
+			txStep{`DELETE FROM email_history_ids WHERE email_id = $1`, []any{accountID}},
+			txStep{`INSERT INTO email_sync_state (email_id, user_id, backfill_status, backfill_completed_at)
+			  SELECT id, user_id, 'complete', now() FROM email_accounts WHERE id = $1
+			  ON CONFLICT (email_id) DO UPDATE SET backfill_status = 'complete', backfill_cursor = '{}'::jsonb,
+			      backfill_completed_at = COALESCE(email_sync_state.backfill_completed_at, now()), updated_at = now()`, []any{accountID}})
+	}
+	return r.convertTx(ctx, query, []any{orgID, accountID, mailHost, wasIMAP}, steps)
 }
 
 // convertTx runs a guarded UPDATE and, only when it matched a row, the steps after it, in one transaction.

@@ -188,8 +188,7 @@ func (c *inboxKit) show(ctx context.Context, ws, uid, email string) (Credentials
 	return Credentials{Password: res.Password, AppPassword: res.AppPassword}, nil
 }
 
-// AuthorizeApp calls POST /v1/api/mailboxes/client-id-request/initiate: a trusted
-// app under domain-wide delegation on Google, tenant-wide admin consent on Microsoft.
+// AuthorizeApp calls POST /v1/api/mailboxes/client-id-request/initiate for tenant-wide admin consent on Microsoft.
 func (c *inboxKit) AuthorizeApp(ctx context.Context, a AppAuthorization) (string, error) {
 	ws, _ := unscoped(a.Mailbox.ID)
 	if ws == "" || a.Domain == "" || a.ClientID == "" {
@@ -197,12 +196,11 @@ func (c *inboxKit) AuthorizeApp(ctx context.Context, a AppAuthorization) (string
 	}
 	body := map[string]any{"domain": a.Domain, "client_id": a.ClientID}
 	switch a.Provider {
-	case ProviderGoogle:
-		body["delegated"], body["scopes"] = true, a.Scopes
 	case ProviderMicrosoft:
 		body["scopes"], body["app_roles"] = a.Scopes, a.AppRoles
 	default:
-		return "", unsupported(VendorInboxKit, "only Google and Microsoft domains can authorize an app")
+		// Google domains trust the client through TrustApp; none is delegated.
+		return "", unsupported(VendorInboxKit, "only Microsoft domains can authorize an app tenant-wide")
 	}
 	var res struct {
 		inboxKitEnvelope
@@ -242,18 +240,114 @@ func (c *inboxKit) AuthorizationStatus(ctx context.Context, requestID string) (A
 	if err := res.err(); err != nil {
 		return AuthorizationStatus{}, err
 	}
-	switch strings.ToLower(res.Data.Status) {
-	case "completed":
-		return AuthorizationStatus{State: AuthorizationCompleted}, nil
-	case "failed", "errored", "cancelled":
-		reason := ""
-		if res.Data.ErrorMessage != nil {
-			reason = *res.Data.ErrorMessage
-		}
-		return AuthorizationStatus{State: AuthorizationFailed, Reason: reason}, nil
-	}
-	return AuthorizationStatus{State: AuthorizationPending, Stage: strings.ToLower(strings.TrimSpace(res.Data.Status)), UpdatedAt: res.Data.UpdatedAt}, nil
+	return inboxKitState(res.Data.Status, deref(res.Data.ErrorMessage), res.Data.UpdatedAt), nil
 }
+
+// inboxKitState maps InboxKit's request statuses, shared by client-id and consent requests.
+func inboxKitState(status, reason string, updated time.Time) AuthorizationStatus {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "completed":
+		return AuthorizationStatus{State: AuthorizationCompleted}
+	case "failed", "errored", "cancelled":
+		return AuthorizationStatus{State: AuthorizationFailed, Reason: reason}
+	}
+	return AuthorizationStatus{State: AuthorizationPending, Stage: strings.ToLower(strings.TrimSpace(status)), UpdatedAt: updated}
+}
+
+// TrustApp calls client-id-request/initiate without delegation, which marks the client a trusted app in Google Admin.
+func (c *inboxKit) TrustApp(ctx context.Context, a AppTrust) (string, error) {
+	ws, _ := unscoped(a.Mailbox.ID)
+	if ws == "" || a.Domain == "" || a.ClientID == "" {
+		return "", invalid(VendorInboxKit, "domain, workspace and client id are required")
+	}
+	body := map[string]any{"domain": a.Domain, "client_id": a.ClientID, "delegated": false, "platform": "GOOGLE"}
+	var res struct {
+		inboxKitEnvelope
+		Data struct {
+			UID string `json:"uid"`
+		} `json:"data"`
+	}
+	if err := c.t.do(ctx, call{method: http.MethodPost, path: "/v1/api/mailboxes/client-id-request/initiate", body: body, header: inboxKitHeader(ws)}, &res); err != nil {
+		return "", err
+	}
+	if err := res.err(); err != nil {
+		return "", err
+	}
+	if res.Data.UID == "" {
+		return "", vendorErr(VendorInboxKit, http.StatusOK, "no request id", nil)
+	}
+	return scoped(ws, res.Data.UID), nil
+}
+
+// TrustStatus reads the client-id request a TrustApp opened.
+func (c *inboxKit) TrustStatus(ctx context.Context, requestID string) (AuthorizationStatus, error) {
+	return c.AuthorizationStatus(ctx, requestID)
+}
+
+// RequestConsent calls POST /v1/api/mailboxes/consent-request/initiate; a 400 is the documented "already in progress".
+func (c *inboxKit) RequestConsent(ctx context.Context, r ConsentRequest) (string, error) {
+	ws, uid := unscoped(r.Mailbox.ID)
+	if ws == "" || uid == "" || r.URL == "" {
+		return "", invalid(VendorInboxKit, "mailbox, workspace and consent url are required")
+	}
+	body := map[string]any{"mailbox_uid": uid, "consent_url": r.URL}
+	if r.ClientID != "" {
+		body["request_data"] = map[string]any{"client_id": r.ClientID}
+	}
+	var res struct {
+		inboxKitEnvelope
+		Data struct {
+			UID string `json:"uid"`
+		} `json:"data"`
+	}
+	err := c.t.do(ctx, call{method: http.MethodPost, path: "/v1/api/mailboxes/consent-request/initiate", body: body, header: inboxKitHeader(ws), once: true}, &res)
+	var ve *Error
+	if errors.As(err, &ve) && ve.Status == http.StatusBadRequest {
+		return "", vendorErr(VendorInboxKit, ve.Status, "consent already in progress", ErrInProgress)
+	}
+	if err != nil {
+		return "", err
+	}
+	if err := res.err(); err != nil {
+		return "", err
+	}
+	if res.Data.UID == "" {
+		return "", vendorErr(VendorInboxKit, http.StatusOK, "no request id", nil)
+	}
+	return scoped(ws, res.Data.UID), nil
+}
+
+// ConsentStatus reads GET /v1/api/mailboxes/consent-request/status/{id}.
+func (c *inboxKit) ConsentStatus(ctx context.Context, requestID string) (AuthorizationStatus, error) {
+	ws, uid := unscoped(requestID)
+	if ws == "" || uid == "" {
+		return AuthorizationStatus{}, invalid(VendorInboxKit, "request id is required")
+	}
+	var res struct {
+		inboxKitEnvelope
+		Data struct {
+			Status        string     `json:"status"`
+			StatusText    string     `json:"status_text"`
+			StatusReason  *string    `json:"status_reason"`
+			CreatedAt     time.Time  `json:"created_at"`
+			LastAttemptAt *time.Time `json:"last_attempt_at"`
+		} `json:"data"`
+	}
+	if err := c.t.do(ctx, call{method: http.MethodGet, path: "/v1/api/mailboxes/consent-request/status/" + url.PathEscape(uid), header: inboxKitHeader(ws)}, &res); err != nil {
+		return AuthorizationStatus{}, err
+	}
+	if err := res.err(); err != nil {
+		return AuthorizationStatus{}, err
+	}
+	updated := res.Data.CreatedAt
+	if res.Data.LastAttemptAt != nil {
+		updated = *res.Data.LastAttemptAt
+	}
+	return inboxKitState(res.Data.Status, firstNonEmpty(deref(res.Data.StatusReason), res.Data.StatusText), updated), nil
+}
+
+// ConsentBudget is unlimited: InboxKit documents no per-mailbox limit.
+func (c *inboxKit) ConsentBudget() (int, time.Duration) { return 0, 0 }
 
 const inboxKitDomainPageSize = 100
 
