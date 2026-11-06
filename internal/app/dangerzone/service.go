@@ -463,6 +463,10 @@ func (s *service) billingCheck(ending *[]string) repository.BillingCheck {
 // nothing is left to bill once the workspace is gone.
 func (s *service) keepEnding(ctx context.Context, ids []string) {
 	for _, id := range ids {
+		// Only a subscription that resumed needs it; one still ending or since canceled is left alone.
+		if sub, err := s.billing.GetSubscription(ctx, id); err == nil && !subscriptionRenews(sub) {
+			continue
+		}
 		if err := s.billing.CancelSubscription(ctx, id, true); err != nil {
 			errs.CaptureException(fmt.Errorf("keep subscription %s ending after account deletion: %s", id, err.Message))
 		}

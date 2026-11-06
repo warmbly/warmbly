@@ -57,6 +57,19 @@ func TestAccountDeletionReassertsEndingSubscriptions(t *testing.T) {
 	if err := s.billingCheck(&ending)(context.Background(), []string{"sub_ending", "sub_canceled"}); err != nil {
 		t.Fatal(err)
 	}
+	// Still ending at commit: nothing to undo.
+	s.keepEnding(context.Background(), ending)
+	if len(billing.reasserts) != 0 {
+		t.Errorf("reasserted %v on a subscription that never resumed", billing.reasserts)
+	}
+	// Canceled before the reassertion: left alone, not reported.
+	billing.subs["sub_ending"] = &stripe.Subscription{Status: stripe.SubscriptionStatusCanceled}
+	s.keepEnding(context.Background(), ending)
+	if len(billing.reasserts) != 0 {
+		t.Errorf("reasserted %v on a canceled subscription", billing.reasserts)
+	}
+	// Resumed between the check and the commit: ended again.
+	billing.subs["sub_ending"] = &stripe.Subscription{Status: stripe.SubscriptionStatusActive}
 	s.keepEnding(context.Background(), ending)
 	if len(billing.reasserts) != 1 || billing.reasserts[0] != "sub_ending" {
 		t.Errorf("reasserted %v, want [sub_ending]", billing.reasserts)
