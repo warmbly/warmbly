@@ -19,6 +19,7 @@
 // subscription row is ignored: it would otherwise report a free trial that
 // nothing enforces.
 
+import { useEffect, useState } from "react";
 import type Subscription from "@/lib/api/models/app/subscription/Subscription";
 import useSubscription from "@/lib/api/hooks/app/subscription/useSubscription";
 import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
@@ -83,6 +84,9 @@ export default function useFeatureAccess(): FeatureAccess {
     const sub = useSubscription();
     const authConfig = useAuthConfig();
     const currentOrg = useAppStore((s) => s.currentOrganization);
+    // The trial gate reads the clock, so the caller re-renders when it ends even if no data changes.
+    const rawTrialEnd = sub.data?.free_trial_ends_at ? Date.parse(sub.data.free_trial_ends_at) : NaN;
+    useRerenderAt(Number.isNaN(rawTrialEnd) ? null : rawTrialEnd);
 
     const isOwner = currentOrg?.role === "owner";
     // Permission-aware: a custom role carrying MANAGE_TEAM unlocks the
@@ -184,4 +188,25 @@ export default function useFeatureAccess(): FeatureAccess {
 /** Whole days left in a trial, rounded up and never below 1 while it runs; every countdown reads this. */
 export function trialDaysLeft(endsAt: Date, now = Date.now()): number {
     return Math.max(1, Math.ceil((endsAt.getTime() - now) / 86_400_000));
+}
+
+const DAY = 86_400_000;
+
+/** trialDaysLeft that re-renders when the count drops, so every countdown on screen changes together. */
+export function useTrialDaysLeft(endsAt: Date | null): number {
+    const days = endsAt ? trialDaysLeft(endsAt) : 0;
+    useRerenderAt(endsAt && days > 1 ? endsAt.getTime() - (days - 1) * DAY : null);
+    return days;
+}
+
+// Re-renders the caller once `at` (epoch ms) has passed.
+function useRerenderAt(at: number | null) {
+    const [, bump] = useState(0);
+    useEffect(() => {
+        if (at == null) return;
+        const wait = at - Date.now();
+        if (wait <= 0) return;
+        const timer = setTimeout(() => bump((n) => n + 1), Math.min(wait + 500, 2_000_000_000));
+        return () => clearTimeout(timer);
+    }, [at]);
 }

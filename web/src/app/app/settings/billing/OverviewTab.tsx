@@ -25,7 +25,7 @@ import {
     SparklesIcon,
     XIcon,
 } from "lucide-react";
-import useFeatureAccess, { trialDaysLeft } from "@/hooks/useFeatureAccess";
+import useFeatureAccess, { useTrialDaysLeft } from "@/hooks/useFeatureAccess";
 import useUpgradeFlow from "@/hooks/useUpgradeFlow";
 import { useConfirm } from "@/hooks/context/confirm";
 import useSubscription from "@/lib/api/hooks/app/subscription/useSubscription";
@@ -47,6 +47,7 @@ import { Section } from "../_components/SectionShell";
 
 export default function OverviewTab({ onChangePlan }: { onChangePlan: () => void }) {
     const access = useFeatureAccess();
+    const trialDays = useTrialDaysLeft(access.trial ? access.trialEndsAt : null);
     const sub = useSubscription();
     const orgLimits = useOrganizationLimits();
     const limits = orgLimits.data?.limits;
@@ -134,7 +135,7 @@ export default function OverviewTab({ onChangePlan }: { onChangePlan: () => void
                         key="trial"
                         tone="sky"
                         icon={SparklesIcon}
-                        title={`${trialDaysLeft(access.trialEndsAt)} ${trialDaysLeft(access.trialEndsAt) === 1 ? "day" : "days"} left in your trial`}
+                        title={`${trialDays} ${trialDays === 1 ? "day" : "days"} left in your trial`}
                         body={`Your trial ends on ${fmtDate(access.trialEndsAt) || "its end date"}. Pick a plan before then to keep sending and warming without a pause.`}
                         action={{ label: "Choose a plan", onClick: onChangePlan }}
                     />

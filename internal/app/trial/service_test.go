@@ -12,11 +12,17 @@ import (
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
+// memSubs models CreateTrial's single statement: the owner's claim and the row commit together or not at all.
 type memSubs struct {
 	repository.SubscriptionRepository
 	mu      sync.Mutex
 	byOrg   map[uuid.UUID]*models.Subscription
+	used    map[uuid.UUID]bool
 	failing bool
+}
+
+func newMemSubs() *memSubs {
+	return &memSubs{byOrg: map[uuid.UUID]*models.Subscription{}, used: map[uuid.UUID]bool{}}
 }
 
 func (m *memSubs) GetByOrganizationID(_ context.Context, orgID uuid.UUID) (*models.Subscription, error) {
@@ -25,44 +31,25 @@ func (m *memSubs) GetByOrganizationID(_ context.Context, orgID uuid.UUID) (*mode
 	return m.byOrg[orgID], nil
 }
 
-func (m *memSubs) Create(_ context.Context, sub *models.Subscription) error {
+func (m *memSubs) CreateTrial(_ context.Context, sub *models.Subscription) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.failing {
-		return errors.New("write failed")
+		return false, errors.New("write failed")
 	}
-	m.byOrg[sub.OrganizationID] = sub
-	return nil
-}
-
-type memUsers struct {
-	repository.UserRepository
-	mu   sync.Mutex
-	used map[uuid.UUID]bool
-}
-
-func (m *memUsers) ReleaseFreeTrial(_ context.Context, userID uuid.UUID) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.used[userID] = false
-	return nil
-}
-
-func (m *memUsers) ClaimFreeTrial(_ context.Context, userID uuid.UUID) (bool, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.used[userID] {
+	if m.used[sub.UserID] {
 		return false, nil
 	}
-	m.used[userID] = true
+	m.used[sub.UserID] = true
+	m.byOrg[sub.OrganizationID] = sub
 	return true, nil
 }
 
 // An owner's first workspace gets the trial; every later one starts with no subscription.
 func TestOneTrialPerOwner(t *testing.T) {
 	ctx := context.Background()
-	subs := &memSubs{byOrg: map[uuid.UUID]*models.Subscription{}}
-	svc := NewService(subs, &memUsers{used: map[uuid.UUID]bool{}}, nil, nil)
+	subs := newMemSubs()
+	svc := NewService(subs, nil, nil)
 	owner, first, second := uuid.New(), uuid.New(), uuid.New()
 
 	if err := svc.StartFreeTrialWithOrg(ctx, owner, first); err != nil {
@@ -88,11 +75,12 @@ func TestOneTrialPerOwner(t *testing.T) {
 	}
 }
 
-// A trial whose subscription could not be written is handed back, so the owner's next workspace still gets it.
-func TestFailedTrialIsHandedBack(t *testing.T) {
+// A trial whose write failed was never claimed, so the owner's next workspace still gets it.
+func TestFailedTrialKeepsTheClaim(t *testing.T) {
 	ctx := context.Background()
-	subs := &memSubs{byOrg: map[uuid.UUID]*models.Subscription{}, failing: true}
-	svc := NewService(subs, &memUsers{used: map[uuid.UUID]bool{}}, nil, nil)
+	subs := newMemSubs()
+	subs.failing = true
+	svc := NewService(subs, nil, nil)
 	owner, broken, next := uuid.New(), uuid.New(), uuid.New()
 
 	if err := svc.StartFreeTrialWithOrg(ctx, owner, broken); err == nil {

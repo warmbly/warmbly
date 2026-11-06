@@ -85,9 +85,11 @@ func (j *TrialExpirationJob) Run(ctx context.Context) error {
 		}
 
 		// Paused, not cleared, so a plan resumes warmup with its ramp where it stopped.
+		// A failed pause leaves the trial unexpired so the next run retries it.
 		if sub.FreeTrialEndsAt != nil {
 			if err := repository.PauseTrialWarmup(ctx, j.db, sub.OrganizationID, *sub.FreeTrialEndsAt); err != nil {
 				errs.CaptureException(err)
+				continue
 			}
 		}
 

@@ -884,7 +884,7 @@ func main() {
 		// Initialize new services for trial, feature gates, and worker assignment.
 		// The trial service seeds the free plan's monthly AI-credit allowance at
 		// trial start (planRepo + creditService, both already constructed above).
-		trialService = trial.NewService(subscriptionRepository, userRepostory, planRepository, creditService)
+		trialService = trial.NewService(subscriptionRepository, planRepository, creditService)
 		featureGateService = feature.NewService(subscriptionRepository, planRepository)
 		// An approved daily-send increase must raise what is enforced, not
 		// only what the dashboard shows.

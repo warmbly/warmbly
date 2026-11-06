@@ -2,7 +2,6 @@ package trial
 
 import (
 	"context"
-	"errors"
 	"math"
 	"time"
 
@@ -45,7 +44,6 @@ type CreditGranter interface {
 
 type trialService struct {
 	subRepo  repository.SubscriptionRepository
-	userRepo repository.UserRepository
 	planRepo repository.PlanRepository
 	credits  CreditGranter
 }
@@ -53,10 +51,9 @@ type trialService struct {
 // NewService constructs the trial service. planRepo and credits are optional
 // (nil-safe): when both are set, StartFreeTrialWithOrg seeds the free plan's
 // monthly AI-credit allowance so trial orgs can try AI features.
-func NewService(subRepo repository.SubscriptionRepository, userRepo repository.UserRepository, planRepo repository.PlanRepository, credits CreditGranter) TrialService {
+func NewService(subRepo repository.SubscriptionRepository, planRepo repository.PlanRepository, credits CreditGranter) TrialService {
 	return &trialService{
 		subRepo:  subRepo,
-		userRepo: userRepo,
 		planRepo: planRepo,
 		credits:  credits,
 	}
@@ -74,12 +71,6 @@ func (s *trialService) StartFreeTrialWithOrg(ctx context.Context, userID uuid.UU
 		return nil
 	}
 
-	// Claimed before the row exists, so concurrent workspace creations cannot both get one.
-	claimed, err := s.userRepo.ClaimFreeTrial(ctx, userID)
-	if err != nil || !claimed {
-		return err
-	}
-
 	freePlanUUID, _ := uuid.Parse(FreePlanID)
 	startedAt := time.Now()
 	endsAt := startedAt.Add(TrialDuration)
@@ -95,11 +86,9 @@ func (s *trialService) StartFreeTrialWithOrg(ctx context.Context, userID uuid.UU
 		FreeTrialEndsAt:    &endsAt,
 	}
 
-	if err := s.subRepo.Create(ctx, sub); err != nil {
-		// Handed back so the next workspace this owner creates still gets it.
-		if rerr := s.userRepo.ReleaseFreeTrial(ctx, userID); rerr != nil {
-			return errors.Join(err, rerr)
-		}
+	// The claim and the row are one write: a failure keeps the trial, and a second workspace cannot also take it.
+	created, err := s.subRepo.CreateTrial(ctx, sub)
+	if err != nil || !created {
 		return err
 	}
 

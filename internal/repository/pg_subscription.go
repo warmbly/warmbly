@@ -21,6 +21,8 @@ const subscriptionColumns = `id, user_id, organization_id, plan_id, stripe_custo
 
 type SubscriptionRepository interface {
 	Create(ctx context.Context, sub *models.Subscription) error
+	// CreateTrial writes a trial subscription only if it also claims the owner's one free trial, in one statement.
+	CreateTrial(ctx context.Context, sub *models.Subscription) (bool, error)
 	Update(ctx context.Context, sub *models.Subscription) error
 	GetByID(ctx context.Context, id uuid.UUID) (*models.Subscription, error)
 	GetByUserID(ctx context.Context, userID uuid.UUID) (*models.Subscription, error)
@@ -77,6 +79,27 @@ func (r *subscriptionRepository) Create(ctx context.Context, sub *models.Subscri
 		sub.IsEnterprise, now, now,
 	)
 	return err
+}
+
+func (r *subscriptionRepository) CreateTrial(ctx context.Context, sub *models.Subscription) (bool, error) {
+	// One statement, so the claim and the row commit or fail together.
+	const q = `
+		WITH claim AS (
+			UPDATE users SET free_trial_used = TRUE, updated_at = now()
+			WHERE id = $2 AND NOT free_trial_used
+			RETURNING id
+		)
+		INSERT INTO subscriptions (
+			id, user_id, organization_id, plan_id, stripe_customer_id, status,
+			free_trial_started_at, free_trial_ends_at
+		)
+		SELECT $1, claim.id, $3, $4, '', $5, $6, $7 FROM claim`
+	tag, err := r.db.Exec(ctx, q, sub.ID, sub.UserID, sub.OrganizationID, sub.PlanID, sub.Status,
+		sub.FreeTrialStartedAt, sub.FreeTrialEndsAt)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
 }
 
 func (r *subscriptionRepository) Update(ctx context.Context, sub *models.Subscription) error {

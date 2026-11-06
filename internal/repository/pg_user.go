@@ -62,10 +62,6 @@ type UserRepository interface {
 	// exempt AND belongs to no organization, which a real user never is.
 	DeleteOrphanExemptUser(ctx context.Context, id uuid.UUID) error
 	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
-	// ClaimFreeTrial marks the user's one free trial used and reports whether this call took it.
-	ClaimFreeTrial(ctx context.Context, userID uuid.UUID) (bool, error)
-	// ReleaseFreeTrial hands a claimed trial back when its workspace could not be given it.
-	ReleaseFreeTrial(ctx context.Context, userID uuid.UUID) error
 	UpdateOnboarding(ctx context.Context, userID uuid.UUID, firstName, lastName, referralSource, role, teamSize string) error
 	MarkOnboarded(ctx context.Context, userID uuid.UUID) (time.Time, error)
 	MarkProductTourCompleted(ctx context.Context, userID uuid.UUID) (time.Time, error)
@@ -234,21 +230,6 @@ func (r *userRepository) GetUser(ctx context.Context, userID uuid.UUID) (*models
 
 func (r *userRepository) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
 	return r.getUser(ctx, "email", normalizeUserEmail(email))
-}
-
-func (r *userRepository) ClaimFreeTrial(ctx context.Context, userID uuid.UUID) (bool, error) {
-	const q = `UPDATE users SET free_trial_used = TRUE, updated_at = NOW() WHERE id = $1 AND NOT free_trial_used`
-	tag, err := r.DB.Exec(ctx, q, userID)
-	if err != nil {
-		return false, err
-	}
-	return tag.RowsAffected() == 1, nil
-}
-
-func (r *userRepository) ReleaseFreeTrial(ctx context.Context, userID uuid.UUID) error {
-	const q = `UPDATE users SET free_trial_used = FALSE, updated_at = NOW() WHERE id = $1`
-	_, err := r.DB.Exec(ctx, q, userID)
-	return err
 }
 
 func (r *userRepository) UpdateOnboarding(ctx context.Context, userID uuid.UUID, firstName, lastName, referralSource, role, teamSize string) error {
