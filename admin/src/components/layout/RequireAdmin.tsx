@@ -10,16 +10,17 @@
 //    say so and point at where to turn one on. The backend refuses these
 //    routes either way; this is what turns that 403 into instructions.
 
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useMe } from "@/hooks/useMe";
-import { getToken } from "@/lib/auth/storage";
+import { hasToken as tokenStored, subscribeToken } from "@/lib/auth/storage";
 import { noteStep, setErrorIdentity } from "@/lib/observability";
 import { AdminBadge } from "./AdminBadge";
 
 export function RequireAdmin() {
     const loc = useLocation();
-    const hasToken = !!getToken();
+    // Live, so a session that lapses mid-visit signs out once and unmounts the socket and polls.
+    const hasToken = useSyncExternalStore(subscribeToken, tokenStored);
     const { data: me, isLoading, isError } = useMe();
 
     // Every admin route is behind this guard, so it is the one place that

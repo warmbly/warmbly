@@ -226,14 +226,39 @@ const websiteJsonLd = {
             var isSdkTimeout = function (type, value) {
               return type === 'AbortError' && typeof value === 'string' && value.indexOf('PostHog request timed out') === 0;
             };
+            // Thrown into the page by wallets, extensions and in-app browsers; a frame in our /_astro/ bundle keeps the report.
+            var foreign = [
+              /window\.ethereum\.selectedAddress = undefined/,
+              /^Can't find variable: (CONFIG|currentInset)$/,
+              /^No Listener: tabs:/,
+              /^Could not establish connection\. Receiving end does not exist\.$/,
+            ];
+            var isForeign = function (exception) {
+              var frames = (exception && exception.stacktrace && exception.stacktrace.frames) || [];
+              var fromExtension = false;
+              for (var f = 0; f < frames.length; f++) {
+                var source = frames[f] && (frames[f].filename || frames[f].abs_path);
+                if (typeof source !== 'string') continue;
+                if (/^(?:[a-z]+:\/\/[^/]+)?\/_astro\//i.test(source)) return false;
+                if (/^(?:(?:chrome|moz|safari|safari-web|ms-browser)-extension:|webkit-masked-url:)/.test(source)) fromExtension = true;
+              }
+              if (fromExtension) return true;
+              var text = exception && (exception.value || exception.$exception_value);
+              if (typeof text !== 'string') return false;
+              for (var p = 0; p < foreign.length; p++) if (foreign[p].test(text)) return true;
+              return false;
+            };
             var exceptions = event.properties && event.properties.$exception_list;
             if (Array.isArray(exceptions)) {
+              var allForeign = exceptions.length > 0;
               for (var i = 0; i < exceptions.length; i++) {
                 var value = exceptions[i] && (exceptions[i].value || exceptions[i].$exception_value);
                 if (isNoise(value)) return null;
                 var type = exceptions[i] && (exceptions[i].type || exceptions[i].$exception_type);
                 if (isSdkTimeout(type, value)) return null;
+                if (!isForeign(exceptions[i])) allForeign = false;
               }
+              if (allForeign) return null;
             }
             var message = event.properties && event.properties.$exception_message;
             if (isNoise(message)) return null;
