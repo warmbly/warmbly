@@ -43,6 +43,7 @@ func DefaultUsage() Usage {
 			{Model: "claude-sonnet-4", InputPerMTok: 3, OutputPerMTok: 15},
 			{Model: "claude-haiku-4", InputPerMTok: 1, OutputPerMTok: 5},
 			{Model: "claude-3-5-haiku", InputPerMTok: 0.8, OutputPerMTok: 4},
+			{Model: "gpt-6-luna", InputPerMTok: 0.10, OutputPerMTok: 0.50},
 			{Model: AnyModel, InputPerMTok: 3, OutputPerMTok: 15},
 		},
 		Units: map[string]float64{

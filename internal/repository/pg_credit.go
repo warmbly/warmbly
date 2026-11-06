@@ -57,6 +57,11 @@ type CreditRepository interface {
 	// UsageBreakdown groups spend since `since` by "reason" or "model".
 	UsageBreakdown(ctx context.Context, orgID uuid.UUID, since time.Time, by string) ([]models.CreditUsageBucket, error)
 
+	// AnnualAllowancesDue lists active subscriptions billed over more than a
+	// month, with their period start, plan allowance and last reset, so the
+	// allowance can refresh every month in between invoices.
+	AnnualAllowancesDue(ctx context.Context, limit int) ([]AnnualAllowance, error)
+
 	ListTransactions(ctx context.Context, orgID uuid.UUID, limit int) ([]models.CreditTransaction, error)
 	// ListTransactionsBefore keyset-paginates rows older than the cursor.
 	ListTransactionsBefore(ctx context.Context, orgID uuid.UUID, limit int, beforeCreatedAt time.Time, beforeID uuid.UUID) ([]models.CreditTransaction, error)
@@ -582,6 +587,43 @@ func (r *creditRepository) ListTransactionsBefore(ctx context.Context, orgID uui
 			return nil, err
 		}
 		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// AnnualAllowance is one subscription billed over more than a month.
+type AnnualAllowance struct {
+	OrgID       uuid.UUID
+	PeriodStart time.Time
+	Allowance   models.Micro
+	LastReset   time.Time
+}
+
+func (r *creditRepository) AnnualAllowancesDue(ctx context.Context, limit int) ([]AnnualAllowance, error) {
+	rows, err := r.DB.Query(ctx, `
+		SELECT s.organization_id, s.current_period_start, p.monthly_allowance_micro,
+		       COALESCE(l.month_reset_at, 'epoch'::timestamptz)
+		FROM subscriptions s
+		JOIN plans p ON p.id = s.plan_id
+		LEFT JOIN credit_ledger l ON l.org_id = s.organization_id
+		WHERE s.status = 'active'
+		  AND s.current_period_start IS NOT NULL
+		  AND s.current_period_end > now()
+		  AND s.current_period_end - s.current_period_start > interval '35 days'
+		  AND p.monthly_allowance_micro > 0
+		  AND COALESCE(l.month_reset_at, 'epoch'::timestamptz) < now() - interval '27 days'
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AnnualAllowance
+	for rows.Next() {
+		var a AnnualAllowance
+		if err := rows.Scan(&a.OrgID, &a.PeriodStart, &a.Allowance, &a.LastReset); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
 	}
 	return out, rows.Err()
 }

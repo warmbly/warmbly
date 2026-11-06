@@ -118,3 +118,70 @@ func containsCharge(list []models.SavedCardCharge, id uuid.UUID) bool {
 	}
 	return false
 }
+
+func TestLiveAnnualSubscriptionAllowanceIsDueMonthly(t *testing.T) {
+	handle, pool := liveContactDB(t)
+	ctx := context.Background()
+	userID, orgID, monthlyOrg := uuid.New(), uuid.New(), uuid.New()
+	exec := func(query string, args ...any) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, query, args...); err != nil {
+			t.Fatalf("fixture: %v", err)
+		}
+	}
+	exec(`INSERT INTO users (id, first_name, last_name, email) VALUES ($1, 'Annual', 'Live', $2)`,
+		userID, "annual-"+uuid.NewString()+"@"+"example.test")
+	for _, id := range []uuid.UUID{orgID, monthlyOrg} {
+		exec(`INSERT INTO organizations (id, name, owner_user_id) VALUES ($1, 'Annual Live', $2)`, id, userID)
+	}
+	// A yearly period started 70 days ago, last reset 60 days ago; a monthly
+	// period is left to its invoices.
+	exec(`INSERT INTO subscriptions (user_id, organization_id, plan_id, stripe_customer_id, status, current_period_start, current_period_end)
+	      VALUES ($1, $2, $3, '', 'active', now() - interval '70 days', now() + interval '295 days'),
+	             ($1, $4, $3, '', 'active', now() - interval '29 days', now() + interval '1 day')`,
+		userID, orgID, models.TestPlanID, monthlyOrg)
+	exec(`INSERT INTO credit_ledger (org_id, balance_micro, month_reset_at) VALUES ($1, 0, now() - interval '60 days'), ($2, 0, now() - interval '29 days')`, orgID, monthlyOrg)
+	t.Cleanup(func() {
+		bg := context.Background()
+		for _, id := range []uuid.UUID{orgID, monthlyOrg} {
+			_, _ = pool.Exec(bg, `DELETE FROM credit_ledger_transactions WHERE org_id = $1`, id)
+			_, _ = pool.Exec(bg, `DELETE FROM credit_ledger WHERE org_id = $1`, id)
+			_, _ = pool.Exec(bg, `DELETE FROM subscriptions WHERE organization_id = $1`, id)
+			_, _ = pool.Exec(bg, `DELETE FROM organizations WHERE id = $1`, id)
+		}
+		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id = $1`, userID)
+	})
+
+	ledger := NewCreditRepository(handle)
+	due, err := ledger.AnnualAllowancesDue(ctx, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *AnnualAllowance
+	for i := range due {
+		switch due[i].OrgID {
+		case orgID:
+			found = &due[i]
+		case monthlyOrg:
+			t.Fatal("a monthly subscription is refreshed by the sweep instead of its invoice")
+		}
+	}
+	if found == nil || found.Allowance <= 0 {
+		t.Fatalf("annual subscription not due: %+v", due)
+	}
+	if _, err := ledger.ResetMonthly(ctx, orgID, found.Allowance, "annual_month:test"); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := ledger.AnnualAllowancesDue(ctx, 1000); slicesContainsOrg(again, orgID) {
+		t.Fatal("a freshly reset subscription is still due")
+	}
+}
+
+func slicesContainsOrg(list []AnnualAllowance, id uuid.UUID) bool {
+	for _, a := range list {
+		if a.OrgID == id {
+			return true
+		}
+	}
+	return false
+}

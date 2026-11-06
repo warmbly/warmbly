@@ -306,6 +306,7 @@ const USAGE_DEFAULTS: UsageSettings = {
         { model: "claude-sonnet-4", input_per_mtok: 3, output_per_mtok: 15 },
         { model: "claude-haiku-4", input_per_mtok: 1, output_per_mtok: 5 },
         { model: "claude-3-5-haiku", input_per_mtok: 0.8, output_per_mtok: 4 },
+        { model: "gpt-6-luna", input_per_mtok: 0.1, output_per_mtok: 0.5 },
         { model: ANY_MODEL, input_per_mtok: 3, output_per_mtok: 15 },
     ],
     units: { web_search: 0.01, placement_test: 0.4 },

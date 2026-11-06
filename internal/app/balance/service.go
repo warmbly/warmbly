@@ -435,6 +435,12 @@ func (s *Service) Start(ctx context.Context) {
 }
 
 func (s *Service) sweep(ctx context.Context) {
+	// A yearly subscription's allowance still refreshes every month.
+	if n, err := s.credits.RefreshAnnualAllowances(ctx); err != nil {
+		log.Warn().Err(err).Msg("balance sweep: refresh annual allowances")
+	} else if n > 0 {
+		log.Info().Int("count", n).Msg("balance sweep: refreshed annual allowances")
+	}
 	due, err := s.charges.Due(ctx, time.Now(), staleAfter, 50)
 	if err != nil {
 		log.Warn().Err(err).Msg("balance sweep: list due charges")

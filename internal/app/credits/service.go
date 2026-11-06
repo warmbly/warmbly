@@ -119,6 +119,11 @@ type CreditService interface {
 	// (purchased untouched). The key (the Stripe event id) makes retries safe.
 	ResetMonthlyAllowance(ctx context.Context, orgID uuid.UUID, allowance models.Micro, idempotencyKey string) error
 
+	// RefreshAnnualAllowances resets the monthly pool of every subscription
+	// billed yearly on each month's anniversary of its period start; the
+	// invoice resets the first month. Returns how many it reset.
+	RefreshAnnualAllowances(ctx context.Context) (int, error)
+
 	// CheckUsageCaps returns ErrCapExceeded when the org is at a generation
 	// cap, without taking anything.
 	CheckUsageCaps(ctx context.Context, orgID uuid.UUID) error
@@ -475,6 +480,50 @@ func (s *creditService) ResetMonthlyAllowance(ctx context.Context, orgID uuid.UU
 	}
 	_, err := s.repo.ResetMonthly(ctx, orgID, allowance, idempotencyKey)
 	return err
+}
+
+func (s *creditService) RefreshAnnualAllowances(ctx context.Context) (int, error) {
+	if s.selfHost {
+		return 0, nil
+	}
+	due, err := s.repo.AnnualAllowancesDue(ctx, 500)
+	if err != nil {
+		return 0, err
+	}
+	now, reset := time.Now(), 0
+	for _, a := range due {
+		anchor, ok := LatestMonthlyAnchor(a.PeriodStart, now)
+		if !ok || !a.LastReset.Before(anchor) {
+			continue
+		}
+		key := "annual_month:" + anchor.UTC().Format("2006-01-02")
+		if err := s.ResetMonthlyAllowance(ctx, a.OrgID, a.Allowance, key); err != nil {
+			return reset, err
+		}
+		reset++
+	}
+	return reset, nil
+}
+
+// LatestMonthlyAnchor is the most recent monthly anniversary of start that is
+// not after now, from the first month after start on; ok is false during the
+// first month. A start on the 31st lands on each month's last day.
+func LatestMonthlyAnchor(start, now time.Time) (time.Time, bool) {
+	var anchor time.Time
+	for k := 1; ; k++ {
+		next := addMonthsClamped(start, k)
+		if next.After(now) {
+			return anchor, k > 1
+		}
+		anchor = next
+	}
+}
+
+func addMonthsClamped(t time.Time, months int) time.Time {
+	y, m, d := t.Date()
+	first := time.Date(y, m+time.Month(months), 1, t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), t.Location())
+	last := first.AddDate(0, 1, -1).Day()
+	return first.AddDate(0, 0, min(d, last)-1)
 }
 
 func (s *creditService) CheckUsageCaps(ctx context.Context, orgID uuid.UUID) error {
