@@ -243,7 +243,7 @@ Each registered key may make 30 protected calls per hour. Past that the call ans
 
 #### Account deletion refusals
 
-Scheduling an account deletion is refused with one of these codes. The same checks run again when the 30-day grace period ends: if either still applies, the deletion stays pending, is checked again a day later, and the account is kept until it completes.
+Scheduling an account deletion is refused with one of these codes, or with `organization_cloud_connected` (see [Cloud connection refusals](#cloud-connection-refusals)) when a workspace it owns is connected to Warmbly Cloud. The same checks run again when the 30-day grace period ends: if either still applies, the deletion stays pending, is checked again a day later, and the account is kept until it completes.
 
 | `code` | Status | Meaning |
 |--------|--------|---------|
