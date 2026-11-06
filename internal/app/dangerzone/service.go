@@ -78,6 +78,7 @@ type service struct {
 // BillingLookup reads a subscription's live state from the billing provider.
 type BillingLookup interface {
 	GetSubscription(ctx context.Context, subscriptionID string) (*stripe.Subscription, *errx.Error)
+	CancelSubscription(ctx context.Context, subscriptionID string, cancelAtPeriodEnd bool) *errx.Error
 }
 
 // NewService constructs the default Service implementation.
@@ -420,7 +421,11 @@ func (s *service) runHardDelete(ctx context.Context, d *models.ScheduledDeletion
 	case models.DeletionResourceOrganization:
 		placements, err = s.repo.HardDeleteOrganization(ctx, d.ResourceID)
 	case models.DeletionResourceUser:
-		placements, err = s.repo.HardDeleteUser(ctx, d.ResourceID, s.billingCheck())
+		var ending []string
+		placements, err = s.repo.HardDeleteUser(ctx, d.ResourceID, s.billingCheck(&ending))
+		if err == nil {
+			s.keepEnding(ctx, ending)
+		}
 	default:
 		return fmt.Errorf("unsupported resource type: %s", d.ResourceType)
 	}
@@ -431,7 +436,9 @@ func (s *service) runHardDelete(ctx context.Context, d *models.ScheduledDeletion
 	return nil
 }
 
-func (s *service) billingCheck() repository.BillingCheck {
+// billingCheck refuses while an owned subscription renews and records the ones
+// ending at period end, which keepEnding reasserts once the deletion commits.
+func (s *service) billingCheck(ending *[]string) repository.BillingCheck {
 	if s.billing == nil {
 		return nil
 	}
@@ -444,8 +451,25 @@ func (s *service) billingCheck() repository.BillingCheck {
 			if subscriptionRenews(sub) {
 				return repository.ErrOwnedWorkspaceBilled
 			}
+			if sub.CancelAtPeriodEnd {
+				*ending = append(*ending, id)
+			}
 		}
 		return nil
+	}
+}
+
+// keepEnding undoes a resume made between the provider check and the commit:
+// nothing is left to bill once the workspace is gone.
+func (s *service) keepEnding(ctx context.Context, ids []string) {
+	for _, id := range ids {
+		// Only a subscription that resumed needs it; one still ending or since canceled is left alone.
+		if sub, err := s.billing.GetSubscription(ctx, id); err == nil && !subscriptionRenews(sub) {
+			continue
+		}
+		if err := s.billing.CancelSubscription(ctx, id, true); err != nil {
+			errs.CaptureException(fmt.Errorf("keep subscription %s ending after account deletion: %s", id, err.Message))
+		}
 	}
 }
 
