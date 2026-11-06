@@ -17,7 +17,7 @@ test.describe("warmup placement", () => {
     await strip.scrollIntoViewIfNeeded();
     await expect(page.getByText("Shorter ask").first()).toBeVisible();
     await proof.chapter("Warmup placement", "Warmup opens some threads with a running step's copy on its own; the step shows where it landed");
-    await proof.shot("step-warmup-placement", { caption: "Each arm's inbox, tabs and spam at Google, Microsoft and Yahoo over the last 30 days" });
+    await proof.shot("step-warmup-placement", { caption: "Each arm's inbox, tabs and spam at business inboxes on Google Workspace and Microsoft 365 over the last 30 days" });
     await proof.dwell();
   });
 });

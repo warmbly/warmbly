@@ -1,15 +1,19 @@
-// Where this step's copy landed when its senders' warmup carried it. Warmup
-// opens some of its threads with a running campaign's copy on its own; this
-// strip only reports, and stays hidden until a recipient has filed a receipt.
+// Where this step's copy landed at business inboxes when its senders' warmup
+// carried it. Warmup opens some of its threads with a running campaign's copy
+// on its own; this strip only reports, and stays hidden until an arm has
+// enough receipts for its rate to mean something.
 
 import type { WarmupCopyPlacement, WarmupStepPlacement } from "@/lib/api/models/app/campaigns/WarmupPlacement";
 import { useCampaignWarmupPlacement } from "@/lib/api/hooks/app/campaigns/useCampaignWarmupPlacement";
 
 const PROVIDERS: { group: string; label: string }[] = [
-    { group: "google", label: "Google" },
-    { group: "microsoft", label: "Microsoft" },
-    { group: "yahoo", label: "Yahoo" },
+    { group: "google", label: "Google Workspace" },
+    { group: "microsoft", label: "Microsoft 365" },
 ];
+
+// Receipts an arm needs before its rates show, and a provider before its own does.
+const MIN_ARM_CHECKED = 20;
+const MIN_PROVIDER_CHECKED = 10;
 
 const rate = (n: number, of: number) => Math.round((n / of) * 100);
 
@@ -31,7 +35,7 @@ export default function StepWarmupPlacement({
 }) {
     const { data } = useCampaignWarmupPlacement(campaignId);
     const rows = (data?.data ?? [])
-        .filter((r) => r.sequence_id === stepId && r.placement.reported > 0)
+        .filter((r) => r.sequence_id === stepId && r.placement.reported >= MIN_ARM_CHECKED)
         .map((r) => ({ row: r, name: armName(r.variant_id ?? "original") }))
         .filter((r): r is { row: WarmupStepPlacement; name: string } => r.name !== undefined);
     if (rows.length === 0) return null;
@@ -53,7 +57,7 @@ export default function StepWarmupPlacement({
                     <span className="inline-flex flex-wrap items-center gap-x-2 text-[11px] text-slate-500">
                         {PROVIDERS.map(({ group, label }) => {
                             const g = row.by_group.find((x) => x.group === group);
-                            if (!g || g.reported === 0) return null;
+                            if (!g || g.reported < MIN_PROVIDER_CHECKED) return null;
                             const pct = rate(g.inbox + g.tabs, g.reported);
                             return (
                                 <span key={group}>
@@ -66,7 +70,7 @@ export default function StepWarmupPlacement({
                 </div>
             ))}
             <p className="text-[11px] text-slate-400">
-                Where this copy landed when your mailboxes' warmup carried it, at Google, Microsoft and Yahoo.
+                Where this copy landed when your mailboxes' warmup sent it to business inboxes on Google Workspace and Microsoft 365.
             </p>
         </div>
     );

@@ -19,21 +19,21 @@ describe("StepWarmupPlacement", () => {
             </QueryClientProvider>,
         );
 
-    it("stays hidden until a recipient files a receipt", async () => {
-        api.get.mockResolvedValue({ days: 30, data: [{ sequence_id: "s1", variant_id: null, placement: { sent: 4, reported: 0, inbox: 0, tabs: 0, spam: 0, rescued: 0 }, by_group: [] }] });
+    it("stays hidden until an arm has enough receipts to read", async () => {
+        api.get.mockResolvedValue({ days: 30, data: [{ sequence_id: "s1", variant_id: null, placement: { sent: 30, reported: 19, inbox: 10, tabs: 0, spam: 9, rescued: 0 }, by_group: [group("google", 19, 10, 9)] }] });
         const { container } = draw();
         await vi.waitFor(() => expect(api.get).toHaveBeenCalled());
         await new Promise((r) => setTimeout(r, 0));
         expect(container.textContent).toBe("");
     });
 
-    it("shows each arm's headline and provider split for this step only", async () => {
+    it("shows each arm's headline and business inbox split for this step only", async () => {
         api.get.mockResolvedValue({
             days: 30,
             data: [
-                { sequence_id: "s1", variant_id: null, placement: { sent: 20, reported: 20, inbox: 18, tabs: 0, spam: 2, rescued: 2 }, by_group: [group("google", 10, 10, 0), group("microsoft", 10, 8, 2), group("other", 3, 1, 2)] },
-                { sequence_id: "s1", variant_id: "v1", placement: { sent: 10, reported: 10, inbox: 10, tabs: 0, spam: 0, rescued: 0 }, by_group: [group("google", 10, 10, 0)] },
-                { sequence_id: "s2", variant_id: null, placement: { sent: 9, reported: 9, inbox: 0, tabs: 0, spam: 9, rescued: 0 }, by_group: [] },
+                { sequence_id: "s1", variant_id: null, placement: { sent: 20, reported: 20, inbox: 18, tabs: 0, spam: 2, rescued: 2 }, by_group: [group("google", 10, 10, 0), group("microsoft", 10, 8, 2)] },
+                { sequence_id: "s1", variant_id: "v1", placement: { sent: 25, reported: 25, inbox: 25, tabs: 0, spam: 0, rescued: 0 }, by_group: [group("google", 21, 21, 0), group("microsoft", 4, 4, 0)] },
+                { sequence_id: "s2", variant_id: null, placement: { sent: 29, reported: 29, inbox: 0, tabs: 0, spam: 29, rescued: 0 }, by_group: [] },
             ],
         });
         draw();
@@ -43,12 +43,14 @@ describe("StepWarmupPlacement", () => {
         expect(screen.getByText("90%")).toBeTruthy();
         expect(screen.getByText("80%")).toBeTruthy();
         expect(screen.getByText("20 checked")).toBeTruthy();
-        expect(screen.queryByText("9 checked")).toBeNull();
-        expect(screen.queryByText(/Other/)).toBeNull();
+        expect(screen.getByText("25 checked")).toBeTruthy();
+        expect(screen.queryByText("29 checked")).toBeNull();
+        // Microsoft 365 shows for the Original's ten receipts and not for Variant B's four.
+        expect(screen.getAllByText(/Microsoft 365/)).toHaveLength(2);
     });
 
     it("drops a row for an arm no longer on the step", async () => {
-        api.get.mockResolvedValue({ days: 30, data: [{ sequence_id: "s1", variant_id: "gone", placement: { sent: 5, reported: 5, inbox: 5, tabs: 0, spam: 0, rescued: 0 }, by_group: [] }] });
+        api.get.mockResolvedValue({ days: 30, data: [{ sequence_id: "s1", variant_id: "gone", placement: { sent: 25, reported: 25, inbox: 25, tabs: 0, spam: 0, rescued: 0 }, by_group: [] }] });
         const { container } = draw((k) => (k === "original" ? "Original" : undefined));
         await vi.waitFor(() => expect(api.get).toHaveBeenCalled());
         await new Promise((r) => setTimeout(r, 0));

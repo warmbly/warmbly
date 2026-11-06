@@ -32053,7 +32053,7 @@
                 "$ref": "#/components/schemas/WarmupCopyPlacement"
               }
             ],
-            "description": "Google, Microsoft and Yahoo recipients only."
+            "description": "Business inboxes on Google Workspace and Microsoft 365 only, the only recipients campaign copy is sent to."
           },
           "by_group": {
             "type": "array",
@@ -32109,7 +32109,7 @@
             "properties": {
               "group": {
                 "type": "string",
-                "description": "google, microsoft, yahoo or other."
+                "description": "google (Google Workspace) or microsoft (Microsoft 365)."
               }
             }
           }

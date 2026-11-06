@@ -1,7 +1,7 @@
 -- Warmup placement proof data for the isolated rich-seed QA database, never production.
 -- Every address is on the reserved .example TLD and every send is synthetic: an
 -- A/B arm on the entry step of the seeded "RevOps outreach - July" campaign,
--- three pool peers, warmup openings of that step and the receipts they filed.
+-- two business pool peers, warmup openings of that step and the receipts they filed.
 BEGIN;
 DO $$
 BEGIN
@@ -27,24 +27,22 @@ INSERT INTO campaign_ab_variants (id, campaign_id, sequence_id, name, weight, su
 VALUES ('86300000-0000-0000-0000-000000000001', 'dddd0d00-0000-0000-0000-000000000001', 'dddd0e00-0000-0000-0000-000000000001',
         'Shorter ask', 100, 'Outbound at {{.Company}}',
         E'Hi {{.FirstName}},\n\nHow is {{.Company}} keeping track of which mailboxes land in spam?\n\nWorth a two-minute look?\n\nDev', true);
--- Pool peers in a workspace of their own, one per provider group.
+-- Pool peers in a workspace of their own, one on Google Workspace and one on Microsoft 365.
 INSERT INTO users (id, email, first_name, last_name, password_hash)
 VALUES ('86300000-0000-0000-0000-0000000000b1', 'peers@pool-peers.example', 'Pool', 'Peers', 'x');
 INSERT INTO organizations (id, name, slug, owner_user_id)
 VALUES ('86300000-0000-0000-0000-0000000000a1', 'Pool peers', 'wc-pool-peers', '86300000-0000-0000-0000-0000000000b1');
 INSERT INTO email_accounts (id, user_id, organization_id, email, name, signature_plain, signature_html, provider, status, campaign_limit, min_wait_time, timezone, mail_host)
 VALUES ('86300000-0000-0000-0000-0000000000c1', '86300000-0000-0000-0000-0000000000b1', '86300000-0000-0000-0000-0000000000a1', 'priya@northridge.example', 'Priya Raman', '', '', 'smtp_imap', 'active', 50, 600, 'UTC', 'google_workspace'),
-       ('86300000-0000-0000-0000-0000000000c2', '86300000-0000-0000-0000-0000000000b1', '86300000-0000-0000-0000-0000000000a1', 'tom@harbourline.example', 'Tom Okafor', '', '', 'smtp_imap', 'active', 50, 600, 'UTC', 'microsoft365'),
-       ('86300000-0000-0000-0000-0000000000c3', '86300000-0000-0000-0000-0000000000b1', '86300000-0000-0000-0000-0000000000a1', 'lena@fjordmail.example', 'Lena Berg', '', '', 'smtp_imap', 'active', 50, 600, 'UTC', 'other');
+       ('86300000-0000-0000-0000-0000000000c2', '86300000-0000-0000-0000-0000000000b1', '86300000-0000-0000-0000-0000000000a1', 'tom@harbourline.example', 'Tom Okafor', '', '', 'smtp_imap', 'active', 50, 600, 'UTC', 'microsoft365');
 
 -- Sends by arm and recipient group, and where each landed. "none" has no receipt yet.
 CREATE TEMP TABLE wc_sends ON COMMIT DROP AS
 WITH spec(arm, rec, outcome, n) AS (VALUES
-  ('step', 'c1', 'inbox', 10), ('step', 'c1', 'tabs', 1), ('step', 'c1', 'spam_rescued', 1), ('step', 'c1', 'none', 2),
-  ('step', 'c2', 'inbox', 6), ('step', 'c2', 'spam_rescued', 2), ('step', 'c2', 'spam', 1),
-  ('step', 'c3', 'inbox', 3),
-  ('variant', 'c1', 'inbox', 7), ('variant', 'c1', 'spam_rescued', 1),
-  ('variant', 'c2', 'inbox', 7)
+  ('step', 'c1', 'inbox', 12), ('step', 'c1', 'tabs', 2), ('step', 'c1', 'spam_rescued', 1), ('step', 'c1', 'none', 2),
+  ('step', 'c2', 'inbox', 9), ('step', 'c2', 'spam_rescued', 1), ('step', 'c2', 'spam', 1),
+  ('variant', 'c1', 'inbox', 12), ('variant', 'c1', 'tabs', 1),
+  ('variant', 'c2', 'inbox', 9), ('variant', 'c2', 'spam_rescued', 1)
 ), expanded AS (
   SELECT spec.*, row_number() OVER () AS k FROM spec, generate_series(1, spec.n)
 )

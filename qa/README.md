@@ -323,8 +323,8 @@ Everything the harness writes stays under the ignored `.artifacts/`.
 
 `flows/warmup-placement.flow.ts` is opt-in: apply `fixtures/warmup-placement.sql`
 to this worktree's rich-seed database. It adds an A/B arm to the entry step of the
-seeded **RevOps outreach - July** campaign, three pool peers (Google, Microsoft and
-another host, on the reserved `.example` TLD) and synthetic warmup openings of that
+seeded **RevOps outreach - July** campaign, two pool peers (Google Workspace and
+Microsoft 365, on the reserved `.example` TLD) and synthetic warmup openings of that
 step with the receipts they filed, and marks the owner's product tour finished. It
 is re-runnable. Clear the stack's private Redis afterwards.
 

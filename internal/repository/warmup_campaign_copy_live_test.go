@@ -145,9 +145,6 @@ func TestLiveCampaignStepPlacement(t *testing.T) {
 	ctx := t.Context()
 	since := time.Now().Add(-time.Hour)
 
-	if _, err := f.pool.Exec(ctx, `UPDATE email_accounts SET mail_host = 'gmail' WHERE id = $1`, f.recipient); err != nil {
-		t.Fatal(err)
-	}
 	msgID := "<" + uuid.NewString() + "@fixture>"
 	if _, err := f.pool.Exec(ctx, `INSERT INTO warmup_tokens(task_id, sender_account_id, recipient_account_id, content_source, sequence_id, variant_id, sent_message_id)
 		VALUES ($1, $2, $3, 'campaign', $4, $5, $6)`, f.task, f.sender, f.recipient, c.s1, c.variantB, msgID); err != nil {
@@ -155,6 +152,17 @@ func TestLiveCampaignStepPlacement(t *testing.T) {
 	}
 	if _, err := f.pool.Exec(ctx, `INSERT INTO warmup_received(email_account_id, internal_id, message_id, sender_account_id, first_landing, rescue_outcome)
 		VALUES ($1, $2, $3, $4, 'spam', 'moved')`, f.recipient, uuid.New(), msgID, f.sender); err != nil {
+		t.Fatal(err)
+	}
+	for _, host := range []string{"gmail", "outlook", "yahoo", "zoho"} {
+		if _, err := f.pool.Exec(ctx, `UPDATE email_accounts SET mail_host = $2 WHERE id = $1`, f.recipient, host); err != nil {
+			t.Fatal(err)
+		}
+		if steps, err := r.CampaignStepPlacement(ctx, f.org, c.campaign, since); err != nil || len(steps) != 0 {
+			t.Fatalf("a %s recipient counted toward the step's placement: %+v %v", host, steps, err)
+		}
+	}
+	if _, err := f.pool.Exec(ctx, `UPDATE email_accounts SET mail_host = 'google_workspace' WHERE id = $1`, f.recipient); err != nil {
 		t.Fatal(err)
 	}
 

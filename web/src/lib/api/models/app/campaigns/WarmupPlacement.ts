@@ -10,7 +10,8 @@ export interface WarmupCopyPlacement {
     rescued: number;
 }
 
-export type WarmupProviderGroup = "google" | "microsoft" | "yahoo" | "other";
+// google is Google Workspace and microsoft is Microsoft 365.
+export type WarmupProviderGroup = "google" | "microsoft";
 
 export interface WarmupCopyGroupPlacement extends WarmupCopyPlacement {
     group: WarmupProviderGroup | (string & {});
@@ -20,7 +21,7 @@ export interface WarmupStepPlacement {
     sequence_id: string;
     // Null is the step's own copy (the Original); otherwise one of its A/B variants.
     variant_id: string | null;
-    // Google, Microsoft and Yahoo recipients only.
+    // Business inboxes on Google Workspace and Microsoft 365, the only ones campaign copy is sent to.
     placement: WarmupCopyPlacement;
     by_group: WarmupCopyGroupPlacement[];
 }

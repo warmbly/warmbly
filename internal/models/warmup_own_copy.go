@@ -45,7 +45,7 @@ type WarmupCopyPlacement struct {
 }
 
 // WarmupCopyGroupPlacement is WarmupCopyPlacement for one recipient provider
-// group (google, microsoft, yahoo, other).
+// group: google (Google Workspace) or microsoft (Microsoft 365).
 type WarmupCopyGroupPlacement struct {
 	Group string `json:"group"`
 	WarmupCopyPlacement
@@ -55,20 +55,15 @@ type WarmupCopyGroupPlacement struct {
 type WarmupStepPlacement struct {
 	SequenceID uuid.UUID  `json:"sequence_id"`
 	VariantID  *uuid.UUID `json:"variant_id"`
-	// Placement counts recipients at Google, Microsoft and Yahoo only; ByGroup has every group.
+	// Placement counts business inboxes on Google Workspace and Microsoft 365, the only ones campaign copy is sent to.
 	Placement WarmupCopyPlacement        `json:"placement"`
 	ByGroup   []WarmupCopyGroupPlacement `json:"by_group"`
 }
 
-// MajorProviderPlacement totals the google, microsoft and yahoo groups. Those
-// filter on sender reputation; a small host's spam folder is its own filter's
-// verdict, so it never counts toward a copy's headline.
-func MajorProviderPlacement(groups []WarmupCopyGroupPlacement) WarmupCopyPlacement {
+// TotalCopyPlacement adds up a step arm's provider groups.
+func TotalCopyPlacement(groups []WarmupCopyGroupPlacement) WarmupCopyPlacement {
 	var t WarmupCopyPlacement
 	for _, g := range groups {
-		if g.Group == "other" {
-			continue
-		}
 		t.Sent += g.Sent
 		t.Reported += g.Reported
 		t.Inbox += g.Inbox

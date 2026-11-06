@@ -78,13 +78,29 @@ func TestCopyFillableSkipsRecipientsMissingAField(t *testing.T) {
 	}
 }
 
-func TestOwnCopyDrawNeedsAMatureSenderAndAnOutOfInboxRecipient(t *testing.T) {
+func TestOwnCopyDrawNeedsAMatureSenderAndAnOutOfInboxBusinessRecipient(t *testing.T) {
 	org := uuid.New()
 	now := time.Now()
 	mature := now.AddDate(0, 0, -models.WarmupOwnCopyMinDays)
 	young := now.AddDate(0, 0, -models.WarmupOwnCopyMinDays+1)
 	sender := Email{OrganizationID: &org, Warmup: &mature}
-	folder := &Email{}
+	at := func(domain string) string { return "priya" + "@" + domain }
+	folder := &Email{Email: at("northridge.example"), MailHost: "google_workspace"}
+	for _, business := range []*Email{folder, {Email: at("northridge.example"), Provider: "outlook"}, {Email: at("northridge.example"), Provider: "gmail"}} {
+		if !ownCopyDraw(sender, business, now, 0) {
+			t.Fatalf("own copy skipped the business inbox %s", business.Email)
+		}
+	}
+	for _, elsewhere := range []*Email{
+		{Email: at("gmail.com"), Provider: "gmail"},
+		{Email: at("outlook.com"), MailHost: "outlook", Provider: "outlook"},
+		{Email: at("yahoo.com"), MailHost: "yahoo"},
+		{Email: at("smallhost.example"), Provider: "smtp_imap"},
+	} {
+		if ownCopyDraw(sender, elsewhere, now, 0) {
+			t.Fatalf("own copy went to %s, which is not a business inbox on Google Workspace or Microsoft 365", elsewhere.Email)
+		}
+	}
 	if !ownCopyDraw(sender, folder, now, models.WarmupOwnCopySharePercent-1) {
 		t.Fatal("a roll under the share did not draw own copy")
 	}
@@ -94,7 +110,7 @@ func TestOwnCopyDrawNeedsAMatureSenderAndAnOutOfInboxRecipient(t *testing.T) {
 	if ownCopyDraw(Email{OrganizationID: &org, Warmup: &young}, folder, now, 0) {
 		t.Fatalf("a mailbox under %d days of warmup carried its own copy", models.WarmupOwnCopyMinDays)
 	}
-	if ownCopyDraw(sender, &Email{WarmupPlacement: models.WarmupPlacementInbox}, now, 0) {
+	if ownCopyDraw(sender, &Email{Email: folder.Email, MailHost: folder.MailHost, WarmupPlacement: models.WarmupPlacementInbox}, now, 0) {
 		t.Fatal("own copy went to a recipient that reads warmup in its inbox")
 	}
 	if ownCopyDraw(Email{Warmup: &mature}, folder, now, 0) || ownCopyDraw(sender, nil, now, 0) {
