@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/models"
 )
 
 func TestLiveContentPoolRejectsDuplicateBatchContentUnderConcurrency(t *testing.T) {
@@ -54,6 +55,26 @@ func TestLiveContentPoolRejectsDuplicateBatchContentUnderConcurrency(t *testing.
 	}
 	if c, err := r.GetConversation(t.Context(), winner.ID); err != nil || c != nil {
 		t.Fatalf("rejected content entered pool: %+v %v", c, err)
+	}
+}
+
+func TestLiveScheduledGenerationReservesOneInFlightBatchPerSegment(t *testing.T) {
+	f, r, segment, _ := contentPoolFixture(t)
+	t.Cleanup(func() {
+		_, _ = f.pool.Exec(t.Context(), `DELETE FROM warmup_generation_jobs WHERE segment=$1`, segment)
+	})
+	job := func(trigger string) *models.WarmupGenerationJob {
+		return &models.WarmupGenerationJob{ID: uuid.New(), Trigger: trigger, Mode: models.WarmupGenerationModeBatch,
+			PoolType: "premium", Segment: segment, Model: "fixture-model", RequestedCount: 1, Status: "pending"}
+	}
+	if err := r.CreateGenerationJob(t.Context(), job("schedule")); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.CreateGenerationJob(t.Context(), job("schedule")); !errors.Is(err, ErrScheduledGenerationInFlight) {
+		t.Fatalf("second scheduled batch for the segment: %v", err)
+	}
+	if err := r.CreateGenerationJob(t.Context(), job("manual")); err != nil {
+		t.Fatalf("a manual batch is not limited to one in flight: %v", err)
 	}
 }
 
