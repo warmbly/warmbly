@@ -274,9 +274,30 @@ func (e *DatabaseConnectError) Error() string {
 	return "failed to connect to the database (SQLSTATE " + e.Code + ")"
 }
 
+// Sensitive marks an error whose text carries connection details: the local log
+// keeps it, a remote backend gets public instead.
+func Sensitive(err error, public string) error {
+	if err == nil {
+		return nil
+	}
+	return &sensitiveError{err: err, public: public}
+}
+
+type sensitiveError struct {
+	err    error
+	public string
+}
+
+func (e *sensitiveError) Error() string { return e.err.Error() }
+func (e *sensitiveError) Unwrap() error { return e.err }
+
 func redact(err error) error {
 	var connect *pgconn.ConnectError
 	if !errors.As(err, &connect) {
+		var sensitive *sensitiveError
+		if errors.As(err, &sensitive) {
+			return errors.New(sensitive.public)
+		}
 		return err
 	}
 	out := &DatabaseConnectError{}

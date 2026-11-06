@@ -11,6 +11,8 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+
+	"github.com/warmbly/warmbly/internal/observability/errs"
 )
 
 //go:embed migrations/*.sql
@@ -32,7 +34,7 @@ func RunMigrations(databaseURL string) error {
 
 	m, err := openMigrate(source, databaseURL)
 	if err != nil {
-		return fmt.Errorf("failed to create migrate instance: %w", err)
+		return fmt.Errorf("failed to create migrate instance: %w", errs.Sensitive(err, "failed to open the migration connection"))
 	}
 	defer m.Close()
 

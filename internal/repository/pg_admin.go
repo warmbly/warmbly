@@ -1280,7 +1280,9 @@ func (r *adminRepository) GetAppeal(ctx context.Context, appealID uuid.UUID) (*m
 		return nil, err
 	}
 
-	a.User = &user
+	if user.ID != uuid.Nil {
+		a.User = &user
+	}
 	return &a, nil
 }
 

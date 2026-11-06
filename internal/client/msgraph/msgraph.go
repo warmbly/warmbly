@@ -193,14 +193,16 @@ var errGraphTrailingJSON = errors.New("graph: response contains extra JSON data"
 // retries without reporting either.
 var ErrUnreadableResponse = errors.New("graph: success response could not be decoded")
 
-// unreadableResponse logs the response's shape, never its body, which can carry mail content.
+// unreadableResponse logs the response's shape and the decoder's error type,
+// never their text: both can quote the body, which can carry mail content.
 func unreadableResponse(resp *http.Response, err error) error {
-	log.Warn().Err(err).
+	log.Warn().
+		Str("decode_error", fmt.Sprintf("%T", err)).
 		Int("status", resp.StatusCode).
 		Str("content_type", resp.Header.Get("Content-Type")).
 		Str("content_encoding", resp.Header.Get("Content-Encoding")).
 		Msg("graph: success response could not be decoded")
-	return fmt.Errorf("%w: %w", ErrUnreadableResponse, err)
+	return fmt.Errorf("%w (%T)", ErrUnreadableResponse, err)
 }
 
 // transportError classifies a failure of the HTTP call itself. The client's

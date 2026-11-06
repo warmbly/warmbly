@@ -2,12 +2,15 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
+	"github.com/warmbly/warmbly/internal/models"
 )
 
 // Live cover for deleting a workspace and deleting a person. Skipped unless
@@ -269,5 +272,81 @@ func TestLiveDeletingAnAccountRemovesOwnedWorkspacesAndKeepsSharedWork(t *testin
 	}
 	if n := f.count(t, `SELECT count(*) FROM scheduled_deletions WHERE id = $1 AND requested_by_user_id IS NULL`, request); n != 1 {
 		t.Error("the deletion request did not survive as the record of the closure")
+	}
+}
+
+// A user row cascades into the mailboxes, contacts and campaigns it created in
+// every workspace, so an account that still holds any in a workspace it does
+// not own is refused, at scheduling and at execution, with nothing erased.
+func TestLiveAccountDeletionRefusesWhileHoldingAnotherWorkspacesMailbox(t *testing.T) {
+	f := newDangerLiveFixture(t)
+	ctx := context.Background()
+	other, otherOrg, shared := uuid.New(), uuid.New(), uuid.New()
+	for _, q := range []struct {
+		sql  string
+		args []any
+	}{
+		{`INSERT INTO users (id, email, first_name, last_name) VALUES ($1, $2, 'Other', 'Owner')`, []any{other, "danger-" + other.String()[:8] + "@test.local"}},
+		{`INSERT INTO organizations (id, name, slug, owner_user_id) VALUES ($1, 'Other', $2, $3)`, []any{otherOrg, "danger-" + otherOrg.String()[:8], other}},
+		{`INSERT INTO email_accounts (id, user_id, organization_id, email, name, signature_plain, signature_html, provider, status, campaign_limit, min_wait_time)
+		  VALUES ($1, $2, $3, $4, 'Shared', '', '', 'gmail', 'active', 50, 600)`, []any{shared, f.user, otherOrg, "danger-" + shared.String()[:8] + "@test.local"}},
+	} {
+		if _, err := f.handle.Pool.Exec(ctx, q.sql, q.args...); err != nil {
+			t.Fatalf("fixture %q: %v", q.sql, err)
+		}
+	}
+	t.Cleanup(func() {
+		c := context.Background()
+		for _, q := range []struct {
+			sql string
+			arg any
+		}{
+			{`DELETE FROM email_accounts WHERE id = $1`, shared},
+			{`DELETE FROM organizations WHERE id = $1`, otherOrg},
+			{`DELETE FROM users WHERE id = $1`, other},
+		} {
+			if _, err := f.handle.Pool.Exec(c, q.sql, q.arg); err != nil {
+				t.Errorf("cleanup %q: %v", q.sql, err)
+			}
+		}
+	})
+
+	err := f.repo.CreatePending(ctx, &models.ScheduledDeletion{ID: uuid.New(), ResourceType: models.DeletionResourceUser,
+		ResourceID: f.user, RequestedByUserID: f.user, ScheduledAt: time.Now(), ExecuteAfter: time.Now(), GraceDays: 30})
+	if !errors.Is(err, ErrAccountHoldsSharedWork) {
+		t.Fatalf("scheduling: got %v, want ErrAccountHoldsSharedWork", err)
+	}
+	if _, err := f.repo.HardDeleteUser(ctx, f.user); !errors.Is(err, ErrAccountHoldsSharedWork) {
+		t.Fatalf("executing: got %v, want ErrAccountHoldsSharedWork", err)
+	}
+	if n := f.count(t, `SELECT count(*) FROM email_accounts WHERE id = $1`, shared); n != 1 {
+		t.Error("the other workspace lost its mailbox")
+	}
+	if n := f.count(t, `SELECT count(*) FROM organizations WHERE id = $1`, f.org); n != 1 {
+		t.Error("the owned workspace went although the deletion was refused")
+	}
+	if n := f.count(t, `SELECT count(*) FROM mailbox_erasures WHERE email_account_id = $1`, f.mailbox); n != 0 {
+		t.Errorf("queued %d erasures for a refused deletion", n)
+	}
+}
+
+// Nothing in a deletion cancels billing, so an owned workspace whose
+// subscription will renew holds the account deletion.
+func TestLiveAccountDeletionRefusesWhileAnOwnedWorkspaceRenews(t *testing.T) {
+	f := newDangerLiveFixture(t)
+	ctx := context.Background()
+	if _, err := f.handle.Pool.Exec(ctx, `
+		INSERT INTO subscriptions (user_id, organization_id, plan_id, stripe_customer_id, stripe_subscription_id, status)
+		VALUES ($1, $2, '00000000-0000-0000-0000-000000000001', 'cus_test', 'sub_test', 'active')`, f.user, f.org); err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	if _, err := f.repo.HardDeleteUser(ctx, f.user); !errors.Is(err, ErrOwnedWorkspaceBilled) {
+		t.Fatalf("got %v, want ErrOwnedWorkspaceBilled", err)
+	}
+	if _, err := f.handle.Pool.Exec(ctx, `UPDATE subscriptions SET cancel_at_period_end = true WHERE organization_id = $1`, f.org); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.repo.HardDeleteUser(ctx, f.user); err != nil {
+		t.Fatalf("a subscription set to end still held the deletion: %v", err)
 	}
 }
