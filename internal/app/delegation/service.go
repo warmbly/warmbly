@@ -60,6 +60,9 @@ type Config struct {
 	// GoogleMissing and MicrosoftMissing name the settings an operator still has to set; empty when enabled.
 	GoogleMissing    []string `json:"google_missing"`
 	MicrosoftMissing []string `json:"microsoft_missing"`
+
+	// GoogleMailboxClientID is the per-mailbox sign-in client a Workspace admin marks Trusted; empty when sign-in is off.
+	GoogleMailboxClientID string `json:"google_mailbox_client_id,omitempty"`
 }
 
 // Stable codes for refusals a client branches on.
@@ -133,6 +136,8 @@ type Service struct {
 	msLoginBase    string
 	graphBase      string
 
+	googleMailboxClientID string
+
 	sources sync.Map // cache key -> oauth2.TokenSource
 }
 
@@ -152,6 +157,9 @@ type Deps struct {
 	GoogleSignin *oauth2.Config
 	Prover       *domainproof.Prover
 	TXT          TXTLookup
+
+	// GoogleMailboxClientID is shown to a Workspace admin trusting per-mailbox sign-in.
+	GoogleMailboxClientID string
 }
 
 func NewService(d Deps) *Service {
@@ -166,6 +174,8 @@ func NewService(d Deps) *Service {
 		gmailBase:      "https://gmail.googleapis.com/gmail/v1",
 		msLoginBase:    "https://login.microsoftonline.com",
 		graphBase:      "https://graph.microsoft.com/v1.0",
+
+		googleMailboxClientID: d.GoogleMailboxClientID,
 	}
 	if s.txt == nil {
 		s.txt = net.DefaultResolver
@@ -200,6 +210,9 @@ func (s *Service) Config() Config {
 		GoogleEnabled: s.googleEnabled(), GoogleClientID: s.googleClientID,
 		GoogleScopes: config.GoogleDelegationScopes, MicrosoftEnabled: s.microsoftEnabled(),
 		GoogleMissing: []string{}, MicrosoftMissing: []string{},
+	}
+	if config.GoogleOAuthConnect() {
+		c.GoogleMailboxClientID = s.googleMailboxClientID
 	}
 	if !c.GoogleEnabled {
 		c.GoogleMissing = append(c.GoogleMissing, "GOOGLE_WORKSPACE_DELEGATION_KEY")

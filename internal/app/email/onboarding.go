@@ -53,6 +53,9 @@ func (s *emailService) OAuthStart(ctx context.Context, userID string, orgID *uui
 	if provider == models.InboxProviderGoogle && !config.GoogleOAuthConnect() {
 		return nil, errx.ErrEmailOnboardGoogleOAuthDisabled
 	}
+	if provider == models.InboxProviderGoogle && personalGmail(loginHint) {
+		return nil, errx.ErrEmailOnboardGooglePersonal
+	}
 	cfg, xerr := s.oauthConfigFor(provider)
 	if xerr != nil {
 		return nil, xerr

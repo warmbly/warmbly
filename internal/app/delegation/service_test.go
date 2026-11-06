@@ -407,6 +407,21 @@ func TestConfigNamesTheClientAndScopes(t *testing.T) {
 	}
 }
 
+// The per-mailbox sign-in client is named only while new mailboxes may sign in with Google.
+func TestConfigNamesTheMailboxClientWhileSigninIsOn(t *testing.T) {
+	t.Setenv("BOX_GOOGLE_CLIENT_ID", "mailbox-client.apps.googleusercontent.com")
+	t.Setenv("BOX_GOOGLE_CLIENT_SECRET", "secret")
+	s := NewService(Deps{GoogleMailboxClientID: "mailbox-client.apps.googleusercontent.com"})
+	t.Setenv("BOX_GOOGLE_OAUTH_CONNECT", "true")
+	if got := s.Config().GoogleMailboxClientID; got != "mailbox-client.apps.googleusercontent.com" {
+		t.Fatalf("sign-in on: client = %q", got)
+	}
+	t.Setenv("BOX_GOOGLE_OAUTH_CONNECT", "false")
+	if got := s.Config().GoogleMailboxClientID; got != "" {
+		t.Fatalf("sign-in off: client = %q", got)
+	}
+}
+
 // googleGrant proves acme.io for org by sign-in and returns the grant.
 func googleGrant(t *testing.T, s *Service, p *fakeProviders, org, user uuid.UUID) *models.DomainGrant {
 	t.Helper()

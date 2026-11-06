@@ -1969,6 +1969,10 @@ func main() {
 				Scopes: []string{"openid", "email"}, Endpoint: g.Endpoint,
 			}
 		}
+		var googleMailboxClientID string
+		if g := oauth2Cfg.InboxAuthorization.Google; g != nil {
+			googleMailboxClientID = g.ClientID
+		}
 		delegationService = delegation.NewService(delegation.Deps{
 			Repo:              repository.NewDomainGrantRepository(primaryDB),
 			Mailboxes:         emailService,
@@ -1980,6 +1984,8 @@ func main() {
 			MicrosoftRedirect: outlookApp.RedirectURL,
 			GoogleSignin:      googleSignin,
 			Prover:            domainProver,
+
+			GoogleMailboxClientID: googleMailboxClientID,
 		})
 		if w, ok := poolLinkService.(interface {
 			WireDelegation(poollink.DelegatedTokenBroker)

@@ -606,6 +606,14 @@ The [Apollo](/guides/apollo/) and [Clay](/guides/clay/) endpoints answer with th
 |--------|--------|---------|
 | `action_provider_mismatch` | 400 | `POST /automations`, `PATCH /automations/:id` or `POST /integrations/connections/:id/events` paired an action with a connection whose provider does not run it, such as a Slack message on a HubSpot connection. Each action runs only on the integration it belongs to; the provider's actions are listed under `capability.actions` in `GET /integrations/catalog` |
 
+#### `google_personal_app_password`
+
+A `400` with `code: "google_personal_app_password"` comes from `POST /emails/onboarding/oauth/start` with `provider: "gmail"` and a `login_hint` on `gmail.com` or `googlemail.com`. Personal Gmail connects with an app password, not with Google sign-in. Nothing was started and nothing was stored.
+
+**How to fix:**
+- Turn on 2-Step Verification for the Google account, create an app password, and connect the mailbox through `POST /emails/onboarding/smtp-imap` with `smtp.gmail.com:587` (STARTTLS) and `imap.gmail.com:993` (TLS). See [personal Gmail](/guides/mailboxes/#personal-gmail)
+- A Google Workspace mailbox signs in with Google once its administrator trusts Warmbly; see [Google Workspace with Google sign-in](/guides/mailboxes/#google-workspace-with-google-sign-in)
+
 #### `mailbox_oauth_return_origin`
 
 A `400` with `code: "mailbox_oauth_return_origin"` means a Google or Microsoft mailbox connect or reauthorization came from a dashboard origin the backend does not allow. Add its exact HTTP(S) origin to `CORS_ALLOW_ORIGINS`, as in [shared-backend dashboard configuration](/development/configuration/#google-sign-in-per-dashboard-deployment). A wildcard is not an OAuth return allowlist.
