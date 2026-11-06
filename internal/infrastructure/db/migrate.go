@@ -40,6 +40,11 @@ func RunMigrations(databaseURL string) error {
 	defer m.Close()
 
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		// A dropped connection names the database's address; a failed migration does not.
+		var op *net.OpError
+		if errors.As(err, &op) {
+			err = errs.Sensitive(err, "lost the migration connection"+connectReason(err))
+		}
 		return fmt.Errorf("failed to run migrations: %w", err)
 	}
 

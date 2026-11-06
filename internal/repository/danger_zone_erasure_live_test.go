@@ -362,10 +362,27 @@ func TestLiveAccountDeletionRefusesWhileAnOwnedWorkspaceRenews(t *testing.T) {
 	if _, err := f.repo.HardDeleteUser(ctx, f.user); !errors.Is(err, ErrOwnedWorkspaceBilled) {
 		t.Fatalf("got %v, want ErrOwnedWorkspaceBilled", err)
 	}
-	if _, err := f.handle.Pool.Exec(ctx, `UPDATE subscriptions SET cancel_at_period_end = true WHERE organization_id = $1`, f.org); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.repo.HardDeleteUser(ctx, f.user); err != nil {
-		t.Fatalf("a subscription set to end still held the deletion: %v", err)
+	// Each of these will not renew; checked inside a rolled-back transaction so the next still has a workspace.
+	for _, change := range []string{
+		`cancel_at_period_end = true`,
+		`status = 'canceled'`,
+		`status = 'incomplete_expired'`,
+		`stripe_subscription_id = NULL`,
+	} {
+		tx, err := f.handle.Pool.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.Exec(ctx, `UPDATE subscriptions SET `+change+` WHERE organization_id = $1`, f.org); err != nil {
+			t.Fatal(err)
+		}
+		owned, err := ownedWorkspaces(ctx, tx, f.user, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := accountDeletable(ctx, tx, f.user, owned); err != nil {
+			t.Errorf("%s still held the deletion: %v", change, err)
+		}
+		_ = tx.Rollback(ctx)
 	}
 }

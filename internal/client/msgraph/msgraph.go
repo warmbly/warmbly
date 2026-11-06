@@ -193,8 +193,7 @@ var errGraphTrailingJSON = errors.New("graph: response contains extra JSON data"
 // retries without reporting either.
 var ErrUnreadableResponse = errors.New("graph: success response could not be decoded")
 
-// unreadableResponse logs the response's shape and the decoder's error type,
-// never their text: both can quote the body, which can carry mail content.
+// unreadableResponse logs the response shape and decoder error type, never text that can quote mail content.
 func unreadableResponse(resp *http.Response, err error) error {
 	log.Warn().
 		Str("decode_error", fmt.Sprintf("%T", err)).
