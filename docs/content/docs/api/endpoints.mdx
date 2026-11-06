@@ -89,6 +89,7 @@ Campaigns, steps and activity logs are scoped to the selected organization for s
 | PATCH | `/campaigns/:id/ab-variants/:variantId` | `WRITE_CAMPAIGNS` |
 | DELETE | `/campaigns/:id/ab-variants/:variantId` | `WRITE_CAMPAIGNS` |
 | GET | `/campaigns/:id/ab-analysis` | `READ_ANALYTICS` |
+| GET | `/campaigns/:id/warmup-placement` | `READ_CAMPAIGNS` |
 | POST | `/campaigns/:id/preflight` | `SEND_CAMPAIGNS` |
 | POST | `/campaigns/:id/test-email` | `SEND_CAMPAIGNS` |
 | POST | `/campaigns/:id/start` | `SEND_CAMPAIGNS` |
@@ -481,17 +482,11 @@ The `listing` routes publish an app to the [community directory](/api/oauth/#pub
 | GET/PATCH | `/integrations/clay/:id` | `INTEGRATIONS` |
 | GET/POST/PATCH/DELETE | `/automations[/:id]` | `INTEGRATIONS` |
 | PATCH | `/automations/:id/layout` | `INTEGRATIONS` |
-| GET/POST/PATCH/DELETE | `/warmup/routing[/:id]` | `WARMUP_ROUTING` |
-| GET/POST/DELETE | `/warmup/templates[/:id]` | `WARMUP_TEMPLATES` |
-| POST | `/warmup/templates/check` | `WARMUP_TEMPLATES` |
-| GET/PUT | `/warmup/templates/settings` | `WARMUP_TEMPLATES` |
-| GET | `/warmup/templates/:id` | `WARMUP_TEMPLATES` |
-| GET | `/warmup/templates/:id/stats` | `WARMUP_TEMPLATES` |
-| GET | `/warmup/templates/campaign-copy` | `WARMUP_TEMPLATES` and `READ_CAMPAIGNS` |
 
 A signed-in member needs `manage_settings` to create, edit, enable or delete an automation, because a flow runs as the workspace; `use_integrations` is enough to list, open, test and read the run history.
 
 Starting an [Apollo](/guides/apollo/) enrichment writes contacts and spends the workspace's Apollo credits, so it needs `BULK_CONTACTS` as well as `INTEGRATIONS` (for a member, `use_integrations` and `manage_contacts`). Saving the key, imports and Clay settings need `manage_settings`; previewing and running an import need `use_integrations`. `POST /integrations/inbound/clay/:secret` is the URL a [Clay](/guides/clay/) table posts rows to. It takes no API key, because the secret in its path is the credential.
+| GET/POST/PATCH/DELETE | `/warmup/routing[/:id]` | `WARMUP_ROUTING` |
 
 ### Retry safety
 

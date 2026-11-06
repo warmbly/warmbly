@@ -667,6 +667,39 @@ Each step entry lists the Original (`variant_id: null`) and every variant of tha
 
 The top-level `winner_id`, `winner_name` and `confidence` describe campaign-level variants only.
 
+## Get warmup placement
+
+`GET /campaigns/:id/warmup-placement`
+
+Where each arm of the campaign's opening steps landed when its senders' warmup opened threads with it over the last 30 days (see [your campaign copy](/guides/warmup/#your-campaign-copy)). Only arms warmup carried are listed, so a campaign warmup has not used returns an empty `data`. **Scope** `READ_CAMPAIGNS` · **Org permission** `view_campaigns`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+
+### Response
+
+`variant_id` is `null` for the step's own copy. `placement` counts only recipients at Google, Microsoft and Yahoo, which filter on sender reputation; `by_group` splits the same sends by provider group, `other` included. `sent` counts the openings and `reported` how many of them the recipient has filed a receipt for; `inbox`, `tabs`, `spam` and `rescued` count within those receipts, so read rates over `reported`.
+
+```json
+{
+  "days": 30,
+  "data": [
+    {
+      "sequence_id": "7e3b2c1d-4f5a-4b6c-8d7e-9f0a1b2c3d4e",
+      "variant_id": null,
+      "placement": { "sent": 24, "reported": 22, "inbox": 19, "tabs": 1, "spam": 2, "rescued": 2 },
+      "by_group": [
+        { "group": "google", "sent": 14, "reported": 13, "inbox": 12, "tabs": 1, "spam": 0, "rescued": 0 },
+        { "group": "microsoft", "sent": 10, "reported": 9, "inbox": 7, "tabs": 0, "spam": 2, "rescued": 2 }
+      ]
+    }
+  ]
+}
+```
+
+A campaign outside the caller's workspace answers `404`.
+
 ## List attachments
 
 `GET /campaigns/:id/attachments`

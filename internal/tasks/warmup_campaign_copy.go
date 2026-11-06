@@ -28,10 +28,10 @@ var warmupFillableFields = map[string]bool{
 	tmplvars.UnsubscribeLink: true,
 }
 
-// CampaignCopyIneligible says in a sentence why warmup cannot carry a step's
+// campaignCopyIneligible says in a sentence why warmup cannot carry a step's
 // copy as the campaign sends it, or "" when it can for a recipient who has
 // every field it reads.
-func CampaignCopyIneligible(subject, bodyHTML, bodyPlain string) string {
+func campaignCopyIneligible(subject, bodyHTML, bodyPlain string) string {
 	if strings.TrimSpace(subject) == "" {
 		return "The step has no subject of its own."
 	}
@@ -151,7 +151,7 @@ func (s *tasksService) campaignCopyContent(ctx context.Context, account Email, r
 	contact := warmupRecipientContact(recipient)
 	campaigns := map[uuid.UUID]*models.Campaign{}
 	for _, c := range candidates {
-		if CampaignCopyIneligible(c.Subject, c.BodyHTML, c.BodyPlain) != "" || !copyFillable(contact, c.Subject, c.BodyHTML, c.BodyPlain) {
+		if campaignCopyIneligible(c.Subject, c.BodyHTML, c.BodyPlain) != "" || !copyFillable(contact, c.Subject, c.BodyHTML, c.BodyPlain) {
 			continue
 		}
 		campaign, seen := campaigns[c.CampaignID]

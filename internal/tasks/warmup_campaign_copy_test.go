@@ -39,7 +39,7 @@ func TestCampaignCopyIneligibleNamesWhatWarmupCannotCarry(t *testing.T) {
 		{"FREE CASH", "", "Act now for a guaranteed bonus and free cash prize.", "spam"},
 	}
 	for _, tc := range cases {
-		got := CampaignCopyIneligible(tc.subject, tc.html, tc.plain)
+		got := campaignCopyIneligible(tc.subject, tc.html, tc.plain)
 		if tc.want == "" && got != "" {
 			t.Errorf("%q: refused (%s), want eligible", tc.plain, got)
 		}
