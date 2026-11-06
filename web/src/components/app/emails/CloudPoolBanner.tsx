@@ -77,13 +77,17 @@ export default function CloudPoolBanner({ mailboxCount }: { mailboxCount: number
             body={
                 <>
                     It only pairs your own mailboxes, which providers learn to recognise. Warmbly Cloud warms mailboxes in a pool of thousands of real
-                    ones. Self-hosting is for experienced operators, and Warmbly does not provide support for it.
+                    ones. To move, pick a plan on Warmbly Cloud, then bring this workspace over with an export from{" "}
+                    <Link to="/app/settings/data" className="font-medium text-sky-700 hover:text-sky-900 underline underline-offset-2">
+                        Settings &gt; Data
+                    </Link>
+                    . Warmbly does not provide support for self-hosting.
                 </>
             }
             actions={
                 <>
-                    <a href={pool.cloudURL} target="_blank" rel="noreferrer" className={PRIMARY}>
-                        Use Warmbly Cloud
+                    <a href={`${pool.cloudURL}/auth/register?next=${encodeURIComponent(CLOUD_PLANS_PATH)}`} target="_blank" rel="noreferrer" className={PRIMARY}>
+                        Upgrade on Warmbly Cloud
                         <ArrowRightIcon className="w-3 h-3" />
                     </a>
                     <CommunityLink />
@@ -96,6 +100,9 @@ export default function CloudPoolBanner({ mailboxCount }: { mailboxCount: number
         />
     );
 }
+
+// Opens the plan chooser once the account exists; the sign-up page also signs existing users in.
+const CLOUD_PLANS_PATH = "/app/settings/billing?pool=1";
 
 const PRIMARY = "shrink-0 h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors";
 

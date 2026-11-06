@@ -272,7 +272,10 @@ func (s *service) Plan(ctx context.Context, orgID uuid.UUID) (models.PoolLinkPla
 	limit := models.FreeWorkspaceMailboxLimit
 	plan.MailboxLimit = &limit
 	plan.SubscriptionRequired = true
-	plan.UpgradeURL = plan.ManageURL
+	if plan.ManageURL != "" {
+		// ?pool=1 opens the plan chooser on arrival.
+		plan.UpgradeURL = plan.ManageURL + "?pool=1"
+	}
 	return plan, nil
 }
 
