@@ -24,9 +24,7 @@ func reportable(err error) bool {
 	if !errors.As(err, &mailErr) {
 		return true
 	}
-	// Only the throttles the loop rides out. The codes that deactivate a
-	// mailbox (rate limit, sync fair use, flood) stay reportable, because an
-	// operator does want to see those.
+	// Throttles the loop rides out and credential refusals only the owner can fix; Warmbly's own deactivations stay reportable.
 	switch mailErr.Code {
 	case errx.MailErrorCodeSendingTooFast,
 		errx.MailErrorCodeQuotaExceeded,
@@ -34,6 +32,9 @@ func reportable(err error) bool {
 		errx.MailErrorCodeConnectionLost,
 		errx.MailErrorCodeTLSCertificateChanged,
 		errx.MailErrorCodeTLSCertificateUnconfirmed:
+		return false
+	case errx.MailErrorCodeGoogleAuth, errx.MailErrorCodeInvalidCredentials:
+		// Relayed below, which deactivates the mailbox and tells its owner.
 		return false
 	}
 	return true
