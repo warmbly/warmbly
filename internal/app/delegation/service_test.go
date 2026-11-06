@@ -330,6 +330,7 @@ func TestGrantOriginBoundToUnconsumedState(t *testing.T) {
 	s, p, _, _, _ := newTestService(t)
 	ctx := config.WithDashboardOrigin(context.Background(), "https://tac-security-assessment.warmbly.com")
 	org, user := uuid.New(), uuid.New()
+	holdLegacyGoogle(t, s, org)
 	g, xerr := s.StartGoogle(ctx, org, user, "acme.io", "admin@acme.io")
 	if xerr != nil {
 		t.Fatal(xerr)
@@ -407,24 +408,45 @@ func TestConfigNamesTheClientAndScopes(t *testing.T) {
 	}
 }
 
-// The per-mailbox sign-in client is named only while new mailboxes may sign in with Google.
-func TestConfigNamesTheMailboxClientWhileSigninIsOn(t *testing.T) {
-	t.Setenv("BOX_GOOGLE_CLIENT_ID", "mailbox-client.apps.googleusercontent.com")
-	t.Setenv("BOX_GOOGLE_CLIENT_SECRET", "secret")
-	s := NewService(Deps{GoogleMailboxClientID: "mailbox-client.apps.googleusercontent.com"})
-	t.Setenv("BOX_GOOGLE_OAUTH_CONNECT", "true")
-	if got := s.Config().GoogleMailboxClientID; got != "mailbox-client.apps.googleusercontent.com" {
-		t.Fatalf("sign-in on: client = %q", got)
+// A domain the workspace holds no Google grant for is refused at start and finish; Microsoft is untouched.
+func TestNewGoogleGrantsAreRetired(t *testing.T) {
+	s, _, _, _, _ := newTestService(t)
+	org, user := uuid.New(), uuid.New()
+	if _, xerr := s.StartGoogle(context.Background(), org, user, "acme.io", "admin"+"@acme.io"); xerr == nil || xerr.Identifier != ErrIDGoogleRetired {
+		t.Fatalf("start on a new domain = %v", xerr)
 	}
-	t.Setenv("BOX_GOOGLE_OAUTH_CONNECT", "false")
-	if got := s.Config().GoogleMailboxClientID; got != "" {
-		t.Fatalf("sign-in off: client = %q", got)
+	testTXT.records["_warmbly.acme.io"] = []string{s.proof.Value(org, "acme.io")}
+	if _, xerr := s.FinishGoogle(context.Background(), org, user, GoogleFinish{Domain: "acme.io", AdminEmail: "admin" + "@acme.io"}); xerr == nil || xerr.Identifier != ErrIDGoogleRetired {
+		t.Fatalf("finish on a new domain = %v", xerr)
+	}
+	if _, _, xerr := s.StartMicrosoft(context.Background(), org, user); xerr != nil {
+		t.Fatalf("microsoft consent = %v", xerr)
 	}
 }
 
-// googleGrant proves acme.io for org by sign-in and returns the grant.
+// The per-mailbox sign-in client is named whenever one is configured, so a reconnect can show it too.
+func TestConfigNamesTheMailboxClient(t *testing.T) {
+	s := NewService(Deps{GoogleMailboxClientID: "mailbox-client.apps.googleusercontent.com"})
+	if got := s.Config().GoogleMailboxClientID; got != "mailbox-client.apps.googleusercontent.com" {
+		t.Fatalf("client = %q", got)
+	}
+	if got := NewService(Deps{}).Config().GoogleMailboxClientID; got != "" {
+		t.Fatalf("no client = %q", got)
+	}
+}
+
+// holdLegacyGoogle gives org an existing (failing) Google grant on acme.io, the only kind that may be proved again.
+func holdLegacyGoogle(t *testing.T, s *Service, org uuid.UUID) {
+	t.Helper()
+	m := s.repo.(*memGrants)
+	id := uuid.New()
+	m.grants[id] = &models.DomainGrant{ID: id, OrganizationID: org, Provider: models.GrantProviderGoogle, Tenant: "acme.io", Domains: []string{"acme.io"}, Status: "invalid"}
+}
+
+// googleGrant proves acme.io again for org, which holds a grant there, and returns the grant.
 func googleGrant(t *testing.T, s *Service, p *fakeProviders, org, user uuid.UUID) *models.DomainGrant {
 	t.Helper()
+	holdLegacyGoogle(t, s, org)
 	start, xerr := s.StartGoogle(context.Background(), org, user, "Acme.io", "admin@acme.io")
 	if xerr != nil || start.Method != "signin" {
 		t.Fatalf("start = %+v, %v", start, xerr)
@@ -471,6 +493,7 @@ func TestGoogleGrantNeedsTheAdminsOwnSignin(t *testing.T) {
 func TestGoogleGrantByDNSIsBoundToTheWorkspace(t *testing.T) {
 	s, _, _, _, _ := newTestService(t)
 	victim, attacker := uuid.New(), uuid.New()
+	holdLegacyGoogle(t, s, victim)
 	start, xerr := s.StartGoogle(context.Background(), victim, uuid.New(), "acme.io", "admin@acme.io")
 	if xerr != nil || start.TXTName != "_warmbly.acme.io" {
 		t.Fatalf("start = %+v, %v", start, xerr)
@@ -702,6 +725,7 @@ func TestMicrosoftSigninURLOnlyForItsOwnState(t *testing.T) {
 func TestSigninsRequirePKCEAndNonce(t *testing.T) {
 	s, p, _, _, _ := newTestService(t)
 	org, user := uuid.New(), uuid.New()
+	holdLegacyGoogle(t, s, org)
 	start, xerr := s.StartGoogle(context.Background(), org, user, "acme.io", "admin@acme.io")
 	if xerr != nil || !strings.Contains(start.URL, "code_challenge_method=S256") || !strings.Contains(start.URL, "nonce=") {
 		t.Fatalf("google start = %+v, %v", start, xerr)

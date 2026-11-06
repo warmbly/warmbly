@@ -61,7 +61,7 @@ type Config struct {
 	GoogleMissing    []string `json:"google_missing"`
 	MicrosoftMissing []string `json:"microsoft_missing"`
 
-	// GoogleMailboxClientID is the per-mailbox sign-in client a Workspace admin marks Trusted; empty when sign-in is off.
+	// GoogleMailboxClientID is the per-mailbox sign-in client a Workspace admin marks Trusted; empty with none configured.
 	GoogleMailboxClientID string `json:"google_mailbox_client_id,omitempty"`
 }
 
@@ -70,6 +70,8 @@ const (
 	ErrIDNotConfigured      = "mailbox_grant_not_configured"
 	ErrIDGoogleUnauthorized = "google_delegation_unauthorized"
 	ErrIDMicrosoftConsent   = "microsoft_consent_missing"
+	// ErrIDGoogleRetired refuses a Google domain-wide delegation grant for a domain the workspace holds none for.
+	ErrIDGoogleRetired      = "google_delegation_retired"
 	ErrIDState              = "mailbox_grant_state_invalid"
 	ErrIDNotCovered         = "mailbox_grant_domain_mismatch"
 	ErrIDMailboxUnreachable = "mailbox_grant_mailbox_unreachable"
@@ -210,9 +212,7 @@ func (s *Service) Config() Config {
 		GoogleEnabled: s.googleEnabled(), GoogleClientID: s.googleClientID,
 		GoogleScopes: config.GoogleDelegationScopes, MicrosoftEnabled: s.microsoftEnabled(),
 		GoogleMissing: []string{}, MicrosoftMissing: []string{},
-	}
-	if config.GoogleOAuthConnect() {
-		c.GoogleMailboxClientID = s.googleMailboxClientID
+		GoogleMailboxClientID: s.googleMailboxClientID,
 	}
 	if !c.GoogleEnabled {
 		c.GoogleMissing = append(c.GoogleMissing, "GOOGLE_WORKSPACE_DELEGATION_KEY")
@@ -874,8 +874,8 @@ func sortedKeys(m map[string]bool) []string {
 }
 
 // SigninMigration is every mailbox still on per-mailbox Google sign-in, by
-// domain, with where it moves: the domain's grant, or an app password for a
-// shared address like gmail.com.
+// domain, with the domain's existing active grant when it has one; a shared
+// address like gmail.com is marked personal.
 func (s *Service) SigninMigration(ctx context.Context, orgID uuid.UUID) ([]models.SigninMigration, *errx.Error) {
 	boxes, xerr := s.store.ListSigninRetiring(ctx, orgID)
 	if xerr != nil {

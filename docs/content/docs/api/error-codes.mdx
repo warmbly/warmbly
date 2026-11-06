@@ -723,6 +723,14 @@ A `403` whose `code` is `mailbox_gmail_oauth_disabled` comes from `POST /emails/
 - Connect the mailbox through `POST /emails/onboarding/smtp-imap` with `smtp.gmail.com:465` and `imap.gmail.com:993`, both TLS, and a Google app password. See [Gmail and Google Workspace](/guides/mailboxes/#gmail-and-google-workspace)
 - An instance with its own Google app must set both `BOX_GOOGLE_CLIENT_ID` and `BOX_GOOGLE_CLIENT_SECRET`. Leave `BOX_GOOGLE_OAUTH_CONNECT` unset or set it to `true`, then enable the [dashboard visibility flag](/development/configuration/#google-sign-in-per-dashboard-deployment) on the deployments that should offer Google sign-in
 
+#### `google_delegation_retired`
+
+A `403` with `code: "google_delegation_retired"` comes from `POST /emails/grants/google/start` or `POST /emails/grants/google/finish` for a domain the workspace holds no Google grant for. New Google Workspace domain-wide delegation grants are no longer set up. A grant the workspace already holds keeps working: it can be proved again, checked, used to connect more mailboxes and removed. Microsoft whole-organization consent is unaffected.
+
+**How to fix:**
+- Have a Workspace administrator mark Warmbly as a trusted app, then sign in each mailbox with Google. See [Google Workspace with Google sign-in](/guides/mailboxes/#google-workspace-with-google-sign-in)
+- Or connect the mailbox with an app password over IMAP and SMTP
+
 #### `plan_offer_required`
 
 A `403` whose `code` is `plan_offer_required` comes from `POST /subscription/checkout`, `POST /subscription/change-plan` or `POST /subscription/offers/:planId/checkout`. Those routes sell public plans, and a private plan only to a workspace Warmbly has offered it to. The workspace holds no open offer for the chosen plan: it was never offered, or the offer has ended or been withdrawn. The Warmup plan is no longer sold anywhere: it is refused here too, and `POST /pool-link/checkout` answers `409` with `warmup_plan_retired`.
