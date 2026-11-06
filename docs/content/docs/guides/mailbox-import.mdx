@@ -157,7 +157,7 @@ Each mailbox is labelled with where it is hosted and how it signs in. The [API](
 
 A Google row whose password is not a 16-letter app password is flagged in the preview before anything is tried: Google refuses the account password over IMAP and SMTP. On an instance that connects new Gmail mailboxes with Google sign-in (`gmail_oauth_connect` in `GET /auth/config`), such a row waits for sign-in instead, like a Microsoft row.
 
-Google rows waiting for Google sign-in offer a **Sign in** action only on deployments where [Google mailbox OAuth is enabled](/development/configuration/#google-sign-in-per-dashboard-deployment). Otherwise use **Fix** on the row to give it a 16-letter app password, which connects it over IMAP and SMTP with Google's servers, or use an admin grant. Microsoft sign-in is unaffected by that flag.
+Google rows waiting for Google sign-in offer a **Sign in** action only on deployments where [Google mailbox OAuth is enabled](/development/configuration/#google-sign-in-per-dashboard-deployment), and never for a personal Gmail address, which connects with an app password. Otherwise use **Fix** on the row to give it a 16-letter app password, which connects it over IMAP and SMTP with Google's servers, or use an admin grant. Microsoft sign-in is unaffected by that flag.
 
 ### Microsoft
 
@@ -204,7 +204,9 @@ One vendor account lists up to 10,000 mailboxes.
 
 ## Connect a whole Google Workspace domain
 
-A Google Workspace super admin can authorize Warmbly for the whole domain with domain-wide delegation. Every mailbox on the domain then connects through that one grant: no app passwords, nothing that expires when someone changes a password, and nothing for each mailbox owner to do. It is the recommended way to connect Workspace mailboxes.
+A Google Workspace super admin can authorize Warmbly for the whole domain with domain-wide delegation. Every mailbox on the domain then connects through that one grant: no app passwords, nothing that expires when someone changes a password, and nothing for each mailbox owner to do.
+
+The recommended way to connect Workspace mailboxes, where your deployment offers it, is for the administrator to mark Warmbly as a trusted app and for each mailbox to sign in with Google; see [Google Workspace with Google sign-in](/guides/mailboxes/#google-workspace-with-google-sign-in). Delegation is the alternative when you would rather no mailbox signs in, and the way to connect a whole domain without app passwords where Google sign-in is not offered. Grants already made keep working. Personal Gmail addresses are on no Workspace domain and connect with an [app password](/guides/mailboxes/#personal-gmail).
 
 Choose **Add account**, then **Google**, then **Whole Workspace domain**. The dialog shows a client ID and the scopes to authorize. On a self-hosted instance the option stays switched off until the operator has set up a Google service account; see [whole-domain mailbox connects](/development/whole-domain-connect/).
 

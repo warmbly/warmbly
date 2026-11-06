@@ -25,7 +25,7 @@ Pick **Google**, **Microsoft**, or **Other (SMTP / IMAP)** for any other host.
 
 <Step>
 
-On Google Workspace or Microsoft 365, choose the administrator's grant: it connects every mailbox on the domain at once, with no password and no sign-in each.
+On Google Workspace, have your Workspace administrator mark Warmbly as a trusted app once, then sign in each mailbox with Google, or use the administrator's delegation grant to connect every mailbox on the domain with no sign-in each. On Microsoft 365, the administrator's grant does the same. Personal Gmail connects with an app password.
 
 </Step>
 
@@ -76,9 +76,9 @@ Open **Accounts** and choose **Add account**. Google and Microsoft each have one
 
 | Provider | Method | Notes |
 |----------|--------|-------|
-| Google | **Whole Workspace domain**: an administrator's grant (`gmail`, sign-in method `delegated`) | Recommended for Google Workspace. A super admin authorizes Warmbly once, and every mailbox on the domain connects with no password and no sign-in each. Runs on the Gmail API. See [connect a whole Google Workspace domain](/guides/mailbox-import/#connect-a-whole-google-workspace-domain) |
-| Google | **App password** over IMAP + SMTP (`smtp_imap`, sign-in method `app_password`) | Works for personal Gmail and for Workspace. The dialog walks you through it in three steps, see [Gmail and Google Workspace](#gmail-and-google-workspace) below |
-| Google | **Sign in with Google**: OAuth for one mailbox (`gmail`, sign-in method `oauth`) | Offered where the dashboard deployment enables it and the backend supports it. No app password needed |
+| Google | **Sign in with Google**: OAuth for one Workspace mailbox (`gmail`, sign-in method `oauth`) | Recommended for Google Workspace where the deployment offers it. A Workspace administrator marks Warmbly as a trusted app once, then each mailbox signs in. See [Google Workspace with Google sign-in](#google-workspace-with-google-sign-in). Not for personal Gmail |
+| Google | **Whole Workspace domain**: domain-wide delegation (`gmail`, sign-in method `delegated`) | The alternative for Google Workspace. A super admin authorizes Warmbly once, and every mailbox on the domain connects with no password and no sign-in each. Runs on the Gmail API. See [connect a whole Google Workspace domain](/guides/mailbox-import/#connect-a-whole-google-workspace-domain) |
+| Google | **App password** over IMAP + SMTP (`smtp_imap`, sign-in method `app_password`) | The way to connect personal Gmail, and it works for one Workspace mailbox too. The dialog walks you through it in three steps, see [personal Gmail](#personal-gmail) below |
 | Microsoft | **Whole organization**: an administrator's grant (`outlook`, sign-in method `delegated`) | Recommended for Microsoft 365. A Global Administrator approves Warmbly once, and every licensed mailbox connects with no sign-in each. Runs on Microsoft Graph. See [connect a whole Microsoft 365 organization](/guides/mailbox-import/#connect-a-whole-microsoft-365-organization) |
 | Microsoft | **Sign in one mailbox**: OAuth (`outlook`, sign-in method `oauth`) | No password stored. Runs on Microsoft Graph. The way to connect Outlook.com and a single Microsoft 365 mailbox |
 | Any other server | IMAP + SMTP (`smtp_imap`) | Custom domains, self-hosted, or providers without OAuth. Any IMAP server that accepts a password works, including Yahoo, Fastmail, Zoho, Seznam.cz, cPanel and self-hosted Dovecot. Exchange Online (Microsoft 365 and Outlook.com) no longer accepts passwords over IMAP, so connect those with Microsoft |
@@ -175,7 +175,30 @@ The choice and the fingerprints are part of the mailbox and travel with a [works
 
 On a self-hosted instance linked to Warmbly Cloud, an administrator can also use **Add account > In your Warmbly Cloud workspace > Connect** for an existing Cloud mailbox, including one connected through a Google Workspace domain grant. The mailbox keeps warming on Cloud with its history intact, while campaigns send from your instance through brokered access tokens. An existing local app-password connection switches in place, keeping its campaigns and imported mail. See [mailboxes connected on Cloud](/guides/warmbly-cloud/#mailboxes-connected-on-the-cloud).
 
-Where your deployment enables it, choose **Add account > Google > Sign in with Google** to connect one mailbox through Google's consent screen. This option is deployment-dependent; an administrator can enable it with the [dashboard configuration flag](/development/configuration/#google-sign-in-per-dashboard-deployment). If it is hidden, use an app password or a Workspace whole-domain grant instead. Existing Google sign-in mailboxes keep working and can re-authorize even when new Google sign-in connects are disabled.
+**Add account > Google** sorts the choices by the kind of account: **Google Workspace**, a mailbox on your company's own domain, and **Personal Gmail**, an address ending in `@gmail.com` or `@googlemail.com`.
+
+#### Google Workspace with Google sign-in
+
+Where your deployment offers **Sign in with Google**, it is the recommended way to connect a Workspace mailbox. A Workspace administrator marks Warmbly's OAuth client as a trusted app once for the domain, and then each mailbox signs in with Google on its own. Users on a domain whose administrator trusts the app can sign in to it whether or not Google has verified it, which is what lets mailboxes on your domain connect. Without that entry, Google can answer the sign-in with **Access blocked** or a message that your administrator has blocked the app.
+
+The administrator does this in the Google Admin console:
+
+1. Sign in to [admin.google.com](https://admin.google.com) as an administrator.
+2. Go to **Security > Access and data control > API controls > Manage Third-Party App Access**, and choose **Configure new app**.
+3. Search by the client ID that **Add account > Google > Sign in with Google** shows (it has a copy button), and select Warmbly.
+4. Choose **All users**, or the organizational unit that holds the mailboxes you send from, then **Trusted**, and finish.
+
+Then connect each mailbox: choose **Add account > Google > Sign in with Google**, enter the mailbox's address, choose **Continue with Google** and approve the consent screen. When the Google window closes without connecting, the dialog shows the client ID again with what to ask the administrator. The same client ID is reported as `google_mailbox_client_id` by `GET /emails/grants/config`. On a self-hosted instance linked to Warmbly Cloud, the consent runs on Warmbly Cloud's own app, so the dialog shows no client ID.
+
+This option is deployment-dependent; an administrator can enable it with the [dashboard configuration flag](/development/configuration/#google-sign-in-per-dashboard-deployment). If it is hidden, use a whole-domain grant or an app password instead. Existing Google sign-in mailboxes keep working and can re-authorize even when new Google sign-in connects are disabled.
+
+#### Whole Workspace domain with delegation
+
+The alternative for a Workspace domain is domain-wide delegation: a super admin authorizes Warmbly once in the Admin console, and every mailbox on the domain connects with no sign-in each. Choose it when you would rather no mailbox owner signs in; choose the trusted app when each mailbox signs in itself. Grants made this way keep working. See [connect a whole Google Workspace domain](/guides/mailbox-import/#connect-a-whole-google-workspace-domain).
+
+#### Personal Gmail
+
+Personal Gmail accounts connect with an app password over IMAP and SMTP, not with Google sign-in. A Google sign-in started for a personal address is refused with [`google_personal_app_password`](/api/error-codes/#google_personal_app_password), and typing one into the sign-in panel takes you to the app-password walkthrough with the address filled in. An app password also works for one Workspace mailbox.
 
 Choose **Add account**, then **Google**, then **App password**. The dialog walks through three steps, and the only things you type are the address and the app password; the server settings are Gmail's own and are filled in for you.
 
