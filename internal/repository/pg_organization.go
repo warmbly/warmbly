@@ -1475,10 +1475,11 @@ func (r *organizationRepository) ListLimitRequestsForAdmin(ctx context.Context, 
 			lr.reason, lr.status, lr.submitted_by, lr.submitted_at,
 			lr.reviewed_by, lr.reviewed_at, lr.review_notes,
 			o.id, o.name, o.slug, o.owner_user_id, o.created_at, o.updated_at,
-			u.id, u.first_name, u.last_name, u.email, u.created_at, u.updated_at
+			COALESCE(u.id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(u.first_name, ''), COALESCE(u.last_name, ''), COALESCE(u.email, ''),
+			COALESCE(u.created_at, lr.submitted_at), COALESCE(u.updated_at, lr.submitted_at)
 		FROM limit_increase_requests lr
 		JOIN organizations o ON o.id = lr.organization_id
-		JOIN users u ON u.id = lr.submitted_by
+		LEFT JOIN users u ON u.id = lr.submitted_by
 		` + where + `
 		` + orderBy + `
 		` + adminLimitOffset("$"+itoa(argNum), offset)
@@ -1503,7 +1504,10 @@ func (r *organizationRepository) ListLimitRequestsForAdmin(ctx context.Context, 
 			return nil, err
 		}
 		lr.Organization = &org
-		lr.SubmittedByUser = &user
+		// A submitter whose account was deleted has no summary.
+		if user.ID != uuid.Nil {
+			lr.SubmittedByUser = &user
+		}
 		items = append(items, lr)
 	}
 
@@ -1517,7 +1521,7 @@ func (r *organizationRepository) ListLimitRequestsForAdmin(ctx context.Context, 
 	}
 
 	// Total count for the same filter — drop the trailing LIMIT arg.
-	countQuery := `SELECT COUNT(*) FROM limit_increase_requests lr JOIN organizations o ON o.id = lr.organization_id JOIN users u ON u.id = lr.submitted_by ` + where
+	countQuery := `SELECT COUNT(*) FROM limit_increase_requests lr JOIN organizations o ON o.id = lr.organization_id LEFT JOIN users u ON u.id = lr.submitted_by ` + where
 	var total int64
 	if err := r.db.QueryRow(ctx, countQuery, args[:len(args)-1]...).Scan(&total); err == nil {
 		result.Pagination.Total = &total

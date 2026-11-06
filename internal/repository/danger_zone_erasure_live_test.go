@@ -202,41 +202,72 @@ func TestLiveDeletingAWorkspaceWithWarmupStandingSucceeds(t *testing.T) {
 	}
 }
 
-// Closing an account cannot complete today for an unrelated reason: twenty
-// foreign keys into users have no delete action, including
-// scheduled_deletions.requested_by_user_id, which the deletion request itself
-// writes. Repairing that is account-closure work, with a separate decision per
-// constraint about what survives a person leaving, and it is not done here.
-//
-// What IS this change's business is that the failure stays clean. The enqueue
-// shares the delete's transaction, so a delete that cannot happen must leave
-// nothing queued: erasing a live mailbox's grant and its stored mail because a
-// deletion half-ran would be far worse than the deletion not running.
-func TestLiveAFailedAccountDeletionQueuesNoErasure(t *testing.T) {
+// Closing an account removes the person and every workspace they own, queues
+// the owned mailboxes for erasure, and leaves what they wrote in a workspace
+// they did not own with that workspace, naming nobody. The request row stays as
+// the record that the account was closed.
+func TestLiveDeletingAnAccountRemovesOwnedWorkspacesAndKeepsSharedWork(t *testing.T) {
 	f := newDangerLiveFixture(t)
 	ctx := context.Background()
-
-	// The row the real flow writes, and the one that blocks the delete.
-	if _, err := f.handle.Pool.Exec(ctx, `
-		INSERT INTO scheduled_deletions (id, resource_type, resource_id, requested_by_user_id,
-		    scheduled_at, execute_after, grace_days, status)
-		VALUES ($1, 'user', $2, $2, now(), now(), 7, 'pending')`, uuid.New(), f.user); err != nil {
-		t.Fatalf("fixture: %v", err)
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := f.handle.Pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("fixture %q: %v", sql, err)
+		}
 	}
+
+	request := uuid.New()
+	exec(`INSERT INTO scheduled_deletions (id, resource_type, resource_id, requested_by_user_id,
+	          scheduled_at, execute_after, grace_days, status)
+	      VALUES ($1, 'user', $2, $2, now(), now(), 30, 'executing')`, request, f.user)
+
+	// Someone else's workspace, where the person being deleted wrote a note.
+	other, otherOrg, contact, note := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	exec(`INSERT INTO users (id, email, first_name, last_name) VALUES ($1, $2, 'Other', 'Owner')`,
+		other, "danger-"+other.String()[:8]+"@test.local")
+	exec(`INSERT INTO organizations (id, name, slug, owner_user_id) VALUES ($1, 'Other', $2, $3)`,
+		otherOrg, "danger-"+otherOrg.String()[:8], other)
+	exec(`INSERT INTO organization_members (organization_id, user_id) VALUES ($1, $2)`, otherOrg, f.user)
+	exec(`INSERT INTO contacts (id, organization_id, user_id, email, first_name, last_name, company, phone, custom_fields)
+	      VALUES ($1, $2, $3, 'lead@test.local', '', '', '', '', '{}')`, contact, otherOrg, other)
+	exec(`INSERT INTO contact_notes (id, organization_id, contact_id, user_id, content) VALUES ($1, $2, $3, $4, 'kept')`,
+		note, otherOrg, contact, f.user)
 	t.Cleanup(func() {
-		if _, err := f.handle.Pool.Exec(context.Background(),
-			`DELETE FROM scheduled_deletions WHERE resource_id = $1`, f.user); err != nil {
-			t.Errorf("cleanup scheduled deletion: %v", err)
+		c := context.Background()
+		for _, step := range []struct {
+			sql string
+			arg any
+		}{
+			{`DELETE FROM scheduled_deletions WHERE id = $1`, request},
+			{`DELETE FROM organizations WHERE id = $1`, otherOrg},
+			{`DELETE FROM users WHERE id = $1`, other},
+		} {
+			if _, err := f.handle.Pool.Exec(c, step.sql, step.arg); err != nil {
+				t.Errorf("cleanup %q: %v", step.sql, err)
+			}
 		}
 	})
 
-	if _, err := f.repo.HardDeleteUser(ctx, f.user); err == nil {
-		t.Fatal("the account deletion reported success; if it now works, this test should assert the erasure instead")
+	placements, err := f.repo.HardDeleteUser(ctx, f.user)
+	if err != nil {
+		t.Fatalf("the account could not be deleted: %v", err)
 	}
-	if n := f.count(t, `SELECT count(*) FROM users WHERE id = $1`, f.user); n != 1 {
-		t.Fatal("the user went after all")
+	if len(placements) != 1 || placements[0].EmailID != f.mailbox || placements[0].WorkerID != f.worker {
+		t.Errorf("returned %+v, want the owned workspace's mailbox on worker %s", placements, f.worker)
 	}
-	if n := f.count(t, `SELECT count(*) FROM mailbox_erasures WHERE email_account_id = $1`, f.mailbox); n != 0 {
-		t.Errorf("queued %d erasures for a mailbox that is still connected and still syncing", n)
+	if n := f.count(t, `SELECT count(*) FROM users WHERE id = $1`, f.user); n != 0 {
+		t.Error("the user is still there")
+	}
+	if n := f.count(t, `SELECT count(*) FROM organizations WHERE id = $1`, f.org); n != 0 {
+		t.Error("the workspace the user owned outlived them")
+	}
+	if n := f.count(t, `SELECT count(*) FROM mailbox_erasures WHERE email_account_id = $1`, f.mailbox); n != 1 {
+		t.Errorf("queued %d erasures for the owned workspace's mailbox, want 1", n)
+	}
+	if n := f.count(t, `SELECT count(*) FROM contact_notes WHERE id = $1 AND user_id IS NULL`, note); n != 1 {
+		t.Error("the note written in another workspace was not kept with its author cleared")
+	}
+	if n := f.count(t, `SELECT count(*) FROM scheduled_deletions WHERE id = $1 AND requested_by_user_id IS NULL`, request); n != 1 {
+		t.Error("the deletion request did not survive as the record of the closure")
 	}
 }

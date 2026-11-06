@@ -57,8 +57,8 @@ type DangerZoneRepository interface {
 	// evict; see CollectMailboxPlacements.
 	HardDeleteOrganization(ctx context.Context, orgID uuid.UUID) ([]MailboxPlacement, error)
 
-	// HardDeleteUser removes the user row, returning the same placements to
-	// evict as HardDeleteOrganization.
+	// HardDeleteUser removes the user row and every workspace it owns,
+	// returning the same placements to evict as HardDeleteOrganization.
 	HardDeleteUser(ctx context.Context, userID uuid.UUID) ([]MailboxPlacement, error)
 }
 
@@ -358,14 +358,19 @@ func (r *dangerZoneRepository) SetNotifBit(ctx context.Context, id uuid.UUID, bi
 func (r *dangerZoneRepository) HardDeleteOrganization(ctx context.Context, orgID uuid.UUID) ([]MailboxPlacement, error) {
 	return r.hardDelete(ctx,
 		`a.organization_id = $1`,
-		`DELETE FROM organizations WHERE id = $1`,
+		[]string{`DELETE FROM organizations WHERE id = $1`},
 		orgID)
 }
 
 func (r *dangerZoneRepository) HardDeleteUser(ctx context.Context, userID uuid.UUID) ([]MailboxPlacement, error) {
+	// Owned workspaces go first: organizations.owner_user_id deliberately has no
+	// delete action, so a user row can never take a workspace with it implicitly.
 	return r.hardDelete(ctx,
-		`a.user_id = $1`,
-		`DELETE FROM users WHERE id = $1`,
+		`a.user_id = $1 OR a.organization_id IN (SELECT id FROM organizations WHERE owner_user_id = $1)`,
+		[]string{
+			`DELETE FROM organizations WHERE owner_user_id = $1`,
+			`DELETE FROM users WHERE id = $1`,
+		},
 		userID)
 }
 
@@ -439,7 +444,7 @@ func CollectMailboxPlacements(ctx context.Context, tx pgx.Tx, scope string, args
 //
 // mailboxScope selects those mailboxes as a WHERE clause over email_accounts
 // aliased `a`; it is written here, never by a caller.
-func (r *dangerZoneRepository) hardDelete(ctx context.Context, mailboxScope, deleteStmt string, id uuid.UUID) ([]MailboxPlacement, error) {
+func (r *dangerZoneRepository) hardDelete(ctx context.Context, mailboxScope string, deleteStmts []string, id uuid.UUID) ([]MailboxPlacement, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -460,15 +465,16 @@ func (r *dangerZoneRepository) hardDelete(ctx context.Context, mailboxScope, del
 
 	// The threads those mailboxes hold, read before the rows go. Deleting a
 	// workspace does not delete its members, so their labels and snoozes
-	// outlive the messages they were attached to; deleting a person takes both
-	// with them and this finds nothing to do.
+	// outlive the messages they were attached to.
 	threads, err := CollectMailboxThreadState(ctx, tx, mailboxScope, id)
 	if err != nil {
 		return nil, err
 	}
 
-	if _, err := tx.Exec(ctx, deleteStmt, id); err != nil {
-		return nil, err
+	for _, stmt := range deleteStmts {
+		if _, err := tx.Exec(ctx, stmt, id); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := DeleteOrphanedThreadState(ctx, tx, threads); err != nil {

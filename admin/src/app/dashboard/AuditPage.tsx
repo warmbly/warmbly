@@ -270,7 +270,8 @@ function FilterField({ label, children }: { label: string; children: React.React
 function Row({ row }: { row: AdminAuditLog }) {
     const [open, setOpen] = useState(false);
     const hasDetails = row.details && Object.keys(row.details).length > 0;
-    const systemActor = row.admin_user_id === NIL_UUID;
+    // The actor's id is cleared when their account is deleted.
+    const deletedActor = row.admin_user_id === NIL_UUID;
     const tone = ACTION_TONE[row.action] ?? "neutral";
     return (
         <>
@@ -290,8 +291,8 @@ function Row({ row }: { row: AdminAuditLog }) {
                     {new Date(row.created_at).toLocaleString()}
                 </td>
                 <td className="px-3 py-2">
-                    {systemActor ? (
-                        <span className="text-subtle-foreground">system</span>
+                    {deletedActor ? (
+                        <span className="text-subtle-foreground">Deleted account</span>
                     ) : row.admin_user ? (
                         <div className="min-w-0">
                             <div className="whitespace-nowrap text-foreground">
