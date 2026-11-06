@@ -1,6 +1,8 @@
 // App-wide countdown for a workspace in its free trial, so the end date is
 // never a surprise. Hidden on every other workspace.
 
+import { useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { SparklesIcon } from "lucide-react";
 import useFeatureAccess from "@/hooks/useFeatureAccess";
 import { useUpgradeDialog } from "@/hooks/context/upgrade";
@@ -8,9 +10,21 @@ import { useUpgradeDialog } from "@/hooks/context/upgrade";
 export default function TrialBar() {
     const access = useFeatureAccess();
     const upgrade = useUpgradeDialog();
-    if (!access.trial || !access.trialEndsAt) return null;
+    const qc = useQueryClient();
+    const endsAt = access.trial ? access.trialEndsAt?.getTime() : undefined;
 
-    const days = Math.max(1, Math.ceil((access.trialEndsAt.getTime() - Date.now()) / 86_400_000));
+    // Re-read the server's answer when the trial ends, so an open tab locks with it.
+    useEffect(() => {
+        if (endsAt == null) return;
+        const wait = Math.min(Math.max(endsAt - Date.now(), 0) + 1000, 2_000_000_000);
+        const timer = setTimeout(() => void qc.invalidateQueries({ queryKey: ["subscription"] }), wait);
+        return () => clearTimeout(timer);
+    }, [endsAt, qc]);
+
+    if (endsAt == null) return null;
+
+    // Rounded up, as the server's days_remaining is, so the billing banner shows the same count.
+    const days = Math.max(1, Math.ceil((endsAt - Date.now()) / 86_400_000));
 
     return (
         <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 border-b bg-sky-50 border-sky-200 text-sky-900">

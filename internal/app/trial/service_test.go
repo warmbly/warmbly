@@ -2,6 +2,7 @@ package trial
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -13,8 +14,9 @@ import (
 
 type memSubs struct {
 	repository.SubscriptionRepository
-	mu    sync.Mutex
-	byOrg map[uuid.UUID]*models.Subscription
+	mu      sync.Mutex
+	byOrg   map[uuid.UUID]*models.Subscription
+	failing bool
 }
 
 func (m *memSubs) GetByOrganizationID(_ context.Context, orgID uuid.UUID) (*models.Subscription, error) {
@@ -26,6 +28,9 @@ func (m *memSubs) GetByOrganizationID(_ context.Context, orgID uuid.UUID) (*mode
 func (m *memSubs) Create(_ context.Context, sub *models.Subscription) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.failing {
+		return errors.New("write failed")
+	}
 	m.byOrg[sub.OrganizationID] = sub
 	return nil
 }
@@ -34,6 +39,13 @@ type memUsers struct {
 	repository.UserRepository
 	mu   sync.Mutex
 	used map[uuid.UUID]bool
+}
+
+func (m *memUsers) ReleaseFreeTrial(_ context.Context, userID uuid.UUID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.used[userID] = false
+	return nil
 }
 
 func (m *memUsers) ClaimFreeTrial(_ context.Context, userID uuid.UUID) (bool, error) {
@@ -73,5 +85,24 @@ func TestOneTrialPerOwner(t *testing.T) {
 
 	if err := svc.StartFreeTrialWithOrg(ctx, owner, first); err != nil || subs.byOrg[first] != sub {
 		t.Error("starting again on a workspace with a subscription must change nothing")
+	}
+}
+
+// A trial whose subscription could not be written is handed back, so the owner's next workspace still gets it.
+func TestFailedTrialIsHandedBack(t *testing.T) {
+	ctx := context.Background()
+	subs := &memSubs{byOrg: map[uuid.UUID]*models.Subscription{}, failing: true}
+	svc := NewService(subs, &memUsers{used: map[uuid.UUID]bool{}}, nil, nil)
+	owner, broken, next := uuid.New(), uuid.New(), uuid.New()
+
+	if err := svc.StartFreeTrialWithOrg(ctx, owner, broken); err == nil {
+		t.Fatal("a failed subscription write must be reported")
+	}
+	subs.failing = false
+	if err := svc.StartFreeTrialWithOrg(ctx, owner, next); err != nil {
+		t.Fatal(err)
+	}
+	if sub := subs.byOrg[next]; sub == nil || !sub.IsInFreeTrial() {
+		t.Error("the owner's next workspace must get the trial the failed one never received")
 	}
 }

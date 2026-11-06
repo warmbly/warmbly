@@ -2140,6 +2140,9 @@ func (s *organizationService) GrantManagedPlan(ctx context.Context, orgID, planI
 		errs.CaptureException(err)
 		return nil, errx.New(errx.Internal, "failed to grant the plan")
 	}
+	if err := s.subRepo.ResumeTrialWarmup(ctx, orgID); err != nil {
+		errs.CaptureException(err)
+	}
 	return s.GetManagedPlan(ctx, orgID)
 }
 

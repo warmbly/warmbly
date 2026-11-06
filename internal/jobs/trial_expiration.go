@@ -84,7 +84,12 @@ func (j *TrialExpirationJob) Run(ctx context.Context) error {
 			// Continue processing other organizations
 		}
 
-		// Warmup settings stay: the gate stops warming, and a plan resumes it where it left off.
+		// Paused, not cleared, so a plan resumes warmup with its ramp where it stopped.
+		if sub.FreeTrialEndsAt != nil {
+			if err := repository.PauseTrialWarmup(ctx, j.db, sub.OrganizationID, *sub.FreeTrialEndsAt); err != nil {
+				errs.CaptureException(err)
+			}
+		}
 
 		// Mark subscription as expired
 		if err := repository.MarkSubscriptionTrialExpired(ctx, j.db, sub.ID); err != nil {

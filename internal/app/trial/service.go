@@ -2,6 +2,8 @@ package trial
 
 import (
 	"context"
+	"errors"
+	"math"
 	"time"
 
 	"github.com/google/uuid"
@@ -94,6 +96,10 @@ func (s *trialService) StartFreeTrialWithOrg(ctx context.Context, userID uuid.UU
 	}
 
 	if err := s.subRepo.Create(ctx, sub); err != nil {
+		// Handed back so the next workspace this owner creates still gets it.
+		if rerr := s.userRepo.ReleaseFreeTrial(ctx, userID); rerr != nil {
+			return errors.Join(err, rerr)
+		}
 		return err
 	}
 
@@ -143,11 +149,8 @@ func (s *trialService) GetTrialStatus(ctx context.Context, orgID uuid.UUID) (*Tr
 		status.IsExpired = sub.IsFreeTrialExpired()
 
 		if status.IsInTrial {
-			remaining := time.Until(*sub.FreeTrialEndsAt)
-			status.DaysRemaining = int(remaining.Hours() / 24)
-			if remaining > 0 && status.DaysRemaining == 0 {
-				status.DaysRemaining = 1 // At least 1 day remaining if not expired
-			}
+			// Rounded up, as the dashboard's trial bar does, so both show the same count.
+			status.DaysRemaining = int(math.Ceil(time.Until(*sub.FreeTrialEndsAt).Hours() / 24))
 		}
 	}
 

@@ -644,6 +644,13 @@ func PauseCampaignsByOrganizationID(ctx context.Context, db *pgxpool.Pool, orgID
 	return err
 }
 
+// PauseTrialWarmup pauses the organization's warming mailboxes at the trial end, which ResumeTrialWarmup matches on.
+func PauseTrialWarmup(ctx context.Context, db *pgxpool.Pool, orgID uuid.UUID, trialEndsAt time.Time) error {
+	query := `UPDATE email_accounts SET warmup_paused_at = $2, updated_at = NOW() WHERE organization_id = $1 AND warmup IS NOT NULL AND warmup_paused_at IS NULL`
+	_, err := db.Exec(ctx, query, orgID, trialEndsAt)
+	return err
+}
+
 // MarkSubscriptionTrialExpired marks a subscription as expired trial
 func MarkSubscriptionTrialExpired(ctx context.Context, db *pgxpool.Pool, subID uuid.UUID) error {
 	query := `UPDATE subscriptions SET status = 'incomplete_expired', updated_at = NOW() WHERE id = $1`

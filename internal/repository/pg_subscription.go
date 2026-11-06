@@ -39,6 +39,9 @@ type SubscriptionRepository interface {
 	// Enterprise
 	SetEnterprise(ctx context.Context, orgID uuid.UUID, isEnterprise bool) error
 
+	// ResumeTrialWarmup resumes the mailboxes the trial expiry paused, keeping their ramp where it stopped.
+	ResumeTrialWarmup(ctx context.Context, orgID uuid.UUID) error
+
 	// Webhook idempotency
 	WebhookEventExists(ctx context.Context, eventID string) (bool, error)
 	RecordWebhookEvent(ctx context.Context, event *models.StripeWebhookEvent) error
@@ -197,6 +200,17 @@ func (r *subscriptionRepository) GetWithLimits(ctx context.Context, orgID uuid.U
 func (r *subscriptionRepository) SetEnterprise(ctx context.Context, orgID uuid.UUID, isEnterprise bool) error {
 	query := `UPDATE subscriptions SET is_enterprise = $2, updated_at = $3 WHERE organization_id = $1`
 	_, err := r.db.Exec(ctx, query, orgID, isEnterprise, time.Now())
+	return err
+}
+
+func (r *subscriptionRepository) ResumeTrialWarmup(ctx context.Context, orgID uuid.UUID) error {
+	// The expiry stamps the trial end as the pause time, which no manual pause carries.
+	const q = `UPDATE email_accounts ea
+		SET warmup = ea.warmup + (now() - ea.warmup_paused_at), warmup_paused_at = NULL, updated_at = now()
+		FROM subscriptions s
+		WHERE s.organization_id = $1 AND ea.organization_id = $1
+		  AND ea.warmup IS NOT NULL AND ea.warmup_paused_at = s.free_trial_ends_at`
+	_, err := r.db.Exec(ctx, q, orgID)
 	return err
 }
 
