@@ -1005,7 +1005,7 @@ func (s *organizationService) acceptResolved(ctx context.Context, inv *models.Or
 		Role:           primary.Name,
 		RoleID:         &primary.ID,
 		Permissions:    primary.Permissions,
-		InvitedBy:      &inv.InvitedBy,
+		InvitedBy:      repository.InviterOf(inv.InvitedBy),
 		InvitedAt:      inv.CreatedAt,
 		AcceptedAt:     &now,
 		// Grants on resources deleted since the invite are dropped by the insert.

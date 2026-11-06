@@ -235,6 +235,9 @@ func TestLiveDeletingAnAccountRemovesOwnedWorkspacesAndKeepsSharedWork(t *testin
 	      VALUES ($1, $2, $3, 'lead@test.local', '', '', '', '', '{}')`, contact, otherOrg, other)
 	exec(`INSERT INTO contact_notes (id, organization_id, contact_id, user_id, content) VALUES ($1, $2, $3, $4, 'kept')`,
 		note, otherOrg, contact, f.user)
+	// Bought by this user before handing the workspace over.
+	exec(`INSERT INTO subscriptions (user_id, organization_id, plan_id, stripe_customer_id) VALUES ($1, $2, '00000000-0000-0000-0000-000000000001', 'cus_test')`,
+		f.user, otherOrg)
 	t.Cleanup(func() {
 		c := context.Background()
 		for _, step := range []struct {
@@ -272,6 +275,9 @@ func TestLiveDeletingAnAccountRemovesOwnedWorkspacesAndKeepsSharedWork(t *testin
 	}
 	if n := f.count(t, `SELECT count(*) FROM scheduled_deletions WHERE id = $1 AND requested_by_user_id IS NULL`, request); n != 1 {
 		t.Error("the deletion request did not survive as the record of the closure")
+	}
+	if n := f.count(t, `SELECT count(*) FROM subscriptions WHERE organization_id = $1 AND user_id = (SELECT owner_user_id FROM organizations WHERE id = $1)`, otherOrg); n != 1 {
+		t.Error("the other workspace's subscription did not pass to its owner")
 	}
 }
 
@@ -318,6 +324,19 @@ func TestLiveAccountDeletionRefusesWhileHoldingAnotherWorkspacesMailbox(t *testi
 	}
 	if _, err := f.repo.HardDeleteUser(ctx, f.user); !errors.Is(err, ErrAccountHoldsSharedWork) {
 		t.Fatalf("executing: got %v, want ErrAccountHoldsSharedWork", err)
+	}
+	// A conversation the workspace shares counts too, once the mailbox is gone.
+	if _, err := f.handle.Pool.Exec(ctx, `UPDATE email_accounts SET user_id = $1 WHERE id = $2`, other, shared); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.handle.Pool.Exec(ctx, `UPDATE organizations SET assistant_shared_history = true WHERE id = $1`, otherOrg); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.handle.Pool.Exec(ctx, `INSERT INTO agent_sessions (org_id, user_id) VALUES ($1, $2)`, otherOrg, f.user); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.repo.HardDeleteUser(ctx, f.user); !errors.Is(err, ErrAccountHoldsSharedWork) {
+		t.Fatalf("shared conversation: got %v, want ErrAccountHoldsSharedWork", err)
 	}
 	if n := f.count(t, `SELECT count(*) FROM email_accounts WHERE id = $1`, shared); n != 1 {
 		t.Error("the other workspace lost its mailbox")

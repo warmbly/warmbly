@@ -48,6 +48,9 @@ type DangerZoneRepository interface {
 	// MarkFailed records an execution error so the next tick can retry.
 	MarkFailed(ctx context.Context, id uuid.UUID, errMsg string) error
 
+	// MarkWaiting records why a deletion was refused and holds it until retryAt.
+	MarkWaiting(ctx context.Context, id uuid.UUID, reason string, retryAt time.Time) error
+
 	// SetNotifBit OR's bit into notifications_sent (idempotent reminder gate).
 	SetNotifBit(ctx context.Context, id uuid.UUID, bit int) error
 
@@ -355,6 +358,17 @@ func (r *dangerZoneRepository) MarkFailed(ctx context.Context, id uuid.UUID, err
 	return err
 }
 
+func (r *dangerZoneRepository) MarkWaiting(ctx context.Context, id uuid.UUID, reason string, retryAt time.Time) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE scheduled_deletions
+		   SET status = 'pending',
+		       execution_error = $2,
+		       execute_after = $3
+		 WHERE id = $1
+	`, id, reason, retryAt)
+	return err
+}
+
 func (r *dangerZoneRepository) SetNotifBit(ctx context.Context, id uuid.UUID, bit int) error {
 	_, err := r.db.Exec(ctx, `
 		UPDATE scheduled_deletions
@@ -393,6 +407,13 @@ func (r *dangerZoneRepository) HardDeleteUser(ctx context.Context, userID uuid.U
 	if err := accountDeletable(ctx, tx, userID, owned); err != nil {
 		return nil, err
 	}
+	// A subscription keeps the user who bought it through ownership transfers; it belongs to the current owner.
+	if _, err := tx.Exec(ctx, `
+		UPDATE subscriptions s SET user_id = o.owner_user_id
+		  FROM organizations o
+		 WHERE o.id = s.organization_id AND s.user_id = $1 AND s.organization_id <> ALL($2)`, userID, owned); err != nil {
+		return nil, err
+	}
 	// organizations.owner_user_id deliberately has no delete action, so the
 	// workspaces go by id; one created since the lock fails the user delete.
 	placements, err := eraseAndDelete(ctx, tx, `a.user_id = $1 OR a.organization_id = ANY($2)`, []any{userID, owned},
@@ -406,8 +427,8 @@ func (r *dangerZoneRepository) HardDeleteUser(ctx context.Context, userID uuid.U
 
 // ErrAccountHoldsSharedWork refuses an account deletion that would take a
 // workspace's assets with it: the user's mailboxes, contacts, campaigns,
-// templates, API keys, apps and subscriptions cascade with the user row, in
-// every workspace, owned or not.
+// templates, API keys, apps and shared assistant conversations cascade with
+// the user row, in every workspace, owned or not.
 var ErrAccountHoldsSharedWork = errors.New("account holds assets in workspaces it does not own")
 
 // ErrOwnedWorkspaceBilled refuses an account deletion while an owned workspace
@@ -440,7 +461,8 @@ func accountDeletable(ctx context.Context, tx pgx.Tx, userID uuid.UUID, owned []
 			OR EXISTS (SELECT 1 FROM reply_templates x WHERE x.user_id = $1 AND x.organization_id <> ALL($2))
 			OR EXISTS (SELECT 1 FROM api_keys x WHERE x.user_id = $1 AND x.organization_id <> ALL($2))
 			OR EXISTS (SELECT 1 FROM oauth_applications x WHERE x.created_by = $1 AND x.organization_id <> ALL($2))
-			OR EXISTS (SELECT 1 FROM subscriptions x WHERE x.user_id = $1 AND x.organization_id <> ALL($2)),
+			OR EXISTS (SELECT 1 FROM agent_sessions x JOIN organizations o ON o.id = x.org_id
+				WHERE x.user_id = $1 AND x.org_id <> ALL($2) AND o.assistant_shared_history),
 			EXISTS (SELECT 1 FROM subscriptions s WHERE s.organization_id = ANY($2)
 				AND s.stripe_subscription_id IS NOT NULL AND NOT s.cancel_at_period_end
 				AND s.status NOT IN ('canceled', 'incomplete_expired'))`,

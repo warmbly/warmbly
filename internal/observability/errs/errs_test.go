@@ -180,14 +180,14 @@ func TestDatabaseConnectErrorLeavesOutUserAndAddresses(t *testing.T) {
 	}
 }
 
-// An error marked Sensitive reaches a remote backend as its public sentence.
+// An error marked Sensitive shows only its public sentence, locally and remotely.
 func TestSensitiveErrorReachesRemoteAsItsPublicSentence(t *testing.T) {
 	raw := errors.New("dial tcp 10.9.8.7:5432: connect: connection refused")
 	err := fmt.Errorf("failed to create migrate instance: %w", Sensitive(raw, "failed to open the migration connection"))
 	if got := redact(err).Error(); got != "failed to open the migration connection" {
 		t.Errorf("reported %q", got)
 	}
-	if !errors.Is(err, raw) || !strings.Contains(err.Error(), "10.9.8.7") {
-		t.Error("the local error lost its detail")
+	if !errors.Is(err, raw) || strings.Contains(err.Error(), "10.9.8.7") {
+		t.Errorf("want the original reachable through Unwrap and hidden from the text: %v", err)
 	}
 }

@@ -248,7 +248,7 @@ Each registered key may make 30 protected calls per hour. Past that the call ans
 | `cloud_link_workspace_required` | 409 | Disconnecting a shared server connection requires explicit confirmation of the server-wide scope; it affects all local workspaces using that connection |
 | `cloud_link_upgrade_required` | 409 | This Cloud deployment does not support workspace-scoped connections. Upgrade Cloud first |
 | `organization_cloud_connected` | 409 | Disconnect the workspace's Cloud connection before deleting it or scheduling deletion of it or its owner account |
-| `account_has_shared_work` | 409 | The account still holds mailboxes, contacts, campaigns, reply templates, API keys, apps or a subscription in a workspace it does not own. Remove them before scheduling deletion of the account |
+| `account_has_shared_work` | 409 | The account still holds mailboxes, contacts, campaigns, reply templates, API keys, apps or shared assistant conversations in a workspace it does not own. Remove them before scheduling deletion of the account |
 | `workspace_subscription_active` | 409 | A workspace the account owns has a subscription that will renew. Cancel it before scheduling deletion of the account |
 | `cloud_link_connected` | 409 | The workspace is already connected to Warmbly Cloud. Warmbly Cloud links no new instances, so a disconnected workspace cannot link another Cloud workspace |
 | `cloud_link_not_connected` | 409 | The workspace is not connected to Warmbly Cloud, so there is nothing to change or disconnect |

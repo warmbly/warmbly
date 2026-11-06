@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -34,7 +35,7 @@ func RunMigrations(databaseURL string) error {
 
 	m, err := openMigrate(source, databaseURL)
 	if err != nil {
-		return fmt.Errorf("failed to create migrate instance: %w", errs.Sensitive(err, "failed to open the migration connection"))
+		return fmt.Errorf("failed to create migrate instance: %w", errs.Sensitive(err, "failed to open the migration connection"+connectReason(err)))
 	}
 	defer m.Close()
 
@@ -61,6 +62,19 @@ func openMigrate(sourceDrv source.Driver, databaseURL string) (*migrate.Migrate,
 
 // serverBusy reports a refusal that clears on its own: no free connection
 // slot (53300) or a server starting up or shutting down (57P03).
+// connectReason names why the connection failed without the URL or address the driver's text carries.
+func connectReason(err error) string {
+	var pe interface{ SQLState() string }
+	if errors.As(err, &pe) {
+		return " (SQLSTATE " + pe.SQLState() + ")"
+	}
+	var op *net.OpError
+	if errors.As(err, &op) && op.Err != nil {
+		return ": " + op.Op + ": " + op.Err.Error()
+	}
+	return ""
+}
+
 func serverBusy(err error) bool {
 	var pe interface{ SQLState() string }
 	if !errors.As(err, &pe) {

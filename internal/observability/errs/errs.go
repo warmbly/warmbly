@@ -274,8 +274,8 @@ func (e *DatabaseConnectError) Error() string {
 	return "failed to connect to the database (SQLSTATE " + e.Code + ")"
 }
 
-// Sensitive marks an error whose text carries connection details: the local log
-// keeps it, a remote backend gets public instead.
+// Sensitive hides an error whose text can carry connection details or
+// credentials behind public; the original stays reachable through Unwrap.
 func Sensitive(err error, public string) error {
 	if err == nil {
 		return nil
@@ -288,7 +288,7 @@ type sensitiveError struct {
 	public string
 }
 
-func (e *sensitiveError) Error() string { return e.err.Error() }
+func (e *sensitiveError) Error() string { return e.public }
 func (e *sensitiveError) Unwrap() error { return e.err }
 
 func redact(err error) error {
@@ -296,7 +296,7 @@ func redact(err error) error {
 	if !errors.As(err, &connect) {
 		var sensitive *sensitiveError
 		if errors.As(err, &sensitive) {
-			return errors.New(sensitive.public)
+			return errors.New(sensitive.Error())
 		}
 		return err
 	}
