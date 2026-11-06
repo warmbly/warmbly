@@ -257,12 +257,14 @@ var Tables = []Table{
 		// destination's own sweep verifies it again.
 		// send_claimed_at is this instance's per-send gap lock.
 		// previous_worker_id and worker_released_at name a worker on this instance.
+		// signin_switch_* is this instance's vendor reconnect attempt; the destination makes its own.
 		ResetOnImport: []string{
 			"transport_generation",
 			"worker_id", "auth_checked_at", "auth_failing_since", "cold_ramp_started_at",
 			"send_lifecycle", "send_lifecycle_since", "send_lifecycle_reason", "seed_scope",
 			"avatar_checked_at", "tracking_domain_verified", "tracking_domain_verified_at",
 			"send_claimed_at", "previous_worker_id", "worker_released_at",
+			"signin_switch_state", "signin_switch_at", "signin_switch_message", "signin_switch_automatic",
 		},
 		Blobs: []BlobColumn{{Column: "avatar_url", Kind: BlobKindPublicURL}},
 	},

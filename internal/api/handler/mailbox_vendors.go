@@ -183,3 +183,17 @@ func (h *Handler) MailboxVendorReconnectStatus(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"data": out})
 }
+
+// GetEmailSignin is GET /emails/:id/signin: how the mailbox signs in, the switches that can succeed for it, and its last vendor reconnect.
+func (h *Handler) GetEmailSignin(c *gin.Context) {
+	orgID, _, id, ok := h.vendorID(c)
+	if !ok {
+		return
+	}
+	out, xerr := h.VendorConnService.SigninOptions(c.Request.Context(), orgID, id)
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, out)
+}

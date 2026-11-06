@@ -3,6 +3,7 @@ package models
 import (
 	"net"
 	"net/mail"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -661,6 +662,20 @@ type NewOauthAccount struct {
 	ExpiresAt    time.Time
 	// MailHost is stored as given; "" when unknown.
 	MailHost string
+	// GrantedScopes is what the provider says it granted; nil when it did not say.
+	GrantedScopes []string
+}
+
+// GoogleFullMailScope is the Google consent that lets a token sign in over IMAP.
+const GoogleFullMailScope = "https://mail.google.com/"
+
+// FullMailAccess reads recorded scopes for GoogleFullMailScope; nil when none were recorded.
+func FullMailAccess(scopes []string) *bool {
+	if scopes == nil {
+		return nil
+	}
+	has := slices.Contains(scopes, GoogleFullMailScope)
+	return &has
 }
 
 // NewDelegatedAccount is a Gmail or Outlook mailbox reached through an
@@ -698,10 +713,13 @@ type EmailRef struct {
 	Managed bool `json:"managed"`
 }
 
-// SigninRetiring is a mailbox connected with per-mailbox Google sign-in, the
-// method being retired; it moves to an administrator's grant or an app password.
-func (r EmailRef) SigninRetiring() bool {
-	return InboxProvider(r.Provider) == InboxProviderGoogle && r.AuthMethod == MailAuthOAuth && !r.Managed
+// GoogleSwitchable is a Google mailbox on its own sign-in or on a grant, which another credential can take over in place.
+func (r EmailRef) GoogleSwitchable() bool {
+	switch r.AuthMethod {
+	case MailAuthOAuth, MailAuthDelegated:
+		return InboxProvider(r.Provider) == InboxProviderGoogle && !r.Managed
+	}
+	return false
 }
 
 // Movable is a per-mailbox sign-in an administrator's grant for provider can take over in place.

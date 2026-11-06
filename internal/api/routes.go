@@ -713,6 +713,9 @@ func Run(
 				mailboxVendors.POST("/:id/reconnect", h.ReconnectMailboxVendorMailboxes)
 				mailboxVendors.GET("/:id/reconnect", h.MailboxVendorReconnectStatus)
 			}
+			// How one mailbox signs in and what it can switch to; session-only and manage-emails, like the switches themselves.
+			jwtOnly.GET("/emails/:id/signin", m.RequireOrganization(), m.RequirePermission(models.PermManageEmails),
+				m.RateLimitMiddleware(models.RateLimitWrite), middleware.UUIDParams("id"), middleware.RequireEmailAccountParam("id"), h.GetEmailSignin)
 
 			// Integration OAuth handshake is JWT-only — it writes user-encrypted
 			// provider tokens via the SPA popup flow, same as mailbox onboarding.

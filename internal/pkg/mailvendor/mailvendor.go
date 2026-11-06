@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 )
@@ -187,6 +188,16 @@ type ConsentRequester interface {
 	ConsentStatus(ctx context.Context, requestID string) (AuthorizationStatus, error)
 	// ConsentBudget is how many consent requests one mailbox may be sent per window; zero is unlimited.
 	ConsentBudget() (n int, window time.Duration)
+}
+
+// ConsentVendors are the vendors whose client is a ConsentRequester, for queries that select by vendor id.
+func ConsentVendors() []string {
+	return []string{VendorInboxKit, VendorZapmail}
+}
+
+// SupportsConsent reports whether vendor's client is a ConsentRequester.
+func SupportsConsent(vendor string) bool {
+	return slices.Contains(ConsentVendors(), vendor)
 }
 
 // Option configures New.

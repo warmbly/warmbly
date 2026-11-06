@@ -508,8 +508,9 @@ func (s *emailService) buildAddWorkerEmailSnapshot(ctx context.Context, acc *mod
 			return nil, cerr
 		}
 		out.Google = &models.AddWorkerEmailGoogleData{
-			Token:         oauthToken(creds),
-			LastHistoryID: s.workerHistoryID(ctx, userID, acc, preload),
+			Token:          oauthToken(creds),
+			LastHistoryID:  s.workerHistoryID(ctx, userID, acc, preload),
+			FullMailAccess: models.FullMailAccess(creds.GrantedScopes),
 		}
 	case models.InboxProviderOutlook:
 		creds, cerr := repo.GetOAuthCredentials(ctx, acc.ID)

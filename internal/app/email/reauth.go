@@ -122,7 +122,7 @@ func (s *emailService) finishReauth(ctx context.Context, sess *models.EmailOnboa
 		refresh = creds.RefreshToken
 	}
 
-	if err := s.emailRepository.RefreshBoxToken(ctx, account.ID, tok.AccessToken, refresh, tok.Expiry); err != nil {
+	if err := s.emailRepository.ReplaceBoxToken(ctx, account.ID, tok.AccessToken, refresh, tok.Expiry, recordedScopes(tok)); err != nil {
 		return nil, errx.InternalError()
 	}
 

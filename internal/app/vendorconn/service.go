@@ -82,6 +82,9 @@ type Service struct {
 	lists sync.Map // connection id -> cachedList
 	// kickReconnect starts a reconnect job's first step; nil leaves it to the loop.
 	kickReconnect func(ctx context.Context, key string)
+	audit         Auditor
+	// automatic reports whether the instance switches vendor mailboxes without a click; nil is off.
+	automatic func(ctx context.Context) bool
 }
 
 type cachedClient struct {
@@ -538,6 +541,7 @@ const reconnectCooldown = 6 * time.Hour
 // and, when the vendor now has a different password, reconnects them with it.
 func (s *Service) StartReconnect(ctx context.Context) {
 	go s.startReconnectDriver(ctx)
+	go s.startAutoSwitch(ctx)
 	jobrun.Loop(ctx, "mailbox_vendor_reconnect", 15*time.Minute, false, func(ctx context.Context) error {
 		cands, err := s.repo.ReconnectCandidates(ctx, 50)
 		if err != nil {

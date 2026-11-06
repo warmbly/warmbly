@@ -138,6 +138,8 @@ type SendEmailResult struct {
 type AddWorkerEmailGoogleData struct {
 	LastHistoryID uint64        `json:"last_history_id" avro:"last_history_id"`
 	Token         *oauth2.Token `json:"token" avro:"token"`
+	// FullMailAccess is whether the stored consent carries GoogleFullMailScope; nil when unknown, which the worker probes.
+	FullMailAccess *bool `json:"full_mail_access,omitempty" avro:"full_mail_access"`
 }
 
 type AddWorkerEmailSmtpImapData struct {

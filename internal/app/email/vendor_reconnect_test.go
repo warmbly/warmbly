@@ -18,13 +18,15 @@ type convertRepo struct {
 	stubReauthRepo
 	converted int
 	refuse    bool
+	scopes    []string
 }
 
-func (r *convertRepo) ConvertToGoogleOAuth(_ context.Context, orgID, accountID uuid.UUID, access, refresh string, _ time.Time, _ string) (bool, *errx.Error) {
+func (r *convertRepo) ConvertToGoogleOAuth(_ context.Context, orgID, accountID uuid.UUID, access, refresh string, _ time.Time, _ string, scopes []string) (bool, *errx.Error) {
 	if r.refuse || orgID != *r.account.OrganizationID || accountID != r.account.ID || access == "" || refresh == "" {
 		return false, nil
 	}
 	r.converted++
+	r.scopes = scopes
 	return true, nil
 }
 

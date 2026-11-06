@@ -212,6 +212,10 @@ type VendorConnectionRepository interface {
 	ReconnectCandidates(ctx context.Context, limit int) ([]VendorReconnect, error)
 	// LinkedGoogleMailboxes are the organization's Google mailboxes linked to one vendor connection.
 	LinkedGoogleMailboxes(ctx context.Context, orgID, connectionID uuid.UUID) ([]VendorReconnect, error)
+	AutoSwitchCandidates(ctx context.Context, vendors []string, limit int) ([]SigninSwitchCandidate, error)
+	StartSigninSwitch(ctx context.Context, orgID uuid.UUID, ids []uuid.UUID, automatic bool) ([]uuid.UUID, error)
+	SetSigninSwitch(ctx context.Context, orgID, accountID uuid.UUID, status, message string) error
+	SigninState(ctx context.Context, orgID, accountID uuid.UUID) (*models.MailboxSigninState, error)
 }
 
 type vendorConnectionRepository struct{ DB *db.DB }

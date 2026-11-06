@@ -308,7 +308,7 @@ func (s *emailService) vendorReconnect(ctx context.Context, sess *models.VendorC
 			UserID: sess.UserID.String(), OrganizationID: &orgID, Provider: string(models.InboxProviderGoogle), EmailAccountID: &target.ID,
 		}, models.InboxProviderGoogle, tok, owner)
 	}
-	ok, xerr := s.emailRepository.ConvertToGoogleOAuth(ctx, orgID, target.ID, tok.AccessToken, tok.RefreshToken, tok.Expiry, oauthMailHost(models.InboxProviderGoogle, target.Email))
+	ok, xerr := s.emailRepository.ConvertToGoogleOAuth(ctx, orgID, target.ID, tok.AccessToken, tok.RefreshToken, tok.Expiry, oauthMailHost(models.InboxProviderGoogle, target.Email), recordedScopes(tok))
 	if xerr != nil {
 		return nil, xerr
 	}

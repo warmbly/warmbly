@@ -18,6 +18,7 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
 	"github.com/warmbly/warmbly/internal/pkg/encrypt"
+	"github.com/warmbly/warmbly/internal/pkg/mailvendor"
 	"github.com/warmbly/warmbly/internal/utils"
 	"github.com/warmbly/warmbly/internal/utils/paging"
 	"github.com/warmbly/warmbly/internal/utils/validate"
@@ -47,6 +48,8 @@ type OAuthCredentials struct {
 	AccessToken  string
 	RefreshToken string
 	ExpiresAt    time.Time
+	// GrantedScopes is what the provider granted the token; nil when not recorded.
+	GrantedScopes []string
 }
 
 // AccountScope confines a mailbox lookup to one tenant. The organization is the
@@ -169,6 +172,8 @@ type EmailRepository interface {
 	NewManagedAccount(ctx context.Context, userID string, data models.NewOauthAccount) (*models.Email, *errx.Error)
 	NewSMTPIMAPAccount(ctx context.Context, userID string, data models.NewSMTPIMAPAccount) (*models.Email, *errx.Error)
 	RefreshBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time) error
+	// ReplaceBoxToken stores a new consent's tokens with the scopes it granted; nil scopes records them as unknown.
+	ReplaceBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time, scopes []string) error
 	// RefreshBoxTokenSealed stores a refreshed token a worker sealed under the mailbox's organization key.
 	RefreshBoxTokenSealed(ctx context.Context, id uuid.UUID, sealed string, expiresAt time.Time) error
 	// ReplaceSMTPIMAPCredentials overwrites a mailbox's SMTP/IMAP credential
@@ -188,7 +193,7 @@ type EmailRepository interface {
 	// ConvertGoogleToAppPassword moves a per-mailbox Google sign-in onto an app password in place; false when it was not one.
 	ConvertGoogleToAppPassword(ctx context.Context, orgID, accountID uuid.UUID, creds *models.SmtpImap, mailHost string) (bool, *errx.Error)
 	// ConvertToGoogleOAuth moves a delegated or app-password Google mailbox onto its own Google sign-in in place; false when it was neither.
-	ConvertToGoogleOAuth(ctx context.Context, orgID, accountID uuid.UUID, accessToken, refreshToken string, expiresAt time.Time, mailHost string) (bool, *errx.Error)
+	ConvertToGoogleOAuth(ctx context.Context, orgID, accountID uuid.UUID, accessToken, refreshToken string, expiresAt time.Time, mailHost string, scopes []string) (bool, *errx.Error)
 	// ListSigninRetiring is the workspace's mailboxes still on per-mailbox Google sign-in.
 	ListSigninRetiring(ctx context.Context, orgID uuid.UUID) ([]models.MigrationMailbox, *errx.Error)
 	// RelinkDelegated points an existing delegated mailbox at a grant again (one that arrived in an archive without it).
@@ -429,9 +434,9 @@ func (r *emailRepository) ConvertToDelegated(ctx context.Context, orgID, account
 	return r.convertTx(ctx, query, []any{orgID, accountID, string(provider), grantID, subject, mailHost}, steps)
 }
 
-// ConvertGoogleToAppPassword moves a per-mailbox Google sign-in onto IMAP and
-// SMTP with an app password in place. Mail already imported stays, so the
-// history walk is marked done and IMAP picks up from new mail.
+// ConvertGoogleToAppPassword moves a Google mailbox on its own sign-in or a grant
+// onto IMAP and SMTP with an app password in place. Mail already imported stays,
+// so the history walk is marked done and IMAP picks up from new mail.
 func (r *emailRepository) ConvertGoogleToAppPassword(ctx context.Context, orgID, accountID uuid.UUID, creds *models.SmtpImap, mailHost string) (bool, *errx.Error) {
 	if creds == nil || creds.SMTP == nil || creds.IMAP == nil {
 		return false, errx.ErrInvalid
@@ -442,8 +447,8 @@ func (r *emailRepository) ConvertGoogleToAppPassword(ctx context.Context, orgID,
 		return false, errx.InternalError()
 	}
 	query := `UPDATE email_accounts ea SET provider = 'smtp_imap', auth_method = 'app_password',
-		       mail_host = CASE WHEN $3 = '' THEN mail_host ELSE $3 END, last_id = NULL, updated_at = now()
-		WHERE organization_id = $1 AND id = $2 AND provider = 'gmail' AND auth_method = 'oauth' AND NOT ` + managedExpr
+		       mail_host = CASE WHEN $3 = '' THEN mail_host ELSE $3 END, last_id = NULL, domain_grant_id = NULL, delegated_subject = '', updated_at = now()
+		WHERE organization_id = $1 AND id = $2 AND provider = 'gmail' AND auth_method IN ('oauth', 'delegated') AND NOT ` + managedExpr
 	return r.convertTx(ctx, query, []any{orgID, accountID, mailHost}, []txStep{
 		{`DELETE FROM email_accounts_oauth WHERE email_account_id = $1`, []any{accountID}},
 		{`INSERT INTO email_accounts_smtp_imap (email_account_id, smtp_host, smtp_port, smtp_user, smtp_password, smtp_security,
@@ -475,7 +480,7 @@ type txStep struct {
 // ConvertToGoogleOAuth moves a Google mailbox reached through a grant or an app
 // password onto its own Google sign-in in place, so history, campaigns and
 // warmup stay. An IMAP mailbox's history is already imported, so its walk is marked done.
-func (r *emailRepository) ConvertToGoogleOAuth(ctx context.Context, orgID, accountID uuid.UUID, accessToken, refreshToken string, expiresAt time.Time, mailHost string) (bool, *errx.Error) {
+func (r *emailRepository) ConvertToGoogleOAuth(ctx context.Context, orgID, accountID uuid.UUID, accessToken, refreshToken string, expiresAt time.Time, mailHost string, scopes []string) (bool, *errx.Error) {
 	if strings.TrimSpace(accessToken) == "" || strings.TrimSpace(refreshToken) == "" {
 		return false, errx.ErrInvalid
 	}
@@ -500,9 +505,9 @@ func (r *emailRepository) ConvertToGoogleOAuth(ctx context.Context, orgID, accou
 		  AND ((provider = 'gmail' AND auth_method = 'delegated') OR (provider = 'smtp_imap' AND $4))`
 	steps := []txStep{
 		{`DELETE FROM email_accounts_smtp_imap WHERE email_account_id = $1`, []any{accountID}},
-		{`INSERT INTO email_accounts_oauth (email_account_id, access_token, refresh_token, expires_at) VALUES ($1, $2, $3, $4)
+		{`INSERT INTO email_accounts_oauth (email_account_id, access_token, refresh_token, expires_at, granted_scopes) VALUES ($1, $2, $3, $4, $5)
 		  ON CONFLICT (email_account_id) DO UPDATE SET access_token = EXCLUDED.access_token, refresh_token = EXCLUDED.refresh_token,
-		      expires_at = EXCLUDED.expires_at, updated_at = now()`, []any{accountID, sealed[0], sealed[1], expiresAt}},
+		      expires_at = EXCLUDED.expires_at, granted_scopes = EXCLUDED.granted_scopes, updated_at = now()`, []any{accountID, sealed[0], sealed[1], expiresAt, scopes}},
 	}
 	if wasIMAP {
 		steps = append(steps,
@@ -542,12 +547,19 @@ func (r *emailRepository) convertTx(ctx context.Context, guard string, args []an
 	return true, nil
 }
 
-// ListSigninRetiring is the workspace's mailboxes still on per-mailbox Google sign-in.
+// ListSigninRetiring is the workspace's mailboxes on per-mailbox Google sign-in
+// whose token is not known to carry full mail access, with the inbox vendor
+// that can reconnect each one, when it has one.
 func (r *emailRepository) ListSigninRetiring(ctx context.Context, orgID uuid.UUID) ([]models.MigrationMailbox, *errx.Error) {
-	query := `SELECT id, email, name, status FROM email_accounts ea
-		WHERE organization_id = $1 AND provider = 'gmail' AND auth_method = 'oauth' AND NOT ` + managedExpr + `
-		ORDER BY lower(email)`
-	rows, err := r.DB.Query(ctx, query, orgID)
+	query := `SELECT ea.id, ea.email, ea.name, ea.status, c.id, COALESCE(c.vendor, '')
+		FROM email_accounts ea
+		LEFT JOIN email_accounts_oauth o ON o.email_account_id = ea.id
+		LEFT JOIN mailbox_vendor_connections c ON c.id = ea.vendor_connection_id AND c.organization_id = ea.organization_id
+		    AND c.status = 'active' AND ea.vendor_mailbox_id <> '' AND c.vendor = ANY($3)
+		WHERE ea.organization_id = $1 AND ea.provider = 'gmail' AND ea.auth_method = 'oauth' AND NOT ` + managedExpr + `
+		  AND NOT COALESCE($2 = ANY(o.granted_scopes), false)
+		ORDER BY lower(ea.email)`
+	rows, err := r.DB.Query(ctx, query, orgID, models.GoogleFullMailScope, mailvendor.ConsentVendors())
 	if err != nil {
 		db.CaptureError(err, query, nil, "query")
 		return nil, errx.InternalError()
@@ -556,7 +568,7 @@ func (r *emailRepository) ListSigninRetiring(ctx context.Context, orgID uuid.UUI
 	out := []models.MigrationMailbox{}
 	for rows.Next() {
 		var m models.MigrationMailbox
-		if err := rows.Scan(&m.ID, &m.Email, &m.Name, &m.Status); err != nil {
+		if err := rows.Scan(&m.ID, &m.Email, &m.Name, &m.Status, &m.VendorConnectionID, &m.Vendor); err != nil {
 			return nil, errx.InternalError()
 		}
 		out = append(out, m)
@@ -1033,8 +1045,8 @@ func (r *emailRepository) NewOauthAccount(ctx context.Context, userID string, da
 	}
 
 	query = `
-		INSERT INTO email_accounts_oauth (email_account_id, access_token, refresh_token, expires_at)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO email_accounts_oauth (email_account_id, access_token, refresh_token, expires_at, granted_scopes)
+		VALUES ($1, $2, $3, $4, $5)
 	`
 
 	params = []any{
@@ -1042,6 +1054,7 @@ func (r *emailRepository) NewOauthAccount(ctx context.Context, userID string, da
 		encAccessToken,
 		encRefreshToken,
 		data.ExpiresAt,
+		data.GrantedScopes,
 	}
 
 	_, err = tx.Exec(
@@ -2744,7 +2757,7 @@ func (r *emailRepository) GetOAuthCredentials(ctx context.Context, emailAccountI
 		return nil, errx.InternalError()
 	}
 	query := `
-		SELECT ea.organization_id, o.access_token, o.refresh_token, o.expires_at
+		SELECT ea.organization_id, o.access_token, o.refresh_token, o.expires_at, o.granted_scopes
 		FROM email_accounts_oauth o
 		JOIN email_accounts ea ON ea.id = o.email_account_id
 		WHERE o.email_account_id = $1
@@ -2753,9 +2766,10 @@ func (r *emailRepository) GetOAuthCredentials(ctx context.Context, emailAccountI
 	var orgID *uuid.UUID
 	var accessToken, refreshToken string
 	var expiresAt time.Time
+	var scopes []string
 
 	err := r.transportQueryRow(ctx, query, emailAccountID).Scan(
-		&orgID, &accessToken, &refreshToken, &expiresAt,
+		&orgID, &accessToken, &refreshToken, &expiresAt, &scopes,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -2781,9 +2795,10 @@ func (r *emailRepository) GetOAuthCredentials(ctx context.Context, emailAccountI
 	}
 
 	return &OAuthCredentials{
-		AccessToken:  decryptedAccessToken,
-		RefreshToken: decryptedRefreshToken,
-		ExpiresAt:    expiresAt,
+		AccessToken:   decryptedAccessToken,
+		RefreshToken:  decryptedRefreshToken,
+		ExpiresAt:     expiresAt,
+		GrantedScopes: scopes,
 	}, nil
 }
 

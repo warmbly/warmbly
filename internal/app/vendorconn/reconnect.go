@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/app/mailboximport"
 	"github.com/warmbly/warmbly/internal/errx"
@@ -66,6 +67,8 @@ type reconnectJob struct {
 	Mailboxes    []ReconnectMailbox `json:"mailboxes"`
 	// VendorMailboxIDs are the vendor's ids the consent requests name, kept out of the answer.
 	VendorMailboxIDs map[uuid.UUID]string `json:"vendor_mailbox_ids"`
+	// Automatic marks the mailboxes the automatic switch started rather than a member.
+	Automatic map[uuid.UUID]bool `json:"automatic,omitempty"`
 }
 
 func reconnectUnavailable() *errx.Error {
@@ -77,6 +80,15 @@ func reconnectUnavailable() *errx.Error {
 // connection, or every one, renewing or converting each in place. It answers at
 // once; the vendor's work goes on in the background and ReconnectStatus reads it.
 func (s *Service) Reconnect(ctx context.Context, orgID, userID, connectionID uuid.UUID, accountID *uuid.UUID) ([]ReconnectMailbox, *errx.Error) {
+	var only map[uuid.UUID]bool
+	if accountID != nil {
+		only = map[uuid.UUID]bool{*accountID: true}
+	}
+	return s.startReconnect(ctx, orgID, userID, connectionID, only, false)
+}
+
+// startReconnect starts the vendor signing in again as the connection's Google mailboxes, or only those in only.
+func (s *Service) startReconnect(ctx context.Context, orgID, userID, connectionID uuid.UUID, only map[uuid.UUID]bool, automatic bool) ([]ReconnectMailbox, *errx.Error) {
 	if s.cache == nil || s.consent == nil {
 		return nil, reconnectUnavailable()
 	}
@@ -98,18 +110,18 @@ func (s *Service) Reconnect(ctx context.Context, orgID, userID, connectionID uui
 	if err != nil {
 		return nil, errx.InternalError()
 	}
-	if accountID != nil {
-		var one []repository.VendorReconnect
+	if only != nil {
+		var some []repository.VendorReconnect
 		for _, l := range linked {
-			if l.AccountID == *accountID {
-				one = append(one, l)
+			if only[l.AccountID] {
+				some = append(some, l)
 			}
 		}
-		linked = one
+		linked = some
 	}
 	if len(linked) == 0 {
 		msg := "This vendor account has no Google mailboxes in this workspace."
-		if accountID != nil {
+		if only != nil {
 			msg = "That mailbox is not a Google mailbox imported from this vendor account."
 		}
 		return nil, errx.NewWithIdentifier(errx.NotFound, ErrIDReconnectNone, msg)
@@ -120,16 +132,21 @@ func (s *Service) Reconnect(ctx context.Context, orgID, userID, connectionID uui
 	}
 
 	key := reconnectJobKey(orgID, connectionID)
-	job := reconnectJob{OrgID: orgID, UserID: userID, ConnectionID: connectionID, Started: time.Now(), VendorMailboxIDs: map[uuid.UUID]string{}}
+	job := reconnectJob{OrgID: orgID, UserID: userID, ConnectionID: connectionID, Started: time.Now(),
+		VendorMailboxIDs: map[uuid.UUID]string{}, Automatic: map[uuid.UUID]bool{}}
 	var prev reconnectJob
 	if s.cache.GetJSON(ctx, key, &prev) == nil {
 		for _, m := range prev.Mailboxes {
 			if !m.final() {
 				job.Mailboxes = append(job.Mailboxes, m)
 				job.VendorMailboxIDs[m.EmailAccountID] = prev.VendorMailboxIDs[m.EmailAccountID]
+				if prev.Automatic[m.EmailAccountID] {
+					job.Automatic[m.EmailAccountID] = true
+				}
 			}
 		}
 	}
+	var started []uuid.UUID
 	for _, l := range linked {
 		if _, open := job.VendorMailboxIDs[l.AccountID]; open {
 			continue
@@ -141,6 +158,10 @@ func (s *Service) Reconnect(ctx context.Context, orgID, userID, connectionID uui
 		}
 		job.Mailboxes = append(job.Mailboxes, ReconnectMailbox{EmailAccountID: l.AccountID, Email: l.Email, Status: ReconnectQueued})
 		job.VendorMailboxIDs[l.AccountID] = l.VendorMailboxID
+		if automatic {
+			job.Automatic[l.AccountID] = true
+		}
+		started = append(started, l.AccountID)
 	}
 	if err := s.cache.SetJSON(ctx, key, job, reconnectJobTTL); err != nil {
 		return nil, errx.InternalError()
@@ -148,13 +169,19 @@ func (s *Service) Reconnect(ctx context.Context, orgID, userID, connectionID uui
 	if err := s.cache.SAdd(ctx, reconnectJobsIndex, key).Err(); err != nil {
 		return nil, errx.InternalError()
 	}
+	// The automatic switch recorded its start when it claimed the mailboxes.
+	if !automatic && len(started) > 0 {
+		if _, err := s.repo.StartSigninSwitch(ctx, orgID, started, false); err != nil {
+			log.Warn().Err(err).Str("organization_id", orgID.String()).Msg("vendor reconnect: recording the start failed")
+		}
+	}
 	// The first step runs now rather than at the next pass; the loop carries on from it.
 	if s.kickReconnect != nil {
 		s.kickReconnect(context.WithoutCancel(ctx), key)
 	}
 	out := make([]ReconnectMailbox, 0, len(linked))
 	for _, m := range job.Mailboxes {
-		if accountID == nil || m.EmailAccountID == *accountID {
+		if only == nil || only[m.EmailAccountID] {
 			out = append(out, m)
 		}
 	}
@@ -213,7 +240,12 @@ func (s *Service) driveReconnectKey(ctx context.Context, key string) {
 		_ = s.cache.SRem(ctx, reconnectJobsIndex, key).Err()
 		return
 	}
+	before := make(map[uuid.UUID]ReconnectMailbox, len(job.Mailboxes))
+	for _, m := range job.Mailboxes {
+		before[m.EmailAccountID] = m
+	}
 	open := s.driveReconnect(ctx, &job)
+	s.recordReconnect(ctx, &job, before)
 	if ttl := time.Until(job.Started.Add(reconnectJobTTL)); ttl > 0 {
 		_ = s.cache.SetJSON(ctx, key, job, ttl)
 	}

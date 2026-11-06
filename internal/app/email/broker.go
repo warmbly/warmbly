@@ -104,6 +104,7 @@ func (s *emailService) OAuthConnectWithCodeForAccount(ctx context.Context, userI
 		AccessToken:    tok.AccessToken,
 		RefreshToken:   tok.RefreshToken,
 		ExpiresAt:      tok.Expiry,
+		GrantedScopes:  recordedScopes(tok),
 	})
 	if xerr != nil {
 		return nil, xerr

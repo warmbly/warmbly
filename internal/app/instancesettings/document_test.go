@@ -292,3 +292,28 @@ func TestRetentionNormalizeWarmupWindows(t *testing.T) {
 		})
 	}
 }
+
+// The automatic vendor reconnect is on for a fresh instance and for a document saved before the setting existed.
+func TestAutoVendorReconnectDefaultsOnAndPatches(t *testing.T) {
+	if !Defaults().MailboxSignin.AutoVendorReconnect {
+		t.Fatal("AutoVendorReconnect is off by default")
+	}
+	doc := Defaults()
+	if err := json.Unmarshal([]byte(`{"invitations":{"links_enabled":true,"ttl_hours":24}}`), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if !doc.MailboxSignin.AutoVendorReconnect {
+		t.Fatal("a document without the section turned the switch off")
+	}
+	var p Patch
+	if err := json.Unmarshal([]byte(`{"mailbox_signin":{"auto_vendor_reconnect":false}}`), &p); err != nil {
+		t.Fatal(err)
+	}
+	off := p.Apply(doc)
+	if off.MailboxSignin.AutoVendorReconnect {
+		t.Fatal("the patch did not turn it off")
+	}
+	if kept := (Patch{}).Apply(off); kept.MailboxSignin.AutoVendorReconnect {
+		t.Fatal("an absent field cleared the stored value")
+	}
+}

@@ -2057,6 +2057,9 @@ func main() {
 			go mailboxAvatars.Start(ctx)
 		}
 		vendorConnService.SetImporter(mailboxImportService)
+		vendorConnService.WireSigninSwitch(auditService, func(ctx context.Context) bool {
+			return instanceSettings == nil || instanceSettings.AutoVendorReconnect(ctx)
+		})
 		sendingDomainService.WireVendors(vendorConnService)
 		go vendorConnService.StartReconnect(ctx)
 		go mailboxImportService.Start(ctx)

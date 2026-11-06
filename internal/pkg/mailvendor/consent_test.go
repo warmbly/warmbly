@@ -188,3 +188,21 @@ func TestZapmailConsentIsNotRetriedOnItsLimit(t *testing.T) {
 		t.Fatalf("%d requests, want the lookup and one consent", n)
 	}
 }
+
+// SupportsConsent is what selects vendors in SQL, so it has to name exactly the clients that can sign in for Warmbly.
+func TestSupportsConsentMatchesTheClients(t *testing.T) {
+	for _, d := range Descriptors() {
+		fields := map[string]string{}
+		for _, f := range d.Fields {
+			fields[f.Key] = "x"
+		}
+		c, err := New(d.ID, fields)
+		if err != nil {
+			t.Fatalf("%s: %v", d.ID, err)
+		}
+		_, is := c.(ConsentRequester)
+		if is != SupportsConsent(d.ID) {
+			t.Errorf("%s: ConsentRequester = %v, SupportsConsent = %v", d.ID, is, SupportsConsent(d.ID))
+		}
+	}
+}

@@ -260,6 +260,7 @@ func (s *emailService) createOAuthMailbox(ctx context.Context, userID string, or
 		RefreshToken:   tok.RefreshToken,
 		ExpiresAt:      tok.Expiry,
 		MailHost:       oauthMailHost(provider, owner.Email),
+		GrantedScopes:  recordedScopes(tok),
 	})
 	if xerr == nil && acc != nil {
 		s.captureSendIdentity(ctx, acc, tok)
@@ -554,6 +555,17 @@ func grantedScopes(tok *oauth2.Token) (map[string]bool, bool) {
 		out["offline_access"] = true
 	}
 	return out, true
+}
+
+// recordedScopes is the token's granted scope list as stored on the mailbox; nil when the provider named none.
+func recordedScopes(tok *oauth2.Token) []string {
+	raw, _ := tok.Extra("scope").(string)
+	fields := strings.Fields(raw)
+	if len(fields) == 0 {
+		return nil
+	}
+	slices.Sort(fields)
+	return slices.Compact(fields)
 }
 
 // scopeSatisfiedBy maps a scope we ask for to every scope that confers it.

@@ -180,6 +180,31 @@ func (r *emailRepository) RefreshBoxToken(ctx context.Context, id uuid.UUID, acc
 	return nil
 }
 
+// ReplaceBoxToken is RefreshBoxToken for a new consent, which also records what it granted.
+func (r *emailRepository) ReplaceBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time, scopes []string) error {
+	orgID, err := r.mailboxOrganization(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	sealed, err := r.sealCredentials(ctx, orgID, accessToken, refreshToken)
+	if err != nil {
+		db.CaptureError(err, "", nil, "encrypt-oauth-tokens")
+		return err
+	}
+	query := `UPDATE email_accounts_oauth
+		SET access_token = $1, refresh_token = $2, expires_at = $3, granted_scopes = $4, updated_at = now()
+		WHERE email_account_id = $5`
+	if _, err := r.DB.Exec(ctx, query, sealed[0], sealed[1], expiresAt, scopes, id); err != nil {
+		// The parameters hold the sealed tokens; keep them out of the error report.
+		db.CaptureError(err, query, nil, "exec")
+		return err
+	}
+	return nil
+}
+
 func (r *emailRepository) RefreshBoxTokenSealed(ctx context.Context, id uuid.UUID, sealed string, expiresAt time.Time) error {
 	orgID, err := r.mailboxOrganization(ctx, id)
 	if errors.Is(err, pgx.ErrNoRows) {
