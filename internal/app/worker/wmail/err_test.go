@@ -1,9 +1,12 @@
 package wmail
 
 import (
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/warmbly/warmbly/internal/client/msgraph"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
@@ -39,6 +42,13 @@ func TestTransientProviderFailuresAreNotReportedAsApplicationErrors(t *testing.T
 		if reportable(mailErr) {
 			t.Errorf("%s was reportable; the worker retries this expected provider condition", mailErr.Code)
 		}
+	}
+}
+
+// A non-JSON Graph success body retries and is not an application error.
+func TestUnreadableGraphResponseIsNotReported(t *testing.T) {
+	if reportable(fmt.Errorf("%w: %w", msgraph.ErrUnreadableResponse, errors.New("invalid character"))) {
+		t.Error("an unreadable Graph response was reportable")
 	}
 }
 

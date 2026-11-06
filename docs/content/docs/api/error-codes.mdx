@@ -241,6 +241,15 @@ Each registered key may make 30 protected calls per hour. Past that the call ans
 }
 ```
 
+#### Account deletion refusals
+
+Scheduling an account deletion is refused with one of these codes, or with `organization_cloud_connected` (see [Cloud connection refusals](#cloud-connection-refusals)) when a workspace it owns is connected to Warmbly Cloud. The same checks run again when the 30-day grace period ends: if either still applies, the deletion stays pending, is checked again a day later, and the account is kept until it completes.
+
+| `code` | Status | Meaning |
+|--------|--------|---------|
+| `account_has_shared_work` | 409 | The account still holds mailboxes, contacts, campaigns, campaign attachments, reply templates, API keys, apps or shared assistant conversations in a workspace it does not own. Remove them before scheduling deletion of the account |
+| `workspace_subscription_active` | 409 | A workspace the account owns has a subscription that will renew. Cancel it before scheduling deletion of the account |
+
 #### Cloud connection refusals
 
 | `code` | Status | Meaning |

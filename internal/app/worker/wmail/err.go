@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/warmbly/warmbly/internal/client/msgraph"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/eventbus"
 	"github.com/warmbly/warmbly/internal/models"
@@ -16,7 +17,7 @@ import (
 // itself, and one per mailbox for a bus that closed because we are shutting
 // down. The relay below still runs either way, so nothing stops acting on them.
 func reportable(err error) bool {
-	if errors.Is(err, eventbus.ErrBusClosed) || errors.Is(err, context.Canceled) {
+	if errors.Is(err, eventbus.ErrBusClosed) || errors.Is(err, context.Canceled) || errors.Is(err, msgraph.ErrUnreadableResponse) {
 		return false
 	}
 	var mailErr *errx.MailError

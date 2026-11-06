@@ -558,10 +558,10 @@ func (r *adminRepository) GetUserBans(ctx context.Context, userID uuid.UUID) ([]
 	query := `
 		SELECT ub.id, ub.user_id, ub.banned_by, ub.reason, ub.banned_at,
 			ub.unbanned_at, ub.unbanned_by, ub.unban_reason,
-			bu.id, bu.first_name, bu.last_name, bu.email,
+			COALESCE(bu.id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(bu.first_name, ''), COALESCE(bu.last_name, ''), COALESCE(bu.email, ''),
 			uu.id, uu.first_name, uu.last_name, uu.email
 		FROM user_bans ub
-		JOIN users bu ON bu.id = ub.banned_by
+		LEFT JOIN users bu ON bu.id = ub.banned_by
 		LEFT JOIN users uu ON uu.id = ub.unbanned_by
 		WHERE ub.user_id = $1
 		ORDER BY ub.banned_at DESC
@@ -588,7 +588,10 @@ func (r *adminRepository) GetUserBans(ctx context.Context, userID uuid.UUID) ([]
 			return nil, err
 		}
 
-		ban.BannedByUser = &bannedByUser
+		// An admin whose account was deleted has no summary.
+		if bannedByUser.ID != uuid.Nil {
+			ban.BannedByUser = &bannedByUser
+		}
 		if unbannedByID != nil {
 			id, _ := uuid.Parse(*unbannedByID)
 			ban.UnbannedByUser = &models.AdminUserSummary{
@@ -1091,7 +1094,9 @@ func (r *adminRepository) ListBlockedAccounts(ctx context.Context, offset, limit
 		); err != nil {
 			return nil, err
 		}
-		a.User = &user
+		if user.ID != uuid.Nil {
+			a.User = &user
+		}
 		if appealStatus != nil {
 			status := models.WarmupAppealStatus(*appealStatus)
 			a.AppealStatus = &status
@@ -1201,9 +1206,9 @@ func (r *adminRepository) ListAppeals(ctx context.Context, status string, offset
 	query := `
 		SELECT wa.id, wa.email_account_id, wa.user_id, wa.reason, wa.status,
 			wa.reviewed_by, wa.reviewed_at, wa.review_notes, wa.created_at,
-			u.id, u.first_name, u.last_name, u.email
+			COALESCE(u.id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(u.first_name, ''), COALESCE(u.last_name, ''), COALESCE(u.email, '')
 		FROM warmup_appeals wa
-		JOIN users u ON u.id = wa.user_id
+		LEFT JOIN users u ON u.id = wa.user_id
 		` + whereClause + `
 		ORDER BY wa.created_at DESC, wa.id DESC
 		` + adminLimitOffset("$1", offset)
@@ -1228,7 +1233,9 @@ func (r *adminRepository) ListAppeals(ctx context.Context, status string, offset
 			return nil, err
 		}
 
-		a.User = &user
+		if user.ID != uuid.Nil {
+			a.User = &user
+		}
 		appeals = append(appeals, a)
 	}
 
@@ -1252,9 +1259,9 @@ func (r *adminRepository) GetAppeal(ctx context.Context, appealID uuid.UUID) (*m
 	query := `
 		SELECT wa.id, wa.email_account_id, wa.user_id, wa.reason, wa.status,
 			wa.reviewed_by, wa.reviewed_at, wa.review_notes, wa.created_at,
-			u.id, u.first_name, u.last_name, u.email
+			COALESCE(u.id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(u.first_name, ''), COALESCE(u.last_name, ''), COALESCE(u.email, '')
 		FROM warmup_appeals wa
-		JOIN users u ON u.id = wa.user_id
+		LEFT JOIN users u ON u.id = wa.user_id
 		WHERE wa.id = $1
 	`
 
@@ -1273,7 +1280,9 @@ func (r *adminRepository) GetAppeal(ctx context.Context, appealID uuid.UUID) (*m
 		return nil, err
 	}
 
-	a.User = &user
+	if user.ID != uuid.Nil {
+		a.User = &user
+	}
 	return &a, nil
 }
 
@@ -1660,9 +1669,9 @@ func (r *adminRepository) SearchAuditLogs(ctx context.Context, search *models.Ad
 	query := `
 		SELECT al.id, al.admin_user_id, al.action, al.target_type, al.target_id,
 			al.details, COALESCE(al.ip_address, ''), COALESCE(al.user_agent, ''), al.created_at,
-			u.id, u.first_name, u.last_name, u.email
+			COALESCE(u.id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(u.first_name, ''), COALESCE(u.last_name, ''), COALESCE(u.email, '')
 		FROM admin_audit_logs al
-		JOIN users u ON u.id = al.admin_user_id
+		LEFT JOIN users u ON u.id = al.admin_user_id
 		` + whereClause + `
 		ORDER BY al.created_at DESC, al.id DESC
 		LIMIT $` + itoa(argNum)
@@ -1692,7 +1701,9 @@ func (r *adminRepository) SearchAuditLogs(ctx context.Context, search *models.Ad
 			json.Unmarshal(detailsJSON, &log.Details)
 		}
 
-		log.AdminUser = &user
+		if user.ID != uuid.Nil {
+			log.AdminUser = &user
+		}
 		logs = append(logs, log)
 	}
 

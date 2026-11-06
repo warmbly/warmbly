@@ -150,11 +150,11 @@ func (r *adminOutreachRepository) Search(ctx context.Context, search *models.Adm
 	query := `
 		SELECT m.id, m.sent_by, m.to_user_id, m.to_org_id, m.to_email, m.reply_to,
 			m.subject, m.body, m.status, m.error, m.sent_at, m.created_at,
-			s.id, s.first_name, s.last_name, s.email,
+			COALESCE(s.id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(s.first_name, ''), COALESCE(s.last_name, ''), COALESCE(s.email, ''),
 			COALESCE(u.id, '00000000-0000-0000-0000-000000000000'::uuid),
 			COALESCE(u.first_name, ''), COALESCE(u.last_name, ''), COALESCE(u.email, '')
 		FROM admin_outreach_messages m
-		JOIN users s ON s.id = m.sent_by
+		LEFT JOIN users s ON s.id = m.sent_by
 		LEFT JOIN users u ON u.id = m.to_user_id
 		` + where + `
 		` + orderBy + `
@@ -179,7 +179,10 @@ func (r *adminOutreachRepository) Search(ctx context.Context, search *models.Adm
 		); err != nil {
 			return nil, err
 		}
-		m.SentByUser = &sender
+		// A sender whose account was deleted has no summary.
+		if sender.ID != uuid.Nil {
+			m.SentByUser = &sender
+		}
 		if m.ToUserID != nil {
 			m.ToUserSummary = &models.AdminUserSummary{
 				ID: toUserID, FirstName: toFN, LastName: toLN, Email: toEmail,
@@ -197,7 +200,7 @@ func (r *adminOutreachRepository) Search(ctx context.Context, search *models.Adm
 		result.Pagination.NextCursor = adminNextCursor(offset, limit)
 	}
 
-	countQuery := `SELECT COUNT(*) FROM admin_outreach_messages m JOIN users s ON s.id = m.sent_by LEFT JOIN users u ON u.id = m.to_user_id ` + where
+	countQuery := `SELECT COUNT(*) FROM admin_outreach_messages m LEFT JOIN users s ON s.id = m.sent_by LEFT JOIN users u ON u.id = m.to_user_id ` + where
 	var total int64
 	if err := r.db.QueryRow(ctx, countQuery, args[:len(args)-1]...).Scan(&total); err == nil {
 		result.Pagination.Total = &total
