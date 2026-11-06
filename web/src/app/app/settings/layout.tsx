@@ -80,7 +80,7 @@ const GROUPS: SectionGroup[] = [
             { path: "tracking", label: "Website tracking", icon: GlobeIcon, description: "Page views on your site, in the contact timeline.", permission: "MANAGE_SETTINGS" },
             { path: "inbox-tagging", label: "Inbox tagging", icon: TagsIcon, description: "Label and score inbound mail automatically.", permission: "VIEW_ANALYTICS" },
             { path: "ai-skills", label: "AI skills", icon: SparklesIcon, description: "Playbooks your AI features follow.", permission: "MANAGE_SETTINGS" },
-            { path: "billing", label: "Billing", icon: CreditCardIcon, description: "Plan, payment, invoices.", ownerOnly: true, billingOnly: true },
+            { path: "billing", label: "Billing", icon: CreditCardIcon, description: "Plan, balance, invoices.", permission: "MANAGE_BILLING", billingOnly: true },
             { path: "limits", label: "Limits", icon: GaugeIcon, description: "Ask for a higher cap on mailboxes, contacts, seats or sends.", ownerOnly: true },
         ],
     },
@@ -124,6 +124,7 @@ function SettingsLayoutInner() {
         ? (linkedInstances.data?.data ?? []).some((i) => !i.revoked_at)
         : !!(cloudStatus.data?.connected || cloudStatus.data?.legacy_connected);
     const canViewAnalytics = usePermission("VIEW_ANALYTICS");
+    const canManageBilling = usePermission("MANAGE_BILLING");
     const restricted = useAccessRestricted();
     const navRef = React.useRef<HTMLElement>(null);
     const unsaved = useUnsavedRegistry();
@@ -190,7 +191,8 @@ function SettingsLayoutInner() {
                     (s.path !== "warmbly-cloud" || hasCloudLink) &&
                     (s.permission !== "MANAGE_API_KEYS" || canManageApiKeys) &&
                     (s.permission !== "MANAGE_SETTINGS" || canManageSettings) &&
-                    (s.permission !== "VIEW_ANALYTICS" || canViewAnalytics),
+                    (s.permission !== "VIEW_ANALYTICS" || canViewAnalytics) &&
+                    (s.permission !== "MANAGE_BILLING" || canManageBilling || access.isOwner),
             )
             .map((s) =>
                 hosted && s.hostedLabel

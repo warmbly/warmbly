@@ -48,6 +48,7 @@ import {
 import { domainOf } from "@/lib/api/models/app/emails/MailboxSources";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import { cn } from "@/lib/utils";
+import { fmtUsd, fmtUsdCost } from "@/lib/money";
 import {
     CampaignPicker,
     CopySourceFields,
@@ -99,7 +100,7 @@ interface Draft extends CopyDraft {
     seedIds: string[];
     families: string[];
     onUnavailable: PlacementUnavailable;
-    // The credit total the user agreed to; a different total needs asking again.
+    // The dollar total the user agreed to; a different total needs asking again.
     payConsent: number | null;
 }
 
@@ -357,20 +358,20 @@ function DialogBody({ onClose, prefill }: { onClose: () => void; prefill?: NewPl
                   : (emptyIssue(senders.data) ?? tooLarge(senders.data));
 
     const fp = full.data;
-    const consented = !!fp && fp.paid_tests > 0 && draft.payConsent === fp.credits;
-    const canPay = !fp || fp.paid_tests === 0 || (fp.usage.credits_per_test > 0 && (fp.usage.credit_balance == null || fp.usage.credit_balance >= fp.credits));
+    const consented = !!fp && fp.paid_tests > 0 && draft.payConsent === fp.cost_usd;
+    const canPay = !fp || fp.paid_tests === 0 || (fp.usage.price_per_test_usd > 0 && (fp.usage.balance_usd == null || fp.usage.balance_usd >= fp.cost_usd));
     const reviewIssue: string | null = full.error
         ? full.error.message
         : !fp
           ? "Working out the cost…"
           : (emptyIssue(fp) ??
             tooLarge(fp) ??
-            (fp.paid_tests > 0 && fp.usage.credits_per_test === 0
+            (fp.paid_tests > 0 && fp.usage.price_per_test_usd === 0
                 ? `This month's free tests cover ${n(fp.free_tests)} of the ${n(fp.tests)} tests, and tests past them cannot be paid for. Take a smaller sample, or use your own seed inboxes.`
                 : fp.paid_tests > 0 && !canPay
-                  ? `The paid tests cost up to ${n(fp.credits)} credits and the workspace has ${n(fp.usage.credit_balance ?? 0)}. Top up under Settings > Billing, or take a smaller sample.`
+                  ? `The paid tests cost up to ${fmtUsdCost(fp.cost_usd)} and the workspace balance is ${fmtUsd(fp.usage.balance_usd ?? 0)}. Add money under Settings > Billing, or take a smaller sample.`
                   : fp.paid_tests > 0 && !consented
-                    ? `Tick the box to pay up to ${n(fp.credits)} credits for this batch.`
+                    ? `Tick the box to pay up to ${fmtUsdCost(fp.cost_usd)} for this batch.`
                     : null));
 
     const issueOf = React.useCallback(
@@ -443,7 +444,7 @@ function DialogBody({ onClose, prefill }: { onClose: () => void; prefill?: NewPl
             setNudged(true);
             return;
         }
-        const body: PlacementBatchRequest = { ...fullBody, ...(fp.paid_tests > 0 ? { max_credits: fp.credits } : {}) };
+        const body: PlacementBatchRequest = { ...fullBody, ...(fp.paid_tests > 0 ? { max_usd: fp.cost_usd } : {}) };
         try {
             const batch = await create.mutateAsync({ body, idempotencyKey: idemKey.current });
             toast.success("Placement batch queued.");
@@ -546,7 +547,7 @@ function DialogBody({ onClose, prefill }: { onClose: () => void; prefill?: NewPl
                                         onChange={(v) => patch({ tracking: v })}
                                         source={draft.source}
                                         textOnly={textOnly}
-                                        compareHint="Every sender runs two tests to the same seeds, so tests, copies and credits double."
+                                        compareHint="Every sender runs two tests to the same seeds, so tests, copies and cost double."
                                     />
                                     <section>
                                         <SectionLabel>Seed panel</SectionLabel>
@@ -669,7 +670,7 @@ function DialogBody({ onClose, prefill }: { onClose: () => void; prefill?: NewPl
                             >
                                 {pending ? <Loader2Icon className="w-3.5 h-3.5 animate-spin" /> : <PlayIcon className="w-3.5 h-3.5" />}
                                 Start batch
-                                {fp && fp.paid_tests > 0 && <span className="opacity-80">· up to {n(fp.credits)} credits</span>}
+                                {fp && fp.paid_tests > 0 && <span className="opacity-80">· up to {fmtUsdCost(fp.cost_usd)}</span>}
                             </button>
                         )}
                     </div>
@@ -1267,31 +1268,31 @@ function ReviewStep({
                                 {p.free_tests > 0
                                     ? `This month's free tests cover ${n(p.free_tests)} of the ${n(p.tests)} tests. The other ${n(p.paid_tests)}`
                                     : `This month's free tests are used up, so all ${n(p.paid_tests)} tests`}{" "}
-                                cost up to <b className="font-medium text-slate-900">{n(p.credits)} credits</b>
-                                {p.usage.credits_per_test > 0 && ` (${p.usage.credits_per_test} each)`}.
-                                {p.usage.credit_balance != null && ` The workspace has ${n(p.usage.credit_balance)}.`} A test that delivers no copy gets its credits back.
+                                cost up to <b className="font-medium text-slate-900">{fmtUsdCost(p.cost_usd)}</b>
+                                {p.usage.price_per_test_usd > 0 && ` (${fmtUsdCost(p.usage.price_per_test_usd)} each)`}, paid from the workspace balance.
+                                {p.usage.balance_usd != null && ` The balance is ${fmtUsd(p.usage.balance_usd)}.`} A test that delivers no copy is refunded.
                             </p>
-                            {p.usage.credits_per_test === 0 ? null : canPay ? (
+                            {p.usage.price_per_test_usd === 0 ? null : canPay ? (
                                 <label className="mt-2 flex items-center gap-2 cursor-pointer select-none">
                                     <Checkbox
                                         tone="slate"
                                         checked={consented}
-                                        onChange={(e) => patch({ payConsent: e.target.checked ? p.credits : null })}
+                                        onChange={(e) => patch({ payConsent: e.target.checked ? p.cost_usd : null })}
                                     />
-                                    <span className="text-[12px] text-slate-900">Pay up to {n(p.credits)} credits for this batch</span>
+                                    <span className="text-[12px] text-slate-900">Pay up to {fmtUsdCost(p.cost_usd)} for this batch</span>
                                 </label>
                             ) : canBuy ? (
                                 <Link
                                     to="/app/settings/billing/{-$tab}"
-                                    params={{ tab: "ai-credits" }}
+                                    params={{ tab: "balance" }}
                                     target="_blank"
                                     rel="noopener"
                                     className="mt-2 inline-flex text-[12px] font-medium text-sky-700 hover:underline"
                                 >
-                                    Top up credits in a new tab
+                                    Add money in a new tab
                                 </Link>
                             ) : (
-                                <p className="mt-2 text-[12px] text-slate-600">Ask someone with the Manage billing permission to top up.</p>
+                                <p className="mt-2 text-[12px] text-slate-600">Ask someone with the Manage billing permission to add money.</p>
                             )}
                         </div>
                     )}

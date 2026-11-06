@@ -2,8 +2,9 @@
 
 import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangleIcon, Loader2Icon, XIcon } from "lucide-react";
-import { ConfirmContext } from "./context/confirm";
+import { AlertTriangleIcon, CheckIcon, Loader2Icon, XIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { ConfirmContext, type ConfirmOptions } from "./context/confirm";
 
 export default function ConfirmProvider({ children }: { children: React.ReactNode }) {
     const [visible, setVisible] = React.useState<boolean>(false);
@@ -11,10 +12,13 @@ export default function ConfirmProvider({ children }: { children: React.ReactNod
     const submitRef = React.useRef<() => void | Promise<void>>(null);
     const cancelRef = React.useRef<(() => void) | null>(null);
     const [text, setText] = React.useState<string>("");
+    const [options, setOptions] = React.useState<ConfirmOptions>({});
+    const primary = options.tone === "primary";
 
     const show = React.useCallback(
-        (text: string, onSubmit: () => void | Promise<void>, onCancel?: () => void) => {
+        (text: string, onSubmit: () => void | Promise<void>, onCancel?: () => void, opts?: ConfirmOptions) => {
             setText(text);
+            setOptions(opts ?? {});
             submitRef.current = onSubmit;
             cancelRef.current = onCancel ?? null;
             setVisible(true);
@@ -85,15 +89,15 @@ export default function ConfirmProvider({ children }: { children: React.ReactNod
                             className="w-full max-w-[400px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden"
                         >
                             <div className="h-12 px-4 border-b border-slate-200 flex items-center gap-2.5">
-                                <div className="size-5 rounded bg-red-50 text-red-600 flex items-center justify-center">
-                                    <AlertTriangleIcon className="w-3 h-3" />
+                                <div className={cn("size-5 rounded flex items-center justify-center", primary ? "bg-sky-50 text-sky-600" : "bg-red-50 text-red-600")}>
+                                    {primary ? <CheckIcon className="w-3 h-3" /> : <AlertTriangleIcon className="w-3 h-3" />}
                                 </div>
                                 <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
                                     Confirm
                                 </span>
                                 <div className="h-4 w-px bg-slate-200" />
                                 <span className="text-[12.5px] text-slate-900 font-medium truncate">
-                                    Are you sure?
+                                    {options.title ?? "Are you sure?"}
                                 </span>
                                 <button
                                     type="button"
@@ -123,10 +127,13 @@ export default function ConfirmProvider({ children }: { children: React.ReactNod
                                     type="button"
                                     onClick={onConfirm}
                                     disabled={loading}
-                                    className="h-7 px-2.5 rounded-md bg-red-600 hover:bg-red-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
+                                    className={cn(
+                                        "h-7 px-2.5 rounded-md text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60",
+                                        primary ? "bg-sky-600 hover:bg-sky-700" : "bg-red-600 hover:bg-red-700",
+                                    )}
                                 >
                                     {loading && <Loader2Icon className="w-3 h-3 animate-spin" />}
-                                    Confirm
+                                    {options.confirmLabel ?? "Confirm"}
                                 </button>
                             </div>
                         </motion.div>

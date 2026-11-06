@@ -1,7 +1,8 @@
 // Package aiagent orchestrates the dashboard AI agent: it runs the M2 tool
 // registry through the M1 provider loop, streams step events to the client over
-// SSE, pauses write/send tools for human approval, charges one credit per loop
-// iteration (bounded by a per-run budget), and persists a resumable transcript.
+// SSE, pauses write/send tools for human approval, checks the balance before
+// each loop iteration (bounded by a per-run budget), charges the run's actual
+// usage once, and persists a resumable transcript.
 package aiagent
 
 import (
@@ -91,7 +92,9 @@ type StreamEvent struct {
 	Result           string `json:"result,omitempty"`
 	Iteration        int    `json:"iteration,omitempty"`
 	CreditsRemaining int    `json:"credits_remaining,omitempty"`
-	Budget           int    `json:"budget,omitempty"`
+	// BalanceUSD is the workspace balance; CreditsRemaining is its legacy credit figure.
+	BalanceUSD *float64 `json:"balance_usd,omitempty"`
+	Budget     int      `json:"budget,omitempty"`
 	// FreeModel is true when the run is on an explicitly free/local backend
 	// (AI_FREE): the client warns the user and no credits are charged.
 	FreeModel bool   `json:"free_model,omitempty"`
@@ -379,7 +382,7 @@ func hydrateTranscript(msgs []generation.AgentMessage) []HydratedTurn {
 // errOutOfCredits / errCapExceeded are recorded by the credit PreIteration hook
 // so the run can stop cleanly and the reason surfaced to the client.
 var (
-	errOutOfCredits = errors.New("insufficient credits")
+	errOutOfCredits = errors.New("insufficient balance")
 	errCapExceeded  = errors.New("usage cap exceeded")
 	errStopped      = errors.New("stopped")
 )
@@ -488,17 +491,17 @@ func (s *service) Resume(ctx context.Context, inv aitools.Invocation, sessionID 
 		generation.AgentMessage{Role: "tool", ToolCallID: pending.ToolCallID, Content: toolResult},
 	)
 
-	// Give the resumed segment its own credit-idempotency namespace. Reusing the
-	// original message id would collide with the pre-pause iterations (which
-	// already consumed messageID:1..N), so the resumed loop's iterations 1..N
-	// would replay for free. Pending was claimed above, so a resume is single-
-	// shot and a fresh id is safe.
+	// Give the resumed segment its own charge key. Reusing the original message
+	// id would replay the pre-pause segment's charge, so the resumed segment
+	// would run for free. Pending was claimed above, so a resume is single-shot
+	// and a fresh id is safe.
 	return s.runLoop(ctx, inv, sess, genMsgs, baseline, "resume:"+uuid.NewString(), emit)
 }
 
-// runLoop drives one RunAgent segment: credit-charged per iteration, approval-
-// gated, streamed, and persisted. baseline is the count of genMsgs already
-// persisted (new tail beyond it is written on completion).
+// runLoop drives one RunAgent segment: balance-checked per iteration, charged
+// once for its usage, approval-gated, streamed, and persisted. baseline is the
+// count of genMsgs already persisted (new tail beyond it is written on
+// completion).
 func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *models.AgentSession, genMsgs []generation.AgentMessage, baseline int, messageID string, emit func(StreamEvent)) *errx.Error {
 	paid, _ := s.feature.IsPaidOrganization(ctx, inv.OrgID)
 	model := s.provider.ModelForTier(paid)
@@ -514,9 +517,23 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 	}
 
 	var (
-		stopReason    string
-		lastRemaining int
+		stopReason string
+		balance    *models.Micro // nil on the free path or when unread
 	)
+	creditMeta := models.CreditMeta{ActorID: inv.UserID, Context: models.CreditContext{SessionID: sess.ID.String()}}
+	readBalance := func(ctx context.Context) {
+		if bal, xerr := s.credits.GetBalance(ctx, inv.OrgID); xerr == nil {
+			balance = &bal
+		}
+	}
+	// withBalance stamps the last read balance on an event, in dollars and in legacy credits.
+	withBalance := func(ev StreamEvent) StreamEvent {
+		if balance != nil {
+			usd := balance.USD()
+			ev.CreditsRemaining, ev.BalanceUSD = models.CreditsFromMicro(*balance), &usd
+		}
+		return ev
+	}
 
 	skillsBlock := ""
 	if s.skills != nil {
@@ -552,10 +569,8 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 				emit(StreamEvent{Type: "iteration", Iteration: iter, Budget: DefaultRunBudget, FreeModel: true})
 				return nil
 			}
-			key := messageID + ":" + strconv.Itoa(iter)
-			mctx := models.WithCreditMeta(ctx, models.CreditMeta{ActorID: inv.UserID, Context: models.CreditContext{SessionID: sess.ID.String()}})
-			remaining, cerr := s.credits.Consume(mctx, inv.OrgID, credits.CostAgentIteration, "agent_iteration", model, 0, key)
-			if cerr != nil {
+			mctx := models.WithCreditMeta(ctx, creditMeta)
+			if cerr := s.credits.Reserve(mctx, inv.OrgID, credits.EstimateAgentIteration); cerr != nil {
 				switch {
 				case errors.Is(cerr, credits.ErrInsufficientCredits):
 					stopReason = "out_of_credits"
@@ -568,8 +583,10 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 					return errStopped
 				}
 			}
-			lastRemaining = remaining
-			emit(StreamEvent{Type: "iteration", Iteration: iter, CreditsRemaining: remaining, Budget: DefaultRunBudget})
+			if balance == nil {
+				readBalance(ctx)
+			}
+			emit(withBalance(StreamEvent{Type: "iteration", Iteration: iter, Budget: DefaultRunBudget}))
 			return nil
 		},
 		Approve: func(ctx context.Context, tool generation.ToolDef, call generation.ToolCall) error {
@@ -604,9 +621,17 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 	}
 
 	result, rerr := s.provider.RunAgent(ctx, req)
-	// Receipts and refunds get a bounded window after request cancellation.
+	// Receipts and the charge get a bounded window after request cancellation.
 	finalizeCtx, cancelFinalize := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancelFinalize()
+	// One charge for every iteration that reached the provider, including a
+	// run that stopped early or failed after earlier turns took actions.
+	if chargeCredits && result != nil && result.InputTokens+result.OutputTokens > 0 {
+		mctx := models.WithCreditMeta(finalizeCtx, creditMeta)
+		if _, cerr := s.credits.Charge(mctx, inv.OrgID, credits.AIUsage(model, result.InputTokens, result.OutputTokens), "agent_iteration", messageID); cerr == nil {
+			readBalance(finalizeCtx)
+		}
+	}
 	// Preserve completed tool actions even when a later provider call fails.
 	if result != nil && len(result.Messages) > baseline {
 		if perr := s.persist(finalizeCtx, sess.OrgID, sess.UserID, sess.ID, result.Messages[baseline:], result.TokensUsed); perr != nil {
@@ -617,51 +642,34 @@ func (s *service) runLoop(ctx context.Context, inv aitools.Invocation, sess *mod
 		// The client only ever sees the generic message; the real cause goes to
 		// the server log so a failing provider is debuggable.
 		log.Printf("aiagent: run failed (org=%s session=%s provider=%s model=%s): %v", inv.OrgID, sess.ID, s.provider.Name(), model, rerr)
-		// The credit for the failed iteration was charged before the model call
-		// (PreIteration); refund it so the user is not billed for output they
-		// never received. Nothing to refund on the free/local path.
-		if chargeCredits {
-			if bal, gerr := s.credits.Grant(finalizeCtx, inv.OrgID, credits.CostAgentIteration, "agent_iteration_refund"); gerr == nil {
-				lastRemaining = bal
-			}
-		}
 		sess.Context.Pending = nil
 		_ = s.repo.ClearPendingTool(ctx, sess.OrgID, sess.ID)
-		emit(StreamEvent{Type: evError, Code: "provider_error", Message: "Remie hit an error. Please try again.", CreditsRemaining: lastRemaining})
+		emit(withBalance(StreamEvent{Type: evError, Code: "provider_error", Message: "Remie hit an error. Please try again."}))
 		return nil
-	}
-
-	// Usage-based settle: the run charged 1 credit per iteration up-front;
-	// price the run's total token usage and charge the overage (best-effort).
-	if chargeCredits && result.TokensUsed > 0 {
-		mctx := models.WithCreditMeta(ctx, models.CreditMeta{ActorID: inv.UserID, Context: models.CreditContext{SessionID: sess.ID.String()}})
-		if extra, serr := s.credits.SettleUsage(mctx, inv.OrgID, result.Iterations*credits.CostAgentIteration, model, result.TokensUsed, "agent_iteration", messageID+":usage"); serr == nil && extra > 0 {
-			lastRemaining -= extra
-		}
 	}
 
 	switch result.StopReason {
 	case "approval_required":
 		_ = s.repo.UpdateSessionContext(ctx, sess.OrgID, sess.UserID, sess.ID, sess.Context)
-		emit(StreamEvent{Type: evDone, CreditsRemaining: lastRemaining, Message: "awaiting_approval"})
+		emit(withBalance(StreamEvent{Type: evDone, Message: "awaiting_approval"}))
 	case "stopped":
-		s.emitStop(emit, stopReason, lastRemaining)
+		emit(withBalance(stopEvent(stopReason)))
 	default: // "stop" or "max_iterations"
 		sess.Context.Pending = nil
 		_ = s.repo.UpdateSessionContext(ctx, sess.OrgID, sess.UserID, sess.ID, sess.Context)
-		emit(StreamEvent{Type: evDone, CreditsRemaining: lastRemaining})
+		emit(withBalance(StreamEvent{Type: evDone}))
 	}
 	return nil
 }
 
-func (s *service) emitStop(emit func(StreamEvent), reason string, remaining int) {
+func stopEvent(reason string) StreamEvent {
 	switch reason {
 	case "out_of_credits":
-		emit(StreamEvent{Type: evError, Code: "insufficient_credits", Message: "You're out of AI credits. Add more to keep using Remie.", CreditsRemaining: remaining})
+		return StreamEvent{Type: evError, Code: "insufficient_credits", Message: "The workspace balance is too low. Add funds to keep using Remie."}
 	case "usage_cap":
-		emit(StreamEvent{Type: evError, Code: "usage_cap_exceeded", Message: "AI usage limit reached, please try again later.", CreditsRemaining: remaining})
+		return StreamEvent{Type: evError, Code: "usage_cap_exceeded", Message: "AI usage limit reached, please try again later."}
 	default:
-		emit(StreamEvent{Type: evError, Code: "stopped", Message: "The run was stopped.", CreditsRemaining: remaining})
+		return StreamEvent{Type: evError, Code: "stopped", Message: "The run was stopped."}
 	}
 }
 

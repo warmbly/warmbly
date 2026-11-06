@@ -245,7 +245,7 @@ Every endpoint that acts on a set of contacts (`PATCH /contacts`, `DELETE /conta
 }
 ```
 
-A filter selection that matches more than 250,000 contacts is refused with `selection_too_large` rather than truncated; narrow it and repeat. One that matches nothing is a `400`. `POST /integrations/connections/:id/push` and `POST /contacts/research/batch` accept the same shape and answer the same way, but still cap the resolved set at 500: a push calls the CRM once per contact inside the request, and each research run spends AI credits.
+A filter selection that matches more than 250,000 contacts is refused with `selection_too_large` rather than truncated; narrow it and repeat. One that matches nothing is a `400`. `POST /integrations/connections/:id/push` and `POST /contacts/research/batch` accept the same shape and answer the same way, but still cap the resolved set at 500: a push calls the CRM once per contact inside the request, and each research run is charged to the workspace balance.
 
 ## Bulk update contacts
 

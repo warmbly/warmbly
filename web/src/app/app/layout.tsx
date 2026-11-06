@@ -20,6 +20,7 @@ const ComposeWindow = lazy(() => import("@/components/app/unibox/compose/Compose
 const PasskeyEnrollPrompt = lazy(() => import("@/components/app/modals/PasskeyEnrollPrompt"));
 const PermissionDeniedModal = lazy(() => import("@/components/app/modals/PermissionDeniedModal"));
 const ReauthModal = lazy(() => import("@/components/app/modals/ReauthModal"));
+const InsufficientBalanceDialog = lazy(() => import("@/components/app/billing/InsufficientBalanceDialog"));
 
 export default function RootAppLayout() {
     // The route already checked the session (bootDashboard in router.tsx).
@@ -67,6 +68,7 @@ export default function RootAppLayout() {
                         <PasskeyEnrollPrompt />
                         <PermissionDeniedModal />
                         <ReauthModal />
+                        <InsufficientBalanceDialog />
                     </Suspense>
                 </UpgradeDialogProvider>
             </ConfirmProvider>

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "@/stores";
 import useFeatureAccess from "@/hooks/useFeatureAccess";
 import { PlanPill } from "./PlanPill";
-import { CreditsMeter } from "./CreditsMeter";
+import { BalanceMeter } from "./BalanceMeter";
 
 const fixture = vi.hoisted(() => ({
     subscription: {
@@ -23,12 +23,25 @@ vi.mock("@/lib/api/hooks/auth/useAuthConfig", () => ({ default: () => ({ data: {
 vi.mock("@/hooks/useCloudPool", () => ({ default: () => ({}) }));
 vi.mock("@/hooks/usePermission", () => ({ usePermission: () => true }));
 vi.mock("@/hooks/useAiMetered", () => ({ default: () => true }));
-vi.mock("@/lib/api/hooks/app/subscription/useCredits", () => ({
-    default: () => ({ isPending: false, data: { balance: 100, monthly_balance: 100, purchased_balance: 0, monthly_allowance: 100, packs: [] } }),
+vi.mock("@/lib/api/hooks/app/subscription/useBalance", () => ({
+    useBalance: () => ({
+        isPending: false,
+        data: {
+            unlimited: false,
+            balance_usd: 5,
+            monthly_usd: 5,
+            purchased_usd: 0,
+            monthly_allowance_usd: 5,
+            monthly_used_usd: 0,
+            next_reset_at: null,
+            low_balance_usd: 0.5,
+        },
+    }),
 }));
-vi.mock("@/lib/api/hooks/app/subscription/useCreditSettings", () => ({ useCreditSettings: () => ({ data: {} }) }));
 vi.mock("@/lib/api/hooks/app/subscription/useCreditUsage", () => ({ default: () => ({ isPending: false }) }));
-vi.mock("@/components/ui/AnimatedNumber", () => ({ default: ({ value }: { value: number }) => <span>{value}</span> }));
+vi.mock("@/components/ui/AnimatedNumber", () => ({
+    default: ({ value, format }: { value: number; format?: (n: number) => string }) => <span>{format ? format(value) : value}</span>,
+}));
 vi.mock("@/components/ui/dither", () => ({ DitherMeter: () => <div /> }));
 
 beforeEach(() => {
@@ -46,21 +59,21 @@ describe("dedicated tester header", () => {
         expect(screen.queryByText("Free")).not.toBeInTheDocument();
     });
 
-    it("labels the bounded allowance as test credits in the header and popover", () => {
-        render(<CreditsMeter />);
-        const button = screen.getByRole("button", { name: "100 of 100 test credits left" });
-        expect(button).toHaveTextContent("Test credits");
+    it("labels the bounded allowance as test balance in the header and popover", () => {
+        render(<BalanceMeter />);
+        const button = screen.getByRole("button", { name: "$5.00 test balance left" });
+        expect(button).toHaveTextContent("Test balance");
         fireEvent.click(button);
-        expect(screen.queryByText("Plan credits")).not.toBeInTheDocument();
-        expect(screen.getAllByText("Test credits").length).toBeGreaterThan(1);
+        expect(screen.queryByText("Included this cycle")).not.toBeInTheDocument();
+        expect(screen.getAllByText("Test balance").length).toBeGreaterThan(1);
     });
 
-    it("leaves a customer workspace's plan and credit labels unchanged", () => {
+    it("leaves a customer workspace's plan and balance labels unchanged", () => {
         useAppStore.setState({ currentOrganization: { id: "customer", name: "Customer", category: "standard", role: "owner" } });
         fixture.subscription.data = { managed: false, status: "active", plan: { id: "customer-plan", name: "Starter" } };
-        render(<><PlanPill /><CreditsMeter /></>);
+        render(<><PlanPill /><BalanceMeter /></>);
         expect(screen.getByRole("link", { name: "Starter" })).toBeInTheDocument();
-        expect(screen.getByRole("button", { name: "100 of 100 plan credits left" })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "$5.00 balance left" })).toBeInTheDocument();
         expect(screen.queryByText("Test")).not.toBeInTheDocument();
     });
 

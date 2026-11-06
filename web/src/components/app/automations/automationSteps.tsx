@@ -19,6 +19,8 @@ import type { StepTone } from "@/components/app/flow/StepCard";
 import type { PickerItem } from "@/components/app/flow/StepPicker";
 import { ACTION_VISUAL } from "./automationActions";
 import { isSwitch, switchCases } from "./automationGraph";
+import { fmtUsdAbout } from "@/lib/money";
+import { AI_ESTIMATE_USD } from "@/lib/aiEstimates";
 
 export interface StepView {
     icon: React.ReactNode;
@@ -101,7 +103,7 @@ export function stepView(n: AutomationNode, ctx: StepContext): StepView {
     }
     if (n.type === "condition") {
         const c = n.condition;
-        const kind = c?.field === "ai" ? "Ask AI · 1 credit" : c?.field === "random" ? "Random split" : c?.field === "expression" ? "Expression" : "Checks the event";
+        const kind = c?.field === "ai" ? `Ask AI · ${fmtUsdAbout(AI_ESTIMATE_USD.aiNode)}` : c?.field === "random" ? "Random split" : c?.field === "expression" ? "Expression" : "Checks the event";
         return { icon: <GitBranchIcon />, tone: "amber", kicker: "If / else", title: conditionLabel(c), summary: kind };
     }
     if (n.type === "stop") return { icon: <FlagIcon />, tone: "rose", kicker: "End", title: "End", summary: "" };
@@ -117,12 +119,12 @@ export function stepView(n: AutomationNode, ctx: StepContext): StepView {
             tone: "purple",
             kicker: value ? "Value switch" : "AI switch",
             title: value ? `Match ${clip(String(cfg.switch_value ?? "").trim() || "a value", 32)}` : clip(instruction) || "New AI switch",
-            summary: `${plural(cases, "case")}${value ? "" : " · 1 credit"}`,
+            summary: `${plural(cases, "case")}${value ? "" : ` · ${fmtUsdAbout(AI_ESTIMATE_USD.aiNode)}`}`,
         };
     }
     if (isAIAction(action)) {
         const mode = AI_MODES[String(cfg.mode ?? "agent")] ?? "Agent";
-        return { icon: <SparklesIcon />, tone: "purple", kicker: "AI step", title: clip(instruction) || "New AI step", summary: `${mode} · billed in credits` };
+        return { icon: <SparklesIcon />, tone: "purple", kicker: "AI step", title: clip(instruction) || "New AI step", summary: `${mode} · charged by usage` };
     }
     if (isNativeAction(action)) {
         return { icon: actionIcon(action), tone: actionTone(action), kicker: "Action", title: actionLabel(action), summary: nativeSummary(action, cfg, ctx) };

@@ -134,9 +134,12 @@ type AgentResult struct {
 	// caller can persist it and resume.
 	Messages []AgentMessage
 	Model    string
-	// TokensUsed is the summed input+output tokens across all iterations.
-	TokensUsed int
-	Iterations int
+	// TokensUsed is the summed input+output tokens across all iterations;
+	// InputTokens and OutputTokens split it, since they are priced apart.
+	TokensUsed   int
+	InputTokens  int
+	OutputTokens int
+	Iterations   int
 	// StopReason is "stop", "max_iterations", "approval_required", "stopped", or "error".
 	StopReason string
 	// Pending is set only when StopReason == "approval_required".

@@ -19,54 +19,51 @@ import (
 
 type runCreditLedger struct {
 	credits.CreditService
-	balance, attempts, refunded, settlements, settledCredits, settledTokens int
-	keys                                                                    []string
+	balance         models.Micro
+	allowed, checks int
+	charges         []credits.Usage
+	keys            []string
 }
 
-// Consume enforces the fixture balance and records the idempotency key of each charged turn.
-func (l *runCreditLedger) Consume(ctx context.Context, _ uuid.UUID, amount int, _, _ string, _ int, key string) (int, error) {
+// Reserve refuses once the fixture's allowed number of iterations is used up.
+func (l *runCreditLedger) Reserve(ctx context.Context, _ uuid.UUID, _ models.Micro) error {
 	if err := ctx.Err(); err != nil {
-		return l.balance, err
+		return err
 	}
-	l.attempts++
-	if l.balance < amount {
-		return l.balance, credits.ErrInsufficientCredits
+	l.checks++
+	if l.checks > l.allowed {
+		return credits.ErrInsufficientCredits
 	}
-	l.balance -= amount
-	l.keys = append(l.keys, key)
-	return l.balance, nil
+	return nil
 }
 
-// Grant records failed-turn refunds and rejects canceled storage contexts.
-func (l *runCreditLedger) Grant(ctx context.Context, _ uuid.UUID, amount int, _ string) (int, *errx.Error) {
-	if ctx.Err() != nil {
-		return l.balance, errx.New(errx.Internal, "credit context is canceled")
-	}
-	l.refunded += amount
-	l.balance += amount
-	return l.balance, nil
-}
-
-// SettleUsage records the charged turns and token usage without introducing external pricing into the fixture.
-func (l *runCreditLedger) SettleUsage(ctx context.Context, _ uuid.UUID, charged int, _ string, tokens int, _, _ string) (int, error) {
+// Charge records the usage and key, priced at one micro-dollar per token so no external price list is involved.
+func (l *runCreditLedger) Charge(ctx context.Context, _ uuid.UUID, u credits.Usage, _, key string) (models.Micro, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	l.settlements++
-	l.settledCredits, l.settledTokens = charged, tokens
-	return 0, nil
+	amount := models.Micro(u.InputTokens + u.OutputTokens)
+	l.balance -= amount
+	l.charges = append(l.charges, u)
+	l.keys = append(l.keys, key)
+	return amount, nil
 }
 
-// TestRunMessageChargesReservedAnswerWithinBudget covers successful answers, failed-turn refunds, and depleted credits.
+func (l *runCreditLedger) GetBalance(context.Context, uuid.UUID) (models.Micro, *errx.Error) {
+	return l.balance, nil
+}
+
+// TestRunMessageChargesReservedAnswerWithinBudget covers successful answers, a failed final turn, and a depleted balance.
 func TestRunMessageChargesReservedAnswerWithinBudget(t *testing.T) {
 	for _, tc := range []struct {
-		name                                                                                   string
-		balance, wantRequests, wantCharged, wantRefund, wantBalance, wantRows, wantSettlements int
-		wantCode                                                                               string
+		name                            string
+		allowed, wantRequests, wantRows int
+		wantInput, wantOutput           int
+		wantCode                        string
 	}{
-		{name: "answer", balance: 50, wantRequests: 20, wantCharged: 20, wantBalance: 30, wantRows: 40, wantSettlements: 1},
-		{name: "empty_answer", balance: 50, wantRequests: 20, wantCharged: 20, wantRefund: 1, wantBalance: 31, wantRows: 39, wantCode: "provider_error"},
-		{name: "no_credit_for_answer", balance: 19, wantRequests: 19, wantCharged: 19, wantBalance: 0, wantRows: 39, wantSettlements: 1, wantCode: "insufficient_credits"},
+		{name: "answer", allowed: 50, wantRequests: 20, wantInput: 120, wantOutput: 80, wantRows: 40},
+		{name: "empty_answer", allowed: 50, wantRequests: 20, wantInput: 120, wantOutput: 80, wantRows: 39, wantCode: "provider_error"},
+		{name: "no_credit_for_answer", allowed: 19, wantRequests: 19, wantInput: 114, wantOutput: 76, wantRows: 39, wantCode: "insufficient_credits"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			requests := 0
@@ -82,7 +79,7 @@ func TestRunMessageChargesReservedAnswerWithinBudget(t *testing.T) {
 				}
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(map[string]any{
-					"choices": []any{map[string]any{"message": message}}, "usage": map[string]int{"total_tokens": 10},
+					"choices": []any{map[string]any{"message": message}}, "usage": map[string]int{"prompt_tokens": 6, "completion_tokens": 4, "total_tokens": 10},
 				})
 			}))
 			defer srv.Close()
@@ -97,22 +94,26 @@ func TestRunMessageChargesReservedAnswerWithinBudget(t *testing.T) {
 				return `{"status":"paused"}`, nil
 			}})
 			repo := &runRepository{session: models.AgentSession{ID: uuid.New(), OrgID: uuid.New(), UserID: uuid.New()}}
-			ledger := &runCreditLedger{balance: tc.balance}
+			const startBalance = models.Micro(1_000_000)
+			ledger := &runCreditLedger{balance: startBalance, allowed: tc.allowed}
 			svc := NewService(repo, registry, provider, ledger, runFeatureGate{}, nil, nil, nil, nil)
 			var last StreamEvent
 			if xerr := svc.RunMessage(context.Background(), aitools.Invocation{OrgID: repo.session.OrgID, UserID: repo.session.UserID}, repo.session.ID, "paid-message", "Inspect sending", "", "", func(ev StreamEvent) { last = ev }); xerr != nil {
 				t.Fatal(xerr)
 			}
-			if requests != tc.wantRequests || ledger.attempts != 20 || len(ledger.keys) != tc.wantCharged || ledger.refunded != tc.wantRefund || ledger.balance != tc.wantBalance {
-				t.Fatalf("requests=%d attempts=%d charged=%d refunded=%d balance=%d", requests, ledger.attempts, len(ledger.keys), ledger.refunded, ledger.balance)
+			if requests != tc.wantRequests || ledger.checks != 20 {
+				t.Fatalf("requests=%d balance checks=%d", requests, ledger.checks)
 			}
-			if ledger.keys[0] != "paid-message:1" || ledger.keys[len(ledger.keys)-1] != fmt.Sprintf("paid-message:%d", tc.wantCharged) {
-				t.Fatalf("credit idempotency keys changed: %v", ledger.keys)
+			// One charge per run, keyed by the message, for every turn that reached the provider.
+			if len(ledger.charges) != 1 || ledger.keys[0] != "paid-message" {
+				t.Fatalf("charges=%+v keys=%v", ledger.charges, ledger.keys)
 			}
-			if ledger.settlements != tc.wantSettlements || tc.wantSettlements > 0 && (ledger.settledCredits != tc.wantCharged || ledger.settledTokens != tc.wantRequests*10) {
-				t.Fatalf("settlements=%d credits=%d tokens=%d", ledger.settlements, ledger.settledCredits, ledger.settledTokens)
+			if got := ledger.charges[0]; got.InputTokens != tc.wantInput || got.OutputTokens != tc.wantOutput || got.Model != "fixture-model" {
+				t.Fatalf("charged usage=%+v", got)
 			}
-			if last.Code != tc.wantCode || last.CreditsRemaining != tc.wantBalance || len(repo.rows) != tc.wantRows {
+			wantBalance := startBalance - models.Micro(tc.wantInput+tc.wantOutput)
+			if last.Code != tc.wantCode || last.BalanceUSD == nil || *last.BalanceUSD != wantBalance.USD() ||
+				last.CreditsRemaining != models.CreditsFromMicro(wantBalance) || len(repo.rows) != tc.wantRows {
 				t.Fatalf("event=%+v persisted rows=%d", last, len(repo.rows))
 			}
 		})

@@ -4,8 +4,8 @@
 //     composer's preview uses. Each issue carries where it is (subject or
 //     body) and the exact fragments that caused it, so the panel points at the
 //     words instead of restating the rule;
-//   - the AI pass (/templates/analyze), on an explicit click because it spends
-//     credits. It quotes the sentence a filter will object to and says what to
+//   - the AI pass (/templates/analyze), on an explicit click because it is
+//     charged to the balance. It quotes the sentence a filter will object to and says what to
 //     write instead, and returns the rules pass with it so both halves of the
 //     panel are scored from one reading of the copy.
 //
@@ -41,6 +41,9 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import { usePermission } from "@/hooks/usePermission";
 import useAiMetered from "@/hooks/useAiMetered";
+import { isInsufficientBalance, openInsufficientBalance } from "@/lib/insufficientBalance";
+import { fmtUsd, fmtUsdAbout, fmtUsdCost } from "@/lib/money";
+import { AI_ESTIMATE_USD } from "@/lib/aiEstimates";
 import { Loading } from "@/components/loader";
 import { cn } from "@/lib/utils";
 import { DitherMeter, type DitherTone } from "@/components/ui/dither";
@@ -368,8 +371,8 @@ export default function ContentScore({
                 },
                 onError: (e) => {
                     const err = e as unknown as AppError;
-                    if (err?.status === 402) {
-                        toast.error("You're out of AI credits. Add more to keep using AI analysis.");
+                    if (isInsufficientBalance(err)) {
+                        openInsufficientBalance();
                     } else if (err?.code === "ai_not_configured") {
                         // Permanent for this deployment, unlike a provider
                         // outage, so the button goes away rather than staying
@@ -469,7 +472,7 @@ export default function ContentScore({
                     >
                         <SparklesIcon className="w-3.5 h-3.5 text-sky-500" />
                         Analyze with AI
-                        {metered && <span className="text-slate-400">2 credits</span>}
+                        {metered && <span className="text-slate-400">{fmtUsdAbout(AI_ESTIMATE_USD.spamAnalysis)}</span>}
                     </button>
                     <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">
                         Reads the copy and names the words and sentences that hurt deliverability, in the subject and in
@@ -574,10 +577,9 @@ export default function ContentScore({
                         </div>
                     )}
 
-                    {metered && analysis.credits_charged > 0 && (
+                    {metered && analysis.charged_usd > 0 && (
                         <p className="mt-2 text-[10.5px] text-slate-400">
-                            {analysis.credits_charged} credit{analysis.credits_charged === 1 ? "" : "s"} spent,{" "}
-                            {analysis.credits_remaining} left
+                            {fmtUsdCost(analysis.charged_usd)} spent, {fmtUsd(analysis.balance_usd)} left
                         </p>
                     )}
                 </div>

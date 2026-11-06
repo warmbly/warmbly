@@ -55,6 +55,8 @@ type Service interface {
 	PlacementPolicy(ctx context.Context) Placement
 	// AutoVendorReconnect is whether vendor-linked Google mailboxes are reconnected without a click.
 	AutoVendorReconnect(ctx context.Context) bool
+	// UsagePrices is the price list a workspace's balance is charged by.
+	UsagePrices(ctx context.Context) Usage
 }
 
 type service struct {
@@ -158,6 +160,12 @@ func (s *service) TrackingPolicy(ctx context.Context) Tracking {
 	t := s.Get(ctx).Tracking
 	t.Normalize()
 	return t
+}
+
+func (s *service) UsagePrices(ctx context.Context) Usage {
+	u := s.Get(ctx).Usage
+	u.Normalize()
+	return u
 }
 
 func (s *service) PlacementPolicy(ctx context.Context) Placement {

@@ -21,6 +21,8 @@ import { renderPreview } from "./emailPreview";
 import { type EmailAIContext, SUBJECT_MOVES, parseSubjects, stepLabel, subjectsPrompt } from "./emailAIPrompt";
 import type { EmailAIWriter } from "./useEmailAIWriter";
 import { reportAIError } from "@/components/app/ai/reportAIError";
+import { fmtUsdAbout } from "@/lib/money";
+import { AI_ESTIMATE_USD } from "@/lib/aiEstimates";
 
 // Briefs offered as one-click starting points. A follow-up gets the moves that
 // earn a reply after silence; a first email gets a rewrite when it has a draft.
@@ -131,7 +133,7 @@ export function WriteEmailWithAI({ writer, ctx, bodyPlain }: { writer: EmailAIWr
                     <div className="mt-2 flex items-center gap-2 border-t border-slate-100 px-3 py-2">
                         <span className="mr-auto text-[10.5px] text-slate-400">
                             {hasDraft ? "Replaces the current email. You can undo." : "Your mailbox signature is added for you."}
-                            {metered && " From 1 credit."}
+                            {metered && ` Costs ${fmtUsdAbout(AI_ESTIMATE_USD.writingAssistant)}.`}
                         </span>
                         <button
                             type="button"

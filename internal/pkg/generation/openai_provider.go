@@ -575,6 +575,8 @@ func (p *openAIProvider) RunAgent(ctx context.Context, req AgentRequest) (*Agent
 			return result, err
 		}
 		result.TokensUsed += resp.Usage.TotalTokens
+		result.InputTokens += resp.Usage.PromptTokens
+		result.OutputTokens += resp.Usage.CompletionTokens
 		choice := resp.Choices[0]
 
 		// No tool calls: final answer.
@@ -678,7 +680,7 @@ func (p *openAIProvider) Complete(ctx context.Context, req CompletionRequest) (*
 	if text == "" {
 		return nil, errors.New("openai: empty completion")
 	}
-	return &WritingResult{Text: text, Model: model, TokensUsed: resp.Usage.TotalTokens}, nil
+	return &WritingResult{Text: text, Model: model, TokensUsed: resp.Usage.TotalTokens, InputTokens: resp.Usage.PromptTokens, OutputTokens: resp.Usage.CompletionTokens}, nil
 }
 
 // CompleteStream is Complete with the text handed to onDelta as it arrives.
@@ -705,7 +707,7 @@ func (p *openAIProvider) CompleteStream(ctx context.Context, req CompletionReque
 	if text == "" {
 		return nil, errors.New("openai: empty completion")
 	}
-	return &WritingResult{Text: text, Model: model, TokensUsed: resp.Usage.TotalTokens}, nil
+	return &WritingResult{Text: text, Model: model, TokensUsed: resp.Usage.TotalTokens, InputTokens: resp.Usage.PromptTokens, OutputTokens: resp.Usage.CompletionTokens}, nil
 }
 
 // --- WritingGenerator port ---

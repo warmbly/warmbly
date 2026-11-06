@@ -47,7 +47,7 @@ Press **Save** and make sure the automation is switched on.
 
 - Nothing takes effect until you **Save**. **Test** saves first, then dry-runs.
 - An automation that is off never fires, even from a campaign step.
-- A test sends no messages and changes no records, but AI steps run for real and spend credits.
+- A test sends no messages and changes no records, but AI steps run for real and are charged to the balance.
 - One failing step never blocks the rest. The failure is recorded in **History**.
 - Bulk file imports and sheet syncs do not fire **Contact created**.
 
@@ -168,7 +168,7 @@ The built-in Slack and Discord messages name the labels in their title when a re
 
 Three special conditions work with any trigger:
 
-- **Ask AI (yes/no)**: a plain-language question about the event ("Is this reply asking about pricing?") picks the path. Templated, so you can drop in `{{.field}}`. One credit per evaluation; if the model can't answer or you are out of credits, the no path runs and History shows why. See [AI steps in automations](/guides/ai-steps-in-automations/).
+- **Ask AI (yes/no)**: a plain-language question about the event ("Is this reply asking about pricing?") picks the path. Templated, so you can drop in `{{.field}}`. Each evaluation is charged for the tokens it uses; if the model can't answer or the balance is too low, the no path runs and History shows why. See [AI steps in automations](/guides/ai-steps-in-automations/).
 - **Random split**: a set percentage (`1%` to `99%`) down the yes path, deterministic per event so re-deliveries never flip it.
 - **Advanced expression**: a free-form condition, taken when truthy.
 
@@ -260,7 +260,7 @@ Unknown tokens render empty rather than failing.
 
 ## Testing and history
 
-**Test** saves the canvas and dry-runs it against sample data: no messages sent, no records changed. It shows the exact path taken, on the canvas (each step it reached is marked, the rest fade back) and as a list with a preview of each action. AI steps are the exception, running for real so you see actual output, which spends one credit per AI step.
+**Test** saves the canvas and dry-runs it against sample data: no messages sent, no records changed. It shows the exact path taken, on the canvas (each step it reached is marked, the rest fade back) and as a list with a preview of each action. AI steps are the exception, running for real so you see actual output, which charges the balance for what each AI step uses.
 
 **History** shows recent real runs: success or error, start time, and per-step results (error text on failure, a short summary on success). It updates live as the automation fires.
 

@@ -308,7 +308,7 @@ Three things the CLI deliberately does not do, because the API does not let a ke
 
 - **Connecting a mailbox.** It needs OAuth consent or a credential form in a browser. `warmbly browse mailboxes` opens the right page.
 - **Workspace administration.** Members, roles, invitations, workspace exports and the danger zone are session-only on the API: they depend on a human-bound session and refuse an API key. `warmbly browse members` and `warmbly browse settings` open them.
-- **Billing.** Plans, checkout and credits are session-only for the same reason. `warmbly browse billing`.
+- **Billing.** Plans, checkout and the balance are session-only for the same reason. `warmbly browse billing`.
 
 `warmbly org view` still shows which workspace you are in, and `warmbly team`, `warmbly settings` and `warmbly audit` cover the workspace surface a key can reach.
 

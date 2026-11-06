@@ -235,7 +235,7 @@ export default function ProductTour() {
               lead: jumped ? "Before you go." : "Your plan.",
               title: `You're on ${planName}.`,
               body: productPaid
-                  ? "Everything in this tour is already on for your workspace. Need more sending or AI credits? Change plan any time, and the difference is prorated."
+                  ? "Everything in this tour is already on for your workspace. Need more sending or AI usage? Change plan any time, and the difference is prorated."
                   : "Your mailboxes warm in the premium pool. Choose a plan to start sending and to turn on the inbox, the CRM, automations and Remie.",
           };
     const choosePlan = async (id: PlanID) => {

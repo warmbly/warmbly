@@ -29,10 +29,13 @@ type ContactResearchRun struct {
 	Result         ResearchResult `json:"result"`
 	Error          string         `json:"error,omitempty"`
 	CreditsCharged int            `json:"credits_charged"`
-	ModelUsed      string         `json:"model_used"`
-	TokensUsed     int            `json:"tokens_used"`
-	CreatedAt      time.Time      `json:"created_at"`
-	UpdatedAt      time.Time      `json:"updated_at"`
+	// ChargedMicro is what the run cost; CreditsCharged is its legacy credit figure.
+	ChargedMicro Micro     `json:"-"`
+	ChargedUSD   float64   `json:"charged_usd"`
+	ModelUsed    string    `json:"model_used"`
+	TokensUsed   int       `json:"tokens_used"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // ResearchResult is the STRICT save_research schema. It is validated at the app

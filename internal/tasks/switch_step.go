@@ -12,6 +12,7 @@ import (
 
 	"github.com/warmbly/warmbly/internal/app/aiagentargs"
 	"github.com/warmbly/warmbly/internal/app/credits"
+	"github.com/warmbly/warmbly/internal/app/instancesettings"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 )
@@ -19,14 +20,13 @@ import (
 // Campaign "switch" sequence step: a multi-way router. The step's configured
 // cases are draggable dots on the canvas; each connected case is an outgoing
 // ai_label branch. Per contact the decider picks one case — either one LLM
-// call over the contact's data ("ai" mode, one credit) or a rendered template
+// call over the contact's data ("ai" mode, metered) or a rendered template
 // value matched against the case names ("value" mode, free, no model). The
 // chosen case is stored on the progress row (RecordAILabel) and routing reads
 // it deterministically at the step boundary; the decider never executes side
 // effects (those are ordinary action steps placed on the chosen path).
-// AI mode shares the automation AI nodes' lifecycle: gate ->
-// consume(Idempotency-Key) -> call -> refund-on-failure, deterministic
-// sampling, bounded output.
+// AI mode shares the automation AI nodes' lifecycle: balance check -> call ->
+// charge actual usage once per key, deterministic sampling, bounded output.
 const (
 	seqAIMaxTokens         = 512
 	seqAIThinkingMaxTokens = 2048
@@ -142,8 +142,6 @@ func (s *tasksService) execSequenceSwitchStep(ctx context.Context, campaign *mod
 
 	// The key is stable per (campaign, contact, step), so an at-least-once task
 	// redelivery never double-charges. A free/local model runs un-metered.
-	// Thinking routes to the stronger model tier; its higher token pricing
-	// flows through the usage settle.
 	model := s.aiProvider.ModelForTier(cfg.AIThinking)
 	maxTokens := seqAIMaxTokens
 	if cfg.AIThinking {
@@ -151,10 +149,10 @@ func (s *tasksService) execSequenceSwitchStep(ctx context.Context, campaign *mod
 	}
 	idemKey := fmt.Sprintf("seq_ai:%s:%s:%s", campaign.ID, contact.ID, sequenceID)
 	if !s.aiProvider.IsLocal() {
-		if _, cerr := s.aiCredits.Consume(ctx, *campaign.OrganizationID, credits.CostCampaignAIStep, "campaign_ai", model, 0, idemKey); cerr != nil {
+		if cerr := s.aiCredits.Reserve(ctx, *campaign.OrganizationID, credits.EstimateAINode); cerr != nil {
 			switch {
 			case errors.Is(cerr, credits.ErrInsufficientCredits):
-				return fmt.Errorf("out of AI credits: this step needs %d credit", credits.CostCampaignAIStep)
+				return errors.New("the workspace balance is too low for this step")
 			case errors.Is(cerr, credits.ErrCapExceeded):
 				return errors.New("AI usage cap reached; try again later")
 			default:
@@ -187,7 +185,7 @@ func (s *tasksService) execSequenceSwitchStep(ctx context.Context, campaign *mod
 			if serr == nil && len(results) > 0 {
 				web = renderSwitchSearchResults(q, results)
 				if !s.aiProvider.IsLocal() {
-					_, _ = s.aiCredits.Consume(ctx, *campaign.OrganizationID, credits.CostWebSearch, "campaign_ai_search", "", 0, idemKey+":search")
+					_, _ = s.aiCredits.Charge(ctx, *campaign.OrganizationID, credits.UnitUsage(instancesettings.UnitWebSearch, 1), "campaign_ai_search", idemKey+":search")
 				}
 			}
 		}
@@ -205,21 +203,15 @@ func (s *tasksService) execSequenceSwitchStep(ctx context.Context, campaign *mod
 		Temperature: generation.Deterministic(),
 	})
 	if gerr != nil || res == nil {
-		// The org paid for a step the provider couldn't complete: refund it (a
-		// local model was never charged).
-		if !s.aiProvider.IsLocal() {
-			_, _ = s.aiCredits.Grant(ctx, *campaign.OrganizationID, credits.CostCampaignAIStep, "campaign_ai_refund")
-		}
 		if gerr != nil {
 			return fmt.Errorf("AI switch failed: %w", gerr)
 		}
 		return errors.New("AI switch returned no output")
 	}
 
-	// Usage-based settle: price the actual tokens and charge any overage
-	// beyond the flat minimum (best-effort; never fails the delivered result).
+	// Charge what the call actually used; best-effort, never fails the result.
 	if !s.aiProvider.IsLocal() {
-		_, _ = s.aiCredits.SettleUsage(ctx, *campaign.OrganizationID, credits.CostCampaignAIStep, model, res.TokensUsed, "campaign_ai", idemKey+":usage")
+		_, _ = s.aiCredits.Charge(ctx, *campaign.OrganizationID, credits.AIUsage(model, res.InputTokens, res.OutputTokens), "campaign_ai", idemKey)
 	}
 
 	matched := matchSwitchCase(res.Text, cases)
@@ -688,16 +680,14 @@ func (s *tasksService) execSequenceAIAgentStep(ctx context.Context, campaign *mo
 	model := s.aiProvider.ModelForTier(cfg.AIThinking)
 	idemBase := fmt.Sprintf("seq_ai_agent:%s:%s:%s", campaign.ID, contact.ID, sequenceID)
 	var creditErr error
-	charged := 0
-	preIteration := func(ctx context.Context, iteration int) error {
+	preIteration := func(ctx context.Context, _ int) error {
 		if s.aiProvider.IsLocal() {
 			return nil
 		}
-		idem := fmt.Sprintf("%s:iter:%d", idemBase, iteration)
-		if _, cerr := s.aiCredits.Consume(ctx, *campaign.OrganizationID, credits.CostCampaignAIStep, "campaign_ai_agent", model, 0, idem); cerr != nil {
+		if cerr := s.aiCredits.Reserve(ctx, *campaign.OrganizationID, credits.EstimateAgentIteration); cerr != nil {
 			switch {
 			case errors.Is(cerr, credits.ErrInsufficientCredits):
-				creditErr = fmt.Errorf("out of AI credits: the agent step needs %d credit per step", credits.CostCampaignAIStep)
+				creditErr = errors.New("the workspace balance is too low for the agent step")
 			case errors.Is(cerr, credits.ErrCapExceeded):
 				creditErr = errors.New("AI usage cap reached; try again later")
 			default:
@@ -705,7 +695,6 @@ func (s *tasksService) execSequenceAIAgentStep(ctx context.Context, campaign *mo
 			}
 			return creditErr
 		}
-		charged++
 		return nil
 	}
 
@@ -737,14 +726,15 @@ func (s *tasksService) execSequenceAIAgentStep(ctx context.Context, campaign *mo
 		MaxTokens:     seqAIMaxTokens,
 		PreIteration:  preIteration,
 	})
+	// Iterations that ran used tokens even when a later one stopped the loop.
+	if res != nil && !s.aiProvider.IsLocal() {
+		_, _ = s.aiCredits.Charge(ctx, *campaign.OrganizationID, credits.AIUsage(model, res.InputTokens, res.OutputTokens), "campaign_ai_agent", idemBase)
+	}
 	if creditErr != nil {
 		return creditErr
 	}
 	if gerr != nil {
 		return fmt.Errorf("AI agent step failed: %w", gerr)
-	}
-	if res != nil && !s.aiProvider.IsLocal() && charged > 0 {
-		_, _ = s.aiCredits.SettleUsage(ctx, *campaign.OrganizationID, charged, model, res.TokensUsed, "campaign_ai_agent", idemBase+":usage")
 	}
 	return nil
 }

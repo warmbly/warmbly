@@ -13,7 +13,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/warmbly/warmbly/internal/api/middleware"
-	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/app/credits"
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 )
 
@@ -35,18 +36,14 @@ func (p *streamProvider) CompleteStream(ctx context.Context, req generation.Comp
 	return &generation.WritingResult{Text: strings.Join(p.deltas, ""), Model: "test-model", TokensUsed: 9}, nil
 }
 
-type refundCredits struct {
+type countingCredits struct {
 	editCredits
-	refunds int
+	charges int
 }
 
-// Grant fails on a cancelled context, as the ledger's transaction does.
-func (r *refundCredits) Grant(ctx context.Context, _ uuid.UUID, _ int, _ string) (int, *errx.Error) {
-	if ctx.Err() != nil {
-		return 0, errx.New(errx.Internal, "context cancelled")
-	}
-	r.refunds++
-	return 42, nil
+func (r *countingCredits) Charge(context.Context, uuid.UUID, credits.Usage, string, string) (models.Micro, error) {
+	r.charges++
+	return 20_000, nil
 }
 
 func streamEdit(t *testing.T, h *Handler, ctx context.Context) []writingEvent {
@@ -91,7 +88,8 @@ func TestGenerateEditStreamsTheTextAsItIsWritten(t *testing.T) {
 		}
 	}
 	done := events[3]
-	if done.Type != "done" || done.Text != "Hi {{.FirstName}}, one question." || done.CreditsCharged == nil || *done.CreditsCharged != 1 {
+	if done.Type != "done" || done.Text != "Hi {{.FirstName}}, one question." || done.CreditsCharged == nil || *done.CreditsCharged != 1 ||
+		done.ChargedUSD == nil || *done.ChargedUSD != 0.02 || done.BalanceUSD == nil || *done.BalanceUSD != 0.82 {
 		t.Errorf("unexpected done event: %+v", done)
 	}
 	if p.got.System != generation.BuildEditRules(generation.VoiceContext{}) {
@@ -99,16 +97,15 @@ func TestGenerateEditStreamsTheTextAsItIsWritten(t *testing.T) {
 	}
 }
 
-func TestStreamedFailureRefundsUnlessTheCallerLeft(t *testing.T) {
+func TestStreamedFailureChargesNothing(t *testing.T) {
 	cases := []struct {
-		name    string
-		deltas  []string
-		cancel  bool
-		refunds int
+		name   string
+		deltas []string
+		cancel bool
 	}{
-		{"provider failed mid-stream", []string{"Hi"}, false, 1},
-		{"caller left after reading", []string{"Hi"}, true, 0},
-		{"caller left before any text", nil, true, 1},
+		{"provider failed mid-stream", []string{"Hi"}, false},
+		{"caller left after reading", []string{"Hi"}, true},
+		{"caller left before any text", nil, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -117,7 +114,7 @@ func TestStreamedFailureRefundsUnlessTheCallerLeft(t *testing.T) {
 			if tc.cancel {
 				cancel()
 			}
-			credits := &refundCredits{}
+			credits := &countingCredits{}
 			p := &streamProvider{deltas: tc.deltas, err: errors.New("boom")}
 			h := &Handler{FeatureGateService: editGate{}, CreditService: credits, AIProvider: p}
 
@@ -126,8 +123,8 @@ func TestStreamedFailureRefundsUnlessTheCallerLeft(t *testing.T) {
 			if last := events[len(events)-1]; last.Type != "error" {
 				t.Errorf("last event %+v, want error", last)
 			}
-			if credits.refunds != tc.refunds {
-				t.Errorf("refunds %d, want %d", credits.refunds, tc.refunds)
+			if credits.charges != 0 {
+				t.Errorf("a failed generation was charged %d times", credits.charges)
 			}
 		})
 	}

@@ -35,6 +35,7 @@ import {
 } from "@/components/app/placement/tests/PlacementParts";
 import { ORIGIN_LABEL, fmtDate, fmtRate, rateTone, usageLabel } from "@/components/app/placement/tests/placementTests";
 import { cn } from "@/lib/utils";
+import { fmtUsdCost } from "@/lib/money";
 
 type Tab = "tests" | "batches" | "seeds";
 
@@ -90,8 +91,8 @@ export default function PlacementPage() {
             >
                 {exhausted && (
                     <span className="hidden md:inline text-[11px] text-slate-400">
-                        {usage.credits_per_test > 0
-                            ? `More tests cost ${usage.credits_per_test} credits each. Your own seed inboxes are always free.`
+                        {usage.price_per_test_usd > 0
+                            ? `More tests cost ${fmtUsdCost(usage.price_per_test_usd)} each. Your own seed inboxes are always free.`
                             : "Your own seed inboxes are never counted."}
                     </span>
                 )}

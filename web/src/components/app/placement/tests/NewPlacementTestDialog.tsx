@@ -35,6 +35,7 @@ import type {
 import type Contact from "@/lib/api/models/app/contacts/Contact";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import { cn } from "@/lib/utils";
+import { fmtUsd, fmtUsdCost } from "@/lib/money";
 import { placementErrorMessage, seedBlocker, testCost, type PlacementErrorField } from "./placementTests";
 import { CopySourceFields, FamilyChips, InlineError, PaceChoice, PanelChoice, TrackingChoice } from "./PlacementFormParts";
 import {
@@ -62,7 +63,7 @@ interface Draft {
     // Provider families on a shared panel; empty means every provider.
     families: string[];
     pace: PlacementPace;
-    // The credit price the user agreed to pay; a different price needs asking again.
+    // The dollar price the user agreed to pay; a different price needs asking again.
     payConsent: number | null;
 }
 
@@ -204,9 +205,9 @@ function DialogBody({ onClose, prefill }: { onClose: () => void; prefill?: NewPl
     const sendTime = sendSeconds < 90 ? "under 2 minutes" : `about ${Math.round(sendSeconds / 60)} minutes`;
     const usage = overview.data?.usage;
     const testsNeeded = compare ? 2 : 1;
-    // The instance panel's free tests run out into credits; the cloud's allowance is the cloud's.
+    // The instance panel's free tests run out into paid ones; the cloud's allowance is the cloud's.
     const cost = testCost(usage, draft.panel === "instance" && !!panel?.metered, testsNeeded);
-    const consented = cost.paid > 0 && draft.payConsent === cost.credits;
+    const consented = cost.paid > 0 && draft.payConsent === cost.usd;
     const freeLeft = usage?.limit != null ? Math.max(0, usage.limit - usage.used) : null;
     const overQuota =
         draft.panel === "cloud" && !!panel?.metered && usage?.limit != null && usage.used + testsNeeded > usage.limit;
@@ -240,9 +241,9 @@ function DialogBody({ onClose, prefill }: { onClose: () => void; prefill?: NewPl
                     : cost.paid > 0 && !cost.payable
                       ? "This month's free tests are used up. Your own seed inboxes are never counted."
                     : cost.paid > 0 && !cost.canPay
-                      ? `This test costs ${cost.credits} credits and the workspace has ${usage?.credit_balance ?? 0}. Top up under Settings > Billing.`
+                      ? `This test costs ${fmtUsdCost(cost.usd)} and the workspace balance is ${fmtUsd(usage?.balance_usd ?? 0)}. Add money under Settings > Billing.`
                     : cost.paid > 0 && !consented
-                      ? `This month's free tests are used up. Tick the box to pay ${cost.credits} credits for this test.`
+                      ? `This month's free tests are used up. Tick the box to pay ${fmtUsdCost(cost.usd)} for this test.`
                     : overQuota
                       ? `This month's tests are used up${compare && usage && usage.limit != null && usage.used < usage.limit ? " (a comparison counts as 2)" : ""}. Your own seed inboxes are never counted.`
                       : null;
@@ -285,7 +286,7 @@ function DialogBody({ onClose, prefill }: { onClose: () => void; prefill?: NewPl
             ...(chosenSeeds.length > 0 ? { seed_ids: chosenSeeds.map((m) => m.email_account_id) } : {}),
             ...(chosenFamilies.length > 0 ? { families: chosenFamilies } : {}),
             ...(draft.pace !== "spaced" ? { pace: draft.pace } : {}),
-            ...(consented ? { max_credits: cost.credits } : {}),
+            ...(consented ? { max_usd: cost.usd } : {}),
         };
         if (draft.source === "step") {
             body.campaign_id = draft.campaignId;
@@ -439,30 +440,30 @@ function DialogBody({ onClose, prefill }: { onClose: () => void; prefill?: NewPl
                                 {cost.paid < testsNeeded
                                     ? "One free test is left this month, so the second half of this comparison"
                                     : "This month's free tests are used up, so this test"}{" "}
-                                costs <b className="font-medium text-slate-900">{cost.credits} credits</b>.
-                                {usage?.credit_balance != null && ` The workspace has ${usage.credit_balance}.`} A test that delivers no copy gets its credits back.
+                                costs <b className="font-medium text-slate-900">{fmtUsdCost(cost.usd)}</b>, paid from the workspace balance.
+                                {usage?.balance_usd != null && ` The balance is ${fmtUsd(usage.balance_usd)}.`} A test that delivers no copy is refunded.
                             </p>
                             {cost.canPay ? (
                                 <label className="mt-2 flex items-center gap-2 cursor-pointer select-none">
                                     <Checkbox
                                         tone="slate"
                                         checked={consented}
-                                        onChange={(e) => patch({ payConsent: e.target.checked ? cost.credits : null })}
+                                        onChange={(e) => patch({ payConsent: e.target.checked ? cost.usd : null })}
                                     />
-                                    <span className="text-[12px] text-slate-900">Pay {cost.credits} credits for this test</span>
+                                    <span className="text-[12px] text-slate-900">Pay {fmtUsdCost(cost.usd)} for this test</span>
                                 </label>
                             ) : canBuy ? (
                                 <Link
                                     to="/app/settings/billing/{-$tab}"
-                                    params={{ tab: "ai-credits" }}
+                                    params={{ tab: "balance" }}
                                     target="_blank"
                                     rel="noopener"
                                     className="mt-2 inline-flex text-[12px] font-medium text-sky-700 hover:underline"
                                 >
-                                    Top up credits in a new tab
+                                    Add money in a new tab
                                 </Link>
                             ) : (
-                                <p className="mt-2 text-[12px] text-slate-600">Ask someone with the Manage billing permission to top up.</p>
+                                <p className="mt-2 text-[12px] text-slate-600">Ask someone with the Manage billing permission to add money.</p>
                             )}
                         </div>
                     )}
@@ -496,7 +497,7 @@ function DialogBody({ onClose, prefill }: { onClose: () => void; prefill?: NewPl
                     >
                         {pending ? <Loader2Icon className="w-3.5 h-3.5 animate-spin" /> : <PlayIcon className="w-3.5 h-3.5" />}
                         {compare ? "Start comparison" : "Start test"}
-                        {cost.paid > 0 && cost.payable && <span className="opacity-80">· {cost.credits} credits</span>}
+                        {cost.paid > 0 && cost.payable && <span className="opacity-80">· {fmtUsdCost(cost.usd)}</span>}
                     </button>
                 </div>
             </motion.div>

@@ -173,7 +173,7 @@ export function RemieCard({
                 </div>
             )}
             {!canAsk && (ask || slide.scene === "remieAct") && (
-                <p className="mt-2 text-[11.5px] leading-[1.45] text-slate-400">Remie comes with every paid plan and runs on AI credits.</p>
+                <p className="mt-2 text-[11.5px] leading-[1.45] text-slate-400">Remie comes with every paid plan and is paid from the workspace balance.</p>
             )}
         </div>
     );

@@ -364,6 +364,10 @@ var Tables = []Table{
 	{
 		Name: "org_ai_settings", Group: models.OrgDataGroupCore,
 		Scope: scopeOrgAlt,
+		// Automatic reload charges a card on the source instance's Stripe
+		// account, so it arrives off with no failure or notice history.
+		ResetOnImport: []string{"auto_topup_enabled", "auto_reload_failure_code", "auto_reload_failed_at",
+			"low_balance_notified_at", "balance_out_notified_at"},
 	},
 	{
 		Name: "advisor_settings", Group: models.OrgDataGroupCore,

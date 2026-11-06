@@ -118,7 +118,7 @@ The writing is about the prospect's business, not about your product: what they 
 
 For subject ideas, press **⌘J** (Ctrl+J on Windows and Linux) in the subject, or click the sparkle at its end. AI reads the body and the earlier steps and offers five short subject lines, each appearing as soon as it is written and each a different approach, written to look like a colleague sent them rather than a marketing team. A merge field in an idea always comes with a fallback, and the sample line under each idea shows how it reads. Type a few words to steer the ideas, or use a move on the subject you already have: **Shorter**, **More personal**, **As a question** or **Less salesy**. A follow-up that opens a new email gets ideas that do not repeat the earlier subjects. **More ideas** asks again; picking one replaces the subject.
 
-Two more AI surfaces live in the body itself. With the cursor somewhere in the copy, a sparkle appears in the right gutter: click it, or press **⌘J** (Ctrl+J on Windows and Linux), to ask for text at the cursor or to continue the draft. Select some text instead and a floating **Edit with AI** pill appears over it, with quick actions (improve, shorten, expand, fix grammar, friendlier, more formal) or a free instruction. Both cost [AI credits](/guides/ai-credits/).
+Two more AI surfaces live in the body itself. With the cursor somewhere in the copy, a sparkle appears in the right gutter: click it, or press **⌘J** (Ctrl+J on Windows and Linux), to ask for text at the cursor or to continue the draft. Select some text instead and a floating **Edit with AI** pill appears over it, with quick actions (improve, shorten, expand, fix grammar, friendlier, more formal) or a free instruction. Both are charged to the [workspace balance](/guides/ai-credits/) for what they use.
 
 In both, the words appear in place as the model writes them, tinted blue so you can see what is new. **Esc** (or **Stop**) stops it and keeps what it wrote so far. When it finishes, a menu by the text lets you decide: **Keep it** (⌘Enter, Ctrl+Enter on Windows and Linux), **Try again**, a one-click change such as **Make it shorter**, or **Discard**, which puts the body back exactly as it was. You can also type a change of your own into the menu and press Enter, use the arrow keys to move through the list, or just keep typing in the body, which keeps the text. Press **Esc** in the menu to discard. A kept passage is one step of undo.
 
@@ -223,10 +223,10 @@ A Switch step routes each contact down one of several named cases (`interested`,
 
 | Decider | How it picks | Cost |
 |---------|--------------|------|
-| **AI prompt** | A plain-language instruction (supports the same variables as your copy). One model call per contact reads their data and picks exactly one case. | 1 credit per contact, refunded on failure. With no credits the step is skipped and the contact takes the fallback path. |
+| **AI prompt** | A plain-language instruction (supports the same variables as your copy). One model call per contact reads their data and picks exactly one case. | Charged per contact for the tokens it uses, nothing on failure. When the balance is too low the step is skipped and the contact takes the fallback path. |
 | **Value** | A template value (`{{.Industry}}`, any custom field) rendered per contact and matched to case names. Casing and whitespace are ignored; wrap a case in slashes for a case-insensitive regex (`/^(vip\|enterprise)/`). Plain cases match first, then regex in order. | None, fully deterministic |
 
-The AI decider adds two optional toggles: **web search** looks up the contact's company (query built from company, name, or corporate domain, never email content) for 1 extra credit when it finds results, and **extended thinking** routes to the stronger model tier for hard decisions, metered through [AI credits](/guides/ai-credits/).
+The AI decider adds two optional toggles: **web search** looks up the contact's company (query built from company, name, or corporate domain, never email content), charged as one web search ($0.0125 at the default prices) when it finds results, and **extended thinking** routes to the stronger model tier for hard decisions, charged to the [workspace balance](/guides/ai-credits/).
 
 Under **What AI can see**, each step controls whether the model also receives the contact's campaign history and newest email on top of their fields. Both default on. The newest email is the latest one the contact sent to any mailbox in the workspace, whoever connected it. Email and profile fields are treated strictly as content: instructions inside an email ("ignore your rules") are ignored, and the model can only answer with a case you named.
 
@@ -314,7 +314,7 @@ A branch routes contacts by condition. Press **+** under a step and pick **If / 
 | `if auto-reply / out of office` | Reply was automated, not human |
 | `if reply intent is…` | The intent [automatic inbox tagging](/guides/inbox-tagging/) read from the human reply: agreed, wants info, wants pricing, not now, not interested, wrong person, opt out, scheduling, in progress, question answered, or unclear. Set only when inbox tagging is on and the classifier was at least 70% sure; an untagged reply takes the otherwise path. Checked once, no day window |
 | `random split` | A random share of contacts (1 to 99%) |
-| Switch case paths | Each case's own column under the Switch, not chosen here. Uses the stored case, so routing spends no credits |
+| Switch case paths | Each case's own column under the Switch, not chosen here. Uses the stored case, so routing charges nothing |
 
 ### Instant vs at-the-next-step
 

@@ -348,7 +348,7 @@ final class AssistantChatStore {
         if let apiError = error as? APIError {
             switch apiError {
             case let .server(status, payload):
-                if status == 402 { return "You're out of AI credits for this billing period." }
+                if status == 402 { return "The workspace balance is too low for AI. Add money on the web." }
                 return payload?.message ?? apiError.localizedDescription
             case .rateLimited:
                 return "AI usage limit reached, try again later."

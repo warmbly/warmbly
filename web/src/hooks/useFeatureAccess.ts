@@ -142,7 +142,7 @@ export default function useFeatureAccess(): FeatureAccess {
     // A plan an operator granted never touches Stripe, so `status` stays
     // whatever it was ("incomplete" on a workspace that never subscribed).
     // Deciding paid from status alone locks a workspace that is entitled to
-    // everything, which is what the plan pill and the credit balance already
+    // everything, which is what the plan pill and the balance already
     // show correctly. The server resolves expiry, so this is just a read.
     const managed = sub.data?.managed === true;
     const orgImpliesPaid =

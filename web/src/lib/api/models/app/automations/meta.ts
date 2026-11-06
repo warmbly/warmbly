@@ -105,7 +105,7 @@ export const AI_ALLOWLIST_ACTIONS = [
 export type NativeActionAllow = (typeof AI_ALLOWLIST_ACTIONS)[number];
 
 // AI action nodes run over the event with the model: the unified AI step (a
-// single-shot transform or an agent) or the AI switch router. They cost credits.
+// single-shot transform or an agent) or the AI switch router. They are charged by usage.
 export function isAIAction(a: string): boolean {
     return a === "warmbly.ai_step" || a === "warmbly.ai_switch";
 }
@@ -348,7 +348,7 @@ const EXPRESSION_FIELD: TriggerFieldDef = {
 };
 
 // Ask AI: a plain-language yes/no question answered by the model over the
-// event data (true edge = yes). Costs 1 credit per evaluation.
+// event data (true edge = yes). Charged by usage per evaluation.
 const AI_FIELD: TriggerFieldDef = {
     key: AI_FIELD_KEY,
     label: "Ask AI (yes/no)",

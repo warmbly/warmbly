@@ -166,8 +166,33 @@ type PlacementTest struct {
 	CreditsCharged   int        `json:"credits_charged"`
 	CreditsRefunded  int        `json:"credits_refunded"`
 	CreditsSettledAt *time.Time `json:"credits_settled_at"`
-	CreatedAt        time.Time  `json:"created_at"`
-	FinishedAt       *time.Time `json:"finished_at"`
+	// ChargedMicro and RefundedMicro are the same in micro-dollars; the
+	// credit fields are their legacy figures.
+	ChargedMicro  Micro      `json:"-"`
+	RefundedMicro Micro      `json:"-"`
+	ChargedUSD    float64    `json:"charged_usd"`
+	RefundedUSD   float64    `json:"refunded_usd"`
+	CreatedAt     time.Time  `json:"created_at"`
+	FinishedAt    *time.Time `json:"finished_at"`
+}
+
+// SetCharge records what a test costs, in dollars and in legacy credits.
+func (t *PlacementTest) SetCharge(charged Micro) {
+	t.ChargedMicro, t.ChargedUSD, t.CreditsCharged = charged, charged.USD(), PlacementLegacyCredits(charged)
+}
+
+// SetRefund records what came back, in dollars and in legacy credits.
+func (t *PlacementTest) SetRefund(refunded Micro) {
+	t.RefundedMicro, t.RefundedUSD, t.CreditsRefunded = refunded, refunded.USD(), CreditsFromMicro(refunded)
+}
+
+// PlacementLegacyCredits is a placement charge in legacy credits. A paid
+// test never rounds to zero: credits_charged > 0 is what marks it paid.
+func PlacementLegacyCredits(m Micro) int {
+	if m <= 0 {
+		return 0
+	}
+	return max(CreditsFromMicro(m), 1)
 }
 
 // Tracked reports whether the test's copies carry any tracking.
@@ -322,13 +347,48 @@ type PlacementUsage struct {
 	Used int `json:"used"`
 	// Limit is nil when the instance does not meter tests (self-hosted).
 	Limit *int `json:"limit"`
-	// CreditsPerTest is what a test past the free allowance costs in credits,
-	// zero when tests cannot be paid for; CreditBalance is the workspace's
-	// spendable balance, nil when credits are off.
-	CreditsPerTest int       `json:"credits_per_test"`
-	CreditBalance  *int      `json:"credit_balance"`
-	PeriodStart    time.Time `json:"period_start"`
-	PeriodEnd      time.Time `json:"period_end"`
+	// PricePerTestUSD is what a test past the free allowance costs, zero when
+	// tests cannot be paid for; BalanceUSD is the workspace's spendable
+	// balance, nil when the balance is off. The credit fields are their legacy
+	// figures, and all an instance on the previous release sends.
+	PricePerTestUSD float64   `json:"price_per_test_usd"`
+	BalanceUSD      *float64  `json:"balance_usd"`
+	CreditsPerTest  int       `json:"credits_per_test"`
+	CreditBalance   *int      `json:"credit_balance"`
+	PeriodStart     time.Time `json:"period_start"`
+	PeriodEnd       time.Time `json:"period_end"`
+}
+
+// SetPrice fills the price and balance in dollars and in legacy credits. The
+// legacy price rounds up so a client agreeing to it in credits covers it.
+func (u *PlacementUsage) SetPrice(price Micro, balance *Micro) {
+	u.PricePerTestUSD = price.USD()
+	u.CreditsPerTest = int((price + LegacyCreditMicro - 1) / LegacyCreditMicro)
+	if balance != nil {
+		usd, credits := balance.USD(), CreditsFromMicro(*balance)
+		u.BalanceUSD, u.CreditBalance = &usd, &credits
+	}
+}
+
+// TestPrice is the price of one paid test.
+func (u PlacementUsage) TestPrice() Micro {
+	if u.PricePerTestUSD > 0 {
+		return USDToMicro(u.PricePerTestUSD)
+	}
+	return Micro(u.CreditsPerTest) * LegacyCreditMicro
+}
+
+// Balance is the spendable balance, nil when unknown.
+func (u PlacementUsage) Balance() *Micro {
+	switch {
+	case u.BalanceUSD != nil:
+		m := USDToMicro(*u.BalanceUSD)
+		return &m
+	case u.CreditBalance != nil:
+		m := Micro(*u.CreditBalance) * LegacyCreditMicro
+		return &m
+	}
+	return nil
 }
 
 // Remaining is how many metered tests are left, -1 when unmetered.

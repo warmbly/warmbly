@@ -37,7 +37,7 @@ Apply the fix. **Done** offers **Undo** where the change can be reverted.
 
 ## Good to know
 
-- Core detection uses explicit rules and thresholds, works with no AI configured, and never spends AI credits. Optional TypeSafe copy reviews are automated judgments.
+- Core detection uses explicit rules and thresholds, works with no AI configured, and never charges the workspace balance. Optional TypeSafe copy reviews are automated judgments.
 - A check stays quiet until it has enough data, for example `100` sends in 30 days for complaint rate.
 - Nothing is applied until you have seen the **What changes** screen, and the change runs with your permissions.
 - Autopilot, under **Settings > Workspace**, is off by default and only takes bounded fixes that can be undone.
@@ -78,7 +78,7 @@ If one check fires on many things, they collapse into a single card ("19 mailbox
 
 ## How findings are made
 
-Core checks use explicit rules and thresholds over your workspace data. Optional TypeSafe copy reviews supply model judgments to the copy checks described below. A separate AI narrator rewrites explanations; it cannot create a finding, change its severity, or change what a fix does. Self-hosts with no AI configured still receive the core checks, and Advisor evaluations never spend AI credits.
+Core checks use explicit rules and thresholds over your workspace data. Optional TypeSafe copy reviews supply model judgments to the copy checks described below. A separate AI narrator rewrites explanations; it cannot create a finding, change its severity, or change what a fix does. Self-hosts with no AI configured still receive the core checks, and Advisor evaluations never charge the workspace balance.
 
 ### Sample floors
 
@@ -148,7 +148,7 @@ Findings needing a judgement call have no settings preview. Their second screen 
 
 Findings whose fix edits something Warmbly owns (copy, sequence shape, list membership) offer **Fix with agent**: it reads the current campaign, step, or list, makes the smallest change that resolves the problem, and reports back.
 
-It runs as you, with your permissions, and only gets the tools that finding's category needs. A copy problem gets read access to the campaign and edit access to that step, nothing more. **No tool set can send mail, delete a campaign or contact, or touch team, billing, or API keys.** Each loop costs one AI credit.
+It runs as you, with your permissions, and only gets the tools that finding's category needs. A copy problem gets read access to the campaign and edit access to that step, nothing more. **No tool set can send mail, delete a campaign or contact, or touch team, billing, or API keys.** Each loop is charged to the workspace balance for the tokens it uses, typically a few cents.
 
 When it finishes you get its account plus the list of tools it actually called, which you can check against the audit log. An agent that concludes nothing needs changing says so, and the finding stays open rather than being quietly closed.
 
