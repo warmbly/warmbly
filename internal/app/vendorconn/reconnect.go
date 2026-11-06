@@ -87,6 +87,19 @@ func (s *Service) Reconnect(ctx context.Context, orgID, userID, connectionID uui
 	return s.startReconnect(ctx, orgID, userID, connectionID, only, false)
 }
 
+// ReconnectMailboxes is Reconnect for several of the connection's mailboxes at once.
+func (s *Service) ReconnectMailboxes(ctx context.Context, orgID, userID, connectionID uuid.UUID, accountIDs []uuid.UUID) ([]ReconnectMailbox, *errx.Error) {
+	if len(accountIDs) > maxReconnectMailboxes {
+		return nil, errx.NewWithIdentifier(errx.BadRequest, ErrIDReconnectNone,
+			"One request reconnects up to "+strconv.Itoa(maxReconnectMailboxes)+" mailboxes. Reconnect them in smaller groups.")
+	}
+	only := make(map[uuid.UUID]bool, len(accountIDs))
+	for _, id := range accountIDs {
+		only[id] = true
+	}
+	return s.startReconnect(ctx, orgID, userID, connectionID, only, false)
+}
+
 // startReconnect starts the vendor signing in again as the connection's Google mailboxes, or only those in only.
 func (s *Service) startReconnect(ctx context.Context, orgID, userID, connectionID uuid.UUID, only map[uuid.UUID]bool, automatic bool) ([]ReconnectMailbox, *errx.Error) {
 	if s.cache == nil || s.consent == nil {

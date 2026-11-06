@@ -138,6 +138,8 @@ type Vendor struct {
 	Website    string        `json:"website"`
 	KeyHelpURL string        `json:"key_help_url"`
 	Fields     []VendorField `json:"fields"`
+	// SignsIn is a vendor that can sign in again as its Google mailboxes, so they reconnect in place.
+	SignsIn bool `json:"signs_in"`
 }
 
 // Catalog lists every supported vendor and what connecting it asks for.
@@ -145,7 +147,7 @@ func (s *Service) Catalog() []Vendor {
 	ds := mailvendor.Descriptors()
 	out := make([]Vendor, 0, len(ds))
 	for _, d := range ds {
-		v := Vendor{ID: d.ID, Label: d.Label, Website: d.Website, KeyHelpURL: d.KeyHelpURL}
+		v := Vendor{ID: d.ID, Label: d.Label, Website: d.Website, KeyHelpURL: d.KeyHelpURL, SignsIn: mailvendor.SupportsConsent(d.ID)}
 		for _, f := range d.Fields {
 			if f.Legacy {
 				continue

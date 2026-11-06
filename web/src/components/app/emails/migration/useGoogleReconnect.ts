@@ -7,6 +7,7 @@ import reauthEmailOAuth from "@/lib/api/client/app/emails/reauthEmailOAuth";
 import onboardOAuthFinish from "@/lib/api/client/app/emails/onboardOAuthFinish";
 import { authorizeEmailInPopup } from "@/lib/emails/emailOAuthPopup";
 import { SIGNIN_MIGRATION_KEY } from "@/lib/api/hooks/app/emails/useMailboxGrants";
+import { MAILBOX_SIGNIN_KEY } from "@/lib/api/hooks/app/emails/useMailboxSignin";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 
@@ -29,6 +30,7 @@ export default function useGoogleReconnect() {
                 toast.success("Reconnected with the new Google sign-in");
                 setDone((prev) => new Set(prev).add(mailboxId));
                 qc.invalidateQueries({ queryKey: ["emails", "list"] });
+                qc.invalidateQueries({ queryKey: MAILBOX_SIGNIN_KEY });
                 qc.invalidateQueries({ queryKey: SIGNIN_MIGRATION_KEY });
             } catch (e) {
                 setUnfinished(mailboxId);

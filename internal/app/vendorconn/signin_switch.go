@@ -114,6 +114,7 @@ func (s *Service) recordReconnect(ctx context.Context, job *reconnectJob, before
 		if was, ok := before[m.EmailAccountID]; ok && was.Status == m.Status && was.Message == m.Message {
 			continue
 		}
+		moved++
 		automatic := job.Automatic[m.EmailAccountID]
 		if m.final() {
 			actor := job.UserID
@@ -126,8 +127,8 @@ func (s *Service) recordReconnect(ctx context.Context, job *reconnectJob, before
 		if err := s.repo.SetSigninSwitch(ctx, job.OrgID, m.EmailAccountID, m.Status, m.Message); err != nil {
 			log.Warn().Err(err).Str("email_account_id", m.EmailAccountID.String()).Msg("vendor reconnect: recording progress failed")
 		}
-		moved++
 	}
+	// One event for the connection per pass refreshes its row; a finished mailbox also refreshes its own drawer.
 	if moved > 0 {
 		s.auditVendor(ctx, job.OrgID, job.ConnectionID, map[string]string{"action": "reconnect_progress", "mailboxes": strconv.Itoa(moved)})
 	}

@@ -145,9 +145,10 @@ func (h *Handler) ImportMailboxVendorMailboxes(c *gin.Context) {
 	c.JSON(http.StatusCreated, imp)
 }
 
-// vendorReconnectRequest names one mailbox; without one every Google mailbox imported from the vendor account is reconnected.
+// vendorReconnectRequest names one mailbox or several; without either every Google mailbox imported from the vendor account is reconnected.
 type vendorReconnectRequest struct {
-	EmailAccountID *uuid.UUID `json:"email_account_id"`
+	EmailAccountID  *uuid.UUID  `json:"email_account_id"`
+	EmailAccountIDs []uuid.UUID `json:"email_account_ids"`
 }
 
 // ReconnectMailboxVendorMailboxes is POST /emails/vendors/:id/reconnect: the vendor signs in again as its Google mailboxes, renewing each in place.
@@ -161,7 +162,19 @@ func (h *Handler) ReconnectMailboxVendorMailboxes(c *gin.Context) {
 		errx.Handle(c, errx.ErrInvalid)
 		return
 	}
-	out, xerr := h.VendorConnService.Reconnect(c.Request.Context(), orgID, userID, id, req.EmailAccountID)
+	if len(req.EmailAccountIDs) > 0 && req.EmailAccountID != nil {
+		errx.Handle(c, errx.ErrInvalid)
+		return
+	}
+	var (
+		out  []vendorconn.ReconnectMailbox
+		xerr *errx.Error
+	)
+	if len(req.EmailAccountIDs) > 0 {
+		out, xerr = h.VendorConnService.ReconnectMailboxes(c.Request.Context(), orgID, userID, id, req.EmailAccountIDs)
+	} else {
+		out, xerr = h.VendorConnService.Reconnect(c.Request.Context(), orgID, userID, id, req.EmailAccountID)
+	}
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return

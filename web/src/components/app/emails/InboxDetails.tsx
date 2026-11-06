@@ -88,7 +88,7 @@ import { mailboxConnectionLabel, mailHostLogo } from "@/lib/mailHost";
 import { useGrants } from "@/lib/api/hooks/app/emails/useMailboxGrants";
 import { domainOf, grantFor, grantName, vendorLabel, type GrantProvider } from "@/lib/api/models/app/emails/MailboxSources";
 import MailboxGrantDialog from "./import/grants/MailboxGrantDialog";
-import SigninRetiringNotice from "./migration/SigninRetiringNotice";
+import MailboxSigninSection, { SigninPrompt } from "./migration/MailboxSigninSection";
 import ProviderLogo from "./ProviderLogo";
 import MailboxSourceChip from "./MailboxSourceChip";
 import { mailboxSource } from "@/lib/mailboxSource";
@@ -571,7 +571,7 @@ function Detail({ mailbox, onClose, initialTab, tabIntentKey, onTabIntentConsume
 
             {/* Body */}
             <div className="flex-1 min-h-0 overflow-y-auto">
-                {tab === "overview" && <OverviewTab status={status.data} loading={status.isPending} mailbox={mailbox} warmup={warmup.data} />}
+                {tab === "overview" && <OverviewTab status={status.data} loading={status.isPending} mailbox={mailbox} warmup={warmup.data} onOpenSignin={() => setTab("settings")} />}
                 {tab === "deliverability" && <MailboxPlacementTab mailboxId={mailbox.id} poolHealth={status.data?.warmup_health} />}
                 {tab === "analytics" && <AnalyticsTab warmup={warmup.data} replyTarget={mailbox.warmup_reply_rate} loading={warmup.isPending} failed={warmup.isError} retry={() => void warmup.refetch()} />}
                 {tab === "warmup" && <WarmupTab form={form} update={update} status={status.data} mailbox={mailbox} canWarmup={canWarmup} />}
@@ -732,7 +732,7 @@ function DelegatedGrantNotice({ mailbox, inError = false }: { mailbox: Inbox; in
     );
 }
 
-function OverviewTab({ status, loading, mailbox, warmup }: { status?: import("@/lib/api/models/app/analytics/AccountStatus").default; loading: boolean; mailbox: Inbox; warmup?: WarmupAnalytics }) {
+function OverviewTab({ status, loading, mailbox, warmup, onOpenSignin }: { status?: import("@/lib/api/models/app/analytics/AccountStatus").default; loading: boolean; mailbox: Inbox; warmup?: WarmupAnalytics; onOpenSignin: () => void }) {
     const health = status?.health;
     const usage = status?.daily_usage;
     const ws = status?.warmup_status;
@@ -761,7 +761,7 @@ function OverviewTab({ status, loading, mailbox, warmup }: { status?: import("@/
     return (
         <div className="divide-y divide-slate-200/60">
             {mailbox.status === "inactive" && <SwitchedOffNotice mailbox={mailbox} />}
-            {mailbox.provider === "gmail" && mailbox.auth_method !== "delegated" && <SigninRetiringNotice mailbox={mailbox} />}
+            <SigninPrompt mailbox={mailbox} onOpen={onOpenSignin} />
             {/* Whatever the Advisor has on this mailbox, above the numbers that
                 produced it. This is where a row flag and a deep link both land. */}
             <AdvisorStrip
@@ -2388,6 +2388,7 @@ function SettingsTab({ form, update, mailbox, onDisconnected }: { form: Inbox; u
     );
     return (
         <div className="divide-y divide-slate-200/60">
+            <MailboxSigninSection mailbox={mailbox} />
             <div className="px-5 py-5 space-y-4">
                 <Eyebrow>Sender profile</Eyebrow>
                 <FieldShell label="Display name">

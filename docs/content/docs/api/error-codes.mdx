@@ -482,7 +482,7 @@ The [inbox vendor](/guides/mailbox-import/#import-from-an-inbox-vendor) routes (
 | `code` | Status | Meaning |
 |--------|--------|---------|
 | `app_password_invalid` | 400 | `app_password` is not 16 letters once spaces are removed. Create one at myaccount.google.com/apppasswords and send it as Google shows it |
-| `mailbox_not_google_signin` | 409 | The mailbox is not connected with per-mailbox Google sign-in: it is already on an app password or an admin grant, is an Outlook or SMTP/IMAP mailbox, or its sign-in is held by Warmbly Cloud. A repeat of a switch that succeeded answers this |
+| `mailbox_not_google_signin` | 409 | The mailbox is not a Google mailbox on its own Google sign-in or an admin grant: it is already on an app password, is an Outlook or SMTP/IMAP mailbox, or its sign-in is held by Warmbly Cloud. A repeat of a switch that succeeded answers this |
 
 #### Placement test refusals
 
@@ -950,7 +950,7 @@ A few conflicts carry their own `code`. The mailbox import's are under [mailbox 
 | `lead_cc_lead_is_copied` | 409 | [Set a lead's CC](/api/reference/campaigns/#set-a-leads-cc) on a lead that is itself copied on another lead in the campaign, so it sends nothing of its own to copy anyone on |
 | `lead_cc_has_copies` | 409 | [Set a lead's CC](/api/reference/campaigns/#set-a-leads-cc) names a contact that has copies of their own in the campaign |
 | `mailbox_is_seed` | 409 | Warmup was started or resumed on a placement seed inbox. See [placement test refusals](#placement-test-refusals) |
-| `mailbox_not_google_signin` | 409 | `POST /emails/onboarding/app-password/:id` on a mailbox that is not connected with per-mailbox Google sign-in. See [app password switch refusals](#app-password-switch-refusals) |
+| `mailbox_not_google_signin` | 409 | `POST /emails/onboarding/app-password/:id` on a mailbox that is not a Google mailbox on its own sign-in or an admin grant. See [app password switch refusals](#app-password-switch-refusals) |
 | `approval_not_pending` | 409 | `POST /ai/sessions/:id/approve` named a tool call the conversation is not waiting on: it was already decided, in another tab or in Slack, or a newer message replaced it |
 | `mailbox_cloud_unenroll_failed` | 409 | The mailbox is linked to [Warmbly Cloud](/guides/warmbly-cloud/) and its link could not be released, so `DELETE /emails/{id}` would leave Warmbly Cloud holding its credential or its claim on it. The mailbox record remains, and restoration onto its worker is attempted |
 

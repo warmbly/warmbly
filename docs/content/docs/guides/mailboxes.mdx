@@ -221,27 +221,53 @@ On Google Workspace the administrator decides. They can switch IMAP off for the 
   Credentials and both connections are validated when you add the account, so wrong settings fail immediately rather than silently at send time. When the check fails, the message says which server (SMTP or IMAP) failed and why, quoting the server's reply when there is one, so a refused password, an unreachable host and a failed secure connection each read differently. Tokens and credentials are sealed with envelope encryption before they touch storage.
 </Callout>
 
+### Changing how a mailbox signs in
+
+The **Sign-in** section at the top of a Google mailbox's **Settings** tab shows how it signs in now and offers only the changes that can succeed for it. Every change keeps the same mailbox: its history, campaigns, warmup progress and settings stay, and it never counts against the [mailbox allowance](#mailbox-allowance).
+
+| Signs in with | What the section offers |
+| --- | --- |
+| Google sign-in with full mail access | Switch to an app password |
+| Google sign-in with the older permissions (connected before Warmbly asked for full mail access) | Reconnect through the inbox vendor, reconnect with Google, move onto the domain's existing admin grant, or switch to an app password |
+| A legacy domain grant | Reconnect through the inbox vendor, or switch to an app password |
+| An app password | Reconnect through the inbox vendor |
+
+Each change is offered only where it can work. **Reconnect through** a vendor appears for a mailbox imported from InboxKit or Zapmail whose connection is healthy, on an instance with Google sign-in. **Reconnect with Google** is not offered for a personal Gmail address. **Move onto the admin grant** appears only where the workspace already holds an active grant for the domain. A mailbox whose sign-in is held by [Warmbly Cloud](/guides/warmbly-cloud/) is changed there, so the section offers nothing. The Overview tab points to the section while the mailbox is on an older sign-in or a vendor reconnect is running or has failed.
+
+A vendor reconnect shows where it stands as it moves, without refreshing: about to start, adding Warmbly as a trusted app on the domain, signing in as the mailbox, then reconnected or not. When it fails, the section shows the vendor's reason. The mailbox keeps working on its current sign-in throughout and after a failure, because nothing about it changes until Google returns a complete sign-in for the mailbox's own address.
+
+#### Automatic reconnect for vendor mailboxes
+
+A Google mailbox imported from InboxKit or Zapmail reconnects on its own, with no click, when it is on the older Google sign-in without full mail access or on a legacy domain grant. Warmbly asks the vendor, the vendor marks Warmbly trusted on the domain and signs in as the mailbox, and the mailbox moves onto its own Google sign-in with full mail access in place. The Sign-in section says when this is coming and how it ended.
+
+- A mailbox has at most one request open at a time, and after a request ends Warmbly waits a week before asking again on its own. Zapmail takes at most 3 sign-in requests per mailbox every 7 days, so this stays well inside it.
+- A mailbox that reconnected is not asked again. One that failed keeps working on its current sign-in and is tried again after the week; **Reconnect** in the Sign-in section asks sooner.
+- Only mailboxes that are switched on are reconnected, and app-password mailboxes are left as they are: they already work over IMAP.
+- It runs every 15 minutes and takes a bounded number of mailboxes each time, so a large vendor account switches over a few hours.
+
+The instance operator turns it off in the admin panel under **Instance > Configuration > Settings > Mailbox sign-in**, the [`mailbox_signin.auto_vendor_reconnect`](/development/configuration/#settings-stored-in-the-database) setting. Off, a member reconnects from the Sign-in section, the banner, or the vendor account's menu.
+
 ### Moving off per-mailbox Google sign-in
 
 Switching a mailbox off the older per-mailbox **Sign in with Google** is optional. A mailbox on it keeps sending, syncing and warming, and re-authorizing it still works.
 
-The **Accounts** page shows a banner while any mailbox is still on the older Google sign-in, each such mailbox carries a chip in the list, and its drawer shows a notice with the moves for it. Mailboxes whose sign-in is held by [Warmbly Cloud](/guides/warmbly-cloud/) are not included; the cloud keeps their sign-in.
+The **Accounts** page shows a banner while any mailbox is still on the older Google sign-in without full mail access, each such mailbox carries a chip in the list, and its drawer's Sign-in section has the moves for it. A mailbox drops off the banner once it reconnects with full mail access. A mailbox connected before Warmbly recorded which permissions Google granted counts as the older sign-in until it reconnects. Mailboxes whose sign-in is held by [Warmbly Cloud](/guides/warmbly-cloud/) are not included; the cloud keeps their sign-in. When some of the listed mailboxes came from an inbox vendor that can sign in for Warmbly, the banner offers **Reconnect through** that vendor for them in one click.
 
 **A Google Workspace mailbox reconnects with the new Google sign-in.**
 
 1. Have the domain's Workspace administrator mark Warmbly as a trusted app, once for the domain, as in [Google Workspace with Google sign-in](#google-workspace-with-google-sign-in). The notice and the banner's list show the client ID and the Admin console steps.
-2. Choose **Reconnect with Google** on the mailbox, in its drawer or in the banner's list, and approve Google's consent screen as the mailbox itself.
+2. Choose **Reconnect with Google** on the mailbox, in its drawer's Sign-in section or in the banner's list, and approve Google's consent screen as the mailbox itself.
 
-Reconnecting renews the mailbox's own sign-in in place, so it is the same mailbox with the same history, campaigns, warmup progress and settings, and it moves the mailbox's warmup engagement to IMAP. When the Google window closes without connecting, the notice shows the client ID again with what to ask the administrator. A Workspace mailbox can switch to an app password instead, as below.
+Reconnecting renews the mailbox's own sign-in in place, so it is the same mailbox with the same history, campaigns, warmup progress and settings, and it moves the mailbox's warmup engagement to IMAP. When the Google window closes without connecting, the section shows the client ID again with what to ask the administrator. A Workspace mailbox can switch to an app password instead, as below.
 
-**A domain that already holds an admin grant can move onto it.** New Google domain-wide delegation grants are no longer set up, but where the workspace already holds an active grant for the domain, the notice offers to move the mailbox onto it, and the grant's user list marks the mailboxes still on their own sign-in. Connecting the address converts the existing mailbox in place and deletes its stored Google token. Converting does not add a mailbox, so it never counts against the [mailbox allowance](#mailbox-allowance). The same optional switch works for a mailbox on per-mailbox Microsoft sign-in under a Microsoft 365 organization grant.
+**A domain that already holds an admin grant can move onto it.** New Google domain-wide delegation grants are no longer set up, but where the workspace already holds an active grant for the domain, the Sign-in section offers to move the mailbox onto it, and the grant's user list marks the mailboxes still on their own sign-in. Connecting the address converts the existing mailbox in place and deletes its stored Google token. Converting does not add a mailbox, so it never counts against the [mailbox allowance](#mailbox-allowance). The same optional switch works for a mailbox on per-mailbox Microsoft sign-in under a Microsoft 365 organization grant.
 
-**A personal Gmail mailbox moves to an app password.** This works for a Workspace mailbox too.
+**A personal Gmail mailbox moves to an app password.** This works for a Workspace mailbox too, including one on a legacy domain grant.
 
 1. Turn on 2-Step Verification for the Google account and create an app password at [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords), as in [personal Gmail](#personal-gmail).
-2. In the notice in the mailbox's drawer, choose to switch to an app password and paste the 16 letters. Spaces do not matter.
+2. In the mailbox drawer's Sign-in section, choose **Switch to an app password** and paste the 16 letters. Spaces do not matter.
 
-Warmbly checks the app password against Gmail's IMAP and SMTP servers before anything is stored. A refusal changes nothing, and the message says which server refused and why. Once it passes, the mailbox becomes an IMAP and SMTP mailbox in place (`smtp_imap`, sign-in method `app_password`) and its Google token is deleted. Mail already imported stays, and sync carries on with new mail from that point; the history is not imported a second time. The mailbox keeps its campaigns, warmup and settings. The **Sending identity** list is read from Gmail's API, so it is not offered on an app password, as for any IMAP mailbox.
+Warmbly checks the app password against Gmail's IMAP and SMTP servers before anything is stored. A refusal changes nothing, and the message says which server refused and why. Once it passes, the mailbox becomes an IMAP and SMTP mailbox in place (`smtp_imap`, sign-in method `app_password`) and its Google token, or its link to the admin grant, is deleted. Mail already imported stays, and sync carries on with new mail from that point; the history is not imported a second time. The mailbox keeps its campaigns, warmup and settings. The **Sending identity** list is read from Gmail's API, so it is not offered on an app password, as for any IMAP mailbox.
 
 ### Local mail relays (Proton Bridge)
 

@@ -16,6 +16,7 @@ import type { MailboxImport } from "@/lib/api/models/app/emails/MailboxImport";
 import type { DirectoryUser, DomainGrant, GrantConnectRequest } from "@/lib/api/models/app/emails/MailboxSources";
 import { sourceMutationKey } from "./mailboxSourceBusy";
 import { SENDING_DOMAINS_KEY } from "./useSendingDomains";
+import { MAILBOX_SIGNIN_KEY } from "./useMailboxSignin";
 
 export const GRANTS_KEY = ["mailbox-grants"] as const;
 export const SIGNIN_MIGRATION_KEY = [...GRANTS_KEY, "migration"] as const;
@@ -166,6 +167,7 @@ export function useSwitchToAppPassword() {
             qc.invalidateQueries({ queryKey: SIGNIN_MIGRATION_KEY });
             qc.invalidateQueries({ queryKey: ["emails"] });
             qc.invalidateQueries({ queryKey: ["analytics", "accounts"] });
+            qc.invalidateQueries({ queryKey: MAILBOX_SIGNIN_KEY });
         },
     });
 }

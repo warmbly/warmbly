@@ -248,3 +248,28 @@ func TestManualReconnectRecordsItsStart(t *testing.T) {
 		t.Fatalf("audit = %+v", audit.rows)
 	}
 }
+
+func TestReconnectMailboxesTakesOnlyTheNamedOnes(t *testing.T) {
+	client := &consentClient{trustState: mailvendor.AuthorizationPending}
+	s, _, org, conn := consentFixture(t, client)
+	s.kickReconnect = nil
+	ctx := context.Background()
+	repo := s.repo.(*memVendors)
+	ava, leo, other := uuid.New(), uuid.New(), uuid.New()
+	repo.linked = []repository.VendorReconnect{
+		{AccountID: ava, OrgID: org, ConnectionID: conn.ID, VendorMailboxID: "ws:m1", Email: avaAddr},
+		{AccountID: leo, OrgID: org, ConnectionID: conn.ID, VendorMailboxID: "ws:m2", Email: leoAddr},
+	}
+	key := reconnectJobKey(org, conn.ID)
+	t.Cleanup(func() {
+		_ = s.cache.Del(ctx, key).Err()
+		_ = s.cache.SRem(ctx, reconnectJobsIndex, key).Err()
+	})
+	out, xerr := s.ReconnectMailboxes(ctx, org, uuid.New(), conn.ID, []uuid.UUID{leo, other})
+	if xerr != nil || len(out) != 1 || out[0].EmailAccountID != leo {
+		t.Fatalf("named = %+v, %v", out, xerr)
+	}
+	if _, started := repo.switches[ava]; started {
+		t.Fatal("a mailbox nobody named was started")
+	}
+}
