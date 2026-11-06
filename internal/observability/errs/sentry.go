@@ -43,7 +43,7 @@ func (sentrySink) capture(ev event) {
 			scope.SetExtra(k, v)
 		}
 		if ev.err != nil {
-			hub.CaptureException(ev.err)
+			hub.CaptureException(redact(ev.err))
 			return
 		}
 		hub.CaptureMessage(ev.message)

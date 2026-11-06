@@ -7,12 +7,16 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgproto3"
 )
 
 // A deployment that configured no backend is the self-host default, so that
@@ -131,5 +135,47 @@ func TestCancelledWorkIsNotReported(t *testing.T) {
 	CaptureException(fmt.Errorf("queryrow failed: %w", context.DeadlineExceeded))
 	if !strings.Contains(buf.String(), "[issue-local]") {
 		t.Error("a deadline this process set and blew through was dropped as if the caller had gone away")
+	}
+}
+
+// A failed database connection reaches a remote backend as its SQLSTATE alone:
+// pgconn's message names the database user and the addresses it tried.
+func TestDatabaseConnectErrorLeavesOutUserAndAddresses(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		backend := pgproto3.NewBackend(conn, conn)
+		if _, err := backend.ReceiveStartupMessage(); err != nil {
+			return
+		}
+		backend.Send(&pgproto3.ErrorResponse{Severity: "FATAL", Code: "08006", Message: "failed to connect to upstream 10.9.8.7:6432"})
+		_ = backend.Flush()
+	}()
+
+	_, connectErr := pgconn.Connect(context.Background(),
+		"postgres://pscale_api_secretname@"+ln.Addr().String()+"/postgres?sslmode=disable&connect_timeout=5")
+	if connectErr == nil {
+		t.Fatal("connected to a server that refused")
+	}
+
+	got := redact(fmt.Errorf("get membership: %w", connectErr)).Error()
+	if got != "failed to connect to the database (SQLSTATE 08006)" {
+		t.Errorf("reported %q", got)
+	}
+	for _, leaked := range []string{"pscale_api_secretname", "10.9.8.7", "127.0.0.1"} {
+		if strings.Contains(got, leaked) {
+			t.Errorf("reported message carries %q: %s", leaked, got)
+		}
+	}
+	if other := errors.New("boom"); redact(other) != other {
+		t.Error("an unrelated error was rewritten")
 	}
 }
