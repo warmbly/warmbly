@@ -120,22 +120,18 @@ func TestFetchMessageStillTreatsNotFoundAsASkip(t *testing.T) {
 	}
 }
 
-// A success status with a body that is not JSON is the provider failing this
-// pass, so it retries like a 5xx instead of surfacing as an unclassified error.
-func TestUnreadableSuccessBodyRetriesAsUnreachable(t *testing.T) {
+// A success status with a body that is not JSON is named as such, not passed
+// up as a bare decode error or dressed as an unreachable server.
+func TestUnreadableSuccessBodyIsNamed(t *testing.T) {
 	c := deltaTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte("\xe4\x9a\x01not json"))
 	}, nil)
-	unreachable := func(err error) bool {
-		var mailErr *errx.MailError
-		return errors.As(err, &mailErr) && mailErr.Code == errx.MailErrorCodeServerUnreachable
-	}
 	var out listPage
-	if err := c.doJSON(t.Context(), "GET", graphBase+"/me/mailFolders/inbox/messages", nil, &out); !unreachable(err) {
-		t.Fatalf("list: got %T %v, want a server-unreachable mail error", err, err)
+	if err := c.doJSON(t.Context(), "GET", graphBase+"/me/mailFolders/inbox/messages", nil, &out); !errors.Is(err, ErrUnreadableResponse) {
+		t.Fatalf("list: got %T %v", err, err)
 	}
-	if _, err := c.FetchMessage(t.Context(), "inbox", "m1"); !unreachable(err) {
-		t.Fatalf("fetch: got %T %v, want a server-unreachable mail error", err, err)
+	if _, err := c.FetchMessage(t.Context(), "inbox", "m1"); !errors.Is(err, ErrUnreadableResponse) {
+		t.Fatalf("fetch: got %T %v", err, err)
 	}
 }
