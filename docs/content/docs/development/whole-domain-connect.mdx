@@ -132,6 +132,18 @@ The authorization comes before the proof, because Warmbly checks it straight awa
 
 A grant that worked and later fails its hourly check shows as invalid and its mailboxes stop; they restart on their own once a check passes again. See [`google_delegation_unauthorized`](/api/error-codes/#mailbox-source-refusals).
 
+### Optional scope for warmup engagement over IMAP
+
+An existing grant can also list `https://mail.google.com/`. The three scopes above stay required and are still what the grant check verifies; the fourth is optional. When the entry lists it, workers sign in to `imap.gmail.com` with a separate token minted under that scope alone, and run the recipient-side [warmup actions](/guides/warmup/#in-your-mail-client) (taking a message out of Spam, marking it read, starring it, marking it important) over IMAP. Filing, retention deletes, sending and sync stay on the Gmail API.
+
+To turn it on for a domain that is already connected, the super admin edits the existing domain-wide delegation entry for Warmbly's Client ID and adds the scope, so the entry reads:
+
+```text
+https://www.googleapis.com/auth/gmail.modify,https://www.googleapis.com/auth/gmail.settings.basic,https://www.googleapis.com/auth/admin.directory.user.readonly,https://mail.google.com/
+```
+
+Nothing changes in Warmbly. While the entry does not list it, or while the domain has IMAP turned off, Google refuses the IMAP token or the sign-in, and the worker runs the same actions on the Gmail API, remembering that for the mailbox until it is next loaded onto a worker. A worker or backend from before this change only ever uses the Gmail API.
+
 ## Microsoft 365
 
 A Microsoft 365 organization is connected through admin consent to the Outlook app the instance already uses for single-mailbox Microsoft sign-in (`BOX_OUTLOOK_CLIENT_ID`, `BOX_OUTLOOK_CLIENT_SECRET`). There is no second app and no new setting: the option is on whenever those two are set. The app registration needs three additions.

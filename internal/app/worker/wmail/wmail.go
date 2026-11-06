@@ -33,6 +33,8 @@ type OutlookService struct {
 type GoogleData struct {
 	Client        *goog.Client
 	LastHistoryID uint64
+	// IMAP carries warmup engagement; nil runs it through the Gmail API.
+	IMAP *GmailIMAP
 }
 
 type GraphData struct {
@@ -259,6 +261,11 @@ func NewWMail(
 		} else if err := mail.GoogleData.Client.Init(mailCtx, data.Google.Token, data.Cfg); err != nil {
 			return nil, err
 		}
+		imapTokens := mail.GoogleData.Client.TokenSource()
+		if data.IMAPTokenSource != nil {
+			imapTokens = data.IMAPTokenSource
+		}
+		mail.GoogleData.IMAP = NewGmailIMAP(mailCtx, data.Email, imapTokens)
 	case models.InboxProviderOutlook:
 		// Microsoft/Outlook mailboxes run entirely on Microsoft Graph: RAW MIME
 		// sendMail plus delta-based inbound sync. There is no IMAP/SMTP path.

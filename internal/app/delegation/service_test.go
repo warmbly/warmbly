@@ -156,7 +156,9 @@ type fakeProviders struct {
 	*httptest.Server
 	// googleRefuse makes the token endpoint answer unauthorized_client.
 	googleRefuse bool
-	subjects     []string
+	// googleRefuseScope refuses only an assertion asking for this scope, as Google does for one the entry lacks.
+	googleRefuseScope string
+	subjects          []string
 	// What the next sign-in or consent token says.
 	signinEmail, signinHD, consentTenant string
 	// consentRoles are the directory role template ids in the consent's ID token; nil means a Global Administrator.
@@ -212,7 +214,7 @@ func newProviders(t *testing.T) *fakeProviders {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/google/token", func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
-		if f.googleRefuse {
+		if f.googleRefuse || (f.googleRefuseScope != "" && strings.Contains(assertionScope(r.Form.Get("assertion")), f.googleRefuseScope)) {
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = w.Write([]byte(`{"error":"unauthorized_client","error_description":"Client is unauthorized to retrieve access tokens"}`))
 			return

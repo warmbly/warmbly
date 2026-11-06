@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/mail"
+	"slices"
 	"strings"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/displayname"
 	"github.com/warmbly/warmbly/internal/utils/validate"
 	"golang.org/x/oauth2"
+	"google.golang.org/api/gmail/v1"
 )
 
 // WebStatePrefix marks a state the dashboard started, so a sign-in window that lost its opener returns
@@ -190,7 +192,7 @@ func (s *emailService) OAuthFinish(ctx context.Context, userID, code, state stri
 	// mailbox can be refused. Storing one instead means a mailbox that looks
 	// connected and fails on its first send, days later, with a provider 403
 	// nobody can trace back to a checkbox.
-	if xerr := checkGrantedScopes(ctx, provider, cfg.Scopes, tok); xerr != nil {
+	if xerr := checkGrantedScopes(ctx, provider, requiredScopes(cfg.Scopes, sess.EmailAccountID != nil), tok); xerr != nil {
 		return nil, false, xerr
 	}
 
@@ -572,6 +574,10 @@ var scopeSatisfiedBy = map[string][]string{
 		"https://www.googleapis.com/auth/gmail.modify",
 		"https://mail.google.com/",
 	},
+	// Only itself: gmail.modify cannot sign in over IMAP.
+	"https://mail.google.com/": {
+		"https://mail.google.com/",
+	},
 	// settings.basic is not implied by anything: mail.google.com is full
 	// mailbox access and does not confer settings either.
 	"https://www.googleapis.com/auth/gmail.settings.basic": {
@@ -582,6 +588,7 @@ var scopeSatisfiedBy = map[string][]string{
 // scopeLabel names a permission the way the consent screen does, so the error
 // tells someone which checkbox to go back and tick.
 var scopeLabel = map[string]string{
+	"https://mail.google.com/":                             "read, compose, send and permanently delete all your email from Gmail",
 	"https://www.googleapis.com/auth/gmail.readonly":       "read your email",
 	"https://www.googleapis.com/auth/gmail.send":           "send email on your behalf",
 	"https://www.googleapis.com/auth/gmail.modify":         "manage your email",
@@ -591,6 +598,19 @@ var scopeLabel = map[string]string{
 	"https://graph.microsoft.com/Mail.Send":                "send mail",
 	"https://graph.microsoft.com/Mail.ReadWrite":           "read and write mail",
 	"https://graph.microsoft.com/User.Read":                "read your profile",
+}
+
+// requiredScopes holds a reconnect only to gmail.modify, so an existing mailbox is never refused for keeping the API path.
+func requiredScopes(requested []string, reauth bool) []string {
+	out := slices.Clone(requested)
+	if reauth {
+		for i, s := range out {
+			if s == gmail.MailGoogleComScope {
+				out[i] = gmail.GmailModifyScope
+			}
+		}
+	}
+	return out
 }
 
 // checkGrantedScopes refuses a connection the provider only partly authorised.

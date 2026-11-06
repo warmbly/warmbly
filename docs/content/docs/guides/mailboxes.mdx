@@ -91,7 +91,7 @@ Once you press **Connect**, the connect finishes on the server even if you refre
   A mailbox connected with **Sign in with Google** keeps sending and syncing even when a deployment hides that option for new mailboxes. If Google invalidates its token, the **Re-authorize** button in its drawer still works. You can optionally switch to a domain grant (Google Workspace) or an app password without losing history. See [moving off per-mailbox Google sign-in](#moving-off-per-mailbox-google-sign-in).
 </Callout>
 
-**OAuth** sends you to your provider's consent screen and returns a token instead of a password. Both OAuth providers use the provider's native API, never IMAP or SMTP, so consent asks to send mail and to read and organize your mailbox. Google additionally asks to read your mail settings, which is what lets Warmbly offer the addresses Google has verified you to send as and import the signature you already wrote there. It needs no app passwords or server settings. Note that Google revokes Gmail tokens when the account's password changes, so a password change there means [re-authorizing the mailbox](#reconnecting-an-account) once.
+**OAuth** sends you to your provider's consent screen and returns a token instead of a password. Both OAuth providers send and sync through the provider's native API, never SMTP, so consent asks to send mail and to read and organize your mailbox. A Google sign-in mailbox also signs in to `imap.gmail.com` with the same token for its recipient-side [warmup engagement](/guides/warmup/#in-your-mail-client). Google additionally asks to read your mail settings, which is what lets Warmbly offer the addresses Google has verified you to send as and import the signature you already wrote there. It needs no app passwords or server settings. Note that Google revokes Gmail tokens when the account's password changes, so a password change there means [re-authorizing the mailbox](#reconnecting-an-account) once.
 
 #### What each provider is asked for
 
@@ -99,16 +99,16 @@ Exactly these, and nothing beyond them:
 
 | Provider | Scope | What it is for |
 |----------|-------|----------------|
-| Google | `https://www.googleapis.com/auth/gmail.modify` | Send campaign and warmup mail, read replies, and move messages between folders |
+| Google | `https://mail.google.com/` | Send campaign and warmup mail, read replies, move messages between folders, and act on received warmup mail over IMAP |
 | Google | `https://www.googleapis.com/auth/gmail.settings.basic` | Read the send-as addresses Google has verified for the account, and the signature already set there |
 | Microsoft | `https://graph.microsoft.com/Mail.Send` | Send mail |
 | Microsoft | `https://graph.microsoft.com/Mail.ReadWrite` | Read replies and move messages |
 | Microsoft | `https://graph.microsoft.com/User.Read` | Read the signed-in address, so the mailbox is filed under the right one |
 | Microsoft | `offline_access` | Keep the connection alive without asking again |
 
-Google's scopes nest, so `gmail.modify` already covers reading, sending, composing and metadata. Warmbly used to ask for those four by name as well, which widened the consent screen without granting anything extra; it no longer does. A mailbox connected under the older, broader consent keeps working and does not need reconnecting.
+Google's scopes nest, so full mail access (`https://mail.google.com/`) covers everything `gmail.modify` does, and it is also the only Google scope that can sign in over IMAP. A mailbox connected earlier under `gmail.modify` keeps working and does not need reconnecting: it sends, syncs and runs its warmup engagement on the Gmail API as before. Reconnecting it with **Re-authorize** asks for full mail access, and once granted, its warmup engagement moves to IMAP. A reconnect that leaves full mail access unticked is still accepted and keeps the mailbox on the Gmail API.
 
-A consent screen lets you untick individual permissions. Warmbly checks what was actually granted and refuses a half-granted mailbox at connect time, naming the missing permission, rather than storing one that looks connected and fails on its first send days later.
+A consent screen lets you untick individual permissions. Warmbly checks what was actually granted and refuses a half-granted mailbox at connect time, naming the missing permission, rather than storing one that looks connected and fails on its first send days later. A new Google mailbox needs full mail access ticked.
 
 #### When Microsoft asks for admin approval
 

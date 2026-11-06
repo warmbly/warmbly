@@ -749,6 +749,15 @@ func (s *Service) Connect(ctx context.Context, orgID uuid.UUID, userID string, g
 // AccessToken is a worker's token for a delegated mailbox; handled is false
 // for any other mailbox, so the caller can try its own broker.
 func (s *Service) AccessToken(ctx context.Context, accountID uuid.UUID) (*models.PoolLinkAccessToken, bool, *errx.Error) {
+	return s.accessToken(ctx, accountID, false)
+}
+
+// IMAPAccessToken is a delegated Google mailbox's token under the optional https://mail.google.com/ scope, for Gmail IMAP.
+func (s *Service) IMAPAccessToken(ctx context.Context, accountID uuid.UUID) (*models.PoolLinkAccessToken, bool, *errx.Error) {
+	return s.accessToken(ctx, accountID, true)
+}
+
+func (s *Service) accessToken(ctx context.Context, accountID uuid.UUID, imap bool) (*models.PoolLinkAccessToken, bool, *errx.Error) {
 	d, xerr := s.store.GetDelegation(ctx, accountID)
 	if xerr != nil {
 		return nil, true, xerr
@@ -772,12 +781,20 @@ func (s *Service) AccessToken(ctx context.Context, accountID uuid.UUID) (*models
 		if !s.googleEnabled() {
 			return nil, true, notConfigured("Google Workspace")
 		}
-		src, err := s.googleSource(d.Subject, gmail.GmailModifyScope, gmail.GmailSettingsBasicScope)
+		// IMAP is minted on its own, so a delegation entry without the optional scope still serves the API token.
+		scopes := []string{gmail.GmailModifyScope, gmail.GmailSettingsBasicScope}
+		if imap {
+			scopes = []string{gmail.MailGoogleComScope}
+		}
+		src, err := s.googleSource(d.Subject, scopes...)
 		if err != nil {
 			return nil, true, errx.InternalError()
 		}
 		ts = src
 	case models.InboxProviderOutlook:
+		if imap {
+			return nil, true, errx.ErrNotFound
+		}
 		if !s.microsoftEnabled() {
 			return nil, true, notConfigured("Microsoft 365")
 		}
@@ -787,6 +804,10 @@ func (s *Service) AccessToken(ctx context.Context, accountID uuid.UUID) (*models
 	}
 	tok, err := ts.Token()
 	if err != nil {
+		// The worker remembers a refused IMAP token for the mailbox, so a provider outage must not read as one.
+		if imap && unavailable(err) {
+			return nil, true, unavailableErr()
+		}
 		provider := models.GrantProviderGoogle
 		if d.Provider == models.InboxProviderOutlook {
 			provider = models.GrantProviderMicrosoft

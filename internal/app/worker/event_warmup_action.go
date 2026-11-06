@@ -278,7 +278,12 @@ func (w *WorkerService) runGoogleWarmupActions(ctx context.Context, mail *wmail.
 		gmailID = id
 	}
 
+	// Engagement goes over IMAP; filing, deletion and anything IMAP could not settle stay on the API.
+	settled := w.runGmailIMAPEngagement(ctx, mail, action, rescue)
 	for _, act := range action.Actions {
+		if settled[act] {
+			continue
+		}
 		switch act {
 		case models.WarmupActionFile:
 			if placement == models.WarmupPlacementInbox || gmailID == "" {

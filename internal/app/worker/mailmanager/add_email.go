@@ -6,6 +6,7 @@ import (
 
 	"github.com/warmbly/warmbly/internal/app/worker/wmail"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/repository"
 )
 
 // errBrokerUnavailable: a managed mailbox needs the backend's token broker.
@@ -35,6 +36,9 @@ func (m *MailManager) AddWMail(
 			return errBrokerUnavailable
 		}
 		data.TokenSource = m.tokenBroker.Source(data.ID)
+		if b, ok := m.tokenBroker.(repository.BrokeredIMAPTokenClient); ok && data.Type == models.InboxProviderGoogle {
+			data.IMAPTokenSource = b.IMAPSource(data.ID)
+		}
 	}
 
 	var newMail *wmail.WMail

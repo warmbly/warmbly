@@ -190,6 +190,8 @@ type AddWorkerEmail struct {
 	Cfg oauth2.Config `json:"-" avro:"-"`
 	// TokenSource is set by the worker for brokered mailboxes.
 	TokenSource oauth2.TokenSource `json:"-" avro:"-"`
+	// IMAPTokenSource is a brokered Google mailbox's token for Gmail IMAP; nil reuses TokenSource.
+	IMAPTokenSource oauth2.TokenSource `json:"-" avro:"-"`
 }
 
 // SavesSentCopy reports whether the worker should APPEND a copy of each sent

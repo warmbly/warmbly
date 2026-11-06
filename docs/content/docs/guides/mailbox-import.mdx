@@ -220,6 +220,8 @@ First, the super admin authorizes the client ID. This has to happen before the d
 
 4. Choose **Authorize**, and allow a few minutes for Google to apply it.
 
+A domain that is already connected can move its warmup engagement to IMAP: the super admin edits the existing delegation entry and adds `https://mail.google.com/` after the three scopes. The three stay required; the added one is optional, and without it warmup engagement runs on the Gmail API as before. See [optional scope for warmup engagement over IMAP](/development/whole-domain-connect/#optional-scope-for-warmup-engagement-over-imap).
+
 Then, back in Warmbly, enter the domain and a super admin address on it, and prove the domain as below.
 
 ### Prove the workspace controls the domain

@@ -599,7 +599,7 @@ Needed on the backend **and** every worker: the backend starts the OAuth flow, a
 
 | Variable | What it does | Default |
 |---|---|---|
-| `BOX_GOOGLE_CLIENT_ID`, `BOX_GOOGLE_CLIENT_SECRET` | The Google app used by Gmail mailboxes connected with per-mailbox Google sign-in. Both are required to enable new connects. Keep them set while any mailbox uses Google sign-in. Also carries a Workspace administrator's domain proof when `GOOGLE_CLIENT_ID` is not set. Redirect URI is your API base plus `/addresses/google/callback` | unset |
+| `BOX_GOOGLE_CLIENT_ID`, `BOX_GOOGLE_CLIENT_SECRET` | The Google app used by Gmail mailboxes connected with per-mailbox Google sign-in. Both are required to enable new connects. Keep them set while any mailbox uses Google sign-in. Also carries a Workspace administrator's domain proof when `GOOGLE_CLIENT_ID` is not set. Redirect URI is your API base plus `/addresses/google/callback`. The consent screen needs `https://mail.google.com/` and `gmail.settings.basic` ([setup](/development/deployment-guide/#gmail-and-google-workspace)) | unset |
 | `BOX_GOOGLE_OAUTH_CONNECT` | Optional backend kill switch for new Gmail OAuth connects. Unset enables the capability when both Google mailbox credentials are present; explicit `false` or an invalid value disables it. Existing Google sign-in mailboxes keep working and can re-authorize either way. Announced as `gmail_oauth_connect` on `GET /v1/auth/config` | enabled when configured |
 | `BOX_OUTLOOK_CLIENT_ID`, `BOX_OUTLOOK_CLIENT_SECRET` | Connect Outlook and Microsoft 365 mailboxes. Redirect URI is your API base plus `/addresses/outlook/callback` | unset |
 
