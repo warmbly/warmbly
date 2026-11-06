@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -116,10 +117,6 @@ func TestNATSBus_KeyedLanesKeepKeyOrderAndRunKeysConcurrently(t *testing.T) {
 		}
 		return nil
 	})
-	// a and b must not share a lane for the concurrency half to mean anything.
-	if natsLane("a", 4) == natsLane("b", 4) {
-		t.Fatal("test keys hash to the same lane")
-	}
 	waitForConsumer(t, bus, bus.durable("lanes", []string{topic}))
 	for _, p := range []string{"a1", "a2", "a3", "b1"} {
 		if err := bus.Publish(t.Context(), topic, "", []byte(p)); err != nil {
@@ -138,6 +135,54 @@ func TestNATSBus_KeyedLanesKeepKeyOrderAndRunKeysConcurrently(t *testing.T) {
 	}
 	if got := order[1:]; got[0] != "a1" || got[1] != "a2" || got[2] != "a3" {
 		t.Fatalf("one key's messages ran out of order: %v", order)
+	}
+}
+
+// A slow key takes one lane and no more: with two lanes, every other key keeps
+// moving through the second while the first is held.
+func TestNATSBus_KeyedLanesNeverQueueOneKeyBehindAnother(t *testing.T) {
+	bus := newTestNATSBus(t)
+	topic := "w.blocking"
+
+	releaseA := make(chan struct{})
+	handled := make(chan string, 8)
+	subscribeInBackground(t, t.Context(), bus, topic, "blocking", 2, payloadKey, func(_ context.Context, msg Message) error {
+		p := string(msg.Payload)
+		if p == "a1" {
+			select {
+			case <-releaseA:
+			case <-time.After(5 * time.Second):
+			}
+		}
+		handled <- p
+		return nil
+	})
+	waitForConsumer(t, bus, bus.durable("blocking", []string{topic}))
+	for _, p := range []string{"a1", "b1", "c1", "d1", "e1"} {
+		if err := bus.Publish(t.Context(), topic, "", []byte(p)); err != nil {
+			t.Fatalf("publish %s: %v", p, err)
+		}
+	}
+	others := map[string]bool{}
+	for len(others) < 4 {
+		select {
+		case p := <-handled:
+			if p == "a1" {
+				t.Fatalf("a1 finished before the other keys: %v", others)
+			}
+			others[p] = true
+		case <-time.After(5 * time.Second):
+			t.Fatalf("keys waited behind a held one: handled %v", others)
+		}
+	}
+	close(releaseA)
+	select {
+	case p := <-handled:
+		if p != "a1" {
+			t.Fatalf("handled %s, want a1", p)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("a1 never finished")
 	}
 }
 
@@ -230,7 +275,14 @@ func TestNATSBus_KeyedLanesKeepSaturatedMessagesAlive(t *testing.T) {
 	select {
 	case <-allHandled:
 	case <-time.After(20 * time.Second):
-		t.Fatal("not every saturated-lane message was handled")
+		mu.Lock()
+		redelivered := 0
+		for _, attempts := range seen {
+			redelivered += len(attempts) - 1
+		}
+		handled, distinct := len(order), len(seen)
+		mu.Unlock()
+		t.Fatalf("not every saturated-lane message was handled: %d distinct of %d, %d handlings, %d redeliveries", distinct, messages, handled, redelivered)
 	}
 	// Give already-prefetched redeliveries time to reach the handler too.
 	time.Sleep(2 * ackWait)
@@ -247,5 +299,103 @@ func TestNATSBus_KeyedLanesKeepSaturatedMessagesAlive(t *testing.T) {
 	}
 	if len(order) != messages {
 		t.Errorf("handled %d messages, want %d", len(order), messages)
+	}
+}
+
+// A delivery waiting for room behind a full lane is heartbeated too, so a slow
+// handler ahead of it does not let JetStream hand it out a second time.
+func TestNATSBus_KeyedLanesKeepMessagesWaitingForRoomAlive(t *testing.T) {
+	grace := natsAckGrace
+	natsAckGrace = 200 * time.Millisecond
+	t.Cleanup(func() { natsAckGrace = grace })
+	t.Setenv("EVENTBUS_HANDLER_TIMEOUT", "300ms")
+
+	bus := newTestNATSBus(t)
+	topic := "w.room"
+	// Two lanes, since one runs without the pool; one key fills both lanes' room.
+	const messages = 2*natsLaneBuffer + 4
+	var mu sync.Mutex
+	seen := map[string][]int{}
+	subscribeInBackground(t, t.Context(), bus, topic, "room", 2, payloadKey, func(_ context.Context, msg Message) error {
+		p := string(msg.Payload)
+		mu.Lock()
+		seen[p] = append(seen[p], msg.Attempt)
+		mu.Unlock()
+		if p == "a00" {
+			// Well past the 500ms ack wait while the lane's room is full.
+			time.Sleep(1500 * time.Millisecond)
+		}
+		return nil
+	})
+	ackWait := waitForConsumer(t, bus, bus.durable("room", []string{topic}))
+	for i := 0; i < messages; i++ {
+		if err := bus.Publish(t.Context(), topic, "a", fmt.Appendf(nil, "a%02d", i)); err != nil {
+			t.Fatalf("publish %d: %v", i, err)
+		}
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		mu.Lock()
+		n := len(seen)
+		mu.Unlock()
+		if n == messages || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	time.Sleep(2 * ackWait)
+	mu.Lock()
+	defer mu.Unlock()
+	for i := 0; i < messages; i++ {
+		p := fmt.Sprintf("a%02d", i)
+		if got := seen[p]; len(got) != 1 || got[0] != 1 {
+			t.Errorf("%s handled with attempts %v, want exactly one first delivery", p, got)
+		}
+	}
+}
+
+// Closing the bus ends a pull waiting for room behind handlers that have not
+// finished, and hands back what is queued instead of starting it.
+func TestNATSBus_CloseDoesNotWaitForLaneRoom(t *testing.T) {
+	bus := newTestNATSBus(t)
+	topic := "w.close"
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	var started atomic.Int32
+	subscribeInBackground(t, t.Context(), bus, topic, "close", 2, payloadKey, func(context.Context, Message) error {
+		started.Add(1)
+		<-release
+		return nil
+	})
+	t.Cleanup(unblock)
+	waitForConsumer(t, bus, bus.durable("close", []string{topic}))
+	for i := 0; i < 2*natsLaneBuffer+8; i++ {
+		if err := bus.Publish(t.Context(), topic, "k", fmt.Appendf(nil, "%c%02d", 'a'+i%2, i)); err != nil {
+			t.Fatalf("publish %d: %v", i, err)
+		}
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for started.Load() < 2 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	// Let the pull fill the lanes' room and wait for more.
+	time.Sleep(500 * time.Millisecond)
+
+	closed := make(chan struct{})
+	go func() {
+		_ = bus.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Close waited for room in the lanes")
+	}
+	before := started.Load()
+	unblock()
+	time.Sleep(500 * time.Millisecond)
+	if after := started.Load(); after != before {
+		t.Fatalf("%d queued deliveries started after Close", after-before)
 	}
 }

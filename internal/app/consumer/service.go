@@ -43,6 +43,8 @@ type CloudExecution interface {
 
 type JobsService struct {
 	CampaignIsolationEnabled bool
+	// DBConns is the database pool the event handlers share; it sizes how many mailboxes run at once.
+	DBConns int32
 	// Bus delivers the jobs.worker-events stream (Kafka or NATS).
 	Bus eventbus.EventBus
 	// Codec decodes bus payloads (jobs.worker-events); it must match the
@@ -151,7 +153,7 @@ func (s *JobsService) Start(ctx context.Context) {
 	go s.runStoredSendResults(ctx)
 	go s.runArrivalOutbox(ctx)
 
-	lanes := WorkerEventConcurrency()
+	lanes := WorkerEventConcurrency(s.DBConns)
 	log.Info().Int("lanes", lanes).Msg("consumer: worker-events ordered mailbox lanes")
 	if err := eventbus.SubscribeKeyed(ctx, s.Bus, []string{kafka.TopicWorkerEvents}, "consumer-group", lanes, workerEventKey, s.receive); err != nil {
 		log.Error().Err(err).Msg("consumer: worker-events subscription ended")

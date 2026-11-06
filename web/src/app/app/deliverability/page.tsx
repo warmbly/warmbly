@@ -22,6 +22,7 @@ import {
     SelectButton,
 } from "@/components/ui/popover-menu";
 import useDeliverability from "@/lib/api/hooks/app/analytics/useDeliverability";
+import { periodWindow } from "@/lib/campaignPeriod";
 import AdvisorSummaryBar from "@/components/app/advisor/AdvisorSummaryBar";
 import WarmupPlacementSection from "@/components/app/placement/WarmupPlacementSection";
 import type { DeliverabilityBand, ProviderPlacement } from "@/lib/api/models/app/analytics/Deliverability";
@@ -124,9 +125,9 @@ function BandChip({ band }: { band: DeliverabilityBand }) {
 
 export default function DeliverabilityPage() {
     const [view, setView] = useBrowseState<ViewPrefs>("deliverability.view", loadView, deliverabilityView);
-    // Legend toggles: every metric charts together; "sent" starts hidden so
-    // it doesn't dwarf the failure signals this page exists to surface.
-    const [hiddenMetrics, setHiddenMetrics] = useBrowseState<Metric[]>("deliverability.hiddenMetrics", ["sent"], deliverabilityHiddenMetrics);
+    // Legend toggles: every metric charts together; sends draw in their own
+    // strip, so they never dwarf the failure signals above them.
+    const [hiddenMetrics, setHiddenMetrics] = useBrowseState<Metric[]>("deliverability.hiddenMetrics", [], deliverabilityHiddenMetrics);
     const toggleMetric = (k: Metric) =>
         setHiddenMetrics((cur) => {
             if (cur.includes(k)) return cur.filter((x) => x !== k);
@@ -144,6 +145,7 @@ export default function DeliverabilityPage() {
     const toggleSection = (k: SectionKey) =>
         updateView({ ...view, hidden: show(k) ? [...view.hidden, k] : view.hidden.filter((h) => h !== k) });
 
+    const chartRange = useMemo(() => periodWindow({ key: view.range }), [view.range]);
     const trend = useMemo(() => {
         const rows = d?.timeseries ?? [];
         const series: TrendSeries[] = METRICS.filter((m) => !hiddenMetrics.includes(m.key)).map((m) => ({
@@ -242,6 +244,8 @@ export default function DeliverabilityPage() {
                                             <MultiTrend
                                                 labels={trend.labels}
                                                 series={trend.series}
+                                                range={chartRange}
+                                                volumeKey="sent"
                                                 height={280}
                                                 emptyLabel="No activity in this window yet"
                                             />

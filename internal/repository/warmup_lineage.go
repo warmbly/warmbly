@@ -227,7 +227,7 @@ func (r *taskRepository) recoveringWarmupReplySenders(ctx context.Context, recip
 	return priority, rows.Err()
 }
 
-// OwedWarmupReplies applies recovery priority before the limit, then orders eligible messages newest first.
+// OwedWarmupReplies applies recovery priority before the limit, then continues the deepest conversation, newest first, so replies build threads instead of answering each once.
 func (r *taskRepository) OwedWarmupReplies(ctx context.Context, recipient uuid.UUID, limit int, excluded WarmupReplyExclusions) ([]WarmupOwedReply, error) {
 	priority, err := r.recoveringWarmupReplySenders(ctx, recipient, excluded)
 	if err != nil {
@@ -238,7 +238,7 @@ func (r *taskRepository) OwedWarmupReplies(ctx context.Context, recipient uuid.U
         COALESCE(wt.conversation_theme,''),COALESCE(wt.content_source,''),wt.conversation_id,wt.conversation_turn,
         COALESCE(original.reference_ids,'{}'::text[]),original.scenario_version,original.rendering_version,original.max_turns
         `+owedWarmupRepliesFromSQL+`
-        ORDER BY (wt.sender_account_id=ANY($5::uuid[])) DESC, wr.created_at DESC, wt.task_id LIMIT $4`, recipient, excluded.Parents, excluded.Senders, limit, priority)
+        ORDER BY (wt.sender_account_id=ANY($5::uuid[])) DESC, wt.conversation_turn DESC, wr.created_at DESC, wt.task_id LIMIT $4`, recipient, excluded.Parents, excluded.Senders, limit, priority)
 	if err != nil {
 		return nil, err
 	}

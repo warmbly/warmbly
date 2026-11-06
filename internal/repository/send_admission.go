@@ -660,7 +660,8 @@ func (r *taskRepository) cancelOutbound(ctx context.Context, task, mailbox, work
 func checkWarmupRecipientReservation(ctx context.Context, tx pgx.Tx, task, sender uuid.UUID) error {
 	var recipient uuid.UUID
 	var pool string
-	if err := tx.QueryRow(ctx, `SELECT wt.recipient_account_id,wp.pool_type FROM warmup_tokens wt JOIN warmup_pool_participants wpp ON wpp.email_account_id=wt.sender_account_id JOIN warmup_pools wp ON wp.id=wpp.pool_id WHERE wt.task_id=$1 AND wt.sender_account_id=$2`, task, sender).Scan(&recipient, &pool); err != nil {
+	var reply bool
+	if err := tx.QueryRow(ctx, `SELECT wt.recipient_account_id,wp.pool_type,COALESCE(w.parent_task_id IS NOT NULL,false) FROM warmup_tokens wt JOIN warmup_pool_participants wpp ON wpp.email_account_id=wt.sender_account_id JOIN warmup_pools wp ON wp.id=wpp.pool_id LEFT JOIN warmup_tasks w ON w.task_id=wt.task_id WHERE wt.task_id=$1 AND wt.sender_account_id=$2`, task, sender).Scan(&recipient, &pool, &reply); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,273))`, recipient.String()); err != nil {
@@ -673,9 +674,13 @@ func checkWarmupRecipientReservation(ctx context.Context, tx pgx.Tx, task, sende
 	if !receiving {
 		return ErrSendAdmissionDenied
 	}
+	// A reply answers mail the recipient sent, so its own sending bounds it; the cap and tier shares hold back new threads.
+	if reply {
+		return nil
+	}
 	var allowed bool
 	// The send's own token is already counted, so it needs no extra room.
-	err := tx.QueryRow(ctx, warmupInboxRoomSQL, recipient, inboundSharePercent(pool), 0).Scan(&allowed)
+	err := tx.QueryRow(ctx, warmupInboxRoomSQL, recipient, inboundSharePercent(pool)).Scan(&allowed)
 	if err != nil {
 		return err
 	}

@@ -12,9 +12,12 @@ import { cn } from "@/lib/utils";
 import {
     AREA_PAD_BOTTOM,
     AREA_PAD_TOP,
+    DitherBarChart,
     DitherMultiAreaChart,
     type DitherTone,
 } from "@/components/ui/dither";
+import useMeasure from "@/hooks/useMeasure";
+import { TONE_DOT } from "@/components/ui/tones";
 
 export interface ChartPoint {
     /** x-tick source — typically an ISO date string. */
@@ -22,12 +25,24 @@ export interface ChartPoint {
     value: number;
 }
 
-function shortDate(iso: string): string {
-    try {
-        return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-    } catch {
-        return iso;
-    }
+// Dates are UTC days ("yyyy-MM-dd"); formatting in the viewer's zone would
+// label each point a day early west of Greenwich.
+function dayDate(day: string): Date {
+    return new Date(`${day.slice(0, 10)}T00:00:00Z`);
+}
+
+function shortDate(day: string): string {
+    return dayDate(day).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+function longDate(day: string): string {
+    return dayDate(day).toLocaleDateString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        timeZone: "UTC",
+    });
 }
 
 function compact(n: number): string {
@@ -73,12 +88,57 @@ export interface TrendSeries {
     values: number[];
 }
 
+const DAY_MS = 86_400_000;
+
+// Every UTC day of the window, so a quiet day charts as zero instead of the
+// days either side of it being drawn next to each other.
+function fillDays(
+    labels: string[],
+    series: TrendSeries[],
+    range?: { from: string; to: string } | null,
+): { days: string[]; series: TrendSeries[] } {
+    const keys = labels.map((l) => l.slice(0, 10));
+    const sorted = [...keys].sort();
+    // A day the server returned outside the window widens it rather than being dropped.
+    const ends = [range?.from, range?.to, sorted[0], sorted[sorted.length - 1]].filter((d): d is string => !!d).sort();
+    const from = ends[0];
+    const to = ends[ends.length - 1];
+    if (!from || !to) return { days: [], series };
+    const days: string[] = [];
+    const end = dayDate(to).getTime();
+    for (let t = dayDate(from).getTime(); t <= end; t += DAY_MS) days.push(new Date(t).toISOString().slice(0, 10));
+    const at = new Map(days.map((d, i) => [d, i]));
+    return {
+        days,
+        series: series.map((s) => {
+            const values = new Array<number>(days.length).fill(0);
+            keys.forEach((k, i) => {
+                const j = at.get(k);
+                if (j !== undefined) values[j] += s.values[i] ?? 0;
+            });
+            return { ...s, values };
+        }),
+    };
+}
+
+// A y-axis top whose half is a whole number, so the midline label is exact.
+function niceMax(v: number): number {
+    if (v <= 10) return Math.max(2, Math.ceil(v / 2) * 2);
+    const p = 10 ** Math.floor(Math.log10(v));
+    const m = [1, 2, 3, 4, 5, 6, 8, 10].find((x) => x * p >= v) ?? 10;
+    return m * p;
+}
+
+const GUTTER = 34;
+const TICK_H = 20;
+const PANEL_GAP = 30;
+
 /**
- * MultiTrend — several metrics composed on one graph (dither-kit style): a
- * smoothed dithered area line per series, one shared crosshair listing every
- * value, plus date ticks. Falls back to <EmptyChart> when there is no data
- * (or every visible series is all zero), keeping the same height so the
- * layout never jumps.
+ * MultiTrend: a day-by-day chart over the whole window. Quiet days stay on
+ * the axis as zero. The `volumeKey` series (sends) draws as bars in its own
+ * strip with its own scale, so a steady send volume never flattens the
+ * engagement lines above it. One crosshair spans both and lists every value,
+ * with each line as a share of the volume that day.
  */
 export function MultiTrend({
     labels,
@@ -86,53 +146,204 @@ export function MultiTrend({
     height = 260,
     emptyLabel = "No activity yet",
     className,
+    range,
+    volumeKey,
 }: {
-    /** ISO dates, one per x position (shared by every series). */
+    /** UTC days, one per value (shared by every series). Missing days chart as zero. */
     labels: string[];
     series: TrendSeries[];
     height?: number;
     emptyLabel?: string;
     className?: string;
+    /** The full window to chart; defaults to the first through last label. */
+    range?: { from: string; to: string } | null;
+    /** Series drawn as bars below the lines, on its own scale. */
+    volumeKey?: string;
 }) {
-    const total = series.reduce((s, x) => s + x.values.reduce((a, v) => a + (v || 0), 0), 0);
-    const isEmpty = labels.length === 0 || series.length === 0 || total === 0;
+    const [wrapRef, { w }] = useMeasure<HTMLDivElement>();
+    const [pointer, setHover] = React.useState<number | null>(null);
+    const [tipW, setTipW] = React.useState(160);
 
-    const areaSeries = React.useMemo(
-        () => series.map(({ label, tone, values }) => ({ label, tone, values })),
-        [series],
+    // Keyed on content: callers rebuild these arrays every render, and a new
+    // identity would replay the bars' entrance on each one.
+    const contentKey = JSON.stringify([labels, series, range?.from, range?.to]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const filled = React.useMemo(() => fillDays(labels, series, range), [contentKey]);
+    const { days } = filled;
+    const volume = volumeKey ? filled.series.find((s) => s.key === volumeKey) : undefined;
+    const lines = React.useMemo(() => filled.series.filter((s) => s.key !== volumeKey), [filled.series, volumeKey]);
+    const areaSeries = React.useMemo(() => lines.map(({ label, tone, values }) => ({ label, tone, values })), [lines]);
+    const bars = React.useMemo(
+        () => (volume ? volume.values.map((value, i) => ({ key: days[i], value })) : []),
+        [volume, days],
     );
-    const shortLabels = React.useMemo(() => labels.map(shortDate), [labels]);
+    const shortLabels = React.useMemo(() => days.map(shortDate), [days]);
 
-    if (isEmpty) return <EmptyChart height={height} label={emptyLabel} className={className} />;
+    const sum = (s: TrendSeries) => s.values.reduce((a, v) => a + (v || 0), 0);
+    const total = filled.series.reduce((a, s) => a + sum(s), 0);
+    const isEmpty = days.length === 0 || filled.series.length === 0 || total === 0;
 
-    const tickH = 18;
-    const chartH = height - tickH - 4;
-    // Same y mapping as the canvas painter, so gridline values line up with
-    // the drawn curves.
-    const max = Math.max(1, ...series.flatMap((s) => s.values));
-    const innerH = chartH - AREA_PAD_TOP - AREA_PAD_BOTTOM;
-    const gridFracs = [0.25, 0.5, 0.75];
+    const n = days.length;
+    // The index from the last pointer move can outlive a shorter window.
+    const hover = pointer !== null && pointer < n ? pointer : null;
+    const plotW = Math.max(0, w - GUTTER);
+    const slot = n > 0 ? plotW / n : 0;
+    const plotH = height - TICK_H;
+    const both = !!volume && lines.length > 0;
+    const barsH = !volume ? 0 : both ? Math.min(84, Math.max(48, Math.round(plotH * 0.28))) : plotH;
+    const linesH = lines.length === 0 ? 0 : both ? plotH - barsH - PANEL_GAP : plotH;
+    const barsTop = plotH - barsH;
+
+    const lineMax = niceMax(Math.max(0, ...lines.flatMap((s) => s.values)));
+    const innerH = linesH - AREA_PAD_TOP - AREA_PAD_BOTTOM;
+    const volMax = volume ? Math.max(1, ...volume.values) : 0;
+    const linesQuiet = lines.length > 0 && lines.every((s) => sum(s) === 0);
+
+    // Lines run between the first and last bar centers so both panels share x.
+    const inset = n > 1 ? slot / 2 : 0;
+    const cx = (i: number) => GUTTER + (i + 0.5) * slot;
+
+    const maxTicks = Math.max(2, Math.floor(plotW / 72));
+    const step = Math.max(1, Math.ceil(n / maxTicks));
+    const ticks = days.map((_, i) => i).filter((i) => (n - 1 - i) % step === 0);
+
+    const pick = (e: React.PointerEvent<HTMLDivElement>) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const i = Math.floor(((e.clientX - rect.left) / rect.width) * n);
+        setHover(i >= 0 && i < n ? i : null);
+    };
+
+    // Right of the crosshair when the card fits, else left of it, else pinned inside the chart.
+    const tipLeft = (x: number) =>
+        x + 10 + tipW <= w ? x + 10 : x - 10 - tipW >= 0 ? x - 10 - tipW : Math.max(0, w - tipW);
+    const volAt = hover !== null && volume ? volume.values[hover] : 0;
 
     return (
-        <div className={cn("relative w-full select-none", className)} style={{ height }}>
-            {gridFracs.map((f) => (
-                <div
-                    key={f}
-                    className="pointer-events-none absolute left-0 right-0"
-                    style={{ top: AREA_PAD_TOP + (1 - f) * innerH }}
-                >
-                    <div className="h-px bg-slate-100" />
-                    <span className="absolute right-0 -top-3.5 font-mono text-[9px] tabular-nums text-slate-300">
-                        {compact(max * f)}
-                    </span>
-                </div>
-            ))}
-            <DitherMultiAreaChart labels={shortLabels} series={areaSeries} height={chartH} />
-            <div className="absolute left-0 right-0 h-px bg-slate-200/80" style={{ bottom: tickH }} />
-            <div className="absolute left-0 right-0 bottom-0 flex justify-between font-mono text-[9.5px] text-slate-400">
-                <span>{shortDate(labels[0])}</span>
-                <span>{shortDate(labels[labels.length - 1])}</span>
-            </div>
+        // The measured wrapper stays mounted while empty, so the size is known once data arrives.
+        <div ref={wrapRef} className={cn("relative w-full select-none", className)} style={{ height }}>
+            {isEmpty ? (
+                <EmptyChart height={height} label={emptyLabel} />
+            ) : w > 0 && (
+                <>
+                    {linesH > 0 && (
+                        <>
+                            {[0, 0.5, 1].map((f) => (
+                                <div
+                                    key={f}
+                                    className="pointer-events-none absolute right-0"
+                                    style={{ left: GUTTER, top: AREA_PAD_TOP + (1 - f) * innerH }}
+                                >
+                                    <div className={f === 0 ? "h-px bg-slate-200" : "h-px bg-slate-100"} />
+                                    <span
+                                        className="absolute -translate-y-1/2 pr-2 text-right font-mono text-[9.5px] tabular-nums text-slate-400"
+                                        style={{ right: "100%", top: 0, width: GUTTER }}
+                                    >
+                                        {compact(lineMax * f)}
+                                    </span>
+                                </div>
+                            ))}
+                            <div
+                                className="absolute top-0"
+                                style={{ left: GUTTER + inset, width: Math.max(1, plotW - 2 * inset), height: linesH }}
+                            >
+                                <DitherMultiAreaChart
+                                    labels={shortLabels}
+                                    series={areaSeries}
+                                    height={linesH}
+                                    max={lineMax}
+                                    hover={hover}
+                                />
+                            </div>
+                            {linesQuiet && (
+                                <div
+                                    className="pointer-events-none absolute flex items-center justify-center text-[11px] text-slate-400"
+                                    style={{ left: GUTTER, right: 0, top: 0, height: linesH }}
+                                >
+                                    No engagement recorded on these days yet
+                                </div>
+                            )}
+                        </>
+                    )}
+                    {volume && (
+                        <>
+                            {both && (
+                                <div
+                                    className="pointer-events-none absolute flex items-end text-[9.5px] font-medium uppercase tracking-[0.14em] text-slate-400"
+                                    style={{ left: GUTTER, top: barsTop - PANEL_GAP, height: PANEL_GAP - 6 }}
+                                >
+                                    {volume.label} per day
+                                </div>
+                            )}
+                            <span
+                                className="pointer-events-none absolute pr-2 text-right font-mono text-[9.5px] tabular-nums text-slate-400"
+                                style={{ left: 0, top: barsTop - 1, width: GUTTER }}
+                            >
+                                {compact(volMax)}
+                            </span>
+                            <div className="pointer-events-none absolute" style={{ left: GUTTER, right: 0, top: barsTop }}>
+                                <DitherBarChart data={bars} height={barsH} tone={volume.tone} selected={hover} />
+                            </div>
+                        </>
+                    )}
+                    <div className="absolute right-0 h-px bg-slate-200" style={{ left: GUTTER, top: plotH }} />
+                    {ticks.map((i) => (
+                        <span
+                            key={days[i]}
+                            className="pointer-events-none absolute bottom-0 -translate-x-1/2 whitespace-nowrap font-mono text-[9.5px] text-slate-400"
+                            style={{ left: Math.min(Math.max(cx(i), GUTTER + 18), w - 18) }}
+                        >
+                            {shortLabels[i]}
+                        </span>
+                    ))}
+                    <div
+                        className="absolute top-0"
+                        style={{ left: GUTTER, right: 0, height: plotH }}
+                        onPointerMove={pick}
+                        onPointerDown={pick}
+                        onPointerLeave={() => setHover(null)}
+                    />
+                    {hover !== null && (
+                        <>
+                            <div
+                                className="pointer-events-none absolute top-0 border-l border-dashed border-slate-300"
+                                style={{ left: cx(hover), height: plotH }}
+                            />
+                            <div
+                                ref={(el) => {
+                                    if (el && el.offsetWidth !== tipW) setTipW(el.offsetWidth);
+                                }}
+                                className="pointer-events-none absolute top-1 z-10 min-w-[140px] rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] text-slate-600 shadow-sm"
+                                style={{ left: tipLeft(cx(hover)) }}
+                            >
+                                <div className="mb-1 whitespace-nowrap font-medium text-slate-900">{longDate(days[hover])}</div>
+                                {volume && <TipRow tone={volume.tone} label={volume.label} value={volAt} />}
+                                {lines.map((s) => (
+                                    <TipRow
+                                        key={s.key}
+                                        tone={s.tone}
+                                        label={s.label}
+                                        value={s.values[hover] ?? 0}
+                                        share={volume && volAt > 0 ? (s.values[hover] ?? 0) / volAt : undefined}
+                                    />
+                                ))}
+                            </div>
+                        </>
+                    )}
+                </>
+            )}
+        </div>
+    );
+}
+
+function TipRow({ tone, label, value, share }: { tone: DitherTone; label: string; value: number; share?: number }) {
+    return (
+        <div className="flex items-center gap-1.5 whitespace-nowrap leading-5">
+            <span className={cn("size-1.5 rounded-full", TONE_DOT[tone])} />
+            <span>{label}</span>
+            <span className="ml-auto pl-3 font-mono tabular-nums text-slate-900">{value.toLocaleString()}</span>
+            {share !== undefined && (
+                <span className="w-10 text-right font-mono tabular-nums text-slate-400">{(share * 100).toFixed(share < 0.1 ? 1 : 0)}%</span>
+            )}
         </div>
     );
 }
