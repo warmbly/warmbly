@@ -1303,13 +1303,19 @@ func (s *stripeService) handleInvoicePaymentFailed(ctx context.Context, event *s
 	// happens rather than discovering it from a churned customer.
 	if s.opsNotify != nil {
 		var inv struct {
-			CustomerEmail string `json:"customer_email"`
-			Customer      string `json:"customer"`
-			Number        string `json:"number"`
-			AmountDue     int64  `json:"amount_due"`
-			Currency      string `json:"currency"`
+			CustomerEmail string            `json:"customer_email"`
+			Customer      string            `json:"customer"`
+			Number        string            `json:"number"`
+			AmountDue     int64             `json:"amount_due"`
+			Currency      string            `json:"currency"`
+			Metadata      map[string]string `json:"metadata"`
 		}
 		_ = json.Unmarshal(event.Data.Raw, &inv)
+		// A declined balance charge is the balance flow's to retry or turn off;
+		// it puts no sending at risk.
+		if inv.Metadata["purpose"] == purposeBalanceCharge {
+			return nil
+		}
 		s.opsNotify.NotifyOperator(
 			"subscription.payment_failed",
 			"Payment failed",

@@ -348,3 +348,25 @@ func TestAsyncCreditPurchaseStoresCustomer(t *testing.T) {
 		t.Fatal("purchase did not persist the billing customer and credits")
 	}
 }
+
+type recordingOps struct{ keys []string }
+
+func (r *recordingOps) NotifyOperator(key, _, _ string, _ map[string]string) {
+	r.keys = append(r.keys, key)
+}
+
+func TestDeclinedBalanceChargeDoesNotPageTheOperator(t *testing.T) {
+	ops := &recordingOps{}
+	s := &stripeService{subRepo: &billingSubRepo{}, opsNotify: ops}
+	raw := json.RawMessage(`{"customer":"cus_1","amount_due":2500,"currency":"usd","metadata":{"purpose":"balance_charge"}}`)
+	if err := s.ProcessWebhookEvent(context.Background(), &stripeapi.Event{ID: "evt_bal", Type: "invoice.payment_failed", Data: &stripeapi.EventData{Raw: raw}}); err != nil {
+		t.Fatal(err)
+	}
+	raw = json.RawMessage(`{"customer":"cus_1","amount_due":8900,"currency":"usd","subscription":"sub_1"}`)
+	if err := s.ProcessWebhookEvent(context.Background(), &stripeapi.Event{ID: "evt_sub", Type: "invoice.payment_failed", Data: &stripeapi.EventData{Raw: raw}}); err != nil {
+		t.Fatal(err)
+	}
+	if len(ops.keys) != 1 {
+		t.Fatalf("operator alerts = %v; want only the subscription's", ops.keys)
+	}
+}
