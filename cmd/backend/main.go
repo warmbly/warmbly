@@ -2194,6 +2194,7 @@ func main() {
 			emailNotificationService,
 			eventsPublisher,
 			os.Getenv("FRONTEND_BASE_URL"),
+			dangerZoneBilling(stripeService),
 		)
 		dangerZoneJob := jobs.NewDangerZoneJob(dangerZoneService)
 		dangerZoneScheduler := jobs.NewDangerZoneScheduler(dangerZoneJob, 1*time.Hour)
@@ -2967,4 +2968,13 @@ func typeSafeAsker(c *typesafe.Client) typesafe.Asker {
 		return nil
 	}
 	return c
+}
+
+// dangerZoneBilling is the provider account deletion asks about owned
+// subscriptions, or nil when billing is off and the local record is the answer.
+func dangerZoneBilling(svc stripe.StripeService) dangerzone.BillingLookup {
+	if config.BillingProvider() != "stripe" {
+		return nil
+	}
+	return svc
 }

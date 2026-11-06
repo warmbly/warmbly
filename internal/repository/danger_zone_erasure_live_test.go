@@ -254,7 +254,7 @@ func TestLiveDeletingAnAccountRemovesOwnedWorkspacesAndKeepsSharedWork(t *testin
 		}
 	})
 
-	placements, err := f.repo.HardDeleteUser(ctx, f.user)
+	placements, err := f.repo.HardDeleteUser(ctx, f.user, nil)
 	if err != nil {
 		t.Fatalf("the account could not be deleted: %v", err)
 	}
@@ -322,7 +322,7 @@ func TestLiveAccountDeletionRefusesWhileHoldingAnotherWorkspacesMailbox(t *testi
 	if !errors.Is(err, ErrAccountHoldsSharedWork) {
 		t.Fatalf("scheduling: got %v, want ErrAccountHoldsSharedWork", err)
 	}
-	if _, err := f.repo.HardDeleteUser(ctx, f.user); !errors.Is(err, ErrAccountHoldsSharedWork) {
+	if _, err := f.repo.HardDeleteUser(ctx, f.user, nil); !errors.Is(err, ErrAccountHoldsSharedWork) {
 		t.Fatalf("executing: got %v, want ErrAccountHoldsSharedWork", err)
 	}
 	// A conversation the workspace shares counts too, once the mailbox is gone.
@@ -335,7 +335,7 @@ func TestLiveAccountDeletionRefusesWhileHoldingAnotherWorkspacesMailbox(t *testi
 	if _, err := f.handle.Pool.Exec(ctx, `INSERT INTO agent_sessions (org_id, user_id) VALUES ($1, $2)`, otherOrg, f.user); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.repo.HardDeleteUser(ctx, f.user); !errors.Is(err, ErrAccountHoldsSharedWork) {
+	if _, err := f.repo.HardDeleteUser(ctx, f.user, nil); !errors.Is(err, ErrAccountHoldsSharedWork) {
 		t.Fatalf("shared conversation: got %v, want ErrAccountHoldsSharedWork", err)
 	}
 	if n := f.count(t, `SELECT count(*) FROM email_accounts WHERE id = $1`, shared); n != 1 {
@@ -359,7 +359,7 @@ func TestLiveAccountDeletionRefusesWhileAnOwnedWorkspaceRenews(t *testing.T) {
 		VALUES ($1, $2, '00000000-0000-0000-0000-000000000001', 'cus_test', 'sub_test', 'active')`, f.user, f.org); err != nil {
 		t.Fatalf("fixture: %v", err)
 	}
-	if _, err := f.repo.HardDeleteUser(ctx, f.user); !errors.Is(err, ErrOwnedWorkspaceBilled) {
+	if _, err := f.repo.HardDeleteUser(ctx, f.user, nil); !errors.Is(err, ErrOwnedWorkspaceBilled) {
 		t.Fatalf("got %v, want ErrOwnedWorkspaceBilled", err)
 	}
 	// Each of these will not renew; checked inside a rolled-back transaction so the next still has a workspace.
@@ -384,5 +384,37 @@ func TestLiveAccountDeletionRefusesWhileAnOwnedWorkspaceRenews(t *testing.T) {
 			t.Errorf("%s still held the deletion: %v", change, err)
 		}
 		_ = tx.Rollback(ctx)
+	}
+}
+
+// The provider is asked at execution, because a subscription resumed there
+// reaches the local row only when its webhook lands.
+func TestLiveAccountDeletionAsksTheProviderAboutAnEndingSubscription(t *testing.T) {
+	f := newDangerLiveFixture(t)
+	ctx := context.Background()
+	if _, err := f.handle.Pool.Exec(ctx, `
+		INSERT INTO subscriptions (user_id, organization_id, plan_id, stripe_customer_id, stripe_subscription_id, status, cancel_at_period_end)
+		VALUES ($1, $2, '00000000-0000-0000-0000-000000000001', 'cus_test', 'sub_resumed', 'active', true)`, f.user, f.org); err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	var asked []string
+	resumed := func(_ context.Context, ids []string) error {
+		asked = ids
+		return ErrOwnedWorkspaceBilled
+	}
+	if _, err := f.repo.HardDeleteUser(ctx, f.user, resumed); !errors.Is(err, ErrOwnedWorkspaceBilled) {
+		t.Fatalf("got %v, want ErrOwnedWorkspaceBilled from the provider", err)
+	}
+	if len(asked) != 1 || asked[0] != "sub_resumed" {
+		t.Errorf("asked about %v, want [sub_resumed]", asked)
+	}
+	if n := f.count(t, `SELECT count(*) FROM organizations WHERE id = $1`, f.org); n != 1 {
+		t.Error("the workspace went although its subscription renews")
+	}
+	if n := f.count(t, `SELECT count(*) FROM mailbox_erasures WHERE email_account_id = $1`, f.mailbox); n != 0 {
+		t.Errorf("queued %d erasures for a refused deletion", n)
+	}
+	if _, err := f.repo.HardDeleteUser(ctx, f.user, func(context.Context, []string) error { return nil }); err != nil {
+		t.Fatalf("a subscription the provider confirms is ending still held the deletion: %v", err)
 	}
 }

@@ -17,6 +17,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+	"github.com/stripe/stripe-go/v86"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/events"
 	"github.com/warmbly/warmbly/internal/observability/errs"
@@ -68,6 +69,15 @@ type service struct {
 	// frontendBaseURL is used when building cancellation links in emails.
 	// Falls back to this deployment's own dashboard origin if empty.
 	frontendBaseURL string
+
+	// billing is the provider asked whether an owned subscription will renew;
+	// nil when billing is off, which leaves the local record as the answer.
+	billing BillingLookup
+}
+
+// BillingLookup reads a subscription's live state from the billing provider.
+type BillingLookup interface {
+	GetSubscription(ctx context.Context, subscriptionID string) (*stripe.Subscription, *errx.Error)
 }
 
 // NewService constructs the default Service implementation.
@@ -78,6 +88,7 @@ func NewService(
 	notifier notify.EmailNotificationService,
 	publisher events.Publisher,
 	frontendBaseURL string,
+	billing BillingLookup,
 ) Service {
 	if frontendBaseURL == "" {
 		frontendBaseURL = config.AppBaseURL()
@@ -89,6 +100,7 @@ func NewService(
 		notifier:        notifier,
 		publisher:       publisher,
 		frontendBaseURL: frontendBaseURL,
+		billing:         billing,
 	}
 }
 
@@ -404,7 +416,7 @@ func (s *service) runHardDelete(ctx context.Context, d *models.ScheduledDeletion
 	case models.DeletionResourceOrganization:
 		placements, err = s.repo.HardDeleteOrganization(ctx, d.ResourceID)
 	case models.DeletionResourceUser:
-		placements, err = s.repo.HardDeleteUser(ctx, d.ResourceID)
+		placements, err = s.repo.HardDeleteUser(ctx, d.ResourceID, s.billingCheck())
 	default:
 		return fmt.Errorf("unsupported resource type: %s", d.ResourceType)
 	}
@@ -413,6 +425,33 @@ func (s *service) runHardDelete(ctx context.Context, d *models.ScheduledDeletion
 	}
 	s.evictMailboxes(ctx, placements)
 	return nil
+}
+
+func (s *service) billingCheck() repository.BillingCheck {
+	if s.billing == nil {
+		return nil
+	}
+	return func(ctx context.Context, ids []string) error {
+		for _, id := range ids {
+			sub, err := s.billing.GetSubscription(ctx, id)
+			if err != nil {
+				return fmt.Errorf("read subscription from the billing provider: %s", err.Message)
+			}
+			if subscriptionRenews(sub) {
+				return repository.ErrOwnedWorkspaceBilled
+			}
+		}
+		return nil
+	}
+}
+
+// subscriptionRenews is a subscription the provider will charge again.
+func subscriptionRenews(sub *stripe.Subscription) bool {
+	switch sub.Status {
+	case stripe.SubscriptionStatusCanceled, stripe.SubscriptionStatusIncompleteExpired:
+		return false
+	}
+	return !sub.CancelAtPeriodEnd && sub.CancelAt == 0
 }
 
 // evictMailboxes tells each worker to drop the mailboxes this deletion

@@ -63,7 +63,9 @@ type DangerZoneRepository interface {
 	// HardDeleteUser removes the user row and every workspace it owns,
 	// returning the same placements to evict as HardDeleteOrganization. It
 	// refuses with ErrAccountHoldsSharedWork or ErrOwnedWorkspaceBilled.
-	HardDeleteUser(ctx context.Context, userID uuid.UUID) ([]MailboxPlacement, error)
+	// confirm, when set, is asked about every owned subscription still on
+	// record while the workspaces are locked.
+	HardDeleteUser(ctx context.Context, userID uuid.UUID, confirm BillingCheck) ([]MailboxPlacement, error)
 }
 
 // ErrPendingDeletionExists is returned when CreatePending is called for
@@ -393,7 +395,11 @@ func (r *dangerZoneRepository) HardDeleteOrganization(ctx context.Context, orgID
 	return placements, tx.Commit(ctx)
 }
 
-func (r *dangerZoneRepository) HardDeleteUser(ctx context.Context, userID uuid.UUID) ([]MailboxPlacement, error) {
+// BillingCheck asks the billing provider about subscriptions whose local
+// state can lag it: it returns ErrOwnedWorkspaceBilled for one that will renew.
+type BillingCheck func(ctx context.Context, subscriptionIDs []string) error
+
+func (r *dangerZoneRepository) HardDeleteUser(ctx context.Context, userID uuid.UUID, confirm BillingCheck) ([]MailboxPlacement, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -406,6 +412,25 @@ func (r *dangerZoneRepository) HardDeleteUser(ctx context.Context, userID uuid.U
 	}
 	if err := accountDeletable(ctx, tx, userID, owned); err != nil {
 		return nil, err
+	}
+	if confirm != nil {
+		// The local row learns of a resumed subscription only from a webhook.
+		rows, err := tx.Query(ctx, `
+			SELECT stripe_subscription_id FROM subscriptions
+			 WHERE organization_id = ANY($1) AND stripe_subscription_id IS NOT NULL
+			   AND status NOT IN ('canceled', 'incomplete_expired')`, owned)
+		if err != nil {
+			return nil, err
+		}
+		ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			return nil, err
+		}
+		if len(ids) > 0 {
+			if err := confirm(ctx, ids); err != nil {
+				return nil, err
+			}
+		}
 	}
 	// A subscription keeps the user who bought it through ownership transfers; it belongs to the current owner.
 	if _, err := tx.Exec(ctx, `
