@@ -119,6 +119,31 @@ outbound IP changes, and preserve each worker ID throughout the move.
 The same root can instead run an autoscaling fleet with no public IPv4 address
 on any worker; see [AWS worker fleet](/development/aws-workers/).
 
+## Scale tasks
+
+Terraform sets each service's task count once and then leaves it alone, so the
+runtime root's `autoscaling` map is what moves it afterwards. A service that is
+not listed keeps the count it was given by hand.
+
+- The consumer is listed by default, between one and six tasks. Every consumer
+  task reads one shared queue, so the root scales it on that queue's backlog:
+  worker events still waiting for a free lane. A backlog of
+  `consumer_backlog_scale_out` events (default `1000`) held for two minutes adds
+  a task, and ten times that adds two. After `consumer_quiet_minutes` (default
+  `30`) with nothing waiting, one task is removed. The consumer publishes the
+  backlog every minute through `CONSUMER_METRICS_CLOUDWATCH`, which the root
+  sets along with permission to publish it. A missing metric neither adds nor
+  removes tasks. A task keeps each mailbox's events in order among the ones it
+  took; with more than one task, two events for one mailbox can be handled at
+  the same time by different tasks.
+- `backend`, `tracking` and `forms` scale on average CPU when listed, at `cpu`
+  percent (default `60`). Set `min` to the count each one runs today.
+- `realtime` keeps a fixed count. Presence is tracked inside each task, so
+  members connected to different tasks would not see each other.
+
+To hold a service at one count, suspend its scaling activities in Application
+Auto Scaling, or remove it from `autoscaling`.
+
 ## Prepare configuration
 
 Use the deployment README to bootstrap encrypted, versioned Terraform state and

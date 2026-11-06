@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"github.com/warmbly/warmbly/internal/app/cloudlink"
+	"github.com/warmbly/warmbly/internal/app/consumermetrics"
 	emailverifyapp "github.com/warmbly/warmbly/internal/app/emailverify"
 	"github.com/warmbly/warmbly/internal/app/mailpush"
 	"github.com/warmbly/warmbly/internal/app/slackapp"
@@ -774,6 +775,19 @@ func main() {
 		defer close(agentDone)
 		newConsumerAgent().Run(ctx)
 	}()
+
+	// The consumer's ECS service scales on this; unset on every other deployment.
+	if name := consumermetrics.Name(); name != "" {
+		if diagnostics, ok := consumerBus.(eventbus.Diagnostics); ok {
+			go func() {
+				if err := consumermetrics.Run(ctx, diagnostics, name); err != nil {
+					log.Printf("Warning: worker event backlog metric disabled: %v", err)
+				}
+			}()
+		} else {
+			log.Printf("Warning: worker event backlog metric disabled: the %s bus reports no backlog", consumerBus.Name())
+		}
+	}
 
 	log.Println("Consumer started, listening on", kafka.TopicWorkerEvents)
 	jobsService.Start(ctx)

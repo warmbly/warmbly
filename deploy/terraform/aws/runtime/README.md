@@ -26,7 +26,9 @@ service runs the default or the `-kafka` image. Service revision and desired
 count are deployment operations; Terraform ignores those two fields after
 service creation, and its task definition outputs describe prepared revisions,
 not necessarily running ones. Start new services at zero and use explicit counts
-when activating them.
+when activating them. Once a service is running, `autoscaling` (in
+`autoscaling.tf`) moves its count between the bounds given there: the consumer
+on its worker-event backlog, other listed services on CPU.
 
 `.github/workflows/deploy-aws.yml` selects the image and preserves the live managed
 attachment-download setting unless Terraform explicitly supplies its environment

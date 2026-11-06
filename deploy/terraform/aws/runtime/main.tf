@@ -149,7 +149,8 @@ locals {
     )
   }
   service_environment = {
-    for name, service in var.services : name => merge(service.environment, name == "backend" ? { DB_MIGRATIONS_ON_START = "false" } : {}, local.tls_environment[name])
+    for name, service in var.services : name => merge(service.environment, name == "backend" ? { DB_MIGRATIONS_ON_START = "false" } : {}, local.tls_environment[name],
+    name == "consumer" && local.backlog_scaling ? { CONSUMER_METRICS_CLOUDWATCH = local.consumer_metric.dimensions.Consumer } : {})
   }
   parameter_secrets = {
     for name, service in var.services : name => [
