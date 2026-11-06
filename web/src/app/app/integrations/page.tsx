@@ -487,6 +487,8 @@ function IntegrationsStore({ route, routeKey }: { route: Route; routeKey: string
                                 // The Clay page shows the new URL with the column setup next to it.
                                 if (conn.inbound_webhook_url) stashInboundUrl(conn.id, conn.inbound_webhook_url);
                                 navigate({ to: "/app/integrations/clay/$id", params: { id: conn.id } });
+                            } else if (conn.provider === "companyenrich") {
+                                navigate({ to: "/app/integrations/companyenrich/$id", params: { id: conn.id } });
                             } else if (conn.provider === "apollo") {
                                 navigate({ to: "/app/integrations/apollo/$id", params: { id: conn.id } });
                             } else if (conn.inbound_webhook_url) {

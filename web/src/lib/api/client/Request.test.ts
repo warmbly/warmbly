@@ -6,6 +6,7 @@ import getToken from "@/lib/helper/getToken";
 import refreshTokenFn from "./auth/refreshToken";
 import { AuthError } from "@/lib/errors/auth";
 import { SESSION_ENDED_EVENT } from "@/lib/auth";
+import { queryCompanyEnrich, enrichCompanyEnrichContact } from "./app/integrations/companyenrich";
 
 vi.mock("./auth/refreshToken", () => ({
     default: vi.fn(),
@@ -38,6 +39,42 @@ describe("Request", () => {
             refresh_token: "refresh-token",
             refresh_token_expires_at: new Date(Date.now() + 120_000),
         });
+    });
+
+    it("does not replay paid requests after authentication failure", async () => {
+        const error = { status: 401, message: "Request refused" };
+        vi.mocked(Client.request).mockRejectedValue(error);
+        await expect(queryCompanyEnrich("id", { operation: "enrich_company", query: { domain: "example.com" } })).rejects.toBe(error);
+        expect(Client.request).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not replay paid requests through a reauthentication prompt", async () => {
+        const error = { status: 403, code: "reauth_required", message: "Request refused" };
+        vi.mocked(Client.request).mockRejectedValue(error);
+        const prompt = vi.fn();
+        window.addEventListener("reauth-required", prompt);
+        try {
+            await expect(enrichCompanyEnrichContact("id", { contact_id: "contact-id", kind: "person", overwrite: false })).rejects.toBe(error);
+            expect(Client.request).toHaveBeenCalledTimes(1);
+            expect(prompt).not.toHaveBeenCalled();
+        } finally { window.removeEventListener("reauth-required", prompt); }
+    });
+
+    it("preserves opaque provider JSON including date-shaped strings and exact IDs", async () => {
+        const payload = { data: { id: "9223372036854775807", created_at: "2026-09-17T12:34:56.000Z", nested: [null] }, credits_consumed: 0 };
+        vi.mocked(Client.request).mockResolvedValue({ data: payload });
+        expect(await queryCompanyEnrich("id", { operation: "get_person", query: { id: "9223372036854775807" } })).toBe(payload);
+        expect(payload.data.created_at).toBe("2026-09-17T12:34:56.000Z");
+    });
+
+    it("revives saved contact dates without changing the enrichment payload", async () => {
+        const timestamp = "2026-09-17T12:34:56.000Z";
+        const provider = { created_at: timestamp, id: "9223372036854775807" };
+        vi.mocked(Client.request).mockResolvedValue({ data: { contact: { created_at: timestamp, custom_fields: { date_text: timestamp } }, data: provider, updated_fields: [] } });
+        const result = await enrichCompanyEnrichContact("id", { contact_id: "contact-id", kind: "person", overwrite: false });
+        expect(result.contact.created_at).toEqual(new Date(timestamp));
+        expect(result.contact.custom_fields.date_text).toBe(timestamp);
+        expect(result.data).toBe(provider);
     });
 
     it("preserves blob responses for browser downloads", async () => {

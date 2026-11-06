@@ -28,6 +28,7 @@ import { contactsSearchQuery } from "./lib/api/hooks/app/contacts/useSearchConta
 import { customFieldKeysQuery } from "./lib/api/hooks/app/contacts/useCustomFieldKeys";
 import { readCachedView, viewPreferencesQuery } from "./lib/api/hooks/app/views/useViewPreferences";
 import { labelCountQuery, segmentFieldsQuery, segmentQuery, segmentsListQuery } from "./lib/api/hooks/app/segments";
+import { companyEnrichConnectionQuery } from "./lib/api/hooks/app/integrations/useCompanyEnrich";
 import { apolloOverviewQuery, apolloSourcesQuery } from "./lib/api/hooks/app/integrations/useApollo";
 import { claySettingsQuery } from "./lib/api/hooks/app/integrations/useClay";
 import { suppressionsListQuery } from "./lib/api/hooks/app/suppressions/useSuppressions";
@@ -311,6 +312,11 @@ export const automationsLoader = pageLoader((qc) => [
 export const automationLoader = pageLoader((qc, { params }) => [
     !!params.id && qc.prefetchQuery(automationQuery(params.id)),
     qc.prefetchQuery(integrationConnectionsQuery),
+    qc.prefetchQuery(integrationCatalogQuery),
+]);
+
+export const companyEnrichLoader = pageLoader((qc, { params }) => [
+    !!params.id && qc.prefetchQuery(companyEnrichConnectionQuery(params.id)),
     qc.prefetchQuery(integrationCatalogQuery),
 ]);
 

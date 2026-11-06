@@ -81,6 +81,7 @@ export const dashboardPages = {
     pipedrive: () => import("./app/app/integrations/pipedrive/page"),
     salesforce: () => import("./app/app/integrations/salesforce/[id]/page"),
     apollo: () => import("./app/app/integrations/apollo/[id]/page"),
+    companyenrich: () => import("./app/app/integrations/companyenrich/[id]/page"),
     clay: () => import("./app/app/integrations/clay/[id]/page"),
     automations: () => import("./app/app/automations/page"),
     automation: () => import("./app/app/automations/[id]/page"),
@@ -341,6 +342,7 @@ const integrationsSplat = createRoute({ getParentRoute: () => integrationsRoute,
 const hubspotRoute = dash(appRoute, "integrations/hubspot", dashboardPages.hubspot, "HubSpot");
 const pipedriveRoute = dash(appRoute, "integrations/pipedrive", dashboardPages.pipedrive, "Pipedrive");
 const salesforceRoute = dash(appRoute, "integrations/salesforce/$id", dashboardPages.salesforce, "Salesforce");
+const companyEnrichRoute = dash(appRoute, "integrations/companyenrich/$id", dashboardPages.companyenrich, "CompanyEnrich", loaders.companyEnrichLoader);
 const apolloRoute = dash(appRoute, "integrations/apollo/$id", dashboardPages.apollo, "Apollo", loaders.apolloLoader);
 const clayRoute = dash(appRoute, "integrations/clay/$id", dashboardPages.clay, "Clay", loaders.clayLoader);
 
@@ -441,6 +443,7 @@ const routeTree = rootRoute.addChildren([
         pipedriveRoute,
         salesforceRoute,
         apolloRoute,
+        companyEnrichRoute,
         clayRoute,
         automationsRoute,
         automationRoute,

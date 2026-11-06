@@ -34,9 +34,10 @@ const (
 	IntegrationCalCom   IntegrationProvider = "cal_com"
 
 	// Data
-	IntegrationGoogleSheets IntegrationProvider = "google_sheets"
-	IntegrationApollo       IntegrationProvider = "apollo"
-	IntegrationClay         IntegrationProvider = "clay"
+	IntegrationGoogleSheets  IntegrationProvider = "google_sheets"
+	IntegrationApollo        IntegrationProvider = "apollo"
+	IntegrationCompanyEnrich IntegrationProvider = "companyenrich"
+	IntegrationClay          IntegrationProvider = "clay"
 
 	// Verification
 	IntegrationMillionVerifier IntegrationProvider = "millionverifier"
@@ -63,6 +64,7 @@ var AllIntegrationProviders = []IntegrationProvider{
 	IntegrationCalCom,
 	IntegrationGoogleSheets,
 	IntegrationApollo,
+	IntegrationCompanyEnrich,
 	IntegrationClay,
 	IntegrationMillionVerifier,
 	IntegrationCleanMyList,

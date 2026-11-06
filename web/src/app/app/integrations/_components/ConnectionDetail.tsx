@@ -210,7 +210,8 @@ export default function ConnectionDetail({
                                     <p className="text-[12px] text-rose-700 leading-relaxed break-words">{conn.last_error}</p>
                                 </div>
                             )}
-                            {needsReauth && (
+                            {needsReauth && conn.provider === "companyenrich" && <p className="text-[12px] text-slate-600">To replace your API key, disconnect this connection, then connect CompanyEnrich again from <Link to="/app/integrations" onClick={onClose} className="text-sky-700 underline">Integrations</Link>.</p>}
+                            {needsReauth && conn.provider !== "companyenrich" && (
                                 <button
                                     type="button"
                                     onClick={handleReauth}
@@ -237,6 +238,13 @@ export default function ConnectionDetail({
                         </div>
                     )}
 
+                    {conn.provider === "companyenrich" && (
+                        <div className="px-5 py-4">
+                            <Link to="/app/integrations/companyenrich/$id" params={{ id: conn.id }} onClick={onClose} className={homeLinkClass}>
+                                <HomeLinkBody icon={<Settings2Icon className="w-4 h-4 text-sky-600" />} title="CompanyEnrich research" body="Research companies and people, or fill empty contact fields with your own API key." />
+                            </Link>
+                        </div>
+                    )}
                     {conn.provider === "apollo" && (
                         <div className="px-5 py-4">
                             <Link to="/app/integrations/apollo/$id" params={{ id: conn.id }} onClick={onClose} className={homeLinkClass}>
