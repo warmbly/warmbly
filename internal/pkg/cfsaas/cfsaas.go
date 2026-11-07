@@ -167,6 +167,9 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 	return nil
 }
 
+// Zone is the zone the hostnames are registered on.
+func (c *Client) Zone() string { return c.cfg.ZoneID }
+
 // Find is the zone's custom hostname for name, or nil when it has none.
 func (c *Client) Find(ctx context.Context, name string) (*Hostname, error) {
 	name = normalize(name)

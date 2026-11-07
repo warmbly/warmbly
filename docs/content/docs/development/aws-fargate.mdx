@@ -76,7 +76,7 @@ their TLS certificates and origin configuration. Put those hostnames in
 the tracking service. The empty default keeps ordinary single-host deployments
 unchanged. Validate each hostname before moving its traffic.
 
-Customer domains that verify later need no list. Set `tracking_serves_unmatched_hosts = true` and the listener sends any host no rule matches to the tracking service instead of answering `404`, and the backend registers each verified domain at the edge itself when the [Cloudflare for SaaS settings](/development/configuration/#customer-domains-behind-cloudflare-for-saas) are set. The tracking service answers an unknown host with its own `404` and limits how many unknown hosts one source can ask about. The default keeps the `404` at the listener.
+Customer domains that verify later need no list. Set `tracking_serves_unmatched_hosts = true` and the listener sends any host no rule matches to the tracking service instead of answering `404`, and the backend registers each verified domain at the edge itself when the [Cloudflare for SaaS settings](/development/configuration/#customer-domains-behind-cloudflare-for-saas) are set. The tracking service answers an unknown host with its own `404` and remembers the miss for a minute, so the backend is asked about each unknown name about once a minute. Turn it on once the tracking service has running tasks: the listener then sends every customer host to the same target group as the tracking host itself. The default keeps the `404` at the listener.
 
 ## Size tasks from measurements
 

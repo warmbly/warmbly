@@ -34,8 +34,9 @@ func (m memEdgeRows) Save(_ context.Context, h repository.EdgeHostname) error {
 	m[h.Hostname] = h
 	return nil
 }
-func (m memEdgeRows) MarkUnwanted(context.Context, []string) error { return nil }
-func (m memEdgeRows) Delete(context.Context, string) error         { return nil }
+func (m memEdgeRows) Failed(context.Context, string, string, string) error { return nil }
+func (m memEdgeRows) MarkUnwanted(context.Context, []string) error         { return nil }
+func (m memEdgeRows) DeleteUnwanted(context.Context, string) (bool, error) { return false, nil }
 
 // pendingEdge registers every name as waiting for its TXT, the answer for a root that does not CNAME to the zone.
 type pendingEdge struct{ ensured []string }
@@ -45,6 +46,7 @@ func (p *pendingEdge) Ensure(_ context.Context, name string) (*cfsaas.Hostname, 
 	return &cfsaas.Hostname{Hostname: name, Status: "pending", Ownership: &cfsaas.TXTRecord{Name: "_cf-custom-hostname." + name, Value: "cf-" + name}}, nil
 }
 func (p *pendingEdge) Remove(context.Context, string) error { return nil }
+func (p *pendingEdge) Zone() string                         { return "" }
 
 func byPurpose(records []models.DNSRecord) map[string][]models.DNSRecord {
 	out := map[string][]models.DNSRecord{}

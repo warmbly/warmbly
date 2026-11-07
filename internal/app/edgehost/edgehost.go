@@ -20,6 +20,8 @@ import (
 type Edge interface {
 	Ensure(ctx context.Context, name string) (*cfsaas.Hostname, error)
 	Remove(ctx context.Context, name string) error
+	// Zone names where the hostnames live, so a verdict from another zone is not trusted.
+	Zone() string
 }
 
 const (
@@ -30,8 +32,9 @@ const (
 	activeRecheck = 24 * time.Hour
 	// removeAfter is how long a name stays registered after nothing serves it, so a brief unverify does not drop its certificate.
 	removeAfter = 24 * time.Hour
-	// callsPerSweep keeps one sweep well inside the provider's API rate limit.
-	callsPerSweep = 100
+	// callsPerSweep and removalsPerSweep keep one sweep well inside the provider's API rate limit, each with its own share.
+	callsPerSweep    = 100
+	removalsPerSweep = 20
 )
 
 // Service registers and retires customer hostnames at the edge.
@@ -82,7 +85,8 @@ func (s *Service) Register(ctx context.Context, hosts ...string) {
 		if s.own(host) {
 			continue
 		}
-		if row, ok := known[host]; ok && !s.due(row, time.Now()) {
+		// Only a live name is skipped: someone checking a pending one may just have added its record.
+		if row, ok := known[host]; ok && row.Status == "active" && !s.due(row, time.Now()) {
 			continue
 		}
 		s.ensure(ctx, host)
@@ -100,7 +104,7 @@ func (s *Service) Pending(ctx context.Context, hosts ...string) map[string]cfsaa
 	}
 	out := map[string]cfsaas.TXTRecord{}
 	for _, r := range rows {
-		if r.Status != "active" && r.OwnershipName != "" && r.UnwantedSince == nil {
+		if r.Zone == s.edge.Zone() && r.Status != "active" && r.OwnershipName != "" && r.UnwantedSince == nil {
 			out[r.Hostname] = cfsaas.TXTRecord{Name: r.OwnershipName, Value: r.OwnershipValue}
 		}
 	}
@@ -129,20 +133,23 @@ func (s *Service) Sweep(ctx context.Context) error {
 		}
 	}
 
-	hosts := make([]string, 0, len(want))
+	var due []string
 	for h := range want {
-		hosts = append(hosts, h)
-	}
-	sort.Strings(hosts)
-	calls, registered := 0, 0
-	for _, h := range hosts {
-		if row, ok := known[h]; ok && !s.due(row, now) {
-			continue
+		if row, ok := known[h]; !ok || s.due(row, now) {
+			due = append(due, h)
 		}
-		if calls >= callsPerSweep || ctx.Err() != nil {
+	}
+	// Never-checked hosts go first, then the longest waiting, so hosts that keep failing cannot hold the rest back.
+	sort.Slice(due, func(i, j int) bool {
+		a, b := known[due[i]], known[due[j]]
+		a.Hostname, b.Hostname = due[i], due[j]
+		return waitedLonger(a, b)
+	})
+	registered := 0
+	for i, h := range due {
+		if i >= callsPerSweep || ctx.Err() != nil {
 			break
 		}
-		calls++
 		if s.ensure(ctx, h) {
 			registered++
 		}
@@ -154,7 +161,7 @@ func (s *Service) Sweep(ctx context.Context) error {
 		return nil
 	}
 	var fresh []string
-	removed := 0
+	removals, removed := 0, 0
 	for _, r := range rows {
 		if want[r.Hostname] {
 			continue
@@ -163,15 +170,11 @@ func (s *Service) Sweep(ctx context.Context) error {
 			fresh = append(fresh, r.Hostname)
 			continue
 		}
-		if now.Sub(*r.UnwantedSince) < removeAfter || calls >= callsPerSweep || ctx.Err() != nil {
+		if now.Sub(*r.UnwantedSince) < removeAfter || removals >= removalsPerSweep || ctx.Err() != nil {
 			continue
 		}
-		calls++
-		if err := s.edge.Remove(ctx, r.Hostname); err != nil {
-			log.Warn().Err(err).Str("host", r.Hostname).Msg("edge hostnames: could not remove")
-			continue
-		}
-		if err := s.repo.Delete(ctx, r.Hostname); err == nil {
+		removals++
+		if s.retire(ctx, r.Hostname) {
 			removed++
 		}
 	}
@@ -184,8 +187,39 @@ func (s *Service) Sweep(ctx context.Context) error {
 	return nil
 }
 
+// retire removes a host nothing serves; one registered again meanwhile keeps its row and is put back at the edge.
+func (s *Service) retire(ctx context.Context, host string) bool {
+	rows, err := s.repo.Get(ctx, []string{host})
+	if err != nil || len(rows) == 0 || rows[0].UnwantedSince == nil {
+		return false
+	}
+	if err := s.edge.Remove(ctx, host); err != nil {
+		log.Warn().Err(err).Str("host", host).Msg("edge hostnames: could not remove")
+		return false
+	}
+	gone, err := s.repo.DeleteUnwanted(ctx, host)
+	if err != nil {
+		log.Warn().Err(err).Str("host", host).Msg("edge hostnames: could not record a removal")
+		return false
+	}
+	if !gone {
+		s.ensure(ctx, host)
+	}
+	return gone
+}
+
+func waitedLonger(a, b repository.EdgeHostname) bool {
+	switch {
+	case (a.CheckedAt == nil) != (b.CheckedAt == nil):
+		return a.CheckedAt == nil
+	case a.CheckedAt != nil && !a.CheckedAt.Equal(*b.CheckedAt):
+		return a.CheckedAt.Before(*b.CheckedAt)
+	}
+	return a.Hostname < b.Hostname
+}
+
 func (s *Service) due(r repository.EdgeHostname, now time.Time) bool {
-	if r.UnwantedSince != nil || r.CheckedAt == nil {
+	if r.UnwantedSince != nil || r.CheckedAt == nil || r.Zone != s.edge.Zone() {
 		return true
 	}
 	if r.Status != "active" {
@@ -201,9 +235,16 @@ func (s *Service) ensure(ctx context.Context, host string) bool {
 	h, err := s.edge.Ensure(cctx, host)
 	if err != nil || h == nil {
 		log.Warn().Err(err).Str("host", host).Msg("edge hostnames: could not register")
+		reason := "no answer"
+		if err != nil {
+			reason = err.Error()
+		}
+		if ferr := s.repo.Failed(ctx, host, s.edge.Zone(), reason); ferr != nil {
+			log.Warn().Err(ferr).Str("host", host).Msg("edge hostnames: could not record a failed attempt")
+		}
 		return false
 	}
-	row := repository.EdgeHostname{Hostname: host, Status: h.Status, LastError: strings.Join(h.Errors, "; ")}
+	row := repository.EdgeHostname{Hostname: host, Zone: s.edge.Zone(), Status: h.Status, LastError: strings.Join(h.Errors, "; ")}
 	if h.Ownership != nil {
 		row.OwnershipName, row.OwnershipValue = h.Ownership.Name, h.Ownership.Value
 	}

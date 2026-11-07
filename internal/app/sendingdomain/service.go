@@ -544,13 +544,15 @@ func (s *Service) check(ctx context.Context, r *models.DomainRedirect, force boo
 		}
 		return nil, errx.InternalError()
 	}
-	// The edge in front of the tracking host has to know the names before a visit can reach it.
+	// The edge in front of the tracking host has to know the names before a visit can reach it; a slow edge is left to the sweep.
 	if verified && s.edge.Enabled() {
 		hosts := []string{r.Domain}
 		if r.IncludeWWW {
 			hosts = append(hosts, "www."+r.Domain)
 		}
-		s.edge.Register(ctx, hosts...)
+		ectx, cancel := context.WithTimeout(ctx, edgeRegisterTimeout)
+		s.edge.Register(ectx, hosts...)
+		cancel()
 	}
 	// DNS proves the name points here; opening it proves a visitor gets the redirect, which is withheld until the destination is the workspace's.
 	var reach *models.RedirectReach
@@ -578,6 +580,9 @@ func (s *Service) check(ctx context.Context, r *models.DomainRedirect, force boo
 
 // sweepConcurrency bounds the checks one sweep runs at once.
 const sweepConcurrency = 8
+
+// edgeRegisterTimeout is what one check may spend registering its names, leaving the rest of a request's deadline to finish it.
+const edgeRegisterTimeout = 5 * time.Second
 
 // settleGrace is how long after verifying a tracking miss is put down to its cache rather than to the setup.
 const settleGrace = 3 * time.Minute
