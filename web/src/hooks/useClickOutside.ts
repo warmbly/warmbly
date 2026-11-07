@@ -48,7 +48,8 @@ export default function useClickOutside(open: boolean, onClose: Dismiss, inside:
         const origin = refs.current[0]?.current ?? document.activeElement;
         let parent = layers.length - 1;
         while (parent >= 0 && !(origin && layers[parent].contains(origin))) parent--;
-        const nested = parent < 0 && !!origin?.closest?.("[data-floating]");
+        // A layer's own [data-floating] root is not a panel it was opened from.
+        const nested = parent < 0 && !!origin?.parentElement?.closest("[data-floating]");
         if (!nested) for (const other of layers.slice(parent + 1)) other.close("outside");
         layers.push(self);
 
