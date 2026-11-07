@@ -43,7 +43,7 @@ func (m *memRepo) Failed(_ context.Context, host, zone, reason string) error {
 	now := time.Now()
 	r := m.rows[host]
 	if r.Zone != zone {
-		r.Status = ""
+		r.Status, r.OwnershipName, r.OwnershipValue = "", "", ""
 	}
 	r.Hostname, r.Zone, r.LastError, r.CheckedAt, r.UnwantedSince = host, zone, reason, &now, nil
 	m.rows[host] = r
@@ -231,12 +231,20 @@ func TestHostsThatKeepFailingDoNotHoldTheRestBack(t *testing.T) {
 
 func TestAVerdictFromAnotherZoneCountsAsNone(t *testing.T) {
 	s, repo, edge := newTest("acme.io")
-	edge.status = "active"
 	_ = s.Sweep(context.Background())
-	edge.zone, edge.status = "zone-b", "pending"
+	edge.zone, edge.fail = "zone-b", true
 	if got := s.Pending(context.Background(), "acme.io"); len(got) != 0 {
 		t.Fatalf("pending = %v", got)
 	}
+	// A failed first ask at the new zone must not pass the old zone's record off as the new one's.
+	_ = s.Sweep(context.Background())
+	if got := s.Pending(context.Background(), "acme.io"); len(got) != 0 {
+		t.Fatalf("the old zone's activation record is shown for the new zone: %v", got)
+	}
+	r := repo.rows["acme.io"]
+	r.CheckedAt = ago(pendingRecheck)
+	repo.rows["acme.io"] = r
+	edge.fail = false
 	_ = s.Sweep(context.Background())
 	if len(edge.ensured) != 2 || repo.rows["acme.io"].Zone != "zone-b" {
 		t.Fatalf("the new zone was not asked: %v %+v", edge.ensured, repo.rows["acme.io"])

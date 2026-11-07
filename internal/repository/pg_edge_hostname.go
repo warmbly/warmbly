@@ -109,7 +109,7 @@ func (r *edgeHostnameRepository) Save(ctx context.Context, h EdgeHostname) error
 	return err
 }
 
-// Failed keeps the last verdict and its ownership record; only a fresh answer replaces them.
+// Failed keeps the last verdict and its ownership record from the same zone; only a fresh answer replaces them.
 func (r *edgeHostnameRepository) Failed(ctx context.Context, host, zone, reason string) error {
 	_, err := r.db.Exec(ctx, `
 		INSERT INTO edge_hostnames (hostname, zone, last_error, checked_at)
@@ -117,6 +117,8 @@ func (r *edgeHostnameRepository) Failed(ctx context.Context, host, zone, reason 
 		ON CONFLICT (hostname) DO UPDATE SET
 			last_error = EXCLUDED.last_error, checked_at = now(), unwanted_since = NULL, updated_at = now(),
 			status = CASE WHEN edge_hostnames.zone = EXCLUDED.zone THEN edge_hostnames.status ELSE '' END,
+			ownership_name = CASE WHEN edge_hostnames.zone = EXCLUDED.zone THEN edge_hostnames.ownership_name ELSE '' END,
+			ownership_value = CASE WHEN edge_hostnames.zone = EXCLUDED.zone THEN edge_hostnames.ownership_value ELSE '' END,
 			zone = EXCLUDED.zone
 	`, host, zone, reason)
 	return err
