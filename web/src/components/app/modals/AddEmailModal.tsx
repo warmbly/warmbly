@@ -511,7 +511,7 @@ function Header({
         smtp_imap: "Any provider via SMTP / IMAP",
         bulk: "Import mailboxes",
         vendor: "Import from an inbox vendor",
-        grant_google: "Whole Workspace domain",
+        grant_google: "Workspace domain grant",
         grant_microsoft: "Whole Microsoft 365 organization",
     };
     return (
@@ -718,7 +718,8 @@ function MethodChooser({
     open: boolean;
 }) {
     const grantConfig = useGrantConfig(open);
-    const googleGrants = (useGrants(open && provider === "google").data?.data ?? []).some((g) => g.provider === "google");
+    // Every other grant is reached from View the grant in its mailboxes' drawers.
+    const orphanedGoogleGrant = (useGrants(open && provider === "google").data?.data ?? []).some((g) => g.provider === "google" && g.mailboxes === 0);
     const busy = useMailboxSourceBusy();
     const methods: Method[] = [];
     if (provider === "google") {
@@ -734,13 +735,13 @@ function MethodChooser({
                 section: WORKSPACE_SECTION,
             });
         }
-        // New delegation grants are retired; the domains already granted stay reachable.
-        if (grantConfig.data?.google_enabled && googleGrants) {
+        // New delegation grants are retired; one left without a mailbox has no drawer to open it from.
+        if (grantConfig.data?.google_enabled && orphanedGoogleGrant) {
             methods.push({
                 view: "grant_google",
                 icon: <Building2Icon className="w-4 h-4 text-slate-700" />,
-                title: "Whole Workspace domain",
-                sub: "Your existing domain-wide delegation grants: connect more of their mailboxes, check or remove a grant.",
+                title: "Workspace domain grant",
+                sub: "A domain grant you already hold, with no mailbox connected through it: connect its mailboxes again, check it or remove it.",
                 section: WORKSPACE_SECTION,
             });
         }
