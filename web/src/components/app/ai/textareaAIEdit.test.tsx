@@ -5,11 +5,14 @@
 
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, act, fireEvent } from "@testing-library/react";
+import { render, screen, act, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 let reply = { text: "", charged_usd: 0.01, tokens_used: 10 };
 let sent: { text: string; instruction: string } | null = null;
+// When set, the rewrite stays in flight until the test answers it.
+let holdReply = false;
+let answer: (() => void) | null = null;
 vi.mock("@/lib/api/hooks/app/generation/useGenerateEdit", () => ({
     default: () => ({
         isPending: false,
@@ -18,10 +21,16 @@ vi.mock("@/lib/api/hooks/app/generation/useGenerateEdit", () => ({
             opts?: { onSuccess?: (res: unknown) => void },
         ) => {
             sent = vars;
-            opts?.onSuccess?.(reply);
+            if (holdReply) answer = () => opts?.onSuccess?.(reply);
+            else opts?.onSuccess?.(reply);
         },
     }),
 }));
+vi.mock("@/lib/api/hooks/app/generation/useGenerateWrite", () => ({
+    default: () => ({ isPending: false, mutate: () => {} }),
+}));
+vi.mock("@/hooks/usePermission", () => ({ usePermission: () => true }));
+vi.mock("@/hooks/useAiMetered", () => ({ default: () => false }));
 // The typewriter animates the rewrite in; the test wants its end state.
 vi.mock("./useTypewriter", () => ({
     default: () => ({
@@ -41,6 +50,7 @@ vi.mock("./textareaRange", () => ({
 }));
 
 import TextareaAIEdit from "./TextareaAIEdit";
+import TextareaAICaret from "./TextareaAICaret";
 
 const MAX = 20;
 
@@ -178,5 +188,108 @@ describe("TextareaAIEdit against the composer's length cap", () => {
             fireEvent.keyDown(again, { key: "Enter" });
         });
         expect(sent?.text).toBe("two");
+    });
+});
+
+describe("TextareaAIEdit closes like every floating layer", () => {
+    async function openPopover() {
+        const { container } = render(
+            <QueryClientProvider client={new QueryClient()}>
+                <Host initial="one two three" />
+            </QueryClientProvider>,
+        );
+        const ta = container.querySelector("textarea")!;
+        await act(async () => {
+            ta.focus();
+            ta.setSelectionRange(4, 7);
+            document.dispatchEvent(new Event("selectionchange"));
+        });
+        await act(async () => {
+            fireEvent.mouseDown(await screen.findByText("Edit with AI"));
+        });
+        await screen.findByPlaceholderText("Tell AI how to change it…");
+        return ta;
+    }
+    const isOpen = () => screen.queryByPlaceholderText("Tell AI how to change it…") !== null;
+
+    it("stays open on a press in the textarea and closes on a press anywhere else", async () => {
+        const ta = await openPopover();
+        await act(async () => {
+            fireEvent.pointerDown(ta);
+        });
+        expect(isOpen()).toBe(true);
+        await act(async () => {
+            fireEvent.pointerDown(document.body);
+        });
+        await waitFor(() => expect(isOpen()).toBe(false));
+    });
+
+    it("closes on Escape", async () => {
+        await openPopover();
+        await act(async () => {
+            fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+        });
+        await waitFor(() => expect(isOpen()).toBe(false));
+    });
+});
+
+describe("TextareaAIEdit beside the caret menu", () => {
+    beforeEach(() => {
+        holdReply = false;
+        answer = null;
+    });
+
+    it("closes, and drops its pending rewrite, when the caret menu opens after the selection collapses", async () => {
+        function Both() {
+            const ref = React.useRef<HTMLTextAreaElement>(null);
+            const [value, setValue] = React.useState("one two three");
+            return (
+                <>
+                    <textarea ref={ref} value={value} onChange={(e) => setValue(e.target.value)} />
+                    <TextareaAIEdit textareaRef={ref} value={value} onChange={setValue} />
+                    <TextareaAICaret textareaRef={ref} value={value} onChange={setValue} />
+                </>
+            );
+        }
+        const { container } = render(
+            <QueryClientProvider client={new QueryClient()}>
+                <Both />
+            </QueryClientProvider>,
+        );
+        const ta = container.querySelector("textarea")!;
+        await act(async () => {
+            ta.focus();
+            ta.setSelectionRange(4, 7);
+            document.dispatchEvent(new Event("selectionchange"));
+        });
+        await act(async () => {
+            fireEvent.mouseDown(await screen.findByText("Edit with AI"));
+        });
+        const input = await screen.findByPlaceholderText("Tell AI how to change it…");
+        holdReply = true;
+        reply = { text: "TWO", charged_usd: 0.01, tokens_used: 10 };
+        await act(async () => {
+            fireEvent.change(input, { target: { value: "shout" } });
+            fireEvent.keyDown(input, { key: "Enter" });
+        });
+        expect(answer).not.toBeNull();
+
+        // Collapse the selection in the textarea, then open the caret menu.
+        await act(async () => {
+            fireEvent.pointerDown(ta);
+            ta.focus();
+            ta.setSelectionRange(2, 2);
+            document.dispatchEvent(new Event("selectionchange"));
+        });
+        await act(async () => {
+            fireEvent.keyDown(ta, { key: "j", ctrlKey: true });
+        });
+        await screen.findByPlaceholderText("Ask AI to write…");
+        await waitFor(() => expect(screen.queryByPlaceholderText("Tell AI how to change it…")).toBeNull());
+
+        await act(async () => {
+            answer?.();
+        });
+        expect(ta.value).toBe("one two three");
     });
 });

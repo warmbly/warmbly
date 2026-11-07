@@ -178,6 +178,43 @@ describe("useClickOutside", () => {
         expect([isOpen("A"), isOpen("B")]).toEqual([false, true]);
     });
 
+    it("closes a sibling floating root when another one opens, and keeps one opened inside a floating panel", () => {
+        // A layer rooted on its own portaled [data-floating] panel, opened from
+        // the keyboard like the textarea AI menus.
+        function Floating({ name }: { name: string }) {
+            const [open, setOpen] = React.useState(false);
+            const ref = React.useRef<HTMLDivElement>(null);
+            useClickOutside(open, () => setOpen(false), ref);
+            return (
+                <>
+                    <button type="button" onClick={() => setOpen(true)}>
+                        {name}
+                    </button>
+                    {createPortal(
+                        <div ref={ref} data-floating="">
+                            {open && <div data-testid={`${name}-panel`} />}
+                        </div>,
+                        document.body,
+                    )}
+                </>
+            );
+        }
+        render(
+            <>
+                <Floating name="A" />
+                <Floating name="B" />
+                <div data-floating="">
+                    <Drop name="C" />
+                </div>
+            </>,
+        );
+        toggle("A");
+        toggle("B");
+        expect([isOpen("A"), isOpen("B")]).toEqual([false, true]);
+        toggle("C");
+        expect([isOpen("B"), isOpen("C")]).toEqual([true, true]);
+    });
+
     it("closes on a press inside an iframe, which only blurs the window", async () => {
         render(
             <>

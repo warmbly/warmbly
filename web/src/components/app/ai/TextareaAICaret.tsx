@@ -9,6 +9,7 @@
 // the two are naturally exclusive: this renders only for a collapsed caret.
 
 import React from "react";
+import useClickOutside from "@/hooks/useClickOutside";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -210,29 +211,8 @@ export default function TextareaAICaret({
         };
     }, [caret, measure]);
 
-    // Click-away and Escape while open.
-    React.useEffect(() => {
-        if (!open) return;
-        const onDown = (e: MouseEvent | TouchEvent) => {
-            const t = e.target as Node | null;
-            if (rootRef.current?.contains(t)) return;
-            closeAll();
-        };
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key === "Escape") {
-                e.stopPropagation();
-                closeAll();
-            }
-        };
-        document.addEventListener("mousedown", onDown, true);
-        document.addEventListener("touchstart", onDown, true);
-        document.addEventListener("keydown", onKey, true);
-        return () => {
-            document.removeEventListener("mousedown", onDown, true);
-            document.removeEventListener("touchstart", onDown, true);
-            document.removeEventListener("keydown", onKey, true);
-        };
-    }, [open, closeAll]);
+    // Click-away and Escape while open; a press in the textarea closes it too.
+    useClickOutside(open, () => closeAll(), rootRef);
 
     // External edits while open (typing, draft bar) close the menu.
     React.useEffect(() => {
