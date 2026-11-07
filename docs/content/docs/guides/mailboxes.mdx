@@ -77,7 +77,7 @@ Open **Accounts** and choose **Add account**. Google and Microsoft each have one
 | Provider | Method | Notes |
 |----------|--------|-------|
 | Google | **Sign in with Google**: OAuth for one Workspace mailbox (`gmail`, sign-in method `oauth`) | Recommended for Google Workspace where the deployment offers it. A Workspace administrator marks Warmbly as a trusted app once, then each mailbox signs in. See [Google Workspace with Google sign-in](#google-workspace-with-google-sign-in). Not for personal Gmail |
-| Google | **Whole Workspace domain**: domain-wide delegation (`gmail`, sign-in method `delegated`) | Legacy, for grants a workspace already holds: connect more of their mailboxes, check or remove a grant. New domains are no longer connected this way, and a workspace with no Google grant does not see the option. See [connect a whole Google Workspace domain](/guides/mailbox-import/#connect-a-whole-google-workspace-domain) |
+| Google | Domain-wide delegation (`gmail`, sign-in method `delegated`) | Legacy, and no longer offered under **Add account**. A grant a workspace already holds keeps working: open a mailbox it connected and choose **View the grant** in the mailbox's drawer to connect more of its mailboxes, check it or remove it. See [connect a whole Google Workspace domain](/guides/mailbox-import/#connect-a-whole-google-workspace-domain) |
 | Google | **App password** over IMAP + SMTP (`smtp_imap`, sign-in method `app_password`) | The way to connect personal Gmail, and it works for one Workspace mailbox too. The dialog walks you through it in three steps, see [personal Gmail](#personal-gmail) below |
 | Microsoft | **Whole organization**: an administrator's grant (`outlook`, sign-in method `delegated`) | Recommended for Microsoft 365. A Global Administrator approves Warmbly once, and every licensed mailbox connects with no sign-in each. Runs on Microsoft Graph. See [connect a whole Microsoft 365 organization](/guides/mailbox-import/#connect-a-whole-microsoft-365-organization) |
 | Microsoft | **Sign in one mailbox**: OAuth (`outlook`, sign-in method `oauth`) | No password stored. Runs on Microsoft Graph. The way to connect Outlook.com and a single Microsoft 365 mailbox |
@@ -184,17 +184,17 @@ Where your deployment offers **Sign in with Google**, it is the recommended way 
 The administrator does this in the Google Admin console:
 
 1. Sign in to [admin.google.com](https://admin.google.com) as an administrator.
-2. Go to **Security > Access and data control > API controls > Manage Third-Party App Access**, and choose **Configure new app** (some consoles label it **Add app > OAuth App Name or Client ID**).
-3. Search by the client ID that **Add account > Google > Sign in with Google** shows (it has a copy button), and select Warmbly.
-4. Choose **All users**, or the organizational unit that holds the mailboxes you send from, then **Trusted**, and finish.
+2. Go to **Security > API Controls > App Access Control**, and choose **Configure new app**.
+3. Search by the client ID that **Add account > Google > Sign in with Google** shows (it has a copy button), and select the app it finds.
+4. Under **Scope**, choose **All in** your organization **(all users)**, or the org units that hold the mailboxes you send from. Under **Access to Google Data**, choose **Trusted**, then **Finish**.
 
 Then connect each mailbox: choose **Add account > Google > Sign in with Google**, enter the mailbox's address, choose **Continue with Google** and approve the consent screen. When the Google window closes without connecting, the dialog shows the client ID again with what to ask the administrator. The same client ID is reported as `google_mailbox_client_id` by `GET /emails/grants/config`. On a self-hosted instance linked to Warmbly Cloud, the consent runs on Warmbly Cloud's own app, so the dialog shows no client ID.
 
 This option appears when the instance has a Google mailbox client configured and `BOX_GOOGLE_OAUTH_CONNECT` is unset or true; an explicit `false` or an invalid value turns new connects off (see [configuration](/development/configuration/)). An instance linked to Warmbly Cloud offers it either way, through Warmbly Cloud's app. If it is hidden, use an app password instead. Existing Google sign-in mailboxes keep working and can re-authorize even when new Google sign-in connects are disabled.
 
-#### Whole Workspace domain with delegation
+#### Existing Workspace domain grants
 
-Domain-wide delegation is legacy. New Google Workspace domains are no longer connected this way, and the dashboard offers **Whole Workspace domain** only to a workspace that already holds a Google grant. Those grants keep working: you can check them, connect more of their mailboxes and remove them. See [connect a whole Google Workspace domain](/guides/mailbox-import/#connect-a-whole-google-workspace-domain).
+Domain-wide delegation is legacy, and **Add account** no longer offers it. Grants a workspace already holds keep working: open a mailbox it connected and choose **View the grant** in the mailbox's drawer to check the grant, connect more of its mailboxes or remove it. See [connect a whole Google Workspace domain](/guides/mailbox-import/#connect-a-whole-google-workspace-domain).
 
 #### Personal Gmail
 
@@ -325,7 +325,7 @@ There is no daily cap on how many mailboxes you connect: a Business workspace ca
 
 Choose **Import mailboxes** in the connect dialog to connect up to 5,000 mailboxes from a CSV, TSV or XLSX file, a vendor export, or a pasted list of `address:password` pairs. Only an address and a password are needed: the columns are recognised and each domain's servers are found from DNS. Microsoft 365 and Outlook.com rows wait for a Microsoft sign-in each. Google rows use an app password, Google sign-in where enabled, or an admin grant the workspace already holds for the domain. The import runs on the server, verifies every credential before saving it, and groups whatever fails by cause with the fix.
 
-The same dialog imports straight from an [inbox vendor](/guides/mailbox-import/#import-from-an-inbox-vendor) with an API key, and connects a whole [Microsoft 365 organization](/guides/mailbox-import/#connect-a-whole-microsoft-365-organization) (**Microsoft > Whole organization**) through one administrator's grant. A workspace that already holds a [Google Workspace domain grant](/guides/mailbox-import/#connect-a-whole-google-workspace-domain) connects more of its mailboxes from **Google > Whole Workspace domain**.
+The same dialog imports straight from an [inbox vendor](/guides/mailbox-import/#import-from-an-inbox-vendor) with an API key, and connects a whole [Microsoft 365 organization](/guides/mailbox-import/#connect-a-whole-microsoft-365-organization) (**Microsoft > Whole organization**) through one administrator's grant. A workspace that already holds a [Google Workspace domain grant](/guides/mailbox-import/#connect-a-whole-google-workspace-domain) connects more of its mailboxes from **View the grant** in the drawer of a mailbox it connected.
 
 See [Import mailboxes](/guides/mailbox-import/) for the columns, what each provider needs, and what is kept, and [sending domains](/guides/sending-domains/) for setting a tracking host and a root redirect per domain.
 
