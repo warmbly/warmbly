@@ -10,6 +10,18 @@ import (
 	"google.golang.org/api/googleapi"
 )
 
+func TestGmailSendingLimitReadsTheResetFromTheMessage(t *testing.T) {
+	reset := time.Now().UTC().Add(7 * time.Hour).Truncate(time.Millisecond)
+	native := &googleapi.Error{Code: 429, Message: "User-rate limit exceeded.  Retry after " + reset.Format("2006-01-02T15:04:05.000Z") + " (Mail sending)", Header: http.Header{}, Errors: []googleapi.ErrorItem{{Reason: "rateLimitExceeded"}}}
+	got := HandleError(native)
+	if got.Failure.RetryAt == nil || !got.Failure.RetryAt.Equal(reset) {
+		t.Fatalf("retry at = %v, want %v", got.Failure.RetryAt, reset)
+	}
+	if kind := errx.ClassifySendPause(string(got.Code), got.Failure); kind != errx.SendPauseDailyLimit {
+		t.Fatalf("pause = %q", kind)
+	}
+}
+
 func TestNativeSendFailureGmail(t *testing.T) {
 	for _, tc := range []struct {
 		status              int

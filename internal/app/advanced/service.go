@@ -2096,10 +2096,14 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 	// cause goes in metadata only: the reason text is the contract downstream
 	// classifiers read. One judge call per ambiguous bounce, no cache.
 	var cause string
-	addressFine := false
+	addressFine, namesAddress := false, false
 	if eventType == models.DeliverabilityEventBounce {
+		// The cause is ours to decide; a caller-supplied one never stands.
+		for _, k := range []string{"bounce_cause", "bounce_cause_source", "bounce_cause_confidence"} {
+			delete(req.Metadata, k)
+		}
 		rule := dsn.Blame(req.Reason)
-		cause, addressFine = string(rule), rule.AddressIsFine()
+		cause, addressFine, namesAddress = string(rule), rule.AddressIsFine(), rule.NamesAddress()
 		source := "rule"
 		if rule == dsn.CauseUnknown && s.bounceJudge != nil && strings.TrimSpace(req.Reason) != "" {
 			// Bounded: a bounce storm must not queue behind a rate-limited judge.
@@ -2109,8 +2113,8 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 			switch {
 			case vErr != nil:
 				log.Debug().Err(vErr).Str("recipient", req.RecipientEmail).Msg("bounce reason not classified")
-			case v != nil:
-				cause, addressFine, source = v.Cause, v.AddressIsFine(), "judge"
+			case v.Confident() && v.Cause != bounceclass.CauseOther:
+				cause, addressFine, namesAddress, source = v.Cause, v.AddressIsFine(), v.NamesAddress(), "judge"
 				if req.Metadata == nil {
 					req.Metadata = map[string]interface{}{}
 				}
@@ -2151,15 +2155,20 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 		(eventType == models.DeliverabilityEventComplaint && settings.BouncePipeline.AutoSuppressOnComplaint) ||
 		(eventType == models.DeliverabilityEventUnsubscribe && settings.BouncePipeline.AutoSuppressOnUnsubscribe)
 
-	// The address is not what failed: record the bounce, feed the breaker and
-	// mailbox health below, but keep the recipient sendable.
-	if shouldSuppress && addressFine {
+	// Only clear evidence that the address cannot receive mail suppresses it.
+	// A bounce nothing places (a bare 550 included) stops this lead below but
+	// leaves the address sendable, since a wrong suppression is silent and permanent.
+	if shouldSuppress && eventType == models.DeliverabilityEventBounce && !namesAddress {
 		shouldSuppress = false
+		msg := "bounce not placed; recipient not suppressed"
+		if addressFine {
+			msg = "bounce not about the address; recipient not suppressed and lead kept"
+		}
 		log.Info().
 			Str("organization_id", organizationID.String()).
 			Str("recipient", req.RecipientEmail).
 			Str("bounce_cause", cause).
-			Msg("bounce not about the address; recipient not suppressed and lead kept")
+			Msg(msg)
 	}
 
 	if shouldSuppress {
@@ -2222,10 +2231,12 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 		s.evaluateCampaignBreaker(ctx, organizationID, *req.CampaignID, settings)
 	}
 
-	// Trigger warmup health re-evaluation on bounce or complaint events.
-	// This connects deliverability signals to the warmup pool health system.
-	if s.warmupService != nil && req.TaskID != nil &&
-		(eventType == models.DeliverabilityEventBounce || eventType == models.DeliverabilityEventComplaint) {
+	// Trigger warmup health re-evaluation on bounce or complaint events. A full
+	// mailbox or a temporary failure says nothing about the sender, so it is
+	// not reported against it.
+	chargesSender := eventType == models.DeliverabilityEventComplaint ||
+		eventType == models.DeliverabilityEventBounce && cause != string(dsn.CauseMailboxFull) && cause != string(dsn.CauseTransient)
+	if s.warmupService != nil && req.TaskID != nil && chargesSender {
 		task, tErr := s.taskRepo.GetTask(ctx, *req.TaskID)
 		if tErr == nil && task != nil {
 			if _, err := s.warmupService.ApplySpamReport(ctx, task.EmailAccountID, task.EmailAccountID, req.IdempotencyKey, string(eventType)); err != nil {

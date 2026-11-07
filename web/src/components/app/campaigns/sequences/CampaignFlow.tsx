@@ -27,7 +27,8 @@ import { useSuppressGlobalCursors } from "@/components/app/presence/GlobalCursor
 import { useResourceViewers } from "@/hooks/PresenceProvider";
 import { useUserProfile } from "@/hooks/context/user";
 import { useConfirm } from "@/hooks/context/confirm";
-import { usePermission } from "@/hooks/usePermission";
+import { useAccessRestricted, usePermission } from "@/hooks/usePermission";
+import { SCOPE_STEP_ACTIONS } from "@/lib/accessScope";
 import { NumberInput } from "@/components/ui/field";
 import { PopoverMenu, PopoverMenuContent } from "@/components/ui/popover-menu";
 import type { AppError } from "@/lib/api/client/normalizeError";
@@ -99,6 +100,9 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
     const confirm = useConfirm();
     const qc = useQueryClient();
     const canEdit = usePermission("MANAGE_CAMPAIGNS");
+    // A restricted member edits emails, waits and paths; steps that act outside the campaign stay as set.
+    const restricted = useAccessRestricted();
+    const canEditStep = (s: Sequence) => canEdit && (!restricted || s.kind !== "action" || SCOPE_STEP_ACTIONS.has(s.action?.type ?? ""));
 
     const [selection, setSelection] = React.useState<Selection>(null);
     const [picker, setPicker] = React.useState<{ at: InsertPoint; anchor: DOMRect } | null>(null);
@@ -445,7 +449,9 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                         .sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))
                         .map((s) => ({ id: s.id, view: viewOf(s) }))
                   : [],
-          }).filter((i) => picker.at.from !== ENTRY_ID || i.key === "email" || i.key.startsWith("action:"))
+          })
+              .filter((i) => picker.at.from !== ENTRY_ID || i.key === "email" || i.key.startsWith("action:"))
+              .filter((i) => !restricted || !i.key.startsWith("action:") || SCOPE_STEP_ACTIONS.has(i.key.slice("action:".length)))
         : [];
 
     const activeEdge = selection?.kind === "path" ? (layout.edges.find((e) => e.from === selection.stepId && e.port === selection.port)?.key ?? null) : null;
@@ -517,7 +523,7 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                             steps={steps}
                             index={indexOf.get(panelStep.id) ?? 0}
                             view={viewOf(panelStep)}
-                            canEdit={canEdit}
+                            canEdit={canEditStep(panelStep)}
                             onClose={() => select(null)}
                             onChanged={() => void invalidate()}
                             onDelete={() => removeStep(panelStep.id)}

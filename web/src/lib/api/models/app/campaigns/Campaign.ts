@@ -3,6 +3,10 @@ export function isValidCampaignDailyLimit(value: number, savedValue?: number): b
     return Number.isInteger(value) && ((value >= 3 && value <= 5000) || (value <= 0 && value === savedValue));
 }
 
+/** Which mailbox a lead's follow-ups leave from: the one that sent the first
+ *  email, another on its domain, or any mailbox rotation picks. */
+export type FollowUpSender = 'same' | 'same_domain' | 'rotate';
+
 export default interface Campaign {
     id: string;
 
@@ -54,6 +58,8 @@ export default interface Campaign {
     // "explicit" uses the campaign's sender pool (edited via the senders endpoint).
     sender_strategy: 'tags' | 'explicit';
     rotation_mode: 'weighted' | 'round_robin' | 'least_recently_used';
+    // Which mailbox a lead's follow-ups leave from.
+    follow_up_sender: FollowUpSender;
     senders?: CampaignSender[];
 
     // Per-campaign daily ramp-up. ramp_level/ramp_level_date are server-managed.

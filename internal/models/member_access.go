@@ -19,8 +19,14 @@ func (s AccessScope) Valid() bool {
 	return s == AccessScopeWorkspace || s == AccessScopeRestricted
 }
 
-// RestrictedPermissionMask is the most a restricted member's role can grant; migration 000278's trigger holds the same value.
-const RestrictedPermissionMask = PermViewCampaigns | PermViewAnalytics | PermAccessUnibox
+// RestrictedReadPermissions are what any role gives a restricted member, read-only inside their grants.
+const RestrictedReadPermissions = PermViewCampaigns | PermViewAnalytics | PermAccessUnibox
+
+// ScopeActionPermissions are what a role that acts in scope lets a restricted member use inside their grants.
+const ScopeActionPermissions = RestrictedReadPermissions | PermManageCampaigns | PermSendCampaigns
+
+// RestrictedPermissionMask is the most a restricted member can hold; migration 000366's trigger holds the same values.
+const RestrictedPermissionMask = RestrictedReadPermissions | ScopeActionPermissions
 
 // MaxAccessGrants bounds each grant list on one member.
 const MaxAccessGrants = 500
@@ -67,6 +73,13 @@ type ResourceScope struct {
 	Mailboxes []uuid.UUID
 	// MailboxTags are the tags on mailboxes in scope.
 	MailboxTags []uuid.UUID
+	// Actions are the permissions the member may act with inside the scope, from roles that act in scope.
+	Actions OrganizationPermission
+}
+
+// CanAct reports whether the member may act with perm inside the scope.
+func (s *ResourceScope) CanAct(perm OrganizationPermission) bool {
+	return perm != 0 && s.Actions&ScopeActionPermissions&perm == perm
 }
 
 // HasCampaign reports whether id is in scope.

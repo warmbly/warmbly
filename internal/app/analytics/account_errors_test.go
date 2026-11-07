@@ -234,7 +234,10 @@ func TestPermanentHoldSaysHowSendingResumes(t *testing.T) {
 			t.Fatalf("%s refusal must say it resumes once the mailbox syncs: %s", provider, message)
 		}
 	}
-	if message := sendRecoveryHoldMessage(hold, models.InboxProviderSMTPIMAP); strings.Contains(message, "on its own") || !strings.Contains(message, "reconnect") {
-		t.Fatalf("an SMTP refusal resumes only on reconnect: %s", message)
+	if message := sendRecoveryHoldMessage(hold, models.InboxProviderSMTPIMAP); strings.Contains(message, "syncs again") || !strings.Contains(message, "Resume sending") || !strings.Contains(message, "after 3 hours") {
+		t.Fatalf("an SMTP refusal must offer Resume sending and say when it is retried: %s", message)
+	}
+	if message := sendRecoveryHoldMessage(repository.SendRecoveryHold{Reason: "domain_auth"}, models.InboxProviderSMTPIMAP); !strings.Contains(message, "DNS") || strings.Contains(message, "reconnect the mailbox") {
+		t.Fatalf("a domain authentication refusal must point at DNS, not a reconnect: %s", message)
 	}
 }

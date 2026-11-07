@@ -254,7 +254,7 @@ A path that runs instantly fires the moment the event happens, so the target's w
 
 ## Follow-ups and threading
 
-A follow-up is the next email step, sent as a **reply on the conversation the contact is already in** rather than as a second email out of nowhere. It carries `In-Reply-To` and `References` pointing at the last message they received from the campaign, and on Gmail it is posted into that same thread, so it sits under the first email in their inbox and in your Sent folder.
+A follow-up is the next email step, sent as a **reply on the conversation the contact is already in** rather than as a second email out of nowhere. It carries `In-Reply-To` pointing at the last message they received from the campaign and `References` listing every message of that conversation, oldest first, and on Gmail it is posted into that same thread, so it sits under the first email in their inbox and in your Sent folder. A long conversation keeps the first message and the most recent ones in `References`, so the header stays within what mail servers accept.
 
 Each email step has a **Reply in thread** switch, on by default. Turn it off for a step that should deliberately start a fresh conversation.
 
@@ -263,6 +263,8 @@ Each email step has a **Reply in thread** switch, on by default. Turn it off for
 - A step with **Reply in thread** off writes its own subject and opens a new conversation. Every threading step after it then replies on *that* conversation.
 - The switch does nothing on a contact's first email. There is nothing to reply to, so it opens the thread.
 - A/B variants on a threading step vary the body only, for the same reason.
+- The subject is repeated as it was sent, with no `Re:` added: the contact has not replied, so the follow-up does not claim they did.
+- When the campaign [rotates follow-ups](/guides/campaigns/#follow-ups-from-other-mailboxes), a follow-up from another mailbox carries the same headers and subject. Most mail apps use those to keep it in the conversation, but how a thread is grouped is up to the recipient's app. The Gmail thread in your own Sent folder is only joined when the same mailbox sent the previous email.
 
 <Callout type="info" title="The reply headers need the first email to have been confirmed sent">
 They point at the message id the sending provider put on the wire, which Warmbly learns when the worker reports the send. If that confirmation never arrives the follow-up still sends, carrying the conversation's subject, but as its own conversation.

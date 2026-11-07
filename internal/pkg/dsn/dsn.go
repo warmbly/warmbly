@@ -265,5 +265,38 @@ func (r Report) WithFailedRecipients(header, subject, body string) Report {
 		first := strings.TrimSpace(strings.Split(header, ",")[0])
 		r.FailedRecipient = strings.Trim(first, "<>")
 	}
+	if r.Diagnostic == "" {
+		r.Diagnostic = proseDiagnostic(body)
+	}
 	return r
+}
+
+// reReplyLine is a line of the notice that quotes the remote server's reply;
+// reInlineReply is Exim's older form, the reply after the host on one line.
+var (
+	reReplyLine   = regexp.MustCompile(`(?m)^[ \t]*[45]\d\d[ -]\S.*$`)
+	reInlineReply = regexp.MustCompile(`(?i)remote (?:mail )?server[^\n]*?:\s+([45]\d\d[ -]\S[^\n]*)`)
+)
+
+// proseDiagnostic is the remote server's reply as a notice without a status
+// part quotes it (Exim's "SMTP error from remote mail server", Gmail's "The
+// response from the remote server was:"), with its continuation lines.
+func proseDiagnostic(body string) string {
+	notice := noticeText(body)
+	loc := reReplyLine.FindStringIndex(notice)
+	if loc == nil {
+		if m := reInlineReply.FindStringSubmatch(notice); m != nil {
+			return bound(m[1])
+		}
+		return ""
+	}
+	parts := []string{notice[loc[0]:loc[1]]}
+	for _, line := range strings.Split(notice[loc[1]:], "\n")[1:] {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || !reReplyLine.MatchString(line) && (line[0] != ' ' && line[0] != '\t') {
+			break
+		}
+		parts = append(parts, trimmed)
+	}
+	return bound(strings.Join(parts, " "))
 }

@@ -47,7 +47,7 @@ On **Review**, check the finish date, then choose **Launch** or **Save as draft*
 
 - Each mailbox sends at most `50` cold emails a day by default, with at least `600` seconds between two sends. A newly connected free Gmail or Outlook.com account starts at `20` a day, `900` seconds apart.
 - A campaign sends only inside its weekly sending windows, in the campaign's timezone.
-- A lead's follow-ups normally go out from the mailbox that sent their first email, and move to another one only when that mailbox is held, cooling or gone.
+- A lead's follow-ups normally go out from the mailbox that sent their first email. They wait for that mailbox through a provider pause that ends within 45 minutes, and move to another one only when it is held, paused for longer, or gone.
 - Launch checks your list first and refuses one that is known to be largely undeliverable.
 - Nothing sends until the campaign launches. Closing the flow with anything filled in saves a draft.
 
@@ -124,7 +124,7 @@ The chart draws one bar per day for campaigns up to about three months long and 
 
 Follow-ups that are due go out before new leads start, and the total assumes nobody replies or unsubscribes, so real sequences usually finish sooner. Replies, bounces, new contacts joining a linked segment and changes to a mailbox's health all move the real finish.
 
-An unresolved send from one mailbox does not stop other healthy mailboxes from sending. A follow-up normally uses the address its lead first heard from, but can move to another eligible mailbox when that address is held or cooling. The launch plan and day plan show the hold or cooldown separately from the normal daily limit.
+An unresolved send from one mailbox does not stop other healthy mailboxes from sending. A follow-up normally uses the address its lead first heard from: it waits out a short provider pause on that address (45 minutes or less) and moves to another eligible mailbox when the address is held or paused for longer. A provider's rate limit, daily limit or restriction on a mailbox never costs a lead one of its send attempts; see [when a provider pauses sending](/guides/mailboxes/#when-a-provider-pauses-sending). The launch plan and day plan show the hold or cooldown separately from the normal daily limit.
 
 After ten minutes Warmbly isolates an authorized campaign send whose outcome is still unknown. The mailbox can send to other contacts again. Only the affected contact waits for confirmation, independently of any manual pause. No customer action is needed, and the uncertain email is never retried. A late confirmed result updates the contact automatically. A timeout or missing Sent copy never counts as proof of failure. A send the worker never started is handed back after 30 minutes and the step is sent fresh, because it provably never left. Legacy sends without durable execution authorization still require [provider-confirmed resolution](/development/send-safety/#resolving-an-unknown-send).
 
@@ -162,8 +162,8 @@ A campaign set through the API to `sender_strategy: "explicit"` is the exception
 
 Sending accounts always resolve inside the campaign's own workspace. If you belong to more than one workspace, a tag you reuse across them still only picks up mailboxes belonging to the workspace that owns the campaign, so one workspace's sending reputation, daily caps, and warmup are never spent on another's traffic.
 
-<Callout type="info" title="Follow-ups stay on the same mailbox">
-Rotation chooses a mailbox for a lead's **first** email, and that mailbox sends the rest of that lead's sequence. Three emails from three addresses is not a conversation, and a reply belongs in the mailbox the contact was written to from.
+<Callout type="info" title="Follow-ups stay on the same mailbox by default">
+Rotation chooses a mailbox for a lead's **first** email, and that mailbox sends the rest of that lead's sequence. Three emails from three addresses reads less like a conversation, and a reply belongs in the mailbox the contact was written to from. You can change this per campaign; see [follow-ups from other mailboxes](#follow-ups-from-other-mailboxes).
 </Callout>
 
 | Rotation | Behavior |
@@ -172,9 +172,25 @@ Rotation chooses a mailbox for a lead's **first** email, and that mailbox sends 
 | Round-robin | Cycles in order: `A`, `B`, `C`, back to `A` |
 | Weighted | Sends more from healthier, higher-limit mailboxes |
 
-Whichever mode you pick, it decides which mailbox **starts** a lead. Every mailbox still stays inside its own daily cap and minimum gap, so a campaign's volume is the sum of its mailboxes' budgets as always. Rotation only chooses among mailboxes whose minimum gap has passed, and warmup mail counts toward that gap. A mailbox that just sent warmup sits out that turn and another one starts the lead. The campaign only waits when every mailbox is inside its gap.
+Whichever mode you pick, it decides which mailbox **starts** a lead (and, when follow-ups rotate, which sends each later step). Every mailbox still stays inside its own daily cap and minimum gap, so a campaign's volume is the sum of its mailboxes' budgets as always. Rotation only chooses among mailboxes whose minimum gap has passed, and warmup mail counts toward that gap. A mailbox that just sent warmup sits out that turn and another one starts the lead. The campaign only waits when every mailbox is inside its gap.
 
 The Leads tab shows each lead's mailbox in its **Sender** column, and a contact's Activity tab shows it beside their progress. A lead has none until its first email goes out.
+
+### Follow-ups from other mailboxes
+
+**Preferences** > **Inbox rotation** > **Follow-ups** decides which mailbox sends a lead's second and later emails:
+
+| Follow-ups | Behavior |
+|------------|----------|
+| **Same mailbox as the first email** (default, recommended) | Every step comes from the address that sent the first. When that mailbox has nothing left for now, the follow-up waits for it; it only moves when the mailbox can no longer send for the campaign |
+| Rotate within the same domain | Each follow-up is drawn by the campaign's rotation from the mailboxes sending as the domain the lead last heard from, preferring one other than the previous sender. When every mailbox on that domain is busy, the follow-up waits; when none can send for the campaign any more, it uses the whole pool |
+| Rotate every step | Each follow-up is placed like a first email: rotation, ESP matching (below), daily caps and minimum gaps apply, and a mailbox other than the previous sender is preferred when one is free |
+
+A rotated follow-up never waits for the previous sender, and every mailbox still keeps its own daily cap and minimum gap, so rotating spreads a campaign's follow-ups across the pool rather than adding volume.
+
+The tradeoffs are real. A lead can see several sender addresses in one conversation. Threaded steps still carry the [reply headers](/guides/sequences/#follow-ups-and-threading) for the whole conversation, which most mail apps use to keep them together, but grouping is decided by the recipient's app. A reply goes to the mailbox that sent the email being answered, so one lead's replies can land in different inboxes; every one is still credited to the lead and stops the sequence when **Stop on reply** is on. To collect them in one place, give the mailboxes the same [reply-to address](/guides/mailboxes/#a-shared-reply-inbox). In the unibox each mailbox keeps its own copy of the conversation, so a rotated lead's emails sit under the mailboxes that sent them. Rotating follow-ups does not by itself change how a provider treats the mail.
+
+The contact's **Activity** tab names the mailbox that sent each step.
 
 ### Campaigns sharing mailboxes
 
@@ -184,7 +200,7 @@ Two campaigns never send from one mailbox inside its minimum gap. When both reac
 
 Because the daily cap belongs to the mailbox, the campaign whose window opens first can use most of a shared pool's day, which matters when the campaigns send in different timezones. To keep part of the pool for a later campaign, lower the earlier campaign's [daily limit per mailbox](#sending-limits), which caps what it takes from each mailbox. To split the pool outright, give each campaign its own tag.
 
-**ESP matching** optionally aligns sender and recipient providers (Google to Google, Microsoft to Microsoft). The recipient's provider is read from their domain's mail records, so a lead on a company domain hosted by Google Workspace or Microsoft 365 is matched too, not only `gmail.com` and `outlook.com` addresses; the contacts list shows it as a badge on each contact's avatar. A mailbox connected with an app password to Google Workspace or Microsoft 365 counts as that provider. Under **Settings** > **ESP matching**, the coverage panel shows how many of the campaign's leads are on Google, Microsoft and other providers, and which of your mailboxes serve each. **Prefer same** falls back to any mailbox when no same-provider one is free; **Strict same** makes the contact wait instead. A contact left waiting this way waits alone: the campaign moves on to the next lead in the queue rather than stopping, and comes back to them when a matching mailbox is free. An unknown recipient provider never blocks a send. Like rotation, it applies to a lead's first email: a follow-up goes out from the mailbox the contact already knows.
+**ESP matching** optionally aligns sender and recipient providers (Google to Google, Microsoft to Microsoft). The recipient's provider is read from their domain's mail records, so a lead on a company domain hosted by Google Workspace or Microsoft 365 is matched too, not only `gmail.com` and `outlook.com` addresses; the contacts list shows it as a badge on each contact's avatar. A mailbox connected with an app password to Google Workspace or Microsoft 365 counts as that provider. Under **Settings** > **ESP matching**, the coverage panel shows how many of the campaign's leads are on Google, Microsoft and other providers, and which of your mailboxes serve each. **Prefer same** falls back to any mailbox when no same-provider one is free; **Strict same** makes the contact wait instead. A contact left waiting this way waits alone: the campaign moves on to the next lead in the queue rather than stopping, and comes back to them when a matching mailbox is free. An unknown recipient provider never blocks a send. Like rotation, it applies to a lead's first email: a follow-up goes out from the mailbox the contact already knows, unless the campaign [rotates follow-ups](#follow-ups-from-other-mailboxes), which matches each step.
 
 ### When a lead's mailbox is busy, or gone
 
@@ -418,7 +434,7 @@ Optional **campaign dates** bound when it may send. Leave both blank to run open
 
 The play and pause buttons work from the list row or the detail view. Starting moves the campaign to **active** and begins scheduling inside your windows and limits; pausing stops new scheduling immediately and resumes from where it left off.
 
-A campaign can pause itself: **paused, no accounts** when it loses every sender or no sender can send under its settings (a sending behaviour profile with no working days), **paused, trial expired** when a trial ends, **auto-paused** when a guardrail trips, **needs verification** when address verification has refused every remaining lead (the campaign offers to re-verify them or send anyway; see [address verification](/guides/deliverability/#address-verification)), and plain **paused** if it ever loses its workspace, because unsubscribes, bounces and complaints are checked per workspace and cannot be honoured without one. It moves to **finished** once every contact completes the sequence or its end date passes, unless **Keep running for new leads** is on: then it stays active and shows **waiting for leads** until the next lead arrives, and only its end date finishes it. Configured to do so, it also stops following up with a contact the moment they reply.
+A campaign can pause itself: **paused, no accounts** when it loses every sender or no sender can send under its settings (a sending behaviour profile with no working days), and it resumes on its own within about five minutes once a mailbox it can send from is back (reconnected, switched back on, or its domain passing authentication again), logging **Campaign resumed automatically** in its activity; a campaign you paused yourself stays paused. It also pauses as **paused, trial expired** when a trial ends, **auto-paused** when a guardrail trips, **needs verification** when address verification has refused every remaining lead (the campaign offers to re-verify them or send anyway; see [address verification](/guides/deliverability/#address-verification)), and plain **paused** if it ever loses its workspace, because unsubscribes, bounces and complaints are checked per workspace and cannot be honoured without one. It moves to **finished** once every contact completes the sequence or its end date passes, unless **Keep running for new leads** is on: then it stays active and shows **waiting for leads** until the next lead arrives, and only its end date finishes it. Configured to do so, it also stops following up with a contact the moment they reply.
 
 An auto-pause is never silent. It writes a red entry to the campaign's activity log saying which of the several possible causes it was, and every teammate's campaign list moves to the paused status live, so a campaign that stops sending overnight is visible the moment anyone looks at it rather than hours later.
 

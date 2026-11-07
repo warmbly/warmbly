@@ -525,6 +525,9 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 			if permanentReply(err) && isDomainAuthRejection(err) {
 				return sendFailure(errx.ErrMailDomainAuthRejected, err, "rcpt to", "mailbox")
 			}
+			if permanentReply(err) && senderRefusal(err) {
+				return sendFailure(errx.ErrMailSendRejected("The SMTP server refused the sender"), err, "rcpt to", "mailbox")
+			}
 			// A refused RCPT is a recipient problem (bad address, policy
 			// rejection), not a dead server; classifying it as unreachable
 			// hid rejections from bounce accounting. A 4xx is greylisting or

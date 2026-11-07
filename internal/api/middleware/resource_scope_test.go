@@ -116,15 +116,15 @@ func TestResourceScopeGateRefusesRoutesTheScopeCannotFilter(t *testing.T) {
 	if body.Code != MemberAccessRestricted {
 		t.Fatalf("code = %q, want %q", body.Code, MemberAccessRestricted)
 	}
-	// A write on a scope-aware path is still refused: the allowlist is per method.
+	// A write needs a role that acts in scope, which this member does not hold.
 	if rec, _ := serveScoped(t, h, member, nil, http.MethodPatch, "/v1/campaigns/:id", "/v1/campaigns/"+uuid.NewString()); rec.Code != http.StatusForbidden {
 		t.Fatalf("campaign write: status %d, want 403", rec.Code)
 	}
 	if rec, _ := serveScoped(t, h, member, nil, http.MethodGet, "/v1/campaigns", "/v1/campaigns"); rec.Code != http.StatusOK {
 		t.Fatalf("campaign list: status %d, want 200", rec.Code)
 	}
-	if orgs.resolved != 1 {
-		t.Fatalf("scope resolved %d times, want once for the one allowed request", orgs.resolved)
+	if orgs.resolved != 2 {
+		t.Fatalf("scope resolved %d times, want once per request on a scope route", orgs.resolved)
 	}
 }
 
@@ -200,6 +200,52 @@ func TestRequireCampaignParamHidesOutOfScopeCampaigns(t *testing.T) {
 		rec, _ := serveScoped(t, h, restrictedMember(orgID), nil, http.MethodGet, "/v1/campaigns/:id", "/v1/campaigns/"+id.String(), RequireCampaignParam("id"))
 		if rec.Code != want {
 			t.Fatalf("campaign %s: status %d, want %d", id, rec.Code, want)
+		}
+	}
+}
+
+func TestScopeActionRoutesNeedARoleThatActsInScope(t *testing.T) {
+	orgID := uuid.New()
+	granted, other := uuid.New(), uuid.New()
+	for _, tc := range []struct {
+		name     string
+		actions  models.OrganizationPermission
+		campaign uuid.UUID
+		want     int
+	}{
+		{"read-only roles", 0, granted, http.StatusForbidden},
+		{"inbox actions only", models.PermAccessUnibox, granted, http.StatusForbidden},
+		{"campaign actions on a granted campaign", models.PermManageCampaigns, granted, http.StatusOK},
+		{"campaign actions on another campaign", models.PermManageCampaigns, other, http.StatusNotFound},
+		{"a workspace permission is not an action", models.PermManageTeam | models.PermManageSettings, granted, http.StatusForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := &Handler{OrganizationService: &scopeOrgs{scope: &models.ResourceScope{Campaigns: []uuid.UUID{granted}, Actions: tc.actions}}}
+			for _, key := range [][]uuid.UUID{nil, {uuid.New()}} {
+				rec, seen := serveScoped(t, h, restrictedMember(orgID), key, http.MethodPatch, "/v1/campaigns/:id", "/v1/campaigns/"+tc.campaign.String(), RequireCampaignParam("id"))
+				if rec.Code != tc.want {
+					t.Fatalf("key=%v: status %d, want %d", key != nil, rec.Code, tc.want)
+				}
+				if tc.want != http.StatusOK && seen != nil {
+					t.Fatal("a refused write reached the handler")
+				}
+			}
+		})
+	}
+}
+
+func TestEveryScopeActionIsScopeSafe(t *testing.T) {
+	for route, a := range ScopeActionRoutes() {
+		if a.Perm == 0 || a.Perm&^models.ScopeActionPermissions != 0 {
+			t.Errorf("%s acts with %b, outside the scope action permissions", route, a.Perm)
+		}
+		if scopeAwareRoutes[route] {
+			t.Errorf("%s is both a read and an action route", route)
+		}
+		switch a.Check {
+		case ScopeCheckCampaignParam, ScopeCheckMailbox, ScopeCheckOwnRows:
+		default:
+			t.Errorf("%s names no grant check", route)
 		}
 	}
 }

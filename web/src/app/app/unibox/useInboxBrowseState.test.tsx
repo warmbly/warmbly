@@ -14,9 +14,9 @@ function Owner({ children }: { children: ReactNode }) {
 }
 const key = `${BROWSE_STORAGE_PREFIX}user:workspace:unibox.list.browsing`;
 const all: UniboxSearchParams = { includeArchived: true };
-const mount = (scope = "all", base = all, accounts: { id: string; tags?: string[] }[] = []) => renderHook(
-  (props) => useInboxBrowseState(props.scope, props.base, props.accounts),
-  { wrapper: Owner, initialProps: { scope, base, accounts } },
+const mount = (scope = "all", base = all) => renderHook(
+  (props) => useInboxBrowseState(props.scope, props.base),
+  { wrapper: Owner, initialProps: { scope, base } },
 );
 
 beforeEach(() => {
@@ -46,16 +46,14 @@ describe("inbox canonical browsing", () => {
     expect(stored.value.filters).not.toHaveProperty("includeArchived");
   });
 
-  it("recomposes a selected tag from current membership instead of saving mailbox ids", () => {
-    const page = mount("all", all, [{ id: "old", tags: ["tag"] }]);
+  it("keeps a selected tag as the tag instead of saving or sending mailbox ids", () => {
+    const page = mount("all", all);
     act(() => page.result.current.setParams((previous) => ({ ...previous, tagId: "tag", accountIds: ["old"] })));
     expect(JSON.parse(sessionStorage.getItem(key)!).value.filters).toEqual({ tagId: "tag" });
     page.unmount();
-    const refreshed = mount("all", all, [{ id: "new", tags: ["tag"] }]);
-    expect(refreshed.result.current.params.accountIds).toEqual(["new"]);
-    refreshed.rerender({ scope: "all", base: all, accounts: [] });
+    const refreshed = mount("all", all);
     expect(refreshed.result.current.params.tagId).toBe("tag");
-    expect(refreshed.result.current.params.accountIds).toEqual([]);
+    expect(refreshed.result.current.params.accountIds).toBeUndefined();
   });
 
   it("metadata arriving for tag and premade-view scopes does not reset restored extra filters", () => {
@@ -63,12 +61,12 @@ describe("inbox canonical browsing", () => {
     act(() => { page.result.current.setParams((previous) => ({ ...previous, from: "sender", sortBy: "oldest" })); page.result.current.setSearch("subject"); });
     page.unmount();
     const refreshed = mount("tag:tag", { accountIds: [], tagId: "tag" });
-    refreshed.rerender({ scope: "tag:tag", base: { accountIds: ["loaded"], tagId: "tag" }, accounts: [] });
+    refreshed.rerender({ scope: "tag:tag", base: { accountIds: ["loaded"], tagId: "tag" } });
     expect(refreshed.result.current.params).toMatchObject({ from: "sender", sortBy: "oldest", accountIds: ["loaded"] });
     expect(refreshed.result.current.search).toBe("subject");
-    refreshed.rerender({ scope: "view:interested", base: { categoryIds: [] }, accounts: [] });
+    refreshed.rerender({ scope: "view:interested", base: { categoryIds: [] } });
     act(() => refreshed.result.current.setParams((previous) => ({ ...previous, from: "view-sender" })));
-    refreshed.rerender({ scope: "view:interested", base: { categoryIds: ["current-category"] }, accounts: [] });
+    refreshed.rerender({ scope: "view:interested", base: { categoryIds: ["current-category"] } });
     expect(refreshed.result.current.params).toMatchObject({ from: "view-sender", categoryIds: ["current-category"] });
   });
 
@@ -82,9 +80,9 @@ describe("inbox canonical browsing", () => {
     expect(linked.result.current.search).toBe("");
     act(() => linked.result.current.setSearch("across scopes"));
     linked.result.current.keepSearch.current = true;
-    linked.rerender({ scope: "all", base: all, accounts: [] });
+    linked.rerender({ scope: "all", base: all });
     expect(linked.result.current.search).toBe("across scopes");
-    linked.rerender({ scope: "folder:sent", base: { folder: "sent" }, accounts: [] });
+    linked.rerender({ scope: "folder:sent", base: { folder: "sent" } });
     expect(linked.result.current.search).toBe("");
     expect(linked.result.current.params.sortBy).toBe("oldest");
   });
@@ -99,7 +97,7 @@ describe("inbox canonical browsing", () => {
     vi.setSystemTime(new Date("2026-10-09T12:00:00Z"));
     const refreshed = mount("today", { since: inboxPresetDate("today") });
     expect(refreshed.result.current.params.since).toEqual(inboxPresetDate("today"));
-    refreshed.rerender({ scope: "all", base: all, accounts: [] });
+    refreshed.rerender({ scope: "all", base: all });
     act(() => refreshed.result.current.setParams((previous) => ({ ...previous, since: inboxPresetDate("week"), datePreset: "week" })));
     expect(JSON.parse(sessionStorage.getItem(key)!).value.filters).toEqual({ datePreset: "week" });
     refreshed.unmount();

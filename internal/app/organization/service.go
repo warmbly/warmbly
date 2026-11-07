@@ -2025,6 +2025,7 @@ func (s *organizationService) CreateRole(ctx context.Context, orgID, actorID uui
 		Description:    strings.TrimSpace(req.Description),
 		Color:          color,
 		Permissions:    perms,
+		ActsInScope:    req.ActsInScope,
 	}
 	if err := s.orgRepo.CreateRole(ctx, role); err != nil {
 		// Unique (org, name) violation is the only expected failure here.
@@ -2071,6 +2072,13 @@ func (s *organizationService) UpdateRole(ctx context.Context, orgID, actorID, ro
 			return nil, xerr
 		}
 		role.Permissions = perms
+	}
+	// Whether restricted members act with the role changes what it does for them, so the actor must hold it.
+	if req.ActsInScope != nil && *req.ActsInScope != role.ActsInScope {
+		if xerr := s.validateActorHoldsPermissions(ctx, orgID, actorID, role.Permissions); xerr != nil {
+			return nil, xerr
+		}
+		role.ActsInScope = *req.ActsInScope
 	}
 
 	// Write-through: assigned members pick up the new name + permissions

@@ -71,6 +71,69 @@ function RampPreview({
     );
 }
 
+/** Which mailbox a lead's follow-ups leave from, with the tradeoff spelled out
+ *  whenever follow-ups stop being pinned to one address. */
+function FollowUpSenderSetting({
+    newCampaign,
+    setNewCampaign,
+}: {
+    newCampaign: Campaign;
+    setNewCampaign: SetCampaign;
+}) {
+    const mode = newCampaign.follow_up_sender ?? "same";
+    return (
+        <div>
+            <SettingRow
+                title="Follow-ups"
+                description="Which mailbox sends a lead's second and later emails."
+                stack
+                control={
+                    <OptionSelect
+                        aria-label="Follow-up sender"
+                        cols={1}
+                        value={mode}
+                        onChange={(v) => setNewCampaign((bef) => ({ ...bef, follow_up_sender: v }))}
+                        options={[
+                            {
+                                value: "same",
+                                label: "Same mailbox as the first email",
+                                hint: "Recommended. One address per conversation; a follow-up waits for that mailbox when it is busy.",
+                            },
+                            {
+                                value: "same_domain",
+                                label: "Rotate within the same domain",
+                                hint: "Each follow-up comes from another mailbox on the domain the lead already heard from.",
+                            },
+                            {
+                                value: "rotate",
+                                label: "Rotate every step",
+                                hint: "Each follow-up is placed like a first email, from any mailbox in the campaign.",
+                            },
+                        ]}
+                    />
+                }
+            />
+            {mode !== "same" && (
+                <div className="mt-2.5 rounded-md border border-amber-100 bg-amber-50/70 px-3 py-2.5 flex gap-2.5">
+                    <AlertCircleIcon className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="min-w-0 space-y-1">
+                        <p className="text-[11.5px] text-amber-900/90 leading-relaxed">
+                            Each follow-up can come from a different address, so a lead may see several senders in one
+                            conversation. Threaded steps still reference every earlier email, which most mail apps use
+                            to keep them together, but that is up to the recipient's app.
+                        </p>
+                        <p className="text-[10.5px] text-amber-800/70 leading-relaxed">
+                            A reply goes to whichever mailbox sent the email being answered, so one lead's replies can
+                            land in different inboxes. They are all still credited to the lead. To collect them in one
+                            inbox, give the mailboxes the same reply-to address in their settings.
+                        </p>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 /** Inbox rotation — distribution mode + per-mailbox daily ramp-up. */
 export function RotationRampSection({
     newCampaign,
@@ -115,11 +178,14 @@ export function RotationRampSection({
                     }
                 />
                 <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">
-                    Rotation picks the mailbox for a lead's first email, and every follow-up to that lead comes from
-                    the same address, so the conversation stays consistent. Each mailbox stays within its own daily
-                    limit, and a lead only changes address if its mailbox stops being able to send for this campaign.
+                    {newCampaign.follow_up_sender === "same"
+                        ? "Rotation picks the mailbox for a lead's first email, and every follow-up to that lead comes from the same address, so the conversation stays consistent. A lead only changes address if its mailbox stops being able to send for this campaign."
+                        : "Rotation picks the mailbox for a lead's first email and, with the follow-up setting below, for every follow-up too."}{" "}
+                    Each mailbox stays within its own daily limit and minimum gap.
                 </p>
             </div>
+
+            <FollowUpSenderSetting newCampaign={newCampaign} setNewCampaign={setNewCampaign} />
 
             {/* Daily ramp-up */}
             <SettingRow

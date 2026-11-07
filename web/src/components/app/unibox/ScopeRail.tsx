@@ -155,6 +155,10 @@ const VIEW_ICONS: Record<UniboxViewId, React.ReactNode> = {
 
 const COLLAPSE_THRESHOLD = 8;
 const COLLAPSED_VISIBLE = 6;
+// An expanded section grows by this many rows at a time, so hundreds of mailboxes never mount at once.
+const EXPANDED_PAGE = 100;
+// Past this many rows they appear without the per-row fold animation.
+const ANIMATED_ROWS_MAX = 40;
 
 const SECTION_IDS = ["favorites", "mail", "views", "mailboxes", "labels", "tags"];
 
@@ -1430,14 +1434,20 @@ function CollapsibleSection({
     if (!q) return items;
     return items.filter((it) => (it.search ?? it.label).toLowerCase().includes(q));
   }, [items, search]);
+  // A new filter or a fold starts the expanded list from its first page again.
+  const pageKey = `${expanded}|${search}`;
+  const [paged, setPaged] = React.useState({ key: pageKey, n: EXPANDED_PAGE });
+  const limit = paged.key === pageKey ? paged.n : EXPANDED_PAGE;
+  const showMore = () => setPaged({ key: pageKey, n: limit + EXPANDED_PAGE });
 
   const showSearch = items.length > COLLAPSE_THRESHOLD || !!search;
   const showCollapse = filtered.length > COLLAPSE_THRESHOLD;
   const visible =
-    showCollapse && !expanded ? filtered.slice(0, COLLAPSED_VISIBLE) : filtered;
+    showCollapse && !expanded ? filtered.slice(0, COLLAPSED_VISIBLE) : filtered.slice(0, limit);
   const hidden = filtered.length - visible.length;
   // Folded, only the row you are on stays, even one "Show all" would have tucked away.
   const rows = sectionOpen ? visible : items.filter((it) => it.key === activeKey);
+  const animateRows = rows.length <= ANIMATED_ROWS_MAX;
   const dot = !sectionOpen && items.some((it) => it.key !== activeKey && it.accent);
   const message = !sectionOpen
     ? null
@@ -1505,13 +1515,21 @@ function CollapsibleSection({
         </AnimatePresence>
 
         <div className="space-y-px">
-          <AnimatePresence initial={false}>
-            {rows.map((it) => (
-              <motion.div key={it.key} {...FOLD} transition={transition}>
+          {animateRows ? (
+            <AnimatePresence initial={false}>
+              {rows.map((it) => (
+                <motion.div key={it.key} {...FOLD} transition={transition}>
+                  <MenuRow row={it} active={it.key === activeKey} menu={rowMenu(it)} />
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          ) : (
+            rows.map((it) => (
+              <div key={it.key}>
                 <MenuRow row={it} active={it.key === activeKey} menu={rowMenu(it)} />
-              </motion.div>
-            ))}
-          </AnimatePresence>
+              </div>
+            ))
+          )}
         </div>
 
         <AnimatePresence initial={false}>
@@ -1519,10 +1537,10 @@ function CollapsibleSection({
             <motion.div key="more" {...FOLD} transition={transition}>
               <button
                 type="button"
-                onClick={() => setExpanded(true)}
+                onClick={() => (expanded ? showMore() : setExpanded(true))}
                 className="w-full h-7 px-2 rounded-md text-[11.5px] text-slate-500 hover:text-slate-900 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 transition-colors text-left"
               >
-                Show all ({hidden} more)
+                {expanded ? `Show ${Math.min(hidden, EXPANDED_PAGE)} more (${hidden} left)` : `Show all (${hidden} more)`}
               </button>
             </motion.div>
           )}

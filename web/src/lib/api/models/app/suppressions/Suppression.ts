@@ -13,8 +13,25 @@ export default interface Suppression {
     campaign_id?: string | null;
     expires_at?: Date | null;
     metadata?: Record<string, unknown>;
+    // What a bounce entry was about; absent on other sources and older entries.
+    bounce_cause?: BounceCause | string;
     created_at: Date;
     updated_at: Date;
+}
+
+// Mirrors dsn.Cause: what a receiving server refused.
+export type BounceCause = "recipient_invalid" | "mailbox_full" | "reputation_block" | "transient";
+
+export const BOUNCE_CAUSE_LABEL: Record<string, string> = {
+    recipient_invalid: "Invalid address",
+    mailbox_full: "Mailbox full",
+    reputation_block: "Blocked by provider",
+    transient: "Temporary failure",
+};
+
+// A bounce with one of these causes was not about the address, so it was kept.
+export function bounceKeptAddress(cause?: string | null): boolean {
+    return cause === "mailbox_full" || cause === "reputation_block" || cause === "transient";
 }
 
 export interface SuppressionListResult {

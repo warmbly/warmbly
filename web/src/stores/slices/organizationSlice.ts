@@ -13,6 +13,8 @@ export interface Organization {
   permissions?: number
   // "restricted" reaches only the campaigns and mailboxes granted to the caller.
   access_scope?: "workspace" | "restricted"
+  // What a restricted caller may act with inside their grants; 0 is read-only.
+  scope_actions?: number
 }
 
 export interface OrganizationSlice {

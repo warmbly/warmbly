@@ -1799,12 +1799,12 @@ func (r *emailRepository) Update(ctx context.Context, orgID, emailAccountID stri
 			tag, resolveErr := tx.Exec(ctx, `WITH held AS(
 		 SELECT ea.organization_id,ea.id,ea.send_recovery_task_id,ea.send_recovery_reason,t.completed_at,ea.last_synced_at
 		 FROM email_accounts ea LEFT JOIN tasks t ON t.id=ea.send_recovery_task_id
-		 WHERE ea.organization_id=$1 AND ea.id=$2 AND ea.status='active' AND ea.send_recovery_hold AND ea.send_recovery_task_id=$6 AND ea.send_recovery_reason=$7 AND ea.send_recovery_reason IN('authentication','permanent','conflict')
+		 WHERE ea.organization_id=$1 AND ea.id=$2 AND ea.status='active' AND ea.send_recovery_hold AND ea.send_recovery_task_id=$6 AND ea.send_recovery_reason=$7 AND ea.send_recovery_reason IN('authentication','permanent','conflict','domain_auth')
 		 AND (ea.send_cooldown_provider IS NULL OR ea.send_cooldown_provider=ea.provider::text) FOR UPDATE OF ea),
 		 valid AS(SELECT * FROM held WHERE NOT EXISTS(SELECT 1 FROM tasks u WHERE u.email_account_id=held.id AND u.send_result_state='unknown' AND u.send_result_applied_at IS NULL AND u.warmup_send_retired_at IS NULL AND u.campaign_send_isolated_at IS NULL AND u.send_hold_lifted_at IS NULL)
 		 AND (($3='authentication_repaired' AND held.send_recovery_reason='authentication' AND $4::uuid IS NOT NULL
 		 AND EXISTS(SELECT 1 FROM tasks e WHERE e.id=$4 AND e.email_account_id=held.id AND e.send_result_state='sent' AND e.send_result_applied_at>held.completed_at AND e.send_executor_started_at>held.completed_at))
-		 OR ($3='operator_provider_confirmation' AND held.send_recovery_reason IN('authentication','permanent','conflict') AND length($5)>0 AND $4::uuid IS NOT NULL
+		 OR ($3='operator_provider_confirmation' AND held.send_recovery_reason IN('authentication','permanent','conflict','domain_auth') AND length($5)>0 AND $4::uuid IS NOT NULL
 		 AND EXISTS(SELECT 1 FROM tasks e WHERE e.id=$4 AND e.email_account_id=held.id AND e.send_result_state IN('sent','failed') AND e.send_result_applied_at IS NOT NULL)))),
 		 history AS(INSERT INTO send_recovery_resolutions(organization_id,email_account_id,recovery_task_id,evidence_task_id,previous_reason,evidence_type,confirmation_reference,recorded_locally_at)
 		 SELECT organization_id,id,send_recovery_task_id,$4,send_recovery_reason,$3,$5,clock_timestamp() FROM valid RETURNING email_account_id)
@@ -2127,6 +2127,15 @@ func (r *emailRepository) updateDomainAuthState(ctx context.Context, orgID *uuid
 		orgID,
 	}
 
+	// Only records that failed and now pass release a domain-authentication hold; a domain DNS always passed cannot explain the refusal.
+	wasFailing := false
+	if state == "passing" {
+		if ferr := r.DB.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM email_accounts WHERE status='active' AND lower(split_part(email,'@',2))=$1
+			AND ($2::uuid IS NULL OR organization_id=$2::uuid) AND auth_failing_since IS NOT NULL)`, params[7], orgID).Scan(&wasFailing); ferr != nil {
+			db.CaptureError(ferr, "read domain auth failing", nil, "query")
+		}
+	}
+
 	rows, err := r.DB.Query(ctx, query, params...)
 	if err != nil {
 		db.CaptureError(err, query, params, "query")
@@ -2146,6 +2155,12 @@ func (r *emailRepository) updateDomainAuthState(ctx context.Context, orgID *uuid
 	if rerr := rows.Err(); rerr != nil {
 		db.CaptureError(rerr, "", nil, "rows")
 		return nil, errx.InternalError()
+	}
+	rows.Close()
+	if wasFailing {
+		if _, herr := r.ReleaseDomainAuthHolds(ctx, orgID, strings.ToLower(strings.TrimSpace(domain))); herr != nil {
+			db.CaptureError(herr, "release domain auth holds", nil, "exec")
+		}
 	}
 	return transitions, nil
 }

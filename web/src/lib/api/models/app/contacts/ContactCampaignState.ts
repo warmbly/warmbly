@@ -1,4 +1,5 @@
 import type { LeadCC, LeadHold, LeadStatus } from "./Contact";
+import type { FollowUpSender } from "../campaigns/Campaign";
 
 // One campaign a contact belongs to, as the Activity tab's campaign panel
 // shows it: the flow with this contact's progress, the derived lead status,
@@ -9,6 +10,8 @@ export interface ContactCampaignStep {
     kind: string;
     position: number;
     subject?: string;
+    // The mailbox that sent this step; absent until it is sent.
+    sender_email?: string;
 
     sent_at?: Date | null;
     opened_at?: Date | null;
@@ -50,11 +53,12 @@ export default interface ContactCampaignState {
     lead_status: LeadStatus;
     failure_reason?: string;
 
-    // The mailbox this lead's whole sequence sends from. Rotation picks it for
-    // the first email and every follow-up keeps it, so the contact always hears
-    // from one address. Absent until the first email goes out.
+    // The mailbox that sent this lead's latest step. Rotation picks it for the
+    // first email and every follow-up keeps it unless follow_up_sender rotates
+    // them. Absent until the first email goes out.
     sender_id?: string | null;
     sender_email?: string;
+    follow_up_sender?: FollowUpSender;
 
     steps: ContactCampaignStep[];
     completed_steps: number;

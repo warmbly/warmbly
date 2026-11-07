@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -123,6 +124,9 @@ type ThreadParent struct {
 	// SubjectSent marks Subject as recorded off a send, already rendered for
 	// this contact; otherwise it is the opening step's template.
 	SubjectSent bool
+	// References is every Message-ID of the conversation the contact received,
+	// oldest first and ending with MessageID, whichever mailbox sent each.
+	References []string
 }
 
 // CampaignProgressRepository defines methods for campaign progress tracking
@@ -450,9 +454,9 @@ func (r *campaignProgressRepository) ReserveSend(ctx context.Context, campaignID
 
 	// Bind the lead to the mailbox this send leaves from. Written with the
 	// claim, so the binding exists for every send that was ever dispatched and
-	// for none that was not. Re-stated on every step: the placer only hands a
-	// different mailbox when the bound one is gone, and that decision is what
-	// this records.
+	// for none that was not. Re-stated on every step, so it always names the
+	// latest sender: the placer hands a different mailbox when the bound one
+	// is gone or the campaign rotates follow-ups.
 	if senderID != uuid.Nil {
 		if _, err := tx.Exec(ctx, `
 			UPDATE campaign_leads
@@ -726,8 +730,9 @@ func (r *campaignProgressRepository) ThreadParentForLead(ctx context.Context, ca
 
 	var parent *ThreadParent
 	var subject string
-	var recorded bool
-	for rows.Next() {
+	var recorded, subjectDone, chainDone bool
+	var chain []string
+	for rows.Next() && !(subjectDone && chainDone) {
 		var (
 			messageID, threadID, stepSubject string
 			sentSubject                      *string
@@ -740,10 +745,18 @@ func (r *campaignProgressRepository) ThreadParentForLead(ctx context.Context, ca
 		if parent == nil {
 			parent = &ThreadParent{MessageID: messageID, ThreadID: threadID, SenderID: senderID}
 		}
+		// The conversation is every send back to the step that opened it.
+		if !chainDone {
+			chain = append(chain, messageID)
+			chainDone = !stepKnown || !threadReply
+		}
+		if subjectDone {
+			continue
+		}
 		// A recorded subject is the conversation's as sent, whichever A/B arm it came from.
 		if sentSubject != nil && *sentSubject != "" {
-			subject, recorded = *sentSubject, true
-			break
+			subject, recorded, subjectDone = *sentSubject, true, true
+			continue
 		}
 		// A step that has since been deleted (campaign_tasks.sequence_id is
 		// ON DELETE SET NULL) says nothing about whether it opened a thread or
@@ -752,7 +765,8 @@ func (r *campaignProgressRepository) ThreadParentForLead(ctx context.Context, ca
 		// than filing this send in a conversation under a subject that may
 		// belong to a different one.
 		if !stepKnown {
-			break
+			subjectDone = true
+			continue
 		}
 		// Walking back from the parent, the first step that did NOT reply in a
 		// thread is the one that opened this conversation, and its subject is
@@ -760,9 +774,7 @@ func (r *campaignProgressRepository) ThreadParentForLead(ctx context.Context, ca
 		// blank subject of the second (which inherited it in turn) instead of
 		// the subject the recipient is actually looking at.
 		subject = stepSubject
-		if !threadReply {
-			break
-		}
+		subjectDone = !threadReply
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -771,6 +783,8 @@ func (r *campaignProgressRepository) ThreadParentForLead(ctx context.Context, ca
 		return nil, nil
 	}
 	parent.Subject, parent.SubjectSent = subject, recorded
+	slices.Reverse(chain)
+	parent.References = chain
 	return parent, nil
 }
 

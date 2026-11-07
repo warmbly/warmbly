@@ -174,7 +174,8 @@ const CAMPAIGN_SELECT = `id, name, description, status,
 		  guardrail_tripped_at, guardrail_reason,
 		  utm_tracking, utm_source, utm_medium, utm_campaign,
 		  unsubscribe_mode,
-		  continuous, idle_since, stop_on_meeting`
+		  continuous, idle_since, stop_on_meeting,
+		  follow_up_sender`
 
 func getCampaign(rows db.Scannable, campaign *models.Campaign, extra ...any) error {
 	var dest []any = []any{
@@ -196,6 +197,7 @@ func getCampaign(rows db.Scannable, campaign *models.Campaign, extra ...any) err
 		&campaign.UTMTracking, &campaign.UTMSource, &campaign.UTMMedium, &campaign.UTMCampaign,
 		&campaign.UnsubscribeMode,
 		&campaign.Continuous, &campaign.IdleSince, &campaign.StopOnMeeting,
+		&campaign.FollowUpSender,
 	}
 	dest = append(dest, extra...)
 	return rows.Scan(
@@ -222,6 +224,7 @@ const CAMPAIGN_SELECT_FULL = `
 	c.utm_tracking, c.utm_source, c.utm_medium, c.utm_campaign,
 	c.unsubscribe_mode,
 	c.continuous, c.idle_since, c.stop_on_meeting,
+	c.follow_up_sender,
 	COALESCE(array_agg(cet.tag_id) FILTER (WHERE cet.tag_id IS NOT NULL), '{}') AS email_tag_ids,
 	COALESCE(array_agg(cec.folder_id) FILTER (WHERE cec.folder_id IS NOT NULL), '{}') AS email_folder_ids
 `
@@ -416,6 +419,13 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 		}
 		rotationMode = *data.RotationMode
 	}
+	followUpSender := string(models.FollowUpSameMailbox)
+	if data.FollowUpSender != nil {
+		if err := validate.CampaignFollowUpSender(*data.FollowUpSender); err != nil {
+			return nil, err
+		}
+		followUpSender = *data.FollowUpSender
+	}
 	rampEnabled := false
 	if data.RampEnabled != nil {
 		rampEnabled = *data.RampEnabled
@@ -509,7 +519,7 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 			tracking_domain,
 			utm_tracking, utm_source, utm_medium, utm_campaign,
 			unsubscribe_mode, continuous, entry_delay_minutes,
-			stop_on_meeting,
+			stop_on_meeting, follow_up_sender,
 			created_at, updated_at
 		) VALUES (
 			gen_random_uuid(), $1, $2, $3, $4,
@@ -523,7 +533,7 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 			$30,
 			$31, $32, $33, $34,
 			$35, $36, $37,
-			$38,
+			$38, $39,
 			NOW(), NOW()
 		)
 		RETURNING %s
@@ -568,6 +578,7 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 		continuous,         // $36
 		entryDelay,         // $37
 		stopOnMeeting,      // $38
+		followUpSender,     // $39
 	}
 
 	row := tx.QueryRow(ctx, insertSQL, params...)
@@ -1166,6 +1177,14 @@ func (r *campaignRepository) Update(ctx context.Context, orgID, campaignID strin
 		args = append(args, *data.RotationMode)
 		argPos++
 	}
+	if data.FollowUpSender != nil {
+		if err := validate.CampaignFollowUpSender(*data.FollowUpSender); err != nil {
+			return nil, err
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "follow_up_sender", argPos))
+		args = append(args, *data.FollowUpSender)
+		argPos++
+	}
 	if data.RampEnabled != nil {
 		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "ramp_enabled", argPos))
 		args = append(args, *data.RampEnabled)
@@ -1469,6 +1488,7 @@ func (r *campaignRepository) GetByID(ctx context.Context, campaignID uuid.UUID) 
 		&campaign.UTMTracking, &campaign.UTMSource, &campaign.UTMMedium, &campaign.UTMCampaign,
 		&campaign.UnsubscribeMode,
 		&campaign.Continuous, &campaign.IdleSince, &campaign.StopOnMeeting,
+		&campaign.FollowUpSender,
 		&campaign.EmailTags, &campaign.Folders,
 	)
 	if err != nil {

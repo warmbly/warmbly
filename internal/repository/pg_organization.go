@@ -251,6 +251,9 @@ func (r *organizationRepository) GetUserOrganizations(ctx context.Context, userI
 		SELECT
 			om.id, om.organization_id, om.user_id, om.role, om.permissions,
 			om.invited_by, om.invited_at, om.accepted_at, om.access_scope,
+			COALESCE((SELECT bit_or(r.permissions)::int FROM organization_member_roles mr
+				JOIN organization_roles r ON r.id = mr.role_id AND r.organization_id = om.organization_id
+				WHERE mr.organization_id = om.organization_id AND mr.user_id = om.user_id AND r.acts_in_scope), 0) & om.permissions::int,
 			o.id, o.name, o.slug, o.avatar_url, o.owner_user_id, o.created_at, o.updated_at,
 			o.deletion_scheduled_at, o.deletion_scheduled_for, o.category
 		FROM organization_members om
@@ -270,7 +273,7 @@ func (r *organizationRepository) GetUserOrganizations(ctx context.Context, userI
 		var org models.Organization
 		err := rows.Scan(
 			&m.ID, &m.OrganizationID, &m.UserID, &m.Role, &m.Permissions,
-			&m.InvitedBy, &m.InvitedAt, &m.AcceptedAt, &m.AccessScope,
+			&m.InvitedBy, &m.InvitedAt, &m.AcceptedAt, &m.AccessScope, &m.ScopeActions,
 			&org.ID, &org.Name, &org.Slug, &org.AvatarURL, &org.OwnerUserID, &org.CreatedAt, &org.UpdatedAt,
 			&org.DeletionScheduledAt, &org.DeletionScheduledFor, &org.Category,
 		)
@@ -278,6 +281,9 @@ func (r *organizationRepository) GetUserOrganizations(ctx context.Context, userI
 			return nil, err
 		}
 		m.Organization = &org
+		if !m.IsRestricted() {
+			m.ScopeActions = 0
+		}
 		members = append(members, m)
 	}
 	return members, rows.Err()

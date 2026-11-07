@@ -16,6 +16,7 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/dnsauth"
 	"github.com/warmbly/warmbly/internal/pkg/trackdns"
+	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/utils/paging"
 	"github.com/warmbly/warmbly/internal/utils/validate"
 )
@@ -189,6 +190,30 @@ func (s *emailService) SetSendHold(ctx context.Context, orgID, emailAccountID st
 	state := states[account.ID]
 	s.publishAccountEvent(ctx, pubsub.EventAccountSynced, account)
 	return &state, nil
+}
+
+// ResumeSending lifts a provider pause or refusal hold at the owner's word; a refusal that still applies pauses the mailbox again on the next send.
+func (s *emailService) ResumeSending(ctx context.Context, orgID, emailAccountID string) (*repository.SendPauseRelease, *errx.Error) {
+	resumer, ok := s.emailRepository.(interface {
+		ResumeSending(context.Context, uuid.UUID, uuid.UUID) (repository.SendPauseRelease, error)
+	})
+	if !ok {
+		return nil, errx.New(errx.Conflict, "Resuming sending is not available on this install.")
+	}
+	account, xerr := s.emailRepository.Get(ctx, orgID, emailAccountID)
+	if xerr != nil {
+		return nil, xerr
+	}
+	if account.OrganizationID == nil {
+		return nil, errx.ErrNoOrganization
+	}
+	released, err := resumer.ResumeSending(ctx, *account.OrganizationID, account.ID)
+	if err != nil {
+		log.Error().Err(err).Str("email_account_id", account.ID.String()).Msg("could not resume sending")
+		return nil, errx.InternalError()
+	}
+	s.publishAccountEvent(ctx, pubsub.EventAccountSynced, account)
+	return &released, nil
 }
 
 // UpdateTrackingDomain sets or clears a mailbox's custom tracking domain and

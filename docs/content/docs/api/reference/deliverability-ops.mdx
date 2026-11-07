@@ -169,7 +169,7 @@ Auth: **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_settings`
 
 `POST /deliverability/events`
 
-Posts a single deliverability signal (bounce, complaint, unsubscribe, open, click, or reply) into the platform. This is API-key callable so downstream pipelines (for example an SES bounce processor) can report events without a human in the loop. Depending on the org's bounce-pipeline settings, a bounce, complaint, or unsubscribe may auto-suppress the recipient. Supply an `idempotency_key` to make retries safe.
+Posts a single deliverability signal (bounce, complaint, unsubscribe, open, click, or reply) into the platform. This is API-key callable so downstream pipelines (for example an SES bounce processor) can report events without a human in the loop. Depending on the org's bounce-pipeline settings, a bounce, complaint, or unsubscribe may auto-suppress the recipient. A bounce suppresses only when its `reason` clearly says the address cannot receive mail (see [suppression](/guides/deliverability/#built-in-protections)); Warmbly classifies it and stores the result as `bounce_cause` in the event's metadata, replacing any `bounce_cause` the request supplied. Supply an `idempotency_key` to make retries safe.
 
 Auth: **Scope** `WRITE_CAMPAIGNS` · **Org permission** `send_campaigns`
 
@@ -250,7 +250,7 @@ Auth: **Scope** `READ_CONTACTS` · **Org permission** `view_contacts`
 }
 ```
 
-`kind` is `email` or `domain`; a domain entry keeps the bare host in `email` and matches every address at it. `source` is `bounce`, `complaint`, `unsubscribe`, `manual` (added one at a time) or `import` (added as a batch). An invalid `limit` or `cursor` returns `400`.
+`kind` is `email` or `domain`; a domain entry keeps the bare host in `email` and matches every address at it. `source` is `bounce`, `complaint`, `unsubscribe`, `manual` (added one at a time) or `import` (added as a batch). A `bounce` entry carries `bounce_cause`, what the bounce was about, when it was classified: `recipient_invalid` for every entry added now, since only a bounce that says the address cannot receive mail suppresses it. Older entries can carry another cause or none. An invalid `limit` or `cursor` returns `400`.
 
 ## Add to the suppression list
 

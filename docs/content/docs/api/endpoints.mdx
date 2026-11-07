@@ -11,7 +11,7 @@ This page is the source of truth for what an API key can and cannot reach. Every
 
 When an endpoint says "JWT permission: X / API permission: Y", the dual-auth middleware checks the relevant one based on which credential the caller used.
 
-A member restricted to [selected resources](/guides/team-roles/#access-scope) is held to a short list of read routes whatever credential they use, and those routes filter to their grants: `GET /campaigns`, `/campaigns-overview`, `/campaigns/:id` with its `/logs`, `/steps` and `/ab-variants`, `GET /analytics/dashboard` (whose `campaign_ids` and `folder_ids` filters must name granted campaigns and folders), `/analytics/campaigns/compare`, `/analytics/campaigns/:id` with `/daily` and `/hourly`, `GET /analytics/accounts` and `/analytics/accounts/:id`, `GET /emails` and `/emails/:id`, and the unibox reads `GET /unibox`, `/unibox/count`, `/unibox/overview`, `/unibox/thread`, `/unibox/thread/labels`, `/unibox/scheduled` and `/unibox/:id` (which, for them, does not mark the message read). Their own account routes under `/auth/*`, `/me/*`, `GET /organization`, `/organization/current`, `/organization/switch/:id`, `/invitations`, `GET /subscription`, `/subscription/features`, `GET /timezones` and `POST /getaway` keep working. Every other route answers `403` `member_access_restricted`, and a campaign or mailbox outside their grants answers `404`. An API key's own mailbox allowlist still applies on top: the key reaches the mailboxes on both lists.
+A member restricted to [selected resources](/guides/team-roles/#access-scope) is held to a short list of routes whatever credential they use, and those routes filter to their grants. The reads are `GET /campaigns`, `/campaigns-overview`, `/campaigns/:id` with its `/logs`, `/steps` and `/ab-variants`, `GET /analytics/dashboard` (whose `campaign_ids` and `folder_ids` filters must name granted campaigns and folders), `/analytics/campaigns/compare`, `/analytics/campaigns/:id` with `/daily` and `/hourly`, `GET /analytics/accounts` and `/analytics/accounts/:id`, `GET /emails` and `/emails/:id`, and the unibox reads `GET /unibox`, `/unibox/count`, `/unibox/overview`, `/unibox/thread`, `/unibox/thread/labels`, `/unibox/scheduled` and `/unibox/:id` (which, for them, does not mark the message read). Their own account routes under `/auth/*`, `/me/*`, `GET /organization`, `/organization/current`, `/organization/switch/:id`, `/invitations`, `GET /subscription`, `/subscription/features`, `GET /timezones` and `POST /getaway` keep working. With a role that [lets clients act](/guides/team-roles/#client-roles), they can also call `PUT /unibox/thread/labels`, `PATCH /unibox/seen`, `PATCH /unibox/folder`, `POST /unibox/reply`, `POST /unibox/snooze`, `DELETE /unibox/snooze` and `DELETE /unibox/scheduled/:task_id` (with `access_unibox`), `PATCH /campaigns/:id`, `POST /campaigns/:id/steps`, `PATCH` and `DELETE /campaigns/:id/steps/:sid` and `PATCH /campaigns/:id/step-layout` (with `manage_campaigns`), and `POST /campaigns/:id/start` and `/stop` (with `send_campaigns`). Each write is checked against their grants before anything changes: a reply needs a granted sending mailbox and a `thread_id` whose messages all sit in granted mailboxes, inbox changes need every named message or conversation in granted mailboxes, `PATCH /campaigns/:id` refuses `status`, `email_tags`, `sender_strategy`, `folders`, `tracking_domain`, `cc` and `bcc`, steps accept only email, wait and end actions, and a campaign edit, a step change and a start each need the campaign to send only from granted mailboxes in an explicit list with no mailbox tags. Every other route, and a write without such a role, answers `403` `member_access_restricted`, and a campaign or mailbox outside their grants answers `404`. An API key's own mailbox allowlist still applies on top: the key reaches the mailboxes on both lists.
 
 All paths below are relative to the versioned base URL `https://api.warmbly.com/v1` (for example `/campaigns` is `https://api.warmbly.com/v1/campaigns`). See [versioning](/api/) for details.
 
@@ -37,12 +37,17 @@ These checks use existing grants on hosted and self-hosted instances and need no
 
 `PATCH /emails/:id` validates `warmup_start_time` and `warmup_end_time` together: the end must be later than the start on the same day. A partial time patch uses the other stored endpoint; an invalid pair returns `400`. Unrelated patches do not rewrite existing invalid hours. See [warmup hours](/guides/warmup/).
 
+`POST /emails/bulk/delete`, `/emails/bulk/warmup` and `/emails/bulk/status` apply one action to up to 500 mailboxes through the same path as the single-mailbox routes and answer with a result per mailbox, so one failure does not stop the rest. Warmup and status calls set a state and are safe to retry; send an `Idempotency-Key` to replay a delete's first response. See [acting on many mailboxes](/api/reference/mailboxes/#act-on-many-mailboxes).
+
 | Method | Path | API Permission |
 |--------|------|----------------|
 | GET | `/emails` | `READ_EMAILS` |
 | GET | `/emails/:id` | `READ_EMAILS` |
 | PATCH | `/emails/:id` | `WRITE_EMAILS` |
 | PATCH | `/emails/tags` | `WRITE_EMAILS` |
+| POST | `/emails/bulk/delete` | `WRITE_EMAILS` |
+| POST | `/emails/bulk/warmup` | `WRITE_EMAILS` |
+| POST | `/emails/bulk/status` | `WRITE_EMAILS` |
 | GET | `/emails/allowance` | `READ_EMAILS` |
 | GET | `/emails/:id/track` | `READ_EMAILS` |
 | PATCH | `/emails/:id/track` | `WRITE_EMAILS` |
@@ -60,6 +65,7 @@ These checks use existing grants on hosted and self-hosted instances and need no
 | GET | `/emails/:id/behavior/plan` | `READ_EMAILS` |
 | POST | `/emails/:id/hold` | `WRITE_EMAILS` |
 | POST | `/emails/:id/release` | `WRITE_EMAILS` |
+| POST | `/emails/:id/resume-sending` | `WRITE_EMAILS` |
 | DELETE | `/emails/:id` | `WRITE_EMAILS` |
 | POST | `/emails/:id/send` | `SEND_CAMPAIGNS` |
 
@@ -308,6 +314,8 @@ The `/unibox/drafts` endpoints hold autosaved compose drafts, scoped to the call
 `GET /emails/:id/track` reports the mailbox's stored tracking domain plus the `CNAME` value this deployment expects (`cname_target`, taken from its `TRACKING_DOMAIN`), and does no DNS work. It also carries the ownership `TXT` record (`txt_name`, `txt_value`) a host the workspace has not verified before needs beside the `CNAME`; until it is published the status is `proof_missing`. `PATCH /emails/:id/track` sets the domain and resolves it once; `POST /emails/:id/track/verify` re-resolves the saved one and records the verdict, which is what makes a record that has finished propagating start being used. Both writes are derived from public DNS with no request body, so they take no `Idempotency-Key`. Only a verified domain is used at send time; until then opens and clicks go through the shared tracking host. See [custom tracking domain](/guides/mailboxes/#custom-tracking-domain).
 
 `POST /emails/:id/hold` keeps a mailbox out of campaign sending until `POST /emails/:id/release` puts it back; warmup is unaffected and the automatic rest logic never releases a hold. `release` is also the manual exit for a mailbox that is `resting` automatically. Both are bodyless and idempotent, so they take no `Idempotency-Key`. See [holding a mailbox yourself](/guides/mailboxes/#holding-a-mailbox-yourself).
+
+`POST /emails/:id/resume-sending` lifts a provider pause on the mailbox: it ends a timed pause (`rate_limited`, `daily_limit`, `sender_blocked`, `retry`) and releases a `permanent` or `domain_auth` hold. It answers `{"hold_released": bool, "cooldown_cleared": bool}`, both `false` when nothing was paused. An `authentication` hold is cleared by reconnecting the mailbox, and an unconfirmed (`unknown`) or `conflict` hold keeps its own recovery, so this leaves both in place. If the provider still refuses, the next send pauses the mailbox again. It is bodyless and idempotent, so it takes no `Idempotency-Key`. The mailbox's `send_pause` in [`GET /analytics/accounts/:id`](/api/reference/analytics/) says whether it applies (`resumable`). See [when a provider pauses sending](/guides/mailboxes/#when-a-provider-pauses-sending).
 
 `GET /emails/allowance` reports how many mailboxes the workspace holds (`used`), how many it may hold (`allowance`, `null` for unlimited), `remaining`, and the `basis` of the number: `fair_use` (the plan's daily sends divided by `sends_per_mailbox`), `plan`, `override` (an approved request), `free` (no paid plan: `0`, or `10` for a workspace that kept the earlier free plan), or `unlimited`. `pending_request` is the open limit-increase request for mailboxes, if any. Every connect path refuses with `mailbox_allowance_reached` once `remaining` is `0`. See [mailbox allowance](/guides/mailboxes/#mailbox-allowance).
 

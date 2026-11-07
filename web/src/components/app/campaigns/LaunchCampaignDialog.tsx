@@ -32,6 +32,7 @@ import { preflightFailures } from "@/lib/api/models/app/campaigns/Preflight";
 import { isIdleCampaign } from "@/components/app/campaigns/status";
 import { entryDelayLabel } from "@/components/app/campaigns/schedule/entryDelay";
 import type { StartCampaignResult } from "@/lib/api/client/app/campaigns/startCampaign";
+import { useAccessRestricted } from "@/hooks/usePermission";
 
 type Phase = "idle" | "launching" | "done";
 
@@ -122,7 +123,9 @@ export default function LaunchCampaignDialog({
     // The platform's own pre-send checks, run fresh each time the dialog opens.
     // Advisory: a failure is shown, never used to disable Launch, because the
     // backend owns what actually blocks a start.
-    const preflight = usePreflight(campaign?.id ?? "", !!campaign);
+    // The checks read the workspace's mailboxes, so a restricted member launches without them.
+    const restricted = useAccessRestricted();
+    const preflight = usePreflight(campaign?.id ?? "", !!campaign && !restricted);
     const issues = preflightFailures(preflight.data);
 
     // Reset to a clean state whenever a new campaign is opened.

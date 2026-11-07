@@ -134,6 +134,13 @@ function SendingSettings() {
         [],
     );
 
+    const patchBouncePipeline = React.useCallback(
+        (next: Partial<OutreachSettings["bounce_pipeline"]>) => {
+            setDraft((prev) => (prev ? { ...prev, bounce_pipeline: { ...prev.bounce_pipeline, ...next } } : prev));
+        },
+        [],
+    );
+
     const patch = React.useCallback(
         (next: Partial<NonNullable<typeof sto>>) => {
             setDraft((prev) =>
@@ -280,6 +287,26 @@ function SendingSettings() {
                         <Toggle
                             on={!!draft.ab_testing?.auto_promote_winner}
                             onChange={(on) => patchABTesting({ auto_promote_winner: on })}
+                        />
+                    </Row>
+                )}
+            </Section>
+
+            <Section
+                eyebrow="Bounces"
+                description="Every bounce is recorded and read for what it was about: an address that does not exist, a full mailbox, a block by the receiving provider, or a temporary failure. The cause shows in the contact's activity."
+            >
+                {isLoading || !draft ? (
+                    <div className="h-7 w-40 rounded bg-slate-100 animate-pulse" />
+                ) : (
+                    <Row
+                        label="Suppress addresses that bounce as invalid"
+                        description="On by default. Only a bounce that clearly says the address cannot receive mail puts it on the suppression list. A full mailbox, a provider block or a temporary failure keeps the lead in its campaign. A bounce that gives no reason stops the lead in that campaign but leaves the address sendable."
+                    >
+                        <Toggle
+                            on={draft.bounce_pipeline?.auto_suppress_on_bounce !== false}
+                            onChange={(on) => patchBouncePipeline({ auto_suppress_on_bounce: on })}
+                            label="Suppress addresses that bounce as invalid"
                         />
                     </Row>
                 )}

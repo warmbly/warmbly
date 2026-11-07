@@ -20,7 +20,7 @@ import (
 func (r *contactRepository) ListCampaignStates(ctx context.Context, orgID, contactID uuid.UUID) ([]models.ContactCampaignState, *errx.Error) {
 	campQuery := `
 		SELECT cam.id, cam.name, cam.status, c.subscribed, ` + undeliverableClause("cam.id") + `,
-		       cl.email_account_id, COALESCE(sender.email, ''),
+		       cl.email_account_id, COALESCE(sender.email, ''), cam.follow_up_sender,
 		       ` + leadHoldColumns + `
 		FROM campaign_leads cl
 		JOIN campaigns cam ON cam.id = cl.campaign_id AND cam.organization_id = $2
@@ -47,7 +47,7 @@ func (r *contactRepository) ListCampaignStates(ctx context.Context, orgID, conta
 		var pausedAt, pausedUntil *time.Time
 		var pauseReason, pauseSource string
 		if err := rows.Scan(&cr.state.CampaignID, &cr.state.CampaignName, &cr.state.CampaignStatus, &cr.subscribed, &cr.undeliverable,
-			&cr.state.SenderID, &cr.state.SenderEmail, &pausedAt, &pausedUntil, &pauseReason, &pauseSource); err != nil {
+			&cr.state.SenderID, &cr.state.SenderEmail, &cr.state.FollowUpSender, &pausedAt, &pausedUntil, &pauseReason, &pauseSource); err != nil {
 			rows.Close()
 			db.CaptureError(err, "", nil, "ListCampaignStates campaigns scan")
 			return nil, errx.InternalError()
@@ -168,10 +168,24 @@ func (r *contactRepository) campaignStepsForContact(ctx context.Context, campaig
 		       -- having opened the step.
 		       CASE WHEN p.opened_machine THEN NULL ELSE p.opened_at END,
 		       p.clicked_at, p.replied_at, p.bounced_at, p.failed_at,
-		       COALESCE(p.send_attempts, 0), p.dispatched_at, COALESCE(p.failure_reason, '')
+		       COALESCE(p.send_attempts, 0), p.dispatched_at, COALESCE(p.failure_reason, ''),
+		       COALESCE(sent_from.email, '')
 		FROM sequences s
 		LEFT JOIN campaign_contact_progress p
 		       ON p.campaign_id = s.campaign_id AND p.sequence_id = s.id AND p.contact_id = $2
+		-- The mailbox that sent this step, which differs per step when the
+		-- campaign rotates follow-ups.
+		LEFT JOIN LATERAL (
+			SELECT ea.email
+			FROM campaign_tasks ct
+			JOIN tasks t ON t.id = ct.task_id
+			JOIN email_accounts ea ON ea.id = t.email_account_id
+			WHERE p.sent_at IS NOT NULL
+			  AND ct.campaign_id = s.campaign_id AND ct.contact_id = $2 AND ct.sequence_id = s.id
+			  AND t.task_type = 'campaign' AND ` + completedSendTaskSQL("t") + `
+			ORDER BY t.created_at DESC
+			LIMIT 1
+		) sent_from ON true
 		WHERE s.campaign_id = $1
 		ORDER BY s.position ASC, s.created_at ASC
 	`
@@ -193,7 +207,7 @@ func (r *contactRepository) campaignStepsForContact(ctx context.Context, campaig
 		var reason string
 		if err := rows.Scan(&s.ID, &name, &s.Subject, &s.Kind, &action, &s.Position,
 			&s.SentAt, &s.OpenedAt, &s.ClickedAt, &s.RepliedAt, &s.BouncedAt, &s.FailedAt,
-			&s.Attempts, &dispatchedAt, &reason); err != nil {
+			&s.Attempts, &dispatchedAt, &reason, &s.SenderEmail); err != nil {
 			db.CaptureError(err, "", nil, "ListCampaignStates steps scan")
 			return nil, "", errx.InternalError()
 		}
