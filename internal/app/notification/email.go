@@ -242,20 +242,31 @@ func notifIDs(rows []models.Notification) []uuid.UUID {
 	return ids
 }
 
+// keepEligibleEmailMessages drops rows that may no longer send and retries a user's whole batch, bar sign-in alerts, when any row could not be checked.
 func (s *service) keepEligibleEmailMessages(ctx context.Context, rows []models.Notification) []models.Notification {
-	kept := rows[:0:0]
+	eligible := rows[:0:0]
 	var skipped, retry []uuid.UUID
+	unsure := map[uuid.UUID]bool{}
 	for _, n := range rows {
 		allowed, err := s.recipientEligibility(ctx, n.UserID, n.OrganizationID, n.Category)
 		if err == nil && allowed {
 			allowed, err = s.messageEligibility(ctx, n.Category, n.UniboxEmailID)
 		}
 		if err != nil {
+			unsure[n.UserID] = true
 			retry = append(retry, n.ID)
 		} else if allowed {
-			kept = append(kept, n)
+			eligible = append(eligible, n)
 		} else {
 			skipped = append(skipped, n.ID)
+		}
+	}
+	kept := eligible[:0:0]
+	for _, n := range eligible {
+		if unsure[n.UserID] && n.Category != models.NotifSecuritySignIn {
+			retry = append(retry, n.ID)
+		} else {
+			kept = append(kept, n)
 		}
 	}
 	if len(skipped) > 0 {

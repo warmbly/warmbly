@@ -120,3 +120,16 @@ func TestPendingPushRechecksTheMessageButKeepsActionAlerts(t *testing.T) {
 		t.Fatal("genuine reply was suppressed")
 	}
 }
+
+func TestEmailRetriesAUsersBatchTogether(t *testing.T) {
+	userID, orgID, msg := uuid.New(), uuid.New(), uuid.New()
+	r := &messageNotificationRepo{err: errors.New("database unavailable")}
+	s := &service{repo: r, members: acceptedMember(userID)}
+	reply := models.Notification{ID: uuid.New(), UserID: userID, OrganizationID: &orgID, Category: models.NotifInboundReply, UniboxEmailID: &msg}
+	paused := models.Notification{ID: uuid.New(), UserID: userID, OrganizationID: &orgID, Category: models.NotifCampaignPaused}
+	signIn := models.Notification{ID: uuid.New(), UserID: userID, Category: models.NotifSecuritySignIn}
+	kept := s.keepEligibleEmailMessages(context.Background(), []models.Notification{reply, paused, signIn})
+	if len(kept) != 1 || kept[0].ID != signIn.ID || len(r.retry) != 2 {
+		t.Fatalf("kept=%v retry=%v, want only the sign-in alert sent and both others retried", kept, r.retry)
+	}
+}
