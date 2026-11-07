@@ -25,6 +25,13 @@ type warmupContent struct {
 	scenarioVersion  string
 	renderingVersion string
 	maxTurns         int
+	// Campaign copy only: the HTML part and List-Unsubscribe target the
+	// campaign would send, and the step and arm it came from.
+	bodyHTML       string
+	unsubscribeURL string
+	tracking       *models.TrackingInfo
+	sequenceID     *uuid.UUID
+	variantID      *uuid.UUID
 }
 
 // getWarmupSettings caches selection settings briefly between warmup sends.
@@ -57,16 +64,26 @@ func (s *tasksService) getWarmupSettings(ctx context.Context) models.WarmupGener
 var errWarmupContentUnavailable = errors.New("warmup content is unavailable")
 
 // pickNewWarmupContent prefers a conversation neither mailbox has seen recently and always yields one.
-func (s *tasksService) pickNewWarmupContent(ctx context.Context, account Email, recipientID, taskID uuid.UUID) (warmupContent, error) {
+// A mature sender opens a share of its threads with its own running campaign copy instead.
+func (s *tasksService) pickNewWarmupContent(ctx context.Context, account Email, recipient *Email, taskID uuid.UUID) (warmupContent, error) {
 	library := warmupConversations()
 	if s.warmupContentRepo != nil {
+		if ownCopyDraw(account, recipient, time.Now(), rand.Intn(100)) {
+			content, ok, err := s.campaignCopyContent(ctx, account, recipient, taskID)
+			if err != nil {
+				return warmupContent{}, err
+			}
+			if ok {
+				return content, nil
+			}
+		}
 		settings := s.getWarmupSettings(ctx)
 		s.seedStaticWarmupLibrary(ctx, library)
 		staticIDs := make([]uuid.UUID, len(library))
 		for i, c := range library {
 			staticIDs[i] = c.ID
 		}
-		conv, err := s.warmupContentRepo.PickConversation(ctx, repository.WarmupContentPick{Segment: strings.TrimSpace(account.WarmupTag), TaskID: taskID, SenderID: account.ID, RecipientID: recipientID, IncludeAI: settings.Enabled, StaticIDs: staticIDs})
+		conv, err := s.warmupContentRepo.PickConversation(ctx, repository.WarmupContentPick{Segment: strings.TrimSpace(account.WarmupTag), TaskID: taskID, SenderID: account.ID, RecipientID: recipient.ID, IncludeAI: settings.Enabled, StaticIDs: staticIDs})
 		if err != nil {
 			return warmupContent{}, err
 		}
@@ -80,6 +97,31 @@ func (s *tasksService) pickNewWarmupContent(ctx context.Context, account Email, 
 		return warmupContent{}, errWarmupContentUnavailable
 	}
 	return staticWarmupContent(library[rand.Intn(len(library))], account), nil
+}
+
+// ownCopyDraw decides whether a new thread opens with the sender's campaign
+// copy. A mailbox in its first WarmupOwnCopyMinDays of warmup never carries
+// it, so sales copy never rides a mailbox with no history. Nor does a
+// recipient that leaves warmup mail in its inbox, where a person reads it and
+// someone else's sales copy is unsolicited mail.
+func ownCopyDraw(account Email, recipient *Email, now time.Time, roll int) bool {
+	return account.OrganizationID != nil && ownCopyMature(account, now) && ownCopyRecipient(recipient) && roll < models.WarmupOwnCopySharePercent
+}
+
+// ownCopyRecipient reports whether the recipient is a business inbox on Google
+// Workspace or Microsoft 365, where cold copy is read, and files warmup mail
+// out of its inbox.
+func ownCopyRecipient(recipient *Email) bool {
+	if !recipient.BusinessMailbox() {
+		return false
+	}
+	placement, _ := recipient.WarmupFiling()
+	return placement != models.WarmupPlacementInbox
+}
+
+// ownCopyMature reports whether the mailbox has warmed long enough to carry its own campaign copy.
+func ownCopyMature(account Email, now time.Time) bool {
+	return account.Warmup != nil && !account.Warmup.After(now.AddDate(0, 0, -models.WarmupOwnCopyMinDays))
 }
 
 func pickedWarmupContent(conv *models.WarmupConversation, account Email) (warmupContent, bool) {

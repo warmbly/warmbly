@@ -199,3 +199,33 @@ func TestReferences(t *testing.T) {
 		}
 	}
 }
+
+func TestContactReads(t *testing.T) {
+	cases := []struct {
+		in        string
+		builtins  []string
+		other, ok bool
+	}{
+		{"no fields", nil, false, true},
+		{"Hi {{.FirstName}} at {{company_name}}", []string{"FirstName", "Company"}, false, true},
+		{`Hi {{.first_name | default "there"}}, {{.Sender.FirstName}}`, []string{"FirstName", "Sender"}, false, true},
+		{"About {{.industry}}", nil, true, true},
+		{`{{index . "city"}}`, nil, true, true},
+		{`{{index $ "city"}}`, nil, true, true},
+		{"{{range $k, $v := .}}{{$k}}{{end}}", nil, true, true},
+		{"{{with .FirstName}}{{.}}{{end}}", []string{"FirstName"}, false, true},
+		{"Hi {{frist_name}}", nil, false, false},
+	}
+	for _, tc := range cases {
+		builtins, other, ok := ContactReads(tc.in)
+		if ok != tc.ok || other != tc.other {
+			t.Errorf("%q: other=%v ok=%v, want other=%v ok=%v", tc.in, other, ok, tc.other, tc.ok)
+			continue
+		}
+		for _, b := range tc.builtins {
+			if !builtins[b] {
+				t.Errorf("%q: %s not reported among %v", tc.in, b, builtins)
+			}
+		}
+	}
+}

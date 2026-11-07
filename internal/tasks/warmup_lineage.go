@@ -37,6 +37,9 @@ func lintDiagnosticContent(subject, body string, reply bool, account Email) erro
 }
 
 func (s *tasksService) exactReplyContent(ctx context.Context, c *repository.WarmupReplyCandidate, account Email) (warmupContent, string, []string, error) {
+	if c != nil && c.ContentSource == models.WarmupContentSourceCampaign {
+		return campaignReplyContent(c, account)
+	}
 	if c == nil || c.ConversationID == nil || c.MessageID == "" || c.Subject == "" || c.ConversationTurn+1 >= c.MaxTurns || c.RenderingVersion != generation.CanonicalRenderingVersion {
 		return warmupContent{}, "", nil, errors.New("diagnostic parent unavailable")
 	}
@@ -198,19 +201,8 @@ func (s *tasksService) ValidateWarmupExecution(ctx context.Context, taskID uuid.
 	if !account.TestSendingAllowed() {
 		return errors.New("diagnostic sending stopped")
 	}
-	source, err := s.diagnosticSource(ctx, current)
-	if err != nil {
+	if err := s.executableWarmupSource(ctx, current, account); err != nil {
 		return err
-	}
-	if current.ConversationTurn < 0 || current.ConversationTurn >= current.MaxTurns {
-		return errors.New("diagnostic source exhausted")
-	}
-	if current.ConversationTurn == 0 {
-		if GenerateConversationOpeningEmail(source, *account) == "" {
-			return errors.New("diagnostic opening unavailable")
-		}
-	} else if _, ok := GenerateConversationReplyEmail(source, *account, current.ConversationTurn); !ok {
-		return errors.New("diagnostic turn unavailable")
 	}
 	pool := s.resolveWarmupPoolType(ctx, account)
 	if err := s.validateWarmupRecipient(ctx, taskID, warmup.ParentTaskID != nil, recipientID, account, pool); err != nil {
@@ -287,6 +279,34 @@ func (s *tasksService) validateWarmupRecipient(ctx context.Context, taskID uuid.
 		if recipient == nil || routingMultiplier(rules, account.Email, recipient.Email) <= 0 {
 			return errors.New("warmup recipient excluded")
 		}
+	}
+	return nil
+}
+
+// executableWarmupSource confirms the content a dispatch carries may still be
+// sent. A thread opened with campaign copy names no bank conversation: the
+// opening was rendered at send time and its replies come from the prospect
+// exchanges.
+func (s *tasksService) executableWarmupSource(ctx context.Context, current *repository.WarmupReplyCandidate, account *models.Email) error {
+	if current.ContentSource == models.WarmupContentSourceCampaign {
+		if current.ConversationID != nil || current.MaxTurns < 1 || current.MaxTurns > models.WarmupOwnCopyTurns || current.ConversationTurn < 0 || current.ConversationTurn >= current.MaxTurns {
+			return errors.New("campaign copy thread out of shape")
+		}
+		return nil
+	}
+	source, err := s.diagnosticSource(ctx, current)
+	if err != nil {
+		return err
+	}
+	if current.ConversationTurn < 0 || current.ConversationTurn >= current.MaxTurns {
+		return errors.New("diagnostic source exhausted")
+	}
+	if current.ConversationTurn == 0 {
+		if GenerateConversationOpeningEmail(source, *account) == "" {
+			return errors.New("diagnostic opening unavailable")
+		}
+	} else if _, ok := GenerateConversationReplyEmail(source, *account, current.ConversationTurn); !ok {
+		return errors.New("diagnostic turn unavailable")
 	}
 	return nil
 }

@@ -56,6 +56,7 @@ const WarmupContentRepeatWindow = 30 * 24 * time.Hour
 // WarmupContentRepository is the data access for the warmup content bank,
 // offline generation jobs, generation settings, and content-cohort analytics.
 type WarmupContentRepository interface {
+	WarmupCampaignCopyRepository
 	// Conversation bank
 	InsertConversation(ctx context.Context, c *models.WarmupConversation) error
 	// SeedStaticConversations inserts library rows that are missing and never revives one an admin archived.

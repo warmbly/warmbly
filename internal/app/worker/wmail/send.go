@@ -189,11 +189,8 @@ func (w *WMail) Send(ctx context.Context, req *SendRequest) *SendResult {
 	defer done()
 	ctx, cancel := w.ExecutionContext(ctx)
 	defer cancel()
-	// For warmup emails, ensure HTML is empty
+	// The control plane decides the parts: warmup is plain text unless it carries campaign copy.
 	bodyHTML := req.BodyHTML
-	if req.IsWarmup {
-		bodyHTML = ""
-	}
 
 	var result *SendResult
 	for attempt := 0; attempt <= maxSendRetries; attempt++ {
