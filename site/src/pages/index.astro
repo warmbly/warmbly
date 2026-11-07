@@ -8,6 +8,7 @@ import CTA from '../components/CTA.astro';
 import FeatureGrid from '../components/FeatureGrid.astro';
 import OutboundSteps from '../components/OutboundSteps.astro';
 import AutomationsShowcase from '../components/AutomationsShowcase.astro';
+import LeadFinderShowcase from '../components/LeadFinderShowcase.astro';
 
 
 // Mirrors web/src/lib/plans.ts — single source of truth.
@@ -199,6 +200,12 @@ const softwareJsonLd = {
     <FeatureGrid />
     <div class="container-page"><div class="h-px md:-mx-6 bg-slate-900/[0.06]"></div></div>
     <OutboundSteps />
+    <div class="container-page"><div class="h-px md:-mx-6 bg-slate-900/[0.06]"></div></div>
+
+    <!-- ============================================================
+         LEAD FINDER: the businesses to email, found on a map.
+    ============================================================ -->
+    <LeadFinderShowcase />
 
     <!-- ============================================================
          AUTOMATIONS: full-width centerpiece, the live builder demo

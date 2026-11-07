@@ -1,0 +1,749 @@
+---
+/**
+ * Live demo of the lead finder (/app/leads), mirrored from
+ * web/src/app/app/leads/page.tsx and web/src/components/app/leads:
+ *
+ *   - the header with the search it is scoped to and the Map / Split / List
+ *     switch, the 316px SearchPanel with the past searches under it
+ *   - the filter bar, then the map with its draw tools on the left, layers and
+ *     zoom on the right, the "Search this area" pill and the legend
+ *   - LeadsTable under the map, with EnrichmentProgress as its banner, the
+ *     floating LeadSelectionBar, and LeadDrawer open on its People tab
+ *
+ * Drawn inside the full app shell, 1536px wide like the automations demo.
+ *
+ * Demo: the cursor draws a rectangle on the map, searches it, pins drop in and
+ * the list fills, it selects the page and runs Find people and emails, each row
+ * reads its website and turns into an address, then the first lead opens on
+ * the people found there.
+ */
+import AppShellMock from './AppShellMock.astro';
+import DemoCursor from './DemoCursor.astro';
+
+const svg = (d: string, size = 14, cls = '') =>
+  `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 ${cls}">${d}</svg>`;
+
+const I = {
+  mapPinned: '<path d="M18 8c0 3.613-3.869 7.429-5.393 8.795a1 1 0 0 1-1.214 0C9.87 15.429 6 11.613 6 8a6 6 0 0 1 12 0"/><circle cx="12" cy="8" r="2"/><path d="M8.714 14h-3.71a1 1 0 0 0-.948.683l-2.004 6A1 1 0 0 0 3 22h18a1 1 0 0 0 .948-1.316l-2-6a1 1 0 0 0-.949-.684h-3.712"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  mapPin: '<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>',
+  square: '<rect width="18" height="18" x="3" y="3" rx="2"/>',
+  circle: '<circle cx="12" cy="12" r="10"/>',
+  pentagon: '<path d="M10.83 2.38a2 2 0 0 1 2.34 0l8 5.74a2 2 0 0 1 .73 2.25l-3.04 9.26a2 2 0 0 1-1.9 1.37H7.04a2 2 0 0 1-1.9-1.37L2.1 10.37a2 2 0 0 1 .73-2.25z"/>',
+  hand: '<path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>',
+  lasso: '<path d="M7 22a5 5 0 0 1-2-4"/><path d="M3.3 14A6.8 6.8 0 0 1 2 10c0-4.4 4.5-8 10-8s10 3.6 10 8-4.5 8-10 8a12 12 0 0 1-5-1"/><path d="M5 18a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/>',
+  layers: '<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/>',
+  box: '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
+  focus: '<circle cx="12" cy="12" r="3"/><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/>',
+  rotateCw: '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>',
+  loader: '<path d="M21 12a9 9 0 1 1-6.219-8.56"/>',
+  star: '<path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"/>',
+  sort: '<path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="M11 4h10"/><path d="M11 8h7"/><path d="M11 12h4"/>',
+  phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>',
+  mail: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
+  mailX: '<path d="M22 13V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v12c0 1.1.9 2 2 2h9"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><path d="m17 17 4 4"/><path d="m21 17-4 4"/>',
+  circleCheck: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+  alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  sparkles: '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  userPlus: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
+  more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  minus: '<path d="M5 12h14"/>',
+  building: '<rect width="16" height="20" x="4" y="2" rx="2" ry="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M12 6h.01"/><path d="M12 10h.01"/><path d="M12 14h.01"/><path d="M16 10h.01"/><path d="M16 14h.01"/><path d="M8 10h.01"/><path d="M8 14h.01"/>',
+  globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  chevronDown: '<path d="m6 9 6 6 6-6"/>',
+  filter: '<path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/>',
+  map: '<path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/><path d="M15 5.764v15"/><path d="M9 3.236v15"/>',
+  split: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 12h18"/>',
+  list: '<path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M3 6h.01"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M8 6h13"/>',
+  copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  bookmark: '<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>',
+};
+
+// ── The map, 964x420, drawn like the light map style ─────────────────
+const MW = 964;
+const MH = 420;
+// The downtown grid runs a little off north, so it is drawn rotated.
+const grid: string[] = [];
+for (let y = -140; y <= 560; y += 44) grid.push(`M-260 ${y}H1220`);
+for (let x = -260; x <= 1220; x += 62) grid.push(`M${x} -140V560`);
+const minor = grid.join('');
+const major = 'M-260 166H1220M-260 298H1220M482 -140V560M172 -140V560';
+const river = 'M-30 352 C 140 322, 300 372, 470 346 S 780 300, 1000 342';
+const highway = 'M792 -20 C 770 120, 760 210, 722 300 S 680 400, 676 450';
+
+// The rectangle the cursor draws, in map px.
+const AREA = { x: 296, y: 78, w: 404, h: 226 };
+
+// Pins inside the area, coloured by reachability. `to` is what a website
+// read turns it into, `d` when (seconds after Find people and emails).
+type Reach = 'email' | 'web' | 'phone' | 'none';
+const pins: { x: number; y: number; r: Reach; to?: Reach; d?: number }[] = [
+  { x: 618, y: 276, r: 'web', to: 'email', d: 1.2 },
+  { x: 472, y: 150, r: 'web', to: 'email', d: 2.0 },
+  { x: 664, y: 232, r: 'web', to: 'email', d: 2.6 },
+  { x: 560, y: 210, r: 'phone', to: 'email', d: 3.3 },
+  { x: 410, y: 108, r: 'email' },
+  { x: 528, y: 272, r: 'web', d: 4.1 },
+  { x: 342, y: 182, r: 'web', to: 'email', d: 1.6 },
+  { x: 596, y: 128, r: 'web', to: 'email', d: 2.3 },
+  { x: 380, y: 250, r: 'phone' },
+  { x: 446, y: 214, r: 'web', to: 'email', d: 3.0 },
+  { x: 650, y: 104, r: 'none' },
+  { x: 508, y: 96, r: 'web', to: 'email', d: 3.6 },
+  { x: 322, y: 120, r: 'email' },
+  { x: 684, y: 168, r: 'web', to: 'email', d: 4.0 },
+  { x: 412, y: 284, r: 'web', to: 'email', d: 2.8 },
+  { x: 548, y: 160, r: 'phone' },
+  { x: 630, y: 190, r: 'web', to: 'email', d: 1.9 },
+  { x: 360, y: 220, r: 'web', to: 'email', d: 3.9 },
+];
+const clusters = [
+  { x: 388, y: 154, n: 8 },
+  { x: 500, y: 236, n: 7 },
+  { x: 584, y: 248, n: 5 },
+];
+const REACH: Record<Reach, string> = { email: '#10b981', web: '#0ea5e9', phone: '#f59e0b', none: '#94a3b8' };
+const TOTAL = pins.length + clusters.reduce((n, c) => n + c.n, 0);
+
+// ── The list: the first rows of the search, best leads first ─────────
+type Cell =
+  | { k: 'email'; email: string; v: 'valid' | 'risky' }
+  | { k: 'note'; text: string };
+type Row = {
+  name: string; street: string; domain?: string; found?: boolean; phone?: string;
+  rating: string; reviews: string; s0: number; s1: number; people?: number;
+  before: Cell | { k: 'phone' } | { k: 'email'; email: string; v: 'unchecked' };
+  after: Cell; d: number; working: string;
+};
+const rows: Row[] = [
+  { name: 'Lakeshore Family Dental', street: 'E Cesar Chavez St', domain: 'lakeshorefamilydental.com', phone: '(512) 555-0142', rating: '4.8', reviews: '212', s0: 48, s1: 92, people: 3,
+    before: { k: 'phone' }, after: { k: 'email', email: '[EMAIL]', v: 'valid' }, d: 1.2, working: 'Reading the website' },
+  { name: 'Congress Avenue Smiles', street: 'Congress Ave', domain: 'congressavesmiles.com', phone: '(512) 555-0198', rating: '4.6', reviews: '148', s0: 46, s1: 86, people: 2,
+    before: { k: 'phone' }, after: { k: 'email', email: '[EMAIL]', v: 'valid' }, d: 2.0, working: 'Reading the website' },
+  { name: 'Rainey Street Dental Studio', street: 'Rainey St', domain: 'raineydentalstudio.com', phone: '(512) 555-0117', rating: '4.9', reviews: '96', s0: 47, s1: 88, people: 4,
+    before: { k: 'phone' }, after: { k: 'email', email: '[EMAIL]', v: 'valid' }, d: 2.6, working: 'Reading the website' },
+  { name: 'Eastside Kids Dentistry', street: 'E 7th St', domain: 'eastsidekidsdentistry.com', found: true, phone: '(512) 555-0163', rating: '4.7', reviews: '64', s0: 30, s1: 71, people: 1,
+    before: { k: 'phone' }, after: { k: 'email', email: '[EMAIL]', v: 'risky' }, d: 3.3, working: 'Looking for a website' },
+  { name: 'Capitol Orthodontics', street: 'W 11th St', domain: 'capitolortho.com', phone: '(512) 555-0105', rating: '4.5', reviews: '181', s0: 69, s1: 84, people: 2,
+    before: { k: 'email', email: '[EMAIL]', v: 'unchecked' }, after: { k: 'email', email: '[EMAIL]', v: 'valid' }, d: 3.8, working: 'Reading the website' },
+  { name: 'Waller Creek Dental', street: 'Red River St', domain: 'wallercreekdental.com', phone: '(512) 555-0186', rating: '4.3', reviews: '57', s0: 44, s1: 47,
+    before: { k: 'phone' }, after: { k: 'note', text: 'No email on the site' }, d: 4.3, working: 'Reading the website' },
+];
+
+// LeadDrawer > PeopleTab for the first row.
+const people = [
+  { initials: 'MA', name: 'Dr. Maria Alvarez', seniority: 'Owner', tone: 'bg-violet-50 text-violet-700', avatar: 'bg-violet-100 text-violet-700', title: 'Founder and lead dentist', email: '[EMAIL]', verdict: 'Confirmed', vTone: 'text-emerald-700', vIcon: I.circleCheck, source: 'From the website' },
+  { initials: 'JC', name: 'James Chen', seniority: 'Manager', tone: 'bg-teal-50 text-teal-700', avatar: 'bg-teal-100 text-teal-700', title: 'Practice manager', email: '[EMAIL]', verdict: 'Confirmed', vTone: 'text-emerald-700', vIcon: I.circleCheck, source: 'Listed on the website' },
+  { initials: 'PN', name: 'Priya Nair', seniority: '', tone: '', avatar: 'bg-slate-100 text-slate-600', title: 'Dental hygienist', email: '[EMAIL]', verdict: 'Likely · 72%', vTone: 'text-sky-700', vIcon: I.sparkles, source: 'From the website' },
+];
+
+const pastSearches = [
+  { name: 'Roofers · Denver', meta: '112 leads · 2 days ago', saved: true },
+  { name: 'Vegan bakeries · Berlin', meta: '24 leads · last week' },
+  { name: 'Physiotherapists · Manchester', meta: '57 leads · 3 weeks ago' },
+];
+const quick = ['Restaurants', 'Dentists', 'Hair salons', 'Gyms', 'Real estate'];
+
+const checkbox = 'lf-check relative inline-flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-slate-300 bg-white text-white transition-colors duration-150';
+const mapBtn = 'size-7 rounded-md inline-flex items-center justify-center text-slate-600';
+const mapPanel = 'flex flex-col gap-0.5 rounded-lg border border-slate-200 bg-white/95 p-0.5 shadow-[0_6px_18px_-8px_rgba(15,23,42,0.3)]';
+---
+<div class="lf-root round-clip bg-white ring-1 ring-slate-900/[0.07]" style="box-shadow: 0 50px 110px -32px rgba(2,132,199,0.42), 0 14px 36px -16px rgba(15,23,42,0.18);">
+  <!-- browser chrome -->
+  <div class="flex items-center gap-2.5 px-3 h-11 border-b border-slate-200/80 bg-gradient-to-b from-[#f7f8fa] to-[#eceef1]">
+    <div class="flex items-center gap-2 shrink-0">
+      <span class="w-3 h-3 rounded-full bg-[#ff5f57]"></span>
+      <span class="w-3 h-3 rounded-full bg-[#febc2e]"></span>
+      <span class="w-3 h-3 rounded-full bg-[#28c840]"></span>
+    </div>
+    <div class="flex-1 min-w-0 flex items-center gap-2 h-7 px-3 rounded-lg bg-white ring-1 ring-slate-200/90 text-[12px] shadow-[inset_0_1px_2px_rgba(15,23,42,0.04)]">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="text-emerald-500 shrink-0"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      <span class="truncate font-medium text-slate-700">app.warmbly.com<span class="text-slate-400 font-normal">/app/leads</span></span>
+    </div>
+  </div>
+
+  <div class="lf-fit relative w-full overflow-hidden bg-white">
+    <div class="lf-screen absolute top-0 left-0 origin-top-left" style="width:1536px;">
+    <AppShellMock crumb="Lead finder">
+    <div class="lf relative flex h-[844px] max-h-[844px] flex-col overflow-hidden bg-white" data-demo="lf">
+
+      <!-- ── Header ─────────────────────────────────────────────────── -->
+      <header class="shrink-0 h-12 px-4 flex items-center gap-2 border-b border-slate-200">
+        <Fragment set:html={svg(I.mapPinned, 16, 'text-sky-600')} />
+        <h1 class="text-[13.5px] font-semibold text-slate-900">Lead finder</h1>
+        <div class="h-4 w-px bg-slate-200"></div>
+        <span class="lf-scope-all text-[12px] text-slate-500">All leads</span>
+        <span class="lf-scope inline-flex h-6 items-center gap-1 rounded-md bg-sky-50 pl-2 pr-1 text-[12px] text-sky-800">
+          Dentists · Downtown Austin
+          <span class="size-4 rounded inline-flex items-center justify-center"><Fragment set:html={svg(I.x, 12)} /></span>
+        </span>
+        <div class="ml-auto inline-flex rounded-md border border-slate-200 p-0.5">
+          <span class="h-6 px-2 rounded inline-flex items-center gap-1 text-[11.5px] text-slate-500"><Fragment set:html={svg(I.map, 14)} />Map</span>
+          <span class="h-6 px-2 rounded inline-flex items-center gap-1 text-[11.5px] bg-slate-100 text-slate-900 font-medium"><Fragment set:html={svg(I.split, 14)} />Split</span>
+          <span class="h-6 px-2 rounded inline-flex items-center gap-1 text-[11.5px] text-slate-500"><Fragment set:html={svg(I.list, 14)} />List</span>
+        </div>
+      </header>
+
+      <div class="relative flex flex-1 min-h-0">
+        <!-- ── Search panel ─────────────────────────────────────────── -->
+        <aside class="flex w-[316px] shrink-0 flex-col border-r border-slate-200 bg-white">
+          <div class="px-3 pt-3 pb-4 space-y-3.5">
+            <div>
+              <div class="mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">What</div>
+              <div class="relative h-8 w-full rounded-md border border-slate-200 bg-white pl-7 pr-2 flex items-center text-[12.5px] text-slate-400">
+                <Fragment set:html={svg(I.search, 14, 'absolute left-2 top-1/2 -translate-y-1/2 text-slate-400')} />
+                Dentists, optionally named…
+              </div>
+              <div class="mt-2 flex flex-wrap gap-1">
+                {quick.map((q) => (
+                  <span class={`inline-flex h-6 items-center rounded-full px-2.5 text-[11.5px] ${q === 'Dentists' ? 'bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-200 font-medium' : 'border border-slate-200 text-slate-600'}`}>{q}</span>
+                ))}
+                <span class="inline-flex h-6 items-center gap-0.5 rounded-full border border-dashed border-slate-300 px-2.5 text-[11.5px] text-slate-500">More<Fragment set:html={svg(I.chevronDown, 12)} /></span>
+              </div>
+            </div>
+
+            <div>
+              <div class="mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Where</div>
+              <div class="relative h-8 w-full rounded-md border border-slate-200 bg-white pl-7 pr-2 flex items-center text-[12.5px] text-slate-900">
+                <Fragment set:html={svg(I.mapPin, 14, 'absolute left-2 top-1/2 -translate-y-1/2 text-slate-400')} />
+                Downtown, Austin, Texas
+              </div>
+              <div class="mt-2 flex items-center gap-1.5">
+                <span class="relative min-w-0 flex-1 h-4 overflow-hidden text-[11.5px]">
+                  <span class="lf-where-view absolute inset-0 truncate text-slate-500">The visible map, or draw an area</span>
+                  <span class="lf-where-area absolute inset-0 truncate font-medium text-sky-700">Rectangle · 3.4 × 1.9 km</span>
+                </span>
+                {[I.square, I.circle, I.pentagon].map((d) => (
+                  <span class="size-6 rounded-md border border-slate-200 text-slate-500 inline-flex items-center justify-center"><Fragment set:html={svg(d, 14)} /></span>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div class="mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Source</div>
+              <div class="h-8 w-full rounded-md border border-slate-200 bg-white px-2 inline-flex items-center gap-2 text-[12.5px] text-slate-800">
+                <span class="size-4 rounded bg-emerald-50 text-emerald-600 ring-1 ring-inset ring-emerald-200 inline-flex items-center justify-center"><Fragment set:html={svg(I.map, 10)} /></span>
+                <span class="truncate">OpenStreetMap</span>
+                <Fragment set:html={svg(I.chevronDown, 14, 'ml-auto text-slate-400')} />
+              </div>
+              <p class="mt-1.5 text-[11px] leading-relaxed text-slate-400">Free, no key needed. Websites, phones and emails where the map's contributors added them.</p>
+            </div>
+
+            <div class="lf-searchbtn relative h-8 w-full overflow-hidden rounded-md bg-sky-600 text-white text-[12.5px] font-medium inline-flex items-center justify-center gap-1.5">
+              <span class="lf-sweep absolute inset-y-0 w-1/3 bg-white/20 lf-progress" aria-hidden="true"></span>
+              <span class="lf-sb-view relative inline-flex items-center gap-1.5"><Fragment set:html={svg(I.search, 14)} />Search the visible map</span>
+              <span class="lf-sb-area relative inline-flex items-center gap-1.5"><Fragment set:html={svg(I.search, 14)} />Search this area</span>
+              <span class="lf-sb-busy relative inline-flex items-center gap-1.5"><Fragment set:html={svg(I.loader, 14, 'animate-spin')} />Searching…</span>
+            </div>
+          </div>
+
+          <div class="border-t border-slate-100 px-3 pt-3 pb-4">
+            <div class="mb-2 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Searches</div>
+            <div class="space-y-0.5">
+              <div class="lf-newsearch rounded-md bg-sky-50/70 px-2 py-1.5">
+                <div class="flex items-center gap-1.5 text-[12.5px] font-medium text-slate-900"><Fragment set:html={svg(I.search, 12, 'text-sky-600')} />Dentists · Downtown Austin</div>
+                <div class="pl-[18px] text-[11px] text-slate-400 tabular-nums">{TOTAL} leads · just now</div>
+              </div>
+              {pastSearches.map((s) => (
+                <div class="rounded-md px-2 py-1.5">
+                  <div class="flex items-center gap-1.5 text-[12.5px] text-slate-700">
+                    <Fragment set:html={svg(s.saved ? I.bookmark : I.search, 12, s.saved ? 'text-amber-500' : 'text-slate-400')} />{s.name}
+                  </div>
+                  <div class="pl-[18px] text-[11px] text-slate-400">{s.meta}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </aside>
+
+        <!-- ── Map and list ─────────────────────────────────────────── -->
+        <div class="relative flex min-w-0 flex-1 flex-col">
+          <!-- LeadFilterBar -->
+          <div class="shrink-0 h-11 px-3 flex items-center gap-1.5 border-b border-slate-200">
+            <div class="relative h-7 w-[248px] rounded-md border border-slate-200 pl-7 pr-2 flex items-center text-[12px] text-slate-400">
+              <Fragment set:html={svg(I.search, 14, 'absolute left-2 top-1/2 -translate-y-1/2 text-slate-400')} />
+              Filter by name, email, domain
+            </div>
+            {['Has email', 'Has website', 'Has phone'].map((c) => (
+              <span class="h-7 px-2.5 rounded-full border border-slate-200 inline-flex items-center text-[11.5px] text-slate-600">{c}</span>
+            ))}
+            <span class="h-7 px-2.5 rounded-full border border-slate-200 inline-flex items-center gap-1 text-[11.5px] text-slate-600"><Fragment set:html={svg(I.star, 12, 'fill-amber-400 text-amber-400')} />4+</span>
+            <span class="ml-auto h-7 px-2.5 rounded-md border border-slate-200 inline-flex items-center gap-1.5 text-[11.5px] text-slate-700"><Fragment set:html={svg(I.filter, 14)} />Filters</span>
+          </div>
+
+          <!-- The map -->
+          <div class="lf-map relative h-[420px] shrink-0 overflow-hidden border-b border-slate-200 bg-[#f2f3f0]">
+            <svg class="absolute inset-0" width={MW} height={MH} viewBox={`0 0 ${MW} ${MH}`} aria-hidden="true">
+              <rect width={MW} height={MH} fill="#f2f3f0" />
+              <g transform={`rotate(-9 ${MW / 2} ${MH / 2})`}>
+                <path d="M40 300 h230 v120 h-230z M548 18 h96 v74 h-96z" fill="#dfecdc" />
+                <rect x="380" y="194" width="56" height="40" fill="#e3efe0" />
+                <path d={minor} stroke="#e4e6ea" stroke-width="7" fill="none" />
+                <path d={minor} stroke="#ffffff" stroke-width="4.5" fill="none" />
+              </g>
+              <path d={river} stroke="#cfe2f2" stroke-width="36" stroke-linecap="round" fill="none" />
+              <g transform={`rotate(-9 ${MW / 2} ${MH / 2})`}>
+                <path d={major} stroke="#e0e3e8" stroke-width="11" fill="none" />
+                <path d={major} stroke="#ffffff" stroke-width="8" fill="none" />
+                <text x="488" y="40" transform="rotate(90 488 40)" font-size="10" fill="#94a3b8" font-family="ui-sans-serif, system-ui" letter-spacing="0.4">Congress Ave</text>
+                <text x="20" y="162" font-size="10" fill="#94a3b8" font-family="ui-sans-serif, system-ui" letter-spacing="0.4">E 6th St</text>
+                <text x="820" y="294" font-size="10" fill="#94a3b8" font-family="ui-sans-serif, system-ui" letter-spacing="0.4">Cesar Chavez St</text>
+              </g>
+              <path d={highway} stroke="#efd8a0" stroke-width="15" fill="none" />
+              <path d={highway} stroke="#fbebc3" stroke-width="11" fill="none" />
+              <text x="190" y="352" font-size="11" font-style="italic" fill="#6f9bc1" font-family="ui-sans-serif, system-ui" letter-spacing="0.6">Lady Bird Lake</text>
+              <g font-size="9.5" fill="#a3adbb" font-family="ui-sans-serif, system-ui" font-weight="600" letter-spacing="1.6">
+                <text x="92" y="66">CLARKSVILLE</text>
+                <text x="796" y="118">EAST AUSTIN</text>
+                <text x="604" y="404">TRAVIS HEIGHTS</text>
+                <text x="70" y="404">ZILKER</text>
+              </g>
+              <rect x="0" y="0" width={MW} height={MH} fill="url(#lf-vignette)" />
+              <defs>
+                <radialGradient id="lf-vignette" cx="50%" cy="45%" r="75%">
+                  <stop offset="70%" stop-color="#ffffff" stop-opacity="0" />
+                  <stop offset="100%" stop-color="#e2e8f0" stop-opacity="0.55" />
+                </radialGradient>
+              </defs>
+            </svg>
+
+            <!-- The drawn area, growing under the cursor. -->
+            <div class="lf-area absolute" style={`left:${AREA.x}px; top:${AREA.y}px; --w:${AREA.w}px; --h:${AREA.h}px;`}></div>
+            <span class="lf-a0 absolute size-px" style={`left:${AREA.x}px; top:${AREA.y}px;`}></span>
+            <span class="lf-a1 absolute size-px" style={`left:${AREA.x + AREA.w}px; top:${AREA.y + AREA.h}px;`}></span>
+
+            <!-- Pins and clusters -->
+            {clusters.map((c, i) => (
+              <span class="lf-pin absolute" style={`left:${c.x}px; top:${c.y}px; --i:${i + 2};`}>
+                <span class="flex size-[30px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-sky-500/90 text-[11px] font-semibold text-white ring-[5px] ring-sky-300/40 shadow-[0_4px_12px_-4px_rgba(2,132,199,0.6)]">{c.n}</span>
+              </span>
+            ))}
+            {pins.map((p, i) => (
+              <span class={`lf-pin absolute ${i === 0 ? 'lf-pin-0' : ''}`} style={`left:${p.x}px; top:${p.y}px; --i:${i};`}>
+                <span class={`lf-dot block size-3 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-white shadow-[0_1px_4px_rgba(15,23,42,0.35)] ${p.to ? 'lf-dot-to' : ''}`} style={`background:${REACH[p.r]}; --from:${REACH[p.r]}; --to:${p.to ? REACH[p.to] : REACH[p.r]}; --d:${p.d ?? 0}s;`}></span>
+              </span>
+            ))}
+
+            <!-- MapToolbar -->
+            <div class={`absolute left-3 top-3 z-10 ${mapPanel}`}>
+              <span class={`lf-tool-pan ${mapBtn}`}><Fragment set:html={svg(I.hand, 14)} /></span>
+              <span class={`lf-tool-rect ${mapBtn} transition-colors`}><Fragment set:html={svg(I.square, 14)} /></span>
+              <span class={mapBtn}><Fragment set:html={svg(I.circle, 14)} /></span>
+              <span class={mapBtn}><Fragment set:html={svg(I.pentagon, 14)} /></span>
+              <span class={mapBtn}><Fragment set:html={svg(I.lasso, 14)} /></span>
+            </div>
+            <!-- MapControlsBar -->
+            <div class="absolute right-3 top-3 z-10 flex flex-col gap-1.5">
+              <div class={mapPanel}>
+                <span class={mapBtn}><Fragment set:html={svg(I.layers, 14)} /></span>
+                <span class={mapBtn}><Fragment set:html={svg(I.box, 14)} /></span>
+                <span class={mapBtn}><Fragment set:html={svg(I.focus, 14)} /></span>
+              </div>
+              <div class={mapPanel}>
+                <span class={mapBtn}><Fragment set:html={svg(I.plus, 14)} /></span>
+                <span class={mapBtn}><Fragment set:html={svg(I.minus, 14)} /></span>
+              </div>
+            </div>
+
+            <!-- ToolHint, then the search pill once an area is drawn -->
+            <div class="lf-hint absolute left-1/2 top-3 z-10 -translate-x-1/2 inline-flex items-center gap-2 rounded-full bg-slate-900/90 py-1 pl-3 pr-1 text-[12px] text-white shadow-lg">
+              Drag to draw a rectangle
+              <span class="h-6 rounded-full bg-white/15 px-2 inline-flex items-center text-[11.5px]">Esc</span>
+            </div>
+            <div class="lf-pill-wrap absolute left-1/2 top-3 z-10 -translate-x-1/2">
+              <span class="lf-pill h-8 px-3.5 rounded-full bg-white/95 border border-slate-200 text-[12px] font-medium text-slate-800 shadow-[0_6px_18px_-8px_rgba(15,23,42,0.35)] inline-flex items-center gap-1.5 transition-colors [&.is-hover]:text-sky-700 [&.is-hover]:border-sky-200">
+                <span class="lf-pill-idle inline-flex items-center gap-1.5"><Fragment set:html={svg(I.rotateCw, 14, 'text-sky-600')} />Search this area</span>
+                <span class="lf-pill-busy inline-flex items-center gap-1.5"><Fragment set:html={svg(I.loader, 14, 'animate-spin text-sky-600')} />Searching…</span>
+              </span>
+            </div>
+
+            <!-- Legend -->
+            <div class="absolute left-3 bottom-3 z-10 flex items-center gap-x-2.5 rounded-lg border border-slate-200 bg-white/95 px-2.5 py-1.5 text-[11px] text-slate-600 shadow-sm">
+              <span class="font-medium tabular-nums text-slate-900"><span class="lf-n0">0</span><span class="lf-n1">{TOTAL}</span> on map</span>
+              {(['email', 'web', 'phone', 'none'] as Reach[]).map((r) => (
+                <span class="inline-flex items-center gap-1">
+                  <span class="size-2 rounded-full" style={`background:${REACH[r]}`}></span>
+                  {{ email: 'Email', web: 'Website', phone: 'Phone only', none: 'No contact' }[r]}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <!-- LeadsTable -->
+          <div class="relative min-h-0 flex-1 flex flex-col">
+            <div class="shrink-0 h-10 px-3 flex items-center gap-3 border-b border-slate-200">
+              <span class={`lf-all ${checkbox}`}><Fragment set:html={svg(I.check, 12, 'lf-tick')} /></span>
+              <span class="text-[12px] text-slate-500 tabular-nums"><span class="lf-n0">0 leads</span><span class="lf-n1">{TOTAL} leads</span></span>
+              <span class="ml-auto h-6 px-2 rounded-md text-[11.5px] text-slate-600 inline-flex items-center gap-1.5"><Fragment set:html={svg(I.sort, 14)} />Best leads first</span>
+            </div>
+
+            <!-- EnrichmentProgress -->
+            <div class="lf-strips shrink-0">
+              <div class="lf-strip-search h-9 px-3 flex items-center gap-2 border-b border-sky-100 bg-sky-50/60 text-[12px]">
+                <span class="campaign-grid text-sky-600 shrink-0" aria-hidden="true"></span>
+                <span class="text-shimmer truncate font-medium text-sky-800">Searching OpenStreetMap for dentists</span>
+                <span class="relative ml-auto h-1 w-40 overflow-hidden rounded-full bg-sky-100"><span class="absolute inset-y-0 w-1/3 rounded-full bg-sky-500 lf-progress"></span></span>
+              </div>
+              <div class="lf-strip-run h-9 px-3 flex items-center gap-2 border-b border-sky-100 bg-sky-50/60 text-[12px]">
+                <span class="campaign-grid text-sky-600 shrink-0" aria-hidden="true"></span>
+                <span class="text-shimmer shrink-0 font-medium text-sky-800">Finding people and emails</span>
+                <span class="truncate text-slate-500 tabular-nums"><span class="lf-count lf-c-done"></span> of {TOTAL} businesses · <span class="lf-count lf-c-mail"></span> with an email</span>
+                <span class="ml-auto shrink-0 text-[11px] text-slate-400">Keeps going if you leave</span>
+                <span class="shrink-0 w-9 text-right tabular-nums text-[11px] font-medium text-sky-700"><span class="lf-count lf-c-pct"></span>%</span>
+                <span class="relative h-1 w-32 shrink-0 overflow-hidden rounded-full bg-sky-100"><span class="lf-run-bar absolute inset-y-0 left-0 rounded-full bg-sky-500"></span><span class="absolute inset-y-0 w-1/4 rounded-full bg-white/60 lf-progress"></span></span>
+              </div>
+              <div class="lf-strip-done h-9 px-3 flex items-center gap-2 border-b border-emerald-100 bg-emerald-50/60 text-[12px]">
+                <Fragment set:html={svg(I.circleCheck, 14, 'text-emerald-600')} />
+                <span class="shrink-0 font-medium text-emerald-800">Done</span>
+                <span class="truncate text-slate-600">27 with an email, 41 people from {TOTAL} businesses</span>
+              </div>
+            </div>
+
+            <div class="lf-colhead shrink-0 h-7 pl-10 pr-3 flex items-center gap-3 border-b border-slate-100 bg-slate-50/60 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">
+              <span class="flex-1">Business</span>
+              <span class="w-[230px] shrink-0">Contact</span>
+              <span class="w-[190px] shrink-0">Website</span>
+              <span class="w-[64px] shrink-0">Rating</span>
+              <span class="w-[56px] shrink-0">Score</span>
+              <span class="w-[66px] shrink-0">Status</span>
+            </div>
+
+            <div class="relative flex-1 min-h-0 overflow-hidden">
+              <div class="lf-empty absolute inset-0 flex flex-col items-center justify-center text-center">
+                <Fragment set:html={svg(I.search, 24, 'text-slate-300')} />
+                <p class="mt-2 text-[12.5px] font-medium text-slate-900">No leads here yet</p>
+                <p class="mt-0.5 text-[11.5px] text-slate-400">Search an area, or loosen the filters above.</p>
+              </div>
+              <ul class="lf-rows divide-y divide-slate-100">
+                {rows.map((r, i) => (
+                  <li class={`lf-row lf-row-${i} relative px-3 min-h-[52px] py-2 flex items-center gap-3`} style={`--i:${i}; --d:${r.d}s; --s0:${r.s0}%; --s1:${r.s1}%;`}>
+                    <span class="lf-working absolute left-0 inset-y-0 w-0.5 bg-sky-500" aria-hidden="true"></span>
+                    <span class="lf-flash absolute inset-0 bg-emerald-50/80" aria-hidden="true"></span>
+                    <span class="lf-active absolute inset-0 bg-sky-50/70" aria-hidden="true"></span>
+                    <span class={`lf-rcheck ${checkbox}`}><Fragment set:html={svg(I.check, 12, 'lf-tick')} /></span>
+                    <div class="relative min-w-0 flex-1">
+                      <div class="flex items-center gap-1.5">
+                        <span class="truncate text-[12.5px] font-medium text-slate-900">{r.name}</span>
+                        {r.people && (
+                          <span class="lf-people shrink-0 inline-flex items-center gap-0.5 rounded bg-violet-50 px-1 text-[10px] font-medium text-violet-700"><Fragment set:html={svg(I.users, 10)} />{r.people}</span>
+                        )}
+                      </div>
+                      <div class="truncate text-[11.5px] text-slate-500">Dentist · {r.street}</div>
+                    </div>
+                    <div class="relative w-[230px] shrink-0 grid">
+                      <div class="lf-pre [grid-area:1/1] flex flex-col gap-0.5">
+                        {r.before.k === 'email' ? (
+                          <span class="inline-flex min-w-0 items-center gap-1 text-[11.5px]"><Fragment set:html={svg(I.mail, 12, 'text-slate-400')} /><span class="truncate text-slate-800">{r.before.email}</span><Fragment set:html={svg('<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>', 12, 'text-slate-500')} /></span>
+                        ) : null}
+                        <span class="inline-flex items-center gap-1 text-[11.5px] text-slate-600 tabular-nums"><Fragment set:html={svg(I.phone, 12, 'text-slate-400')} />{r.phone}</span>
+                      </div>
+                      <div class="lf-work [grid-area:1/1] flex flex-col gap-0.5">
+                        <span class="inline-flex items-center gap-1.5 text-[11.5px]"><span class="campaign-grid text-sky-600 shrink-0" aria-hidden="true"></span><span class="text-shimmer font-medium text-sky-700">{r.working}</span></span>
+                        <span class="inline-flex items-center gap-1 text-[11.5px] text-slate-600 tabular-nums"><Fragment set:html={svg(I.phone, 12, 'text-slate-400')} />{r.phone}</span>
+                      </div>
+                      <div class="lf-done [grid-area:1/1] flex flex-col gap-0.5">
+                        {r.after.k === 'email' ? (
+                          <span class="inline-flex min-w-0 items-center gap-1 text-[11.5px]">
+                            <Fragment set:html={svg(I.mail, 12, 'text-slate-400')} />
+                            <span class="truncate text-slate-800">{r.after.email}</span>
+                            <Fragment set:html={svg(r.after.v === 'valid' ? I.circleCheck : I.alert, 12, r.after.v === 'valid' ? 'text-emerald-700' : 'text-amber-700')} />
+                            {r.people && r.people > 1 && <span class="shrink-0 text-slate-400">+{r.people - 1}</span>}
+                          </span>
+                        ) : (
+                          <span class="inline-flex items-center gap-1 text-[11px] text-slate-400"><Fragment set:html={svg(I.mailX, 12)} />{r.after.text}</span>
+                        )}
+                        <span class="inline-flex items-center gap-1 text-[11.5px] text-slate-600 tabular-nums"><Fragment set:html={svg(I.phone, 12, 'text-slate-400')} />{r.phone}</span>
+                      </div>
+                    </div>
+                    <div class="relative w-[190px] shrink-0 grid text-[11.5px] text-slate-600">
+                      {r.found ? (
+                        <>
+                          <span class="lf-pre [grid-area:1/1] text-slate-300">·</span>
+                          <span class="lf-done [grid-area:1/1] inline-flex min-w-0 items-center gap-1"><Fragment set:html={svg(I.globe, 12, 'text-slate-400')} /><span class="truncate">{r.domain}</span><Fragment set:html={svg(I.sparkles, 12, 'text-sky-600')} /></span>
+                        </>
+                      ) : (
+                        <span class="inline-flex min-w-0 items-center gap-1"><Fragment set:html={svg(I.globe, 12, 'text-slate-400')} /><span class="truncate">{r.domain}</span></span>
+                      )}
+                    </div>
+                    <div class="relative w-[64px] shrink-0 inline-flex items-center gap-1 text-[11.5px] text-slate-600 tabular-nums">
+                      <Fragment set:html={svg(I.star, 12, 'fill-amber-400 text-amber-400')} />{r.rating}<span class="text-slate-400">({r.reviews})</span>
+                    </div>
+                    <div class="relative w-[56px] shrink-0 flex items-center gap-1.5">
+                      <div class="h-1.5 flex-1 rounded-full bg-slate-100 overflow-hidden"><div class="lf-score h-full rounded-full"></div></div>
+                      <span class="w-5 text-right text-[10.5px] tabular-nums text-slate-500 grid"><span class="lf-pre [grid-area:1/1]">{r.s0}</span><span class="lf-done [grid-area:1/1]">{r.s1}</span></span>
+                    </div>
+                    <div class="relative w-[66px] shrink-0">
+                      <span class="inline-flex h-5 items-center rounded px-1.5 text-[10.5px] font-medium bg-slate-100 text-slate-600">New</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          <!-- ── LeadDrawer, People tab ─────────────────────────────── -->
+          <aside class="lf-drawer absolute inset-y-0 right-0 z-20 flex w-[400px] flex-col border-l border-slate-200 bg-white shadow-[-16px_0_40px_-24px_rgba(15,23,42,0.35)]">
+            <header class="shrink-0 px-4 pt-3 pb-2.5 border-b border-slate-200">
+              <div class="flex items-start gap-2">
+                <div class="mt-0.5 size-8 shrink-0 rounded-md bg-sky-50 text-sky-700 flex items-center justify-center"><Fragment set:html={svg(I.building, 16)} /></div>
+                <div class="min-w-0 flex-1">
+                  <h2 class="truncate text-[14px] font-semibold text-slate-900">{rows[0].name}</h2>
+                  <p class="truncate text-[11.5px] text-slate-500">Dentist · Austin</p>
+                </div>
+                <span class="lf-close size-7 rounded-md text-slate-500 inline-flex items-center justify-center transition-colors [&.is-hover]:bg-slate-100 [&.is-hover]:text-slate-900"><Fragment set:html={svg(I.x, 14)} /></span>
+              </div>
+              <div class="mt-2.5 flex items-center gap-1.5">
+                <div class="inline-flex rounded-md border border-slate-200 p-0.5">
+                  {['New', 'Saved', 'Contacted', 'Dismissed'].map((s) => (
+                    <span class={`h-6 px-2 rounded inline-flex items-center text-[11.5px] ${s === 'New' ? 'bg-sky-50 text-sky-700 font-medium' : 'text-slate-500'}`}>{s}</span>
+                  ))}
+                </div>
+                <div class="ml-auto w-[72px] flex items-center gap-1.5">
+                  <div class="h-1.5 flex-1 rounded-full bg-slate-100 overflow-hidden"><div class="h-full rounded-full bg-sky-700" style={`width:${rows[0].s1}%`}></div></div>
+                  <span class="w-5 text-right text-[10.5px] tabular-nums text-slate-500">{rows[0].s1}</span>
+                </div>
+              </div>
+              <div class="mt-2.5 flex flex-wrap items-center gap-1.5">
+                <span class="h-7 px-2.5 rounded-md bg-sky-600 text-white text-[12px] font-medium inline-flex items-center gap-1.5"><Fragment set:html={svg(I.sparkles, 14)} />Read again</span>
+                <span class="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-slate-700 text-[12px] font-medium inline-flex items-center gap-1.5"><Fragment set:html={svg(I.userPlus, 14)} />Add to contacts</span>
+                <span class="h-7 px-2 rounded-md border border-slate-200 text-slate-600 inline-flex items-center gap-1 text-[12px]"><Fragment set:html={svg(I.globe, 14)} />Website</span>
+              </div>
+            </header>
+            <div class="shrink-0 px-3 flex items-center gap-1 border-b border-slate-200">
+              {[['Overview', false], ['People', true], ['Website', false], ['Notes', false]].map(([t, on]) => (
+                <span class={`relative h-10 px-2.5 inline-flex items-center gap-1.5 text-[12.5px] ${on ? 'text-slate-900 font-medium' : 'text-slate-500'}`}>
+                  {t}
+                  {on && <span class="rounded bg-slate-100 px-1 text-[10px] tabular-nums text-slate-600">3</span>}
+                  {on && <span class="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-sky-600"></span>}
+                </span>
+              ))}
+            </div>
+            <div class="flex-1 min-h-0 overflow-hidden p-3">
+              <ul class="space-y-1.5">
+                {people.map((p, i) => (
+                  <li class="lf-person rounded-md border border-slate-200 px-2.5 py-2" style={`--i:${i}`}>
+                    <div class="flex items-start gap-2.5">
+                      <div class={`mt-0.5 size-7 shrink-0 rounded-full text-[11px] font-semibold flex items-center justify-center ${p.avatar}`}>{p.initials}</div>
+                      <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-1.5">
+                          <span class="truncate text-[12.5px] font-medium text-slate-900">{p.name}</span>
+                          {p.seniority && <span class={`shrink-0 rounded px-1 text-[10px] ${p.tone}`}>{p.seniority}</span>}
+                        </div>
+                        <p class="truncate text-[11.5px] text-slate-500">{p.title}</p>
+                        <div class="mt-1 flex items-center gap-1.5">
+                          <span class="truncate text-[12px] text-slate-800">{p.email}</span>
+                          <Fragment set:html={svg(I.copy, 12, 'text-slate-300')} />
+                        </div>
+                        <div class="mt-0.5 flex items-center gap-x-1.5 text-[10.5px] text-slate-400">
+                          <span class={`inline-flex items-center gap-0.5 ${p.vTone}`}><Fragment set:html={svg(p.vIcon, 12)} />{p.verdict}</span>
+                          <span>·</span>
+                          <span>{p.source}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <div class="lf-person mt-3 rounded-md border border-dashed border-slate-200 px-2.5 py-2.5" style="--i:3">
+                <div class="text-[12px] font-medium text-slate-700">Find someone's email</div>
+                <div class="mt-1.5 flex items-center gap-1.5">
+                  <span class="h-7 flex-1 rounded-md border border-slate-200 px-2 inline-flex items-center text-[12px] text-slate-400">First name</span>
+                  <span class="h-7 flex-1 rounded-md border border-slate-200 px-2 inline-flex items-center text-[12px] text-slate-400">Last name</span>
+                  <span class="h-7 px-2.5 rounded-md border border-slate-200 text-[12px] text-slate-500 inline-flex items-center"><Fragment set:html={svg(I.search, 14)} /></span>
+                </div>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+
+      <!-- ── LeadSelectionBar ───────────────────────────────────────── -->
+      <div class="lf-selbar absolute bottom-4 left-1/2 z-30 flex items-center gap-1.5 rounded-md border border-slate-200 bg-white p-1 shadow-[0_16px_40px_-16px_rgba(15,23,42,0.45)]">
+        <div class="inline-flex items-center gap-1.5 px-2 h-7 rounded bg-sky-50 text-sky-700 text-[12px] font-medium"><Fragment set:html={svg(I.check, 12)} /><span class="tabular-nums">{TOTAL} selected</span></div>
+        <span class="lf-enrich h-7 px-2.5 rounded-md text-[12px] font-medium text-slate-700 inline-flex items-center gap-1.5 transition-colors [&.is-hover]:bg-slate-100 [&.is-hover]:text-slate-900"><Fragment set:html={svg(I.sparkles, 14)} />Find people and emails</span>
+        <span class="h-7 px-2.5 rounded-md text-[12px] font-medium text-slate-700 inline-flex items-center gap-1.5"><Fragment set:html={svg(I.userPlus, 14)} />Add to contacts</span>
+        <span class="h-7 px-2.5 rounded-md text-[12px] font-medium text-slate-700 inline-flex items-center gap-1.5"><Fragment set:html={svg(I.download, 14)} />Export</span>
+        <span class="h-7 px-2 rounded-md text-slate-600 inline-flex items-center"><Fragment set:html={svg(I.more, 14)} /></span>
+        <span class="mx-0.5 h-4 w-px bg-slate-200"></span>
+        <span class="lf-clear h-7 w-7 rounded-md text-slate-500 inline-flex items-center justify-center transition-colors [&.is-hover]:bg-slate-100 [&.is-hover]:text-slate-900"><Fragment set:html={svg(I.x, 14)} /></span>
+      </div>
+
+      <!-- Toast -->
+      <div class="lf-toast absolute bottom-4 right-4 z-30 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[12.5px] text-slate-800 shadow-[0_16px_40px_-16px_rgba(15,23,42,0.45)]">
+        <Fragment set:html={svg(I.circleCheck, 16, 'text-emerald-600')} />
+        Reading {TOTAL} websites for people and contact details
+      </div>
+
+      <DemoCursor />
+    </div>
+    </AppShellMock>
+    </div>
+  </div>
+
+  <style is:global>
+    @property --lf-done { syntax: '<integer>'; inherits: false; initial-value: 0; }
+    @property --lf-mail { syntax: '<integer>'; inherits: false; initial-value: 0; }
+    @property --lf-pct { syntax: '<integer>'; inherits: false; initial-value: 0; }
+
+    .lf-progress { animation: lf-sweep 1.1s ease-in-out infinite; }
+    @keyframes lf-sweep { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+
+    /* Drawing the area: the rect tool lights up, the hint shows, the rectangle
+       grows with the drag (the cursor's own duration and easing), then sets. */
+    .lf.is-tool .lf-tool-rect { background: #0284c7; color: #fff; }
+    .lf:not(.is-tool) .lf-tool-pan { background: #0284c7; color: #fff; }
+    .lf-hint { display: none; }
+    .lf.is-tool .lf-hint { display: inline-flex; }
+    .lf-area { width: 0; height: 0; opacity: 0; border: 1.5px dashed #0284c7; background: rgba(14, 165, 233, 0.06); border-radius: 2px; }
+    .lf.is-drawing .lf-area { opacity: 1; width: var(--w); height: var(--h); transition: width 1460ms cubic-bezier(0.65, 0, 0.35, 1), height 1460ms cubic-bezier(0.65, 0, 0.35, 1); }
+    .lf.is-drawn .lf-area { border: 2px solid #0369a1; background: rgba(14, 165, 233, 0.12); }
+
+    /* The sidebar follows: the area is described, the button names it. */
+    .lf-where-area, .lf-sb-area, .lf-sb-busy, .lf-sweep { display: none; }
+    .lf.is-drawn .lf-where-view, .lf.is-drawn .lf-sb-view { display: none; }
+    .lf.is-drawn .lf-where-area { display: block; animation: lf-up 0.18s ease-out; }
+    .lf.is-drawn .lf-sb-area { display: inline-flex; }
+    .lf.is-searching .lf-sb-area { display: none; }
+    .lf.is-searching .lf-sb-busy, .lf.is-searching .lf-sweep { display: inline-flex; }
+
+    /* Search this area, then Searching…, then gone once the pins are in. */
+    .lf-pill-wrap, .lf-pill-busy { display: none; }
+    .lf.is-drawn .lf-pill-wrap { display: block; animation: lf-up 0.2s ease-out; }
+    .lf.is-searching .lf-pill-idle { display: none; }
+    .lf.is-searching .lf-pill-busy { display: inline-flex; }
+    .lf.is-found .lf-pill-wrap { display: none; }
+
+    /* Results: pins drop in, the list fills, the search joins the list. */
+    .lf-pin, .lf-n1, .lf-scope, .lf-newsearch, .lf-rows, .lf-colhead, .lf-strips > div { display: none; }
+    .lf.is-found .lf-pin { display: block; animation: lf-drop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both; animation-delay: calc(var(--i) * 35ms); }
+    .lf.is-found .lf-n0, .lf.is-found .lf-scope-all, .lf.is-found .lf-empty { display: none; }
+    .lf.is-found .lf-n1 { display: inline; }
+    .lf.is-found .lf-scope { display: inline-flex; animation: lf-up 0.2s ease-out; }
+    .lf.is-found .lf-newsearch { display: block; animation: lf-up 0.3s ease-out; }
+    .lf.is-found .lf-rows { display: block; }
+    .lf.is-found .lf-colhead { display: flex; }
+    .lf.is-found .lf-row { animation: lf-up 0.35s ease-out both; animation-delay: calc(120ms + var(--i) * 55ms); }
+    .lf.is-searching .lf-strip-search { display: flex; }
+
+    /* Selection: every checkbox on the page, and the floating bar. */
+    .lf-tick { opacity: 0; }
+    .lf.is-selected .lf-check { background: #0284c7; border-color: #0284c7; }
+    .lf.is-selected .lf-tick { opacity: 1; }
+    .lf-selbar { display: none; transform: translateX(-50%); }
+    .lf.is-selected .lf-selbar { display: flex; animation: lf-bar 0.16s ease-out; }
+
+    /* The run: each row reads its site, then turns into what it found. */
+    .lf-work, .lf-done, .lf-working, .lf-flash, .lf-people, .lf-active, .lf-toast { opacity: 0; }
+    .lf.is-toast .lf-toast { opacity: 1; animation: lf-toast 0.3s cubic-bezier(0.22, 1, 0.36, 1); }
+    .lf.is-enriching:not(.is-enriched) .lf-strip-run { display: flex; }
+    .lf.is-enriched .lf-strip-done { display: flex; animation: lf-up 0.25s ease-out; }
+    .lf.is-enriching .lf-pre { animation: lf-out 0.2s both; }
+    .lf.is-enriching .lf-work, .lf.is-enriching .lf-working { animation: lf-in-out 1s both; animation-duration: var(--d); }
+    .lf.is-enriching .lf-done, .lf.is-enriching .lf-people { animation: lf-in 0.35s both; animation-delay: var(--d); }
+    .lf.is-enriching .lf-flash { animation: lf-flash 1.6s both; animation-delay: var(--d); }
+    .lf-score { width: var(--s0); background: #0ea5e9; }
+    .lf.is-enriching .lf-score { width: var(--s1); background: #0369a1; transition: width 0.7s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.7s; transition-delay: var(--d); }
+    .lf.is-enriching .lf-dot-to { animation: lf-recolor 0.5s both; animation-delay: var(--d); }
+
+    .lf-count::after { counter-reset: n var(--n); content: counter(n); }
+    .lf-c-done { --n: var(--lf-done); }
+    .lf-c-mail { --n: var(--lf-mail); }
+    .lf-c-pct { --n: var(--lf-pct); }
+    .lf.is-enriching .lf-c-done { animation: lf-c-done 4.6s linear both; }
+    .lf.is-enriching .lf-c-mail { animation: lf-c-mail 4.6s linear both; }
+    .lf.is-enriching .lf-c-pct { animation: lf-c-pct 4.6s linear both; }
+    .lf-run-bar { width: 3%; }
+    .lf.is-enriching .lf-run-bar { width: 100%; transition: width 4.6s linear; }
+    @keyframes lf-c-done { to { --lf-done: 38; } }
+    @keyframes lf-c-mail { to { --lf-mail: 27; } }
+    @keyframes lf-c-pct { to { --lf-pct: 100; } }
+
+    /* The drawer: the first lead, on the people found there. */
+    .lf-drawer { transform: translateX(100%); visibility: hidden; transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 0.22s; }
+    .lf.is-drawer .lf-drawer { transform: none; visibility: visible; transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1); }
+    .lf.is-drawer .lf-person { animation: lf-up 0.3s ease-out both; animation-delay: calc(160ms + var(--i) * 70ms); }
+    .lf.is-drawer .lf-row-0 .lf-active { opacity: 1; }
+    .lf.is-drawer .lf-pin-0 { z-index: 5; }
+    .lf.is-drawer .lf-pin-0 .lf-dot { scale: 1.6; box-shadow: 0 0 0 6px rgba(16, 185, 129, 0.25); transition: scale 0.25s, box-shadow 0.25s; }
+
+    @keyframes lf-drop { from { opacity: 0; transform: translateY(-14px) scale(0.6); } to { opacity: 1; transform: none; } }
+    @keyframes lf-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    @keyframes lf-bar { from { opacity: 0; transform: translate(-50%, 16px); } to { opacity: 1; transform: translate(-50%, 0); } }
+    @keyframes lf-toast { from { opacity: 0; transform: translateY(10px) scale(0.97); } to { opacity: 1; transform: none; } }
+    @keyframes lf-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+    @keyframes lf-out { to { opacity: 0; } }
+    @keyframes lf-in-out { 0%, 99% { opacity: 1; } 100% { opacity: 0; } }
+    @keyframes lf-flash { 0% { opacity: 0; } 15% { opacity: 1; } 100% { opacity: 0; } }
+    @keyframes lf-recolor { from { background: var(--from); scale: 1; } 50% { scale: 1.5; } to { background: var(--to); scale: 1; } }
+
+    /* Reduced motion: hold the finished run with the drawer open. */
+    .lf.is-static .lf-area { opacity: 1; width: var(--w); height: var(--h); border: 2px solid #0369a1; background: rgba(14, 165, 233, 0.12); }
+    .lf.is-static .lf-pin { display: block; }
+    .lf.is-static .lf-dot-to { background: var(--to) !important; }
+    .lf.is-static .lf-n0, .lf.is-static .lf-scope-all, .lf.is-static .lf-empty, .lf.is-static .lf-pre, .lf.is-static .lf-where-view, .lf.is-static .lf-sb-view { display: none; }
+    .lf.is-static .lf-n1 { display: inline; }
+    .lf.is-static .lf-scope, .lf.is-static .lf-colhead, .lf.is-static .lf-strip-done, .lf.is-static .lf-sb-area { display: flex; }
+    .lf.is-static .lf-where-area, .lf.is-static .lf-newsearch, .lf.is-static .lf-rows { display: block; }
+    .lf.is-static .lf-done, .lf.is-static .lf-people, .lf.is-static .lf-row-0 .lf-active { opacity: 1; }
+    .lf.is-static .lf-score { width: var(--s1); background: #0369a1; }
+    .lf.is-static .lf-drawer { transform: none; visibility: visible; }
+  </style>
+
+  <script>
+    import { playCursor } from '../lib/cursor';
+    // The whole 1536px window from md up; on a phone the shell and search
+    // panel slide off the left so the map and list fill the frame.
+    const DESIGN = 1536;
+    const CROP = 572;
+    function fit(screen: HTMLElement) {
+      const box = screen.parentElement as HTMLElement | null;
+      if (!box) return;
+      const crop = window.innerWidth >= 768 ? 0 : CROP;
+      const s = box.clientWidth / (DESIGN - crop);
+      screen.style.transform = `translateX(${-crop * s}px) scale(${s})`;
+      box.style.height = `${screen.offsetHeight * s}px`;
+    }
+    document.querySelectorAll<HTMLElement>('.lf-screen').forEach((screen) => {
+      const run = () => fit(screen);
+      run();
+      requestAnimationFrame(run);
+      if (screen.parentElement) new ResizeObserver(() => requestAnimationFrame(run)).observe(screen.parentElement);
+      window.addEventListener('load', run);
+    });
+    document.querySelectorAll<HTMLElement>('[data-demo="lf"]').forEach((root) => {
+      playCursor(root, {
+        loop: 24500,
+        steps: [
+          { at: 0, x: 62, y: 30 },
+          { at: 1300, el: '.lf-tool-rect', hover: '.lf-tool-rect' },
+          { at: 1440, press: true, target: '.lf-tool-rect', add: ['is-tool'] },
+          { at: 2700, el: '.lf-a0', down: true, add: ['is-drawing'] },
+          { at: 4300, el: '.lf-a1', straight: true, slow: true, up: true, add: ['is-drawn'], remove: ['is-tool'] },
+          { at: 5500, el: '.lf-pill', oy: 0.55, hover: '.lf-pill' },
+          { at: 5640, press: true, target: '.lf-pill', add: ['is-searching'] },
+          { at: 6900, add: ['is-found'], remove: ['is-searching'] },
+          { at: 8300, el: '.lf-all', hover: '.lf-all' },
+          { at: 8440, press: true, target: '.lf-all', add: ['is-selected'] },
+          { at: 9700, el: '.lf-enrich', hover: '.lf-enrich' },
+          { at: 9840, press: true, target: '.lf-enrich', add: ['is-enriching', 'is-toast'] },
+          { at: 11200, el: '.lf-clear', hover: '.lf-clear' },
+          { at: 11340, press: true, target: '.lf-clear', remove: ['is-selected'] },
+          { at: 12800, remove: ['is-toast'] },
+          { at: 13200, x: 46, y: 80 },
+          { at: 14500, add: ['is-enriched'] },
+          { at: 15600, el: '.lf-row-0', ox: 0.22, hover: '.lf-row-0' },
+          { at: 15740, press: true, target: '.lf-row-0', add: ['is-drawer'] },
+          { at: 17600, el: '.lf-person', ox: 0.6, oy: 0.7 },
+          { at: 21600, el: '.lf-close', hover: '.lf-close' },
+          { at: 21740, press: true, target: '.lf-close', remove: ['is-drawer'] },
+          { at: 23400, x: 62, y: 30 },
+        ],
+      });
+    });
+  </script>
+</div>
