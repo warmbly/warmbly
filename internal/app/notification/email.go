@@ -2,7 +2,6 @@ package notification
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"sort"
 	"strconv"
@@ -18,9 +17,9 @@ import (
 // Email digest engine. Email-channel notifications never send at creation:
 // notifyOne queues them as pending rows with a due time from the user's
 // cadence, and this loop flushes what is still unread when due. One flush
-// sends at most one email per user (their pending rows bundle into a digest)
-// plus one email per org group (the same event across several members
-// coalesces into a single message with every recipient in To). Reading a
+// sends at most one email per user (their pending rows bundle into a digest);
+// an event shared by several members that is the only thing pending for each
+// of them goes out once, with every recipient in To. Reading a
 // notification in-app cancels its pending email (repo.MarkRead), which is
 // what keeps active users from ever being emailed about things they saw.
 const (
@@ -84,43 +83,52 @@ func (s *service) flushDueEmails() {
 		return
 	}
 
-	// Partition: org groups spanning several users become one coalesced
-	// email; everything else bundles per user.
+	groups, byUser := partitionEmails(claimed)
+	for _, rows := range groups {
+		s.sendGroupEmail(ctx, rows)
+	}
+	for userID, rows := range byUser {
+		s.sendUserEmail(ctx, userID, rows)
+	}
+}
+
+// partitionEmails sends a shared event once only when it is all its recipients have pending; otherwise it joins their digests.
+func partitionEmails(claimed []models.Notification) ([][]models.Notification, map[uuid.UUID][]models.Notification) {
+	pending := map[uuid.UUID]int{}
 	byGroup := map[string][]models.Notification{}
 	for _, n := range claimed {
+		pending[n.UserID]++
 		if n.GroupKey != "" && n.OrganizationID != nil {
 			key := n.OrganizationID.String() + "|" + n.GroupKey
 			byGroup[key] = append(byGroup[key], n)
 		}
 	}
 	grouped := map[uuid.UUID]bool{}
-	for key, rows := range byGroup {
-		users := map[uuid.UUID]bool{}
+	var groups [][]models.Notification
+	for _, rows := range byGroup {
+		users := map[uuid.UUID]int{}
 		for _, n := range rows {
-			users[n.UserID] = true
+			users[n.UserID]++
 		}
-		if len(users) < 2 {
-			delete(byGroup, key) // single recipient — bundle with their digest
+		alone := len(users) >= 2
+		for user, count := range users {
+			alone = alone && pending[user] == count
+		}
+		if !alone {
 			continue
 		}
+		groups = append(groups, rows)
 		for _, n := range rows {
 			grouped[n.ID] = true
 		}
 	}
-
-	for _, rows := range byGroup {
-		s.sendGroupEmail(ctx, rows)
-	}
-
 	byUser := map[uuid.UUID][]models.Notification{}
 	for _, n := range claimed {
 		if !grouped[n.ID] {
 			byUser[n.UserID] = append(byUser[n.UserID], n)
 		}
 	}
-	for userID, rows := range byUser {
-		s.sendUserEmail(ctx, userID, rows)
-	}
+	return groups, byUser
 }
 
 // sendGroupEmail delivers one shared event to all its recipients in a single
@@ -209,12 +217,12 @@ func (s *service) sendUserEmail(ctx context.Context, userID uuid.UUID, rows []mo
 		subject = n.Title
 		html, gerr = templates.GenerateNotificationHTML(n.Title, emailBody(n), absoluteLink(n.Link), "")
 	} else {
-		sort.Slice(rows, func(i, j int) bool { return rows[i].CreatedAt.Before(rows[j].CreatedAt) })
+		sort.Slice(rows, func(i, j int) bool { return rows[i].CreatedAt.After(rows[j].CreatedAt) })
 		items := make([]templates.DigestItem, 0, len(rows))
 		for _, n := range rows {
 			items = append(items, templates.DigestItem{Title: n.Title, Body: emailBody(n), URL: absoluteLink(n.Link)})
 		}
-		subject = fmt.Sprintf("%d updates in your Warmbly workspace", len(rows))
+		subject = templates.DigestSubject(len(rows))
 		html, gerr = templates.GenerateDigestHTML(len(rows), items)
 	}
 	if gerr != nil {
