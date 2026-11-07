@@ -374,7 +374,7 @@ export default function BillingSettingsPage() {
 
                                 <Section
                                     eyebrow="Redeemed codes"
-                                    description="Promo and referral codes this workspace has redeemed."
+                                    description="Promo codes this workspace has redeemed."
                                 >
                                     {redemptions.isPending ? (
                                         <div className="h-16 rounded bg-slate-100 animate-pulse" />

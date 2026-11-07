@@ -2351,17 +2351,15 @@ Auth: Session only (not available to API keys).
 }
 ```
 
-### Promo codes and referrals
+<a id="promo-codes-and-referrals"></a>
 
-All session only, requiring org permission `manage_billing` and a selected organization. See the [referral program guide](/guides/referral-program/) for the product rules.
+### Promo codes
+
+Session only, requiring org permission `manage_billing` and a selected organization.
 
 | Endpoint | Returns |
 |----------|---------|
 | `GET /subscription/discounts` | The org's promo-code redemption history (`code`, `type`, `percent_off`, `duration`, `redeemed_at`). |
-| `GET /subscription/referral` | The org's referral status and code. |
-| `POST /subscription/referral` | Creates the org's referral code. |
-| `GET /subscription/referral/attributions` | One row per referred signup. `status` is `pending` (signed up, not yet paid), `qualified` (reached a paid checkout), `rewarded`, or `void` (clawback, self-referral, or cap). `reward_cents` is integer cents. |
-| `GET /subscription/referral/earnings` | The reward ledger. `amount_cents` is positive for a reward, negative for a clawback within the 30-day window; `reason` is `referral_reward` or `referral_clawback:<cause>`; `balance_after_cents` is the running balance. |
 
 ## Reference data
 

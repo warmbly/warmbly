@@ -568,8 +568,7 @@ export function useRealtimeEvents() {
           lead_sync_source: [['lead-sync', 'sources']],
           meeting: [['meetings'], ['meetings', 'summary']],
           subscription: [['subscription'], ['organizations', 'limits']],
-          referral: [['subscription', 'referral']],
-          referral_credit: [['subscription', 'referral'], ['subscription']],
+          referral_credit: [['subscription']],
           // AI credits: a top-up purchase or a monthly allowance reset both
           // change the billing/credits view for every teammate.
           credit_purchase: [['subscription', 'credits'], ['subscription']],

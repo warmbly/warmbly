@@ -1826,12 +1826,6 @@ func Run(
 				subscriptions.GET("/credits/settings", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.GetCreditSettings)
 				subscriptions.PATCH("/credits/settings", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), middleware.RequireFreshAuth(), h.UpdateCreditSettings)
 
-				// Referral program (owner-scoped, gated like the rest of billing).
-				subscriptions.GET("/referral", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.GetReferralSummary)
-				subscriptions.POST("/referral", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.EnsureReferralCode)
-				subscriptions.GET("/referral/attributions", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.ListReferralAttributions)
-				subscriptions.GET("/referral/earnings", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.ListReferralEarnings)
-
 				subscriptions.POST("/enterprise-inquiry", h.SubmitEnterpriseInquiry)
 			}
 		}

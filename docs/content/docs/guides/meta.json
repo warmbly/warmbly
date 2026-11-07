@@ -58,7 +58,6 @@
     "security",
     "workspace-export-import",
     "team-roles",
-    "collaboration",
-    "referral-program"
+    "collaboration"
   ]
 }

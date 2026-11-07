@@ -156,9 +156,6 @@ type RegistrationSession struct {
 	PasswordHash string `json:"password_hash"`
 	CodeHash     string `json:"code_hash"`
 	Nonce        string `json:"nonce"`
-	// ReferralCode is the optional referral code captured at RegistrationStart,
-	// applied for attribution once the account + org are created at confirm.
-	ReferralCode string `json:"referral_code,omitempty"`
 	// Invite is the invitation token captured at RegistrationStart, re-checked
 	// and redeemed at confirm so the account lands in the inviting org.
 	Invite string `json:"invite,omitempty"`
