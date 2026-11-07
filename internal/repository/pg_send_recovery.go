@@ -455,7 +455,7 @@ func (r *emailRepository) ReleaseReconnectedHold(ctx context.Context, orgID, acc
 	tag, err := tx.Exec(ctx, `WITH held AS (SELECT organization_id,id,send_recovery_task_id,send_recovery_reason FROM email_accounts
 		WHERE organization_id=$1 AND id=$2 AND send_recovery_hold AND send_recovery_reason IN('authentication','permanent') FOR UPDATE),
 		history AS (INSERT INTO send_recovery_resolutions(organization_id,email_account_id,recovery_task_id,previous_reason,evidence_type,recorded_locally_at)
-		SELECT organization_id,id,send_recovery_task_id,send_recovery_reason,'credentials_reverified',clock_timestamp() FROM held RETURNING email_account_id)
+		SELECT organization_id,id,(SELECT t.id FROM tasks t WHERE t.id=held.send_recovery_task_id),send_recovery_reason,'credentials_reverified',clock_timestamp() FROM held RETURNING email_account_id)
 		UPDATE email_accounts ea SET send_recovery_hold=false,send_recovery_reason=NULL,send_recovery_task_id=NULL
 		FROM history WHERE ea.id=history.email_account_id`, orgID, accountID)
 	if err != nil {

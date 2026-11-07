@@ -79,4 +79,17 @@ func TestLiveProviderRestoredHoldReleasesOnceTheMailboxSyncsAgain(t *testing.T) 
 	if !held || reason == nil || *reason != "unknown" {
 		t.Fatalf("an unresolved send must keep the mailbox held as unknown, got %v %v", held, reason)
 	}
+
+	// With the refused task gone there is no refusal time, so only a recent sync counts.
+	f.exec(t, `UPDATE tasks SET send_result_state='failed' WHERE id=$1`, unknown)
+	f.exec(t, `UPDATE send_recovery_resolutions SET created_at=NOW()-INTERVAL '7 hours' WHERE email_account_id=$1`, f.sender)
+	f.exec(t, `UPDATE email_accounts SET send_recovery_hold=true,send_recovery_reason='permanent',send_recovery_task_id=$2 WHERE id=$1`, f.sender, uuid.New())
+	synced(2 * time.Hour)
+	if n := release(); n != 0 {
+		t.Fatalf("a stale sync released a hold with no refused task: %d", n)
+	}
+	synced(time.Minute)
+	if n := release(); n != 1 {
+		t.Fatalf("released=%d", n)
+	}
 }

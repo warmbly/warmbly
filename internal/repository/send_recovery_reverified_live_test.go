@@ -44,6 +44,10 @@ func TestLiveReconnectReleasesAuthenticationAndPermanentHolds(t *testing.T) {
 	if held, reason := hold(); held || reason != "" {
 		t.Fatalf("still held: %v %q", held, reason)
 	}
+	exec(`UPDATE email_accounts SET send_recovery_hold=true,send_recovery_reason='permanent',send_recovery_task_id=$2 WHERE id=$1`, f.sender, uuid.New())
+	if released, err := r.ReleaseReconnectedHold(ctx, f.org, f.sender); err != nil || !released {
+		t.Fatalf("a hold whose refused task is gone was not released by a reconnect: released=%v err=%v", released, err)
+	}
 	exec(`UPDATE email_accounts SET send_recovery_hold=true,send_recovery_reason='permanent',send_recovery_task_id=$2 WHERE id=$1`, f.sender, failed)
 	if released, err := r.ReleaseReconnectedHold(ctx, uuid.New(), f.sender); err != nil || released {
 		t.Fatalf("another workspace released the hold: released=%v err=%v", released, err)

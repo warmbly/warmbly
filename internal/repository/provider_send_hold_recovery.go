@@ -8,11 +8,12 @@ import (
 	"github.com/google/uuid"
 )
 
-// providerRestoredHold is a Gmail or Outlook refusal of the whole mailbox that a complete sync pass on the same grant has since outlived.
+// providerRestoredHold is a Gmail or Outlook refusal of the whole mailbox that a complete sync pass on the same grant has since outlived; with the refused task gone, only a sync in the last hour counts.
 // A permanent refusal is a known failed outcome, so releasing it can cost one more refused send, never a duplicate.
 const providerRestoredHold = `ea.status='active' AND ea.send_recovery_hold AND ea.send_recovery_reason='permanent'
 	AND ea.provider IN('gmail','outlook') AND (ea.send_cooldown_provider IS NULL OR ea.send_cooldown_provider=ea.provider::text)
-	AND ss.last_synced_at>COALESCE(t.send_result_applied_at,t.completed_at,t.updated_at,'-infinity'::timestamptz)
+	AND ((t.id IS NOT NULL AND ss.last_synced_at>COALESCE(t.send_result_applied_at,t.completed_at,t.updated_at))
+	 OR (t.id IS NULL AND ss.last_synced_at>NOW()-interval '1 hour'))
 	AND NOT EXISTS(SELECT 1 FROM send_recovery_resolutions r WHERE r.email_account_id=ea.id
 	 AND r.evidence_type='provider_access_restored' AND r.created_at>$1)`
 
@@ -67,7 +68,7 @@ func (r *taskRepository) releaseProviderRestoredHold(ctx context.Context, mailbo
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,269))`, mailbox.String()); err != nil {
 		return false, err
 	}
-	tag, err := tx.Exec(ctx, `WITH held AS(SELECT ea.organization_id,ea.id,ea.send_recovery_task_id FROM email_accounts ea
+	tag, err := tx.Exec(ctx, `WITH held AS(SELECT ea.organization_id,ea.id,t.id AS send_recovery_task_id FROM email_accounts ea
 		JOIN email_sync_state ss ON ss.email_id=ea.id
 		LEFT JOIN tasks t ON t.id=ea.send_recovery_task_id AND t.email_account_id=ea.id
 		WHERE ea.id=$2 AND `+providerRestoredHold+` FOR UPDATE OF ea),

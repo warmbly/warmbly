@@ -503,7 +503,7 @@ func sendRecoveryHoldMessage(hold repository.SendRecoveryHold, provider models.I
 		return "Sending is paused because the mail server refused this mailbox's login when it last sent. Reconnect the mailbox (re-authorize it, or enter its current password or app password); once the server accepts the login, sending resumes unless another send safety hold is still pending."
 	case "permanent":
 		if provider == models.InboxProviderGoogle || provider == models.InboxProviderOutlook {
-			return "Sending is paused because the provider refused this mailbox when it last sent, for example while the account or workspace was suspended. Once the mailbox syncs again, Warmbly resumes sending on its own within a few minutes and checks again every 6 hours while the provider keeps refusing. Reconnecting the mailbox also resumes sending. The refused email was not sent, so nothing is sent twice."
+			return "Sending is paused because the provider refused this mailbox when it last sent, for example while the account or workspace was suspended. Once the mailbox syncs again, Warmbly resumes sending on its own, usually within minutes. If the provider refused the last attempt to resume, the next one waits up to 6 hours. Reconnecting the mailbox resumes sending sooner. The refused email was not sent, so nothing is sent twice."
 		}
 		return "Sending is paused because the mail server refused this mailbox when it last sent. Fix the account with your mail provider, then reconnect the mailbox (enter its current password or app password) to resume sending. The refused email was not sent, so nothing is sent twice."
 	default:
