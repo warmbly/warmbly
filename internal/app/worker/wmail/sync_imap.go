@@ -84,7 +84,7 @@ func (w *WMail) Sync(ctx context.Context) *errx.MailError {
 	selectionComplete := client.FolderOverflow() == 0 && client.FolderConflicts() == 0
 	if selectionComplete {
 		if err := w.imapFollowRenames(folders, listing.Present); err != nil {
-			return nil
+			return w.controlPlaneError(err, stats)
 		}
 	}
 
@@ -112,7 +112,7 @@ func (w *WMail) Sync(ctx context.Context) *errx.MailError {
 				return nil
 			}
 			if err := w.mboxEvent(&saved); err != nil {
-				return nil
+				return w.controlPlaneError(err, stats)
 			}
 			w.SmtpImapData.Mailboxes = append(w.SmtpImapData.Mailboxes, &saved)
 			continue
@@ -132,7 +132,7 @@ func (w *WMail) Sync(ctx context.Context) *errx.MailError {
 				return nil
 			}
 			if err := w.mboxEvent(&saved); err != nil {
-				return nil
+				return w.controlPlaneError(err, stats)
 			}
 			*befBox = saved
 			delete(w.flagScan, box.Name)
@@ -188,7 +188,7 @@ func (w *WMail) Sync(ctx context.Context) *errx.MailError {
 				advanceToView(&next, view)
 			}
 			if err := w.mboxEvent(&next); err != nil {
-				return nil
+				return w.controlPlaneError(err, stats)
 			}
 			// befBox is the stored copy itself, matched by name, so there is
 			// nothing else in the list to keep in step with it.
@@ -246,7 +246,7 @@ func (w *WMail) Sync(ctx context.Context) *errx.MailError {
 			// the mail already stored from it along.
 			Skipped: imap.SkipsFolder(*box, skip) || imapRetiredIntoSkipped(box, gone, skipped),
 		}); err != nil {
-			return nil
+			return w.controlPlaneError(err, stats)
 		}
 		deleted = append(deleted, box.Name)
 	}

@@ -1,13 +1,17 @@
 package jobs
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
@@ -96,8 +100,17 @@ func TestSyncStateChecksReportingWorkerBeforeSaving(t *testing.T) {
 		at := time.Now().Add(-time.Minute)
 		event := &models.JobEventSyncState{WorkerID: &workerID, ReportGeneration: syncTestGeneration, UserID: uuid.New(), EmailID: uuid.New(),
 			State: models.SyncState{TransportGeneration: syncTestGeneration, LastSyncedAt: &at, BackfillStatus: models.SyncBackfillComplete, FoldersSkippedCap: 4}}
-		if err := s.HandleSyncState(t.Context(), event); err != nil {
+		var output bytes.Buffer
+		previous := log.Logger
+		log.Logger = zerolog.New(&output)
+		err := s.HandleSyncState(t.Context(), event)
+		log.Logger = previous
+		if err != nil {
 			t.Fatal(err)
+		}
+		// A dropped report leaves last_synced_at stale, so it must be logged (#1157).
+		if logged := strings.Contains(output.String(), "sync state report dropped") && strings.Contains(output.String(), workerID.String()); logged == accepted {
+			t.Fatalf("accepted=%t drop logged=%t: %s", accepted, logged, output.String())
 		}
 		if repo.reportWorker != workerID || repo.reportGeneration != syncTestGeneration || (repo.put != nil) != accepted {
 			t.Fatalf("worker=%s accepted=%t saved=%+v", repo.reportWorker, accepted, repo.put)

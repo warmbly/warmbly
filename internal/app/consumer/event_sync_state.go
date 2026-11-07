@@ -55,6 +55,15 @@ func (s *JobsService) HandleSyncState(ctx context.Context, e *models.JobEventSyn
 		return err
 	}
 	if !accepted {
+		// The mailbox moved to another worker or transport generation. The
+		// report is dropped, so last_synced_at does not move; say so instead of
+		// leaving a stale "last synced" with nothing in the logs.
+		log.Warn().
+			Str("email_id", e.EmailID.String()).
+			Str("worker_id", e.WorkerID.String()).
+			Str("report_generation", e.ReportGeneration.String()).
+			Str("transport_generation", e.State.TransportGeneration.String()).
+			Msg("sync state report dropped: reporting worker no longer owns the mailbox at this generation")
 		return nil
 	}
 
