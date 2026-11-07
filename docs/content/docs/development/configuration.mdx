@@ -640,7 +640,7 @@ Each additional dashboard also needs:
 
 - its hostname allowed on the Cloudflare Turnstile widget. A widget restricted to one hostname does not cover a sibling. Keep CAPTCHA enabled.
 - its origin appended to the realtime service's `CHECK_ORIGIN_HOSTS`, preserving the existing origins. The API origin allowlist does not configure websocket origin checks.
-- the existing `WEBAUTHN_RP_ID`, unchanged. Changing it invalidates every registered passkey, so a passkey registered on the primary dashboard's hostname does not sign in on a sibling hostname; use email/password there.
+- the existing `WEBAUTHN_RP_ID`, unchanged. Changing it invalidates every registered passkey. If it is the primary dashboard's hostname, use email/password on a sibling hostname; if it is a shared parent domain and both origins are allowed for WebAuthn, existing passkeys work on both dashboards.
 
 This is not a global rewrite of every primary-dashboard link. Dashboard Google/Apple/OIDC login remains primary-dashboard routed. Server-generated notifications, Slack-launched links, CLI/bootstrap links and self-hosted Cloud broker returns retain their canonical instance routing. Cloud broker return origins remain bound to the registered instance.
 

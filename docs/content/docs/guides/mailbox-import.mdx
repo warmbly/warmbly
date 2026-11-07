@@ -157,7 +157,7 @@ Each mailbox is labelled with where it is hosted and how it signs in. The [API](
 
 A Google row whose password is not a 16-letter app password is flagged in the preview before anything is tried: Google refuses the account password over IMAP and SMTP. On an instance that connects new Gmail mailboxes with Google sign-in (`gmail_oauth_connect` in `GET /auth/config`), such a row waits for sign-in instead, like a Microsoft row.
 
-Google rows waiting for Google sign-in offer a **Sign in** action only on instances that connect new Gmail mailboxes with Google sign-in, and never for a personal Gmail address, which connects with an app password. Otherwise use **Fix** on the row to give it a 16-letter app password, which connects it over IMAP and SMTP with Google's servers, or use an admin grant the workspace already holds for the domain.
+Google rows waiting for Google sign-in offer a **Sign in** action on instances that connect new Gmail mailboxes with Google sign-in or are linked to Warmbly Cloud (which runs the consent on its own app), and never for a personal Gmail address, which connects with an app password. Otherwise use **Fix** on the row to give it a 16-letter app password, which connects it over IMAP and SMTP with Google's servers, or use an admin grant the workspace already holds for the domain.
 
 ### Microsoft
 

@@ -190,7 +190,7 @@ The administrator does this in the Google Admin console:
 
 Then connect each mailbox: choose **Add account > Google > Sign in with Google**, enter the mailbox's address, choose **Continue with Google** and approve the consent screen. When the Google window closes without connecting, the dialog shows the client ID again with what to ask the administrator. The same client ID is reported as `google_mailbox_client_id` by `GET /emails/grants/config`. On a self-hosted instance linked to Warmbly Cloud, the consent runs on Warmbly Cloud's own app, so the dialog shows no client ID.
 
-This option appears whenever the instance has a Google mailbox client configured; an administrator can turn new connects off with `BOX_GOOGLE_OAUTH_CONNECT=false` (see [configuration](/development/configuration/)). If it is hidden, use an app password instead. Existing Google sign-in mailboxes keep working and can re-authorize even when new Google sign-in connects are disabled.
+This option appears when the instance has a Google mailbox client configured and `BOX_GOOGLE_OAUTH_CONNECT` is unset or true; an explicit `false` or an invalid value turns new connects off (see [configuration](/development/configuration/)). An instance linked to Warmbly Cloud offers it either way, through Warmbly Cloud's app. If it is hidden, use an app password instead. Existing Google sign-in mailboxes keep working and can re-authorize even when new Google sign-in connects are disabled.
 
 #### Whole Workspace domain with delegation
 
