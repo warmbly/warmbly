@@ -509,6 +509,62 @@ func TestFoldersStatusEchoingAnotherNameFallsBackToExamine(t *testing.T) {
 	}
 }
 
+// The fallback carries EXAMINE's values over field for field, HIGHESTMODSEQ
+// included on a CONDSTORE server.
+func TestFoldersUnpairedStatusKeepsExamineCursors(t *testing.T) {
+	for _, condStore := range []bool{false, true} {
+		t.Run(fmt.Sprintf("CONDSTORE=%t", condStore), func(t *testing.T) {
+			modSeq := ""
+			var rewrite func(string) string
+			if condStore {
+				modSeq = " HIGHESTMODSEQ 1"
+				rewrite = advertising("CONDSTORE")
+			}
+			c, wire := rewritingServer(t, nil, func(line string) string {
+				fields := strings.Fields(line)
+				if len(fields) < 3 {
+					return ""
+				}
+				switch strings.ToUpper(fields[1]) {
+				case "STATUS":
+					if strings.Contains(fields[2], "&") {
+						return `* STATUS "???" (MESSAGES 1 UIDNEXT 2 UIDVALIDITY 3)` + "\r\n" + fields[0] + " OK STATUS completed"
+					}
+					return "* STATUS " + fields[2] + " (MESSAGES 0 UIDNEXT 1 UIDVALIDITY 1" + modSeq + ")\r\n" + fields[0] + " OK STATUS completed"
+				case "EXAMINE":
+					reply := "* 7 EXISTS\r\n* OK [UIDVALIDITY 777] ok\r\n* OK [UIDNEXT 42] ok\r\n"
+					if condStore {
+						reply += "* OK [HIGHESTMODSEQ 9001] ok\r\n"
+					}
+					return reply + fields[0] + " OK [READ-ONLY] EXAMINE completed"
+				}
+				return ""
+			}, rewrite, "已发送")
+			boxes, err := c.Folders()
+			if err != nil {
+				t.Fatalf("Folders: %v", err)
+			}
+			var sent *models.Mailbox
+			for i := range boxes {
+				if boxes[i].Name == "已发送" {
+					sent = &boxes[i]
+				}
+			}
+			var wantModSeq uint64
+			if condStore {
+				wantModSeq = 9001
+			}
+			if sent == nil || sent.UIDValidity != 777 || sent.UIDNext != 42 || sent.Messages != 7 || sent.HighestModSeq != wantModSeq {
+				t.Fatalf("recovered folder = %+v, want UIDVALIDITY 777, UIDNEXT 42, 7 messages, HIGHESTMODSEQ %d", sent, wantModSeq)
+			}
+			examined := wire.commands("EXAMINE")
+			if len(examined) != 1 || strings.Contains(examined[0], "CONDSTORE") != condStore {
+				t.Fatalf("EXAMINE should carry CONDSTORE only where advertised: %v", examined)
+			}
+		})
+	}
+}
+
 // A failed fallback EXAMINE is held to the STATUS rules: only an explicit
 // NONEXISTENT drops the folder, anything else fails the pass without
 // handing back a listing that could retire stored folders.
