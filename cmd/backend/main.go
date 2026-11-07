@@ -1970,7 +1970,8 @@ func main() {
 			}
 		}
 		var googleMailboxClientID string
-		if g := oauth2Cfg.InboxAuthorization.Google; g != nil {
+		// Named only when the client can complete a sign-in, so the dashboard offers no Google reconnect that cannot work.
+		if g := oauth2Cfg.InboxAuthorization.Google; g != nil && g.ClientSecret != "" {
 			googleMailboxClientID = g.ClientID
 		}
 		delegationService = delegation.NewService(delegation.Deps{
