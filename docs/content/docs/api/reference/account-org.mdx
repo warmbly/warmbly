@@ -2397,7 +2397,7 @@ The workspace balance in US dollars: the plan's monthly allowance plus money the
 }
 ```
 
-`payment_method` is `null` with no saved card. `retry_at` and `retry_reason` are set while a declined automatic reload waits for its next try (1, 6 and 18 hours after the attempts before it). `failure_code` and `failed_at` record why automatic reload last turned itself off: `card_declined`, `authentication_required`, `no_payment_method` or `payment_failed`.
+`payment_method` is `null` with no saved card. `retry_at` and `retry_reason` are set while a declined automatic reload waits for its next try (1, 6 and 18 hours after the attempts before it). `failure_code` and `failed_at` record why automatic reload last turned itself off: `card_declined`, `authentication_required`, `no_payment_method`, `payment_failed`, or `unavailable` when Stripe could not be reached after 8 tries. A reload waiting for its next try is canceled when automatic reload is turned off or the balance is back above `threshold_usd`.
 
 #### Add money on the saved card
 
@@ -2407,7 +2407,7 @@ The workspace balance in US dollars: the plan's monthly allowance plus money the
 |-------|------|----------|-------------|
 | `amount_usd` | number | yes | From `5` to `5000`, rounded to whole cents. |
 
-Charges the saved card now, billed as a Stripe invoice, and answers `{"status": "paid", "amount_usd": 25, "balance_usd": 46.4375}`. `status` is `processing` when the card network has not confirmed yet; the money is added when it does. Needs an active paid plan (`403` otherwise).
+Charges the saved card now, billed as a Stripe invoice, and answers `200` with `{"status": "paid", "amount_usd": 25, "balance_usd": 46.4375, "charge_in_progress": false}`. While the payment is still going through (the card network has not confirmed, or Stripe did not answer and Warmbly retries it in the background) it answers `202` with `status` `processing` and `charge_in_progress` `true`; the money is added when the payment lands. Needs an active paid plan (`403` otherwise). Send an `Idempotency-Key` to retry the call safely; without one, a retry while the first payment is pending answers `409` `charge_in_progress` rather than charging twice.
 
 | Status | Code | Meaning |
 |--------|------|---------|

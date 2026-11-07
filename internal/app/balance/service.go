@@ -45,6 +45,10 @@ const (
 	// staleAfter is how long a pending charge may sit untouched (a crash
 	// between steps) before the sweep resumes it.
 	staleAfter = 5 * time.Minute
+	// maxTries bounds the payment attempts on one charge, failed Stripe calls included.
+	maxTries = 8
+	// legacyPendingFor is how long a credit-pack charge the previous release started may stay pending.
+	legacyPendingFor = 24 * time.Hour
 )
 
 // Card is the slice of the Stripe service a charge needs.
@@ -230,11 +234,19 @@ func (s *Service) paymentMethod(ctx context.Context, orgID uuid.UUID) (string, *
 
 // run makes one payment attempt on a pending charge and acts on how it ended.
 func (s *Service) run(ctx context.Context, c *models.SavedCardCharge, offSession bool) error {
-	// A card changed while a soft decline waited is the one to retry on.
-	if c.Kind == models.SavedCardAutoReload && c.Tries > 0 {
-		if _, pm, err := s.paymentMethod(ctx, c.OrgID); err == nil && pm != nil && pm.ID != c.PaymentMethodID {
-			if err := s.charges.SetPaymentMethod(ctx, c.ID, pm.ID); err == nil {
-				c.PaymentMethodID = pm.ID
+	if c.Kind == models.SavedCardAutoReload {
+		// An automatic reload is charged only while reload is on and the balance under its threshold.
+		if wanted, err := s.reloadWanted(ctx, c.OrgID); err != nil {
+			return err
+		} else if !wanted {
+			return s.cancel(ctx, c)
+		}
+		// A card changed while a soft decline waited is the one to retry on.
+		if c.Tries > 0 {
+			if _, pm, err := s.paymentMethod(ctx, c.OrgID); err == nil && pm != nil && pm.ID != c.PaymentMethodID {
+				if err := s.charges.SetPaymentMethod(ctx, c.ID, pm.ID); err == nil {
+					c.PaymentMethodID = pm.ID
+				}
 			}
 		}
 	}
@@ -243,8 +255,11 @@ func (s *Service) run(ctx context.Context, c *models.SavedCardCharge, offSession
 		return err
 	}
 	res, err := s.card.ChargeSavedCard(ctx, c, tries, offSession)
-	if err != nil {
+	if err != nil && tries < maxTries {
 		return err // left pending; the sweep resumes it
+	}
+	if err != nil {
+		return s.giveUp(ctx, c, err)
 	}
 	c.InvoiceID = res.InvoiceID
 	switch {
@@ -272,9 +287,61 @@ func (s *Service) run(ctx context.Context, c *models.SavedCardCharge, offSession
 	return nil
 }
 
+func (s *Service) reloadWanted(ctx context.Context, orgID uuid.UUID) (bool, error) {
+	cfg := s.config(ctx, orgID)
+	if !cfg.AutoReloadEnabled {
+		return false, nil
+	}
+	bal, xerr := s.credits.GetBalance(ctx, orgID)
+	if xerr != nil {
+		return false, xerr
+	}
+	return bal < cfg.AutoReloadThreshold, nil
+}
+
+// cancel closes a pending charge nothing should collect any more.
+func (s *Service) cancel(ctx context.Context, c *models.SavedCardCharge) error {
+	if s.card != nil {
+		s.card.VoidChargeInvoice(ctx, c.InvoiceID)
+	}
+	if err := s.charges.MarkFailed(ctx, c.ID, models.ChargeCanceled); err != nil {
+		return err
+	}
+	s.changed(ctx, c.OrgID)
+	return nil
+}
+
+// cancelPendingReload closes the workspace's pending automatic reload, if any.
+func (s *Service) cancelPendingReload(ctx context.Context, orgID uuid.UUID) {
+	c, err := s.charges.Pending(ctx, orgID)
+	if err != nil || c == nil || c.Legacy || c.Kind != models.SavedCardAutoReload {
+		return
+	}
+	if err := s.cancel(ctx, c); err != nil {
+		log.Warn().Err(err).Str("charge_id", c.ID.String()).Msg("cancel pending automatic reload")
+	}
+}
+
+// giveUp fails a charge whose Stripe calls kept failing for maxTries attempts.
+func (s *Service) giveUp(ctx context.Context, c *models.SavedCardCharge, cause error) error {
+	if cur, err := s.charges.Get(ctx, c.ID); err == nil && cur != nil {
+		c.InvoiceID = cur.InvoiceID
+	}
+	s.card.VoidChargeInvoice(ctx, c.InvoiceID)
+	if err := s.charges.MarkFailed(ctx, c.ID, models.ReloadUnavailable); err != nil {
+		return err
+	}
+	if c.Kind == models.SavedCardAutoReload {
+		s.disable(ctx, c.OrgID, models.ReloadUnavailable)
+	}
+	s.changed(ctx, c.OrgID)
+	return fmt.Errorf("charge %s failed after %d tries: %w", c.ID, maxTries, cause)
+}
+
 // disable turns automatic reload off after a charge it cannot recover from,
 // so nothing else is charged, and tells whoever manages billing.
 func (s *Service) disable(ctx context.Context, orgID uuid.UUID, code string) {
+	s.cancelPendingReload(ctx, orgID)
 	turnedOff, err := s.settings.DisableAutoReload(ctx, orgID, code)
 	if err != nil || !turnedOff {
 		return
@@ -348,8 +415,8 @@ func (s *Service) changed(ctx context.Context, orgID uuid.UUID) {
 	}
 }
 
-// TopUpResult is how a one-click top-up ended: "paid", or "processing" when the
-// card network has not answered yet and the webhook will finish it.
+// TopUpResult is how a one-click top-up ended: "paid", or "processing" while the
+// charge is still pending and the webhook or the sweep will finish it.
 type TopUpResult struct {
 	Status string
 	Amount models.Micro
@@ -380,17 +447,33 @@ func (s *Service) TopUp(ctx context.Context, orgID uuid.UUID, amount models.Micr
 	if err != nil {
 		return nil, err
 	}
-	if err := s.run(ctx, c, false); err != nil {
-		return nil, err
+	runErr := s.run(ctx, c, false)
+	var declined *DeclinedError
+	if errors.As(runErr, &declined) {
+		return nil, runErr
 	}
-	if done, _ := s.charges.Get(ctx, c.ID); done != nil && done.Status == "succeeded" {
+	done, err := s.charges.Get(ctx, c.ID)
+	if err != nil {
+		return nil, errors.Join(runErr, err)
+	}
+	if done == nil {
+		return nil, errors.Join(runErr, fmt.Errorf("top-up charge %s is gone", c.ID))
+	}
+	switch done.Status {
+	case "succeeded":
 		return &TopUpResult{Status: "paid", Amount: amount}, nil
+	case "pending":
+		if runErr != nil {
+			log.Warn().Err(runErr).Str("charge_id", c.ID.String()).Msg("top-up left for the sweep to finish")
+		}
+		return &TopUpResult{Status: "processing", Amount: amount}, nil
 	}
-	return &TopUpResult{Status: "processing", Amount: amount}, nil
+	return nil, errors.Join(runErr, fmt.Errorf("top-up charge %s ended %s", c.ID, done.Status))
 }
 
 // SetAutoReload saves automatic reload. Turning it on needs a saved card, and
-// starts a reload right away when the balance is already under the threshold.
+// starts a reload right away when the balance is already under the threshold;
+// turning it off cancels a reload still pending.
 func (s *Service) SetAutoReload(ctx context.Context, orgID uuid.UUID, enabled bool, threshold, amount, monthlyLimit models.Micro) (*models.AISpendSettings, error) {
 	if enabled && s.card != nil {
 		if _, pm, err := s.paymentMethod(ctx, orgID); err != nil {
@@ -403,15 +486,17 @@ func (s *Service) SetAutoReload(ctx context.Context, orgID uuid.UUID, enabled bo
 	if err != nil {
 		return nil, err
 	}
-	if enabled {
-		go func() {
-			rctx, cancel := context.WithTimeout(context.Background(), opTimeout)
-			defer cancel()
-			if err := s.Reload(rctx, orgID); err != nil {
-				log.Warn().Err(err).Str("org_id", orgID.String()).Msg("automatic reload after enabling failed")
-			}
-		}()
+	if !enabled {
+		s.cancelPendingReload(ctx, orgID)
+		return out, nil
 	}
+	go func() {
+		rctx, cancel := context.WithTimeout(context.Background(), opTimeout)
+		defer cancel()
+		if err := s.Reload(rctx, orgID); err != nil {
+			log.Warn().Err(err).Str("org_id", orgID.String()).Msg("automatic reload after enabling failed")
+		}
+	}()
 	return out, nil
 }
 
@@ -440,6 +525,11 @@ func (s *Service) sweep(ctx context.Context) {
 		log.Warn().Err(err).Msg("balance sweep: refresh annual allowances")
 	} else if n > 0 {
 		log.Info().Int("count", n).Msg("balance sweep: refreshed annual allowances")
+	}
+	if n, err := s.charges.CloseLegacy(ctx, time.Now().Add(-legacyPendingFor), models.ChargeExpired); err != nil {
+		log.Warn().Err(err).Msg("balance sweep: close legacy charges")
+	} else if n > 0 {
+		log.Info().Int64("count", n).Msg("balance sweep: closed legacy charges")
 	}
 	due, err := s.charges.Due(ctx, time.Now(), staleAfter, 50)
 	if err != nil {

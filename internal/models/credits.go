@@ -118,6 +118,14 @@ const (
 	ReloadUnavailable            = "unavailable"
 )
 
+// Failure codes only a charge row carries, never the settings row.
+const (
+	// ChargeCanceled closes an automatic reload no longer wanted: reload off or the balance back over the threshold.
+	ChargeCanceled = "canceled"
+	// ChargeExpired closes a credit-pack charge the previous release left pending.
+	ChargeExpired = "expired"
+)
+
 // AISpendSettings is an org's spend-control row: optional spend limits per
 // calendar day, ISO week and calendar month for the workspace and for each
 // member (nil = no limit), the low-balance notice threshold, and automatic

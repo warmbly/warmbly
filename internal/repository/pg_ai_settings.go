@@ -53,7 +53,7 @@ func NewAISettingsRepository(database *db.DB) AISettingsRepository {
 const aiSettingsCols = `org_id, spend_limit_daily_micro, spend_limit_weekly_micro, spend_limit_monthly_micro,
 	member_limit_daily_micro, member_limit_weekly_micro, member_limit_monthly_micro,
 	low_balance_threshold_micro, low_balance_notified_at, balance_out_notified_at,
-	auto_topup_enabled, auto_reload_threshold_micro, auto_reload_amount_micro, auto_reload_monthly_limit_micro,
+	auto_reload_enabled, auto_reload_threshold_micro, auto_reload_amount_micro, auto_reload_monthly_limit_micro,
 	COALESCE(auto_reload_failure_code, ''), auto_reload_failed_at, created_at, updated_at`
 
 func scanAISettings(row pgx.Row, s *models.AISpendSettings) error {
@@ -104,15 +104,15 @@ func (r *aiSettingsRepository) UpsertLimits(ctx context.Context, in *models.AISp
 func (r *aiSettingsRepository) UpsertAutoReload(ctx context.Context, orgID uuid.UUID, enabled bool, threshold, amount, monthlyLimit models.Micro) (*models.AISpendSettings, error) {
 	return r.one(ctx, `
 		INSERT INTO org_ai_settings
-			(org_id, auto_topup_enabled, auto_reload_threshold_micro, auto_reload_amount_micro, auto_reload_monthly_limit_micro)
+			(org_id, auto_reload_enabled, auto_reload_threshold_micro, auto_reload_amount_micro, auto_reload_monthly_limit_micro)
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (org_id) DO UPDATE SET
-			auto_topup_enabled = EXCLUDED.auto_topup_enabled,
+			auto_reload_enabled = EXCLUDED.auto_reload_enabled,
 			auto_reload_threshold_micro = EXCLUDED.auto_reload_threshold_micro,
 			auto_reload_amount_micro = EXCLUDED.auto_reload_amount_micro,
 			auto_reload_monthly_limit_micro = EXCLUDED.auto_reload_monthly_limit_micro,
-			auto_reload_failure_code = CASE WHEN EXCLUDED.auto_topup_enabled THEN NULL ELSE org_ai_settings.auto_reload_failure_code END,
-			auto_reload_failed_at = CASE WHEN EXCLUDED.auto_topup_enabled THEN NULL ELSE org_ai_settings.auto_reload_failed_at END,
+			auto_reload_failure_code = CASE WHEN EXCLUDED.auto_reload_enabled THEN NULL ELSE org_ai_settings.auto_reload_failure_code END,
+			auto_reload_failed_at = CASE WHEN EXCLUDED.auto_reload_enabled THEN NULL ELSE org_ai_settings.auto_reload_failed_at END,
 			updated_at = now()
 		RETURNING `+aiSettingsCols,
 		orgID, enabled, threshold, amount, monthlyLimit)
@@ -121,8 +121,8 @@ func (r *aiSettingsRepository) UpsertAutoReload(ctx context.Context, orgID uuid.
 func (r *aiSettingsRepository) DisableAutoReload(ctx context.Context, orgID uuid.UUID, failureCode string) (bool, error) {
 	tag, err := r.DB.Exec(ctx, `
 		UPDATE org_ai_settings
-		SET auto_topup_enabled = false, auto_reload_failure_code = $2, auto_reload_failed_at = now(), updated_at = now()
-		WHERE org_id = $1 AND auto_topup_enabled`, orgID, failureCode)
+		SET auto_reload_enabled = false, auto_reload_failure_code = $2, auto_reload_failed_at = now(), updated_at = now()
+		WHERE org_id = $1 AND auto_reload_enabled`, orgID, failureCode)
 	if err != nil {
 		return false, err
 	}
@@ -157,7 +157,7 @@ func (r *aiSettingsRepository) AutoReloadDue(ctx context.Context, limit int) ([]
 		SELECT s.org_id
 		FROM org_ai_settings s
 		JOIN credit_ledger l ON l.org_id = s.org_id
-		WHERE s.auto_topup_enabled
+		WHERE s.auto_reload_enabled
 		  AND l.balance_micro + l.purchased_micro < s.auto_reload_threshold_micro
 		  AND NOT EXISTS (SELECT 1 FROM credit_auto_topup_attempts a
 		                  WHERE a.organization_id = s.org_id AND a.status = 'pending')

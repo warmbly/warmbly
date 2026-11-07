@@ -41,6 +41,9 @@ type SavedCardChargeRepository interface {
 	// Due lists pending charges whose retry time has come or that have sat
 	// untouched longer than staleAfter, oldest first.
 	Due(ctx context.Context, now time.Time, staleAfter time.Duration, limit int) ([]models.SavedCardCharge, error)
+	// CloseLegacy fails credit-pack charges the previous release started that
+	// are still pending since before a time, so they stop holding the slot.
+	CloseLegacy(ctx context.Context, createdBefore time.Time, failureCode string) (int64, error)
 	// SettleLegacyPaymentIntent settles a credit-pack charge the previous
 	// release started on a payment intent.
 	SettleLegacyPaymentIntent(ctx context.Context, paymentIntentID string) error
@@ -173,6 +176,16 @@ func (r *savedCardChargeRepository) Due(ctx context.Context, now time.Time, stal
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+func (r *savedCardChargeRepository) CloseLegacy(ctx context.Context, createdBefore time.Time, failureCode string) (int64, error) {
+	tag, err := r.DB.Exec(ctx, `UPDATE credit_auto_topup_attempts
+		SET status = 'failed', failure_code = $2, failure_message = $2, retry_at = NULL, completed_at = now(), updated_at = now()
+		WHERE status = 'pending' AND pack_key <> 'usd' AND created_at < $1`, createdBefore, failureCode)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 func (r *savedCardChargeRepository) SettleLegacyPaymentIntent(ctx context.Context, paymentIntentID string) error {

@@ -138,7 +138,7 @@ The usage card above it shows spend today, this week and this month, a graph ove
 
 You can add any amount from **$5 to $5,000**, in whole cents. Adding money needs an active paid plan.
 
-- **One click on the saved card.** The card is charged at once and the money is added as soon as the payment goes through. Each charge is billed as a Stripe invoice, so it has its own invoice and receipt.
+- **One click on the saved card.** The card is charged at once and the money is added as soon as the payment goes through. If the payment is still going through when the page answers, the Balance tab says so and updates when it lands; Warmbly finishes it in the background, and another payment cannot start until it does. Each charge is billed as a Stripe invoice, so it has its own invoice and receipt.
 - **Pay another way.** Opens Stripe Checkout for the amount. Use it when there is no saved card, when you want another card, or when the saved card is declined or your bank asks to confirm the payment. Checkout saves the card for next time. Money arrives only after Stripe confirms the payment, so closing the checkout tab charges nothing, and a completed payment is added exactly once even if Stripe retries.
 - **Change the card.** Opens Stripe Checkout to save a new card, without charging anything.
 
@@ -164,6 +164,9 @@ When a reload is declined:
 
 - **A temporary decline** (for example insufficient funds) is retried 1 hour, 6 hours and 18 hours later. If the last retry also fails, automatic reload turns off.
 - **A hard decline, or your bank asking to confirm the payment**, turns automatic reload off at once, so nothing else is charged. Everyone who manages billing is notified with the reason. Add money once (through Checkout if the bank needs you to confirm), update the card if it was declined, then turn automatic reload back on.
+- **Stripe keeps failing to answer**: the reload is given up after 8 tries and automatic reload turns off the same way.
+
+A reload waiting for a retry is canceled, never charged, when you turn automatic reload off or the balance is back above the threshold by the time it is due.
 
 The Balance tab shows the last reload, how much has been reloaded this month, and a pending retry with its time.
 

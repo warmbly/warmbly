@@ -123,6 +123,11 @@ UPDATE plans SET monthly_allowance_micro = CASE
     ELSE monthly_credits::bigint * legacy_credit_micro()
 END;
 
+-- The previous release refills a monthly pool from monthly_credits, so it has
+-- to grant the same dollars.
+UPDATE plans SET monthly_credits = (monthly_allowance_micro / legacy_credit_micro())::integer
+WHERE monthly_credits::bigint * legacy_credit_micro() <> monthly_allowance_micro;
+
 -- ------------------------------------------------------- spend settings
 
 ALTER TABLE org_ai_settings
@@ -133,6 +138,7 @@ ALTER TABLE org_ai_settings
     ADD COLUMN IF NOT EXISTS member_limit_weekly_micro bigint CHECK (member_limit_weekly_micro IS NULL OR member_limit_weekly_micro > 0),
     ADD COLUMN IF NOT EXISTS member_limit_monthly_micro bigint CHECK (member_limit_monthly_micro IS NULL OR member_limit_monthly_micro > 0),
     ADD COLUMN IF NOT EXISTS low_balance_threshold_micro bigint NOT NULL DEFAULT 500000 CHECK (low_balance_threshold_micro >= 0),
+    ADD COLUMN IF NOT EXISTS auto_reload_enabled boolean NOT NULL DEFAULT false,
     ADD COLUMN IF NOT EXISTS auto_reload_threshold_micro bigint NOT NULL DEFAULT 5000000
         CHECK (auto_reload_threshold_micro BETWEEN 10000 AND 1000000000),
     ADD COLUMN IF NOT EXISTS auto_reload_amount_micro bigint NOT NULL DEFAULT 25000000
@@ -164,8 +170,12 @@ UPDATE org_ai_settings SET
 
 -- An existing pack-based auto top-up keeps its shape: the pack becomes the
 -- reload amount, the credit threshold the dollar one, and the monthly count
--- times the amount the monthly limit.
+-- times the amount the monthly limit. It moves to auto_reload_enabled, and the
+-- legacy switch goes off, so the previous release never charges a pack from
+-- a setting this release owns.
 UPDATE org_ai_settings SET
+    auto_reload_enabled = true,
+    auto_topup_enabled = false,
     auto_reload_amount_micro = GREATEST(CASE auto_topup_pack
         WHEN 'pack_2000' THEN 2000 WHEN 'pack_10000' THEN 10000 ELSE 500 END::bigint * legacy_credit_micro(), 5000000),
     auto_reload_threshold_micro = LEAST(GREATEST(auto_topup_threshold::bigint * legacy_credit_micro(), 10000),

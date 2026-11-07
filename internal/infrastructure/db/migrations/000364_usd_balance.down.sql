@@ -31,6 +31,7 @@ ALTER TABLE org_ai_settings
     DROP COLUMN IF EXISTS member_limit_weekly_micro,
     DROP COLUMN IF EXISTS member_limit_monthly_micro,
     DROP COLUMN IF EXISTS low_balance_threshold_micro,
+    DROP COLUMN IF EXISTS auto_reload_enabled,
     DROP COLUMN IF EXISTS auto_reload_threshold_micro,
     DROP COLUMN IF EXISTS auto_reload_amount_micro,
     DROP COLUMN IF EXISTS auto_reload_monthly_limit_micro,

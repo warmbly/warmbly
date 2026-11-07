@@ -99,6 +99,25 @@ func TestLiveBalanceChargesAndAutoReload(t *testing.T) {
 	if cfg, _ := settings.UpsertAutoReload(ctx, orgID, true, 5*models.MicroPerUSD, 25*models.MicroPerUSD, 250*models.MicroPerUSD); cfg.AutoReloadFailureCode != "" {
 		t.Fatal("turning reload back on kept the failure")
 	}
+	// The previous release's switch stays off whatever this release saves.
+	var legacyOn bool
+	if err := pool.QueryRow(ctx, `SELECT auto_topup_enabled FROM org_ai_settings WHERE org_id = $1`, orgID).Scan(&legacyOn); err != nil || legacyOn {
+		t.Fatalf("auto_topup_enabled = %v, %v; want false", legacyOn, err)
+	}
+
+	// A pack charge the previous release left pending frees the slot after a day.
+	exec(`INSERT INTO credit_auto_topup_attempts (organization_id, pack_key, credits, created_at) VALUES ($1, 'pack_500', 500, now() - interval '25 hours')`, orgID)
+	if n, err := charges.CloseLegacy(ctx, time.Now().Add(-24*time.Hour), models.ChargeExpired); err != nil || n < 1 {
+		t.Fatalf("CloseLegacy = %d, %v", n, err)
+	}
+	if p, _ := charges.Pending(ctx, orgID); p != nil {
+		t.Fatalf("a day-old legacy charge still holds the slot: %+v", p)
+	}
+	exec(`INSERT INTO credit_auto_topup_attempts (organization_id, pack_key, credits) VALUES ($1, 'pack_500', 500)`, orgID)
+	_, _ = charges.CloseLegacy(ctx, time.Now().Add(-24*time.Hour), models.ChargeExpired)
+	if p, _ := charges.Pending(ctx, orgID); p == nil || !p.Legacy {
+		t.Fatal("a fresh legacy charge was closed")
+	}
 }
 
 func dueHasOrg(ids []uuid.UUID, id uuid.UUID) bool {

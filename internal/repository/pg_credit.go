@@ -59,7 +59,7 @@ type CreditRepository interface {
 
 	// AnnualAllowancesDue lists active subscriptions billed over more than a
 	// month, with their period start, plan allowance and last reset, so the
-	// allowance can refresh every month in between invoices.
+	// allowance can refresh every month in between invoices. Oldest reset first.
 	AnnualAllowancesDue(ctx context.Context, limit int) ([]AnnualAllowance, error)
 
 	ListTransactions(ctx context.Context, orgID uuid.UUID, limit int) ([]models.CreditTransaction, error)
@@ -612,6 +612,7 @@ func (r *creditRepository) AnnualAllowancesDue(ctx context.Context, limit int) (
 		  AND s.current_period_end - s.current_period_start > interval '35 days'
 		  AND p.monthly_allowance_micro > 0
 		  AND COALESCE(l.month_reset_at, 'epoch'::timestamptz) < now() - interval '27 days'
+		ORDER BY COALESCE(l.month_reset_at, 'epoch'::timestamptz), s.organization_id
 		LIMIT $1`, limit)
 	if err != nil {
 		return nil, err

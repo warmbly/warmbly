@@ -92,11 +92,13 @@ export function useTopUp() {
         },
         onSuccess: (r) => {
             if (!r) return;
-            qc.setQueryData<Balance>(balanceQuery.queryKey, (prev) => (prev ? { ...prev, balance_usd: r.balance_usd } : prev));
+            qc.setQueryData<Balance>(balanceQuery.queryKey, (prev) =>
+                prev ? { ...prev, balance_usd: r.balance_usd, charge_in_progress: r.charge_in_progress } : prev,
+            );
             void qc.invalidateQueries({ queryKey: ["subscription", "credits"] });
             void qc.invalidateQueries({ queryKey: balanceInvoicesQuery.queryKey });
             if (r.status === "paid") toast.success(`${fmtUsd(r.amount_usd)} added to the balance`);
-            else toast.success("Payment received. The money appears in a moment.");
+            else toast("Your payment is still going through. The balance updates when it lands.");
         },
         onError: (e: AppError) => {
             toast.dismiss("balance-checkout");

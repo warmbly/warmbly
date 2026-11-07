@@ -2,6 +2,7 @@ package balance
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -42,6 +43,10 @@ func (f *fakeSettings) Get(context.Context, uuid.UUID) (*models.AISpendSettings,
 	return f.cfg, nil
 }
 func (f *fakeSettings) RearmNotices(context.Context, uuid.UUID) error { return nil }
+func (f *fakeSettings) UpsertAutoReload(_ context.Context, _ uuid.UUID, enabled bool, threshold, amount, limit models.Micro) (*models.AISpendSettings, error) {
+	f.cfg.AutoReloadEnabled, f.cfg.AutoReloadThreshold, f.cfg.AutoReloadAmount, f.cfg.AutoReloadMonthlyMax = enabled, threshold, amount, limit
+	return f.cfg, nil
+}
 func (f *fakeSettings) DisableAutoReload(_ context.Context, _ uuid.UUID, code string) (bool, error) {
 	if !f.cfg.AutoReloadEnabled {
 		return false, nil
@@ -115,10 +120,15 @@ type fakeCard struct {
 	results []stripe.SavedCardResult
 	charged []models.Micro
 	voided  []string
+	// fail answers every charge with this error, as a Stripe outage would.
+	fail error
 }
 
 func (f *fakeCard) ChargeSavedCard(_ context.Context, c *models.SavedCardCharge, _ int, _ bool) (*stripe.SavedCardResult, error) {
 	f.charged = append(f.charged, c.Amount)
+	if f.fail != nil {
+		return nil, f.fail
+	}
 	r := f.results[0]
 	f.results = f.results[1:]
 	return &r, nil
@@ -218,5 +228,90 @@ func TestReloadNearTheMonthlyLimitTakesWhatIsLeft(t *testing.T) {
 	ch2.reloaded = ch.reloaded
 	if err := s2.Reload(context.Background(), uuid.New()); err != nil || len(card2.charged) != 0 {
 		t.Fatalf("charged %v under the minimum top-up", card2.charged)
+	}
+}
+
+func onlyCharge(t *testing.T, ch *fakeCharges) *models.SavedCardCharge {
+	t.Helper()
+	if len(ch.rows) != 1 {
+		t.Fatalf("charges = %d, want 1", len(ch.rows))
+	}
+	for _, c := range ch.rows {
+		return c
+	}
+	return nil
+}
+
+func TestTurningReloadOffCancelsTheSnoozedReload(t *testing.T) {
+	s, _, _, ch, card, _ := newTestService(0, stripe.SavedCardResult{InvoiceID: "in_1", Declined: models.ReloadCardDeclined, Soft: true})
+	org := uuid.New()
+	if err := s.Reload(context.Background(), org); err != nil {
+		t.Fatal(err)
+	}
+	c := onlyCharge(t, ch)
+	c.InvoiceID = "in_1"
+	if _, err := s.SetAutoReload(context.Background(), org, false, credits.DefaultReloadThreshold, credits.DefaultReloadAmount, credits.DefaultReloadMonthlyLimit); err != nil {
+		t.Fatal(err)
+	}
+	if c.Status != "failed" || c.FailureCode != models.ChargeCanceled || len(card.voided) != 1 || card.voided[0] != "in_1" {
+		t.Fatalf("charge = %+v, voided %v; want canceled with its invoice voided", c, card.voided)
+	}
+}
+
+func TestDueReloadIsNotChargedOnceUnwanted(t *testing.T) {
+	for name, change := range map[string]func(*fakeCredits, *fakeSettings){
+		"reload off":         func(_ *fakeCredits, st *fakeSettings) { st.cfg.AutoReloadEnabled = false },
+		"balance over again": func(cr *fakeCredits, st *fakeSettings) { cr.balance = st.cfg.AutoReloadThreshold },
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, cr, st, ch, card, _ := newTestService(0, stripe.SavedCardResult{InvoiceID: "in_1", Declined: models.ReloadCardDeclined, Soft: true})
+			org := uuid.New()
+			if err := s.Reload(context.Background(), org); err != nil {
+				t.Fatal(err)
+			}
+			c := onlyCharge(t, ch)
+			c.InvoiceID, c.RetryAt = "in_1", nil
+			change(cr, st)
+			// The sweep resuming the due retry.
+			due := *c
+			if err := s.run(context.Background(), &due, true); err != nil {
+				t.Fatal(err)
+			}
+			if len(card.charged) != 1 || c.Status != "failed" || c.FailureCode != models.ChargeCanceled || len(card.voided) != 1 {
+				t.Fatalf("charged %v, charge %+v, voided %v; want no second charge and a canceled reload", card.charged, c, card.voided)
+			}
+		})
+	}
+}
+
+func TestTopUpThatStripeDidNotAnswerIsStillProcessing(t *testing.T) {
+	s, cr, _, ch, card, _ := newTestService(0)
+	card.fail = errors.New("stripe: connection reset")
+	res, err := s.TopUp(context.Background(), uuid.New(), 25*models.MicroPerUSD)
+	if err != nil || res.Status != "processing" {
+		t.Fatalf("TopUp = %+v, %v; want processing", res, err)
+	}
+	if c := onlyCharge(t, ch); c.Status != "pending" || cr.balance != 0 {
+		t.Fatalf("charge = %+v, balance %v; want pending for the sweep", c, cr.balance)
+	}
+}
+
+func TestChargeStripeKeepsFailingIsFailedAfterMaxTries(t *testing.T) {
+	s, _, st, ch, card, n := newTestService(0)
+	card.fail = errors.New("stripe: 500")
+	org := uuid.New()
+	if err := s.Reload(context.Background(), org); err == nil {
+		t.Fatal("a failed Stripe call returned no error")
+	}
+	c := onlyCharge(t, ch)
+	for c.Status == "pending" && c.Tries < maxTries+2 {
+		due := *c
+		_ = s.run(context.Background(), &due, true)
+	}
+	if c.Status != "failed" || c.Tries != maxTries || c.FailureCode != models.ReloadUnavailable {
+		t.Fatalf("charge = %+v; want failed as unavailable after %d tries", c, maxTries)
+	}
+	if st.cfg.AutoReloadEnabled || st.disabled != models.ReloadUnavailable || len(n.titles) != 1 {
+		t.Fatalf("reload on = %v (%q), notices %v; want it off and billing told", st.cfg.AutoReloadEnabled, st.disabled, n.titles)
 	}
 }

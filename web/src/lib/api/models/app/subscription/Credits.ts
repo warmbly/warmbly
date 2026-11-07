@@ -58,10 +58,12 @@ export interface AutoReloadPatch {
     monthly_limit_usd: number;
 }
 
+/** 200 is "paid"; 202 is "processing", the payment still going through. */
 export interface TopUpResult {
     status: "paid" | "processing";
     amount_usd: number;
     balance_usd: number;
+    charge_in_progress: boolean;
 }
 
 export interface BalanceInvoice {

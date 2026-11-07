@@ -1860,7 +1860,7 @@ func Run(
 				// card, automatic reload, invoices. Charging and changing what is
 				// charged need a fresh sign-in.
 				subscriptions.GET("/balance", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.GetBalance)
-				subscriptions.POST("/balance/top-up", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), middleware.RequireFreshAuth(), h.TopUpBalance)
+				subscriptions.POST("/balance/top-up", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), middleware.RequireFreshAuth(), m.IdempotencyMiddleware(), h.TopUpBalance)
 				subscriptions.POST("/balance/checkout", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), middleware.RequireFreshAuth(), h.CreateBalanceCheckout)
 				subscriptions.POST("/balance/payment-method", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), middleware.RequireFreshAuth(), h.CreatePaymentMethodSetup)
 				subscriptions.PATCH("/balance/auto-reload", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), middleware.RequireFreshAuth(), h.UpdateAutoReload)

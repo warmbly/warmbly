@@ -131,6 +131,9 @@ func TestBalanceCheckoutCollectsTaxAndSavesTheCard(t *testing.T) {
 				if r.Form.Get("payment_intent_data[setup_future_usage]") != "off_session" || r.Form.Get("line_items[0][price_data][unit_amount]") != "2500" || r.Form.Get("metadata[amount_micro]") != "25000000" {
 					t.Errorf("balance checkout does not save the card or charge the amount: %v", r.Form)
 				}
+				if r.Form.Has("metadata[user_id]") || r.Form.Get("metadata[actor_user_id]") == "" {
+					t.Errorf("balance checkout session metadata must name the actor without user_id: %v", r.Form)
+				}
 				if customerID == "" && r.Form.Get("customer_creation") != "always" {
 					t.Errorf("credit checkout will not save the new customer: %v", r.Form)
 				}
@@ -150,6 +153,23 @@ func TestBalanceCheckoutCollectsTaxAndSavesTheCard(t *testing.T) {
 				t.Fatal(xerr)
 			}
 		})
+	}
+}
+
+func TestCardSetupCheckoutSessionCarriesNoUserID(t *testing.T) {
+	stripeAt(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatal(err)
+		}
+		if r.Form.Get("mode") != "setup" || r.Form.Has("metadata[user_id]") || r.Form.Get("metadata[actor_user_id]") == "" || r.Form.Get("metadata[purpose]") != purposeCardSetup {
+			t.Errorf("card setup checkout session metadata: %v", r.Form)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"cs_setup","url":"https://checkout.stripe.com/test"}`))
+	})
+	s := &stripeService{subRepo: &billingSubRepo{sub: &models.Subscription{StripeCustomerID: "cus_existing"}}}
+	if _, xerr := s.CreateCardSetupCheckout(context.Background(), uuid.New(), uuid.New(), "https://example.com/success", "https://example.com/cancel"); xerr != nil {
+		t.Fatal(xerr)
 	}
 }
 

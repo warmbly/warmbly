@@ -227,9 +227,10 @@ func (h *Handler) requirePaidForBalance(c *gin.Context, orgID uuid.UUID) bool {
 }
 
 // TopUpBalance — POST /subscription/balance/top-up {amount_usd}
-// Charges the saved card now. 402 card_declined or authentication_required
-// tells the dashboard to offer Checkout instead; 409 payment_method_required
-// when there is no card.
+// Charges the saved card now: 200 paid, or 202 processing while the payment
+// is still going through. 402 card_declined or authentication_required tells
+// the dashboard to offer Checkout instead; 409 payment_method_required when
+// there is no card.
 func (h *Handler) TopUpBalance(c *gin.Context) {
 	orgID, ok := h.billingOrg(c)
 	if !ok || !h.requirePaidForBalance(c, orgID) {
@@ -264,7 +265,14 @@ func (h *Handler) TopUpBalance(c *gin.Context) {
 	}
 	// Settling the charge already logged it on the audit spine.
 	bal, _ := h.CreditService.GetBalance(c.Request.Context(), orgID)
-	c.JSON(http.StatusOK, gin.H{"status": res.Status, "amount_usd": usd(res.Amount), "balance_usd": usd(bal)})
+	status := http.StatusOK
+	if res.Status != "paid" {
+		status = http.StatusAccepted
+	}
+	c.JSON(status, gin.H{
+		"status": res.Status, "amount_usd": usd(res.Amount), "balance_usd": usd(bal),
+		"charge_in_progress": res.Status != "paid",
+	})
 }
 
 // CreateBalanceCheckout — POST /subscription/balance/checkout {amount_usd}

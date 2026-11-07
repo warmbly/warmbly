@@ -29,6 +29,9 @@ const (
 	purposeCardSetup       = "card_setup"
 )
 
+// metaActor names who opened a balance Checkout; never user_id, which the previous release reads as a subscription checkout.
+const metaActor = "actor_user_id"
+
 // BalanceSettler is the slice of the balance service the webhook flow drives:
 // a saved-card charge's invoice was paid. Injected via WireBalance so this
 // package needs no import of it.
@@ -257,7 +260,7 @@ func (s *stripeService) VoidChargeInvoice(ctx context.Context, invoiceID string)
 // form. The webhook grants the amount; nothing changes here.
 func (s *stripeService) CreateBalanceCheckout(ctx context.Context, userID, orgID uuid.UUID, amount models.Micro, successURL, cancelURL string) (*stripe.CheckoutSession, *errx.Error) {
 	meta := map[string]string{
-		"purpose": purposeBalanceCheckout, "user_id": userID.String(), "org_id": orgID.String(),
+		"purpose": purposeBalanceCheckout, metaActor: userID.String(), "org_id": orgID.String(),
 		"amount_micro": strconv.FormatInt(int64(amount), 10),
 	}
 	params := &stripe.CheckoutSessionParams{
@@ -301,7 +304,7 @@ func (s *stripeService) CreateBalanceCheckout(ctx context.Context, userID, orgID
 
 // CreateCardSetupCheckout opens Stripe Checkout to save a card without paying.
 func (s *stripeService) CreateCardSetupCheckout(ctx context.Context, userID, orgID uuid.UUID, successURL, cancelURL string) (*stripe.CheckoutSession, *errx.Error) {
-	meta := map[string]string{"purpose": purposeCardSetup, "user_id": userID.String(), "org_id": orgID.String()}
+	meta := map[string]string{"purpose": purposeCardSetup, metaActor: userID.String(), "org_id": orgID.String()}
 	params := &stripe.CheckoutSessionParams{
 		Params:          stripe.Params{Context: ctx},
 		Mode:            stripe.String(string(stripe.CheckoutSessionModeSetup)),
@@ -400,7 +403,7 @@ func (s *stripeService) fulfillBalanceCheckout(ctx context.Context, sess *stripe
 		s.ensureDefaultPaymentMethod(ctx, sess.Customer, sess.PaymentIntent.PaymentMethod)
 	}
 	if s.audit != nil {
-		actorID, _ := uuid.Parse(sess.Metadata["user_id"])
+		actorID, _ := uuid.Parse(sess.Metadata[metaActor])
 		s.audit.LogAction(ctx, orgID, actorID, models.AuditActionCreate, models.AuditEntityCreditPurchase, nil, "", "", nil, map[string]string{
 			"amount_usd": strconv.FormatFloat(models.Micro(amount).USD(), 'f', 2, 64),
 		})
@@ -424,7 +427,7 @@ func (s *stripeService) fulfillCardSetup(ctx context.Context, sess *stripe.Check
 		}
 	}
 	if s.audit != nil {
-		actorID, _ := uuid.Parse(sess.Metadata["user_id"])
+		actorID, _ := uuid.Parse(sess.Metadata[metaActor])
 		s.audit.LogAction(ctx, orgID, actorID, models.AuditActionUpdate, models.AuditEntitySubscription, nil, "", "", nil, map[string]string{
 			"payment_method": "saved",
 		})
