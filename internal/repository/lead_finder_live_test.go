@@ -17,7 +17,7 @@ import (
 //	  go test ./internal/repository/ -run LiveLeadFinder -v
 func TestLiveLeadFinder(t *testing.T) {
 	_, pool := liveContactDB(t)
-	requireSchemaVersion(t, pool, 355)
+	requireSchemaVersion(t, pool, 361)
 	ctx := context.Background()
 	repo := NewLeadFinderRepository(pool)
 

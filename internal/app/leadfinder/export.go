@@ -353,7 +353,8 @@ func writeXLSX(w io.Writer, t *exportTable) error {
 					continue
 				}
 			}
-			row[i] = cellSafe(v)
+			// Excel stores these as text, never formulas, so they are written as they are.
+			row[i] = v
 		}
 		cell, _ := excelize.CoordinatesToCellName(1, r+2)
 		if err := sw.SetRow(cell, row); err != nil {

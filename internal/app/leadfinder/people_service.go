@@ -493,7 +493,13 @@ func (s *Service) findAndSave(ctx context.Context, orgID uuid.UUID, l *models.Le
 			log.Warn().Err(err).Msg("leadfinder: could not store a domain's address pattern")
 		}
 	}
-	return s.savePerson(ctx, orgID, l.ID, p)
+	saved, err := s.savePerson(ctx, orgID, l.ID, p)
+	if err != nil && searching && s.metered() && found {
+		if _, rerr := s.Credits.RefundCharge(context.WithoutCancel(pctx), orgID, key, "lead_person_email_refund"); rerr != nil {
+			log.Warn().Err(rerr).Msg("leadfinder: could not refund a person search that was not saved")
+		}
+	}
+	return saved, err
 }
 
 func (s *Service) savePerson(ctx context.Context, orgID, leadID uuid.UUID, p models.LeadPerson) (*models.LeadPerson, error) {

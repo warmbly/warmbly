@@ -297,7 +297,8 @@ func (s *Service) Geocode(ctx context.Context, q string, near *models.LatLng, la
 	}
 	res, err := s.geocoder.Search(ctx, q, near, 6, lang)
 	if err != nil {
-		return nil, errx.New(errx.ServiceUnavailable, err.Error())
+		log.Warn().Err(err).Msg("leadfinder: geocoding failed")
+		return nil, errx.New(errx.ServiceUnavailable, "Places could not be looked up right now. Try again shortly.")
 	}
 	return res, nil
 }
@@ -536,7 +537,8 @@ func providerErr(id models.LeadProvider, err error) error {
 	case errors.Is(err, context.DeadlineExceeded):
 		return errx.NewWithIdentifier(errx.ServiceUnavailable, "lead_provider_unavailable", name+" took too long. Try a smaller area.")
 	}
-	return errx.NewWithIdentifier(errx.ServiceUnavailable, "lead_provider_unavailable", err.Error())
+	log.Warn().Err(err).Str("provider", name).Msg("leadfinder: provider search failed")
+	return errx.NewWithIdentifier(errx.ServiceUnavailable, "lead_provider_unavailable", name+" could not be reached. Try again shortly.")
 }
 
 // --- leads ------------------------------------------------------------------

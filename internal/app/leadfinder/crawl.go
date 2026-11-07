@@ -440,7 +440,10 @@ func parsePage(src string) *page {
 						p.phones = append(p.phones, d)
 					}
 				case strings.Contains(lower, "/cdn-cgi/l/email-protection#"):
-					addEmail(decodeCloudflareEmail(href[strings.Index(lower, "#")+1:]))
+					// Sliced at the fragment of href itself: lowercasing can change byte lengths.
+					if i := strings.IndexByte(href, '#'); i >= 0 {
+						addEmail(decodeCloudflareEmail(href[i+1:]))
+					}
 				case href != "" && !strings.HasPrefix(lower, "javascript:"):
 					p.links = append(p.links, link{href: href})
 					if tt == html.StartTagToken {
