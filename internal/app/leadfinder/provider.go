@@ -47,7 +47,7 @@ type ProviderInfo struct {
 	NeedsKey    bool     `json:"needs_key"`
 	PageSize    int      `json:"page_size"`
 	MaxPages    int      `json:"max_pages"`
-	CreditCost  int      `json:"credit_cost"`
+	CostUSD     float64  `json:"cost_usd"`
 	Fields      []string `json:"fields"`
 	Integration string   `json:"integration,omitempty"`
 }

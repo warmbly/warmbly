@@ -1,46 +1,96 @@
-// AI credit ledger, transaction log, and top-up packs. Mirrors the backend
-// /subscription/credits responses (internal/api/handler/credits.go).
+// The workspace balance in US dollars: what is left, how it is topped up, and
+// what it was spent on. Mirrors /subscription/balance and /subscription/credits
+// (internal/api/handler/credits.go).
 
-export interface CreditPack {
-    key: string;
-    credits: number;
+export interface PaymentMethod {
+    brand: string;
+    last4: string;
+    exp_month: number;
+    exp_year: number;
+    wallet?: string;
 }
 
-export interface CreditBalance {
-    // True when the deployment runs without a billing provider: the ledger is
-    // bypassed, AI is unlimited, and every figure below is zero and meaningless.
+export type AutoReloadFailure = "card_declined" | "authentication_required" | "no_payment_method" | "payment_failed" | "unavailable";
+
+export interface AutoReload {
+    enabled: boolean;
+    threshold_usd: number;
+    amount_usd: number;
+    monthly_limit_usd: number;
+    reloaded_this_month_usd: number;
+    failure_code: AutoReloadFailure | null;
+    failed_at: Date | null;
+    last_reload: { amount_usd: number; at: Date } | null;
+    // A soft decline waiting for its next try.
+    retry_at: Date | null;
+    retry_reason: string | null;
+}
+
+export interface TopUpBounds {
+    min_usd: number;
+    max_usd: number;
+    presets_usd: number[];
+    default_usd: number;
+}
+
+// GET /subscription/balance. With billing off only `unlimited: true` is sent.
+export interface Balance {
     unlimited: boolean;
-    // Spendable total across both pools.
-    balance: number;
-    // Current monthly (plan allowance) pool.
-    monthly_balance: number;
-    // Top-up pool (never expires, survives resets).
-    purchased_balance: number;
-    // Plan grant per billing cycle.
-    monthly_allowance: number;
-    // Lifetime purchased credits.
-    total_purchased: number;
-    // When the monthly pool was last reset.
-    monthly_reset_at: Date;
-    // When the monthly pool next resets (subscription period end), if any.
+    /** Whether this workspace's plan lets it add money; absent from an older backend. */
+    can_add_money?: boolean;
+    balance_usd: number;
+    monthly_usd: number;
+    purchased_usd: number;
+    monthly_allowance_usd: number;
+    monthly_used_usd: number;
     next_reset_at: Date | null;
-    packs: CreditPack[];
+    top_up: TopUpBounds;
+    auto_reload?: AutoReload;
+    low_balance_usd?: number;
+    payment_method?: PaymentMethod | null;
+    charge_in_progress?: boolean;
+}
+
+export interface AutoReloadPatch {
+    enabled: boolean;
+    threshold_usd: number;
+    amount_usd: number;
+    monthly_limit_usd: number;
+}
+
+/** 200 is "paid"; 202 is "processing", the payment still going through. */
+export interface TopUpResult {
+    status: "paid" | "processing";
+    amount_usd: number;
+    balance_usd: number;
+    charge_in_progress: boolean;
+}
+
+export interface BalanceInvoice {
+    id: string;
+    number: string;
+    kind: "subscription" | "top_up" | "auto_reload" | string;
+    status: string;
+    amount_cents: number;
+    currency: string;
+    created_at: Date;
+    hosted_url?: string;
+    pdf_url?: string;
 }
 
 export interface CreditTransaction {
     id: string;
     org_id: string;
-    // Signed: negative for consumption, positive for grants/purchases.
-    amount: number;
     reason: string;
     model_used: string;
-    tokens_used: number;
-    balance_after: number;
-    purchased_delta: number;
-    purchased_balance_after: number;
-    idempotency_key?: string | null;
-    // Who triggered the charge (absent for scheduled/system work) and exactly
-    // what ran (campaign/step/contact, automation/node/run, thread, session).
+    // Signed: negative for usage, positive for money added.
+    amount_usd: number;
+    // Provider cost before the markup.
+    cost_usd: number;
+    input_tokens: number;
+    output_tokens: number;
+    quantity: number;
+    balance_after_usd: number;
     actor_user_id?: string | null;
     context?: CreditContext;
     created_at: Date;
@@ -54,54 +104,46 @@ export interface CreditTransactionsPage {
     };
 }
 
-// Org AI spend controls: hard spend limits per window (null = off), the
-// low-balance alert threshold, and auto top-up configuration. Mirrors
-// GET/PATCH /subscription/credits/settings.
+// GET/PATCH /subscription/credits/settings. A null limit is no limit.
 export interface AISpendSettings {
-    org_id: string;
-    spend_limit_daily: number | null;
-    spend_limit_weekly: number | null;
-    spend_limit_monthly: number | null;
-    member_limit_daily: number | null;
-    member_limit_weekly: number | null;
-    member_limit_monthly: number | null;
-    low_balance_threshold: number;
-    low_balance_notified_at?: Date | null;
-    auto_topup_enabled: boolean;
-    auto_topup_pack: string;
-    auto_topup_threshold: number;
-    auto_topup_max_per_month: number;
+    spend_limit_daily_usd: number | null;
+    spend_limit_weekly_usd: number | null;
+    spend_limit_monthly_usd: number | null;
+    member_limit_daily_usd: number | null;
+    member_limit_weekly_usd: number | null;
+    member_limit_monthly_usd: number | null;
+    low_balance_usd: number;
+    auto_reload_enabled: boolean;
 }
 
 export interface CreditUsagePoint {
     date: string; // YYYY-MM-DD (UTC)
-    credits: number;
+    amount_usd: number;
     tokens: number;
 }
 
 export interface CreditUsageBucket {
     key: string;
-    credits: number;
+    amount_usd: number;
     tokens: number;
     count: number;
 }
 
-// GET /subscription/credits/usage — spend per window vs configured limits,
-// a daily series, and breakdowns by feature and model.
+// GET /subscription/credits/usage: spend per window against the limits, a
+// daily series, and breakdowns by feature and model.
 export interface CreditUsageOverview {
-    spent_today: number;
-    spent_week: number;
-    spent_month: number;
-    limit_daily: number | null;
-    limit_weekly: number | null;
-    limit_monthly: number | null;
+    spent_today_usd: number;
+    spent_week_usd: number;
+    spent_month_usd: number;
+    limit_daily_usd: number | null;
+    limit_weekly_usd: number | null;
+    limit_monthly_usd: number | null;
     series: CreditUsagePoint[];
     by_reason: CreditUsageBucket[];
     by_model: CreditUsageBucket[];
 }
 
-// CreditContext names exactly what an AI charge ran for; only the fields that
-// apply to the feature are present.
+// What a charge ran for; only the fields that apply are present.
 export interface CreditContext {
     campaign_id?: string;
     campaign_name?: string;

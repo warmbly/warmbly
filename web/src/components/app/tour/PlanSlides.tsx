@@ -1,6 +1,6 @@
 // The tour's plans chapter: what every plan includes, how the plans differ,
 // and the cards to pick one. Every number comes from the plan catalog or the
-// AI credits guide, never from the slide copy.
+// balance and usage guide, never from the slide copy.
 
 import type { ReactNode } from "react";
 import { motion, useReducedMotion } from "framer-motion";
@@ -28,17 +28,18 @@ import BillingIntervalToggle from "@/components/app/billing/BillingIntervalToggl
 import { PAID_PLANS, getPlan, planOrder, type PlanDef, type PlanID } from "@/lib/plans";
 import type { BillingInterval } from "@/lib/pricing";
 import { cn } from "@/lib/utils";
+import { MAX_TOP_UP_USD, MIN_TOP_UP_USD, fmtUsdTrim } from "@/lib/money";
 import { EASE } from "./sceneTokens";
 import { Title } from "./TourCopy";
 import type { FlatSlide } from "./tourSteps";
 import { EYEBROW } from "./tourUi";
 import { COMMUNITY_URL } from "@/lib/cloudPlan";
 
-// Monthly AI credits per plan, from the allowance table in the AI credits guide.
-const AI_CREDITS: Partial<Record<PlanID, string>> = {
-    starter: "250",
-    grow: "2,000",
-    business: "25,000",
+// Monthly AI usage included per plan, from the allowance table in the balance guide.
+const AI_ALLOWANCE: Partial<Record<PlanID, string>> = {
+    starter: "$5",
+    grow: "$15",
+    business: "$50",
 };
 
 // The pricing page's one-line pitch for each plan.
@@ -115,7 +116,7 @@ const INCLUDED: { icon: ReactNode; name: string; line: string }[] = [
     { icon: <CircleDollarSignIcon className="size-4 text-emerald-600" />, name: "CRM", line: "Pipelines, deals, tasks and meetings, or your HubSpot, Pipedrive or Salesforce" },
     { icon: <ZapIcon className="size-4 text-amber-500" />, name: "Automations", line: "Triggers and actions across Slack, Zapier, Make, n8n and webhooks" },
     { icon: <ShieldCheckIcon className="size-4 text-emerald-600" />, name: "Deliverability", line: "Placement tests, the Advisor, suppression and one-click unsubscribe" },
-    { icon: <AgentMark size={16} />, name: "Remie and AI", line: "AI credits every month for Remie, reply drafts and contact research" },
+    { icon: <AgentMark size={16} />, name: "Remie and AI", line: "AI usage included every month for Remie, reply drafts and contact research" },
     { icon: <KeyRoundIcon className="size-4 text-slate-600" />, name: "Team and API", line: "Invite your team with roles, an audit log and API keys" },
 ];
 
@@ -156,7 +157,7 @@ export function PlanCompare({ interval, onInterval, current, ...props }: Omit<Pa
     const rows: { label: string; note?: string; cell: (p: PlanDef) => ReactNode }[] = [
         { label: "Emails a day", cell: (p) => <span className="font-medium text-slate-900 tabular-nums">{sends(p)}</span> },
         { label: "Mailboxes kept busy", note: `at ${PER_MAILBOX} a day each`, cell: (p) => <span className="tabular-nums">{busy(p)}</span> },
-        { label: "AI credits a month", cell: (p) => <span className="tabular-nums">{AI_CREDITS[p.id] ?? "Custom"}</span> },
+        { label: "AI usage included a month", cell: (p) => <span className="tabular-nums">{AI_ALLOWANCE[p.id] ?? "Custom"}</span> },
         { label: "Mailboxes and warmup", cell: () => "Unlimited" },
         { label: "Campaigns, inbox, CRM, automations and Remie", cell: () => <Yes /> },
         { label: "Sending kept apart from other customers", cell: (p) => (p.isolatedSending ? <Yes /> : <No />) },
@@ -259,12 +260,12 @@ function PlanHead({ plan, interval, current }: { plan: PlanDef; interval: Billin
     );
 }
 
-// How billing behaves, from the billing and AI credits guides.
+// How billing behaves, from the billing and balance guides.
 const FACTS: { icon: ReactNode; text: string }[] = [
     { icon: <TagIcon className="size-3.5" />, text: "Yearly billing is 20% off" },
     { icon: <RefreshCwIcon className="size-3.5" />, text: "Change plan any time, prorated" },
     { icon: <WalletIcon className="size-3.5" />, text: "Cancel and keep your mailboxes, warmup and settings" },
-    { icon: <SparklesIcon className="size-3.5" />, text: "AI top-ups of 500 to 10,000 credits never expire" },
+    { icon: <SparklesIcon className="size-3.5" />, text: `Money added for AI, ${fmtUsdTrim(MIN_TOP_UP_USD)} to ${fmtUsdTrim(MAX_TOP_UP_USD)} at a time, never expires` },
 ];
 
 const CHOOSE =
@@ -323,7 +324,7 @@ export function PlanChoose({
                             <p className="mt-2 text-[12.5px] leading-[1.45] text-slate-500">{BEST_FOR[id]}</p>
                             <ul className="mt-4 mb-5 pt-4 border-t border-slate-100 space-y-2 text-[12.5px] text-slate-600">
                                 <li>{sends(plan)} emails a day</li>
-                                <li>{AI_CREDITS[id] ? `${AI_CREDITS[id]} AI credits a month` : "Custom AI credits"}</li>
+                                <li>{AI_ALLOWANCE[id] ? `${AI_ALLOWANCE[id]} of AI usage a month` : "Custom AI usage"}</li>
                                 <li>Unlimited mailboxes and warmup</li>
                                 <li>Every feature in this tour</li>
                                 {plan.isolatedSending && <li>Sending kept apart from other customers</li>}

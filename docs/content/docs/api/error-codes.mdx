@@ -42,7 +42,7 @@ Admission denial before dispatch releases the send reservation without spending 
 |------|-------|-------------|
 | 400 | Bad Request | Invalid request syntax or parameters, or a quota that would be passed (`storage_limit_reached`) |
 | 401 | Unauthorized | Missing or invalid authentication |
-| 402 | Payment Required | Out of credits (`insufficient_credits`), or no free placement tests left this month (`placement_quota_exceeded`, `placement_not_entitled`) |
+| 402 | Payment Required | The workspace balance is too low (`insufficient_credits`), a card was not charged when adding money (`card_declined`, `authentication_required`, `payment_failed`), or no free placement tests left this month (`placement_quota_exceeded`, `placement_not_entitled`) |
 | 403 | Forbidden | Authenticated but lacks permission, or the workspace's mailbox allowance is full (`mailbox_allowance_reached`) |
 | 404 | Not Found | Resource doesn't exist |
 | 409 | Conflict | Resource already exists |
@@ -491,7 +491,7 @@ The [inbox placement test](/guides/placement-tests/) routes (`/placement/*` and 
 | `code` | Status | Meaning |
 |--------|--------|---------|
 | `placement_not_entitled` | 402 | The workspace has no active trial or subscription, so it cannot start a test. Only the hosted product answers this |
-| `placement_quota_exceeded` | 402 | The workspace has used its free tests for the month on the instance panel, or the linked Warmbly Cloud workspace has used its free tests on Warmbly Cloud's panel. A tracking comparison needs two. On the instance panel of a paid workspace the `message` names the price in credits: send `max_credits` of at least that much to pay it. Monitors and trials cannot pay, and wait for the next month. Tests on the workspace's own seed inboxes are never counted |
+| `placement_quota_exceeded` | 402 | The workspace has used its free tests for the month on the instance panel, or the linked Warmbly Cloud workspace has used its free tests on Warmbly Cloud's panel. A tracking comparison needs two. On the instance panel of a paid workspace the `message` names the price in dollars: send `max_usd` of at least that much to pay it from the balance (`max_credits`, the legacy form, is read only when `max_usd` is absent). Monitors and trials cannot pay, and wait for the next month. Tests on the workspace's own seed inboxes are never counted |
 | `placement_too_many_running` | 429 | The workspace already has `3` tests running, counting each half of a tracking comparison. Wait for one to finish |
 | `placement_sender_busy` | 409 | The sending mailbox still has copies of another test waiting to be sent. One test sends from a mailbox at a time |
 | `placement_sender_unavailable` | 409 | The sending mailbox is not connected and active, or it is itself a seed inbox, which receives tests and cannot send one |
@@ -509,7 +509,7 @@ The [inbox placement test](/guides/placement-tests/) routes (`/placement/*` and 
 | `placement_too_many_batches` | 429 | The workspace already has `5` batches running. Wait for one to finish, or cancel one |
 | `placement_batch_not_running` | 409 | `POST /placement/batches/:id/cancel` on a batch that has already finished or been cancelled |
 
-A batch runs every check that applies to the whole batch (the copy, the panel, the tracking, the allowance and the credits agreed) before it is created, and refuses with the codes above. The checks for each mailbox run when its turn comes: a mailbox refused then is deferred or skipped, and its sender row in `GET /placement/batches/:id/senders` carries the code as `reason` with its sentence as `detail`. Besides the single-test codes, a sender row can carry `placement_sender_deleted` (the mailbox was removed from the workspace), `placement_batch_retry_expired` (still unavailable when the seven-day retry window closed), `placement_batch_start_failed` (the test could not be started after several tries) and `placement_batch_copy_unavailable` (the campaign or step being tested was deleted, which skips every mailbox not started yet).
+A batch runs every check that applies to the whole batch (the copy, the panel, the tracking, the allowance and the spend agreed) before it is created, and refuses with the codes above. The checks for each mailbox run when its turn comes: a mailbox refused then is deferred or skipped, and its sender row in `GET /placement/batches/:id/senders` carries the code as `reason` with its sentence as `detail`. Besides the single-test codes, a sender row can carry `placement_sender_deleted` (the mailbox was removed from the workspace), `placement_batch_retry_expired` (still unavailable when the seven-day retry window closed), `placement_batch_start_failed` (the test could not be started after several tries) and `placement_batch_copy_unavailable` (the campaign or step being tested was deleted, which skips every mailbox not started yet).
 
 ```json
 {
@@ -620,7 +620,7 @@ The [lead finder](/guides/lead-finder/) endpoints answer with their own codes.
 | `lead_provider_quota` | 429 | The source is rate limiting the key or its quota is used up. Retry later |
 | `lead_provider_unavailable` | 503 | The source did not answer, took too long, or (OpenStreetMap) every server is busy. Retry, or search a smaller area |
 
-A search through a source the instance pays for answers `402` with `insufficient_credits` past the credit balance and `429` with `usage_cap_exceeded` past a spend limit, and charges nothing. An enrichment run charges as it reads each website; one that reaches either limit stops with `status: "error"` and the reason in `last_error`, and leaves the remaining leads untouched.
+A search through a source the instance pays for, or a person's email found on request, answers `402` with `insufficient_credits` when the balance is too low and `429` with `usage_cap_exceeded` past a spend limit, and charges nothing. An enrichment run charges as it reads each website; one that reaches either limit stops with `status: "error"` and the reason in `last_error`, and leaves the remaining leads untouched.
 
 #### Automation refusals
 
@@ -684,22 +684,24 @@ Two more `401` variants are not about API keys at all. `setup_token_invalid` is 
 
 ### 402 Payment Required
 
-Returned when an AI action, or a placement test paid in credits, is requested but the organization does not have enough credits. The response carries the stable code `insufficient_credits`.
+Returned when an AI action, or a placement test paid from the balance, is requested but the workspace balance is too low to cover it. The check runs before any work starts, so nothing is charged. The response carries the stable code `insufficient_credits`, kept from before the balance was in dollars.
 
 ```json
 {
   "error": "Payment Required",
-  "message": "You're out of AI credits. Add more to keep using the assistant.",
+  "message": "The workspace balance is too low. Add funds to keep using AI features.",
   "code": "insufficient_credits",
   "request_id": "req_..."
 }
 ```
 
 **How to fix:**
-- Wait for the monthly allowance to reset, or buy a top-up pack (see [AI credits](/guides/ai-credits/))
-- Related: a `429` with code `usage_cap_exceeded` means a short-term AI usage cap was hit; retry later
+- Add money to the balance, turn on automatic reload, or wait for the monthly allowance to reset (see [Balance and usage](/guides/ai-credits/))
+- Related: a `429` with code `usage_cap_exceeded` means a spend limit or a short-term AI usage cap was hit; retry when the window rolls over
 
-Placement tests answer `402` too, with `placement_not_entitled` or `placement_quota_exceeded`; see [placement test refusals](#placement-test-refusals). A paid placement test past the credit balance answers `insufficient_credits`, and one past a spend limit answers `429` with `usage_cap_exceeded`; neither charges anything.
+`POST /subscription/balance/top-up` answers `402` when the saved card was not charged: `card_declined` (the card was refused), `authentication_required` (the bank asked to confirm the payment) or `payment_failed`. Nothing was added. Offer Stripe Checkout instead with `POST /subscription/balance/checkout`. See [balance and usage](/api/endpoints/#balance-and-usage).
+
+Placement tests answer `402` too, with `placement_not_entitled` or `placement_quota_exceeded`; see [placement test refusals](#placement-test-refusals). A paid placement test past the balance answers `insufficient_credits`, and one past a spend limit answers `429` with `usage_cap_exceeded`; neither charges anything.
 
 ### 403 Forbidden
 
@@ -971,6 +973,8 @@ A few conflicts carry their own `code`. The mailbox import's are under [mailbox 
 | `mailbox_is_seed` | 409 | Warmup was started or resumed on a placement seed inbox. See [placement test refusals](#placement-test-refusals) |
 | `mailbox_not_google_signin` | 409 | `POST /emails/onboarding/app-password/:id` on a mailbox that is not a Google mailbox on its own sign-in or an admin grant. See [app password switch refusals](#app-password-switch-refusals) |
 | `approval_not_pending` | 409 | `POST /ai/sessions/:id/approve` named a tool call the conversation is not waiting on: it was already decided, in another tab or in Slack, or a newer message replaced it |
+| `payment_method_required` | 409 | `POST /subscription/balance/top-up`, or turning on automatic reload with `PATCH /subscription/balance/auto-reload`, with no saved card. Save one with `POST /subscription/balance/payment-method`, or pay through `POST /subscription/balance/checkout` |
+| `charge_in_progress` | 409 | `POST /subscription/balance/top-up` while another payment for the workspace is still going through. Try again in a minute |
 | `mailbox_cloud_unenroll_failed` | 409 | The mailbox is linked to [Warmbly Cloud](/guides/warmbly-cloud/) and its link could not be released, so `DELETE /emails/{id}` would leave Warmbly Cloud holding its credential or its claim on it. The mailbox record remains, and restoration onto its worker is attempted |
 
 `mailbox_cloud_unenroll_failed` is a self-hosted instance losing contact with Warmbly Cloud mid-delete. Deleting an enrolled mailbox has to revoke its enrollment before the record goes, because the pool holds the mailbox's own SMTP/IMAP credentials and that record is the only thing that knows the enrollment exists. The same call releases a cloud-managed mirror before the record goes, so the mailbox returns to the cloud workspace and can be adopted again instead of staying claimed by an instance that no longer keeps it. The mailbox record remains. Warmbly attempts to restore it onto its worker immediately, and the worker reconciler may restore it later if that attempt fails. Retry the delete once the instance can reach the cloud again. Unenrolling under **Settings > Warmbly Cloud** first does not help: it makes the same call.
@@ -995,6 +999,13 @@ Returned when validation fails on the request data.
   "request_id": "4bbbd1b2-8f86-47dd-8a7f-9476501ad20e"
 }
 ```
+
+`PATCH /subscription/balance/auto-reload` has two codes of its own:
+
+| `code` | Status | Meaning |
+|--------|--------|---------|
+| `recharge_too_small` | 422 | `amount_usd` is not more than `threshold_usd`, so a reload would not lift the balance back above the point that triggers it |
+| `monthly_limit_too_small` | 422 | `monthly_limit_usd` is below one reload (`amount_usd`) or above $50,000 |
 
 ### 500 Internal Server Error
 

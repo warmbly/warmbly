@@ -24,6 +24,8 @@ import useClickOutside from "@/hooks/useClickOutside";
 import useEditorSheen from "./useEditorSheen";
 import useEditorAIRun from "./useEditorAIRun";
 import AIRunCard from "./AIRunCard";
+import { fmtUsdAbout } from "@/lib/money";
+import { AI_ESTIMATE_USD } from "@/lib/aiEstimates";
 import { AI_CARD_CLASS, WRITE_REFINEMENTS, aiRunCardClass } from "./aiCard";
 
 const CONTEXT_WINDOW = 1500;
@@ -252,7 +254,7 @@ export default function RichTextAICaret({ editor }: { editor: Editor }) {
                                     >
                                         <PenLineIcon className="h-3.5 w-3.5 text-slate-400" />
                                         Continue writing
-                                        {metered && <span className="ml-auto text-[10px] text-slate-300">from 1 credit</span>}
+                                        {metered && <span className="ml-auto text-[10px] text-slate-300">{fmtUsdAbout(AI_ESTIMATE_USD.writingAssistant)}</span>}
                                     </button>
                                 </div>
                             </div>

@@ -341,7 +341,7 @@ func TestLivePlacementPaidTestRefundsToThePoolsItDrewFrom(t *testing.T) {
 	requireSchemaVersion(t, pool, 224)
 	ctx := context.Background()
 	credits := NewCreditRepository(handle)
-	f.exec(`INSERT INTO credit_ledger (org_id, balance, purchased_balance) VALUES ($1, 10, 100)`, f.org)
+	f.exec(`INSERT INTO credit_ledger (org_id, balance_micro, purchased_micro) VALUES ($1, 10, 100)`, f.org)
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM credit_ledger_transactions WHERE org_id = $1`, f.org)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM credit_ledger WHERE org_id = $1`, f.org)
@@ -349,7 +349,7 @@ func TestLivePlacementPaidTestRefundsToThePoolsItDrewFrom(t *testing.T) {
 
 	test, _, _ := f.newTest(f.seeds, time.Now().Add(time.Hour))
 	key := "placement:" + test.ID.String()
-	if _, _, _, err := credits.Consume(ctx, f.org, 25, "placement_test", "", 0, key); err != nil {
+	if _, _, _, err := credits.Debit(ctx, f.org, models.CreditDebit{Amount: 25, Reason: "placement_test", IdempotencyKey: key}); err != nil {
 		t.Fatalf("Consume: %v", err)
 	}
 	f.exec(`UPDATE placement_tests SET credits_charged = 25 WHERE id = $1`, test.ID)
@@ -399,7 +399,7 @@ func TestLivePlacementPaidTestRefundsToThePoolsItDrewFrom(t *testing.T) {
 		}
 	}
 	ledger, err := credits.GetBalance(ctx, f.org)
-	if err != nil || ledger.Balance != 10 || ledger.PurchasedBalance != 100 {
+	if err != nil || ledger.Monthly != 10 || ledger.Purchased != 100 {
 		t.Fatalf("ledger = %+v, %v; want 10 monthly and 100 purchased back", ledger, err)
 	}
 	if ok, err := f.repo.SettleCredits(ctx, test.ID, 25); err != nil || !ok {
@@ -411,8 +411,10 @@ func TestLivePlacementPaidTestRefundsToThePoolsItDrewFrom(t *testing.T) {
 	if open, _ := f.repo.UnsettledPaidTests(ctx, 1000); findSettle(open, test.ID) != nil {
 		t.Fatalf("a settled test is still open")
 	}
-	if got, _ := f.repo.GetTest(ctx, test.ID); got == nil || got.CreditsRefunded != 25 || got.CreditsSettledAt == nil {
-		t.Fatalf("test = %+v; want 25 refunded and a settle time", got)
+	// Charged in credits only, as the previous release writes it; the refund is recorded in micro-dollars.
+	if got, _ := f.repo.GetTest(ctx, test.ID); got == nil || got.RefundedMicro != 25 || got.CreditsSettledAt == nil ||
+		got.ChargedMicro != 25*models.LegacyCreditMicro {
+		t.Fatalf("test = %+v; want 25 refunded, the credit charge read in dollars, and a settle time", got)
 	}
 	if n, _, _ := credits.RefundSpend(ctx, f.org, "placement:"+uuid.NewString(), "x:refund", "placement_test_refund"); n != 0 {
 		t.Fatalf("refunded %d for a charge that never happened", n)
@@ -429,7 +431,7 @@ func TestLivePlacementPaidTestRefundsToThePoolsItDrewFrom(t *testing.T) {
 	// Monthly credits spent before a reset would have expired with it, so a
 	// refund after the reset gives back only the purchased part.
 	key2 := "placement:" + uuid.NewString()
-	if _, _, _, err := credits.Consume(ctx, f.org, 25, "placement_test", "", 0, key2); err != nil {
+	if _, _, _, err := credits.Debit(ctx, f.org, models.CreditDebit{Amount: 25, Reason: "placement_test", IdempotencyKey: key2}); err != nil {
 		t.Fatalf("Consume: %v", err)
 	}
 	f.exec(`UPDATE credit_ledger SET month_reset_at = NOW() + INTERVAL '1 second' WHERE org_id = $1`, f.org)
@@ -441,7 +443,7 @@ func TestLivePlacementPaidTestRefundsToThePoolsItDrewFrom(t *testing.T) {
 		t.Fatalf("SpentInWindows = %d; want the 10 that did not come back", day)
 	}
 	ledger, _ = credits.GetBalance(ctx, f.org)
-	if ledger.Balance != 0 || ledger.PurchasedBalance != 100 {
+	if ledger.Monthly != 0 || ledger.Purchased != 100 {
 		t.Fatalf("ledger = %+v; want the reset month untouched and purchased whole", ledger)
 	}
 }

@@ -436,7 +436,7 @@ struct UniboxComposer: View {
         }
     }
 
-    /// "Rewritten · 1 credit · 300 tok" style capsule that floats over the
+    /// "Rewritten · $0.004 · 300 tok" style capsule that floats over the
     /// helper bar for a few seconds, with a one-tap Undo when applicable.
     private func noticeChip(_ notice: AINotice) -> some View {
         HStack(spacing: 8) {
@@ -914,7 +914,7 @@ struct UniboxComposer: View {
         if let apiError = error as? APIError {
             switch apiError {
             case let .server(status, _) where status == 402:
-                store.setError("You're out of AI credits for this billing period.")
+                store.setError("The workspace balance is too low for AI. Add money on the web.")
             case .rateLimited:
                 store.setError("AI usage limit reached, try again later.")
             default:

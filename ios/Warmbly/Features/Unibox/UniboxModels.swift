@@ -574,11 +574,13 @@ extension Color {
 // MARK: - AI writing assistant
 
 /// Shared result of `POST /v1/generation/write`, `/v1/generation/edit`, and
-/// `/v1/unibox/reply/draft`; 402 means the org is out of credits.
+/// `/v1/unibox/reply/draft`; 402 means the workspace balance is too low.
 struct AIWriteResponse: Codable, Sendable {
     var text: String
     var creditsRemaining: Int?
     var creditsCharged: Int?
+    /// What the call cost the balance; nil from a backend before the balance.
+    var chargedUSD: Double?
     var tokensUsed: Int?
     var model: String?
 
@@ -586,20 +588,27 @@ struct AIWriteResponse: Codable, Sendable {
         case text, model
         case creditsRemaining = "credits_remaining"
         case creditsCharged = "credits_charged"
+        case chargedUSD = "charged_usd"
         case tokensUsed = "tokens_used"
     }
 
-    /// "2 credits · 1.4k tok"; nil when nothing was charged (local model).
+    /// "$0.013 · 1.4k tok"; nil when nothing was charged (local model).
     var usage: String? {
-        guard let creditsCharged, creditsCharged > 0 else { return nil }
-        let credits = "\(creditsCharged) credit\(creditsCharged == 1 ? "" : "s")"
-        guard let tokensUsed, tokensUsed > 0 else { return credits }
-        return "\(credits) · \(WFormat.compact(tokensUsed)) tok"
+        let charge: String
+        if let chargedUSD {
+            guard chargedUSD > 0 else { return nil }
+            charge = WFormat.usd(chargedUSD, precise: true)
+        } else {
+            guard let creditsCharged, creditsCharged > 0 else { return nil }
+            charge = "\(creditsCharged) credit\(creditsCharged == 1 ? "" : "s")"
+        }
+        guard let tokensUsed, tokensUsed > 0 else { return charge }
+        return "\(charge) · \(WFormat.compact(tokensUsed)) tok"
     }
 }
 
 /// `POST /v1/unibox/reply/draft`: thread-grounded reply draft. The server
-/// assembles thread history + contact context + voice profile; 2 credits.
+/// assembles thread history + contact context + voice profile.
 struct AIDraftReplyRequest: Encodable, Sendable {
     var threadID: String
     var instruction: String?

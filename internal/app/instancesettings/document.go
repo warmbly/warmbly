@@ -311,6 +311,7 @@ type Document struct {
 	Placement      Placement      `json:"placement"`
 	Notifications  Notifications  `json:"notifications"`
 	MailboxSignin  MailboxSignin  `json:"mailbox_signin"`
+	Usage          Usage          `json:"usage"`
 }
 
 // Defaults is the document a fresh instance behaves as if it had.
@@ -329,6 +330,7 @@ func Defaults() Document {
 		Deliverability: DefaultDeliverability(),
 		Placement:      DefaultPlacement(),
 		MailboxSignin:  MailboxSignin{AutoVendorReconnect: true},
+		Usage:          DefaultUsage(),
 	}
 }
 
@@ -422,6 +424,7 @@ func (d *Document) Normalize() {
 	d.Deliverability.Normalize()
 	d.Placement.Normalize()
 	d.Notifications.Normalize()
+	d.Usage.Normalize()
 }
 
 // Normalize clamps the grace window. Zero and negative resolve to the compiled
@@ -525,6 +528,12 @@ type Patch struct {
 	MailboxSignin *struct {
 		AutoVendorReconnect *bool `json:"auto_vendor_reconnect"`
 	} `json:"mailbox_signin"`
+	// Models and Units replace the whole list or map when present.
+	Usage *struct {
+		MarkupPercent *int                `json:"markup_percent"`
+		Models        *[]ModelPrice       `json:"models"`
+		Units         *map[string]float64 `json:"units"`
+	} `json:"usage"`
 }
 
 // Apply merges a patch onto a document.
@@ -644,6 +653,21 @@ func (p Patch) Apply(doc Document) Document {
 	}
 	if p.MailboxSignin != nil && p.MailboxSignin.AutoVendorReconnect != nil {
 		doc.MailboxSignin.AutoVendorReconnect = *p.MailboxSignin.AutoVendorReconnect
+	}
+	if p.Usage != nil {
+		if p.Usage.MarkupPercent != nil {
+			v := *p.Usage.MarkupPercent
+			doc.Usage.MarkupPercent = &v
+		}
+		if p.Usage.Models != nil {
+			doc.Usage.Models = append([]ModelPrice(nil), (*p.Usage.Models)...)
+		}
+		if p.Usage.Units != nil {
+			doc.Usage.Units = map[string]float64{}
+			for k, v := range *p.Usage.Units {
+				doc.Usage.Units[k] = v
+			}
+		}
 	}
 	return doc
 }

@@ -37,6 +37,8 @@ import { usePermission } from "@/hooks/usePermission";
 import { capturePointerDrag, useResizablePane } from "@/hooks/useResizablePane";
 import { dispatchPanelShortcut } from "@/hooks/useKeyboardShortcuts";
 import useAiMetered from "@/hooks/useAiMetered";
+import { openInsufficientBalance } from "@/lib/insufficientBalance";
+import { fmtUsd } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { hrefTarget, parseSearch } from "@/lib/routerSearch";
 import { useAppStore } from "@/stores";
@@ -316,8 +318,8 @@ export default function AgentPanel() {
         const s = useAppStore.getState();
         if (ev.type === "iteration") {
             s.agentPatchTab(tabKey, {
-                ...(typeof ev.credits_remaining === "number"
-                    ? { credits: ev.credits_remaining }
+                ...(typeof ev.balance_usd === "number"
+                    ? { balanceUsd: ev.balance_usd }
                     : {}),
                 ...(typeof ev.budget === "number" ? { budget: ev.budget } : {}),
                 ...(typeof ev.iteration === "number"
@@ -343,8 +345,8 @@ export default function AgentPanel() {
             return;
         }
         if (ev.type === "done") {
-            if (typeof ev.credits_remaining === "number") {
-                s.agentPatchTab(tabKey, { credits: ev.credits_remaining });
+            if (typeof ev.balance_usd === "number") {
+                s.agentPatchTab(tabKey, { balanceUsd: ev.balance_usd });
             }
             return;
         }
@@ -352,9 +354,10 @@ export default function AgentPanel() {
             ...t,
             turns: foldEvent(t.turns, ev),
         }));
-        if (ev.type === "error" && typeof ev.credits_remaining === "number") {
-            s.agentPatchTab(tabKey, { credits: ev.credits_remaining });
+        if (ev.type === "error" && typeof ev.balance_usd === "number") {
+            s.agentPatchTab(tabKey, { balanceUsd: ev.balance_usd });
         }
+        if (ev.type === "error" && ev.code === "insufficient_credits") openInsufficientBalance();
     }
 
     function beginRun(tabKey: string): AbortController {
@@ -1036,9 +1039,9 @@ export default function AgentPanel() {
                                 </span>
                                 {!activeTab?.freeModel &&
                                     metered &&
-                                    activeTab?.credits != null && (
+                                    activeTab?.balanceUsd != null && (
                                         <span className="font-mono tabular-nums">
-                                            {activeTab.credits.toLocaleString()} credits
+                                            {fmtUsd(activeTab.balanceUsd)} balance
                                         </span>
                                     )}
                             </div>

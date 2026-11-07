@@ -296,7 +296,8 @@ type LeadEnrichmentRun struct {
 	PeopleFound       int         `json:"people_found"`
 	NoWebsite         int         `json:"no_website"`
 	Failed            int         `json:"failed"`
-	CreditsConsumed   int         `json:"credits_consumed"`
+	ChargedMicro      Micro       `json:"-"`
+	ChargedUSD        float64     `json:"charged_usd"`
 	LastError         string      `json:"last_error"`
 	StartedAt         *time.Time  `json:"started_at"`
 	FinishedAt        *time.Time  `json:"finished_at"`

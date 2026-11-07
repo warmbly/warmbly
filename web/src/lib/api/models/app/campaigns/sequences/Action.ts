@@ -67,7 +67,7 @@ export interface SequenceAction {
     // branch with an "ai_label" condition carrying the case name, and an
     // unconditional branch is the "otherwise" fallback. switch_on picks the
     // decider: "ai" (one model call per contact follows ai_instruction and
-    // picks exactly one case; 1 credit) or "value" (switch_value, a template
+    // picks exactly one case; charged by usage) or "value" (switch_value, a template
     // like {{.Industry}}, rendered against the contact and matched to the case
     // names; free, no model call). Side effects are ordinary action steps
     // placed on the chosen path.
@@ -76,7 +76,7 @@ export interface SequenceAction {
     switch_value?: string;
     ai_instruction?: string;
     // AI-decider capabilities: web search runs one lookup about the contact's
-    // company before deciding (+1 credit when results are found); thinking
+    // company before deciding (one search charge when results are found); thinking
     // routes to the stronger model tier (costs more through usage metering).
     ai_web_search?: boolean;
     ai_thinking?: boolean;

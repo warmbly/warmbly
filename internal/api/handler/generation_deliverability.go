@@ -13,15 +13,15 @@ import (
 // score would flag it (spam-trigger terms, stacked punctuation), so a draft
 // lands clean. Anything already in the author's own source text is theirs and
 // left alone. It keeps the original unless the pass flags less and every
-// template token survives, and returns the tokens the pass used. onPass, when
-// set, hears that the pass is starting.
-func (h *Handler) rewordFlagged(ctx context.Context, model string, voice generation.VoiceContext, text, source string, onPass func()) (string, int) {
+// template token survives, and returns the input and output tokens the pass
+// used. onPass, when set, hears that the pass is starting.
+func (h *Handler) rewordFlagged(ctx context.Context, model string, voice generation.VoiceContext, text, source string, onPass func()) (string, int, int) {
 	terms, stacked := warmlint.Rewordable(text)
 	theirs, theirsStacked := warmlint.Rewordable(source)
 	terms = slices.DeleteFunc(terms, func(t string) bool { return slices.Contains(theirs, t) })
 	stacked = stacked && !theirsStacked
 	if (len(terms) == 0 && !stacked) || h.AIProvider == nil {
-		return text, 0
+		return text, 0, 0
 	}
 	if onPass != nil {
 		onPass()
@@ -41,15 +41,15 @@ func (h *Handler) rewordFlagged(ctx context.Context, model string, voice generat
 		MaxTokens: editMaxTokens,
 	})
 	if err != nil || res == nil {
-		return text, 0
+		return text, 0, 0
 	}
 	fixed := stripEditFences(res.Text)
 	after, stillStacked := warmlint.Rewordable(fixed)
 	after = slices.DeleteFunc(after, func(t string) bool { return slices.Contains(theirs, t) })
 	if fixed == "" || !sameTemplateTokens(text, fixed) || len(after) >= len(terms) && (stillStacked && !theirsStacked) == stacked {
-		return text, res.TokensUsed
+		return text, res.InputTokens, res.OutputTokens
 	}
-	return fixed, res.TokensUsed
+	return fixed, res.InputTokens, res.OutputTokens
 }
 
 // sameTemplateTokens reports whether b keeps every merge token, condition,

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast/headless'
+import { fmtUsd } from '@/lib/money'
 import { useQueryClient, type QueryKey } from '@tanstack/react-query'
 import { useSocket } from './context/socket'
 import { useAppStore } from '@/stores'
@@ -224,24 +225,24 @@ export function useRealtimeEvents() {
         return
       }
 
-      // AI credit balance dipped below the org's alert threshold (fired at
-      // most once per day, gated on manage_billing server-side). Popup
-      // reminder + refresh every credits view.
+      // The balance ran low or out (once per cycle, gated on manage_billing
+      // server-side, silent while automatic reload covers it).
       if (includes('CREDITS_LOW')) {
-        const balance = typeof payload.balance === 'number' ? payload.balance : null
+        const balance = typeof payload.balance_usd === 'number' ? payload.balance_usd : null
         toast(
-          balance !== null
-            ? `AI credits are running low: ${balance} left. Top up or enable auto top-up in Billing.`
-            : 'AI credits are running low. Top up or enable auto top-up in Billing.',
+          payload.out
+            ? 'The balance is used up, so AI features are paused. Add money in Billing.'
+            : balance !== null
+              ? `The balance is running low: ${fmtUsd(balance)} left. Add money or turn on automatic reload in Billing.`
+              : 'The balance is running low. Add money or turn on automatic reload in Billing.',
           { icon: '⚠️', duration: 8000, id: 'credits-low' },
         )
         invalidate([['subscription', 'credits']])
         return
       }
 
-      // Any fresh AI credit debit (fired per charge, including scheduled
-      // campaign/automation spends) — keep every credits view live so the
-      // meter visibly moves when credits are used.
+      // Any charge or refund (including scheduled campaign and automation
+      // work) keeps every balance view live.
       if (includes('CREDITS_CHANGED')) {
         invalidate([['subscription', 'credits']])
         return
@@ -571,8 +572,8 @@ export function useRealtimeEvents() {
           meeting: [['meetings'], ['meetings', 'summary']],
           subscription: [['subscription'], ['organizations', 'limits']],
           referral_credit: [['subscription']],
-          // AI credits: a top-up purchase or a monthly allowance reset both
-          // change the billing/credits view for every teammate.
+          // Money added, an automatic reload, a reset or a settings change
+          // refreshes the balance, invoices and activity for every teammate.
           credit_purchase: [['subscription', 'credits'], ['subscription']],
           credit_grant: [['subscription', 'credits'], ['subscription']],
           // AI assistant sessions (per-user; refreshes the session list).

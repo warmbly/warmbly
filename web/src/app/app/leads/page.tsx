@@ -55,6 +55,7 @@ import type { GeocodeResult, LatLng, LeadArea, LeadBounds, LeadFinderConfig, Lea
 import buildError from "@/lib/helper/buildError";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores";
+import { fmtUsdCost } from "@/lib/money";
 
 type ViewMode = "split" | "map" | "list";
 type StyleChoice = "auto" | "light" | "dark" | "streets";
@@ -231,9 +232,9 @@ function Finder({ config }: { config: LeadFinderConfig }) {
             if (res.leads.length) {
                 flyTo({ bounds: boundsOf(res.leads.map((l) => ({ lat: l.latitude, lng: l.longitude }))) });
             }
-            const credits = res.credits_charged ? ` · ${res.credits_charged} credit${res.credits_charged === 1 ? "" : "s"}` : "";
+            const charged = res.charged_usd > 0 ? ` · ${fmtUsdCost(res.charged_usd)}` : "";
             if (res.found === 0) toast(`Nothing found in this area${res.outside_area ? `; ${res.outside_area} results fell just outside it` : ""}`);
-            else toast.success(`Found ${res.found.toLocaleString()} business${res.found === 1 ? "" : "es"}${credits}`);
+            else toast.success(`Found ${res.found.toLocaleString()} business${res.found === 1 ? "" : "es"}${charged}`);
         } catch (e) {
             toast.error(buildError(e as AppError));
         }
@@ -615,7 +616,7 @@ function Finder({ config }: { config: LeadFinderConfig }) {
 
             <LeadSelectionBar
                 count={selectedCount}
-                enrichCost={config.enrich_cost}
+                enrichCost={config.enrich_cost_usd}
                 enriching={enrich.isPending}
                 onEnrich={() => startEnrich(selection)}
                 onAddToContacts={() => setDialog({ kind: "contacts", selection, count: selectedCount })}

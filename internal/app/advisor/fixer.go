@@ -44,8 +44,8 @@ type ToolLister interface {
 
 // CreditCharger meters the run. Nil means the install does not bill AI.
 type CreditCharger interface {
-	Consume(ctx context.Context, orgID uuid.UUID, amount int, reason, model string, tokens int, idempotencyKey string) (int, error)
-	SettleUsage(ctx context.Context, orgID uuid.UUID, charged int, model string, tokens int, reason, idempotencyKey string) (int, error)
+	Reserve(ctx context.Context, orgID uuid.UUID, estimate models.Micro) error
+	Charge(ctx context.Context, orgID uuid.UUID, u credits.Usage, reason, idempotencyKey string) (models.Micro, error)
 }
 
 const (
@@ -161,22 +161,18 @@ func (s *service) FixWithAgent(ctx context.Context, inv aitools.Invocation, id u
 		model = s.agent.ModelForTier(s.tier.IsPaid(ctx, inv.OrgID))
 	}
 
-	// Credits are charged per loop iteration, so an agent that wanders costs
-	// more than one that goes straight to the fix, and a workspace out of
-	// credits stops cleanly instead of half-applying a change.
-	idemBase := fmt.Sprintf("advisor_agent_fix:%s:%s", inv.OrgID, id)
-	charged := 0
+	// The balance is checked before every loop iteration, so a workspace that
+	// runs out stops cleanly instead of half-applying a change.
+	idemKey := fmt.Sprintf("advisor_agent_fix:%s:%s", inv.OrgID, id)
 	var creditErr error
-	preIteration := func(ctx context.Context, iteration int) error {
+	preIteration := func(ctx context.Context, _ int) error {
 		if s.credits == nil || s.agent.IsLocal() {
 			return nil
 		}
-		idem := fmt.Sprintf("%s:iter:%d", idemBase, iteration)
-		if _, err := s.credits.Consume(ctx, inv.OrgID, credits.CostAgentIteration, "advisor_agent_fix", model, 0, idem); err != nil {
+		if err := s.credits.Reserve(ctx, inv.OrgID, credits.EstimateAgentIteration); err != nil {
 			creditErr = err
 			return err
 		}
-		charged++
 		return nil
 	}
 
@@ -192,15 +188,16 @@ func (s *service) FixWithAgent(ctx context.Context, inv aitools.Invocation, id u
 		MaxTokens:     agentMaxTokens,
 		PreIteration:  preIteration,
 	})
+	// Iterations that ran are charged even when the loop stopped early.
+	if res != nil && s.credits != nil && !s.agent.IsLocal() {
+		_, _ = s.credits.Charge(ctx, inv.OrgID, credits.AIUsage(model, res.InputTokens, res.OutputTokens), "advisor_agent_fix", idemKey)
+	}
 	if creditErr != nil {
-		return nil, errx.New(errx.PaymentRequired, "not enough AI credits to run this fix")
+		return nil, errx.New(errx.PaymentRequired, "the workspace balance is too low to run this fix")
 	}
 	if err != nil {
 		log.Printf("advisor: agent fix %s for org %s: %v", f.DetectorKey, inv.OrgID, err)
 		return nil, errx.New(errx.Internal, "the agent could not complete this fix")
-	}
-	if res != nil && s.credits != nil && !s.agent.IsLocal() && charged > 0 {
-		_, _ = s.credits.SettleUsage(ctx, inv.OrgID, charged, model, res.TokensUsed, "advisor_agent_fix", idemBase+":usage")
 	}
 
 	summary := ""

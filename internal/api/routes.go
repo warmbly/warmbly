@@ -1852,11 +1852,19 @@ func Run(
 				// manage_billing-gated; purchase fulfillment is webhook-only.
 				subscriptions.GET("/credits", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.GetCreditBalance)
 				subscriptions.GET("/credits/transactions", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.ListCreditTransactions)
-				subscriptions.POST("/credits/checkout", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), middleware.RequireFreshAuth(), h.CreateCreditCheckoutSession)
 				// AI usage overview + spend controls (limits, alerts, auto top-up).
 				subscriptions.GET("/credits/usage", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.GetCreditUsage)
 				subscriptions.GET("/credits/settings", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.GetCreditSettings)
 				subscriptions.PATCH("/credits/settings", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), middleware.RequireFreshAuth(), h.UpdateCreditSettings)
+				// Balance: add money on the saved card or through Checkout, save a
+				// card, automatic reload, invoices. Charging and changing what is
+				// charged need a fresh sign-in.
+				subscriptions.GET("/balance", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.GetBalance)
+				subscriptions.POST("/balance/top-up", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), middleware.RequireFreshAuth(), m.IdempotencyMiddleware(), h.TopUpBalance)
+				subscriptions.POST("/balance/checkout", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), middleware.RequireFreshAuth(), h.CreateBalanceCheckout)
+				subscriptions.POST("/balance/payment-method", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), middleware.RequireFreshAuth(), h.CreatePaymentMethodSetup)
+				subscriptions.PATCH("/balance/auto-reload", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), middleware.RequireFreshAuth(), h.UpdateAutoReload)
+				subscriptions.GET("/balance/invoices", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.ListBalanceInvoices)
 
 				subscriptions.POST("/enterprise-inquiry", h.SubmitEnterpriseInquiry)
 			}

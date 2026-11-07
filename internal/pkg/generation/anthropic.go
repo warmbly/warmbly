@@ -53,6 +53,9 @@ type WritingResult struct {
 	Text       string
 	Model      string
 	TokensUsed int
+	// InputTokens and OutputTokens split TokensUsed; they are priced apart.
+	InputTokens  int
+	OutputTokens int
 }
 
 // WritingGenerator is the provider-agnostic interface the handler depends on.
@@ -197,8 +200,10 @@ func (c *AnthropicClient) GenerateWriting(ctx context.Context, model, prompt str
 	}
 
 	return &WritingResult{
-		Text:       text,
-		Model:      model,
-		TokensUsed: parsed.Usage.InputTokens + parsed.Usage.OutputTokens,
+		Text:         text,
+		Model:        model,
+		TokensUsed:   parsed.Usage.InputTokens + parsed.Usage.OutputTokens,
+		InputTokens:  parsed.Usage.InputTokens,
+		OutputTokens: parsed.Usage.OutputTokens,
 	}, nil
 }

@@ -44,6 +44,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/appdirectory"
 	"github.com/warmbly/warmbly/internal/app/audit"
 	"github.com/warmbly/warmbly/internal/app/auth"
+	"github.com/warmbly/warmbly/internal/app/balance"
 	behaviorapp "github.com/warmbly/warmbly/internal/app/behavior"
 	"github.com/warmbly/warmbly/internal/app/bootstrap"
 	"github.com/warmbly/warmbly/internal/app/campaign"
@@ -55,7 +56,6 @@ import (
 	"github.com/warmbly/warmbly/internal/app/contact"
 	"github.com/warmbly/warmbly/internal/app/contactimport"
 	"github.com/warmbly/warmbly/internal/app/credits"
-	"github.com/warmbly/warmbly/internal/app/creditwatch"
 	"github.com/warmbly/warmbly/internal/app/crm"
 	"github.com/warmbly/warmbly/internal/app/crmmode"
 	"github.com/warmbly/warmbly/internal/app/customhost"
@@ -246,6 +246,7 @@ func main() {
 	var creditRepository repository.CreditRepository
 	var aiSettingsRepository repository.AISettingsRepository
 	var creditService credits.CreditService
+	var balanceService *balance.Service
 	var aiDraftRepo repository.AIDraftRepository
 	var writingGenerator generation.WritingGenerator
 	var aiProvider generation.Provider
@@ -830,9 +831,9 @@ func main() {
 			writingGenerator = generation.NewAnthropicClient(aiKey)
 		}
 		creditRepository = repository.NewCreditRepository(primaryDB)
-		creditAutoTopUpAttemptRepository := repository.NewCreditAutoTopUpAttemptRepository(primaryDB)
+		savedCardChargeRepository := repository.NewSavedCardChargeRepository(primaryDB)
 		aiSettingsRepository = repository.NewAISettingsRepository(primaryDB)
-		creditService = credits.NewService(creditRepository, aiSettingsRepository, cache)
+		creditService = credits.NewService(creditRepository, aiSettingsRepository, instanceSettings, cache)
 		webhookRepository := repository.NewWebhookRepositorySealed(primaryDB.Pool, credEncrypter)
 		webhookService := webhook.NewService(webhookRepository)
 		webhookServiceForHandler = webhookService
@@ -927,7 +928,7 @@ func main() {
 				errs.CaptureFatal(err)
 				log.Fatal(err)
 			}
-			stripeService = stripe.NewService(stripeCfg, subscriptionRepository, planRepository, workerAssignmentService, discountService, creditAutoTopUpAttemptRepository)
+			stripeService = stripe.NewService(stripeCfg, subscriptionRepository, planRepository, workerAssignmentService, discountService, savedCardChargeRepository)
 		} else {
 			stripeService = stripe.NewDisabledService()
 		}
@@ -981,11 +982,13 @@ func main() {
 		// views refresh live via the spine.
 		stripeService.WireCredits(creditService, auditService)
 
-		// Credit watch: after every fresh debit it fires the low-balance alert
-		// (once per day) and, when enabled, buys the configured pack off-session
-		// (auto top-up). Runs detached so charges are never slowed.
-		creditWatch := creditwatch.New(aiSettingsRepository, creditRepository, cache, streamingPublisher, stripeService)
-		creditService.SetMonitor(creditWatch.OnBalanceChanged)
+		// Balance: after every fresh debit it sends the low and empty balance
+		// notices and starts an automatic reload on the saved card. Runs
+		// detached so charges are never slowed; a sweep resumes retries.
+		balanceService = balance.New(creditService, aiSettingsRepository, savedCardChargeRepository, subscriptionRepository,
+			stripeService, cache, streamingPublisher, nil, auditService)
+		creditService.SetMonitor(balanceService.OnBalanceChanged)
+		stripeService.WireBalance(balanceService)
 
 		authService = auth.NewService(
 			authRepostory,
@@ -1835,6 +1838,9 @@ func main() {
 		}
 		notificationService.WirePush(pushSender, repository.NewDeviceTokenRepository(primaryDB.Pool), cache.Client)
 		advancedService.WireNotifier(notificationService)
+		if balanceService != nil {
+			balanceService.WireNotifier(notificationService)
+		}
 		// New-device sign-in alerts: the token service fires this on session
 		// creation from an unrecognized device, delivered as a security
 		// notification (in-app + email per the user's channels).
@@ -2130,6 +2136,9 @@ func main() {
 			trialExpirationJob.WireNotifier(notificationService)
 			trialScheduler := jobs.NewTrialExpirationScheduler(trialExpirationJob, 1*time.Hour)
 			go trialScheduler.Start(ctx)
+			if balanceService != nil {
+				go balanceService.Start(ctx)
+			}
 		}
 
 		// Local task dispatcher (TASKS_PROVIDER=local): the in-process poller
@@ -2660,6 +2669,7 @@ func main() {
 
 		// AI writing assistant + credit ledger
 		CreditService:    creditService,
+		BalanceService:   balanceService,
 		WritingGenerator: writingGenerator,
 		AIProvider:       aiProvider,
 		TypeSafe:         typeSafeAsker(typeSafeClient),

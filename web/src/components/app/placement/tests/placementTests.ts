@@ -97,17 +97,18 @@ export function usageLabel(o: PlacementOverview | undefined): string {
     return `${used} of ${limit} free test${limit === 1 ? "" : "s"} used this month`;
 }
 
-// What starting `tests` more would cost: how many are free and how many are
-// paid in credits, and whether the workspace can pay.
+// What starting `tests` more would cost: how many are free, what the paid ones
+// cost in dollars, and whether the workspace can pay.
 export function testCost(usage: PlacementOverview["usage"] | undefined, metered: boolean, tests: number) {
-    if (!usage || !metered || usage.limit == null) return { paid: 0, credits: 0, payable: true, canPay: true };
+    if (!usage || !metered || usage.limit == null) return { paid: 0, usd: 0, payable: true, canPay: true };
     const free = Math.max(0, usage.limit - usage.used);
     const paid = Math.max(0, tests - free);
-    const credits = paid * usage.credits_per_test;
-    const payable = paid === 0 || usage.credits_per_test > 0;
+    // Whole micro-dollars, the unit the server compares the agreed amount in.
+    const usd = Math.round(paid * usage.price_per_test_usd * 1e6) / 1e6;
+    const payable = paid === 0 || usage.price_per_test_usd > 0;
     // An unknown balance is left to the server, which refuses what cannot be paid.
-    const canPay = paid === 0 || (payable && (usage.credit_balance == null || usage.credit_balance >= credits));
-    return { paid, credits, payable, canPay };
+    const canPay = paid === 0 || (payable && (usage.balance_usd == null || usage.balance_usd >= usd));
+    return { paid, usd, payable, canPay };
 }
 
 // Which part of the new-test form a refusal is about, so it shows beside it.
@@ -149,9 +150,9 @@ export function placementErrorMessage(
                           : "None of your seed inboxes can take this test. Add a seed inbox on a different domain than the sender.",
             };
         case "insufficient_credits":
-            return { field: "panel", message: "The workspace does not have enough credits for this test. Top up under Settings > Billing." };
+            return { field: "panel", message: "The workspace balance is too low for this test. Add money under Settings > Billing." };
         case "usage_cap_exceeded":
-            return { field: "panel", message: "This test would go past the workspace's credit spend limit. An admin can raise it under Settings > Billing." };
+            return { field: "panel", message: "This test would go past the workspace's spend limit. An admin can raise it under Settings > Billing." };
         case "placement_invalid_seeds":
             return { field: "panel", message: err.message || "A seed inbox you chose is no longer a connected seed. Choose again." };
         case "placement_panel_unavailable":

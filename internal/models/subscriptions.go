@@ -70,8 +70,11 @@ type Plan struct {
 	MaxTeamMembers     *int `json:"max_team_members,omitempty"`
 	MaxEmailAccounts   *int `json:"max_email_accounts,omitempty"`
 
-	// AI writing-assistant monthly credit grant for this plan.
-	MonthlyCredits int `json:"monthly_credits"`
+	// MonthlyAllowanceUSD is the usage this plan includes each month, in
+	// dollars. MonthlyCredits is the same allowance in legacy credits, which
+	// the previous release reads; writes derive it from the dollars.
+	MonthlyAllowanceUSD float64 `json:"monthly_allowance_usd"`
+	MonthlyCredits      int     `json:"monthly_credits"`
 
 	// Referral reward: the percentage of this plan's first-month-equivalent
 	// price a referrer earns when an invitee converts to it (100 = a full
@@ -92,6 +95,15 @@ func (p *Plan) MonthlyPriceCents() int64 {
 		price = price / 12
 	}
 	return int64(math.Round(price * 100))
+}
+
+// Allowance is the plan's monthly included usage. A client that still sends
+// only the credit figure is read at the credit's value.
+func (p *Plan) Allowance() Micro {
+	if p.MonthlyAllowanceUSD > 0 {
+		return USDToMicro(p.MonthlyAllowanceUSD)
+	}
+	return Micro(max(p.MonthlyCredits, 0)) * LegacyCreditMicro
 }
 
 // ReferralRewardCents returns the credit a referrer earns for converting an

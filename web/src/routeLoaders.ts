@@ -23,6 +23,9 @@ import { emailsListQuery } from "./lib/api/hooks/app/emails/useEmails";
 import { sendingDomainsQuery } from "./lib/api/hooks/app/emails/useSendingDomains";
 import { signinMigrationQuery } from "./lib/api/hooks/app/emails/useMailboxGrants";
 import { featureStatusQuery } from "./lib/api/hooks/app/subscription/useFeatureStatus";
+import { balanceQuery } from "./lib/api/hooks/app/subscription/useBalance";
+import { creditUsageQuery } from "./lib/api/hooks/app/subscription/useCreditUsage";
+import { creditSettingsQuery } from "./lib/api/hooks/app/subscription/useCreditSettings";
 import { advisorFindingsQuery, advisorSurfaceQuery } from "./lib/api/hooks/app/advisor/useAdvisor";
 import { contactsSearchQuery } from "./lib/api/hooks/app/contacts/useSearchContacts";
 import { customFieldKeysQuery } from "./lib/api/hooks/app/contacts/useCustomFieldKeys";
@@ -390,11 +393,19 @@ export const webhooksLoader = pageLoader((qc) =>
     can("MANAGE_SETTINGS") ? [qc.prefetchQuery(webhooksListQuery), qc.prefetchQuery(webhookDropsQuery)] : [],
 );
 
-// The overview tab, for the owner, on a deployment that bills.
+// The overview tab for the owner, and the balance tab for anyone who manages billing, on a deployment that bills.
 export const billingLoader = pageLoader((qc, { params }) => {
+    if (qc.getQueryData(authConfigQuery.queryKey)?.billing_enabled === false) return [];
+    if (params.tab === "balance" || params.tab === "ai-credits") {
+        if (!can("MANAGE_BILLING")) return [];
+        return [
+            qc.prefetchQuery(balanceQuery),
+            qc.prefetchQuery(creditUsageQuery(30)),
+            qc.prefetchQuery(creditSettingsQuery),
+        ];
+    }
     if (params.tab) return [];
     if (useAppStore.getState().currentOrganization?.role !== "owner") return [];
-    if (qc.getQueryData(authConfigQuery.queryKey)?.billing_enabled === false) return [];
     return [
         qc.prefetchQuery(organizationLimitsQuery),
         qc.prefetchQuery(usageOverviewQuery("month")),

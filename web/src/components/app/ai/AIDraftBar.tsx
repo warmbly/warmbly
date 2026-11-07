@@ -21,17 +21,15 @@ import {
     Trash2Icon,
     XIcon,
 } from "lucide-react";
-import toast from "react-hot-toast/headless";
-import type { AppError } from "@/lib/api/client/normalizeError";
-import buildError from "@/lib/helper/buildError";
 import useTypewriter from "./useTypewriter";
 import formatUsage from "./usage";
+import { reportAIError } from "./reportAIError";
 import AIBusyStatus, { AI_PILL_CLASS } from "./AIBusyStatus";
 
 export interface AIDraftController {
     phase: "idle" | "busy" | "review" | "question";
     // What the last draft actually cost (usage-based settle), when metered.
-    usage: { charged: number; tokens: number } | null;
+    usage: { chargedUsd: number; tokens: number } | null;
     // Clarifying question the generator asked instead of drafting (grounded
     // endpoints ask when they can't tell what the email is for).
     question: string | null;
@@ -61,8 +59,8 @@ interface GenerateResult {
     text?: string;
     question?: string;
     grounding?: AIDraftGrounding;
-    credits_remaining: number;
-    credits_charged?: number;
+    // What the call cost in dollars.
+    charged_usd?: number;
     tokens_used?: number;
 }
 
@@ -76,7 +74,7 @@ interface UseAIDraftOptions {
 export function useAIDraft({ value, onChange, generate, maxLen }: UseAIDraftOptions): AIDraftController {
     const typewriter = useTypewriter();
     const [phase, setPhase] = React.useState<"idle" | "busy" | "review" | "question">("idle");
-    const [usage, setUsage] = React.useState<{ charged: number; tokens: number } | null>(null);
+    const [usage, setUsage] = React.useState<{ chargedUsd: number; tokens: number } | null>(null);
     const [question, setQuestion] = React.useState<string | null>(null);
     const [grounding, setGrounding] = React.useState<AIDraftGrounding | null>(null);
 
@@ -105,7 +103,7 @@ export function useAIDraft({ value, onChange, generate, maxLen }: UseAIDraftOpti
                 .then((res) => {
                     if (runId.current !== id) return;
                     setUsage({
-                        charged: res.credits_charged ?? 0,
+                        chargedUsd: res.charged_usd ?? 0,
                         tokens: res.tokens_used ?? 0,
                     });
                     setGrounding(res.grounding ?? null);
@@ -124,12 +122,7 @@ export function useAIDraft({ value, onChange, generate, maxLen }: UseAIDraftOpti
                 })
                 .catch((e) => {
                     if (runId.current !== id) return;
-                    const err = e as AppError;
-                    if (err?.status === 402) {
-                        toast.error("You're out of AI credits. Upgrade or purchase more to keep drafting.");
-                    } else {
-                        toast.error(buildError(err));
-                    }
+                    reportAIError(e);
                     setPhase("idle");
                 });
         },
@@ -227,7 +220,7 @@ export default function AIDraftBar({
         ctrl.adjust(text);
     };
 
-    const usageText = ctrl.usage ? formatUsage(ctrl.usage.charged, ctrl.usage.tokens) : "";
+    const usageText = ctrl.usage ? formatUsage(ctrl.usage.chargedUsd, ctrl.usage.tokens) : "";
 
     // Floats over the bottom of the body area; the wrapper is pointer-inert so
     // the textarea stays clickable around the card.

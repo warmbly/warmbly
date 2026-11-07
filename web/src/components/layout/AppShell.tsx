@@ -24,6 +24,7 @@ import { AppNav } from "./AppNav";
 import PendingDeletionBar from "./PendingDeletionBar";
 import SendingRestrictedBar from "./SendingRestrictedBar";
 import TrialBar from "./TrialBar";
+import BalanceBanner from "@/components/app/billing/BalanceBanner";
 import { RouteBoundary } from "./ErrorBoundary";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { GlobalCursorsProvider } from "@/components/app/presence/GlobalCursors";
@@ -71,6 +72,7 @@ export function AppShell() {
                 <SendingRestrictedBar />
                 <PendingDeletionBar />
                 <TrialBar />
+                <BalanceBanner />
 
                 <AppHeader onMenu={() => setNavOpen(true)} />
 

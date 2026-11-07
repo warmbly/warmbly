@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, act, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-let reply = { text: "", credits_charged: 1, tokens_used: 10 };
+let reply = { text: "", charged_usd: 0.01, tokens_used: 10 };
 let sent: { text: string; instruction: string } | null = null;
 vi.mock("@/lib/api/hooks/app/generation/useGenerateEdit", () => ({
     default: () => ({
@@ -57,7 +57,7 @@ function Host({ initial, max = MAX }: { initial: string; max?: number }) {
 
 describe("TextareaAIEdit against the composer's length cap", () => {
     beforeEach(() => {
-        reply = { text: "", credits_charged: 1, tokens_used: 10 };
+        reply = { text: "", charged_usd: 0.01, tokens_used: 10 };
         sent = null;
     });
 
@@ -76,7 +76,7 @@ describe("TextareaAIEdit against the composer's length cap", () => {
             ta.setSelectionRange(4, 7);
             document.dispatchEvent(new Event("selectionchange"));
         });
-        reply = { text: "TWO IS MUCH LONGER", credits_charged: 1, tokens_used: 10 };
+        reply = { text: "TWO IS MUCH LONGER", charged_usd: 0.01, tokens_used: 10 };
         await act(async () => {
             fireEvent.mouseDown(await screen.findByText("Edit with AI"));
         });
@@ -115,7 +115,7 @@ describe("TextareaAIEdit against the composer's length cap", () => {
             document.dispatchEvent(new Event("selectionchange"));
         });
         // Everything this adds lands past the cap, so the body cannot move.
-        reply = { text: "fg extra", credits_charged: 1, tokens_used: 10 };
+        reply = { text: "fg extra", charged_usd: 0.01, tokens_used: 10 };
         await act(async () => {
             fireEvent.mouseDown(await screen.findByText("Edit with AI"));
         });
@@ -154,7 +154,7 @@ describe("TextareaAIEdit against the composer's length cap", () => {
             ta.setSelectionRange(4, 7);
             document.dispatchEvent(new Event("selectionchange"));
         });
-        reply = { text: "TWO IS MUCH LONGER", credits_charged: 1, tokens_used: 10 };
+        reply = { text: "TWO IS MUCH LONGER", charged_usd: 0.01, tokens_used: 10 };
         await act(async () => {
             fireEvent.mouseDown(await screen.findByText("Edit with AI"));
         });

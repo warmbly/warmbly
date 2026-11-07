@@ -184,7 +184,7 @@ The dev user's org always loads as a mid-flight workspace, not an empty shell:
 - An active 3-step campaign with 24 leads spread across the funnel (sent, opened, replied, bounced, queued), plus a draft campaign
 - 14 days of stats history (campaign sends, warmup volume, per-mailbox counts), always including sends today
 - A unified inbox with reply chains, an objection, an out-of-office, a bounce, and a warmup-style exchange
-- A CRM pipeline with deals, tasks, and notes, reply templates, notifications, and an AI credit balance with transaction history
+- A CRM pipeline with deals, tasks, and notes, reply templates, notifications, and a workspace balance with its charge history
 
 All dates are computed relative to the current time, so the workspace looks active no matter when you seed.
 
@@ -272,7 +272,7 @@ make backend AI_PROVIDER=groq   AI_KEY=gsk_... AI_MODEL=openai/gpt-oss-20b
 make backend AI_PROVIDER=openai AI_KEY=sk-...
 ```
 
-`AI_PROVIDER=ollama` needs no key and marks the model free (`AI_FREE`), so AI credits are not charged and the assistant shows a "free model" notice. Local and free-tier models are less capable, but tool calls and the full agent loop work; use `llama3.1` (8B) or `qwen2.5`, not a 1B to 3B model. Leave `AI_PROVIDER` unset to keep AI off. See the [self-hosting guide](/development/deployment-guide/) for the full provider list.
+`AI_PROVIDER=ollama` needs no key and marks the model free (`AI_FREE`), so nothing is charged to the balance and the assistant shows a "free model" notice. Local and free-tier models are less capable, but tool calls and the full agent loop work; use `llama3.1` (8B) or `qwen2.5`, not a 1B to 3B model. Leave `AI_PROVIDER` unset to keep AI off. See the [self-hosting guide](/development/deployment-guide/) for the full provider list.
 
 ## Mailpit
 

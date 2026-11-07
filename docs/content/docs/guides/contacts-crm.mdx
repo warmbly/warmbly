@@ -218,7 +218,7 @@ When more contacts match than are loaded, a bar appears under the header: **Sele
 
 The set is the one the list is showing: search, filters, the subscription facet, and the campaign or segment the list is scoped to all narrow it. Changing any of them clears the selection, because it would no longer mean what it did when you made it. A selection past `250,000` contacts is refused rather than half-applied; add a filter and work through it in parts.
 
-Every bulk action reads the selection: **Edit**, **Segment**, **Remove from segment**, **Remove from campaign**, **Research**, **Verify**, **Mark deliverable** and **Delete**. **Push to CRM** and **Research** are the exceptions: a push calls the CRM once per contact while you wait, and each research run spends AI credits, so both stay capped at `500` at a time. A workspace in [HubSpot mode](/guides/hubspot/) or [Pipedrive mode](/guides/pipedrive/) does not need **Push to CRM** for that CRM: a contact is created there the first time Warmbly emails it.
+Every bulk action reads the selection: **Edit**, **Segment**, **Remove from segment**, **Remove from campaign**, **Research**, **Verify**, **Mark deliverable** and **Delete**. **Push to CRM** and **Research** are the exceptions: a push calls the CRM once per contact while you wait, and each research run is charged to the workspace balance, so both stay capped at `500` at a time. A workspace in [HubSpot mode](/guides/hubspot/) or [Pipedrive mode](/guides/pipedrive/) does not need **Push to CRM** for that CRM: a contact is created there the first time Warmbly emails it.
 
 **Select all matching** is in the **From contacts** picker too, on a campaign's Leads tab and a segment page, so a whole search can be added as leads or members in one step.
 

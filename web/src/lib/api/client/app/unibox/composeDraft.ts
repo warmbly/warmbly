@@ -10,8 +10,8 @@ export interface ComposeDraftInput {
     to?: string;
     subject?: string;
     instruction?: string;
-    // Per-attempt key so a network retry of the SAME draft never double-charges
-    // credits (the backend keys the consume on it).
+    // Per-attempt key so a network retry of the SAME draft is never charged
+    // twice (the backend keys the charge on it).
     idempotency_key?: string;
 }
 
@@ -20,8 +20,8 @@ export interface ComposeDraftResult {
     text?: string;
     question?: string;
     grounding: AIDraftGrounding;
-    credits_remaining: number;
-    credits_charged: number;
+    charged_usd: number;
+    balance_usd: number;
     tokens_used: number;
     model: string;
 }

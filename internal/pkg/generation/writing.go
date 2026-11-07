@@ -52,8 +52,10 @@ func (c *GenerationClient) GenerateWriting(ctx context.Context, model, prompt st
 	}
 
 	return &WritingResult{
-		Text:       text,
-		Model:      string(chatModel),
-		TokensUsed: int(resp.Usage.TotalTokens),
+		Text:         text,
+		Model:        string(chatModel),
+		TokensUsed:   int(resp.Usage.TotalTokens),
+		InputTokens:  int(resp.Usage.PromptTokens),
+		OutputTokens: int(resp.Usage.CompletionTokens),
 	}, nil
 }

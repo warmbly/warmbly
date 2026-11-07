@@ -159,7 +159,7 @@ func (s *service) draft(ctx context.Context, r models.InboxAgentReply) {
 
 	// A trivial ack ("thanks", "ok, got it") does not warrant a paid reply
 	// draft. Reuse the classifier's content-sanity gate so an org isn't charged
-	// 5 credits to reply to one-liners.
+	// for a reply to a one-liner.
 	replyText := r.BodyText
 	if strings.TrimSpace(replyText) == "" {
 		replyText = r.Snippet
@@ -167,7 +167,7 @@ func (s *service) draft(ctx context.Context, r models.InboxAgentReply) {
 	if !replyclassify.WorthModeling(replyclassify.Input{BodyText: replyText}) {
 		return
 	}
-	// The classifier's verdict, when the message has one: no credits spent
+	// The classifier's verdict, when the message has one: nothing spent
 	// answering "no thanks", "please remove me" or a threat to sue.
 	if s.gate != nil {
 		if ok, why := s.gate.ShouldDraft(ctx, r.OrganizationID, r.InReplyTo); !ok {
@@ -186,12 +186,9 @@ func (s *service) draft(ctx context.Context, r models.InboxAgentReply) {
 		return
 	}
 
-	// Balance + abuse-cap pre-check so a broke/capped org never does free model
-	// work (the charge itself is enforced again below).
-	if bal, berr := s.credits.GetBalance(ctx, r.OrganizationID); berr != nil || bal < credits.CostInboxAgentThread {
-		return
-	}
-	if err := s.credits.CheckUsageCaps(ctx, r.OrganizationID); err != nil {
+	// Balance + abuse-cap check so a broke/capped org never does free model
+	// work; the draft is charged its actual usage below.
+	if err := s.credits.Reserve(ctx, r.OrganizationID, credits.EstimateInboxAgentThread); err != nil {
 		return
 	}
 
@@ -251,25 +248,22 @@ func (s *service) draft(ctx context.Context, r models.InboxAgentReply) {
 	}
 
 	// Charge exactly once (idempotency key = the draft id, unique per reserve).
-	// If the charge fails (out of credits at charge time, or a cap trip), unwind
-	// the reserved row so no free draft lingers. Delete on a FRESH context: the
+	// A short balance is clamped, never refused; if the charge still fails (a
+	// ledger error), unwind the reserved row so no free draft lingers. Delete on a FRESH context: the
 	// draft ctx may be near its deadline after a slow completion, and a failed
 	// delete would orphan an unpaid pending draft that could later be
 	// approved-and-sent for free. A free/local model (AI_FREE) runs
 	// un-metered, so skip the charge (and the unwind).
 	if !s.provider.IsLocal() {
 		ctx = models.WithCreditMeta(ctx, models.CreditMeta{Context: models.CreditContext{ThreadID: r.ThreadID, Detail: "inbound from " + r.Counterpart}})
-		if _, chErr := s.credits.Consume(ctx, r.OrganizationID, credits.CostInboxAgentThread, "inbox_agent_draft", res.Model, res.TokensUsed, "inbox_agent:"+draft.ID.String()); chErr != nil {
+		if _, chErr := s.credits.Charge(ctx, r.OrganizationID, credits.AIUsage(res.Model, res.InputTokens, res.OutputTokens), "inbox_agent_draft", "inbox_agent:"+draft.ID.String()); chErr != nil {
 			delCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if derr := s.draftRepo.DeleteDraft(delCtx, draft.ID); derr != nil {
-				log.Error().Err(derr).Str("draft_id", draft.ID.String()).Msg("inbox agent: failed to unwind unpaid draft after credit charge failure")
+				log.Error().Err(derr).Str("draft_id", draft.ID.String()).Msg("inbox agent: failed to unwind unpaid draft after a charge failure")
 			}
 			return
 		}
-		// Usage-based settle: charge any overage beyond the flat thread price
-		// from the run's actual tokens (best-effort; the draft stands).
-		_, _ = s.credits.SettleUsage(ctx, r.OrganizationID, credits.CostInboxAgentThread, res.Model, res.TokensUsed, "inbox_agent_draft", "inbox_agent:"+draft.ID.String()+":usage")
 	}
 
 	// Live: the whole team sees the draft land on the thread awaiting review. The

@@ -5,6 +5,7 @@ import { CheckCircle2Icon, TriangleAlertIcon, XIcon } from "lucide-react";
 import { LEADS_KEY, runActive } from "@/lib/api/hooks/app/leads/useLeads";
 import type { LeadEnrichmentRun } from "@/lib/api/models/app/leads/Lead";
 import { cn } from "@/lib/utils";
+import { fmtUsdCost } from "@/lib/money";
 
 // The strip on top of the leads list: a search in flight, the website runs
 // going in the background, and how each one ended.
@@ -77,7 +78,7 @@ export default function EnrichmentProgress({ runs, searching }: { runs: LeadEnri
                             {failed && r.last_error
                                 ? r.last_error
                                 : `${r.emails_found.toLocaleString()} with an email${r.people ? `, ${r.people_found.toLocaleString()} ${r.people_found === 1 ? "person" : "people"}` : ""} from ${r.total.toLocaleString()} business${r.total === 1 ? "" : "es"}`}
-                            {r.credits_consumed > 0 && ` · ${r.credits_consumed} credit${r.credits_consumed === 1 ? "" : "s"}`}
+                            {r.charged_usd > 0 && ` · ${fmtUsdCost(r.charged_usd)}`}
                         </span>
                         <button
                             type="button"

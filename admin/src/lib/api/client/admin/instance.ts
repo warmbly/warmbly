@@ -174,15 +174,15 @@ export interface InstanceSettings {
     };
     // Inbox placement tests. The monthly allowances count tests on the
     // instance and cloud panels only, and a self-hosted instance does not
-    // meter at all. Zero or negative on write resolves to the default, except
-    // credits_per_test, where zero turns paid tests off.
+    // meter at all. Zero or negative on write resolves to the default. A test
+    // past the allowance is priced by the placement_test unit under usage.
     placement: {
         tests_per_month_trial: number;
         tests_per_month_paid: number;
         seeds_per_test: number;
         spacing_seconds: number;
-        /** Credits a test past the monthly allowance costs; 0 turns paid tests off. */
-        credits_per_test: number;
+        /** Legacy credit price, read by older backends; the form no longer sends it. */
+        credits_per_test?: number;
         /** Most senders one placement batch may hold. */
         batch_senders_max: number;
         /** A workspace's batch senders sending probes at the same time. */
@@ -202,6 +202,26 @@ export interface InstanceSettings {
     notifications?: {
         channels: NotifyChannel[];
     };
+    // What a workspace's balance is charged for usage: the provider price
+    // below plus the markup. Absent on a backend from before the balance.
+    usage?: UsageSettings;
+}
+
+export interface UsageSettings {
+    /** Added on top of every provider price, 0 to 500. */
+    markup_percent: number;
+    /** Matched on the model name: exact, then longest prefix, then "*". */
+    models: ModelPrice[];
+    /** Dollars per unit before the markup, keyed by unit (web_search, placement_test). */
+    units: Record<string, number>;
+}
+
+export interface ModelPrice {
+    model: string;
+    /** Dollars per million input tokens, before the markup. */
+    input_per_mtok: number;
+    /** Dollars per million output tokens, before the markup. */
+    output_per_mtok: number;
 }
 
 export type NotifyChannelType = "discord" | "slack" | "webhook" | "email";

@@ -11,6 +11,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/app/credits"
+	"github.com/warmbly/warmbly/internal/app/instancesettings"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/emailverify"
@@ -473,7 +474,7 @@ func (s *Service) findAndSave(ctx context.Context, orgID uuid.UUID, l *models.Le
 	}
 	key := "lead_person:" + uuid.NewString()
 	if searching && s.metered() {
-		if _, err := s.Credits.Charge(pctx, orgID, credits.CostLeadPersonEmail, "lead_person_email", key); err != nil {
+		if _, err := s.Credits.ChargeUpfront(pctx, orgID, credits.UnitUsage(instancesettings.UnitLeadPersonEmail, 1), "lead_person_email", key); err != nil {
 			return nil, creditErr(err)
 		}
 	}

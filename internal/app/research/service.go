@@ -18,6 +18,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/aitools"
 	"github.com/warmbly/warmbly/internal/app/contact"
 	"github.com/warmbly/warmbly/internal/app/credits"
+	"github.com/warmbly/warmbly/internal/app/instancesettings"
 	"github.com/warmbly/warmbly/internal/app/organization"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
@@ -96,16 +97,21 @@ func (s *service) RunResearch(ctx context.Context, inv aitools.Invocation, conta
 	if s.provider == nil {
 		return nil, errx.New(errx.ServiceUnavailable, "AI research is not configured")
 	}
-	// Pre-check balance AND the abuse caps so an out-of-credits or rate-capped
-	// org never does free research work (the charge happens on save, after the
-	// expensive agent loop).
-	if bal, xerr := s.credits.GetBalance(ctx, inv.OrgID); xerr != nil {
-		return nil, xerr
-	} else if bal < credits.CostResearchRun {
-		return nil, errx.New(errx.PaymentRequired, "insufficient credits")
-	}
-	if err := s.credits.CheckUsageCaps(ctx, inv.OrgID); err != nil {
-		return nil, errx.New(errx.TooManyRequests, "AI usage limit reached, please try again later.")
+	// Check the balance AND the abuse caps so a short or rate-capped org never
+	// does free research work (the charge happens on save, after the expensive
+	// agent loop).
+	if err := s.credits.Reserve(ctx, inv.OrgID, credits.EstimateResearchRun); err != nil {
+		var xerr *errx.Error
+		switch {
+		case errors.Is(err, credits.ErrInsufficientCredits):
+			return nil, errx.New(errx.PaymentRequired, "the workspace balance is too low for research")
+		case errors.Is(err, credits.ErrCapExceeded):
+			return nil, errx.New(errx.TooManyRequests, "AI usage limit reached, please try again later.")
+		case errors.As(err, &xerr):
+			return nil, xerr
+		default:
+			return nil, errx.New(errx.Internal, "failed to check the balance")
+		}
 	}
 
 	run := &models.ContactResearchRun{
@@ -135,8 +141,8 @@ func (s *service) Batch(ctx context.Context, inv aitools.Invocation, contactIDs 
 	// Pre-check: at least one run must be fundable.
 	if bal, xerr := s.credits.GetBalance(ctx, inv.OrgID); xerr != nil {
 		return 0, xerr
-	} else if bal < credits.CostResearchRun {
-		return 0, errx.New(errx.PaymentRequired, "insufficient credits")
+	} else if bal < max(credits.EstimateResearchRun, credits.MinBalance) {
+		return 0, errx.New(errx.PaymentRequired, "the workspace balance is too low for research")
 	}
 
 	queued := 0
@@ -198,17 +204,16 @@ func (s *service) execute(ctx context.Context, inv aitools.Invocation, run *mode
 		return run
 	}
 
-	// Per-run balance + cap pre-check (batch runs are only pre-checked in
-	// aggregate). This gates the expensive agent loop so a cap trip at charge
-	// time can never discard a completed run's work.
-	if bal, xerr := s.credits.GetBalance(ctx, run.OrgID); xerr != nil || bal < credits.CostResearchRun {
+	// Per-run balance + cap check (batch runs are only pre-checked in
+	// aggregate). This gates the expensive agent loop; the charge after it
+	// never fails for a short balance.
+	if err := s.credits.Reserve(ctx, run.OrgID, credits.EstimateResearchRun); err != nil {
 		run.Status = models.ResearchFailed
-		run.Error = "insufficient credits"
-		return finish()
-	}
-	if err := s.credits.CheckUsageCaps(ctx, run.OrgID); err != nil {
-		run.Status = models.ResearchFailed
-		run.Error = "AI usage limit reached, please try again later"
+		if errors.Is(err, credits.ErrCapExceeded) {
+			run.Error = "AI usage limit reached, please try again later"
+		} else {
+			run.Error = "the workspace balance is too low"
+		}
 		return finish()
 	}
 
@@ -268,9 +273,12 @@ func (s *service) execute(ctx context.Context, inv aitools.Invocation, run *mode
 		Model:         model,
 		MaxIterations: maxIterations,
 	})
+	usage := credits.Usage{Model: model, Unit: instancesettings.UnitWebSearch}
 	if result != nil {
 		run.TokensUsed = result.TokensUsed
+		usage.InputTokens, usage.OutputTokens = result.InputTokens, result.OutputTokens
 	}
+	usage.Quantity = defaultSearchBudget - searchBudget
 
 	switch {
 	case rerr != nil:
@@ -289,21 +297,15 @@ func (s *service) execute(ctx context.Context, inv aitools.Invocation, run *mode
 				ContactID: run.ContactID.String(),
 				RunID:     run.ID.String(),
 			}})
-			if _, cerr := s.credits.Consume(ctx, orgID, credits.CostResearchRun, "research_run", model, run.TokensUsed, "research:"+run.ID.String()); cerr != nil {
+			// The run's tokens and the web searches it made, once per run.
+			charged, cerr := s.credits.Charge(ctx, orgID, usage, "research_run", "research:"+run.ID.String())
+			if cerr != nil {
 				run.Status = models.ResearchFailed
-				if errors.Is(cerr, credits.ErrInsufficientCredits) {
-					run.Error = "insufficient credits"
-				} else {
-					run.Error = "failed to charge credits"
-				}
+				run.Error = "failed to charge the balance"
 				break
 			}
-			run.CreditsCharged = credits.CostResearchRun
-			// Usage-based settle: charge any overage beyond the flat run price
-			// from the run's actual tokens (best-effort; the findings stand).
-			if extra, serr := s.credits.SettleUsage(ctx, orgID, credits.CostResearchRun, model, run.TokensUsed, "research_run", "research:"+run.ID.String()+":usage"); serr == nil && extra > 0 {
-				run.CreditsCharged += extra
-			}
+			run.ChargedMicro, run.ChargedUSD = charged, charged.USD()
+			run.CreditsCharged = models.CreditsFromMicro(charged)
 		}
 		run.Result = *captured
 		if captured.NothingFound {

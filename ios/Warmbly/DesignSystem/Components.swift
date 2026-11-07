@@ -419,6 +419,14 @@ struct SkeletonRows: View {
 // MARK: - Formatting
 
 enum WFormat {
+    /// "$12.40"; `precise` shows a single AI call's fraction of a cent ("$0.013").
+    static func usd(_ value: Double, precise: Bool = false) -> String {
+        let magnitude = abs(value)
+        if precise, magnitude > 0, magnitude < 0.001 { return "<$0.001" }
+        let digits = precise && magnitude < 0.1 ? 3 : 2
+        return value.formatted(.currency(code: "USD").precision(.fractionLength(digits)))
+    }
+
     /// 12.3k / 1.2M compact numbers, mirroring the web's AnimatedNumber output.
     static func compact(_ value: Int) -> String {
         let n = Double(value)

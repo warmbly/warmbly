@@ -32,10 +32,10 @@ export interface PlacementUsage {
     used: number;
     /** Free tests used this month; null limit = unmetered. */
     limit: number | null;
-    /** Price of a test past the free ones, 0 when tests cannot be paid for. */
-    credits_per_test: number;
-    /** Spendable credits, null when credits are off. */
-    credit_balance: number | null;
+    /** Dollar price of a test past the free ones, 0 when tests cannot be paid for. */
+    price_per_test_usd: number;
+    /** Spendable balance in dollars, null when the balance is off. */
+    balance_usd: number | null;
     period_start: Date;
     period_end: Date;
 }
@@ -103,12 +103,10 @@ export interface PlacementTest {
     status: PlacementTestStatus;
     error?: string;
     pace: PlacementPace;
-    /** Credits this test cost past the month's free tests; 0 when it was free. */
-    credits_charged: number;
-    /** Credits a paid test that delivered nothing got back. */
-    credits_refunded: number;
-    /** When a paid test's charge was settled (refunded or kept), null until it finishes. */
-    credits_settled_at: Date | null;
+    /** Dollars this test cost past the month's free tests; 0 when it was free. */
+    charged_usd: number;
+    /** Dollars a paid test that delivered nothing got back. */
+    refunded_usd: number;
     created_at: Date;
     finished_at: Date | null;
     summary: PlacementCounts;
@@ -162,8 +160,8 @@ export interface CreatePlacementTestRequest {
     /** Only seeds at these provider families. */
     families?: string[];
     pace?: PlacementPace;
-    /** The most credits the caller agreed to pay for a test past the month's free tests. */
-    max_credits?: number;
+    /** The most dollars the caller agreed to pay for a test past the month's free tests. */
+    max_usd?: number;
 }
 
 export interface PlacementWorkspaceSeed {
@@ -282,8 +280,9 @@ export interface PlacementBatch {
     on_unavailable: PlacementUnavailable;
     selection: PlacementBatchSelection;
     sender_count: number;
-    max_credits: number;
-    credits_spent: number;
+    /** The most agreed for tests past the free ones, and what was spent, in dollars. */
+    max_usd: number;
+    spent_usd: number;
     status: PlacementBatchStatus;
     error?: string;
     /** Deferred senders are retried until then, then skipped. */
@@ -372,8 +371,8 @@ export interface PlacementBatchRequest {
     families?: string[];
     seed_ids?: string[];
     on_unavailable?: PlacementUnavailable;
-    /** The most credits agreed across the whole batch for tests past the free ones. */
-    max_credits?: number;
+    /** The most dollars agreed across the whole batch for tests past the free ones. */
+    max_usd?: number;
 }
 
 export interface PlacementBatchProviderCount {
@@ -398,8 +397,8 @@ export interface PlacementBatchPreview {
     metered: boolean;
     free_tests: number;
     paid_tests: number;
-    /** The most the paid tests cost. */
-    credits: number;
+    /** The most the paid tests cost, in dollars. */
+    cost_usd: number;
     usage: PlacementUsage;
     /** The instance's ceiling on senders in one batch. */
     senders_max: number;

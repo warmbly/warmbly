@@ -64,7 +64,7 @@ export default function AdvisorSettingsSection({ canManage }: { canManage: boole
     return (
         <Section
             eyebrow="Advisor"
-            description="Warmbly checks your sending continuously and surfaces what to fix on the page where the fix lives. Detection runs on your own data with fixed thresholds; AI only rewrites the explanation, and never spends credits."
+            description="Warmbly checks your sending continuously and surfaces what to fix on the page where the fix lives. Detection runs on your own data with fixed thresholds; AI only rewrites the explanation, and is never charged to your balance."
         >
             <ToggleRow
                 label="Show recommendations"

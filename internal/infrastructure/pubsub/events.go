@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/models"
 )
 
 // Additional Topics for realtime updates
@@ -884,14 +885,18 @@ func (p *StreamingPublisher) PublishAIDraftReady(ctx context.Context, orgID, act
 // balance that tripped the alert and the org's configured threshold.
 type CreditsLowEvent struct {
 	BaseEvent
-	OrgID     string `json:"org_id"`
-	Balance   int    `json:"balance"`
-	Threshold int    `json:"threshold"`
+	OrgID        string  `json:"org_id"`
+	Balance      int     `json:"balance"`
+	Threshold    int     `json:"threshold"`
+	BalanceUSD   float64 `json:"balance_usd"`
+	ThresholdUSD float64 `json:"threshold_usd"`
+	// Out is true when the balance ran out rather than ran low.
+	Out bool `json:"out"`
 }
 
 // PublishCreditsLow emits BILLING_CREDITS_LOW when an org's spendable balance
 // crosses under its alert threshold. Best-effort, system-fired (no actor).
-func (p *StreamingPublisher) PublishCreditsLow(ctx context.Context, orgID uuid.UUID, balance, threshold int) {
+func (p *StreamingPublisher) PublishCreditsLow(ctx context.Context, orgID uuid.UUID, balance, threshold models.Micro, out bool) {
 	if p == nil || p.client == nil || orgID == uuid.Nil {
 		return
 	}
@@ -901,9 +906,12 @@ func (p *StreamingPublisher) PublishCreditsLow(ctx context.Context, orgID uuid.U
 			UserID:    uuid.Nil.String(),
 			Timestamp: time.Now(),
 		},
-		OrgID:     orgID.String(),
-		Balance:   balance,
-		Threshold: threshold,
+		OrgID:        orgID.String(),
+		Balance:      models.CreditsFromMicro(balance),
+		Threshold:    models.CreditsFromMicro(threshold),
+		BalanceUSD:   balance.USD(),
+		ThresholdUSD: threshold.USD(),
+		Out:          out,
 	}
 	attrs := map[string]string{
 		"user_id":    uuid.Nil.String(),
@@ -919,13 +927,14 @@ func (p *StreamingPublisher) PublishCreditsLow(ctx context.Context, orgID uuid.U
 // the spendable balance after a debit, so credit meters update live.
 type CreditsChangedEvent struct {
 	BaseEvent
-	OrgID   string `json:"org_id"`
-	Balance int    `json:"balance"`
+	OrgID      string  `json:"org_id"`
+	Balance    int     `json:"balance"`
+	BalanceUSD float64 `json:"balance_usd"`
 }
 
 // PublishCreditsChanged emits BILLING_CREDITS_CHANGED after a fresh credit
 // debit. Best-effort, system-fired (no actor).
-func (p *StreamingPublisher) PublishCreditsChanged(ctx context.Context, orgID uuid.UUID, balance int) {
+func (p *StreamingPublisher) PublishCreditsChanged(ctx context.Context, orgID uuid.UUID, balance models.Micro) {
 	if p == nil || p.client == nil || orgID == uuid.Nil {
 		return
 	}
@@ -935,8 +944,9 @@ func (p *StreamingPublisher) PublishCreditsChanged(ctx context.Context, orgID uu
 			UserID:    uuid.Nil.String(),
 			Timestamp: time.Now(),
 		},
-		OrgID:   orgID.String(),
-		Balance: balance,
+		OrgID:      orgID.String(),
+		Balance:    models.CreditsFromMicro(balance),
+		BalanceUSD: balance.USD(),
 	}
 	attrs := map[string]string{
 		"user_id":    uuid.Nil.String(),

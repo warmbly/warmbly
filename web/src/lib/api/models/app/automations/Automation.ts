@@ -11,7 +11,7 @@ export interface AutomationCondition {
     value?: unknown;
     expression?: string;
     // "ai" field: the plain-language yes/no question the model answers over the
-    // event data (true edge = yes). Costs 1 credit per evaluation.
+    // event data (true edge = yes). Charged by usage per evaluation.
     prompt?: string;
 }
 

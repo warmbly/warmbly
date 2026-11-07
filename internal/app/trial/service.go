@@ -39,7 +39,7 @@ type TrialService interface {
 // CreditGranter is the slice of the credit service the trial flow uses to seed
 // the org's monthly AI-credit allowance once, when the free trial starts.
 type CreditGranter interface {
-	ResetMonthlyAllowance(ctx context.Context, orgID uuid.UUID, allowance int, idempotencyKey string) error
+	ResetMonthlyAllowance(ctx context.Context, orgID uuid.UUID, allowance models.Micro, idempotencyKey string) error
 }
 
 type trialService struct {
@@ -97,8 +97,8 @@ func (s *trialService) StartFreeTrialWithOrg(ctx context.Context, userID uuid.UU
 	// convert. Set-to-N with a per-org idempotency key so a re-trigger can't
 	// double-grant. Best-effort: a credit failure must not fail trial creation.
 	if s.credits != nil && s.planRepo != nil {
-		if plan, perr := s.planRepo.GetByID(ctx, freePlanUUID); perr == nil && plan != nil && plan.MonthlyCredits > 0 {
-			_ = s.credits.ResetMonthlyAllowance(ctx, orgID, plan.MonthlyCredits, "trial_grant:"+orgID.String())
+		if plan, perr := s.planRepo.GetByID(ctx, freePlanUUID); perr == nil && plan != nil && plan.Allowance() > 0 {
+			_ = s.credits.ResetMonthlyAllowance(ctx, orgID, plan.Allowance(), "trial_grant:"+orgID.String())
 		}
 	}
 

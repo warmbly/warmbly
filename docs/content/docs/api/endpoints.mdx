@@ -173,7 +173,7 @@ The `cc` calls under the same path set the contacts copied on every email to one
 
 The import pair is two steps over the same file: preview parses it and suggests a column mapping (matching headers to your existing custom fields), commit applies the mapping you chose. Commit takes the stricter `BULK_CONTACTS` scope because one call writes up to 50,000 rows. A mapping problem, an unusable custom-field name or no `email` column, is a `400` on the whole request; see [contacts](/api/reference/contacts/).
 
-AI contact research charges credits (2 per run, billable even when it finds nothing) and only saves cited findings. See the [AI contact research](/guides/ai-contact-research/) guide. The batch endpoint accepts up to 500 contact ids and drains in the background.
+AI contact research is charged to the workspace balance for the tokens and web searches it uses (a run that finds nothing is still charged for its searching) and only saves cited findings. See the [AI contact research](/guides/ai-contact-research/) guide. The batch endpoint accepts up to 500 contact ids and drains in the background.
 
 ### Lead finder
 
@@ -204,7 +204,7 @@ AI contact research charges credits (2 per run, billable even when it finds noth
 
 Leads are prospect contacts, so the [lead finder](/guides/lead-finder/) uses the contact scopes and the **View contacts** and **Manage contacts** member permissions. `POST /leads/search` runs one page of a source search over an `area` (`bbox`, `circle` or `polygon`) and stores what it finds; send `search_id` alone to fetch the next page of the same search. `POST /leads/query`, `/leads/points` and `/leads/facets` are reads with a `filter` body; `query` pages with an opaque `cursor` and a `limit` from 1 to 200 and answers `data` plus `pagination` with a `total`. Bulk calls take a selection: `lead_ids` (at most 5,000), or `all: true` with a `filter`.
 
-`POST /leads/enrich` starts a background run that reads each lead's website for emails, socials and (unless `people` is `false`) the people it names, then works out and checks their addresses, and answers `202` with the run; follow it at `/leads/enrichments/:id`. It costs one credit per website read, refunded when the site never answers. `GET /leads/:id` carries the lead's `people`. `POST /leads/:id/people` adds a person by `name` or `first_name` and `last_name`, and without an `email` works out their address at the lead's domain on the spot for one credit, refunded when none turns up; `find-email` does the same for someone already listed. People are matched by name, so adding someone again lands on the same person. `POST /leads/contacts` takes `who` (`business`, `people` or `both`), `include_guessed`, `segment_ids`, `category_ids`, `campaign_ids`, `skip_active_in_other_campaigns` and `keep_existing` (leave contacts you already have as they are); `POST /leads/export` takes `rows` (`leads` or `people`). A search through a source the instance pays for costs one credit a page. `POST /leads/search` and `/leads/enrich` honor `Idempotency-Key`. A paid address lookup, `find-email` or adding a person without an `email`, charges again when retried, so retry it only after reading the person back. The other writes set values or update existing contacts, so a retry lands on the same state. `POST /leads/export` answers the file itself (`format` is `csv`, `xlsx` or `json`).
+`POST /leads/enrich` starts a background run that reads each lead's website for emails, socials and (unless `people` is `false`) the people it names, then works out and checks their addresses, and answers `202` with the run; follow it at `/leads/enrichments/:id`. Each website read is charged to the workspace balance (the `lead_website_read` price, $0.02 at the default prices), refunded when the site never answers, and the run's `charged_usd` is what it cost so far, net of refunds. `GET /leads/:id` carries the lead's `people`. `POST /leads/:id/people` adds a person by `name` or `first_name` and `last_name`, and without an `email` works out their address at the lead's domain on the spot for the `lead_person_email` price ($0.02 at the default prices), refunded when none turns up; `find-email` does the same for someone already listed. People are matched by name, so adding someone again lands on the same person. `POST /leads/contacts` takes `who` (`business`, `people` or `both`), `include_guessed`, `segment_ids`, `category_ids`, `campaign_ids`, `skip_active_in_other_campaigns` and `keep_existing` (leave contacts you already have as they are); `POST /leads/export` takes `rows` (`leads` or `people`). A search through a source the instance pays for charges the `lead_search_page` price for each page ($0.04 at the default prices), refunded when the search fails, and answers what it charged in `charged_usd`. `GET /leads/config` carries the current prices with the markup in dollars: `enrich_cost_usd` and `person_email_cost_usd`, and on each provider `cost_usd` per page; each is `0` when nothing is charged, as on a self-hosted instance without billing or a source billed to the workspace's own key. `POST /leads/search` and `/leads/enrich` honor `Idempotency-Key`. A paid address lookup, `find-email` or adding a person without an `email`, charges again when retried, so retry it only after reading the person back. The other writes set values or update existing contacts, so a retry lands on the same state. `POST /leads/export` answers the file itself (`format` is `csv`, `xlsx` or `json`).
 
 ### Segments
 
@@ -295,9 +295,9 @@ A source's `column_mapping` is validated when the source is written, not on its 
 
 `POST /unibox/reply` with `forward_message_id` forwards a stored message, which discloses it, so the key also needs `READ_UNIBOX` and, when it is restricted to certain mailboxes, the mailbox the message belongs to. See [Forwarding a message](/api/reference/unibox/#forwarding-a-message).
 
-`POST /unibox/reply/draft` returns an AI-drafted reply (it never sends) grounded in the thread, the contact, and your [voice profile](/guides/unibox/#ai-reply-drafts). It charges AI credits; see [AI credits](/guides/ai-credits/).
+`POST /unibox/reply/draft` returns an AI-drafted reply (it never sends) grounded in the thread, the contact, and your [voice profile](/guides/unibox/#ai-reply-drafts). It is charged to the workspace balance; see [Balance and usage](/guides/ai-credits/).
 
-`POST /unibox/compose/draft` returns a grounded AI draft for a new email (it never sends): the recipient's contact record, correspondence history, and the workspace voice profile feed the prompt, and the response carries either `text` or a clarifying `question` plus a `grounding` report. Charges AI credits like the reply draft; see [AI credits](/guides/ai-credits/).
+`POST /unibox/compose/draft` returns a grounded AI draft for a new email (it never sends): the recipient's contact record, correspondence history, and the workspace voice profile feed the prompt, and the response carries either `text` or a clarifying `question` plus a `grounding` report. Charged to the workspace balance like the reply draft; see [Balance and usage](/guides/ai-credits/).
 
 `POST /unibox/compose` sends a brand-new outbound email (not a reply). `body_html` goes out as written; with `body_plain` left empty, the plain-text part is rendered from it, which `POST /unibox/reply` does too. Omit `email_account_id` (or pass `"auto"`) and the backend picks the best mailbox for the first recipient; the response reports `account_id`, `account_email`, `auto`, and a `picked_reason`. Recipients on the workspace suppression list are rejected with a `400` before anything queues. `GET /unibox/compose/candidates?to=<address>` returns every active mailbox scored for that recipient (conversation history, remaining daily budget, domain-auth health) plus the resolved contact and suppression state; see [composing email](/guides/unibox/#composing-a-new-email).
 
@@ -337,7 +337,7 @@ The `agent-drafts` endpoints back the [inbox agent](/guides/inbox-agent/): the a
 |--------|------|----------------|
 | GET | `/templates`, `/templates/:id` | `READ_TEMPLATES` |
 | POST | `/templates/score` | `READ_TEMPLATES` |
-| POST | `/templates/analyze` | `WRITE_TEMPLATES` (it spends AI credits) |
+| POST | `/templates/analyze` | `WRITE_TEMPLATES` (it is charged to the workspace balance) |
 | POST/PATCH/DELETE | `/templates[/:id]` | `WRITE_TEMPLATES` |
 | GET | `/crm/pipelines`, `/crm/pipelines/:id` | `READ_CRM` |
 | POST/PATCH/DELETE | `/crm/pipelines[/:id][/stages[/:stageId]]` | `WRITE_CRM` |
@@ -597,7 +597,7 @@ These changes require the session to have confirmed the account holder within th
 | Export or import a whole workspace | `POST /organization/current/export`, `POST /organization/current/import` |
 | Schedule a workspace or account for deletion | `POST /organization/current/danger-zone/delete`, `POST /me/danger-zone/delete` |
 | Approve a self-hosted instance's warmup pool link (always refused with `403` `pool_link_closed`) | `POST /pool-link/codes/:code/approve` |
-| Start a checkout, open the billing portal, change or cancel the plan, buy AI credits or change AI spend controls | `POST /subscription/checkout`, `POST /subscription/portal`, `POST /subscription/change-plan`, `POST /subscription/cancel`, `POST /subscription/credits/checkout`, `PATCH /subscription/credits/settings`, `POST /pool-link/checkout` (the retired Warmup plan's checkout, which always refuses with `409` `warmup_plan_retired`), `POST /subscription/offers/:planId/checkout` |
+| Start a checkout, open the billing portal, change or cancel the plan, add money to the balance, save a card, change automatic reload or AI spend controls | `POST /subscription/checkout`, `POST /subscription/portal`, `POST /subscription/change-plan`, `POST /subscription/cancel`, `POST /subscription/balance/top-up`, `POST /subscription/balance/checkout`, `POST /subscription/balance/payment-method`, `PATCH /subscription/balance/auto-reload`, `PATCH /subscription/credits/settings`, `POST /pool-link/checkout` (the retired Warmup plan's checkout, which always refuses with `409` `warmup_plan_retired`), `POST /subscription/offers/:planId/checkout` |
 | Reveal or rotate a signing secret | `POST /webhooks/:id/rotate-secret`, `GET /integrations/connections/:id/webhook-secret`, `POST /oauth/applications/:id/rotate-secret`, `GET /oauth/applications/:id/webhook-secret`, `POST /oauth/applications/:id/webhook-secret/rotate` |
 | Record, use or remove an admin grant over a whole domain | `POST /emails/grants/google/finish`, `POST /emails/grants/microsoft/finish`, `POST /emails/grants/:id/connect`, `DELETE /emails/grants/:id` |
 | Admin panel: issue a fleet join token, grant admin permissions, export or import any workspace, issue a tester a new password, change a login-code exemption | `POST /admin/fleet/join-token`, `POST /admin/admins/:userId/grant`, `POST /admin/organizations/:id/exports`, `POST /admin/organizations/:id/imports`, `POST /admin/testers/:id/password`, `PUT /admin/users/:id/login-code-exempt` |
@@ -785,15 +785,32 @@ Billing discount history is part of `/subscription/*`, so they are JWT only and 
 |--------|------|----------------|
 | GET | `/subscription/discounts` | `manage_billing` |
 
-### AI credits
+### Balance and usage
 
-Credit balance, top-up purchases, and the transaction log are part of `/subscription/*`, so they are JWT only and never accept an API key. Purchases are fulfilled only in the Stripe webhook, never in the checkout call. See the [AI credits](/guides/ai-credits/) guide for what each action costs and the pack and reset rules. `GET /subscription/credits` carries `unlimited` (boolean): `true` on a deployment with `BILLING_PROVIDER=none`, where the ledger is bypassed and every balance and allowance field is zero and meaningless.
+The workspace balance, adding money, automatic reload, spend controls, the activity log and invoices are part of `/subscription/*`, so they are JWT only and never accept an API key. Every call that charges a card or changes what is charged needs a [recent confirmation](#actions-that-need-a-recent-confirmation). See the [Balance and usage](/guides/ai-credits/) guide for how usage is priced, the monthly allowance and automatic reload. Amounts are US dollars in `*_usd` fields (up to six decimals); a card is only ever charged in whole cents.
 
 | Method | Path | JWT permission |
 |--------|------|----------------|
+| GET | `/subscription/balance` | `manage_billing` |
+| POST | `/subscription/balance/top-up` | `manage_billing` |
+| POST | `/subscription/balance/checkout` | `manage_billing` |
+| POST | `/subscription/balance/payment-method` | `manage_billing` |
+| PATCH | `/subscription/balance/auto-reload` | `manage_billing` |
+| GET | `/subscription/balance/invoices` | `manage_billing` |
 | GET | `/subscription/credits` | `manage_billing` |
 | GET | `/subscription/credits/transactions` | `manage_billing` |
-| POST | `/subscription/credits/checkout` | `manage_billing` |
+| GET | `/subscription/credits/usage` | `manage_billing` |
+| GET | `/subscription/credits/settings` | `manage_billing` |
+| PATCH | `/subscription/credits/settings` | `manage_billing` |
+
+- `GET /subscription/balance` is everything the Balance tab shows: `balance_usd`, `monthly_usd`, `purchased_usd`, `monthly_allowance_usd`, `monthly_used_usd`, `next_reset_at`, the saved card (`payment_method`), `auto_reload`, `low_balance_usd`, `charge_in_progress`, and the `top_up` bounds and presets. On a deployment with `BILLING_PROVIDER=none` it answers only `{"unlimited": true}`.
+- `POST /subscription/balance/top-up` `{"amount_usd": 25}` charges the saved card now (from $5 to $5,000) and is billed as a Stripe invoice. It answers `200` with `status` `paid`, or `202` with `status` `processing` and `charge_in_progress` `true` while the payment is still going through and Warmbly finishes it in the background. It honors `Idempotency-Key`; without one, a retry while the first payment is pending answers `409` `charge_in_progress`, so it never charges twice. A decline answers `402` with `card_declined`, `authentication_required` or `payment_failed`, which tells a client to offer Checkout instead; no saved card is `409` `payment_method_required`, and another payment still going through is `409` `charge_in_progress`. Needs an active paid plan.
+- `POST /subscription/balance/checkout` `{"amount_usd": 25}` returns a Stripe Checkout `checkout_url` for the amount; the payment saves the card for next time. `POST /subscription/balance/payment-method` returns a Checkout `checkout_url` that saves or replaces the card without charging it. Money is added only in the Stripe webhook, never in the call, and exactly once.
+- `PATCH /subscription/balance/auto-reload` takes `enabled`, `threshold_usd` ($0.01 to $1,000), `amount_usd` ($5 to $5,000, more than the threshold) and `monthly_limit_usd` (at least the amount, at most $50,000), and answers with the same body as `GET /subscription/balance`. An amount not above the threshold is `422` `recharge_too_small`, a monthly limit out of range is `422` `monthly_limit_too_small`, and turning it on with no saved card is `409` `payment_method_required`.
+- `GET /subscription/balance/invoices` returns `data`: the latest Stripe invoices for the workspace, subscription and balance alike, each with `kind` (`subscription`, `top_up` or `auto_reload`), `status`, `amount_cents`, `currency`, `hosted_url` and `pdf_url`.
+- `GET /subscription/credits`, `/credits/transactions`, `/credits/usage` and `/credits/settings` keep their legacy credit fields for older clients and carry the dollar figures next to them: `balance_usd`, `monthly_usd`, `purchased_usd`, `monthly_allowance_usd` and `total_purchased_usd` on the balance; `amount_usd`, `cost_usd` (the provider price before the markup), `input_tokens`, `output_tokens`, `quantity` and `balance_after_usd` on each transaction; `spent_today_usd`, `spent_week_usd`, `spent_month_usd`, the `limit_*_usd` caps and `amount_usd` on each `series` and `by_reason` or `by_model` entry in usage; and the `spend_limit_*_usd`, `member_limit_*_usd` and `low_balance_usd` settings, which `PATCH /subscription/credits/settings` also accepts. `GET /subscription/credits` carries `unlimited` (boolean): `true` on a deployment with `BILLING_PROVIDER=none`, where the balance is bypassed and every amount is zero and meaningless.
+
+`POST /subscription/credits/checkout`, which bought a fixed credit pack, is removed; add money with `POST /subscription/balance/top-up` or `/balance/checkout` instead.
 
 ### AI assistant
 

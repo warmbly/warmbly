@@ -120,14 +120,20 @@ type PlacementBatch struct {
 	SenderCount    int                     `json:"sender_count"`
 	MaxCredits     int                     `json:"max_credits"`
 	CreditsSpent   int                     `json:"credits_spent"`
-	Status         string                  `json:"status"`
-	Error          string                  `json:"error,omitempty"`
-	Active         bool                    `json:"-"`
-	LastTickAt     *time.Time              `json:"-"`
-	RetryUntil     time.Time               `json:"retry_until"`
-	CreatedAt      time.Time               `json:"created_at"`
-	StartedAt      *time.Time              `json:"started_at"`
-	FinishedAt     *time.Time              `json:"finished_at"`
+	// MaxMicro and SpentMicro are the same in micro-dollars; the credit
+	// fields are their legacy figures.
+	MaxMicro   Micro      `json:"-"`
+	SpentMicro Micro      `json:"-"`
+	MaxUSD     float64    `json:"max_usd"`
+	SpentUSD   float64    `json:"spent_usd"`
+	Status     string     `json:"status"`
+	Error      string     `json:"error,omitempty"`
+	Active     bool       `json:"-"`
+	LastTickAt *time.Time `json:"-"`
+	RetryUntil time.Time  `json:"retry_until"`
+	CreatedAt  time.Time  `json:"created_at"`
+	StartedAt  *time.Time `json:"started_at"`
+	FinishedAt *time.Time `json:"finished_at"`
 }
 
 // PlacementBatchSender is one sender of a batch.

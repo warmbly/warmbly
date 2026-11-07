@@ -205,6 +205,32 @@ func TestLiveLeadFinder(t *testing.T) {
 	if err := repo.RecordSearchPage(ctx, search); err != nil || search.ResultCount != 2 {
 		t.Fatalf("search count = %d %v", search.ResultCount, err)
 	}
+	// A run keeps what it cost in micro-dollars through progress, finish and a read.
+	run := &models.LeadEnrichmentRun{OrganizationID: orgA, RequestedByUserID: &user, LeadIDs: ids, Verify: true, Total: len(ids)}
+	if err := repo.CreateEnrichmentRun(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+	if claimed, err := repo.ClaimEnrichmentRun(ctx, run.ID); err != nil || claimed == nil {
+		t.Fatalf("claim = %v %v", claimed, err)
+	}
+	run.Status, run.Processed, run.ChargedMicro = "running", 1, 20_000
+	if err := repo.UpdateEnrichmentProgress(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := repo.GetEnrichmentRun(ctx, orgA, run.ID); err != nil || got == nil || got.ChargedMicro != 20_000 || got.ChargedUSD != 0.02 {
+		t.Fatalf("progress charged = %+v %v", got, err)
+	}
+	run.Status, run.Processed, run.ChargedMicro = "done", 2, 40_000
+	if err := repo.FinishEnrichmentRun(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := repo.GetEnrichmentRun(ctx, orgA, run.ID); err != nil || got == nil || got.ChargedMicro != 40_000 || got.ChargedUSD != 0.04 {
+		t.Fatalf("finished charged = %+v %v", got, err)
+	}
+	if got, err := repo.GetEnrichmentRun(ctx, orgB, run.ID); err != nil || got != nil {
+		t.Fatalf("another organization read the run: %v %v", got, err)
+	}
+
 	if n, err := repo.DeleteLeads(ctx, orgB, ids); err != nil || n != 0 {
 		t.Fatalf("another organization deleted the leads: %d %v", n, err)
 	}

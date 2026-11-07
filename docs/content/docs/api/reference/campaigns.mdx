@@ -1539,7 +1539,7 @@ A `TemplatePreview` object. `errors` lists template parse errors that would bloc
 
 `POST /generation/write`
 
-Generate outreach copy with the AI writing assistant. Gated to paid and free-trial organizations, and each call consumes one AI credit (refunded if the provider call fails). Supports `Idempotency-Key` so a retried request is not double-charged. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
+Generate outreach copy with the AI writing assistant. Gated to paid and free-trial organizations, and each call is charged to the workspace balance for the tokens it uses (nothing if the provider call fails). Supports `Idempotency-Key` so a retried request is not double-charged. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
 
 ### Request body
 
@@ -1557,12 +1557,15 @@ Generate outreach copy with the AI writing assistant. Gated to paid and free-tri
 ```json
 {
   "text": "Hi {{.FirstName}},\n\nNoticed {{.Company}} is scaling outbound...\n\nWorth a quick chat?",
+  "charged_usd": 0.012,
+  "balance_usd": 4.96,
+  "credits_charged": 1,
   "credits_remaining": 248,
   "model": "claude-..."
 }
 ```
 
-When the organization is out of credits the endpoint returns `402` with `code: "insufficient_credits"` and the standard envelope. A depleted balance is checked before any provider call, so no completion is ever burned on a `402`.
+`charged_usd` is what the call cost and `balance_usd` the balance left, in dollars; `credits_charged` and `credits_remaining` are the same in legacy credits, kept for clients written before the dollar balance. When the balance is too low the endpoint returns `402` with `code: "insufficient_credits"` and the standard envelope. A depleted balance is checked before any provider call, so no completion is ever burned on a `402`.
 
 ### Streaming
 
@@ -1572,22 +1575,22 @@ Send `Accept: text/event-stream` to receive the text while the model writes it. 
 | --- | --- | --- |
 | `delta` | `text` | The next fragment, in order. |
 | `stage` | `stage: "checking"` | The text is written and words spam filters flag are being reworded. |
-| `done` | `text`, `credits_remaining`, `credits_charged`, `tokens_used`, `model` | The final text, which can differ from the joined deltas after the rewording. Always the last event on success. |
-| `error` | `code`, `message` | The generation failed. A failure refunds the credit, except when the caller disconnected after text had arrived. |
+| `done` | `text`, `charged_usd`, `balance_usd`, `credits_remaining`, `credits_charged`, `tokens_used`, `model` | The final text, which can differ from the joined deltas after the rewording. Always the last event on success. |
+| `error` | `code`, `message` | The generation failed. A failure charges nothing, except when the caller disconnected after text had arrived. |
 
 ```text
 data: {"type":"delta","text":"Hi {{.FirstName}},"}
 
 data: {"type":"delta","text":" saw that"}
 
-data: {"type":"done","text":"Hi {{.FirstName}}, saw that...","credits_remaining":247,"credits_charged":1,"tokens_used":412,"model":"..."}
+data: {"type":"done","text":"Hi {{.FirstName}}, saw that...","charged_usd":0.0118,"balance_usd":4.9482,"credits_remaining":247,"credits_charged":1,"tokens_used":412,"model":"..."}
 ```
 
 ## Preview an AI variable
 
 `POST /generation/ai-variable`
 
-Generate the recipient-specific snippet a per-recipient AI variable block would produce, for the campaign editor's preview. The prompt is rendered against a supplied contact (must belong to the organization) or a sample contact, then generated with the same framing the send path uses, including the surrounding email so the fragment fits. The charge is metered by usage (the model and tokens the snippet uses, plus any web lookup), refunded if the provider call fails, and `Idempotency-Key` is honored so a retried request is not double-charged. See the [AI variables](/guides/ai-variables/) guide. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns` and `use_ai`. Passing `contact_id` additionally requires `READ_CONTACTS` (org permission `view_contacts`), since the prompt reads that contact's fields.
+Generate the recipient-specific snippet a per-recipient AI variable block would produce, for the campaign editor's preview. The prompt is rendered against a supplied contact (must belong to the organization) or a sample contact, then generated with the same framing the send path uses, including the surrounding email so the fragment fits. The charge is metered by usage (the model and tokens the snippet uses, plus any web lookup), charged to the workspace balance and nothing if the provider call fails, and `Idempotency-Key` is honored so a retried request is not double-charged. See the [AI variables](/guides/ai-variables/) guide. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns` and `use_ai`. Passing `contact_id` additionally requires `READ_CONTACTS` (org permission `view_contacts`), since the prompt reads that contact's fields.
 
 ### Request body
 
@@ -1610,6 +1613,8 @@ Generate the recipient-specific snippet a per-recipient AI variable block would 
 ```json
 {
   "text": "Saw Acme just shipped its new billing API.",
+  "charged_usd": 0.0053,
+  "balance_usd": 4.92,
   "credits_remaining": 246,
   "credits_charged": 1,
   "tokens_used": 180,
@@ -1617,4 +1622,4 @@ Generate the recipient-specific snippet a per-recipient AI variable block would 
 }
 ```
 
-A `contact_id` that is not in the organization returns `404`. When the organization is out of credits the endpoint returns `402` with `code: "insufficient_credits"`, checked before any provider call.
+A `contact_id` that is not in the organization returns `404`. When the balance is too low the endpoint returns `402` with `code: "insufficient_credits"`, checked before any provider call.

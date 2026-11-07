@@ -785,9 +785,9 @@ Advisory only, exactly like `/templates/score`: nothing here blocks or delays a 
 
 Auth: **Scope** `WRITE_TEMPLATES` · **Org permission** `view_campaigns` and `use_ai`
 
-It writes no template, but it spends the workspace's AI credits, so it takes the write scope: a read-only key must not be able to spend money. A signed-in member still needs only `view_campaigns`, plus `use_ai`.
+It writes no template, but it charges the workspace balance, so it takes the write scope: a read-only key must not be able to spend money. A signed-in member still needs only `view_campaigns`, plus `use_ai`.
 
-This endpoint spends AI credits (see [AI credits](/guides/ai-credits/)), unless the deployment runs an unmetered model (`AI_PROVIDER=ollama`, or any provider with `AI_FREE=true`), where `credits_charged` comes back `0`. Send an `Idempotency-Key` header to make a retry safe; the same key is never charged twice.
+This endpoint is charged to the workspace balance for the tokens it uses (see [Balance and usage](/guides/ai-credits/)), unless the deployment runs an unmetered model (`AI_PROVIDER=ollama`, or any provider with `AI_FREE=true`), where `charged_usd` comes back `0`. Send an `Idempotency-Key` header to make a retry safe; the same key is never charged twice.
 
 ### Request body
 
@@ -831,6 +831,8 @@ At least one of the three must carry something, and the three together are cappe
   },
   "model": "gpt-6-luna",
   "tokens_used": 812,
+  "charged_usd": 0.0215,
+  "balance_usd": 4.96,
   "credits_remaining": 248,
   "credits_charged": 2
 }
@@ -845,6 +847,7 @@ At least one of the three must carry something, and the three together are cappe
 | `suggested_subject` | A rewritten subject, or absent when the current one is fine. |
 | `improvements` | Copy-level advice with no single fragment to quote. |
 | `rules` | The `/templates/score` result for the same content. |
+| `charged_usd`, `balance_usd` | What the analysis cost and the balance left, in dollars. `credits_charged` and `credits_remaining` are the same in legacy credits. |
 
 <Callout type="info" title="Quotes are verified, not trusted">
 Every `text` is checked against the submitted subject and body before it is returned. A fragment that is not in the copy is dropped and the finding keeps only its `issue` and `suggestion`, so a response never quotes a sentence you did not send. A finding whose quote was found in the other half has its `field` corrected.
@@ -857,6 +860,6 @@ The analysis runs at a fixed temperature, so re-analyzing unchanged copy returns
 | Status | When |
 |--------|------|
 | `400` | Nothing written to analyze, or the template is over the size cap. |
-| `402` | The workspace is out of AI credits. Nothing is charged and no provider call is made. |
+| `402` | The workspace balance is too low (`insufficient_credits`). Nothing is charged and no provider call is made. |
 | `403` | The plan or trial does not cover AI, or the member lacks `use_ai`. |
-| `503` | No AI provider is configured on this deployment (`code` is `ai_not_configured`, which is permanent for that deployment), or the provider failed (`code` is `service_unavailable`, and the reserved credits are refunded). |
+| `503` | No AI provider is configured on this deployment (`code` is `ai_not_configured`, which is permanent for that deployment), or the provider failed (`code` is `service_unavailable`, and nothing is charged). |
