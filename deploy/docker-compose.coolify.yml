@@ -228,7 +228,6 @@ services:
     environment:
       WARMBLY_API_URL: ${API_PUBLIC_URL:?}
       WARMBLY_APP_URL: ${APP_URL:?}
-      WARMBLY_GMAIL_OAUTH_CONNECT: ${BOX_GOOGLE_OAUTH_CONNECT:-false}
       WEBSOCKET_URL: wss://${REALTIME_HOST:?}/socket/websocket
     depends_on:
       backend: { condition: service_healthy }

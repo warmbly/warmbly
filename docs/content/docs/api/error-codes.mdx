@@ -638,7 +638,7 @@ A `400` with `code: "google_personal_app_password"` comes from `POST /emails/onb
 
 #### `mailbox_oauth_return_origin`
 
-A `400` with `code: "mailbox_oauth_return_origin"` means a Google or Microsoft mailbox connect or reauthorization came from a dashboard origin the backend does not allow. Add its exact HTTP(S) origin to `CORS_ALLOW_ORIGINS`, as in [shared-backend dashboard configuration](/development/configuration/#google-sign-in-per-dashboard-deployment). A wildcard is not an OAuth return allowlist.
+A `400` with `code: "mailbox_oauth_return_origin"` means a Google or Microsoft mailbox connect or reauthorization came from a dashboard origin the backend does not allow. Add its exact HTTP(S) origin to `CORS_ALLOW_ORIGINS`, as in [shared-backend dashboard configuration](/development/configuration/#multiple-dashboards-on-one-backend). A wildcard is not an OAuth return allowlist.
 
 ### 401 Unauthorized
 
@@ -745,7 +745,7 @@ A `403` whose `code` is `mailbox_gmail_oauth_disabled` comes from `POST /emails/
 
 **How to fix:**
 - Connect the mailbox through `POST /emails/onboarding/smtp-imap` with `smtp.gmail.com:465` and `imap.gmail.com:993`, both TLS, and a Google app password. See [Gmail and Google Workspace](/guides/mailboxes/#gmail-and-google-workspace)
-- An instance with its own Google app must set both `BOX_GOOGLE_CLIENT_ID` and `BOX_GOOGLE_CLIENT_SECRET`. Leave `BOX_GOOGLE_OAUTH_CONNECT` unset or set it to `true`, then enable the [dashboard visibility flag](/development/configuration/#google-sign-in-per-dashboard-deployment) on the deployments that should offer Google sign-in
+- An instance with its own Google app must set both `BOX_GOOGLE_CLIENT_ID` and `BOX_GOOGLE_CLIENT_SECRET`. Leave `BOX_GOOGLE_OAUTH_CONNECT` unset or set it to `true`; the dashboard then offers Google sign-in
 
 #### `google_delegation_retired`
 

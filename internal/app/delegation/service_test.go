@@ -331,9 +331,9 @@ func serviceAccountKey(t *testing.T, tokenURL string) []byte {
 func TestGrantOriginBoundToUnconsumedState(t *testing.T) {
 	t.Setenv("APP_URL", "https://app.warmbly.com")
 	t.Setenv("APP_ORIGIN", "")
-	t.Setenv("CORS_ALLOW_ORIGINS", "https://tac-security-assessment.warmbly.com")
+	t.Setenv("CORS_ALLOW_ORIGINS", "https://second.example.com")
 	s, p, _, _, _ := newTestService(t)
-	ctx := config.WithDashboardOrigin(context.Background(), "https://tac-security-assessment.warmbly.com")
+	ctx := config.WithDashboardOrigin(context.Background(), "https://second.example.com")
 	org, user := uuid.New(), uuid.New()
 	holdLegacyGoogle(t, s, org)
 	g, xerr := s.StartGoogle(ctx, org, user, "acme.io", "admin@acme.io")
@@ -345,7 +345,7 @@ func TestGrantOriginBoundToUnconsumedState(t *testing.T) {
 		t.Fatal(xerr)
 	}
 	for _, state := range []string{g.State, ms} {
-		if got := s.OAuthReturnOrigin(context.Background(), state); got != "https://tac-security-assessment.warmbly.com" {
+		if got := s.OAuthReturnOrigin(context.Background(), state); got != "https://second.example.com" {
 			t.Fatalf("origin = %q", got)
 		}
 		st, ok := p.states.Peek(ctx, "mailbox_grant_state:"+state)
@@ -353,7 +353,7 @@ func TestGrantOriginBoundToUnconsumedState(t *testing.T) {
 			t.Fatal("routing must preserve identity and PKCE state")
 		}
 	}
-	if s.MicrosoftSigninURL(context.Background(), ms) == "" || s.OAuthReturnOrigin(ctx, ms) != "https://tac-security-assessment.warmbly.com" {
+	if s.MicrosoftSigninURL(context.Background(), ms) == "" || s.OAuthReturnOrigin(ctx, ms) != "https://second.example.com" {
 		t.Fatal("second Microsoft sign-in must retain origin")
 	}
 	p.states.Take(ctx, "mailbox_grant_state:"+ms)

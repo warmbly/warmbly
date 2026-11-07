@@ -613,31 +613,14 @@ Needed on the backend **and** every worker: the backend starts the OAuth flow, a
 |---|---|---|
 | `BOX_GOOGLE_CLIENT_ID`, `BOX_GOOGLE_CLIENT_SECRET` | The Google app used by Gmail mailboxes connected with per-mailbox Google sign-in. Both are required to enable new connects. Keep them set while any mailbox uses Google sign-in. Also carries a Workspace administrator's domain proof when `GOOGLE_CLIENT_ID` is not set. Redirect URI is your API base plus `/addresses/google/callback`. Until Google verifies the client it is limited to 100 new users, except on Workspace domains whose administrator marks it Trusted under Manage Third-Party App Access, and an **Internal** client in your own organization; members see the client ID in the connect dialog and as `google_mailbox_client_id` on `GET /emails/grants/config`. The consent screen needs `https://mail.google.com/` and `gmail.settings.basic` ([setup](/development/deployment-guide/#gmail-and-google-workspace)) | unset |
 | `BOX_GOOGLE_APP_NAME` | The app name on the consent screen of the `BOX_GOOGLE_*` client. An inbox vendor that signs in to Google mailboxes for Warmbly checks it against the client ID (Zapmail refuses a mismatch), so set it to the name your Google Cloud project shows | `Warmbly` |
-| `BOX_GOOGLE_OAUTH_CONNECT` | Optional backend kill switch for new Gmail OAuth connects. Unset enables the capability when both Google mailbox credentials are present; explicit `false` or an invalid value disables it. Existing Google sign-in mailboxes keep working and can re-authorize either way. Announced as `gmail_oauth_connect` on `GET /v1/auth/config` | enabled when configured |
+| `BOX_GOOGLE_OAUTH_CONNECT` | Optional backend kill switch for new Gmail OAuth connects. Unset enables the capability when both Google mailbox credentials are present; explicit `false` or an invalid value disables it. Existing Google sign-in mailboxes keep working and can re-authorize either way. Announced as `gmail_oauth_connect` on `GET /v1/auth/config`, which is what the dashboard reads to offer Google sign-in | enabled when configured |
 | `BOX_OUTLOOK_CLIENT_ID`, `BOX_OUTLOOK_CLIENT_SECRET` | Connect Outlook and Microsoft 365 mailboxes. Redirect URI is your API base plus `/addresses/outlook/callback` | unset |
 
 Plain SMTP and IMAP mailboxes need none of this. If a worker is missing these values, the mailbox connects fine and then silently stops about an hour later, when its first access token expires.
 
-### Google sign-in per dashboard deployment
+### Multiple dashboards on one backend
 
-The dashboard has a separate visibility flag. It affects only **per-mailbox Google sign-in** in the connect dialog and mailbox import, not Microsoft sign-in, Google dashboard login or Workspace whole-domain grants.
-
-| Variable | Where to set it | Default |
-|---|---|---|
-| `WARMBLY_GMAIL_OAUTH_CONNECT` | Dashboard container environment or Cloudflare Pages environment. Set to `true` to offer Google mailbox sign-in when the backend supports it | `false` |
-| `VITE_GMAIL_OAUTH_CONNECT` | `web/.env` for local Vite or a direct Vite build. Runtime configuration takes precedence | `false` |
-
-Two dashboard deployments can share one backend and set this flag differently. For example:
-
-```dotenv
-# Public dashboard environment
-WARMBLY_GMAIL_OAUTH_CONNECT=false
-
-# Assessment dashboard environment (a separate deployment)
-WARMBLY_GMAIL_OAUTH_CONNECT=true
-```
-
-Both dashboards point `WARMBLY_API_URL` at the same API and set `WARMBLY_APP_URL` to their own dashboard URL. Containers generate `/config.js` at startup, so no second image is needed. Cloudflare Pages renders it during `build:pages`; set the variable on the intended Pages project and redeploy.
+Several dashboard deployments can share one backend. Each points `WARMBLY_API_URL` at the same API and sets `WARMBLY_APP_URL` to its own dashboard URL. Containers generate `/config.js` at startup, so no second image is needed. Cloudflare Pages renders it during `build:pages`; set the variables on the intended Pages project and redeploy.
 
 The customer dashboard also generates a Content Security Policy from the same deployment settings. Static bootstrap scripts and styles use build-generated hashes; scripts and styles injected as markup are not generally allowed. API, Sentry and PostHog origins are derived from their configured URLs. Before nginx starts, the dashboard reads the public `/v1/auth/config` endpoint at its configured API URL and allows only the exact `websocket_url` origin. Existing backend `WEBSOCKET_URL` configuration therefore needs no duplicate CSP setting. If `WEBSOCKET_URL` is also passed into the web container, it supplies the origin directly without an HTTP request.
 
@@ -653,30 +636,13 @@ On the shared backend, keep `APP_URL` as the primary dashboard and add both exac
 
 Email/password login, OTP/2FA, signup, logout and ordinary dashboard navigation use local routes. Password-reset and invitation emails initiated from an allowlisted dashboard link back to that dashboard. Stripe checkout, credit top-ups, billing portal and warmup-plan returns use the initiating dashboard and retain safe same-origin paths. Requests without a trusted browser origin use the primary dashboard.
 
-For Warmbly's hosted assessment dashboard, the shared backend needs both of these origins:
+Each additional dashboard also needs:
 
-```dotenv
-APP_URL=https://app.warmbly.com
-CORS_ALLOW_ORIGINS=https://app.warmbly.com,https://tac-security-assessment.warmbly.com
-```
+- its hostname allowed on the Cloudflare Turnstile widget. A widget restricted to one hostname does not cover a sibling. Keep CAPTCHA enabled.
+- its origin appended to the realtime service's `CHECK_ORIGIN_HOSTS`, preserving the existing origins. The API origin allowlist does not configure websocket origin checks.
+- the existing `WEBAUTHN_RP_ID`, unchanged. Changing it invalidates every registered passkey, so a passkey registered on the primary dashboard's hostname does not sign in on a sibling hostname; use email/password there.
 
-This is an environment example, not a built-in allowlist. Preserve any other existing origins, such as the admin dashboard: append `https://tac-security-assessment.warmbly.com` to the current `CORS_ALLOW_ORIGINS` value rather than replacing the list. On Railway, update the backend service's variable and redeploy it; changing the frontend variable or merging code does not update the live backend environment. Keep `APP_URL` and `APP_ORIGIN` pointing at the primary dashboard, not the assessment dashboard. The assessment frontend sets `WARMBLY_APP_URL=https://tac-security-assessment.warmbly.com` and `WARMBLY_GMAIL_OAUTH_CONNECT=true`.
-
-Before giving assessors access:
-
-- Set the assessment frontend's `WARMBLY_API_URL` to the shared API, and use an exact `WARMBLY_APP_URL` origin without a trailing slash.
-- Allow the assessment hostname on the existing Cloudflare Turnstile widget. A widget restricted to `app.warmbly.com` does not cover its sibling assessment hostname. Keep CAPTCHA enabled.
-- Append the assessment origin to the realtime service's `CHECK_ORIGIN_HOSTS`, preserving its existing origins. The API origin allowlist does not configure websocket origin checks.
-- For password-only assessor accounts, use **Admin > Testers**, or turn on **Skip emailed sign-in code** on an existing account's page under **Users**. These accounts are exempt from the emailed login-code step, but still use CAPTCHA and existing permission checks. Accounts with 2FA enabled still need their second factor.
-- Keep the existing `WEBAUTHN_RP_ID` unchanged. An `app.warmbly.com` passkey RP ID cannot serve a sibling assessment hostname, and changing it invalidates existing credentials. Reviewers can use email/password; passkey support across both hosts needs a separate migration decision.
-
-This is not a global rewrite of every primary-dashboard link. Dashboard Google/Apple/OIDC login remains primary-dashboard routed; assessment reviewers should use email/password. Server-generated notifications, Slack-launched links, CLI/bootstrap links and self-hosted Cloud broker returns retain their canonical instance routing. Cloud broker return origins remain bound to the registered instance, not the hosted assessment dashboard.
-
-Existing Google OAuth mailboxes can still re-authorize with the frontend flag off. App-password and SMTP/IMAP options stay available. When linked to Warmbly Cloud, Google consent is brokered by Cloud rather than the local backend, but the frontend opt-in is still required.
-
-<Callout type="warn" title="Visibility is not authorization">
-Hiding the button does not prevent an authenticated client from calling the API. Use `BOX_GOOGLE_OAUTH_CONNECT=false` to disable new Google OAuth connects on the backend. A frontend flag does not change Google's restricted-scope verification or security assessment requirements, and a second dashboard on the same backend shares its data. Agree the assessment scope and reviewer account with your assessor before scanning.
-</Callout>
+This is not a global rewrite of every primary-dashboard link. Dashboard Google/Apple/OIDC login remains primary-dashboard routed. Server-generated notifications, Slack-launched links, CLI/bootstrap links and self-hosted Cloud broker returns retain their canonical instance routing. Cloud broker return origins remain bound to the registered instance.
 
 ### Optional hosted static edge
 
