@@ -39,7 +39,7 @@ Pause to stop both sending and receiving warmup mail, or Stop to also turn diagn
 
 ## Good to know
 
-- On Warmbly Cloud, warmup needs a paid plan, and every paid plan warms unlimited mailboxes in the premium pool. A workspace that had the free plan before it closed to new workspaces keeps warming up to 10 mailboxes in the free pool.
+- On Warmbly Cloud, every paid plan warms unlimited mailboxes in the premium pool. A new workspace warms up to 2 mailboxes in the free pool during its 14-day [free trial](/guides/billing/#the-free-trial), and a workspace that had the free plan before it closed to new workspaces keeps warming up to 10 there. Otherwise warmup needs a paid plan.
 - A self-hosted instance warms every mailbox, but only against the other mailboxes on that instance, with no shared pool.
 - New mailboxes start with warmup off. Once on, it starts at `10` emails a day by default and climbs by `+1` a day to a ceiling of `40`.
 - Keep warmup on after campaigns start. A mailbox backing a live campaign drops to at most five warmup messages a day, and the pool replies to more of them.
@@ -53,7 +53,7 @@ Pause to stop both sending and receiving warmup mail, or Stop to also turn diagn
 Warmup sends natural plain-text threads between participating mailboxes. It measures observed placement and bounded actual-message DKIM evidence. It does not establish organic engagement or guarantee reputation improvement or inbox placement.
 
 <Callout type="info" title="Warmup is a paid feature">
-  On Warmbly Cloud a workspace without a paid plan cannot connect mailboxes, and no warmup traffic is scheduled for it; pending warmup activity is skipped rather than sent. A workspace that had the free plan before it closed to new workspaces keeps warming up to 10 mailboxes in the free pool. See [billing](/guides/billing/#without-a-paid-plan).
+  On Warmbly Cloud a workspace with no paid plan, no free trial and no free plan kept from before cannot connect mailboxes, and no warmup traffic is scheduled for it; pending warmup activity is skipped rather than sent. During the 14-day free trial a new workspace warms up to 2 mailboxes in the free pool; when the trial ends, warmup is paused, and choosing a plan resumes it with the ramp where it stopped. A workspace that had the free plan before it closed to new workspaces keeps warming up to 10 mailboxes in the free pool. See [billing](/guides/billing/#without-a-paid-plan).
 </Callout>
 
 </Fold>
@@ -139,7 +139,7 @@ A pool is the set of mailboxes that warm each other. Your mailbox exchanges warm
 | Pool | Who is in it |
 |------|--------------|
 | `premium` | Paid organizations' mailboxes. The default for paid accounts, isolated from lower-trust traffic. |
-| `free` | Mailboxes of workspaces that kept the earlier free plan, and lower-trust mailboxes, kept separate so free traffic does not mix into premium reputation. New workspaces do not join it without a plan. |
+| `free` | Mailboxes of workspaces in their free trial or that kept the earlier free plan, and lower-trust mailboxes, kept separate so free traffic does not mix into premium reputation. Other workspaces without a plan do not join it. |
 
 A mailbox belongs to exactly one pool at a time. When its plan changes the mailbox moves between pools rather than joining a second one, and it takes its warmup standing with it, so a quarantine or block is not cleared by changing tier.
 
@@ -153,7 +153,7 @@ Partner/domain diversity broadens diagnostic coverage. It is not identity rotati
 
 A [placement seed inbox](/guides/placement-tests/#your-own-seed-inboxes) never joins a pool: marking a mailbox as a seed turns its warmup off, and starting warmup on a seed is refused, because a seed that exchanged mail with the pool would stop being a stranger to every sender in it. It never sends campaign mail either.
 
-Self-hosted instances warm only among their own mailboxes. That local warmup works, but it is not effective: providers learn to recognise a few mailboxes that only write to each other, and one instance has nowhere near enough of them. For these pools of thousands of real mailboxes, use a hosted workspace on [app.warmbly.com](https://app.warmbly.com) and move the mailboxes there. Warmbly Cloud no longer links new self-hosted instances; one [linked earlier](/guides/warmbly-cloud/) keeps its enrolled mailboxes in these pools. On an instance that is not linked, the **Mailboxes** page says so in a banner, with **Use Warmbly Cloud** (opens app.warmbly.com) and **Community on Discord**, since Warmbly does not support self-hosted instances.
+Self-hosted instances warm only among their own mailboxes. That local warmup works, but it is not effective: providers learn to recognise a few mailboxes that only write to each other, and one instance has nowhere near enough of them. For these pools of thousands of real mailboxes, use a hosted workspace on [app.warmbly.com](https://app.warmbly.com) and move the mailboxes there. Warmbly Cloud no longer links new self-hosted instances; one [linked earlier](/guides/warmbly-cloud/) keeps its enrolled mailboxes in these pools. On an instance that is not linked, the **Mailboxes** page says so in a banner, with **Upgrade on Warmbly Cloud** and **Community on Discord**, since Warmbly does not support self-hosted instances. **Upgrade on Warmbly Cloud** opens sign-up on app.warmbly.com (an existing account can sign in from the same page) and then the plan chooser. The banner also links to **Settings > Data**, where a [workspace export](/guides/workspace-export-import/) carries the workspace and, with **Include mailbox credentials** on, its mailboxes still connected.
 
 ### Choosing partners
 

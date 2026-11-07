@@ -229,9 +229,13 @@ func (s *service) RunScheduled(ctx context.Context) error {
 				Model:    settings.Model,
 				Count:    count,
 			})
+			if errors.Is(err, repository.ErrScheduledGenerationInFlight) {
+				// Its output is not in the bank until the poller ingests it, so the deficit stands meanwhile.
+				continue
+			}
 			if err != nil {
 				log.Warn().Err(err).Str("segment", segment).Msg("warmup generation: scheduled batch not submitted")
-				scheduleErr = errors.Join(scheduleErr, fmt.Errorf("warmup batch submission failed for segment %q", segment))
+				scheduleErr = errors.Join(scheduleErr, fmt.Errorf("warmup batch submission failed for %s: %w", segmentLabel(segment), err))
 				continue
 			}
 			if settings.DailyGenerationCap > 0 {
@@ -243,6 +247,14 @@ func (s *service) RunScheduled(ctx context.Context) error {
 		}
 	}
 	return scheduleErr
+}
+
+// segmentLabel names a library segment; "" is the shared library every mailbox draws from.
+func segmentLabel(segment string) string {
+	if segment == "" {
+		return "the shared library"
+	}
+	return fmt.Sprintf("segment %q", segment)
 }
 
 func cleanMessages(in []string) []string {

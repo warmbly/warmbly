@@ -84,10 +84,13 @@ func (j *TrialExpirationJob) Run(ctx context.Context) error {
 			// Continue processing other organizations
 		}
 
-		// Disable warmup on all email accounts (they're already blocked, but clean up)
-		if err := repository.DisableWarmupByOrganizationID(ctx, j.db, sub.OrganizationID); err != nil {
-			errs.CaptureException(err)
-			// Continue processing other organizations
+		// Paused, not cleared, so a plan resumes warmup with its ramp where it stopped.
+		// A failed pause leaves the trial unexpired so the next run retries it.
+		if sub.FreeTrialEndsAt != nil {
+			if err := repository.PauseTrialWarmup(ctx, j.db, sub.OrganizationID, *sub.FreeTrialEndsAt); err != nil {
+				errs.CaptureException(err)
+				continue
+			}
 		}
 
 		// Mark subscription as expired
@@ -103,8 +106,8 @@ func (j *TrialExpirationJob) Run(ctx context.Context) error {
 		if j.notifier != nil && sub.OrganizationID != uuid.Nil {
 			j.notifier.NotifyOrg(ctx, sub.OrganizationID, models.PermManageBilling, uuid.Nil,
 				models.NotifBillingAlert,
-				"Your Warmbly trial has expired",
-				"Campaigns are paused and warmup is disabled until you upgrade.",
+				"Your Warmbly trial has ended",
+				"Sending and warmup are paused. Your mailboxes, contacts and campaigns are kept, and warmup picks up where it stopped when you choose a plan.",
 				"/app/settings/billing", nil,
 				"trial_expired:"+sub.OrganizationID.String())
 			continue
@@ -125,7 +128,7 @@ func (j *TrialExpirationJob) notifyTrialExpired(ctx context.Context, userID inte
 		return
 	}
 
-	subject := "Your Warmbly trial has expired"
+	subject := "Your Warmbly trial has ended"
 	body, err := templates.GenerateTrialExpiredHTML()
 	if err != nil {
 		// GenerateTrialExpiredHTML already reported it.

@@ -395,3 +395,20 @@ func TestCanonicalTransformKeepsEmptyTurnsAndFacts(t *testing.T) {
 		t.Fatal("facts or alternating positions changed")
 	}
 }
+
+func TestScheduledGenerationWaitsOnAnInFlightBatchWithoutFailing(t *testing.T) {
+	s, r, p := newControlFixture()
+	r.settings.RefreshEnabled = false
+	r.reserveErr = repository.ErrScheduledGenerationInFlight
+	if err := s.RunScheduled(t.Context()); err != nil {
+		t.Fatalf("a segment already being topped up failed the run: %v", err)
+	}
+	if len(p.requests) != 0 || len(r.jobs) != 0 {
+		t.Fatal("a second batch was submitted while one was in flight")
+	}
+	r.reserveErr = errors.New("connection reset")
+	err := s.RunScheduled(t.Context())
+	if err == nil || !strings.Contains(err.Error(), "shared library") || !strings.Contains(err.Error(), "connection reset") {
+		t.Fatalf("a real submission failure lost its segment or cause: %v", err)
+	}
+}

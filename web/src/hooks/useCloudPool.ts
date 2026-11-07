@@ -35,7 +35,6 @@ export default function useCloudPool() {
         connected,
         workspaceConnected: connected && !!status.data?.link?.organization_id,
         reachable: status.data?.reachable === true,
-        cloudURL: status.data?.default_cloud_url || "https://app.warmbly.com",
         orgName: status.data?.link?.organization_name ?? "",
         plan,
         enrolledCount,

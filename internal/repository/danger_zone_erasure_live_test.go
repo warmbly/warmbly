@@ -2,12 +2,16 @@ package repository
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
+	"github.com/warmbly/warmbly/internal/models"
 )
 
 // Live cover for deleting a workspace and deleting a person. Skipped unless
@@ -202,41 +206,294 @@ func TestLiveDeletingAWorkspaceWithWarmupStandingSucceeds(t *testing.T) {
 	}
 }
 
-// Closing an account cannot complete today for an unrelated reason: twenty
-// foreign keys into users have no delete action, including
-// scheduled_deletions.requested_by_user_id, which the deletion request itself
-// writes. Repairing that is account-closure work, with a separate decision per
-// constraint about what survives a person leaving, and it is not done here.
-//
-// What IS this change's business is that the failure stays clean. The enqueue
-// shares the delete's transaction, so a delete that cannot happen must leave
-// nothing queued: erasing a live mailbox's grant and its stored mail because a
-// deletion half-ran would be far worse than the deletion not running.
-func TestLiveAFailedAccountDeletionQueuesNoErasure(t *testing.T) {
+// Closing an account removes the person and every workspace they own, queues
+// the owned mailboxes for erasure, and leaves what they wrote in a workspace
+// they did not own with that workspace, naming nobody. The request row stays as
+// the record that the account was closed.
+func TestLiveDeletingAnAccountRemovesOwnedWorkspacesAndKeepsSharedWork(t *testing.T) {
 	f := newDangerLiveFixture(t)
 	ctx := context.Background()
-
-	// The row the real flow writes, and the one that blocks the delete.
-	if _, err := f.handle.Pool.Exec(ctx, `
-		INSERT INTO scheduled_deletions (id, resource_type, resource_id, requested_by_user_id,
-		    scheduled_at, execute_after, grace_days, status)
-		VALUES ($1, 'user', $2, $2, now(), now(), 7, 'pending')`, uuid.New(), f.user); err != nil {
-		t.Fatalf("fixture: %v", err)
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := f.handle.Pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("fixture %q: %v", sql, err)
+		}
 	}
+
+	request := uuid.New()
+	exec(`INSERT INTO scheduled_deletions (id, resource_type, resource_id, requested_by_user_id,
+	          scheduled_at, execute_after, grace_days, status)
+	      VALUES ($1, 'user', $2, $2, now(), now(), 30, 'executing')`, request, f.user)
+
+	// Someone else's workspace, where the person being deleted wrote a note.
+	other, otherOrg, contact, note := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	exec(`INSERT INTO users (id, email, first_name, last_name) VALUES ($1, $2, 'Other', 'Owner')`,
+		other, "danger-"+other.String()[:8]+"@test.local")
+	exec(`INSERT INTO organizations (id, name, slug, owner_user_id) VALUES ($1, 'Other', $2, $3)`,
+		otherOrg, "danger-"+otherOrg.String()[:8], other)
+	exec(`INSERT INTO organization_members (organization_id, user_id) VALUES ($1, $2)`, otherOrg, f.user)
+	exec(`INSERT INTO contacts (id, organization_id, user_id, email, first_name, last_name, company, phone, custom_fields)
+	      VALUES ($1, $2, $3, 'lead@test.local', '', '', '', '', '{}')`, contact, otherOrg, other)
+	exec(`INSERT INTO contact_notes (id, organization_id, contact_id, user_id, content) VALUES ($1, $2, $3, $4, 'kept')`,
+		note, otherOrg, contact, f.user)
+	// Bought by this user before handing the workspace over.
+	exec(`INSERT INTO subscriptions (user_id, organization_id, plan_id, stripe_customer_id) VALUES ($1, $2, '00000000-0000-0000-0000-000000000001', 'cus_test')`,
+		f.user, otherOrg)
 	t.Cleanup(func() {
-		if _, err := f.handle.Pool.Exec(context.Background(),
-			`DELETE FROM scheduled_deletions WHERE resource_id = $1`, f.user); err != nil {
-			t.Errorf("cleanup scheduled deletion: %v", err)
+		c := context.Background()
+		for _, step := range []struct {
+			sql string
+			arg any
+		}{
+			{`DELETE FROM scheduled_deletions WHERE id = $1`, request},
+			{`DELETE FROM organizations WHERE id = $1`, otherOrg},
+			{`DELETE FROM users WHERE id = $1`, other},
+		} {
+			if _, err := f.handle.Pool.Exec(c, step.sql, step.arg); err != nil {
+				t.Errorf("cleanup %q: %v", step.sql, err)
+			}
 		}
 	})
 
-	if _, err := f.repo.HardDeleteUser(ctx, f.user); err == nil {
-		t.Fatal("the account deletion reported success; if it now works, this test should assert the erasure instead")
+	placements, err := f.repo.HardDeleteUser(ctx, f.user, nil)
+	if err != nil {
+		t.Fatalf("the account could not be deleted: %v", err)
 	}
-	if n := f.count(t, `SELECT count(*) FROM users WHERE id = $1`, f.user); n != 1 {
-		t.Fatal("the user went after all")
+	if len(placements) != 1 || placements[0].EmailID != f.mailbox || placements[0].WorkerID != f.worker {
+		t.Errorf("returned %+v, want the owned workspace's mailbox on worker %s", placements, f.worker)
+	}
+	if n := f.count(t, `SELECT count(*) FROM users WHERE id = $1`, f.user); n != 0 {
+		t.Error("the user is still there")
+	}
+	if n := f.count(t, `SELECT count(*) FROM organizations WHERE id = $1`, f.org); n != 0 {
+		t.Error("the workspace the user owned outlived them")
+	}
+	if n := f.count(t, `SELECT count(*) FROM mailbox_erasures WHERE email_account_id = $1`, f.mailbox); n != 1 {
+		t.Errorf("queued %d erasures for the owned workspace's mailbox, want 1", n)
+	}
+	if n := f.count(t, `SELECT count(*) FROM contact_notes WHERE id = $1 AND user_id IS NULL`, note); n != 1 {
+		t.Error("the note written in another workspace was not kept with its author cleared")
+	}
+	if n := f.count(t, `SELECT count(*) FROM scheduled_deletions WHERE id = $1 AND requested_by_user_id IS NULL`, request); n != 1 {
+		t.Error("the deletion request did not survive as the record of the closure")
+	}
+	if n := f.count(t, `SELECT count(*) FROM subscriptions WHERE organization_id = $1 AND user_id = (SELECT owner_user_id FROM organizations WHERE id = $1)`, otherOrg); n != 1 {
+		t.Error("the other workspace's subscription did not pass to its owner")
+	}
+}
+
+// A user row cascades into the mailboxes, contacts and campaigns it created in
+// every workspace, so an account that still holds any in a workspace it does
+// not own is refused, at scheduling and at execution, with nothing erased.
+func TestLiveAccountDeletionRefusesWhileHoldingAnotherWorkspacesMailbox(t *testing.T) {
+	f := newDangerLiveFixture(t)
+	ctx := context.Background()
+	other, otherOrg, shared := uuid.New(), uuid.New(), uuid.New()
+	for _, q := range []struct {
+		sql  string
+		args []any
+	}{
+		{`INSERT INTO users (id, email, first_name, last_name) VALUES ($1, $2, 'Other', 'Owner')`, []any{other, "danger-" + other.String()[:8] + "@test.local"}},
+		{`INSERT INTO organizations (id, name, slug, owner_user_id) VALUES ($1, 'Other', $2, $3)`, []any{otherOrg, "danger-" + otherOrg.String()[:8], other}},
+		{`INSERT INTO email_accounts (id, user_id, organization_id, email, name, signature_plain, signature_html, provider, status, campaign_limit, min_wait_time)
+		  VALUES ($1, $2, $3, $4, 'Shared', '', '', 'gmail', 'active', 50, 600)`, []any{shared, f.user, otherOrg, "danger-" + shared.String()[:8] + "@test.local"}},
+	} {
+		if _, err := f.handle.Pool.Exec(ctx, q.sql, q.args...); err != nil {
+			t.Fatalf("fixture %q: %v", q.sql, err)
+		}
+	}
+	t.Cleanup(func() {
+		c := context.Background()
+		for _, q := range []struct {
+			sql string
+			arg any
+		}{
+			{`DELETE FROM email_accounts WHERE id = $1`, shared},
+			{`DELETE FROM organizations WHERE id = $1`, otherOrg},
+			{`DELETE FROM users WHERE id = $1`, other},
+		} {
+			if _, err := f.handle.Pool.Exec(c, q.sql, q.arg); err != nil {
+				t.Errorf("cleanup %q: %v", q.sql, err)
+			}
+		}
+	})
+
+	err := f.repo.CreatePending(ctx, &models.ScheduledDeletion{ID: uuid.New(), ResourceType: models.DeletionResourceUser,
+		ResourceID: f.user, RequestedByUserID: f.user, ScheduledAt: time.Now(), ExecuteAfter: time.Now(), GraceDays: 30})
+	if !errors.Is(err, ErrAccountHoldsSharedWork) {
+		t.Fatalf("scheduling: got %v, want ErrAccountHoldsSharedWork", err)
+	}
+	if _, err := f.repo.HardDeleteUser(ctx, f.user, nil); !errors.Is(err, ErrAccountHoldsSharedWork) {
+		t.Fatalf("executing: got %v, want ErrAccountHoldsSharedWork", err)
+	}
+	// A conversation the workspace shares counts too, once the mailbox is gone.
+	if _, err := f.handle.Pool.Exec(ctx, `UPDATE email_accounts SET user_id = $1 WHERE id = $2`, other, shared); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.handle.Pool.Exec(ctx, `UPDATE organizations SET assistant_shared_history = true WHERE id = $1`, otherOrg); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.handle.Pool.Exec(ctx, `INSERT INTO agent_sessions (org_id, user_id) VALUES ($1, $2)`, otherOrg, f.user); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.repo.HardDeleteUser(ctx, f.user, nil); !errors.Is(err, ErrAccountHoldsSharedWork) {
+		t.Fatalf("shared conversation: got %v, want ErrAccountHoldsSharedWork", err)
+	}
+	// So does an attachment on another workspace's campaign, once the conversation is private again.
+	if _, err := f.handle.Pool.Exec(ctx, `UPDATE organizations SET assistant_shared_history = false WHERE id = $1`, otherOrg); err != nil {
+		t.Fatal(err)
+	}
+	campaign := uuid.New()
+	if _, err := f.handle.Pool.Exec(ctx, `INSERT INTO campaigns (id, user_id, organization_id, name, description, days, created_at, updated_at) VALUES ($1, $2, $3, 'Shared', '', 127, now(), now())`, campaign, other, otherOrg); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.handle.Pool.Exec(ctx, `INSERT INTO campaign_attachments (campaign_id, user_id, filename, size, mime_type, s3_key) VALUES ($1, $2, 'a.pdf', 1, 'application/pdf', 'k')`, campaign, f.user); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.repo.HardDeleteUser(ctx, f.user, nil); !errors.Is(err, ErrAccountHoldsSharedWork) {
+		t.Fatalf("shared attachment: got %v, want ErrAccountHoldsSharedWork", err)
+	}
+	if n := f.count(t, `SELECT count(*) FROM email_accounts WHERE id = $1`, shared); n != 1 {
+		t.Error("the other workspace lost its mailbox")
+	}
+	if n := f.count(t, `SELECT count(*) FROM organizations WHERE id = $1`, f.org); n != 1 {
+		t.Error("the owned workspace went although the deletion was refused")
 	}
 	if n := f.count(t, `SELECT count(*) FROM mailbox_erasures WHERE email_account_id = $1`, f.mailbox); n != 0 {
-		t.Errorf("queued %d erasures for a mailbox that is still connected and still syncing", n)
+		t.Errorf("queued %d erasures for a refused deletion", n)
+	}
+}
+
+// Nothing in a deletion cancels billing, so an owned workspace whose
+// subscription will renew holds the account deletion.
+func TestLiveAccountDeletionRefusesWhileAnOwnedWorkspaceRenews(t *testing.T) {
+	f := newDangerLiveFixture(t)
+	ctx := context.Background()
+	if _, err := f.handle.Pool.Exec(ctx, `
+		INSERT INTO subscriptions (user_id, organization_id, plan_id, stripe_customer_id, stripe_subscription_id, status)
+		VALUES ($1, $2, '00000000-0000-0000-0000-000000000001', 'cus_test', 'sub_test', 'active')`, f.user, f.org); err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	if _, err := f.repo.HardDeleteUser(ctx, f.user, nil); !errors.Is(err, ErrOwnedWorkspaceBilled) {
+		t.Fatalf("got %v, want ErrOwnedWorkspaceBilled", err)
+	}
+	// Each of these will not renew; checked inside a rolled-back transaction so the next still has a workspace.
+	for _, change := range []string{
+		`cancel_at_period_end = true`,
+		`status = 'canceled'`,
+		`status = 'incomplete_expired'`,
+		`stripe_subscription_id = NULL`,
+	} {
+		tx, err := f.handle.Pool.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.Exec(ctx, `UPDATE subscriptions SET `+change+` WHERE organization_id = $1`, f.org); err != nil {
+			t.Fatal(err)
+		}
+		owned, err := ownedWorkspaces(ctx, tx, f.user, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := accountDeletable(ctx, tx, f.user, owned); err != nil {
+			t.Errorf("%s still held the deletion: %v", change, err)
+		}
+		_ = tx.Rollback(ctx)
+	}
+}
+
+// The provider is asked at execution, because a subscription resumed there
+// reaches the local row only when its webhook lands.
+func TestLiveAccountDeletionAsksTheProviderAboutAnEndingSubscription(t *testing.T) {
+	f := newDangerLiveFixture(t)
+	ctx := context.Background()
+	if _, err := f.handle.Pool.Exec(ctx, `
+		INSERT INTO subscriptions (user_id, organization_id, plan_id, stripe_customer_id, stripe_subscription_id, status, cancel_at_period_end)
+		VALUES ($1, $2, '00000000-0000-0000-0000-000000000001', 'cus_test', 'sub_resumed', 'active', true)`, f.user, f.org); err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	var asked []string
+	resumed := func(_ context.Context, ids []string) error {
+		asked = ids
+		return ErrOwnedWorkspaceBilled
+	}
+	if _, err := f.repo.HardDeleteUser(ctx, f.user, resumed); !errors.Is(err, ErrOwnedWorkspaceBilled) {
+		t.Fatalf("got %v, want ErrOwnedWorkspaceBilled from the provider", err)
+	}
+	if len(asked) != 1 || asked[0] != "sub_resumed" {
+		t.Errorf("asked about %v, want [sub_resumed]", asked)
+	}
+	if n := f.count(t, `SELECT count(*) FROM organizations WHERE id = $1`, f.org); n != 1 {
+		t.Error("the workspace went although its subscription renews")
+	}
+	if n := f.count(t, `SELECT count(*) FROM mailbox_erasures WHERE email_account_id = $1`, f.mailbox); n != 0 {
+		t.Errorf("queued %d erasures for a refused deletion", n)
+	}
+	if _, err := f.repo.HardDeleteUser(ctx, f.user, func(context.Context, []string) error { return nil }); err != nil {
+		t.Fatalf("a subscription the provider confirms is ending still held the deletion: %v", err)
+	}
+}
+
+// A mailbox attached to the user in another workspace after the shared-work
+// check must not be erased by the deletion: the insert waits for the deletion
+// and then fails on the foreign key.
+func TestLiveAccountDeletionHoldsOffAMailboxAddedMidway(t *testing.T) {
+	f := newDangerLiveFixture(t)
+	ctx := context.Background()
+	other, otherOrg, late := uuid.New(), uuid.New(), uuid.New()
+	for _, q := range []struct {
+		sql  string
+		args []any
+	}{
+		{`INSERT INTO users (id, email, first_name, last_name) VALUES ($1, $2, 'Other', 'Owner')`, []any{other, "danger-" + other.String()[:8] + "@test.local"}},
+		{`INSERT INTO organizations (id, name, slug, owner_user_id) VALUES ($1, 'Other', $2, $3)`, []any{otherOrg, "danger-" + otherOrg.String()[:8], other}},
+		// A subscription ending at period end, so the provider check runs and gives the test its moment.
+		{`INSERT INTO subscriptions (user_id, organization_id, plan_id, stripe_customer_id, stripe_subscription_id, status, cancel_at_period_end)
+		  VALUES ($1, $2, '00000000-0000-0000-0000-000000000001', 'cus_test', 'sub_ending', 'active', true)`, []any{f.user, f.org}},
+	} {
+		if _, err := f.handle.Pool.Exec(ctx, q.sql, q.args...); err != nil {
+			t.Fatalf("fixture %q: %v", q.sql, err)
+		}
+	}
+	t.Cleanup(func() {
+		c := context.Background()
+		for _, q := range []struct {
+			sql string
+			arg any
+		}{
+			{`DELETE FROM email_accounts WHERE id = $1`, late},
+			{`DELETE FROM organizations WHERE id = $1`, otherOrg},
+			{`DELETE FROM users WHERE id = $1`, other},
+		} {
+			if _, err := f.handle.Pool.Exec(c, q.sql, q.arg); err != nil {
+				t.Errorf("cleanup %q: %v", q.sql, err)
+			}
+		}
+	})
+
+	inserted := make(chan error, 1)
+	midway := func(context.Context, []string) error {
+		go func() {
+			_, err := f.handle.Pool.Exec(context.Background(), `
+				INSERT INTO email_accounts (id, user_id, organization_id, email, name, signature_plain, signature_html, provider, status, campaign_limit, min_wait_time)
+				VALUES ($1, $2, $3, $4, 'Late', '', '', 'gmail', 'active', 50, 600)`,
+				late, f.user, otherOrg, "danger-"+late.String()[:8]+"@test.local")
+			inserted <- err
+		}()
+		select {
+		case err := <-inserted:
+			return fmt.Errorf("the mailbox was attached while the deletion was running (err=%v)", err)
+		case <-time.After(300 * time.Millisecond):
+			return nil
+		}
+	}
+	if _, err := f.repo.HardDeleteUser(ctx, f.user, midway); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-inserted; !IsForeignKeyViolation(err) {
+		t.Errorf("the late mailbox insert: got %v, want a foreign key violation", err)
+	}
+	if n := f.count(t, `SELECT count(*) FROM mailbox_erasures WHERE email_account_id = $1`, late); n != 0 {
+		t.Error("a mailbox in another workspace was queued for erasure")
 	}
 }

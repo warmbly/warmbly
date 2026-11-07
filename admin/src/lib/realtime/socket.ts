@@ -10,7 +10,7 @@
 // The socket URL comes from POST /v1/getaway and embeds a short-lived auth
 // token (~10 min), so EVERY (re)connect fetches a fresh URL.
 
-import { Request } from "@/lib/api/client";
+import { Request, SessionExpiredError } from "@/lib/api/client";
 
 export type RealtimeStatus = "connecting" | "connected" | "disconnected" | "refused";
 
@@ -89,6 +89,7 @@ let rejoinAttempt = 0;
 let lastRejoinAt = 0;
 let connecting = false; // guards the async URL fetch window before ws exists
 let refusal: string | null = null; // a terminal join refusal; blocks every reconnect
+let signedOut = false; // the session is gone; no retry can mint a socket URL again
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let rejoinTimer: ReturnType<typeof setTimeout> | null = null;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -177,7 +178,7 @@ function startHeartbeat() {
 }
 
 function scheduleReconnect() {
-    if (!started || reconnectTimer || refusal) return;
+    if (!started || reconnectTimer || refusal || signedOut) return;
     const base = RECONNECT_SCHEDULE[Math.min(reconnectAttempt, RECONNECT_SCHEDULE.length - 1)];
     // ±25% jitter so clients don't reconnect in lockstep after an outage.
     const delay = Math.round(base * (0.75 + Math.random() * 0.5));
@@ -317,7 +318,7 @@ function teardownSocket() {
 }
 
 async function connect(): Promise<void> {
-    if (!started || connecting || refusal) return;
+    if (!started || connecting || refusal || signedOut) return;
     if (
         ws &&
         (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)
@@ -340,6 +341,12 @@ async function connect(): Promise<void> {
     } catch (err) {
         connecting = false;
         if (!started || myEpoch !== epoch) return;
+        if (err instanceof SessionExpiredError) {
+            // Expected, not a fault: RequireAdmin sends the operator to sign in.
+            signedOut = true;
+            setStatus("disconnected");
+            return;
+        }
         console.error("[realtime] Socket URL fetch failed:", err);
         setStatus("disconnected");
         scheduleReconnect();
@@ -388,7 +395,7 @@ async function connect(): Promise<void> {
 // instead of waiting out a backoff timer. Also clears a socket stuck
 // CONNECTING (suspended background tab) so a fresh one can open.
 function wake() {
-    if (!started || refusal) return;
+    if (!started || refusal || signedOut) return;
     if (ws?.readyState === WebSocket.OPEN) return;
     teardownSocket();
     if (reconnectTimer) {
@@ -406,6 +413,7 @@ export function startRealtime() {
     started = true;
     epoch += 1;
     refusal = null;
+    signedOut = false;
     reconnectAttempt = 0;
     rejoinAttempt = 0;
     lastRejoinAt = 0;

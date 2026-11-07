@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
@@ -106,6 +107,12 @@ type warmupContentRepository struct {
 }
 
 var ErrWarmupConversationDuplicate = errors.New("warmup subject or opening is already in the conversation library")
+
+// ErrScheduledGenerationInFlight: the library segment already has a scheduled batch pending or running.
+var ErrScheduledGenerationInFlight = errors.New("a scheduled warmup batch for this library segment is already in flight")
+
+// scheduledGenerationInFlightIndex is the unique index from migration 000077.
+const scheduledGenerationInFlightIndex = "idx_warmup_generation_jobs_one_scheduled_inflight"
 
 // NewWarmupContentRepository creates a new warmup content repository.
 func NewWarmupContentRepository(db *pgxpool.Pool) WarmupContentRepository {
@@ -508,6 +515,10 @@ func (r *warmupContentRepository) CreateGenerationJob(ctx context.Context, j *mo
 		j.ID, j.RequestedBy, j.Trigger, j.Mode, j.PoolType, j.Segment, j.Theme, j.Model, j.RequestedCount, j.Status,
 		j.BatchID, j.BatchInputFileID, j.BatchOutputFileID, j.BatchStatus, j.CompletionWindow, j.ContentVersion, j.MaxMessagesPerThread,
 	)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == scheduledGenerationInFlightIndex {
+		return ErrScheduledGenerationInFlight
+	}
 	if err != nil {
 		return err
 	}

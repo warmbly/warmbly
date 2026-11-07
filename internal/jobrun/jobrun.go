@@ -272,8 +272,7 @@ func Run(ctx context.Context, name string, fn func(ctx context.Context) error) {
 		}
 	}
 	runErr := safeRun(ctx, name, fn)
-	var quiet quietError
-	if runErr != nil && !errors.As(runErr, &quiet) {
+	if runErr != nil && !IsQuiet(runErr) {
 		errs.CaptureException(runErr)
 		log.Warn().Err(runErr).Str("job", name).Msg("scheduled job failed")
 	}
@@ -284,12 +283,18 @@ func Run(ctx context.Context, name string, fn func(ctx context.Context) error) {
 	}
 }
 
-// Quiet marks a standing condition a job already reported: the panel records it, but it is not logged or captured again.
+// Quiet marks an expected or already reported condition: the panel records it, but it is not logged or captured.
 func Quiet(err error) error {
 	if err == nil {
 		return nil
 	}
 	return quietError{err}
+}
+
+// IsQuiet reports whether err was marked with Quiet.
+func IsQuiet(err error) bool {
+	var quiet quietError
+	return errors.As(err, &quiet)
 }
 
 type quietError struct{ error }

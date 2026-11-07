@@ -241,6 +241,15 @@ Each registered key may make 30 protected calls per hour. Past that the call ans
 }
 ```
 
+#### Account deletion refusals
+
+Scheduling an account deletion is refused with one of these codes, or with `organization_cloud_connected` (see [Cloud connection refusals](#cloud-connection-refusals)) when a workspace it owns is connected to Warmbly Cloud. The same checks run again when the 30-day grace period ends: if either still applies, the deletion stays pending, is checked again a day later, and the account is kept until it completes.
+
+| `code` | Status | Meaning |
+|--------|--------|---------|
+| `account_has_shared_work` | 409 | The account still holds mailboxes, contacts, campaigns, campaign attachments, reply templates, API keys, apps or shared assistant conversations in a workspace it does not own. Remove them before scheduling deletion of the account |
+| `workspace_subscription_active` | 409 | A workspace the account owns has a subscription that will renew. Cancel it before scheduling deletion of the account |
+
 #### Cloud connection refusals
 
 | `code` | Status | Meaning |
@@ -1071,7 +1080,7 @@ Those request URLs answer `401` `unauthorized` to a request whose Slack signatur
 
 #### `mailbox_allowance_reached`
 
-A `403` whose `code` is `mailbox_allowance_reached` comes from every path that connects a mailbox: `POST /emails/onboarding/oauth/start`, `POST /emails/onboarding/oauth/finish`, `POST /emails/onboarding/smtp-imap`, and per row inside `POST /emails/onboarding/smtp-imap/bulk`. A [mailbox import](/guides/mailbox-import/) does not answer it over HTTP: the rows past the allowance fail with the `cause` `allowance_reached` and can be retried once it is raised. It is not a permission problem: the workspace holds its whole [mailbox allowance](/guides/mailboxes/#mailbox-allowance), which on a paid plan is one mailbox for every send a day the plan includes, `0` on a workspace without a paid plan, and `10` on a workspace that kept the earlier free plan. On a workspace without a plan the message says a plan is needed to connect mailboxes. Nothing was connected.
+A `403` whose `code` is `mailbox_allowance_reached` comes from every path that connects a mailbox: `POST /emails/onboarding/oauth/start`, `POST /emails/onboarding/oauth/finish`, `POST /emails/onboarding/smtp-imap`, and per row inside `POST /emails/onboarding/smtp-imap/bulk`. A [mailbox import](/guides/mailbox-import/) does not answer it over HTTP: the rows past the allowance fail with the `cause` `allowance_reached` and can be retried once it is raised. It is not a permission problem: the workspace holds its whole [mailbox allowance](/guides/mailboxes/#mailbox-allowance), which on a paid plan is one mailbox for every send a day the plan includes, `2` during a workspace's free trial, `0` on a workspace without a paid plan after it, and `10` on a workspace that kept the earlier free plan. On a workspace without a plan the message says a plan is needed to connect mailboxes. Nothing was connected.
 
 ```json
 {

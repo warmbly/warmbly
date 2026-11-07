@@ -1005,7 +1005,7 @@ func (s *organizationService) acceptResolved(ctx context.Context, inv *models.Or
 		Role:           primary.Name,
 		RoleID:         &primary.ID,
 		Permissions:    primary.Permissions,
-		InvitedBy:      &inv.InvitedBy,
+		InvitedBy:      repository.InviterOf(inv.InvitedBy),
 		InvitedAt:      inv.CreatedAt,
 		AcceptedAt:     &now,
 		// Grants on resources deleted since the invite are dropped by the insert.
@@ -2139,6 +2139,9 @@ func (s *organizationService) GrantManagedPlan(ctx context.Context, orgID, planI
 	if err := s.subRepo.SetManagedPlan(ctx, orgID, planID, adminID, reason, until); err != nil {
 		errs.CaptureException(err)
 		return nil, errx.New(errx.Internal, "failed to grant the plan")
+	}
+	if err := s.subRepo.ResumeTrialWarmup(ctx, orgID); err != nil {
+		errs.CaptureException(err)
 	}
 	return s.GetManagedPlan(ctx, orgID)
 }

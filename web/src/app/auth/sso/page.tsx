@@ -16,6 +16,8 @@ import { takeSSOBinding } from "@/lib/api/client/auth/beginSSO";
 import getUser from "@/lib/api/client/auth/getUser";
 import { saveTokens } from "@/lib/auth";
 import buildError from "@/lib/helper/buildError";
+import { postAuthNext, takeSSONext } from "@/lib/helper/safeNext";
+import { hrefTarget } from "@/lib/routerSearch";
 import type { AppError } from "@/lib/api/client/normalizeError";
 
 export default function SSOCallbackPage() {
@@ -38,6 +40,7 @@ export default function SSOCallbackPage() {
         }
 
         (async () => {
+            const next = takeSSONext();
             try {
                 const session = await exchangeSSO(code, takeSSOBinding());
 
@@ -50,7 +53,7 @@ export default function SSOCallbackPage() {
                         setError("Two-factor authentication is required, but the challenge did not arrive. Try signing in again.");
                         return;
                     }
-                    navigate({ to: "/auth/login", replace: true, state: { two_fa_pending: session.pending_token } });
+                    navigate({ to: "/auth/login", search: { next }, replace: true, state: { two_fa_pending: session.pending_token } });
                     return;
                 }
                 // The provider's address already belongs to an account with a
@@ -63,6 +66,7 @@ export default function SSOCallbackPage() {
                     }
                     navigate({
                         to: "/auth/login",
+                        search: { next },
                         replace: true,
                         state: {
                             sso_link: {
@@ -86,7 +90,7 @@ export default function SSOCallbackPage() {
                 } catch {
                     // UserProvider retries and redirects on a genuine failure.
                 }
-                navigate({ to: "/app/emails", replace: true });
+                navigate({ ...hrefTarget(postAuthNext(next)), replace: true });
             } catch (err) {
                 setError(buildError(err as AppError));
             }

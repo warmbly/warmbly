@@ -17,6 +17,8 @@ export function RouteError() {
     useEffect(() => {
         if (reported.current) return;
         reported.current = true;
+        // A lapsed session is the sign-in screen's job, not a fault to report.
+        if (error instanceof SessionExpiredError) return;
         captureException(error);
     }, [error]);
 

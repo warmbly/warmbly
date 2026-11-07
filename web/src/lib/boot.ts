@@ -93,7 +93,7 @@ async function runBoot(queryClient: QueryClient, location: { pathname: string; h
             syncedOrgId = orgs[0].id;
             store.setCurrentOrganization(orgs[0]);
         } else {
-            throw redirect({ to: "/select-org", replace: true });
+            throw redirect({ to: "/select-org", search: { next: location.href }, replace: true });
         }
 
         // Identity carries the workspace's folders and labels, so it follows the switch.
@@ -102,7 +102,8 @@ async function runBoot(queryClient: QueryClient, location: { pathname: string; h
             queryClient.ensureQueryData(subscriptionQuery).catch(() => undefined),
         ]);
         if (!user.onboarding_completed_at) {
-            throw redirect({ to: "/onboarding", replace: true });
+            // Kept through onboarding, so a sign-up from a link still lands where it pointed.
+            throw redirect({ to: "/onboarding", search: { next: location.href }, replace: true });
         }
     } catch (err) {
         if (isAuthFailure(err)) {

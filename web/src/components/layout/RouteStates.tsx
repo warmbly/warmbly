@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { Logo } from "@/components/svg";
 import { cn } from "@/lib/utils";
 import { captureException } from "@/lib/observability";
+import { canReloadForStaleChunk, isModuleLoadError, reloadForStaleChunk } from "@/lib/moduleLoadError";
 import { useAppStore } from "@/stores";
 import { SkyChrome } from "./SkyChrome";
 import { BoundaryFallback } from "./ErrorBoundary";
@@ -28,8 +29,11 @@ export function BlankPending() {
 export function RouteError({ error, reset, info }: ErrorComponentProps) {
     const router = useRouter();
     useEffect(() => {
+        if (reloadForStaleChunk(error)) return;
         captureException(error);
     }, [error]);
+    // A chunk a deploy removed: the effect above reloads into the new build.
+    if (isModuleLoadError(error) && canReloadForStaleChunk()) return null;
     return (
         <BoundaryFallback
             error={error as Error}

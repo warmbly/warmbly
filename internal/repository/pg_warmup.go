@@ -1703,18 +1703,23 @@ func (r *warmupRepository) acceptReceipt(ctx context.Context, q interface {
 	if token.ConsumedAt != nil || !token.ExpiresAt.After(time.Now()) {
 		return true, nil
 	}
-	var lineage, awaitingSend, retired bool
+	var lineage, awaitingSend, retired, settled bool
 	if err = q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM warmup_tasks WHERE task_id=$1 AND lineage_version=1),
 		EXISTS(SELECT 1 FROM warmup_tasks w JOIN tasks sent ON sent.id=w.task_id
 		WHERE w.task_id=$1 AND w.lineage_version=1 AND (sent.status<>'completed' OR $2='')),
 		EXISTS(SELECT 1 FROM warmup_tokens WHERE token=$3 AND sent_retired_at IS NOT NULL)
-		OR EXISTS(SELECT 1 FROM tasks WHERE id=$1 AND warmup_send_retired_at IS NOT NULL)`, token.TaskID, token.SentMessageID, token.Token).Scan(&lineage, &awaitingSend, &retired); err != nil {
+		OR EXISTS(SELECT 1 FROM tasks WHERE id=$1 AND warmup_send_retired_at IS NOT NULL),
+		EXISTS(SELECT 1 FROM tasks WHERE id=$1 AND status IN ('failed','cancelled'))`, token.TaskID, token.SentMessageID, token.Token).Scan(&lineage, &awaitingSend, &retired, &settled); err != nil {
 		return false, err
 	}
 	if retired {
 		return true, nil
 	}
 	if awaitingSend {
+		if settled {
+			// A failed or cancelled send is never confirmed later, so it gets now what expiry would give it.
+			return true, nil
+		}
 		return false, ErrWarmupDeliveryPending
 	}
 	if lineage && (strings.Trim(proof.MessageID, "<> \t") == "" ||

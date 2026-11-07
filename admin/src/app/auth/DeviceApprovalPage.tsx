@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Callout, Panel, Property, PropertyList, StatusBadge } from "@/components/ui/kit";
 import { ErrorState } from "@/components/ErrorState";
-import { APIError, promptForReauth } from "@/lib/api/client";
+import { APIError, promptForReauth, ReauthCancelledError } from "@/lib/api/client";
 import { describeAdminDevice, decideAdminDevice, type DeviceDescription } from "@/lib/api/client/admin/device";
 import { API_URL } from "@/lib/env";
 import { AdminPerm } from "@/lib/auth/permissions";
@@ -90,7 +90,7 @@ export default function DeviceApprovalPage() {
         try {
             await promptForReauth();
             if (mounted.current) setNeedsReauth(false);
-        } catch (err) { if (mounted.current) setError(err); }
+        } catch (err) { if (mounted.current && !(err instanceof ReauthCancelledError)) setError(err); }
         finally { inFlight.current = false; if (mounted.current) setBusy(false); }
     }
 

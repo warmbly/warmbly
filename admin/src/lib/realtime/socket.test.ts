@@ -2,8 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("@/lib/api/client", () => ({
     Request: vi.fn(async () => ({ url: "ws://localhost:4000/socket/websocket", expires_in: 600 })),
+    SessionExpiredError: class SessionExpiredError extends Error {},
 }));
 
+import { Request, SessionExpiredError } from "@/lib/api/client";
 import { startRealtime, stopRealtime, getStatus, getRefusal, onEvent, refusalMessage } from "./socket";
 
 const TOPIC = "admin:platform";
@@ -259,5 +261,36 @@ describe("status reporting", () => {
         await tick(1);
 
         expect(getStatus()).toBe("disconnected");
+    });
+});
+
+describe("an expired session", () => {
+    it("stops asking for socket URLs and logs nothing as an error", async () => {
+        const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+        vi.mocked(Request).mockClear();
+        vi.mocked(Request).mockRejectedValueOnce(new SessionExpiredError());
+
+        sockets[sockets.length - 1].close();
+        await tick(60_000);
+        window.dispatchEvent(new Event("focus"));
+        window.dispatchEvent(new Event("online"));
+        await tick(60_000);
+
+        expect(Request).toHaveBeenCalledTimes(1);
+        expect(errors).not.toHaveBeenCalled();
+        expect(getStatus()).toBe("disconnected");
+    });
+
+    it("connects again after the next sign-in", async () => {
+        vi.mocked(Request).mockRejectedValueOnce(new SessionExpiredError());
+        sockets[sockets.length - 1].close();
+        await tick(1_000);
+        const before = sockets.length;
+
+        stopRealtime();
+        startRealtime();
+        await tick(10);
+
+        expect(sockets.length).toBe(before + 1);
     });
 });
