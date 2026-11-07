@@ -50,6 +50,19 @@ func (c *Client) listFoldersCapped(limit int) (FolderListing, *errx.MailError) {
 	if err := c.ensureConnected(); err != nil {
 		return FolderListing{}, err
 	}
+	var pending []int
+	listing, err := c.listFoldersOnce(limit, &pending)
+	if err != nil || len(pending) == 0 {
+		return listing, err
+	}
+	return c.fillUnmatchedStatus(listing, pending)
+}
+
+// listFoldersOnce is the listing every server gets: LIST, then a STATUS for
+// each folder the LIST did not already answer. A folder whose STATUS reply the
+// client cannot pair with the request is appended without cursors, and its
+// index in the listing goes into pending for fillUnmatchedStatus.
+func (c *Client) listFoldersOnce(limit int, pending *[]int) (FolderListing, *errx.MailError) {
 	c.lifecycle.RLock()
 	defer c.lifecycle.RUnlock()
 	defer c.begin()()
@@ -114,6 +127,17 @@ func (c *Client) listFoldersCapped(limit int) (FolderListing, *errx.MailError) {
 			}
 			st = data
 		}
+		if unmatchedStatus(st) && nonASCIIName(box.Name) {
+			// A server that answers STATUS under another spelling of a non-ASCII
+			// folder name (NetEase Enterprise Mail masks it as "???") has its
+			// reply dropped by the client, which pairs replies with commands by
+			// name. The cursors are read from the folder itself instead. An ASCII
+			// name cannot be masked this way, so an empty answer for one stays the
+			// retryable failure it always was.
+			*pending = append(*pending, len(resp))
+			resp = append(resp, box)
+			continue
+		}
 		if st == nil || st.UIDValidity == 0 || st.UIDNext == 0 {
 			return FolderListing{}, errx.ErrMailServerUnreachable
 		}
@@ -127,6 +151,72 @@ func (c *Client) listFoldersCapped(limit int) (FolderListing, *errx.MailError) {
 	}
 
 	return FolderListing{Folders: resp, Present: present}, nil
+}
+
+// unmatchedStatus is a STATUS result that no reply was paired with. go-imap
+// pairs a reply with its command by mailbox name and drops one it cannot
+// pair, which leaves the zero value; a reply that did arrive always names its
+// mailbox.
+func unmatchedStatus(st *imap.StatusData) bool {
+	return st != nil && st.Mailbox == "" && st.UIDValidity == 0 && st.UIDNext == 0
+}
+
+// nonASCIIName reports whether a folder name has a character that a server
+// can fail to echo back in a STATUS reply.
+func nonASCIIName(name string) bool {
+	for _, r := range name {
+		if r >= utf8.RuneSelf {
+			return true
+		}
+	}
+	return false
+}
+
+// fillUnmatchedStatus reads the cursors of the folders whose STATUS reply was
+// not paired, from a read-only SELECT of each. SELECT changes the selected
+// mailbox, so it runs under mu like every other path that does. The lock is
+// taken here and not for the whole listing, so a server that answers STATUS
+// normally keeps the lock-free listing it always had.
+func (c *Client) fillUnmatchedStatus(listing FolderListing, pending []int) (FolderListing, *errx.MailError) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.lifecycle.RLock()
+	defer c.lifecycle.RUnlock()
+	defer c.begin()()
+
+	gone := make(map[int]struct{})
+	for _, i := range pending {
+		box := &listing.Folders[i]
+		sel, err := c.selectMailbox(box.Name, &imap.SelectOptions{ReadOnly: true})
+		if err != nil {
+			merr := c.handleError(err)
+			if merr.Code == errx.ErrMailResourceNotFound.Code {
+				// Only explicit absence can retire a folder's stored state.
+				delete(listing.Present, box.Name)
+				gone[i] = struct{}{}
+				continue
+			}
+			return FolderListing{}, merr
+		}
+		if sel.UIDValidity == 0 || sel.UIDNext == 0 {
+			return FolderListing{}, errx.ErrMailServerUnreachable
+		}
+		box.UIDValidity = sel.UIDValidity
+		box.UIDNext = uint32(sel.UIDNext)
+		box.HighestModSeq = sel.HighestModSeq
+		box.Messages = sel.NumMessages
+	}
+	if len(gone) == 0 {
+		return listing, nil
+	}
+	kept := listing.Folders[:0]
+	for i, box := range listing.Folders {
+		if _, ok := gone[i]; !ok {
+			kept = append(kept, box)
+		}
+	}
+	listing.Folders = kept
+	return listing, nil
 }
 
 // listOptionsFor is the LIST options a server's capabilities allow, and
