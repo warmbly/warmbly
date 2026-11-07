@@ -77,7 +77,7 @@ Open **Accounts** and choose **Add account**. Google and Microsoft each have one
 | Provider | Method | Notes |
 |----------|--------|-------|
 | Google | **Sign in with Google**: OAuth for one Workspace mailbox (`gmail`, sign-in method `oauth`) | Recommended for Google Workspace where the deployment offers it. A Workspace administrator marks Warmbly as a trusted app once, then each mailbox signs in. See [Google Workspace with Google sign-in](#google-workspace-with-google-sign-in). Not for personal Gmail |
-| Google | Domain-wide delegation (`gmail`, sign-in method `delegated`) | Legacy, and no longer offered under **Add account**. A grant a workspace already holds keeps working: open a mailbox it connected and choose **View the grant** in the mailbox's drawer to connect more of its mailboxes, check it or remove it. See [connect a whole Google Workspace domain](/guides/mailbox-import/#connect-a-whole-google-workspace-domain) |
+| Google | Domain-wide delegation (`gmail`, sign-in method `delegated`) | Legacy, and no longer offered under **Add account**. A grant a workspace already holds keeps working: open a mailbox it connected and choose **View the grant** (**Check the grant** when the grant is invalid) in the mailbox's drawer to connect more of its mailboxes, check it or remove it. See [connect a whole Google Workspace domain](/guides/mailbox-import/#connect-a-whole-google-workspace-domain) |
 | Google | **App password** over IMAP + SMTP (`smtp_imap`, sign-in method `app_password`) | The way to connect personal Gmail, and it works for one Workspace mailbox too. The dialog walks you through it in three steps, see [personal Gmail](#personal-gmail) below |
 | Microsoft | **Whole organization**: an administrator's grant (`outlook`, sign-in method `delegated`) | Recommended for Microsoft 365. A Global Administrator approves Warmbly once, and every licensed mailbox connects with no sign-in each. Runs on Microsoft Graph. See [connect a whole Microsoft 365 organization](/guides/mailbox-import/#connect-a-whole-microsoft-365-organization) |
 | Microsoft | **Sign in one mailbox**: OAuth (`outlook`, sign-in method `oauth`) | No password stored. Runs on Microsoft Graph. The way to connect Outlook.com and a single Microsoft 365 mailbox |
@@ -194,7 +194,7 @@ This option appears when the instance has a Google mailbox client configured and
 
 #### Existing Workspace domain grants
 
-Domain-wide delegation is legacy, and **Add account** no longer offers it. Grants a workspace already holds keep working: open a mailbox it connected and choose **View the grant** in the mailbox's drawer to check the grant, connect more of its mailboxes or remove it. See [connect a whole Google Workspace domain](/guides/mailbox-import/#connect-a-whole-google-workspace-domain).
+Domain-wide delegation is legacy, and **Add account** no longer offers it. Grants a workspace already holds keep working: open a mailbox it connected and choose **View the grant** in the mailbox's drawer to check the grant, connect more of its mailboxes or remove it. A grant with no mailbox left appears under **Add account > Google > Workspace domain grant**. See [connect a whole Google Workspace domain](/guides/mailbox-import/#connect-a-whole-google-workspace-domain).
 
 #### Personal Gmail
 

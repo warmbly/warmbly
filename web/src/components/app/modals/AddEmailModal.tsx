@@ -84,7 +84,7 @@ import MailboxImportWizard from "@/components/app/emails/import/MailboxImportWiz
 import VendorImportWizard from "@/components/app/emails/import/vendors/VendorImportWizard";
 import GrantImportWizard from "@/components/app/emails/import/grants/GrantImportWizard";
 import ProviderLogo, { LogoStack } from "@/components/app/emails/ProviderLogo";
-import { useGrantConfig } from "@/lib/api/hooks/app/emails/useMailboxGrants";
+import { useGrantConfig, useGrants } from "@/lib/api/hooks/app/emails/useMailboxGrants";
 import { useMailboxSourceBusy } from "@/lib/api/hooks/app/emails/mailboxSourceBusy";
 import { useVendorCatalog } from "@/lib/api/hooks/app/emails/useMailboxVendors";
 import { DitherMeter, type DitherTone } from "@/components/ui/dither";
@@ -102,10 +102,11 @@ type View =
     | "smtp_imap"
     | "bulk"
     | "vendor"
+    | "grant_google"
     | "grant_microsoft";
 
 // The multi-step import views: wider, and guarded while they hold a draft.
-const WIZARD_VIEWS: View[] = ["bulk", "vendor", "grant_microsoft"];
+const WIZARD_VIEWS: View[] = ["bulk", "vendor", "grant_google", "grant_microsoft"];
 
 // Where Back goes: a method returns to its provider's chooser.
 const PARENT: Record<View, View> = {
@@ -114,6 +115,7 @@ const PARENT: Record<View, View> = {
     microsoft: "pick",
     gmail: "google",
     gmail_app_password: "google",
+    grant_google: "google",
     outlook: "microsoft",
     grant_microsoft: "microsoft",
     smtp_imap: "pick",
@@ -399,9 +401,10 @@ export default function AddEmailModal() {
                                             onDirtyChange={setWizardDirty}
                                         />
                                     )}
-                                    {view === "grant_microsoft" && (
+                                    {(view === "grant_google" || view === "grant_microsoft") && (
                                         <GrantImportWizard
-                                            provider="microsoft"
+                                            key={view}
+                                            provider={view === "grant_google" ? "google" : "microsoft"}
                                             onDone={finishWizard}
                                             onAllowance={() => openAllowance(allowanceFull(allowance.data))}
                                             onDirtyChange={setWizardDirty}
@@ -508,6 +511,7 @@ function Header({
         smtp_imap: "Any provider via SMTP / IMAP",
         bulk: "Import mailboxes",
         vendor: "Import from an inbox vendor",
+        grant_google: "Workspace domain grant",
         grant_microsoft: "Whole Microsoft 365 organization",
     };
     return (
@@ -714,6 +718,8 @@ function MethodChooser({
     open: boolean;
 }) {
     const grantConfig = useGrantConfig(open);
+    // Every other grant is reached from View the grant in its mailboxes' drawers.
+    const orphanedGoogleGrant = (useGrants(open && provider === "google").data?.data ?? []).some((g) => g.provider === "google" && g.mailboxes === 0);
     const busy = useMailboxSourceBusy();
     const methods: Method[] = [];
     if (provider === "google") {
@@ -726,6 +732,16 @@ function MethodChooser({
                     ? "One mailbox at a time, through Warmbly Cloud."
                     : "Your Workspace admin marks Warmbly as a trusted app once, then each mailbox signs in with Google.",
                 pill: { label: "Recommended", tone: "sky" },
+                section: WORKSPACE_SECTION,
+            });
+        }
+        // New delegation grants are retired; one left without a mailbox has no drawer to open it from.
+        if (grantConfig.data?.google_enabled && orphanedGoogleGrant) {
+            methods.push({
+                view: "grant_google",
+                icon: <Building2Icon className="w-4 h-4 text-slate-700" />,
+                title: "Workspace domain grant",
+                sub: "A domain grant you already hold, with no mailbox connected through it: connect its mailboxes again, check it or remove it.",
                 section: WORKSPACE_SECTION,
             });
         }

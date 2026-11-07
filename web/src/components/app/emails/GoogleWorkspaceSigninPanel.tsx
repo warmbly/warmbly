@@ -206,7 +206,7 @@ export function BlockedByAdminHint({ clientId }: { clientId?: string }) {
                 <div className="min-w-0 space-y-1">
                     <div className="text-[12px] font-medium text-amber-900">Google said the app is blocked by your admin?</div>
                     <p className="text-[11.5px] text-amber-800 leading-relaxed">
-                        Your Workspace admin has to add Warmbly&apos;s client ID as a trusted app under App Access Control, for all users, then the mailbox can sign in again.
+                        Your Workspace admin has to add Warmbly&apos;s client ID as a trusted app under App Access Control, for the users or org units whose mailboxes connect, then the mailbox can sign in again.
                     </p>
                 </div>
             </div>
