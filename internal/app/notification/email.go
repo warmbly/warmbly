@@ -83,7 +83,8 @@ func (s *service) flushDueEmails() {
 		return
 	}
 
-	groups, byUser := partitionEmails(claimed)
+	// Eligible first: a row that will not send must not keep a shared event from going out once.
+	groups, byUser := partitionEmails(s.keepEligibleEmailMessages(ctx, claimed))
 	for _, rows := range groups {
 		s.sendGroupEmail(ctx, rows)
 	}
@@ -132,16 +133,11 @@ func partitionEmails(claimed []models.Notification) ([][]models.Notification, ma
 }
 
 // sendGroupEmail delivers one shared event to all its recipients in a single
-// message, addresses together in To — teammates see who else was told. Before
-// sending it re-verifies each recipient: still an accepted member of the org
-// (permissions were checked at event time, but membership can end during the
-// hold) and still inside their email budget. Dropped recipients' rows go to
-// skipped; the in-app feed remains their record.
+// message, addresses together in To, so teammates see who else was told. Rows
+// arrive already re-checked for membership (it can end during the hold); a
+// recipient over their email budget is dropped to skipped, and the in-app feed
+// remains their record.
 func (s *service) sendGroupEmail(ctx context.Context, rows []models.Notification) {
-	rows = s.keepEligibleEmailMessages(ctx, rows)
-	if len(rows) == 0 {
-		return
-	}
 	to := make([]string, 0, len(rows))
 	seen := map[string]bool{}
 	kept := make([]models.Notification, 0, len(rows))
@@ -182,10 +178,6 @@ func (s *service) sendGroupEmail(ctx context.Context, rows []models.Notification
 // budget, non-security rows skip (the feed keeps them) and only security
 // sign-in alerts still send.
 func (s *service) sendUserEmail(ctx context.Context, userID uuid.UUID, rows []models.Notification) {
-	rows = s.keepEligibleEmailMessages(ctx, rows)
-	if len(rows) == 0 {
-		return
-	}
 	if s.overEmailBudget(ctx, userID) {
 		var capped []uuid.UUID
 		kept := rows[:0:0]
