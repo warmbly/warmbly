@@ -228,11 +228,8 @@ func (r *approveDraftRepo) GetDraft(context.Context, uuid.UUID, uuid.UUID) (*mod
 	return r.stale, nil
 }
 
-func (r *approveDraftRepo) ClaimDraftForApproval(_ context.Context, _, _ uuid.UUID, allowed []uuid.UUID, source *uuid.UUID) (*models.AIThreadDraft, error) {
+func (r *approveDraftRepo) ClaimDraftForApproval(_ context.Context, _, _ uuid.UUID, allowed []uuid.UUID) (*models.AIThreadDraft, error) {
 	r.allowed = allowed
-	if source != nil && r.claimed != nil && (r.claimed.SourceMessageID == nil || *r.claimed.SourceMessageID != *source) {
-		return nil, nil
-	}
 	return r.claimed, nil
 }
 
@@ -336,24 +333,5 @@ func TestApproveAgentDraftExplainsARefusedClaim(t *testing.T) {
 				t.Fatalf("claim allowlist = %v, want %v", repo.allowed, tc.allowed)
 			}
 		})
-	}
-}
-
-func TestApproveAgentDraftRefusesARetargetedDraft(t *testing.T) {
-	seen, newer := uuid.New(), uuid.New()
-	retargeted := &models.AIThreadDraft{EmailAccountID: uuid.New(), ToAddr: "[EMAIL]", SourceMessageID: &newer, Status: "pending"}
-	claimed := *retargeted
-	claimed.Status = "approved"
-
-	sender := &recordingSender{}
-	rec := approveDraft(t, &approveDraftRepo{stale: retargeted, claimed: &claimed}, sender, nil, `{"body":"for the old message","source_message_id":"`+seen.String()+`"}`)
-	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "draft_retargeted") || sender.req != nil {
-		t.Fatalf("status %d sent=%v: %s", rec.Code, sender.req != nil, rec.Body.String())
-	}
-
-	sender = &recordingSender{}
-	rec = approveDraft(t, &approveDraftRepo{stale: retargeted, claimed: &claimed}, sender, nil, `{"body":"reviewed","source_message_id":"`+newer.String()+`"}`)
-	if rec.Code != http.StatusOK || sender.req == nil || sender.req.BodyPlain != "reviewed" {
-		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 	}
 }

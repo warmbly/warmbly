@@ -34,16 +34,12 @@ export async function listAgentDrafts(signal?: AbortSignal): Promise<{ data: AIT
 }
 
 // approveAgentDraft sends the draft (optionally with an edited body) through the
-// normal reply path and marks it approved. Never sends until called. With the
-// source message the reviewer saw, a draft since retargeted is refused (409 draft_retargeted).
-export async function approveAgentDraft(id: string, body?: string, sourceMessageId?: string | null): Promise<{ task_id: string }> {
+// normal reply path and marks it approved. Never sends until called.
+export async function approveAgentDraft(id: string, body?: string): Promise<{ task_id: string }> {
     return await Request<{ task_id: string }>({
         method: "POST",
         url: `/unibox/agent-drafts/${id}/approve`,
-        data: {
-            ...(body != null ? { body } : {}),
-            ...(sourceMessageId ? { source_message_id: sourceMessageId } : {}),
-        },
+        data: body != null ? { body } : {},
         authorization: true,
     })
 }

@@ -87,20 +87,18 @@ func (h *Handler) ApproveAgentDraft(c *gin.Context) {
 	}
 
 	// Optional edited body (the Edit-then-send path). Empty keeps the draft body.
-	// source_message_id is the inbound message the reviewer saw the draft answer.
 	var req struct {
-		Body            string     `json:"body"`
-		SourceMessageID *uuid.UUID `json:"source_message_id"`
+		Body string `json:"body"`
 	}
 	_ = c.ShouldBindJSON(&req)
 
-	draft, cerr := h.AIDraftRepo.ClaimDraftForApproval(c.Request.Context(), *orgID, draftID, restrictedMailboxes(c), req.SourceMessageID)
+	draft, cerr := h.AIDraftRepo.ClaimDraftForApproval(c.Request.Context(), *orgID, draftID, restrictedMailboxes(c))
 	if cerr != nil {
 		errx.Handle(c, errx.InternalError())
 		return
 	}
 	if draft == nil {
-		errx.Handle(c, h.unclaimedDraftError(c, *orgID, draftID, req.SourceMessageID))
+		errx.Handle(c, h.unclaimedDraftError(c, *orgID, draftID))
 		return
 	}
 
@@ -139,7 +137,7 @@ func (h *Handler) ApproveAgentDraft(c *gin.Context) {
 }
 
 // unclaimedDraftError explains a refused claim: missing, outside the caller's mailboxes, or already handled.
-func (h *Handler) unclaimedDraftError(c *gin.Context, orgID, draftID uuid.UUID, source *uuid.UUID) *errx.Error {
+func (h *Handler) unclaimedDraftError(c *gin.Context, orgID, draftID uuid.UUID) *errx.Error {
 	draft, err := h.AIDraftRepo.GetDraft(c.Request.Context(), orgID, draftID)
 	switch {
 	case err != nil:
@@ -149,9 +147,6 @@ func (h *Handler) unclaimedDraftError(c *gin.Context, orgID, draftID uuid.UUID, 
 	}
 	if xerr := mailboxAllowed(c, draft.EmailAccountID); xerr != nil {
 		return xerr
-	}
-	if draft.Status == "pending" && source != nil && (draft.SourceMessageID == nil || *draft.SourceMessageID != *source) {
-		return errx.NewWithIdentifier(errx.Conflict, "draft_retargeted", "This draft now answers a newer message. Review it before sending.")
 	}
 	return errx.New(errx.Conflict, "this draft was already handled")
 }

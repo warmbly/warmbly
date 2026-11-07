@@ -6,7 +6,6 @@ import toast from "react-hot-toast/headless";
 import useAgentDrafts from "@/lib/api/hooks/app/unibox/useAgentDrafts";
 import { approveAgentDraft, discardAgentDraft } from "@/lib/api/client/app/unibox/agentDrafts";
 import { useConfirm } from "@/hooks/context/confirm";
-import type { AppError } from "@/lib/api/client/normalizeError";
 
 // AgentDraftCard surfaces the inbox agent's suggested reply for the open thread,
 // awaiting a human decision. The body is editable inline: "Approve & send" sends
@@ -42,18 +41,15 @@ export default function AgentDraftCard({ threadId }: { threadId: string }) {
     };
 
     const approve = useMutation({
-        mutationFn: () => approveAgentDraft(draft!.id, body, draft!.source_message_id),
+        mutationFn: () => approveAgentDraft(draft!.id, body),
         onSuccess: () => {
             toast.success("Reply sent");
             refresh();
         },
-        onError: (e) => {
-            if ((e as unknown as AppError)?.code === "draft_retargeted") {
-                toast.error("This draft now answers a newer message. Review it before sending.");
-                refresh();
-                return;
-            }
+        onError: () => {
+            // A draft retargeted at a newer message has a new id: reload to show it.
             toast.error("Could not send the reply");
+            refresh();
         },
     });
 

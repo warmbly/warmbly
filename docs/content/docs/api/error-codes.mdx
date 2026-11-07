@@ -168,7 +168,6 @@ Resource IDs on email, campaign and contact routes must be UUIDs. Email `tags` a
 | `thread_not_found` | `PUT /unibox/ai-drafts/by-thread` named a thread with no inbound message in this workspace |
 | `already_sent` | `PUT /unibox/ai-drafts/by-thread` found an approved draft that already answers the newest inbound message on the thread. Nothing was changed |
 | `draft_discarded` | `PUT /unibox/ai-drafts/by-thread` found a discarded draft that already covers the newest inbound message on the thread. Nothing was changed |
-| `draft_retargeted` | `POST /unibox/agent-drafts/:id/approve` named a `source_message_id` the draft no longer answers: it was pointed at a newer inbound message after it was reviewed. Nothing was sent and the draft is still pending; review it and approve again |
 
 #### Image upload refusals
 

@@ -237,10 +237,14 @@ func TestLiveUpsertThreadDraft(t *testing.T) {
 			newest, f.user, other, "<"+newest.String()+"@lead.test>", base.Add(time.Hour))
 
 		d, created, err := f.repo.UpsertPendingDraftForThread(ctx, f.org, draftParams("th-6", "two"))
-		if err != nil || created || d.ID != first.ID {
-			t.Fatalf("retarget: id=%s want %s created=%v err=%v", d.ID, first.ID, created, err)
+		if err != nil || created || d.ID == first.ID {
+			t.Fatalf("retarget kept its id: id=%s first %s created=%v err=%v", d.ID, first.ID, created, err)
 		}
-		got, err := f.repo.GetDraft(ctx, f.org, first.ID)
+		// Whoever reviewed the old version holds its id, and approving it finds nothing to send.
+		if stale, err := f.repo.ClaimDraftForApproval(ctx, f.org, first.ID, nil); err != nil || stale != nil {
+			t.Fatalf("claimed the version answering the old message: %+v err=%v", stale, err)
+		}
+		got, err := f.repo.GetDraft(ctx, f.org, d.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -414,40 +418,63 @@ func TestLiveApproveThreadDraft(t *testing.T) {
 		return d, older, newer
 	}
 
-	t.Run("an approval queued behind an upsert claims and sends the upserted version", func(t *testing.T) {
-		f := newThreadDraftFixture(t, pool)
-		d, _, newer := pendingOnOlder(t, f, "th-a1")
-		release := f.lockDraft(t, d.ID)
-		up := make(chan upsertResult, 1)
-		go func() {
-			r, created, err := f.repo.UpsertPendingDraftForThread(ctx, f.org, draftParams("th-a1", "new"))
-			up <- upsertResult{r, created, err}
-		}()
-		f.waitForLockWaiters(t, 1)
-		cl := make(chan claimResult, 1)
-		go func() {
-			r, err := f.repo.ClaimDraftForApproval(ctx, f.org, d.ID, nil, nil)
-			cl <- claimResult{r, err}
-		}()
-		f.waitForLockWaiters(t, 2)
-		release()
+	t.Run("an approval queued behind an upsert claims the replaced body, and nothing once the draft is retargeted", func(t *testing.T) {
+		for _, retarget := range []bool{false, true} {
+			f := newThreadDraftFixture(t, pool)
+			thread := "th-a-" + uuid.NewString()[:8]
+			var d *models.AIThreadDraft
+			var newer uuid.UUID
+			if retarget {
+				d, _, newer = pendingOnOlder(t, f, thread)
+			} else {
+				newer = f.message(thread, "inbox", "[EMAIL]", "Quote", base)
+				var err error
+				if d, _, err = f.repo.UpsertPendingDraftForThread(ctx, f.org, draftParams(thread, "old")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			release := f.lockDraft(t, d.ID)
+			up := make(chan upsertResult, 1)
+			go func() {
+				r, created, err := f.repo.UpsertPendingDraftForThread(ctx, f.org, draftParams(thread, "new"))
+				up <- upsertResult{r, created, err}
+			}()
+			f.waitForLockWaiters(t, 1)
+			cl := make(chan claimResult, 1)
+			go func() {
+				r, err := f.repo.ClaimDraftForApproval(ctx, f.org, d.ID, nil)
+				cl <- claimResult{r, err}
+			}()
+			f.waitForLockWaiters(t, 2)
+			release()
 
-		u, c := <-up, <-cl
-		if u.err != nil || u.created {
-			t.Fatalf("upsert: created=%v err=%v", u.created, u.err)
-		}
-		if c.err != nil || c.draft == nil {
-			t.Fatalf("claim: %+v err=%v", c.draft, c.err)
-		}
-		if c.draft.Body != "new" || *c.draft.SourceMessageID != newer || c.draft.ToAddr != "second@lead.test" || c.draft.Status != "approved" {
-			t.Fatalf("claim returned a version the upsert replaced: %+v", c.draft)
-		}
-		stored, _ := f.repo.GetDraft(ctx, f.org, d.ID)
-		if !sameSend(stored, c.draft) {
-			t.Fatalf("stored %+v differs from claimed %+v", stored, c.draft)
-		}
-		if n := f.pendingCount(t, "th-a1"); n != 0 {
-			t.Fatalf("%d pending drafts, want 0", n)
+			u, c := <-up, <-cl
+			if u.err != nil || u.created || *u.draft.SourceMessageID != newer || (u.draft.ID != d.ID) == !retarget {
+				t.Fatalf("retarget=%v upsert: %+v created=%v err=%v", retarget, u.draft, u.created, u.err)
+			}
+			if c.err != nil {
+				t.Fatalf("retarget=%v claim: %v", retarget, c.err)
+			}
+			if retarget {
+				// The reviewer approved the version answering the older message: nothing is sent.
+				if c.draft != nil {
+					t.Fatalf("claimed a retargeted draft through its old id: %+v", c.draft)
+				}
+				if n := f.pendingCount(t, thread); n != 1 {
+					t.Fatalf("%d pending drafts, want the retargeted one", n)
+				}
+				continue
+			}
+			if c.draft == nil || c.draft.Body != "new" || c.draft.Status != "approved" {
+				t.Fatalf("claim returned a version the upsert replaced: %+v", c.draft)
+			}
+			stored, _ := f.repo.GetDraft(ctx, f.org, d.ID)
+			if !sameSend(stored, c.draft) {
+				t.Fatalf("stored %+v differs from claimed %+v", stored, c.draft)
+			}
+			if n := f.pendingCount(t, thread); n != 0 {
+				t.Fatalf("%d pending drafts, want 0", n)
+			}
 		}
 	})
 
@@ -476,7 +503,7 @@ func TestLiveApproveThreadDraft(t *testing.T) {
 				release := f.lockDraft(t, d.ID)
 				cl := make(chan claimResult, 1)
 				go func() {
-					r, err := f.repo.ClaimDraftForApproval(ctx, f.org, d.ID, nil, nil)
+					r, err := f.repo.ClaimDraftForApproval(ctx, f.org, d.ID, nil)
 					cl <- claimResult{r, err}
 				}()
 				f.waitForLockWaiters(t, 1)
@@ -521,7 +548,7 @@ func TestLiveApproveThreadDraft(t *testing.T) {
 				wg.Add(2)
 				go func() {
 					defer wg.Done()
-					r, err := f.repo.ClaimDraftForApproval(ctx, f.org, d.ID, nil, nil)
+					r, err := f.repo.ClaimDraftForApproval(ctx, f.org, d.ID, nil)
 					claims <- claimResult{r, err}
 				}()
 				go func() {
@@ -542,8 +569,8 @@ func TestLiveApproveThreadDraft(t *testing.T) {
 					won = append(won, c.draft)
 				}
 			}
-			if len(won) != 1 {
-				t.Fatalf("iteration %d: %d approvals claimed the draft, want 1", i, len(won))
+			if len(won) > 1 {
+				t.Fatalf("iteration %d: %d approvals claimed the draft", i, len(won))
 			}
 			for u := range ups {
 				if u.err != nil && !errors.Is(u.err, ErrDraftAlreadySent) {
@@ -551,8 +578,12 @@ func TestLiveApproveThreadDraft(t *testing.T) {
 				}
 			}
 			stored, _ := f.repo.GetDraft(ctx, f.org, d.ID)
-			if !sameSend(stored, won[0]) {
-				t.Fatalf("iteration %d: stored %+v differs from claimed %+v", i, stored, won[0])
+			// Either an approval claimed the version it was shown, or a retarget moved the draft to a new id first.
+			if len(won) == 1 && (won[0].Body != "old" || !sameSend(stored, won[0])) {
+				t.Fatalf("iteration %d: stored %+v, claimed %+v", i, stored, won[0])
+			}
+			if len(won) == 0 && (stored != nil || f.pendingCount(t, thread) != 1) {
+				t.Fatalf("iteration %d: nothing claimed, yet the old id is %+v", i, stored)
 			}
 			if n := f.pendingCount(t, thread); n > 1 {
 				t.Fatalf("iteration %d: %d pending drafts", i, n)
@@ -567,7 +598,7 @@ func TestLiveApproveThreadDraft(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if c, err := f.repo.ClaimDraftForApproval(ctx, f.org, first.ID, nil, nil); err != nil || c == nil {
+		if c, err := f.repo.ClaimDraftForApproval(ctx, f.org, first.ID, nil); err != nil || c == nil {
 			t.Fatalf("claim: %v %v", c, err)
 		}
 		// Synced after the approval but dated before it.
@@ -604,41 +635,19 @@ func TestLiveApproveThreadDraft(t *testing.T) {
 			org     uuid.UUID
 			allowed []uuid.UUID
 		}{"foreign org": {uuid.New(), nil}, "outside allowlist": {f.org, []uuid.UUID{uuid.New()}}, "empty allowlist": {f.org, []uuid.UUID{}}} {
-			if got, err := f.repo.ClaimDraftForApproval(ctx, c.org, d.ID, c.allowed, nil); err != nil || got != nil {
+			if got, err := f.repo.ClaimDraftForApproval(ctx, c.org, d.ID, c.allowed); err != nil || got != nil {
 				t.Fatalf("%s: claimed %+v err=%v", name, got, err)
 			}
 		}
 		if n := f.pendingCount(t, "th-f"); n != 1 {
 			t.Fatal("a refused claim resolved the draft")
 		}
-		got, err := f.repo.ClaimDraftForApproval(ctx, f.org, d.ID, []uuid.UUID{f.account}, nil)
+		got, err := f.repo.ClaimDraftForApproval(ctx, f.org, d.ID, []uuid.UUID{f.account})
 		if err != nil || got == nil || got.Body != "x" {
 			t.Fatalf("inside allowlist: %+v err=%v", got, err)
 		}
-		if again, err := f.repo.ClaimDraftForApproval(ctx, f.org, d.ID, nil, nil); err != nil || again != nil {
+		if again, err := f.repo.ClaimDraftForApproval(ctx, f.org, d.ID, nil); err != nil || again != nil {
 			t.Fatalf("second claim: %+v err=%v", again, err)
-		}
-	})
-
-	t.Run("a claim naming the message the reviewer saw is refused once the draft answers another", func(t *testing.T) {
-		f := newThreadDraftFixture(t, pool)
-		f.message("th-g", "inbox", "[EMAIL]", "Hi", base)
-		d, _, err := f.repo.UpsertPendingDraftForThread(ctx, f.org, draftParams("th-g", "x"))
-		if err != nil || d.SourceMessageID == nil {
-			t.Fatalf("draft %+v err=%v", d, err)
-		}
-		seen := *d.SourceMessageID
-		f.message("th-g", "inbox", "[EMAIL]", "Again", base.Add(time.Hour))
-		moved, _, err := f.repo.UpsertPendingDraftForThread(ctx, f.org, draftParams("th-g", "y"))
-		if err != nil || moved.ID != d.ID || moved.SourceMessageID == nil || *moved.SourceMessageID == seen {
-			t.Fatalf("not retargeted: %+v err=%v", moved, err)
-		}
-		if got, err := f.repo.ClaimDraftForApproval(ctx, f.org, d.ID, nil, &seen); err != nil || got != nil {
-			t.Fatalf("claimed a retargeted draft: %+v err=%v", got, err)
-		}
-		got, err := f.repo.ClaimDraftForApproval(ctx, f.org, d.ID, nil, moved.SourceMessageID)
-		if err != nil || got == nil || got.Body != "y" {
-			t.Fatalf("current source: %+v err=%v", got, err)
 		}
 	})
 }

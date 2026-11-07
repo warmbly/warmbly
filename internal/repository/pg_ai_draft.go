@@ -74,9 +74,8 @@ type AIDraftRepository interface {
 	RevertApprovedToPending(ctx context.Context, orgID, id uuid.UUID) (bool, error)
 	// ClaimDraftForApproval flips a PENDING draft to approved and returns the row as
 	// claimed, which is exactly what the caller sends. nil when the draft is missing,
-	// already resolved, (when allowed is non-nil) in a mailbox outside allowed, or
-	// (when source is non-nil) no longer answering that inbound message.
-	ClaimDraftForApproval(ctx context.Context, orgID, id uuid.UUID, allowed []uuid.UUID, source *uuid.UUID) (*models.AIThreadDraft, error)
+	// already resolved, or (when allowed is non-nil) in a mailbox outside allowed.
+	ClaimDraftForApproval(ctx context.Context, orgID, id uuid.UUID, allowed []uuid.UUID) (*models.AIThreadDraft, error)
 	// UpsertPendingDraftForThread writes a reply draft for the org's newest inbound
 	// message on the thread: it replaces the body of the thread's pending draft, or
 	// inserts a pending one filled like the inbox agent's. Approved and discarded
@@ -194,7 +193,7 @@ func (r *aiDraftRepository) SetDraftStatus(ctx context.Context, orgID, id uuid.U
 	return tag.RowsAffected() > 0, nil
 }
 
-func (r *aiDraftRepository) ClaimDraftForApproval(ctx context.Context, orgID, id uuid.UUID, allowed []uuid.UUID, source *uuid.UUID) (*models.AIThreadDraft, error) {
+func (r *aiDraftRepository) ClaimDraftForApproval(ctx context.Context, orgID, id uuid.UUID, allowed []uuid.UUID) (*models.AIThreadDraft, error) {
 	restricted := allowed != nil
 	if !restricted {
 		allowed = []uuid.UUID{}
@@ -205,8 +204,7 @@ func (r *aiDraftRepository) ClaimDraftForApproval(ctx context.Context, orgID, id
 		UPDATE ai_thread_drafts SET status = 'approved', updated_at = NOW()
 		WHERE id = $1 AND organization_id = $2 AND status = 'pending'
 		  AND (NOT $3::boolean OR email_account_id = ANY($4::uuid[]))
-		  AND ($5::uuid IS NULL OR source_message_id IS NOT DISTINCT FROM $5::uuid)
-		RETURNING `+aiDraftCols, id, orgID, restricted, allowed, source), &d)
+		RETURNING `+aiDraftCols, id, orgID, restricted, allowed), &d)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -314,7 +312,8 @@ func (r *aiDraftRepository) upsertPendingDraftOnce(ctx context.Context, orgID uu
 			}
 			return &d, false, tx.Commit(ctx)
 		}
-		// Re-point recipient, subject, threading, sender links and mailbox at the newest message.
+		// Re-point recipient, subject, threading, sender links and mailbox at the newest message,
+		// under a new id so an approval of the version a reviewer saw finds nothing to send.
 		contactID := contactForDraft(ctx, tx, orgID, in.sender)
 		var campaignID *uuid.UUID
 		if contactID != nil {
@@ -322,7 +321,7 @@ func (r *aiDraftRepository) upsertPendingDraftOnce(ctx context.Context, orgID uu
 		}
 		if err := scanAIDraft(tx.QueryRow(ctx, `
 			UPDATE ai_thread_drafts
-			SET body = $2, model = $3, intent_class = $4, confidence = $5,
+			SET id = gen_random_uuid(), body = $2, model = $3, intent_class = $4, confidence = $5,
 			    source_message_id = $6, to_addr = $7, subject = $8, in_reply_to = $9,
 			    contact_id = $10, campaign_id = $11, email_account_id = $12, owner_user_id = $13, updated_at = NOW()
 			WHERE id = $1 AND organization_id = $14 AND status = 'pending'
