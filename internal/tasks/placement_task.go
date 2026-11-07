@@ -268,6 +268,25 @@ func (s *tasksService) renderPlacementBase(ctx context.Context, test *models.Pla
 		}
 	}
 
+	base := s.renderCopyBase(ctx, orgID, campaign, sequenceID, account, contact, renderAI{
+		resolve: realContact && test.CampaignID != nil && sequenceID != uuid.Nil,
+		drop:    !realContact,
+	}, rawSubject, rawHTML, rawPlain)
+	if base.Refusal == "" && test.CampaignID != nil {
+		base.Attachments = s.campaignAttachmentRefs(ctx, campaign.ID, sequenceID)
+	}
+	return base
+}
+
+// renderAI is what a render does with the copy's AI blocks: generate them for
+// the contact, drop them because there is no lead to generate for, or neither.
+type renderAI struct{ resolve, drop bool }
+
+// renderCopyBase renders raw copy for one contact the way HandleCampaignTask
+// builds a send: merge fields and spintax, AI blocks, plain-text rule,
+// unsubscribe link and UTM tags, plus the signature and opt-out that go on
+// after tracking. Form links are the caller's, resolved or stripped already.
+func (s *tasksService) renderCopyBase(ctx context.Context, orgID uuid.UUID, campaign *models.Campaign, sequenceID uuid.UUID, account *models.Email, contact models.Contact, ai renderAI, rawSubject, rawHTML, rawPlain string) placementBase {
 	optOut := s.resolveOptOut(ctx, orgID, campaign)
 	var unsubscribeURL string
 	if s.unsubLinks != nil && s.unsubLinks.Enabled() {
@@ -284,7 +303,7 @@ func (s *tasksService) renderPlacementBase(ctx context.Context, test *models.Pla
 
 	// AI blocks resolve for the chosen lead through the send path's own cache,
 	// so every probe reads the copy that lead would get.
-	if realContact && test.CampaignID != nil && sequenceID != uuid.Nil && s.aiProvider != nil && s.aiCredits != nil {
+	if ai.resolve && s.aiProvider != nil && s.aiCredits != nil {
 		var err error
 		subject, bodyHTML, bodyPlain, err = s.resolveAIVariables(ctx, campaign, &contact, sequenceID, subject, bodyHTML, bodyPlain)
 		if err != nil {
@@ -294,7 +313,7 @@ func (s *tasksService) renderPlacementBase(ctx context.Context, test *models.Pla
 
 	// With no lead there is nothing to generate for, so the blocks drop out
 	// the way a block that cannot be generated does.
-	if !realContact {
+	if ai.drop {
 		subject = aiVarTokenRE.ReplaceAllString(subject, "")
 		bodyHTML = aiVarTokenRE.ReplaceAllString(aiVarSpanRE.ReplaceAllString(bodyHTML, ""), "")
 		bodyPlain = aiVarTokenRE.ReplaceAllString(bodyPlain, "")
@@ -333,9 +352,6 @@ func (s *tasksService) renderPlacementBase(ctx context.Context, test *models.Pla
 	}
 	if campaign.UnsubscribeHeader {
 		base.HeaderURL = unsubscribeURL
-	}
-	if test.CampaignID != nil {
-		base.Attachments = s.campaignAttachmentRefs(ctx, campaign.ID, sequenceID)
 	}
 	return base
 }
