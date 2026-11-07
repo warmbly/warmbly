@@ -39,12 +39,6 @@ func (s *uniboxService) OverviewForMailboxes(ctx context.Context, orgID uuid.UUI
 		errs.CaptureException(err)
 		return nil, errx.InternalError()
 	}
-	if len(o.Mailboxes) > OverviewMaxMailboxes {
-		o.Mailboxes = o.Mailboxes[:OverviewMaxMailboxes]
-	}
-	if len(o.Tags) > OverviewMaxTags {
-		o.Tags = o.Tags[:OverviewMaxTags]
-	}
 	o.ScheduledPendingMax = int64(config.MaxPendingScheduledSendsPerOrg)
 	return o, nil
 }
@@ -82,12 +76,7 @@ func (s *uniboxService) computeOverview(ctx context.Context, scope overviewScope
 	if err != nil {
 		return nil, err
 	}
-	if len(o.Mailboxes) > OverviewMaxMailboxes {
-		o.Mailboxes = o.Mailboxes[:OverviewMaxMailboxes]
-	}
-	if len(o.Tags) > OverviewMaxTags {
-		o.Tags = o.Tags[:OverviewMaxTags]
-	}
+	// Every mailbox and tag is listed; the rail searches and collapses them.
 	// Scheduled-pending count comes from the tasks table; folded into
 	// the same response so the scope rail shows it without a second
 	// round-trip. A failure here is non-fatal — the rest of the

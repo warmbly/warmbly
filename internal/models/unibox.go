@@ -378,10 +378,11 @@ type MailSearchParams struct {
 	// contact, or, without CampaignID, exchanged with the contact's address.
 	ContactID *uuid.UUID
 	// EmailAccountIDs restricts results to messages received by one of
-	// these mailboxes. Empty = no account filter. The frontend tag
-	// filter resolves client-side to the matching account IDs and
-	// passes them here.
+	// these mailboxes. Empty = no account filter.
 	EmailAccountIDs []uuid.UUID
+	// TagIDs restricts results to mailboxes carrying any of these workspace
+	// mailbox tags, resolved in SQL. Combined with EmailAccountIDs it is the intersection.
+	TagIDs []uuid.UUID
 	// Snoozed scopes the result set:
 	//   nil   → exclude snoozed threads (default inbox behaviour)
 	//   true  → only snoozed threads

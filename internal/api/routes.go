@@ -580,6 +580,10 @@ func Run(
 				// Bulk tag add/remove across many mailboxes (set semantics,
 				// naturally idempotent). Static path beside /:id like /verify.
 				emails.PATCH("/tags", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), h.BulkTagEmails)
+				// Bulk remove, warmup and on/off for the mailboxes list; each id is held to the allowlist like /:id.
+				emails.POST("/bulk/delete", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), h.BulkDeleteEmails)
+				emails.POST("/bulk/warmup", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), h.BulkWarmupEmails)
+				emails.POST("/bulk/status", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), h.BulkStatusEmails)
 				// How many mailboxes the workspace holds and may hold, and why.
 				emails.GET("/allowance", m.RequireOrganization(), m.RequireAccess(models.PermManageEmails, models.APIPermReadEmails), h.GetMailboxAllowance)
 				emails.GET("/:id/track", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), middleware.RequireEmailAccountParam("id"), h.GetEmailTrackingDomain)

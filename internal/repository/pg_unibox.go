@@ -897,6 +897,15 @@ func uniboxSearchQuery(orgID uuid.UUID, params *models.MailSearchParams) (string
 		args = append(args, params.EmailAccountIDs)
 		argPos++
 	}
+	if len(params.TagIDs) > 0 {
+		tagged := fmt.Sprintf(`(SELECT et.email_id FROM email_tags et JOIN tags tg ON tg.id = et.tag_id
+			WHERE tg.organization_id = $1 AND et.tag_id = ANY($%d))`, argPos)
+		inner += ` AND ue.email_id IN ` + tagged
+		agentMailboxScope += ` AND d.email_account_id IN ` + tagged
+		campaignMailboxScope += ` AND cm.email_id IN ` + tagged
+		args = append(args, params.TagIDs)
+		argPos++
+	}
 
 	outerCols := make([]string, len(mailFieldsPreview))
 	for i, c := range mailFieldsPreview {
@@ -1817,9 +1826,10 @@ func (r *uniboxRepository) ListSnoozes(ctx context.Context, orgID, userID uuid.U
 
 // ── Overview ───────────────────────────────────────────────────────────
 //
-// One round trip computes everything the scope rail + top metric strip
-// needs. We use CTEs so each metric is a single sequential scan rather
-// than N+M queries from the client.
+// One statement computes everything the scope rail and metric strip need.
+// The organization's messages are read once into a materialized set carrying
+// the facts every counter shares (snoozed, automated conversation, pending
+// agent draft), and each counter is a hash aggregate over that set.
 
 func (r *uniboxRepository) Overview(ctx context.Context, orgID uuid.UUID) (*models.UniboxOverview, error) {
 	return r.overview(ctx, orgID, nil)
@@ -1834,20 +1844,189 @@ func (r *uniboxRepository) OverviewForMailboxes(ctx context.Context, orgID uuid.
 	return r.overview(ctx, orgID, accountIDs)
 }
 
-func (r *uniboxRepository) overview(ctx context.Context, orgID uuid.UUID, accountIDs []uuid.UUID) (*models.UniboxOverview, error) {
-	// A uuid renders as hex and dashes only, so the list inlines safely and
-	// keeps every query's placeholders as they are.
-	onlyMailboxes := func(col string) string {
-		if len(accountIDs) == 0 {
-			return ""
-		}
-		ids := make([]string, len(accountIDs))
-		for i, id := range accountIDs {
-			ids[i] = "'" + id.String() + "'"
-		}
-		return " AND " + col + " IN (" + strings.Join(ids, ", ") + ")"
+// overviewAutomatedOrgWide judges a conversation over every mailbox of the
+// organization, as automatedThreadSQL does, when the scanned set is narrower.
+const overviewAutomatedOrgWide = `
+		auto AS (
+			SELECT am.thread_id,
+				bool_or(am.automated)
+				AND NOT COALESCE(bool_or(NOT am.automated AND am.folder NOT IN ('sent', 'drafts', 'spam', 'trash')), false) AS auto
+			FROM unibox_emails am
+			WHERE am.email_id IN (SELECT id FROM email_accounts WHERE organization_id = $1)
+			  AND am.thread_id IN (SELECT thread_id FROM raw WHERE thread_id <> '')
+			GROUP BY am.thread_id
+		),`
+
+// overviewAutomatedScanned is the same judgement when the scanned set is the whole organization.
+const overviewAutomatedScanned = `
+		auto AS (
+			SELECT thread_id,
+				bool_or(automated)
+				AND NOT COALESCE(bool_or(NOT automated AND folder NOT IN ('sent', 'drafts', 'spam', 'trash')), false) AS auto
+			FROM raw
+			WHERE thread_id <> ''
+			GROUP BY thread_id
+		),`
+
+func overviewSQL(limited bool) string {
+	auto := overviewAutomatedScanned
+	if limited {
+		auto = overviewAutomatedOrgWide
 	}
-	mailboxes := "(SELECT id FROM email_accounts WHERE organization_id = $1" + onlyMailboxes("id") + ")"
+	// Counts are per THREAD, matching the thread-collapsed list; unthreaded
+	// mail is its own conversation. Archived mail counts for All mail and
+	// nowhere else, and snoozed conversations stay out of every count but
+	// Snoozed, so a badge never counts rows its view then hides.
+	return `
+		WITH mb AS (
+			SELECT id FROM email_accounts
+			WHERE organization_id = $1 AND ($4::uuid[] IS NULL OR id = ANY($4::uuid[]))
+		),
+		raw AS MATERIALIZED (
+			SELECT e.id, e.thread_id, e.user_id, e.email_id, e.folder, e.seen, e.automated, e.internal_date, e.from_addr
+			FROM unibox_emails e
+			WHERE e.email_id IN (SELECT id FROM mb)
+		),` + auto + `
+		snz AS (
+			SELECT DISTINCT user_id, thread_id FROM unibox_snoozes
+			WHERE organization_id = $1 AND snoozed_until > NOW()
+		),
+		agent AS (
+			SELECT DISTINCT thread_id FROM ai_thread_drafts
+			WHERE organization_id = $1 AND status = 'pending' AND email_account_id IN (SELECT id FROM mb)
+		),
+		m AS MATERIALIZED (
+			SELECT
+				COALESCE(NULLIF(raw.thread_id, ''), raw.id::text) AS tkey,
+				raw.thread_id, raw.email_id, raw.folder, raw.seen, raw.automated, raw.internal_date, raw.from_addr,
+				snz.thread_id IS NOT NULL AS is_snoozed,
+				agent.thread_id IS NOT NULL AS has_agent_draft,
+				CASE WHEN raw.thread_id = '' THEN raw.automated ELSE COALESCE(auto.auto, false) END AS thread_automated
+			FROM raw
+			LEFT JOIN snz ON snz.user_id = raw.user_id AND snz.thread_id = raw.thread_id
+			LEFT JOIN agent ON agent.thread_id = raw.thread_id
+			LEFT JOIN auto ON auto.thread_id = raw.thread_id
+		),
+		ue AS (
+			SELECT tkey, from_addr, internal_date, seen, automated, is_snoozed, has_agent_draft,
+				folder = 'drafts' AS is_draft,
+				folder IN ` + foldersOutbound + ` AS is_ours,
+				folder = 'archive' AS is_archived
+			FROM m
+			WHERE folder NOT IN ` + foldersOutsideAllMail + `
+		),
+		threads AS (
+			SELECT
+				tkey,
+				bool_or(is_snoozed)                              AS is_snoozed,
+				bool_or(NOT is_archived)                         AS working,
+				bool_or((is_draft OR (NOT is_archived AND has_agent_draft)) AND NOT is_snoozed) AS has_draft,
+				bool_or(NOT seen) FILTER (WHERE NOT is_archived) AS has_unread,
+				max(internal_date) FILTER (WHERE NOT is_archived) AS last_date,
+				-- The same rule as automatedThreadSQL, over rows already in hand.
+				bool_or(automated) AND NOT COALESCE(bool_or(NOT automated AND NOT is_ours), false) AS is_automated
+			FROM ue
+			GROUP BY tkey
+		),
+		-- Byte order is enough to group by; a linguistic sort of every key is what this would cost otherwise.
+		latest_per_thread AS (
+			SELECT DISTINCT ON (tkey COLLATE "C") tkey, from_addr
+			FROM ue
+			WHERE NOT is_snoozed AND NOT is_archived
+			ORDER BY tkey COLLATE "C", internal_date DESC
+		),
+		-- A header naming one of our addresses contains its domain, so this cheap test runs before the exact one.
+		own_domains AS (
+			SELECT DISTINCT '%@' || lower(split_part(email, '@', 2)) || '%' AS pattern
+			FROM email_accounts WHERE organization_id = $1
+		),
+		folder_threads AS (
+			SELECT folder, tkey, bool_or(NOT seen) AS unread
+			FROM m
+			WHERE NOT is_snoozed AND NOT (folder = 'inbox' AND thread_automated)
+			GROUP BY folder, tkey
+		),
+		-- One row per (mailbox, conversation) in the working views; the mailbox and tag counters share it.
+		box_threads AS (
+			SELECT email_id, tkey, bool_or(NOT seen) AS unread
+			FROM m
+			WHERE folder NOT IN ` + foldersOutsideWorkingViews + ` AND NOT thread_automated AND NOT is_snoozed
+			GROUP BY email_id, tkey
+		),
+		box_counts AS (
+			SELECT email_id, COUNT(*) FILTER (WHERE unread) AS unread, COUNT(*) AS total
+			FROM box_threads
+			GROUP BY email_id
+		),
+		tag_counts AS (
+			SELECT tag_id, COUNT(*) FILTER (WHERE unread) AS unread, COUNT(*) AS total
+			FROM (
+				SELECT et.tag_id, bt.tkey, bool_or(bt.unread) AS unread
+				FROM box_threads bt
+				JOIN email_tags et ON et.email_id = bt.email_id
+				GROUP BY et.tag_id, bt.tkey
+			) tt
+			GROUP BY tag_id
+		),
+		label_threads AS (
+			SELECT thread_id, bool_or(NOT seen) AS has_unread
+			FROM m
+			WHERE folder NOT IN ` + foldersOutsideWorkingViews + ` AND NOT is_snoozed
+			GROUP BY thread_id
+		)
+		SELECT
+			COUNT(*) FILTER (WHERE NOT t.is_snoozed),
+			COUNT(*) FILTER (WHERE NOT t.is_snoozed AND t.working AND NOT t.is_automated AND t.has_unread),
+			COUNT(*) FILTER (WHERE NOT t.is_snoozed AND t.working AND NOT t.is_automated AND t.last_date >= $2),
+			COUNT(*) FILTER (WHERE NOT t.is_snoozed AND t.working AND NOT t.is_automated AND t.last_date >= $3),
+			COUNT(*) FILTER (WHERE t.is_snoozed AND t.working),
+			COUNT(*) FILTER (WHERE NOT t.is_snoozed AND t.working AND t.is_automated),
+			COUNT(*) FILTER (WHERE NOT t.is_snoozed AND t.working AND t.is_automated AND t.has_unread),
+			(SELECT COUNT(*) FROM latest_per_thread l
+				WHERE CASE WHEN lower(array_to_string(l.from_addr, ' ')) LIKE ANY (SELECT pattern FROM own_domains)
+					THEN ` + ownAddressSQL("l.from_addr", "$1") + ` ELSE false END),
+			(SELECT COUNT(*) FROM ai_thread_drafts d
+				WHERE d.organization_id = $1 AND d.status = 'pending' AND d.email_account_id IN (SELECT id FROM mb)),
+			COUNT(*) FILTER (WHERE t.has_draft),
+			(SELECT COALESCE(json_agg(json_build_object('folder', f.folder, 'unread', f.unread, 'total', f.total)), '[]')
+				FROM (SELECT folder, COUNT(*) FILTER (WHERE unread) AS unread, COUNT(*) AS total
+					FROM folder_threads GROUP BY folder) f),
+			(SELECT COALESCE(json_agg(json_build_object('id', ea.id, 'email', ea.email, 'name', ea.name,
+					'unread', COALESCE(bc.unread, 0), 'total', COALESCE(bc.total, 0)) ORDER BY ea.email), '[]')
+				FROM email_accounts ea
+				LEFT JOIN box_counts bc ON bc.email_id = ea.id
+				WHERE ea.organization_id = $1 AND ea.id IN (SELECT id FROM mb)),
+			(SELECT COALESCE(json_agg(json_build_object('id', tg.id, 'title', tg.title, 'color', tg.color,
+					'unread', COALESCE(tc.unread, 0), 'total', COALESCE(tc.total, 0)) ORDER BY tg.position, tg.title), '[]')
+				FROM tags tg
+				LEFT JOIN tag_counts tc ON tc.tag_id = tg.id
+				-- A mailbox-limited view lists only the tags on its own mailboxes.
+				WHERE tg.organization_id = $1
+				  AND ($4::uuid[] IS NULL OR EXISTS (
+					SELECT 1 FROM email_tags et2 WHERE et2.tag_id = tg.id AND et2.email_id IN (SELECT id FROM mb)
+				  ))),
+			(SELECT COALESCE(json_agg(json_build_object('id', cc.id, 'title', cc.title, 'color', cc.color,
+					'unread', cc.unread, 'total', cc.total) ORDER BY cc.position, cc.title), '[]')
+				FROM (
+					SELECT c.id, c.title, c.color, c.position,
+						COUNT(*) FILTER (WHERE lt.thread_id IS NOT NULL AND lt.has_unread) AS unread,
+						COUNT(*) FILTER (WHERE lt.thread_id IS NOT NULL)                   AS total
+					FROM categories c
+					LEFT JOIN unibox_thread_labels utl ON utl.category_id = c.id AND utl.organization_id = c.organization_id
+					LEFT JOIN label_threads lt ON lt.thread_id = utl.thread_id
+					WHERE c.organization_id = $1
+					  AND ($4::uuid[] IS NULL OR EXISTS (
+						SELECT 1 FROM unibox_thread_labels visible_label
+						WHERE visible_label.organization_id = c.organization_id AND visible_label.category_id = c.id
+						  AND visible_label.thread_id IN (SELECT thread_id FROM raw)
+					  ))
+					GROUP BY c.id, c.title, c.color, c.position
+				) cc)
+		FROM threads t
+	`
+}
+
+func (r *uniboxRepository) overview(ctx context.Context, orgID uuid.UUID, accountIDs []uuid.UUID) (*models.UniboxOverview, error) {
 	now := time.Now().UTC()
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	weekStart := todayStart.AddDate(0, 0, -6)
@@ -1857,76 +2036,25 @@ func (r *uniboxRepository) overview(ctx context.Context, orgID uuid.UUID, accoun
 		WindowTodayStart: todayStart,
 		WindowWeekStart:  weekStart,
 	}
+	var only any
+	if accountIDs != nil {
+		only = accountIDs
+	}
 
-	// Single aggregate over unibox_emails — cheap. Counts are per
-	// THREAD (matching the thread-collapsed list), not per message, so
-	// the rail numbers line up with the rows the user sees. Empty
-	// thread_ids fall back to row id so unthreaded mail counts as its
-	// own conversation.
-	//
-	// Archived mail counts for All mail and nowhere else, so every other
-	// counter is computed over the thread's unarchived messages only. A rail
-	// number that counts rows its own view then hides is what made Archive
-	// look like it had done nothing.
-	err := r.db.QueryRow(ctx, `
-		WITH ue AS (
-			SELECT
-				COALESCE(NULLIF(e.thread_id, ''), e.id::text) AS tkey,
-				e.from_addr,
-				e.internal_date,
-				e.seen,
-				e.automated,
-				e.folder = 'drafts' AS is_draft,
-				EXISTS (
-					SELECT 1 FROM ai_thread_drafts d
-					WHERE d.organization_id = $1 AND d.thread_id = e.thread_id AND d.status = 'pending'
-					  AND d.email_account_id IN `+mailboxes+`
-				) AS has_agent_draft,
-				e.folder IN ('sent', 'drafts') AS is_ours,
-				e.folder = 'archive' AS is_archived,
-				EXISTS (
-					SELECT 1 FROM unibox_snoozes s
-					WHERE s.organization_id = $1 AND s.user_id = e.user_id
-					  AND s.thread_id = e.thread_id
-					  AND s.snoozed_until > NOW()
-				) AS is_snoozed
-			FROM unibox_emails e
-			WHERE e.email_id IN `+mailboxes+`
-			  AND e.folder NOT IN `+foldersOutsideAllMail+`
-		),
-		threads AS (
-			SELECT
-				tkey,
-				bool_or(is_snoozed)                             AS is_snoozed,
-				bool_or(NOT is_archived)                        AS working,
-				bool_or((is_draft OR (NOT is_archived AND has_agent_draft)) AND NOT is_snoozed) AS has_draft,
-				bool_or(NOT seen) FILTER (WHERE NOT is_archived) AS has_unread,
-				max(internal_date) FILTER (WHERE NOT is_archived) AS last_date,
-				-- The same rule as automatedThreadSQL, over rows already in hand.
-				bool_or(automated) AND NOT COALESCE(bool_or(NOT automated AND NOT is_ours), false) AS is_automated
-			FROM ue
-			GROUP BY tkey
-		),
-		latest_per_thread AS (
-			SELECT DISTINCT ON (tkey) tkey, from_addr
-			FROM ue
-			WHERE NOT is_snoozed AND NOT is_archived
-			ORDER BY tkey, internal_date DESC
-		)
-		SELECT
-			COUNT(*) FILTER (WHERE NOT t.is_snoozed)                                          AS total,
-			COUNT(*) FILTER (WHERE NOT t.is_snoozed AND t.working AND NOT t.is_automated AND t.has_unread)      AS unread,
-			COUNT(*) FILTER (WHERE NOT t.is_snoozed AND t.working AND NOT t.is_automated AND t.last_date >= $2) AS today,
-			COUNT(*) FILTER (WHERE NOT t.is_snoozed AND t.working AND NOT t.is_automated AND t.last_date >= $3) AS week,
-			COUNT(*) FILTER (WHERE t.is_snoozed AND t.working)                                                  AS snoozed,
-			COUNT(*) FILTER (WHERE NOT t.is_snoozed AND t.working AND t.is_automated)                           AS automated,
-			COUNT(*) FILTER (WHERE NOT t.is_snoozed AND t.working AND t.is_automated AND t.has_unread)          AS automated_unread,
-			(SELECT COUNT(*) FROM latest_per_thread l WHERE `+ownAddressSQL("l.from_addr", "$1")+`) AS awaiting,
-			(SELECT COUNT(*) FROM ai_thread_drafts d
-				WHERE d.organization_id = $1 AND d.status = 'pending' AND d.email_account_id IN `+mailboxes+`) AS awaiting_agent_draft,
-			COUNT(*) FILTER (WHERE t.has_draft) AS drafts
-		FROM threads t
-	`, orgID, todayStart, weekStart).Scan(
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	// The plan is cheap hash aggregates; JIT compiling it costs more than running it.
+	if _, err := tx.Exec(ctx, `SET LOCAL jit = off`); err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `SET LOCAL work_mem = '64MB'`); err != nil {
+		return nil, err
+	}
+	var folders, mailboxes, tags, categories []byte
+	err = tx.QueryRow(ctx, overviewSQL(accountIDs != nil), orgID, todayStart, weekStart, only).Scan(
 		&overview.Total,
 		&overview.Unread,
 		&overview.Today,
@@ -1937,41 +2065,28 @@ func (r *uniboxRepository) overview(ctx context.Context, orgID uuid.UUID, accoun
 		&overview.AwaitingReply,
 		&overview.AwaitingAgentDraft,
 		&overview.Drafts,
+		&folders, &mailboxes, &tags, &categories,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	// Per-folder counters, per THREAD like everything else. Zero-filled
-	// over all six canonical folders so the sidebar renders a stable list.
-	folderCounts := map[string]models.UniboxFolderOverview{}
-	// Snoozed threads are excluded, matching Search's default scope: a badge
-	// that counts rows the folder then hides reads as a bug.
-	folderRows, err := r.db.Query(ctx, `
-		SELECT
-			e.folder,
-			COUNT(DISTINCT COALESCE(NULLIF(e.thread_id, ''), e.id::text)) FILTER (WHERE NOT e.seen) AS unread,
-			COUNT(DISTINCT COALESCE(NULLIF(e.thread_id, ''), e.id::text))                            AS total
-		FROM unibox_emails e
-		WHERE e.email_id IN `+mailboxes+`
-		  AND NOT EXISTS (
-			SELECT 1 FROM unibox_snoozes s
-			WHERE s.organization_id = $1 AND s.user_id = e.user_id
-			  AND s.thread_id = e.thread_id
-			  AND s.snoozed_until > NOW()
-		  )
-		  AND NOT (e.folder = 'inbox' AND `+automatedThreadSQL("e.thread_id", "e.automated", "$1")+`)
-		GROUP BY e.folder
-	`, orgID)
-	if err != nil {
-		return nil, err
-	}
-	defer folderRows.Close()
-	for folderRows.Next() {
-		var f models.UniboxFolderOverview
-		if err := folderRows.Scan(&f.Folder, &f.Unread, &f.Total); err != nil {
-			return nil, err
+	var folderRows []models.UniboxFolderOverview
+	overview.Mailboxes = make([]models.UniboxMailboxOverview, 0)
+	overview.Tags = make([]models.UniboxTagOverview, 0)
+	overview.Categories = make([]models.UniboxCategoryOverview, 0)
+	for _, part := range []struct {
+		raw []byte
+		dst any
+	}{{folders, &folderRows}, {mailboxes, &overview.Mailboxes}, {tags, &overview.Tags}, {categories, &overview.Categories}} {
+		if err := json.Unmarshal(part.raw, part.dst); err != nil {
+			return nil, fmt.Errorf("unibox overview: decode: %w", err)
 		}
+	}
+
+	// Zero-filled over the canonical folders so the sidebar renders a stable list.
+	folderCounts := make(map[string]models.UniboxFolderOverview, len(folderRows))
+	for _, f := range folderRows {
 		folderCounts[f.Folder] = f
 	}
 	overview.Folders = make([]models.UniboxFolderOverview, 0, len(models.MailFolders))
@@ -1980,150 +2095,6 @@ func (r *uniboxRepository) overview(ctx context.Context, orgID uuid.UUID, accoun
 		f.Folder = name
 		overview.Folders = append(overview.Folders, f)
 	}
-
-	// Per-mailbox counters. LEFT JOIN against unibox_emails so empty
-	// mailboxes still show up in the rail with a zero count. Counts are
-	// per THREAD (distinct thread key, empty-thread-safe) to match the
-	// collapsed list, not per message.
-	mailboxRows, err := r.db.Query(ctx, `
-		SELECT
-			ea.id,
-			ea.email,
-			ea.name,
-			COUNT(DISTINCT COALESCE(NULLIF(ue.thread_id, ''), ue.id::text)) FILTER (WHERE ue.id IS NOT NULL AND NOT ue.seen
-				AND NOT EXISTS (
-					SELECT 1 FROM unibox_snoozes s
-					WHERE s.organization_id = $1 AND s.user_id = ea.user_id AND s.thread_id = ue.thread_id AND s.snoozed_until > NOW()
-				)) AS unread,
-			COUNT(DISTINCT COALESCE(NULLIF(ue.thread_id, ''), ue.id::text)) FILTER (WHERE ue.id IS NOT NULL
-				AND NOT EXISTS (
-					SELECT 1 FROM unibox_snoozes s
-					WHERE s.organization_id = $1 AND s.user_id = ea.user_id AND s.thread_id = ue.thread_id AND s.snoozed_until > NOW()
-				)) AS total
-		FROM email_accounts ea
-		LEFT JOIN unibox_emails ue ON ue.email_id = ea.id AND ue.user_id = ea.user_id
-			AND ue.folder NOT IN `+foldersOutsideWorkingViews+`
-			AND NOT `+automatedThreadSQL("ue.thread_id", "ue.automated", "$1")+`
-		WHERE ea.organization_id = $1`+onlyMailboxes("ea.id")+`
-		GROUP BY ea.id, ea.email, ea.name
-		ORDER BY ea.email ASC
-	`, orgID)
-	if err != nil {
-		return nil, err
-	}
-	defer mailboxRows.Close()
-
-	overview.Mailboxes = make([]models.UniboxMailboxOverview, 0)
-	for mailboxRows.Next() {
-		var m models.UniboxMailboxOverview
-		if err := mailboxRows.Scan(&m.ID, &m.Email, &m.Name, &m.Unread, &m.Total); err != nil {
-			return nil, err
-		}
-		overview.Mailboxes = append(overview.Mailboxes, m)
-	}
-
-	// A mailbox-limited view lists only the tags on its own mailboxes.
-	tagsOnMailboxes := ""
-	if len(accountIDs) > 0 {
-		tagsOnMailboxes = " AND EXISTS (SELECT 1 FROM email_tags et2 WHERE et2.tag_id = t.id" + onlyMailboxes("et2.email_id") + ")"
-	}
-	// Per-tag counters. Mailbox tags live in `tags` + `email_tags`.
-	// Per THREAD (distinct thread key) so threads aren't over-counted by
-	// message multiplicity or the email_tags fan-out. Every join is on the
-	// workspace's organization_id, never on a member's user_id.
-	tagRows, err := r.db.Query(ctx, `
-		SELECT
-			t.id,
-			t.title,
-			t.color,
-			COUNT(DISTINCT COALESCE(NULLIF(ue.thread_id, ''), ue.id::text)) FILTER (WHERE ue.id IS NOT NULL AND NOT ue.seen
-				AND NOT EXISTS (
-					SELECT 1 FROM unibox_snoozes s
-					WHERE s.organization_id = $1 AND s.user_id = ue.user_id AND s.thread_id = ue.thread_id AND s.snoozed_until > NOW()
-				)) AS unread,
-			COUNT(DISTINCT COALESCE(NULLIF(ue.thread_id, ''), ue.id::text)) FILTER (WHERE ue.id IS NOT NULL
-				AND NOT EXISTS (
-					SELECT 1 FROM unibox_snoozes s
-					WHERE s.organization_id = $1 AND s.user_id = ue.user_id AND s.thread_id = ue.thread_id AND s.snoozed_until > NOW()
-				)) AS total
-		FROM tags t
-		LEFT JOIN email_tags et ON et.tag_id = t.id
-		LEFT JOIN email_accounts ea ON ea.id = et.email_id AND ea.organization_id = t.organization_id
-		LEFT JOIN unibox_emails ue ON ue.email_id = ea.id
-			AND ue.folder NOT IN `+foldersOutsideWorkingViews+`
-			AND NOT `+automatedThreadSQL("ue.thread_id", "ue.automated", "$1")+onlyMailboxes("ue.email_id")+`
-		WHERE t.organization_id = $1`+tagsOnMailboxes+`
-		GROUP BY t.id, t.title, t.color, t.position
-		ORDER BY t.position ASC, t.title ASC
-	`, orgID)
-	if err != nil {
-		// Tags are optional; never let an empty tag join take the
-		// whole overview down.
-		overview.Tags = []models.UniboxTagOverview{}
-		return overview, nil
-	}
-	defer tagRows.Close()
-
-	overview.Tags = make([]models.UniboxTagOverview, 0)
-	for tagRows.Next() {
-		var t models.UniboxTagOverview
-		if err := tagRows.Scan(&t.ID, &t.Title, &t.Color, &t.Unread, &t.Total); err != nil {
-			return nil, err
-		}
-		overview.Tags = append(overview.Tags, t)
-	}
-
-	// Per-conversation-label counters. total / unread count THREADS (one
-	// row per (thread,category) in unibox_thread_labels), restricted to
-	// threads that still have a non-snoozed message. unread = the thread
-	// has any unseen message. Like tags, labels are optional — never let
-	// the join fail the whole overview.
-	overview.Categories = make([]models.UniboxCategoryOverview, 0)
-	categoriesOnMailboxes := ""
-	if accountIDs != nil {
-		categoriesOnMailboxes = ` AND EXISTS (
-			SELECT 1 FROM unibox_thread_labels visible_label
-			JOIN unibox_emails visible_message ON visible_message.thread_id = visible_label.thread_id
-			WHERE visible_label.organization_id = c.organization_id AND visible_label.category_id = c.id
-			  AND visible_message.email_id IN ` + mailboxes + `
-		)`
-	}
-	catRows, err := r.db.Query(ctx, `
-		WITH thread_state AS (
-			SELECT e.thread_id, bool_or(NOT e.seen) AS has_unread
-			FROM unibox_emails e
-			WHERE e.email_id IN `+mailboxes+`
-			  AND e.folder NOT IN `+foldersOutsideWorkingViews+`
-			  AND NOT EXISTS (
-				SELECT 1 FROM unibox_snoozes s
-				WHERE s.organization_id = $1 AND s.user_id = e.user_id AND s.thread_id = e.thread_id AND s.snoozed_until > NOW()
-			  )
-			GROUP BY e.thread_id
-		)
-		SELECT
-			c.id, c.title, c.color,
-			COUNT(*) FILTER (WHERE ts.thread_id IS NOT NULL AND ts.has_unread) AS unread,
-			COUNT(*) FILTER (WHERE ts.thread_id IS NOT NULL)                   AS total
-		FROM categories c
-		LEFT JOIN unibox_thread_labels utl ON utl.category_id = c.id AND utl.organization_id = c.organization_id
-		LEFT JOIN thread_state ts ON ts.thread_id = utl.thread_id
-		WHERE c.organization_id = $1`+categoriesOnMailboxes+`
-		GROUP BY c.id, c.title, c.color, c.position
-		ORDER BY c.position ASC, c.title ASC
-	`, orgID)
-	if err != nil {
-		return overview, nil
-	}
-	defer catRows.Close()
-
-	for catRows.Next() {
-		var cat models.UniboxCategoryOverview
-		if err := catRows.Scan(&cat.ID, &cat.Title, &cat.Color, &cat.Unread, &cat.Total); err != nil {
-			return overview, nil
-		}
-		overview.Categories = append(overview.Categories, cat)
-	}
-
 	return overview, nil
 }
 

@@ -37,12 +37,17 @@ These checks use existing grants on hosted and self-hosted instances and need no
 
 `PATCH /emails/:id` validates `warmup_start_time` and `warmup_end_time` together: the end must be later than the start on the same day. A partial time patch uses the other stored endpoint; an invalid pair returns `400`. Unrelated patches do not rewrite existing invalid hours. See [warmup hours](/guides/warmup/).
 
+`POST /emails/bulk/delete`, `/emails/bulk/warmup` and `/emails/bulk/status` apply one action to up to 500 mailboxes through the same path as the single-mailbox routes and answer with a result per mailbox, so one failure does not stop the rest. Warmup and status calls set a state and are safe to retry; send an `Idempotency-Key` to replay a delete's first response. See [acting on many mailboxes](/api/reference/mailboxes/#act-on-many-mailboxes).
+
 | Method | Path | API Permission |
 |--------|------|----------------|
 | GET | `/emails` | `READ_EMAILS` |
 | GET | `/emails/:id` | `READ_EMAILS` |
 | PATCH | `/emails/:id` | `WRITE_EMAILS` |
 | PATCH | `/emails/tags` | `WRITE_EMAILS` |
+| POST | `/emails/bulk/delete` | `WRITE_EMAILS` |
+| POST | `/emails/bulk/warmup` | `WRITE_EMAILS` |
+| POST | `/emails/bulk/status` | `WRITE_EMAILS` |
 | GET | `/emails/allowance` | `READ_EMAILS` |
 | GET | `/emails/:id/track` | `READ_EMAILS` |
 | PATCH | `/emails/:id/track` | `WRITE_EMAILS` |

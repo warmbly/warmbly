@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast/headless'
 import { fmtUsd } from '@/lib/money'
-import { useQueryClient, type QueryKey } from '@tanstack/react-query'
+import { partialMatchKey, useQueryClient, type QueryKey } from '@tanstack/react-query'
 import { useSocket } from './context/socket'
 import { useAppStore } from '@/stores'
 import { useUserProfile } from './context/user'
@@ -14,16 +14,21 @@ import {
   createRefreshCoalescer,
   type QueryMatch,
 } from '@/lib/realtime/refreshCoalescer'
+import { createListHeadRefresh } from '@/lib/api/hooks/app/unibox/refreshListHead'
 
 // What an inbox event moves besides its own thread; refreshed through the coalescer, never per event.
 const INBOX_AGGREGATES: QueryKey[] = [
-  ['unibox', 'overview'],
   ['unibox', 'unseen-count'],
   ['unibox', 'search'],
   ['unibox', 'incoming'],
   ['unibox', 'scheduled'],
   ['analytics'],
 ]
+
+const OVERVIEW_KEY: QueryKey = ['unibox', 'overview']
+// The overview recounts the whole workspace's mail, so a stream of arrivals refreshes it at most this often.
+const OVERVIEW_REFRESH_DELAY_MS = 4000
+const OVERVIEW_REFRESH_MAX_WAIT_MS = 15_000
 
 // Bridges realtime socket events into both the zustand store and react-query
 // cache so list pages, detail panes, counters, and workflow states stay live.
@@ -77,9 +82,20 @@ export function useRealtimeEvents() {
   }, [])
 
   // One aggregate refresh per quiet interval; per-thread work once per delivery, not per channel.
-  const [inboxRefresh] = useState(() => createRefreshCoalescer(queryClient, { invalidate: gate.invalidate }))
+  // A conversation list with several pages loaded refetches only its first.
+  const [inboxRefresh] = useState(() =>
+    createRefreshCoalescer(queryClient, { invalidate: createListHeadRefresh(queryClient, gate.invalidate) }),
+  )
+  const [overviewRefresh] = useState(() =>
+    createRefreshCoalescer(queryClient, {
+      invalidate: gate.invalidate,
+      delayMs: OVERVIEW_REFRESH_DELAY_MS,
+      maxWaitMs: OVERVIEW_REFRESH_MAX_WAIT_MS,
+    }),
+  )
   const [isDuplicateDelivery] = useState(() => createDeliveryDeduper())
   useEffect(() => () => inboxRefresh.dispose(), [inboxRefresh])
+  useEffect(() => () => overviewRefresh.dispose(), [overviewRefresh])
   // Mailbox events arrive in bursts (a fleet reconnect, a pool re-evaluation),
   // and each one refetches the whole mailbox list and every status chunk.
   const [accountRefresh] = useState(() => createRefreshCoalescer(queryClient, { invalidate: gate.invalidate }))
@@ -172,7 +188,8 @@ export function useRealtimeEvents() {
       // thread if present.
       if (includes('AI_DRAFT')) {
         invalidate([['unibox', 'agent-drafts']])
-        inboxRefresh.add([['unibox', 'overview'], ['unibox', 'search']])
+        inboxRefresh.add([['unibox', 'search']])
+        overviewRefresh.add([OVERVIEW_KEY])
         if (threadId) invalidate([['unibox', 'thread', threadId]])
         return
       }
@@ -195,6 +212,7 @@ export function useRealtimeEvents() {
 
       // The named thread and message refresh now; without a thread id the message may sit in any open thread, refreshed later.
       const refreshInbox = (aggregates: QueryKey[]) => {
+        overviewRefresh.add([OVERVIEW_KEY])
         const own: QueryKey[] = []
         if (threadId) own.push(['unibox', 'thread', threadId], ['unibox', 'thread', 'labels', threadId])
         // An unthreaded message is its own conversation, keyed by its id.
@@ -623,7 +641,10 @@ export function useRealtimeEvents() {
         const keys = spine[entityType]
         if (keys) invalidate(keys)
         // Unibox writes come in bursts (reading, filing), so they ride the coalescer.
-        if (entityType === 'unibox') inboxRefresh.add([['unibox']])
+        if (entityType === 'unibox') {
+          inboxRefresh.add([['unibox']], (q) => !partialMatchKey(q.queryKey, OVERVIEW_KEY))
+          overviewRefresh.add([OVERVIEW_KEY])
+        }
         // A deletion also takes the entity's inbox mail, unread badge and
         // advice with it, which no update ever does.
         if (getString('action') === 'delete') {
@@ -669,6 +690,7 @@ export function useRealtimeEvents() {
       currentOrg?.id,
       gate,
       inboxRefresh,
+      overviewRefresh,
       invalidate,
       isDuplicateDelivery,
       myId,

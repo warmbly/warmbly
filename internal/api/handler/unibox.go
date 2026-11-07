@@ -231,6 +231,16 @@ func (h *Handler) GetUniboxIncoming(c *gin.Context) {
 		collectAccountIDs(v)
 	}
 
+	// Mailbox-tag filter: tag_ids=<uuid>,<uuid>, resolved against the
+	// workspace's tags in SQL. Invalid UUIDs are dropped like email_ids.
+	if v := c.Query("tag_ids"); v != "" {
+		for _, s := range strings.Split(v, ",") {
+			if id, err := uuid.Parse(strings.TrimSpace(s)); err == nil {
+				params.TagIDs = append(params.TagIDs, id)
+			}
+		}
+	}
+
 	// Uncategorized: threads carrying no conversation labels at all.
 	if c.Query("uncategorized") == "true" {
 		v := true
