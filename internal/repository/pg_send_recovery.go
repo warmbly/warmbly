@@ -445,17 +445,17 @@ func persistSendHold(ctx context.Context, tx pgx.Tx, mailboxID uuid.UUID, result
 	return nil
 }
 
-// ReleaseAuthenticationHold lifts an authentication hold once the mailbox's credentials passed a fresh login check, recording why; any unknown or conflict hold still owed is re-applied.
-func (r *emailRepository) ReleaseAuthenticationHold(ctx context.Context, orgID, accountID uuid.UUID) (bool, error) {
+// ReleaseReconnectedHold lifts an authentication or permanent hold once the mailbox's credentials passed a fresh login check, recording why; any unknown or conflict hold still owed is re-applied.
+func (r *emailRepository) ReleaseReconnectedHold(ctx context.Context, orgID, accountID uuid.UUID) (bool, error) {
 	tx, err := r.DB.Begin(ctx)
 	if err != nil {
 		return false, err
 	}
 	defer tx.Rollback(ctx)
-	tag, err := tx.Exec(ctx, `WITH held AS (SELECT organization_id,id,send_recovery_task_id FROM email_accounts
-		WHERE organization_id=$1 AND id=$2 AND send_recovery_hold AND send_recovery_reason='authentication' FOR UPDATE),
+	tag, err := tx.Exec(ctx, `WITH held AS (SELECT organization_id,id,send_recovery_task_id,send_recovery_reason FROM email_accounts
+		WHERE organization_id=$1 AND id=$2 AND send_recovery_hold AND send_recovery_reason IN('authentication','permanent') FOR UPDATE),
 		history AS (INSERT INTO send_recovery_resolutions(organization_id,email_account_id,recovery_task_id,previous_reason,evidence_type,recorded_locally_at)
-		SELECT organization_id,id,send_recovery_task_id,'authentication','credentials_reverified',clock_timestamp() FROM held RETURNING email_account_id)
+		SELECT organization_id,id,send_recovery_task_id,send_recovery_reason,'credentials_reverified',clock_timestamp() FROM held RETURNING email_account_id)
 		UPDATE email_accounts ea SET send_recovery_hold=false,send_recovery_reason=NULL,send_recovery_task_id=NULL
 		FROM history WHERE ea.id=history.email_account_id`, orgID, accountID)
 	if err != nil {
