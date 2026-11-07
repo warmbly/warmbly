@@ -7,7 +7,7 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
 )
 
-func TestLiveReconnectReleasesOnlyAnAuthenticationHold(t *testing.T) {
+func TestLiveReconnectReleasesAuthenticationAndPermanentHolds(t *testing.T) {
 	f, _ := lineageFixture(t)
 	ctx := t.Context()
 	r := &emailRepository{DB: &db.DB{Pool: f.pool}}
@@ -32,16 +32,35 @@ func TestLiveReconnectReleasesOnlyAnAuthenticationHold(t *testing.T) {
 	failed := uuid.New()
 	exec(`INSERT INTO tasks(id,task_type,email_account_id,status,message_id,send_result_state,completed_at) VALUES($1,'warmup',$2,'failed','','failed',NOW())`, failed, f.sender)
 
-	exec(`UPDATE email_accounts SET send_recovery_hold=true,send_recovery_reason='permanent',send_recovery_task_id=$2 WHERE id=$1`, f.sender, failed)
-	if released, err := r.ReleaseAuthenticationHold(ctx, f.org, f.sender); err != nil || released {
-		t.Fatalf("a permanent hold was released by a reconnect: released=%v err=%v", released, err)
+	exec(`UPDATE email_accounts SET send_recovery_hold=true,send_recovery_reason='conflict',send_recovery_task_id=$2 WHERE id=$1`, f.sender, failed)
+	if released, err := r.ReleaseReconnectedHold(ctx, f.org, f.sender); err != nil || released {
+		t.Fatalf("a conflict hold was released by a reconnect: released=%v err=%v", released, err)
 	}
 
-	exec(`UPDATE email_accounts SET send_recovery_reason='authentication' WHERE id=$1`, f.sender)
-	if released, err := r.ReleaseAuthenticationHold(ctx, uuid.New(), f.sender); err != nil || released {
+	exec(`UPDATE email_accounts SET send_recovery_reason='permanent' WHERE id=$1`, f.sender)
+	if released, err := r.ReleaseReconnectedHold(ctx, f.org, f.sender); err != nil || !released {
+		t.Fatalf("permanent hold not released by a reconnect: released=%v err=%v", released, err)
+	}
+	if held, reason := hold(); held || reason != "" {
+		t.Fatalf("still held: %v %q", held, reason)
+	}
+	exec(`UPDATE email_accounts SET send_recovery_hold=true,send_recovery_reason='permanent',send_recovery_task_id=$2 WHERE id=$1`, f.sender, uuid.New())
+	if released, err := r.ReleaseReconnectedHold(ctx, f.org, f.sender); err != nil || !released {
+		t.Fatalf("a hold whose refused task is gone was not released by a reconnect: released=%v err=%v", released, err)
+	}
+	exec(`UPDATE email_accounts SET send_recovery_hold=true,send_recovery_reason='permanent',send_recovery_task_id=$2 WHERE id=$1`, f.sender, failed)
+	if released, err := r.ReleaseReconnectedHold(ctx, uuid.New(), f.sender); err != nil || released {
 		t.Fatalf("another workspace released the hold: released=%v err=%v", released, err)
 	}
-	if released, err := r.ReleaseAuthenticationHold(ctx, f.org, f.sender); err != nil || !released {
+	if released, err := r.ReleaseReconnectedHold(ctx, f.org, f.sender); err != nil || !released {
+		t.Fatalf("permanent hold not released by a reconnect: released=%v err=%v", released, err)
+	}
+
+	exec(`UPDATE email_accounts SET send_recovery_hold=true,send_recovery_reason='authentication',send_recovery_task_id=$2 WHERE id=$1`, f.sender, failed)
+	if released, err := r.ReleaseReconnectedHold(ctx, uuid.New(), f.sender); err != nil || released {
+		t.Fatalf("another workspace released the hold: released=%v err=%v", released, err)
+	}
+	if released, err := r.ReleaseReconnectedHold(ctx, f.org, f.sender); err != nil || !released {
 		t.Fatalf("authentication hold not released: released=%v err=%v", released, err)
 	}
 	if held, reason := hold(); held || reason != "" {
@@ -55,7 +74,7 @@ func TestLiveReconnectReleasesOnlyAnAuthenticationHold(t *testing.T) {
 	unknown := uuid.New()
 	exec(`INSERT INTO tasks(id,task_type,email_account_id,status,message_id,send_result_state) VALUES($1,'warmup',$2,'failed','','unknown')`, unknown, f.sender)
 	exec(`UPDATE email_accounts SET send_recovery_hold=true,send_recovery_reason='authentication',send_recovery_task_id=$2 WHERE id=$1`, f.sender, failed)
-	if released, err := r.ReleaseAuthenticationHold(ctx, f.org, f.sender); err != nil || !released {
+	if released, err := r.ReleaseReconnectedHold(ctx, f.org, f.sender); err != nil || !released {
 		t.Fatalf("authentication hold not released: released=%v err=%v", released, err)
 	}
 	if held, reason := hold(); !held || reason != "unknown" {

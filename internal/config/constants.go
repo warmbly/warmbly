@@ -273,6 +273,9 @@ const (
 	// UnknownSendHoldVisibleAfterMinutes keeps an unconfirmed send out of mailbox health until it outlasts automatic recovery.
 	UnknownSendHoldVisibleAfterMinutes = 2 * CampaignSendReclaimAfterMinutes
 
+	// ProviderRestoredHoldRecheckHours spaces automatic releases of a mailbox's Gmail or Outlook refusal hold, so a provider that keeps refusing costs one send per interval.
+	ProviderRestoredHoldRecheckHours = 6
+
 	// WorkerReleaseGraceMinutes keeps a mailbox in its previous worker's scope after a move, until the reclaimer has resolved any send it left unanswered.
 	WorkerReleaseGraceMinutes = CampaignSendReclaimAfterMinutes
 

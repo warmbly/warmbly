@@ -782,6 +782,8 @@ func Run(
 				campaigns.DELETE("/:id/attachments/:attachmentId", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.DeleteCampaignAttachment)
 				campaigns.POST("/:id/preflight", m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns), h.RunCampaignPreflight)
 				campaigns.GET("/:id/ab-analysis", m.RequireOrganization(), m.RequireAccess(models.PermViewAnalytics, models.APIPermReadAnalytics), h.GetCampaignABAnalysis)
+				// Where each opening step landed when the senders' warmup carried its copy.
+				campaigns.GET("/:id/warmup-placement", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.GetCampaignWarmupPlacement)
 				campaigns.POST("/:id/test-email", m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns), h.SendTestEmail)
 				// The campaign's scheduled placement test. PUT is a full-state
 				// write, so a retry lands on the same monitor.

@@ -318,3 +318,20 @@ The harness refuses to record anything but localhost (or a host named in
 production or a customer workspace, and never attach media to a PR any other
 way: no image hosts, no commits of screenshots, no other repositories.
 Everything the harness writes stays under the ignored `.artifacts/`.
+
+## Warmup placement proof fixtures
+
+`flows/warmup-placement.flow.ts` is opt-in: apply `fixtures/warmup-placement.sql`
+to this worktree's rich-seed database. It adds an A/B arm to the entry step of the
+seeded **RevOps outreach - July** campaign, two pool peers (Google Workspace and
+Microsoft 365, on the reserved `.example` TLD) and synthetic warmup openings of that
+step with the receipts they filed, and marks the owner's product tour finished. It
+is re-runnable. Clear the stack's private Redis afterwards.
+
+```bash
+docker exec -i warmbly-postgres-1 psql -U warmbly -d warmbly_qa_<worktree> < fixtures/warmup-placement.sql
+docker exec wqa-<worktree>-redis redis-cli FLUSHDB
+QA_WARMUP_PLACEMENT_FIXTURES=1 pnpm proof warmup-placement
+```
+
+The placement numbers are fixture data, not a measurement of real delivery.
