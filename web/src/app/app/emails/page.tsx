@@ -36,7 +36,7 @@ import { CloudIcon, MailCheckIcon } from "lucide-react";
 import { PlacementRateBadge } from "@/components/app/placement/PlacementCharts";
 import type { CloudLinkMailboxRow } from "@/lib/api/models/app/cloudlink/CloudLink";
 import { cloudLinkScope, invalidateWarmupReports } from "@/lib/api/hooks/app/cloudlink/warmupReports";
-import { resolveMailboxWarmup, warmupActivityLabel, warmupUnknown, type MailboxWarmup, type WarmupSource } from "@/lib/mailboxWarmup";
+import { cloudReportMissing, resolveMailboxWarmup, warmupActivityLabel, warmupUnknown, type MailboxWarmup, type WarmupSource } from "@/lib/mailboxWarmup";
 import { cloudSendFailure } from "@/lib/cloudWarmup";
 import buildError from "@/lib/helper/buildError";
 import type { AppError } from "@/lib/api/client/normalizeError";
@@ -1013,7 +1013,7 @@ function MailboxRow({
     const cloudActivity = warmup.cloudActivity ?? warmup.activity;
     const cloudPaused = cloudActivity === "paused" || cloudActivity === "receive_only";
     const cloudResume = cloudPaused || cloudActivity === "off";
-    const cloudUnknown = warmupUnknown(warmup);
+    const cloudUnknown = cloudReportMissing(warmup);
     const cloudLabel = `Warmbly Cloud: ${warmupActivityLabel[warmup.activity]}`;
     const cloudSupported = providerSupported(box.provider);
     const cloudRun = async (fn: () => Promise<unknown>, ok: string) => {
@@ -1617,7 +1617,7 @@ function MailboxStatusPill({ box, status, stale, historicalIssue, warmup, compac
     if (!status) return <span className="text-[10.5px] text-slate-500">{pending ? "Checking…" : "Unavailable"}</span>;
 
     // One word; the icons beside it say which activities are on. An unknown warmup state is not reported as idle.
-    const idle = !warmupUnknown(warmup) ? "Idle" : warmup.activity === "checking" ? "Checking…" : warmup.activity === "unavailable" ? "Unavailable" : "Pending";
+    const idle = !warmupUnknown(warmup) ? "Idle" : warmup.activity === "checking" ? "Checking…" : warmup.activity === "unavailable" || warmup.activity === "unconfirmed" ? "Unavailable" : "Pending";
     const label = sending && warming ? "Active" : sending ? "Sending" : resting ? (lifecycle?.state === "reserve" ? "Reserve" : "Resting") : warming ? "Warming" : idle;
     const title = [
         sending ? "Sending campaign emails" : resting ? `Held out of campaign sending${lifecycle?.reason ? `: ${lifecycle.reason}` : ""}` : "Not in a live campaign",

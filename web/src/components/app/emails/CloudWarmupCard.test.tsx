@@ -40,6 +40,14 @@ describe.each([true, false])("Cloud diagnostic participation with workspace conn
         await waitFor(() => expect(fixtures.lifecycle).toHaveBeenCalledWith({ id: "mailbox", action: paused ? "resume" : "pause" }));
     });
 
+    it("keeps the reported Cloud controls while this server's permission to run the mailbox is unconfirmed", async () => {
+        fixtures.executor = "instance";
+        draw();
+        expect(screen.getByText("Permission to run on this server unconfirmed")).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+        await waitFor(() => expect(fixtures.lifecycle).toHaveBeenCalledWith({ id: "mailbox", action: "pause" }));
+    });
+
     it("retains a positive mailbox report when the separate connection request fails", () => {
         fixtures.unavailable = true;
         draw();

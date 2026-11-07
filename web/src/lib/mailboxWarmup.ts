@@ -16,7 +16,7 @@ export interface WarmupSource {
     rowFor: (id: string) => CloudLinkMailboxRow | undefined;
 }
 
-export type WarmupActivity = "active" | "paused" | "receive_only" | "off" | "inactive" | "ungranted" | "connecting" | "removing" | "checking" | "unavailable";
+export type WarmupActivity = "active" | "paused" | "receive_only" | "off" | "inactive" | "ungranted" | "unconfirmed" | "connecting" | "removing" | "checking" | "unavailable";
 
 export interface MailboxWarmup {
     source: "local" | "cloud" | "unknown";
@@ -29,12 +29,18 @@ export interface MailboxWarmup {
 export const warmupActivityLabel: Record<WarmupActivity, string> = {
     active: "warming up", paused: "warmup paused", receive_only: "receiving warmup only",
     off: "warmup off", inactive: "warmup mailbox off", ungranted: "waiting for permission to run on this server",
+    unconfirmed: "permission to run on this server unconfirmed",
     connecting: "Cloud enrollment pending", removing: "Cloud removal pending",
     checking: "warmup status checking", unavailable: "warmup status unavailable",
 };
 
 export function warmupUnknown(warmup: MailboxWarmup): boolean {
-    return ["checking", "unavailable", "connecting", "removing"].includes(warmup.activity);
+    return ["checking", "unavailable", "unconfirmed", "connecting", "removing"].includes(warmup.activity);
+}
+
+// Cloud lifecycle controls need a Cloud report to act on; an unconfirmed grant still has one.
+export function cloudReportMissing(warmup: MailboxWarmup): boolean {
+    return warmup.cloudActivity === undefined;
 }
 
 // Undefined when Cloud did not answer about the grant; a lapsed expiry counts as withdrawn.
@@ -62,7 +68,7 @@ export function resolveMailboxWarmup(mailbox: Pick<Inbox, "id" | "status" | "war
         // This server runs the plan, so it only warms while the mailbox is on here and Cloud still grants it.
         const instance = row.executor === "instance";
         const activity = instance && mailbox.status !== "active" ? "inactive"
-            : instance && cloudActivity === "active" && pool?.selfExecutionGranted === false ? "ungranted"
+            : instance && cloudActivity === "active" && pool?.selfExecutionGranted !== true ? pool?.selfExecutionGranted === false ? "ungranted" : "unconfirmed"
             : cloudActivity;
         return { ...values, activity, cloudActivity };
     }

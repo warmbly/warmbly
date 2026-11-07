@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type Inbox from "@/lib/api/models/app/emails/Inbox";
 import type AccountStatus from "@/lib/api/models/app/analytics/AccountStatus";
 import type { CloudLinkMailboxRow, PoolLinkMailboxState } from "@/lib/api/models/app/cloudlink/CloudLink";
-import { resolveMailboxWarmup, selfExecutionGranted } from "./mailboxWarmup";
+import { cloudReportMissing, resolveMailboxWarmup, selfExecutionGranted, warmupUnknown } from "./mailboxWarmup";
 
 const mailbox = { id: "mailbox", status: "active", warmup: new Date("2026-01-01") } as Inbox;
 const report = { status: "active", sent_today: 5, warmup: { enabled: true, paused: false, current_volume: 0, target_volume: 12, days_active: 3 } } as PoolLinkMailboxState;
@@ -13,7 +13,9 @@ describe("warmup source and lifecycle", () => {
         const pool = (granted?: boolean) => ({ connected: true, selfExecutionGranted: granted, rowFor: () => ({ id: mailbox.id, enrolled: true, executor: "instance", cloud: report } as CloudLinkMailboxRow) });
         expect(resolveMailboxWarmup(mailbox, undefined, pool(false))).toMatchObject({ source: "cloud", activity: "ungranted", cloudActivity: "active" });
         expect(resolveMailboxWarmup(mailbox, undefined, pool(true)).activity).toBe("active");
-        expect(resolveMailboxWarmup(mailbox, undefined, pool(undefined)).activity).toBe("active");
+        expect(resolveMailboxWarmup(mailbox, undefined, pool(undefined))).toMatchObject({ activity: "unconfirmed", cloudActivity: "active" });
+        expect(warmupUnknown(resolveMailboxWarmup(mailbox, undefined, pool(undefined)))).toBe(true);
+        expect(cloudReportMissing(resolveMailboxWarmup(mailbox, undefined, pool(undefined)))).toBe(false);
         expect(resolve({ executor: "cloud", cloud: report }).activity).toBe("active");
     });
     it("reads a lapsed grant expiry as withdrawn and an absent answer as unknown", () => {
