@@ -96,6 +96,7 @@ export default function GoogleWorkspaceSigninPanel({
                     placeholder="alex@yourcompany.com"
                     type="email"
                     autoComplete="email"
+                    className="w-full"
                     onKeyDown={(e) => {
                         if (e.key === "Enter") submit();
                     }}
@@ -169,7 +170,8 @@ export function TrustedAppSteps({ clientId }: { clientId?: string }) {
                 <p>Go to</p>
                 <Crumbs items={THIRD_PARTY_PATH} />
                 <p>
-                    and click <span className="font-medium text-slate-900">Configure new app</span>.
+                    and click <span className="font-medium text-slate-900">Configure new app</span> (or{" "}
+                    <span className="font-medium text-slate-900">Add app &gt; OAuth App Name or Client ID</span>).
                 </p>
             </Instruction>
             <Instruction n={3}>
