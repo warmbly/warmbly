@@ -44,7 +44,7 @@ const DARK: Palette = {
     labelHalo: "#0b1220",
 };
 
-function set(map: MapLibreMap, id: string, prop: string, value: unknown) {
+function set(map: MapLibreMap, id: string, prop: Parameters<MapLibreMap["setPaintProperty"]>[1], value: string) {
     try {
         map.setPaintProperty(id, prop, value);
     } catch {
