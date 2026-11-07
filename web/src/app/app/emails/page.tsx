@@ -1008,6 +1008,8 @@ function MailboxRow({
     const inCampaign = status?.in_campaign;
 
     const inCloud = !!cloud?.enrolled;
+    // Local actions wait until Cloud ownership is known; a missing report is not a local mailbox.
+    const localOwned = !inCloud && warmup.source === "local";
     const cloudActivity = warmup.cloudActivity ?? warmup.activity;
     const cloudPaused = cloudActivity === "paused" || cloudActivity === "receive_only";
     const cloudResume = cloudPaused || cloudActivity === "off";
@@ -1367,7 +1369,7 @@ function MailboxRow({
                                     <PopoverMenuSeparator />
                                 </>
                             )}
-                            {!inCloud && cloudConnected && cloudSupported && (
+                            {localOwned && cloudConnected && cloudSupported && (
                                 <PopoverMenuItem
                                     onSelect={() => void cloudRun(() => actions.cloudEnroll(box.id), `${box.email} is now warming in the pool`)}
                                     icon={<CloudIcon className="w-3 h-3" />}
@@ -1375,22 +1377,22 @@ function MailboxRow({
                                     Warm in Warmbly Cloud
                                 </PopoverMenuItem>
                             )}
-                            {!inCloud && off && (
+                            {localOwned && off && (
                                 <PopoverMenuItem onSelect={canWarmup ? () => run("start", "started") : upsell} icon={<PlayIcon className="w-3 h-3" />}>
                                     {canWarmup ? "Start warmup" : "Upgrade to start warmup"}
                                 </PopoverMenuItem>
                             )}
-                            {!inCloud && paused && (
+                            {localOwned && paused && (
                                 <PopoverMenuItem onSelect={canWarmup ? () => run("resume", "resumed") : upsell} icon={<PlayIcon className="w-3 h-3" />}>
                                     {canWarmup ? "Resume warmup" : "Upgrade to resume warmup"}
                                 </PopoverMenuItem>
                             )}
-                            {!inCloud && active && (
+                            {localOwned && active && (
                                 <PopoverMenuItem onSelect={() => run("pause", "paused")} icon={<PauseIcon className="w-3 h-3" />}>
                                     Pause warmup
                                 </PopoverMenuItem>
                             )}
-                            {!inCloud && (active || paused) && (
+                            {localOwned && (active || paused) && (
                                 <PopoverMenuItem danger onSelect={stopReset} icon={<RotateCcwIcon className="w-3 h-3" />}>
                                     Stop &amp; reset
                                 </PopoverMenuItem>
@@ -1614,8 +1616,9 @@ function MailboxStatusPill({ box, status, stale, historicalIssue, warmup, compac
 
     if (!status) return <span className="text-[10.5px] text-slate-500">{pending ? "Checking…" : "Unavailable"}</span>;
 
-    // One word; the icons beside it say which activities are on.
-    const label = sending && warming ? "Active" : sending ? "Sending" : resting ? (lifecycle?.state === "reserve" ? "Reserve" : "Resting") : warming ? "Warming" : "Idle";
+    // One word; the icons beside it say which activities are on. An unknown warmup state is not reported as idle.
+    const idle = !warmupUnknown(warmup) ? "Idle" : warmup.activity === "checking" ? "Checking…" : warmup.activity === "unavailable" ? "Unavailable" : "Pending";
+    const label = sending && warming ? "Active" : sending ? "Sending" : resting ? (lifecycle?.state === "reserve" ? "Reserve" : "Resting") : warming ? "Warming" : idle;
     const title = [
         sending ? "Sending campaign emails" : resting ? `Held out of campaign sending${lifecycle?.reason ? `: ${lifecycle.reason}` : ""}` : "Not in a live campaign",
         `${warmup.source === "cloud" ? "Warmbly Cloud: " : ""}${warmupActivityLabel[warmup.activity]}`,

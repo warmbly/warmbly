@@ -339,6 +339,16 @@ describe("Cloud warmup values", () => {
         }
     });
 
+    it.each(["cloudLoading", "cloudUnavailable"] as const)("offers no local warmup action while Cloud ownership is %s", async (unknown) => {
+        statusState.data = rows.map(measuredStatus);
+        statusState[unknown] = true;
+        await renderPage();
+        fireEvent.click(within(screen.getAllByRole("row")[1]).getByRole("button", { name: "Warmup actions" }));
+        expect(screen.queryByRole("menuitem", { name: "Start warmup" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("menuitem", { name: "Warm in Warmbly Cloud" })).not.toBeInTheDocument();
+        expect(screen.getByRole("menuitem", { name: "Warmup settings" })).toBeInTheDocument();
+    });
+
     it("refreshes Cloud reports after a partially successful bulk pause without a socket", async () => {
         statusState.data = rows.map(measuredStatus);
         statusState.cloudConnected = true;

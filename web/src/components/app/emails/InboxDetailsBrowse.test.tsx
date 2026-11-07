@@ -85,6 +85,24 @@ describe("mailbox drawer browse persistence", () => {
         expect(stat).not.toHaveTextContent("target 0");
     });
 
+    it("offers no local warmup control while Cloud ownership is unavailable", () => {
+        cloudState.unavailable = true;
+        render(<Page initialTab="warmup" />);
+        expect(screen.queryByRole("button", { name: "Start" })).not.toBeInTheDocument();
+        expect(screen.queryByText("Warmup off")).not.toBeInTheDocument();
+    });
+
+    it("keeps the local warmup setting and its controls on a switched-off mailbox", () => {
+        Object.assign(mailbox, { status: "inactive", warmup: new Date("2026-01-01"), test_mode: "diagnostic", test_send_enabled: true });
+        try {
+            render(<Page initialTab="warmup" />);
+            expect(screen.getByText("Warming up")).toBeInTheDocument();
+            expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+        } finally {
+            Object.assign(mailbox, { status: "active", warmup: undefined, test_mode: undefined, test_send_enabled: undefined });
+        }
+    });
+
     it("restores drawer tabs on remount and isolates mailbox resources", () => {
         const page = render(<Page />);
         fireEvent.click(tab("Analytics"));

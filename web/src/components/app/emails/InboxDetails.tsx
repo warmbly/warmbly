@@ -16,7 +16,7 @@ import React, { useMemo, useState } from "react";
 import { signatureToPlain } from "@/lib/email/signaturePlain";
 import useBrowseState from "@/hooks/useBrowseState";
 import { mailboxTab, type MailboxTab } from "@/lib/browse-accounts-analytics";
-import { diagnosticSendingAllowed } from "@/lib/diagnosticParticipation";
+import { diagnosticSendingAllowed, diagnosticWarmupActive } from "@/lib/diagnosticParticipation";
 import { cloudStandingUnavailable } from "@/lib/mailboxStatus";
 import { AnimatePresence, motion } from "framer-motion";
 import AdvisorStrip from "@/components/app/advisor/AdvisorStrip";
@@ -1353,6 +1353,8 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true, warmup }: 
     // Warmup on with sending off is receive-only, which still receives; only a real pause stops both.
     const receiveOnly = paused && !mailbox.warmup_paused_at;
     const active = warmup.activity === "active";
+    // The local controls act on the local setting, not on the resolved display state.
+    const localActive = diagnosticWarmupActive(mailbox);
     // When Warmbly Cloud warms this mailbox the local controls step aside.
     const pool = useCloudPool();
     const inCloud = pool.connected && pool.isEnrolled(mailbox.id);
@@ -1397,16 +1399,16 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true, warmup }: 
 
             <CloudWarmupCard mailboxId={mailbox.id} email={mailbox.email} provider={mailbox.provider} status={mailbox.status} />
 
-            {/* Lifecycle control */}
-            {!inCloud && (
+            {/* Lifecycle control: only once Cloud ownership is known, so a missing report never offers a local action. */}
+            {!inCloud && warmup.source === "local" && (
             <div className="px-5 py-4 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5 min-w-0">
-                    <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center shrink-0", active ? "bg-orange-50 text-orange-600" : paused ? "bg-amber-50 text-amber-600" : "bg-slate-100 text-slate-400")}>
+                    <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center shrink-0", localActive ? "bg-orange-50 text-orange-600" : paused ? "bg-amber-50 text-amber-600" : "bg-slate-100 text-slate-400")}>
                         <FlameIcon className="w-4 h-4" />
                     </div>
                     <div className="min-w-0">
-                        <div className="text-[12.5px] font-medium text-slate-900">{active ? "Warming up" : receiveOnly ? "Receiving only" : paused ? "Paused" : "Warmup off"}</div>
-                        <div className="text-[11px] text-slate-400 truncate">{active ? "Automated diagnostic traffic, not organic engagement" : receiveOnly ? "Receives warmup mail; sending is off" : paused && !off ? "Paused: no warmup mail is sent or received" : "Sending and receiving diagnostic tests disabled"}</div>
+                        <div className="text-[12.5px] font-medium text-slate-900">{localActive ? "Warming up" : receiveOnly ? "Receiving only" : paused ? "Paused" : "Warmup off"}</div>
+                        <div className="text-[11px] text-slate-400 truncate">{localActive ? "Automated diagnostic traffic, not organic engagement" : receiveOnly ? "Receives warmup mail; sending is off" : paused && !off ? "Paused: no warmup mail is sent or received" : "Sending and receiving diagnostic tests disabled"}</div>
                     </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -1420,7 +1422,7 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true, warmup }: 
                             {off ? "Start" : "Resume"}
                         </button>
                     )}
-                    {active && (
+                    {localActive && (
                         <>
                             <button
                                 onClick={() => run("pause", "paused")}
