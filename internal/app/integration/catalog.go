@@ -240,7 +240,7 @@ func Catalog() []models.IntegrationCatalogEntry {
 			DocsURL:    "https://docs.warmbly.com/guides/lead-finder/",
 			Highlights: []string{
 				"Ratings, review counts, hours, phone numbers and websites",
-				"Billed to your Google Maps Platform account, no Warmbly credits",
+				"Billed to your Google Maps Platform account, not your Warmbly balance",
 				"Up to 60 places per search, inside the area you draw",
 			},
 		},
@@ -253,7 +253,7 @@ func Catalog() []models.IntegrationCatalogEntry {
 			DocsURL:    "https://docs.warmbly.com/guides/lead-finder/",
 			Highlights: []string{
 				"Categories, chains, socials, ratings and hours",
-				"Billed to your Foursquare account, no Warmbly credits",
+				"Billed to your Foursquare account, not your Warmbly balance",
 				"Up to 50 places a page, paged as far as the area goes",
 			},
 		},
@@ -267,7 +267,7 @@ func Catalog() []models.IntegrationCatalogEntry {
 			Highlights: []string{
 				"Google Maps listings with ratings, reviews and hours",
 				"Emails and social profiles found from each business's domain",
-				"Billed to your Outscraper account, no Warmbly credits",
+				"Billed to your Outscraper account, not your Warmbly balance",
 			},
 		},
 

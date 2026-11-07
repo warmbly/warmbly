@@ -212,7 +212,8 @@ export interface LeadProviderInfo {
     needs_key: boolean;
     page_size: number;
     max_pages: number;
-    credit_cost: number;
+    /** What one page costs the balance; 0 when free or billed to the workspace's own key. */
+    cost_usd: number;
     fields: string[];
     integration?: string;
 }
@@ -232,8 +233,8 @@ export interface LeadFinderConfig {
     providers: LeadProviderInfo[];
     categories: LeadCategory[];
     default_provider: LeadProvider;
-    enrich_cost: number;
-    person_email_cost: number;
+    enrich_cost_usd: number;
+    person_email_cost_usd: number;
     export_columns: LeadExportColumn[];
     person_columns: LeadExportColumn[];
     default_export_columns: string[];
@@ -265,7 +266,7 @@ export interface LeadSearchResult {
     leads: Lead[];
     found: number;
     outside_area: number;
-    credits_charged: number;
+    charged_usd: number;
 }
 
 export interface LeadFacet {
@@ -296,7 +297,7 @@ export interface LeadEnrichmentRun {
     people_found: number;
     no_website: number;
     failed: number;
-    credits_consumed: number;
+    charged_usd: number;
     last_error: string;
     started_at: string | null;
     finished_at: string | null;

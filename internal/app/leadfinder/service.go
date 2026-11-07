@@ -12,6 +12,7 @@ import (
 
 	"github.com/warmbly/warmbly/internal/app/contact"
 	"github.com/warmbly/warmbly/internal/app/credits"
+	"github.com/warmbly/warmbly/internal/app/instancesettings"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/emailverify"
@@ -53,11 +54,12 @@ type Verifier interface {
 	VerifyAddress(ctx context.Context, orgID uuid.UUID, email string) emailverify.Result
 }
 
-// Credits charges flat-priced work.
+// Credits charges priced units to the workspace balance.
 type Credits interface {
-	Charge(ctx context.Context, orgID uuid.UUID, amount int, reason, idempotencyKey string) (int, error)
-	RefundCharge(ctx context.Context, orgID uuid.UUID, chargeKey, reason string) (int, error)
-	// Unmetered is true when the instance bills nothing in credits.
+	Quote(ctx context.Context, u credits.Usage) models.Micro
+	ChargeUpfront(ctx context.Context, orgID uuid.UUID, u credits.Usage, reason, idempotencyKey string) (models.Micro, error)
+	RefundCharge(ctx context.Context, orgID uuid.UUID, chargeKey, reason string) (models.Micro, error)
+	// Unmetered is true when the instance charges nothing.
 	Unmetered() bool
 }
 
@@ -98,7 +100,7 @@ func NewService(d Deps) *Service {
 	}
 }
 
-// metered is whether this instance charges credits at all.
+// metered is whether this instance charges the balance at all.
 func (s *Service) metered() bool {
 	return s.Credits != nil && !s.Credits.Unmetered()
 }
@@ -218,8 +220,8 @@ type FinderConfig struct {
 	Providers       []ProviderInfo `json:"providers"`
 	Categories      []Category     `json:"categories"`
 	DefaultProvider string         `json:"default_provider"`
-	EnrichCost      int            `json:"enrich_cost"`
-	PersonEmailCost int            `json:"person_email_cost"`
+	EnrichCost      float64        `json:"enrich_cost_usd"`
+	PersonEmailCost float64        `json:"person_email_cost_usd"`
 	ExportColumns   []ExportColumn `json:"export_columns"`
 	PersonColumns   []PersonColumn `json:"person_columns"`
 	DefaultColumns  []string       `json:"default_export_columns"`
@@ -242,9 +244,11 @@ const (
 func (s *Service) FinderConfig(ctx context.Context, orgID uuid.UUID) *FinderConfig {
 	conns := s.connections(ctx, orgID)
 	out := &FinderConfig{Categories: Categories, DefaultProvider: string(models.LeadProviderOSM), ExportColumns: ExportColumns, PersonColumns: PersonColumns, DefaultColumns: DefaultExportColumns}
+	pageCost := 0.0
 	if s.metered() {
-		out.EnrichCost = credits.CostLeadEnrich
-		out.PersonEmailCost = credits.CostLeadPersonEmail
+		out.EnrichCost = s.Credits.Quote(ctx, credits.UnitUsage(instancesettings.UnitLeadWebsiteRead, 1)).USD()
+		out.PersonEmailCost = s.Credits.Quote(ctx, credits.UnitUsage(instancesettings.UnitLeadPersonEmail, 1)).USD()
+		pageCost = s.Credits.Quote(ctx, credits.UnitUsage(instancesettings.UnitLeadSearchPage, 1)).USD()
 	}
 	for _, id := range models.LeadProviders {
 		info := providerMeta[id]
@@ -260,9 +264,7 @@ func (s *Service) FinderConfig(ctx context.Context, orgID uuid.UUID) *FinderConf
 				info.Available, info.KeySource = true, "workspace"
 			case s.instanceKey(id) != "":
 				info.Available, info.KeySource = true, "instance"
-				if s.metered() {
-					info.CreditCost = credits.CostLeadSearchPage
-				}
+				info.CostUSD = pageCost
 			}
 		}
 		out.Providers = append(out.Providers, info)
@@ -318,11 +320,11 @@ type SearchRequest struct {
 
 // SearchResult is one page of a search.
 type SearchResult struct {
-	Search         *models.LeadSearch `json:"search"`
-	Leads          []models.Lead      `json:"leads"`
-	Found          int                `json:"found"`
-	OutsideArea    int                `json:"outside_area"`
-	CreditsCharged int                `json:"credits_charged"`
+	Search      *models.LeadSearch `json:"search"`
+	Leads       []models.Lead      `json:"leads"`
+	Found       int                `json:"found"`
+	OutsideArea int                `json:"outside_area"`
+	ChargedUSD  float64            `json:"charged_usd"`
 }
 
 // Search runs a provider search over an area and stores what it returns.
@@ -359,13 +361,15 @@ func (s *Service) Search(ctx context.Context, orgID, userID uuid.UUID, req Searc
 		return nil, errx.NewWithIdentifier(errx.BadRequest, "lead_search_exhausted", "This search has no more results")
 	}
 
-	charged, chargeKey := 0, ""
+	var charged models.Micro
+	chargeKey := ""
 	if keySource == "instance" && s.metered() {
 		chargeKey = fmt.Sprintf("lead_search:%s:%d", search.ID, search.PagesFetched)
-		if _, err := s.Credits.Charge(ctx, orgID, credits.CostLeadSearchPage, "lead_search", chargeKey); err != nil {
+		taken, err := s.Credits.ChargeUpfront(ctx, orgID, credits.UnitUsage(instancesettings.UnitLeadSearchPage, 1), "lead_search", chargeKey)
+		if err != nil {
 			return nil, creditErr(err)
 		}
-		charged = credits.CostLeadSearchPage
+		charged = taken
 	}
 	pctx, cancel := context.WithTimeout(ctx, searchTimeout)
 	defer cancel()
@@ -393,7 +397,7 @@ func (s *Service) Search(ctx context.Context, orgID, userID uuid.UUID, req Searc
 		}
 	}
 
-	res := &SearchResult{Search: search, CreditsCharged: charged}
+	res := &SearchResult{Search: search, ChargedUSD: charged.USD()}
 	keep := make([]models.Lead, 0, len(page.Leads))
 	seen := map[string]bool{}
 	for _, l := range page.Leads {
@@ -518,9 +522,9 @@ func truncate(s string, n int) string {
 func creditErr(err error) error {
 	switch {
 	case errors.Is(err, credits.ErrInsufficientCredits):
-		return errx.NewWithIdentifier(errx.PaymentRequired, "insufficient_credits", "Not enough credits. Top up under Billing to keep going.")
+		return errx.NewWithIdentifier(errx.PaymentRequired, "insufficient_credits", "The workspace balance is too low. Add money under Billing to keep going.")
 	case errors.Is(err, credits.ErrCapExceeded):
-		return errx.NewWithIdentifier(errx.TooManyRequests, "usage_cap_exceeded", "The workspace reached its credit spend limit for now.")
+		return errx.NewWithIdentifier(errx.TooManyRequests, "usage_cap_exceeded", "The workspace reached its spend limit for now.")
 	}
 	return err
 }

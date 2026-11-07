@@ -26,6 +26,16 @@ func TestPriceIsProviderCostPlusMarkup(t *testing.T) {
 	if charge, _ := Price(prices, UnitUsage(instancesettings.UnitPlacementTest, 1)); charge != models.MicroPerUSD/2 {
 		t.Fatalf("placement test = %v, want $0.50", charge.USD())
 	}
+	// The lead finder's website read and person email bill $0.02, a search page $0.04.
+	for unit, want := range map[string]models.Micro{
+		instancesettings.UnitLeadWebsiteRead: 20_000,
+		instancesettings.UnitLeadPersonEmail: 20_000,
+		instancesettings.UnitLeadSearchPage:  40_000,
+	} {
+		if charge, _ := Price(prices, UnitUsage(unit, 1)); charge != want {
+			t.Fatalf("%s = %d micro, want %d", unit, charge, want)
+		}
+	}
 }
 
 func TestLatestMonthlyAnchor(t *testing.T) {

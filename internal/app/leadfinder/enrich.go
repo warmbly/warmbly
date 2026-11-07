@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/app/credits"
+	"github.com/warmbly/warmbly/internal/app/instancesettings"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/emailverify"
@@ -25,8 +26,8 @@ const (
 	enrichLeadTimeout = 50 * time.Second
 )
 
-// errOutOfCredits stops a run when the workspace cannot pay for the next site.
-var errOutOfCredits = errors.New("the workspace ran out of credits; the rest of the leads were left as they were")
+// errOutOfBalance stops a run when the workspace cannot pay for the next site.
+var errOutOfBalance = errors.New("the workspace balance ran out; the rest of the leads were left as they were")
 
 // AuditLogger records a finished run so every teammate's dashboard refreshes.
 type AuditLogger interface {
@@ -105,7 +106,7 @@ func (s *Service) runEnrichment(ctx context.Context, id uuid.UUID) {
 		} else {
 			run.LastError = err.Error()
 		}
-		if !errors.Is(err, errOutOfCredits) {
+		if !errors.Is(err, errOutOfBalance) {
 			log.Warn().Err(err).Str("run", id.String()).Msg("leadfinder: enrichment run failed")
 		}
 	}
@@ -143,19 +144,18 @@ func (s *Service) enrich(ctx context.Context, run *models.LeadEnrichmentRun) err
 			go func(l *models.Lead) {
 				defer wg.Done()
 				defer func() { <-sem }()
-				out, found, err := s.enrichLead(ctx, run, l)
+				out, found, charged, err := s.enrichLead(ctx, run, l)
 				mu.Lock()
 				defer mu.Unlock()
 				run.PeopleFound += found
+				run.ChargedMicro += charged
 				switch {
-				case errors.Is(err, errOutOfCredits):
+				case errors.Is(err, errOutOfBalance):
 					stopErr = err
 				case err != nil || out == outcomeFailed:
 					run.Failed++
 				case out == outcomeNoWebsite:
 					run.NoWebsite++
-				case out == outcomeCharged && s.metered():
-					run.CreditsConsumed += credits.CostLeadEnrich
 				}
 				if err == nil && l.Email != "" {
 					run.EmailsFound++
@@ -179,11 +179,12 @@ type enrichOutcome int
 
 const (
 	outcomeNoWebsite enrichOutcome = iota
-	outcomeCharged
+	outcomeRead
 	outcomeFailed
 )
 
-func (s *Service) enrichLead(ctx context.Context, run *models.LeadEnrichmentRun, l *models.Lead) (enrichOutcome, int, error) {
+// enrichLead reads one lead's website and returns what it found and what the read cost, net of a refund.
+func (s *Service) enrichLead(ctx context.Context, run *models.LeadEnrichmentRun, l *models.Lead) (enrichOutcome, int, models.Micro, error) {
 	lctx, cancel := context.WithTimeout(ctx, enrichLeadTimeout)
 	defer cancel()
 	l.OrganizationID = run.OrganizationID
@@ -195,16 +196,19 @@ func (s *Service) enrichLead(ctx context.Context, run *models.LeadEnrichmentRun,
 	if l.Website == "" {
 		l.EnrichmentStatus = models.LeadEnrichmentNoWebsite
 		s.finishEmails(lctx, run, l, nil)
-		return outcomeNoWebsite, 0, s.Repo.SaveEnrichment(lctx, l)
+		return outcomeNoWebsite, 0, 0, s.Repo.SaveEnrichment(lctx, l)
 	}
 	key := "lead_enrich:" + run.ID.String() + ":" + l.ID.String()
+	var charged models.Micro
 	if s.metered() {
-		if _, err := s.Credits.Charge(lctx, run.OrganizationID, credits.CostLeadEnrich, "lead_enrich", key); err != nil {
+		taken, err := s.Credits.ChargeUpfront(lctx, run.OrganizationID, credits.UnitUsage(instancesettings.UnitLeadWebsiteRead, 1), "lead_enrich", key)
+		if err != nil {
 			if errors.Is(err, credits.ErrInsufficientCredits) || errors.Is(err, credits.ErrCapExceeded) {
-				return outcomeFailed, 0, errOutOfCredits
+				return outcomeFailed, 0, 0, errOutOfBalance
 			}
-			return outcomeFailed, 0, err
+			return outcomeFailed, 0, 0, err
 		}
+		charged = taken
 	}
 	res, err := s.crawler.Crawl(lctx, l.Website)
 	if err != nil {
@@ -219,7 +223,7 @@ func (s *Service) enrichLead(ctx context.Context, run *models.LeadEnrichmentRun,
 	}
 	l.Site.AcceptsAll = prev.AcceptsAll
 	l.Site.FoundWebsite = found
-	outcome := outcomeCharged
+	outcome := outcomeRead
 	if res.Site.Reachable {
 		l.EnrichmentStatus = models.LeadEnrichmentDone
 	} else {
@@ -227,9 +231,11 @@ func (s *Service) enrichLead(ctx context.Context, run *models.LeadEnrichmentRun,
 		l.EnrichmentStatus = models.LeadEnrichmentFailed
 		outcome = outcomeFailed
 		if s.metered() {
-			if _, rerr := s.Credits.RefundCharge(context.WithoutCancel(lctx), run.OrganizationID, key, "lead_enrich_refund"); rerr != nil {
+			refunded, rerr := s.Credits.RefundCharge(context.WithoutCancel(lctx), run.OrganizationID, key, "lead_enrich_refund")
+			if rerr != nil {
 				log.Warn().Err(rerr).Msg("leadfinder: could not refund an unreachable site")
 			}
+			charged = max(charged-refunded, 0)
 		}
 	}
 	if l.Socials == nil {
@@ -252,7 +258,7 @@ func (s *Service) enrichLead(ctx context.Context, run *models.LeadEnrichmentRun,
 		}
 		people = n
 	}
-	return outcome, people, s.Repo.SaveEnrichment(lctx, l)
+	return outcome, people, charged, s.Repo.SaveEnrichment(lctx, l)
 }
 
 // finishEmails merges found addresses into the lead, verifies the best few

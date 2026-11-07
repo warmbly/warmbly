@@ -30,6 +30,12 @@ const (
 	UnitWebSearch = "web_search"
 	// UnitPlacementTest is one inbox placement test past the free allowance.
 	UnitPlacementTest = "placement_test"
+	// UnitLeadWebsiteRead is one lead website read, with the people it names and their addresses.
+	UnitLeadWebsiteRead = "lead_website_read"
+	// UnitLeadPersonEmail is finding one named person's email on request.
+	UnitLeadPersonEmail = "lead_person_email"
+	// UnitLeadSearchPage is one page of a lead search through a source the instance pays for.
+	UnitLeadSearchPage = "lead_search_page"
 	// AnyModel prices a model with no row of its own.
 	AnyModel = "*"
 )
@@ -47,8 +53,12 @@ func DefaultUsage() Usage {
 			{Model: AnyModel, InputPerMTok: 3, OutputPerMTok: 15},
 		},
 		Units: map[string]float64{
-			UnitWebSearch:     0.01,
-			UnitPlacementTest: 0.40,
+			UnitWebSearch:       0.01,
+			UnitPlacementTest:   0.40,
+			UnitLeadWebsiteRead: 0.016,
+			UnitLeadPersonEmail: 0.016,
+			// Google Places Text Search list price; edit to match the provider.
+			UnitLeadSearchPage: 0.032,
 		},
 	}
 }

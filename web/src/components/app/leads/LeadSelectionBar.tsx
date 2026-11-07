@@ -3,6 +3,7 @@ import { BookmarkIcon, CheckIcon, DownloadIcon, Loader2Icon, MoreHorizontalIcon,
 import { useState } from "react";
 import { PopoverMenu, PopoverMenuContent, PopoverMenuItem, PopoverMenuSeparator, PopoverMenuTrigger } from "@/components/ui/popover-menu";
 import type { LeadStatus } from "@/lib/api/models/app/leads/Lead";
+import { fmtUsdCost } from "@/lib/money";
 
 export default function LeadSelectionBar({
     count,
@@ -42,7 +43,7 @@ export default function LeadSelectionBar({
                         <CheckIcon className="size-3" />
                         <span>{count.toLocaleString()} selected</span>
                     </div>
-                    <Action onClick={onEnrich} disabled={enriching} title={enrichCost > 0 ? `${enrichCost} credit for each website read; unreachable sites are refunded` : undefined}>
+                    <Action onClick={onEnrich} disabled={enriching} title={enrichCost > 0 ? `${fmtUsdCost(enrichCost)} for each website read; unreachable sites are refunded` : undefined}>
                         {enriching ? <Loader2Icon className="size-3.5 animate-spin" /> : <SparklesIcon className="size-3.5" />}
                         Find people and emails
                     </Action>

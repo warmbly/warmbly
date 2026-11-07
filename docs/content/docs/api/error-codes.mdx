@@ -620,7 +620,7 @@ The [lead finder](/guides/lead-finder/) endpoints answer with their own codes.
 | `lead_provider_quota` | 429 | The source is rate limiting the key or its quota is used up. Retry later |
 | `lead_provider_unavailable` | 503 | The source did not answer, took too long, or (OpenStreetMap) every server is busy. Retry, or search a smaller area |
 
-A search through a source the instance pays for answers `402` with `insufficient_credits` past the credit balance and `429` with `usage_cap_exceeded` past a spend limit, and charges nothing. An enrichment run charges as it reads each website; one that reaches either limit stops with `status: "error"` and the reason in `last_error`, and leaves the remaining leads untouched.
+A search through a source the instance pays for, or a person's email found on request, answers `402` with `insufficient_credits` when the balance is too low and `429` with `usage_cap_exceeded` past a spend limit, and charges nothing. An enrichment run charges as it reads each website; one that reaches either limit stops with `status: "error"` and the reason in `last_error`, and leaves the remaining leads untouched.
 
 #### Automation refusals
 

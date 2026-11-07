@@ -716,13 +716,14 @@ func (r *leadFinderRepository) DeleteSearch(ctx context.Context, orgID, id uuid.
 // --- enrichment runs --------------------------------------------------------
 
 const leadRunColumns = `id, organization_id, requested_by_user_id, lead_ids, verify, people, status, total, processed,
-	emails_found, people_found, no_website, failed, credits_consumed, last_error, started_at, finished_at, created_at, updated_at`
+	emails_found, people_found, no_website, failed, charged_micro, last_error, started_at, finished_at, created_at, updated_at`
 
 func scanLeadRun(row pgx.Row) (models.LeadEnrichmentRun, error) {
 	var run models.LeadEnrichmentRun
 	err := row.Scan(&run.ID, &run.OrganizationID, &run.RequestedByUserID, &run.LeadIDs, &run.Verify, &run.People, &run.Status,
-		&run.Total, &run.Processed, &run.EmailsFound, &run.PeopleFound, &run.NoWebsite, &run.Failed, &run.CreditsConsumed,
+		&run.Total, &run.Processed, &run.EmailsFound, &run.PeopleFound, &run.NoWebsite, &run.Failed, &run.ChargedMicro,
 		&run.LastError, &run.StartedAt, &run.FinishedAt, &run.CreatedAt, &run.UpdatedAt)
+	run.ChargedUSD = run.ChargedMicro.USD()
 	return run, err
 }
 
@@ -811,20 +812,20 @@ func (r *leadFinderRepository) DueEnrichmentRuns(ctx context.Context, limit int)
 func (r *leadFinderRepository) UpdateEnrichmentProgress(ctx context.Context, run *models.LeadEnrichmentRun) error {
 	_, err := r.db.Exec(ctx, `
 		UPDATE lead_enrichment_runs SET
-			processed = $2, emails_found = $3, no_website = $4, failed = $5, credits_consumed = $6, people_found = $7,
+			processed = $2, emails_found = $3, no_website = $4, failed = $5, charged_micro = $6, people_found = $7,
 			updated_at = NOW()
 		WHERE id = $1 AND status = 'running'`,
-		run.ID, run.Processed, run.EmailsFound, run.NoWebsite, run.Failed, run.CreditsConsumed, run.PeopleFound)
+		run.ID, run.Processed, run.EmailsFound, run.NoWebsite, run.Failed, run.ChargedMicro, run.PeopleFound)
 	return err
 }
 
 func (r *leadFinderRepository) FinishEnrichmentRun(ctx context.Context, run *models.LeadEnrichmentRun) error {
 	_, err := r.db.Exec(ctx, `
 		UPDATE lead_enrichment_runs SET
-			status = $2, processed = $3, emails_found = $4, no_website = $5, failed = $6, credits_consumed = $7,
+			status = $2, processed = $3, emails_found = $4, no_website = $5, failed = $6, charged_micro = $7,
 			last_error = $8, people_found = $9, finished_at = NOW(), updated_at = NOW()
 		WHERE id = $1`,
-		run.ID, run.Status, run.Processed, run.EmailsFound, run.NoWebsite, run.Failed, run.CreditsConsumed,
+		run.ID, run.Status, run.Processed, run.EmailsFound, run.NoWebsite, run.Failed, run.ChargedMicro,
 		truncateRunes(run.LastError, 500), run.PeopleFound)
 	if err != nil {
 		return err

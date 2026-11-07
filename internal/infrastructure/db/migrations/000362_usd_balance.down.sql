@@ -1,3 +1,4 @@
+ALTER TABLE lead_enrichment_runs DROP COLUMN IF EXISTS charged_micro;
 ALTER TABLE contact_research_runs DROP COLUMN IF EXISTS charged_micro;
 ALTER TABLE placement_batches
     DROP COLUMN IF EXISTS max_micro,

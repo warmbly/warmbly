@@ -264,3 +264,6 @@ ALTER TABLE contact_research_runs
 
 UPDATE contact_research_runs SET charged_micro = credits_charged::bigint * legacy_credit_micro()
 WHERE credits_charged > 0 AND charged_micro = 0;
+
+ALTER TABLE lead_enrichment_runs
+    ADD COLUMN IF NOT EXISTS charged_micro bigint NOT NULL DEFAULT 0 CHECK (charged_micro >= 0);

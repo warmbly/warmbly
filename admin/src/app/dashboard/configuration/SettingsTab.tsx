@@ -309,7 +309,13 @@ const USAGE_DEFAULTS: UsageSettings = {
         { model: "gpt-6-luna", input_per_mtok: 0.1, output_per_mtok: 0.5 },
         { model: ANY_MODEL, input_per_mtok: 3, output_per_mtok: 15 },
     ],
-    units: { web_search: 0.01, placement_test: 0.4 },
+    units: {
+        web_search: 0.01,
+        placement_test: 0.4,
+        lead_website_read: 0.016,
+        lead_person_email: 0.016,
+        lead_search_page: 0.032,
+    },
 };
 
 // Known units first, in this order; any other unit the backend prices is listed after them by key.
@@ -321,6 +327,18 @@ const UNIT_LABELS: Record<string, { label: string; help: string }> = {
     placement_test: {
         label: "Placement test",
         help: "One inbox placement test past the workspace's free tests for the month. The workspace agrees to the price before each paid test, and a test that delivers no copy is refunded. 0 turns paid tests off, so a workspace waits for next month instead.",
+    },
+    lead_website_read: {
+        label: "Lead website read",
+        help: "The lead finder reading one business's website, including the people it names and their addresses. A site that never answers is refunded.",
+    },
+    lead_person_email: {
+        label: "Lead person email",
+        help: "Finding one named person's email in the lead finder on request. A search that finds no address is refunded.",
+    },
+    lead_search_page: {
+        label: "Lead search page",
+        help: "One page of a lead finder search through a source this instance pays for. The default is Google Places' Text Search list price; set it to what your provider charges. A workspace using its own key is not charged.",
     },
 };
 

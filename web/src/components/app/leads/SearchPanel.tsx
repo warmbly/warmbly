@@ -20,6 +20,7 @@ import LocationSearch from "./LocationSearch";
 import SourceLogo from "./SourceLogo";
 import { describeArea } from "./geo";
 import type { MapTool } from "./LeadMap";
+import { fmtUsdCost } from "@/lib/money";
 
 // Shown as one-tap chips; the rest live in the full list.
 const QUICK = ["restaurant", "dentist", "gym", "hair_salon", "plumber", "real_estate", "lawyer", "cafe", "car_repair", "hotel"];
@@ -167,8 +168,8 @@ export default function SearchPanel({
                                 description={
                                     !p.available
                                         ? "Connect a key under Integrations"
-                                        : p.credit_cost > 0
-                                          ? `${p.credit_cost} credit a page of ${p.page_size}`
+                                        : p.cost_usd > 0
+                                          ? `${fmtUsdCost(p.cost_usd)} a page of ${p.page_size}`
                                           : p.key_source === "workspace"
                                             ? "Billed to your own account"
                                             : "Free, no key needed"
