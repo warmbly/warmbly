@@ -30,6 +30,7 @@ import {
     XIcon,
 } from "lucide-react";
 import { useUpgradeDialog } from "@/hooks/context/upgrade";
+import useFeatureAccess from "@/hooks/useFeatureAccess";
 import { useConfirm } from "@/hooks/context/confirm";
 import { useCurrentOrg } from "@/stores/useAppStore";
 import { DitherMeter, type DitherTone } from "@/components/ui/dither";
@@ -185,6 +186,7 @@ function Body({
     onClose: () => void;
 }) {
     const upgrade = useUpgradeDialog();
+    const trial = useFeatureAccess().trial;
     const cap = a.allowance;
     const full = cap != null && (a.remaining ?? 0) <= 0;
     const pct = cap ? Math.min(100, Math.round((a.used / cap) * 100)) : 0;
@@ -192,7 +194,11 @@ function Body({
     const planLabel = a.plan_name || getPlan(currentPlan).label;
     const next = a.paid ? nextPlanWithMore(a, currentPlan) : null;
 
-    const title = reached
+    // A workspace without a plan that never had the free allowance holds none.
+    const needsPlan = !a.paid && cap === 0;
+    const title = needsPlan
+        ? "Mailboxes start with a plan"
+        : reached
         ? full
             ? "You've reached your mailbox allowance"
             : "This connect would pass your mailbox allowance"
@@ -218,11 +224,11 @@ function Body({
             <div>
                 <h2 className="text-[15px] font-semibold text-slate-900 leading-snug">{title}</h2>
                 <p className="text-[12.5px] text-slate-600 mt-1 leading-relaxed">
-                    <Explanation a={a} planLabel={planLabel} />
+                    <Explanation a={a} planLabel={planLabel} trial={trial} />
                 </p>
             </div>
 
-            {cap != null && (
+            {cap != null && !needsPlan && (
                 <div className="rounded-md border border-slate-200 p-3">
                     <div className="flex items-baseline justify-between gap-2 mb-1.5">
                         <span className="text-[12px] text-slate-700 font-medium">Connected mailboxes</span>
@@ -238,7 +244,9 @@ function Body({
                             : a.basis === "override"
                               ? "Raised for this workspace by an approved request"
                               : a.basis === "free"
-                                ? "Free workspace"
+                                ? trial
+                                    ? "Free trial"
+                                    : "Free plan"
                                 : `Set by ${planLabel}`}
                     </div>
                 </div>
@@ -267,7 +275,11 @@ function Body({
                             openPlans(
                                 "More mailboxes",
                                 "starter",
-                                `A free workspace holds ${cap?.toLocaleString() ?? "10"} mailboxes. A paid plan holds one for every send a day it includes, and more on request.`,
+                                needsPlan
+                                    ? "A paid plan holds one mailbox for every send a day it includes, and more on request. Every plan warms its mailboxes in the premium pool."
+                                    : trial
+                                    ? `Your trial holds ${cap?.toLocaleString() ?? "2"} mailboxes. A paid plan holds one for every send a day it includes, and more on request.`
+                                    : `Your free plan holds ${cap?.toLocaleString() ?? "10"} mailboxes. A paid plan holds one for every send a day it includes, and more on request.`,
                             )
                         }
                         className="mt-2.5 h-7 px-3 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
@@ -329,16 +341,26 @@ function Body({
     );
 }
 
-function Explanation({ a, planLabel }: { a: MailboxAllowance; planLabel: string }) {
+function Explanation({ a, planLabel, trial }: { a: MailboxAllowance; planLabel: string; trial: boolean }) {
     switch (a.basis) {
         case "unlimited":
             return <>There is no cap on mailboxes here. Connect as many as you need.</>;
         case "free":
-            return (
+            if (trial) {
+                return (
+                    <>
+                        Your free trial holds up to {a.allowance?.toLocaleString()} mailboxes, warming in the free pool. A
+                        paid plan holds more and warms them in the premium pool.
+                    </>
+                );
+            }
+            return a.allowance ? (
                 <>
-                    A free workspace holds up to {a.allowance?.toLocaleString()} mailboxes for warmup. Sending, and mailboxes
+                    Your free plan holds up to {a.allowance.toLocaleString()} mailboxes for warmup. Sending, and mailboxes
                     without a fixed cap, come with a plan.
                 </>
+            ) : (
+                <>Connecting and warming mailboxes starts with a plan. Every plan warms its mailboxes in the premium pool.</>
             );
         case "override":
             return (

@@ -3,13 +3,19 @@ title: Whole-domain mailbox connects
 description: "Set up the Google service account and the Microsoft app that let a workspace connect every mailbox on a Google Workspace domain or Microsoft 365 organization with one administrator's approval."
 ---
 
-A workspace can connect every mailbox on a Google Workspace domain or a Microsoft 365 organization through one administrator's approval, with no password and no sign-in per mailbox. In the dashboard these are **Add account > Google > Whole Workspace domain** and **Add account > Microsoft > Whole organization**, and both are the recommended way to connect those mailboxes. The customer side is in [connect a whole Google Workspace domain](/guides/mailbox-import/#connect-a-whole-google-workspace-domain) and [connect a whole Microsoft 365 organization](/guides/mailbox-import/#connect-a-whole-microsoft-365-organization).
+A workspace can connect every mailbox on a Google Workspace domain or a Microsoft 365 organization through one administrator's approval, with no password and no sign-in per mailbox. In the dashboard these are **Add account > Microsoft > Whole organization**, the recommended way to connect Microsoft 365 mailboxes, and **Add account > Google > Whole Workspace domain**, which is legacy: new Google Workspace domains are no longer connected through delegation, and the Google half of this page keeps the grants a workspace already holds working. The customer side is in [connect a whole Google Workspace domain](/guides/mailbox-import/#connect-a-whole-google-workspace-domain) and [connect a whole Microsoft 365 organization](/guides/mailbox-import/#connect-a-whole-microsoft-365-organization).
 
 This page is the operator side: what the instance needs before either option works. Both are off until you set them up, and a self-hosted instance shows them switched off in the dashboard, naming the settings still unset. `GET /emails/grants/config` reports the same as `google_missing` and `microsoft_missing`.
 
 Everything here is read by the backend only. It mints every token for these mailboxes itself and hands a short-lived one to a worker each time it needs one, so workers and consumers need nothing from this page.
 
 ## Google Workspace
+
+<Callout type="warn" title="Legacy: existing grants only">
+New Google domain-wide delegation grants are retired. A grant a workspace already holds keeps working (it can be checked, proved again, used to connect more mailboxes and removed), and a domain the workspace holds none for is refused with `google_delegation_retired`. New Workspace mailboxes sign in with Google once the domain's administrator marks the `BOX_GOOGLE_*` client Trusted, or connect with an app password; see [Google Workspace with Google sign-in](/guides/mailboxes/#google-workspace-with-google-sign-in).
+
+An instance that configured only this service account can no longer set up a new domain. Configure a Google OAuth client instead, as in [Gmail and Google Workspace](/development/deployment-guide/#gmail-and-google-workspace). A client with the **Internal** user type on your own Workspace organization is exempt from Google's 100-user cap for unverified apps ([Google's help](https://support.google.com/cloud/answer/13464323)); on any other domain, its administrator marks the client Trusted. Keep the service account key set while any grant is in use: it is what mints their tokens.
+</Callout>
 
 A Google Workspace domain is connected through domain-wide delegation to a Google Cloud service account that belongs to your instance. You create the service account once and load its key into the backend. Each customer's Workspace super admin then authorizes that service account in their own Admin console, and nothing on your side changes per customer.
 
@@ -104,9 +110,11 @@ Customers change nothing: the Client ID they authorized belongs to the service a
 
 Google treats domain-wide delegation as authorized by the customer's administrator, in their own Admin console. There is no OAuth consent screen for Google to review on that path, so the service account needs no Google app verification and no CASA security assessment for the Gmail scopes. Google's rules change, so confirm against Google's current help page on exceptions to verification requirements before relying on this. The sign-in client used for the domain proof asks only for `openid` and `email`, which are not sensitive scopes.
 
-The per-mailbox **Sign in with Google** path is the one that needs Google's verification, and a security assessment, for its restricted Gmail scopes. It runs on the `BOX_GOOGLE_*` client, and it is being retired in favor of the whole-domain connect and app passwords. See [moving existing mailboxes](#moving-existing-mailboxes).
+The per-mailbox **Sign in with Google** path is the one that needs Google's verification, and a security assessment, for its restricted Gmail scopes. It runs on the `BOX_GOOGLE_*` client and is the Workspace path for new domains. Until Google verifies the client, it is limited to 100 new users, except on domains whose administrator marks it Trusted and, for an Internal client, in your own organization. See [moving existing mailboxes](#moving-existing-mailboxes).
 
-### What the customer does
+### What the customer did
+
+These are the Admin console steps behind an existing grant, for an administrator checking or correcting its entry. No new domain is set up this way.
 
 1. A **super admin** of the Workspace opens [admin.google.com](https://admin.google.com) and goes to **Security > Access and data control > API controls > Manage domain-wide delegation**.
 2. Chooses **Add new**, pastes the Client ID the dashboard shows, and enters exactly these three scopes, comma separated:
@@ -131,6 +139,18 @@ The authorization comes before the proof, because Warmbly checks it straight awa
 - **APIs off.** The Gmail API or the Admin SDK API is not enabled on your service account's project (your side, not the customer's)
 
 A grant that worked and later fails its hourly check shows as invalid and its mailboxes stop; they restart on their own once a check passes again. See [`google_delegation_unauthorized`](/api/error-codes/#mailbox-source-refusals).
+
+### Optional scope for warmup engagement over IMAP
+
+An existing grant can also list `https://mail.google.com/`. The three scopes above stay required and are still what the grant check verifies; the fourth is optional. When the entry lists it, workers sign in to `imap.gmail.com` with a separate token minted under that scope alone, and run the recipient-side [warmup actions](/guides/warmup/#in-your-mail-client) (taking a message out of Spam, marking it read, starring it, marking it important) over IMAP. Filing, retention deletes, sending and sync stay on the Gmail API.
+
+To turn it on for a domain that is already connected, the super admin edits the existing domain-wide delegation entry for Warmbly's Client ID and adds the scope, so the entry reads:
+
+```text
+https://www.googleapis.com/auth/gmail.modify,https://www.googleapis.com/auth/gmail.settings.basic,https://www.googleapis.com/auth/admin.directory.user.readonly,https://mail.google.com/
+```
+
+Nothing changes in Warmbly. While the entry does not list it, or while the domain has IMAP turned off, Google refuses the IMAP token or the sign-in, and the worker runs the same actions on the Gmail API, remembering that for the mailbox until it is next loaded onto a worker. A worker or backend from before this change only ever uses the Gmail API.
 
 ## Microsoft 365
 
@@ -190,9 +210,9 @@ See [`microsoft_consent_missing`](/api/error-codes/#mailbox-source-refusals).
 
 ## Moving existing mailboxes
 
-Per-mailbox **Sign in with Google** is being retired. Mailboxes connected that way keep working and there is no cutoff date, but the dashboard marks them and offers to move each one without losing its history, campaigns or warmup:
+Mailboxes connected with the older per-mailbox **Sign in with Google** keep working and there is no cutoff date. The dashboard marks them and offers a move for each that keeps its history, campaigns and warmup:
 
-- **A Google Workspace mailbox** moves onto the domain's administrator grant. Connecting its address through the grant converts the mailbox in place
+- **A Google Workspace mailbox** reconnects with the new Google sign-in, once the domain's administrator marks the `BOX_GOOGLE_*` client Trusted, which moves its warmup engagement to IMAP. Where the workspace already holds a grant for the domain, it can move onto the grant instead
 - **A personal Gmail mailbox** (or any Google mailbox) moves to an app password, checked against Gmail before anything is stored
 
-Per-mailbox Microsoft sign-in is not being retired, but a mailbox on it can move onto an organization's grant the same way. The customer's side is in [moving off per-mailbox Google sign-in](/guides/mailboxes/#moving-off-per-mailbox-google-sign-in). Keep the `BOX_GOOGLE_*` client configured while any mailbox still uses it: it is what refreshes their tokens.
+A mailbox on per-mailbox Microsoft sign-in can move onto an organization's grant the same way. The customer's side is in [moving off per-mailbox Google sign-in](/guides/mailboxes/#moving-off-per-mailbox-google-sign-in). Keep the `BOX_GOOGLE_*` client configured while any mailbox still uses it: it is what refreshes their tokens.

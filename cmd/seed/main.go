@@ -47,6 +47,7 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/argon2"
+	"github.com/warmbly/warmbly/internal/pkg/crypt"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/seed"
 )
@@ -152,6 +153,11 @@ func seedBaseline(ctx context.Context, pool *pgxpool.Pool) error {
 	// the running worker container can pick the assignments up.
 	if err := upsertWorker(ctx, pool, workerShared, "worker-1", "10.0.0.11", "", true); err != nil {
 		return fmt.Errorf("dev worker: %w", err)
+	}
+	// Its own node credential, so `make worker` also runs with NODE_REQUIRE_NODE_CREDENTIAL=true.
+	if _, err := pool.Exec(ctx, `UPDATE fleet_nodes SET credential_hash = $2, updated_at = now() WHERE id = $1`,
+		workerShared, crypt.SHA256(seed.DevNodeCredential)); err != nil {
+		return fmt.Errorf("dev worker credential: %w", err)
 	}
 
 	// Connect two email accounts on the dev org. Without these a fresh
@@ -342,12 +348,12 @@ func seedRich(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 	seq1 := uuid.MustParse("55555555-0000-0000-0000-000000000001")
 	seq2 := uuid.MustParse("55555555-0000-0000-0000-000000000002")
-	if err := upsertSequence(ctx, pool, seq1, campaignID, orgBeta, "Intro", "Quick question, {{first_name}}",
-		"Hi {{first_name}}, ...intro body...", 0); err != nil {
+	if err := upsertSequence(ctx, pool, seq1, campaignID, orgBeta, "Intro", "Quick question, {{.FirstName}}",
+		"Hi {{.FirstName}}, ...intro body...", 0); err != nil {
 		return err
 	}
 	if err := upsertSequence(ctx, pool, seq2, campaignID, orgBeta, "Follow-up", "Re: Quick question",
-		"Hi {{first_name}}, following up...", 3); err != nil {
+		"Hi {{.FirstName}}, following up...", 3); err != nil {
 		return err
 	}
 

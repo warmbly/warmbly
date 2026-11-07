@@ -2,6 +2,7 @@ package msgraph
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -116,5 +117,21 @@ func TestFetchMessageStillTreatsNotFoundAsASkip(t *testing.T) {
 	}
 	if msg != nil {
 		t.Fatalf("FetchMessage returned %+v, want nil", msg)
+	}
+}
+
+// A success status with a body that is not JSON is named as such, not passed
+// up as a bare decode error or dressed as an unreachable server.
+func TestUnreadableSuccessBodyIsNamed(t *testing.T) {
+	c := deltaTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("\xe4\x9a\x01not json"))
+	}, nil)
+	var out listPage
+	if err := c.doJSON(t.Context(), "GET", graphBase+"/me/mailFolders/inbox/messages", nil, &out); !errors.Is(err, ErrUnreadableResponse) {
+		t.Fatalf("list: got %T %v", err, err)
+	}
+	if _, err := c.FetchMessage(t.Context(), "inbox", "m1"); !errors.Is(err, ErrUnreadableResponse) {
+		t.Fatalf("fetch: got %T %v", err, err)
 	}
 }

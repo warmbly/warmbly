@@ -1,6 +1,6 @@
 // Full-page screen a hosted workspace sees on a locked page before it has a
-// plan: the auth screen's sky, one floating card, what is already included
-// and the plan that unlocks the feature. Self-hosting is a footnote: it is
+// plan: the auth screen's sky, one floating card, what it already has (when it
+// has anything) and the plan that unlocks the feature. Self-hosting is a footnote: it is
 // one way to run the product, not the reason to be here.
 
 import React from "react";
@@ -20,6 +20,7 @@ export default function SubscriptionLockedScreen({ feature }: { feature: string 
     // The Warmup plan pays for warming only, so it meets the same locks.
     const access = useFeatureAccess();
     const warmupOnly = access.warmupOnly;
+    const keptFree = access.keptFreeWarmup;
     const warmupLabel = getPlan(access.plan).label;
     const starter = getPlan("starter");
     const openPlans = () =>
@@ -48,7 +49,7 @@ export default function SubscriptionLockedScreen({ feature }: { feature: string 
             >
                 <div className="px-7 pt-8 pb-6 md:px-10 md:pt-10 text-center">
                     <span className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full bg-sky-50 text-sky-700 text-[11px] font-medium">
-                        <SparklesIcon className="w-3 h-3" /> {warmupOnly ? `${warmupLabel} plan` : "Free workspace"}
+                        <SparklesIcon className="w-3 h-3" /> {warmupOnly ? `${warmupLabel} plan` : keptFree ? "Free plan" : access.trialEnded ? "Trial ended" : "No plan yet"}
                     </span>
                     <h1 className="mt-4 text-[26px] md:text-[34px] font-semibold tracking-[-0.03em] leading-[1.08] text-slate-900">
                         {feature} unlocks with a plan.
@@ -56,28 +57,34 @@ export default function SubscriptionLockedScreen({ feature }: { feature: string 
                     <p className="mt-3 text-[14px] text-slate-500 leading-relaxed max-w-xl mx-auto">
                         {warmupOnly
                             ? `Your ${warmupLabel} plan covers warming your mailboxes. Sending needs a plan that includes it, and every one of those keeps the premium pool.`
-                            : "Your workspace is free forever for warming mailboxes. Pick a plan when you are ready to send from it."}
+                            : keptFree
+                            ? "Your workspace keeps its free plan for warming mailboxes. Pick a plan when you are ready to send from it."
+                            : access.trialEnded
+                            ? "Your trial has ended, so sending and warmup are paused. Your mailboxes, contacts and campaigns are kept, and warmup picks up where it stopped when you choose a plan."
+                            : "Look around as long as you like. Connecting and warming mailboxes starts with a plan."}
                     </p>
                 </div>
 
-                <div className="grid md:grid-cols-2 gap-px bg-slate-200/70 border-y border-slate-200/70">
-                    <Path
-                        icon={InboxIcon}
-                        eyebrow="Included"
-                        title={warmupOnly ? "Every mailbox in the premium pool" : "Warm up to 10 mailboxes"}
-                        body={
-                            warmupOnly
-                                ? "Connect as many mailboxes as you like and they warm in the premium pool, with replies and spam rescue handled for you."
-                                : "Connect mailboxes and they warm in the Warmbly pool at no cost, with replies and spam rescue handled for you."
-                        }
-                        cta="Go to mailboxes"
-                        to="/app/emails"
-                    />
+                <div className={`grid gap-px bg-slate-200/70 border-y border-slate-200/70 ${warmupOnly || keptFree ? "md:grid-cols-2" : ""}`}>
+                    {(warmupOnly || keptFree) && (
+                        <Path
+                            icon={InboxIcon}
+                            eyebrow="Included"
+                            title={warmupOnly ? "Every mailbox in the premium pool" : "Warm up to 10 mailboxes"}
+                            body={
+                                warmupOnly
+                                    ? "Connect as many mailboxes as you like and they warm in the premium pool, with replies and spam rescue handled for you."
+                                    : "Your mailboxes keep warming in the free pool at no cost, with replies and spam rescue handled for you."
+                            }
+                            cta="Go to mailboxes"
+                            to="/app/emails"
+                        />
+                    )}
                     <Path
                         icon={CloudIcon}
                         eyebrow={starter.priceMonthly != null ? `From $${starter.priceMonthly}/mo` : "Plans"}
                         title="Send from Warmbly Cloud"
-                        body="Campaigns, the unified inbox, contacts, CRM, automations and integrations on our infrastructure."
+                        body="Campaigns, the unified inbox, contacts, CRM, automations and integrations on our infrastructure, with every mailbox warming in the premium pool."
                         bullets={starter.bullets}
                         cta={isOwner ? "Choose a plan" : "See plans"}
                         onClick={openPlans}
@@ -91,7 +98,7 @@ export default function SubscriptionLockedScreen({ feature }: { feature: string 
                         <a href={SELF_HOST_DOCS} target="_blank" rel="noreferrer" className="font-medium text-slate-700 hover:text-slate-900">
                             Self-host for free
                         </a>{" "}
-                        and link it here to warm its mailboxes.
+                        if you want to own the stack. It warms only against your own mailboxes, so for deliverability the Warmbly Cloud pool does much better.
                     </span>
                     {!isOwner && <span>Only the workspace owner can choose a plan.</span>}
                 </div>

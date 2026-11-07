@@ -102,6 +102,8 @@ Two columns may fill the same field, which is how a `Phone` and a `Mobile` colum
 `Dana@Acme.com` and `dana@acme.com` are the same contact, and a contact belongs to the workspace, so an address a teammate already added counts as one you have. Choose **Leave as is** (their details stay untouched) or **Update details** (empty details are filled in from the file). The API also accepts `create_duplicate`, which updates too, since one address is one contact per workspace.
 
 Skipping still adds the contact to the campaigns, segments, and labels the import targets: it leaves their fields alone, it does not leave them out of the list. If the same address appears twice in one file it becomes one contact, and the extra rows count as skipped with the line they repeat.
+
+To keep people another campaign is still emailing out of this import's campaigns, tick **Skip contacts already running in another campaign** under **Campaigns** on **Review**. A contact counts as running when their sequence in a campaign that is not a draft and not completed is still queued, sending or held. One who replied, bounced, unsubscribed or finished every step there is added as usual. Skipped contacts are still imported or updated and still get the import's labels and segments; only the campaign enrolment is left out. A segment [linked to a campaign](/guides/segments/#linking-a-segment-to-a-campaign) still enrols everyone in it, so pinning a skipped contact into a segment that feeds the same campaign enrols them through the link. It is off by default.
 </Callout>
 
 An address you already hold as a contact in another workspace you belong to cannot be added to this one, and that row fails with a reason saying so; the other workspace's contact is never changed by an import here.
@@ -216,7 +218,7 @@ When more contacts match than are loaded, a bar appears under the header: **Sele
 
 The set is the one the list is showing: search, filters, the subscription facet, and the campaign or segment the list is scoped to all narrow it. Changing any of them clears the selection, because it would no longer mean what it did when you made it. A selection past `250,000` contacts is refused rather than half-applied; add a filter and work through it in parts.
 
-Every bulk action reads the selection: **Edit**, **Segment**, **Remove from segment**, **Remove from campaign**, **Research**, **Verify**, **Mark deliverable** and **Delete**. **Push to CRM** and **Research** are the exceptions: a push calls the CRM once per contact while you wait, and each research run spends AI credits, so both stay capped at `500` at a time. A workspace in [HubSpot mode](/guides/hubspot/) or [Pipedrive mode](/guides/pipedrive/) does not need **Push to CRM** for that CRM: a contact is created there the first time Warmbly emails it.
+Every bulk action reads the selection: **Edit**, **Segment**, **Remove from segment**, **Remove from campaign**, **Research**, **Verify**, **Mark deliverable** and **Delete**. **Push to CRM** and **Research** are the exceptions: a push calls the CRM once per contact while you wait, and each research run is charged to the workspace balance, so both stay capped at `500` at a time. A workspace in [HubSpot mode](/guides/hubspot/) or [Pipedrive mode](/guides/pipedrive/) does not need **Push to CRM** for that CRM: a contact is created there the first time Warmbly emails it.
 
 **Select all matching** is in the **From contacts** picker too, on a campaign's Leads tab and a segment page, so a whole search can be added as leads or members in one step.
 
@@ -401,3 +403,7 @@ This is the safe default response to a bad signal: stop sending rather than keep
   <Card title="Deliverability" href="/guides/deliverability/" />
   <Card title="Automations" href="/guides/automations/" />
 </Cards>
+
+## Text import encoding
+
+Delimited CSV, TSV and TXT imports, including supported extensionless text files, use UTF-8 with an optional UTF-8 BOM. Unicode, comma/semicolon detection, tab-separated input, quoted multiline cells and ragged rows retain their existing parsing behavior. Binary control characters, NUL bytes and invalid UTF-8 are refused before row parsing. XLSX and XLSM imports retain their existing workbook parser and decompression limits; their support is separate from campaign attachment uploads.

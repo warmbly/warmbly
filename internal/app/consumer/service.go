@@ -43,6 +43,8 @@ type CloudExecution interface {
 
 type JobsService struct {
 	CampaignIsolationEnabled bool
+	// DBConns is the database pool the event handlers share; it sizes how many mailboxes run at once.
+	DBConns int32
 	// Bus delivers the jobs.worker-events stream (Kafka or NATS).
 	Bus eventbus.EventBus
 	// Codec decodes bus payloads (jobs.worker-events); it must match the
@@ -54,6 +56,7 @@ type JobsService struct {
 	EmailHistoryIDRepository    repository.EmailHistoryIDRepository
 	EmailGraphDeltaRepository   repository.EmailGraphDeltaRepository
 	EmailSyncStateRepository    repository.EmailSyncStateRepository
+	MailboxPushRepository       repository.MailboxPushRepository
 	ArrivalOutbox               repository.ArrivalOutbox
 	EmailAccountErrorRepository repository.EmailAccountErrorRepository
 	WarmupRepo                  repository.WarmupRepository
@@ -115,6 +118,9 @@ type JobsService struct {
 	// dead-worker job moves or strands their mailboxes. Nil disables it.
 	Notifier OrgNotifier
 
+	// UniboxAccess keeps inbox notices from workspaces whose plan locks the inbox. Nil skips the check.
+	UniboxAccess UniboxGate
+
 	// OpsNotifier raises instance-wide operator alerts, which are a different
 	// audience from Notifier: the operator hears about the fleet, the tenant
 	// hears about their mailboxes. Nil disables it.
@@ -133,6 +139,8 @@ type JobsService struct {
 	Evidence advanced.EvidenceRecorder
 
 	eventHandlers map[models.JobEventType]func(ctx context.Context, body any) error
+	// arrivalBacklogAt is when the arrival loop last counted its queue; only that loop touches it.
+	arrivalBacklogAt time.Time
 }
 
 func (s *JobsService) Start(ctx context.Context) {
@@ -145,7 +153,9 @@ func (s *JobsService) Start(ctx context.Context) {
 	go s.runStoredSendResults(ctx)
 	go s.runArrivalOutbox(ctx)
 
-	if err := s.Bus.Subscribe(ctx, []string{kafka.TopicWorkerEvents}, "consumer-group", s.receive); err != nil {
+	lanes := WorkerEventConcurrency(s.DBConns)
+	log.Info().Int("lanes", lanes).Msg("consumer: worker-events ordered mailbox lanes")
+	if err := eventbus.SubscribeKeyed(ctx, s.Bus, []string{kafka.TopicWorkerEvents}, "consumer-group", lanes, workerEventKey, s.receive); err != nil {
 		log.Error().Err(err).Msg("consumer: worker-events subscription ended")
 	}
 }

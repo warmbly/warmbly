@@ -8,6 +8,7 @@ package dsn
 import (
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 // Report is the extracted result of parsing a bounce message.
@@ -23,10 +24,23 @@ type Report struct {
 	// OriginalMessageID is the Message-ID of the original outbound message the
 	// bounce concerns, recovered from the returned headers section.
 	OriginalMessageID string
+	// Status is the first recipient's enhanced status code, e.g. "5.2.2".
+	Status string
+	// Action is the first recipient's Action field, lowercased.
+	Action string
+	// Diagnostic is the remote server's reply from Diagnostic-Code without its
+	// type prefix, whitespace collapsed and bounded by ReasonLimit.
+	Diagnostic string
 }
+
+// ReasonLimit bounds Report.Reason in runes; a notice can paste a whole transcript.
+const ReasonLimit = 500
 
 var (
 	reStatus     = regexp.MustCompile(`(?im)^\s*Status:\s*([245])\.\d{1,3}\.\d{1,3}`)
+	reStatusCode = regexp.MustCompile(`(?im)^\s*Status:\s*([245]\.\d{1,3}\.\d{1,3})`)
+	reDiagField  = regexp.MustCompile(`(?im)^[ \t]*Diagnostic-Code:[^;\r\n]*;[ \t]*(.*)$`)
+	reFieldName  = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]*:`)
 	reAction     = regexp.MustCompile(`(?im)^\s*Action:\s*(failed|delayed|delivered|relayed|expanded)`)
 	reFinalRcpt  = regexp.MustCompile(`(?im)^\s*(?:Final|Original)-Recipient:\s*[^;\r\n]*;\s*<?([^\s<>]+@[^\s<>]+?)>?\s*$`)
 	reMessageID  = regexp.MustCompile(`(?im)^\s*Message-ID:\s*<([^>\s]+)>`)
@@ -119,8 +133,87 @@ func Parse(body string) Report {
 	if ids := reMessageID.FindAllStringSubmatch(body, -1); len(ids) > 0 {
 		r.OriginalMessageID = strings.TrimSpace(ids[len(ids)-1][1])
 	}
+	// Recipient, status and diagnostic come from one per-recipient group.
+	group := failedGroup(body)
+	if m := reFinalRcpt.FindStringSubmatch(group); m != nil {
+		r.FailedRecipient = strings.TrimSpace(m[1])
+	}
+	if a := reAction.FindStringSubmatch(group); a != nil {
+		r.Action = strings.ToLower(a[1])
+	}
+	if m := reStatusCode.FindStringSubmatch(group); m != nil {
+		r.Status = m[1]
+	}
+	r.Diagnostic = diagnosticText(group)
 
 	return r
+}
+
+var reBlankLine = regexp.MustCompile(`\r?\n[ \t]*\r?\n`)
+
+// failedGroup is the per-recipient field group a notice reports: the first
+// with a permanent status, else the first with a status or diagnostic.
+func failedGroup(body string) string {
+	first := ""
+	for _, g := range reBlankLine.Split(body, -1) {
+		if m := reStatusCode.FindStringSubmatch(g); m != nil && m[1][0] == '5' {
+			return g
+		}
+		if first == "" && (reStatusCode.MatchString(g) || reDiagField.MatchString(g)) {
+			first = g
+		}
+	}
+	return first
+}
+
+// diagnosticText reads the first Diagnostic-Code value with its folded
+// continuation lines.
+func diagnosticText(body string) string {
+	loc := reDiagField.FindStringSubmatchIndex(body)
+	if loc == nil {
+		return ""
+	}
+	parts := []string{body[loc[2]:loc[3]]}
+	for _, line := range strings.Split(body[loc[1]:], "\n")[1:] {
+		line = strings.TrimRight(line, "\r")
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || (line[0] != ' ' && line[0] != '\t') || reFieldName.MatchString(trimmed) {
+			break
+		}
+		parts = append(parts, trimmed)
+	}
+	return bound(strings.Join(parts, " "))
+}
+
+// bound collapses whitespace, drops control characters and caps the length.
+func bound(s string) string {
+	s = strings.Join(strings.FieldsFunc(s, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }), " ")
+	if r := []rune(s); len(r) > ReasonLimit {
+		s = string(r[:ReasonLimit])
+	}
+	return s
+}
+
+// Reason is the notice's own account of the failure, its status code and the
+// remote server's reply, or fallback when the notice carries neither. The
+// Status field leads unless the reply's own deciding code is the same, so it
+// is the code StatusIn reads.
+func (r Report) Reason(fallback string) string {
+	switch {
+	case r.Diagnostic != "" && (r.Status == "" || sameStatus(r.Diagnostic, r.Status)):
+		return r.Diagnostic
+	case r.Diagnostic != "":
+		return bound(r.Status + " " + r.Diagnostic)
+	case r.Status != "":
+		return r.Status
+	}
+	return bound(fallback)
+}
+
+func sameStatus(text, status string) bool {
+	got, ok := StatusIn(text)
+	want, wok := parseStatus(status)
+	return ok && wok && got == want
 }
 
 func (r Report) hasNo4xx(body string) bool {
@@ -172,5 +265,38 @@ func (r Report) WithFailedRecipients(header, subject, body string) Report {
 		first := strings.TrimSpace(strings.Split(header, ",")[0])
 		r.FailedRecipient = strings.Trim(first, "<>")
 	}
+	if r.Diagnostic == "" {
+		r.Diagnostic = proseDiagnostic(body)
+	}
 	return r
+}
+
+// reReplyLine is a line of the notice that quotes the remote server's reply;
+// reInlineReply is Exim's older form, the reply after the host on one line.
+var (
+	reReplyLine   = regexp.MustCompile(`(?m)^[ \t]*[45]\d\d[ -]\S.*$`)
+	reInlineReply = regexp.MustCompile(`(?i)remote (?:mail )?server[^\n]*?:\s+([45]\d\d[ -]\S[^\n]*)`)
+)
+
+// proseDiagnostic is the remote server's reply as a notice without a status
+// part quotes it (Exim's "SMTP error from remote mail server", Gmail's "The
+// response from the remote server was:"), with its continuation lines.
+func proseDiagnostic(body string) string {
+	notice := noticeText(body)
+	loc := reReplyLine.FindStringIndex(notice)
+	if loc == nil {
+		if m := reInlineReply.FindStringSubmatch(notice); m != nil {
+			return bound(m[1])
+		}
+		return ""
+	}
+	parts := []string{notice[loc[0]:loc[1]]}
+	for _, line := range strings.Split(notice[loc[1]:], "\n")[1:] {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || !reReplyLine.MatchString(line) && (line[0] != ' ' && line[0] != '\t') {
+			break
+		}
+		parts = append(parts, trimmed)
+	}
+	return bound(strings.Join(parts, " "))
 }

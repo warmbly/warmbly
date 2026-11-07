@@ -75,6 +75,12 @@ type Retention struct {
 	// receipts, tampering and spam reports) are kept. The daily warmup
 	// statistics behind the analytics are separate and never pruned.
 	WarmupEventDays int `json:"warmup_event_days"`
+	// CampaignLogDays is how long a campaign's activity feed keeps an entry; 0 keeps every entry.
+	CampaignLogDays int `json:"campaign_log_days"`
+	// NotificationDays is how long in-app notifications are kept, read or not; 0 keeps them all.
+	NotificationDays int `json:"notification_days"`
+	// WebhookDeliveryDays is how long a settled webhook delivery stays in its endpoint's log; 0 keeps them all.
+	WebhookDeliveryDays int `json:"webhook_delivery_days"`
 }
 
 // Tracking holds the engagement-classification windows. Zero means "compiled
@@ -187,6 +193,13 @@ type Deliverability struct {
 	AuthGraceHours int `json:"auth_grace_hours"`
 }
 
+// MailboxSignin holds how mailboxes change the way they sign in.
+type MailboxSignin struct {
+	// AutoVendorReconnect has an inbox vendor that can sign in for Warmbly reconnect its Google mailboxes
+	// that lack full mail access, with no click. Off leaves the reconnect to a member.
+	AutoVendorReconnect bool `json:"auto_vendor_reconnect"`
+}
+
 // Placement holds the inbox placement test knobs.
 type Placement struct {
 	// TestsPerMonthTrial and TestsPerMonthPaid are how many tests one workspace
@@ -297,6 +310,8 @@ type Document struct {
 	Deliverability Deliverability `json:"deliverability"`
 	Placement      Placement      `json:"placement"`
 	Notifications  Notifications  `json:"notifications"`
+	MailboxSignin  MailboxSignin  `json:"mailbox_signin"`
+	Usage          Usage          `json:"usage"`
 }
 
 // Defaults is the document a fresh instance behaves as if it had.
@@ -314,6 +329,8 @@ func Defaults() Document {
 		Tracking:       DefaultTracking(),
 		Deliverability: DefaultDeliverability(),
 		Placement:      DefaultPlacement(),
+		MailboxSignin:  MailboxSignin{AutoVendorReconnect: true},
+		Usage:          DefaultUsage(),
 	}
 }
 
@@ -346,6 +363,9 @@ func DefaultRetention() Retention {
 		AuditLogDays:        config.AuditLogRetentionDaysDefault,
 		WarmupMailDays:      config.WarmupMailRetentionDaysDefault,
 		WarmupEventDays:     config.WarmupEventRetentionDaysDefault,
+		CampaignLogDays:     config.CampaignLogRetentionDaysDefault,
+		NotificationDays:    config.NotificationRetentionDaysDefault,
+		WebhookDeliveryDays: config.WebhookDeliveryRetentionDaysDefault,
 	}
 }
 
@@ -374,6 +394,16 @@ func (r *Retention) Normalize() {
 	// the thirty-day health bands that read them.
 	r.WarmupMailDays = clamp(r.WarmupMailDays, config.WarmupMailRetentionDaysDefault, config.WarmupMailRetentionDaysMin)
 	r.WarmupEventDays = clamp(r.WarmupEventDays, config.WarmupEventRetentionDaysDefault, config.WarmupEventRetentionDaysMin)
+	// The feed windows treat 0 as keep everything, which is also their default.
+	optional := func(v int) int {
+		if v <= 0 {
+			return 0
+		}
+		return clamp(v, 0, config.RetentionDaysMin)
+	}
+	r.CampaignLogDays = optional(r.CampaignLogDays)
+	r.NotificationDays = optional(r.NotificationDays)
+	r.WebhookDeliveryDays = optional(r.WebhookDeliveryDays)
 }
 
 // Normalize clamps a document into its accepted range. It is applied on read
@@ -394,6 +424,7 @@ func (d *Document) Normalize() {
 	d.Deliverability.Normalize()
 	d.Placement.Normalize()
 	d.Notifications.Normalize()
+	d.Usage.Normalize()
 }
 
 // Normalize clamps the grace window. Zero and negative resolve to the compiled
@@ -463,6 +494,9 @@ type Patch struct {
 		AuditLogDays        *int `json:"audit_log_days"`
 		WarmupMailDays      *int `json:"warmup_mail_days"`
 		WarmupEventDays     *int `json:"warmup_event_days"`
+		CampaignLogDays     *int `json:"campaign_log_days"`
+		NotificationDays    *int `json:"notification_days"`
+		WebhookDeliveryDays *int `json:"webhook_delivery_days"`
 	} `json:"retention"`
 	Tracking *struct {
 		MachineWindowOpenSeconds     *int `json:"machine_window_open_seconds"`
@@ -491,6 +525,15 @@ type Patch struct {
 	Notifications *struct {
 		Channels *[]NotifyChannel `json:"channels"`
 	} `json:"notifications"`
+	MailboxSignin *struct {
+		AutoVendorReconnect *bool `json:"auto_vendor_reconnect"`
+	} `json:"mailbox_signin"`
+	// Models and Units replace the whole list or map when present.
+	Usage *struct {
+		MarkupPercent *int                `json:"markup_percent"`
+		Models        *[]ModelPrice       `json:"models"`
+		Units         *map[string]float64 `json:"units"`
+	} `json:"usage"`
 }
 
 // Apply merges a patch onto a document.
@@ -540,6 +583,15 @@ func (p Patch) Apply(doc Document) Document {
 		}
 		if p.Retention.WarmupEventDays != nil {
 			doc.Retention.WarmupEventDays = *p.Retention.WarmupEventDays
+		}
+		if p.Retention.CampaignLogDays != nil {
+			doc.Retention.CampaignLogDays = *p.Retention.CampaignLogDays
+		}
+		if p.Retention.NotificationDays != nil {
+			doc.Retention.NotificationDays = *p.Retention.NotificationDays
+		}
+		if p.Retention.WebhookDeliveryDays != nil {
+			doc.Retention.WebhookDeliveryDays = *p.Retention.WebhookDeliveryDays
 		}
 	}
 	if p.Tracking != nil {
@@ -598,6 +650,24 @@ func (p Patch) Apply(doc Document) Document {
 	}
 	if p.Notifications != nil && p.Notifications.Channels != nil {
 		doc.Notifications.Channels = mergeChannels(doc.Notifications.Channels, *p.Notifications.Channels)
+	}
+	if p.MailboxSignin != nil && p.MailboxSignin.AutoVendorReconnect != nil {
+		doc.MailboxSignin.AutoVendorReconnect = *p.MailboxSignin.AutoVendorReconnect
+	}
+	if p.Usage != nil {
+		if p.Usage.MarkupPercent != nil {
+			v := *p.Usage.MarkupPercent
+			doc.Usage.MarkupPercent = &v
+		}
+		if p.Usage.Models != nil {
+			doc.Usage.Models = append([]ModelPrice(nil), (*p.Usage.Models)...)
+		}
+		if p.Usage.Units != nil {
+			doc.Usage.Units = map[string]float64{}
+			for k, v := range *p.Usage.Units {
+				doc.Usage.Units[k] = v
+			}
+		}
 	}
 	return doc
 }

@@ -28,6 +28,9 @@ func (h *Handler) InternalWarmupDispatch(c *gin.Context) {
 		c.Status(http.StatusBadRequest)
 		return
 	}
+	if !h.nodeWorkerMailbox(c, "worker.warmup_dispatch", http.StatusNotFound, req.WorkerID, req.MailboxID) {
+		return
+	}
 	ctx := c.Request.Context()
 	if admission, ok := h.WarmupDispatch.(repository.OutboundAdmissionRepository); ok {
 		state, err := admission.InspectOutbound(ctx, req.TaskID, req.MailboxID, req.WorkerID)

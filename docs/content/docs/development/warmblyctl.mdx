@@ -247,6 +247,7 @@ The [shared authentication reference](/api/authentication/) remains the backend 
 | [`org list`](#org-list) | Lists the workspaces on this instance with their id, owner, and size |
 | [`org export`](#org-export) | Writes a whole workspace to a portable archive file |
 | [`org import`](#org-import) | Applies an archive to a workspace on this instance |
+| [`db load`](#db-load) | Shows what the database is busy with: connections by service, costliest queries, largest tables |
 
 `warmblyctl --help` lists them, and `warmblyctl <command> --help` prints one command's flags with an example. The [API commands](#the-api-commands) are further down, because they authenticate differently.
 
@@ -608,6 +609,56 @@ The whole import runs in one transaction: if any part fails, nothing lands and t
 
 Billing history, plan overrides, worker placement, mailbox sync checkpoints and warmup pool membership are exported for the record but never applied: each belongs to the instance rather than to the workspace. [Export and import](/guides/workspace-export-import/) has the full table.
 
+## org attachments-preflight
+
+With `jq` installed, write reports to a new private directory and resume only when the first page succeeds and its `done` field is false. The subshell keeps its restrictive permissions and error handling local to this example:
+
+```bash
+(
+  set -eu
+  umask 077
+  report_dir="$(mktemp -d ./attachment-preflight.XXXXXXXX)"
+  printf 'Reports: %s\n' "$report_dir"
+  warmblyctl org attachments-preflight --file ./workspace.warmbly.zip \
+    --limit 25 > "$report_dir/page-1.json"
+  page_done="$(jq -r '.done' "$report_dir/page-1.json")"
+  if [ "$page_done" = false ]; then
+    next_after="$(jq -r '.next_after' "$report_dir/page-1.json")"
+    archive_sha256="$(jq -r '.archive_sha256' "$report_dir/page-1.json")"
+    warmblyctl org attachments-preflight --file ./workspace.warmbly.zip \
+      --after "$next_after" --expect-sha256 "$archive_sha256" \
+      --limit 25 > "$report_dir/page-2.json"
+  fi
+)
+```
+
+Reads private campaign attachment rows and their bytes from an **existing local workspace archive**, comparing each selected file with the [new-upload profile](/guides/campaigns/#campaign-attachments). This command works offline without `PRIMARY_DB`, a storage client, credentials or a destination workspace. It opens the archive for reading and prints JSON to stdout. Keep the archive immutable and protect reports as workspace data: they contain filenames, identifiers and content fingerprints. Obtaining an archive is a separate, authorized export operation; this command does not create or download one.
+
+| Flag | Does |
+|---|---|
+| `--file` | Regular local archive file. Required |
+| `--limit` | Rows inspected per page, from 1 to 100. Default 25 |
+| `--after` | Rows to skip. Use the previous successful page's `next_after`, starting at zero |
+| `--expect-sha256` | Expected archive fingerprint. Required when resuming with `--after` |
+
+Resume using the same binary, archive and classifier build. Every page hashes the whole compressed archive before and after inspection and rescans campaign and attachment metadata. Only the selected attachment members are decompressed for classification. A failed or interrupted run emits no report; retry the same page. Save each successful report before advancing. `done` means all attachment **rows in this archive** have been visited, not that every file matches the profile. `classifier_build` identifies the inspecting binary; an unstamped development binary needs its source commit recorded separately. `source_version` is informational archive metadata.
+
+| Per-file `status` | Meaning |
+|---|---|
+| `matches_upload_profile` | Original bytes pass this binary's upload classifier. `canonical_mime` is its result; `stored_mime` remains unchanged |
+| `outside_upload_profile` | The file does not meet the current upload profile, including its size limits |
+| `missing_blob` | The row has no matching available private blob in the archive |
+| `metadata_mismatch` | Campaign/key scope or stored sizes do not agree |
+| `unreadable_blob` | The selected member could not be read with its ZIP integrity checks |
+
+`content_sha256` fingerprints bytes that were successfully read within the upload size limit. Missing, inconsistent, oversized and empty members do not receive one. `unreferenced_blobs` counts attachment blob references without an attachment row; their content is not classified. Review those separately. Zero exit status means the report completed, including any nonmatching or unknown results. Structural archive errors and invalid options exit nonzero.
+
+The command accepts archive format versions supported by this binary, including v0.6.75 archives. It requires complete `campaigns` and `campaign_attachments` tables with matching row counts, refuses duplicate paths and attachment identifiers, and checks campaign ownership against the archive organization. Every member read has its CRC32 checked, including a recorded zero checksum. Archives without private blob bytes produce `missing_blob` results. Limits are 8 GiB compressed archive size, the existing 64 MiB manifest limit, 64 MiB decompressed per metadata table, 1 MiB per metadata row, and the upload profile's 15 MiB per selected attachment, processed sequentially. Cancellation is checked before archive source reads, including ZIP indexing and compressed member reads. Classifier calls remain synchronous. ZIP directory indexing and classifier work still consume resources; page size is not a process memory or runtime guarantee.
+
+The input path must resolve to a regular file before opening, and the opened descriptor must identify the same regular file. Linux, macOS and supported BSD builds use a nonblocking open so descriptor verification also covers a path changed to a FIFO. These checks and the archive fingerprints detect ordinary file changes; they do not create a filesystem snapshot or interrupt a source read already in progress.
+
+This is an inventory observation, not malware certification, import approval or send eligibility. It does not change archives, stored rows, private bytes, MIME metadata, duplication, restore or queued sends. It does not inspect live storage, retained queue messages, orphan objects, other archives or concurrent writes. Any later eligibility transition needs its own compatible migration stage covering old readers, retained messages, portability and rollback.
+
 ## The API commands
 
 Everything in this section talks to the public REST API with an API key, so it runs from anywhere: your laptop, a CI job, an agent's sandbox. It needs no database access and works against the hosted service and self-hosted instances alike.
@@ -694,6 +745,22 @@ Every one of these runs `warmblyctl` inside the backend container of a compose i
 | `make cli ARGS="..."` | Any command, with a TTY attached so prompts work |
 | `make grant-admin EMAIL=... ROLE=...` | `user grant-admin` |
 | `make revoke-admin EMAIL=...` | `user revoke-admin` |
+
+## db load
+
+Shows what the database is busy with. It only reads the statistics views and changes nothing.
+
+```bash
+warmblyctl db load
+warmblyctl db load --limit 30 --json
+```
+
+It prints four sections:
+
+- **Connections** to the whole server, grouped by the service that opened them and their state, against `max_connections`. Postgres's own background processes are listed but not counted, because they have their own slots. Every Go service names its connections `warmbly-<binary>` (`warmbly-backend`, `warmbly-consumer`, `warmbly-warmblyctl`), unless the connection string sets its own `application_name`.
+- **Longest-running sessions**, with how long each has been in its transaction and what it is waiting on. Query text is left out, because it can hold literal values.
+- **Costliest statements** by total execution time, read from `pg_stat_statements`, with each statement's `queryid`. Text is shown only for queries, whose constants Postgres replaces with placeholders; other statements such as `ALTER ROLE` can keep literal values, so they show their `queryid` alone. When the extension is not installed, the section says how to enable it.
+- **Largest tables** with live and dead rows, sequential scans and the last autovacuum.
 
 ## See also
 

@@ -12,6 +12,7 @@ import {
   KeyIcon,
   SettingsIcon,
   CreditCardIcon,
+  WalletIcon,
   CheckIcon,
 } from 'lucide-react'
 import {
@@ -59,6 +60,7 @@ export function CommandPalette() {
     { icon: KeyIcon, label: 'API Keys', shortcut: 'g k', onSelect: () => navigate({ to: '/app/api-keys' }) },
     { icon: SettingsIcon, label: 'Settings', shortcut: 'g s', onSelect: () => navigate({ to: '/app/settings' }) },
     { icon: CreditCardIcon, label: 'Billing', onSelect: () => navigate({ to: '/app/settings/billing/{-$tab}', params: { tab: undefined } }) },
+    { icon: WalletIcon, label: 'Add money', onSelect: () => navigate({ to: '/app/settings/billing/{-$tab}', params: { tab: 'balance' } }) },
   ]
 
   return (

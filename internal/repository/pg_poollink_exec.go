@@ -832,7 +832,7 @@ func (r *emailRepository) RestoreMailboxCredential(ctx context.Context, id uuid.
 			return err
 		}
 		_, err = r.DB.Exec(ctx, `INSERT INTO email_accounts_oauth (email_account_id, access_token, refresh_token, expires_at) VALUES ($1, $2, $3, $4)
-			ON CONFLICT (email_account_id) DO UPDATE SET access_token = EXCLUDED.access_token, refresh_token = EXCLUDED.refresh_token, expires_at = EXCLUDED.expires_at`,
+			ON CONFLICT (email_account_id) DO UPDATE SET access_token = EXCLUDED.access_token, refresh_token = EXCLUDED.refresh_token, expires_at = EXCLUDED.expires_at, granted_scopes = NULL`,
 			id, sealed[0], sealed[1], oauth.ExpiresAt)
 		return err
 	case creds != nil && creds.SMTP != nil && creds.IMAP != nil:

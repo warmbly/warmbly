@@ -1,0 +1,89 @@
+name: Configure AWS backend
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published stable release already running on every backend (v0.6.75 or newer)
+        required: true
+        type: string
+      expected_task_definition:
+        description: Exact currently running backend task definition ARN
+        required: true
+        type: string
+      expected_backend_tasks:
+        description: JSON array of every current RUNNING backend task ARN from the read-only preflight
+        required: true
+        type: string
+      attachment_download_proxy:
+        description: Serve private campaign attachments through the backend download route
+        required: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: aws-production
+    concurrency:
+      group: aws-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      attestations: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify main and the published release provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          ENABLED: ${{ vars.AWS_DEPLOY_ENABLED }}
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF" = refs/heads/main ] && [ "$ENABLED" = true ] || {
+            echo "::error::Backend configuration requires main and AWS_DEPLOY_ENABLED=true"; exit 1; }
+          printf '%s\n' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || {
+            echo "::error::A stable release tag is required"; exit 1; }
+          git merge-base --is-ancestor "refs/tags/$TAG^{commit}" origin/main
+          state=$(gh release view "$TAG" --json isDraft,isPrerelease --jq '"\(.isDraft) \(.isPrerelease)"')
+          [ "$state" = "false false" ] || { echo "::error::A published stable release is required"; exit 1; }
+          mkdir -p /tmp/backend-config-release
+          gh release download "$TAG" --pattern images.json --dir /tmp/backend-config-release
+          manifest=/tmp/backend-config-release/images.json
+          jq -e --arg tag "$TAG" '.tag == $tag and .registry == "ghcr.io/warmbly/warmbly"' "$manifest" >/dev/null
+          registry=$(jq -r .registry "$manifest")
+          for key in backend backend-kafka consumer consumer-kafka worker worker-kafka forms tracking tracking-kafka realtime; do
+            digest=$(jq -er --arg key "$key" '.images[$key] | select(test("^sha256:[a-f0-9]{64}$"))' "$manifest")
+            gh attestation verify "oci://$registry/${key%-kafka}@$digest" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+              --source-ref "refs/tags/$TAG" >/dev/null
+            echo "verified provenance of $key"
+          done
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install deployment client
+        run: npm ci --prefix .github/aws-deploy --omit=dev --ignore-scripts --no-audit --no-fund
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: Configure and bake the backend
+        env:
+          NODE_PATH: ${{ github.workspace }}/.github/aws-deploy/node_modules
+          AWS_ECS_CLUSTER: ${{ vars.AWS_ECS_CLUSTER }}
+          AWS_ECS_SERVICE_PREFIX: ${{ vars.AWS_ECS_SERVICE_PREFIX }}
+          DEPLOY_TAG: ${{ inputs.tag }}
+          DEPLOY_IMAGES_JSON: /tmp/backend-config-release/images.json
+          CONFIG_EXPECTED_TASK_DEFINITION: ${{ inputs.expected_task_definition }}
+          CONFIG_EXPECTED_TASKS: ${{ inputs.expected_backend_tasks }}
+          CONFIG_ATTACHMENT_DOWNLOAD_PROXY: ${{ inputs.attachment_download_proxy }}
+        run: node .github/scripts/aws-backend-config.cjs

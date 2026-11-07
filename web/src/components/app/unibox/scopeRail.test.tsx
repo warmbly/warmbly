@@ -34,6 +34,7 @@ const overview = vi.hoisted(() => ({
     automated: 0,
     automated_unread: 0,
     awaiting_agent_draft: 0,
+    drafts: undefined as number | undefined,
     scheduled_pending: 0,
     scheduled_pending_max: 100,
     folders: [
@@ -1138,4 +1139,33 @@ describe("sanitizeUniboxRailFavorites", () => {
       useAppStore.persist.setOptions({ storage: original });
     }
   });
+});
+
+it("counts pending agent drafts on Drafts and highlights them", () => {
+  const saved = overview.data;
+  overview.data = {
+    ...saved,
+    awaiting_agent_draft: 3,
+    drafts: 3,
+    folders: [...saved.folders, { folder: "drafts", unread: 0, total: 1 }],
+  };
+  try {
+    mountRail();
+    const rows = Array.from(document.querySelectorAll("[data-rail-row]")).map((r) => r.textContent ?? "");
+    expect(rows.find((r) => r.startsWith("Drafts"))).toBe("Drafts3");
+  } finally {
+    overview.data = saved;
+  }
+});
+
+it("keeps the mailbox Drafts count when connected to an older backend", () => {
+  const saved = overview.data;
+  overview.data = { ...saved, awaiting_agent_draft: 3, folders: [...saved.folders, { folder: "drafts", unread: 0, total: 1 }] };
+  try {
+    mountRail();
+    const rows = Array.from(document.querySelectorAll("[data-rail-row]")).map((r) => r.textContent ?? "");
+    expect(rows.find((r) => r.startsWith("Drafts"))).toBe("Drafts1");
+  } finally {
+    overview.data = saved;
+  }
 });

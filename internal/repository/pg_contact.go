@@ -2221,6 +2221,18 @@ func leadStatusClause(status, cp string) string {
 	}
 }
 
+// activeElsewhereClause matches a contact `c` whose sequence is still in
+// flight (queued, processing or held) in a launched, unfinished campaign other
+// than campaignCol, by the same derivation the Leads view shows.
+func activeElsewhereClause(campaignCol string) string {
+	const cp = "ol.campaign_id"
+	return `EXISTS (SELECT 1 FROM campaign_leads ol JOIN campaigns oc ON oc.id = ol.campaign_id
+		WHERE ol.contact_id = c.id AND oc.organization_id = c.organization_id
+		  AND ol.campaign_id <> ` + campaignCol + ` AND oc.status NOT IN ('draft', 'completed')
+		  AND (` + leadStatusClause(models.LeadStatusPending, cp) + ` OR ` + leadStatusClause(models.LeadStatusActive, cp) +
+		` OR ` + leadStatusClause(models.LeadStatusPaused, cp) + `))`
+}
+
 // leadHeldClause is the "this lead's flow is parked right now" predicate for a
 // contact-scoped query, built on the one definition of live in liveHold. The
 // Leads-view status filter, the scope-chip counts and the row-level status all
@@ -2925,6 +2937,11 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, orgID
 	}
 
 	if len(data.AddCampaigns) > 0 {
+		// A skipped pair is left exactly as it was, its removal record included.
+		skip := ""
+		if data.SkipActiveInOtherCampaigns {
+			skip = " AND NOT " + activeElsewhereClause("cam.id")
+		}
 		// A manual add clears the removal record: the user changed their mind,
 		// so linked segments may manage this pair again.
 		if xerr := link(`WITH cleared AS (
@@ -2935,7 +2952,7 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, orgID
 		           AND c.organization_id = $1
 		           AND cam.organization_id = $1
 		           AND r.contact_id = ANY($2)
-		           AND r.campaign_id = ANY($3::uuid[])
+		           AND r.campaign_id = ANY($3::uuid[])`+skip+`
 		         )
 		         INSERT INTO campaign_leads (contact_id, campaign_id)
 		         SELECT c.id, cam.id
@@ -2944,7 +2961,7 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, orgID
 		         WHERE c.organization_id = $1
 		           AND c.id = ANY($2)
 		           AND cam.id = ANY($3::uuid[])
-		           AND cam.organization_id = $1
+		           AND cam.organization_id = $1`+skip+`
 		         ON CONFLICT DO NOTHING
 		         RETURNING contact_id, campaign_id`,
 			models.ActivityCampaignAdded, logCampaignLinks, orgID, data.Contacts, data.AddCampaigns); xerr != nil {
@@ -2952,7 +2969,12 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, orgID
 		}
 		// Claims leads a linked segment had enrolled, so detaching that
 		// segment later leaves hand-picked leads alone.
-		if _, err := tx.Exec(ctx, claimLeadsManualSQL, data.AddCampaigns, data.Contacts, orgID); err != nil {
+		claim := claimLeadsManualSQL
+		if data.SkipActiveInOtherCampaigns {
+			claim += ` AND NOT EXISTS (SELECT 1 FROM contacts c WHERE c.id = campaign_leads.contact_id AND ` +
+				activeElsewhereClause("campaign_leads.campaign_id") + `)`
+		}
+		if _, err := tx.Exec(ctx, claim, data.AddCampaigns, data.Contacts, orgID); err != nil {
 			db.CaptureError(err, "", nil, "campaign_leads claim")
 			return nil, errx.InternalError()
 		}
@@ -4273,7 +4295,7 @@ func (r *contactRepository) ListTimeline(ctx context.Context, orgID, contactID u
 	// 3. Deliverability events (bounce / complaint / unsubscribe).
 	delivQuery := `
 			SELECT de.id, de.created_at, de.event_type, de.provider, de.reason,
-			       de.campaign_id, cam.name, de.task_id
+			       de.campaign_id, cam.name, de.task_id, de.metadata->>'bounce_cause'
 			FROM deliverability_events de
 			LEFT JOIN campaigns cam ON cam.id = de.campaign_id
 			WHERE de.organization_id = $1
@@ -4291,7 +4313,8 @@ func (r *contactRepository) ListTimeline(ctx context.Context, orgID, contactID u
 		var ev models.ContactTimelineEvent
 		var id uuid.UUID
 		var eventType, provider, reason string
-		if err := drows.Scan(&id, &ev.At, &eventType, &provider, &reason, &ev.CampaignID, &ev.CampaignName, &ev.TaskID); err != nil {
+		var bounceCause *string
+		if err := drows.Scan(&id, &ev.At, &eventType, &provider, &reason, &ev.CampaignID, &ev.CampaignName, &ev.TaskID, &bounceCause); err != nil {
 			drows.Close()
 			db.CaptureError(err, "", nil, "ListTimeline deliv scan")
 			return nil, errx.InternalError()
@@ -4302,6 +4325,9 @@ func (r *contactRepository) ListTimeline(ctx context.Context, orgID, contactID u
 		ev.Provider = &provider
 		if reason != "" {
 			ev.Reason = &reason
+		}
+		if eventType == string(models.DeliverabilityEventBounce) && bounceCause != nil && *bounceCause != "" {
+			ev.BounceCause = bounceCause
 		}
 		events = append(events, ev)
 	}

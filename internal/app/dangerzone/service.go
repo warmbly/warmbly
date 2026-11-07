@@ -17,6 +17,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+	"github.com/stripe/stripe-go/v86"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/events"
 	"github.com/warmbly/warmbly/internal/observability/errs"
@@ -68,6 +69,16 @@ type service struct {
 	// frontendBaseURL is used when building cancellation links in emails.
 	// Falls back to this deployment's own dashboard origin if empty.
 	frontendBaseURL string
+
+	// billing is the provider asked whether an owned subscription will renew;
+	// nil when billing is off, which leaves the local record as the answer.
+	billing BillingLookup
+}
+
+// BillingLookup reads a subscription's live state from the billing provider.
+type BillingLookup interface {
+	GetSubscription(ctx context.Context, subscriptionID string) (*stripe.Subscription, *errx.Error)
+	CancelSubscription(ctx context.Context, subscriptionID string, cancelAtPeriodEnd bool) *errx.Error
 }
 
 // NewService constructs the default Service implementation.
@@ -78,6 +89,7 @@ func NewService(
 	notifier notify.EmailNotificationService,
 	publisher events.Publisher,
 	frontendBaseURL string,
+	billing BillingLookup,
 ) Service {
 	if frontendBaseURL == "" {
 		frontendBaseURL = config.AppBaseURL()
@@ -89,6 +101,7 @@ func NewService(
 		notifier:        notifier,
 		publisher:       publisher,
 		frontendBaseURL: frontendBaseURL,
+		billing:         billing,
 	}
 }
 
@@ -255,6 +268,12 @@ func (s *service) ScheduleUserDeletion(ctx context.Context, userID uuid.UUID, re
 		if errors.Is(err, repository.ErrOrganizationCloudLinked) {
 			return nil, errx.NewWithIdentifier(errx.Conflict, "organization_cloud_connected", "Disconnect owned workspaces from Warmbly Cloud before scheduling deletion.")
 		}
+		if errors.Is(err, repository.ErrAccountHoldsSharedWork) {
+			return nil, errx.NewWithIdentifier(errx.Conflict, "account_has_shared_work", "Remove the mailboxes, contacts, campaigns, campaign attachments, templates, API keys, apps and shared assistant conversations you added to workspaces you do not own before deleting your account.")
+		}
+		if errors.Is(err, repository.ErrOwnedWorkspaceBilled) {
+			return nil, errx.NewWithIdentifier(errx.Conflict, "workspace_subscription_active", "Cancel the subscription of every workspace you own before deleting your account.")
+		}
 		if errors.Is(err, repository.ErrPendingDeletionExists) {
 			return nil, errx.New(errx.Conflict, "account is already scheduled for deletion")
 		}
@@ -360,8 +379,19 @@ func (s *service) ExecuteDuePendingDeletions(ctx context.Context) (int, int, err
 		}
 
 		if err := s.runHardDelete(ctx, &d); err != nil {
+			// A refusal waits for the account to change, so it is recorded and rechecked daily, not reported.
+			if errors.Is(err, repository.ErrAccountHoldsSharedWork) || errors.Is(err, repository.ErrOwnedWorkspaceBilled) {
+				log.Info().Err(err).Str("deletion_id", d.ID.String()).Msg("scheduled account deletion is waiting")
+				if merr := s.repo.MarkWaiting(ctx, d.ID, err.Error(), time.Now().Add(24*time.Hour)); merr != nil {
+					errs.CaptureException(fmt.Errorf("record waiting deletion %s: %w", d.ID, merr))
+				}
+				failed++
+				continue
+			}
 			errs.CaptureException(err)
-			_ = s.repo.MarkFailed(ctx, d.ID, err.Error())
+			if merr := s.repo.MarkFailed(ctx, d.ID, err.Error()); merr != nil {
+				errs.CaptureException(fmt.Errorf("record failed deletion %s: %w", d.ID, merr))
+			}
 			failed++
 			continue
 		}
@@ -391,7 +421,11 @@ func (s *service) runHardDelete(ctx context.Context, d *models.ScheduledDeletion
 	case models.DeletionResourceOrganization:
 		placements, err = s.repo.HardDeleteOrganization(ctx, d.ResourceID)
 	case models.DeletionResourceUser:
-		placements, err = s.repo.HardDeleteUser(ctx, d.ResourceID)
+		var ending []string
+		placements, err = s.repo.HardDeleteUser(ctx, d.ResourceID, s.billingCheck(&ending))
+		if err == nil {
+			s.keepEnding(ctx, ending)
+		}
 	default:
 		return fmt.Errorf("unsupported resource type: %s", d.ResourceType)
 	}
@@ -400,6 +434,52 @@ func (s *service) runHardDelete(ctx context.Context, d *models.ScheduledDeletion
 	}
 	s.evictMailboxes(ctx, placements)
 	return nil
+}
+
+// billingCheck refuses while an owned subscription renews and records the ones
+// ending at period end, which keepEnding reasserts once the deletion commits.
+func (s *service) billingCheck(ending *[]string) repository.BillingCheck {
+	if s.billing == nil {
+		return nil
+	}
+	return func(ctx context.Context, ids []string) error {
+		for _, id := range ids {
+			sub, err := s.billing.GetSubscription(ctx, id)
+			if err != nil {
+				return fmt.Errorf("read subscription from the billing provider: %s", err.Message)
+			}
+			if subscriptionRenews(sub) {
+				return repository.ErrOwnedWorkspaceBilled
+			}
+			if sub.CancelAtPeriodEnd {
+				*ending = append(*ending, id)
+			}
+		}
+		return nil
+	}
+}
+
+// keepEnding undoes a resume made between the provider check and the commit:
+// nothing is left to bill once the workspace is gone.
+func (s *service) keepEnding(ctx context.Context, ids []string) {
+	for _, id := range ids {
+		// Only a subscription that resumed needs it; one still ending or since canceled is left alone.
+		if sub, err := s.billing.GetSubscription(ctx, id); err == nil && !subscriptionRenews(sub) {
+			continue
+		}
+		if err := s.billing.CancelSubscription(ctx, id, true); err != nil {
+			errs.CaptureException(fmt.Errorf("keep subscription %s ending after account deletion: %s", id, err.Message))
+		}
+	}
+}
+
+// subscriptionRenews is a subscription the provider will charge again.
+func subscriptionRenews(sub *stripe.Subscription) bool {
+	switch sub.Status {
+	case stripe.SubscriptionStatusCanceled, stripe.SubscriptionStatusIncompleteExpired:
+		return false
+	}
+	return !sub.CancelAtPeriodEnd && sub.CancelAt == 0
 }
 
 // evictMailboxes tells each worker to drop the mailboxes this deletion

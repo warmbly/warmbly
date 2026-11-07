@@ -344,6 +344,8 @@ struct MorePlan: Codable, Sendable {
     var maxContacts: Int?
     var accountLimit: Int?
     var monthlyCredits: Int?
+    /// Usage included each month in dollars; nil from a backend before the balance.
+    var monthlyAllowanceUSD: Double?
     var dedicatedWorkers: Int?
     var savings: Double?
     var isPublic: Bool?
@@ -355,6 +357,7 @@ struct MorePlan: Codable, Sendable {
         case maxContacts = "max_contacts"
         case accountLimit = "account_limit"
         case monthlyCredits = "monthly_credits"
+        case monthlyAllowanceUSD = "monthly_allowance_usd"
         case dedicatedWorkers = "dedicated_workers"
         case isPublic = "public"
     }
@@ -388,7 +391,8 @@ struct OrgUsageSnapshot: Codable, Sendable {
     }
 }
 
-/// `GET subscription/credits`.
+/// `GET subscription/credits`. The `*USD` fields are the dollar balance; a
+/// backend from before it sends only the legacy credit figures.
 struct CreditBalance: Codable, Sendable {
     var balance: Int?
     var monthlyAllowance: Int?
@@ -396,6 +400,10 @@ struct CreditBalance: Codable, Sendable {
     var purchasedBalance: Int?
     var nextResetAt: Date?
     var unlimited: Bool?
+    var balanceUSD: Double?
+    var monthlyUSD: Double?
+    var purchasedUSD: Double?
+    var monthlyAllowanceUSD: Double?
 
     enum CodingKeys: String, CodingKey {
         case balance, unlimited
@@ -403,26 +411,45 @@ struct CreditBalance: Codable, Sendable {
         case monthlyBalance = "monthly_balance"
         case purchasedBalance = "purchased_balance"
         case nextResetAt = "next_reset_at"
+        case balanceUSD = "balance_usd"
+        case monthlyUSD = "monthly_usd"
+        case purchasedUSD = "purchased_usd"
+        case monthlyAllowanceUSD = "monthly_allowance_usd"
     }
 }
 
-/// `GET subscription/credits/usage`.
+/// `GET subscription/credits/usage`, in dollars when the backend sends them.
 struct CreditUsage: Codable, Sendable {
     var spentToday: Int?
     var spentWeek: Int?
     var spentMonth: Int?
+    var spentTodayUSD: Double?
+    var spentWeekUSD: Double?
+    var spentMonthUSD: Double?
     var series: [Point]?
     var byReason: [Bucket]?
 
     struct Point: Codable, Sendable {
         var date: String
-        var credits: Int
+        var credits: Int?
+        var amountUSD: Double?
+
+        enum CodingKeys: String, CodingKey {
+            case date, credits
+            case amountUSD = "amount_usd"
+        }
     }
 
     struct Bucket: Codable, Sendable {
         var key: String
-        var credits: Int
+        var credits: Int?
+        var amountUSD: Double?
         var count: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case key, credits, count
+            case amountUSD = "amount_usd"
+        }
     }
 
     enum CodingKeys: String, CodingKey {
@@ -430,27 +457,34 @@ struct CreditUsage: Codable, Sendable {
         case spentToday = "spent_today"
         case spentWeek = "spent_week"
         case spentMonth = "spent_month"
+        case spentTodayUSD = "spent_today_usd"
+        case spentWeekUSD = "spent_week_usd"
+        case spentMonthUSD = "spent_month_usd"
         case byReason = "by_reason"
     }
 }
 
-/// `GET subscription/referral`.
-struct ReferralSummary: Codable, Sendable {
-    var code: String?
-    var shareURL: String?
-    var currency: String?
-    var inviteePercentOff: Int?
-    var inviteeMonths: Int?
-    var lifetimeEarnedCents: Int?
-    var totalReferred: Int?
+/// `GET subscription/balance`: read here only for the automatic reload state,
+/// which is changed on the web. A backend from before the balance has no route.
+struct BalanceInfo: Codable, Sendable {
+    var unlimited: Bool?
+    var autoReload: AutoReload?
+
+    struct AutoReload: Codable, Sendable {
+        var enabled: Bool?
+        var amountUSD: Double?
+        var thresholdUSD: Double?
+
+        enum CodingKeys: String, CodingKey {
+            case enabled
+            case amountUSD = "amount_usd"
+            case thresholdUSD = "threshold_usd"
+        }
+    }
 
     enum CodingKeys: String, CodingKey {
-        case code, currency
-        case shareURL = "share_url"
-        case inviteePercentOff = "invitee_percent_off"
-        case inviteeMonths = "invitee_months"
-        case lifetimeEarnedCents = "lifetime_earned_cents"
-        case totalReferred = "total_referred"
+        case unlimited
+        case autoReload = "auto_reload"
     }
 }
 

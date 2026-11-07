@@ -141,6 +141,7 @@ func (r *advisorRepository) loadMailboxes(ctx context.Context, orgID uuid.UUID, 
 			WHERE eae.email_account_id = ea.id
 			  AND eae.resolved_at IS NULL
 			  AND eae.created_at > NOW() - INTERVAL '7 days'
+			  AND NOT ` + mailTransientBlipSQL("eae") + `
 		) err ON true
 		LEFT JOIN LATERAL (
 			SELECT ` + warmupInboundColumns + ` ` + warmupInboundSQL + `

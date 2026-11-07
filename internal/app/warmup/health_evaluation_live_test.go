@@ -197,10 +197,15 @@ func deliverWarmup(t *testing.T, handle *db.DB, sender, recipient uuid.UUID, off
 	for i := range ids {
 		ids[i] = "<" + uuid.NewString() + "@test.local>"
 	}
+	landing := "inbox"
+	if junked {
+		landing = "spam"
+	}
+	// Placement counts only a receipt whose landing was observed (000267).
 	execSQL(t, handle.Pool, `
-		INSERT INTO warmup_received (email_account_id, internal_id, message_id, sender_account_id, created_at)
-		SELECT $1, gen_random_uuid(), m, $2, NOW() - $3::interval FROM unnest($4::text[]) AS m`,
-		recipient, sender, offset, ids)
+		INSERT INTO warmup_received (email_account_id, internal_id, message_id, sender_account_id, created_at, first_landing)
+		SELECT $1, gen_random_uuid(), m, $2, NOW() - $3::interval, $5 FROM unnest($4::text[]) AS m`,
+		recipient, sender, offset, ids, landing)
 	if junked {
 		execSQL(t, handle.Pool, `
 			INSERT INTO warmup_spam_reports (reporter_account_id, reported_account_id, message_id, report_type, created_at)

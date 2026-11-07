@@ -228,8 +228,25 @@ type EmailAccountStatus struct {
 	// is below the mailbox's own cap. Without it the cap just reads lower than
 	// the number the owner configured.
 	ColdRamp *ColdRampInfo `json:"cold_ramp,omitempty"`
-	// SendRecoveryReason names a send safety hold ("authentication", "permanent", "conflict" or "unknown"); absent when sending is not held.
+	// SendRecoveryReason names a send safety hold ("authentication", "permanent", "domain_auth", "conflict" or "unknown"); absent when sending is not held.
 	SendRecoveryReason string `json:"send_recovery_reason,omitempty"`
+	// SendPause is a provider's pause on this mailbox's sending; absent while it sends normally.
+	SendPause *SendPauseInfo `json:"send_pause,omitempty"`
+}
+
+// SendPauseInfo is why a provider stopped this mailbox sending and when it starts again.
+type SendPauseInfo struct {
+	// Reason is rate_limited, daily_limit, sender_blocked or retry for a timed pause, or domain_auth, permanent or authentication for a hold; empty for a timed pause an earlier release recorded.
+	Reason string `json:"reason"`
+	Held   bool   `json:"held"`
+	// Until is when a timed pause ends.
+	Until *time.Time `json:"until,omitempty"`
+	// RetryAt is when Warmbly lets a held mailbox try one more send on its own.
+	RetryAt *time.Time `json:"retry_at,omitempty"`
+	// ProviderMessage is the refusal as the worker reported it.
+	ProviderMessage string `json:"provider_message,omitempty"`
+	// Resumable says POST /emails/:id/resume-sending can lift it; an authentication hold needs a reconnect instead.
+	Resumable bool `json:"resumable"`
 }
 
 // EmailAccountStatusesResult is one page of account statuses. Data carries the

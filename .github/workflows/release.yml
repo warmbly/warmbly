@@ -657,3 +657,34 @@ jobs:
             --branch "$CLOUDFLARE_PAGES_PRODUCTION_BRANCH" \
             --commit-hash "$GITHUB_SHA" \
             --commit-message "$RELEASE_TAG"
+
+      - name: Prepare optional static asset mirror
+        id: static-assets
+        if: vars.CLOUDFLARE_STATIC_ASSETS_DEPLOY_ENABLED == 'true'
+        env:
+          CLOUDFLARE_PAGES_PROJECTS: ${{ vars.CLOUDFLARE_PAGES_PROJECTS }}
+          CLOUDFLARE_STATIC_ASSETS_TARGETS: ${{ vars.CLOUDFLARE_STATIC_ASSETS_TARGETS }}
+          SOURCE_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          export STATIC_ASSETS_ARTIFACT_DIR="$RUNNER_TEMP/static-assets"
+          node .github/scripts/pages-static-assets.mjs prepare-if-configured
+
+      - name: Publish the same artifact to the configured static asset host
+        if: steps.static-assets.outputs.enabled == 'true'
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_STATIC_ASSETS_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_STATIC_ASSETS_API_TOKEN }}
+          WRANGLER_SEND_METRICS: "false"
+        run: |
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test -n "$CLOUDFLARE_API_TOKEN"
+          pnpm dlx wrangler@4.45.0 deploy --config "$RUNNER_TEMP/static-assets/wrangler.json"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.static-assets.outputs.enabled == 'true'
+        with:
+          name: static-assets-${{ matrix.project }}-${{ github.ref_name }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/static-assets
+          include-hidden-files: true
+          retention-days: 30

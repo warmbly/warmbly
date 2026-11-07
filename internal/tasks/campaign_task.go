@@ -16,6 +16,7 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
+	"github.com/warmbly/warmbly/internal/pkg/mailhdr"
 	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/scheduler"
@@ -281,7 +282,9 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 				executionStatus = "completed"
 				return nil
 			}
-			s.campaignRepo.UpdateStatus(ctx, campaign.ID, "completed")
+			if cerr := s.completeCampaign(ctx, campaign, completionReason(err)); cerr != nil {
+				log.Warn().Err(cerr).Str("campaign_id", campaign.ID.String()).Msg("Failed to mark campaign completed")
+			}
 			if s.campaignLogRepo != nil {
 				s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
 					CampaignID: campaign.ID,
@@ -538,7 +541,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 		return errx.InternalError()
 	}
 
-	// stop_on_reply is enforced inside FindRoutedPairs (STEP 6), and it is now
+	// stop_on_reply and stop_on_meeting are enforced inside FindRoutedPairs (STEP 6), and are
 	// ROUTE-AWARE: a contact who replied is only handed back when their next step
 	// is part of the reply flow (the reply branch's own path). The normal cold
 	// sequence stops there, so there is no longer a blanket "contact has replied,
@@ -629,10 +632,12 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 	// STEP 10: Pick the copy, then render it with contact variables exactly
 	// once and expand any {a|b|c} spintax per-recipient. Rendering happens after
 	// the variant pick so a contact value is never parsed as template text.
-	subject, bodyHTML, bodyPlain, sxerr := s.selectAndRender(ctx, orgID, campaign.ID, sequence.ID, *contact, extra, threadSubject, rawSubject, rawBodyHTML, rawBodyPlain)
+	resolveLinks := func(parts ...*string) { s.resolveFormLinks(ctx, orgID, campaign, contact, parts...) }
+	rendered, sxerr := s.selectAndRender(ctx, orgID, campaign.ID, sequence.ID, *contact, extra, threadSubject, rawSubject, rawBodyHTML, rawBodyPlain, resolveLinks)
 	if sxerr != nil {
 		return sxerr
 	}
+	subject, bodyHTML, bodyPlain := rendered.Subject, rendered.BodyHTML, rendered.BodyPlain
 	// A recorded conversation subject is already rendered: reuse it verbatim.
 	if threadParent != nil && threadParent.SubjectSent && threadSubject != "" {
 		subject = threadSubject
@@ -814,7 +819,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 		s.retryCampaignTickLater(ctx, taskRecord)
 		return errx.InternalError()
 	}
-	reserved, rerr := s.campaignProgressRepo.ReserveSend(ctx, campaign.ID, contact.ID, sequence.ID, taskID, account.ID, nextPair.IsNewLead)
+	reserved, rerr := s.campaignProgressRepo.ReserveSend(ctx, campaign.ID, contact.ID, sequence.ID, taskID, account.ID, nextPair.IsNewLead, rendered.Arm)
 	if rerr != nil {
 		// The attempt could not be made durable, so it must not be made at all.
 		// Retry the whole task rather than sending something nothing remembers.
@@ -863,6 +868,9 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 	}
 	if threadParent != nil {
 		emailMsg.InReplyTo = threadParent.MessageID
+		// The whole conversation, whichever mailbox sent each step, so the
+		// recipient's client threads a follow-up from another address too.
+		emailMsg.References = mailhdr.ConversationReferences(append(threadParent.References, threadParent.MessageID))
 		// The provider handle needs two things the headers do not. It is
 		// meaningless outside the mailbox that owns it, and Gmail will not
 		// file a message in a thread whose subject it does not match, so it
@@ -1012,8 +1020,9 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 	// they had been hearing from stopped being one this campaign can send from
 	// (disconnected, taken off its sending accounts, resting, or held by warmup
 	// health), and it is the kind of thing an owner should find in the activity
-	// log rather than in a confused reply.
-	if prev := nextPair.AssignedSender; prev != nil && *prev != account.ID && s.campaignLogRepo != nil {
+	// log rather than in a confused reply. A campaign that rotates follow-ups
+	// changes address on purpose, so it is not logged there.
+	if prev := nextPair.AssignedSender; prev != nil && *prev != account.ID && s.campaignLogRepo != nil && !campaign.FollowUpSender.Rotates() {
 		from := "its previous mailbox"
 		if old, oerr := s.emailRepo.GetByID(ctx, *prev); oerr == nil && old != nil {
 			from = old.Email
@@ -1178,6 +1187,31 @@ func autoPauseReason(err error) string {
 // because verification refused every remaining lead.
 func UndeliverablePauseReason(n int) string {
 	return fmt.Sprintf("Campaign paused: %d remaining lead(s) were refused by address verification. Re-verify them or mark them deliverable to continue", n)
+}
+
+// completeCampaign closes a finished campaign and delivers campaign.completed
+// only from the call that closed it, so concurrent completers announce once.
+func (s *tasksService) completeCampaign(ctx context.Context, campaign *models.Campaign, reason string) error {
+	closed, err := s.campaignRepo.MarkCompleted(ctx, campaign.ID)
+	if err != nil || !closed {
+		return err
+	}
+	if s.advanced != nil && campaign.OrganizationID != nil {
+		s.advanced.EmitCampaignEvent(ctx, *campaign.OrganizationID, models.WebhookEventCampaignCompleted, map[string]any{
+			"campaign_id":   campaign.ID.String(),
+			"campaign_name": campaign.Name,
+			"reason":        reason,
+		})
+	}
+	return nil
+}
+
+// completionReason names why the scheduler ended a campaign: all_sent or end_date.
+func completionReason(err error) string {
+	if errors.Is(err, scheduler.ErrCampaignEnded) {
+		return "end_date"
+	}
+	return "all_sent"
 }
 
 // pauseUndeliverable parks a campaign whose only remaining leads were refused
@@ -1504,7 +1538,7 @@ func (s *tasksService) executeActionNode(ctx context.Context, campaign *models.C
 		if perr != nil {
 			return nil
 		}
-		// Deal name supports the same {{first_name}}/{{company}} templating other
+		// Deal name supports the same {{.FirstName}}/{{.Company}} templating other
 		// campaign copy uses; fall back to a contact-derived name when blank.
 		name := RenderTemplate(strings.TrimSpace(cfg.DealName), *contact)
 		if name == "" {
@@ -1862,20 +1896,29 @@ type variantSelector interface {
 	SelectVariant(ctx context.Context, organizationID, campaignID, contactID, sequenceID uuid.UUID, subject, bodyHTML, bodyPlain string) (*models.VariantSelection, *errx.Error)
 }
 
+// renderedCopy is a step's copy rendered for one contact, with the A/B arm it came from.
+type renderedCopy struct {
+	Subject, BodyHTML, BodyPlain string
+	// Arm is the step split arm drawn, nil when the step ran no split.
+	Arm *models.StepABArm
+}
+
 // selectAndRender picks the step's copy or an A/B variant from template text, then renders it once.
-func (s *tasksService) selectAndRender(ctx context.Context, orgID, campaignID, sequenceID uuid.UUID, contact models.Contact, extra TemplateContext, threadSubject, rawSubject, rawBodyHTML, rawBodyPlain string) (string, string, string, *errx.Error) {
+// resolveLinks resolves form-link markers in the chosen copy, which a variant brings unresolved.
+func (s *tasksService) selectAndRender(ctx context.Context, orgID, campaignID, sequenceID uuid.UUID, contact models.Contact, extra TemplateContext, threadSubject, rawSubject, rawBodyHTML, rawBodyPlain string, resolveLinks func(...*string)) (renderedCopy, *errx.Error) {
 	var picker variantSelector
 	if s.advanced != nil {
 		picker = s.advanced
 	}
-	return selectAndRender(ctx, picker, orgID, campaignID, sequenceID, contact, extra, threadSubject, rawSubject, rawBodyHTML, rawBodyPlain)
+	return selectAndRender(ctx, picker, orgID, campaignID, sequenceID, contact, extra, threadSubject, rawSubject, rawBodyHTML, rawBodyPlain, resolveLinks)
 }
 
-func selectAndRender(ctx context.Context, picker variantSelector, orgID, campaignID, sequenceID uuid.UUID, contact models.Contact, extra TemplateContext, threadSubject, rawSubject, rawBodyHTML, rawBodyPlain string) (string, string, string, *errx.Error) {
+func selectAndRender(ctx context.Context, picker variantSelector, orgID, campaignID, sequenceID uuid.UUID, contact models.Contact, extra TemplateContext, threadSubject, rawSubject, rawBodyHTML, rawBodyPlain string, resolveLinks func(...*string)) (renderedCopy, *errx.Error) {
+	var arm *models.StepABArm
 	if picker != nil {
 		selection, xerr := picker.SelectVariant(ctx, orgID, campaignID, contact.ID, sequenceID, rawSubject, rawBodyHTML, rawBodyPlain)
 		if xerr != nil {
-			return "", "", "", xerr
+			return renderedCopy{}, xerr
 		}
 		if selection != nil {
 			// A threading step's subject belongs to the conversation, so variants vary the body only.
@@ -1883,13 +1926,20 @@ func selectAndRender(ctx context.Context, picker variantSelector, orgID, campaig
 				rawSubject = selection.Subject
 			}
 			rawBodyHTML, rawBodyPlain = selection.BodyHTML, selection.BodyPlain
+			arm = selection.StepArm
 		}
 	}
-	subject := expandSpintax(RenderTemplateWith(rawSubject, contact, extra))
-	bodyHTML := expandSpintax(RenderHTMLTemplateWith(rawBodyHTML, contact, extra))
-	bodyPlain := expandSpintax(RenderTemplateWith(rawBodyPlain, contact, extra))
-	if bodyPlain == "" && bodyHTML != "" {
-		bodyPlain = ExtractPlainTextFromHTML(bodyHTML)
+	if resolveLinks != nil {
+		resolveLinks(&rawSubject, &rawBodyHTML, &rawBodyPlain)
 	}
-	return subject, bodyHTML, bodyPlain, nil
+	out := renderedCopy{
+		Subject:   expandSpintax(RenderTemplateWith(rawSubject, contact, extra)),
+		BodyHTML:  expandSpintax(RenderHTMLTemplateWith(rawBodyHTML, contact, extra)),
+		BodyPlain: expandSpintax(RenderTemplateWith(rawBodyPlain, contact, extra)),
+		Arm:       arm,
+	}
+	if out.BodyPlain == "" && out.BodyHTML != "" {
+		out.BodyPlain = ExtractPlainTextFromHTML(out.BodyHTML)
+	}
+	return out, nil
 }

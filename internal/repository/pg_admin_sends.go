@@ -342,7 +342,7 @@ const sendHoldColumns = `
 		       COALESCE(t.send_reserved_at, t.completed_at, t.updated_at),
 		       COALESCE(t.send_result_state, ''), t.send_result_applied_at IS NOT NULL,
 		       (SELECT COUNT(*) FROM tasks u WHERE u.email_account_id = ea.id AND u.send_result_state = 'unknown'
-		          AND u.send_result_applied_at IS NULL AND u.warmup_send_retired_at IS NULL AND u.campaign_send_isolated_at IS NULL AND u.id IS DISTINCT FROM t.id),
+		          AND u.send_result_applied_at IS NULL AND u.warmup_send_retired_at IS NULL AND u.campaign_send_isolated_at IS NULL AND u.send_hold_lifted_at IS NULL AND u.id IS DISTINCT FROM t.id),
 		       EXISTS(SELECT 1 FROM send_recovery_resolutions r WHERE r.recovery_task_id = t.id
 		          AND r.previous_reason = 'unknown' AND r.recorded_locally_at IS NOT NULL),
 		       COALESCE(COALESCE(t.send_executor_started_at, w.dispatch_started_at, t.send_reserved_at, t.completed_at, t.created_at) < NOW() - INTERVAL '2 minutes', false),

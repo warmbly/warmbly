@@ -866,21 +866,34 @@ func scanJob(row pgx.Row) (*models.CRMSyncJob, error) {
 }
 
 // ClaimJobs leases due jobs. A lease that lapses (a crashed drainer) makes the
-// job claimable again, so nothing is stranded in running.
+// job claimable again, so nothing is stranded in running. Each arm is its own
+// select so the due and the running-lease partial indexes serve it.
 func (r *crmProviderRepository) ClaimJobs(ctx context.Context, provider models.CRMProvider, limit int, lease time.Duration) ([]models.CRMSyncJob, error) {
 	rows, err := r.db.Query(ctx, `
-		UPDATE crm_sync_jobs j
-		SET status = 'running', attempts = j.attempts + 1, locked_until = NOW() + make_interval(secs => $2),
-		    lease_token = gen_random_uuid(), updated_at = NOW()
-		WHERE j.id IN (
-			SELECT id FROM crm_sync_jobs
-			WHERE provider = $3
-			  AND ((status = 'pending' AND next_attempt_at <= NOW())
-			   OR (status = 'running' AND locked_until < NOW()))
+		WITH lapsed AS (
+			SELECT id, next_attempt_at FROM crm_sync_jobs
+			WHERE provider = $3 AND status = 'running' AND locked_until < NOW()
+			ORDER BY locked_until
+			LIMIT $1
+			FOR UPDATE SKIP LOCKED
+		), due AS (
+			SELECT id, next_attempt_at FROM crm_sync_jobs
+			WHERE provider = $3 AND status = 'pending' AND next_attempt_at <= NOW()
 			ORDER BY next_attempt_at
 			LIMIT $1
 			FOR UPDATE SKIP LOCKED
+		), picked AS (
+			SELECT id AS pick_id, next_attempt_at AS pick_at FROM lapsed
+			UNION ALL
+			SELECT id, next_attempt_at FROM due
+			ORDER BY pick_at
+			LIMIT $1
 		)
+		UPDATE crm_sync_jobs j
+		SET status = 'running', attempts = j.attempts + 1, locked_until = NOW() + make_interval(secs => $2),
+		    lease_token = gen_random_uuid(), updated_at = NOW()
+		FROM picked
+		WHERE j.id = picked.pick_id
 		RETURNING `+jobCols, limit, lease.Seconds(), provider)
 	if err != nil {
 		return nil, err

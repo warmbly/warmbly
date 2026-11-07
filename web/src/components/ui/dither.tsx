@@ -12,6 +12,7 @@
 import React from "react";
 import { useReducedMotion } from "framer-motion";
 import { useAppStore } from "@/stores";
+import useMeasure from "@/hooks/useMeasure";
 
 // Ordered 8x8 Bayer matrix: 64 threshold levels, so density ramps render as
 // smooth halftone gradients instead of the harsh stripe patterns a 4x4 gives.
@@ -72,25 +73,6 @@ function clamp01(n: number): number {
 
 function easeOutCubic(c: number): number {
     return 1 - Math.pow(1 - c, 3);
-}
-
-// Observe an element's CSS-pixel size.
-function useMeasure<T extends HTMLElement>(): [React.RefObject<T | null>, { w: number; h: number }] {
-    const ref = React.useRef<T | null>(null);
-    const [size, setSize] = React.useState({ w: 0, h: 0 });
-    React.useEffect(() => {
-        const el = ref.current;
-        if (!el) return;
-        const ro = new ResizeObserver((entries) => {
-            const r = entries[0].contentRect;
-            const w = Math.round(r.width);
-            const h = Math.round(r.height);
-            setSize((s) => (s.w === w && s.h === h ? s : { w, h }));
-        });
-        ro.observe(el);
-        return () => ro.disconnect();
-    }, []);
-    return [ref, size];
 }
 
 function sizeCanvas(el: HTMLCanvasElement, w: number, h: number, dpr: number): CanvasRenderingContext2D | null {
@@ -752,12 +734,18 @@ export function DitherMultiAreaChart({
     height = 96,
     className,
     renderTooltip,
+    max: maxProp,
+    hover: hoverProp,
 }: {
     labels: string[];
     series: DitherAreaSeries[];
     height?: number;
     className?: string;
     renderTooltip?: (i: number) => React.ReactNode;
+    /** Lowest top of the y scale; values above it still raise the scale. */
+    max?: number;
+    /** Controlled crosshair: the parent owns pointer, guide line and tooltip; only the dots draw here. */
+    hover?: number | null;
 }) {
     const dark = useDarkTheme();
     const reduced = useReducedMotion();
@@ -766,9 +754,11 @@ export function DitherMultiAreaChart({
     const lineRef = React.useRef<HTMLCanvasElement | null>(null);
     const starRef = React.useRef<HTMLCanvasElement | null>(null);
     const geomRef = React.useRef<AreaGeom | null>(null);
-    const [hover, setHover] = React.useState<number | null>(null);
+    const [ownHover, setHover] = React.useState<number | null>(null);
+    const controlled = hoverProp !== undefined;
+    const hover = controlled ? hoverProp : ownHover;
 
-    const max = Math.max(1, ...series.flatMap((s) => s.values));
+    const max = Math.max(1, maxProp ?? 0, ...series.flatMap((s) => s.values));
     const yCssFor = React.useCallback(
         (v: number) => AREA_PAD_TOP + (1 - v / max) * (height - AREA_PAD_TOP - AREA_PAD_BOTTOM),
         [max, height],
@@ -828,8 +818,13 @@ export function DitherMultiAreaChart({
     const tones = React.useMemo(() => series.map((s) => toneRgb(s.tone, dark)), [series, dark]);
     useSparkles(starRef, geomRef, tones, reveal, intensity, reduced);
 
+    const hovering = hover !== null;
+    React.useEffect(() => {
+        if (controlled) setLift(hovering);
+    }, [controlled, hovering, setLift]);
+
     const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
-        if (labels.length === 0 || w <= 0) return;
+        if (controlled || labels.length === 0 || w <= 0) return;
         const rect = e.currentTarget.getBoundingClientRect();
         const i = Math.round(((e.clientX - rect.left) / rect.width) * (labels.length - 1));
         setHover(i >= 0 && i < labels.length ? i : null);
@@ -843,12 +838,16 @@ export function DitherMultiAreaChart({
             ref={wrapRef}
             className={`relative ${className ?? ""}`}
             style={{ height }}
-            onPointerEnter={() => setLift(true)}
+            onPointerEnter={controlled ? undefined : () => setLift(true)}
             onPointerMove={onMove}
-            onPointerLeave={() => {
-                setHover(null);
-                setLift(false);
-            }}
+            onPointerLeave={
+                controlled
+                    ? undefined
+                    : () => {
+                          setHover(null);
+                          setLift(false);
+                      }
+            }
         >
             <canvas
                 ref={canvasRef}
@@ -863,10 +862,12 @@ export function DitherMultiAreaChart({
             <canvas ref={lineRef} className="absolute inset-0 block h-full w-full" />
             {hover !== null && (
                 <>
-                    <div
-                        className="pointer-events-none absolute inset-y-0 border-l border-dashed border-slate-300"
-                        style={{ left: hoverX }}
-                    />
+                    {!controlled && (
+                        <div
+                            className="pointer-events-none absolute inset-y-0 border-l border-dashed border-slate-300"
+                            style={{ left: hoverX }}
+                        />
+                    )}
                     {series.map((s) => {
                         const [cr, cg, cb] = toneRgb(s.tone, dark);
                         return (
@@ -881,6 +882,7 @@ export function DitherMultiAreaChart({
                             />
                         );
                     })}
+                    {!controlled && (
                     <div
                         className={`pointer-events-none absolute top-1 z-10 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10.5px] text-slate-600 shadow-sm ${
                             flip ? "-translate-x-full" : ""
@@ -910,6 +912,7 @@ export function DitherMultiAreaChart({
                             </>
                         )}
                     </div>
+                    )}
                 </>
             )}
         </div>

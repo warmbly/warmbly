@@ -220,6 +220,8 @@ export interface ImportCause {
     fix: string;
     count: number;
     retryable: boolean;
+    /** Some row under the cause is on Gmail or Google Workspace; older servers do not send it. */
+    google?: boolean;
 }
 
 /** Where an import's rows came from: a file, a pasted list, a vendor's API, or an admin grant. */

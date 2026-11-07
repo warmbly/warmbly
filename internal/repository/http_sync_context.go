@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/pkg/nodeauth"
 )
 
 // StoredFolderMessage is one message the platform holds for a mailbox folder:
@@ -67,7 +68,7 @@ func (r *httpSyncContextRepository) ListProviderMessages(ctx context.Context, us
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+r.token)
+	nodeauth.Authorize(req, r.token)
 	req.Header.Set("User-Agent", "warmbly-worker/sync-context-http")
 	resp, err := r.client.Do(req)
 	if err != nil {
@@ -109,7 +110,7 @@ func NewHTTPSyncContextRepository(baseURL, token string) (SyncContextRepository,
 	return &httpSyncContextRepository{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		token:   token,
-		client:  &http.Client{Timeout: 10 * time.Second},
+		client:  newControlPlaneClient(10 * time.Second),
 	}, nil
 }
 
@@ -123,7 +124,7 @@ func (r *httpSyncContextRepository) IsOwnConversation(ctx context.Context, userI
 	if err != nil {
 		return false, err
 	}
-	req.Header.Set("Authorization", "Bearer "+r.token)
+	nodeauth.Authorize(req, r.token)
 	req.Header.Set("User-Agent", "warmbly-worker/sync-context-http")
 	resp, err := r.client.Do(req)
 	if err != nil {
@@ -153,7 +154,7 @@ func (r *httpSyncContextRepository) ListFolderMessages(ctx context.Context, user
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+r.token)
+	nodeauth.Authorize(req, r.token)
 	req.Header.Set("User-Agent", "warmbly-worker/sync-context-http")
 	resp, err := r.client.Do(req)
 	if err != nil {
@@ -184,7 +185,7 @@ func (r *httpSyncContextRepository) ListProviderFolderMessages(ctx context.Conte
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+r.token)
+	nodeauth.Authorize(req, r.token)
 	req.Header.Set("User-Agent", "warmbly-worker/sync-context-http")
 	resp, err := r.client.Do(req)
 	if err != nil {

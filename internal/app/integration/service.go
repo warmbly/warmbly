@@ -111,6 +111,8 @@ type Service interface {
 	// publisher post-construction (they depend on services built after this one).
 	SetNativeActions(n NativeActions)
 	SetPublisher(p *pubsub.StreamingPublisher)
+	// SetEvents wires the webhook dispatcher that announces automation.run.
+	SetEvents(e EventDispatcher)
 	// SetAI wires the LLM provider + credit ledger the AI automation nodes
 	// (ai_step / ai_switch) use. Both may be nil (AI steps then fail with a clear
 	// "not available" error); the provider is nil when no AI_PROVIDER is
@@ -258,6 +260,12 @@ type SlackInstallHook interface {
 	SlackInstalled(ctx context.Context, conn *models.IntegrationConnection, slackUserID string, userID uuid.UUID)
 }
 
+// EventDispatcher delivers a platform event to customer webhooks. Satisfied by
+// webhook.Service.
+type EventDispatcher interface {
+	Dispatch(ctx context.Context, orgID uuid.UUID, eventType models.WebhookEventType, data any) (uuid.UUID, error)
+}
+
 type service struct {
 	refresh    singleflight.Group
 	crmMode    func(ctx context.Context, orgID uuid.UUID) models.CRMProvider
@@ -271,6 +279,7 @@ type service struct {
 	aiSearch   generation.SearchClient
 	salesforce SalesforceBridge
 	slackHook  SlackInstallHook
+	events     EventDispatcher
 
 	checkMu sync.RWMutex
 	checks  map[models.IntegrationProvider]CredentialCheck
@@ -294,6 +303,7 @@ func NewService(repo repository.IntegrationRepository, cipherSvc cipher.CipherSe
 
 func (s *service) SetNativeActions(n NativeActions)          { s.native = n }
 func (s *service) SetPublisher(p *pubsub.StreamingPublisher) { s.publisher = p }
+func (s *service) SetEvents(e EventDispatcher)               { s.events = e }
 func (s *service) SetAI(p generation.Provider, c credits.CreditService) {
 	s.aiProvider = p
 	s.credits = c
@@ -1834,6 +1844,8 @@ func buildDisplayFields(provider models.IntegrationProvider, config map[string]a
 		// Credits are filled in at connect time from the provider.
 	case models.IntegrationApollo:
 		// The account the key acts as is filled in by the credential check.
+	case models.IntegrationGooglePlaces, models.IntegrationFoursquare, models.IntegrationOutscraper:
+		// A key and nothing to show beyond the connection itself.
 	case models.IntegrationClay:
 		if raw, ok := config["webhook_url"].(string); ok && raw != "" {
 			df["webhook_host"] = urlHost(raw)

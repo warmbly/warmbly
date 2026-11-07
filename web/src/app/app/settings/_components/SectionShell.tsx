@@ -169,10 +169,13 @@ export function Toggle({
     on,
     onChange,
     disabled,
+    label,
 }: {
     on: boolean;
     onChange: (next: boolean) => void;
     disabled?: boolean;
+    /** Accessible name for the switch, usually the row's label. */
+    label?: string;
 }) {
     return (
         <button
@@ -181,6 +184,7 @@ export function Toggle({
             disabled={disabled}
             role="switch"
             aria-checked={on}
+            aria-label={label}
             className={`relative h-4 w-7 rounded-full transition-colors shrink-0 after:absolute after:-inset-3 after:content-[''] ${
                 on ? "bg-slate-900" : "bg-slate-200"
             } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
@@ -222,6 +226,7 @@ export function ToggleRow({
         <Row label={label} description={description}>
             <Toggle
                 on={on}
+                label={label}
                 disabled={disabled}
                 onChange={(next) => {
                     if (!controlled) setInternal(next);

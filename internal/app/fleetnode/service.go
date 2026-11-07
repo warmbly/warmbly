@@ -13,6 +13,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -78,7 +79,9 @@ func imageVariant() string {
 	if v, ok := os.LookupEnv("FLEET_IMAGE_VARIANT"); ok {
 		return v
 	}
-	if strings.EqualFold(os.Getenv("EVENTBUS_PROVIDER"), "kafka") {
+	readBoth, _ := strconv.ParseBool(os.Getenv("EVENTBUS_READ_BOTH"))
+	readBothCodecs, _ := strconv.ParseBool(os.Getenv("CODEC_READ_BOTH"))
+	if strings.EqualFold(os.Getenv("EVENTBUS_PROVIDER"), "kafka") || readBoth || readBothCodecs {
 		return "-kafka"
 	}
 	return ""

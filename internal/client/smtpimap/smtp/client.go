@@ -44,6 +44,15 @@ func tlsFailure(base *errx.MailError, stage string, err error) *errx.MailError {
 	return sendFailure(base, err, stage, "mailbox")
 }
 
+// handshakeFailure marks a TLS handshake the server closed, which is how some servers shed connections.
+func handshakeFailure(base *errx.MailError, stage string, err error) *errx.MailError {
+	failure := tlsFailure(base, stage, err)
+	if droppedConnection(err) && failure.Failure != nil {
+		failure.Failure.Cause = causeDroppedHandshake
+	}
+	return failure
+}
+
 // pinFailure reports a pinned certificate refusal as a retryable mailbox
 // connection error, never as a credentials failure.
 func pinFailure(perr *mailtls.PinError) *errx.MailError {
@@ -319,7 +328,7 @@ func writeBase64Wrapped(w io.Writer, data []byte) {
 
 // ---------- Internal helpers ----------
 
-func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []byte) *errx.MailError {
+func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []byte) (result *errx.MailError) {
 	var host string
 	var port int
 	var security string
@@ -359,6 +368,12 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 	if resolved == models.MailSecurityNone && !models.CleartextMailAllowed(host) {
 		return errx.ErrMailInsecureRemoteHost
 	}
+	if pace := paceFor(host, c.BindIP); pace != nil {
+		if held := pace.wait(ctx, time.Now()); held != nil {
+			return held
+		}
+		defer func() { result = pace.observe(time.Now(), result) }()
+	}
 	// The socket may be 587 with STARTTLS when the mailbox's 465 never
 	// answered; the mode to speak is the one the dial reports.
 	dialed, err := DialSubmission(ctx, c.BindIP, host, port, security)
@@ -394,7 +409,7 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 			if perr := mailtls.AsPinError(err, capture); perr != nil {
 				return pinFailure(perr)
 			}
-			return tlsFailure(errx.ErrMailServerUnreachableAt("dial "+addr, err), "dial", err)
+			return handshakeFailure(errx.ErrMailServerUnreachableAt("dial "+addr, err), "dial", err)
 		}
 		conn = tlsConn
 	}
@@ -426,7 +441,7 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 				if perr := mailtls.AsPinError(err, capture); perr != nil {
 					return pinFailure(perr)
 				}
-				return tlsFailure(errx.ErrMailServerUnreachable, "starttls", err)
+				return handshakeFailure(errx.ErrMailServerUnreachable, "starttls", err)
 			}
 		} else if !netbind.InsecureTLS() && !c.plaintext {
 			return sendFailure(errx.ErrMailServerUnreachableAt("starttls", errNoSTARTTLS), errNoSTARTTLS, "starttls", "mailbox")
@@ -509,6 +524,9 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 			// recipient; suppressing the address would punish the wrong party.
 			if permanentReply(err) && isDomainAuthRejection(err) {
 				return sendFailure(errx.ErrMailDomainAuthRejected, err, "rcpt to", "mailbox")
+			}
+			if permanentReply(err) && senderRefusal(err) {
+				return sendFailure(errx.ErrMailSendRejected("The SMTP server refused the sender"), err, "rcpt to", "mailbox")
 			}
 			// A refused RCPT is a recipient problem (bad address, policy
 			// rejection), not a dead server; classifying it as unreachable

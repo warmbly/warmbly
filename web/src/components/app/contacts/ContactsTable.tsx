@@ -95,6 +95,8 @@ import { useAddSegmentToCampaign, useCampaignSegments, useSetSegmentMembers } fr
 import type { ExportScopeContext } from "./ExportDialog";
 import useUpdateContactsBulk from "@/lib/api/hooks/app/contacts/useUpdateContactsBulk";
 import useAiMetered from "@/hooks/useAiMetered";
+import { fmtUsdAbout } from "@/lib/money";
+import { AI_ESTIMATE_USD } from "@/lib/aiEstimates";
 import SyncSourcesPanel from "./SyncSourcesPanel";
 import { columnClass, emptyColumnIds, sortOptions, type ContactColumn, type ContactRow } from "./columns";
 import { ColumnChooser, SortMenu, type ViewSortState } from "./ViewControls";
@@ -577,7 +579,7 @@ export default function ContactsTable({
         }
     }
 
-    // Bulk AI research. Confirms the credit cost (2 per contact) before queuing;
+    // Bulk AI research. Confirms the estimated cost before queuing;
     // runs drain in the background and the tab refreshes live via realtime.
     const batchResearch = useBatchResearch();
     const metered = useAiMetered();
@@ -590,7 +592,7 @@ export default function ContactsTable({
         confirm?.show(
             `Research ${selectionCount.toLocaleString()} ${selectionCount === 1 ? "contact" : "contacts"}? ${
                 metered
-                    ? `This uses up to ${(selectionCount * 2).toLocaleString()} AI credits and runs`
+                    ? `This costs ${fmtUsdAbout(selectionCount * AI_ESTIMATE_USD.researchRun)} from the workspace balance and runs`
                     : "This runs"
             } in the background.`,
             async () => {

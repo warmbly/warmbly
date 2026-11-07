@@ -56,7 +56,7 @@ Only an address and a password are required. Servers, ports and encryption are f
 Three other sources skip the file entirely, each reached from the same **Add account** dialog:
 
 - **Inbox vendor**: read the mailboxes straight from the vendor you bought them from, with an API key. See [import from an inbox vendor](#import-from-an-inbox-vendor).
-- **Google > Whole Workspace domain**: a Workspace super admin authorizes Warmbly once, and every mailbox on the domain connects without a password. See [connect a whole Google Workspace domain](#connect-a-whole-google-workspace-domain).
+- **Google > Whole Workspace domain**: for a workspace that already holds a Google domain grant, connect more of its mailboxes without a password. New domains are no longer connected this way. See [connect a whole Google Workspace domain](#connect-a-whole-google-workspace-domain).
 - **Microsoft > Whole organization**: a Global Administrator consents once, and every licensed mailbox in the organization connects without a sign-in each. See [connect a whole Microsoft 365 organization](#connect-a-whole-microsoft-365-organization).
 
 All three create the same kind of import as a file: it runs in the background, shows the same progress, and groups failures by cause.
@@ -157,7 +157,7 @@ Each mailbox is labelled with where it is hosted and how it signs in. The [API](
 
 A Google row whose password is not a 16-letter app password is flagged in the preview before anything is tried: Google refuses the account password over IMAP and SMTP. On an instance that connects new Gmail mailboxes with Google sign-in (`gmail_oauth_connect` in `GET /auth/config`), such a row waits for sign-in instead, like a Microsoft row.
 
-Google rows waiting for Google sign-in offer a **Sign in** action only on deployments where [Google mailbox OAuth is enabled](/development/configuration/#google-sign-in-per-dashboard-deployment). Otherwise use an app password or an admin grant. Microsoft sign-in is unaffected by that flag.
+Google rows waiting for Google sign-in offer a **Sign in** action on instances that connect new Gmail mailboxes with Google sign-in or are linked to Warmbly Cloud (which runs the consent on its own app), and never for a personal Gmail address, which connects with an app password. Otherwise use **Fix** on the row to give it a 16-letter app password, which connects it over IMAP and SMTP with Google's servers, or use an admin grant the workspace already holds for the domain.
 
 ### Microsoft
 
@@ -191,8 +191,10 @@ A key that reaches several workspaces (or, at ScaledMail, organizations) lists t
 
 One vendor account lists up to 10,000 mailboxes.
 
-- **Credentials are read when each row is worked.** Picking mailboxes stores only which ones you picked. The password, app password and servers of each are fetched from the vendor at the moment its row connects, and the row is then judged exactly like a file row: Google mailboxes need the app password the vendor holds (or [an admin grant](#connect-a-whole-google-workspace-domain) over the domain), and Microsoft mailboxes connect through [a grant](#connect-a-whole-microsoft-365-organization) over their domain.
-- **The vendor can authorize Warmbly for you.** When a row would otherwise wait for a sign-in and the vendor can approve apps through the admin mailbox it holds on the domain (InboxKit can), Warmbly asks it to: tenant-wide consent for Warmbly's Microsoft app, or domain-wide delegation for Warmbly's Google client. The rows show as **Authorizing** in the meantime, each with the vendor's own status for its request (for example queued or processing). It can take up to an hour. When a Google domain waits on its administrator, the row names the step: Warmbly's client ID and scopes to add under Security > Access and data control > API controls > Domain-wide delegation. When the vendor has not moved a request for 20 minutes, the row says so, with the time and the request id to give the vendor's support. The import stays open until they connect on their own, with nobody signing in. To connect them sooner, **Connect all at once (admin sign-in)** signs in once with the domain's Global Administrator account (the vendor gives you its login) and does what the vendor was asked to do: every Microsoft mailbox on the domain connects within a minute, and mailboxes imported there later connect with no sign-in. **Sign in** on a row signs in as that one mailbox and connects only it. One request covers every mailbox on the domain. The resulting grant covers only domains this vendor account holds, even when the vendor's Microsoft organization has others. A Google domain needs an admin mailbox listed at the vendor. When the vendor cannot authorize the domain, or has not finished within two hours, its rows fall back to **Sign in** with the reason on the row. Cancelling the import does the same for rows still waiting.
+- **Credentials are read when each row is worked.** Picking mailboxes stores only which ones you picked. The password, app password and servers of each are fetched from the vendor at the moment its row connects, and the row is then judged exactly like a file row: Google mailboxes need the app password the vendor holds, or a Google sign-in (which the vendor can do for you, below), and Microsoft mailboxes connect through [a grant](#connect-a-whole-microsoft-365-organization) over their domain.
+- **The vendor can sign in to Google mailboxes for you.** When a Google row would otherwise wait for a sign-in, this instance connects new Gmail mailboxes with Google sign-in, and the vendor can act through the admin mailbox it holds on the domain (InboxKit and Zapmail can), Warmbly has the vendor do it in two steps. First the vendor marks Warmbly's Google client as a trusted app on the domain, once per domain; the row shows **Authorizing**, with the vendor's own status for the request (for example queued or processing). Then the vendor signs in as each mailbox at a Google sign-in link Warmbly made for that row and approves Warmbly; the row's detail reads **Signing in**. When Google returns to Warmbly, the mailbox connects with its own Google sign-in, in the name of the person who started the import, and the row closes with the import's settings applied. Nobody signs in by hand. Each link is for one address and refuses any other account, works once, and expires after 24 hours. When the vendor's request waits on the domain's administrator, the row names the step: mark Warmbly's client ID as Trusted in the Google Admin console under Security > Access and data control > API controls. When the vendor has not moved a request for 20 minutes, the row says so, with the time and the request id to give the vendor's support. If the vendor cannot trust the client, or has not finished the domain within two hours or a mailbox within six, the row falls back to **Sign in** with the reason on the row. Zapmail takes at most 3 sign-in requests per mailbox every 7 days, so Warmbly never sends a second one while a request is open, and after a refusal waits a day before asking again (a week when Zapmail refused for that limit). **Sign in** on a row works at any point and connects that one mailbox sooner. On an instance without Google sign-in, vendor Google rows need the app password the vendor holds. Warmbly does not ask a vendor to set up domain-wide delegation for a domain; a domain already connected through an admin grant keeps using it.
+- **The vendor can approve Warmbly's Microsoft app.** When a Microsoft row would otherwise wait for a sign-in and the vendor can approve apps through the admin mailbox it holds on the domain (InboxKit can), Warmbly asks it for tenant-wide consent for Warmbly's Microsoft app. The rows show as **Authorizing** in the meantime, each with the vendor's own status for its request. It can take up to an hour. When the vendor has not moved a request for 20 minutes, the row says so, with the time and the request id to give the vendor's support. The import stays open until they connect on their own, with nobody signing in. To connect them sooner, **Connect all at once (admin sign-in)** signs in once with the domain's Global Administrator account (the vendor gives you its login) and does what the vendor was asked to do: every Microsoft mailbox on the domain connects within a minute, and mailboxes imported there later connect with no sign-in. **Sign in** on a row signs in as that one mailbox and connects only it. One request covers every mailbox on the domain. The resulting grant covers only domains this vendor account holds, even when the vendor's Microsoft organization has others. When the vendor cannot authorize the domain, or has not finished within two hours, its rows fall back to **Sign in** with the reason on the row. Cancelling the import does the same for rows still waiting.
+- **Google mailboxes can be signed in again through the vendor.** **Reconnect all Google mailboxes** in the vendor account's menu, **Reconnect** in a mailbox drawer's [Sign-in section](/guides/mailboxes/#changing-how-a-mailbox-signs-in), or `POST /emails/vendors/:id/reconnect` has the vendor sign in again as the Google mailboxes imported from it: the ones named (`email_account_id` or `email_account_ids`), or every one. The vendor account's row shows how many are reconnecting, and each drawer shows its own mailbox's progress live. Mailboxes on the older Google sign-in or a legacy domain grant are also [reconnected automatically](/guides/mailboxes/#automatic-reconnect-for-vendor-mailboxes) unless the instance turns it off. A mailbox with its own Google sign-in gets fresh tokens, and one connected through an admin grant or with an app password moves onto its own Google sign-in in place, keeping its history, campaigns, warmup and settings. Its current sign-in stays untouched until Google returns a complete, long-lived sign-in for the mailbox's own address, so a sign-in that fails changes nothing. The same steps, links and limits apply as for an import. `GET /emails/vendors/:id/reconnect` shows where each mailbox stands.
 - **The key is sealed and never shown again.** The API key is sealed with the workspace's own encryption key. The list of connections shows each one's vendor, label, status and mailbox count, never the key. **Update** replaces the key after checking the new one with the vendor.
 - **Passwords the vendor rotates are picked up.** An SMTP and IMAP mailbox that came from a vendor and has stopped with an unresolved connection error is looked at every 15 minutes. When the vendor now holds a different password for it, Warmbly verifies that password against the server and reconnects the mailbox with it. Each mailbox is tried at most once every 6 hours, so a password that still fails is not retried on every pass.
 - **A refused key marks the connection.** A key the vendor accepts but that reaches no workspace is refused with `mailbox_vendor_no_workspace`, since there is nothing to list. When the vendor stops accepting the key, the connection shows as invalid with the vendor's reason, and rows that needed it fail as `vendor_unauthorized` until the key is updated.
@@ -204,27 +206,17 @@ One vendor account lists up to 10,000 mailboxes.
 
 ## Connect a whole Google Workspace domain
 
-A Google Workspace super admin can authorize Warmbly for the whole domain with domain-wide delegation. Every mailbox on the domain then connects through that one grant: no app passwords, nothing that expires when someone changes a password, and nothing for each mailbox owner to do. It is the recommended way to connect Workspace mailboxes.
+A Google Workspace domain grant is domain-wide delegation: a super admin authorized Warmbly's service account for the whole domain, and every mailbox on it connects through that one grant, with no app password and no sign-in each.
 
-Choose **Add account**, then **Google**, then **Whole Workspace domain**. The dialog shows a client ID and the scopes to authorize. On a self-hosted instance the option stays switched off until the operator has set up a Google service account; see [whole-domain mailbox connects](/development/whole-domain-connect/).
+New Google Workspace domains are no longer connected this way. Connect a Workspace mailbox by having the administrator mark Warmbly as a trusted app and signing the mailbox in with Google, see [Google Workspace with Google sign-in](/guides/mailboxes/#google-workspace-with-google-sign-in), or with an [app password](/guides/mailboxes/#personal-gmail). Personal Gmail addresses are on no Workspace domain and always use an app password. Microsoft 365 organizations are unaffected.
 
-First, the super admin authorizes the client ID. This has to happen before the domain is proved, because Warmbly checks the authorization straight away:
+A grant a workspace already holds keeps working. **Add account > Google > Whole Workspace domain** appears only for such a workspace, and lists its grants: pick one to connect more of its mailboxes, check it again, or remove it. Starting a grant for a domain the workspace holds none for is refused with [`google_delegation_retired`](/api/error-codes/#google_delegation_retired).
 
-1. Sign in to [admin.google.com](https://admin.google.com) as a super admin and go to **Security > Access and data control > API controls**, then **Manage domain-wide delegation**.
-2. Choose **Add new** and paste the client ID the dialog shows. It is a long number; it never ends in `apps.googleusercontent.com`.
-3. Enter exactly these three scopes, comma separated:
-
-   ```text
-   https://www.googleapis.com/auth/gmail.modify,https://www.googleapis.com/auth/gmail.settings.basic,https://www.googleapis.com/auth/admin.directory.user.readonly
-   ```
-
-4. Choose **Authorize**, and allow a few minutes for Google to apply it.
-
-Then, back in Warmbly, enter the domain and a super admin address on it, and prove the domain as below.
+A domain that is already connected can move its warmup engagement to IMAP: the super admin edits the existing delegation entry and adds `https://mail.google.com/` after the three scopes. The three stay required; the added one is optional, and without it warmup engagement runs on the Gmail API as before. See [optional scope for warmup engagement over IMAP](/development/whole-domain-connect/#optional-scope-for-warmup-engagement-over-imap).
 
 ### Prove the workspace controls the domain
 
-The client ID belongs to the instance, not to your workspace, so authorizing it says nothing about which workspace asked. A grant is recorded only for the workspace that proves it controls the domain, in one of two ways:
+Proving a domain again re-verifies a grant the workspace already holds (`POST /emails/grants/google/start` and `/finish`); no new domain is accepted. The client ID belongs to the instance, not to your workspace, so authorizing it says nothing about which workspace asked. A grant is recorded only for the workspace that proves it controls the domain, in one of two ways:
 
 - **Sign in as the administrator.** When the instance has a Google sign-in app, Warmbly opens Google's sign-in for the admin address you entered. The sign-in has to be that exact address, verified by Google, on that Workspace domain.
 - **Publish a DNS record.** Always available, and the only way on an instance without a Google sign-in app. Add this `TXT` record at your DNS provider, then confirm:
@@ -315,13 +307,15 @@ A mailbox connected with Google or Microsoft sign-in only takes the settings; th
 
 ## Settings for every mailbox
 
-The dialog sets these for every mailbox the import connects or updates. A mapped column wins over them for its own row.
+The dialog sets these for every mailbox the import connects or updates. A mapped column wins over them for its own row, except for warmup switched off.
 
 - tags
 - daily limit
 - time between sends (in minutes in the dialog; the `min_wait` column is in seconds)
-- warmup on or off, with its start, maximum, daily increase and reply rate
+- warmup, with its start, maximum, daily increase and reply rate
 - reply-to, signature and time zone
+
+Warmup has three choices. **As each row says** (the default) uses the file's warmup column, such as Instantly's `Warmup Enabled`, and leaves warmup as it is on a row without one, so a new mailbox starts without it. **On** starts warmup on every mailbox except rows whose column says no. **Off** turns it off on every mailbox the import connects or updates and ignores every warmup column in the file. An import from an inbox vendor or an administrator grant has no file, so its default is **Leave as it is**.
 
 Tags are added to the ones a mailbox already has. A tag named in the `tags` column that does not exist yet is created. A setting that cannot be applied never fails its row: the mailbox is connected and the row's message says what did not apply. A value that cannot be read at all, such as text in a limit column, fails that row before it is tried. See [sending behavior](/guides/sending-behavior/) and [warmup](/guides/warmup/) for sensible values.
 
@@ -380,7 +374,7 @@ Failures are grouped by cause, each with the fix. The same keys appear as `cause
 | `creator_removed` | Import owner left the workspace |
 | `vendor_unauthorized` | Vendor refused the API key |
 | `vendor_unreachable` | Vendor did not return the credentials |
-| `vendor_authorizing` | Vendor is authorizing Warmbly (not a failure: the row connects on its own) |
+| `vendor_authorizing` | Vendor is authorizing Warmbly, or signing in to the mailbox (not a failure: the row connects on its own) |
 | `mailbox_grant_not_configured` | Admin connections are not set up here |
 | `google_delegation_unauthorized` | Google refused the domain-wide delegation |
 | `microsoft_consent_missing` | Microsoft 365 admin consent is missing |
@@ -458,3 +452,7 @@ The import is available to a signed-in session under `/emails/imports`, never to
   <Card title="Warmup" href="/guides/warmup/" />
   <Card title="Export and import" href="/guides/workspace-export-import/" />
 </Cards>
+
+## Text import encoding
+
+File-based CSV, TSV and TXT imports, including supported extensionless text files, use UTF-8 with an optional UTF-8 BOM. Unicode, comma/semicolon detection, tab-separated input, quoted multiline cells and ragged rows retain their existing parsing behavior. Binary control characters, NUL bytes and invalid UTF-8 are refused before row parsing. XLSX and XLSM imports retain their existing workbook parser and decompression limits; their support is separate from campaign attachment uploads.

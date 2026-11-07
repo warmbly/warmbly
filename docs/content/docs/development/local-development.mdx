@@ -184,7 +184,7 @@ The dev user's org always loads as a mid-flight workspace, not an empty shell:
 - An active 3-step campaign with 24 leads spread across the funnel (sent, opened, replied, bounced, queued), plus a draft campaign
 - 14 days of stats history (campaign sends, warmup volume, per-mailbox counts), always including sends today
 - A unified inbox with reply chains, an objection, an out-of-office, a bounce, and a warmup-style exchange
-- A CRM pipeline with deals, tasks, and notes, reply templates, notifications, and an AI credit balance with transaction history
+- A CRM pipeline with deals, tasks, and notes, reply templates, notifications, and a workspace balance with its charge history
 
 All dates are computed relative to the current time, so the workspace looks active no matter when you seed.
 
@@ -237,6 +237,12 @@ does, and `deploy/config/env.example` for the bare-binary template). Saving a Go
 re-running the target recompiles in a second or two against the warm build
 cache.
 
+The dev worker presents its own node credential, a published dev value that the
+seed fixtures register for its id, so it keeps working when you start the backend
+with `NODE_REQUIRE_NODE_CREDENTIAL=true` to try the strict mode. A second worker
+started with `make worker WORKER_ID=<uuid>` has no credential and needs that
+setting off. The dev consumer reads keys from Postgres and calls no node route.
+
 ### Tracking (Rust) and realtime (Elixir)
 
 `make dev` runs both as containers; `make run` does not include them. The native
@@ -266,7 +272,7 @@ make backend AI_PROVIDER=groq   AI_KEY=gsk_... AI_MODEL=openai/gpt-oss-20b
 make backend AI_PROVIDER=openai AI_KEY=sk-...
 ```
 
-`AI_PROVIDER=ollama` needs no key and marks the model free (`AI_FREE`), so AI credits are not charged and the assistant shows a "free model" notice. Local and free-tier models are less capable, but tool calls and the full agent loop work; use `llama3.1` (8B) or `qwen2.5`, not a 1B to 3B model. Leave `AI_PROVIDER` unset to keep AI off. See the [self-hosting guide](/development/deployment-guide/) for the full provider list.
+`AI_PROVIDER=ollama` needs no key and marks the model free (`AI_FREE`), so nothing is charged to the balance and the assistant shows a "free model" notice. Local and free-tier models are less capable, but tool calls and the full agent loop work; use `llama3.1` (8B) or `qwen2.5`, not a 1B to 3B model. Leave `AI_PROVIDER` unset to keep AI off. See the [self-hosting guide](/development/deployment-guide/) for the full provider list.
 
 ## Mailpit
 
@@ -334,9 +340,9 @@ To tail subjects live, use the NATS CLI (`nats` from nats-io) against `nats://lo
 
 ## Testing the Warmbly Cloud link
 
-`make poollink-dev` boots two instances side by side so you can walk the self-hoster's path end to end: a prod-like cloud (`DEPLOYMENT_MODE=cloud`, Stripe billing gates on with placeholder keys, email verification through Mailpit, the Sunrise Labs sandbox org seeded into the warmup pool) on `:18301` / `:18401`, and a brand-new self-hosted instance with no accounts on `:18302` / `:18402`, with `WARMBLY_CLOUD_URL` pointing at the cloud. Both use the `make infra` containers with their own databases, so `make dev` keeps working next to them.
+`make poollink-dev` boots two instances side by side: a prod-like cloud (`DEPLOYMENT_MODE=cloud`, Stripe billing gates on with placeholder keys, email verification through Mailpit, the Sunrise Labs sandbox org seeded into the warmup pool) on `:18301` / `:18401`, and a brand-new self-hosted instance with no accounts on `:18302` / `:18402`, with `WARMBLY_CLOUD_URL` pointing at the cloud. Both use the `make infra` containers with their own databases, so `make dev` keeps working next to them.
 
-The script prints a claim link for the self-hosted instance (`scripts/dev-poollink.sh setup-link` prints a fresh one). Connect a mailbox there with SMTP `localhost:11025` (Mailpit, no auth) and IMAP `localhost:10993` (Dovecot accepts any user with password `sandbox`), then follow Settings > Warmbly Cloud: the claimed account is the instance administrator, and linking needs it signed in with two-factor authentication, so turn on 2FA under Settings > Security and sign in again first. Register on the cloud dashboard, approve the code at `/connect`, and enroll the mailbox. The cloud workspace starts on a free trial, so the 10-mailbox allowance and the upgrade card behave like production; checkout itself needs real Stripe keys (`STRIPE_SECRET_KEY` and friends are read from the environment if set). `make poollink-dev-down` stops everything, `make poollink-dev-reset` also drops the databases. Product behavior is described in the [Warmbly Cloud guide](/guides/warmbly-cloud/).
+The script prints a claim link for the self-hosted instance (`scripts/dev-poollink.sh setup-link` prints a fresh one). Connect a mailbox there with SMTP `localhost:11025` (Mailpit, no auth) and IMAP `localhost:10993` (Dovecot accepts any user with password `sandbox`), then open Settings > Warmbly Cloud. Warmbly Cloud no longer links new instances, so this pair shows a self-hosted instance's unlinked screens, and the cloud's `/connect` refuses every code with `pool_link_closed`. Checkout needs real Stripe keys (`STRIPE_SECRET_KEY` and friends are read from the environment if set). `make poollink-dev-down` stops everything, `make poollink-dev-reset` also drops the databases. Product behavior is described in the [Warmbly Cloud guide](/guides/warmbly-cloud/).
 
 ## Next steps
 

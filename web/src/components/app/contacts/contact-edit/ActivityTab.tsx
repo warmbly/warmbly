@@ -74,6 +74,7 @@ import { useFlipAlignment } from "@/hooks/useFlipPlacement";
 import { fmtAbsolute, fmtRelative } from "./format";
 import OriginBadge from "@/components/app/engagement/OriginBadge";
 import { deviceLabel, hiddenReason, originPlace, originSummary, readerLabel } from "@/lib/engagementOrigin";
+import { BOUNCE_CAUSE_LABEL, bounceKeptAddress } from "@/lib/api/models/app/suppressions/Suppression";
 
 type FilterId =
     | "all"
@@ -360,7 +361,11 @@ function CampaignCard({
                     <PanelFact
                         label="Sender"
                         value={
-                            state.sender_email ? (
+                            state.follow_up_sender && state.follow_up_sender !== "same" ? (
+                                <span title="This campaign picks a mailbox for every step; each step below names the one that sent it.">
+                                    {state.sender_email ? `Rotates · last ${state.sender_email}` : "Rotates each step"}
+                                </span>
+                            ) : state.sender_email ? (
                                 <span title={`Every step of this sequence sends from ${state.sender_email}`}>
                                     {state.sender_email}
                                 </span>
@@ -668,7 +673,7 @@ function stepState(s: ContactCampaignStep): StepState {
 function StepRow({ step, isNext }: { step: ContactCampaignStep; isNext: boolean }) {
     const st = stepState(step);
     const facts: string[] = [];
-    if (step.sent_at) facts.push(`sent ${fmtRelative(step.sent_at)}`);
+    if (step.sent_at) facts.push(`sent ${fmtRelative(step.sent_at)}${step.sender_email ? ` from ${step.sender_email}` : ""}`);
     if (step.opened_at) facts.push("opened");
     if (step.clicked_at) facts.push("clicked");
     if (step.replied_at) facts.push("replied");
@@ -1171,6 +1176,14 @@ function detailsFor(e: ContactTimelineEvent): [string, React.ReactNode][] {
     add("Intent", e.intent);
     if (e.type === "deliverability" || e.type === "suppressed") {
         add("Type", e.source);
+        if (e.bounce_cause && BOUNCE_CAUSE_LABEL[e.bounce_cause]) {
+            add(
+                "Cause",
+                bounceKeptAddress(e.bounce_cause)
+                    ? `${BOUNCE_CAUSE_LABEL[e.bounce_cause]}. Not about the address, so it was not suppressed`
+                    : BOUNCE_CAUSE_LABEL[e.bounce_cause],
+            );
+        }
         add("Provider", e.provider && e.provider !== "manual" ? e.provider : null);
     }
     if (e.type.startsWith("meeting_")) {
@@ -1488,6 +1501,14 @@ function EventMeta({
         if (event.source) {
             parts.push(<span key="source">type: {event.source}</span>);
         }
+        if (event.bounce_cause && BOUNCE_CAUSE_LABEL[event.bounce_cause]) {
+            parts.push(
+                <span key="cause" className="font-medium text-slate-700">
+                    {BOUNCE_CAUSE_LABEL[event.bounce_cause]}
+                    {bounceKeptAddress(event.bounce_cause) ? ", address kept" : ""}
+                </span>,
+            );
+        }
         if (event.reason) {
             parts.push(
                 <span key="reason" className="text-slate-700">
@@ -1574,6 +1595,8 @@ export function sourceLabel(source?: string | null): string {
             return "Imported from Apollo";
         case "clay":
             return "Sent from Clay";
+        case "lead_finder":
+            return "Found with the lead finder";
         case "unknown":
         case undefined:
         case null:
@@ -1653,6 +1676,8 @@ function createdLabel(source?: string | null): string {
             return "Imported from Apollo";
         case "clay":
             return "Sent from Clay";
+        case "lead_finder":
+            return "Added from the lead finder";
         case "manual":
             return "Created manually";
         default:

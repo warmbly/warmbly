@@ -9,18 +9,33 @@ import (
 	"github.com/google/uuid"
 )
 
-// The trigger in migration 000278 masks with a literal; it has to be this mask.
+// The trigger in migration 000366 masks with literals; they have to be these masks.
 func TestRestrictedPermissionMaskMatchesTheTrigger(t *testing.T) {
-	sql, err := os.ReadFile("../infrastructure/db/migrations/000278_member_access_scope.up.sql")
+	sql, err := os.ReadFile("../infrastructure/db/migrations/000366_restricted_member_role_actions.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := fmt.Sprintf("NEW.permissions & %d;", uint16(RestrictedPermissionMask))
+	want := fmt.Sprintf("NEW.permissions & (%d | (%d & ", uint16(RestrictedReadPermissions), uint16(ScopeActionPermissions))
 	if !strings.Contains(string(sql), want) {
-		t.Fatalf("migration 000278 does not mask with %q", want)
+		t.Fatalf("migration 000366 does not mask with %q", want)
 	}
-	if RestrictedPermissionMask&(PermManageCampaigns|PermManageEmails|PermManageTeam|PermViewContacts|PermUseAI) != 0 {
-		t.Fatal("the restricted mask grants more than reading campaigns, analytics and the inbox")
+	if RestrictedPermissionMask != ScopeActionPermissions || RestrictedReadPermissions&^ScopeActionPermissions != 0 {
+		t.Fatal("the read permissions must sit inside the scope action permissions")
+	}
+	workspaceWide := PermManageTeam | PermManageBilling | PermManageContacts | PermManageEmails | PermManageSequences |
+		PermManageSettings | PermViewContacts | PermTransferOwnership | PermManageAPIKeys | PermUseIntegrations | PermUseAI
+	if RestrictedPermissionMask&workspaceWide != 0 {
+		t.Fatal("the restricted mask grants a workspace-wide permission")
+	}
+}
+
+func TestScopeCanActOnlyWithinTheActionMask(t *testing.T) {
+	s := &ResourceScope{Actions: AllPermissions}
+	if !s.CanAct(PermManageCampaigns) || !s.CanAct(PermAccessUnibox) || s.CanAct(PermManageTeam) || s.CanAct(0) {
+		t.Fatal("CanAct reaches outside the scope action permissions")
+	}
+	if (&ResourceScope{Actions: PermViewCampaigns}).CanAct(PermSendCampaigns) {
+		t.Fatal("CanAct granted a permission the scope does not act with")
 	}
 }
 

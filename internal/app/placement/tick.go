@@ -89,7 +89,7 @@ func (s *service) Tick(ctx context.Context) error {
 }
 
 // settleCredits decides every finished paid test once: one that delivered
-// no copy gets its credits back, one that delivered keeps the charge. The
+// no copy gets its charge back, one that delivered keeps it. The
 // ledger refund is keyed, so a pass that dies before the stamp repeats the
 // stamp and never the refund.
 func (s *service) settleCredits(ctx context.Context) []uuid.UUID {
@@ -103,7 +103,7 @@ func (s *service) settleCredits(ctx context.Context) []uuid.UUID {
 	}
 	var refunded []uuid.UUID
 	for _, r := range open {
-		back := 0
+		var back models.Micro
 		if !r.Delivered {
 			// Attributed like the charge, so it reads as the same member's.
 			meta := models.CreditMeta{Context: models.CreditContext{Detail: "Placement test refund"}}

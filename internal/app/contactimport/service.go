@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"strconv"
 	"strings"
 	"time"
@@ -34,11 +35,17 @@ type Publisher interface {
 	PublishContactImportProgress(ctx context.Context, orgID, importID uuid.UUID, status string)
 }
 
+// EventDispatcher delivers the bulk_operation.* webhooks. Satisfied by webhook.Service.
+type EventDispatcher interface {
+	Dispatch(ctx context.Context, orgID uuid.UUID, eventType models.WebhookEventType, data any) (uuid.UUID, error)
+}
+
 // Deps are the service's collaborators.
 type Deps struct {
 	Repo      repository.ContactImportRepository
 	Contacts  contact.ContactService
 	Publisher Publisher
+	Events    EventDispatcher
 	// Kicked is called after an import is started, e.g. to verify new addresses.
 	Kicked func()
 }
@@ -48,6 +55,7 @@ type Service struct {
 	repo      repository.ContactImportRepository
 	contacts  contact.ContactService
 	publisher Publisher
+	events    EventDispatcher
 	kicked    func()
 	kick      chan struct{}
 }
@@ -57,6 +65,7 @@ func NewService(d Deps) *Service {
 		repo:      d.Repo,
 		contacts:  d.Contacts,
 		publisher: d.Publisher,
+		events:    d.Events,
 		kicked:    d.Kicked,
 		kick:      make(chan struct{}, 1),
 	}
@@ -254,6 +263,7 @@ func (s *Service) Start(ctx context.Context, orgID, userID, id uuid.UUID, opts *
 			}
 		}
 		s.publish(ctx, orgID, id, models.ContactImportQueued)
+		s.announce(ctx, orgID, id, imp.Filename, models.WebhookEventBulkOperationStarted, nil)
 		s.Kick()
 	}
 	imp, xerr = s.Get(ctx, orgID, id)
@@ -336,6 +346,21 @@ func (s *Service) publish(ctx context.Context, orgID, id uuid.UUID, status model
 	}
 }
 
+// announce delivers one bulk_operation.* webhook for a contact import.
+func (s *Service) announce(ctx context.Context, orgID, id uuid.UUID, filename string, eventType models.WebhookEventType, fields map[string]any) {
+	if s.events == nil {
+		return
+	}
+	payload := map[string]any{
+		"operation_id":   id.String(),
+		"operation_type": "contact_import",
+		"entity_type":    "contact",
+		"filename":       filename,
+	}
+	maps.Copy(payload, fields)
+	_, _ = s.events.Dispatch(ctx, orgID, eventType, payload)
+}
+
 // Kick wakes the runner now instead of at its next tick.
 func (s *Service) Kick() {
 	select {
@@ -390,10 +415,21 @@ func (s *Service) run(ctx context.Context, job *repository.ContactImportJob, lea
 				}
 			}
 		}
-		if err := s.repo.Finish(work, job.ID, job.Attempts, status, quality, pinned, notes, msg); err != nil {
+		ended, err := s.repo.Finish(work, job.ID, job.Attempts, status, quality, pinned, notes, msg)
+		if err != nil {
 			return
 		}
 		s.publish(work, job.OrgID, job.ID, status)
+		switch {
+		case ended != status:
+		case status == models.ContactImportCompleted && res != nil:
+			s.announce(work, job.OrgID, job.ID, job.Filename, models.WebhookEventBulkOperationCompleted, map[string]any{
+				"total": res.Total, "imported": res.Imported, "updated": res.Updated,
+				"skipped": res.Skipped, "failed": res.Failed,
+			})
+		case status == models.ContactImportFailed:
+			s.announce(work, job.OrgID, job.ID, job.Filename, models.WebhookEventBulkOperationFailed, map[string]any{"error": msg})
+		}
 	}
 
 	if job.Attempts > config.ContactImportMaxAttempts {

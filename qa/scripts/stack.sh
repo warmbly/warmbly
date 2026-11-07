@@ -145,6 +145,20 @@ rewrite() {
 
 make_cmd() { (cd "$REPO" && make -s -n "$1") | rewrite; }
 
+# QA_STRIPE_SECRET_KEY, a Stripe test-mode key, bills through Stripe instead of nothing; the keys
+# reach the backend through the environment and are never written to the run directory.
+billing() {
+  if [ -z "${QA_STRIPE_SECRET_KEY:-}" ]; then cat; return; fi
+  sed 's#BILLING_PROVIDER=none#BILLING_PROVIDER=stripe#'
+}
+export_stripe() {
+  [ -n "${QA_STRIPE_SECRET_KEY:-}" ] || return 0
+  case "$QA_STRIPE_SECRET_KEY" in sk_test_* | rk_test_* | rkcs_test_*) ;; *) die "QA_STRIPE_SECRET_KEY must be a Stripe test-mode key" ;; esac
+  export STRIPE_SECRET_KEY="$QA_STRIPE_SECRET_KEY"
+  export STRIPE_WEBHOOK_SECRET="${QA_STRIPE_WEBHOOK_SECRET:-whsec_qa_unused}"
+  export STRIPE_PUBLISHABLE_KEY="${QA_STRIPE_PUBLISHABLE_KEY:-pk_test_qa_unused}"
+}
+
 # The sandbox reads its own endpoints from the environment (internal/sandbox/config.go).
 sandbox_env() {
   echo "MAILPIT_URL=http://localhost:$MAILPIT TRACKING_URL=http://localhost:$TRACK DOVECOT_IMAP_ADDR=localhost:$IMAPS" \
@@ -275,7 +289,8 @@ up() {
   wait_for mailpit "curl -fs localhost:$MAILPIT/api/v1/info" 30
 
   say "starting backend on :$API (applies migrations on boot)"
-  make_cmd backend >"$RUN/backend.sh"
+  export_stripe
+  make_cmd backend | billing >"$RUN/backend.sh"
   start backend "exec bash '$RUN/backend.sh'"
   wait_for backend "curl -fs localhost:$API/health" 300
 

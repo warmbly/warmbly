@@ -1,5 +1,9 @@
 import '@testing-library/jest-dom'
+import { MotionGlobalConfig } from 'framer-motion'
 import { vi } from 'vitest'
+
+// Animations finish instantly, so no test waits on wall-clock transitions.
+MotionGlobalConfig.skipAnimations = true
 
 if (typeof window !== 'undefined') {
   // Mock matchMedia for tests

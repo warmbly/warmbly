@@ -42,9 +42,9 @@ type BatchInput struct {
 	Families      []string
 	SeedIDs       []uuid.UUID
 	OnUnavailable string
-	// MaxCredits is the most the caller agreed to pay across the whole batch
+	// MaxSpend is the most the caller agreed to pay across the whole batch
 	// for tests past the monthly free allowance.
-	MaxCredits int
+	MaxSpend models.Micro
 }
 
 // BatchGroupCount is how many selected senders share a provider.
@@ -71,11 +71,12 @@ type BatchPreview struct {
 	// limit can only make it fewer.
 	MaxSends int `json:"max_sends"`
 	// FreeTests and PaidTests split Tests against the monthly allowance, and
-	// Credits is the most the paid ones cost. Unmetered panels leave all three
-	// zero.
+	// CostUSD is the most the paid ones cost (Credits in legacy credits).
+	// Unmetered panels leave them zero.
 	Metered    bool                  `json:"metered"`
 	FreeTests  int                   `json:"free_tests"`
 	PaidTests  int                   `json:"paid_tests"`
+	CostUSD    float64               `json:"cost_usd"`
 	Credits    int                   `json:"credits"`
 	Usage      models.PlacementUsage `json:"usage"`
 	SendersMax int                   `json:"senders_max"`
@@ -177,8 +178,8 @@ func (s *service) validateBatch(ctx context.Context, in *BatchInput, copyGiven b
 	if in.OnUnavailable != models.PlacementUnavailableDefer && in.OnUnavailable != models.PlacementUnavailableSkip {
 		return nil, errx.New(errx.BadRequest, "on_unavailable must be skip or defer")
 	}
-	if in.MaxCredits < 0 {
-		return nil, errx.New(errx.BadRequest, "max_credits cannot be negative")
+	if in.MaxSpend < 0 {
+		return nil, errx.New(errx.BadRequest, "max_usd cannot be negative")
 	}
 	families, xerr := normalizeFamilies(in.Families)
 	if xerr != nil {
@@ -555,7 +556,7 @@ type batchCost struct {
 	usage   models.PlacementUsage
 	free    int
 	paid    int
-	credits int
+	cost    models.Micro
 }
 
 func (s *service) batchCost(ctx context.Context, orgID uuid.UUID, panel string, tests int) (batchCost, *errx.Error) {
@@ -582,7 +583,7 @@ func (s *service) batchCost(ctx context.Context, orgID uuid.UUID, panel string, 
 	c.metered = true
 	c.free = min(tests, c.usage.Remaining())
 	c.paid = tests - c.free
-	c.credits = c.paid * c.usage.CreditsPerTest
+	c.cost = models.Micro(c.paid) * c.usage.TestPrice()
 	return c, nil
 }
 
@@ -648,7 +649,9 @@ func (s *service) PreviewBatch(ctx context.Context, in BatchInput) (*BatchPrevie
 	if xerr != nil {
 		return nil, xerr
 	}
-	p.Metered, p.Usage, p.FreeTests, p.PaidTests, p.Credits = cost.metered, cost.usage, cost.free, cost.paid, cost.credits
+	p.Metered, p.Usage, p.FreeTests, p.PaidTests = cost.metered, cost.usage, cost.free, cost.paid
+	// The legacy figure prices each test rounded up, so agreeing to it covers the cost.
+	p.CostUSD, p.Credits = cost.cost.USD(), cost.paid*cost.usage.CreditsPerTest
 	return p, nil
 }
 
@@ -684,22 +687,22 @@ func (s *service) CreateBatch(ctx context.Context, in BatchInput) (*BatchView, *
 		return nil, xerr
 	}
 	if cost.paid > 0 {
-		if cost.usage.CreditsPerTest == 0 {
+		if cost.usage.TestPrice() == 0 {
 			return nil, placementErr(errx.PaymentRequired, "placement_quota_exceeded",
 				"This batch needs "+strconv.Itoa(tests)+" tests and the workspace has "+strconv.Itoa(cost.free)+
 					" free this month. Take a smaller sample or test on your own seed inboxes.")
 		}
-		if in.MaxCredits < cost.credits {
+		if in.MaxSpend < cost.cost {
 			return nil, placementErr(errx.PaymentRequired, "placement_quota_exceeded",
-				"This batch can cost up to "+strconv.Itoa(cost.credits)+" credits past the free tests; start it again agreeing to pay that many.")
+				"This batch can cost up to "+dollars(cost.cost)+" past the free tests; start it again agreeing to pay that much.")
 		}
-		if bal := cost.usage.CreditBalance; bal != nil && *bal < cost.credits {
+		if bal := cost.usage.Balance(); bal != nil && *bal < cost.cost {
 			return nil, placementErr(errx.PaymentRequired, "insufficient_credits",
-				"This batch can cost up to "+strconv.Itoa(cost.credits)+" credits and the workspace has "+strconv.Itoa(*bal)+".")
+				"This batch can cost up to "+dollars(cost.cost)+" and the workspace has "+dollars(*bal)+".")
 		}
 	} else {
 		// Nothing agreed is ever charged when the batch fits the free tests.
-		in.MaxCredits = 0
+		in.MaxSpend = 0
 	}
 
 	now := s.now()
@@ -727,7 +730,9 @@ func (s *service) CreateBatch(ctx context.Context, in BatchInput) (*BatchView, *
 			Matched:          matched,
 		},
 		SenderCount: len(ordered),
-		MaxCredits:  in.MaxCredits,
+		MaxCredits:  models.CreditsFromMicro(in.MaxSpend),
+		MaxMicro:    in.MaxSpend,
+		MaxUSD:      in.MaxSpend.USD(),
 		Status:      models.PlacementBatchQueued,
 		RetryUntil:  now.AddDate(0, 0, config.PlacementBatchRetryDays),
 	}

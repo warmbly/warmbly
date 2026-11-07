@@ -194,7 +194,7 @@ func TestLiveUniboxSearchFiltersAndTies(t *testing.T) {
 		{"mailbox", models.MailSearchParams{EmailAccountIDs: []uuid.UUID{f.mailbox}}, received, 2},
 		{"second mailbox", models.MailSearchParams{EmailAccountIDs: []uuid.UUID{second.mailbox}}, latest, 1},
 		{"since", models.MailSearchParams{Since: &boundary}, latest, 2},
-		{"until", models.MailSearchParams{Until: &boundary}, old, 1},
+		{"before", models.MailSearchParams{Before: &boundary}, old, 1},
 		{"sent", models.MailSearchParams{Folder: &sent}, latest, 2},
 		{"inbox", models.MailSearchParams{Folder: &incoming}, received, 1},
 		{"sender", models.MailSearchParams{Sender: &ours}, latest, 2},

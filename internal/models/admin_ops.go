@@ -162,7 +162,7 @@ type AdminSendHoldsResult struct {
 // AdminResolveSendHold is an operator's provider-checked verdict on a held send.
 type AdminResolveSendHold struct {
 	HeldTaskID uuid.UUID `json:"held_task_id" binding:"required"`
-	HeldReason string    `json:"held_reason" binding:"required,oneof=unknown conflict permanent authentication"`
+	HeldReason string    `json:"held_reason" binding:"required,oneof=unknown conflict permanent authentication domain_auth"`
 	// Outcome is sent or not_sent for an unknown hold, provider_confirmed for the others.
 	Outcome               string `json:"outcome" binding:"required,oneof=sent not_sent provider_confirmed"`
 	MessageID             string `json:"message_id" binding:"max=998"`

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/tmplvars"
 )
 
 func TestCompiledTemplateCachesRawSource(t *testing.T) {
@@ -241,6 +242,43 @@ func TestRenderTemplate_BasicVariables(t *testing.T) {
 	expected := "Hi Alice Smith, welcome from Acme Corp!"
 	if result != expected {
 		t.Errorf("expected %q, got %q", expected, result)
+	}
+}
+
+func TestRenderTemplate_AliasSpellings(t *testing.T) {
+	contact := models.Contact{FirstName: "Sam", LastName: "Lee", Company: "Acme", Email: "[EMAIL]", Phone: "555"}
+	cases := []struct{ tmpl, want string }{
+		{"{{.FirstName}}", "Sam"},
+		{"{{first_name}}", "Sam"},
+		{"{{ firstName }}", "Sam"},
+		{"{{.firstName}}", "Sam"},
+		{"{{.first_name}} {{last_name}}", "Sam Lee"},
+		{"{{company_name}}/{{.company}}/{{companyName}}", "Acme/Acme/Acme"},
+		{"{{email}} {{phone}}", "[EMAIL] 555"},
+		{"{{if first_name}}Hi {{first_name}}{{else}}Hi there{{end}}", "Hi Sam"},
+		{`{{.nickname | default "friend"}}`, "friend"},
+		{`{{first_name | upper}}`, "SAM"},
+		{"Write {first_name} or first_name literally", "Write {first_name} or first_name literally"},
+	}
+	for _, tc := range cases {
+		if got := RenderTemplate(tc.tmpl, contact); got != tc.want {
+			t.Errorf("%q: got %q, want %q", tc.tmpl, got, tc.want)
+		}
+		if got := RenderHTMLTemplateWith(tc.tmpl, contact, TemplateContext{}); got != tc.want {
+			t.Errorf("html %q: got %q, want %q", tc.tmpl, got, tc.want)
+		}
+	}
+}
+
+func TestRenderTemplate_CustomFieldBeatsAlias(t *testing.T) {
+	contact := models.Contact{FirstName: "Sam", CustomFields: map[string]string{"first_name": "Samantha"}}
+	// A dotted alias defers to a custom field; a bare one is the built-in field, as it is once saved.
+	tmpl := "{{first_name}} {{.first_name}} {{firstName}} {{.FirstName}}"
+	if got := RenderTemplate(tmpl, contact); got != "Sam Samantha Sam Sam" {
+		t.Fatalf("got %q", got)
+	}
+	if preview := PreviewTemplates(tmpl, "", "", contact); preview.Subject != RenderTemplate(tmplvars.Canonicalize(tmpl), contact) {
+		t.Fatalf("preview %q differs from the saved copy's render", preview.Subject)
 	}
 }
 

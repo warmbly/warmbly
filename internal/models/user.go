@@ -56,6 +56,9 @@ type User struct {
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+
+	// PasswordExpiresAt is set only by CreateExemptUser, to the stored expiry of the issued password.
+	PasswordExpiresAt *time.Time `json:"-"`
 }
 
 // IsPendingDeletion reports whether the user has a pending account deletion.
@@ -74,6 +77,8 @@ type LoginCodeExemption struct {
 	PasswordExpiresAt  *time.Time `json:"password_expires_at,omitempty"`
 	TestWorkspaceID    *uuid.UUID `json:"test_workspace_id,omitempty"`
 	SampleDataSeededAt *time.Time `json:"sample_data_seeded_at,omitempty"`
+	// CreatedAsTester marks an account the tester flow created, which alone can be issued a new password.
+	CreatedAsTester bool `json:"created_as_tester"`
 }
 
 type TesterSampleData struct {

@@ -39,9 +39,13 @@ func (s *service) Dispatch(ctx context.Context, orgID uuid.UUID, eventType model
 	if err != nil {
 		log.Warn().Err(err).Str("event", string(eventType)).Msg("integration dispatch: failed to load targets")
 	}
-	autos, err := s.repo.ListEnabledAutomationsForEvent(ctx, orgID, string(eventType))
-	if err != nil {
-		log.Warn().Err(err).Str("event", string(eventType)).Msg("integration dispatch: failed to load automations")
+	// Every run announces automation.run, so starting a flow on it would loop.
+	var autos []models.Automation
+	if eventType != models.WebhookEventAutomationRun {
+		autos, err = s.repo.ListEnabledAutomationsForEvent(ctx, orgID, string(eventType))
+		if err != nil {
+			log.Warn().Err(err).Str("event", string(eventType)).Msg("integration dispatch: failed to load automations")
+		}
 	}
 	// An event raised by an automation's own action (a contact it created, a
 	// deal it opened) carries its depth. Past the chain cap it still reaches

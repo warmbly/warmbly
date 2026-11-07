@@ -48,9 +48,11 @@ func newPoolMailbox(t *testing.T, handle *db.DB, poolType string) *poolMailbox {
 		f.user, "wp-"+f.user.String()[:8]+"@test.local")
 	exec(`INSERT INTO organizations (id, name, slug, owner_user_id) VALUES ($1, 'Warmup Pool Live', $2, $3)`,
 		f.org, "wp-"+f.org.String()[:8], f.user)
+	// MoveToPool admits only a mailbox that consented to send and receive test mail (000273).
 	exec(`INSERT INTO email_accounts (id, user_id, organization_id, email, name,
-	          signature_plain, signature_html, provider, status, campaign_limit, min_wait_time, timezone, warmup_pool_type)
-	      VALUES ($1, $2, $3, $4, 'Pool', '', '', 'smtp_imap', 'active', 50, 600, 'UTC', $5)`,
+	          signature_plain, signature_html, provider, status, campaign_limit, min_wait_time, timezone, warmup_pool_type,
+	          test_mode, test_send_enabled, test_receive_enabled)
+	      VALUES ($1, $2, $3, $4, 'Pool', '', '', 'smtp_imap', 'active', 50, 600, 'UTC', $5, 'diagnostic', true, true)`,
 		f.account, f.user, f.org, "wp-"+f.account.String()[:8]+"@test.local", poolType)
 
 	if poolType != "" {
@@ -117,6 +119,28 @@ func TestLiveJoiningTheOtherPoolMovesTheMailboxRatherThanDuplicatingIt(t *testin
 	got := f.memberships(t)
 	if len(got) != 1 || got[0] != "free" {
 		t.Fatalf("memberships %v, want exactly [free]; the mailbox is in two pools at once", got)
+	}
+}
+
+// A mailbox that has not consented to test mail is never admitted to a pool.
+func TestLiveMoveToPoolRefusesAMailboxWithoutTestMailConsent(t *testing.T) {
+	for name, consent := range map[string]string{
+		"test mail off":                      `test_mode = 'off'`,
+		"diagnostic without send or receive": `test_send_enabled = false, test_receive_enabled = false`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			repo, handle := liveWarmupRepo(t)
+			f := newPoolMailbox(t, handle, "")
+			ctx := context.Background()
+			execSQL(t, handle.Pool, `UPDATE email_accounts SET `+consent+` WHERE id = $1`, f.account)
+
+			if err := repo.MoveToPool(ctx, models.WarmupPoolFreeID, f.account, "sender_receiver"); err == nil {
+				t.Fatal("admitted a mailbox without test mail consent")
+			}
+			if got := f.memberships(t); len(got) != 0 {
+				t.Fatalf("memberships %v, want none", got)
+			}
+		})
 	}
 }
 

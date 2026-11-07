@@ -32,6 +32,8 @@ import { Logo } from "@/components/svg";
 import { NewWorkspaceDialog } from "@/components/app/organizations/NewWorkspaceDialog";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
+import { postAuthNext } from "@/lib/helper/safeNext";
+import { hrefTarget } from "@/lib/routerSearch";
 
 function relativeAge(d: Date | string): string {
     const date = typeof d === "string" ? new Date(d) : d;
@@ -125,7 +127,7 @@ function SelectOrgPageInner() {
             await switchOrg.mutateAsync(orgId);
             const org = orgList.find((o) => o.id === orgId);
             if (org) setCurrentOrganization(org);
-            navigate({ to: "/app/emails", replace: true });
+            navigate({ ...hrefTarget(postAuthNext(new URLSearchParams(window.location.search).get("next"))), replace: true });
         } catch (e) {
             toast.error(buildError(e as AppError));
         }

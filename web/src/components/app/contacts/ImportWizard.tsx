@@ -92,6 +92,7 @@ export default function ImportWizard({ open, onClose, lockedCampaign, lockedSegm
     const [subscribedDefault, setSubscribedDefault] = React.useState(true);
     const [categoryIds, setCategoryIds] = React.useState<string[]>([]);
     const [campaignIds, setCampaignIds] = React.useState<string[]>([]);
+    const [skipActiveElsewhere, setSkipActiveElsewhere] = React.useState(false);
     const [segmentIds, setSegmentIds] = React.useState<string[]>([]);
     const [uploading, setUploading] = React.useState(false);
     const [uploadFraction, setUploadFraction] = React.useState<number | null>(null);
@@ -117,6 +118,7 @@ export default function ImportWizard({ open, onClose, lockedCampaign, lockedSegm
         setSubscribedDefault(true);
         setCategoryIds([]);
         setCampaignIds([]);
+        setSkipActiveElsewhere(false);
         setSegmentIds([]);
         setUploading(false);
         setUploadFraction(null);
@@ -153,6 +155,7 @@ export default function ImportWizard({ open, onClose, lockedCampaign, lockedSegm
                 subscribedDefault: o?.subscribed_default ?? true,
                 categoryIds: o?.category_ids ?? [],
                 campaignIds: (o?.campaign_ids ?? []).filter((id) => id !== lockedCampaign?.id),
+                skipActiveElsewhere: o?.skip_active_in_other_campaigns === true,
                 segmentIds: (o?.segment_ids ?? []).filter((id) => id !== lockedSegment?.id),
             };
             // The next autosave compares against what was just restored.
@@ -166,6 +169,7 @@ export default function ImportWizard({ open, onClose, lockedCampaign, lockedSegm
             setSubscribedDefault(restored.subscribedDefault);
             setCategoryIds(restored.categoryIds);
             setCampaignIds(restored.campaignIds);
+            setSkipActiveElsewhere(restored.skipActiveElsewhere);
             setSegmentIds(restored.segmentIds);
             setDirection(1);
             setStep(at === "review" ? "review" : "map");
@@ -234,9 +238,10 @@ export default function ImportWizard({ open, onClose, lockedCampaign, lockedSegm
             subscribed_default: subscribedDefault,
             category_ids: categoryIds,
             campaign_ids: campaignIds,
+            skip_active_in_other_campaigns: skipActiveElsewhere,
             segment_ids: segmentIds,
         }),
-        [mapping, dedup, hasHeader, subscribedDefault, categoryIds, campaignIds, segmentIds],
+        [mapping, dedup, hasHeader, subscribedDefault, categoryIds, campaignIds, skipActiveElsewhere, segmentIds],
     );
 
     // Autosave: every change to a draft reaches the server shortly after it is made.
@@ -320,6 +325,7 @@ export default function ImportWizard({ open, onClose, lockedCampaign, lockedSegm
                 subscribed_default: subscribedDefault,
                 category_ids: categoryIds.length > 0 ? categoryIds : undefined,
                 campaign_ids: lockedCampaign ? [lockedCampaign.id] : campaignIds.length > 0 ? campaignIds : undefined,
+                skip_active_in_other_campaigns: skipActiveElsewhere || undefined,
                 segment_ids: targetSegmentIds.length > 0 ? targetSegmentIds : undefined,
             });
             queryClient.setQueryData([...CONTACT_IMPORTS_KEY, imp.id], imp);
@@ -503,6 +509,8 @@ export default function ImportWizard({ open, onClose, lockedCampaign, lockedSegm
                                             setCategoryIds={setCategoryIds}
                                             campaignIds={campaignIds}
                                             setCampaignIds={setCampaignIds}
+                                            skipActiveElsewhere={skipActiveElsewhere}
+                                            setSkipActiveElsewhere={setSkipActiveElsewhere}
                                             segmentIds={segmentIds}
                                             setSegmentIds={setSegmentIds}
                                             lockedCampaign={lockedCampaign}

@@ -18,9 +18,7 @@ import { Node as TiptapNode, mergeAttributes } from "@tiptap/core";
 import { ReactNodeViewRenderer, NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { SparklesIcon, GlobeIcon, TrashIcon } from "lucide-react";
-import toast from "react-hot-toast/headless";
-import type { AppError } from "@/lib/api/client/normalizeError";
-import buildError from "@/lib/helper/buildError";
+import { reportAIError } from "@/components/app/ai/reportAIError";
 import useGenerateAIVariable from "@/lib/api/hooks/app/generation/useGenerateAIVariable";
 import useTypewriter from "@/components/app/ai/useTypewriter";
 import formatUsage from "@/components/app/ai/usage";
@@ -209,7 +207,7 @@ function AIVariableConfigBody({
 
     const [draft, setDraft] = React.useState<AIVariableConfig>(config);
     const [preview, setPreview] = React.useState<string>("");
-    const [usage, setUsage] = React.useState<{ charged: number; tokens: number } | null>(null);
+    const [usage, setUsage] = React.useState<{ chargedUsd: number; tokens: number } | null>(null);
     // Surrounding email, captured when the modal opens (the body isn't edited while open).
     const [ctx] = React.useState(getContext);
 
@@ -245,17 +243,10 @@ function AIVariableConfigBody({
             },
             {
                 onSuccess: (res) => {
-                    setUsage({ charged: res.credits_charged ?? 0, tokens: res.tokens_used ?? 0 });
+                    setUsage({ chargedUsd: res.charged_usd ?? 0, tokens: res.tokens_used ?? 0 });
                     typewriter.run(res.text, (partial) => setPreview(partial));
                 },
-                onError: (e) => {
-                    const err = e as unknown as AppError;
-                    if (err?.status === 402) {
-                        toast.error("You're out of AI credits. Upgrade or purchase more to preview AI blocks.");
-                    } else {
-                        toast.error(buildError(err));
-                    }
-                },
+                onError: (e) => reportAIError(e),
             },
         );
     };
@@ -408,8 +399,8 @@ function AIVariableConfigBody({
                             <p className="text-[12.5px] leading-relaxed text-slate-400">Your snippet appears here.</p>
                         )}
                     </AnimatePresence>
-                    {usage && preview && formatUsage(usage.charged, usage.tokens) && (
-                        <p className="mt-2 text-[10px] text-slate-400">{formatUsage(usage.charged, usage.tokens)}</p>
+                    {usage && preview && formatUsage(usage.chargedUsd, usage.tokens) && (
+                        <p className="mt-2 text-[10px] text-slate-400">{formatUsage(usage.chargedUsd, usage.tokens)}</p>
                     )}
                 </div>
 

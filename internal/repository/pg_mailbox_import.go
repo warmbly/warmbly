@@ -78,8 +78,8 @@ type MailboxImportRepository interface {
 	GetRow(ctx context.Context, orgID, id uuid.UUID, line int) (*models.MailboxImportRow, string, error)
 	// Retryable lists failed rows that still hold credentials, optionally one cause or named lines.
 	Retryable(ctx context.Context, orgID, id uuid.UUID, cause string, lines []int) ([]ImportWorkRow, error)
-	// Requeue puts one row back in the queue; an empty payload keeps the stored one.
-	Requeue(ctx context.Context, id uuid.UUID, line int, payload string) error
+	// Requeue puts one failed or sign-in row back in the queue; an empty payload keeps the stored one.
+	Requeue(ctx context.Context, id uuid.UUID, line int, payload string) (bool, error)
 	// Reopen marks a finished import running again after a retry.
 	Reopen(ctx context.Context, orgID, id uuid.UUID) error
 	Cancel(ctx context.Context, orgID, id uuid.UUID) error
@@ -261,7 +261,7 @@ func (r *mailboxImportRepository) fillCounts(ctx context.Context, imp *models.Ma
 	}
 
 	query = `
-		SELECT cause, count(*), bool_or(payload <> '' AND status = 'failed')
+		SELECT cause, count(*), bool_or(payload <> '' AND status = 'failed'), bool_or(mail_host IN ('gmail', 'google_workspace'))
 		FROM mailbox_import_rows
 		WHERE import_id = $1 AND status IN ('failed', 'needs_signin') AND cause <> ''
 		GROUP BY cause
@@ -275,7 +275,7 @@ func (r *mailboxImportRepository) fillCounts(ctx context.Context, imp *models.Ma
 	imp.Causes = make([]models.MailboxImportCause, 0)
 	for rows.Next() {
 		var c models.MailboxImportCause
-		if err := rows.Scan(&c.Cause, &c.Count, &c.Retryable); err != nil {
+		if err := rows.Scan(&c.Cause, &c.Count, &c.Retryable, &c.Google); err != nil {
 			db.CaptureError(err, query, nil, "scan")
 			return err
 		}
@@ -415,17 +415,19 @@ func (r *mailboxImportRepository) Retryable(ctx context.Context, orgID, id uuid.
 	return out, rows.Err()
 }
 
-func (r *mailboxImportRepository) Requeue(ctx context.Context, id uuid.UUID, line int, payload string) error {
+func (r *mailboxImportRepository) Requeue(ctx context.Context, id uuid.UUID, line int, payload string) (bool, error) {
 	query := `
 		UPDATE mailbox_import_rows
 		SET status = 'queued', lease_until = NULL, attempts = 0, code = '', cause = '', message = '',
 		    payload = CASE WHEN $3 = '' THEN payload ELSE $3 END, updated_at = now()
-		WHERE import_id = $1 AND line = $2 AND status = 'failed'`
-	if _, err := r.DB.Exec(ctx, query, id, line, payload); err != nil {
+		WHERE import_id = $1 AND line = $2
+		  AND (status = 'failed' OR (status = 'needs_signin' AND cause <> '` + ParkedVendorCause + `'))`
+	tag, err := r.DB.Exec(ctx, query, id, line, payload)
+	if err != nil {
 		db.CaptureError(err, query, nil, "exec")
-		return err
+		return false, err
 	}
-	return nil
+	return tag.RowsAffected() > 0, nil
 }
 
 func (r *mailboxImportRepository) Reopen(ctx context.Context, orgID, id uuid.UUID) error {

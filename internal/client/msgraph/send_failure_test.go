@@ -29,6 +29,27 @@ func TestNativeSendFailureGraph(t *testing.T) {
 	}
 }
 
+func TestGraphSendingLimitsPauseInsteadOfReauthorizing(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		code   string
+		want   errx.SendPause
+	}{
+		{400, "ErrorExceededMessageLimit", errx.SendPauseDailyLimit},
+		{403, "ErrorMessageSubmissionBlocked", errx.SendPauseSenderBlocked},
+		{429, "ApplicationThrottled", errx.SendPauseRateLimited},
+		{403, "ErrorAccessDenied", errx.SendPauseAuthentication},
+	} {
+		got := HandleError(&http.Response{StatusCode: tc.status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"error":{"code":"` + tc.code + `","message":"private body"}}`))})
+		if kind := errx.ClassifySendPause(string(got.Code), got.Failure); kind != tc.want {
+			t.Fatalf("%s: pause = %q, want %q", tc.code, kind, tc.want)
+		}
+		if tc.want != errx.SendPauseAuthentication && got.Failure.Disposition == errx.SendAuth {
+			t.Fatalf("%s asks the owner to re-authorize", tc.code)
+		}
+	}
+}
+
 func TestSendAmbiguousGraphDoesNotFallbackOrDelete(t *testing.T) {
 	for _, draft := range []bool{false, true} {
 		rt := &sendRT{assignedID: "<assigned@test.local>", isDraft: "true"}

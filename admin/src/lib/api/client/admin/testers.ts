@@ -6,7 +6,7 @@
 // exemptions are the same query.
 
 import { Request } from "@/lib/api/client";
-import type { LoginCodeExemption, CreatedTester, AdminOrgRole } from "@/lib/api/models/admin";
+import type { LoginCodeExemption, CreatedTester, AdminOrgRole, ReissuedTesterPassword } from "@/lib/api/models/admin";
 
 export function listTesters(): Promise<{ data: LoginCodeExemption[] }> {
     return Request({ method: "GET", url: "/admin/testers", authorization: true });
@@ -37,4 +37,9 @@ export function revokeTester(id: string): Promise<{ revoked: boolean; password_c
 
 export function seedTesterWorkspace(orgID: string): Promise<{ organization_id: string; created: boolean; seeded_at: string }> {
     return Request({ method: "POST", url: `/admin/organizations/${orgID}/sample-data`, authorization: true });
+}
+
+/** Issues a tester a fresh 48-hour initial password and signs out its sessions. Needs a recent confirmation. */
+export function reissueTesterPassword(id: string): Promise<ReissuedTesterPassword> {
+    return Request({ method: "POST", url: `/admin/testers/${id}/password`, authorization: true });
 }

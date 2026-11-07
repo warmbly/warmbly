@@ -51,7 +51,7 @@ func priorTransportSchema(t *testing.T, schema avro.Schema) avro.Schema {
 				kept := fields[:0]
 				for _, f := range fields {
 					record := f.(map[string]any)
-					if record["name"] == "transport_generation" || x["name"] == "EmailErrorEvent" && record["name"] == "operation" {
+					if record["name"] == "transport_generation" || record["name"] == "folder_coverage_observed_at" || x["name"] == "warmbly.events.EmailErrorEvent" && record["name"] == "operation" || x["name"] == "warmbly.events.JobEventSyncState" && (record["name"] == "worker_id" || record["name"] == "report_generation") {
 						continue
 					}
 					strip(f)
@@ -80,6 +80,38 @@ func priorTransportSchema(t *testing.T, schema avro.Schema) avro.Schema {
 		t.Fatal(err)
 	}
 	return parsed
+}
+
+func TestPriorTransportSchemaOmitsReportingIdentity(t *testing.T) {
+	current := models.JobEvent{}.Schema()
+	for _, tc := range []struct {
+		schema  avro.Schema
+		present bool
+	}{
+		{current, true}, {priorTransportSchema(t, current), false},
+	} {
+		found := false
+		branches := tc.schema.(*avro.RecordSchema).Fields()[1].Type().(*avro.UnionSchema).Types()
+		for _, branch := range branches {
+			record, ok := branch.(*avro.RecordSchema)
+			if !ok || record.FullName() != "warmbly.events.JobEventSyncState" {
+				continue
+			}
+			found = true
+			for _, name := range []string{"worker_id", "report_generation"} {
+				present := false
+				for _, field := range record.Fields() {
+					present = present || field.Name() == name
+				}
+				if present != tc.present {
+					t.Fatalf("%s present=%t want=%t", name, present, tc.present)
+				}
+			}
+		}
+		if !found {
+			t.Fatal("sync record missing from schema")
+		}
+	}
 }
 
 func TestMailTransportCodecRegistryCompatibility(t *testing.T) {
@@ -143,7 +175,7 @@ func TestMailTransportCodecRegistryCompatibility(t *testing.T) {
 	if url == "" {
 		t.Skip("SR_URL must name an isolated local Schema Registry")
 	}
-	generation, task, mailbox := uuid.New(), uuid.New(), uuid.New()
+	generation, reportGeneration, worker, task, mailbox := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	at := time.Now().UTC().Truncate(time.Millisecond)
 	for _, tc := range []struct {
 		name   string
@@ -156,7 +188,7 @@ func TestMailTransportCodecRegistryCompatibility(t *testing.T) {
 			return v.(*models.WorkerEvent).Body.(*models.AddWorkerEmail).TransportGeneration
 		}},
 		{"send", models.JobEvent{Type: models.JobEventTypeEmailSent, Body: models.SendEmailResult{TaskID: task, Success: true, SentAt: at, TransportGeneration: generation}}, models.JobEvent{}.Schema(), func() any { return &models.JobEvent{} }, func(v any) uuid.UUID { return v.(*models.JobEvent).Body.(models.SendEmailResult).TransportGeneration }},
-		{"sync", models.JobEvent{Type: models.JobEventTypeSyncState, Body: &models.JobEventSyncState{EmailID: mailbox, State: models.SyncState{LastSyncedAt: &at, TransportGeneration: generation}}}, models.JobEvent{}.Schema(), func() any { return &models.JobEvent{} }, func(v any) uuid.UUID {
+		{"sync", models.JobEvent{Type: models.JobEventTypeSyncState, Body: &models.JobEventSyncState{WorkerID: &worker, ReportGeneration: reportGeneration, EmailID: mailbox, State: models.SyncState{LastSyncedAt: &at, FolderCoverageObservedAt: &at, TransportGeneration: generation}}}, models.JobEvent{}.Schema(), func() any { return &models.JobEvent{} }, func(v any) uuid.UUID {
 			return v.(*models.JobEvent).Body.(*models.JobEventSyncState).State.TransportGeneration
 		}},
 		{"error", models.JobEvent{Type: models.JobEventTypeEmailServerError, Body: models.EmailErrorEvent{EmailAccountID: mailbox.String(), Operation: models.MailTransportSync, TransportGeneration: generation}}, models.JobEvent{}.Schema(), func() any { return &models.JobEvent{} }, func(v any) uuid.UUID { return v.(*models.JobEvent).Body.(models.EmailErrorEvent).TransportGeneration }},
@@ -188,6 +220,12 @@ func TestMailTransportCodecRegistryCompatibility(t *testing.T) {
 			if tc.proof(target) != uuid.Nil {
 				t.Fatal("old payload fabricated proof")
 			}
+			if tc.name == "sync" && target.(*models.JobEvent).Body.(*models.JobEventSyncState).WorkerID != nil {
+				t.Fatal("old sync payload manufactured a reporting worker")
+			}
+			if tc.name == "sync" && target.(*models.JobEvent).Body.(*models.JobEventSyncState).ReportGeneration != uuid.Nil {
+				t.Fatal("old sync payload manufactured a report generation")
+			}
 			fresh, err := writer.Serialize(t.Context(), topic, tc.value)
 			if err != nil {
 				t.Fatal("FULL_TRANSITIVE registry rejected additive schema", err)
@@ -198,6 +236,18 @@ func TestMailTransportCodecRegistryCompatibility(t *testing.T) {
 			}
 			if tc.proof(target) != generation {
 				t.Fatal("typed wire lost generation")
+			}
+			if tc.name == "sync" {
+				report := target.(*models.JobEvent).Body.(*models.JobEventSyncState)
+				if report.WorkerID == nil || *report.WorkerID != worker {
+					t.Fatal("typed wire lost reporting worker")
+				}
+				if report.ReportGeneration != reportGeneration {
+					t.Fatal("typed wire lost report generation")
+				}
+				if report.State.FolderCoverageObservedAt == nil || !report.State.FolderCoverageObservedAt.Equal(at) {
+					t.Fatal("typed wire lost folder coverage observation")
+				}
 			}
 			id := mailbox
 			if tc.name == "send" {

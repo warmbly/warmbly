@@ -15,11 +15,12 @@ type ContactCampaignState struct {
 	// LeadStatus follows ContactCampaignProgress.Status exactly.
 	LeadStatus string `json:"lead_status"`
 
-	// SenderID / SenderEmail are the mailbox this lead's whole sequence sends
-	// from, fixed when its first email went out. Empty until then: rotation
-	// picks it for the first step and every follow-up follows.
-	SenderID    *uuid.UUID `json:"sender_id,omitempty"`
-	SenderEmail string     `json:"sender_email,omitempty"`
+	// SenderID / SenderEmail are the mailbox that sent this lead's latest
+	// step, which every follow-up keeps unless FollowUpSender rotates them.
+	// Empty until the first email went out.
+	SenderID       *uuid.UUID     `json:"sender_id,omitempty"`
+	SenderEmail    string         `json:"sender_email,omitempty"`
+	FollowUpSender FollowUpSender `json:"follow_up_sender"`
 	// FailureReason is the worker's reason for the last failed send.
 	FailureReason string `json:"failure_reason,omitempty"`
 
@@ -52,6 +53,8 @@ type ContactCampaignStep struct {
 	Kind     string    `json:"kind"`
 	Position int       `json:"position"`
 	Subject  string    `json:"subject,omitempty"`
+	// SenderEmail is the mailbox that sent this step, empty until it is sent.
+	SenderEmail string `json:"sender_email,omitempty"`
 
 	SentAt    *time.Time `json:"sent_at,omitempty"`
 	OpenedAt  *time.Time `json:"opened_at,omitempty"`

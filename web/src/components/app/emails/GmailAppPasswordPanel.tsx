@@ -49,10 +49,13 @@ function normalizeAppPassword(raw: string): string {
 export default function GmailAppPasswordPanel({
     onDone,
     onError,
+    initialEmail = "",
 }: {
     onDone: () => void;
     /** A refused connect (a full allowance) gets its own dialog upstairs. */
     onError: (e: unknown) => void;
+    /** An address typed earlier, e.g. a personal Gmail steered here from Google sign-in. */
+    initialEmail?: string;
 }) {
     const [step, setStep] = React.useState(0);
     const [dir, setDir] = React.useState<1 | -1>(1);
@@ -82,7 +85,7 @@ export default function GmailAppPasswordPanel({
                     >
                         {step === 0 && <TwoStepStep onNext={() => go(1)} />}
                         {step === 1 && <AppPasswordStep onBack={() => go(0)} onNext={() => go(2)} />}
-                        {step === 2 && <ConnectStep onBack={() => go(1)} onDone={onDone} onError={onError} />}
+                        {step === 2 && <ConnectStep onBack={() => go(1)} onDone={onDone} onError={onError} initialEmail={initialEmail} />}
                     </motion.div>
                 </AnimatePresence>
             </div>
@@ -178,13 +181,15 @@ function ConnectStep({
     onBack,
     onDone,
     onError,
+    initialEmail,
 }: {
     onBack: () => void;
     onDone: () => void;
     onError: (e: unknown) => void;
+    initialEmail: string;
 }) {
     const [name, setName] = React.useState("");
-    const [email, setEmail] = React.useState("");
+    const [email, setEmail] = React.useState(initialEmail);
     const [password, setPassword] = React.useState("");
     const [submitting, setSubmitting] = React.useState(false);
 

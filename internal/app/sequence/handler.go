@@ -11,6 +11,7 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
+	"github.com/warmbly/warmbly/internal/pkg/tmplvars"
 )
 
 func (s *sequenceService) Create(ctx context.Context, orgID, campaignID string) (*models.Sequence, *errx.Error) {
@@ -22,12 +23,35 @@ func (s *sequenceService) Get(ctx context.Context, orgID, campaignID string) ([]
 }
 
 func (s *sequenceService) Update(ctx context.Context, orgID, campaignID, sequenceID string, data *models.UpdateSequence) (*models.Sequence, *errx.Error) {
+	if err := checkCopy(data); err != nil {
+		return nil, errx.InvalidTemplate(err)
+	}
+	if data != nil {
+		tmplvars.CanonicalizeAll(data.Subject, data.BodyHTML, data.BodyPlain)
+	}
 	s.deriveBodyHTML(ctx, orgID, campaignID, sequenceID, data)
 	// Branch routing is resolved (and made safe against deleted/dangling targets
 	// and loops) at schedule time in the repository's finder; the repository also
 	// validates branch shape before persisting. No cross-step write validation is
 	// needed here — the canvas only ever points a branch at a real step or stop.
 	return s.sequenceRepository.Update(ctx, orgID, campaignID, sequenceID, data)
+}
+
+// checkCopy refuses any copy field in the write that would not render as written.
+func checkCopy(data *models.UpdateSequence) error {
+	if data == nil {
+		return nil
+	}
+	var parts []tmplvars.Part
+	for _, f := range []struct {
+		name string
+		val  *string
+	}{{"subject", data.Subject}, {"body", data.BodyHTML}, {"plain-text body", data.BodyPlain}} {
+		if f.val != nil {
+			parts = append(parts, tmplvars.Part{Name: f.name, Text: *f.val, HTML: f.val == data.BodyHTML})
+		}
+	}
+	return tmplvars.CheckCopy(parts...)
 }
 
 // deriveBodyHTML fills in the HTML part for a plain-only write.

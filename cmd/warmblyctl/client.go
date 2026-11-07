@@ -14,6 +14,7 @@ import (
 
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	"github.com/warmbly/warmbly/internal/app/credits"
+	"github.com/warmbly/warmbly/internal/app/instancesettings"
 	"github.com/warmbly/warmbly/internal/app/mailcred"
 	"github.com/warmbly/warmbly/internal/app/organization"
 	"github.com/warmbly/warmbly/internal/app/orgtransfer"
@@ -122,11 +123,11 @@ func (c *conn) trialService() trial.TrialService {
 	creditSvc := credits.NewService(
 		repository.NewCreditRepository(c.db),
 		repository.NewAISettingsRepository(c.db),
+		instancesettings.NewService(instancesettings.NewStore(c.db.Pool)),
 		c.cache,
 	)
 	return trial.NewService(
 		repository.NewSubscriptionRepository(c.db.Pool),
-		c.users,
 		repository.NewPlanRepository(c.db.Pool),
 		creditSvc,
 	)

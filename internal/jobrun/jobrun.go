@@ -34,12 +34,12 @@ type Store interface {
 	// RequestRun asks the owning loop to run at its next poll. False when no
 	// job by that name has ever registered.
 	RequestRun(ctx context.Context, name string) (bool, error)
-	// TakeRunRequest clears a pending request and reports whether there was one.
-	TakeRunRequest(ctx context.Context, name string) (bool, error)
+	// TakeRunRequests clears the pending requests among names and returns the jobs that had one.
+	TakeRunRequests(ctx context.Context, names []string) ([]string, error)
 	List(ctx context.Context) ([]models.ScheduledJobRun, error)
 }
 
-// requestPoll is how often a loop checks for a "run now" request.
+// requestPoll is how often a process checks for "run now" requests, in one query for all its loops.
 const requestPoll = 15 * time.Second
 
 // phaseWindow is how far apart loops that share an interval are pulled. Every
@@ -119,8 +119,8 @@ func Loop(ctx context.Context, name string, interval time.Duration, runOnBoot bo
 
 	timer := time.NewTimer(time.Until(due))
 	defer timer.Stop()
-	poll := time.NewTicker(requestPoll)
-	defer poll.Stop()
+	requests := watchRequests(name)
+	defer unwatchRequests(name, requests)
 	for {
 		select {
 		case <-ctx.Done():
@@ -144,18 +144,109 @@ func Loop(ctx context.Context, name string, interval time.Duration, runOnBoot bo
 				Run(ctx, name, fn)
 			}
 			timer.Reset(time.Until(due))
-		case <-poll.C:
-			if st == nil {
-				continue
+		case <-requests:
+			Run(ctx, name, fn)
+		}
+	}
+}
+
+var (
+	watchMu    sync.Mutex
+	watchers   = map[string][]chan struct{}{}
+	pollerStop chan struct{}
+)
+
+// watchRequests registers a loop for run requests, starting the process's poller with the first one.
+func watchRequests(name string) chan struct{} {
+	ch := make(chan struct{}, 1)
+	watchMu.Lock()
+	defer watchMu.Unlock()
+	watchers[name] = append(watchers[name], ch)
+	if pollerStop == nil {
+		pollerStop = make(chan struct{})
+		go pollRequests(pollerStop)
+	}
+	return ch
+}
+
+// unwatchRequests removes a loop; the poller stops with the last one.
+func unwatchRequests(name string, ch chan struct{}) {
+	watchMu.Lock()
+	defer watchMu.Unlock()
+	list := watchers[name]
+	for i, c := range list {
+		if c == ch {
+			list = append(list[:i], list[i+1:]...)
+			break
+		}
+	}
+	if len(list) == 0 {
+		delete(watchers, name)
+	} else {
+		watchers[name] = list
+	}
+	if len(watchers) == 0 && pollerStop != nil {
+		close(pollerStop)
+		pollerStop = nil
+	}
+}
+
+// pollRequests takes every pending request for this process's loops in one query per poll.
+func pollRequests(stop chan struct{}) {
+	ticker := time.NewTicker(requestPoll)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			takeRequests(context.Background())
+		}
+	}
+}
+
+func takeRequests(ctx context.Context) {
+	st, _ := current()
+	if st == nil {
+		return
+	}
+	watchMu.Lock()
+	names := make([]string, 0, len(watchers))
+	for name := range watchers {
+		names = append(names, name)
+	}
+	watchMu.Unlock()
+	if len(names) == 0 {
+		return
+	}
+	pollCtx, cancel := context.WithTimeout(ctx, requestPoll)
+	defer cancel()
+	taken, err := st.TakeRunRequests(pollCtx, names)
+	if err != nil {
+		log.Warn().Err(err).Msg("jobrun: run request poll failed")
+		return
+	}
+	var orphaned []string
+	watchMu.Lock()
+	for _, name := range taken {
+		if len(watchers[name]) == 0 {
+			orphaned = append(orphaned, name)
+		}
+		for _, ch := range watchers[name] {
+			select {
+			case ch <- struct{}{}:
+			default:
 			}
-			requested, err := st.TakeRunRequest(ctx, name)
-			if err != nil {
-				log.Warn().Err(err).Str("job", name).Msg("jobrun: poll failed")
-				continue
-			}
-			if requested {
-				Run(ctx, name, fn)
-			}
+		}
+	}
+	watchMu.Unlock()
+	// The loop stopped here after the poll began; the request goes back for whichever process runs it now.
+	for _, name := range orphaned {
+		handCtx, cancelHand := context.WithTimeout(ctx, requestPoll)
+		_, err := st.RequestRun(handCtx, name)
+		cancelHand()
+		if err != nil {
+			log.Warn().Err(err).Str("job", name).Msg("jobrun: could not hand a run request back")
 		}
 	}
 }
@@ -181,8 +272,7 @@ func Run(ctx context.Context, name string, fn func(ctx context.Context) error) {
 		}
 	}
 	runErr := safeRun(ctx, name, fn)
-	var quiet quietError
-	if runErr != nil && !errors.As(runErr, &quiet) {
+	if runErr != nil && !IsQuiet(runErr) {
 		errs.CaptureException(runErr)
 		log.Warn().Err(runErr).Str("job", name).Msg("scheduled job failed")
 	}
@@ -193,12 +283,18 @@ func Run(ctx context.Context, name string, fn func(ctx context.Context) error) {
 	}
 }
 
-// Quiet marks a standing condition a job already reported: the panel records it, but it is not logged or captured again.
+// Quiet marks an expected or already reported condition: the panel records it, but it is not logged or captured.
 func Quiet(err error) error {
 	if err == nil {
 		return nil
 	}
 	return quietError{err}
+}
+
+// IsQuiet reports whether err was marked with Quiet.
+func IsQuiet(err error) bool {
+	var quiet quietError
+	return errors.As(err, &quiet)
 }
 
 type quietError struct{ error }

@@ -143,7 +143,7 @@ type PlacementBatchRepository interface {
 	// CloseOpenBatchSenders gives every sender of a batch in one of the from
 	// statuses (queued, deferred) one final status.
 	CloseOpenBatchSenders(ctx context.Context, batchID uuid.UUID, from []string, status, reason, detail string) error
-	AddBatchCredits(ctx context.Context, id uuid.UUID, credits int) error
+	AddBatchSpend(ctx context.Context, id uuid.UUID, spent models.Micro) error
 	MarkBatchStarted(ctx context.Context, id uuid.UUID) error
 	// FinishBatch closes an active batch; false when it was already closed.
 	FinishBatch(ctx context.Context, id uuid.UUID, status, errMsg string) (bool, error)
@@ -215,20 +215,25 @@ func nonNilUUIDs(ids []uuid.UUID) []uuid.UUID {
 
 const placementBatchCols = `id, organization_id, created_by, campaign_id, sequence_id, contact_id, subject,
 	body_plain, body_html, tracking, panel, pace, families, seed_ids, on_unavailable, selection, sender_count,
-	max_credits, credits_spent, status, error, active, last_tick_at, retry_until, created_at, started_at, finished_at`
+	max_credits, credits_spent, max_micro, spent_micro, status, error, active, last_tick_at, retry_until, created_at, started_at, finished_at`
 
 func scanPlacementBatch(row pgx.Row) (*models.PlacementBatch, error) {
 	var b models.PlacementBatch
 	var selection []byte
 	err := row.Scan(&b.ID, &b.OrganizationID, &b.CreatedBy, &b.CampaignID, &b.SequenceID, &b.ContactID, &b.Subject,
 		&b.BodyPlain, &b.BodyHTML, &b.Tracking, &b.Panel, &b.Pace, &b.Families, &b.SeedIDs, &b.OnUnavailable, &selection, &b.SenderCount,
-		&b.MaxCredits, &b.CreditsSpent, &b.Status, &b.Error, &b.Active, &b.LastTickAt, &b.RetryUntil, &b.CreatedAt, &b.StartedAt, &b.FinishedAt)
+		&b.MaxCredits, &b.CreditsSpent, &b.MaxMicro, &b.SpentMicro, &b.Status, &b.Error, &b.Active, &b.LastTickAt, &b.RetryUntil, &b.CreatedAt, &b.StartedAt, &b.FinishedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	// The previous release writes the credit columns only; this one writes
+	// credits rounded down, so the larger figure is the real one.
+	b.MaxMicro = max(b.MaxMicro, models.Micro(b.MaxCredits)*models.LegacyCreditMicro)
+	b.SpentMicro = max(b.SpentMicro, models.Micro(b.CreditsSpent)*models.LegacyCreditMicro)
+	b.MaxUSD, b.SpentUSD = b.MaxMicro.USD(), b.SpentMicro.USD()
 	if len(selection) > 0 {
 		// A selection that no longer parses only costs the display.
 		_ = json.Unmarshal(selection, &b.Selection)
@@ -260,12 +265,12 @@ func (r *placementBatchRepository) CreateBatch(ctx context.Context, b *models.Pl
 	err = tx.QueryRow(ctx, `
 		INSERT INTO placement_batches (id, organization_id, created_by, campaign_id, sequence_id, contact_id, subject,
 			body_plain, body_html, tracking, panel, pace, families, seed_ids, on_unavailable, selection, sender_count,
-			max_credits, status, active, retry_until)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, true, $20)
+			max_credits, max_micro, status, active, retry_until)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, true, $21)
 		RETURNING created_at
 	`, b.ID, b.OrganizationID, b.CreatedBy, b.CampaignID, b.SequenceID, b.ContactID, b.Subject,
 		b.BodyPlain, b.BodyHTML, b.Tracking, b.Panel, b.Pace, families, nonNilUUIDs(b.SeedIDs), b.OnUnavailable, selection, b.SenderCount,
-		b.MaxCredits, b.Status, b.RetryUntil).Scan(&b.CreatedAt)
+		models.CreditsFromMicro(b.MaxMicro), b.MaxMicro, b.Status, b.RetryUntil).Scan(&b.CreatedAt)
 	if err != nil {
 		return err
 	}
@@ -596,10 +601,10 @@ func (r *placementBatchRepository) CloseOpenBatchSenders(ctx context.Context, ba
 	return err
 }
 
-func (r *placementBatchRepository) AddBatchCredits(ctx context.Context, id uuid.UUID, credits int) error {
+func (r *placementBatchRepository) AddBatchSpend(ctx context.Context, id uuid.UUID, spent models.Micro) error {
 	_, err := r.db.Exec(ctx, `
-		UPDATE placement_batches SET credits_spent = credits_spent + $2, updated_at = NOW() WHERE id = $1
-	`, id, credits)
+		UPDATE placement_batches SET credits_spent = credits_spent + $2, spent_micro = spent_micro + $3, updated_at = NOW() WHERE id = $1
+	`, id, models.CreditsFromMicro(spent), spent)
 	return err
 }
 

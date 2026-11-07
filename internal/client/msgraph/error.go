@@ -49,6 +49,15 @@ func HandleError(resp *http.Response) *errx.MailError {
 		Cause: errx.SafeProviderCode(env.Error.Code), Scope: "mailbox", ObservedAt: now,
 		Disposition: errx.SendRetry, RetryAt: errx.RetryAfterAt(resp.Header.Get("Retry-After"), now)}
 	base := errx.ErrMailServerUnreachable
+	// A spent quota or a sending restriction arrives as a 400 or 403 but is no reason to re-authorize.
+	switch errx.ClassifySendPause("", &errx.SendFailure{Cause: failure.Cause, Disposition: errx.SendPermanent}) {
+	case errx.SendPauseDailyLimit, errx.SendPauseRateLimited:
+		failure.Disposition = errx.SendThrottle
+		return errx.WithSendFailure(errx.ErrMailSendingTooFast, failure)
+	case errx.SendPauseSenderBlocked:
+		failure.Disposition = errx.SendPermanent
+		return errx.WithSendFailure(errx.ErrMailSendRejected("The provider is not letting this mailbox send right now"), failure)
+	}
 	switch resp.StatusCode {
 	case http.StatusUnauthorized:
 		base, failure.Disposition = errx.ErrMailAuthenticationFailed, errx.SendAuth

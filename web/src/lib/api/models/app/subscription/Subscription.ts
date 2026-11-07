@@ -20,6 +20,10 @@ export default interface Subscription {
     // subscription keeps whatever `status` it had, so this is the only signal
     // that the workspace is entitled. Expiry is resolved server-side.
     managed?: boolean
+    // The workspace had the free warmup allowance before new ones stopped getting it.
+    keeps_free_warmup?: boolean
+    // Set on a workspace that started with the free trial; past it, the trial has ended.
+    free_trial_ends_at?: string | null
     current_period_start: Date
     current_period_end: Date
     cancel_at_period_end: boolean

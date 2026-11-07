@@ -20,7 +20,7 @@ type WritingEvent =
 // streamWriting runs /generation/write or /generation/edit as a Server-Sent
 // Events stream and resolves with the final response, whose text can differ
 // from the deltas (tidied and reworded after the model finished). It rejects
-// with an AppError (status 402 when out of credits) or with the AbortError of
+// with an AppError (status 402 when the balance is too low) or with the AbortError of
 // the passed signal.
 export default async function streamWriting(
     path: "/generation/write" | "/generation/edit",
@@ -43,7 +43,7 @@ export default async function streamWriting(
         throw { error: "Network Error", message: "Please check your connection." } satisfies AppError;
     });
 
-    // Refusals (credits, permissions, limits) come back as a JSON error body.
+    // Refusals (balance, permissions, limits) come back as a JSON error body.
     if (!res.ok || !res.body) {
         const j = await res.json().catch(() => ({}));
         throw {
@@ -63,7 +63,9 @@ export default async function streamWriting(
         else if (ev.type === "stage") handlers.onChecking?.();
         else if (ev.type === "done") result = ev;
         else if (ev.type === "error") {
-            failure = { error: "Service Unavailable", message: ev.message || "The writing assistant is unavailable.", status: 503, code: ev.code };
+            // A balance that ran out mid-run reads as the same 402 a refusal is.
+            const status = ev.code === "insufficient_credits" ? 402 : 503;
+            failure = { error: "Service Unavailable", message: ev.message || "The writing assistant is unavailable.", status, code: ev.code };
         }
     });
     if (failure) throw failure;

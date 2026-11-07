@@ -88,7 +88,7 @@ export function useEmailAIWriter({
                     },
                 );
                 if (runId.current !== id) return;
-                setUsage({ charged: res.credits_charged ?? 0, tokens: res.tokens_used ?? 0 });
+                setUsage({ chargedUsd: res.charged_usd ?? 0, tokens: res.tokens_used ?? 0 });
                 const draft = parseDraft(res.text);
                 if (!draft.body) {
                     restore();

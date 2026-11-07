@@ -174,6 +174,11 @@ func TestLiveMailboxImportLifecycle(t *testing.T) {
 		if len(got.Causes) != 2 {
 			t.Fatalf("causes = %+v", got.Causes)
 		}
+		for _, c := range got.Causes {
+			if !c.Google {
+				t.Fatalf("cause %s on Google rows is not marked google", c.Cause)
+			}
+		}
 		rows, err := repo.ListRows(ctx, f.org, id, []string{models.ImportRowConnected}, "", 0, 10)
 		if err != nil || len(rows) != 1 || rows[0].Retryable || rows[0].EmailAccountID == nil {
 			t.Fatalf("connected rows = %+v, %v", rows, err)
@@ -188,7 +193,9 @@ func TestLiveMailboxImportLifecycle(t *testing.T) {
 		if other, _ := repo.Retryable(ctx, f.other, id, "", nil); len(other) != 0 {
 			t.Fatal("another workspace saw retryable rows")
 		}
-		mustImport(t, repo.Requeue(ctx, id, 3, "resealed"))
+		if queued, err := repo.Requeue(ctx, id, 3, "resealed"); err != nil || !queued {
+			t.Fatalf("requeue = %v, %v", queued, err)
+		}
 		mustImport(t, repo.Reopen(ctx, f.org, id))
 		row, payload, err := repo.GetRow(ctx, f.org, id, 3)
 		if err != nil || row.Status != models.ImportRowQueued || payload != "resealed" || row.Cause != "" {
@@ -218,6 +225,30 @@ func TestLiveMailboxImportLifecycle(t *testing.T) {
 		}
 		row, payload, _ := repo.GetRow(ctx, f.org, id, 4)
 		if row.Status != models.ImportRowConnected || payload != "" {
+			t.Fatalf("row = %+v payload = %q", row, payload)
+		}
+	})
+
+	t.Run("a row waiting for sign-in is requeued unless its vendor is authorizing it", func(t *testing.T) {
+		park := func(cause string) {
+			t.Helper()
+			if _, err := pool.Exec(ctx, `UPDATE mailbox_import_rows SET status = 'needs_signin', cause = $3, payload = 'sealed'
+				WHERE import_id = $1 AND line = $2`, id, 4, cause); err != nil {
+				t.Fatal(err)
+			}
+		}
+		park(ParkedVendorCause)
+		if queued, err := repo.Requeue(ctx, id, 4, "resealed"); err != nil || queued {
+			t.Fatalf("a vendor-parked row requeued = %v, %v", queued, err)
+		}
+		if row, payload, _ := repo.GetRow(ctx, f.org, id, 4); row.Status != models.ImportRowNeedsSignin || payload != "sealed" {
+			t.Fatalf("row = %+v payload = %q", row, payload)
+		}
+		park("google_signin")
+		if queued, err := repo.Requeue(ctx, id, 4, "resealed"); err != nil || !queued {
+			t.Fatalf("a sign-in row requeued = %v, %v", queued, err)
+		}
+		if row, payload, _ := repo.GetRow(ctx, f.org, id, 4); row.Status != models.ImportRowQueued || payload != "resealed" || row.Cause != "" {
 			t.Fatalf("row = %+v payload = %q", row, payload)
 		}
 	})

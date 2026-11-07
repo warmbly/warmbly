@@ -12,6 +12,7 @@ package placement
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/rand/v2"
 	"slices"
 	"sort"
@@ -97,19 +98,20 @@ type Deps struct {
 	Mailboxes MailboxControl
 	Pauser    CampaignPauser
 	Cloud     CloudPanel
-	// Credits pays for tests past the monthly free allowance; nil turns
-	// paid tests off.
+	// Credits pays for tests past the monthly free allowance from the
+	// balance; nil turns paid tests off.
 	Credits Credits
 	// Batches stores placement batches; nil turns batches off.
 	Batches repository.PlacementBatchRepository
 }
 
-// Credits is the slice of the credit ledger a paid test uses.
+// Credits is the slice of the balance a paid test uses.
 type Credits interface {
 	Unmetered() bool
-	GetBalance(ctx context.Context, orgID uuid.UUID) (int, *errx.Error)
-	Charge(ctx context.Context, orgID uuid.UUID, amount int, reason, idempotencyKey string) (int, error)
-	RefundCharge(ctx context.Context, orgID uuid.UUID, chargeKey, reason string) (int, error)
+	GetBalance(ctx context.Context, orgID uuid.UUID) (models.Micro, *errx.Error)
+	Quote(ctx context.Context, u credits.Usage) models.Micro
+	ChargeUpfront(ctx context.Context, orgID uuid.UUID, u credits.Usage, reason, idempotencyKey string) (models.Micro, error)
+	RefundCharge(ctx context.Context, orgID uuid.UUID, chargeKey, reason string) (models.Micro, error)
 }
 
 // Service is the placement test surface.
@@ -178,11 +180,11 @@ type CreateInput struct {
 	Families []string
 	// Pace is spaced (the default) or quick.
 	Pace string
-	// MaxCredits is the most the caller agreed to pay for a test past the
+	// MaxSpend is the most the caller agreed to pay for a test past the
 	// monthly free allowance; a higher price is refused, never charged.
-	MaxCredits int
-	Origin     string
-	MonitorID  *uuid.UUID
+	MaxSpend  models.Micro
+	Origin    string
+	MonitorID *uuid.UUID
 	// BatchID and BatchSenderID tie a batch's test to its sender row.
 	BatchID       *uuid.UUID
 	BatchSenderID *uuid.UUID
@@ -292,29 +294,29 @@ func (s *service) CreateTests(ctx context.Context, in CreateInput) ([]TestView, 
 	}
 	pol := s.policy(ctx)
 
-	// The monthly free tests go first; past them a manual test is paid in
-	// credits, and only when the caller agreed to the price.
-	paid, price := 0, 0
+	// The monthly free tests go first; past them a manual test is paid from
+	// the balance, and only when the caller agreed to the price.
+	paid, price := 0, models.Micro(0)
 	if in.Panel == models.PlacementPanelInstance && in.Origin != models.PlacementOriginAdmin {
 		usage, xerr := s.usage(ctx, in.OrgID)
 		if xerr != nil {
 			return nil, xerr
 		}
 		if free := usage.Remaining(); free >= 0 && free < len(variants) {
-			paid, price = len(variants)-free, usage.CreditsPerTest
+			paid, price = len(variants)-free, usage.TestPrice()
 			if price == 0 || (in.Origin != models.PlacementOriginManual && in.Origin != models.PlacementOriginBatch) {
 				return nil, placementErr(errx.PaymentRequired, "placement_quota_exceeded",
 					"This workspace has used its free placement tests for the month.")
 			}
-			if in.MaxCredits < paid*price {
+			cost := models.Micro(paid) * price
+			if in.MaxSpend < cost {
 				return nil, placementErr(errx.PaymentRequired, "placement_quota_exceeded",
 					"This workspace has used its free placement tests for the month. This test costs "+
-						strconv.Itoa(paid*price)+" credits; start it again agreeing to pay that many.")
+						dollars(cost)+"; start it again agreeing to pay that much.")
 			}
-			if usage.CreditBalance != nil && *usage.CreditBalance < paid*price {
+			if bal := usage.Balance(); bal != nil && *bal < cost {
 				return nil, placementErr(errx.PaymentRequired, "insufficient_credits",
-					"This test costs "+strconv.Itoa(paid*price)+" credits and the workspace has "+
-						strconv.Itoa(*usage.CreditBalance)+".")
+					"This test costs "+dollars(cost)+" and the workspace has "+dollars(*bal)+".")
 			}
 		}
 	}
@@ -465,7 +467,7 @@ func (s *service) CreateTests(ctx context.Context, in CreateInput) ([]TestView, 
 		}
 		// The last halves of a comparison are the ones past the free tests.
 		if i >= len(variants)-paid {
-			out[i].test.CreditsCharged = price
+			out[i].test.SetCharge(price)
 		}
 		if cloudStart != nil {
 			remote := cloudStart.TestIDs[i]
@@ -520,7 +522,7 @@ func (s *service) CreateTests(ctx context.Context, in CreateInput) ([]TestView, 
 		for i := range out {
 			tests[i] = &out[i].test
 		}
-		if xerr := s.chargeTests(ctx, in, sender.Email, price, tests); xerr != nil {
+		if xerr := s.chargeTests(ctx, in, sender.Email, tests); xerr != nil {
 			return nil, xerr
 		}
 	}
@@ -798,17 +800,17 @@ func inFamilies(rows []repository.SeedAccount, families []string) []repository.S
 	return out
 }
 
-// chargeTests charges each paid test its price. On a refusal it refunds what
-// it already charged and deletes every test of the request, which has not
-// sent anything yet.
-func (s *service) chargeTests(ctx context.Context, in CreateInput, sender string, price int, tests []*models.PlacementTest) *errx.Error {
+// chargeTests charges each paid test one placement test at the current price.
+// On a refusal it refunds what it already charged and deletes every test of
+// the request, which has not sent anything yet.
+func (s *service) chargeTests(ctx context.Context, in CreateInput, sender string, tests []*models.PlacementTest) *errx.Error {
 	cctx := s.creditContext(ctx, in, sender)
 	var charged []uuid.UUID
 	for _, t := range tests {
-		if t.CreditsCharged == 0 {
+		if t.ChargedMicro == 0 {
 			continue
 		}
-		_, err := s.Credits.Charge(cctx, in.OrgID, price, "placement_test", chargeKey(t.ID))
+		_, err := s.Credits.ChargeUpfront(cctx, in.OrgID, credits.UnitUsage(instancesettings.UnitPlacementTest, 1), "placement_test", chargeKey(t.ID))
 		if err == nil {
 			charged = append(charged, t.ID)
 			continue
@@ -855,12 +857,17 @@ func (s *service) creditContext(ctx context.Context, in CreateInput, sender stri
 func creditErr(err error) *errx.Error {
 	switch {
 	case errors.Is(err, credits.ErrInsufficientCredits):
-		return placementErr(errx.PaymentRequired, "insufficient_credits", "The workspace does not have enough credits for this test.")
+		return placementErr(errx.PaymentRequired, "insufficient_credits", "The workspace balance is too low for this test.")
 	case errors.Is(err, credits.ErrCapExceeded):
-		return placementErr(errx.TooManyRequests, "usage_cap_exceeded", "This test would go past the workspace's credit spend limit.")
+		return placementErr(errx.TooManyRequests, "usage_cap_exceeded", "This test would go past the workspace's spend limit.")
 	}
 	errs.CaptureException(err)
 	return errx.InternalError()
+}
+
+// dollars renders an amount for a refusal message, to the cent.
+func dollars(m models.Micro) string {
+	return fmt.Sprintf("$%.2f", m.USD())
 }
 
 // chosenSeeds keeps the live rows named in ids. An id that is not a seed of

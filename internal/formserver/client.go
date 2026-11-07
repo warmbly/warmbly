@@ -3,6 +3,8 @@ package formserver
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -45,11 +47,18 @@ type cacheEntry struct {
 	expires time.Time
 }
 
-func newBackendClient(base, token string) *backendClient {
+// newBackendClient trusts only roots for the backend when it is set, else the system roots.
+func newBackendClient(base, token string, roots *x509.CertPool) *backendClient {
+	client := &http.Client{Timeout: 10 * time.Second}
+	if roots != nil {
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.TLSClientConfig = &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}
+		client.Transport = transport
+	}
 	return &backendClient{
 		base:  base,
 		token: token,
-		http:  &http.Client{Timeout: 10 * time.Second},
+		http:  client,
 		cache: map[string]cacheEntry{},
 	}
 }

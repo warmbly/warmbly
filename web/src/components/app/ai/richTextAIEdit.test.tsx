@@ -48,9 +48,9 @@ vi.mock("@/hooks/context/confirm", () => ({
     useConfirm: () => ({ show: (_: string, onSubmit: () => void) => onSubmit() }),
 }));
 
-let reply = { text: "", credits_charged: 1, tokens_used: 1700 };
+let reply = { text: "", charged_usd: 0.01, tokens_used: 1700 };
 let sent: { text: string; instruction: string; context?: string } | null = null;
-let written = { text: "", credits_charged: 1, tokens_used: 10 };
+let written = { text: "", charged_usd: 0.01, tokens_used: 10 };
 // Both endpoints stream: the answer arrives in two pieces, then done.
 // With hold set, the model writes only the first half and keeps going until stopped.
 let hold = false;
@@ -124,12 +124,12 @@ describe("Edit with AI in the campaign body", () => {
     beforeEach(() => {
         captured = null;
         sent = null;
-        reply = { text: "", credits_charged: 1, tokens_used: 1700 };
+        reply = { text: "", charged_usd: 0.01, tokens_used: 1700 };
     });
 
     it("sends the passage with its merge variables and its paragraph breaks", async () => {
         const { editor } = mountBody('<p>Hi <span data-var="">{{.FirstName}}</span>, quick one.</p><p>Saw your ads.</p>');
-        reply = { text: "Rewritten.", credits_charged: 1, tokens_used: 10 };
+        reply = { text: "Rewritten.", charged_usd: 0.01, tokens_used: 10 };
         await select(editor, 1, editor.state.doc.content.size - 1);
         await rewrite();
         expect(sent?.text).toBe("Hi {{.FirstName}}, quick one.\n\nSaw your ads.");
@@ -140,7 +140,7 @@ describe("Edit with AI in the campaign body", () => {
             '<p>Please <a href="{{.UnsubscribeLink}}">opt out</a> if this misses.</p>',
         );
         // The model keeps the markdown it was given and rewords around it.
-        reply = { text: "Or [opt out]({{.UnsubscribeLink}}) any time.", credits_charged: 1, tokens_used: 10 };
+        reply = { text: "Or [opt out]({{.UnsubscribeLink}}) any time.", charged_usd: 0.01, tokens_used: 10 };
         await select(editor, 1, editor.state.doc.content.size - 1);
         await rewrite("make it shorter");
         expect(sent?.text).toBe("Please [opt out]({{.UnsubscribeLink}}) if this misses.");
@@ -154,7 +154,7 @@ describe("Edit with AI in the campaign body", () => {
     it("wraps a destination the plain markdown form cannot hold", async () => {
         const url = "https://en.wikipedia.org/wiki/Foo_(bar)";
         const { editor } = mountBody(`<p>See <a href="${url}">the page</a>.</p>`);
-        reply = { text: "unused", credits_charged: 1, tokens_used: 10 };
+        reply = { text: "unused", charged_usd: 0.01, tokens_used: 10 };
         await select(editor, 1, editor.state.doc.content.size - 1);
         await rewrite();
         expect(sent?.text).toBe(`See [the page](<${url}>).`);
@@ -162,7 +162,7 @@ describe("Edit with AI in the campaign body", () => {
 
     it("replaces the whole selection and reports the new body upward", async () => {
         const { editor, saved } = mountBody("<p>Original one.</p><p>Original two.</p>");
-        reply = { text: "New one.\n\nNew two.", credits_charged: 1, tokens_used: 10 };
+        reply = { text: "New one.\n\nNew two.", charged_usd: 0.01, tokens_used: 10 };
         await select(editor, 1, editor.state.doc.content.size - 1);
         await rewrite();
         expect(editor.getHTML()).toBe("<p>New one.</p><p>New two.</p>");
@@ -172,7 +172,7 @@ describe("Edit with AI in the campaign body", () => {
 
     it("rewrites a phrase in place instead of splitting the paragraph around it", async () => {
         const { editor, saved } = mountBody("<p>One two three four.</p>");
-        reply = { text: "TWO AND THREE", credits_charged: 1, tokens_used: 10 };
+        reply = { text: "TWO AND THREE", charged_usd: 0.01, tokens_used: 10 };
         await select(editor, 5, 14); // "two three"
         await rewrite();
         expect(editor.getHTML()).toBe("<p>One TWO AND THREE four.</p>");
@@ -181,7 +181,7 @@ describe("Edit with AI in the campaign body", () => {
 
     it("brings a merge variable back as a chip, with the body value in step", async () => {
         const { editor, saved } = mountBody("<p>Hello there.</p>");
-        reply = { text: "Hi {{.FirstName}}, quick one.", credits_charged: 1, tokens_used: 10 };
+        reply = { text: "Hi {{.FirstName}}, quick one.", charged_usd: 0.01, tokens_used: 10 };
         await select(editor, 1, editor.state.doc.content.size - 1);
         await rewrite();
         expect(editor.getHTML()).toBe('<p>Hi <span data-var="">{{.FirstName}}</span>, quick one.</p>');
@@ -193,7 +193,7 @@ describe("Edit with AI in the campaign body", () => {
     it("keeps an AI block's configuration when the model echoes its token", async () => {
         const config = encodeConfig({ name: "opener", mode: "instant", prompt: "a warm opener", tone: "", web_search: false });
         const { editor } = mountBody(`<p>Hi <span data-ai-var="abc" data-ai-config="${config}">[[ai:abc]]</span> there.</p>`);
-        reply = { text: "Hey [[ai:abc]] there.", credits_charged: 1, tokens_used: 10 };
+        reply = { text: "Hey [[ai:abc]] there.", charged_usd: 0.01, tokens_used: 10 };
         await select(editor, 1, editor.state.doc.content.size - 1);
         expect(sent).toBeNull();
         await rewrite();
@@ -211,7 +211,7 @@ describe("Edit with AI in the campaign body", () => {
 
     it("says so when the model hands the passage back untouched", async () => {
         const { editor } = mountBody("<p>Already fine.</p>");
-        reply = { text: "Already fine.", credits_charged: 1, tokens_used: 10 };
+        reply = { text: "Already fine.", charged_usd: 0.01, tokens_used: 10 };
         await select(editor, 1, editor.state.doc.content.size - 1);
         await rewrite("fix grammar");
         await screen.findByText(/No change/, {}, { timeout: 5000 });
@@ -221,7 +221,7 @@ describe("Edit with AI in the campaign body", () => {
     it("gives back the space the selection ended on", async () => {
         const { editor } = mountBody("<p>One two three four.</p>");
         // "two three " including the trailing space; the server trims its answer.
-        reply = { text: "TWO AND THREE", credits_charged: 1, tokens_used: 10 };
+        reply = { text: "TWO AND THREE", charged_usd: 0.01, tokens_used: 10 };
         await select(editor, 5, 15);
         await rewrite();
         expect(editor.getHTML()).toBe("<p>One TWO AND THREE four.</p>");
@@ -229,7 +229,7 @@ describe("Edit with AI in the campaign body", () => {
 
     it("joins the paragraphs a selection ran across, without inventing a blank one", async () => {
         const { editor, saved } = mountBody("<p>One two</p><p>Three four.</p>");
-        reply = { text: "TWO!", credits_charged: 1, tokens_used: 10 };
+        reply = { text: "TWO!", charged_usd: 0.01, tokens_used: 10 };
         await select(editor, 5, 10); // mid paragraph one to the start of paragraph two
         await rewrite();
         expect(editor.getHTML()).toBe("<p>One TWO!Three four.</p>");
@@ -238,7 +238,7 @@ describe("Edit with AI in the campaign body", () => {
 
     it("discards the rewrite back to the body that was there", async () => {
         const { editor, saved } = mountBody("<p>Original one.</p>");
-        reply = { text: "New one.", credits_charged: 1, tokens_used: 10 };
+        reply = { text: "New one.", charged_usd: 0.01, tokens_used: 10 };
         await select(editor, 1, editor.state.doc.content.size - 1);
         await rewrite();
         await act(async () => {
@@ -250,10 +250,10 @@ describe("Edit with AI in the campaign body", () => {
 
     it("discards with Escape, and a second change refines the rewrite rather than the original", async () => {
         const { editor, saved } = mountBody("<p>Original one.</p>");
-        reply = { text: "New one.", credits_charged: 1, tokens_used: 10 };
+        reply = { text: "New one.", charged_usd: 0.01, tokens_used: 10 };
         await select(editor, 1, editor.state.doc.content.size - 1);
         await rewrite();
-        reply = { text: "Newer.", credits_charged: 1, tokens_used: 10 };
+        reply = { text: "Newer.", charged_usd: 0.01, tokens_used: 10 };
         await act(async () => {
             fireEvent.click(screen.getByText("Make it shorter"));
         });
@@ -269,7 +269,7 @@ describe("Edit with AI in the campaign body", () => {
 
     it("keeps the rewrite as one undo step", async () => {
         const { editor } = mountBody("<p>Original one.</p>");
-        reply = { text: "New one.", credits_charged: 1, tokens_used: 10 };
+        reply = { text: "New one.", charged_usd: 0.01, tokens_used: 10 };
         await select(editor, 1, editor.state.doc.content.size - 1);
         await rewrite();
         await act(async () => {
@@ -291,7 +291,7 @@ describe("Write with AI at the caret", () => {
     beforeEach(() => {
         captured = null;
         hold = false;
-        written = { text: "", credits_charged: 1, tokens_used: 10 };
+        written = { text: "", charged_usd: 0.01, tokens_used: 10 };
     });
 
     async function writeAtCaret(editor: Editor, pos: number, instruction: string) {
@@ -309,7 +309,7 @@ describe("Write with AI at the caret", () => {
 
     it("extends the sentence it was asked to write into", async () => {
         const { editor, saved } = mountBody("<p>One four.</p>");
-        written = { text: "two three", credits_charged: 1, tokens_used: 10 };
+        written = { text: "two three", charged_usd: 0.01, tokens_used: 10 };
         await writeAtCaret(editor, 5, "add the middle");
         expect(editor.getHTML()).toBe("<p>One two threefour.</p>");
         expect(saved.html).toBe(editor.getHTML());
@@ -317,7 +317,7 @@ describe("Write with AI at the caret", () => {
 
     it("leaves the caret after what it wrote, not in front of it", async () => {
         const { editor } = mountBody("<p>One four.</p>");
-        written = { text: "two three ", credits_charged: 1, tokens_used: 10 };
+        written = { text: "two three ", charged_usd: 0.01, tokens_used: 10 };
         await writeAtCaret(editor, 5, "add the middle");
         expect(editor.getHTML()).toBe("<p>One two three four.</p>");
         // Continuing to type has to continue the sentence, which it cannot do
@@ -328,7 +328,7 @@ describe("Write with AI at the caret", () => {
 
     it("lands the merge variable it was told to use as a chip", async () => {
         const { editor } = mountBody("<p>Hello.</p>");
-        written = { text: "Hi {{.FirstName}}.", credits_charged: 1, tokens_used: 10 };
+        written = { text: "Hi {{.FirstName}}.", charged_usd: 0.01, tokens_used: 10 };
         await writeAtCaret(editor, 1, "greet them");
         expect(editor.getHTML()).toBe('<p>Hi <span data-var="">{{.FirstName}}</span>.Hello.</p>');
     });
@@ -336,7 +336,7 @@ describe("Write with AI at the caret", () => {
     it("shows the words as they arrive, and Escape stops it keeping what was written", async () => {
         hold = true;
         const { editor, saved } = mountBody("<p>Hello.</p>");
-        written = { text: "Quick note for you. ", credits_charged: 1, tokens_used: 10 };
+        written = { text: "Quick note for you. ", charged_usd: 0.01, tokens_used: 10 };
         await act(async () => {
             editor.commands.setTextSelection(1);
             fireEvent.keyDown(editor.view.dom, { key: "j", metaKey: true });

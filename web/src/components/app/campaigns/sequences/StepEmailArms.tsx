@@ -12,12 +12,14 @@ import { Loader2Icon, Trash2Icon, TrophyIcon, PauseIcon, PlayIcon, SplitIcon } f
 import toast from "react-hot-toast/headless";
 import type Sequence from "@/lib/api/models/app/campaigns/sequences/Sequence";
 import type ABVariant from "@/lib/api/models/app/campaigns/ABVariant";
-import type { ABVariantStats } from "@/lib/api/models/app/campaigns/ABVariant";
+import type { ABStepArmStats } from "@/lib/api/models/app/campaigns/ABVariant";
 import { Label, TextInput } from "@/components/ui/field";
 import EmailContentEditor from "./EmailContentEditor";
 import { htmlToPlain } from "./emailPreview";
 import SequenceView from "./SequenceView";
 import StepSplitAllocator, { type SplitArm } from "./StepSplitAllocator";
+import StepArmResults from "./StepArmResults";
+import StepWarmupPlacement from "./StepWarmupPlacement";
 import { openerArmSubjects, type ArmSubject } from "./threading";
 import type { EarlierEmail } from "./emailAIPrompt";
 import {
@@ -73,12 +75,18 @@ export default function StepEmailArms({
     const busy = create.isPending || update.isPending || del.isPending;
 
     const { data: analysis } = useCampaignABAnalysis(campaignId, (all ?? []).length > 0);
-    const statsById = React.useMemo(() => {
-        const m = new Map<string, ABVariantStats>();
-        for (const s of analysis?.variants ?? []) m.set(s.variant_id, s);
+    const stepAnalysis = analysis?.steps?.find((s) => s.step_id === sequence.id) ?? null;
+    const statsByKey = React.useMemo(() => {
+        const m = new Map<string, ABStepArmStats>();
+        for (const a of stepAnalysis?.arms ?? []) m.set(a.variant_id ?? "original", a);
         return m;
-    }, [analysis]);
-    const winnerId = analysis?.winner_id ?? null;
+    }, [stepAnalysis]);
+    const winner = stepAnalysis?.winner ?? null;
+    const winnerKey = winner ? (winner.variant_id ?? "original") : null;
+    const promotedRow = stepRows.find((v) => v.promoted_at) ?? null;
+    const promoted = promotedRow?.promoted_at
+        ? { name: promotedRow.is_control ? "Original" : promotedRow.name, at: promotedRow.promoted_at }
+        : null;
 
     const [selected, setSelected] = React.useState<string>("original");
     React.useEffect(() => {
@@ -87,16 +95,18 @@ export default function StepEmailArms({
         }
     }, [variants, selected]);
 
+    // A control row paused (by hand or by promoting a variant) takes the Original out of the split.
+    const originalActive = controlRow ? controlRow.is_active : true;
     const originalWeight = controlRow ? controlRow.weight : CONTROL_WEIGHT;
     const arms: SplitArm[] = [
-        { key: "original", name: "Original", weight: originalWeight, active: true, isOriginal: true },
+        { key: "original", name: "Original", weight: originalWeight, active: originalActive, isOriginal: true, winner: winnerKey === "original" },
         ...variants.map((v, i) => ({
             key: v.id,
             name: v.name || `Variant ${LETTERS[i] ?? i + 1}`,
             weight: v.weight,
             active: v.is_active,
             isOriginal: false,
-            winner: winnerId === v.id,
+            winner: winnerKey === v.id,
         })),
     ];
 
@@ -136,7 +146,7 @@ export default function StepEmailArms({
     };
 
     const evenSplit = () => {
-        const keys = ["original", ...variants.filter((v) => v.is_active).map((v) => v.id)];
+        const keys = [...(originalActive ? ["original"] : []), ...variants.filter((v) => v.is_active).map((v) => v.id)];
         const n = keys.length;
         if (n < 2) return;
         const base = Math.floor(100 / n);
@@ -148,6 +158,9 @@ export default function StepEmailArms({
 
     const togglePause = (variantId: string, active: boolean) => {
         update.mutate({ variantId, input: { is_active: active } }, { onError: err });
+    };
+    const resumeOriginal = () => {
+        if (controlRow) togglePause(controlRow.id, true);
     };
 
     const deleteArm = (variantId: string) => {
@@ -203,6 +216,23 @@ export default function StepEmailArms({
                     busy={busy}
                 />
             )}
+            {variants.length > 0 && (
+                <StepArmResults
+                    arms={arms}
+                    statsByKey={statsByKey}
+                    analysis={stepAnalysis}
+                    winningRule={analysis?.winning_rule ?? "reply_rate"}
+                    selectedKey={selected}
+                    onSelect={setSelected}
+                    onResumeOriginal={controlRow && !originalActive ? resumeOriginal : undefined}
+                    promoted={promoted}
+                />
+            )}
+            <StepWarmupPlacement
+                campaignId={campaignId}
+                stepId={sequence.id}
+                armName={(key) => arms.find((a) => a.key === key)?.name}
+            />
             {selected === "original" || !selectedVariant ? (
                 <SequenceView
                     embedded
@@ -235,8 +265,8 @@ export default function StepEmailArms({
                     key={selectedVariant.id}
                     campaignId={campaignId}
                     variant={selectedVariant}
-                    stats={statsById.get(selectedVariant.id)}
-                    isWinner={winnerId === selectedVariant.id}
+                    stats={statsByKey.get(selectedVariant.id)}
+                    isWinner={winnerKey === selectedVariant.id}
                     sharePct={selectedVariant.is_active ? shareOf(selectedVariant.weight) : 0}
                     onTogglePause={(active) => togglePause(selectedVariant.id, active)}
                     onDelete={() => deleteArm(selectedVariant.id)}
@@ -263,7 +293,7 @@ function VariantEditor({
 }: {
     campaignId: string;
     variant: ABVariant;
-    stats?: ABVariantStats;
+    stats?: ABStepArmStats;
     isWinner?: boolean;
     sharePct: number;
     onTogglePause: (active: boolean) => void;
@@ -343,17 +373,17 @@ function VariantEditor({
                 </button>
             </div>
 
-            {stats && stats.total_sent > 0 && (
+            {stats && stats.sent > 0 && (
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md bg-slate-50 px-2.5 py-1.5 text-[11px]">
                     {isWinner && (
                         <span className="inline-flex items-center gap-1 text-amber-700 font-medium">
                             <TrophyIcon className="w-3 h-3" /> Winner
                         </span>
                     )}
-                    <Metric label="Sent" value={stats.total_sent.toLocaleString()} />
+                    <Metric label="Sent" value={`${stats.sent.toLocaleString()} contacts`} />
                     <Metric label="Open" value={`${stats.open_rate.toFixed(1)}%`} tone="text-emerald-600" />
                     <Metric label="Reply" value={`${stats.reply_rate.toFixed(1)}%`} tone="text-sky-600" />
-                    <Metric label="Bounce" value={`${stats.bounce_rate.toFixed(1)}%`} tone="text-rose-600" />
+                    <Metric label="Bounced" value={stats.bounced.toLocaleString()} tone="text-rose-600" />
                 </div>
             )}
 

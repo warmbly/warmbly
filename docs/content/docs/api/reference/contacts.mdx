@@ -245,7 +245,7 @@ Every endpoint that acts on a set of contacts (`PATCH /contacts`, `DELETE /conta
 }
 ```
 
-A filter selection that matches more than 250,000 contacts is refused with `selection_too_large` rather than truncated; narrow it and repeat. One that matches nothing is a `400`. `POST /integrations/connections/:id/push` and `POST /contacts/research/batch` accept the same shape and answer the same way, but still cap the resolved set at 500: a push calls the CRM once per contact inside the request, and each research run spends AI credits.
+A filter selection that matches more than 250,000 contacts is refused with `selection_too_large` rather than truncated; narrow it and repeat. One that matches nothing is a `400`. `POST /integrations/connections/:id/push` and `POST /contacts/research/batch` accept the same shape and answer the same way, but still cap the resolved set at 500: a push calls the CRM once per contact inside the request, and each research run is charged to the workspace balance.
 
 ## Bulk update contacts
 
@@ -262,6 +262,7 @@ Auth: **Scope** `BULK_CONTACTS` · **Org permission** `manage_contacts`
 | `contacts` | string[] | Yes, unless `all` | Contact IDs to edit (1 to 10,000). |
 | `all`, `filters`, `exclude` | — | No | Select by filter instead; see [selecting contacts](#selecting-contacts-for-a-bulk-action). |
 | `add_campaigns` | string[] | No | Campaign IDs to add. |
+| `skip_active_in_other_campaigns` | boolean | No | Leave a contact out of `add_campaigns` while their sequence is still running in another campaign: queued, sending, or held, in a campaign that is not a draft and not completed. Contacts who replied, bounced, unsubscribed, failed or finished every step elsewhere are added. Defaults to `false`. |
 | `remove_campaigns` | string[] | No | Campaign IDs to remove. |
 | `add_categories` | string[] | No | Label IDs to add. |
 | `remove_categories` | string[] | No | Label IDs to remove. |
@@ -428,6 +429,7 @@ Send `multipart/form-data` with a `file` field and an `options` field containing
 | `has_header` | boolean | Yes | Whether the first row is a header. |
 | `category_ids` | string[] | No | Label IDs to put on imported contacts. |
 | `campaign_ids` | string[] | No | Campaigns to add imported contacts to. |
+| `skip_active_in_other_campaigns` | boolean | No | Keep a contact who already exists out of `campaign_ids` while their sequence is still running in another campaign, as `skip_active_in_other_campaigns` on a [bulk update](#bulk-update-contacts) defines it. The row is still imported or updated under `dedup`, and still gets its labels and segments. Defaults to `false`. |
 | `segment_ids` | string[] | No | Segments to pin imported contacts into, as a manual include override. Applies to imported, updated, and skipped-but-linked contacts alike. An id that is not a valid UUID, or that names no segment in the organization, is rejected with `400` before any row is written. |
 | `subscribed_default` | boolean | No | Subscription state for new contacts when no subscribed column is mapped. Defaults to true. |
 
@@ -959,6 +961,8 @@ Returns a `data` array and the standard `pagination` envelope. Paginate by passi
 
 `email_opened` and `email_clicked` carry `machine`: `true` when an automated fetcher did it rather than the person (a mail privacy proxy, a fetch inside the instance's automated-engagement window, which starts when the step is dispatched to a worker, several links followed within seconds). Per-link `email_clicked` events carry `machine_reason` (`prefetch`, `instant`, `scanner` or `burst`), and per-event `email_opened` rows carry it too (`prefetch`, `instant` or `scanner`); an open summarised from the lead alone carries only the flag. Both kinds carry an `origin` object when the event was logged: `client` when the user agent names a mail client (`Gmail`, `Apple Mail`, `Outlook`, `Yahoo Mail`, `Thunderbird` and others); `client_type`, `app` for an installed mail app or `webmail` for a browser (on a click, `app` only when a mail app made the request itself, and never `webmail`); `device_hidden: true` when the mailbox provider's image proxy fetched the email (Gmail, Yahoo Mail, HEY, Fastmail, Seznam, and Apple Mail Privacy Protection, whose user agent is just `Mozilla/5.0`); `device_type` (`desktop`, `mobile` or `tablet`), `os`, `browser`, `browser_version`; and `country_code`, `region`, `city` when the consumer could resolve them. A hidden device omits the device, operating system and browser, which would describe the proxy, and the location too, except the country and region Apple's relay keeps. The stripped WebKit user agent that Mail on a Mac and the new Outlook for Windows both send is reported as `client: "Apple Mail or Outlook"`, `client_type: "app"`, with no device. On a click, `browser` and `device_type` are where the link opened, and `client` is set only when a mail app made the request itself. Opens appear once per event, so a contact who opened from two devices has two rows. Automated clicks are on the feed for the record but never count the step as clicked. An `email_clicked` event carries `link` with the link's `id`, `url`, `label` (its anchor text), the `utm_*` parameters the URL carried, and the `user_agent`; every link in an email is tracked on its own, so each link clicked is its own event. Clicks recorded before per-link attribution have no `link`.
 
+A `deliverability` event carries `source` (`bounce`, `complaint` or `unsubscribe`), `provider` and `reason`, and a bounce carries `bounce_cause` once it has been classified: `recipient_invalid` (the address cannot receive mail, the only cause that suppresses it), `mailbox_full`, `reputation_block` or `transient`. A bounce without `bounce_cause` could not be placed; it did not suppress the address. See [suppression](/guides/deliverability/#built-in-protections).
+
 A `form_submitted` event carries `form_id` and `form_name`. A `page_hit` event is a page view on your own site from a browser tied to the contact through an email-link ticket (see [Website tracking](/guides/website-tracking/)); `subject` is the page title, or its path when the page has none, and `page_hit` carries the full view: `url`, `path`, `title`, `referrer`, `referrer_domain`, `landing` (the first view of a session), the `utm_*` parameters, `device_type`, `os`, `browser`, `browser_version`, `device_brand`, `language`, `timezone`, `screen_width`, `screen_height`, and `country_code`, `region`, `city` when known.
 
 Lifecycle events carry the name of what changed as it was at the time (`campaign_name`, or, for a label, `category_id` plus `category_title`), so a later rename or deletion does not rewrite history. A `contact_created` event carries `source` (`manual`, `campaign`, `import`, `sheet_sync`, `api`, `form`, `automation`, `ai_assistant`, or `unknown` for contacts that predate attribution) and `source_detail` (the file, campaign, sheet, form, automation or API key name). The same values are on the contact itself as `source`, `source_detail` and `first_seen_at`, and never change after creation.
@@ -1316,9 +1320,9 @@ Sequence action steps `add_to_segment` and `remove_from_segment` take a `segment
 `POST /segments/:id/add-to-campaign`
 
 ```json
-{ "campaign_id": "…" }
+{ "campaign_id": "…", "skip_active_in_other_campaigns": true }
 ```
 
-Enrols every current member as a lead. Contacts already in the campaign are skipped, each new lead gets a `campaign_added` activity, and a running campaign is woken so the leads are scheduled. Returns `{ "campaign_id", "added", "members" }`. This is a snapshot: later members are not added until the call is repeated. Safe to retry. It counts as choosing the leads it adds, so it clears any hand-made removal and the rows it writes are never withdrawn by [detaching a segment](/api/reference/campaigns/#replace-linked-segments). Members that are already leads are left exactly as they are, provenance included. For a live link that keeps enrolling members as they join the segment, see [linked segments](/api/reference/campaigns/#list-linked-segments).
+Enrols every current member as a lead. Contacts already in the campaign are skipped, each new lead gets a `campaign_added` activity, and a running campaign is woken so the leads are scheduled. With `skip_active_in_other_campaigns` (optional, default `false`), a member whose sequence is still running in another campaign is left out too, as on a [bulk update](#bulk-update-contacts), and keeps any hand-made removal. Returns `{ "campaign_id", "added", "members" }`. This is a snapshot: later members are not added until the call is repeated. Safe to retry. It counts as choosing the leads it adds, so it clears any hand-made removal and the rows it writes are never withdrawn by [detaching a segment](/api/reference/campaigns/#replace-linked-segments). Members that are already leads are left exactly as they are, provenance included. For a live link that keeps enrolling members as they join the segment, see [linked segments](/api/reference/campaigns/#list-linked-segments).
 
 Auth: **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`

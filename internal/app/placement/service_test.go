@@ -392,26 +392,33 @@ func TestCreateTestsSendsOnlyToTheChosenSeeds(t *testing.T) {
 	}
 }
 
+// fakeTestPrice is what the fake ledger quotes for one placement test.
+const fakeTestPrice = models.Micro(500_000)
+
 type fakeCredits struct {
-	balance  int
-	charges  map[string]int
+	balance  models.Micro
+	charges  map[string]models.Micro
 	refunded map[string]bool
 	refuse   bool
 }
 
 func (f *fakeCredits) Unmetered() bool { return false }
-func (f *fakeCredits) GetBalance(context.Context, uuid.UUID) (int, *errx.Error) {
+func (f *fakeCredits) GetBalance(context.Context, uuid.UUID) (models.Micro, *errx.Error) {
 	return f.balance, nil
 }
-func (f *fakeCredits) Charge(_ context.Context, _ uuid.UUID, amount int, _ string, key string) (int, error) {
+func (f *fakeCredits) Quote(_ context.Context, u credits.Usage) models.Micro {
+	return models.Micro(u.Quantity) * fakeTestPrice
+}
+func (f *fakeCredits) ChargeUpfront(ctx context.Context, _ uuid.UUID, u credits.Usage, _ string, key string) (models.Micro, error) {
+	amount := f.Quote(ctx, u)
 	if f.refuse || f.balance < amount {
 		return 0, credits.ErrInsufficientCredits
 	}
 	f.balance -= amount
 	f.charges[key] = amount
-	return f.balance, nil
+	return amount, nil
 }
-func (f *fakeCredits) RefundCharge(_ context.Context, _ uuid.UUID, key, _ string) (int, error) {
+func (f *fakeCredits) RefundCharge(_ context.Context, _ uuid.UUID, key, _ string) (models.Micro, error) {
 	if f.refunded[key] {
 		return 0, nil
 	}
@@ -502,21 +509,23 @@ func TestChosenOwnSeedsAreNotCappedBySeedsPerTest(t *testing.T) {
 	}
 }
 
-func TestCreateTestsPaysInCreditsPastTheFreeTests(t *testing.T) {
-	newPaid := func(t *testing.T, balance int) (*harness, *fakeCredits) {
+func TestCreateTestsPaysFromTheBalancePastTheFreeTests(t *testing.T) {
+	newPaid := func(t *testing.T, balance models.Micro) (*harness, *fakeCredits) {
 		h := newHarness(t)
 		t.Setenv("DEPLOYMENT_MODE", "cloud")
 		h.svc.Gate = fakeGate{paid: true}
 		h.repo.metered = config.PlacementTestsPerMonthPaidDefault // the free tests are used
-		c := &fakeCredits{balance: balance, charges: map[string]int{}, refunded: map[string]bool{}}
+		c := &fakeCredits{balance: balance, charges: map[string]models.Micro{}, refunded: map[string]bool{}}
 		h.svc.Credits = c
 		return h, c
 	}
-	price := config.PlacementCreditsPerTestDefault
+	price := fakeTestPrice
+	const balance = 2 * models.MicroPerUSD
+	const agreed = 20 * models.MicroPerUSD
 
-	h, c := newPaid(t, 100)
+	h, c := newPaid(t, balance)
 	_, xerr := h.svc.CreateTests(context.Background(), h.input())
-	if xerr == nil || xerr.Identifier != "placement_quota_exceeded" || !strings.Contains(xerr.Message, strconv.Itoa(price)+" credits") {
+	if xerr == nil || xerr.Identifier != "placement_quota_exceeded" || !strings.Contains(xerr.Message, "costs $0.50;") {
 		t.Fatalf("got %v; want a refusal naming the price", xerr)
 	}
 	if len(c.charges) != 0 || len(h.repo.created) != 0 {
@@ -524,48 +533,52 @@ func TestCreateTestsPaysInCreditsPastTheFreeTests(t *testing.T) {
 	}
 
 	in := h.input()
-	in.MaxCredits = 1000
+	in.MaxSpend = agreed
 	views, xerr := h.svc.CreateTests(context.Background(), in)
 	if xerr != nil {
 		t.Fatalf("CreateTests: %v", xerr)
 	}
-	if views[0].CreditsCharged != price || c.balance != 100-price || c.charges[chargeKey(views[0].ID)] != price {
-		t.Fatalf("charged %d, balance %d; want %d charged under the test's key", views[0].CreditsCharged, c.balance, price)
+	if views[0].ChargedMicro != price || c.balance != balance-price || c.charges[chargeKey(views[0].ID)] != price {
+		t.Fatalf("charged %d, balance %d; want %d charged under the test's key", views[0].ChargedMicro, c.balance, price)
+	}
+	if views[0].ChargedUSD != 0.5 || views[0].CreditsCharged != models.CreditsFromMicro(price) {
+		t.Fatalf("charge reads $%v and %d credits; want $0.50 and its legacy credits", views[0].ChargedUSD, views[0].CreditsCharged)
 	}
 
 	// A comparison with one free test left pays for its second half only.
-	h, c = newPaid(t, 100)
+	h, c = newPaid(t, balance)
 	h.repo.metered = config.PlacementTestsPerMonthPaidDefault - 1
 	in = h.input()
-	in.MaxCredits, in.Tracking = 1000, models.PlacementTrackingCompare
+	in.MaxSpend, in.Tracking = agreed, models.PlacementTrackingCompare
 	views, xerr = h.svc.CreateTests(context.Background(), in)
 	if xerr != nil {
 		t.Fatalf("CreateTests: %v", xerr)
 	}
-	if views[0].CreditsCharged != 0 || views[1].CreditsCharged != price || len(c.charges) != 1 {
-		t.Fatalf("charged %d and %d; want only the second half paid", views[0].CreditsCharged, views[1].CreditsCharged)
+	if views[0].ChargedMicro != 0 || views[1].ChargedMicro != price || len(c.charges) != 1 {
+		t.Fatalf("charged %d and %d; want only the second half paid", views[0].ChargedMicro, views[1].ChargedMicro)
 	}
 
-	h, _ = newPaid(t, price-1)
+	h, _ = newPaid(t, 200_000)
 	in = h.input()
-	in.MaxCredits = 1000
-	if _, xerr := h.svc.CreateTests(context.Background(), in); xerr == nil || xerr.Identifier != "insufficient_credits" {
-		t.Fatalf("got %v; want insufficient_credits", xerr)
+	in.MaxSpend = agreed
+	if _, xerr := h.svc.CreateTests(context.Background(), in); xerr == nil || xerr.Identifier != "insufficient_credits" ||
+		xerr.Message != "This test costs $0.50 and the workspace has $0.20." {
+		t.Fatalf("got %v; want insufficient_credits in dollars", xerr)
 	}
 
 	// Agreeing to less than the price charges nothing.
-	h, c = newPaid(t, 100)
+	h, c = newPaid(t, balance)
 	in = h.input()
-	in.MaxCredits = price - 1
+	in.MaxSpend = price - 1
 	if _, xerr := h.svc.CreateTests(context.Background(), in); xerr == nil || xerr.Identifier != "placement_quota_exceeded" || len(c.charges) != 0 {
 		t.Fatalf("got %v with charges %v; want a refusal below the price", xerr, c.charges)
 	}
 
 	// A charge refused after the write takes the test back out.
-	h, _ = newPaid(t, 100)
-	h.svc.Credits = &fakeCredits{balance: 100, charges: map[string]int{}, refunded: map[string]bool{}, refuse: true}
+	h, _ = newPaid(t, balance)
+	h.svc.Credits = &fakeCredits{balance: balance, charges: map[string]models.Micro{}, refunded: map[string]bool{}, refuse: true}
 	in = h.input()
-	in.MaxCredits = 1000
+	in.MaxSpend = agreed
 	if _, xerr := h.svc.CreateTests(context.Background(), in); xerr == nil || xerr.Identifier != "insufficient_credits" {
 		t.Fatalf("got %v; want the refused charge surfaced", xerr)
 	}
@@ -573,33 +586,33 @@ func TestCreateTestsPaysInCreditsPastTheFreeTests(t *testing.T) {
 		t.Fatalf("%d tests left behind after a refused charge", len(h.repo.created))
 	}
 
-	// A monitor never spends credits on its own.
-	h, _ = newPaid(t, 100)
+	// A monitor never spends the balance on its own.
+	h, _ = newPaid(t, balance)
 	in = h.input()
-	in.MaxCredits, in.Origin = 1000, models.PlacementOriginMonitor
+	in.MaxSpend, in.Origin = agreed, models.PlacementOriginMonitor
 	if _, xerr := h.svc.CreateTests(context.Background(), in); xerr == nil || xerr.Identifier != "placement_quota_exceeded" {
 		t.Fatalf("got %v; want a monitor refused past the free tests", xerr)
 	}
 
-	// A trial has no credits to pay with, so it waits for next month.
-	h, c = newPaid(t, 100)
+	// A trial has no balance to pay with, so it waits for next month.
+	h, c = newPaid(t, balance)
 	h.svc.Gate = fakeGate{paid: false}
 	h.repo.metered = config.PlacementTestsPerMonthTrialDefault
 	in = h.input()
-	in.MaxCredits = 1000
+	in.MaxSpend = agreed
 	if _, xerr := h.svc.CreateTests(context.Background(), in); xerr == nil || xerr.Identifier != "placement_quota_exceeded" || len(c.charges) != 0 {
 		t.Fatalf("got %v with charges %v; want a trial refused without a charge", xerr, c.charges)
 	}
 
 	// Nothing written means nothing charged.
-	h, c = newPaid(t, 100)
+	h, c = newPaid(t, balance)
 	h.repo.failSave = true
 	in = h.input()
-	in.MaxCredits = 1000
+	in.MaxSpend = agreed
 	if _, xerr := h.svc.CreateTests(context.Background(), in); xerr == nil {
 		t.Fatalf("CreateTests succeeded with a failing write")
 	}
-	if c.balance != 100 || len(c.charges) != 0 {
+	if c.balance != balance || len(c.charges) != 0 {
 		t.Fatalf("balance %d, charges %v after a failed write; want nothing charged", c.balance, c.charges)
 	}
 }
@@ -616,13 +629,13 @@ func (g fakeGate) IsPaidOrganization(context.Context, uuid.UUID) (bool, *errx.Er
 type settleRepo struct {
 	*fakeRepo
 	open    []repository.PlacementSettle
-	settled map[uuid.UUID]int
+	settled map[uuid.UUID]models.Micro
 }
 
 func (r *settleRepo) UnsettledPaidTests(context.Context, int) ([]repository.PlacementSettle, error) {
 	return r.open, nil
 }
-func (r *settleRepo) SettleCredits(_ context.Context, id uuid.UUID, refunded int) (bool, error) {
+func (r *settleRepo) SettleCredits(_ context.Context, id uuid.UUID, refunded models.Micro) (bool, error) {
 	if _, done := r.settled[id]; done {
 		return false, nil
 	}
@@ -634,21 +647,21 @@ func TestSettleCreditsRefundsOnlyWhatDeliveredNothing(t *testing.T) {
 	h := newHarness(t)
 	org := uuid.New()
 	delivered, empty := uuid.New(), uuid.New()
-	repo := &settleRepo{fakeRepo: h.repo, settled: map[uuid.UUID]int{}, open: []repository.PlacementSettle{
-		{ID: delivered, OrganizationID: org, Credits: 25, Delivered: true},
-		{ID: empty, OrganizationID: org, Credits: 25},
+	repo := &settleRepo{fakeRepo: h.repo, settled: map[uuid.UUID]models.Micro{}, open: []repository.PlacementSettle{
+		{ID: delivered, OrganizationID: org, Charged: fakeTestPrice, Delivered: true},
+		{ID: empty, OrganizationID: org, Charged: fakeTestPrice},
 	}}
-	c := &fakeCredits{charges: map[string]int{chargeKey(delivered): 25, chargeKey(empty): 25}, refunded: map[string]bool{}}
+	c := &fakeCredits{charges: map[string]models.Micro{chargeKey(delivered): fakeTestPrice, chargeKey(empty): fakeTestPrice}, refunded: map[string]bool{}}
 	h.svc.Repo, h.svc.Credits = repo, c
 
 	got := h.svc.settleCredits(context.Background())
 	if len(got) != 1 || got[0] != empty {
 		t.Fatalf("refunded %v; want only the test that delivered nothing", got)
 	}
-	if repo.settled[delivered] != 0 || repo.settled[empty] != 25 || c.refunded[chargeKey(delivered)] {
-		t.Fatalf("settled %v, refunded %v; want the delivered test kept and the empty one refunded 25", repo.settled, c.refunded)
+	if repo.settled[delivered] != 0 || repo.settled[empty] != fakeTestPrice || c.refunded[chargeKey(delivered)] {
+		t.Fatalf("settled %v, refunded %v; want the delivered test kept and the empty one refunded", repo.settled, c.refunded)
 	}
-	if again := h.svc.settleCredits(context.Background()); len(again) != 0 || c.balance != 25 {
+	if again := h.svc.settleCredits(context.Background()); len(again) != 0 || c.balance != fakeTestPrice {
 		t.Fatalf("a second pass refunded %v (balance %d); want nothing more", again, c.balance)
 	}
 }

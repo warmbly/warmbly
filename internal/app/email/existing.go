@@ -191,7 +191,7 @@ func (s *emailService) SwitchToAppPassword(ctx context.Context, orgID *uuid.UUID
 	if xerr != nil {
 		return nil, xerr
 	}
-	if ref == nil || ref.ID != acc.ID || !ref.SigninRetiring() {
+	if ref == nil || ref.ID != acc.ID || !ref.GoogleSwitchable() {
 		return nil, ErrNotGoogleSignin
 	}
 	password := strings.Join(strings.Fields(appPassword), "")
@@ -220,6 +220,6 @@ func (s *emailService) SwitchToAppPassword(ctx context.Context, orgID *uuid.UUID
 
 // Refusals for the app-password switch.
 var (
-	ErrNotGoogleSignin  = errx.NewWithIdentifier(errx.Conflict, "mailbox_not_google_signin", "Only a mailbox connected with Google sign-in can switch to an app password.")
+	ErrNotGoogleSignin  = errx.NewWithIdentifier(errx.Conflict, "mailbox_not_google_signin", "Only a Google mailbox signed in on its own or through an administrator's grant can switch to an app password.")
 	ErrAppPasswordShape = errx.NewWithIdentifier(errx.BadRequest, "app_password_invalid", "A Google app password is 16 letters. Create one at myaccount.google.com/apppasswords and paste it here.")
 )

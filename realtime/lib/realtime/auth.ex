@@ -144,8 +144,8 @@ defmodule Realtime.Auth do
     end
   end
 
-  # Tickets minted by a backend that predates the claim: no session, so no second factor.
-  defp ticket_session(_claims, _user_id), do: {:ok, %{session_id: nil, mfa_verified: false}}
+  # Every ticket names its session; one that does not is not a ticket.
+  defp ticket_session(_claims, _user_id), do: {:error, :invalid_claims}
 
   # Each ticket opens one socket; the marker outlives the ticket itself.
   defp claim_ticket(%{"sid" => ticket_id, "exp" => exp})

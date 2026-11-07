@@ -184,14 +184,45 @@ const NOISE = [
     "ResizeObserver loop limit exceeded",
 ];
 
-function dropBrowserNoise(event: CaptureResult | null): CaptureResult | null {
+// Expected states, not faults: a lapsed session signs the operator out, and a closed confirm prompt is a choice.
+const NOISE_TYPES = ["SessionExpiredError", "ReauthCancelledError"];
+
+// Thrown into the page by wallets, extensions and in-app browsers; none of these names exist in our code.
+const FOREIGN_MESSAGES = [
+    /window\.ethereum\.selectedAddress = undefined/,
+    /^Can't find variable: (CONFIG|currentInset)$/,
+    /^No Listener: tabs:/,
+    /^Could not establish connection\. Receiving end does not exist\.$/,
+];
+const EXTENSION_SOURCE = /^(?:(?:chrome|moz|safari|safari-web|ms-browser)-extension:|webkit-masked-url:)/;
+// Our bundle is served from /assets/; a frame there means the error passed through our code.
+const BUNDLE_SOURCE = /^(?:[a-z]+:\/\/[^/]+)?\/assets\//i;
+
+// isForeign keeps anything with a frame in our bundle, so a real error with the same words still reports.
+function isForeign(entry: Record<string, unknown>): boolean {
+    const trace = entry.stacktrace as { frames?: unknown } | undefined;
+    const sources = (Array.isArray(trace?.frames) ? trace.frames : []).flatMap((frame) => {
+        const f = frame as { filename?: unknown; abs_path?: unknown } | null;
+        const source = f?.filename ?? f?.abs_path;
+        return typeof source === "string" ? [source] : [];
+    });
+    if (sources.some((source) => BUNDLE_SOURCE.test(source))) return false;
+    if (sources.some((source) => EXTENSION_SOURCE.test(source))) return true;
+    const value = entry.value ?? entry.$exception_value;
+    return typeof value === "string" && FOREIGN_MESSAGES.some((pattern) => pattern.test(value));
+}
+
+export function dropBrowserNoise(event: CaptureResult | null): CaptureResult | null {
     if (event?.event !== "$exception") return event;
     const exceptionList = event.properties?.$exception_list;
-    const structuredNoise = Array.isArray(exceptionList) && exceptionList.some((exception) => {
-        if (!exception || typeof exception !== "object") return false;
-        const entry = exception as Record<string, unknown>;
+    const entries = (Array.isArray(exceptionList) ? exceptionList : [])
+        .filter((exception): exception is Record<string, unknown> => Boolean(exception) && typeof exception === "object");
+    if (entries.length > 0 && entries.every(isForeign)) return null;
+    const structuredNoise = entries.some((entry) => {
         const value = entry.value ?? entry.$exception_value;
-        return typeof value === "string" && NOISE.includes(value.trim());
+        const type = entry.type ?? entry.$exception_type;
+        return (typeof value === "string" && NOISE.includes(value.trim()))
+            || (typeof type === "string" && NOISE_TYPES.includes(type));
     });
     const message = event.properties?.$exception_message;
     const messageNoise = typeof message === "string" && NOISE.includes(message.trim());

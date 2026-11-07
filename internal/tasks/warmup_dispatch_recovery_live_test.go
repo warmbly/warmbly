@@ -97,10 +97,21 @@ func TestLiveSendHoldReportingDoesNotFlagNormalInFlightSends(t *testing.T) {
 	if err != nil || len(holds) != 0 {
 		t.Fatalf("normal in-flight admission hold is not an error: holds=%v err=%v", holds, err)
 	}
-	f.exec(t, `UPDATE tasks SET send_result_applied_at=NOW() WHERE id=$1`, f.task)
+	f.exec(t, `UPDATE tasks SET send_result_applied_at=NOW(),send_result_evidence='{"disposition":"ambiguous"}' WHERE id=$1`, f.task)
 	holds, err = reader.GetSendRecoveryHolds(t.Context(), []uuid.UUID{f.sender.ID})
-	if err != nil || holds[f.sender.ID].Reason != "unknown" {
-		t.Fatalf("settled unknown outcome must be visible immediately: holds=%v err=%v", holds, err)
+	if err != nil || len(holds) != 0 {
+		t.Fatalf("an unconfirmed send recovering on its own must not reach mailbox health: holds=%v err=%v", holds, err)
+	}
+	f.exec(t, `UPDATE tasks SET completed_at=NOW()-INTERVAL '3 hours',send_reserved_at=NOW()-INTERVAL '3 hours' WHERE id=$1`, f.task)
+	f.exec(t, `UPDATE warmup_tasks SET dispatch_started_at=NOW() WHERE task_id=$1`, f.task)
+	holds, err = reader.GetSendRecoveryHolds(t.Context(), []uuid.UUID{f.sender.ID})
+	if err != nil || len(holds) != 0 {
+		t.Fatalf("a send the worker only just started is in flight, however long it queued: holds=%v err=%v", holds, err)
+	}
+	f.exec(t, `UPDATE warmup_tasks SET dispatch_started_at=NOW()-INTERVAL '3 hours' WHERE task_id=$1`, f.task)
+	holds, err = reader.GetSendRecoveryHolds(t.Context(), []uuid.UUID{f.sender.ID})
+	if err != nil || holds[f.sender.ID].Reason != "unknown" || !holds[f.sender.ID].Warmup {
+		t.Fatalf("a hold that outlasted automatic recovery must be visible: holds=%v err=%v", holds, err)
 	}
 	f.exec(t, `UPDATE email_accounts SET send_recovery_hold=false,send_recovery_reason=NULL,send_recovery_task_id=NULL WHERE id=$1`, f.sender.ID)
 	holds, err = reader.GetSendRecoveryHolds(t.Context(), []uuid.UUID{f.sender.ID})

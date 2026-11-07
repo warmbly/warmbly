@@ -60,11 +60,12 @@ export type AgentTab = {
   unseen: boolean
   // hydrated is false for a tab opened from history until its transcript loads.
   hydrated: boolean
-  credits: number | null
+  // The workspace balance in dollars, as the last stream event reported it.
+  balanceUsd: number | null
   budget: number
   iteration: number
   // True when this conversation is running on a free/local model (AI_LOCAL_MODEL):
-  // the composer shows a "free model" notice and no credits are charged.
+  // the composer shows a "free model" notice and nothing is charged.
   freeModel: boolean
 }
 
@@ -102,7 +103,7 @@ function makeTab(partial?: Partial<AgentTab>): AgentTab {
     draft: '',
     unseen: false,
     hydrated: true,
-    credits: null,
+    balanceUsd: null,
     budget: 20,
     iteration: 0,
     freeModel: false,

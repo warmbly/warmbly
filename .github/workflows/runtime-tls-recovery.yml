@@ -1,0 +1,199 @@
+name: Recover partial runtime TLS cleanup
+run-name: Reviewed partial runtime TLS cleanup
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/runtime-tls-recovery.yml'
+      - '.github/workflows/deploy-aws.yml'
+      - '.github/scripts/runtime-tls*'
+  workflow_dispatch:
+    inputs:
+      contract_key:
+        description: New private reviewed recovery contract key under runtime-tls-recovery/
+        required: true
+        type: string
+      contract_version:
+        description: Exact version ID of the reviewed contract
+        required: true
+        type: string
+      contract_sha256:
+        description: SHA-256 of the exact reviewed contract bytes
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  TF_IN_AUTOMATION: "1"
+  TF_INPUT: "0"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: shellcheck .github/scripts/runtime-tls*.sh
+      - run: |
+          for suite in .github/scripts/runtime-tls*.test.sh; do
+            bash "$suite"
+          done
+
+  plan:
+    needs: check
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: aws-infrastructure-plan
+    permissions:
+      contents: read
+      actions: read
+      attestations: read
+      id-token: write
+    outputs:
+      digest: ${{ steps.plan.outputs.digest }}
+      release: ${{ steps.plan.outputs.release }}
+    steps:
+      - name: Require an explicitly enabled new main run
+        env:
+          RECOVERY_ENABLED: ${{ vars.AWS_TLS_RECOVERY_ENABLED }}
+          EVIDENCE_ROLE: ${{ vars.AWS_TLS_RECOVERY_EVIDENCE_ROLE_ARN }}
+        run: |
+          [ "$GITHUB_REF" = refs/heads/main ]
+          [ "$GITHUB_RUN_ATTEMPT" = 1 ]
+          [ "$RECOVERY_ENABLED" = true ]
+          [ "$EVIDENCE_ROLE" = arn:aws:iam::925323749693:role/warmbly-production-tls-recovery-evidence ]
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.16.5"
+          terraform_wrapper: false
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_TERRAFORM_PLAN_ROLE_ARN }}
+          aws-region: us-east-1
+      - id: plan
+        env:
+          WORK: ${{ runner.temp }}/runtime-tls-recovery-plan
+          CONTRACT_KEY: ${{ inputs.contract_key }}
+          CONTRACT_VERSION: ${{ inputs.contract_version }}
+          CONTRACT_SHA256: ${{ inputs.contract_sha256 }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/runtime-tls-recovery-execute.sh plan
+      - uses: aws-actions/configure-aws-credentials@v4
+        if: always() && steps.plan.outcome != 'skipped'
+        with:
+          role-to-assume: ${{ vars.AWS_TLS_RECOVERY_EVIDENCE_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: Preserve full private plan evidence
+        if: always() && steps.plan.outcome != 'skipped'
+        env:
+          WORK: ${{ runner.temp }}/runtime-tls-recovery-plan
+        run: bash .github/scripts/runtime-tls-recovery-archive.sh plan
+
+  apply:
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: aws-infrastructure-approval
+    concurrency:
+      group: aws-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      actions: read
+      attestations: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.16.5"
+          terraform_wrapper: false
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_TERRAFORM_APPLY_ROLE_ARN }}
+          aws-region: us-east-1
+      - id: apply
+        env:
+          WORK: ${{ runner.temp }}/runtime-tls-recovery-apply
+          CONTRACT_KEY: ${{ inputs.contract_key }}
+          CONTRACT_VERSION: ${{ inputs.contract_version }}
+          CONTRACT_SHA256: ${{ inputs.contract_sha256 }}
+          APPROVED_DIGEST: ${{ needs.plan.outputs.digest }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/runtime-tls-recovery-execute.sh apply
+      - uses: aws-actions/configure-aws-credentials@v4
+        if: always() && steps.apply.outcome != 'skipped'
+        with:
+          role-to-assume: ${{ vars.AWS_TLS_RECOVERY_EVIDENCE_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: Preserve full private apply evidence
+        if: always() && steps.apply.outcome != 'skipped'
+        env:
+          WORK: ${{ runner.temp }}/runtime-tls-recovery-apply
+        run: bash .github/scripts/runtime-tls-recovery-archive.sh apply
+
+  redeploy:
+    needs: [plan, apply]
+    permissions:
+      contents: read
+      id-token: write
+      attestations: read
+    uses: ./.github/workflows/deploy-aws.yml
+    with:
+      tag: ${{ needs.plan.outputs.release }}
+      mode: redeploy
+      services: all
+      fleet: false
+      require_attestation: true
+      bake_seconds: "300"
+    secrets: inherit
+
+  verify:
+    needs: redeploy
+    runs-on: ubuntu-latest
+    environment: aws-infrastructure-plan
+    concurrency:
+      group: aws-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      actions: read
+      attestations: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_TERRAFORM_PLAN_ROLE_ARN }}
+          aws-region: us-east-1
+      - id: verify
+        env:
+          WORK: ${{ runner.temp }}/runtime-tls-recovery-verify
+          CONTRACT_KEY: ${{ inputs.contract_key }}
+          CONTRACT_VERSION: ${{ inputs.contract_version }}
+          CONTRACT_SHA256: ${{ inputs.contract_sha256 }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/runtime-tls-recovery-execute.sh verify
+      - uses: aws-actions/configure-aws-credentials@v4
+        if: always() && steps.verify.outcome != 'skipped'
+        with:
+          role-to-assume: ${{ vars.AWS_TLS_RECOVERY_EVIDENCE_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: Preserve full private final evidence
+        if: always() && steps.verify.outcome != 'skipped'
+        env:
+          WORK: ${{ runner.temp }}/runtime-tls-recovery-verify
+        run: bash .github/scripts/runtime-tls-recovery-archive.sh verify

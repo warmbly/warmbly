@@ -79,3 +79,36 @@ temporary input. It verifies both TLS certificate validation and an authenticate
 Instances and addresses have destruction guards. AMI and bootstrap drift do not
 silently replace a running worker. Roll out host upgrades deliberately while
 preserving worker identity and static addresses.
+
+## Autoscaling fleet
+
+`fleet.tf` and `fleet-network.tf` add an opt-in Auto Scaling group of workers
+with no public IPv4 address: dual-stack subnets, an egress-only gateway for
+IPv6, one NAT instance per zone for IPv4 and an S3 gateway endpoint. Workers
+join at boot with `join.sh`, reading the join token from the SecureString
+parameter named by `fleet_join_token_parameter`. Nothing is created until
+`fleet_enabled` is true, and the fixed hosts above are unaffected. Apply the
+foundation first, since it adds the VPC's IPv6 block.
+
+The fleet scales on server resource usage, not mailbox count. Two
+target-tracking policies add workers to hold the fleet's memory in use
+(`WorkerMemoryPercent`) at `fleet_target_memory` and its average CPU at
+`fleet_target_cpu`. One full worker does not grow the fleet: its `auto` mailbox
+target falls, so placement steers new mailboxes elsewhere. The fleet shrinks one worker at a time, and only after fleet memory,
+the fullest worker's memory and the busiest worker's CPU have all stayed low
+for `fleet_scale_in_after_hours`; missing data never counts as low.
+
+The backend publishes those metrics to `Warmbly/Fleet` with the dimension
+`Fleet=<name>` when `FLEET_METRICS_CLOUDWATCH=<name>` is set on it, and its role
+needs `cloudwatch:PutMetricData`. Each worker's `node.local.env` gets
+`WARMBLY_WORKER_CAPACITY=auto` by default, so it sizes its mailbox target from
+its memory, and `GOMEMLIMIT` at 80% of the instance's memory.
+
+The design, variables, scaling metric contract, retirement of fixed hosts and
+cost notes are in [the AWS worker fleet guide](https://docs.warmbly.com/development/aws-workers/).
+
+```sh
+terraform -chdir=deploy/terraform/aws/workers test
+```
+
+runs the mocked-provider checks in `tests/`, with no credentials.

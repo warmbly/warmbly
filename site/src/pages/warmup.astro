@@ -43,9 +43,9 @@ const faq: [string, string][] = [
   ['How long does warmup take?', 'Most new mailboxes need three to six weeks. At the default ramp a mailbox reaches 40 emails a day after about a month, and inbox placement usually settles over the same stretch.'],
   ['Should warmup keep running once my campaigns start?', 'Yes. Warmup runs alongside cold sending at up to five messages a day, so a dip in reputation shows up in the warmup numbers and gets corrected before your campaigns feel it.'],
   ['What gets a mailbox taken out of the pool?', 'High complaint or bounce rates: 0.10% complaints or 5% bounces pause it for 7 days, 0.30% or 10% for 30. Spam placement on its own never removes a mailbox; it only slows warmup down until placement recovers.'],
-  ['Do the free and premium pools mix?', 'Only on proven terms. A paying mailbox can also write to free mailboxes from other workspaces that have been healthy pool members for at least three days, and a free mailbox may only write back to a paying inbox that wrote to it in the last two weeks.'],
+  ['Do the free and premium pools mix?', 'Only on proven terms. The free pool holds the mailboxes of workspaces in their free trial and of workspaces that kept the free plan after it closed to new workspaces. A paying mailbox can also write to those mailboxes once they have been healthy pool members for at least three days, and a free mailbox may only write back to a paying inbox that wrote to it in the last two weeks.'],
   ['Which providers does placement count at?', 'Gmail, Outlook and Yahoo. They filter on sender reputation, which is what cold email is judged on. Smaller mail hosts run their own filters, so their spam folder is never held against you.'],
-  ['Can I warm up a self-hosted instance?', 'Yes, by linking it to Warmbly Cloud once it launches: up to 10 mailboxes free, or unlimited for $15 a month. Everything else stays on your own servers.'],
+  ['Can I warm up a self-hosted instance?', 'Only between the mailboxes on that instance. There is no shared pool, so it does far less for deliverability than warming on Warmbly Cloud. Self-hosted instances do not link to the Cloud pool; to warm in it, connect those mailboxes to a hosted workspace, free for two mailboxes during the 14-day trial on an owner\u2019s first workspace and on a paid plan after that.'],
 ];
 
 const sceneTitle = 'mt-6 text-[21px] md:text-[23px] tracking-[-0.02em] text-slate-900';
@@ -153,7 +153,7 @@ const link = 'group mt-6 inline-flex items-center gap-2 text-[16px] md:text-[17p
   <section class="container-page py-20 md:py-28">
     <div class="grid items-center gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
       <div class="lg:order-2">
-        <SectionIntro lead="Pools." title="Free and premium mailboxes warm apart." text="Paid plans warm in the premium pool; free workspaces and linked self-hosted instances in the free one. A paying mailbox may also write to free mailboxes from other workspaces once they have been healthy members for three days. A free mailbox only writes back to a paying inbox that wrote to it in the last 14 days." />
+        <SectionIntro lead="Pools." title="Paying mailboxes warm in the premium pool." text="Every paid plan warms in the premium pool. Workspaces in their free trial (up to two mailboxes) and workspaces that already had the free plan warm in a separate free pool. A paying mailbox may also write to those mailboxes once they have been healthy members for three days, and a free mailbox only writes back to a paying inbox that wrote to it in the last 14 days." />
         <p class="mt-4 max-w-xl text-[16px] md:text-[18px] leading-[1.6] text-slate-500">
           Every draw favours the inbox that is owed the most mail, up to four times as often, and no inbox receives more than about twice what it sends in a day.
         </p>

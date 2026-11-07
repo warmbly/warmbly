@@ -20,7 +20,10 @@ func TestRoutesThatNeedAFreshConfirmation(t *testing.T) {
 		"subscriptions POST /cancel":                  false,
 		"subscriptions POST /change-plan":             false,
 		"subscriptions POST /offers/:planId/checkout": false,
-		"subscriptions POST /credits/checkout":        false,
+		"subscriptions POST /balance/top-up":          false,
+		"subscriptions POST /balance/checkout":        false,
+		"subscriptions POST /balance/payment-method":  false,
+		"subscriptions PATCH /balance/auto-reload":    false,
 		"subscriptions PATCH /credits/settings":       false,
 		"poolLink POST /checkout":                     false,
 		"apiKeys POST ":                               false,
@@ -31,6 +34,7 @@ func TestRoutesThatNeedAFreshConfirmation(t *testing.T) {
 		"org POST /members/invite":                    false,
 		"org POST /transfer-ownership":                false,
 		"org POST /current/danger-zone/delete":        false,
+		"adminRoutes POST /testers/:id/password":      false,
 		"protectedAuth POST /passkey/register/finish": false,
 	}
 	file, err := parser.ParseFile(token.NewFileSet(), "routes.go", nil, 0)

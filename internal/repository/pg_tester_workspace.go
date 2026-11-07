@@ -38,21 +38,24 @@ func (r *organizationRepository) ProvisionTesterWorkspace(ctx context.Context, o
 		return err
 	}
 
-	var allowance int
-	if err := tx.QueryRow(ctx, `SELECT monthly_credits FROM plans WHERE id = $1`, models.TestPlanID).Scan(&allowance); err != nil {
+	var allowance models.Micro
+	if err := tx.QueryRow(ctx, `SELECT monthly_allowance_micro FROM plans WHERE id = $1`, models.TestPlanID).Scan(&allowance); err != nil {
 		return err
 	}
 	if allowance <= 0 {
-		return errors.New("the test plan needs a credit allowance")
+		return errors.New("the test plan needs a monthly allowance")
 	}
-	var balance, purchased int
+	var balance, purchased models.Micro
 	if err := tx.QueryRow(ctx, `
-		INSERT INTO credit_ledger (org_id, balance) VALUES ($1, $2)
-		ON CONFLICT (org_id) DO UPDATE SET balance = credit_ledger.balance + EXCLUDED.balance, updated_at = now()
-		RETURNING balance, purchased_balance`, orgID, allowance).Scan(&balance, &purchased); err != nil {
+		INSERT INTO credit_ledger (org_id, balance_micro) VALUES ($1, $2)
+		ON CONFLICT (org_id) DO UPDATE SET balance_micro = credit_ledger.balance_micro + EXCLUDED.balance_micro, updated_at = now()
+		RETURNING balance_micro, purchased_micro`, orgID, allowance).Scan(&balance, &purchased); err != nil {
 		return err
 	}
-	if _, err := insertTxn(ctx, tx, orgID, allowance, "tester_grant", "", 0, balance, 0, purchased, scopeKey(orgID, "tester_grant")); err != nil {
+	if _, err := insertTxn(ctx, tx, orgID, models.CreditTransaction{
+		Amount: allowance, Reason: "tester_grant", MonthlyAfter: balance, PurchasedAfter: purchased,
+		IdempotencyKey: keyPtr(scopeKey(orgID, "tester_grant")),
+	}); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

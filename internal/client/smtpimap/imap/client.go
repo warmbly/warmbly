@@ -95,6 +95,10 @@ type Client struct {
 	// config.ImapCommandIdleTimeout.
 	IdleTimeout time.Duration
 
+	// OnChange is called when the server volunteers a change to the selected
+	// folder; set it before Connect. Only WatchInbox sessions use it.
+	OnChange func()
+
 	// plaintext dials without TLS at all. Only the tests set it, to talk to
 	// the in-process server; no product path reaches it, because an IMAP
 	// session in the clear would put the mailbox password on the wire.
@@ -287,11 +291,11 @@ func (c *Client) connectLocked() *errx.MailError {
 	var client *imapclient.Client
 	switch {
 	case c.plaintext, resolved == models.MailSecurityNone:
-		client = imapclient.New(conn, nil)
+		client = imapclient.New(conn, c.options(nil))
 	case resolved == models.MailSecurityStartTLS:
 		// Plaintext greeting, upgraded in-band. NewStartTLS closes conn
 		// itself when the upgrade fails.
-		client, err = imapclient.NewStartTLS(conn, &imapclient.Options{TLSConfig: tlsConf})
+		client, err = imapclient.NewStartTLS(conn, c.options(tlsConf))
 		if err != nil {
 			if perr := mailtls.AsPinError(err, capture); perr != nil {
 				return mailtls.MailError(perr, "IMAP")
@@ -308,7 +312,7 @@ func (c *Client) connectLocked() *errx.MailError {
 			}
 			return errx.ErrMailServerUnreachableAt(errx.MailConnectionStageIMAPTLS, errors.New(connectionFailureReason(err)))
 		}
-		client = imapclient.New(tconn, nil)
+		client = imapclient.New(tconn, c.options(nil))
 	}
 
 	c.client = client
@@ -397,6 +401,11 @@ func (c *Client) oauth2Auth() *errx.MailError {
 	})
 
 	if err := c.client.Authenticate(saslc); err != nil {
+		// A bearer refusal (wrong scope, revoked token) comes back as the SASL challenge, not a tagged NO.
+		var bearer *sasl.OAuthBearerError
+		if errors.As(err, &bearer) {
+			return errx.ErrMailAuthenticationFailed
+		}
 		return c.handleError(err)
 	}
 

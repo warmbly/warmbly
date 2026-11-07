@@ -49,6 +49,9 @@ export default function useAccountStatuses(emailIds: string[], options?: { enabl
             queryKey: ["analytics", "accounts", "list", ids, sourceRevision],
             queryFn: ({ signal }: { signal: AbortSignal }) => getAccountStatuses(ids, signal),
             enabled: ids.length > 0 && enabled,
+            // Routine recovery persists without a realtime event.
+            refetchInterval: 60_000,
+            refetchOnWindowFocus: true,
         })),
         [chunks, enabled, sourceRevision],
     );

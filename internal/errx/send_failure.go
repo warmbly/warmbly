@@ -29,6 +29,9 @@ const (
 	SendAmbiguous = "ambiguous"
 )
 
+// SendCauseServerPacing marks a failure caused by the server limiting the worker's address, never the mailbox.
+const SendCauseServerPacing = "server_pacing"
+
 func RetryAfterAt(value string, now time.Time) *time.Time {
 	value = strings.TrimSpace(value)
 	if seconds, err := strconv.ParseInt(value, 10, 64); err == nil {

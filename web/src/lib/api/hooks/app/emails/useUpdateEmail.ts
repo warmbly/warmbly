@@ -1,6 +1,6 @@
 import updateEmail from "@/lib/api/client/app/emails/updateEmail";
 import type Inbox from "@/lib/api/models/app/emails/Inbox";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { mutationOptions, useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { overlapping, patchQueries, restoreQueries, settle, updateEntity } from "@/lib/api/hooks/optimistic";
 import patchEmailLists from "./patchEmailLists";
 
@@ -10,11 +10,12 @@ export const mailboxMutationKey = (id: string) => ["emails", id];
 // Optimistic: the switch, the rename and the tags show on the click; the reply replaces them.
 // serverOwned fields are decided by the server, so they wait for its answer.
 export default function useUpdateEmail(id: string, serverOwned: readonly (keyof Inbox)[] = []) {
-    const queryClient = useQueryClient();
-    const mutationKey = [...mailboxMutationKey(id), "update"];
+    return useMutation(updateEmailOptions(useQueryClient(), id, serverOwned));
+}
 
-    return useMutation({
-        mutationKey,
+export function updateEmailOptions(queryClient: QueryClient, id: string, serverOwned: readonly (keyof Inbox)[] = []) {
+    return mutationOptions({
+        mutationKey: [...mailboxMutationKey(id), "update"],
         mutationFn: (inbox: Partial<Inbox>) => updateEmail(id, inbox),
         onMutate: (inbox) => {
             const shown = { ...inbox };
@@ -37,6 +38,7 @@ export default function useUpdateEmail(id: string, serverOwned: readonly (keyof 
                 ["emails", id],
                 data
             );
+            void queryClient.invalidateQueries({ queryKey: ["analytics", "accounts"] });
         }
     })
 }

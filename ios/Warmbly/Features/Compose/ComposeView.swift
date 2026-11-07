@@ -996,7 +996,7 @@ struct ComposeView: View {
         if let apiError = error as? APIError {
             switch apiError {
             case let .server(status, _) where status == 402:
-                store.setError("You're out of AI credits for this billing period.")
+                store.setError("The workspace balance is too low for AI. Add money on the web.")
             case .rateLimited:
                 store.setError("AI usage limit reached, try again later.")
             default:

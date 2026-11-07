@@ -21,16 +21,16 @@ import {
     SparklesIcon,
     Undo2Icon,
 } from "lucide-react";
-import toast from "react-hot-toast/headless";
 import useGenerateWrite from "@/lib/api/hooks/app/generation/useGenerateWrite";
 import { usePermission } from "@/hooks/usePermission";
 import useAiMetered from "@/hooks/useAiMetered";
-import type { AppError } from "@/lib/api/client/normalizeError";
-import buildError from "@/lib/helper/buildError";
 import ShortcutTooltip, { Kbd } from "@/components/ui/shortcut-tooltip";
 import textareaRangeRect, { type RangeRect } from "./textareaRange";
 import useTypewriter from "./useTypewriter";
 import formatUsage from "./usage";
+import { reportAIError } from "./reportAIError";
+import { fmtUsdAbout } from "@/lib/money";
+import { AI_ESTIMATE_USD } from "@/lib/aiEstimates";
 import AgentMark from "@/components/app/agent/AgentMark";
 
 // Context window around the caret sent with freeform prompts, so long drafts
@@ -78,7 +78,7 @@ export default function TextareaAICaret({
     onChange,
     onDraftReply,
     draftLabel = "Draft a reply from this thread",
-    draftCost = "from 2 credits",
+    draftCost = fmtUsdAbout(AI_ESTIMATE_USD.replyDraft),
     contextHint,
     maxLen,
 }: TextareaAICaretProps) {
@@ -101,7 +101,7 @@ export default function TextareaAICaret({
     } | null>(null);
     const [open, setOpen] = React.useState(false);
     const [phase, setPhase] = React.useState<Phase>("idle");
-    const [usage, setUsage] = React.useState<{ charged: number; tokens: number } | null>(null);
+    const [usage, setUsage] = React.useState<{ chargedUsd: number; tokens: number } | null>(null);
     const [instruction, setInstruction] = React.useState("");
 
     const rootRef = React.useRef<HTMLDivElement>(null);
@@ -247,7 +247,7 @@ export default function TextareaAICaret({
                     onSuccess: (res) => {
                         if (!openRef.current) return;
                         setUsage({
-                            charged: res.credits_charged ?? 0,
+                            chargedUsd: res.charged_usd ?? 0,
                             tokens: res.tokens_used ?? 0,
                         });
                         const before = prevValue.slice(0, pos);
@@ -278,12 +278,7 @@ export default function TextareaAICaret({
                         );
                     },
                     onError: (e) => {
-                        const err = e as unknown as AppError;
-                        if (err?.status === 402) {
-                            toast.error("You're out of AI credits. Upgrade or purchase more to keep writing with AI.");
-                        } else {
-                            toast.error(buildError(err));
-                        }
+                        reportAIError(e);
                         setPhase("idle");
                     },
                 },
@@ -397,9 +392,9 @@ export default function TextareaAICaret({
                                 <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-900 mr-auto">
                                     <CheckIcon className="w-3.5 h-3.5 text-emerald-600" />
                                     Inserted
-                                    {usage && formatUsage(usage.charged, usage.tokens) && (
+                                    {usage && formatUsage(usage.chargedUsd, usage.tokens) && (
                                         <span className="text-[10.5px] font-normal text-slate-400">
-                                            · {formatUsage(usage.charged, usage.tokens)}
+                                            · {formatUsage(usage.chargedUsd, usage.tokens)}
                                         </span>
                                     )}
                                 </span>
@@ -482,7 +477,7 @@ export default function TextareaAICaret({
                                     >
                                         <PenLineIcon className="w-3.5 h-3.5 text-slate-400" />
                                         Continue writing
-                                        {metered && <span className="ml-auto text-[10px] text-slate-300">from 1 credit</span>}
+                                        {metered && <span className="ml-auto text-[10px] text-slate-300">{fmtUsdAbout(AI_ESTIMATE_USD.writingAssistant)}</span>}
                                     </button>
                                 </div>
                                 <div className="px-2.5 pb-2 pt-1 flex items-center gap-2.5 text-[10px] text-slate-400 border-t border-slate-100">

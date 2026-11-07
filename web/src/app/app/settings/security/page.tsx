@@ -1,13 +1,12 @@
-import React from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { RowLink, Section, SectionShell } from "../_components/SectionShell";
 import PasskeyManager from "./PasskeyManager";
 import SessionManager from "./SessionManager";
 import TwoFactorManager from "./TwoFactorManager";
-import ChangePasswordDialog from "./ChangePasswordDialog";
+import PasswordSection from "./PasswordSection";
+import SignInMethods from "./SignInMethods";
 
 export default function SecuritySettingsPage() {
-    const [pwOpen, setPwOpen] = React.useState(false);
     const navigate = useNavigate();
     return (
         <SectionShell title="Security" description="Sign-in protection for your account.">
@@ -15,14 +14,9 @@ export default function SecuritySettingsPage() {
 
             <TwoFactorManager />
 
-            <Section eyebrow="Password" description="The credential you sign in with.">
-                <RowLink
-                    title="Change password"
-                    description="Use 12+ characters with mixed case and a number."
-                    cta="Change"
-                    onClick={() => setPwOpen(true)}
-                />
-            </Section>
+            <PasswordSection />
+
+            <SignInMethods />
 
             <SessionManager />
 
@@ -62,7 +56,6 @@ export default function SecuritySettingsPage() {
                     onClick={() => (window.location.href = "/app/api-keys")}
                 />
             </Section>
-            <ChangePasswordDialog open={pwOpen} onClose={() => setPwOpen(false)} />
         </SectionShell>
     );
 }

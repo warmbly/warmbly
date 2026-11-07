@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"errors"
+	"maps"
 	"time"
 
 	"github.com/google/uuid"
@@ -60,7 +61,7 @@ func (s *JobsService) HandleEmailAuthError(ctx context.Context, event models.Ema
 	}
 
 	// Mark email account as needing re-auth (set status to inactive)
-	s.deactivateAccount(ctx, userID, emailAccountID)
+	s.disconnectMailbox(ctx, userID, emailAccountID, "auth_error", event.ErrorCode)
 
 	// Send Pub/Sub notification to user
 	if s.StreamingPublisher != nil && event.UserVisible {
@@ -125,7 +126,7 @@ func (s *JobsService) HandleEmailDisabled(ctx context.Context, event models.Emai
 	}
 
 	// Mark email account as inactive
-	s.deactivateAccount(ctx, userID, emailAccountID)
+	s.disconnectMailbox(ctx, userID, emailAccountID, "account_disabled", event.ErrorCode)
 
 	// Send Pub/Sub notification to user
 	if s.StreamingPublisher != nil && event.UserVisible {
@@ -205,7 +206,7 @@ func (s *JobsService) HandleEmailRateLimited(ctx context.Context, event models.E
 	}
 
 	// Mark email account as inactive (terminated due to abuse)
-	s.deactivateAccount(ctx, userID, emailAccountID)
+	s.disconnectMailbox(ctx, userID, emailAccountID, "fair_use", event.ErrorCode)
 
 	if s.WarmupService != nil {
 		health, _ := s.WarmupService.ApplyRateLimitExceeded(ctx, emailAccountID, "worker sync/email rate limit exceeded")
@@ -273,7 +274,7 @@ func (s *JobsService) HandleEmailServerError(ctx context.Context, event models.E
 	// once a minute and relays what it got each time, so the same unresolved
 	// failure would otherwise fill the mailbox's error list with a row a
 	// minute for as long as the server keeps refusing (issue #405).
-	recorded := true
+	notify := true
 	warningMessage := event.UserMessage
 	if s.EmailAccountErrorRepository != nil {
 		errorRecord := &repository.CreateEmailAccountError{
@@ -297,7 +298,14 @@ func (s *JobsService) HandleEmailServerError(ctx context.Context, event models.E
 			log.Error().Str("error", xerr.Message).Msg("Failed to store server error")
 			return xerr
 		}
-		recorded = xerr == nil && row != nil
+		notify = xerr == nil && row != nil && !s.transientBlip(ctx, emailAccountID, row)
+		// CreateOnce returns a row only when it opened one, so this fires once per unresolved error.
+		if notify {
+			s.emitMailboxEvent(ctx, emailAccountID, models.WebhookEventEmailAccountError, map[string]any{
+				"error_code": row.ErrorCode,
+				"operation":  string(row.Operation),
+			})
+		}
 		if row != nil && row.UserMessage != nil {
 			warningMessage = *row.UserMessage
 		} else if row != nil && row.Message == errx.ErrMailServerUnreachable.Message {
@@ -308,9 +316,9 @@ func (s *JobsService) HandleEmailServerError(ctx context.Context, event models.E
 	// Server errors are temporary - don't change account status
 	// The error will be auto-resolved when connectivity is restored
 
-	// Only notify for an error we just recorded: a repeat of one already in
+	// Only notify for an error we just recorded on a mailbox that is not still working: a repeat of one already in
 	// the drawer must not toast the reader again every pass.
-	if s.StreamingPublisher != nil && event.UserVisible && recorded {
+	if s.StreamingPublisher != nil && event.UserVisible && notify {
 		s.StreamingPublisher.PublishEmailWarning(
 			ctx,
 			event.UserID,
@@ -321,6 +329,21 @@ func (s *JobsService) HandleEmailServerError(ctx context.Context, event models.E
 	}
 
 	return nil
+}
+
+// transientBlip is a temporary failure on a mailbox that still worked within the grace window, which is not worth a notification.
+func (s *JobsService) transientBlip(ctx context.Context, accountID uuid.UUID, row *repository.EmailAccountError) bool {
+	reader, ok := s.EmailAccountErrorRepository.(interface {
+		LastTransportSuccess(context.Context, []uuid.UUID) (map[uuid.UUID]map[models.MailTransportOperation]time.Time, *errx.Error)
+	})
+	if !ok {
+		return false
+	}
+	success, xerr := reader.LastTransportSuccess(ctx, []uuid.UUID{accountID})
+	if xerr != nil {
+		return false
+	}
+	return models.MailTransientBlip(row.Severity, row.ErrorCode, row.Operation, row.ObservationSource, success[accountID], time.Now())
 }
 
 func serverErrorObservedAt(timestamp int64) *time.Time {
@@ -344,6 +367,51 @@ func ptrString(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// disconnectMailbox deactivates a mailbox and delivers email_account.disconnected
+// when this call is what took it from working to inactive.
+func (s *JobsService) disconnectMailbox(ctx context.Context, userID, emailAccountID uuid.UUID, reason, errorCode string) {
+	before := s.mailboxForEvent(ctx, emailAccountID)
+	s.deactivateAccount(ctx, userID, emailAccountID)
+	if before == nil || before.Status == "inactive" {
+		return
+	}
+	if after := s.mailboxForEvent(ctx, emailAccountID); after == nil || after.Status != "inactive" {
+		return
+	}
+	s.emitMailboxEvent(ctx, emailAccountID, models.WebhookEventEmailAccountDisconnected, map[string]any{
+		"reason":     reason,
+		"error_code": errorCode,
+	})
+}
+
+// mailboxForEvent reads a mailbox for an email_account.* webhook, or nil when
+// none can be delivered.
+func (s *JobsService) mailboxForEvent(ctx context.Context, emailAccountID uuid.UUID) *models.Email {
+	if s.AdvancedService == nil || s.EmailRepository == nil {
+		return nil
+	}
+	account, xerr := s.EmailRepository.GetByID(ctx, emailAccountID)
+	if xerr != nil || account == nil || account.OrganizationID == nil {
+		return nil
+	}
+	return account
+}
+
+// emitMailboxEvent delivers an email_account.* webhook carrying the mailbox's identity plus fields.
+func (s *JobsService) emitMailboxEvent(ctx context.Context, emailAccountID uuid.UUID, eventType models.WebhookEventType, fields map[string]any) {
+	account := s.mailboxForEvent(ctx, emailAccountID)
+	if account == nil {
+		return
+	}
+	payload := map[string]any{
+		"email_account_id": account.ID.String(),
+		"email":            account.Email,
+		"provider":         account.Provider,
+	}
+	maps.Copy(payload, fields)
+	s.AdvancedService.EmitCampaignEvent(ctx, *account.OrganizationID, eventType, payload)
 }
 
 // deactivateAccount marks a mailbox inactive AND tells the worker holding it

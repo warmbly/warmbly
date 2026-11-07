@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -62,43 +63,39 @@ func (r *pgEmailMessageMapRepository) AdmitArrival(ctx context.Context, data Ema
 	if err != nil {
 		return arrivalFailure("payload_encryption", err)
 	}
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return arrivalFailure("database_begin", err)
-	}
-	defer tx.Rollback(context.Background())
-	// Recheck and lock ownership after crypto, without nesting key-store I/O in the transaction.
-	var owned uuid.UUID
-	if err = tx.QueryRow(ctx, `SELECT id FROM email_accounts WHERE id=$1 AND user_id=$2 AND organization_id=$3 FOR SHARE`, email, user, org).Scan(&owned); err != nil {
-		return arrivalOwnershipFailure("mailbox_ownership_recheck", err)
-	}
+	// Recheck and lock ownership after crypto, and write the map and the outbox row as one statement.
 	// A retry after an ambiguous response adopts the first canonical identity.
-	inserted, err := tx.Exec(ctx, `INSERT INTO email_message_map(user_id,email_id,message_id,id,thread_id)
-		VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`, user, email, data.MessageID, id, data.ThreadID)
+	var owned, queued bool
+	err = r.db.QueryRow(ctx, `WITH owner AS (
+			SELECT id FROM email_accounts WHERE id=$2 AND user_id=$1 AND organization_id=$3 FOR SHARE
+		), mapped AS (
+			INSERT INTO email_message_map(user_id,email_id,message_id,id,thread_id)
+			SELECT $1::uuid,$2::uuid,$4::text,$5::uuid,$6::text FROM owner ON CONFLICT DO NOTHING RETURNING 1
+		), queued AS (
+			INSERT INTO sync_arrival_outbox(user_id,email_id,organization_id,message_id,id,payload)
+			SELECT $1::uuid,$2::uuid,$3::uuid,$4::text,$5::uuid,$7::text FROM mapped RETURNING 1
+		)
+		SELECT EXISTS(SELECT 1 FROM owner), EXISTS(SELECT 1 FROM queued)`,
+		user, email, org, data.MessageID, id, data.ThreadID, payload).Scan(&owned, &queued)
 	if err != nil {
 		return arrivalFailure("mapping_write", err)
 	}
-	if inserted.RowsAffected() != 0 {
-		_, err = tx.Exec(ctx, `INSERT INTO sync_arrival_outbox(user_id,email_id,organization_id,message_id,id,payload)
-			VALUES($1,$2,$3,$4,$5,$6)`, user, email, org, data.MessageID, id, payload)
-		if err != nil {
-			return arrivalFailure("outbox_write", err)
-		}
-	} else {
-		var pending bool
-		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM email_message_map m
-			JOIN sync_arrival_outbox o USING(user_id,email_id,message_id,id)
-			WHERE m.user_id=$1 AND m.email_id=$2 AND m.message_id=$3 AND o.organization_id=$4)`, user, email, data.MessageID, org).Scan(&pending)
-		if err != nil {
-			return arrivalFailure("durability_check", err)
-		}
-		// Legacy, deleted and already-delivered maps have no durable admission proof.
-		if !pending {
-			return ErrArrivalAdmissionUnconfirmed
-		}
+	if !owned {
+		return arrivalOwnershipFailure("mailbox_ownership_recheck", pgx.ErrNoRows)
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return arrivalFailure("database_commit", err)
+	if queued {
+		return nil
+	}
+	var durable bool
+	err = r.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM email_message_map m
+		JOIN sync_arrival_outbox o USING(user_id,email_id,message_id,id)
+		WHERE m.user_id=$1 AND m.email_id=$2 AND m.message_id=$3 AND o.organization_id=$4)`, user, email, data.MessageID, org).Scan(&durable)
+	if err != nil {
+		return arrivalFailure("durability_check", err)
+	}
+	// Legacy, deleted and already-delivered maps have no durable admission proof.
+	if !durable {
+		return ErrArrivalAdmissionUnconfirmed
 	}
 	return nil
 }
@@ -124,14 +121,30 @@ func (r *pgEmailMessageMapRepository) HasPendingArrival(ctx context.Context, use
 	return pending, err
 }
 
+// ArrivalBatchSize is how many stored arrivals one claim leases, and the most one DeliverArrivals call delivers; the lease outlives the 30 second pass.
+const ArrivalBatchSize = 32
+
 // DeliverArrivals invokes the existing consumer handlers, retaining every failed stage.
 func (r *pgEmailMessageMapRepository) DeliverArrivals(ctx context.Context, deliver func(context.Context, models.JobEventType, any) error) error {
-	return deliverArrivalBatch(ctx, func() (bool, error) { return r.deliverArrival(ctx, nil, deliver) })
+	claimed, err := r.claimArrivals(ctx, nil, ArrivalBatchSize)
+	if err != nil {
+		return err
+	}
+	next := 0
+	err = deliverArrivalBatch(ctx, func() (bool, error) {
+		if next == len(claimed) {
+			return false, nil
+		}
+		next++
+		return true, r.deliverClaimed(ctx, claimed[next-1], deliver)
+	})
+	r.releaseArrivals(claimed[next:])
+	return err
 }
 
 func deliverArrivalBatch(ctx context.Context, deliverOne func() (bool, error)) error {
 	var first error
-	for i := 0; i < 32; i++ {
+	for i := 0; i < ArrivalBatchSize; i++ {
 		found, err := deliverOne()
 		if err != nil && first == nil {
 			first = err
@@ -151,38 +164,90 @@ func (r *pgEmailMessageMapRepository) DeliverPendingArrival(ctx context.Context,
 	if user == uuid.Nil || email == uuid.Nil || id == uuid.Nil {
 		return false, errors.New("invalid pending arrival identity")
 	}
-	return r.deliverArrival(ctx, &arrivalIdentity{user: user, email: email, id: id}, deliver)
-}
-
-func (r *pgEmailMessageMapRepository) deliverArrival(ctx context.Context, target *arrivalIdentity, deliver func(context.Context, models.JobEventType, any) error) (bool, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	var user, email, org, lease uuid.UUID
-	var key, payload string
-	var stage int
-	scope := ""
-	var args []any
-	if target != nil {
-		scope = " AND o.user_id=$1 AND o.email_id=$2 AND o.id=$3"
-		args = []any{target.user, target.email, target.id}
-	}
-	// Claim without retaining a connection while handlers use their repositories.
-	finish := arrivaldiag.Begin(ctx, arrivaldiag.Claim)
-	err := r.db.QueryRow(ctx, `WITH candidate AS (SELECT o.user_id,o.email_id,o.message_id
-		FROM sync_arrival_outbox o JOIN email_accounts a ON a.id=o.email_id AND a.user_id=o.user_id AND a.organization_id=o.organization_id
-		WHERE o.retry_at<=now() AND (o.locked_until IS NULL OR o.locked_until<now())`+scope+`
-		ORDER BY o.retry_at,o.created_at LIMIT 1 FOR UPDATE OF o SKIP LOCKED)
-		UPDATE sync_arrival_outbox o SET lease=gen_random_uuid(),locked_until=now()+interval '1 minute'
-		FROM candidate c WHERE o.user_id=c.user_id AND o.email_id=c.email_id AND o.message_id=c.message_id
-		RETURNING o.user_id,o.email_id,o.organization_id,o.message_id,o.payload,o.stage,o.lease`, args...).Scan(&user, &email, &org, &key, &payload, &stage, &lease)
-	finish()
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
-	}
-	if err != nil {
+	claimed, err := r.claimArrivals(ctx, &arrivalIdentity{user: user, email: email, id: id}, 1)
+	if err != nil || len(claimed) == 0 {
 		return false, err
 	}
-	finish = arrivaldiag.Begin(ctx, arrivaldiag.KeyLookup)
+	return true, r.deliverClaimed(ctx, claimed[0], deliver)
+}
+
+type claimedArrival struct {
+	user, email, org, lease uuid.UUID
+	key, payload            string
+	stage                   int
+}
+
+// claimArrivals leases up to limit due arrivals without holding a connection while handlers run.
+func (r *pgEmailMessageMapRepository) claimArrivals(ctx context.Context, target *arrivalIdentity, limit int) ([]claimedArrival, error) {
+	scope := ""
+	args := []any{limit}
+	if target != nil {
+		scope = " AND o.user_id=$2 AND o.email_id=$3 AND o.id=$4"
+		args = append(args, target.user, target.email, target.id)
+	}
+	finish := arrivaldiag.Begin(ctx, arrivaldiag.Claim)
+	defer finish()
+	rows, err := r.db.Query(ctx, `WITH candidate AS (SELECT o.user_id,o.email_id,o.message_id
+		FROM sync_arrival_outbox o JOIN email_accounts a ON a.id=o.email_id AND a.user_id=o.user_id AND a.organization_id=o.organization_id
+		WHERE o.retry_at<=now() AND (o.locked_until IS NULL OR o.locked_until<now())`+scope+`
+		ORDER BY o.retry_at,o.created_at LIMIT $1 FOR UPDATE OF o SKIP LOCKED)
+		UPDATE sync_arrival_outbox o SET lease=gen_random_uuid(),locked_until=now()+interval '1 minute'
+		FROM candidate c WHERE o.user_id=c.user_id AND o.email_id=c.email_id AND o.message_id=c.message_id
+		RETURNING o.user_id,o.email_id,o.organization_id,o.message_id,o.payload,o.stage,o.lease,o.retry_at,o.created_at`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	type ordered struct {
+		claimedArrival
+		retryAt, createdAt time.Time
+	}
+	var out []ordered
+	for rows.Next() {
+		var c ordered
+		if err := rows.Scan(&c.user, &c.email, &c.org, &c.key, &c.payload, &c.stage, &c.lease, &c.retryAt, &c.createdAt); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// RETURNING carries no order; deliver oldest first as the claim chose them.
+	slices.SortFunc(out, func(a, b ordered) int {
+		if c := a.retryAt.Compare(b.retryAt); c != 0 {
+			return c
+		}
+		return a.createdAt.Compare(b.createdAt)
+	})
+	claimed := make([]claimedArrival, len(out))
+	for i := range out {
+		claimed[i] = out[i].claimedArrival
+	}
+	return claimed, nil
+}
+
+// releaseArrivals hands back leases a pass ran out of time to use.
+func (r *pgEmailMessageMapRepository) releaseArrivals(claimed []claimedArrival) {
+	if len(claimed) == 0 {
+		return
+	}
+	users, emails, keys, leases := make([]uuid.UUID, len(claimed)), make([]uuid.UUID, len(claimed)), make([]string, len(claimed)), make([]uuid.UUID, len(claimed))
+	for i, c := range claimed {
+		users[i], emails[i], keys[i], leases[i] = c.user, c.email, c.key, c.lease
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, _ = r.db.Exec(ctx, `UPDATE sync_arrival_outbox o SET locked_until=NULL
+		FROM unnest($1::uuid[],$2::uuid[],$3::text[],$4::uuid[]) AS c(user_id,email_id,message_id,lease)
+		WHERE o.user_id=c.user_id AND o.email_id=c.email_id AND o.message_id=c.message_id AND o.lease=c.lease`, users, emails, keys, leases)
+}
+
+func (r *pgEmailMessageMapRepository) deliverClaimed(ctx context.Context, c claimedArrival, deliver func(context.Context, models.JobEventType, any) error) error {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	user, email, org, lease, key, payload, stage := c.user, c.email, c.org, c.lease, c.key, c.payload, c.stage
+	finish := arrivaldiag.Begin(ctx, arrivaldiag.KeyLookup)
 	sealed, err := r.cipher.Cipher(ctx, org)
 	finish()
 	var raw string
@@ -208,6 +273,12 @@ func (r *pgEmailMessageMapRepository) deliverArrival(ctx context.Context, target
 			{models.JobEventTypeInboundBounce, pending.Bounce, pending.Bounce != nil, arrivaldiag.Bounce},
 			{models.JobEventTypeInboundComplaint, pending.Complaint, pending.Complaint != nil, arrivaldiag.Complaint},
 		}
+		last := 0
+		for i, e := range events {
+			if e.present {
+				last = i
+			}
+		}
 		for stage < len(events) {
 			e := events[stage]
 			if e.present {
@@ -219,12 +290,16 @@ func (r *pgEmailMessageMapRepository) deliverArrival(ctx context.Context, target
 				}
 			}
 			stage++
+			// Only a delivered stage with a later one still to run needs a checkpoint; the delete retires the rest.
+			if !e.present || stage > last {
+				continue
+			}
 			finish = arrivaldiag.Begin(ctx, arrivaldiag.Checkpoint)
 			_, updateErr := r.db.Exec(ctx, `UPDATE sync_arrival_outbox SET stage=$5
 				WHERE user_id=$1 AND email_id=$2 AND message_id=$3 AND lease=$4`, user, email, key, lease, stage)
 			finish()
 			if updateErr != nil {
-				return true, updateErr
+				return updateErr
 			}
 		}
 	}
@@ -238,8 +313,8 @@ func (r *pgEmailMessageMapRepository) deliverArrival(ctx context.Context, target
 			WHERE user_id=$1 AND email_id=$2 AND message_id=$3 AND lease=$4`, user, email, key, lease)
 		finish()
 		if updateErr != nil {
-			return true, updateErr
+			return updateErr
 		}
 	}
-	return true, err
+	return err
 }

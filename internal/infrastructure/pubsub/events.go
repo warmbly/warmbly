@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/models"
 )
 
 // Additional Topics for realtime updates
@@ -47,6 +48,8 @@ const (
 	EventAccountHealthChanged EventType = "ACCOUNT_HEALTH_CHANGED"
 	// EventWarmupPlacement: a partner saw one of the org's warmup emails land.
 	EventWarmupPlacement EventType = "WARMUP_PLACEMENT"
+	// EventWarmupActivity: a mailbox sent or received warmup mail, so its counts moved.
+	EventWarmupActivity EventType = "WARMUP_ACTIVITY"
 	// EventAccountSyncState: a mailbox's import finished or fair use started
 	// or stopped holding it. Status carries the backfill status, Reason the
 	// throttle reason (empty when released).
@@ -553,13 +556,39 @@ func (p *StreamingPublisher) PublishWarmupPlacement(ctx context.Context, orgID, 
 	if p == nil || p.client == nil || orgID == "" {
 		return
 	}
-	p.PublishAccountEvent(ctx, &AccountEvent{
+	p.publishWarmupEvent(ctx, &AccountEvent{
 		BaseEvent:      BaseEvent{EventType: EventWarmupPlacement, UserID: userID},
 		OrgID:          orgID,
 		EmailAccountID: accountID,
 		Email:          email,
 		Status:         landed,
 	})
+}
+
+// PublishWarmupActivity tells a mailbox's organization its warmup counts moved, so its open views refresh live.
+func (p *StreamingPublisher) PublishWarmupActivity(ctx context.Context, orgID, userID, accountID, email string) {
+	if p == nil || p.client == nil || orgID == "" {
+		return
+	}
+	p.publishWarmupEvent(ctx, &AccountEvent{
+		BaseEvent:      BaseEvent{EventType: EventWarmupActivity, UserID: userID},
+		OrgID:          orgID,
+		EmailAccountID: accountID,
+		Email:          email,
+	})
+}
+
+// publishWarmupEvent sends a mailbox's warmup event to its whole organization;
+// the user-events topic would narrow it to the mailbox's owner.
+func (p *StreamingPublisher) publishWarmupEvent(ctx context.Context, event *AccountEvent) {
+	event.Timestamp = time.Now()
+	attrs := map[string]string{
+		"user_id":    event.UserID,
+		"org_id":     event.OrgID,
+		"account_id": event.EmailAccountID,
+		"event_type": string(event.EventType),
+	}
+	_ = p.publish(ctx, TopicWarmupUpdate, event, attrs)
 }
 
 // AuditEvent signals that a new audit-trail entry was recorded. It is
@@ -856,14 +885,18 @@ func (p *StreamingPublisher) PublishAIDraftReady(ctx context.Context, orgID, act
 // balance that tripped the alert and the org's configured threshold.
 type CreditsLowEvent struct {
 	BaseEvent
-	OrgID     string `json:"org_id"`
-	Balance   int    `json:"balance"`
-	Threshold int    `json:"threshold"`
+	OrgID        string  `json:"org_id"`
+	Balance      int     `json:"balance"`
+	Threshold    int     `json:"threshold"`
+	BalanceUSD   float64 `json:"balance_usd"`
+	ThresholdUSD float64 `json:"threshold_usd"`
+	// Out is true when the balance ran out rather than ran low.
+	Out bool `json:"out"`
 }
 
 // PublishCreditsLow emits BILLING_CREDITS_LOW when an org's spendable balance
 // crosses under its alert threshold. Best-effort, system-fired (no actor).
-func (p *StreamingPublisher) PublishCreditsLow(ctx context.Context, orgID uuid.UUID, balance, threshold int) {
+func (p *StreamingPublisher) PublishCreditsLow(ctx context.Context, orgID uuid.UUID, balance, threshold models.Micro, out bool) {
 	if p == nil || p.client == nil || orgID == uuid.Nil {
 		return
 	}
@@ -873,9 +906,12 @@ func (p *StreamingPublisher) PublishCreditsLow(ctx context.Context, orgID uuid.U
 			UserID:    uuid.Nil.String(),
 			Timestamp: time.Now(),
 		},
-		OrgID:     orgID.String(),
-		Balance:   balance,
-		Threshold: threshold,
+		OrgID:        orgID.String(),
+		Balance:      models.CreditsFromMicro(balance),
+		Threshold:    models.CreditsFromMicro(threshold),
+		BalanceUSD:   balance.USD(),
+		ThresholdUSD: threshold.USD(),
+		Out:          out,
 	}
 	attrs := map[string]string{
 		"user_id":    uuid.Nil.String(),
@@ -891,13 +927,14 @@ func (p *StreamingPublisher) PublishCreditsLow(ctx context.Context, orgID uuid.U
 // the spendable balance after a debit, so credit meters update live.
 type CreditsChangedEvent struct {
 	BaseEvent
-	OrgID   string `json:"org_id"`
-	Balance int    `json:"balance"`
+	OrgID      string  `json:"org_id"`
+	Balance    int     `json:"balance"`
+	BalanceUSD float64 `json:"balance_usd"`
 }
 
 // PublishCreditsChanged emits BILLING_CREDITS_CHANGED after a fresh credit
 // debit. Best-effort, system-fired (no actor).
-func (p *StreamingPublisher) PublishCreditsChanged(ctx context.Context, orgID uuid.UUID, balance int) {
+func (p *StreamingPublisher) PublishCreditsChanged(ctx context.Context, orgID uuid.UUID, balance models.Micro) {
 	if p == nil || p.client == nil || orgID == uuid.Nil {
 		return
 	}
@@ -907,8 +944,9 @@ func (p *StreamingPublisher) PublishCreditsChanged(ctx context.Context, orgID uu
 			UserID:    uuid.Nil.String(),
 			Timestamp: time.Now(),
 		},
-		OrgID:   orgID.String(),
-		Balance: balance,
+		OrgID:      orgID.String(),
+		Balance:    models.CreditsFromMicro(balance),
+		BalanceUSD: balance.USD(),
 	}
 	attrs := map[string]string{
 		"user_id":    uuid.Nil.String(),

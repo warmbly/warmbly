@@ -18,6 +18,8 @@ import { useRegisterUnsaved } from "@/hooks/context/unsaved";
 import useCurrentOrganization from "@/lib/api/hooks/app/organizations/useCurrentOrganization";
 import { usePermission } from "@/hooks/usePermission";
 import useAiMetered from "@/hooks/useAiMetered";
+import { fmtUsdAbout } from "@/lib/money";
+import { AI_ESTIMATE_USD } from "@/lib/aiEstimates";
 import AdvisorSettingsSection from "@/components/app/advisor/AdvisorSettingsSection";
 import RemieToolPolicies from "../_components/RemieToolPolicies";
 
@@ -299,7 +301,7 @@ function WorkspaceSettings({ org: currentOrg }: { org: StoreOrganization | null 
 
             <Section
                 eyebrow="Inbox agent"
-                description={`On an inbound human reply, draft a suggested reply in your voice and hold it in the unibox for review. It never sends on its own.${metered ? " Paid feature; each handled reply costs 5 AI credits." : ""}`}
+                description={`On an inbound human reply, draft a suggested reply in your voice and hold it in the unibox for review. It never sends on its own.${metered ? ` Paid feature; each handled reply costs ${fmtUsdAbout(AI_ESTIMATE_USD.inboxAgentThread)}.` : ""}`}
             >
                 <ToggleRow
                     label="Draft replies for me"

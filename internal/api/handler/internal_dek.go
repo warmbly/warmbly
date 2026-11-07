@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -48,6 +49,9 @@ func (h *Handler) InternalGetDEK(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if !h.nodeOrganization(c, "dek.get", id) {
+		return
+	}
 	v, err := h.EncryptedKeys.Get(c.Request.Context(), id)
 	if err != nil {
 		errx.JSON(c, errx.New(errx.Internal, err.Error()))
@@ -63,6 +67,9 @@ func (h *Handler) InternalGetDEK(c *gin.Context) {
 func (h *Handler) InternalPutDEK(c *gin.Context) {
 	id, ok := parseOrgID(c)
 	if !ok {
+		return
+	}
+	if !h.nodeOrganization(c, "dek.put", id) {
 		return
 	}
 	body, err := io.ReadAll(c.Request.Body)
@@ -101,6 +108,7 @@ func (h *Handler) InternalPutDEK(c *gin.Context) {
 // It takes ciphertext and returns plaintext, with no organization id anywhere
 // in the exchange: a caller can only open a key it was already given, so this
 // grants nothing beyond what holding the sealed key and the token already did.
+// A worker that presents its own credential opens only its assigned organizations' keys.
 func (h *Handler) InternalDecryptDEK(c *gin.Context) {
 	if h.KMS == nil {
 		c.JSON(http.StatusNotImplemented, gin.H{"error": "no kms provider configured"})
@@ -113,6 +121,12 @@ func (h *Handler) InternalDecryptDEK(c *gin.Context) {
 	}
 	if p.EncryptedDataKey == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "encrypted_data_key required"})
+		return
+	}
+	if !h.nodeInScope(c, "dek.decrypt", http.StatusNotFound, func(ctx context.Context, node uuid.UUID) (bool, error) {
+		return h.NodeScope.DataKey(ctx, node, p.EncryptedDataKey)
+	}) {
+		logBrokerAccess(c, "dek.decrypt", "", false, "data key outside the node's assignment")
 		return
 	}
 	key, err := h.KMS.GetDecryptedKey(c.Request.Context(), p.EncryptedDataKey)

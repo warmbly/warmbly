@@ -163,8 +163,8 @@ func scanPartnerWeeks(ctx context.Context, db sendResultDB, query string, args .
 	return out, rows.Err()
 }
 
-// partnerToday is what a mailbox received and was dispatched today, the two
-// numbers its inbound cap is held against.
+// partnerToday is the new threads a mailbox received and was dispatched today,
+// the two numbers its inbound cap is held against.
 type partnerToday struct {
 	received, inflight int
 }
@@ -176,12 +176,13 @@ func (r *warmupRepository) partnerTodays(ctx context.Context, ids []uuid.UUID, e
 		SELECT wr.email_account_id, COUNT(*), 0
 		FROM warmup_received wr
 		WHERE wr.created_at >= date_trunc('day', NOW()) AND wr.email_account_id = ANY($1::uuid[])
+		  AND `+newThreadSQL("wr")+`
 		GROUP BY 1
 		UNION ALL
 		SELECT wt.recipient_account_id, 0, COUNT(*)
 		FROM warmup_tokens wt
 		WHERE wt.created_at >= date_trunc('day', NOW()) AND wt.recipient_account_id = ANY($1::uuid[])
-		  AND wt.task_id <> $2
+		  AND wt.task_id <> $2 AND `+newThreadSQL("wt")+`
 		GROUP BY 1`, ids, excludeTask)
 	if err != nil {
 		return nil, err
@@ -202,6 +203,13 @@ func (r *warmupRepository) partnerTodays(ctx context.Context, ids []uuid.UUID, e
 	return out, rows.Err()
 }
 
+// newThreadSQL is true for warmup mail (alias has task_id) that opens a thread. A
+// reply answers mail its recipient sent, so it neither counts against the
+// recipient's inbound cap nor uses the share a tier leaves to the other.
+func newThreadSQL(alias string) string {
+	return `NOT EXISTS(SELECT 1 FROM warmup_tasks rw WHERE rw.task_id=` + alias + `.task_id AND rw.parent_task_id IS NOT NULL)`
+}
+
 // partnerInboundCap is how much one inbox may receive from the pool in a day,
 // scaled to the share the sender's tier may fill. warmupInboxRoomSQL holds the
 // same rule in SQL.
@@ -211,19 +219,12 @@ func partnerInboundCap(sentWeek, sharePercent int) int {
 	return daily * sharePercent / 100
 }
 
-// warmupInboxRoomSQL is true while recipient $1 can take $3 more warmup messages today at sender share $2, on the recipient's local day.
+// warmupInboxRoomSQL is true while the new threads recipient $1 has today, on its local day, are within sender share $2 of its cap.
 var warmupInboxRoomSQL = `SELECT GREATEST(
-	 (SELECT COUNT(*) FROM warmup_received wr WHERE wr.email_account_id=ea.id AND wr.created_at >= date_trunc('day',NOW() AT TIME ZONE COALESCE(NULLIF(ea.timezone,''),NULLIF(o.timezone,''),'UTC')) AT TIME ZONE COALESCE(NULLIF(ea.timezone,''),NULLIF(o.timezone,''),'UTC')),
-	 (SELECT COUNT(*) FROM warmup_tokens wt WHERE wt.recipient_account_id=ea.id AND wt.created_at >= date_trunc('day',NOW() AT TIME ZONE COALESCE(NULLIF(ea.timezone,''),NULLIF(o.timezone,''),'UTC')) AT TIME ZONE COALESCE(NULLIF(ea.timezone,''),NULLIF(o.timezone,''),'UTC')))
-	 + $3::int <= LEAST(GREATEST((((SELECT COUNT(*) FROM warmup_tokens wt WHERE wt.sender_account_id=ea.id AND wt.sent_message_id<>'' AND wt.created_at>=NOW()-INTERVAL '7 days')+6)/7)*` + inboundDailyMultipleSQL + `,` + inboundDailyFloorSQL + `),` + inboundDailyCeilingSQL + `)*$2/100
+	 (SELECT COUNT(*) FROM warmup_received wr WHERE wr.email_account_id=ea.id AND wr.created_at >= date_trunc('day',NOW() AT TIME ZONE COALESCE(NULLIF(ea.timezone,''),NULLIF(o.timezone,''),'UTC')) AT TIME ZONE COALESCE(NULLIF(ea.timezone,''),NULLIF(o.timezone,''),'UTC') AND ` + newThreadSQL("wr") + `),
+	 (SELECT COUNT(*) FROM warmup_tokens wt WHERE wt.recipient_account_id=ea.id AND wt.created_at >= date_trunc('day',NOW() AT TIME ZONE COALESCE(NULLIF(ea.timezone,''),NULLIF(o.timezone,''),'UTC')) AT TIME ZONE COALESCE(NULLIF(ea.timezone,''),NULLIF(o.timezone,''),'UTC') AND ` + newThreadSQL("wt") + `))
+	 <= LEAST(GREATEST((((SELECT COUNT(*) FROM warmup_tokens wt WHERE wt.sender_account_id=ea.id AND wt.sent_message_id<>'' AND wt.created_at>=NOW()-INTERVAL '7 days')+6)/7)*` + inboundDailyMultipleSQL + `,` + inboundDailyFloorSQL + `),` + inboundDailyCeilingSQL + `)*$2/100
 	 FROM email_accounts ea JOIN organizations o ON o.id=ea.organization_id WHERE ea.id=$1`
-
-// WarmupInboxHasRoom reports whether recipient can take one more warmup message today from a poolType sender, by the rule the send reservation enforces.
-func (r *warmupRepository) WarmupInboxHasRoom(ctx context.Context, recipient uuid.UUID, poolType string) (bool, error) {
-	var room bool
-	err := resultDB(ctx, r.db).QueryRow(ctx, warmupInboxRoomSQL, recipient, inboundSharePercent(poolType), 1).Scan(&room)
-	return room, err
-}
 
 // inboundSharePercent: a paying sender may fill all of an inbox's daily cap; a
 // free sender stops short, so the rest of every inbox's day stays open to the

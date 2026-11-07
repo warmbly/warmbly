@@ -42,6 +42,8 @@ import { CrmDealNote, CrmTaskNote } from "@/components/app/crm/crmMode";
 import { useReportDirty } from "@/components/app/flow/dirty";
 import { ACTION_META, ADD_ACTION_OPTIONS, AI_STEP_OPTION, BRANCH_PATH_OPTIONS, DEAL_NAME_VARIABLES, STOP_ON_REPLY_HELP, SWITCH_OPTION, defaultActionFor } from "./campaignActions";
 import { caseKey } from "./campaignGraph";
+import { fmtUsdAbout } from "@/lib/money";
+import { AI_ESTIMATE_USD } from "@/lib/aiEstimates";
 
 const stepName = (s: Sequence | undefined) => (s?.name?.trim() ? s.name : "Untitled step");
 
@@ -278,7 +280,7 @@ export function PathEditor({
                     <p className="rounded-md bg-slate-50 px-2 py-1.5 text-[11px] leading-relaxed text-slate-600 ring-1 ring-slate-200">
                         The “{caseName}” case of this switch: contacts take this path when{" "}
                         {aiSwitch ? "the AI picks" : "the value matches"} “{caseName}”. Rename or remove the case on the
-                        step itself; routing happens at the step boundary with no extra credits.
+                        step itself; routing happens at the step boundary at no extra cost.
                     </p>
                 )}
                 {!isAlways && !isRandom && !isReply && !isIntent && !isCasePath && (
@@ -1094,8 +1096,8 @@ function AIStepFields({
                 )}
                 <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
                     The agent decides which of these to use for each contact, writes any task or deal details itself, and
-                    can chain several. It only takes the actions you enable, never sending or replying. Billed 1 credit
-                    per step it takes.
+                    can chain several. It only takes the actions you enable, never sending or replying. Each step it takes
+                    is charged to the workspace balance by what it uses, usually {fmtUsdAbout(AI_ESTIMATE_USD.agentIteration)}.
                 </p>
             </div>
         </div>
@@ -1126,7 +1128,7 @@ function SwitchStepFields({
                                 mode: true,
                                 Icon: SparklesIcon,
                                 title: "AI prompt",
-                                detail: "A model reads the contact and picks a case. 1 credit per contact.",
+                                detail: `A model reads the contact and picks a case. ${fmtUsdAbout(AI_ESTIMATE_USD.aiNode)} per contact.`,
                             },
                             {
                                 mode: false,
@@ -1181,15 +1183,15 @@ function SwitchStepFields({
                     />
                     <p className="mt-1 text-[11px] text-slate-400">
                         One model call per contact reaching this step picks exactly one case. Supports the same{" "}
-                        {"{{.FirstName}}"} / {"{{.Company}}"} variables as your email copy. Costs 1 credit per contact
-                        plus usage on long calls.
+                        {"{{.FirstName}}"} / {"{{.Company}}"} variables as your email copy. Costs {fmtUsdAbout(AI_ESTIMATE_USD.aiNode)} per
+                        contact, more on long calls.
                     </p>
                     <div className="mt-3">
                         <Label>Capabilities</Label>
                         <div className="space-y-1">
                             <AIContextToggle
                                 label="Web search"
-                                detail="Looks up the contact's company on the web before deciding. +1 credit when results are found"
+                                detail={`Looks up the contact's company on the web before deciding. Adds ${fmtUsdAbout(AI_ESTIMATE_USD.webSearch)} when results are found`}
                                 on={!!action.ai_web_search}
                                 onToggle={() => setAction((a) => ({ ...a, ai_web_search: !a.ai_web_search || undefined }))}
                             />
@@ -1220,7 +1222,7 @@ function SwitchStepFields({
                         Rendered per contact and matched to the case names. Matching ignores casing and extra spaces
                         (“ VIP  Customer” matches the case “vip customer”); wrap a case in slashes for a regex, e.g.{" "}
                         <code className="font-mono">/^(vip|enterprise)/</code>. First matching case wins. No model call,
-                        no credits.
+                        no charge.
                     </p>
                 </div>
             )}

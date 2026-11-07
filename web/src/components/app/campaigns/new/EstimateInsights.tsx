@@ -30,7 +30,7 @@ export function WarmupNote({ e, className }: { e: CampaignEstimateResult; classN
             <span>
                 Warmup keeps running on {plural(w.mailboxes, "mailbox", "mailboxes")}
                 {without > now ? `, down from about ${without} to ${now} a day each` : `, about ${now} a day each`} while this runs.
-                {w.reply_rate ? ` Pool partners reply to at least ${w.reply_rate}% of it.` : ""}
+                {w.reply_rate ? " Pool partners prioritize replies to it within their own reply settings." : ""}
             </span>
         </p>
     );
@@ -99,7 +99,7 @@ export function MailboxMix({ e, limit, className }: { e: CampaignEstimateResult;
                     </Point>
                     {!!w.reply_rate && (
                         <Point>
-                            Pool partners reply to at least {w.reply_rate}% of that warmup (where the partner allows replies) and read, rescue from spam
+                            Pool partners answer that warmup before other warmup mail (within each partner's own reply rate) and read, rescue from spam
                             and mark more of it important, so each mailbox keeps getting replies while most cold leads do not answer. Those replies use
                             the partner's own warmup sends, so they add no volume.
                         </Point>

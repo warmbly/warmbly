@@ -229,6 +229,59 @@
         }
       }
     },
+    "/auth/login/initial-password": {
+      "post": {
+        "operationId": "auth_login_initial_password",
+        "summary": "Replace an issued initial password and continue signing in",
+        "description": "Answers a /auth/login result with password_change_required. Takes the single-use pending_token (ten minute lifetime) and the holder's own password, stores it in place of the issued one, signs out every other session, then continues the sign-in exactly as /auth/login would: an emailed code, a 2FA challenge or the session. Refusals: the password rules (8 to 128 characters, password_breached), password_reused for the issued password itself, and password_change_expired for a token that is unknown, expired, already used or whose issued password ran out.",
+        "tags": [
+          "auth"
+        ],
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InitialPasswordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The sign-in continues, in the same shape /auth/login returns.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The new password was refused, or the challenge expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/register": {
       "post": {
         "operationId": "auth_register_start",
@@ -1118,6 +1171,220 @@
           },
           "403": {
             "description": "Not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/me/password/link": {
+      "post": {
+        "operationId": "auth_send_password_link",
+        "summary": "Send a set-password link",
+        "description": "Emails the signed-in user a single-use link to set a password, to the address on the account. It is how an account created through Google, Apple or single sign-on adds email and password sign-in. The link is the one Forgot password sends: it expires after one hour, setting the password through it ends every session, and it shares that flow's budget of 2 links per address per 4 hours. No request body. Takes no Idempotency-Key, because a repeat mails another link. Requires a user session token (not an API key).",
+        "tags": [
+          "auth"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The link was sent."
+          },
+          "400": {
+            "description": "The link budget for this address is spent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Password sign-in is turned off on this server (`password_login_disabled`), or the caller is not a user session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/me/identities": {
+      "get": {
+        "operationId": "auth_list_identities",
+        "summary": "List sign-in methods",
+        "description": "The providers linked to the signed-in user: Google, Apple or the deployment's single sign-on. A password and passkeys are not listed here. Requires a user session token (not an API key).",
+        "tags": [
+          "auth"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The linked providers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LinkedIdentity"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/me/identities/{provider}": {
+      "delete": {
+        "operationId": "auth_remove_identity",
+        "summary": "Remove a sign-in method",
+        "description": "Stops the provider signing in to this account and ends every other session that signed in through it; the calling session stays signed in. Requires a fresh confirmation (`reauth_required` otherwise). A repeat converges and also returns 204, so it takes no Idempotency-Key. Refused with 409 `last_sign_in_method` when the account would be left with no password, no passkey and no other provider. Requires a user session token (not an API key).",
+        "tags": [
+          "auth"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "google",
+                "apple",
+                "oidc"
+              ]
+            },
+            "description": "The provider to remove."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The provider is no longer a sign-in method, also when it was already removed."
+          },
+          "401": {
+            "description": "Missing or invalid session token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Fresh confirmation required (`reauth_required`) or not a user session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`identity_not_found`: the provider is not google, apple or oidc.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`last_sign_in_method`: this is the account's only way to sign in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`sessions_not_ended`: the provider was removed but its sessions could not all be ended. Repeat the request to finish.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4800,6 +5067,74 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ABWinnerAnalysis"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/campaigns/{id}/warmup-placement": {
+      "get": {
+        "operationId": "campaigns_get_warmup_placement",
+        "summary": "Get warmup placement",
+        "description": "Where each arm of the campaign's opening steps landed when its senders' warmup carried it over the last 30 days. Scope READ_CAMPAIGNS, org permission view_campaigns.",
+        "tags": [
+          "campaigns"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Warmup placement per step arm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CampaignWarmupPlacement"
                 }
               }
             }
@@ -9955,6 +10290,28 @@
             }
           },
           {
+            "name": "address",
+            "in": "query",
+            "required": false,
+            "description": "Conversations with this address in either direction: messages from it or sent to it (substring of the From or To entries).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "required": false,
+            "description": "`sent` returns only messages from one of your mailboxes, `received` only the rest. Omit for both.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "sent",
+                "received"
+              ]
+            }
+          },
+          {
             "name": "subject",
             "in": "query",
             "required": false,
@@ -10029,20 +10386,38 @@
             "name": "since",
             "in": "query",
             "required": false,
-            "description": "Lower bound on date, `YYYY-MM-DD`.",
+            "description": "Earliest message date, inclusive. A date (`YYYY-MM-DD`) starts at 00:00 UTC that day; an RFC 3339 timestamp is used exactly. Any other value returns `400` with code `invalid_filter`.",
             "schema": {
-              "type": "string",
-              "format": "date"
+              "type": "string"
             }
           },
           {
             "name": "until",
             "in": "query",
             "required": false,
-            "description": "Upper bound on date, `YYYY-MM-DD`.",
+            "description": "Latest message date. A date (`YYYY-MM-DD`) includes that whole UTC day; an RFC 3339 timestamp is an exclusive bound. Any other value returns `400` with code `invalid_filter`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "campaign_id",
+            "in": "query",
+            "required": false,
+            "description": "Only conversations tied to one of this campaign's sends: the sent copy, a reply naming it, and anything threaded with either. A malformed id returns `400` (`invalid_filter`); a campaign outside the workspace returns `404`.",
             "schema": {
               "type": "string",
-              "format": "date"
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "contact_id",
+            "in": "query",
+            "required": false,
+            "description": "Only conversations tied to a campaign send to this contact, plus mail from or to the contact's address. With `campaign_id`, only that campaign's conversations with the contact, without the address match. A malformed id returns `400` (`invalid_filter`); a contact outside the workspace returns `404`.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -10086,7 +10461,7 @@
             }
           },
           "400": {
-            "description": "Invalid cursor, limit, or no organization selected.",
+            "description": "Invalid cursor, limit, folder, date, `campaign_id` or `contact_id`, or no organization selected.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10107,6 +10482,16 @@
           },
           "403": {
             "description": "Missing scope/permission, or organization lacks unified-inbox access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`campaign_id` or `contact_id` names no campaign or contact in the workspace.",
             "content": {
               "application/json": {
                 "schema": {
@@ -31623,6 +32008,113 @@
       }
     },
     "schemas": {
+      "CampaignWarmupPlacement": {
+        "type": "object",
+        "required": [
+          "days",
+          "data"
+        ],
+        "properties": {
+          "days": {
+            "type": "integer"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WarmupStepPlacement"
+            }
+          }
+        }
+      },
+      "WarmupStepPlacement": {
+        "type": "object",
+        "required": [
+          "sequence_id",
+          "variant_id",
+          "placement",
+          "by_group"
+        ],
+        "properties": {
+          "sequence_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "variant_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Null for the step's own copy."
+          },
+          "placement": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WarmupCopyPlacement"
+              }
+            ],
+            "description": "Business inboxes on Google Workspace and Microsoft 365 only, the only recipients campaign copy is sent to."
+          },
+          "by_group": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WarmupCopyGroupPlacement"
+            }
+          }
+        }
+      },
+      "WarmupCopyPlacement": {
+        "type": "object",
+        "required": [
+          "sent",
+          "reported",
+          "inbox",
+          "tabs",
+          "spam",
+          "rescued"
+        ],
+        "properties": {
+          "sent": {
+            "type": "integer",
+            "description": "Openings warmup sent."
+          },
+          "reported": {
+            "type": "integer",
+            "description": "Openings whose recipient filed a receipt; rates are read over this."
+          },
+          "inbox": {
+            "type": "integer"
+          },
+          "tabs": {
+            "type": "integer"
+          },
+          "spam": {
+            "type": "integer"
+          },
+          "rescued": {
+            "type": "integer"
+          }
+        }
+      },
+      "WarmupCopyGroupPlacement": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/WarmupCopyPlacement"
+          },
+          {
+            "type": "object",
+            "required": [
+              "group"
+            ],
+            "properties": {
+              "group": {
+                "type": "string",
+                "description": "google (Google Workspace) or microsoft (Microsoft 365)."
+              }
+            }
+          }
+        ]
+      },
       "Error": {
         "type": "object",
         "description": "Standard error envelope returned for every 4xx/5xx response.",
@@ -31749,14 +32241,53 @@
       },
       "AuthSession": {
         "type": "object",
-        "description": "Opaque session handle returned by login/register start; pass it to the matching confirm call.",
-        "required": [
-          "session"
-        ],
+        "description": "Returned by login/register start. With code_required, pass session to the matching confirm call. Without it, the sign-in completed (token), needs a 2FA code (two_fa_required with pending_token), or used an issued initial password that has to be replaced first (password_change_required with pending_token for /auth/login/initial-password).",
         "properties": {
           "session": {
             "type": "string",
             "description": "Opaque session handle."
+          },
+          "code_required": {
+            "type": "boolean",
+            "description": "True when a code was emailed and session goes to the confirm call."
+          },
+          "two_fa_required": {
+            "type": "boolean"
+          },
+          "password_change_required": {
+            "type": "boolean",
+            "description": "True when the password was an issued initial password. No session exists; post pending_token and a new password to /auth/login/initial-password."
+          },
+          "pending_token": {
+            "type": "string",
+            "description": "Single-use pending token for /auth/2fa/verify or /auth/login/initial-password."
+          },
+          "expires_in": {
+            "type": "integer",
+            "description": "Seconds until pending_token expires."
+          }
+        }
+      },
+      "InitialPasswordRequest": {
+        "type": "object",
+        "description": "Request body for /auth/login/initial-password.",
+        "required": [
+          "pending_token",
+          "password"
+        ],
+        "properties": {
+          "pending_token": {
+            "type": "string",
+            "description": "The pending_token from a password_change_required sign-in."
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "description": "The new password, 8 to 128 characters, not on the breached list and not the issued password."
+          },
+          "device_token": {
+            "type": "string",
+            "description": "The remembered-browser token, as sent to /auth/login."
           }
         }
       },
@@ -33486,6 +34017,15 @@
             "type": "string",
             "description": "How volume spreads across mailboxes."
           },
+          "follow_up_sender": {
+            "type": "string",
+            "description": "Which mailbox sends a lead's follow-ups: same (default, the mailbox that sent the first email), same_domain (rotate among mailboxes on that domain) or rotate (rotate across the pool).",
+            "enum": [
+              "same",
+              "same_domain",
+              "rotate"
+            ]
+          },
           "ramp_enabled": {
             "type": "boolean"
           },
@@ -33661,6 +34201,15 @@
           "rotation_mode": {
             "type": "string"
           },
+          "follow_up_sender": {
+            "type": "string",
+            "description": "Which mailbox sends a lead's follow-ups: same (default, the mailbox that sent the first email), same_domain (rotate among mailboxes on that domain) or rotate (rotate across the pool).",
+            "enum": [
+              "same",
+              "same_domain",
+              "rotate"
+            ]
+          },
           "senders": {
             "type": "array",
             "items": {
@@ -33827,6 +34376,15 @@
           },
           "rotation_mode": {
             "type": "string"
+          },
+          "follow_up_sender": {
+            "type": "string",
+            "description": "Which mailbox sends a lead's follow-ups: same (default, the mailbox that sent the first email), same_domain (rotate among mailboxes on that domain) or rotate (rotate across the pool).",
+            "enum": [
+              "same",
+              "same_domain",
+              "rotate"
+            ]
           },
           "ramp_enabled": {
             "type": "boolean"
@@ -34141,6 +34699,14 @@
             "type": "object",
             "additionalProperties": true
           },
+          "promoted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When auto-promotion handed this arm's step to it; on the is_control row when the Original won."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -34305,7 +34871,118 @@
           },
           "confidence": {
             "type": "string",
-            "description": "Winner confidence (e.g. low, medium, high)."
+            "description": "Winner confidence for campaign-level variants (e.g. low, medium, high)."
+          },
+          "steps": {
+            "type": "array",
+            "description": "One entry per step-scoped A/B test, counted in contacts.",
+            "items": {
+              "type": "object",
+              "required": [
+                "step_id",
+                "arms",
+                "confidence"
+              ],
+              "properties": {
+                "step_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "arms": {
+                  "type": "array",
+                  "description": "The Original (variant_id null) and every variant of the step.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "variant_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "uuid"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "is_control": {
+                        "type": "boolean"
+                      },
+                      "is_active": {
+                        "type": "boolean"
+                      },
+                      "sent": {
+                        "type": "integer",
+                        "description": "Contacts sent this arm at this step."
+                      },
+                      "bounced": {
+                        "type": "integer"
+                      },
+                      "delivered": {
+                        "type": "integer",
+                        "description": "sent minus bounced; the denominator of the open, click and reply rates."
+                      },
+                      "opened": {
+                        "type": "integer"
+                      },
+                      "clicked": {
+                        "type": "integer"
+                      },
+                      "replied": {
+                        "type": "integer"
+                      },
+                      "open_rate": {
+                        "type": "number"
+                      },
+                      "click_rate": {
+                        "type": "number"
+                      },
+                      "reply_rate": {
+                        "type": "number"
+                      },
+                      "bounce_rate": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                },
+                "winner": {
+                  "type": "object",
+                  "description": "Present once the leader on winning_rule is significant.",
+                  "properties": {
+                    "variant_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "is_control": {
+                      "type": "boolean"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "confidence": {
+                  "type": "string",
+                  "enum": [
+                    "none",
+                    "low",
+                    "medium",
+                    "high"
+                  ]
+                },
+                "p_value": {
+                  "type": "number",
+                  "description": "Bonferroni-adjusted two-proportion z-test p-value of the leader against the other arms."
+                },
+                "promoted_at": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
           }
         }
       },
@@ -34879,7 +35556,8 @@
                 "type": "string"
               },
               "auto_promote_winner": {
-                "type": "boolean"
+                "type": "boolean",
+                "description": "Hand each step A/B test to its winner once the winner is significant: the other arms are paused. Each step is promoted once."
               },
               "min_sample_size": {
                 "type": "integer"
@@ -37571,6 +38249,11 @@
             "items": {
               "$ref": "#/components/schemas/UniboxLabel"
             }
+          },
+          "campaign_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The campaign whose send this conversation holds or answers: the latest such message's, or the filtered campaign when `campaign_id` is set. Absent when there is none."
           }
         }
       },
@@ -37926,6 +38609,39 @@
           }
         }
       },
+      "LinkedIdentity": {
+        "type": "object",
+        "required": [
+          "provider",
+          "label",
+          "created_at"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "google",
+              "apple",
+              "oidc"
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "description": "The address the provider reported. For Apple it can be a Hide My Email relay address."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_login_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "UniboxOverview": {
         "type": "object",
         "required": [
@@ -37963,6 +38679,10 @@
           "automated_unread": {
             "type": "integer",
             "description": "Automated conversations with an unread message."
+          },
+          "drafts": {
+            "type": "integer",
+            "description": "Visible threads with a mailbox draft or a pending agent draft, each counted once."
           },
           "scheduled_pending": {
             "type": "integer"

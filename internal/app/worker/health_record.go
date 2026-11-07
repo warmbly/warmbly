@@ -6,6 +6,7 @@ import (
 
 	"github.com/warmbly/warmbly/internal/app/worker/wmail"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/pkg/dsn"
 )
 
 // recordSendAttempt + recordSendLatency + recordSendOutcome are the
@@ -42,8 +43,15 @@ func (s *WorkerService) recordSendOutcome(result *wmail.SendResult) {
 		errx.MailErrorCodeSendingTooFast,
 		errx.MailErrorCodeQuotaExceeded:
 		s.RecordRateLimitError()
-	case errx.MailErrorCodeRecipientRejected,
-		errx.MailErrorCodeSendRejected,
+	case errx.MailErrorCodeRecipientRejected:
+		// Only a refusal that names the address is a hard bounce; a full
+		// mailbox, a policy block or a busy system is not.
+		if dsn.Blame(result.Error.Message).AddressIsFine() {
+			s.RecordBounceSoft()
+		} else {
+			s.RecordBounceHard()
+		}
+	case errx.MailErrorCodeSendRejected,
 		errx.MailErrorCodeAccountSuspended,
 		// Refused on the sending domain's authentication: a hard rejection
 		// that stays hard until DNS is fixed, so it must not be counted as a

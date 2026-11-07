@@ -259,6 +259,72 @@ func TestApplyFixSetsBothLegs(t *testing.T) {
 	}
 }
 
+func TestApplyFixTurnsSigninRowIntoPasswordConnect(t *testing.T) {
+	p := payload{MailHost: string(mailhost.GoogleWorkspace), Signin: true, AuthMethod: models.MailAuthOAuth}
+	pw := "abcd efgh ijkl mnop"
+	applyFix(&p, "[EMAIL]", models.MailboxImportRowFix{AppPassword: &pw})
+	if p.Signin || p.AuthMethod != "app_password" {
+		t.Fatalf("signin = %v auth = %q", p.Signin, p.AuthMethod)
+	}
+	if p.SMTP.Host != "smtp.gmail.com" || p.SMTP.Port != 587 || p.IMAP.Host != "imap.gmail.com" || p.IMAP.Port != 993 {
+		t.Fatalf("legs = %+v %+v", p.SMTP, p.IMAP)
+	}
+	if p.SMTP.Password != "abcdefghijklmnop" || p.IMAP.Username != "[EMAIL]" {
+		t.Fatalf("credentials = %+v %+v", p.SMTP, p.IMAP)
+	}
+}
+
+func TestCheckGooglePassword(t *testing.T) {
+	grant := uuid.New()
+	cases := []struct {
+		name string
+		p    payload
+		want bool
+	}{
+		{"app password", payload{MailHost: "gmail", SMTP: &models.Service{Password: "abcdefghijklmnop"}, IMAP: &models.Service{Password: "abcd efgh ijkl mnop"}}, true},
+		{"account password on smtp", payload{MailHost: "google_workspace", SMTP: &models.Service{Password: "hunter2"}, IMAP: &models.Service{Password: "abcdefghijklmnop"}}, false},
+		{"account password on imap", payload{MailHost: "google_workspace", SMTP: &models.Service{Password: "abcdefghijklmnop"}, IMAP: &models.Service{Password: "hunter2"}}, false},
+		{"grant row", payload{MailHost: "google_workspace", GrantID: &grant, SMTP: &models.Service{Password: "hunter2"}}, true},
+		{"another host", payload{MailHost: "zoho", SMTP: &models.Service{Password: "hunter2"}, IMAP: &models.Service{Password: "hunter2"}}, true},
+	}
+	for _, c := range cases {
+		if got := checkGooglePassword(c.p) == nil; got != c.want {
+			t.Errorf("%s: accepted = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+func TestApplyFixNormalizesPerLegGooglePasswords(t *testing.T) {
+	p := payload{MailHost: string(mailhost.Gmail)}
+	smtpPw, imapPw := "abcd efgh ijkl mnop", "ponm lkji hgfe dcba"
+	applyFix(&p, "[EMAIL]", models.MailboxImportRowFix{
+		SMTP: &models.MailboxImportLegFix{Password: &smtpPw},
+		IMAP: &models.MailboxImportLegFix{Password: &imapPw},
+	})
+	if p.SMTP.Password != "abcdefghijklmnop" || p.IMAP.Password != "ponmlkjihgfedcba" {
+		t.Fatalf("passwords = %q %q", p.SMTP.Password, p.IMAP.Password)
+	}
+}
+
+func TestFixableRows(t *testing.T) {
+	cases := []struct {
+		status, cause string
+		want          bool
+	}{
+		{models.ImportRowFailed, "google_bad_credentials", true},
+		{models.ImportRowNeedsSignin, causeGoogleSignin, true},
+		{models.ImportRowNeedsSignin, causeMicrosoftSignin, true},
+		{models.ImportRowNeedsSignin, causeVendorAuthorizing, false},
+		{models.ImportRowConnected, "", false},
+		{models.ImportRowQueued, "", false},
+	}
+	for _, c := range cases {
+		if got := fixable(&models.MailboxImportRow{Status: c.status, Cause: c.cause}); got != c.want {
+			t.Errorf("%s/%s fixable = %v, want %v", c.status, c.cause, got, c.want)
+		}
+	}
+}
+
 func TestCSVSafe(t *testing.T) {
 	for _, v := range []string{"=HYPERLINK(1)", "+1", "-2", "@x"} {
 		if got := csvSafe(v); got[0] != '\'' {

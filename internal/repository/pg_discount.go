@@ -35,6 +35,9 @@ type DiscountCodeRepository interface {
 	GetByCode(ctx context.Context, code string) (*models.DiscountCode, error)
 	List(ctx context.Context, search *models.AdminDiscountSearch) (*models.AdminDiscountsResult, error)
 	Delete(ctx context.Context, id uuid.UUID) error
+	// ReferralHeldFrom reports whether the code backs a referral link that
+	// orgID did not sign up through; such a code applies only to its invitees.
+	ReferralHeldFrom(ctx context.Context, codeID, orgID uuid.UUID) (bool, error)
 }
 
 type discountCodeRepository struct {
@@ -414,6 +417,19 @@ func (r *discountCodeRepository) List(ctx context.Context, search *models.AdminD
 func (r *discountCodeRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	_, err := r.db.Exec(ctx, `DELETE FROM discount_codes WHERE id = $1`, id)
 	return err
+}
+
+func (r *discountCodeRepository) ReferralHeldFrom(ctx context.Context, codeID, orgID uuid.UUID) (bool, error) {
+	var held bool
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM referral_codes WHERE discount_code_id = $1)
+		   AND NOT EXISTS (
+			SELECT 1 FROM referral_attributions a
+			JOIN referral_codes rc ON rc.id = a.referral_code_id
+			WHERE rc.discount_code_id = $1 AND a.invitee_org_id = $2
+		   )
+	`, codeID, orgID).Scan(&held)
+	return held, err
 }
 
 // DiscountRedemptionRepository owns the discount_redemptions table.

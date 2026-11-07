@@ -85,11 +85,11 @@ func seedSequences(ctx context.Context, pool *pgxpool.Pool, _ *Result) error {
 	}
 	steps := []step{
 		{SequenceAcmeStep1ID, CampaignAcmeActiveID, OrgAcmeID,
-			"Step 1 - intro", "Quick intro from {{firstName}}",
-			"Hey {{firstName}},\n\nNoticed your team is hiring SDRs - quick idea.",
-			"<p>Hey {{firstName}},</p><p>Noticed your team is hiring SDRs - quick idea.</p>", 0},
+			"Step 1 - intro", "Quick intro from {{.FirstName}}",
+			"Hey {{.FirstName}},\n\nNoticed your team is hiring SDRs - quick idea.",
+			"<p>Hey {{.FirstName}},</p><p>Noticed your team is hiring SDRs - quick idea.</p>", 0},
 		{SequenceAcmeStep2ID, CampaignAcmeActiveID, OrgAcmeID,
-			"Step 2 - bump", "Re: Quick intro from {{firstName}}",
+			"Step 2 - bump", "Re: Quick intro from {{.FirstName}}",
 			"Bumping this in case it got buried.",
 			"<p>Bumping this in case it got buried.</p>", 3},
 		{SequenceAcmeStep3ID, CampaignAcmeActiveID, OrgAcmeID,

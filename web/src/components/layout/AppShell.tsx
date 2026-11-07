@@ -15,7 +15,7 @@
 // where it meets the chrome's inner corner. Reads as one continuous
 // frame around a clean work surface.
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "@tanstack/react-router";
 import SubscriptionGate from "./SubscriptionGate";
 import { SkyChrome } from "./SkyChrome";
@@ -23,16 +23,20 @@ import { AppHeader } from "./AppHeader";
 import { AppNav } from "./AppNav";
 import PendingDeletionBar from "./PendingDeletionBar";
 import SendingRestrictedBar from "./SendingRestrictedBar";
+import TrialBar from "./TrialBar";
+import BalanceBanner from "@/components/app/billing/BalanceBanner";
 import { RouteBoundary } from "./ErrorBoundary";
-import { ShortcutsModal } from "@/components/shared/ShortcutsModal";
-import { CommandPalette } from "@/components/shared/CommandPalette";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { GlobalCursorsProvider } from "@/components/app/presence/GlobalCursors";
-import AgentPanel from "@/components/app/agent/AgentPanel";
-import ProductTourHost from "@/components/app/tour/ProductTourHost";
 import { useRouteKey } from "@/hooks/useRouteKey";
 import { useScrollMemory, type ScrollStore } from "@/hooks/useScrollMemory";
 import { RouteFallback } from "./RouteStates";
+
+// Overlays closed on first paint, so the frame does not wait on their code.
+const ShortcutsModal = lazy(() => import("@/components/shared/ShortcutsModal").then((m) => ({ default: m.ShortcutsModal })));
+const CommandPalette = lazy(() => import("@/components/shared/CommandPalette").then((m) => ({ default: m.CommandPalette })));
+const AgentPanel = lazy(() => import("@/components/app/agent/AgentPanel"));
+const ProductTourHost = lazy(() => import("@/components/app/tour/ProductTourHost"));
 
 // Per history entry, kept apart so ordinary browsing never evicts a list's remembered offset.
 const entryOffsets: ScrollStore = new Map();
@@ -67,6 +71,8 @@ export function AppShell() {
                     own account is scheduled for deletion. */}
                 <SendingRestrictedBar />
                 <PendingDeletionBar />
+                <TrialBar />
+                <BalanceBanner />
 
                 <AppHeader onMenu={() => setNavOpen(true)} />
 
@@ -99,11 +105,13 @@ export function AppShell() {
                 </div>
             </div>
 
-            <ShortcutsModal />
-            <CommandPalette />
-            {/* Right-side AI assistant, persistent across routes. */}
-            <AgentPanel />
-            <ProductTourHost />
+            <Suspense fallback={null}>
+                <ShortcutsModal />
+                <CommandPalette />
+                {/* Right-side AI assistant, persistent across routes. */}
+                <AgentPanel />
+                <ProductTourHost />
+            </Suspense>
         </div>
     );
 }

@@ -23,6 +23,9 @@ import { emailsListQuery } from "./lib/api/hooks/app/emails/useEmails";
 import { sendingDomainsQuery } from "./lib/api/hooks/app/emails/useSendingDomains";
 import { signinMigrationQuery } from "./lib/api/hooks/app/emails/useMailboxGrants";
 import { featureStatusQuery } from "./lib/api/hooks/app/subscription/useFeatureStatus";
+import { balanceQuery } from "./lib/api/hooks/app/subscription/useBalance";
+import { creditUsageQuery } from "./lib/api/hooks/app/subscription/useCreditUsage";
+import { creditSettingsQuery } from "./lib/api/hooks/app/subscription/useCreditSettings";
 import { advisorFindingsQuery, advisorSurfaceQuery } from "./lib/api/hooks/app/advisor/useAdvisor";
 import { contactsSearchQuery } from "./lib/api/hooks/app/contacts/useSearchContacts";
 import { customFieldKeysQuery } from "./lib/api/hooks/app/contacts/useCustomFieldKeys";
@@ -30,6 +33,7 @@ import { readCachedView, viewPreferencesQuery } from "./lib/api/hooks/app/views/
 import { labelCountQuery, segmentFieldsQuery, segmentQuery, segmentsListQuery } from "./lib/api/hooks/app/segments";
 import { apolloOverviewQuery, apolloSourcesQuery } from "./lib/api/hooks/app/integrations/useApollo";
 import { claySettingsQuery } from "./lib/api/hooks/app/integrations/useClay";
+import { leadFinderConfigQuery, leadSearchesQuery } from "./lib/api/hooks/app/leads/useLeads";
 import { suppressionsListQuery } from "./lib/api/hooks/app/suppressions/useSuppressions";
 import { formQuery, formsListQuery } from "./lib/api/hooks/app/forms";
 import { campaignsListQuery } from "./lib/api/hooks/app/campaigns/useCampaigns";
@@ -76,7 +80,6 @@ import { auditLogsQuery } from "./lib/api/hooks/app/audit/useAuditLogs";
 import { uniboxOverviewQuery } from "./lib/api/hooks/app/unibox/useUniboxOverview";
 import { uniboxSearchQuery } from "./lib/api/hooks/app/unibox/useUniboxSearch";
 import { webhookDropsQuery, webhooksListQuery } from "./lib/api/hooks/app/webhooks/useWebhooks";
-import { trialStatusQuery } from "./lib/api/hooks/app/subscription/useTrialStatus";
 import { appliedDiscountsQuery } from "./lib/api/hooks/app/subscription/useAppliedDiscounts";
 import { planOffersQuery } from "./lib/api/hooks/app/subscription/usePlanOffers";
 
@@ -320,6 +323,11 @@ export const apolloLoader = pageLoader((qc, { params }) =>
 
 export const clayLoader = pageLoader((qc, { params }) => [!!params.id && qc.prefetchQuery(claySettingsQuery(params.id))]);
 
+export const leadsLoader = pageLoader((qc) => [
+    can("VIEW_CONTACTS") && qc.prefetchQuery(leadFinderConfigQuery),
+    can("VIEW_CONTACTS") && qc.prefetchQuery(leadSearchesQuery),
+]);
+
 export const auditLoader = pageLoader((qc) => [canManageTeam() && qc.prefetchQuery(auditLogsQuery({ limit: 50 }))]);
 
 const UNIBOX_FOLDER_SCOPES: UniboxFolder[] = ["inbox", "sent", "drafts", "archive", "spam", "trash"];
@@ -385,13 +393,20 @@ export const webhooksLoader = pageLoader((qc) =>
     can("MANAGE_SETTINGS") ? [qc.prefetchQuery(webhooksListQuery), qc.prefetchQuery(webhookDropsQuery)] : [],
 );
 
-// The overview tab, for the owner, on a deployment that bills.
+// The overview tab for the owner, and the balance tab for anyone who manages billing, on a deployment that bills.
 export const billingLoader = pageLoader((qc, { params }) => {
+    if (qc.getQueryData(authConfigQuery.queryKey)?.billing_enabled === false) return [];
+    if (params.tab === "balance" || params.tab === "ai-credits") {
+        if (!can("MANAGE_BILLING")) return [];
+        return [
+            qc.prefetchQuery(balanceQuery),
+            qc.prefetchQuery(creditUsageQuery(30)),
+            qc.prefetchQuery(creditSettingsQuery),
+        ];
+    }
     if (params.tab) return [];
     if (useAppStore.getState().currentOrganization?.role !== "owner") return [];
-    if (qc.getQueryData(authConfigQuery.queryKey)?.billing_enabled === false) return [];
     return [
-        qc.prefetchQuery(trialStatusQuery),
         qc.prefetchQuery(organizationLimitsQuery),
         qc.prefetchQuery(usageOverviewQuery("month")),
         qc.prefetchQuery(appliedDiscountsQuery()),

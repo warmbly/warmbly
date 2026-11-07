@@ -23,8 +23,9 @@ const ReturnWindowDays = 92
 // back, as midnight UTC on that day. now anchors the year for dates written
 // without one ("back on the 8th of September") and rejects dates in the past.
 // Returns false when nothing parses with enough confidence.
-func ParseReturnDate(subject, body string, now time.Time) (time.Time, bool) {
-	r, ok := FindReturnDate(subject, body, now)
+// langs are the workspace's tagging languages, which add their cues and months.
+func ParseReturnDate(subject, body string, now time.Time, langs ...string) (time.Time, bool) {
+	r, ok := FindReturnDate(subject, body, now, langs...)
 	return r.Back, ok
 }
 
@@ -39,12 +40,12 @@ type ReturnDate struct {
 }
 
 // FindReturnDate is ParseReturnDate with the phrase the date came from.
-func FindReturnDate(subject, body string, now time.Time) (ReturnDate, bool) {
-	text := normalizeForDates(subject + "\n" + StripQuoted(body))
+func FindReturnDate(subject, body string, now time.Time, langs ...string) (ReturnDate, bool) {
+	text := normalizeForDates(subject + "\n" + StripQuoted(body, langs...))
 	if text == "" {
 		return ReturnDate{}, false
 	}
-	rs := rulesFor(nil)
+	rs := rulesFor(langs)
 	at := func(m []int) (ReturnDate, bool) {
 		// Only the span right after the cue is considered: an auto-reply is
 		// mostly prose, and the first date anywhere in it is usually not the

@@ -93,18 +93,8 @@ func (h *Handler) DraftCompose(c *gin.Context) {
 		reqCtx = models.WithCreditMeta(reqCtx, meta)
 	}
 
-	var remaining int
-	if local {
-		if bal, berr := h.CreditService.GetBalance(reqCtx, *orgID); berr == nil {
-			remaining = bal
-		}
-	} else {
-		var cerr error
-		remaining, cerr = h.CreditService.Consume(reqCtx, *orgID, credits.CostReplyDraft, "compose_draft", model, 0, idemKey)
-		if cerr != nil {
-			mapCreditError(c, cerr)
-			return
-		}
+	if !h.reserveAI(c, reqCtx, *orgID, local, credits.EstimateReplyDraft) {
+		return
 	}
 
 	system := generation.BuildComposeRules(voice) + composeQuestionRule
@@ -121,35 +111,20 @@ func (h *Handler) DraftCompose(c *gin.Context) {
 		Model:  model,
 	})
 	if gerr != nil {
-		if !local {
-			if bal, rerr := h.CreditService.Grant(reqCtx, *orgID, credits.CostReplyDraft, "compose_draft_refund"); rerr == nil {
-				remaining = bal
-			}
-		}
-		errx.JSON(c, errx.New(errx.ServiceUnavailable, "The email drafter is temporarily unavailable. Your credits were not charged."))
+		errx.JSON(c, errx.New(errx.ServiceUnavailable, "The email drafter is temporarily unavailable. Nothing was charged."))
 		return
 	}
 
-	charged := 0
-	if !local {
-		charged = credits.CostReplyDraft
-		if extra, serr := h.CreditService.SettleUsage(reqCtx, *orgID, credits.CostReplyDraft, result.Model, result.TokensUsed, "compose_draft", settleKey(idemKey)); serr == nil && extra > 0 {
-			remaining -= extra
-			charged += extra
-		}
-	}
-
-	resp := gin.H{
-		"credits_remaining": remaining,
-		"credits_charged":   charged,
-		"tokens_used":       result.TokensUsed,
-		"model":             result.Model,
+	charged, balance := h.chargeAI(reqCtx, *orgID, local, credits.AIUsage(result.Model, result.InputTokens, result.OutputTokens), "compose_draft", idemKey)
+	resp := withBalance(gin.H{
+		"tokens_used": result.TokensUsed,
+		"model":       result.Model,
 		"grounding": gin.H{
 			"contact":       contactCtx != "",
 			"history":       historyCount,
 			"voice_profile": hasVoice,
 		},
-	}
+	}, charged, balance)
 
 	text := strings.TrimSpace(result.Text)
 	if q, ok := strings.CutPrefix(text, composeQuestionPrefix); ok {

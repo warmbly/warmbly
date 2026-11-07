@@ -118,6 +118,8 @@ type SyncState struct {
 	// when the user fixes it.
 	FoldersSkippedCap      int `json:"folders_skipped_cap,omitempty" avro:"folders_skipped_cap"`
 	FoldersSkippedConflict int `json:"folders_skipped_conflict,omitempty" avro:"folders_skipped_conflict"`
+	// FolderCoverageObservedAt orders counter changes independently of completed syncs.
+	FolderCoverageObservedAt *time.Time `json:"folder_coverage_observed_at,omitempty" avro:"folder_coverage_observed_at"`
 
 	LastSyncedAt *time.Time `json:"last_synced_at,omitempty" avro:"last_synced_at"`
 }
@@ -142,7 +144,10 @@ type AddWorkerEmailSyncData struct {
 // JobEventSyncState is the worker's SYNC_STATE relay: the full current state,
 // not a delta, so a lost event is repaired by the next one.
 type JobEventSyncState struct {
-	UserID  uuid.UUID `json:"user_id" avro:"user_id"`
-	EmailID uuid.UUID `json:"email_id" avro:"email_id"`
-	State   SyncState `json:"state" avro:"state"`
+	WorkerID *uuid.UUID `json:"worker_id,omitempty" avro:"worker_id"`
+	// ReportGeneration is the transport generation the reporting incarnation was loaded with.
+	ReportGeneration uuid.UUID `json:"report_generation,omitempty" avro:"report_generation"`
+	UserID           uuid.UUID `json:"user_id" avro:"user_id"`
+	EmailID          uuid.UUID `json:"email_id" avro:"email_id"`
+	State            SyncState `json:"state" avro:"state"`
 }

@@ -507,7 +507,7 @@ The backend exposes the same answer nginx cannot ask for itself, at `GET /tls/au
 
 If you do not want to run that step per customer, leave custom domains unverified: links stay on your shared tracking host, which already has a certificate, and nothing breaks.
 
-A [root redirect](/guides/sending-domains/#root-redirects) takes the same step for the bare domain and its `www` (`acme.io`, `www.acme.io`), proxied to `:3000` with `proxy_set_header Host $host;`. Until nginx sends it on, the sending domains page shows the redirect as **Not reaching visitors** with the change to make. An instance [linked to Warmbly Cloud](/guides/warmbly-cloud/#root-redirects-served-by-warmbly-cloud) can have Cloud serve redirects instead, which needs no change to nginx.
+A [root redirect](/guides/sending-domains/#root-redirects) takes the same step for the bare domain and its `www` (`acme.io`, `www.acme.io`), proxied to `:3000` with `proxy_set_header Host $host;`. Until nginx sends it on, the sending domains page shows the redirect as **Not reaching visitors** with the change to make. An instance already [linked to Warmbly Cloud](/guides/warmbly-cloud/#root-redirects-served-by-warmbly-cloud) can have Cloud serve redirects instead, which needs no change to nginx.
 
 The frontends are plain files under `/opt/warmbly/web` and `/opt/warmbly/admin` with a history fallback to `index.html`, and `index.html` and `config.js` are served with `Cache-Control: no-store` so a redeploy is picked up on the next load. Any other web server can do the same; the config file has the exact headers.
 

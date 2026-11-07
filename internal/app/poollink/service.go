@@ -3,13 +3,10 @@ package poollink
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
-	"net/url"
 	"strings"
 	"time"
 
@@ -23,26 +20,23 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
 	"github.com/warmbly/warmbly/internal/models"
-	"github.com/warmbly/warmbly/internal/pkg/crypt"
-	"github.com/warmbly/warmbly/internal/pkg/displayname"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
 var (
-	ErrLegacyLink        = errx.NewWithIdentifier(errx.Conflict, "pool_link_workspace_required", "Update this self-hosted instance before creating a new connection. Existing connections continue working.")
-	ErrWorkspaceLinked   = errx.NewWithIdentifier(errx.Conflict, "pool_link_workspace_connected", "This Cloud workspace already has an active connection. Use a separate Cloud workspace and subscription, or disconnect the existing link first.")
-	ErrCodeNotFound      = errx.NewWithIdentifier(errx.NotFound, "pool_link_code_not_found", "That code is unknown or has expired. Start the connection again from your instance.")
-	ErrCodeNotPending    = errx.NewWithIdentifier(errx.Conflict, "pool_link_code_used", "That code has already been used.")
-	ErrCodeDenied        = errx.NewWithIdentifier(errx.Forbidden, "pool_link_denied", "The connection was declined.")
-	ErrInstanceNotFound  = errx.NewWithIdentifier(errx.NotFound, "pool_link_instance_not_found", "Linked instance not found.")
-	ErrInstanceRevoked   = errx.NewWithIdentifier(errx.Unauthorized, "pool_link_revoked", "This instance's link has been revoked. Reconnect from the instance settings.")
-	ErrMailboxLimit      = errx.NewWithIdentifier(errx.PaymentRequired, "pool_link_mailbox_limit", "This workspace has reached the free allowance of linked mailboxes. Upgrade to the pool plan for unlimited mailboxes.")
-	ErrMailboxNotFound   = errx.NewWithIdentifier(errx.NotFound, "pool_link_mailbox_not_found", "That mailbox is not enrolled.")
-	ErrMailboxConflict   = errx.NewWithIdentifier(errx.Conflict, "pool_link_mailbox_conflict", "This address already exists in the linked Cloud workspace. An instance administrator can connect the existing mailbox from Add account > In your Warmbly Cloud workspace when it is available there. Otherwise, contact Warmbly support to check the association. Do not delete or re-enroll the Cloud mailbox.")
-	ErrWarmupNotEntitled = errx.NewWithIdentifier(errx.Forbidden, "pool_link_warmup_unavailable", "Warmup is not available on this workspace.")
-	ErrBadCredential     = errx.NewWithIdentifier(errx.BadRequest, "pool_link_credential", "A credential matching the provider is required.")
-	ErrBadRequest        = errx.NewWithIdentifier(errx.BadRequest, "pool_link_request", "Instance name is required.")
-	ErrCleartextMailbox  = errx.NewWithIdentifier(errx.Unprocessable, "pool_link_cleartext_mailbox", "Warmbly Cloud reaches your mail server over the internet, so it needs TLS or STARTTLS on both SMTP and IMAP. This mailbox uses security \"none\", which only works for a mail server on your instance's own machine. Switch it to TLS, or keep warming it on your instance.")
+	ErrCodeNotFound        = errx.NewWithIdentifier(errx.NotFound, "pool_link_code_not_found", "That code is unknown or has expired. Start the connection again from your instance.")
+	ErrCodeNotPending      = errx.NewWithIdentifier(errx.Conflict, "pool_link_code_used", "That code has already been used.")
+	ErrCodeDenied          = errx.NewWithIdentifier(errx.Forbidden, "pool_link_denied", "The connection was declined.")
+	ErrInstanceNotFound    = errx.NewWithIdentifier(errx.NotFound, "pool_link_instance_not_found", "Linked instance not found.")
+	ErrInstanceRevoked     = errx.NewWithIdentifier(errx.Unauthorized, "pool_link_revoked", "This instance's link has been revoked. Warmbly Cloud links no new instances, so it cannot be reconnected.")
+	ErrLinkClosed          = errx.NewWithIdentifier(errx.Forbidden, "pool_link_closed", "Warmbly Cloud no longer links new self-hosted instances. Existing connections keep working.")
+	ErrMailboxSubscription = errx.NewWithIdentifier(errx.PaymentRequired, "pool_link_subscription_required", "Adding mailboxes to Warmbly Cloud from a self-hosted instance needs a paid Warmbly Cloud plan. Choose a plan, or keep warming this mailbox on your instance. Mailboxes already enrolled keep warming.")
+	ErrMailboxNotFound     = errx.NewWithIdentifier(errx.NotFound, "pool_link_mailbox_not_found", "That mailbox is not enrolled.")
+	ErrMailboxConflict     = errx.NewWithIdentifier(errx.Conflict, "pool_link_mailbox_conflict", "This address already exists in the linked Cloud workspace. An instance administrator can connect the existing mailbox from Add account > In your Warmbly Cloud workspace when it is available there. Otherwise, contact Warmbly support to check the association. Do not delete or re-enroll the Cloud mailbox.")
+	ErrWarmupNotEntitled   = errx.NewWithIdentifier(errx.Forbidden, "pool_link_warmup_unavailable", "Warmup is not available on this workspace.")
+	ErrBadCredential       = errx.NewWithIdentifier(errx.BadRequest, "pool_link_credential", "A credential matching the provider is required.")
+	ErrBadRequest          = errx.NewWithIdentifier(errx.BadRequest, "pool_link_request", "Instance name is required.")
+	ErrCleartextMailbox    = errx.NewWithIdentifier(errx.Unprocessable, "pool_link_cleartext_mailbox", "Warmbly Cloud reaches your mail server over the internet, so it needs TLS or STARTTLS on both SMTP and IMAP. This mailbox uses security \"none\", which only works for a mail server on your instance's own machine. Switch it to TLS, or keep warming it on your instance.")
 )
 
 // cloudReachable refuses an SMTP/IMAP credential this instance's workers cannot use, before anything is stored.
@@ -120,7 +114,6 @@ type service struct {
 	gate       feature.FeatureGateService
 	orgs       organization.OrganizationService
 	scheduler  WarmupScheduler
-	planRepo   repository.PlanRepository
 	cache      *cache.Cache
 	campaigns  CampaignUsage
 	delegation DelegatedTokenBroker
@@ -147,9 +140,8 @@ func NewService(
 	warmup repository.WarmupRepository,
 	gate feature.FeatureGateService,
 	orgs organization.OrganizationService,
-	planRepo repository.PlanRepository,
 ) Service {
-	return &service{repo: repo, emails: emails, emailSvc: emailSvc, analytics: analyticsSvc, warmup: warmup, gate: gate, orgs: orgs, planRepo: planRepo}
+	return &service{repo: repo, emails: emails, emailSvc: emailSvc, analytics: analyticsSvc, warmup: warmup, gate: gate, orgs: orgs}
 }
 
 // WireScheduler attaches the warmup task seeder after construction.
@@ -157,25 +149,6 @@ func (s *service) WireScheduler(w WarmupScheduler) { s.scheduler = w }
 
 // WireCampaigns lets enrollment adopt only mailboxes no active campaign sends from.
 func (s *service) WireCampaigns(c CampaignUsage) { s.campaigns = c }
-
-// Unambiguous alphabet: no 0/O, 1/I/L.
-const userCodeAlphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
-
-func randomUserCode() (string, error) {
-	s, err := crypt.RandomString(userCodeAlphabet, 8)
-	if err != nil {
-		return "", err
-	}
-	return s[:4] + "-" + s[4:], nil
-}
-
-func randomToken(prefix string) (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return prefix + base64.RawURLEncoding.EncodeToString(b), nil
-}
 
 func hashToken(t string) string {
 	sum := sha256.Sum256([]byte(t))
@@ -193,51 +166,9 @@ func NormalizeUserCode(raw string) string {
 	return raw[:4] + "-" + raw[4:]
 }
 
-func (s *service) StartCode(ctx context.Context, req models.PoolLinkStartRequest) (*models.PoolLinkStartResponse, *errx.Error) {
-	if strings.TrimSpace(req.InstanceName) == "" || req.RemoteOrganizationID == uuid.Nil {
-		if req.RemoteOrganizationID == uuid.Nil {
-			return nil, ErrLegacyLink
-		}
-		return nil, ErrBadRequest
-	}
-	// Shown to the approving workspace, so it follows the workspace naming rules.
-	req.InstanceName = displayname.CleanOr(req.InstanceName, displayname.Workspace, "Self-hosted instance")
-	if u, err := url.Parse(strings.TrimSpace(req.InstanceURL)); err != nil || (u.Scheme != "http" && u.Scheme != "https") {
-		req.InstanceURL = ""
-	}
-	if r := []rune(req.InstanceVersion); len(r) > 40 {
-		req.InstanceVersion = string(r[:40])
-	}
-
-	deviceCode, err := randomToken("")
-	if err != nil {
-		return nil, errx.InternalError()
-	}
-	_ = s.repo.DeleteExpiredCodes(ctx)
-	var code *models.PoolLinkCode
-	for attempt := 0; attempt < 3; attempt++ {
-		userCode, err := randomUserCode()
-		if err != nil {
-			return nil, errx.InternalError()
-		}
-		code, err = s.repo.CreateCode(ctx, hashToken(deviceCode), userCode, req, time.Now().Add(config.PoolLinkCodeTTLMinutes*time.Minute))
-		if err == nil {
-			break
-		}
-		// A user-code collision is the only expected failure; retry with a new one.
-		code = nil
-	}
-	if code == nil {
-		return nil, errx.InternalError()
-	}
-	return &models.PoolLinkStartResponse{
-		WorkspaceScoped: true,
-		DeviceCode:      deviceCode,
-		UserCode:        code.UserCode,
-		VerificationURL: config.AppBaseURL() + "/connect?code=" + url.QueryEscape(code.UserCode),
-		ExpiresIn:       config.PoolLinkCodeTTLMinutes * 60,
-		Interval:        config.PoolLinkPollIntervalSeconds,
-	}, nil
+// StartCode refuses: Warmbly Cloud links no new self-hosted instances, on any plan.
+func (s *service) StartCode(context.Context, models.PoolLinkStartRequest) (*models.PoolLinkStartResponse, *errx.Error) {
+	return nil, ErrLinkClosed
 }
 
 func (s *service) PollCode(ctx context.Context, deviceCode string) (*models.PoolLinkPollResponse, *errx.Error) {
@@ -283,46 +214,9 @@ func (s *service) DescribeCode(ctx context.Context, userCode string) (*models.Po
 	return code, nil
 }
 
-func (s *service) ApproveCode(ctx context.Context, userCode string, orgID, userID uuid.UUID) (*models.PoolLinkInstance, *errx.Error) {
-	code, xerr := s.DescribeCode(ctx, userCode)
-	if xerr != nil {
-		return nil, xerr
-	}
-	if code.Status != models.PoolLinkCodePending {
-		return nil, ErrCodeNotPending
-	}
-	token, err := randomToken("wpl_")
-	if err != nil {
-		return nil, errx.InternalError()
-	}
-	inst := &models.PoolLinkInstance{
-		ID:                   uuid.New(),
-		RemoteOrganizationID: code.RemoteOrganizationID,
-		OrganizationID:       orgID,
-		Name:                 code.InstanceName,
-		URL:                  code.InstanceURL,
-		Version:              code.InstanceVersion,
-		CreatedBy:            &userID,
-	}
-	if code.RemoteOrganizationID == nil || *code.RemoteOrganizationID == uuid.Nil {
-		return nil, ErrLegacyLink
-	}
-	if err := s.repo.CreateInstance(ctx, inst, hashToken(token)); err != nil {
-		if errors.Is(err, repository.ErrCloudWorkspaceLinked) {
-			return nil, ErrWorkspaceLinked
-		}
-		return nil, errx.InternalError()
-	}
-	ok, err := s.repo.ApproveCode(ctx, code.UserCode, orgID, userID, inst.ID, token)
-	if err != nil {
-		_ = s.repo.RevokeInstance(ctx, inst.ID)
-		return nil, errx.InternalError()
-	}
-	if !ok {
-		_ = s.repo.RevokeInstance(ctx, inst.ID)
-		return nil, ErrCodeNotPending
-	}
-	return inst, nil
+// ApproveCode refuses every code, including one issued before linking closed.
+func (s *service) ApproveCode(context.Context, string, uuid.UUID, uuid.UUID) (*models.PoolLinkInstance, *errx.Error) {
+	return nil, ErrLinkClosed
 }
 
 func (s *service) DenyCode(ctx context.Context, userCode string) *errx.Error {
@@ -364,12 +258,10 @@ func (s *service) Plan(ctx context.Context, orgID uuid.UUID) (models.PoolLinkPla
 		return models.PoolLinkPlan{}, xerr
 	}
 	plan := models.PoolLinkPlan{Tier: "free", Enrolled: enrolled, Warming: warming, PriceUSD: config.PoolLinkPlanPriceUSD, WarmupEntitled: true}
-	if config.BillingProvider() == "none" {
-		plan.Tier = "paid"
-		return plan, nil
+	if config.BillingProvider() != "none" {
+		plan.ManageURL = config.AppBaseURL() + "/app/settings/billing"
 	}
-	plan.ManageURL = config.AppBaseURL() + "/app/settings/billing"
-	paid, xerr := s.gate.HasPremiumWarmup(ctx, orgID)
+	paid, xerr := s.paidWorkspace(ctx, orgID)
 	if xerr != nil {
 		return plan, xerr
 	}
@@ -379,12 +271,40 @@ func (s *service) Plan(ctx context.Context, orgID uuid.UUID) (models.PoolLinkPla
 	}
 	limit := models.FreeWorkspaceMailboxLimit
 	plan.MailboxLimit = &limit
-	if s.planRepo != nil {
-		if p, err := s.planRepo.GetByID(ctx, uuid.MustParse(config.PoolLinkPlanID)); err == nil && p != nil && p.StripePriceID != nil && *p.StripePriceID != "" {
-			plan.UpgradeURL = config.AppBaseURL() + "/app/settings/billing?pool=1"
-		}
+	plan.SubscriptionRequired = true
+	if plan.ManageURL != "" {
+		// ?pool=1 opens the plan chooser on arrival.
+		plan.UpgradeURL = plan.ManageURL + "?pool=1"
 	}
 	return plan, nil
+}
+
+// paidWorkspace reports whether orgID pays for a plan; with billing off every workspace does.
+func (s *service) paidWorkspace(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error) {
+	if config.BillingProvider() == "none" {
+		return true, nil
+	}
+	return s.gate.HasPremiumWarmup(ctx, orgID)
+}
+
+// admitNewMailbox refuses a mailbox the workspace's plan lets no linked instance add; enrolled ones are untouched.
+func admitNewMailbox(plan models.PoolLinkPlan) *errx.Error {
+	if plan.SubscriptionRequired {
+		return ErrMailboxSubscription
+	}
+	return nil
+}
+
+// newMailboxAdmitted is admitNewMailbox without loading the plan: only a paid workspace adds, and it has no cap.
+func (s *service) newMailboxAdmitted(ctx context.Context, orgID uuid.UUID) *errx.Error {
+	paid, xerr := s.paidWorkspace(ctx, orgID)
+	if xerr != nil {
+		return xerr
+	}
+	if !paid {
+		return ErrMailboxSubscription
+	}
+	return nil
 }
 
 func (s *service) InstanceInfo(ctx context.Context, inst *models.PoolLinkInstance) (*models.PoolLinkInstanceInfo, *errx.Error) {
@@ -504,8 +424,8 @@ func (s *service) Enroll(ctx context.Context, inst *models.PoolLinkInstance, req
 	if !plan.WarmupEntitled {
 		return nil, ErrWarmupNotEntitled
 	}
-	if plan.MailboxLimit != nil && plan.Enrolled >= *plan.MailboxLimit {
-		return nil, ErrMailboxLimit
+	if xerr := admitNewMailbox(plan); xerr != nil {
+		return nil, xerr
 	}
 
 	userID, xerr := s.ownerUserID(ctx, inst)

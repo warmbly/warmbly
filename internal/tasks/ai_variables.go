@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/warmbly/warmbly/internal/app/credits"
+	"github.com/warmbly/warmbly/internal/app/instancesettings"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 )
@@ -198,28 +199,26 @@ func decodeAIVarConfig(b64 string) (aiVarConfig, bool) {
 // a bounded web-research agent (search_web + fetch_url) over the shared tool
 // registry when it's wired, degrading to a single web-enriched completion when it
 // isn't; instant mode runs a tool-less completion (optionally with one web
-// search). The credit lifecycle mirrors the AI switch step: gate ->
-// consume(idempotency) -> generate -> refund-on-failure -> usage settle. The flat
-// cost is charged up front (instant = CostWritingAssistant, research =
-// CostResearchRun); the agent's own tool calls are covered by that flat charge.
+// search). Billing mirrors the AI switch step: balance check -> generate ->
+// charge the actual usage (tokens plus the agent's web searches) once per key.
 func (s *tasksService) generateAIVariable(ctx context.Context, orgID uuid.UUID, contact *models.Contact, cfg aiVarConfig, rendered, before, after, idemKey string) (string, error) {
 	if s.aiProvider == nil || s.aiCredits == nil {
 		return "", errors.New("per-recipient AI variables are not available on this deployment")
 	}
 
 	research := strings.EqualFold(strings.TrimSpace(cfg.Mode), "research")
-	cost := credits.CostWritingAssistant
+	estimate := credits.EstimateWritingAssistant
 	reason := "campaign_ai_var"
 	if research {
-		cost = credits.CostResearchRun
+		estimate = credits.EstimateResearchRun
 	}
 
 	model := s.aiProvider.ModelForTier(cfg.Thinking)
 	if !s.aiProvider.IsLocal() {
-		if _, cerr := s.aiCredits.Consume(ctx, orgID, cost, reason, model, 0, idemKey); cerr != nil {
+		if cerr := s.aiCredits.Reserve(ctx, orgID, estimate); cerr != nil {
 			switch {
 			case errors.Is(cerr, credits.ErrInsufficientCredits):
-				return "", fmt.Errorf("out of AI credits: this AI variable needs %d credit", cost)
+				return "", errors.New("the workspace balance is too low for this AI variable")
 			case errors.Is(cerr, credits.ErrCapExceeded):
 				return "", errors.New("AI usage cap reached; try again later")
 			default:
@@ -236,25 +235,20 @@ func (s *tasksService) generateAIVariable(ctx context.Context, orgID uuid.UUID, 
 	vc := generation.VoiceContext{Tone: cfg.Tone, AvailableVars: aiVarAvailableVars(contact)}
 
 	var (
-		text   string
-		tokens int
-		gerr   error
+		text  string
+		usage credits.Usage
+		gerr  error
 	)
 	if research && s.aiTools != nil {
-		text, tokens, gerr = s.generateAIVariableResearch(ctx, orgID, contact, vc, rendered, before, after, model)
+		text, usage, gerr = s.generateAIVariableResearch(ctx, orgID, contact, vc, rendered, before, after, model)
 	}
 	// instant, research-without-a-registry, or research whose registry had no
 	// web tools all fall back to the single-completion path.
 	if !research || s.aiTools == nil || errors.Is(gerr, errAIVarNoTools) {
-		text, tokens, gerr = s.generateAIVariableCompletion(ctx, orgID, contact, vc, cfg, rendered, before, after, model, research, idemKey)
+		text, usage, gerr = s.generateAIVariableCompletion(ctx, orgID, contact, vc, cfg, rendered, before, after, model, research, idemKey)
 	}
 
 	if gerr != nil || strings.TrimSpace(text) == "" {
-		// The org paid for a snippet the provider couldn't produce: refund it (a
-		// local model was never charged).
-		if !s.aiProvider.IsLocal() {
-			_, _ = s.aiCredits.Grant(ctx, orgID, cost, reason+"_refund")
-		}
 		if gerr != nil {
 			return "", fmt.Errorf("AI variable generation failed: %w", gerr)
 		}
@@ -262,16 +256,16 @@ func (s *tasksService) generateAIVariable(ctx context.Context, orgID uuid.UUID, 
 	}
 
 	if !s.aiProvider.IsLocal() {
-		_, _ = s.aiCredits.SettleUsage(ctx, orgID, cost, model, tokens, reason, idemKey+":usage")
+		_, _ = s.aiCredits.Charge(ctx, orgID, usage, reason, idemKey)
 	}
 	return strings.TrimSpace(text), nil
 }
 
 // generateAIVariableCompletion runs a single tool-less completion. For instant
 // blocks with web search on (and research degraded here), it first enriches the
-// prompt with one bounded web lookup, fenced as untrusted. Returns the snippet +
-// tokens used; the caller owns the consume/refund/settle lifecycle.
-func (s *tasksService) generateAIVariableCompletion(ctx context.Context, orgID uuid.UUID, contact *models.Contact, vc generation.VoiceContext, cfg aiVarConfig, rendered, before, after, model string, research bool, idemKey string) (string, int, error) {
+// prompt with one bounded web lookup, fenced as untrusted. Returns the snippet
+// and the tokens used; the caller charges them.
+func (s *tasksService) generateAIVariableCompletion(ctx context.Context, orgID uuid.UUID, contact *models.Contact, vc generation.VoiceContext, cfg aiVarConfig, rendered, before, after, model string, research bool, idemKey string) (string, credits.Usage, error) {
 	web := ""
 	if (cfg.WebSearch || research) && s.aiSearch != nil {
 		if q := switchSearchQuery(contact); q != "" {
@@ -281,7 +275,7 @@ func (s *tasksService) generateAIVariableCompletion(ctx context.Context, orgID u
 			if serr == nil && len(results) > 0 {
 				web = renderSwitchSearchResults(q, results)
 				if !s.aiProvider.IsLocal() {
-					_, _ = s.aiCredits.Consume(ctx, orgID, credits.CostWebSearch, "campaign_ai_var_search", "", 0, idemKey+":search")
+					_, _ = s.aiCredits.Charge(ctx, orgID, credits.UnitUsage(instancesettings.UnitWebSearch, 1), "campaign_ai_var_search", idemKey+":search")
 				}
 			}
 		}
@@ -299,12 +293,12 @@ func (s *tasksService) generateAIVariableCompletion(ctx context.Context, orgID u
 		Temperature: generation.Deterministic(),
 	})
 	if gerr != nil {
-		return "", 0, gerr
+		return "", credits.Usage{}, gerr
 	}
 	if res == nil {
-		return "", 0, nil
+		return "", credits.Usage{}, nil
 	}
-	return strings.TrimSpace(res.Text), res.TokensUsed, nil
+	return strings.TrimSpace(res.Text), credits.AIUsage(model, res.InputTokens, res.OutputTokens), nil
 }
 
 // generateAIVariableResearch runs a bounded web-research agent whose final
@@ -312,7 +306,7 @@ func (s *tasksService) generateAIVariableCompletion(ctx context.Context, orgID u
 // writes the snippet. Read-only web tools need no org permission, so a bare
 // org-scoped invocation suffices. Returns errAIVarNoTools when the registry has
 // no web tools, so the caller degrades to a completion.
-func (s *tasksService) generateAIVariableResearch(ctx context.Context, orgID uuid.UUID, contact *models.Contact, vc generation.VoiceContext, rendered, before, after, model string) (string, int, error) {
+func (s *tasksService) generateAIVariableResearch(ctx context.Context, orgID uuid.UUID, contact *models.Contact, vc generation.VoiceContext, rendered, before, after, model string) (string, credits.Usage, error) {
 	searchBudget, fetchBudget := aiVarResearchSearchBudget, aiVarResearchFetchBudget
 	tools := make([]generation.ToolDef, 0, 2)
 	for _, t := range s.aiTools.WebResearchTools(orgID) {
@@ -324,7 +318,7 @@ func (s *tasksService) generateAIVariableResearch(ctx context.Context, orgID uui
 		}
 	}
 	if len(tools) == 0 {
-		return "", 0, errAIVarNoTools
+		return "", credits.Usage{}, errAIVarNoTools
 	}
 
 	// Same inline-snippet humanizer as the completion path, plus a research rider
@@ -346,12 +340,14 @@ func (s *tasksService) generateAIVariableResearch(ctx context.Context, orgID uui
 		MaxTokens:     aiVarMaxTokens,
 	})
 	if rerr != nil {
-		return "", 0, rerr
+		return "", credits.Usage{}, rerr
 	}
 	if res == nil {
-		return "", 0, nil
+		return "", credits.Usage{}, nil
 	}
-	return strings.TrimSpace(res.Text), res.TokensUsed, nil
+	usage := credits.AIUsage(model, res.InputTokens, res.OutputTokens)
+	usage.Unit, usage.Quantity = instancesettings.UnitWebSearch, aiVarResearchSearchBudget-searchBudget
+	return strings.TrimSpace(res.Text), usage, nil
 }
 
 // budgetedAIVarTool caps how many times the research agent may call a tool; once

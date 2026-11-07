@@ -30,7 +30,7 @@ import { RemieCard, SlideCopy } from "./TourCopy";
 import { CloudCallout, PlanChoose, PlanCompare, PlanIncluded } from "./PlanSlides";
 import { TOUR_SLIDES, type FlatSlide } from "./tourSteps";
 import { SHOTS } from "./tourShots";
-import { CLOUD_DOCS, PRIMARY, SECONDARY, billingPreview, hostedPlanURL } from "./tourUi";
+import { PRIMARY, SECONDARY, billingPreview, hostedPlanURL } from "./tourUi";
 
 const CLOSE =
     "h-7 pl-2 pr-2.5 rounded-full inline-flex items-center gap-1 bg-white/85 text-[12px] text-slate-500 ring-1 ring-slate-900/[0.06] backdrop-blur-sm transition-colors hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400";
@@ -235,7 +235,7 @@ export default function ProductTour() {
               lead: jumped ? "Before you go." : "Your plan.",
               title: `You're on ${planName}.`,
               body: productPaid
-                  ? "Everything in this tour is already on for your workspace. Need more sending or AI credits? Change plan any time, and the difference is prorated."
+                  ? "Everything in this tour is already on for your workspace. Need more sending or AI usage? Change plan any time, and the difference is prorated."
                   : "Your mailboxes warm in the premium pool. Choose a plan to start sending and to turn on the inbox, the CRM, automations and Remie.",
           };
     const choosePlan = async (id: PlanID) => {
@@ -399,10 +399,7 @@ export default function ProductTour() {
                                                 hrefFor={hostedPlanURL}
                                                 onOpen={(id) => capture("product_tour_hosted_plan", { plan: id })}
                                             >
-                                                <CloudCallout
-                                                    docs={CLOUD_DOCS}
-                                                    onLink={canSettings ? () => act("link_cloud", () => navigate({ to: "/app/settings/warmbly-cloud" })) : undefined}
-                                                />
+                                                <CloudCallout />
                                             </PlanChoose>
                                         ) : (
                                             <PlanChoose
@@ -417,7 +414,11 @@ export default function ProductTour() {
                                                 note={
                                                     access.paid
                                                         ? undefined
-                                                        : "Only warming for now? Free keeps up to 10 mailboxes warming, no card needed, and the Warmup plan puts every mailbox in the premium pool for $15 a month."
+                                                        : access.trial
+                                                        ? "Your trial warms up to 2 mailboxes in the free pool and sends 20 a day. Every paid plan warms them in the premium pool."
+                                                        : access.keptFreeWarmup
+                                                        ? "Only warming for now? Your free plan keeps up to 10 mailboxes warming. Every paid plan puts them in the premium pool."
+                                                        : "Mailboxes and warmup start with a plan. Every paid plan warms them in the premium pool."
                                                 }
                                             />
                                         )

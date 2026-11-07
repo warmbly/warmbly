@@ -35,6 +35,7 @@ import {
     SENTRY_ENVIRONMENT,
     SENTRY_RELEASE,
 } from "./information";
+import { canReloadForStaleChunk, isModuleLoadMessage } from "./moduleLoadError";
 
 export type PostHogIdentity = {
     userId: string;
@@ -219,8 +220,40 @@ function isUninformative(entry: Record<string, unknown>): boolean {
 
 const DEFAULT_OBJECT_STRING = /\[object [A-Z][A-Za-z]*\]/;
 
+// Thrown into the page by wallets, extensions and in-app browsers; none of these names exist in our code.
+const FOREIGN_MESSAGES = [
+    /window\.ethereum\.selectedAddress = undefined/,
+    /^Can't find variable: (CONFIG|currentInset)$/,
+    /^No Listener: tabs:/,
+    /^Could not establish connection\. Receiving end does not exist\.$/,
+];
+const EXTENSION_SOURCE = /^(?:(?:chrome|moz|safari|safari-web|ms-browser)-extension:|webkit-masked-url:)/;
+// Our bundle is served from /assets/; a frame there means the error passed through our code.
+const BUNDLE_SOURCE = /^(?:[a-z]+:\/\/[^/]+)?\/assets\//i;
+
+function frameSources(entry: Record<string, unknown>): string[] {
+    const trace = entry.stacktrace as { frames?: unknown } | undefined;
+    if (!Array.isArray(trace?.frames)) return [];
+    return trace.frames.flatMap((frame) => {
+        const f = frame as { filename?: unknown; abs_path?: unknown } | null;
+        const source = f?.filename ?? f?.abs_path;
+        return typeof source === "string" ? [source] : [];
+    });
+}
+
+// isForeign keeps anything with a frame in our bundle, so a real error with the same words still reports.
+function isForeign(entry: Record<string, unknown>): boolean {
+    const sources = frameSources(entry);
+    if (sources.some((source) => BUNDLE_SOURCE.test(source))) return false;
+    if (sources.some((source) => EXTENSION_SOURCE.test(source))) return true;
+    const value = entry.value ?? entry.$exception_value;
+    return typeof value === "string" && FOREIGN_MESSAGES.some((pattern) => pattern.test(value));
+}
+
 export function isNoise(properties: Properties): boolean {
     const exceptionList = properties.$exception_list;
+    if (Array.isArray(exceptionList) && exceptionList.length > 0 && exceptionList.every((exception) =>
+        Boolean(exception) && typeof exception === "object" && isForeign(exception as Record<string, unknown>))) return true;
     if (Array.isArray(exceptionList) && exceptionList.length > 0 && exceptionList.every((exception) => {
         if (!exception || typeof exception !== "object") return false;
         const entry = exception as Record<string, unknown>;
@@ -259,12 +292,25 @@ export function isNoise(properties: Properties): boolean {
     return values.some((v) => typeof v === "string" && NOISE.includes(v.trim()));
 }
 
+// A chunk a deploy removed; the boundary that catches it reloads instead, so only a repeat is reported.
+function isStaleChunk(properties: Properties): boolean {
+    const exceptionList = properties.$exception_list;
+    if (!Array.isArray(exceptionList)) return false;
+    return exceptionList.some((exception) => {
+        const entry = (exception ?? {}) as Record<string, unknown>;
+        const type = entry.type ?? entry.$exception_type;
+        const value = entry.value ?? entry.$exception_value;
+        return type === "TypeError" && typeof value === "string" && isModuleLoadMessage(value);
+    });
+}
+
 // decorate is the last thing to touch an event before it is sent. Exceptions
 // get the account and workspace ids as flat properties on top of the person,
 // so "every error this workspace hit" is a property filter.
 function decorate(event: CaptureResult | null): CaptureResult | null {
     if (!event?.properties || event.event !== "$exception") return event;
     if (isNoise(event.properties)) return null;
+    if (isStaleChunk(event.properties) && canReloadForStaleChunk()) return null;
     if (!identity) return event;
     event.properties.user_id = identity.userId;
     if (identity.organizationId) event.properties.organization_id = identity.organizationId;
