@@ -884,6 +884,25 @@ Set these on the backend and the consumer.
 
 Automatic inbox tagging is read by the backend, consumer, and `warmblyctl`. Both inbox-tagging variables are required; a key by itself does not start classification. See [Automatic inbox tagging](/guides/inbox-tagging/).
 
+## Lead finder
+
+The [lead finder](/guides/lead-finder/) works with nothing set: OpenStreetMap through public Overpass servers, Komoot's public Photon geocoder for typed locations, and OpenFreeMap's keyless vector tiles for the map. Every variable here is optional and read by the backend.
+
+| Variable | What it does | Default |
+|---|---|---|
+| `LEAD_FINDER_OVERPASS_URL` | Overpass endpoints for OpenStreetMap searches, separated by commas and tried in order when one is busy. Point it at your own Overpass for dependable searches; the public ones are shared and often at capacity | `overpass-api.de`, `overpass.private.coffee` and `maps.mail.ru` mirrors |
+| `LEAD_FINDER_GEOCODER_URL` | A Photon-compatible `/api` endpoint for the **Where** box | `https://photon.komoot.io/api` |
+| `LEAD_FINDER_MAP_STYLE_URL`, `LEAD_FINDER_MAP_STYLE_DARK_URL` | MapLibre style JSON for the map in light and dark themes. The **Streets** style is offered only with the default styles | OpenFreeMap `positron` and `dark` |
+| `LEAD_FINDER_GOOGLE_PLACES_API_KEY` | An instance-wide Google Maps Platform key with Places API (New). Every workspace without its own Google Places connection can then search Google, at one credit a page | unset |
+| `LEAD_FINDER_FOURSQUARE_API_KEY` | An instance-wide Foursquare service key, used the same way | unset |
+| `LEAD_FINDER_OUTSCRAPER_API_KEY` | An instance-wide Outscraper key, used the same way | unset |
+
+A workspace's own key, connected under Integrations, always takes precedence over the instance's and costs no credits.
+
+The dashboard's content security policy allows `https://tiles.openfreemap.org`. A map style served from anywhere else, including your own tile server, also needs its origin (and the origins of its tiles, sprites and glyphs) in `WARMBLY_CSP_CONNECT_ORIGINS` on the web container, or the map stays blank.
+
+Reading websites for emails runs from the backend, opens only public addresses on ports 80 and 443, and identifies itself as `WarmblyBot/1.0`. See [data control](/development/data-control/#outbound-calls) for every call the lead finder makes.
+
 ## Tasks and billing
 
 Warmup replies use the same persisted SQL task identity with either queue provider. They wait at least 45 minutes after the exact parent receipt and recheck mailbox windows, roles, consent, standing, suppression and remaining budgets before native dispatch. Queue callbacks do not grant sending authority. See [diagnostic generation and rollout](/development/warmup-generation/).

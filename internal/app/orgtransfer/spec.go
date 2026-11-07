@@ -386,6 +386,27 @@ var Tables = []Table{
 		Note:  "Column mappings the workspace confirmed for its contact imports, keyed by header set, so the same export maps itself on the destination too.",
 	},
 	{
+		Name: "lead_searches", Group: models.OrgDataGroupContacts,
+		Scope:         scopeOrg,
+		ResetOnImport: []string{"next_cursor", "pages_fetched"},
+		Note:          "Lead finder searches and saved searches. A provider's paging token only means something to the session that fetched it, so a search resumes from its first page.",
+	},
+	{
+		Name: "leads", Group: models.OrgDataGroupContacts,
+		Scope: scopeOrg,
+		Note:  "Businesses found with the lead finder, with what reading their websites found and the contact each became.",
+	},
+	{
+		Name: "lead_search_hits", Group: models.OrgDataGroupContacts,
+		Scope: `search_id IN (SELECT id FROM lead_searches WHERE organization_id = $1)`,
+		Note:  "Which search found each lead, so a saved search reopens with its results.",
+	},
+	{
+		Name: "lead_people", Group: models.OrgDataGroupContacts,
+		Scope: scopeOrg,
+		Note:  "People found at each lead's business, with the address found or worked out for them and the contact each became.",
+	},
+	{
 		Name: "contact_categories", Group: models.OrgDataGroupContacts,
 		Scope: `contact_id IN ` + orgContacts,
 	},
@@ -1083,6 +1104,7 @@ var ExcludedTables = map[string]string{
 	"crm_sync_jobs":                    "The outbox of pending CRM writes on this instance; the destination's own events feed its outbox.",
 	"crm_sync_cursors":                 "Pull checkpoints for this instance; the destination starts its own pull.",
 	"apollo_enrichment_runs":           "The progress of enrichment requests run on this instance. What they found is already on the contacts, which travel.",
+	"lead_enrichment_runs":             "The progress of website reads run on this instance. What they found is already on the leads, which travel.",
 	"salesforce_record_links":          "Which Salesforce record each contact is, with a cached copy of it. The destination links contacts again by address the first time it syncs or shows them, and reads the record fresh.",
 	"salesforce_activity_queue":        "Activity waiting to be logged in Salesforce, and the recent outcome of what was. What was logged is already in Salesforce; what was waiting belongs to this instance's drain.",
 	"salesforce_sync_state":            "Where this instance's pull loop got to in each Salesforce org, and the API calls it counted today. The destination starts its own cursor when the connection first syncs.",

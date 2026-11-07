@@ -231,6 +231,45 @@ func Catalog() []models.IntegrationCatalogEntry {
 			Events:      ClayEvents,
 			ActionTypes: []string{string(models.IntegrationActionClaySendRow)},
 		},
+		{
+			Provider:   models.IntegrationGooglePlaces,
+			Name:       "Google Places",
+			Tagline:    "Search Google's business listings from the lead finder map with your own key.",
+			Category:   models.IntegrationCategoryData,
+			AuthMethod: string(models.IntegrationAuthAPIKey),
+			DocsURL:    "https://docs.warmbly.com/guides/lead-finder/",
+			Highlights: []string{
+				"Ratings, review counts, hours, phone numbers and websites",
+				"Billed to your Google Maps Platform account, no Warmbly credits",
+				"Up to 60 places per search, inside the area you draw",
+			},
+		},
+		{
+			Provider:   models.IntegrationFoursquare,
+			Name:       "Foursquare",
+			Tagline:    "Search Foursquare's global places database from the lead finder map.",
+			Category:   models.IntegrationCategoryData,
+			AuthMethod: string(models.IntegrationAuthAPIKey),
+			DocsURL:    "https://docs.warmbly.com/guides/lead-finder/",
+			Highlights: []string{
+				"Categories, chains, socials, ratings and hours",
+				"Billed to your Foursquare account, no Warmbly credits",
+				"Up to 50 places a page, paged as far as the area goes",
+			},
+		},
+		{
+			Provider:   models.IntegrationOutscraper,
+			Name:       "Outscraper",
+			Tagline:    "Google Maps results with emails and socials, through your Outscraper account.",
+			Category:   models.IntegrationCategoryData,
+			AuthMethod: string(models.IntegrationAuthAPIKey),
+			DocsURL:    "https://docs.warmbly.com/guides/lead-finder/",
+			Highlights: []string{
+				"Google Maps listings with ratings, reviews and hours",
+				"Emails and social profiles found from each business's domain",
+				"Billed to your Outscraper account, no Warmbly credits",
+			},
+		},
 
 		// NOTE: Google Sheets is intentionally NOT a catalog integration. The
 		// google_sheets OAuth connection still exists (it powers the on-demand

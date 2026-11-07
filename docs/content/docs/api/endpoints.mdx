@@ -175,6 +175,37 @@ The import pair is two steps over the same file: preview parses it and suggests 
 
 AI contact research charges credits (2 per run, billable even when it finds nothing) and only saves cited findings. See the [AI contact research](/guides/ai-contact-research/) guide. The batch endpoint accepts up to 500 contact ids and drains in the background.
 
+### Lead finder
+
+| Method | Path | API Permission |
+|--------|------|----------------|
+| GET | `/leads/config` | `READ_CONTACTS` |
+| GET | `/leads/geocode` | `READ_CONTACTS` |
+| POST | `/leads/search` | `WRITE_CONTACTS` |
+| POST | `/leads/query` | `READ_CONTACTS` |
+| POST | `/leads/points` | `READ_CONTACTS` |
+| POST | `/leads/facets` | `READ_CONTACTS` |
+| POST | `/leads/export` | `READ_CONTACTS` |
+| PATCH | `/leads` | `BULK_CONTACTS` |
+| DELETE | `/leads` | `BULK_CONTACTS` |
+| POST | `/leads/enrich` | `BULK_CONTACTS` |
+| GET | `/leads/enrichments` | `READ_CONTACTS` |
+| GET | `/leads/enrichments/:id` | `READ_CONTACTS` |
+| POST | `/leads/contacts` | `BULK_CONTACTS` |
+| GET | `/leads/searches` | `READ_CONTACTS` |
+| PATCH | `/leads/searches/:id` | `WRITE_CONTACTS` |
+| DELETE | `/leads/searches/:id` | `WRITE_CONTACTS` |
+| GET | `/leads/:id` | `READ_CONTACTS` |
+| PATCH | `/leads/:id` | `WRITE_CONTACTS` |
+| POST | `/leads/:id/people` | `WRITE_CONTACTS` |
+| PATCH | `/leads/:id/people/:personId` | `WRITE_CONTACTS` |
+| DELETE | `/leads/:id/people/:personId` | `WRITE_CONTACTS` |
+| POST | `/leads/:id/people/:personId/find-email` | `WRITE_CONTACTS` |
+
+Leads are prospect contacts, so the [lead finder](/guides/lead-finder/) uses the contact scopes and the **View contacts** and **Manage contacts** member permissions. `POST /leads/search` runs one page of a source search over an `area` (`bbox`, `circle` or `polygon`) and stores what it finds; send `search_id` alone to fetch the next page of the same search. `POST /leads/query`, `/leads/points` and `/leads/facets` are reads with a `filter` body; `query` pages with an opaque `cursor` and a `limit` from 1 to 200 and answers `data` plus `pagination` with a `total`. Bulk calls take a selection: `lead_ids` (at most 5,000), or `all: true` with a `filter`.
+
+`POST /leads/enrich` starts a background run that reads each lead's website for emails, socials and (unless `people` is `false`) the people it names, then works out and checks their addresses, and answers `202` with the run; follow it at `/leads/enrichments/:id`. It costs one credit per website read, refunded when the site never answers. `GET /leads/:id` carries the lead's `people`. `POST /leads/:id/people` adds a person by `name` or `first_name` and `last_name`, and without an `email` works out their address at the lead's domain on the spot for one credit, refunded when none turns up; `find-email` does the same for someone already listed. People are matched by name, so adding someone again lands on the same person. `POST /leads/contacts` takes `who` (`business`, `people` or `both`), `include_guessed`, `segment_ids`, `category_ids`, `campaign_ids`, `skip_active_in_other_campaigns` and `keep_existing` (leave contacts you already have as they are); `POST /leads/export` takes `rows` (`leads` or `people`). A search through a source the instance pays for costs one credit a page. `POST /leads/search` and `/leads/enrich` honor `Idempotency-Key`. A paid address lookup, `find-email` or adding a person without an `email`, charges again when retried, so retry it only after reading the person back. The other writes set values or update existing contacts, so a retry lands on the same state. `POST /leads/export` answers the file itself (`format` is `csv`, `xlsx` or `json`).
+
 ### Segments
 
 | Method | Path | API Permission |

@@ -1844,6 +1844,8 @@ func buildDisplayFields(provider models.IntegrationProvider, config map[string]a
 		// Credits are filled in at connect time from the provider.
 	case models.IntegrationApollo:
 		// The account the key acts as is filled in by the credential check.
+	case models.IntegrationGooglePlaces, models.IntegrationFoursquare, models.IntegrationOutscraper:
+		// A key and nothing to show beyond the connection itself.
 	case models.IntegrationClay:
 		if raw, ok := config["webhook_url"].(string); ok && raw != "" {
 			df["webhook_host"] = urlHost(raw)

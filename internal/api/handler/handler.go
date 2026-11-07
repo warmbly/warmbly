@@ -45,6 +45,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/instancesettings"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/keystatus"
+	"github.com/warmbly/warmbly/internal/app/leadfinder"
 	"github.com/warmbly/warmbly/internal/app/leadsync"
 	"github.com/warmbly/warmbly/internal/app/mailboximport"
 	"github.com/warmbly/warmbly/internal/app/mailpush"
@@ -348,6 +349,8 @@ type Handler struct {
 	ApolloService *apollo.Service
 	// ClayService takes rows from Clay tables and sends events back to them.
 	ClayService *clay.Service
+	// LeadFinderService finds businesses on a map and turns them into contacts.
+	LeadFinderService *leadfinder.Service
 
 	// Public websocket URL used by frontend clients
 	WebsocketURI string

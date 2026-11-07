@@ -83,6 +83,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/instancesettings"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/keystatus"
+	"github.com/warmbly/warmbly/internal/app/leadfinder"
 	"github.com/warmbly/warmbly/internal/app/leadsync"
 	"github.com/warmbly/warmbly/internal/app/mailboxavatar"
 	"github.com/warmbly/warmbly/internal/app/mailboximport"
@@ -388,6 +389,7 @@ func main() {
 	var leadSyncServiceForHandler leadsync.Service
 	var salesforceServiceForHandler *salesforce.Service
 	var apolloServiceForHandler *apollo.Service
+	var leadFinderServiceForHandler *leadfinder.Service
 	var clayServiceForHandler *clay.Service
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -2313,6 +2315,29 @@ func main() {
 			})
 			go contactImportService.Run(ctx)
 		}
+		if contactService != nil {
+			// The lead finder's keyed providers read the workspace's own key first,
+			// then the operator's; OpenStreetMap needs none.
+			leadfinder.RegisterKeyChecks(integrationServiceForHandler)
+			leadFinderServiceForHandler = leadfinder.NewService(leadfinder.Deps{
+				Repo:         repository.NewLeadFinderRepository(primaryDB.Pool),
+				Integrations: integrationServiceForHandler,
+				Contacts:     contactService,
+				Verifier:     emailVerifyService,
+				Credits:      creditService,
+				Audit:        auditService,
+				Config: leadfinder.Config{
+					OverpassURL:   cfg.GetStringOptional(ctx, "LEAD_FINDER_OVERPASS_URL", "lead_finder/overpass_url", ""),
+					GeocoderURL:   cfg.GetStringOptional(ctx, "LEAD_FINDER_GEOCODER_URL", "lead_finder/geocoder_url", ""),
+					MapStyleLight: cfg.GetStringOptional(ctx, "LEAD_FINDER_MAP_STYLE_URL", "lead_finder/map_style_url", ""),
+					MapStyleDark:  cfg.GetStringOptional(ctx, "LEAD_FINDER_MAP_STYLE_DARK_URL", "lead_finder/map_style_dark_url", ""),
+					GoogleKey:     cfg.GetSecretOptional(ctx, "LEAD_FINDER_GOOGLE_PLACES_API_KEY", "lead_finder/google_places_api_key", ""),
+					FoursquareKey: cfg.GetSecretOptional(ctx, "LEAD_FINDER_FOURSQUARE_API_KEY", "lead_finder/foursquare_api_key", ""),
+					OutscraperKey: cfg.GetSecretOptional(ctx, "LEAD_FINDER_OUTSCRAPER_API_KEY", "lead_finder/outscraper_api_key", ""),
+				},
+			})
+			go jobrun.Loop(ctx, "lead_enrichment_runs", time.Minute, true, leadFinderServiceForHandler.RunPendingEnrichment)
+		}
 
 		// HubSpot as the workspace CRM: write-through for the CRM service, the
 		// activity sink, and the outbox for automation-written records. The
@@ -2679,6 +2704,7 @@ func main() {
 		SalesforceService: salesforceServiceForHandler,
 		ApolloService:     apolloServiceForHandler,
 		ClayService:       clayServiceForHandler,
+		LeadFinderService: leadFinderServiceForHandler,
 
 		WebsocketURI: websocketURI,
 

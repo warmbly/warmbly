@@ -38,6 +38,11 @@ const (
 	IntegrationApollo       IntegrationProvider = "apollo"
 	IntegrationClay         IntegrationProvider = "clay"
 
+	// Lead finder place providers; a connection holds the workspace's own key.
+	IntegrationGooglePlaces IntegrationProvider = "google_places"
+	IntegrationFoursquare   IntegrationProvider = "foursquare"
+	IntegrationOutscraper   IntegrationProvider = "outscraper"
+
 	// Verification
 	IntegrationMillionVerifier IntegrationProvider = "millionverifier"
 	IntegrationCleanMyList     IntegrationProvider = "cleanmylist"
@@ -64,6 +69,9 @@ var AllIntegrationProviders = []IntegrationProvider{
 	IntegrationGoogleSheets,
 	IntegrationApollo,
 	IntegrationClay,
+	IntegrationGooglePlaces,
+	IntegrationFoursquare,
+	IntegrationOutscraper,
 	IntegrationMillionVerifier,
 	IntegrationCleanMyList,
 }
