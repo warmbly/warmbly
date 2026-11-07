@@ -98,12 +98,31 @@ type VendorAuthorization struct {
 	Stage  string
 	// Note is what the person can do about a pending request: a step the vendor waits on, or who to ask when it stalls.
 	Note string
+	// Domain marks an answer that holds for every row on the domain, so it is asked once per domain.
+	Domain bool
+	// SigningIn is a vendor signing in as the mailbox itself; it connects when Google returns to Warmbly.
+	SigningIn bool
+	// Trusting is a vendor adding Warmbly as a trusted app on the domain, ahead of signing in.
+	Trusting bool
+}
+
+// VendorAuthorizeRequest is one import row a vendor is asked to connect with no sign-in.
+type VendorAuthorizeRequest struct {
+	OrgID, UserID, ConnectionID, ImportID uuid.UUID
+	Line                                  int
+	Email, Provider, VendorMailboxID      string
+	// Consent allows asking the vendor to sign in as the mailbox; off when the address is already connected.
+	Consent bool
+	// EmailAccountID asks for a sign-in that renews or converts this existing mailbox in place.
+	EmailAccountID *uuid.UUID
 }
 
 // VendorAuthorizer is a VendorSource that can have the vendor authorize this
-// instance's app on a domain, so its mailboxes connect with no sign-in.
+// instance's app on a domain, or sign in as a mailbox, so it connects with no sign-in here.
 type VendorAuthorizer interface {
-	AuthorizeDomain(ctx context.Context, orgID, userID, connectionID uuid.UUID, email, provider string) VendorAuthorization
+	AuthorizeMailbox(ctx context.Context, r VendorAuthorizeRequest) VendorAuthorization
+	// ConsentSettled records how a vendor's sign-in as email ended; an empty reason is a connect.
+	ConsentSettled(ctx context.Context, orgID, connectionID uuid.UUID, email, reason string)
 }
 
 // Deps is everything the service talks to. Asker, Warmup, Auditor,

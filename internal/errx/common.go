@@ -169,6 +169,10 @@ var (
 	// hits this.
 	ErrEmailOnboardGoogleOAuthDisabled = NewWithIdentifier(Forbidden, "mailbox_gmail_oauth_disabled",
 		"New Gmail mailboxes connect with an app password over IMAP and SMTP on this deployment, not with Google sign-in. Mailboxes already connected with Google sign-in keep working and can still be re-authorized. See https://docs.warmbly.com/guides/mailboxes/#gmail-and-google-workspace")
+	// Raised when a Google sign-in start hints a personal gmail.com or
+	// googlemail.com address; those connect with an app password.
+	ErrEmailOnboardGooglePersonal = NewWithIdentifier(BadRequest, "google_personal_app_password",
+		"Personal Gmail addresses (gmail.com, googlemail.com) connect with an app password over IMAP and SMTP, not with Google sign-in. Turn on 2-Step Verification on the Google account, create an app password, and connect the mailbox with it. See https://docs.warmbly.com/guides/mailboxes/#personal-gmail")
 	ErrEmailOnboardState         = New(BadRequest, "Invalid or expired onboarding state.")
 	ErrEmailOnboardReturnOrigin  = NewWithIdentifier(BadRequest, "mailbox_oauth_return_origin", "This dashboard origin is not allowed for mailbox OAuth. Add its exact origin to CORS_ALLOW_ORIGINS.")
 	ErrEmailOnboardCode          = New(BadRequest, "Authorization code is missing or invalid.")

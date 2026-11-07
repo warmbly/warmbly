@@ -255,7 +255,7 @@ Record proof only for a UI change a reviewer should actually see; most changes n
 
 ## Security And Compliance Invariants
 
-Warmbly's Google OAuth client is assessed against **ADA CASA v2.1.1 at Assurance Level 1**, which maps to OWASP ASVS 4.0.3. The evidence pack is a claim about the code on `main`: a change that breaks one of the invariants below does not just introduce a bug, it makes a submitted statement untrue and puts the OAuth client's verification at risk. Treat them as constraints on every change, not as a checklist run before an audit.
+Warmbly's security invariants are written against **ADA CASA v2.1.1 at Assurance Level 1**, which maps to OWASP ASVS 4.0.3. The Google OAuth client is in production but unverified and has not been assessed: it is held to Google's 100-new-user cap, except on Workspace domains whose admin marks it Trusted, which is how Workspace and reseller mailboxes connect. The evidence pack is a claim about the code on `main`: a change that breaks one of the invariants below does not just introduce a bug, it makes the pack untrue and puts any future verification at risk. Treat them as constraints on every change, not as a checklist run before an audit.
 
 **The pack is not in this repository and must not be added to it.** It maps every control to the file that implements it and lists the advisories still open with the exact conditions under which each is reachable. That is a reconnaissance document for anyone attacking a self-hosted instance that has not updated, which is the same reason the disclosure rule below exists. It lives outside the tree, at `CASA_EVIDENCE_DIR` (default `~/warmbly-casa-private/casa`), and `make casa-evidence` refuses to write anywhere inside the repository.
 

@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"errors"
+	"io"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -140,4 +143,70 @@ func (h *Handler) ImportMailboxVendorMailboxes(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, imp)
+}
+
+// vendorReconnectRequest names one mailbox or several; without either every Google mailbox imported from the vendor account is reconnected.
+type vendorReconnectRequest struct {
+	EmailAccountID  *uuid.UUID  `json:"email_account_id"`
+	EmailAccountIDs []uuid.UUID `json:"email_account_ids"`
+}
+
+// ReconnectMailboxVendorMailboxes is POST /emails/vendors/:id/reconnect: the vendor signs in again as its Google mailboxes, renewing each in place.
+func (h *Handler) ReconnectMailboxVendorMailboxes(c *gin.Context) {
+	orgID, userID, id, ok := h.vendorID(c)
+	if !ok {
+		return
+	}
+	var req vendorReconnectRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		errx.Handle(c, errx.ErrInvalid)
+		return
+	}
+	if len(req.EmailAccountIDs) > 0 && req.EmailAccountID != nil {
+		errx.Handle(c, errx.ErrInvalid)
+		return
+	}
+	var (
+		out  []vendorconn.ReconnectMailbox
+		xerr *errx.Error
+	)
+	if len(req.EmailAccountIDs) > 0 {
+		out, xerr = h.VendorConnService.ReconnectMailboxes(c.Request.Context(), orgID, userID, id, req.EmailAccountIDs)
+	} else {
+		out, xerr = h.VendorConnService.Reconnect(c.Request.Context(), orgID, userID, id, req.EmailAccountID)
+	}
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityMailboxVendor, &id, nil, map[string]string{"action": "reconnect", "mailboxes": strconv.Itoa(len(out))})
+	c.JSON(http.StatusAccepted, gin.H{"data": out})
+}
+
+// MailboxVendorReconnectStatus is GET /emails/vendors/:id/reconnect: where the last reconnect stands, mailbox by mailbox.
+func (h *Handler) MailboxVendorReconnectStatus(c *gin.Context) {
+	orgID, _, id, ok := h.vendorID(c)
+	if !ok {
+		return
+	}
+	out, xerr := h.VendorConnService.ReconnectStatus(c.Request.Context(), orgID, id)
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": out})
+}
+
+// GetEmailSignin is GET /emails/:id/signin: how the mailbox signs in, the switches that can succeed for it, and its last vendor reconnect.
+func (h *Handler) GetEmailSignin(c *gin.Context) {
+	orgID, _, id, ok := h.vendorID(c)
+	if !ok {
+		return
+	}
+	out, xerr := h.VendorConnService.SigninOptions(c.Request.Context(), orgID, id)
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, out)
 }

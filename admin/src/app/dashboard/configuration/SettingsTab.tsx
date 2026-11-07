@@ -311,6 +311,7 @@ interface FormState {
     placement: Record<PlacementFieldKey, string>;
     enforceDomainAuth: boolean;
     authGraceHours: string;
+    autoVendorReconnect: boolean;
 }
 
 function toForm(s: InstanceSettings): FormState {
@@ -353,6 +354,7 @@ function toForm(s: InstanceSettings): FormState {
         },
         enforceDomainAuth: s.deliverability.enforce_domain_auth,
         authGraceHours: String(s.deliverability.auth_grace_hours),
+        autoVendorReconnect: s.mailbox_signin?.auto_vendor_reconnect ?? true,
     };
 }
 
@@ -424,6 +426,7 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
             form.allowInvitedSignup !== server.access.allow_invited_signup ||
             form.enforceDomainAuth !== server.deliverability.enforce_domain_auth ||
             form.authGraceHours !== String(server.deliverability.auth_grace_hours) ||
+            form.autoVendorReconnect !== (server.mailbox_signin?.auto_vendor_reconnect ?? true) ||
             retentionDirty ||
             trackingDirty ||
             placementDirty ||
@@ -525,6 +528,7 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
                 enforce_domain_auth: form.enforceDomainAuth,
                 auth_grace_hours: authGrace,
             },
+            mailbox_signin: { auto_vendor_reconnect: form.autoVendorReconnect },
             placement: {
                 tests_per_month_trial: Number(form.placement.testsTrial),
                 tests_per_month_paid: Number(form.placement.testsPaid),
@@ -780,6 +784,21 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
                             disabled={!form.enforceDomainAuth}
                             error={`Enter a whole number between ${AUTH_GRACE_MIN_HOURS} and ${AUTH_GRACE_MAX_HOURS.toLocaleString()}.`}
                         />
+                    </SettingsGroup>
+
+                    <SettingsGroup
+                        title="Mailbox sign-in"
+                        description="Google mailboxes imported from InboxKit or Zapmail can be reconnected in place with full mail access by the vendor itself: it marks Warmbly trusted on the domain and signs in as each mailbox. The mailbox, its history, campaigns and warmup stay the same, and one that cannot be reconnected keeps working on its current sign-in."
+                    >
+                        <SettingsRow
+                            label="Reconnect vendor mailboxes automatically"
+                            description="On, Warmbly asks the vendor on its own for each linked Google mailbox on the older Google sign-in or a legacy domain grant, at most once a week per mailbox. Off leaves it to a member to click Reconnect."
+                        >
+                            <Switch
+                                checked={form.autoVendorReconnect}
+                                onCheckedChange={(v) => setForm({ ...form, autoVendorReconnect: v })}
+                            />
+                        </SettingsRow>
                     </SettingsGroup>
                 </div>
             )}

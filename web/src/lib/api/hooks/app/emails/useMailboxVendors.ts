@@ -8,7 +8,9 @@ import {
     importVendorMailboxes,
     listVendorCatalog,
     listVendorConnections,
+    getVendorReconnect,
     listVendorMailboxes,
+    reconnectVendorMailboxes,
     updateVendorConnection,
 } from "@/lib/api/client/app/emails/imports/mailboxVendors";
 import type { MailboxImport } from "@/lib/api/models/app/emails/MailboxImport";
@@ -21,6 +23,7 @@ import type {
 } from "@/lib/api/models/app/emails/MailboxSources";
 import { sourceMutationKey } from "./mailboxSourceBusy";
 import { SENDING_DOMAINS_KEY } from "./useSendingDomains";
+import { MAILBOX_SIGNIN_KEY } from "./useMailboxSignin";
 
 export const VENDORS_KEY = ["mailbox-vendors"] as const;
 
@@ -115,6 +118,35 @@ export function useImportVendorMailboxes() {
             qc.setQueryData<MailboxImport>(["emails", "imports", job.id], job);
             qc.invalidateQueries({ queryKey: ["emails", "imports"] });
             qc.invalidateQueries({ queryKey: VENDORS_KEY });
+        },
+    });
+}
+
+export function vendorReconnectKey(id: string) {
+    return [...VENDORS_KEY, id, "reconnect"] as const;
+}
+
+/** Where the connection's last reconnect stands; the mailbox_vendor audit spine refreshes it as the vendor works. */
+export function useVendorReconnect(id: string | null, enabled = true) {
+    return useQuery({
+        queryKey: vendorReconnectKey(id ?? ""),
+        queryFn: () => getVendorReconnect(id!),
+        enabled: !!id && enabled,
+        staleTime: 15_000,
+        retry: false,
+    });
+}
+
+/** Has the vendor sign in again as the named linked Google mailboxes, or every one. The server decides, so nothing is optimistic. */
+export function useStartVendorReconnect() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationKey: sourceMutationKey("vendor-reconnect"),
+        mutationFn: ({ id, emailAccountIds }: { id: string; emailAccountIds?: string[] }) => reconnectVendorMailboxes(id, emailAccountIds),
+        onSuccess: (_out, { id }) => {
+            // The answer names only the mailboxes asked for; the connection's full progress is read again.
+            qc.invalidateQueries({ queryKey: vendorReconnectKey(id) });
+            qc.invalidateQueries({ queryKey: MAILBOX_SIGNIN_KEY });
         },
     });
 }

@@ -49,7 +49,6 @@ import MailboxSourceChip from "@/components/app/emails/MailboxSourceChip";
 import ProviderLogo from "@/components/app/emails/ProviderLogo";
 import SigninMigrationBanner, { SigninRetiringChip } from "@/components/app/emails/migration/SigninMigrationBanner";
 import SigninMigrationDialog from "@/components/app/emails/migration/SigninMigrationDialog";
-import MailboxGrantDialog from "@/components/app/emails/import/grants/MailboxGrantDialog";
 import { useSigninMigration } from "@/lib/api/hooks/app/emails/useMailboxGrants";
 import { mailboxBrand, mailboxSource } from "@/lib/mailboxSource";
 import type Tag from "@/lib/api/models/app/Tag";
@@ -167,7 +166,6 @@ export default function AddressesPage() {
     }, [migration.data]);
     const [migrationOpen, setMigrationOpen] = React.useState(false);
     const [migrationFocus, setMigrationFocus] = React.useState<string | null>(null);
-    const [setupDomain, setSetupDomain] = React.useState<string | null>(null);
     const openMigration = (domain: string | null = null) => {
         setMigrationFocus(domain);
         setMigrationOpen(true);
@@ -545,7 +543,7 @@ export default function AddressesPage() {
                     sit evenly and the whole block collapses when all are empty. */}
                 <div className="px-5 py-3 flex flex-col gap-2 empty:hidden">
                     <AdvisorSummaryBar surface="emails" noun="mailbox" nounPlural="mailboxes" />
-                    <SigninMigrationBanner total={migration.data?.total ?? 0} onOpen={() => openMigration()} />
+                    <SigninMigrationBanner total={migration.data?.total ?? 0} groups={migration.data?.data} onOpen={() => openMigration()} />
                     <CloudPoolBanner mailboxCount={stats.total} />
                     {!emailsData.isLoading && <CloudPathsPanel mailboxCount={stats.total} onAdd={() => p?.setAddEmail(true)} />}
                     {/* Hosted, the pool is thousands of mailboxes: the pool-size advice is self-host only. */}
@@ -768,16 +766,6 @@ export default function AddressesPage() {
                 open={migrationOpen}
                 focusDomain={migrationFocus}
                 onClose={() => setMigrationOpen(false)}
-                onSetUpDomain={(domain) => {
-                    setMigrationOpen(false);
-                    setSetupDomain(domain);
-                }}
-            />
-            <MailboxGrantDialog
-                open={!!setupDomain}
-                provider="google"
-                initialDomain={setupDomain ?? undefined}
-                onClose={() => setSetupDomain(null)}
             />
 
             <BulkWarmupDialog

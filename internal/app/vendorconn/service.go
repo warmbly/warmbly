@@ -69,6 +69,7 @@ type Service struct {
 	reconnect Reconnector
 	importer  Importer
 	grants    Grants
+	consent   ConsentLinks
 	cache     *cache.Cache
 	newClient func(vendor string, fields map[string]string) (mailvendor.Client, error)
 
@@ -79,6 +80,11 @@ type Service struct {
 	domainCache domainCache
 	// lists keeps each connection's mailbox list a minute, for app authorization.
 	lists sync.Map // connection id -> cachedList
+	// kickReconnect starts a reconnect job's first step; nil leaves it to the loop.
+	kickReconnect func(ctx context.Context, key string)
+	audit         Auditor
+	// automatic reports whether the instance switches vendor mailboxes without a click; nil is off.
+	automatic func(ctx context.Context) bool
 }
 
 type cachedClient struct {
@@ -95,13 +101,16 @@ type Deps struct {
 	Reconnect Reconnector
 	Importer  Importer
 	Grants    Grants
-	Cache     *cache.Cache
+	// Consent mints the Google sign-in links a vendor completes for a mailbox; optional.
+	Consent ConsentLinks
+	Cache   *cache.Cache
 	// NewClient overrides the vendor client (tests).
 	NewClient func(vendor string, fields map[string]string) (mailvendor.Client, error)
 }
 
 func NewService(d Deps) *Service {
-	s := &Service{repo: d.Repo, cipher: d.Cipher, mailboxes: d.Mailboxes, reconnect: d.Reconnect, importer: d.Importer, grants: d.Grants, cache: d.Cache, newClient: d.NewClient}
+	s := &Service{repo: d.Repo, cipher: d.Cipher, mailboxes: d.Mailboxes, reconnect: d.Reconnect, importer: d.Importer, grants: d.Grants, consent: d.Consent, cache: d.Cache, newClient: d.NewClient}
+	s.kickReconnect = func(ctx context.Context, key string) { go s.driveReconnectKey(ctx, key) }
 	if s.newClient == nil {
 		s.newClient = func(vendor string, fields map[string]string) (mailvendor.Client, error) {
 			return mailvendor.New(vendor, fields)
@@ -129,6 +138,8 @@ type Vendor struct {
 	Website    string        `json:"website"`
 	KeyHelpURL string        `json:"key_help_url"`
 	Fields     []VendorField `json:"fields"`
+	// SignsIn is a vendor that can sign in again as its Google mailboxes, so they reconnect in place.
+	SignsIn bool `json:"signs_in"`
 }
 
 // Catalog lists every supported vendor and what connecting it asks for.
@@ -136,7 +147,7 @@ func (s *Service) Catalog() []Vendor {
 	ds := mailvendor.Descriptors()
 	out := make([]Vendor, 0, len(ds))
 	for _, d := range ds {
-		v := Vendor{ID: d.ID, Label: d.Label, Website: d.Website, KeyHelpURL: d.KeyHelpURL}
+		v := Vendor{ID: d.ID, Label: d.Label, Website: d.Website, KeyHelpURL: d.KeyHelpURL, SignsIn: mailvendor.SupportsConsent(d.ID)}
 		for _, f := range d.Fields {
 			if f.Legacy {
 				continue
@@ -531,6 +542,8 @@ const reconnectCooldown = 6 * time.Hour
 // StartReconnect watches vendor mailboxes that stopped on a credential error
 // and, when the vendor now has a different password, reconnects them with it.
 func (s *Service) StartReconnect(ctx context.Context) {
+	go s.startReconnectDriver(ctx)
+	go s.startAutoSwitch(ctx)
 	jobrun.Loop(ctx, "mailbox_vendor_reconnect", 15*time.Minute, false, func(ctx context.Context) error {
 		cands, err := s.repo.ReconnectCandidates(ctx, 50)
 		if err != nil {

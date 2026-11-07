@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -21,6 +22,14 @@ type BrokeredTokenClient interface {
 	// Source adapts a mailbox to oauth2; the returned source caches until expiry.
 	Source(accountID uuid.UUID) oauth2.TokenSource
 }
+
+// BrokeredIMAPTokenClient also mints a token meant for Gmail IMAP; a backend that predates it answers with the ordinary one.
+type BrokeredIMAPTokenClient interface {
+	IMAPSource(accountID uuid.UUID) oauth2.TokenSource
+}
+
+// BrokeredTokenPurposeIMAP asks the control plane for a Google token carrying https://mail.google.com/.
+const BrokeredTokenPurposeIMAP = "imap"
 
 type httpBrokeredTokenClient struct {
 	baseURL string
@@ -54,7 +63,15 @@ func (e *BrokeredTokenRefused) Error() string {
 }
 
 func (r *httpBrokeredTokenClient) Token(ctx context.Context, accountID uuid.UUID) (*oauth2.Token, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.baseURL+"/api/v1/internal/cloud-link/token/"+accountID.String(), nil)
+	return r.fetch(ctx, accountID, "")
+}
+
+func (r *httpBrokeredTokenClient) fetch(ctx context.Context, accountID uuid.UUID, purpose string) (*oauth2.Token, error) {
+	u := r.baseURL + "/api/v1/internal/cloud-link/token/" + accountID.String()
+	if purpose != "" {
+		u += "?purpose=" + url.QueryEscape(purpose)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -98,13 +115,18 @@ func (r *httpBrokeredTokenClient) Source(accountID uuid.UUID) oauth2.TokenSource
 	return oauth2.ReuseTokenSource(nil, brokeredSource{client: r, accountID: accountID})
 }
 
+func (r *httpBrokeredTokenClient) IMAPSource(accountID uuid.UUID) oauth2.TokenSource {
+	return oauth2.ReuseTokenSource(nil, brokeredSource{client: r, accountID: accountID, purpose: BrokeredTokenPurposeIMAP})
+}
+
 type brokeredSource struct {
 	client    *httpBrokeredTokenClient
 	accountID uuid.UUID
+	purpose   string
 }
 
 func (b brokeredSource) Token() (*oauth2.Token, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
-	return b.client.Token(ctx, b.accountID)
+	return b.client.fetch(ctx, b.accountID, b.purpose)
 }

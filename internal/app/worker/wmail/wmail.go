@@ -33,6 +33,8 @@ type OutlookService struct {
 type GoogleData struct {
 	Client        *goog.Client
 	LastHistoryID uint64
+	// IMAP carries warmup engagement; nil runs it through the Gmail API.
+	IMAP *GmailIMAP
 }
 
 type GraphData struct {
@@ -258,6 +260,15 @@ func NewWMail(
 			}
 		} else if err := mail.GoogleData.Client.Init(mailCtx, data.Google.Token, data.Cfg); err != nil {
 			return nil, err
+		}
+		imapTokens := mail.GoogleData.Client.TokenSource()
+		if data.IMAPTokenSource != nil {
+			imapTokens = data.IMAPTokenSource
+		}
+		mail.GoogleData.IMAP = NewGmailIMAP(mailCtx, data.Email, imapTokens)
+		// The control plane knows the stored consent lacks full mail access, so IMAP is not even tried.
+		if f := data.Google.FullMailAccess; f != nil && !*f {
+			mail.GoogleData.IMAP.RefuseStanding(ErrGmailIMAPScope.Error())
 		}
 	case models.InboxProviderOutlook:
 		// Microsoft/Outlook mailboxes run entirely on Microsoft Graph: RAW MIME

@@ -142,7 +142,7 @@ export const ROW_STATUS: Record<ImportRowStatus, { label: string; cls: string }>
     cancelled: { label: "Cancelled", cls: "text-slate-500 bg-slate-100" },
 };
 
-// A needs_signin row parked while the inbox vendor authorizes Warmbly on its domain; it resumes on its own.
+// A needs_signin row parked while the inbox vendor authorizes Warmbly on its domain or signs in as the mailbox; it resumes on its own.
 export const VENDOR_AUTHORIZING = "vendor_authorizing";
 export const AUTHORIZING_STATUS = { label: "Authorizing", cls: "text-sky-700 bg-sky-50" };
 

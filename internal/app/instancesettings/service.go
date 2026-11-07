@@ -53,6 +53,8 @@ type Service interface {
 	DomainAuth(ctx context.Context) (enforce bool, grace time.Duration)
 	// PlacementPolicy is the inbox placement test section, already normalized.
 	PlacementPolicy(ctx context.Context) Placement
+	// AutoVendorReconnect is whether vendor-linked Google mailboxes are reconnected without a click.
+	AutoVendorReconnect(ctx context.Context) bool
 }
 
 type service struct {
@@ -162,6 +164,10 @@ func (s *service) PlacementPolicy(ctx context.Context) Placement {
 	p := s.Get(ctx).Placement
 	p.Normalize()
 	return p
+}
+
+func (s *service) AutoVendorReconnect(ctx context.Context) bool {
+	return s.Get(ctx).MailboxSignin.AutoVendorReconnect
 }
 
 func (s *service) DomainAuth(ctx context.Context) (bool, time.Duration) {

@@ -3,6 +3,7 @@ package models
 import (
 	"net"
 	"net/mail"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -671,6 +672,20 @@ type NewOauthAccount struct {
 	ExpiresAt    time.Time
 	// MailHost is stored as given; "" when unknown.
 	MailHost string
+	// GrantedScopes is what the provider says it granted; nil when it did not say.
+	GrantedScopes []string
+}
+
+// GoogleFullMailScope is the Google consent that lets a token sign in over IMAP.
+const GoogleFullMailScope = "https://mail.google.com/"
+
+// FullMailAccess reads recorded scopes for GoogleFullMailScope; nil when none were recorded.
+func FullMailAccess(scopes []string) *bool {
+	if scopes == nil {
+		return nil
+	}
+	has := slices.Contains(scopes, GoogleFullMailScope)
+	return &has
 }
 
 // NewDelegatedAccount is a Gmail or Outlook mailbox reached through an
@@ -708,10 +723,13 @@ type EmailRef struct {
 	Managed bool `json:"managed"`
 }
 
-// SigninRetiring is a mailbox connected with per-mailbox Google sign-in, the
-// method being retired; it moves to an administrator's grant or an app password.
-func (r EmailRef) SigninRetiring() bool {
-	return InboxProvider(r.Provider) == InboxProviderGoogle && r.AuthMethod == MailAuthOAuth && !r.Managed
+// GoogleSwitchable is a Google mailbox on its own sign-in or on a grant, which another credential can take over in place.
+func (r EmailRef) GoogleSwitchable() bool {
+	switch r.AuthMethod {
+	case MailAuthOAuth, MailAuthDelegated:
+		return InboxProvider(r.Provider) == InboxProviderGoogle && !r.Managed
+	}
+	return false
 }
 
 // Movable is a per-mailbox sign-in an administrator's grant for provider can take over in place.
@@ -750,6 +768,34 @@ type EmailOnboardingState struct {
 	// code intercepted anywhere between the provider and this backend is not
 	// redeemable. A state without one is refused.
 	CodeVerifier string `json:"code_verifier,omitempty"`
+}
+
+// VendorConsentRequest names the import row, or the existing mailbox, an inbox vendor is asked to sign in for.
+type VendorConsentRequest struct {
+	OrganizationID uuid.UUID
+	UserID         uuid.UUID
+	ImportID       uuid.UUID
+	Line           int
+	ConnectionID   uuid.UUID
+	Email          string
+	// EmailAccountID re-authorizes this mailbox in place instead of connecting a new one.
+	EmailAccountID *uuid.UUID
+}
+
+// VendorConsentState is a Google sign-in an inbox vendor completes for one import
+// row with no Warmbly session. It lives server-side, single use, under its own key.
+type VendorConsentState struct {
+	OrganizationID uuid.UUID `json:"organization_id"`
+	UserID         uuid.UUID `json:"user_id"`
+	ImportID       uuid.UUID `json:"import_id"`
+	Line           int       `json:"line"`
+	ConnectionID   uuid.UUID `json:"connection_id"`
+	// Email is the only mailbox the sign-in may connect.
+	Email        string    `json:"email"`
+	CodeVerifier string    `json:"code_verifier"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	// EmailAccountID is the existing mailbox the sign-in renews or converts in place; nil connects a new one.
+	EmailAccountID *uuid.UUID `json:"email_account_id,omitempty"`
 }
 
 // EmailOnboardingStartResponse is returned from POST /emails/onboarding/oauth/start.

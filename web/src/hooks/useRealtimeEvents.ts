@@ -530,13 +530,14 @@ export function useRealtimeEvents() {
           // refreshes everyone's open drawer instead of only the list row.
           // A mailbox write can move it off Google sign-in, so the migration list follows.
           // A seed toggle is audited here too, so the placement seed list follows.
-          email_account: [['emails'], ['analytics', 'accounts'], ['sending-domains'], ['mailbox-grants', 'migration'], ['pool-link'], ['placement', 'seeds'], ['placement', 'overview']],
+          email_account: [['emails'], ['analytics', 'accounts'], ['sending-domains'], ['mailbox-grants', 'migration'], ['pool-link'], ['placement', 'seeds'], ['placement', 'overview'], ['mailbox-signin']],
           // A mailbox import created, retried or cancelled by a teammate; it may move mailboxes onto a grant.
           mailbox_import: [['emails', 'imports'], ['mailbox-grants', 'migration']],
           // An admin grant added, re-checked or removed, and an inbox vendor
           // account connected, re-keyed or removed.
-          mailbox_grant: [['mailbox-grants'], ['emails', 'list']],
-          mailbox_vendor: [['mailbox-vendors'], ['sending-domains']],
+          mailbox_grant: [['mailbox-grants'], ['emails', 'list'], ['mailbox-signin']],
+          // A vendor reconnect moving on also moves the drawer's Sign-in section.
+          mailbox_vendor: [['mailbox-vendors'], ['sending-domains'], ['mailbox-signin']],
           // A sending domain's root redirect or vendor forwarding changed. Its
           // tracking host is an email_account write, covered above.
           domain_redirect: [['sending-domains']],

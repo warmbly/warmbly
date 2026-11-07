@@ -1965,6 +1965,11 @@ func main() {
 				Scopes: []string{"openid", "email"}, Endpoint: g.Endpoint,
 			}
 		}
+		var googleMailboxClientID string
+		// Named only when the client can complete a sign-in, so the dashboard offers no Google reconnect that cannot work.
+		if g := oauth2Cfg.InboxAuthorization.Google; g != nil && g.ClientSecret != "" {
+			googleMailboxClientID = g.ClientID
+		}
 		delegationService = delegation.NewService(delegation.Deps{
 			Repo:              repository.NewDomainGrantRepository(primaryDB),
 			Mailboxes:         emailService,
@@ -1976,6 +1981,8 @@ func main() {
 			MicrosoftRedirect: outlookApp.RedirectURL,
 			GoogleSignin:      googleSignin,
 			Prover:            domainProver,
+
+			GoogleMailboxClientID: googleMailboxClientID,
 		})
 		if w, ok := poolLinkService.(interface {
 			WireDelegation(poollink.DelegatedTokenBroker)
@@ -1998,6 +2005,7 @@ func main() {
 			Mailboxes: emailRepostory,
 			Reconnect: emailService,
 			Grants:    delegationService,
+			Consent:   emailService,
 			Cache:     cache,
 			NewClient: sandboxVendors,
 		})
@@ -2054,6 +2062,9 @@ func main() {
 			go mailboxAvatars.Start(ctx)
 		}
 		vendorConnService.SetImporter(mailboxImportService)
+		vendorConnService.WireSigninSwitch(auditService, func(ctx context.Context) bool {
+			return instanceSettings == nil || instanceSettings.AutoVendorReconnect(ctx)
+		})
 		sendingDomainService.WireVendors(vendorConnService)
 		go vendorConnService.StartReconnect(ctx)
 		go mailboxImportService.Start(ctx)

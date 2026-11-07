@@ -193,6 +193,13 @@ type Deliverability struct {
 	AuthGraceHours int `json:"auth_grace_hours"`
 }
 
+// MailboxSignin holds how mailboxes change the way they sign in.
+type MailboxSignin struct {
+	// AutoVendorReconnect has an inbox vendor that can sign in for Warmbly reconnect its Google mailboxes
+	// that lack full mail access, with no click. Off leaves the reconnect to a member.
+	AutoVendorReconnect bool `json:"auto_vendor_reconnect"`
+}
+
 // Placement holds the inbox placement test knobs.
 type Placement struct {
 	// TestsPerMonthTrial and TestsPerMonthPaid are how many tests one workspace
@@ -303,6 +310,7 @@ type Document struct {
 	Deliverability Deliverability `json:"deliverability"`
 	Placement      Placement      `json:"placement"`
 	Notifications  Notifications  `json:"notifications"`
+	MailboxSignin  MailboxSignin  `json:"mailbox_signin"`
 }
 
 // Defaults is the document a fresh instance behaves as if it had.
@@ -320,6 +328,7 @@ func Defaults() Document {
 		Tracking:       DefaultTracking(),
 		Deliverability: DefaultDeliverability(),
 		Placement:      DefaultPlacement(),
+		MailboxSignin:  MailboxSignin{AutoVendorReconnect: true},
 	}
 }
 
@@ -513,6 +522,9 @@ type Patch struct {
 	Notifications *struct {
 		Channels *[]NotifyChannel `json:"channels"`
 	} `json:"notifications"`
+	MailboxSignin *struct {
+		AutoVendorReconnect *bool `json:"auto_vendor_reconnect"`
+	} `json:"mailbox_signin"`
 }
 
 // Apply merges a patch onto a document.
@@ -629,6 +641,9 @@ func (p Patch) Apply(doc Document) Document {
 	}
 	if p.Notifications != nil && p.Notifications.Channels != nil {
 		doc.Notifications.Channels = mergeChannels(doc.Notifications.Channels, *p.Notifications.Channels)
+	}
+	if p.MailboxSignin != nil && p.MailboxSignin.AutoVendorReconnect != nil {
+		doc.MailboxSignin.AutoVendorReconnect = *p.MailboxSignin.AutoVendorReconnect
 	}
 	return doc
 }

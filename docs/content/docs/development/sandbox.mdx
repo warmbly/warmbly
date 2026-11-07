@@ -119,6 +119,8 @@ Connect either vendor from **Add account > Inbox vendor** with any API key. The 
 
 The mock keeps its state in memory, so a restart puts every domain back the way it started.
 
+The first InboxKit mailbox on each domain is listed as its admin, and the mock answers InboxKit's trusted-app and mailbox sign-in requests: a trusted-app request completes after about 5 seconds, and a sign-in request fails after about 20, because nothing in the sandbox can sign in to Google. The `.test` domains are not hosted by Google, so an import never takes that path on its own; it is there for exercising the vendor client against the mock.
+
 ## Demo script
 
 A tour that shows the platform working end to end:

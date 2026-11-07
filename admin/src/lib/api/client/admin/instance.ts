@@ -166,6 +166,12 @@ export interface InstanceSettings {
         enforce_domain_auth: boolean;
         auth_grace_hours: number;
     };
+    // Whether an inbox vendor that can sign in for Warmbly reconnects its
+    // Google mailboxes without full mail access on its own. Optional so an
+    // older backend that does not send the section reads as on, its default.
+    mailbox_signin?: {
+        auto_vendor_reconnect: boolean;
+    };
     // Inbox placement tests. The monthly allowances count tests on the
     // instance and cloud panels only, and a self-hosted instance does not
     // meter at all. Zero or negative on write resolves to the default, except

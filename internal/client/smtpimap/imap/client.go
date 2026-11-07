@@ -401,6 +401,11 @@ func (c *Client) oauth2Auth() *errx.MailError {
 	})
 
 	if err := c.client.Authenticate(saslc); err != nil {
+		// A bearer refusal (wrong scope, revoked token) comes back as the SASL challenge, not a tagged NO.
+		var bearer *sasl.OAuthBearerError
+		if errors.As(err, &bearer) {
+			return errx.ErrMailAuthenticationFailed
+		}
 		return c.handleError(err)
 	}
 
