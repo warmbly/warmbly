@@ -154,11 +154,16 @@ func throttledFailure(err *errx.MailError, retryAt time.Time) *errx.MailError {
 	out := *err
 	f := *err.Failure
 	f.RetryAt = &retryAt
-	f.Cause = ""
+	limit := f.Cause == errx.SendCauseSendingLimit || f.Cause == errx.SendCauseSenderBlocked
+	if !limit {
+		f.Cause = ""
+	}
 	switch f.Stage {
 	case "dial", "greeting", "ehlo", "starttls", "auth", "mail from":
 		// Refused before any recipient was offered, so the send costs the lead nothing.
-		f.Cause = errx.SendCauseServerPacing
+		if !limit {
+			f.Cause = errx.SendCauseServerPacing
+		}
 	}
 	out.Failure = &f
 	out.RetryAfter = retryAt.Sub(f.ObservedAt)

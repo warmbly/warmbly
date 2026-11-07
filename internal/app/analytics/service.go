@@ -469,6 +469,10 @@ func (s *analyticsService) assembleAccountStatus(ctx context.Context, email *mod
 		holdReason = hold.Reason
 	}
 	lifecycle := sendLifecycleNotice(reads.lifecycles, email.ID)
+	var sendPause *models.SendPauseInfo
+	if p, ok := reads.sendPauses[email.ID]; ok {
+		sendPause = &p
+	}
 
 	return &models.EmailAccountStatus{
 		ID:                 email.ID,
@@ -486,6 +490,7 @@ func (s *analyticsService) assembleAccountStatus(ctx context.Context, email *mod
 		ColdRamp:           coldRamp,
 		SendLifecycle:      lifecycle,
 		SendRecoveryReason: holdReason,
+		SendPause:          sendPause,
 	}
 }
 
@@ -505,7 +510,9 @@ func sendRecoveryHoldMessage(hold repository.SendRecoveryHold, provider models.I
 		if provider == models.InboxProviderGoogle || provider == models.InboxProviderOutlook {
 			return "Sending is paused because the provider refused this mailbox when it last sent, for example while the account or workspace was suspended. Once the mailbox syncs again, Warmbly resumes sending on its own, usually within minutes. If the provider refused the last attempt to resume, the next one waits up to 6 hours. Reconnecting the mailbox resumes sending sooner. The refused email was not sent, so nothing is sent twice."
 		}
-		return "Sending is paused because the mail server refused this mailbox when it last sent. Fix the account with your mail provider, then reconnect the mailbox (enter its current password or app password) to resume sending. The refused email was not sent, so nothing is sent twice."
+		return "Sending is paused because the mail server refused this mailbox when it last sent. Fix the account with your mail provider, then choose Resume sending (or reconnect the mailbox). Warmbly also tries one send on its own after 3 hours, then waits longer after each refusal, up to a day. The refused email was not sent, so nothing is sent twice."
+	case "domain_auth":
+		return "Sending is paused because a receiving mail server refused this mailbox's mail: the sending domain failed its SPF, DKIM or DMARC check. Fix the domain's DNS records, then choose Resume sending; a domain whose check was failing also resumes on its own once it passes. Reconnecting the mailbox does not fix this. The refused email was not sent, so nothing is sent twice."
 	default:
 		return "Sending is paused by a send safety hold. Resolve the held send before this mailbox can send again."
 	}

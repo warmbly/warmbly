@@ -102,6 +102,7 @@ import useCurrentOrganization from "@/lib/api/hooks/app/organizations/useCurrent
 import { timezoneOptions } from "@/lib/timezone";
 import { utcDay, utcToday } from "@/lib/campaignPeriod";
 import SyncStatusCard from "./SyncStatusCard";
+import SendPauseNotice from "./SendPauseNotice";
 import ServerCertificatesCard from "./ServerCertificatesCard";
 import CloudWarmupCard from "./CloudWarmupCard";
 import WarmupPartnerDiversity from "./WarmupPartnerDiversity";
@@ -800,9 +801,18 @@ function OverviewTab({ status, loading, mailbox, warmup, onOpenSignin }: { statu
                     </ul>
                 )}
                 {/* A login refused at send time can hold sending while sync still works, so no credential error carries the button. */}
-                {status?.send_recovery_reason === "authentication" && !firstCredentialErrorId &&
+                {status?.send_recovery_reason === "authentication" && !firstCredentialErrorId && !status.send_pause &&
                     (mailbox.auth_method === "delegated" ? <DelegatedGrantNotice mailbox={mailbox} inError /> : <ReconnectAction mailbox={mailbox} />)}
             </div>
+
+            {status?.send_pause && (
+                <SendPauseNotice
+                    mailboxId={mailbox.id}
+                    address={mailbox.email}
+                    pause={status.send_pause}
+                    reconnect={!firstCredentialErrorId && (mailbox.auth_method === "delegated" ? <DelegatedGrantNotice mailbox={mailbox} inError /> : <ReconnectAction mailbox={mailbox} />)}
+                />
+            )}
 
             {/* Sync: import progress and fair-use status */}
             <SyncStatusCard mailboxId={mailbox.id} provider={mailbox.provider} />

@@ -9,7 +9,9 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/config"
+	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/jobrun"
+	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/scheduler"
 )
 
@@ -48,6 +50,8 @@ func (s *tasksService) ReconcileCampaignSchedules(ctx context.Context, limit int
 	// days out — and it moves one only when the campaign's own next slot is
 	// meaningfully sooner.
 	s.repark(ctx, limit)
+	// Before the re-seed scan, so a campaign it reactivates gets its chain this same pass.
+	s.resumeNoAccounts(ctx, limit)
 
 	ids, err := s.campaignRepo.ListCampaignScheduleCandidates(ctx, limit)
 	if err != nil {
@@ -120,6 +124,64 @@ func (s *tasksService) ReconcileCampaignSchedules(ctx context.Context, limit int
 		}
 	}
 	return seeded, nil
+}
+
+// resumeNoAccounts reactivates campaigns the scheduler parked for having no usable mailbox once one is back; an owner's own pause is a different status and is never touched.
+func (s *tasksService) resumeNoAccounts(ctx context.Context, limit int) {
+	repo, ok := s.campaignRepo.(interface {
+		ListNoAccountsPaused(context.Context, int) ([]uuid.UUID, error)
+		ResumeFromNoAccounts(context.Context, uuid.UUID) (bool, error)
+	})
+	resumer, rok := s.scheduler.(scheduler.NoAccountsResumer)
+	if !ok || !rok {
+		return
+	}
+	ids, err := repo.ListNoAccountsPaused(ctx, limit)
+	if err != nil {
+		log.Warn().Err(err).Msg("campaign reconcile: no-mailbox pause scan failed")
+		return
+	}
+	for _, id := range ids {
+		can, cerr := resumer.CanResumeNoAccounts(ctx, id)
+		if cerr != nil || !can {
+			continue
+		}
+		resumed, rerr := repo.ResumeFromNoAccounts(ctx, id)
+		if rerr != nil {
+			log.Warn().Err(rerr).Str("campaign_id", id.String()).Msg("campaign reconcile: could not resume a no-mailbox pause")
+			continue
+		}
+		if resumed {
+			s.announceAutoResume(ctx, id)
+		}
+	}
+}
+
+func (s *tasksService) announceAutoResume(ctx context.Context, campaignID uuid.UUID) {
+	const reason = "Campaign resumed automatically: a mailbox it can send from is available again"
+	log.Info().Str("campaign_id", campaignID.String()).Msg("campaign resumed: a mailbox is back")
+	if s.campaignLogRepo != nil {
+		_ = s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
+			CampaignID: campaignID,
+			EventType:  "auto_resumed",
+			Message:    reason,
+			Metadata:   map[string]interface{}{"level": "info", "code": "mailbox_available"},
+		})
+	}
+	if s.streamingPublisher == nil {
+		return
+	}
+	campaign, err := s.campaignRepo.GetByID(ctx, campaignID)
+	if err != nil || campaign == nil {
+		return
+	}
+	s.streamingPublisher.PublishCampaignEvent(ctx, &pubsub.CampaignEvent{
+		BaseEvent:  pubsub.BaseEvent{EventType: pubsub.EventCampaignStarted, UserID: campaign.UserID},
+		OrgID:      campaignOrgID(campaign),
+		CampaignID: campaignID.String(),
+		Name:       campaign.Name,
+		Status:     "active",
+	})
 }
 
 // repark pulls a stale parked wakeup forward. For each active campaign whose

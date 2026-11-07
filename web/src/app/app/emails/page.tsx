@@ -7,6 +7,7 @@ import useMailboxTagFilter from "@/hooks/useMailboxTagFilter";
 import groupMailboxes from "@/lib/groupMailboxes";
 import { utcToday } from "@/lib/campaignPeriod";
 import { cloudStandingUnavailable as cloudHealthUnavailable, mailboxColdActivity, reputationOnlyWarning } from "@/lib/mailboxStatus";
+import { sendPauseSummary } from "@/lib/sendPause";
 import { useAppStore } from "@/stores/useAppStore";
 import toast from "react-hot-toast/headless";
 import { useQueryClient } from "@tanstack/react-query";
@@ -61,6 +62,7 @@ import {
     ArrowUpIcon,
     CheckIcon,
     CircleSlashIcon,
+    PauseCircleIcon,
     FilterIcon,
     FlameIcon,
     GaugeIcon,
@@ -1487,6 +1489,7 @@ function MailboxStatusPill({ box, status, stale, historicalIssue, warming, compa
     let problem: { label: string; text: string; Icon: LucideIcon; title: string } | null = null;
     if (box.status === "revoked") problem = { label: "Reconnect", text: "text-rose-600", Icon: UnplugIcon, title: "Access was revoked at the provider. Reconnect the mailbox to send and warm again." };
     else if (box.status !== "active") problem = { label: "Off", text: "text-slate-500", Icon: CircleSlashIcon, title: "Switched off: it neither sends, warms nor syncs. Switch it back on from the row's menu or its Settings tab." };
+    else if (status?.send_pause) problem = { label: "Paused", text: "text-amber-600", Icon: PauseCircleIcon, title: sendPauseSummary(status.send_pause) };
     else if (error) {
         const title = error.action_required ? `${error.title}. ${error.action_required}` : error.title;
         // Only a critical report stops the mailbox; a warning (a dropped connection, a busy server) is retried on its own.

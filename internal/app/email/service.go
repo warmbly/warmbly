@@ -48,6 +48,8 @@ type EmailService interface {
 	// SetSendHold holds a mailbox in reserve or releases it; a release lands
 	// wherever its warmup health says, so an unhealthy mailbox rests.
 	SetSendHold(ctx context.Context, orgID, emailAccountID string, hold bool) (*models.SendLifecycleState, *errx.Error)
+	// ResumeSending lifts a provider pause or a refusal hold the owner says is fixed.
+	ResumeSending(ctx context.Context, orgID, emailAccountID string) (*repository.SendPauseRelease, *errx.Error)
 	// UpdateTrackingDomain sets or clears the custom open/click tracking
 	// domain and resolves it once, persisting the verdict.
 	UpdateTrackingDomain(ctx context.Context, orgID, emailAccountID, domain string) (*models.TrackingDomainStatus, *errx.Error)

@@ -21,6 +21,7 @@ func sendFailure(base *errx.MailError, native error, stage, scope string) *errx.
 	if errors.As(native, &reply) {
 		f.EnhancedStatus = enhancedReply.FindString(reply.Msg)
 	}
+	f.Cause = senderCause(native)
 	switch {
 	case f.Status >= 400 && f.Status < 500 || stage == "auth" && f.Status == 0:
 		base = errx.ErrMailServerUnreachable
