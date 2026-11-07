@@ -109,7 +109,7 @@ export default interface AccountStatus {
     warmup_status?: WarmupStatusInfo;
     /** Present only while graduation holds the cold cap below the configured one. */
     cold_ramp?: ColdRampInfo;
-    /** Names a send safety hold; absent while sending is not held. "authentication" clears on a successful reconnect. */
+    /** Names a send safety hold; absent while sending is not held. "authentication" and "permanent" clear on a successful reconnect; a Gmail or Outlook "permanent" also clears once the mailbox syncs again. */
     send_recovery_reason?: "authentication" | "permanent" | "conflict" | "unknown";
     /** Present only when the mailbox is NOT in cold rotation. */
     send_lifecycle?: SendLifecycleState;

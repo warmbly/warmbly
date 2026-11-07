@@ -76,7 +76,7 @@ func TestUnknownWarmupHoldExplainsAutomaticRetirementWithoutPromisingResend(t *t
 }
 
 func TestUnknownCampaignHoldExplainsAutomaticIsolation(t *testing.T) {
-	message := sendRecoveryHoldMessage(repository.SendRecoveryHold{Reason: "unknown", Campaign: true})
+	message := sendRecoveryHoldMessage(repository.SendRecoveryHold{Reason: "unknown", Campaign: true}, models.InboxProviderSMTPIMAP)
 	for _, required := range []string{"automatically", "other contacts", "never retried", "No action is needed"} {
 		if !strings.Contains(message, required) {
 			t.Fatalf("campaign recovery guidance missing %q: %s", required, message)
@@ -224,5 +224,17 @@ func TestConnectionErrorGuidanceNamesProviderAndOperationWithoutInventingAnOutag
 		if errs[0].Title != "Specific issue" || *errs[0].ActionRequired != action {
 			t.Fatalf("do not relabel %s as a retryable connection issue: %+v", code, errs)
 		}
+	}
+}
+
+func TestPermanentHoldSaysHowSendingResumes(t *testing.T) {
+	hold := repository.SendRecoveryHold{Reason: "permanent"}
+	for _, provider := range []models.InboxProvider{models.InboxProviderGoogle, models.InboxProviderOutlook} {
+		if message := sendRecoveryHoldMessage(hold, provider); !strings.Contains(message, "on its own") || !strings.Contains(message, "syncs again") {
+			t.Fatalf("%s refusal must say it resumes once the mailbox syncs: %s", provider, message)
+		}
+	}
+	if message := sendRecoveryHoldMessage(hold, models.InboxProviderSMTPIMAP); strings.Contains(message, "on its own") || !strings.Contains(message, "reconnect") {
+		t.Fatalf("an SMTP refusal resumes only on reconnect: %s", message)
 	}
 }

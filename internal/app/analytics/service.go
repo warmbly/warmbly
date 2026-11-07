@@ -401,7 +401,7 @@ func (s *analyticsService) assembleAccountStatus(ctx context.Context, email *mod
 			if errs[i].Operation == models.MailTransportSync || (errs[i].ErrorCode != string(errx.MailErrorCodeServerUnreachable) && errs[i].ErrorCode != string(errx.MailErrorCodeConnectionLost)) {
 				continue
 			}
-			action := sendRecoveryHoldMessage(hold)
+			action := sendRecoveryHoldMessage(hold, models.InboxProvider(email.Provider))
 			errs[i].ActionRequired = &action
 		}
 	}
@@ -420,11 +420,11 @@ func (s *analyticsService) assembleAccountStatus(ctx context.Context, email *mod
 		if health.Status == "healthy" {
 			health.Status = "warning"
 		}
-		health.Issues = append(health.Issues, sendRecoveryHoldMessage(hold))
+		health.Issues = append(health.Issues, sendRecoveryHoldMessage(hold, models.InboxProvider(email.Provider)))
 	} else if held {
 		health.Status = "error"
 		health.Score = min(health.Score, 50)
-		health.Issues = append(health.Issues, sendRecoveryHoldMessage(hold))
+		health.Issues = append(health.Issues, sendRecoveryHoldMessage(hold, models.InboxProvider(email.Provider)))
 	} else if reads.sendHoldsUnavailable {
 		if health.Status == "healthy" {
 			health.Status = "warning"
@@ -489,7 +489,7 @@ func (s *analyticsService) assembleAccountStatus(ctx context.Context, email *mod
 	}
 }
 
-func sendRecoveryHoldMessage(hold repository.SendRecoveryHold) string {
+func sendRecoveryHoldMessage(hold repository.SendRecoveryHold, provider models.InboxProvider) string {
 	switch hold.Reason {
 	case "unknown":
 		if hold.Campaign {
@@ -501,6 +501,11 @@ func sendRecoveryHoldMessage(hold repository.SendRecoveryHold) string {
 		return "Sending is briefly paused because Warmbly cannot yet tell whether an earlier email went out. That email is never retried, so nothing is sent twice. The pause clears on its own, usually within 30 minutes, even if that email's outcome stays unknown. No action is needed."
 	case "authentication":
 		return "Sending is paused because the mail server refused this mailbox's login when it last sent. Reconnect the mailbox (re-authorize it, or enter its current password or app password); once the server accepts the login, sending resumes unless another send safety hold is still pending."
+	case "permanent":
+		if provider == models.InboxProviderGoogle || provider == models.InboxProviderOutlook {
+			return "Sending is paused because the provider refused this mailbox when it last sent, for example while the account or workspace was suspended. Once the mailbox syncs again, Warmbly resumes sending on its own, usually within minutes. If the provider refused the last attempt to resume, the next one waits up to 6 hours. Reconnecting the mailbox resumes sending sooner. The refused email was not sent, so nothing is sent twice."
+		}
+		return "Sending is paused because the mail server refused this mailbox when it last sent. Fix the account with your mail provider, then reconnect the mailbox (enter its current password or app password) to resume sending. The refused email was not sent, so nothing is sent twice."
 	default:
 		return "Sending is paused by a send safety hold. Resolve the held send before this mailbox can send again."
 	}
