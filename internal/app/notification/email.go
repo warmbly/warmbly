@@ -2,6 +2,7 @@ package notification
 
 import (
 	"context"
+	"log"
 	"os"
 	"sort"
 	"strconv"
@@ -271,13 +272,17 @@ func (s *service) keepEligibleEmailMessages(ctx context.Context, rows []models.N
 		}
 	}
 	if len(held) > 0 {
-		_ = s.repo.DeferEmails(ctx, held, emailRetryDelay)
+		if err := s.repo.DeferEmails(ctx, held, emailRetryDelay); err != nil {
+			log.Printf("notification: defer %d emails failed, stale-claim recovery reclaims them: %v", len(held), err)
+		}
 	}
 	if len(skipped) > 0 {
 		_ = s.repo.SkipEmails(ctx, skipped)
 	}
 	if len(retry) > 0 {
-		_ = s.repo.RequeueEmails(ctx, retry, emailRetryDelay, emailMaxAttempts)
+		if err := s.repo.RequeueEmails(ctx, retry, emailRetryDelay, emailMaxAttempts); err != nil {
+			log.Printf("notification: requeue %d emails failed, stale-claim recovery reclaims them: %v", len(retry), err)
+		}
 	}
 	return kept
 }
