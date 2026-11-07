@@ -15,6 +15,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/credits"
 	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 )
 
@@ -130,11 +131,12 @@ func (editGate) IsPaidOrganization(context.Context, uuid.UUID) (bool, *errx.Erro
 
 type editCredits struct{ credits.CreditService }
 
-func (editCredits) Consume(context.Context, uuid.UUID, int, string, string, int, string) (int, error) {
-	return 41, nil
+func (editCredits) Reserve(context.Context, uuid.UUID, models.Micro) error { return nil }
+func (editCredits) Charge(context.Context, uuid.UUID, credits.Usage, string, string) (models.Micro, error) {
+	return 20_000, nil
 }
-func (editCredits) SettleUsage(context.Context, uuid.UUID, int, string, int, string, string) (int, error) {
-	return 0, nil
+func (editCredits) GetBalance(context.Context, uuid.UUID) (models.Micro, *errx.Error) {
+	return 820_000, nil
 }
 
 // editProvider records the completion it was asked for, so the test sees the

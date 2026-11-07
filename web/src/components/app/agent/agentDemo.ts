@@ -35,43 +35,43 @@ function tool(name: string, args: string, result: string, ms: number): DemoStep[
     ];
 }
 
-function iteration(n: number, credits: number): DemoStep {
+function iteration(n: number, balanceUsd: number): DemoStep {
     return {
         wait: 200,
-        ev: { type: "iteration", iteration: n, budget: 12, credits_remaining: credits },
+        ev: { type: "iteration", iteration: n, budget: 12, balance_usd: balanceUsd },
     };
 }
 
 export function demoRun(part: "open" | "approve" | "deny"): DemoStep[] {
     if (part === "approve") {
         return [
-            iteration(4, 479),
+            iteration(4, 4.79),
             ...tool("set_campaign_status", `${CAMPAIGN}, status: "paused"`, "Paused Agency re-engagement", 1100),
             { wait: 700, ev: { type: "iteration", iteration: 5, budget: 12 } },
             ...say(
                 "Done. **Agency re-engagement** is paused and nothing else was changed. Resume it from the campaign page once the list is cleaned.",
             ),
-            { wait: 100, ev: { type: "done", credits_remaining: 478 } },
+            { wait: 100, ev: { type: "done", balance_usd: 4.78 } },
         ];
     }
     if (part === "deny") {
         return [
-            iteration(4, 479),
+            iteration(4, 4.79),
             ...say(
                 "Okay, I left it running. Keep an eye on its bounce rate: at 10% the sending mailbox can be blocked from the warmup pool.",
             ),
-            { wait: 100, ev: { type: "done", credits_remaining: 479 } },
+            { wait: 100, ev: { type: "done", balance_usd: 4.79 } },
         ];
     }
     return [
-        { wait: 900, ev: { type: "iteration", iteration: 1, budget: 12, credits_remaining: 482 } },
+        { wait: 900, ev: { type: "iteration", iteration: 1, budget: 12, balance_usd: 4.82 } },
         ...tool("list_campaigns", "status: active", "4 active campaigns", 1100),
-        iteration(2, 481),
+        iteration(2, 4.81),
         ...tool("get_campaign_stats", 'campaign: "Q4 founder outreach"', "41% opened, 6.2% replied, 0.4% bounced", 1200),
         ...tool("get_campaign_stats", CAMPAIGN, "9% opened, 0.3% replied, 7.8% bounced", 1000),
         ...tool("get_mailbox", 'mailbox: "sam@getacme.io"', "warmup throttled, 22% spam placement", 900),
         ...tool("get_advisor_summary", "", "2 open recommendations", 800),
-        iteration(3, 480),
+        iteration(3, 4.80),
         { wait: 1200, ev: { type: "iteration", iteration: 3, budget: 12 } },
         ...say(
             [

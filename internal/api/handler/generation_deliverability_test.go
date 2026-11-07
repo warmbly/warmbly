@@ -37,7 +37,7 @@ func TestRewordFlaggedCleansWhatTheScoreFlags(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			p := &rewordProvider{reply: tc.reply}
 			h := &Handler{AIProvider: p}
-			got, _ := h.rewordFlagged(context.Background(), "m", generation.VoiceContext{}, draft, tc.source, nil)
+			got, _, _ := h.rewordFlagged(context.Background(), "m", generation.VoiceContext{}, draft, tc.source, nil)
 			if got != tc.want || p.calls != tc.calls {
 				t.Fatalf("got %q after %d calls, want %q after %d", got, p.calls, tc.want, tc.calls)
 			}

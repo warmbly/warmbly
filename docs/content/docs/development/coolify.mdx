@@ -142,7 +142,7 @@ Confirm `https://api.example.com/health` responds successfully, the dashboard op
 
 SMTP/IMAP mailbox connections require no Google or Microsoft app registration. Their TLS certificates are verified by this stack. Do not disable verification to work around provider settings.
 
-For OAuth mailbox connections, the file also passes `BOX_GOOGLE_CLIENT_ID`, `BOX_GOOGLE_CLIENT_SECRET`, `BOX_GOOGLE_OAUTH_CONNECT`, `BOX_OUTLOOK_CLIENT_ID`, and `BOX_OUTLOOK_CLIENT_SECRET` to the appropriate services. Gmail's UI switch follows `BOX_GOOGLE_OAUTH_CONNECT`. Set up your own provider application and the callback URLs documented under [configuration](/development/configuration/), then redeploy. These are mailbox-connection clients, not sign-in-with-Google credentials.
+For OAuth mailbox connections, the file also passes `BOX_GOOGLE_CLIENT_ID`, `BOX_GOOGLE_CLIENT_SECRET`, `BOX_GOOGLE_OAUTH_CONNECT`, `BOX_OUTLOOK_CLIENT_ID`, and `BOX_OUTLOOK_CLIENT_SECRET` to the appropriate services. With the Google client set, the dashboard offers Google mailbox sign-in unless `BOX_GOOGLE_OAUTH_CONNECT=false`. Set up your own provider application and the callback URLs documented under [configuration](/development/configuration/), then redeploy. These are mailbox-connection clients, not sign-in-with-Google credentials.
 
 ## Updates, backups, and existing data
 

@@ -98,12 +98,31 @@ type VendorAuthorization struct {
 	Stage  string
 	// Note is what the person can do about a pending request: a step the vendor waits on, or who to ask when it stalls.
 	Note string
+	// Domain marks an answer that holds for every row on the domain, so it is asked once per domain.
+	Domain bool
+	// SigningIn is a vendor signing in as the mailbox itself; it connects when Google returns to Warmbly.
+	SigningIn bool
+	// Trusting is a vendor adding Warmbly as a trusted app on the domain, ahead of signing in.
+	Trusting bool
+}
+
+// VendorAuthorizeRequest is one import row a vendor is asked to connect with no sign-in.
+type VendorAuthorizeRequest struct {
+	OrgID, UserID, ConnectionID, ImportID uuid.UUID
+	Line                                  int
+	Email, Provider, VendorMailboxID      string
+	// Consent allows asking the vendor to sign in as the mailbox; off when the address is already connected.
+	Consent bool
+	// EmailAccountID asks for a sign-in that renews or converts this existing mailbox in place.
+	EmailAccountID *uuid.UUID
 }
 
 // VendorAuthorizer is a VendorSource that can have the vendor authorize this
-// instance's app on a domain, so its mailboxes connect with no sign-in.
+// instance's app on a domain, or sign in as a mailbox, so it connects with no sign-in here.
 type VendorAuthorizer interface {
-	AuthorizeDomain(ctx context.Context, orgID, userID, connectionID uuid.UUID, email, provider string) VendorAuthorization
+	AuthorizeMailbox(ctx context.Context, r VendorAuthorizeRequest) VendorAuthorization
+	// ConsentSettled records how a vendor's sign-in as email ended; an empty reason is a connect.
+	ConsentSettled(ctx context.Context, orgID, connectionID uuid.UUID, email, reason string)
 }
 
 // Deps is everything the service talks to. Asker, Warmup, Auditor,
@@ -473,6 +492,7 @@ func (s *Service) Create(ctx context.Context, c CreateInput) (*models.MailboxImp
 		// enough to retry it; a row no fix can repair keeps nothing.
 		if ins.Status != models.ImportRowSkipped && !unfixable[r.cause] {
 			r.payload.TrackingDomain, r.payload.RedirectURL = domainChoices(c.Options, r.domain)
+			r.payload.Settings = storedRowSettings(c.Options.Settings, r.payload.Settings)
 			raw, _ := json.Marshal(r.payload)
 			sealed, err := ciph.Encrypt(ctx, string(raw))
 			if err != nil {
@@ -694,8 +714,8 @@ func (s *Service) FixRow(ctx context.Context, orgID, userID, id uuid.UUID, line 
 	if row == nil {
 		return nil, errx.ErrNotFound
 	}
-	if row.Status != models.ImportRowFailed {
-		return nil, errx.NewWithIdentifier(errx.Conflict, "mailbox_import_row_not_failed", "Only a row that did not connect can be fixed.")
+	if !fixable(row) {
+		return nil, errNotFixable
 	}
 	if sealed == "" {
 		return nil, errx.NewWithIdentifier(errx.Conflict, "mailbox_import_credentials_expired",
@@ -718,14 +738,21 @@ func (s *Service) FixRow(ctx context.Context, orgID, userID, id uuid.UUID, line 
 	if (p.SMTP.Password == "" || p.IMAP.Password == "") && p.VendorConnectionID == nil {
 		return nil, errx.NewWithIdentifier(errx.BadRequest, "mailbox_import_row_incomplete", "Add a password for this row.")
 	}
+	if xerr := checkGooglePassword(p); xerr != nil {
+		return nil, xerr
+	}
 	raw, _ := json.Marshal(p)
 	resealed, err := ciph.Encrypt(ctx, string(raw))
 	if err != nil {
 		errs.CaptureException(err)
 		return nil, errx.InternalError()
 	}
-	if err := s.repo.Requeue(ctx, id, line, resealed); err != nil {
+	queued, err := s.repo.Requeue(ctx, id, line, resealed)
+	if err != nil {
 		return nil, errx.InternalError()
+	}
+	if !queued {
+		return nil, errNotFixable
 	}
 	if err := s.repo.Reopen(ctx, orgID, id); err != nil {
 		return nil, errx.InternalError()
@@ -737,6 +764,15 @@ func (s *Service) FixRow(ctx context.Context, orgID, userID, id uuid.UUID, line 
 		return nil, errx.InternalError()
 	}
 	return row, nil
+}
+
+var errNotFixable = errx.NewWithIdentifier(errx.Conflict, "mailbox_import_row_not_failed",
+	"Only a row that did not connect or is waiting for sign-in can be fixed.")
+
+// fixable is a row that failed or waits on a sign-in; a vendor still authorizing it connects on its own.
+func fixable(row *models.MailboxImportRow) bool {
+	return row.Status == models.ImportRowFailed ||
+		(row.Status == models.ImportRowNeedsSignin && row.Cause != repository.ParkedVendorCause)
 }
 
 func applyFix(p *payload, email string, fix models.MailboxImportRowFix) {
@@ -788,6 +824,11 @@ func applyFix(p *payload, email string, fix models.MailboxImportRowFix) {
 	}
 	leg(p.SMTP, fix.SMTP, "smtp")
 	leg(p.IMAP, fix.IMAP, "imap")
+	// A sign-in row carries no servers; a password connect uses its host's known ones.
+	if known := mailhost.SettingsFor(host); known != nil {
+		fillLeg(p.SMTP, known.SMTP)
+		fillLeg(p.IMAP, known.IMAP)
+	}
 	if p.SMTP.Port == 0 {
 		p.SMTP.Port = 587
 	}
@@ -797,8 +838,43 @@ func applyFix(p *payload, email string, fix models.MailboxImportRowFix) {
 	if fix.SMTP != nil && fix.SMTP.Host != nil {
 		p.MailHost = string(mailhost.Refine(mailhost.FromServer(p.SMTP.Host), domainOf(email)))
 		p.AuthMethod = mailhost.AuthMethodFor(mailhost.Host(p.MailHost), "")
+	} else if p.Signin || p.AuthMethod == models.MailAuthOAuth {
+		p.AuthMethod = mailhost.AuthMethodFor(host, "")
 	}
+	final := mailhost.Host(p.MailHost)
+	p.SMTP.Password = mailhost.NormalizeAppPassword(final, p.SMTP.Password)
+	p.IMAP.Password = mailhost.NormalizeAppPassword(final, p.IMAP.Password)
 	p.Signin = false
+}
+
+var errGoogleAppPassword = errx.NewWithIdentifier(errx.BadRequest, "google_app_password_required",
+	"Google needs a 16-letter app password here, not the account password.")
+
+// checkGooglePassword refuses a Google row's password that is not an app password; Google would refuse it too.
+func checkGooglePassword(p payload) *errx.Error {
+	if !mailhost.Host(p.MailHost).Google() || p.GrantID != nil {
+		return nil
+	}
+	for _, svc := range []*models.Service{p.SMTP, p.IMAP} {
+		if svc != nil && svc.Password != "" && !mailhost.LooksLikeGoogleAppPassword(svc.Password) {
+			return errGoogleAppPassword
+		}
+	}
+	return nil
+}
+
+// fillLeg gives a leg with no server the host's known one.
+func fillLeg(svc *models.Service, e mailhost.Endpoint) {
+	if svc.Host != "" || e.Host == "" {
+		return
+	}
+	svc.Host = e.Host
+	if svc.Port == 0 {
+		svc.Port = e.Port
+	}
+	if svc.Security == "" {
+		svc.Security = e.Security
+	}
 }
 
 // Retry queues failed rows again, optionally with one new password for all of them.
@@ -823,29 +899,40 @@ func (s *Service) Retry(ctx context.Context, orgID, userID, id uuid.UUID, req mo
 		}
 		ciph = c
 	}
-	for _, w := range rows {
-		resealed := ""
-		if ciph != nil {
+	// Every row is resealed and checked before any is queued, so a refusal leaves no partial batch.
+	resealed := make([]string, len(rows))
+	if ciph != nil {
+		for i, w := range rows {
 			p, xerr := unseal(ctx, ciph, w.Payload)
 			if xerr != nil {
 				return nil, xerr
 			}
 			pw := req.Password
 			applyFix(&p, w.Email, models.MailboxImportRowFix{Password: &pw})
+			if xerr := checkGooglePassword(p); xerr != nil {
+				return nil, xerr
+			}
 			raw, _ := json.Marshal(p)
-			if resealed, err = ciph.Encrypt(ctx, string(raw)); err != nil {
+			if resealed[i], err = ciph.Encrypt(ctx, string(raw)); err != nil {
 				errs.CaptureException(err)
 				return nil, errx.InternalError()
 			}
 		}
-		if err := s.repo.Requeue(ctx, id, w.Line, resealed); err != nil {
+	}
+	requeued := 0
+	for i, w := range rows {
+		queued, err := s.repo.Requeue(ctx, id, w.Line, resealed[i])
+		if err != nil {
 			return nil, errx.InternalError()
+		}
+		if queued {
+			requeued++
 		}
 	}
 	if err := s.repo.Reopen(ctx, orgID, id); err != nil {
 		return nil, errx.InternalError()
 	}
-	s.audit(ctx, orgID, userID, models.AuditActionUpdate, id, map[string]string{"retried": strconv.Itoa(len(rows))})
+	s.audit(ctx, orgID, userID, models.AuditActionUpdate, id, map[string]string{"retried": strconv.Itoa(requeued)})
 	s.Kick()
 	return s.Get(ctx, orgID, id)
 }

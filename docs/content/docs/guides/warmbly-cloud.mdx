@@ -1,52 +1,35 @@
 ---
 title: Warmbly Cloud for self-hosted instances
-description: "Warm the mailboxes on your own Warmbly instance in the hosted warmup pool, while campaigns, contacts and inbox stay on your server."
+description: "How a self-hosted instance already linked to Warmbly Cloud warms its mailboxes in the hosted pool. Warmbly Cloud no longer links new instances."
 ---
 
-Linking a self-hosted instance to Warmbly Cloud lets its mailboxes warm in the hosted pool, instead of only against the few other mailboxes on your server. Campaigns, contacts, the unibox, tracking and every stored message stay on your server. By default the cloud holds the credential of each SMTP/IMAP mailbox you enroll, the sign-in of any Google or Microsoft mailbox connected through it, and any redirect you choose to serve from it. A workspace Warmbly has approved can instead [keep each mailbox's credential on your server](#keep-credentials-on-your-server), so the cloud only learns the mailbox's address and its warmup traffic.
+<Callout type="warn" title="Warmbly Cloud no longer links new self-hosted instances">
+  Linking is closed on every plan. Existing connections keep working. To warm in the hosted pool, use a hosted workspace on [app.warmbly.com](https://app.warmbly.com) and move the mailboxes there; a [workspace export](/guides/workspace-export-import/) can carry the rest of the workspace. A self-hosted instance that is not linked connects Google and Microsoft mailboxes through [its own OAuth apps](/development/deployment-guide/#connect-mailboxes) and serves its [root redirects](/guides/sending-domains/#root-redirects) itself.
+</Callout>
 
-## Link a workspace
-
-<Steps>
-
-<Step>
-
-On your instance, open **Settings > Warmbly Cloud**, select the local workspace, and press **Connect to Warmbly Cloud**.
-
-</Step>
-
-<Step>
-
-Press **Open Warmbly Cloud**, sign in with your Warmbly account, enter the eight character code and pick the workspace to link to.
-
-</Step>
-
-<Step>
-
-Back on your instance, switch on the mailboxes you want warmed.
-
-</Step>
-
-</Steps>
+This page is for a self-hosted instance that is already linked to Warmbly Cloud. A linked instance's enrolled mailboxes warm in the hosted pool, instead of only against the few other mailboxes on your server. Campaigns, contacts, the unibox, tracking and every stored message stay on your server. By default the cloud holds the credential of each SMTP/IMAP mailbox you enroll, the sign-in of any Google or Microsoft mailbox connected through it, and any redirect you choose to serve from it. A workspace Warmbly has approved can instead [keep each mailbox's credential on your server](#keep-credentials-on-your-server), so the cloud only learns the mailbox's address and its warmup traffic.
 
 ## Good to know
 
-- A free Warmbly Cloud workspace warms up to 10 mailboxes at no cost. The Warmup plan ($15 a month or $144 a year) moves them to the premium pool with no mailbox cap.
-- Connecting needs an instance administrator signed in with two-factor authentication.
-- A code expires after 15 minutes if nobody approves it.
+- Warmbly Cloud links no new self-hosted instances, on any plan. An instance asking for a connection code is refused with `pool_link_closed`, and approving a code on `app.warmbly.com/connect` is refused with the same code for every workspace.
+- An existing link keeps everything while its Cloud workspace stays on a paid plan, including the retired Warmup plan: warmup, enrolling more mailboxes, Google and Microsoft sign-in through Cloud, Cloud-served redirects and placement tests on Cloud's seed panel.
+- A free Cloud workspace that is already linked keeps its enrolled mailboxes warming but adds none. See [free workspaces linked earlier](#free-workspaces-linked-earlier).
+- Disconnecting is permanent. A workspace that disconnects, from either side, cannot link again.
+- Upgrading the self-hosted instance does not break its link.
 - The cloud reaches your mail server over the internet, so SMTP and IMAP both need TLS or STARTTLS.
 - A mailbox the cloud quarantines or blocks is skipped by your campaigns until the hold ends.
+- Warmbly does not provide support for self-hosted instances. The community helps on [Discord](https://dc.warmbly.com).
 
 <Fold>
 
-## What linking gives you
+## What a link gives you
 
-A self-hosted Warmbly instance warms mailboxes only against the other mailboxes on that same instance, which for most installs is a handful. Linking the instance to Warmbly Cloud lets those mailboxes warm in the hosted pool instead: thousands of real, monitored mailboxes exchanging natural-looking mail, with replies and inbox engagement handled for you.
+A self-hosted Warmbly instance on its own warms mailboxes only against the other mailboxes on that same instance, which for most installs is a handful. That local warmup works, but it is not effective. A linked instance's enrolled mailboxes warm in the hosted pool instead: thousands of real, monitored mailboxes exchanging natural-looking mail, with replies and inbox engagement handled for you.
 
 Only warmup moves to the cloud. Campaigns, contacts, the unibox, tracking and every stored message stay on your server exactly as before. Linked instances also get Google and Microsoft sign-in through Warmbly's own OAuth apps, so there is no client to register: see [Google and Microsoft mailboxes](#google-and-microsoft-mailboxes-sign-in-through-warmbly-cloud). They can also have Cloud serve a sending domain's [root redirect](#root-redirects-served-by-warmbly-cloud), so the domain answers visitors without any proxy setup on your server.
 
 <Callout type="info" title="Pricing">
-  A free Warmbly Cloud workspace holds up to 10 mailboxes, connected directly or through a linked instance, and warms them at no cost. The Warmup plan, $15 a month per workspace or $144 a year, moves the workspace's mailboxes to the premium pool for better deliverability, with reputation protection and no mailbox cap. Nothing else about self-hosting changes.
+  A linked instance's mailboxes warm in the premium pool, with reputation protection and no mailbox cap, while its Cloud workspace is on a paid Warmbly Cloud plan, including the retired Warmup plan; see [billing](/guides/billing/). A free workspace [linked earlier](#free-workspaces-linked-earlier) keeps what it already enrolled. Self-hosting itself stays free and fully functional without Cloud.
 </Callout>
 
 </Fold>
@@ -55,10 +38,10 @@ Only warmup moves to the cloud. Campaigns, contacts, the unibox, tracking and ev
 
 ## How it works
 
-New connections link one local workspace to one Warmbly Cloud workspace. A Cloud workspace can have only one active self-hosted connection, including any older instance-wide link. New connections for different local workspaces need different Cloud workspaces, each with its own plan. Existing server-wide connections keep serving their local workspaces without reconnecting or buying another plan. Self-hosted workspace creation itself is unlimited; hosted creation limits and request-rate protection are unchanged. When you enroll a mailbox, the instance sends that mailbox's SMTP/IMAP credential to the cloud, sealed in transit and at rest with the same envelope encryption the hosted product uses for every customer mailbox. From then on:
+A connection links one local workspace to one Warmbly Cloud workspace, and a Cloud workspace has at most one. Older server-wide connections keep serving their local workspaces without reconnecting or buying another plan. Self-hosted workspace creation itself is unlimited; hosted creation limits and request-rate protection are unchanged. When you enroll a mailbox, the instance sends that mailbox's SMTP/IMAP credential to the cloud, sealed in transit and at rest with the same envelope encryption the hosted product uses for every customer mailbox. From then on:
 
 - Warmbly Cloud sends the mailbox's warmup mail, replies to partners, and rescues, opens and stars the warmup mail it receives, on Warmbly's own workers
-- the mailbox's warmup ramp, hours and days belong to Warmbly Cloud from then on, starting from the ones it had on your instance, and its timezone stays your instance's (see [warmup settings](#warmup-settings)). Cloud does not automatically enable its weekday sending-behavior profile for these warmup-only mailboxes. A Cloud profile you explicitly configure still takes precedence while enabled.
+- the mailbox's warmup ramp, hours and days belong to Warmbly Cloud from then on, starting from the ones it had on your instance, and its timezone stays your instance's (see [warmup settings](#warmup-settings)). Cloud does not automatically enable its weekday sending-behavior profile for these warmup-only mailboxes. An enabled Cloud sending plan supplies hours and breaks within the warmup window. Explicit warmup days, including weekends, take precedence over its working days.
 - the cloud reads only verified warmup mail from the mailbox. Everything else that arrives is dropped unread; no history is imported and nothing is stored
 - your instance stops its own warmup for that mailbox and takes it out of the local warmup pool, so no mailbox on your server writes to it any more, and keeps sending campaigns from it as usual
 - your instance recognises both received warmup and the mailbox's own Sent copies and leaves them out of your unibox, asking the cloud to vouch for anything it cannot identify on its own
@@ -96,29 +79,31 @@ Once a mailbox is unenrolled, the instance no longer requests its Cloud history.
 
 <Fold>
 
-## Linking a workspace
+## Managing an existing connection
 
-The link is offered on a self-hosted instance as the last step of onboarding when you first sign in, as a banner on **Mailboxes** until you connect or dismiss it, under **Settings > Warmbly Cloud** at any time, and on **Sending domains** when a [root redirect](#root-redirects-served-by-warmbly-cloud) could be served from Cloud. Whichever you use, the steps are the same:
+Warmbly Cloud no longer links new self-hosted instances, so there is no connect step anywhere on the instance: not in onboarding, on **Mailboxes**, on **Sending domains** or under **Settings > Warmbly Cloud**. On an instance that is not linked, Warmbly Cloud is hidden: there is no **Settings > Warmbly Cloud** entry (its address opens your profile), no Cloud card in a mailbox's **Warmup** tab, and the plan badge opens your profile. Only the **Mailboxes** banner remains. Its **Upgrade on Warmbly Cloud** button opens sign-up on app.warmbly.com, or sign-in for an existing account, and then the plan chooser, and it links to **Settings > Data** for the [workspace export](/guides/workspace-export-import/) that moves the workspace there. On Warmbly Cloud, **Settings > Linked instances** appears only for a workspace that still has a linked instance. On Warmbly Cloud, `app.warmbly.com/connect` refuses every code with `pool_link_closed`, and an older instance that still asks for a code gets the same answer.
 
-1. Select the local workspace you want to connect, then press **Connect to Warmbly Cloud**. The instance shows an eight character code.
-2. Press **Open Warmbly Cloud**, or go to `app.warmbly.com/connect`, sign in with your Warmbly account (create one if you do not have it, it is free), enter the code and pick the workspace to link to. The workspace needs the manage settings permission.
-3. Your instance notices the approval within a few seconds and moves on to mailbox selection. Switch on the mailboxes you want warmed.
-
-The whole flow takes about a minute. A code expires after 15 minutes if nobody approves it; start again from the instance.
-
-The link belongs to the selected local workspace. Connecting and disconnecting it, and bringing in mailboxes from its Cloud workspace, still requires an instance administrator because credentials leave the server: it needs a platform admin account with the manage settings admin permission (the [first owner](/development/first-run/) has it) signed in with two-factor authentication. Once a workspace is linked, its members with the manage mailboxes permission can use that workspace's connection: enrolling, pausing and resuming, and connecting Google and Microsoft mailboxes through Warmbly Cloud. The onboarding step that links the instance is shown only to an administrator who can complete it.
+A connection belongs to its local workspace. Disconnecting it, and bringing in mailboxes from its Cloud workspace, requires an instance administrator because credentials leave the server: it needs a platform admin account with the manage settings admin permission (the [first owner](/development/first-run/) has it) signed in with two-factor authentication. Members of a linked workspace with the manage mailboxes permission can use that workspace's connection: enrolling, pausing and resuming, and connecting Google and Microsoft mailboxes through Warmbly Cloud.
 
 ### Existing instance-wide connections
 
 Upgrading does not revoke an existing connection or move its mailboxes. The migration records which connection enrolled each mailbox, and existing warmup, brokered access tokens, warmup verification, analytics, standing synchronization, redirects and placement results keep using that original connection. Old placement results and Cloud-served redirects are backfilled to that connection too.
 
-Existing connections work normally after upgrading: you can enroll more mailboxes, connect Cloud mailboxes, sign in with Google or Microsoft, create Cloud-served redirects, and start placement tests within the connected Cloud workspace's plan. **Settings > Warmbly Cloud** shows the normal connection, plan and mailbox controls, with no separate migration step. You do not need to disconnect or buy another plan to keep using your existing connection.
+Existing connections work normally after upgrading: you can enroll more mailboxes, connect Cloud mailboxes, sign in with Google or Microsoft, create Cloud-served redirects, and start placement tests within the connected Cloud workspace's plan (a free workspace adds no new mailboxes, see [free workspaces linked earlier](#free-workspaces-linked-earlier)). **Settings > Warmbly Cloud** shows the normal connection, plan and mailbox controls, with no separate migration step. You do not need to disconnect or buy another plan to keep using your existing connection.
 
-The one-active-connection limit applies when creating an additional connection, not when using an existing one. A local workspace with an existing connection does not offer another connection setup. A Cloud workspace that already has a connection cannot approve another, including when that connection is shared across a self-hosted server's local workspaces. Existing connections and their mailboxes remain in place. New connection requests are scoped to an unconnected local workspace and require an unused Cloud workspace.
+Disconnect is permanent and potentially disruptive: a disconnected workspace cannot link again. Disconnecting a shared server connection affects **all** local workspaces using it; the confirmation states that scope. Disconnecting a workspace's own connection affects only its mailboxes and redirects. Other connections are unaffected. Removing an SMTP/IMAP enrollment deletes its Cloud mailbox and history; enrolling it again starts a new Cloud enrollment. Cloud-managed mailboxes remain on Cloud, but disconnecting removes their local mirrors. None of this is required by an upgrade.
 
-Disconnect is still deliberate and potentially disruptive. Disconnecting a shared server connection affects **all** local workspaces using it; the confirmation states that scope. Disconnecting a workspace's own connection affects only its mailboxes and redirects. Other connections are unaffected. Removing an SMTP/IMAP enrollment deletes its Cloud mailbox and history; enrolling it again starts a new Cloud enrollment. Cloud-managed mailboxes remain on Cloud, but disconnecting removes their local mirrors. None of this is required by an upgrade.
+Deploy the Cloud backend and migration **before** publishing the self-hosted upgrade. Old self-hosted clients keep using existing connections, including adding mailboxes on a paid workspace. No new environment variable or data backfill is required to keep using existing connections.
 
-Deploy the Cloud backend and migration **before** publishing the self-hosted upgrade. Old self-hosted clients can keep using existing connections, including adding mailboxes, but cannot establish new instance-wide connections. New self-hosted clients refuse to connect to older Cloud versions that do not advertise workspace-scoped support. No new environment variable or data backfill is required for restoring use of existing connections.
+### Free workspaces linked earlier
+
+A free Cloud workspace that already has a linked instance keeps it, and every mailbox it enrolled keeps warming in Cloud exactly as before.
+
+That connection adds no new mailbox to Cloud until the workspace subscribes to a paid Warmbly Cloud plan. Enrolling an SMTP/IMAP mailbox, signing in a Google or Microsoft mailbox through Warmbly Cloud, and connecting an existing Cloud workspace mailbox into the instance are refused with `pool_link_subscription_required` (402). New mailboxes warm locally on the instance instead. It follows that a mailbox you unenroll cannot be enrolled again without the plan.
+
+**Settings > Warmbly Cloud** shows how many mailboxes the workspace keeps, and the **Mailboxes** page says when new ones warm locally, with a **See plans** button that opens the plan chooser on Warmbly Cloud for the linked workspace. Moving the linked Cloud workspace to a paid plan lifts the restriction on the existing connection; nothing needs reconnecting. This applies only to linked instances: a workspace that kept the free plan still warms up to 10 mailboxes connected directly on Warmbly Cloud. A new workspace has no free plan to keep and needs a paid plan to connect mailboxes; see [billing](/guides/billing/#without-a-paid-plan).
+
+Deploy the Cloud backend before upgrading self-hosted instances. Older self-hosted versions keep working against it; on a free workspace they show the refusal when they try to add a mailbox.
 
 </Fold>
 
@@ -132,7 +117,7 @@ On a linked instance, signing in one mailbox under **Add account > Google** or *
 - your instance gets a mirror of the mailbox with no credential on it. Campaigns, replies and the unibox work from your server as before; to send and sync, the instance asks the cloud for a short-lived access token (about an hour, cached) using its link token
 - the refresh grant never leaves the cloud. Removing the mailbox from either side, unlinking the instance, or the cloud blocking the mailbox stops the instance sending from it within the hour
 
-The sign-in only completes in the browser that pressed **Continue**, and Cloud only ever sends it back to the address the instance registered when it was linked (its `APP_URL`). An instance linked before it had an address set cannot use this until you set `APP_URL`, disconnect it and link it again. The exchange with Google or Microsoft is protected with PKCE, so an authorization code is useless to anyone but Cloud.
+The sign-in only completes in the browser that pressed **Continue**, and Cloud only ever sends it back to the address the instance registered when it was linked (its `APP_URL`). An instance linked before it had an address set cannot use this. Linking again is no longer possible, so connect its Google and Microsoft mailboxes through [its own OAuth apps](/development/deployment-guide/#connect-mailboxes) or an app password instead. The exchange with Google or Microsoft is protected with PKCE, so an authorization code is useless to anyone but Cloud.
 
 These mailboxes show the blue **Cloud** badge with "Signed in through Warmbly Cloud". The `BOX_GOOGLE_*` and `BOX_OUTLOOK_*` variables are still honoured when set, but an instance without them can now connect Google and Microsoft mailboxes as long as it is linked.
 
@@ -245,7 +230,7 @@ Warmbly Cloud owns an enrolled mailbox's starting volume, daily increase, maximu
 - Changing a setting on the Warmup tab, or through `PATCH /emails/:id`, sends it to Warmbly Cloud first. You can change the starting volume and other ramp settings while warmup is active without removing or enrolling the mailbox again. It is saved only once Warmbly Cloud has applied it, and the mailbox then shows the values Warmbly Cloud reports. If Warmbly Cloud cannot be reached, nothing changes. If it answers but does not apply a value, the rest of your change is not saved, the error names what was not applied, and the mailbox shows the values Warmbly Cloud reported.
 - The copy is refreshed whenever the Cloud mailbox list loads, after every change, and every 15 minutes in the background, so a change made in Warmbly Cloud shows up here within 15 minutes. The Warmup tab shows when it was last refreshed.
 - The timezone stays your instance's, because campaigns use it too. It travels with every change, and the background refresh sends it again whenever Warmbly Cloud's differs.
-- Warmbly Cloud does not take 0 from an instance for the starting volume, maximum, daily increase or reply rate, so on an enrolled mailbox those fields start at 1. Sending every day is sent as all seven days.
+- Warmbly Cloud does not take 0 from an instance for the starting volume, maximum, daily increase or reply rate, so on an enrolled mailbox those fields start at 1. Sending days are explicit on linked mailboxes: **Every day** is sent and mirrored as all seven days. **Follow sending plan** is available for mailboxes warmed on the current instance; linked mailboxes use the days Cloud reports.
 - The content segment, warmup placement, folder and retention on your instance do not apply while Warmbly Cloud warms the mailbox, and the Warmup tab hides them.
 - Participation and the shared daily and recipient limits are changed with the mailbox's Warmbly Cloud controls. Starting, pausing and resuming warmup are sent to Warmbly Cloud; to stop warmup, remove the mailbox from Warmbly Cloud.
 
@@ -273,14 +258,14 @@ The count can also hold below the target when the pool has fewer partners free f
 
 | Tier | Mailboxes | Partners |
 |------|-----------|----------|
-| Free | Up to 10 per linked workspace | The pool's free tier, plus the paid mailboxes that wrote to it in the last 14 days, which a proven free mailbox writes back to |
-| Premium (the Warmup plan, $15 a month or $144 a year) | Unlimited | The premium tier first; when a mailbox has too few partners in other workspaces (fewer than 25, or its warmup ceiling if higher), that many of the best proven free mailboxes fill in, and those mailboxes write back |
+| Free | Only the mailboxes a [free workspace linked earlier](#free-workspaces-linked-earlier) already enrolled; it adds no new ones | The pool's free tier, plus the paid mailboxes that wrote to it in the last 14 days, which a proven free mailbox writes back to |
+| Premium (any paid Warmbly Cloud plan) | Unlimited | The premium tier first; when a mailbox has too few partners in other workspaces (fewer than 25, or its warmup ceiling if higher), that many of the best proven free mailboxes fill in, and those mailboxes write back |
 
 Premium workspaces are always served first. Borrowed partners are limited to mailboxes that have been healthy pool members for at least three days in a workspace in good standing, and only those may write back, so nothing unproven and nothing unsolicited ever reaches a paying mailbox. Every draw favours the inbox that has received the least for what it sent, so a paying mailbox in a thin tier is written to first rather than last. See [pools](/guides/warmup/#pools) for the full rule.
 
-Your instance shows which tier it is on in two places: the plan badge in the header reads **Cloud · Free** or **Cloud · Premium** once the link is live, and **Settings > Warmbly Cloud** has a **Plan** section with the allowance and what Premium adds: better deliverability, reputation protection, priority matching and no mailbox cap. Its **Premium** button opens Warmbly Cloud's billing page, asks whether you want to be billed monthly or yearly, and sends you to checkout for the workspace the instance is linked to; the instance itself bills nothing. On Premium the same section links to that billing page to manage or cancel. The **Mailboxes** page nudges once, only when every free pool mailbox is in use and the instance has more to warm.
+Your instance shows which tier it is on in two places: the plan badge in the header reads **Cloud · Free** or **Cloud · Premium** once the link is live, and **Settings > Warmbly Cloud** has a **Plan** section with how many mailboxes a free workspace keeps and what Premium adds: better deliverability, reputation protection, priority matching and no mailbox cap. On a free workspace its button opens the plan chooser on Warmbly Cloud's billing page for the workspace the instance is linked to; the instance itself bills nothing. On Premium the same section links to that billing page to manage or cancel. On a free workspace the **Mailboxes** page says so only when the instance has mailboxes that are not in Cloud, which warm locally until the workspace subscribes.
 
-The Warmup plan is the same plan a hosted workspace buys when it only warms and does not send, so it is not tied to self-hosting: a workspace on it can hold mailboxes connected on the cloud, through linked instances, or both, and the workspace's regular hosted plan, if it has one, also counts as Premium, so a workspace on Starter or above needs nothing extra. It is not listed next to Starter, Grow and Business because it is not an alternative to them; the button on your instance and the mailboxes page on the cloud are the ways in. See [billing](/guides/billing/#the-warmup-plan).
+Premium is the workspace's regular hosted plan, not a separate purchase: a workspace on Starter or above needs nothing extra, and its mailboxes can be connected on the cloud, through linked instances, or both. The Warmup plan is no longer sold; a workspace already on it keeps it, and counts as Premium, for as long as it stays subscribed. See [billing](/guides/billing/#the-warmup-plan).
 
 </Fold>
 
@@ -326,7 +311,7 @@ The split is the same as for warmup, only narrower:
 
 - **Your instance renders and sends every copy.** The cloud stores no template and never gets the mailbox's credentials; its seed inboxes receive the rendered copies like any recipient. A campaign step renders for a placeholder contact here, not the campaign's first lead, so no lead's details reach the cloud's seed inboxes unless you pick a contact for the test. Copies go out from your mailbox through your own workers, paced and charged to the mailbox's daily limit exactly like a test on any other panel.
 - **The cloud only hands out seed addresses and reports where each copy landed.** It picks seeds for the test (never one on your sender's domain), your instance tells it the Message-ID of each copy it sent, and the cloud answers with the folder each seed found it in. Seed addresses are shown masked, as on any shared panel.
-- **Tests use the linked cloud workspace's free tests**, the same monthly number a hosted workspace on the same plan gets, and a tracking comparison counts as two. Paying for more in credits is only offered on the hosted product's own panel, so past the free tests a test here waits for the next month. Tests on your instance's own panel and on your own seed inboxes are never counted.
+- **Tests use the linked cloud workspace's free tests**, the same monthly number a hosted workspace on the same plan gets, and a tracking comparison counts as two. Paying for more from the balance is only offered on the hosted product's own panel, so past the free tests a test here waits for the next month. Tests on your instance's own panel and on your own seed inboxes are never counted.
 - **You can narrow a test to some providers**, as on any shared panel; the cloud then picks its seeds from those providers alone.
 
 The panel is offered only while the instance is linked. Without a link a test on it is refused with `placement_panel_unavailable`.
@@ -352,7 +337,7 @@ See [serve it from Warmbly Cloud](/guides/sending-domains/#serve-it-from-warmbly
 
 ## Unlinking
 
-On your instance, **Settings > Warmbly Cloud > Disconnect** removes only the selected workspace link's enrollments and lets eligible local warmup take over after confirmed cleanup. Other workspace links and retained legacy links are unaffected. Instance-originated SMTP mailboxes and their credentials are deleted on the cloud. An OAuth mailbox belongs to the cloud workspace: unlinking removes that connection's access, not the workspace's mailbox or provider grant. Unlinking stops its Cloud warmup sending and receiving; its ramp settings and history remain, and you can restart it or delete its stored credentials on Warmbly Cloud. Root redirects using the disconnected link stop at the same time. Removing a legacy instance-wide link remains a separate administrator action. On Warmbly Cloud, **Settings > Linked instances** lists the connections linked to a workspace and can unlink any of them from the other side.
+On your instance, **Settings > Warmbly Cloud > Disconnect** removes only the selected workspace link's enrollments and lets eligible local warmup take over after confirmed cleanup. Other workspace links and retained legacy links are unaffected. Instance-originated SMTP mailboxes and their credentials are deleted on the cloud. An OAuth mailbox belongs to the cloud workspace: unlinking removes that connection's access, not the workspace's mailbox or provider grant. Unlinking stops its Cloud warmup sending and receiving; its ramp settings and history remain, and you can restart it or delete its stored credentials on Warmbly Cloud. Root redirects using the disconnected link stop at the same time. Removing a legacy instance-wide link remains a separate administrator action. On Warmbly Cloud, **Settings > Linked instances** lists the connections linked to a workspace and can unlink any of them from the other side; once none is left, the section disappears. An unlinked connection cannot be linked again from either side.
 
 SMTP enrollment, mailbox removal and instance disconnect first record a durable local intent. While enrollment or removal is pending, the mailbox is not admitted to local warmup. The regular standing sync retries pending work after an outage or restart, using the same mailbox identity rather than creating another. Remote removal must be acknowledged, or confirmed already absent, before local enrollment is dropped. A failed local cleanup stays pending and is retried.
 
@@ -400,7 +385,7 @@ The schema downgrade refuses to discard any managed consent history, including c
 
 Redis still holds the short-lived browser session, PKCE verifier, browser binding and consent result, with a ten-minute TTL. The cloud's ordinary encrypted mailbox credential store holds provider credentials under its existing retention rules. The instance only caches brokered access tokens in memory for at most ten minutes; an already-issued worker token can remain valid until its provider expiry.
 
-Consent restrictions/history travel in a [workspace export](/guides/workspace-export-import/). Import resets source instance IDs, remote IDs, session hashes, planned account handles and queued activation handles; live cloud account references on the local consent record are reset too. This prevents an imported pending operation from resuming against the source instance, while retaining its restrictive state. Workspace links and legacy instance-wide links do not travel: reconnect and explicitly authorize any new managed operation after moving. Imported history is not a fresh consent or a positive provider verdict.
+Consent restrictions/history travel in a [workspace export](/guides/workspace-export-import/). Import resets source instance IDs, remote IDs, session hashes, planned account handles and queued activation handles; live cloud account references on the local consent record are reset too. This prevents an imported pending operation from resuming against the source instance, while retaining its restrictive state. Workspace links and legacy instance-wide links do not travel, and Warmbly Cloud links no new instances, so the destination has no Cloud connection. Imported history is not a fresh consent or a positive provider verdict.
 
 </Fold>
 
@@ -409,10 +394,10 @@ Consent restrictions/history travel in a [workspace export](/guides/workspace-ex
 ## Self-hosting notes
 
 - Traffic is outbound only: the instance calls `WARMBLY_CLOUD_URL` (default `https://api.warmbly.com`) over HTTPS, on port 443 or 8443, and only to a public address. Plain HTTP to `localhost` is accepted only when `APP_ENV` is `dev`. Nothing needs to reach the instance from the internet
-- The instance token is stored sealed with `CREDENTIALS_ENCRYPTION_KEY`. Rotating that key invalidates the stored token; reconnect afterwards
+- The instance token is stored sealed with `CREDENTIALS_ENCRYPTION_KEY`. Keep the old key in `CREDENTIALS_ENCRYPTION_READ_KEYS` when you rotate it: a token the instance can no longer open ends the connection, and it cannot be linked again
 - Brokered access tokens reach the worker through the backend's internal API (`/api/v1/internal/cloud-link/token/:id`), so workers keep needing only `ENCRYPTED_KEYS_BACKEND_URL` and `ENCRYPTED_KEYS_WORKER_TOKEN`. A worker that cannot reach the backend keeps sending from such mailboxes until its cached token expires, about an hour
-- Connections and enrollments are bound to this installation's encryption key, even when workspace-scoped, so they are not part of a [workspace export](/guides/workspace-export-import/). Reconnect after moving a workspace to a new instance
-- `INSTANCE_NAME` sets the name shown on the approval page; the hostname is used when unset. The name follows the workspace [naming rules](/api/error-codes/#name-refusals), so one that reads as a web address (a hostname, for example) shows as "Self-hosted instance"
+- Connections and enrollments are bound to this installation's encryption key, even when workspace-scoped, so they are not part of a [workspace export](/guides/workspace-export-import/). A workspace moved to a new instance leaves its connection behind, and the new instance cannot link
+- `INSTANCE_NAME` was the name an instance gave Warmbly Cloud when it linked, and is what the Cloud sign-in page and **Settings > Linked instances** still show. Changing it now changes nothing. The name follows the workspace [naming rules](/api/error-codes/#name-refusals), so one that reads as a web address (a hostname, for example) shows as "Self-hosted instance"
 
 </Fold>
 

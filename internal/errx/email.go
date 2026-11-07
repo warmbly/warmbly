@@ -187,6 +187,12 @@ const (
 	MailCertificateHint = "The server's certificate is not one a recognised certificate authority vouches for, has expired, or is for another host name. Use the host name the certificate is issued for. For a server with its own certificate, choose Update credentials on the mailbox and trust the certificate when the test offers it."
 	// MailCleartextAuthMessage is the refusal to sign in over a link that is not encrypted.
 	MailCleartextAuthMessage = "This mail server only offers sign-in over an unencrypted connection, and Warmbly never sends a mailbox password unencrypted. Use the server's SSL/TLS port (usually 465) or a port that offers STARTTLS (usually 587)."
+	// MailServerThrottlingMessage replaces the generic connection text when the server limited this worker's address.
+	MailServerThrottlingMessage = "The mail server temporarily refused new connections or sign-ins from Warmbly's sending address, which providers do when many mailboxes they host connect from the same address. Warmbly now spaces its connections to this server and retries on its own; nothing needs to change on the mailbox."
+	// MailServerPacedMessage is a send held back without contacting a server that is limiting Warmbly's address.
+	MailServerPacedMessage = "Not sent yet: this mailbox's mail server is limiting connections from Warmbly's sending address, so Warmbly is holding the send briefly instead of adding to them. It is retried automatically."
+	// MailWrongServerHint opens the message for a provider saying the account lives on another of its servers.
+	MailWrongServerHint = "The mail server refused the sign-in because this mailbox's account is hosted on a different server of the same provider."
 	// MailNoSTARTTLSHint is what a mailbox owner reads when the port offers no encryption.
 	MailNoSTARTTLSHint = "The server offers no STARTTLS on this port, and Warmbly only signs in over an encrypted connection. Use the server's SSL/TLS port (usually 465) or a port that offers STARTTLS (usually 587)."
 )
@@ -264,6 +270,10 @@ var (
 		"The email address or password is incorrect. Please check your credentials and try again.",
 		MailErrorResolveMethodReload,
 	)
+	// ErrMailWrongServer is credentials-class because Update credentials is where the host is fixed; detail is the server's own words.
+	ErrMailWrongServer = func(detail string) *MailError {
+		return MError(MailErrorCritical, MailErrorCodeInvalidCredentials, fmt.Sprintf("%s The server said: %s", MailWrongServerHint, detail), MailErrorResolveMethodReload)
+	}
 	ErrMailAuthenticationFailed = MError(
 		MailErrorCritical,
 		MailErrorCodeAuthenticationFailed,
@@ -410,6 +420,10 @@ func (e *MailError) GetUserErrorInfo() UserErrorInfo {
 	case MailErrorCodeInvalidCredentials:
 		info.Title = "Invalid Credentials"
 		info.ActionRequired = "Please update your email credentials"
+		if strings.HasPrefix(e.Message, MailWrongServerHint) {
+			info.Title = "Wrong mail server"
+			info.ActionRequired = "Choose Update credentials on the mailbox and enter the IMAP and SMTP hosts for the data centre your account is in"
+		}
 	case MailErrorCodeServerUnreachable:
 		info.Title = "Connection Error"
 		info.ActionRequired = "The email server is temporarily unavailable. We'll retry automatically."

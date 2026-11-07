@@ -31,8 +31,8 @@ vi.mock("@/lib/api/hooks/app/cloudlink/useCloudLink", () => ({
     useUnenrollCloudLinkMailbox: () => ({ mutateAsync: vi.fn() }),
     useCloudLinkMailboxLifecycle: () => ({ mutateAsync: vi.fn() }),
 }));
-vi.mock("./ConnectFlow", () => ({ default: () => <div>Connection setup</div> }));
 vi.mock("./LinkedInstances", () => ({ default: () => null }));
+vi.mock("@tanstack/react-router", () => ({ Navigate: ({ to }: { to: string }) => <div>Redirected to {to}</div> }));
 vi.mock("@/components/app/emails/CloudMailboxPicker", () => ({ default: () => <div>Existing Cloud mailboxes</div> }));
 
 describe("existing Cloud connections", () => {
@@ -64,7 +64,6 @@ describe("existing Cloud connections", () => {
         expect(screen.getByText("Existing Cloud mailboxes")).toBeInTheDocument();
         expect(screen.queryByText(/legacy/i)).not.toBeInTheDocument();
         expect(screen.queryByText("Connect this workspace")).not.toBeInTheDocument();
-        expect(screen.queryByText("Connection setup")).not.toBeInTheDocument();
         expect(screen.getByRole("switch")).toBeEnabled();
         fireEvent.click(screen.getByRole("switch"));
         await waitFor(() => expect(fixture.enroll).toHaveBeenCalledWith("mailbox"));
@@ -97,7 +96,6 @@ describe("existing Cloud connections", () => {
         fixture.status.link!.organization_id = "local";
         draw();
         expect(screen.queryByText(/legacy/i)).not.toBeInTheDocument();
-        expect(screen.queryByText("Connection setup")).not.toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
         expect(fixture.confirm.mock.calls[0][0]).toContain("this workspace");
         await fixture.confirm.mock.calls[0][1]();
@@ -108,11 +106,11 @@ describe("existing Cloud connections", () => {
         expect(fixture.disconnect).toHaveBeenLastCalledWith(true);
     });
 
-    it("only offers connection setup when disconnected", () => {
+    it("has no page for an instance that is not linked, since Cloud links no new instances", () => {
         fixture.status.connected = false;
         fixture.status.legacy_connected = false;
         fixture.status.link = null;
         draw();
-        expect(screen.getByText("Connection setup")).toBeInTheDocument();
+        expect(screen.getByText("Redirected to /app/settings/profile")).toBeInTheDocument();
     });
 });

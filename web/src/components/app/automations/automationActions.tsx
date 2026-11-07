@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import { triggerVariables } from "@/lib/api/models/app/automations/meta";
 import { cn } from "@/lib/utils";
+import { fmtUsdAbout } from "@/lib/money";
+import { AI_ESTIMATE_USD } from "@/lib/aiEstimates";
 
 // Fresh config for a newly-created action node: agent mode for the AI step, two
 // starter cases for the AI switch (so its case branches show at once), else empty.
@@ -54,8 +56,8 @@ export const ACTION_VISUAL: Record<string, { Icon: typeof TagIcon; tint: string;
     "warmbly.fire_event": { Icon: SendIcon, tint: "text-sky-600", bg: "bg-sky-50", desc: "Publish a custom event to the realtime gateway — your app receives it over the API websocket, no public URL." },
     "warmbly.upsert_contact": { Icon: UserPlusIcon, tint: "text-emerald-600", bg: "bg-emerald-50", desc: "Create a contact from the event's fields, or enrich the one with that email, then tag it and enrol it in a campaign." },
     "warmbly.add_to_campaign": { Icon: MegaphoneIcon, tint: "text-sky-600", bg: "bg-sky-50", desc: "Enrol the event's contact in a campaign. Sending still follows the campaign's mailboxes, caps and spacing." },
-    "warmbly.ai_step": { Icon: SparklesIcon, tint: "text-purple-600", bg: "bg-purple-50", desc: "One AI step: an agent that takes reversible actions (tag, task, deal, label…), or a single-shot classify, extract, or generate over the event. Billed in credits." },
-    "warmbly.ai_switch": { Icon: GitBranchIcon, tint: "text-purple-600", bg: "bg-purple-50", desc: "Route the event: AI picks one of your cases, or match a value template. AI mode costs 1 credit; value mode is free." },
+    "warmbly.ai_step": { Icon: SparklesIcon, tint: "text-purple-600", bg: "bg-purple-50", desc: "One AI step: an agent that takes reversible actions (tag, task, deal, label…), or a single-shot classify, extract, or generate over the event. Charged to the balance by usage." },
+    "warmbly.ai_switch": { Icon: GitBranchIcon, tint: "text-purple-600", bg: "bg-purple-50", desc: `Route the event: AI picks one of your cases, or match a value template. AI mode costs ${fmtUsdAbout(AI_ESTIMATE_USD.aiNode)}; value mode is free.` },
     "slack.notify": { Icon: MessageSquareIcon, tint: "text-violet-600", bg: "bg-violet-50" },
     "discord.notify": { Icon: MessageSquareIcon, tint: "text-indigo-600", bg: "bg-indigo-50" },
     "webhook.ping": { Icon: SendIcon, tint: "text-sky-600", bg: "bg-sky-50" },

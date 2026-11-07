@@ -9,22 +9,22 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/warmbly/warmbly/internal/app/credits"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 )
 
-// writingCall is one writing-assistant generation whose credit is already
-// taken; deliverWriting runs it, refunds a failure, settles usage and answers.
+// writingCall is one writing-assistant generation the balance was checked for;
+// deliverWriting runs it, charges what it used and answers.
 type writingCall struct {
-	orgID     uuid.UUID
-	reqCtx    context.Context // carries the credit attribution
-	local     bool
-	remaining int
-	cost      int
-	ledger    string // usage reason; a refund is ledger + "_refund"
-	idemKey   string
-	model     string
-	voice     generation.VoiceContext
+	orgID   uuid.UUID
+	reqCtx  context.Context // carries the credit attribution
+	local   bool
+	ledger  string // usage reason
+	idemKey string
+	model   string
+	voice   generation.VoiceContext
 	// source is text the author supplied; flagged words already in it are theirs.
 	source string
 	// tidy cleans the model's raw text before the final version is sent.
@@ -38,15 +38,17 @@ type writingCall struct {
 // pass runs), then exactly one "done" (the final text and what it cost) or
 // "error".
 type writingEvent struct {
-	Type             string `json:"type"`
-	Text             string `json:"text,omitempty"`
-	Stage            string `json:"stage,omitempty"`
-	CreditsRemaining *int   `json:"credits_remaining,omitempty"`
-	CreditsCharged   *int   `json:"credits_charged,omitempty"`
-	TokensUsed       *int   `json:"tokens_used,omitempty"`
-	Model            string `json:"model,omitempty"`
-	Code             string `json:"code,omitempty"`
-	Message          string `json:"message,omitempty"`
+	Type             string   `json:"type"`
+	Text             string   `json:"text,omitempty"`
+	Stage            string   `json:"stage,omitempty"`
+	CreditsRemaining *int     `json:"credits_remaining,omitempty"`
+	CreditsCharged   *int     `json:"credits_charged,omitempty"`
+	ChargedUSD       *float64 `json:"charged_usd,omitempty"`
+	BalanceUSD       *float64 `json:"balance_usd,omitempty"`
+	TokensUsed       *int     `json:"tokens_used,omitempty"`
+	Model            string   `json:"model,omitempty"`
+	Code             string   `json:"code,omitempty"`
+	Message          string   `json:"message,omitempty"`
 }
 
 // wantsEventStream reports whether the caller asked for the streamed answer.
@@ -64,25 +66,15 @@ func (h *Handler) deliverWriting(c *gin.Context, w writingCall) {
 	if wantsEventStream(c) {
 		emit = sseEmitter[writingEvent](c)
 	}
-	streamed := false
 	var onDelta func(string)
 	if emit != nil {
-		onDelta = func(s string) {
-			streamed = true
-			emit(writingEvent{Type: "delta", Text: s})
-		}
+		onDelta = func(s string) { emit(writingEvent{Type: "delta", Text: s}) }
 	}
 
 	result, gerr := w.generate(ctx, onDelta)
 	if gerr != nil {
-		// Text a caller read and then walked away from was delivered; any other
-		// failure is refunded.
-		if !w.local && (!streamed || ctx.Err() == nil) {
-			if bal, rerr := h.CreditService.Grant(context.WithoutCancel(w.reqCtx), w.orgID, w.cost, w.ledger+"_refund"); rerr == nil {
-				w.remaining = bal
-			}
-		}
-		msg := "The writing assistant is temporarily unavailable. Your credit was not charged."
+		// A failed generation reports no usage, so nothing is charged.
+		msg := "The writing assistant is temporarily unavailable. Nothing was charged."
 		if errors.Is(gerr, generation.ErrNotConfigured) {
 			msg = "AI writing assistant is not configured."
 		}
@@ -103,34 +95,29 @@ func (h *Handler) deliverWriting(c *gin.Context, w writingCall) {
 			emit(writingEvent{Type: "stage", Stage: "checking"})
 		}
 	}
-	if fixed, used := h.rewordFlagged(ctx, w.model, w.voice, text, w.source, onPass); used > 0 {
+	if fixed, in, out := h.rewordFlagged(ctx, w.model, w.voice, text, w.source, onPass); in+out > 0 {
 		text = fixed
-		result.TokensUsed += used
+		result.TokensUsed += in + out
+		result.InputTokens += in
+		result.OutputTokens += out
 	}
 
-	// Usage-based settle: price the actual tokens and charge any overage
-	// beyond the flat minimum (best-effort; never fails the delivered text).
-	charged := 0
-	if !w.local {
-		charged = w.cost
-		if extra, serr := h.CreditService.SettleUsage(w.reqCtx, w.orgID, w.cost, result.Model, result.TokensUsed, w.ledger, settleKey(w.idemKey)); serr == nil && extra > 0 {
-			w.remaining -= extra
-			charged += extra
-		}
-	}
+	usage := credits.AIUsage(result.Model, result.InputTokens, result.OutputTokens)
+	charged, balance := h.chargeAI(w.reqCtx, w.orgID, w.local, usage, w.ledger, w.idemKey)
 
 	if emit != nil {
+		remaining, chargedCredits := models.CreditsFromMicro(balance), models.CreditsFromMicro(charged)
+		chargedUSD, balanceUSD := charged.USD(), balance.USD()
 		emit(writingEvent{
 			Type: "done", Text: text, Model: result.Model,
-			CreditsRemaining: &w.remaining, CreditsCharged: &charged, TokensUsed: &result.TokensUsed,
+			CreditsRemaining: &remaining, CreditsCharged: &chargedCredits,
+			ChargedUSD: &chargedUSD, BalanceUSD: &balanceUSD, TokensUsed: &result.TokensUsed,
 		})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"text":              text,
-		"credits_remaining": w.remaining,
-		"credits_charged":   charged,
-		"tokens_used":       result.TokensUsed,
-		"model":             result.Model,
-	})
+	c.JSON(http.StatusOK, withBalance(gin.H{
+		"text":        text,
+		"tokens_used": result.TokensUsed,
+		"model":       result.Model,
+	}, charged, balance))
 }

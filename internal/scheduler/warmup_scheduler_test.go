@@ -26,8 +26,13 @@ func TestWarmupWindowRespectsGatewaySundayWithoutCloudWorkday(t *testing.T) {
 	}
 	profile.Enabled = true
 	at, err = warmupDispatchWindow(a, behavior.NewStandalone(profile, loc), now)
+	if err != nil || !at.Equal(now) {
+		t.Fatalf("explicit Sunday selection was skipped: at=%v err=%v", at, err)
+	}
+	a.WarmupDays = 0
+	at, err = warmupDispatchWindow(a, behavior.NewStandalone(profile, loc), now)
 	if err != nil || at.In(loc).Weekday() != time.Monday || !at.After(now) {
-		t.Fatalf("explicit Cloud workday not preserved: at=%v err=%v", at, err)
+		t.Fatalf("inherited weekday schedule changed: at=%v err=%v", at, err)
 	}
 }
 
@@ -53,6 +58,42 @@ func TestWarmupDispatchWindowClassifiesInvalidHoursWithoutOpeningThem(t *testing
 				t.Fatalf("valid hours rejected: at=%v err=%v", at, err)
 			}
 		})
+	}
+}
+
+func TestWarmupSelectedDaysKeepHoursAndBreaks(t *testing.T) {
+	b := models.DefaultSendingBehavior(uuid.New())
+	b.Enabled = true
+	b.WorkStartMin, b.WorkStartMax = 9*60, 9*60
+	b.WorkEndMin, b.WorkEndMax = 17*60, 17*60
+	b.LunchEnabled = true
+	b.LunchEarliest, b.LunchLatest = 12*60, 12*60
+	b.LunchMinMinutes, b.LunchMaxMinutes = 60, 60
+	sunday := time.Date(2026, time.October, 11, 0, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name             string
+		days, fromMinute int
+		wantDay, wantMin int
+	}{
+		{"explicit weekend", 127, 10 * 60, 0, 10 * 60},
+		{"inherited weekdays", 0, 10 * 60, 1, 9 * 60},
+		{"warmup starts later", 127, 8 * 60, 0, 9 * 60},
+		{"weekend lunch", 127, 12*60 + 30, 0, 13 * 60},
+		{"after close on Sunday-only schedule", 64, 18 * 60, 7, 9 * 60},
+		{"weekdays selected", 31, 10 * 60, 1, 9 * 60},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &models.Email{WarmupDays: tc.days, WarmupStartTime: "08:00", WarmupEndTime: "16:00"}
+			at, err := warmupDispatchWindow(a, behavior.NewStandalone(b, time.UTC), sunday.Add(time.Duration(tc.fromMinute)*time.Minute))
+			want := sunday.AddDate(0, 0, tc.wantDay).Add(time.Duration(tc.wantMin) * time.Minute)
+			if err != nil || !at.Equal(want) {
+				t.Fatalf("at=%v err=%v, want %v", at, err, want)
+			}
+		})
+	}
+	a := &models.Email{WarmupDays: 127, WarmupStartTime: "18:00", WarmupEndTime: "20:00"}
+	if at, err := warmupDispatchWindow(a, behavior.NewStandalone(b, time.UTC), sunday); !errors.Is(err, ErrWarmupTimeWindowInvalid) || !at.IsZero() {
+		t.Fatalf("disjoint hours must defer as a configuration error: at=%v err=%v", at, err)
 	}
 }
 

@@ -71,7 +71,7 @@ export function UserLoginCodeCard({ user }: { user: AdminUserDetail }) {
             title: `Require the emailed sign-in code for ${user.email} again?`,
             description: user.password_expires_at
                 ? "Every session this account holds is signed out, and the password handed out with it stops working."
-                : "Every session this account holds is signed out. Its password is kept.",
+                : "Every session this account holds is signed out. An account created under Testers also loses the password its holder chose; any other keeps its password.",
             confirmLabel: "Remove exemption",
             destructive: true,
         });

@@ -29,7 +29,7 @@ Write a plain-language instruction. Drop in event fields with `{{.field}}`.
 
 <Step>
 
-Press **Test** to see the real output. AI steps run for real in a test and spend credits.
+Press **Test** to see the real output. AI steps run for real in a test and are charged to the balance.
 
 </Step>
 
@@ -38,10 +38,10 @@ Press **Test** to see the real output. AI steps run for real in a test and spend
 ## Good to know
 
 - No AI step ever sends email or contacts anyone.
-- Classify, extract and generate cost 1 credit; the agent costs 1 per step it takes. Provider failures refund automatically.
-- Out of credits, the step fails and the run continues down the normal path.
+- Each AI step is charged to the workspace balance for the tokens it uses, typically about $0.01 for classify, extract and generate. The agent is charged for every step it takes. A provider failure charges nothing.
+- When the balance is too low, the step fails and the run continues down the normal path.
 - **Ask AI (yes/no)** fails safe: if the model can't answer, the **no** path runs.
-- An automation whose AI steps keep failing for lack of credits is switched off.
+- An automation whose AI steps keep failing for lack of balance is switched off.
 
 <Fold>
 
@@ -64,7 +64,7 @@ Every mode takes a plain-language **instruction**, templated so you can drop eve
 | Classify | Picks exactly one of your labels | `ai_class` |
 | Extract fields | Pulls the fields you name out of the event text | One variable per field |
 
-**Agent** is the default. Check which reversible actions it may take: add or remove a label, label the conversation, create a task, create a deal, move a deal stage, set variables, and unsubscribe. It decides which fit, can chain several, and writes the details itself (task title, deal name, variable value). It only ever takes the actions you enable, and **never sends email or replies**. Billed one credit per step it takes.
+**Agent** is the default. Check which reversible actions it may take: add or remove a label, label the conversation, create a task, create a deal, move a deal stage, set variables, and unsubscribe. It decides which fit, can chain several, and writes the details itself (task title, deal name, variable value). It only ever takes the actions you enable, and **never sends email or replies**. Charged for the tokens each step it takes uses.
 
 For the label actions, an optional **pool** limits which labels it may choose: the labels it can add or remove on the contact, and the conversation labels it can apply. An empty pool lets it use any of yours, and optionally create a new one when nothing fits.
 
@@ -88,7 +88,7 @@ Routes the event down exactly one of your **cases** (at least two), each its own
 
 | Decided by | How | Cost |
 |-----------|-----|------|
-| **AI prompt** | The model reads the event and picks one case | 1 credit per event |
+| **AI prompt** | The model reads the event and picks one case | Charged per event for the tokens it uses |
 | **Value** | A template under **Value to match** (`{{.intent}}`) is rendered and matched to case names, ignoring casing and extra spaces. Wrap a case in slashes for a regex (`/^(vip\|enterprise)/`); first match wins | None |
 
 An unmatched value, or a model picking no case, takes the fallback.
@@ -99,9 +99,9 @@ An unmatched value, or a model picking no case, takes the fallback.
 
 ## Capabilities
 
-Both nodes can enable **extended thinking**, routing to the stronger model with a larger reasoning budget, metered by usage rather than a flat credit.
+Both nodes can enable **extended thinking**, routing to the stronger model with a larger reasoning budget, charged for the tokens it uses like every other call.
 
-The AI switch in prompt mode can also enable **web search**: it looks up the event's company before deciding. The query is built only from event fields such as company name or corporate email domain, **never from the reply text**, and costs one extra credit only when it returns results.
+The AI switch in prompt mode can also enable **web search**: it looks up the event's company before deciding. The query is built only from event fields such as company name or corporate email domain, **never from the reply text**, and is charged as one web search ($0.0125 at the default prices) only when it returns results.
 
 </Fold>
 
@@ -112,8 +112,8 @@ The AI switch in prompt mode can also enable **web search**: it looks up the eve
 A condition node can ask the model directly. Pick **Ask AI (yes/no)** and write a question about the event ("Is this reply asking about pricing?"): yes follows the Yes column, no the No column.
 
 - Templated, so `{{.subject}}` and `{{.snippet}}` work inside it.
-- One credit per evaluation, refunded if the provider call fails.
-- **Fails safe**: if the model can't answer, you are out of credits, or the answer is ambiguous, the **no** path runs and the reason is recorded.
+- Charged per evaluation for the tokens it uses, nothing if the provider call fails.
+- **Fails safe**: if the model can't answer, the balance is too low, or the answer is ambiguous, the **no** path runs and the reason is recorded.
 - Use an AI switch when you need more than two outcomes.
 
 </Fold>
@@ -137,9 +137,9 @@ If two AI steps would both write `ai_class` or `ai_text`, set an **output variab
 
 | Topic | Behavior |
 |-------|----------|
-| Credits | Single-shot steps (classify, extract, generate) cost 1; the agent costs 1 per step taken; an AI switch costs 1 in AI mode, nothing in value mode. Provider failures refund automatically |
-| Out of credits | The step fails with a clear message and the run continues down the normal path. Nothing is half-charged. Connect the **on error** branch for a specific fallback |
-| Auto-pause | An automation whose AI steps keep failing for lack of credits is switched off, so it stops trying against an empty balance |
+| Cost | Every AI call is charged to the workspace balance for the tokens it uses: single-shot steps (classify, extract, generate) typically about $0.01, the agent for each step taken, an AI switch in AI mode per event, nothing in value mode. A provider failure charges nothing |
+| Balance too low | The step fails with a clear message and the run continues down the normal path. Nothing is half-charged. Connect the **on error** branch for a specific fallback |
+| Auto-pause | An automation whose AI steps keep failing for lack of balance is switched off, so it stops trying against an empty balance |
 | Timing | Each step is bounded to a few seconds so a slow model never stalls the flow |
 | Sending safety | **No AI step ever sends email or contacts anyone.** The agent takes only the reversible actions you enable; other modes only write a variable |
 
@@ -149,7 +149,7 @@ If two AI steps would both write `ai_class` or `ai_text`, set an **output variab
 
 ## Testing
 
-**Test** dry-runs the flow, but AI steps and Ask AI branches run **for real** so you see actual output and the branch it drives, which spends credits. The agent reports what it would do without applying it. The trace panel shows each step's output beside its node. See [Testing and history](/guides/automations/).
+**Test** dry-runs the flow, but AI steps and Ask AI branches run **for real** so you see actual output and the branch it drives, which charges the balance. The agent reports what it would do without applying it. The trace panel shows each step's output beside its node. See [Testing and history](/guides/automations/).
 
 </Fold>
 
@@ -157,5 +157,5 @@ If two AI steps would both write `ai_class` or `ai_text`, set an **output variab
 
 - [Automations](/guides/automations/) for the builder, triggers, and conditions.
 - [Sequences](/guides/sequences/) for the same two steps run per contact in campaigns.
-- [AI credits](/guides/ai-credits/) for costs and balances.
+- [Balance and usage](/guides/ai-credits/) for costs and the balance.
 - [Personalization and expressions](/guides/expressions/) for each trigger's variables.

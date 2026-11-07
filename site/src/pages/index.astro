@@ -18,7 +18,7 @@ const plans = [
     annual: '$23',
     cadence: '/ month',
     summary: 'Great for small businesses with a small budget.',
-    cta: 'Start free',
+    cta: 'Get started',
     href: 'https://app.warmbly.com/auth/register?plan=starter',
     highlight: false,
     sendsPerDay: 150,
@@ -42,7 +42,7 @@ const plans = [
     annual: '$71',
     cadence: '/ month',
     summary: 'Ideal for growing businesses scaling their outreach.',
-    cta: 'Start free',
+    cta: 'Get started',
     href: 'https://app.warmbly.com/auth/register?plan=grow',
     highlight: false,
     sendsPerDay: 3000,
@@ -62,7 +62,7 @@ const plans = [
     annual: '$263',
     cadence: '/ month',
     summary: 'For established teams that need higher limits and advanced features.',
-    cta: 'Start free',
+    cta: 'Get started',
     href: 'https://app.warmbly.com/auth/register?plan=business',
     highlight: true,
     sendsPerDay: 15000,
@@ -104,7 +104,7 @@ const plans = [
 ];
 
 // SoftwareApplication schema for the product itself — helps Google understand
-// Warmbly is a SaaS tool with a free tier, not just a marketing page.
+// Warmbly is a SaaS tool with paid plans, not just a marketing page.
 const softwareJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'SoftwareApplication',
@@ -118,9 +118,9 @@ const softwareJsonLd = {
   publisher: { '@id': 'https://warmbly.com#org' },
   offers: {
     '@type': 'Offer',
-    price: '0',
+    price: '29',
     priceCurrency: 'USD',
-    description: 'Free plan available, with paid plans for higher volume.',
+    description: 'Paid plans from $29 a month with unlimited mailboxes and warmup. Free to self-host.',
   },
 };
 ---
@@ -155,7 +155,7 @@ const softwareJsonLd = {
 
       <div class="mt-9 flex flex-wrap items-center gap-3">
         <a href="https://app.warmbly.com/auth/register" class="inline-flex h-11 px-5 items-center gap-2 rounded-full bg-slate-900 text-[15px] font-medium text-white transition-colors hover:bg-slate-800">
-          Start free
+          Get started
           <Icon name="arrowRight" size={14} />
         </a>
         <a href="https://github.com/warmbly/warmbly" target="_blank" rel="noopener noreferrer" class="inline-flex h-11 px-5 items-center gap-2 rounded-full border border-slate-200 bg-white text-[15px] text-slate-800 transition-colors hover:border-slate-300 hover:bg-slate-50">
@@ -163,7 +163,7 @@ const softwareJsonLd = {
           Star on GitHub
         </a>
       </div>
-      <p class="mt-5 text-[13.5px] text-slate-400">Free plan with 10 mailboxes · No credit card · Free to self-host</p>
+      <p class="mt-5 text-[13.5px] text-slate-400">14-day free trial · No credit card · Plans from $29 a month</p>
     </div>
 
     <div class="container-page mt-14 md:mt-20">
@@ -312,7 +312,7 @@ const softwareJsonLd = {
           </a>
         </div>
         <p class="mt-2 max-w-2xl text-[13px] leading-relaxed text-slate-400">
-          Self-hosting is free. When Warmbly Cloud launches, link your instance and we warm up to 10 of your mailboxes in the shared pool at no cost, unlimited for $15 a month.
+          Self-hosting is free and community supported, and it suits teams that want to own the whole stack. A self-hosted instance warms only between its own mailboxes, with no shared pool, so for deliverability Warmbly Cloud is the better choice.
         </p>
       </div>
     </section>

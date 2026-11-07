@@ -21,7 +21,7 @@ type ResearchRepository interface {
 	CreateRun(ctx context.Context, run *models.ContactResearchRun, idempotencyKey string) (created *models.ContactResearchRun, replayed bool, err error)
 	GetRun(ctx context.Context, orgID, id uuid.UUID) (*models.ContactResearchRun, error)
 	ListByContact(ctx context.Context, orgID, contactID uuid.UUID, limit int) ([]models.ContactResearchRun, error)
-	// UpdateRun writes the terminal state (status, result, error, credits, model,
+	// UpdateRun writes the terminal state (status, result, error, charge, model,
 	// tokens).
 	UpdateRun(ctx context.Context, run *models.ContactResearchRun) error
 	// ClaimNextQueued atomically claims the oldest queued run (FOR UPDATE SKIP
@@ -37,13 +37,18 @@ func NewResearchRepository(database *db.DB) ResearchRepository {
 	return &researchRepository{DB: database}
 }
 
-const researchCols = `id, org_id, contact_id, requested_by, status, objective, result, error, credits_charged, model_used, tokens_used, created_at, updated_at`
+const researchCols = `id, org_id, contact_id, requested_by, status, objective, result, error, credits_charged, charged_micro, model_used, tokens_used, created_at, updated_at`
 
 func scanRun(row pgx.Row, r *models.ContactResearchRun) error {
 	var resultRaw []byte
-	if err := row.Scan(&r.ID, &r.OrgID, &r.ContactID, &r.RequestedBy, &r.Status, &r.Objective, &resultRaw, &r.Error, &r.CreditsCharged, &r.ModelUsed, &r.TokensUsed, &r.CreatedAt, &r.UpdatedAt); err != nil {
+	if err := row.Scan(&r.ID, &r.OrgID, &r.ContactID, &r.RequestedBy, &r.Status, &r.Objective, &resultRaw, &r.Error, &r.CreditsCharged, &r.ChargedMicro, &r.ModelUsed, &r.TokensUsed, &r.CreatedAt, &r.UpdatedAt); err != nil {
 		return err
 	}
+	// A run charged before the dollar columns, or by the previous release, has only credits.
+	if r.ChargedMicro == 0 && r.CreditsCharged > 0 {
+		r.ChargedMicro = models.Micro(r.CreditsCharged) * models.LegacyCreditMicro
+	}
+	r.ChargedUSD = r.ChargedMicro.USD()
 	if len(resultRaw) > 0 {
 		_ = json.Unmarshal(resultRaw, &r.Result)
 	}
@@ -129,9 +134,9 @@ func (r *researchRepository) UpdateRun(ctx context.Context, run *models.ContactR
 	}
 	_, err = r.DB.Exec(ctx, `
 		UPDATE contact_research_runs
-		SET status = $2, result = $3, error = $4, credits_charged = $5, model_used = $6, tokens_used = $7, updated_at = now()
+		SET status = $2, result = $3, error = $4, credits_charged = $5, charged_micro = $6, model_used = $7, tokens_used = $8, updated_at = now()
 		WHERE id = $1`,
-		run.ID, run.Status, resultRaw, run.Error, run.CreditsCharged, run.ModelUsed, run.TokensUsed)
+		run.ID, run.Status, resultRaw, run.Error, models.CreditsFromMicro(run.ChargedMicro), run.ChargedMicro, run.ModelUsed, run.TokensUsed)
 	return err
 }
 

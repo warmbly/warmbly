@@ -10,6 +10,7 @@ import (
 
 	"github.com/warmbly/warmbly/internal/app/aiagentargs"
 	"github.com/warmbly/warmbly/internal/app/credits"
+	"github.com/warmbly/warmbly/internal/app/instancesettings"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
@@ -33,21 +34,20 @@ import (
 // rendered template match (value, free). config.thinking routes to the stronger
 // model tier; config.web_search grounds an ai-mode switch in a bounded lookup.
 //
-// Each single-shot step costs one credit, charged to the org, refunded if the
-// provider call fails. Out-of-credits fails only that node (the run continues
-// down the normal edge); a flow whose org is persistently out of credits
+// Each single-shot step is charged its actual usage once it succeeds; a failed
+// call costs nothing. A low balance fails only that node (the run continues
+// down the normal edge); a flow whose org is persistently out of balance
 // auto-pauses after aiCreditFailurePauseAt consecutive misses so it stops
 // hammering a hard wall.
 const (
-	aiNodeCredits          = 1
 	aiNodeMaxTokens        = 512
 	aiThinkingMaxTokens    = 2048 // stronger tier gets a larger output budget
 	aiNodeTimeout          = 20 * time.Second
 	aiCreditFailurePauseAt = 20
 
-	// Agent mode: a bounded tool-use loop, billed per iteration (like the
-	// dashboard agent) rather than a flat per-node credit. Kept small so a
-	// single node can't run the graph long or rack up credits.
+	// Agent mode: a bounded tool-use loop, checked against the balance before
+	// each iteration. Kept small so a single node can't run the graph long or
+	// rack up spend.
 	aiAgentMaxIterations = 4
 	aiAgentTimeout       = 45 * time.Second
 
@@ -282,13 +282,12 @@ func (s *service) execAIAction(ctx context.Context, a models.Automation, n model
 		return s.execAIAgentStep(ctx, a, n, cfg, instruction, data, feedPause)
 	}
 
-	// gate -> consume(Idempotency-Key) -> call -> refund-on-failure. The key is
-	// scoped to this run + node so a retried walk never double-charges. A
-	// free/local model (AI_FREE) runs un-metered, so skip the charge. Thinking
-	// routes to the stronger tier; its higher pricing flows through the settle.
+	// balance check -> call -> charge actual usage. The key is scoped to this
+	// run + node so a retried walk never double-charges. A free/local model
+	// (AI_FREE) runs un-metered, so skip the charge.
 	model := s.aiProvider.ModelForTier(cfg.Thinking)
 	idemKey := "auto_ai:" + stringFromMap(data, automationRunIDKey) + ":" + n.ID
-	// Attribute the charge (and its settle/refund) to this automation node run.
+	// Attribute the charge to this automation node run.
 	ctx = models.WithCreditMeta(ctx, models.CreditMeta{Context: models.CreditContext{
 		AutomationID:   a.ID.String(),
 		AutomationName: a.Name,
@@ -297,13 +296,13 @@ func (s *service) execAIAction(ctx context.Context, a models.Automation, n model
 		Detail:         string(n.Action),
 	}})
 	if !s.aiProvider.IsLocal() {
-		if _, cerr := s.credits.Consume(ctx, a.OrganizationID, aiNodeCredits, "automation_ai", model, 0, idemKey); cerr != nil {
+		if cerr := s.credits.Reserve(ctx, a.OrganizationID, credits.EstimateAINode); cerr != nil {
 			switch {
 			case errors.Is(cerr, credits.ErrInsufficientCredits):
 				if feedPause {
 					s.noteAICreditFailure(ctx, a)
 				}
-				return fmt.Errorf("out of AI credits: this step needs %d credit", aiNodeCredits)
+				return errors.New("the workspace balance is too low for this step")
 			case errors.Is(cerr, credits.ErrCapExceeded):
 				return errors.New("AI usage cap reached; try again later")
 			default:
@@ -325,7 +324,7 @@ func (s *service) execAIAction(ctx context.Context, a models.Automation, n model
 			if serr == nil && len(results) > 0 {
 				web = renderAISearchResults(q, results)
 				if !s.aiProvider.IsLocal() {
-					_, _ = s.credits.Consume(ctx, a.OrganizationID, credits.CostWebSearch, "automation_ai_search", "", 0, idemKey+":search")
+					_, _ = s.credits.Charge(ctx, a.OrganizationID, credits.UnitUsage(instancesettings.UnitWebSearch, 1), "automation_ai_search", idemKey+":search")
 				}
 			}
 		}
@@ -348,25 +347,19 @@ func (s *service) execAIAction(ctx context.Context, a models.Automation, n model
 		Temperature: aiTemperature(mode),
 	})
 	if gerr != nil || res == nil {
-		// The org paid for a step the provider couldn't complete: refund it. A
-		// free/local model was never charged, so never mint credits for it.
-		if !s.aiProvider.IsLocal() {
-			_, _ = s.credits.Grant(ctx, a.OrganizationID, aiNodeCredits, "automation_ai_refund")
-		}
 		if gerr != nil {
 			return fmt.Errorf("AI step failed: %w", gerr)
 		}
 		return errors.New("AI step returned no output")
 	}
 
-	// Usage-based settle: price the actual tokens and charge any overage
-	// beyond the flat minimum (best-effort; never fails the delivered node).
+	// Charge what the call used (best-effort; never fails the delivered node).
 	if !s.aiProvider.IsLocal() {
-		_, _ = s.credits.SettleUsage(ctx, a.OrganizationID, aiNodeCredits, model, res.TokensUsed, "automation_ai", idemKey+":usage")
+		_, _ = s.credits.Charge(ctx, a.OrganizationID, credits.AIUsage(model, res.InputTokens, res.OutputTokens), "automation_ai", idemKey)
 	}
 
 	mergeAIOutput(n.Action, cfg, res.Text, data)
-	// A successful LIVE AI node clears the consecutive out-of-credits counter.
+	// A successful LIVE AI node clears the consecutive out-of-balance counter.
 	// A dry-run (feedPause=false) must not touch the auto-pause lifecycle: it is
 	// a test, not a live delivery, so it neither advances nor resets the counter.
 	if feedPause {
@@ -378,8 +371,8 @@ func (s *service) execAIAction(ctx context.Context, a models.Automation, n model
 // execAIAgentStep runs the agent mode of an ai_step: a bounded tool-use loop
 // where the model, following the user's instruction, may call a guarded set of
 // reversible native actions (config.allowed_actions[]). It reuses the shared
-// generation.RunAgent harness and bills one credit per loop iteration
-// (credits.CostAgentIteration) via PreIteration, matching the dashboard agent.
+// generation.RunAgent harness, checks the balance before each iteration via
+// PreIteration and charges the run's actual usage once, like the dashboard agent.
 // The final text is merged into data under the node's output variable so
 // downstream conditions can branch on it. On a dry run (feedPause=false) the
 // tools report what they would do but apply nothing.
@@ -402,23 +395,21 @@ func (s *service) execAIAgentStep(ctx context.Context, a models.Automation, n mo
 		Detail:         "ai_agent",
 	}})
 
-	// Charge per iteration before each model call; out-of-credits stops the loop
+	// Check the balance before each model call; a low balance stops the loop
 	// cleanly (StopReason "stopped") and, on a live run, advances the auto-pause
 	// counter exactly like the single-shot AI nodes.
-	charged := 0
 	var creditErr error
-	preIteration := func(ctx context.Context, iteration int) error {
+	preIteration := func(ctx context.Context, _ int) error {
 		if s.aiProvider.IsLocal() {
 			return nil
 		}
-		idem := fmt.Sprintf("auto_ai:%s:%s:iter:%d", runID, n.ID, iteration)
-		if _, cerr := s.credits.Consume(ctx, a.OrganizationID, credits.CostAgentIteration, "automation_ai_agent", model, 0, idem); cerr != nil {
+		if cerr := s.credits.Reserve(ctx, a.OrganizationID, credits.EstimateAgentIteration); cerr != nil {
 			switch {
 			case errors.Is(cerr, credits.ErrInsufficientCredits):
 				if feedPause {
 					s.noteAICreditFailure(ctx, a)
 				}
-				creditErr = fmt.Errorf("out of AI credits: the agent step needs %d credit per step", credits.CostAgentIteration)
+				creditErr = errors.New("the workspace balance is too low for the agent step")
 			case errors.Is(cerr, credits.ErrCapExceeded):
 				creditErr = errors.New("AI usage cap reached; try again later")
 			default:
@@ -426,7 +417,6 @@ func (s *service) execAIAgentStep(ctx context.Context, a models.Automation, n mo
 			}
 			return creditErr
 		}
-		charged++
 		return nil
 	}
 
@@ -447,9 +437,13 @@ func (s *service) execAIAgentStep(ctx context.Context, a models.Automation, n mo
 		MaxTokens:     maxTokens,
 		PreIteration:  preIteration,
 	})
-	// The loop stopped because the org ran out of credits: surface that, not a
-	// generic failure. Iterations already charged stay charged (each was a real
-	// model call), matching the per-iteration dashboard-agent billing.
+	// Iterations that ran were real model calls, so they are charged even when
+	// the loop stopped early.
+	if res != nil && !s.aiProvider.IsLocal() {
+		_, _ = s.credits.Charge(ctx, a.OrganizationID, credits.AIUsage(model, res.InputTokens, res.OutputTokens), "automation_ai_agent", fmt.Sprintf("auto_ai:%s:%s", runID, n.ID))
+	}
+	// The loop stopped because the balance ran out: surface that, not a
+	// generic failure.
 	if creditErr != nil {
 		return creditErr
 	}
@@ -457,9 +451,6 @@ func (s *service) execAIAgentStep(ctx context.Context, a models.Automation, n mo
 		return fmt.Errorf("AI agent step failed: %w", gerr)
 	}
 	if res != nil {
-		if !s.aiProvider.IsLocal() && charged > 0 {
-			_, _ = s.credits.SettleUsage(ctx, a.OrganizationID, charged, model, res.TokensUsed, "automation_ai_agent", fmt.Sprintf("auto_ai:%s:%s:usage", runID, n.ID))
-		}
 		data[agentOutputKey(cfg)] = strings.TrimSpace(res.Text)
 	}
 	if feedPause {
@@ -770,9 +761,9 @@ func (s *service) aiUnsubscribeTool(a models.Automation, n models.AutomationNode
 }
 
 // evalAICondition answers an Ask-AI branch node's yes/no question about the
-// event. Same lifecycle as execAIAction: one credit (idempotent per run+node,
-// refunded on provider failure), 20s ceiling, deterministic sampling. Any error
-// (no provider, out of credits, provider failure, ambiguous answer) is returned
+// event. Same lifecycle as execAIAction: actual usage charged once per run+node
+// on success, 20s ceiling, deterministic sampling. Any error
+// (no provider, low balance, provider failure, ambiguous answer) is returned
 // so the caller records it — the walk fails safe down the false edge.
 func (s *service) evalAICondition(ctx context.Context, a models.Automation, n models.AutomationNode, data map[string]any, feedPause bool) (bool, error) {
 	if s.aiProvider == nil || s.credits == nil {
@@ -788,7 +779,7 @@ func (s *service) evalAICondition(ctx context.Context, a models.Automation, n mo
 
 	model := s.aiProvider.ModelForTier(false)
 	idemKey := "auto_ai:" + stringFromMap(data, automationRunIDKey) + ":" + n.ID
-	// Attribute the charge (and its settle/refund) to this Ask AI evaluation.
+	// Attribute the charge to this Ask AI evaluation.
 	ctx = models.WithCreditMeta(ctx, models.CreditMeta{Context: models.CreditContext{
 		AutomationID:   a.ID.String(),
 		AutomationName: a.Name,
@@ -797,13 +788,13 @@ func (s *service) evalAICondition(ctx context.Context, a models.Automation, n mo
 		Detail:         "ask_ai: " + truncate(question, 120),
 	}})
 	if !s.aiProvider.IsLocal() {
-		if _, cerr := s.credits.Consume(ctx, a.OrganizationID, aiNodeCredits, "automation_ai", model, 0, idemKey); cerr != nil {
+		if cerr := s.credits.Reserve(ctx, a.OrganizationID, credits.EstimateAINode); cerr != nil {
 			switch {
 			case errors.Is(cerr, credits.ErrInsufficientCredits):
 				if feedPause {
 					s.noteAICreditFailure(ctx, a)
 				}
-				return false, fmt.Errorf("out of AI credits: this branch needs %d credit", aiNodeCredits)
+				return false, errors.New("the workspace balance is too low for this branch")
 			case errors.Is(cerr, credits.ErrCapExceeded):
 				return false, errors.New("AI usage cap reached; try again later")
 			default:
@@ -825,18 +816,15 @@ func (s *service) evalAICondition(ctx context.Context, a models.Automation, n mo
 		Temperature: generation.Deterministic(),
 	})
 	if gerr != nil || res == nil {
-		if !s.aiProvider.IsLocal() {
-			_, _ = s.credits.Grant(ctx, a.OrganizationID, aiNodeCredits, "automation_ai_refund")
-		}
 		if gerr != nil {
 			return false, fmt.Errorf("AI branch failed: %w", gerr)
 		}
 		return false, errors.New("AI branch returned no output")
 	}
 
-	// Settle actual token usage beyond the flat minimum (best-effort).
+	// Charge actual token usage (best-effort).
 	if !s.aiProvider.IsLocal() {
-		_, _ = s.credits.SettleUsage(ctx, a.OrganizationID, aiNodeCredits, model, res.TokensUsed, "automation_ai", idemKey+":usage")
+		_, _ = s.credits.Charge(ctx, a.OrganizationID, credits.AIUsage(model, res.InputTokens, res.OutputTokens), "automation_ai", idemKey)
 	}
 
 	if feedPause {

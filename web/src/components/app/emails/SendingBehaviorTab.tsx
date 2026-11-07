@@ -356,7 +356,7 @@ export default function SendingBehaviorTab({ mailboxId, timezone }: { mailboxId:
                             setValue={(v) => update({ weekdays: v })}
                         />
                         <p className="text-[10.5px] text-slate-400 leading-relaxed">
-                            Days this mailbox sends anything at all, cold outreach and warmup alike.
+                            Campaign working days. Warmup follows these only when its Sending days is set to Follow sending plan.
                         </p>
                     </div>
 

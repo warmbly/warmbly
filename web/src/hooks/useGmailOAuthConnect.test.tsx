@@ -1,5 +1,7 @@
 import { renderHook } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import useGmailOAuthConnect from "./useGmailOAuthConnect";
 
 const auth = vi.hoisted(() => ({ gmail_oauth_connect: false }));
 vi.mock("@/lib/api/hooks/auth/useAuthConfig", () => ({
@@ -7,33 +9,16 @@ vi.mock("@/lib/api/hooks/auth/useAuthConfig", () => ({
 }));
 
 beforeEach(() => {
-    vi.resetModules();
-    delete window.__WARMBLY_ENV__;
-    vi.stubEnv("VITE_GMAIL_OAUTH_CONNECT", undefined);
     auth.gmail_oauth_connect = false;
 });
 
-afterEach(() => {
-    vi.unstubAllEnvs();
-    delete window.__WARMBLY_ENV__;
-});
-
-describe("Google mailbox OAuth deployment capability", () => {
+describe("Google mailbox sign-in availability", () => {
     it.each([
-        { name: "defaults off even with backend support", backend: true, expected: false },
-        { name: "uses runtime opt-in with backend support", runtime: "true", backend: true, expected: true },
-        { name: "respects backend disable", runtime: "true", backend: false, expected: false },
-        { name: "uses Vite opt-in in development", build: "true", backend: true, expected: true },
-        { name: "runtime off overrides a build-time opt-in", runtime: "false", build: "true", backend: true, expected: false },
-        { name: "ignores an invalid frontend setting", runtime: "invalid", backend: true, expected: false },
-        { name: "trims a true frontend setting", runtime: " TRUE ", backend: true, expected: true },
-        { name: "requires frontend opt-in for Cloud", viaCloud: true, backend: false, expected: false },
-        { name: "allows opted-in Cloud-brokered consent", runtime: "true", viaCloud: true, backend: false, expected: true },
-    ])("$name", async ({ runtime, build, backend, viaCloud, expected }) => {
-        window.__WARMBLY_ENV__ = { GMAIL_OAUTH_CONNECT: runtime };
-        vi.stubEnv("VITE_GMAIL_OAUTH_CONNECT", build);
+        { name: "shows when the backend allows it", backend: true, expected: true },
+        { name: "hides when the backend disables it", backend: false, expected: false },
+        { name: "shows for Cloud-brokered consent", viaCloud: true, backend: false, expected: true },
+    ])("$name", ({ backend, viaCloud, expected }) => {
         auth.gmail_oauth_connect = backend;
-        const { default: useGmailOAuthConnect } = await import("./useGmailOAuthConnect");
         const { result, unmount } = renderHook(() => useGmailOAuthConnect(viaCloud));
         expect(result.current).toBe(expected);
         unmount();

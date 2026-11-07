@@ -51,14 +51,30 @@ func (s *authService) LoginStart(ctx context.Context, data *AuthData, ipaddr, us
 	}
 	s.clearLoginFailures(ctx, data.Email)
 
+	// Assessed once here: the verdict that decides the challenge is the same
+	// one recorded when the sign-in completes.
+	verdict := s.assessLogin(ctx, uid, ipaddr)
+
+	// An issued initial password signs nobody in; its holder chooses their own first.
+	pending, xerr := s.authRepository.InitialPasswordPending(ctx, uid)
+	if xerr != nil {
+		return nil, xerr
+	}
+	if pending {
+		return s.createInitialPasswordChallenge(ctx, uid, data.Email, data.Password, verdict)
+	}
+
+	return s.continuePasswordLogin(ctx, uid, data.Email, data.DeviceToken, verdict, ipaddr, userAgent)
+}
+
+// continuePasswordLogin is everything after a password is accepted: the
+// emailed code unless excused, then completeLogin with its ban and 2FA gates.
+func (s *authService) continuePasswordLogin(ctx context.Context, uid uuid.UUID, email, deviceToken string, verdict authrisk.Verdict, ipaddr, userAgent string) (*models.AuthSession, *errx.Error) {
 	// The emailed code is a step in the login, not a second factor: NIST
 	// SP 800-63B and OWASP ASVS both decline to count email as one. When it is
 	// off, or the device is already known, the login completes here and never
 	// touches the mail transport.
-	// Assessed once here: the verdict that decides the challenge is the same
-	// one recorded when the sign-in completes.
-	verdict := s.assessLogin(ctx, uid, ipaddr)
-	if !s.loginCodeRequired(ctx, uid, data.DeviceToken, verdict) {
+	if !s.loginCodeRequired(ctx, uid, deviceToken, verdict) {
 		result, ferr := s.finishLoginWith(ctx, uid, ipaddr, userAgent, &verdict)
 		if ferr != nil {
 			return nil, ferr
@@ -72,7 +88,7 @@ func (s *authService) LoginStart(ctx context.Context, data *AuthData, ipaddr, us
 		}, nil
 	}
 
-	if err := s.canSendEmail(ctx, emailFlowLogin, data.Email); err != nil {
+	if err := s.canSendEmail(ctx, emailFlowLogin, email); err != nil {
 		return nil, err
 	}
 
@@ -100,7 +116,7 @@ func (s *authService) LoginStart(ctx context.Context, data *AuthData, ipaddr, us
 
 	// The transport reports the send failure itself; capturing it again here
 	// filed the same rejection as a second issue under a second file.
-	if xerr := s.sendAuthEmail(ctx, data.Email, "Your Login Code", text); xerr != nil {
+	if xerr := s.sendAuthEmail(ctx, email, "Your Login Code", text); xerr != nil {
 		return nil, errx.ErrMailUndeliverable
 	}
 

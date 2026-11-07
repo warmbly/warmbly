@@ -3,6 +3,7 @@ package eventbus
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
 )
@@ -39,6 +40,35 @@ func FromEnv(bootstrap string, sasl *kafka.SASLConfig) (EventBus, error) {
 	if provider == "" {
 		provider = "kafka"
 	}
+	readBoth := false
+	if raw := os.Getenv("EVENTBUS_READ_BOTH"); raw != "" {
+		var err error
+		readBoth, err = strconv.ParseBool(raw)
+		if err != nil {
+			return nil, fmt.Errorf("eventbus: EVENTBUS_READ_BOTH must be a boolean")
+		}
+	}
+	hold := os.Getenv("EVENTBUS_HOLD_READS")
+	if hold != "" && (!readBoth || hold != "nats" && hold != "kafka") {
+		return nil, fmt.Errorf("eventbus: EVENTBUS_HOLD_READS requires EVENTBUS_READ_BOTH and must be nats or kafka")
+	}
+	primary, err := busFromEnv(provider, bootstrap, sasl)
+	if err != nil || !readBoth {
+		return primary, err
+	}
+	otherProvider := "nats"
+	if provider == "nats" {
+		otherProvider = "kafka"
+	}
+	other, err := busFromEnv(otherProvider, bootstrap, sasl)
+	if err != nil {
+		_ = primary.Close()
+		return nil, err
+	}
+	return &migrationBus{primary: primary, other: other, hold: hold}, nil
+}
+
+func busFromEnv(provider, bootstrap string, sasl *kafka.SASLConfig) (EventBus, error) {
 	switch provider {
 	case "kafka":
 		return NewKafka(KafkaConfig{
@@ -50,11 +80,27 @@ func FromEnv(bootstrap string, sasl *kafka.SASLConfig) (EventBus, error) {
 		if err != nil {
 			return nil, err
 		}
+		replicas := 0
+		if raw := os.Getenv("NATS_REPLICAS"); raw != "" {
+			replicas, err = strconv.Atoi(raw)
+			if err != nil || replicas < 1 || replicas > 5 {
+				return nil, fmt.Errorf("eventbus nats: NATS_REPLICAS must be an integer between 1 and 5")
+			}
+		}
+		discardNew := false
+		if raw := os.Getenv("NATS_DISCARD_NEW"); raw != "" {
+			discardNew, err = strconv.ParseBool(raw)
+			if err != nil {
+				return nil, fmt.Errorf("eventbus nats: NATS_DISCARD_NEW must be a boolean")
+			}
+		}
 		return NewNATS(NATSConfig{
 			URL:           natsURLFromEnv(),
 			StreamName:    os.Getenv("NATS_STREAM_NAME"),
 			SubjectPrefix: os.Getenv("NATS_SUBJECT_PREFIX"),
 			MaxBytes:      maxBytes,
+			Replicas:      replicas,
+			DiscardNew:    discardNew,
 		})
 	default:
 		return nil, fmt.Errorf("eventbus: unknown EVENTBUS_PROVIDER %q (want: kafka, nats)", provider)

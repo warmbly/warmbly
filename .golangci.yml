@@ -32,6 +32,12 @@ linters-settings:
 
 issues:
   exclude-rules:
+    # Keep the pinned upstream reader tests byte-for-byte.
+    - path: ^internal/pkg/boundedcsv/reader_test\.go$
+      text: 'deepequalerrors: avoid using reflect\.DeepEqual with errors'
+      linters:
+        - govet
+
     - path: _test\.go
       linters:
         - errcheck

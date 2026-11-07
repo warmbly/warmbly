@@ -20,6 +20,9 @@ const (
 	// its send-as identities (and one signature) from the provider. The
 	// control plane never calls a customer's provider itself.
 	WorkerEventTypeMailboxIdentity WorkerEventType = "MAILBOX_IDENTITY"
+	// WorkerEventTypeSyncWake asks the worker holding a mailbox to run its
+	// sync pass now, because the provider said something changed.
+	WorkerEventTypeSyncWake WorkerEventType = "SYNC_WAKE"
 )
 
 type WorkerEvent struct {
@@ -53,6 +56,9 @@ const (
 	// JobEventTypeSyncState relays a mailbox's backfill progress, fair-use
 	// throttle and last-synced time (JobEventSyncState).
 	JobEventTypeSyncState JobEventType = "SYNC_STATE"
+	// JobEventTypePushState records the provider push channel a worker
+	// opened, renewed or closed for a mailbox (JobEventPushState).
+	JobEventTypePushState JobEventType = "PUSH_STATE"
 
 	// Task result events from worker
 	JobEventTypeEmailSent   JobEventType = "EMAIL_SENT"

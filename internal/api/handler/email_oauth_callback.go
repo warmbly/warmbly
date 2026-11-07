@@ -12,6 +12,8 @@ import (
 	"github.com/warmbly/warmbly/internal/app/email"
 	"github.com/warmbly/warmbly/internal/app/poollink"
 	"github.com/warmbly/warmbly/internal/config"
+	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/models"
 )
 
 // callbackPage renders a tiny HTML page that hands the OAuth code + state
@@ -144,6 +146,12 @@ func (h *Handler) renderOAuthCallback(c *gin.Context, provider string) {
 		return
 	}
 
+	// An inbox vendor signing in for an import row has no session; the state alone carries the binding.
+	if email.IsVendorConsentState(state) {
+		h.finishVendorConsent(c, provider, code, state, providerErr)
+		return
+	}
+
 	// Microsoft reports an admin consent with no code; the admin grant then needs a sign-in, same state.
 	if strings.HasPrefix(state, delegation.MicrosoftStatePrefix) && providerErr == "" && code == "" &&
 		strings.EqualFold(c.Query("admin_consent"), "true") && h.DelegationService != nil {
@@ -240,4 +248,39 @@ func renderNotice(c *gin.Context, status int, title, body string) {
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.Status(status)
 	_ = noticePage.Execute(c.Writer, struct{ Title, Body string }{title, body})
+}
+
+// finishVendorConsent lands a Google sign-in an inbox vendor completed for an import row.
+func (h *Handler) finishVendorConsent(c *gin.Context, provider, code, state, providerErr string) {
+	c.Header("Referrer-Policy", "no-referrer")
+	c.Header("Cache-Control", "no-store")
+	if provider != "gmail" || h.EmailService == nil {
+		renderNotice(c, http.StatusBadRequest, "Not connected", email.ErrVendorConsentState.Message)
+		return
+	}
+	res, xerr := h.EmailService.FinishVendorConsent(c.Request.Context(), code, state, providerErr, h.mailboxFinishAuthorizer)
+	if xerr != nil {
+		status, body := http.StatusBadRequest, xerr.Message
+		switch xerr.Code {
+		case errx.Internal, errx.ServiceUnavailable:
+			status = http.StatusInternalServerError
+			body = "Something went wrong on our side, so nothing was connected. Request id: " + c.GetString("request_id") + "."
+		case errx.Conflict:
+			status = http.StatusConflict
+		case errx.Forbidden:
+			status = http.StatusForbidden
+		}
+		renderNotice(c, status, "Not connected", body)
+		return
+	}
+	acc := res.Account
+	action := models.AuditActionConnect
+	if res.Reconnected {
+		action = models.AuditActionUpdate
+	}
+	if h.AuditService != nil && acc != nil && acc.OrganizationID != nil {
+		h.AuditService.LogAction(c.Request.Context(), *acc.OrganizationID, res.ActorID, action, models.AuditEntityEmailAccount, &acc.ID,
+			c.ClientIP(), c.Request.UserAgent(), nil, map[string]string{"provider": acc.Provider, "email": acc.Email, "via": "vendor_consent"})
+	}
+	renderNotice(c, http.StatusOK, "Connected", "The mailbox is connected to Warmbly. You can close this window.")
 }

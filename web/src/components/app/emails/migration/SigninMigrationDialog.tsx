@@ -1,14 +1,15 @@
-// SigninMigrationDialog: every mailbox still on per-mailbox Google sign-in,
-// by domain, with the move that fits it. A domain with an admin grant moves
-// in one click (an import, shown with the import result screen); a Workspace
-// domain without one is set up first; a personal address switches to an app
-// password. Every move keeps the mailbox, its history, campaigns and warmup.
+// SigninMigrationDialog: every mailbox still on the older per-mailbox Google
+// sign-in, by domain, with the move that fits it. A Workspace mailbox
+// reconnects with the new Google sign-in once its admin trusts Warmbly, or
+// switches to an app password; a domain that already holds an admin grant
+// moves onto it in one click; a personal address switches to an app password.
+// Every move keeps the mailbox, its history, campaigns and warmup.
 import React from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import toast from "react-hot-toast/headless";
 import { useIsMutating } from "@tanstack/react-query";
-import { ArrowLeftIcon, ArrowRightIcon, Building2Icon, CheckCircle2Icon, KeyRoundIcon, Loader2Icon, XIcon } from "lucide-react";
+import { ArrowLeftIcon, ArrowRightIcon, CheckCircle2Icon, CheckIcon, KeyRoundIcon, Loader2Icon, RefreshCwIcon, XIcon } from "lucide-react";
 import ProviderLogo from "@/components/app/emails/ProviderLogo";
 import { useConfirm } from "@/hooks/context/confirm";
 import {
@@ -27,23 +28,23 @@ import { plural } from "../import/importFields";
 import RunStep from "../import/RunStep";
 import AppPasswordSwitchForm from "./AppPasswordSwitchForm";
 import { migrationRoute, type MigrationRoute } from "./migrationRoute";
+import useGoogleReconnect from "./useGoogleReconnect";
+import { BlockedByAdminHint, TrustedAppSteps } from "../GoogleWorkspaceSigninPanel";
 import { SkeletonCards } from "@/components/app/emails/import/Discovering";
 
 export default function SigninMigrationDialog({
     open,
     focusDomain,
     onClose,
-    onSetUpDomain,
 }: {
     open: boolean;
     /** Scrolled to and marked, e.g. from one mailbox's row. */
     focusDomain?: string | null;
     onClose: () => void;
-    /** Opens the whole-domain setup; the dialog closes first. */
-    onSetUpDomain: (domain: string) => void;
 }) {
     const migration = useSigninMigration(open);
-    const googleGrants = useGrantConfig(open).data?.google_enabled === true;
+    const clientId = useGrantConfig(open).data?.google_mailbox_client_id;
+    const google = useGoogleReconnect();
     const confirm = useConfirm();
     const [run, setRun] = React.useState<{ importId: string; domain: string } | null>(null);
     const [dirty, setDirty] = React.useState<Set<string>>(() => new Set());
@@ -95,6 +96,7 @@ export default function SigninMigrationDialog({
         return [...all].sort((a, b) => Number(b.domain === focusDomain) - Number(a.domain === focusDomain));
     }, [migration.data, focusDomain]);
     const total = migration.data?.total ?? 0;
+    const signinGroups = groups.some((g) => migrationRoute(g, !!clientId) === "signin");
 
     return createPortal(
         <AnimatePresence>
@@ -191,17 +193,27 @@ export default function SigninMigrationDialog({
                                     ) : (
                                         <div className="p-4 space-y-3">
                                             <p className="text-[12px] text-slate-600 leading-relaxed">
-                                                Switching from Google sign-in is optional. Moving keeps each mailbox, with its history,
-                                                campaigns and warmup.
+                                                Switching from the older Google sign-in is optional. Reconnecting with the new Google sign-in
+                                                moves a mailbox's warmup engagement to IMAP; an app password works too. Either way each mailbox
+                                                keeps its history, campaigns and warmup.
                                             </p>
+                                            {signinGroups && (
+                                                <div className="rounded-md border border-slate-200 px-3 py-2.5 space-y-2">
+                                                    <p className="text-[12px] font-medium text-slate-900">
+                                                        Before reconnecting, your Workspace admin trusts Warmbly, once per domain
+                                                    </p>
+                                                    <TrustedAppSteps clientId={clientId} />
+                                                </div>
+                                            )}
+                                            {google.unfinished && <BlockedByAdminHint clientId={clientId} />}
                                             {groups.map((g) => (
                                                 <GroupCard
                                                     key={g.domain}
                                                     group={g}
-                                                    route={migrationRoute(g, googleGrants)}
+                                                    route={migrationRoute(g, !!clientId)}
                                                     focused={g.domain === focusDomain}
                                                     onMoved={(importId) => setRun({ importId, domain: g.domain })}
-                                                    onSetUp={() => onSetUpDomain(g.domain)}
+                                                    google={google}
                                                     setRowDirty={setRowDirty}
                                                 />
                                             ))}
@@ -223,14 +235,14 @@ function GroupCard({
     route,
     focused,
     onMoved,
-    onSetUp,
+    google,
     setRowDirty,
 }: {
     group: SigninMigration;
     route: MigrationRoute;
     focused: boolean;
     onMoved: (importId: string) => void;
-    onSetUp: () => void;
+    google: GoogleReconnect;
     setRowDirty: (id: string, dirty: boolean) => void;
 }) {
     const ref = React.useRef<HTMLDivElement>(null);
@@ -257,12 +269,10 @@ function GroupCard({
 
     const sub =
         route === "grant"
-            ? "This domain has an admin grant. Moving signs each mailbox in through it."
-            : route === "setup"
-              ? "Set up the whole domain once, then move these mailboxes onto it."
-              : g.kind === "personal"
-                ? "A personal address moves to an app password, one mailbox at a time."
-                : "Admin grants are not set up on this instance, so each mailbox moves to an app password.";
+            ? "This domain already has an admin grant. Moving signs each mailbox in through it."
+            : route === "signin"
+              ? "Reconnect each mailbox with the new Google sign-in once your admin trusts Warmbly, or switch it to an app password."
+              : "A personal address moves to an app password, one mailbox at a time.";
 
     return (
         <div
@@ -295,37 +305,40 @@ function GroupCard({
                         Move {n} to the admin grant
                     </button>
                 )}
-                {route === "setup" && (
-                    <button
-                        type="button"
-                        onClick={onSetUp}
-                        className="shrink-0 self-center h-7 px-2.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
-                    >
-                        <Building2Icon className="w-3 h-3" />
-                        Set up the whole domain
-                    </button>
-                )}
             </div>
             <div className="divide-y divide-slate-100">
                 {g.mailboxes.map((m) => (
-                    <MailboxLine key={m.id} mailbox={m} appPassword={route === "app_password"} setRowDirty={setRowDirty} />
+                    <MailboxLine
+                        key={m.id}
+                        mailbox={m}
+                        appPassword={route !== "grant"}
+                        google={route === "signin" ? google : undefined}
+                        setRowDirty={setRowDirty}
+                    />
                 ))}
             </div>
         </div>
     );
 }
 
+type GoogleReconnect = ReturnType<typeof useGoogleReconnect>;
+
 function MailboxLine({
     mailbox: m,
     appPassword,
+    google,
     setRowDirty,
 }: {
     mailbox: MigrationMailbox;
     appPassword: boolean;
+    /** Offered when the mailbox can reconnect with the new Google sign-in. */
+    google?: GoogleReconnect;
     setRowDirty: (id: string, dirty: boolean) => void;
 }) {
     const [open, setOpen] = React.useState(false);
     const onDirty = React.useCallback((d: boolean) => setRowDirty(m.id, d), [m.id, setRowDirty]);
+    const reconnected = google?.done.has(m.id) === true;
+    const reconnecting = google?.busy === m.id;
     return (
         <div className="px-3 py-2">
             <div className="flex items-center gap-2 min-w-0">
@@ -338,7 +351,28 @@ function MailboxLine({
                         {m.status.replace(/_/g, " ")}
                     </span>
                 )}
-                {appPassword && (
+                {reconnected && (
+                    <span className="shrink-0 h-6 px-2 rounded-md bg-emerald-50 text-emerald-700 text-[11.5px] font-medium inline-flex items-center gap-1">
+                        <CheckIcon className="w-3 h-3" />
+                        Reconnected
+                    </span>
+                )}
+                {google && !reconnected && (
+                    <button
+                        type="button"
+                        onClick={() => void google.reconnect(m.id)}
+                        aria-disabled={!!google.busy}
+                        className={cn(
+                            "shrink-0 h-6 px-2 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[11.5px] font-medium inline-flex items-center gap-1 transition-colors",
+                            google.busy && "opacity-60",
+                        )}
+                    >
+                        {reconnecting ? <Loader2Icon className="w-3 h-3 animate-spin" /> : <RefreshCwIcon className="w-3 h-3" />}
+                        <span className="hidden sm:inline">Reconnect with Google</span>
+                        <span className="sm:hidden">Reconnect</span>
+                    </button>
+                )}
+                {appPassword && !reconnected && (
                     <button
                         type="button"
                         onClick={() => setOpen((v) => !v)}

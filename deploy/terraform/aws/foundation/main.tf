@@ -64,7 +64,9 @@ resource "aws_vpc" "main" {
   cidr_block           = var.vpc_cidr
   enable_dns_support   = true
   enable_dns_hostnames = true
-  tags                 = { Name = var.name }
+  # Amazon-provided /56; existing subnets stay IPv4-only, the worker fleet's subnets take /64s from it.
+  assign_generated_ipv6_cidr_block = true
+  tags                             = { Name = var.name }
 }
 
 resource "aws_internet_gateway" "main" {

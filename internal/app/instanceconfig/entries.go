@@ -11,23 +11,24 @@ import (
 
 // Docs anchors. Kept as constants so a renamed section is one edit.
 const (
-	docsDeployment = "/development/configuration/#deployment"
-	docsSecrets    = "/development/configuration/#secrets"
-	docsAddresses  = "/development/configuration/#addresses"
-	docsProxy      = "/development/configuration/#network-and-proxy"
-	docsSignIn     = "/development/configuration/#authentication"
-	docsMail       = "/development/configuration/#platform-mail"
-	docsEncryption = "/development/configuration/#encryption"
-	docsStorage    = "/development/configuration/#storage"
-	docsEventBus   = "/development/configuration/#event-bus"
-	docsDatabase   = "/development/configuration/#database"
-	docsGeoIP      = "/development/configuration/#geoip"
-	docsWorkers    = "/development/configuration/#workers"
-	docsCaptcha    = "/development/configuration/#captcha"
-	docsSSO        = "/development/accounts-and-access/#single-sign-on"
-	docsFirstOwner = "/development/accounts-and-access/#first-owner"
-	docsUpdates    = "/development/updates/"
-	docsAI         = "/development/configuration/#ai-and-search"
+	docsDeployment  = "/development/configuration/#deployment"
+	docsSecrets     = "/development/configuration/#secrets"
+	docsAddresses   = "/development/configuration/#addresses"
+	docsProxy       = "/development/configuration/#network-and-proxy"
+	docsSignIn      = "/development/configuration/#authentication"
+	docsMail        = "/development/configuration/#platform-mail"
+	docsEncryption  = "/development/configuration/#encryption"
+	docsStorage     = "/development/configuration/#storage"
+	docsEventBus    = "/development/configuration/#event-bus"
+	docsDatabase    = "/development/configuration/#database"
+	docsGeoIP       = "/development/configuration/#geoip"
+	docsWorkers     = "/development/configuration/#workers"
+	docsMailboxSync = "/development/configuration/#mailbox-sync"
+	docsCaptcha     = "/development/configuration/#captcha"
+	docsSSO         = "/development/accounts-and-access/#single-sign-on"
+	docsFirstOwner  = "/development/accounts-and-access/#first-owner"
+	docsUpdates     = "/development/updates/"
+	docsAI          = "/development/configuration/#ai-and-search"
 	// The database-backed settings document, which is the one tier the
 	// environment does not own.
 	docsSettingsDoc = "/development/configuration/#settings-stored-in-the-database"
@@ -135,6 +136,12 @@ var table = []Entry{
 		Effect:     "Credential for the TypeSafe judgments: reply classification, copy judgment, warmup content lint, bounce classification and form triage. Inbox tagging also needs INBOX_TAGGING_ENABLED.",
 		DocsAnchor: docsAI,
 		Resolve:    envValue("TYPESAFE_API_KEY"),
+	},
+	{
+		Key: "TYPESAFE_ENDPOINT", Group: GroupDeployment, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "URL the TypeSafe judgments are sent to.",
+		DocsAnchor: docsAI,
+		Resolve:    envOr("TYPESAFE_ENDPOINT", "https://api.typesafe.ai/v1/systemone"),
 	},
 	{
 		Key: "INBOX_TAGGING_ENABLED", Group: GroupDeployment, RuntimeChangeable: ChangeBootOnly,
@@ -800,6 +807,42 @@ var table = []Entry{
 		Effect:     "A worker's stable identity. Derived from the hostname when unset, which changes on every container recreate.",
 		DocsAnchor: docsWorkers,
 		Resolve:    envValue("WORKER_ID"),
+	},
+	{
+		Key: "IMAP_IDLE", Group: GroupWorkers, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "Workers hold each IMAP INBOX open in IDLE on a second connection, so new mail syncs within seconds. false keeps IMAP polling once a minute.",
+		DocsAnchor: docsMailboxSync,
+		Resolve:    envOr("IMAP_IDLE", "true"),
+	},
+	{
+		Key: "SYNC_PUSH_FALLBACK_INTERVAL", Group: GroupWorkers, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "How often a mailbox whose provider pushes its changes is still polled, because notifications can be delayed or lost.",
+		DocsAnchor: docsMailboxSync,
+		Resolve:    envOr("SYNC_PUSH_FALLBACK_INTERVAL", "10m"),
+	},
+	{
+		Key: "GRAPH_PUSH", Group: GroupWorkers, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "Outlook mailboxes subscribe to Microsoft Graph change notifications at the backend's public HTTPS URL instead of only polling.",
+		DocsAnchor: docsMailboxSync,
+		Resolve:    envOr("GRAPH_PUSH", "false"),
+	},
+	{
+		Key: "GMAIL_PUSH_TOPIC", Group: GroupWorkers, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "The Pub/Sub topic Gmail mailboxes watch into. Unset keeps Gmail polling.",
+		DocsAnchor: docsMailboxSync,
+		Resolve:    envValue("GMAIL_PUSH_TOPIC"),
+	},
+	{
+		Key: "GMAIL_PUSH_SERVICE_ACCOUNT", Group: GroupWorkers, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "The service account a Pub/Sub push subscription signs with. Set, the backend accepts Gmail watch notifications at its public HTTPS URL.",
+		DocsAnchor: docsMailboxSync,
+		Resolve:    envValue("GMAIL_PUSH_SERVICE_ACCOUNT"),
+	},
+	{
+		Key: "GMAIL_PUSH_SUBSCRIPTION", Group: GroupWorkers, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "A pull subscription the consumer reads Gmail watch notifications from, for an instance Pub/Sub cannot push to.",
+		DocsAnchor: docsMailboxSync,
+		Resolve:    envValue("GMAIL_PUSH_SUBSCRIPTION"),
 	},
 	{
 		Key: "WARMBLY_NODE_REGION", Group: GroupWorkers, RuntimeChangeable: ChangeBootOnly,

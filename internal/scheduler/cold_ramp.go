@@ -40,11 +40,10 @@ func (s *schedulerService) coldRampStates(ctx context.Context, accounts []models
 // coldCeilingFor is the graduation ceiling for one mailbox, or mailboxCap when
 // the gate does not apply.
 //
-// It applies only to mailboxes that have warmed. Gating one that never used
-// warmup would cap customers who never opted into it, which is a different
-// decision from stopping the warmup-to-cold spike this exists to stop.
+// It applies only to mailboxes that have warmed and whose warmup is not
+// stopped: a stopped mailbox is capped by its own campaign limit and min-gap.
 func coldCeilingFor(state repository.ColdRampState, mailboxCap int) int {
-	if state.WarmupStartedAt == nil {
+	if !state.CeilingApplies() {
 		return mailboxCap
 	}
 	now := time.Now()

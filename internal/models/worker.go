@@ -138,6 +138,8 @@ type SendEmailResult struct {
 type AddWorkerEmailGoogleData struct {
 	LastHistoryID uint64        `json:"last_history_id" avro:"last_history_id"`
 	Token         *oauth2.Token `json:"token" avro:"token"`
+	// FullMailAccess is whether the stored consent carries GoogleFullMailScope; nil when unknown, which the worker probes.
+	FullMailAccess *bool `json:"full_mail_access,omitempty" avro:"full_mail_access"`
 }
 
 type AddWorkerEmailSmtpImapData struct {
@@ -179,6 +181,8 @@ type AddWorkerEmail struct {
 	// Sync is the fair-use budget and resume state. Nil only from a publisher
 	// older than the sync policy; the worker then applies compiled defaults.
 	Sync *AddWorkerEmailSyncData `json:"sync" avro:"sync"`
+	// Push asks the worker to keep a provider push channel open; nil keeps polling only.
+	Push *AddWorkerEmailPushData `json:"push,omitempty" avro:"push"`
 	// Brokered: no credential travels; the worker fetches access tokens from the backend.
 	Brokered bool `json:"brokered" avro:"brokered"`
 	// SealedSecrets carries the token or SMTP/IMAP login sealed under the
@@ -188,6 +192,8 @@ type AddWorkerEmail struct {
 	Cfg oauth2.Config `json:"-" avro:"-"`
 	// TokenSource is set by the worker for brokered mailboxes.
 	TokenSource oauth2.TokenSource `json:"-" avro:"-"`
+	// IMAPTokenSource is a brokered Google mailbox's token for Gmail IMAP; nil reuses TokenSource.
+	IMAPTokenSource oauth2.TokenSource `json:"-" avro:"-"`
 }
 
 // SavesSentCopy reports whether the worker should APPEND a copy of each sent

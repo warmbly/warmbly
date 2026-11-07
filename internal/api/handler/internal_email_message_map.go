@@ -23,6 +23,9 @@ func (h *Handler) InternalAdmitEmailArrival(c *gin.Context) {
 		c.Status(http.StatusBadRequest)
 		return
 	}
+	if user, mailbox := mapScope(p.Map.UserID, p.Map.EmailID); !h.nodeMailbox(c, "email_message_map.arrival", http.StatusNotFound, user, mailbox) {
+		return
+	}
 	repo, ok := h.EmailMessageMap.(repository.ArrivalAdmission)
 	if !ok {
 		logArrivalAdmissionFailure(c, p.Map, repository.ErrArrivalOutboxUnsupported)
@@ -96,6 +99,9 @@ func (h *Handler) InternalLookupEmailMessageMaps(c *gin.Context) {
 		c.Status(http.StatusBadRequest)
 		return
 	}
+	if !h.nodeMailbox(c, "email_message_map.lookup", http.StatusNotFound, userID, emailID) {
+		return
+	}
 	for _, id := range payload.MessageIDs {
 		if id == "" {
 			c.Status(http.StatusBadRequest)
@@ -129,6 +135,9 @@ func (h *Handler) InternalPutEmailMessageMap(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id, email_id, message_id, id required"})
 		return
 	}
+	if user, mailbox := mapScope(p.UserID, p.EmailID); !h.nodeMailbox(c, "email_message_map.put", http.StatusNotFound, user, mailbox) {
+		return
+	}
 	err = h.EmailMessageMap.Add(c.Request.Context(), repository.EmailMessageData{
 		UserID:    p.UserID,
 		EmailID:   p.EmailID,
@@ -146,6 +155,9 @@ func (h *Handler) InternalPutEmailMessageMap(c *gin.Context) {
 func (h *Handler) InternalGetEmailMessageMap(c *gin.Context) {
 	userID, emailID, messageID, ok := parseEmailMessageMapKey(c)
 	if !ok {
+		return
+	}
+	if !h.nodeMailbox(c, "email_message_map.get", http.StatusNotFound, userID, emailID) {
 		return
 	}
 	data, err := h.EmailMessageMap.Get(c.Request.Context(), userID, emailID, messageID)
@@ -169,6 +181,9 @@ func (h *Handler) InternalGetEmailMessageMap(c *gin.Context) {
 func (h *Handler) InternalDeleteEmailMessageMap(c *gin.Context) {
 	userID, emailID, messageID, ok := parseEmailMessageMapKey(c)
 	if !ok {
+		return
+	}
+	if !h.nodeMailbox(c, "email_message_map.delete", http.StatusNotFound, userID, emailID) {
 		return
 	}
 	var id uuid.UUID

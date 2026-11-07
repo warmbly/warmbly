@@ -127,7 +127,7 @@ var apiSpecs = []apiSpec{
 	{name: "mailbox release", summary: "Put a held mailbox back into campaign sending", method: "POST", path: "/emails/{id}/release"},
 
 	// Unified inbox.
-	{name: "inbox list", summary: "List inbox messages", method: "GET", path: "/unibox", query: []string{"limit", "cursor", "address", "direction", "folder", "from", "subject", "unseen", "awaiting_reply", "since", "until"}},
+	{name: "inbox list", summary: "List inbox messages", method: "GET", path: "/unibox", query: []string{"limit", "cursor", "address", "direction", "folder", "from", "subject", "unseen", "awaiting_reply", "campaign_id", "contact_id", "since", "until"}},
 	{name: "inbox count", summary: "The unseen message count", method: "GET", path: "/unibox/count"},
 	{name: "inbox overview", summary: "Per-mailbox and per-tag inbox rollup", method: "GET", path: "/unibox/overview"},
 	{name: "inbox thread", summary: "One conversation thread", method: "GET", path: "/unibox/thread", query: []string{"thread_id", "email_id", "limit", "cursor"}},

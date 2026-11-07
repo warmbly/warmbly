@@ -34,7 +34,9 @@ export default function AuthLayout({
         return () => window.removeEventListener("message", receiveMessage);
     }, [navigate]);
 
-    if (redirectIfAuthenticated && getToken()) {
+    // A reset link is opened from mail, often in the browser that is signed in.
+    const opensSignedIn = pathname.startsWith("/auth/reset-password");
+    if (redirectIfAuthenticated && !opensSignedIn && getToken()) {
         return <Navigate to="/app/emails" replace />;
     }
 

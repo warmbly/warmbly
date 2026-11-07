@@ -99,7 +99,8 @@ export default function SettingsPanel({
                     <p className="text-[11px] text-slate-500 mt-1">
                         Must be a page on one of your workspace's own domains: a domain you have a mailbox on (not
                         gmail.com or another shared provider), your verified tracking domain, your verified forms
-                        domain, or a subdomain of one. Leave empty to show the success message instead.
+                        domain, a website confirmed under Sending domains, or a subdomain of one. Leave empty to show
+                        the success message instead.
                     </p>
                 </div>
             </Section>

@@ -251,6 +251,9 @@ func (r *organizationRepository) GetUserOrganizations(ctx context.Context, userI
 		SELECT
 			om.id, om.organization_id, om.user_id, om.role, om.permissions,
 			om.invited_by, om.invited_at, om.accepted_at, om.access_scope,
+			COALESCE((SELECT bit_or(r.permissions)::int FROM organization_member_roles mr
+				JOIN organization_roles r ON r.id = mr.role_id AND r.organization_id = om.organization_id
+				WHERE mr.organization_id = om.organization_id AND mr.user_id = om.user_id AND r.acts_in_scope), 0) & om.permissions::int,
 			o.id, o.name, o.slug, o.avatar_url, o.owner_user_id, o.created_at, o.updated_at,
 			o.deletion_scheduled_at, o.deletion_scheduled_for, o.category
 		FROM organization_members om
@@ -270,7 +273,7 @@ func (r *organizationRepository) GetUserOrganizations(ctx context.Context, userI
 		var org models.Organization
 		err := rows.Scan(
 			&m.ID, &m.OrganizationID, &m.UserID, &m.Role, &m.Permissions,
-			&m.InvitedBy, &m.InvitedAt, &m.AcceptedAt, &m.AccessScope,
+			&m.InvitedBy, &m.InvitedAt, &m.AcceptedAt, &m.AccessScope, &m.ScopeActions,
 			&org.ID, &org.Name, &org.Slug, &org.AvatarURL, &org.OwnerUserID, &org.CreatedAt, &org.UpdatedAt,
 			&org.DeletionScheduledAt, &org.DeletionScheduledFor, &org.Category,
 		)
@@ -278,6 +281,9 @@ func (r *organizationRepository) GetUserOrganizations(ctx context.Context, userI
 			return nil, err
 		}
 		m.Organization = &org
+		if !m.IsRestricted() {
+			m.ScopeActions = 0
+		}
 		members = append(members, m)
 	}
 	return members, rows.Err()
@@ -1475,10 +1481,11 @@ func (r *organizationRepository) ListLimitRequestsForAdmin(ctx context.Context, 
 			lr.reason, lr.status, lr.submitted_by, lr.submitted_at,
 			lr.reviewed_by, lr.reviewed_at, lr.review_notes,
 			o.id, o.name, o.slug, o.owner_user_id, o.created_at, o.updated_at,
-			u.id, u.first_name, u.last_name, u.email, u.created_at, u.updated_at
+			COALESCE(u.id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(u.first_name, ''), COALESCE(u.last_name, ''), COALESCE(u.email, ''),
+			COALESCE(u.created_at, lr.submitted_at), COALESCE(u.updated_at, lr.submitted_at)
 		FROM limit_increase_requests lr
 		JOIN organizations o ON o.id = lr.organization_id
-		JOIN users u ON u.id = lr.submitted_by
+		LEFT JOIN users u ON u.id = lr.submitted_by
 		` + where + `
 		` + orderBy + `
 		` + adminLimitOffset("$"+itoa(argNum), offset)
@@ -1503,7 +1510,10 @@ func (r *organizationRepository) ListLimitRequestsForAdmin(ctx context.Context, 
 			return nil, err
 		}
 		lr.Organization = &org
-		lr.SubmittedByUser = &user
+		// A submitter whose account was deleted has no summary.
+		if user.ID != uuid.Nil {
+			lr.SubmittedByUser = &user
+		}
 		items = append(items, lr)
 	}
 
@@ -1517,7 +1527,7 @@ func (r *organizationRepository) ListLimitRequestsForAdmin(ctx context.Context, 
 	}
 
 	// Total count for the same filter — drop the trailing LIMIT arg.
-	countQuery := `SELECT COUNT(*) FROM limit_increase_requests lr JOIN organizations o ON o.id = lr.organization_id JOIN users u ON u.id = lr.submitted_by ` + where
+	countQuery := `SELECT COUNT(*) FROM limit_increase_requests lr JOIN organizations o ON o.id = lr.organization_id LEFT JOIN users u ON u.id = lr.submitted_by ` + where
 	var total int64
 	if err := r.db.QueryRow(ctx, countQuery, args[:len(args)-1]...).Scan(&total); err == nil {
 		result.Pagination.Total = &total

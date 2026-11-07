@@ -9,6 +9,7 @@ import type {
     VendorConnection,
     VendorImportRequest,
     VendorMailbox,
+    VendorReconnectMailbox,
 } from "@/lib/api/models/app/emails/MailboxSources";
 
 export async function listVendorCatalog(): Promise<ListResponse<VendorCatalogEntry>> {
@@ -51,4 +52,19 @@ export async function importVendorMailboxes(id: string, body: VendorImportReques
         authorization: true,
         timeout: 60_000,
     });
+}
+
+// Starts the vendor signing in again as the named linked Google mailboxes, or every one; the work goes on in the background.
+export async function reconnectVendorMailboxes(id: string, emailAccountIds?: string[]): Promise<ListResponse<VendorReconnectMailbox>> {
+    return await Request<ListResponse<VendorReconnectMailbox>>({
+        method: "POST",
+        url: `/emails/vendors/${id}/reconnect`,
+        data: emailAccountIds?.length ? { email_account_ids: emailAccountIds } : {},
+        authorization: true,
+        timeout: 60_000,
+    });
+}
+
+export async function getVendorReconnect(id: string): Promise<ListResponse<VendorReconnectMailbox>> {
+    return await Request<ListResponse<VendorReconnectMailbox>>({ method: "GET", url: `/emails/vendors/${id}/reconnect`, authorization: true });
 }

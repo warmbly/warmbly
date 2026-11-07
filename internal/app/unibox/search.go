@@ -9,6 +9,12 @@ import (
 	"github.com/warmbly/warmbly/internal/observability/errs"
 )
 
+// A campaign_id or contact_id outside the organization answers as not found.
+var (
+	ErrSearchCampaignNotFound = errx.New(errx.NotFound, "Campaign not found.")
+	ErrSearchContactNotFound  = errx.New(errx.NotFound, "Contact not found.")
+)
+
 // Search searches emails with filters
 func (s *uniboxService) Search(
 	ctx context.Context,
@@ -21,6 +27,20 @@ func (s *uniboxService) Search(
 	}
 	if params.PageSize > LimitMax {
 		params.PageSize = LimitMax
+	}
+
+	if params.CampaignID != nil || params.ContactID != nil {
+		campaign, contact, err := s.uniboxRepository.SearchScopeOwned(ctx, orgID, params.CampaignID, params.ContactID)
+		if err != nil {
+			errs.CaptureException(err)
+			return nil, errx.InternalError()
+		}
+		if !campaign {
+			return nil, ErrSearchCampaignNotFound
+		}
+		if !contact {
+			return nil, ErrSearchContactNotFound
+		}
 	}
 
 	// Everything goes through Search: it collapses messages into one row

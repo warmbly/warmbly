@@ -30,8 +30,14 @@ func TestSendSafetyHoldCannotAppearHealthyOrPromiseAutomaticSendRetries(t *testi
 				status := s.assembleAccountStatus(context.Background(), &models.Email{ID: id, Status: "active", Provider: "smtp_imap"},
 					&models.AccountDailyUsage{}, errs, nil, false, nil, false,
 					&statusReads{sendHolds: map[uuid.UUID]repository.SendRecoveryHold{id: {Reason: reason}}})
-				if status.Health.Status != "error" || status.Health.Score > 50 || len(status.Health.Issues) == 0 {
+				if status.Health.Status == "healthy" || len(status.Health.Issues) == 0 {
 					t.Fatalf("held mailbox cannot look healthy, even without an error row: %+v", status.Health)
+				}
+				if reason == "unknown" && (status.Health.Status != "warning" || status.Health.Score != 100) {
+					t.Fatalf("an unconfirmed send recovers on its own and must not cost health: %+v", status.Health)
+				}
+				if reason != "unknown" && (status.Health.Status != "error" || status.Health.Score > 50) {
+					t.Fatalf("a hold that needs the owner is an error: %+v", status.Health)
 				}
 				if !withError {
 					continue
@@ -44,8 +50,8 @@ func TestSendSafetyHoldCannotAppearHealthyOrPromiseAutomaticSendRetries(t *testi
 					if strings.Contains(action, "retries automatically") || !strings.Contains(action, "paused") {
 						t.Fatalf("held sending must not promise retries: %s", action)
 					}
-					if reason == "unknown" && (!strings.Contains(action, "Provider confirmation") || !strings.Contains(action, "duplicate")) {
-						t.Fatalf("unknown outcome requires confirmation, not blind retry: %s", action)
+					if reason == "unknown" && (!strings.Contains(action, "sent twice") || !strings.Contains(action, "on its own") || strings.Contains(action, "Provider confirmation")) {
+						t.Fatalf("unknown outcome recovers automatically without a resend: %s", action)
 					}
 				}
 			}
@@ -59,8 +65,8 @@ func TestUnknownWarmupHoldExplainsAutomaticRetirementWithoutPromisingResend(t *t
 	status := s.assembleAccountStatus(t.Context(), &models.Email{ID: id, Status: "active", Provider: "smtp_imap"},
 		&models.AccountDailyUsage{}, []models.AccountError{{ErrorCode: string(errx.MailErrorCodeServerUnreachable), Operation: models.MailTransportSend}},
 		nil, false, nil, false, &statusReads{sendHolds: map[uuid.UUID]repository.SendRecoveryHold{id: {Reason: "unknown", Warmup: true}}})
-	if status.Health.Status != "error" || status.Health.Score > 50 {
-		t.Fatalf("recovery has not completed: %+v", status.Health)
+	if status.Health.Status != "warning" || status.Health.Score != 100 {
+		t.Fatalf("an unconfirmed warmup send must not cost health: %+v", status.Health)
 	}
 	for _, message := range []string{status.Health.Issues[len(status.Health.Issues)-1], *status.Errors[0].ActionRequired} {
 		if !strings.Contains(message, "automatically") || !strings.Contains(message, "new sends") || !strings.Contains(message, "never retried") || strings.Contains(message, "Provider confirmation is required") {
@@ -70,7 +76,7 @@ func TestUnknownWarmupHoldExplainsAutomaticRetirementWithoutPromisingResend(t *t
 }
 
 func TestUnknownCampaignHoldExplainsAutomaticIsolation(t *testing.T) {
-	message := sendRecoveryHoldMessage(repository.SendRecoveryHold{Reason: "unknown", Campaign: true})
+	message := sendRecoveryHoldMessage(repository.SendRecoveryHold{Reason: "unknown", Campaign: true}, models.InboxProviderSMTPIMAP)
 	for _, required := range []string{"automatically", "other contacts", "never retried", "No action is needed"} {
 		if !strings.Contains(message, required) {
 			t.Fatalf("campaign recovery guidance missing %q: %s", required, message)
@@ -218,5 +224,20 @@ func TestConnectionErrorGuidanceNamesProviderAndOperationWithoutInventingAnOutag
 		if errs[0].Title != "Specific issue" || *errs[0].ActionRequired != action {
 			t.Fatalf("do not relabel %s as a retryable connection issue: %+v", code, errs)
 		}
+	}
+}
+
+func TestPermanentHoldSaysHowSendingResumes(t *testing.T) {
+	hold := repository.SendRecoveryHold{Reason: "permanent"}
+	for _, provider := range []models.InboxProvider{models.InboxProviderGoogle, models.InboxProviderOutlook} {
+		if message := sendRecoveryHoldMessage(hold, provider); !strings.Contains(message, "on its own") || !strings.Contains(message, "syncs again") {
+			t.Fatalf("%s refusal must say it resumes once the mailbox syncs: %s", provider, message)
+		}
+	}
+	if message := sendRecoveryHoldMessage(hold, models.InboxProviderSMTPIMAP); strings.Contains(message, "syncs again") || !strings.Contains(message, "Resume sending") || !strings.Contains(message, "after 3 hours") {
+		t.Fatalf("an SMTP refusal must offer Resume sending and say when it is retried: %s", message)
+	}
+	if message := sendRecoveryHoldMessage(repository.SendRecoveryHold{Reason: "domain_auth"}, models.InboxProviderSMTPIMAP); !strings.Contains(message, "DNS") || strings.Contains(message, "reconnect the mailbox") {
+		t.Fatalf("a domain authentication refusal must point at DNS, not a reconnect: %s", message)
 	}
 }

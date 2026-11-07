@@ -28,7 +28,7 @@ import { OrgSwitcher } from "./OrgSwitcher";
 import { BetaPill } from "./BetaPill";
 import { PlanPill } from "./PlanPill";
 import { VersionPill } from "./VersionPill";
-import { CreditsMeter } from "./CreditsMeter";
+import { BalanceMeter } from "./BalanceMeter";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import { hrefTarget } from "@/lib/routerSearch";
@@ -126,7 +126,7 @@ export function AppHeader({ onMenu }: { onMenu?: () => void }) {
                 <div className="hidden sm:flex items-center gap-2">
                     <div className="hidden lg:contents"><PlanPill /></div>
                     <VersionPill />
-                    {!restricted && <div className="hidden lg:contents"><CreditsMeter /></div>}
+                    {!restricted && <div className="hidden lg:contents"><BalanceMeter /></div>}
                     <div className="hidden lg:block h-4 w-px bg-slate-200/80" />
                 </div>
                 <OutboxIndicator />

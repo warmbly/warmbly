@@ -22,8 +22,13 @@ func TestLiveCampaignReplyRepairDoesNotSkipMatchingMessagesAcrossRawPages(t *tes
 	}
 	t.Cleanup(func() { _, _ = handle.Pool.Exec(context.Background(), `DELETE FROM contacts WHERE id=$1`, contactID) })
 
-	prefix := uuid.New().String()[:14] + "4000-8000-"
+	// The sweep is instance-wide, so the fixture takes the top of the id space and the pages end on its rows.
+	prefix := "ffffffff-" + uuid.New().String()[9:14] + "4000-8000-"
 	id := func(i int) uuid.UUID { return uuid.MustParse(prefix + fmt.Sprintf("%012x", i)) }
+	var foreign bool
+	if err := handle.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM unibox_emails WHERE id > $1)`, id(0)).Scan(&foreign); err != nil || foreign {
+		t.Fatalf("fixture id range is not free in the shared database: foreign=%t err=%v", foreign, err)
+	}
 	var values [][]any
 	for i := 1; i <= 502; i++ {
 		folder := "inbox"

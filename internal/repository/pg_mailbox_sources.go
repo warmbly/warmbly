@@ -29,6 +29,8 @@ type DomainGrantRepository interface {
 	ListActive(ctx context.Context) ([]models.DomainGrant, error)
 	// InactiveMailboxes are the grant's mailboxes a failure took out of work, never one switched off by hand.
 	InactiveMailboxes(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error)
+	// AwaitsGoogleGrant reports Google mailboxes on the domain that sign in through a grant the workspace no longer holds, as after an import.
+	AwaitsGoogleGrant(ctx context.Context, orgID uuid.UUID, domain string) (bool, error)
 }
 
 type domainGrantRepository struct{ DB *db.DB }
@@ -210,6 +212,12 @@ type VendorConnectionRepository interface {
 	SetStatus(ctx context.Context, id uuid.UUID, status, lastError string) error
 	// ReconnectCandidates are vendor-linked SMTP/IMAP mailboxes out of work on a credential error.
 	ReconnectCandidates(ctx context.Context, limit int) ([]VendorReconnect, error)
+	// LinkedGoogleMailboxes are the organization's Google mailboxes linked to one vendor connection.
+	LinkedGoogleMailboxes(ctx context.Context, orgID, connectionID uuid.UUID) ([]VendorReconnect, error)
+	AutoSwitchCandidates(ctx context.Context, vendors []string, limit int) ([]SigninSwitchCandidate, error)
+	StartSigninSwitch(ctx context.Context, orgID uuid.UUID, ids []uuid.UUID, automatic bool) ([]uuid.UUID, error)
+	SetSigninSwitch(ctx context.Context, orgID, accountID uuid.UUID, status, message string) error
+	SigninState(ctx context.Context, orgID, accountID uuid.UUID) (*models.MailboxSigninState, error)
 }
 
 type vendorConnectionRepository struct{ DB *db.DB }
@@ -306,6 +314,30 @@ func (r *vendorConnectionRepository) SetStatus(ctx context.Context, id uuid.UUID
 	return nil
 }
 
+func (r *vendorConnectionRepository) LinkedGoogleMailboxes(ctx context.Context, orgID, connectionID uuid.UUID) ([]VendorReconnect, error) {
+	query := `
+		SELECT ea.id, ea.organization_id, ea.vendor_connection_id, ea.vendor_mailbox_id, ea.email
+		FROM email_accounts ea
+		WHERE ea.organization_id = $1 AND ea.vendor_connection_id = $2 AND ea.vendor_mailbox_id <> ''
+		  AND (ea.provider = 'gmail' OR (ea.provider = 'smtp_imap' AND ea.mail_host IN ('google_workspace', 'gmail')))
+		ORDER BY lower(ea.email)`
+	rows, err := r.DB.Query(ctx, query, orgID, connectionID)
+	if err != nil {
+		db.CaptureError(err, query, nil, "query")
+		return nil, err
+	}
+	defer rows.Close()
+	var out []VendorReconnect
+	for rows.Next() {
+		var v VendorReconnect
+		if err := rows.Scan(&v.AccountID, &v.OrgID, &v.ConnectionID, &v.VendorMailboxID, &v.Email); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
 func (r *vendorConnectionRepository) ReconnectCandidates(ctx context.Context, limit int) ([]VendorReconnect, error) {
 	query := `
 		SELECT ea.id, ea.organization_id, ea.vendor_connection_id, ea.vendor_mailbox_id, ea.email
@@ -331,4 +363,16 @@ func (r *vendorConnectionRepository) ReconnectCandidates(ctx context.Context, li
 		out = append(out, v)
 	}
 	return out, rows.Err()
+}
+
+func (r *domainGrantRepository) AwaitsGoogleGrant(ctx context.Context, orgID uuid.UUID, domain string) (bool, error) {
+	query := `SELECT EXISTS (SELECT 1 FROM email_accounts
+		WHERE organization_id = $1 AND provider = 'gmail' AND auth_method = 'delegated' AND domain_grant_id IS NULL
+			AND lower(split_part(email, '@', 2)) = $2)`
+	var ok bool
+	if err := r.DB.QueryRow(ctx, query, orgID, strings.ToLower(domain)).Scan(&ok); err != nil {
+		db.CaptureError(err, query, nil, "queryrow")
+		return false, err
+	}
+	return ok, nil
 }

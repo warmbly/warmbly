@@ -37,12 +37,12 @@ func (r *originRepo) SetConnectionStatus(context.Context, uuid.UUID, models.Inte
 func TestIntegrationStartAndReauthBindDashboardOrigin(t *testing.T) {
 	t.Setenv("APP_URL", "https://app.warmbly.com")
 	t.Setenv("APP_ORIGIN", "")
-	t.Setenv("CORS_ALLOW_ORIGINS", "https://tac-security-assessment.warmbly.com")
+	t.Setenv("CORS_ALLOW_ORIGINS", "https://second.example.com")
 	t.Setenv("HUBSPOT_OAUTH_CLIENT_ID", "client")
 	t.Setenv("HUBSPOT_OAUTH_CLIENT_SECRET", "secret")
 	r := &originRepo{}
 	s := &service{repo: r, oauth: NewOAuthManager()}
-	ctx := config.WithDashboardOrigin(context.Background(), "https://tac-security-assessment.warmbly.com")
+	ctx := config.WithDashboardOrigin(context.Background(), "https://second.example.com")
 	org, user := uuid.New(), uuid.New()
 	for _, reauth := range []bool{false, true} {
 		var resp *models.IntegrationOAuthStartResponse
@@ -55,7 +55,7 @@ func TestIntegrationStartAndReauthBindDashboardOrigin(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := s.OAuthReturnOrigin(context.Background(), resp.State); got != "https://tac-security-assessment.warmbly.com" {
+		if got := s.OAuthReturnOrigin(context.Background(), resp.State); got != "https://second.example.com" {
 			t.Fatalf("origin = %q", got)
 		}
 		if r.state.UserID != user || r.state.OrganizationID != org || r.state.UsedAt != nil {
@@ -79,6 +79,6 @@ func TestIntegrationStartAndReauthBindDashboardOrigin(t *testing.T) {
 		if s.OAuthReturnOrigin(ctx, resp.State) != "" {
 			t.Fatal("removed origin must not route")
 		}
-		t.Setenv("CORS_ALLOW_ORIGINS", "https://tac-security-assessment.warmbly.com")
+		t.Setenv("CORS_ALLOW_ORIGINS", "https://second.example.com")
 	}
 }

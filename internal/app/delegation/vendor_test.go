@@ -49,10 +49,15 @@ func TestVendorGrantCoversOnlyTheVendorsDomains(t *testing.T) {
 
 func TestVendorGoogleGrantNeedsTheAdminMailbox(t *testing.T) {
 	s, _, _, _, _ := newTestService(t)
-	if _, xerr := s.GrantFromVendor(context.Background(), uuid.New(), uuid.New(), models.GrantProviderGoogle, "acme.io", "", []string{"acme.io"}); xerr == nil || xerr.Identifier != ErrIDProof {
+	if _, xerr := s.GrantFromVendor(context.Background(), uuid.New(), uuid.New(), models.GrantProviderGoogle, "acme.io", "admin@acme.io", []string{"acme.io"}); xerr == nil || xerr.Identifier != ErrIDGoogleRetired {
+		t.Fatalf("a vendor grant on a new Google domain = %v", xerr)
+	}
+	org := uuid.New()
+	holdLegacyGoogle(t, s, org)
+	if _, xerr := s.GrantFromVendor(context.Background(), org, uuid.New(), models.GrantProviderGoogle, "acme.io", "", []string{"acme.io"}); xerr == nil || xerr.Identifier != ErrIDProof {
 		t.Fatalf("a Google grant with no administrator = %v", xerr)
 	}
-	g, xerr := s.GrantFromVendor(context.Background(), uuid.New(), uuid.New(), models.GrantProviderGoogle, "acme.io", "admin@acme.io", []string{"acme.io"})
+	g, xerr := s.GrantFromVendor(context.Background(), org, uuid.New(), models.GrantProviderGoogle, "acme.io", "admin@acme.io", []string{"acme.io"})
 	if xerr != nil {
 		t.Fatal(xerr)
 	}
@@ -67,8 +72,8 @@ func TestAppIdentityNamesWhatTheVendorAuthorizes(t *testing.T) {
 	if !ok || id != "app-id" || strings.Join(roles, ",") != "Mail.ReadWrite,Mail.Send,User.Read.All" || len(scopes) == 0 {
 		t.Fatalf("microsoft = %q %v %v %v", id, scopes, roles, ok)
 	}
-	id, scopes, roles, ok = s.AppIdentity(models.GrantProviderGoogle)
-	if !ok || id != "123456789" || len(scopes) != 3 || roles != nil {
+	// New Google delegation grants are retired, so no vendor is asked to authorize one.
+	if id, scopes, roles, ok = s.AppIdentity(models.GrantProviderGoogle); ok {
 		t.Fatalf("google = %q %v %v %v", id, scopes, roles, ok)
 	}
 }

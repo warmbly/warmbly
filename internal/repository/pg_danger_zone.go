@@ -48,6 +48,9 @@ type DangerZoneRepository interface {
 	// MarkFailed records an execution error so the next tick can retry.
 	MarkFailed(ctx context.Context, id uuid.UUID, errMsg string) error
 
+	// MarkWaiting records why a deletion was refused and holds it until retryAt.
+	MarkWaiting(ctx context.Context, id uuid.UUID, reason string, retryAt time.Time) error
+
 	// SetNotifBit OR's bit into notifications_sent (idempotent reminder gate).
 	SetNotifBit(ctx context.Context, id uuid.UUID, bit int) error
 
@@ -57,9 +60,12 @@ type DangerZoneRepository interface {
 	// evict; see CollectMailboxPlacements.
 	HardDeleteOrganization(ctx context.Context, orgID uuid.UUID) ([]MailboxPlacement, error)
 
-	// HardDeleteUser removes the user row, returning the same placements to
-	// evict as HardDeleteOrganization.
-	HardDeleteUser(ctx context.Context, userID uuid.UUID) ([]MailboxPlacement, error)
+	// HardDeleteUser removes the user row and every workspace it owns,
+	// returning the same placements to evict as HardDeleteOrganization. It
+	// refuses with ErrAccountHoldsSharedWork or ErrOwnedWorkspaceBilled.
+	// confirm, when set, is asked about every owned subscription still on
+	// record while the workspaces are locked.
+	HardDeleteUser(ctx context.Context, userID uuid.UUID, confirm BillingCheck) ([]MailboxPlacement, error)
 }
 
 // ErrPendingDeletionExists is returned when CreatePending is called for
@@ -123,6 +129,15 @@ func (r *dangerZoneRepository) CreatePending(ctx context.Context, d *models.Sche
 		}
 		if linked {
 			return ErrOrganizationCloudLinked
+		}
+	}
+	if d.ResourceType == models.DeletionResourceUser {
+		owned, err := ownedWorkspaces(ctx, tx, d.ResourceID, false)
+		if err != nil {
+			return err
+		}
+		if err := accountDeletable(ctx, tx, d.ResourceID, owned); err != nil {
+			return err
 		}
 	}
 
@@ -345,6 +360,17 @@ func (r *dangerZoneRepository) MarkFailed(ctx context.Context, id uuid.UUID, err
 	return err
 }
 
+func (r *dangerZoneRepository) MarkWaiting(ctx context.Context, id uuid.UUID, reason string, retryAt time.Time) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE scheduled_deletions
+		   SET status = 'pending',
+		       execution_error = $2,
+		       execute_after = $3
+		 WHERE id = $1
+	`, id, reason, retryAt)
+	return err
+}
+
 func (r *dangerZoneRepository) SetNotifBit(ctx context.Context, id uuid.UUID, bit int) error {
 	_, err := r.db.Exec(ctx, `
 		UPDATE scheduled_deletions
@@ -356,17 +382,132 @@ func (r *dangerZoneRepository) SetNotifBit(ctx context.Context, id uuid.UUID, bi
 }
 
 func (r *dangerZoneRepository) HardDeleteOrganization(ctx context.Context, orgID uuid.UUID) ([]MailboxPlacement, error) {
-	return r.hardDelete(ctx,
-		`a.organization_id = $1`,
-		`DELETE FROM organizations WHERE id = $1`,
-		orgID)
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	placements, err := eraseAndDelete(ctx, tx, `a.organization_id = $1`, []any{orgID},
+		deletion{`DELETE FROM organizations WHERE id = $1`, []any{orgID}})
+	if err != nil {
+		return nil, err
+	}
+	return placements, tx.Commit(ctx)
 }
 
-func (r *dangerZoneRepository) HardDeleteUser(ctx context.Context, userID uuid.UUID) ([]MailboxPlacement, error) {
-	return r.hardDelete(ctx,
-		`a.user_id = $1`,
-		`DELETE FROM users WHERE id = $1`,
-		userID)
+// BillingCheck asks the billing provider about subscriptions whose local
+// state can lag it: it returns ErrOwnedWorkspaceBilled for one that will renew.
+type BillingCheck func(ctx context.Context, subscriptionIDs []string) error
+
+func (r *dangerZoneRepository) HardDeleteUser(ctx context.Context, userID uuid.UUID, confirm BillingCheck) ([]MailboxPlacement, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	// Conflicts with the key-share lock every insert referencing the user takes,
+	// so nothing new can be attached to it between the checks and the delete.
+	if _, err := tx.Exec(ctx, `SELECT 1 FROM users WHERE id = $1 FOR UPDATE`, userID); err != nil {
+		return nil, err
+	}
+	// Locked so an ownership transfer cannot take a workspace out from under the erasure queued for it.
+	owned, err := ownedWorkspaces(ctx, tx, userID, true)
+	if err != nil {
+		return nil, err
+	}
+	if err := accountDeletable(ctx, tx, userID, owned); err != nil {
+		return nil, err
+	}
+	if confirm != nil {
+		// The local row learns of a resumed subscription only from a webhook.
+		rows, err := tx.Query(ctx, `
+			SELECT stripe_subscription_id FROM subscriptions
+			 WHERE organization_id = ANY($1) AND stripe_subscription_id IS NOT NULL
+			   AND status NOT IN ('canceled', 'incomplete_expired')`, owned)
+		if err != nil {
+			return nil, err
+		}
+		ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			return nil, err
+		}
+		if len(ids) > 0 {
+			if err := confirm(ctx, ids); err != nil {
+				return nil, err
+			}
+		}
+	}
+	// A subscription keeps the user who bought it through ownership transfers; it belongs to the current owner.
+	if _, err := tx.Exec(ctx, `
+		UPDATE subscriptions s SET user_id = o.owner_user_id
+		  FROM organizations o
+		 WHERE o.id = s.organization_id AND s.user_id = $1 AND s.organization_id <> ALL($2)`, userID, owned); err != nil {
+		return nil, err
+	}
+	// organizations.owner_user_id deliberately has no delete action, so the
+	// workspaces go by id; one created since the lock fails the user delete.
+	placements, err := eraseAndDelete(ctx, tx, `a.user_id = $1 OR a.organization_id = ANY($2)`, []any{userID, owned},
+		deletion{`DELETE FROM organizations WHERE id = ANY($1)`, []any{owned}},
+		deletion{`DELETE FROM users WHERE id = $1`, []any{userID}})
+	if err != nil {
+		return nil, err
+	}
+	return placements, tx.Commit(ctx)
+}
+
+// ErrAccountHoldsSharedWork refuses an account deletion that would take a
+// workspace's assets with it: the user's mailboxes, contacts, campaigns and
+// their attachments, templates, API keys, apps and shared assistant conversations cascade with
+// the user row, in every workspace, owned or not.
+var ErrAccountHoldsSharedWork = errors.New("account holds assets in workspaces it does not own")
+
+// ErrOwnedWorkspaceBilled refuses an account deletion while an owned workspace
+// still has a subscription that will renew, which nothing here cancels.
+var ErrOwnedWorkspaceBilled = errors.New("an owned workspace has a renewing subscription")
+
+func ownedWorkspaces(ctx context.Context, tx pgx.Tx, userID uuid.UUID, lock bool) ([]uuid.UUID, error) {
+	q := `SELECT id FROM organizations WHERE owner_user_id = $1 ORDER BY id`
+	if lock {
+		q += ` FOR UPDATE`
+	}
+	rows, err := tx.Query(ctx, q, userID)
+	if err != nil {
+		return nil, err
+	}
+	owned, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+	if owned == nil {
+		owned = []uuid.UUID{}
+	}
+	return owned, err
+}
+
+func accountDeletable(ctx context.Context, tx pgx.Tx, userID uuid.UUID, owned []uuid.UUID) error {
+	var shared, billed bool
+	err := tx.QueryRow(ctx, `
+		SELECT
+			EXISTS (SELECT 1 FROM email_accounts x WHERE x.user_id = $1 AND x.organization_id <> ALL($2))
+			OR EXISTS (SELECT 1 FROM contacts x WHERE x.user_id = $1 AND x.organization_id <> ALL($2))
+			OR EXISTS (SELECT 1 FROM campaigns x WHERE x.user_id = $1 AND x.organization_id <> ALL($2))
+			OR EXISTS (SELECT 1 FROM reply_templates x WHERE x.user_id = $1 AND x.organization_id <> ALL($2))
+			OR EXISTS (SELECT 1 FROM api_keys x WHERE x.user_id = $1 AND x.organization_id <> ALL($2))
+			OR EXISTS (SELECT 1 FROM oauth_applications x WHERE x.created_by = $1 AND x.organization_id <> ALL($2))
+			OR EXISTS (SELECT 1 FROM campaign_attachments x JOIN campaigns c ON c.id = x.campaign_id
+				WHERE x.user_id = $1 AND c.organization_id <> ALL($2))
+			OR EXISTS (SELECT 1 FROM agent_sessions x JOIN organizations o ON o.id = x.org_id
+				WHERE x.user_id = $1 AND x.org_id <> ALL($2) AND o.assistant_shared_history),
+			EXISTS (SELECT 1 FROM subscriptions s WHERE s.organization_id = ANY($2)
+				AND s.stripe_subscription_id IS NOT NULL AND NOT s.cancel_at_period_end
+				AND s.status NOT IN ('canceled', 'incomplete_expired'))`,
+		userID, owned).Scan(&shared, &billed)
+	switch {
+	case err != nil:
+		return err
+	case shared:
+		return ErrAccountHoldsSharedWork
+	case billed:
+		return ErrOwnedWorkspaceBilled
+	}
+	return nil
 }
 
 // MailboxPlacement is one mailbox and the worker that was executing it, read
@@ -428,8 +569,15 @@ func CollectMailboxPlacements(ctx context.Context, tx pgx.Tx, scope string, args
 	return out, nil
 }
 
-// hardDelete removes a workspace or a person and everything the cascades take
-// with them, having first written down the erasure that the cascades cannot do.
+// deletion is one statement of a hard delete with its own arguments.
+type deletion struct {
+	sql  string
+	args []any
+}
+
+// eraseAndDelete removes a workspace or a person and everything the cascades
+// take with them, having first written down the erasure that the cascades
+// cannot do.
 //
 // Deleting the rows is not deleting the data. Every mailbox in scope has an
 // OAuth grant still live at its provider and message bodies still in object
@@ -439,42 +587,34 @@ func CollectMailboxPlacements(ctx context.Context, tx pgx.Tx, scope string, args
 //
 // mailboxScope selects those mailboxes as a WHERE clause over email_accounts
 // aliased `a`; it is written here, never by a caller.
-func (r *dangerZoneRepository) hardDelete(ctx context.Context, mailboxScope, deleteStmt string, id uuid.UUID) ([]MailboxPlacement, error) {
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback(ctx)
-
-	if _, err := EnqueueMailboxErasures(ctx, tx, mailboxScope, id); err != nil {
+func eraseAndDelete(ctx context.Context, tx pgx.Tx, mailboxScope string, scopeArgs []any, deletes ...deletion) ([]MailboxPlacement, error) {
+	if _, err := EnqueueMailboxErasures(ctx, tx, mailboxScope, scopeArgs...); err != nil {
 		return nil, err
 	}
 
 	// Read while the assignments still exist; returned to the caller to act on
 	// only once the delete has committed, because evicting a mailbox from its
 	// worker on a transaction that then rolls back would stop a live one.
-	placements, err := CollectMailboxPlacements(ctx, tx, mailboxScope, id)
+	placements, err := CollectMailboxPlacements(ctx, tx, mailboxScope, scopeArgs...)
 	if err != nil {
 		return nil, err
 	}
 
 	// The threads those mailboxes hold, read before the rows go. Deleting a
 	// workspace does not delete its members, so their labels and snoozes
-	// outlive the messages they were attached to; deleting a person takes both
-	// with them and this finds nothing to do.
-	threads, err := CollectMailboxThreadState(ctx, tx, mailboxScope, id)
+	// outlive the messages they were attached to.
+	threads, err := CollectMailboxThreadState(ctx, tx, mailboxScope, scopeArgs...)
 	if err != nil {
 		return nil, err
 	}
 
-	if _, err := tx.Exec(ctx, deleteStmt, id); err != nil {
-		return nil, err
+	for _, d := range deletes {
+		if _, err := tx.Exec(ctx, d.sql, d.args...); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := DeleteOrphanedThreadState(ctx, tx, threads); err != nil {
-		return nil, err
-	}
-	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
 	return placements, nil

@@ -25,6 +25,19 @@ func TestTransactionConnectionConfiguration(t *testing.T) {
 	if pool.ConnConfig.TLSConfig == nil || session.TLSConfig == nil || pool.ConnConfig.TLSConfig.InsecureSkipVerify || session.TLSConfig.InsecureSkipVerify {
 		t.Fatal("both connection paths must preserve TLS verification")
 	}
+	if name := pool.ConnConfig.RuntimeParams["application_name"]; !strings.HasPrefix(name, "warmbly-") || session.RuntimeParams["application_name"] != name {
+		t.Fatalf("connections are not labelled with the process that opened them: %q", name)
+	}
+}
+
+func TestApplicationNameFromTheDSNWins(t *testing.T) {
+	pool, session, _, err := connectionConfigs("postgres://app:fixture@db.example:5432/app?application_name=ops", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pool.ConnConfig.RuntimeParams["application_name"] != "ops" || session.RuntimeParams["application_name"] != "ops" {
+		t.Fatal("an operator's application_name was replaced")
+	}
 }
 
 func TestDirectConnectionDefaults(t *testing.T) {

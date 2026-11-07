@@ -122,7 +122,7 @@ func (s *emailService) finishReauth(ctx context.Context, sess *models.EmailOnboa
 		refresh = creds.RefreshToken
 	}
 
-	if err := s.emailRepository.RefreshBoxToken(ctx, account.ID, tok.AccessToken, refresh, tok.Expiry); err != nil {
+	if err := s.emailRepository.ReplaceBoxToken(ctx, account.ID, tok.AccessToken, refresh, tok.Expiry, recordedScopes(tok)); err != nil {
 		return nil, errx.InternalError()
 	}
 
@@ -211,12 +211,12 @@ func (s *emailService) reconnectAccount(ctx context.Context, accountID uuid.UUID
 		return nil, xerr
 	}
 	s.resolveCredentialErrors(ctx, account.ID)
-	// Both reconnect flows only get here with a credential the server just accepted, which is what an authentication hold waits for.
+	// Both reconnect flows only get here with a credential the server just accepted; a send the provider still refuses holds the mailbox again.
 	if releaser, ok := s.emailRepository.(interface {
-		ReleaseAuthenticationHold(context.Context, uuid.UUID, uuid.UUID) (bool, error)
+		ReleaseReconnectedHold(context.Context, uuid.UUID, uuid.UUID) (bool, error)
 	}); ok {
-		if _, err := releaser.ReleaseAuthenticationHold(ctx, *account.OrganizationID, account.ID); err != nil {
-			log.Warn().Err(err).Str("account_id", account.ID.String()).Msg("reconnect succeeded but the authentication send hold could not be released")
+		if _, err := releaser.ReleaseReconnectedHold(ctx, *account.OrganizationID, account.ID); err != nil {
+			log.Warn().Err(err).Str("account_id", account.ID.String()).Msg("reconnect succeeded but the send hold could not be released")
 		}
 	}
 	return updated, nil

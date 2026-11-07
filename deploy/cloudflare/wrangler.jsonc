@@ -1,0 +1,11 @@
+{
+  "name": "warmbly-static-edge",
+  "main": "static-edge.mjs",
+  "compatibility_date": "2026-11-03",
+  "workers_dev": false,
+  "preview_urls": false,
+  "limits": { "cpu_ms": 10 },
+  "vars": {
+    "PAGES_ORIGINS": "{}"
+  }
+}

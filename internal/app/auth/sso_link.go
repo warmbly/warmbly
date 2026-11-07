@@ -113,6 +113,16 @@ func (s *authService) SSOLinkConfirm(ctx context.Context, data *SSOLinkData, ipa
 	}
 	s.clearLoginFailures(ctx, pend.Email)
 
+	// An issued initial password is replaced through the password sign-in, never spent here.
+	pendingInitial, xerr := s.authRepository.InitialPasswordPending(ctx, pend.UserID)
+	if xerr != nil {
+		return nil, xerr
+	}
+	if pendingInitial {
+		s.deleteSSOLinkPending(ctx, claims.SessionID)
+		return nil, errx.ErrPasswordChangeRequired
+	}
+
 	// Consumed before anything is linked, so one password proves exactly one
 	// link and a retried request cannot mint a second session.
 	s.deleteSSOLinkPending(ctx, claims.SessionID)

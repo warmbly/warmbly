@@ -12,6 +12,8 @@ export default interface Organization {
     permissions?: number
     // "restricted" reaches only the campaigns and mailboxes granted to the caller.
     access_scope?: "workspace" | "restricted"
+    // What a restricted caller may act with inside their grants (roles that act in scope); 0 is read-only.
+    scope_actions?: number
     created_at: Date
     // Org-wide team presence privacy (admin-controlled). When false, the
     // realtime service stops broadcasting that signal to teammates.

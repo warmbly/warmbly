@@ -56,6 +56,8 @@ export default async function searchIncoming(
     // single email_id for legacy callers; we always use the multi form.
     usp.set("email_ids", p.accountIds.join(","));
   }
+  // The server resolves a tag to the workspace's mailboxes carrying it.
+  if (p.tagId) usp.set("tag_ids", p.tagId);
   if (p.folder) usp.set("folder", p.folder);
   if (p.includeArchived) usp.set("include_archived", "true");
   if (p.unseen) usp.set("unseen", "true");

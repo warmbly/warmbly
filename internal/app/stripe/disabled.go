@@ -8,6 +8,7 @@ import (
 	stripe "github.com/stripe/stripe-go/v86"
 
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/models"
 )
 
 // disabledService is the StripeService used when BILLING_PROVIDER=none (the
@@ -73,13 +74,29 @@ func (d *disabledService) ApplyCustomerCredit(_ context.Context, _ string, _ int
 	return "", billingDisabled()
 }
 
-func (d *disabledService) CreateCreditCheckoutSession(_ context.Context, _, _ uuid.UUID, _ string, _ int, _, _ string) (*stripe.CheckoutSession, *errx.Error) {
+func (d *disabledService) ChargeSavedCard(_ context.Context, _ *models.SavedCardCharge, _ int, _ bool) (*SavedCardResult, error) {
 	return nil, billingDisabled()
 }
 
-func (d *disabledService) AutoTopUpCredits(_ context.Context, _ uuid.UUID, _ string, _ int) (bool, error) {
-	return false, nil
+func (d *disabledService) VoidChargeInvoice(_ context.Context, _ string) {}
+
+func (d *disabledService) DefaultPaymentMethod(_ context.Context, _ string) (*PaymentMethodSummary, error) {
+	return nil, nil
 }
+
+func (d *disabledService) CreateBalanceCheckout(_ context.Context, _, _ uuid.UUID, _ models.Micro, _, _ string) (*stripe.CheckoutSession, *errx.Error) {
+	return nil, billingDisabled()
+}
+
+func (d *disabledService) CreateCardSetupCheckout(_ context.Context, _, _ uuid.UUID, _, _ string) (*stripe.CheckoutSession, *errx.Error) {
+	return nil, billingDisabled()
+}
+
+func (d *disabledService) ListInvoices(_ context.Context, _ string, _ int) ([]InvoiceSummary, error) {
+	return nil, nil
+}
+
+func (d *disabledService) WireBalance(_ BalanceSettler) {}
 
 func (d *disabledService) WireReferral(_ ReferralRewarder) {}
 

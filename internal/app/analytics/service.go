@@ -245,7 +245,10 @@ func (s *analyticsService) accountStatus(ctx context.Context, orgID, accountID u
 		return nil, xerr
 	}
 
-	errs := s.accountErrors(ctx, accountID)
+	errs, xerr := s.accountErrors(ctx, accountID)
+	if xerr != nil {
+		return nil, xerr
+	}
 	var participant *models.WarmupParticipantHealth
 	if s.warmupRepo != nil {
 		if p, err := s.warmupRepo.GetParticipantHealthForAccount(ctx, accountID); err == nil {
@@ -265,18 +268,43 @@ func (s *analyticsService) accountStatus(ctx context.Context, orgID, accountID u
 	return s.assembleAccountStatus(ctx, email, usage, errs, warmupHealth, inCampaign, rates, withPartners, reads), nil
 }
 
-// accountErrors reads a mailbox's active errors in the API shape, never nil.
-// Error surfacing is best-effort: a failed read is an empty list, not a 500 on
-// the whole status.
-func (s *analyticsService) accountErrors(ctx context.Context, accountID uuid.UUID) []models.AccountError {
+// accountErrors requires a successful read before reporting a mailbox's active errors.
+func (s *analyticsService) accountErrors(ctx context.Context, accountID uuid.UUID) ([]models.AccountError, *errx.Error) {
 	if s.emailAccountErrorsRepo == nil {
-		return make([]models.AccountError, 0)
+		return make([]models.AccountError, 0), nil
 	}
 	dbErrors, err := s.emailAccountErrorsRepo.GetByAccountID(ctx, accountID, true)
 	if err != nil {
-		return make([]models.AccountError, 0)
+		return nil, err
 	}
-	return toAccountErrors(dbErrors)
+	success := s.lastTransportSuccess(ctx, []uuid.UUID{accountID})
+	return toAccountErrors(withoutTransientBlips(dbErrors, success[accountID], time.Now())), nil
+}
+
+// lastTransportSuccess reads when each mailbox last synced and sent; a failed read hides nothing.
+func (s *analyticsService) lastTransportSuccess(ctx context.Context, ids []uuid.UUID) map[uuid.UUID]map[models.MailTransportOperation]time.Time {
+	reader, ok := s.emailAccountErrorsRepo.(interface {
+		LastTransportSuccess(context.Context, []uuid.UUID) (map[uuid.UUID]map[models.MailTransportOperation]time.Time, *errx.Error)
+	})
+	if !ok {
+		return nil
+	}
+	success, xerr := reader.LastTransportSuccess(ctx, ids)
+	if xerr != nil {
+		return nil
+	}
+	return success
+}
+
+// withoutTransientBlips drops temporary failures on a mailbox that is still working, so a passing blip never reads as a fault.
+func withoutTransientBlips(rows []repository.EmailAccountError, success map[models.MailTransportOperation]time.Time, now time.Time) []repository.EmailAccountError {
+	out := rows[:0:0]
+	for _, row := range rows {
+		if !models.MailTransientBlip(row.Severity, row.ErrorCode, row.Operation, row.ObservationSource, success, now) {
+			out = append(out, row)
+		}
+	}
+	return out
 }
 
 // toAccountErrors maps stored error rows into the API shape, never nil.
@@ -373,7 +401,7 @@ func (s *analyticsService) assembleAccountStatus(ctx context.Context, email *mod
 			if errs[i].Operation == models.MailTransportSync || (errs[i].ErrorCode != string(errx.MailErrorCodeServerUnreachable) && errs[i].ErrorCode != string(errx.MailErrorCodeConnectionLost)) {
 				continue
 			}
-			action := sendRecoveryHoldMessage(hold)
+			action := sendRecoveryHoldMessage(hold, models.InboxProvider(email.Provider))
 			errs[i].ActionRequired = &action
 		}
 	}
@@ -387,10 +415,16 @@ func (s *analyticsService) assembleAccountStatus(ctx context.Context, email *mod
 		placement = &r
 	}
 	applyWarmupPlacement(&health, placement)
-	if held {
+	if held && hold.Reason == "unknown" {
+		// Recovery is automatic and says nothing about the mailbox, so it never costs health.
+		if health.Status == "healthy" {
+			health.Status = "warning"
+		}
+		health.Issues = append(health.Issues, sendRecoveryHoldMessage(hold, models.InboxProvider(email.Provider)))
+	} else if held {
 		health.Status = "error"
 		health.Score = min(health.Score, 50)
-		health.Issues = append(health.Issues, sendRecoveryHoldMessage(hold))
+		health.Issues = append(health.Issues, sendRecoveryHoldMessage(hold, models.InboxProvider(email.Provider)))
 	} else if reads.sendHoldsUnavailable {
 		if health.Status == "healthy" {
 			health.Status = "warning"
@@ -435,6 +469,10 @@ func (s *analyticsService) assembleAccountStatus(ctx context.Context, email *mod
 		holdReason = hold.Reason
 	}
 	lifecycle := sendLifecycleNotice(reads.lifecycles, email.ID)
+	var sendPause *models.SendPauseInfo
+	if p, ok := reads.sendPauses[email.ID]; ok {
+		sendPause = &p
+	}
 
 	return &models.EmailAccountStatus{
 		ID:                 email.ID,
@@ -452,10 +490,11 @@ func (s *analyticsService) assembleAccountStatus(ctx context.Context, email *mod
 		ColdRamp:           coldRamp,
 		SendLifecycle:      lifecycle,
 		SendRecoveryReason: holdReason,
+		SendPause:          sendPause,
 	}
 }
 
-func sendRecoveryHoldMessage(hold repository.SendRecoveryHold) string {
+func sendRecoveryHoldMessage(hold repository.SendRecoveryHold, provider models.InboxProvider) string {
 	switch hold.Reason {
 	case "unknown":
 		if hold.Campaign {
@@ -464,9 +503,16 @@ func sendRecoveryHoldMessage(hold repository.SendRecoveryHold) string {
 		if hold.Warmup {
 			return "Sending is paused after an unconfirmed warmup send. Warmbly checks it automatically and, when safe, retires that message so new sends can resume. The uncertain message is never retried."
 		}
-		return "Sending is paused because the previous send outcome is unconfirmed. Warmbly will not retry it automatically, to avoid duplicate mail. Provider confirmation is required to resolve this hold; a successful inbox sync does not confirm the send."
+		return "Sending is briefly paused because Warmbly cannot yet tell whether an earlier email went out. That email is never retried, so nothing is sent twice. The pause clears on its own, usually within 30 minutes, even if that email's outcome stays unknown. No action is needed."
 	case "authentication":
 		return "Sending is paused because the mail server refused this mailbox's login when it last sent. Reconnect the mailbox (re-authorize it, or enter its current password or app password); once the server accepts the login, sending resumes unless another send safety hold is still pending."
+	case "permanent":
+		if provider == models.InboxProviderGoogle || provider == models.InboxProviderOutlook {
+			return "Sending is paused because the provider refused this mailbox when it last sent, for example while the account or workspace was suspended. Once the mailbox syncs again, Warmbly resumes sending on its own, usually within minutes. If the provider refused the last attempt to resume, the next one waits up to 6 hours. Reconnecting the mailbox resumes sending sooner. The refused email was not sent, so nothing is sent twice."
+		}
+		return "Sending is paused because the mail server refused this mailbox when it last sent. Fix the account with your mail provider, then choose Resume sending (or reconnect the mailbox). Warmbly also tries one send on its own after 3 hours, then waits longer after each refusal, up to a day. The refused email was not sent, so nothing is sent twice."
+	case "domain_auth":
+		return "Sending is paused because a receiving mail server refused this mailbox's mail: the sending domain failed its SPF, DKIM or DMARC check. Fix the domain's DNS records, then choose Resume sending; a domain whose check was failing also resumes on its own once it passes. Reconnecting the mailbox does not fix this. The refused email was not sent, so nothing is sent twice."
 	default:
 		return "Sending is paused by a send safety hold. Resolve the held send before this mailbox can send again."
 	}
@@ -648,8 +694,9 @@ func (s *analyticsService) accountStatusesPage(ctx context.Context, orgID uuid.U
 		if xerr != nil {
 			return nil, xerr
 		}
+		success := s.lastTransportSuccess(ctx, ids)
 		for id, rows := range raw {
-			errsByID[id] = toAccountErrors(rows)
+			errsByID[id] = toAccountErrors(withoutTransientBlips(rows, success[id], now))
 		}
 	}
 
@@ -1012,6 +1059,9 @@ func coldRampNotice(email *models.Email, states map[uuid.UUID]repository.ColdRam
 		return nil
 	}
 	state := states[email.ID].WithKnownWarmup(email.Warmup)
+	if !state.CeilingApplies() {
+		return nil
+	}
 	info := warmupramp.Notice(state.WarmupStartedAt, state.ColdRampStartedAt, state.Placements, email.CampaignLimit, now, state.ConfirmedReplies)
 	if info == nil || info.Ceiling >= email.CampaignLimit {
 		return nil

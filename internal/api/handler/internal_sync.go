@@ -35,6 +35,9 @@ func (h *Handler) InternalSyncOwnConversation(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid email_id"})
 		return
 	}
+	if !h.nodeMailbox(c, "sync.own_conversation", http.StatusNotFound, userID, emailID) {
+		return
+	}
 	var ids []string
 	for _, raw := range strings.Split(c.Query("message_ids"), ",") {
 		if id := strings.TrimSpace(raw); id != "" {
@@ -72,6 +75,9 @@ func (h *Handler) InternalSyncFolderMessages(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid email_id"})
 		return
 	}
+	if !h.nodeMailbox(c, "sync.folder_messages", http.StatusNotFound, userID, emailID) {
+		return
+	}
 	folderPath := c.Query("folder_path")
 	if folderPath == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "folder_path required"})
@@ -102,6 +108,9 @@ func (h *Handler) InternalSyncProviderMessages(c *gin.Context) {
 	emailID, err := uuid.Parse(c.Query("email_id"))
 	if err != nil {
 		errx.JSON(c, errx.ErrUuid)
+		return
+	}
+	if !h.nodeMailbox(c, "sync.provider_messages", http.StatusNotFound, userID, emailID) {
 		return
 	}
 	var after *uuid.UUID
@@ -151,6 +160,9 @@ func (h *Handler) InternalSyncProviderFolderMessages(c *gin.Context) {
 	emailID, err := uuid.Parse(c.Query("email_id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid email_id"})
+		return
+	}
+	if !h.nodeMailbox(c, "sync.provider_folder_messages", http.StatusNotFound, userID, emailID) {
 		return
 	}
 	var folders []string

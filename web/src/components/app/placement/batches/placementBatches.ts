@@ -51,8 +51,8 @@ export const SENDER_REASON: Record<string, string> = {
     placement_batch_start_failed: "Could not start",
     placement_batch_copy_unavailable: "Copy no longer available",
     placement_quota_exceeded: "Monthly tests used up",
-    insufficient_credits: "Out of credits",
-    usage_cap_exceeded: "Credit spend limit reached",
+    insufficient_credits: "Balance too low",
+    usage_cap_exceeded: "Spend limit reached",
 };
 
 export function batchOpen(status: PlacementBatchStatus): boolean {
@@ -156,9 +156,9 @@ export function batchErrorMessage(
                 message: "This month's free placement tests do not cover this batch, and tests past them cannot be paid for. Take a smaller sample, or use your own seed inboxes, which are never counted.",
             };
         case "insufficient_credits":
-            return { field: "review", message: "The workspace does not have enough credits for this batch. Top up under Settings > Billing, or take a smaller sample." };
+            return { field: "review", message: "The workspace balance is too low for this batch. Add money under Settings > Billing, or take a smaller sample." };
         case "usage_cap_exceeded":
-            return { field: "review", message: "This batch would go past the workspace's credit spend limit. An admin can raise it under Settings > Billing." };
+            return { field: "review", message: "This batch would go past the workspace's spend limit. An admin can raise it under Settings > Billing." };
         case "placement_no_seeds":
             return {
                 field: "email",

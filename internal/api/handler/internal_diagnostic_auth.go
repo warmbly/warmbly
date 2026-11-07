@@ -14,6 +14,9 @@ func (h *Handler) InternalDiagnosticAuth(c *gin.Context) {
 		c.Status(http.StatusBadRequest)
 		return
 	}
+	if !h.nodeWorkerMailbox(c, "worker.diagnostic_auth", http.StatusForbidden, request.WorkerID, request.MailboxID) {
+		return
+	}
 	authority, ok := h.WarmupDispatch.(repository.DiagnosticAuthAuthority)
 	if !ok {
 		c.Status(http.StatusServiceUnavailable)

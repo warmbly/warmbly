@@ -142,7 +142,7 @@ export const ROW_STATUS: Record<ImportRowStatus, { label: string; cls: string }>
     cancelled: { label: "Cancelled", cls: "text-slate-500 bg-slate-100" },
 };
 
-// A needs_signin row parked while the inbox vendor authorizes Warmbly on its domain; it resumes on its own.
+// A needs_signin row parked while the inbox vendor authorizes Warmbly on its domain or signs in as the mailbox; it resumes on its own.
 export const VENDOR_AUTHORIZING = "vendor_authorizing";
 export const AUTHORIZING_STATUS = { label: "Authorizing", cls: "text-sky-700 bg-sky-50" };
 
@@ -157,6 +157,16 @@ export function isPasswordCause(cause: string): boolean {
 
 export function isSigninCause(cause: string): boolean {
     return SIGNIN_CAUSE.test(cause);
+}
+
+/** Mirrors mailhost.LooksLikeGoogleAppPassword: 16 letters, ends trimmed, spaces ignored. */
+export function looksLikeGoogleAppPassword(s: string): boolean {
+    return /^[a-z]{16}$/i.test(s.trim().replace(/ /g, ""));
+}
+
+/** Mirrors mailhost.FromServer for Google's servers. */
+export function isGoogleServer(host: string): boolean {
+    return /(^|\.)(google|gmail|googlemail)\.com\.?$/i.test(host.trim());
 }
 
 /** "3, 7, 9 and 12 more" for a list of line numbers. */

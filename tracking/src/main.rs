@@ -14,6 +14,7 @@ mod posthog;
 mod producer;
 mod redirects;
 mod scanners;
+mod serve_tls;
 mod unsubscribe;
 mod unsubscribe_i18n;
 
@@ -106,6 +107,21 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    let listeners = match serve_tls::Listeners::from_env(|k| std::env::var(k).ok()) {
+        Ok(l) => l,
+        Err(e) => {
+            observability::report_issue("Invalid TLS listener setting", &e);
+            std::process::exit(1);
+        }
+    };
+    match serve_tls::load_backend_roots(|k| std::env::var(k).ok()) {
+        Ok(roots) => serve_tls::init_backend_roots(roots),
+        Err(e) => {
+            observability::report_issue("Invalid BACKEND_INTERNAL_CA", &e);
+            std::process::exit(1);
+        }
+    }
+
     // Load configuration with env-first approach
     let config = match Config::load().await {
         Ok(c) => c,
@@ -188,7 +204,8 @@ async fn main() {
         .with_state(state);
 
     // Start server
-    let addr: SocketAddr = match config.addr().parse() {
+    let plain_addr = format!("{}:{}", listeners.plain_host(&config.host), config.port);
+    let addr: SocketAddr = match plain_addr.parse() {
         Ok(a) => a,
         Err(e) => {
             observability::report_issue("Invalid tracking listen address", &e.to_string());
@@ -207,15 +224,49 @@ async fn main() {
         }
     };
 
+    let secure = match &listeners.tls {
+        Some(tls) => match tls.rustls_config().await {
+            Ok(rustls) => {
+                let tls_addr = SocketAddr::from(([0, 0, 0, 0], tls.port));
+                info!("Tracking service listening with TLS on {}", tls_addr);
+                let service = app
+                    .clone()
+                    .into_make_service_with_connect_info::<SocketAddr>();
+                Some(tokio::spawn(async move {
+                    axum_server::bind_rustls(tls_addr, rustls)
+                        .serve(service)
+                        .await
+                }))
+            }
+            Err(e) => {
+                observability::report_issue("TLS listener", &e);
+                observability::flush();
+                std::process::exit(1);
+            }
+        },
+        None => None,
+    };
+
     // Connect info carries the socket peer, which is the client unless it is a
     // trusted proxy (TRACKING_TRUSTED_PROXIES).
-    if let Err(e) = axum::serve(
+    let plain = axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .await
-    {
-        observability::report_issue("Tracking server terminated unexpectedly", &e.to_string());
+    );
+    let failure = match secure {
+        // Either listener ending takes the service down, so the orchestrator replaces it.
+        Some(secure) => Some(tokio::select! {
+            r = plain => r.err().map_or_else(|| "plain listener stopped".to_string(), |e| e.to_string()),
+            r = secure => match r {
+                Ok(Ok(())) => "TLS listener stopped".to_string(),
+                Ok(Err(e)) => e.to_string(),
+                Err(e) => e.to_string(),
+            },
+        }),
+        None => plain.await.err().map(|e| e.to_string()),
+    };
+    if let Some(e) = failure {
+        observability::report_issue("Tracking server terminated unexpectedly", &e);
         observability::flush();
         std::process::exit(1);
     }

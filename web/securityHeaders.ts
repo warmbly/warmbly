@@ -1,5 +1,8 @@
 export const mailPreviewCsp = "default-src 'none'; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; style-src 'unsafe-inline'; img-src data: https: http:; font-src data: https:; media-src https:";
 
+// The lead finder map's default tiles, styles, sprites and glyphs all come from here.
+export const mapTileOrigin = "https://tiles.openfreemap.org";
+
 export function dashboardCsp({ scripts = [], styles = [], nonce = "", connections = [], analytics = [], images = [] }: {
     scripts?: string[];
     styles?: string[];
@@ -15,7 +18,7 @@ export function dashboardCsp({ scripts = [], styles = [], nonce = "", connection
         "script-src-attr 'none'",
         `style-src 'self' ${[...authorization, ...styles].join(" ")}`,
         "style-src-attr 'unsafe-inline'",
-        `connect-src 'self' ${[...connections, ...analytics].join(" ")}`,
+        `connect-src 'self' ${mapTileOrigin} ${[...connections, ...analytics].join(" ")}`,
         `img-src 'self' data: blob: ${images.join(" ")}`,
         "font-src 'self'",
         "frame-src 'self' https://challenges.cloudflare.com",

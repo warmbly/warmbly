@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -116,6 +117,41 @@ func (s *JobsService) reconcileRecordedSendResults(ctx context.Context) {
 	}); ok && s.CampaignIsolationEnabled {
 		if _, err := isolator.IsolateUnknownCampaignSends(ctx, time.Now().Add(-10*time.Minute), 200); err != nil {
 			log.Warn().Err(err).Msg("automatic campaign send recovery deferred")
+		}
+	}
+	if holds, ok := s.TaskRepo.(interface {
+		RecoverUnknownSendHolds(context.Context, time.Time, time.Time, int) (int, error)
+	}); ok {
+		now := time.Now()
+		n, err := holds.RecoverUnknownSendHolds(ctx, now.Add(-10*time.Minute), now.Add(-time.Duration(config.CampaignSendReclaimAfterMinutes)*time.Minute), 200)
+		if err != nil {
+			log.Warn().Err(err).Msg("unknown send hold recovery deferred")
+		} else if n > 0 {
+			log.Info().Int("recovered", n).Msg("released mailboxes held by unknown sends that can never run again")
+		}
+	}
+	if holds, ok := s.TaskRepo.(interface {
+		ReleaseProviderRestoredHolds(context.Context, time.Time, int) (int, error)
+	}); ok {
+		n, err := holds.ReleaseProviderRestoredHolds(ctx, time.Now().Add(-config.ProviderRestoredHoldRecheckHours*time.Hour), 200)
+		if err != nil {
+			log.Warn().Err(err).Msg("provider-restored send hold release deferred")
+		} else if n > 0 {
+			log.Info().Int("released", n).Msg("released mailboxes the provider refused that have since synced in full")
+		}
+	}
+	if holds, ok := s.TaskRepo.(interface {
+		ReleaseProbeDueHolds(context.Context, int) ([]uuid.UUID, error)
+	}); ok {
+		released, err := holds.ReleaseProbeDueHolds(ctx, 200)
+		if err != nil {
+			log.Warn().Err(err).Msg("send hold re-probe deferred")
+		}
+		for _, id := range released {
+			s.publishAccountSynced(ctx, id)
+		}
+		if len(released) > 0 {
+			log.Info().Int("released", len(released)).Msg("released refused mailboxes for one more send")
 		}
 	}
 }

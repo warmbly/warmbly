@@ -130,6 +130,8 @@ Every delivery attempt is logged. Open an endpoint in Settings -> Webhooks and g
 
 You can also query deliveries across all endpoints with `GET /webhooks/deliveries`, or scope it to one endpoint with `GET /webhooks/{id}/deliveries`. Both support filtering by status and event type, and return opaque cursor pagination.
 
+A settled delivery stays in the log unless the instance sets a window, measured from its last attempt; one past that window can no longer be redelivered. A delivery still being retried stays until it settles. A self-hosted instance sets this window with `retention.webhook_delivery_days` (see [data control](/development/data-control/#event-history)).
+
 If an event was throttled rather than delivered, it appears in `GET /webhooks/throttle-drops` instead of the delivery log.
 
 </Fold>

@@ -175,7 +175,7 @@ func TestLiveCampaignUnknownIsolationPortablePauseAndDatabaseFence(t *testing.T)
 	nextStep := uuid.New()
 	f.exec(t, `INSERT INTO sequences(id,campaign_id,organization_id,name,subject,body_plain,body_html,wait_after,position) VALUES($1,$2,$3,'Next','Test','Text','',0,2)`, nextStep, f.campaign, f.org)
 	f.exec(t, `INSERT INTO tasks(id,task_type,email_account_id,status,message_id) VALUES($1,'campaign',$2,'active','')`, replacement, f.sender)
-	claimed, err := NewCampaignProgressRepository(f.pool).ReserveSend(t.Context(), f.campaign, f.contactID, nextStep, replacement, f.sender, false)
+	claimed, err := NewCampaignProgressRepository(f.pool).ReserveSend(t.Context(), f.campaign, f.contactID, nextStep, replacement, f.sender, false, nil)
 	if err != nil || claimed {
 		t.Fatalf("portable recovery pause lost: claimed=%t err=%v", claimed, err)
 	}

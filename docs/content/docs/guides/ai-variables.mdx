@@ -3,13 +3,13 @@ title: AI variables
 description: Drop AI blocks into a campaign email that write a unique, personalized snippet for each recipient at send time.
 ---
 
-An AI variable is a block you place inside a campaign email that generates its own copy for every recipient. Where a normal variable like `{{first_name}}` substitutes a stored field, an AI variable runs a short instruction against each contact and writes a snippet tailored to them, right where you dropped it. The rest of the email is yours; the AI variable fills one spot with something specific to the person receiving it.
+An AI variable is a block you place inside a campaign email that generates its own copy for every recipient. Where a normal variable like `{{.FirstName}}` substitutes a stored field, an AI variable runs a short instruction against each contact and writes a snippet tailored to them, right where you dropped it. The rest of the email is yours; the AI variable fills one spot with something specific to the person receiving it.
 
-Because it runs per recipient, an AI variable costs credits for each contact it resolves. Plan for that the same way you plan send volume.
+Because it runs per recipient, an AI variable is charged to the workspace balance for each contact it resolves. Plan for that the same way you plan send volume.
 
 ## Adding an AI variable
 
-In the campaign email editor, place your cursor where you want the personalized copy and insert an AI variable. Give it a short instruction, for example "one line noting something specific about their company" or "a friendly opener that references `{{company}}`". The instruction is itself a template, so you can reference contact fields inside it and they render per contact before the model runs.
+In the campaign email editor, place your cursor where you want the personalized copy and insert an AI variable. Give it a short instruction, for example "one line noting something specific about their company" or "a friendly opener that references `{{.Company}}`". The instruction is itself a template, so you can reference contact fields inside it and they render per contact before the model runs.
 
 By default a block writes instantly from the contact's own fields. That is the right choice for most blocks. One optional add-on personalizes deeper:
 
@@ -29,7 +29,7 @@ A block whose instruction renders empty for a contact resolves to nothing and co
 
 ## Cost and safety
 
-- A block is billed by usage: the model and the tokens each snippet uses, plus the web search when it is on. See [AI credits](/guides/ai-credits/) for how usage maps to credits.
+- A block is billed by usage: the model and the tokens each snippet uses, plus the web search when it is on. See [Balance and usage](/guides/ai-credits/) for how usage is priced.
 - Costs multiply by recipients, not by email: a block that resolves for 500 contacts is charged 500 times over the campaign's run.
 - The contact's fields and any web results are treated as untrusted input, so text a contact controls cannot change the block's instruction.
 - Web lookups are derived only from the contact's company and name, never from anything a contact wrote to you.

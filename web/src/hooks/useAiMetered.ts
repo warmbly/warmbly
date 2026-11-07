@@ -1,9 +1,8 @@
-// useAiMetered — whether AI use is charged in credits on this deployment.
+// useAiMetered: whether AI use is charged to the workspace balance here.
 //
 // False when billing is off (BILLING_PROVIDER=none, the self-host default): the
-// backend bypasses the credit ledger, so balances, allowances and per-action
-// "costs N credits" copy would describe a meter that is not running. Surfaces
-// use this to drop that copy rather than show a plan-based figure.
+// backend bypasses the ledger, so balances and per-action prices would
+// describe a meter that is not running. Surfaces drop that copy instead.
 
 import useFeatureAccess from "@/hooks/useFeatureAccess";
 

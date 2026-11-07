@@ -17,20 +17,14 @@ import (
 // never double-grant — this is the billing-correctness boundary.
 type ReferralRepository interface {
 	// Codes
-	GetCodeByOwner(ctx context.Context, ownerUserID uuid.UUID) (*models.ReferralCode, error)
-	GetCodeByCode(ctx context.Context, code string) (*models.ReferralCode, error)
 	GetCodeByID(ctx context.Context, id uuid.UUID) (*models.ReferralCode, error)
-	CreateCode(ctx context.Context, code *models.ReferralCode) error
 
 	// Attributions
-	CreateAttribution(ctx context.Context, a *models.ReferralAttribution) error
 	GetAttributionByInviteeOrg(ctx context.Context, inviteeOrgID uuid.UUID) (*models.ReferralAttribution, error)
 	MarkAttributionQualified(ctx context.Context, id uuid.UUID) error
 	MarkAttributionRewarded(ctx context.Context, id uuid.UUID, rewardCents int64, currency string) error
 	MarkAttributionVoid(ctx context.Context, id uuid.UUID, reason string) error
-	ListAttributionsByReferrer(ctx context.Context, referrerOrgID uuid.UUID, limit, offset int) ([]models.ReferralAttribution, error)
 	CountRewardedByReferrerSince(ctx context.Context, referrerOrgID uuid.UUID, since time.Time) (int, error)
-	AttributionStats(ctx context.Context, referrerOrgID uuid.UUID) (total, pending, qualified, rewarded int, err error)
 
 	// Earnings ledger
 	GetLedger(ctx context.Context, orgID uuid.UUID) (*models.ReferralEarningsLedger, error)
@@ -47,7 +41,6 @@ type ReferralRepository interface {
 	// SetStripePushed records how many net cents have been mirrored to the
 	// Stripe customer balance (the sync watermark).
 	SetStripePushed(ctx context.Context, orgID uuid.UUID, pushedCents int64) error
-	ListEarnings(ctx context.Context, orgID uuid.UUID, limit, offset int) ([]models.ReferralEarningsTransaction, error)
 }
 
 type referralRepository struct {
@@ -66,30 +59,6 @@ func scanReferralCode(row pgx.Row, c *models.ReferralCode) error {
 	return row.Scan(&c.ID, &c.OwnerUserID, &c.OwnerOrgID, &c.Code, &c.DiscountCodeID, &c.CreatedAt, &c.UpdatedAt)
 }
 
-func (r *referralRepository) GetCodeByOwner(ctx context.Context, ownerUserID uuid.UUID) (*models.ReferralCode, error) {
-	c := &models.ReferralCode{}
-	err := scanReferralCode(r.db.QueryRow(ctx, `SELECT `+referralCodeCols+` FROM referral_codes WHERE owner_user_id = $1`, ownerUserID), c)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return c, nil
-}
-
-func (r *referralRepository) GetCodeByCode(ctx context.Context, code string) (*models.ReferralCode, error) {
-	c := &models.ReferralCode{}
-	err := scanReferralCode(r.db.QueryRow(ctx, `SELECT `+referralCodeCols+` FROM referral_codes WHERE code = $1`, code), c)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return c, nil
-}
-
 func (r *referralRepository) GetCodeByID(ctx context.Context, id uuid.UUID) (*models.ReferralCode, error) {
 	c := &models.ReferralCode{}
 	err := scanReferralCode(r.db.QueryRow(ctx, `SELECT `+referralCodeCols+` FROM referral_codes WHERE id = $1`, id), c)
@@ -100,14 +69,6 @@ func (r *referralRepository) GetCodeByID(ctx context.Context, id uuid.UUID) (*mo
 		return nil, err
 	}
 	return c, nil
-}
-
-func (r *referralRepository) CreateCode(ctx context.Context, code *models.ReferralCode) error {
-	_, err := r.db.Exec(ctx, `
-		INSERT INTO referral_codes (id, owner_user_id, owner_org_id, code, discount_code_id)
-		VALUES ($1, $2, $3, $4, $5)
-	`, code.ID, code.OwnerUserID, code.OwnerOrgID, code.Code, code.DiscountCodeID)
-	return err
 }
 
 // --- Attributions ---
@@ -121,15 +82,6 @@ func scanReferralAttribution(row pgx.Row, a *models.ReferralAttribution) error {
 		&a.Status, &a.RewardCents, &a.RewardCurrency, &a.QualifiedAt, &a.RewardedAt, &a.VoidedAt, &a.VoidReason,
 		&a.CreatedAt, &a.UpdatedAt,
 	)
-}
-
-func (r *referralRepository) CreateAttribution(ctx context.Context, a *models.ReferralAttribution) error {
-	_, err := r.db.Exec(ctx, `
-		INSERT INTO referral_attributions (
-			id, referral_code_id, referrer_user_id, referrer_org_id, invitee_org_id, invitee_user_id, status
-		) VALUES ($1, $2, $3, $4, $5, $6, $7)
-	`, a.ID, a.ReferralCodeID, a.ReferrerUserID, a.ReferrerOrgID, a.InviteeOrgID, a.InviteeUserID, a.Status)
-	return err
 }
 
 func (r *referralRepository) GetAttributionByInviteeOrg(ctx context.Context, inviteeOrgID uuid.UUID) (*models.ReferralAttribution, error) {
@@ -172,29 +124,6 @@ func (r *referralRepository) MarkAttributionVoid(ctx context.Context, id uuid.UU
 	return err
 }
 
-func (r *referralRepository) ListAttributionsByReferrer(ctx context.Context, referrerOrgID uuid.UUID, limit, offset int) ([]models.ReferralAttribution, error) {
-	rows, err := r.db.Query(ctx, `
-		SELECT `+referralAttrCols+`
-		FROM referral_attributions
-		WHERE referrer_org_id = $1
-		ORDER BY created_at DESC
-		LIMIT $2 OFFSET $3
-	`, referrerOrgID, limit, offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := make([]models.ReferralAttribution, 0)
-	for rows.Next() {
-		var a models.ReferralAttribution
-		if err := scanReferralAttribution(rows, &a); err != nil {
-			return nil, err
-		}
-		out = append(out, a)
-	}
-	return out, rows.Err()
-}
-
 func (r *referralRepository) CountRewardedByReferrerSince(ctx context.Context, referrerOrgID uuid.UUID, since time.Time) (int, error) {
 	var n int
 	err := r.db.QueryRow(ctx, `
@@ -202,19 +131,6 @@ func (r *referralRepository) CountRewardedByReferrerSince(ctx context.Context, r
 		WHERE referrer_org_id = $1 AND status = 'rewarded' AND rewarded_at >= $2
 	`, referrerOrgID, since).Scan(&n)
 	return n, err
-}
-
-func (r *referralRepository) AttributionStats(ctx context.Context, referrerOrgID uuid.UUID) (total, pending, qualified, rewarded int, err error) {
-	err = r.db.QueryRow(ctx, `
-		SELECT
-			count(*),
-			count(*) FILTER (WHERE status = 'pending'),
-			count(*) FILTER (WHERE status = 'qualified'),
-			count(*) FILTER (WHERE status = 'rewarded')
-		FROM referral_attributions
-		WHERE referrer_org_id = $1
-	`, referrerOrgID).Scan(&total, &pending, &qualified, &rewarded)
-	return total, pending, qualified, rewarded, err
 }
 
 // --- Earnings ledger ---
@@ -330,31 +246,4 @@ func (r *referralRepository) SetStripePushed(ctx context.Context, orgID uuid.UUI
 		UPDATE referral_earnings_ledger SET stripe_pushed_cents = $2, updated_at = now() WHERE org_id = $1
 	`, orgID, pushedCents)
 	return err
-}
-
-func (r *referralRepository) ListEarnings(ctx context.Context, orgID uuid.UUID, limit, offset int) ([]models.ReferralEarningsTransaction, error) {
-	rows, err := r.db.Query(ctx, `
-		SELECT id, org_id, attribution_id, amount_cents, currency, reason, balance_after_cents,
-			   stripe_customer_balance_txn_id, idempotency_key, created_at
-		FROM referral_earnings_transactions
-		WHERE org_id = $1
-		ORDER BY created_at DESC
-		LIMIT $2 OFFSET $3
-	`, orgID, limit, offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := make([]models.ReferralEarningsTransaction, 0)
-	for rows.Next() {
-		var t models.ReferralEarningsTransaction
-		if err := rows.Scan(
-			&t.ID, &t.OrgID, &t.AttributionID, &t.AmountCents, &t.Currency, &t.Reason, &t.BalanceAfterCents,
-			&t.StripeCustomerBalanceTxnID, &t.IdempotencyKey, &t.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		out = append(out, t)
-	}
-	return out, rows.Err()
 }

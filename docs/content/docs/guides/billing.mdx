@@ -3,7 +3,7 @@ title: Plans and billing
 description: How plans unlock features, how to upgrade from anywhere in the dashboard, and what changes when you switch.
 ---
 
-Every hosted workspace starts free. A paid plan turns on sending from Warmbly Cloud, the unified inbox, contacts, the CRM, automations and integrations.
+Each owner's first hosted workspace starts with a 14-day [free trial](#the-free-trial), no card needed: two mailboxes warming, `20` sends a day, the unified inbox, contacts and campaigns. After the trial, connecting and warming mailboxes needs a paid plan, and the plan decides what else is on: sending from Warmbly Cloud, the unified inbox, contacts, the CRM, automations and integrations come with the plans compared [below](#plans).
 
 ![Settings > Billing: the plan card, usage against limits, and the subscription actions](/guides/billing.webp)
 
@@ -33,18 +33,45 @@ With no subscription yet, finish in Stripe Checkout. An existing subscription sw
 
 ## Good to know
 
-- The free workspace warms up to 10 mailboxes.
+- A new workspace gets a 14-day free trial with up to 2 mailboxes, once per owner. Every other workspace that owner creates starts without one.
+- After the trial, a workspace without a paid plan cannot connect or warm mailboxes. Paid plans start at $29 a month with unlimited mailboxes and unlimited warmup in the premium pool.
+- A workspace that already had the free plan keeps it: up to 10 mailboxes warming in the free pool, no card and no time limit.
 - Annual billing is 20% off the monthly price.
 - Only the workspace owner can change the plan.
-- Cancelling keeps the plan active until the end of the paid period, and the workspace keeps its mailboxes, warmup and settings.
-- A workspace that only warms can take the Warmup plan: $15 a month, or $144 a year.
+- Cancelling keeps the plan active until the end of the paid period. The workspace keeps its mailboxes and settings after that, and warmup stops until it picks a plan again.
+- The Warmup plan is no longer sold. A workspace already on it keeps it while it stays subscribed.
 - Some plans, like the Partnership plan, are private and can be bought only once Warmbly has [offered them](#plans-offered-to-a-workspace) to your workspace.
 
 <Fold>
 
-## What the free workspace includes
+## The free trial
 
-Every hosted workspace starts free. The free workspace warms up to 10 mailboxes, connected on the cloud or through a linked self-hosted instance. Sending from Warmbly Cloud, the unified inbox, contacts, the CRM, automations and integrations turn on with a paid plan. A workspace that only warms can take the [Warmup plan](#the-warmup-plan) instead.
+An owner's first hosted workspace starts on a 14-day free trial the moment it is created. No card is asked for, and nothing is charged when it ends.
+
+| During the trial | |
+| --- | --- |
+| Mailboxes | Up to `2`, warming in the free pool |
+| Campaign sends | `20` a day across the workspace |
+| Unified inbox, contacts, campaigns | Included, within the trial limits shown under **Settings > Billing** |
+| AI features and integrations | Need a paid plan |
+
+Each owner gets one trial. It goes to the first workspace they create, whether at sign-up or later from the workspace switcher, and every workspace after that starts without one and needs a plan to connect mailboxes. Joining someone else's workspace as a member does not use it.
+
+The dashboard counts the days down in a bar across the top and on **Settings > Billing**. Pick a plan at any point and the trial ends there: the plan takes over at once and every mailbox moves to the premium pool.
+
+**When the trial ends without a plan**, nothing is deleted. Active campaigns are paused as **paused, trial expired**, warmup stops and the mailboxes leave the free pool, and members with billing access get a notice. Warmup is paused rather than switched off, so choosing a plan resumes it on its own, with the ramp where it stopped; resume the paused campaigns from their pages.
+
+</Fold>
+
+<Fold>
+
+## Without a paid plan
+
+Warmbly Cloud has no free plan for new workspaces. After its trial, or from the start on a workspace that owner created after their trial, a workspace without a paid plan has a [mailbox allowance](/guides/mailboxes/#mailbox-allowance) of `0`: connecting a mailbox is refused with [`mailbox_allowance_reached`](/api/error-codes/#mailbox_allowance_reached), and no warmup is scheduled. Choosing any plan lifts both.
+
+Workspaces that had the free plan before it closed to new workspaces keep it, unchanged, for as long as they like: up to 10 mailboxes connected on the cloud, warming in the free pool, with no card. Subscribing moves those mailboxes to the premium pool with no cap. Warmbly Cloud no longer links new self-hosted instances on any plan; a free workspace [linked earlier](/guides/warmbly-cloud/#free-workspaces-linked-earlier) keeps what it already enrolled but adds no new mailboxes until it picks a plan. Sending from Warmbly Cloud, the unified inbox, contacts, the CRM, automations and integrations turn on with a paid plan.
+
+A [self-hosted instance](/development/install/) has no billing and no allowance: every mailbox connects and warms. Its warmup only pairs the mailboxes on that instance, with no shared pool, so it does far less for deliverability than warming on Warmbly Cloud. Self-hosting suits teams that want to own the whole stack.
 
 </Fold>
 
@@ -67,20 +94,13 @@ Unlimited mailboxes means exactly that, under a fair-use allowance of one mailbo
 
 ### The Warmup plan
 
-The Warmup plan is for a workspace that only warms mailboxes and does not send from Warmbly Cloud: $15 a month, or $144 a year. It moves the workspace's mailboxes into the premium warmup pool, which is built for inbox placement:
+The Warmup plan is no longer sold, to hosted or self-hosted workspaces. A workspace already on it keeps it, unchanged, for as long as it stays subscribed; once cancelled it cannot be bought again, and the workspace picks one of the plans above instead.
 
-- **Better deliverability.** Warmup mail is exchanged with paying senders first. A free mailbox is let in only after it has been a healthy pool member for at least three days, in a workspace in good standing.
-- **Reputation protected.** A partner that complains, bounces or tampers with warmup mail is pulled from the pool well before mailbox providers would act, and one landing in spam is slowed down, so a struggling mailbox cannot drag yours down. See [pool safety](/guides/warmup/#pool-safety).
-- **Priority matching.** Premium mailboxes are given partners before the free pool is.
-- **No mailbox cap.** Every mailbox the workspace holds warms, whether it is connected on the cloud or through a linked self-hosted instance.
-
-It is not a self-hosting plan; it is the plan for warmup on its own. Everything else is exactly as on a free workspace: sending, the unified inbox, contacts, the CRM, automations, integrations, AI and team invitations still need one of the plans above. The dashboard keeps those pages locked, and the server refuses sending, the inbox, AI, integrations and placement tests to a Warmup workspace the same way it refuses them to a free one. Any of those plans includes everything the Warmup plan does.
-
-It has no card in the plans grid. The ways in are the **Upgrade** button on the **Mailboxes** page, the **Only need warmup?** row on the billing overview of a free workspace, and the **Premium** button on a linked instance's **Settings > Warmbly Cloud** page. Each opens the same dialog: pick monthly or yearly, then checkout. Once active the header badge reads **Warmup**, and the overview shows it like any other plan, with the same cancel and resume controls. Its usage section shows the one limit it has, mailboxes, which reads unlimited.
+The plan warms mailboxes and does not send from Warmbly Cloud. It puts every mailbox the workspace holds, connected on the cloud or through a [linked self-hosted instance](/guides/warmbly-cloud/), into the premium warmup pool with no mailbox cap, and counts as a paid plan for a link that already exists. Sending, the unified inbox, contacts, the CRM, automations, integrations, AI and team invitations stay locked as on a free workspace, and the server refuses them the same way. Its header badge reads **Warmup**, and the billing overview shows it with the usual cancel and resume controls.
 
 ### The Partnership plan
 
-The Partnership plan is the Warmup plan for partners: the same premium warmup pool, the same reputation protection and no mailbox cap, at $90 a month. Like the Warmup plan it warms only, so sending, the inbox, AI and integrations stay locked and the server refuses them the same way.
+The Partnership plan is a warmup-only plan for partners: the premium warmup pool, its reputation protection and no mailbox cap, at $90 a month. It warms only, so sending, the inbox, AI and integrations stay locked and the server refuses them the same way.
 
 It is not for sale to everyone. A workspace can buy it only after Warmbly has [offered it](#plans-offered-to-a-workspace), and it then appears on that workspace's billing overview. Once active the header badge reads **Partnership**.
 
@@ -113,17 +133,17 @@ Only the workspace owner can change the plan. Other members see the same compari
 **Overview** is the control panel for the subscription.
 
 - The plan card shows the plan, its status, the price (per year on a yearly subscription), and the renewal or end date. Change plan opens the same chooser the locked features use.
-- Cancel plan schedules the cancellation for the end of the paid period. The plan stays fully active until then, and Resume clears it with one click. Nothing is lost either way: the workspace returns to the free tier and keeps its mailboxes, warmup and settings.
-- Usage and limits shows live counts against the limits the server actually enforces, for mailboxes, sends today (the cap the sender applies, or unlimited on a plan without one), contacts, campaigns, team members, attachment storage, sends this period, and API calls. A meter turns amber past 70% and red past 90%. A meter with no cap means that limit is unmetered on your plan. A workspace that does not send (free, or on the Warmup or Partnership plan) sees only the mailbox meter, because none of the others applies to it. The mailbox meter says where its number comes from (fair use, an approved request, or the free allowance), and the storage meter says so when a plan change left the workspace over its quota: existing attachments keep sending, and new uploads wait until you are back under.
-- Banners appear only when something needs a decision: a failed payment, a scheduled cancellation, or a trial about to end.
+- Cancel plan schedules the cancellation for the end of the paid period. The plan stays fully active until then, and Resume clears it with one click. Nothing is deleted either way: the workspace keeps its mailboxes and settings, and warmup stops until it picks a plan again (a workspace that kept the earlier free plan returns to it).
+- Usage and limits shows live counts against the limits the server actually enforces, for mailboxes, sends today (the cap the sender applies, or unlimited on a plan without one), contacts, campaigns, team members, attachment storage, sends this period, and API calls. A meter turns amber past 70% and red past 90%. A meter with no cap means that limit is unmetered on your plan. A workspace that does not send (free, or on the Warmup or Partnership plan) sees only the mailbox meter, because none of the others applies to it. The mailbox meter says where its number comes from (fair use, an approved request, or the free allowance: `2` during the free trial, `0` after it on a workspace without a plan), and the storage meter says so when a plan change left the workspace over its quota: existing attachments keep sending, and new uploads wait until you are back under.
+- Banners appear only when something needs a decision: a failed payment, a scheduled cancellation, or the days left in a free trial.
 
 Need a single limit raised without moving plan? Request an increase from **Settings > Limits**, linked from the usage section, or straight from the connect dialog when it is mailboxes you need. An operator reviews it and the approved limit takes effect on the workspace, including the daily send allowance the sender enforces. The page shows how much of each limit the workspace uses, and a limit your plan leaves unlimited (mailboxes, on a plan whose daily sends are uncapped) is not offered, because there is nothing to raise. A workspace that does not send can only ask for more mailboxes.
 
 **Plans** compares the lineup as full plan cards, with the best value plan highlighted. For an existing Stripe subscription, monthly plan cards preview the estimated proration and next billing date. Stripe calculates annual proration when you switch. Promo codes and the codes this workspace has redeemed live here too.
 
-**AI and credits** covers the credit balance, top-ups and usage. See [AI credits](/guides/ai-credits/).
+**Balance** covers the dollar balance that pays for AI and other metered work: the monthly allowance your plan includes (Starter $5, Grow $15, Business $50), adding money on your saved card or through Stripe Checkout, automatic reload, spend limits, the history of every charge, and the invoices for each payment. See [Balance and usage](/guides/ai-credits/).
 
-**Payment** links out to the Stripe billing portal. Cards and the billing email are held by Stripe and never touch Warmbly, so they are read and changed there. Invoices and PDF receipts live in the portal too.
+**Payment** links out to the Stripe billing portal. Cards and the billing email are held by Stripe and never touch Warmbly, so they are read and changed there. Invoices and PDF receipts live in the portal too, and the latest are also listed on the Balance tab. Account credit on your Stripe balance, such as a reward from the former referral program, comes off your next invoices on its own.
 
 The portal also lets the owner update the billing address, legal billing name, and business tax ID. Update these details before the next renewal if the company moves or its tax registration changes.
 
@@ -143,9 +163,9 @@ Upgrading a workspace with only a managed plan opens Checkout to create a Stripe
 
 Operators grant one from the admin panel on the workspace, under **Plan**. The organization list marks granted workspaces with a `managed` badge and can filter to them, so "who is paid because we said so" is answerable without checking Stripe. A grant that has lapsed keeps its reason on file and is shown as `grant lapsed` rather than disappearing.
 
-A grant is held beside the plan a workspace pays for, never on top of it, so a paying workspace that is granted a different plan goes back to the one it pays for when the grant ends. Revoking returns the workspace to whatever it actually pays for, which for most is the free plan.
+A grant is held beside the plan a workspace pays for, never on top of it, so a paying workspace that is granted a different plan goes back to the one it pays for when the grant ends. Revoking returns the workspace to whatever it actually pays for, which can be no plan at all.
 
-One thing a grant does not do: monthly AI credits are granted when an invoice is paid, and a granted plan raises no invoice, so a managed workspace does not receive a recurring credit allowance. Top up its balance directly if it needs credits.
+One thing a grant does not do: the monthly balance allowance is granted when an invoice is paid, and a granted plan raises no invoice, so a managed workspace does not receive a recurring allowance. Add money to its balance directly if it needs AI.
 
 </Fold>
 
@@ -153,7 +173,7 @@ One thing a grant does not do: monthly AI credits are granted when an invoice is
 
 ## Plans offered to a workspace
 
-Some plans are private: they are not in the plans grid and the checkout refuses them, unless Warmbly has offered that plan to your workspace. The Partnership plan is one. The Warmup plan is private too, but it has its own checkout and needs no offer.
+Some plans are private: they are not in the plans grid and the checkout refuses them, unless Warmbly has offered that plan to your workspace. The Partnership plan is one. The retired Warmup plan cannot be offered.
 
 When an offer is open, the billing overview shows a row for it under the plan card, with its name and price. Opening it shows what the plan includes and, if it has a yearly price, a monthly or yearly choice:
 
@@ -170,6 +190,6 @@ An offer is a decision by Warmbly's operators on this instance, so it does not t
 
 ## Self-hosted deployments
 
-A self-hosted instance running without a billing provider has every feature unlocked and no billing page. See [Warmbly Cloud](/guides/warmbly-cloud/) for how a self-hosted instance links to a hosted workspace.
+A self-hosted instance running without a billing provider has every feature unlocked and no billing page. Warmbly Cloud plans are hosted only: Warmbly Cloud no longer links new self-hosted instances, and an instance [linked earlier](/guides/warmbly-cloud/) keeps its connection while its Cloud workspace stays subscribed. For the hosted warmup pool, use a workspace on [app.warmbly.com](https://app.warmbly.com).
 
 </Fold>

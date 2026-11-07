@@ -9,11 +9,11 @@
 //	        Return-Path, delivery-status reports, mailer-daemon senders, and the
 //	        well-known "Automatic reply" / "Out of Office" subjects.
 //	Layer 2 (lexicon): deterministic, offline keyword scan. Compliance words
-//	        (unsubscribe / stop / remove me) win first; then clear interest
-//	        phrases (positive) and clear rejection (negative).
-//	Layer 3 (model): OPTIONAL, gated by the AI provider. Only the ambiguous middle
-//	        reaches it. When no provider is configured we NEVER call out and fall back to
-//	        "unknown".
+//	        (unsubscribe / stop / remove me) always win; its interest and
+//	        rejection phrases decide only when the typed model has no answer.
+//	Layer 3 (model): OPTIONAL. The typed classifier (TypeSafe) is read before
+//	        the lexicon's sentiment; the LLM prompt only after it. When no
+//	        provider is configured we NEVER call out and fall back to "unknown".
 //
 // Layers 1 and 2 are pure and deterministic; only Layer 3 has side effects and
 // only when explicitly configured.
@@ -22,6 +22,7 @@ package replyclassify
 import (
 	"context"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 )
@@ -109,20 +110,27 @@ func ClassifyGated(ctx context.Context, in Input, gate ModelGate) Result {
 		return r
 	}
 
-	// Layer 2: lexicon (deterministic, offline). Compliance words win, then
-	// clear interest / rejection.
-	if r, ok := classifyLexicon(in); ok {
-		return r
+	// Layer 2: lexicon (deterministic, offline). An opt-out is a compliance
+	// verdict and always stands.
+	lex, lexOK := classifyLexicon(in)
+	if lexOK && lex.Class == ClassUnsubscribe {
+		return lex
 	}
 
-	// Layer 3: model (optional, provider-gated AND cost-gated). Skipped
-	// entirely when the gate declines, with no network call. The typed
-	// classifier (TypeSafe, with a real confidence) is asked first; the LLM
-	// one-word prompt is the fallback for a deployment without it.
-	if gate == nil || gate() {
-		if r, ok := classifyTyped(ctx, in); ok {
-			return r
-		}
+	// Layer 3: model (optional, provider-gated AND cost-gated), asked once.
+	modelAllowed := sync.OnceValue(func() bool { return gate == nil || gate() })
+
+	// The typed classifier (TypeSafe) outranks keyword sentiment: a substring
+	// such as "no need" or "not looking" cannot read a pricing question. Its
+	// stored verdict is free, so the gate only holds back a new question.
+	if r, ok := classifyTyped(ctx, in, modelAllowed); ok {
+		return r
+	}
+	if lexOK {
+		return lex
+	}
+	// The LLM one-word prompt is the fallback for a deployment without TypeSafe.
+	if modelAllowed() {
 		if r, ok := classifyModel(ctx, in); ok {
 			return r
 		}
@@ -136,7 +144,19 @@ func ClassifyGated(ctx context.Context, in Input, gate ModelGate) Result {
 // safe on every inbound message rather than only the ones with a campaign
 // behind them. An inconclusive verdict comes back as ClassUnknown.
 func ClassifyOffline(in Input) Result {
-	return ClassifyGated(context.Background(), in, func() bool { return false })
+	if r, ok := classifyHeaders(in); ok {
+		return r
+	}
+	if r, ok := classifyLexicon(in); ok {
+		return r
+	}
+	return Result{Class: ClassUnknown, Confidence: 0, Source: ""}
+}
+
+// ClassifyKnown is ClassifyOffline that also reads a verdict the typed layer
+// already holds for the message, and never pays for a new one.
+func ClassifyKnown(ctx context.Context, in Input) Result {
+	return ClassifyGated(ctx, in, func() bool { return false })
 }
 
 // WorthModeling is a cheap content-sanity pre-check for the model layer: a reply

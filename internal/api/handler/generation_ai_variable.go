@@ -10,7 +10,6 @@ package handler
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -20,6 +19,7 @@ import (
 
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/app/credits"
+	"github.com/warmbly/warmbly/internal/app/instancesettings"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
@@ -117,25 +117,18 @@ func (h *Handler) GenerateAIVariable(c *gin.Context) {
 	rendered := strings.TrimSpace(tasks.RenderTemplate(req.Prompt, contact))
 	if rendered == "" {
 		// A prompt that renders empty against the contact charges nothing.
-		remaining := 0
-		if bal, berr := h.CreditService.GetBalance(c.Request.Context(), *orgID); berr == nil {
-			remaining = bal
-		}
-		c.JSON(http.StatusOK, gin.H{
-			"text": "", "credits_remaining": remaining, "credits_charged": 0,
-			"tokens_used": 0, "model": "",
-		})
+		c.JSON(http.StatusOK, withBalance(gin.H{"text": "", "tokens_used": 0, "model": ""},
+			0, h.balanceNow(c.Request.Context(), *orgID)))
 		return
 	}
 
-	// Cost mirrors the resolver: instant -> CostWritingAssistant, research ->
-	// CostResearchRun. Research degrades to the same completion path here (no agent
-	// tool loop on the preview) but still charges the research price.
+	// The balance check mirrors the resolver's estimates. Research degrades to
+	// the same completion path here (no agent tool loop on the preview).
 	research := strings.EqualFold(strings.TrimSpace(req.Mode), "research")
-	cost := credits.CostWritingAssistant
+	estimate := credits.EstimateWritingAssistant
 	reason := "campaign_ai_var_preview"
 	if research {
-		cost = credits.CostResearchRun
+		estimate = credits.EstimateResearchRun
 	}
 
 	paid, xerr := h.FeatureGateService.IsPaidOrganization(c.Request.Context(), *orgID)
@@ -152,30 +145,14 @@ func (h *Handler) GenerateAIVariable(c *gin.Context) {
 		reqCtx = models.WithCreditMeta(reqCtx, models.CreditMeta{ActorID: actor})
 	}
 
-	var remaining int
-	if local {
-		if bal, berr := h.CreditService.GetBalance(reqCtx, *orgID); berr == nil {
-			remaining = bal
-		}
-	} else {
-		var err error
-		remaining, err = h.CreditService.Consume(reqCtx, *orgID, cost, reason, model, 0, idemKey)
-		if err != nil {
-			switch {
-			case errors.Is(err, credits.ErrInsufficientCredits):
-				paymentRequiredJSON(c, "You're out of AI credits. Upgrade or purchase more to keep using AI variables.")
-			case errors.Is(err, credits.ErrCapExceeded):
-				errx.JSON(c, errx.New(errx.TooManyRequests, "AI usage limit reached, please try again later."))
-			default:
-				errx.JSON(c, errx.InternalError())
-			}
-			return
-		}
+	if !h.reserveAI(c, reqCtx, *orgID, local, estimate) {
+		return
 	}
 
 	// Optional web enrichment (one bounded lookup, charged only when it returns
 	// results), matching the send-path resolver. Research implies web on.
 	web := ""
+	var searchCharged models.Micro
 	if (req.WebSearch || research) && h.AISearch != nil {
 		if q := previewSearchQuery(contact); q != "" {
 			sctx, scancel := context.WithTimeout(reqCtx, 15*time.Second)
@@ -184,8 +161,8 @@ func (h *Handler) GenerateAIVariable(c *gin.Context) {
 			if serr == nil && len(results) > 0 {
 				web = generation.FormatSearchResults(results)
 				if !local {
-					if _, cerr := h.CreditService.Consume(reqCtx, *orgID, credits.CostWebSearch, reason+"_search", "", 0, searchIdem(idemKey)); cerr == nil {
-						remaining -= credits.CostWebSearch
+					if taken, cerr := h.CreditService.Charge(reqCtx, *orgID, credits.UnitUsage(instancesettings.UnitWebSearch, 1), reason+"_search", searchIdem(idemKey)); cerr == nil {
+						searchCharged = taken
 					}
 				}
 			}
@@ -210,31 +187,20 @@ func (h *Handler) GenerateAIVariable(c *gin.Context) {
 		Temperature: generation.Deterministic(),
 	})
 	if gerr != nil || result == nil {
-		if !local {
-			if bal, rerr := h.CreditService.Grant(reqCtx, *orgID, cost, reason+"_refund"); rerr == nil {
-				remaining = bal
-			}
+		msg := "AI generation is temporarily unavailable. Nothing was charged."
+		if searchCharged > 0 {
+			msg = "AI generation is temporarily unavailable. Only the web search was charged."
 		}
-		errx.JSON(c, errx.New(errx.ServiceUnavailable, "AI generation is temporarily unavailable. Your credit was not charged."))
+		errx.JSON(c, errx.New(errx.ServiceUnavailable, msg))
 		return
 	}
 
-	charged := 0
-	if !local {
-		charged = cost
-		if extra, serr := h.CreditService.SettleUsage(reqCtx, *orgID, cost, result.Model, result.TokensUsed, reason, settleKey(idemKey)); serr == nil && extra > 0 {
-			remaining -= extra
-			charged += extra
-		}
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"text":              strings.TrimSpace(result.Text),
-		"credits_remaining": remaining,
-		"credits_charged":   charged,
-		"tokens_used":       result.TokensUsed,
-		"model":             result.Model,
-	})
+	charged, balance := h.chargeAI(reqCtx, *orgID, local, credits.AIUsage(result.Model, result.InputTokens, result.OutputTokens), reason, idemKey)
+	c.JSON(http.StatusOK, withBalance(gin.H{
+		"text":        strings.TrimSpace(result.Text),
+		"tokens_used": result.TokensUsed,
+		"model":       result.Model,
+	}, charged+searchCharged, balance))
 }
 
 // aiVarPreviewContextMax bounds each side of the surrounding-email context sent
@@ -250,7 +216,7 @@ func clampPreviewContext(s string) string {
 	return s
 }
 
-// searchIdem derives the web-search settle/consume key from the call's key. An
+// searchIdem derives the web-search charge key from the call's key. An
 // empty key stays empty (non-idempotent call, non-idempotent search charge).
 func searchIdem(idemKey string) string {
 	if idemKey == "" {

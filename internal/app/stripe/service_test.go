@@ -11,7 +11,6 @@ import (
 	"github.com/google/uuid"
 	stripeapi "github.com/stripe/stripe-go/v86"
 	workerapp "github.com/warmbly/warmbly/internal/app/worker"
-	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -119,7 +118,7 @@ func TestSubscriptionCheckoutCustomerParameters(t *testing.T) {
 	}
 }
 
-func TestCreditCheckoutCollectsTaxAndBusinessDetails(t *testing.T) {
+func TestBalanceCheckoutCollectsTaxAndSavesTheCard(t *testing.T) {
 	for _, customerID := range []string{"", "cus_existing"} {
 		t.Run("customer_"+customerID, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -127,7 +126,13 @@ func TestCreditCheckoutCollectsTaxAndBusinessDetails(t *testing.T) {
 					t.Fatal(err)
 				}
 				if r.Form.Get("mode") != "payment" || r.Form.Get("automatic_tax[enabled]") != "false" || r.Form.Get("billing_address_collection") != "required" || r.Form.Get("tax_id_collection[enabled]") != "true" {
-					t.Errorf("invalid tax-aware credit checkout: %v", r.Form)
+					t.Errorf("invalid tax-aware balance checkout: %v", r.Form)
+				}
+				if r.Form.Get("payment_intent_data[setup_future_usage]") != "off_session" || r.Form.Get("line_items[0][price_data][unit_amount]") != "2500" || r.Form.Get("metadata[amount_micro]") != "25000000" {
+					t.Errorf("balance checkout does not save the card or charge the amount: %v", r.Form)
+				}
+				if r.Form.Has("metadata[user_id]") || r.Form.Get("metadata[actor_user_id]") == "" {
+					t.Errorf("balance checkout session metadata must name the actor without user_id: %v", r.Form)
 				}
 				if customerID == "" && r.Form.Get("customer_creation") != "always" {
 					t.Errorf("credit checkout will not save the new customer: %v", r.Form)
@@ -143,14 +148,28 @@ func TestCreditCheckoutCollectsTaxAndBusinessDetails(t *testing.T) {
 			stripeapi.SetBackend(stripeapi.APIBackend, stripeapi.GetBackendWithConfig(stripeapi.APIBackend, &stripeapi.BackendConfig{URL: stripeapi.String(server.URL), HTTPClient: server.Client()}))
 			t.Cleanup(func() { stripeapi.SetBackend(stripeapi.APIBackend, old) })
 
-			s := &stripeService{
-				cfg:     &config.StripeConfig{CreditPackPriceIDs: map[string]string{"pack_500": "price_pack"}},
-				subRepo: &billingSubRepo{sub: &models.Subscription{StripeCustomerID: customerID}},
-			}
-			if _, xerr := s.CreateCreditCheckoutSession(context.Background(), uuid.New(), uuid.New(), "pack_500", 500, "https://example.com/success", "https://example.com/cancel"); xerr != nil {
+			s := &stripeService{subRepo: &billingSubRepo{sub: &models.Subscription{StripeCustomerID: customerID}}}
+			if _, xerr := s.CreateBalanceCheckout(context.Background(), uuid.New(), uuid.New(), 25*models.MicroPerUSD, "https://example.com/success", "https://example.com/cancel"); xerr != nil {
 				t.Fatal(xerr)
 			}
 		})
+	}
+}
+
+func TestCardSetupCheckoutSessionCarriesNoUserID(t *testing.T) {
+	stripeAt(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatal(err)
+		}
+		if r.Form.Get("mode") != "setup" || r.Form.Has("metadata[user_id]") || r.Form.Get("metadata[actor_user_id]") == "" || r.Form.Get("metadata[purpose]") != purposeCardSetup {
+			t.Errorf("card setup checkout session metadata: %v", r.Form)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"cs_setup","url":"https://checkout.stripe.com/test"}`))
+	})
+	s := &stripeService{subRepo: &billingSubRepo{sub: &models.Subscription{StripeCustomerID: "cus_existing"}}}
+	if _, xerr := s.CreateCardSetupCheckout(context.Background(), uuid.New(), uuid.New(), "https://example.com/success", "https://example.com/cancel"); xerr != nil {
+		t.Fatal(xerr)
 	}
 }
 
@@ -201,55 +220,26 @@ func TestAnnualChangeDoesNotFallBackToMonthly(t *testing.T) {
 
 type billingCredits struct {
 	resetErr error
-	granted  int
-	reset    int
+	granted  models.Micro
+	reset    models.Micro
 }
 
-type billingTopUpAttempts struct {
-	attempt *models.CreditAutoTopUpAttempt
+// billingCharges records the invoice a saved-card charge gets.
+type billingCharges struct {
+	repository.SavedCardChargeRepository
+	invoiceID string
 }
 
-func (r *billingTopUpAttempts) GetOrCreatePending(_ context.Context, orgID uuid.UUID, packKey string, credits int) (*models.CreditAutoTopUpAttempt, error) {
-	if r.attempt == nil || r.attempt.Status != "pending" {
-		r.attempt = &models.CreditAutoTopUpAttempt{
-			ID:      uuid.New(),
-			OrgID:   orgID,
-			PackKey: packKey,
-			Credits: credits,
-			Status:  "pending",
-		}
-	}
-	return r.attempt, nil
-}
-
-func (r *billingTopUpAttempts) SetTaxCalculation(_ context.Context, _ uuid.UUID, id string) (*models.CreditAutoTopUpAttempt, error) {
-	r.attempt.TaxCalculationID = id
-	return r.attempt, nil
-}
-
-func (r *billingTopUpAttempts) SetPaymentIntent(_ context.Context, _ uuid.UUID, id string) (*models.CreditAutoTopUpAttempt, error) {
-	r.attempt.PaymentIntentID = id
-	return r.attempt, nil
-}
-
-func (r *billingTopUpAttempts) MarkSucceededByPaymentIntent(_ context.Context, id string) error {
-	if r.attempt != nil && r.attempt.PaymentIntentID == id {
-		r.attempt.Status = "succeeded"
-	}
+func (r *billingCharges) SetInvoice(_ context.Context, _ uuid.UUID, id string) error {
+	r.invoiceID = id
 	return nil
 }
 
-func (r *billingTopUpAttempts) MarkFailed(_ context.Context, _ uuid.UUID, message string) error {
-	r.attempt.Status = "failed"
-	r.attempt.FailureMessage = message
-	return nil
-}
-
-func (c *billingCredits) ResetMonthlyAllowance(_ context.Context, _ uuid.UUID, amount int, _ string) error {
+func (c *billingCredits) ResetMonthlyAllowance(_ context.Context, _ uuid.UUID, amount models.Micro, _ string) error {
 	c.reset = amount
 	return c.resetErr
 }
-func (c *billingCredits) GrantPurchased(_ context.Context, _ uuid.UUID, amount int, _, _ string) (int, error) {
+func (c *billingCredits) GrantPurchased(_ context.Context, _ uuid.UUID, amount models.Micro, _, _ string) (models.Micro, error) {
 	c.granted += amount
 	return c.granted, nil
 }
@@ -259,110 +249,86 @@ func (r *billingSubRepo) RecordWebhookEvent(context.Context, *models.StripeWebho
 	return nil
 }
 
-func TestAutoTopUpCalculatesAndAssociatesTax(t *testing.T) {
-	orgID := uuid.New()
-	attempts := &billingTopUpAttempts{}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/prices/price_pack":
-			_, _ = w.Write([]byte(`{"id":"price_pack","currency":"usd","unit_amount":1000,"tax_behavior":"exclusive","product":"prod_credits"}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/customers/cus_test":
-			_, _ = w.Write([]byte(`{"id":"cus_test","invoice_settings":{"default_payment_method":"pm_test"}}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/v1/tax/calculations":
-			if r.Header.Get("Idempotency-Key") != "warmbly-credit-auto-topup-tax-"+attempts.attempt.ID.String() {
-				t.Errorf("unexpected tax idempotency key %q", r.Header.Get("Idempotency-Key"))
-			}
-			if err := r.ParseForm(); err != nil {
-				t.Fatal(err)
-			}
-			if r.Form.Get("customer") != "cus_test" || r.Form.Get("line_items[0][amount]") != "1000" || r.Form.Get("line_items[0][product]") != "prod_credits" || r.Form.Get("line_items[0][tax_behavior]") != "exclusive" {
-				t.Errorf("invalid tax calculation: %v", r.Form)
-			}
-			_, _ = w.Write([]byte(`{"id":"taxcalc_test","currency":"usd","amount_total":1200}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/v1/payment_intents":
-			if r.Header.Get("Idempotency-Key") != "warmbly-credit-auto-topup-payment-"+attempts.attempt.ID.String() {
-				t.Errorf("unexpected payment idempotency key %q", r.Header.Get("Idempotency-Key"))
-			}
-			if err := r.ParseForm(); err != nil {
-				t.Fatal(err)
-			}
-			if r.Form.Get("amount") != "1200" || r.Form.Get("hooks[inputs][tax][calculation]") != "taxcalc_test" || r.Form.Get("metadata[tax_calculation_id]") != "taxcalc_test" {
-				t.Errorf("payment intent is not linked to its tax calculation: %v", r.Form)
-			}
-			_, _ = w.Write([]byte(`{"id":"pi_test","status":"succeeded","metadata":{"org_id":"` + orgID.String() + `","purpose":"credit_auto_topup","pack_key":"pack_500","credits":"500","tax_calculation_id":"taxcalc_test"}}`))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
+// stripeAt points the Stripe client at a test server for one test.
+func stripeAt(t *testing.T, h http.HandlerFunc) {
+	server := httptest.NewServer(h)
+	t.Cleanup(server.Close)
 	old := stripeapi.GetBackend(stripeapi.APIBackend)
 	stripeapi.SetBackend(stripeapi.APIBackend, stripeapi.GetBackendWithConfig(stripeapi.APIBackend, &stripeapi.BackendConfig{URL: stripeapi.String(server.URL), HTTPClient: server.Client()}))
 	t.Cleanup(func() { stripeapi.SetBackend(stripeapi.APIBackend, old) })
+}
 
-	credits := &billingCredits{}
-	s := &stripeService{
-		cfg:           &config.StripeConfig{CreditPackPriceIDs: map[string]string{"pack_500": "price_pack"}},
-		subRepo:       &billingSubRepo{sub: &models.Subscription{StripeCustomerID: "cus_test"}},
-		credits:       credits,
-		topupAttempts: attempts,
+func TestSavedCardChargeIsOneKeyedInvoice(t *testing.T) {
+	charge := &models.SavedCardCharge{
+		ID: uuid.New(), OrgID: uuid.New(), Kind: models.SavedCardAutoReload, Amount: 25 * models.MicroPerUSD,
+		AmountCents: 2500, Currency: "usd", CustomerID: "cus_test", PaymentMethodID: "pm_test",
 	}
-	granted, err := s.AutoTopUpCredits(context.Background(), orgID, "pack_500", 500)
-	if err != nil || !granted || credits.granted != 500 {
-		t.Fatalf("granted=%v credits=%d err=%v", granted, credits.granted, err)
-	}
-	if attempts.attempt.Status != "succeeded" || attempts.attempt.PaymentIntentID != "pi_test" {
-		t.Fatalf("attempt was not completed: %+v", attempts.attempt)
+	key := "warmbly-balance-" + charge.ID.String()
+	stripeAt(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if err := r.ParseForm(); err != nil {
+			t.Fatal(err)
+		}
+		idem := r.Header.Get("Idempotency-Key")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/invoices":
+			if idem != key+"-invoice" || r.Form.Get("auto_advance") != "false" || r.Form.Get("metadata[charge_id]") != charge.ID.String() {
+				t.Errorf("invoice create: key %q form %v", idem, r.Form)
+			}
+			_, _ = w.Write([]byte(`{"id":"in_1","status":"draft","total":0}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/invoiceitems":
+			if idem != key+"-item" || r.Form.Get("amount") != "2500" || r.Form.Get("invoice") != "in_1" {
+				t.Errorf("invoice item: key %q form %v", idem, r.Form)
+			}
+			_, _ = w.Write([]byte(`{"id":"ii_1"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/invoices/in_1/finalize":
+			_, _ = w.Write([]byte(`{"id":"in_1","status":"open","total":2500}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/invoices/in_1/pay":
+			if idem != key+"-pay-1" || r.Form.Get("off_session") != "true" || r.Form.Get("payment_method") != "pm_test" {
+				t.Errorf("pay: key %q form %v", idem, r.Form)
+			}
+			_, _ = w.Write([]byte(`{"id":"in_1","status":"paid","total":2500}`))
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	charges := &billingCharges{}
+	s := &stripeService{balanceCharges: charges}
+	out, err := s.ChargeSavedCard(context.Background(), charge, 1, true)
+	if err != nil || !out.Paid || out.InvoiceID != "in_1" || charges.invoiceID != "in_1" {
+		t.Fatalf("charge = %+v, %v; recorded invoice %q", out, err, charges.invoiceID)
 	}
 }
 
-func TestAutoTopUpResumesPersistedStripeObjects(t *testing.T) {
-	orgID := uuid.New()
-	attempts := &billingTopUpAttempts{attempt: &models.CreditAutoTopUpAttempt{
-		ID:               uuid.New(),
-		OrgID:            orgID,
-		PackKey:          "pack_500",
-		Credits:          500,
-		Status:           "pending",
-		TaxCalculationID: "taxcalc_saved",
-		PaymentIntentID:  "pi_saved",
-	}}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/prices/price_pack":
-			_, _ = w.Write([]byte(`{"id":"price_pack","currency":"usd","unit_amount":1000,"tax_behavior":"exclusive","product":"prod_credits"}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/customers/cus_test":
-			_, _ = w.Write([]byte(`{"id":"cus_test","invoice_settings":{"default_payment_method":"pm_test"}}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/tax/calculations/taxcalc_saved":
-			_, _ = w.Write([]byte(`{"id":"taxcalc_saved","currency":"usd","amount_total":1200}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/payment_intents/pi_saved":
-			_, _ = w.Write([]byte(`{"id":"pi_saved","status":"succeeded","metadata":{"org_id":"` + orgID.String() + `","purpose":"credit_auto_topup","pack_key":"pack_500","credits":"500","tax_calculation_id":"taxcalc_saved"}}`))
-		case r.Method == http.MethodPost:
-			t.Errorf("retry created a new Stripe object: %s", r.URL.Path)
-			http.Error(w, "unexpected create", http.StatusInternalServerError)
-		default:
-			http.NotFound(w, r)
+func TestSavedCardRefusalsAreClassified(t *testing.T) {
+	cases := []struct {
+		body     string
+		code     string
+		soft     bool
+		declined bool
+	}{
+		{`{"error":{"type":"card_error","code":"card_declined","decline_code":"insufficient_funds"}}`, models.ReloadCardDeclined, true, true},
+		{`{"error":{"type":"card_error","code":"card_declined","decline_code":"stolen_card"}}`, models.ReloadCardDeclined, false, true},
+		{`{"error":{"type":"card_error","code":"authentication_required","decline_code":"authentication_required"}}`, models.ReloadAuthenticationRequired, false, true},
+	}
+	for _, c := range cases {
+		stripeAt(t, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			switch r.URL.Path {
+			case "/v1/invoices/in_open":
+				_, _ = w.Write([]byte(`{"id":"in_open","status":"open","total":1000}`))
+			case "/v1/invoices/in_open/pay":
+				w.WriteHeader(http.StatusPaymentRequired)
+				_, _ = w.Write([]byte(c.body))
+			default:
+				http.NotFound(w, r)
+			}
+		})
+		s := &stripeService{}
+		out, err := s.ChargeSavedCard(context.Background(), &models.SavedCardCharge{ID: uuid.New(), InvoiceID: "in_open", PaymentMethodID: "pm"}, 2, true)
+		if err != nil || out.Paid || out.Declined != c.code || out.Soft != c.soft {
+			t.Errorf("%s: got %+v, %v", c.body, out, err)
 		}
-	}))
-	defer server.Close()
-	old := stripeapi.GetBackend(stripeapi.APIBackend)
-	stripeapi.SetBackend(stripeapi.APIBackend, stripeapi.GetBackendWithConfig(stripeapi.APIBackend, &stripeapi.BackendConfig{URL: stripeapi.String(server.URL), HTTPClient: server.Client()}))
-	t.Cleanup(func() { stripeapi.SetBackend(stripeapi.APIBackend, old) })
-
-	credits := &billingCredits{}
-	s := &stripeService{
-		cfg:           &config.StripeConfig{CreditPackPriceIDs: map[string]string{"pack_500": "price_pack"}},
-		subRepo:       &billingSubRepo{sub: &models.Subscription{StripeCustomerID: "cus_test"}},
-		credits:       credits,
-		topupAttempts: attempts,
-	}
-	granted, err := s.AutoTopUpCredits(context.Background(), orgID, "pack_500", 500)
-	if err != nil || !granted || credits.granted != 500 {
-		t.Fatalf("granted=%v credits=%d err=%v", granted, credits.granted, err)
-	}
-	if attempts.attempt.Status != "succeeded" {
-		t.Fatalf("attempt was not completed: %+v", attempts.attempt)
 	}
 }
 
@@ -370,7 +336,7 @@ func TestInvoiceBeforeCheckoutAndRetryAfterCreditFailure(t *testing.T) {
 	orgID := uuid.New()
 	repo := &billingSubRepo{sub: &models.Subscription{OrganizationID: orgID}}
 	credits := &billingCredits{resetErr: errors.New("temporary ledger failure")}
-	s := &stripeService{subRepo: repo, planRepo: &billingPlanRepo{plan: &models.Plan{MonthlyCredits: 500}}, credits: credits}
+	s := &stripeService{subRepo: repo, planRepo: &billingPlanRepo{plan: &models.Plan{MonthlyAllowanceUSD: 10}}, credits: credits}
 	raw := json.RawMessage(`{"subscription":"sub_new","billing_reason":"subscription_create","subscription_details":{"metadata":{"org_id":"` + orgID.String() + `"}},"lines":{"data":[{"price":{"id":"price_new"}}]}}`)
 	event := &stripeapi.Event{ID: "evt_invoice", Type: "invoice.paid", Data: &stripeapi.EventData{Raw: raw}}
 	if err := s.ProcessWebhookEvent(context.Background(), event); err == nil || err.Code != errx.Internal {
@@ -383,7 +349,7 @@ func TestInvoiceBeforeCheckoutAndRetryAfterCreditFailure(t *testing.T) {
 	if err := s.ProcessWebhookEvent(context.Background(), event); err != nil {
 		t.Fatal(err)
 	}
-	if !repo.recorded || credits.reset != 500 {
+	if !repo.recorded || credits.reset != 10*models.MicroPerUSD {
 		t.Fatal("retried invoice did not grant monthly allowance")
 	}
 }
@@ -398,7 +364,29 @@ func TestAsyncCreditPurchaseStoresCustomer(t *testing.T) {
 	if err := s.ProcessWebhookEvent(context.Background(), event); err != nil {
 		t.Fatal(err)
 	}
-	if !repo.updated || repo.sub.StripeCustomerID != "cus_credit" || credits.granted != 500 || !repo.recorded {
+	if !repo.updated || repo.sub.StripeCustomerID != "cus_credit" || credits.granted != 500*models.LegacyCreditMicro || !repo.recorded {
 		t.Fatal("purchase did not persist the billing customer and credits")
+	}
+}
+
+type recordingOps struct{ keys []string }
+
+func (r *recordingOps) NotifyOperator(key, _, _ string, _ map[string]string) {
+	r.keys = append(r.keys, key)
+}
+
+func TestDeclinedBalanceChargeDoesNotPageTheOperator(t *testing.T) {
+	ops := &recordingOps{}
+	s := &stripeService{subRepo: &billingSubRepo{}, opsNotify: ops}
+	raw := json.RawMessage(`{"customer":"cus_1","amount_due":2500,"currency":"usd","metadata":{"purpose":"balance_charge"}}`)
+	if err := s.ProcessWebhookEvent(context.Background(), &stripeapi.Event{ID: "evt_bal", Type: "invoice.payment_failed", Data: &stripeapi.EventData{Raw: raw}}); err != nil {
+		t.Fatal(err)
+	}
+	raw = json.RawMessage(`{"customer":"cus_1","amount_due":8900,"currency":"usd","subscription":"sub_1"}`)
+	if err := s.ProcessWebhookEvent(context.Background(), &stripeapi.Event{ID: "evt_sub", Type: "invoice.payment_failed", Data: &stripeapi.EventData{Raw: raw}}); err != nil {
+		t.Fatal(err)
+	}
+	if len(ops.keys) != 1 {
+		t.Fatalf("operator alerts = %v; want only the subscription's", ops.keys)
 	}
 }

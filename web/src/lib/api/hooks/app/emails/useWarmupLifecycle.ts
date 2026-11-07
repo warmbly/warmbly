@@ -1,6 +1,6 @@
 import warmupLifecycle, { type WarmupAction } from "@/lib/api/client/app/emails/warmupLifecycle";
 import type Inbox from "@/lib/api/models/app/emails/Inbox";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { mutationOptions, useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { overlapping, patchQueries, restoreQueries, settle, updateEntity } from "@/lib/api/hooks/optimistic";
 import patchEmailLists from "./patchEmailLists";
 import { mailboxMutationKey } from "./useUpdateEmail";
@@ -26,9 +26,11 @@ export function applyWarmup(row: Inbox, action: WarmupAction): Inbox {
 // cache on the click, writes the server's mailbox back when it answers, and
 // invalidates the account-status query so the live warmup/health panel refreshes.
 export default function useWarmupLifecycle(id: string) {
-    const queryClient = useQueryClient();
+    return useMutation(warmupLifecycleOptions(useQueryClient(), id));
+}
 
-    return useMutation({
+export function warmupLifecycleOptions(queryClient: QueryClient, id: string) {
+    return mutationOptions({
         mutationKey: [...mailboxMutationKey(id), "warmup"],
         mutationFn: (action: WarmupAction) => warmupLifecycle(id, action),
         onMutate: async (action) => ({

@@ -104,8 +104,8 @@ func TestLiveJobRunRetirementPreservesHistoryAndReactivatesOnlyOnRegistration(t 
 	if found, err := repo.RequestRun(ctx, name); err != nil || found {
 		t.Fatalf("retired RequestRun found=%v err=%v", found, err)
 	}
-	if taken, err := repo.TakeRunRequest(ctx, name); err != nil || taken {
-		t.Fatalf("retired TakeRunRequest taken=%v err=%v", taken, err)
+	if taken, err := repo.TakeRunRequests(ctx, []string{name}); err != nil || len(taken) != 0 {
+		t.Fatalf("retired TakeRunRequests taken=%v err=%v", taken, err)
 	}
 	if won, got, err := repo.Claim(ctx, name, due, next); err != nil || won || !got.Equal(next) {
 		t.Fatalf("retired Claim won=%v due=%s err=%v", won, got, err)
@@ -206,5 +206,38 @@ func TestLiveJobRunMonitoringExcludesOnlyExplicitRetirements(t *testing.T) {
 				t.Fatalf("missing production monitoring query %s", tc.id)
 			}
 		})
+	}
+}
+
+// One poll takes the requests of every named job and leaves the rest pending.
+func TestLiveTakeRunRequestsTakesOnlyNamedRequestsOnce(t *testing.T) {
+	handle, pool := liveContactDB(t)
+	ctx := context.Background()
+	repo := NewJobRunRepository(handle)
+	asked, idle, elsewhere := "live_take_"+uuid.NewString(), "live_take_"+uuid.NewString(), "live_take_"+uuid.NewString()
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM scheduled_job_runs WHERE name = ANY($1)`, []string{asked, idle, elsewhere})
+	})
+	now := time.Now().Truncate(time.Microsecond)
+	for _, name := range []string{asked, idle, elsewhere} {
+		if _, err := repo.Register(ctx, name, "test", time.Hour, now.Add(time.Hour), now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{asked, elsewhere} {
+		if found, err := repo.RequestRun(ctx, name); err != nil || !found {
+			t.Fatalf("RequestRun %s found=%v err=%v", name, found, err)
+		}
+	}
+
+	taken, err := repo.TakeRunRequests(ctx, []string{asked, idle})
+	if err != nil || len(taken) != 1 || taken[0] != asked {
+		t.Fatalf("taken %v err %v, want only %s", taken, err, asked)
+	}
+	if again, err := repo.TakeRunRequests(ctx, []string{asked, idle}); err != nil || len(again) != 0 {
+		t.Fatalf("a request was taken twice: %v err %v", again, err)
+	}
+	if other, err := repo.TakeRunRequests(ctx, []string{elsewhere}); err != nil || len(other) != 1 {
+		t.Fatalf("another process's request was not left pending: %v err %v", other, err)
 	}
 }

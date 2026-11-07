@@ -4,6 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/constant"
+	"go/parser"
+	"go/token"
+	"go/types"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -40,8 +45,8 @@ import (
 // `user_rate_limits.daily_email_limit` column and a `campaign_status` value
 // called 'stopped', none of which exist, and each failed 100% of the time.
 //
-// Syntax errors stay tolerated: the extractor below is a regex over source and
-// will pick up the first fragment of a statement that is assembled at runtime.
+// Any other prepare error fails too: the extractor folds only complete constant
+// expressions, so a statement assembled at runtime is skipped, never half-read.
 const (
 	indeterminateDatatype = "42P08" // a $n Postgres cannot assign a type to
 	undefinedColumn       = "42703"
@@ -63,14 +68,14 @@ var unrunnable = map[string]string{
 }
 
 var (
-	// A backtick string literal in Go source.
-	rawLiteral = regexp.MustCompile("`([^`]*)`")
 	// Something that starts like a complete statement.
 	statementStart = regexp.MustCompile(`(?is)^\s*(SELECT|INSERT|UPDATE|DELETE|WITH)\b`)
 	// Placeholders. No placeholders means no parameter to be ambiguous about.
 	hasParam = regexp.MustCompile(`\$\d`)
 	// Assembled with fmt: not a statement, just a template.
-	isTemplate = regexp.MustCompile(`%[sdvqt]`)
+	isTemplate = regexp.MustCompile(`%(\[\d+\])?[sdvqt]`)
+	// Session setup the package runs before statements that read pg_temp tables.
+	tempTable = regexp.MustCompile(`(?is)^\s*CREATE\s+TEMP(ORARY)?\s+TABLE\b`)
 )
 
 type extractedQuery struct {
@@ -79,45 +84,160 @@ type extractedQuery struct {
 	sql  string
 }
 
-func extractQueries(t *testing.T, dir string) []extractedQuery {
+// harvest is every complete statement in the package's source and the temp tables it creates.
+type harvest struct {
+	queries     []extractedQuery
+	tempTables  []string
+	unassembled int
+}
+
+// extractQueries type-checks the package and takes every maximal string constant expression as a statement.
+func extractQueries(t *testing.T, dir string) harvest {
 	t.Helper()
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatalf("read %s: %v", dir, err)
 	}
-
-	var out []extractedQuery
+	fset := token.NewFileSet()
+	var files []*ast.File
 	for _, e := range entries {
 		name := e.Name()
 		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-		src, err := os.ReadFile(filepath.Join(dir, name))
+		f, err := parser.ParseFile(fset, filepath.Join(dir, name), nil, 0)
 		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
+			t.Fatalf("parse %s: %v", name, err)
 		}
-		for _, m := range rawLiteral.FindAllSubmatchIndex(src, -1) {
-			sql := string(src[m[2]:m[3]])
-			if !hasParam.MatchString(sql) ||
-				!statementStart.MatchString(sql) ||
-				isTemplate.MatchString(sql) {
-				continue
+		files = append(files, f)
+	}
+
+	// Imports are not resolved; constant folding of the package's own strings does not need them.
+	info := &types.Info{Types: map[ast.Expr]types.TypeAndValue{}, Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}}
+	conf := types.Config{Importer: noImporter{}, Error: func(error) {}}
+	_, _ = conf.Check("repository", fset, files, info)
+
+	stringConst := func(e ast.Expr) (string, bool) {
+		tv, ok := info.Types[e]
+		if !ok || tv.Value == nil || tv.Value.Kind() != constant.String {
+			return "", false
+		}
+		return constant.StringVal(tv.Value), true
+	}
+
+	// A constant spliced into a + chain is a fragment; the chain is checked where it is assembled.
+	fragments := map[types.Object]bool{}
+	for _, f := range files {
+		ast.Inspect(f, func(n ast.Node) bool {
+			if isConcat(n) {
+				for _, op := range concatOperands(n.(ast.Expr)) {
+					if id, ok := op.(*ast.Ident); ok && info.Uses[id] != nil {
+						fragments[info.Uses[id]] = true
+					}
+				}
 			}
-			out = append(out, extractedQuery{
-				file: name,
-				line: strings.Count(string(src[:m[0]]), "\n") + 1,
-				sql:  sql,
-			})
+			return true
+		})
+	}
+
+	var h harvest
+	for _, f := range files {
+		skip := map[ast.Node]bool{}
+		ast.Inspect(f, func(n ast.Node) bool {
+			if n == nil || skip[n] {
+				return false
+			}
+			switch v := n.(type) {
+			case *ast.ValueSpec:
+				for i, name := range v.Names {
+					if i < len(v.Values) && fragments[info.Defs[name]] {
+						skip[v.Values[i]] = true
+					}
+				}
+				return true
+			case *ast.CompositeLit:
+				// monitoringStatement assembles these; the test prepares the assembled form.
+				if at, ok := v.Type.(*ast.ArrayType); ok && isIdent(at.Elt, "monitoringQuery") {
+					for _, el := range v.Elts {
+						if q, ok := el.(*ast.CompositeLit); ok {
+							skipMonitoringQuery(q, skip)
+						}
+					}
+				}
+				if isIdent(v.Type, "monitoringQuery") {
+					skipMonitoringQuery(v, skip)
+				}
+				return true
+			}
+			expr, ok := n.(ast.Expr)
+			if !ok {
+				return true
+			}
+			sql, ok := stringConst(expr)
+			if !ok {
+				if isConcat(n) {
+					for _, op := range concatOperands(expr) {
+						if _, isString := stringConst(op); isString {
+							// A chain with a runtime operand cannot be assembled from source.
+							h.unassembled++
+							return false
+						}
+					}
+				}
+				return true
+			}
+			pos := fset.Position(expr.Pos())
+			switch {
+			case tempTable.MatchString(sql):
+				h.tempTables = append(h.tempTables, sql)
+			case hasParam.MatchString(sql) && statementStart.MatchString(sql) && !isTemplate.MatchString(sql):
+				h.queries = append(h.queries, extractedQuery{file: filepath.Base(pos.Filename), line: pos.Line, sql: sql})
+			}
+			return false
+		})
+	}
+	sort.Slice(h.queries, func(i, j int) bool {
+		if h.queries[i].file != h.queries[j].file {
+			return h.queries[i].file < h.queries[j].file
+		}
+		return h.queries[i].line < h.queries[j].line
+	})
+	return h
+}
+
+type noImporter struct{}
+
+func (noImporter) Import(path string) (*types.Package, error) {
+	return nil, fmt.Errorf("not resolved: %s", path)
+}
+
+func isIdent(e ast.Expr, name string) bool {
+	id, ok := e.(*ast.Ident)
+	return ok && id.Name == name
+}
+
+func skipMonitoringQuery(cl *ast.CompositeLit, skip map[ast.Node]bool) {
+	for _, el := range cl.Elts {
+		if kv, ok := el.(*ast.KeyValueExpr); ok && isIdent(kv.Key, "query") {
+			skip[kv.Value] = true
 		}
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].file != out[j].file {
-			return out[i].file < out[j].file
-		}
-		return out[i].line < out[j].line
-	})
-	return out
+}
+
+func isConcat(n ast.Node) bool {
+	b, ok := n.(*ast.BinaryExpr)
+	return ok && b.Op == token.ADD
+}
+
+func concatOperands(e ast.Expr) []ast.Expr {
+	if p, ok := e.(*ast.ParenExpr); ok {
+		return concatOperands(p.X)
+	}
+	if b, ok := e.(*ast.BinaryExpr); ok && b.Op == token.ADD {
+		return append(concatOperands(b.X), concatOperands(b.Y)...)
+	}
+	return []ast.Expr{e}
 }
 
 func TestLiveEveryQueryPrepares(t *testing.T) {
@@ -133,14 +253,36 @@ func TestLiveEveryQueryPrepares(t *testing.T) {
 	}
 	defer conn.Close(ctx)
 
-	queries := extractQueries(t, ".")
+	h := extractQueries(t, ".")
+	queries := h.queries
 	if len(queries) < 100 {
 		t.Fatalf("only found %d statements to check; the extractor is broken", len(queries))
+	}
+	for _, id := range monitoringSectionOrder {
+		queries = append(queries, extractedQuery{file: "monitoringStatement(" + id + ")", sql: monitoringStatement(monitoringSections[id])})
+	}
+
+	// Temp tables are ON COMMIT DROP, so the sweep runs in one transaction with a savepoint per statement.
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	for _, ddl := range h.tempTables {
+		if _, err := tx.Exec(ctx, ddl); err != nil {
+			t.Fatalf("create temp table: %v\n\t%s", err, oneLine(ddl))
+		}
 	}
 
 	var broken, other []string
 	for i, q := range queries {
-		_, err := conn.Prepare(ctx, fmt.Sprintf("check_%d", i), strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(q.sql), ";")))
+		if _, err := tx.Exec(ctx, "SAVEPOINT prepare_check"); err != nil {
+			t.Fatalf("savepoint: %v", err)
+		}
+		_, err := tx.Prepare(ctx, fmt.Sprintf("check_%d", i), strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(q.sql), ";")))
+		if _, rbErr := tx.Exec(ctx, "ROLLBACK TO SAVEPOINT prepare_check"); rbErr != nil {
+			t.Fatalf("rollback to savepoint: %v", rbErr)
+		}
 		if err == nil {
 			continue
 		}
@@ -157,10 +299,8 @@ func TestLiveEveryQueryPrepares(t *testing.T) {
 		other = append(other, fmt.Sprintf("%s: %v", where, err))
 	}
 
-	// Informational: a fragment of a runtime-assembled statement lands here.
 	if len(other) > 0 {
-		t.Logf("%d statement(s) could not be prepared for other reasons (runtime-assembled fragments):\n%s",
-			len(other), strings.Join(other, "\n"))
+		t.Errorf("%d statement(s) could not be prepared:\n%s", len(other), strings.Join(other, "\n"))
 	}
 
 	if len(broken) > 0 {
@@ -168,7 +308,7 @@ func TestLiveEveryQueryPrepares(t *testing.T) {
 			len(broken), strings.Join(broken, "\n"))
 	}
 
-	t.Logf("checked %d parameterised statements", len(queries))
+	t.Logf("checked %d parameterised statements; %d runtime-assembled chains not checked", len(queries), h.unassembled)
 }
 
 func oneLine(s string) string {

@@ -64,7 +64,8 @@ func TestArrivalDiagnosticsShutdownBetweenPassesFlushesReturnedWork(t *testing.T
 		attempts += record["pass_attempts"].(float64)
 		cancelled += record["cancelled_pass_attempts"].(float64)
 	}
-	if summaries != 2 || attempts != 2 || cancelled != 0 || stub.backlogCalls != 2 {
+	// Two passes five seconds apart share one backlog reading (arrivalBacklogInterval).
+	if summaries != 2 || attempts != 2 || cancelled != 0 || stub.backlogCalls != 1 {
 		t.Fatalf("shutdown lost returned work or invented a cancelled pass: summaries=%v attempts=%v cancelled=%v backlog=%d", summaries, attempts, cancelled, stub.backlogCalls)
 	}
 }

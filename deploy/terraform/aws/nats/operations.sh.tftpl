@@ -1,0 +1,95 @@
+#!/bin/bash
+set -euo pipefail
+node=$(awk '$1 == "server_name:" {gsub(/"/, "", $2); print $2; exit}' /etc/nats/server.conf)
+case "$node" in nats1|nats2|nats3) ;; *) echo 'unexpected broker hostname'; exit 1 ;; esac
+
+cat > /usr/local/sbin/nats-health <<'HEALTH'
+#!/bin/bash
+set -euo pipefail
+node=$(awk '$1 == "server_name:" {gsub(/"/, "", $2); print $2; exit}' /etc/nats/server.conf)
+healthy=0
+curl --fail --silent --max-time 5 'http://127.0.0.1:8222/healthz?js-enabled-only=true' >/dev/null && healthy=1
+used=$(df --output=pcent /var/lib/nats | tail -1 | tr -dc '0-9')
+expiry=$(openssl x509 -enddate -noout -in /etc/nats/server.crt | cut -d= -f2-)
+days=$(( ($(date -d "$expiry" +%s) - $(date +%s)) / 86400 ))
+metrics=$(jq -cn --arg node "$node" --argjson healthy "$healthy" --argjson free "$((100-used))" --argjson days "$days" '
+  [{MetricName:"Healthy",Value:$healthy,Unit:"Count"},
+   {MetricName:"DiskFreePercent",Value:$free,Unit:"Percent"},
+   {MetricName:"CertificateDaysRemaining",Value:$days,Unit:"Count"}]
+  | map(. + {Dimensions:[{Name:"Node",Value:$node}]})')
+if capacity=$(curl -fsS --max-time 5 'http://127.0.0.1:8222/jsz?accounts=true&streams=true&config=true' | jq -er '
+  [.account_details[]?.stream_detail[]? | select(.name == "warmbly" and .config.max_bytes > 0) | (.state.bytes * 100 / .config.max_bytes)]
+  | if length == 1 then .[0] else error("stream capacity unavailable") end'); then
+  metrics=$(jq -c --arg node "$node" --argjson capacity "$capacity" '. + [{MetricName:"StreamUsagePercent",Value:$capacity,Unit:"Percent",Dimensions:[{Name:"Node",Value:$node}]}]' <<< "$metrics")
+fi
+if [ "$node" = nats1 ]; then
+  age=1000000000
+  if [ -f /var/lib/nats-backup/last-success ]; then age=$(( $(date +%s) - $(stat -c %Y /var/lib/nats-backup/last-success) )); fi
+  metrics=$(jq -c --argjson age "$age" '. + [{MetricName:"BackupAgeSeconds",Value:$age,Unit:"Seconds",Dimensions:[{Name:"Node",Value:"nats1"}]}]' <<< "$metrics")
+fi
+aws cloudwatch put-metric-data --region us-east-1 --namespace Warmbly/NATS --metric-data "$metrics"
+HEALTH
+chmod 700 /usr/local/sbin/nats-health
+/usr/local/sbin/nats-health
+
+[ "$node" = nats1 ] || exit 0
+dnf install -y unzip cloud-utils-growpart xfsprogs >/dev/null
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+curl --fail --silent --show-error --location --retry 5 https://github.com/nats-io/natscli/releases/download/v0.5.1/nats-0.5.1-linux-arm64.zip -o "$work/nats.zip"
+echo '91c661f1173ee9bfe07514eef55a29d25ac7757a0868c179e825eba976073adc  '"$work/nats.zip" | sha256sum -c -
+unzip -q "$work/nats.zip" -d "$work/cli"
+install -m 755 "$work/cli/nats-0.5.1-linux-arm64/nats" /usr/local/bin/nats
+# Reserve root-disk space for a complete snapshot beside the live replica.
+growpart /dev/nvme0n1 1 || [ "$(lsblk -bno SIZE /dev/nvme0n1p1)" -gt 190000000000 ]
+xfs_growfs / >/dev/null
+install -d -m 700 /var/lib/nats-backup
+
+cat > /usr/local/sbin/nats-backup <<'BACKUP'
+#!/bin/bash
+set -euo pipefail
+umask 077
+exec 9>/run/nats-backup.lock
+flock -n 9 || exit 0
+work=$(mktemp -d /var/lib/nats-backup/run.XXXXXX)
+trap 'rm -rf "$work"' EXIT
+aws secretsmanager get-secret-value --region us-east-1 --secret-id '${secret_arn}' --query SecretString --output text > "$work/secret.json"
+jq -er '.NATS_CREDS_B64' "$work/secret.json" | base64 -d > "$work/backup.creds"
+rm "$work/secret.json"
+stream_bytes=$(nats --no-context --server tls://nats1.nats.warmbly.internal:4222 --creds "$work/backup.creds" --tlsca /etc/nats/ca.crt stream info warmbly --json | jq -er '.state.bytes')
+available=$(df --output=avail -B1 /var/lib/nats-backup | tail -1 | tr -d ' ')
+[ "$available" -gt "$((stream_bytes + 10737418240))" ] || { echo 'insufficient snapshot headroom'; exit 1; }
+nats --no-context --server tls://nats1.nats.warmbly.internal:4222 --creds "$work/backup.creds" --tlsca /etc/nats/ca.crt --timeout 30m backup stream warmbly "$work/snapshot" --check --consumers --no-progress
+rm "$work/backup.creds"
+nats --no-context backup validate "$work/snapshot"
+prefix="warmbly/$(date -u +%Y/%m/%d/%H%M%S)"
+aws s3 cp "$work/snapshot/" 's3://${bucket}/'"$prefix/" --recursive --only-show-errors --sse AES256
+printf '{"completed_at":"%s","stream":"warmbly"}\n' "$(date -u +%FT%TZ)" > "$work/complete.json"
+aws s3 cp "$work/complete.json" 's3://${bucket}/'"$prefix/_COMPLETE" --only-show-errors --sse AES256
+touch /var/lib/nats-backup/last-success
+/usr/local/sbin/nats-health
+echo 'NATS snapshot validated and uploaded'
+BACKUP
+chmod 700 /usr/local/sbin/nats-backup
+cat > /etc/systemd/system/nats-backup.service <<'UNIT'
+[Unit]
+Description=Validate and upload a native JetStream stream snapshot
+After=nats.service network-online.target
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/nats-backup
+TimeoutStartSec=3600
+UMask=0077
+UNIT
+cat > /etc/systemd/system/nats-backup.timer <<'UNIT'
+[Unit]
+Description=Daily native JetStream backup
+[Timer]
+OnCalendar=*-*-* 02:00:00 UTC
+Persistent=true
+RandomizedDelaySec=300
+[Install]
+WantedBy=timers.target
+UNIT
+systemctl daemon-reload
+systemctl enable --now nats-backup.timer

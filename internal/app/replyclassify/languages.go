@@ -34,11 +34,20 @@ type langRules struct {
 	// declined turns down interest and is read before any interest phrase;
 	// negative is any other clear no. Both are phrases, never single words.
 	declined, negative []string
+	// positive is clear interest. A chosen language's is read after its no
+	// phrases, and never after a negator or condition in its sentence. positiveAsWritten
+	// keeps its accents, where folding would change the meaning.
+	positive, positiveAsWritten []string
+	// positiveRequests express a request; a trailing qualifier need not negate it.
+	positiveRequests []string
+	// postverbalNegation reads French pas after an interest phrase, including intervening adverbs.
+	postverbalNegation bool
 }
 
 var baseRules = langRules{
 	declined: declinedInterestKeywords,
 	negative: negativeKeywords,
+	positive: positiveKeywords,
 	quote: []quoteMarker{
 		{re: attribution(`on`, `wrote:`)},
 		{re: regexp.MustCompile(`(?i)_{10,}`)},
@@ -138,19 +147,36 @@ var languageRules = map[string]langRules{
 			"nein danke", "nein, danke", "kein bedarf", "keinen bedarf", "falscher ansprechpartner", "falschen ansprechpartner",
 			"nicht der richtige ansprechpartner", "nicht die richtige ansprechpartnerin", "nicht zuständig",
 		},
+		positive: []string{
+			"klingt gut", "klingt interessant", "klingt spannend", "ich bin interessiert", "wir sind interessiert",
+			"lassen sie uns telefonieren", "lass uns telefonieren", "können wir telefonieren",
+			"gerne mehr erfahren", "schicken sie mir mehr informationen", "was kostet das",
+		},
 	},
 	"fr": {
-		quote:      []quoteMarker{{re: headerBlock(`de ?`, `envoyé ?|date ?`)}},
-		separators: []string{`message d'origine`, `message transféré`},
-		ooo:        []string{"absent du bureau", "absente du bureau"},
+		postverbalNegation: true,
+		quote:              []quoteMarker{{re: headerBlock(`de ?`, `envoyé ?|date ?`)}},
+		separators:         []string{`message d'origine`, `message transféré`},
+		ooo:                []string{"absent du bureau", "absente du bureau"},
 		declined: []string{
 			"pas intéressé", "pas intéressée", "pas intéressés", "pas intéressées", "aucun intérêt",
-			"ne nous intéresse pas", "ne m'intéresse pas", "ne suis plus intéressé", "ne suis plus intéressée",
+			"nous intéresse pas", "m'intéresse pas", "ne m'intéresse plus", "ne nous intéresse plus",
+			"ne suis plus intéressé", "ne suis plus intéressée",
 			"ne sommes plus intéressés", "ne sommes plus intéressées",
 		},
 		negative: []string{
 			"non merci", "non, merci", "pas le bon interlocuteur", "pas la bonne personne",
 			"nous avons déjà une solution", "nous avons déjà un prestataire",
+		},
+		positive: []string{
+			"je suis intéressé", "je suis intéressée", "nous sommes intéressés", "nous sommes intéressées",
+			"ça m'intéresse", "cela m'intéresse", "ça nous intéresse", "cela nous intéresse",
+			"ça a l'air intéressant", "cela semble intéressant",
+		},
+		positiveRequests: []string{
+			"prenons rendez-vous",
+			"envoyez-moi plus d'informations", "envoyez-moi une offre", "envoyez-moi un devis",
+			"quel est le tarif", "quels sont vos tarifs",
 		},
 	},
 	"es": {
@@ -166,6 +192,14 @@ var languageRules = map[string]langRules{
 			"no gracias", "no, gracias", "no soy la persona", "persona equivocada",
 			"ya tenemos una solución", "ya tenemos proveedor",
 		},
+		positive: []string{
+			"me interesa mucho", "nos interesa mucho", "estoy muy interesado",
+			"estoy muy interesada", "estamos muy interesados", "agendemos una llamada",
+			"envíeme más información", "envíame más información", "cuánto cuesta",
+			"cuál es el precio",
+		},
+		// "Si me interesa, les aviso" is conditional; only the accented "sí" says yes.
+		positiveAsWritten: []string{"sí me interesa", "sí, me interesa"},
 	},
 	"pt": {
 		quote: []quoteMarker{
@@ -457,6 +491,7 @@ type ruleSet struct {
 	bounce    []string
 	declined  []phrase
 	negative  []phrase
+	positive  []phrase
 }
 
 // phrase is a sentiment phrase as compiled. The English base set keeps the
@@ -465,6 +500,87 @@ type ruleSet struct {
 type phrase struct {
 	text    string
 	bounded bool
+	// negatable phrases do not count after a negator or condition in the same sentence.
+	negatable bool
+	// asWritten phrases keep their accents, because folding them changes the meaning ("sí" is not "si").
+	asWritten          bool
+	postverbalNegation bool
+	unlessNextWord     string
+}
+
+// negators are the words that, earlier in the sentence, turn an interest phrase around.
+var negators = map[string]bool{
+	"no": true, "not": true, "nicht": true, "kein": true, "keine": true, "keinen": true, "nie": true,
+	"pas": true, "ne": true, "non": true, "niet": true, "geen": true, "nao": true, "nunca": true, "jamas": true,
+}
+
+// negatedOrConditionalAt keeps a qualified phrase from counting as definite interest.
+func negatedOrConditionalAt(text string, start int) bool {
+	head := text[:start]
+	if i := strings.LastIndexAny(head, ".!?;"); i >= 0 {
+		head = head[i+1:]
+	}
+	words := strings.FieldsFunc(head, func(r rune) bool { return !unicode.IsLetter(r) && r != '\'' })
+	for i, word := range words {
+		word = strings.Trim(word, "'")
+		if word == "s'il" && i+2 < len(words) && (words[i+1] == "vous" || words[i+1] == "te") && accentFolder.Replace(strings.Trim(words[i+2], "'")) == "plait" {
+			continue
+		}
+		if word == "s'il" || word == "s'ils" {
+			return true
+		}
+		for _, part := range strings.Split(word, "'") {
+			if negators[accentFolder.Replace(part)] || part == "si" || part == "wenn" || part == "falls" || part == "sofern" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// unfoldedOffset maps a folded match back across replacements that change byte length.
+func unfoldedOffset(text string, offset int) int {
+	for i, r := range text {
+		if offset <= 0 {
+			return i
+		}
+		offset -= len(accentFolder.Replace(string(r)))
+	}
+	return len(text)
+}
+
+// contrasts open a reservation; a negator after one takes the interest back.
+var contrasts = map[string]bool{
+	"aber": true, "jedoch": true, "allerdings": true, "mais": true, "cependant": true, "toutefois": true, "pero": true, "aunque": true,
+}
+
+// refusedAfter reports a contrast and then a negator later in the reply ("me interesa mucho, pero no ahora").
+func refusedAfter(text string, end int) bool {
+	contrast := false
+	for _, word := range strings.FieldsFunc(text[end:], func(r rune) bool { return !unicode.IsLetter(r) }) {
+		if contrast && negators[word] {
+			return true
+		}
+		contrast = contrast || contrasts[word]
+	}
+	return false
+}
+
+const sentimentWhitespace = `[[:space:]\p{Z}\x{0085}]`
+
+var frenchPostverbalNegation = regexp.MustCompile(`^` + sentimentWhitespace + `+(?:(?:vraiment|absolument|franchement|certainement|tellement|beaucoup)` + sentimentWhitespace + `+)*pas\b(?:` + sentimentWhitespace + `+(\p{L}+))?`)
+
+// frenchNegatedAfter keeps post-verbal pas distinct from the affirmative idiom pas mal.
+func frenchNegatedAfter(text string, end int) bool {
+	match := frenchPostverbalNegation.FindStringSubmatch(text[end:])
+	return match != nil && match[1] != "mal"
+}
+
+func followedByWord(text string, end int, word string) bool {
+	tail := strings.TrimLeftFunc(text[end:], unicode.IsSpace)
+	rest, found := strings.CutPrefix(tail, word)
+	next, _ := utf8.DecodeRuneInString(rest)
+	return found && !wordRune(next)
 }
 
 // in matches an English base phrase against the text as written and a chosen
@@ -473,7 +589,10 @@ func (p phrase) in(text, folded string) bool {
 	if !p.bounded {
 		return strings.Contains(text, p.text)
 	}
-	text = folded
+	original := text
+	if !p.asWritten {
+		text = folded
+	}
 	for i := 0; i < len(text); {
 		j := strings.Index(text[i:], p.text)
 		if j < 0 {
@@ -482,8 +601,14 @@ func (p phrase) in(text, folded string) bool {
 		start, end := i+j, i+j+len(p.text)
 		before, _ := utf8.DecodeLastRuneInString(text[:start])
 		after, _ := utf8.DecodeRuneInString(text[end:])
-		if !wordRune(before) && !wordRune(after) {
-			return true
+		if !wordRune(before) && !wordRune(after) && !(p.unlessNextWord != "" && followedByWord(text, end, p.unlessNextWord)) {
+			originalStart := start
+			if p.negatable && !p.asWritten {
+				originalStart = unfoldedOffset(original, start)
+			}
+			if !p.negatable || !(negatedOrConditionalAt(original, originalStart) || refusedAfter(text, end) || (p.postverbalNegation && frenchNegatedAfter(text, end))) {
+				return true
+			}
 		}
 		_, size := utf8.DecodeRuneInString(text[start:])
 		i = start + size
@@ -542,10 +667,23 @@ func compileRules(parts []langRules) *ruleSet {
 		rs.bounce = append(rs.bounce, p.bounce...)
 		// parts[0] is always baseRules.
 		for _, d := range p.declined {
-			rs.declined = append(rs.declined, phrase{text: accentFolder.Replace(strings.ToLower(d)), bounded: i > 0})
+			declined := phrase{text: accentFolder.Replace(strings.ToLower(d)), bounded: i > 0}
+			if p.postverbalNegation && strings.HasSuffix(declined.text, " pas") {
+				declined.unlessNextWord = "mal"
+			}
+			rs.declined = append(rs.declined, declined)
 		}
 		for _, n := range p.negative {
 			rs.negative = append(rs.negative, phrase{text: accentFolder.Replace(strings.ToLower(n)), bounded: i > 0})
+		}
+		for _, pos := range p.positive {
+			rs.positive = append(rs.positive, phrase{text: accentFolder.Replace(strings.ToLower(pos)), bounded: i > 0, negatable: i > 0, postverbalNegation: p.postverbalNegation})
+		}
+		for _, pos := range p.positiveRequests {
+			rs.positive = append(rs.positive, phrase{text: accentFolder.Replace(strings.ToLower(pos)), bounded: i > 0, negatable: i > 0})
+		}
+		for _, pos := range p.positiveAsWritten {
+			rs.positive = append(rs.positive, phrase{text: strings.ToLower(pos), bounded: true, negatable: true, asWritten: true})
 		}
 	}
 	rs.quote = append(rs.quote, quoteMarker{re: regexp.MustCompile(`(?i)-{2,}\s*(` + strings.Join(separators, `|`) + `)\s*-{2,}`)})

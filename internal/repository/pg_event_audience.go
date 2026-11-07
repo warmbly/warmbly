@@ -3,17 +3,38 @@ package repository
 import (
 	"context"
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// resourceOrgTTL bounds how long a resource's organization is remembered; nothing moves a resource between organizations.
+const (
+	resourceOrgTTL     = time.Minute
+	resourceOrgEntries = 50_000
+)
+
 type EventAudienceRepository struct {
 	db *pgxpool.Pool
+
+	mu   sync.Mutex
+	orgs map[resourceKey]cachedOrg
+}
+
+type resourceKey struct {
+	kind string
+	id   uuid.UUID
+}
+
+type cachedOrg struct {
+	org     uuid.UUID
+	expires time.Time
 }
 
 func NewEventAudienceRepository(db *pgxpool.Pool) *EventAudienceRepository {
-	return &EventAudienceRepository{db: db}
+	return &EventAudienceRepository{db: db, orgs: map[resourceKey]cachedOrg{}}
 }
 
 func (r *EventAudienceRepository) ResourceOrganization(ctx context.Context, kind string, id uuid.UUID) (uuid.UUID, error) {
@@ -32,11 +53,28 @@ func (r *EventAudienceRepository) ResourceOrganization(ctx context.Context, kind
 	default:
 		return uuid.Nil, fmt.Errorf("unsupported event resource kind %q", kind)
 	}
+	key := resourceKey{kind: kind, id: id}
+	now := time.Now()
+	r.mu.Lock()
+	cached, ok := r.orgs[key]
+	r.mu.Unlock()
+	if ok && now.Before(cached.expires) {
+		return cached.org, nil
+	}
 	var orgID uuid.UUID
 	err := r.db.QueryRow(ctx, query, id).Scan(&orgID)
+	if err == nil && orgID != uuid.Nil {
+		r.mu.Lock()
+		if len(r.orgs) >= resourceOrgEntries {
+			clear(r.orgs)
+		}
+		r.orgs[key] = cachedOrg{org: orgID, expires: now.Add(resourceOrgTTL)}
+		r.mu.Unlock()
+	}
 	return orgID, err
 }
 
+// CanAddressUser is never cached: removing a member stops their events at once.
 func (r *EventAudienceRepository) CanAddressUser(ctx context.Context, orgID, userID uuid.UUID) (bool, error) {
 	var allowed bool
 	err := r.db.QueryRow(ctx, `SELECT EXISTS (

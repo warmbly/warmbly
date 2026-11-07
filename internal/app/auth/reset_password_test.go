@@ -8,6 +8,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/pkg/crypt"
 )
 
@@ -89,5 +90,13 @@ func TestRevokeAPICredentials(t *testing.T) {
 	s.WireCredentialRevokers(failing, keys)
 	if err := s.revokeAPICredentials(ctx, uid); err == nil {
 		t.Fatal("a failing revoker must fail the revoke")
+	}
+}
+
+// A deployment with password sign-in off sends no set-password link.
+func TestSendPasswordLinkRefusedWhenPasswordLoginDisabled(t *testing.T) {
+	s := &authService{policy: &config.AuthPolicy{DisablePasswordLogin: true}}
+	if err := s.SendPasswordLink(context.Background(), uuid.New()); err != ErrPasswordLoginDisabled {
+		t.Fatalf("err = %v, want ErrPasswordLoginDisabled", err)
 	}
 }

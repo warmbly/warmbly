@@ -76,6 +76,10 @@ Booking from a contact-specific place embeds that contact's id as `utm_content`.
 These buttons only render with a connected provider and a saved link, so they never appear dead.
 </Callout>
 
+## Campaign follow-ups
+
+A booked meeting ends the contact's cold sequence in every campaign that has **Stop on meeting booked** on, which is the default. Someone who books a call from the first email gets no more follow-ups, even without replying. See [stop on meeting booked](/guides/sequences/#stop-on-meeting-booked).
+
 ## Automations
 
 Meeting events drive [Automations](/guides/automations/): **booked**, **rescheduled**, and **canceled** are notification triggers (Slack, Discord, Zapier, Make, n8n), while **booked** and **canceled** are also CRM triggers (HubSpot, Salesforce, Pipedrive, Close). So one flow can post "Meeting booked" to Slack and upsert the contact into your CRM every time a prospect books. A workspace in [HubSpot mode](/guides/hubspot/) or [Pipedrive mode](/guides/pipedrive/) needs no automation for this: each booking is logged as a meeting on the contact and its open deals.

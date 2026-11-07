@@ -144,6 +144,18 @@ export function DeliverabilitySection({
                 }
             />
             <SettingRow
+                title="Stop on meeting booked"
+                description="Stop follow-ups for a contact once they book a meeting, even if they never replied."
+                control={
+                    <Toggle
+                        id="campaign-pref-stop-on-meeting"
+                        ariaLabel="Stop on meeting booked"
+                        value={newCampaign.stop_on_meeting}
+                        onChange={(v) => setNewCampaign((bef) => ({ ...bef, stop_on_meeting: v }))}
+                    />
+                }
+            />
+            <SettingRow
                 title="Plain text only"
                 description="Send as simple text for the best deliverability (disables tracking)."
                 control={

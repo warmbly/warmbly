@@ -1,6 +1,6 @@
 // AI writing assistant — POST /generation/write. Drafts email copy from a short
-// prompt; the response reports the remaining generation credits and the model
-// that produced the text. A 402 means the org is out of credits.
+// prompt; the response reports what the call cost, the balance after it and the
+// model that produced the text. A 402 means the workspace balance is too low.
 export interface WriteRequest {
     prompt: string;
     tone?: string;
@@ -8,17 +8,16 @@ export interface WriteRequest {
 
 export interface WriteResponse {
     text: string;
-    credits_remaining: number;
-    // Real usage-based charge for this call: flat minimum plus the token
-    // overage settle. 0 on unmetered (local model) setups.
-    credits_charged: number;
+    // What this call cost in dollars; 0 on unmetered (local model) setups.
+    charged_usd: number;
+    balance_usd: number;
     tokens_used: number;
     model: string;
 }
 
 // AI selection edit — POST /generation/edit. Rewrites a passage of a draft
 // according to an instruction; `context` optionally carries the full draft for
-// tone consistency. Same credits/402 semantics as /generation/write.
+// tone consistency. Same billing/402 semantics as /generation/write.
 export interface EditRequest {
     text: string;
     instruction: string;

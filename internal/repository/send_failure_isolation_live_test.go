@@ -65,3 +65,27 @@ func TestLiveSendFailureKeepsRecipientAndMailboxRecoverySeparate(t *testing.T) {
 		})
 	}
 }
+
+func TestLiveServerPacingHoldWaitsForItsRetryTime(t *testing.T) {
+	f := newCampaignIsolationFixture(t)
+	retryAt := time.Now().UTC().Add(9 * time.Minute)
+	result := models.SendEmailResult{TaskID: f.request.TaskID, Error: &models.EmailSendError{
+		Code: string(errx.MailErrorCodeServerUnreachable), Message: errx.MailServerPacedMessage,
+		Failure: &errx.SendFailure{Provider: "smtp", Protocol: "smtp", Stage: "pacing", Cause: errx.SendCauseServerPacing,
+			Disposition: errx.SendRetry, Scope: "mailbox", ObservedAt: time.Now().UTC(), RetryAt: &retryAt},
+	}}
+	if err := f.r.FinishOutbound(t.Context(), result.TaskID, f.sender, f.worker, result); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.r.ApplySendResult(t.Context(), result, func(context.Context) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	early, err := f.r.GetSendAdmission(t.Context(), f.org, f.sender, models.InboxProviderSMTPIMAP, retryAt.Add(-time.Minute))
+	if err != nil || early.Allowed || early.RecoveryHold || early.RetryAt == nil || early.RetryAt.Before(retryAt.Add(-time.Second)) {
+		t.Fatalf("held send admitted before the server's retry time: %+v %v", early, err)
+	}
+	late, err := f.r.GetSendAdmission(t.Context(), f.org, f.sender, models.InboxProviderSMTPIMAP, retryAt.Add(time.Second))
+	if err != nil || !late.Allowed || late.RecoveryHold {
+		t.Fatalf("held send not admitted after the retry time: %+v %v", late, err)
+	}
+}

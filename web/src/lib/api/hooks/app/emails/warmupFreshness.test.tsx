@@ -110,7 +110,7 @@ it("refreshes Cloud reports after a partially successful bulk settings and start
     const complete = vi.fn();
     const hook = renderHook(useCloudLinkMailboxes, { wrapper: ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider> });
     await waitFor(() => expect(hook.result.current.data?.[0].cloud?.warmup?.paused).toBe(false));
-    render(<QueryClientProvider client={client}><BulkWarmupDialog open ids={["mailbox", "failed"]} onClose={() => {}} onComplete={complete} /></QueryClientProvider>);
+    render(<QueryClientProvider client={client}><BulkWarmupDialog open ids={["mailbox", "failed"]} onClose={() => {}} onComplete={complete} ownershipPending={false} /></QueryClientProvider>);
     fireEvent.click(screen.getByRole("button", { name: "Start warmup" }));
     await waitFor(() => expect(complete).toHaveBeenCalledOnce());
     expect(hook.result.current.data?.[0].cloud?.warmup?.paused).toBe(true);

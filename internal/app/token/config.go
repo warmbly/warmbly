@@ -40,4 +40,6 @@ const (
 	// PurposeSSOLink is a federated sign-in parked on an existing password
 	// account until that password is presented; it opens nothing else.
 	PurposeSSOLink = "sso_link"
+	// PurposeInitialPassword lets the holder of an issued initial password choose their own; it opens nothing else.
+	PurposeInitialPassword = "initial_password"
 )

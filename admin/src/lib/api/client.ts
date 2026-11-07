@@ -25,6 +25,14 @@ export class SessionExpiredError extends Error {
     }
 }
 
+// The operator closed the confirm-it-is-you prompt: a choice, not a failure.
+export class ReauthCancelledError extends Error {
+    constructor() {
+        super("Confirmation cancelled");
+        this.name = "ReauthCancelledError";
+    }
+}
+
 export class APIError<T = unknown> extends Error {
     status: number;
     // Machine-readable code + request id from the backend's standard error
@@ -79,7 +87,7 @@ export function promptForReauth(): Promise<void> {
             new CustomEvent("reauth-required", {
                 detail: {
                     resolve: finish(resolve),
-                    reject: finish(() => reject(new Error("cancelled"))),
+                    reject: finish(() => reject(new ReauthCancelledError())),
                     // A mounted prompt takes over; the operator may take as long as they need.
                     ack: () => window.clearTimeout(timer),
                 },

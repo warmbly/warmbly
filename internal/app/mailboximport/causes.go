@@ -61,7 +61,7 @@ var importCauses = map[string]mailcause.Cause{
 	causeVendorUnreachable: {Key: causeVendorUnreachable, Title: "Vendor did not return the credentials",
 		Fix: "The inbox vendor did not answer with this mailbox's credentials, or no longer has it. Retry in a few minutes, or check the mailbox in the vendor's dashboard.", Retryable: true},
 	causeVendorAuthorizing: {Key: causeVendorAuthorizing, Title: "Vendor is authorizing Warmbly",
-		Fix: "The inbox vendor is approving Warmbly for these domains through the admin mailbox it holds, so nobody has to sign in. This usually takes a few minutes; the rows connect on their own when it finishes."},
+		Fix: "The inbox vendor is approving Warmbly for these domains through the admin mailbox it holds, so nobody has to sign in. For Google it adds Warmbly as a trusted app, then signs in to each mailbox. This usually takes a few minutes; the rows connect on their own when it finishes."},
 	"mailbox_grant_not_configured": {Key: "mailbox_grant_not_configured", Title: "Admin connections are not set up here",
 		Fix: "This instance has no Google service account or Microsoft app for admin connections. An operator configures them; see the self-hosting docs."},
 	"google_delegation_unauthorized": {Key: "google_delegation_unauthorized", Title: "Google refused the domain-wide delegation",

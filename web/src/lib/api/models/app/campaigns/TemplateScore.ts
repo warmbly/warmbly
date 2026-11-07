@@ -86,6 +86,6 @@ export interface TemplateAnalysis {
     judgment?: CopyJudgment | null;
     model: string;
     tokens_used: number;
-    credits_remaining: number;
-    credits_charged: number;
+    charged_usd: number;
+    balance_usd: number;
 }

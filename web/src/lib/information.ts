@@ -8,8 +8,6 @@ export const API_URL = runtimeEnv("API_URL", import.meta.env.VITE_API_URL);
 // (no path), so this is the single place the /v1 prefix is applied.
 export const API_BASE_URL = `${API_URL}/v1`;
 export const TURNSTILE_KEY = runtimeEnv("TURNSTILE_KEY", import.meta.env.VITE_TURNSTILE_KEY);
-// Visibility only; the backend still decides whether a new mailbox can connect.
-export const GMAIL_OAUTH_CONNECT = runtimeEnv("GMAIL_OAUTH_CONNECT", import.meta.env.VITE_GMAIL_OAUTH_CONNECT, "false").trim().toLowerCase() === "true";
 
 // Shown once in a dialog and then as a header pill. Empty means this is not a
 // preview deployment and nothing renders, which is what production wants

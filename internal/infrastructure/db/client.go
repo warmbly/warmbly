@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -16,6 +17,43 @@ import (
 type DB struct {
 	*pgxpool.Pool
 	directConfig *pgx.ConnConfig
+	pooled       bool
+
+	sessionsOnce sync.Once
+	sessions     *pgxpool.Pool
+	sessionsErr  error
+}
+
+// sessionLockConns bounds the direct connections one process holds for session-scoped locks.
+const sessionLockConns = 4
+
+// SessionLocks is a small pool of direct connections for locks held while pooled work runs,
+// so a held lock never occupies one of the pooler's server connections. It is nil without a pooler.
+func (d *DB) SessionLocks() (*pgxpool.Pool, error) {
+	if !d.pooled || d.directConfig == nil {
+		return nil, nil
+	}
+	d.sessionsOnce.Do(func() {
+		cfg, err := pgxpool.ParseConfig("")
+		if err != nil {
+			d.sessionsErr = err
+			return
+		}
+		cfg.ConnConfig = d.directConfig.Copy()
+		cfg.MaxConns, cfg.MinConns = sessionLockConns, 0
+		cfg.MaxConnIdleTime = defaultMaxConnIdleTime
+		d.sessions, d.sessionsErr = pgxpool.NewWithConfig(context.Background(), cfg)
+	})
+	return d.sessions, d.sessionsErr
+}
+
+// Close closes the session-lock pool with the main one.
+func (d *DB) Close() {
+	d.sessionsOnce.Do(func() {})
+	if d.sessions != nil {
+		d.sessions.Close()
+	}
+	d.Pool.Close()
 }
 
 const (
@@ -133,6 +171,7 @@ func NewWithDirect(ctx context.Context, endpoint, directEndpoint string) (*DB, e
 	return &DB{
 		Pool:         conn,
 		directConfig: directConfig,
+		pooled:       pooled,
 	}, nil
 }
 

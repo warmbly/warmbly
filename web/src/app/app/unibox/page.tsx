@@ -286,16 +286,6 @@ export default function UniboxPage() {
   // an effect: an effect runs after paint, so on a reload of a scoped
   // URL the list would fire and render the default "all" query first,
   // then flash to the scoped one.
-  const storeEmails = useAppStore((s) => s.emails);
-  const tagAccountIds = React.useMemo(
-    () =>
-      scope.kind === "tag"
-        ? storeEmails
-            .filter((m) => (m.tags ?? []).includes(scope.tagId))
-            .map((m) => m.id)
-        : null,
-    [scope, storeEmails],
-  );
   // A premade view resolves to the workspace's label rows by slug, so the
   // filter is recomputed once the overview has loaded them.
   const viewCategoriesData = overview.data?.categories;
@@ -334,10 +324,7 @@ export default function UniboxPage() {
           next.automated = false;
           break;
         case "tag":
-          // Tag→mailbox membership resolves through the store's
-          // mailbox directory (populated by DataSyncProvider); the
-          // server only knows accountIds.
-          next.accountIds = tagAccountIds ?? [];
+          // The server resolves the tag to its mailboxes (tag_ids).
           next.tagId = scope.tagId;
           next.automated = false;
           break;
@@ -371,11 +358,11 @@ export default function UniboxPage() {
       }
       return next;
     },
-    [scope, tagAccountIds, viewCategoriesData],
+    [scope, viewCategoriesData],
   );
   const scopeBase = React.useMemo(() => paramsForScope("newest"), [paramsForScope]);
   const { params, baseParams, setParams, search, setSearch, keepSearch } =
-    useInboxBrowseState(scopeKey(scope), scopeBase, storeEmails);
+    useInboxBrowseState(scopeKey(scope), scopeBase);
 
   // ── Scope label for header chip ────────────────────────────────
   const overviewData = overview.data;

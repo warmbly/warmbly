@@ -20,20 +20,29 @@ Returns the inbox list, collapsed to one row per thread (the newest message), wi
 | `cursor` | query | string | Opaque pagination cursor from a previous response. |
 | `limit` | query | integer | Page size. Clamped to the server's min/max. |
 | `from` | query | string | Filter by sender address (substring). |
+| `address` | query | string | Conversations with this address in either direction: messages from it or sent to it (substring of the `From` or `To` entries). |
+| `direction` | query | string | `sent` returns only messages from one of your mailboxes, `received` only the rest. Omit for both. |
+| `campaign_id` | query | string | Campaign UUID. Returns only conversations tied to one of the campaign's sends: the sent copy, a reply naming it in `In-Reply-To`, and anything threaded with either. A malformed id returns `400`; a campaign outside your workspace returns `404`. |
+| `contact_id` | query | string | Contact UUID. Returns the conversations tied to a campaign send to this contact, plus any mail from or to the contact's email address. Combined with `campaign_id`, only that campaign's conversations with the contact are returned, without the address match. A malformed id returns `400`; a contact outside your workspace returns `404`. |
 | `folder` | query | string | One of `inbox`, `sent`, `drafts`, `archive`, `spam`, `trash`. Omit for every folder except `spam` and `trash` (junk never bleeds into the combined view). An unknown value returns `400`. |
 | `subject` | query | string | Filter by subject (substring). |
 | `unseen` | query | boolean | `true` returns only threads with unread messages. |
 | `awaiting_reply` | query | boolean | `true` returns only threads where the latest message was sent by you (recipient has not replied). |
 | `snoozed` | query | string | `true` returns only snoozed threads. Omit to exclude snoozed threads (default). |
-| `since` | query | string | Lower bound on date, `YYYY-MM-DD`. |
-| `until` | query | string | Upper bound on date, `YYYY-MM-DD`. |
+| `since` | query | string | Earliest message date, inclusive. A date (`YYYY-MM-DD`) starts at 00:00 UTC that day; an RFC 3339 timestamp (`2026-06-11T09:00:00+02:00`) is used exactly. |
+| `until` | query | string | Latest message date. A date (`YYYY-MM-DD`) includes that whole UTC day; an RFC 3339 timestamp is an exclusive bound, so a message at exactly that instant is left out. |
 | `email_id` | query | string | Restrict to a single mailbox by UUID. |
 | `email_ids` | query | string | Comma-separated mailbox UUIDs. A thread matches if it landed in any of them. Invalid UUIDs are dropped. |
+| `tag_ids` | query | string | Comma-separated mailbox tag UUIDs. A thread matches if it landed in a mailbox carrying any of them; with `email_ids` as well, the mailbox has to match both. A tag on no mailbox matches nothing. Invalid UUIDs are dropped. |
 | `category_ids` | query | string | Comma-separated conversation-label UUIDs. A thread matches if it carries any of them. |
 | `uncategorized` | query | boolean | `true` returns only threads carrying no conversation labels. |
 | `automated` | query | boolean | `true` returns only conversations no person wrote in: security alerts, notifications, bounces and auto-replies, as judged by [automatic inbox tagging](/guides/inbox-tagging/). `false` leaves them out, which is how the dashboard's Inbox reads. Omit for both. A conversation counts as automated only while every message in it that is not yours was judged automated, so a reply brings it back. |
 
-The response is a `data` plus `pagination` envelope. Each row summarises the whole thread behind it (`message_count`, `has_unread`) plus the conversation's labels.
+The response is a `data` plus `pagination` envelope. Each row summarises the whole thread behind it (`message_count`, `has_unread`) plus the conversation's labels. When one of the thread's messages is a campaign send or names one, the row carries that campaign's `campaign_id` (the latest such message wins; with a `campaign_id` filter, that campaign). Rows with no campaign send omit the field.
+
+`since` and `until` take a `YYYY-MM-DD` date or an RFC 3339 timestamp, and dates are read in UTC. Any other value returns `400` with code `invalid_filter`, as does a `campaign_id` or `contact_id` that is not a UUID. A window that ends before it starts matches nothing.
+
+A conversation counts toward `campaign_id` and `contact_id` through the campaign sends recorded for them. A send whose contact has since been deleted is no longer linked to any campaign conversation.
 
 ### Response
 
@@ -54,7 +63,8 @@ The response is a `data` plus `pagination` envelope. Each row summarises the who
       "has_unread": true,
       "labels": [
         { "id": "c0ffee00-0000-4000-8000-000000000001", "title": "Interested", "color": "#16a34a" }
-      ]
+      ],
+      "campaign_id": "5d1e2f3a-4b5c-4d6e-8f70-81a2b3c4d5e6"
     }
   ],
   "pagination": {
@@ -86,7 +96,7 @@ Returns the number of unread conversations in the Inbox folder, optionally scope
 
 `GET /unibox/overview`
 
-Rolls up the scope rail and top metric strip in one call: unread, today, week, snoozed, awaiting-reply, and pending-scheduled counts, plus per-folder, per-mailbox, per-tag, and per-conversation-label breakdowns. The `folders` array always lists all six canonical folders, zero-filled, in sidebar order; the headline counts exclude `spam` and `trash`. All counts are threads, not messages, except `scheduled_pending`, which counts the sends queued from the organization's mailboxes against the workspace cap in `scheduled_pending_max`. Automated conversations are counted in `automated` and `automated_unread` and left out of `unread`, `today`, `week`, the `inbox` folder and the per-mailbox and per-tag counts; `total` and the label counts still include them. Concurrent requests from the same organization share one computation, and its result is served for up to one second after it started (`generated_at` is when it started). Auth: **Scope** `READ_UNIBOX` · **Org permission** `access_unibox`.
+Rolls up the scope rail and top metric strip in one call: unread, today, week, snoozed, awaiting-reply, draft (`drafts`, each visible thread once whether it holds a mailbox draft or a pending agent draft), and pending-scheduled counts, plus per-folder, per-mailbox, per-tag, and per-conversation-label breakdowns. `mailboxes` lists every mailbox the caller can see, sorted by address, and `tags` every tag, however many there are. The `folders` array always lists all six canonical folders, zero-filled, in sidebar order; the headline counts exclude `spam` and `trash`. All counts are threads, not messages, except `scheduled_pending`, which counts the sends queued from the organization's mailboxes against the workspace cap in `scheduled_pending_max`. Automated conversations are counted in `automated` and `automated_unread` and left out of `unread`, `today`, `week`, the `inbox` folder and the per-mailbox and per-tag counts; `total` and the label counts still include them. Concurrent requests from the same organization share one computation, and its result is served for up to one second after it started (`generated_at` is when it started). Auth: **Scope** `READ_UNIBOX` · **Org permission** `access_unibox`.
 
 ### Response
 
@@ -100,6 +110,7 @@ Rolls up the scope rail and top metric strip in one call: unread, today, week, s
   "awaiting_reply": 9,
   "automated": 41,
   "automated_unread": 6,
+  "drafts": 4,
   "scheduled_pending": 2,
   "scheduled_pending_max": 10000,
   "folders": [
@@ -371,7 +382,7 @@ Two limits:
 - attachments on the original are not forwarded
 - a message whose full body is not stored (the reader shows "Only a preview of this message is stored") is forwarded with that preview
 
-Forwarding discloses the message, so it takes `READ_UNIBOX` as well as `WRITE_UNIBOX` (for a dashboard session, the `access_unibox` permission covers both), and an API key restricted to certain mailboxes must be allowed the mailbox the message belongs to as well as the sending mailbox. Either missing answers `403`. A `forward_message_id` that names no message in the organization answers `404`.
+Forwarding discloses the message, so it takes `READ_UNIBOX` as well as `WRITE_UNIBOX` (for a dashboard session, the `access_unibox` permission covers both), and an API key restricted to certain mailboxes must be allowed the mailbox the message belongs to as well as the sending mailbox. Either missing answers `403`. A `forward_message_id` that names no message in the organization answers `404`. A `thread_id` is held to the same allowlist: every message of the conversation must sit in a mailbox the caller may use. A member restricted to [selected resources](/guides/team-roles/#client-roles) replies only with a `thread_id` (or `forward_message_id`) naming a conversation held in their granted mailboxes, and through a role that lets clients act; anything else answers `403` `member_access_restricted`.
 
 ```json
 {

@@ -103,8 +103,10 @@ function route(url: string): unknown {
         return {
             monthly_balance: 100, monthly_allowance: 100, purchased_balance: 0,
             spent_today: 0, spent_week: 0, spent_month: 0,
+            balance_usd: 1, monthly_usd: 1, purchased_usd: 0, monthly_allowance_usd: 1,
         };
     }
+    if (url.startsWith("/subscription/balance")) return { unlimited: true };
     if (url.startsWith("/subscription")) return { plan: { name: "Pro" }, status: "active" };
     if (url.startsWith("/analytics")) return { summary: {}, steps: [], data: [] };
     if (url.startsWith("/advisor")) return { findings: [], data: [], total: 0 };

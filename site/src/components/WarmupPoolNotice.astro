@@ -8,7 +8,7 @@ import Icon from './Icon.astro';
 
 interface Props {
   class?: string;
-  /** Show the waitlist link (default true). */
+  /** Show the Warmbly Cloud link (default true). */
   showWaitlist?: boolean;
 }
 const { class: className = '', showWaitlist = true } = Astro.props;
@@ -16,14 +16,14 @@ const { class: className = '', showWaitlist = true } = Astro.props;
 <aside class={`rounded-[6px] bg-white p-6 ring-1 ring-slate-200 md:p-7 ${className}`}>
   <div class="text-[15px] font-medium text-slate-900">Self-hosting and the warmup pool</div>
   <p class="mt-2 text-[15px] leading-[1.65] text-slate-600">
-    The shared warmup pool runs on Warmbly Cloud, because a pool only works once enough vetted mailboxes are writing to each other. Self-hosted instances connect to the same pool, and the same rules keep its quality up wherever an instance runs.
+    The shared warmup pool runs on Warmbly Cloud, because a pool only works once enough vetted mailboxes are writing to each other. A self-hosted instance warms only between its own mailboxes, with no shared pool, so it does far less for deliverability. If deliverability is the goal, Warmbly Cloud is the better choice.
   </p>
   <p class="mt-3 text-[15px] leading-[1.65] text-slate-600">
-    Self-hosting is free. When Warmbly Cloud launches, link your instance from Settings and we warm up to 10 of your mailboxes at no cost, or as many as you like for $15 a month. Sending, sequences, the inbox, the CRM, tracking and the API all stay on your own servers.
+    Self-hosting is free and fully functional on its own, for experienced operators who want to own the whole stack, and supported by the community on Discord rather than by Warmbly. Self-hosted instances do not link to the pool. To warm your mailboxes in it, connect them to a hosted workspace at app.warmbly.com: an owner's first workspace warms two mailboxes free for 14 days, and a paid plan warms every mailbox within its fair-use allowance.
   </p>
   {showWaitlist && (
-    <a href="https://app.warmbly.com" class="mt-4 inline-flex items-center gap-1.5 text-[14px] font-medium text-slate-900 hover:text-slate-600">
-      Join the cloud waitlist
+    <a href="https://app.warmbly.com/auth/register" class="mt-4 inline-flex items-center gap-1.5 text-[14px] font-medium text-slate-900 hover:text-slate-600">
+      Get started on Warmbly Cloud
       <Icon name="arrowRight" size={12} />
     </a>
   )}

@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/nodeevidence"
 )
 
@@ -35,16 +37,40 @@ func (w *WMail) StartSyncWorker(ctx context.Context) {
 		w.captureSyncError(err)
 	}
 
+	if w.EmailType == models.InboxProviderSMTPIMAP {
+		go w.runImapWatcher(ctx)
+	}
 	for {
-		delay := w.nextSyncDelay(ImapCheckInterval, err)
-		timer := time.NewTimer(delay)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
+		w.maintainPush(ctx)
+		if !w.waitForPass(ctx, w.nextSyncDelay(w.pollInterval(), err), err == nil) {
 			return
-		case <-timer.C:
 		}
 		err = w.syncOnce(ctx)
+	}
+}
+
+// waitForPass sleeps until the next pass is due or, when the last pass was
+// clean, a wake arrives. A wake never cuts short a backoff the provider asked for.
+func (w *WMail) waitForPass(ctx context.Context, delay time.Duration, wakeable bool) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	wake := w.wake
+	if !wakeable {
+		wake = nil
+	}
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		// The pass about to run covers any wake that queued during the wait.
+		select {
+		case <-w.wake:
+		default:
+		}
+		return true
+	case <-wake:
+		// Let the rest of a burst land so one pass covers it.
+		return sleepCtx(ctx, config.SyncWakeMinGap)
 	}
 }
 

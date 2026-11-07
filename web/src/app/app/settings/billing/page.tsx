@@ -1,8 +1,8 @@
-// Billing — owner-only, organization-scoped, split into tabs so the page is
-// browsable: Overview (plan, usage, controls), Plans (compare/promo), AI & credits,
-// and Payment. Each tab is a real path (/app/settings/billing/ai-credits,
-// /plans, /payment) so tabs are linkable and Stripe returns land on the tab
-// they left from.
+// Billing, organization-scoped, split into tabs so the page is browsable:
+// Overview (plan, usage, controls), Plans (compare/promo), Balance, and
+// Payment. Each tab is a real path (/app/settings/billing/balance, /plans,
+// /payment) so tabs are linkable and Stripe returns land on the tab they left
+// from. The owner sees every tab; a member who can manage billing sees Balance.
 //
 // Plan data lives in `lib/plans` so the dashboard mirrors warmbly-web
 // exactly — every value here (limits, descriptions, bullets) comes
@@ -16,13 +16,12 @@ import {
     CheckIcon,
     CreditCardIcon,
     ExternalLinkIcon,
-    FileTextIcon,
     GaugeIcon,
     LayersIcon,
     Loader2Icon,
     LockIcon,
-    SparklesIcon,
     TicketIcon,
+    WalletIcon,
     XIcon,
 } from "lucide-react";
 import { Link, Navigate, useNavigate, useParams } from "@tanstack/react-router";
@@ -31,6 +30,7 @@ import toast from "react-hot-toast/headless";
 import { TopbarAction } from "@/components/layout/Page";
 import { useSearchParams } from "@/hooks/useSearchParams";
 import useFeatureAccess from "@/hooks/useFeatureAccess";
+import { usePermission } from "@/hooks/usePermission";
 import useUpgradeFlow from "@/hooks/useUpgradeFlow";
 import { useUpgradeDialog } from "@/hooks/context/upgrade";
 import useValidateDiscountCode from "@/lib/api/hooks/app/subscription/useValidateDiscountCode";
@@ -45,22 +45,21 @@ import { TextInput } from "@/components/ui/field";
 import BillingIntervalToggle from "@/components/app/billing/BillingIntervalToggle";
 import PlanCard from "@/components/app/billing/PlanCard";
 import EnterpriseInquiryDialog from "@/components/app/billing/EnterpriseInquiryDialog";
-import WarmupPlanDialog from "@/components/app/billing/WarmupPlanDialog";
 import { Row, Section, SectionShell, TableSurface } from "../_components/SectionShell";
 import { PAID_PLANS, getPlan, planOrder, type PlanID } from "@/lib/plans";
 import { describeDiscount, fmtMoney, fromMinorUnits, type BillingInterval } from "@/lib/pricing";
 import OverviewTab from "./OverviewTab";
-import CreditsCard from "./CreditsCard";
-import AIUsageCard from "./AIUsageCard";
+import BalanceTab from "./BalanceTab";
+import InvoicesSection from "./InvoicesSection";
 
-type BillingTab = "overview" | "plans" | "ai" | "payment";
+type BillingTab = "overview" | "plans" | "balance" | "payment";
 
 // Tab slugs are path segments under /app/settings/billing; overview is the
 // bare path.
 const TABS: { id: BillingTab; slug: string; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     { id: "overview", slug: "", label: "Overview", icon: GaugeIcon },
     { id: "plans", slug: "plans", label: "Plans", icon: LayersIcon },
-    { id: "ai", slug: "ai-credits", label: "AI & credits", icon: SparklesIcon },
+    { id: "balance", slug: "balance", label: "Balance", icon: WalletIcon },
     { id: "payment", slug: "payment", label: "Payment", icon: CreditCardIcon },
 ];
 
@@ -77,12 +76,22 @@ function pathForTab(t: BillingTab): string {
 
 export default function BillingSettingsPage() {
     const access = useFeatureAccess();
+    const canManageBilling = usePermission("MANAGE_BILLING");
     const currentOrg = useAppStore((s) => s.currentOrganization);
     const validateCode = useValidateDiscountCode();
     // Checkout / plan change / portal live in useUpgradeFlow, shared with the
     // in-app upgrade dialog.
     const flow = useUpgradeFlow();
     const upgradeDialog = useUpgradeDialog();
+    // Overview's "Change plan" opens the same full-screen chooser the locked
+    // surfaces use, so there is one upgrade experience everywhere.
+    const openPlanChooser = React.useCallback(() => {
+        upgradeDialog.open({
+            feature: "Your plan",
+            minPlan: "starter",
+            blurb: "Compare every plan, switch billing interval, and change your subscription in one step.",
+        });
+    }, [upgradeDialog]);
     const openPortal = flow.openPortal;
     const redemptions = useAppliedDiscounts();
     const { tab: tabSlug } = useParams({ from: "/app/settings/billing/{-$tab}" });
@@ -93,13 +102,10 @@ export default function BillingSettingsPage() {
         useBrowseState<BillingInterval>("settings.billing.interval", "annual", billingIntervalSchema);
     const [salesOpen, setSalesOpen] = React.useState(false);
 
-    // ?pool=1 is where a linked instance's "Premium" button lands (and what
-    // the overview's warmup-only row opens), and ?pool=done is where Stripe
-    // returns. Both are consumed once and stripped, so a refresh or a back
-    // navigation does not replay them.
+    // ?pool=1 is where a self-hosted instance's upgrade links land, opening the plan chooser;
+    // ?pool=done is where an earlier Warmup checkout returns. Both are consumed once and stripped.
     const [searchParams, setSearchParams] = useSearchParams();
     const poolParam = searchParams.get("pool");
-    const [poolOpen, setPoolOpen] = React.useState(false);
     const offerParam = searchParams.get("offer");
     React.useEffect(() => {
         if (offerParam !== "done") return;
@@ -109,19 +115,31 @@ export default function BillingSettingsPage() {
         setSearchParams(next, { replace: true });
     }, [offerParam, searchParams, setSearchParams]);
     React.useEffect(() => {
-        if (!poolParam) return;
-        if (poolParam === "1") setPoolOpen(true);
+        // Billing availability decides whether the chooser can do anything here.
+        if (!poolParam || access.loading) return;
+        if (poolParam === "1" && access.billing) {
+            upgradeDialog.open({
+                feature: "Premium warmup",
+                minPlan: "starter",
+                blurb: "Every plan warms all of its mailboxes in the premium pool, including the ones a linked self-hosted instance adds.",
+            });
+        }
         if (poolParam === "done") {
             toast.success("Payment received. The Warmup plan applies as soon as Stripe confirms.");
         }
         const next = new URLSearchParams(searchParams);
         next.delete("pool");
         setSearchParams(next, { replace: true });
-    }, [poolParam, searchParams, setSearchParams]);
+    }, [poolParam, searchParams, setSearchParams, upgradeDialog, access.loading, access.billing]);
 
     const resolvedTab = tabForSlug(tabSlug);
     const tab: BillingTab = resolvedTab ?? "overview";
     const setTab = (t: BillingTab) => navigate({ to: pathForTab(t) });
+
+    // The tab before dollars; old links and bookmarks land on Balance.
+    if (tabSlug === "ai-credits") {
+        return <Navigate to="/app/settings/billing/{-$tab}" params={{ tab: "balance" }} replace />;
+    }
 
     // Unknown slug (stale link, typo) — normalize the URL to the overview.
     if (resolvedTab === null) {
@@ -133,7 +151,13 @@ export default function BillingSettingsPage() {
         return <Navigate to="/app/settings/workspace" replace />;
     }
 
-    if (!access.loading && !access.isOwner) {
+    // A billing manager who is not the owner runs the balance and nothing else.
+    const balanceOnly = !access.loading && !access.isOwner && canManageBilling;
+    if (balanceOnly && tab !== "balance") {
+        return <Navigate to="/app/settings/billing/{-$tab}" params={{ tab: "balance" }} replace />;
+    }
+
+    if (!access.loading && !access.isOwner && !canManageBilling) {
         return (
             <SectionShell title="Billing" description="Owner only.">
                 <Section eyebrow="Permission denied">
@@ -189,15 +213,6 @@ export default function BillingSettingsPage() {
             (id) => getPlan(id).featured && planOrder(id) > planOrder(currentPlan.id),
         ) ?? PAID_PLANS.find((id) => planOrder(id) > planOrder(currentPlan.id));
 
-    // Overview's "Change plan" opens the same full-screen chooser the locked
-    // surfaces use, so there is one upgrade experience everywhere.
-    function openPlanChooser() {
-        upgradeDialog.open({
-            feature: "Your plan",
-            minPlan: "starter",
-            blurb: "Compare every plan, switch billing interval, and change your subscription in one step.",
-        });
-    }
 
     // Upgrade/switch to a plan. A valid promo code rides along to Stripe; the
     // flow picks Checkout, an in-place change, or the portal.
@@ -217,7 +232,7 @@ export default function BillingSettingsPage() {
         <SectionShell
             title="Billing"
             description={`Plan, payment and invoices for ${currentOrg?.name ?? "this workspace"}.`}
-            actions={flow.hasBillingCustomer ? (
+            actions={flow.hasBillingCustomer && !balanceOnly ? (
                 <TopbarAction
                     icon={<ExternalLinkIcon className="w-3 h-3" />}
                     onClick={openPortal}
@@ -228,7 +243,7 @@ export default function BillingSettingsPage() {
         >
             <div>
                 <div className="sticky top-0 z-20 bg-white/95 backdrop-blur px-2 md:px-6 flex items-center gap-1 border-b border-slate-200/70 overflow-x-auto">
-                    {TABS.map(({ id, label, icon: Icon }) => {
+                    {TABS.filter((t) => !balanceOnly || t.id === "balance").map(({ id, label, icon: Icon }) => {
                         const active = tab === id;
                         return (
                             <button
@@ -263,7 +278,7 @@ export default function BillingSettingsPage() {
                         className="divide-y divide-slate-200/70"
                     >
                         {tab === "overview" && (
-                            <OverviewTab onChangePlan={openPlanChooser} onWarmupPlan={() => setPoolOpen(true)} />
+                            <OverviewTab onChangePlan={openPlanChooser} />
                         )}
 
                         {tab === "plans" && (
@@ -371,7 +386,7 @@ export default function BillingSettingsPage() {
 
                                 <Section
                                     eyebrow="Redeemed codes"
-                                    description="Promo and referral codes this workspace has redeemed."
+                                    description="Promo codes this workspace has redeemed."
                                 >
                                     {redemptions.isPending ? (
                                         <div className="h-16 rounded bg-slate-100 animate-pulse" />
@@ -402,12 +417,7 @@ export default function BillingSettingsPage() {
                             </>
                         )}
 
-                        {tab === "ai" && (
-                            <>
-                                <CreditsCard isPaid={currentPlan.id !== "free"} />
-                                <AIUsageCard />
-                            </>
-                        )}
+                        {tab === "balance" && <BalanceTab isPaid={access.paid} />}
 
                         {tab === "payment" && !flow.hasBillingCustomer && (
                             <Section eyebrow="Payment" description="Complete checkout to set up billing. Operator-granted plans do not create a Stripe billing account.">
@@ -450,35 +460,13 @@ export default function BillingSettingsPage() {
                                     </Row>
                                 </Section>
 
-                                <Section
-                                    eyebrow="Invoices"
-                                    description="Receipts from your billing portal."
-                                >
-                                    <p className="text-[12px] text-slate-500 leading-relaxed">
-                                        Invoices live in Stripe's billing portal. Open the portal to download
-                                        PDF receipts.
-                                    </p>
-                                    <button
-                                        type="button"
-                                        onClick={openPortal}
-                                        disabled={flow.portalPending}
-                                        className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-[12px] text-slate-700 hover:text-slate-900 transition-colors disabled:opacity-60"
-                                    >
-                                        {flow.portalPending ? (
-                                            <Loader2Icon className="w-3 h-3 animate-spin" />
-                                        ) : (
-                                            <FileTextIcon className="w-3 h-3" />
-                                        )}
-                                        Open invoices
-                                    </button>
-                                </Section>
+                                <InvoicesSection description="Receipts for the plan, money added and automatic reloads." />
                             </>
                         )}
                     </motion.div>
                 </AnimatePresence>
             </div>
             <EnterpriseInquiryDialog open={salesOpen} onClose={() => setSalesOpen(false)} />
-            <WarmupPlanDialog open={poolOpen} onClose={() => setPoolOpen(false)} />
         </SectionShell>
     );
 }

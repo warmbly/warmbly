@@ -278,7 +278,20 @@ func (w *WorkerService) runGoogleWarmupActions(ctx context.Context, mail *wmail.
 		gmailID = id
 	}
 
+	// Engagement goes over IMAP; filing, deletion and anything IMAP could not settle stay on the API.
+	settled := w.runGmailIMAPEngagement(ctx, mail, action, rescue)
+	if gmailID == "" && action.RFCMessageID != "" && unsettledEngagement(action.Actions, settled) {
+		// A mailbox that switched sign-in while this was queued has no Gmail id yet; the API needs one.
+		if id, err := mail.GoogleData.Client.FindByRFCMessageID(ctx, action.RFCMessageID); err == nil {
+			gmailID = id
+		} else {
+			log.Error().Err(err).Str("email_id", action.EmailID.String()).Msg("Failed to find the warmup message (Gmail)")
+		}
+	}
 	for _, act := range action.Actions {
+		if settled[act] {
+			continue
+		}
 		switch act {
 		case models.WarmupActionFile:
 			if placement == models.WarmupPlacementInbox || gmailID == "" {
@@ -297,24 +310,24 @@ func (w *WorkerService) runGoogleWarmupActions(ctx context.Context, mail *wmail.
 				return err
 			}
 		case models.WarmupActionMarkRead:
-			if err := mail.GoogleData.Client.MarkAsRead(ctx, action.GmailID); err != nil {
-				log.Error().Err(err).Str("gmail_id", action.GmailID).Msg("Failed to mark as read")
+			if err := mail.GoogleData.Client.MarkAsRead(ctx, gmailID); err != nil {
+				log.Error().Err(err).Str("gmail_id", gmailID).Msg("Failed to mark as read")
 			}
 		case models.WarmupActionRescueFromSpam:
 			toInbox := placement == models.WarmupPlacementInbox
-			if err := mail.GoogleData.Client.RescueFromSpam(ctx, action.GmailID, label, toInbox); err != nil {
-				log.Error().Err(err).Str("gmail_id", action.GmailID).Msg("Failed to rescue from spam (Gmail)")
+			if err := mail.GoogleData.Client.RescueFromSpam(ctx, gmailID, label, toInbox); err != nil {
+				log.Error().Err(err).Str("gmail_id", gmailID).Msg("Failed to rescue from spam (Gmail)")
 				setRescue(rescue, rescueFailure(err))
 			} else {
 				setRescue(rescue, models.WarmupRescueMoved)
 			}
 		case models.WarmupActionMarkImportant:
-			if err := mail.GoogleData.Client.MarkImportant(ctx, action.GmailID); err != nil {
-				log.Error().Err(err).Str("gmail_id", action.GmailID).Msg("Failed to mark important")
+			if err := mail.GoogleData.Client.MarkImportant(ctx, gmailID); err != nil {
+				log.Error().Err(err).Str("gmail_id", gmailID).Msg("Failed to mark important")
 			}
 		case models.WarmupActionStar:
-			if err := mail.GoogleData.Client.AddStar(ctx, action.GmailID); err != nil {
-				log.Error().Err(err).Str("gmail_id", action.GmailID).Msg("Failed to star warmup message")
+			if err := mail.GoogleData.Client.AddStar(ctx, gmailID); err != nil {
+				log.Error().Err(err).Str("gmail_id", gmailID).Msg("Failed to star warmup message")
 			}
 		default:
 			log.Warn().Str("action", act).Msg("Unknown warmup action")

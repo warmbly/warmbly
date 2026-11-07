@@ -94,9 +94,17 @@ func (r *organizationRepository) ListMemberAccess(ctx context.Context, orgID uui
 	return out, rows.Err()
 }
 
+// scopeActionsSQL is what the member ($1 org, $2 user) may act with in scope: their roles that act in scope, within what the member holds.
+const scopeActionsSQL = `SELECT COALESCE((
+	SELECT bit_or(r.permissions)::int FROM organization_member_roles mr
+	JOIN organization_roles r ON r.id = mr.role_id AND r.organization_id = $1
+	WHERE mr.organization_id = $1 AND mr.user_id = $2 AND r.acts_in_scope), 0)
+	& COALESCE((SELECT om.permissions::int FROM organization_members om WHERE om.organization_id = $1 AND om.user_id = $2), 0)`
+
 // ResolveMemberScope is what a restricted member reaches right now: folder grants follow the folder's current contents.
 func (r *organizationRepository) ResolveMemberScope(ctx context.Context, orgID, userID uuid.UUID) (*models.ResourceScope, error) {
 	var campaigns, folders, mailboxes, tags []string
+	var actions models.OrganizationPermission
 	err := r.db.QueryRow(ctx, `
 		WITH granted_folders AS (
 			SELECT f.id FROM folders f
@@ -119,12 +127,13 @@ func (r *organizationRepository) ResolveMemberScope(ctx context.Context, orgID, 
 				SELECT id FROM granted_folders
 				UNION SELECT cf.folder_id FROM campaign_folders cf WHERE cf.campaign_id IN (SELECT id FROM in_scope)) v), '{}'),
 			COALESCE((SELECT array_agg(id::text) FROM boxes), '{}'),
-			COALESCE((SELECT array_agg(DISTINCT et.tag_id::text) FROM email_tags et WHERE et.email_id IN (SELECT id FROM boxes)), '{}')
-	`, orgID, userID).Scan(&campaigns, &folders, &mailboxes, &tags)
+			COALESCE((SELECT array_agg(DISTINCT et.tag_id::text) FROM email_tags et WHERE et.email_id IN (SELECT id FROM boxes)), '{}'),
+			(`+scopeActionsSQL+`)
+	`, orgID, userID).Scan(&campaigns, &folders, &mailboxes, &tags, &actions)
 	if err != nil {
 		return nil, err
 	}
-	return &models.ResourceScope{Campaigns: textUUIDs(campaigns), Folders: textUUIDs(folders), Mailboxes: textUUIDs(mailboxes), MailboxTags: textUUIDs(tags)}, nil
+	return &models.ResourceScope{Campaigns: textUUIDs(campaigns), Folders: textUUIDs(folders), Mailboxes: textUUIDs(mailboxes), MailboxTags: textUUIDs(tags), Actions: actions}, nil
 }
 
 // CountOwnedAccessResources counts how many of the ids belong to the organization, per kind.

@@ -127,6 +127,20 @@ function SendingSettings() {
         [],
     );
 
+    const patchABTesting = React.useCallback(
+        (next: Partial<OutreachSettings["ab_testing"]>) => {
+            setDraft((prev) => (prev ? { ...prev, ab_testing: { ...prev.ab_testing, ...next } } : prev));
+        },
+        [],
+    );
+
+    const patchBouncePipeline = React.useCallback(
+        (next: Partial<OutreachSettings["bounce_pipeline"]>) => {
+            setDraft((prev) => (prev ? { ...prev, bounce_pipeline: { ...prev.bounce_pipeline, ...next } } : prev));
+        },
+        [],
+    );
+
     const patch = React.useCallback(
         (next: Partial<NonNullable<typeof sto>>) => {
             setDraft((prev) =>
@@ -260,6 +274,45 @@ function SendingSettings() {
             </Section>
 
             <Section
+                eyebrow="A/B tests"
+                description="By default a step's A/B test names a winner once every arm has 30 delivered contacts and the leader's reply rate is ahead at 95% confidence. Results count contacts, and a reply counts for the step the contact had most recently been sent."
+            >
+                {isLoading || !draft ? (
+                    <div className="h-7 w-40 rounded bg-slate-100 animate-pulse" />
+                ) : (
+                    <Row
+                        label="Promote the winner automatically"
+                        description="Once a step's winner is significant, every new contact at that step gets it and the other arms are paused. Each step is promoted once, and you can resume any arm afterwards."
+                    >
+                        <Toggle
+                            on={!!draft.ab_testing?.auto_promote_winner}
+                            onChange={(on) => patchABTesting({ auto_promote_winner: on })}
+                        />
+                    </Row>
+                )}
+            </Section>
+
+            <Section
+                eyebrow="Bounces"
+                description="Every bounce is recorded and read for what it was about: an address that does not exist, a full mailbox, a block by the receiving provider, or a temporary failure. The cause shows in the contact's activity."
+            >
+                {isLoading || !draft ? (
+                    <div className="h-7 w-40 rounded bg-slate-100 animate-pulse" />
+                ) : (
+                    <Row
+                        label="Suppress addresses that bounce as invalid"
+                        description="On by default. Only a bounce that clearly says the address cannot receive mail puts it on the suppression list. A full mailbox, a provider block or a temporary failure keeps the lead in its campaign. A bounce that gives no reason stops the lead in that campaign but leaves the address sendable."
+                    >
+                        <Toggle
+                            on={draft.bounce_pipeline?.auto_suppress_on_bounce !== false}
+                            onChange={(on) => patchBouncePipeline({ auto_suppress_on_bounce: on })}
+                            label="Suppress addresses that bounce as invalid"
+                        />
+                    </Row>
+                )}
+            </Section>
+
+            <Section
                 eyebrow="Unsubscribe"
                 description="The opt-out every campaign email carries, added after the signature. A reply that asks to stop, a click on the link, and the mail client's own unsubscribe button all put the recipient on the suppression list, and no campaign emails them again. For cold outreach the List-Unsubscribe header (per campaign, on by default) is what satisfies the bulk-sender rules, so this line can stay a plain sentence. A campaign can override this in its preferences."
             >
@@ -270,7 +323,7 @@ function SendingSettings() {
                         <UnsubscribeRows value={draft.unsubscribe ?? DEFAULT_UNSUBSCRIBE} onChange={patchUnsubscribe} />
                         <Row
                             label="Honour replies that ask to stop"
-                            description="A reply saying unsubscribe, remove me, stop emailing me and the like puts the sender on the suppression list at once. This is what makes the reply-to-opt-out line a real mechanism."
+                            description="A reply saying unsubscribe, remove me, stop emailing me and the like, or a reply that is just STOP, puts the sender on the suppression list at once. This is what makes the reply-to-opt-out line a real mechanism."
                         >
                             <Toggle
                                 on={draft.reply_intent?.auto_suppress_on_unsubscribe_keyword !== false}
@@ -278,6 +331,26 @@ function SendingSettings() {
                             />
                         </Row>
                     </>
+                )}
+            </Section>
+
+            <Section
+                eyebrow="Replies"
+                description="A reply from a person always stops the campaign they answered (when that campaign stops on reply). Auto-replies and out-of-office messages never count as a reply."
+            >
+                {isLoading || !draft ? (
+                    <div className="h-7 w-40 rounded bg-slate-100 animate-pulse" />
+                ) : (
+                    <Row
+                        label="Hold the contact in every other campaign"
+                        description="Off by default. When on, a reply also holds the contact in every other campaign they are a lead of, for a year. The hold shows on each campaign's Leads tab, where you can resume it."
+                    >
+                        <Toggle
+                            on={draft.reply_intent?.stop_all_campaigns_on_reply === true}
+                            onChange={(on) => patchReplyIntent({ stop_all_campaigns_on_reply: on })}
+                            label="Hold the contact in every other campaign"
+                        />
+                    </Row>
                 )}
             </Section>
 

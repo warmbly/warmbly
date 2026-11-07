@@ -6,14 +6,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Label, NumberInput, TextInput } from "@/components/ui/field";
 import { OptionSelect } from "@/components/app/campaigns/preferences/components/CampaignPreferenceBoolBox";
 import TimeSelect from "@/components/ui/TimeSelect";
-import WeekdayBitmask from "@/components/app/campaigns/schedule/WeekdayBitmask";
+import WarmupDaysPicker from "./WarmupDaysPicker";
 import { Loading } from "@/components/loader";
 import updateEmail from "@/lib/api/client/app/emails/updateEmail";
 import warmupLifecycle from "@/lib/api/client/app/emails/warmupLifecycle";
 import type Inbox from "@/lib/api/models/app/emails/Inbox";
 import { cloudLinkScope, invalidateWarmupReports } from "@/lib/api/hooks/app/cloudlink/warmupReports";
-
-const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 // Bulk warmup-start dialog. Lets the user optionally apply one set of warmup
 // settings to every selected mailbox before starting — useful when onboarding a
@@ -23,11 +21,15 @@ export default function BulkWarmupDialog({
     ids,
     onClose,
     onComplete,
+    ownershipPending,
+    allowFollow = true,
 }: {
     open: boolean;
     ids: string[];
     onClose: () => void;
-    onComplete: () => void;
+    onComplete: (ids: string[]) => void;
+    ownershipPending: boolean;
+    allowFollow?: boolean;
 }) {
     const queryClient = useQueryClient();
     const [customize, setCustomize] = useState(true);
@@ -45,9 +47,10 @@ export default function BulkWarmupDialog({
 
     const n = ids.length;
     const baseOverMax = base > max;
+    const sendingDays = allowFollow ? days : (days || 127);
 
     const start = async () => {
-        if (busy || n === 0) return;
+        if (busy || ownershipPending || n === 0) return;
         if (customize && baseOverMax) {
             toast.error("Starting volume can't exceed the maximum.");
             return;
@@ -61,7 +64,7 @@ export default function BulkWarmupDialog({
             warmup_reply_rate: replyRate,
             warmup_start_time: startTime,
             warmup_end_time: endTime,
-            warmup_days: days,
+            warmup_days: sendingDays,
             warmup_placement: placement,
             warmup_folder: folder.trim(),
         };
@@ -73,7 +76,8 @@ export default function BulkWarmupDialog({
                 await warmupLifecycle(id, "start");
             }),
         );
-        const failed = results.filter((r) => r.status === "rejected").length;
+        const started = ids.filter((_, index) => results[index].status === "fulfilled");
+        const failed = n - started.length;
         await queryClient.invalidateQueries({ queryKey: ["emails"] });
         await invalidateWarmupReports(queryClient, scope);
         setBusy(false);
@@ -82,7 +86,7 @@ export default function BulkWarmupDialog({
         } else {
             toast.success(`Warmup started for ${n} mailbox${n > 1 ? "es" : ""}`);
         }
-        onComplete();
+        onComplete(started);
         onClose();
     };
 
@@ -100,6 +104,9 @@ export default function BulkWarmupDialog({
                     />
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
                         <motion.div
+                            role="dialog"
+                            aria-modal="true"
+                            aria-label="Start warmup"
                             initial={{ opacity: 0, scale: 0.97, y: 8 }}
                             animate={{ opacity: 1, scale: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.97, y: 8 }}
@@ -128,7 +135,12 @@ export default function BulkWarmupDialog({
                             </div>
 
                             {/* Body */}
-                            <div className="px-5 py-4 space-y-4">
+                            <fieldset disabled={busy || ownershipPending} className="px-5 py-4 space-y-4 min-w-0">
+                                {ownershipPending && (
+                                    <p role="status" className="text-[11.5px] text-slate-600 leading-relaxed">
+                                        Waiting for mailbox ownership to be confirmed.
+                                    </p>
+                                )}
                                 <label className="flex items-center gap-2.5 cursor-pointer select-none">
                                     <Toggle on={customize} onChange={setCustomize} />
                                     <span className="text-[12.5px] text-slate-700">
@@ -169,10 +181,8 @@ export default function BulkWarmupDialog({
                                     </div>
                                     <div>
                                         <Label>Sending days</Label>
-                                        <WeekdayBitmask weekdays={WEEKDAYS} value={days} setValue={setDays} />
-                                        <p className="text-[11px] text-slate-400 mt-1.5">
-                                            Leave all unselected to send every day.
-                                        </p>
+                                        <WarmupDaysPicker value={sendingDays} onChange={setDays} allowFollow={allowFollow} />
+                                        {!allowFollow && <p className="text-[11px] text-slate-500 mt-1.5">Cloud-linked mailboxes need explicit sending days.</p>}
                                     </div>
                                     <div>
                                         <Label>Warmup mail in the mailbox</Label>
@@ -200,7 +210,7 @@ export default function BulkWarmupDialog({
                                         </div>
                                     )}
                                 </div>
-                            </div>
+                            </fieldset>
 
                             {/* Footer */}
                             <div className="px-5 h-14 flex items-center justify-end gap-2 border-t border-slate-200 bg-slate-50/60">
@@ -213,7 +223,7 @@ export default function BulkWarmupDialog({
                                 </button>
                                 <button
                                     onClick={start}
-                                    disabled={busy || n === 0}
+                                    disabled={busy || ownershipPending || n === 0}
                                     className="h-8 px-3.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
                                 >
                                     {busy && <Loading className="!w-3.5 h-3.5 text-white" />}

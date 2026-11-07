@@ -3,7 +3,6 @@
 // pause/resume/remove, or the way in when it is not enrolled yet.
 
 import React from "react";
-import { Link } from "@tanstack/react-router";
 import toast from "react-hot-toast/headless";
 import { CloudIcon, Loader2Icon, PauseIcon, PlayIcon } from "lucide-react";
 import type { AppError } from "@/lib/api/client/normalizeError";
@@ -24,6 +23,7 @@ import { Toggle } from "@/components/app/campaigns/preferences/components/Campai
 import { cloudMailboxPickerOpened } from "@/lib/cloudMailboxConnect";
 import { cloudLinkScope, invalidateWarmupReports } from "@/lib/api/hooks/app/cloudlink/warmupReports";
 import type Inbox from "@/lib/api/models/app/emails/Inbox";
+import { cloudAddsNeedSubscription } from "@/lib/cloudPlan";
 
 export default function CloudWarmupCard({ mailboxId, email, provider, status }: { mailboxId: string; email: string; provider: string; status: Inbox["status"] }) {
     const pool = useCloudPool();
@@ -52,22 +52,27 @@ export default function CloudWarmupCard({ mailboxId, email, provider, status }: 
 
     const warmup = resolveMailboxWarmup({ id: mailboxId, status }, undefined, pool);
     if (warmup.source === "unknown") return <p className="px-5 py-3 text-xs text-slate-500">Cloud warmup status {warmup.activity === "checking" ? "checking…" : "unavailable"}</p>;
-    if (!pool.connected) {
-        return (
-            <div className="px-5 py-3 flex items-center gap-2.5 text-[12px] text-slate-500">
-                <CloudIcon className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                <span className="min-w-0 flex-1">Warm this mailbox in the Warmbly pool instead, free for up to 10 mailboxes.</span>
-                <Link to="/app/settings/warmbly-cloud" className="shrink-0 font-medium text-sky-700 hover:text-sky-900">
-                    Connect Warmbly Cloud
-                </Link>
-            </div>
-        );
-    }
+    if (!pool.connected) return null;
 
     const row = pool.rowFor(mailboxId);
     const cloud = row?.cloud;
     const sendFailure = cloudSendFailure(cloud);
     const supported = providerSupported(provider);
+
+    const subscribeURL = pool.plan?.upgrade_url || pool.plan?.manage_url;
+    if (!row?.enrolled && cloudAddsNeedSubscription(pool.plan)) {
+        return (
+            <div className="px-5 py-3 flex items-center gap-2.5 text-[12px] text-slate-600">
+                <CloudIcon className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                <span className="min-w-0 flex-1">This mailbox warms on this instance, which is not effective. Adding it to the Warmbly Cloud pool needs a paid plan.</span>
+                {subscribeURL && (
+                    <a href={subscribeURL} target="_blank" rel="noreferrer" className="shrink-0 font-medium text-sky-700 hover:text-sky-900">
+                        See plans
+                    </a>
+                )}
+            </div>
+        );
+    }
 
     if (!row?.enrolled) {
         return (
@@ -131,13 +136,14 @@ export default function CloudWarmupCard({ mailboxId, email, provider, status }: 
                             disabled={busy || warmup.activity === "connecting" || warmup.activity === "removing"}
                             onClick={() =>
                                 confirm.show(
-                                    row.managed
+                                    (row.managed
                                         ? `Remove ${email} from this instance and stop its Cloud warmup sending and receiving? Its mailbox, sign-in and history stay in your Warmbly Cloud workspace. You can restart warmup there.`
                                         : row.independent_smtp || cloud?.managed
                                         ? `Disconnect Cloud warmup for ${email}? Its Cloud mailbox, credentials and warmup history stay on Cloud. Campaigns here keep their existing app-password connection. Cloud warmup sending and receiving stop until you restart them there.`
                                         : row.executor === "instance"
                                         ? `Stop warming ${email} in the Warmbly pool? Its credential never left this server, and local warmup takes over.`
-                                        : `Stop warming ${email} in the Warmbly pool? The cloud deletes its credential right away and local warmup takes over.`,
+                                        : `Stop warming ${email} in the Warmbly pool? The cloud deletes its credential right away and local warmup takes over.`) +
+                                        (cloudAddsNeedSubscription(pool.plan) ? " A free workspace cannot add it back without a paid plan." : ""),
                                     async () => {
                                         await run(() => unenroll.mutateAsync(mailboxId), row.managed ? `${email} removed from this instance` : `${email} removed from the pool`);
                                     },

@@ -59,19 +59,23 @@ Auth: **Scope** `WEBHOOKS` · **Org permission** `manage_settings`.
       "type": "campaign.reply_received",
       "category": "campaign",
       "description": "A human reply lands for a campaign thread.",
-      "firehose": false
+      "firehose": false,
+      "deprecated": false
     },
     {
       "type": "campaign.email_sent",
       "category": "campaign",
       "description": "A campaign email is dispatched by a worker.",
-      "firehose": true
+      "firehose": true,
+      "deprecated": false
     }
   ]
 }
 ```
 
 `firehose: true` means the event is high-volume. An endpoint with an empty `event_types` list does **not** receive firehose events automatically. To receive them you must list each one explicitly in `event_types`. See [Firehose events](#firehose-events) for details.
+
+`deprecated: true` means Warmbly never delivers the event. It stays a valid `event_types` value and automation trigger, so an existing subscription keeps saving, but nothing arrives for it and an empty `event_types` list does not include it. Its `description` names what to use instead. See [Deprecated events](#deprecated-events).
 
 ## Create a webhook endpoint
 
@@ -356,7 +360,7 @@ There is no `version` field in the payload. If an event's payload ever changes i
 
 ### Reply received payload
 
-`campaign.reply_received` carries `contact_email`, `intent` and `confidence` (the workspace keyword list's reading), `subject`, `snippet`, `action_taken`, `thread_id` and `email_account_id`. `contact_id` and `campaign_id` are optional, included only when the reply is linked to the corresponding contact or campaign. When [inbox tagging](/guides/inbox-tagging/) judged the message it also carries the stored verdict:
+`campaign.reply_received` carries `contact_email`, `intent` and `confidence` (the reply classifier's verdict, the same one the campaign's reply counts show; the workspace keyword lists decide only a reply the classifier could not), `subject`, `snippet`, `action_taken`, `thread_id` and `email_account_id`. `contact_id` and `campaign_id` are optional, included only when the reply is linked to the corresponding contact or campaign. When [inbox tagging](/guides/inbox-tagging/) judged the message it also carries the stored verdict:
 
 ```json
 {
@@ -370,6 +374,34 @@ There is no `version` field in the payload. If an event's payload ever changes i
 ```
 
 `ai_kind` and `ai_intent` are empty strings when tagging was not confident enough to act on them, and the six keys are absent when tagging never judged the message. See [Automations](/guides/automations/#filtering-replies-on-inbox-tagging) for what each holds.
+
+`inbox.reply_received` carries the same fields with `trigger` set to `inbox_reply`. It fires once per message, when a person (not an out-of-office or other automatic reply) answers an email the workspace sent through Warmbly: a campaign step, or a message written in the inbox. The reply's `In-Reply-To` has to name that email, so a reply to mail sent from your own mail client, warmup mail and a fresh message from a contact do not raise it. Like `campaign.reply_received`, it fires only while reply handling is on in the workspace's outreach settings (the default).
+
+### Campaign completed payload
+
+`campaign.completed` carries `campaign_id`, `campaign_name` and `reason`: `all_sent` when every lead finished the sequence, `end_date` when the campaign reached its end date. A campaign paused because verification refused its remaining leads, one waiting on held leads, and a continuous campaign out of leads are not complete and do not raise it.
+
+### Mailbox payloads
+
+Every `email_account.*` event carries `email_account_id`, `email` and `provider`.
+
+- `email_account.disconnected` fires once when a working mailbox is paused because it can no longer be used, and adds `reason` (`auth_error` when the provider refused the sign-in, `account_disabled` when the provider disabled the account, `fair_use` when sync fair use stopped it) and `error_code`. Reconnecting the mailbox and losing it again raises it again.
+- `email_account.error` fires when a new temporary sending or sync error is recorded for a mailbox, and adds `error_code` and `operation` (`send`, `sync` or `unknown`). A repeat of an error that is still unresolved, and a brief failure on a mailbox that worked moments ago, do not raise it.
+- `email_account.synced` fires when a mailbox finishes importing its existing mail after it connects, and adds `backfill_status` (`complete`). It does not fire for the ongoing sync that follows.
+
+### Automation run payload
+
+`automation.run` carries `automation_id`, `automation_name`, `run_id`, `trigger_event` (the event that started the run, or `campaign.action` for a run a campaign step launched) and `status` (`success`, or `error` when a step failed with no error path). It also carries `contact_id`, `contact_email` and `campaign_id` when the triggering event had them. It is a firehose event. It never starts an automation, so a flow cannot trigger itself.
+
+### Bulk operation payloads
+
+The `bulk_operation.*` events report contact file imports. Each carries `operation_id` (the import's id), `operation_type` (`contact_import`), `entity_type` (`contact`) and `filename`.
+
+- `bulk_operation.started` fires when an import is started.
+- `bulk_operation.completed` fires when it finishes, and adds `total`, `imported`, `updated`, `skipped` and `failed` row counts.
+- `bulk_operation.failed` fires when it stops with an error, and adds `error`.
+
+A cancelled import raises neither `completed` nor `failed`.
 
 ### Delivery headers
 
@@ -469,19 +501,22 @@ The full catalog is available at `GET /webhooks/event-types`. Below is the compl
 | --- | --- | --- |
 | `campaign.started` | A campaign starts sending. | |
 | `campaign.paused` | A campaign is paused. | |
-| `campaign.completed` | A campaign finishes all sends. | |
+| `campaign.completed` | A campaign finishes: every lead is done, or it reached its end date. See [Campaign completed payload](#campaign-completed-payload). | |
 | `campaign.created` | A campaign is created. | |
 | `campaign.updated` | A campaign's settings change. | |
 | `campaign.deleted` | A campaign is deleted. | |
+| `template.created` | An email template is created. | |
+| `template.updated` | An email template changes. | |
+| `template.deleted` | An email template is deleted. | |
 | `campaign.email_sent` | A campaign email is dispatched by a worker. | yes |
-| `campaign.email_delivered` | A campaign email is accepted by the recipient's mail server. | yes |
+| `campaign.email_delivered` | **Deprecated, never delivered.** Warmbly cannot observe delivery. Use `campaign.email_sent` and `campaign.email_bounced`. | yes |
 | `campaign.email_opened` | A person opens a tracked email. The payload carries `origin` when the open said anything about itself: the mail client, app or webmail, device and location, as on a [contact timeline](/api/reference/contacts/#list-a-contacts-timeline) event. Automated opens (mail privacy proxies, fetches inside seconds of the send) do not fire it. | yes |
 | `campaign.email_clicked` | A person clicks a tracked link. The payload carries the `url`, the link's `link_label`, and `origin` with the device and browser the link opened in. Automated clicks (security gateways walking the links) do not fire it. | yes |
 | `campaign.email_bounced` | A campaign email bounces. | |
 | `campaign.reply_received` | A human reply lands for a campaign thread. | |
 | `campaign.unsubscribed` | A recipient opts out. `source` is `one_click` (the mail client's button), `link` (the link in the email), `reply` (a reply asking to stop) or `action` (a sequence's unsubscribe step). | |
 | `campaign.deliverability_warning` | The campaign's rolling bounce or complaint rate enters the early-warning band. | |
-| `campaign.action` | A sequence flow `notify` action node fires. | |
+| `campaign.action` | **Deprecated, never delivered.** It is only the trigger of automations a campaign step runs. | |
 
 ### Warmup
 
@@ -505,20 +540,20 @@ The full catalog is available at `GET /webhooks/event-types`. Below is the compl
 | Event | Description | Firehose |
 | --- | --- | --- |
 | `inbox.email_received` | A new email arrives in a connected mailbox. | yes |
-| `inbox.email_updated` | An inbox email's state changes (labels, read status). | yes |
-| `inbox.email_deleted` | An inbox email is deleted or expunged. | yes |
-| `inbox.reply_received` | A human reply arrives on a tracked thread (distinct from `campaign.reply_received`). | |
+| `inbox.email_updated` | **Deprecated, never delivered.** Per-message inbox changes are not sent as webhooks. | yes |
+| `inbox.email_deleted` | **Deprecated, never delivered.** Per-message inbox changes are not sent as webhooks. | yes |
+| `inbox.reply_received` | A person (not an automatic reply) answers a campaign email or an email sent from the inbox. See [Reply received payload](#reply-received-payload). | |
 
 ### Mailbox
 
 | Event | Description | Firehose |
 | --- | --- | --- |
 | `email_account.connected` | A mailbox is connected to the organization. | |
-| `email_account.disconnected` | A mailbox loses its connection (auth failure, token revoked). | |
+| `email_account.disconnected` | A working mailbox is paused because it can no longer be used (sign-in refused, account disabled, fair-use stop). See [Mailbox payloads](#mailbox-payloads). | |
 | `email_account.removed` | A mailbox is removed from the organization. | |
-| `email_account.error` | A mailbox encounters a sync or sending error. | |
-| `email_account.synced` | A mailbox sync cycle completes. | yes |
-| `email_account.health_changed` | A mailbox's health state transitions. | |
+| `email_account.error` | A mailbox hits a new temporary sending or sync error. | |
+| `email_account.synced` | A mailbox finishes importing its existing mail after it connects. | |
+| `email_account.health_changed` | **Deprecated, never delivered.** Use `warmup.health_changed`, which carries the same transition. | |
 
 ### Contact
 
@@ -548,7 +583,7 @@ The full catalog is available at `GET /webhooks/event-types`. Below is the compl
 | `automation.created` | An automation is created. | |
 | `automation.updated` | An automation's definition or enabled state changes. | |
 | `automation.deleted` | An automation is deleted. | |
-| `automation.run` | An automation completes a run for a contact. | |
+| `automation.run` | An automation finishes a run. See [Automation run payload](#automation-run-payload). | yes |
 
 ### Meeting
 
@@ -572,9 +607,9 @@ The full catalog is available at `GET /webhooks/event-types`. Below is the compl
 
 | Event | Description | Firehose |
 | --- | --- | --- |
-| `bulk_operation.started` | A bulk import, export, or deletion begins. | |
-| `bulk_operation.completed` | A bulk operation finishes successfully. | |
-| `bulk_operation.failed` | A bulk operation fails or is aborted. | |
+| `bulk_operation.started` | A contact file import is started. See [Bulk operation payloads](#bulk-operation-payloads). | |
+| `bulk_operation.completed` | A contact file import finishes. | |
+| `bulk_operation.failed` | A contact file import stops with an error. | |
 
 ### Workspace
 
@@ -593,6 +628,18 @@ The full catalog is available at `GET /webhooks/event-types`. Below is the compl
 ### Trigger-only (not delivered outbound)
 
 `inbound.webhook` is an automation trigger for receiving inbound HTTP requests. It is never delivered outbound as a webhook event.
+
+### Deprecated events
+
+These events are in the catalog with `deprecated: true` and are never delivered. They remain valid in `event_types` and as automation triggers, so an endpoint or automation that already names one keeps saving, but it receives nothing for it. The dashboard's event pickers no longer offer them.
+
+| Event | Why | Use instead |
+| --- | --- | --- |
+| `campaign.email_delivered` | Warmbly hands mail to the sender's own mailbox provider and cannot see the recipient's server accept it. | `campaign.email_sent`, then `campaign.email_bounced` if it bounces |
+| `campaign.action` | It names the trigger of an automation a campaign step runs, not something that happens on its own. | `automation.run`, or a Fire event step's `custom.event` |
+| `inbox.email_updated` | Per-message changes (read state, labels, moves) have no single source that reports each one once. | `inbox.email_received`, `inbox.reply_received` |
+| `inbox.email_deleted` | As above. | `inbox.email_received`, `inbox.reply_received` |
+| `email_account.health_changed` | The mailbox health shown in the dashboard is its warmup health, which already has an event. | `warmup.health_changed` |
 
 ## OAuth app-level subscriptions
 

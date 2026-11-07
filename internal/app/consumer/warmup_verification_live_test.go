@@ -268,6 +268,36 @@ func TestLiveWarmupLineageConcurrentInitialRelayArrivalsEngageOnce(t *testing.T)
 	}
 }
 
+// A send that ended failed or cancelled is never confirmed, so its arrival is filed now instead of held until the token expires.
+func TestLiveWarmupLineageArrivalOfASettledSendIsNotHeld(t *testing.T) {
+	for _, status := range []string{"failed", "cancelled"} {
+		t.Run(status, func(t *testing.T) {
+			s, handle := liveWarmupService(t)
+			ctx := t.Context()
+			f := newWarmupFixture(t, handle)
+			token := f.mintToken(t, s.WarmupRepo)
+			if _, err := handle.Exec(ctx, `INSERT INTO warmup_tasks(task_id,lineage_version,subject,max_turns)VALUES($1,1,$2,1)`, f.task, f.subject); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := handle.Exec(ctx, `UPDATE tasks SET status=$2::task_status WHERE id=$1`, f.task, status); err != nil {
+				t.Fatal(err)
+			}
+			e := f.arrival("<[EMAIL]>", []string{config.WarmupVerifyHeader + ":" + token.String()})
+			if err := s.HandleNewEmail(ctx, e); err != nil {
+				t.Fatal(err)
+			}
+			var pending, visible, receipts int
+			if err := handle.QueryRow(ctx, `SELECT (SELECT COUNT(*) FROM unibox_pending_emails WHERE id=$1), (SELECT COUNT(*) FROM unibox_emails WHERE id=$1),
+				(SELECT COUNT(*) FROM warmup_received WHERE sender_account_id=$2)`, e.Message.ID, f.sender).Scan(&pending, &visible, &receipts); err != nil {
+				t.Fatal(err)
+			}
+			if pending != 0 || visible != 0 || receipts != 0 {
+				t.Fatalf("settled send: pending=%d visible=%d receipts=%d", pending, visible, receipts)
+			}
+		})
+	}
+}
+
 func TestLiveWarmupLineageConsumerReceiptGuards(t *testing.T) {
 	for _, name := range []string{"exact headerless", "headerless rewrite", "forwarded marker", "foreign mailbox", "expired", "retired"} {
 		t.Run(name, func(t *testing.T) {

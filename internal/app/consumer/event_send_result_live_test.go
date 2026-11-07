@@ -198,7 +198,7 @@ func (f *sendResultFixture) dispatch(t *testing.T, s *JobsService) uuid.UUID {
 	if err := s.TaskRepo.UpdateCampaignTaskTracking(ctx, taskID, f.contact, f.step); err != nil {
 		t.Fatalf("tracking: %v", err)
 	}
-	reserved, err := s.CampaignProgressRepo.ReserveSend(ctx, f.campaign, f.contact, f.step, taskID, uuid.Nil, true)
+	reserved, err := s.CampaignProgressRepo.ReserveSend(ctx, f.campaign, f.contact, f.step, taskID, uuid.Nil, true, nil)
 	if err != nil || !reserved {
 		t.Fatalf("reserve send: reserved=%v err=%v", reserved, err)
 	}

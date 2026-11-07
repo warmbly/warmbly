@@ -99,6 +99,19 @@ func TestWithVariant(t *testing.T) {
 	}
 }
 
+func TestMigrationRetainsKafkaWorkerImages(t *testing.T) {
+	os_Unsetenv(t, "FLEET_IMAGE_VARIANT")
+	t.Setenv("EVENTBUS_PROVIDER", "nats")
+	for _, setting := range []string{"EVENTBUS_READ_BOTH", "CODEC_READ_BOTH"} {
+		t.Setenv("EVENTBUS_READ_BOTH", "false")
+		t.Setenv("CODEC_READ_BOTH", "false")
+		t.Setenv(setting, "true")
+		if got := imageVariant(); got != "-kafka" {
+			t.Fatalf("%s selected image without Kafka support: %q", setting, got)
+		}
+	}
+}
+
 // A pin is the sharp edge: an operator canarying a node types "v0.4.4", and
 // that has to reach the machine as the image the machine can actually run.
 func TestDesiredVersionAppliesVariantToPinsAndFleetTarget(t *testing.T) {

@@ -153,7 +153,11 @@ func (p *InboxPoster) deliverInbound(ctx context.Context, orgID uuid.UUID, acct 
 		return err
 	}
 	st := settingsFrom(conn)
-	if st.InboxChannel == "" || !inboxWants(st.InboxScope, acct, msg) {
+	if st.InboxChannel == "" {
+		return nil
+	}
+	verdict := replyVerdict(ctx, orgID, msg)
+	if !inboxWants(st.InboxScope, acct, msg, verdict) {
 		return nil
 	}
 	if !p.guard.first(ctx, "slack:inbox:msg:"+orgID.String()+":"+msg.ID.String(), inboxMessageTTL) {
@@ -169,7 +173,7 @@ func (p *InboxPoster) deliverInbound(ctx context.Context, orgID uuid.UUID, acct 
 	if err != nil {
 		return err
 	}
-	info := p.describe(ctx, orgID, acct, msg)
+	info := p.describe(ctx, orgID, acct, msg, verdict)
 
 	existing, err := p.d.Repo.GetInboxThread(ctx, orgID, msg.ThreadID)
 	if err != nil {
@@ -225,7 +229,7 @@ func sameChannel(stored, setting string) bool {
 
 // inboxWants applies the inbox scope: never the mailbox's own mail; "replies"
 // keeps only a person's reply, never an auto-reply, out-of-office or bounce.
-func inboxWants(scope string, acct *models.Email, msg *models.EmailMessageStoreData) bool {
+func inboxWants(scope string, acct *models.Email, msg *models.EmailMessageStoreData, verdict replyclassify.Result) bool {
 	sender := senderAddress(msg.FromAddr)
 	if sender == "" {
 		return false
@@ -241,11 +245,18 @@ func inboxWants(scope string, acct *models.Email, msg *models.EmailMessageStoreD
 	if len(msg.InReplyTo) == 0 {
 		return false
 	}
-	in := classifyInput(msg)
-	if replyclassify.IsDeliveryFailure(in) {
+	if replyclassify.IsDeliveryFailure(classifyInput(msg)) {
 		return false
 	}
-	return !replyclassify.IsAutomated(replyclassify.ClassifyOffline(in).Class)
+	return !replyclassify.IsAutomated(verdict.Class)
+}
+
+// replyVerdict reads msg the way the campaign does: headers and an opt-out
+// first, then the tagger's stored verdict, then the offline keywords.
+func replyVerdict(ctx context.Context, orgID uuid.UUID, msg *models.EmailMessageStoreData) replyclassify.Result {
+	in := classifyInput(msg)
+	in.OrganizationID, in.MessageID = orgID, msg.MessageID
+	return replyclassify.ClassifyKnown(ctx, in)
 }
 
 func classifyInput(msg *models.EmailMessageStoreData) replyclassify.Input {
@@ -294,7 +305,7 @@ type inboundInfo struct {
 	Excerpt  string
 }
 
-func (p *InboxPoster) describe(ctx context.Context, orgID uuid.UUID, acct *models.Email, msg *models.EmailMessageStoreData) inboundInfo {
+func (p *InboxPoster) describe(ctx context.Context, orgID uuid.UUID, acct *models.Email, msg *models.EmailMessageStoreData, verdict replyclassify.Result) inboundInfo {
 	in := classifyInput(msg)
 	info := inboundInfo{
 		ThreadID: msg.ThreadID,
@@ -304,7 +315,7 @@ func (p *InboxPoster) describe(ctx context.Context, orgID uuid.UUID, acct *model
 		Excerpt:  quoteBlock(sanitizeInbound(truncateRunes(cleanExcerpt(in.BodyText), inboxExcerptRunes))),
 	}
 	var tags []string
-	switch replyclassify.ClassifyOffline(in).Class {
+	switch verdict.Class {
 	case replyclassify.ClassPositive:
 		tags = append(tags, "Positive")
 	case replyclassify.ClassNegative:

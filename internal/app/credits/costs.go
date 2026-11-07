@@ -1,103 +1,43 @@
 package credits
 
-import "strings"
+import "github.com/warmbly/warmbly/internal/models"
 
-// Every AI credit cost in the product, in one place. Handlers and services
-// must reference these constants instead of hardcoding amounts, and the
-// "AI credits" guide in docs/ mirrors this table.
+// What each kind of work is expected to cost, checked against the balance
+// before it starts. The charge afterwards is the actual cost (Price); these
+// only decide whether there is enough to begin, so they sit at a typical
+// call's price, not a worst case. The "Balance and usage" guide in docs/
+// mirrors this table.
 const (
-	// CostWritingAssistant is one writing-assistant generation (POST /generation/write).
-	CostWritingAssistant = 1
-
-	// CostAgentIteration is one iteration of the dashboard agent loop.
-	CostAgentIteration = 1
-
-	// CostReplyDraft is one context-grounded unibox reply draft.
-	CostReplyDraft = 2
-
-	// CostResearchRun is one contact research run (nothing_found included).
-	CostResearchRun = 2
-
-	// CostAutomationAINode is one single-shot AI step (classify/extract/generate
-	// mode) or AI switch execution, and one Ask-AI branch evaluation.
-	CostAutomationAINode = 1
-
-	// CostCampaignAIStep is one campaign-sequence AI-decided "switch" step execution (one
-	// contact passing through the step).
-	CostCampaignAIStep = 1
-
-	// CostInboxAgentThread is one inbound thread handled by the inbox agent.
-	CostInboxAgentThread = 5
-
-	// CostWebSearch is one web-search lookup made on behalf of an AI step
-	// (charged only when the search returned results).
-	CostWebSearch = 1
-
-	// CostSpamAnalysis is one AI spam analysis of a campaign template
-	// (POST /templates/analyze, and every Re-check after an edit).
-	CostSpamAnalysis = 2
+	// EstimateWritingAssistant is one writing-assistant generation.
+	EstimateWritingAssistant models.Micro = 10_000
+	// EstimateAgentIteration is one iteration of an agent loop.
+	EstimateAgentIteration models.Micro = 20_000
+	// EstimateReplyDraft is one context-grounded reply draft.
+	EstimateReplyDraft models.Micro = 20_000
+	// EstimateResearchRun is one contact research run.
+	EstimateResearchRun models.Micro = 50_000
+	// EstimateAINode is one single-shot AI step in an automation or a campaign.
+	EstimateAINode models.Micro = 10_000
+	// EstimateInboxAgentThread is one inbound thread handled by the inbox agent.
+	EstimateInboxAgentThread models.Micro = 50_000
+	// EstimateSpamAnalysis is one AI spam analysis of a template.
+	EstimateSpamAnalysis models.Micro = 20_000
 )
 
-// Usage-based metering. The per-feature constants above are the up-front
-// MINIMUM charged before the provider call (they double as the reservation
-// that gates an empty balance); after the call, the real token usage is priced
-// with MeteredCost and any overage beyond the minimum is settled from the
-// ledger (draining to zero at worst — a delivered result never fails on the
-// settle). So small calls cost exactly the flat minimum, and big calls pay for
-// what they actually used.
+// MinBalance is the least a workspace needs to start any metered work.
+const MinBalance models.Micro = 10_000
+
+// Top-up and automatic reload bounds, in micro-dollars.
 const (
-	// tokensPerCreditLight prices the light model tier (mini/haiku-class).
-	tokensPerCreditLight = 1500
-	// tokensPerCreditStandard prices the standard tier (4o/sonnet-class).
-	tokensPerCreditStandard = 400
+	TopUpMin models.Micro = 5 * models.MicroPerUSD
+	TopUpMax models.Micro = 5_000 * models.MicroPerUSD
+
+	ReloadThresholdMin    models.Micro = 10_000
+	ReloadThresholdMax    models.Micro = 1_000 * models.MicroPerUSD
+	ReloadMonthlyLimitMax models.Micro = 50_000 * models.MicroPerUSD
+
+	DefaultReloadThreshold    models.Micro = 5 * models.MicroPerUSD
+	DefaultReloadAmount       models.Micro = 25 * models.MicroPerUSD
+	DefaultReloadMonthlyLimit models.Micro = 250 * models.MicroPerUSD
+	DefaultLowBalance         models.Micro = 500_000
 )
-
-// lightModelMarkers identify light-tier models by name substring.
-var lightModelMarkers = []string{"mini", "haiku", "nano", "flash", "lite"}
-
-// TokensPerCredit returns how many tokens one credit buys on this model.
-func TokensPerCredit(model string) int {
-	m := strings.ToLower(model)
-	for _, marker := range lightModelMarkers {
-		if strings.Contains(m, marker) {
-			return tokensPerCreditLight
-		}
-	}
-	return tokensPerCreditStandard
-}
-
-// MeteredCost prices actual token usage on a model in credits (rounded up).
-// Zero tokens price to zero: callers keep their flat minimum as the floor.
-func MeteredCost(model string, tokens int) int {
-	if tokens <= 0 {
-		return 0
-	}
-	per := TokensPerCredit(model)
-	return (tokens + per - 1) / per
-}
-
-// CreditPack is a fixed top-up pack purchasable through Stripe Checkout
-// (mode=payment). Price IDs are configured per environment
-// (STRIPE_CREDIT_PACK_<credits>_PRICE_ID); the pack sizes are product
-// constants.
-type CreditPack struct {
-	Key     string `json:"key"`
-	Credits int    `json:"credits"`
-}
-
-// CreditPacks are the three purchasable top-up packs.
-var CreditPacks = []CreditPack{
-	{Key: "pack_500", Credits: 500},
-	{Key: "pack_2000", Credits: 2000},
-	{Key: "pack_10000", Credits: 10000},
-}
-
-// PackByKey returns the pack for a key, or nil for an unknown key.
-func PackByKey(key string) *CreditPack {
-	for i := range CreditPacks {
-		if CreditPacks[i].Key == key {
-			return &CreditPacks[i]
-		}
-	}
-	return nil
-}

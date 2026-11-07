@@ -118,7 +118,7 @@ The writing is about the prospect's business, not about your product: what they 
 
 For subject ideas, press **⌘J** (Ctrl+J on Windows and Linux) in the subject, or click the sparkle at its end. AI reads the body and the earlier steps and offers five short subject lines, each appearing as soon as it is written and each a different approach, written to look like a colleague sent them rather than a marketing team. A merge field in an idea always comes with a fallback, and the sample line under each idea shows how it reads. Type a few words to steer the ideas, or use a move on the subject you already have: **Shorter**, **More personal**, **As a question** or **Less salesy**. A follow-up that opens a new email gets ideas that do not repeat the earlier subjects. **More ideas** asks again; picking one replaces the subject.
 
-Two more AI surfaces live in the body itself. With the cursor somewhere in the copy, a sparkle appears in the right gutter: click it, or press **⌘J** (Ctrl+J on Windows and Linux), to ask for text at the cursor or to continue the draft. Select some text instead and a floating **Edit with AI** pill appears over it, with quick actions (improve, shorten, expand, fix grammar, friendlier, more formal) or a free instruction. Both cost [AI credits](/guides/ai-credits/).
+Two more AI surfaces live in the body itself. With the cursor somewhere in the copy, a sparkle appears in the right gutter: click it, or press **⌘J** (Ctrl+J on Windows and Linux), to ask for text at the cursor or to continue the draft. Select some text instead and a floating **Edit with AI** pill appears over it, with quick actions (improve, shorten, expand, fix grammar, friendlier, more formal) or a free instruction. Both are charged to the [workspace balance](/guides/ai-credits/) for what they use.
 
 In both, the words appear in place as the model writes them, tinted blue so you can see what is new. **Esc** (or **Stop**) stops it and keeps what it wrote so far. When it finishes, a menu by the text lets you decide: **Keep it** (⌘Enter, Ctrl+Enter on Windows and Linux), **Try again**, a one-click change such as **Make it shorter**, or **Discard**, which puts the body back exactly as it was. You can also type a change of your own into the menu and press Enter, use the arrow keys to move through the list, or just keep typing in the body, which keeps the text. Press **Esc** in the menu to discard. A kept passage is one step of undo.
 
@@ -205,6 +205,8 @@ Apply a saved template to a step, or save a step as a reusable one from the comp
 
 ### Attachments
 
+Private attachments carry business documents, images, spreadsheets and archives. They are stored as bytes and sent as email attachments, with executable and script filename extensions refused. When your instance enables the attachment download proxy, selecting a filename downloads it through a short-lived file link; the response is an attachment, is not cached, and includes browser MIME-sniffing and document sandbox protections.
+
 Upload attachments for a step below its composer by dragging and dropping files or clicking the upload area. A file uploaded there is sent with every email from that step and from no other step, and can be removed in the same place. Files attached to the campaign itself rather than to a step, which can only be added through the API, ride every step: they are listed under **Sent with every step** so each step shows everything it carries. Attachments count against your workspace storage limit, shown under **Settings > Billing**; an upload that would pass it is refused with `storage_limit_reached`, and two uploads racing for the last of the quota cannot both get in. Removing a step deletes the files scoped to it.
 
 ### Action steps
@@ -221,10 +223,10 @@ A Switch step routes each contact down one of several named cases (`interested`,
 
 | Decider | How it picks | Cost |
 |---------|--------------|------|
-| **AI prompt** | A plain-language instruction (supports the same variables as your copy). One model call per contact reads their data and picks exactly one case. | 1 credit per contact, refunded on failure. With no credits the step is skipped and the contact takes the fallback path. |
+| **AI prompt** | A plain-language instruction (supports the same variables as your copy). One model call per contact reads their data and picks exactly one case. | Charged per contact for the tokens it uses, nothing on failure. When the balance is too low the step is skipped and the contact takes the fallback path. |
 | **Value** | A template value (`{{.Industry}}`, any custom field) rendered per contact and matched to case names. Casing and whitespace are ignored; wrap a case in slashes for a case-insensitive regex (`/^(vip\|enterprise)/`). Plain cases match first, then regex in order. | None, fully deterministic |
 
-The AI decider adds two optional toggles: **web search** looks up the contact's company (query built from company, name, or corporate domain, never email content) for 1 extra credit when it finds results, and **extended thinking** routes to the stronger model tier for hard decisions, metered through [AI credits](/guides/ai-credits/).
+The AI decider adds two optional toggles: **web search** looks up the contact's company (query built from company, name, or corporate domain, never email content), charged as one web search ($0.0125 at the default prices) when it finds results, and **extended thinking** routes to the stronger model tier for hard decisions, charged to the [workspace balance](/guides/ai-credits/).
 
 Under **What AI can see**, each step controls whether the model also receives the contact's campaign history and newest email on top of their fields. Both default on. The newest email is the latest one the contact sent to any mailbox in the workspace, whoever connected it. Email and profile fields are treated strictly as content: instructions inside an email ("ignore your rules") are ignored, and the model can only answer with a case you named.
 
@@ -252,7 +254,7 @@ A path that runs instantly fires the moment the event happens, so the target's w
 
 ## Follow-ups and threading
 
-A follow-up is the next email step, sent as a **reply on the conversation the contact is already in** rather than as a second email out of nowhere. It carries `In-Reply-To` and `References` pointing at the last message they received from the campaign, and on Gmail it is posted into that same thread, so it sits under the first email in their inbox and in your Sent folder.
+A follow-up is the next email step, sent as a **reply on the conversation the contact is already in** rather than as a second email out of nowhere. It carries `In-Reply-To` pointing at the last message they received from the campaign and `References` listing every message of that conversation, oldest first, and on Gmail it is posted into that same thread, so it sits under the first email in their inbox and in your Sent folder. A long conversation keeps the first message and the most recent ones in `References`, so the header stays within what mail servers accept.
 
 Each email step has a **Reply in thread** switch, on by default. Turn it off for a step that should deliberately start a fresh conversation.
 
@@ -261,6 +263,8 @@ Each email step has a **Reply in thread** switch, on by default. Turn it off for
 - A step with **Reply in thread** off writes its own subject and opens a new conversation. Every threading step after it then replies on *that* conversation.
 - The switch does nothing on a contact's first email. There is nothing to reply to, so it opens the thread.
 - A/B variants on a threading step vary the body only, for the same reason.
+- The subject is repeated as it was sent, with no `Re:` added: the contact has not replied, so the follow-up does not claim they did.
+- When the campaign [rotates follow-ups](/guides/campaigns/#follow-ups-from-other-mailboxes), a follow-up from another mailbox carries the same headers and subject. Most mail apps use those to keep it in the conversation, but how a thread is grouped is up to the recipient's app. The Gmail thread in your own Sent folder is only joined when the same mailbox sent the previous email.
 
 <Callout type="info" title="The reply headers need the first email to have been confirmed sent">
 They point at the message id the sending provider put on the wire, which Warmbly learns when the worker reports the send. If that confirmation never arrives the follow-up still sends, carrying the conversation's subject, but as its own conversation.
@@ -280,7 +284,19 @@ Open a step's editor and click **A/B test this step**.
 - Select an arm to edit its name, subject, and body. Leave a variant's subject or body blank to reuse the step's own. On a step that replies in the thread, a variant's subject is ignored: the conversation owns it. On a step that opens a conversation, the variant's subject becomes the conversation's for every contact it is sent to, so the follow-ups threading on it reply under that subject.
 - A first variant starts at 50/50. Marking one **inactive** drops it from the split without deleting it; deleting the last one returns the step to a single send.
 
-Once variants have sent, each card shows Sent, Open rate, Reply rate, and Bounce rate. When Warmbly finds a **winner**, a banner names it with the rule and confidence used, and the winning card gets a trophy.
+### Results
+
+Once the step has sent, a **Results by contact** table under the split shows every arm, the Original included: how many contacts were sent that arm at this step, its open, click and reply rates, and how many bounced. Click a row to edit that arm.
+
+- Every number counts contacts, not emails, and each contact counts at most once per metric.
+- Rates are over delivered contacts: bounced contacts are left out of the denominator and shown as their own count.
+- An open, click or reply belongs to the step the contact had most recently been sent when it happened. A reply that lands after the next step went out counts for that next step, even when it answers the earlier email's thread.
+- Automated opens (Apple Mail Privacy Protection, security scanners) are not counted.
+- Arms are recorded as each email is sent, so contacts sent before a step had variants, or before this feature existed, are not counted.
+
+**Winner.** Warmbly ranks arms on the winning rule from outreach settings (**reply rate** by default). It names a winner only when every arm that has sent reached the minimum sample (`30` delivered contacts by default) and the leader beats each other arm in a two-proportion z-test at 95% confidence, corrected for the number of comparisons (Bonferroni). At 99% the confidence reads high. The winning row gets a trophy.
+
+**Auto-promote.** Turn on **Promote the winner automatically** under Settings > Sending (or set `ab_testing.auto_promote_winner` through the [outreach settings API](/api/reference/deliverability-ops/)) and Warmbly hands each step to its winner once the winner is significant, checking about every 15 minutes: new contacts at that step all get the winning arm and the other arms are paused, including the Original when a variant won. The results table marks the step as promoted and the change is recorded in the audit log. A step is promoted once: resume any arm to split traffic again (the Original has a **Resume** button in the results table), and auto-promote leaves that step alone from then on.
 
 </Fold>
 
@@ -300,7 +316,7 @@ A branch routes contacts by condition. Press **+** under a step and pick **If / 
 | `if auto-reply / out of office` | Reply was automated, not human |
 | `if reply intent is…` | The intent [automatic inbox tagging](/guides/inbox-tagging/) read from the human reply: agreed, wants info, wants pricing, not now, not interested, wrong person, opt out, scheduling, in progress, question answered, or unclear. Set only when inbox tagging is on and the classifier was at least 70% sure; an untagged reply takes the otherwise path. Checked once, no day window |
 | `random split` | A random share of contacts (1 to 99%) |
-| Switch case paths | Each case's own column under the Switch, not chosen here. Uses the stored case, so routing spends no credits |
+| Switch case paths | Each case's own column under the Switch, not chosen here. Uses the stored case, so routing charges nothing |
 
 ### Instant vs at-the-next-step
 
@@ -335,11 +351,30 @@ A new email from a contact that answers no thread of yours counts toward the las
 
 A reply that lands in the mailbox a send's reply-to named counts the same way, although that mailbox never wrote to the contact. That is what a [shared reply inbox](/guides/mailboxes/#a-shared-reply-inbox) relies on: the reply stops the sequence, runs the reply branch, and is credited to the mailbox that sent the email.
 
+### Other campaigns the contact is in
+
+By default a reply stops only the campaign it answered. A contact who is also a lead of another campaign keeps receiving that campaign's steps. To stop those too, turn on **Settings > Sending > Replies > Hold the contact in every other campaign**. A human reply then holds the contact in every other campaign they are a lead of that has not completed, for a year. Out-of-office and other automatic replies never trigger it. The campaign they answered is left to its own **Stop on reply** and reply branches.
+
+The hold works like any other: it shows on each campaign's **Leads** tab with the reason "replied to another campaign", and **Resume now** lifts it. It never shortens or replaces a pause a member set by hand. The setting is `reply_intent.stop_all_campaigns_on_reply` in the [outreach settings](/api/reference/deliverability-ops/).
+
 When an upgrade repairs a reply marker that was provably created by a synchronized Sent message, the contact resumes at the next due step and the campaign reply totals update with it. An upgrade also restores provable human replies that were received by one campaign mailbox but referenced a thread started by another mailbox in the workspace. Warmbly recalculates address verification from the corrected delivery, open, click, reply, and bounce evidence. It leaves ambiguous historical replies untouched.
 
 <Callout type="warn" title="Turn on stop on reply">
 With it off and more than one step, Warmbly warns you on the canvas: replies that don't match a reply branch would otherwise keep receiving cold follow-ups. Turning it on still runs your reply branches, so it is strictly safer.
 </Callout>
+
+## Stop on meeting booked
+
+A campaign setting under **Settings** and, in the new-campaign wizard, under **Tracking and replies**. It is on by default. When a contact books a meeting, the rest of the cold sequence stops for them, even if they never replied. A prospect who books a call from the first email does not get the follow-ups or the "haven't heard back" email.
+
+A meeting counts when it is linked to the contact: a [Calendly or Cal.com booking](/guides/meetings/) whose invitee matches the contact, or a call you log with **New meeting**. It works the same way as stop on reply:
+
+- the cold sequence stops, and a reply branch the contact already entered still runs
+- it applies in every campaign the contact is a lead of that has the setting on, not only the one whose email they booked from
+- only a meeting booked after the contact entered the campaign counts, so a call they booked before you added them does not stop the new sequence
+- a canceled or rescheduled meeting still counts. The sequence does not restart by itself. To email the contact from that campaign again, turn the setting off for the campaign, and if the campaign has already finished, press play to start it again
+
+The contact's campaign panel says **Booked a meeting, sending stopped**. In the campaign's **Leads** tab the lead keeps the status it had. The setting is `stop_on_meeting` in the [campaigns API](/api/reference/campaigns/).
 
 </Fold>
 

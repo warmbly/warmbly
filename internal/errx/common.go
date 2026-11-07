@@ -2,6 +2,7 @@ package errx
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/warmbly/warmbly/internal/config"
 )
@@ -86,6 +87,18 @@ var (
 	ErrSSOLinkExpired = NewWithIdentifier(BadRequest, "sso_link_expired",
 		"That sign-in request expired or had too many attempts. Start the sign-in again.")
 
+	// ErrPasswordChangeRequired refuses using an issued initial password anywhere but the password sign-in, which replaces it.
+	ErrPasswordChangeRequired = NewWithIdentifier(Forbidden, "password_change_required",
+		"This account still has the password it was issued, which has to be replaced first. Sign in with your email and password to choose your own.")
+
+	// ErrPasswordChangeExpired ends a choose-your-password step that is unknown, expired, already used, or whose issued password ran out.
+	ErrPasswordChangeExpired = NewWithIdentifier(BadRequest, "password_change_expired",
+		"That sign-in request expired or was already used. Sign in again.")
+
+	// ErrPasswordReused refuses choosing the issued initial password as your own.
+	ErrPasswordReused = NewWithIdentifier(BadRequest, "password_reused",
+		"Choose a password of your own, different from the one you were given.")
+
 	// Re-authentication through a linked identity.
 	ErrReauthIdentityMismatch = NewWithIdentifier(BadRequest, "reauth_identity_mismatch",
 		"That account is not the one linked to this Warmbly account. Continue with the account you sign in with.")
@@ -105,8 +118,11 @@ var (
 	ErrPasskeySession  = New(BadRequest, "Your passkey request expired. Please start again.")
 	ErrPasskeyName     = New(BadRequest, "Passkey name must be between 1 and 60 characters.")
 	ErrPasskeyNotFound = New(NotFound, "Passkey not found.")
-	ErrPasskeyExists   = New(Conflict, "This passkey is already registered.")
-	ErrPasskeyNone     = New(BadRequest, "No passkey was found for this account.")
+	// ErrLastSignInMethod refuses removing a passkey or provider that is the
+	// account's only way to sign in.
+	ErrLastSignInMethod = NewWithIdentifier(Conflict, "last_sign_in_method", "This is the only way you sign in. Set a password or add a passkey first, then remove it.")
+	ErrPasskeyExists    = New(Conflict, "This passkey is already registered.")
+	ErrPasskeyNone      = New(BadRequest, "No passkey was found for this account.")
 	// A passkey sign-in counts as multi-factor, so the authenticator must verify the user.
 	ErrPasskeyUserVerification = NewWithIdentifier(BadRequest, "passkey_user_verification_required", "This passkey didn’t ask for a PIN or biometric. Set a PIN on the security key, or sign in another way.")
 
@@ -153,6 +169,10 @@ var (
 	// hits this.
 	ErrEmailOnboardGoogleOAuthDisabled = NewWithIdentifier(Forbidden, "mailbox_gmail_oauth_disabled",
 		"New Gmail mailboxes connect with an app password over IMAP and SMTP on this deployment, not with Google sign-in. Mailboxes already connected with Google sign-in keep working and can still be re-authorized. See https://docs.warmbly.com/guides/mailboxes/#gmail-and-google-workspace")
+	// Raised when a Google sign-in start hints a personal gmail.com or
+	// googlemail.com address; those connect with an app password.
+	ErrEmailOnboardGooglePersonal = NewWithIdentifier(BadRequest, "google_personal_app_password",
+		"Personal Gmail addresses (gmail.com, googlemail.com) connect with an app password over IMAP and SMTP, not with Google sign-in. Turn on 2-Step Verification on the Google account, create an app password, and connect the mailbox with it. See https://docs.warmbly.com/guides/mailboxes/#personal-gmail")
 	ErrEmailOnboardState         = New(BadRequest, "Invalid or expired onboarding state.")
 	ErrEmailOnboardReturnOrigin  = NewWithIdentifier(BadRequest, "mailbox_oauth_return_origin", "This dashboard origin is not allowed for mailbox OAuth. Add its exact origin to CORS_ALLOW_ORIGINS.")
 	ErrEmailOnboardCode          = New(BadRequest, "Authorization code is missing or invalid.")
@@ -303,6 +323,10 @@ var (
 // workspace holds its whole allowance. The identifier is stable so the
 // dashboard can open the request-more flow instead of showing the text.
 func MailboxAllowanceReached(used, allowance int, paid bool) *Error {
+	if !paid && allowance == 0 {
+		return NewWithIdentifier(Forbidden, "mailbox_allowance_reached",
+			"Connecting and warming mailboxes needs a plan. Choose one to add a mailbox.")
+	}
 	if !paid {
 		return NewWithIdentifier(Forbidden, "mailbox_allowance_reached",
 			fmt.Sprintf("A free workspace holds up to %d mailboxes. Choose a plan to add more.", allowance))
@@ -319,4 +343,14 @@ func StorageLimitReached(usedBytes, limitBytes, addingBytes int64) *Error {
 	return NewWithIdentifier(BadRequest, "storage_limit_reached",
 		fmt.Sprintf("Storage limit reached: %d MB of %d MB used, %d MB to add. Remove attachments or images, or upgrade your plan.",
 			usedBytes/mb, limitBytes/mb, addingBytes/mb))
+}
+
+// InvalidTemplate refuses campaign copy that would not render as written; the
+// message is the validator's own, naming the field, the line and the variable.
+func InvalidTemplate(err error) *Error {
+	msg := err.Error()
+	if msg != "" {
+		msg = strings.ToUpper(msg[:1]) + msg[1:]
+	}
+	return NewWithIdentifier(BadRequest, "invalid_template", msg+".")
 }

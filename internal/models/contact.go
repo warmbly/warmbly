@@ -653,8 +653,10 @@ type ContactTimelineEvent struct {
 	Reason   *string `json:"reason,omitempty"`   // deliverability / suppression / meeting cancellation
 	Source   *string `json:"source,omitempty"`   // suppression: bounce/complaint/unsubscribe; meeting: calendly/cal_com
 	Provider *string `json:"provider,omitempty"` // deliverability provider
-	Intent   *string `json:"intent,omitempty"`   // reply_intent classification
-	Content  *string `json:"content,omitempty"`  // note body
+	// BounceCause is what a bounce was about (dsn.Cause), absent when unclassified.
+	BounceCause *string `json:"bounce_cause,omitempty"`
+	Intent      *string `json:"intent,omitempty"`  // reply_intent classification
+	Content     *string `json:"content,omitempty"` // note body
 
 	// Meeting events (meeting_booked / rescheduled / canceled).
 	ScheduledFor *time.Time `json:"scheduled_for,omitempty"` // when the call is set for
@@ -853,6 +855,9 @@ const (
 	// ContactSourceClay is a contact a Clay table sent in; the detail names the
 	// connection.
 	ContactSourceClay ContactSource = "clay"
+	// ContactSourceLeadFinder is a business found on the lead finder map; the
+	// detail names the search.
+	ContactSourceLeadFinder ContactSource = "lead_finder"
 )
 
 // Valid reports whether the value is one the database accepts.
@@ -860,7 +865,8 @@ func (s ContactSource) Valid() bool {
 	switch s {
 	case ContactSourceUnknown, ContactSourceManual, ContactSourceCampaign, ContactSourceImport,
 		ContactSourceSheetSync, ContactSourceAPI, ContactSourceAIAssistant, ContactSourceForm,
-		ContactSourceAutomation, ContactSourceCRMSync, ContactSourceApollo, ContactSourceClay:
+		ContactSourceAutomation, ContactSourceCRMSync, ContactSourceApollo, ContactSourceClay,
+		ContactSourceLeadFinder:
 		return true
 	}
 	return false
@@ -932,6 +938,10 @@ type BulkEditContactsData struct {
 	RemoveCategories []string                `json:"remove_categories,omitempty"`
 	Fields           []BulkEditContactsField `json:"fields"`
 	Subscribe        *bool                   `json:"subscribe"`
+
+	// SkipActiveInOtherCampaigns leaves out of add_campaigns a contact whose
+	// sequence is still running in another campaign.
+	SkipActiveInOtherCampaigns bool `json:"skip_active_in_other_campaigns,omitempty"`
 
 	// SkipRows suppresses the hydrated rows in the response. Set by the
 	// handler for a filter-shaped selection, which can name far more contacts

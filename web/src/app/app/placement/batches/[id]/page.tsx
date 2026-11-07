@@ -43,6 +43,7 @@ import {
     scopeSummary,
 } from "@/components/app/placement/batches/placementBatches";
 import { cn } from "@/lib/utils";
+import { fmtUsdCost } from "@/lib/money";
 
 type Tab = "mailboxes" | "domains" | "providers" | "recipients";
 
@@ -151,7 +152,7 @@ function Detail({ batch }: { batch: PlacementBatchDetail }) {
                         <span>{scopeSummary(batch)}</span>
                         <span>{batch.started_at ? `Started ${fmtDate(batch.started_at)}` : `Queued ${fmtDate(batch.created_at)}`}</span>
                         {batch.finished_at && <span>Finished {fmtDate(batch.finished_at)}</span>}
-                        {batch.credits_spent > 0 && <span>Paid {batch.credits_spent.toLocaleString()} credits</span>}
+                        {batch.spent_usd > 0 && <span>Paid {fmtUsdCost(batch.spent_usd)}</span>}
                         {batch.campaign_id && (
                             <Link to="/app/campaigns/$id/steps" params={{ id: batch.campaign_id }} className="inline-flex items-center gap-0.5 text-sky-700 hover:text-sky-800">
                                 {campaign.data?.name ?? "Campaign"}

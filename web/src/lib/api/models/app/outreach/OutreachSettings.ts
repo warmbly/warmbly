@@ -47,6 +47,8 @@ export interface ReplyIntentSettings {
     hold_on_out_of_office: boolean;
     // The fallback hold, used when the auto-reply names no return date.
     out_of_office_hold_days: number;
+    // Hold a contact who replies in every other campaign they are in.
+    stop_all_campaigns_on_reply?: boolean;
 }
 
 // What a classified reply may do beyond labelling, from automatic inbox
@@ -234,10 +236,31 @@ export const DEFAULT_UNSUBSCRIBE: UnsubscribeSettings = {
     link_text: "Unsubscribe",
 };
 
+export type ABWinningRule = "reply_rate" | "open_rate" | "click_rate";
+
+// How step A/B tests pick and apply a winner (see the A/B variants guide).
+export interface ABTestingSettings {
+    enabled: boolean;
+    default_winning_rule: ABWinningRule;
+    auto_promote_winner: boolean;
+    min_sample_size: number;
+}
+
+// What happens after a bounce, complaint or unsubscribe (see the suppression guide).
+export interface BouncePipelineSettings {
+    enabled?: boolean;
+    auto_suppress_on_bounce?: boolean;
+    auto_suppress_on_complaint?: boolean;
+    auto_suppress_on_unsubscribe?: boolean;
+    auto_pause_campaign_on_spike?: boolean;
+    pause_bounce_rate_threshold?: number;
+    pause_complaint_rate_threshold?: number;
+}
+
 export interface OutreachSettings {
-    bounce_pipeline: Record<string, unknown>;
+    bounce_pipeline: BouncePipelineSettings;
     task_reliability: Record<string, unknown>;
-    ab_testing: Record<string, unknown>;
+    ab_testing: ABTestingSettings;
     reply_intent: ReplyIntentSettings;
     inbox_tagging?: InboxTaggingSettings;
     send_time_optimization: SendTimeOptimizationSettings;

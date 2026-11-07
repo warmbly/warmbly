@@ -35,17 +35,41 @@ export function getToken(): AdminToken | null {
 
 export function setToken(t: AdminToken | null) {
     if (!t) {
-        clearAdminBrowse();
-        localStorage.removeItem(TOKEN_KEY);
+        clearToken();
         return;
     }
     localStorage.setItem(TOKEN_KEY, JSON.stringify(t));
     resumeBrowse();
+    notify();
 }
 
 export function clearToken() {
     clearAdminBrowse();
     localStorage.removeItem(TOKEN_KEY);
+    notify();
+}
+
+export function hasToken(): boolean {
+    return localStorage.getItem(TOKEN_KEY) !== null;
+}
+
+const listeners = new Set<() => void>();
+
+function notify() {
+    listeners.forEach((listener) => listener());
+}
+
+// subscribeToken calls back when the token is stored or cleared, in this tab or another.
+export function subscribeToken(listener: () => void): () => void {
+    listeners.add(listener);
+    const onStorage = (e: StorageEvent) => {
+        if (e.key === TOKEN_KEY || e.key === null) listener();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+        listeners.delete(listener);
+        window.removeEventListener("storage", onStorage);
+    };
 }
 
 export function isExpired(iso: string): boolean {

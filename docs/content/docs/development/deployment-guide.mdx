@@ -451,9 +451,9 @@ There are several ways to attach a sending mailbox. Only the OAuth and whole-dom
 | Mailbox type | Setup needed | Variables |
 |--------------|--------------|-----------|
 | Any SMTP + IMAP provider | None | none |
-| Gmail / Google Workspace | None with an app password (the default). A Google Cloud OAuth client to offer per-mailbox Google sign-in, which is being retired | `BOX_GOOGLE_OAUTH_CONNECT`, `BOX_GOOGLE_CLIENT_ID`, `BOX_GOOGLE_CLIENT_SECRET` |
+| Gmail / Google Workspace | None with an app password (the default, and the only way for personal Gmail). A Google Cloud OAuth client for Workspace mailboxes to sign in with Google, once each domain's administrator marks it Trusted | `BOX_GOOGLE_OAUTH_CONNECT`, `BOX_GOOGLE_CLIENT_ID`, `BOX_GOOGLE_CLIENT_SECRET` |
 | Outlook / Microsoft 365 | An Entra ID app registration | `BOX_OUTLOOK_CLIENT_ID`, `BOX_OUTLOOK_CLIENT_SECRET` |
-| A whole Google Workspace domain or Microsoft 365 organization | A Google Cloud service account for Google; the Outlook app above, with three application permissions, for Microsoft. See [whole-domain mailbox connects](/development/whole-domain-connect/) | `GOOGLE_WORKSPACE_DELEGATION_KEY_FILE` (or `GOOGLE_WORKSPACE_DELEGATION_KEY`), `BOX_OUTLOOK_CLIENT_ID`, `BOX_OUTLOOK_CLIENT_SECRET` |
+| A whole Microsoft 365 organization, or a Google Workspace domain grant a workspace already holds | The Outlook app above, with three application permissions, for Microsoft; the existing Google Cloud service account for Google, which takes no new domains. See [whole-domain mailbox connects](/development/whole-domain-connect/) | `GOOGLE_WORKSPACE_DELEGATION_KEY_FILE` (or `GOOGLE_WORKSPACE_DELEGATION_KEY`), `BOX_OUTLOOK_CLIENT_ID`, `BOX_OUTLOOK_CLIENT_SECRET` |
 
 <Callout type="warn" title="These are not the sign-in variables">
 `BOX_GOOGLE_*` connects **mailboxes you send from**. `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (no `BOX_` prefix) are a different thing entirely: they enable "Sign in with Google" for logging into Warmbly. You can set either, both, or neither, and one never substitutes for the other. The one overlap: a Google Workspace administrator proving a domain for a [whole-domain connect](/development/whole-domain-connect/#proving-the-domain) signs in through the `GOOGLE_CLIENT_ID` client when it is set, and through the `BOX_GOOGLE_*` client otherwise.
@@ -465,7 +465,7 @@ Nothing to configure. Add the mailbox in the dashboard with its host, port, user
 
 ### Gmail and Google Workspace
 
-Nothing to configure by default: the connect dialog walks users through a Google app password over `smtp.gmail.com` and `imap.gmail.com`, see [the mailbox guide](/guides/mailboxes/#gmail-and-google-workspace). For Google Workspace, the recommended path is a [whole-domain connect](/development/whole-domain-connect/), which needs a service account rather than an OAuth client. Per-mailbox Google sign-in is [being retired](/guides/mailboxes/#moving-off-per-mailbox-google-sign-in). Set up a Google OAuth client only if you want to offer it for new Gmail mailboxes, which also needs `BOX_GOOGLE_OAUTH_CONNECT=true`; without it the client still serves the mailboxes already connected that way, both refreshing their tokens and re-authorizing them when Google invalidates a grant.
+Nothing to configure by default: the connect dialog walks users through a Google app password over `smtp.gmail.com` and `imap.gmail.com`, which is how personal Gmail always connects; see [the mailbox guide](/guides/mailboxes/#personal-gmail). For Google Workspace, set up the Google OAuth client below: each domain's administrator marks it Trusted, then each mailbox signs in with Google, see [Google Workspace with Google sign-in](/guides/mailboxes/#google-workspace-with-google-sign-in). Domain-wide delegation through a service account is legacy and serves only grants already made, so an instance that configured only the service account can no longer set up a new domain. The client also serves the mailboxes already connected with Google sign-in, both refreshing their tokens and re-authorizing them when Google invalidates a grant.
 
 <Steps>
 
@@ -474,7 +474,9 @@ In the [Google Cloud console](https://console.cloud.google.com/), create (or pic
 </Step>
 
 <Step>
-Configure the OAuth consent screen. For a Workspace domain, choose **Internal** to skip Google's verification review. For personal Gmail accounts you need **External**, which stays limited to test users until verified.
+Configure the OAuth consent screen. For your own Workspace domain only, choose **Internal** to skip Google's verification review; an Internal client is exempt from the 100-user cap ([Google's help](https://support.google.com/cloud/answer/13464323)). To connect mailboxes on other Workspace domains you need **External**: until Google verifies the app it is limited to 100 new users, except on domains whose administrator marks the client ID Trusted under **Security > Access and data control > API controls > Manage Third-Party App Access**. Personal Gmail never signs in this way; it connects with an app password.
+
+Under **Data access**, add the two scopes Warmbly requests: `https://mail.google.com/` and `https://www.googleapis.com/auth/gmail.settings.basic`. Full mail access is what lets a mailbox run its warmup engagement over IMAP; a mailbox connected earlier under `gmail.modify` keeps working on the Gmail API until it is re-authorized. Workers reach `imap.gmail.com` on port `993` for that, so allow it outbound wherever workers have an egress allowlist.
 </Step>
 
 <Step>
@@ -640,7 +642,7 @@ Pair it with `DISABLE_PASSWORD_LOGIN=true` for an SSO-only deployment.
 | Root key | Local AES (`KMS_PROVIDER=local`) | AWS KMS (`=aws`) |
 | Blob storage | Filesystem (`BLOB_PROVIDER=filesystem`) | S3, MinIO, R2 (`=s3` plus `BLOB_BUCKET`) |
 | Task scheduler | In-process poller (`TASKS_PROVIDER=local`) | GCP Cloud Tasks (`=gcloud`) |
-| Billing | Off (`BILLING_PROVIDER=none`, everything unlocked, AI credits unmetered) | Stripe (`=stripe`) |
+| Billing | Off (`BILLING_PROVIDER=none`, everything unlocked, AI usage unmetered) | Stripe (`=stripe`) |
 | Captcha | Off (`CAPTCHA_PROVIDER=none`) | Cloudflare Turnstile (`=turnstile`) |
 | Realtime transport | Redis pub/sub (`PUBSUB_ENABLED=false`) | Google Cloud Pub/Sub (`=true` plus `GCP_PROJECT_ID`) |
 
@@ -843,6 +845,12 @@ make upgrade                 # git pull --ff-only, then make up; migrations appl
 ```
 
 Upgrading is safe with data in place: migrations are forward-only and apply on backend boot.
+
+### Warmup day selection across versions
+
+Explicit warmup-day selection uses the existing `warmup_days` mask, with no migration or new worker message. The current and immediately previous application releases can read each other's values and queued tasks. A rollback preserves saved day selections. A zero mask retains inherited working days with an enabled sending plan and every day with Fixed schedule.
+
+Upgrade the backend and consumer together, including Cloud's copies when it owns warmup. An older scheduler still intersects explicit warmup days with the sending plan's working days, and an older Cloud-sync reader can normalize all seven days to zero. Explicit weekend sending is consistent once those older processes have drained. Rolling back restores the previous scheduling policy without deleting selected days; keep all writers on the current release to preserve explicit all-day choices through Cloud sync.
 
 ### Updates without lost work
 

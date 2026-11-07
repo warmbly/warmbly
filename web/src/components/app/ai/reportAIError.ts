@@ -1,11 +1,14 @@
 import toast from "react-hot-toast/headless";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
+import { isInsufficientBalance, openInsufficientBalance } from "@/lib/insufficientBalance";
 
-// reportAIError toasts a failed AI call, naming the fix when credits ran out.
+// reportAIError reports a failed AI call. A balance that ran out opens the
+// add-money dialog instead of a toast.
 export function reportAIError(e: unknown) {
-    const err = e as AppError;
-    toast.error(
-        err?.status === 402 ? "You're out of AI credits. Upgrade or purchase more to keep writing with AI." : buildError(err),
-    );
+    if (isInsufficientBalance(e)) {
+        openInsufficientBalance();
+        return;
+    }
+    toast.error(buildError(e as AppError));
 }

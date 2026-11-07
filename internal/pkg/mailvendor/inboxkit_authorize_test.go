@@ -59,21 +59,19 @@ func TestInboxKitAuthorizesAnApp(t *testing.T) {
 	}
 }
 
-func TestInboxKitGoogleAuthorizationIsDelegated(t *testing.T) {
+func TestInboxKitNeverDelegatesAGoogleDomain(t *testing.T) {
 	srv := newRecorder(t, func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, 200, `{"error":false,"data":{"uid":"req-2","status":"queued"}}`)
 	})
 	c := newTestClient(t, VendorInboxKit, map[string]string{FieldAPIKey: testKey}, srv.URL, nil)
-	scopes := []string{"https://www.googleapis.com/auth/gmail.modify"}
 	if _, err := c.(AppAuthorizer).AuthorizeApp(context.Background(), AppAuthorization{
-		Domain: "acme.io", Mailbox: Mailbox{ID: "ws:m1"}, Provider: ProviderGoogle, ClientID: "1234567890", Scopes: scopes, AppRoles: []string{"ignored"},
-	}); err != nil {
-		t.Fatal(err)
+		Domain: "acme.io", Mailbox: Mailbox{ID: "ws:m1"}, Provider: ProviderGoogle, ClientID: "1234567890",
+		Scopes: []string{"https://www.googleapis.com/auth/gmail.modify"},
+	}); err == nil {
+		t.Fatal("a Google domain was sent a domain-wide delegation request")
 	}
-	var body map[string]any
-	_ = json.Unmarshal([]byte(srv.requests()[0].Body), &body)
-	if body["delegated"] != true || body["app_roles"] != nil || !reflect.DeepEqual(body["scopes"], []any{scopes[0]}) {
-		t.Fatalf("google initiate body = %v", body)
+	if n := len(srv.requests()); n != 0 {
+		t.Fatalf("%d requests sent for a Google domain", n)
 	}
 }
 

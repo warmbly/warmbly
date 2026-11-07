@@ -2,10 +2,13 @@ package mailvendor
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
+	"time"
 )
 
 // Zapmail: https://docs.zapmail.ai/llms.txt
@@ -15,6 +18,8 @@ type zapmail struct {
 	workspaces workspaceCache
 	cache      credCache
 	domains    domainProvider
+	// domainIDs remembers a workspace's domain ids by name, for the OAuth calls that take them.
+	domainIDs domainProvider
 }
 
 // zapmailProviders are the service providers Zapmail lists separately.
@@ -453,4 +458,153 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// zapmailConsentBudget is custom-oauth's documented per-mailbox limit.
+const (
+	zapmailConsentBudget = 3
+	zapmailConsentWindow = 7 * 24 * time.Hour
+)
+
+// domainID resolves a Google domain's Zapmail id in a workspace through GET /v2/domains?contains=.
+func (c *zapmail) domainID(ctx context.Context, ws, name string) (string, error) {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return "", invalid(VendorZapmail, "domain is required")
+	}
+	if id := c.domainIDs.get(ws + scopeSep + name); id != "" {
+		return id, nil
+	}
+	for page := 1; page <= maxPages; page++ {
+		var res struct {
+			zapmailEnvelope
+			Data struct {
+				NextPage   int `json:"nextPage"`
+				TotalPages int `json:"totalPages"`
+				Domains    []struct {
+					ID     string `json:"id"`
+					Domain string `json:"domain"`
+				} `json:"domains"`
+			} `json:"data"`
+		}
+		q := url.Values{"contains": {name}, "page": {strconv.Itoa(page)}, "limit": {strconv.Itoa(zapmailPageSize)}}
+		if err := c.t.do(ctx, call{method: http.MethodGet, path: "/v2/domains", query: q, header: c.header(ws, "GOOGLE")}, &res); err != nil {
+			return "", err
+		}
+		if err := res.err(); err != nil {
+			return "", err
+		}
+		for _, d := range res.Data.Domains {
+			if d.ID != "" && strings.EqualFold(d.Domain, name) {
+				c.domainIDs.put(ws+scopeSep+name, d.ID)
+				return d.ID, nil
+			}
+		}
+		more := res.Data.TotalPages > page || (res.Data.TotalPages == 0 && res.Data.NextPage > page)
+		if len(res.Data.Domains) == 0 || !more {
+			break
+		}
+	}
+	return "", vendorErr(VendorZapmail, http.StatusOK, "domain not found", ErrNotFound)
+}
+
+// TrustApp calls POST /v2/domains/add-client-id, which Zapmail queues with no status to read.
+func (c *zapmail) TrustApp(ctx context.Context, a AppTrust) (string, error) {
+	ws, _ := unscoped(a.Mailbox.ID)
+	if a.Domain == "" || a.ClientID == "" || a.AppName == "" {
+		return "", invalid(VendorZapmail, "domain, client id and app name are required")
+	}
+	id, err := c.domainID(ctx, ws, a.Domain)
+	if err != nil {
+		return "", err
+	}
+	var res zapmailEnvelope
+	body := map[string]any{"domainIds": []string{id}, "clientId": a.ClientID, "app": a.AppName}
+	if err := c.t.do(ctx, call{method: http.MethodPost, path: "/v2/domains/add-client-id", body: body, header: c.header(ws, "GOOGLE")}, &res); err != nil {
+		return "", err
+	}
+	if err := res.err(); err != nil {
+		return "", err
+	}
+	return scoped(ws, id), nil
+}
+
+// TrustStatus is complete once accepted: Zapmail publishes no status, and custom-oauth adds a missing client itself.
+func (c *zapmail) TrustStatus(_ context.Context, requestID string) (AuthorizationStatus, error) {
+	if _, id := unscoped(requestID); id == "" {
+		return AuthorizationStatus{}, invalid(VendorZapmail, "request id is required")
+	}
+	return AuthorizationStatus{State: AuthorizationCompleted}, nil
+}
+
+// RequestConsent calls POST /v2/mailboxes/custom-oauth for one mailbox; its export id is the request.
+func (c *zapmail) RequestConsent(ctx context.Context, r ConsentRequest) (string, error) {
+	ws, mailboxID := unscoped(r.Mailbox.ID)
+	if mailboxID == "" || r.URL == "" || r.ClientID == "" || r.AppName == "" {
+		return "", invalid(VendorZapmail, "mailbox, consent url, client id and app name are required")
+	}
+	domain := r.Mailbox.Domain
+	if at := strings.LastIndex(r.Mailbox.Email, "@"); domain == "" && at > 0 {
+		domain = r.Mailbox.Email[at+1:]
+	}
+	domainID, err := c.domainID(ctx, ws, domain)
+	if err != nil {
+		return "", err
+	}
+	body := map[string]any{"google": map[string]any{
+		"appName":            r.AppName,
+		"clientId":           r.ClientID,
+		"mailboxesPerDomain": map[string]any{domainID: []map[string]string{{"mailboxId": mailboxID, "oauthLink": r.URL}}},
+	}}
+	var res struct {
+		zapmailEnvelope
+		Data struct {
+			ExportID json.Number `json:"exportId"`
+		} `json:"data"`
+	}
+	if err := c.t.do(ctx, call{method: http.MethodPost, path: "/v2/mailboxes/custom-oauth", body: body, header: c.header(ws, "GOOGLE"), once: true}, &res); err != nil {
+		return "", err
+	}
+	if err := res.err(); err != nil {
+		return "", err
+	}
+	if res.Data.ExportID == "" {
+		return "", vendorErr(VendorZapmail, http.StatusOK, "no export id", nil)
+	}
+	return scoped(ws, res.Data.ExportID.String()), nil
+}
+
+// ConsentStatus reads GET /v2/exports/status for the export a RequestConsent opened.
+func (c *zapmail) ConsentStatus(ctx context.Context, requestID string) (AuthorizationStatus, error) {
+	ws, id := unscoped(requestID)
+	if id == "" {
+		return AuthorizationStatus{}, invalid(VendorZapmail, "request id is required")
+	}
+	var res struct {
+		zapmailEnvelope
+		Data struct {
+			Status        string `json:"status"`
+			FailureReason any    `json:"failure_reason"`
+		} `json:"data"`
+	}
+	if err := c.t.do(ctx, call{method: http.MethodGet, path: "/v2/exports/status", query: url.Values{"exportId": {id}}, header: c.header(ws, "")}, &res); err != nil {
+		return AuthorizationStatus{}, err
+	}
+	if err := res.err(); err != nil {
+		return AuthorizationStatus{}, err
+	}
+	reason, _ := res.Data.FailureReason.(string)
+	switch st := strings.ToLower(strings.TrimSpace(res.Data.Status)); st {
+	case "completed", "complete", "success", "succeeded", "done":
+		return AuthorizationStatus{State: AuthorizationCompleted}, nil
+	case "failed", "failure", "error", "errored", "cancelled", "canceled":
+		return AuthorizationStatus{State: AuthorizationFailed, Reason: reason}, nil
+	default:
+		return AuthorizationStatus{State: AuthorizationPending, Stage: st}, nil
+	}
+}
+
+// ConsentBudget is custom-oauth's documented three requests per mailbox in seven days.
+func (c *zapmail) ConsentBudget() (int, time.Duration) {
+	return zapmailConsentBudget, zapmailConsentWindow
 }

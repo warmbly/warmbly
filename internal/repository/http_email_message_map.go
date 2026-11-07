@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/pkg/nodeauth"
 )
 
 // httpEmailMessageMapRepository is the worker-side adapter. Workers cannot
@@ -65,7 +66,7 @@ func (r *httpEmailMessageMapRepository) endpoint() string {
 }
 
 func (r *httpEmailMessageMapRepository) authed(req *http.Request) {
-	req.Header.Set("Authorization", "Bearer "+r.token)
+	nodeauth.Authorize(req, r.token)
 	req.Header.Set("User-Agent", "warmbly-worker/email-message-map-http")
 }
 

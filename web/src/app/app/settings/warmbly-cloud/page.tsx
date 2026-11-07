@@ -6,8 +6,9 @@
 
 import React from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { Navigate } from "@tanstack/react-router";
 import { cloudLinkScope, invalidateWarmupReports } from "@/lib/api/hooks/app/cloudlink/warmupReports";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import toast from "react-hot-toast/headless";
 import { CheckIcon, CloudIcon, ExternalLinkIcon, Loader2Icon, RefreshCwIcon, SparklesIcon } from "lucide-react";
 import { useInstanceAdmin, usePermission } from "@/hooks/usePermission";
@@ -20,8 +21,8 @@ import buildError from "@/lib/helper/buildError";
 import { useCloudLinkStatus, useDisconnectCloudLink } from "@/lib/api/hooks/app/cloudlink/useCloudLink";
 import type { PoolLinkPlan } from "@/lib/api/models/app/cloudlink/CloudLink";
 import { WARMUP_PLAN_BENEFITS, WARMUP_PLAN_PITCH } from "@/lib/plans";
+import { cloudAddsNeedSubscription } from "@/lib/cloudPlan";
 import { Row, Section, SectionShell } from "../_components/SectionShell";
-import ConnectFlow from "./ConnectFlow";
 import MailboxTable from "./MailboxTable";
 import CloudMailboxPicker from "@/components/app/emails/CloudMailboxPicker";
 import LinkedInstances from "./LinkedInstances";
@@ -62,11 +63,6 @@ function SelfHostedCloud() {
     const status = useCloudLinkStatus();
     const disconnect = useDisconnectCloudLink();
     const confirm = useConfirm();
-    // The step flow stays up after linking until the user finishes it, so a
-    // fresh link walks through mailbox selection instead of dropping into the
-    // steady-state table.
-    const [flow, setFlow] = React.useState<boolean | null>(null);
-    const showFlow = flow ?? (status.data ? !status.data.connected : false);
 
     if (status.isLoading || !status.data) {
         return (
@@ -78,6 +74,8 @@ function SelfHostedCloud() {
         );
     }
     const st = status.data;
+    // Warmbly Cloud links no new instances, so an unlinked one has no page here.
+    if (!st.connected && !st.legacy_connected) return <Navigate to="/app/settings/profile" replace />;
     const plan = st.info?.plan;
     const serverWide = st.connected && !st.link?.organization_id;
 
@@ -98,90 +96,75 @@ function SelfHostedCloud() {
                 ) : undefined
             }
         >
-            <AnimatePresence mode="wait" initial={false}>
-                {showFlow ? (
-                    <motion.div key="flow" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                        <ConnectFlow
-                            status={st}
-                            onFinished={() => {
-                                setFlow(false);
-                                void status.refetch();
-                            }}
-                        />
-                    </motion.div>
-                ) : (
-                    <motion.div key="steady" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="divide-y divide-slate-200/70">
-                        <Section eyebrow="Connection">
-                            <Row
-                                label={
-                                    <span className="inline-flex items-center gap-2">
-                                        <span className="size-6 rounded-md bg-sky-600 text-white inline-flex items-center justify-center">
-                                            <CloudIcon className="w-3.5 h-3.5" />
-                                        </span>
-                                        {st.link?.organization_name || "Warmbly Cloud"}
-                                    </span>
-                                }
-                                description={
-                                    st.reachable ? (
-                                        <span>Connected{st.link?.connected_at ? ` since ${new Date(st.link.connected_at).toLocaleDateString()}` : ""}</span>
-                                    ) : (
-                                        <span className="text-amber-700">Cloud unreachable{st.error ? `: ${st.error}` : ""}</span>
-                                    )
-                                }
-                            />
-                        </Section>
-                        {plan && (
-                            <Section eyebrow="Plan" description="Billed on the connected Warmbly Cloud workspace. Existing connections keep their plan and mailbox history.">
-                                <PlanCard plan={plan} />
-                            </Section>
-                        )}
-                        <Section
-                            eyebrow="Mailboxes"
-                            description="Enrolled mailboxes are warmed by Warmbly Cloud; their local warmup stops. Campaigns keep sending from this server."
-                        >
-                            <CloudMailboxPicker />
-                            <MailboxTable selfExecution={st.info?.self_execution} />
-                        </Section>
-                        <Section eyebrow="Disconnect">
-                            <Row
-                                danger
-                                label={serverWide ? "Disconnect this server from Warmbly Cloud" : "Disconnect this workspace from Warmbly Cloud"}
-                                description={serverWide ? "Stops mailboxes and redirects using this connection across all local workspaces. Other connections are not affected. Managed mailbox mirrors using this connection are removed." : "Stops only mailboxes and redirects using this connection. Other connections and workspaces are not affected. Managed mailbox mirrors using this connection are removed."}
-                            >
-                                <button
-                                    type="button"
-                                    onClick={() =>
-                                        confirm.show(serverWide ? "Disconnect this server from Warmbly Cloud? Mailboxes and redirects using this connection across all local workspaces will stop using Cloud. Its managed mailbox mirrors will be removed." : "Disconnect this workspace from Warmbly Cloud? Mailboxes and redirects using this connection will stop using Cloud. Its managed mailbox mirrors will be removed.", async () => {
-                                            try {
-                                                await disconnect.mutateAsync(serverWide);
-                                                setFlow(null);
-                                                toast.success("Disconnected");
-                                            } catch (e) {
-                                                toast.error(buildError(e as AppError));
-                                            }
-                                        })
-                                    }
-                                    className="h-7 px-2.5 rounded-md text-[12px] text-rose-600 hover:bg-rose-50 transition-colors"
-                                >
-                                    Disconnect
-                                </button>
-                            </Row>
-                            {st.legacy_connected && !serverWide && (
-                                <Row danger label="Disconnect the shared server connection" description="Some mailboxes or redirects may use this other connection. Disconnecting it affects all local workspaces using it, not this workspace's connection.">
-                                    <button type="button" className="h-7 px-2.5 rounded-md text-[12px] text-rose-600 hover:bg-rose-50" onClick={() => confirm.show("Disconnect the shared server connection? Mailboxes and redirects using it across all local workspaces will stop using Cloud, and its managed mailbox mirrors will be removed. This workspace's connection is not affected.", async () => {
-                                        try {
-                                            await disconnect.mutateAsync(true);
-                                            toast.success("Disconnected");
-                                        } catch (e) {
-                                            toast.error(buildError(e as AppError));
-                                        }
-                                    })}>Disconnect shared connection</button>
-                                </Row>
-                            )}
-                        </Section>
-                    </motion.div>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="divide-y divide-slate-200/70">
+                <Section eyebrow="Connection">
+                    <Row
+                        label={
+                            <span className="inline-flex items-center gap-2">
+                                <span className="size-6 rounded-md bg-sky-600 text-white inline-flex items-center justify-center">
+                                    <CloudIcon className="w-3.5 h-3.5" />
+                                </span>
+                                {st.link?.organization_name || "Warmbly Cloud"}
+                            </span>
+                        }
+                        description={
+                            st.reachable ? (
+                                <span>Connected{st.link?.connected_at ? ` since ${new Date(st.link.connected_at).toLocaleDateString()}` : ""}</span>
+                            ) : (
+                                <span className="text-amber-700">Cloud unreachable{st.error ? `: ${st.error}` : ""}</span>
+                            )
+                        }
+                    />
+                </Section>
+                {plan && (
+                    <Section eyebrow="Plan" description="Billed on the connected Warmbly Cloud workspace. Existing connections keep their plan and mailbox history.">
+                        <PlanCard plan={plan} />
+                    </Section>
                 )}
-            </AnimatePresence>
+                <Section
+                    eyebrow="Mailboxes"
+                    description="Enrolled mailboxes are warmed by Warmbly Cloud; their local warmup stops. Campaigns keep sending from this server."
+                >
+                    <CloudMailboxPicker />
+                    <MailboxTable selfExecution={st.info?.self_execution} />
+                </Section>
+                <Section eyebrow="Disconnect">
+                    <Row
+                        danger
+                        label={serverWide ? "Disconnect this server from Warmbly Cloud" : "Disconnect this workspace from Warmbly Cloud"}
+                        description={serverWide ? "Stops mailboxes and redirects using this connection across all local workspaces. Other connections are not affected. Managed mailbox mirrors using this connection are removed." : "Stops only mailboxes and redirects using this connection. Other connections and workspaces are not affected. Managed mailbox mirrors using this connection are removed."}
+                    >
+                        <button
+                            type="button"
+                            onClick={() =>
+                                confirm.show(serverWide ? "Disconnect this server from Warmbly Cloud? Mailboxes and redirects using this connection across all local workspaces will stop using Cloud. Its managed mailbox mirrors will be removed. Warmbly Cloud links no new instances, so it cannot be connected again." : "Disconnect this workspace from Warmbly Cloud? Mailboxes and redirects using this connection will stop using Cloud. Its managed mailbox mirrors will be removed. Warmbly Cloud links no new instances, so it cannot be connected again.", async () => {
+                                    try {
+                                        await disconnect.mutateAsync(serverWide);
+                                        toast.success("Disconnected");
+                                    } catch (e) {
+                                        toast.error(buildError(e as AppError));
+                                    }
+                                })
+                            }
+                            className="h-7 px-2.5 rounded-md text-[12px] text-rose-600 hover:bg-rose-50 transition-colors"
+                        >
+                            Disconnect
+                        </button>
+                    </Row>
+                    {st.legacy_connected && !serverWide && (
+                        <Row danger label="Disconnect the shared server connection" description="Some mailboxes or redirects may use this other connection. Disconnecting it affects all local workspaces using it, not this workspace's connection.">
+                            <button type="button" className="h-7 px-2.5 rounded-md text-[12px] text-rose-600 hover:bg-rose-50" onClick={() => confirm.show("Disconnect the shared server connection? Mailboxes and redirects using it across all local workspaces will stop using Cloud, and its managed mailbox mirrors will be removed. This workspace's connection is not affected. It cannot be connected again.", async () => {
+                                try {
+                                    await disconnect.mutateAsync(true);
+                                    toast.success("Disconnected");
+                                } catch (e) {
+                                    toast.error(buildError(e as AppError));
+                                }
+                            })}>Disconnect shared connection</button>
+                        </Row>
+                    )}
+                </Section>
+            </motion.div>
         </SectionShell>
     );
 }
@@ -192,7 +175,8 @@ function SelfHostedCloud() {
 function PlanCard({ plan }: { plan: PoolLinkPlan }) {
     const premium = plan.tier === "paid";
     const limit = plan.mailbox_limit;
-    const atLimit = !premium && limit !== null && plan.enrolled >= limit;
+    const closed = cloudAddsNeedSubscription(plan);
+    const atLimit = !premium && (closed || (limit !== null && plan.enrolled >= limit));
     return (
         <div className={`rounded-lg border overflow-hidden ${premium ? "border-sky-200/70" : "border-slate-200"}`}>
             <div className={`px-4 py-3.5 flex flex-wrap items-start gap-3 ${premium ? "bg-gradient-to-b from-sky-50/70 to-white" : "bg-gradient-to-b from-slate-50/60 to-white"}`}>
@@ -205,13 +189,15 @@ function PlanCard({ plan }: { plan: PoolLinkPlan }) {
                         <span className={`inline-flex items-center h-4 px-1.5 rounded text-[10px] uppercase tracking-[0.1em] font-medium border ${
                             premium ? "bg-sky-50 text-sky-700 border-sky-100" : atLimit ? "bg-amber-50 text-amber-700 border-amber-100" : "bg-slate-100 text-slate-500 border-slate-200"
                         }`}>
-                            {premium ? "Unlimited" : limit === null ? "Unlimited" : `${plan.enrolled} of ${limit} mailboxes`}
+                            {premium ? "Unlimited" : closed ? `${plan.enrolled} kept, no new` : limit === null ? "Unlimited" : `${plan.enrolled} of ${limit} mailboxes`}
                         </span>
                     </div>
                     <p className="text-[12px] text-slate-500 mt-1 leading-relaxed max-w-md">
                         {premium
                             ? "Your mailboxes warm in the premium pool, built for inbox placement, with reputation protection and priority matching."
-                            : atLimit
+                            : closed
+                              ? "Mailboxes already in Warmbly Cloud keep warming. New ones warm on this instance, which is not effective, unless the workspace moves to a paid plan. Self-hosted instances get no support from Warmbly."
+                              : atLimit
                               ? `Every free pool mailbox is in use. ${WARMUP_PLAN_PITCH}`
                               : `Up to ${limit ?? 10} mailboxes in the free pool. ${WARMUP_PLAN_PITCH}`}
                     </p>
@@ -238,7 +224,7 @@ function PlanCard({ plan }: { plan: PoolLinkPlan }) {
                             rel="noreferrer"
                             className="h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
                         >
-                            Premium for ${plan.price_usd}/mo
+                            See plans
                             <ExternalLinkIcon className="w-3 h-3" />
                         </a>
                     )}

@@ -112,6 +112,8 @@ type PoolLinkPlan struct {
 	ManageURL string `json:"manage_url,omitempty"`
 	// WarmupEntitled is false when the cloud workspace itself cannot warm.
 	WarmupEntitled bool `json:"warmup_entitled"`
+	// SubscriptionRequired is true when a linked instance may add no new mailboxes until the workspace pays.
+	SubscriptionRequired bool `json:"subscription_required,omitempty"`
 }
 
 // PoolLinkInstanceInfo is the instance-facing status document.
@@ -147,7 +149,7 @@ type PoolLinkWarmupSettings struct {
 	Timezone  string `json:"timezone"`
 }
 
-// WarmupEveryDay is the weekday bitmask with all seven days set; locally 0 means the same.
+// WarmupEveryDay explicitly selects all seven days, independently of sending-plan weekdays.
 const WarmupEveryDay = 127
 
 // Reported is false for a settings block an older or broken cloud left empty.
@@ -158,9 +160,6 @@ func (w PoolLinkWarmupSettings) Reported() bool {
 // Mirrored is the cloud's settings in the form this instance stores them.
 func (w PoolLinkWarmupSettings) Mirrored() PoolLinkWarmupSettings {
 	w.StartTime, w.EndTime = ClockHHMM(w.StartTime), ClockHHMM(w.EndTime)
-	if w.Days == WarmupEveryDay {
-		w.Days = 0
-	}
 	return w
 }
 
@@ -399,8 +398,7 @@ type CloudLinkMailboxRow struct {
 	CommandsFailed  int `json:"commands_failed,omitempty"`
 }
 
-// PoolLinkOffer is the warmup plan as an upgrade prompt sees it:
-// what it costs, and whether it can actually be bought here.
+// PoolLinkOffer is the retired Warmup plan as older upgrade prompts read it; it is always unavailable.
 type PoolLinkOffer struct {
 	Available        bool    `json:"available"`
 	MonthlyAvailable bool    `json:"monthly_available"`

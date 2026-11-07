@@ -42,19 +42,57 @@ func authKey(orgID, connectionID uuid.UUID, provider, domain string) string {
 	return "vendor_app_auth:" + orgID.String() + ":" + connectionID.String() + ":" + provider + ":" + domain
 }
 
-// AuthorizeDomain has the vendor authorize this instance's app on a mailbox's
-// domain and records the grant once it is done; call again while Pending.
-func (s *Service) AuthorizeDomain(ctx context.Context, orgID, userID, connectionID uuid.UUID, email, provider string) DomainAuthorization {
-	if s.grants == nil || s.cache == nil {
+// AuthorizeMailbox gets an import row's mailbox connected through its vendor:
+// an existing grant, else for Google the vendor trusting this instance's
+// client and signing in as the mailbox, for Microsoft tenant-wide consent. Call again while Pending.
+func (s *Service) AuthorizeMailbox(ctx context.Context, r mailboximport.VendorAuthorizeRequest) DomainAuthorization {
+	if s.cache == nil {
 		return DomainAuthorization{}
 	}
-	at := strings.LastIndex(email, "@")
-	if at < 0 || (provider != models.GrantProviderGoogle && provider != models.GrantProviderMicrosoft) {
+	at := strings.LastIndex(r.Email, "@")
+	if at < 0 || (r.Provider != models.GrantProviderGoogle && r.Provider != models.GrantProviderMicrosoft) {
 		return DomainAuthorization{}
 	}
-	domain := strings.ToLower(email[at+1:])
-	if g, err := s.grants.GrantFor(ctx, orgID, provider, domain); err == nil && g != nil {
-		return DomainAuthorization{GrantID: &g.ID}
+	domain := strings.ToLower(r.Email[at+1:])
+	if s.grants != nil {
+		if g, err := s.grants.GrantFor(ctx, r.OrgID, r.Provider, domain); err == nil && g != nil {
+			return DomainAuthorization{GrantID: &g.ID, Domain: true}
+		}
+	}
+	if r.Provider == models.GrantProviderGoogle {
+		// A delegation request an earlier release opened runs to its grant; new Google domains are never delegated.
+		if s.delegationInFlight(ctx, r.OrgID, r.ConnectionID, domain) {
+			auth := s.authorizeDomain(ctx, r.OrgID, r.UserID, r.ConnectionID, domain, r.Provider)
+			auth.Domain = true
+			return auth
+		}
+		if s.consent == nil {
+			return DomainAuthorization{}
+		}
+		clientID, appName, ok := s.consent.VendorConsentApp()
+		if !ok {
+			return DomainAuthorization{}
+		}
+		auth, _ := s.authorizeByConsent(ctx, r, domain, clientID, appName)
+		return auth
+	}
+	auth := s.authorizeDomain(ctx, r.OrgID, r.UserID, r.ConnectionID, domain, r.Provider)
+	auth.Domain = true
+	return auth
+}
+
+// delegationInFlight is a domain-wide delegation request already open, possibly opened by an earlier release; it runs to its end.
+func (s *Service) delegationInFlight(ctx context.Context, orgID, connectionID uuid.UUID, domain string) bool {
+	var st authState
+	return s.cache.GetJSON(ctx, authKey(orgID, connectionID, models.GrantProviderGoogle, domain), &st) == nil && st.RequestID != ""
+}
+
+// authorizeDomain has the vendor authorize this instance's app on the domain
+// under domain-wide delegation (Google) or tenant-wide consent (Microsoft) and
+// records the grant once it is done.
+func (s *Service) authorizeDomain(ctx context.Context, orgID, userID, connectionID uuid.UUID, domain, provider string) DomainAuthorization {
+	if s.grants == nil {
+		return DomainAuthorization{}
 	}
 	clientID, scopes, roles, ok := s.grants.AppIdentity(provider)
 	if !ok {
@@ -117,6 +155,10 @@ func (s *Service) AuthorizeDomain(ctx context.Context, orgID, userID, connection
 		return s.recordGrant(ctx, c, client, key, orgID, userID, provider, domain, time.Since(st.Completed) < authSettle)
 	}
 
+	// Only Microsoft opens a new domain-wide request; a Google one is only ever finished.
+	if provider != models.GrantProviderMicrosoft {
+		return DomainAuthorization{}
+	}
 	started, err := s.cache.SetNX(ctx, key, "{}", authStartTTL).Result()
 	if err != nil {
 		return DomainAuthorization{}
@@ -137,17 +179,14 @@ func (s *Service) AuthorizeDomain(ctx context.Context, orgID, userID, connection
 	}
 	// The admin mailbox names the workspace InboxKit resolves the domain's admin in.
 	var on *mailvendor.Mailbox
-	admin := false
 	for i := range list {
 		if strings.EqualFold(list[i].Domain, domain) || strings.HasSuffix(strings.ToLower(list[i].Email), "@"+domain) {
-			if on == nil || (list[i].Admin && !admin) {
+			if on == nil || (list[i].Admin && !on.Admin) {
 				on = &list[i]
 			}
-			admin = admin || list[i].Admin
 		}
 	}
-	// A Google grant is verified as the domain's administrator, so without one there is nothing to verify.
-	if on == nil || (provider == models.GrantProviderGoogle && !admin) {
+	if on == nil {
 		_ = s.cache.Del(ctx, key)
 		return DomainAuthorization{}
 	}

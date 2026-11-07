@@ -125,3 +125,22 @@ func TestAddressIsFine(t *testing.T) {
 		}
 	}
 }
+
+// Only a confident recipient_invalid verdict may suppress an address.
+func TestNamesAddress(t *testing.T) {
+	cases := []struct {
+		v    *Verdict
+		want bool
+	}{
+		{nil, false},
+		{&Verdict{Cause: CauseRecipientInvalid, Confidence: ConfFloor}, true},
+		{&Verdict{Cause: CauseRecipientInvalid, Confidence: 0.79}, false},
+		{&Verdict{Cause: CauseOther, Confidence: 0.99}, false},
+		{&Verdict{Cause: CauseReputationBlock, Confidence: 0.99}, false},
+	}
+	for _, c := range cases {
+		if got := c.v.NamesAddress(); got != c.want {
+			t.Errorf("%+v: NamesAddress = %v, want %v", c.v, got, c.want)
+		}
+	}
+}

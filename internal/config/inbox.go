@@ -30,25 +30,22 @@ func GoogleOAuthConnect() bool {
 	return err == nil && b
 }
 
+// GoogleOAuthAppName is the Google client's app name as its consent screen shows it, which an inbox vendor checks.
+func GoogleOAuthAppName() string {
+	if v := strings.TrimSpace(os.Getenv("BOX_GOOGLE_APP_NAME")); v != "" {
+		return v
+	}
+	return "Warmbly"
+}
+
 func GoogleOauth2Inbox(baseURL string) *oauth2.Config {
 	return &oauth2.Config{
 		ClientID:     os.Getenv("BOX_GOOGLE_CLIENT_ID"),
 		ClientSecret: os.Getenv("BOX_GOOGLE_CLIENT_SECRET"),
 		RedirectURL:  baseURL + "/addresses/google/callback",
-		// The smallest set that does the job. Gmail's scopes nest:
-		// gmail.modify already confers readonly, send, compose and metadata, so
-		// asking for those as well widened the consent screen and the list of
-		// restricted scopes under review without granting anything extra.
-		//
-		// gmail.settings.basic is separate and is not implied: it is what reads
-		// the send-as identities, so a mailbox sending from an alias is set up
-		// correctly rather than rewritten to the primary address.
-		//
-		// Existing grants are unaffected. scopeSatisfiedBy in
-		// internal/app/email/onboarding.go resolves the nesting both ways, so a
-		// mailbox connected under the old six-scope consent still verifies.
+		// Full mail access lets warmup engagement run over IMAP and confers all gmail.modify did; settings.basic reads send-as aliases.
 		Scopes: []string{
-			gmail.GmailModifyScope,
+			gmail.MailGoogleComScope,
 			gmail.GmailSettingsBasicScope,
 		},
 		Endpoint: google.Endpoint,

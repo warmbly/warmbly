@@ -110,6 +110,8 @@ const (
 	AuditEntityTeam           AuditEntityType = "team"
 	AuditEntityAutomation     AuditEntityType = "automation"
 	AuditEntityLeadSyncSource AuditEntityType = "lead_sync_source"
+	AuditEntityLead           AuditEntityType = "lead"
+	AuditEntityLeadSearch     AuditEntityType = "lead_search"
 	AuditEntityMeeting        AuditEntityType = "meeting"
 
 	// Workspace archives (export/import for moving between instances).

@@ -33,6 +33,7 @@ import AnalyticsShareButton from "@/components/app/analytics/AnalyticsShareButto
 import CampaignScopePicker from "@/components/app/analytics/CampaignScopePicker";
 import { ALL_CAMPAIGNS, isScoped, scopeLabel } from "@/components/app/analytics/campaignScope";
 import useDashboard from "@/lib/api/hooks/app/analytics/useDashboard";
+import { periodWindow } from "@/lib/campaignPeriod";
 import DirectMailSection from "@/components/app/analytics/DirectMailSection";
 import OriginBadge from "@/components/app/engagement/OriginBadge";
 import type { DashboardCampaignFilter, RecentActivityItem } from "@/lib/api/models/app/analytics/DashboardOverview";
@@ -98,6 +99,7 @@ export default function AnalyticsPage() {
             return [...cur, k];
         });
 
+    const chartRange = useMemo(() => periodWindow({ key: range }), [range]);
     const trend = useMemo(() => {
         const rows = d?.daily_trend ?? [];
         const series: TrendSeries[] = METRICS.filter((m) => !hiddenMetrics.includes(m.key)).map((m) => ({
@@ -185,6 +187,8 @@ export default function AnalyticsPage() {
                                     <MultiTrend
                                         labels={trend.labels}
                                         series={trend.series}
+                                        range={chartRange}
+                                        volumeKey="sent"
                                         height={280}
                                         emptyLabel={scoped ? "No sends from these campaigns in this window" : "No sends in this window yet"}
                                     />

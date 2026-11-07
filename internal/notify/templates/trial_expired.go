@@ -19,7 +19,7 @@ Subscription
 Your free trial has ended
 </h2>
 <p style="margin:0 0 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;color:#475569;line-height:20px;">
-Thanks for trying {{.Brand}}. Your trial has now ended, so we've paused your campaigns and turned off warmup to avoid any unexpected sending.
+Thanks for trying {{.Brand}}. Your trial has now ended, so sending and warmup are paused. Your mailboxes keep their warmup settings, and warmup picks up where it stopped when you choose a plan.
 </p>
 
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;width:100%;">
@@ -35,7 +35,7 @@ Thanks for trying {{.Brand}}. Your trial has now ended, so we've paused your cam
 </table>
 
 <p style="margin:0 0 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;color:#475569;line-height:20px;">
-Upgrade to a paid plan to switch everything back on:
+Choose a plan to switch everything back on:
 </p>
 
 <table cellpadding="0" cellspacing="0" border="0" align="center" role="presentation" style="margin:0 0 24px;">

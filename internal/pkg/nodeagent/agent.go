@@ -24,6 +24,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/nodeauth"
 )
 
 // DefaultInterval is used until the control plane says otherwise. The first
@@ -34,6 +35,7 @@ const DefaultInterval = 90 * time.Second
 type Config struct {
 	LogToken           string
 	WarmupSendProtocol int
+	SyncWakeProtocol   int
 	NodeID             uuid.UUID
 	Role               models.NodeRole
 	Name               string
@@ -42,12 +44,17 @@ type Config struct {
 	// CapacityTarget is meaningful for workers only. Zero leaves the control
 	// plane's stored/default target unchanged.
 	CapacityTarget float64
+	// Capacity, when set, replaces CapacityTarget with a target derived from
+	// each beat's usage; a zero result keeps CapacityTarget.
+	Capacity func(models.NodeUsage) float64
 	// Version is what this build reports. Empty means "unknown", which the
 	// control plane must not read as "needs updating".
 	Version string
 
 	BaseURL string
 	Token   string
+	// Credential is the node credential join issued to NodeID; empty sends the fleet token alone.
+	Credential string
 
 	// TargetVersionPath is where the resolved target is written for the
 	// host-side updater to read. Empty disables that, which is what you want
@@ -103,7 +110,7 @@ func (a *Agent) RequestReload() {
 // node that cannot reach the control plane should keep doing the work it
 // already has, not stop.
 func (a *Agent) Run(ctx context.Context) {
-	if a.cfg.BaseURL == "" || a.cfg.Token == "" {
+	if a.cfg.BaseURL == "" || (a.cfg.Token == "" && a.cfg.Credential == "") {
 		log.Println("nodeagent: no backend URL or token; heartbeats disabled")
 		return
 	}
@@ -157,16 +164,24 @@ func paceFrom(livenessSeconds int) time.Duration {
 }
 
 func (a *Agent) beat(ctx context.Context, booted, stopping bool) *models.NodeHeartbeatReply {
+	usage := a.sampleUsage()
+	capacity := a.cfg.CapacityTarget
+	if a.cfg.Capacity != nil {
+		if v := a.cfg.Capacity(usage); v > 0 {
+			capacity = v
+		}
+	}
 	beat := models.NodeHeartbeat{
 		WarmupSendProtocol: a.cfg.WarmupSendProtocol,
+		SyncWakeProtocol:   a.cfg.SyncWakeProtocol,
 		NodeID:             a.cfg.NodeID,
 		Role:               a.cfg.Role,
 		Name:               a.cfg.Name,
 		Region:             a.cfg.Region,
 		Address:            a.address,
-		CapacityTarget:     a.cfg.CapacityTarget,
+		CapacityTarget:     capacity,
 		Version:            a.cfg.Version,
-		Usage:              a.sampleUsage(),
+		Usage:              usage,
 		Booted:             booted,
 		Stopping:           stopping,
 	}
@@ -192,7 +207,7 @@ func (a *Agent) beat(ctx context.Context, booted, stopping bool) *models.NodeHea
 		log.Println("nodeagent: build heartbeat:", err)
 		return nil
 	}
-	req.Header.Set("Authorization", "Bearer "+a.cfg.Token)
+	a.authorize(req)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := a.http.Do(req)
@@ -214,6 +229,17 @@ func (a *Agent) beat(ctx context.Context, booted, stopping bool) *models.NodeHea
 	a.applyDigest(reply.DesiredVersion, reply.DesiredDigest)
 	a.applyEnvRevision(reply.EnvRevision)
 	return reply
+}
+
+// authorize presents the fleet token and, when join issued one, this node's own credential.
+func (a *Agent) authorize(req *http.Request) {
+	if a.cfg.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+a.cfg.Token)
+	}
+	if a.cfg.Credential != "" {
+		req.Header.Set(nodeauth.IDHeader, a.cfg.NodeID.String())
+		req.Header.Set(nodeauth.CredentialHeader, a.cfg.Credential)
+	}
 }
 
 // The host updater shares the target directory: it writes update-failed and

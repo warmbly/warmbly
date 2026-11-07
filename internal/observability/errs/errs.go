@@ -23,6 +23,8 @@ import (
 	"log"
 	"sync/atomic"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // Config is what a service knows about itself at boot.
@@ -255,4 +257,53 @@ func build(opts []Option) scope {
 		opt(&s)
 	}
 	return s
+}
+
+// DatabaseConnectError stands in for a failed database connection on its way to
+// a remote backend, because pgconn's own message names the database user and
+// every address it tried. The local log keeps the original.
+type DatabaseConnectError struct {
+	// Code is the server's SQLSTATE when it answered, empty when it never did.
+	Code string
+}
+
+func (e *DatabaseConnectError) Error() string {
+	if e.Code == "" {
+		return "failed to connect to the database"
+	}
+	return "failed to connect to the database (SQLSTATE " + e.Code + ")"
+}
+
+// Sensitive hides an error whose text can carry connection details or
+// credentials behind public; the original stays reachable through Unwrap.
+func Sensitive(err error, public string) error {
+	if err == nil {
+		return nil
+	}
+	return &sensitiveError{err: err, public: public}
+}
+
+type sensitiveError struct {
+	err    error
+	public string
+}
+
+func (e *sensitiveError) Error() string { return e.public }
+func (e *sensitiveError) Unwrap() error { return e.err }
+
+func redact(err error) error {
+	var connect *pgconn.ConnectError
+	if !errors.As(err, &connect) {
+		var sensitive *sensitiveError
+		if errors.As(err, &sensitive) {
+			return errors.New(sensitive.Error())
+		}
+		return err
+	}
+	out := &DatabaseConnectError{}
+	var server *pgconn.PgError
+	if errors.As(connect, &server) {
+		out.Code = server.Code
+	}
+	return out
 }

@@ -23,6 +23,9 @@ func (h *Handler) InternalWarmupActions(c *gin.Context) {
 			return
 		}
 	}
+	if !h.nodeWorkerMailbox(c, "worker.warmup_actions", http.StatusNotFound, req.WorkerID, req.MailboxID) {
+		return
+	}
 	if r, ok := h.WarmupDispatch.(repository.WarmupActionRecoveryAdmission); ok {
 		decision, err := r.AdmitWarmupAction(c.Request.Context(), req)
 		if err != nil {
@@ -50,6 +53,9 @@ func (h *Handler) InternalWarmupFilingDeferral(c *gin.Context) {
 	var req models.WarmupFilingDeferralRequest
 	if c.ShouldBindJSON(&req) != nil || req.MailboxID == uuid.Nil || req.WorkerID == uuid.Nil || req.FilingID == uuid.Nil || req.ProviderRetryAt.IsZero() {
 		c.Status(http.StatusBadRequest)
+		return
+	}
+	if !h.nodeWorkerMailbox(c, "worker.warmup_filing_deferral", http.StatusForbidden, req.WorkerID, req.MailboxID) {
 		return
 	}
 	r, ok := h.WarmupDispatch.(repository.WarmupFilingDeferralAuthority)

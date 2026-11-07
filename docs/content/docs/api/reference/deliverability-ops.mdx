@@ -53,7 +53,8 @@ Returns the `AdvancedOutreachSettings` object directly (not wrapped in an envelo
     "auto_pause_on_negative": false,
     "auto_suppress_on_unsubscribe_keyword": true,
     "hold_on_out_of_office": true,
-    "out_of_office_hold_days": 7
+    "out_of_office_hold_days": 7,
+    "stop_all_campaigns_on_reply": false
   },
   "send_time_optimization": {
     "enabled": false,
@@ -102,8 +103,16 @@ The `unsubscribe` block is the workspace default for the opt-out appended after 
 `reply_intent.hold_on_out_of_office` defaults to `true`. When a recipient's mailbox answers a campaign step with an away message, the contact's next step in that campaign is held until they are back: the return date in the auto-reply when one can be read, plus a working day, and `out_of_office_hold_days` (1 to 90, default `7`) when none can. An auto-reply is never counted as a human reply, so without this the follow-up goes out on schedule while the person is away. `out_of_office_keywords` feeds the reply-intent record and is workspace-editable; detection itself carries its own multilingual vocabulary and does not depend on it. See [out of office and pausing one lead](/guides/campaigns/#out-of-office-and-pausing-one-lead) and [pause a lead](/api/reference/campaigns/#pause-a-lead).
 </Callout>
 
+<Callout type="info" title="A reply stops only its own campaign by default">
+`reply_intent.stop_all_campaigns_on_reply` defaults to `false`. It takes effect only while `reply_intent.enabled` is `true` (the default): with reply automation off, no reply holds anything. Set it to `true` and a human reply also holds the contact in every other campaign they are a lead of that has not completed, for 365 days, with the reason `replied to another campaign` and the source `inbox_tagging`. Automatic replies never trigger it, the answered campaign is left to its own stop on reply, and a member's own pause is never replaced. Lift it like any hold, with [resume a lead](/api/reference/campaigns/#pause-a-lead). Omitting the field keeps it off. See [other campaigns the contact is in](/guides/sequences/#other-campaigns-the-contact-is-in).
+</Callout>
+
 <Callout type="info" title="Send-time optimization is off by default">
 `send_time_optimization.enabled` defaults to `false`. Set it to `true` and campaign scheduling holds each send until the recipient's local clock reaches one of `preferred_hours`, resolving the recipient's timezone from the contact's `timezone` custom field, then the country-code suffix of its email domain, then `default_contact_timezone`. It can only delay a send: the campaign window, the mailbox's sending profile, its daily cap, and the campaign end date all still bind. See [Sending behavior](/guides/sending-behavior/).
+</Callout>
+
+<Callout type="info" title="A/B winners are promoted only when asked">
+`ab_testing.default_winning_rule` (`reply_rate` by default, or `open_rate`, `click_rate`) and `ab_testing.min_sample_size` (default `30` delivered contacts per arm) decide when a step's A/B test has a winner. `ab_testing.auto_promote_winner` defaults to `false`. Set it to `true` and, once a step's winner is significant, every new contact at that step gets the winner: the other arms are paused and the winner is marked with `promoted_at`. Warmbly checks about every 15 minutes, promotes a step at most once, and records the change in the audit log. Campaign-level variants are never promoted. See [A/B variants](/guides/sequences/#ab-variants).
 </Callout>
 
 <Callout type="info" title="Mail that needs action stays in the inbox by default">
@@ -160,7 +169,7 @@ Auth: **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_settings`
 
 `POST /deliverability/events`
 
-Posts a single deliverability signal (bounce, complaint, unsubscribe, open, click, or reply) into the platform. This is API-key callable so downstream pipelines (for example an SES bounce processor) can report events without a human in the loop. Depending on the org's bounce-pipeline settings, a bounce, complaint, or unsubscribe may auto-suppress the recipient. Supply an `idempotency_key` to make retries safe.
+Posts a single deliverability signal (bounce, complaint, unsubscribe, open, click, or reply) into the platform. This is API-key callable so downstream pipelines (for example an SES bounce processor) can report events without a human in the loop. Depending on the org's bounce-pipeline settings, a bounce, complaint, or unsubscribe may auto-suppress the recipient. A bounce suppresses only when its `reason` clearly says the address cannot receive mail (see [suppression](/guides/deliverability/#built-in-protections)); Warmbly classifies it and stores the result as `bounce_cause` in the event's metadata, replacing any `bounce_cause` the request supplied. Supply an `idempotency_key` to make retries safe.
 
 Auth: **Scope** `WRITE_CAMPAIGNS` · **Org permission** `send_campaigns`
 
@@ -241,7 +250,7 @@ Auth: **Scope** `READ_CONTACTS` · **Org permission** `view_contacts`
 }
 ```
 
-`kind` is `email` or `domain`; a domain entry keeps the bare host in `email` and matches every address at it. `source` is `bounce`, `complaint`, `unsubscribe`, `manual` (added one at a time) or `import` (added as a batch). An invalid `limit` or `cursor` returns `400`.
+`kind` is `email` or `domain`; a domain entry keeps the bare host in `email` and matches every address at it. `source` is `bounce`, `complaint`, `unsubscribe`, `manual` (added one at a time) or `import` (added as a batch). A `bounce` entry carries `bounce_cause`, what the bounce was about, when it was classified: `recipient_invalid` for every entry added now, since only a bounce that says the address cannot receive mail suppresses it. Older entries can carry another cause or none. An invalid `limit` or `cursor` returns `400`.
 
 ## Add to the suppression list
 
@@ -776,9 +785,9 @@ Advisory only, exactly like `/templates/score`: nothing here blocks or delays a 
 
 Auth: **Scope** `WRITE_TEMPLATES` · **Org permission** `view_campaigns` and `use_ai`
 
-It writes no template, but it spends the workspace's AI credits, so it takes the write scope: a read-only key must not be able to spend money. A signed-in member still needs only `view_campaigns`, plus `use_ai`.
+It writes no template, but it charges the workspace balance, so it takes the write scope: a read-only key must not be able to spend money. A signed-in member still needs only `view_campaigns`, plus `use_ai`.
 
-This endpoint spends AI credits (see [AI credits](/guides/ai-credits/)), unless the deployment runs an unmetered model (`AI_PROVIDER=ollama`, or any provider with `AI_FREE=true`), where `credits_charged` comes back `0`. Send an `Idempotency-Key` header to make a retry safe; the same key is never charged twice.
+This endpoint is charged to the workspace balance for the tokens it uses (see [Balance and usage](/guides/ai-credits/)), unless the deployment runs an unmetered model (`AI_PROVIDER=ollama`, or any provider with `AI_FREE=true`), where `charged_usd` comes back `0`. Send an `Idempotency-Key` header to make a retry safe; the same key is never charged twice.
 
 ### Request body
 
@@ -822,6 +831,8 @@ At least one of the three must carry something, and the three together are cappe
   },
   "model": "gpt-6-luna",
   "tokens_used": 812,
+  "charged_usd": 0.0215,
+  "balance_usd": 4.96,
   "credits_remaining": 248,
   "credits_charged": 2
 }
@@ -836,6 +847,7 @@ At least one of the three must carry something, and the three together are cappe
 | `suggested_subject` | A rewritten subject, or absent when the current one is fine. |
 | `improvements` | Copy-level advice with no single fragment to quote. |
 | `rules` | The `/templates/score` result for the same content. |
+| `charged_usd`, `balance_usd` | What the analysis cost and the balance left, in dollars. `credits_charged` and `credits_remaining` are the same in legacy credits. |
 
 <Callout type="info" title="Quotes are verified, not trusted">
 Every `text` is checked against the submitted subject and body before it is returned. A fragment that is not in the copy is dropped and the finding keeps only its `issue` and `suggestion`, so a response never quotes a sentence you did not send. A finding whose quote was found in the other half has its `field` corrected.
@@ -848,6 +860,6 @@ The analysis runs at a fixed temperature, so re-analyzing unchanged copy returns
 | Status | When |
 |--------|------|
 | `400` | Nothing written to analyze, or the template is over the size cap. |
-| `402` | The workspace is out of AI credits. Nothing is charged and no provider call is made. |
+| `402` | The workspace balance is too low (`insufficient_credits`). Nothing is charged and no provider call is made. |
 | `403` | The plan or trial does not cover AI, or the member lacks `use_ai`. |
-| `503` | No AI provider is configured on this deployment (`code` is `ai_not_configured`, which is permanent for that deployment), or the provider failed (`code` is `service_unavailable`, and the reserved credits are refunded). |
+| `503` | No AI provider is configured on this deployment (`code` is `ai_not_configured`, which is permanent for that deployment), or the provider failed (`code` is `service_unavailable`, and nothing is charged). |

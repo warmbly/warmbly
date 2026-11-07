@@ -2,6 +2,7 @@ package goog
 
 import (
 	"errors"
+	"regexp"
 	"strings"
 	"time"
 
@@ -71,6 +72,21 @@ func isGoogleThrottle(gerr *googleapi.Error) bool {
 	return strings.Contains(msg, "quota exceeded") || strings.Contains(msg, "rate limit exceeded")
 }
 
+// retryAfterStamp is Gmail's sending-limit sentence, "User-rate limit exceeded.  Retry after 2026-01-02T15:04:05.000Z (Mail sending)"; only a send carries it.
+var retryAfterStamp = regexp.MustCompile(`(?i)retry after (\d{4}-\d{2}-\d{2}T[0-9:.]+Z) \(mail sending\)`)
+
+func retryAfterInMessage(msg string, now time.Time) *time.Time {
+	m := retryAfterStamp.FindStringSubmatch(msg)
+	if m == nil {
+		return nil
+	}
+	at, err := time.Parse(time.RFC3339Nano, m[1])
+	if err != nil || !at.After(now) {
+		return nil
+	}
+	return &at
+}
+
 func HandleError(err error) *errx.MailError {
 	if err == nil {
 		return nil
@@ -84,6 +100,9 @@ func HandleError(err error) *errx.MailError {
 		failure := errx.SendFailure{Provider: "google", Protocol: "http", Status: gerr.Code,
 			Scope: "mailbox", ObservedAt: now, Disposition: errx.SendPermanent,
 			RetryAt: errx.RetryAfterAt(gerr.Header.Get("Retry-After"), now)}
+		if failure.RetryAt == nil {
+			failure.RetryAt = retryAfterInMessage(gerr.Message, now)
+		}
 		for _, item := range gerr.Errors {
 			if code := errx.SafeProviderCode(item.Reason); code != "" {
 				failure.Cause = code

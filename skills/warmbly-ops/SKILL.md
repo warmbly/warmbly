@@ -44,6 +44,7 @@ for. Prefer parsing that over reasoning from the prose.
 | Back the instance up | `warmblyctl backup --out /data/blobs/warmbly.tar.gz`, then copy it out and delete it |
 | Restore one onto this instance | `warmblyctl restore --file /data/blobs/warmbly.tar.gz` |
 | See which key opens each stored secret | `warmblyctl keys status [--json]` |
+| See what the database is busy with: connections by service, costliest queries, largest tables | `warmblyctl db load [--limit N] [--json]` |
 | Move secrets onto a new primary key | `warmblyctl keys reseal` (dry run), then `keys reseal --apply` |
 | Mint replacement keys and tokens | `warmblyctl keys generate [NAME...]` |
 

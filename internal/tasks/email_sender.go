@@ -165,11 +165,8 @@ func (s *emailSender) Send(ctx context.Context, taskID uuid.UUID, msg EmailMessa
 		return fmt.Errorf("email account %s has no organization", account.ID)
 	}
 
-	// For warmup emails, only use plaintext (no HTML)
+	// Warmup is plain text unless it carries campaign copy, which the task sets.
 	bodyHTML := msg.BodyHTML
-	if msg.IsWarmup {
-		bodyHTML = ""
-	}
 
 	// Create send email params
 	params := &events.SendEmailParams{

@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -43,7 +44,7 @@ func (s *schedulerService) WarmupExecutionNotBefore(ctx context.Context, id, tas
 		if err != nil {
 			return time.Time{}, err
 		}
-		bhv = behavior.NewStandalone(profile, loadLocation(a.ClockTimezone()))
+		bhv = behavior.NewStandalone(profile, loadLocation(a.ClockTimezone())).ForWarmup(a.WarmupDays)
 	}
 	at, err := warmupDispatchWindow(a, bhv, now)
 	if err != nil {
@@ -128,6 +129,7 @@ func (s *schedulerService) WarmupExecutionNotBefore(ctx context.Context, id, tas
 }
 
 func warmupDispatchWindow(a *models.Email, bhv behavior.Resolved, desired time.Time) (time.Time, error) {
+	bhv = bhv.ForWarmup(a.WarmupDays)
 	loc := loadLocation(a.ClockTimezone())
 	at := desired
 	for i := 0; i < 32; i++ {
@@ -138,7 +140,7 @@ func warmupDispatchWindow(a *models.Email, bhv behavior.Resolved, desired time.T
 		if bhv.Enabled {
 			open, _, ok := bhv.NextOpen(at)
 			if !ok {
-				return time.Time{}, errors.New("warmup behavior has no working days")
+				return time.Time{}, fmt.Errorf("%w: sending plan has no working days", ErrWarmupTimeWindowInvalid)
 			}
 			at = open
 		}
@@ -160,7 +162,7 @@ func warmupDispatchWindow(a *models.Email, bhv behavior.Resolved, desired time.T
 		if bhv.Enabled {
 			open, _, ok := bhv.NextOpen(at)
 			if !ok {
-				return time.Time{}, errors.New("warmup behavior has no working days")
+				return time.Time{}, fmt.Errorf("%w: sending plan has no working days", ErrWarmupTimeWindowInvalid)
 			}
 			if open.After(at) {
 				at = open
@@ -172,5 +174,5 @@ func warmupDispatchWindow(a *models.Email, bhv behavior.Resolved, desired time.T
 		}
 		at = valid
 	}
-	return time.Time{}, errors.New("warmup calendars have no reachable intersection")
+	return time.Time{}, fmt.Errorf("%w: no reachable overlap with sending plan", ErrWarmupTimeWindowInvalid)
 }

@@ -18,6 +18,8 @@ export interface VendorCatalogEntry {
     website: string;
     key_help_url: string;
     fields: VendorField[];
+    /** The vendor can sign in again as its Google mailboxes, so they reconnect in place. */
+    signs_in?: boolean;
 }
 
 export type SourceStatus = "active" | "invalid";
@@ -84,21 +86,9 @@ export interface GrantConfig {
     /** Settings an operator still has to set; empty when enabled. */
     google_missing?: string[];
     microsoft_missing?: string[];
+    /** The per-mailbox Google sign-in client a Workspace admin marks Trusted; absent with no client configured. */
+    google_mailbox_client_id?: string;
 }
-
-/**
- * How a workspace proves it controls a Workspace domain. "signin" opens `url`
- * for the administrator; the DNS record works either way.
- */
-export interface GoogleGrantStart {
-    method: "signin" | "dns";
-    url?: string;
-    state?: string;
-    txt_name: string;
-    txt_value: string;
-}
-
-export type GoogleGrantFinish = { state: string; code: string } | { domain: string; admin_email: string };
 
 export interface DomainGrant {
     id: string;
@@ -135,12 +125,50 @@ export interface GrantConnectRequest {
     options: SourceImportOptions;
 }
 
-/** A mailbox still on the retiring per-mailbox Google sign-in. */
+/** A mailbox on the older per-mailbox Google sign-in, without full mail access. */
 export interface MigrationMailbox {
     id: string;
     email: string;
     name: string;
     status: string;
+    /** The healthy vendor connection that can reconnect it in place, when one can. */
+    vendor_connection_id?: string;
+    vendor?: string;
+}
+
+/** Where one mailbox's vendor reconnect stands. */
+export type ReconnectStatus = "queued" | "trusting" | "signing_in" | "connected" | "failed";
+
+export interface VendorReconnectMailbox {
+    email_account_id: string;
+    email: string;
+    status: ReconnectStatus;
+    message?: string;
+}
+
+export type SigninMethod = "google_signin" | "google_grant" | "app_password" | "other";
+
+/** How a mailbox signs in and the switches that can succeed for it (GET /emails/:id/signin). */
+export interface MailboxSignin {
+    method: SigninMethod;
+    /** Set for a Google sign-in whose granted permissions are recorded. */
+    full_mail_access: boolean | null;
+    personal: boolean;
+    managed: boolean;
+    options: {
+        google_signin: { client_id: string } | null;
+        app_password: boolean;
+        vendor: { connection_id: string; vendor: string; label: string } | null;
+        grant: { id: string; domain: string } | null;
+    };
+    /** Warmbly reconnects it through its vendor without a click. */
+    auto_switch: boolean;
+    switch: { status: ReconnectStatus; message?: string; automatic: boolean; at: string } | null;
+}
+
+/** A reconnect that has not ended yet. */
+export function reconnectOpen(status?: ReconnectStatus | null): boolean {
+    return status === "queued" || status === "trusting" || status === "signing_in";
 }
 
 /**

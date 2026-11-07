@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
+	"github.com/warmbly/warmbly/internal/app/warmupramp"
 	"github.com/warmbly/warmbly/internal/bitmask"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -39,6 +40,12 @@ func (s *JobsService) scheduleWarmupReplyBack(ctx context.Context, token *models
 	// work forward would spend the budget on a reply.
 	if !recipient.IsWarmingActive() {
 		return nil
+	}
+	// Arrivals only spend the reply share the mailbox has left; a send it owes is repaid when its next plain send goes out.
+	if share, ok := s.TaskRepo.(repository.WarmupReplyShareRepository); ok {
+		if sent, replied, err := share.WarmupReplyShare(ctx, recipientAccountID); err == nil && warmupramp.ReplyDeficit(recipient.WarmupReplyRate, sent, replied) <= 0 {
+			return nil
+		}
 	}
 
 	if int(binary.BigEndian.Uint32(token.Token[:4])%100) >= recoveryReplyChance(recipient.WarmupReplyRate, senderBoosted) {

@@ -11,6 +11,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/scheduler"
 )
 
@@ -74,6 +75,8 @@ func (s *contactService) fillNextAction(ctx context.Context, st *models.ContactC
 			return
 		}
 		switch {
+		case route.StoppedBy == repository.StoppedByMeeting:
+			st.EndedReason = "Booked a meeting, sending stopped"
 		case st.LeadStatus == models.LeadStatusReplied:
 			st.EndedReason = "Replied, sending stopped"
 		case st.LeadStatus == models.LeadStatusCompleted:

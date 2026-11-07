@@ -30,6 +30,8 @@ import (
 type memGrants struct {
 	mu     sync.Mutex
 	grants map[uuid.UUID]*models.DomainGrant
+	// awaiting is a domain with imported mailboxes waiting on their grant.
+	awaiting bool
 }
 
 func (m *memGrants) Upsert(_ context.Context, g *models.DomainGrant, _ uuid.UUID) error {
@@ -95,6 +97,9 @@ func (m *memGrants) ListActive(context.Context) ([]models.DomainGrant, error) { 
 func (m *memGrants) InactiveMailboxes(context.Context, uuid.UUID) ([]uuid.UUID, error) {
 	return nil, nil
 }
+func (m *memGrants) AwaitsGoogleGrant(context.Context, uuid.UUID, string) (bool, error) {
+	return m.awaiting, nil
+}
 
 type fakeMailboxes struct{ connected []models.NewDelegatedAccount }
 
@@ -156,7 +161,9 @@ type fakeProviders struct {
 	*httptest.Server
 	// googleRefuse makes the token endpoint answer unauthorized_client.
 	googleRefuse bool
-	subjects     []string
+	// googleRefuseScope refuses only an assertion asking for this scope, as Google does for one the entry lacks.
+	googleRefuseScope string
+	subjects          []string
 	// What the next sign-in or consent token says.
 	signinEmail, signinHD, consentTenant string
 	// consentRoles are the directory role template ids in the consent's ID token; nil means a Global Administrator.
@@ -212,7 +219,7 @@ func newProviders(t *testing.T) *fakeProviders {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/google/token", func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
-		if f.googleRefuse {
+		if f.googleRefuse || (f.googleRefuseScope != "" && strings.Contains(assertionScope(r.Form.Get("assertion")), f.googleRefuseScope)) {
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = w.Write([]byte(`{"error":"unauthorized_client","error_description":"Client is unauthorized to retrieve access tokens"}`))
 			return
@@ -324,10 +331,11 @@ func serviceAccountKey(t *testing.T, tokenURL string) []byte {
 func TestGrantOriginBoundToUnconsumedState(t *testing.T) {
 	t.Setenv("APP_URL", "https://app.warmbly.com")
 	t.Setenv("APP_ORIGIN", "")
-	t.Setenv("CORS_ALLOW_ORIGINS", "https://tac-security-assessment.warmbly.com")
+	t.Setenv("CORS_ALLOW_ORIGINS", "https://second.example.com")
 	s, p, _, _, _ := newTestService(t)
-	ctx := config.WithDashboardOrigin(context.Background(), "https://tac-security-assessment.warmbly.com")
+	ctx := config.WithDashboardOrigin(context.Background(), "https://second.example.com")
 	org, user := uuid.New(), uuid.New()
+	holdLegacyGoogle(t, s, org)
 	g, xerr := s.StartGoogle(ctx, org, user, "acme.io", "admin@acme.io")
 	if xerr != nil {
 		t.Fatal(xerr)
@@ -337,7 +345,7 @@ func TestGrantOriginBoundToUnconsumedState(t *testing.T) {
 		t.Fatal(xerr)
 	}
 	for _, state := range []string{g.State, ms} {
-		if got := s.OAuthReturnOrigin(context.Background(), state); got != "https://tac-security-assessment.warmbly.com" {
+		if got := s.OAuthReturnOrigin(context.Background(), state); got != "https://second.example.com" {
 			t.Fatalf("origin = %q", got)
 		}
 		st, ok := p.states.Peek(ctx, "mailbox_grant_state:"+state)
@@ -345,7 +353,7 @@ func TestGrantOriginBoundToUnconsumedState(t *testing.T) {
 			t.Fatal("routing must preserve identity and PKCE state")
 		}
 	}
-	if s.MicrosoftSigninURL(context.Background(), ms) == "" || s.OAuthReturnOrigin(ctx, ms) != "https://tac-security-assessment.warmbly.com" {
+	if s.MicrosoftSigninURL(context.Background(), ms) == "" || s.OAuthReturnOrigin(ctx, ms) != "https://second.example.com" {
 		t.Fatal("second Microsoft sign-in must retain origin")
 	}
 	p.states.Take(ctx, "mailbox_grant_state:"+ms)
@@ -405,9 +413,55 @@ func TestConfigNamesTheClientAndScopes(t *testing.T) {
 	}
 }
 
-// googleGrant proves acme.io for org by sign-in and returns the grant.
+// A domain the workspace holds no Google grant for is refused at start and finish; Microsoft is untouched.
+func TestNewGoogleGrantsAreRetired(t *testing.T) {
+	s, _, _, _, _ := newTestService(t)
+	org, user := uuid.New(), uuid.New()
+	if _, xerr := s.StartGoogle(context.Background(), org, user, "acme.io", "admin"+"@acme.io"); xerr == nil || xerr.Identifier != ErrIDGoogleRetired {
+		t.Fatalf("start on a new domain = %v", xerr)
+	}
+	testTXT.records["_warmbly.acme.io"] = []string{s.proof.Value(org, "acme.io")}
+	if _, xerr := s.FinishGoogle(context.Background(), org, user, GoogleFinish{Domain: "acme.io", AdminEmail: "admin" + "@acme.io"}); xerr == nil || xerr.Identifier != ErrIDGoogleRetired {
+		t.Fatalf("finish on a new domain = %v", xerr)
+	}
+	if _, _, xerr := s.StartMicrosoft(context.Background(), org, user); xerr != nil {
+		t.Fatalf("microsoft consent = %v", xerr)
+	}
+}
+
+// Mailboxes that arrived in a workspace import without their grant let the domain be proved again.
+func TestImportedMailboxesReopenTheirGoogleGrant(t *testing.T) {
+	s, _, grants, _, _ := newTestService(t)
+	grants.awaiting = true
+	org, user := uuid.New(), uuid.New()
+	if _, xerr := s.StartGoogle(context.Background(), org, user, "acme.io", "admin"+"@acme.io"); xerr != nil {
+		t.Fatalf("start for imported mailboxes = %v", xerr)
+	}
+}
+
+// The per-mailbox sign-in client is named whenever one is configured, so a reconnect can show it too.
+func TestConfigNamesTheMailboxClient(t *testing.T) {
+	s := NewService(Deps{GoogleMailboxClientID: "mailbox-client.apps.googleusercontent.com"})
+	if got := s.Config().GoogleMailboxClientID; got != "mailbox-client.apps.googleusercontent.com" {
+		t.Fatalf("client = %q", got)
+	}
+	if got := NewService(Deps{}).Config().GoogleMailboxClientID; got != "" {
+		t.Fatalf("no client = %q", got)
+	}
+}
+
+// holdLegacyGoogle gives org an existing (failing) Google grant on acme.io, the only kind that may be proved again.
+func holdLegacyGoogle(t *testing.T, s *Service, org uuid.UUID) {
+	t.Helper()
+	m := s.repo.(*memGrants)
+	id := uuid.New()
+	m.grants[id] = &models.DomainGrant{ID: id, OrganizationID: org, Provider: models.GrantProviderGoogle, Tenant: "acme.io", Domains: []string{"acme.io"}, Status: "invalid"}
+}
+
+// googleGrant proves acme.io again for org, which holds a grant there, and returns the grant.
 func googleGrant(t *testing.T, s *Service, p *fakeProviders, org, user uuid.UUID) *models.DomainGrant {
 	t.Helper()
+	holdLegacyGoogle(t, s, org)
 	start, xerr := s.StartGoogle(context.Background(), org, user, "Acme.io", "admin@acme.io")
 	if xerr != nil || start.Method != "signin" {
 		t.Fatalf("start = %+v, %v", start, xerr)
@@ -454,6 +508,7 @@ func TestGoogleGrantNeedsTheAdminsOwnSignin(t *testing.T) {
 func TestGoogleGrantByDNSIsBoundToTheWorkspace(t *testing.T) {
 	s, _, _, _, _ := newTestService(t)
 	victim, attacker := uuid.New(), uuid.New()
+	holdLegacyGoogle(t, s, victim)
 	start, xerr := s.StartGoogle(context.Background(), victim, uuid.New(), "acme.io", "admin@acme.io")
 	if xerr != nil || start.TXTName != "_warmbly.acme.io" {
 		t.Fatalf("start = %+v, %v", start, xerr)
@@ -685,6 +740,7 @@ func TestMicrosoftSigninURLOnlyForItsOwnState(t *testing.T) {
 func TestSigninsRequirePKCEAndNonce(t *testing.T) {
 	s, p, _, _, _ := newTestService(t)
 	org, user := uuid.New(), uuid.New()
+	holdLegacyGoogle(t, s, org)
 	start, xerr := s.StartGoogle(context.Background(), org, user, "acme.io", "admin@acme.io")
 	if xerr != nil || !strings.Contains(start.URL, "code_challenge_method=S256") || !strings.Contains(start.URL, "nonce=") {
 		t.Fatalf("google start = %+v, %v", start, xerr)

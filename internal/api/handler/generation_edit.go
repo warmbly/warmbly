@@ -1,6 +1,6 @@
 // AI selection-edit endpoint: rewrite a passage of an email draft according to
-// an instruction. Same credit flow as /generation/write (gate, consume up
-// front, refund on provider failure, usage settle), but the prompt is composed
+// an instruction. Same billing as /generation/write (gate, balance check,
+// charge the actual usage on success), but the prompt is composed
 // server-side with the passage fenced as untrusted content, because the
 // selection can contain quoted inbound email that must never be able to steer
 // the model.
@@ -15,7 +15,6 @@ package handler
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"unicode/utf8"
 
@@ -27,8 +26,6 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 )
-
-const creditsPerEdit = 1
 
 // editMaxTextLen bounds the passage and surrounding context; editMaxInstructionLen
 // bounds the user's instruction. Both count characters, not bytes: a byte cap
@@ -121,28 +118,8 @@ func (h *Handler) GenerateEdit(c *gin.Context) {
 		})
 	}
 
-	var remaining int
-	if local {
-		if bal, berr := h.CreditService.GetBalance(reqCtx, *orgID); berr == nil {
-			remaining = bal
-		}
-	} else {
-		var err error
-		remaining, err = h.CreditService.Consume(
-			reqCtx, *orgID, creditsPerEdit,
-			"writing_edit", model, 0, idemKey,
-		)
-		if err != nil {
-			switch {
-			case errors.Is(err, credits.ErrInsufficientCredits):
-				paymentRequiredJSON(c, "You're out of AI credits. Upgrade or purchase more to keep using the writing assistant.")
-			case errors.Is(err, credits.ErrCapExceeded):
-				errx.JSON(c, errx.New(errx.TooManyRequests, "AI writing assistant usage limit reached, please try again later."))
-			default:
-				errx.JSON(c, errx.InternalError())
-			}
-			return
-		}
+	if !h.reserveAI(c, reqCtx, *orgID, local, credits.EstimateWritingAssistant) {
+		return
 	}
 
 	voice := h.orgVoice(c.Request.Context(), *orgID, req.Tone)
@@ -153,8 +130,8 @@ func (h *Handler) GenerateEdit(c *gin.Context) {
 		MaxTokens: editMaxTokens,
 	}
 	h.deliverWriting(c, writingCall{
-		orgID: *orgID, reqCtx: reqCtx, local: local, remaining: remaining,
-		cost: creditsPerEdit, ledger: "writing_edit", idemKey: idemKey,
+		orgID: *orgID, reqCtx: reqCtx, local: local,
+		ledger: "writing_edit", idemKey: idemKey,
 		model: model, voice: voice, source: req.Text, tidy: stripEditFences,
 		generate: func(ctx context.Context, onDelta func(string)) (*generation.WritingResult, error) {
 			if s, ok := h.AIProvider.(generation.StreamCompleter); ok && onDelta != nil {

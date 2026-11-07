@@ -110,3 +110,126 @@ func BenchmarkGraphKnownMessage(b *testing.B) {
 	}
 	b.ReportMetric(float64(maps.gets)/float64(b.N), "lookups/op")
 }
+
+// A walk that re-reads a folder relays a known message's state only when it changed.
+func TestGraphKnownMessageRelaysOnlyChanges(t *testing.T) {
+	var events []captured
+	var relayed []models.SyncState
+	w := newGraphTestMail(t, newFakeGraph().serve(t), &events, &relayed)
+	w.EmailMessageMapRepository = &countingGraphMap{recoveryMessageMap: recoveryMessageMap{data: map[string]repository.EmailMessageData{
+		"known": {ID: uuid.NewString(), MessageID: "known"},
+	}}}
+	injected := errors.New("injected failure")
+	fail := false
+	emit := w.onEvent
+	w.onEvent = func(typ models.JobEventType, body any) error {
+		if fail {
+			return injected
+		}
+		return emit(typ, body)
+	}
+	seen := func(folder string, read bool) {
+		t.Helper()
+		if added, err := w.onGraphMessageSeen(t.Context(), folder, "known", read); err != nil || !added {
+			t.Fatalf("seen %s read=%v: added=%v err=%v", folder, read, added, err)
+		}
+	}
+	expect := func(step string, n int) {
+		t.Helper()
+		if len(events) != n {
+			t.Fatalf("%s: %d events relayed, want %d", step, len(events), n)
+		}
+	}
+
+	seen(msgraph.FolderSent, true)
+	seen(msgraph.FolderSent, true)
+	seen(msgraph.FolderSent, true)
+	expect("unchanged walks", 2)
+	seen(msgraph.FolderSent, false)
+	expect("read state changed", 4)
+	seen(msgraph.FolderArchive, false)
+	expect("folder changed", 6)
+
+	fail = true
+	if _, err := w.onGraphMessageSeen(t.Context(), msgraph.FolderInbox, "known", false); !errors.Is(err, injected) {
+		t.Fatalf("publish failure not propagated: %v", err)
+	}
+	fail = false
+	seen(msgraph.FolderInbox, false)
+	expect("relay retried after a failed publish", 8)
+
+	if err := w.onGraphMessageRemove(t.Context(), "known"); err != nil {
+		t.Fatal(err)
+	}
+	removed := len(events)
+	seen(msgraph.FolderInbox, false)
+	expect("state relayed again after a removal", removed+2)
+}
+
+// A reconcile relays the read state it fetched, and that is what a later walk compares against.
+func TestGraphReconcileReplacesTheRelayedState(t *testing.T) {
+	var events []captured
+	var relayed []models.SyncState
+	w := newGraphTestMail(t, newFakeGraph().serve(t), &events, &relayed)
+	id := uuid.NewString()
+	w.EmailMessageMapRepository = &countingGraphMap{recoveryMessageMap: recoveryMessageMap{data: map[string]repository.EmailMessageData{
+		"known": {ID: id, MessageID: "known"},
+	}}}
+	if _, err := w.onGraphMessageSeen(t.Context(), msgraph.FolderInbox, "known", true); err != nil {
+		t.Fatal(err)
+	}
+	// The fake mailbox reports the message unread, so the reconcile relays unread.
+	if err := w.graphReconcileMessage(t.Context(), id, "known", msgraph.FolderInbox); err != nil {
+		t.Fatal(err)
+	}
+	if last := events[len(events)-1]; last.eventType != models.JobEventTypeFlagsRemove {
+		t.Fatalf("reconcile relayed %s, want the fetched unread state", last.eventType)
+	}
+	before := len(events)
+	if _, err := w.onGraphMessageSeen(t.Context(), msgraph.FolderInbox, "known", true); err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != before+2 || events[before].eventType != models.JobEventTypeFlagsAdd {
+		t.Fatalf("read state after a reconcile relayed unread was not relayed: %v", events[before:])
+	}
+	if _, err := w.onGraphMessageSeen(t.Context(), msgraph.FolderInbox, "known", true); err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != before+2 {
+		t.Fatalf("unchanged state relayed again: %v", events[before:])
+	}
+}
+
+// A relay that fails after its flag event leaves nothing cached, so a later
+// return to the earlier state is still relayed.
+func TestGraphKnownMessagePartialRelayIsNotRemembered(t *testing.T) {
+	var events []captured
+	var relayed []models.SyncState
+	w := newGraphTestMail(t, newFakeGraph().serve(t), &events, &relayed)
+	w.EmailMessageMapRepository = &countingGraphMap{recoveryMessageMap: recoveryMessageMap{data: map[string]repository.EmailMessageData{
+		"known": {ID: uuid.NewString(), MessageID: "known"},
+	}}}
+	failFolder := false
+	emit := w.onEvent
+	w.onEvent = func(typ models.JobEventType, body any) error {
+		if failFolder && typ == models.JobEventTypeFolderUpdate {
+			return errors.New("injected failure")
+		}
+		return emit(typ, body)
+	}
+	if _, err := w.onGraphMessageSeen(t.Context(), msgraph.FolderInbox, "known", true); err != nil {
+		t.Fatal(err)
+	}
+	failFolder = true
+	if _, err := w.onGraphMessageSeen(t.Context(), msgraph.FolderInbox, "known", false); err == nil {
+		t.Fatal("folder publish failure not propagated")
+	}
+	failFolder = false
+	before := len(events)
+	if _, err := w.onGraphMessageSeen(t.Context(), msgraph.FolderInbox, "known", true); err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != before+2 || events[before].eventType != models.JobEventTypeFlagsAdd {
+		t.Fatalf("read state after a partial unread relay was not relayed: %v", events[before:])
+	}
+}

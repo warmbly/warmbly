@@ -114,11 +114,17 @@ export async function setCampaignSegments(
     });
 }
 
-export async function addSegmentToCampaign(id: string, campaignId: string): Promise<SegmentAddToCampaignResult> {
+export async function addSegmentToCampaign(
+    id: string,
+    campaignId: string,
+    skipActiveInOtherCampaigns = false,
+): Promise<SegmentAddToCampaignResult> {
     return await Request<SegmentAddToCampaignResult>({
         method: "POST",
         url: `/segments/${id}/add-to-campaign`,
-        data: { campaign_id: campaignId },
+        data: skipActiveInOtherCampaigns
+            ? { campaign_id: campaignId, skip_active_in_other_campaigns: true }
+            : { campaign_id: campaignId },
         authorization: true,
     });
 }

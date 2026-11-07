@@ -27,7 +27,7 @@ func TestLegacyMailboxStateUsesPrimaryDashboard(t *testing.T) {
 	t.Cleanup(func() { _ = c.Close() })
 	t.Setenv("APP_URL", "https://app.warmbly.com/")
 	t.Setenv("APP_ORIGIN", "")
-	t.Setenv("CORS_ALLOW_ORIGINS", "https://tac-security-assessment.warmbly.com")
+	t.Setenv("CORS_ALLOW_ORIGINS", "https://second.example.com")
 	svc := &emailService{r: c}
 	ctx := context.Background()
 	for _, provider := range []string{"gmail", "outlook"} {
@@ -46,7 +46,7 @@ func TestLegacyMailboxStateUsesPrimaryDashboard(t *testing.T) {
 func TestOAuthStartRejectsUntrustedReturnOrigin(t *testing.T) {
 	t.Setenv("APP_URL", "https://app.example.com")
 	t.Setenv("APP_ORIGIN", "")
-	t.Setenv("CORS_ALLOW_ORIGINS", "https://assessment.example.com")
+	t.Setenv("CORS_ALLOW_ORIGINS", "https://second.example.com")
 	svc := &emailService{}
 	org := uuid.New()
 	for _, tt := range []struct {
@@ -54,8 +54,8 @@ func TestOAuthStartRejectsUntrustedReturnOrigin(t *testing.T) {
 		web    bool
 	}{
 		{"https://evil.example.com", true},
-		{"https://assessment.example.com/path", true},
-		{"https://assessment.example.com", false},
+		{"https://second.example.com/path", true},
+		{"https://second.example.com", false},
 	} {
 		if _, xerr := svc.OAuthStart(context.Background(), uuid.NewString(), &org, models.InboxProviderGoogle, "", tt.web, tt.origin); xerr != errx.ErrEmailOnboardReturnOrigin {
 			t.Fatalf("untrusted return origin should fail before storing state, got %v", xerr)
@@ -66,7 +66,7 @@ func TestOAuthStartRejectsUntrustedReturnOrigin(t *testing.T) {
 func TestOAuthReauthRejectsUntrustedGoogleReturnOrigin(t *testing.T) {
 	t.Setenv("APP_URL", "https://app.example.com")
 	t.Setenv("APP_ORIGIN", "")
-	t.Setenv("CORS_ALLOW_ORIGINS", "https://assessment.example.com")
+	t.Setenv("CORS_ALLOW_ORIGINS", "https://second.example.com")
 	svc, repo, _, _ := reauthFixture("gmail", "owner@example.com")
 	_, xerr := svc.OAuthReauth(context.Background(), repo.account.UserID, repo.account.OrganizationID, repo.account.ID, "https://evil.example.com")
 	if xerr != errx.ErrEmailOnboardReturnOrigin {
@@ -94,7 +94,7 @@ func TestMailboxOAuthOriginStaysBoundToSingleUseState(t *testing.T) {
 	t.Cleanup(func() { _ = c.Close() })
 	t.Setenv("APP_URL", "https://app.example.com")
 	t.Setenv("APP_ORIGIN", "")
-	t.Setenv("CORS_ALLOW_ORIGINS", "https://assessment.example.com")
+	t.Setenv("CORS_ALLOW_ORIGINS", "https://second.example.com")
 	t.Setenv("BOX_GOOGLE_CLIENT_ID", "client")
 	t.Setenv("BOX_GOOGLE_CLIENT_SECRET", "secret")
 	t.Setenv("BOX_GOOGLE_OAUTH_CONNECT", "")
@@ -110,23 +110,23 @@ func TestMailboxOAuthOriginStaysBoundToSingleUseState(t *testing.T) {
 			var xerr *errx.Error
 			if reauth {
 				t.Setenv("BOX_GOOGLE_OAUTH_CONNECT", "false")
-				resp, xerr = svc.OAuthReauth(ctx, repo.account.UserID, repo.account.OrganizationID, repo.account.ID, "https://assessment.example.com")
+				resp, xerr = svc.OAuthReauth(ctx, repo.account.UserID, repo.account.OrganizationID, repo.account.ID, "https://second.example.com")
 			} else {
 				t.Setenv("BOX_GOOGLE_OAUTH_CONNECT", "")
-				resp, xerr = svc.OAuthStart(ctx, repo.account.UserID, repo.account.OrganizationID, models.InboxProvider(provider), "", true, "https://assessment.example.com")
+				resp, xerr = svc.OAuthStart(ctx, repo.account.UserID, repo.account.OrganizationID, models.InboxProvider(provider), "", true, "https://second.example.com")
 			}
 			if xerr != nil {
 				t.Fatal(xerr)
 			}
 			t.Cleanup(func() { _ = c.Del(ctx, onboardingStateKey(resp.State)).Err() })
-			if origin := svc.OAuthReturnOrigin(ctx, resp.State); origin != "https://assessment.example.com" {
+			if origin := svc.OAuthReturnOrigin(ctx, resp.State); origin != "https://second.example.com" {
 				t.Fatalf("state-bound origin = %q", origin)
 			}
 			if svc.OAuthReturnOrigin(ctx, "w.unknown") != "" || svc.OAuthReturnOrigin(ctx, "native") != "" {
 				t.Fatal("unknown or native state must not select a dashboard")
 			}
 			sess, xerr := svc.takeOnboardingState(ctx, resp.State)
-			if xerr != nil || sess.ReturnOrigin != "https://assessment.example.com" || sess.CodeVerifier == "" || sess.UserID != repo.account.UserID || (sess.EmailAccountID != nil) != reauth {
+			if xerr != nil || sess.ReturnOrigin != "https://second.example.com" || sess.CodeVerifier == "" || sess.UserID != repo.account.UserID || (sess.EmailAccountID != nil) != reauth {
 				t.Fatalf("callback metadata lookup must preserve the finish state: %+v, %v", sess, xerr)
 			}
 			if svc.OAuthReturnOrigin(ctx, resp.State) != "" {

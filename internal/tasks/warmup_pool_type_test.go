@@ -90,27 +90,25 @@ func TestResolveWarmupPoolTypeFallsBackToEntitlementWithoutAStoredTier(t *testin
 }
 
 // The reconciler is what moves a mailbox that is not actively warming (a
-// recipient-only member, say), so restriction has to reach it there too.
+// recipient-only member, say), so restriction has to reach it there too. Every
+// workspace's risk is read in one query per pass.
 func TestPoolReconcileMovesARestrictedOrganizationToTheFreePool(t *testing.T) {
 	f := newPoolReconcileFixture()
 	restricted := f.mailbox(f.orgPaid, "premium", "premium")
-	participants := []uuid.UUID{restricted}
-	f.svc = &tasksService{
-		warmupRepo:   &poolReconcileWarmupRepo{participants: participants},
-		emailRepo:    f.emails,
-		featureGate:  f.gate,
-		warmupHealth: f.warmup,
-		orgRiskRepo:  &poolTypeRiskRepo{states: map[uuid.UUID]models.OrgRiskState{f.orgPaid: models.OrgRiskRestricted}},
-	}
+	other := uuid.New()
+	f.gate.entitled[other] = true
+	f.mailbox(other, "premium", "premium")
+	f.risk.states[f.orgPaid] = models.OrgRiskRestricted
 
-	moved, removed, err := f.svc.ReconcileWarmupPoolMembership(context.Background())
-	if err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
+	moved, removed := f.run(t)
+
 	if moved != 1 || removed != 0 {
 		t.Fatalf("moved %d removed %d, want 1 and 0", moved, removed)
 	}
 	if f.warmup.moved[restricted] != "free" {
 		t.Fatalf("moved to %q, want free", f.warmup.moved[restricted])
+	}
+	if f.risk.calls != 1 {
+		t.Fatalf("read risk %d times, want once per pass", f.risk.calls)
 	}
 }

@@ -48,7 +48,7 @@ import { useConfirm } from "@/hooks/context/confirm";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import timeAgo from "@/lib/helper/timeAgo";
-import { mailHostLabel, mailHostOAuthProvider } from "@/lib/mailHost";
+import { isPersonalGmail, mailHostLabel, mailHostOAuthProvider } from "@/lib/mailHost";
 import { cn } from "@/lib/utils";
 import {
     AUTHORIZING_STATUS,
@@ -57,6 +57,7 @@ import {
     importSourceName,
     isPasswordCause,
     isSigninCause,
+    looksLikeGoogleAppPassword,
     plural,
 } from "./importFields";
 import { Banner, HostMark, Linkified, Pill, SectionLabel, StatCard } from "./parts";
@@ -175,7 +176,8 @@ export default function RunStep({
     const signInProvider = (row: ImportRow) => {
         const provider = mailHostOAuthProvider(row.mail_host);
         if (!provider) return null;
-        if (provider === "gmail" && !oauth.gmailAvailable) return null;
+        // Personal Gmail connects with an app password, never Google sign-in.
+        if (provider === "gmail" && (!oauth.gmailAvailable || row.mail_host === "gmail" || isPersonalGmail(row.email))) return null;
         return provider;
     };
 
@@ -358,9 +360,10 @@ export default function RunStep({
                                 {plural(authorizing, "mailbox", "mailboxes")}
                             </p>
                             <p className="text-[11.5px] text-sky-800/90 leading-relaxed mt-0.5">
-                                It approves Warmbly through the admin mailbox it holds on each domain, so nobody has to sign in. This can
-                                take up to an hour; each row shows where its request is. The rows connect on their own, and switch to Sign in
-                                if it is not done within 2 hours. You can close this window.
+                                It approves Warmbly through the admin mailbox it holds on each domain, so nobody has to sign in. For Google
+                                mailboxes it first adds Warmbly as a trusted app on the domain, then signs in to each mailbox to approve it.
+                                This can take up to an hour; each row shows its stage (Authorizing, then Signing in) and where its request is.
+                                The rows connect on their own, and switch to Sign in if it is not done in time. You can close this window.
                             </p>
                             <div className="mt-2 pt-2 border-t border-sky-200/70">
                                 <p className="text-[11.5px] font-medium text-sky-900">Want it faster?</p>
@@ -690,6 +693,9 @@ function CauseCard({
     const canRetry = cause.retryable && !signin;
     const passwordCause = isPasswordCause(cause.cause);
     const appPassword = /app_password/.test(cause.cause);
+    // The server refuses anything but an app password when a Google row is in the batch.
+    const googleRows = cause.google === true || cause.cause.startsWith("google_");
+    const notAppPassword = googleRows && !!password && !looksLikeGoogleAppPassword(password);
     return (
         <div className={cn("rounded-md border px-3 py-2.5", active ? "border-sky-300 bg-sky-50/40" : "border-slate-200")}>
             <div className="flex items-baseline gap-2">
@@ -727,7 +733,7 @@ function CauseCard({
                     className="mt-2 flex items-center gap-1.5"
                     onSubmit={(e) => {
                         e.preventDefault();
-                        if (!password || busy) return;
+                        if (!password || notAppPassword || busy) return;
                         void onRetryWithPassword(password).then(() => setPassword(""));
                     }}
                 >
@@ -742,12 +748,15 @@ function CauseCard({
                     />
                     <button
                         type="submit"
-                        disabled={!password || busy}
+                        disabled={!password || notAppPassword || busy}
                         className="h-7 px-2.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium inline-flex items-center gap-1 transition-colors disabled:opacity-50 shrink-0"
                     >
                         Retry with it
                     </button>
                 </form>
+            )}
+            {passwordCause && canRetry && notAppPassword && (
+                <p className="mt-1 text-[11px] text-rose-600">Google needs the 16-letter app password, not the account password.</p>
             )}
         </div>
     );

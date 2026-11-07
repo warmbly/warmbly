@@ -13,9 +13,9 @@ afterEach(cleanup);
 
 it.each([false, true])("separates inventory counts from quota and preserves positive reports during a connection error (%s)", async (unavailable) => {
     fixture.unavailable = unavailable;
-    const router = createRouter({ routeTree: createRootRoute({ component: () => <CloudPoolBanner onConnect={() => {}} /> }), history: createMemoryHistory() });
+    const router = createRouter({ routeTree: createRootRoute({ component: () => <CloudPoolBanner /> }), history: createMemoryHistory() });
     await router.load();
     render(<RouterProvider router={router} />);
     expect(await screen.findByText("8 of 8 mailboxes connected to Warmbly Cloud. 6 warming.")).toBeInTheDocument();
-    expect(screen.getByText("10 of 10 free.")).toBeInTheDocument();
+    expect(screen.getByText("Free pool.")).toBeInTheDocument();
 });

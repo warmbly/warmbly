@@ -13,9 +13,6 @@ type AuthData struct {
 	Turnstile string `json:"turnstile"`
 	// AppAttest is the native app's proof, sent instead of Turnstile.
 	AppAttest *appattest.Proof `json:"app_attest,omitempty"`
-	// ReferralCode is the optional ?ref= code the signup arrived with. Carried
-	// to RegistrationConfirm so the new org can be attributed to its referrer.
-	ReferralCode string `json:"referral_code"`
 	// Invite is the team-invitation token the signup arrived with. It is what
 	// lets an invited person create an account under DISABLE_REGISTRATION=invite_only.
 	Invite string `json:"invite"`
@@ -78,4 +75,13 @@ type ChangePassword struct {
 type SSOLinkData struct {
 	PendingToken string `json:"pending_token"`
 	Password     string `json:"password"`
+}
+
+// InitialPasswordData is what POST /auth/login/initial-password takes: the
+// challenge a password_change_required sign-in returned and the new password.
+type InitialPasswordData struct {
+	PendingToken string `json:"pending_token"`
+	Password     string `json:"password"`
+	// DeviceToken is the remembered-browser token LoginStart takes, for the emailed-code step that follows.
+	DeviceToken string `json:"device_token"`
 }

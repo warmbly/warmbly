@@ -23,6 +23,12 @@ type AuthRepository interface {
 	// PasswordChangedAt is when the password was last written, nil when it
 	// has not been since the column existed.
 	PasswordChangedAt(ctx context.Context, userID uuid.UUID) (*time.Time, *errx.Error)
+	// InitialPasswordPending reports whether the live password is an issued
+	// initial one its holder still has to replace.
+	InitialPasswordPending(ctx context.Context, userID uuid.UUID) (bool, *errx.Error)
+	// ReplaceInitialPassword stores the holder's own password over the live
+	// initial password whose hash is oldHash, and reports whether it did.
+	ReplaceInitialPassword(ctx context.Context, userID uuid.UUID, oldHash, newHash string) (bool, *errx.Error)
 }
 
 type authRepository struct {
@@ -166,10 +172,11 @@ func (r *authRepository) PasswordChangedAt(ctx context.Context, userID uuid.UUID
 // ResetPassword is the one write of a password hash, so it is also the one
 // place the change is stamped: every reset link issued before this instant is
 // refused from here on, whichever path (reset, change, operator CLI) wrote it.
+// A password written here is chosen rather than issued, so it never expires.
 func (r *authRepository) ResetPassword(ctx context.Context, userID uuid.UUID, passwordHash string) *errx.Error {
 	query := `
 		UPDATE users
-		SET password_hash = $1, password_changed_at = now(), updated_at = now()
+		SET password_hash = $1, password_expires_at = NULL, password_changed_at = now(), updated_at = now()
 		WHERE id = $2
 	`
 	params := []any{
@@ -183,4 +190,29 @@ func (r *authRepository) ResetPassword(ctx context.Context, userID uuid.UUID, pa
 	}
 
 	return nil
+}
+
+func (r *authRepository) InitialPasswordPending(ctx context.Context, userID uuid.UUID) (bool, *errx.Error) {
+	var pending bool
+	err := r.DB.QueryRow(ctx, `SELECT COALESCE(password_expires_at > now(), false) FROM users WHERE id = $1`, userID).Scan(&pending)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, errx.ErrNotFound
+		}
+		db.CaptureError(err, "initial password pending", []any{userID}, "queryrow")
+		return false, errx.InternalError()
+	}
+	return pending, nil
+}
+
+func (r *authRepository) ReplaceInitialPassword(ctx context.Context, userID uuid.UUID, oldHash, newHash string) (bool, *errx.Error) {
+	tag, err := r.DB.Exec(ctx, `
+		UPDATE users
+		SET password_hash = $3, password_expires_at = NULL, password_changed_at = now(), updated_at = now()
+		WHERE id = $1 AND password_hash = $2 AND password_expires_at > now()`, userID, oldHash, newHash)
+	if err != nil {
+		db.CaptureError(err, "replace initial password", []any{userID}, "exec")
+		return false, errx.InternalError()
+	}
+	return tag.RowsAffected() == 1, nil
 }

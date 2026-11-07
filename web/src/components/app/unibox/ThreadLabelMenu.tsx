@@ -25,6 +25,7 @@ import useSetThreadLabels, {
 } from "@/lib/api/hooks/app/unibox/useSetThreadLabels";
 import { TagMeaningTooltip } from "@/components/ui/tag-meaning-tooltip";
 import { errorMessage } from "@/lib/errors/message";
+import { useAccessRestricted } from "@/hooks/usePermission";
 
 interface Props {
   threadId: string;
@@ -87,6 +88,8 @@ export function ThreadLabelPanel({
   const labelsQ = useThreadLabels(threadId);
   const setLabels = useSetThreadLabels(threadId);
   const createCategory = useCreateCategory();
+  // Restricted members label with the workspace's labels; creating one is workspace-wide.
+  const canCreate = !useAccessRestricted();
   const [query, setQuery] = React.useState("");
 
   const current = React.useMemo(() => labelsQ.data ?? [], [labelsQ.data]);
@@ -137,7 +140,7 @@ export function ThreadLabelPanel({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && query.trim() && !queryMatchesExisting) {
+                if (e.key === "Enter" && canCreate && query.trim() && !queryMatchesExisting) {
                   e.preventDefault();
                   void createAndAdd();
                 }
@@ -210,7 +213,7 @@ export function ThreadLabelPanel({
                 </button>
               );
             })}
-            {query.trim() && !queryMatchesExisting && (
+            {canCreate && query.trim() && !queryMatchesExisting && (
               <button
                 type="button"
                 onClick={createAndAdd}

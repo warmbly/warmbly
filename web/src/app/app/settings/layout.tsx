@@ -20,7 +20,6 @@ import {
     CloudIcon,
     DatabaseIcon,
     GaugeIcon,
-    GiftIcon,
     Loader2Icon,
     PlugIcon,
     ShieldCheckIcon,
@@ -38,6 +37,7 @@ import { useAccessRestricted, usePermission, type PermissionKey } from "@/hooks/
 import { Page, PageTopbar } from "@/components/layout/Page";
 import useFeatureAccess from "@/hooks/useFeatureAccess";
 import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
+import { useCloudLinkStatus, usePoolLinkInstances } from "@/lib/api/hooks/app/cloudlink/useCloudLink";
 
 interface SectionDef {
     path: string;
@@ -80,8 +80,7 @@ const GROUPS: SectionGroup[] = [
             { path: "tracking", label: "Website tracking", icon: GlobeIcon, description: "Page views on your site, in the contact timeline.", permission: "MANAGE_SETTINGS" },
             { path: "inbox-tagging", label: "Inbox tagging", icon: TagsIcon, description: "Label and score inbound mail automatically.", permission: "VIEW_ANALYTICS" },
             { path: "ai-skills", label: "AI skills", icon: SparklesIcon, description: "Playbooks your AI features follow.", permission: "MANAGE_SETTINGS" },
-            { path: "billing", label: "Billing", icon: CreditCardIcon, description: "Plan, payment, invoices.", ownerOnly: true, billingOnly: true },
-            { path: "referral", label: "Refer & earn", icon: GiftIcon, description: "Invite teams and earn account credit.", ownerOnly: true, billingOnly: true },
+            { path: "billing", label: "Billing", icon: CreditCardIcon, description: "Plan, balance, invoices.", permission: "MANAGE_BILLING", billingOnly: true },
             { path: "limits", label: "Limits", icon: GaugeIcon, description: "Ask for a higher cap on mailboxes, contacts, seats or sends.", ownerOnly: true },
         ],
     },
@@ -114,10 +113,18 @@ export default function SettingsLayout() {
 function SettingsLayoutInner() {
     const pathname = useLocation({ select: (l) => l.pathname });
     const access = useFeatureAccess();
-    const hosted = useAuthConfig().data?.self_hosted === false;
+    const selfHosted = useAuthConfig().data?.self_hosted;
+    const hosted = selfHosted === false;
     const canManageApiKeys = usePermission("MANAGE_API_KEYS");
     const canManageSettings = usePermission("MANAGE_SETTINGS");
+    // Warmbly Cloud only shows where a link exists: an instance linked to it, or a hosted workspace with linked instances.
+    const cloudStatus = useCloudLinkStatus(selfHosted === true && canManageSettings);
+    const linkedInstances = usePoolLinkInstances(hosted && canManageSettings);
+    const hasCloudLink = hosted
+        ? (linkedInstances.data?.data ?? []).some((i) => !i.revoked_at)
+        : !!(cloudStatus.data?.connected || cloudStatus.data?.legacy_connected);
     const canViewAnalytics = usePermission("VIEW_ANALYTICS");
+    const canManageBilling = usePermission("MANAGE_BILLING");
     const restricted = useAccessRestricted();
     const navRef = React.useRef<HTMLElement>(null);
     const unsaved = useUnsavedRegistry();
@@ -181,9 +188,11 @@ function SettingsLayoutInner() {
                     (!restricted || s.scoped) &&
                     (!s.ownerOnly || access.isOwner) &&
                     (!s.billingOnly || access.billing) &&
+                    (s.path !== "warmbly-cloud" || hasCloudLink) &&
                     (s.permission !== "MANAGE_API_KEYS" || canManageApiKeys) &&
                     (s.permission !== "MANAGE_SETTINGS" || canManageSettings) &&
-                    (s.permission !== "VIEW_ANALYTICS" || canViewAnalytics),
+                    (s.permission !== "VIEW_ANALYTICS" || canViewAnalytics) &&
+                    (s.permission !== "MANAGE_BILLING" || canManageBilling || access.isOwner),
             )
             .map((s) =>
                 hosted && s.hostedLabel

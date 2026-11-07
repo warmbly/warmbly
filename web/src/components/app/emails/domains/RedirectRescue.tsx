@@ -8,7 +8,6 @@ import { useSetDomainRedirect } from "@/lib/api/hooks/app/emails/useSendingDomai
 import { useConfirm } from "@/hooks/context/confirm";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
-import CloudConnectDialog from "@/components/app/cloud/CloudConnectDialog";
 import { PROXY_NAMES, redirectBlocked } from "./rules";
 import { useCloudServing } from "./cloudServing";
 
@@ -18,7 +17,6 @@ export default function RedirectRescue({ all, onOpenDomain }: { all: SendingDoma
     const cloud = useCloudServing();
     const confirm = useConfirm();
     const save = useSetDomainRedirect();
-    const [connecting, setConnecting] = React.useState(false);
     const [moving, setMoving] = React.useState<{ done: number; of: number } | null>(null);
     const [hidden, setHidden] = React.useState(() => localStorage.getItem(DISMISS_KEY) ?? "");
 
@@ -115,19 +113,17 @@ export default function RedirectRescue({ all, onOpenDomain }: { all: SendingDoma
                         >
                             Fix on my server
                         </button>
-                        {(cloud.canServe || !cloud.connected) && (
+                        {cloud.canServe && (
                             <button
                                 type="button"
-                                onClick={() => (cloud.canServe ? serveFromCloud() : setConnecting(true))}
+                                onClick={() => serveFromCloud()}
                                 disabled={!!moving}
                                 className="h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
                             >
                                 {moving ? <Loader2Icon className="w-3 h-3 animate-spin" /> : <CloudIcon className="w-3 h-3" />}
                                 {moving
                                     ? `Moving ${Math.min(moving.done + 1, moving.of)} of ${moving.of}`
-                                    : cloud.canServe
-                                      ? "Serve from Warmbly Cloud"
-                                      : "Connect Warmbly Cloud"}
+                                    : "Serve from Warmbly Cloud"}
                             </button>
                         )}
                         <button
@@ -145,24 +141,6 @@ export default function RedirectRescue({ all, onOpenDomain }: { all: SendingDoma
                     </div>
                 </div>
             </div>
-            <CloudConnectDialog
-                open={connecting}
-                onClose={() => setConnecting(false)}
-                autoStart
-                intro={
-                    <>
-                        Link this instance to a Warmbly Cloud workspace, free to create, and Cloud serves{" "}
-                        {n === 1 ? <span className="font-medium text-slate-900">{stuck[0].domain}</span> : `these ${n} redirects`} and{" "}
-                        {n === 1 ? "its certificate" : "their certificates"}. Nothing on your server changes: you only point the DNS at Cloud. Approve
-                        the code below on Warmbly Cloud to finish.
-                    </>
-                }
-                doneLabel={n === 1 ? `Serve ${stuck[0].domain} from Warmbly Cloud` : `Serve ${n} redirects from Warmbly Cloud`}
-                onDone={() => {
-                    setConnecting(false);
-                    void moveAll(stuck);
-                }}
-            />
         </motion.div>
     );
 }

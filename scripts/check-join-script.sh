@@ -470,6 +470,7 @@ grep -q 'Authorization: Bearer fixture-broker-old' "$U/fix/curl-stdin" || fail "
 grep -qx 'NODE_CREDENTIAL=fixture-node-credential' "$envf" || fail "an env refresh dropped the node credential"
 if grep -q 'fixture-node-credential' "$U/fix/curl-argv"; then fail "the node credential reached curl's argv"; fi
 grep -q 'X-Warmbly-Node-Credential: fixture-node-credential' "$U/fix/curl-stdin" || fail "the node credential must reach curl on stdin"
+grep -q "X-Warmbly-Node-Id: $NODE_ID" "$U/fix/curl-stdin" || fail "the updater must name its node next to the node credential"
 ok "env refresh applies, keeps local keys and never puts the token on argv"
 
 upd_reset

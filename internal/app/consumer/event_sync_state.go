@@ -9,6 +9,7 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/repository"
 )
 
 // HandleSyncState persists the worker's SYNC_STATE relay and tells the
@@ -21,32 +22,52 @@ func (s *JobsService) HandleSyncState(ctx context.Context, e *models.JobEventSyn
 		return nil
 	}
 
-	prev, err := s.EmailSyncStateRepository.Get(ctx, e.EmailID)
-	if err != nil {
-		return err
+	recover := func(ctx context.Context, prev *repository.SyncStatePrior) error {
+		if e.State.LastSyncedAt != nil && e.State.Deferred == 0 && e.State.BackfillCursor.GoogleRecovery == nil &&
+			(prev == nil || prev.LastSyncedAt == nil || !models.ValidMailTransportTime(*prev.LastSyncedAt, time.Now()) || e.State.LastSyncedAt.After(*prev.LastSyncedAt)) {
+			return s.resolveTransientMailErrors(ctx, e.EmailID, e.State.LastSyncedAt, e.State.TransportGeneration)
+		}
+		return nil
 	}
 
-	// Persist recovery before state, so a failed proof write remains retryable.
-	if e.State.LastSyncedAt != nil && e.State.Deferred == 0 && e.State.BackfillCursor.GoogleRecovery == nil &&
-		(prev == nil || prev.LastSyncedAt == nil || !models.ValidMailTransportTime(*prev.LastSyncedAt, time.Now()) || e.State.LastSyncedAt.After(*prev.LastSyncedAt)) {
-		if err := s.resolveTransientMailErrors(ctx, e.EmailID, e.State.LastSyncedAt, e.State.TransportGeneration); err != nil {
-			return err
+	accepted := true
+	var prev *repository.SyncStatePrior
+	var err error
+	if e.WorkerID != nil {
+		accepted, prev, err = s.EmailSyncStateRepository.PutFromWorker(ctx, e.UserID, e.EmailID, *e.WorkerID, e.ReportGeneration, &e.State, recover)
+	} else {
+		// Retained v0.6.72 reports remain supported through the rollback window.
+		stored, getErr := s.EmailSyncStateRepository.Get(ctx, e.EmailID)
+		if getErr != nil {
+			return getErr
+		}
+		prev = repository.PriorOf(stored)
+		err = recover(ctx, prev)
+		if err == nil {
+			err = s.EmailSyncStateRepository.Put(ctx, e.UserID, e.EmailID, &e.State)
 		}
 	}
-
-	if err := s.EmailSyncStateRepository.Put(ctx, e.UserID, e.EmailID, &e.State); err != nil {
+	if err != nil {
 		if s.dropForDeletedMailbox(ctx, e.UserID, e.EmailID, err) {
 			return nil
 		}
 		CaptureError(e.UserID, e.EmailID, err)
 		return err
 	}
+	if !accepted {
+		return nil
+	}
 
+	completed := e.State.BackfillStatus == models.SyncBackfillComplete &&
+		(prev == nil || prev.BackfillStatus != models.SyncBackfillComplete)
+	if completed {
+		s.emitMailboxEvent(ctx, e.EmailID, models.WebhookEventEmailAccountSynced, map[string]any{
+			"backfill_status": string(e.State.BackfillStatus),
+		})
+	}
 	if s.StreamingPublisher == nil {
 		return nil
 	}
-	completed := e.State.BackfillStatus == models.SyncBackfillComplete &&
-		(prev == nil || prev.BackfillStatus != models.SyncBackfillComplete)
 	throttleFlipped := (e.State.ThrottledUntil != nil) != (prev != nil && prev.ThrottledUntil != nil)
 	if !completed && !throttleFlipped {
 		return nil
