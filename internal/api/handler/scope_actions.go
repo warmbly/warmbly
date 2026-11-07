@@ -2,6 +2,7 @@ package handler
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/errx"
@@ -26,8 +27,18 @@ func restrictedCampaignUpdateAllowed(c *gin.Context, data *models.UpdateCampaign
 		return errScopeField("The campaign's folders are set by your workspace's administrators.")
 	case data.TrackingDomain != nil:
 		return errScopeField("The campaign's tracking domain is set by your workspace's administrators.")
+	case data.CC != nil, data.BCC != nil:
+		return errScopeField("The campaign's copied addresses are set by your workspace's administrators.")
 	}
 	return nil
+}
+
+// restrictedPoolAllowed holds a restricted member's campaign edits to campaigns that send only from mailboxes they were granted.
+func (h *Handler) restrictedPoolAllowed(c *gin.Context, orgID uuid.UUID, id string) *errx.Error {
+	if !middleware.IsScopeRestricted(c) {
+		return nil
+	}
+	return h.campaignPoolAllowed(c, orgID, id)
 }
 
 // scopeStepActions are the step actions that touch nothing outside the campaign itself.

@@ -6,14 +6,27 @@ import { type ClientRolePreset } from "@/lib/accessScope";
 export default function useEnsureClientRole() {
     const roles = useRoles();
     const create = useCreateRole();
+    // A role only stands for a preset when it grants exactly what the preset says, whatever it is called.
+    const roleFor = (preset: ClientRolePreset) => {
+        const matching = (roles.data ?? []).filter(
+            (r) => r.permissions === preset.permissions && Boolean(r.acts_in_scope) === preset.acts_in_scope,
+        );
+        return matching.find((r) => r.name === preset.name) ?? matching[0];
+    };
+    const freeName = (base: string) => {
+        const taken = new Set((roles.data ?? []).map((r) => r.name));
+        let name = base;
+        for (let n = 2; taken.has(name); n++) name = `${base} (${n})`;
+        return name;
+    };
     return {
         pending: create.isPending,
-        roleFor: (preset: ClientRolePreset) => (roles.data ?? []).find((r) => r.name === preset.name),
+        roleFor,
         ensure: async (preset: ClientRolePreset): Promise<string> => {
-            const existing = (roles.data ?? []).find((r) => r.name === preset.name);
+            const existing = roleFor(preset);
             if (existing) return existing.id;
             const role = await create.mutateAsync({
-                name: preset.name,
+                name: freeName(preset.name),
                 description: preset.summary,
                 color: preset.color,
                 permissions: preset.permissions,

@@ -292,6 +292,10 @@ func (h *Handler) UpdateCampaign(c *gin.Context) {
 		errx.JSON(c, xerr)
 		return
 	}
+	if xerr := h.restrictedPoolAllowed(c, *orgID, id); xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
 	if xerr := poolStrategyAllowed(c, data.SenderStrategy, data.EmailTags != nil); xerr != nil {
 		errx.JSON(c, xerr)
 		return
@@ -556,7 +560,8 @@ func (h *Handler) campaignPoolAllowed(c *gin.Context, orgID uuid.UUID, id string
 	if xerr != nil {
 		return xerr
 	}
-	if camp.SenderStrategy != "explicit" {
+	// An explicit pool still sends from tag-resolved mailboxes, so a pool with tags is never fully known here.
+	if camp.SenderStrategy != "explicit" || len(camp.EmailTags) > 0 {
 		return refused
 	}
 	senders, xerr := h.CampaignService.ListCampaignSenders(c.Request.Context(), orgID, id)

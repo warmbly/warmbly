@@ -148,10 +148,10 @@ The member dialog offers three presets, added to **Roles & access** as ordinary 
 
 Inside their grants, a client is held to the resources they were given:
 
-- **Replies** answer a conversation whose messages all sit in granted mailboxes, sent from a granted mailbox. They cannot start a new conversation, and a forward needs the forwarded message's mailbox granted too.
+- **Replies** go into a conversation whose messages all sit in granted mailboxes, sent from a granted mailbox. The client chooses the recipients, as in any reply. Compose outside a conversation is not available to them, and a forward needs the forwarded message's mailbox granted too.
 - **Inbox changes** (labels, read state, filing, snoozes) name messages or conversations in granted mailboxes; a conversation that also sits in another mailbox is refused. Marking a whole folder read is refused. Opening a conversation marks it read only for a client who can act in the inbox.
-- **Campaign edits** reach granted campaigns only. A client cannot change a campaign's senders, sender tags, folders, tracking domain or status, and can set only email, wait, end and path steps. Steps that act on contacts, the CRM or automations stay as your team set them.
-- **Starting** a campaign needs every sender to be a granted mailbox, listed explicitly. Pausing needs nothing more.
+- **Campaign edits** reach granted campaigns that send only from granted mailboxes, listed explicitly with no sender tags. A client cannot change a campaign's senders, sender tags, folders, tracking domain, CC and BCC addresses or status, and can set only email, wait, end and path steps. Steps that act on contacts, the CRM or automations stay as your team set them.
+- **Starting** a campaign needs every sender to be a granted mailbox, listed explicitly with no sender tags. Pausing needs nothing more.
 - They cannot create, duplicate or delete campaigns, compose new mail, or open a campaign's leads or settings tabs.
 
 A refused write answers `403` `member_access_restricted`, and a campaign or mailbox outside their grants answers `404`.

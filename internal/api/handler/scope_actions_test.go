@@ -70,6 +70,7 @@ func (f *scopedSend) SendEmail(context.Context, uuid.UUID, uuid.UUID, uuid.UUID,
 type scopedCampaigns struct {
 	campaign.CampaignService
 	strategy string
+	tags     []string
 	senders  []uuid.UUID
 	writes   int
 }
@@ -80,7 +81,7 @@ func (f *scopedCampaigns) Update(context.Context, string, string, *models.Update
 }
 
 func (f *scopedCampaigns) Get(context.Context, string, string) (*models.Campaign, *errx.Error) {
-	return &models.Campaign{SenderStrategy: f.strategy}, nil
+	return &models.Campaign{SenderStrategy: f.strategy, EmailTags: f.tags}, nil
 }
 
 func (f *scopedCampaigns) ListCampaignSenders(context.Context, uuid.UUID, string) ([]models.CampaignSender, *errx.Error) {
@@ -191,11 +192,14 @@ func TestRestrictedCampaignEditsStayInTheCampaign(t *testing.T) {
 		`{"sender_strategy":"tags"}`:       false,
 		`{"folders":["x"]}`:                false,
 		`{"tracking_domain":"t.example"}`:  false,
+		`{"bcc":["[EMAIL]"]}`:              false,
+		`{"cc":["[EMAIL]"]}`:               false,
 	} {
-		svc := &scopedCampaigns{}
+		granted := uuid.New()
+		svc := &scopedCampaigns{strategy: "explicit", senders: []uuid.UUID{granted}}
 		h := &Handler{CampaignService: svc, AuditService: audit.NewNoOpService()}
 		id := uuid.NewString()
-		code := serveRestricted(t, nil, http.MethodPatch, "/campaigns/:id", "/campaigns/"+id, body, h.UpdateCampaign)
+		code := serveRestricted(t, []uuid.UUID{granted}, http.MethodPatch, "/campaigns/:id", "/campaigns/"+id, body, h.UpdateCampaign)
 		if ok != (svc.writes == 1) || ok != (code == http.StatusOK) {
 			t.Fatalf("%s: status %d, writes %d, want ok=%v", body, code, svc.writes, ok)
 		}
@@ -210,9 +214,10 @@ func TestRestrictedStepEditsStayInTheCampaign(t *testing.T) {
 		`{"action":{"type":"run_automation"}}`:                         false,
 		`{"kind":"action"}`:                                            false,
 	} {
+		granted := uuid.New()
 		steps := &scopedSteps{}
-		h := &Handler{SequenceService: steps, AuditService: audit.NewNoOpService()}
-		code := serveRestricted(t, nil, http.MethodPatch, "/campaigns/:id/steps/:sid", "/campaigns/"+uuid.NewString()+"/steps/"+uuid.NewString(), body, h.UpdateSequence)
+		h := &Handler{SequenceService: steps, CampaignService: &scopedCampaigns{strategy: "explicit", senders: []uuid.UUID{granted}}, AuditService: audit.NewNoOpService()}
+		code := serveRestricted(t, []uuid.UUID{granted}, http.MethodPatch, "/campaigns/:id/steps/:sid", "/campaigns/"+uuid.NewString()+"/steps/"+uuid.NewString(), body, h.UpdateSequence)
 		if ok != (steps.writes == 1) || ok != (code == http.StatusOK) {
 			t.Fatalf("%s: status %d, writes %d, want ok=%v", body, code, steps.writes, ok)
 		}
@@ -225,19 +230,47 @@ func TestRestrictedStartSendsOnlyFromGrantedMailboxes(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		strategy string
+		tags     []string
 		senders  []uuid.UUID
 		starts   bool
 	}{
-		{"explicit granted senders", "explicit", []uuid.UUID{granted}, true},
-		{"a sender outside the grants", "explicit", []uuid.UUID{granted, other}, false},
-		{"a tag pool", "tags", nil, false},
+		{"explicit granted senders", "explicit", nil, []uuid.UUID{granted}, true},
+		{"a sender outside the grants", "explicit", nil, []uuid.UUID{granted, other}, false},
+		{"a tag pool", "tags", []string{"x"}, nil, false},
+		{"explicit senders with tags still on the campaign", "explicit", []string{"x"}, []uuid.UUID{granted}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			svc := &scopedCampaigns{strategy: tc.strategy, senders: tc.senders}
+			svc := &scopedCampaigns{strategy: tc.strategy, tags: tc.tags, senders: tc.senders}
 			h := &Handler{CampaignService: svc, AuditService: audit.NewNoOpService()}
 			code := serveRestricted(t, []uuid.UUID{granted}, http.MethodPost, "/campaigns/:id/start", "/campaigns/"+uuid.NewString()+"/start", "", h.StartCampaign)
 			if tc.starts != (svc.writes == 1) {
 				t.Fatalf("status %d, starts %d, want starts=%v", code, svc.writes, tc.starts)
+			}
+		})
+	}
+}
+
+// Campaign and step edits reach only campaigns that send from granted mailboxes alone.
+func TestRestrictedEditsNeedAGrantedPool(t *testing.T) {
+	granted, other := uuid.New(), uuid.New()
+	for _, tc := range []struct {
+		name string
+		svc  *scopedCampaigns
+		ok   bool
+	}{
+		{"granted explicit pool", &scopedCampaigns{strategy: "explicit", senders: []uuid.UUID{granted}}, true},
+		{"a sender outside the grants", &scopedCampaigns{strategy: "explicit", senders: []uuid.UUID{granted, other}}, false},
+		{"a tag pool", &scopedCampaigns{strategy: "tags", tags: []string{"x"}}, false},
+		{"explicit senders with tags still on the campaign", &scopedCampaigns{strategy: "explicit", tags: []string{"x"}, senders: []uuid.UUID{granted}}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			steps := &scopedSteps{}
+			h := &Handler{CampaignService: tc.svc, SequenceService: steps, AuditService: audit.NewNoOpService()}
+			id := uuid.NewString()
+			edit := serveRestricted(t, []uuid.UUID{granted}, http.MethodPatch, "/campaigns/:id", "/campaigns/"+id, `{"name":"Q3"}`, h.UpdateCampaign)
+			step := serveRestricted(t, []uuid.UUID{granted}, http.MethodPatch, "/campaigns/:id/steps/:sid", "/campaigns/"+id+"/steps/"+uuid.NewString(), `{"subject":"Hi"}`, h.UpdateSequence)
+			if tc.ok != (tc.svc.writes == 1) || tc.ok != (steps.writes == 1) || tc.ok != (edit == http.StatusOK) || tc.ok != (step == http.StatusOK) {
+				t.Fatalf("edit %d (writes %d), step %d (writes %d), want ok=%v", edit, tc.svc.writes, step, steps.writes, tc.ok)
 			}
 		})
 	}
