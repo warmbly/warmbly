@@ -426,7 +426,7 @@ func TestLiveApproveThreadDraft(t *testing.T) {
 		f.waitForLockWaiters(t, 1)
 		cl := make(chan claimResult, 1)
 		go func() {
-			r, err := f.repo.ClaimDraftForApproval(ctx, f.org, d.ID, nil)
+			r, err := f.repo.ClaimDraftForApproval(ctx, f.org, d.ID, nil, nil)
 			cl <- claimResult{r, err}
 		}()
 		f.waitForLockWaiters(t, 2)
@@ -476,7 +476,7 @@ func TestLiveApproveThreadDraft(t *testing.T) {
 				release := f.lockDraft(t, d.ID)
 				cl := make(chan claimResult, 1)
 				go func() {
-					r, err := f.repo.ClaimDraftForApproval(ctx, f.org, d.ID, nil)
+					r, err := f.repo.ClaimDraftForApproval(ctx, f.org, d.ID, nil, nil)
 					cl <- claimResult{r, err}
 				}()
 				f.waitForLockWaiters(t, 1)
@@ -521,7 +521,7 @@ func TestLiveApproveThreadDraft(t *testing.T) {
 				wg.Add(2)
 				go func() {
 					defer wg.Done()
-					r, err := f.repo.ClaimDraftForApproval(ctx, f.org, d.ID, nil)
+					r, err := f.repo.ClaimDraftForApproval(ctx, f.org, d.ID, nil, nil)
 					claims <- claimResult{r, err}
 				}()
 				go func() {
@@ -567,7 +567,7 @@ func TestLiveApproveThreadDraft(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if c, err := f.repo.ClaimDraftForApproval(ctx, f.org, first.ID, nil); err != nil || c == nil {
+		if c, err := f.repo.ClaimDraftForApproval(ctx, f.org, first.ID, nil, nil); err != nil || c == nil {
 			t.Fatalf("claim: %v %v", c, err)
 		}
 		// Synced after the approval but dated before it.
@@ -604,19 +604,41 @@ func TestLiveApproveThreadDraft(t *testing.T) {
 			org     uuid.UUID
 			allowed []uuid.UUID
 		}{"foreign org": {uuid.New(), nil}, "outside allowlist": {f.org, []uuid.UUID{uuid.New()}}, "empty allowlist": {f.org, []uuid.UUID{}}} {
-			if got, err := f.repo.ClaimDraftForApproval(ctx, c.org, d.ID, c.allowed); err != nil || got != nil {
+			if got, err := f.repo.ClaimDraftForApproval(ctx, c.org, d.ID, c.allowed, nil); err != nil || got != nil {
 				t.Fatalf("%s: claimed %+v err=%v", name, got, err)
 			}
 		}
 		if n := f.pendingCount(t, "th-f"); n != 1 {
 			t.Fatal("a refused claim resolved the draft")
 		}
-		got, err := f.repo.ClaimDraftForApproval(ctx, f.org, d.ID, []uuid.UUID{f.account})
+		got, err := f.repo.ClaimDraftForApproval(ctx, f.org, d.ID, []uuid.UUID{f.account}, nil)
 		if err != nil || got == nil || got.Body != "x" {
 			t.Fatalf("inside allowlist: %+v err=%v", got, err)
 		}
-		if again, err := f.repo.ClaimDraftForApproval(ctx, f.org, d.ID, nil); err != nil || again != nil {
+		if again, err := f.repo.ClaimDraftForApproval(ctx, f.org, d.ID, nil, nil); err != nil || again != nil {
 			t.Fatalf("second claim: %+v err=%v", again, err)
+		}
+	})
+
+	t.Run("a claim naming the message the reviewer saw is refused once the draft answers another", func(t *testing.T) {
+		f := newThreadDraftFixture(t, pool)
+		f.message("th-g", "inbox", "[EMAIL]", "Hi", base)
+		d, _, err := f.repo.UpsertPendingDraftForThread(ctx, f.org, draftParams("th-g", "x"))
+		if err != nil || d.SourceMessageID == nil {
+			t.Fatalf("draft %+v err=%v", d, err)
+		}
+		seen := *d.SourceMessageID
+		f.message("th-g", "inbox", "[EMAIL]", "Again", base.Add(time.Hour))
+		moved, _, err := f.repo.UpsertPendingDraftForThread(ctx, f.org, draftParams("th-g", "y"))
+		if err != nil || moved.ID != d.ID || moved.SourceMessageID == nil || *moved.SourceMessageID == seen {
+			t.Fatalf("not retargeted: %+v err=%v", moved, err)
+		}
+		if got, err := f.repo.ClaimDraftForApproval(ctx, f.org, d.ID, nil, &seen); err != nil || got != nil {
+			t.Fatalf("claimed a retargeted draft: %+v err=%v", got, err)
+		}
+		got, err := f.repo.ClaimDraftForApproval(ctx, f.org, d.ID, nil, moved.SourceMessageID)
+		if err != nil || got == nil || got.Body != "y" {
+			t.Fatalf("current source: %+v err=%v", got, err)
 		}
 	})
 }

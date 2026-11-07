@@ -5,7 +5,7 @@
 
 import React from "react";
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const drafts = vi.hoisted(() => ({ data: [] as unknown[] }));
@@ -21,6 +21,8 @@ vi.mock("@/hooks/context/confirm", () => ({ useConfirm: () => vi.fn() }));
 vi.mock("react-hot-toast/headless", () => ({ default: { success: vi.fn(), error: vi.fn() } }));
 
 import AgentDraftCard from "./AgentDraftCard";
+import { approveAgentDraft } from "@/lib/api/client/app/unibox/agentDrafts";
+import toast from "react-hot-toast/headless";
 
 const draft = (id: string, body: string) => ({
     id,
@@ -76,5 +78,17 @@ describe("AgentDraftCard", () => {
         drafts.data = [draft("d2", "other")];
         rerender(view());
         expect(textarea().value).toBe("other");
+    });
+
+    it("approves the message it showed and explains a draft retargeted meanwhile", async () => {
+        drafts.data = [{ ...draft("d1", "first"), source_message_id: "m1" }];
+        vi.mocked(approveAgentDraft).mockRejectedValueOnce({ code: "draft_retargeted" });
+        render(view());
+        fireEvent.change(textarea(), { target: { value: "my edit" } });
+        fireEvent.click(screen.getByRole("button", { name: /Approve/ }));
+
+        await waitFor(() => expect(approveAgentDraft).toHaveBeenCalledWith("d1", "my edit", "m1"));
+        await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("newer message")));
+        expect(textarea().value).toBe("my edit");
     });
 });

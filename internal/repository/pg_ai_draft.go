@@ -74,8 +74,9 @@ type AIDraftRepository interface {
 	RevertApprovedToPending(ctx context.Context, orgID, id uuid.UUID) (bool, error)
 	// ClaimDraftForApproval flips a PENDING draft to approved and returns the row as
 	// claimed, which is exactly what the caller sends. nil when the draft is missing,
-	// already resolved, or (when allowed is non-nil) in a mailbox outside allowed.
-	ClaimDraftForApproval(ctx context.Context, orgID, id uuid.UUID, allowed []uuid.UUID) (*models.AIThreadDraft, error)
+	// already resolved, (when allowed is non-nil) in a mailbox outside allowed, or
+	// (when source is non-nil) no longer answering that inbound message.
+	ClaimDraftForApproval(ctx context.Context, orgID, id uuid.UUID, allowed []uuid.UUID, source *uuid.UUID) (*models.AIThreadDraft, error)
 	// UpsertPendingDraftForThread writes a reply draft for the org's newest inbound
 	// message on the thread: it replaces the body of the thread's pending draft, or
 	// inserts a pending one filled like the inbox agent's. Approved and discarded
@@ -193,7 +194,7 @@ func (r *aiDraftRepository) SetDraftStatus(ctx context.Context, orgID, id uuid.U
 	return tag.RowsAffected() > 0, nil
 }
 
-func (r *aiDraftRepository) ClaimDraftForApproval(ctx context.Context, orgID, id uuid.UUID, allowed []uuid.UUID) (*models.AIThreadDraft, error) {
+func (r *aiDraftRepository) ClaimDraftForApproval(ctx context.Context, orgID, id uuid.UUID, allowed []uuid.UUID, source *uuid.UUID) (*models.AIThreadDraft, error) {
 	restricted := allowed != nil
 	if !restricted {
 		allowed = []uuid.UUID{}
@@ -204,7 +205,8 @@ func (r *aiDraftRepository) ClaimDraftForApproval(ctx context.Context, orgID, id
 		UPDATE ai_thread_drafts SET status = 'approved', updated_at = NOW()
 		WHERE id = $1 AND organization_id = $2 AND status = 'pending'
 		  AND (NOT $3::boolean OR email_account_id = ANY($4::uuid[]))
-		RETURNING `+aiDraftCols, id, orgID, restricted, allowed), &d)
+		  AND ($5::uuid IS NULL OR source_message_id IS NOT DISTINCT FROM $5::uuid)
+		RETURNING `+aiDraftCols, id, orgID, restricted, allowed, source), &d)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
