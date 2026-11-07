@@ -46,6 +46,8 @@ type NotificationRepository interface {
 	// with a retry delay; rows that already burned their attempts are
 	// dropped to skipped instead of retrying forever.
 	RequeueEmails(ctx context.Context, ids []uuid.UUID, delay time.Duration, maxAttempts int) error
+	// DeferEmails returns claimed rows to pending after delay without spending an attempt.
+	DeferEmails(ctx context.Context, ids []uuid.UUID, delay time.Duration) error
 }
 
 type notificationRepository struct {
@@ -327,5 +329,15 @@ func (r *notificationRepository) RequeueEmails(ctx context.Context, ids []uuid.U
 			email_state = CASE WHEN email_attempts + 1 >= $3 THEN 'skipped' ELSE 'pending' END,
 			email_due_at = CASE WHEN email_attempts + 1 >= $3 THEN NULL ELSE now() + make_interval(secs => $2) END
 		WHERE id = ANY($1) AND email_state = 'sending'`, ids, delay.Seconds(), maxAttempts)
+	return err
+}
+
+func (r *notificationRepository) DeferEmails(ctx context.Context, ids []uuid.UUID, delay time.Duration) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	_, err := r.db.Exec(ctx, `
+		UPDATE notifications SET email_state = 'pending', email_due_at = now() + make_interval(secs => $2)
+		WHERE id = ANY($1) AND email_state = 'sending'`, ids, delay.Seconds())
 	return err
 }

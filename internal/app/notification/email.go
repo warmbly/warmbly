@@ -242,7 +242,7 @@ func notifIDs(rows []models.Notification) []uuid.UUID {
 	return ids
 }
 
-// keepEligibleEmailMessages drops rows that may no longer send and retries a user's whole batch, bar sign-in alerts, when any row could not be checked.
+// keepEligibleEmailMessages drops rows that may no longer send and holds a user's eligible rows, bar sign-in alerts, while any of theirs could not be checked.
 func (s *service) keepEligibleEmailMessages(ctx context.Context, rows []models.Notification) []models.Notification {
 	eligible := rows[:0:0]
 	var skipped, retry []uuid.UUID
@@ -262,12 +262,16 @@ func (s *service) keepEligibleEmailMessages(ctx context.Context, rows []models.N
 		}
 	}
 	kept := eligible[:0:0]
+	var held []uuid.UUID
 	for _, n := range eligible {
 		if unsure[n.UserID] && n.Category != models.NotifSecuritySignIn {
-			retry = append(retry, n.ID)
+			held = append(held, n.ID)
 		} else {
 			kept = append(kept, n)
 		}
+	}
+	if len(held) > 0 {
+		_ = s.repo.DeferEmails(ctx, held, emailRetryDelay)
 	}
 	if len(skipped) > 0 {
 		_ = s.repo.SkipEmails(ctx, skipped)
