@@ -2,10 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import type { ExpressionSpecification, GeoJSONSource, GeoJSONSourceSpecification, Map as MapLibreMap, MapMouseEvent, MapTouchEvent } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import { MailIcon, GlobeIcon, PhoneIcon, StarIcon } from "lucide-react";
 import type { LatLng, LeadArea, LeadBounds, LeadPoint } from "@/lib/api/models/app/leads/Lead";
 import { applyMapTheme } from "./mapTheme";
 import { areaRing, boundsOf, circleBounds, circleRing, distanceM } from "./geo";
+
+// Vite cannot follow the URL MapLibre builds for its own worker, so hand it the bundled one.
+maplibregl.setWorkerUrl(workerUrl);
 
 type FeatureCollection = Extract<Exclude<GeoJSONSourceSpecification["data"], string>, { type: "FeatureCollection" }>;
 
