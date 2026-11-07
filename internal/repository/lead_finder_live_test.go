@@ -76,8 +76,8 @@ func TestLiveLeadFinder(t *testing.T) {
 	if l.Score != 15+15+10+10+10 {
 		t.Fatalf("score = %d", l.Score)
 	}
-	if got, _ := repo.GetLead(ctx, orgB, ids[0]); got != nil {
-		t.Fatal("another organization read the lead")
+	if got, err := repo.GetLead(ctx, orgB, ids[0]); err != nil || got != nil {
+		t.Fatalf("another organization read the lead: %v %v", got, err)
 	}
 
 	// Enrichment stores the primary address and rescores.
@@ -100,8 +100,8 @@ func TestLiveLeadFinder(t *testing.T) {
 	if _, total, _ = repo.ListLeads(ctx, orgA, &models.LeadFilter{Q: "corner"}, models.LeadSortName, 10, 0); total != 1 {
 		t.Fatalf("text filter total = %d", total)
 	}
-	if _, total, _ = repo.ListLeads(ctx, orgB, nil, models.LeadSortRecent, 10, 0); total != 0 {
-		t.Fatalf("another organization lists %d leads", total)
+	if _, total, err = repo.ListLeads(ctx, orgB, nil, models.LeadSortRecent, 10, 0); err != nil || total != 0 {
+		t.Fatalf("another organization lists %d leads: %v", total, err)
 	}
 
 	// Tags converge, and a patch from another organization changes nothing.
@@ -112,8 +112,8 @@ func TestLiveLeadFinder(t *testing.T) {
 	if _, err := repo.PatchLeads(ctx, orgA, ids, &models.LeadPatch{AddTags: []string{"q4"}, RemoveTags: []string{"hot"}}); err != nil {
 		t.Fatal(err)
 	}
-	if n, _ := repo.PatchLeads(ctx, orgB, ids, &models.LeadPatch{Status: &saved}); n != 0 {
-		t.Fatal("another organization patched the leads")
+	if n, err := repo.PatchLeads(ctx, orgB, ids, &models.LeadPatch{Status: &saved}); err != nil || n != 0 {
+		t.Fatalf("another organization patched the leads: %d %v", n, err)
 	}
 	if l, _ = repo.GetLead(ctx, orgA, ids[1]); len(l.Tags) != 1 || l.Tags[0] != "q4" || l.Status != models.LeadStatusSaved {
 		t.Fatalf("tags %v status %s", l.Tags, l.Status)
@@ -176,8 +176,8 @@ func TestLiveLeadFinder(t *testing.T) {
 	if ravi.Email != "ravi.patel"+at+dom || ravi.EmailSource != models.LeadEmailWebsite || ravi.Title != "Associate" {
 		t.Fatalf("a guess did not give way to a published address: %+v", ravi)
 	}
-	if other, _ := repo.PeopleForLeads(ctx, orgB, ids); len(other) != 0 {
-		t.Fatal("another organization read the people")
+	if other, err := repo.PeopleForLeads(ctx, orgB, ids); err != nil || len(other) != 0 {
+		t.Fatalf("another organization read the people: %v %v", other, err)
 	}
 	if l, _ = repo.GetLead(ctx, orgA, ids[0]); l.PeopleCount != 2 {
 		t.Fatalf("people_count = %d", l.PeopleCount)
@@ -195,8 +195,8 @@ func TestLiveLeadFinder(t *testing.T) {
 	if p, _ := repo.GetPerson(ctx, orgA, ids[0], jane.ID); p == nil || p.ContactID != nil {
 		t.Fatal("linked a person to a contact from another organization")
 	}
-	if ok, _ := repo.DeletePerson(ctx, orgB, ids[0], jane.ID); ok {
-		t.Fatal("another organization removed a person")
+	if ok, err := repo.DeletePerson(ctx, orgB, ids[0], jane.ID); err != nil || ok {
+		t.Fatalf("another organization removed a person: %v %v", ok, err)
 	}
 	if ok, err := repo.DeletePerson(ctx, orgA, ids[0], jane.ID); !ok || err != nil {
 		t.Fatalf("delete person = %v %v", ok, err)
@@ -205,7 +205,7 @@ func TestLiveLeadFinder(t *testing.T) {
 	if err := repo.RecordSearchPage(ctx, search); err != nil || search.ResultCount != 2 {
 		t.Fatalf("search count = %d %v", search.ResultCount, err)
 	}
-	if n, _ := repo.DeleteLeads(ctx, orgB, ids); n != 0 {
-		t.Fatal("another organization deleted the leads")
+	if n, err := repo.DeleteLeads(ctx, orgB, ids); err != nil || n != 0 {
+		t.Fatalf("another organization deleted the leads: %d %v", n, err)
 	}
 }

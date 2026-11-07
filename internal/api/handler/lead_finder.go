@@ -69,7 +69,12 @@ func (h *Handler) LeadFinderGeocode(c *gin.Context) {
 		return
 	}
 	var near *models.LatLng
-	if lat, lng := c.Query("lat"), c.Query("lng"); lat != "" && lng != "" {
+	lat, lng := c.Query("lat"), c.Query("lng")
+	if (lat == "") != (lng == "") {
+		errx.JSON(c, errx.New(errx.BadRequest, "lat and lng must be sent together"))
+		return
+	}
+	if lat != "" {
 		la, err1 := strconv.ParseFloat(lat, 64)
 		lo, err2 := strconv.ParseFloat(lng, 64)
 		if err1 != nil || err2 != nil || la < -90 || la > 90 || lo < -180 || lo > 180 {

@@ -100,8 +100,10 @@ func (c *Crawler) Crawl(ctx context.Context, website string) (*CrawlResult, erro
 	if err != nil && start.Scheme == "https" {
 		alt := *start
 		alt.Scheme = "http"
-		if h, e := c.fetch(ctx, alt.String(), rules); e == nil {
-			home, err = h, nil
+		// The http origin answers for itself, here and for every page read after.
+		altRules := c.robots(ctx, &alt)
+		if h, e := c.fetch(ctx, alt.String(), altRules); e == nil {
+			home, err, rules = h, nil, altRules
 		}
 	}
 	if err != nil {

@@ -388,7 +388,7 @@ var Tables = []Table{
 	{
 		Name: "lead_searches", Group: models.OrgDataGroupContacts,
 		Scope:         scopeOrg,
-		ResetOnImport: []string{"next_cursor"},
+		ResetOnImport: []string{"next_cursor", "pages_fetched"},
 		Note:          "Lead finder searches and saved searches. A provider's paging token only means something to the session that fetched it, so a search resumes from its first page.",
 	},
 	{

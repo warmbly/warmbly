@@ -77,7 +77,7 @@ export default function EnrichmentProgress({ runs, searching }: { runs: LeadEnri
                             {failed && r.last_error
                                 ? r.last_error
                                 : `${r.emails_found.toLocaleString()} with an email${r.people ? `, ${r.people_found.toLocaleString()} ${r.people_found === 1 ? "person" : "people"}` : ""} from ${r.total.toLocaleString()} business${r.total === 1 ? "" : "es"}`}
-                            {r.credits_consumed > 0 && ` · ${r.credits_consumed} credits`}
+                            {r.credits_consumed > 0 && ` · ${r.credits_consumed} credit${r.credits_consumed === 1 ? "" : "s"}`}
                         </span>
                         <button
                             type="button"

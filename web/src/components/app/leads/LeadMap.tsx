@@ -227,7 +227,7 @@ export default function LeadMap(props: Props) {
         };
     }, []);
 
-    // Style switches drop every layer; style.load reinstalls them.
+    // Style switches drop every layer; style.load reinstalls them. Turning the palette off reloads to restore the style's own paint.
     const firstStyle = useRef(true);
     useEffect(() => {
         if (firstStyle.current) {
@@ -235,7 +235,7 @@ export default function LeadMap(props: Props) {
             return;
         }
         mapRef.current?.setStyle(props.styleUrl);
-    }, [props.styleUrl]);
+    }, [props.styleUrl, props.themed]);
 
     useEffect(() => {
         const map = mapRef.current;

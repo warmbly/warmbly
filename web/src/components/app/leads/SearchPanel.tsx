@@ -74,7 +74,7 @@ export default function SearchPanel({
                     <input
                         value={query}
                         onChange={(e) => onQuery(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && !blockedReason && onSearch()}
+                        onKeyDown={(e) => e.key === "Enter" && !blockedReason && !searching && onSearch()}
                         maxLength={120}
                         placeholder={picked ? `${picked.label}, optionally named…` : "Business type or name, e.g. vegan bakery"}
                         aria-label="What to look for"
@@ -242,9 +242,11 @@ export default function SearchPanel({
     );
 }
 
-function Chip({ on, onClick, children }: { on?: boolean; onClick: () => void; children: React.ReactNode }) {
+// Takes a ref so popLayout can pull an exiting chip out of the flow at once.
+function Chip({ on, onClick, children, ref }: { on?: boolean; onClick: () => void; children: React.ReactNode; ref?: React.Ref<HTMLButtonElement> }) {
     return (
         <motion.button
+            ref={ref}
             layout
             type="button"
             onClick={onClick}

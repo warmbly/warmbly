@@ -42,12 +42,14 @@ export default function ExportDialog({
         if (open) setColumns(config.default_export_columns);
     }, [open, config.default_export_columns]);
 
+    // The people column only exists in per-business rows.
+    const sent = rows === "people" ? columns.filter((k) => k !== "people") : columns;
     const toggle = (k: string) => setColumns((c) => (c.includes(k) ? c.filter((x) => x !== k) : [...config.export_columns.map((x) => x.key).filter((x) => c.includes(x) || x === k)]));
 
     const run = async () => {
         setBusy(true);
         try {
-            const blob = await exportLeads({ ...selection, format, columns, rows });
+            const blob = await exportLeads({ ...selection, format, columns: sent, rows });
             downloadBlob(blob, `${rows === "people" ? "lead-people" : "leads"}-${new Date().toISOString().slice(0, 10)}.${format}`);
             toast.success(`Exported ${count.toLocaleString()} lead${count === 1 ? "" : "s"}`);
             onClose();
@@ -69,7 +71,7 @@ export default function ExportDialog({
             footer={
                 <>
                     <span className="mr-auto text-[11px] text-slate-400">
-                        {rows === "people" ? `${config.person_columns.length} person columns + ${columns.length}` : `${columns.length} columns`}
+                        {rows === "people" ? `${config.person_columns.length} person columns + ${sent.length}` : `${sent.length} columns`}
                     </span>
                     <button type="button" onClick={onClose} className="h-7 px-3 rounded-md text-[12px] text-slate-600 hover:text-slate-900">
                         Cancel
@@ -77,7 +79,7 @@ export default function ExportDialog({
                     <button
                         type="button"
                         onClick={run}
-                        disabled={busy || columns.length === 0}
+                        disabled={busy || sent.length === 0}
                         className="h-7 px-3 rounded-md bg-sky-600 text-white text-[12px] font-medium inline-flex items-center gap-1.5 hover:bg-sky-700 disabled:opacity-60"
                     >
                         {busy ? <Loader2Icon className="size-3.5 animate-spin" /> : <DownloadIcon className="size-3.5" />}

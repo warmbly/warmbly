@@ -457,7 +457,8 @@ func (r *leadFinderRepository) LeadFacets(ctx context.Context, orgID uuid.UUID, 
 	}
 	var out LeadFacets
 	var err error
-	if out.Categories, err = facet("l.category"); err != nil {
+	// Counts the primary and secondary categories once per lead, matching the category filter.
+	if out.Categories, err = facet("UNNEST(ARRAY(SELECT DISTINCT c FROM UNNEST(array_prepend(l.category, l.categories)) c))"); err != nil {
 		return nil, err
 	}
 	if out.Tags, err = facet("UNNEST(l.tags)"); err != nil {
@@ -560,7 +561,7 @@ func (r *leadFinderRepository) MarkQueued(ctx context.Context, orgID uuid.UUID, 
 func (r *leadFinderRepository) SaveEnrichment(ctx context.Context, l *models.Lead) error {
 	_, err := r.db.Exec(ctx, `
 		UPDATE leads SET
-			email = $3, emails = $4, socials = $5, site = $6, phone = $7, enrichment_status = $8,
+			email = $3, emails = $4, socials = $5, site = $6, phone = COALESCE(NULLIF($7, ''), phone), enrichment_status = $8,
 			website = COALESCE(NULLIF($9, ''), website), domain = COALESCE(NULLIF($10, ''), domain),
 			enriched_at = NOW(), updated_at = NOW()
 		WHERE organization_id = $1 AND id = $2`,
@@ -631,7 +632,7 @@ func scanLeadSearch(row pgx.Row) (models.LeadSearch, error) {
 		return s, err
 	}
 	_ = json.Unmarshal(area, &s.Area)
-	s.HasMore = s.NextCursor != ""
+	s.HasMore = s.NextCursor != "" || s.PagesFetched == 0
 	return s, nil
 }
 
@@ -828,9 +829,11 @@ func (r *leadFinderRepository) FinishEnrichmentRun(ctx context.Context, run *mod
 	if err != nil {
 		return err
 	}
-	// A lead the run never reached is no longer waiting on it.
-	_, err = r.db.Exec(ctx, `UPDATE leads SET enrichment_status = 'none', updated_at = NOW()
-		WHERE organization_id = $1 AND id = ANY($2) AND enrichment_status = 'queued'`, run.OrganizationID, run.LeadIDs)
+	// A lead the run never reached is no longer waiting on it, unless another open run holds it.
+	_, err = r.db.Exec(ctx, `UPDATE leads l SET enrichment_status = 'none', updated_at = NOW()
+		WHERE l.organization_id = $1 AND l.id = ANY($2) AND l.enrichment_status = 'queued'
+		AND NOT EXISTS (SELECT 1 FROM lead_enrichment_runs o WHERE o.organization_id = $1 AND o.id <> $3
+			AND o.status IN ('queued', 'running') AND l.id = ANY(o.lead_ids))`, run.OrganizationID, run.LeadIDs, run.ID)
 	return err
 }
 

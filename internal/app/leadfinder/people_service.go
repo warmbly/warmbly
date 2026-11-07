@@ -434,7 +434,9 @@ func (s *Service) UpdatePerson(ctx context.Context, orgID, leadID, id uuid.UUID,
 			defer cancel()
 			f := s.newAddressFinder(orgID, l, true, 1)
 			f.find(pctx, p)
-			f.markSuppressed(pctx, []models.LeadPerson{*p})
+			one := []models.LeadPerson{*p}
+			f.markSuppressed(pctx, one)
+			*p = one[0]
 		}
 	}
 	return s.savePerson(ctx, orgID, leadID, *p)
@@ -477,7 +479,9 @@ func (s *Service) findAndSave(ctx context.Context, orgID uuid.UUID, l *models.Le
 	}
 	f := s.newAddressFinder(orgID, l, true, probesPerPerson)
 	found := f.find(pctx, &p)
-	f.markSuppressed(pctx, []models.LeadPerson{p})
+	one := []models.LeadPerson{p}
+	f.markSuppressed(pctx, one)
+	p = one[0]
 	if searching && s.metered() && !found {
 		if _, err := s.Credits.RefundCharge(context.WithoutCancel(pctx), orgID, key, "lead_person_email_refund"); err != nil {
 			log.Warn().Err(err).Msg("leadfinder: could not refund a person search that found nothing")

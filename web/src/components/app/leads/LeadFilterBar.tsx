@@ -37,7 +37,8 @@ export default function LeadFilterBar({
     onChange: (r: Refine) => void;
     facets?: LeadFacets;
 }) {
-    const quickKeys = new Set(QUICK.map((q) => q.key));
+    // A chip is hidden only while its toggle shows it; a 3+ rating still gets one.
+    const quickKeys = new Set(QUICK.filter((q) => q.on(value)).map((q) => q.key));
     const chips = refineChips(value).filter((c) => !quickKeys.has(c.key));
     const count = refineCount(value);
     const anything = count > 0 || text.trim() !== "";

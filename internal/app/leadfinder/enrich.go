@@ -294,6 +294,9 @@ func (s *Service) finishEmails(ctx context.Context, run *models.LeadEnrichmentRu
 	for i := range list {
 		if suppressed[list[i].Email] {
 			list[i].Status = "suppressed"
+		} else if list[i].Status == "suppressed" {
+			// No longer suppressed: verify it again like a new address.
+			list[i].Status, list[i].SubStatus = "", ""
 		}
 	}
 	sort.SliceStable(list, func(i, j int) bool { return emailRank(list[i]) < emailRank(list[j]) })

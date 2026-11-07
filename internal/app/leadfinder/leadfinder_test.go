@@ -223,6 +223,7 @@ func TestCellSafe(t *testing.T) {
 		"=HYPERLINK(\"x\",\"y\")": "'=HYPERLINK(\"x\",\"y\")",
 		"+cmd|' /C calc'!A0":      "'+cmd|' /C calc'!A0",
 		"@SUM(A1)":                "'@SUM(A1)",
+		"\n=1+1":                  "'\n=1+1",
 		"Bright Smiles":           "Bright Smiles",
 	}
 	for in, want := range cases {

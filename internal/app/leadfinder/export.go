@@ -308,7 +308,7 @@ var phoneShape = regexp.MustCompile(`^\+[0-9 ().\-/]+$`)
 
 // cellSafe keeps a provider's text from running as a spreadsheet formula.
 func cellSafe(v string) string {
-	if v == "" || !strings.ContainsRune("=+-@\t\r", rune(v[0])) || phoneShape.MatchString(v) {
+	if v == "" || !strings.ContainsRune("=+-@\t\r\n", rune(v[0])) || phoneShape.MatchString(v) {
 		return v
 	}
 	if _, err := strconv.ParseFloat(v, 64); err == nil {

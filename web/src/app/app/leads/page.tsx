@@ -51,7 +51,7 @@ import {
     useSearchLeads,
     useUpdateLeads,
 } from "@/lib/api/hooks/app/leads/useLeads";
-import type { GeocodeResult, LatLng, LeadArea, LeadFinderConfig, LeadProvider, LeadSearch, LeadSelection, LeadSort, LeadStatus } from "@/lib/api/models/app/leads/Lead";
+import type { GeocodeResult, LatLng, LeadArea, LeadBounds, LeadFinderConfig, LeadProvider, LeadSearch, LeadSelection, LeadSort, LeadStatus } from "@/lib/api/models/app/leads/Lead";
 import buildError from "@/lib/helper/buildError";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores";
@@ -80,6 +80,15 @@ const DEFAULT_PREFS: Prefs = {
     view: { center: { lat: 39.5, lng: -98.35 }, zoom: 3.4 },
 };
 const OSM_MAX_KM2 = 2500;
+
+// The bounds a map the size of v shows around center at zoom.
+function boundsAt(v: MapView, center: LatLng, zoom: number): LeadBounds {
+    const k = 2 ** (v.zoom - zoom);
+    const cos = (lat: number) => Math.cos((lat * Math.PI) / 180);
+    const halfLng = ((v.bounds.east - v.bounds.west) / 2) * k;
+    const halfLat = ((v.bounds.north - v.bounds.south) / 2) * k * (cos(center.lat) / cos(v.center.lat));
+    return { south: center.lat - halfLat, north: center.lat + halfLat, west: center.lng - halfLng, east: center.lng + halfLng };
+}
 
 function loadPrefs(): Prefs {
     try {
@@ -128,6 +137,8 @@ function Finder({ config }: { config: LeadFinderConfig }) {
         patchPrefs({ provider: p });
     };
     const [area, setArea] = useState<LeadArea | null>(null);
+    // The last search's outline; drawn on the map, never searched again on its own.
+    const [searched, setSearched] = useState<LeadArea | null>(null);
     const [tool, setTool] = useState<MapTool>("pan");
     const [view, setView] = useState<MapView | null>(null);
     const [fly, setFly] = useState<FlyTarget | null>(null);
@@ -155,8 +166,10 @@ function Finder({ config }: { config: LeadFinderConfig }) {
     const viewBounds = view?.bounds;
     const roundedBounds = useMemo(() => {
         if (!refine.inView || !viewBounds) return undefined;
-        const r = (n: number) => Math.round(n * 1000) / 1000;
-        return { south: r(viewBounds.south), west: r(viewBounds.west), north: r(viewBounds.north), east: r(viewBounds.east) };
+        // Rounded outward, so a deep zoom never collapses the box to zero width.
+        const down = (n: number) => Math.floor(n * 1000) / 1000;
+        const up = (n: number) => Math.ceil(n * 1000) / 1000;
+        return { south: down(viewBounds.south), west: down(viewBounds.west), north: up(viewBounds.north), east: up(viewBounds.east) };
     }, [refine.inView, viewBounds]);
 
     const filter = useMemo(() => {
@@ -189,6 +202,7 @@ function Finder({ config }: { config: LeadFinderConfig }) {
     const providerInfo = config.providers.find((p) => p.id === provider);
     const lookingFor = query.trim() || config.categories.find((c) => c.id === category)?.label || "businesses";
     const searchingLabel = search.isPending ? `Searching ${providerInfo?.name ?? "the map"} for ${lookingFor.toLowerCase()}…` : null;
+    const shownArea = area ?? searched;
     const searchArea: LeadArea | null = area ?? (view ? { kind: "bbox", bounds: view.bounds } : null);
     const blockedReason = !query.trim() && !category
         ? "Pick a category or type what to look for."
@@ -201,7 +215,7 @@ function Finder({ config }: { config: LeadFinderConfig }) {
               : null;
 
     const runSearch = async () => {
-        if (blockedReason || !searchArea) return;
+        if (blockedReason || !searchArea || search.isPending) return;
         try {
             const res = await search.mutateAsync({
                 provider,
@@ -212,7 +226,7 @@ function Finder({ config }: { config: LeadFinderConfig }) {
                 language: navigator.language.slice(0, 2),
             });
             setSearchId(res.search.id);
-            setArea(res.search.area);
+            setSearched(res.search.area);
             setSideOpen(false);
             if (res.leads.length) {
                 flyTo({ bounds: boundsOf(res.leads.map((l) => ({ lat: l.latitude, lng: l.longitude }))) });
@@ -238,6 +252,7 @@ function Finder({ config }: { config: LeadFinderConfig }) {
     const openSearch = (s: LeadSearch) => {
         setSearchId(s.id);
         setArea(s.area);
+        setSearched(null);
         setQuery(s.query);
         setCategory(s.category);
         setLocation(s.location_label);
@@ -246,10 +261,23 @@ function Finder({ config }: { config: LeadFinderConfig }) {
         setSideOpen(false);
     };
 
+    const clearSearch = () => {
+        setSearchId(null);
+        setArea(null);
+        setSearched(null);
+    };
+
+    // Until the flight lands, a search covers where the map is going, not where it was.
     const onPlace = (r: GeocodeResult) => {
         setArea(null);
-        if (r.bounds) flyTo({ bounds: r.bounds });
-        else flyTo({ center: r.center, zoom: 14 });
+        const bounds = r.bounds;
+        if (bounds) {
+            setView((v) => ({ center: r.center, zoom: v?.zoom ?? 14, bounds }));
+            flyTo({ bounds });
+        } else {
+            setView((v) => v && { center: r.center, zoom: 14, bounds: boundsAt(v, r.center, 14) });
+            flyTo({ center: r.center, zoom: 14 });
+        }
     };
 
     // Selection.
@@ -379,7 +407,10 @@ function Finder({ config }: { config: LeadFinderConfig }) {
                             provider={provider}
                             onProvider={pickProvider}
                             area={area}
-                            onClearArea={() => setArea(null)}
+                            onClearArea={() => {
+                                setArea(null);
+                                setSearched(null);
+                            }}
                             onTool={(t) => {
                                 setTool(t);
                                 setSideOpen(false);
@@ -402,6 +433,7 @@ function Finder({ config }: { config: LeadFinderConfig }) {
                             openSearch(s);
                             setSideOpen(false);
                         }}
+                        onDelete={(id) => id === searchId && clearSearch()}
                     />
                 </motion.section>
             </div>
@@ -429,10 +461,7 @@ function Finder({ config }: { config: LeadFinderConfig }) {
                             type="button"
                             aria-label="Show every lead"
                             title="Show every lead"
-                            onClick={() => {
-                                setSearchId(null);
-                                setArea(null);
-                            }}
+                            onClick={clearSearch}
                             className="size-4 rounded hover:bg-sky-100 inline-flex items-center justify-center"
                         >
                             <XIcon className="size-3" />
@@ -494,7 +523,7 @@ function Finder({ config }: { config: LeadFinderConfig }) {
                                 activeId={activeId}
                                 colorBy={prefs.colorBy}
                                 layer={prefs.layer}
-                                area={area}
+                                area={shownArea}
                                 tool={tool}
                                 tilt={prefs.tilt}
                                 initialView={prefs.view}
@@ -516,7 +545,7 @@ function Finder({ config }: { config: LeadFinderConfig }) {
                                 onFit={() => {
                                     const pts = points.data?.data ?? [];
                                     if (pts.length) flyTo({ bounds: boundsOf(pts.map((p) => ({ lat: p.latitude, lng: p.longitude }))) });
-                                    else if (area) flyTo({ bounds: area.bounds });
+                                    else if (shownArea) flyTo({ bounds: shownArea.bounds });
                                 }}
                             />
                             {tool !== "pan" && <ToolHint tool={tool} onCancel={() => setTool("pan")} />}
@@ -548,7 +577,9 @@ function Finder({ config }: { config: LeadFinderConfig }) {
                             <LeadsTable
                                 leads={leads}
                                 total={total}
-                                loading={list.isPending}
+                                loading={list.isPending || (list.isError && list.isFetching && !leads.length)}
+                                error={list.isError && !leads.length ? buildError(list.error as unknown as AppError) : null}
+                                onRetry={() => list.refetch()}
                                 hasMore={!!list.hasNextPage}
                                 loadingMore={list.isFetchingNextPage}
                                 onMore={() => list.fetchNextPage()}

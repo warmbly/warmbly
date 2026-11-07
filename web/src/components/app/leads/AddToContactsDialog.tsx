@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import toast from "react-hot-toast/headless";
 import { Link } from "@tanstack/react-router";
 import { ArrowRightIcon, BuildingIcon, FolderTreeIcon, Loader2Icon, type LucideIcon, MegaphoneIcon, TagsIcon, UserPlusIcon, UsersIcon } from "lucide-react";
@@ -44,12 +44,16 @@ export default function AddToContactsDialog({
     const [keepExisting, setKeepExisting] = useState(false);
     const [result, setResult] = useState<AddLeadsToContactsResult | null>(null);
 
+    // Bumped on close, so an import that finishes after it does not show its result.
+    const attempt = useRef(0);
     const close = () => {
+        attempt.current++;
         setResult(null);
         onClose();
     };
 
     const submit = async () => {
+        const mine = ++attempt.current;
         try {
             const res = await add.mutateAsync({
                 ...selection,
@@ -62,7 +66,7 @@ export default function AddToContactsDialog({
                 include_guessed: includeGuessed,
                 keep_existing: keepExisting,
             });
-            setResult(res);
+            if (mine === attempt.current) setResult(res);
             const n = res.imported + res.updated;
             if (n > 0) toast.success(`${n.toLocaleString()} contact${n === 1 ? "" : "s"} added`);
         } catch (e) {

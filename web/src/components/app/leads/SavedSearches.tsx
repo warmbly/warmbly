@@ -15,10 +15,12 @@ export default function SavedSearches({
     config,
     activeId,
     onOpen,
+    onDelete,
 }: {
     config: LeadFinderConfig;
     activeId: string | null;
     onOpen: (s: LeadSearch) => void;
+    onDelete: (id: string) => void;
 }) {
     const searches = useLeadSearches();
     const list = searches.data ?? [];
@@ -49,9 +51,9 @@ export default function SavedSearches({
         <LayoutGroup>
             <div className="space-y-4">
                 <AnimatePresence initial={false}>
-                    {saved.length > 0 && <Section key="saved" title="Saved" items={saved} config={config} activeId={activeId} onOpen={onOpen} />}
+                    {saved.length > 0 && <Section key="saved" title="Saved" items={saved} config={config} activeId={activeId} onOpen={onOpen} onDelete={onDelete} />}
                 </AnimatePresence>
-                {recent.length > 0 && <Section title="Recent" items={recent} config={config} activeId={activeId} onOpen={onOpen} cap={4} />}
+                {recent.length > 0 && <Section title="Recent" items={recent} config={config} activeId={activeId} onOpen={onOpen} onDelete={onDelete} cap={4} />}
             </div>
         </LayoutGroup>
     );
@@ -63,6 +65,7 @@ function Section({
     config,
     activeId,
     onOpen,
+    onDelete,
     cap,
 }: {
     title: string;
@@ -70,6 +73,7 @@ function Section({
     config: LeadFinderConfig;
     activeId: string | null;
     onOpen: (s: LeadSearch) => void;
+    onDelete: (id: string) => void;
     /** Show this many until the list is opened up. */
     cap?: number;
 }) {
@@ -85,7 +89,7 @@ function Section({
             <ul className="space-y-1">
                 <AnimatePresence initial={false}>
                     {shown.map((s) => (
-                        <SearchRow key={s.id} search={s} config={config} active={s.id === activeId} onOpen={() => onOpen(s)} />
+                        <SearchRow key={s.id} search={s} config={config} active={s.id === activeId} onOpen={() => onOpen(s)} onDelete={() => onDelete(s.id)} />
                     ))}
                 </AnimatePresence>
             </ul>
@@ -104,7 +108,7 @@ function Section({
     );
 }
 
-function SearchRow({ search, config, active, onOpen }: { search: LeadSearch; config: LeadFinderConfig; active: boolean; onOpen: () => void }) {
+function SearchRow({ search, config, active, onOpen, onDelete }: { search: LeadSearch; config: LeadFinderConfig; active: boolean; onOpen: () => void; onDelete: () => void }) {
     const update = useUpdateLeadSearch();
     const remove = useDeleteLeadSearch();
     const confirm = useConfirm();
@@ -155,7 +159,14 @@ function SearchRow({ search, config, active, onOpen }: { search: LeadSearch; con
                         className="h-6 min-w-0 flex-1 rounded border border-sky-300 px-1.5 text-[12.5px] outline-none"
                     />
                 ) : (
-                    <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-slate-900">{search.name}</span>
+                    // A real button, so the row opens from the keyboard; its click bubbles to the row.
+                    <button
+                        type="button"
+                        aria-current={active || undefined}
+                        className="min-w-0 flex-1 truncate rounded text-left text-[12.5px] font-medium text-slate-900 outline-none focus-visible:ring-2 focus-visible:ring-sky-200"
+                    >
+                        {search.name}
+                    </button>
                 )}
                 <button
                     type="button"
@@ -195,6 +206,7 @@ function SearchRow({ search, config, active, onOpen }: { search: LeadSearch; con
                                 confirm?.show(`Delete "${search.name}"? The leads it found stay in your list.`, async () => {
                                     try {
                                         await remove.mutateAsync(search.id);
+                                        onDelete();
                                     } catch (e) {
                                         toast.error(buildError(e as AppError));
                                     }

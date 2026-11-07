@@ -335,7 +335,8 @@ func (s *Service) Search(ctx context.Context, orgID, userID uuid.UUID, req Searc
 		if got == nil {
 			return nil, errx.New(errx.NotFound, "search not found")
 		}
-		if got.NextCursor == "" {
+		// A search with no page recorded fetches its first page again.
+		if got.NextCursor == "" && got.PagesFetched > 0 {
 			return nil, errx.NewWithIdentifier(errx.BadRequest, "lead_search_exhausted", "This search has no more results")
 		}
 		search = got
@@ -371,17 +372,22 @@ func (s *Service) Search(ctx context.Context, orgID, userID uuid.UUID, req Searc
 		Text: search.Query, Category: category, Area: search.Area, Cursor: search.NextCursor,
 		Limit: providerMeta[search.Provider].PageSize, Language: req.Language,
 	})
-	if err != nil {
-		if chargeKey != "" {
-			if _, rerr := s.Credits.RefundCharge(context.WithoutCancel(ctx), orgID, chargeKey, "lead_search_refund"); rerr != nil {
-				log.Warn().Err(rerr).Msg("leadfinder: could not refund a failed search")
-			}
+	refund := func() {
+		if chargeKey == "" {
+			return
 		}
+		if _, rerr := s.Credits.RefundCharge(context.WithoutCancel(ctx), orgID, chargeKey, "lead_search_refund"); rerr != nil {
+			log.Warn().Err(rerr).Msg("leadfinder: could not refund a failed search")
+		}
+	}
+	if err != nil {
+		refund()
 		return nil, providerErr(search.Provider, err)
 	}
 	// A search is kept once its source answered, so a failed one leaves nothing behind.
 	if req.SearchID == nil {
 		if err := s.Repo.CreateSearch(ctx, search); err != nil {
+			refund()
 			return nil, err
 		}
 	}
@@ -421,8 +427,10 @@ func (s *Service) Search(ctx context.Context, orgID, userID uuid.UUID, req Searc
 }
 
 func (s *Service) newSearch(orgID, userID uuid.UUID, req SearchRequest) (*models.LeadSearch, error) {
-	if !req.Provider.Valid() {
+	if req.Provider == "" {
 		req.Provider = models.LeadProviderOSM
+	} else if !req.Provider.Valid() {
+		return nil, errx.New(errx.BadRequest, "unknown lead provider")
 	}
 	req.Query = strings.TrimSpace(req.Query)
 	if len([]rune(req.Query)) > 120 {

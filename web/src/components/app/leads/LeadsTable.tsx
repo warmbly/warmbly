@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowDownWideNarrowIcon, CheckIcon, GlobeIcon, Loader2Icon, MailXIcon, PhoneIcon, SearchXIcon, SparklesIcon, StarIcon, UserCheckIcon, UsersIcon } from "lucide-react";
+import { ArrowDownWideNarrowIcon, CheckIcon, GlobeIcon, Loader2Icon, MailXIcon, PhoneIcon, RotateCwIcon, SearchXIcon, SparklesIcon, StarIcon, UserCheckIcon, UsersIcon } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { PopoverMenu, PopoverMenuContent, PopoverMenuItem, PopoverMenuTrigger } from "@/components/ui/popover-menu";
 import type { Lead, LeadSort } from "@/lib/api/models/app/leads/Lead";
@@ -18,6 +18,8 @@ export default function LeadsTable({
     leads,
     total,
     loading,
+    error,
+    onRetry,
     hasMore,
     loadingMore,
     onMore,
@@ -36,6 +38,9 @@ export default function LeadsTable({
     leads: Lead[];
     total: number;
     loading: boolean;
+    // Set when the list failed to load and there is nothing to show.
+    error?: string | null;
+    onRetry?: () => void;
     hasMore: boolean;
     loadingMore: boolean;
     onMore: () => void;
@@ -74,8 +79,8 @@ export default function LeadsTable({
         wasQueued.current = queued;
         if (!done.length) return;
         setJustDone((cur) => new Set([...cur, ...done]));
-        const t = setTimeout(() => setJustDone((cur) => new Set([...cur].filter((id) => !done.includes(id)))), 2_400);
-        return () => clearTimeout(t);
+        // Not cleared on re-render: a poll landing inside the flash would strand the highlight.
+        setTimeout(() => setJustDone((cur) => new Set([...cur].filter((id) => !done.includes(id)))), 2_400);
     }, [leads]);
 
     const pageAll = leads.length > 0 && leads.every((l) => selected.has(l.id));
@@ -143,11 +148,27 @@ export default function LeadsTable({
                             </div>
                         ))}
                     </div>
+                ) : error ? (
+                    <div className="px-6 py-14 text-center">
+                        <SearchXIcon className="mx-auto size-6 text-slate-300" />
+                        <p className="mt-2 text-[12.5px] font-medium text-slate-900">Leads did not load</p>
+                        <p className="mt-0.5 text-[11.5px] text-slate-400">{error}</p>
+                        {onRetry && (
+                            <button
+                                type="button"
+                                onClick={onRetry}
+                                className="mt-3 h-7 px-3 rounded-md border border-slate-200 text-[12px] text-slate-700 hover:border-slate-300 hover:text-slate-900 inline-flex items-center gap-1.5"
+                            >
+                                <RotateCwIcon className="size-3.5" />
+                                Try again
+                            </button>
+                        )}
+                    </div>
                 ) : leads.length === 0 ? (
                     <div className="px-6 py-14 text-center">
                         <SearchXIcon className="mx-auto size-6 text-slate-300" />
                         <p className="mt-2 text-[12.5px] font-medium text-slate-900">No leads here yet</p>
-                        <p className="mt-0.5 text-[11.5px] text-slate-400">Search an area, or loosen the filters on the left.</p>
+                        <p className="mt-0.5 text-[11.5px] text-slate-400">Search an area, or loosen the filters above.</p>
                     </div>
                 ) : (
                     <ul className="divide-y divide-slate-100">

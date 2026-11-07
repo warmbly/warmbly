@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import toast from "react-hot-toast/headless";
 import {
@@ -255,7 +255,7 @@ function Body({
                 {tab === "overview" && <Overview lead={lead} provider={provider} onPeople={() => onTab("people")} />}
                 {tab === "people" && <PeopleTab lead={lead} onFindPeople={findEmails} finding={enrich.isPending || lead.enrichment_status === "queued"} />}
                 {tab === "website" && <Website lead={lead} />}
-                {tab === "notes" && <Notes lead={lead} />}
+                {tab === "notes" && <Notes key={lead.id} lead={lead} />}
             </div>
         </>
     );
@@ -506,8 +506,12 @@ function Website({ lead }: { lead: Lead }) {
 function Notes({ lead }: { lead: Lead }) {
     const update = useUpdateLead();
     const [notes, setNotes] = useState(lead.notes);
+    // A teammate's save must not overwrite what is being typed here.
+    const dirty = useRef(false);
     const [tag, setTag] = useState("");
-    useEffect(() => setNotes(lead.notes), [lead.id, lead.notes]);
+    useEffect(() => {
+        if (!dirty.current) setNotes(lead.notes);
+    }, [lead.notes]);
     const save = (patch: Parameters<typeof update.mutate>[0]["patch"]) =>
         update.mutate({ id: lead.id, patch }, { onError: (e) => toast.error(buildError(e as unknown as AppError)) });
     const addTag = () => {
@@ -549,8 +553,14 @@ function Notes({ lead }: { lead: Lead }) {
                 <textarea
                     value={notes}
                     maxLength={5000}
-                    onChange={(e) => setNotes(e.target.value)}
-                    onBlur={() => notes !== lead.notes && save({ notes })}
+                    onChange={(e) => {
+                        dirty.current = true;
+                        setNotes(e.target.value);
+                    }}
+                    onBlur={() => {
+                        dirty.current = false;
+                        if (notes !== lead.notes) save({ notes });
+                    }}
                     rows={8}
                     placeholder="What you know about them, who to ask for, when to follow up…"
                     className="w-full resize-y rounded-md border border-slate-200 px-2.5 py-2 text-[12.5px] text-slate-800 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
