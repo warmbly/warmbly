@@ -232,8 +232,13 @@ func (s *Service) LinkedList(ctx context.Context, inst *models.PoolLinkInstance)
 	if err != nil {
 		return nil, errx.InternalError()
 	}
+	ptrs := make([]*models.DomainRedirect, len(list))
 	for i := range list {
-		s.decorate(&list[i], nil)
+		ptrs[i] = &list[i]
+	}
+	pending := s.edgePending(ctx, ptrs...)
+	for i := range list {
+		s.decorate(&list[i], nil, pending)
 	}
 	return list, nil
 }
@@ -246,7 +251,7 @@ func (s *Service) LinkedGet(ctx context.Context, inst *models.PoolLinkInstance, 
 	if r == nil {
 		return nil, linkedNotFound()
 	}
-	s.decorate(r, nil)
+	s.decorate(r, nil, s.edgePending(ctx, r))
 	return r, nil
 }
 

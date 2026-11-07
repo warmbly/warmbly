@@ -63,6 +63,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/dangerzone"
 	"github.com/warmbly/warmbly/internal/app/delegation"
 	"github.com/warmbly/warmbly/internal/app/discount"
+	"github.com/warmbly/warmbly/internal/app/edgehost"
 	"github.com/warmbly/warmbly/internal/app/email"
 	"github.com/warmbly/warmbly/internal/app/emailsend"
 	emailverifyapp "github.com/warmbly/warmbly/internal/app/emailverify"
@@ -159,6 +160,7 @@ import (
 	productanalytics "github.com/warmbly/warmbly/internal/observability/analytics"
 	"github.com/warmbly/warmbly/internal/pkg/appleauth"
 	"github.com/warmbly/warmbly/internal/pkg/captcha"
+	"github.com/warmbly/warmbly/internal/pkg/cfsaas"
 	"github.com/warmbly/warmbly/internal/pkg/domainproof"
 	"github.com/warmbly/warmbly/internal/pkg/emailverify"
 	"github.com/warmbly/warmbly/internal/pkg/encrypt"
@@ -2007,6 +2009,14 @@ func main() {
 		ownDomains.WireWebsites(repository.NewWebsiteDomainRepository(primaryDB), domainProver, nil)
 		sendingDomainService.WireOwnDomains(ownDomains)
 		sendingDomainService.WireCustomHosts(customHosts)
+		// Behind a Cloudflare for SaaS zone, every served customer name is registered there as it verifies.
+		if edge := cfsaas.New(cfsaas.Config{ZoneID: config.CloudflareSaaSZoneID(), APIToken: config.CloudflareSaaSAPIToken(), Origin: config.CloudflareSaaSOrigin()}); edge != nil {
+			edgeHosts := edgehost.New(repository.NewEdgeHostnameRepository(primaryDB.Pool), edge, func() []string {
+				return []string{config.TrackingHostname(), config.FormsHostname()}
+			})
+			sendingDomainService.WireEdge(edgeHosts)
+			go edgeHosts.Start(ctx)
+		}
 		// A linked self-hosted instance can have Warmbly Cloud serve a redirect instead.
 		sendingDomainService.WireCloud(cloudLinkService)
 		cloudLinkService.OnDisconnect(sendingDomainService.MarkCloudUnlinked)

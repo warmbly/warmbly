@@ -352,13 +352,31 @@ resource "aws_lb_listener" "https" {
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-Res-2021-06"
   certificate_arn   = local.foundation.certificate_arns[var.certificate_primary_domain]
   default_action {
-    type = "fixed-response"
-    fixed_response {
-      content_type = "text/plain"
-      status_code  = "404"
-      message_body = "Not found"
+    type             = var.tracking_serves_unmatched_hosts ? "forward" : "fixed-response"
+    target_group_arn = var.tracking_serves_unmatched_hosts && !contains(["both", "route"], var.target_tls) ? local.serving_target_groups["tracking"].arn : null
+    dynamic "forward" {
+      for_each = var.tracking_serves_unmatched_hosts && contains(["both", "route"], var.target_tls) ? ["tracking"] : []
+      content {
+        target_group {
+          arn    = aws_lb_target_group.service[forward.value].arn
+          weight = var.target_tls == "both" ? 1 : 0
+        }
+        target_group {
+          arn    = aws_lb_target_group.service_tls[forward.value].arn
+          weight = var.target_tls == "route" ? 1 : 0
+        }
+      }
+    }
+    dynamic "fixed_response" {
+      for_each = var.tracking_serves_unmatched_hosts ? [] : ["not_found"]
+      content {
+        content_type = "text/plain"
+        status_code  = "404"
+        message_body = "Not found"
+      }
     }
   }
+  depends_on = [aws_vpc_security_group_ingress_rule.service, aws_vpc_security_group_ingress_rule.service_tls]
 }
 resource "aws_lb_listener_certificate" "additional" {
   for_each        = { for domain, arn in local.foundation.certificate_arns : domain => arn if domain != var.certificate_primary_domain }
