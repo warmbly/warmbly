@@ -285,7 +285,12 @@ func (s *emailService) vendorReconnectTarget(ctx context.Context, orgID, account
 		return nil, 0, ErrVendorConsentWrongMailbox
 	}
 	if s.cloudLink != nil {
-		if m, err := s.cloudLink.GetByAccount(ctx, accountID); err == nil && m != nil && m.Managed {
+		m, err := s.cloudLink.GetByAccount(ctx, accountID)
+		if err != nil {
+			// Unknown is not unmanaged: no consent is asked for a mailbox Warmbly Cloud may hold.
+			return nil, 0, errx.InternalError()
+		}
+		if m != nil && m.Managed {
 			return nil, 0, errx.ErrEmailReauthCloudManaged
 		}
 	}

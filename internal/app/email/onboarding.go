@@ -222,6 +222,10 @@ func (s *emailService) OAuthFinish(ctx context.Context, userID, code, state stri
 	} else if existing != nil {
 		return nil, false, errx.ErrEmailOnboardAlreadyExists
 	}
+	// The login hint is optional, so the address Google returned decides.
+	if provider == models.InboxProviderGoogle && personalGmail(owner.Email) {
+		return nil, false, errx.ErrEmailOnboardGooglePersonal
+	}
 
 	acc, xerr := s.createOAuthMailbox(ctx, userID, sess.OrganizationID, allowance, provider, tok, owner)
 	return acc, false, xerr

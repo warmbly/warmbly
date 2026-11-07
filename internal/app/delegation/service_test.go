@@ -30,6 +30,8 @@ import (
 type memGrants struct {
 	mu     sync.Mutex
 	grants map[uuid.UUID]*models.DomainGrant
+	// awaiting is a domain with imported mailboxes waiting on their grant.
+	awaiting bool
 }
 
 func (m *memGrants) Upsert(_ context.Context, g *models.DomainGrant, _ uuid.UUID) error {
@@ -94,6 +96,9 @@ func (m *memGrants) ForDomain(_ context.Context, org uuid.UUID, provider, domain
 func (m *memGrants) ListActive(context.Context) ([]models.DomainGrant, error) { return nil, nil }
 func (m *memGrants) InactiveMailboxes(context.Context, uuid.UUID) ([]uuid.UUID, error) {
 	return nil, nil
+}
+func (m *memGrants) AwaitsGoogleGrant(context.Context, uuid.UUID, string) (bool, error) {
+	return m.awaiting, nil
 }
 
 type fakeMailboxes struct{ connected []models.NewDelegatedAccount }
@@ -421,6 +426,16 @@ func TestNewGoogleGrantsAreRetired(t *testing.T) {
 	}
 	if _, _, xerr := s.StartMicrosoft(context.Background(), org, user); xerr != nil {
 		t.Fatalf("microsoft consent = %v", xerr)
+	}
+}
+
+// Mailboxes that arrived in a workspace import without their grant let the domain be proved again.
+func TestImportedMailboxesReopenTheirGoogleGrant(t *testing.T) {
+	s, _, grants, _, _ := newTestService(t)
+	grants.awaiting = true
+	org, user := uuid.New(), uuid.New()
+	if _, xerr := s.StartGoogle(context.Background(), org, user, "acme.io", "admin"+"@acme.io"); xerr != nil {
+		t.Fatalf("start for imported mailboxes = %v", xerr)
 	}
 }
 

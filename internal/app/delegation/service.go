@@ -426,7 +426,7 @@ func unavailable(err error) bool {
 	}
 	var re *oauth2.RetrieveError
 	if errors.As(err, &re) {
-		return re.Response != nil && re.Response.StatusCode >= 500
+		return re.Response != nil && (re.Response.StatusCode >= 500 || re.Response.StatusCode == http.StatusTooManyRequests)
 	}
 	return true
 }

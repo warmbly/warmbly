@@ -143,8 +143,9 @@ export function useStartVendorReconnect() {
     return useMutation({
         mutationKey: sourceMutationKey("vendor-reconnect"),
         mutationFn: ({ id, emailAccountIds }: { id: string; emailAccountIds?: string[] }) => reconnectVendorMailboxes(id, emailAccountIds),
-        onSuccess: (out, { id }) => {
-            qc.setQueryData(vendorReconnectKey(id), out);
+        onSuccess: (_out, { id }) => {
+            // The answer names only the mailboxes asked for; the connection's full progress is read again.
+            qc.invalidateQueries({ queryKey: vendorReconnectKey(id) });
             qc.invalidateQueries({ queryKey: MAILBOX_SIGNIN_KEY });
         },
     });

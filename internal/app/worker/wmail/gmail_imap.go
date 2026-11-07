@@ -43,7 +43,17 @@ type GmailIMAP struct {
 	mu      sync.Mutex
 	session GmailIMAPSession
 	gen     uint64
-	refused atomic.Pointer[string]
+	refused atomic.Pointer[gmailIMAPRefusal]
+}
+
+// gmailIMAPRetryAfter is how long a refusal the worker saw itself holds before IMAP is tried again, so a repaired grant takes effect.
+const gmailIMAPRetryAfter = 6 * time.Hour
+
+type gmailIMAPRefusal struct {
+	reason string
+	at     time.Time
+	// standing is the control plane's answer, which a republished mailbox replaces.
+	standing bool
 }
 
 // NewGmailIMAP dials imap.gmail.com with the mailbox's own OAuth token source.
@@ -78,15 +88,25 @@ func NewGmailIMAP(lifetime context.Context, email string, tokens oauth2.TokenSou
 
 // Refused is why this mailbox's engagement runs through the Gmail API, or "" while IMAP is in use.
 func (g *GmailIMAP) Refused() string {
-	if r := g.refused.Load(); r != nil {
-		return *r
+	r := g.refused.Load()
+	if r == nil {
+		return ""
 	}
-	return ""
+	if !r.standing && time.Since(r.at) > gmailIMAPRetryAfter {
+		g.refused.CompareAndSwap(r, nil)
+		return ""
+	}
+	return r.reason
 }
 
 // Refuse records that IMAP cannot serve this mailbox; true only for the first call.
 func (g *GmailIMAP) Refuse(reason string) bool {
-	return g.refused.CompareAndSwap(nil, &reason)
+	return g.refused.CompareAndSwap(nil, &gmailIMAPRefusal{reason: reason, at: time.Now()})
+}
+
+// RefuseStanding records the control plane's refusal, which holds for the life of this mailbox.
+func (g *GmailIMAP) RefuseStanding(reason string) {
+	g.refused.Store(&gmailIMAPRefusal{reason: reason, at: time.Now(), standing: true})
 }
 
 // With runs fn on the mailbox's session, dialing it first when none is open; batches never overlap.

@@ -167,7 +167,7 @@ func cleanDomainAdmin(domain, admin string) (string, string, *errx.Error) {
 	return domain, admin, nil
 }
 
-// googleRetired refuses a Google grant for a domain the workspace holds no grant for; an existing one may be proved again.
+// googleRetired refuses a Google grant for a domain the workspace holds no grant for; an existing or imported one may be proved again.
 func (s *Service) googleRetired(ctx context.Context, orgID uuid.UUID, domain string) *errx.Error {
 	list, err := s.repo.List(ctx, orgID)
 	if err != nil {
@@ -177,6 +177,14 @@ func (s *Service) googleRetired(ctx context.Context, orgID uuid.UUID, domain str
 		if g.Provider == models.GrantProviderGoogle && slices.Contains(g.Domains, domain) {
 			return nil
 		}
+	}
+	// Mailboxes that arrived in a workspace import without their grant are restored by making it again.
+	awaiting, err := s.repo.AwaitsGoogleGrant(ctx, orgID, domain)
+	if err != nil {
+		return errx.InternalError()
+	}
+	if awaiting {
+		return nil
 	}
 	return errx.NewWithIdentifier(errx.Forbidden, ErrIDGoogleRetired,
 		"New Google Workspace domain-wide delegation grants are no longer set up. Have a Workspace administrator mark Warmbly as a trusted app, then sign in each mailbox with Google, or connect it with an app password. Grants already made keep working. See https://docs.warmbly.com/guides/mailboxes/#google-workspace-with-google-sign-in")

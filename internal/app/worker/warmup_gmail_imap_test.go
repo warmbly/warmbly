@@ -122,13 +122,13 @@ func TestGmailRescueOutcomes(t *testing.T) {
 	}{
 		{"already out of spam", map[string]uint32{"[Gmail]/All Mail": 3}, nil, models.WarmupRescueAlreadyOut},
 		{"nowhere", map[string]uint32{}, nil, models.WarmupRescueGone},
-		{"search failed on the network", map[string]uint32{}, errx.ErrMailServerUnreachable, models.WarmupRescueFailed},
+		{"search failed on the network, left to the API", map[string]uint32{}, errx.ErrMailServerUnreachable, ""},
 	} {
 		s := &gmailSession{folders: gmailFolders(), held: tc.held, findErr: tc.findErr}
 		outcome := ""
 		settled := (&WorkerService{}).runGmailIMAPEngagement(context.Background(), (&gmailDialer{session: s}).mail(),
 			gmailAction(models.WarmupPlacementFolder, models.WarmupActionRescueFromSpam), &outcome)
-		if !settled[models.WarmupActionRescueFromSpam] || outcome != tc.want || len(s.calls) != 0 {
+		if settled[models.WarmupActionRescueFromSpam] != (tc.want != "") || outcome != tc.want || len(s.calls) != 0 {
 			t.Fatalf("%s: settled=%v outcome=%q calls=%v", tc.name, settled, outcome, s.calls)
 		}
 	}
@@ -179,6 +179,7 @@ func TestGmailIMAPRefusalIsRememberedForTheMailbox(t *testing.T) {
 	}
 }
 
+// A network failure leaves the action to the Gmail API for this batch and is not remembered as a refusal.
 func TestGmailIMAPNetworkFailureIsNotAFallback(t *testing.T) {
 	d := &gmailDialer{err: errx.ErrMailServerUnreachable}
 	mail := d.mail()
@@ -186,7 +187,7 @@ func TestGmailIMAPNetworkFailureIsNotAFallback(t *testing.T) {
 	for range 2 {
 		outcome := ""
 		settled := w.runGmailIMAPEngagement(context.Background(), mail, gmailAction(models.WarmupPlacementInbox, models.WarmupActionRescueFromSpam), &outcome)
-		if !settled[models.WarmupActionRescueFromSpam] || outcome != models.WarmupRescueFailed {
+		if settled[models.WarmupActionRescueFromSpam] || outcome != "" {
 			t.Fatalf("settled=%v outcome=%q", settled, outcome)
 		}
 	}

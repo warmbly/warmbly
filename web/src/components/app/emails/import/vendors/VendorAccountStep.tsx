@@ -25,6 +25,7 @@ import {
     PopoverMenuTrigger,
 } from "@/components/ui/popover-menu";
 import { useConfirm } from "@/hooks/context/confirm";
+import { useGrantConfig } from "@/lib/api/hooks/app/emails/useMailboxGrants";
 import {
     useCreateVendorConnection,
     useDeleteVendorConnection,
@@ -71,6 +72,8 @@ export default function VendorAccountStep({
     onDirtyChange: (dirty: boolean) => void;
 }) {
     const confirm = useConfirm();
+    // A vendor reconnect ends in a Google sign-in, which needs the instance's Google client.
+    const googleSignin = !!useGrantConfig(true).data?.google_mailbox_client_id;
     const [mode, setMode] = React.useState<Mode | null>(null);
     // With nothing saved yet, the vendor grid is the first screen.
     const current: Mode = mode ?? (connections.length > 0 ? { kind: "list" } : { kind: "vendors" });
@@ -161,7 +164,7 @@ export default function VendorAccountStep({
                                         <ConnectionRow
                                             key={conn.id}
                                             conn={conn}
-                                            signsIn={!!catalog.find((v) => v.id === conn.vendor)?.signs_in}
+                                            signsIn={googleSignin && !!catalog.find((v) => v.id === conn.vendor)?.signs_in}
                                             onReconnect={() => reconnectAll(conn)}
                                             active={conn.id === selectedId}
                                             onOpen={() => {

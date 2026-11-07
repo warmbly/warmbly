@@ -348,7 +348,10 @@ export default function AddEmailModal() {
                                                     setAppPasswordEmail(address);
                                                     navigate("gmail_app_password");
                                                 }}
-                                                onUseAppPassword={() => navigate("gmail_app_password")}
+                                                onUseAppPassword={(address) => {
+                                                    setAppPasswordEmail(address);
+                                                    navigate("gmail_app_password");
+                                                }}
                                             />
                                         )
                                     )}

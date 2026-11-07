@@ -26,6 +26,9 @@ function vendorGroups(groups: SigninMigration[] | undefined) {
     return [...by.values()];
 }
 
+// The server reconnects up to this many mailboxes per request.
+const RECONNECT_BATCH = 1000;
+
 const LATER_MS = 7 * 24 * 60 * 60 * 1000;
 
 function laterKey(orgId: string) {
@@ -64,8 +67,11 @@ export default function SigninMigrationBanner({ total, groups, onOpen }: { total
         if (busy) return;
         setBusy(v.connectionId);
         try {
-            const out = await reconnect.mutateAsync({ id: v.connectionId, emailAccountIds: v.ids });
-            const n = out.data.length;
+            let n = 0;
+            for (let i = 0; i < v.ids.length; i += RECONNECT_BATCH) {
+                const out = await reconnect.mutateAsync({ id: v.connectionId, emailAccountIds: v.ids.slice(i, i + RECONNECT_BATCH) });
+                n += out.data.length;
+            }
             toast.success(`${vendorLabel(v.vendor)} is reconnecting ${n === 1 ? "1 mailbox" : `${n} mailboxes`}. Each one drops off this list once it is done.`);
         } catch (e) {
             toast.error(buildError(e as AppError));

@@ -28,6 +28,7 @@ import MailboxImportDialog from "../import/MailboxImportDialog";
 import { BlockedByAdminHint, TrustedAppSteps } from "../GoogleWorkspaceSigninPanel";
 import AppPasswordSwitchForm from "./AppPasswordSwitchForm";
 import useGoogleReconnect from "./useGoogleReconnect";
+import { useConfirm } from "@/hooks/context/confirm";
 
 type Mailbox = { id: string; email: string };
 
@@ -157,6 +158,17 @@ export default function MailboxSigninSection({ mailbox }: { mailbox: Mailbox }) 
     const move = useMoveToGrant();
     const google = useGoogleReconnect();
     const [open, setOpen] = React.useState<"google" | "password" | null>(null);
+    const confirm = useConfirm();
+    const [passwordDirty, setPasswordDirty] = React.useState(false);
+    // Leaving a typed app password asks first; the password is not kept anywhere.
+    const toggle = (which: "google" | "password") => {
+        const next = open === which ? null : which;
+        if (open === "password" && passwordDirty) {
+            confirm.show("Discard the app password you typed?", async () => setOpen(next));
+            return;
+        }
+        setOpen(next);
+    };
     const [importId, setImportId] = React.useState<string | null>(null);
     const s = q.data;
     // The dialog outlives the move, which changes what the section shows.
@@ -244,7 +256,7 @@ export default function MailboxSigninSection({ mailbox }: { mailbox: Mailbox }) 
                             action={
                                 <button
                                     type="button"
-                                    onClick={() => setOpen((v) => (v === "google" ? null : "google"))}
+                                    onClick={() => toggle("google")}
                                     aria-expanded={open === "google"}
                                     className={cn(secondary, open === "google" ? "border-sky-200 bg-sky-50 text-sky-700" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50")}
                                 >
@@ -287,7 +299,7 @@ export default function MailboxSigninSection({ mailbox }: { mailbox: Mailbox }) 
                             action={
                                 <button
                                     type="button"
-                                    onClick={() => setOpen((v) => (v === "password" ? null : "password"))}
+                                    onClick={() => toggle("password")}
                                     aria-expanded={open === "password"}
                                     className={cn(secondary, open === "password" ? "border-sky-200 bg-sky-50 text-sky-700" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50")}
                                 >
@@ -297,7 +309,7 @@ export default function MailboxSigninSection({ mailbox }: { mailbox: Mailbox }) 
                             }
                         >
                             <Expand open={open === "password"}>
-                                <AppPasswordSwitchForm mailbox={mailbox} onDone={() => setOpen(null)} />
+                                <AppPasswordSwitchForm mailbox={mailbox} onDirtyChange={setPasswordDirty} onDone={() => setOpen(null)} />
                             </Expand>
                         </OptionRow>
                     )}

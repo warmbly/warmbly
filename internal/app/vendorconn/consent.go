@@ -263,6 +263,14 @@ func (s *Service) consentMailbox(ctx context.Context, c *models.VendorConnection
 			return fail(reason)
 		}
 		if next != st {
+			// The callback may have settled it while the status was read; a settled outcome is never replaced.
+			var cur consentState
+			if err := s.cache.GetJSON(ctx, key, &cur); err == nil && (cur.Done || cur.Failed != "") {
+				if cur.Done {
+					return DomainAuthorization{}
+				}
+				return DomainAuthorization{Message: cur.Failed}
+			}
 			_ = s.cache.SetJSON(ctx, key, next, time.Until(next.Started.Add(consentStateTTL)))
 		}
 		note := pendingNote(label, "", clientID, nil, next.RequestID, mailvendor.AuthorizationStatus{Stage: next.Stage, UpdatedAt: next.UpdatedAt}, now)
@@ -271,7 +279,7 @@ func (s *Service) consentMailbox(ctx context.Context, c *models.VendorConnection
 
 	started, err := s.cache.SetNX(ctx, key, "{}", authStartTTL).Result()
 	if err != nil {
-		return DomainAuthorization{}
+		return DomainAuthorization{Pending: true, SigningIn: true, Vendor: label}
 	}
 	if !started {
 		return DomainAuthorization{Pending: true, SigningIn: true, Vendor: label}

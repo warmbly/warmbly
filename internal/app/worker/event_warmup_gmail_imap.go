@@ -28,6 +28,16 @@ func gmailIMAPAction(act string) bool {
 	return false
 }
 
+// unsettledEngagement reports an engagement action IMAP left for the API.
+func unsettledEngagement(acts []string, settled map[string]bool) bool {
+	for _, act := range acts {
+		if gmailIMAPAction(act) && !settled[act] {
+			return true
+		}
+	}
+	return false
+}
+
 // gmailIMAPRefusal names why IMAP can never serve this mailbox, or "" for a failure worth retrying.
 func gmailIMAPRefusal(err error) string {
 	if errors.Is(err, wmail.ErrGmailIMAPScope) {
@@ -79,11 +89,8 @@ func (w *WorkerService) runGmailIMAPEngagement(ctx context.Context, mail *wmail.
 			case errors.Is(err, errGmailIMAPCannot), errors.Is(err, errGmailIMAPNotFound), imap.Refused(err):
 				log.Debug().Err(err).Str("email_id", action.EmailID.String()).Str("action", act).Msg("Warmup action handed to the Gmail API")
 			default:
-				log.Error().Err(err).Str("email_id", action.EmailID.String()).Str("action", act).Msg("Warmup action failed (Gmail IMAP)")
-				settled[act] = true
-				if act == models.WarmupActionRescueFromSpam {
-					setRescue(rescue, models.WarmupRescueFailed)
-				}
+				// The API gets the next try; it records the failure if it cannot do it either.
+				log.Warn().Err(err).Str("email_id", action.EmailID.String()).Str("action", act).Msg("Warmup action failed over Gmail IMAP; trying the Gmail API")
 			}
 		}
 		return nil
@@ -98,16 +105,8 @@ func (w *WorkerService) runGmailIMAPEngagement(ctx context.Context, mail *wmail.
 		}
 		return settled
 	}
-	// A dial or listing that failed on the network is a failed attempt, like any other provider failure.
-	log.Error().Err(err).Str("email_id", action.EmailID.String()).Strs("actions", acts).Msg("Warmup engagement failed (Gmail IMAP)")
-	for _, act := range acts {
-		if !settled[act] {
-			settled[act] = true
-			if act == models.WarmupActionRescueFromSpam {
-				setRescue(rescue, models.WarmupRescueFailed)
-			}
-		}
-	}
+	// A dial or listing that failed on the network leaves the rest to the API.
+	log.Warn().Err(err).Str("email_id", action.EmailID.String()).Strs("actions", acts).Msg("Warmup engagement failed over Gmail IMAP; trying the Gmail API")
 	return settled
 }
 
@@ -192,8 +191,12 @@ func (e *gmailEngagement) rescue(ctx context.Context, rescue *string) error {
 		}
 		return nil
 	}
-	if _, err := e.s.MoveToFolder(ctx, e.junk, e.filingDest, uid); err != nil {
+	moved, err := e.s.MoveToFolder(ctx, e.junk, e.filingDest, uid)
+	if err != nil {
 		return err
+	}
+	if !moved {
+		return errGmailIMAPCannot
 	}
 	e.at.folder, e.at.uid = "", 0
 	setRescue(rescue, models.WarmupRescueMoved)

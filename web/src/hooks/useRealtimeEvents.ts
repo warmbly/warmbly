@@ -535,7 +535,7 @@ export function useRealtimeEvents() {
           mailbox_import: [['emails', 'imports'], ['mailbox-grants', 'migration']],
           // An admin grant added, re-checked or removed, and an inbox vendor
           // account connected, re-keyed or removed.
-          mailbox_grant: [['mailbox-grants'], ['emails', 'list']],
+          mailbox_grant: [['mailbox-grants'], ['emails', 'list'], ['mailbox-signin']],
           // A vendor reconnect moving on also moves the drawer's Sign-in section.
           mailbox_vendor: [['mailbox-vendors'], ['sending-domains'], ['mailbox-signin']],
           // A sending domain's root redirect or vendor forwarding changed. Its

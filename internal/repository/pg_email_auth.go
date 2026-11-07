@@ -180,6 +180,9 @@ func (r *emailRepository) RefreshBoxToken(ctx context.Context, id uuid.UUID, acc
 	return nil
 }
 
+// ErrNoOAuthRow is a token replacement for a mailbox that no longer signs in with OAuth.
+var ErrNoOAuthRow = errors.New("mailbox has no OAuth sign-in to replace")
+
 // ReplaceBoxToken is RefreshBoxToken for a new consent, which also records what it granted.
 func (r *emailRepository) ReplaceBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time, scopes []string) error {
 	orgID, err := r.mailboxOrganization(ctx, id)
@@ -197,10 +200,15 @@ func (r *emailRepository) ReplaceBoxToken(ctx context.Context, id uuid.UUID, acc
 	query := `UPDATE email_accounts_oauth
 		SET access_token = $1, refresh_token = $2, expires_at = $3, granted_scopes = $4, updated_at = now()
 		WHERE email_account_id = $5`
-	if _, err := r.DB.Exec(ctx, query, sealed[0], sealed[1], expiresAt, scopes, id); err != nil {
+	tag, err := r.DB.Exec(ctx, query, sealed[0], sealed[1], expiresAt, scopes, id)
+	if err != nil {
 		// The parameters hold the sealed tokens; keep them out of the error report.
 		db.CaptureError(err, query, nil, "exec")
 		return err
+	}
+	// A mailbox whose sign-in changed meanwhile has no token row; the new consent must not read as stored.
+	if tag.RowsAffected() == 0 {
+		return ErrNoOAuthRow
 	}
 	return nil
 }

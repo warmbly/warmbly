@@ -38,7 +38,7 @@ export default function GoogleWorkspaceSigninPanel({
     unfinished: boolean;
     onConnect: (address: string) => void;
     onPersonalGmail: (address: string) => void;
-    onUseAppPassword: () => void;
+    onUseAppPassword: (address: string) => void;
 }) {
     const [address, setAddress] = React.useState("");
     const trimmed = address.trim();
@@ -138,7 +138,7 @@ export default function GoogleWorkspaceSigninPanel({
                 Prefer not to use Google sign-in?{" "}
                 <button
                     type="button"
-                    onClick={onUseAppPassword}
+                    onClick={() => onUseAppPassword(trimmed)}
                     className="text-sky-700 underline decoration-sky-300 hover:decoration-sky-600 transition-colors"
                 >
                     Connect it with an app password instead

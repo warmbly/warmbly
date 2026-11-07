@@ -29,6 +29,8 @@ type DomainGrantRepository interface {
 	ListActive(ctx context.Context) ([]models.DomainGrant, error)
 	// InactiveMailboxes are the grant's mailboxes a failure took out of work, never one switched off by hand.
 	InactiveMailboxes(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error)
+	// AwaitsGoogleGrant reports Google mailboxes on the domain that sign in through a grant the workspace no longer holds, as after an import.
+	AwaitsGoogleGrant(ctx context.Context, orgID uuid.UUID, domain string) (bool, error)
 }
 
 type domainGrantRepository struct{ DB *db.DB }
@@ -361,4 +363,16 @@ func (r *vendorConnectionRepository) ReconnectCandidates(ctx context.Context, li
 		out = append(out, v)
 	}
 	return out, rows.Err()
+}
+
+func (r *domainGrantRepository) AwaitsGoogleGrant(ctx context.Context, orgID uuid.UUID, domain string) (bool, error) {
+	query := `SELECT EXISTS (SELECT 1 FROM email_accounts
+		WHERE organization_id = $1 AND provider = 'gmail' AND auth_method = 'delegated' AND domain_grant_id IS NULL
+			AND lower(split_part(email, '@', 2)) = $2)`
+	var ok bool
+	if err := r.DB.QueryRow(ctx, query, orgID, strings.ToLower(domain)).Scan(&ok); err != nil {
+		db.CaptureError(err, query, nil, "queryrow")
+		return false, err
+	}
+	return ok, nil
 }

@@ -268,7 +268,7 @@ func NewWMail(
 		mail.GoogleData.IMAP = NewGmailIMAP(mailCtx, data.Email, imapTokens)
 		// The control plane knows the stored consent lacks full mail access, so IMAP is not even tried.
 		if f := data.Google.FullMailAccess; f != nil && !*f {
-			mail.GoogleData.IMAP.Refuse(ErrGmailIMAPScope.Error())
+			mail.GoogleData.IMAP.RefuseStanding(ErrGmailIMAPScope.Error())
 		}
 	case models.InboxProviderOutlook:
 		// Microsoft/Outlook mailboxes run entirely on Microsoft Graph: RAW MIME

@@ -96,7 +96,7 @@ export default function SigninMigrationDialog({
         return [...all].sort((a, b) => Number(b.domain === focusDomain) - Number(a.domain === focusDomain));
     }, [migration.data, focusDomain]);
     const total = migration.data?.total ?? 0;
-    const signinGroups = groups.some((g) => migrationRoute(g) === "signin");
+    const signinGroups = groups.some((g) => migrationRoute(g, !!clientId) === "signin");
 
     return createPortal(
         <AnimatePresence>
@@ -210,7 +210,7 @@ export default function SigninMigrationDialog({
                                                 <GroupCard
                                                     key={g.domain}
                                                     group={g}
-                                                    route={migrationRoute(g)}
+                                                    route={migrationRoute(g, !!clientId)}
                                                     focused={g.domain === focusDomain}
                                                     onMoved={(importId) => setRun({ importId, domain: g.domain })}
                                                     google={google}

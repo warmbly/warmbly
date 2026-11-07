@@ -89,6 +89,9 @@ func (s *emailService) OAuthConnectWithCodeForAccount(ctx context.Context, userI
 	} else if existing != nil {
 		return nil, errx.ErrEmailOnboardAlreadyExists
 	}
+	if provider == models.InboxProviderGoogle && personalGmail(owner.Email) {
+		return nil, errx.ErrEmailOnboardGooglePersonal
+	}
 	name := strings.TrimSpace(owner.Name)
 	if name == "" {
 		name = deriveNameFromEmail(owner.Email)
