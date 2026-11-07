@@ -2,13 +2,30 @@ import { describe, expect, it } from "vitest";
 import type Inbox from "@/lib/api/models/app/emails/Inbox";
 import type AccountStatus from "@/lib/api/models/app/analytics/AccountStatus";
 import type { CloudLinkMailboxRow, PoolLinkMailboxState } from "@/lib/api/models/app/cloudlink/CloudLink";
-import { resolveMailboxWarmup } from "./mailboxWarmup";
+import { resolveMailboxWarmup, selfExecutionGranted } from "./mailboxWarmup";
 
 const mailbox = { id: "mailbox", status: "active", warmup: new Date("2026-01-01") } as Inbox;
 const report = { status: "active", sent_today: 5, warmup: { enabled: true, paused: false, current_volume: 0, target_volume: 12, days_active: 3 } } as PoolLinkMailboxState;
 const resolve = (row: Partial<CloudLinkMailboxRow>, local = mailbox) => resolveMailboxWarmup(local, undefined, { connected: true, rowFor: () => ({ id: local.id, enrolled: true, ...row } as CloudLinkMailboxRow) });
 
 describe("warmup source and lifecycle", () => {
+    it("does not count an instance executor as warming once Cloud withdraws its grant, keeping the reported lifecycle", () => {
+        const pool = (granted?: boolean) => ({ connected: true, selfExecutionGranted: granted, rowFor: () => ({ id: mailbox.id, enrolled: true, executor: "instance", cloud: report } as CloudLinkMailboxRow) });
+        expect(resolveMailboxWarmup(mailbox, undefined, pool(false))).toMatchObject({ source: "cloud", activity: "ungranted", cloudActivity: "active" });
+        expect(resolveMailboxWarmup(mailbox, undefined, pool(true)).activity).toBe("active");
+        expect(resolveMailboxWarmup(mailbox, undefined, pool(undefined)).activity).toBe("active");
+        expect(resolve({ executor: "cloud", cloud: report }).activity).toBe("active");
+    });
+    it("reads a lapsed grant expiry as withdrawn and an absent answer as unknown", () => {
+        const now = Date.parse("2026-11-07T12:00:00Z");
+        expect(selfExecutionGranted({ protocol: 1, granted: true, expires_at: new Date("2026-11-07T11:00:00Z") }, now)).toBe(false);
+        expect(selfExecutionGranted({ protocol: 1, granted: true, expires_at: new Date("2026-11-08T11:00:00Z") }, now)).toBe(true);
+        expect(selfExecutionGranted({ protocol: 1, granted: false }, now)).toBe(false);
+        expect(selfExecutionGranted(undefined, now)).toBeUndefined();
+    });
+    it("keeps a mailbox unknown rather than local when this member cannot read Cloud enrollment", () => {
+        expect(resolveMailboxWarmup({ ...mailbox, warmup: undefined }, undefined, { connected: false, ownershipHidden: true, rowFor: () => undefined })).toEqual({ source: "unknown", activity: "unavailable" });
+    });
     it.each([undefined, new Date("2026-01-01")])("uses Cloud activity and counters independently of the local start order (%s)", (warmup) => {
         const local = { ...mailbox, warmup, warmup_paused_at: new Date(), test_mode: "off" as const, status: "inactive" };
         expect(resolve({ cloud: report }, local)).toMatchObject({ source: "cloud", activity: "active", sentToday: 5, info: { current_volume: 5, target_volume: 12 } });

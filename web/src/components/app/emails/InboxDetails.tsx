@@ -416,6 +416,8 @@ const EDITABLE: (keyof Inbox)[] = [
     "warmup_placement", "warmup_folder", "warmup_retention_days",
     "test_mode", "test_send_enabled", "test_receive_enabled", "shared_daily_limit", "rolling_recipient_limit",
 ];
+// Local participation is saved only for a mailbox confirmed local; Cloud owns it for an enrolled one.
+const LOCAL_PARTICIPATION: (keyof Inbox)[] = ["test_mode", "test_send_enabled", "test_receive_enabled", "shared_daily_limit", "rolling_recipient_limit"];
 
 function Detail({ mailbox, onClose, initialTab, tabIntentKey, onTabIntentConsumed, canWarmup = true }: { mailbox: Inbox; onClose: () => void; initialTab?: MailboxTab; tabIntentKey?: number; onTabIntentConsumed?: () => void; canWarmup?: boolean }) {
     const [tab, setTab] = useBrowseState<MailboxTab>(`emails.mailbox.${mailbox.id}.tab`, "overview", mailboxTab,
@@ -467,15 +469,19 @@ function Detail({ mailbox, onClose, initialTab, tabIntentKey, onTabIntentConsume
     const pool = useCloudPool();
     const mutation = useUpdateEmail(mailbox.id, pool.connected && pool.isEnrolled(mailbox.id) ? cloudOwnedWarmupFields : undefined);
     const effectiveWarmup = resolveMailboxWarmup(mailbox, status.data, pool);
+    const savable = useMemo(
+        () => effectiveWarmup.source === "local" ? EDITABLE : EDITABLE.filter((k) => !LOCAL_PARTICIPATION.includes(k)),
+        [effectiveWarmup.source],
+    );
 
     const dirty = useMemo(
-        () => daysToApply !== null || EDITABLE.some((k) => JSON.stringify(form[k]) !== JSON.stringify(mailbox[k])),
-        [daysToApply, form, mailbox],
+        () => daysToApply !== null || savable.some((k) => JSON.stringify(form[k]) !== JSON.stringify(mailbox[k])),
+        [daysToApply, form, mailbox, savable],
     );
 
     const save = async () => {
         const patch: Partial<Inbox> = {};
-        for (const k of EDITABLE) {
+        for (const k of savable) {
             if (JSON.stringify(form[k]) !== JSON.stringify(mailbox[k])) {
                 (patch as Record<string, unknown>)[k] = form[k];
             }
@@ -1355,6 +1361,8 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true, warmup }: 
     const active = warmup.activity === "active";
     // The local controls act on the local setting, not on the resolved display state.
     const localActive = diagnosticWarmupActive(mailbox);
+    // Warmup set to run on a switched-off mailbox is stopped; the controls still change the setting.
+    const stoppedHere = mailbox.status !== "active" && !off;
     // When Warmbly Cloud warms this mailbox the local controls step aside.
     const pool = useCloudPool();
     const inCloud = pool.connected && pool.isEnrolled(mailbox.id);
@@ -1403,12 +1411,12 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true, warmup }: 
             {!inCloud && warmup.source === "local" && (
             <div className="px-5 py-4 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5 min-w-0">
-                    <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center shrink-0", localActive ? "bg-orange-50 text-orange-600" : paused ? "bg-amber-50 text-amber-600" : "bg-slate-100 text-slate-400")}>
+                    <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center shrink-0", stoppedHere ? "bg-slate-100 text-slate-400" : localActive ? "bg-orange-50 text-orange-600" : paused ? "bg-amber-50 text-amber-600" : "bg-slate-100 text-slate-400")}>
                         <FlameIcon className="w-4 h-4" />
                     </div>
                     <div className="min-w-0">
-                        <div className="text-[12.5px] font-medium text-slate-900">{localActive ? "Warming up" : receiveOnly ? "Receiving only" : paused ? "Paused" : "Warmup off"}</div>
-                        <div className="text-[11px] text-slate-400 truncate">{localActive ? "Automated diagnostic traffic, not organic engagement" : receiveOnly ? "Receives warmup mail; sending is off" : paused && !off ? "Paused: no warmup mail is sent or received" : "Sending and receiving diagnostic tests disabled"}</div>
+                        <div className="text-[12.5px] font-medium text-slate-900">{stoppedHere ? "Stopped: mailbox off" : localActive ? "Warming up" : receiveOnly ? "Receiving only" : paused ? "Paused" : "Warmup off"}</div>
+                        <div className="text-[11px] text-slate-400 truncate">{stoppedHere ? `Set to ${localActive ? "warm" : receiveOnly ? "receive only" : "stay paused"} once the mailbox is switched back on` : localActive ? "Automated diagnostic traffic, not organic engagement" : receiveOnly ? "Receives warmup mail; sending is off" : paused && !off ? "Paused: no warmup mail is sent or received" : "Sending and receiving diagnostic tests disabled"}</div>
                     </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -1466,7 +1474,7 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true, warmup }: 
             )}
 
             {/* Live volume */}
-            {!inCloud && (
+            {!inCloud && warmup.source === "local" && (
                 <div className="px-5 py-4 space-y-3 border-t border-slate-100">
                     <Eyebrow>Diagnostic participation</Eyebrow>
                     <SelectMenu

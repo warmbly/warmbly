@@ -219,8 +219,8 @@ export default function AddressesPage() {
     );
     // One resolution per mailbox per input change; sorting and the virtualized rows read it on every scroll.
     const warmupSource = useMemo<WarmupSource>(
-        () => ({ connected: cloud.connected, loading: cloud.loading, unavailable: cloud.unavailable, reportsUnavailable: cloud.reportsUnavailable, rowFor: cloud.rowFor }),
-        [cloud.connected, cloud.loading, cloud.unavailable, cloud.reportsUnavailable, cloud.rowFor],
+        () => ({ connected: cloud.connected, loading: cloud.loading, unavailable: cloud.unavailable, reportsUnavailable: cloud.reportsUnavailable, ownershipHidden: cloud.ownershipHidden, selfExecutionGranted: cloud.selfExecutionGranted, rowFor: cloud.rowFor }),
+        [cloud.connected, cloud.loading, cloud.unavailable, cloud.reportsUnavailable, cloud.ownershipHidden, cloud.selfExecutionGranted, cloud.rowFor],
     );
     const warmupById = useMemo(() => {
         const m = new Map<string, MailboxWarmup>();

@@ -90,13 +90,16 @@ describe("mailbox drawer browse persistence", () => {
         render(<Page initialTab="warmup" />);
         expect(screen.queryByRole("button", { name: "Start" })).not.toBeInTheDocument();
         expect(screen.queryByText("Warmup off")).not.toBeInTheDocument();
+        expect(screen.queryByText("Diagnostic participation")).not.toBeInTheDocument();
     });
 
-    it("keeps the local warmup setting and its controls on a switched-off mailbox", () => {
+    it("shows a switched-off mailbox as stopped while keeping the controls for its warmup setting", () => {
         Object.assign(mailbox, { status: "inactive", warmup: new Date("2026-01-01"), test_mode: "diagnostic", test_send_enabled: true });
         try {
             render(<Page initialTab="warmup" />);
-            expect(screen.getByText("Warming up")).toBeInTheDocument();
+            expect(screen.getByText("Stopped: mailbox off")).toBeInTheDocument();
+            expect(screen.queryByText("Warming up")).not.toBeInTheDocument();
+            expect(screen.getByText("Diagnostic participation")).toBeInTheDocument();
             expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
         } finally {
             Object.assign(mailbox, { status: "active", warmup: undefined, test_mode: undefined, test_send_enabled: undefined });

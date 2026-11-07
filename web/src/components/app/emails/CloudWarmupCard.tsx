@@ -111,7 +111,7 @@ export default function CloudWarmupCard({ mailboxId, email, provider, status }: 
                     </span>
                     <div className="min-w-0 flex-1">
                         <div className="text-[12.5px] font-medium text-slate-900">
-                            {warmup.activity === "connecting" ? "Cloud enrollment pending" : warmup.activity === "removing" ? "Cloud removal pending" : unknown ? "Cloud warmup status unavailable" : warmup.activity === "off" ? "Diagnostics off in Warmbly Cloud" : warmup.activity === "inactive" ? row.executor === "instance" && status !== "active" ? "Mailbox off on this server" : "Cloud mailbox off" : paused ? "Diagnostic sending paused in Cloud" : row.managed ? "Signed in through Warmbly Cloud" : "Automated diagnostics in Warmbly Cloud"}
+                            {warmup.activity === "connecting" ? "Cloud enrollment pending" : warmup.activity === "removing" ? "Cloud removal pending" : unknown ? "Cloud warmup status unavailable" : warmup.activity === "off" ? "Diagnostics off in Warmbly Cloud" : warmup.activity === "inactive" ? row.executor === "instance" && status !== "active" ? "Mailbox off on this server" : "Cloud mailbox off" : warmup.activity === "ungranted" ? "Waiting for permission to run on this server" : paused ? "Diagnostic sending paused in Cloud" : row.managed ? "Signed in through Warmbly Cloud" : "Automated diagnostics in Warmbly Cloud"}
                         </div>
                         <div className="text-[11px] text-slate-500 truncate">
                             {!unknown && cloud

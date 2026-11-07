@@ -18,7 +18,7 @@ import { useConfirm } from "@/hooks/context/confirm";
 import { cloudMailboxPickerOpened } from "@/lib/cloudMailboxConnect";
 import { TableSurface, Toggle } from "../_components/SectionShell";
 import { providerLabel, providerSupported } from "./providers";
-import { resolveMailboxWarmup, warmupActivityLabel, warmupUnknown } from "@/lib/mailboxWarmup";
+import { resolveMailboxWarmup, selfExecutionGranted, warmupActivityLabel, warmupUnknown } from "@/lib/mailboxWarmup";
 import { cloudStandingUnavailable } from "@/lib/mailboxStatus";
 
 /** Whether Cloud lets this instance keep mailbox credentials: offered, missing approval, or not supported. */
@@ -180,7 +180,7 @@ export default function MailboxTable({ selfExecution }: { selfExecution?: PoolLi
                             {list.map((row) => {
                                 const supported = providerSupported(row.provider) || row.managed;
                                 const cloud = row.cloud;
-                                const warmup = resolveMailboxWarmup(row, undefined, { connected: true, rowFor: () => row });
+                                const warmup = resolveMailboxWarmup(row, undefined, { connected: true, selfExecutionGranted: selfExecutionGranted(selfExecution), rowFor: () => row });
                                 const unknown = warmupUnknown(warmup);
                                 const cloudActivity = warmup.cloudActivity ?? warmup.activity;
                                 const paused = cloudActivity === "paused" || cloudActivity === "receive_only";

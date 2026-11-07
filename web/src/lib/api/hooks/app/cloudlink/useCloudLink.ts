@@ -20,7 +20,7 @@ import { useInstanceAdmin } from "@/hooks/usePermission";
 import { CLOUD_MAILBOX_PICKER_EVENT, CLOUD_MAILBOX_PICKER_OPENED } from "@/lib/cloudMailboxConnect";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import type { CloudLinkExecutor, CloudLinkMailboxRow } from "@/lib/api/models/app/cloudlink/CloudLink";
-import { CLOUD_LINK_KEY, cloudLinkScope, invalidateWarmupReports } from "./warmupReports";
+import { CLOUD_LINK_KEY, cloudLinkScope, invalidateWarmupReports, mirroredSettingsStale } from "./warmupReports";
 
 export { CLOUD_LINK_KEY } from "./warmupReports";
 export const POOL_LINK_KEY = ["pool-link"];
@@ -35,7 +35,20 @@ export function useCloudLinkStatus(enabled = true, staleTime = 10_000) {
 
 export function useCloudLinkMailboxes(enabled = true) {
     const organization = useCurrentOrganization();
-    return useQuery({ queryKey: [...CLOUD_LINK_KEY, organization.data?.id, "mailboxes"], queryFn: listCloudLinkMailboxes, enabled: enabled && !!organization.data?.id, staleTime: 10_000, refetchOnWindowFocus: true, refetchOnReconnect: true });
+    const qc = useQueryClient();
+    return useQuery({
+        queryKey: [...CLOUD_LINK_KEY, organization.data?.id, "mailboxes"],
+        queryFn: async () => {
+            const rows = await listCloudLinkMailboxes();
+            // A missed settings event would otherwise leave the drawer's ramp behind the report it just mirrored.
+            if (mirroredSettingsStale(qc, rows)) void qc.invalidateQueries({ queryKey: ["emails"] });
+            return rows;
+        },
+        enabled: enabled && !!organization.data?.id,
+        staleTime: 10_000,
+        refetchOnWindowFocus: true,
+        refetchOnReconnect: true,
+    });
 }
 
 export function useDisconnectCloudLink() {
