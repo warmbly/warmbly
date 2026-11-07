@@ -59,8 +59,9 @@ func (h *Handler) ListAgentDrafts(c *gin.Context) {
 
 // ApproveAgentDraft — POST /unibox/agent-drafts/:id/approve
 // Sends the draft (optionally with an edited body) through the normal reply path
-// and marks it approved. The status flip is claimed BEFORE sending so two
-// approvals can never double-send.
+// and marks it approved. The claim flips pending -> approved and returns the row
+// it claimed BEFORE sending, so two approvals can never double-send and what is
+// sent is the draft as claimed, never a version an upsert wrote around it.
 func (h *Handler) ApproveAgentDraft(c *gin.Context) {
 	orgID := middleware.GetOrganizationID(c)
 	if orgID == nil {
@@ -91,32 +92,13 @@ func (h *Handler) ApproveAgentDraft(c *gin.Context) {
 	}
 	_ = c.ShouldBindJSON(&req)
 
-	draft, derr := h.AIDraftRepo.GetDraft(c.Request.Context(), *orgID, draftID)
-	if derr != nil {
-		errx.Handle(c, errx.InternalError())
-		return
-	}
-	if draft == nil {
-		errx.Handle(c, errx.New(errx.NotFound, "draft not found"))
-		return
-	}
-	if xerr := mailboxAllowed(c, draft.EmailAccountID); xerr != nil {
-		errx.Handle(c, xerr)
-		return
-	}
-	if draft.Status != models.AIDraftPending {
-		errx.Handle(c, errx.New(errx.Conflict, "this draft was already handled"))
-		return
-	}
-
-	// Claim it: only the first approver flips pending -> approved and proceeds.
-	claimed, cerr := h.AIDraftRepo.SetDraftStatus(c.Request.Context(), *orgID, draftID, models.AIDraftApproved)
+	draft, cerr := h.AIDraftRepo.ClaimDraftForApproval(c.Request.Context(), *orgID, draftID, restrictedMailboxes(c))
 	if cerr != nil {
 		errx.Handle(c, errx.InternalError())
 		return
 	}
-	if !claimed {
-		errx.Handle(c, errx.New(errx.Conflict, "this draft was already handled"))
+	if draft == nil {
+		errx.Handle(c, h.unclaimedDraftError(c, *orgID, draftID))
 		return
 	}
 
@@ -137,12 +119,8 @@ func (h *Handler) ApproveAgentDraft(c *gin.Context) {
 
 	resp, xerr := h.EmailSendService.SendEmail(c.Request.Context(), userID, *orgID, draft.EmailAccountID, sendReq)
 	if xerr != nil {
-		// Send failed after we claimed the draft (pending -> approved). Return it
-		// to pending so the human can retry rather than silently losing it. The
-		// draft is now in the 'approved' state, so this needs the approved->pending
-		// revert (SetDraftStatus only transitions FROM pending). If the revert
-		// itself fails, the draft is stuck 'approved' and invisible to review — log
-		// it so that is observable rather than a silent loss.
+		// The send failed after the claim: return the draft to pending so the human
+		// can retry. A failed revert leaves it approved and unsent, so log it.
 		if reverted, rerr := h.AIDraftRepo.RevertApprovedToPending(c.Request.Context(), *orgID, draftID); rerr != nil || !reverted {
 			log.Error().Err(rerr).Str("draft_id", draftID.String()).Bool("reverted", reverted).Msg("inbox agent: failed to revert draft to pending after send failure")
 		}
@@ -156,6 +134,21 @@ func (h *Handler) ApproveAgentDraft(c *gin.Context) {
 	})
 
 	c.JSON(http.StatusOK, resp)
+}
+
+// unclaimedDraftError explains a refused claim: missing, outside the caller's mailboxes, or already handled.
+func (h *Handler) unclaimedDraftError(c *gin.Context, orgID, draftID uuid.UUID) *errx.Error {
+	draft, err := h.AIDraftRepo.GetDraft(c.Request.Context(), orgID, draftID)
+	switch {
+	case err != nil:
+		return errx.InternalError()
+	case draft == nil:
+		return errx.New(errx.NotFound, "draft not found")
+	}
+	if xerr := mailboxAllowed(c, draft.EmailAccountID); xerr != nil {
+		return xerr
+	}
+	return errx.New(errx.Conflict, "this draft was already handled")
 }
 
 // DiscardAgentDraft — POST /unibox/agent-drafts/:id/discard

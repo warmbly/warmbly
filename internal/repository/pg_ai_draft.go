@@ -72,6 +72,10 @@ type AIDraftRepository interface {
 	// the approve claim succeeded but the actual send then failed. Returns false
 	// when the draft is not in the approved state (nothing to revert).
 	RevertApprovedToPending(ctx context.Context, orgID, id uuid.UUID) (bool, error)
+	// ClaimDraftForApproval flips a PENDING draft to approved and returns the row as
+	// claimed, which is exactly what the caller sends. nil when the draft is missing,
+	// already resolved, or (when allowed is non-nil) in a mailbox outside allowed.
+	ClaimDraftForApproval(ctx context.Context, orgID, id uuid.UUID, allowed []uuid.UUID) (*models.AIThreadDraft, error)
 	// UpsertPendingDraftForThread writes a reply draft for the org's newest inbound
 	// message on the thread: it replaces the body of the thread's pending draft, or
 	// inserts a pending one filled like the inbox agent's. Approved and discarded
@@ -189,6 +193,27 @@ func (r *aiDraftRepository) SetDraftStatus(ctx context.Context, orgID, id uuid.U
 	return tag.RowsAffected() > 0, nil
 }
 
+func (r *aiDraftRepository) ClaimDraftForApproval(ctx context.Context, orgID, id uuid.UUID, allowed []uuid.UUID) (*models.AIThreadDraft, error) {
+	restricted := allowed != nil
+	if !restricted {
+		allowed = []uuid.UUID{}
+	}
+	var d models.AIThreadDraft
+	// One statement: it waits on an upsert holding the row and returns the version it claimed.
+	err := scanAIDraft(r.db.QueryRow(ctx, `
+		UPDATE ai_thread_drafts SET status = 'approved', updated_at = NOW()
+		WHERE id = $1 AND organization_id = $2 AND status = 'pending'
+		  AND (NOT $3::boolean OR email_account_id = ANY($4::uuid[]))
+		RETURNING `+aiDraftCols, id, orgID, restricted, allowed), &d)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
 func (r *aiDraftRepository) RevertApprovedToPending(ctx context.Context, orgID, id uuid.UUID) (bool, error) {
 	tag, err := r.db.Exec(ctx, `
 		UPDATE ai_thread_drafts SET status = 'pending', updated_at = NOW()
@@ -281,8 +306,8 @@ func (r *aiDraftRepository) upsertPendingDraftOnce(ctx context.Context, orgID uu
 			if err := scanAIDraft(tx.QueryRow(ctx, `
 				UPDATE ai_thread_drafts
 				SET body = $2, model = $3, intent_class = $4, confidence = $5, updated_at = NOW()
-				WHERE id = $1
-				RETURNING `+aiDraftCols, cur.ID, p.Body, p.Model, p.IntentClass, p.Confidence), &d); err != nil {
+				WHERE id = $1 AND organization_id = $6 AND status = 'pending'
+				RETURNING `+aiDraftCols, cur.ID, p.Body, p.Model, p.IntentClass, p.Confidence, orgID), &d); err != nil {
 				return nil, false, err
 			}
 			return &d, false, tx.Commit(ctx)
@@ -298,9 +323,9 @@ func (r *aiDraftRepository) upsertPendingDraftOnce(ctx context.Context, orgID uu
 			SET body = $2, model = $3, intent_class = $4, confidence = $5,
 			    source_message_id = $6, to_addr = $7, subject = $8, in_reply_to = $9,
 			    contact_id = $10, campaign_id = $11, email_account_id = $12, owner_user_id = $13, updated_at = NOW()
-			WHERE id = $1
+			WHERE id = $1 AND organization_id = $14 AND status = 'pending'
 			RETURNING `+aiDraftCols, cur.ID, p.Body, p.Model, p.IntentClass, p.Confidence,
-			in.id, in.sender, draftReplySubject(in.subject), in.messageID, contactID, campaignID, in.emailID, in.ownerID), &d); err != nil {
+			in.id, in.sender, draftReplySubject(in.subject), in.messageID, contactID, campaignID, in.emailID, in.ownerID, orgID), &d); err != nil {
 			return nil, false, err
 		}
 		return &d, false, tx.Commit(ctx)
@@ -345,14 +370,15 @@ func (r *aiDraftRepository) upsertPendingDraftOnce(ctx context.Context, orgID uu
 	return &d, true, tx.Commit(ctx)
 }
 
-// resolvedDraftBlock refuses a draft when a resolved one already answers the message.
+// resolvedDraftBlock refuses a draft when a resolved one already answers the message:
+// by source message, or by creation time only for legacy rows that name none.
 func resolvedDraftBlock(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, threadID string, in *draftInbound) error {
 	var status string
 	err := tx.QueryRow(ctx, `
 		SELECT status FROM ai_thread_drafts
 		WHERE organization_id = $1
 		  AND status <> 'pending'
-		  AND (source_message_id = $2 OR (thread_id = $3 AND created_at >= $4))
+		  AND (source_message_id = $2 OR (source_message_id IS NULL AND thread_id = $3 AND created_at >= $4))
 		ORDER BY (status = 'approved') DESC, created_at DESC
 		LIMIT 1`, orgID, in.id, threadID, in.arrivedAt).Scan(&status)
 	switch {

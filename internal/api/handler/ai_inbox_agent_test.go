@@ -15,6 +15,8 @@ import (
 
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/app/audit"
+	"github.com/warmbly/warmbly/internal/app/emailsend"
+	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -210,5 +212,126 @@ func TestUpsertThreadDraftNeedsOrganizationAndRepo(t *testing.T) {
 	}
 	if rec := putThreadDraft(t, nil, uuid.New(), nil, body); rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("no draft store: status %d", rec.Code)
+	}
+}
+
+// approveDraftRepo answers a claim with a canned snapshot while GetDraft holds an older version.
+type approveDraftRepo struct {
+	repository.AIDraftRepository
+	stale    *models.AIThreadDraft
+	claimed  *models.AIThreadDraft
+	allowed  []uuid.UUID
+	reverted bool
+}
+
+func (r *approveDraftRepo) GetDraft(context.Context, uuid.UUID, uuid.UUID) (*models.AIThreadDraft, error) {
+	return r.stale, nil
+}
+
+func (r *approveDraftRepo) ClaimDraftForApproval(_ context.Context, _, _ uuid.UUID, allowed []uuid.UUID) (*models.AIThreadDraft, error) {
+	r.allowed = allowed
+	return r.claimed, nil
+}
+
+func (r *approveDraftRepo) RevertApprovedToPending(context.Context, uuid.UUID, uuid.UUID) (bool, error) {
+	r.reverted = true
+	return true, nil
+}
+
+// recordingSender captures the one send it is asked for.
+type recordingSender struct {
+	account uuid.UUID
+	req     *emailsend.SendEmailRequest
+	err     *errx.Error
+}
+
+func (s *recordingSender) SendEmail(_ context.Context, _, _, accountID uuid.UUID, req *emailsend.SendEmailRequest) (*emailsend.SendEmailResponse, *errx.Error) {
+	s.account, s.req = accountID, req
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &emailsend.SendEmailResponse{}, nil
+}
+
+func approveDraft(t *testing.T, repo *approveDraftRepo, sender *recordingSender, allowed []uuid.UUID, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	h := &Handler{AuditService: audit.NewNoOpService(), AIDraftRepo: repo, EmailSendService: sender}
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(middleware.UserIDKey, uuid.NewString())
+		c.Set(middleware.OrganizationIDKey, uuid.New())
+		if allowed != nil {
+			c.Set(middleware.AuthTypeKey, middleware.AuthTypeAPIKey)
+			c.Set(middleware.APIKeyAllowedEmailAccountsKey, allowed)
+		}
+	})
+	router.POST("/unibox/agent-drafts/:id/approve", h.ApproveAgentDraft)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/unibox/agent-drafts/"+uuid.NewString()+"/approve", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestApproveAgentDraftSendsTheClaimedSnapshot(t *testing.T) {
+	id := uuid.New()
+	stale := &models.AIThreadDraft{ID: id, EmailAccountID: uuid.New(), ThreadID: "t", ToAddr: "old@lead.test", Subject: "Re: old", InReplyTo: "<old@lead.test>", Body: "old", Status: "pending"}
+	claimed := &models.AIThreadDraft{ID: id, EmailAccountID: uuid.New(), ThreadID: "t", ToAddr: "new@lead.test", Subject: "Re: new", InReplyTo: "<new@lead.test>", Body: "new", Status: "approved"}
+
+	repo := &approveDraftRepo{stale: stale, claimed: claimed}
+	sender := &recordingSender{}
+	if rec := approveDraft(t, repo, sender, nil, `{}`); rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	want := &emailsend.SendEmailRequest{To: []string{"new@lead.test"}, Subject: "Re: new", BodyPlain: "new", ThreadID: "t", SendMode: "instant", InReplyTo: []string{"<new@lead.test>"}}
+	if sender.account != claimed.EmailAccountID || !reflect.DeepEqual(sender.req, want) {
+		t.Fatalf("sent %+v from %s, want the claimed snapshot %+v from %s", sender.req, sender.account, want, claimed.EmailAccountID)
+	}
+	if repo.allowed != nil {
+		t.Fatalf("unrestricted caller claimed with an allowlist: %v", repo.allowed)
+	}
+
+	// An edited body replaces only the body; addressing stays the claimed row's.
+	sender = &recordingSender{}
+	approveDraft(t, &approveDraftRepo{stale: stale, claimed: claimed}, sender, nil, `{"body":" edited "}`)
+	if sender.req.BodyPlain != "edited" || sender.req.To[0] != "new@lead.test" {
+		t.Fatalf("edited send = %+v", sender.req)
+	}
+
+	// A failed send returns the claimed draft to pending.
+	repo = &approveDraftRepo{stale: stale, claimed: claimed}
+	approveDraft(t, repo, &recordingSender{err: errx.New(errx.BadRequest, "nope")}, nil, `{}`)
+	if !repo.reverted {
+		t.Fatal("a failed send left the draft approved")
+	}
+}
+
+func TestApproveAgentDraftExplainsARefusedClaim(t *testing.T) {
+	box := uuid.New()
+	for _, tc := range []struct {
+		name    string
+		stale   *models.AIThreadDraft
+		allowed []uuid.UUID
+		status  int
+	}{
+		{"missing", nil, nil, http.StatusNotFound},
+		{"already handled", &models.AIThreadDraft{EmailAccountID: box, Status: "approved"}, nil, http.StatusConflict},
+		{"outside the key's mailboxes", &models.AIThreadDraft{EmailAccountID: box, Status: "pending"}, []uuid.UUID{uuid.New()}, http.StatusForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &approveDraftRepo{stale: tc.stale}
+			sender := &recordingSender{}
+			rec := approveDraft(t, repo, sender, tc.allowed, `{}`)
+			if rec.Code != tc.status {
+				t.Fatalf("status %d, want %d: %s", rec.Code, tc.status, rec.Body.String())
+			}
+			if sender.req != nil {
+				t.Fatal("a refused claim sent mail")
+			}
+			if tc.allowed != nil && !reflect.DeepEqual(repo.allowed, tc.allowed) {
+				t.Fatalf("claim allowlist = %v, want %v", repo.allowed, tc.allowed)
+			}
+		})
 	}
 }
