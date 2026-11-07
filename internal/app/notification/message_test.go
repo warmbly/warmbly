@@ -19,6 +19,7 @@ type messageNotificationRepo struct {
 	channels        models.ChannelPrefs
 	skipped         []uuid.UUID
 	retry           []uuid.UUID
+	deferred        []uuid.UUID
 }
 
 func (r *messageNotificationRepo) CanNotifyAboutMessage(context.Context, uuid.UUID, models.NotificationCategory) (bool, error) {
@@ -41,6 +42,11 @@ func (r *messageNotificationRepo) Create(_ context.Context, n *models.Notificati
 
 func (r *messageNotificationRepo) SkipEmails(_ context.Context, ids []uuid.UUID) error {
 	r.skipped = append(r.skipped, ids...)
+	return nil
+}
+
+func (r *messageNotificationRepo) DeferEmails(_ context.Context, ids []uuid.UUID, _ time.Duration) error {
+	r.deferred = append(r.deferred, ids...)
 	return nil
 }
 
@@ -118,5 +124,19 @@ func TestPendingPushRechecksTheMessageButKeepsActionAlerts(t *testing.T) {
 	r.allowed = true
 	if !s.canPushMessage(context.Background(), models.NotifInboundReply, pendingPush{MessageID: &id}) {
 		t.Fatal("genuine reply was suppressed")
+	}
+}
+
+func TestEmailRetriesAUsersBatchTogether(t *testing.T) {
+	userID, orgID, msg := uuid.New(), uuid.New(), uuid.New()
+	r := &messageNotificationRepo{err: errors.New("database unavailable")}
+	s := &service{repo: r, members: acceptedMember(userID)}
+	reply := models.Notification{ID: uuid.New(), UserID: userID, OrganizationID: &orgID, Category: models.NotifInboundReply, UniboxEmailID: &msg}
+	paused := models.Notification{ID: uuid.New(), UserID: userID, OrganizationID: &orgID, Category: models.NotifCampaignPaused}
+	signIn := models.Notification{ID: uuid.New(), UserID: userID, Category: models.NotifSecuritySignIn}
+	kept := s.keepEligibleEmailMessages(context.Background(), []models.Notification{reply, paused, signIn})
+	// Only the row whose check failed spends an attempt; the one held beside it does not.
+	if len(kept) != 1 || kept[0].ID != signIn.ID || len(r.retry) != 1 || r.retry[0] != reply.ID || len(r.deferred) != 1 || r.deferred[0] != paused.ID {
+		t.Fatalf("kept=%v retry=%v deferred=%v, want the sign-in alert sent, the reply retried and the pause held", kept, r.retry, r.deferred)
 	}
 }

@@ -2,7 +2,7 @@ package notification
 
 import (
 	"context"
-	"fmt"
+	"log"
 	"os"
 	"sort"
 	"strconv"
@@ -18,9 +18,9 @@ import (
 // Email digest engine. Email-channel notifications never send at creation:
 // notifyOne queues them as pending rows with a due time from the user's
 // cadence, and this loop flushes what is still unread when due. One flush
-// sends at most one email per user (their pending rows bundle into a digest)
-// plus one email per org group (the same event across several members
-// coalesces into a single message with every recipient in To). Reading a
+// sends at most one email per user (their pending rows bundle into a digest);
+// an event shared by several members that is the only thing pending for each
+// of them goes out once, with every recipient in To. Reading a
 // notification in-app cancels its pending email (repo.MarkRead), which is
 // what keeps active users from ever being emailed about things they saw.
 const (
@@ -84,56 +84,61 @@ func (s *service) flushDueEmails() {
 		return
 	}
 
-	// Partition: org groups spanning several users become one coalesced
-	// email; everything else bundles per user.
-	byGroup := map[string][]models.Notification{}
-	for _, n := range claimed {
-		if n.GroupKey != "" && n.OrganizationID != nil {
-			key := n.OrganizationID.String() + "|" + n.GroupKey
-			byGroup[key] = append(byGroup[key], n)
-		}
-	}
-	grouped := map[uuid.UUID]bool{}
-	for key, rows := range byGroup {
-		users := map[uuid.UUID]bool{}
-		for _, n := range rows {
-			users[n.UserID] = true
-		}
-		if len(users) < 2 {
-			delete(byGroup, key) // single recipient — bundle with their digest
-			continue
-		}
-		for _, n := range rows {
-			grouped[n.ID] = true
-		}
-	}
-
-	for _, rows := range byGroup {
+	// Eligible first: a row that will not send must not keep a shared event from going out once.
+	groups, byUser := partitionEmails(s.keepEligibleEmailMessages(ctx, claimed))
+	for _, rows := range groups {
 		s.sendGroupEmail(ctx, rows)
-	}
-
-	byUser := map[uuid.UUID][]models.Notification{}
-	for _, n := range claimed {
-		if !grouped[n.ID] {
-			byUser[n.UserID] = append(byUser[n.UserID], n)
-		}
 	}
 	for userID, rows := range byUser {
 		s.sendUserEmail(ctx, userID, rows)
 	}
 }
 
-// sendGroupEmail delivers one shared event to all its recipients in a single
-// message, addresses together in To — teammates see who else was told. Before
-// sending it re-verifies each recipient: still an accepted member of the org
-// (permissions were checked at event time, but membership can end during the
-// hold) and still inside their email budget. Dropped recipients' rows go to
-// skipped; the in-app feed remains their record.
-func (s *service) sendGroupEmail(ctx context.Context, rows []models.Notification) {
-	rows = s.keepEligibleEmailMessages(ctx, rows)
-	if len(rows) == 0 {
-		return
+// partitionEmails sends a shared event once only when it is all its recipients have pending; otherwise it joins their digests.
+func partitionEmails(claimed []models.Notification) ([][]models.Notification, map[uuid.UUID][]models.Notification) {
+	pending := map[uuid.UUID]int{}
+	byGroup := map[string][]models.Notification{}
+	for _, n := range claimed {
+		pending[n.UserID]++
+		if n.GroupKey != "" && n.OrganizationID != nil {
+			key := n.OrganizationID.String() + "|" + n.GroupKey
+			byGroup[key] = append(byGroup[key], n)
+		}
 	}
+	grouped := map[uuid.UUID]bool{}
+	var groups [][]models.Notification
+	for _, rows := range byGroup {
+		users := map[uuid.UUID]int{}
+		for _, n := range rows {
+			users[n.UserID]++
+		}
+		alone := len(users) >= 2
+		for user, count := range users {
+			alone = alone && pending[user] == count
+		}
+		if !alone {
+			continue
+		}
+		groups = append(groups, rows)
+		for _, n := range rows {
+			grouped[n.ID] = true
+		}
+	}
+	byUser := map[uuid.UUID][]models.Notification{}
+	for _, n := range claimed {
+		if !grouped[n.ID] {
+			byUser[n.UserID] = append(byUser[n.UserID], n)
+		}
+	}
+	return groups, byUser
+}
+
+// sendGroupEmail delivers one shared event to all its recipients in a single
+// message, addresses together in To, so teammates see who else was told. Rows
+// arrive already re-checked for membership (it can end during the hold); a
+// recipient over their email budget is dropped to skipped, and the in-app feed
+// remains their record.
+func (s *service) sendGroupEmail(ctx context.Context, rows []models.Notification) {
 	to := make([]string, 0, len(rows))
 	seen := map[string]bool{}
 	kept := make([]models.Notification, 0, len(rows))
@@ -174,10 +179,6 @@ func (s *service) sendGroupEmail(ctx context.Context, rows []models.Notification
 // budget, non-security rows skip (the feed keeps them) and only security
 // sign-in alerts still send.
 func (s *service) sendUserEmail(ctx context.Context, userID uuid.UUID, rows []models.Notification) {
-	rows = s.keepEligibleEmailMessages(ctx, rows)
-	if len(rows) == 0 {
-		return
-	}
 	if s.overEmailBudget(ctx, userID) {
 		var capped []uuid.UUID
 		kept := rows[:0:0]
@@ -209,12 +210,12 @@ func (s *service) sendUserEmail(ctx context.Context, userID uuid.UUID, rows []mo
 		subject = n.Title
 		html, gerr = templates.GenerateNotificationHTML(n.Title, emailBody(n), absoluteLink(n.Link), "")
 	} else {
-		sort.Slice(rows, func(i, j int) bool { return rows[i].CreatedAt.Before(rows[j].CreatedAt) })
+		sort.Slice(rows, func(i, j int) bool { return rows[i].CreatedAt.After(rows[j].CreatedAt) })
 		items := make([]templates.DigestItem, 0, len(rows))
 		for _, n := range rows {
 			items = append(items, templates.DigestItem{Title: n.Title, Body: emailBody(n), URL: absoluteLink(n.Link)})
 		}
-		subject = fmt.Sprintf("%d updates in your Warmbly workspace", len(rows))
+		subject = templates.DigestSubject(len(rows))
 		html, gerr = templates.GenerateDigestHTML(len(rows), items)
 	}
 	if gerr != nil {
@@ -242,27 +243,46 @@ func notifIDs(rows []models.Notification) []uuid.UUID {
 	return ids
 }
 
+// keepEligibleEmailMessages drops rows that may no longer send and holds a user's eligible rows, bar sign-in alerts, while any of theirs could not be checked.
 func (s *service) keepEligibleEmailMessages(ctx context.Context, rows []models.Notification) []models.Notification {
-	kept := rows[:0:0]
+	eligible := rows[:0:0]
 	var skipped, retry []uuid.UUID
+	unsure := map[uuid.UUID]bool{}
 	for _, n := range rows {
 		allowed, err := s.recipientEligibility(ctx, n.UserID, n.OrganizationID, n.Category)
 		if err == nil && allowed {
 			allowed, err = s.messageEligibility(ctx, n.Category, n.UniboxEmailID)
 		}
 		if err != nil {
+			unsure[n.UserID] = true
 			retry = append(retry, n.ID)
 		} else if allowed {
-			kept = append(kept, n)
+			eligible = append(eligible, n)
 		} else {
 			skipped = append(skipped, n.ID)
+		}
+	}
+	kept := eligible[:0:0]
+	var held []uuid.UUID
+	for _, n := range eligible {
+		if unsure[n.UserID] && n.Category != models.NotifSecuritySignIn {
+			held = append(held, n.ID)
+		} else {
+			kept = append(kept, n)
+		}
+	}
+	if len(held) > 0 {
+		if err := s.repo.DeferEmails(ctx, held, emailRetryDelay); err != nil {
+			log.Printf("notification: defer %d emails failed, stale-claim recovery reclaims them: %v", len(held), err)
 		}
 	}
 	if len(skipped) > 0 {
 		_ = s.repo.SkipEmails(ctx, skipped)
 	}
 	if len(retry) > 0 {
-		_ = s.repo.RequeueEmails(ctx, retry, emailRetryDelay, emailMaxAttempts)
+		if err := s.repo.RequeueEmails(ctx, retry, emailRetryDelay, emailMaxAttempts); err != nil {
+			log.Printf("notification: requeue %d emails failed, stale-claim recovery reclaims them: %v", len(retry), err)
+		}
 	}
 	return kept
 }
