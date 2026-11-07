@@ -40,6 +40,7 @@ export interface CreateCampaignInput {
     // Net-new send controls (all optional; backend defaults reproduce today's behavior)
     sender_strategy?: 'tags' | 'explicit';
     rotation_mode?: 'weighted' | 'round_robin' | 'least_recently_used';
+    follow_up_sender?: 'same' | 'same_domain' | 'rotate';
     ramp_enabled?: boolean;
     ramp_start?: number;
     ramp_increment?: number;

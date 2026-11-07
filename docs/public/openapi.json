@@ -34017,6 +34017,15 @@
             "type": "string",
             "description": "How volume spreads across mailboxes."
           },
+          "follow_up_sender": {
+            "type": "string",
+            "description": "Which mailbox sends a lead's follow-ups: same (default, the mailbox that sent the first email), same_domain (rotate among mailboxes on that domain) or rotate (rotate across the pool).",
+            "enum": [
+              "same",
+              "same_domain",
+              "rotate"
+            ]
+          },
           "ramp_enabled": {
             "type": "boolean"
           },
@@ -34192,6 +34201,15 @@
           "rotation_mode": {
             "type": "string"
           },
+          "follow_up_sender": {
+            "type": "string",
+            "description": "Which mailbox sends a lead's follow-ups: same (default, the mailbox that sent the first email), same_domain (rotate among mailboxes on that domain) or rotate (rotate across the pool).",
+            "enum": [
+              "same",
+              "same_domain",
+              "rotate"
+            ]
+          },
           "senders": {
             "type": "array",
             "items": {
@@ -34358,6 +34376,15 @@
           },
           "rotation_mode": {
             "type": "string"
+          },
+          "follow_up_sender": {
+            "type": "string",
+            "description": "Which mailbox sends a lead's follow-ups: same (default, the mailbox that sent the first email), same_domain (rotate among mailboxes on that domain) or rotate (rotate across the pool).",
+            "enum": [
+              "same",
+              "same_domain",
+              "rotate"
+            ]
           },
           "ramp_enabled": {
             "type": "boolean"

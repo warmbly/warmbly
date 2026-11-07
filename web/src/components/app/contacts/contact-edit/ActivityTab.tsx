@@ -361,7 +361,11 @@ function CampaignCard({
                     <PanelFact
                         label="Sender"
                         value={
-                            state.sender_email ? (
+                            state.follow_up_sender && state.follow_up_sender !== "same" ? (
+                                <span title="This campaign picks a mailbox for every step; each step below names the one that sent it.">
+                                    {state.sender_email ? `Rotates · last ${state.sender_email}` : "Rotates each step"}
+                                </span>
+                            ) : state.sender_email ? (
                                 <span title={`Every step of this sequence sends from ${state.sender_email}`}>
                                     {state.sender_email}
                                 </span>
@@ -669,7 +673,7 @@ function stepState(s: ContactCampaignStep): StepState {
 function StepRow({ step, isNext }: { step: ContactCampaignStep; isNext: boolean }) {
     const st = stepState(step);
     const facts: string[] = [];
-    if (step.sent_at) facts.push(`sent ${fmtRelative(step.sent_at)}`);
+    if (step.sent_at) facts.push(`sent ${fmtRelative(step.sent_at)}${step.sender_email ? ` from ${step.sender_email}` : ""}`);
     if (step.opened_at) facts.push("opened");
     if (step.clicked_at) facts.push("clicked");
     if (step.replied_at) facts.push("replied");

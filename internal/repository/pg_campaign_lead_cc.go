@@ -200,6 +200,14 @@ func (r *campaignProgressRepository) LeadForCopiedReply(ctx context.Context, ccC
 		      SELECT 1
 		      FROM campaign_tasks ct
 		      JOIN tasks t ON t.id = ct.task_id
+		      WHERE ct.campaign_id = x.campaign_id AND ct.contact_id = x.contact_id
+		        AND t.task_type = 'campaign' AND `+completedSendTaskSQL("t")+`
+		        AND t.email_account_id = $2
+		    )
+		    OR EXISTS (
+		      SELECT 1
+		      FROM campaign_tasks ct
+		      JOIN tasks t ON t.id = ct.task_id
 		      JOIN email_accounts here ON here.id = $2
 		      WHERE ct.campaign_id = x.campaign_id AND ct.contact_id = x.contact_id
 		        AND t.reply_to <> ''

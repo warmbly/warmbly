@@ -597,7 +597,7 @@ func (s *schedulerService) PlanCampaignDay(ctx context.Context, campaignID uuid.
 	// or held by health is moved to another mailbox, not left waiting.
 	unavailable := map[uuid.UUID]bool{}
 	for _, d := range days {
-		if d.remaining == 0 && (d.gate.paced || d.gate.reason == "") {
+		if d.remaining == 0 && (d.gate.paced || d.gate.reason == "") && !campaign.FollowUpSender.Rotates() {
 			unavailable[d.acct.ID] = true
 		}
 	}

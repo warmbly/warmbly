@@ -59,6 +59,10 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 		return time.Time{}, nil, uuid.Nil, err
 	}
 	paced := s.pacedSenders(ctx, pass, accounts)
+	if campaign.FollowUpSender.Rotates() {
+		// Rotated follow-ups never wait on the mailbox that sent the last step.
+		paced = nil
+	}
 
 	// STEP 3: Get campaign progress - find next contact/sequence to send.
 	// Honor the new-lead-per-day cap and the prioritize-new-leads ordering.
@@ -447,6 +451,12 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 			prefer = boundSender(accounts, last)
 		}
 	}
+	// A campaign that rotates follow-ups places this step like a first email,
+	// remembering only who sent the last one (rotatedFollowUp).
+	rotation := rotatedFollowUp(campaign, nextPair, prefer)
+	if rotation.active {
+		bound, prefer = nil, nil
+	}
 
 	var candidates []AccountCandidate
 	for _, acct := range accounts {
@@ -672,6 +682,21 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 	// Every mailbox with budget today, before ESP matching narrows the set:
 	// the "last email today" line below must speak for the whole pool.
 	wholePool := candidates
+	if rotation.domain != "" {
+		same, back, busy := rotation.sameDomain(candidates, accounts, gates)
+		if busy {
+			logDecisionOnce("sender_busy",
+				"Some leads are waiting for a mailbox on the domain they already hear from: every one of them has nothing left for now",
+				map[string]interface{}{"domain": rotation.domain})
+			if back.IsZero() {
+				back = s.deferToNextDay(campaign, preview)
+			}
+			return back, nil, rotation.previous.ID, ErrSenderBusy
+		}
+		if same != nil {
+			candidates, wholePool = same, same
+		}
+	}
 
 	// STEP 8.25: Apply ESP matching to the under-budget candidate set.
 	//   strict → only matching mailboxes are eligible; if none, DEFER (never
@@ -757,7 +782,7 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 					pick = clear
 				}
 			}
-			selected = selectAccountByRotationMode(campaign.RotationMode, pick, campaign.ID)
+			selected = selectAccountByRotationMode(campaign.RotationMode, rotation.avoidPrevious(pick), campaign.ID)
 		}
 	}
 	if selected == nil {

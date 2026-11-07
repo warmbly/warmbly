@@ -162,8 +162,8 @@ A campaign set through the API to `sender_strategy: "explicit"` is the exception
 
 Sending accounts always resolve inside the campaign's own workspace. If you belong to more than one workspace, a tag you reuse across them still only picks up mailboxes belonging to the workspace that owns the campaign, so one workspace's sending reputation, daily caps, and warmup are never spent on another's traffic.
 
-<Callout type="info" title="Follow-ups stay on the same mailbox">
-Rotation chooses a mailbox for a lead's **first** email, and that mailbox sends the rest of that lead's sequence. Three emails from three addresses is not a conversation, and a reply belongs in the mailbox the contact was written to from.
+<Callout type="info" title="Follow-ups stay on the same mailbox by default">
+Rotation chooses a mailbox for a lead's **first** email, and that mailbox sends the rest of that lead's sequence. Three emails from three addresses reads less like a conversation, and a reply belongs in the mailbox the contact was written to from. You can change this per campaign; see [follow-ups from other mailboxes](#follow-ups-from-other-mailboxes).
 </Callout>
 
 | Rotation | Behavior |
@@ -172,9 +172,25 @@ Rotation chooses a mailbox for a lead's **first** email, and that mailbox sends 
 | Round-robin | Cycles in order: `A`, `B`, `C`, back to `A` |
 | Weighted | Sends more from healthier, higher-limit mailboxes |
 
-Whichever mode you pick, it decides which mailbox **starts** a lead. Every mailbox still stays inside its own daily cap and minimum gap, so a campaign's volume is the sum of its mailboxes' budgets as always. Rotation only chooses among mailboxes whose minimum gap has passed, and warmup mail counts toward that gap. A mailbox that just sent warmup sits out that turn and another one starts the lead. The campaign only waits when every mailbox is inside its gap.
+Whichever mode you pick, it decides which mailbox **starts** a lead (and, when follow-ups rotate, which sends each later step). Every mailbox still stays inside its own daily cap and minimum gap, so a campaign's volume is the sum of its mailboxes' budgets as always. Rotation only chooses among mailboxes whose minimum gap has passed, and warmup mail counts toward that gap. A mailbox that just sent warmup sits out that turn and another one starts the lead. The campaign only waits when every mailbox is inside its gap.
 
 The Leads tab shows each lead's mailbox in its **Sender** column, and a contact's Activity tab shows it beside their progress. A lead has none until its first email goes out.
+
+### Follow-ups from other mailboxes
+
+**Preferences** > **Inbox rotation** > **Follow-ups** decides which mailbox sends a lead's second and later emails:
+
+| Follow-ups | Behavior |
+|------------|----------|
+| **Same mailbox as the first email** (default, recommended) | Every step comes from the address that sent the first. When that mailbox has nothing left for now, the follow-up waits for it; it only moves when the mailbox can no longer send for the campaign |
+| Rotate within the same domain | Each follow-up is drawn by the campaign's rotation from the mailboxes sending as the domain the lead last heard from, preferring one other than the previous sender. When every mailbox on that domain is busy, the follow-up waits; when none can send for the campaign any more, it uses the whole pool |
+| Rotate every step | Each follow-up is placed like a first email: rotation, ESP matching (below), daily caps and minimum gaps apply, and a mailbox other than the previous sender is preferred when one is free |
+
+A rotated follow-up never waits for the previous sender, and every mailbox still keeps its own daily cap and minimum gap, so rotating spreads a campaign's follow-ups across the pool rather than adding volume.
+
+The tradeoffs are real. A lead can see several sender addresses in one conversation. Threaded steps still carry the [reply headers](/guides/sequences/#follow-ups-and-threading) for the whole conversation, which most mail apps use to keep them together, but grouping is decided by the recipient's app. A reply goes to the mailbox that sent the email being answered, so one lead's replies can land in different inboxes; every one is still credited to the lead and stops the sequence when **Stop on reply** is on. To collect them in one place, give the mailboxes the same [reply-to address](/guides/mailboxes/#a-shared-reply-inbox). In the unibox each mailbox keeps its own copy of the conversation, so a rotated lead's emails sit under the mailboxes that sent them. Rotating follow-ups does not by itself change how a provider treats the mail.
+
+The contact's **Activity** tab names the mailbox that sent each step.
 
 ### Campaigns sharing mailboxes
 
@@ -184,7 +200,7 @@ Two campaigns never send from one mailbox inside its minimum gap. When both reac
 
 Because the daily cap belongs to the mailbox, the campaign whose window opens first can use most of a shared pool's day, which matters when the campaigns send in different timezones. To keep part of the pool for a later campaign, lower the earlier campaign's [daily limit per mailbox](#sending-limits), which caps what it takes from each mailbox. To split the pool outright, give each campaign its own tag.
 
-**ESP matching** optionally aligns sender and recipient providers (Google to Google, Microsoft to Microsoft). The recipient's provider is read from their domain's mail records, so a lead on a company domain hosted by Google Workspace or Microsoft 365 is matched too, not only `gmail.com` and `outlook.com` addresses; the contacts list shows it as a badge on each contact's avatar. A mailbox connected with an app password to Google Workspace or Microsoft 365 counts as that provider. Under **Settings** > **ESP matching**, the coverage panel shows how many of the campaign's leads are on Google, Microsoft and other providers, and which of your mailboxes serve each. **Prefer same** falls back to any mailbox when no same-provider one is free; **Strict same** makes the contact wait instead. A contact left waiting this way waits alone: the campaign moves on to the next lead in the queue rather than stopping, and comes back to them when a matching mailbox is free. An unknown recipient provider never blocks a send. Like rotation, it applies to a lead's first email: a follow-up goes out from the mailbox the contact already knows.
+**ESP matching** optionally aligns sender and recipient providers (Google to Google, Microsoft to Microsoft). The recipient's provider is read from their domain's mail records, so a lead on a company domain hosted by Google Workspace or Microsoft 365 is matched too, not only `gmail.com` and `outlook.com` addresses; the contacts list shows it as a badge on each contact's avatar. A mailbox connected with an app password to Google Workspace or Microsoft 365 counts as that provider. Under **Settings** > **ESP matching**, the coverage panel shows how many of the campaign's leads are on Google, Microsoft and other providers, and which of your mailboxes serve each. **Prefer same** falls back to any mailbox when no same-provider one is free; **Strict same** makes the contact wait instead. A contact left waiting this way waits alone: the campaign moves on to the next lead in the queue rather than stopping, and comes back to them when a matching mailbox is free. An unknown recipient provider never blocks a send. Like rotation, it applies to a lead's first email: a follow-up goes out from the mailbox the contact already knows, unless the campaign [rotates follow-ups](#follow-ups-from-other-mailboxes), which matches each step.
 
 ### When a lead's mailbox is busy, or gone
 
