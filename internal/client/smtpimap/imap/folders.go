@@ -47,8 +47,18 @@ func (c *Client) foldersCapped(limit int) ([]models.Mailbox, *errx.MailError) {
 }
 
 func (c *Client) listFoldersCapped(limit int) (FolderListing, *errx.MailError) {
+	listing, unpaired, err := c.listFoldersStatus(limit)
+	if err != nil || len(unpaired) == 0 {
+		return listing, err
+	}
+	return c.examineUnpaired(listing, unpaired)
+}
+
+// listFoldersStatus is the listing with each folder's STATUS. It also returns
+// the folders whose STATUS reply go-imap could not pair, left with no cursors.
+func (c *Client) listFoldersStatus(limit int) (FolderListing, map[string]struct{}, *errx.MailError) {
 	if err := c.ensureConnected(); err != nil {
-		return FolderListing{}, err
+		return FolderListing{}, nil, err
 	}
 	c.lifecycle.RLock()
 	defer c.lifecycle.RUnlock()
@@ -86,7 +96,7 @@ func (c *Client) listFoldersCapped(limit int) (FolderListing, *errx.MailError) {
 		}
 	}
 	if err := cmd.Close(); err != nil {
-		return FolderListing{}, c.handleError(err)
+		return FolderListing{}, nil, c.handleError(err)
 	}
 
 	// Before the cap, not after: a name the server listed twice would
@@ -98,6 +108,7 @@ func (c *Client) listFoldersCapped(limit int) (FolderListing, *errx.MailError) {
 	kept, overflow := rankFolders(all, limit)
 	c.folderOverflow.Store(int32(overflow))
 
+	var unpaired map[string]struct{}
 	resp := make([]models.Mailbox, 0, len(kept))
 	for _, box := range kept {
 		st := statuses[box.Name]
@@ -110,12 +121,20 @@ func (c *Client) listFoldersCapped(limit int) (FolderListing, *errx.MailError) {
 					delete(present, box.Name)
 					continue
 				}
-				return FolderListing{}, merr
+				return FolderListing{}, nil, merr
+			}
+			if data.Mailbox == "" && encodedOnWire(box.Name) {
+				if unpaired == nil {
+					unpaired = map[string]struct{}{}
+				}
+				unpaired[box.Name] = struct{}{}
+				resp = append(resp, box)
+				continue
 			}
 			st = data
 		}
 		if st == nil || st.UIDValidity == 0 || st.UIDNext == 0 {
-			return FolderListing{}, errx.ErrMailServerUnreachable
+			return FolderListing{}, nil, errx.ErrMailServerUnreachable
 		}
 		box.UIDValidity = st.UIDValidity
 		box.UIDNext = uint32(st.UIDNext)
@@ -126,7 +145,58 @@ func (c *Client) listFoldersCapped(limit int) (FolderListing, *errx.MailError) {
 		resp = append(resp, box)
 	}
 
-	return FolderListing{Folders: resp, Present: present}, nil
+	return FolderListing{Folders: resp, Present: present}, unpaired, nil
+}
+
+// examineUnpaired reads the cursors of the folders whose STATUS reply go-imap
+// pairs by name and could not pair (NetEase echoes a non-ASCII name as "???")
+// from EXAMINE. It takes mu, because EXAMINE moves the selection a warmup
+// action works in, so a listing that needs none of this never waits on mu.
+func (c *Client) examineUnpaired(listing FolderListing, unpaired map[string]struct{}) (FolderListing, *errx.MailError) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.ensureConnected(); err != nil {
+		return FolderListing{}, err
+	}
+	c.lifecycle.RLock()
+	defer c.lifecycle.RUnlock()
+	defer c.begin()()
+
+	folders := listing.Folders[:0]
+	for _, box := range listing.Folders {
+		if _, ok := unpaired[box.Name]; ok {
+			sel, err := c.examineLocked(box.Name)
+			if err != nil {
+				merr := c.handleError(err)
+				if merr.Code == errx.ErrMailResourceNotFound.Code {
+					delete(listing.Present, box.Name)
+					continue
+				}
+				return FolderListing{}, merr
+			}
+			if sel.UIDValidity == 0 || sel.UIDNext == 0 {
+				return FolderListing{}, errx.ErrMailServerUnreachable
+			}
+			box.UIDValidity = sel.UIDValidity
+			box.UIDNext = uint32(sel.UIDNext)
+			box.HighestModSeq = sel.HighestModSeq
+			box.Messages = sel.NumMessages
+		}
+		folders = append(folders, box)
+	}
+	listing.Folders = folders
+	return listing, nil
+}
+
+// encodedOnWire is whether a mailbox name goes out in modified UTF-7 rather
+// than as written (RFC 3501 5.1.3), the only names a reply can echo differently.
+func encodedOnWire(name string) bool {
+	for _, r := range name {
+		if r < 0x20 || r > 0x7e || r == '&' {
+			return true
+		}
+	}
+	return false
 }
 
 // listOptionsFor is the LIST options a server's capabilities allow, and

@@ -466,6 +466,141 @@ func TestFolderListingRequiresCompleteDiscoveryOrExplicitAbsence(t *testing.T) {
 	}
 }
 
+// NetEase (imap.qiye.163.com) answers STATUS for a non-ASCII folder with the
+// name masked as "???", which go-imap cannot pair with the command, so the
+// cursors come from EXAMINE. One such folder used to fail the whole mailbox.
+// A server that echoes the name is never sent an EXAMINE.
+func TestFoldersStatusEchoingAnotherNameFallsBackToExamine(t *testing.T) {
+	for _, masked := range []bool{false, true} {
+		for _, listStatus := range []bool{false, true} {
+			t.Run(fmt.Sprintf("masked=%t/LIST-STATUS=%t", masked, listStatus), func(t *testing.T) {
+				var caps imap.CapSet
+				if listStatus {
+					caps = imap.CapSet{imap.CapIMAP4rev1: {}, imap.CapListExtended: {}, imap.CapListStatus: {}}
+				}
+				c, wire := rewritingServer(t, caps, nil, func(line string) string {
+					fields := strings.Fields(line)
+					if masked && len(fields) >= 3 && fields[0] == "*" && strings.EqualFold(fields[1], "STATUS") && strings.Contains(fields[2], "&") {
+						return strings.Replace(line, fields[2], `"???"`, 1)
+					}
+					return line
+				}, "已发送", "Archive")
+				boxes, err := c.Folders()
+				if err != nil {
+					t.Fatalf("Folders: %v", err)
+				}
+				if len(boxes) != 3 {
+					t.Fatalf("listed %d folders, want 3: %+v", len(boxes), boxes)
+				}
+				for _, b := range boxes {
+					if b.UIDValidity == 0 || b.UIDNext == 0 {
+						t.Errorf("%q has incomplete cursors: %+v", b.Name, b)
+					}
+				}
+				examined := wire.commands("EXAMINE")
+				if !masked && len(examined) != 0 {
+					t.Fatalf("a server that pairs every STATUS was sent %v", examined)
+				}
+				if masked && (len(examined) != 1 || !strings.Contains(examined[0], "&XFJT0ZAB-")) {
+					t.Fatalf("only the unpaired folder should be examined, got %v", examined)
+				}
+			})
+		}
+	}
+}
+
+// The fallback carries EXAMINE's values over field for field, HIGHESTMODSEQ
+// included on a CONDSTORE server.
+func TestFoldersUnpairedStatusKeepsExamineCursors(t *testing.T) {
+	for _, condStore := range []bool{false, true} {
+		t.Run(fmt.Sprintf("CONDSTORE=%t", condStore), func(t *testing.T) {
+			modSeq := ""
+			var rewrite func(string) string
+			if condStore {
+				modSeq = " HIGHESTMODSEQ 1"
+				rewrite = advertising("CONDSTORE")
+			}
+			c, wire := rewritingServer(t, nil, func(line string) string {
+				fields := strings.Fields(line)
+				if len(fields) < 3 {
+					return ""
+				}
+				switch strings.ToUpper(fields[1]) {
+				case "STATUS":
+					if strings.Contains(fields[2], "&") {
+						return `* STATUS "???" (MESSAGES 1 UIDNEXT 2 UIDVALIDITY 3)` + "\r\n" + fields[0] + " OK STATUS completed"
+					}
+					return "* STATUS " + fields[2] + " (MESSAGES 0 UIDNEXT 1 UIDVALIDITY 1" + modSeq + ")\r\n" + fields[0] + " OK STATUS completed"
+				case "EXAMINE":
+					reply := "* 7 EXISTS\r\n* OK [UIDVALIDITY 777] ok\r\n* OK [UIDNEXT 42] ok\r\n"
+					if condStore {
+						reply += "* OK [HIGHESTMODSEQ 9001] ok\r\n"
+					}
+					return reply + fields[0] + " OK [READ-ONLY] EXAMINE completed"
+				}
+				return ""
+			}, rewrite, "已发送")
+			boxes, err := c.Folders()
+			if err != nil {
+				t.Fatalf("Folders: %v", err)
+			}
+			var sent *models.Mailbox
+			for i := range boxes {
+				if boxes[i].Name == "已发送" {
+					sent = &boxes[i]
+				}
+			}
+			var wantModSeq uint64
+			if condStore {
+				wantModSeq = 9001
+			}
+			if sent == nil || sent.UIDValidity != 777 || sent.UIDNext != 42 || sent.Messages != 7 || sent.HighestModSeq != wantModSeq {
+				t.Fatalf("recovered folder = %+v, want UIDVALIDITY 777, UIDNEXT 42, 7 messages, HIGHESTMODSEQ %d", sent, wantModSeq)
+			}
+			examined := wire.commands("EXAMINE")
+			if len(examined) != 1 || strings.Contains(examined[0], "CONDSTORE") != condStore {
+				t.Fatalf("EXAMINE should carry CONDSTORE only where advertised: %v", examined)
+			}
+		})
+	}
+}
+
+// A failed fallback EXAMINE is held to the STATUS rules: only an explicit
+// NONEXISTENT drops the folder, anything else fails the pass without
+// handing back a listing that could retire stored folders.
+func TestFoldersUnpairedStatusExamineFailure(t *testing.T) {
+	for _, reply := range []string{"NO [UNAVAILABLE] Try later", "NO [NONEXISTENT] Folder removed"} {
+		t.Run(reply, func(t *testing.T) {
+			c, _ := rewritingServer(t, nil, func(line string) string {
+				fields := strings.Fields(line)
+				if len(fields) >= 3 && strings.EqualFold(fields[1], "EXAMINE") {
+					return fields[0] + " " + reply
+				}
+				return ""
+			}, func(line string) string {
+				fields := strings.Fields(line)
+				if len(fields) >= 3 && fields[0] == "*" && strings.EqualFold(fields[1], "STATUS") && strings.Contains(fields[2], "&") {
+					return strings.Replace(line, fields[2], `"???"`, 1)
+				}
+				return line
+			}, "已发送", "Archive")
+			listing, err := c.ListFolders()
+			if strings.Contains(reply, "UNAVAILABLE") {
+				if err == nil || err.Code != errx.MailErrorCodeServerUnreachable || listing.Present != nil {
+					t.Fatalf("failed fallback leaked a listing: %+v err=%v", listing, err)
+				}
+				return
+			}
+			if err != nil || len(listing.Folders) != 2 {
+				t.Fatalf("absent folder should leave INBOX and Archive: %+v err=%v", listing, err)
+			}
+			if _, present := listing.Present["已发送"]; present {
+				t.Fatal("explicit absence was not recorded")
+			}
+		})
+	}
+}
+
 // The UIDNEXT search is the incremental set without CONDSTORE: everything at
 // or above the cursor, and nothing below it.
 func TestSearchNewSince(t *testing.T) {
