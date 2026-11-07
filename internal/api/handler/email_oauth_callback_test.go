@@ -27,9 +27,9 @@ func (s *returnOriginService) OAuthReturnOrigin(_ context.Context, state string)
 func TestMailboxCallbacksUseStateBoundDashboard(t *testing.T) {
 	t.Setenv("APP_URL", "https://app.warmbly.com")
 	t.Setenv("APP_ORIGIN", "")
-	t.Setenv("CORS_ALLOW_ORIGINS", "https://app.warmbly.com,https://tac-security-assessment.warmbly.com")
+	t.Setenv("CORS_ALLOW_ORIGINS", "https://app.warmbly.com,https://second.example.com")
 	for _, tt := range []struct{ name, origin, want string }{
-		{"assessment", "https://tac-security-assessment.warmbly.com", "https://tac-security-assessment.warmbly.com"},
+		{"second dashboard", "https://second.example.com", "https://second.example.com"},
 		{"primary dashboard", "https://app.warmbly.com", "https://app.warmbly.com"},
 		{"missing or expired state", "", ""},
 		{"untrusted origin", "https://evil.example.com", ""},
@@ -116,8 +116,8 @@ func (s *integrationReturnOriginService) OAuthReturnOrigin(_ context.Context, _ 
 func TestIntegrationCallbackUsesStateBoundDashboard(t *testing.T) {
 	t.Setenv("APP_ORIGIN", "")
 	t.Setenv("APP_URL", "https://app.acme.io")
-	t.Setenv("CORS_ALLOW_ORIGINS", "https://tac-security-assessment.warmbly.com")
-	for _, origin := range []string{"https://app.acme.io", "https://tac-security-assessment.warmbly.com", "https://evil.example.com", ""} {
+	t.Setenv("CORS_ALLOW_ORIGINS", "https://second.example.com")
+	for _, origin := range []string{"https://app.acme.io", "https://second.example.com", "https://evil.example.com", ""} {
 		h := &Handler{IntegrationService: &integrationReturnOriginService{origin: origin}}
 		w := serve(t, h.IntegrationOAuthCallback, "/cb?state=s&code=c")
 		want := origin

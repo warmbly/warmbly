@@ -9,8 +9,6 @@ const at = (local: string, domain: string) => `${local}@${domain}`;
 const MAILBOX_EMAIL = at("dev.outbound", "warmbly.test");
 
 async function enableGoogleSignin(page: Page) {
-  await page.route("**/config.js", (route) =>
-    route.fulfill({ contentType: "text/javascript", body: 'window.__WARMBLY_ENV__ = { GMAIL_OAUTH_CONNECT: "true" };' }));
   await page.route("**/v1/auth/config", async (route) => {
     const response = await route.fetch();
     await route.fulfill({ response, json: { ...await response.json(), gmail_oauth_connect: true } });

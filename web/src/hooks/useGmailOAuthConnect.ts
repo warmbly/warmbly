@@ -1,7 +1,7 @@
 import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
-import { GMAIL_OAUTH_CONNECT } from "@/lib/information";
 
+// The backend decides; Cloud-brokered consent runs on Warmbly Cloud's client, not this instance's.
 export default function useGmailOAuthConnect(viaCloud = false): boolean {
     const { config } = useAuthConfig();
-    return GMAIL_OAUTH_CONNECT && (viaCloud || config.gmail_oauth_connect === true);
+    return viaCloud || config.gmail_oauth_connect === true;
 }
