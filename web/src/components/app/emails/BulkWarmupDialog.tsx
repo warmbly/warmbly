@@ -11,6 +11,7 @@ import { Loading } from "@/components/loader";
 import updateEmail from "@/lib/api/client/app/emails/updateEmail";
 import warmupLifecycle from "@/lib/api/client/app/emails/warmupLifecycle";
 import type Inbox from "@/lib/api/models/app/emails/Inbox";
+import { cloudLinkScope, invalidateWarmupReports } from "@/lib/api/hooks/app/cloudlink/warmupReports";
 
 // Bulk warmup-start dialog. Lets the user optionally apply one set of warmup
 // settings to every selected mailbox before starting — useful when onboarding a
@@ -55,6 +56,7 @@ export default function BulkWarmupDialog({
             return;
         }
         setBusy(true);
+        const scope = cloudLinkScope(queryClient);
         const patch: Partial<Inbox> = {
             warmup_base: base,
             warmup_increase: increase,
@@ -77,7 +79,7 @@ export default function BulkWarmupDialog({
         const started = ids.filter((_, index) => results[index].status === "fulfilled");
         const failed = n - started.length;
         await queryClient.invalidateQueries({ queryKey: ["emails"] });
-        await queryClient.invalidateQueries({ queryKey: ["analytics", "accounts"] });
+        await invalidateWarmupReports(queryClient, scope);
         setBusy(false);
         if (failed > 0) {
             toast.error(`${failed} of ${n} mailbox${n > 1 ? "es" : ""} couldn't start`);

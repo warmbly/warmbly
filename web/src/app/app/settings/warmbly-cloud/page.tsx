@@ -5,7 +5,9 @@
 // instances linked to this workspace (GET /pool-link/instances).
 
 import React from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Navigate } from "@tanstack/react-router";
+import { cloudLinkScope, invalidateWarmupReports } from "@/lib/api/hooks/app/cloudlink/warmupReports";
 import { motion } from "framer-motion";
 import toast from "react-hot-toast/headless";
 import { CheckIcon, CloudIcon, ExternalLinkIcon, Loader2Icon, RefreshCwIcon, SparklesIcon } from "lucide-react";
@@ -57,6 +59,7 @@ export default function WarmblyCloudSettingsPage() {
 }
 
 function SelfHostedCloud() {
+    const queryClient = useQueryClient();
     const status = useCloudLinkStatus();
     const disconnect = useDisconnectCloudLink();
     const confirm = useConfirm();
@@ -84,7 +87,7 @@ function SelfHostedCloud() {
                 st.connected ? (
                     <button
                         type="button"
-                        onClick={() => void status.refetch()}
+                        onClick={() => void invalidateWarmupReports(queryClient, cloudLinkScope(queryClient))}
                         className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-[12px] text-slate-700 hover:text-slate-900 transition-colors inline-flex items-center gap-1.5"
                     >
                         <RefreshCwIcon className={`w-3 h-3 ${status.isFetching ? "animate-spin" : ""}`} />

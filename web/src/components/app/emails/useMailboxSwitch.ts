@@ -7,7 +7,7 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 
 // Off is the whole mailbox, not campaigns alone, so the prompt points at the hold.
 export function switchOffPrompt(subject: string): string {
-    return `Switch ${subject} off? It stops sending, warming and syncing until you switch it back on, and keeps its settings and history. To stop campaign sending and keep warming, use Hold from campaigns in the mailbox's Overview instead.`;
+    return `Switch ${subject} off on this instance? This stops local campaign sending, local warmup and syncing, and keeps settings and history. Warmbly Cloud warmup is managed separately in the Warmup tab. To stop only campaign sending, use Hold from campaigns in the mailbox's Overview instead.`;
 }
 
 // The mailbox's own on/off switch (status active or inactive).

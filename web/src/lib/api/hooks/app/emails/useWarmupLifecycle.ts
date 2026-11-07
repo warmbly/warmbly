@@ -4,6 +4,7 @@ import { mutationOptions, useMutation, useQueryClient, type QueryClient } from "
 import { overlapping, patchQueries, restoreQueries, settle, updateEntity } from "@/lib/api/hooks/optimistic";
 import patchEmailLists from "./patchEmailLists";
 import { mailboxMutationKey } from "./useUpdateEmail";
+import { cloudLinkScope, cloudLinkScopeCurrent, invalidateWarmupReports } from "../cloudlink/warmupReports";
 
 // The warmup fields each action leaves behind; ramp progress is the server's to keep.
 export function applyWarmup(row: Inbox, action: WarmupAction): Inbox {
@@ -32,24 +33,26 @@ export function warmupLifecycleOptions(queryClient: QueryClient, id: string) {
     return mutationOptions({
         mutationKey: [...mailboxMutationKey(id), "warmup"],
         mutationFn: (action: WarmupAction) => warmupLifecycle(id, action),
-        onMutate: (action) =>
-            patchQueries(
+        onMutate: async (action) => ({
+            scope: cloudLinkScope(queryClient),
+            snapshot: await patchQueries(
                 queryClient,
                 [["emails", "list"]],
                 updateEntity<Inbox>(id, (row) => applyWarmup(row, action)),
             ),
-        onError: (_err, _action, snapshot) => {
-            restoreQueries(queryClient, snapshot);
+        }),
+        onError: (_err, _action, context) => {
+            if (context && !cloudLinkScopeCurrent(queryClient, context.scope)) return;
+            restoreQueries(queryClient, context?.snapshot);
             settle(queryClient, mailboxMutationKey(id), [["emails", "list"]]);
         },
-        onSuccess: (data) => {
+        onSuccess: (data, _action, context) => {
+            if (context && !cloudLinkScopeCurrent(queryClient, context.scope)) return;
             if (overlapping(queryClient, mailboxMutationKey(id))) return;
             patchEmailLists(queryClient, (rows) => rows.map((c) => (c.id === id ? data : c)));
 
             queryClient.setQueryData<Inbox>(["emails", id], data);
         },
-        onSettled: () => {
-            void queryClient.invalidateQueries({ queryKey: ["analytics", "accounts", id] });
-        },
+        onSettled: (_data, _error, _action, context) => invalidateWarmupReports(queryClient, context?.scope ?? cloudLinkScope(queryClient)),
     });
 }
