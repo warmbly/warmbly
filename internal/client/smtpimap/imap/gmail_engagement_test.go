@@ -121,3 +121,15 @@ func TestIMAPDisabledReadsGmailsAlert(t *testing.T) {
 		t.Fatal("a network failure read as IMAP being switched off")
 	}
 }
+
+// A SELECT the server refuses is an error for the strict lookup and an absent message for the lenient one.
+func TestFindUIDInFolderReportsARefusedSelect(t *testing.T) {
+	c := gmailShapedServer(t)
+	ctx := context.Background()
+	if uid, err := c.FindUIDInFolder(ctx, "[Gmail]/Missing", "<warm@test>"); err == nil || uid != 0 {
+		t.Fatalf("strict lookup: uid=%d err=%v, want an error", uid, err)
+	}
+	if uid, err := c.FindUIDByMessageID(ctx, "[Gmail]/Missing", "<warm@test>"); err != nil || uid != 0 {
+		t.Fatalf("lenient lookup: uid=%d err=%v, want no match", uid, err)
+	}
+}
