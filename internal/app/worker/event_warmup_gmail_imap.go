@@ -175,7 +175,7 @@ func (e *gmailEngagement) rescue(ctx context.Context, rescue *string) error {
 	if e.junk == "" || e.filingDest == "" {
 		return errGmailIMAPCannot
 	}
-	uid, err := e.s.FindUIDByMessageID(ctx, e.junk, e.id)
+	uid, err := e.s.FindUIDInFolder(ctx, e.junk, e.id)
 	if err != nil {
 		return err
 	}
@@ -219,7 +219,7 @@ func (e *gmailEngagement) locate(ctx context.Context) (string, uint32, error) {
 			continue
 		}
 		seen[name] = true
-		uid, err := e.s.FindUIDByMessageID(ctx, name, e.id)
+		uid, err := e.s.FindUIDInFolder(ctx, name, e.id)
 		if err != nil {
 			return "", 0, err
 		}

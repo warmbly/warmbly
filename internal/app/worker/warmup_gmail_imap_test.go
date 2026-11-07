@@ -39,7 +39,7 @@ func gmailFolders(except ...string) []models.Mailbox {
 
 func (s *gmailSession) AllFolders(context.Context) ([]models.Mailbox, error) { return s.folders, nil }
 
-func (s *gmailSession) FindUIDByMessageID(_ context.Context, box, _ string) (uint32, error) {
+func (s *gmailSession) FindUIDInFolder(_ context.Context, box, _ string) (uint32, error) {
 	if s.findErr != nil {
 		return 0, s.findErr
 	}

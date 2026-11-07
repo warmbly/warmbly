@@ -27,7 +27,7 @@ var ErrGmailIMAPScope = errors.New("gmail: no token with " + GmailFullMailScope)
 // GmailIMAPSession is the slice of the IMAP client warmup engagement uses on Gmail.
 type GmailIMAPSession interface {
 	AllFolders(ctx context.Context) ([]models.Mailbox, error)
-	FindUIDByMessageID(ctx context.Context, mailboxName, rfcMessageID string) (uint32, error)
+	FindUIDInFolder(ctx context.Context, mailboxName, rfcMessageID string) (uint32, error)
 	MoveToFolder(ctx context.Context, sourceMailbox, dstFolder string, uid uint32) (bool, error)
 	CopyToFolder(ctx context.Context, sourceMailbox, dstFolder string, uid uint32) error
 	MarkAsRead(ctx context.Context, mailboxName string, uid uint32) error
