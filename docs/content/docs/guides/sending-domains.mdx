@@ -178,6 +178,8 @@ The redirect's tab says what the check saw and, for the usual causes, what to ch
 
 | What the check saw | What it usually means | What to do |
 | --- | --- | --- |
+| Cloudflare refused the domain with error `1000` | The root's `A` or `AAAA` records point straight at Cloudflare's own addresses, which Cloudflare only serves through a `CNAME` | Delete every `A` and `AAAA` record on the root and add the root record the tab lists, set to DNS only. The tab shows the exact records |
+| Cloudflare answered with error `1014` or `1001` | Cloudflare received the visit but has not activated the domain yet | On Warmbly Cloud, add the **Activation** record when the tab lists one; otherwise it activates by itself within a few minutes of the records verifying. On your own instance behind Cloudflare, point the records straight at your server, or add the domain to that Cloudflare zone as a custom hostname |
 | Another web server answered, often a `404`, and the tab names it when it can tell (Traefik, nginx, Caddy, Apache) | A proxy in front of Warmbly only answers for the hostnames it was set up with | Add the domain wherever the tracking host is set up, since that one already reaches Warmbly. The tab shows the exact change for Traefik, Coolify, Dokploy, nginx and Caddy |
 | The tracking service answered but did not recognise the domain | The proxy sends the visit on under a different hostname | Pass the original `Host` header through, for example `proxy_set_header Host $host;` in nginx |
 | The domain redirects somewhere else | Another redirect answers first: a proxy rule, or forwarding at the domain or DNS provider | Remove that redirect |

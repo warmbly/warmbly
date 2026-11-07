@@ -561,6 +561,13 @@ func (s *Service) check(ctx context.Context, r *models.DomainRedirect, force boo
 			got = models.RedirectReach{Status: models.RedirectReachNotReaching, Hint: models.RedirectHintNotRouted, Proxy: got.Proxy,
 				Detail: "Warmbly's tracking service answers for " + r.Domain + " but serves no redirect for it, so the domain may point at a different Warmbly instance."}
 		}
+		if got.Hint == models.RedirectHintEdgeInactive {
+			if s.edge.Enabled() {
+				got.Detail += " Warmbly activates a verified domain there by itself within a few minutes."
+			} else {
+				got.Detail += " Cloudflare only serves names its own zone knows, so point the domain's records straight at this server, or add the domain to that zone as a custom hostname."
+			}
+		}
 		reach = &got
 	}
 	if err := s.redirects.SetReach(ctx, r.ID, reach); err != nil {

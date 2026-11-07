@@ -32,7 +32,18 @@ export type RedirectServer = "instance" | "cloud";
 export type RedirectReachStatus = "ok" | "not_reaching" | "https_error" | "unreachable";
 
 /** The likely cause, which picks the fix to show. */
-export type RedirectReachHint = "" | "not_routed" | "host_header" | "wrong_target" | "certificate" | "no_listener" | "settling";
+export type RedirectReachHint =
+    | ""
+    | "not_routed"
+    | "host_header"
+    | "wrong_target"
+    | "certificate"
+    | "no_listener"
+    | "settling"
+    /** Cloudflare refused the domain: its A or AAAA records point at Cloudflare's own addresses. */
+    | "edge_record"
+    /** Cloudflare received the visit but has not activated the domain yet. */
+    | "edge_inactive";
 
 /** The last time the domain was opened the way a visitor would, after DNS verified. */
 export interface RedirectReach {
