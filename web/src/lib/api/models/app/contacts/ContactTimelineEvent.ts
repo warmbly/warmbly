@@ -116,6 +116,8 @@ export default interface ContactTimelineEvent {
     reason?: string | null;
     source?: string | null;
     provider?: string | null;
+    // What a deliverability bounce was about; absent when it was not classified.
+    bounce_cause?: string | null;
     intent?: string | null;
     content?: string | null;
 

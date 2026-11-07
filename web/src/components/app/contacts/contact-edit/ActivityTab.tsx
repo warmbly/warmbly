@@ -74,6 +74,7 @@ import { useFlipAlignment } from "@/hooks/useFlipPlacement";
 import { fmtAbsolute, fmtRelative } from "./format";
 import OriginBadge from "@/components/app/engagement/OriginBadge";
 import { deviceLabel, hiddenReason, originPlace, originSummary, readerLabel } from "@/lib/engagementOrigin";
+import { BOUNCE_CAUSE_LABEL, bounceKeptAddress } from "@/lib/api/models/app/suppressions/Suppression";
 
 type FilterId =
     | "all"
@@ -1171,6 +1172,14 @@ function detailsFor(e: ContactTimelineEvent): [string, React.ReactNode][] {
     add("Intent", e.intent);
     if (e.type === "deliverability" || e.type === "suppressed") {
         add("Type", e.source);
+        if (e.bounce_cause && BOUNCE_CAUSE_LABEL[e.bounce_cause]) {
+            add(
+                "Cause",
+                bounceKeptAddress(e.bounce_cause)
+                    ? `${BOUNCE_CAUSE_LABEL[e.bounce_cause]}. Not about the address, so it was not suppressed`
+                    : BOUNCE_CAUSE_LABEL[e.bounce_cause],
+            );
+        }
         add("Provider", e.provider && e.provider !== "manual" ? e.provider : null);
     }
     if (e.type.startsWith("meeting_")) {
@@ -1487,6 +1496,14 @@ function EventMeta({
         }
         if (event.source) {
             parts.push(<span key="source">type: {event.source}</span>);
+        }
+        if (event.bounce_cause && BOUNCE_CAUSE_LABEL[event.bounce_cause]) {
+            parts.push(
+                <span key="cause" className="font-medium text-slate-700">
+                    {BOUNCE_CAUSE_LABEL[event.bounce_cause]}
+                    {bounceKeptAddress(event.bounce_cause) ? ", address kept" : ""}
+                </span>,
+            );
         }
         if (event.reason) {
             parts.push(

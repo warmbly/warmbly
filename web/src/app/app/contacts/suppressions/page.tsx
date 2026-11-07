@@ -16,7 +16,7 @@ import { PopoverMenu, PopoverMenuContent, PopoverMenuItem, PopoverMenuTrigger } 
 import { useConfirm } from "@/hooks/context/confirm";
 import { useWriteGuard } from "@/hooks/usePermission";
 import { useRemoveSuppression, useSuppressions } from "@/lib/api/hooks/app/suppressions/useSuppressions";
-import { SOURCE_LABEL, recipientTriggered, type default as Suppression } from "@/lib/api/models/app/suppressions/Suppression";
+import { BOUNCE_CAUSE_LABEL, SOURCE_LABEL, recipientTriggered, type default as Suppression } from "@/lib/api/models/app/suppressions/Suppression";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import { fmtAbsolute } from "@/components/app/contacts/contact-edit/format";
@@ -44,6 +44,10 @@ export default function SuppressionsPage() {
             </SectionBar>
 
             <AddSuppressionsDialog open={adding} onClose={() => setAdding(false)} />
+
+            <p className="px-5 py-2 border-b border-slate-200/60 text-[11.5px] text-slate-500">
+                A bounce lands here only when it says the address cannot receive mail. A full mailbox, a block by the receiving provider, a temporary failure or a bounce with no reason keeps the address; those bounces show in the contact's activity with their cause.
+            </p>
 
             <PageBody>
                 {list.isLoading ? (
@@ -131,6 +135,11 @@ function SuppressionRow({ entry }: { entry: Suppression }) {
             >
                 {SOURCE_LABEL[entry.source] ?? entry.source}
             </span>
+            {entry.bounce_cause && BOUNCE_CAUSE_LABEL[entry.bounce_cause] && (
+                <span className="hidden sm:inline-flex h-5 items-center px-1.5 rounded text-[10px] font-medium border shrink-0 text-slate-600 bg-slate-100 border-slate-200">
+                    {BOUNCE_CAUSE_LABEL[entry.bounce_cause]}
+                </span>
+            )}
             <span className="hidden md:inline text-[11px] text-slate-400 tabular-nums whitespace-nowrap text-right shrink-0">
                 {fmtAbsolute(entry.created_at)}
             </span>
