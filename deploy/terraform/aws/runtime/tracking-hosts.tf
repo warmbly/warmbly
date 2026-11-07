@@ -10,6 +10,12 @@ variable "tracking_additional_hosts" {
   }
 }
 
+variable "tracking_serves_unmatched_hosts" {
+  description = "Send any host no rule matches to tracking, so customer tracking hosts and redirects registered at the edge need no rule of their own"
+  type        = bool
+  default     = false
+}
+
 resource "aws_lb_listener_rule" "tracking_alias" {
   for_each = {
     for index, hosts in chunklist(sort(tolist(var.tracking_additional_hosts)), 5) : tostring(index) => hosts

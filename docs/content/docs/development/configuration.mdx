@@ -167,6 +167,20 @@ Every emailed link (password reset, invitation, the first-run claim link) is bui
 Once `PUBLIC_HOST` is set, every derived URL uses it and `http://localhost:5173` stops working, because a `localhost` origin is no longer in `CORS_ALLOW_ORIGINS`. To keep both, list them yourself in `CORS_ALLOW_ORIGINS`.
 </Callout>
 
+### Customer domains behind Cloudflare for SaaS
+
+Optional, and only for an instance whose `TRACKING_DOMAIN` is on a Cloudflare for SaaS zone. Cloudflare refuses a customer domain pointed at that host (error `1000` at a root, `1014` at a `CNAME`) until the domain is one of the zone's custom hostnames. With both values set, the backend registers a root redirect (and its `www`) as a custom hostname the moment it verifies and a verified tracking host within two minutes, rechecks a pending one every two minutes, and removes one a day after nothing on the instance serves it any more. While Cloudflare still needs proof of a domain, the redirect lists its `_cf-custom-hostname` record. The root record a redirect asks for also changes from the tracking host's addresses, which are Cloudflare's shared ones, to a `CNAME` to the tracking host. Unset, nothing is registered and the records are unchanged.
+
+| Variable | What it does | Default | Restart needed |
+|---|---|---|---|
+| `CLOUDFLARE_SAAS_ZONE_ID` | The Cloudflare zone `TRACKING_DOMAIN` is on | unset | yes |
+| `CLOUDFLARE_SAAS_API_TOKEN` | A token with `SSL and Certificates: Edit` on that zone. Treat it as a secret | unset | yes |
+| `CLOUDFLARE_SAAS_ORIGIN` | Origin server for the hostnames the backend creates, when it differs from the zone's fallback origin | the zone's fallback origin | yes |
+
+The origin has to route a request for any registered name to the tracking service with its Host header intact. On the AWS Fargate deployment that is `tracking_serves_unmatched_hosts`; see [AWS Fargate](/development/aws-fargate/).
+
+</Callout>
+
 ## Network and proxy
 
 | Variable | What it does | Default | Restart needed |

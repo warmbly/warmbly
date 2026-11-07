@@ -11,7 +11,8 @@ export interface TrackingDomainUse {
     mailboxes: number;
 }
 
-export type DNSRecordPurpose = "ownership" | "root" | "www" | "website";
+/** `edge` is a TXT the provider in front of this instance needs before it serves the name. */
+export type DNSRecordPurpose = "ownership" | "root" | "www" | "website" | "edge";
 
 /** One record to add at the DNS provider, and whether it is in place. */
 export interface DNSRecord {

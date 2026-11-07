@@ -131,12 +131,16 @@ Enter the website to send visitors to, such as `https://yourcompany.com`. It mus
 | Purpose | Type | Name | Value | Needed to verify |
 | --- | --- | --- | --- | --- |
 | Ownership | `TXT` | `_warmbly.<domain>` | `warmbly-verify=<value>` | Yes |
-| Root | `A` and `AAAA` | `<domain>` | The tracking host's public addresses, as listed | Yes |
-| www | `CNAME` | `www.<domain>` | The tracking host | No |
+| Root | `A` and `AAAA`, or `CNAME` | `<domain>` | The tracking host's public addresses, or the tracking host itself, as listed | Yes |
+| www | `CNAME` | `www.<domain>` | `<domain>` | No |
 
 The ownership value is unique to your workspace and the domain on this instance, so a record another workspace published proves nothing for yours. It is the same record a [Google Workspace admin grant](/guides/mailbox-import/#prove-the-workspace-controls-the-domain) accepts as proof, so a domain that has one for either needs nothing more for the other.
 
-When the tracking host has no public address to list, the root record is shown as an `ALIAS` to the tracking host instead. A provider that offers `ALIAS`, `ANAME` or a flattened `CNAME` at the root can use that in place of the address records either way: Warmbly compares the addresses the root resolves to.
+On Warmbly Cloud the root record is a `CNAME` to the tracking host, because the tracking host sits behind Cloudflare and its addresses are Cloudflare's shared ones, which change. A `CNAME` at the root works where the DNS provider flattens it: Cloudflare does this on its own, and providers such as Namecheap, Porkbun, DNSimple, Bunny and NS1 offer an `ALIAS` or `ANAME` record that does the same. A provider with none of these cannot point the root here; use its domain forwarding to send the domain to your website instead. While Cloudflare is still activating the domain it may list one more record, an **Activation** `TXT` named `_cf-custom-hostname.<domain>` (and one for `www`). Add it when it is listed; it is no longer listed once the domain is live.
+
+The `www` record points at the domain itself, so it follows whatever the root does. A `www` that is a `CNAME` straight to the tracking host keeps working too.
+
+On a self-hosted instance the root records are the tracking host's public addresses, or an `ALIAS` to it when it has no public address to list. A provider that offers `ALIAS`, `ANAME` or a flattened `CNAME` at the root can use that in place of the address records either way: Warmbly compares the addresses the root resolves to.
 
 The root of a domain has to point here for the redirect to work, so a domain whose root already serves a website is not a candidate. Mail is unaffected: `MX`, SPF, DKIM and DMARC records live beside these and nothing here changes them.
 
