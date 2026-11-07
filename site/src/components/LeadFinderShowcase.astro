@@ -1,0 +1,83 @@
+---
+import Icon from './Icon.astro';
+import Photo from './Photo.astro';
+import LeadFinderDemo from './LeadFinderDemo.astro';
+
+/**
+ * Landing page section for the lead finder: the live demo hung in a photo
+ * frame like the hero, then the four things it does in order.
+ */
+// Every line follows docs/content/docs/guides/lead-finder.mdx.
+const steps = [
+  {
+    n: '01',
+    title: 'Search any area',
+    text: 'Pick a kind of business, go to a city, and search the map or draw the exact area. Only businesses inside it are kept.',
+  },
+  {
+    n: '02',
+    title: 'Find the people',
+    text: "Warmbly reads each business's own website, its team, about and contact pages, for the people who run it, their emails and social profiles.",
+  },
+  {
+    n: '03',
+    title: 'Check every address',
+    text: "Addresses are worked out from each person's name and checked with the business's mail server without sending anything, so you know which are confirmed.",
+  },
+  {
+    n: '04',
+    title: 'Send them a campaign',
+    text: 'Add the people or the business to your contacts, a segment and a campaign in one step, with every detail ready as a variable. Or export to CSV or Excel.',
+  },
+];
+
+const sources = [
+  { name: 'OpenStreetMap', note: 'Free, no key' },
+  { name: 'Google Places', note: 'Your key' },
+  { name: 'Foursquare', note: 'Your key' },
+  { name: 'Outscraper', note: 'Your key' },
+];
+---
+<section class="container-page py-20 md:py-28">
+  <div class="flex flex-wrap items-end justify-between gap-x-10 gap-y-6">
+    <h2 class="max-w-3xl text-[36px] md:text-[58px] font-medium tracking-[-0.045em] leading-[1.04]">
+      <span class="text-slate-400">Lead finder.</span>
+      <span class="text-slate-900"> Find the businesses worth emailing.</span>
+    </h2>
+    <div class="max-w-md lg:pb-2">
+      <p class="text-[17px] md:text-[18px] leading-[1.55] text-slate-500">
+        Draw an area on the map and get every dentist, roofer or bakery inside it, with the people who run them and an address you can trust.
+      </p>
+      <a href="https://docs.warmbly.com/guides/lead-finder/" class="group mt-4 inline-flex items-center gap-1.5 text-[15px] font-medium text-slate-900 hover:text-slate-600">
+        How the lead finder works <Icon name="arrowRight" size={13} class="transition-transform group-hover:translate-x-0.5" />
+      </a>
+    </div>
+  </div>
+
+  <div class="lf-frame relative mt-12 md:mt-16 overflow-hidden rounded-[6px] bg-slate-100 p-3 sm:p-6 md:p-10 lg:p-14">
+    <Photo name="lake-mist" sizes="(min-width: 1440px) 1360px, 100vw" class="absolute inset-0 h-full w-full object-cover select-none pointer-events-none" />
+    <div class="relative mx-auto max-w-[1180px]">
+      <LeadFinderDemo />
+    </div>
+  </div>
+
+  <div class="mt-14 md:mt-16 grid gap-x-8 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
+    {steps.map((s) => (
+      <div class="step-card sm:border-l sm:border-slate-200 sm:pl-6">
+        <div class="text-[22px] font-light tracking-[-0.03em] leading-none text-slate-400">{s.n}</div>
+        <h3 class="mt-4 text-[17px] font-medium text-slate-900">{s.title}</h3>
+        <p class="mt-1.5 text-[14.5px] leading-[1.6] text-slate-500">{s.text}</p>
+      </div>
+    ))}
+  </div>
+
+  <div class="mt-12 flex flex-wrap items-center gap-x-3 gap-y-2 text-[13.5px] text-slate-500">
+    <span>Where businesses come from:</span>
+    {sources.map((s) => (
+      <span class="inline-flex h-7 items-center gap-1.5 rounded-full border border-slate-200 bg-white pl-3 pr-2.5 text-slate-700">
+        {s.name}
+        <span class="text-[11.5px] text-slate-400">{s.note}</span>
+      </span>
+    ))}
+  </div>
+</section>
