@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import maplibregl, { type ExpressionSpecification, type GeoJSONSource, type GeoJSONSourceSpecification, type Map as MapLibreMap, type MapMouseEvent, type MapTouchEvent } from "maplibre-gl";
+import * as maplibregl from "maplibre-gl";
+import type { ExpressionSpecification, GeoJSONSource, GeoJSONSourceSpecification, Map as MapLibreMap, MapMouseEvent, MapTouchEvent } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MailIcon, GlobeIcon, PhoneIcon, StarIcon } from "lucide-react";
 import type { LatLng, LeadArea, LeadBounds, LeadPoint } from "@/lib/api/models/app/leads/Lead";
