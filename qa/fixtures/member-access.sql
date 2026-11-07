@@ -39,4 +39,9 @@ FROM folders f WHERE f.organization_id = '22222222-0000-0000-0000-000000000001' 
 INSERT INTO organization_member_mailbox_access (organization_id, user_id, email_account_id, granted_by)
 SELECT ea.organization_id, '86100000-0000-0000-0000-000000000001', ea.id, '11111111-0000-0000-0000-000000000001'
 FROM email_accounts ea WHERE ea.organization_id = '22222222-0000-0000-0000-000000000001' AND ea.email = 'dev.outbound@warmbly.test';
+-- The client role preset that replies, unassigned, so a proof can grant it from the members page.
+INSERT INTO organization_roles (id, organization_id, name, description, color, permissions, acts_in_scope)
+VALUES ('86100000-0000-0000-0000-000000000003', '22222222-0000-0000-0000-000000000001', 'Client: can reply',
+        'Reads and answers the conversations in the mailboxes shared with them.', '#0ea5e9', 1184, true)
+ON CONFLICT (id) DO NOTHING;
 COMMIT;

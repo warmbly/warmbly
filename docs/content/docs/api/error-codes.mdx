@@ -859,11 +859,11 @@ Turning on two-factor authentication (`POST /auth/2fa/enroll/start` and `/confir
 
 #### Member access scope
 
-A member restricted to [selected resources](/guides/team-roles/#access-scope), and any API key or OAuth app acting for one, reaches only the read routes that filter to their grants. The scope's own refusals:
+A member restricted to [selected resources](/guides/team-roles/#access-scope), and any API key or OAuth app acting for one, reaches only the routes that filter to their grants, and writes only through a [client role](/guides/team-roles/#client-roles) that acts in scope. The scope's own refusals:
 
 | `code` | Status | Meaning |
 |--------|--------|---------|
-| `member_access_restricted` | 403 | The caller's selected-resource scope does not cover this route. Resource writes and workspace-wide surfaces such as contacts and settings are refused. Workspace creation is refused to accounts with only restricted memberships, except instance administrators; limit-request operations require an unrestricted membership in the target workspace |
+| `member_access_restricted` | 403 | The caller's selected-resource scope does not cover this route. Workspace-wide surfaces such as contacts and settings are refused, and so is a write without a role that acts in scope, a reply outside a conversation held in granted mailboxes, a campaign edit to its senders, folders, tracking domain or status, a step that acts on contacts, the CRM or automations, and a start whose senders are not all granted mailboxes in an explicit list. Workspace creation is refused to accounts with only restricted memberships, except instance administrators; limit-request operations require an unrestricted membership in the target workspace |
 | `invalid_access_resource` | 400 | `PUT /organization/members/:id/access` or an invitation named a campaign folder, campaign or mailbox that is not in this workspace |
 | `invalid_access_scope` | 400 | The scope is neither `workspace` nor `restricted` |
 | `too_many_access_grants` | 400 | More than 500 folders, campaigns or mailboxes in one list |

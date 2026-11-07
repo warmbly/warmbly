@@ -1501,6 +1501,7 @@ Auth: Session only (not available to API keys). Requires a selected organization
       "description": "Run campaigns, view contacts",
       "color": "#22c55e",
       "permissions": 4352,
+      "acts_in_scope": false,
       "member_count": 4,
       "created_at": "2026-05-01T09:00:00Z",
       "updated_at": "2026-06-01T09:00:00Z"
@@ -1525,6 +1526,7 @@ Auth: Session only (not available to API keys). **Org permission** `manage_team`
 | `description` | string | no | Role description. |
 | `color` | string | no | Hex color for the chip. |
 | `permissions` | int | no | Organization permission bitmask granted by the role. |
+| `acts_in_scope` | bool | no | Lets a member restricted to [selected resources](/guides/team-roles/#client-roles) act with the role's `access_unibox`, `manage_campaigns` and `send_campaigns` inside their grants. Defaults to `false`, which keeps such a member read-only. |
 
 ```json
 {
@@ -1557,6 +1559,7 @@ All fields optional; nil fields are left untouched.
 | `description` | string | no | New description. |
 | `color` | string | no | New chip color. |
 | `permissions` | int | no | New permission bitmask. |
+| `acts_in_scope` | bool | no | Whether restricted members act with the role inside their grants. Changing it needs every permission the role grants. |
 
 ### Delete a custom role
 

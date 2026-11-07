@@ -381,7 +381,7 @@ Two limits:
 - attachments on the original are not forwarded
 - a message whose full body is not stored (the reader shows "Only a preview of this message is stored") is forwarded with that preview
 
-Forwarding discloses the message, so it takes `READ_UNIBOX` as well as `WRITE_UNIBOX` (for a dashboard session, the `access_unibox` permission covers both), and an API key restricted to certain mailboxes must be allowed the mailbox the message belongs to as well as the sending mailbox. Either missing answers `403`. A `forward_message_id` that names no message in the organization answers `404`.
+Forwarding discloses the message, so it takes `READ_UNIBOX` as well as `WRITE_UNIBOX` (for a dashboard session, the `access_unibox` permission covers both), and an API key restricted to certain mailboxes must be allowed the mailbox the message belongs to as well as the sending mailbox. Either missing answers `403`. A `forward_message_id` that names no message in the organization answers `404`. A `thread_id` is held to the same allowlist: every message of the conversation must sit in a mailbox the caller may use. A member restricted to [selected resources](/guides/team-roles/#client-roles) replies only with a `thread_id` (or `forward_message_id`) naming a conversation held in their granted mailboxes, and through a role that lets clients act; anything else answers `403` `member_access_restricted`.
 
 ```json
 {

@@ -78,7 +78,7 @@ vi.mock("./UniboxFilterPopover", () => ({
 vi.mock("@/components/app/unibox/compose/ComposeButton", () => ({ default: () => null }));
 vi.mock("@/hooks/useConversationActions", () => ({ useConversationActions: () => ({}) }));
 vi.mock("@/hooks/useShortcutActions", () => ({ useShortcutActions: () => {} }));
-vi.mock("@/hooks/usePermission", () => ({ useAccessRestricted: () => false }));
+vi.mock("@/hooks/usePermission", () => ({ useAccessRestricted: () => false, useScopeReadOnly: () => false }));
 vi.mock("@/hooks/useBrowseDebouncedValue", () => ({ default: (v: unknown) => v }));
 vi.mock("@/hooks/useScrollMemory", () => ({ useScrollMemory: () => {} }));
 vi.mock("framer-motion", async (importOriginal) => ({

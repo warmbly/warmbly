@@ -18,7 +18,7 @@ import { SelectionBar } from "./SelectionBar";
 import { useConversationActions } from "@/hooks/useConversationActions";
 import useUniboxSearch from "@/lib/api/hooks/app/unibox/useUniboxSearch";
 import { useShortcutActions } from "@/hooks/useShortcutActions";
-import { useAccessRestricted } from "@/hooks/usePermission";
+import { useScopeReadOnly } from "@/hooks/usePermission";
 import useInboxDebouncedValue from "@/hooks/useBrowseDebouncedValue";
 import { useScrollMemory } from "@/hooks/useScrollMemory";
 import { useAppStore } from "@/stores";
@@ -96,7 +96,7 @@ export function ConversationList({
   onOpenScopeSheet,
 }: ConversationListProps) {
   const [filtersOpen, setFiltersOpen] = React.useState(false);
-  const readOnly = useAccessRestricted();
+  const readOnly = useScopeReadOnly("ACCESS_UNIBOX");
 
   const searchRef = React.useRef<HTMLInputElement>(null);
   const listRef = React.useRef<HTMLDivElement>(null);

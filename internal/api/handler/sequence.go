@@ -27,6 +27,10 @@ func (h *Handler) CreateSequence(c *gin.Context) {
 		errx.Handle(c, errx.InvalidBody(err))
 		return
 	}
+	if xerr := restrictedStepAllowed(c, &data); xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
 
 	resp, err := h.SequenceService.Create(c.Request.Context(), orgID.String(), id)
 	if err != nil {
@@ -81,6 +85,10 @@ func (h *Handler) UpdateSequence(c *gin.Context) {
 
 	if err := c.ShouldBindJSON(&data); err != nil {
 		errx.Handle(c, errx.InvalidBody(err))
+		return
+	}
+	if xerr := restrictedStepAllowed(c, &data); xerr != nil {
+		errx.Handle(c, xerr)
 		return
 	}
 

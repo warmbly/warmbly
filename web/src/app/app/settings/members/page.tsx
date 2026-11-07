@@ -37,6 +37,7 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import getInvitationLink from "@/lib/api/client/app/organizations/getInvitationLink";
 import { useSetMemberAccess } from "@/lib/api/hooks/app/organizations/useMemberAccess";
+import useEnsureClientRole from "@/lib/api/hooks/app/organizations/useEnsureClientRole";
 import type MemberAccess from "@/lib/api/models/app/organizations/MemberAccess";
 import { WORKSPACE_ACCESS } from "@/lib/api/models/app/organizations/MemberAccess";
 import type OrganizationMember from "@/lib/api/models/app/organizations/OrganizationMember";
@@ -67,6 +68,7 @@ export default function MembersSettingsPage() {
     const setAccess = useSetMemberAccess();
     const [editingAccess, setEditingAccess] = React.useState<OrganizationMember | null>(null);
     const customRoles = useRoles();
+    const clientRoles = useEnsureClientRole();
     const { config: authConfig, ready: authConfigReady } = useAuthConfig();
     const currentUserId = useAppStore((s) => s.user?.id);
     const currentOrg = useAppStore((s) => s.currentOrganization);
@@ -171,7 +173,7 @@ export default function MembersSettingsPage() {
             {access.canManage && (
                 <Section
                     eyebrow="Invite teammates"
-                    description="Paste any number of emails — we'll separate them automatically. Pick a role; you can change it later."
+                    description="Paste any number of emails and they are separated automatically. Pick a role, or under Access make them a client with a client role; you can change either later."
                 >
                     <InviteFlow
                         pending={invite.isPending}
@@ -202,9 +204,18 @@ export default function MembersSettingsPage() {
                         title="Member access"
                         subject={safeEmail(editingAccess.email) || editingAccess.user_id}
                         initial={editingAccess.access}
+                        currentRoles={editingAccess.roles}
                         onClose={() => setEditingAccess(null)}
-                        onSave={async (next) => {
-                            await toast.promise(setAccess.mutateAsync({ userId: editingAccess.user_id, access: next }), {
+                        onSave={async (next, preset) => {
+                            // Scope first, then the client role, so the member never holds more than either allows.
+                            const save = async () => {
+                                await setAccess.mutateAsync({ userId: editingAccess.user_id, access: next });
+                                if (preset) {
+                                    const roleId = await clientRoles.ensure(preset);
+                                    await updateRole.mutateAsync({ id: editingAccess.user_id, data: { role_ids: [roleId] } });
+                                }
+                            };
+                            await toast.promise(save(), {
                                 loading: "Saving…",
                                 success: "Access updated",
                                 error: (e: AppError) => buildError(e),
@@ -468,6 +479,7 @@ function InviteFlow({
     const [roleIds, setRoleIds] = React.useState<string[]>([]);
     const [inviteAccess, setInviteAccess] = React.useState<MemberAccess>(WORKSPACE_ACCESS);
     const [editingAccess, setEditingAccess] = React.useState(false);
+    const clientRoles = useEnsureClientRole();
     // Default to the seeded Viewer (least privilege), else the first role.
     const defaultRole = customRoles.find((r) => r.name === "Viewer") ?? customRoles[0];
     const effectiveRoleIds = roleIds.length > 0 ? roleIds : defaultRole ? [defaultRole.id] : [];
@@ -644,7 +656,17 @@ function InviteFlow({
                             initial={inviteAccess}
                             saveLabel="Use this access"
                             onClose={() => setEditingAccess(false)}
-                            onSave={async (next) => setInviteAccess(next)}
+                            onSave={async (next, preset) => {
+                                if (preset) {
+                                    try {
+                                        setRoleIds([await clientRoles.ensure(preset)]);
+                                    } catch (e) {
+                                        toast.error(buildError(e as AppError));
+                                        throw e;
+                                    }
+                                }
+                                setInviteAccess(next);
+                            }}
                         />
                     )}
                 </AnimatePresence>

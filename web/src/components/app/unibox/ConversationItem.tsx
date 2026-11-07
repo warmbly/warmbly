@@ -48,7 +48,7 @@ import {
 import { cn, labelInk } from "@/lib/utils";
 import { nameFromAddr } from "@/lib/helper/emailAddress";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useAccessRestricted } from "@/hooks/usePermission";
+import { useScopeReadOnly } from "@/hooks/usePermission";
 
 function relative(d: Date): string {
   const diff = Date.now() - d.getTime();
@@ -107,8 +107,8 @@ export function ConversationItem({
   onSelectionDone,
   actions,
 }: ConversationItemProps) {
-  // A member restricted to selected resources reads the inbox and triages nothing.
-  const readOnly = useAccessRestricted();
+  // A restricted member triages only through a role that acts in scope.
+  const readOnly = useScopeReadOnly("ACCESS_UNIBOX");
   const onToggleSelect = readOnly ? undefined : toggleSelect;
   const selectedThreadId = useAppStore((s) => s.selectedThreadId);
   const setSelectedThreadId = useAppStore((s) => s.setSelectedThreadId);
