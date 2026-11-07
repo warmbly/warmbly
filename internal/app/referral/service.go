@@ -1,41 +1,29 @@
-// Package referral implements the customer referral program: a user shares a
-// code, an invitee who signs up with it gets 10% off their first 3 months, and
-// when the invitee converts to a paid plan the referrer earns account credit
-// equal to one month-equivalent of the invitee's plan price. The credit is
-// recorded in a dollar ledger and mirrored onto the referrer's Stripe customer
-// balance so it nets off their invoices.
-//
-// The referral code IS a discount_codes row, so the invitee discount reuses the
-// existing checkout/coupon path with no new Stripe mechanics. Reward grants and
-// clawbacks are driven by Stripe webhooks and keyed on the Stripe event id so a
-// retried webhook never double-grants.
+// Package referral settles the referrals made while the referral program ran.
+// No new referral is recorded; an invitee already attributed keeps its
+// discount, and its referrer is still rewarded (and clawed back) through the
+// Stripe webhooks, credited onto the referrer's Stripe customer balance.
+// Reward grants and clawbacks are keyed on the Stripe event id so a retried
+// webhook never double-grants.
 package referral
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
-// Product defaults for the referral program.
 const (
-	InviteePercentOff = 10    // invitee discount, percent off
-	InviteeMonths     = 3     // invitee discount, months it repeats
-	DefaultCurrency   = "usd" // reward ledger currency
-	MonthlyRewardCap  = 50    // max rewarded conversions per referrer per 30 days
-	clawbackWindow    = 30 * 24 * time.Hour
-	codeAlphabet      = "ABCDEFGHJKMNPQRSTVWXYZ23456789" // no ambiguous chars
-	codeLength        = 8
+	DefaultCurrency  = "usd" // reward ledger currency
+	MonthlyRewardCap = 50    // max rewarded conversions per referrer per 30 days
+	clawbackWindow   = 30 * 24 * time.Hour
 )
 
 // AuditPublisher records org-scoped audit events. *audit.Service satisfies it.
@@ -53,29 +41,15 @@ type StripeBalancer interface {
 }
 
 // Service is the referral program API. The Qualify/Reward/Clawback/Sync methods
-// are driven by Stripe webhooks; the rest serve the dashboard + signup flow.
+// Service is driven by the Stripe webhooks, plus the checkout lookup of an
+// attributed invitee's discount.
 type Service interface {
-	// EnsureCode idempotently mints the caller's canonical referral code (and
-	// its backing 10%/3-month discount code) and returns it.
-	EnsureCode(ctx context.Context, ownerUserID, ownerOrgID uuid.UUID) (*models.ReferralCode, *errx.Error)
-	// Summary returns the dashboard payload (code, link, earnings, counts),
-	// minting the code if needed.
-	Summary(ctx context.Context, ownerUserID, ownerOrgID uuid.UUID) (*models.ReferralSummary, *errx.Error)
-	ListAttributions(ctx context.Context, referrerOrgID uuid.UUID, limit, offset int) ([]models.ReferralAttribution, *errx.Error)
-	ListEarnings(ctx context.Context, orgID uuid.UUID, limit, offset int) ([]models.ReferralEarningsTransaction, *errx.Error)
-
-	// AttributeSignup links a new invitee org to the referrer behind `code`.
-	// Best-effort: a bad/self code never blocks signup.
-	AttributeSignup(ctx context.Context, code string, inviteeOrgID, inviteeUserID uuid.UUID) *errx.Error
-
 	// InviteeDiscountCode returns the referral discount code an invitee org
 	// should auto-apply at its first checkout, or "" if none applies.
 	InviteeDiscountCode(ctx context.Context, inviteeOrgID uuid.UUID) string
 
 	// WireBalancer attaches the Stripe customer-balance applier.
 	WireBalancer(b StripeBalancer)
-
-	// --- webhook-driven (called by the stripe service) ---
 
 	// QualifyOnConversion marks an invitee's attribution qualified once they
 	// reach a paid checkout.
@@ -92,222 +66,26 @@ type Service interface {
 }
 
 type service struct {
-	repo         repository.ReferralRepository
-	discountRepo repository.DiscountCodeRepository
-	planRepo     repository.PlanRepository
-	subRepo      repository.SubscriptionRepository
-	userRepo     repository.UserRepository
-	audit        AuditPublisher
-	balancer     StripeBalancer
-	shareBase    string
+	repo     repository.ReferralRepository
+	planRepo repository.PlanRepository
+	subRepo  repository.SubscriptionRepository
+	userRepo repository.UserRepository
+	audit    AuditPublisher
+	balancer StripeBalancer
 }
 
-// NewService builds the referral service. audit may be nil. shareBase is the
-// public base URL for share links (falls back to the app default when empty).
+// NewService builds the referral service. audit may be nil.
 func NewService(
 	repo repository.ReferralRepository,
-	discountRepo repository.DiscountCodeRepository,
 	planRepo repository.PlanRepository,
 	subRepo repository.SubscriptionRepository,
 	userRepo repository.UserRepository,
 	audit AuditPublisher,
-	shareBase string,
 ) Service {
-	if strings.TrimSpace(shareBase) == "" {
-		shareBase = config.AppBaseURL()
-	}
-	return &service{
-		repo:         repo,
-		discountRepo: discountRepo,
-		planRepo:     planRepo,
-		subRepo:      subRepo,
-		userRepo:     userRepo,
-		audit:        audit,
-		shareBase:    strings.TrimRight(shareBase, "/"),
-	}
+	return &service{repo: repo, planRepo: planRepo, subRepo: subRepo, userRepo: userRepo, audit: audit}
 }
 
 func (s *service) WireBalancer(b StripeBalancer) { s.balancer = b }
-
-// --- code minting ---
-
-func genCode() string {
-	b := make([]byte, codeLength)
-	_, _ = rand.Read(b)
-	out := make([]byte, codeLength)
-	for i, v := range b {
-		out[i] = codeAlphabet[int(v)%len(codeAlphabet)]
-	}
-	return string(out)
-}
-
-func (s *service) EnsureCode(ctx context.Context, ownerUserID, ownerOrgID uuid.UUID) (*models.ReferralCode, *errx.Error) {
-	existing, err := s.repo.GetCodeByOwner(ctx, ownerUserID)
-	if err != nil {
-		errs.CaptureException(err)
-		return nil, errx.New(errx.Internal, "failed to load referral code")
-	}
-	if existing != nil {
-		return existing, nil
-	}
-
-	// Mint a fresh, collision-free code and its backing discount row.
-	percent := InviteePercentOff
-	months := InviteeMonths
-	for attempt := 0; attempt < 6; attempt++ {
-		code := genCode()
-
-		taken, err := s.repo.GetCodeByCode(ctx, code)
-		if err != nil {
-			errs.CaptureException(err)
-			return nil, errx.New(errx.Internal, "failed to mint referral code")
-		}
-		if taken != nil {
-			continue
-		}
-		clash, err := s.discountRepo.GetByCode(ctx, code)
-		if err != nil {
-			errs.CaptureException(err)
-			return nil, errx.New(errx.Internal, "failed to mint referral code")
-		}
-		if clash != nil {
-			continue
-		}
-
-		dc := &models.DiscountCode{
-			ID:                uuid.New(),
-			Code:              code,
-			Description:       "Referral reward: 10% off for 3 months",
-			Type:              models.DiscountTypePercent,
-			PercentOff:        &percent,
-			Duration:          models.DiscountDurationRepeating,
-			DurationInMonths:  &months,
-			PerAccountLimit:   1,
-			AppliesToAllPlans: true,
-			Status:            models.DiscountCodeStatusActive,
-		}
-		if err := s.discountRepo.Create(ctx, dc); err != nil {
-			// Most likely a unique-code race; try a different code.
-			continue
-		}
-
-		rc := &models.ReferralCode{
-			ID:             uuid.New(),
-			OwnerUserID:    ownerUserID,
-			OwnerOrgID:     ownerOrgID,
-			Code:           code,
-			DiscountCodeID: &dc.ID,
-		}
-		if err := s.repo.CreateCode(ctx, rc); err != nil {
-			// Owner raced to a code on another request; return whatever stuck.
-			if again, gerr := s.repo.GetCodeByOwner(ctx, ownerUserID); gerr == nil && again != nil {
-				return again, nil
-			}
-			errs.CaptureException(err)
-			return nil, errx.New(errx.Internal, "failed to mint referral code")
-		}
-		return rc, nil
-	}
-	return nil, errx.New(errx.Internal, "failed to mint a unique referral code")
-}
-
-func (s *service) shareURL(ctx context.Context, code string) string {
-	base := s.shareBase
-	if origin := config.DashboardOriginFromContext(ctx); origin != "" {
-		base = origin
-	}
-	return base + "/auth/register?ref=" + code
-}
-
-func (s *service) Summary(ctx context.Context, ownerUserID, ownerOrgID uuid.UUID) (*models.ReferralSummary, *errx.Error) {
-	code, xerr := s.EnsureCode(ctx, ownerUserID, ownerOrgID)
-	if xerr != nil {
-		return nil, xerr
-	}
-
-	ledger, err := s.repo.GetLedger(ctx, ownerOrgID)
-	if err != nil {
-		errs.CaptureException(err)
-		return nil, errx.New(errx.Internal, "failed to load referral earnings")
-	}
-	total, pending, qualified, rewarded, err := s.repo.AttributionStats(ctx, ownerOrgID)
-	if err != nil {
-		errs.CaptureException(err)
-		return nil, errx.New(errx.Internal, "failed to load referral stats")
-	}
-
-	sum := &models.ReferralSummary{
-		Code:              code.Code,
-		ShareURL:          s.shareURL(ctx, code.Code),
-		Currency:          DefaultCurrency,
-		InviteePercentOff: InviteePercentOff,
-		InviteeMonths:     InviteeMonths,
-		TotalReferred:     total,
-		Pending:           pending,
-		Qualified:         qualified,
-		Rewarded:          rewarded,
-	}
-	if ledger != nil {
-		sum.BalanceCents = ledger.BalanceCents
-		sum.LifetimeEarnedCents = ledger.LifetimeEarnedCents
-		sum.Currency = ledger.Currency
-	}
-	return sum, nil
-}
-
-func (s *service) ListAttributions(ctx context.Context, referrerOrgID uuid.UUID, limit, offset int) ([]models.ReferralAttribution, *errx.Error) {
-	rows, err := s.repo.ListAttributionsByReferrer(ctx, referrerOrgID, limit, offset)
-	if err != nil {
-		errs.CaptureException(err)
-		return nil, errx.New(errx.Internal, "failed to list referrals")
-	}
-	return rows, nil
-}
-
-func (s *service) ListEarnings(ctx context.Context, orgID uuid.UUID, limit, offset int) ([]models.ReferralEarningsTransaction, *errx.Error) {
-	rows, err := s.repo.ListEarnings(ctx, orgID, limit, offset)
-	if err != nil {
-		errs.CaptureException(err)
-		return nil, errx.New(errx.Internal, "failed to list referral earnings")
-	}
-	return rows, nil
-}
-
-// --- signup attribution ---
-
-func (s *service) AttributeSignup(ctx context.Context, code string, inviteeOrgID, inviteeUserID uuid.UUID) *errx.Error {
-	code = strings.ToUpper(strings.TrimSpace(code))
-	if code == "" {
-		return nil
-	}
-	rc, err := s.repo.GetCodeByCode(ctx, code)
-	if err != nil {
-		errs.CaptureException(err)
-		return nil // never block signup on a lookup failure
-	}
-	if rc == nil {
-		return nil // unknown code: ignore silently
-	}
-	// Self-referral guard: a user can't refer their own new org/account.
-	if rc.OwnerUserID == inviteeUserID || rc.OwnerOrgID == inviteeOrgID {
-		return nil
-	}
-
-	attr := &models.ReferralAttribution{
-		ID:             uuid.New(),
-		ReferralCodeID: &rc.ID,
-		ReferrerUserID: rc.OwnerUserID,
-		ReferrerOrgID:  rc.OwnerOrgID,
-		InviteeOrgID:   inviteeOrgID,
-		InviteeUserID:  &inviteeUserID,
-		Status:         models.ReferralStatusPending,
-	}
-	if err := s.repo.CreateAttribution(ctx, attr); err != nil {
-		// UNIQUE(invitee_org_id): the org was already referred. Ignore.
-		return nil
-	}
-	return nil
-}
 
 func (s *service) InviteeDiscountCode(ctx context.Context, inviteeOrgID uuid.UUID) string {
 	attr, err := s.repo.GetAttributionByInviteeOrg(ctx, inviteeOrgID)

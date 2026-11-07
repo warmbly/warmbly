@@ -434,26 +434,6 @@ struct CreditUsage: Codable, Sendable {
     }
 }
 
-/// `GET subscription/referral`.
-struct ReferralSummary: Codable, Sendable {
-    var code: String?
-    var shareURL: String?
-    var currency: String?
-    var inviteePercentOff: Int?
-    var inviteeMonths: Int?
-    var lifetimeEarnedCents: Int?
-    var totalReferred: Int?
-
-    enum CodingKeys: String, CodingKey {
-        case code, currency
-        case shareURL = "share_url"
-        case inviteePercentOff = "invitee_percent_off"
-        case inviteeMonths = "invitee_months"
-        case lifetimeEarnedCents = "lifetime_earned_cents"
-        case totalReferred = "total_referred"
-    }
-}
-
 /// `GET subscription`.
 struct SubscriptionInfo: Codable, Sendable {
     var id: String?

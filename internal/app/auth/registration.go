@@ -49,9 +49,8 @@ func (s *authService) RegistrationStart(ctx context.Context, data *AuthData, ori
 	// nobody can receive. Every product surveyed defaults self-host to this.
 	if !s.policy.RequireEmailVerification || !s.mailDelivers {
 		u, err := s.createAccount(ctx, data.Email, passwordHash, SignupAttribution{
-			ReferralCode: data.ReferralCode,
-			Invite:       data.Invite,
-			Acquisition:  data.Acquisition,
+			Invite:      data.Invite,
+			Acquisition: data.Acquisition,
 		}, origin)
 		if err != nil {
 			return nil, err
@@ -99,7 +98,6 @@ func (s *authService) RegistrationStart(ctx context.Context, data *AuthData, ori
 		CodeHash:     codeHash,
 		PasswordHash: passwordHash,
 		Nonce:        nonce,
-		ReferralCode: data.ReferralCode,
 		Invite:       data.Invite,
 	}
 	// Held across the emailed code so the org created at confirm still knows
@@ -169,7 +167,7 @@ func (s *authService) RegistrationConfirm(ctx context.Context, data *ConfirmData
 		return nil, errx.ErrSession
 	}
 
-	attr := SignupAttribution{ReferralCode: sess.ReferralCode, Invite: sess.Invite}
+	attr := SignupAttribution{Invite: sess.Invite}
 	if sess.Acquisition != nil {
 		attr.Acquisition = *sess.Acquisition
 	}

@@ -42,7 +42,7 @@ export interface FeatureAccess {
     status?: Subscription["status"];
     plan: PlanID;
     /** False on a deployment running without a billing provider: every gate
-     *  below is open and billing/referral surfaces do not apply. */
+     *  below is open and billing surfaces do not apply. */
     billing: boolean;
     /** Active subscription on any paid tier, the Warmup plan included. */
     paid: boolean;

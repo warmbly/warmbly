@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The plan you are on and what it includes, usage against what the server
-/// enforces, AI credits and the referral code. Read only: the app sells nothing.
+/// enforces and AI credits. Read only: the app sells nothing.
 struct BillingView: View {
     @Environment(AppEnvironment.self) private var env
 
@@ -10,11 +10,9 @@ struct BillingView: View {
     @State private var usage: OrgUsageSnapshot?
     @State private var credits: CreditBalance?
     @State private var creditUsage: CreditUsage?
-    @State private var referral: ReferralSummary?
     @State private var loaded = false
     @State private var errorMessage: String?
     @State private var shown = false
-    @State private var copied = false
 
     var body: some View {
         Group {
@@ -50,9 +48,6 @@ struct BillingView: View {
             usageSection
             if credits != nil || creditUsage != nil {
                 creditsSection
-            }
-            if referral?.code != nil {
-                referralSection
             }
         }
         .refreshable { await load() }
@@ -493,97 +488,6 @@ struct BillingView: View {
         return parts.isEmpty ? nil : parts.joined(separator: ". ") + "."
     }
 
-    // MARK: Referral
-
-    private var referralSection: some View {
-        let percent = referral?.inviteePercentOff ?? 0
-        let months = referral?.inviteeMonths ?? 0
-        let code = referral?.code ?? ""
-        return VStack(alignment: .leading, spacing: 8) {
-            EyebrowLabel("Invite a team")
-                .padding(.leading, 16)
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .top, spacing: 14) {
-                    SettingsIcon(symbol: "gift.fill", color: SettingsPalette.billing, size: 40)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Give \(percent)% off, earn a month")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(WTheme.ink)
-                        Text("Teams that join with your code get \(percent)% off for \(months) \(months == 1 ? "month" : "months"). When they upgrade, a month of their plan comes off your invoices.")
-                            .font(.system(size: 14))
-                            .foregroundStyle(WTheme.inkSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                HStack(spacing: 10) {
-                    Button {
-                        UIPasteboard.general.string = code
-                        UINotificationFeedbackGenerator().notificationOccurred(.success)
-                        withAnimation(.snappy) { copied = true }
-                        Task {
-                            try? await Task.sleep(for: .seconds(1.6))
-                            withAnimation(.snappy) { copied = false }
-                        }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Text(code)
-                                .font(.system(size: 16, weight: .semibold, design: .monospaced))
-                                .tracking(1.5)
-                                .foregroundStyle(WTheme.ink)
-                            Spacer(minLength: 4)
-                            Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(copied ? WTheme.positive : WTheme.inkSecondary)
-                                .contentTransition(.symbolEffect(.replace))
-                        }
-                        .padding(.horizontal, 14)
-                        .frame(height: 44)
-                        .background(WTheme.fill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(copied ? "Code copied" : "Copy code \(code)")
-                    if let link = referral?.shareURL.flatMap(URL.init(string:)) {
-                        ShareLink(item: link, message: Text("Try Warmbly with \(percent)% off your first \(months) months.")) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "square.and.arrow.up")
-                                    .font(.system(size: 13, weight: .semibold))
-                                Text("Share")
-                                    .font(.system(size: 15, weight: .semibold))
-                            }
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 16)
-                            .frame(height: 44)
-                            .background(WTheme.accent, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        }
-                    }
-                }
-                .padding(.top, 16)
-                if let referred = referral?.totalReferred, referred > 0 {
-                    Hairline().padding(.top, 16)
-                    HStack {
-                        Text("\(referred) \(referred == 1 ? "team" : "teams") referred")
-                        Spacer()
-                        Text("\(earnedText) earned")
-                            .monospacedDigit()
-                    }
-                    .font(.system(size: 14))
-                    .foregroundStyle(WTheme.inkSecondary)
-                    .padding(.top, 12)
-                }
-            }
-            .padding(16)
-            .background(WTheme.groupedCard)
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        }
-        .reveal(shown, 4)
-    }
-
-    private var earnedText: String {
-        let cents = referral?.lifetimeEarnedCents ?? 0
-        let currency = (referral?.currency ?? "usd").uppercased()
-        return (Double(cents) / 100).formatted(.currency(code: currency).precision(.fractionLength(0)))
-    }
-
     // MARK: Derived
 
     private var planName: String {
@@ -658,16 +562,14 @@ struct BillingView: View {
             async let lim: OrgUsageSnapshot = env.api.get("organization/current/limits")
             async let bal: CreditBalance = env.api.get("subscription/credits")
             async let use: CreditUsage = env.api.get("subscription/credits/usage")
-            async let ref: ReferralSummary = env.api.get("subscription/referral")
             let subscription = try await sub
-            let fresh = (try? await tr, try? await lim, try? await bal, try? await use, try? await ref)
+            let fresh = (try? await tr, try? await lim, try? await bal, try? await use)
             withAnimation(.snappy) {
                 self.subscription = subscription
                 trial = fresh.0
                 usage = fresh.1 ?? usage
                 credits = fresh.2
                 creditUsage = fresh.3
-                referral = fresh.4
             }
         } catch {
             errorMessage = (error as? APIError)?.errorDescription ?? error.localizedDescription
