@@ -3,7 +3,7 @@ DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM send_recovery_resolutions
                WHERE previous_reason = 'domain_auth' OR evidence_type IN ('hold_probe', 'operator_resumed', 'domain_auth_passing')) THEN
-        RAISE EXCEPTION 'send_recovery_resolutions holds releases recorded after 000366; roll forward instead of downgrading past it';
+        RAISE EXCEPTION 'send_recovery_resolutions holds releases recorded after 000367; roll forward instead of downgrading past it';
     END IF;
 END $$;
 

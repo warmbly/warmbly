@@ -25,7 +25,7 @@ const RestrictedReadPermissions = PermViewCampaigns | PermViewAnalytics | PermAc
 // ScopeActionPermissions are what a role that acts in scope lets a restricted member use inside their grants.
 const ScopeActionPermissions = RestrictedReadPermissions | PermManageCampaigns | PermSendCampaigns
 
-// RestrictedPermissionMask is the most a restricted member can hold; migration 000365's trigger holds the same values.
+// RestrictedPermissionMask is the most a restricted member can hold; migration 000366's trigger holds the same values.
 const RestrictedPermissionMask = RestrictedReadPermissions | ScopeActionPermissions
 
 // MaxAccessGrants bounds each grant list on one member.

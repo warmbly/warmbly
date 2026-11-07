@@ -9,15 +9,15 @@ import (
 	"github.com/google/uuid"
 )
 
-// The trigger in migration 000365 masks with literals; they have to be these masks.
+// The trigger in migration 000366 masks with literals; they have to be these masks.
 func TestRestrictedPermissionMaskMatchesTheTrigger(t *testing.T) {
-	sql, err := os.ReadFile("../infrastructure/db/migrations/000365_restricted_member_role_actions.up.sql")
+	sql, err := os.ReadFile("../infrastructure/db/migrations/000366_restricted_member_role_actions.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := fmt.Sprintf("NEW.permissions & (%d | (%d & ", uint16(RestrictedReadPermissions), uint16(ScopeActionPermissions))
 	if !strings.Contains(string(sql), want) {
-		t.Fatalf("migration 000365 does not mask with %q", want)
+		t.Fatalf("migration 000366 does not mask with %q", want)
 	}
 	if RestrictedPermissionMask != ScopeActionPermissions || RestrictedReadPermissions&^ScopeActionPermissions != 0 {
 		t.Fatal("the read permissions must sit inside the scope action permissions")
