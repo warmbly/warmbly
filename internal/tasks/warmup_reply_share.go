@@ -15,8 +15,8 @@ import (
 const owedReplyCandidates = 8
 
 // owedWarmupReply makes a claimed plain send the reply to received warmup mail
-// when the mailbox's reply share is behind its setting, answering recovering
-// senders first. Nil leaves the send a new thread.
+// at the mailbox's reply chance, answering recovering senders first, then the
+// deepest conversation. Nil leaves the send a new thread.
 func (s *tasksService) owedWarmupReply(ctx context.Context, taskID uuid.UUID, account *Email, poolType string) *Email {
 	if account == nil || account.WarmupReplyRate <= 0 || !account.IsWarmingActive() {
 		return nil
@@ -26,7 +26,7 @@ func (s *tasksService) owedWarmupReply(ctx context.Context, taskID uuid.UUID, ac
 		return nil
 	}
 	sent, replied, err := share.WarmupReplyShare(ctx, account.ID)
-	if err != nil || !warmupramp.ReplyDue(warmupramp.ReplyDeficit(account.WarmupReplyRate, sent, replied), rand.Float64()) {
+	if err != nil || rand.Float64() >= warmupramp.ReplyChance(account.WarmupReplyRate, sent, replied) {
 		return nil
 	}
 	excluded := repository.WarmupReplyExclusions{}
@@ -43,7 +43,7 @@ func (s *tasksService) owedWarmupReply(ctx context.Context, taskID uuid.UUID, ac
 			}
 			partner, checked := partners[o.SenderID]
 			if !checked {
-				partner = s.replyPartner(ctx, taskID, o.SenderID, account, poolType)
+				partner = s.replyPartner(ctx, o.SenderID, account, poolType)
 				partners[o.SenderID] = partner
 				if partner == nil {
 					excluded.Senders = append(excluded.Senders, o.SenderID)

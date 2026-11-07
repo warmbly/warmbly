@@ -21,6 +21,7 @@ type Client struct {
 
 	srv       *gmail.Service
 	rawClient *http.Client
+	tokens    oauth2.TokenSource
 	Cache     *cache.Cache
 
 	// sentLabelStuck records that this mailbox's Gmail refused to remove the
@@ -66,6 +67,7 @@ func (c *Client) Init(ctx context.Context, token *oauth2.Token, cfg oauth2.Confi
 func (c *Client) InitWithSource(ctx context.Context, ts oauth2.TokenSource) *errx.MailError {
 	httpClient := stoken.HTTPClient(ctx, ts)
 	c.rawClient = httpClient
+	c.tokens = ts
 	var err error
 	c.srv, err = gmail.NewService(ctx, option.WithHTTPClient(httpClient))
 	if err != nil {
@@ -73,4 +75,9 @@ func (c *Client) InitWithSource(ctx context.Context, ts oauth2.TokenSource) *err
 	}
 
 	return nil
+}
+
+// TokenSource is the mailbox's own token source, shared so an IMAP session refreshes and persists through the same one.
+func (c *Client) TokenSource() oauth2.TokenSource {
+	return c.tokens
 }

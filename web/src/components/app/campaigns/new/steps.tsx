@@ -40,6 +40,7 @@ import {
     newEmail,
     plural,
     scheduledDate,
+    stopRulePhrase,
     trackingSummary,
     writtenEmails,
     type Draft,
@@ -311,6 +312,8 @@ function EmailsEditor({
         setSelected(1);
     };
     const totalDays = draft.emails.slice(1).reduce((n, e) => n + Math.max(0, e.wait_after), 0);
+    const stopsFor = stopRulePhrase(draft, "replies", "books a meeting");
+    const notYet = stopRulePhrase(draft, "replied", "booked a meeting");
 
     return (
         <div>
@@ -385,7 +388,7 @@ function EmailsEditor({
                 {draft.emails.length > 1 && (
                     <p className="mt-2 ml-1 text-[11px] text-slate-400">
                         {plural(draft.emails.length, "email")} over {plural(totalDays, "day")}
-                        {draft.stopOnReply ? ", stopping for anyone who replies." : "."}
+                        {stopsFor ? `, stopping for anyone who ${stopsFor}.` : "."}
                     </p>
                 )}
             </div>
@@ -402,7 +405,7 @@ function EmailsEditor({
                     />
                     <span>
                         day{email.wait_after === 1 ? "" : "s"} after the previous email
-                        {draft.stopOnReply ? ", if they have not replied" : ""}.
+                        {notYet ? `, if they have not ${notYet}` : ""}.
                     </span>
                     <button
                         type="button"
@@ -596,6 +599,12 @@ export function ScheduleStep({
                                         description="End the follow-ups for a lead once they respond."
                                         value={draft.stopOnReply}
                                         onChange={(v) => patch({ stopOnReply: v })}
+                                    />
+                                    <SwitchRow
+                                        label="Stop on meeting booked"
+                                        description="End the follow-ups for a lead once they book a meeting, even without a reply."
+                                        value={draft.stopOnMeeting}
+                                        onChange={(v) => patch({ stopOnMeeting: v })}
                                     />
                                     <SwitchRow
                                         label="Track opens"

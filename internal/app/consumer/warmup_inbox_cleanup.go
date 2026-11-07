@@ -13,6 +13,7 @@ import (
 	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/arrivaldiag"
+	"github.com/warmbly/warmbly/internal/repository"
 )
 
 // StartWarmupInboxCleanup repairs old leaks in bounded passes, retrying verification failures per mailbox.
@@ -291,13 +292,22 @@ func (s *JobsService) retryPendingWarmupVerification(ctx context.Context) error 
 	if err != nil {
 		return err
 	}
-	var failures []error
+	var failures, waiting []error
 	for _, e := range events {
-		if err := s.UniboxRepository.ProcessPendingWarmupVerification(ctx, e.Message.ID, func(current *models.JobEventNewEmail) error {
+		err := s.UniboxRepository.ProcessPendingWarmupVerification(ctx, e.Message.ID, func(current *models.JobEventNewEmail) error {
 			return s.ingestNewEmail(ctx, current)
-		}); err != nil {
+		})
+		switch {
+		case err == nil:
+		case errors.Is(err, repository.ErrWarmupDeliveryPending):
+			// The hold this loop exists for: the send's provider id is not recorded yet, so the lease brings it back.
+			waiting = append(waiting, err)
+		default:
 			failures = append(failures, err)
 		}
+	}
+	if len(failures) == 0 {
+		return jobrun.Quiet(errors.Join(waiting...))
 	}
 	return errors.Join(failures...)
 }

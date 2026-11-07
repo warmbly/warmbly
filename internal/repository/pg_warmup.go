@@ -325,6 +325,8 @@ type warmupRepository struct {
 	db           *pgxpool.Pool
 	receiptOnce  sync.Once
 	receiptSlots chan struct{}
+	// sessionLocks is set behind a transaction pooler; see UseSessionLocks.
+	sessionLocks *pgxpool.Pool
 	// partnerWeeks7d is nil in tests that build the struct directly, which
 	// then read every candidate's counts exactly.
 	partnerWeeks7d *partnerWeekCache
@@ -890,9 +892,12 @@ func (r *warmupRepository) ListParticipantHealth(ctx context.Context) ([]models.
 	return out, rows.Err()
 }
 
+// Bounces here are hard bounces: one recorded as a full mailbox, a block or a
+// temporary failure is not about the address and stays out of the rate.
 const healthFeedbackCountsSQL = `SELECT
 	COUNT(*) FILTER (WHERE de.event_type = 'complaint') AS complaints,
-	COUNT(*) FILTER (WHERE de.event_type = 'bounce') AS bounces
+	COUNT(*) FILTER (WHERE de.event_type = 'bounce'
+		AND COALESCE(de.metadata->>'bounce_cause', '') NOT IN ('mailbox_full', 'reputation_block', 'transient')) AS bounces
 	FROM deliverability_events de JOIN tasks t ON t.id = de.task_id
 	WHERE t.email_account_id = $1 AND de.created_at >= $3 AND de.event_type IN ('complaint', 'bounce')`
 
@@ -1576,8 +1581,8 @@ func (r *warmupRepository) GetOrCreateDailyStats(ctx context.Context, accountID 
 // CreateWarmupToken creates a warmup verification token
 func (r *warmupRepository) CreateWarmupToken(ctx context.Context, token *models.WarmupToken) error {
 	query := `
-		INSERT INTO warmup_tokens (token, task_id, sender_account_id, recipient_account_id, conversation_theme, content_source, conversation_id, conversation_turn, subject, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO warmup_tokens (token, task_id, sender_account_id, recipient_account_id, conversation_theme, content_source, conversation_id, conversation_turn, subject, expires_at, sequence_id, variant_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`
 	_, err := resultDB(ctx, r.db).Exec(ctx, query,
 		token.Token,
@@ -1590,6 +1595,8 @@ func (r *warmupRepository) CreateWarmupToken(ctx context.Context, token *models.
 		token.ConversationTurn,
 		token.Subject,
 		token.ExpiresAt,
+		token.SequenceID,
+		token.VariantID,
 	)
 	return err
 }
@@ -1616,7 +1623,18 @@ type WarmupReceiptProcessor interface {
 
 var ErrWarmupReceiptBusy = errors.New("warmup receipt is already being processed")
 
+// WarmupSessionLocker moves receipt locks onto direct sessions when the pool is a transaction pooler.
+type WarmupSessionLocker interface {
+	UseSessionLocks(*pgxpool.Pool)
+}
+
+// UseSessionLocks holds each receipt's lock on a direct connection from locks instead of a pooled transaction.
+func (r *warmupRepository) UseSessionLocks(locks *pgxpool.Pool) { r.sessionLocks = locks }
+
 func (r *warmupRepository) ProcessWarmupReceipt(ctx context.Context, tokenID, recipient uuid.UUID, proof WarmupReceiptProof, accept func(*models.WarmupToken) error) (bool, error) {
+	if r.sessionLocks != nil {
+		return r.processReceiptUnderSessionLock(ctx, tokenID, recipient, proof, accept)
+	}
 	if r.db.Config().MaxConns < 2 {
 		return false, errors.New("warmup receipt processing requires at least two database connections")
 	}
@@ -1641,7 +1659,44 @@ func (r *warmupRepository) ProcessWarmupReceipt(ctx context.Context, tokenID, re
 	if !locked {
 		return false, ErrWarmupReceiptBusy
 	}
-	token, err := scanWarmupToken(tx.QueryRow(ctx, `SELECT `+warmupTokenColumns+` FROM warmup_tokens wt
+	return r.acceptReceipt(ctx, tx, tokenID, recipient, proof, accept)
+}
+
+// processReceiptUnderSessionLock takes the same advisory key as the transaction path, so the two exclude each other
+// during a rolling deploy, but on a direct session: a pooler connection is never held while acceptance needs another.
+func (r *warmupRepository) processReceiptUnderSessionLock(ctx context.Context, tokenID, recipient uuid.UUID, proof WarmupReceiptProof, accept func(*models.WarmupToken) error) (bool, error) {
+	conn, err := r.sessionLocks.Acquire(ctx)
+	if err != nil {
+		return false, err
+	}
+	var locked bool
+	if err := conn.QueryRow(ctx, `SELECT pg_try_advisory_lock(hashtext('warmup_receipt_' || $1::text))`, tokenID).Scan(&locked); err != nil {
+		// The session's state is unknown, and closing it drops any lock it took.
+		_ = conn.Hijack().Close(context.WithoutCancel(ctx))
+		return false, err
+	}
+	if !locked {
+		conn.Release()
+		return false, ErrWarmupReceiptBusy
+	}
+	defer func() {
+		unlockCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		var released bool
+		if err := conn.QueryRow(unlockCtx, `SELECT pg_advisory_unlock(hashtext('warmup_receipt_' || $1::text))`, tokenID).Scan(&released); err != nil || !released {
+			_ = conn.Hijack().Close(unlockCtx)
+			return
+		}
+		conn.Release()
+	}()
+	return r.acceptReceipt(ctx, r.db, tokenID, recipient, proof, accept)
+}
+
+// acceptReceipt decides a receipt while its lock is held and runs acceptance when the token still applies.
+func (r *warmupRepository) acceptReceipt(ctx context.Context, q interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}, tokenID, recipient uuid.UUID, proof WarmupReceiptProof, accept func(*models.WarmupToken) error) (bool, error) {
+	token, err := scanWarmupToken(q.QueryRow(ctx, `SELECT `+warmupTokenColumns+` FROM warmup_tokens wt
 		WHERE wt.token=$1 AND wt.recipient_account_id=$2
 		AND EXISTS(SELECT 1 FROM email_accounts sender WHERE sender.id=wt.sender_account_id AND lower(sender.email)=lower($3))`,
 		tokenID, recipient, strings.TrimSpace(proof.SenderAddress)))
@@ -1651,18 +1706,23 @@ func (r *warmupRepository) ProcessWarmupReceipt(ctx context.Context, tokenID, re
 	if token.ConsumedAt != nil || !token.ExpiresAt.After(time.Now()) {
 		return true, nil
 	}
-	var lineage, awaitingSend, retired bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM warmup_tasks WHERE task_id=$1 AND lineage_version=1),
+	var lineage, awaitingSend, retired, settled bool
+	if err = q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM warmup_tasks WHERE task_id=$1 AND lineage_version=1),
 		EXISTS(SELECT 1 FROM warmup_tasks w JOIN tasks sent ON sent.id=w.task_id
 		WHERE w.task_id=$1 AND w.lineage_version=1 AND (sent.status<>'completed' OR $2='')),
 		EXISTS(SELECT 1 FROM warmup_tokens WHERE token=$3 AND sent_retired_at IS NOT NULL)
-		OR EXISTS(SELECT 1 FROM tasks WHERE id=$1 AND warmup_send_retired_at IS NOT NULL)`, token.TaskID, token.SentMessageID, token.Token).Scan(&lineage, &awaitingSend, &retired); err != nil {
+		OR EXISTS(SELECT 1 FROM tasks WHERE id=$1 AND warmup_send_retired_at IS NOT NULL),
+		EXISTS(SELECT 1 FROM tasks WHERE id=$1 AND status IN ('failed','cancelled'))`, token.TaskID, token.SentMessageID, token.Token).Scan(&lineage, &awaitingSend, &retired, &settled); err != nil {
 		return false, err
 	}
 	if retired {
 		return true, nil
 	}
 	if awaitingSend {
+		if settled {
+			// A failed or cancelled send is never confirmed later, so it gets now what expiry would give it.
+			return true, nil
+		}
 		return false, ErrWarmupDeliveryPending
 	}
 	if lineage && (strings.Trim(proof.MessageID, "<> \t") == "" ||

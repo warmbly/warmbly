@@ -359,7 +359,7 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 	// STEP 7: Draw content neither mailbox has seen recently; only a database failure retries.
 	if !shouldReply {
 		var contentErr error
-		content, contentErr = s.pickNewWarmupContent(ctx, *account, partner.ID, taskID)
+		content, contentErr = s.pickNewWarmupContent(ctx, *account, partner, taskID)
 		if contentErr != nil {
 			if !errors.Is(contentErr, errWarmupContentUnavailable) {
 				errs.CaptureException(contentErr)
@@ -395,6 +395,8 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 		ContentSource:      contentSource,
 		ConversationID:     conversationID,
 		ConversationTurn:   conversationTurn,
+		SequenceID:         content.sequenceID,
+		VariantID:          content.variantID,
 		// The recipient falls back to matching on the subject when the verify
 		// header does not survive delivery (Graph strips it).
 		Subject:   subject,
@@ -419,18 +421,19 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 
 	// STEP 10: Send warmup email to worker via Kafka
 	emailMsg := EmailMessage{
-		From:        account.Email,
-		To:          []string{partner.Email},
-		Subject:     subject,
-		BodyHTML:    "", // Warmup emails are plaintext only
-		BodyPlain:   emailBody,
-		InReplyTo:   inReplyTo,
-		References:  references,
-		ThreadID:    threadID,
-		MessageID:   messageID,
-		IsWarmup:    true,
-		Tracking:    nil, // No tracking for warmup
-		WarmupToken: warmupTokenStr,
+		From:           account.Email,
+		To:             []string{partner.Email},
+		Subject:        subject,
+		BodyHTML:       content.bodyHTML, // only campaign copy carries HTML
+		BodyPlain:      emailBody,
+		UnsubscribeURL: content.unsubscribeURL,
+		InReplyTo:      inReplyTo,
+		References:     references,
+		ThreadID:       threadID,
+		MessageID:      messageID,
+		IsWarmup:       true,
+		Tracking:       content.tracking, // campaign copy keeps its campaign's tracking
+		WarmupToken:    warmupTokenStr,
 	}
 
 	if err := s.validateWarmupPair(ctx, account, partner, poolType, shouldReply); err != nil {
@@ -1137,6 +1140,10 @@ func (s *tasksService) publishWarmupEmailSentEvent(ctx context.Context, task *Ta
 		}
 	}
 
+	if s.streamingPublisher != nil && account != nil && account.OrganizationID != nil {
+		s.streamingPublisher.PublishWarmupActivity(ctx, account.OrganizationID.String(), account.UserID, account.ID.String(), account.Email)
+	}
+
 	if s.advanced != nil && account != nil && account.OrganizationID != nil {
 		s.advanced.EmitCampaignEvent(ctx, *account.OrganizationID, models.WebhookEventWarmupEmailSent, map[string]any{
 			"email_account_id": account.ID.String(),
@@ -1173,11 +1180,11 @@ func (s *tasksService) directedWarmupPartner(ctx context.Context, taskID uuid.UU
 	if err != nil || warmupTask == nil || warmupTask.TargetAccountID == nil {
 		return nil
 	}
-	return s.replyPartner(ctx, taskID, *warmupTask.TargetAccountID, account, poolType)
+	return s.replyPartner(ctx, *warmupTask.TargetAccountID, account, poolType)
 }
 
 // replyPartner is target when this mailbox may answer it now, or nil.
-func (s *tasksService) replyPartner(ctx context.Context, taskID, target uuid.UUID, account *Email, poolType string) *Email {
+func (s *tasksService) replyPartner(ctx context.Context, target uuid.UUID, account *Email, poolType string) *Email {
 	if s.warmupHealth != nil {
 		ok, reason, herr := s.warmupHealth.CanParticipate(ctx, target, poolType)
 		if herr != nil {
@@ -1208,15 +1215,6 @@ func (s *tasksService) replyPartner(ctx context.Context, taskID, target uuid.UUI
 	// too; the thread exists because the other side started it (#501).
 	if rules := s.warmupRoutingRules(ctx, account, poolType); len(rules) > 0 {
 		if routingMultiplier(rules, account.Email, partner.Email) <= 0 {
-			return nil
-		}
-	}
-	// A reply holds the mailbox's only warmup task, so one to a full inbox ends the thread rather than waiting on the reservation's refusal.
-	if room, ok := s.warmupRepo.(interface {
-		WarmupInboxHasRoom(context.Context, uuid.UUID, string) (bool, error)
-	}); ok {
-		if has, err := room.WarmupInboxHasRoom(ctx, partner.ID, poolType); err == nil && !has {
-			log.Info().Str("task_id", taskID.String()).Str("email_account_id", account.ID.String()).Msg("warmup reply closed: the recipient's inbox is full today")
 			return nil
 		}
 	}

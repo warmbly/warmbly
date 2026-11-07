@@ -231,6 +231,16 @@ func (h *Handler) GetUniboxIncoming(c *gin.Context) {
 		collectAccountIDs(v)
 	}
 
+	// Mailbox-tag filter: tag_ids=<uuid>,<uuid>, resolved against the
+	// workspace's tags in SQL. Invalid UUIDs are dropped like email_ids.
+	if v := c.Query("tag_ids"); v != "" {
+		for _, s := range strings.Split(v, ",") {
+			if id, err := uuid.Parse(strings.TrimSpace(s)); err == nil {
+				params.TagIDs = append(params.TagIDs, id)
+			}
+		}
+	}
+
 	// Uncategorized: threads carrying no conversation labels at all.
 	if c.Query("uncategorized") == "true" {
 		v := true
@@ -485,7 +495,7 @@ func (h *Handler) UniboxMarkSeen(c *gin.Context) {
 	}
 
 	if data.Folder != "" && len(restrictedMailboxes(c)) > 0 {
-		errx.Handle(c, errx.New(errx.Forbidden, "an API key limited to specific mailboxes cannot mark a whole folder; name the messages or threads"))
+		errx.Handle(c, errx.New(errx.Forbidden, "a caller limited to specific mailboxes cannot mark a whole folder; name the messages or threads"))
 		return
 	}
 	if xerr := h.uniboxMessagesAllowed(c, *orgID, data.EmailIDs, data.ThreadIDs); xerr != nil {
@@ -630,6 +640,19 @@ func (h *Handler) UniboxReply(c *gin.Context) {
 	if xerr := mailboxAllowed(c, accountID); xerr != nil {
 		errx.Handle(c, xerr)
 		return
+	}
+	// A restricted member answers a conversation held in their mailboxes; a new conversation is not a reply.
+	if middleware.IsScopeRestricted(c) && req.ForwardMessageID == "" {
+		if xerr := h.restrictedThreadHeld(c, *orgID, req.ThreadID); xerr != nil {
+			errx.Handle(c, xerr)
+			return
+		}
+	}
+	if req.ThreadID != "" {
+		if xerr := h.uniboxMessagesAllowed(c, *orgID, nil, []string{req.ThreadID}); xerr != nil {
+			errx.Handle(c, xerr)
+			return
+		}
 	}
 
 	var forward *models.ForwardedMessage

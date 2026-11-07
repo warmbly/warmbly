@@ -49,7 +49,7 @@ export default function SubscriptionLockedScreen({ feature }: { feature: string 
             >
                 <div className="px-7 pt-8 pb-6 md:px-10 md:pt-10 text-center">
                     <span className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full bg-sky-50 text-sky-700 text-[11px] font-medium">
-                        <SparklesIcon className="w-3 h-3" /> {warmupOnly ? `${warmupLabel} plan` : keptFree ? "Free plan" : "No plan yet"}
+                        <SparklesIcon className="w-3 h-3" /> {warmupOnly ? `${warmupLabel} plan` : keptFree ? "Free plan" : access.trialEnded ? "Trial ended" : "No plan yet"}
                     </span>
                     <h1 className="mt-4 text-[26px] md:text-[34px] font-semibold tracking-[-0.03em] leading-[1.08] text-slate-900">
                         {feature} unlocks with a plan.
@@ -59,6 +59,8 @@ export default function SubscriptionLockedScreen({ feature }: { feature: string 
                             ? `Your ${warmupLabel} plan covers warming your mailboxes. Sending needs a plan that includes it, and every one of those keeps the premium pool.`
                             : keptFree
                             ? "Your workspace keeps its free plan for warming mailboxes. Pick a plan when you are ready to send from it."
+                            : access.trialEnded
+                            ? "Your trial has ended, so sending and warmup are paused. Your mailboxes, contacts and campaigns are kept, and warmup picks up where it stopped when you choose a plan."
                             : "Look around as long as you like. Connecting and warming mailboxes starts with a plan."}
                     </p>
                 </div>

@@ -2,8 +2,8 @@ import type { WriteRequest, WriteResponse } from "@/lib/api/models/app/generatio
 import Request from "../../Request";
 
 // POST /generation/write — drafts email copy from a prompt. Returns a 402 when
-// the org is out of generation credits; that surfaces as an AppError with
-// status 402 (handled at the call site with a friendly toast).
+// the workspace balance is too low; that surfaces as an AppError with status
+// 402, and the call site opens the add-money dialog.
 export default async function write(body: WriteRequest): Promise<WriteResponse> {
     return await Request<WriteResponse>({
         method: "POST",

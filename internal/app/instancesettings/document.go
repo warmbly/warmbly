@@ -193,6 +193,13 @@ type Deliverability struct {
 	AuthGraceHours int `json:"auth_grace_hours"`
 }
 
+// MailboxSignin holds how mailboxes change the way they sign in.
+type MailboxSignin struct {
+	// AutoVendorReconnect has an inbox vendor that can sign in for Warmbly reconnect its Google mailboxes
+	// that lack full mail access, with no click. Off leaves the reconnect to a member.
+	AutoVendorReconnect bool `json:"auto_vendor_reconnect"`
+}
+
 // Placement holds the inbox placement test knobs.
 type Placement struct {
 	// TestsPerMonthTrial and TestsPerMonthPaid are how many tests one workspace
@@ -303,6 +310,8 @@ type Document struct {
 	Deliverability Deliverability `json:"deliverability"`
 	Placement      Placement      `json:"placement"`
 	Notifications  Notifications  `json:"notifications"`
+	MailboxSignin  MailboxSignin  `json:"mailbox_signin"`
+	Usage          Usage          `json:"usage"`
 }
 
 // Defaults is the document a fresh instance behaves as if it had.
@@ -320,6 +329,8 @@ func Defaults() Document {
 		Tracking:       DefaultTracking(),
 		Deliverability: DefaultDeliverability(),
 		Placement:      DefaultPlacement(),
+		MailboxSignin:  MailboxSignin{AutoVendorReconnect: true},
+		Usage:          DefaultUsage(),
 	}
 }
 
@@ -413,6 +424,7 @@ func (d *Document) Normalize() {
 	d.Deliverability.Normalize()
 	d.Placement.Normalize()
 	d.Notifications.Normalize()
+	d.Usage.Normalize()
 }
 
 // Normalize clamps the grace window. Zero and negative resolve to the compiled
@@ -513,6 +525,15 @@ type Patch struct {
 	Notifications *struct {
 		Channels *[]NotifyChannel `json:"channels"`
 	} `json:"notifications"`
+	MailboxSignin *struct {
+		AutoVendorReconnect *bool `json:"auto_vendor_reconnect"`
+	} `json:"mailbox_signin"`
+	// Models and Units replace the whole list or map when present.
+	Usage *struct {
+		MarkupPercent *int                `json:"markup_percent"`
+		Models        *[]ModelPrice       `json:"models"`
+		Units         *map[string]float64 `json:"units"`
+	} `json:"usage"`
 }
 
 // Apply merges a patch onto a document.
@@ -629,6 +650,24 @@ func (p Patch) Apply(doc Document) Document {
 	}
 	if p.Notifications != nil && p.Notifications.Channels != nil {
 		doc.Notifications.Channels = mergeChannels(doc.Notifications.Channels, *p.Notifications.Channels)
+	}
+	if p.MailboxSignin != nil && p.MailboxSignin.AutoVendorReconnect != nil {
+		doc.MailboxSignin.AutoVendorReconnect = *p.MailboxSignin.AutoVendorReconnect
+	}
+	if p.Usage != nil {
+		if p.Usage.MarkupPercent != nil {
+			v := *p.Usage.MarkupPercent
+			doc.Usage.MarkupPercent = &v
+		}
+		if p.Usage.Models != nil {
+			doc.Usage.Models = append([]ModelPrice(nil), (*p.Usage.Models)...)
+		}
+		if p.Usage.Units != nil {
+			doc.Usage.Units = map[string]float64{}
+			for k, v := range *p.Usage.Units {
+				doc.Usage.Units[k] = v
+			}
+		}
 	}
 	return doc
 }

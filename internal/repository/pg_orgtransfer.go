@@ -590,8 +590,11 @@ func importSendColumnValue(table, column string, indexed bool) string {
 	switch table {
 	case "email_accounts":
 		switch column {
-		case "send_recovery_hold", "send_recovery_task_id", "send_recovery_reason":
+		case "send_recovery_hold", "send_recovery_task_id", "send_recovery_reason", "send_recovery_probes", "send_recovery_probe_at":
 			return `CASE WHEN dest.send_recovery_hold THEN dest.` + quoteIdent(column) + ` ELSE ` + value + ` END`
+		case "send_cooldown_reason", "send_cooldown_strikes", "send_pause_detail":
+			// The pause details follow whichever pause end the row keeps.
+			return `CASE WHEN dest.send_cooldown_until>=COALESCE(EXCLUDED.send_cooldown_until,'-infinity'::timestamptz) THEN dest.` + quoteIdent(column) + ` ELSE ` + value + ` END`
 		case "send_cooldown_until":
 			return `GREATEST(dest.send_cooldown_until,` + value + `)`
 		case "send_cooldown_provider":

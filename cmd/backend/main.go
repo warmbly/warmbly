@@ -44,6 +44,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/appdirectory"
 	"github.com/warmbly/warmbly/internal/app/audit"
 	"github.com/warmbly/warmbly/internal/app/auth"
+	"github.com/warmbly/warmbly/internal/app/balance"
 	behaviorapp "github.com/warmbly/warmbly/internal/app/behavior"
 	"github.com/warmbly/warmbly/internal/app/bootstrap"
 	"github.com/warmbly/warmbly/internal/app/campaign"
@@ -55,7 +56,6 @@ import (
 	"github.com/warmbly/warmbly/internal/app/contact"
 	"github.com/warmbly/warmbly/internal/app/contactimport"
 	"github.com/warmbly/warmbly/internal/app/credits"
-	"github.com/warmbly/warmbly/internal/app/creditwatch"
 	"github.com/warmbly/warmbly/internal/app/crm"
 	"github.com/warmbly/warmbly/internal/app/crmmode"
 	"github.com/warmbly/warmbly/internal/app/customhost"
@@ -63,6 +63,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/dangerzone"
 	"github.com/warmbly/warmbly/internal/app/delegation"
 	"github.com/warmbly/warmbly/internal/app/discount"
+	"github.com/warmbly/warmbly/internal/app/edgehost"
 	"github.com/warmbly/warmbly/internal/app/email"
 	"github.com/warmbly/warmbly/internal/app/emailsend"
 	emailverifyapp "github.com/warmbly/warmbly/internal/app/emailverify"
@@ -82,6 +83,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/instancesettings"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/keystatus"
+	"github.com/warmbly/warmbly/internal/app/leadfinder"
 	"github.com/warmbly/warmbly/internal/app/leadsync"
 	"github.com/warmbly/warmbly/internal/app/mailboxavatar"
 	"github.com/warmbly/warmbly/internal/app/mailboximport"
@@ -159,6 +161,7 @@ import (
 	productanalytics "github.com/warmbly/warmbly/internal/observability/analytics"
 	"github.com/warmbly/warmbly/internal/pkg/appleauth"
 	"github.com/warmbly/warmbly/internal/pkg/captcha"
+	"github.com/warmbly/warmbly/internal/pkg/cfsaas"
 	"github.com/warmbly/warmbly/internal/pkg/domainproof"
 	"github.com/warmbly/warmbly/internal/pkg/emailverify"
 	"github.com/warmbly/warmbly/internal/pkg/encrypt"
@@ -243,6 +246,7 @@ func main() {
 	var creditRepository repository.CreditRepository
 	var aiSettingsRepository repository.AISettingsRepository
 	var creditService credits.CreditService
+	var balanceService *balance.Service
 	var aiDraftRepo repository.AIDraftRepository
 	var writingGenerator generation.WritingGenerator
 	var aiProvider generation.Provider
@@ -274,7 +278,6 @@ func main() {
 	var subscriptionService subscription.SubscriptionService
 	var stripeService stripe.StripeService
 	var discountService discount.DiscountService
-	var referralService referral.Service
 	var organizationService organization.OrganizationService
 	// Private plan offers and the credential-free Cloud warmup grant; selfExecutionGrants is shared with the pool link.
 	var planOfferService planoffer.Service
@@ -387,6 +390,7 @@ func main() {
 	var leadSyncServiceForHandler leadsync.Service
 	var salesforceServiceForHandler *salesforce.Service
 	var apolloServiceForHandler *apollo.Service
+	var leadFinderServiceForHandler *leadfinder.Service
 	var clayServiceForHandler *clay.Service
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -827,9 +831,9 @@ func main() {
 			writingGenerator = generation.NewAnthropicClient(aiKey)
 		}
 		creditRepository = repository.NewCreditRepository(primaryDB)
-		creditAutoTopUpAttemptRepository := repository.NewCreditAutoTopUpAttemptRepository(primaryDB)
+		savedCardChargeRepository := repository.NewSavedCardChargeRepository(primaryDB)
 		aiSettingsRepository = repository.NewAISettingsRepository(primaryDB)
-		creditService = credits.NewService(creditRepository, aiSettingsRepository, cache)
+		creditService = credits.NewService(creditRepository, aiSettingsRepository, instanceSettings, cache)
 		webhookRepository := repository.NewWebhookRepositorySealed(primaryDB.Pool, credEncrypter)
 		webhookService := webhook.NewService(webhookRepository)
 		webhookServiceForHandler = webhookService
@@ -884,7 +888,7 @@ func main() {
 		// Initialize new services for trial, feature gates, and worker assignment.
 		// The trial service seeds the free plan's monthly AI-credit allowance at
 		// trial start (planRepo + creditService, both already constructed above).
-		trialService = trial.NewService(subscriptionRepository, userRepostory, planRepository, creditService)
+		trialService = trial.NewService(subscriptionRepository, planRepository, creditService)
 		featureGateService = feature.NewService(subscriptionRepository, planRepository)
 		// An approved daily-send increase must raise what is enforced, not
 		// only what the dashboard shows.
@@ -924,7 +928,7 @@ func main() {
 				errs.CaptureFatal(err)
 				log.Fatal(err)
 			}
-			stripeService = stripe.NewService(stripeCfg, subscriptionRepository, planRepository, workerAssignmentService, discountService, creditAutoTopUpAttemptRepository)
+			stripeService = stripe.NewService(stripeCfg, subscriptionRepository, planRepository, workerAssignmentService, discountService, savedCardChargeRepository)
 		} else {
 			stripeService = stripe.NewDisabledService()
 		}
@@ -978,11 +982,13 @@ func main() {
 		// views refresh live via the spine.
 		stripeService.WireCredits(creditService, auditService)
 
-		// Credit watch: after every fresh debit it fires the low-balance alert
-		// (once per day) and, when enabled, buys the configured pack off-session
-		// (auto top-up). Runs detached so charges are never slowed.
-		creditWatch := creditwatch.New(aiSettingsRepository, creditRepository, cache, streamingPublisher, stripeService)
-		creditService.SetMonitor(creditWatch.OnBalanceChanged)
+		// Balance: after every fresh debit it sends the low and empty balance
+		// notices and starts an automatic reload on the saved card. Runs
+		// detached so charges are never slowed; a sweep resumes retries.
+		balanceService = balance.New(creditService, aiSettingsRepository, savedCardChargeRepository, subscriptionRepository,
+			stripeService, cache, streamingPublisher, nil, auditService)
+		creditService.SetMonitor(balanceService.OnBalanceChanged)
+		stripeService.WireBalance(balanceService)
 
 		authService = auth.NewService(
 			authRepostory,
@@ -1160,22 +1166,17 @@ func main() {
 			GoogleIOSClientID: authCfg.GoogleIOSClientID,
 		}
 
-		// Referral program. Wired bidirectionally with Stripe (webhooks reward and
-		// claw back; the earnings ledger nets onto the referrer's customer balance)
-		// and into auth so a signup carrying ?ref= is attributed to its referrer.
-		referralRepository := repository.NewReferralRepository(primaryDB.Pool)
-		referralService = referral.NewService(
-			referralRepository,
-			discountCodeRepository,
+		// Referrals already attributed are still rewarded and clawed back by the
+		// Stripe webhooks, onto the referrer's customer balance.
+		referralService := referral.NewService(
+			repository.NewReferralRepository(primaryDB.Pool),
 			planRepository,
 			subscriptionRepository,
 			userRepostory,
 			auditService,
-			os.Getenv("APP_URL"),
 		)
 		stripeService.WireReferral(referralService)
 		referralService.WireBalancer(stripeService)
-		authService.WireReferral(referralService)
 		var passkeyErr error
 		passkeyService, passkeyErr = passkey.New(passkey.Deps{
 			Repo:          webauthnRepository,
@@ -1837,6 +1838,9 @@ func main() {
 		}
 		notificationService.WirePush(pushSender, repository.NewDeviceTokenRepository(primaryDB.Pool), cache.Client)
 		advancedService.WireNotifier(notificationService)
+		if balanceService != nil {
+			balanceService.WireNotifier(notificationService)
+		}
 		// New-device sign-in alerts: the token service fires this on session
 		// creation from an unrecognized device, delivered as a security
 		// notification (in-app + email per the user's channels).
@@ -1969,6 +1973,11 @@ func main() {
 				Scopes: []string{"openid", "email"}, Endpoint: g.Endpoint,
 			}
 		}
+		var googleMailboxClientID string
+		// Named only when the client can complete a sign-in, so the dashboard offers no Google reconnect that cannot work.
+		if g := oauth2Cfg.InboxAuthorization.Google; g != nil && g.ClientSecret != "" {
+			googleMailboxClientID = g.ClientID
+		}
 		delegationService = delegation.NewService(delegation.Deps{
 			Repo:              repository.NewDomainGrantRepository(primaryDB),
 			Mailboxes:         emailService,
@@ -1980,6 +1989,8 @@ func main() {
 			MicrosoftRedirect: outlookApp.RedirectURL,
 			GoogleSignin:      googleSignin,
 			Prover:            domainProver,
+
+			GoogleMailboxClientID: googleMailboxClientID,
 		})
 		if w, ok := poolLinkService.(interface {
 			WireDelegation(poollink.DelegatedTokenBroker)
@@ -2002,6 +2013,7 @@ func main() {
 			Mailboxes: emailRepostory,
 			Reconnect: emailService,
 			Grants:    delegationService,
+			Consent:   emailService,
 			Cache:     cache,
 			NewClient: sandboxVendors,
 		})
@@ -2013,6 +2025,14 @@ func main() {
 		ownDomains.WireWebsites(repository.NewWebsiteDomainRepository(primaryDB), domainProver, nil)
 		sendingDomainService.WireOwnDomains(ownDomains)
 		sendingDomainService.WireCustomHosts(customHosts)
+		// Behind a Cloudflare for SaaS zone, every served customer name is registered there as it verifies.
+		if edge := cfsaas.New(cfsaas.Config{ZoneID: config.CloudflareSaaSZoneID(), APIToken: config.CloudflareSaaSAPIToken(), Origin: config.CloudflareSaaSOrigin()}); edge != nil {
+			edgeHosts := edgehost.New(repository.NewEdgeHostnameRepository(primaryDB.Pool), edge, func() []string {
+				return []string{config.TrackingHostname(), config.FormsHostname()}
+			})
+			sendingDomainService.WireEdge(edgeHosts)
+			go edgeHosts.Start(ctx)
+		}
 		// A linked self-hosted instance can have Warmbly Cloud serve a redirect instead.
 		sendingDomainService.WireCloud(cloudLinkService)
 		cloudLinkService.OnDisconnect(sendingDomainService.MarkCloudUnlinked)
@@ -2050,6 +2070,9 @@ func main() {
 			go mailboxAvatars.Start(ctx)
 		}
 		vendorConnService.SetImporter(mailboxImportService)
+		vendorConnService.WireSigninSwitch(auditService, func(ctx context.Context) bool {
+			return instanceSettings == nil || instanceSettings.AutoVendorReconnect(ctx)
+		})
 		sendingDomainService.WireVendors(vendorConnService)
 		go vendorConnService.StartReconnect(ctx)
 		go mailboxImportService.Start(ctx)
@@ -2113,6 +2136,9 @@ func main() {
 			trialExpirationJob.WireNotifier(notificationService)
 			trialScheduler := jobs.NewTrialExpirationScheduler(trialExpirationJob, 1*time.Hour)
 			go trialScheduler.Start(ctx)
+			if balanceService != nil {
+				go balanceService.Start(ctx)
+			}
 		}
 
 		// Local task dispatcher (TASKS_PROVIDER=local): the in-process poller
@@ -2194,6 +2220,7 @@ func main() {
 			emailNotificationService,
 			eventsPublisher,
 			os.Getenv("FRONTEND_BASE_URL"),
+			dangerZoneBilling(stripeService),
 		)
 		dangerZoneJob := jobs.NewDangerZoneJob(dangerZoneService)
 		dangerZoneScheduler := jobs.NewDangerZoneScheduler(dangerZoneJob, 1*time.Hour)
@@ -2296,6 +2323,29 @@ func main() {
 				Kicked: emailVerifyService.Kick,
 			})
 			go contactImportService.Run(ctx)
+		}
+		if contactService != nil {
+			// The lead finder's keyed providers read the workspace's own key first,
+			// then the operator's; OpenStreetMap needs none.
+			leadfinder.RegisterKeyChecks(integrationServiceForHandler)
+			leadFinderServiceForHandler = leadfinder.NewService(leadfinder.Deps{
+				Repo:         repository.NewLeadFinderRepository(primaryDB.Pool),
+				Integrations: integrationServiceForHandler,
+				Contacts:     contactService,
+				Verifier:     emailVerifyService,
+				Credits:      creditService,
+				Audit:        auditService,
+				Config: leadfinder.Config{
+					OverpassURL:   cfg.GetStringOptional(ctx, "LEAD_FINDER_OVERPASS_URL", "lead_finder/overpass_url", ""),
+					GeocoderURL:   cfg.GetStringOptional(ctx, "LEAD_FINDER_GEOCODER_URL", "lead_finder/geocoder_url", ""),
+					MapStyleLight: cfg.GetStringOptional(ctx, "LEAD_FINDER_MAP_STYLE_URL", "lead_finder/map_style_url", ""),
+					MapStyleDark:  cfg.GetStringOptional(ctx, "LEAD_FINDER_MAP_STYLE_DARK_URL", "lead_finder/map_style_dark_url", ""),
+					GoogleKey:     cfg.GetSecretOptional(ctx, "LEAD_FINDER_GOOGLE_PLACES_API_KEY", "lead_finder/google_places_api_key", ""),
+					FoursquareKey: cfg.GetSecretOptional(ctx, "LEAD_FINDER_FOURSQUARE_API_KEY", "lead_finder/foursquare_api_key", ""),
+					OutscraperKey: cfg.GetSecretOptional(ctx, "LEAD_FINDER_OUTSCRAPER_API_KEY", "lead_finder/outscraper_api_key", ""),
+				},
+			})
+			go jobrun.Loop(ctx, "lead_enrichment_runs", time.Minute, true, leadFinderServiceForHandler.RunPendingEnrichment)
 		}
 
 		// HubSpot as the workspace CRM: write-through for the CRM service, the
@@ -2567,7 +2617,6 @@ func main() {
 		SubscriptionService: subscriptionService,
 		StripeService:       stripeService,
 		DiscountService:     discountService,
-		ReferralService:     referralService,
 		PlanOfferService:    planOfferService,
 
 		// Trial & feature gates
@@ -2620,6 +2669,7 @@ func main() {
 
 		// AI writing assistant + credit ledger
 		CreditService:    creditService,
+		BalanceService:   balanceService,
 		WritingGenerator: writingGenerator,
 		AIProvider:       aiProvider,
 		TypeSafe:         typeSafeAsker(typeSafeClient),
@@ -2664,6 +2714,7 @@ func main() {
 		SalesforceService: salesforceServiceForHandler,
 		ApolloService:     apolloServiceForHandler,
 		ClayService:       clayServiceForHandler,
+		LeadFinderService: leadFinderServiceForHandler,
 
 		WebsocketURI: websocketURI,
 
@@ -2967,4 +3018,13 @@ func typeSafeAsker(c *typesafe.Client) typesafe.Asker {
 		return nil
 	}
 	return c
+}
+
+// dangerZoneBilling is the provider account deletion asks about owned
+// subscriptions, or nil when billing is off and the local record is the answer.
+func dangerZoneBilling(svc stripe.StripeService) dangerzone.BillingLookup {
+	if config.BillingProvider() != "stripe" {
+		return nil
+	}
+	return svc
 }

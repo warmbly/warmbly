@@ -288,6 +288,14 @@ func (h *Handler) UpdateCampaign(c *gin.Context) {
 		errx.JSON(c, errx.InvalidBody(err))
 		return
 	}
+	if xerr := restrictedCampaignUpdateAllowed(c, &data); xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	if xerr := h.restrictedPoolAllowed(c, *orgID, id); xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
 	if xerr := poolStrategyAllowed(c, data.SenderStrategy, data.EmailTags != nil); xerr != nil {
 		errx.JSON(c, xerr)
 		return
@@ -524,6 +532,10 @@ func (h *Handler) ListCampaignSenders(c *gin.Context) {
 var errPoolNeedsExplicitSenders = errx.NewWithIdentifier(errx.Forbidden, apiKeyMailboxLimited,
 	"This API key is limited to some mailboxes, so its campaigns must use an explicit sender list (sender_strategy \"explicit\") of those mailboxes.")
 
+// errMemberPoolNotGranted refuses a restricted member a start that would send from a mailbox outside their grants.
+var errMemberPoolNotGranted = errx.NewWithIdentifier(errx.Forbidden, middleware.MemberAccessRestricted,
+	"This campaign can only be started by you when every sender is one of the mailboxes shared with you, listed explicitly.")
+
 // poolStrategyAllowed refuses a tag-resolved pool to a mailbox-limited key.
 func poolStrategyAllowed(c *gin.Context, strategy *string, tagsChanged bool) *errx.Error {
 	if !keyMailboxLimited(c) {
@@ -540,12 +552,17 @@ func (h *Handler) campaignPoolAllowed(c *gin.Context, orgID uuid.UUID, id string
 	if !keyMailboxLimited(c) {
 		return nil
 	}
+	refused := errPoolNeedsExplicitSenders
+	if middleware.IsScopeRestricted(c) {
+		refused = errMemberPoolNotGranted
+	}
 	camp, xerr := h.CampaignService.Get(c.Request.Context(), orgID.String(), id)
 	if xerr != nil {
 		return xerr
 	}
-	if camp.SenderStrategy != "explicit" {
-		return errPoolNeedsExplicitSenders
+	// An explicit pool still sends from tag-resolved mailboxes, so a pool with tags is never fully known here.
+	if camp.SenderStrategy != "explicit" || len(camp.EmailTags) > 0 {
+		return refused
 	}
 	senders, xerr := h.CampaignService.ListCampaignSenders(c.Request.Context(), orgID, id)
 	if xerr != nil {
@@ -553,6 +570,9 @@ func (h *Handler) campaignPoolAllowed(c *gin.Context, orgID uuid.UUID, id string
 	}
 	for _, s := range senders {
 		if xerr := mailboxAllowed(c, s.EmailAccountID); xerr != nil {
+			if middleware.IsScopeRestricted(c) {
+				return refused
+			}
 			return xerr
 		}
 	}

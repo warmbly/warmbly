@@ -65,6 +65,7 @@ import {
     PopoverMenuSeparator,
 } from "@/components/ui/popover-menu";
 import { cn } from "@/lib/utils";
+import { useAccessRestricted } from "@/hooks/usePermission";
 import {
     bodyHasContent,
     bodyTooLong,
@@ -352,6 +353,8 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
     };
 
     const templatesQuery = useTemplates();
+    // Templates and booking links are workspace registries a restricted member does not reach.
+    const restricted = useAccessRestricted();
 
     // Scheduled-sends pending cap. Disable the Schedule button at 100%
     // so users cannot queue a send that would 429 server-side. Cached
@@ -1015,6 +1018,7 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
                 {/* Template picker. Custom rich rows (not
                     PopoverMenuItem) so each row can run two lines
                     without the wrapper truncating them. */}
+                {!restricted && (
                 <PopoverMenu
                     align="start"
                     side="top"
@@ -1041,13 +1045,16 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
                         />
                     </PopoverMenuContent>
                 </PopoverMenu>
+                )}
 
                 <HtmlModeToggle state={bodyState} disabled={aiDraft.phase !== "idle"} />
 
-                <InsertBookingLink
-                    email={to[0]}
-                    onInsert={(text) => setBodyValue((b) => capPlain(withText(b, text)))}
-                />
+                {!restricted && (
+                    <InsertBookingLink
+                        email={to[0]}
+                        onInsert={(text) => setBodyValue((b) => capPlain(withText(b, text)))}
+                    />
+                )}
 
                 <span
                     className={cn(

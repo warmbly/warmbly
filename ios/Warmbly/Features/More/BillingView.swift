@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// The plan you are on and what it includes, usage against what the server
-/// enforces, AI credits and the referral code. Read only: the app sells nothing.
+/// enforces and the AI balance. Read only: the app sells nothing, so adding
+/// money and automatic reload link out to the web.
 struct BillingView: View {
     @Environment(AppEnvironment.self) private var env
 
@@ -10,11 +11,10 @@ struct BillingView: View {
     @State private var usage: OrgUsageSnapshot?
     @State private var credits: CreditBalance?
     @State private var creditUsage: CreditUsage?
-    @State private var referral: ReferralSummary?
+    @State private var balanceInfo: BalanceInfo?
     @State private var loaded = false
     @State private var errorMessage: String?
     @State private var shown = false
-    @State private var copied = false
 
     var body: some View {
         Group {
@@ -50,9 +50,6 @@ struct BillingView: View {
             usageSection
             if credits != nil || creditUsage != nil {
                 creditsSection
-            }
-            if referral?.code != nil {
-                referralSection
             }
         }
         .refreshable { await load() }
@@ -313,13 +310,30 @@ struct BillingView: View {
         .accessibilityElement(children: .combine)
     }
 
-    // MARK: AI credits
+    // MARK: AI balance
+
+    /// Dollars from a backend with the balance, credits from one before it.
+    private var inDollars: Bool {
+        credits?.balanceUSD != nil || creditUsage?.spentMonthUSD != nil
+    }
+
+    private func money(_ value: Double) -> String {
+        inDollars ? WFormat.usd(value) : Int(value.rounded()).formatted()
+    }
+
+    private func spent(_ usd: Double?, _ legacy: Int?) -> Double {
+        inDollars ? usd ?? 0 : Double(legacy ?? 0)
+    }
+
+    private func amount(_ bucket: CreditUsage.Bucket) -> Double {
+        spent(bucket.amountUSD, bucket.credits)
+    }
 
     private var creditsSection: some View {
         let days = creditDays
-        let peak = max(1, days.map(\.credits).max() ?? 1)
+        let peak = max(inDollars ? 0.01 : 1, days.map(\.amount).max() ?? 0)
         return VStack(alignment: .leading, spacing: 8) {
-            EyebrowLabel("AI credits")
+            EyebrowLabel(inDollars ? "AI balance" : "AI credits")
                 .padding(.leading, 16)
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .top) {
@@ -338,11 +352,11 @@ struct BillingView: View {
                         Text("This month")
                             .font(.system(size: 13))
                             .foregroundStyle(WTheme.inkSecondary)
-                        Text("\((creditUsage?.spentMonth ?? 0).formatted()) spent")
+                        Text("\(money(spent(creditUsage?.spentMonthUSD, creditUsage?.spentMonth))) spent")
                             .font(.system(size: 15, weight: .medium))
                             .monospacedDigit()
                             .foregroundStyle(WTheme.ink)
-                        Text("\((creditUsage?.spentWeek ?? 0).formatted()) this week")
+                        Text("\(money(spent(creditUsage?.spentWeekUSD, creditUsage?.spentWeek))) this week")
                             .font(.system(size: 13))
                             .monospacedDigit()
                             .foregroundStyle(WTheme.inkTertiary)
@@ -352,8 +366,8 @@ struct BillingView: View {
                     ForEach(Array(days.enumerated()), id: \.offset) { index, day in
                         let isToday = index == days.count - 1
                         UnevenRoundedRectangle(topLeadingRadius: 3, topTrailingRadius: 3, style: .continuous)
-                            .fill(day.credits > 0 ? (isToday ? SettingsPalette.analytics : SettingsPalette.analytics.opacity(0.55)) : WTheme.fill)
-                            .frame(height: shown ? max(4, 64 * CGFloat(day.credits) / CGFloat(peak)) : 4)
+                            .fill(day.amount > 0 ? (isToday ? SettingsPalette.analytics : SettingsPalette.analytics.opacity(0.55)) : WTheme.fill)
+                            .frame(height: shown ? max(4, 64 * CGFloat(day.amount / peak)) : 4)
                             .frame(maxWidth: .infinity)
                             .animation(.spring(response: 0.8, dampingFraction: 0.8).delay(0.2 + Double(index) * 0.02), value: shown)
                     }
@@ -361,7 +375,7 @@ struct BillingView: View {
                 .frame(height: 64, alignment: .bottom)
                 .padding(.top, 18)
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Credits spent over the last two weeks")
+                .accessibilityLabel(inDollars ? "AI spend over the last two weeks" : "Credits spent over the last two weeks")
                 HStack {
                     Text(days.first.map { $0.date.formatted(.dateTime.month(.abbreviated).day()) } ?? "")
                     Spacer()
@@ -383,6 +397,10 @@ struct BillingView: View {
                 }
                 .padding(.top, 4)
             }
+            if let reload = balanceInfo?.autoReload, balanceInfo?.unlimited != true {
+                autoReloadCard(reload)
+                    .padding(.top, 4)
+            }
             if let footer = creditsFooter {
                 Text(footer)
                     .font(.system(size: 13))
@@ -394,9 +412,37 @@ struct BillingView: View {
         .reveal(shown, 2)
     }
 
+    /// Automatic reload, read only: it charges a card, which happens on the web.
+    private func autoReloadCard(_ reload: BalanceInfo.AutoReload) -> some View {
+        let on = reload.enabled == true
+        let detail: String? = if on, let added = reload.amountUSD, let threshold = reload.thresholdUSD {
+            "Adds \(WFormat.usd(added)) when the balance falls below \(WFormat.usd(threshold))"
+        } else if on {
+            nil
+        } else {
+            "Add money or turn it on from the web dashboard"
+        }
+        return MoreCard {
+            SettingsRow(
+                icon: "arrow.clockwise.circle.fill", color: SettingsPalette.billing,
+                title: "Automatic reload", subtitle: detail,
+                value: on ? "On" : "Off", accessory: .none
+            )
+            if let url = AppConfig.dashboardURL("/app/settings/billing/balance") {
+                Link(destination: url) {
+                    SettingsRow(
+                        icon: "safari.fill", color: WTheme.accent,
+                        title: "Manage on the web", accessory: .external
+                    )
+                }
+                .buttonStyle(MoreRowPressStyle())
+            }
+        }
+    }
+
     private func useRow(_ bucket: CreditUsage.Bucket) -> some View {
-        let total = max(1, topUses.map(\.credits).reduce(0, +))
-        let share = Double(bucket.credits) / Double(total)
+        let total = topUses.map { amount($0) }.reduce(0, +)
+        let share = total > 0 ? amount(bucket) / total : 0
         return VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .firstTextBaseline) {
                 Text(Self.reasonLabel(bucket.key))
@@ -404,7 +450,7 @@ struct BillingView: View {
                     .foregroundStyle(WTheme.ink)
                     .lineLimit(1)
                 Spacer(minLength: 8)
-                Text("\(bucket.credits.formatted())")
+                Text(money(amount(bucket)))
                     .font(.system(size: 15, weight: .medium))
                     .monospacedDigit()
                     .foregroundStyle(WTheme.ink)
@@ -450,20 +496,20 @@ struct BillingView: View {
     }
 
     private var topUses: [CreditUsage.Bucket] {
-        Array((creditUsage?.byReason ?? []).filter { $0.credits > 0 }.sorted { $0.credits > $1.credits }.prefix(4))
+        Array((creditUsage?.byReason ?? []).filter { amount($0) > 0 }.sorted { amount($0) > amount($1) }.prefix(4))
     }
 
     /// The last fourteen days, oldest first, with the empty days filled in.
-    private var creditDays: [(date: Date, credits: Int)] {
+    private var creditDays: [(date: Date, amount: Double)] {
         let calendar = Calendar.current
         let parser = DateFormatter()
         parser.calendar = Calendar(identifier: .gregorian)
         parser.locale = Locale(identifier: "en_US_POSIX")
         parser.dateFormat = "yyyy-MM-dd"
-        var byDay: [Date: Int] = [:]
+        var byDay: [Date: Double] = [:]
         for point in creditUsage?.series ?? [] {
             if let date = parser.date(from: point.date) {
-                byDay[calendar.startOfDay(for: date), default: 0] += point.credits
+                byDay[calendar.startOfDay(for: date), default: 0] += spent(point.amountUSD, point.credits)
             }
         }
         let today = calendar.startOfDay(for: .now)
@@ -474,114 +520,27 @@ struct BillingView: View {
 
     private var balanceText: String {
         if credits?.unlimited == true { return "Unlimited" }
-        return (credits?.balance ?? 0).formatted()
+        return money(spent(credits?.balanceUSD, credits?.balance))
     }
 
     private var creditsFooter: String? {
-        guard credits?.unlimited != true else { return "Credits pay for AI drafting, research and analysis." }
+        guard credits?.unlimited != true else {
+            return inDollars ? "AI drafting, research and analysis are not metered here." : "Credits pay for AI drafting, research and analysis."
+        }
         var parts: [String] = []
-        if let allowance = credits?.monthlyAllowance, allowance > 0 {
-            var line = "\(allowance.formatted()) included each month"
+        let allowance = spent(credits?.monthlyAllowanceUSD, credits?.monthlyAllowance)
+        if allowance > 0 {
+            var line = "\(money(allowance)) included each month"
             if let reset = credits?.nextResetAt {
                 line += ", next on \(reset.formatted(.dateTime.month(.abbreviated).day()))"
             }
             parts.append(line)
         }
-        if let purchased = credits?.purchasedBalance, purchased > 0 {
-            parts.append("\(purchased.formatted()) bought credits that never expire")
+        let purchased = spent(credits?.purchasedUSD, credits?.purchasedBalance)
+        if purchased > 0 {
+            parts.append(inDollars ? "\(money(purchased)) added that never expires" : "\(Int(purchased).formatted()) bought credits that never expire")
         }
         return parts.isEmpty ? nil : parts.joined(separator: ". ") + "."
-    }
-
-    // MARK: Referral
-
-    private var referralSection: some View {
-        let percent = referral?.inviteePercentOff ?? 0
-        let months = referral?.inviteeMonths ?? 0
-        let code = referral?.code ?? ""
-        return VStack(alignment: .leading, spacing: 8) {
-            EyebrowLabel("Invite a team")
-                .padding(.leading, 16)
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .top, spacing: 14) {
-                    SettingsIcon(symbol: "gift.fill", color: SettingsPalette.billing, size: 40)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Give \(percent)% off, earn a month")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(WTheme.ink)
-                        Text("Teams that join with your code get \(percent)% off for \(months) \(months == 1 ? "month" : "months"). When they upgrade, a month of their plan comes off your invoices.")
-                            .font(.system(size: 14))
-                            .foregroundStyle(WTheme.inkSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                HStack(spacing: 10) {
-                    Button {
-                        UIPasteboard.general.string = code
-                        UINotificationFeedbackGenerator().notificationOccurred(.success)
-                        withAnimation(.snappy) { copied = true }
-                        Task {
-                            try? await Task.sleep(for: .seconds(1.6))
-                            withAnimation(.snappy) { copied = false }
-                        }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Text(code)
-                                .font(.system(size: 16, weight: .semibold, design: .monospaced))
-                                .tracking(1.5)
-                                .foregroundStyle(WTheme.ink)
-                            Spacer(minLength: 4)
-                            Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(copied ? WTheme.positive : WTheme.inkSecondary)
-                                .contentTransition(.symbolEffect(.replace))
-                        }
-                        .padding(.horizontal, 14)
-                        .frame(height: 44)
-                        .background(WTheme.fill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(copied ? "Code copied" : "Copy code \(code)")
-                    if let link = referral?.shareURL.flatMap(URL.init(string:)) {
-                        ShareLink(item: link, message: Text("Try Warmbly with \(percent)% off your first \(months) months.")) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "square.and.arrow.up")
-                                    .font(.system(size: 13, weight: .semibold))
-                                Text("Share")
-                                    .font(.system(size: 15, weight: .semibold))
-                            }
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 16)
-                            .frame(height: 44)
-                            .background(WTheme.accent, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        }
-                    }
-                }
-                .padding(.top, 16)
-                if let referred = referral?.totalReferred, referred > 0 {
-                    Hairline().padding(.top, 16)
-                    HStack {
-                        Text("\(referred) \(referred == 1 ? "team" : "teams") referred")
-                        Spacer()
-                        Text("\(earnedText) earned")
-                            .monospacedDigit()
-                    }
-                    .font(.system(size: 14))
-                    .foregroundStyle(WTheme.inkSecondary)
-                    .padding(.top, 12)
-                }
-            }
-            .padding(16)
-            .background(WTheme.groupedCard)
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        }
-        .reveal(shown, 4)
-    }
-
-    private var earnedText: String {
-        let cents = referral?.lifetimeEarnedCents ?? 0
-        let currency = (referral?.currency ?? "usd").uppercased()
-        return (Double(cents) / 100).formatted(.currency(code: currency).precision(.fractionLength(0)))
     }
 
     // MARK: Derived
@@ -638,14 +597,17 @@ struct BillingView: View {
         } else {
             usage == nil ? "–" : "Unlimited"
         }
+        let allowanceUSD = subscription?.plan?.monthlyAllowanceUSD ?? credits?.monthlyAllowanceUSD
         let aiCredits: String = if credits?.unlimited == true {
             "Unlimited"
-        } else if let monthly = subscription?.plan?.monthlyCredits, monthly > 0 {
+        } else if let allowanceUSD, allowanceUSD > 0 {
+            "\(WFormat.usd(allowanceUSD).replacingOccurrences(of: ".00", with: "")) a month"
+        } else if !inDollars, let monthly = subscription?.plan?.monthlyCredits, monthly > 0 {
             "\(WFormat.compact(monthly)) a month"
         } else {
             "Pay as you go"
         }
-        return [first, ("Daily sends", sends), ("AI credits", aiCredits)]
+        return [first, ("Daily sends", sends), (inDollars || allowanceUSD != nil ? "AI included" : "AI credits", aiCredits)]
     }
 
     // MARK: Load
@@ -658,16 +620,16 @@ struct BillingView: View {
             async let lim: OrgUsageSnapshot = env.api.get("organization/current/limits")
             async let bal: CreditBalance = env.api.get("subscription/credits")
             async let use: CreditUsage = env.api.get("subscription/credits/usage")
-            async let ref: ReferralSummary = env.api.get("subscription/referral")
+            async let rel: BalanceInfo = env.api.get("subscription/balance")
             let subscription = try await sub
-            let fresh = (try? await tr, try? await lim, try? await bal, try? await use, try? await ref)
+            let fresh = (try? await tr, try? await lim, try? await bal, try? await use, try? await rel)
             withAnimation(.snappy) {
                 self.subscription = subscription
                 trial = fresh.0
                 usage = fresh.1 ?? usage
                 credits = fresh.2
                 creditUsage = fresh.3
-                referral = fresh.4
+                balanceInfo = fresh.4
             }
         } catch {
             errorMessage = (error as? APIError)?.errorDescription ?? error.localizedDescription

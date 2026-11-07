@@ -157,7 +157,7 @@ func (r *taskRepository) BindWarmupSuccessor(ctx context.Context, parent, recipi
 // warmupAnswerableSQL is when received warmup mail may still be answered, over aliases wt, original, wr and ea (the recipient).
 const warmupAnswerableSQL = `ea.status='active' AND ea.warmup IS NOT NULL AND ea.warmup_paused_at IS NULL
         AND wr.retired_at IS NULL AND wr.created_at>NOW()-INTERVAL '7 days'
-        AND original.lineage_version=1 AND original.subject<>'' AND wt.conversation_id IS NOT NULL
+        AND original.lineage_version=1 AND original.subject<>'' AND (wt.conversation_id IS NOT NULL OR wt.content_source='campaign')
         AND wt.expires_at>NOW() AND wt.sent_retired_at IS NULL
         AND wt.conversation_turn+1<original.max_turns AND wr.message_id<>''
         AND wt.sent_message_id<>'' AND wr.sender_account_id=wt.sender_account_id
@@ -227,7 +227,7 @@ func (r *taskRepository) recoveringWarmupReplySenders(ctx context.Context, recip
 	return priority, rows.Err()
 }
 
-// OwedWarmupReplies applies recovery priority before the limit, then orders eligible messages newest first.
+// OwedWarmupReplies applies recovery priority before the limit, then continues the deepest conversation, newest first, so replies build threads instead of answering each once.
 func (r *taskRepository) OwedWarmupReplies(ctx context.Context, recipient uuid.UUID, limit int, excluded WarmupReplyExclusions) ([]WarmupOwedReply, error) {
 	priority, err := r.recoveringWarmupReplySenders(ctx, recipient, excluded)
 	if err != nil {
@@ -238,7 +238,7 @@ func (r *taskRepository) OwedWarmupReplies(ctx context.Context, recipient uuid.U
         COALESCE(wt.conversation_theme,''),COALESCE(wt.content_source,''),wt.conversation_id,wt.conversation_turn,
         COALESCE(original.reference_ids,'{}'::text[]),original.scenario_version,original.rendering_version,original.max_turns
         `+owedWarmupRepliesFromSQL+`
-        ORDER BY (wt.sender_account_id=ANY($5::uuid[])) DESC, wr.created_at DESC, wt.task_id LIMIT $4`, recipient, excluded.Parents, excluded.Senders, limit, priority)
+        ORDER BY (wt.sender_account_id=ANY($5::uuid[])) DESC, wt.conversation_turn DESC, wr.created_at DESC, wt.task_id LIMIT $4`, recipient, excluded.Parents, excluded.Senders, limit, priority)
 	if err != nil {
 		return nil, err
 	}
@@ -315,7 +315,7 @@ func (r *taskRepository) WarmupExecutionContext(ctx context.Context, task uuid.U
         FROM warmup_tasks w JOIN warmup_tokens wt ON wt.task_id=w.task_id JOIN tasks t ON t.id=w.task_id
         JOIN email_accounts sender ON sender.id=t.email_account_id JOIN email_accounts receiver ON receiver.id=wt.recipient_account_id
         WHERE w.task_id=$1 AND wt.sender_account_id=t.email_account_id AND w.lineage_version=1
-        AND wt.expires_at>NOW() AND wt.sent_retired_at IS NULL AND wt.conversation_id IS NOT NULL
+        AND wt.expires_at>NOW() AND wt.sent_retired_at IS NULL AND (wt.conversation_id IS NOT NULL OR wt.content_source='campaign')
         AND NOT recipient_suppressed(sender.organization_id,receiver.email)`, task).Scan(&recipient, &c.Subject, &c.ContentSource, &c.ConversationID, &c.ConversationTurn, &c.ScenarioVersion, &c.RenderingVersion, &c.MaxTurns)
 	return recipient, c, err
 }

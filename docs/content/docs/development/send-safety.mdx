@@ -55,7 +55,9 @@ If a modern warmup task becomes dead-lettered after its definitive failure and r
 
 ## Evidence-based repair holds
 
-Authentication, permanent and conflicting-result holds do not clear merely because time passed or an unrelated send succeeded. An authentication hold clears when the mailbox is reconnected: both reconnect flows (OAuth re-authorization and replacement SMTP/IMAP credentials) only complete after the provider accepted the credential, and SMTP/IMAP credentials pass a worker's SMTP AUTH and IMAP login check first. The release is recorded in `send_recovery_resolutions` with evidence type `credentials_reverified`, scoped to the mailbox's organization, and the hold is then recomputed, so an unresolved unknown send or outcome conflict still holds the mailbox. Permanent and conflicting-result holds are not released by a reconnect. An organization-authorized operator can also use `send_recovery_resolution` in the existing mailbox PATCH after investigating the current held task and reason:
+Authentication, permanent and conflicting-result holds do not clear merely because time passed or an unrelated send succeeded. An authentication hold clears when the mailbox is reconnected: both reconnect flows (OAuth re-authorization and replacement SMTP/IMAP credentials) only complete after the provider accepted the credential, and SMTP/IMAP credentials pass a worker's SMTP AUTH and IMAP login check first. The release is recorded in `send_recovery_resolutions` with evidence type `credentials_reverified`, scoped to the mailbox's organization, and the hold is then recomputed, so an unresolved unknown send or outcome conflict still holds the mailbox. A reconnect releases a permanent hold the same way. Conflicting-result holds are not released by a reconnect.
+
+A permanent hold means the provider refused the whole mailbox, not one recipient, for example while a Google Workspace or Microsoft 365 tenant is suspended. The refused send has a known outcome (it was not sent), so releasing the hold can cost at most one more refused send, never a duplicate. On Gmail and Outlook mailboxes the same grant serves sending and sync, so the result-recovery loop releases the hold once a complete sync pass finishes after the refusal (or, when the refused task no longer exists, within the last hour), recorded with evidence type `provider_access_restored` (migration 359). It releases a mailbox at most once every 6 hours, so a provider that keeps refusing costs one send per interval and the next refusal holds the mailbox again. SMTP/IMAP mailboxes are not released this way, because a working IMAP login says nothing about whether the SMTP server accepts the mailbox. Instead every `permanent` and `domain_auth` hold carries `email_accounts.send_recovery_probe_at`: the same loop releases the mailbox for one send 3 hours after the refusal, recorded as `hold_probe`, and each refusal after a probe doubles the wait up to 24 hours (`send_recovery_probes` counts them; a confirmed send resets it). The owner's **Resume now** (`POST /emails/:id/resume-sending`) releases the same two reasons as `operator_resumed` and ends a timed pause. A `domain_auth` hold is also released as `domain_auth_passing` the moment a recorded check passes for a domain that was failing; a domain whose DNS always passed cannot explain the refusal, so it waits for a probe or a resume. The down migration refuses to remove recorded `provider_access_restored` releases. An organization-authorized operator can also use `send_recovery_resolution` in the existing mailbox PATCH after investigating the current held task and reason:
 
 ```json
 {
@@ -68,7 +70,7 @@ Authentication, permanent and conflicting-result holds do not clear merely becau
 }
 ```
 
-`authentication_repaired` requires `evidence_task_id` naming a newer definitive, applied successful outbound send on the same mailbox; fresh inbox sync alone is not repair proof. `operator_provider_confirmation` requires a same-mailbox definitive, applied evidence task and non-empty `confirmation_reference`. Include the exact held task and reason (`authentication`, `permanent`, `conflict`). Changed holds, inactive mailboxes, cross-organization requests and remaining unknown sends refuse these repair resolutions. Repair history is inserted atomically before clearing only the repair hold. Cooldowns, suppression and other restrictions remain. References must not contain credentials, message bodies or provider payloads.
+`authentication_repaired` requires `evidence_task_id` naming a newer definitive, applied successful outbound send on the same mailbox; fresh inbox sync alone is not repair proof. `operator_provider_confirmation` requires a same-mailbox definitive, applied evidence task and non-empty `confirmation_reference`. Include the exact held task and reason (`authentication`, `permanent`, `domain_auth`, `conflict`). Changed holds, inactive mailboxes, cross-organization requests and remaining unknown sends refuse these repair resolutions. Repair history is inserted atomically before clearing only the repair hold. Cooldowns, suppression and other restrictions remain. References must not contain credentials, message bodies or provider payloads.
 
 ### Resolving an unknown send
 
@@ -137,13 +139,33 @@ The PATCH atomically queues an immutable audited result; it does **not** immedia
 **Resolve** records the verdict through the same resolution path as the mailbox PATCH, so every rule above still applies:
 
 - an unknown hold takes **It went out** (with the Message-ID of the sent copy) or **It did not go out**
-- an authentication, permanent or conflict hold takes a provider confirmation, with the held send as its evidence. Reconnecting the mailbox remains the normal way to clear a sign-in hold
+- an authentication, permanent, domain authentication or conflict hold takes a provider confirmation, with the held send as its evidence. Reconnecting the mailbox remains the normal way to clear a sign-in or permanent hold, and a Gmail or Outlook permanent hold also clears on its own once the mailbox syncs again
 
 Each verdict needs a one-line note saying where it was checked, and is written to the admin audit log. The button is offered only when the hold can be resolved. Otherwise the row says why: the mailbox is switched off, the send is still running or finished under two minutes ago, a verdict is already queued, the worker's own result is being applied, other unknown sends are queued behind it, or the mailbox changed provider. Reading the tab needs `view_campaigns`; resolving needs `stop_campaigns`, the same bit as a dead-letter replay.
 
 ### Campaign placement and result reporting
 
 Campaign routing, placement, day plans and estimates share durable mailbox send admission. Recovery-held or currently cooling mailboxes contribute no immediately available capacity and do not trap a lead when another healthy sender is available. Plans identify send recovery and provider cooldown separately. When the entire pool is unavailable, the campaign defers with a bounded recheck rather than completing or repeatedly dispatching refused sends. An admission read failure also closes the affected mailbox for that pass.
+
+### Provider pauses
+
+A definite refusal of the mailbox (never of one recipient) is classified once, by `errx.ClassifySendPause`, from fields every worker release already sends: the error code, the enhanced status, the provider's error code in `cause`, the disposition and the scope. The send-result transaction stores the outcome and the consumer reads the same classification, so they cannot disagree.
+
+| Kind | Typical evidence | Stored as | Pause |
+|---|---|---|---|
+| `rate_limited` | Gmail or Graph `429`, SMTP `421`/`454`, `4.7.x` | `send_cooldown_reason` | Retry-After on the first throttle; otherwise 5 minutes doubling per burst, at most 2 hours |
+| `daily_limit` | `5.4.5`, Gmail `dailyLimitExceeded`, Graph `ErrorExceededMessageLimit`, submission quota; any rate limit whose stated reset is an hour or more away | `send_cooldown_reason` | the provider's reset when it is an hour or more out, otherwise 24 hours |
+| `sender_blocked` | `5.4.6`, `5.7.708`, `5.7.705`, `5.7.50x`, `5.1.8`, `OutboundSpamException`, Graph `ErrorMessageSubmissionBlocked` | `send_cooldown_reason` | 3 hours doubling per burst, at most 24 hours |
+| `retry` | any other temporary mailbox-level refusal | `send_cooldown_reason` | 5 minutes |
+| `domain_auth` | `DOMAIN_AUTH_REJECTED` (`5.7.26`, `5.7.515`, `5.7.509`, RFC 7372 codes) | `send_recovery_reason` | held, re-probed |
+| `permanent` | any other permanent mailbox-level refusal, including Microsoft `SendAsDenied` | `send_recovery_reason` | held, re-probed |
+| `authentication` | a refused sign-in | `send_recovery_reason` | held until reconnect |
+
+A stated reset is capped at 48 hours, and a shorter pause never cuts a longer one short. One burst of refusals (results from sends already in flight) is one strike; `send_cooldown_strikes` resets after a confirmed send or a day without a throttle. `send_pause_detail` keeps the worker's account of the refusal for the drawer. A temporary refusal scoped to one recipient (greylisting) pauses nothing.
+
+A `daily_limit`, `sender_blocked`, or API `rate_limited` refusal walks the campaign step back without counting an attempt (`SENDER_PAUSED` in the campaign feed, logged as `email_deferred`), the same as a refusal before the recipients. An SMTP throttle after the recipients were offered still counts, because the message itself may be the cause. A lead bound to a mailbox paused for at most 45 minutes (`config.SendPauseWaitThreshold`) waits for it; a longer pause or any hold moves the lead.
+
+A campaign parked at `paused_no_accounts` is reconsidered by the campaign reconciler every pass: when its sender pool again holds an active mailbox that is not failing domain authentication and has a working day, it is set back to `active` with a guarded update that only matches `paused_no_accounts`, so a campaign the owner paused stays paused.
 
 Provider execution gets 120 seconds, which covers the SMTP client's own 90-second budget for a slow server's verdict after the message, so a send is not cut off waiting for an answer the server was about to give. After provider execution, workers record and publish the result on an independent 45-second context with at most four attempts, each bounded to 10 seconds. Failed reports retain the exact outcome in memory for command redelivery without another provider send. Persisted results survive worker replacement and lost broker events: the consumer replays them through the same idempotent reconciliation. A worker crash before durable recording can still leave an unknown outcome requiring investigation.
 
@@ -181,6 +203,8 @@ Immutable attempt timestamps and recipient counts travel with the sending group 
 The source-instance reconciliation outbox is excluded from organization archives so an import cannot replay customer notifications. Drain pending effects before moving; whole-instance backups retain the queue. Delivered outbox rows expire after seven days; pending rows remain until delivery or organization/task deletion. They contain event/notification metadata, not raw MIME, provider responses or credentials. Repair history lasts with the organization and must not contain sensitive message content.
 
 Rollback refuses unresolved reservations, explicit participation state, diagnostic authorization/proof, pending outbox effects and repair history instead of discarding them. Earlier component migrations also refuse restrictive dispatch or managed consent history. Restore or complete a reviewed reconciliation; do not delete negative evidence simply to make downgrade succeed. Legacy deployments remain readable, but do not resume a mixed-old executor fleet assuming new guarantees.
+
+Migration 362 adds the pause columns (`send_cooldown_reason`, `send_cooldown_strikes`, `send_pause_detail`, `send_recovery_probes`, `send_recovery_probe_at`) and the `domain_auth` reason with defaults, so the previous release keeps working on the new schema: it reads `domain_auth` as an ordinary hold and writes cooldowns without a reason, which the new release shows as a pause with no stated cause. Queued worker results from any release classify on fields they already carry. Rolling back the code needs no data change; the down migration turns `domain_auth` holds into `permanent` and refuses while releases recorded under the new evidence types exist.
 
 ### Conflict-audit upgrade ordering
 

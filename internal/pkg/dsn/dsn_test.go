@@ -116,3 +116,40 @@ func TestWithFailedRecipientsLeavesRetriesAndOrdinaryMail(t *testing.T) {
 		t.Error("a 4.x.x status read as permanent")
 	}
 }
+
+// A notice with no status part still quotes the remote server's reply, and
+// that reply, not the subject, is the reason.
+func TestWithFailedRecipientsReadsTheQuotedReply(t *testing.T) {
+	exim := "This message was created automatically by mail delivery software.\n\n" +
+		"A message that you sent could not be delivered to one or more of its\nrecipients. This is a permanent error. The following address(es) failed:\n\n" +
+		"  [EMAIL]\n    host mx.example.com [[IP]]\n" +
+		"    SMTP error from remote mail server after RCPT TO:<[EMAIL]>:\n" +
+		"    550 5.1.1 <[EMAIL]>: Recipient address rejected:\n    User unknown in virtual mailbox table\n\n" +
+		"------ This is a copy of the message, including all the headers. ------\n"
+	gmail := "** Address not found **\n\nYour message wasn't delivered.\n\nThe response from the remote server was:\n" +
+		"550 5.7.1 Service unavailable, Client host [[IP]] blocked using Spamhaus\n\n----- Original message -----\nSubject: 550 user unknown\n"
+	inline := "SMTP error from remote mail server after RCPT TO:<[EMAIL]>: host mx.example.com [[IP]]: 552 5.2.2 Mailbox full\n"
+	for _, tc := range []struct {
+		name, body, want string
+		cause            Cause
+	}{
+		{"exim folded reply", exim, "550 5.1.1 <[EMAIL]>: Recipient address rejected: User unknown in virtual mailbox table", CauseRecipientInvalid},
+		{"gmail quoted reply", gmail, "550 5.7.1 Service unavailable, Client host [[IP]] blocked using Spamhaus", CauseReputationBlock},
+		{"exim inline reply", inline, "552 5.2.2 Mailbox full", CauseMailboxFull},
+		{"no quoted reply keeps the subject", groupRejection, "Delivery Status Notification (Failure)", CauseUnknown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := Parse(tc.body).WithFailedRecipients("[EMAIL]", "Delivery Status Notification (Failure)", tc.body)
+			if !r.Permanent {
+				t.Fatalf("expected a permanent bounce, got %+v", r)
+			}
+			got := r.Reason("Delivery Status Notification (Failure)")
+			if got != tc.want {
+				t.Fatalf("Reason = %q, want %q", got, tc.want)
+			}
+			if c := Blame(got); c != tc.cause {
+				t.Fatalf("Blame = %q, want %q", c, tc.cause)
+			}
+		})
+	}
+}

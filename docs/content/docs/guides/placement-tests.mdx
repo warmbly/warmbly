@@ -45,8 +45,8 @@ Watch the results appear on the test as each seed syncs its copy.
 
 - Every copy is a real send, charged to the sending mailbox's daily campaign limit.
 - A copy not seen within 120 minutes of being sent is marked never arrived.
-- On the hosted product, a paid plan gets `40` free tests a month on the shared panel by default, then `25` credits per test. A trial gets `3`.
-- Tests on your own seed inboxes are never counted and never cost credits.
+- On the hosted product, a paid plan gets `40` free tests a month on the shared panel by default, then `$0.50` per test from the workspace balance at the default prices. A trial gets `3`.
+- Tests on your own seed inboxes are never counted and never cost anything.
 - One test is noise. Look for a pattern across several tests and providers.
 
 <Fold>
@@ -207,25 +207,25 @@ A comparison sends each seed both versions back to back, in a random order per s
 
 A mailbox runs one test at a time: until every copy of a test has been sent, another test from the same mailbox is refused with `placement_sender_busy`.
 
-### Free tests and credits
+### Free tests and the balance
 
 On the hosted product, every workspace gets free tests on the shared panel each month:
 
 | Workspace | Free tests per month | After that |
 |-----------|----------------------|------------|
 | On a free trial | `3` | Wait for next month, or upgrade |
-| On a paid plan | `40` | `25` [credits](/guides/ai-credits/) per test |
+| On a paid plan | `40` | `$0.50` per test from the [balance](/guides/ai-credits/) |
 
-These are the defaults, and the operator can change both numbers. The month is the calendar month in UTC. A tracking comparison counts as two tests. The placement tests page shows how many free tests you have used, and the new-test dialog says which free test a test uses.
+These are the defaults, and the operator can change both numbers and the price. The price is the operator's placement test price plus the markup (`$0.40` plus 25% by default), and a price of `0` turns paid tests off. The month is the calendar month in UTC. A tracking comparison counts as two tests. The placement tests page shows how many free tests you have used, and the new-test dialog says which free test a test uses.
 
-**A paid test never starts without you agreeing to its price.** Once the free tests are used up, the dialog shows what the test costs and your balance, and you tick **Pay 25 credits for this test** before it can start; the button repeats the price. Through the API the same agreement is `max_credits`, the most you agree to pay; a price above it (because the last free test went to a teammate in the meantime, say) is refused with `placement_quota_exceeded`, naming the price, and nothing is charged. Credits are drawn like any other spend, monthly allowance first and top-ups after, and your [spend limits](/guides/ai-credits/#usage-and-spend-controls) apply. The charge is logged as **Placement test** in the credits history.
+**A paid test never starts without you agreeing to its price.** Once the free tests are used up, the dialog shows what the test costs and your balance, and you tick **Pay $0.50 for this test** before it can start; the button repeats the price. Through the API the same agreement is `max_usd`, the most you agree to pay in dollars; a price above it (because the last free test went to a teammate in the meantime, say) is refused with `placement_quota_exceeded`, naming the price, and nothing is charged. The price is drawn from the balance like any other spend, monthly allowance first and money you added after, and your [spend limits](/guides/ai-credits/#spend-limits) apply. The charge is logged as **Placement test** in the balance history.
 
-- **A test that delivers nothing is refunded.** When no copy of a paid test left the sender (the worker was offline, or you cancelled before the first copy went out), its credits go back to the pools they came from, logged as **Placement test refund**, and they stop counting against your spend limits. Monthly credits whose allowance has reset since the charge are not returned, because they would have expired with it. A free test that ended that way does not use up a free test either.
+- **A test that delivers nothing is refunded.** When no copy of a paid test left the sender (the worker was offline, or you cancelled before the first copy went out), its price goes back to the part of the balance it came from, logged as **Placement test refund**, and it stops counting against your spend limits. Allowance that has reset since the charge is not returned, because it would have expired with the reset. A free test that ended that way does not use up a free test either.
 - **A comparison with one free test left** uses the free test for one half and pays for the other.
-- **Monitors never spend credits.** A monitor's scheduled test uses the free tests like any other, and once they are gone it records why and tries again a day later.
-- **A trial cannot pay.** Credits are part of a paid plan, so a trial waits for the next month.
+- **Monitors never spend the balance.** A monitor's scheduled test uses the free tests like any other, and once they are gone it records why and tries again a day later.
+- **A trial cannot pay.** The balance comes with a paid plan, so a trial waits for the next month.
 
-Tests on your own seed inboxes are never counted and never cost credits. A self-hosted instance does not meter its own panel at all. Tests on Warmbly Cloud's panel use the free tests of the Warmbly Cloud workspace the instance is linked to; paying for more with credits is not offered there.
+Tests on your own seed inboxes are never counted and never cost anything. A self-hosted instance does not meter its own panel at all. Tests on Warmbly Cloud's panel use the free tests of the Warmbly Cloud workspace the instance is linked to; paying for more is not offered there.
 
 </Fold>
 
@@ -297,7 +297,7 @@ A mailbox that cannot run when its turn comes is handled by the batch's policy:
 
 A mailbox still sending another test is always retried a quarter of an hour later. A mailbox with no seed it can reach (every seed is on its own domain) is skipped under either policy. One mailbox failing never fails the batch: every mailbox keeps its own result or its own reason, such as its daily limit, its connection or its worker.
 
-A batch ends **completed** when every mailbox finished a test, **completed with warnings** when some were skipped or failed, **failed** when none finished, or **cancelled**. When the free tests or the credits you agreed to run out partway, or the campaign or step being tested is deleted, the mailboxes not yet started are skipped with that reason and the batch ends with the results it has.
+A batch ends **completed** when every mailbox finished a test, **completed with warnings** when some were skipped or failed, **failed** when none finished, or **cancelled**. When the free tests or the amount you agreed to run out partway, or the campaign or step being tested is deleted, the mailboxes not yet started are skipped with that reason and the batch ends with the results it has.
 
 Cancelling a batch stops it starting mailboxes, cancels the copies not sent yet, and leaves the copies already sent to be classified, so a cancelled batch keeps every result it had.
 
@@ -318,7 +318,7 @@ The batch does not group by worker. A worker signs in to your mailbox provider, 
 
 Before a batch starts, the dialog states the workload: how many tests, the most copies it can send (seeds per test times mailboxes, doubled for a tracking comparison), and how many mailboxes send at once. Each mailbox's daily limit can only make the real number smaller.
 
-Every mailbox's test counts as one test against the monthly free tests (two for a comparison), exactly like a single test. When a batch needs more tests than are free, you agree up front to the most the rest can cost, which the API takes as `max_credits` for the whole batch; the batch never spends more than that, and a test that delivers nothing is refunded as usual. When the tests cannot be paid for (a trial, or a panel without paid tests), a batch larger than the free tests left is refused; take a smaller sample or test on your own seed inboxes, which are never counted.
+Every mailbox's test counts as one test against the monthly free tests (two for a comparison), exactly like a single test. When a batch needs more tests than are free, you agree up front to the most the rest can cost, which the API takes as `max_usd` for the whole batch; the batch never spends more than that, and a test that delivers nothing is refunded as usual. When the tests cannot be paid for (a trial, or a panel without paid tests), a batch larger than the free tests left is refused; take a smaller sample or test on your own seed inboxes, which are never counted.
 
 ### Fleet coverage
 
@@ -380,7 +380,7 @@ Both open the test, or the batch. Change them under **Settings > Notifications**
 
 ## Moving a workspace
 
-Placement tests and their results travel in a [workspace export](/guides/workspace-export-import/) as a record, under Delivery events (without what a paid test cost, since credits do not travel), and so do placement batches with their mailboxes and results. A batch still running when it is exported arrives cancelled, so the destination never starts sending it. Campaign placement monitors travel with the campaigns. Which mailboxes are seed inboxes does not travel, so mark them again on the destination. A test that is still sending leaves its unsent copies behind.
+Placement tests and their results travel in a [workspace export](/guides/workspace-export-import/) as a record, under Delivery events (without what a paid test cost, since the balance does not travel), and so do placement batches with their mailboxes and results. A batch still running when it is exported arrives cancelled, so the destination never starts sending it. Campaign placement monitors travel with the campaigns. Which mailboxes are seed inboxes does not travel, so mark them again on the destination. A test that is still sending leaves its unsent copies behind.
 
 </Fold>
 

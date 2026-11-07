@@ -246,8 +246,19 @@ export interface ABTestingSettings {
     min_sample_size: number;
 }
 
+// What happens after a bounce, complaint or unsubscribe (see the suppression guide).
+export interface BouncePipelineSettings {
+    enabled?: boolean;
+    auto_suppress_on_bounce?: boolean;
+    auto_suppress_on_complaint?: boolean;
+    auto_suppress_on_unsubscribe?: boolean;
+    auto_pause_campaign_on_spike?: boolean;
+    pause_bounce_rate_threshold?: number;
+    pause_complaint_rate_threshold?: number;
+}
+
 export interface OutreachSettings {
-    bounce_pipeline: Record<string, unknown>;
+    bounce_pipeline: BouncePipelineSettings;
     task_reliability: Record<string, unknown>;
     ab_testing: ABTestingSettings;
     reply_intent: ReplyIntentSettings;

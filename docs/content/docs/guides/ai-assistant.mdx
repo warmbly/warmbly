@@ -35,7 +35,7 @@ Choose **Approve** or **Skip** on each approval card Remie shows before a change
 - It acts as you: only what your role allows, only in your workspace.
 - Sending, starting things that send, and changing who has access always ask, even with **Always allow** on.
 - Conversations are private to you unless an admin turns on **Shared history**.
-- Each step costs one AI credit, and the stop button ends a run anytime.
+- Each step is charged to the workspace balance for the tokens it uses, and the stop button ends a run anytime.
 
 <Fold>
 
@@ -51,7 +51,7 @@ The same assistant also answers in Slack, when you mention `@Warmbly` or message
 Remie acts as you: only what your role allows, only in your workspace, never another organization's data. Every change asks first. **Sending, starting things that send, and changing who has access are never auto-approved**, even with "Always allow" on.
 </Callout>
 
-Remie needs a paid plan; a free trial has no credit allowance and the AI surfaces stay locked. Beyond that, access is the **Use AI** role permission (on for admins and managers, off for viewers); without it Remie and AI drafting are hidden. Admins can cap per-member spend by day, week, or month. See [AI credits](/guides/ai-credits/) and [Team and roles](/guides/team-roles/).
+Remie needs a paid plan; a free trial has no AI allowance and the AI surfaces stay locked. Beyond that, access is the **Use AI** role permission (on for admins and managers, off for viewers); without it Remie and AI drafting are hidden. Admins can cap per-member spend by day, week, or month. See [Balance and usage](/guides/ai-credits/) and [Team and roles](/guides/team-roles/).
 
 </Fold>
 
@@ -116,7 +116,7 @@ These preferences are yours alone, kept in your browser for each workspace.
 
 It knows what page you are on, so "summarize this campaign" and "draft a reply here" resolve correctly.
 
-When the available tools exceed the OpenAI-compatible provider's 128-tool limit, Remie discovers the tools it needs on demand, including tools from connected MCP servers. Discovery results include each tool's argument schema, so its usage remains available in the conversation after another search. No permitted capability is removed. Discovery is a read-only step; the action itself keeps its normal permissions and approval requirements. Like other model steps, discovery counts toward the run's step budget and AI credits.
+When the available tools exceed the OpenAI-compatible provider's 128-tool limit, Remie discovers the tools it needs on demand, including tools from connected MCP servers. Discovery results include each tool's argument schema, so its usage remains available in the conversation after another search. No permitted capability is removed. Discovery is a read-only step; the action itself keeps its normal permissions and approval requirements. Like other model steps, discovery counts toward the run's step budget and is charged to the balance.
 
 </Fold>
 
@@ -147,9 +147,9 @@ Settings > Workspace > Remie lists every action that is always allowed, who allo
 
 <Fold>
 
-## Credits and privacy
+## Cost and privacy
 
-Each model turn costs one AI credit, and a run is capped at 20 model turns between approval pauses. A turn can call several tools, so the activity list can show more than 20 tool steps. Remie reserves the last turn for an answer from the evidence already gathered, without calling more tools. If it cannot verify the answer, it is instructed to explain what remains unknown and what to check next. An empty provider answer is reported as an error. Remaining credits show at the panel's bottom, and the stop button ends a run anytime. On a self-hosted install with a free or local model, runs are not charged and a "free model" notice appears.
+Each model turn is charged to the workspace balance for the tokens it uses, and a run is capped at 20 model turns between approval pauses. A turn can call several tools, so the activity list can show more than 20 tool steps. Remie reserves the last turn for an answer from the evidence already gathered, without calling more tools. If it cannot verify the answer, it is instructed to explain what remains unknown and what to check next. An empty provider answer is reported as an error. The remaining balance shows at the panel's bottom, and the stop button ends a run anytime. On a self-hosted install with a free or local model, runs are not charged and a "free model" notice appears.
 
 Completed tool steps stay in the conversation history if a later provider call fails or you stop the run. Remie gives recording those steps and refunding a failed model turn up to five seconds to finish after cancellation. Changes Remie makes (a created task, an updated contact) appear in the shared activity feed like any other edit, so teammates' views stay current.
 

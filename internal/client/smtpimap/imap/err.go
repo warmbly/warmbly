@@ -79,12 +79,13 @@ func (c *Client) handleError(err error) *errx.MailError {
 		case imap.ResponseCodeLimit:
 			// A server limit (connections, commands per window) is a throttle to back off from.
 			return errx.ErrMailSendingTooFast
-		case imap.ResponseCodeNonExistent:
+		case imap.ResponseCodeNonExistent, imap.ResponseCodeTryCreate:
 			// The folder or message asked for is gone, which the folder walk
 			// recovers from by re-listing. Not a reason to reconnect a mailbox.
+			// Some servers say it with TRYCREATE, RFC 3501's word for a missing target.
 			return errx.ErrMailResourceNotFound
 		case imap.ResponseCodeAlert:
-			if mailErr := c.classifyAlert(imapErr.Text); mailErr != nil {
+			if mailErr := c.classifyAlert(imapErr); mailErr != nil {
 				return mailErr
 			}
 			return errx.ErrMailUnknownImapError(imapErrDetail(imapErr))
@@ -146,13 +147,16 @@ func (c *Client) credentialsRefused() *errx.MailError {
 	return errx.ErrMailInvalidCredentials
 }
 
-// Gmail's [ALERT] texts for a throttle and for a sign-in the owner must complete.
+// Gmail's [ALERT] texts for a throttle, and for a refused password or a sign-in the owner must complete.
 var (
-	alertThrottles = []string{
+	// Zoho's, for an account signing in to another region's data centre (imap.zoho.com vs .eu, .in, .com.au).
+	alertWrongServer = "the server details you are using seems incorrect"
+	alertThrottles   = []string{
 		"too many simultaneous connections",
 		"exceeded command or bandwidth limits",
 	}
 	alertLoginRequired = []string{
+		"invalid credentials",
 		"application-specific password required",
 		"log in via your web browser",
 		"web login required",
@@ -160,8 +164,11 @@ var (
 )
 
 // classifyAlert returns nil for an [ALERT] text it does not recognise.
-func (c *Client) classifyAlert(text string) *errx.MailError {
-	lower := strings.ToLower(text)
+func (c *Client) classifyAlert(alert *imap.Error) *errx.MailError {
+	lower := strings.ToLower(alert.Text)
+	if strings.Contains(lower, alertWrongServer) {
+		return errx.ErrMailWrongServer(imapErrDetail(alert))
+	}
 	for _, phrase := range alertThrottles {
 		if strings.Contains(lower, phrase) {
 			return errx.ErrMailSendingTooFast

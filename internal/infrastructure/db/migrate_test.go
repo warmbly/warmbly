@@ -3,7 +3,10 @@ package db
 import (
 	"errors"
 	"fmt"
+	"net"
+	"os"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/golang-migrate/migrate/v4/source/iofs"
@@ -67,6 +70,29 @@ func TestServerBusy(t *testing.T) {
 	for err, want := range cases {
 		if got := serverBusy(err); got != want {
 			t.Errorf("serverBusy(%v) = %v, want %v", err, got, want)
+		}
+	}
+}
+
+// The reason given for a failed migration connection names no host, address or resolver.
+func TestConnectReasonLeavesOutHostsAndAddresses(t *testing.T) {
+	dns := &net.OpError{Op: "dial", Net: "tcp", Err: &net.DNSError{Err: "no such host", Name: "db.internal.example", Server: "10.0.0.2:53", IsNotFound: true}}
+	refused := &net.OpError{Op: "dial", Net: "tcp", Addr: &net.TCPAddr{IP: net.ParseIP("10.9.8.7"), Port: 5432}, Err: os.NewSyscallError("connect", syscall.ECONNREFUSED)}
+	for _, tc := range []struct {
+		err  error
+		want string
+	}{
+		{fmt.Errorf("open: %w", dns), ": dns lookup failed"},
+		{fmt.Errorf("open: %w", refused), ": connect: connection refused"},
+	} {
+		got := connectReason(tc.err)
+		if got != tc.want {
+			t.Errorf("connectReason(%v) = %q, want %q", tc.err, got, tc.want)
+		}
+		for _, leaked := range []string{"db.internal.example", "10.0.0.2", "10.9.8.7"} {
+			if strings.Contains(got, leaked) {
+				t.Errorf("reason %q carries %q", got, leaked)
+			}
 		}
 	}
 }

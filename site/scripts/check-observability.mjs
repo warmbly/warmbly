@@ -11,6 +11,22 @@ for (const properties of [
   { $exception_list: [{ $exception_type: 'AbortError', $exception_value: 'PostHog request timed out after 3000ms' }] },
   { $exception_types: ['AbortError'], $exception_values: ['PostHog request timed out after 3000ms'] },
 ]) assert.equal(beforeSend(event(properties)), null);
+const thrown = (type, value, filenames) => ({
+  $exception_list: [{ type, value, stacktrace: { type: 'raw', frames: filenames.map((filename) => ({ filename })) } }],
+});
+for (const properties of [
+  thrown('TypeError', "undefined is not an object (evaluating 'window.ethereum.selectedAddress = undefined')", ['https://warmbly.com/']),
+  thrown('ReferenceError', "Can't find variable: CONFIG", ['https://warmbly.com/', 'https://warmbly.com/']),
+  thrown('ReferenceError', "Can't find variable: currentInset", ['https://warmbly.com/pricing/']),
+  thrown('Error', 'No Listener: tabs:outgoing.message.ready', []),
+  thrown('Error', 'Could not establish connection. Receiving end does not exist.', []),
+  thrown('TypeError', 'x is undefined', ['chrome-extension://abcdef/content.js']),
+]) assert.equal(beforeSend(event(properties)), null);
+for (const properties of [
+  thrown('ReferenceError', "Can't find variable: CONFIG", ['https://warmbly.com/_astro/page.abc.js']),
+  thrown('TypeError', 'x is undefined', ['chrome-extension://abcdef/content.js', 'https://warmbly.com/_astro/page.abc.js']),
+  thrown('TypeError', 'Cannot read properties of undefined', []),
+]) { const input = event(properties); assert.equal(beforeSend(input), input); }
 for (const properties of [
   { $exception_list: [{ type: 'AbortError', value: 'signal is aborted without reason' }] },
   { $exception_list: [{ type: 'Error', value: 'PostHog request timed out after 3000ms' }] },

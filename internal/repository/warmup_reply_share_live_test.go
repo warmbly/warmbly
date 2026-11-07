@@ -167,3 +167,36 @@ func TestLiveReplySharePrioritizesRecoveryBeforeCandidateLimit(t *testing.T) {
 		})
 	}
 }
+
+// A reply in a running conversation is answered before newer mail that opens
+// one, so replies build back-and-forth threads instead of one reply on each.
+func TestLiveOwedRepliesContinueTheDeepestConversationFirst(t *testing.T) {
+	f, r := lineageFixture(t)
+	ctx := t.Context()
+	seed := func(turn int, age time.Duration) uuid.UUID {
+		t.Helper()
+		task := uuid.New()
+		messageID := task.String() + "@example.test"
+		for _, q := range []struct {
+			sql  string
+			args []any
+		}{
+			{`INSERT INTO tasks(id,task_type,email_account_id,status,message_id) VALUES($1,'warmup',$2,'completed','')`, []any{task, f.sender}},
+			{`INSERT INTO warmup_tasks(task_id,lineage_version,subject,scenario_version,rendering_version,max_turns) VALUES($1,1,'Pinned diagnostic','diagnostic-v1','canonical-v1',6)`, []any{task}},
+			{`INSERT INTO warmup_tokens(token,task_id,sender_account_id,recipient_account_id,conversation_id,conversation_turn,sent_message_id,expires_at)
+				VALUES($1,$2,$3,$4,$5,$6,$7,NOW()+INTERVAL '1 day')`, []any{uuid.New(), task, f.sender, f.recipient, uuid.New(), turn, "<" + messageID + ">"}},
+			{`INSERT INTO warmup_received(email_account_id,internal_id,sender_account_id,message_id,task_id,created_at) VALUES($1,$2,$3,$4,$5,$6)`, []any{f.recipient, uuid.New(), f.sender, messageID, task, time.Now().Add(-age)}},
+		} {
+			if _, err := f.pool.Exec(ctx, q.sql, q.args...); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return task
+	}
+	opening := seed(0, time.Hour)
+	running := seed(2, 3*time.Hour)
+	owed, err := r.OwedWarmupReplies(ctx, f.recipient, 8, WarmupReplyExclusions{})
+	if err != nil || len(owed) != 2 || owed[0].ParentTaskID != running || owed[1].ParentTaskID != opening {
+		t.Fatalf("owed replies %+v (%v), want the running conversation %v before the newer opening %v", owed, err, running, opening)
+	}
+}

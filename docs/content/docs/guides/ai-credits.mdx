@@ -1,29 +1,29 @@
 ---
-title: AI credits
-description: How AI credits work in Warmbly, what each AI action costs, the monthly allowance and reset rules, and how to buy top-up packs.
+title: Balance and usage
+description: How the workspace balance pays for AI and other metered work in US dollars, the monthly allowance each plan includes, what typical actions cost, adding money, automatic reload, notices and spend limits.
 ---
 
-AI features run on credits, and they need a paid plan. Your plan grants a monthly allowance that refreshes each billing cycle, and top-up packs you buy never expire.
+AI and other metered features are paid from the workspace balance, in US dollars, and they need a paid plan. Your plan includes a monthly allowance that resets each billing cycle. Money you add never expires and is spent after the allowance. Each charge is what the work actually used, at the provider's price plus a markup.
 
-## Check and top up credits
+## Add money
 
 <Steps>
 
 <Step>
 
-Open the **AI & credits** tab of **Settings > Billing** (it needs the **Manage billing** permission).
+Open the **Balance** tab of **Settings > Billing** (it needs the **Manage billing** permission).
 
 </Step>
 
 <Step>
 
-Check your balance and the reset date beside it.
+Pick an amount: **$10**, **$25**, **$50**, **$100**, **$250**, or any other amount from $5 to $5,000.
 
 </Step>
 
 <Step>
 
-Buy a top-up pack of **500**, **2,000** or **10,000** credits through Stripe Checkout.
+With a saved card, confirm **Pay** and the money is added at once. Without one, or to use another card, choose **Pay another way** to finish in Stripe Checkout, which saves the card for next time.
 
 </Step>
 
@@ -31,66 +31,86 @@ Buy a top-up pack of **500**, **2,000** or **10,000** credits through Stripe Che
 
 ## Good to know
 
-- Unused monthly credits do not roll over. Purchased credits survive every reset.
-- Spending draws the monthly allowance first, then purchased credits.
-- Each action reserves a small minimum up front, then settles against real usage. A provider error refunds it.
-- Running out stops work before it starts, so you are never half-charged.
-- You can set daily, weekly and monthly spend limits for the workspace and for each member.
+- The balance is in US dollars. A charge is the provider's price for what a call used plus a markup (25% by default).
+- Spending draws the monthly allowance first, then money you added.
+- Unused allowance does not roll over. Money you add never expires.
+- Before work starts, Warmbly checks the balance covers a typical call. Running out stops work before it starts, and a result you already received never fails.
+- Automatic reload adds money on your saved card when the balance runs low, up to a monthly limit you set.
+- You can set daily, weekly and monthly spend limits for the workspace and for each member, in dollars.
 
 <Fold>
 
-## What credits are and who manages them
+## What the balance pays for and who manages it
 
-AI features run on credits, and they are paid-only: a free trial carries no allowance and the AI surfaces stay locked until the workspace is on a paid plan. Your plan grants a monthly allowance that refreshes each billing cycle, and top-up packs never expire.
+The balance pays for AI features (the writing assistant, reply and compose drafts, Remie, contact research, AI variables, AI steps in campaigns and automations, the inbox agent and AI spam analysis), web searches those features make, and [inbox placement tests](/guides/placement-tests/) past the monthly free tests. These features are paid-only: a free trial has no allowance, and the AI surfaces stay locked until the workspace is on a paid plan.
 
-<Callout type="info" title="Who can manage credits">
-Everything here lives on the **AI & credits** tab of **Settings > Billing** and needs the **Manage billing** permission. Other members do not see it.
+<Callout type="info" title="Who can manage the balance">
+Everything here lives on the **Balance** tab of **Settings > Billing** and needs the **Manage billing** permission. Adding money, saving a card and changing automatic reload also ask for a recent sign-in. Other members do not see the tab.
 </Callout>
 
+A dedicated reviewer workspace starts with a small test balance on its managed Test plan. It uses the normal balance and spend rules, and does not keep paid features unlocked after the reviewer grant expires. Joining an existing workspace as a tester does not add to its balance. See [reviewer accounts](/development/accounts-and-access/#which-workspace-a-tester-lands-in).
+
 </Fold>
 
 <Fold>
 
-## The two pools
+## The monthly allowance
 
-A dedicated reviewer workspace starts with 100 test credits. Its header gauge and popover label them **Test credits** rather than plan credits. These use the normal credit ledger and spend rules, and do not keep paid features unlocked after the reviewer grant expires. Joining an existing workspace as a tester does not add credits. See [reviewer accounts](/development/accounts-and-access/#which-workspace-a-tester-lands-in).
+| Plan | Included each month |
+|------|---------------------|
+| Free trial | none, AI is a paid feature |
+| Starter | $5 |
+| Grow (monthly or annual) | $15 |
+| Business | $50 |
 
-| Pool | Refresh | Rollover |
+The allowance resets to the plan amount at the start of each billing cycle, and the reset date is shown beside the balance. An annual plan still gets it every month: it resets on the same day of each month as the day the plan started (the last day of a shorter month when that day does not exist). Unused allowance is replaced by the fresh one and does not carry over, and once a month's allowance is used up, money you added pays for the rest.
+
+| Part of the balance | Refresh | Rollover |
 |------|---------|----------|
-| **Monthly allowance** | Reset to the plan amount each billing cycle | No, unused credits are replaced by the fresh grant |
-| **Purchased credits** | Bought as top-up packs | Yes, they never expire and survive every reset |
+| **Monthly allowance** | Reset to the plan amount each billing cycle | No |
+| **Money you added** | Added by you or by automatic reload | Yes, it never expires and survives every reset |
 
-Spending draws the monthly pool first and only touches purchased credits once it is empty, holding your top-ups in reserve for heavy months.
+Spending draws the allowance first and only touches money you added once the allowance is used up, so what you added is held back for heavy months.
+
+A balance held in credits before Warmbly switched to dollars was converted to dollars, and purchased credits carry over as money you added, so they still never expire.
 
 </Fold>
 
 <Fold>
 
-## What each action costs
+## How usage is priced
 
-Each action reserves a flat **minimum** up front (which also gates an empty balance before work starts), then settles against real token usage after the call.
+Every charge is the actual cost of the work:
 
-| Action | Minimum |
-|--------|---------|
-| Writing assistant draft, selection edit ("Edit with AI") | 1 |
-| Remie step | 1 per turn |
-| Reply draft, compose draft, contact research run | 2 |
-| AI spam analysis of a campaign step, and each Re-check | 2 |
-| Single-shot automation AI step (classify, extract, generate) | 1 |
-| Automation AI agent step | 1 per step |
-| AI switch or campaign switch step, AI decider (value decider is free) | 1 |
-| Ask AI branch | 1 per evaluation |
-| Per-recipient AI variable, instant / research mode | 1 / 2 per recipient |
-| Web search by an AI step (only when results are found) | 1 |
-| Inbox agent handled thread | 5 |
+- **AI calls** are priced per token on the model that ran them, at the provider's price per million input and output tokens.
+- **Other units** have a price each: a web search an AI step makes, a paid placement test, or [lead finder](/guides/lead-finder/) work (a website read, a person's email found on request, a search page through a source the instance pays for).
+- The **markup** is added on top of the provider price. It is 25% by default, so each $1.00 of provider cost is charged as $1.25. The operator of the instance sets the price list and the markup.
 
-Five rules govern the settle:
+At the default prices, a standard model costs $3.75 per million input tokens and $18.75 per million output tokens once the markup is added, and a lighter model costs less. The default OpenAI model, `gpt-6-luna`, costs $0.125 per million input tokens and $0.625 per million output tokens with the markup, so on it each action below costs a small fraction of what the table shows. What typical actions cost at the default prices on a standard model:
 
-- One credit buys a fixed token budget on the serving model: light models (mini and haiku class) at 1,500 tokens per credit, standard models at 400. The exact model and token count appear in the transaction log.
-- **Overage can never fail a result you already received**; at worst it drains the balance to zero.
-- A provider error refunds the reserved minimum automatically, so you are never charged for output you did not get.
-- A contact research run that finds nothing still costs its credits. You are paying for the search, not the result.
-- Running out returns "insufficient credits" **before** any work starts, so a depleted balance never leaves you half-charged.
+| Action | Typical usage | Typically charged |
+|--------|---------------|-------------------|
+| Writing assistant draft or "Edit with AI" | 1,500 tokens in, 400 out | about $0.01 |
+| Reply or compose draft with the thread as context | 4,000 tokens in, 500 out | about $0.02 to $0.03 |
+| AI variable, instant mode | per recipient, 800 tokens in, 100 out | about $0.005 per recipient |
+| Single-shot AI step in a campaign or automation | 1,500 tokens in, 200 out | about $0.01 |
+| Contact research run with three web searches | 8,000 tokens in, 1,000 out | about $0.09 |
+| Inbox agent handling one thread | 10,000 tokens in, 1,000 out | about $0.05 to $0.06 |
+| Web search by an AI step (only when it finds results) | one search | $0.0125 |
+| Inbox placement test past the free tests | one test | $0.50 |
+| Lead finder website read, with the people it names | one website | $0.02 |
+| Lead finder email found for a named person | one person | $0.02 |
+| Lead search page through a source the instance pays for | one page | $0.04 |
+
+Longer threads, bigger prompts and longer outputs cost more, and shorter ones cost less. The history shows exactly what each call used.
+
+Rules for every charge:
+
+- Before work starts, the balance has to cover a typical call of that kind. A short balance is refused **before** any work starts, so you are never half-charged.
+- After the call, the actual cost is charged. **A result you already received never fails** for costing more than expected; at worst the balance goes to zero.
+- A provider error charges nothing, so you never pay for output you did not get.
+- A contact research run that finds nothing is still charged for the searching it did.
+- A free or local model (on a self-hosted instance) is never charged.
 
 </Fold>
 
@@ -98,51 +118,86 @@ Five rules govern the settle:
 
 ## Placement tests
 
-Credits also pay for [inbox placement tests](/guides/placement-tests/#free-tests-and-credits) once a paid workspace has used its free tests for the month. A test is a flat `25` credits (the operator can change the price), with no AI involved and no settle afterwards. Nothing is charged without you agreeing to it: the new-test dialog shows the price and your balance, and you tick to pay before the test can start. A test that delivers no copy is refunded to the pools it came from. Placement charges count toward your spend limits (a refunded one no longer does) and appear in the usage breakdown as **Placement tests**; they are not held to the AI generation caps. Tests on your own seed inboxes are always free.
+The balance also pays for [inbox placement tests](/guides/placement-tests/#free-tests-and-the-balance) once a paid workspace has used its free tests for the month. A test is a flat price ($0.50 at the default prices, set by the operator), with no AI involved. Nothing is charged without you agreeing to it: the new-test dialog shows the price and your balance, and you tick to pay before the test can start. A test that delivers no copy is refunded to the part of the balance it came from. Placement charges count toward your spend limits (a refunded one no longer does) and appear in the usage breakdown as **Placement tests**; they are not held to the AI generation caps. Tests on your own seed inboxes are always free.
 
 </Fold>
 
 <Fold>
 
-## Usage and spend controls
+## The history
 
-The **AI usage & spend controls** card shows today, this week, and this month spend, a graph over the last 7, 30, or 90 days, and breakdowns by feature and model (credits, tokens, call counts). Each limit is set by slider or exact number and shows current spend against it; changes collect into a save bar.
+Every charge, addition and reset, newest first. A charge shows the activity, the model, the input and output tokens or the units used, the amount in dollars, the balance after it, and the time. Each one records exactly what ran it: campaign, step and contact for a switch step; automation, node and run for an automation step (including what an Ask AI branch asked); the thread for inbox drafts; and the teammate behind manual features.
+
+The usage card above it shows spend today, this week and this month, a graph over the last 7, 30 or 90 days, and breakdowns by feature and by model (dollars, tokens and call counts).
+
+</Fold>
+
+<Fold>
+
+## Adding money and your saved card
+
+You can add any amount from **$5 to $5,000**, in whole cents. Adding money needs an active paid plan.
+
+- **One click on the saved card.** The card is charged at once and the money is added as soon as the payment goes through. If the payment is still going through when the page answers, the Balance tab says so and updates when it lands; Warmbly finishes it in the background, and another payment cannot start until it does. Each charge is billed as a Stripe invoice, so it has its own invoice and receipt.
+- **Pay another way.** Opens Stripe Checkout for the amount. Use it when there is no saved card, when you want another card, or when the saved card is declined or your bank asks to confirm the payment. Checkout saves the card for next time. Money arrives only after Stripe confirms the payment, so closing the checkout tab charges nothing, and a completed payment is added exactly once even if Stripe retries.
+- **Change the card.** Opens Stripe Checkout to save a new card, without charging anything.
+
+The card shown is the one on the workspace's Stripe billing account (brand and last four digits). Card details are held by Stripe and never touch Warmbly.
+
+</Fold>
+
+<Fold>
+
+## Automatic reload
+
+Automatic reload adds money on the saved card when the balance falls below a threshold, so AI never pauses for an empty balance. It needs a saved card and an active paid plan.
+
+| Setting | Default | Range |
+|---------|---------|-------|
+| **When the balance falls below** | $5 | $0.01 to $1,000 |
+| **Add** | $25 | $5 to $5,000, and more than the threshold |
+| **Monthly limit** | $250 | at least one reload, up to $50,000 |
+
+The monthly limit counts every automatic reload in the calendar month. When less than a full reload is left under it, Warmbly adds what is left if that is at least $5, and otherwise waits for next month.
+
+When a reload is declined:
+
+- **A temporary decline** (for example insufficient funds) is retried 1 hour, 6 hours and 18 hours later. If the last retry also fails, automatic reload turns off.
+- **A hard decline, or your bank asking to confirm the payment**, turns automatic reload off at once, so nothing else is charged. Everyone who manages billing is notified with the reason. Add money once (through Checkout if the bank needs you to confirm), update the card if it was declined, then turn automatic reload back on.
+- **Stripe keeps failing to answer**: the reload is given up after 8 tries and automatic reload turns off the same way.
+
+A reload waiting for a retry is canceled, never charged, when you turn automatic reload off or the balance is back above the threshold by the time it is due.
+
+The Balance tab shows the last reload, how much has been reloaded this month, and a pending retry with its time.
+
+</Fold>
+
+<Fold>
+
+## Low and empty balance notices
+
+Everyone with **Manage billing** gets an in-app notice when the balance falls below your low balance threshold ($0.50 by default, set on the Balance tab), and another when it runs out. Each one is sent at most once a month, and again after money is added. Neither is sent when automatic reload will top the balance up.
+
+</Fold>
+
+<Fold>
+
+## Spend limits
 
 | Control | Behavior |
 |---------|----------|
-| **Spend limits** | Optional hard caps per calendar day, ISO week, and calendar month. At the limit, AI pauses with a clear message until the window rolls over |
-| **Per-member limits** | The same three windows per teammate, counting only charges they triggered. Workspace-level work (automations, inbox agent) is attributed to nobody |
-| **Low-credit reminder** | Below your threshold, everyone with Manage billing gets an in-app alert, at most once a day |
-| **Auto top-up** | Buys your chosen pack automatically when the balance dips below a threshold, bounded by a monthly purchase maximum. Needs the saved subscription card |
+| **Spend limits** | Optional caps in dollars per calendar day, ISO week and calendar month. At the limit, AI pauses with a clear message until the window rolls over |
+| **Per-member limits** | The same three windows per teammate, in dollars, counting only charges they triggered. Workspace-level work (automations, the inbox agent) is attributed to nobody |
 
-Who can use AI at all is separate: the **Use AI** role permission (see [Team and roles](/guides/team-roles/)).
+Each limit shows current spend against it, and changes collect into a save bar. Who can use AI at all is separate: the **Use AI** role permission (see [Team and roles](/guides/team-roles/)).
 
 </Fold>
 
 <Fold>
 
-## Allowances and top-ups
+## Invoices
 
-| Plan | Monthly credits |
-|------|-----------------|
-| Free trial | none, AI is a paid feature |
-| Starter | 250 |
-| Grow | 2,000 |
-| Business | 25,000 |
-
-Paid workspaces get a fresh grant each cycle, with the reset date shown beside your balance. Top-up packs come in **500**, **2,000**, and **10,000** credits, paid through Stripe Checkout with the card on file, landing in the purchased pool as soon as payment settles. Top-ups require an active paid plan.
-
-<Callout type="warn" title="Purchases settle through Stripe">
-Credits arrive only after Stripe confirms payment, not when you click. Closing the checkout tab charges nothing. A completed purchase is applied exactly once even if Stripe retries.
-</Callout>
-
-</Fold>
-
-<Fold>
-
-## The transaction log
-
-Every grant, purchase, and spend, newest first, with the activity, model and token count, signed credit change, resulting balance, and time. Each spend records exactly what ran it: campaign, step, and contact for a switch step; automation, node, and run for an automation step (including what an Ask AI branch asked); the thread for inbox drafts; and the teammate behind manual features.
+Every payment raises a Stripe invoice: each one-click addition, each automatic reload, each Checkout payment, and the subscription itself. The Balance tab lists the latest ones with a link to each invoice and its PDF. Invoices and receipts for the plan itself are covered in [Plans and billing](/guides/billing/).
 
 </Fold>
 
@@ -150,14 +205,14 @@ Every grant, purchase, and spend, newest first, with the activity, model and tok
 
 ## FAQ
 
-**Do unused monthly credits roll over?** No. Buy a top-up pack for credits that carry over.
+**Does unused allowance roll over?** No. Money you add carries over.
 
-**Do purchased credits expire?** No, through any number of resets.
+**Does money I add expire?** No, through any number of resets.
 
-**What happens when I change plans?** Your allowance follows the new plan from the next cycle. Purchased credits are unaffected.
+**What happens when I change plans?** Your allowance follows the new plan from the next cycle. Money you added is unaffected.
 
-**What happens if I cancel?** Monthly grants stop; any purchased balance stays until spent.
+**What happens if I cancel?** The monthly allowance stops; money you added stays until spent, and is usable again once the workspace is on a paid plan.
 
-**Do credits apply when self-hosting?** Not when billing is off, which is the self-host default (`BILLING_PROVIDER=none`). You pay your AI provider directly, so the credit ledger is bypassed: nothing is debited, there is no plan allowance, the header shows no credit gauge, and per-action cost hints are hidden. A self-hosted install that runs Stripe (`BILLING_PROVIDER=stripe`) is metered exactly like the hosted product. Separately, a free or local model (`AI_PROVIDER=ollama`, or any provider with `AI_FREE=true`) is never charged and shows a "free model" notice. See the [self-hosting guide](/development/deployment-guide/).
+**Does the balance apply when self-hosting?** Not when billing is off, which is the self-host default (`BILLING_PROVIDER=none`). You pay your AI provider directly, so the balance is bypassed: nothing is charged, there is no plan allowance, the header shows no balance, and per-action cost hints are hidden. A self-hosted instance that runs Stripe (`BILLING_PROVIDER=stripe`) is metered exactly like the hosted product, at the price list and markup its operator sets (see [instance settings](/development/configuration/#usage-pricing)). Separately, a free or local model (`AI_PROVIDER=ollama`, or any provider with `AI_FREE=true`) is never charged and shows a "free model" notice. See the [self-hosting guide](/development/deployment-guide/).
 
 </Fold>

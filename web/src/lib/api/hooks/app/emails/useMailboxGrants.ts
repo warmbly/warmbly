@@ -7,17 +7,16 @@ import {
     checkGrant,
     connectGrantUsers,
     deleteGrant,
-    finishGoogleGrant,
     getGrantConfig,
     getSigninMigration,
     listGrantUsers,
     listGrants,
-    startGoogleGrant,
 } from "@/lib/api/client/app/emails/imports/mailboxGrants";
 import type { MailboxImport } from "@/lib/api/models/app/emails/MailboxImport";
-import type { DirectoryUser, DomainGrant, GoogleGrantFinish, GrantConnectRequest } from "@/lib/api/models/app/emails/MailboxSources";
+import type { DirectoryUser, DomainGrant, GrantConnectRequest } from "@/lib/api/models/app/emails/MailboxSources";
 import { sourceMutationKey } from "./mailboxSourceBusy";
 import { SENDING_DOMAINS_KEY } from "./useSendingDomains";
+import { MAILBOX_SIGNIN_KEY } from "./useMailboxSignin";
 
 export const GRANTS_KEY = ["mailbox-grants"] as const;
 export const SIGNIN_MIGRATION_KEY = [...GRANTS_KEY, "migration"] as const;
@@ -80,23 +79,6 @@ export function useStoreGrant() {
         );
         qc.invalidateQueries({ queryKey: GRANTS_KEY });
     };
-}
-
-export function useStartGoogleGrant() {
-    return useMutation({
-        mutationKey: sourceMutationKey("grant-google-start"),
-        mutationFn: (body: { domain: string; admin_email: string }) => startGoogleGrant(body),
-    });
-}
-
-/** The DNS proof's finish; the sign-in's runs in useGoogleAdminSignin. */
-export function useFinishGoogleGrant() {
-    const store = useStoreGrant();
-    return useMutation({
-        mutationKey: sourceMutationKey("grant-google-finish"),
-        mutationFn: (body: GoogleGrantFinish) => finishGoogleGrant(body),
-        onSuccess: store,
-    });
 }
 
 export function useCheckGrant() {
@@ -185,6 +167,7 @@ export function useSwitchToAppPassword() {
             qc.invalidateQueries({ queryKey: SIGNIN_MIGRATION_KEY });
             qc.invalidateQueries({ queryKey: ["emails"] });
             qc.invalidateQueries({ queryKey: ["analytics", "accounts"] });
+            qc.invalidateQueries({ queryKey: MAILBOX_SIGNIN_KEY });
         },
     });
 }

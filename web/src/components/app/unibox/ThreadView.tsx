@@ -38,7 +38,7 @@ import { DateTimePicker } from "@/components/ui/DateTimePicker";
 import { usePresenceResource } from "@/hooks/PresenceProvider";
 import { useMediaQuery, LG_QUERY } from "@/hooks/useMediaQuery";
 import { useShortcutActions } from "@/hooks/useShortcutActions";
-import { useAccessRestricted } from "@/hooks/usePermission";
+import { useAccessRestricted, useScopeReadOnly } from "@/hooks/usePermission";
 import { ThreadLabelMenu } from "./ThreadLabelMenu";
 import ContactContextPanel from "./ContactContextPanel";
 import { CategoryChip } from "@/components/app/contacts/CategoryPicker";
@@ -104,8 +104,9 @@ function defaultCustomSnoozeValue(): string {
 }
 
 export function ThreadView({ threadId, emailId, onClose }: ThreadViewProps) {
-  // A member restricted to selected resources reads the conversation and nothing more.
-  const readOnly = useAccessRestricted();
+  // Read-only unless a role acts in scope; the AI agent and CRM panel stay workspace-only.
+  const restricted = useAccessRestricted();
+  const readOnly = useScopeReadOnly("ACCESS_UNIBOX");
   const q = useThread(threadId, emailId);
   const scheduledQ = useThreadScheduled(threadId);
   const accounts = useAppStore((s) => s.emails);
@@ -574,6 +575,7 @@ export function ThreadView({ threadId, emailId, onClose }: ThreadViewProps) {
             )}
           </div>
           <span aria-hidden className="hidden @min-[28rem]/thread:block h-4 w-px bg-slate-200 mx-1" />
+          {!restricted && (
           <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -592,6 +594,7 @@ export function ThreadView({ threadId, emailId, onClose }: ThreadViewProps) {
             </TooltipTrigger>
             <TooltipContent side="bottom">{crmOpen ? "Hide contact" : "Show contact"}</TooltipContent>
           </Tooltip>
+          )}
           <PopoverMenu align="end" side="bottom">
             <PopoverMenuTrigger asChild>
               <button
@@ -695,7 +698,7 @@ export function ThreadView({ threadId, emailId, onClose }: ThreadViewProps) {
         ))}
       </motion.div>
 
-      {!readOnly && <AgentDraftCard threadId={threadId} />}
+      {!restricted && <AgentDraftCard threadId={threadId} />}
 
       {!readOnly && (
       <AnimatePresence mode="wait" initial={false}>
@@ -750,7 +753,7 @@ export function ThreadView({ threadId, emailId, onClose }: ThreadViewProps) {
       )}
       </div>
 
-      {crmOpen && !readOnly && (
+      {crmOpen && !restricted && (
         <ContactContextPanel
           email={contactEmail}
           name={contactName}

@@ -13,12 +13,12 @@ import (
 func TestSlackVerifyCallbackOriginIsStateBound(t *testing.T) {
 	t.Setenv("APP_URL", "https://app.warmbly.com")
 	t.Setenv("APP_ORIGIN", "")
-	t.Setenv("CORS_ALLOW_ORIGINS", "https://tac-security-assessment.warmbly.com")
+	t.Setenv("CORS_ALLOW_ORIGINS", "https://second.example.com")
 	s := &Service{guard: newGuard(nil)}
 	ctx := context.Background()
-	blob, _ := json.Marshal(verifyState{ReturnOrigin: "https://tac-security-assessment.warmbly.com"})
+	blob, _ := json.Marshal(verifyState{ReturnOrigin: "https://second.example.com"})
 	s.guard.put(ctx, verifyKey("state"), string(blob), time.Minute)
-	if s.OAuthReturnOrigin(ctx, "state") != "https://tac-security-assessment.warmbly.com" || s.guard.get(ctx, verifyKey("state")) == "" {
+	if s.OAuthReturnOrigin(ctx, "state") != "https://second.example.com" || s.guard.get(ctx, verifyKey("state")) == "" {
 		t.Fatal("routing must preserve verification state")
 	}
 	if s.OAuthReturnOrigin(ctx, "unknown") != "" {
@@ -28,7 +28,7 @@ func TestSlackVerifyCallbackOriginIsStateBound(t *testing.T) {
 	if s.OAuthReturnOrigin(ctx, "state") != "" {
 		t.Fatal("consumed state must not route")
 	}
-	for _, origin := range []string{"https://evil.example.com", "https://tac-security-assessment.warmbly.com/path"} {
+	for _, origin := range []string{"https://evil.example.com", "https://second.example.com/path"} {
 		blob, _ := json.Marshal(verifyState{ReturnOrigin: origin})
 		s.guard.put(ctx, verifyKey("state"), string(blob), time.Minute)
 		if s.OAuthReturnOrigin(ctx, "state") != "" {

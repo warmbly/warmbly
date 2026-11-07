@@ -72,7 +72,7 @@ func (r *organizationRepository) CreateInvitedUser(ctx context.Context, tokenHas
 	now := time.Now()
 	member := &models.OrganizationMember{
 		ID: uuid.New(), OrganizationID: inv.OrganizationID, UserID: u.ID,
-		Role: roles[0].Name, RoleID: &roles[0].ID, InvitedBy: &inv.InvitedBy,
+		Role: roles[0].Name, RoleID: &roles[0].ID, InvitedBy: InviterOf(inv.InvitedBy),
 		InvitedAt: inv.CreatedAt, AcceptedAt: &now, Access: acc.access(),
 	}
 	roleIDs := make([]uuid.UUID, 0, len(roles))
@@ -90,4 +90,12 @@ func (r *organizationRepository) CreateInvitedUser(ctx context.Context, tokenHas
 		return nil, nil, err
 	}
 	return u, member, nil
+}
+
+// InviterOf is nil for an invitation whose inviter's account was deleted.
+func InviterOf(id uuid.UUID) *uuid.UUID {
+	if id == uuid.Nil {
+		return nil
+	}
+	return &id
 }

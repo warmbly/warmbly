@@ -12,8 +12,6 @@ on:
       - deploy/docker-compose.coolify.yml
       - deploy/check-coolify.sh
       - .github/workflows/coolify.yml
-  merge_group:
-    types: [checks_requested]
 
 permissions:
   contents: read

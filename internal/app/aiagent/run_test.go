@@ -307,7 +307,7 @@ func TestResumePreservesApprovedActionWhenProviderFails(t *testing.T) {
 	}
 }
 
-// TestRunMessagePreservesCompletedActionsAfterCancellation protects receipts, refunds, and newer approvals during cleanup.
+// TestRunMessagePreservesCompletedActionsAfterCancellation protects receipts, the charge, and newer approvals during cleanup.
 func TestRunMessagePreservesCompletedActionsAfterCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -316,7 +316,7 @@ func TestRunMessagePreservesCompletedActionsAfterCancellation(t *testing.T) {
 		requests++
 		w.Header().Set("Content-Type", "application/json")
 		if requests == 1 {
-			_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","tool_calls":[{"id":"completed-write","type":"function","function":{"name":"update_contact_fields","arguments":"{}"}}]}}]}`))
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","tool_calls":[{"id":"completed-write","type":"function","function":{"name":"update_contact_fields","arguments":"{}"}}]}}],"usage":{"prompt_tokens":6,"completion_tokens":4,"total_tokens":10}}`))
 			return
 		}
 		cancel()
@@ -336,7 +336,7 @@ func TestRunMessagePreservesCompletedActionsAfterCancellation(t *testing.T) {
 		session:  models.AgentSession{ID: uuid.New(), OrgID: uuid.New(), UserID: uuid.New()},
 		policies: map[string]string{"update_contact_fields": "always_allow"},
 	}
-	ledger := &runCreditLedger{balance: 50}
+	ledger := &runCreditLedger{balance: 50, allowed: 50}
 	repo.afterAppend = func(receiptCtx context.Context) {
 		if ctx.Err() != nil {
 			if _, bounded := receiptCtx.Deadline(); !bounded {
@@ -353,8 +353,8 @@ func TestRunMessagePreservesCompletedActionsAfterCancellation(t *testing.T) {
 	if ctx.Err() == nil || requests != 2 || writes != 1 {
 		t.Fatalf("fixture did not cancel after one completed action: canceled=%v requests=%d writes=%d", ctx.Err(), requests, writes)
 	}
-	if ledger.refunded != 1 || ledger.balance != 49 {
-		t.Errorf("cancellation lost the failed iteration refund: refunded=%d balance=%d", ledger.refunded, ledger.balance)
+	if len(ledger.charges) != 1 || ledger.keys[0] != "canceled-message" || ledger.charges[0].InputTokens < 6 {
+		t.Errorf("cancellation lost the completed turn's charge: charges=%+v keys=%v", ledger.charges, ledger.keys)
 	}
 	turns, pending, xerr := svc.Transcript(context.Background(), inv, repo.session.ID)
 	if xerr != nil {

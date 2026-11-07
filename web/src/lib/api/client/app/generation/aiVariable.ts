@@ -5,7 +5,7 @@ import type {
 import Request from "../../Request";
 
 // POST /generation/ai-variable — preview one AI-variable snippet for a sample or
-// chosen contact. Returns a 402 when the org is out of generation credits.
+// chosen contact. Returns a 402 when the workspace balance is too low.
 export default async function generateAIVariable(
     body: AIVariableGenerateRequest,
 ): Promise<AIVariableGenerateResponse> {

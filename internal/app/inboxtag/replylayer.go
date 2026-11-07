@@ -43,23 +43,20 @@ func ReplyClassFor(kind, intent string) string {
 // sentimentCriteria is the three-way question the model layer answers when no
 // stored verdict exists. Same classes, same floor, as the full taxonomy.
 var sentimentCriteria = map[string]string{
-	replyclassify.ClassPositive: "Interested, agrees, asks for more, or wants to talk",
+	replyclassify.ClassPositive: "Interested, agrees, wants to talk, or asks about price, terms or how it works",
 	replyclassify.ClassNegative: "Declines or says they are not the right person",
-	replyclassify.ClassNeutral:  "A question, a deferral, or anything unclear",
+	replyclassify.ClassNeutral:  "Says the timing is wrong, or anything unclear",
 }
 
 // ReplyClassifier builds the classifier's model layer. repo is optional: with
-// it, a message the tagger classified moments earlier is answered from the row.
+// it, a message the tagger classified moments earlier is answered from the row,
+// which costs nothing and so is read whatever mayAsk says.
 func ReplyClassifier(asker typesafe.Asker, repo repository.InboxTagRepository) replyclassify.TypedClassifyFunc {
-	return func(ctx context.Context, in replyclassify.Input) (replyclassify.Result, bool) {
-		if repo != nil && in.OrganizationID != uuid.Nil && in.MessageID != "" {
-			if stored, err := repo.GetByMessageID(ctx, in.OrganizationID, in.MessageID); err == nil && stored != nil {
-				// A verdict the tagger marked untrusted stays untrusted; a
-				// coarser second question must not overrule the review page.
-				return resultFromStored(stored)
-			}
+	return func(ctx context.Context, in replyclassify.Input, mayAsk func() bool) (replyclassify.Result, bool) {
+		if r, ok := StoredReplyResult(ctx, repo, in.OrganizationID, in.MessageID); ok {
+			return r, true
 		}
-		if asker == nil {
+		if asker == nil || !mayAsk() {
 			return replyclassify.Result{}, false
 		}
 		state := BuildState(in.Subject, in.BodyText, "", "", in.Languages...)
@@ -84,20 +81,40 @@ func ReplyClassifier(asker typesafe.Asker, repo repository.InboxTagRepository) r
 	}
 }
 
-// resultFromStored reads a stored verdict as a classifier result. Only a
-// trusted one counts: a kind under the floor, or a human reply whose intent
-// was, is not a verdict to route a campaign on.
-func resultFromStored(r *repository.InboxTagResult) (replyclassify.Result, bool) {
-	if r.KindConfidence < ConfFloor || r.NeedsReview {
+// StoredReplyResult reads the verdict the tagger stored for a message as a
+// reply class. found is false only when nothing was stored; an untrusted
+// verdict is found as ClassUnknown, so no other layer labels what the inbox
+// shows as Needs review.
+func StoredReplyResult(ctx context.Context, repo repository.InboxTagRepository, orgID uuid.UUID, messageID string) (replyclassify.Result, bool) {
+	if repo == nil || orgID == uuid.Nil || messageID == "" {
 		return replyclassify.Result{}, false
 	}
-	class := ReplyClassFor(r.Kind, r.Intent)
-	if class == replyclassify.ClassUnknown {
+	stored, err := repo.GetByMessageID(ctx, orgID, messageID)
+	if err != nil || stored == nil {
 		return replyclassify.Result{}, false
+	}
+	return resultFromStored(stored), true
+}
+
+// resultFromStored reads a stored verdict as a classifier result. Only a
+// trusted one names a class: a kind under the floor, or a human reply whose
+// intent was, is not a verdict to route a campaign on.
+func resultFromStored(r *repository.InboxTagResult) replyclassify.Result {
+	unknown := replyclassify.Result{Class: replyclassify.ClassUnknown, Source: replyclassify.SourceModel}
+	if r.KindConfidence < ConfFloor || r.NeedsReview {
+		return unknown
+	}
+	class := ReplyClassFor(r.Kind, r.Intent)
+	if class == replyclassify.ClassUnknown && IsAutomatedKind(r.Kind) {
+		// A bounce or a notice is machine mail, as the inbox files it.
+		class = replyclassify.ClassAutoReply
+	}
+	if class == replyclassify.ClassUnknown {
+		return unknown
 	}
 	conf := r.KindConfidence
 	if r.Kind == KindHumanReply {
 		conf = r.IntentConfidence
 	}
-	return replyclassify.Result{Class: class, Confidence: conf, Source: replyclassify.SourceModel}, true
+	return replyclassify.Result{Class: class, Confidence: conf, Source: replyclassify.SourceModel}
 }

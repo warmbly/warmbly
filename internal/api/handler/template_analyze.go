@@ -94,21 +94,15 @@ func (h *Handler) AnalyzeTemplateContent(c *gin.Context) {
 			errx.JSON(c, errx.New(errx.ServiceUnavailable, "The copy judge is temporarily unavailable. Nothing was charged."))
 			return
 		}
-		remaining := 0
-		if bal, berr := h.CreditService.GetBalance(c.Request.Context(), *orgID); berr == nil {
-			remaining = bal
-		}
-		c.JSON(http.StatusOK, gin.H{
-			"score":             rules.Score,
-			"verdict":           judgment.Summary(),
-			"findings":          []spamcheck.Finding{},
-			"rules":             rules,
-			"judgment":          judgment,
-			"model":             judgment.Model,
-			"tokens_used":       judgment.InputTokens,
-			"credits_remaining": remaining,
-			"credits_charged":   0,
-		})
+		c.JSON(http.StatusOK, withBalance(gin.H{
+			"score":       rules.Score,
+			"verdict":     judgment.Summary(),
+			"findings":    []spamcheck.Finding{},
+			"rules":       rules,
+			"judgment":    judgment,
+			"model":       judgment.Model,
+			"tokens_used": judgment.InputTokens,
+		}, 0, h.balanceNow(c.Request.Context(), *orgID)))
 		return
 	}
 
@@ -126,18 +120,8 @@ func (h *Handler) AnalyzeTemplateContent(c *gin.Context) {
 		reqCtx = models.WithCreditMeta(reqCtx, meta)
 	}
 
-	var remaining int
-	if local {
-		if bal, berr := h.CreditService.GetBalance(reqCtx, *orgID); berr == nil {
-			remaining = bal
-		}
-	} else {
-		var cerr error
-		remaining, cerr = h.CreditService.Consume(reqCtx, *orgID, credits.CostSpamAnalysis, "spam_analysis", model, 0, idemKey)
-		if cerr != nil {
-			mapCreditError(c, cerr)
-			return
-		}
+	if !h.reserveAI(c, reqCtx, *orgID, local, credits.EstimateSpamAnalysis) {
+		return
 	}
 
 	analysis, aerr := spamcheck.Analyze(c.Request.Context(), h.AIProvider, model, spamcheck.Input{
@@ -148,43 +132,16 @@ func (h *Handler) AnalyzeTemplateContent(c *gin.Context) {
 		Voice:     h.orgVoice(c.Request.Context(), *orgID, ""),
 	})
 	if aerr != nil {
-		refunded := local
-		if !local {
-			bal, rerr := h.CreditService.Grant(reqCtx, *orgID, credits.CostSpamAnalysis, "spam_analysis_refund")
-			if rerr == nil {
-				remaining, refunded = bal, true
-			} else {
-				// Do not tell the customer their credits came back when the
-				// refund is what failed. Logged so it can be reconciled from
-				// the ledger rather than discovered from a support ticket.
-				log.Error().Err(rerr).Str("organization_id", orgID.String()).
-					Int("credits", credits.CostSpamAnalysis).
-					Msg("spam analysis refund failed after a provider error")
-			}
-		}
-		if !refunded {
-			errx.JSON(c, errx.New(errx.ServiceUnavailable,
-				"The spam analyzer is temporarily unavailable, and the credits it reserved could not be returned automatically. Contact support and they will be refunded."))
-			return
-		}
-		errx.JSON(c, errx.New(errx.ServiceUnavailable, "The spam analyzer is temporarily unavailable. Your credits were not charged."))
+		errx.JSON(c, errx.New(errx.ServiceUnavailable, "The spam analyzer is temporarily unavailable. Nothing was charged."))
 		return
 	}
 
 	// Judged only once the paid analysis succeeded, so a request refused for
-	// credits or a provider error spends no TypeSafe call.
+	// its balance or a provider error spends no TypeSafe call.
 	judgment := h.copyJudgment(c.Request.Context(), *orgID, req)
 
-	charged := 0
-	if !local {
-		charged = credits.CostSpamAnalysis
-		if extra, serr := h.CreditService.SettleUsage(reqCtx, *orgID, credits.CostSpamAnalysis, analysis.Model, analysis.TokensUsed, "spam_analysis", settleKey(idemKey)); serr == nil && extra > 0 {
-			remaining -= extra
-			charged += extra
-		}
-	}
-
-	out := gin.H{
+	charged, balance := h.chargeAI(reqCtx, *orgID, local, credits.AIUsage(analysis.Model, analysis.InputTokens, analysis.OutputTokens), "spam_analysis", idemKey)
+	out := withBalance(gin.H{
 		"score":             analysis.Score,
 		"verdict":           analysis.Verdict,
 		"findings":          analysis.Findings,
@@ -193,9 +150,7 @@ func (h *Handler) AnalyzeTemplateContent(c *gin.Context) {
 		"rules":             rules,
 		"model":             analysis.Model,
 		"tokens_used":       analysis.TokensUsed,
-		"credits_remaining": remaining,
-		"credits_charged":   charged,
-	}
+	}, charged, balance)
 	if judgment != nil {
 		out["judgment"] = judgment
 	}

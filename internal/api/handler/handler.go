@@ -16,6 +16,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/attachmentdownload"
 	"github.com/warmbly/warmbly/internal/app/audit"
 	"github.com/warmbly/warmbly/internal/app/auth"
+	"github.com/warmbly/warmbly/internal/app/balance"
 	"github.com/warmbly/warmbly/internal/app/behavior"
 	"github.com/warmbly/warmbly/internal/app/bootstrap"
 	"github.com/warmbly/warmbly/internal/app/campaign"
@@ -45,6 +46,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/instancesettings"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/keystatus"
+	"github.com/warmbly/warmbly/internal/app/leadfinder"
 	"github.com/warmbly/warmbly/internal/app/leadsync"
 	"github.com/warmbly/warmbly/internal/app/mailboximport"
 	"github.com/warmbly/warmbly/internal/app/mailpush"
@@ -64,7 +66,6 @@ import (
 	"github.com/warmbly/warmbly/internal/app/planoffer"
 	"github.com/warmbly/warmbly/internal/app/poollink"
 	"github.com/warmbly/warmbly/internal/app/ratelimit"
-	"github.com/warmbly/warmbly/internal/app/referral"
 	"github.com/warmbly/warmbly/internal/app/research"
 	"github.com/warmbly/warmbly/internal/app/salesforce"
 	"github.com/warmbly/warmbly/internal/app/segment"
@@ -171,7 +172,6 @@ type Handler struct {
 	SubscriptionService subscription.SubscriptionService
 	StripeService       stripe.StripeService
 	DiscountService     discount.DiscountService
-	ReferralService     referral.Service
 	// PlanOfferService holds private plan offers and credential-free Cloud warmup grants. Nil-safe.
 	PlanOfferService planoffer.Service
 
@@ -253,6 +253,7 @@ type Handler struct {
 
 	// AI writing assistant + credit ledger.
 	CreditService    credits.CreditService
+	BalanceService   *balance.Service
 	WritingGenerator generation.WritingGenerator
 
 	// AI provider layer (RunAgent tool-loop backend) + pluggable web search,
@@ -350,6 +351,8 @@ type Handler struct {
 	ApolloService *apollo.Service
 	// ClayService takes rows from Clay tables and sends events back to them.
 	ClayService *clay.Service
+	// LeadFinderService finds businesses on a map and turns them into contacts.
+	LeadFinderService *leadfinder.Service
 
 	// Public websocket URL used by frontend clients
 	WebsocketURI string

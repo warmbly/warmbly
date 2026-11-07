@@ -97,6 +97,30 @@ export interface WarmupHealthInfo {
     senders_7d: number;
 }
 
+export type SendPauseReason =
+    | "rate_limited"
+    | "daily_limit"
+    | "sender_blocked"
+    | "retry"
+    | "domain_auth"
+    | "permanent"
+    | "authentication"
+    | "";
+
+// Why a provider stopped this mailbox sending, and when it starts again.
+export interface SendPause {
+    reason: SendPauseReason;
+    /** True for a hold that waits for a fix or a re-probe; false for a timed pause. */
+    held: boolean;
+    /** When a timed pause ends. */
+    until?: string;
+    /** When Warmbly lets a held mailbox try one more send on its own. */
+    retry_at?: string;
+    provider_message?: string;
+    /** POST /emails/:id/resume-sending can lift it; an authentication hold needs a reconnect. */
+    resumable: boolean;
+}
+
 export default interface AccountStatus {
     id: string;
     email: string;
@@ -109,8 +133,10 @@ export default interface AccountStatus {
     warmup_status?: WarmupStatusInfo;
     /** Present only while graduation holds the cold cap below the configured one. */
     cold_ramp?: ColdRampInfo;
-    /** Names a send safety hold; absent while sending is not held. "authentication" clears on a successful reconnect. */
-    send_recovery_reason?: "authentication" | "permanent" | "conflict" | "unknown";
+    /** Names a send safety hold; absent while sending is not held. "authentication" and "permanent" clear on a successful reconnect; a Gmail or Outlook "permanent" also clears once the mailbox syncs again; "domain_auth" clears once the sending domain's check passes. */
+    send_recovery_reason?: "authentication" | "permanent" | "domain_auth" | "conflict" | "unknown";
+    /** A provider's pause on this mailbox's sending; absent while it sends normally. */
+    send_pause?: SendPause;
     /** Present only when the mailbox is NOT in cold rotation. */
     send_lifecycle?: SendLifecycleState;
     warmup_health?: WarmupHealthInfo;

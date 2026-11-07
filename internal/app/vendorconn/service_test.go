@@ -41,7 +41,48 @@ func (f *fakeClient) Credentials(_ context.Context, m mailvendor.Mailbox) (mailv
 }
 
 type memVendors struct {
-	conns map[uuid.UUID]*models.VendorConnection
+	conns  map[uuid.UUID]*models.VendorConnection
+	linked []repository.VendorReconnect
+	// cands are the automatic switch's candidates; switches is each mailbox's recorded reconnect.
+	cands    []repository.SigninSwitchCandidate
+	switches map[uuid.UUID]*models.MailboxSigninSwitch
+}
+
+func (m *memVendors) AutoSwitchCandidates(_ context.Context, _ []string, limit int) ([]repository.SigninSwitchCandidate, error) {
+	return m.cands[:min(limit, len(m.cands))], nil
+}
+
+// StartSigninSwitch claims like the store does: an automatic start skips a mailbox tried within the retry or connected.
+func (m *memVendors) StartSigninSwitch(_ context.Context, _ uuid.UUID, ids []uuid.UUID, automatic bool) ([]uuid.UUID, error) {
+	if m.switches == nil {
+		m.switches = map[uuid.UUID]*models.MailboxSigninSwitch{}
+	}
+	var out []uuid.UUID
+	for _, id := range ids {
+		if was := m.switches[id]; automatic && was != nil && (was.Status == ReconnectConnected || time.Since(was.At) < repository.SigninSwitchRetry) {
+			continue
+		}
+		m.switches[id] = &models.MailboxSigninSwitch{Status: ReconnectQueued, Automatic: automatic, At: time.Now()}
+		out = append(out, id)
+	}
+	return out, nil
+}
+
+func (m *memVendors) SetSigninSwitch(_ context.Context, _, id uuid.UUID, status, message string) error {
+	if m.switches == nil {
+		m.switches = map[uuid.UUID]*models.MailboxSigninSwitch{}
+	}
+	sw := m.switches[id]
+	if sw == nil {
+		sw = &models.MailboxSigninSwitch{}
+		m.switches[id] = sw
+	}
+	sw.Status, sw.Message, sw.At = status, message, time.Now()
+	return nil
+}
+
+func (m *memVendors) SigninState(context.Context, uuid.UUID, uuid.UUID) (*models.MailboxSigninState, error) {
+	return nil, nil
 }
 
 func (m *memVendors) Create(_ context.Context, c *models.VendorConnection, _ uuid.UUID) error {
@@ -94,6 +135,15 @@ func (m *memVendors) SetStatus(_ context.Context, id uuid.UUID, status, last str
 }
 func (m *memVendors) ReconnectCandidates(context.Context, int) ([]repository.VendorReconnect, error) {
 	return nil, nil
+}
+func (m *memVendors) LinkedGoogleMailboxes(_ context.Context, org, conn uuid.UUID) ([]repository.VendorReconnect, error) {
+	var out []repository.VendorReconnect
+	for _, l := range m.linked {
+		if l.OrgID == org && l.ConnectionID == conn {
+			out = append(out, l)
+		}
+	}
+	return out, nil
 }
 
 type fakeMailboxes struct {

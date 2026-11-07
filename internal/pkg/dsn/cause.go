@@ -30,6 +30,10 @@ func (c Cause) AddressIsFine() bool {
 	return false
 }
 
+// NamesAddress reports a refusal that clearly says the address cannot receive
+// mail, the only cause that may suppress it.
+func (c Cause) NamesAddress() bool { return c == CauseRecipientInvalid }
+
 // mailboxFullMarkers say the mailbox exists and is over quota. They win over
 // recipientMarkers because Postfix quota policies answer "Recipient address
 // rejected: Mailbox full".
@@ -69,12 +73,15 @@ var recipientMarkers = []string{
 	"no mailbox here",
 	"not a valid mailbox",
 	"user doesn't have an account",
+	"user doesn't have a ",
+	"address not found",
+	"address couldn't be found",
 }
 
 // weakRecipientMarkers blame the recipient only when nothing in the text
-// blames the sender or a policy: "Recipient address rejected: policy
-// restriction" and "sender domain does not exist" are not about the address,
-// while Microsoft's "Recipient address rejected: Access denied" is.
+// blames the sender or a policy and the enhanced status does not place the
+// refusal elsewhere: "550 5.7.1 mailbox unavailable" is a policy block, while
+// Microsoft's "Recipient address rejected: Access denied" under 5.4.1 is not.
 var weakRecipientMarkers = []string{
 	"recipient address rejected",
 	"recipient rejected",
@@ -132,11 +139,31 @@ var sessionMarkers = []string{
 	"blocked using",
 	"listed in",
 	"spamhaus",
+	"dnsbl",
+	"listed at",
+	"listed on",
+	"listed by",
 	"spam",
+	"unsolicited",
 	"reputation",
+	"blocked",
+	"banned",
+	"spoof",
+	"dmarc",
+	"unauthenticated",
 	"service unavailable",
 	"connection refused",
 	"policy",
+}
+
+// weakBlockMarkers refuse the message without saying who for, so they yield
+// to recipient wording and to a status code: Exchange answers a missing
+// mailbox "Recipient address rejected: Access denied".
+var weakBlockMarkers = []string{
+	"access denied",
+	"message rejected",
+	"rejected by",
+	"not accepted",
 }
 
 // Status is an RFC 3463 enhanced status code (class.subject.detail).
@@ -222,10 +249,22 @@ func Blame(text string) Cause {
 	if containsAny(lower, sessionMarkers) {
 		return CauseReputationBlock
 	}
-	if containsAny(lower, weakRecipientMarkers) {
+	byStatus := CauseUnknown
+	if hasStatus {
+		byStatus = statusCause(status)
+	}
+	if containsAny(lower, weakRecipientMarkers) && !byStatus.AddressIsFine() {
 		return CauseRecipientInvalid
 	}
-	if !hasStatus || status.Class != 5 {
+	if byStatus == CauseUnknown && containsAny(lower, weakBlockMarkers) {
+		return CauseReputationBlock
+	}
+	return byStatus
+}
+
+// statusCause reads an enhanced status code on its own.
+func statusCause(status Status) Cause {
+	if status.Class != 5 {
 		return CauseUnknown
 	}
 	switch status.Subject {

@@ -257,12 +257,14 @@ var Tables = []Table{
 		// destination's own sweep verifies it again.
 		// send_claimed_at is this instance's per-send gap lock.
 		// previous_worker_id and worker_released_at name a worker on this instance.
+		// signin_switch_* is this instance's vendor reconnect attempt; the destination makes its own.
 		ResetOnImport: []string{
 			"transport_generation",
 			"worker_id", "auth_checked_at", "auth_failing_since", "cold_ramp_started_at",
 			"send_lifecycle", "send_lifecycle_since", "send_lifecycle_reason", "seed_scope",
 			"avatar_checked_at", "tracking_domain_verified", "tracking_domain_verified_at",
 			"send_claimed_at", "previous_worker_id", "worker_released_at",
+			"signin_switch_state", "signin_switch_at", "signin_switch_message", "signin_switch_automatic",
 		},
 		Blobs: []BlobColumn{{Column: "avatar_url", Kind: BlobKindPublicURL}},
 	},
@@ -362,6 +364,10 @@ var Tables = []Table{
 	{
 		Name: "org_ai_settings", Group: models.OrgDataGroupCore,
 		Scope: scopeOrgAlt,
+		// Automatic reload charges a card on the source instance's Stripe
+		// account, so it arrives off with no failure or notice history.
+		ResetOnImport: []string{"auto_reload_enabled", "auto_topup_enabled", "auto_reload_failure_code", "auto_reload_failed_at",
+			"low_balance_notified_at", "balance_out_notified_at"},
 	},
 	{
 		Name: "advisor_settings", Group: models.OrgDataGroupCore,
@@ -382,6 +388,27 @@ var Tables = []Table{
 		Name: "contact_import_mappings", Group: models.OrgDataGroupContacts,
 		Scope: scopeOrg,
 		Note:  "Column mappings the workspace confirmed for its contact imports, keyed by header set, so the same export maps itself on the destination too.",
+	},
+	{
+		Name: "lead_searches", Group: models.OrgDataGroupContacts,
+		Scope:         scopeOrg,
+		ResetOnImport: []string{"next_cursor", "pages_fetched"},
+		Note:          "Lead finder searches and saved searches. A provider's paging token only means something to the session that fetched it, so a search resumes from its first page.",
+	},
+	{
+		Name: "leads", Group: models.OrgDataGroupContacts,
+		Scope: scopeOrg,
+		Note:  "Businesses found with the lead finder, with what reading their websites found and the contact each became.",
+	},
+	{
+		Name: "lead_search_hits", Group: models.OrgDataGroupContacts,
+		Scope: `search_id IN (SELECT id FROM lead_searches WHERE organization_id = $1)`,
+		Note:  "Which search found each lead, so a saved search reopens with its results.",
+	},
+	{
+		Name: "lead_people", Group: models.OrgDataGroupContacts,
+		Scope: scopeOrg,
+		Note:  "People found at each lead's business, with the address found or worked out for them and the contact each became.",
 	},
 	{
 		Name: "contact_categories", Group: models.OrgDataGroupContacts,
@@ -1081,6 +1108,7 @@ var ExcludedTables = map[string]string{
 	"crm_sync_jobs":                    "The outbox of pending CRM writes on this instance; the destination's own events feed its outbox.",
 	"crm_sync_cursors":                 "Pull checkpoints for this instance; the destination starts its own pull.",
 	"apollo_enrichment_runs":           "The progress of enrichment requests run on this instance. What they found is already on the contacts, which travel.",
+	"lead_enrichment_runs":             "The progress of website reads run on this instance. What they found is already on the leads, which travel.",
 	"salesforce_record_links":          "Which Salesforce record each contact is, with a cached copy of it. The destination links contacts again by address the first time it syncs or shows them, and reads the record fresh.",
 	"salesforce_activity_queue":        "Activity waiting to be logged in Salesforce, and the recent outcome of what was. What was logged is already in Salesforce; what was waiting belongs to this instance's drain.",
 	"salesforce_sync_state":            "Where this instance's pull loop got to in each Salesforce org, and the API calls it counted today. The destination starts its own cursor when the connection first syncs.",

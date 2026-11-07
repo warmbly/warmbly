@@ -57,6 +57,15 @@ export function mailHostLogo(host?: string | null): "google" | "microsoft" | nul
     return null;
 }
 
+/** A consumer Gmail address, which connects with an app password rather than Google sign-in. */
+export function isPersonalGmail(address?: string | null): boolean {
+    const a = (address ?? "").trim();
+    const at = a.lastIndexOf("@");
+    if (at < 0) return false;
+    const domain = a.slice(at + 1).toLowerCase().replace(/\.$/, "");
+    return domain === "gmail.com" || domain === "googlemail.com";
+}
+
 /** The OAuth provider a host signs in with, when it has one. */
 export function mailHostOAuthProvider(host?: string | null): "gmail" | "outlook" | null {
     const logo = mailHostLogo(host);

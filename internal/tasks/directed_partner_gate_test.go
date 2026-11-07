@@ -215,49 +215,50 @@ func TestDirectedWarmupPartnerRefusesTwoSelfExecutedMailboxes(t *testing.T) {
 	}
 }
 
-// inboxRoomRepo answers the recipient-capacity check the reservation enforces.
-type inboxRoomRepo struct {
+// cappedCandidatesRepo is a draw whose new-thread cap has left the recipient out.
+type cappedCandidatesRepo struct {
 	standingRepo
-
-	room  bool
-	err   error
-	asked []string
 }
 
-func (r *inboxRoomRepo) WarmupInboxHasRoom(_ context.Context, _ uuid.UUID, poolType string) (bool, error) {
-	r.asked = append(r.asked, poolType)
-	return r.room, r.err
+func (cappedCandidatesRepo) WarmupExecutionCandidates(context.Context, string, uuid.UUID, uuid.UUID) ([]models.WarmupPartnerCandidate, error) {
+	return nil, nil
 }
 
-// A reply holds the mailbox's only pending task, so one to a full inbox closes
-// instead of being refused by the reservation every few minutes for days.
-func TestDirectedWarmupPartnerClosesAReplyToAFullInbox(t *testing.T) {
-	org := uuid.New()
+// failingRuleRepo cannot read the organization's routing rules.
+type failingRuleRepo struct {
+	repository.WarmupRoutingRepository
+}
+
+func (failingRuleRepo) ListForOrganization(context.Context, uuid.UUID) ([]models.WarmupRoutingRule, error) {
+	return nil, errors.New("db down")
+}
+
+// A reply is rechecked at execution by the rule that chose its partner, so an
+// inbox whose day is full of new threads still gets it; a new thread does not.
+func TestWarmupExecutionHoldsRepliesToTheReplyRule(t *testing.T) {
+	recipient, org := uuid.New(), uuid.New()
 	for _, tc := range []struct {
-		name string
-		repo *inboxRoomRepo
-		want bool
+		name   string
+		reply  bool
+		pool   string
+		routes repository.WarmupRoutingRepository
+		want   bool
 	}{
-		{"a full inbox ends the thread", &inboxRoomRepo{room: false}, false},
-		{"an inbox with room is answered", &inboxRoomRepo{room: true}, true},
-		{"an unreadable capacity leaves the decision to the reservation", &inboxRoomRepo{err: errors.New("db down")}, true},
+		{"a reply to a capped inbox goes out", true, "premium", ruleRepo{}, true},
+		{"a new thread to a capped inbox does not", false, "premium", ruleRepo{}, false},
+		{"a reply to a mailbox that left the pool does not", true, "", ruleRepo{}, false},
+		{"a reply whose routing rules cannot be read does not", true, "premium", failingRuleRepo{}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			target := uuid.New()
-			tc.repo.state = models.WarmupHealthHealthy
 			s := &tasksService{
-				taskRepo:     &directedTaskRepo{target: target},
-				emailRepo:    directedEmailRepo{},
-				warmupRepo:   tc.repo,
-				warmupHealth: &pinnedGate{poolOf: map[uuid.UUID]string{target: "free"}},
-				orgRiskRepo:  riskRepo{state: models.OrgRiskTrusted},
+				emailRepo:         directedEmailRepo{},
+				warmupRepo:        cappedCandidatesRepo{standingRepo{state: models.WarmupHealthHealthy}},
+				warmupHealth:      &pinnedGate{poolOf: map[uuid.UUID]string{recipient: tc.pool}},
+				warmupRoutingRepo: tc.routes,
 			}
-			sender := &Email{ID: uuid.New(), OrganizationID: &org, WarmupPoolType: "free"}
-			if got := s.directedWarmupPartner(context.Background(), uuid.New(), sender, "free"); (got != nil) != tc.want {
-				t.Fatalf("partner = %v, want answered %v", got, tc.want)
-			}
-			if len(tc.repo.asked) != 1 || tc.repo.asked[0] != "free" {
-				t.Fatalf("capacity asked for pools %v, want the sender's free share", tc.repo.asked)
+			err := s.validateWarmupRecipient(context.Background(), uuid.New(), tc.reply, recipient, &Email{ID: uuid.New(), OrganizationID: &org}, "premium")
+			if (err == nil) != tc.want {
+				t.Fatalf("validate = %v, want allowed %v", err, tc.want)
 			}
 		})
 	}

@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"net/textproto"
 	"regexp"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/warmbly/warmbly/internal/errx"
 )
@@ -19,6 +21,7 @@ func sendFailure(base *errx.MailError, native error, stage, scope string) *errx.
 	if errors.As(native, &reply) {
 		f.EnhancedStatus = enhancedReply.FindString(reply.Msg)
 	}
+	f.Cause = senderCause(native)
 	switch {
 	case f.Status >= 400 && f.Status < 500 || stage == "auth" && f.Status == 0:
 		base = errx.ErrMailServerUnreachable
@@ -34,5 +37,27 @@ func sendFailure(base *errx.MailError, native error, stage, scope string) *errx.
 	if f.EnhancedStatus != "" {
 		result.Message += "; enhanced status " + f.EnhancedStatus
 	}
+	// An AUTH reply can echo a credential challenge, so only later stages quote the server.
+	if reply != nil && stage != "auth" {
+		if text := replyText(reply.Msg); text != "" {
+			result.Message += fmt.Sprintf("; server replied: %d %s", reply.Code, text)
+		}
+	}
 	return result
+}
+
+// replyTextLimit bounds the quoted reply in runes; it is external input.
+const replyTextLimit = 300
+
+var replyAddress = regexp.MustCompile(`[^\s<>"';:,()\[\]]+@[^\s<>"';:,()\[\]]+`)
+
+// replyText is the server's own reply on one line: addresses masked, control
+// characters dropped, whitespace collapsed, bounded.
+func replyText(msg string) string {
+	msg = replyAddress.ReplaceAllString(msg, "<address>")
+	text := strings.Join(strings.FieldsFunc(msg, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }), " ")
+	if r := []rune(text); len(r) > replyTextLimit {
+		text = string(r[:replyTextLimit]) + "…"
+	}
+	return text
 }

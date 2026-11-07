@@ -136,8 +136,9 @@ export function route(url: string): unknown {
     }
     if (url.startsWith("/organization")) return [{ id: "org-1", name: "Org", slug: "org", role: "owner" }];
     if (url.startsWith("/subscription/credits")) {
-        return { monthly_balance: 100, monthly_allowance: 100, purchased_balance: 0, spent_today: 0, spent_week: 0, spent_month: 0 };
+        return { monthly_balance: 100, monthly_allowance: 100, purchased_balance: 0, spent_today: 0, spent_week: 0, spent_month: 0, balance_usd: 1, monthly_usd: 1, purchased_usd: 0, monthly_allowance_usd: 1 };
     }
+    if (url.startsWith("/subscription/balance")) return { unlimited: true };
     if (url.startsWith("/subscription")) return { plan: { name: "Pro" }, status: "active" };
     if (url.startsWith("/unibox/overview")) {
         return { total: ROWS.length, unread: 0, awaiting_reply: 0, snoozed: 0, today: 0, week: 0, mailboxes: [], tags: [], categories: [], folders: [] };

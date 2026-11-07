@@ -1,7 +1,7 @@
 // The Drafts folder lists threads with a pending inbox-agent draft above the mailbox's own drafts.
 
 import React from "react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { UniboxSearchParams } from "@/lib/api/models/app/unibox/UniboxSearch";
 import { ConversationList } from "./ConversationList";
@@ -78,13 +78,21 @@ vi.mock("./UniboxFilterPopover", () => ({
 vi.mock("@/components/app/unibox/compose/ComposeButton", () => ({ default: () => null }));
 vi.mock("@/hooks/useConversationActions", () => ({ useConversationActions: () => ({}) }));
 vi.mock("@/hooks/useShortcutActions", () => ({ useShortcutActions: () => {} }));
-vi.mock("@/hooks/usePermission", () => ({ useAccessRestricted: () => false }));
+vi.mock("@/hooks/usePermission", () => ({ useAccessRestricted: () => false, useScopeReadOnly: () => false }));
 vi.mock("@/hooks/useBrowseDebouncedValue", () => ({ default: (v: unknown) => v }));
 vi.mock("@/hooks/useScrollMemory", () => ({ useScrollMemory: () => {} }));
 vi.mock("framer-motion", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
+
+// jsdom lays nothing out; the virtualized list needs a viewport to fill.
+beforeAll(() => {
+  Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => 800 });
+});
+afterAll(() => {
+  delete (HTMLElement.prototype as { clientHeight?: number }).clientHeight;
+});
 
 afterEach(() => {
   cleanup();

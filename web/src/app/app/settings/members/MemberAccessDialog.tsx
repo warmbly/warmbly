@@ -1,5 +1,5 @@
 // Which resources a member's roles apply to: the entire workspace, or only
-// the campaign folders, campaigns and mailboxes chosen here, read-only.
+// the campaign folders, campaigns and mailboxes chosen here, for a client.
 
 import React from "react";
 import { createPortal } from "react-dom";
@@ -18,6 +18,9 @@ import { useSuggestedSenders } from "@/lib/api/hooks/app/organizations/useMember
 import type MemberAccess from "@/lib/api/models/app/organizations/MemberAccess";
 import { WORKSPACE_ACCESS } from "@/lib/api/models/app/organizations/MemberAccess";
 import { cn } from "@/lib/utils";
+import { CLIENT_ROLE_PRESETS, presetForRole, type ClientRolePreset } from "@/lib/accessScope";
+
+type PresetKey = ClientRolePreset["key"];
 
 /** One-line summary of a scope, for the roster and the invite form. */
 function accessSummary(access?: MemberAccess | null): string {
@@ -84,6 +87,7 @@ export default function MemberAccessDialog({
     subject,
     initial,
     saveLabel = "Save access",
+    currentRoles,
     onSave,
     onClose,
 }: {
@@ -92,14 +96,23 @@ export default function MemberAccessDialog({
     subject: string;
     initial?: MemberAccess | null;
     saveLabel?: string;
-    onSave: (access: MemberAccess) => Promise<void>;
+    /** The roles held now; a client preset among them starts selected. */
+    currentRoles?: { name: string }[];
+    /** preset is the client role to give them, or null to keep their roles. */
+    onSave: (access: MemberAccess, preset: ClientRolePreset | null) => Promise<void>;
     onClose: () => void;
 }) {
     const confirm = useConfirm();
     const start = React.useMemo(() => normalize(initial), [initial]);
+    const startPreset = React.useMemo<PresetKey | null>(() => {
+        if (start.scope !== "restricted" || currentRoles?.length !== 1) return null;
+        return presetForRole(currentRoles[0])?.key ?? null;
+    }, [start.scope, currentRoles]);
     const [access, setAccess] = React.useState<MemberAccess>(start);
+    const [preset, setPreset] = React.useState<PresetKey | null>(startPreset);
     const [saving, setSaving] = React.useState(false);
-    const dirty = !sameAccess(access, start);
+    const restricted = access.scope === "restricted";
+    const dirty = !sameAccess(access, start) || (restricted && preset !== startPreset);
 
     const requestClose = React.useCallback(() => {
         if (dirty && !saving) {
@@ -122,7 +135,8 @@ export default function MemberAccessDialog({
     async function save() {
         setSaving(true);
         try {
-            await onSave(access.scope === "restricted" ? access : WORKSPACE_ACCESS);
+            const chosen = restricted ? (CLIENT_ROLE_PRESETS.find((p) => p.key === preset) ?? null) : null;
+            await onSave(restricted ? access : WORKSPACE_ACCESS, chosen);
             onClose();
         } catch {
             // The caller surfaced it; the dialog stays open with the draft.
@@ -168,7 +182,13 @@ export default function MemberAccessDialog({
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4">
-                    <AccessEditor value={access} onChange={setAccess} />
+                    <AccessEditor
+                        value={access}
+                        onChange={setAccess}
+                        preset={preset}
+                        onPreset={setPreset}
+                        canKeepRoles={(currentRoles?.length ?? 0) > 0}
+                    />
                 </div>
 
                 <div className="h-12 px-4 border-t border-slate-200 flex items-center gap-2 shrink-0">
@@ -208,8 +228,20 @@ function normalize(a?: MemberAccess | null): MemberAccess {
     };
 }
 
-/** The scope choice and, for a restricted scope, the three resource pickers. */
-export function AccessEditor({ value, onChange }: { value: MemberAccess; onChange: (next: MemberAccess) => void }) {
+/** The scope choice and, for a client, their role and the three resource pickers. */
+export function AccessEditor({
+    value,
+    onChange,
+    preset,
+    onPreset,
+    canKeepRoles,
+}: {
+    value: MemberAccess;
+    onChange: (next: MemberAccess) => void;
+    preset: PresetKey | null;
+    onPreset: (next: PresetKey | null) => void;
+    canKeepRoles: boolean;
+}) {
     const restricted = value.scope === "restricted";
     const { user } = useUserProfile();
     const campaigns = useCampaigns({ query: "", folder: "", enabled: restricted });
@@ -240,8 +272,8 @@ export function AccessEditor({ value, onChange }: { value: MemberAccess; onChang
                 <div className="grid grid-cols-2 gap-1.5">
                     {(
                         [
-                            ["workspace", "Entire workspace", "Everything the roles allow", GlobeIcon],
-                            ["restricted", "Selected resources", "Only what you choose, read-only", LockIcon],
+                            ["workspace", "Full workspace", "Everything the roles allow", GlobeIcon],
+                            ["restricted", "Client", "Only the campaigns and mailboxes you share", LockIcon],
                         ] as const
                     ).map(([scope, label, sub, Icon]) => (
                         <button
@@ -273,11 +305,12 @@ export function AccessEditor({ value, onChange }: { value: MemberAccess; onChang
                         className="flex flex-col gap-4"
                     >
                         <p className="text-[11.5px] leading-relaxed text-slate-500">
-                            The member can view the selected campaigns and their analytics, and read the conversations
-                            in the selected mailboxes. They cannot change, send or reply to anything, and contacts,
-                            settings and the rest of the workspace are hidden from them. Their roles still apply on
-                            top: a role without inbox access shows no mailbox.
+                            A client reaches only the campaigns and mailboxes selected below, and their role decides what
+                            they can do there. Team, billing, settings, contacts, mailbox settings and the rest of the
+                            workspace stay hidden from them whatever the role.
                         </p>
+
+                        <ClientRolePicker value={preset} onChange={onPreset} canKeepRoles={canKeepRoles} />
 
                         <div>
                             <Label>Campaign folders</Label>
@@ -333,6 +366,53 @@ export function AccessEditor({ value, onChange }: { value: MemberAccess; onChang
                     </motion.div>
                 )}
             </AnimatePresence>
+        </div>
+    );
+}
+
+/** The client role presets, each with what it lets the client do. */
+function ClientRolePicker({
+    value,
+    onChange,
+    canKeepRoles,
+}: {
+    value: PresetKey | null;
+    onChange: (next: PresetKey | null) => void;
+    canKeepRoles: boolean;
+}) {
+    const options: { key: PresetKey | null; name: string; summary: string }[] = [
+        ...CLIENT_ROLE_PRESETS.map((p) => ({ key: p.key, name: p.name, summary: p.summary })),
+        ...(canKeepRoles
+            ? [{ key: null, name: "Keep their current roles", summary: "Their roles apply inside what you share. A role only lets a client act when it is set to." }]
+            : [{ key: null, name: "Use the roles picked above", summary: "They apply inside what you share. A role only lets a client act when it is set to." }]),
+    ];
+    return (
+        <div>
+            <Label>Client role</Label>
+            <div className="flex flex-col gap-1" role="radiogroup" aria-label="Client role">
+                {options.map((o) => {
+                    const on = value === o.key;
+                    return (
+                        <button
+                            key={o.key ?? "keep"}
+                            type="button"
+                            role="radio"
+                            aria-checked={on}
+                            onClick={() => onChange(o.key)}
+                            className={cn(
+                                "rounded-md border px-2.5 py-1.5 text-left transition-colors",
+                                on ? "border-sky-400 bg-sky-50" : "border-slate-200 hover:border-slate-300",
+                            )}
+                        >
+                            <span className="block text-[12.5px] font-medium text-slate-900">{o.name}</span>
+                            <span className="block text-[11px] text-slate-500 leading-snug">{o.summary}</span>
+                        </button>
+                    );
+                })}
+            </div>
+            <p className="mt-1 text-[11px] text-slate-400">
+                A preset is added to Roles the first time you use it, so you can rename or adjust it there.
+            </p>
         </div>
     );
 }

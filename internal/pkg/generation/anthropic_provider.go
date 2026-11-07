@@ -210,7 +210,7 @@ func (p *anthropicProvider) Complete(ctx context.Context, req CompletionRequest)
 	if text == "" {
 		return nil, errors.New("anthropic: empty completion")
 	}
-	return &WritingResult{Text: text, Model: model, TokensUsed: resp.Usage.InputTokens + resp.Usage.OutputTokens}, nil
+	return &WritingResult{Text: text, Model: model, TokensUsed: resp.Usage.InputTokens + resp.Usage.OutputTokens, InputTokens: resp.Usage.InputTokens, OutputTokens: resp.Usage.OutputTokens}, nil
 }
 
 // RunAgent implements the tool-use loop against Anthropic. Same approval/resume
@@ -263,6 +263,8 @@ func (p *anthropicProvider) RunAgent(ctx context.Context, req AgentRequest) (*Ag
 			return result, err
 		}
 		result.TokensUsed += resp.Usage.InputTokens + resp.Usage.OutputTokens
+		result.InputTokens += resp.Usage.InputTokens
+		result.OutputTokens += resp.Usage.OutputTokens
 
 		// Split the response into text and tool_use calls.
 		var text strings.Builder

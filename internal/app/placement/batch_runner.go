@@ -22,7 +22,7 @@ const (
 	// outcomeNotStarted: skipped or deferred, the batch goes on.
 	outcomeNotStarted
 	// outcomeStopBatch: no other sender could start either (the allowance or
-	// the credits ran out, the campaign went away).
+	// the balance ran out, the campaign went away).
 	outcomeStopBatch
 )
 
@@ -221,19 +221,19 @@ func (s *service) startBatchSender(ctx context.Context, b *models.PlacementBatch
 		SeedIDs:         b.SeedIDs,
 		Families:        b.Families,
 		Pace:            models.PlacementPaceSpaced,
-		MaxCredits:      max(0, b.MaxCredits-b.CreditsSpent),
+		MaxSpend:        max(0, b.MaxMicro-b.SpentMicro),
 		Origin:          models.PlacementOriginBatch,
 		BatchID:         &batchID,
 		BatchSenderID:   &senderID,
 	})
 	if xerr == nil {
-		charged := 0
+		var charged models.Micro
 		for _, v := range views {
-			charged += v.CreditsCharged
+			charged += v.ChargedMicro
 		}
 		if charged > 0 {
-			b.CreditsSpent += charged
-			if err := s.Batches.AddBatchCredits(ctx, b.ID, charged); err != nil {
+			b.SpentMicro += charged
+			if err := s.Batches.AddBatchSpend(ctx, b.ID, charged); err != nil {
 				errs.CaptureException(err)
 			}
 		}

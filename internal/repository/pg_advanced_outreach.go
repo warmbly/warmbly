@@ -430,6 +430,9 @@ func scanSuppressedRecipient(row pgx.Row) (*models.SuppressedRecipient, error) {
 	if len(metadata) > 0 {
 		_ = json.Unmarshal(metadata, &out.Metadata)
 	}
+	if cause, ok := out.Metadata["bounce_cause"].(string); ok && out.Source == models.DeliverabilityEventBounce {
+		out.BounceCause = cause
+	}
 	return &out, nil
 }
 

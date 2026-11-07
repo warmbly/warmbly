@@ -1005,7 +1005,7 @@ func (s *organizationService) acceptResolved(ctx context.Context, inv *models.Or
 		Role:           primary.Name,
 		RoleID:         &primary.ID,
 		Permissions:    primary.Permissions,
-		InvitedBy:      &inv.InvitedBy,
+		InvitedBy:      repository.InviterOf(inv.InvitedBy),
 		InvitedAt:      inv.CreatedAt,
 		AcceptedAt:     &now,
 		// Grants on resources deleted since the invite are dropped by the insert.
@@ -2025,6 +2025,7 @@ func (s *organizationService) CreateRole(ctx context.Context, orgID, actorID uui
 		Description:    strings.TrimSpace(req.Description),
 		Color:          color,
 		Permissions:    perms,
+		ActsInScope:    req.ActsInScope,
 	}
 	if err := s.orgRepo.CreateRole(ctx, role); err != nil {
 		// Unique (org, name) violation is the only expected failure here.
@@ -2071,6 +2072,13 @@ func (s *organizationService) UpdateRole(ctx context.Context, orgID, actorID, ro
 			return nil, xerr
 		}
 		role.Permissions = perms
+	}
+	// Whether restricted members act with the role changes what it does for them, so the actor must hold it.
+	if req.ActsInScope != nil && *req.ActsInScope != role.ActsInScope {
+		if xerr := s.validateActorHoldsPermissions(ctx, orgID, actorID, role.Permissions); xerr != nil {
+			return nil, xerr
+		}
+		role.ActsInScope = *req.ActsInScope
 	}
 
 	// Write-through: assigned members pick up the new name + permissions
@@ -2139,6 +2147,9 @@ func (s *organizationService) GrantManagedPlan(ctx context.Context, orgID, planI
 	if err := s.subRepo.SetManagedPlan(ctx, orgID, planID, adminID, reason, until); err != nil {
 		errs.CaptureException(err)
 		return nil, errx.New(errx.Internal, "failed to grant the plan")
+	}
+	if err := s.subRepo.ResumeTrialWarmup(ctx, orgID); err != nil {
+		errs.CaptureException(err)
 	}
 	return s.GetManagedPlan(ctx, orgID)
 }

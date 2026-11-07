@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
@@ -20,13 +19,9 @@ import (
 var microsoftAppRoles = []string{"Mail.ReadWrite", "Mail.Send", "User.Read.All"}
 
 // AppIdentity is what a vendor needs to authorize this instance's app; ok is false with no app for provider.
+// Google has none: new domain-wide delegation grants are retired.
 func (s *Service) AppIdentity(provider string) (clientID string, scopes, appRoles []string, ok bool) {
 	switch provider {
-	case models.GrantProviderGoogle:
-		if !s.googleEnabled() {
-			return "", nil, nil, false
-		}
-		return s.googleClientID, append([]string(nil), config.GoogleDelegationScopes...), nil, true
 	case models.GrantProviderMicrosoft:
 		if !s.microsoftEnabled() {
 			return "", nil, nil, false
@@ -48,6 +43,9 @@ func (s *Service) GrantFromVendor(ctx context.Context, orgID, userID uuid.UUID, 
 	case models.GrantProviderGoogle:
 		if !s.googleEnabled() {
 			return nil, notConfigured("Google Workspace")
+		}
+		if xerr := s.googleRetired(ctx, orgID, domain); xerr != nil {
+			return nil, xerr
 		}
 		admin = strings.ToLower(strings.TrimSpace(admin))
 		if !strings.HasSuffix(admin, "@"+domain) {

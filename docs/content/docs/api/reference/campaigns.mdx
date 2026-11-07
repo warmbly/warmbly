@@ -38,6 +38,7 @@ A `data` plus `pagination` envelope. `next_cursor` is the campaign id to resume 
       "description": "",
       "status": "active",
       "stop_on_reply": true,
+      "stop_on_meeting": true,
       "open_tracking": true,
       "link_tracking": true,
       "text_only": false,
@@ -191,6 +192,7 @@ Create a campaign. Only `name` is required, every other field is optional and ap
 | `name` | string | yes | Campaign name. |
 | `description` | string | no | Free-text description. |
 | `stop_on_reply` | boolean | no | Stop sending to a contact once they reply. |
+| `stop_on_meeting` | boolean | no | Stop sending to a contact once they book a meeting linked to them, whether or not they replied. Default `true`. See [stop on meeting booked](/guides/sequences/#stop-on-meeting-booked). |
 | `open_tracking` | boolean | no | Insert the open pixel. |
 | `link_tracking` | boolean | no | Rewrite links through the tracking ticket service. Each link gets its own ticket, so clicks are attributed per link. |
 | `utm_tracking` | boolean | no | Tag every link with `utm_source`, `utm_medium`, `utm_campaign` and a per-link `utm_content` at send time. Default `false`. Values already on a link are kept. |
@@ -214,6 +216,7 @@ Create a campaign. Only `name` is required, every other field is optional and ap
 | `folder_ids` | string[] | no | Folder ids to file the campaign under. |
 | `sender_strategy` | string | no | `tags` (default) or `explicit`. `tags` resolves the pool from `email_tag_ids`, and falls back to every active mailbox in the workspace when no tag and no explicit sender is set. `explicit` sends from the mailboxes in `senders`, plus any `email_tag_ids` set alongside them. It never falls back to every active mailbox, so a pool that empties out parks the campaign at `paused_no_accounts` instead of widening to the whole workspace. |
 | `rotation_mode` | string | no | How volume spreads across the chosen mailboxes. |
+| `follow_up_sender` | string | no | Which mailbox sends a lead's follow-ups: `same` (default, the mailbox that sent the first email), `same_domain` (rotate among mailboxes on that domain) or `rotate` (rotate across the pool). Any other value is `400`. |
 | `senders` | object[] | no | Explicit-strategy mailbox pool (see sender input below). |
 | `ramp_enabled` | boolean | no | Enable per-campaign daily ramp-up. |
 | `ramp_start` | integer | no | Ramp starting volume. |
@@ -285,7 +288,7 @@ Patch any subset of campaign fields. Omitted fields are left unchanged. The expl
 
 ### Request body
 
-Every field is optional. Scalar fields use nullable pointers, so any field you send is applied. `timezone` accepts `""` to make the campaign follow the workspace timezone. `start_date` and `end_date` additionally accept an explicit `null` to clear the stored date: a null `start_date` means "start now" and a null `end_date` means "run open-ended". Changing any schedule field (`start_date`, `end_date`, `timezone`, `days`, `start_time`, `end_time`, `schedule_windows`, `entry_delay_minutes`) on an active campaign reschedules its next send immediately, so clearing a future start date or shortening the entry delay takes effect right away. Notable fields: `name`, `description`, `status`, `stop_on_reply`, `open_tracking`, `link_tracking`, `text_only`, `daily_limit`, `unsubscribe_header`, `risky_emails`, `cc`, `bcc`, `start_date`, `end_date`, `timezone`, `days`, `start_time`, `end_time`, `schedule_windows`, `email_tags`, `folders`, `contact_order_by`, `contact_order_dir`, `contact_order_field`, `sender_strategy`, `rotation_mode`, `ramp_enabled`, `ramp_start`, `ramp_increment`, `ramp_ceiling`, `esp_match_mode`, `max_new_leads_per_day`, `prioritize_new_leads`, `entry_delay_minutes`, `continuous`, `tracking_domain`, `utm_tracking`, `utm_source`, `utm_medium`, `utm_campaign`.
+Every field is optional. Scalar fields use nullable pointers, so any field you send is applied. `timezone` accepts `""` to make the campaign follow the workspace timezone. `start_date` and `end_date` additionally accept an explicit `null` to clear the stored date: a null `start_date` means "start now" and a null `end_date` means "run open-ended". Changing any schedule field (`start_date`, `end_date`, `timezone`, `days`, `start_time`, `end_time`, `schedule_windows`, `entry_delay_minutes`) on an active campaign reschedules its next send immediately, so clearing a future start date or shortening the entry delay takes effect right away. Notable fields: `name`, `description`, `status`, `stop_on_reply`, `stop_on_meeting`, `open_tracking`, `link_tracking`, `text_only`, `daily_limit`, `unsubscribe_header`, `risky_emails`, `cc`, `bcc`, `start_date`, `end_date`, `timezone`, `days`, `start_time`, `end_time`, `schedule_windows`, `email_tags`, `folders`, `contact_order_by`, `contact_order_dir`, `contact_order_field`, `sender_strategy`, `rotation_mode`, `follow_up_sender`, `ramp_enabled`, `ramp_start`, `ramp_increment`, `ramp_ceiling`, `esp_match_mode`, `max_new_leads_per_day`, `prioritize_new_leads`, `entry_delay_minutes`, `continuous`, `tracking_domain`, `utm_tracking`, `utm_source`, `utm_medium`, `utm_campaign`.
 
 `entry_delay_minutes` is anchored on when each contact entered the campaign, not on when the campaign started, so a contact enrolled by a linked segment next week waits the same amount from their own arrival. Leads that were in the campaign before the field existed count from the campaign's `created_at`, so turning a delay on never re-delays leads that have been enrolled for weeks.
 
@@ -664,6 +667,39 @@ Each step entry lists the Original (`variant_id: null`) and every variant of tha
 - `promoted_at` is set once auto-promotion handed the step to its winner. With `ab_testing.auto_promote_winner` on, a significant winner gets every new contact at its step and the other arms, the Original included, are set inactive. A step is promoted at most once, and the change is audited as a campaign update.
 
 The top-level `winner_id`, `winner_name` and `confidence` describe campaign-level variants only.
+
+## Get warmup placement
+
+`GET /campaigns/:id/warmup-placement`
+
+Where each arm of the campaign's opening steps landed when its senders' warmup opened threads with it over the last 30 days (see [your campaign copy](/guides/warmup/#your-campaign-copy)). Only arms warmup carried are listed, so a campaign warmup has not used returns an empty `data`. **Scope** `READ_CAMPAIGNS` · **Org permission** `view_campaigns`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+
+### Response
+
+`variant_id` is `null` for the step's own copy. Campaign copy is only sent to business inboxes on Google Workspace and Microsoft 365, and only those are counted: `by_group` splits the sends into `google` (Google Workspace) and `microsoft` (Microsoft 365), and `placement` adds them up. `sent` counts the openings and `reported` how many of them the recipient has filed a receipt for; `inbox`, `tabs`, `spam` and `rescued` count within those receipts, so read rates over `reported`.
+
+```json
+{
+  "days": 30,
+  "data": [
+    {
+      "sequence_id": "7e3b2c1d-4f5a-4b6c-8d7e-9f0a1b2c3d4e",
+      "variant_id": null,
+      "placement": { "sent": 24, "reported": 22, "inbox": 19, "tabs": 1, "spam": 2, "rescued": 2 },
+      "by_group": [
+        { "group": "google", "sent": 14, "reported": 13, "inbox": 12, "tabs": 1, "spam": 0, "rescued": 0 },
+        { "group": "microsoft", "sent": 10, "reported": 9, "inbox": 7, "tabs": 0, "spam": 2, "rescued": 2 }
+      ]
+    }
+  ]
+}
+```
+
+A campaign outside the caller's workspace answers `404`.
 
 ## List attachments
 
@@ -1504,7 +1540,7 @@ A `TemplatePreview` object. `errors` lists template parse errors that would bloc
 
 `POST /generation/write`
 
-Generate outreach copy with the AI writing assistant. Gated to paid and free-trial organizations, and each call consumes one AI credit (refunded if the provider call fails). Supports `Idempotency-Key` so a retried request is not double-charged. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
+Generate outreach copy with the AI writing assistant. Gated to paid and free-trial organizations, and each call is charged to the workspace balance for the tokens it uses (nothing if the provider call fails). Supports `Idempotency-Key` so a retried request is not double-charged. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
 
 ### Request body
 
@@ -1522,12 +1558,15 @@ Generate outreach copy with the AI writing assistant. Gated to paid and free-tri
 ```json
 {
   "text": "Hi {{.FirstName}},\n\nNoticed {{.Company}} is scaling outbound...\n\nWorth a quick chat?",
+  "charged_usd": 0.012,
+  "balance_usd": 4.96,
+  "credits_charged": 1,
   "credits_remaining": 248,
   "model": "claude-..."
 }
 ```
 
-When the organization is out of credits the endpoint returns `402` with `code: "insufficient_credits"` and the standard envelope. A depleted balance is checked before any provider call, so no completion is ever burned on a `402`.
+`charged_usd` is what the call cost and `balance_usd` the balance left, in dollars; `credits_charged` and `credits_remaining` are the same in legacy credits, kept for clients written before the dollar balance. When the balance is too low the endpoint returns `402` with `code: "insufficient_credits"` and the standard envelope. A depleted balance is checked before any provider call, so no completion is ever burned on a `402`.
 
 ### Streaming
 
@@ -1537,22 +1576,22 @@ Send `Accept: text/event-stream` to receive the text while the model writes it. 
 | --- | --- | --- |
 | `delta` | `text` | The next fragment, in order. |
 | `stage` | `stage: "checking"` | The text is written and words spam filters flag are being reworded. |
-| `done` | `text`, `credits_remaining`, `credits_charged`, `tokens_used`, `model` | The final text, which can differ from the joined deltas after the rewording. Always the last event on success. |
-| `error` | `code`, `message` | The generation failed. A failure refunds the credit, except when the caller disconnected after text had arrived. |
+| `done` | `text`, `charged_usd`, `balance_usd`, `credits_remaining`, `credits_charged`, `tokens_used`, `model` | The final text, which can differ from the joined deltas after the rewording. Always the last event on success. |
+| `error` | `code`, `message` | The generation failed. A failure charges nothing, except when the caller disconnected after text had arrived. |
 
 ```text
 data: {"type":"delta","text":"Hi {{.FirstName}},"}
 
 data: {"type":"delta","text":" saw that"}
 
-data: {"type":"done","text":"Hi {{.FirstName}}, saw that...","credits_remaining":247,"credits_charged":1,"tokens_used":412,"model":"..."}
+data: {"type":"done","text":"Hi {{.FirstName}}, saw that...","charged_usd":0.0118,"balance_usd":4.9482,"credits_remaining":247,"credits_charged":1,"tokens_used":412,"model":"..."}
 ```
 
 ## Preview an AI variable
 
 `POST /generation/ai-variable`
 
-Generate the recipient-specific snippet a per-recipient AI variable block would produce, for the campaign editor's preview. The prompt is rendered against a supplied contact (must belong to the organization) or a sample contact, then generated with the same framing the send path uses, including the surrounding email so the fragment fits. The charge is metered by usage (the model and tokens the snippet uses, plus any web lookup), refunded if the provider call fails, and `Idempotency-Key` is honored so a retried request is not double-charged. See the [AI variables](/guides/ai-variables/) guide. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns` and `use_ai`. Passing `contact_id` additionally requires `READ_CONTACTS` (org permission `view_contacts`), since the prompt reads that contact's fields.
+Generate the recipient-specific snippet a per-recipient AI variable block would produce, for the campaign editor's preview. The prompt is rendered against a supplied contact (must belong to the organization) or a sample contact, then generated with the same framing the send path uses, including the surrounding email so the fragment fits. The charge is metered by usage (the model and tokens the snippet uses, plus any web lookup), charged to the workspace balance and nothing if the provider call fails, and `Idempotency-Key` is honored so a retried request is not double-charged. See the [AI variables](/guides/ai-variables/) guide. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns` and `use_ai`. Passing `contact_id` additionally requires `READ_CONTACTS` (org permission `view_contacts`), since the prompt reads that contact's fields.
 
 ### Request body
 
@@ -1575,6 +1614,8 @@ Generate the recipient-specific snippet a per-recipient AI variable block would 
 ```json
 {
   "text": "Saw Acme just shipped its new billing API.",
+  "charged_usd": 0.0053,
+  "balance_usd": 4.92,
   "credits_remaining": 246,
   "credits_charged": 1,
   "tokens_used": 180,
@@ -1582,4 +1623,4 @@ Generate the recipient-specific snippet a per-recipient AI variable block would 
 }
 ```
 
-A `contact_id` that is not in the organization returns `404`. When the organization is out of credits the endpoint returns `402` with `code: "insufficient_credits"`, checked before any provider call.
+A `contact_id` that is not in the organization returns `404`. When the balance is too low the endpoint returns `402` with `code: "insufficient_credits"`, checked before any provider call.

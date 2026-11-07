@@ -212,6 +212,7 @@ export default function CampaignPreferences() {
             }),
             ...(newData.daily_limit !== campaign.daily_limit && { daily_limit: newData.daily_limit }),
             ...(newData.stop_on_reply !== campaign.stop_on_reply && { stop_on_reply: newData.stop_on_reply }),
+            ...(newData.stop_on_meeting !== campaign.stop_on_meeting && { stop_on_meeting: newData.stop_on_meeting }),
             ...(newData.text_only !== campaign.text_only && { text_only: newData.text_only }),
             ...(newData.open_tracking !== campaign.open_tracking && { open_tracking: newData.open_tracking }),
             ...(newData.link_tracking !== campaign.link_tracking && { link_tracking: newData.link_tracking }),
@@ -228,6 +229,9 @@ export default function CampaignPreferences() {
 
             // Rotation
             ...(newData.rotation_mode !== campaign.rotation_mode && { rotation_mode: newData.rotation_mode }),
+            ...(newData.follow_up_sender !== campaign.follow_up_sender && {
+                follow_up_sender: newData.follow_up_sender,
+            }),
 
             // Ramp-up
             ...(newData.ramp_enabled !== campaign.ramp_enabled && { ramp_enabled: newData.ramp_enabled }),

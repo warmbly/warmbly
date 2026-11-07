@@ -48,6 +48,8 @@ type EmailService interface {
 	// SetSendHold holds a mailbox in reserve or releases it; a release lands
 	// wherever its warmup health says, so an unhealthy mailbox rests.
 	SetSendHold(ctx context.Context, orgID, emailAccountID string, hold bool) (*models.SendLifecycleState, *errx.Error)
+	// ResumeSending lifts a provider pause or a refusal hold the owner says is fixed.
+	ResumeSending(ctx context.Context, orgID, emailAccountID string) (*repository.SendPauseRelease, *errx.Error)
 	// UpdateTrackingDomain sets or clears the custom open/click tracking
 	// domain and resolves it once, persisting the verdict.
 	UpdateTrackingDomain(ctx context.Context, orgID, emailAccountID, domain string) (*models.TrackingDomainStatus, *errx.Error)
@@ -156,6 +158,11 @@ type EmailService interface {
 	// WireImportSignin lets an OAuth connect close the import rows that were
 	// waiting for someone to sign in as that mailbox.
 	WireImportSignin(r ImportSigninResolver)
+	// VendorConsentApp, VendorConsentURL and FinishVendorConsent let an inbox
+	// vendor sign in as an import row's Google mailbox with no Warmbly session.
+	VendorConsentApp() (clientID, appName string, ok bool)
+	VendorConsentURL(ctx context.Context, req models.VendorConsentRequest) (string, *errx.Error)
+	FinishVendorConsent(ctx context.Context, code, state, providerErr string, authorizeFor func(userID string) FinishAuthorizer) (*VendorConsentResult, *errx.Error)
 	// WireAvatars lets a connect keep the profile photo its provider returns.
 	WireAvatars(a AvatarSaver)
 	// WireAccountErrors lets a successful reconnect resolve the credential

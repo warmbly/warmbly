@@ -669,6 +669,43 @@ Auth: **Scope** `WRITE_EMAILS` · **Org permission** `manage_emails`
 | `409` | `mailbox_cloud_unenroll_failed` | The mailbox's Warmbly Cloud link could not be released. See [error codes](/api/error-codes/#409-conflict) |
 | `503` | `mailbox_worker_unreachable` | The machine syncing the mailbox could not be told to drop it. See [error codes](/api/error-codes/#mailbox_worker_unreachable) |
 
+## Act on many mailboxes
+
+`POST /emails/bulk/delete` · `POST /emails/bulk/warmup` · `POST /emails/bulk/status`
+
+Applies one action to up to 500 mailboxes in a single call: remove them, change their warmup, or switch them on or off. Each mailbox goes through the same path as its single-mailbox route (`DELETE /emails/:id`, `POST /emails/:id/warmup/:action`, `PATCH /emails/:id` with `status`), so every side effect and refusal is the same, and one mailbox failing does not stop the others. An id outside the API key's mailbox allowlist refuses the whole call before anything is changed.
+
+Auth: **Scope** `WRITE_EMAILS` · **Org permission** `manage_emails`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `email_ids` | string[] | yes | Mailbox ids, 1 to 500. Duplicates are applied once. |
+| `action` | string | `/bulk/warmup` | `start`, `pause`, `resume` or `stop`. |
+| `status` | string | `/bulk/status` | `active` or `inactive`. |
+
+Warmup and status calls set a state, so retrying one converges on the same result. A retried delete answers `not_found` for the mailboxes the first attempt removed. Send an `Idempotency-Key` to replay the first response instead.
+
+### Response
+
+`200 OK` with one result per mailbox, in request order. A failed row carries the `code` and `message` its single-mailbox route would have answered with.
+
+```json
+{
+  "succeeded": 2,
+  "failed": 1,
+  "results": [
+    { "id": "2a1b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d", "ok": true },
+    { "id": "3b2c4d5e-6f7a-8b9c-0d1e-2f3a4b5c6d7e", "ok": true },
+    { "id": "4c3d5e6f-7a8b-9c0d-1e2f-3a4b5c6d7e8f", "ok": false, "code": "mailbox_is_seed", "message": "This mailbox is a placement seed inbox, which never warms up. Remove it from the seed inboxes first." }
+  ]
+}
+```
+
+| Status | `code` | Meaning |
+|--------|--------|---------|
+| `400` | `bad_request` | No ids, more than 500, an id that is not a UUID, or an unknown `action` or `status`. |
+| `403` | `forbidden` | An id is outside the API key's mailbox allowlist. |
+
 ## Send from a mailbox
 
 `POST /emails/:id/send`
@@ -821,7 +858,7 @@ Response: `201 Created` with the new mailbox object.
 
 `POST /emails/onboarding/app-password/:id`
 
-Moves a mailbox connected with per-mailbox Google sign-in, which is [being retired](/guides/mailboxes/#moving-off-per-mailbox-google-sign-in), onto Gmail's IMAP and SMTP with a Google app password. Session only, and needs the `manage_emails` organization permission.
+Moves a Google mailbox connected with per-mailbox Google sign-in or through an administrator grant onto Gmail's IMAP and SMTP with a Google app password. Session only, and needs the `manage_emails` organization permission.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -835,7 +872,7 @@ Moves a mailbox connected with per-mailbox Google sign-in, which is [being retir
 
 The password is checked against `imap.gmail.com` and `smtp.gmail.com` before anything is stored, and refused with the same codes as [Connect SMTP/IMAP](#connect-smtpimap) (such as `mailbox_auth_refused`); a refusal changes nothing. On success the mailbox becomes `smtp_imap` with `auth_method` `app_password` in place: its id, imported mail, campaigns, warmup and settings stay, and sync continues with new mail.
 
-Response: `200 OK` with the mailbox object. `409` `mailbox_not_google_signin` when the mailbox is not on per-mailbox Google sign-in (including one already switched, so a repeat changes nothing), and `400` `app_password_invalid` when the value is not 16 letters.
+Response: `200 OK` with the mailbox object. `409` `mailbox_not_google_signin` when the mailbox is on neither per-mailbox Google sign-in nor an administrator grant, or Warmbly Cloud holds its sign-in (including one already switched, so a repeat changes nothing), and `400` `app_password_invalid` when the value is not 16 letters.
 
 ## Connect many mailboxes
 

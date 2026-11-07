@@ -273,6 +273,28 @@ const (
 	// UnknownSendHoldVisibleAfterMinutes keeps an unconfirmed send out of mailbox health until it outlasts automatic recovery.
 	UnknownSendHoldVisibleAfterMinutes = 2 * CampaignSendReclaimAfterMinutes
 
+	// ProviderRestoredHoldRecheckHours spaces automatic releases of a mailbox's Gmail or Outlook refusal hold, so a provider that keeps refusing costs one send per interval.
+	ProviderRestoredHoldRecheckHours = 6
+
+	// Send pauses after a provider refuses or throttles one mailbox. Each lasts
+	// the provider's own Retry-After when it gives one, capped at SendPauseMax.
+	// SendRateLimitPause doubles per repeated throttle up to SendRateLimitPauseMax.
+	SendRateLimitPause    = 5 * time.Minute
+	SendRateLimitPauseMax = 2 * time.Hour
+	// SendDailyLimitPause covers a rolling 24-hour provider quota with no stated reset.
+	SendDailyLimitPause = 24 * time.Hour
+	// SendBlockedPause re-probes a mailbox the provider restricted, doubling up to SendBlockedPauseMax.
+	SendBlockedPause    = 3 * time.Hour
+	SendBlockedPauseMax = 24 * time.Hour
+	// SendHoldProbe releases a permanent or domain-authentication hold for one more try, doubling up to SendHoldProbeMax.
+	SendHoldProbe    = 3 * time.Hour
+	SendHoldProbeMax = 24 * time.Hour
+	SendPauseMax     = 48 * time.Hour
+	// SendPauseStrikeResetAfter forgets earlier throttles once a mailbox has been clear this long.
+	SendPauseStrikeResetAfter = 24 * time.Hour
+	// SendPauseWaitThreshold is the longest pause a lead bound to the mailbox waits out instead of moving to another sender.
+	SendPauseWaitThreshold = 45 * time.Minute
+
 	// WorkerReleaseGraceMinutes keeps a mailbox in its previous worker's scope after a move, until the reclaimer has resolved any send it left unanswered.
 	WorkerReleaseGraceMinutes = CampaignSendReclaimAfterMinutes
 
@@ -612,7 +634,7 @@ const (
 	PoolLinkTrustUntrustedDivergence = 0.30
 	WarmupPoolFallbackMinAgeDays     = 3  // a free mailbox must have been a pool member this long before premium may borrow it, or write back to one
 	WarmupPoolReturnVisitDays        = 14 // a proven free mailbox may write back to a paying mailbox that wrote to it this recently
-	// What one inbox may receive from the pool in a day: WarmupInboundDailyMultiple
+	// New threads one inbox may receive from the pool in a day (replies are not counted): WarmupInboundDailyMultiple
 	// times its own daily sends, never below the floor (a recipient-only mailbox
 	// sends nothing) and never above the ceiling. A recipient at its cap is left
 	// out of every draw for the rest of the day, so paying the pool's debt to a

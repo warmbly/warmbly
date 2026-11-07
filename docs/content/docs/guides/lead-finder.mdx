@@ -1,0 +1,159 @@
+---
+title: Lead finder
+description: "Find local businesses on a map, read their websites for the people who run them, emails and socials, filter and score them, then export them or add them to contacts and campaigns."
+---
+
+The lead finder searches a map for businesses of a kind, in the exact area you choose, and keeps every one it finds as a lead in your workspace. From there you can read each business's own website for the people who work there, email addresses and social profiles, work out and check those people's addresses, sort and filter the results, and turn the good ones into contacts or a campaign's leads. Open it from **Lead finder** in the sidebar.
+
+## Search an area
+
+<Steps>
+
+<Step>
+
+Pick a category, type what you are looking for (for example `vegan bakery` or a business name), or both.
+
+</Step>
+
+<Step>
+
+Type a city, neighborhood or address under **Where** to move the map there.
+
+</Step>
+
+<Step>
+
+Search the visible map, or draw the exact area first with the rectangle, circle or shape tool on the left of the map. Draw a rectangle or circle by dragging across the map. Draw a shape by clicking its corners, then double-click (or press Enter) to finish. Escape cancels a drawing.
+
+</Step>
+
+<Step>
+
+Press **Search this area**. Pins appear on the map and the businesses fill the list below it.
+
+</Step>
+
+</Steps>
+
+Only businesses inside the area you searched are kept. When a source has more results than one page, **Load more** fetches the next page of the same search.
+
+## Sources
+
+Where businesses come from is picked under **Source**, and the finder remembers your pick in this browser until that source is no longer connected. Every source returns the business's name, address, category and position; what else it returns differs.
+
+| Source | What it adds | Cost |
+|---|---|---|
+| OpenStreetMap | Websites, phone numbers, emails and opening hours where the map's contributors added them. Coverage is best in Europe and large cities | Free, no key |
+| Google Places | Ratings, review counts, price level, hours, phone numbers, websites and whether a business has closed. Up to 60 results a search | Your Google Maps Platform key, billed by Google |
+| Foursquare | Categories, chains, socials, ratings and hours, paged 50 at a time | Your Foursquare key, billed by Foursquare |
+| Outscraper | Google Maps listings, plus emails and social profiles Outscraper finds from each business's domain | Your Outscraper key, billed by Outscraper |
+
+Connect a key under **Integrations**, in the Data group. The key is checked with one small search before it is saved, encrypted with your workspace's key and never shown again. A Warmbly instance can also provide a source with its own key; searching through it then charges a price per page to your [balance](/guides/ai-credits/) ($0.04 at the default prices), refunded when the search fails. The source menu shows the price next to each source the instance pays for. Your own key always takes precedence over the instance's.
+
+OpenStreetMap searches up to 2,500 km² at a time and is served by shared public servers that are sometimes busy. When one is, the finder tries the next and tells you if all of them are.
+
+Each source has its own terms about storing and reusing its data. Google's, for example, limit how long Places content may be kept. Check the terms of the source you use before exporting from it.
+
+## The map
+
+The controls on the right of the map change how leads are drawn:
+
+- **Pins or heatmap.** Pins cluster when they crowd and split as you zoom in. The heatmap shows where leads are densest, weighted by score.
+- **Color pins by** reachability (email, website, phone only, nothing), status, score or rating. The legend in the corner says what each color means.
+- **Map style** follows the dashboard's light or dark theme, or can be set to light, dark or streets.
+- **Tilt** gives the map a 3D angle, and **Fit** frames every lead on the map.
+
+Hovering a pin shows its name, rating and how it can be reached. Clicking one opens its details. Shift-click a pin to add it to the selection, or use the lasso tool to select every lead inside a shape you drag.
+
+## Find people and emails
+
+**Find people and emails** reads each selected business's own website the way a visitor would: the home page and up to six of its contact, team, about and legal pages, nothing its `robots.txt` asks crawlers to skip. It collects:
+
+- the people the site names, with their titles (see [people](#people))
+
+- email addresses, including ones written as `name [at] domain [dot] com` and ones hidden by Cloudflare's email protection
+- links to Facebook, Instagram, LinkedIn, X, TikTok, YouTube, Pinterest and Yelp profiles
+- phone numbers, when the source had none
+- what the site is built with, and signals worth knowing before you reach out: no HTTPS, not mobile friendly, no analytics, an outdated copyright year, online booking, live chat or an online store
+
+When a listing has no website, the finder first looks for one from the business's name: a few likely domains (the name run together or hyphenated, with the town added, on the country's own ending and `.com`). A domain counts only when its home page shows the business's phone number, or its full name together with its town, street or postcode, so a parked domain or a namesake elsewhere is never taken. Many small businesses use a domain that cannot be guessed from their name, so this finds some of the missing websites, not all of them. A website found this way is marked with a sparkle in the list and costs the same as any other read; looking costs nothing.
+
+Up to three addresses per lead are then checked with the same verification your contacts get. The best one becomes the lead's primary email: a valid address on the business's own domain first, a front desk address such as `info@` before a named person's, and `noreply` addresses last. An invalid or suppressed address is never picked, but a `noreply` one can be when the lead has nothing better.
+
+Reading a website is charged to your [balance](/guides/ai-credits/), $0.02 at the default prices, including the people it names and their addresses. A site that never answers is refunded, and a lead with no website, even after looking for one, costs nothing. A self-hosted instance without billing charges nothing for the lead finder at all. Runs keep going in the background when you leave the page. Progress shows in a strip above the list, each business being read is marked in its row, and rows update as they are read. A run stops early, leaving the rest untouched, when the workspace balance runs out or a spend limit is reached. A finished run shows what it cost.
+
+## People
+
+Reading a website also finds the people who work there, from:
+
+- team, staff, leadership and "meet the doctors" pages, where a name sits next to a role
+- the legal notice (Impressum) that German, Austrian, Swiss and several other sites must carry, naming the owner or managing director
+- structured data the site publishes for search engines (schema.org `Person`)
+- a mailto link whose text is a name, a personal address such as `jane.doe@` on the business's own domain, and LinkedIn profiles linked from the site
+
+Each person is placed as an owner, executive, manager or staff member from their title, and the most senior are listed and worked on first. A lead's **People** tab lists them; the list shows how many each lead has, and **Has people** filters to leads with someone found.
+
+Then each person gets an address at the business's domain:
+
+1. An address the site published for them is kept and checked.
+2. Otherwise their address is worked out from their name. When the site published any personal address, the domain's pattern (`first.last`, `jane@`, `jdoe@` and so on) is learned from it and tried first; otherwise the most common shapes are tried in turn.
+3. Each candidate is checked with the domain's mail server, without sending anything. The first one it confirms is kept, and the pattern is remembered for everyone else at that business.
+
+The result says how far to trust it:
+
+| Shown as | Meaning |
+|---|---|
+| Confirmed | Published on the site, or worked out and confirmed by their mail server |
+| Likely | Follows the address pattern this business uses, but the server would not confirm it |
+| Best guess | The most common shape; nothing could confirm it |
+| Not deliverable | The server refused it |
+| Suppressed | On your [suppression list](/guides/unsubscribe/), so it is never mailed |
+
+Some mail servers accept any address (catch-all) and some hosted providers answer every check the same way, so neither can confirm a worked-out address. The **People** tab says so when that is the case, and the finder stops checking that domain rather than spending more checks on it. Checking needs outbound port 25, so on an instance that cannot reach it, worked-out addresses stay unconfirmed.
+
+**Find someone's email** at the bottom of the **People** tab takes a first and last name (and a title, if you like) and works out that person's address the same way, right away. It is charged to your [balance](/guides/ai-credits/), $0.02 at the default prices, and refunded when no address turns up. You can also add someone whose address you know, edit anyone, ask the finder to look again, or remove them; a contact made from them stays. Nothing your team typed in is overwritten by a later website read.
+
+## Score
+
+Every lead has a score from 0 to 100 that rates how reachable it is: a website (15), an email (25), an email that checked as valid (15), a phone number (15), social profiles (10), its rating (up to 10) and its review count (up to 10). Sort by **Best leads first** to work the reachable ones first.
+
+## Filter and organize
+
+The filter bar above the map and the list narrows what both show. Type to filter by name, email or domain, tap **Has email**, **Has website**, **Has phone** or **4+** stars, or open **Filters** for the rest: reachability (has email, website, phone or socials, or no website at all), rating, review count, score, status, category and tag. You can also hide leads already in your contacts, chains and franchises, and dismissed leads, or keep only what is in the current map view.
+
+Each lead has a status (new, saved, contacted or dismissed), tags and notes, set in its details or for a whole selection at once from the bar at the bottom of the screen. Your team sees the same leads, statuses and notes.
+
+The header shows which search the list is scoped to. Clear it to see every lead your workspace has found.
+
+## Saved searches
+
+Every search is listed under the search form, the latest few first with the rest a click away. Bookmark one to keep it under **Saved** at the top, rename it, or open it to see its leads and area again. Deleting a search keeps its leads.
+
+## Add to contacts
+
+**Add to contacts** turns the selected leads into contacts, and can add them to segments, labels and campaigns at the same time. A new segment can be made on the spot, named after the search by default. When you add them to a campaign, contacts another campaign is already emailing are added but not enrolled, unless you untick that. Choose who becomes a contact:
+
+- **The people**: everyone found at each business with an address. Each contact gets their first and last name, the business as the company, their phone (or the business's) and the verification result, plus `job_title`, `seniority`, `linkedin_url`, `company_linkedin_url`, `website`, `business_category`, `address`, `city`, `state`, `country`, `map_url` and `lead_score` as custom fields. Addresses that were worked out but not confirmed are left out unless you turn on **Include unconfirmed guesses**
+- **The business**: each lead's own primary address, as described below
+- **Both**: the people first, then each business's address, so an owner whose address is also the business's is added once, as a person
+
+For the business, each contact gets:
+
+- the lead's primary email, the business name as the company, and its phone number
+- the verification result, when the address was checked
+- `website`, `business_category`, `address`, `city`, `state`, `postcode`, `country`, `rating`, `review_count`, `map_url`, `facebook_url`, `instagram_url`, `linkedin_url`, `website_platform` and `lead_score` as [custom fields](/guides/contacts-crm/), ready for [variables](/guides/ai-variables/) in your emails
+
+A lead without an email is left out, as is a suppressed address. **Only verified addresses** also leaves out every lead whose address did not check as valid. A contact who already exists is never duplicated: by default the lead fills in its empty details and nothing it has is erased, and **Leave as is** keeps it exactly as it was. Either way it gets the segments, labels and campaigns you picked. Leads that became contacts show a check in the list.
+
+## Export
+
+**Export** downloads the selected leads, or every lead matching the filter, as CSV, Excel or JSON. Pick the columns: every field on this page is available, including every address found other than invalid or suppressed ones, the people found with their addresses unless suppressed, socials, the website's platform and signals, the score, status, tags and notes.
+
+Choose **One row per person** to get a row for each person found instead, starting with their name, first and last name, title, seniority, address, its status and confidence, LinkedIn, phone and the page they were found on, followed by the business columns you picked. Businesses with nobody found are left out of that file.
+
+## Good to know
+
+- One action takes at most 5,000 leads.
+- A business found twice, by two searches or two people, is one lead. A new search refreshes what the source says about it and never blanks a field it already had.
+- Leads and the people found at them move with the Contacts group of a [workspace export](/guides/workspace-export-import/).
+- Reading the leads needs **View contacts**; searching, editing and adding them needs **Manage contacts**. API keys use the contact scopes; see the [scope map](/api/endpoints/).

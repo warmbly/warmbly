@@ -23,6 +23,9 @@ mock_provider "aws" {
   mock_resource "aws_cloudwatch_log_group" {
     defaults = { arn = "arn:aws:logs:us-east-1:123456789012:log-group:mock" }
   }
+  mock_resource "aws_appautoscaling_policy" {
+    defaults = { arn = "arn:aws:autoscaling:us-east-1:123456789012:scalingPolicy:mock" }
+  }
   mock_data "aws_caller_identity" {
     defaults = { account_id = "123456789012" }
   }
@@ -353,4 +356,82 @@ run "evidence_writer_refuses_other_accounts" {
     tls_recovery_evidence_writer = true
   }
   expect_failures = [aws_iam_role.tls_recovery_evidence]
+}
+
+run "consumer_scales_on_its_backlog_by_default" {
+  command = apply
+  assert {
+    condition     = keys(aws_appautoscaling_target.service) == ["consumer"] && aws_appautoscaling_target.service["consumer"].min_capacity == 1 && aws_appautoscaling_target.service["consumer"].max_capacity == 6
+    error_message = "Only the consumer scales by default, between one and six tasks."
+  }
+  assert {
+    condition     = aws_appautoscaling_target.service["consumer"].resource_id == "service/warmbly-production/warmbly-production-consumer" && length(aws_appautoscaling_policy.cpu) == 0
+    error_message = "The consumer's target names its ECS service and has no CPU policy."
+  }
+  assert {
+    condition = (aws_cloudwatch_metric_alarm.consumer_backlog[0].threshold == 1000 && aws_cloudwatch_metric_alarm.consumer_backlog[0].treat_missing_data == "notBreaching" &&
+    aws_cloudwatch_metric_alarm.consumer_quiet[0].evaluation_periods * aws_cloudwatch_metric_alarm.consumer_quiet[0].period == 1800 && aws_cloudwatch_metric_alarm.consumer_quiet[0].treat_missing_data == "notBreaching")
+    error_message = "A sustained backlog adds tasks, half an hour quiet removes one, and missing data does neither."
+  }
+  assert {
+    condition     = contains(jsondecode(aws_ecs_task_definition.service["consumer"].container_definitions)[0].environment, { name = "CONSUMER_METRICS_CLOUDWATCH", value = "warmbly-production" }) && length(aws_iam_role_policy.consumer_metrics) == 1
+    error_message = "The consumer publishes the backlog its alarms read, and its role may publish it."
+  }
+}
+
+run "listed_services_scale_on_cpu" {
+  command = apply
+  variables {
+    autoscaling = {
+      backend  = { min = 2, max = 4 }
+      tracking = { min = 1, max = 3, cpu = 70 }
+    }
+  }
+  assert {
+    condition     = aws_appautoscaling_policy.cpu["backend"].target_tracking_scaling_policy_configuration[0].target_value == 60 && aws_appautoscaling_policy.cpu["tracking"].target_tracking_scaling_policy_configuration[0].target_value == 70
+    error_message = "Each listed service tracks its CPU target."
+  }
+  assert {
+    condition     = length(aws_cloudwatch_metric_alarm.consumer_backlog) == 0 && length(aws_iam_role_policy.consumer_metrics) == 0 && !contains([for env in jsondecode(aws_ecs_task_definition.service["consumer"].container_definitions)[0].environment : env.name], "CONSUMER_METRICS_CLOUDWATCH")
+    error_message = "A consumer left out keeps its count and publishes nothing."
+  }
+}
+
+run "realtime_keeps_a_fixed_count" {
+  command = plan
+  variables {
+    autoscaling = { realtime = { min = 1, max = 2 } }
+  }
+  expect_failures = [var.autoscaling]
+}
+
+run "unmatched_hosts_answer_404_by_default" {
+  command = apply
+  assert {
+    condition     = aws_lb_listener.https.default_action[0].type == "fixed-response" && aws_lb_listener.https.default_action[0].fixed_response[0].status_code == "404"
+    error_message = "a host no rule matches is refused unless tracking is asked to serve it"
+  }
+}
+
+run "unmatched_hosts_reach_tracking_when_enabled" {
+  command = apply
+  variables {
+    tracking_serves_unmatched_hosts = true
+  }
+  assert {
+    condition     = aws_lb_listener.https.default_action[0].type == "forward" && aws_lb_listener.https.default_action[0].target_group_arn == aws_lb_target_group.service["tracking"].arn
+    error_message = "a host no rule matches goes to tracking"
+  }
+}
+
+run "unmatched_hosts_follow_the_tls_route" {
+  command = apply
+  variables {
+    tracking_serves_unmatched_hosts = true
+    target_tls                      = "route"
+  }
+  assert {
+    condition     = alltrue([for group in aws_lb_listener.https.default_action[0].forward[0].target_group : group.arn == aws_lb_target_group.service_tls["tracking"].arn ? group.weight == 1 : group.weight == 0])
+    error_message = "the catch-all moves to HTTPS with every other tracking rule"
+  }
 }

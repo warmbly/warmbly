@@ -5104,6 +5104,74 @@
         }
       }
     },
+    "/campaigns/{id}/warmup-placement": {
+      "get": {
+        "operationId": "campaigns_get_warmup_placement",
+        "summary": "Get warmup placement",
+        "description": "Where each arm of the campaign's opening steps landed when its senders' warmup carried it over the last 30 days. Scope READ_CAMPAIGNS, org permission view_campaigns.",
+        "tags": [
+          "campaigns"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Warmup placement per step arm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CampaignWarmupPlacement"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/campaigns/{id}/attachments": {
       "get": {
         "operationId": "campaigns_list_attachments",
@@ -31940,6 +32008,113 @@
       }
     },
     "schemas": {
+      "CampaignWarmupPlacement": {
+        "type": "object",
+        "required": [
+          "days",
+          "data"
+        ],
+        "properties": {
+          "days": {
+            "type": "integer"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WarmupStepPlacement"
+            }
+          }
+        }
+      },
+      "WarmupStepPlacement": {
+        "type": "object",
+        "required": [
+          "sequence_id",
+          "variant_id",
+          "placement",
+          "by_group"
+        ],
+        "properties": {
+          "sequence_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "variant_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Null for the step's own copy."
+          },
+          "placement": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WarmupCopyPlacement"
+              }
+            ],
+            "description": "Business inboxes on Google Workspace and Microsoft 365 only, the only recipients campaign copy is sent to."
+          },
+          "by_group": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WarmupCopyGroupPlacement"
+            }
+          }
+        }
+      },
+      "WarmupCopyPlacement": {
+        "type": "object",
+        "required": [
+          "sent",
+          "reported",
+          "inbox",
+          "tabs",
+          "spam",
+          "rescued"
+        ],
+        "properties": {
+          "sent": {
+            "type": "integer",
+            "description": "Openings warmup sent."
+          },
+          "reported": {
+            "type": "integer",
+            "description": "Openings whose recipient filed a receipt; rates are read over this."
+          },
+          "inbox": {
+            "type": "integer"
+          },
+          "tabs": {
+            "type": "integer"
+          },
+          "spam": {
+            "type": "integer"
+          },
+          "rescued": {
+            "type": "integer"
+          }
+        }
+      },
+      "WarmupCopyGroupPlacement": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/WarmupCopyPlacement"
+          },
+          {
+            "type": "object",
+            "required": [
+              "group"
+            ],
+            "properties": {
+              "group": {
+                "type": "string",
+                "description": "google (Google Workspace) or microsoft (Microsoft 365)."
+              }
+            }
+          }
+        ]
+      },
       "Error": {
         "type": "object",
         "description": "Standard error envelope returned for every 4xx/5xx response.",
@@ -33842,6 +34017,15 @@
             "type": "string",
             "description": "How volume spreads across mailboxes."
           },
+          "follow_up_sender": {
+            "type": "string",
+            "description": "Which mailbox sends a lead's follow-ups: same (default, the mailbox that sent the first email), same_domain (rotate among mailboxes on that domain) or rotate (rotate across the pool).",
+            "enum": [
+              "same",
+              "same_domain",
+              "rotate"
+            ]
+          },
           "ramp_enabled": {
             "type": "boolean"
           },
@@ -34017,6 +34201,15 @@
           "rotation_mode": {
             "type": "string"
           },
+          "follow_up_sender": {
+            "type": "string",
+            "description": "Which mailbox sends a lead's follow-ups: same (default, the mailbox that sent the first email), same_domain (rotate among mailboxes on that domain) or rotate (rotate across the pool).",
+            "enum": [
+              "same",
+              "same_domain",
+              "rotate"
+            ]
+          },
           "senders": {
             "type": "array",
             "items": {
@@ -34183,6 +34376,15 @@
           },
           "rotation_mode": {
             "type": "string"
+          },
+          "follow_up_sender": {
+            "type": "string",
+            "description": "Which mailbox sends a lead's follow-ups: same (default, the mailbox that sent the first email), same_domain (rotate among mailboxes on that domain) or rotate (rotate across the pool).",
+            "enum": [
+              "same",
+              "same_domain",
+              "rotate"
+            ]
           },
           "ramp_enabled": {
             "type": "boolean"

@@ -10,13 +10,17 @@ import { RealtimeManager } from "@/hooks/RealtimeManager";
 import { OrgGate } from "@/hooks/OrgGate";
 import { RestrictedRouteGuard } from "@/hooks/RestrictedRouteGuard";
 import { ErrorContext } from "@/hooks/ErrorContext";
-import TagsModal from "@/components/app/modals/TagsModal";
-import FoldersModal from "@/components/app/modals/FoldersModal";
-import AddEmailModal from "@/components/app/modals/AddEmailModal";
-import ComposeWindow from "@/components/app/unibox/compose/ComposeWindow";
-import PasskeyEnrollPrompt from "@/components/app/modals/PasskeyEnrollPrompt";
-import PermissionDeniedModal from "@/components/app/modals/PermissionDeniedModal";
-import ReauthModal from "@/components/app/modals/ReauthModal";
+import { lazy, Suspense } from "react";
+
+// Closed until opened, so their code (the editor, the mailbox wizard) loads beside the page instead of ahead of the frame.
+const TagsModal = lazy(() => import("@/components/app/modals/TagsModal"));
+const FoldersModal = lazy(() => import("@/components/app/modals/FoldersModal"));
+const AddEmailModal = lazy(() => import("@/components/app/modals/AddEmailModal"));
+const ComposeWindow = lazy(() => import("@/components/app/unibox/compose/ComposeWindow"));
+const PasskeyEnrollPrompt = lazy(() => import("@/components/app/modals/PasskeyEnrollPrompt"));
+const PermissionDeniedModal = lazy(() => import("@/components/app/modals/PermissionDeniedModal"));
+const ReauthModal = lazy(() => import("@/components/app/modals/ReauthModal"));
+const InsufficientBalanceDialog = lazy(() => import("@/components/app/billing/InsufficientBalanceDialog"));
 
 export default function RootAppLayout() {
     // The route already checked the session (bootDashboard in router.tsx).
@@ -56,13 +60,16 @@ export default function RootAppLayout() {
                             </RealtimeManager>
                         </SocketProvider>
                     </LinkProvider>
-                    <TagsModal />
-                    <FoldersModal />
-                    <AddEmailModal />
-                    <ComposeWindow />
-                    <PasskeyEnrollPrompt />
-                    <PermissionDeniedModal />
-                    <ReauthModal />
+                    <Suspense fallback={null}>
+                        <TagsModal />
+                        <FoldersModal />
+                        <AddEmailModal />
+                        <ComposeWindow />
+                        <PasskeyEnrollPrompt />
+                        <PermissionDeniedModal />
+                        <ReauthModal />
+                        <InsufficientBalanceDialog />
+                    </Suspense>
                 </UpgradeDialogProvider>
             </ConfirmProvider>
         </DataSyncProvider>

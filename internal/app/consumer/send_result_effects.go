@@ -130,4 +130,28 @@ func (s *JobsService) reconcileRecordedSendResults(ctx context.Context) {
 			log.Info().Int("recovered", n).Msg("released mailboxes held by unknown sends that can never run again")
 		}
 	}
+	if holds, ok := s.TaskRepo.(interface {
+		ReleaseProviderRestoredHolds(context.Context, time.Time, int) (int, error)
+	}); ok {
+		n, err := holds.ReleaseProviderRestoredHolds(ctx, time.Now().Add(-config.ProviderRestoredHoldRecheckHours*time.Hour), 200)
+		if err != nil {
+			log.Warn().Err(err).Msg("provider-restored send hold release deferred")
+		} else if n > 0 {
+			log.Info().Int("released", n).Msg("released mailboxes the provider refused that have since synced in full")
+		}
+	}
+	if holds, ok := s.TaskRepo.(interface {
+		ReleaseProbeDueHolds(context.Context, int) ([]uuid.UUID, error)
+	}); ok {
+		released, err := holds.ReleaseProbeDueHolds(ctx, 200)
+		if err != nil {
+			log.Warn().Err(err).Msg("send hold re-probe deferred")
+		}
+		for _, id := range released {
+			s.publishAccountSynced(ctx, id)
+		}
+		if len(released) > 0 {
+			log.Info().Int("released", len(released)).Msg("released refused mailboxes for one more send")
+		}
+	}
 }

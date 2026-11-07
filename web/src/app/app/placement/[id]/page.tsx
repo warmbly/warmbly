@@ -40,6 +40,7 @@ import {
     resolvedCount,
 } from "@/components/app/placement/tests/placementTests";
 import { cn } from "@/lib/utils";
+import { fmtUsdCost } from "@/lib/money";
 
 export default function PlacementTestPage() {
     const { id = "" } = useParams({ from: "/app/placement/$id" });
@@ -112,11 +113,11 @@ function Detail({ test }: { test: PlacementTestDetail }) {
                         {test.finished_at && <span>Finished {fmtDate(test.finished_at)}</span>}
                         {test.origin !== "manual" && test.origin !== "batch" && <span>{ORIGIN_LABEL[test.origin] ?? test.origin}</span>}
                         {test.pace === "quick" && <span>Quick pace</span>}
-                        {test.credits_charged > 0 && (
-                            <span title={test.credits_refunded > 0 ? "No copy was delivered, so the credits came back." : "Paid past the month's free tests."}>
-                                {test.credits_refunded > 0
-                                    ? `${test.credits_refunded} of ${test.credits_charged} credits refunded`
-                                    : `Paid ${test.credits_charged} credits`}
+                        {test.charged_usd > 0 && (
+                            <span title={test.refunded_usd > 0 ? "No copy was delivered, so the charge was refunded." : "Paid past the month's free tests."}>
+                                {test.refunded_usd > 0
+                                    ? `${fmtUsdCost(test.refunded_usd)} of ${fmtUsdCost(test.charged_usd)} refunded`
+                                    : `Paid ${fmtUsdCost(test.charged_usd)}`}
                             </span>
                         )}
                         {test.campaign_id && (

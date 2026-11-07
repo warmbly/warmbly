@@ -17,7 +17,10 @@ type qualityContentRepo struct {
 	conversation *models.WarmupConversation
 	pickErr      error
 	lastPick     repository.WarmupContentPick
+	picks        []repository.WarmupContentPick
 	seeded       []models.WarmupConversation
+	// campaignCopy is what CampaignCopyCandidates returns.
+	campaignCopy []models.WarmupCampaignCopyCandidate
 }
 
 func (r *qualityContentRepo) GetGenerationSettings(context.Context) (*models.WarmupGenerationSettings, error) {
@@ -26,17 +29,21 @@ func (r *qualityContentRepo) GetGenerationSettings(context.Context) (*models.War
 }
 func (r *qualityContentRepo) PickConversation(_ context.Context, pick repository.WarmupContentPick) (*models.WarmupConversation, error) {
 	r.lastPick = pick
+	r.picks = append(r.picks, pick)
 	return r.conversation, r.pickErr
 }
 func (r *qualityContentRepo) SeedStaticConversations(_ context.Context, rows []models.WarmupConversation) error {
 	r.seeded = rows
 	return nil
 }
+func (r *qualityContentRepo) CampaignCopyCandidates(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) ([]models.WarmupCampaignCopyCandidate, error) {
+	return r.campaignCopy, nil
+}
 
 func TestWarmupContentPreservesRepositoryFailure(t *testing.T) {
 	want := errors.New("temporary content repository failure")
 	s := &tasksService{warmupContentRepo: &qualityContentRepo{pickErr: want}}
-	_, err := s.pickNewWarmupContent(t.Context(), Email{ID: uuid.New()}, uuid.New(), uuid.New())
+	_, err := s.pickNewWarmupContent(t.Context(), Email{ID: uuid.New()}, &Email{ID: uuid.New()}, uuid.New())
 	if !errors.Is(err, want) || errors.Is(err, errWarmupContentUnavailable) {
 		t.Fatalf("repository failure became content exhaustion: %v", err)
 	}
@@ -96,7 +103,7 @@ func TestAISelectionPreservesSubjectAndCanonicalBody(t *testing.T) {
 	conv.SemanticReview = "passed"
 	repo := &qualityContentRepo{conversation: conv}
 	s := &tasksService{warmupContentRepo: repo}
-	got, err := s.pickNewWarmupContent(context.Background(), Email{Name: "Ada A", Email: "[EMAIL]"}, uuid.New(), uuid.New())
+	got, err := s.pickNewWarmupContent(context.Background(), Email{Name: "Ada A", Email: "[EMAIL]"}, &Email{ID: uuid.New()}, uuid.New())
 	if err != nil || got.contentSource != models.WarmupContentSourceAI || *got.conversationID != conv.ID || got.subject != conv.Subject || got.body != conv.Description+"\n\nAda A" {
 		t.Fatal("AI subject, body, signature or ID changed")
 	}
@@ -118,7 +125,7 @@ func TestNewWarmupFallsBackToTheStaticLibrary(t *testing.T) {
 			if repo != nil {
 				s.warmupContentRepo = repo
 			}
-			content, err := s.pickNewWarmupContent(t.Context(), Email{Name: "Ada", Email: "[EMAIL]"}, uuid.New(), uuid.New())
+			content, err := s.pickNewWarmupContent(t.Context(), Email{Name: "Ada", Email: "[EMAIL]"}, &Email{ID: uuid.New()}, uuid.New())
 			if err != nil || content.contentSource != models.WarmupContentSourceStatic || content.conversationID == nil || content.body == "" {
 				t.Fatalf("warmup did not fall back to the static library: %+v, %v", content, err)
 			}
@@ -132,7 +139,7 @@ func TestNewWarmupFallsBackToTheStaticLibrary(t *testing.T) {
 func TestStaticPickFromBankRendersTheInCodeConversation(t *testing.T) {
 	source := warmupConversations()[3]
 	s := &tasksService{warmupContentRepo: &qualityContentRepo{conversation: &models.WarmupConversation{ID: source.ID, Source: models.WarmupContentSourceStatic, Subject: "stale copy"}}}
-	got, err := s.pickNewWarmupContent(t.Context(), Email{Name: "Ada"}, uuid.New(), uuid.New())
+	got, err := s.pickNewWarmupContent(t.Context(), Email{Name: "Ada"}, &Email{ID: uuid.New()}, uuid.New())
 	if err != nil || got.subject != source.Subject || got.contentSource != models.WarmupContentSourceStatic || got.scenarioVersion != generation.WarmupScenarioVersion || *got.conversationID != source.ID {
 		t.Fatal("static bank row did not render the current in-code conversation")
 	}

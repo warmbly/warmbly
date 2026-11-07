@@ -5,8 +5,6 @@ import type {
     DirectoryUser,
     DomainGrant,
     GrantConfig,
-    GoogleGrantFinish,
-    GoogleGrantStart,
     GrantConnectRequest,
     ListResponse,
     SigninMigrationList,
@@ -22,22 +20,6 @@ export async function listGrants(): Promise<ListResponse<DomainGrant>> {
 
 export async function getGrant(id: string): Promise<DomainGrant> {
     return await Request<DomainGrant>({ method: "GET", url: `/emails/grants/${id}`, authorization: true });
-}
-
-// How this workspace proves it controls the domain: an administrator's sign-in, or a DNS TXT record.
-export async function startGoogleGrant(body: { domain: string; admin_email: string }): Promise<GoogleGrantStart> {
-    return await Request<GoogleGrantStart>({ method: "POST", url: "/emails/grants/google/start", data: body, authorization: true });
-}
-
-// Either the sign-in's {state, code} or the DNS proof's {domain, admin_email}; a DNS repeat re-verifies.
-export async function finishGoogleGrant(body: GoogleGrantFinish): Promise<DomainGrant> {
-    return await Request<DomainGrant>({
-        method: "POST",
-        url: "/emails/grants/google/finish",
-        data: body,
-        authorization: true,
-        timeout: 60_000,
-    });
 }
 
 // The admin consent URL a Global Administrator opens, and the state its callback echoes back.

@@ -1,6 +1,6 @@
 // Contact research tab: run AI research on a contact and show the latest cited
 // findings (company + person summary, signals with linked sources and
-// confidence chips, hooks with copy buttons, notes). Runs charge AI credits and
+// confidence chips, hooks with copy buttons, notes). Runs are charged to the balance and
 // never send anything; findings are read-only research material.
 
 import React from "react";
@@ -24,6 +24,9 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import { TextInput } from "@/components/ui/field";
 import useAiMetered from "@/hooks/useAiMetered";
+import { isInsufficientBalance, openInsufficientBalance } from "@/lib/insufficientBalance";
+import { fmtUsdAbout } from "@/lib/money";
+import { AI_ESTIMATE_USD } from "@/lib/aiEstimates";
 import { WorkingStatus } from "@/components/app/agent/AgentActivity";
 import AgentMark from "@/components/app/agent/AgentMark";
 
@@ -43,15 +46,19 @@ export default function ResearchTab({ contactId }: { contactId: string }) {
 
     async function runResearch() {
         setClickedAt(Date.now());
+        const id = toast.loading("Researching…");
         try {
-            await toast.promise(run.mutateAsync(objective.trim()), {
-                loading: "Researching…",
-                success: "Research complete",
-                error: (e: AppError) => buildError(e),
-            });
+            await run.mutateAsync(objective.trim());
+            toast.success("Research complete", { id });
             setObjective("");
-        } catch {
-            /* surfaced */
+        } catch (e) {
+            // A balance that ran out opens the add-money dialog instead.
+            if (isInsufficientBalance(e)) {
+                toast.dismiss(id);
+                openInsufficientBalance();
+            } else {
+                toast.error(buildError(e as AppError), { id });
+            }
         }
     }
 
@@ -65,7 +72,7 @@ export default function ResearchTab({ contactId }: { contactId: string }) {
                 </div>
                 <p className="text-[11.5px] text-slate-500 mt-1 leading-relaxed">
                     Warmbly searches the public web for current, cited facts about this person and
-                    their company.{metered ? " Costs 2 AI credits per run." : ""}
+                    their company.{metered ? ` Costs ${fmtUsdAbout(AI_ESTIMATE_USD.researchRun)} per run.` : ""}
                 </p>
                 <div className="mt-2.5 flex items-center gap-2">
                     <TextInput

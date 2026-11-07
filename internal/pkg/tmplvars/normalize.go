@@ -159,6 +159,20 @@ func References(src string) map[string]bool {
 	return w.refs
 }
 
+// ContactReads reports the built-in fields src reads from the contact, and
+// whether it reads anything else of it: a custom field, or the whole record
+// handed to a function. ok is false when src does not parse.
+func ContactReads(src string) (builtins map[string]bool, other bool, ok bool) {
+	if !strings.Contains(src, "{{") {
+		return map[string]bool{}, false, true
+	}
+	w, _, _ := analyze(src)
+	if w == nil || w.err != nil {
+		return nil, false, false
+	}
+	return w.refs, w.other, true
+}
+
 // analyze parses src with spaced references rewritten and form-link markers
 // blanked, and walks it. A nil walker means src does not parse.
 func analyze(src string) (*walker, string, []span) {
@@ -323,6 +337,8 @@ type walker struct {
 	vars     map[string]scope
 	assigned []string // variables reassigned with =, in walk order
 	refs     map[string]bool
+	// other is whether src reads anything from the contact besides a built-in field.
+	other bool
 }
 
 func (w *walker) fail(pos int, format string, args ...any) {
@@ -431,6 +447,10 @@ func (w *walker) valueOf(p *parse.PipeNode, dot scope) scope {
 // arg visits one operand; calls is whether it is a command head given arguments.
 func (w *walker) arg(n parse.Node, calls bool, dot scope) {
 	switch x := n.(type) {
+	case *parse.DotNode:
+		if dot == scopeRoot {
+			w.other = true
+		}
 	case *parse.PipeNode:
 		w.pipe(x, dot, false)
 	case *parse.IdentifierNode:
@@ -440,6 +460,8 @@ func (w *walker) arg(n parse.Node, calls bool, dot scope) {
 	case *parse.VariableNode:
 		if len(x.Ident) > 1 {
 			w.fields(int(x.Pos), strings.Join(x.Ident, "."), x.Ident[0], w.vars[x.Ident[0]], x.Ident[1:])
+		} else if w.vars[x.Ident[0]] == scopeRoot {
+			w.other = true
 		}
 	case *parse.ChainNode:
 		switch inner := x.Node.(type) {
@@ -500,6 +522,8 @@ func (w *walker) fields(pos int, text, head string, held scope, idents []string)
 		canonical, builtin := topNames[idents[0]]
 		if builtin {
 			w.refs[canonical] = true
+		} else {
+			w.other = true
 		}
 		if builtin && canonical == SenderField {
 			if len(idents) > 1 {

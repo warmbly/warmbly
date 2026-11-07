@@ -3,9 +3,11 @@ package smtp
 import (
 	"io"
 	"net/textproto"
+	"strings"
 	"testing"
 
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/pkg/dsn"
 )
 
 func TestSendFailurePreservesSMTPRefusalAndAmbiguity(t *testing.T) {
@@ -38,5 +40,35 @@ func TestSendFailurePreservesSMTPRefusalAndAmbiguity(t *testing.T) {
 				t.Fatal("temporary refusal disables authentication")
 			}
 		})
+	}
+}
+
+// A refusal quotes the server's own reply so the bounce rules can read it; an
+// AUTH reply is never quoted.
+func TestSendFailureQuotesTheServerReply(t *testing.T) {
+	native := &textproto.Error{Code: 550, Msg: "Mailbox unavailable\r\n\x07blocked   using zen.spamhaus.org"}
+	got := sendFailure(errx.ErrMailRecipientRejected("refused"), native, "rcpt to", "recipient").Message
+	if !strings.Contains(got, "server replied: 550 Mailbox unavailable blocked using zen.spamhaus.org") {
+		t.Fatalf("message %q does not quote the reply", got)
+	}
+	if strings.ContainsRune(got, '\x07') || strings.ContainsRune(got, '\n') {
+		t.Fatalf("message %q keeps control characters", got)
+	}
+	masked := sendFailure(errx.ErrMailRecipientRejected("refused"), &textproto.Error{Code: 550, Msg: "5.1.1 <gone@example.com>: User unknown"}, "rcpt to", "recipient").Message
+	if strings.Contains(masked, "gone@example.com") || !strings.Contains(masked, "User unknown") {
+		t.Fatalf("message %q keeps the address or drops the reason", masked)
+	}
+	if dsn.Blame(got) != dsn.CauseReputationBlock {
+		t.Fatalf("Blame(%q) = %q, want reputation_block", got, dsn.Blame(got))
+	}
+
+	long := &textproto.Error{Code: 550, Msg: strings.Repeat("x", 4*replyTextLimit)}
+	if n := len([]rune(sendFailure(errx.ErrMailRecipientRejected("refused"), long, "rcpt to", "recipient").Message)); n > 2*replyTextLimit {
+		t.Fatalf("quoted reply is unbounded: %d runes", n)
+	}
+
+	auth := &textproto.Error{Code: 535, Msg: "5.7.8 Username and Password not accepted dXNlcjpzZWNyZXQ="}
+	if msg := sendFailure(errx.ErrMailInvalidCredentials, auth, "auth", "mailbox").Message; strings.Contains(msg, "dXNlcjpzZWNyZXQ") {
+		t.Fatalf("an AUTH reply reached the message: %q", msg)
 	}
 }

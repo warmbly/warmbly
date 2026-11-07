@@ -178,7 +178,8 @@ type TaskRepository interface {
 	// CampaignSendsPerDayByAccounts is each mailbox's average campaign sends
 	// per day over the last `days` whole days; an id with none is absent.
 	CampaignSendsPerDayByAccounts(ctx context.Context, accountIDs []uuid.UUID, days int) (map[uuid.UUID]float64, error)
-	CountWarmupEmailsSentToday(ctx context.Context, accountID uuid.UUID) (int, error)
+	// CountWarmupEmailsSentBetween counts completed warmup sends in [start, end), the mailbox's local day.
+	CountWarmupEmailsSentBetween(ctx context.Context, accountID uuid.UUID, start, end time.Time) (int, error)
 
 	// Create user-initiated email task (transactional)
 	CreateEmailTaskFull(ctx context.Context, task *Task, emailTask *EmailTask) error
@@ -735,19 +736,19 @@ func (r *taskRepository) CountEmailsSentToday(ctx context.Context, accountID uui
 	return count, err
 }
 
-func (r *taskRepository) CountWarmupEmailsSentToday(ctx context.Context, accountID uuid.UUID) (int, error) {
+func (r *taskRepository) CountWarmupEmailsSentBetween(ctx context.Context, accountID uuid.UUID, start, end time.Time) (int, error) {
 	query := `
 		SELECT COUNT(*)
 		FROM tasks
 		WHERE email_account_id = $1
 		  AND status = 'completed'
 		  AND task_type = 'warmup'
-		  AND completed_at >= CURRENT_DATE::timestamptz
-		  AND completed_at < (CURRENT_DATE + 1)::timestamptz
+		  AND completed_at >= $2
+		  AND completed_at < $3
 	`
 
 	var count int
-	err := r.db.QueryRow(ctx, query, accountID).Scan(&count)
+	err := r.db.QueryRow(ctx, query, accountID, start, end).Scan(&count)
 	return count, err
 }
 

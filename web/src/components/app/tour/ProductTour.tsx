@@ -235,7 +235,7 @@ export default function ProductTour() {
               lead: jumped ? "Before you go." : "Your plan.",
               title: `You're on ${planName}.`,
               body: productPaid
-                  ? "Everything in this tour is already on for your workspace. Need more sending or AI credits? Change plan any time, and the difference is prorated."
+                  ? "Everything in this tour is already on for your workspace. Need more sending or AI usage? Change plan any time, and the difference is prorated."
                   : "Your mailboxes warm in the premium pool. Choose a plan to start sending and to turn on the inbox, the CRM, automations and Remie.",
           };
     const choosePlan = async (id: PlanID) => {
@@ -414,6 +414,8 @@ export default function ProductTour() {
                                                 note={
                                                     access.paid
                                                         ? undefined
+                                                        : access.trial
+                                                        ? "Your trial warms up to 2 mailboxes in the free pool and sends 20 a day. Every paid plan warms them in the premium pool."
                                                         : access.keptFreeWarmup
                                                         ? "Only warming for now? Your free plan keeps up to 10 mailboxes warming. Every paid plan puts them in the premium pool."
                                                         : "Mailboxes and warmup start with a plan. Every paid plan warms them in the premium pool."

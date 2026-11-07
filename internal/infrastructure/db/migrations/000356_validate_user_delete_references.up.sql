@@ -1,0 +1,25 @@
+-- Validates the references 000355 added NOT VALID. VALIDATE takes only SHARE UPDATE EXCLUSIVE, so writes continue while it scans.
+ALTER TABLE admin_audit_logs VALIDATE CONSTRAINT admin_audit_logs_admin_user_id_fkey;
+ALTER TABLE admin_outreach_messages VALIDATE CONSTRAINT admin_outreach_messages_sent_by_fkey;
+ALTER TABLE contact_activities VALIDATE CONSTRAINT contact_activities_user_id_fkey;
+ALTER TABLE contact_notes VALIDATE CONSTRAINT contact_notes_user_id_fkey;
+ALTER TABLE crm_tasks VALIDATE CONSTRAINT crm_tasks_assigned_to_fkey;
+ALTER TABLE crm_tasks VALIDATE CONSTRAINT crm_tasks_created_by_fkey;
+ALTER TABLE deals VALIDATE CONSTRAINT deals_assigned_to_fkey;
+ALTER TABLE enterprise_inquiries VALIDATE CONSTRAINT enterprise_inquiries_assigned_to_fkey;
+ALTER TABLE enterprise_inquiries VALIDATE CONSTRAINT enterprise_inquiries_processed_by_fkey;
+ALTER TABLE enterprise_inquiries VALIDATE CONSTRAINT enterprise_inquiries_user_id_fkey;
+ALTER TABLE limit_increase_requests VALIDATE CONSTRAINT limit_increase_requests_reviewed_by_fkey;
+ALTER TABLE limit_increase_requests VALIDATE CONSTRAINT limit_increase_requests_submitted_by_fkey;
+ALTER TABLE organization_invitations VALIDATE CONSTRAINT organization_invitations_invited_by_fkey;
+ALTER TABLE organization_members VALIDATE CONSTRAINT organization_members_invited_by_fkey;
+ALTER TABLE outreach_settings VALIDATE CONSTRAINT outreach_settings_updated_by_fkey;
+ALTER TABLE scheduled_deletions VALIDATE CONSTRAINT scheduled_deletions_cancelled_by_user_id_fkey;
+ALTER TABLE scheduled_deletions VALIDATE CONSTRAINT scheduled_deletions_requested_by_user_id_fkey;
+ALTER TABLE user_bans VALIDATE CONSTRAINT user_bans_banned_by_fkey;
+ALTER TABLE user_bans VALIDATE CONSTRAINT user_bans_unbanned_by_fkey;
+ALTER TABLE user_rate_limits VALIDATE CONSTRAINT user_rate_limits_updated_by_fkey;
+ALTER TABLE users VALIDATE CONSTRAINT users_admin_granted_by_fkey;
+ALTER TABLE warmup_admin_actions VALIDATE CONSTRAINT warmup_admin_actions_admin_user_id_fkey;
+ALTER TABLE warmup_appeals VALIDATE CONSTRAINT warmup_appeals_reviewed_by_fkey;
+ALTER TABLE warmup_appeals VALIDATE CONSTRAINT warmup_appeals_user_id_fkey;

@@ -19,6 +19,7 @@ import { htmlToPlain } from "./emailPreview";
 import SequenceView from "./SequenceView";
 import StepSplitAllocator, { type SplitArm } from "./StepSplitAllocator";
 import StepArmResults from "./StepArmResults";
+import StepWarmupPlacement from "./StepWarmupPlacement";
 import { openerArmSubjects, type ArmSubject } from "./threading";
 import type { EarlierEmail } from "./emailAIPrompt";
 import {
@@ -227,6 +228,11 @@ export default function StepEmailArms({
                     promoted={promoted}
                 />
             )}
+            <StepWarmupPlacement
+                campaignId={campaignId}
+                stepId={sequence.id}
+                armName={(key) => arms.find((a) => a.key === key)?.name}
+            />
             {selected === "original" || !selectedVariant ? (
                 <SequenceView
                     embedded

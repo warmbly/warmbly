@@ -50,11 +50,14 @@ type Verdict struct {
 	Model      string
 }
 
+// Confident reports a verdict strong enough to act on; nil is not.
+func (v *Verdict) Confident() bool { return v != nil && v.Confidence >= ConfFloor }
+
 // AddressIsFine reports whether the bounce is about something other than the
 // recipient's address, strongly enough to skip suppressing it. A nil verdict
 // says nothing, so the address is not vouched for.
 func (v *Verdict) AddressIsFine() bool {
-	if v == nil || v.Confidence < ConfFloor {
+	if !v.Confident() {
 		return false
 	}
 	switch v.Cause {
@@ -62,6 +65,12 @@ func (v *Verdict) AddressIsFine() bool {
 		return true
 	}
 	return false
+}
+
+// NamesAddress reports a confident verdict that the address cannot receive
+// mail, the only verdict that may suppress it.
+func (v *Verdict) NamesAddress() bool {
+	return v.Confident() && v.Cause == CauseRecipientInvalid
 }
 
 // Classify asks one question about one bounce reason. An empty reason has

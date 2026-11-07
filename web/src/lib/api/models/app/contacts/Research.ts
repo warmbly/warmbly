@@ -57,7 +57,8 @@ export interface ContactResearchRun {
     objective: string;
     result: ResearchResult;
     error?: string;
-    credits_charged: number;
+    /** What the run cost in dollars; 0 until it is charged. */
+    charged_usd: number;
     model_used: string;
     tokens_used: number;
     created_at: Date;

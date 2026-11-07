@@ -30,6 +30,7 @@ type placementBatchRequest struct {
 	Families         []string                     `json:"families"`
 	SeedIDs          []uuid.UUID                  `json:"seed_ids"`
 	OnUnavailable    string                       `json:"on_unavailable"`
+	MaxUSD           *float64                     `json:"max_usd"`
 	MaxCredits       int                          `json:"max_credits"`
 }
 
@@ -78,7 +79,7 @@ func (h *Handler) placementBatchInput(c *gin.Context) (placement.BatchInput, boo
 		Families:         req.Families,
 		SeedIDs:          req.SeedIDs,
 		OnUnavailable:    req.OnUnavailable,
-		MaxCredits:       req.MaxCredits,
+		MaxSpend:         agreedSpend(req.MaxUSD, req.MaxCredits),
 	}
 	// A caller limited to some mailboxes only ever tests from those.
 	if allowed := middleware.AllowedEmailAccounts(c); len(allowed) > 0 {

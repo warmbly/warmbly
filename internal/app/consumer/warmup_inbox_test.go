@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -201,5 +202,61 @@ func TestWarmupInboxCleanupRetriesCloudFailureWithoutDeletingMail(t *testing.T) 
 	done, err = s.cleanWarmupInboxBatch(context.Background(), sweep)
 	if err != nil || !done || sweep.afterID != e.Message.ID || len(inbox.deleted) != 1 || inbox.deleted[0] != e.Message.ID {
 		t.Fatalf("cleanup retry failed: %v %v %v", sweep.afterID, done, err)
+	}
+}
+
+type pendingVerificationInbox struct {
+	repository.UniboxRepository
+	held      []models.JobEventNewEmail
+	processed int
+}
+
+func (r *pendingVerificationInbox) ClaimPendingWarmupVerification(context.Context, int) ([]models.JobEventNewEmail, error) {
+	return r.held, nil
+}
+
+func (r *pendingVerificationInbox) ProcessPendingWarmupVerification(_ context.Context, id uuid.UUID, process func(*models.JobEventNewEmail) error) error {
+	for i := range r.held {
+		if r.held[i].Message.ID == id {
+			r.processed++
+			return process(&r.held[i])
+		}
+	}
+	return nil
+}
+
+type pendingDeliveryRepo struct {
+	repository.WarmupRepository
+	deliveryErr map[string]error
+}
+
+func (pendingDeliveryRepo) FindDeliveredWarmupToken(context.Context, uuid.UUID, string, string, string) (*models.WarmupToken, error) {
+	return nil, nil
+}
+
+func (r pendingDeliveryRepo) IsWarmupDelivery(_ context.Context, _ uuid.UUID, _, messageID, _ string) (bool, error) {
+	return false, r.deliveryErr[messageID]
+}
+
+// A send whose provider id is not recorded yet is the wait this loop exists for, not a failure to report.
+func TestPendingWarmupVerificationWaitsQuietlyForTheSendConfirmation(t *testing.T) {
+	arrival := func(messageID string) models.JobEventNewEmail {
+		return models.JobEventNewEmail{UserID: uuid.New(), Message: &models.EmailMessageStoreData{
+			ID: uuid.New(), EmailID: uuid.New(), MessageID: messageID, Subject: "quick question", FromAddr: []string{"[EMAIL]"},
+		}}
+	}
+	inbox := &pendingVerificationInbox{held: []models.JobEventNewEmail{arrival("<a@x>"), arrival("<b@x>")}}
+	repo := pendingDeliveryRepo{deliveryErr: map[string]error{"<a@x>": repository.ErrWarmupDeliveryPending, "<b@x>": repository.ErrWarmupDeliveryPending}}
+	s := &JobsService{UniboxRepository: inbox, WarmupRepo: repo}
+
+	err := s.retryPendingWarmupVerification(context.Background())
+	if inbox.processed != 2 || !errors.Is(err, repository.ErrWarmupDeliveryPending) || !jobrun.IsQuiet(err) {
+		t.Fatalf("awaited confirmations were reported or dropped: processed=%d err=%v", inbox.processed, err)
+	}
+
+	repo.deliveryErr["<b@x>"] = errors.New("connection reset")
+	err = s.retryPendingWarmupVerification(context.Background())
+	if err == nil || jobrun.IsQuiet(err) || errors.Is(err, repository.ErrWarmupDeliveryPending) {
+		t.Fatalf("a lookup failure must be reported on its own: %v", err)
 	}
 }

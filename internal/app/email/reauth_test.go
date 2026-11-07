@@ -22,6 +22,7 @@ type stubReauthRepo struct {
 
 	wroteAccess  string
 	wroteRefresh string
+	wroteScopes  []string
 	updated      *models.UpdateEmail
 }
 
@@ -51,6 +52,11 @@ func (s *stubReauthRepo) RefreshBoxToken(ctx context.Context, id uuid.UUID, acce
 	s.wroteAccess = accessToken
 	s.wroteRefresh = refreshToken
 	return nil
+}
+
+func (s *stubReauthRepo) ReplaceBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time, scopes []string) error {
+	s.wroteScopes = scopes
+	return s.RefreshBoxToken(ctx, id, accessToken, refreshToken, expiresAt)
 }
 
 func (s *stubReauthRepo) Update(ctx context.Context, userID, emailAccountID string, udata *models.UpdateEmail) (*models.Email, *errx.Error) {

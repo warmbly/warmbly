@@ -20,6 +20,9 @@ import {
     ROLE_TEMPLATES,
 } from "@/lib/permissions";
 import { roleColor } from "../_components/RoleSelect";
+import { Toggle } from "@/components/app/campaigns/preferences/components/CampaignPreferenceBoolBox";
+import { CLIENT_ROLE_PRESETS, roleScopeSafe, SCOPE_ACTION_PERMISSIONS, SCOPE_READ_PERMISSIONS } from "@/lib/accessScope";
+import useEnsureClientRole from "@/lib/api/hooks/app/organizations/useEnsureClientRole";
 
 // Ownership transfer can never live in a role (the API rejects it).
 const EDITABLE_PERMISSIONS = PERMISSION_CATALOG.filter(
@@ -67,6 +70,7 @@ export default function RolesSection({ canManage }: { canManage: boolean }) {
                                     style={{ backgroundColor: roleColor(role) }}
                                 />
                                 <span className="text-[12.5px] font-medium text-slate-900 truncate">{role.name}</span>
+                                <ClientFit role={role} />
                             </div>
                             <p className="text-[11px] text-slate-500 truncate">
                                 {role.description || `${countBits(role.permissions)} permissions`}
@@ -99,6 +103,8 @@ export default function RolesSection({ canManage }: { canManage: boolean }) {
                 ))}
             </div>
 
+            {canManage && <ClientPresets />}
+
             {canManage && (
                 <button
                     type="button"
@@ -122,6 +128,72 @@ export default function RolesSection({ canManage }: { canManage: boolean }) {
     );
 }
 
+/** How a role reads for a client restricted to selected resources. */
+function ClientFit({ role }: { role: OrganizationRole }) {
+    const acts = !!role.acts_in_scope;
+    const safe = roleScopeSafe(role.permissions, acts);
+    if (!acts && !safe) return null;
+    return (
+        <span
+            title={
+                safe
+                    ? "Every permission of this role applies to a client restricted to selected resources."
+                    : "Clients holding this role act inside what is shared with them; its workspace-wide permissions do not apply to them."
+            }
+            className={`shrink-0 inline-flex items-center h-[18px] px-1.5 rounded text-[10.5px] font-medium ${
+                safe ? "bg-sky-50 text-sky-700" : "bg-slate-100 text-slate-600"
+            }`}
+        >
+            {acts ? "Clients can act" : "Client role"}
+        </span>
+    );
+}
+
+/** One-click client roles: each preset is added to the workspace as an ordinary role. */
+function ClientPresets() {
+    const clientRoles = useEnsureClientRole();
+    const missing = CLIENT_ROLE_PRESETS.filter((p) => !clientRoles.roleFor(p));
+    if (missing.length === 0) return null;
+    async function addAll() {
+        try {
+            for (const p of missing) await clientRoles.ensure(p);
+            toast.success(missing.length === 1 ? "Client role added" : "Client roles added");
+        } catch (e) {
+            toast.error(buildError(e as AppError));
+        }
+    }
+    return (
+        <div className="rounded-md border border-slate-200 bg-slate-50/60 p-3">
+            <div className="flex items-center gap-2">
+                <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Client roles</div>
+                <button
+                    type="button"
+                    onClick={addAll}
+                    disabled={clientRoles.pending}
+                    className="ml-auto h-6 px-2 rounded-md border border-slate-200 bg-white text-[11.5px] font-medium text-slate-700 hover:border-slate-300 inline-flex items-center gap-1 disabled:opacity-60"
+                >
+                    {clientRoles.pending ? <Loader2Icon className="w-3 h-3 animate-spin" /> : <PlusIcon className="w-3 h-3" />}
+                    Add {missing.length === 1 ? "it" : `all ${missing.length}`}
+                </button>
+            </div>
+            <p className="mt-1 text-[11.5px] text-slate-500 leading-relaxed">
+                For clients restricted to selected campaigns and mailboxes. They work only inside what you share with them.
+            </p>
+            <ul className="mt-2 space-y-1">
+                {missing.map((p) => (
+                    <li key={p.key} className="flex items-start gap-2 text-[12px]">
+                        <span className="mt-1 size-2 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
+                        <span>
+                            <span className="font-medium text-slate-900">{p.name}</span>
+                            <span className="text-slate-500">. {p.summary}</span>
+                        </span>
+                    </li>
+                ))}
+            </ul>
+        </div>
+    );
+}
+
 function countBits(mask: number) {
     let n = 0;
     for (let b = mask; b; b >>= 1) n += b & 1;
@@ -137,7 +209,9 @@ function RoleEditor({ role, onClose }: { role: OrganizationRole | null; onClose:
     const [permissions, setPermissions] = React.useState<number>(
         role?.permissions ?? PRESETS.find((p) => p.id === "viewer")?.permissions ?? 0,
     );
+    const [actsInScope, setActsInScope] = React.useState<boolean>(!!role?.acts_in_scope);
     const pending = create.isPending || update.isPending;
+    const clientReach = permissions & (actsInScope ? SCOPE_ACTION_PERMISSIONS : SCOPE_READ_PERMISSIONS);
 
     const toggle = (bit: number) => setPermissions((p) => p ^ bit);
 
@@ -149,8 +223,8 @@ function RoleEditor({ role, onClose }: { role: OrganizationRole | null; onClose:
         try {
             await toast.promise(
                 role
-                    ? update.mutateAsync({ id: role.id, data: { name: name.trim(), description, color, permissions } })
-                    : create.mutateAsync({ name: name.trim(), description, color, permissions }),
+                    ? update.mutateAsync({ id: role.id, data: { name: name.trim(), description, color, permissions, acts_in_scope: actsInScope } })
+                    : create.mutateAsync({ name: name.trim(), description, color, permissions, acts_in_scope: actsInScope }),
                 {
                     loading: "Saving…",
                     success: role ? "Role updated" : "Role created",
@@ -260,6 +334,25 @@ function RoleEditor({ role, onClose }: { role: OrganizationRole | null; onClose:
                                 />
                             ))}
                         </div>
+                    </div>
+
+                    <div className="rounded-md border border-slate-200 p-2.5">
+                        <div className="flex items-center gap-2">
+                            <span className="text-[12px] font-medium text-slate-900">Clients can act inside what is shared with them</span>
+                            <span className="ml-auto">
+                                <Toggle value={actsInScope} onChange={setActsInScope} ariaLabel="Clients can act inside what is shared with them" />
+                            </span>
+                        </div>
+                        <p className="mt-1 text-[11px] text-slate-500 leading-relaxed">
+                            For a member restricted to selected campaigns and mailboxes. Off, the role only lets them read.
+                            On, they can also use this role's inbox, campaign editing and start or pause permissions on
+                            what is shared with them. Team, billing, settings, contacts and mailbox settings never apply to them.
+                        </p>
+                        <p className="mt-1 text-[11px] text-slate-400">
+                            {clientReach === 0
+                                ? "A client with this role sees nothing."
+                                : `A client with this role: ${EDITABLE_PERMISSIONS.filter((p) => (clientReach & p.bit) === p.bit).map((p) => p.label.toLowerCase()).join(", ")}.`}
+                        </p>
                     </div>
 
                     {CATEGORIES.map((cat) => {

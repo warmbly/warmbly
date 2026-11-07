@@ -34,15 +34,11 @@ export interface UniboxSearchParams {
   direction?: "sent" | "received";
   /**
    * Selected account IDs. The server filters with email_id IN (…).
-   * Use this directly when picking specific mailboxes, or set
-   * `tagId` instead and let the filter UI resolve it into the set
-   * of accounts that carry the tag.
    */
   accountIds?: string[];
   /**
-   * UI-only convenience: when set, the filter sheet resolves the tag
-   * to the matching account IDs at apply time. The server never sees
-   * this field; it sees the resolved `accountIds` instead.
+   * A mailbox tag, sent as `tag_ids`: the server keeps conversations in
+   * mailboxes carrying it, intersected with `accountIds` when both are set.
    */
   tagId?: string;
   unseen?: boolean; // Only unread

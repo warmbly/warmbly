@@ -1176,6 +1176,28 @@ func automatedIntent(r replyclassify.Result) (models.ReplyIntentType, float64) {
 	return models.ReplyIntentAutomated, r.Confidence
 }
 
+// verdictIntent maps a reply classifier verdict onto the recorded intent
+// vocabulary. ok is false when no layer decided. A model verdict too unsure
+// to name a class is neutral, matching the Needs review the inbox shows.
+func verdictIntent(r replyclassify.Result) (models.ReplyIntentType, float64, bool) {
+	switch r.Class {
+	case replyclassify.ClassPositive:
+		return models.ReplyIntentPositive, r.Confidence, true
+	case replyclassify.ClassNegative, replyclassify.ClassUnsubscribe:
+		return models.ReplyIntentNegative, r.Confidence, true
+	case replyclassify.ClassNeutral:
+		return models.ReplyIntentNeutral, r.Confidence, true
+	case replyclassify.ClassOutOfOffice, replyclassify.ClassAutoReply:
+		intent, conf := automatedIntent(r)
+		return intent, conf, true
+	case replyclassify.ClassUnknown:
+		if r.Source == replyclassify.SourceModel {
+			return models.ReplyIntentNeutral, r.Confidence, true
+		}
+	}
+	return "", 0, false
+}
+
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {
 		if strings.TrimSpace(v) != "" {
@@ -1527,9 +1549,10 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 		replyResult := verdict
 		if replyResult.Class == "" {
 			replyResult = replyclassify.ClassifyGated(ctx, replyclassify.Input{
-				Headers:  buildReplyHeaders(msg),
-				Subject:  msg.Subject,
-				BodyText: msg.Snippet,
+				Headers: buildReplyHeaders(msg),
+				Subject: msg.Subject,
+				// The whole reply, so an opt-out past the preview is read.
+				BodyText: firstNonEmpty(msg.BodyText, msg.Snippet),
 				// The typed layer answers from the tagger's stored verdict for
 				// this message, so a reply is judged once.
 				OrganizationID: *account.OrganizationID,
@@ -1547,7 +1570,7 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 		// The tagging verdict for this message was stored before this hook ran;
 		// copy a confident human-reply intent so reply_intent branches can route on
 		// it, ahead of the instant matcher below.
-		s.recordReplyIntent(ctx, *account.OrganizationID, msg.MessageID, cID, ctID, sID)
+		s.recordReplyIntent(ctx, *account.OrganizationID, msg.MessageID, replyResult.Class, cID, ctID, sID)
 
 		// OOO trap fix: only a HUMAN reply stamps replied_at. An auto_reply /
 		// out_of_office must NOT count as a reply, or it would (a) trip
@@ -1653,11 +1676,13 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 	// address. The header and lexicon layers are free, so answer "is this a
 	// human" for every inbound message; only the model layer is worth gating.
 	if verdict.Class == "" {
-		verdict = replyclassify.ClassifyOffline(replyclassify.Input{
-			Headers:   buildReplyHeaders(msg),
-			Subject:   msg.Subject,
-			BodyText:  firstNonEmpty(msg.BodyText, msg.Snippet),
-			Languages: settings.InboxTagging.Languages,
+		verdict = replyclassify.ClassifyKnown(ctx, replyclassify.Input{
+			Headers:        buildReplyHeaders(msg),
+			Subject:        msg.Subject,
+			BodyText:       firstNonEmpty(msg.BodyText, msg.Snippet),
+			OrganizationID: *account.OrganizationID,
+			MessageID:      msg.MessageID,
+			Languages:      settings.InboxTagging.Languages,
 		})
 	}
 	if replyClaimToken == uuid.Nil && !replyClaimCompleted {
@@ -1671,13 +1696,12 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 		replyClaimToken = claimToken
 	}
 
-	intent, confidence := classifyReply(text, settings.ReplyIntent)
-	// The layered classifier reads auto-reply headers and a multilingual
-	// out-of-office vocabulary the workspace's own keyword list does not, so
-	// its verdict settles the case the keywords missed. Only the automated
-	// classes are folded in: sentiment stays the keyword list's call.
-	if replyclassify.IsAutomated(verdict.Class) {
-		intent, confidence = automatedIntent(verdict)
+	// The recorded intent is the classifier's verdict, so a webhook, the
+	// timeline and a CRM task agree with the campaign's reply counts; the
+	// workspace's keyword lists decide only a reply nothing else decided.
+	intent, confidence, decided := verdictIntent(verdict)
+	if !decided {
+		intent, confidence = classifyReply(text, settings.ReplyIntent)
 	}
 	if !replyClaimCompleted {
 		if err := s.campaignProgressRepo.CompleteIncomingReply(ctx, emailAccountID, msg.ID, replyClaimToken); err != nil {
@@ -2072,10 +2096,14 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 	// cause goes in metadata only: the reason text is the contract downstream
 	// classifiers read. One judge call per ambiguous bounce, no cache.
 	var cause string
-	addressFine := false
+	addressFine, namesAddress := false, false
 	if eventType == models.DeliverabilityEventBounce {
+		// The cause is ours to decide; a caller-supplied one never stands.
+		for _, k := range []string{"bounce_cause", "bounce_cause_source", "bounce_cause_confidence"} {
+			delete(req.Metadata, k)
+		}
 		rule := dsn.Blame(req.Reason)
-		cause, addressFine = string(rule), rule.AddressIsFine()
+		cause, addressFine, namesAddress = string(rule), rule.AddressIsFine(), rule.NamesAddress()
 		source := "rule"
 		if rule == dsn.CauseUnknown && s.bounceJudge != nil && strings.TrimSpace(req.Reason) != "" {
 			// Bounded: a bounce storm must not queue behind a rate-limited judge.
@@ -2085,8 +2113,8 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 			switch {
 			case vErr != nil:
 				log.Debug().Err(vErr).Str("recipient", req.RecipientEmail).Msg("bounce reason not classified")
-			case v != nil:
-				cause, addressFine, source = v.Cause, v.AddressIsFine(), "judge"
+			case v.Confident() && v.Cause != bounceclass.CauseOther:
+				cause, addressFine, namesAddress, source = v.Cause, v.AddressIsFine(), v.NamesAddress(), "judge"
 				if req.Metadata == nil {
 					req.Metadata = map[string]interface{}{}
 				}
@@ -2127,15 +2155,20 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 		(eventType == models.DeliverabilityEventComplaint && settings.BouncePipeline.AutoSuppressOnComplaint) ||
 		(eventType == models.DeliverabilityEventUnsubscribe && settings.BouncePipeline.AutoSuppressOnUnsubscribe)
 
-	// The address is not what failed: record the bounce, feed the breaker and
-	// mailbox health below, but keep the recipient sendable.
-	if shouldSuppress && addressFine {
+	// Only clear evidence that the address cannot receive mail suppresses it.
+	// A bounce nothing places (a bare 550 included) stops this lead below but
+	// leaves the address sendable, since a wrong suppression is silent and permanent.
+	if shouldSuppress && eventType == models.DeliverabilityEventBounce && !namesAddress {
 		shouldSuppress = false
+		msg := "bounce not placed; recipient not suppressed"
+		if addressFine {
+			msg = "bounce not about the address; recipient not suppressed and lead kept"
+		}
 		log.Info().
 			Str("organization_id", organizationID.String()).
 			Str("recipient", req.RecipientEmail).
 			Str("bounce_cause", cause).
-			Msg("bounce not about the address; recipient not suppressed and lead kept")
+			Msg(msg)
 	}
 
 	if shouldSuppress {
@@ -2198,10 +2231,12 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 		s.evaluateCampaignBreaker(ctx, organizationID, *req.CampaignID, settings)
 	}
 
-	// Trigger warmup health re-evaluation on bounce or complaint events.
-	// This connects deliverability signals to the warmup pool health system.
-	if s.warmupService != nil && req.TaskID != nil &&
-		(eventType == models.DeliverabilityEventBounce || eventType == models.DeliverabilityEventComplaint) {
+	// Trigger warmup health re-evaluation on bounce or complaint events. A full
+	// mailbox or a temporary failure says nothing about the sender, so it is
+	// not reported against it.
+	chargesSender := eventType == models.DeliverabilityEventComplaint ||
+		eventType == models.DeliverabilityEventBounce && cause != string(dsn.CauseMailboxFull) && cause != string(dsn.CauseTransient)
+	if s.warmupService != nil && req.TaskID != nil && chargesSender {
 		task, tErr := s.taskRepo.GetTask(ctx, *req.TaskID)
 		if tErr == nil && task != nil {
 			if _, err := s.warmupService.ApplySpamReport(ctx, task.EmailAccountID, task.EmailAccountID, req.IdempotencyKey, string(eventType)); err != nil {

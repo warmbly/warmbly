@@ -15,6 +15,7 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/notify/templates"
+	"github.com/warmbly/warmbly/internal/observability/errs"
 	"github.com/warmbly/warmbly/internal/pkg/displayname"
 )
 
@@ -39,6 +40,13 @@ func (h *Handler) CreateOrganization(c *gin.Context) {
 	}
 
 	h.auditOrg(c, models.AuditActionCreate, models.AuditEntityOrganization, &org.ID, nil, map[string]string{"name": org.Name})
+
+	// An owner who has never had a trial gets it here; every later workspace starts unpaid.
+	if h.TrialService != nil {
+		if terr := h.TrialService.StartFreeTrialWithOrg(c.Request.Context(), userID, org.ID); terr != nil {
+			errs.CaptureException(terr)
+		}
+	}
 
 	c.JSON(http.StatusCreated, org)
 }

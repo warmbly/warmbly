@@ -36,7 +36,7 @@ Two other entry points:
 
 - the full `internal/seed` fixture first (plans, workers, the demo orgs), so it works on a fresh database
 - the Sunrise Labs org on an active Pro subscription, owned by `sandbox@warmbly.test`, plus a second teammate (Marco Diaz, admin), one pending invitation, and an active developer API key
-- AI credits: the plan's monthly allowance plus a 5,000-credit purchased top-up, so the assistant and every other AI surface work out of the box (re-seeding refills both pools)
+- Balance: the plan's monthly allowance plus money added on top, so the assistant and every other AI surface work out of the box (re-seeding refills both)
 - 20 sender mailboxes on `@sunrise.test` (a healthy warmup pool by the dashboard's own coverage bar), assigned to the worker `make sandbox` runs, spread across the whole warmup lifecycle: seven graduated senders that finished their ramp weeks ago and carry full (~50/day) cold volume, eight mid-ramp, three freshly connected, one with warmup paused, and one on reduced health with an open provider warning. Every account has matching warmup ramp stats and daily send counts backfilled, varied pool health scores, a personal signature, and a tag (VIP, Agency, or Cold); pacing is demo friendly (45s minimum gap, 100/day cap)
 - campaigns in every list bucket: two active ("Sunrise Q3 launch outreach", 3 steps, 48 contacts; "Agency partnerships", 2 steps, 24 contacts), one paused, one completed, and one draft, all with tracking enabled, every step connected to the next (the scheduler only follows explicit step connections), all 20 senders in the rotation, and a realistic funnel of sent, opened, clicked, replied, and bounced timestamps spread over three weeks
 - six placement seed inboxes on the instance panel, on domains of their own (`gmail-seeds.test`, `workspace-seeds.test`, `m365-seeds.test`, `outlook-seeds.test`, `yahoo-seeds.test`) with the provider each stands in for, so a [placement test](/guides/placement-tests/) from any Sunrise mailbox has somewhere to land
@@ -118,6 +118,8 @@ Connect either vendor from **Add account > Inbox vendor** with any API key. The 
 | Mailforge | four mailboxes on `sunrisehq.test`, hosted on the sandbox's Mailpit and Dovecot, so they import and connect for real | forwarding only |
 
 The mock keeps its state in memory, so a restart puts every domain back the way it started.
+
+The first InboxKit mailbox on each domain is listed as its admin, and the mock answers InboxKit's trusted-app and mailbox sign-in requests: a trusted-app request completes after about 5 seconds, and a sign-in request fails after about 20, because nothing in the sandbox can sign in to Google. The `.test` domains are not hosted by Google, so an import never takes that path on its own; it is there for exercising the vendor client against the mock.
 
 ## Demo script
 

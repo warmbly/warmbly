@@ -97,6 +97,7 @@ type Campaign struct {
 	Status      string `json:"status"`
 
 	StopOnReply       bool `json:"stop_on_reply"`
+	StopOnMeeting     bool `json:"stop_on_meeting"`
 	OpenTracking      bool `json:"open_tracking"`
 	LinkTracking      bool `json:"link_tracking"`
 	TextOnly          bool `json:"text_only"`
@@ -137,6 +138,8 @@ type Campaign struct {
 	SenderStrategy string           `json:"sender_strategy"`
 	RotationMode   string           `json:"rotation_mode"`
 	Senders        []CampaignSender `json:"senders,omitempty"` // loaded on demand, not in the base SELECT
+	// FollowUpSender is which mailbox a lead's follow-ups leave from.
+	FollowUpSender FollowUpSender `json:"follow_up_sender"`
 
 	// Per-campaign daily ramp-up. Applied only via min() against the per-mailbox
 	// cap, so it can never raise volume above the cold cap. RampLevel/RampLevelDate
@@ -416,6 +419,7 @@ type UpdateCampaign struct {
 	Status      *string `json:"status,omitempty"`
 
 	StopOnReply       *bool   `json:"stop_on_reply"`
+	StopOnMeeting     *bool   `json:"stop_on_meeting"`
 	OpenTracking      *bool   `json:"open_tracking"`
 	LinkTracking      *bool   `json:"link_tracking"`
 	TextOnly          *bool   `json:"text_only"`
@@ -450,6 +454,7 @@ type UpdateCampaign struct {
 	// PUT /campaigns/:id/senders; only the strategy/mode toggles ride PATCH.
 	SenderStrategy *string `json:"sender_strategy,omitempty"`
 	RotationMode   *string `json:"rotation_mode,omitempty"`
+	FollowUpSender *string `json:"follow_up_sender,omitempty"`
 
 	RampEnabled   *bool `json:"ramp_enabled,omitempty"`
 	RampStart     *int  `json:"ramp_start,omitempty"`
@@ -489,7 +494,7 @@ func (u *UpdateCampaign) TouchesSchedule() bool {
 
 // TouchesPacing reports whether the patch changes how much the campaign may send or from which mailboxes, which a parked wakeup was placed under too.
 func (u *UpdateCampaign) TouchesPacing() bool {
-	return u.DailyLimit != nil || u.EmailTags != nil || u.SenderStrategy != nil || u.RotationMode != nil ||
+	return u.DailyLimit != nil || u.EmailTags != nil || u.SenderStrategy != nil || u.RotationMode != nil || u.FollowUpSender != nil ||
 		u.RampEnabled != nil || u.RampStart != nil || u.RampIncrement != nil || u.RampCeiling != nil ||
 		u.MaxNewLeadsPerDay != nil || u.ESPMatchMode != nil
 }
@@ -503,6 +508,7 @@ type CreateCampaign struct {
 	Description string `json:"description"`
 	// Sending rules / tracking
 	StopOnReply       *bool   `json:"stop_on_reply,omitempty"`
+	StopOnMeeting     *bool   `json:"stop_on_meeting,omitempty"`
 	OpenTracking      *bool   `json:"open_tracking,omitempty"`
 	LinkTracking      *bool   `json:"link_tracking,omitempty"`
 	TextOnly          *bool   `json:"text_only,omitempty"`
@@ -533,6 +539,7 @@ type CreateCampaign struct {
 	// "explicit", Senders is the mailbox pool; otherwise EmailTagIDs are used.
 	SenderStrategy *string               `json:"sender_strategy,omitempty"`
 	RotationMode   *string               `json:"rotation_mode,omitempty"`
+	FollowUpSender *string               `json:"follow_up_sender,omitempty"`
 	Senders        []CampaignSenderInput `json:"senders,omitempty"`
 
 	// Per-campaign daily ramp-up (net-new). ramp_level is server-owned.

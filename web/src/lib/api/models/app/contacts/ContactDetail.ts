@@ -56,7 +56,8 @@ export type ContactSource =
     | "form"
     | "automation"
     | "apollo"
-    | "clay";
+    | "clay"
+    | "lead_finder";
 
 // One observed fact about the mailbox. Silence is never recorded: a contact
 // who does not open or reply has said nothing about their address.

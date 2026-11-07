@@ -59,7 +59,7 @@ function ReviewMenu({ run, refinements }: { run: EditorAIRun; refinements: AIRef
         else items[active]?.act();
     };
 
-    const usage = run.usage ? formatUsage(run.usage.charged, run.usage.tokens) : "";
+    const usage = run.usage ? formatUsage(run.usage.chargedUsd, run.usage.tokens) : "";
     const summary = run.changed
         ? `${run.words} word${run.words === 1 ? "" : "s"} written`
         : "No change: it came back as it was";

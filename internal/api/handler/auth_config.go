@@ -55,8 +55,8 @@ type DeploymentAuthConfig struct {
 	// naming a protocol.
 	ProviderLabels map[string]string `json:"provider_labels,omitempty"`
 
-	// SelfHosted lets the UI drop hosted-only affordances (billing prompts,
-	// referral fields) that make no sense on someone's own server.
+	// SelfHosted lets the UI drop hosted-only affordances (billing prompts)
+	// that make no sense on someone's own server.
 	SelfHosted bool `json:"self_hosted"`
 
 	// GmailOAuthConnect is whether a new Gmail mailbox may be connected with

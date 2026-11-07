@@ -81,7 +81,7 @@ interface AIEditPopoverProps {
     // reads as a rewrite that never reached the body (issue #432).
     changed?: boolean;
     // What the last run actually cost (usage-based settle), when metered.
-    usage: { charged: number; tokens: number } | null;
+    usage: { chargedUsd: number; tokens: number } | null;
     onRun: (instruction: string) => void;
     onUndo: () => void;
     onRetry: () => void;
@@ -119,7 +119,7 @@ export default function AIEditPopover({
     }
 
     if (phase === "applied") {
-        const usageText = usage ? formatUsage(usage.charged, usage.tokens) : "";
+        const usageText = usage ? formatUsage(usage.chargedUsd, usage.tokens) : "";
         const footer = changed
             ? usageText
             : ["The model returned the passage as it was.", usageText].filter(Boolean).join(" · ");

@@ -16,6 +16,7 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
+	"github.com/warmbly/warmbly/internal/pkg/mailhdr"
 	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/scheduler"
@@ -540,7 +541,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 		return errx.InternalError()
 	}
 
-	// stop_on_reply is enforced inside FindRoutedPairs (STEP 6), and it is now
+	// stop_on_reply and stop_on_meeting are enforced inside FindRoutedPairs (STEP 6), and are
 	// ROUTE-AWARE: a contact who replied is only handed back when their next step
 	// is part of the reply flow (the reply branch's own path). The normal cold
 	// sequence stops there, so there is no longer a blanket "contact has replied,
@@ -867,6 +868,9 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 	}
 	if threadParent != nil {
 		emailMsg.InReplyTo = threadParent.MessageID
+		// The whole conversation, whichever mailbox sent each step, so the
+		// recipient's client threads a follow-up from another address too.
+		emailMsg.References = mailhdr.ConversationReferences(append(threadParent.References, threadParent.MessageID))
 		// The provider handle needs two things the headers do not. It is
 		// meaningless outside the mailbox that owns it, and Gmail will not
 		// file a message in a thread whose subject it does not match, so it
@@ -1016,8 +1020,9 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 	// they had been hearing from stopped being one this campaign can send from
 	// (disconnected, taken off its sending accounts, resting, or held by warmup
 	// health), and it is the kind of thing an owner should find in the activity
-	// log rather than in a confused reply.
-	if prev := nextPair.AssignedSender; prev != nil && *prev != account.ID && s.campaignLogRepo != nil {
+	// log rather than in a confused reply. A campaign that rotates follow-ups
+	// changes address on purpose, so it is not logged there.
+	if prev := nextPair.AssignedSender; prev != nil && *prev != account.ID && s.campaignLogRepo != nil && !campaign.FollowUpSender.Rotates() {
 		from := "its previous mailbox"
 		if old, oerr := s.emailRepo.GetByID(ctx, *prev); oerr == nil && old != nil {
 			from = old.Email

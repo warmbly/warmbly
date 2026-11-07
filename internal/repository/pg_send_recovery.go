@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -117,6 +118,8 @@ type SendAdmission struct {
 	RetryAt      *time.Time
 	RecoveryHold bool
 	HoldReason   string
+	// PauseReason is why RetryAt was set, empty when an earlier release wrote it.
+	PauseReason string
 }
 
 type SendRecoveryHold struct {
@@ -160,13 +163,42 @@ func (r *emailRepository) GetSendRecoveryHolds(ctx context.Context, ids []uuid.U
 	return holds, rows.Err()
 }
 
+// GetSendPauses reads each mailbox's provider pause: a timed pause still running, or a refusal hold and its next re-probe.
+func (r *emailRepository) GetSendPauses(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]models.SendPauseInfo, error) {
+	rows, err := r.DB.Query(ctx, `SELECT ea.id,
+		CASE WHEN ea.send_recovery_hold THEN ea.send_recovery_reason ELSE COALESCE(ea.send_cooldown_reason,'') END,
+		ea.send_recovery_hold,
+		CASE WHEN NOT ea.send_recovery_hold THEN ea.send_cooldown_until END,
+		CASE WHEN ea.send_recovery_hold AND ea.send_recovery_reason IN('permanent','domain_auth') THEN COALESCE(ea.send_recovery_probe_at,
+		 (SELECT COALESCE(t.send_result_applied_at,t.completed_at,t.updated_at) FROM tasks t WHERE t.id=ea.send_recovery_task_id)+make_interval(secs=>$2)) END,
+		COALESCE(ea.send_pause_detail,'')
+		FROM email_accounts ea WHERE ea.id=ANY($1)
+		AND ((ea.send_recovery_hold AND ea.send_recovery_reason IN('permanent','domain_auth','authentication'))
+		 OR (NOT ea.send_recovery_hold AND ea.send_cooldown_until>NOW()))`, ids, config.SendHoldProbe.Seconds())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[uuid.UUID]models.SendPauseInfo)
+	for rows.Next() {
+		var id uuid.UUID
+		var p models.SendPauseInfo
+		if err := rows.Scan(&id, &p.Reason, &p.Held, &p.Until, &p.RetryAt, &p.ProviderMessage); err != nil {
+			return nil, err
+		}
+		p.Resumable = p.Reason != string(errx.SendPauseAuthentication)
+		out[id] = p
+	}
+	return out, rows.Err()
+}
+
 // GetSendAdmission is tenant-scoped mailbox/provider evidence, not domain or tenant-wide inference.
 func (r *taskRepository) GetSendAdmission(ctx context.Context, orgID, mailboxID uuid.UUID, provider models.InboxProvider, now time.Time) (*SendAdmission, error) {
 	a := &SendAdmission{MailboxID: mailboxID, Provider: provider, Scope: "mailbox"}
 	var active bool
 	var current string
-	err := r.db.QueryRow(ctx, `SELECT status = 'active', provider::text, send_cooldown_until, send_recovery_hold, COALESCE(send_recovery_reason, '')
-		FROM email_accounts WHERE id = $1 AND organization_id = $2`, mailboxID, orgID).Scan(&active, &current, &a.RetryAt, &a.RecoveryHold, &a.HoldReason)
+	err := r.db.QueryRow(ctx, `SELECT status = 'active', provider::text, send_cooldown_until, send_recovery_hold, COALESCE(send_recovery_reason, ''), COALESCE(send_cooldown_reason, '')
+		FROM email_accounts WHERE id = $1 AND organization_id = $2`, mailboxID, orgID).Scan(&active, &current, &a.RetryAt, &a.RecoveryHold, &a.HoldReason, &a.PauseReason)
 	if err != nil {
 		return nil, err
 	}
@@ -393,7 +425,10 @@ func persistSendHold(ctx context.Context, tx pgx.Tx, mailboxID uuid.UUID, result
 		}
 	}
 	if state == "sent" {
-		return nil
+		// A send that got through ends the run of throttles and re-probes.
+		_, err := tx.Exec(ctx, `UPDATE email_accounts SET send_cooldown_strikes=0,send_recovery_probes=0
+			WHERE id=$1 AND (send_cooldown_strikes<>0 OR send_recovery_probes<>0)`, mailboxID)
+		return err
 	}
 	var f *errx.SendFailure
 	if result.Error != nil {
@@ -406,56 +441,87 @@ func persistSendHold(ctx context.Context, tx pgx.Tx, mailboxID uuid.UUID, result
 			AND EXISTS(SELECT 1 FROM tasks t WHERE t.id=$2 AND t.campaign_send_isolated_at IS NULL AND t.send_hold_lifted_at IS NULL)`, mailboxID, result.TaskID)
 		return err
 	}
-	if f == nil {
-		if result.Error != nil && (result.Error.Code == string(errx.MailErrorCodeSendingTooFast) || result.Error.Code == string(errx.MailErrorCodeQuotaExceeded)) {
-			base := result.SentAt
-			if base.IsZero() {
-				base = time.Now().UTC()
-			}
-			_, err := tx.Exec(ctx, `UPDATE email_accounts SET send_cooldown_until=GREATEST(send_cooldown_until,$2),send_cooldown_provider=provider::text WHERE id=$1`, mailboxID, base.Add(5*time.Minute))
-			return err
-		}
-		return nil
+	return persistSendPause(ctx, tx, mailboxID, result, f)
+}
+
+func persistSendPause(ctx context.Context, tx pgx.Tx, mailboxID uuid.UUID, result models.SendEmailResult, f *errx.SendFailure) error {
+	code := ""
+	if result.Error != nil {
+		code = result.Error.Code
 	}
-	if f.Disposition == errx.SendRetry || f.Disposition == errx.SendThrottle {
-		if f.Protocol == "internal" && f.Stage == "prepare" {
-			return nil
-		}
-		until := f.RetryAt
-		if until == nil {
-			// Bounded product backoff; not a provider promise.
-			base := f.ObservedAt
-			if base.IsZero() {
-				base = result.SentAt
+	kind := errx.ClassifySendPause(code, f)
+	detail := sendPauseDetail(result)
+	switch {
+	case kind.Timed():
+		observed := result.SentAt
+		var retryAt *time.Time
+		if f != nil {
+			retryAt = f.RetryAt
+			if !f.ObservedAt.IsZero() {
+				observed = f.ObservedAt
 			}
-			if base.IsZero() {
-				base = time.Now().UTC()
-			}
-			at := base.Add(5 * time.Minute)
-			until = &at
 		}
-		_, err := tx.Exec(ctx, `UPDATE email_accounts SET send_cooldown_until = GREATEST(send_cooldown_until, $2), send_cooldown_provider = provider::text WHERE id = $1`, mailboxID, until)
-		return err
-	}
-	if f.Disposition == errx.SendAuth || f.Disposition == errx.SendPermanent && f.Scope != "recipient" {
+		if observed.IsZero() {
+			observed = time.Now().UTC()
+		}
+		return applySendPause(ctx, tx, mailboxID, kind, retryAt, observed, detail)
+	case kind.Held():
+		// A refusal the owner may fix outside Warmbly is re-probed on a backoff; a sign-in refusal waits for a reconnect.
 		_, err := tx.Exec(ctx, `UPDATE email_accounts SET send_recovery_hold = true, send_recovery_task_id = $2,
-			send_recovery_reason = $3, send_cooldown_provider = provider::text WHERE id = $1`, mailboxID, result.TaskID, f.Disposition)
+			send_recovery_reason = $3, send_cooldown_provider = provider::text, send_pause_detail = $4,
+			send_recovery_probe_at = CASE WHEN $3 IN ('permanent','domain_auth')
+			 THEN NOW() + make_interval(secs => LEAST($5::float8 * power(2, LEAST(send_recovery_probes, 10)), $6::float8)) END
+			WHERE id = $1`,
+			mailboxID, result.TaskID, string(kind), detail, config.SendHoldProbe.Seconds(), config.SendHoldProbeMax.Seconds())
 		return err
 	}
 	return nil
 }
 
-// ReleaseAuthenticationHold lifts an authentication hold once the mailbox's credentials passed a fresh login check, recording why; any unknown or conflict hold still owed is re-applied.
-func (r *emailRepository) ReleaseAuthenticationHold(ctx context.Context, orgID, accountID uuid.UUID) (bool, error) {
+// applySendPause extends a mailbox's timed pause, escalating on a repeated throttle; a later end is never cut short.
+func applySendPause(ctx context.Context, tx pgx.Tx, mailboxID uuid.UUID, kind errx.SendPause, retryAt *time.Time, observed time.Time, detail string) error {
+	var prev errx.SendPauseState
+	var prevKind *string
+	if err := tx.QueryRow(ctx, `SELECT send_cooldown_until,send_cooldown_reason,send_cooldown_strikes FROM email_accounts WHERE id=$1 FOR UPDATE`, mailboxID).
+		Scan(&prev.Until, &prevKind, &prev.Strikes); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	if prevKind != nil {
+		prev.Kind = errx.SendPause(*prevKind)
+	}
+	next := errx.NextSendPause(kind, prev, retryAt, observed)
+	_, err := tx.Exec(ctx, `UPDATE email_accounts SET send_cooldown_until=GREATEST(send_cooldown_until,$2),send_cooldown_reason=$3,
+		send_cooldown_strikes=$4,send_pause_detail=$5,send_cooldown_provider=provider::text WHERE id=$1`,
+		mailboxID, next.Until, string(next.Kind), next.Strikes, detail)
+	return err
+}
+
+// sendPauseDetail is the provider's own words, bounded, for the owner to read.
+func sendPauseDetail(result models.SendEmailResult) string {
+	if result.Error == nil {
+		return ""
+	}
+	msg := strings.TrimSpace(result.Error.Message)
+	if len(msg) > 500 {
+		msg = msg[:500]
+	}
+	return strings.ToValidUTF8(msg, "")
+}
+
+// ReleaseReconnectedHold lifts an authentication or permanent hold once the mailbox's credentials passed a fresh login check, recording why; any unknown or conflict hold still owed is re-applied.
+func (r *emailRepository) ReleaseReconnectedHold(ctx context.Context, orgID, accountID uuid.UUID) (bool, error) {
 	tx, err := r.DB.Begin(ctx)
 	if err != nil {
 		return false, err
 	}
 	defer tx.Rollback(ctx)
-	tag, err := tx.Exec(ctx, `WITH held AS (SELECT organization_id,id,send_recovery_task_id FROM email_accounts
-		WHERE organization_id=$1 AND id=$2 AND send_recovery_hold AND send_recovery_reason='authentication' FOR UPDATE),
+	tag, err := tx.Exec(ctx, `WITH held AS (SELECT organization_id,id,send_recovery_task_id,send_recovery_reason FROM email_accounts
+		WHERE organization_id=$1 AND id=$2 AND send_recovery_hold AND send_recovery_reason IN('authentication','permanent') FOR UPDATE),
 		history AS (INSERT INTO send_recovery_resolutions(organization_id,email_account_id,recovery_task_id,previous_reason,evidence_type,recorded_locally_at)
-		SELECT organization_id,id,send_recovery_task_id,'authentication','credentials_reverified',clock_timestamp() FROM held RETURNING email_account_id)
+		SELECT organization_id,id,(SELECT t.id FROM tasks t WHERE t.id=held.send_recovery_task_id),send_recovery_reason,'credentials_reverified',clock_timestamp() FROM held RETURNING email_account_id)
 		UPDATE email_accounts ea SET send_recovery_hold=false,send_recovery_reason=NULL,send_recovery_task_id=NULL
 		FROM history WHERE ea.id=history.email_account_id`, orgID, accountID)
 	if err != nil {

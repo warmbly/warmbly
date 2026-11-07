@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -51,6 +52,18 @@ type hit struct {
 	transient bool
 	// proxy is the web server that answered, when it says or shows which.
 	proxy string
+	// edgeCode is the Cloudflare error behind an edge hint.
+	edgeCode string
+}
+
+// cloudflareCode reads the error number from Cloudflare's own error page, in its html and plain forms.
+var cloudflareCode = regexp.MustCompile(`(?:errorCode:\s*|error code:\s*|/error-)(1\d{3})\b`)
+
+// edgeHints are the Cloudflare refusals whose fix is in DNS, not in a proxy.
+var edgeHints = map[string]models.RedirectReachHint{
+	"1000": models.RedirectHintEdgeRecord,   // DNS points to prohibited IP
+	"1001": models.RedirectHintEdgeInactive, // DNS resolution error
+	"1014": models.RedirectHintEdgeInactive, // CNAME cross-user banned
 }
 
 func (h hit) ok() bool { return h.hint == models.RedirectHintNone && !h.blocked && !h.transient }
@@ -116,6 +129,11 @@ func (p *httpReach) fetch(ctx context.Context, raw, domain, target string) hit {
 		out.transient = true
 	case !tracking:
 		out.hint = models.RedirectHintNotRouted
+		if out.proxy == "cloudflare" {
+			if code := cloudflareCode.FindSubmatch(body); code != nil && edgeHints[string(code[1])] != "" {
+				out.hint, out.edgeCode = edgeHints[string(code[1])], string(code[1])
+			}
+		}
 	case sameSite(res.Header.Get(TrackingHostHeader), domain):
 		// The visit arrived under the right name; the lookup behind it has not caught up yet.
 		out.hint = models.RedirectHintSettling
@@ -214,6 +232,17 @@ func combineHits(domain, target string, plain, secure hit) models.RedirectReach 
 	}
 	if plain.ok() && secure.ok() {
 		return models.RedirectReach{Status: models.RedirectReachOK}
+	}
+	// Cloudflare naming its own refusal outranks everything, since its fix is a DNS change.
+	for _, h := range []hit{plain, secure} {
+		switch h.hint {
+		case models.RedirectHintEdgeRecord:
+			return models.RedirectReach{Status: models.RedirectReachNotReaching, Hint: h.hint,
+				Detail: fmt.Sprintf("Cloudflare refuses %s (error %s) because its A or AAAA records point straight at Cloudflare's own addresses.", domain, h.edgeCode)}
+		case models.RedirectHintEdgeInactive:
+			return models.RedirectReach{Status: models.RedirectReachNotReaching, Hint: h.hint,
+				Detail: fmt.Sprintf("Cloudflare received the visit to %s (error %s) but has not activated the domain for the tracking host yet.", domain, h.edgeCode)}
+		}
 	}
 	// A proxy answering in Warmbly's place is the most useful thing to report, whichever scheme showed it.
 	for _, h := range []hit{plain, secure} {

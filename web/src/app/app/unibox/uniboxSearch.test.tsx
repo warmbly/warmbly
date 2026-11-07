@@ -86,11 +86,15 @@ describe("unibox search", SUITE, () => {
         useAppStore.setState({ selectedThreadId: null, navCollapsed: false });
     });
 
-    it("does not broaden an explicit tag with no matching mailboxes into an all-mail request", async () => {
+    it("asks the server for an explicit tag instead of broadening it into an all-mail request", async () => {
         await mount("/app/unibox/tag?ref=unassigned-tag");
         await settle();
-        expect(searchRequests).toEqual([]);
-        expect(screen.queryByText("Subject 3")).toBeNull();
+        expect(searchRequests.length).toBeGreaterThan(0);
+        for (const url of searchRequests) {
+            const params = new URL(url, "https://test.local").searchParams;
+            expect(params.get("tag_ids")).toBe("unassigned-tag");
+            expect(params.get("email_ids")).toBeNull();
+        }
     });
 
     it("sends what was typed as the free-text param", async () => {

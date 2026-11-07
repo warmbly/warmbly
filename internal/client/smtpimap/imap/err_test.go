@@ -196,6 +196,10 @@ func TestHandleErrorProviderConditions(t *testing.T) {
 		{"gmail app password", models.AuthPlain, &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeAlert, Text: "Application-specific password required: https://support.google.com/accounts/answer/185833 (Failure)"}, errx.MailErrorCodeInvalidCredentials},
 		{"gmail web login", models.AuthPlain, &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeAlert, Text: "Please log in via your web browser: https://support.google.com/mail/accounts/answer/78754 (Failure)"}, errx.MailErrorCodeInvalidCredentials},
 		{"web login on oauth", models.AuthOAuth2, &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeAlert, Text: "Web login required"}, errx.MailErrorCodeAuthenticationFailed},
+		{"zoho wrong region", models.AuthPlain, &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeAlert, Text: zohoWrongServerAlert}, errx.MailErrorCodeInvalidCredentials},
+		{"gmail invalid app password", models.AuthPlain, &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeAlert, Text: "Invalid credentials (Failure)"}, errx.MailErrorCodeInvalidCredentials},
+		{"gmail invalid credentials on oauth", models.AuthOAuth2, &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeAlert, Text: "Invalid credentials (Failure)"}, errx.MailErrorCodeAuthenticationFailed},
+		{"TRYCREATE on a missing folder", models.AuthPlain, &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeTryCreate, Text: "No such mailbox."}, errx.MailErrorCodeNotFound},
 		{"unknown alert", models.AuthPlain, &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeAlert, Text: "Maintenance tonight"}, errx.MailErrorCodeImapUnknown},
 		{"expired passphrase", models.AuthPlain, &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeExpired, Text: "Password expired"}, errx.MailErrorCodeInvalidCredentials},
 		{"ovh LIST failed", models.AuthPlain, &goimap.Error{Type: goimap.StatusResponseTypeNo, Text: "LIST failed"}, errx.MailErrorCodeServerUnreachable},
@@ -215,5 +219,21 @@ func TestHandleErrorProviderConditions(t *testing.T) {
 				t.Errorf("Code = %q, want %q", got.Code, tc.want)
 			}
 		})
+	}
+}
+
+const zohoWrongServerAlert = "The server details you are using seems incorrect. For more details, check this announcement: https://help.zoho.com/portal/en/community/topic/zoho-mail-server-details"
+
+// Zoho's wrong-region alert is the owner's to fix, so it must reach them in the server's words with the fix named.
+func TestHandleErrorZohoWrongServerKeepsAlert(t *testing.T) {
+	got := (&Client{AuthType: models.AuthPlain}).handleError(&goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeAlert, Text: zohoWrongServerAlert})
+	if got == nil || got.Code != errx.MailErrorCodeInvalidCredentials {
+		t.Fatalf("handleError = %+v, want %s", got, errx.MailErrorCodeInvalidCredentials)
+	}
+	if !strings.Contains(got.Message, "[ALERT] "+zohoWrongServerAlert) {
+		t.Errorf("Message = %q, want the server's alert verbatim", got.Message)
+	}
+	if info := got.GetUserErrorInfo(); info.Title != "Wrong mail server" || !strings.Contains(info.ActionRequired, "Update credentials") {
+		t.Errorf("GetUserErrorInfo = %+v, want the wrong-server title and the Update credentials fix", info)
 	}
 }

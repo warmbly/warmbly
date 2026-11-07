@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"github.com/warmbly/warmbly/internal/app/cloudlink"
+	"github.com/warmbly/warmbly/internal/app/consumermetrics"
 	emailverifyapp "github.com/warmbly/warmbly/internal/app/emailverify"
 	"github.com/warmbly/warmbly/internal/app/mailpush"
 	"github.com/warmbly/warmbly/internal/app/slackapp"
@@ -21,11 +22,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/app/advanced"
 	"github.com/warmbly/warmbly/internal/app/audit"
+	"github.com/warmbly/warmbly/internal/app/balance"
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	jobs "github.com/warmbly/warmbly/internal/app/consumer"
 	"github.com/warmbly/warmbly/internal/app/contact"
 	"github.com/warmbly/warmbly/internal/app/credits"
-	"github.com/warmbly/warmbly/internal/app/creditwatch"
 	"github.com/warmbly/warmbly/internal/app/crmmode"
 	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/app/hubspot"
@@ -220,6 +221,12 @@ func main() {
 	emailGraphDeltaRepo := repository.NewEmailGraphDeltaRepository(primaryDB)
 	emailAccountErrorRepo := repository.NewEmailAccountErrorRepository(primaryDB)
 	warmupRepo := repository.NewWarmupRepository(primaryDB.Pool)
+	// Behind a transaction pooler a receipt's lock waits on a direct session, never on a pooled connection.
+	if locks, err := primaryDB.SessionLocks(); err != nil {
+		log.Fatalf("Failed to prepare direct database sessions for warmup receipt locks: %v", err)
+	} else if locks != nil {
+		warmupRepo.(repository.WarmupSessionLocker).UseSessionLocks(locks)
+	}
 	warmupService := warmupapp.NewService(warmupRepo)
 	// Push warmup-health transitions live to the dashboard. The health sweep
 	// runs in this process, so the realtime publisher is wired here.
@@ -274,10 +281,14 @@ func main() {
 	// optional model layer rides the same OpenAI-first provider.
 	creditRepoC := repository.NewCreditRepository(primaryDB)
 	aiSettingsRepoC := repository.NewAISettingsRepository(primaryDB)
-	creditServiceC := credits.NewService(creditRepoC, aiSettingsRepoC, redisCache)
+	creditServiceC := credits.NewService(creditRepoC, aiSettingsRepoC, instancesettings.NewService(instancesettings.NewStore(primaryDB.Pool)), redisCache)
 	// Consumer-side debits (automation AI nodes) also feed the low-balance
 	// alert. Auto top-up stays backend-only (no Stripe service here).
-	creditServiceC.SetMonitor(creditwatch.New(aiSettingsRepoC, creditRepoC, redisCache, streamingPublisher, nil).OnBalanceChanged)
+	// No Stripe here: the backend's sweep starts reloads for work charged in
+	// this process; notices go out from here.
+	balanceC := balance.New(creditServiceC, aiSettingsRepoC, repository.NewSavedCardChargeRepository(primaryDB),
+		repository.NewSubscriptionRepository(primaryDB.Pool), nil, redisCache, streamingPublisher, nil, nil)
+	creditServiceC.SetMonitor(balanceC.OnBalanceChanged)
 	var aiProviderC generation.Provider
 	// Pluggable web search (Serper/SearXNG) backs the AI switch's optional
 	// company lookup on reply-triggered automations that run in the consumer.
@@ -466,6 +477,7 @@ func main() {
 	}
 	notificationService.WirePush(pushSender, repository.NewDeviceTokenRepository(primaryDB.Pool), redisCache.Client)
 	advancedService.WireNotifier(notificationService)
+	balanceC.WireNotifier(notificationService)
 	// Reply pulses fire in THIS process too (inbox ingest classifies replies).
 	advancedService.WireRealtime(streamingPublisher)
 	// A lifted reply opt-out is recorded like a member lifting one by hand.
@@ -547,6 +559,7 @@ func main() {
 
 	jobsService := &jobs.JobsService{
 		CampaignIsolationEnabled:    config.CampaignSendIsolationEnabled(),
+		DBConns:                     primaryDB.Pool.Config().MaxConns,
 		Bus:                         consumerBus,
 		Codec:                       consumerCodec,
 		UniboxRepository:            uniboxRepo,
@@ -767,6 +780,19 @@ func main() {
 		defer close(agentDone)
 		newConsumerAgent().Run(ctx)
 	}()
+
+	// The consumer's ECS service scales on this; unset on every other deployment.
+	if name := consumermetrics.Name(); name != "" {
+		if diagnostics, ok := consumerBus.(eventbus.Diagnostics); ok {
+			go func() {
+				if err := consumermetrics.Run(ctx, diagnostics, name); err != nil {
+					log.Printf("Warning: worker event backlog metric disabled: %v", err)
+				}
+			}()
+		} else {
+			log.Printf("Warning: worker event backlog metric disabled: the %s bus reports no backlog", consumerBus.Name())
+		}
+	}
 
 	log.Println("Consumer started, listening on", kafka.TopicWorkerEvents)
 	jobsService.Start(ctx)

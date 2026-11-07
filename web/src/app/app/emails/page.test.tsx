@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, createRootRoute, createRouter, RouterProvider } from "@tanstack/react-router";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type Inbox from "@/lib/api/models/app/emails/Inbox";
 import type Tag from "@/lib/api/models/app/Tag";
 import type * as UserModule from "@/hooks/context/user";
@@ -47,14 +47,13 @@ vi.mock("@/hooks/useCloudPool", () => ({ default: () => ({ selfHosted: false, co
 vi.mock("@/lib/api/hooks/app/cloudlink/useCloudLink", () => ({
     useEnrollCloudLinkMailbox: () => ({}), useUnenrollCloudLinkMailbox: () => ({}), useCloudLinkMailboxLifecycle: () => ({}),
 }));
-vi.mock("@/lib/api/hooks/app/emails/useWarmupLifecycle", () => ({ default: () => ({}) }));
-vi.mock("@/lib/api/hooks/app/emails/useRemoveEmail", () => ({ default: () => ({}) }));
+vi.mock("@/lib/api/hooks/app/emails/useWarmupLifecycle", () => ({ default: () => ({}), warmupLifecycleOptions: () => ({}) }));
+vi.mock("@/lib/api/hooks/app/emails/useRemoveEmail", () => ({ default: () => ({}), removeEmailOptions: () => ({}) }));
 vi.mock("@/components/app/emails/useMailboxSwitch", () => ({ default: () => ({}), switchOffPrompt: vi.fn() }));
 vi.mock("@/components/app/emails/InboxDetails", () => ({ default: () => null }));
 vi.mock("@/lib/api/client/app/emails/updateEmail", () => ({ default: warmupUpdate }));
 vi.mock("@/lib/api/client/app/emails/warmupLifecycle", () => ({ default: warmupStart }));
 vi.mock("@/components/app/emails/migration/SigninMigrationDialog", () => ({ default: () => null }));
-vi.mock("@/components/app/emails/import/grants/MailboxGrantDialog", () => ({ default: () => null }));
 vi.mock("@/components/app/emails/import/MailboxImportsMenu", () => ({ default: () => null }));
 vi.mock("@/components/app/emails/CloudPathsPanel", () => ({ default: () => null }));
 vi.mock("@/components/app/advisor/AdvisorRowFlag", () => ({ default: () => null }));
@@ -81,6 +80,14 @@ function orderedEmails() {
 function measuredStatus(row: Inbox): AccountStatus {
     return { id: row.id, email: row.email, provider: "gmail", status: "active", last_synced_at: null, health: { status: "healthy", score: 100 }, errors: [], daily_usage: { date: utcToday(), campaign_sent: 0, campaign_limit: 50 }, in_campaign: false };
 }
+
+// jsdom lays nothing out; the virtualized rows need a viewport to fill.
+beforeAll(() => {
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => 800 });
+});
+afterAll(() => {
+    delete (HTMLElement.prototype as { clientHeight?: number }).clientHeight;
+});
 
 beforeEach(() => {
     statusState.cloudConnected = false;

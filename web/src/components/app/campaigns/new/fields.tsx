@@ -185,7 +185,7 @@ export function SwitchRow({
                 <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">{description}</p>
             </div>
             <span onClick={(e) => e.stopPropagation()} className="shrink-0 mt-0.5 inline-flex">
-                <Toggle value={value} onChange={onChange} />
+                <Toggle value={value} onChange={onChange} ariaLabel={label} />
             </span>
         </div>
     );

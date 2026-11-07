@@ -30,13 +30,6 @@ type TwoFAChallenger interface {
 	CreatePendingChallenge(ctx context.Context, userID uuid.UUID, authProvider string, link *models.UserIdentity) (string, int, *errx.Error)
 }
 
-// ReferralAttributor links a brand-new org to the referrer behind its signup
-// code. Satisfied by *referral.Service; injected post-construction (WireReferral)
-// so the auth package needs no import of referral (no cycle).
-type ReferralAttributor interface {
-	AttributeSignup(ctx context.Context, code string, inviteeOrgID, inviteeUserID uuid.UUID) *errx.Error
-}
-
 // AcquisitionRecorder stores where a signup came from on the new workspace.
 // Satisfied by repository.OrganizationRepository; injected post-construction
 // (WireAcquisition) and nil-safe, so a deployment that never wires it simply
@@ -87,9 +80,6 @@ type AuthService interface {
 
 	RegistrationStart(ctx context.Context, data *AuthData, origin SignupOrigin) (*models.AuthSession, *errx.Error)
 	RegistrationConfirm(ctx context.Context, data *ConfirmData, session string, origin SignupOrigin) (*models.AuthSession, *errx.Error)
-	// WireReferral attaches the referral attributor (post-construction; nil = no
-	// referral attribution at signup).
-	WireReferral(r ReferralAttributor)
 	WireAcquisition(r AcquisitionRecorder)
 	WireAnalytics(a ProductAnalytics, host string)
 
@@ -212,7 +202,6 @@ type authService struct {
 	appleIDTokens  IDTokenVerifier
 	googleIDTokens IDTokenVerifier
 	twofa          TwoFAChallenger
-	referral       ReferralAttributor
 	// acquisition records the signup's channel on the new org. Nil-safe.
 	acquisition AcquisitionRecorder
 	// productAnalytics counts finished signups. Nil-safe.
@@ -273,8 +262,6 @@ func (s *authService) WireDeployment(policy *config.AuthPolicy, mailDelivers boo
 func (s *authService) Policy() *config.AuthPolicy { return s.policy }
 
 func (s *authService) WireIdentities(r repository.IdentityRepository) { s.identities = r }
-
-func (s *authService) WireReferral(r ReferralAttributor) { s.referral = r }
 
 // WireAcquisition attaches the store for signup attribution.
 func (s *authService) WireAcquisition(r AcquisitionRecorder) { s.acquisition = r }
