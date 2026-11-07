@@ -12,12 +12,12 @@ import (
 func TestDashboardOriginMiddleware(t *testing.T) {
 	t.Setenv("APP_URL", "https://app.warmbly.com")
 	t.Setenv("APP_ORIGIN", "")
-	t.Setenv("CORS_ALLOW_ORIGINS", "https://tac-security-assessment.warmbly.com")
+	t.Setenv("CORS_ALLOW_ORIGINS", "https://second.example.com")
 	r := gin.New()
 	r.Use(DashboardOriginMiddleware())
 	r.GET("/", func(c *gin.Context) { c.String(http.StatusOK, config.DashboardBaseURL(c.Request.Context())) })
 	for _, tt := range []struct{ origin, want string }{
-		{"https://tac-security-assessment.warmbly.com", "https://tac-security-assessment.warmbly.com"},
+		{"https://second.example.com", "https://second.example.com"},
 		{"https://evil.example.com", "https://app.warmbly.com"},
 		{"", "https://app.warmbly.com"},
 	} {

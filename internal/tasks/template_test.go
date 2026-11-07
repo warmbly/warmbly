@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/tmplvars"
 )
 
 func TestCompiledTemplateCachesRawSource(t *testing.T) {
@@ -244,6 +245,43 @@ func TestRenderTemplate_BasicVariables(t *testing.T) {
 	}
 }
 
+func TestRenderTemplate_AliasSpellings(t *testing.T) {
+	contact := models.Contact{FirstName: "Sam", LastName: "Lee", Company: "Acme", Email: "[EMAIL]", Phone: "555"}
+	cases := []struct{ tmpl, want string }{
+		{"{{.FirstName}}", "Sam"},
+		{"{{first_name}}", "Sam"},
+		{"{{ firstName }}", "Sam"},
+		{"{{.firstName}}", "Sam"},
+		{"{{.first_name}} {{last_name}}", "Sam Lee"},
+		{"{{company_name}}/{{.company}}/{{companyName}}", "Acme/Acme/Acme"},
+		{"{{email}} {{phone}}", "[EMAIL] 555"},
+		{"{{if first_name}}Hi {{first_name}}{{else}}Hi there{{end}}", "Hi Sam"},
+		{`{{.nickname | default "friend"}}`, "friend"},
+		{`{{first_name | upper}}`, "SAM"},
+		{"Write {first_name} or first_name literally", "Write {first_name} or first_name literally"},
+	}
+	for _, tc := range cases {
+		if got := RenderTemplate(tc.tmpl, contact); got != tc.want {
+			t.Errorf("%q: got %q, want %q", tc.tmpl, got, tc.want)
+		}
+		if got := RenderHTMLTemplateWith(tc.tmpl, contact, TemplateContext{}); got != tc.want {
+			t.Errorf("html %q: got %q, want %q", tc.tmpl, got, tc.want)
+		}
+	}
+}
+
+func TestRenderTemplate_CustomFieldBeatsAlias(t *testing.T) {
+	contact := models.Contact{FirstName: "Sam", CustomFields: map[string]string{"first_name": "Samantha"}}
+	// A dotted alias defers to a custom field; a bare one is the built-in field, as it is once saved.
+	tmpl := "{{first_name}} {{.first_name}} {{firstName}} {{.FirstName}}"
+	if got := RenderTemplate(tmpl, contact); got != "Sam Samantha Sam Sam" {
+		t.Fatalf("got %q", got)
+	}
+	if preview := PreviewTemplates(tmpl, "", "", contact); preview.Subject != RenderTemplate(tmplvars.Canonicalize(tmpl), contact) {
+		t.Fatalf("preview %q differs from the saved copy's render", preview.Subject)
+	}
+}
+
 func TestRenderTemplate_CustomFields(t *testing.T) {
 	contact := models.Contact{
 		FirstName:    "Bob",
@@ -400,47 +438,6 @@ func TestExtractPlainTextFromHTML(t *testing.T) {
 	}
 	if strings.Contains(plain, "<p>") || strings.Contains(plain, "<b>") {
 		t.Errorf("plain text should not contain HTML tags: %q", plain)
-	}
-}
-
-func TestGenerateWarmupSubject_NotEmpty(t *testing.T) {
-	subject := generateWarmupSubject()
-	if subject == "" {
-		t.Error("warmup subject should not be empty")
-	}
-}
-
-func TestRandomWarmupConversation_HasContent(t *testing.T) {
-	conv := randomWarmupConversation()
-	if conv.Theme == "" {
-		t.Error("conversation should have a theme")
-	}
-	if conv.Description == "" {
-		t.Error("conversation should have a description")
-	}
-	if len(conv.Messages) == 0 {
-		t.Error("conversation should have at least one message")
-	}
-}
-
-func TestConversationForTheme_MatchesKnownTheme(t *testing.T) {
-	conv := conversationForTheme("productivity")
-	if conv.Theme != "productivity" {
-		t.Errorf("expected theme productivity, got %q", conv.Theme)
-	}
-}
-
-func TestConversationForTheme_FallsBackOnUnknown(t *testing.T) {
-	conv := conversationForTheme("not-a-real-theme")
-	if conv.Theme == "" {
-		t.Error("fallback conversation should still have a theme")
-	}
-}
-
-func TestConversationForTheme_EmptyReturnsRandom(t *testing.T) {
-	conv := conversationForTheme("")
-	if conv.Theme == "" {
-		t.Error("empty theme should return a random conversation with a theme")
 	}
 }
 

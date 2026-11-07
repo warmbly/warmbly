@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -406,7 +407,7 @@ func TestLiveDomainRedirectServing(t *testing.T) {
 
 func TestLiveMailboxSourcesSigninConversions(t *testing.T) {
 	handle, pool := liveContactDB(t)
-	requireSchemaVersion(t, pool, 206)
+	requireSchemaVersion(t, pool, 357)
 	f := newImportFixture(t, pool)
 	grants := NewDomainGrantRepository(handle)
 	enc, err := encrypt.NewEncrypter(make([]byte, 32))
@@ -439,6 +440,51 @@ func TestLiveMailboxSourcesSigninConversions(t *testing.T) {
 	if other, _ := emails.ListSigninRetiring(ctx, f.other); len(other) != 0 {
 		t.Fatal("another workspace listed the mailboxes")
 	}
+
+	t.Run("a sign-in with full mail access is not retiring, and a vendor that can reconnect is named", func(t *testing.T) {
+		suffix := f.org.String()[:8] + "@conv.io"
+		full, modify, other := signin("full-"+suffix), signin("modify-"+suffix), signin("other-"+suffix)
+		zap, forge := uuid.New(), uuid.New()
+		t.Cleanup(func() {
+			_, _ = pool.Exec(context.Background(), `DELETE FROM email_accounts WHERE id = ANY($1)`, []uuid.UUID{full, modify, other})
+			_, _ = pool.Exec(context.Background(), `DELETE FROM mailbox_vendor_connections WHERE id = ANY($1)`, []uuid.UUID{zap, forge})
+		})
+		for _, c := range []struct {
+			id     uuid.UUID
+			vendor string
+		}{{zap, "zapmail"}, {forge, "mailforge"}} {
+			if _, err := pool.Exec(ctx, `INSERT INTO mailbox_vendor_connections (id, organization_id, vendor, credentials) VALUES ($1, $2, $3, 'sealed')`, c.id, f.org, c.vendor); err != nil {
+				t.Fatal(err)
+			}
+		}
+		_, _ = pool.Exec(ctx, `UPDATE email_accounts_oauth SET granted_scopes = $2 WHERE email_account_id = $1`, full,
+			[]string{models.GoogleFullMailScope, "https://www.googleapis.com/auth/gmail.settings.basic"})
+		_, _ = pool.Exec(ctx, `UPDATE email_accounts_oauth SET granted_scopes = $2 WHERE email_account_id = $1`, modify,
+			[]string{"https://www.googleapis.com/auth/gmail.modify"})
+		_, _ = pool.Exec(ctx, `UPDATE email_accounts SET vendor_connection_id = $2, vendor_mailbox_id = 'v1' WHERE id = $1`, modify, zap)
+		_, _ = pool.Exec(ctx, `UPDATE email_accounts SET vendor_connection_id = $2, vendor_mailbox_id = 'v2' WHERE id = $1`, other, forge)
+
+		list, xerr := emails.ListSigninRetiring(ctx, f.org)
+		if xerr != nil {
+			t.Fatal(xerr)
+		}
+		got := map[uuid.UUID]models.MigrationMailbox{}
+		for _, m := range list {
+			got[m.ID] = m
+		}
+		if _, listed := got[full]; listed {
+			t.Fatal("a mailbox with full mail access is still listed")
+		}
+		if m, listed := got[modify]; !listed || m.Vendor != "zapmail" || m.VendorConnectionID == nil || *m.VendorConnectionID != zap {
+			t.Fatalf("gmail.modify only = %+v, listed %v", m, listed)
+		}
+		if m, listed := got[other]; !listed || m.Vendor != "" || m.VendorConnectionID != nil {
+			t.Fatalf("a vendor that cannot sign in was named: %+v, listed %v", m, listed)
+		}
+		if _, listed := got[alex]; !listed {
+			t.Fatal("a mailbox with no recorded scopes is not listed")
+		}
+	})
 
 	t.Run("onto the grant, in place", func(t *testing.T) {
 		if ok, _ := emails.ConvertToDelegated(ctx, f.other, alex, models.InboxProviderGoogle, g.ID, "alex@conv.io", "google_workspace"); ok {
@@ -490,9 +536,18 @@ func TestLiveMailboxSourcesSigninConversions(t *testing.T) {
 		}
 	})
 
+	// An enrollment belongs to the workspace's Cloud link, kept for every later subtest.
+	instance := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO cloud_link (cloud_url, instance_id, token, organization_id) VALUES ('https://cloud.test', $1, 'fixture', $2)`, instance, f.org); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM cloud_link WHERE instance_id = $1`, instance)
+	})
+
 	t.Run("a mailbox managed elsewhere is never offered or moved", func(t *testing.T) {
 		box := signin("managed-" + f.org.String()[:8] + "@conv.io")
-		if _, err := pool.Exec(ctx, `INSERT INTO cloud_link_mailboxes (email_account_id, remote_id, managed) VALUES ($1, $2, true)`, box, uuid.New()); err != nil {
+		if _, err := pool.Exec(ctx, `INSERT INTO cloud_link_mailboxes (email_account_id, remote_id, managed, instance_id) VALUES ($1, $2, true, $3)`, box, uuid.New(), instance); err != nil {
 			t.Fatal(err)
 		}
 		list, _ := emails.ListSigninRetiring(ctx, f.org)
@@ -514,12 +569,25 @@ func TestLiveMailboxSourcesSigninConversions(t *testing.T) {
 			SMTP: &models.Service{Host: "smtp.gmail.com", Port: 587, Username: "me@gmail.com", Password: "abcdabcdabcdabcd"},
 			IMAP: &models.Service{Host: "imap.gmail.com", Port: 993, Username: "me@gmail.com", Password: "abcdabcdabcdabcd"},
 		}
-		if ok, _ := emails.ConvertGoogleToAppPassword(ctx, f.org, alex, creds, "gmail"); ok {
-			t.Fatal("a delegated mailbox switched to an app password")
+		if ok, _ := emails.ConvertGoogleToAppPassword(ctx, f.other, me, creds, "gmail"); ok {
+			t.Fatal("another workspace switched the mailbox")
 		}
 		ok, xerr := emails.ConvertGoogleToAppPassword(ctx, f.org, me, creds, "gmail")
 		if xerr != nil || !ok {
 			t.Fatalf("convert = %v, %v", ok, xerr)
+		}
+		// A mailbox on the grant switches too, and lets go of the grant.
+		if ok, xerr := emails.ConvertGoogleToAppPassword(ctx, f.org, alex, creds, "google_workspace"); xerr != nil || !ok {
+			t.Fatalf("delegated convert = %v, %v", ok, xerr)
+		}
+		var grant *uuid.UUID
+		var subject string
+		_ = pool.QueryRow(ctx, `SELECT domain_grant_id, delegated_subject FROM email_accounts WHERE id = $1`, alex).Scan(&grant, &subject)
+		if grant != nil || subject != "" {
+			t.Fatalf("delegated after = %v %q", grant, subject)
+		}
+		if ok, _ := emails.ConvertGoogleToAppPassword(ctx, f.org, me, creds, "gmail"); ok {
+			t.Fatal("a mailbox already on an app password switched again")
 		}
 		var provider, auth, backfill string
 		var lastID *int64
@@ -534,6 +602,71 @@ func TestLiveMailboxSourcesSigninConversions(t *testing.T) {
 		}
 		if list, _ := emails.ListSigninRetiring(ctx, f.org); len(list) != 0 {
 			t.Fatalf("still retiring: %+v", list)
+		}
+	})
+
+	t.Run("back onto its own Google sign-in, in place", func(t *testing.T) {
+		exp := time.Now().Add(time.Hour)
+		if ok, _ := emails.ConvertToGoogleOAuth(ctx, f.other, me, "a", "r", exp, "", nil); ok {
+			t.Fatal("another workspace converted the mailbox")
+		}
+		if ok, _ := emails.ConvertToGoogleOAuth(ctx, f.org, me, "a", "", exp, "", nil); ok {
+			t.Fatal("converted without a refresh token")
+		}
+		full := []string{models.GoogleFullMailScope}
+		for _, id := range []uuid.UUID{me, alex} {
+			ok, xerr := emails.ConvertToGoogleOAuth(ctx, f.org, id, "access-"+id.String(), "refresh-"+id.String(), exp, "", full)
+			if xerr != nil || !ok {
+				t.Fatalf("convert %s = %v, %v", id, ok, xerr)
+			}
+			var provider, auth, subject string
+			var grant *uuid.UUID
+			_ = pool.QueryRow(ctx, `SELECT provider, auth_method, domain_grant_id, delegated_subject FROM email_accounts WHERE id = $1`, id).Scan(&provider, &auth, &grant, &subject)
+			if provider != "gmail" || auth != models.MailAuthOAuth || grant != nil || subject != "" {
+				t.Fatalf("after = %s %s %v %q", provider, auth, grant, subject)
+			}
+			var smtp int
+			_ = pool.QueryRow(ctx, `SELECT count(*) FROM email_accounts_smtp_imap WHERE email_account_id = $1`, id).Scan(&smtp)
+			creds, xerr := emails.GetOAuthCredentials(ctx, id)
+			if smtp != 0 || xerr != nil || creds == nil || creds.RefreshToken != "refresh-"+id.String() || !slices.Equal(creds.GrantedScopes, full) {
+				t.Fatalf("stored = %d smtp rows, %+v, %v", smtp, creds, xerr)
+			}
+		}
+		if ok, _ := emails.ConvertToGoogleOAuth(ctx, f.org, me, "a", "r", exp, "", nil); ok {
+			t.Fatal("a mailbox already on its own sign-in was converted again")
+		}
+		if list, _ := emails.ListSigninRetiring(ctx, f.org); len(list) != 0 {
+			t.Fatalf("a reconnected mailbox is still retiring: %+v", list)
+		}
+	})
+
+	t.Run("a new consent records its scopes, a refresh keeps them, and a reauth replaces them", func(t *testing.T) {
+		exp := time.Now().Add(time.Hour)
+		read := func() []string {
+			creds, xerr := emails.GetOAuthCredentials(ctx, me)
+			if xerr != nil {
+				t.Fatal(xerr)
+			}
+			return creds.GrantedScopes
+		}
+		if err := emails.RefreshBoxToken(ctx, me, "a2", "r2", exp); err != nil {
+			t.Fatal(err)
+		}
+		if got := read(); !slices.Equal(got, []string{models.GoogleFullMailScope}) {
+			t.Fatalf("after refresh = %v", got)
+		}
+		modify := []string{"https://www.googleapis.com/auth/gmail.modify"}
+		if err := emails.ReplaceBoxToken(ctx, me, "a3", "r3", exp, modify); err != nil {
+			t.Fatal(err)
+		}
+		if got := read(); !slices.Equal(got, modify) {
+			t.Fatalf("after reauth = %v", got)
+		}
+		if err := emails.ReplaceBoxToken(ctx, me, "a4", "r4", exp, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := read(); got != nil {
+			t.Fatalf("a consent that named nothing kept %v", got)
 		}
 	})
 }

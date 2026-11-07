@@ -150,11 +150,11 @@ func TestLiveReserveSendClaimsAStepExactlyOnce(t *testing.T) {
 	s := liveJobsService(handle)
 	f := newSendResultFixture(t, handle)
 
-	first, err := s.CampaignProgressRepo.ReserveSend(ctx, f.campaign, f.contact, f.step, uuid.New(), uuid.Nil, true)
+	first, err := s.CampaignProgressRepo.ReserveSend(ctx, f.campaign, f.contact, f.step, uuid.New(), uuid.Nil, true, nil)
 	if err != nil || !first {
 		t.Fatalf("first reservation: claimed=%v err=%v", first, err)
 	}
-	second, err := s.CampaignProgressRepo.ReserveSend(ctx, f.campaign, f.contact, f.step, uuid.New(), uuid.Nil, true)
+	second, err := s.CampaignProgressRepo.ReserveSend(ctx, f.campaign, f.contact, f.step, uuid.New(), uuid.Nil, true, nil)
 	if err != nil {
 		t.Fatalf("second reservation: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestLiveReserveSendClaimsAStepExactlyOnce(t *testing.T) {
 	if err := s.CampaignProgressRepo.RecordEmailSent(ctx, f.campaign, f.contact, f.step); err != nil {
 		t.Fatalf("record sent: %v", err)
 	}
-	third, err := s.CampaignProgressRepo.ReserveSend(ctx, f.campaign, f.contact, f.step, uuid.New(), uuid.Nil, true)
+	third, err := s.CampaignProgressRepo.ReserveSend(ctx, f.campaign, f.contact, f.step, uuid.New(), uuid.Nil, true, nil)
 	if err != nil {
 		t.Fatalf("third reservation: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestLiveReleaseSendReturnsTheStep(t *testing.T) {
 	s := liveJobsService(handle)
 	f := newSendResultFixture(t, handle)
 
-	if _, err := s.CampaignProgressRepo.ReserveSend(ctx, f.campaign, f.contact, f.step, uuid.New(), uuid.Nil, true); err != nil {
+	if _, err := s.CampaignProgressRepo.ReserveSend(ctx, f.campaign, f.contact, f.step, uuid.New(), uuid.Nil, true, nil); err != nil {
 		t.Fatalf("reserve: %v", err)
 	}
 	if err := s.CampaignProgressRepo.ReleaseSend(ctx, f.campaign, f.contact, f.step, true); err != nil {

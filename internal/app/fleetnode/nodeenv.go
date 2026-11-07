@@ -37,11 +37,18 @@ import (
 var NodeEnvKeys = []string{
 	"APP_ENV",
 	"EVENTBUS_PROVIDER",
+	"EVENTBUS_READ_BOTH",
+	"EVENTBUS_HOLD_READS",
 	"NATS_URL",
 	// Base64, not a path: a node has no file to point at, and the env file
 	// docker reads cannot hold a multi-line value.
 	"NATS_CREDS_B64",
 	"NATS_MAX_BYTES",
+	"NATS_STREAM_NAME",
+	"NATS_SUBJECT_PREFIX",
+	"NATS_REPLICAS",
+	"NATS_DISCARD_NEW",
+	"NATS_TLS_CA_B64",
 	"KAFKA_BOOTSTRAP_SERVERS",
 	"KAFKA_SASL_USERNAME",
 	"KAFKA_SASL_PASSWORD",
@@ -49,6 +56,7 @@ var NodeEnvKeys = []string{
 	"SCHEMA_REGISTRY_KEY",
 	"SCHEMA_REGISTRY_SECRET",
 	"CODEC_PROVIDER",
+	"CODEC_READ_BOTH",
 	"REDIS",
 	"KMS_AWS_KEY_ID",
 	"BLOB_FS_ROOT",
@@ -63,6 +71,8 @@ var NodeEnvKeys = []string{
 	"POSTHOG_HOST",
 	"POSTHOG_ERROR_TRACKING",
 	"SENTRY_DSN",
+	"IMAP_IDLE",
+	"SYNC_PUSH_FALLBACK_INTERVAL",
 }
 
 // consumerEnvKeys reach a consumer and never a worker. A consumer runs the

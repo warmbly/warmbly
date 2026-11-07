@@ -1,0 +1,173 @@
+#!/bin/sh
+# Joins this instance to the Warmbly fleet as a worker. The join token is read
+# from Parameter Store at boot and never written to disk.
+set -eu
+
+REGION='${region}'
+INSTANCE_URL='${instance_url}'
+TOKEN_PARAMETER='${token_parameter}'
+NAME_PREFIX='${name_prefix}'
+REGION_LABEL='${region_label}'
+IMAGE_REPO='${image_repo}'
+CAPACITY='${capacity}'
+NOFILE=1048576
+
+log() { printf 'warmbly-fleet: %s\n' "$*"; }
+
+retry() {
+  attempts=0
+  while ! "$@"; do
+    attempts=$((attempts + 1))
+    if [ "$attempts" -ge 60 ]; then return 1; fi
+    sleep 5
+  done
+  return 0
+}
+
+imds() {
+  token=$(curl -fsS -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 300' http://169.254.169.254/latest/api/token) || return 1
+  curl -fsS -H "X-aws-ec2-metadata-token: $token" "http://169.254.169.254/latest/$1"
+}
+
+# Docker's own default caps every container's open files, which one worker's IMAP sessions outgrow.
+raise_nofile() {
+  if grep -q 'nofile=' /etc/sysconfig/docker 2>/dev/null; then
+    sed -i "s/nofile=[0-9]*:[0-9]*/nofile=$NOFILE:$NOFILE/" /etc/sysconfig/docker
+  elif [ ! -e /etc/docker/daemon.json ]; then
+    install -d -m 755 /etc/docker
+    printf '{"default-ulimits":{"nofile":{"Name":"nofile","Soft":%s,"Hard":%s}}}\n' "$NOFILE" "$NOFILE" > /etc/docker/daemon.json
+  fi
+  printf 'net.ipv4.ip_local_port_range = 10240 65535\n' > /etc/sysctl.d/90-warmbly-worker.conf
+  sysctl -q -p /etc/sysctl.d/90-warmbly-worker.conf
+}
+
+# Only root may reach instance metadata: the host-network worker container must not borrow the join-token role.
+install_metadata_guard() {
+  cat > /etc/systemd/system/warmbly-metadata-guard.service <<'UNIT'
+[Unit]
+Description=Restrict instance metadata to root
+Before=docker.service
+DefaultDependencies=no
+After=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'iptables -w -C OUTPUT -d 169.254.169.254 -m owner ! --uid-owner 0 -j REJECT 2>/dev/null || iptables -w -I OUTPUT 1 -d 169.254.169.254 -m owner ! --uid-owner 0 -j REJECT'
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+}
+
+# Scale-in and refresh hold the instance in a termination hook; stopping the node here lets its mailboxes re-place first.
+install_lifecycle_watch() {
+  cat > /usr/local/sbin/warmbly-lifecycle-watch <<'WATCH'
+#!/bin/sh
+set -u
+imds() {
+  token=$(curl -fsS -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 300' http://169.254.169.254/latest/api/token) || return 1
+  curl -fsS -H "X-aws-ec2-metadata-token: $token" "http://169.254.169.254/latest/$1"
+}
+main() {
+  while :; do
+    if [ "$(imds meta-data/autoscaling/target-lifecycle-state 2>/dev/null || true)" = "Terminated" ]; then
+      # Stopping the service too ends an update in flight, whose rollback would restart the worker.
+      systemctl stop warmbly-node-update.timer warmbly-node-update.service || true
+      systemctl stop warmbly-worker || true
+      printf '%s\n' 'warmbly-lifecycle-watch: instance is terminating; worker stopped'
+      return 0
+    fi
+    sleep 10
+  done
+}
+main "$@"
+WATCH
+  chmod 0755 /usr/local/sbin/warmbly-lifecycle-watch
+  cat > /etc/systemd/system/warmbly-lifecycle-watch.service <<'UNIT'
+[Unit]
+Description=Stop the Warmbly worker when Auto Scaling terminates this instance
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/warmbly-lifecycle-watch
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+}
+
+# Leaves a fifth of the machine to the host and Docker, so the worker's GC runs before the kernel OOM killer does.
+go_memory_limit_mib() {
+  awk '/^MemTotal:/ { printf "%d\n", $2 * 0.8 / 1024 }' /proc/meminfo
+}
+
+# join.sh creates node.local.env only when absent, so writing it first sets this worker's capacity and memory limit.
+write_local_env() {
+  install -d -m 700 /etc/warmbly
+  if [ ! -e /etc/warmbly/node.local.env ]; then
+    mem_limit=$(go_memory_limit_mib || true)
+    umask 077
+    printf '%s\n' '# Written by the fleet launch template; join.sh never rewrites this file.' "WARMBLY_WORKER_CAPACITY=$CAPACITY" > /etc/warmbly/node.local.env
+    # The Go runtime refuses to start on a malformed GOMEMLIMIT, so an unreadable MemTotal leaves it unset.
+    case "$mem_limit" in
+      '' | *[!0-9]* | 0) log "MemTotal unreadable; GOMEMLIMIT left unset" ;;
+      *) printf 'GOMEMLIMIT=%sMiB\n' "$mem_limit" >> /etc/warmbly/node.local.env ;;
+    esac
+    chmod 600 /etc/warmbly/node.local.env
+  fi
+}
+
+# Until the join succeeds, a failed step powers off, and the group replaces the instance.
+on_exit() {
+  rc=$?
+  rm -f /run/warmbly-join.sh
+  if [ "$rc" -ne 0 ]; then
+    log "boot failed with status $rc; powering off"
+    systemctl poweroff || true
+  fi
+}
+
+join_once() {
+  token=$(aws ssm get-parameter --region "$REGION" --name "$TOKEN_PARAMETER" --with-decryption --query Parameter.Value --output text) || return 1
+  [ -n "$token" ] || return 1
+  curl -fsS --retry 5 --retry-delay 5 -o /run/warmbly-join.sh "$INSTANCE_URL/join.sh" || return 1
+  if [ -n "$REGION_LABEL" ]; then
+    sh /run/warmbly-join.sh --url "$INSTANCE_URL" --token "$token" --role worker --name "$NODE_NAME" --region "$REGION_LABEL" --image-repo "$IMAGE_REPO"
+  else
+    sh /run/warmbly-join.sh --url "$INSTANCE_URL" --token "$token" --role worker --name "$NODE_NAME" --image-repo "$IMAGE_REPO"
+  fi
+}
+
+main() {
+  trap on_exit EXIT
+  instance_id=$(retry imds meta-data/instance-id)
+  NODE_NAME="$NAME_PREFIX-$instance_id"
+  hostnamectl set-hostname "$NODE_NAME"
+  # The NAT instance may still be claiming its route on the fleet's first boot.
+  retry dnf -y --setopt=retries=20 install docker iptables-nft
+  install_metadata_guard
+  install_lifecycle_watch
+  systemctl daemon-reload
+  systemctl enable --now warmbly-metadata-guard.service
+  raise_nofile
+  systemctl enable --now docker
+  systemctl enable --now warmbly-lifecycle-watch.service
+  write_local_env
+  attempts=0
+  until join_once; do
+    attempts=$((attempts + 1))
+    if [ "$attempts" -ge 20 ]; then
+      log "join failed $attempts times; check the join token in $TOKEN_PARAMETER and $INSTANCE_URL"
+      return 1
+    fi
+    sleep 30
+  done
+  log "joined as $NODE_NAME"
+  return 0
+}
+
+main "$@"

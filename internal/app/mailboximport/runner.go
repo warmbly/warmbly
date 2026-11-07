@@ -176,9 +176,7 @@ func (s *Service) process(ctx context.Context, w repository.ImportWorkRow) {
 		return
 	}
 	p.email, p.importID = w.Email, w.ImportID
-	var batch models.MailboxImportSettings
-	_ = json.Unmarshal(w.Settings, &batch)
-	settings := mergeSettings(batch, p.Settings)
+	settings := workSettings(w, p)
 	userID := w.CreatedBy.String()
 	orgID := w.OrgID
 
@@ -220,7 +218,7 @@ func (s *Service) process(ctx context.Context, w repository.ImportWorkRow) {
 			_ = s.repo.SetRowMailHost(ctx, w.ImportID, w.Line, resolved.MailHost)
 		}
 		if cause == causeMicrosoftSignin || cause == causeGoogleSignin {
-			auth := s.authorizeVendorDomain(rowCtx, w, *p.VendorConnectionID, cause)
+			auth := s.authorizeVendorRow(rowCtx, w, p, cause, existing == nil)
 			switch {
 			case auth.GrantID != nil:
 				resolved.GrantID, resolved.AuthMethod, resolved.Signin = auth.GrantID, models.MailAuthDelegated, false
@@ -413,17 +411,38 @@ func (s *Service) link(ctx context.Context, p payload, accountID uuid.UUID) {
 	}
 }
 
-// authorizeVendorDomain asks the row's vendor to authorize Warmbly on its domain; signinCause names the provider.
-func (s *Service) authorizeVendorDomain(ctx context.Context, w repository.ImportWorkRow, connectionID uuid.UUID, signinCause string) VendorAuthorization {
+// authorizeVendorRow asks the row's vendor to get its mailbox connected with no
+// sign-in here; signinCause names the provider, and consent allows the vendor to sign in as the mailbox.
+func (s *Service) authorizeVendorRow(ctx context.Context, w repository.ImportWorkRow, p payload, signinCause string, consent bool) VendorAuthorization {
 	az, ok := s.vendors.(VendorAuthorizer)
-	if !ok || w.CreatedBy == nil {
+	if !ok || w.CreatedBy == nil || p.VendorConnectionID == nil {
 		return VendorAuthorization{}
 	}
 	provider := models.GrantProviderMicrosoft
 	if signinCause == causeGoogleSignin {
 		provider = models.GrantProviderGoogle
 	}
-	return az.AuthorizeDomain(ctx, w.OrgID, *w.CreatedBy, connectionID, w.Email, provider)
+	return az.AuthorizeMailbox(ctx, VendorAuthorizeRequest{
+		OrgID: w.OrgID, UserID: *w.CreatedBy, ConnectionID: *p.VendorConnectionID, ImportID: w.ImportID, Line: w.Line,
+		Email: w.Email, Provider: provider, VendorMailboxID: p.VendorMailboxID, Consent: consent,
+	})
+}
+
+// VendorConsentWanted reports whether an import row of the organization still waits on a sign-in as email.
+func (s *Service) VendorConsentWanted(ctx context.Context, orgID, importID uuid.UUID, line int, email string) bool {
+	imp, err := s.repo.Get(ctx, orgID, importID)
+	if err != nil || imp == nil || imp.Status == models.ImportCancelled {
+		return false
+	}
+	row, _, err := s.repo.GetRow(ctx, orgID, importID, line)
+	return err == nil && row != nil && row.Status == models.ImportRowNeedsSignin && strings.EqualFold(strings.TrimSpace(row.Email), strings.TrimSpace(email))
+}
+
+// VendorConsentSettled hands how a vendor's sign-in ended to the vendor side; the next upkeep pass moves the row on.
+func (s *Service) VendorConsentSettled(ctx context.Context, orgID, connectionID uuid.UUID, email, reason string) {
+	if az, ok := s.vendors.(VendorAuthorizer); ok {
+		az.ConsentSettled(ctx, orgID, connectionID, email, reason)
+	}
 }
 
 // grantForHost is the workspace's grant covering an address on a Google or Microsoft host, nil when none.
@@ -495,6 +514,28 @@ func authorizingMessage(auth VendorAuthorization, signinCause, domain string) st
 	if vendor == "" {
 		vendor = "Your inbox vendor"
 	}
+	switch {
+	case auth.SigningIn:
+		msg := "Signing in: " + vendor + " is signing in to this mailbox to approve Warmbly"
+		if auth.Stage != "" {
+			msg += " (" + vendor + " status: " + auth.Stage + ")"
+		}
+		msg += "."
+		if auth.Note != "" {
+			msg += " " + auth.Note
+		}
+		return msg + " The mailbox connects on its own when it is done. To connect it sooner, use Sign in on this row. If it is not done within 6 hours, the row switches to Sign in."
+	case auth.Trusting:
+		msg := "Authorizing: " + vendor + " is adding Warmbly as a trusted app on " + domain
+		if auth.Stage != "" {
+			msg += " (" + vendor + " status: " + auth.Stage + ")"
+		}
+		msg += ". Then it signs in to each mailbox to approve Warmbly."
+		if auth.Note != "" {
+			msg += " " + auth.Note
+		}
+		return msg + " The mailbox connects on its own. To connect it sooner, use Sign in on this row. If the domain is not done within 2 hours, the row switches to Sign in."
+	}
 	msg := vendor + " is authorizing Warmbly on " + domain
 	if auth.Stage != "" {
 		msg += " (" + vendor + " status: " + auth.Stage + ")"
@@ -539,8 +580,11 @@ func (s *Service) resumeVendorAuthorizations(ctx context.Context) {
 		k := domainKey{w.OrgID, *p.VendorConnectionID, w.Code, domainOf(w.Email)}
 		auth, seen := settled[k]
 		if !seen {
-			auth = s.authorizeVendorDomain(ctx, w, *p.VendorConnectionID, w.Code)
-			settled[k] = auth
+			auth = s.authorizeVendorRow(ctx, w, p, w.Code, true)
+			// A per-mailbox answer says nothing about the domain's other rows.
+			if auth.Domain {
+				settled[k] = auth
+			}
 		}
 		if auth.Pending {
 			waiting = append(waiting, w)
@@ -658,6 +702,13 @@ func (s *Service) refineCause(ctx context.Context, fallback, host, detail string
 	}
 	s.causes.Store(key, out)
 	return out
+}
+
+// workSettings is what a claimed row applies: its import's batch settings with the row's own laid over them.
+func workSettings(w repository.ImportWorkRow, p payload) models.MailboxImportSettings {
+	var batch models.MailboxImportSettings
+	_ = json.Unmarshal(w.Settings, &batch)
+	return mergeSettings(batch, p.Settings)
 }
 
 func (s *Service) finish(ctx context.Context, w repository.ImportWorkRow, status, code, cause, message string, accountID *uuid.UUID, keepPayload bool) {
@@ -800,9 +851,7 @@ func (s *Service) ResolveSignin(ctx context.Context, orgID uuid.UUID, email stri
 			if ciph, err := s.cipher.Cipher(ctx, orgID); err == nil {
 				if p, xerr := unseal(ctx, ciph, w.Payload); xerr == nil {
 					p.email, p.importID = w.Email, w.ImportID
-					var batch models.MailboxImportSettings
-					_ = json.Unmarshal(w.Settings, &batch)
-					if note := s.applySettings(ctx, orgID, w.CreatedBy.String(), accountID, p, mergeSettings(batch, p.Settings), false); note != "" {
+					if note := s.applySettings(ctx, orgID, w.CreatedBy.String(), accountID, p, workSettings(w, p), false); note != "" {
 						_ = s.repo.FinishRow(ctx, w.ImportID, w.Line, 0, models.ImportRowConnected, "", "", note, &accountID, false)
 					}
 				}

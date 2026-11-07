@@ -50,14 +50,18 @@ func internalAuth(c *gin.Context) {
 }
 
 // NodeBrokerAuthMiddleware protects the internal routes only fleet nodes
-// call: key material, blob signing, the message map, sync lookups, worker
-// config and the node heartbeat.
+// call: key material, blob signing, the cloud-link token and the node env.
 //
-// NODE_BROKER_TOKEN is that credential, kept apart from the one the
-// internet-facing tracking and forms services carry. It falls back to
-// INTERNAL_API_TOKEN when unset, so a single-token deployment keeps working.
+// A node is admitted by its own NODE_CREDENTIAL and is then named on the
+// request. Unless NODE_REQUIRE_NODE_CREDENTIAL is on, NODE_BROKER_TOKEN (else
+// INTERNAL_API_TOKEN) is also accepted, kept apart from the edge services' token.
 func (h *Handler) NodeBrokerAuthMiddleware() gin.HandlerFunc {
-	return nodeBrokerAuth
+	return func(c *gin.Context) {
+		if h.authenticateNode(c) {
+			return
+		}
+		nodeBrokerAuth(c)
+	}
 }
 
 var (
@@ -94,9 +98,12 @@ func previousTokenMatches(provided []byte, prefix string) bool {
 	return matched
 }
 
-// NodeAuthMiddleware guards node-only routes on NODE_BROKER_TOKEN; NODE_ACCEPT_INTERNAL_TOKEN=true also admits INTERNAL_API_TOKEN while older nodes upgrade.
+// NodeAuthMiddleware guards node-only routes on the node's own credential, or NODE_BROKER_TOKEN while it is not required; NODE_ACCEPT_INTERNAL_TOKEN=true also admits INTERNAL_API_TOKEN while older nodes upgrade.
 func (h *Handler) NodeAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if h.authenticateNode(c) {
+			return
+		}
 		brokerTokenOnce.Do(loadBrokerToken)
 		var legacy []byte
 		if os.Getenv("NODE_ACCEPT_INTERNAL_TOKEN") == "true" {
@@ -114,6 +121,9 @@ const nodeUpdateOnlyKey = "node_update_only"
 // always learn the version that sends NODE_BROKER_TOKEN.
 func (h *Handler) NodeHeartbeatAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if h.authenticateNode(c) {
+			return
+		}
 		brokerTokenOnce.Do(loadBrokerToken)
 		shared := []byte(os.Getenv("INTERNAL_API_TOKEN"))
 		if os.Getenv("NODE_ACCEPT_INTERNAL_TOKEN") == "true" {

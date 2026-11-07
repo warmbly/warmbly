@@ -30,13 +30,6 @@ type TwoFAChallenger interface {
 	CreatePendingChallenge(ctx context.Context, userID uuid.UUID, authProvider string, link *models.UserIdentity) (string, int, *errx.Error)
 }
 
-// ReferralAttributor links a brand-new org to the referrer behind its signup
-// code. Satisfied by *referral.Service; injected post-construction (WireReferral)
-// so the auth package needs no import of referral (no cycle).
-type ReferralAttributor interface {
-	AttributeSignup(ctx context.Context, code string, inviteeOrgID, inviteeUserID uuid.UUID) *errx.Error
-}
-
 // AcquisitionRecorder stores where a signup came from on the new workspace.
 // Satisfied by repository.OrganizationRepository; injected post-construction
 // (WireAcquisition) and nil-safe, so a deployment that never wires it simply
@@ -77,6 +70,9 @@ type AuthService interface {
 	ReleaseReauthAttempt(ctx context.Context, userID uuid.UUID)
 	ClearReauthFailures(ctx context.Context, userID uuid.UUID)
 	LoginConfirm(ctx context.Context, data *ConfirmData, session, ipaddr, userAgent string) (*models.LoginResult, *errx.Error)
+	// CompleteInitialPassword takes the password_change_required challenge and
+	// the holder's own password, then continues the sign-in like LoginStart.
+	CompleteInitialPassword(ctx context.Context, data *InitialPasswordData, ipaddr, userAgent string) (*models.AuthSession, *errx.Error)
 	// WireTwoFA attaches the 2FA challenger (post-construction; nil = 2FA off).
 	WireTwoFA(t TwoFAChallenger)
 	// WireAppAttest accepts native app proofs on the captcha-gated paths (nil = off).
@@ -84,9 +80,6 @@ type AuthService interface {
 
 	RegistrationStart(ctx context.Context, data *AuthData, origin SignupOrigin) (*models.AuthSession, *errx.Error)
 	RegistrationConfirm(ctx context.Context, data *ConfirmData, session string, origin SignupOrigin) (*models.AuthSession, *errx.Error)
-	// WireReferral attaches the referral attributor (post-construction; nil = no
-	// referral attribution at signup).
-	WireReferral(r ReferralAttributor)
 	WireAcquisition(r AcquisitionRecorder)
 	WireAnalytics(a ProductAnalytics, host string)
 
@@ -112,6 +105,14 @@ type AuthService interface {
 	// which the confirm step takes in place of the link token itself.
 	ResetPasswordSession(ctx context.Context, linkToken string) (*ResetPasswordSession, *errx.Error)
 	ResetPasswordConfirm(ctx context.Context, data *ResetPasswordConfirm, session, ipaddr string) *errx.Error
+	// LinkedIdentities lists the providers the user can sign in with.
+	LinkedIdentities(ctx context.Context, userID uuid.UUID) ([]LinkedIdentity, *errx.Error)
+	// UnlinkIdentity removes a provider from the user's sign-in methods and
+	// ends the other sessions it signed in, refusing when it is the last one.
+	UnlinkIdentity(ctx context.Context, userID, currentSessionID uuid.UUID, provider string) *errx.Error
+	// SendPasswordLink emails the signed-in user a set-password link on the
+	// same budget and confirm step as Forgot password.
+	SendPasswordLink(ctx context.Context, userID uuid.UUID) *errx.Error
 	// WireCredentialRevokers attaches what ends a user's API credentials when
 	// a password change or reset asks for it.
 	WireCredentialRevokers(r ...UserCredentialRevoker)
@@ -124,6 +125,8 @@ type AuthService interface {
 	// ForgetTrustedDevices drops every browser the user asked to remember, so
 	// each asks for an emailed login code again.
 	ForgetTrustedDevices(ctx context.Context, userID uuid.UUID) *errx.Error
+	// ForgetTrustedDevice drops the remembered devices whose tokens a signing-out browser presents.
+	ForgetTrustedDevice(ctx context.Context, userID uuid.UUID, tokens []string) *errx.Error
 
 	// Policy is the resolved per-deployment auth behavior, exposed so the
 	// public /auth/config endpoint can report it to the login screen.
@@ -199,7 +202,6 @@ type authService struct {
 	appleIDTokens  IDTokenVerifier
 	googleIDTokens IDTokenVerifier
 	twofa          TwoFAChallenger
-	referral       ReferralAttributor
 	// acquisition records the signup's channel on the new org. Nil-safe.
 	acquisition AcquisitionRecorder
 	// productAnalytics counts finished signups. Nil-safe.
@@ -260,8 +262,6 @@ func (s *authService) WireDeployment(policy *config.AuthPolicy, mailDelivers boo
 func (s *authService) Policy() *config.AuthPolicy { return s.policy }
 
 func (s *authService) WireIdentities(r repository.IdentityRepository) { s.identities = r }
-
-func (s *authService) WireReferral(r ReferralAttributor) { s.referral = r }
 
 // WireAcquisition attaches the store for signup attribution.
 func (s *authService) WireAcquisition(r AcquisitionRecorder) { s.acquisition = r }

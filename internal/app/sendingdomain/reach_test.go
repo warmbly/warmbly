@@ -212,3 +212,35 @@ func selfSigned(t *testing.T, cn string) tls.Certificate {
 	}
 	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
 }
+
+func TestReachReadsCloudflareRefusalsAsADNSFix(t *testing.T) {
+	cloudflare := func(status int, body string) http.HandlerFunc {
+		return func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Server", "cloudflare")
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(body))
+		}
+	}
+	// The browser page carries the code in its feedback script; a plain client gets one line.
+	prohibited := cloudflare(http.StatusForbidden, `<title>DNS points to prohibited IP | example.com | Cloudflare</title><script>a={event:"feedback clicked",properties:{errorCode: 1000 }}</script>`)
+	crossUser := cloudflare(http.StatusConflict, "error code: 1014")
+	other := cloudflare(http.StatusForbidden, "error code: 1020")
+	cases := []struct {
+		name   string
+		plain  http.HandlerFunc
+		hint   models.RedirectReachHint
+		detail string
+	}{
+		{"root A records at Cloudflare's addresses", prohibited, models.RedirectHintEdgeRecord, "error 1000"},
+		{"a name Cloudflare has not activated", crossUser, models.RedirectHintEdgeInactive, "error 1014"},
+		{"a Cloudflare refusal with no DNS fix", other, models.RedirectHintNotRouted, "Cloudflare"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := reachFixture(t, c.plain, c.plain, false).Probe(context.Background(), "example.com", reachTarget)
+			if got.Status != models.RedirectReachNotReaching || got.Hint != c.hint || !strings.Contains(got.Detail, c.detail) || got.Proxy != "cloudflare" {
+				t.Fatalf("got %+v", got)
+			}
+		})
+	}
+}

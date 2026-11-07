@@ -78,10 +78,11 @@ func (p *posthogSink) capture(ev event) {
 	handled := true
 
 	if ev.err != nil {
+		err := redact(ev.err)
 		p.enqueue(ev.scope, "error", posthog.ExceptionItem{
 			// The Go type is the issue title, the message its description.
-			Type:       fmt.Sprintf("%T", ev.err),
-			Value:      ev.err.Error(),
+			Type:       fmt.Sprintf("%T", err),
+			Value:      err.Error(),
 			Mechanism:  &posthog.ExceptionMechanism{Handled: &handled},
 			Stacktrace: stack,
 		})

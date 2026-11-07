@@ -17,6 +17,15 @@ import (
 // the mail arrived in. This is the IMAP equivalent of re-resolving a Graph id:
 // the Message-ID is the one identifier a move does not change.
 func (c *Client) FindUIDByMessageID(ctx context.Context, mailboxName, rfcMessageID string) (uint32, error) {
+	return c.findUIDByMessageID(mailboxName, rfcMessageID, false)
+}
+
+// FindUIDInFolder is FindUIDByMessageID for a folder the server listed, where a failed SELECT is an error rather than an absent message.
+func (c *Client) FindUIDInFolder(ctx context.Context, mailboxName, rfcMessageID string) (uint32, error) {
+	return c.findUIDByMessageID(mailboxName, rfcMessageID, true)
+}
+
+func (c *Client) findUIDByMessageID(mailboxName, rfcMessageID string, strict bool) (uint32, error) {
 	rfcMessageID = strings.TrimSpace(rfcMessageID)
 	if mailboxName == "" || rfcMessageID == "" {
 		return 0, nil
@@ -33,6 +42,9 @@ func (c *Client) FindUIDByMessageID(ctx context.Context, mailboxName, rfcMessage
 	defer c.begin()()
 	name := c.qualifyMailboxLocked(mailboxName)
 	if _, err := c.selectMailbox(name, nil); err != nil {
+		if strict {
+			return 0, fmt.Errorf("select %q: %w", name, err)
+		}
 		// A folder that does not exist is not an error here: the caller is
 		// asking whether the message is in it.
 		return 0, nil

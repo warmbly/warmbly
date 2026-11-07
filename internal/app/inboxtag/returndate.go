@@ -24,7 +24,7 @@ func returnDateToConfirm(m Message, ws workspaceSettings, deterministicKind stri
 	if deterministicKind != "" && deterministicKind != KindAutoReplyOOO {
 		return replyclassify.ReturnDate{}, false
 	}
-	return replyclassify.FindReturnDate(m.Subject, m.holdBody(), now)
+	return replyclassify.FindReturnDate(m.Subject, m.holdBody(), now, ws.languages...)
 }
 
 // holdBody is the text the out-of-office hold reads its date from: the body,

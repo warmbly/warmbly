@@ -50,8 +50,8 @@ You own the domains and their auth. SPF has a 10 DNS-lookup limit, and going ove
 
 You own deliverability monitoring. Warmbly runs its own [open and click tracking](/analytics/) and reports the signals, but you decide what to do when complaint rate climbs toward Amazon SES's 0.1% review line or Google's 0.10% reported-spam threshold. The product's defaults help: a 50 emails/mailbox/day cold cap (hard max 100), a minimum 600 seconds between sends from one mailbox, and warmup that starts at 10/day and ramps +1/day to a 40/day ceiling. A brand-new mailbox typically takes 3 to 6 weeks to reach a stable warmed state. Those numbers ship in the code. Whether your IPs and domains can sustain them is your call. See [how many mailboxes and domains you need](/blog/how-many-mailboxes-and-domains-cold-email/) and [budgets, not server settings](/blog/mailbox-budgets-not-server-settings/).
 
-<Callout title="The shared warmup pool: link your instance, we run it" variant="info">
-  A warmup pool works by pairing your mailboxes with other participants so providers see two-way conversation. A single self-hosted instance is one organization, so on its own its mailboxes can only talk to each other, which providers learn to recognize. The pool mechanics (partner selection, recent partners excluded, verification tokens, health-band quarantine) are in the code, but the network effect needs many organizations. So a self-hosted instance will link to Warmbly Cloud instead, once it launches: you approve a one-time code, pick the mailboxes to enroll, and Warmbly runs their warmup in the shared pool while everything else stays on your server. Free for up to 10 mailboxes, $15 a month for unlimited. [How it works](https://docs.warmbly.com/guides/warmbly-cloud/).
+<Callout title="The shared warmup pool lives on the cloud" variant="info">
+  A warmup pool works by pairing your mailboxes with other participants so providers see two-way conversation. A single self-hosted instance is one organization, so on its own its mailboxes can only talk to each other, which providers learn to recognize. The pool mechanics (partner selection, recent partners excluded, verification tokens, health-band quarantine) are in the code, but the network effect needs many organizations. So the pool runs on Warmbly Cloud, once it launches, for mailboxes connected to a hosted workspace. Self-hosted instances do not link to it. Warmup on a self-hosted instance still runs between its own mailboxes; it just is not effective.
 </Callout>
 
 ## How the encryption model keeps credentials and message content private
@@ -69,11 +69,11 @@ Two properties matter for self-hosting. First, workers never open a Postgres con
 | Who runs the six services? | You | Warmbly |
 | Who owns the IPs and domains? | You | You (mailboxes), Warmbly (sending infra) |
 | Who holds the KMS key? | You | Warmbly |
-| Shared warmup pool? | Yes, by linking the instance once the cloud launches (free for 10 mailboxes, $15/month unlimited) | Yes, cross-org pool |
+| Shared warmup pool? | No. Warmup only pairs your own mailboxes, and a self-hosted instance does not link to the cloud pool | Yes, cross-org pool |
 | Deliverability monitoring? | You watch and react | Managed with the same thresholds |
 | Best fit | You want full data custody and control, and can run infra | You want to send without operating Kafka and IP pools |
 
-Neither is strictly better. If you can run distributed infrastructure and you want your data and campaign credentials to stay on keys you hold, self-host: it is free, and once the cloud launches, linking the instance gets you the real warmup pool too. The [cloud waitlist](https://app.warmbly.com) is open. If you want sending plus warmup without operating any of it, a hosted workspace on the [pricing page](/pricing/) starts free with 10 mailboxes and warmup, no credit card.
+Neither is strictly better. If you can run distributed infrastructure and you want your data and campaign credentials to stay on keys you hold, self-host: it is free and fully functional on its own, though its warmup only pairs your own mailboxes. Self-hosting suits experienced operators: Warmbly does not provide support for self-hosted instances, and help comes from the community on [Discord](https://dc.warmbly.com). The [cloud waitlist](https://app.warmbly.com) is open. If you want the shared warmup pool, or sending plus warmup without operating any of it, a hosted workspace on the [pricing page](/pricing/) starts free with 10 mailboxes and warmup, no credit card.
 
 ## Where the code lives and what Apache 2.0 lets you do
 

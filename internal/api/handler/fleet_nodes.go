@@ -18,6 +18,7 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
+	"github.com/warmbly/warmbly/internal/pkg/nodeauth"
 	"github.com/warmbly/warmbly/internal/pkg/publicip"
 )
 
@@ -187,6 +188,14 @@ func (h *Handler) FleetHeartbeat(c *gin.Context) {
 		h.fleetUpdateOnlyHeartbeat(c, beat)
 		return
 	}
+	if caller, ok := middleware.AuthenticatedNodeID(c); ok {
+		if caller != beat.NodeID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "a node may heartbeat only as itself"})
+			return
+		}
+	} else if _, seen := fleetTokenNodes.LoadOrStore(beat.NodeID, struct{}{}); !seen {
+		log.Warn().Str("node_id", beat.NodeID.String()).Msg("fleet: node heartbeats without its own node credential; it will be refused once NODE_REQUIRE_NODE_CREDENTIAL is on. Update it, or join it again if it predates node credentials")
+	}
 	beat.Address = heartbeatAddress(beat.Address)
 	reply, err := h.FleetNodes.Heartbeat(c.Request.Context(), beat)
 	if err != nil {
@@ -237,7 +246,7 @@ func (h *Handler) nodeEnvFor(ctx context.Context, id uuid.UUID, role models.Node
 }
 
 // nodeCredentialHeader carries the credential join issued to one node, next to the fleet bearer.
-const nodeCredentialHeader = "X-Warmbly-Node-Credential"
+const nodeCredentialHeader = nodeauth.CredentialHeader
 
 // InternalFleetNodeEnv hands an enrolled node the env file join would write
 // today, so a rotated value reaches it by pulling instead of rejoining. The
@@ -268,7 +277,13 @@ func (h *Handler) InternalFleetNodeEnv(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 	reason := "node credential"
-	if credential := c.GetHeader(nodeCredentialHeader); credential != "" {
+	if caller, ok := middleware.AuthenticatedNodeID(c); ok {
+		if caller != id {
+			logBrokerAccess(c, op, id.String(), false, "node asked for another node's env")
+			c.JSON(http.StatusForbidden, gin.H{"error": "a node may fetch only its own env"})
+			return
+		}
+	} else if credential := c.GetHeader(nodeCredentialHeader); credential != "" {
 		switch err := h.FleetNodes.VerifyNodeCredential(ctx, id, credential); {
 		case errors.Is(err, fleetnode.ErrNoNodeCredential), errors.Is(err, fleetnode.ErrBadNodeCredential):
 			logBrokerAccess(c, op, id.String(), false, err.Error())
@@ -299,6 +314,9 @@ func (h *Handler) InternalFleetNodeEnv(c *gin.Context) {
 
 // legacyTokenNodes remembers which nodes were already warned about, so the log says it once per process.
 var legacyTokenNodes sync.Map
+
+// fleetTokenNodes remembers which nodes were already warned for beating on the fleet token alone.
+var fleetTokenNodes sync.Map
 
 // fleetUpdateOnlyHeartbeat answers a node still on INTERNAL_API_TOKEN with its version only.
 func (h *Handler) fleetUpdateOnlyHeartbeat(c *gin.Context, beat models.NodeHeartbeat) {

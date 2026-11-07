@@ -14,6 +14,7 @@ const FEATURE_BY_PREFIX: [string, string][] = [
     ["/app/unibox", "The unified inbox"],
     ["/app/campaigns", "Campaigns"],
     ["/app/contacts", "Contacts"],
+    ["/app/leads", "The lead finder"],
     ["/app/analytics", "Analytics"],
     ["/app/deliverability", "Deliverability"],
     ["/app/crm", "The CRM"],

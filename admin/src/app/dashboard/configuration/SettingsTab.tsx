@@ -5,18 +5,20 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Check, Save } from "lucide-react";
+import { Check, Plus, Save, Trash2 } from "lucide-react";
 import { ErrorState } from "@/components/ErrorState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusDot } from "@/components/ui/kit";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { TONE_TEXT } from "@/lib/tones";
 import { cn } from "@/lib/utils";
 import {
     getInstanceSettings,
     putInstanceSettings,
     type InstanceSettings,
+    type UsageSettings,
 } from "@/lib/api/client/admin/instance";
 import { RangeHint, SettingsGroup, SettingsRow } from "./SettingsLayout";
 
@@ -109,7 +111,28 @@ const RETENTION_FIELDS = [
         setting: "warmup_event_days",
         label: "Warmup records (days)",
         min: 30,
-        help: "Per-message warmup records: tokens, receipts, tampering events and spam reports. The pool health bands read the last 30 days, which is the floor. The daily sent and received counts behind the analytics are separate and never pruned.",
+        help: "Per-message warmup records: tokens, receipts, tampering events, spam reports and the record of which messages belong to a warmup thread. The pool health bands read the last 30 days, which is the floor. The daily sent and received counts behind the analytics are separate and never pruned.",
+    },
+    {
+        key: "campaignLogDays",
+        setting: "campaign_log_days",
+        label: "Campaign activity feed (days)",
+        min: 0,
+        help: "Entries in each campaign's activity feed: sends that failed or were deferred, pauses and the reasons for them. Campaign stats, progress and sent mail are separate and unaffected. 0 keeps every entry, which is the default.",
+    },
+    {
+        key: "notificationDays",
+        setting: "notification_days",
+        label: "Notifications (days)",
+        min: 0,
+        help: "In-app notifications, read or unread. One still waiting to be emailed is kept until it is sent or skipped. 0 keeps every entry, which is the default.",
+    },
+    {
+        key: "webhookDeliveryDays",
+        setting: "webhook_delivery_days",
+        label: "Webhook delivery log (days)",
+        min: 0,
+        help: "Delivered and abandoned webhook deliveries, with the payload and the endpoint's response excerpt. A delivery still being retried is kept until it settles. A delivery past this window can no longer be redelivered from the log. 0 keeps every entry, which is the default.",
     },
 ] as const;
 
@@ -120,25 +143,31 @@ const RETENTION_PRESETS = [
     {
         id: "default",
         label: "Defaults",
-        description: "365 / 180 / 90 days, warmup 30 / 365",
+        description: "365 / 180 / 90 days, warmup 30 / 365, feeds kept",
         values: {
             engagementDays: "365",
             formDays: "180",
             auditDays: "90",
             warmupMailDays: "30",
             warmupEventDays: "365",
+            campaignLogDays: "0",
+            notificationDays: "0",
+            webhookDeliveryDays: "0",
         },
     },
     {
         id: "minimal",
         label: "Minimal retention",
-        description: "30 / 30 / 30 days, warmup 7 / 30",
+        description: "30 / 30 / 30 days, warmup 7 / 30, feeds 30 / 30 / 30",
         values: {
             engagementDays: "30",
             formDays: "30",
             auditDays: "30",
             warmupMailDays: "7",
             warmupEventDays: "30",
+            campaignLogDays: "30",
+            notificationDays: "30",
+            webhookDeliveryDays: "30",
         },
     },
 ] as const;
@@ -191,7 +220,7 @@ const PLACEMENT_FIELDS = [
         label: "Free tests per month on trial",
         min: 1,
         max: 100000,
-        help: "How many free tests a workspace without a paid plan may run on the metered panels each calendar month. A trial has no credits, so it waits for next month after these.",
+        help: "How many free tests a workspace without a paid plan may run on the metered panels each calendar month. A trial has no balance to pay from, so it waits for next month after these.",
     },
     {
         key: "testsPaid",
@@ -199,7 +228,7 @@ const PLACEMENT_FIELDS = [
         label: "Free tests per month on paid plans",
         min: 1,
         max: 100000,
-        help: "The same free allowance for a workspace with an active subscription. Past it, a test on the instance panel costs credits.",
+        help: "The same free allowance for a workspace with an active subscription. Past it, a test on the instance panel is charged to the workspace's balance at the placement test price under Usage pricing.",
     },
     {
         key: "seedsPerTest",
@@ -216,14 +245,6 @@ const PLACEMENT_FIELDS = [
         min: 5,
         max: 600,
         help: "The gap between two copies from one mailbox, jittered, so a test never leaves as a burst. A test someone starts as quick uses the smaller of this and 8 seconds.",
-    },
-    {
-        key: "creditsPerTest",
-        setting: "credits_per_test",
-        label: "Credits per paid test",
-        min: 0,
-        max: 10000,
-        help: "What a test costs in credits once a workspace has used its free tests for the month. The workspace agrees to the price before each paid test, and a test that delivers no copy is refunded. 0 turns paid tests off, so a workspace waits for next month instead. Only a hosted (DEPLOYMENT_MODE=cloud) instance charges.",
     },
     {
         key: "batchSendersMax",
@@ -267,12 +288,147 @@ const PLACEMENT_DEFAULTS: InstanceSettings["placement"] = {
     tests_per_month_paid: 40,
     seeds_per_test: 20,
     spacing_seconds: 60,
-    credits_per_test: 25,
     batch_senders_max: 10000,
     batch_sender_concurrency: 20,
     batch_instance_concurrency: 200,
     batch_starts_per_minute: 10,
 };
+
+// Usage pricing bounds and compiled defaults, mirroring internal/app/instancesettings/usage.go.
+const MARKUP_MIN = 0;
+const MARKUP_MAX = 500;
+const ANY_MODEL = "*";
+
+// A backend from before the balance omits the usage section; the form shows the compiled defaults.
+const USAGE_DEFAULTS: UsageSettings = {
+    markup_percent: 25,
+    models: [
+        { model: "claude-sonnet-4", input_per_mtok: 3, output_per_mtok: 15 },
+        { model: "claude-haiku-4", input_per_mtok: 1, output_per_mtok: 5 },
+        { model: "claude-3-5-haiku", input_per_mtok: 0.8, output_per_mtok: 4 },
+        { model: "gpt-6-luna", input_per_mtok: 0.1, output_per_mtok: 0.5 },
+        { model: ANY_MODEL, input_per_mtok: 3, output_per_mtok: 15 },
+    ],
+    units: {
+        web_search: 0.01,
+        placement_test: 0.4,
+        lead_website_read: 0.016,
+        lead_person_email: 0.016,
+        lead_search_page: 0.032,
+    },
+};
+
+// Known units first, in this order; any other unit the backend prices is listed after them by key.
+const UNIT_LABELS: Record<string, { label: string; help: string }> = {
+    web_search: {
+        label: "Web search",
+        help: "One web search made by contact research, an AI variable, or an AI step in a campaign or automation.",
+    },
+    placement_test: {
+        label: "Placement test",
+        help: "One inbox placement test past the workspace's free tests for the month. The workspace agrees to the price before each paid test, and a test that delivers no copy is refunded. 0 turns paid tests off, so a workspace waits for next month instead.",
+    },
+    lead_website_read: {
+        label: "Lead website read",
+        help: "The lead finder reading one business's website, including the people it names and their addresses. A site that never answers is refunded.",
+    },
+    lead_person_email: {
+        label: "Lead person email",
+        help: "Finding one named person's email in the lead finder on request. A search that finds no address is refunded.",
+    },
+    lead_search_page: {
+        label: "Lead search page",
+        help: "One page of a lead finder search through a source this instance pays for. The default is Google Places' Text Search list price; set it to what your provider charges. A workspace using its own key is not charged.",
+    },
+};
+
+interface ModelRow {
+    // Stable React key; a model name is edited in place, so it cannot be the key.
+    id: string;
+    model: string;
+    input: string;
+    output: string;
+}
+
+interface UsageForm {
+    markup: string;
+    models: ModelRow[];
+    units: Record<string, string>;
+}
+
+let modelRowSeq = 0;
+function nextModelRowId(): string {
+    modelRowSeq += 1;
+    return `model-${modelRowSeq}`;
+}
+
+function toUsageForm(u: UsageSettings | undefined): UsageForm {
+    const usage = u ?? USAGE_DEFAULTS;
+    const models = usage.models.map((m) => ({
+        id: nextModelRowId(),
+        model: m.model,
+        input: String(m.input_per_mtok),
+        output: String(m.output_per_mtok),
+    }));
+    // The "*" row is required; the backend adds it, so this only covers an odd document.
+    if (!models.some((m) => m.model === ANY_MODEL)) {
+        const fallback = USAGE_DEFAULTS.models[USAGE_DEFAULTS.models.length - 1];
+        models.push({
+            id: nextModelRowId(),
+            model: ANY_MODEL,
+            input: String(fallback.input_per_mtok),
+            output: String(fallback.output_per_mtok),
+        });
+    }
+    const units: Record<string, string> = {};
+    for (const [k, v] of Object.entries({ ...USAGE_DEFAULTS.units, ...usage.units })) {
+        units[k] = String(v);
+    }
+    return { markup: String(usage.markup_percent ?? USAGE_DEFAULTS.markup_percent), models, units };
+}
+
+// Compared without row ids, so reseeding the form does not read as an edit.
+function usageSignature(u: UsageForm): string {
+    return JSON.stringify({
+        markup: u.markup,
+        models: u.models.map((m) => [m.model, m.input, m.output]),
+        units: Object.entries(u.units).sort(([a], [b]) => a.localeCompare(b)),
+    });
+}
+
+function unitKeys(units: Record<string, string>): string[] {
+    const known = Object.keys(UNIT_LABELS).filter((k) => k in units);
+    const other = Object.keys(units)
+        .filter((k) => !(k in UNIT_LABELS))
+        .sort();
+    return [...known, ...other];
+}
+
+function priceValid(raw: string): boolean {
+    const n = Number(raw);
+    return raw.trim() !== "" && Number.isFinite(n) && n >= 0;
+}
+
+function modelNameError(rows: ModelRow[], row: ModelRow): string | undefined {
+    const name = row.model.trim().toLowerCase();
+    if (name === "") return "Enter a model name, or remove the row.";
+    if (rows.filter((r) => r.model.trim().toLowerCase() === name).length > 1) {
+        return "Each model is listed once.";
+    }
+    return undefined;
+}
+
+// What a workspace is charged for a provider price after the markup.
+function withMarkup(raw: string, markup: string): string | null {
+    const price = Number(raw);
+    const pct = Number(markup);
+    if (!priceValid(raw) || !Number.isFinite(pct)) return null;
+    return formatUSD((price * (100 + pct)) / 100);
+}
+
+function formatUSD(n: number): string {
+    return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
+}
 
 interface FormState {
     linksEnabled: boolean;
@@ -284,6 +440,8 @@ interface FormState {
     placement: Record<PlacementFieldKey, string>;
     enforceDomainAuth: boolean;
     authGraceHours: string;
+    autoVendorReconnect: boolean;
+    usage: UsageForm;
 }
 
 function toForm(s: InstanceSettings): FormState {
@@ -304,6 +462,9 @@ function toForm(s: InstanceSettings): FormState {
             auditDays: String(s.retention.audit_log_days),
             warmupMailDays: String(s.retention.warmup_mail_days),
             warmupEventDays: String(s.retention.warmup_event_days),
+            campaignLogDays: String(s.retention.campaign_log_days ?? 0),
+            notificationDays: String(s.retention.notification_days ?? 0),
+            webhookDeliveryDays: String(s.retention.webhook_delivery_days ?? 0),
         },
         tracking: {
             machineWindowOpen: String(s.tracking.machine_window_open_seconds),
@@ -315,7 +476,6 @@ function toForm(s: InstanceSettings): FormState {
             testsPaid: String(placement.tests_per_month_paid),
             seedsPerTest: String(placement.seeds_per_test),
             spacingSeconds: String(placement.spacing_seconds),
-            creditsPerTest: String(placement.credits_per_test ?? PLACEMENT_DEFAULTS.credits_per_test),
             batchSendersMax: String(placement.batch_senders_max ?? PLACEMENT_DEFAULTS.batch_senders_max),
             batchSenderConcurrency: String(placement.batch_sender_concurrency ?? PLACEMENT_DEFAULTS.batch_sender_concurrency),
             batchInstanceConcurrency: String(placement.batch_instance_concurrency ?? PLACEMENT_DEFAULTS.batch_instance_concurrency),
@@ -323,6 +483,8 @@ function toForm(s: InstanceSettings): FormState {
         },
         enforceDomainAuth: s.deliverability.enforce_domain_auth,
         authGraceHours: String(s.deliverability.auth_grace_hours),
+        autoVendorReconnect: s.mailbox_signin?.auto_vendor_reconnect ?? true,
+        usage: toUsageForm(s.usage),
     };
 }
 
@@ -373,7 +535,7 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
         !!server &&
         !!form &&
         RETENTION_FIELDS.some(
-            (f) => form.retention[f.key] !== String(server.retention[f.setting]),
+            (f) => form.retention[f.key] !== String(server.retention[f.setting] ?? 0),
         );
     const trackingDirty =
         !!server &&
@@ -386,6 +548,8 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
             (f) =>
                 form.placement[f.key] !== String(server.placement?.[f.setting] ?? PLACEMENT_DEFAULTS[f.setting]),
         );
+    const usageDirty =
+        !!server && !!form && usageSignature(form.usage) !== usageSignature(toUsageForm(server.usage));
     const dirty =
         !!server &&
         !!form &&
@@ -394,9 +558,11 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
             form.allowInvitedSignup !== server.access.allow_invited_signup ||
             form.enforceDomainAuth !== server.deliverability.enforce_domain_auth ||
             form.authGraceHours !== String(server.deliverability.auth_grace_hours) ||
+            form.autoVendorReconnect !== (server.mailbox_signin?.auto_vendor_reconnect ?? true) ||
             retentionDirty ||
             trackingDirty ||
             placementDirty ||
+            usageDirty ||
             syncDirty);
 
     useEffect(() => {
@@ -416,6 +582,15 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
     const placementValid =
         form !== null &&
         PLACEMENT_FIELDS.every((f) => syncFieldValid(form.placement[f.key], f.min, f.max));
+
+    const usageValid =
+        form !== null &&
+        syncFieldValid(form.usage.markup, MARKUP_MIN, MARKUP_MAX) &&
+        form.usage.models.every(
+            (m) =>
+                !modelNameError(form.usage.models, m) && priceValid(m.input) && priceValid(m.output),
+        ) &&
+        Object.values(form.usage.units).every(priceValid);
 
     const authGrace = form ? Number(form.authGraceHours) : NaN;
     const authGraceValid =
@@ -461,6 +636,12 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
             toast.error("Every placement test setting must be a whole number inside the range shown under it");
             return;
         }
+        if (!usageValid) {
+            toast.error(
+                `The markup must be a whole number from ${MARKUP_MIN} to ${MARKUP_MAX}, and every model needs a unique name and prices of zero or more`,
+            );
+            return;
+        }
         if (!authGraceValid) {
             toast.error(
                 `The authentication grace period must be a whole number of hours between ${AUTH_GRACE_MIN_HOURS} and ${AUTH_GRACE_MAX_HOURS}`,
@@ -482,6 +663,9 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
                 audit_log_days: Number(form.retention.auditDays),
                 warmup_mail_days: Number(form.retention.warmupMailDays),
                 warmup_event_days: Number(form.retention.warmupEventDays),
+                campaign_log_days: Number(form.retention.campaignLogDays),
+                notification_days: Number(form.retention.notificationDays),
+                webhook_delivery_days: Number(form.retention.webhookDeliveryDays),
             },
             tracking: {
                 machine_window_open_seconds: Number(form.tracking.machineWindowOpen),
@@ -492,16 +676,27 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
                 enforce_domain_auth: form.enforceDomainAuth,
                 auth_grace_hours: authGrace,
             },
+            mailbox_signin: { auto_vendor_reconnect: form.autoVendorReconnect },
             placement: {
                 tests_per_month_trial: Number(form.placement.testsTrial),
                 tests_per_month_paid: Number(form.placement.testsPaid),
                 seeds_per_test: Number(form.placement.seedsPerTest),
                 spacing_seconds: Number(form.placement.spacingSeconds),
-                credits_per_test: Number(form.placement.creditsPerTest),
                 batch_senders_max: Number(form.placement.batchSendersMax),
                 batch_sender_concurrency: Number(form.placement.batchSenderConcurrency),
                 batch_instance_concurrency: Number(form.placement.batchInstanceConcurrency),
                 batch_starts_per_minute: Number(form.placement.batchStartsPerMinute),
+            },
+            usage: {
+                markup_percent: Number(form.usage.markup),
+                models: form.usage.models.map((m) => ({
+                    model: m.model.trim(),
+                    input_per_mtok: Number(m.input),
+                    output_per_mtok: Number(m.output),
+                })),
+                units: Object.fromEntries(
+                    Object.entries(form.usage.units).map(([k, v]) => [k, Number(v)]),
+                ),
             },
         });
     }
@@ -723,6 +918,11 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
                         ))}
                     </SettingsGroup>
 
+                    <UsagePricingGroup
+                        usage={form.usage}
+                        onChange={(usage) => setForm({ ...form, usage })}
+                    />
+
                     <SettingsGroup
                         title="Sending-domain authentication"
                         description="Gmail, Yahoo, and Outlook reject or spam-filter mail from a domain without SPF and DMARC, and one unauthenticated sender damages the reputation of every mailbox in the shared warmup pool. Warmbly checks each sending domain daily and can stop cold sending and warmup from a domain that keeps failing. The grace period is how long a domain may keep failing first, so a DNS outage cannot stop a customer's campaigns and the owner is warned throughout it."
@@ -747,6 +947,21 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
                             disabled={!form.enforceDomainAuth}
                             error={`Enter a whole number between ${AUTH_GRACE_MIN_HOURS} and ${AUTH_GRACE_MAX_HOURS.toLocaleString()}.`}
                         />
+                    </SettingsGroup>
+
+                    <SettingsGroup
+                        title="Mailbox sign-in"
+                        description="Google mailboxes imported from InboxKit or Zapmail can be reconnected in place with full mail access by the vendor itself: it marks Warmbly trusted on the domain and signs in as each mailbox. The mailbox, its history, campaigns and warmup stay the same, and one that cannot be reconnected keeps working on its current sign-in."
+                    >
+                        <SettingsRow
+                            label="Reconnect vendor mailboxes automatically"
+                            description="On, Warmbly asks the vendor on its own for each linked Google mailbox on the older Google sign-in or a legacy domain grant, at most once a week per mailbox. Off leaves it to a member to click Reconnect."
+                        >
+                            <Switch
+                                checked={form.autoVendorReconnect}
+                                onCheckedChange={(v) => setForm({ ...form, autoVendorReconnect: v })}
+                            />
+                        </SettingsRow>
                     </SettingsGroup>
                 </div>
             )}
@@ -775,7 +990,164 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
     );
 }
 
-// One whole-number setting: the field sits on the right, the range under the help.
+// The price list a workspace's balance is charged from: provider price plus the markup.
+function UsagePricingGroup({
+    usage,
+    onChange,
+}: {
+    usage: UsageForm;
+    onChange: (u: UsageForm) => void;
+}) {
+    const markupValid = syncFieldValid(usage.markup, MARKUP_MIN, MARKUP_MAX);
+    const setModel = (id: string, patch: Partial<ModelRow>) =>
+        onChange({
+            ...usage,
+            models: usage.models.map((m) => (m.id === id ? { ...m, ...patch } : m)),
+        });
+    const addModel = () => {
+        // New rows go above the "*" row, which reads as the fallback at the end.
+        const rows = usage.models.filter((m) => m.model !== ANY_MODEL);
+        const any = usage.models.filter((m) => m.model === ANY_MODEL);
+        onChange({
+            ...usage,
+            models: [...rows, { id: nextModelRowId(), model: "", input: "0", output: "0" }, ...any],
+        });
+    };
+
+    return (
+        <SettingsGroup
+            title="Usage pricing"
+            description="What a workspace's balance is charged for AI and other metered work: the provider's own price for what a call used, plus the markup. Prices are in US dollars before the markup. A change applies to charges made after it. A self-hosted instance with billing off charges nothing, so these prices do nothing there."
+            actions={
+                <Button type="button" size="sm" variant="outline" onClick={addModel}>
+                    <Plus />
+                    Add model
+                </Button>
+            }
+        >
+            <NumberRow
+                id="usage-markup"
+                label="Markup (%)"
+                help="Added on top of every provider price below. 25 charges $1.25 for each $1.00 of provider cost."
+                range={`Between ${MARKUP_MIN} and ${MARKUP_MAX}.`}
+                value={usage.markup}
+                onChange={(v) => onChange({ ...usage, markup: v })}
+                valid={markupValid}
+                error={`Enter a whole number between ${MARKUP_MIN} and ${MARKUP_MAX}.`}
+            />
+            <div className="px-4 py-3.5">
+                <div className="text-[13px] font-medium text-foreground">Models</div>
+                <div className="mt-0.5 text-[12.5px] leading-relaxed text-muted-foreground">
+                    Dollars per million input and output tokens. A model is priced by the row with
+                    its exact name, then by the longest row its name starts with, then by{" "}
+                    <code className="font-mono text-[12px]">*</code>, which prices every model
+                    without a row of its own and cannot be removed.
+                </div>
+                <div className="mt-3 hidden grid-cols-[minmax(0,1fr)_7rem_7rem_1.75rem] gap-2 text-[11px] font-medium uppercase tracking-wide text-subtle-foreground sm:grid">
+                    <span>Model</span>
+                    <span className="text-right">Input / Mtok</span>
+                    <span className="text-right">Output / Mtok</span>
+                    <span />
+                </div>
+                <div className="mt-2 space-y-3 sm:mt-1.5 sm:space-y-2">
+                    {usage.models.map((m) => {
+                        const isAny = m.model === ANY_MODEL;
+                        const nameError = isAny ? undefined : modelNameError(usage.models, m);
+                        const inputOk = priceValid(m.input);
+                        const outputOk = priceValid(m.output);
+                        const chargedIn = withMarkup(m.input, usage.markup);
+                        const chargedOut = withMarkup(m.output, usage.markup);
+                        return (
+                            <div key={m.id}>
+                                <div className="grid grid-cols-[minmax(0,1fr)_1.75rem] gap-2 sm:grid-cols-[minmax(0,1fr)_7rem_7rem_1.75rem]">
+                                    <Input
+                                        aria-label="Model name"
+                                        placeholder="e.g. claude-sonnet-4"
+                                        autoComplete="off"
+                                        spellCheck={false}
+                                        value={m.model}
+                                        readOnly={isAny}
+                                        onChange={(e) => setModel(m.id, { model: e.target.value })}
+                                        aria-invalid={!!nameError}
+                                        className={cn("font-mono text-[12.5px]", isAny && "text-muted-foreground")}
+                                    />
+                                    <Button
+                                        type="button"
+                                        size="icon-sm"
+                                        variant="ghost"
+                                        aria-label={isAny ? "The * row cannot be removed" : `Remove ${m.model || "model"}`}
+                                        title={isAny ? "Prices every model without a row; required" : "Remove"}
+                                        disabled={isAny}
+                                        className="hover:bg-destructive/10 hover:text-destructive sm:order-last"
+                                        onClick={() =>
+                                            onChange({
+                                                ...usage,
+                                                models: usage.models.filter((r) => r.id !== m.id),
+                                            })
+                                        }
+                                    >
+                                        <Trash2 className="size-3.5" />
+                                    </Button>
+                                    <div className="col-span-2 grid grid-cols-2 gap-2 sm:col-span-2">
+                                        <Input
+                                            aria-label={`Input price per million tokens for ${m.model || "model"}`}
+                                            inputMode="decimal"
+                                            autoComplete="off"
+                                            value={m.input}
+                                            onChange={(e) => setModel(m.id, { input: e.target.value })}
+                                            aria-invalid={!inputOk}
+                                            className="text-right tabular-nums"
+                                        />
+                                        <Input
+                                            aria-label={`Output price per million tokens for ${m.model || "model"}`}
+                                            inputMode="decimal"
+                                            autoComplete="off"
+                                            value={m.output}
+                                            onChange={(e) => setModel(m.id, { output: e.target.value })}
+                                            aria-invalid={!outputOk}
+                                            className="text-right tabular-nums"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="mt-1 text-xs text-subtle-foreground sm:text-right sm:pr-9">
+                                    {chargedIn && chargedOut
+                                        ? `charged ${chargedIn} / ${chargedOut} per million tokens`
+                                        : null}
+                                </div>
+                                {(nameError || !inputOk || !outputOk) && (
+                                    <p className={cn("mt-0.5 text-xs", TONE_TEXT.danger)}>
+                                        {nameError ?? "Enter a price of zero or more, in dollars."}
+                                    </p>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+            {unitKeys(usage.units).map((key) => {
+                const raw = usage.units[key];
+                const charged = withMarkup(raw, usage.markup);
+                const meta = UNIT_LABELS[key];
+                return (
+                    <NumberRow
+                        key={key}
+                        id={`usage-unit-${key}`}
+                        label={`${meta?.label ?? key} ($ per unit)`}
+                        help={meta?.help ?? `The provider price of one ${key.replaceAll("_", " ")}.`}
+                        range={charged ? `A workspace is charged ${charged}.` : "Zero or more, in dollars."}
+                        value={raw}
+                        onChange={(v) => onChange({ ...usage, units: { ...usage.units, [key]: v } })}
+                        valid={priceValid(raw)}
+                        error="Enter a price of zero or more, in dollars."
+                        inputMode="decimal"
+                    />
+                );
+            })}
+        </SettingsGroup>
+    );
+}
+
+// One numeric setting: the field sits on the right, the range under the help.
 function NumberRow({
     id,
     label,
@@ -786,6 +1158,7 @@ function NumberRow({
     valid,
     error,
     disabled,
+    inputMode = "numeric",
 }: {
     id: string;
     label: string;
@@ -796,6 +1169,7 @@ function NumberRow({
     valid: boolean;
     error: string;
     disabled?: boolean;
+    inputMode?: "numeric" | "decimal";
 }) {
     return (
         <SettingsRow
@@ -812,7 +1186,7 @@ function NumberRow({
             <Input
                 id={id}
                 type="text"
-                inputMode="numeric"
+                inputMode={inputMode}
                 autoComplete="off"
                 value={value}
                 onChange={(e) => onChange(e.target.value)}

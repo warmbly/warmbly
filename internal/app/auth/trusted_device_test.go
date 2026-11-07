@@ -82,3 +82,24 @@ func TestForgetTrustedDevicesRevokesEveryToken(t *testing.T) {
 		t.Error("forgetting one account's devices touched another's")
 	}
 }
+
+func TestForgetTrustedDeviceRevokesOnlyThatDevice(t *testing.T) {
+	s := trustedSvc(t, config.LoginCodeNewDevice)
+	ctx := context.Background()
+	uid, other := uuid.New(), uuid.New()
+	t.Cleanup(func() { _ = s.ForgetTrustedDevices(ctx, uid); _ = s.ForgetTrustedDevices(ctx, other) })
+
+	signedOut, kept, othersTok := s.trustDevice(ctx, uid), s.trustDevice(ctx, uid), s.trustDevice(ctx, other)
+	if err := s.ForgetTrustedDevice(ctx, uid, []string{signedOut, othersTok, "", "unknown"}); err != nil {
+		t.Fatalf("forget: %v", err)
+	}
+	if s.isTrustedDevice(ctx, uid, signedOut) {
+		t.Error("the signed-out browser must ask for a code again")
+	}
+	if !s.isTrustedDevice(ctx, uid, kept) {
+		t.Error("another remembered browser of the same account must stay remembered")
+	}
+	if !s.isTrustedDevice(ctx, other, othersTok) {
+		t.Error("a token of another account must not be revoked through this one")
+	}
+}

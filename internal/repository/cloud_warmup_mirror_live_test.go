@@ -58,8 +58,8 @@ func TestLiveCloudWarmupMirrorWritesOnlyEnrolledMailboxesInOrder(t *testing.T) {
 	if err != nil || !slices.Equal(changed, []uuid.UUID{enrolled}) {
 		t.Fatalf("changed = %v, %v, want only the enrolled mailbox", changed, err)
 	}
-	if base, days, start, tz := read(enrolled); base != 12 || days != 0 || start != "09:00" || tz != "Europe/Berlin" {
-		t.Fatalf("enrolled mailbox = base %d days %d start %s tz %s, want the cloud's ramp, every day as 0, our timezone", base, days, start, tz)
+	if base, days, start, tz := read(enrolled); base != 12 || days != models.WarmupEveryDay || start != "09:00" || tz != "Europe/Berlin" {
+		t.Fatalf("enrolled mailbox = base %d days %d start %s tz %s, want the cloud's ramp, explicit every day, our timezone", base, days, start, tz)
 	}
 	for _, id := range []uuid.UUID{leaving, local} {
 		if base, days, _, _ := read(id); base != 10 || days != 31 {

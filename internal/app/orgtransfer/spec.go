@@ -256,12 +256,15 @@ var Tables = []Table{
 		// A tracking host is verified per instance and per workspace, so the
 		// destination's own sweep verifies it again.
 		// send_claimed_at is this instance's per-send gap lock.
+		// previous_worker_id and worker_released_at name a worker on this instance.
+		// signin_switch_* is this instance's vendor reconnect attempt; the destination makes its own.
 		ResetOnImport: []string{
 			"transport_generation",
 			"worker_id", "auth_checked_at", "auth_failing_since", "cold_ramp_started_at",
 			"send_lifecycle", "send_lifecycle_since", "send_lifecycle_reason", "seed_scope",
 			"avatar_checked_at", "tracking_domain_verified", "tracking_domain_verified_at",
-			"send_claimed_at",
+			"send_claimed_at", "previous_worker_id", "worker_released_at",
+			"signin_switch_state", "signin_switch_at", "signin_switch_message", "signin_switch_automatic",
 		},
 		Blobs: []BlobColumn{{Column: "avatar_url", Kind: BlobKindPublicURL}},
 	},
@@ -361,6 +364,10 @@ var Tables = []Table{
 	{
 		Name: "org_ai_settings", Group: models.OrgDataGroupCore,
 		Scope: scopeOrgAlt,
+		// Automatic reload charges a card on the source instance's Stripe
+		// account, so it arrives off with no failure or notice history.
+		ResetOnImport: []string{"auto_reload_enabled", "auto_topup_enabled", "auto_reload_failure_code", "auto_reload_failed_at",
+			"low_balance_notified_at", "balance_out_notified_at"},
 	},
 	{
 		Name: "advisor_settings", Group: models.OrgDataGroupCore,
@@ -381,6 +388,27 @@ var Tables = []Table{
 		Name: "contact_import_mappings", Group: models.OrgDataGroupContacts,
 		Scope: scopeOrg,
 		Note:  "Column mappings the workspace confirmed for its contact imports, keyed by header set, so the same export maps itself on the destination too.",
+	},
+	{
+		Name: "lead_searches", Group: models.OrgDataGroupContacts,
+		Scope:         scopeOrg,
+		ResetOnImport: []string{"next_cursor", "pages_fetched"},
+		Note:          "Lead finder searches and saved searches. A provider's paging token only means something to the session that fetched it, so a search resumes from its first page.",
+	},
+	{
+		Name: "leads", Group: models.OrgDataGroupContacts,
+		Scope: scopeOrg,
+		Note:  "Businesses found with the lead finder, with what reading their websites found and the contact each became.",
+	},
+	{
+		Name: "lead_search_hits", Group: models.OrgDataGroupContacts,
+		Scope: `search_id IN (SELECT id FROM lead_searches WHERE organization_id = $1)`,
+		Note:  "Which search found each lead, so a saved search reopens with its results.",
+	},
+	{
+		Name: "lead_people", Group: models.OrgDataGroupContacts,
+		Scope: scopeOrg,
+		Note:  "People found at each lead's business, with the address found or worked out for them and the contact each became.",
 	},
 	{
 		Name: "contact_categories", Group: models.OrgDataGroupContacts,
@@ -830,7 +858,7 @@ var Tables = []Table{
 		Scope: `email_account_id IN ` + orgMailboxes + ` AND task_type <> 'placement'`,
 		Owner: `email_account_id IN ` + orgMailboxes,
 		// The handle belongs to the source instance's queue.
-		ResetOnImport: []string{"cloud_task_name", "send_executor_nonce", "send_executor_worker", "send_executor_started_at", "send_executor_result", "dispatch_retry_at", "dispatch_failure_since", "dispatch_failure_at"},
+		ResetOnImport: []string{"cloud_task_name", "send_executor_nonce", "send_executor_worker", "send_executor_started_at", "send_executor_result", "dispatch_retry_at", "dispatch_failure_since", "dispatch_failure_at", "dispatch_claimed_until"},
 	},
 	{
 		Name: "outbound_attempts", Group: models.OrgDataGroupSending,
@@ -1063,7 +1091,10 @@ var Tables = []Table{
 // with the reason. Kept as data so the docs page and the coverage test both
 // read from one list instead of restating it.
 var ExcludedTables = map[string]string{
+	"website_domains":                  "A website's proof is a TXT value bound to the source workspace, so it proves nothing for the destination. The destination shows its own TXT value on each sending-domain redirect that points at the website, and serves redirects and forms there once it is published.",
+	"warmup_conversation_mailboxes":    "Instance-local content reuse reservations against the shared warmup conversation library. Destination mailboxes build their own content history; full instance backups retain these reservations.",
 	"email_account_transport_recovery": "Source-instance sync and provider-confirmed-send recovery clocks cannot authorize destination recovery. Full instance database backups retain them.",
+	"mailbox_push_channels":            "A Gmail watch or Graph subscription is registered by this instance's workers for this instance's notification endpoint. The destination opens its own channels once its workers load the mailboxes.",
 	"sync_arrival_outbox":              "Encrypted, org-key-owned arrival delivery queue bound to this instance's provider handles and body storage. Pending maps are excluded too so destination sync retries them; no queue secrets or blob references travel. Full instance backups retain queue, org keys and bodies together.",
 	"send_result_effects":              "Source-instance reconciliation delivery queue. Pending webhook and notification effects must drain on the source; imports must not replay customer notifications. Full instance backups retain the durable outbox.",
 	"warmup_received":                  "Raw receiving-mailbox observations and provider thread handles are source-instance evidence, not portable send authority. Aggregated warmup placement history travels; imported threads cannot continue without new verified observations.",
@@ -1077,6 +1108,7 @@ var ExcludedTables = map[string]string{
 	"crm_sync_jobs":                    "The outbox of pending CRM writes on this instance; the destination's own events feed its outbox.",
 	"crm_sync_cursors":                 "Pull checkpoints for this instance; the destination starts its own pull.",
 	"apollo_enrichment_runs":           "The progress of enrichment requests run on this instance. What they found is already on the contacts, which travel.",
+	"lead_enrichment_runs":             "The progress of website reads run on this instance. What they found is already on the leads, which travel.",
 	"salesforce_record_links":          "Which Salesforce record each contact is, with a cached copy of it. The destination links contacts again by address the first time it syncs or shows them, and reads the record fresh.",
 	"salesforce_activity_queue":        "Activity waiting to be logged in Salesforce, and the recent outcome of what was. What was logged is already in Salesforce; what was waiting belongs to this instance's drain.",
 	"salesforce_sync_state":            "Where this instance's pull loop got to in each Salesforce org, and the API calls it counted today. The destination starts its own cursor when the connection first syncs.",

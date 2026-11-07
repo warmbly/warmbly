@@ -89,6 +89,8 @@ type OrganizationMember struct {
 	// AccessScope is which resources the role applies to; Access is filled where the grants are listed.
 	AccessScope AccessScope   `json:"access_scope"`
 	Access      *MemberAccess `json:"access,omitempty"`
+	// ScopeActions are the permissions a restricted member may act with inside their grants, where listed.
+	ScopeActions OrganizationPermission `json:"scope_actions,omitempty"`
 
 	// Joined data
 	User         *User         `json:"user,omitempty"`
@@ -276,9 +278,11 @@ type OrganizationRole struct {
 	Description    string                 `json:"description"`
 	Color          string                 `json:"color"`
 	Permissions    OrganizationPermission `json:"permissions"`
-	MemberCount    int                    `json:"member_count"`
-	CreatedAt      time.Time              `json:"created_at"`
-	UpdatedAt      time.Time              `json:"updated_at"`
+	// ActsInScope lets a restricted member holding the role act with its scope action permissions, not only read.
+	ActsInScope bool      `json:"acts_in_scope"`
+	MemberCount int       `json:"member_count"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // CreateOrganizationRoleRequest creates a custom role.
@@ -287,6 +291,7 @@ type CreateOrganizationRoleRequest struct {
 	Description string `json:"description,omitempty"`
 	Color       string `json:"color,omitempty"`
 	Permissions uint16 `json:"permissions"`
+	ActsInScope bool   `json:"acts_in_scope,omitempty"`
 }
 
 // UpdateOrganizationRoleRequest edits a custom role (edits propagate to
@@ -296,6 +301,7 @@ type UpdateOrganizationRoleRequest struct {
 	Description *string `json:"description,omitempty"`
 	Color       *string `json:"color,omitempty"`
 	Permissions *uint16 `json:"permissions,omitempty"`
+	ActsInScope *bool   `json:"acts_in_scope,omitempty"`
 }
 
 // TransferOwnershipRequest represents the request to transfer organization ownership

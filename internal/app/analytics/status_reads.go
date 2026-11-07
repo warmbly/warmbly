@@ -25,6 +25,7 @@ type statusReads struct {
 	lifecycles           map[uuid.UUID]models.SendLifecycleState
 	sendHolds            map[uuid.UUID]repository.SendRecoveryHold
 	sendHoldsUnavailable bool
+	sendPauses           map[uuid.UUID]models.SendPauseInfo
 }
 
 // loadStatusReads reads the signals for emails, asking each query only for the
@@ -42,6 +43,13 @@ func (s *analyticsService) loadStatusReads(ctx context.Context, emails []models.
 			reads.sendHolds = holds
 		} else {
 			reads.sendHoldsUnavailable = true
+		}
+	}
+	if reader, ok := s.emailRepo.(interface {
+		GetSendPauses(context.Context, []uuid.UUID) (map[uuid.UUID]models.SendPauseInfo, error)
+	}); ok {
+		if pauses, err := reader.GetSendPauses(ctx, ids); err == nil {
+			reads.sendPauses = pauses
 		}
 	}
 	if s.lifecycleRepo != nil {

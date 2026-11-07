@@ -59,7 +59,8 @@ type ContactImportRepository interface {
 	// TouchedContacts are the contacts earlier runs of the import created, updated or linked.
 	TouchedContacts(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error)
 	// Finish closes a claim. A cancelled import stays cancelled but keeps what the run learned.
-	Finish(ctx context.Context, id uuid.UUID, attempt int, status models.ContactImportStatus, quality *models.ContactImportQuality, segmentsPinned *bool, notes []string, errMsg string) error
+	// It returns the status the import ended at, or "" when the claim was no longer held.
+	Finish(ctx context.Context, id uuid.UUID, attempt int, status models.ContactImportStatus, quality *models.ContactImportQuality, segmentsPinned *bool, notes []string, errMsg string) (models.ContactImportStatus, error)
 	// Failures are the first failed rows with their cells.
 	Failures(ctx context.Context, orgID, id uuid.UUID, limit int) ([]models.ContactImportRowError, error)
 	// PurgeExpired drops stale drafts and old finished imports.
@@ -415,12 +416,12 @@ func (r *contactImportRepository) TouchedContacts(ctx context.Context, id uuid.U
 	return out, rows.Err()
 }
 
-func (r *contactImportRepository) Finish(ctx context.Context, id uuid.UUID, attempt int, status models.ContactImportStatus, quality *models.ContactImportQuality, segmentsPinned *bool, notes []string, errMsg string) error {
+func (r *contactImportRepository) Finish(ctx context.Context, id uuid.UUID, attempt int, status models.ContactImportStatus, quality *models.ContactImportQuality, segmentsPinned *bool, notes []string, errMsg string) (models.ContactImportStatus, error) {
 	var q []byte
 	if quality != nil {
 		var err error
 		if q, err = json.Marshal(quality); err != nil {
-			return err
+			return "", err
 		}
 	}
 	if notes == nil {
@@ -428,19 +429,24 @@ func (r *contactImportRepository) Finish(ctx context.Context, id uuid.UUID, atte
 	}
 	n, err := json.Marshal(notes)
 	if err != nil {
-		return err
+		return "", err
 	}
 	query := `
 		UPDATE contact_imports
 		SET status = CASE WHEN status = 'cancelled' THEN status ELSE $3 END,
 		    quality = COALESCE($4::jsonb, quality), segments_pinned = $5, notes = $6, error = $7,
 		    finished_at = COALESCE(finished_at, now()), lease_until = NULL, updated_at = now()
-		WHERE id = $1 AND attempts = $2 AND status IN ('running', 'cancelled')`
-	if _, err := r.DB.Exec(ctx, query, id, attempt, string(status), q, segmentsPinned, n, errMsg); err != nil {
-		db.CaptureError(err, query, nil, "exec")
-		return err
+		WHERE id = $1 AND attempts = $2 AND status IN ('running', 'cancelled')
+		RETURNING status`
+	var ended string
+	if err := r.DB.QueryRow(ctx, query, id, attempt, string(status), q, segmentsPinned, n, errMsg).Scan(&ended); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		db.CaptureError(err, query, nil, "queryrow")
+		return "", err
 	}
-	return nil
+	return models.ContactImportStatus(ended), nil
 }
 
 func (r *contactImportRepository) Failures(ctx context.Context, orgID, id uuid.UUID, limit int) ([]models.ContactImportRowError, error) {

@@ -36,6 +36,10 @@ type IdentityRepository interface {
 	// ListForUser returns every identity linked to a user, for the account
 	// security screen.
 	ListForUser(ctx context.Context, userID uuid.UUID) ([]models.UserIdentity, error)
+
+	// Unlink removes the user's identity from provider unless it is the
+	// account's last way to sign in.
+	Unlink(ctx context.Context, userID uuid.UUID, provider string) error
 }
 
 type identityRepository struct {
@@ -116,4 +120,56 @@ func (r *identityRepository) ListForUser(ctx context.Context, userID uuid.UUID) 
 		out = append(out, identity)
 	}
 	return out, rows.Err()
+}
+
+// ErrIdentityNotLinked is Unlink's answer when the user has no identity from
+// that provider.
+var ErrIdentityNotLinked = errors.New("identity is not linked to this account")
+
+// ErrLastSignInMethod is Unlink's answer when the identity is the account's
+// only way to sign in: no password, no passkey and no other identity.
+var ErrLastSignInMethod = errors.New("identity is the last sign-in method")
+
+func (r *identityRepository) Unlink(ctx context.Context, userID uuid.UUID, provider string) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	remains, err := signInMethodRemains(ctx, tx, userID, provider, uuid.Nil)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrIdentityNotLinked
+	}
+	if err != nil {
+		return err
+	}
+	tag, err := tx.Exec(ctx, `DELETE FROM user_identities WHERE user_id = $1 AND provider = $2`, userID, provider)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrIdentityNotLinked
+	}
+	if !remains {
+		return ErrLastSignInMethod
+	}
+	return tx.Commit(ctx)
+}
+
+// signInMethodRemains locks the user row, which every removal of a way in
+// takes first, and reports whether one remains besides the given provider or
+// passkey. pgx.ErrNoRows means the user does not exist.
+func signInMethodRemains(ctx context.Context, tx pgx.Tx, userID uuid.UUID, provider string, passkeyID uuid.UUID) (bool, error) {
+	var hasPassword bool
+	err := tx.QueryRow(ctx, `SELECT COALESCE(`+livePasswordHash+`, '') <> '' FROM users WHERE id = $1 FOR UPDATE`, userID).Scan(&hasPassword)
+	if err != nil || hasPassword {
+		return hasPassword, err
+	}
+	var remains bool
+	err = tx.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM user_identities WHERE user_id = $1 AND provider <> $2)
+		    OR EXISTS (SELECT 1 FROM webauthn_credentials WHERE user_id = $1 AND id <> $3)
+	`, userID, provider, passkeyID).Scan(&remains)
+	return remains, err
 }

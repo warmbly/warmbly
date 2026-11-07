@@ -81,7 +81,18 @@ type createPlacementTestRequest struct {
 	SeedIDs         []uuid.UUID `json:"seed_ids"`
 	Families        []string    `json:"families"`
 	Pace            string      `json:"pace"`
-	MaxCredits      int         `json:"max_credits"`
+	// MaxUSD is the most the caller agrees to pay; MaxCredits is the legacy
+	// form, read only when max_usd is absent.
+	MaxUSD     *float64 `json:"max_usd"`
+	MaxCredits int      `json:"max_credits"`
+}
+
+// agreedSpend is what a placement request agreed to pay, in micro-dollars.
+func agreedSpend(maxUSD *float64, maxCredits int) models.Micro {
+	if maxUSD != nil {
+		return models.USDToMicro(*maxUSD)
+	}
+	return models.Micro(maxCredits) * models.LegacyCreditMicro
 }
 
 // CreatePlacementTest starts a test: one test, or two for a tracking
@@ -141,7 +152,7 @@ func (h *Handler) CreatePlacementTest(c *gin.Context) {
 		SeedIDs:         req.SeedIDs,
 		Families:        req.Families,
 		Pace:            req.Pace,
-		MaxCredits:      req.MaxCredits,
+		MaxSpend:        agreedSpend(req.MaxUSD, req.MaxCredits),
 		Origin:          models.PlacementOriginManual,
 	})
 	if xerr != nil {

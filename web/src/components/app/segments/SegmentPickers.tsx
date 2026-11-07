@@ -272,6 +272,7 @@ const ENUM_LABELS: Record<string, string> = {
     automation: "Automation",
     apollo: "Apollo",
     clay: "Clay",
+    lead_finder: "Lead finder",
     valid: "Valid",
     risky: "Risky",
     invalid: "Invalid",

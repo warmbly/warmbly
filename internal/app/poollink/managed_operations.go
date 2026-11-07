@@ -65,14 +65,7 @@ func (s *service) managedCapacity(ctx context.Context, inst *models.PoolLinkInst
 	if m != nil {
 		return nil
 	}
-	plan, xerr := s.Plan(ctx, inst.OrganizationID)
-	if xerr != nil {
-		return xerr
-	}
-	if plan.MailboxLimit != nil && plan.Enrolled >= *plan.MailboxLimit {
-		return ErrMailboxLimit
-	}
-	return nil
+	return s.newMailboxAdmitted(ctx, inst.OrganizationID)
 }
 
 func (s *service) FinishManagedOAuth(ctx context.Context, inst *models.PoolLinkInstance, req models.PoolLinkOAuthFinishRequest) (*models.PoolLinkMailboxState, *errx.Error) {
@@ -185,6 +178,14 @@ func (s *service) adoptManaged(ctx context.Context, inst *models.PoolLinkInstanc
 		return nil, ErrNotAdoptable
 	}
 	r := s.repo.(repository.PoolLinkManagedRepository)
+	// A retry of an adoption already under way is not a new mailbox.
+	if prior, err := r.GetManagedOperation(ctx, inst.ID, req.RemoteID); err != nil {
+		return nil, errx.InternalError()
+	} else if prior == nil {
+		if xerr := s.newMailboxAdmitted(ctx, inst.OrganizationID); xerr != nil {
+			return nil, xerr
+		}
+	}
 	op := &models.PoolLinkManagedOperation{OrganizationID: inst.OrganizationID, InstanceID: &inst.ID, RemoteID: &req.RemoteID,
 		Kind: "adopt", Provider: models.InboxProvider(acc.Provider), PlannedAccountID: &acc.ID, ExpiresAt: time.Now().Add(brokerTTL)}
 	if err := r.CreateManagedOperation(ctx, op); err != nil {

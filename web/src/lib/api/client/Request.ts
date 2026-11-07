@@ -8,6 +8,7 @@ import setToken from "@/lib/helper/setToken";
 import reviveDates from "@/lib/helper/reviveDates";
 import { isRequestCancelled, type AppError } from "./normalizeError";
 import { announceSessionEnded, endSession } from "@/lib/auth";
+import { isInsufficientBalance, openInsufficientBalance } from "@/lib/insufficientBalance";
 import type Token from "@/lib/api/models/auth/Token";
 
 interface AuthRequestConfig extends AxiosRequestConfig {
@@ -191,6 +192,9 @@ export default async function Request<T>(config: AuthRequestConfig): Promise<T> 
             const res = await Client.request(config);
             return reviveDates(res.data);
         }
+
+        // The balance ran out: one app-wide dialog offers to add money in place.
+        if (config.authorization && isInsufficientBalance(appErr)) openInsufficientBalance();
 
         // A denied WRITE action (edit/save/delete) gets one clear, app-wide
         // popup explaining the missing permission (or plan). Reads that 403 are

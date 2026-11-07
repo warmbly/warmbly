@@ -9,6 +9,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/app/inboxtag"
+	"github.com/warmbly/warmbly/internal/app/replyclassify"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -141,18 +142,21 @@ func (s *service) WireInboxTags(repo repository.InboxTagRepository) {
 // recordReplyIntent copies a confident human-reply intent from the stored
 // tagging verdict onto the contact's progress row, so reply_intent branches
 // route on it with no model call. Best-effort: a miss or an error only logs.
-func (s *service) recordReplyIntent(ctx context.Context, orgID uuid.UUID, messageID string, campaignID, contactID, sequenceID uuid.UUID) {
+func (s *service) recordReplyIntent(ctx context.Context, orgID uuid.UUID, messageID, class string, campaignID, contactID, sequenceID uuid.UUID) {
 	if s.inboxTags == nil || messageID == "" {
 		return
 	}
-	res, err := s.inboxTags.GetByMessageID(ctx, orgID, messageID)
-	if err != nil {
-		log.Warn().Err(err).Str("message_id", messageID).Msg("reply intent: inbox tag lookup failed")
-		return
-	}
-	intent := trustedReplyIntent(res)
-	if intent == "" {
-		return
+	// An opt-out decided by the classifier is the intent, whatever was stored.
+	intent := inboxtag.IntentOptOut
+	if class != replyclassify.ClassUnsubscribe {
+		res, err := s.inboxTags.GetByMessageID(ctx, orgID, messageID)
+		if err != nil {
+			log.Warn().Err(err).Str("message_id", messageID).Msg("reply intent: inbox tag lookup failed")
+			return
+		}
+		if intent = trustedReplyIntent(res); intent == "" {
+			return
+		}
 	}
 	if err := s.campaignProgressRepo.RecordReplyIntent(ctx, campaignID, contactID, sequenceID, intent); err != nil {
 		log.Warn().Err(err).Str("campaign_id", campaignID.String()).Str("contact_id", contactID.String()).Msg("reply intent: record failed")

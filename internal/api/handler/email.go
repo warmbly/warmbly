@@ -195,9 +195,8 @@ func (h *Handler) PauseWarmup(c *gin.Context) { h.warmupLifecycle(c, "pause") }
 // progress continues where it left off.
 func (h *Handler) ResumeWarmup(c *gin.Context) { h.warmupLifecycle(c, "resume") }
 
-// StopWarmup disables warmup entirely and clears ramp progress — a later
-// start begins a fresh ramp. Distinct from PauseWarmup, which preserves
-// progress.
+// StopWarmup ends warmup sending and receiving and lifts the reply-gated cold
+// ceiling; ramp history is kept, so a later start resumes it.
 func (h *Handler) StopWarmup(c *gin.Context) { h.warmupLifecycle(c, "stop") }
 
 func (h *Handler) warmupLifecycle(c *gin.Context, action string) {
@@ -238,6 +237,25 @@ func (h *Handler) HoldEmail(c *gin.Context) { h.sendHold(c, true) }
 // ReleaseEmail serves POST /emails/:id/release, putting a held or resting
 // mailbox back into campaign rotation.
 func (h *Handler) ReleaseEmail(c *gin.Context) { h.sendHold(c, false) }
+
+// ResumeEmailSending serves POST /emails/:id/resume-sending; resuming twice is a no-op, so retries are safe.
+func (h *Handler) ResumeEmailSending(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+	emailAccountID := c.Param("id")
+	released, err := h.EmailService.ResumeSending(c.Request.Context(), orgID.String(), emailAccountID)
+	if err != nil {
+		errx.Handle(c, err)
+		return
+	}
+	if accountID, perr := uuid.Parse(emailAccountID); perr == nil && (released.Hold || released.Cooldown) {
+		h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityEmailAccount, &accountID, map[string]string{"send_pause": "resumed"}, nil)
+	}
+	c.JSON(http.StatusOK, released)
+}
 
 func (h *Handler) sendHold(c *gin.Context, hold bool) {
 	orgID := middleware.GetOrganizationID(c)

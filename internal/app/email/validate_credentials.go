@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/app/nodescope"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
@@ -114,6 +115,12 @@ func (s *emailService) validateOn(ctx context.Context, orgID, workerID uuid.UUID
 	}
 
 	req := models.EventWorkerEmailValidation{OrgID: orgID, ProcessID: processID, Credentials: sealed}
+	// The worker may hold no mailbox of this workspace yet, and opens the credential with its key.
+	if s.r != nil {
+		if err := nodescope.Grant(ctx, s.r.Client, workerID, orgID); err != nil {
+			errs.CaptureException(err)
+		}
+	}
 	if overBus {
 		if err := s.publisher.PublishEmailValidation(ctx, workerID.String(), req); err != nil {
 			errs.CaptureException(err)

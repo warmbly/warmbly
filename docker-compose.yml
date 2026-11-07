@@ -80,6 +80,7 @@ x-selfhost-env: &selfhost-env
   BLOB_PROVIDER: ${BLOB_PROVIDER:-filesystem}
   BLOB_FS_ROOT: ${BLOB_FS_ROOT:-/data/blobs}
   BLOB_BUCKET: ${BLOB_BUCKET:-}
+  CAMPAIGN_ATTACHMENT_DOWNLOAD_PROXY: ${CAMPAIGN_ATTACHMENT_DOWNLOAD_PROXY:-false}
   BLOB_PUBLIC_BASE_URL: ${BLOB_PUBLIC_BASE_URL:-${API_PUBLIC_URL:-http://${PUBLIC_HOST:-localhost}:8080}/public}
   AWS_REGION: ${AWS_REGION:-}
   AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
@@ -228,11 +229,30 @@ x-selfhost-env: &selfhost-env
   SEARCH_API_URL: ${SEARCH_API_URL:-}
   SEARCH_API_KEY: ${SEARCH_API_KEY:-}
 
+  # Lead finder. All optional: OpenStreetMap, Photon and OpenFreeMap work keyless.
+  LEAD_FINDER_OVERPASS_URL: ${LEAD_FINDER_OVERPASS_URL:-}
+  LEAD_FINDER_GEOCODER_URL: ${LEAD_FINDER_GEOCODER_URL:-}
+  LEAD_FINDER_MAP_STYLE_URL: ${LEAD_FINDER_MAP_STYLE_URL:-}
+  LEAD_FINDER_MAP_STYLE_DARK_URL: ${LEAD_FINDER_MAP_STYLE_DARK_URL:-}
+  LEAD_FINDER_GOOGLE_PLACES_API_KEY: ${LEAD_FINDER_GOOGLE_PLACES_API_KEY:-}
+  LEAD_FINDER_FOURSQUARE_API_KEY: ${LEAD_FINDER_FOURSQUARE_API_KEY:-}
+  LEAD_FINDER_OUTSCRAPER_API_KEY: ${LEAD_FINDER_OUTSCRAPER_API_KEY:-}
+
   # Slack app. The OAuth pair lets workspaces connect for notifications; the
   # signing secret turns on the assistant, the inbox and buttons.
   SLACK_OAUTH_CLIENT_ID: ${SLACK_OAUTH_CLIENT_ID:-}
   SLACK_OAUTH_CLIENT_SECRET: ${SLACK_OAUTH_CLIENT_SECRET:-}
   SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:-}
+
+  # Realtime mailbox sync. IMAP IDLE is on by default; Graph and Gmail push are
+  # off until configured, and every mailbox keeps polling as the safety net.
+  IMAP_IDLE: ${IMAP_IDLE:-}
+  SYNC_PUSH_FALLBACK_INTERVAL: ${SYNC_PUSH_FALLBACK_INTERVAL:-}
+  GRAPH_PUSH: ${GRAPH_PUSH:-}
+  GMAIL_PUSH_TOPIC: ${GMAIL_PUSH_TOPIC:-}
+  GMAIL_PUSH_SERVICE_ACCOUNT: ${GMAIL_PUSH_SERVICE_ACCOUNT:-}
+  GMAIL_PUSH_SUBSCRIPTION: ${GMAIL_PUSH_SUBSCRIPTION:-}
+  GOOGLE_APPLICATION_CREDENTIALS_JSON: ${GOOGLE_APPLICATION_CREDENTIALS_JSON:-}
 
   # Mobile push. Partial config disables push with a warning, never a crash.
   APNS_KEY: ${APNS_KEY:-}
@@ -380,6 +400,7 @@ services:
       # review page from it, the consumer does the classifying. Both halves are
       # required, so an instance that sets neither never reaches the network.
       TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+      TYPESAFE_ENDPOINT: ${TYPESAFE_ENDPOINT:-}
       INBOX_TAGGING_ENABLED: ${INBOX_TAGGING_ENABLED:-false}
       # Gmail mailbox OAuth (leave unset to connect only SMTP/IMAP + Outlook
       # mailboxes). See the self-hosting docs for the Google Cloud setup.
@@ -505,6 +526,7 @@ services:
       # key set only here still works; the backend needs it to report whether
       # the feature is on. Off unless both are set.
       TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+      TYPESAFE_ENDPOINT: ${TYPESAFE_ENDPOINT:-}
       INBOX_TAGGING_ENABLED: ${INBOX_TAGGING_ENABLED:-false}
     volumes:
       - ${WARMBLY_BLOBS:-blobs}:/data/blobs
@@ -546,6 +568,8 @@ services:
       BOX_GOOGLE_CLIENT_SECRET: ${BOX_GOOGLE_CLIENT_SECRET:-}
       BOX_OUTLOOK_CLIENT_ID: ${BOX_OUTLOOK_CLIENT_ID:-}
       BOX_OUTLOOK_CLIENT_SECRET: ${BOX_OUTLOOK_CLIENT_SECRET:-}
+      # A worker holds no cloud credential; only the consumer reads this one.
+      GOOGLE_APPLICATION_CREDENTIALS_JSON: ""
     volumes:
       - ${WARMBLY_BLOBS:-blobs}:/data/blobs
       - ${WARMBLY_WORKER_STATE:-worker_state}:/data/state
@@ -661,7 +685,6 @@ services:
     environment:
       WARMBLY_API_URL: ${API_PUBLIC_URL:-http://${PUBLIC_HOST:-localhost}:8080}
       WARMBLY_APP_URL: ${APP_URL:-http://${PUBLIC_HOST:-localhost}:5173}
-      WARMBLY_GMAIL_OAUTH_CONNECT: ${WARMBLY_GMAIL_OAUTH_CONNECT:-false}
       # Cloudflare's always-pass test key keeps the widget satisfied while
       # captcha is off server-side. Set WARMBLY_TURNSTILE_KEY to your site key
       # when you set CAPTCHA_PROVIDER=turnstile.

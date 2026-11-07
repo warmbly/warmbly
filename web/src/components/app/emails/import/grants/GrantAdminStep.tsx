@@ -1,6 +1,6 @@
 // Admin grant, the first step when the workspace already holds grants for the
-// provider: pick one to connect its mailboxes, check or remove it, or start
-// the guided setup of another (GrantSetupSteps).
+// provider: pick one to connect its mailboxes, check or remove it, or (Microsoft
+// only) start the setup of another (GrantSetupSteps).
 import toast from "react-hot-toast/headless";
 import { ChevronRightIcon, MoreHorizontalIcon, PlusIcon, RefreshCwIcon, SettingsIcon, Trash2Icon } from "lucide-react";
 import {
@@ -59,8 +59,8 @@ export default function GrantAdminStep({
     selectedId: string | null;
     /** A picked grant; `advance` moves to its users. */
     onSelect: (grant: DomainGrant | null, advance: boolean) => void;
-    /** Starts the guided setup of another grant. */
-    onAddNew: () => void;
+    /** Starts the setup of another grant; absent for Google, whose new grants are retired. */
+    onAddNew?: () => void;
 }) {
     const enabled = provider === "google" ? config?.google_enabled === true : config?.microsoft_enabled === true;
     const noun = provider === "google" ? "domain" : "organization";
@@ -75,7 +75,7 @@ export default function GrantAdminStep({
 
     return (
         <div className="p-4 space-y-4">
-            {!enabled && <GrantsNotSetUp provider={provider} config={config} />}
+            {!enabled && (provider === "microsoft" || grants.length > 0) && <GrantsNotSetUp provider={provider} config={config} />}
 
             {grants.length > 0 && (
                 <div>
@@ -96,7 +96,9 @@ export default function GrantAdminStep({
                 </div>
             )}
 
-            {enabled && (
+            {provider === "google" && <GoogleDelegationRetired none={grants.length === 0} />}
+
+            {enabled && onAddNew && (
                 <button
                     type="button"
                     onClick={onAddNew}
@@ -107,6 +109,18 @@ export default function GrantAdminStep({
                 </button>
             )}
         </div>
+    );
+}
+
+/** New Google domain-wide delegation grants are retired; grants already here keep working. */
+function GoogleDelegationRetired({ none }: { none: boolean }) {
+    return (
+        <p className="text-[11.5px] text-slate-500 leading-relaxed">
+            {none ? "This workspace holds no Google domain-wide delegation grant. " : ""}
+            New Google Workspace domains are no longer connected with delegation: your Workspace admin marks Warmbly as a trusted
+            app, then each mailbox signs in with Google, or connects with an app password.{" "}
+            {none ? "" : "The grants above keep working, and you can connect more of their mailboxes."}
+        </p>
     );
 }
 

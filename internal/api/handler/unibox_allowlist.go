@@ -68,3 +68,25 @@ func keepAllowedMessages(c *gin.Context, res *models.MailSearchResult) {
 	}
 	res.Data = kept
 }
+
+// restrictedThreadHeld refuses a restricted member's reply unless the thread has messages and all sit in granted mailboxes.
+func (h *Handler) restrictedThreadHeld(c *gin.Context, orgID uuid.UUID, threadID string) *errx.Error {
+	refused := errx.NewWithIdentifier(errx.Forbidden, middleware.MemberAccessRestricted,
+		"Reply from a conversation in one of the mailboxes shared with you.")
+	if threadID == "" {
+		return refused
+	}
+	boxes, xerr := h.UniboxService.MessageMailboxes(c.Request.Context(), orgID, nil, []string{threadID})
+	if xerr != nil {
+		return xerr
+	}
+	if len(boxes) == 0 {
+		return refused
+	}
+	for _, id := range boxes {
+		if xerr := mailboxAllowed(c, id); xerr != nil {
+			return xerr
+		}
+	}
+	return nil
+}

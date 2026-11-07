@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -40,14 +41,16 @@ type NATSBus struct {
 
 	// Held rather than passed: ensureStream retries after a failure, and the
 	// retry callers have no config to hand it.
-	maxAge   time.Duration
-	maxBytes int64
+	maxAge     time.Duration
+	maxBytes   int64
+	replicas   int
+	discardNew bool
 
-	mu           sync.Mutex
-	subscribers  []jetstream.ConsumeContext
-	streamEnsure sync.Once
-	streamErr    error
-	closed       bool
+	mu          sync.Mutex
+	subscribers []jetstream.ConsumeContext
+	streamMu    sync.Mutex
+	streamReady bool
+	closed      bool
 }
 
 // NATSConfig builds a NATSBus.
@@ -71,7 +74,9 @@ type NATSConfig struct {
 	// MaxBytes caps the stream on disk. Zero leaves it unbounded, which a
 	// managed account may refuse: Synadia's "Max Bytes Required" rejects any
 	// stream created without one.
-	MaxBytes int64
+	MaxBytes   int64
+	Replicas   int
+	DiscardNew bool
 
 	// Options passed to nats.Connect (auth, TLS, etc).
 	Options []nats.Option
@@ -84,14 +89,14 @@ func NewNATS(cfg NATSConfig) (*NATSBus, error) {
 	if cfg.URL == "" {
 		return nil, errors.New("eventbus nats: URL required")
 	}
+	if cfg.Replicas < 0 || cfg.Replicas > 5 {
+		return nil, errors.New("eventbus nats: replicas must be between 1 and 5, or zero to preserve the existing setting")
+	}
 	if cfg.StreamName == "" {
 		cfg.StreamName = "warmbly"
 	}
 	if cfg.SubjectPrefix == "" {
 		cfg.SubjectPrefix = "warmbly"
-	}
-	if cfg.MaxAge == 0 {
-		cfg.MaxAge = 7 * 24 * time.Hour
 	}
 
 	opts := append([]nats.Option{
@@ -107,6 +112,13 @@ func NewNATS(cfg NATSConfig) (*NATSBus, error) {
 	}
 	if creds != nil {
 		opts = append(opts, creds)
+	}
+	tlsOption, err := natsTLSOption()
+	if err != nil {
+		return nil, err
+	}
+	if tlsOption != nil {
+		opts = append(opts, tlsOption)
 	}
 
 	nc, err := nats.Connect(cfg.URL, opts...)
@@ -125,8 +137,10 @@ func NewNATS(cfg NATSConfig) (*NATSBus, error) {
 		stream: cfg.StreamName,
 		prefix: cfg.SubjectPrefix,
 
-		maxAge:   cfg.MaxAge,
-		maxBytes: cfg.MaxBytes,
+		maxAge:     cfg.MaxAge,
+		maxBytes:   cfg.MaxBytes,
+		replicas:   cfg.Replicas,
+		discardNew: cfg.DiscardNew,
 	}
 	// Eagerly ensure the stream so misconfiguration surfaces at boot rather
 	// than on the first publish. Failures are non-fatal here — the lazy
@@ -170,25 +184,66 @@ func (b *NATSBus) durable(group string, topics []string) string {
 }
 
 func (b *NATSBus) ensureStream(ctx context.Context) error {
-	b.streamEnsure.Do(func() {
-		cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		defer cancel()
-		filter := b.prefix + ".>"
-		_, err := b.js.CreateOrUpdateStream(cctx, jetstream.StreamConfig{
-			Name:      b.stream,
-			Subjects:  []string{filter},
-			Retention: jetstream.LimitsPolicy,
-			Storage:   jetstream.FileStorage,
-			MaxAge:    b.maxAge,
-			MaxBytes:  maxBytesOrUnlimited(b.maxBytes),
-			Discard:   jetstream.DiscardOld,
-		})
-		if err != nil {
-			b.streamErr = fmt.Errorf("eventbus nats: ensure stream %q: %w%s", b.stream, err, maxBytesHint(err, b.maxBytes))
-			b.streamEnsure = sync.Once{} // allow retry on next call
+	b.streamMu.Lock()
+	defer b.streamMu.Unlock()
+	if b.streamReady {
+		return nil
+	}
+	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	filter := b.prefix + ".>"
+	config := jetstream.StreamConfig{
+		Name:      b.stream,
+		Subjects:  []string{filter},
+		Retention: jetstream.LimitsPolicy,
+		Storage:   jetstream.FileStorage,
+		MaxAge:    b.maxAge,
+		MaxBytes:  maxBytesOrUnlimited(b.maxBytes),
+		Discard:   jetstream.DiscardOld,
+	}
+	if config.MaxAge == 0 {
+		config.MaxAge = 7 * 24 * time.Hour
+	}
+	stream, err := b.js.Stream(cctx, b.stream)
+	var unchanged bool
+	if err == nil {
+		info, infoErr := stream.Info(cctx)
+		if infoErr != nil {
+			return fmt.Errorf("eventbus nats: read stream configuration: %w", infoErr)
 		}
-	})
-	return b.streamErr
+		config = info.Config
+		unchanged = (b.maxAge == 0 || config.MaxAge == b.maxAge) &&
+			(b.maxBytes == 0 || config.MaxBytes == b.maxBytes) &&
+			(b.replicas == 0 || config.Replicas == b.replicas) &&
+			(!b.discardNew || config.Discard == jetstream.DiscardNew)
+		if !slices.Contains(config.Subjects, filter) {
+			return fmt.Errorf("eventbus nats: stream %q does not cover configured subject prefix", b.stream)
+		}
+		if b.maxAge != 0 {
+			config.MaxAge = b.maxAge
+		}
+		if b.maxBytes != 0 {
+			config.MaxBytes = b.maxBytes
+		}
+	} else if !errors.Is(err, jetstream.ErrStreamNotFound) {
+		return fmt.Errorf("eventbus nats: lookup stream: %w", err)
+	}
+	if b.replicas != 0 {
+		config.Replicas = b.replicas
+	}
+	if b.discardNew {
+		config.Discard = jetstream.DiscardNew
+	}
+	if unchanged {
+		b.streamReady = true
+		return nil
+	}
+	_, err = b.js.CreateOrUpdateStream(cctx, config)
+	if err != nil {
+		return fmt.Errorf("eventbus nats: ensure stream %q: %w%s", b.stream, err, maxBytesHint(err, b.maxBytes))
+	}
+	b.streamReady = true
+	return nil
 }
 
 func (b *NATSBus) Publish(ctx context.Context, topic, key string, payload []byte) error {
@@ -291,30 +346,13 @@ func (b *NATSBus) SubscribeKeyed(ctx context.Context, topics []string, group str
 	}
 
 	var pool *natsLanes
-	callback := deliver
-	var opts []jetstream.PullConsumeOpt
+	var cc jetstream.ConsumeContext
 	if lanes > 1 {
 		pool = newNATSLanes(lanes, ackWait, deliver)
-		callback = func(m jetstream.Msg) {
-			laneKey, err := resolveKey(ctx, key, b.envelope(m))
-			if err != nil {
-				log.Error().Err(err).Str("subject", m.Subject()).Msg("eventbus nats key resolution failed")
-				if nakErr := m.NakWithDelay(time.Second); nakErr != nil {
-					log.Warn().Err(nakErr).Msg("eventbus nats nak failed")
-				}
-				return
-			}
-			pool.dispatch(m, laneKey)
-		}
-		// Fetch again only after dispatch tracks this delivery, even when a lane is full.
-		opts = append(opts, jetstream.PullMaxMessages(1))
-	}
-
-	cc, err := cons.Consume(callback, opts...)
-	if err != nil {
-		if pool != nil {
-			pool.stop()
-		}
+		cc = pool.start(ctx, cons, func(m jetstream.Msg) (string, error) {
+			return resolveKey(ctx, key, b.envelope(m))
+		})
+	} else if cc, err = cons.Consume(deliver); err != nil {
 		return fmt.Errorf("eventbus nats: consume: %w", err)
 	}
 

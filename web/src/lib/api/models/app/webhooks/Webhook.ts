@@ -44,6 +44,8 @@ export interface WebhookEventDescriptor {
     category: string;
     description: string;
     firehose: boolean;
+    // Never delivered; kept valid so saved subscriptions still save. Absent from older backends.
+    deprecated?: boolean;
 }
 
 export interface WebhookDelivery {

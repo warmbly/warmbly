@@ -215,6 +215,9 @@ type EmailMessageStoreDataPreview struct {
 	// message replies to, when that is not the mailbox holding it: a reply
 	// that landed in a shared reply inbox. Thread reads only.
 	AnswersMailboxID *uuid.UUID `json:"answers_mailbox_id,omitempty"`
+
+	// CampaignID is the campaign a send in this conversation belongs to. List reads only.
+	CampaignID *uuid.UUID `json:"campaign_id,omitempty"`
 }
 
 // MessageGrounding is one message rendered for an AI prompt: the stored body
@@ -365,13 +368,21 @@ type MailSearchParams struct {
 	Direction *string
 	Unseen    *bool
 	Subject   *string
-	Since     *time.Time
-	Until     *time.Time
+	// Since is the inclusive lower bound on internal_date.
+	Since *time.Time
+	// Before is the exclusive upper bound on internal_date.
+	Before *time.Time
+	// CampaignID narrows to conversations traced to one of the campaign's sends.
+	CampaignID *uuid.UUID
+	// ContactID narrows to conversations traced to a campaign send to the
+	// contact, or, without CampaignID, exchanged with the contact's address.
+	ContactID *uuid.UUID
 	// EmailAccountIDs restricts results to messages received by one of
-	// these mailboxes. Empty = no account filter. The frontend tag
-	// filter resolves client-side to the matching account IDs and
-	// passes them here.
+	// these mailboxes. Empty = no account filter.
 	EmailAccountIDs []uuid.UUID
+	// TagIDs restricts results to mailboxes carrying any of these workspace
+	// mailbox tags, resolved in SQL. Combined with EmailAccountIDs it is the intersection.
+	TagIDs []uuid.UUID
 	// Snoozed scopes the result set:
 	//   nil   → exclude snoozed threads (default inbox behaviour)
 	//   true  → only snoozed threads
@@ -501,7 +512,9 @@ type UniboxOverview struct {
 	// AwaitingAgentDraft is the count of threads with a pending inbox-agent draft
 	// waiting for human review (M10).
 	AwaitingAgentDraft int64 `json:"awaiting_agent_draft"`
-	ScheduledPending   int64 `json:"scheduled_pending"`
+	// Drafts counts each visible thread once across mailbox and pending agent drafts.
+	Drafts           int64 `json:"drafts"`
+	ScheduledPending int64 `json:"scheduled_pending"`
 	// ScheduledPendingMax is the hard cap on pending scheduled email
 	// tasks per workspace. The dashboard shows current/max so the user
 	// sees how close they are to the limit before hitting it.

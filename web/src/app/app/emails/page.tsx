@@ -5,33 +5,31 @@ import { browseString, mailboxSort, mailboxTab, type MailboxTab } from "@/lib/br
 import { useSearchParams } from "@/hooks/useSearchParams";
 import useMailboxTagFilter from "@/hooks/useMailboxTagFilter";
 import groupMailboxes from "@/lib/groupMailboxes";
+import { utcToday } from "@/lib/campaignPeriod";
 import { cloudStandingUnavailable as cloudHealthUnavailable, mailboxColdActivity, reputationOnlyWarning } from "@/lib/mailboxStatus";
+import { sendPauseSummary } from "@/lib/sendPause";
 import { useAppStore } from "@/stores/useAppStore";
 import toast from "react-hot-toast/headless";
 import { useQueryClient } from "@tanstack/react-query";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import useEmails from "@/lib/api/hooks/app/emails/useEmails";
 import { NoAccess } from "@/components/layout/NoAccess";
 import { usePermission } from "@/hooks/usePermission";
-import useWarmupLifecycle from "@/lib/api/hooks/app/emails/useWarmupLifecycle";
 import { diagnosticSendingAllowed, diagnosticWarmupActive } from "@/lib/diagnosticParticipation";
 import useAccountStatuses from "@/lib/api/hooks/app/analytics/useAccountStatuses";
 import useFeatureStatus from "@/lib/api/hooks/app/subscription/useFeatureStatus";
-import warmupLifecycle from "@/lib/api/client/app/emails/warmupLifecycle";
-import removeEmail from "@/lib/api/client/app/emails/removeEmail";
-import updateEmail from "@/lib/api/client/app/emails/updateEmail";
-import useMailboxSwitch, { switchOffPrompt } from "@/components/app/emails/useMailboxSwitch";
+import { bulkRemoveEmails, bulkSwitchEmails, bulkWarmupEmails, type BulkMailboxResult } from "@/lib/api/client/app/emails/bulkMailboxes";
+import { switchOffPrompt } from "@/components/app/emails/useMailboxSwitch";
+import useMailboxRowActions, { type MailboxRowActions } from "@/components/app/emails/useMailboxRowActions";
 import invalidateAfterMailboxRemoval from "@/lib/api/hooks/app/emails/invalidateAfterMailboxRemoval";
-import useRemoveEmail from "@/lib/api/hooks/app/emails/useRemoveEmail";
 import { useUserProfile } from "@/hooks/context/user";
 import { useConfirm } from "@/hooks/context/confirm";
 import InboxDetails from "@/components/app/emails/InboxDetails";
 import WarmupCoverageNotice from "@/components/app/emails/WarmupCoverageNotice";
 import CloudPoolBanner from "@/components/app/emails/CloudPoolBanner";
 import CloudPathsPanel from "@/components/app/emails/CloudPathsPanel";
-import CloudConnectDialog from "@/components/app/cloud/CloudConnectDialog";
 import useCloudPool from "@/hooks/useCloudPool";
 import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
-import { useEnrollCloudLinkMailbox, useUnenrollCloudLinkMailbox, useCloudLinkMailboxLifecycle } from "@/lib/api/hooks/app/cloudlink/useCloudLink";
 import { cloudMailboxPickerOpened } from "@/lib/cloudMailboxConnect";
 import { providerSupported } from "@/app/app/settings/warmbly-cloud/providers";
 import { CloudIcon, MailCheckIcon } from "lucide-react";
@@ -41,6 +39,7 @@ import { cloudSendFailure, cloudWarmupPaused } from "@/lib/cloudWarmup";
 import buildError from "@/lib/helper/buildError";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import BulkWarmupDialog from "@/components/app/emails/BulkWarmupDialog";
+import { warmupDaysLabel } from "@/lib/warmupSchedule";
 import BulkTagPopover from "@/components/app/emails/BulkTagPopover";
 import BulkSignatureDialog from "@/components/app/emails/BulkSignatureDialog";
 import MailboxImportsMenu from "@/components/app/emails/import/MailboxImportsMenu";
@@ -48,7 +47,6 @@ import MailboxSourceChip from "@/components/app/emails/MailboxSourceChip";
 import ProviderLogo from "@/components/app/emails/ProviderLogo";
 import SigninMigrationBanner, { SigninRetiringChip } from "@/components/app/emails/migration/SigninMigrationBanner";
 import SigninMigrationDialog from "@/components/app/emails/migration/SigninMigrationDialog";
-import MailboxGrantDialog from "@/components/app/emails/import/grants/MailboxGrantDialog";
 import { useSigninMigration } from "@/lib/api/hooks/app/emails/useMailboxGrants";
 import { mailboxBrand, mailboxSource } from "@/lib/mailboxSource";
 import type Tag from "@/lib/api/models/app/Tag";
@@ -61,6 +59,7 @@ import {
     ArrowUpIcon,
     CheckIcon,
     CircleSlashIcon,
+    PauseCircleIcon,
     FilterIcon,
     FlameIcon,
     GaugeIcon,
@@ -116,6 +115,10 @@ const DefaultFolder = {
 const HEALTH_RANK: Record<string, number> = { healthy: 0, warning: 1, error: 2 };
 const LAST_REPORTED_ISSUE_MS = 5 * 60_000;
 
+function dailyUsageOn(status: AccountStatus | undefined, day: string) {
+    return status?.daily_usage?.date === day ? status.daily_usage : undefined;
+}
+
 function healthTone(status?: AccountStatus): { dot: string; text: string; label: string; pulse: boolean } {
     const h = status?.health;
     if (!h) return { dot: "bg-slate-300", text: "text-slate-500", label: "—", pulse: false };
@@ -147,7 +150,7 @@ export default function AddressesPage() {
     const [tabIntentKey, setTabIntentKey] = React.useState(0);
     const consumeTabIntent = React.useCallback(() => setViewTab(undefined), []);
     const [removing, setRemoving] = React.useState(false);
-    const [bulkStart, setBulkStart] = React.useState(false);
+    const [bulkStart, setBulkStart] = React.useState<string[] | null>(null);
     const [bulkSignature, setBulkSignature] = React.useState(false);
     const [searchParams, setSearchParams] = useSearchParams();
     const queryClient = useQueryClient();
@@ -161,7 +164,6 @@ export default function AddressesPage() {
     }, [migration.data]);
     const [migrationOpen, setMigrationOpen] = React.useState(false);
     const [migrationFocus, setMigrationFocus] = React.useState<string | null>(null);
-    const [setupDomain, setSetupDomain] = React.useState<string | null>(null);
     const openMigration = (domain: string | null = null) => {
         setMigrationFocus(domain);
         setMigrationOpen(true);
@@ -177,7 +179,6 @@ export default function AddressesPage() {
     // row badges and menu items below key off this.
     const cloud = useCloudPool();
     const { connected: cloudConnected, rowFor: cloudRowFor, unavailable: cloudUnavailable } = cloud;
-    const [cloudDialog, setCloudDialog] = React.useState(false);
     const authConfig = useAuthConfig();
     const authConfigLoading = authConfig.isLoading;
 
@@ -201,14 +202,19 @@ export default function AddressesPage() {
     // Coerce to an array defensively: a wrong-shape (non-array) response must
     // never reach a `for…of`, which would throw "{} is not iterable".
     const accountStatuses = useMemo(
-        () => (!cloudChecking && !statuses.isError && !statuses.isFetching && Array.isArray(statuses.data) ? statuses.data : []),
-        [cloudChecking, statuses.data, statuses.isError, statuses.isFetching],
+        () => (!cloudChecking && Array.isArray(statuses.data) ? statuses.data : []),
+        [cloudChecking, statuses.data],
     );
+    const today = utcToday();
     const statusById = useMemo(() => {
         const m = new Map<string, AccountStatus>();
         for (const s of accountStatuses) m.set(s.id, s);
         return m;
     }, [accountStatuses]);
+    const currentStatusIds = useMemo(
+        () => new Set(statuses.observations.filter((observation) => observation.current).map(({ status }) => status.id)),
+        [statuses.observations],
+    );
     const statusChecking = emailsData.isLoading || cloudChecking || statuses.isLoading || statuses.isFetching;
     const cloudStandingUnavailable = cloud.connected && (emailsData.emails ?? []).some((box) => {
         const row = cloud.rowFor(box.id);
@@ -248,21 +254,20 @@ export default function AddressesPage() {
     // Proactively notify the user when a mailbox's health drops.
     const prevHealth = useRef<Map<string, string>>(new Map());
     useEffect(() => {
-        if (accountStatuses.length === 0) return;
+        if (cloudChecking || cloudUnavailable) return;
         const prev = prevHealth.current;
-        const next = new Map<string, string>();
-        for (const s of accountStatuses) {
+        for (const { status: s, current } of statuses.observations) {
+            if (!current) continue;
             const cur = s.health?.status ?? "healthy";
-            next.set(s.id, cur);
             const before = prev.get(s.id);
             // A reputation slowdown is on the row and recovers by itself; a toast reads as the mailbox stopping.
             if (before && (HEALTH_RANK[cur] ?? 0) > (HEALTH_RANK[before] ?? 0) && !reputationOnlyWarning(s)) {
                 const reason = (!cloudHealthUnavailable(s.warmup_health) && s.warmup_health?.reason) || s.health?.issues?.[0];
                 toast.error(`${s.email} health dropped to ${cur}${reason ? ` — ${reason}` : ""}`);
             }
+            prev.set(s.id, cur);
         }
-        prevHealth.current = next;
-    }, [accountStatuses]);
+    }, [statuses.observations, cloudChecking, cloudUnavailable]);
 
     const removeSelected = () => {
         if (selected.length === 0 || removing || cloudRemovalPending) return;
@@ -282,8 +287,15 @@ export default function AddressesPage() {
             `Remove ${n} mailbox${n > 1 ? "es" : ""}? This deletes ${n > 1 ? "their" : "its"} imported mail and warmup history on this instance. ${managedNote} ${bulkRevocationNote(providers)} It cannot be undone. Switch ${n > 1 ? "them" : "it"} off instead to just stop sending.`,
             async () => {
                 setRemoving(true);
-                const results = await Promise.allSettled(selected.map((id) => removeEmail(id)));
-                const failed = results.filter((r) => r.status === "rejected");
+                let failed: BulkMailboxResult[];
+                try {
+                    failed = (await bulkRemoveEmails(selected)).results.filter((r) => !r.ok);
+                } catch (e) {
+                    setRemoving(false);
+                    await invalidateAfterMailboxRemoval(queryClient);
+                    toast.error(buildError(e as AppError));
+                    return;
+                }
                 await invalidateAfterMailboxRemoval(queryClient);
                 setSelected([]);
                 setRemoving(false);
@@ -292,8 +304,8 @@ export default function AddressesPage() {
                     // disconnect that could not reach the machine syncing the
                     // mailbox is worth retrying, and "couldn't be removed"
                     // alone does not say so.
-                    const reason = failed.length === 1 ? removeErrorMessage(failed[0].reason) : undefined;
-                    toast.error(reason ?? `${failed.length} mailbox${failed.length > 1 ? "es" : ""} couldn't be removed`);
+                    const reason = failed.length === 1 ? failed[0].message : undefined;
+                    toast.error(reason || `${failed.length} mailbox${failed.length > 1 ? "es" : ""} couldn't be removed`);
                 } else toast.success(`Removed ${n} mailbox${n > 1 ? "es" : ""}`);
             },
         );
@@ -302,15 +314,19 @@ export default function AddressesPage() {
     const bulkWarmup = async (action: "start" | "pause") => {
         if (selected.length === 0) return;
         const n = selected.length;
-        const results = await Promise.allSettled(selected.map((id) => warmupLifecycle(id, action)));
-        const failed = results.filter((r) => r.status === "rejected").length;
+        let results: BulkMailboxResult[];
+        try {
+            results = (await bulkWarmupEmails(selected, action)).results;
+        } catch (e) {
+            toast.error(buildError(e as AppError));
+            return;
+        }
+        const failed = results.filter((r) => !r.ok).length;
         await queryClient.invalidateQueries({ queryKey: ["emails", "list"] });
         await queryClient.invalidateQueries({ queryKey: ["analytics", "accounts"] });
         setSelected([]);
         const verb = action === "start" ? "started" : "paused";
-        const seeds = results.filter(
-            (r) => r.status === "rejected" && (r.reason as AppError | null)?.code === "mailbox_is_seed",
-        ).length;
+        const seeds = results.filter((r) => !r.ok && r.code === "mailbox_is_seed").length;
         if (failed > 0 && seeds === failed) {
             toast.error(`${seeds} mailbox${seeds > 1 ? "es are placement seed inboxes" : " is a placement seed inbox"}, and seeds never warm up.`);
         } else if (failed > 0) toast.error(`${failed} mailbox${failed > 1 ? "es" : ""} couldn't be updated`);
@@ -334,13 +350,14 @@ export default function AddressesPage() {
         const apply = async () => {
             setSwitching(true);
             try {
-                const results = await Promise.allSettled(ids.map((id) => updateEmail(id, { status: on ? "active" : "inactive" })));
-                const failed = results.filter((r) => r.status === "rejected").length;
+                const failed = (await bulkSwitchEmails(ids, on ? "active" : "inactive")).failed;
                 await queryClient.invalidateQueries({ queryKey: ["emails", "list"] });
                 await queryClient.invalidateQueries({ queryKey: ["analytics", "accounts"] });
                 setSelected((prev) => prev.filter((id) => !ids.includes(id)));
                 if (failed > 0) toast.error(`${failed} mailbox${failed > 1 ? "es" : ""} couldn't be switched ${on ? "on" : "off"}`);
                 else toast.success(`${n} mailbox${n > 1 ? "es" : ""} switched ${on ? "back on" : "off"}`);
+            } catch (e) {
+                toast.error(buildError(e as AppError));
             } finally {
                 setSwitching(false);
             }
@@ -446,12 +463,51 @@ export default function AddressesPage() {
         const value = col.sortValue;
         const dir = sort.reverse ? 1 : -1;
         return [...list].sort((a, b) => {
-            const x = value(a, statusById.get(a.id));
-            const y = value(b, statusById.get(b.id));
+            const x = value(a, statusById.get(a.id), today);
+            const y = value(b, statusById.get(b.id), today);
             if (x === y) return 0;
             return (x > y ? 1 : -1) * dir;
         });
-    }, [emailsData.emails, sort, statusById, p.user.tags]);
+    }, [emailsData.emails, sort, statusById, p.user.tags, today]);
+
+    const rowActions = useMailboxRowActions();
+    const selectedSet = useMemo(() => new Set(selected), [selected]);
+
+    // Only the rows near the viewport are mounted; the list scrolls inside PageBody.
+    const [scrollEl, setScrollEl] = React.useState<HTMLElement | null>(null);
+    const tableWrapRef = React.useCallback((node: HTMLDivElement | null) => setScrollEl(node?.parentElement ?? null), []);
+    const tbodyRef = React.useRef<HTMLTableSectionElement>(null);
+    const [scrollMargin, setScrollMargin] = React.useState(0);
+    React.useLayoutEffect(() => {
+        if (!scrollEl) return;
+        // Where the rows start inside the scroll box, which moves as the banners above them change.
+        const measure = () => {
+            const body = tbodyRef.current;
+            if (!body) return;
+            const m = Math.round(body.getBoundingClientRect().top - scrollEl.getBoundingClientRect().top + scrollEl.scrollTop);
+            setScrollMargin((prev) => (prev === m ? prev : m));
+        };
+        measure();
+        if (typeof ResizeObserver === "undefined") return;
+        const ro = new ResizeObserver(measure);
+        for (const child of Array.from(scrollEl.children)) ro.observe(child);
+        return () => ro.disconnect();
+    }, [scrollEl]);
+    const rowVirtualizer = useVirtualizer({
+        count: sortedEmails.length,
+        getScrollElement: () => scrollEl,
+        estimateSize: () => 44,
+        getItemKey: (i) => sortedEmails[i]?.id ?? i,
+        overscan: 12,
+        scrollMargin,
+        initialRect: { width: 0, height: 800 },
+    });
+    const virtualRows = rowVirtualizer.getVirtualItems();
+    const padTop = virtualRows.length ? virtualRows[0].start - scrollMargin : 0;
+    const padBottom = virtualRows.length
+        ? Math.max(0, rowVirtualizer.getTotalSize() - (virtualRows[virtualRows.length - 1].end - scrollMargin))
+        : 0;
+    const columnCount = MAILBOX_COLUMNS.length + 2;
 
     if (!canView) {
         return <NoAccess feature="email accounts" permissionLabel="Manage mailboxes" />;
@@ -536,8 +592,8 @@ export default function AddressesPage() {
                     sit evenly and the whole block collapses when all are empty. */}
                 <div className="px-5 py-3 flex flex-col gap-2 empty:hidden">
                     <AdvisorSummaryBar surface="emails" noun="mailbox" nounPlural="mailboxes" />
-                    <SigninMigrationBanner total={migration.data?.total ?? 0} onOpen={() => openMigration()} />
-                    <CloudPoolBanner onConnect={() => setCloudDialog(true)} mailboxCount={stats.total} />
+                    <SigninMigrationBanner total={migration.data?.total ?? 0} groups={migration.data?.data} onOpen={() => openMigration()} />
+                    <CloudPoolBanner mailboxCount={stats.total} />
                     {!emailsData.isLoading && <CloudPathsPanel mailboxCount={stats.total} onAdd={() => p?.setAddEmail(true)} />}
                     {/* Hosted, the pool is thousands of mailboxes: the pool-size advice is self-host only. */}
                     {cloud.selfHosted && (
@@ -546,12 +602,10 @@ export default function AddressesPage() {
                             totalCount={stats.total}
                             canWarmup={canWarmup}
                             onAdd={() => p?.setAddEmail(true)}
-                            onConnectCloud={cloud.manageable && !cloud.connected ? () => setCloudDialog(true) : undefined}
                             cloudConnected={cloud.connected}
                         />
                     )}
                 </div>
-                <CloudConnectDialog open={cloudDialog} onClose={() => setCloudDialog(false)} />
                 {emailsData.isLoading ? (
                     <div className="divide-y divide-slate-200/60">
                         {Array.from({ length: 6 }).map((_, i) => (
@@ -592,7 +646,7 @@ export default function AddressesPage() {
                     // table-fixed like the Leads list: every column but Mailbox
                     // carries a width, so one long address never widens the table.
                     // Columns key off the list's own width, not the viewport, since the sidebar takes a share of it.
-                    <div className="@container">
+                    <div ref={tableWrapRef} className="@container">
                         <table className="w-full table-fixed text-left">
                             <thead className="sticky top-0 bg-white z-[1]">
                                 <tr className="border-b border-slate-200">
@@ -621,32 +675,52 @@ export default function AddressesPage() {
                                     <th className="px-3 py-2 w-[84px] @2xl:w-[76px]"></th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                {sortedEmails.map((box) => (
-                                    <MailboxRow
-                                        key={box.id}
-                                        box={box}
-                                        tags={p?.user.tags ?? []}
-                                        status={(cloud.unavailable || cloudStandingUnavailable) && statusById.get(box.id)?.health?.status === "healthy" && !statusById.get(box.id)?.errors?.length ? undefined : statusById.get(box.id)}
-                                        lastReportedIssue={lastReportedIssues.get(box.id)}
-                                        statusPending={statusChecking && !statusUnavailable}
-                                        cloudStatusPending={cloudChecking || cloud.unavailable || cloudStandingUnavailable}
-                                        cloudRemovalPending={cloudRemovalPending}
-                                        findings={advisor.get(box.id)}
-                                        canWarmup={canWarmup}
-                                        cloud={cloud.connected ? cloud.rowFor(box.id) : undefined}
-                                        cloudConnected={cloud.connected}
-                                        retiring={retiringDomain.has(box.id)}
-                                        onRetiring={() => openMigration(retiringDomain.get(box.id) ?? null)}
-                                        checked={selected.includes(box.id)}
-                                        onToggleSelect={() =>
-                                            selected.includes(box.id)
-                                                ? setSelected((bef) => bef.filter((i) => i !== box.id))
-                                                : setSelected((bef) => [...bef, box.id])
-                                        }
-                                        onOpen={openDetail}
-                                    />
-                                ))}
+                            <tbody ref={tbodyRef}>
+                                {padTop > 0 && (
+                                    <tr aria-hidden style={{ height: padTop }}>
+                                        <td colSpan={columnCount} className="p-0" />
+                                    </tr>
+                                )}
+                                {virtualRows.map((v) => {
+                                    const box = sortedEmails[v.index];
+                                    if (!box) return null;
+                                    const cloudRow = cloud.connected ? cloud.rowFor(box.id) : undefined;
+                                    const rowCloudUnavailable = cloud.unavailable || !!(cloudRow?.enrolled && !cloudRow.cloud?.health);
+                                    return (
+                                        <MailboxRow
+                                            key={box.id}
+                                            index={v.index}
+                                            measure={rowVirtualizer.measureElement}
+                                            actions={rowActions}
+                                            box={box}
+                                            tags={p?.user.tags ?? []}
+                                            status={rowCloudUnavailable && statusById.get(box.id)?.health?.status === "healthy" && !statusById.get(box.id)?.errors?.length ? undefined : statusById.get(box.id)}
+                                            statusCurrent={!cloudChecking && !rowCloudUnavailable && currentStatusIds.has(box.id)}
+                                            lastReportedIssue={lastReportedIssues.get(box.id)}
+                                            statusPending={statusChecking && !inventoryUnavailable && !rowCloudUnavailable && !statuses.isError}
+                                            cloudStatusPending={cloudChecking || rowCloudUnavailable}
+                                            cloudRemovalPending={cloudRemovalPending}
+                                            findings={advisor.get(box.id)}
+                                            canWarmup={canWarmup}
+                                            cloud={cloudRow}
+                                            cloudConnected={cloud.connected}
+                                            retiring={retiringDomain.has(box.id)}
+                                            onRetiring={() => openMigration(retiringDomain.get(box.id) ?? null)}
+                                            checked={selectedSet.has(box.id)}
+                                            onToggleSelect={() =>
+                                                selectedSet.has(box.id)
+                                                    ? setSelected((bef) => bef.filter((i) => i !== box.id))
+                                                    : setSelected((bef) => [...bef, box.id])
+                                            }
+                                            onOpen={openDetail}
+                                        />
+                                    );
+                                })}
+                                {padBottom > 0 && (
+                                    <tr aria-hidden style={{ height: padBottom }}>
+                                        <td colSpan={columnCount} className="p-0" />
+                                    </tr>
+                                )}
                             </tbody>
                         </table>
                     </div>
@@ -680,8 +754,10 @@ export default function AddressesPage() {
                         {canWarmup && (
                             <button
                                 type="button"
-                                onClick={() => setBulkStart(true)}
-                                className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded text-[12px] font-medium text-orange-600 hover:bg-orange-50 transition-colors"
+                                onClick={() => setBulkStart(selected)}
+                                disabled={cloudRemovalPending || bulkStart !== null}
+                                title={cloudRemovalPending ? "Waiting for Cloud mailbox ownership to be confirmed" : undefined}
+                                className="disabled:opacity-50 inline-flex items-center gap-1.5 h-7 px-2.5 rounded text-[12px] font-medium text-orange-600 hover:bg-orange-50 transition-colors"
                             >
                                 <PlayIcon className="w-3.5 h-3.5" />
                                 Start warmup
@@ -754,23 +830,15 @@ export default function AddressesPage() {
                 open={migrationOpen}
                 focusDomain={migrationFocus}
                 onClose={() => setMigrationOpen(false)}
-                onSetUpDomain={(domain) => {
-                    setMigrationOpen(false);
-                    setSetupDomain(domain);
-                }}
-            />
-            <MailboxGrantDialog
-                open={!!setupDomain}
-                provider="google"
-                initialDomain={setupDomain ?? undefined}
-                onClose={() => setSetupDomain(null)}
             />
 
             <BulkWarmupDialog
-                open={bulkStart}
-                ids={selected}
-                onClose={() => setBulkStart(false)}
-                onComplete={() => setSelected([])}
+                open={bulkStart !== null}
+                ids={bulkStart ?? []}
+                ownershipPending={cloudRemovalPending}
+                allowFollow={!(bulkStart ?? []).some((id) => cloud.isEnrolled(id))}
+                onClose={() => setBulkStart(null)}
+                onComplete={(ids) => setSelected((current) => current.filter((id) => !ids.includes(id)))}
             />
 
             <BulkSignatureDialog
@@ -819,9 +887,13 @@ function removeErrorMessage(err: unknown): string | undefined {
 }
 
 function MailboxRow({
+    index,
+    measure,
+    actions,
     box,
     tags,
     status,
+    statusCurrent,
     lastReportedIssue,
     statusPending,
     cloudStatusPending,
@@ -836,9 +908,14 @@ function MailboxRow({
     onToggleSelect,
     onOpen,
 }: {
+    /** Position in the virtualized list, read back when the row is measured. */
+    index: number;
+    measure: (node: HTMLTableRowElement | null) => void;
+    actions: MailboxRowActions;
     box: Inbox;
     tags: Tag[];
     status?: AccountStatus;
+    statusCurrent: boolean;
     lastReportedIssue?: { status: AccountStatus; observedAt: number };
     statusPending: boolean;
     cloudStatusPending: boolean;
@@ -854,10 +931,8 @@ function MailboxRow({
     onToggleSelect: () => void;
     onOpen: (id: string, tab?: string) => void;
 }) {
-    const life = useWarmupLifecycle(box.id);
-    const confirm = useConfirm();
-    const remove = useRemoveEmail(box.id);
-    const power = useMailboxSwitch(box.id, box.email);
+    const { confirm, workspaceZone } = actions;
+    const warmupPending = actions.warmupPending.has(box.id);
     // Switched off by its owner or the platform; a revoked one needs a reconnect instead.
     const switchedOff = box.status === "inactive";
 
@@ -874,7 +949,7 @@ function MailboxRow({
                 : `Disconnect ${box.email}? This deletes its imported mail, warmup history and credentials. ${revocationNote(box.provider)} It cannot be undone. Switch the mailbox off instead to just stop sending.`,
             async () => {
                 try {
-                    await remove.mutateAsync();
+                    await actions.remove(box.id);
                     toast.success(`${box.email} disconnected`);
                 } catch (e) {
                     toast.error(removeErrorMessage(e) ?? "The mailbox couldn't be disconnected");
@@ -902,14 +977,14 @@ function MailboxRow({
     // Warmup only runs on a mailbox that is on, whatever its warmup setting says.
     const warming = active && box.status === "active";
 
-    const historicalIssue = !status && lastReportedIssue && Date.now() - lastReportedIssue.observedAt <= LAST_REPORTED_ISSUE_MS ? lastReportedIssue : undefined;
-    const tone = healthTone(status ?? historicalIssue?.status);
+    const historicalIssue = !statusCurrent && lastReportedIssue && Date.now() - lastReportedIssue.observedAt <= LAST_REPORTED_ISSUE_MS ? lastReportedIssue : undefined;
+    const stale = !!status && !statusCurrent;
+    const displayedHealth = historicalIssue?.status ?? status;
+    const tone = healthTone(displayedHealth);
     const ws = status?.warmup_status;
+    const dailyUsage = dailyUsageOn(status, utcToday());
     const inCampaign = status?.in_campaign;
 
-    const cloudEnroll = useEnrollCloudLinkMailbox();
-    const cloudUnenroll = useUnenrollCloudLinkMailbox();
-    const cloudLifecycle = useCloudLinkMailboxLifecycle();
     const inCloud = !!cloud?.enrolled;
     const cloudPaused = cloudWarmupPaused(cloud?.cloud);
     const cloudSupported = providerSupported(box.provider);
@@ -924,7 +999,7 @@ function MailboxRow({
 
     // A refused send outranks the count: it is why the count is not moving.
     const sendFailure = inCloud ? cloudSendFailure(cloud?.cloud) : warming ? ws?.send_failure : undefined;
-    const nextWarmup = warming && ws?.next_send_at ? nextSlotLabel(ws.next_send_at) : undefined;
+    const nextWarmup = warming && ws?.next_send_at ? nextSlotLabel(ws.next_send_at, undefined, box.timezone || workspaceZone || "UTC") : undefined;
 
     // Warmup column: what's flowing today and why.
     const warmupLabel = inCloud
@@ -957,13 +1032,17 @@ function MailboxRow({
                 : "text-slate-400";
 
     const run = (action: "start" | "pause" | "resume", verb: string) => {
-        const execute = () => life.mutate(action, {
-            onSuccess: () => toast.success(`Warmup ${verb} for ${box.email}`),
-            onError: (e) => toast.error(warmupErrorMessage(e as unknown as AppError)),
-        });
+        const execute = async () => {
+            try {
+                await actions.warmup(box.id, action);
+                toast.success(`Warmup ${verb} for ${box.email}`);
+            } catch (e) {
+                toast.error(warmupErrorMessage(e as AppError));
+            }
+        };
         if (action === "start" || action === "resume") {
             confirm.show("Authorize disclosed automated diagnostic sending? Starting from Off also enables receiving tests. This is not organic engagement or a proven reputation benefit; provider policies apply.", execute);
-        } else execute();
+        } else void execute();
     };
 
     const stopReset = () => {
@@ -971,7 +1050,7 @@ function MailboxRow({
             `Stop all diagnostic sending and receiving for ${box.email}? Ramp history and safety holds are retained. Updated workers recheck pending work, but accepted provider sends cannot be recalled.`,
             async () => {
                 try {
-                    await life.mutateAsync("stop");
+                    await actions.warmup(box.id, "stop");
                     toast.success(`Warmup stopped for ${box.email}`);
                 } catch (e) {
                     toast.error(warmupErrorMessage(e as AppError));
@@ -1028,6 +1107,7 @@ function MailboxRow({
                 {nextWarmup && !sendFailure && (
                     <span className="font-sans text-[10.5px] text-slate-400 truncate">next {nextWarmup}</span>
                 )}
+                <span className="font-sans text-[10.5px] text-slate-400 truncate">{warmupDaysLabel(box.warmup_days ?? 0)}</span>
             </span>
         ) : (
             <span
@@ -1055,6 +1135,8 @@ function MailboxRow({
 
     return (
         <tr
+            ref={measure}
+            data-index={index}
             onClick={() => onOpen(box.id)}
             className={`border-b border-slate-200/60 transition-colors group h-11 cursor-pointer ${checked ? "bg-sky-50/60" : "hover:bg-slate-50/80"}`}
         >
@@ -1130,7 +1212,7 @@ function MailboxRow({
                         </div>
                         {/* Too narrow for the metric columns: the same readings, labelled, under the address. */}
                         <div className="@2xl:hidden mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0 leading-tight">
-                            <MailboxStatusPill box={box} status={status} historicalIssue={historicalIssue} warming={inCloud ? !cloudPaused : warming} compact pending={statusPending} />
+                            <MailboxStatusPill box={box} status={status} stale={stale} historicalIssue={historicalIssue} warming={inCloud ? !cloudPaused : warming} compact pending={statusPending} />
                             <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                                 <span className="text-[10.5px] text-slate-400">Warmup</span>
                                 <span className={`font-mono text-[11.5px] tabular-nums ${warmupTone}`}>{cloudStatusPending ? statusPending ? "Checking…" : "Unavailable" : warmupCell}</span>
@@ -1143,8 +1225,8 @@ function MailboxRow({
                                 <span className="text-[10.5px] text-slate-400">Health</span>
                                 <span className={`inline-flex items-center gap-1 font-mono text-[11.5px] font-medium tabular-nums ${tone.text}`}>
                                     <span className={`inline-flex w-1.5 h-1.5 rounded-full ${tone.dot}`} />
-                                    {historicalIssue && <span className="text-slate-500">Last observed</span>}
-                                    {status?.health?.score ?? historicalIssue?.status.health?.score ?? "—"}
+                                    {(historicalIssue || stale) && <span className="text-slate-500">Last observed</span>}
+                                    {displayedHealth?.health?.score ?? "—"}
                                 </span>
                             </span>
                         </div>
@@ -1155,18 +1237,18 @@ function MailboxRow({
                 </div>
             </td>
             <td className={`px-3 overflow-hidden ${colShow("status")}`}>
-                <MailboxStatusPill box={box} status={status} historicalIssue={historicalIssue} warming={inCloud ? !cloudPaused : warming} pending={statusPending} />
+                <MailboxStatusPill box={box} status={status} stale={stale} historicalIssue={historicalIssue} warming={inCloud ? !cloudPaused : warming} pending={statusPending} />
             </td>
             <td className={`px-3 overflow-hidden ${colShow("sent")}`}>
-                {status?.daily_usage ? (
+                {dailyUsage ? (
                     <span
-                        className={`inline-flex items-center gap-1.5 font-mono text-[12px] tabular-nums ${status.daily_usage.campaign_sent > 0 ? "text-sky-700" : "text-slate-500"}`}
-                        title={`${status.daily_usage.campaign_sent} of ${status.daily_usage.campaign_limit || box.campaign_limit} campaign emails sent today`}
+                        className={`inline-flex items-center gap-1.5 font-mono text-[12px] tabular-nums ${dailyUsage.campaign_sent > 0 ? "text-sky-700" : "text-slate-500"}`}
+                        title={`${dailyUsage.campaign_sent} of ${dailyUsage.campaign_limit || box.campaign_limit} campaign emails sent today`}
                     >
                         <SendIcon className="w-3 h-3 shrink-0 text-sky-500" />
                         <span>
-                            <AnimatedNumber value={status.daily_usage.campaign_sent} />
-                            <span className="text-slate-400">/{status.daily_usage.campaign_limit || box.campaign_limit}</span>
+                            <AnimatedNumber value={dailyUsage.campaign_sent} />
+                            <span className="text-slate-400">/{dailyUsage.campaign_limit || box.campaign_limit}</span>
                         </span>
                     </span>
                 ) : (
@@ -1192,10 +1274,10 @@ function MailboxRow({
                     type="button"
                     onClick={(e) => { e.stopPropagation(); onOpen(box.id, "overview"); }}
                     className={`inline-flex items-center gap-1.5 text-[11px] font-medium max-w-full ${tone.text}`}
-                    title={historicalIssue ? `Last observed ${new Date(historicalIssue.observedAt).toLocaleString()}. Current health unavailable.` : status?.health?.issues?.join("\n") || "View mailbox health"}
+                    title={historicalIssue ? `Last observed ${new Date(historicalIssue.observedAt).toLocaleString()}. Current health unavailable.` : stale ? "Last known measurements. Current status is unconfirmed until a successful refresh." : status?.health?.issues?.join("\n") || "View mailbox health"}
                 >
                     <span className={`inline-flex w-1.5 h-1.5 rounded-full shrink-0 ${tone.dot}`} />
-                    <span className={`uppercase tracking-[0.08em] hidden @4xl:inline truncate ${tone.pulse && !historicalIssue ? "text-shimmer" : ""}`}>{historicalIssue && "Last observed: "}{tone.label}</span>
+                    <span className={`uppercase tracking-[0.08em] hidden @4xl:inline truncate ${tone.pulse && statusCurrent ? "text-shimmer" : ""}`}>{(historicalIssue || stale) && "Last observed: "}{tone.label}</span>
                 </button>
             </td>
             <td className="px-3" onClick={(e) => e.stopPropagation()}>
@@ -1205,7 +1287,7 @@ function MailboxRow({
                             <button
                                 type="button"
                                 aria-label="Warmup actions"
-                                disabled={life.isPending}
+                                disabled={warmupPending}
                                 className="size-7 @2xl:size-6 flex items-center justify-center rounded hover:bg-slate-100 text-slate-400 hover:text-orange-600 transition-colors cursor-pointer disabled:opacity-50"
                             >
                                 {inCloud ? <CloudIcon className={`w-3.5 h-3.5 ${cloudPaused ? "text-amber-500" : "text-sky-600"}`} /> : <RiFireLine className={`w-3.5 h-3.5 ${warming ? "text-orange-500" : paused ? "text-amber-500" : ""}`} />}
@@ -1215,7 +1297,7 @@ function MailboxRow({
                             <PopoverMenuLabel>Warmup · {inCloud ? (cloudPaused ? "Paused in cloud" : "Warmbly Cloud") : box.status === "revoked" && !off ? "Needs reconnect" : switchedOff && !off ? "Mailbox off" : active ? "Active" : paused ? "Paused" : "Off"}</PopoverMenuLabel>
                             {switchedOff && (
                                 <>
-                                    <PopoverMenuItem onSelect={power.switchOn} icon={<PowerIcon className="w-3 h-3" />}>
+                                    <PopoverMenuItem onSelect={() => actions.switchOn(box.id, box.email)} icon={<PowerIcon className="w-3 h-3" />}>
                                         Switch the mailbox back on
                                     </PopoverMenuItem>
                                     <PopoverMenuSeparator />
@@ -1224,7 +1306,7 @@ function MailboxRow({
                             {inCloud && (
                                 <>
                                     <PopoverMenuItem
-                                        onSelect={() => void cloudRun(() => cloudLifecycle.mutateAsync({ id: box.id, action: cloudPaused ? "resume" : "pause" }), cloudPaused ? "Warmup resumed" : "Warmup paused")}
+                                        onSelect={() => void cloudRun(() => actions.cloudLifecycle(box.id, cloudPaused ? "resume" : "pause"), cloudPaused ? "Warmup resumed" : "Warmup paused")}
                                         icon={cloudPaused ? <PlayIcon className="w-3 h-3" /> : <PauseIcon className="w-3 h-3" />}
                                     >
                                         {cloudPaused ? "Resume in Warmbly Cloud" : "Pause in Warmbly Cloud"}
@@ -1241,7 +1323,7 @@ function MailboxRow({
                                                     ? `Stop warming ${box.email} in the Warmbly pool? Its credential never left this server.`
                                                     : `Stop warming ${box.email} in the Warmbly pool? The cloud deletes its credential right away.`,
                                                 async () => {
-                                                    await cloudRun(() => cloudUnenroll.mutateAsync(box.id), cloud?.managed ? `${box.email} removed from this instance` : `${box.email} removed from the pool`);
+                                                    await cloudRun(() => actions.cloudUnenroll(box.id), cloud?.managed ? `${box.email} removed from this instance` : `${box.email} removed from the pool`);
                                                 },
                                             )
                                         }
@@ -1254,7 +1336,7 @@ function MailboxRow({
                             )}
                             {!inCloud && cloudConnected && cloudSupported && (
                                 <PopoverMenuItem
-                                    onSelect={() => void cloudRun(() => cloudEnroll.mutateAsync(box.id), `${box.email} is now warming in the pool`)}
+                                    onSelect={() => void cloudRun(() => actions.cloudEnroll(box.id), `${box.email} is now warming in the pool`)}
                                     icon={<CloudIcon className="w-3 h-3" />}
                                 >
                                     Warm in Warmbly Cloud
@@ -1309,12 +1391,12 @@ function MailboxRow({
                                 Mailbox settings
                             </PopoverMenuItem>
                             {switchedOff && (
-                                <PopoverMenuItem onSelect={power.switchOn} icon={<PowerIcon className="w-3 h-3" />}>
+                                <PopoverMenuItem onSelect={() => actions.switchOn(box.id, box.email)} icon={<PowerIcon className="w-3 h-3" />}>
                                     Switch back on
                                 </PopoverMenuItem>
                             )}
                             {box.status === "active" && (
-                                <PopoverMenuItem onSelect={power.switchOff} icon={<PowerOffIcon className="w-3 h-3" />}>
+                                <PopoverMenuItem onSelect={() => actions.switchOff(box.id, box.email)} icon={<PowerOffIcon className="w-3 h-3" />}>
                                     Switch off
                                 </PopoverMenuItem>
                             )}
@@ -1359,7 +1441,7 @@ interface MailboxColumn {
     align?: "right";
     // Whether the first click sorts ascending (text) rather than descending.
     sortAsc?: boolean;
-    sortValue?: (box: Inbox, status?: AccountStatus) => string | number;
+    sortValue?: (box: Inbox, status: AccountStatus | undefined, today: string) => string | number;
 }
 
 interface MailboxSort {
@@ -1392,7 +1474,7 @@ const MAILBOX_COLUMNS: MailboxColumn[] = [
         header: <InfoHeader label="Sent today" title="Campaign emails sent from this mailbox today, against its daily cap." aria="How sends are counted" />,
         className: "w-32",
         show: "hidden @5xl:table-cell",
-        sortValue: (_, s) => s?.daily_usage?.campaign_sent ?? -1,
+        sortValue: (_, s, today) => dailyUsageOn(s, today)?.campaign_sent ?? -1,
     },
     {
         id: "warmup",
@@ -1464,9 +1546,11 @@ function MailboxTh({ col, sort, onSort }: { col: MailboxColumn; sort: MailboxSor
 // What the mailbox is doing right now. Cold sending and warmup run side by
 // side, so both show when both are on; a problem that stops it wins.
 // compact spells a problem out, since it is the one reading a phone must not miss.
-function MailboxStatusPill({ box, status, historicalIssue, warming, compact = false, pending = false }: { box: Inbox; status?: AccountStatus; historicalIssue?: { status: AccountStatus; observedAt: number }; warming: boolean; compact?: boolean; pending?: boolean }) {
-    if (!status && historicalIssue && box.status === "active") return <span className="text-[10.5px] text-amber-700" title={`Last observed ${new Date(historicalIssue.observedAt).toLocaleString()}. Current status unavailable.`}>Last reported issue</span>;
-    const error = status?.errors?.[0];
+function MailboxStatusPill({ box, status, stale, historicalIssue, warming, compact = false, pending = false }: { box: Inbox; status?: AccountStatus; stale: boolean; historicalIssue?: { status: AccountStatus; observedAt: number }; warming: boolean; compact?: boolean; pending?: boolean }) {
+    if (historicalIssue && box.status === "active") return <span className="text-[10.5px] text-amber-700" title={`Last observed ${new Date(historicalIssue.observedAt).toLocaleString()}. Current status unavailable.`}>Last reported issue</span>;
+    const critical = status?.errors?.find((e) => e.severity?.toUpperCase() === "CRITICAL");
+    const error = critical ?? status?.errors?.[0];
+    const stopped = !!critical || status?.health?.status === "error";
     const lifecycle = status?.send_lifecycle;
     const inCampaign = !!status?.in_campaign;
     const { resting, sending } = mailboxColdActivity(status);
@@ -1474,14 +1558,23 @@ function MailboxStatusPill({ box, status, historicalIssue, warming, compact = fa
     let problem: { label: string; text: string; Icon: LucideIcon; title: string } | null = null;
     if (box.status === "revoked") problem = { label: "Reconnect", text: "text-rose-600", Icon: UnplugIcon, title: "Access was revoked at the provider. Reconnect the mailbox to send and warm again." };
     else if (box.status !== "active") problem = { label: "Off", text: "text-slate-500", Icon: CircleSlashIcon, title: "Switched off: it neither sends, warms nor syncs. Switch it back on from the row's menu or its Settings tab." };
-    else if (error) problem = { label: "Error", text: "text-rose-600", Icon: AlertTriangleIcon, title: error.action_required ? `${error.title}. ${error.action_required}` : error.title };
+    else if (status?.send_pause) problem = { label: "Paused", text: "text-amber-600", Icon: PauseCircleIcon, title: sendPauseSummary(status.send_pause) };
+    else if (error) {
+        const title = error.action_required ? `${error.title}. ${error.action_required}` : error.title;
+        // Only a critical report stops the mailbox; a warning (a dropped connection, a busy server) is retried on its own.
+        problem = stopped
+            ? { label: "Error", text: "text-rose-600", Icon: AlertTriangleIcon, title }
+            : { label: "Retrying", text: "text-amber-600", Icon: RotateCcwIcon, title };
+    }
     if (problem) {
         const { Icon } = problem;
+        const cachedError = stale && box.status === "active";
+        const label = cachedError ? `Last observed: ${problem.label}` : problem.label;
         return (
-            <span className={`inline-flex items-center gap-1.5 max-w-full text-[10.5px] font-medium uppercase tracking-[0.08em] ${problem.text}`} title={problem.title}>
+            <span className={`inline-flex items-center gap-1.5 max-w-full text-[10.5px] font-medium uppercase tracking-[0.08em] ${problem.text}`} title={cachedError ? `Last observed: ${problem.title}. Current status unconfirmed.` : problem.title}>
                 <Icon className="w-3 h-3 shrink-0" />
-                <span className="sr-only">{problem.label}</span>
-                <span aria-hidden className={`${compact ? "inline" : "hidden @4xl:inline"} truncate`}>{problem.label}</span>
+                <span className="sr-only">{label}</span>
+                <span aria-hidden className={`${compact ? "inline" : "hidden @4xl:inline"} truncate`}>{label}</span>
             </span>
         );
     }
@@ -1502,15 +1595,15 @@ function MailboxStatusPill({ box, status, historicalIssue, warming, compact = fa
     ].join(", ");
     const text = sending ? "text-sky-700" : resting ? "text-violet-600" : warming ? "text-orange-600" : "text-slate-400";
     return (
-        <span className={`inline-flex items-center gap-1.5 max-w-full text-[10.5px] font-medium uppercase tracking-[0.08em] ${text}`} title={title}>
+        <span className={`inline-flex items-center gap-1.5 max-w-full text-[10.5px] font-medium uppercase tracking-[0.08em] ${text}`} title={stale ? `Last observed: ${title}. Current status unconfirmed.` : title}>
             <span className="inline-flex items-center gap-0.5 shrink-0">
                 {sending && <SendIcon className="w-3 h-3 text-sky-600" />}
                 {resting && <MoonIcon className="w-3 h-3 text-violet-500" />}
                 {warming && <FlameIcon className="w-3 h-3 text-orange-500" />}
                 {!sending && !resting && !warming && <CircleSlashIcon className="w-3 h-3" />}
             </span>
-            <span className="sr-only">{label}</span>
-            <span aria-hidden className={`hidden @4xl:inline truncate ${sending || warming ? "text-shimmer" : ""}`}>{label}</span>
+            <span className="sr-only">{stale && "Last observed: "}{label}</span>
+            <span aria-hidden className={`hidden @4xl:inline truncate ${!stale && (sending || warming) ? "text-shimmer" : ""}`}>{stale && "Last observed: "}{label}</span>
         </span>
     );
 }

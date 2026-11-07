@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { useAppStore } from "@/stores";
 import { hasPermission, PERMISSION_BITS } from "@/lib/permissions";
 import useUser from "@/lib/api/hooks/auth/useUser";
+import { scopeCanAct } from "@/lib/accessScope";
 
 export type PermissionKey = keyof typeof PERMISSION_BITS;
 
@@ -127,8 +128,15 @@ export function useWriteGuard(key: PermissionKey): WriteGuard {
     return { allowed, locked: !allowed, guard };
 }
 
+// useScopeReadOnly reports whether a restricted member may only read where key
+// applies: none of their roles act in scope with it. Unrestricted members never are.
+export function useScopeReadOnly(key: PermissionKey): boolean {
+    const org = useAppStore((s) => s.currentOrganization);
+    return isAccessRestricted(org) && !scopeCanAct(org, PERMISSION_BITS[key]);
+}
+
 // useAccessRestricted reports whether the current member reaches only the
-// campaigns and mailboxes granted to them, read-only. The owner never does.
+// campaigns and mailboxes granted to them. The owner never does.
 export function useAccessRestricted(): boolean {
     const org = useAppStore((s) => s.currentOrganization);
     return isAccessRestricted(org);

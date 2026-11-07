@@ -14,6 +14,7 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
 	"github.com/warmbly/warmbly/internal/pkg/tmplfuncs"
+	"github.com/warmbly/warmbly/internal/pkg/tmplvars"
 	"github.com/warmbly/warmbly/internal/pkg/warmpersona"
 )
 
@@ -34,15 +35,7 @@ type TemplateContext struct {
 }
 
 // templateAction matches a single {{ ... }} action (no nested braces).
-var templateAction = regexp.MustCompile(`\{\{[^{}]*\}\}`)
-
-// spacedFieldRefAt matches, anchored at the start of the slice, a dotted field
-// reference whose key contains an internal space or dash (e.g. ".job title" or
-// ".first-name"). Such a key is not a valid Go-template identifier, so it cannot
-// be written as a `.Selector`. We rewrite it to the equivalent `(index . "key")`,
-// which IS valid everywhere — standalone, inside {{if}}, and inside eq/and/... —
-// giving custom fields with spaces full Go-template support.
-var spacedFieldRefAt = regexp.MustCompile(`^\.[A-Za-z0-9_]+(?:[ \-]+[A-Za-z0-9_]+)+`)
+var templateAction = tmplvars.ActionPattern
 
 // tmplCache caches parsed templates keyed by the raw template string. A stored
 // nil is a "known-bad" sentinel: that body failed to compile, so future renders
@@ -53,7 +46,7 @@ var tmplCache tmplfuncs.Cache
 
 // Standard fields and the typed Sender namespace take precedence over custom fields.
 func buildTemplateData(contact models.Contact, context TemplateContext) map[string]any {
-	data := make(map[string]any, len(contact.CustomFields)+7)
+	data := make(map[string]any, len(contact.CustomFields)+7+tmplvars.AliasCount())
 	for k, v := range contact.CustomFields {
 		data[k] = v
 	}
@@ -64,62 +57,14 @@ func buildTemplateData(contact models.Contact, context TemplateContext) map[stri
 	data["Phone"] = contact.Phone
 	data["Sender"] = context.Sender
 	data[UnsubscribeLinkVar] = context.UnsubscribeLink
+	tmplvars.AddAliases(data, contact.CustomFields)
 	return data
 }
 
-// rewriteSpacedFieldRefs rewrites a dotted custom-field reference whose key has
-// a space or dash (`.job title`, `.first-name`) into `(index . "key")` inside
-// each {{ }} action, so those fields work EVERYWHERE — standalone, inside
-// {{if}}, and inside eq/and/printf/... — not just as a literal substitution.
-// Plain identifier selectors ({{.FirstName}}) and any text outside an action are
-// left untouched, and quoted string literals inside an action are skipped so a
-// value like ".NET" is never mangled. No data is needed: the rewrite is purely
-// syntactic, so it works identically at render time and at validation time.
-func rewriteSpacedFieldRefs(tmpl string) string {
-	if !strings.Contains(tmpl, "{{") {
-		return tmpl
-	}
-	return templateAction.ReplaceAllStringFunc(tmpl, rewriteSpacedInAction)
-}
-
-func rewriteSpacedInAction(action string) string {
-	var b strings.Builder
-	b.Grow(len(action))
-	var quote byte // 0 = not in a string literal; '"' or '`' otherwise
-	for i := 0; i < len(action); {
-		c := action[i]
-		switch {
-		case quote != 0:
-			b.WriteByte(c)
-			if c == '\\' && quote == '"' && i+1 < len(action) {
-				b.WriteByte(action[i+1]) // keep an escaped char verbatim
-				i += 2
-				continue
-			}
-			if c == quote {
-				quote = 0
-			}
-			i++
-		case c == '"' || c == '`':
-			quote = c
-			b.WriteByte(c)
-			i++
-		case c == '.':
-			// A nested struct selector must not consume the following function argument.
-			fieldStart := i == 0 || strings.ContainsRune("{( \t\r\n", rune(action[i-1]))
-			if m := spacedFieldRefAt.FindString(action[i:]); fieldStart && m != "" {
-				b.WriteString(`(index . "` + m[1:] + `")`)
-				i += len(m)
-				continue
-			}
-			b.WriteByte(c)
-			i++
-		default:
-			b.WriteByte(c)
-			i++
-		}
-	}
-	return b.String()
+// normalizeTemplate is the one rewrite every campaign compile goes through.
+func normalizeTemplate(tmpl string) string {
+	out, _ := tmplvars.Normalize(tmpl)
+	return out
 }
 
 // compiledTemplate returns a parsed, cached template for tmpl, or nil if the
@@ -131,7 +76,7 @@ func compiledTemplate(tmpl string) *template.Template {
 	if t, ok := tmplCache.Load(tmpl); ok {
 		return t // may be nil (known-bad)
 	}
-	t, err := tmplfuncs.Compile("body", rewriteSpacedFieldRefs(tmpl))
+	t, err := tmplfuncs.Compile("body", normalizeTemplate(tmpl))
 	if err != nil {
 		tmplCache.Store(tmpl, nil)
 		return nil
@@ -140,18 +85,10 @@ func compiledTemplate(tmpl string) *template.Template {
 	return t
 }
 
-// TemplateError returns a parse error when a template's control syntax is
-// malformed (e.g. an {{if}} with no {{end}}, or a bad {{eq}}), or nil when it is
-// valid. Spaced/dashed custom-field references are rewritten to their `index`
-// form first (exactly as the renderer does), so a valid template that uses them
-// inside {{if}} does not false-fail validation. Used to block starting a
-// campaign with a template that would degrade to literal {{if}} text on send.
+// TemplateError reports why a template would not render as written (a parse
+// error, or a reference that can never resolve), or nil when it is valid.
 func TemplateError(tmpl string) error {
-	if tmpl == "" {
-		return nil
-	}
-	_, err := tmplfuncs.Compile("validate", rewriteSpacedFieldRefs(tmpl))
-	return err
+	return tmplvars.Check(tmpl)
 }
 
 // RenderTemplate renders a sequence template against a contact, supporting Go
@@ -427,77 +364,6 @@ func generateConversationOpeningEmail(conversation Conversation, account models.
 	}
 	rendered, _ := generation.RenderCanonicalTurn(description, signature)
 	return rendered
-}
-
-// VettedDiagnosticConversations uses a separate immutable source-ID namespace.
-func VettedDiagnosticConversations() []Conversation {
-	return []Conversation{
-		{ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-clock:v1")), Version: generation.DiagnosticScenarioVersion, Theme: "diagnostic-clock", Subject: "Simulated diagnostic: fictional clock", Description: "Simulated diagnostic. In this fictional example, the clock reads 14:00, not 15:00. Which time does the example use?", Messages: []string{"The fictional example uses 14:00, not 15:00.", "Agreed. The example is closed; no real meeting was scheduled."}},
-		{ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-count:v1")), Version: generation.DiagnosticScenarioVersion, Theme: "diagnostic-count", Subject: "Simulated diagnostic: sample count", Description: "Simulated diagnostic. This hypothetical sample contains 3 blue cards and 2 green cards. How many cards are in the sample?", Messages: []string{"There are 5 cards in the hypothetical sample: 3 blue and 2 green.", "That matches the hypothetical sample. This scenario is complete; no physical cards were exchanged."}},
-		{
-			ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-document:v1")), Version: generation.DiagnosticScenarioVersion, Theme: "diagnostic-document", Subject: "Simulated diagnostic: hypothetical draft review",
-			Description: "Simulated diagnostic. In this hypothetical draft, Section A lists assumptions and Section B lists unknowns. An erroneous summary says inbox placement passed, but the draft contains no measured delivery results. Which claim needs correction?",
-			Messages: []string{
-				"The hypothetical inbox-placement claim needs correction: neither assumptions nor unknowns establish a measured result. Should the summary instead distinguish Section A from Section B?",
-				"Yes. Section A lists assumptions; Section B lists unknowns. Neither section proves inbox placement. Can we close the fictional review with that distinction?",
-				"Agreed. The fictional summary distinguishes assumptions from unknowns and makes no placement claim. This review scenario is closed; no real document was reviewed or changed.",
-			},
-		},
-		{
-			ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-summary:v1")), Version: generation.DiagnosticScenarioVersion, Theme: "diagnostic-summary", Subject: "Simulated diagnostic: summary correction",
-			Description: "Simulated diagnostic. A fictional checklist has 12 items: 9 marked complete and 3 marked unknown, with none marked failed. A draft incorrectly calls all 12 complete. What should the corrected summary say?",
-			Messages: []string{
-				"The fictional checklist has 9 complete items and 3 unknown items, not 12 complete items. Does an unknown item count as failed or passed?",
-				"No. Unknown items are neither failed nor passed; the checklist has none marked failed. Should the corrected summary keep the 9 complete and 3 unknown counts separate?",
-				"Yes. The corrected hypothetical summary keeps 9 complete and 3 unknown items separate, with none marked failed. The example is closed; no actual provider check was performed.",
-			},
-		},
-		{
-			ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-timezone:v1")), Version: generation.DiagnosticScenarioVersion, Theme: "diagnostic-timezone", Subject: "Simulated diagnostic: fixed-offset date note",
-			Description: "Simulated diagnostic. On 2026-10-08 the fictional clock reads 09:00 UTC, or 11:00 at the fixed offset UTC+02:00. This is not a meeting invitation. Which local date and time belong in the hypothetical note?",
-			Messages: []string{
-				"The note should use 2026-10-08 at 11:00 with the fixed offset UTC+02:00, corresponding to 09:00 UTC. Should it keep the fixed offset rather than guess a regional timezone?",
-				"Yes. Keep 2026-10-08, 09:00 UTC and 11:00 at UTC+02:00 unchanged. The example specifies no regional timezone or meeting. Can we close without creating an appointment?",
-				"Agreed. The fictional date remains 2026-10-08, with 09:00 UTC equal to 11:00 at UTC+02:00. This example is closed; no appointment was created.",
-			},
-		},
-		{
-			ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-plaintext:v1")), Version: generation.DiagnosticScenarioVersion, Theme: "diagnostic-plaintext", Subject: "Simulated diagnostic: plaintext label review",
-			Description: "Simulated diagnostic. This constructed plaintext example uses written labels, not color or linked instructions. Its hypothetical items are Status: unknown and Next step: review. Can the labels be understood without opening a link?",
-			Messages: []string{
-				"Yes. Status: unknown and Next step: review are written in the example, without a link or color requirement. Does that alone prove how an email client displays a delivered message?",
-				"No. This is a locally constructed example, not a delivered-client accessibility test. Should the summary preserve the unknown status and that testing limit?",
-				"Yes. The example retains Status: unknown and Next step: review. This label-review scenario is closed; no delivered-client accessibility result is claimed.",
-			},
-		},
-		{
-			ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-conditional:v1")), Version: generation.DiagnosticScenarioVersion, Theme: "diagnostic-conditional", Subject: "Simulated diagnostic: conditional wording",
-			Description: "Simulated diagnostic. In a hypothetical plan, a draft may be updated only if a reviewer approves it. No approval exists, and no update is promised for 2026-10-09. What should the draft status say?",
-			Messages: []string{
-				"The hypothetical status is pending review: no approval exists and the update is conditional. Should the wording promise an update on 2026-10-09?",
-				"No. The approval condition has not been met, so no update is promised for 2026-10-09. Can we keep pending review instead of implying an approval?",
-				"Agreed. The hypothetical draft remains pending review, without approval or a promised update for 2026-10-09. This scenario is closed; no real draft was changed or commitment made.",
-			},
-		},
-		{
-			ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-summary-hu:v1")), Version: generation.DiagnosticScenarioVersion, Theme: "diagnostic-summary-hu", Subject: "Simulated diagnostic: magyar összefoglaló",
-			Description: "Simulated diagnostic. Ebben a kitalált jegyzetben 4 ellenőrzésből 3 eredménye ismeretlen, 1 pedig nincs elvégezve. Egyik sem igazolt siker. Hogyan őrizzük meg ezt a különbséget az összefoglalóban?",
-			Messages: []string{
-				"Az összefoglalóban 3 ismeretlen eredményt és 1 el nem végzett ellenőrzést írjunk; ne állítsunk sikert. Jelenthet-e az ismeretlen eredmény igazolt sikert?",
-				"Nem. Az ismeretlen nem igazolt siker, az el nem végzett ellenőrzés pedig továbbra sincs elvégezve. Maradjon ez kitalált példa, ne szolgáltatói mérés?",
-				"Igen. A kitalált példa lezárult: 3 eredmény ismeretlen, 1 ellenőrzés nincs elvégezve. Valós szolgáltatói tesztet nem végeztünk.",
-			},
-		},
-	}
-}
-
-func ResolveDiagnosticConversation(id uuid.UUID) (Conversation, bool) {
-	for _, c := range VettedDiagnosticConversations() {
-		if c.ID == id {
-			return c, true
-		}
-	}
-	return Conversation{}, false
 }
 
 // ExtractPlainTextFromHTML derives the text/plain alternative that ships

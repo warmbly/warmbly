@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -179,4 +180,26 @@ func (h *Handler) ValidateDiscountCode(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, preview)
+}
+
+// ListAppliedDiscounts returns the current org's promo-code redemption history
+// for the billing page.
+func (h *Handler) ListAppliedDiscounts(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+	limit := 50
+	if v := c.Query("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	rows, xerr := h.DiscountService.ListOrganizationRedemptions(c.Request.Context(), *orgID, limit)
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": rows})
 }

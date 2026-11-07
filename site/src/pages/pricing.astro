@@ -8,8 +8,7 @@ import WarmupScene from '../components/scenes/WarmupScene.astro';
 import InboxScene from '../components/scenes/InboxScene.astro';
 import InstallScene from '../components/scenes/InstallScene.astro';
 import BillingScene from '../components/scenes/pricing/BillingScene.astro';
-import FreeScene from '../components/scenes/pricing/FreeScene.astro';
-import WarmupPlanScene from '../components/scenes/pricing/WarmupPlanScene.astro';
+import CloudPoolScene from '../components/scenes/pricing/CloudPoolScene.astro';
 import MailboxLimitScene from '../components/scenes/pricing/MailboxLimitScene.astro';
 import PlacementScene from '../components/scenes/pricing/PlacementScene.astro';
 import SuppressionScene from '../components/scenes/pricing/SuppressionScene.astro';
@@ -78,9 +77,9 @@ const faq: [string, string][] = [
   ['Do you charge per email sent?', 'No. Each plan includes a daily send budget. Unused volume doesn’t carry over to the next day.'],
   ['Is warmup charged separately?', 'No. Warmup is unlimited on every paid plan and runs in the premium pool.'],
   ['Is there really no mailbox limit?', 'Mailboxes are unlimited on every paid plan under fair use: one mailbox for every email a day your plan includes, so Grow holds 3,000 and Business 15,000. If you need more, ask from the connect dialog and we usually answer within a business day.'],
-  ['Is there a free plan?', 'Yes. A hosted workspace starts free with up to 10 mailboxes warming, no card and no time limit. Sending, the inbox and the CRM unlock when you pick a plan.'],
-  ['Can I pay for warmup only?', 'Yes. The Warmup plan is $15 a month, or $144 a year. It moves your mailboxes into the premium pool, removes mailboxes that start landing in spam early, and has no mailbox cap, whether your mailboxes are connected here or on a self-hosted instance you link.'],
-  ['What does self-hosting cost?', 'Nothing. Warmbly is Apache 2.0 and free to run on your own servers. The only paid part is linking to the warmup pool once Warmbly Cloud launches: free for 10 mailboxes, $15 a month for unlimited.'],
+  ['Is there a free trial?', 'Yes. A new workspace gets 14 days free with no card: two mailboxes warming in the free pool, 20 cold emails a day, the unified inbox and campaigns. Each owner gets one trial, on their first workspace. After it, connecting and warming mailboxes needs a paid plan, from $29 a month, and nothing you set up is deleted. Workspaces that already had the free plan keep it.'],
+  ['Can I pay for warmup only?', 'Not any more. The Warmup plan is no longer sold, and workspaces already on it keep it while they stay subscribed. Every paid plan includes unlimited warmup in the premium pool.'],
+  ['What does self-hosting cost?', 'Nothing. Warmbly is Apache 2.0, free to run on your own servers and fully functional on its own. Its warmup only pairs the mailboxes on your own instance, with no shared pool, and self-hosted instances do not link to the Warmbly Cloud pool. If deliverability is what you need, Warmbly Cloud is the better choice. Self-hosting suits experienced operators who want to own the whole stack: Warmbly does not support self-hosted instances, and help comes from the community on Discord.'],
   ['Is there a charge per seat?', 'No. Add as many teammates as you like. Roles and the audit log come with Business.'],
   ['Can I pay yearly?', 'Yes, with 20% off. Use the switch at the top of this page.'],
   ['Can I buy as a business?', 'Yes. Add your legal name and tax ID at checkout. They appear on your invoices, and reverse charge is applied where the rules allow it. Taxes are calculated from your billing address and shown before you pay.'],
@@ -90,7 +89,7 @@ const faq: [string, string][] = [
 ---
 <Layout
   title="Pricing: Unlimited Mailboxes and Warmup | Warmbly"
-  description="Warmbly pricing from $29 a month with unlimited mailboxes and unlimited warmup on every paid plan. Free to self-host, free to warm up to 10 mailboxes, and 20% off yearly."
+  description="Warmbly pricing from $29 a month with unlimited mailboxes and unlimited warmup on every paid plan. Free to self-host, and 20% off yearly."
 >
   <!-- HEADER: the promise and the billing switch. -->
   <section class="container-page pt-14 md:pt-24">
@@ -101,7 +100,7 @@ const faq: [string, string][] = [
           Pay for the email you send.
         </h1>
         <p class="mt-6 max-w-2xl text-[17px] md:text-[19px] leading-[1.55] text-slate-500">
-          Every paid plan has unlimited mailboxes and unlimited warmup. Plans differ in how much cold email you can send a day, and in what your team needs around it.
+          Start with a 14-day free trial, no card needed. Every paid plan has unlimited mailboxes and unlimited warmup, and plans differ in how much cold email you can send a day and in what your team needs around it.
         </p>
       </div>
       <div class="inline-flex items-center gap-3" data-billing-toggle>
@@ -137,7 +136,7 @@ const faq: [string, string][] = [
           </div>
           <div class="mt-2 text-[14px] text-slate-600"><span class="font-medium text-slate-900">{p.sends}</span> cold emails a day</div>
           <a href={p.href} class={`mt-5 inline-flex h-10 w-full items-center justify-center rounded-full text-[14px] font-medium transition-colors ${p.featured ? 'bg-slate-900 text-white hover:bg-slate-800' : 'bg-white text-slate-900 ring-1 ring-slate-200 hover:bg-slate-50'}`}>
-            {p.price !== null ? 'Start free' : 'Talk to sales'}
+            {p.price !== null ? 'Get started' : 'Talk to sales'}
           </a>
         </div>
       ))}
@@ -170,7 +169,7 @@ const faq: [string, string][] = [
                   {p.price !== null ? <span class="plan-note" data-monthly="billed monthly" data-annual="billed yearly">billed yearly</span> : 'volume-based'}
                 </div>
                 <a href={p.href} class={`mt-4 inline-flex h-10 w-full items-center justify-center rounded-full text-[14px] font-medium transition-colors ${p.featured ? 'bg-slate-900 text-white hover:bg-slate-800' : 'bg-white text-slate-900 ring-1 ring-slate-200 hover:bg-slate-50'}`}>
-                  {p.price !== null ? 'Start free' : 'Talk to sales'}
+                  {p.price !== null ? 'Get started' : 'Talk to sales'}
                 </a>
                 </div>
               </th>
@@ -257,31 +256,22 @@ const faq: [string, string][] = [
     </div>
   </section>
 
-  <!-- SMALLER: only warming, or running it yourself. -->
+  <!-- WHERE IT RUNS: Warmbly Cloud and its pool, or the whole thing on your servers. -->
   <Rule />
   <section class="container-page py-20 md:py-28">
     <div class="grid gap-6 lg:grid-cols-[1.15fr_1fr] lg:items-end lg:gap-16">
-      <h2 class={h2}><span class="text-slate-400">Not sending yet?</span> Warm up for free, or run the whole thing yourself.</h2>
-      <p class={lead}>Mailboxes need weeks of warmup before they send well. You can start that today without paying for sending you are not doing yet.</p>
+      <h2 class={h2}><span class="text-slate-400">Cloud or self-hosted?</span> Same platform. The difference is the pool.</h2>
+      <p class={lead}>Warmup works by writing to other real mailboxes. On Warmbly Cloud that is a large shared pool. On your own server it is only the mailboxes you connect there.</p>
     </div>
-    <div class="mt-12 md:mt-16 grid gap-x-3 gap-y-12 md:grid-cols-3">
+    <div class="mt-12 md:mt-16 grid gap-x-3 gap-y-12 md:grid-cols-2">
       <article class="flex flex-col">
-        <FreeScene />
+        <CloudPoolScene />
         <div class="mt-6 flex items-baseline justify-between gap-4">
-          <h3 class="text-[21px] md:text-[23px] tracking-[-0.02em] text-slate-900">Free</h3>
-          <span class="text-[21px] md:text-[23px] font-medium tracking-[-0.03em] text-slate-900">$0</span>
+          <h3 class="text-[21px] md:text-[23px] tracking-[-0.02em] text-slate-900">Warmbly Cloud</h3>
+          <span class="text-[21px] md:text-[23px] font-medium tracking-[-0.03em] text-slate-900">From $29</span>
         </div>
-        <p class={`${body} flex-1`}>Warm up to 10 mailboxes in the Warmbly pool, replies and spam rescue included. No card and no time limit. Sending unlocks with a plan.</p>
-        <a href="https://app.warmbly.com/auth/register" class={link}>Start free <Icon name="arrowRight" size={14} class="transition-transform group-hover:translate-x-0.5" /></a>
-      </article>
-      <article class="flex flex-col">
-        <WarmupPlanScene />
-        <div class="mt-6 flex items-baseline justify-between gap-4">
-          <h3 class="text-[21px] md:text-[23px] tracking-[-0.02em] text-slate-900">Warmup</h3>
-          <span class="text-[21px] md:text-[23px] font-medium tracking-[-0.03em] text-slate-900">$<span class="plan-price" data-monthly="15" data-annual="12">12</span><span class="text-[14px] font-normal text-slate-400"> / month</span></span>
-        </div>
-        <p class={`${body} flex-1`}>The premium pool for every mailbox, with no cap, whether it is connected here or on a self-hosted instance you link.</p>
-        <a href="https://app.warmbly.com/auth/register" class={link}>Start warming <Icon name="arrowRight" size={14} class="transition-transform group-hover:translate-x-0.5" /></a>
+        <p class={`${body} flex-1`}>Unlimited mailboxes warming in the shared premium pool, with replies and spam rescue, alongside sending, the inbox and the CRM. We run it, update it and support it. The better choice when deliverability matters.</p>
+        <a href="https://app.warmbly.com/auth/register" class={link}>Get started <Icon name="arrowRight" size={14} class="transition-transform group-hover:translate-x-0.5" /></a>
       </article>
       <article class="flex flex-col">
         <InstallScene />
@@ -289,7 +279,7 @@ const faq: [string, string][] = [
           <h3 class="text-[21px] md:text-[23px] tracking-[-0.02em] text-slate-900">Self-hosted</h3>
           <span class="text-[21px] md:text-[23px] font-medium tracking-[-0.03em] text-slate-900">Free</span>
         </div>
-        <p class={`${body} flex-1`}>The whole platform under Apache 2.0, on your own servers, with unlimited mailboxes. Link it to the warmup pool when Warmbly Cloud launches.</p>
+        <p class={`${body} flex-1`}>The whole platform under Apache 2.0, on your own servers, with unlimited mailboxes. Warmup only pairs the mailboxes on your instance, with no shared pool, so it does far less for deliverability. Best for teams that want to own the whole stack. Community supported.</p>
         <code class="mt-4 block truncate rounded-md bg-slate-50 px-3 py-2 font-mono text-[12.5px] text-slate-700 ring-1 ring-slate-200">curl -fsSL https://warmbly.com/install.sh | sh</code>
       </article>
     </div>
@@ -300,7 +290,7 @@ const faq: [string, string][] = [
     <p class="mt-4 text-[16px] leading-[1.6] text-slate-500">Something else? Email <a class="font-medium text-slate-900 underline decoration-slate-300 underline-offset-4 hover:decoration-slate-900" href="mailto:team@warmbly.com">team@warmbly.com</a>.</p>
   </Faq>
 
-  <CTA photo="sheer-blue" title="Start free. Pick a plan when you send." description="Warm up to 10 mailboxes for free while you set up. Upgrade when your first campaign is ready." secondaryLabel="Talk to sales" secondaryHref="/contact/?topic=sales" />
+  <CTA photo="sheer-blue" title="Try it free for 14 days." description="Two mailboxes warming and 20 cold emails a day, no card needed. Every paid plan then includes unlimited mailboxes and unlimited warmup in the premium pool." secondaryLabel="Talk to sales" secondaryHref="/contact/?topic=sales" />
 </Layout>
 
 <script>

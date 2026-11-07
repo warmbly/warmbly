@@ -11,6 +11,7 @@
 
 import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { CheckIcon, PanelLeftIcon, SearchIcon, XIcon } from "lucide-react";
 import { AnimatedRow } from "./AnimatedRow";
 import { ConversationItem } from "./ConversationItem";
@@ -18,7 +19,7 @@ import { SelectionBar } from "./SelectionBar";
 import { useConversationActions } from "@/hooks/useConversationActions";
 import useUniboxSearch from "@/lib/api/hooks/app/unibox/useUniboxSearch";
 import { useShortcutActions } from "@/hooks/useShortcutActions";
-import { useAccessRestricted } from "@/hooks/usePermission";
+import { useScopeReadOnly } from "@/hooks/usePermission";
 import useInboxDebouncedValue from "@/hooks/useBrowseDebouncedValue";
 import { useScrollMemory } from "@/hooks/useScrollMemory";
 import { useAppStore } from "@/stores";
@@ -32,14 +33,49 @@ import { cn } from "@/lib/utils";
 import type { UniboxSearchParams } from "@/lib/api/models/app/unibox/UniboxSearch";
 import { Checkbox } from "@/components/ui/checkbox";
 
-type Bucket = "today" | "yesterday" | "week" | "earlier";
+type Bucket = "agent" | "today" | "yesterday" | "week" | "earlier";
 
 const BUCKET_LABELS: Record<Bucket, string> = {
+  agent: "Agent drafts",
   today: "Today",
   yesterday: "Yesterday",
   week: "This week",
   earlier: "Earlier",
 };
+
+type Row = ReturnType<typeof useUniboxSearch>["emails"][number];
+type ListItem =
+  | { kind: "header"; key: string; bucket: Bucket }
+  | { kind: "row"; key: string; bucket: Bucket; row: Row };
+type ShownItem = ListItem & { leaving?: boolean };
+
+// One mounted list entry with its own presence: scrolling it out of range
+// unmounts it at once, while one removed from the list still plays its exit.
+function VirtualSlot({
+  index,
+  measure,
+  present,
+  appear,
+  onExitComplete,
+  children,
+}: {
+  index: number;
+  measure: (node: HTMLDivElement | null) => void;
+  present: boolean;
+  appear: boolean;
+  onExitComplete: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div ref={measure} data-index={index}>
+      <AnimatePresence initial={appear} onExitComplete={onExitComplete}>
+        {present && children}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+const NO_ROWS: ReturnType<typeof useUniboxSearch>["emails"] = [];
 
 // Views where an empty list means the work is done rather than that nothing
 // ever landed there.
@@ -93,7 +129,7 @@ export function ConversationList({
   onOpenScopeSheet,
 }: ConversationListProps) {
   const [filtersOpen, setFiltersOpen] = React.useState(false);
-  const readOnly = useAccessRestricted();
+  const readOnly = useScopeReadOnly("ACCESS_UNIBOX");
 
   const searchRef = React.useRef<HTMLInputElement>(null);
   const listRef = React.useRef<HTMLDivElement>(null);
@@ -121,7 +157,26 @@ export function ConversationList({
   const emptyScope = params.accountIds?.length === 0 || params.categoryIds?.length === 0;
   const result = useUniboxSearch(merged, scopeKey, !emptyScope);
   const q = emptyScope ? { ...result, emails: [], isPending: false, isFetching: false, hasNextPage: false } : result;
-  const emails = q.emails;
+
+  // Drafts lists threads with a pending inbox-agent draft above the mailbox's own drafts.
+  const draftsFolder = params.folder === "drafts" && !emptyScope;
+  const agentParams = React.useMemo<UniboxSearchParams>(
+    () => ({ ...merged, folder: undefined, agentDrafts: true }),
+    [merged],
+  );
+  const agent = useUniboxSearch(agentParams, `${scopeKey}:agent`, draftsFolder);
+  const agentRows = draftsFolder ? agent.emails : NO_ROWS;
+  const agentKeys = React.useMemo(
+    () => new Set(agentRows.map((r) => r.thread_id || r.id)),
+    [agentRows],
+  );
+  const emails = React.useMemo(
+    () =>
+      agentRows.length === 0
+        ? q.emails
+        : [...agentRows, ...q.emails.filter((r) => !agentKeys.has(r.thread_id || r.id))],
+    [agentRows, agentKeys, q.emails],
+  );
   const totalShown = emails.length;
   const activeFilters = countUserFilters(params, baseParams);
 
@@ -208,9 +263,13 @@ export function ConversationList({
   // a bar along the top and the stale rows dimmed. Background refetches from
   // realtime events do not qualify, so nothing flickers while reading. The
   // bar waits 150ms so a fast response never shows it at all.
-  const stale = q.isPlaceholderData && q.isFetching;
+  const stale = (q.isPlaceholderData && q.isFetching) ||
+    (draftsFolder && agent.isPlaceholderData && agent.isFetching);
   const showProgress = useDelayed(stale, 150);
-  const firstLoad = (q.isPending || q.isPlaceholderData) && emails.length === 0;
+  const firstLoad = (q.isPending || q.isPlaceholderData ||
+    (draftsFolder && (agent.isPending || agent.isPlaceholderData))) && emails.length === 0;
+  const failedQuery = q.isError && !q.isFetchNextPageError ? q :
+    draftsFolder && agent.isError && !agent.isFetchNextPageError ? agent : undefined;
 
   // Where this exact list was left. Opening a thread keeps the page mounted
   // (see the route's stableParams in main.tsx), so this covers what that
@@ -225,13 +284,17 @@ export function ConversationList({
   // data is on screen, which lags the request key for as long as the previous
   // rows are standing in, so the swap remounts rather than animates.
   const shownKey = React.useRef(listKey);
-  if (!q.isPlaceholderData) shownKey.current = listKey;
+  if (!q.isPlaceholderData && (!draftsFolder || !agent.isPlaceholderData)) shownKey.current = listKey;
 
   // Infinite scroll: reaching the end of the list loads the next page instead
   // of asking for a click. The button below stays as the manual fallback, and
   // isFetchingNextPage is a dependency so a page landing re-arms the observer:
   // a sentinel still on screen keeps pulling instead of stalling one page in.
-  const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = q;
+  // Page agent drafts first, using the same bounded scroll and retry behavior as mailbox drafts.
+  const nextQuery = draftsFolder && agent.hasNextPage &&
+    (!agent.isFetchNextPageError || !q.hasNextPage) ? agent : q;
+  const { isFetchingNextPage, isFetchNextPageError, fetchNextPage } = nextQuery;
+  const hasNextPage = q.hasNextPage || (draftsFolder && agent.hasNextPage);
   React.useEffect(() => {
     const root = listRef.current;
     // A page that failed stays failed until the user asks again; re-arming on
@@ -254,51 +317,88 @@ export function ConversationList({
     fetchNextPage,
   ]);
 
-  // Rows and their time-bucket headers as one flat sequence, so a single
-  // AnimatePresence sees every entry and exit (a header leaves with the last
-  // row under it). The server orders newest first, so one pass keeps both
-  // the order and the grouping.
+  // Rows and their time-bucket headers as one flat sequence. The server orders
+  // newest first, so one pass keeps both the order and the grouping.
   const items = React.useMemo(() => {
-    const out: (
-      | { kind: "header"; key: string; bucket: Bucket }
-      | { kind: "row"; key: string; row: (typeof emails)[number] }
-    )[] = [];
+    const out: ListItem[] = [];
     let last: Bucket | null = null;
     for (const e of emails) {
-      const b = bucketFor(new Date(e.internal_date));
+      const b = agentKeys.has(rowKey(e)) ? "agent" : bucketFor(new Date(e.internal_date));
       if (b !== last) out.push({ kind: "header", key: `bucket:${b}`, bucket: b });
       last = b;
-      out.push({ kind: "row", key: rowKey(e), row: e });
+      out.push({ kind: "row", key: rowKey(e), bucket: b, row: e });
     }
     return out;
-  }, [emails, rowKey]);
+  }, [emails, rowKey, agentKeys]);
 
-  // Which items were on screen last time, and a generation per key that
-  // left. A key that comes back gets a fresh presence key: AnimatePresence
-  // unmounts exiting children only when every one has finished, and one that
-  // re-enters mid-exit never reports, stranding the rest of the batch (a
-  // date header when the list refills, rows restored by a failed action).
+  // Only entries near the viewport are mounted. One that leaves the data while
+  // mounted is kept in place until its exit ends; one scrolled away just goes.
+  // A new result set remounts the rows, so nothing in it counts as kept.
   const itemSig = React.useMemo(() => items.map((i) => i.key).join("\n"), [items]);
-  // A new result set remounts every row, so nothing in it counts as kept.
   const resultSet = shownKey.current;
+  const mountedKeys = React.useRef<ReadonlySet<string>>(new Set());
+  const played = React.useRef(new Set<string>());
   const [shown, setShown] = React.useState<{
     sig: string;
     set: string;
+    items: ListItem[];
     prev: ReadonlySet<string>;
-    gen: ReadonlyMap<string, number>;
-  }>(() => ({ sig: "", set: resultSet, prev: new Set<string>(), gen: new Map() }));
+    leaving: ReadonlyMap<string, { item: ListItem; after: string | null }>;
+  }>(() => ({ sig: "", set: resultSet, items: [], prev: new Set<string>(), leaving: new Map() }));
   if (shown.sig !== itemSig || shown.set !== resultSet) {
     const sameSet = shown.set === resultSet;
-    const prev = sameSet && shown.sig ? shown.sig.split("\n") : [];
-    const now = new Set(itemSig ? itemSig.split("\n") : []);
-    const gen = new Map(sameSet ? shown.gen : []);
-    for (const k of prev) if (!now.has(k)) gen.set(k, (gen.get(k) ?? 0) + 1);
-    setShown({ sig: itemSig, set: resultSet, prev: new Set(prev), gen });
+    const now = new Set(items.map((i) => i.key));
+    const leaving = new Map(sameSet ? shown.leaving : []);
+    for (const k of now) leaving.delete(k);
+    if (sameSet) {
+      let anchor: string | null = null;
+      for (const it of shown.items) {
+        if (now.has(it.key)) anchor = it.key;
+        else if (mountedKeys.current.has(it.key) && !leaving.has(it.key)) leaving.set(it.key, { item: it, after: anchor });
+      }
+    } else {
+      played.current = new Set();
+    }
+    setShown({
+      sig: itemSig,
+      set: resultSet,
+      items,
+      prev: new Set(sameSet ? shown.items.map((i) => i.key) : []),
+      leaving,
+    });
   }
-  const presenceKey = (key: string) => {
-    const g = shown.gen.get(key);
-    return g ? `${key}~${g}` : key;
-  };
+  const finishLeaving = React.useCallback((key: string) => {
+    setShown((s) => {
+      if (!s.leaving.has(key)) return s;
+      const leaving = new Map(s.leaving);
+      leaving.delete(key);
+      return { ...s, leaving };
+    });
+  }, []);
+  // A leaving entry scrolled away mid-exit never reports back; every exit is well under this.
+  React.useEffect(() => {
+    if (shown.leaving.size === 0) return;
+    const keys = [...shown.leaving.keys()];
+    const t = window.setTimeout(() => keys.forEach(finishLeaving), 1500);
+    return () => window.clearTimeout(t);
+  }, [shown.leaving, finishLeaving]);
+
+  const display = React.useMemo<ShownItem[]>(() => {
+    if (shown.leaving.size === 0) return items;
+    const after = new Map<string | null, ShownItem[]>();
+    for (const { item, after: anchor } of shown.leaving.values()) {
+      const list = after.get(anchor) ?? [];
+      list.push({ ...item, leaving: true });
+      after.set(anchor, list);
+    }
+    const out: ShownItem[] = [...(after.get(null) ?? [])];
+    for (const it of items) {
+      out.push(it);
+      const tail = after.get(it.key);
+      if (tail) out.push(...tail);
+    }
+    return out;
+  }, [items, shown.leaving]);
 
   // How each new row should appear. One inserted above rows already on
   // screen (an arrival, an Undo) grows into place; rows added below them (a
@@ -319,6 +419,44 @@ export function ConversationList({
     return out;
   }, [itemSig, shown.prev]);
 
+  // The rows start below whatever alerts sit above them in the scroll box.
+  const agentPageAlert = draftsFolder && agent.isFetchNextPageError && nextQuery !== agent;
+  const rowsRef = React.useRef<HTMLDivElement>(null);
+  const [scrollMargin, setScrollMargin] = React.useState(0);
+  React.useLayoutEffect(() => {
+    setScrollMargin(rowsRef.current?.offsetTop ?? 0);
+  }, [agentPageAlert, failedQuery, firstLoad]);
+  const virtualizer = useVirtualizer({
+    count: display.length,
+    getScrollElement: () => listRef.current,
+    estimateSize: (i) => (display[i]?.kind === "header" ? 28 : 72),
+    getItemKey: (i) => display[i]?.key ?? i,
+    overscan: 8,
+    scrollMargin,
+    // Rows on the first paint, before the box is measured.
+    initialRect: { width: 0, height: 800 },
+  });
+  const virtualRows = virtualizer.getVirtualItems();
+  const displayRef = React.useRef(display);
+  React.useLayoutEffect(() => {
+    displayRef.current = display;
+    const keys = new Set<string>();
+    for (const v of virtualRows) {
+      const it = display[v.index];
+      if (it) keys.add(it.key);
+    }
+    mountedKeys.current = keys;
+    for (const k of keys) played.current.add(k);
+  });
+  const padTop = virtualRows.length ? virtualRows[0].start - scrollMargin : 0;
+  const padBottom = virtualRows.length
+    ? Math.max(0, virtualizer.getTotalSize() - (virtualRows[virtualRows.length - 1].end - scrollMargin))
+    : 0;
+  // The bucket stays pinned while its own header is scrolled away and unmounted.
+  const scrollOffset = virtualizer.scrollOffset ?? 0;
+  const topRow = scrollOffset > scrollMargin ? virtualRows.find((v) => v.end > scrollOffset + 1) : undefined;
+  const pinnedBucket = topRow ? display[topRow.index]?.bucket : undefined;
+
   // Keyboard navigation. We work off `emails` (flat order) so j/k moves across
   // bucket boundaries naturally. The keys themselves live in the global
   // registry (useKeyboardShortcuts); this only says what they mean here, so the
@@ -329,15 +467,11 @@ export function ConversationList({
       const id = row.thread_id || row.id;
       setSelectedThreadId(id);
       setSelectedAccountId(row.email_id ?? null);
-      // Bring the newly selected row into view if the list scrolled.
-      requestAnimationFrame(() => {
-        const el = listRef.current?.querySelector<HTMLElement>(
-          `[data-thread-id="${id}"]`,
-        );
-        el?.scrollIntoView({ block: "nearest" });
-      });
+      // Bring the newly selected row into view; it may not be mounted yet.
+      const index = displayRef.current.findIndex((i) => i.key === id);
+      if (index >= 0) virtualizer.scrollToIndex(index, { align: "auto" });
     },
-    [setSelectedThreadId, setSelectedAccountId],
+    [setSelectedThreadId, setSelectedAccountId, virtualizer],
   );
 
   const currentIndex = React.useCallback(
@@ -530,24 +664,24 @@ export function ConversationList({
         ref={listRef}
         className={cn(
           // The x clip keeps a row sliding out from drawing a scrollbar.
-          "flex-1 overflow-y-auto overflow-x-hidden transition-opacity duration-200",
+          "relative flex-1 overflow-y-auto overflow-x-hidden transition-opacity duration-200",
           stale && emails.length > 0 && "opacity-50",
         )}
         aria-busy={stale || undefined}
       >
         {firstLoad ? (
           <SkeletonRows />
-        ) : q.isError && emails.length === 0 ? (
+        ) : failedQuery && emails.length === 0 ? (
           <div className="px-5 py-12 text-center">
             <p className="text-[12.5px] text-slate-900 font-medium mb-1">
               Couldn't load inbox
             </p>
             <p className="text-[11.5px] text-slate-500 mb-3">
-              {q.error?.message ?? "Request failed"}
+              {failedQuery.error?.message ?? "Request failed"}
             </p>
             <button
               type="button"
-              onClick={() => q.refetch()}
+              onClick={() => failedQuery.refetch()}
               className="h-7 px-2.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium transition-colors"
             >
               Try again
@@ -555,72 +689,109 @@ export function ConversationList({
           </div>
         ) : (
           <React.Fragment key={shownKey.current}>
-            <AnimatePresence>
-              {items.map((item) =>
-                item.kind === "header" ? (
-                  <motion.div
-                    key={presenceKey(item.key)}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1, height: 28, transition: { duration: 0.2 } }}
-                    // Leaves after the rows under it have slid away.
-                    exit={{ opacity: 0, height: 0, transition: { duration: 0.2, delay: 0.24 } }}
-                    className="sticky top-0 z-10 px-4 h-7 bg-white/95 backdrop-blur-sm flex items-center overflow-hidden"
+            {agentPageAlert && (
+              <div role="alert" className="px-4 py-3 text-[12px] text-rose-600">
+                Couldn't load more agent drafts.{" "}
+                <button type="button" onClick={() => agent.fetchNextPage()} className="underline">
+                  Retry agent drafts
+                </button>
+              </div>
+            )}
+            {failedQuery && (
+              <div role="alert" className="px-4 py-3 text-[12px] text-rose-600">
+                Some conversations couldn't load.{" "}
+                <button type="button" onClick={() => failedQuery.refetch()} className="underline">
+                  Try again
+                </button>
+              </div>
+            )}
+            {pinnedBucket && (
+              <div aria-hidden className="sticky top-0 z-10 -mb-7 px-4 h-7 bg-white/95 backdrop-blur-sm flex items-center">
+                <span className="text-[10.5px] uppercase tracking-[0.12em] text-slate-400 font-medium">
+                  {BUCKET_LABELS[pinnedBucket]}
+                </span>
+              </div>
+            )}
+            <div ref={rowsRef} style={{ paddingTop: padTop, paddingBottom: padBottom }}>
+              {virtualRows.map((v) => {
+                const item = display[v.index];
+                if (!item) return null;
+                const enter = entering.get(item.key);
+                return (
+                  <VirtualSlot
+                    key={item.key}
+                    index={v.index}
+                    measure={virtualizer.measureElement}
+                    present={!item.leaving}
+                    appear={!!enter && !played.current.has(item.key)}
+                    onExitComplete={() => finishLeaving(item.key)}
                   >
-                    <span className="text-[10.5px] uppercase tracking-[0.12em] text-slate-400 font-medium">
-                      {BUCKET_LABELS[item.bucket]}
-                    </span>
-                  </motion.div>
-                ) : (
-                  <AnimatedRow
-                    key={presenceKey(item.key)}
-                    motionKey={item.key}
-                    custom={{
-                      id: item.key,
-                      arrival: entering.get(item.key)?.arrival ?? false,
-                      rank: entering.get(item.key)?.rank ?? 0,
-                    }}
-                  >
-                    <ConversationItem
-                      // The row's actions read the scope: Archive and Trash
-                      // offer the way back rather than the way out.
-                      scope={rowScope}
-                      selected={picked.has(item.key)}
-                      selecting={selecting}
-                      onToggleSelect={toggleSelect}
-                      // Only ticked rows get it, so a change in the selection
-                      // re-renders those and not the whole list.
-                      selection={
-                        picked.has(item.key) && selectedIds.length > 1
-                          ? selectedIds
-                          : undefined
-                      }
-                      onSelectionDone={clearSelection}
-                      actions={actions}
-                      email={{
-                        id: item.row.id,
-                        from: item.row.from_addr?.[0] ?? "",
-                        to: item.row.to_addr?.[0] ?? "",
-                        subject: item.row.subject,
-                        snippet: item.row.snippet,
-                        date: new Date(item.row.internal_date),
-                        // Bold the whole conversation when any message in
-                        // the thread is unread.
-                        is_seen: !item.row.has_unread,
-                        thread_id: item.row.thread_id,
-                        account_id: item.row.email_id,
-                        message_count: item.row.message_count,
-                        labels: item.row.labels,
-                      }}
-                    />
-                  </AnimatedRow>
-                ),
-              )}
-            </AnimatePresence>
+                    {item.kind === "header" ? (
+                      <motion.div
+                        key={item.key}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1, height: 28, transition: { duration: 0.2 } }}
+                        // Leaves after the rows under it have slid away.
+                        exit={{ opacity: 0, height: 0, transition: { duration: 0.2, delay: 0.24 } }}
+                        className="px-4 h-7 bg-white flex items-center overflow-hidden"
+                      >
+                        <span className="text-[10.5px] uppercase tracking-[0.12em] text-slate-400 font-medium">
+                          {BUCKET_LABELS[item.bucket]}
+                        </span>
+                      </motion.div>
+                    ) : (
+                      <AnimatedRow
+                        key={item.key}
+                        motionKey={item.key}
+                        custom={{
+                          id: item.key,
+                          arrival: enter?.arrival ?? false,
+                          rank: enter?.rank ?? 0,
+                        }}
+                      >
+                        <ConversationItem
+                          // The row's actions read the scope: Archive and Trash
+                          // offer the way back rather than the way out.
+                          scope={rowScope}
+                          selected={picked.has(item.key)}
+                          selecting={selecting}
+                          onToggleSelect={toggleSelect}
+                          // Only ticked rows get it, so a change in the selection
+                          // re-renders those and not the whole list.
+                          selection={
+                            picked.has(item.key) && selectedIds.length > 1
+                              ? selectedIds
+                              : undefined
+                          }
+                          onSelectionDone={clearSelection}
+                          actions={actions}
+                          email={{
+                            id: item.row.id,
+                            from: item.row.from_addr?.[0] ?? "",
+                            to: item.row.to_addr?.[0] ?? "",
+                            subject: item.row.subject,
+                            snippet: item.row.snippet,
+                            date: new Date(item.row.internal_date),
+                            // Bold the whole conversation when any message in
+                            // the thread is unread.
+                            is_seen: !item.row.has_unread,
+                            thread_id: item.row.thread_id,
+                            account_id: item.row.email_id,
+                            message_count: item.row.message_count,
+                            labels: item.row.labels,
+                          }}
+                        />
+                      </AnimatedRow>
+                    )}
+                  </VirtualSlot>
+                );
+              })}
+            </div>
             {/* Mounted beside the rows rather than instead of them, so the last
                 ones can still animate out when an action empties the list. It
                 waits for them before it appears. */}
             <AnimatePresence>
-              {emails.length === 0 && !hasNextPage && (
+              {emails.length === 0 && !hasNextPage && !failedQuery && (
                 <motion.div
                   key="empty"
                   initial={{ opacity: 0, y: 6 }}

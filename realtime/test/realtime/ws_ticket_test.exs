@@ -76,8 +76,9 @@ defmodule Realtime.WsTicketTest do
     assert {:error, :ticket_used} = Auth.verify_jwt(token)
   end
 
-  test "a ticket that names no session reaches no second factor" do
-    assert {:ok, @user, :jwt, %{session_id: nil, mfa_verified: false}} = Auth.verify_jwt(ticket())
+  test "a ticket that names no session is refused" do
+    assert {:error, :invalid_claims} = Auth.verify_jwt(ticket())
+    assert {:error, :invalid_claims} = Auth.verify_jwt(ticket(%{"session_id" => ""}))
     assert AuthRepo.queries() == []
   end
 

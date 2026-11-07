@@ -282,8 +282,8 @@ function AssistantTab({ status, canManage }: { status: SlackStatus; canManage: b
                 </div>
                 <p className="text-[11px] text-slate-400 leading-relaxed">
                     The assistant acts as the Warmbly member linked to the Slack account asking, with that member's
-                    permissions. Anything that sends or changes data waits for an Approve click, and credits are
-                    charged as in the dashboard. It never answers in channels shared with other companies.
+                    permissions. Anything that sends or changes data waits for an Approve click, and AI use is
+                    charged to the workspace balance as in the dashboard. It never answers in channels shared with other companies.
                 </p>
             </div>
 

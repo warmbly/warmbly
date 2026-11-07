@@ -1,57 +1,51 @@
-// Mailboxes page strip for self-hosted instances: invites an unlinked
-// instance to connect, and shows a linked one how many mailboxes are in the
-// pool. Dismissal of the invite is remembered locally. Once linked the strip
-// stays quiet: one line of state, and the Premium nudge only when the free
-// allowance is actually used up.
+// Mailboxes page strip for self-hosted instances. Unlinked: local warmup is not
+// effective and self-hosting is unsupported, so it points at Warmbly Cloud.
+// Linked on a free workspace: what it enrolled keeps warming, new mailboxes
+// warm here unless the workspace pays. Linked and paid: one line of state.
 
 import React from "react";
 import { Link } from "@tanstack/react-router";
-import { ArrowRightIcon, CloudIcon, ExternalLinkIcon, MailCheckIcon, TrendingUpIcon, XIcon } from "lucide-react";
+import { ArrowRightIcon, CloudIcon, ExternalLinkIcon, MessagesSquareIcon, ServerIcon, XIcon } from "lucide-react";
 import useCloudPool from "@/hooks/useCloudPool";
+import { CLOUD_APP_URL, COMMUNITY_URL, cloudAddsNeedSubscription } from "@/lib/cloudPlan";
 
-const DISMISS_KEY = "warmbly.cloud-pool-banner.dismissed";
+// A new key, so instances that dismissed the old free offer see this notice once.
+const DISMISS_KEY = "warmbly.selfHostNotice.dismissed";
 
-export default function CloudPoolBanner({ onConnect, mailboxCount }: { onConnect: () => void; mailboxCount: number }) {
+export default function CloudPoolBanner({ mailboxCount }: { mailboxCount: number }) {
     const pool = useCloudPool();
     const [dismissed, setDismissed] = React.useState(() => localStorage.getItem(DISMISS_KEY) === "1");
 
     if (!pool.manageable || pool.loading) return null;
 
-    if (pool.connected && !pool.workspaceConnected) {
-        return <div className="px-3 py-2 text-[12.5px] text-slate-600">Existing Cloud mailboxes keep warming. <Link to="/app/settings/warmbly-cloud" className="font-medium text-sky-700 underline">Connect this workspace</Link> to add more.</div>;
-    }
     if (pool.connected) {
         const plan = pool.plan;
-        const limit = plan?.mailbox_limit ?? null;
         const premium = plan?.tier === "paid";
-        // The allowance is per cloud workspace, so the cloud's count is the
-        // one that decides, not this instance's own enrolled count.
-        const used = plan?.enrolled ?? pool.enrolledCount;
-        const atLimit = !premium && limit !== null && used >= limit && mailboxCount > pool.enrolledCount;
-        if (atLimit && plan?.upgrade_url) {
+        const closed = cloudAddsNeedSubscription(plan);
+        const subscribeURL = plan?.upgrade_url || plan?.manage_url;
+        if (closed && mailboxCount > pool.enrolledCount) {
             return (
-                <div>
-                    <div className="flex items-start sm:items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-2.5 text-[12.5px] text-slate-700">
-                        <SoftIcon icon={TrendingUpIcon} />
-                        <div className="min-w-0 flex-1 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-                            <span className="min-w-0 flex-1 leading-snug">
-                                <span className="font-medium text-slate-900">Give every mailbox better deliverability.</span>{" "}
-                                <span className="text-slate-500">
-                                    All {limit} free pool mailboxes are in use. Premium warms the rest in the premium pool, built for inbox placement, for ${plan.price_usd} a month.
-                                </span>
-                            </span>
-                            <a
-                                href={plan.upgrade_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="self-start sm:self-auto shrink-0 h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
-                            >
-                                Upgrade to Premium
-                                <ExternalLinkIcon className="w-3 h-3" />
-                            </a>
-                        </div>
-                    </div>
-                </div>
+                <Notice
+                    icon={ServerIcon}
+                    title="New mailboxes warm on this instance, which is not effective."
+                    body={
+                        <>
+                            {pool.enrolledCount > 0 ? `The ${pool.enrolledCount} already in Warmbly Cloud keep warming there. ` : ""}
+                            Adding more to the Cloud pool needs a paid Warmbly Cloud plan. Self-hosted instances get no support from Warmbly.
+                        </>
+                    }
+                    actions={
+                        <>
+                            {subscribeURL && (
+                                <a href={subscribeURL} target="_blank" rel="noreferrer" className={PRIMARY}>
+                                    See plans
+                                    <ExternalLinkIcon className="w-3 h-3" />
+                                </a>
+                            )}
+                            <CommunityLink />
+                        </>
+                    }
+                />
             );
         }
         return (
@@ -64,9 +58,7 @@ export default function CloudPoolBanner({ onConnect, mailboxCount }: { onConnect
                                 ? "No mailbox is warming in Warmbly Cloud yet."
                                 : `${pool.enrolledCount} of ${mailboxCount} mailboxes warm in Warmbly Cloud.`}
                         </span>{" "}
-                        <span className="text-slate-500">
-                            {premium ? "Premium pool." : limit === null ? "Unlimited." : `${used} of ${limit} free.`}
-                        </span>
+                        <span className="text-slate-500">{premium ? "Premium pool." : closed ? "Free, no new mailboxes." : "Free pool."}</span>
                     </span>
                     <Link to="/app/settings/warmbly-cloud" className="shrink-0 text-[12px] font-medium text-sky-700 hover:text-sky-900 underline underline-offset-2">
                         Manage
@@ -79,39 +71,78 @@ export default function CloudPoolBanner({ onConnect, mailboxCount }: { onConnect
     if (dismissed) return null;
 
     return (
+        <Notice
+            icon={ServerIcon}
+            title="Warmup on this instance is not effective."
+            body={
+                <>
+                    It only pairs your own mailboxes, which providers learn to recognise. Warmbly Cloud warms mailboxes in a pool of thousands of real
+                    ones. To move, pick a plan on Warmbly Cloud, then bring this workspace over with an export from{" "}
+                    <Link to="/app/settings/data" className="font-medium text-sky-700 hover:text-sky-900 underline underline-offset-2">
+                        Settings &gt; Data
+                    </Link>
+                    . Warmbly does not provide support for self-hosting.
+                </>
+            }
+            actions={
+                <>
+                    <a href={`${CLOUD_APP_URL}/auth/register?next=${encodeURIComponent(CLOUD_PLANS_PATH)}`} target="_blank" rel="noreferrer" className={PRIMARY}>
+                        Upgrade on Warmbly Cloud
+                        <ArrowRightIcon className="w-3 h-3" />
+                    </a>
+                    <CommunityLink />
+                </>
+            }
+            onDismiss={() => {
+                localStorage.setItem(DISMISS_KEY, "1");
+                setDismissed(true);
+            }}
+        />
+    );
+}
+
+// Opens the plan chooser once the account exists; the sign-up page also signs existing users in.
+const CLOUD_PLANS_PATH = "/app/settings/billing?pool=1";
+
+const PRIMARY = "shrink-0 h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors";
+
+function Notice({ icon, title, body, actions, onDismiss }: { icon: React.ComponentType<{ className?: string }>; title: string; body: React.ReactNode; actions: React.ReactNode; onDismiss?: () => void }) {
+    return (
         <div>
             <div className="flex items-start sm:items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-2.5 text-[12.5px] text-slate-700">
-                <SoftIcon icon={MailCheckIcon} />
+                <SoftIcon icon={icon} />
                 <div className="min-w-0 flex-1 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                     <span className="min-w-0 flex-1 leading-snug">
-                        <span className="font-medium text-slate-900">Get these mailboxes into the inbox, not spam.</span>{" "}
-                        <span className="text-slate-500">
-                            Warm them in Warmbly Cloud's large, active pool to build sender reputation, with replies and spam rescue handled for you.
-                            Free for 10 mailboxes, set up in a minute, and your data stays here.
-                        </span>
+                        <span className="font-medium text-slate-900">{title}</span> <span className="text-slate-500">{body}</span>
                     </span>
+                    <div className="self-start sm:self-auto shrink-0 flex items-center gap-2">{actions}</div>
+                </div>
+                {onDismiss && (
                     <button
                         type="button"
-                        onClick={onConnect}
-                        className="self-start sm:self-auto shrink-0 h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
+                        aria-label="Dismiss"
+                        onClick={onDismiss}
+                        className="shrink-0 size-6 rounded-md inline-flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100"
                     >
-                        Connect for free
-                        <ArrowRightIcon className="w-3 h-3" />
+                        <XIcon className="w-3.5 h-3.5" />
                     </button>
-                </div>
-                <button
-                    type="button"
-                    aria-label="Dismiss"
-                    onClick={() => {
-                        localStorage.setItem(DISMISS_KEY, "1");
-                        setDismissed(true);
-                    }}
-                    className="shrink-0 size-6 rounded-md inline-flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100"
-                >
-                    <XIcon className="w-3.5 h-3.5" />
-                </button>
+                )}
             </div>
         </div>
+    );
+}
+
+function CommunityLink() {
+    return (
+        <a
+            href={COMMUNITY_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="shrink-0 h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-slate-700 text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
+        >
+            <MessagesSquareIcon className="w-3 h-3 text-slate-500" />
+            Community on Discord
+        </a>
     );
 }
 

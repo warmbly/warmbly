@@ -2,8 +2,9 @@
 //
 // The fake server below keeps real folder state and pages like the backend, so
 // what the list shows after each round is what a reload would show. The rows
-// are counted in the DOM, including any still mounted after their exit, which
-// is how a stalled exit shows up: the archived rows stay on screen.
+// are read from the DOM, including any still mounted after their exit, which
+// is how a stalled exit shows up: the archived rows stay on screen. The list
+// is virtualized, so only the rows near the viewport are mounted.
 
 import React from "react";
 import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
@@ -89,6 +90,8 @@ vi.mock("@/hooks/context/socket", async (orig) => {
     };
 });
 
+const index = (threadId: string | null) => Number(threadId?.slice("thread-".length));
+
 const visible = () =>
     [...document.querySelectorAll("[data-thread-id]")].map((e) => e.getAttribute("data-thread-id"));
 
@@ -113,17 +116,20 @@ describe("bulk archive from the selection bar", SUITE, () => {
         await mount("/app/unibox/inbox");
         for (let i = 0; i < 4; i++) await settle();
         const first = visible();
-        expect(first).toHaveLength(50);
+        expect(first.length).toBeGreaterThan(0);
+        expect(first.every((id) => index(id) < 50)).toBe(true);
 
         await archiveAll();
         const second = visible();
-        // The next fifty, and nothing from the first round left mounted.
-        expect(second).toHaveLength(50);
+        // The next page, and nothing from the first round left mounted.
+        expect(second.length).toBeGreaterThan(0);
+        expect(second.every((id) => index(id) >= 50 && index(id) < 100)).toBe(true);
         expect(second.filter((id) => first.includes(id))).toEqual([]);
 
         await archiveAll();
         const third = visible();
-        expect(third).toHaveLength(30);
+        expect(third.length).toBeGreaterThan(0);
+        expect(third.every((id) => index(id) >= 100)).toBe(true);
         expect(third.filter((id) => first.includes(id) || second.includes(id))).toEqual([]);
 
         const archived = server.rows.filter((r) => r.folder === "archive").length;

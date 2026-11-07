@@ -124,6 +124,7 @@ func (d Deps) registerCampaignTools(r *Registry) {
 			"description":        strProp("New description."),
 			"daily_limit":        intProp("Per-day send cap for the campaign."),
 			"stop_on_reply":      boolProp("Stop sequencing a lead once they reply."),
+			"stop_on_meeting":    boolProp("Stop sequencing a lead once they book a meeting."),
 			"open_tracking":      boolProp("Track opens."),
 			"link_tracking":      boolProp("Track link clicks."),
 			"utm_tracking":       boolProp("Tag every link with UTM parameters automatically."),
@@ -238,6 +239,7 @@ func (d Deps) updateCampaign(ctx context.Context, inv Invocation, args json.RawM
 		Description       *string `json:"description"`
 		DailyLimit        *int    `json:"daily_limit"`
 		StopOnReply       *bool   `json:"stop_on_reply"`
+		StopOnMeeting     *bool   `json:"stop_on_meeting"`
 		OpenTracking      *bool   `json:"open_tracking"`
 		LinkTracking      *bool   `json:"link_tracking"`
 		UTMTracking       *bool   `json:"utm_tracking"`
@@ -265,6 +267,7 @@ func (d Deps) updateCampaign(ctx context.Context, inv Invocation, args json.RawM
 		Description:       in.Description,
 		DailyLimit:        in.DailyLimit,
 		StopOnReply:       in.StopOnReply,
+		StopOnMeeting:     in.StopOnMeeting,
 		OpenTracking:      in.OpenTracking,
 		LinkTracking:      in.LinkTracking,
 		UTMTracking:       in.UTMTracking,

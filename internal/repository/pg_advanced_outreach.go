@@ -71,6 +71,14 @@ type AdvancedOutreachRepository interface {
 	CreatePreflightReport(ctx context.Context, report *models.PreflightReport) error
 
 	GetABVariantStats(ctx context.Context, campaignID uuid.UUID) ([]models.ABVariantStats, error)
+	// GetStepArmCounts counts contacts per (step, arm) of every step split, attributing each
+	// open, click and reply to the step the contact had most recently been sent.
+	GetStepArmCounts(ctx context.Context, campaignID uuid.UUID) ([]models.ABStepArmCounts, error)
+	// ListABAutoPromoteCandidates lists active campaigns with an unpromoted step split running.
+	ListABAutoPromoteCandidates(ctx context.Context, limit int) ([]models.ABAutoPromoteCandidate, error)
+	// PromoteStepWinner hands a step to its winning arm (nil = the Original) and pauses
+	// the rest. It refuses, returning false, once the step has been promoted.
+	PromoteStepWinner(ctx context.Context, campaignID, stepID uuid.UUID, winner *uuid.UUID) (bool, error)
 
 	// DLQ auto-retry
 	ListRetryableDeadLetters(ctx context.Context, limit int) ([]models.TaskDeadLetter, error)
@@ -182,6 +190,7 @@ func scanABVariant(rows pgx.Row, v *models.CampaignABVariant) error {
 		&v.IsControl,
 		&v.IsActive,
 		&metadata,
+		&v.PromotedAt,
 		&v.CreatedAt,
 		&v.UpdatedAt,
 	); err != nil {
@@ -200,7 +209,7 @@ func scanABVariant(rows pgx.Row, v *models.CampaignABVariant) error {
 
 func (r *advancedOutreachRepository) ListABVariants(ctx context.Context, campaignID uuid.UUID) ([]models.CampaignABVariant, error) {
 	query := `
-		SELECT id, campaign_id, sequence_id, name, weight, subject, body_html, body_plain, is_control, is_active, metadata, created_at, updated_at
+		SELECT id, campaign_id, sequence_id, name, weight, subject, body_html, body_plain, is_control, is_active, metadata, promoted_at, created_at, updated_at
 		FROM campaign_ab_variants
 		WHERE campaign_id = $1
 		ORDER BY is_control DESC, created_at ASC
@@ -250,7 +259,7 @@ func (r *advancedOutreachRepository) CreateABVariant(ctx context.Context, campai
 			campaign_id, sequence_id, name, weight, subject, body_html, body_plain, is_control, is_active, metadata, created_at, updated_at
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
-		RETURNING id, campaign_id, sequence_id, name, weight, subject, body_html, body_plain, is_control, is_active, metadata, created_at, updated_at
+		RETURNING id, campaign_id, sequence_id, name, weight, subject, body_html, body_plain, is_control, is_active, metadata, promoted_at, created_at, updated_at
 	`
 	var out models.CampaignABVariant
 	if err := scanABVariant(resultDB(ctx, r.db).QueryRow(ctx, query,
@@ -329,7 +338,7 @@ func (r *advancedOutreachRepository) UpdateABVariant(ctx context.Context, campai
 		UPDATE campaign_ab_variants
 		SET %s
 		WHERE campaign_id = $1 AND id = $2
-		RETURNING id, campaign_id, sequence_id, name, weight, subject, body_html, body_plain, is_control, is_active, metadata, created_at, updated_at
+		RETURNING id, campaign_id, sequence_id, name, weight, subject, body_html, body_plain, is_control, is_active, metadata, promoted_at, created_at, updated_at
 	`, strings.Join(sets, ", "))
 
 	var out models.CampaignABVariant
@@ -353,7 +362,7 @@ func (r *advancedOutreachRepository) DeleteABVariant(ctx context.Context, campai
 
 func (r *advancedOutreachRepository) GetAssignedVariant(ctx context.Context, campaignID, contactID uuid.UUID) (*models.CampaignABVariant, error) {
 	query := `
-		SELECT v.id, v.campaign_id, v.sequence_id, v.name, v.weight, v.subject, v.body_html, v.body_plain, v.is_control, v.is_active, v.metadata, v.created_at, v.updated_at
+		SELECT v.id, v.campaign_id, v.sequence_id, v.name, v.weight, v.subject, v.body_html, v.body_plain, v.is_control, v.is_active, v.metadata, v.promoted_at, v.created_at, v.updated_at
 		FROM campaign_ab_assignments a
 		JOIN campaign_ab_variants v ON v.id = a.variant_id
 		WHERE a.campaign_id = $1 AND a.contact_id = $2
@@ -420,6 +429,9 @@ func scanSuppressedRecipient(row pgx.Row) (*models.SuppressedRecipient, error) {
 	}
 	if len(metadata) > 0 {
 		_ = json.Unmarshal(metadata, &out.Metadata)
+	}
+	if cause, ok := out.Metadata["bounce_cause"].(string); ok && out.Source == models.DeliverabilityEventBounce {
+		out.BounceCause = cause
 	}
 	return &out, nil
 }
@@ -738,7 +750,7 @@ func (r *advancedOutreachRepository) GetDeliverabilityDashboard(ctx context.Cont
 	sentQuery := `
 		SELECT COUNT(*) FROM tasks t
 		JOIN email_accounts ea ON ea.id = t.email_account_id
-		WHERE ea.organization_id = $1 AND t.task_type = 'campaign' AND t.status = 'completed'
+		WHERE ea.organization_id = $1 AND t.task_type = 'campaign' AND ` + completedSendTaskSQL("t") + `
 		  AND t.completed_at >= $2 AND t.completed_at <= $3
 		  AND ` + taskDispatchedEmail
 	_ = resultDB(ctx, r.db).QueryRow(ctx, sentQuery, organizationID, from, to).Scan(&out.EmailsSent)
@@ -905,7 +917,7 @@ func (r *advancedOutreachRepository) deliverabilityTimeseries(ctx context.Contex
 	sentQ := `
 		SELECT (t.completed_at AT TIME ZONE 'UTC')::date, COUNT(*)
 		FROM tasks t JOIN email_accounts ea ON ea.id = t.email_account_id
-		WHERE ea.organization_id=$1 AND t.task_type='campaign' AND t.status='completed'
+		WHERE ea.organization_id=$1 AND t.task_type='campaign' AND ` + completedSendTaskSQL("t") + `
 		  AND t.completed_at >= $2 AND t.completed_at <= $3
 		GROUP BY 1`
 	if rows, err := resultDB(ctx, r.db).Query(ctx, sentQ, orgID, from, to); err == nil {
@@ -1033,7 +1045,7 @@ func (r *advancedOutreachRepository) deliverabilityByMailbox(ctx context.Context
 	sq := `
 		SELECT t.email_account_id, COUNT(*)
 		FROM tasks t JOIN email_accounts ea ON ea.id = t.email_account_id
-		WHERE ea.organization_id=$1 AND t.task_type='campaign' AND t.status='completed'
+		WHERE ea.organization_id=$1 AND t.task_type='campaign' AND ` + completedSendTaskSQL("t") + `
 		  AND t.completed_at >= $2 AND t.completed_at <= $3
 		GROUP BY t.email_account_id`
 	if srows, serr := resultDB(ctx, r.db).Query(ctx, sq, orgID, from, to); serr == nil {

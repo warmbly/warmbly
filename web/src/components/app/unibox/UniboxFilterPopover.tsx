@@ -9,9 +9,10 @@
 // scope alone would query; anything different from it is the user's.
 
 import React from "react";
-import { ListFilterIcon, XIcon } from "lucide-react";
+import { ListFilterIcon, SearchIcon, XIcon } from "lucide-react";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { TextInput } from "@/components/ui/field";
+import { CheckSquare } from "@/components/ui/check-square";
 import {
   PopoverMenu,
   PopoverMenuContent,
@@ -193,7 +194,7 @@ function FilterPanel({
   const canReadState = base.unseen === undefined;
   const canDates = !base.since && !base.until;
   const canLabels = !base.categoryIds;
-  const canMailboxes = !base.accountIds && accounts.length > 1;
+  const canMailboxes = !base.accountIds && !base.tagId && accounts.length > 1;
 
   const preset = params.datePreset ?? presetOf(params.since, params.until);
   const [customOpen, setCustomOpen] = React.useState(preset === "custom");
@@ -217,10 +218,13 @@ function FilterPanel({
       return { ...s, categoryIds: next.size ? Array.from(next) : undefined };
     });
 
-  const selectedAccounts = new Set(params.accountIds ?? []);
+  // A picked tag shows its mailboxes ticked, and editing them starts from that set.
+  const tagMembers = (tagId: string | undefined) =>
+    tagId ? accounts.filter((a) => (a.tags ?? []).includes(tagId)).map((a) => a.id) : [];
+  const selectedAccounts = new Set(params.tagId ? tagMembers(params.tagId) : (params.accountIds ?? []));
   const toggleAccount = (id: string) =>
     setParams((s) => {
-      const next = new Set(s.accountIds ?? []);
+      const next = new Set(s.tagId ? tagMembers(s.tagId) : (s.accountIds ?? []));
       if (next.has(id)) next.delete(id);
       else next.add(id);
       // A hand-picked set is no longer "the tag".
@@ -229,8 +233,7 @@ function FilterPanel({
   const pickTag = (tagId: string) =>
     setParams((s) => {
       if (s.tagId === tagId) return { ...s, accountIds: undefined, tagId: undefined };
-      const ids = accounts.filter((a) => (a.tags ?? []).includes(tagId)).map((a) => a.id);
-      return { ...s, accountIds: ids, tagId };
+      return { ...s, accountIds: undefined, tagId };
     });
 
   const clear = () => {
@@ -344,31 +347,7 @@ function FilterPanel({
                   ))}
                 </div>
               )}
-              <div className="max-h-40 overflow-y-auto -mx-1">
-                {accounts.map((a) => {
-                  const on = selectedAccounts.has(a.id);
-                  return (
-                    <button
-                      key={a.id}
-                      type="button"
-                      onClick={() => toggleAccount(a.id)}
-                      className="w-full h-7 px-1 rounded-md flex items-center gap-2 text-left hover:bg-slate-50 transition-colors"
-                    >
-                      <span
-                        className={cn(
-                          "size-3.5 rounded border flex items-center justify-center shrink-0 transition-colors",
-                          on ? "bg-sky-600 border-sky-600" : "bg-white border-slate-300",
-                        )}
-                      >
-                        {on && <CheckMark />}
-                      </span>
-                      <span className={cn("truncate text-[12px]", on ? "text-slate-900" : "text-slate-600")}>
-                        {a.email}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+              <MailboxChecklist accounts={accounts} selected={selectedAccounts} onToggle={toggleAccount} />
             </div>
           </Row>
         )}
@@ -595,10 +574,70 @@ function Chip({
   );
 }
 
-function CheckMark() {
+// Rows drawn at once; past this the search narrows them, so a workspace with
+// hundreds of mailboxes never mounts hundreds of buttons in the popover.
+const MAILBOX_ROWS_SHOWN = 100;
+
+function MailboxChecklist({
+  accounts,
+  selected,
+  onToggle,
+}: {
+  accounts: { id: string; email: string; name?: string }[];
+  selected: ReadonlySet<string>;
+  onToggle: (id: string) => void;
+}) {
+  const [query, setQuery] = React.useState("");
+  const q = query.trim().toLowerCase();
+  const matches = React.useMemo(
+    () =>
+      q
+        ? accounts.filter((a) => a.email.toLowerCase().includes(q) || (a.name ?? "").toLowerCase().includes(q))
+        : accounts,
+    [accounts, q],
+  );
+  const shown = matches.slice(0, MAILBOX_ROWS_SHOWN);
   return (
-    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M5 12l5 5L20 7" />
-    </svg>
+    <div className="rounded-md border border-slate-200 overflow-hidden">
+      <div className="h-7 px-2 flex items-center gap-1.5 border-b border-slate-200">
+        <SearchIcon className="w-3 h-3 text-slate-400 shrink-0" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={`Search ${accounts.length} mailboxes`}
+          aria-label="Search mailboxes"
+          className="flex-1 min-w-0 h-full bg-transparent text-[12px] text-slate-900 placeholder:text-slate-400 outline-none"
+        />
+        {selected.size > 0 && (
+          <span className="text-[11px] tabular-nums text-slate-400 shrink-0">{selected.size} picked</span>
+        )}
+      </div>
+      <div className="max-h-44 overflow-y-auto py-0.5">
+        {shown.length === 0 && (
+          <div className="px-2.5 py-3 text-[11.5px] text-slate-400 text-center">No matches.</div>
+        )}
+        {shown.map((a) => {
+          const on = selected.has(a.id);
+          return (
+            <button
+              key={a.id}
+              type="button"
+              onClick={() => onToggle(a.id)}
+              className="w-full h-7 px-2 flex items-center gap-2 text-left hover:bg-slate-50 transition-colors"
+            >
+              <CheckSquare checked={on} tone="sky" />
+              <span className={cn("truncate text-[12px]", on ? "text-slate-900" : "text-slate-600")}>
+                {a.email}
+              </span>
+            </button>
+          );
+        })}
+        {matches.length > shown.length && (
+          <div className="px-2.5 py-1.5 text-[11px] text-slate-400">
+            {matches.length - shown.length} more. Search to narrow the list.
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

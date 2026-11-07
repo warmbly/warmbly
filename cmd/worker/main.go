@@ -28,6 +28,7 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability"
 	"github.com/warmbly/warmbly/internal/pkg/nodeagent"
+	"github.com/warmbly/warmbly/internal/pkg/nodeauth"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -131,11 +132,10 @@ func main() {
 	}
 	log.Printf("Codec: %s", codecImpl.Name())
 
-	// Event bus (NATS default; Kafka when EVENTBUS_PROVIDER=kafka). Kafka
-	// bootstrap/SASL is only loaded for the Kafka provider.
+	// Dual readers retain Kafka credentials until its backlog and rollback window close.
 	var kafkaBootstrapServers string
 	var kafkaSaslConfig *kafka.SASLConfig
-	if config.EventBusProvider() == "kafka" {
+	if config.EventBusUsesKafka() {
 		kafkaBootstrapServers, err = cfg.LoadKafkaBootstrapServers(ctx)
 		if err != nil {
 			log.Fatal(err)
@@ -169,9 +169,15 @@ func main() {
 		log.Println("WARNING: BOX_GOOGLE_CLIENT_ID/SECRET not set; Gmail mailbox token refresh will fail on expiry")
 	}
 
-	agent := newNodeAgent(workerID, bindIP)
+	var workerService *worker.WorkerService
+	agent := newNodeAgent(workerID, bindIP, func() int {
+		if workerService == nil {
+			return 0
+		}
+		return workerService.MailboxCount()
+	})
 	// WorkerService
-	workerService := &worker.WorkerService{
+	workerService = &worker.WorkerService{
 		OnMailboxMissing:          agent.RequestReload,
 		ID:                        workerID.String(),
 		CipherService:             cipherService,
@@ -243,22 +249,25 @@ func main() {
 // newNodeAgent builds the shared fleet agent. It replaces the worker's own
 // heartbeat loop: identity, usage reporting and self-update are node concerns,
 // identical for every role, so they live in one place.
-func newNodeAgent(workerID uuid.UUID, bindIP string) *nodeagent.Agent {
+func newNodeAgent(workerID uuid.UUID, bindIP string, mailboxes func() int) *nodeagent.Agent {
 	reportedIP := os.Getenv("WORKER_PUBLIC_IP")
 	if reportedIP == "" && bindIP != "default route" {
 		reportedIP = bindIP
 	}
 	return nodeagent.New(nodeagent.Config{
 		WarmupSendProtocol: 2,
+		SyncWakeProtocol:   1,
 		NodeID:             workerID,
 		Role:               models.NodeRoleWorker,
 		Name:               os.Getenv("WARMBLY_NODE_NAME"),
 		Region:             nodeRegion(),
 		Address:            reportedIP,
 		CapacityTarget:     workerCapacityTarget(),
+		Capacity:           workerCapacityFromMemory(mailboxes),
 		Version:            buildVersion(),
 		BaseURL:            os.Getenv("ENCRYPTED_KEYS_BACKEND_URL"),
 		Token:              config.NodeAPIToken(),
+		Credential:         nodeauth.FromEnv().Credential,
 		// Written for the host-side updater installed by `warmbly join`.
 		TargetVersionPath: os.Getenv("WARMBLY_TARGET_VERSION_PATH"),
 		Condition:         wsmtp.EgressCondition,
@@ -266,6 +275,15 @@ func newNodeAgent(workerID uuid.UUID, bindIP string) *nodeagent.Agent {
 }
 
 const defaultWorkerCapacityTarget = 100.0
+
+// workerCapacityFromMemory is set when WARMBLY_WORKER_CAPACITY=auto: the
+// worker then plans its mailbox target from its own memory on every beat.
+func workerCapacityFromMemory(mailboxes func() int) func(models.NodeUsage) float64 {
+	if !strings.EqualFold(strings.TrimSpace(os.Getenv("WARMBLY_WORKER_CAPACITY")), "auto") {
+		return nil
+	}
+	return (&nodeagent.MemoryCapacity{Mailboxes: mailboxes}).Target
+}
 
 // workerCapacityTarget reads this machine's assigned-mailbox target.
 func workerCapacityTarget() float64 {

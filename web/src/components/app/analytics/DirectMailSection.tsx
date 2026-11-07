@@ -16,7 +16,7 @@ import { EyeIcon, InboxIcon, MailIcon, ReplyIcon } from "lucide-react";
 
 import { EmptyBlock, SectionBar, Stat, StatStrip } from "@/components/layout/Page";
 import { MultiTrend, type TrendSeries } from "@/components/ui/charts";
-import { utcDay } from "@/lib/campaignPeriod";
+import { periodWindow, utcDay, type CampaignPeriodPreset } from "@/lib/campaignPeriod";
 import useDirectMail from "@/lib/api/hooks/app/analytics/useDirectMail";
 import type DirectMailAnalytics from "@/lib/api/models/app/analytics/DirectMailAnalytics";
 
@@ -52,7 +52,7 @@ function SkeletonRows({ rows = 3 }: { rows?: number }) {
 }
 
 // unfiltered marks the section while the page is narrowed to campaigns: direct mail belongs to none.
-export default function DirectMailSection({ period, unfiltered = false }: { period: string; unfiltered?: boolean }) {
+export default function DirectMailSection({ period, unfiltered = false }: { period: CampaignPeriodPreset; unfiltered?: boolean }) {
     const q = useDirectMail(period);
     const d: DirectMailAnalytics | undefined = q.data;
     const vol = d?.volume;
@@ -124,6 +124,7 @@ export default function DirectMailSection({ period, unfiltered = false }: { peri
                 <MultiTrend
                     labels={labels}
                     series={series}
+                    range={periodWindow({ key: period })}
                     height={200}
                     emptyLabel="No mail sent or received in this range"
                 />

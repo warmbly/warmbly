@@ -266,6 +266,8 @@ export default function CampaignOverview() {
                                     <MultiTrend
                                         labels={trend.labels}
                                         series={trend.series}
+                                        range={chartWindow}
+                                        volumeKey="sent"
                                         height={280}
                                         emptyLabel={
                                             hasSends

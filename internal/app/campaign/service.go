@@ -153,7 +153,21 @@ type campaignService struct {
 	planSnapshotRepo repository.CampaignSendPlanSnapshotRepository
 	// planMaxAge overrides sendPlanSnapshotMaxAge when set (nanoseconds).
 	planMaxAge atomic.Int64
+	// variants lists A/B variants so a start checks their copy too. Optional/nil-safe.
+	variants VariantLister
 }
+
+// VariantLister is the slice of the advanced-outreach repository Start reads.
+type VariantLister interface {
+	ListABVariants(ctx context.Context, campaignID uuid.UUID) ([]models.CampaignABVariant, error)
+}
+
+// VariantAware lets main hand the campaign service the variant lister.
+type VariantAware interface {
+	WireVariants(v VariantLister)
+}
+
+func (s *campaignService) WireVariants(v VariantLister) { s.variants = v }
 
 // SegmentCounter is the slice of the segment service Estimate needs.
 // Satisfied structurally by segment.Service.

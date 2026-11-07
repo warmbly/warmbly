@@ -1,8 +1,8 @@
 name: CI
 
+# main only receives what the merge queue already tested at the same commit,
+# so the merge_group run is the gate and nothing reruns it after the merge.
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
   merge_group:
@@ -69,8 +69,10 @@ jobs:
             aws-deployment:
               - '.github/workflows/ci.yml'
               - '.github/workflows/deploy-aws.yml'
+              - '.github/workflows/configure-backend-aws.yml'
               - '.github/workflows/rotate-keys.yml'
               - '.github/scripts/aws-deploy*.cjs'
+              - '.github/scripts/aws-backend-config*.cjs'
               - '.github/scripts/aws-rotate*.cjs'
               - '.github/aws-deploy/**'
               - 'deploy/terraform/aws/runtime/rotate/**'
@@ -109,6 +111,8 @@ jobs:
               - 'scripts/check-cli-installer.sh'
               - 'scripts/build-cli.sh'
             pages:
+              - '.github/workflows/static-assets.yml'
+              - 'deploy/cloudflare/**'
               - '.github/scripts/pages-*'
               - '.github/workflows/release.yml'
               - '.github/workflows/ci.yml'
@@ -131,7 +135,7 @@ jobs:
         with:
           node-version: "22"
       - name: Check production configuration import
-        run: node --test .github/scripts/pages-*.test.mjs
+        run: node --test .github/scripts/pages-*.test.mjs deploy/cloudflare/static-edge.test.mjs
 
   migrations-ci:
     name: Migrations
@@ -223,10 +227,9 @@ jobs:
         if: matrix.suite == 'lint'
         run: go build -tags kafka ./...
 
-      - name: Run tests with coverage
+      - name: Run tests
         if: matrix.suite == 'unit'
-        run: |
-          go test -race -coverprofile=coverage.out -covermode=atomic ./...
+        run: go test -race ./...
 
       - name: Prepare regression database
         if: startsWith(matrix.suite, 'live-')
@@ -241,8 +244,8 @@ jobs:
           WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
         run: |
           set -o pipefail
-          go test -race -v -p 1 ./internal/repository ./internal/app/analytics -run '^TestLive(WarmupPartnerCountsMatchIndividualCandidates|WarmupSummariesMatchIndividualReads|LinkedMailboxStatusBatchPreservesDetails|WarmupPartnerWeekCacheMatchesExactReadAndKeepsTheCapLive|WarmupPartnerWeekCacheRefreshesDetachedAndServesStale|WarmupPartnerCandidatesCarryReciprocityAndHonourTheCap|AccountStatusPageMatchesSingleReadsInBoundedQueries|WarmupOffMailboxReceivesNothing|WarmupPauseRetiresIncomingWork|WarmupInboxHasRoomMatchesTheReservation)$' -count=1 | tee linked-mailbox-batch.log
-          for test in TestLiveWarmupPartnerCountsMatchIndividualCandidates TestLiveWarmupSummariesMatchIndividualReads TestLiveLinkedMailboxStatusBatchPreservesDetails TestLiveWarmupPartnerWeekCacheMatchesExactReadAndKeepsTheCapLive TestLiveWarmupPartnerWeekCacheRefreshesDetachedAndServesStale TestLiveWarmupPartnerCandidatesCarryReciprocityAndHonourTheCap TestLiveAccountStatusPageMatchesSingleReadsInBoundedQueries TestLiveWarmupOffMailboxReceivesNothing TestLiveWarmupPauseRetiresIncomingWork TestLiveWarmupInboxHasRoomMatchesTheReservation; do
+          go test -race -v -p 1 ./internal/repository ./internal/app/analytics -run '^TestLive(WarmupPartnerCountsMatchIndividualCandidates|WarmupSummariesMatchIndividualReads|LinkedMailboxStatusBatchPreservesDetails|WarmupPartnerWeekCacheMatchesExactReadAndKeepsTheCapLive|WarmupPartnerWeekCacheRefreshesDetachedAndServesStale|WarmupPartnerCandidatesCarryReciprocityAndHonourTheCap|AccountStatusPageMatchesSingleReadsInBoundedQueries|WarmupOffMailboxReceivesNothing|WarmupPauseRetiresIncomingWork|WarmupReservationHoldsEachTierToItsShare|WarmupReplyIsAdmittedToAFullInbox|WarmupRepliesLeaveTheNewThreadCapUntouched|OwedRepliesContinueTheDeepestConversationFirst)$' -count=1 | tee linked-mailbox-batch.log
+          for test in TestLiveWarmupPartnerCountsMatchIndividualCandidates TestLiveWarmupSummariesMatchIndividualReads TestLiveLinkedMailboxStatusBatchPreservesDetails TestLiveWarmupPartnerWeekCacheMatchesExactReadAndKeepsTheCapLive TestLiveWarmupPartnerWeekCacheRefreshesDetachedAndServesStale TestLiveWarmupPartnerCandidatesCarryReciprocityAndHonourTheCap TestLiveAccountStatusPageMatchesSingleReadsInBoundedQueries TestLiveWarmupOffMailboxReceivesNothing TestLiveWarmupPauseRetiresIncomingWork TestLiveWarmupReservationHoldsEachTierToItsShare TestLiveWarmupReplyIsAdmittedToAFullInbox TestLiveWarmupRepliesLeaveTheNewThreadCapUntouched TestLiveOwedRepliesContinueTheDeepestConversationFirst; do
             grep -q -- "--- PASS: $test " linked-mailbox-batch.log
           done
           if grep -q -- '--- SKIP:' linked-mailbox-batch.log; then exit 1; fi
@@ -257,6 +260,18 @@ jobs:
           grep -q '^--- PASS: TestLiveCampaignMailboxLoadingDefersWithoutSpendingAttempts ' campaign-reconnect.log
           grep -q '^--- PASS: TestLiveCampaignLoadingLogsKeepHistoryWithoutCustomerAlerts ' campaign-reconnect.log
           if grep -q -- '--- SKIP:' campaign-reconnect.log; then exit 1; fi
+
+      - name: Mailbox push channels and fleet usage (PostgreSQL)
+        if: matrix.suite == 'live-1'
+        env:
+          WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
+        run: |
+          set -o pipefail
+          go test -race -v -p 1 ./internal/repository ./internal/app/fleetmetrics -run '^TestLive(MailboxPushChannelsRoundTripAndScopeToTheOwner|WakeTargetsSkipWorkersThatCannotActOnAWake|ReadTakesMemoryFromHeartbeats)$' -count=1 | tee mailbox-push.log
+          for test in TestLiveMailboxPushChannelsRoundTripAndScopeToTheOwner TestLiveWakeTargetsSkipWorkersThatCannotActOnAWake TestLiveReadTakesMemoryFromHeartbeats; do
+            grep -q -- "--- PASS: $test " mailbox-push.log
+          done
+          if grep -q -- '--- SKIP:' mailbox-push.log; then exit 1; fi
 
       - name: Contact campaign empty-step regression (PostgreSQL)
         if: matrix.suite == 'live-1'
@@ -282,6 +297,13 @@ jobs:
           WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
         run: |
           go test -race -p 1 ./internal/repository ./internal/scheduler ./internal/tasks -run '^TestLive(MailboxSendClaim(AdmitsOnePerGap|WaitsOutAReservedSend)|BookedSendsLeaveOutCampaignWakeups|ParkedCampaignDoesNotThrottleItsPoolMate|BookedSendsStillSpaceTheCampaign|ClaimedMailboxIsPassedOver|CampaignsSharingAMailboxSendOncePerGap|LostMailboxClaimReschedulesWithoutSending)$' -count=1
+
+      - name: Postgres queue claim regressions (PostgreSQL)
+        if: matrix.suite == 'live-3'
+        env:
+          WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
+        run: |
+          go test -race -p 1 ./internal/repository -run '^TestLive(ConcurrentDispatchersNeverClaimTheSameTask|SendResultEffectsBatchClaimsDeliverEachEffectOnce|CRMClaimTakesDueAndLapsedJobsOnce)$' -count=1
 
       - name: Invited signup atomic provisioning regressions (PostgreSQL)
         if: matrix.suite == 'live-1'
@@ -345,8 +367,8 @@ jobs:
           WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
         run: |
           set -o pipefail
-          go test -race ./internal/repository -run '^TestLive(Monitoring|LastWarmupSendFailure|PersistentMailboxLoadingFailure|DispatchRetry|LineageQueueRevisions|AdminPlatformOverview|WarmupRecoversOldPreparation|WarmupPreparationRecoveryRetains|WarmupFilingRequiresAcknowledgement|WarmupFilingAuthority|WarmupTimeWindow|WarmupInvalidWindow|StoppedRecipientIsNeverAddressed)' -count=1
-          go test -race -v ./internal/tasks -run '^Test(LiveWarmup(SafetyHoldReschedules|Recovery|UnknownRetirement|TaskDoesNotApplyResults|DispatchDefersInvalidHours)|WarmupSenderDistinguishes)' -count=1 | tee warmup-recovery.log
+          go test -race ./internal/repository -run '^TestLive(Monitoring|LastWarmupSendFailure|PersistentMailboxLoadingFailure|DispatchRetry|LineageQueueRevisions|ReplyShare|AdminPlatformOverview|WarmupRecoversOldPreparation|WarmupPreparationRecoveryRetains|WarmupFilingRequiresAcknowledgement|WarmupFilingAuthority|WarmupTimeWindow|WarmupInvalidWindow|StoppedRecipientIsNeverAddressed)' -count=1
+          go test -race -v ./internal/tasks -run '^Test(LiveWarmup(SafetyHoldReschedules|Recovery|UnknownRetirement|TaskDoesNotApplyResults|DispatchDefersInvalidHours|ReplyShare)|WarmupSenderDistinguishes)' -count=1 | tee warmup-recovery.log
           if grep -q -- '--- SKIP: TestLiveWarmupUnknownRetirement' warmup-recovery.log; then exit 1; fi
           for test in TestLiveWarmupUnknownRetirementPreservesEvidenceAndFencesReplayOnce TestLiveWarmupUnknownRetirementAllowsDistinctNewSendAndKeepsCooldown TestLiveWarmupUnknownRetirementAndDefinitiveResultSerialize TestLiveWarmupUnknownRetirementSkipsProtectedRowsWithoutStarvingLaterMailboxes TestLiveWarmupUnknownRetirementReconcilerSeedsOnceAndClearsActiveWarnings; do
             grep -q -- "--- PASS: $test " warmup-recovery.log || exit 1
@@ -417,6 +439,32 @@ jobs:
             grep -q "^--- PASS: $test " monitoring-clock.log
           done
 
+      - name: Approved warmup content and queued source regressions (PostgreSQL)
+        if: matrix.suite == 'live-2'
+        env:
+          WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
+        run: |
+          set -euo pipefail
+          go test -race -v ./internal/repository -run '^TestLiveContentPool' -count=1 | tee content-pool.log
+          go test -race -v ./internal/tasks -run '^TestLiveWarmupDispatchRechecksOpeningSourceAndExactRecipient$' -count=1 | tee -a content-pool.log
+          if grep -q -- '--- SKIP:' content-pool.log; then
+            echo "Warmup content and queued source regressions must execute without skips"
+            exit 1
+          fi
+          for test in TestLiveContentPoolRejectsDuplicateBatchContentUnderConcurrency \
+            TestLiveContentPoolRetryReservesOnceAndReplenishesForExposedMailboxes \
+            TestLiveContentPoolPreservesPlansForFutureDistinctMailboxes \
+            TestLiveContentPoolConcurrentPairsAlwaysReceiveContent \
+            TestLiveContentPoolPrefersLessUsedEligiblePlans \
+            TestLiveContentPoolPrefersWhatNeitherMailboxSawRecently \
+            TestLiveContentPoolExhaustedPairRepeatsTheLeastRecentlySeen \
+            TestLiveContentPoolTokenCleanupKeepsExposure \
+            TestLiveContentPoolStaticRowsOnlyFromTheCurrentLibrary \
+            TestLiveContentPoolDemandCountsPlansRatherThanReplies \
+            TestLiveWarmupDispatchRechecksOpeningSourceAndExactRecipient; do
+            grep -q "^--- PASS: $test " content-pool.log
+          done
+
       - name: Warmup generic execution authority regressions (PostgreSQL)
         if: matrix.suite == 'live-2'
         env:
@@ -431,7 +479,8 @@ jobs:
             TestLiveWarmupGenericCancellationPreservesOtherHolds \
             TestLiveWarmupGenericStartAndLateResult \
             TestLiveWarmupGenericStartAfterCompatibleOverwrite \
-            TestLiveWarmupGenericCannotRepeatStartedWarmupClaim; do
+            TestLiveWarmupGenericCannotRepeatStartedWarmupClaim \
+            TestLiveWarmupGenericDeniesHistoricalDiagnosticContent; do
             grep -q "^--- PASS: $test " warmup-generic-execution.log
           done
 
@@ -531,6 +580,8 @@ jobs:
             grep -q "^--- PASS: $test " mailbox-transport-runtime.log
           done
           if grep -q -- '--- SKIP:' mailbox-transport-runtime.log; then exit 1; fi
+          go test -race -v -p 1 ./internal/repository -run '^TestLiveAuthenticatorStepRequiresActiveEnrollment$' -count=1 | tee authenticator-verification.log
+          grep -q '^--- PASS: TestLiveAuthenticatorStepRequiresActiveEnrollment ' authenticator-verification.log
           grep -q '^--- PASS: TestLiveImportMailTransportWholeArchiveSendResultLockOrder ' mailbox-transport-runtime.log
           for logfile in mailbox-transport-upgrade.log mailbox-transport-runtime.log; do
             test "$(grep -c '^=== RUN' "$logfile")" -gt 0
@@ -594,7 +645,7 @@ jobs:
         if: matrix.suite == 'live-1'
         env:
           WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
-        run: go test -race -v -p 1 ./internal/repository ./internal/infrastructure/db -run '^TestLiveUnibox(Search|ReadStream|SearchUpgrade|GetBySender)' -count=1
+        run: go test -race -v -p 1 ./internal/repository ./internal/infrastructure/db -run '^TestLiveUnibox(Search|ReadStream|SearchUpgrade|GetBySender|ScopeDraftsCount)' -count=1
 
       - name: Notification digest authorization retries (Redis)
         if: matrix.suite == 'live-3'
@@ -605,17 +656,6 @@ jobs:
       - name: Test the Kafka codec, failed-handler replay and client lifecycle
         if: matrix.suite == 'live-2'
         run: go test -race -tags kafka ./internal/infrastructure/codec/ ./internal/infrastructure/kafka/ ./internal/infrastructure/eventbus/
-
-      # fail_ci_if_error does not cover the uploader crashing before it runs
-      # (a TLS handshake failure to Codecov failed jobs whose tests passed).
-      - name: Upload coverage
-        if: matrix.suite == 'unit'
-        uses: codecov/codecov-action@v4
-        continue-on-error: true
-        with:
-          files: coverage.out
-          flags: go
-          fail_ci_if_error: false
 
   web-ci:
     name: Web CI
@@ -989,7 +1029,7 @@ jobs:
       - name: Check deploy, rollback and rotation gates
         env:
           NODE_PATH: ${{ github.workspace }}/.github/aws-deploy/node_modules
-        run: node --test .github/scripts/aws-deploy.test.cjs .github/scripts/aws-rotate.test.cjs deploy/terraform/aws/runtime/rotate/rotate.test.cjs
+        run: node --test .github/scripts/aws-deploy.test.cjs .github/scripts/aws-backend-config.test.cjs .github/scripts/aws-rotate.test.cjs deploy/terraform/aws/runtime/rotate/rotate.test.cjs
 
   ci-status:
     name: CI Status

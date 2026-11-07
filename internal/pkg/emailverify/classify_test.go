@@ -26,6 +26,9 @@ func TestClassifyPermanentRcpt(t *testing.T) {
 		{"mailbox full is not a missing mailbox", 552, "5.2.2 Mailbox full", probeUnknown},
 		{"bare transaction failure is not a verdict", 554, "Transaction failed", probeUnknown},
 		{"command not implemented", 502, "Command not implemented", probeUnknown},
+		{"spam refusal without an enhanced status", 550, "Message rejected as spam", probeUnknown},
+		{"recipient rejection with a policy tail", 550, "5.7.1 Recipient address rejected: policy restriction", probeUnknown},
+		{"sender domain does not exist", 550, "Sender domain does not exist", probeUnknown},
 
 		// Genuine recipient rejections must still be caught.
 		{"gmail unknown mailbox", 550,

@@ -101,10 +101,11 @@ export interface AgentStreamEvent {
     tool_call_id?: string;
     result?: string;
     iteration?: number;
-    credits_remaining?: number;
+    /** The workspace balance in dollars after the step. */
+    balance_usd?: number;
     budget?: number;
     // True when the run is on a free/local model (AI_LOCAL_MODEL): the client
-    // warns the user and no credits are charged.
+    // warns the user and nothing is charged.
     free_model?: boolean;
     code?: string;
     message?: string;

@@ -13,6 +13,7 @@ import {
     MoreHorizontalIcon,
     PlugIcon,
     PlusIcon,
+    RefreshCwIcon,
     Trash2Icon,
 } from "lucide-react";
 import { Label, TextInput } from "@/components/ui/field";
@@ -24,13 +25,16 @@ import {
     PopoverMenuTrigger,
 } from "@/components/ui/popover-menu";
 import { useConfirm } from "@/hooks/context/confirm";
+import { useGrantConfig } from "@/lib/api/hooks/app/emails/useMailboxGrants";
 import {
     useCreateVendorConnection,
     useDeleteVendorConnection,
+    useStartVendorReconnect,
     useUpdateVendorConnection,
+    useVendorReconnect,
 } from "@/lib/api/hooks/app/emails/useMailboxVendors";
 import type { VendorCatalogEntry, VendorConnection } from "@/lib/api/models/app/emails/MailboxSources";
-import { vendorLabel } from "@/lib/api/models/app/emails/MailboxSources";
+import { reconnectOpen, vendorLabel } from "@/lib/api/models/app/emails/MailboxSources";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import timeAgo from "@/lib/helper/timeAgo";
@@ -68,6 +72,8 @@ export default function VendorAccountStep({
     onDirtyChange: (dirty: boolean) => void;
 }) {
     const confirm = useConfirm();
+    // A vendor reconnect ends in a Google sign-in, which needs the instance's Google client.
+    const googleSignin = !!useGrantConfig(true).data?.google_mailbox_client_id;
     const [mode, setMode] = React.useState<Mode | null>(null);
     // With nothing saved yet, the vendor grid is the first screen.
     const current: Mode = mode ?? (connections.length > 0 ? { kind: "list" } : { kind: "vendors" });
@@ -77,6 +83,7 @@ export default function VendorAccountStep({
     }, [current.kind, formDirty, onDirtyChange]);
 
     const del = useDeleteVendorConnection();
+    const reconnect = useStartVendorReconnect();
 
     const leaveForm = (to: Mode) => {
         if (current.kind === "form" && formDirty) {
@@ -115,6 +122,21 @@ export default function VendorAccountStep({
         );
     };
 
+    const reconnectAll = (conn: VendorConnection) => {
+        const name = vendorLabel(conn.vendor);
+        confirm.show(
+            `Have ${name} sign in again as every Google mailbox imported from ${conn.label}? Each one is reconnected in place with full mail access, keeping its history, campaigns and warmup. A mailbox ${name} cannot sign in to keeps working as it is.`,
+            async () => {
+                try {
+                    const out = await reconnect.mutateAsync({ id: conn.id });
+                    toast.success(`${name} is reconnecting ${plural(out.data.length, "mailbox", "mailboxes")}`);
+                } catch (e) {
+                    toast.error(buildError(e as AppError));
+                }
+            },
+        );
+    };
+
     if (loading) {
         return (
             <div className="p-4" role="status" aria-label="Loading your vendor accounts">
@@ -142,6 +164,8 @@ export default function VendorAccountStep({
                                         <ConnectionRow
                                             key={conn.id}
                                             conn={conn}
+                                            signsIn={googleSignin && !!catalog.find((v) => v.id === conn.vendor)?.signs_in}
+                                            onReconnect={() => reconnectAll(conn)}
                                             active={conn.id === selectedId}
                                             onOpen={() => {
                                                 if (conn.status === "invalid") {
@@ -248,18 +272,28 @@ export default function VendorAccountStep({
 
 function ConnectionRow({
     conn,
+    signsIn,
     active,
     onOpen,
     onUpdate,
     onRemove,
+    onReconnect,
 }: {
     conn: VendorConnection;
+    /** The vendor can reconnect its Google mailboxes in place. */
+    signsIn: boolean;
     active: boolean;
     onOpen: () => void;
     onUpdate: () => void;
     onRemove: () => void;
+    onReconnect: () => void;
 }) {
     const invalid = conn.status === "invalid";
+    const canReconnect = signsIn && !invalid && conn.mailboxes > 0;
+    const progress = useVendorReconnect(conn.id, canReconnect).data?.data ?? [];
+    const pending = progress.filter((m) => reconnectOpen(m.status)).length;
+    const failed = progress.filter((m) => m.status === "failed").length;
+    const done = progress.filter((m) => m.status === "connected").length;
     return (
         <div
             role="button"
@@ -294,6 +328,15 @@ function ConnectionRow({
                         {conn.last_error || "The vendor no longer accepts this key."}
                     </p>
                 )}
+                {canReconnect && progress.length > 0 && (
+                    <p role="status" className={cn("text-[11px] mt-1 leading-snug inline-flex items-center gap-1", pending > 0 ? "text-sky-700" : failed > 0 ? "text-rose-700" : "text-emerald-700")}>
+                        {pending > 0 && <Loader2Icon className="w-3 h-3 animate-spin" />}
+                        {pending > 0
+                            ? `Reconnecting ${plural(pending, "Google mailbox", "Google mailboxes")}`
+                            : `Reconnected ${done} of ${progress.length}`}
+                        {failed > 0 && `, ${failed} could not be. Their drawers say why.`}
+                    </p>
+                )}
             </div>
             <div className="shrink-0 flex items-center gap-1 self-center">
                 {invalid && (
@@ -324,6 +367,11 @@ function ConnectionRow({
                             <PopoverMenuItem icon={<KeyRoundIcon className="w-3.5 h-3.5" />} onSelect={onUpdate}>
                                 Update key
                             </PopoverMenuItem>
+                            {canReconnect && (
+                                <PopoverMenuItem icon={<RefreshCwIcon className="w-3.5 h-3.5" />} onSelect={onReconnect}>
+                                    Reconnect all Google mailboxes
+                                </PopoverMenuItem>
+                            )}
                             <PopoverMenuItem danger icon={<Trash2Icon className="w-3.5 h-3.5" />} onSelect={onRemove}>
                                 Remove
                             </PopoverMenuItem>

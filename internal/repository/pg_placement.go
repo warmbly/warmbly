@@ -48,7 +48,7 @@ type PlacementSettle struct {
 	ID             uuid.UUID
 	OrganizationID uuid.UUID
 	CreatedBy      *uuid.UUID
-	Credits        int
+	Charged        models.Micro
 	// Delivered is whether any copy got a verdict; a test that delivered
 	// nothing is refunded.
 	Delivered bool
@@ -162,18 +162,18 @@ type PlacementRepository interface {
 	ListOrgMailboxes(ctx context.Context, orgID uuid.UUID) ([]SeedAccount, map[uuid.UUID]string, error)
 
 	// CountMeteredTests counts a workspace's free tests on the metered panels
-	// since a moment. A test paid in credits, or one that finished without
+	// since a moment. A paid test, or one that finished without
 	// delivering a copy, uses none.
 	CountMeteredTests(ctx context.Context, orgID uuid.UUID, since time.Time) (int, error)
 	// DeleteUnsentTests removes tests of one workspace, with their pending
 	// tasks, when a request fails after writing them and before any copy left.
 	DeleteUnsentTests(ctx context.Context, orgID uuid.UUID, ids []uuid.UUID) error
-	// UnsettledPaidTests lists finished tests paid in credits whose charge
+	// UnsettledPaidTests lists finished paid tests whose charge
 	// has not been settled yet, oldest first.
 	UnsettledPaidTests(ctx context.Context, limit int) ([]PlacementSettle, error)
 	// SettleCredits records a paid test's settlement and what was refunded;
 	// false when it was already settled.
-	SettleCredits(ctx context.Context, testID uuid.UUID, refunded int) (bool, error)
+	SettleCredits(ctx context.Context, testID uuid.UUID, refunded models.Micro) (bool, error)
 	CountRunning(ctx context.Context, orgID uuid.UUID) (int, error)
 	// SenderBusy reports whether a sender still has probes waiting to leave.
 	SenderBusy(ctx context.Context, senderID uuid.UUID) (bool, error)
@@ -223,20 +223,28 @@ func NewPlacementRepository(db *db.DB) PlacementRepository {
 const placementTestCols = `id, organization_id, sender_account_id, sender_email, created_by, campaign_id,
 	sequence_id, contact_id, monitor_id, subject, body_plain, body_html, open_tracking, link_tracking,
 	compare_group_id, origin, panel, status, error, remote_instance_id, remote_test_id, pace, credits_charged,
-	credits_refunded, credits_settled_at, created_at, finished_at, batch_id, batch_sender_id`
+	credits_refunded, credits_settled_at, created_at, finished_at, batch_id, batch_sender_id, charged_micro, refunded_micro`
 
 func scanPlacementTest(row pgx.Row) (*models.PlacementTest, error) {
 	var t models.PlacementTest
 	err := row.Scan(&t.ID, &t.OrganizationID, &t.SenderAccountID, &t.SenderEmail, &t.CreatedBy, &t.CampaignID,
 		&t.SequenceID, &t.ContactID, &t.MonitorID, &t.Subject, &t.BodyPlain, &t.BodyHTML, &t.OpenTracking, &t.LinkTracking,
 		&t.CompareGroupID, &t.Origin, &t.Panel, &t.Status, &t.Error, &t.RemoteInstanceID, &t.RemoteTestID, &t.Pace, &t.CreditsCharged,
-		&t.CreditsRefunded, &t.CreditsSettledAt, &t.CreatedAt, &t.FinishedAt, &t.BatchID, &t.BatchSenderID)
+		&t.CreditsRefunded, &t.CreditsSettledAt, &t.CreatedAt, &t.FinishedAt, &t.BatchID, &t.BatchSenderID, &t.ChargedMicro, &t.RefundedMicro)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	// A test the previous release charged or settled carries credits only.
+	if t.ChargedMicro == 0 && t.CreditsCharged > 0 {
+		t.ChargedMicro = models.Micro(t.CreditsCharged) * models.LegacyCreditMicro
+	}
+	if t.RefundedMicro == 0 && t.CreditsRefunded > 0 {
+		t.RefundedMicro = models.Micro(t.CreditsRefunded) * models.LegacyCreditMicro
+	}
+	t.ChargedUSD, t.RefundedUSD = t.ChargedMicro.USD(), t.RefundedMicro.USD()
 	return &t, nil
 }
 
@@ -271,13 +279,13 @@ func (r *placementRepository) CreateTests(ctx context.Context, bundles []Placeme
 			INSERT INTO placement_tests (id, organization_id, sender_account_id, sender_email, created_by, campaign_id,
 				sequence_id, contact_id, monitor_id, subject, body_plain, body_html, open_tracking, link_tracking,
 				compare_group_id, origin, panel, status, error, remote_instance_id, remote_test_id, pace, credits_charged,
-				batch_id, batch_sender_id, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, NOW())
+				charged_micro, batch_id, batch_sender_id, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, NOW())
 			RETURNING created_at
 		`, t.ID, t.OrganizationID, t.SenderAccountID, t.SenderEmail, t.CreatedBy, t.CampaignID,
 			t.SequenceID, t.ContactID, t.MonitorID, t.Subject, t.BodyPlain, t.BodyHTML, t.OpenTracking, t.LinkTracking,
-			t.CompareGroupID, t.Origin, t.Panel, t.Status, t.Error, t.RemoteInstanceID, t.RemoteTestID, pace, t.CreditsCharged,
-			t.BatchID, t.BatchSenderID).Scan(&t.CreatedAt)
+			t.CompareGroupID, t.Origin, t.Panel, t.Status, t.Error, t.RemoteInstanceID, t.RemoteTestID, pace, models.PlacementLegacyCredits(t.ChargedMicro),
+			t.ChargedMicro, t.BatchID, t.BatchSenderID).Scan(&t.CreatedAt)
 		if err != nil {
 			return err
 		}
@@ -845,7 +853,8 @@ func (r *placementRepository) DeleteUnsentTests(ctx context.Context, orgID uuid.
 
 func (r *placementRepository) UnsettledPaidTests(ctx context.Context, limit int) ([]PlacementSettle, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT pt.id, pt.organization_id, pt.created_by, pt.credits_charged,
+		SELECT pt.id, pt.organization_id, pt.created_by,
+			CASE WHEN pt.charged_micro > 0 THEN pt.charged_micro ELSE pt.credits_charged::bigint * legacy_credit_micro() END,
 			EXISTS (
 				SELECT 1 FROM placement_results pr
 				WHERE pr.test_id = pt.id AND pr.folder IN ('inbox', 'promotions', 'other', 'spam', 'missing','unknown','archive','custom')
@@ -865,7 +874,7 @@ func (r *placementRepository) UnsettledPaidTests(ctx context.Context, limit int)
 	var out []PlacementSettle
 	for rows.Next() {
 		var f PlacementSettle
-		if err := rows.Scan(&f.ID, &f.OrganizationID, &f.CreatedBy, &f.Credits, &f.Delivered); err != nil {
+		if err := rows.Scan(&f.ID, &f.OrganizationID, &f.CreatedBy, &f.Charged, &f.Delivered); err != nil {
 			return nil, err
 		}
 		out = append(out, f)
@@ -873,11 +882,11 @@ func (r *placementRepository) UnsettledPaidTests(ctx context.Context, limit int)
 	return out, rows.Err()
 }
 
-func (r *placementRepository) SettleCredits(ctx context.Context, testID uuid.UUID, refunded int) (bool, error) {
+func (r *placementRepository) SettleCredits(ctx context.Context, testID uuid.UUID, refunded models.Micro) (bool, error) {
 	tag, err := r.db.Exec(ctx, `
-		UPDATE placement_tests SET credits_settled_at = NOW(), credits_refunded = $2
+		UPDATE placement_tests SET credits_settled_at = NOW(), credits_refunded = $2, refunded_micro = $3
 		WHERE id = $1 AND credits_charged > 0 AND credits_settled_at IS NULL
-	`, testID, refunded)
+	`, testID, models.CreditsFromMicro(refunded), refunded)
 	if err != nil {
 		return false, err
 	}

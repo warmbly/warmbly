@@ -14,11 +14,6 @@ const (
 	ThreadLimitMax     = 500
 	DefaultThreadLimit = 500
 
-	// Overview is hot per-page-load. Cap defensively in case a future
-	// caller iterates it.
-	OverviewMaxMailboxes = 200
-	OverviewMaxTags      = 100
-
 	// SnoozeMaxHorizon is the hardest a thread can be snoozed for.
 	// Anything longer is functionally "mute" — we'd rather expose a
 	// dedicated mute action than let snooze drift into archive.

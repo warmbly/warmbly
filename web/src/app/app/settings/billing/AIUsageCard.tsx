@@ -1,9 +1,6 @@
-// AI usage & spend controls for the billing page: spend per window against
-// the configured limits, a dithered area graph switchable between 7/30/90
-// days, breakdowns by feature and model, and the spend-control form. Limits
-// are set per window through slider cells with an inline-editable value and
-// quick presets; edits collect into a floating save bar so nothing writes
-// until you commit.
+// AI spend and spend controls on the Balance tab: dollars spent per window
+// against the limits, a 7/30/90 day graph, breakdowns by feature and model,
+// and the limits form. Edits collect into a floating save bar.
 
 import React from "react";
 import useBrowseState from "@/hooks/useBrowseState";
@@ -11,48 +8,35 @@ import { aiUsageRangeSchema } from "@/lib/browse-other-lists";
 import toast from "react-hot-toast/headless";
 import { AnimatePresence, motion } from "framer-motion";
 import { Loader2Icon, RotateCcwIcon } from "lucide-react";
-import useCredits from "@/lib/api/hooks/app/subscription/useCredits";
 import useCreditUsage from "@/lib/api/hooks/app/subscription/useCreditUsage";
 import { useCreditSettings, useUpdateCreditSettings } from "@/lib/api/hooks/app/subscription/useCreditSettings";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import type { AISpendSettings, CreditUsageBucket } from "@/lib/api/models/app/subscription/Credits";
 import buildError from "@/lib/helper/buildError";
-import { Label, NumberInput } from "@/components/ui/field";
-import { SelectMenu } from "@/components/ui/select-menu";
+import UsdStepper from "@/components/app/billing/UsdStepper";
+import { reasonLabel } from "@/components/app/billing/balanceModel";
+import { fmtUsd, fmtUsdTrim, parseUsd } from "@/lib/money";
 import { AnimatedNumber, DitherAreaChart, DitherMeter, DitherSlider, type DitherBarDatum, type DitherTone } from "@/components/ui/dither";
 import { Section } from "../_components/SectionShell";
-
-const REASON_LABELS: Record<string, string> = {
-    writing_assistant: "Writing assistant",
-    writing_edit: "Selection edits",
-    reply_draft: "Reply drafts",
-    agent_iteration: "Remie",
-    inbox_agent_draft: "Inbox agent",
-    research_run: "Contact research",
-    automation_ai: "Automation AI",
-    campaign_ai: "Campaign switches",
-    spam_analysis: "Spam analysis",
-    placement_test: "Placement tests",
-};
 
 type WindowKey = "day" | "week" | "month";
 
 const WINDOW_PRESETS: Record<WindowKey, number[]> = {
-    day: [50, 100, 250, 500],
-    week: [250, 500, 1000, 2500],
-    month: [500, 1000, 2500, 10000],
+    day: [1, 5, 10, 25],
+    week: [5, 25, 50, 100],
+    month: [25, 100, 250, 1000],
 };
 
 const WINDOW_SLIDER_MAX: Record<WindowKey, number> = {
-    day: 1000,
-    week: 5000,
-    month: 20000,
+    day: 100,
+    week: 500,
+    month: 2000,
 };
 
 const WINDOW_STEP: Record<WindowKey, number> = {
-    day: 5,
-    week: 25,
-    month: 50,
+    day: 1,
+    week: 5,
+    month: 25,
 };
 
 interface SpendForm {
@@ -63,25 +47,17 @@ interface SpendForm {
     memberWeekly: number | null;
     memberMonthly: number | null;
     lowThreshold: number;
-    autoEnabled: boolean;
-    autoPack: string;
-    autoThreshold: number;
-    autoMax: number;
 }
 
 function toForm(s: AISpendSettings): SpendForm {
     return {
-        daily: s.spend_limit_daily,
-        weekly: s.spend_limit_weekly,
-        monthly: s.spend_limit_monthly,
-        memberDaily: s.member_limit_daily,
-        memberWeekly: s.member_limit_weekly,
-        memberMonthly: s.member_limit_monthly,
-        lowThreshold: s.low_balance_threshold,
-        autoEnabled: s.auto_topup_enabled,
-        autoPack: s.auto_topup_pack,
-        autoThreshold: s.auto_topup_threshold,
-        autoMax: s.auto_topup_max_per_month,
+        daily: s.spend_limit_daily_usd ?? null,
+        weekly: s.spend_limit_weekly_usd ?? null,
+        monthly: s.spend_limit_monthly_usd ?? null,
+        memberDaily: s.member_limit_daily_usd ?? null,
+        memberWeekly: s.member_limit_weekly_usd ?? null,
+        memberMonthly: s.member_limit_monthly_usd ?? null,
+        lowThreshold: s.low_balance_usd ?? 0,
     };
 }
 
@@ -91,7 +67,6 @@ export default function AIUsageCard() {
     const [range, setRange] = useBrowseState<RangeDays>("settings.billing.ai-usage.range", 30, aiUsageRangeSchema);
     const usage = useCreditUsage(range);
     const settings = useCreditSettings();
-    const credits = useCredits();
     const save = useUpdateCreditSettings();
 
     // Local form state, seeded from the server row once it loads.
@@ -112,21 +87,17 @@ export default function AIUsageCard() {
         try {
             await toast.promise(
                 save.mutateAsync({
-                    spend_limit_daily: form.daily,
-                    spend_limit_weekly: form.weekly,
-                    spend_limit_monthly: form.monthly,
-                    member_limit_daily: form.memberDaily,
-                    member_limit_weekly: form.memberWeekly,
-                    member_limit_monthly: form.memberMonthly,
-                    low_balance_threshold: form.lowThreshold,
-                    auto_topup_enabled: form.autoEnabled,
-                    auto_topup_pack: form.autoPack,
-                    auto_topup_threshold: form.autoThreshold,
-                    auto_topup_max_per_month: form.autoMax,
+                    spend_limit_daily_usd: form.daily,
+                    spend_limit_weekly_usd: form.weekly,
+                    spend_limit_monthly_usd: form.monthly,
+                    member_limit_daily_usd: form.memberDaily,
+                    member_limit_weekly_usd: form.memberWeekly,
+                    member_limit_monthly_usd: form.memberMonthly,
+                    low_balance_usd: form.lowThreshold,
                 }),
                 {
-                    loading: "Saving spend controls…",
-                    success: "Spend controls saved",
+                    loading: "Saving limits…",
+                    success: "Limits saved",
                     error: (e: AppError) => buildError(e),
                 },
             );
@@ -136,7 +107,6 @@ export default function AIUsageCard() {
     };
 
     const u = usage.data;
-    const packs = credits.data?.packs ?? [];
 
     const chartData = React.useMemo<DitherBarDatum[]>(() => {
         if (!u) return [];
@@ -150,8 +120,8 @@ export default function AIUsageCard() {
             const label = d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
             days.push({
                 key,
-                value: p?.credits ?? 0,
-                hint: `${label} · ${(p?.credits ?? 0).toLocaleString()} credits · ${(p?.tokens ?? 0).toLocaleString()} tokens`,
+                value: p?.amount_usd ?? 0,
+                hint: `${label} · ${fmtUsd(p?.amount_usd ?? 0)} · ${(p?.tokens ?? 0).toLocaleString()} tokens`,
             });
         }
         return days;
@@ -159,17 +129,17 @@ export default function AIUsageCard() {
 
     return (
         <Section
-            eyebrow="AI usage & spend controls"
-            description="Credits are charged from what each AI call actually uses (tokens, per model). Watch the spend here, cap it per day, week, or month, and top up automatically before features pause."
+            eyebrow="AI spend & limits"
+            description="Each AI call is charged at what it actually uses (tokens, per model). Watch the spend here and cap it per day, week or month."
         >
             {usage.isPending ? (
                 <div className="h-24 rounded bg-slate-100 animate-pulse" />
             ) : u ? (
                 <>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                        <SpendStat label="Today" spent={u.spent_today} limit={u.limit_daily} />
-                        <SpendStat label="This week" spent={u.spent_week} limit={u.limit_weekly} />
-                        <SpendStat label="This month" spent={u.spent_month} limit={u.limit_monthly} />
+                        <SpendStat label="Today" spent={u.spent_today_usd} limit={u.limit_daily_usd} />
+                        <SpendStat label="This week" spent={u.spent_week_usd} limit={u.limit_weekly_usd} />
+                        <SpendStat label="This month" spent={u.spent_month_usd} limit={u.limit_monthly_usd} />
                     </div>
 
                     <div>
@@ -183,7 +153,7 @@ export default function AIUsageCard() {
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-                        <Breakdown title="By feature" rows={u.by_reason} labelFor={(k) => REASON_LABELS[k] ?? k} />
+                        <Breakdown title="By feature" rows={u.by_reason} labelFor={reasonLabel} />
                         <Breakdown title="By model" rows={u.by_model} labelFor={(k) => k || "No AI model"} />
                     </div>
                 </>
@@ -201,7 +171,7 @@ export default function AIUsageCard() {
                                 windowKey="day"
                                 value={form.daily}
                                 onChange={(v) => setForm({ ...form, daily: v })}
-                                spent={u?.spent_today}
+                                spent={u?.spent_today_usd}
                                 spentLabel="Spent today"
                             />
                             <LimitCell
@@ -209,7 +179,7 @@ export default function AIUsageCard() {
                                 windowKey="week"
                                 value={form.weekly}
                                 onChange={(v) => setForm({ ...form, weekly: v })}
-                                spent={u?.spent_week}
+                                spent={u?.spent_week_usd}
                                 spentLabel="Spent this week"
                             />
                             <LimitCell
@@ -217,7 +187,7 @@ export default function AIUsageCard() {
                                 windowKey="month"
                                 value={form.monthly}
                                 onChange={(v) => setForm({ ...form, monthly: v })}
-                                spent={u?.spent_month}
+                                spent={u?.spent_month_usd}
                                 spentLabel="Spent this month"
                             />
                         </div>
@@ -254,87 +224,22 @@ export default function AIUsageCard() {
                     </div>
 
                     <div>
-                        <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 mb-2">Low-credit reminder</div>
+                        <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 mb-2">Low balance notice</div>
                         <div className="flex flex-wrap items-center gap-2 text-[12px] text-slate-600">
-                            <span>Alert the billing team when the balance drops below</span>
-                            <NumberInput
+                            <span>Tell the billing team when the balance drops below</span>
+                            <UsdStepper
                                 value={form.lowThreshold}
-                                onChange={(n) => setForm({ ...form, lowThreshold: Math.max(0, Math.round(n)) })}
+                                onCommit={(n) => setForm({ ...form, lowThreshold: n })}
                                 min={0}
-                                max={1000000}
-                                className="w-24"
+                                max={1000}
+                                step={1}
+                                ariaLabel="Low balance notice"
+                                className="w-28"
                             />
-                            <span>credits (at most once per day).</span>
                         </div>
-                    </div>
-
-                    <div>
-                        <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 mb-2">Auto top-up</div>
-                        <div className="flex items-center gap-2">
-                            <button
-                                type="button"
-                                role="switch"
-                                aria-checked={form.autoEnabled}
-                                aria-label="Auto top-up"
-                                onClick={() => setForm({ ...form, autoEnabled: !form.autoEnabled })}
-                                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-                                    form.autoEnabled ? "bg-sky-600" : "bg-slate-200"
-                                }`}
-                            >
-                                <span
-                                    className={`inline-block size-4 transform rounded-full bg-white shadow-sm transition-transform ${
-                                        form.autoEnabled ? "translate-x-4" : "translate-x-0.5"
-                                    }`}
-                                />
-                            </button>
-                            <span className="text-[12px] text-slate-600">
-                                Buy a pack automatically with the card on file when credits run low
-                            </span>
-                        </div>
-                        <AnimatePresence initial={false}>
-                            {form.autoEnabled && (
-                                <motion.div
-                                    initial={{ height: 0, opacity: 0 }}
-                                    animate={{ height: "auto", opacity: 1 }}
-                                    exit={{ height: 0, opacity: 0 }}
-                                    transition={{ duration: 0.18, ease: "easeOut" }}
-                                    className="overflow-hidden"
-                                >
-                                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                        <div>
-                                            <Label>Pack to buy</Label>
-                                            <SelectMenu
-                                                value={form.autoPack}
-                                                onChange={(v) => setForm({ ...form, autoPack: v })}
-                                                options={packs.map((p) => ({ value: p.key, label: `${p.credits.toLocaleString()} credits` }))}
-                                                className="w-full"
-                                                fullWidth
-                                            />
-                                        </div>
-                                        <div>
-                                            <Label>When balance is below</Label>
-                                            <NumberInput
-                                                value={form.autoThreshold}
-                                                onChange={(n) => setForm({ ...form, autoThreshold: Math.max(0, Math.round(n)) })}
-                                                min={0}
-                                                max={1000000}
-                                                className="w-full"
-                                            />
-                                        </div>
-                                        <div>
-                                            <Label>Max purchases / month</Label>
-                                            <NumberInput
-                                                value={form.autoMax}
-                                                onChange={(n) => setForm({ ...form, autoMax: Math.max(0, Math.min(100, Math.round(n))) })}
-                                                min={0}
-                                                max={100}
-                                                className="w-full"
-                                            />
-                                        </div>
-                                    </div>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
+                        <p className="mt-1.5 text-[11px] text-slate-400">
+                            Sent once until money is added, and not while automatic reload covers it.
+                        </p>
                     </div>
 
                     <AnimatePresence>
@@ -347,7 +252,7 @@ export default function AIUsageCard() {
                                 className="sticky bottom-4 z-10 flex justify-center"
                             >
                                 <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 shadow-lg shadow-slate-900/10">
-                                    <span className="text-[12px] text-slate-600">Unsaved spend controls</span>
+                                    <span className="text-[12px] text-slate-600">Unsaved limits</span>
                                     <button
                                         type="button"
                                         onClick={() => serverForm && setForm(serverForm)}
@@ -388,8 +293,8 @@ function SpendStat({ label, spent, limit }: { label: string; spent: number; limi
         <div className="rounded-md border border-slate-200 bg-white px-3 py-2">
             <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400">{label}</div>
             <div className="mt-0.5 flex items-baseline gap-1">
-                <AnimatedNumber value={spent} className="text-[16px] font-semibold text-slate-900 tabular-nums" />
-                <span className="text-[11px] text-slate-400">{limit ? `/ ${limit.toLocaleString()} credits` : "credits"}</span>
+                <AnimatedNumber value={spent} format={fmtUsd} className="text-[16px] font-semibold text-slate-900 tabular-nums" />
+                {limit ? <span className="text-[11px] text-slate-400">of {fmtUsdTrim(limit)}</span> : null}
             </div>
             {pct !== null && <DitherMeter frac={pct / 100} tone={meterTone(pct)} height={4} className="mt-1.5" />}
         </div>
@@ -405,7 +310,7 @@ function Breakdown({
     rows: CreditUsageBucket[];
     labelFor: (key: string) => string;
 }) {
-    const total = Math.max(1, rows.reduce((sum, r) => sum + r.credits, 0));
+    const total = Math.max(0.000001, rows.reduce((sum, r) => sum + r.amount_usd, 0));
     return (
         <div>
             <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 mb-2">{title}</div>
@@ -418,10 +323,10 @@ function Breakdown({
                             <div className="flex items-baseline justify-between gap-2">
                                 <span className="min-w-0 truncate text-slate-600">{labelFor(r.key)}</span>
                                 <span className="shrink-0 tabular-nums text-slate-500">
-                                    {r.credits.toLocaleString()} cr · {r.tokens.toLocaleString()} tok · {r.count.toLocaleString()}×
+                                    {fmtUsd(r.amount_usd)} · {r.tokens.toLocaleString()} tok · {r.count.toLocaleString()}×
                                 </span>
                             </div>
-                            <DitherMeter frac={r.credits / total} height={4} className="mt-0.5" />
+                            <DitherMeter frac={r.amount_usd / total} height={4} className="mt-0.5" />
                         </div>
                     ))}
                 </div>
@@ -431,7 +336,7 @@ function Breakdown({
 }
 
 function fmtCompact(n: number): string {
-    return n >= 1000 ? `${n % 1000 === 0 ? n / 1000 : (n / 1000).toFixed(1)}k` : String(n);
+    return n >= 1000 ? `$${n % 1000 === 0 ? n / 1000 : (n / 1000).toFixed(1)}k` : fmtUsdTrim(n);
 }
 
 // RangeToggle switches the usage graph window (the backend serves 1-90 days).
@@ -457,8 +362,8 @@ function RangeToggle({ range, onChange }: { range: RangeDays; onChange: (r: Rang
     );
 }
 
-// InlineNumber renders a value as editable text (no input chrome): click to
-// type an exact amount, Enter/blur commits, digits only.
+// InlineNumber renders a dollar value as editable text (no input chrome):
+// click to type an exact amount, Enter/blur commits.
 function InlineNumber({
     value,
     onCommit,
@@ -468,21 +373,23 @@ function InlineNumber({
     onCommit: (n: number) => void;
     className?: string;
 }) {
-    const [text, setText] = React.useState(String(value));
+    const show = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
+    const [text, setText] = React.useState(show(value));
     React.useEffect(() => {
-        setText(String(value));
+        setText(Number.isInteger(value) ? String(value) : value.toFixed(2));
     }, [value]);
     const commit = () => {
-        const n = Math.max(1, Math.round(Number(text) || value));
-        setText(String(n));
+        const n = Math.max(0.01, parseUsd(text) ?? value);
+        setText(show(n));
         if (n !== value) onCommit(n);
     };
     return (
         <input
             type="text"
-            inputMode="numeric"
+            inputMode="decimal"
+            aria-label="Limit in US dollars"
             value={text}
-            onChange={(e) => setText(e.target.value.replace(/[^\d]/g, ""))}
+            onChange={(e) => setText(e.target.value.replace(/[^\d.,]/g, ""))}
             onFocus={(e) => e.currentTarget.select()}
             onBlur={commit}
             onKeyDown={(e) => {
@@ -515,7 +422,7 @@ function LimitCell({
     const on = value !== null;
     const presets = WINDOW_PRESETS[windowKey];
     const sliderMax = Math.max(WINDOW_SLIDER_MAX[windowKey], value ?? 0);
-    const pct = on && spent !== undefined ? Math.min(100, Math.round((spent / Math.max(1, value)) * 100)) : null;
+    const pct = on && spent !== undefined ? Math.min(100, Math.round((spent / Math.max(0.01, value)) * 100)) : null;
     return (
         <div className="rounded-md border border-slate-200 bg-white px-3 py-2.5">
             <div className="flex items-center justify-between">
@@ -548,13 +455,13 @@ function LimitCell({
                         className="overflow-hidden"
                     >
                         <div className="pt-1.5 space-y-2">
-                            <div className="flex items-baseline gap-1">
+                            <div className="flex items-baseline gap-0.5">
+                                <span className="text-[17px] font-semibold text-slate-400">$</span>
                                 <InlineNumber
                                     value={value}
                                     onCommit={(n) => onChange(n)}
                                     className="text-[17px] font-semibold text-slate-900 tabular-nums"
                                 />
-                                <span className="text-[10.5px] text-slate-400">credits</span>
                             </div>
                             <DitherSlider
                                 value={value}
@@ -585,7 +492,7 @@ function LimitCell({
                                     <div className="flex items-baseline justify-between text-[10.5px] text-slate-400">
                                         <span>{spentLabel}</span>
                                         <span className="tabular-nums">
-                                            {spent.toLocaleString()} / {(value ?? 0).toLocaleString()}
+                                            {fmtUsd(spent)} / {fmtUsdTrim(value ?? 0)}
                                         </span>
                                     </div>
                                     <DitherMeter frac={pct / 100} tone={meterTone(pct)} height={3} className="mt-1" />

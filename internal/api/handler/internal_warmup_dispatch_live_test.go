@@ -46,7 +46,13 @@ func newOutboundStartFixture(t *testing.T) *outboundStartFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(handle.Pool.Close)
-	f := &outboundStartFixture{db: handle, user: uuid.New(), org: uuid.New(), sender: uuid.New(), recipient: uuid.New(), task: uuid.New(), worker: uuid.New(), source: tasks.VettedDiagnosticConversations()[0]}
+	f := &outboundStartFixture{db: handle, user: uuid.New(), org: uuid.New(), sender: uuid.New(), recipient: uuid.New(), task: uuid.New(), worker: uuid.New(), source: tasks.Conversation{ID: uuid.New(), Version: generation.WarmupScenarioVersion, Subject: "A wording choice", Description: "I'm rewording the labels on our intake form and can't pick between two options. Which one reads clearer to you?", Messages: []string{"The shorter one, I think. It scans faster.", "Agreed, I'll go with that. Thanks for the quick read."}}}
+	contentRepo := repository.NewWarmupContentRepository(handle.Pool)
+	rendering := generation.CanonicalRenderingVersion
+	if err := contentRepo.InsertConversation(t.Context(), &models.WarmupConversation{ID: f.source.ID, PoolType: "premium", Source: models.WarmupContentSourceAI, Subject: f.source.Subject, Description: f.source.Description, Messages: f.source.Messages, Status: models.WarmupConversationActive, LintPassed: true, ReplyEligible: true, ScenarioVersion: &f.source.Version, RenderingVersion: &rendering, SemanticReview: "passed"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = contentRepo.DeleteConversation(context.Background(), f.source.ID) })
 	f.exec(t, `INSERT INTO users(id,email,first_name,last_name,password_hash) VALUES($1,$2,'Start','Test','x')`, f.user, f.user.String()+"@example.test")
 	f.exec(t, `INSERT INTO organizations(id,name,slug,owner_user_id,risk_state) VALUES($1,'Start test',$2,$3,'trusted')`, f.org, f.org.String(), f.user)
 	t.Cleanup(func() {
@@ -72,7 +78,7 @@ func newOutboundStartFixture(t *testing.T) *outboundStartFixture {
 	}
 	f.exec(t, `INSERT INTO tasks(id,task_type,email_account_id,status,message_id,scheduled_at) VALUES($1,'warmup',$2,'active','',NOW())`, f.task, f.sender)
 	f.exec(t, `INSERT INTO warmup_tasks(task_id,target_account_id,lineage_version,subject,scenario_version,rendering_version,max_turns) VALUES($1,$2,1,$3,$4,$5,$6)`, f.task, f.recipient, f.source.Subject, f.source.Version, generation.CanonicalRenderingVersion, len(f.source.Messages)+1)
-	f.exec(t, `INSERT INTO warmup_tokens(token,task_id,sender_account_id,recipient_account_id,subject,content_source,conversation_id,conversation_turn) VALUES($1,$2,$3,$4,$5,'static',$6,0)`, uuid.New(), f.task, f.sender, f.recipient, f.source.Subject, f.source.ID)
+	f.exec(t, `INSERT INTO warmup_tokens(token,task_id,sender_account_id,recipient_account_id,subject,content_source,conversation_id,conversation_turn) VALUES($1,$2,$3,$4,$5,'ai',$6,0)`, uuid.New(), f.task, f.sender, f.recipient, f.source.Subject, f.source.ID)
 	f.repo = repository.NewTaskRepository(handle.Pool)
 	f.admission = f.repo.(repository.OutboundAdmissionRepository)
 	f.dispatch = f.repo.(repository.WarmupDispatchRepository)
@@ -88,7 +94,7 @@ func newOutboundStartFixture(t *testing.T) *outboundStartFixture {
 	emailRepo := repository.NewEmailRepostory(handle, enc)
 	warmupRepo := repository.NewWarmupRepository(handle.Pool)
 	policy := scheduler.NewSchedulerService(f.repo, warmupRepo, nil, emailRepo, nil, nil, nil)
-	f.svc = tasks.NewService(nil, nil, nil, nil, policy, nil, nil, nil, nil, f.repo, warmupRepo, nil, nil, nil, emailRepo, nil, nil, nil, nil, nil, nil, nil)
+	f.svc = tasks.NewService(nil, nil, nil, nil, policy, nil, nil, nil, nil, f.repo, warmupRepo, nil, contentRepo, nil, emailRepo, nil, nil, nil, nil, nil, nil, nil)
 	f.nonce, err = f.dispatch.AuthorizeWarmupDispatch(t.Context(), f.task, f.sender, f.worker)
 	if err != nil {
 		t.Fatal(err)
@@ -123,7 +129,7 @@ func (f *outboundStartFixture) importPendingSnapshot(t *testing.T, status string
 	rows := map[string][]map[string]any{
 		"tasks":         {{"id": f.task, "task_type": "warmup", "email_account_id": f.sender, "status": status, "message_id": "", "send_result_state": "unknown"}},
 		"warmup_tasks":  {{"task_id": f.task, "target_account_id": f.recipient, "subject": f.source.Subject}},
-		"warmup_tokens": {{"token": uuid.New(), "task_id": f.task, "sender_account_id": f.sender, "recipient_account_id": f.recipient, "subject": f.source.Subject, "content_source": "static", "conversation_id": f.source.ID, "conversation_turn": 0}},
+		"warmup_tokens": {{"token": uuid.New(), "task_id": f.task, "sender_account_id": f.sender, "recipient_account_id": f.recipient, "subject": f.source.Subject, "content_source": "ai", "conversation_id": f.source.ID, "conversation_turn": 0}},
 	}
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
@@ -185,7 +191,7 @@ func (f *outboundStartFixture) prepareDeferredWarmup(t *testing.T) {
 	}
 	if err := repository.NewWarmupRepository(f.db.Pool).CreateWarmupToken(t.Context(), &models.WarmupToken{
 		Token: uuid.New(), TaskID: f.task, SenderAccountID: f.sender, RecipientAccountID: f.recipient,
-		Subject: f.source.Subject, ContentSource: "static", ConversationID: &f.source.ID,
+		Subject: f.source.Subject, ContentSource: models.WarmupContentSourceAI, ConversationID: &f.source.ID,
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 	}); err != nil {
 		t.Fatal(err)
@@ -517,5 +523,20 @@ func TestLiveWarmupGenericCannotRepeatStartedWarmupClaim(t *testing.T) {
 	}
 	if err := f.admission.CancelOutbound(t.Context(), f.task, f.sender, f.worker, f.nonce); err != nil || f.snapshot(t) != before {
 		t.Fatal("cancel erased already started native warmup claim", err)
+	}
+}
+
+func TestLiveWarmupGenericDeniesHistoricalDiagnosticContent(t *testing.T) {
+	f := newOutboundStartFixture(t)
+	legacy := tasks.Conversation{ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-clock:v1")), Subject: "Simulated diagnostic: fictional clock"}
+	f.exec(t, `UPDATE warmup_tasks SET subject=$2 WHERE task_id=$1`, f.task, legacy.Subject)
+	f.exec(t, `UPDATE warmup_tokens SET subject=$2,content_source='static',conversation_id=$3 WHERE task_id=$1`, f.task, legacy.Subject, legacy.ID)
+	response, state := f.request(t, f.svc, true, nil)
+	if response.Code != http.StatusOK || state != "denied" {
+		t.Fatalf("historical wording authorized: status=%d state=%s", response.Code, state)
+	}
+	var unstarted bool
+	if err := f.db.QueryRow(t.Context(), `SELECT send_executor_started_at IS NULL FROM tasks WHERE id=$1`, f.task).Scan(&unstarted); err != nil || !unstarted {
+		t.Fatalf("denied content entered native execution: unstarted=%v err=%v", unstarted, err)
 	}
 }

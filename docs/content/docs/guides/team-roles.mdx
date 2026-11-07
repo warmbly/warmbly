@@ -63,7 +63,7 @@ In the **Invite teammates** box, paste or type addresses into **Emails**, separa
 
 Warmbly sends one invitation per address and reports results as "Invited 2 · 1 failed". Invalid addresses are skipped and called out. The chips clear when the batch finishes.
 
-When several trusted dashboards share one backend, invitation emails link back to the dashboard that sent the invitation. Copying an invitation link also keeps that dashboard's hostname. See [multi-dashboard configuration](/development/configuration/#google-sign-in-per-dashboard-deployment).
+When several trusted dashboards share one backend, invitation emails link back to the dashboard that sent the invitation. Copying an invitation link also keeps that dashboard's hostname. See [multi-dashboard configuration](/development/configuration/#multiple-dashboards-on-one-backend).
 
 An invitation works for 48 hours. A self-hosted instance can shorten that, but not lengthen it.
 
@@ -105,10 +105,10 @@ Removal applies to someone who is signed in right now. Their open dashboard lose
 
 A role says what a member may do. Their access scope says which resources it applies to:
 
-- **Entire workspace**, the default and what every member had before scopes existed.
-- **Selected resources**, which reaches only the campaign folders, campaigns and mailboxes you choose.
+- **Full workspace**, the default and what every member had before scopes existed.
+- **Client**, which reaches only the campaign folders, campaigns and mailboxes you choose. This is how an agency shares a client's campaigns and inboxes with that client.
 
-Click the **Access** cell on a member's row to change it. In the dialog, choose **Selected resources**, then pick from three lists:
+Click the **Access** cell on a member's row to change it, or **Access** in the invite box to invite someone as a client. In the dialog, choose **Client**, pick a [client role](#client-roles), then pick from three lists:
 
 | Grant | Gives access to |
 | --- | --- |
@@ -122,9 +122,39 @@ A campaign is reachable when it sits in at least one granted folder or is grante
 Inbox access is by mailbox, not campaign. Granting a mailbox shared with other campaigns also exposes those campaigns' conversations in that mailbox, even when the campaigns themselves are not granted. Review the mailbox's use before granting it.
 </Callout>
 
-<Callout type="warn" title="Restricted access is read-only">
-A restricted member's roles still apply, but only their read permissions do: **View campaigns**, **View analytics** and **Use unified inbox** (reading only). Everything else is set aside while the scope is restricted, so they cannot edit, start, send, reply, label, move, or mark anything read or unread. Opening a conversation does not mark it read for the rest of the team.
-</Callout>
+### Client roles
+
+A restricted member's roles apply only inside their grants, and only as far as these permissions go:
+
+| Permission | From any role | From a role that lets clients act |
+| --- | --- | --- |
+| **View campaigns** | Read granted campaigns, their steps, schedule and activity | Same |
+| **View analytics** | Reports over granted campaigns and mailboxes | Same |
+| **Use unified inbox** | Read the granted mailboxes' conversations | Also reply and forward from a granted mailbox, label, mark read or unread, archive, delete, snooze, and cancel a scheduled reply |
+| **Manage campaigns** | Nothing | Edit a granted campaign's name, description, schedule, sending options and steps |
+| **Send campaigns** | Nothing | Start and pause a granted campaign |
+
+Every other permission is set aside while the scope is restricted: team, billing, settings, API keys, integrations, AI, contacts and mailbox settings never apply to a client, whatever their role. A role lets clients act when **Clients can act inside what is shared with them** is on in its editor; it is off for every role until you turn it on, so a role a client already holds keeps them read-only until then. Turning it on or off needs every permission the role grants.
+
+The member dialog offers three presets, added to **Roles & access** as ordinary roles the first time you pick one:
+
+| Preset | What the client can do |
+| --- | --- |
+| **Client: view only** | Read the shared campaigns, their analytics and the shared mailboxes' conversations |
+| **Client: can reply** | Everything in view only, plus answering and triaging the shared mailboxes' conversations |
+| **Client: manage campaigns** | Everything in can reply, plus editing the shared campaigns' steps and schedule and starting or pausing them |
+
+**Roles & access** also lists any preset the workspace does not have yet, to add in one click, and marks each role a client can fully use.
+
+Inside their grants, a client is held to the resources they were given:
+
+- **Replies** go into a conversation whose messages all sit in granted mailboxes, sent from a granted mailbox. The client chooses the recipients, as in any reply. Compose outside a conversation is not available to them, and a forward needs the forwarded message's mailbox granted too.
+- **Inbox changes** (labels, read state, filing, snoozes) name messages or conversations in granted mailboxes; a conversation that also sits in another mailbox is refused. Marking a whole folder read is refused. Opening a conversation marks it read only for a client who can act in the inbox.
+- **Campaign edits** reach granted campaigns that send only from granted mailboxes, listed explicitly with no sender tags. A client cannot change a campaign's senders, sender tags, folders, tracking domain, CC and BCC addresses or status, and can set only email, wait, end and path steps. Steps that act on contacts, the CRM or automations stay as your team set them.
+- **Starting** a campaign needs every sender to be a granted mailbox, listed explicitly with no sender tags. Pausing needs nothing more.
+- They cannot create, duplicate or delete campaigns, compose new mail, or open a campaign's leads or settings tabs.
+
+A refused write answers `403` `member_access_restricted`, and a campaign or mailbox outside their grants answers `404`.
 
 What a restricted member sees:
 
@@ -134,7 +164,7 @@ What a restricted member sees:
 - **Inbox**: the conversations of their mailboxes, with counts and filters to match. Category lists include only categories applied to conversations with messages in accessible mailboxes. Thread labels require an accessible message; unknown and inaccessible threads both answer as not found.
 - **Live updates** for those resources only. They do not appear in the team's presence and do not see who else is online.
 
-Everything that cannot yet be narrowed to a scope is unavailable to them, and shows as locked in their sidebar with the reason: contacts, CRM, templates, forms, automations, deliverability, placement tests, settings other than their own profile and security, the AI assistant, and the Slack app. Resource ownership does not bypass access checks for live events or notifications. They are not sent workspace notifications, including queued email or push notifications, and stored workspace notifications are hidden while their membership is restricted or removed. Personal sign-in security notices remain available. An API key a restricted member already holds, and an app they authorized, are held to the same scope and the same read-only routes; they cannot create new keys.
+Everything that cannot yet be narrowed to a scope is unavailable to them, and shows as locked in their sidebar with the reason: contacts, CRM, templates, forms, automations, deliverability, placement tests, settings other than their own profile and security, the AI assistant, and the Slack app. Resource ownership does not bypass access checks for live events or notifications. They are not sent workspace notifications, including queued email or push notifications, and stored workspace notifications are hidden while their membership is restricted or removed. Personal sign-in security notices remain available. An API key a restricted member already holds, and an app they authorized, are held to the same scope, the same routes and the same client role; they cannot create new keys.
 
 An account whose workspace memberships are all restricted cannot create another workspace, regardless of which workspace is selected. Accounts with no memberships or at least one unrestricted membership can still create workspaces subject to the existing limits. Instance administrators are exempt from this restriction. Submitting, listing or cancelling a workspace limit request requires an unrestricted membership in the request's target workspace, not just the currently selected one. These rules apply to hosted and self-hosted instances.
 
@@ -166,7 +196,7 @@ Roles are workspace data. Every workspace starts with three seeded roles that ar
 | | Manage sequences | Edit step content and spacing |
 | | View analytics | Deliverability and engagement reports |
 | | Use integrations | Push contacts and deals to connected tools, view and test automations |
-| | Use AI | Remie and AI drafting, spending shared credits |
+| | Use AI | Remie and AI drafting, spending the shared workspace balance |
 | **People** | Manage team | Invite, remove, re-role members |
 | | Transfer ownership | Hand ownership to another member |
 | **Sending** | Manage mailboxes | Connect, disconnect, configure senders |
@@ -196,7 +226,7 @@ Five rules keep this safe:
 - **Members can hold several roles**, and their effective access is the union of all of them. A member left with no roles keeps membership but has no permissions.
 - Up to 25 roles per workspace, including the seeded ones.
 
-Custom roles apply everywhere permissions do: API access checks, dashboard visibility, and which realtime events a member receives. For a member with a restricted [access scope](#access-scope), only a role's read permissions take effect.
+Custom roles apply everywhere permissions do: API access checks, dashboard visibility, and which realtime events a member receives. For a member with a restricted [access scope](#access-scope), a role applies only inside their grants and only as far as [client roles](#client-roles) allow.
 
 </Fold>
 

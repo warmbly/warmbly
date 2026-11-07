@@ -53,6 +53,8 @@ import { useAutomations } from "@/lib/api/hooks/app/automations/useAutomations";
 import { useUserProfile } from "@/hooks/context/user";
 import { actionGlyph, defaultConfigForAction } from "./automationActions";
 import { cn } from "@/lib/utils";
+import { fmtUsdAbout } from "@/lib/money";
+import { AI_ESTIMATE_USD } from "@/lib/aiEstimates";
 
 // InboundUrlField shows the automation's unique inbound-webhook URL (read-only)
 // with a copy button. The stored value is a path; we prefix the API origin so
@@ -177,7 +179,7 @@ export function ConditionEditor({
                     )}
                     <p className="text-[10.5px] text-slate-400 leading-relaxed">
                         AI reads the event data and answers your question: yes follows the Yes branch, no follows No. If AI
-                        can't answer, the No branch runs. Costs 1 credit each time this branch is evaluated.
+                        can't answer, the No branch runs. Costs {fmtUsdAbout(AI_ESTIMATE_USD.aiNode)} each time this branch is evaluated.
                     </p>
                 </div>
             ) : isExpression ? (
@@ -1070,7 +1072,7 @@ function AIClassifyFields({
                 defaultName="ai_class"
             />
             <p className="text-[11px] text-slate-400 leading-relaxed">
-                The model picks exactly one label. Add at least two. Costs 1 credit each time it runs.
+                The model picks exactly one label. Add at least two. Costs {fmtUsdAbout(AI_ESTIMATE_USD.aiNode)} each time it runs.
             </p>
         </div>
     );
@@ -1101,7 +1103,7 @@ function AIExtractFields({
                 addLabel="Add key"
             />
             <p className="text-[11px] text-slate-400 leading-relaxed">
-                Each key becomes a variable ( <code>{`{{.company_size}}`}</code> ). A field the model can't find is empty. Costs 1 credit.
+                Each key becomes a variable ( <code>{`{{.company_size}}`}</code> ). A field the model can't find is empty. Costs {fmtUsdAbout(AI_ESTIMATE_USD.aiNode)}.
             </p>
         </div>
     );
@@ -1129,7 +1131,7 @@ function AIGenerateFields({
                 defaultName="ai_text"
             />
             <p className="text-[11px] text-slate-400 leading-relaxed">
-                The result is stored, not sent. Use it in a later step (a Slack message, a task). Costs 1 credit.
+                The result is stored, not sent. Use it in a later step (a Slack message, a task). Costs {fmtUsdAbout(AI_ESTIMATE_USD.aiNode)}.
             </p>
         </div>
     );
@@ -1377,8 +1379,8 @@ function AIAgentFields({
                 )}
                 <p className="mt-1.5 text-[11px] text-slate-400 leading-relaxed">
                     The agent decides which of these to use for each event, writes any task or deal details itself, and
-                    can chain several. It only takes these reversible actions — it never sends or replies. Billed 1
-                    credit per step it takes.
+                    can chain several. It only takes these reversible actions and never sends or replies. Each step it
+                    takes is charged to the workspace balance by what it uses, usually {fmtUsdAbout(AI_ESTIMATE_USD.agentIteration)}.
                 </p>
             </div>
         </div>
@@ -1404,7 +1406,7 @@ function AISwitchFields({
                 <div className="grid grid-cols-2 gap-1.5">
                     {(
                         [
-                            { ai: true, Icon: SparklesIcon, title: "AI prompt", detail: "A model reads the event and picks a case. 1 credit." },
+                            { ai: true, Icon: SparklesIcon, title: "AI prompt", detail: `A model reads the event and picks a case. ${fmtUsdAbout(AI_ESTIMATE_USD.aiNode)}.` },
                             { ai: false, Icon: BracesIcon, title: "Value", detail: "A field or template is matched to the cases. Free." },
                         ] as const
                     ).map(({ ai, Icon, title, detail }) => {
@@ -1444,7 +1446,7 @@ function AISwitchFields({
                         <div className="space-y-1">
                             <AIToggle
                                 label="Web search"
-                                detail="Looks up the event's company on the web before deciding. +1 credit when results are found"
+                                detail={`Looks up the event's company on the web before deciding. Adds ${fmtUsdAbout(AI_ESTIMATE_USD.webSearch)} when results are found`}
                                 on={!!config.web_search}
                                 onToggle={() => patchConfig({ web_search: !config.web_search })}
                             />
@@ -1464,7 +1466,7 @@ function AISwitchFields({
                     <p className="mt-1 text-[11px] text-slate-400 leading-relaxed">
                         Rendered against the event and matched to the case names. Matching ignores casing and extra
                         spaces; wrap a case in slashes for a regex, e.g. <code className="font-mono">/^(vip|enterprise)/</code>.
-                        First match wins. No model call, no credits.
+                        First match wins. No model call, no charge.
                     </p>
                 </div>
             )}

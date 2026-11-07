@@ -38,6 +38,7 @@ A `data` plus `pagination` envelope. `next_cursor` is the campaign id to resume 
       "description": "",
       "status": "active",
       "stop_on_reply": true,
+      "stop_on_meeting": true,
       "open_tracking": true,
       "link_tracking": true,
       "text_only": false,
@@ -140,7 +141,7 @@ Project an audience against a sender pool before a campaign exists. The campaign
 | `steps`, `total_sends` | Emails per contact, and `recipients` times `steps`. |
 | `first_touch_finish_at` | The day the last contact gets their first email. |
 | `ramping`, `held` | Mailboxes still climbing their graduation ceiling, and mailboxes that send nothing today. |
-| `warmup` | `{mailboxes, per_day, per_day_without, reply_rate}`: the warmup mail running alongside the campaign, what the same mailboxes warm at with no live campaign, and the least share of it (in percent) pool partners reply to while the campaign runs. |
+| `warmup` | `{mailboxes, per_day, per_day_without, reply_rate}`: the warmup mail running alongside the campaign, what the same mailboxes warm at with no live campaign, and the least chance (in percent) that a pool partner with reply share left answers it on arrival while the campaign runs. Partners answer this warmup before other warmup mail, within their own reply rate. |
 | `other_campaigns_per_day` | What the pool's mailboxes sent for other campaigns on an average day over the last week. |
 | `bottleneck` | The clamp that costs the most sends on the first full sending day: `campaign_limit`, `warmup_graduation`, `spacing`, `other_campaigns`, `health`, `held`, `workspace_risk`, `org_daily_limit` or `sending_behavior`. Empty when the mailboxes' own caps are the limit. |
 | `timeline` | Up to 120 days from the start: `date`, `sending_day`, `capacity`, `sends`, `first_emails`, `follow_ups`, `warmup`. |
@@ -191,6 +192,7 @@ Create a campaign. Only `name` is required, every other field is optional and ap
 | `name` | string | yes | Campaign name. |
 | `description` | string | no | Free-text description. |
 | `stop_on_reply` | boolean | no | Stop sending to a contact once they reply. |
+| `stop_on_meeting` | boolean | no | Stop sending to a contact once they book a meeting linked to them, whether or not they replied. Default `true`. See [stop on meeting booked](/guides/sequences/#stop-on-meeting-booked). |
 | `open_tracking` | boolean | no | Insert the open pixel. |
 | `link_tracking` | boolean | no | Rewrite links through the tracking ticket service. Each link gets its own ticket, so clicks are attributed per link. |
 | `utm_tracking` | boolean | no | Tag every link with `utm_source`, `utm_medium`, `utm_campaign` and a per-link `utm_content` at send time. Default `false`. Values already on a link are kept. |
@@ -214,6 +216,7 @@ Create a campaign. Only `name` is required, every other field is optional and ap
 | `folder_ids` | string[] | no | Folder ids to file the campaign under. |
 | `sender_strategy` | string | no | `tags` (default) or `explicit`. `tags` resolves the pool from `email_tag_ids`, and falls back to every active mailbox in the workspace when no tag and no explicit sender is set. `explicit` sends from the mailboxes in `senders`, plus any `email_tag_ids` set alongside them. It never falls back to every active mailbox, so a pool that empties out parks the campaign at `paused_no_accounts` instead of widening to the whole workspace. |
 | `rotation_mode` | string | no | How volume spreads across the chosen mailboxes. |
+| `follow_up_sender` | string | no | Which mailbox sends a lead's follow-ups: `same` (default, the mailbox that sent the first email), `same_domain` (rotate among mailboxes on that domain) or `rotate` (rotate across the pool). Any other value is `400`. |
 | `senders` | object[] | no | Explicit-strategy mailbox pool (see sender input below). |
 | `ramp_enabled` | boolean | no | Enable per-campaign daily ramp-up. |
 | `ramp_start` | integer | no | Ramp starting volume. |
@@ -226,7 +229,7 @@ Create a campaign. Only `name` is required, every other field is optional and ap
 | `continuous` | boolean | no | Keep running for new leads: out of leads, the campaign stays `active` and waits instead of finishing. Linking a segment, a form or an automation that enrols leads turns it on, and so does starting a campaign whose every lead has finished. Default `false`. |
 | `tracking_domain` | string | no | Campaign-scoped tracking domain (honored only once verified). |
 | `steps` | object[] | no | Initial sequence steps in order (see create sequence input below). They are connected in order: each step routes unconditionally to the next, waiting that step's `wait_after` days. The first step's `wait_after` defaults to `0`, follow-ups to `3`. A step given no `subject`, or the same one as the conversation so far, defaults to `thread_reply: true` and is sent as a reply carrying that conversation's subject; a step with a subject of its own defaults to `false` and opens a new conversation. Set `thread_reply` explicitly to override either. |
-| `variants` | object[] | no | A/B variants for the first step (same shape as create A/B variant). |
+| `variants` | object[] | no | A/B variants for the first step (same shape as create A/B variant). A step or variant whose copy would not render as written refuses the whole request with `invalid_template`, naming it, and creates nothing. |
 | `advanced_overrides` | object | no | Advanced outreach overrides, see [advanced settings](#get-advanced-settings). |
 
 `schedule_windows` may also be supplied as a 7-element array (indexed by `time.Weekday`, Sunday = 0) of `{start, end}` minute intervals. When non-empty it supersedes `days`/`start_time`/`end_time`.
@@ -249,7 +252,7 @@ Create a campaign. Only `name` is required, every other field is optional and ap
   "ramp_increment": 2,
   "ramp_ceiling": 40,
   "steps": [
-    { "name": "Step 1", "subject": "Quick question, {{first_name}}", "body_plain": "Hi {{first_name}}...", "wait_after": 0 },
+    { "name": "Step 1", "subject": "Quick question, {{.FirstName}}", "body_plain": "Hi {{.FirstName}}...", "wait_after": 0 },
     { "name": "Step 2", "subject": "", "body_plain": "Just bumping this...", "wait_after": 3 }
   ]
 }
@@ -285,7 +288,7 @@ Patch any subset of campaign fields. Omitted fields are left unchanged. The expl
 
 ### Request body
 
-Every field is optional. Scalar fields use nullable pointers, so any field you send is applied. `timezone` accepts `""` to make the campaign follow the workspace timezone. `start_date` and `end_date` additionally accept an explicit `null` to clear the stored date: a null `start_date` means "start now" and a null `end_date` means "run open-ended". Changing any schedule field (`start_date`, `end_date`, `timezone`, `days`, `start_time`, `end_time`, `schedule_windows`, `entry_delay_minutes`) on an active campaign reschedules its next send immediately, so clearing a future start date or shortening the entry delay takes effect right away. Notable fields: `name`, `description`, `status`, `stop_on_reply`, `open_tracking`, `link_tracking`, `text_only`, `daily_limit`, `unsubscribe_header`, `risky_emails`, `cc`, `bcc`, `start_date`, `end_date`, `timezone`, `days`, `start_time`, `end_time`, `schedule_windows`, `email_tags`, `folders`, `contact_order_by`, `contact_order_dir`, `contact_order_field`, `sender_strategy`, `rotation_mode`, `ramp_enabled`, `ramp_start`, `ramp_increment`, `ramp_ceiling`, `esp_match_mode`, `max_new_leads_per_day`, `prioritize_new_leads`, `entry_delay_minutes`, `continuous`, `tracking_domain`, `utm_tracking`, `utm_source`, `utm_medium`, `utm_campaign`.
+Every field is optional. Scalar fields use nullable pointers, so any field you send is applied. `timezone` accepts `""` to make the campaign follow the workspace timezone. `start_date` and `end_date` additionally accept an explicit `null` to clear the stored date: a null `start_date` means "start now" and a null `end_date` means "run open-ended". Changing any schedule field (`start_date`, `end_date`, `timezone`, `days`, `start_time`, `end_time`, `schedule_windows`, `entry_delay_minutes`) on an active campaign reschedules its next send immediately, so clearing a future start date or shortening the entry delay takes effect right away. Notable fields: `name`, `description`, `status`, `stop_on_reply`, `stop_on_meeting`, `open_tracking`, `link_tracking`, `text_only`, `daily_limit`, `unsubscribe_header`, `risky_emails`, `cc`, `bcc`, `start_date`, `end_date`, `timezone`, `days`, `start_time`, `end_time`, `schedule_windows`, `email_tags`, `folders`, `contact_order_by`, `contact_order_dir`, `contact_order_field`, `sender_strategy`, `rotation_mode`, `follow_up_sender`, `ramp_enabled`, `ramp_start`, `ramp_increment`, `ramp_ceiling`, `esp_match_mode`, `max_new_leads_per_day`, `prioritize_new_leads`, `entry_delay_minutes`, `continuous`, `tracking_domain`, `utm_tracking`, `utm_source`, `utm_medium`, `utm_campaign`.
 
 `entry_delay_minutes` is anchored on when each contact entered the campaign, not on when the campaign started, so a contact enrolled by a linked segment next week waits the same amount from their own arrival. Leads that were in the campaign before the field existed count from the campaign's `created_at`, so turning a delay on never re-delays leads that have been enrolled for weeks.
 
@@ -392,7 +395,8 @@ A `CampaignAdvancedSettings` object: the campaign id, the `overrides` block, and
       "auto_pause_on_negative": false,
       "auto_suppress_on_unsubscribe_keyword": true,
       "hold_on_out_of_office": true,
-      "out_of_office_hold_days": 7
+      "out_of_office_hold_days": 7,
+      "stop_all_campaigns_on_reply": false
     },
     "send_time_optimization": {
       "enabled": false,
@@ -439,7 +443,7 @@ Replace the campaign's advanced overrides. **Scope** `WRITE_CAMPAIGNS` · **Org 
     "bounce_pipeline": { "enabled": true, "auto_suppress_on_bounce": true, "auto_suppress_on_complaint": true, "auto_suppress_on_unsubscribe": true, "auto_pause_campaign_on_spike": true, "pause_bounce_rate_threshold": 8, "pause_complaint_rate_threshold": 1.5 },
     "task_reliability": { "enabled": true, "dlq_enabled": true, "max_attempts": 5, "execution_window_seconds": 300 },
     "ab_testing": { "enabled": true, "default_winning_rule": "reply_rate", "auto_promote_winner": false, "min_sample_size": 30 },
-    "reply_intent": { "enabled": true, "positive_keywords": [], "negative_keywords": [], "out_of_office_keywords": [], "question_keywords": [], "auto_create_crm_task": true, "crm_task_intents": ["positive", "question", "neutral", "negative"], "auto_pause_on_negative": false, "auto_suppress_on_unsubscribe_keyword": true, "hold_on_out_of_office": true, "out_of_office_hold_days": 7 },
+    "reply_intent": { "enabled": true, "positive_keywords": [], "negative_keywords": [], "out_of_office_keywords": [], "question_keywords": [], "auto_create_crm_task": true, "crm_task_intents": ["positive", "question", "neutral", "negative"], "auto_pause_on_negative": false, "auto_suppress_on_unsubscribe_keyword": true, "hold_on_out_of_office": true, "out_of_office_hold_days": 7, "stop_all_campaigns_on_reply": false },
     "send_time_optimization": { "enabled": true, "use_contact_timezone": true, "default_contact_timezone": "UTC", "preferred_hours": [9, 14], "weekend_weight_multiplier": 0.5 },
     "preflight": { "enabled": true, "check_tracking_domain": true, "check_unsubscribe_header": true, "check_ab_variant_configured": false, "check_daily_limit": true, "check_schedule_window": true, "check_content_score": true, "min_content_score": 60 },
     "dashboard": { "enabled": true, "show_suppression_log": true, "show_intent_summary": true, "show_dlq_stats": true }
@@ -458,7 +462,7 @@ Replace the campaign's advanced overrides. **Scope** `WRITE_CAMPAIGNS` · **Org 
 List the campaign's A/B variants. A variant scoped to a `step_id` applies to one step, a `null` sequence id is campaign-level. **Scope** `READ_CAMPAIGNS` · **Org permission** `view_campaigns`.
 
 <Callout type="info" title="The Original is a weighted arm">
-For a step-scoped test the step's own email is the Original (control) arm. By default it carries an even share, but you can give it an explicit share by creating one `is_control: true` variant on that `step_id` whose `weight` is the Original's share. That row's `subject`/`body` are ignored; when the control wins, the step's own content is sent. Control rows are excluded from the A/B analysis variant list.
+For a step-scoped test the step's own email is the Original (control) arm. By default it carries an even share, but you can give it an explicit share by creating one `is_control: true` variant on that `step_id` whose `weight` is the Original's share. That row's `subject`/`body` are ignored; when the control wins, the step's own content is sent. Setting that row's `is_active` to `false` takes the Original out of the split, which is how a promoted variant gets every new contact. Control rows are excluded from the campaign-level `variants` list of the A/B analysis; the Original is an arm of its step in `steps`.
 </Callout>
 
 | Parameter | In | Type | Description |
@@ -478,17 +482,20 @@ A `data` array of `CampaignABVariant` objects (no pagination wrapper).
       "step_id": "7e3b...",
       "name": "Subject B",
       "weight": 50,
-      "subject": "Worth a look, {{first_name}}?",
-      "body_html": "<p>Hi {{first_name}}...</p>",
-      "body_plain": "Hi {{first_name}}...",
+      "subject": "Worth a look, {{.FirstName}}?",
+      "body_html": "<p>Hi {{.FirstName}}...</p>",
+      "body_plain": "Hi {{.FirstName}}...",
       "is_control": false,
       "is_active": true,
+      "promoted_at": null,
       "created_at": "2026-06-02T10:00:00Z",
       "updated_at": "2026-06-02T10:00:00Z"
     }
   ]
 }
 ```
+
+`promoted_at` is set on the arm that [auto-promotion](#get-ab-analysis) handed its step to (on the `is_control` row when the Original won), and is absent otherwise.
 
 ## Create an A/B variant
 
@@ -519,12 +526,14 @@ Add a variant to the campaign (or to one step via `step_id`). **Scope** `WRITE_C
   "name": "Subject B",
   "step_id": "7e3b...",
   "weight": 50,
-  "subject": "Worth a look, {{first_name}}?",
-  "body_plain": "Hi {{first_name}}...",
+  "subject": "Worth a look, {{.FirstName}}?",
+  "body_plain": "Hi {{.FirstName}}...",
   "is_control": false,
   "is_active": true
 }
 ```
+
+A `subject`, `body_html` or `body_plain` that would not render as written answers `400` with `code: "invalid_template"`, as for [a step](#update-a-sequence). The same check applies to an update, against the copy the variant will hold once the update lands, so re-activating a paused variant checks its stored copy. A step's control arm (`is_control` with a `step_id`) sends the step's copy, so its own is not checked.
 
 ### Response
 
@@ -572,7 +581,7 @@ Remove a variant. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_sett
 
 `GET /campaigns/:id/ab-analysis`
 
-Return per-variant engagement stats plus the computed winner for the campaign. **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`.
+Return the campaign's A/B results and winners: `steps` holds one entry per step-scoped test, counted in contacts, and `variants` the per-send summary of campaign-level variants. **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`.
 
 | Parameter | In | Type | Description |
 | --- | --- | --- | --- |
@@ -603,9 +612,94 @@ An `ABWinnerAnalysis` object.
   "winner_id": "c1a2...",
   "winner_name": "Subject A",
   "winning_rule": "reply_rate",
-  "confidence": "low"
+  "confidence": "low",
+  "steps": [
+    {
+      "step_id": "7e3b...",
+      "arms": [
+        {
+          "variant_id": null,
+          "name": "Original",
+          "is_control": true,
+          "is_active": true,
+          "sent": 412,
+          "bounced": 6,
+          "delivered": 406,
+          "opened": 221,
+          "clicked": 18,
+          "replied": 14,
+          "open_rate": 54.4,
+          "click_rate": 4.4,
+          "reply_rate": 3.4,
+          "bounce_rate": 1.5
+        },
+        {
+          "variant_id": "c1a2...",
+          "name": "Subject B",
+          "is_control": false,
+          "is_active": true,
+          "sent": 405,
+          "bounced": 4,
+          "delivered": 401,
+          "opened": 236,
+          "clicked": 22,
+          "replied": 33,
+          "open_rate": 58.9,
+          "click_rate": 5.5,
+          "reply_rate": 8.2,
+          "bounce_rate": 1.0
+        }
+      ],
+      "winner": { "variant_id": "c1a2...", "is_control": false, "name": "Subject B" },
+      "confidence": "high",
+      "p_value": 0.0034
+    }
+  ]
 }
 ```
+
+Each step entry lists the Original (`variant_id: null`) and every variant of that step, including paused ones.
+
+- `sent` is the number of contacts sent that arm at this step. Arms are recorded as each email is sent, so contacts sent before the step had variants are not counted.
+- `opened`, `clicked` and `replied` count contacts, at most once each. An event is credited to the step the contact had most recently been sent when it happened, so a reply after the next step went out belongs to that next step. Automated opens are not counted.
+- Rates are percentages of `delivered` (`sent` minus `bounced`); `bounce_rate` is of `sent`.
+- `winner` is present once every arm that has sent has at least `ab_testing.min_sample_size` delivered contacts and the leader on `winning_rule` beats each other arm in a two-sided two-proportion z-test. `p_value` is the largest of those p-values times the number of comparisons (Bonferroni), capped at `1`. `confidence` is `high` below `0.01`, `medium` below `0.05`, `low` otherwise (no winner), and `none` before any contact was sent.
+- `promoted_at` is set once auto-promotion handed the step to its winner. With `ab_testing.auto_promote_winner` on, a significant winner gets every new contact at its step and the other arms, the Original included, are set inactive. A step is promoted at most once, and the change is audited as a campaign update.
+
+The top-level `winner_id`, `winner_name` and `confidence` describe campaign-level variants only.
+
+## Get warmup placement
+
+`GET /campaigns/:id/warmup-placement`
+
+Where each arm of the campaign's opening steps landed when its senders' warmup opened threads with it over the last 30 days (see [your campaign copy](/guides/warmup/#your-campaign-copy)). Only arms warmup carried are listed, so a campaign warmup has not used returns an empty `data`. **Scope** `READ_CAMPAIGNS` · **Org permission** `view_campaigns`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+
+### Response
+
+`variant_id` is `null` for the step's own copy. Campaign copy is only sent to business inboxes on Google Workspace and Microsoft 365, and only those are counted: `by_group` splits the sends into `google` (Google Workspace) and `microsoft` (Microsoft 365), and `placement` adds them up. `sent` counts the openings and `reported` how many of them the recipient has filed a receipt for; `inbox`, `tabs`, `spam` and `rescued` count within those receipts, so read rates over `reported`.
+
+```json
+{
+  "days": 30,
+  "data": [
+    {
+      "sequence_id": "7e3b2c1d-4f5a-4b6c-8d7e-9f0a1b2c3d4e",
+      "variant_id": null,
+      "placement": { "sent": 24, "reported": 22, "inbox": 19, "tabs": 1, "spam": 2, "rescued": 2 },
+      "by_group": [
+        { "group": "google", "sent": 14, "reported": 13, "inbox": 12, "tabs": 1, "spam": 0, "rescued": 0 },
+        { "group": "microsoft", "sent": 10, "reported": 9, "inbox": 7, "tabs": 0, "spam": 2, "rescued": 2 }
+      ]
+    }
+  ]
+}
+```
+
+A campaign outside the caller's workspace answers `404`.
 
 ## List attachments
 
@@ -770,7 +864,7 @@ Start (activate) the campaign so it begins sending real mail. Works from `draft`
 
 A start refused because every remaining lead was refused by address verification answers `leads_undeliverable` and parks the campaign at `paused_undeliverable`; re-verify the leads or mark them deliverable with [`POST /contacts/verification`](/api/reference/contacts/#verify-or-override-contacts), which resumes it.
 
-A campaign whose email step has nothing in either body is refused with `empty_step_body` rather than started, because it would send a blank message to every lead it reached.
+A campaign whose email step has nothing in either body is refused with `empty_step_body` rather than started, because it would send a blank message to every lead it reached. A step or active A/B variant whose copy would not render as written (saved before the check on write existed) is refused with `invalid_template`, naming it, the field, the line and the problem.
 
 ### Response
 
@@ -822,7 +916,7 @@ Read whether one contact's flow inside this campaign is currently held. A hold p
 }
 ```
 
-`hold` is absent when the lead is not held, including for a dated hold that has since expired. `until` is absent when the hold has no end, in which case only a resume lifts it. `source` is `out_of_office`, `inbox_tagging`, `manual`, or `cc` while the contact is [copied on another lead's emails](#set-a-leads-cc) in this campaign; a `cc` hold's `reason` is that lead's address.
+`hold` is absent when the lead is not held, including for a dated hold that has since expired. `until` is absent when the hold has no end, in which case only a resume lifts it. `source` is `out_of_office`, `inbox_tagging` (a classified reply, or with `reply_intent.stop_all_campaigns_on_reply` on, a reply to another campaign), `manual`, or `cc` while the contact is [copied on another lead's emails](#set-a-leads-cc) in this campaign; a `cc` hold's `reason` is that lead's address.
 
 ### Errors
 
@@ -1279,9 +1373,9 @@ A bare array of `Sequence` objects (no envelope).
   {
     "id": "7e3b...",
     "name": "Step 1",
-    "subject": "Quick question, {{first_name}}",
-    "body_plain": "Hi {{first_name}}...",
-    "body_html": "<p>Hi {{first_name}}...</p>",
+    "subject": "Quick question, {{.FirstName}}",
+    "body_plain": "Hi {{.FirstName}}...",
+    "body_html": "<p>Hi {{.FirstName}}...</p>",
     "body_sync": true,
     "body_code": false,
     "wait_after": 0,
@@ -1311,7 +1405,7 @@ Optional. It takes the same fields as [update a sequence](#update-a-sequence), a
 ```json
 {
   "subject": "Quick question",
-  "body_plain": "Hi {{first_name}}, ...",
+  "body_plain": "Hi {{.FirstName}}, ...",
   "wait_after": 3
 }
 ```
@@ -1352,7 +1446,7 @@ All fields optional.
 ```json
 {
   "name": "Step 2",
-  "subject": "Following up, {{first_name}}",
+  "subject": "Following up, {{.FirstName}}",
   "body_plain": "Just bumping this...",
   "wait_after": 2,
   "conditions": {
@@ -1366,6 +1460,8 @@ All fields optional.
   }
 }
 ```
+
+`subject`, `body_plain` and `body_html` are checked before anything is saved, on a running campaign too. Copy that would not render as written answers `400` with `code: "invalid_template"` and a `message` naming the field, the line and the problem: an `{{if}}` with no `{{end}}`, an unknown function, an unknown sender field, or a bare name that is not a built-in field. Built-in fields are accepted as `{{.FirstName}}` or in their snake_case, camelCase and lowercase spellings. A spelling without the dot is saved in canonical form (`{{first_name}}` is stored and returned as `{{.FirstName}}`), as are sender fields; see [personalization](/guides/expressions/). The same applies to campaign creation with `steps` and to A/B variants. A step's control arm (`is_control` with a `step_id`) sends the step's copy, so its own copy is not checked.
 
 ### Response
 
@@ -1407,8 +1503,8 @@ Render subject and body templates for a contact exactly as the send path would, 
 
 ```json
 {
-  "subject": "Hi {{first_name}} at {{company}}",
-  "body_html": "<p>Hey {{first_name}}, I saw {{company}} is hiring. {{unknown_token}}</p>",
+  "subject": "Hi {{.FirstName}} at {{.Company}}",
+  "body_html": "<p>Hey {{.FirstName}}, I saw {{.Company}} is hiring. {{unknown_token}}</p>",
   "contact_id": "9a2c...",
   "campaign_id": "8f1d...",
   "account_id": "5c7d..."
@@ -1424,6 +1520,7 @@ A `TemplatePreview` object. `errors` lists template parse errors that would bloc
   "subject": "Hi Sam at Globex",
   "body_html": "<p>Hey Sam, I saw Globex is hiring. {{unknown_token}}</p><br><br><p>Best, Ana</p><p style=\"font-size:12px;color:#64748b\">Don't want these emails? <a href=\"https://app.example.com/u/...\">Unsubscribe</a></p>",
   "body_plain": "Hey Sam, I saw Globex is hiring. {{unknown_token}}\n\nBest, Ana\n\nDon't want these emails? https://app.example.com/u/...",
+  "errors": ["body: line 1: unknown variable \"unknown_token\": write a contact field with a leading dot, like {{.unknown_token}}; the built-in fields are FirstName, LastName, Email, Company, Phone, Sender, UnsubscribeLink"],
   "unresolved": ["{{unknown_token}}"],
   "from": { "name": "Ana Silva", "email": "ana@globex.com" },
   "attachments": [
@@ -1443,7 +1540,7 @@ A `TemplatePreview` object. `errors` lists template parse errors that would bloc
 
 `POST /generation/write`
 
-Generate outreach copy with the AI writing assistant. Gated to paid and free-trial organizations, and each call consumes one AI credit (refunded if the provider call fails). Supports `Idempotency-Key` so a retried request is not double-charged. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
+Generate outreach copy with the AI writing assistant. Gated to paid and free-trial organizations, and each call is charged to the workspace balance for the tokens it uses (nothing if the provider call fails). Supports `Idempotency-Key` so a retried request is not double-charged. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
 
 ### Request body
 
@@ -1460,13 +1557,16 @@ Generate outreach copy with the AI writing assistant. Gated to paid and free-tri
 
 ```json
 {
-  "text": "Hi {{first_name}},\n\nNoticed {{company}} is scaling outbound...\n\nWorth a quick chat?",
+  "text": "Hi {{.FirstName}},\n\nNoticed {{.Company}} is scaling outbound...\n\nWorth a quick chat?",
+  "charged_usd": 0.012,
+  "balance_usd": 4.96,
+  "credits_charged": 1,
   "credits_remaining": 248,
   "model": "claude-..."
 }
 ```
 
-When the organization is out of credits the endpoint returns `402` with `code: "insufficient_credits"` and the standard envelope. A depleted balance is checked before any provider call, so no completion is ever burned on a `402`.
+`charged_usd` is what the call cost and `balance_usd` the balance left, in dollars; `credits_charged` and `credits_remaining` are the same in legacy credits, kept for clients written before the dollar balance. When the balance is too low the endpoint returns `402` with `code: "insufficient_credits"` and the standard envelope. A depleted balance is checked before any provider call, so no completion is ever burned on a `402`.
 
 ### Streaming
 
@@ -1476,22 +1576,22 @@ Send `Accept: text/event-stream` to receive the text while the model writes it. 
 | --- | --- | --- |
 | `delta` | `text` | The next fragment, in order. |
 | `stage` | `stage: "checking"` | The text is written and words spam filters flag are being reworded. |
-| `done` | `text`, `credits_remaining`, `credits_charged`, `tokens_used`, `model` | The final text, which can differ from the joined deltas after the rewording. Always the last event on success. |
-| `error` | `code`, `message` | The generation failed. A failure refunds the credit, except when the caller disconnected after text had arrived. |
+| `done` | `text`, `charged_usd`, `balance_usd`, `credits_remaining`, `credits_charged`, `tokens_used`, `model` | The final text, which can differ from the joined deltas after the rewording. Always the last event on success. |
+| `error` | `code`, `message` | The generation failed. A failure charges nothing, except when the caller disconnected after text had arrived. |
 
 ```text
 data: {"type":"delta","text":"Hi {{.FirstName}},"}
 
 data: {"type":"delta","text":" saw that"}
 
-data: {"type":"done","text":"Hi {{.FirstName}}, saw that...","credits_remaining":247,"credits_charged":1,"tokens_used":412,"model":"..."}
+data: {"type":"done","text":"Hi {{.FirstName}}, saw that...","charged_usd":0.0118,"balance_usd":4.9482,"credits_remaining":247,"credits_charged":1,"tokens_used":412,"model":"..."}
 ```
 
 ## Preview an AI variable
 
 `POST /generation/ai-variable`
 
-Generate the recipient-specific snippet a per-recipient AI variable block would produce, for the campaign editor's preview. The prompt is rendered against a supplied contact (must belong to the organization) or a sample contact, then generated with the same framing the send path uses, including the surrounding email so the fragment fits. The charge is metered by usage (the model and tokens the snippet uses, plus any web lookup), refunded if the provider call fails, and `Idempotency-Key` is honored so a retried request is not double-charged. See the [AI variables](/guides/ai-variables/) guide. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns` and `use_ai`. Passing `contact_id` additionally requires `READ_CONTACTS` (org permission `view_contacts`), since the prompt reads that contact's fields.
+Generate the recipient-specific snippet a per-recipient AI variable block would produce, for the campaign editor's preview. The prompt is rendered against a supplied contact (must belong to the organization) or a sample contact, then generated with the same framing the send path uses, including the surrounding email so the fragment fits. The charge is metered by usage (the model and tokens the snippet uses, plus any web lookup), charged to the workspace balance and nothing if the provider call fails, and `Idempotency-Key` is honored so a retried request is not double-charged. See the [AI variables](/guides/ai-variables/) guide. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns` and `use_ai`. Passing `contact_id` additionally requires `READ_CONTACTS` (org permission `view_contacts`), since the prompt reads that contact's fields.
 
 ### Request body
 
@@ -1506,7 +1606,7 @@ Generate the recipient-specific snippet a per-recipient AI variable block would 
 | `context_after` | string | no | The email text immediately after the block. |
 
 ```json
-{ "mode": "instant", "prompt": "One line noting something specific about {{company}}.", "contact_id": "4f6c..." }
+{ "mode": "instant", "prompt": "One line noting something specific about {{.Company}}.", "contact_id": "4f6c..." }
 ```
 
 ### Response
@@ -1514,6 +1614,8 @@ Generate the recipient-specific snippet a per-recipient AI variable block would 
 ```json
 {
   "text": "Saw Acme just shipped its new billing API.",
+  "charged_usd": 0.0053,
+  "balance_usd": 4.92,
   "credits_remaining": 246,
   "credits_charged": 1,
   "tokens_used": 180,
@@ -1521,4 +1623,4 @@ Generate the recipient-specific snippet a per-recipient AI variable block would 
 }
 ```
 
-A `contact_id` that is not in the organization returns `404`. When the organization is out of credits the endpoint returns `402` with `code: "insufficient_credits"`, checked before any provider call.
+A `contact_id` that is not in the organization returns `404`. When the balance is too low the endpoint returns `402` with `code: "insufficient_credits"`, checked before any provider call.

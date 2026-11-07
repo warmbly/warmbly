@@ -6,7 +6,6 @@
 
 import type { WarmupPartnerLimit, WarmupSendFailure } from "@/lib/api/models/app/analytics/AccountStatus";
 
-export type PoolLinkCodeStatus = "pending" | "approved" | "claimed" | "denied";
 
 export interface PoolLinkOrgInfo {
     id: string;
@@ -33,22 +32,13 @@ export interface PoolLinkPlan {
     /** Mailboxes with warmup on and not paused; older servers do not send it. */
     warming?: number;
     price_usd: number;
-    /** The cloud's billing page with the warmup plan checkout open; only on the free tier. */
+    /** Where a free workspace picks a paid plan; only on the free tier. */
     upgrade_url?: string;
     /** The cloud's billing page; absent when the cloud runs without billing. */
     manage_url?: string;
     warmup_entitled: boolean;
-}
-
-/** GET /pool-link/offer — the pool plan's price, and whether it can be bought
- *  here at all. Unavailable means billing is off or no Stripe price is set. */
-export interface PoolLinkOffer {
-    available: boolean;
-    monthly_available: boolean;
-    yearly_available: boolean;
-    monthly_usd: number;
-    yearly_usd: number;
-    currency: string;
+    /** True when a linked instance can add no new mailboxes until the workspace subscribes; older servers do not send it. */
+    subscription_required?: boolean;
 }
 
 /** Root redirects Warmbly Cloud serves for this linked instance. */
@@ -77,18 +67,6 @@ export interface PoolLinkInstanceInfo {
     plan: PoolLinkPlan;
     /** Absent from a Cloud that does not serve redirects. */
     redirects?: PoolLinkRedirectOffer | null;
-}
-
-export interface PoolLinkCode {
-    id: string;
-    user_code: string;
-    instance_name: string;
-    instance_url: string;
-    instance_version: string;
-    status: PoolLinkCodeStatus;
-    organization_id?: string;
-    expires_at: Date;
-    created_at: Date;
 }
 
 export interface PoolLinkWarmupSettings {
@@ -191,20 +169,6 @@ export interface CloudLinkStatus {
     reachable: boolean;
     error?: string;
     default_cloud_url: string;
-}
-
-export interface CloudLinkPendingConnect {
-    user_code: string;
-    verification_url: string;
-    cloud_url: string;
-    expires_at: Date;
-    interval: number;
-}
-
-export interface CloudLinkPollResult {
-    status: PoolLinkCodeStatus;
-    link?: CloudLink | null;
-    info?: PoolLinkInstanceInfo | null;
 }
 
 export interface CloudLinkMailboxRow {

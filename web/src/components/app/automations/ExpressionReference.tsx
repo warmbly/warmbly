@@ -26,7 +26,7 @@ const SECTIONS: Section[] = [
         title: "Variables",
         blurb: "Email: dotted PascalCase. Automations: the event key with a leading dot ({{.key}}).",
         entries: [
-            { code: "{{.FirstName}}", label: "Contact field (email)", note: "Standard: .FirstName .LastName .Email .Company .Phone. Lowercase {{.firstname}} does NOT work for email merge fields." },
+            { code: "{{.FirstName}}", label: "Contact field (email)", note: "Standard: .FirstName .LastName .Email .Company .Phone. Campaign email also accepts first_name, firstName and firstname spellings." },
             { code: "{{.role}}", label: "Custom field by key", note: "Any key works, including names with spaces or dashes (e.g. {{.job title}}), in {{if}} and helpers too." },
             { code: "{{.contact_email}}", label: "Automation event variable", note: "Standard dotted field access — the leading dot is required. Unknown keys render empty." },
             { code: "{{.confidence}}", label: "Reply confidence (reply trigger)", note: "Stays numeric in both conditions and action values, so native gt/lt/eq work. Use gtf only when a value might arrive as text." },

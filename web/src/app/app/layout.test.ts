@@ -22,6 +22,7 @@ const GLOBAL_MODALS = [
     "<PasskeyEnrollPrompt />",
     "<PermissionDeniedModal />",
     "<ReauthModal />",
+    "<InsufficientBalanceDialog />",
 ];
 
 function between(open: string, close: string): string {

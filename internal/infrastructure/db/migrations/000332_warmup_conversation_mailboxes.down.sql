@@ -1,0 +1,3 @@
+DROP TRIGGER preserve_warmup_conversation_exposure ON warmup_tokens;
+DROP FUNCTION preserve_warmup_conversation_exposure();
+DROP TABLE warmup_conversation_mailboxes;

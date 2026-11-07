@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/app/behavior"
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -337,7 +338,8 @@ func (s *schedulerService) sendGate(ctx context.Context, p *campaignPass, acct m
 	case a.RecoveryHold:
 		gate = mailboxGate{reason: gateRecovery}
 	case a.RetryAt != nil && a.RetryAt.After(now):
-		gate = mailboxGate{reason: gateCooldown, reopensAt: *a.RetryAt}
+		// A short pause is waited out so a conversation keeps its address; a long one moves its leads.
+		gate = mailboxGate{reason: gateCooldown, reopensAt: *a.RetryAt, paced: a.RetryAt.Sub(now) <= config.SendPauseWaitThreshold}
 	case !a.Allowed:
 		gate = mailboxGate{reason: gateAdmission}
 	}

@@ -24,8 +24,9 @@ import (
 const modelTimeout = 8 * time.Second
 
 const modelSystemPrompt = "You classify the sentiment of a reply to a cold sales email. " +
-	"Reply with exactly one lowercase word and nothing else: positive (interested / wants to talk), " +
-	"negative (rejection / not interested), or neutral (a question, deferral, or anything unclear). " +
+	"Reply with exactly one lowercase word and nothing else: positive (interested, wants to talk, " +
+	"or asks about price or for more information), negative (rejection / not interested), " +
+	"or neutral (a deferral, or anything unclear). " +
 	"Do not explain."
 
 // ModelClassifyFunc runs one platform LLM completion for Layer 3: given the
@@ -42,10 +43,11 @@ var (
 )
 
 // TypedClassifyFunc is the preferred model layer: a classifier that returns a
-// class with a calibrated confidence, or false when it has no confident
-// answer. Wired from the app mains with SetTypedClassifier when a TypeSafe key
-// is configured; the inbox tagger supplies it.
-type TypedClassifyFunc func(ctx context.Context, in Input) (Result, bool)
+// class with a calibrated confidence, or false when it has no answer. A
+// verdict it already holds is free; mayAsk gates only a paid question. Wired
+// from the app mains with SetTypedClassifier when a TypeSafe key is
+// configured; the inbox tagger supplies it.
+type TypedClassifyFunc func(ctx context.Context, in Input, mayAsk func() bool) (Result, bool)
 
 // SetTypedClassifier wires (or clears, with nil) the typed model layer.
 func SetTypedClassifier(fn TypedClassifyFunc) {
@@ -55,7 +57,7 @@ func SetTypedClassifier(fn TypedClassifyFunc) {
 }
 
 // classifyTyped runs the typed layer when one is wired.
-func classifyTyped(ctx context.Context, in Input) (Result, bool) {
+func classifyTyped(ctx context.Context, in Input, mayAsk func() bool) (Result, bool) {
 	modelMu.RLock()
 	fn := typedClassify
 	modelMu.RUnlock()
@@ -64,7 +66,7 @@ func classifyTyped(ctx context.Context, in Input) (Result, bool) {
 	}
 	cctx, cancel := context.WithTimeout(ctx, modelTimeout)
 	defer cancel()
-	r, ok := fn(cctx, in)
+	r, ok := fn(cctx, in, mayAsk)
 	if !ok || r.Class == "" {
 		return Result{}, false
 	}
@@ -90,7 +92,7 @@ func classifyModel(ctx context.Context, in Input) (Result, bool) {
 		return Result{}, false
 	}
 
-	user := strings.TrimSpace("Subject: " + in.Subject + "\n\n" + in.BodyText)
+	user := strings.TrimSpace("Subject: " + in.Subject + "\n\n" + modelBody(in))
 	if user == "" {
 		return Result{}, false
 	}
@@ -113,6 +115,23 @@ func classifyModel(ctx context.Context, in Input) (Result, bool) {
 	default:
 		return Result{}, false
 	}
+}
+
+// modelBodyRunes caps the reply text one completion reads.
+const modelBodyRunes = 4000
+
+// modelBody is the reply without its quoted history, capped. A reply written
+// below the quote strips to nothing, so it is read whole instead.
+func modelBody(in Input) string {
+	stripped := StripQuoted(in.BodyText, in.Languages...)
+	if strings.TrimSpace(stripped) == "" {
+		stripped = in.BodyText
+	}
+	body := []rune(stripped)
+	if len(body) > modelBodyRunes {
+		body = body[:modelBodyRunes]
+	}
+	return string(body)
 }
 
 // normalizeModelLabel reduces the model's free text to one of the three allowed

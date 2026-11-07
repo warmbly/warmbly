@@ -103,7 +103,7 @@ func TestLiveErasureRemovesTheStoredMailAndTheQueueRow(t *testing.T) {
 
 	// The delete itself, through the repository the API uses.
 	emails := repository.NewEmailRepostory(handle, nil)
-	if xerr := emails.Delete(ctx, user.String(), mailbox.String(), 1); xerr != nil {
+	if xerr := emails.Delete(ctx, org.String(), mailbox.String(), 1); xerr != nil {
 		t.Fatalf("delete mailbox: %v", xerr)
 	}
 

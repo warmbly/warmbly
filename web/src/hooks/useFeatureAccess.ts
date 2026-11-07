@@ -19,6 +19,7 @@
 // subscription row is ignored: it would otherwise report a free trial that
 // nothing enforces.
 
+import { useEffect, useState } from "react";
 import type Subscription from "@/lib/api/models/app/subscription/Subscription";
 import useSubscription from "@/lib/api/hooks/app/subscription/useSubscription";
 import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
@@ -41,13 +42,20 @@ export interface FeatureAccess {
     status?: Subscription["status"];
     plan: PlanID;
     /** False on a deployment running without a billing provider: every gate
-     *  below is open and billing/referral surfaces do not apply. */
+     *  below is open and billing surfaces do not apply. */
     billing: boolean;
     /** Active subscription on any paid tier, the Warmup plan included. */
     paid: boolean;
     /** On a warming-only plan (Warmup, Partnership): the premium pool and no mailbox cap, nothing else.
      *  Every surface a free workspace cannot use stays locked. */
     warmupOnly: boolean;
+    /** Unpaid workspace that kept the free allowance: 10 mailboxes in the free pool. A new one gets none. */
+    keptFreeWarmup: boolean;
+    /** Unpaid workspace inside its free trial: sending, the inbox and a small mailbox allowance, until trialEndsAt. */
+    trial: boolean;
+    /** Unpaid workspace whose free trial is over: sending and warmup are paused until it picks a plan. */
+    trialEnded: boolean;
+    trialEndsAt: Date | null;
     /** Hosted workspace without a plan that sends (free, or the Warmup plan):
      *  only mailboxes, the Warmbly Cloud link and settings are open; everything
      *  else waits for a plan. */
@@ -76,6 +84,9 @@ export default function useFeatureAccess(): FeatureAccess {
     const sub = useSubscription();
     const authConfig = useAuthConfig();
     const currentOrg = useAppStore((s) => s.currentOrganization);
+    // The trial gate reads the clock, so the caller re-renders when it ends even if no data changes.
+    const rawTrialEnd = sub.data?.free_trial_ends_at ? Date.parse(sub.data.free_trial_ends_at) : NaN;
+    useRerenderAt(Number.isNaN(rawTrialEnd) ? null : rawTrialEnd);
 
     const isOwner = currentOrg?.role === "owner";
     // Permission-aware: a custom role carrying MANAGE_TEAM unlocks the
@@ -96,6 +107,10 @@ export default function useFeatureAccess(): FeatureAccess {
             billing: false,
             paid: true,
             warmupOnly: false,
+            keptFreeWarmup: false,
+            trial: false,
+            trialEnded: false,
+            trialEndsAt: null,
             locked: false,
             hasInbox: true,
             hasAdvanced: true,
@@ -127,7 +142,7 @@ export default function useFeatureAccess(): FeatureAccess {
     // A plan an operator granted never touches Stripe, so `status` stays
     // whatever it was ("incomplete" on a workspace that never subscribed).
     // Deciding paid from status alone locks a workspace that is entitled to
-    // everything, which is what the plan pill and the credit balance already
+    // everything, which is what the plan pill and the balance already
     // show correctly. The server resolves expiry, so this is just a read.
     const managed = sub.data?.managed === true;
     const orgImpliesPaid =
@@ -137,6 +152,10 @@ export default function useFeatureAccess(): FeatureAccess {
     // server refuses sending, the inbox and AI to them as it does to a free workspace.
     const warmupOnly = isPaid && isWarmupOnlyPlan(plan);
     const productPaid = isPaid && !warmupOnly;
+    const trialEndsAt = !isPaid && sub.data?.free_trial_ends_at ? new Date(sub.data.free_trial_ends_at) : null;
+    const trial = !!trialEndsAt && trialEndsAt.getTime() > Date.now();
+    // The trial opens what the server opens to it: sending, the inbox, contacts and campaigns.
+    const opened = productPaid || trial;
 
     return {
         loading: sub.isPending || authConfig.isLoading,
@@ -145,12 +164,16 @@ export default function useFeatureAccess(): FeatureAccess {
         billing: true,
         paid: isPaid,
         warmupOnly,
-        locked: !sub.isPending && !authConfig.isLoading && !productPaid,
+        keptFreeWarmup: !isPaid && sub.data?.keeps_free_warmup === true,
+        trial,
+        trialEnded: !!trialEndsAt && !trial,
+        trialEndsAt,
+        locked: !sub.isPending && !authConfig.isLoading && !opened,
         // Unified inbox is included on every plan that sends, so gate it on
         // the subscription (productPaid) rather than the plan-name → catalog
         // map, which doesn't recognise server plan names like "Pro" / "Free
         // Trial" and would wrongly lock paid orgs.
-        hasInbox: productPaid,
+        hasInbox: opened,
         hasAdvanced: productPaid && isAtLeast(plan, "business"),
         hasIsolatedSending: productPaid && isAtLeast(plan, "business"),
         hasRealtime: true,
@@ -160,4 +183,30 @@ export default function useFeatureAccess(): FeatureAccess {
         isOwner,
         canManage,
     };
+}
+
+/** Whole days left in a trial, rounded up and never below 1 while it runs; every countdown reads this. */
+export function trialDaysLeft(endsAt: Date, now = Date.now()): number {
+    return Math.max(1, Math.ceil((endsAt.getTime() - now) / 86_400_000));
+}
+
+const DAY = 86_400_000;
+
+/** trialDaysLeft that re-renders when the count drops, so every countdown on screen changes together. */
+export function useTrialDaysLeft(endsAt: Date | null): number {
+    const days = endsAt ? trialDaysLeft(endsAt) : 0;
+    useRerenderAt(endsAt && days > 1 ? endsAt.getTime() - (days - 1) * DAY : null);
+    return days;
+}
+
+// Re-renders the caller once `at` (epoch ms) has passed.
+function useRerenderAt(at: number | null) {
+    const [, bump] = useState(0);
+    useEffect(() => {
+        if (at == null) return;
+        const wait = at - Date.now();
+        if (wait <= 0) return;
+        const timer = setTimeout(() => bump((n) => n + 1), Math.min(wait + 500, 2_000_000_000));
+        return () => clearTimeout(timer);
+    }, [at]);
 }

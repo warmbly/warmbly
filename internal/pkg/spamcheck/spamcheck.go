@@ -87,6 +87,8 @@ type Result struct {
 	Improvements []string `json:"improvements,omitempty"`
 	Model        string   `json:"model"`
 	TokensUsed   int      `json:"tokens_used"`
+	InputTokens  int      `json:"-"`
+	OutputTokens int      `json:"-"`
 }
 
 const systemPrompt = `You are a cold-email deliverability analyst. You are given one campaign email template and you report exactly what in it would push the message to spam, where that thing is, and what to write instead.
@@ -153,6 +155,7 @@ func Analyze(ctx context.Context, p generation.Provider, model string, in Input)
 	}
 	out.Model = res.Model
 	out.TokensUsed = res.TokensUsed
+	out.InputTokens, out.OutputTokens = res.InputTokens, res.OutputTokens
 	verify(out, subject, body)
 	return out, nil
 }

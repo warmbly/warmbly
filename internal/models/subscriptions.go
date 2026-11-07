@@ -70,8 +70,11 @@ type Plan struct {
 	MaxTeamMembers     *int `json:"max_team_members,omitempty"`
 	MaxEmailAccounts   *int `json:"max_email_accounts,omitempty"`
 
-	// AI writing-assistant monthly credit grant for this plan.
-	MonthlyCredits int `json:"monthly_credits"`
+	// MonthlyAllowanceUSD is the usage this plan includes each month, in
+	// dollars. MonthlyCredits is the same allowance in legacy credits, which
+	// the previous release reads; writes derive it from the dollars.
+	MonthlyAllowanceUSD float64 `json:"monthly_allowance_usd"`
+	MonthlyCredits      int     `json:"monthly_credits"`
 
 	// Referral reward: the percentage of this plan's first-month-equivalent
 	// price a referrer earns when an invitee converts to it (100 = a full
@@ -92,6 +95,15 @@ func (p *Plan) MonthlyPriceCents() int64 {
 		price = price / 12
 	}
 	return int64(math.Round(price * 100))
+}
+
+// Allowance is the plan's monthly included usage. A client that still sends
+// only the credit figure is read at the credit's value.
+func (p *Plan) Allowance() Micro {
+	if p.MonthlyAllowanceUSD > 0 {
+		return USDToMicro(p.MonthlyAllowanceUSD)
+	}
+	return Micro(max(p.MonthlyCredits, 0)) * LegacyCreditMicro
 }
 
 // ReferralRewardCents returns the credit a referrer earns for converting an
@@ -168,6 +180,9 @@ type Subscription struct {
 
 	// Enterprise flag
 	IsEnterprise bool `json:"is_enterprise"`
+
+	// KeepsFreeWarmup marks a workspace that had the free warmup allowance before it was withdrawn from new ones.
+	KeepsFreeWarmup bool `json:"keeps_free_warmup"`
 
 	// Joined data
 	Plan *Plan `json:"plan,omitempty"`
@@ -276,10 +291,24 @@ func (s *Subscription) CanSendEmails() bool {
 	return false
 }
 
-// CanUseWarmup: every workspace may warm its mailboxes (free ones in the free
-// pool, up to FreeWorkspaceMailboxLimit connected mailboxes).
+// CanUseWarmup: a paid plan, a free trial in progress, or a workspace that
+// kept the free allowance. Unpaid ones warm in the free pool.
 func (s *Subscription) CanUseWarmup() bool {
-	return true
+	return s.HasPaidSubscription() || s.KeepsFreeWarmup || s.IsInFreeTrial()
+}
+
+// FreeMailboxLimit is the mailboxes an unsubscribed workspace may hold: the
+// kept free allowance, TrialMailboxLimit during a trial, otherwise none.
+func (s *Subscription) FreeMailboxLimit() int {
+	switch {
+	case s == nil:
+		return 0
+	case s.KeepsFreeWarmup:
+		return FreeWorkspaceMailboxLimit
+	case s.IsInFreeTrial():
+		return TrialMailboxLimit
+	}
+	return 0
 }
 
 // CanUseUnibox returns true if user can use unibox feature.
@@ -292,6 +321,9 @@ func (s *Subscription) CanUseUnibox() bool {
 // FreeWorkspaceMailboxLimit caps the mailboxes an unsubscribed workspace may
 // hold, connected directly or through a linked self-hosted instance.
 const FreeWorkspaceMailboxLimit = 10
+
+// TrialMailboxLimit caps the mailboxes a workspace may hold during its free trial.
+const TrialMailboxLimit = 2
 
 // SubscriptionWithLimits includes rate limits for the subscription
 type SubscriptionWithLimits struct {

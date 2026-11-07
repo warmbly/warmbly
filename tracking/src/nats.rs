@@ -1,6 +1,7 @@
 use async_nats::jetstream;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
+use rustls::pki_types::{pem::PemObject, CertificateDer};
 
 use crate::config::Config;
 use crate::events::TrackingEvent;
@@ -21,7 +22,12 @@ impl NatsProducer {
     pub async fn new(config: &Config) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         // async-nats ignores credentials in the URL, so lift `user:pass@` or
         // `token@` into the options the way the Go client does on its own.
-        let addr: async_nats::ServerAddr = config.nats_url.parse()?;
+        let addresses: Vec<async_nats::ServerAddr> = config
+            .nats_url
+            .split(',')
+            .map(|address| address.trim().parse())
+            .collect::<Result<_, _>>()?;
+        let addr = addresses.first().ok_or("NATS_URL requires a server")?;
         let mut opts = async_nats::ConnectOptions::new();
         if let Some(user) = addr.username() {
             opts = match addr.password() {
@@ -45,7 +51,25 @@ impl NatsProducer {
             }
         }
 
-        let client = opts.connect(addr).await?;
+        if let Ok(raw) = std::env::var("NATS_TLS_CA_B64") {
+            if !raw.trim().is_empty() {
+                let pem = BASE64.decode(raw.trim())?;
+                let mut roots = rustls::RootCertStore::empty();
+                for certificate in CertificateDer::pem_slice_iter(&pem) {
+                    roots.add(certificate?)?;
+                }
+                if roots.is_empty() {
+                    return Err("NATS_TLS_CA_B64 contains no certificates".into());
+                }
+                opts = opts.require_tls(true).tls_client_config(
+                    rustls::ClientConfig::builder()
+                        .with_root_certificates(roots)
+                        .with_no_client_auth(),
+                );
+            }
+        }
+
+        let client = opts.connect(addresses).await?;
         let js = jetstream::new(client);
         let subject = format!("{}.{}", config.nats_subject_prefix, config.kafka_topic);
         tracing::info!(

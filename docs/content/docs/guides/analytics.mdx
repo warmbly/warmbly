@@ -43,7 +43,7 @@ For bounces or complaints, check the per-mailbox breakdown to find the sender at
 - Bots, security scanners and privacy-proxy auto-opens are logged but never counted.
 - Replies are human replies. Out-of-office notices and autoresponders never count.
 - A click by a person counts as an open too.
-- Warmbly will not call an A/B winner until the leader has a minimum sample, `30` sends by default.
+- Warmbly will not call a step's A/B winner until every arm has a minimum sample, `30` delivered contacts by default, and the lead is significant.
 
 <Fold>
 
@@ -217,7 +217,7 @@ These records back the engagement rows on a contact's [activity timeline](/guide
 | Warmup status | Whether warmup is on, actual volume today, the target the scheduler is using, max volume, configured reply target, and elapsed warmup days |
 | Warmup health | Pool standing: healthy, watch, throttled, quarantined, or blocked, with the score and reason the band decided, and the block expiry |
 
-The overview calls the configured percentage **Reply target** because it controls how much synthetic warmup mail should receive a reply. The Analytics tab reports the measured reply rate from actual sends and replies. Its **Target met** percentage is actual warmup sends divided by planned target volume across the active days in the selected range; it can exceed 100% when volume beats the plan.
+The overview calls the configured percentage **Reply target**: the target share of the mailbox's own warmup sends that are replies over its last seven UTC days (see [warmup replies](/guides/warmup/#replies)). The Analytics tab's warmup reply rate is warmup replies sent by the mailbox divided by all its warmup sends in the selected range. It approaches the target when eligible received mail is available. Small send counts, a changed target, thread limits, and partner availability can make the measured rate differ; a selected range can also include sends from before the target changed. It does not measure how many of the mailbox's outgoing messages received an answer. Its **Target met** percentage is actual warmup sends divided by planned target volume across the active days in the selected range; it can exceed 100% when volume beats the plan.
 
 Use this to find the one mailbox dragging down a campaign's bounce rate instead of blaming the campaign.
 
@@ -235,17 +235,21 @@ A/B is on by default in outreach settings, but a campaign only runs an experimen
 
 ### Picking a winner
 
-The default winning rule is **reply rate**; you can rank by open or click rate instead. Warmbly will not call a winner on a tiny sample: it needs a minimum (default `30` sends for the leader) and reports confidence.
+The default winning rule is **reply rate**; you can rank by open or click rate instead.
+
+For a step's A/B test, results count contacts: how many were sent each arm at that step, and how many of them opened, clicked or replied, each credited to the step the contact had most recently been sent. Rates leave bounced contacts out. Warmbly names a winner only when every arm that has sent reached the minimum sample (default `30` delivered contacts) and the leader beats each other arm in a two-proportion z-test, corrected for the number of comparisons. See [A/B variants](/guides/sequences/#ab-variants).
 
 | Confidence | Meaning |
 | --- | --- |
-| `none` | No variant data yet |
-| `low` | Leader below the minimum sample |
-| `medium` | Leader reached the minimum |
-| `high` | Leader at three times the minimum |
+| `none` | No contact sent yet |
+| `low` | An arm is below the minimum sample, or the lead is not significant: no winner |
+| `medium` | Winner at 95% confidence |
+| `high` | Winner at 99% confidence |
+
+Campaign-level variants keep their older per-send summary, where `medium` means the leader reached the minimum sample and `high` three times it, with no significance test.
 
 <Callout type="info" title="Let the test run">
-A variant can look like the winner after a handful of sends and flip later. Wait for `medium` or `high` before promoting one. The minimum sample size is configurable in outreach settings.
+A variant can look like the winner after a handful of sends and flip later, which is why a step test waits for significance. Turn on auto-promote in Settings > Sending to hand the step to its winner once it gets there. The minimum sample size is configurable in outreach settings.
 </Callout>
 
 </Fold>

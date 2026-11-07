@@ -209,3 +209,54 @@ func TestOpenAIAgentDiscoveredToolPausesAndResumes(t *testing.T) {
 		t.Fatalf("resumed = %+v, executions=%d requests=%d", resumed, executions, requests)
 	}
 }
+
+// TestOpenAIAgentDiscoveryKeepsArgumentSchemasAcrossSearches retains required arguments after the active tool page changes.
+func TestOpenAIAgentDiscoveryKeepsArgumentSchemasAcrossSearches(t *testing.T) {
+	tools := catalogTestTools(138)
+	tools[136].InputSchema = map[string]any{
+		"type": "object", "properties": map[string]any{"contact_id": map[string]any{"type": "string"}}, "required": []string{"contact_id"},
+	}
+	tools[137].InputSchema = map[string]any{
+		"type": "object", "properties": map[string]any{"campaign_id": map[string]any{"type": "string"}}, "required": []string{"campaign_id"},
+	}
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		req := readAgentRequest(t, w, r)
+		requests++
+		if requests == 1 {
+			writeAgentResponse(w, false, "",
+				ToolCall{ID: "search-contact", Name: req.Tools[0].Function.Name, Args: json.RawMessage(`{"query":"tool_0136"}`)},
+				ToolCall{ID: "search-campaign", Name: req.Tools[0].Function.Name, Args: json.RawMessage(`{"query":"tool_0137"}`)},
+			)
+			return
+		}
+		for i, want := range []string{"contact_id", "campaign_id"} {
+			var result struct {
+				Tools []struct {
+					InputSchema struct {
+						Required []string `json:"required"`
+					} `json:"input_schema"`
+				} `json:"tools"`
+			}
+			message := req.Messages[len(req.Messages)-2+i]
+			if err := json.Unmarshal([]byte(message.Content), &result); err != nil {
+				t.Error(err)
+			}
+			if len(result.Tools) != 1 || !reflect.DeepEqual(result.Tools[0].InputSchema.Required, []string{want}) {
+				t.Errorf("discovery result lost required %s argument: %s", want, message.Content)
+			}
+		}
+		writeAgentResponse(w, false, "Done")
+	}))
+	defer srv.Close()
+	p := &openAIProvider{baseURL: srv.URL, http: srv.Client()}
+	result, err := p.RunAgent(context.Background(), AgentRequest{
+		Tools: tools, Messages: []AgentMessage{{Role: "user", Content: "Inspect the contact and campaign"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Text != "Done" || requests != 2 {
+		t.Fatalf("result=%+v requests=%d", result, requests)
+	}
+}

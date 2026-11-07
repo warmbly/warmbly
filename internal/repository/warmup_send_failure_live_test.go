@@ -266,6 +266,15 @@ func TestLiveLoadingIncidentNonLoadingBoundary(t *testing.T) {
 	}
 }
 
+// claimDueForTest claims every due task and hands the claims straight back, so tests sharing the database keep theirs.
+func claimDueForTest(ctx context.Context, repo *taskRepository) ([]uuid.UUID, error) {
+	ids, claim, err := repo.ClaimDueTaskIDs(ctx, 10000, time.Minute)
+	if err != nil {
+		return nil, err
+	}
+	return ids, repo.ReleaseDispatchClaims(ctx, ids, claim)
+}
+
 func TestLiveDispatchRetrySuccessfulPendingNoopDoesNotStarveNewerTask(t *testing.T) {
 	_, pool := liveContactDB(t)
 	ctx, now := t.Context(), time.Now().UTC().Truncate(time.Microsecond)
@@ -274,10 +283,10 @@ func TestLiveDispatchRetrySuccessfulPendingNoopDoesNotStarveNewerTask(t *testing
 	old, newer := uuid.New(), uuid.New()
 	f.exec(`INSERT INTO tasks(id,task_type,email_account_id,status,message_id,scheduled_at) VALUES($1,'warmup',$3,'pending','',$4),($2,'warmup',$3,'pending','',$5)`, old, newer, f.account, now.Add(-24*time.Hour), now.Add(-2*time.Hour))
 	repo := &taskRepository{db: pool}
-	if err := repo.RecordDispatchAttempt(ctx, old, false, now.Add(5*time.Minute)); err != nil {
+	if err := repo.RecordDispatchAttempt(ctx, old, time.Time{}, false, now.Add(5*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	ids, err := repo.ListDuePendingTaskIDs(ctx, 10000)
+	ids, err := claimDueForTest(ctx, repo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +307,7 @@ func TestLiveDispatchRetrySuccessfulPendingNoopDoesNotStarveNewerTask(t *testing
 		t.Fatalf("no-op changed schedule/state or manufactured failure: %v %v %s %v %v %v", scheduled, retry, status, failureSince, failureAt, err)
 	}
 	f.exec(`UPDATE tasks SET dispatch_retry_at=NOW()-INTERVAL '1 second' WHERE id=$1`, old)
-	ids, err = repo.ListDuePendingTaskIDs(ctx, 10000)
+	ids, err = claimDueForTest(ctx, repo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,7 +345,7 @@ func TestLiveDispatchRetrySuccessfulAttemptPreservesSchedulingAndSafety(t *testi
 				f.exec(`UPDATE email_accounts SET send_recovery_hold=true,send_recovery_reason='unknown',send_recovery_task_id=$2 WHERE id=$1`, f.account, id)
 			}
 			repo := &taskRepository{db: pool}
-			if err := repo.RecordDispatchAttempt(ctx, id, false, now.Add(5*time.Minute)); err != nil {
+			if err := repo.RecordDispatchAttempt(ctx, id, time.Time{}, false, now.Add(5*time.Minute)); err != nil {
 				t.Fatal(err)
 			}
 			var scheduled time.Time
@@ -369,10 +378,10 @@ func TestLiveDispatchRetryDoesNotStarveNewerTask(t *testing.T) {
 	old, newer := uuid.New(), uuid.New()
 	f.exec(`INSERT INTO tasks(id,task_type,email_account_id,status,message_id,scheduled_at) VALUES($1,'warmup',$3,'pending','',$4),($2,'warmup',$3,'pending','',$5)`, old, newer, f.account, now.Add(-24*time.Hour), now.Add(-2*time.Hour))
 	repo := &taskRepository{db: pool}
-	if err := repo.RecordDispatchAttempt(ctx, old, true, now.Add(5*time.Minute)); err != nil {
+	if err := repo.RecordDispatchAttempt(ctx, old, time.Time{}, true, now.Add(5*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	ids, err := repo.ListDuePendingTaskIDs(ctx, 10000)
+	ids, err := claimDueForTest(ctx, repo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,7 +416,7 @@ func TestLiveDispatchRetryDoesNotStarveNewerTask(t *testing.T) {
 		t.Fatalf("retry changed intended schedule or send state: %v %s %v", scheduled, status, err)
 	}
 	f.exec(`UPDATE tasks SET dispatch_retry_at=NOW()-INTERVAL '1 second' WHERE id=$1`, old)
-	ids, err = repo.ListDuePendingTaskIDs(ctx, 10000)
+	ids, err = claimDueForTest(ctx, repo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -421,7 +430,7 @@ func TestLiveDispatchRetryDoesNotStarveNewerTask(t *testing.T) {
 		t.Fatal("old task never becomes retryable")
 	}
 	f.exec(`UPDATE tasks SET status='completed',send_result_state='unknown',send_executor_started_at=NOW() WHERE id=$1`, old)
-	if err := repo.RecordDispatchAttempt(ctx, old, true, now.Add(time.Hour)); err != nil {
+	if err := repo.RecordDispatchAttempt(ctx, old, time.Time{}, true, now.Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 	var retry time.Time

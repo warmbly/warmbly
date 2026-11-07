@@ -36,6 +36,8 @@ func percentCode(pct int) *models.DiscountCode {
 type fakeCodeRepo struct {
 	byCode map[string]*models.DiscountCode
 	byID   map[uuid.UUID]*models.DiscountCode
+	// referralFor maps a referral-backed code to the one org that signed up through it.
+	referralFor map[uuid.UUID]uuid.UUID
 }
 
 func newFakeCodeRepo(codes ...*models.DiscountCode) *fakeCodeRepo {
@@ -59,6 +61,10 @@ func (r *fakeCodeRepo) List(context.Context, *models.AdminDiscountSearch) (*mode
 	return &models.AdminDiscountsResult{}, nil
 }
 func (r *fakeCodeRepo) Delete(context.Context, uuid.UUID) error { return nil }
+func (r *fakeCodeRepo) ReferralHeldFrom(_ context.Context, codeID, orgID uuid.UUID) (bool, error) {
+	invitee, ok := r.referralFor[codeID]
+	return ok && invitee != orgID, nil
+}
 
 type fakeRedRepo struct {
 	orgCount   int
@@ -302,5 +308,21 @@ func TestReserveMapsCapErrors(t *testing.T) {
 	ok := newSvc(newFakeCodeRepo(dc), &fakeRedRepo{}, &fakePlanRepo{})
 	if id, xerr := ok.ReservePendingRedemption(ctx, dc, uuid.New(), nil, nil); xerr != nil || id == uuid.Nil {
 		t.Fatalf("ok reserve: id=%v err=%v", id, xerr)
+	}
+}
+
+func TestReferralCodeAppliesOnlyToItsInvitee(t *testing.T) {
+	ctx := context.Background()
+	invitee, stranger, plan := uuid.New(), uuid.New(), uuid.New()
+	dc := percentCode(10)
+	repo := newFakeCodeRepo(dc)
+	repo.referralFor = map[uuid.UUID]uuid.UUID{dc.ID: invitee}
+	svc := newSvc(repo, &fakeRedRepo{}, &fakePlanRepo{})
+
+	if got, xerr := svc.ValidateForCheckout(ctx, invitee, dc.Code, plan); xerr != nil || got == nil {
+		t.Fatalf("invitee: expected ok, got err=%v", xerr)
+	}
+	if _, xerr := svc.ValidateForCheckout(ctx, stranger, dc.Code, plan); xerr == nil || xerr.Code != errx.BadRequest {
+		t.Fatalf("stranger: expected BadRequest, got %v", xerr)
 	}
 }

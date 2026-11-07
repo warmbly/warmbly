@@ -58,85 +58,131 @@ func CreditMetaFrom(ctx context.Context) CreditMeta {
 	return CreditMeta{}
 }
 
-// CreditLedger is the authoritative per-organization AI-credit balance. There
-// is exactly one row per organization (org_id is the primary key). Two pools:
-// Balance is the monthly plan allowance (reset to plan.monthly_credits every
-// billing cycle), PurchasedBalance holds top-up credits that never expire and
-// survive resets. Consumption drains the monthly pool first. Balances are
-// mutated only inside row-locked repository transactions backstopped by DB
-// CHECK constraints so neither pool can go negative under concurrency.
+// CreditLedger is the authoritative per-organization balance, one row per
+// organization. Two pools: Monthly is the plan's allowance (set to the plan's
+// amount every billing cycle) and Purchased is money the workspace added,
+// which never expires and survives resets. Usage drains Monthly first.
+// Balances move only inside row-locked repository transactions backstopped by
+// CHECK constraints, so neither pool can go negative under concurrency.
 type CreditLedger struct {
-	OrgID            uuid.UUID `json:"org_id"`
-	Balance          int       `json:"balance"`
-	PurchasedBalance int       `json:"purchased_balance"`
-	MonthResetAt     time.Time `json:"month_reset_at"`
-	TotalPurchased   int       `json:"total_purchased"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
-}
-
-// CreditAutoTopUpAttempt keeps one Stripe charge attempt stable across
-// worker retries so an ambiguous API response cannot create a second charge.
-type CreditAutoTopUpAttempt struct {
-	ID               uuid.UUID
-	OrgID            uuid.UUID
-	PackKey          string
-	Credits          int
-	Status           string
-	TaxCalculationID string
-	PaymentIntentID  string
-	FailureMessage   string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-	CompletedAt      *time.Time
+	OrgID          uuid.UUID
+	Monthly        Micro
+	Purchased      Micro
+	MonthResetAt   time.Time
+	TotalPurchased Micro
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 // Total is the spendable balance across both pools.
-func (l *CreditLedger) Total() int {
-	return l.Balance + l.PurchasedBalance
+func (l *CreditLedger) Total() Micro {
+	return l.Monthly + l.Purchased
 }
 
-// AISpendSettings is an org's AI spend-control row: optional hard spend limits
-// per calendar day / ISO week / calendar month (nil = no limit), the balance
-// threshold that triggers a low-credit alert (with a stamp so the alert fires
-// at most once per day), and the auto top-up configuration (buy a pack
-// automatically when the balance dips below the threshold, bounded per month).
+// SavedCardCharge is one charge on a workspace's saved card, an automatic
+// reload or a one-click top-up. Its id derives every Stripe idempotency key,
+// so a retried job converges on the same charge.
+type SavedCardCharge struct {
+	ID              uuid.UUID
+	OrgID           uuid.UUID
+	Kind            string // SavedCardAutoReload | SavedCardTopUp
+	Amount          Micro
+	AmountCents     int64
+	Currency        string
+	Status          string // pending | succeeded | failed
+	InvoiceID       string
+	CustomerID      string
+	PaymentMethodID string
+	Tries           int
+	RetryAt         *time.Time
+	FailureCode     string
+	CreatedAt       time.Time
+	CompletedAt     *time.Time
+	// Legacy marks a credit-pack charge the previous release started; it
+	// settles through its own payment intent and is never resumed.
+	Legacy bool
+}
+
+const (
+	SavedCardAutoReload = "auto_reload"
+	SavedCardTopUp      = "top_up"
+)
+
+// Auto reload failure codes, stored on the settings row when a reload turns
+// itself off.
+const (
+	ReloadCardDeclined           = "card_declined"
+	ReloadAuthenticationRequired = "authentication_required"
+	ReloadNoPaymentMethod        = "no_payment_method"
+	ReloadPaymentFailed          = "payment_failed"
+	ReloadUnavailable            = "unavailable"
+)
+
+// Failure codes only a charge row carries, never the settings row.
+const (
+	// ChargeCanceled closes an automatic reload no longer wanted: reload off or the balance back over the threshold.
+	ChargeCanceled = "canceled"
+	// ChargeExpired closes a credit-pack charge the previous release left pending.
+	ChargeExpired = "expired"
+)
+
+// AISpendSettings is an org's spend-control row: optional spend limits per
+// calendar day, ISO week and calendar month for the workspace and for each
+// member (nil = no limit), the low-balance notice threshold, and automatic
+// reload (add Amount when the balance falls below Threshold, at most
+// MonthlyLimit a calendar month, on the saved card).
 type AISpendSettings struct {
-	OrgID             uuid.UUID `json:"org_id"`
-	SpendLimitDaily   *int      `json:"spend_limit_daily"`
-	SpendLimitWeekly  *int      `json:"spend_limit_weekly"`
-	SpendLimitMonthly *int      `json:"spend_limit_monthly"`
-	// Member limits cap what each individual member can spend per window
-	// (nil = no per-member limit), mirroring the org-wide windows above.
-	// Enforced against the ledger's actor attribution; scheduled/system
-	// work is not counted against anyone.
-	MemberLimitDaily     *int       `json:"member_limit_daily"`
-	MemberLimitWeekly    *int       `json:"member_limit_weekly"`
-	MemberLimitMonthly   *int       `json:"member_limit_monthly"`
-	LowBalanceThreshold  int        `json:"low_balance_threshold"`
-	LowBalanceNotifiedAt *time.Time `json:"low_balance_notified_at,omitempty"`
-	AutoTopupEnabled     bool       `json:"auto_topup_enabled"`
-	AutoTopupPack        string     `json:"auto_topup_pack"`
-	AutoTopupThreshold   int        `json:"auto_topup_threshold"`
-	AutoTopupMaxPerMonth int        `json:"auto_topup_max_per_month"`
-	CreatedAt            time.Time  `json:"created_at"`
-	UpdatedAt            time.Time  `json:"updated_at"`
+	OrgID              uuid.UUID `json:"-"`
+	SpendLimitDaily    *Micro    `json:"-"`
+	SpendLimitWeekly   *Micro    `json:"-"`
+	SpendLimitMonthly  *Micro    `json:"-"`
+	MemberLimitDaily   *Micro    `json:"-"`
+	MemberLimitWeekly  *Micro    `json:"-"`
+	MemberLimitMonthly *Micro    `json:"-"`
+
+	LowBalanceThreshold   Micro      `json:"-"`
+	LowBalanceNotifiedAt  *time.Time `json:"-"`
+	BalanceOutNotifiedAt  *time.Time `json:"-"`
+	AutoReloadEnabled     bool       `json:"-"`
+	AutoReloadThreshold   Micro      `json:"-"`
+	AutoReloadAmount      Micro      `json:"-"`
+	AutoReloadMonthlyMax  Micro      `json:"-"`
+	AutoReloadFailureCode string     `json:"-"`
+	AutoReloadFailedAt    *time.Time `json:"-"`
+	CreatedAt             time.Time  `json:"-"`
+	UpdatedAt             time.Time  `json:"-"`
 }
 
-// CreditUsagePoint is one day of AI spend for the usage chart.
+// CreditUsagePoint is one day of spend for the usage chart.
 type CreditUsagePoint struct {
-	Date    string `json:"date"` // YYYY-MM-DD (UTC)
-	Credits int    `json:"credits"`
-	Tokens  int    `json:"tokens"`
+	Date   string // YYYY-MM-DD (UTC)
+	Amount Micro
+	Tokens int
 }
 
 // CreditUsageBucket is one row of a usage breakdown (by feature reason or by
-// model): credits spent, tokens metered, and the number of charges.
+// model): amount spent, tokens metered, and the number of charges.
 type CreditUsageBucket struct {
-	Key     string `json:"key"`
-	Credits int    `json:"credits"`
-	Tokens  int    `json:"tokens"`
-	Count   int    `json:"count"`
+	Key    string
+	Amount Micro
+	Tokens int
+	Count  int
+}
+
+// CreditDebit is one charge against the balance. A strict debit refuses when
+// the balance is short; a clamped one takes what is there, because the work
+// it pays for was already delivered.
+type CreditDebit struct {
+	Amount       Micro
+	Clamp        bool
+	Reason       string
+	Model        string
+	InputTokens  int
+	OutputTokens int
+	Quantity     int
+	// Cost is what the provider charged, before the markup.
+	Cost           Micro
+	IdempotencyKey string
 }
 
 // CreditTransaction is one append-only row in the credit audit trail. Amount is
@@ -146,22 +192,25 @@ type CreditUsageBucket struct {
 // and set to the caller's Idempotency-Key for consumption so retries don't
 // double-charge.
 type CreditTransaction struct {
-	ID           uuid.UUID `json:"id"`
-	OrgID        uuid.UUID `json:"org_id"`
-	Amount       int       `json:"amount"`
-	Reason       string    `json:"reason"`
-	ModelUsed    string    `json:"model_used"`
-	TokensUsed   int       `json:"tokens_used"`
-	BalanceAfter int       `json:"balance_after"`
-	// PurchasedDelta is the signed portion of Amount applied to the purchased
-	// pool (0 when only the monthly pool moved); PurchasedBalanceAfter is that
-	// pool's resulting balance, so the log reconstructs both pools.
-	PurchasedDelta        int     `json:"purchased_delta"`
-	PurchasedBalanceAfter int     `json:"purchased_balance_after"`
-	IdempotencyKey        *string `json:"idempotency_key,omitempty"`
+	ID           uuid.UUID
+	OrgID        uuid.UUID
+	Amount       Micro
+	Reason       string
+	ModelUsed    string
+	InputTokens  int
+	OutputTokens int
+	Quantity     int
+	Cost         Micro
+	// MonthlyAfter and PurchasedAfter are both pools after the change, and
+	// PurchasedDelta the part of Amount applied to the purchased pool, so the
+	// trail reconstructs both pools.
+	MonthlyAfter   Micro
+	PurchasedDelta Micro
+	PurchasedAfter Micro
+	IdempotencyKey *string
 	// ActorUserID is the teammate who triggered the charge (nil for scheduled
 	// or system work); Context names exactly what ran.
-	ActorUserID *uuid.UUID    `json:"actor_user_id,omitempty"`
-	Context     CreditContext `json:"context"`
-	CreatedAt   time.Time     `json:"created_at"`
+	ActorUserID *uuid.UUID
+	Context     CreditContext
+	CreatedAt   time.Time
 }

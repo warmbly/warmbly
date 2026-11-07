@@ -2,12 +2,14 @@ package email
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/pkg/trackdns"
 )
 
@@ -29,39 +31,30 @@ func (s *emailService) StartTrackingDomainSweep(ctx context.Context, interval, s
 		return
 	}
 
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			sweepCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-			s.runTrackingDomainSweep(sweepCtx, staleAfter)
-			cancel()
-		}
-	}
+	jobrun.Loop(ctx, "tracking_domain_sweep", interval, false, func(ctx context.Context) error {
+		sweepCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
+		return s.runTrackingDomainSweep(sweepCtx, staleAfter)
+	})
 }
 
-func (s *emailService) runTrackingDomainSweep(ctx context.Context, staleAfter time.Duration) {
+func (s *emailService) runTrackingDomainSweep(ctx context.Context, staleAfter time.Duration) error {
 	target := config.TrackingHostname()
 	if target == "" {
 		// Nothing to compare against. Unverifying every mailbox because this
 		// install has no tracking host would be the worst of both worlds.
-		return
+		return nil
 	}
 
 	due, xerr := s.emailRepository.ListTrackingDomainCheckDue(ctx, time.Now().Add(-staleAfter), trackingDomainSweepBatch)
 	if xerr != nil {
-		log.Warn().Str("error", xerr.Error()).Msg("tracking-domain sweep: failed to list due mailboxes")
-		return
+		return fmt.Errorf("tracking-domain sweep: list due mailboxes: %s", xerr.Error())
 	}
 
-	var verified, revoked int
+	var verified, revoked, failed int
 	for _, t := range due {
 		if ctx.Err() != nil {
-			return
+			break
 		}
 
 		lookupCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -85,6 +78,7 @@ func (s *emailService) runTrackingDomainSweep(ctx context.Context, staleAfter ti
 					continue
 				}
 				log.Warn().Str("domain", t.Domain).Str("error", err.Error()).Msg("tracking-domain sweep: failed to persist")
+				failed++
 				continue
 			}
 			if !t.Verified {
@@ -93,6 +87,7 @@ func (s *emailService) runTrackingDomainSweep(ctx context.Context, staleAfter ti
 		case t.Verified:
 			if err := s.emailRepository.SetTrackingDomainVerified(ctx, t.ID, false, nil); err != nil {
 				log.Warn().Str("domain", t.Domain).Str("error", err.Error()).Msg("tracking-domain sweep: failed to persist")
+				failed++
 				continue
 			}
 			revoked++
@@ -103,4 +98,8 @@ func (s *emailService) runTrackingDomainSweep(ctx context.Context, staleAfter ti
 	if verified > 0 || revoked > 0 {
 		log.Info().Int("checked", len(due)).Int("newly_verified", verified).Int("revoked", revoked).Msg("tracking-domain sweep completed")
 	}
+	if failed > 0 {
+		return fmt.Errorf("tracking-domain sweep: %d of %d verdicts could not be saved", failed, len(due))
+	}
+	return nil
 }

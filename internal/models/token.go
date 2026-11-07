@@ -124,6 +124,21 @@ type AuthSession struct {
 	TwoFARequired bool   `json:"two_fa_required,omitempty"`
 	PendingToken  string `json:"pending_token,omitempty"`
 	ExpiresIn     int    `json:"expires_in,omitempty"`
+
+	// PasswordChangeRequired: the password was an issued initial one, and
+	// PendingToken goes to POST /auth/login/initial-password with the new one.
+	PasswordChangeRequired bool `json:"password_change_required,omitempty"`
+}
+
+// InitialPasswordPending is a password sign-in parked until the holder of an
+// issued initial password chooses their own.
+type InitialPasswordPending struct {
+	UserID        uuid.UUID `json:"user_id"`
+	Nonce         string    `json:"nonce"`
+	Email         string    `json:"email"`
+	AnomalyReason string    `json:"anomaly_reason,omitempty"`
+	// PasswordDigest is a SHA-256 of the issued password hash the challenge was opened with.
+	PasswordDigest string `json:"password_digest,omitempty"`
 }
 
 type LoginSession struct {
@@ -141,9 +156,6 @@ type RegistrationSession struct {
 	PasswordHash string `json:"password_hash"`
 	CodeHash     string `json:"code_hash"`
 	Nonce        string `json:"nonce"`
-	// ReferralCode is the optional referral code captured at RegistrationStart,
-	// applied for attribution once the account + org are created at confirm.
-	ReferralCode string `json:"referral_code,omitempty"`
 	// Invite is the invitation token captured at RegistrationStart, re-checked
 	// and redeemed at confirm so the account lands in the inviting org.
 	Invite string `json:"invite,omitempty"`

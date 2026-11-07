@@ -2,6 +2,7 @@ package warmupcontent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/pkg/warmlint"
+	"github.com/warmbly/warmbly/internal/repository"
 )
 
 // themeForIndex uses a pinned theme when present, otherwise it rotates through
@@ -91,7 +93,7 @@ func (s *service) GenerateBatch(ctx context.Context, req GenerateRequest) (uuid.
 		return uuid.Nil, err
 	}
 
-	version := generation.DiagnosticScenarioVersion
+	version := generation.WarmupScenarioVersion
 	job := &models.WarmupGenerationJob{
 		ContentVersion:       &version,
 		MaxMessagesPerThread: &maxMessages,
@@ -264,6 +266,8 @@ func (s *service) ingestBatch(ctx context.Context, job *models.WarmupGenerationJ
 	job.FailedCount = 0
 
 	seen := make(map[string]bool, len(results))
+	subjects := make(map[string]bool, len(results))
+	openings := make(map[string]bool, len(results))
 	for i := range results {
 		r := &results[i]
 		index, indexErr := strconv.Atoi(strings.TrimPrefix(r.CustomID, job.ID.String()+"-"))
@@ -285,6 +289,10 @@ func (s *service) ingestBatch(ctx context.Context, job *models.WarmupGenerationJ
 			job.FailedCount++
 			continue
 		}
+		subjectKey := strings.ToLower(strings.Join(strings.Fields(subject), " "))
+		openingKey := strings.ToLower(strings.Join(strings.Fields(description), " "))
+		duplicate := subjects[subjectKey] || openings[openingKey]
+		subjects[subjectKey], openings[openingKey] = true, true
 		recordID := batchConversationID(job.ID, r.CustomID)
 		prior, err := s.repo.GetConversation(ctx, recordID)
 		if err != nil {
@@ -302,6 +310,10 @@ func (s *service) ingestBatch(ctx context.Context, job *models.WarmupGenerationJ
 			}
 			continue
 		}
+		if duplicate {
+			job.LintRejectedCount++
+			continue
+		}
 		if job.ContentVersion == nil {
 			record := &models.WarmupConversation{ID: recordID, PoolType: job.PoolType, Segment: job.Segment, Source: models.WarmupContentSourceAI, Theme: theme, Subject: subject, Description: description, Messages: messages, Status: models.WarmupConversationArchived, SemanticReview: "legacy_unreviewed", GeneratedByJob: &job.ID}
 			if err := s.repo.InsertConversation(ctx, record); err != nil {
@@ -311,7 +323,8 @@ func (s *service) ingestBatch(ctx context.Context, job *models.WarmupGenerationJ
 			job.GeneratedCount++
 			continue
 		}
-		if *job.ContentVersion != generation.DiagnosticScenarioVersion {
+		// A batch queued under the retired version is still reviewed, so its output is archived rather than lost.
+		if *job.ContentVersion != generation.WarmupScenarioVersion && *job.ContentVersion != generation.DiagnosticScenarioVersion {
 			job.FailedCount++
 			continue
 		}
@@ -322,7 +335,7 @@ func (s *service) ingestBatch(ctx context.Context, job *models.WarmupGenerationJ
 
 		// Preserve canonical facts before reviewing the complete rendered thread.
 		subject, description, messages = preserveCanonicalThread(subject, description, messages)
-		rendered, err := generation.RenderDiagnostic(generation.Conversation{Subject: subject, Description: description, Messages: messages}, [2]string{"Mailbox A (diagnostic)", "Mailbox B (diagnostic)"})
+		rendered, err := generation.RenderDiagnostic(generation.Conversation{Subject: subject, Description: description, Messages: messages}, [2]string{"Alex", "Sam"})
 		if err != nil {
 			job.LintRejectedCount++
 			continue
@@ -333,22 +346,19 @@ func (s *service) ingestBatch(ctx context.Context, job *models.WarmupGenerationJ
 			continue
 		}
 		review, status := "unavailable", models.WarmupConversationArchived
-		if s.judge != nil {
-			if judgment, err := judgeThread(ctx, s.judge, rendered.Subject, rendered.Description, rendered.Messages); err != nil {
-				review = "unavailable"
-				job.FailedCount++
-			} else {
-				if reject, _ := judgment.Reject(); reject {
-					review = "rejected"
-					job.LintRejectedCount++
-				} else {
-					review, status = "passed", models.WarmupConversationActive
-				}
-			}
-		} else {
+		if err := generation.ValidateFreshWarmup(*r.Conversation); err != nil {
+			review = "rejected"
+			job.LintRejectedCount++
+		} else if judgment, err := s.reviewThread(ctx, rendered, job.Model); err != nil {
+			review = "unavailable"
 			job.FailedCount++
+		} else if reject, _ := judgment.Reject(); reject {
+			review = "rejected"
+			job.LintRejectedCount++
+		} else {
+			review, status = "passed", models.WarmupConversationActive
 		}
-		scenarioVersion, renderingVersion := generation.DiagnosticScenarioVersion, generation.CanonicalRenderingVersion
+		scenarioVersion, renderingVersion := generation.WarmupScenarioVersion, generation.CanonicalRenderingVersion
 
 		record := &models.WarmupConversation{
 			ID:               recordID,
@@ -368,6 +378,10 @@ func (s *service) ingestBatch(ctx context.Context, job *models.WarmupGenerationJ
 			SemanticReview:   review,
 		}
 		if err := s.repo.InsertConversation(ctx, record); err != nil {
+			if errors.Is(err, repository.ErrWarmupConversationDuplicate) {
+				job.LintRejectedCount++
+				continue
+			}
 			job.FailedCount++
 			return err
 		}

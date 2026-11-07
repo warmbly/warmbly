@@ -27,6 +27,14 @@ func (h *Handler) CreateSequence(c *gin.Context) {
 		errx.Handle(c, errx.InvalidBody(err))
 		return
 	}
+	if xerr := restrictedStepAllowed(c, &data); xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	if xerr := h.restrictedPoolAllowed(c, *orgID, id); xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
 
 	resp, err := h.SequenceService.Create(c.Request.Context(), orgID.String(), id)
 	if err != nil {
@@ -83,6 +91,14 @@ func (h *Handler) UpdateSequence(c *gin.Context) {
 		errx.Handle(c, errx.InvalidBody(err))
 		return
 	}
+	if xerr := restrictedStepAllowed(c, &data); xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	if xerr := h.restrictedPoolAllowed(c, *orgID, id); xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
 
 	resp, err := h.SequenceService.Update(c.Request.Context(), orgID.String(), id, sequenceID, &data)
 	if err != nil {
@@ -135,6 +151,11 @@ func (h *Handler) DeleteSequence(c *gin.Context) {
 
 	id := c.Param("id")
 	sequenceID := c.Param("sid")
+
+	if xerr := h.restrictedPoolAllowed(c, *orgID, id); xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
 
 	if err := h.SequenceService.Delete(c.Request.Context(), orgID.String(), id, sequenceID); err != nil {
 		errx.Handle(c, err)

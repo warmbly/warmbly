@@ -189,3 +189,25 @@ func TestHoldForOutOfOfficeReadsTheReturnDateCheck(t *testing.T) {
 		})
 	}
 }
+
+// A workspace's tagging languages reach the return-date reader, so a Polish
+// away message holds until its date instead of the fallback.
+func TestHoldForOutOfOfficeReadsTheWorkspaceLanguages(t *testing.T) {
+	cfg := models.ReplyIntentSettings{HoldOnOutOfOffice: true, OutOfOfficeHoldDays: 7}
+	back := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, 10)
+	msg := &models.EmailMessageStoreData{Subject: "Odpowiedź automatyczna", BodyText: "Wracam " + back.Format("02.01.2006") + "."}
+	for name, langs := range map[string][]string{"with Polish chosen": {"pl"}, "without it": nil} {
+		t.Run(name, func(t *testing.T) {
+			rec := &holdRecorder{}
+			s := &service{campaignProgressRepo: rec}
+			s.holdForOutOfOffice(context.Background(), uuid.New(), uuid.New(), cfg, msg, langs...)
+			want := "auto-reply, no return date"
+			if langs != nil {
+				want = "back " + back.Format("2 Jan 2006")
+			}
+			if rec.reason != want {
+				t.Errorf("hold reason = %q, want %q", rec.reason, want)
+			}
+		})
+	}
+}

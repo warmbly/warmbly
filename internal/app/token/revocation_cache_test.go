@@ -32,6 +32,24 @@ func (failDel) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.Process
 	return next
 }
 
+type failSessionWrites struct{ failDel }
+
+type recordedRevocation struct{ user uuid.UUID }
+
+func (r *recordedRevocation) PublishSessionsRevoked(_ context.Context, user uuid.UUID) {
+	r.user = user
+}
+
+func (failSessionWrites) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
+	return func(ctx context.Context, cmd redis.Cmder) error {
+		switch cmd.Name() {
+		case "set", "setnx", "del":
+			return errors.New("injected: session cache write refused")
+		}
+		return next(ctx, cmd)
+	}
+}
+
 func revocationCache(t *testing.T, refuseDel bool) *cache.Cache {
 	t.Helper()
 	url := os.Getenv("WARMBLY_TEST_REDIS")
@@ -123,5 +141,43 @@ func TestRevokedSessionIsNotRecachedByARacingRead(t *testing.T) {
 	}
 	if got.Live(time.Now()) {
 		t.Fatal("a racing read re-cached the live row after the revocation")
+	}
+}
+
+func TestSessionValidationUsesDatabaseWhenCacheWritesAreRefused(t *testing.T) {
+	ctx := context.Background()
+	user := uuid.New()
+	row := liveRow(user)
+	row.AccessNonce, row.RefreshNonce = "access", "refresh"
+	row.LastRefreshedAt = time.Now().Truncate(time.Second)
+	repo := &revocableRepo{sess: row}
+	c := revocationCache(t, false)
+	publisher := &recordedRevocation{}
+	s := &tokenService{cache: c, tokenRepository: repo, revocations: publisher, AuthSecret: "test-only-signing-key-of-32-bytes-min"}
+	if err := s.saveSession(ctx, &row, SessionTTL); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = revocationCache(t, false).Del(ctx, getSessionKey(row.ID)).Err() })
+	c.AddHook(failSessionWrites{})
+	access, err := s.GenerateTokenFor(PurposeAccess, user, row.ID, "", row.AccessNonce, row.LastRefreshedAt, *row.ExpiresAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refresh, err := s.GenerateTokenFor(PurposeRefresh, user, row.ID, "", row.RefreshNonce, row.LastRefreshedAt, *row.ExpiresAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ValidateAccessToken(ctx, access); err != nil {
+		t.Fatalf("live session: %v", err)
+	}
+	_ = s.RevokeSessionByID(ctx, user, row.ID, uuid.New())
+	if publisher.user != user {
+		t.Fatal("committed revocation did not notify realtime")
+	}
+	if _, err := s.ValidateAccessToken(ctx, access); err != errx.ErrSessionEnded {
+		t.Fatalf("revoked access: %v, want ErrSessionEnded", err)
+	}
+	if tok, err := s.RefreshToken(ctx, refresh); tok != nil || err != errx.ErrSessionEnded {
+		t.Fatalf("revoked refresh: %v, %v", tok, err)
 	}
 }

@@ -116,44 +116,36 @@ type WarmupEngagementSettings struct {
 type WarmupGenerationSettings struct {
 	// GenerationEnabled stops new jobs, independently of cached-content use.
 	GenerationEnabled bool `json:"generation_enabled"`
-	// Enabled is the master switch for using AI-generated content in the
-	// live send selection. When false the static library is used exclusively.
+	// Enabled controls fresh-content selection; disabled selection waits without sending.
 	Enabled bool `json:"enabled"`
 	// ScheduleEnabled runs the background generation job on CadenceHours.
 	ScheduleEnabled bool `json:"schedule_enabled"`
 	CadenceHours    int  `json:"cadence_hours"`
-	// RefreshEnabled keeps generation running after the target is reached:
-	// each scheduled run retires the most-used AI threads and mints fresh
-	// replacements, so content rotates continuously instead of going stale.
+	// RefreshEnabled replaces unused stock even when the supply target is met.
 	RefreshEnabled bool `json:"refresh_enabled"`
 	// RefreshPerRun is how many threads are recycled per scheduled run.
 	RefreshPerRun        int                          `json:"refresh_per_run"`
 	Model                string                       `json:"model"`
 	MaxMessagesPerThread int                          `json:"max_messages_per_thread"`
 	DailyGenerationCap   int                          `json:"daily_generation_cap"`
-	AISelectionShare     int                          `json:"ai_selection_share"` // 0-100
+	AISelectionShare     int                          `json:"ai_selection_share"` // Retained for settings rollback; new openings always use fresh content.
 	Pools                []WarmupGenerationPoolConfig `json:"pools"`
 	Engagement           WarmupEngagementSettings     `json:"engagement"`
 }
 
-// DefaultWarmupGenerationSettings returns autonomous defaults. The AI client is
-// optional and the static library remains the fallback, but when a client is
-// configured the controller continuously maintains and refreshes the bank.
-// Content is ONE shared library
-// (free/premium pools only isolate mailbox reputation, not content), so there's
-// a single library config; "premium" is just its canonical bucket label.
+// DefaultWarmupGenerationSettings maintains one shared bank of approved plans reused across distinct mailboxes.
 func DefaultWarmupGenerationSettings() WarmupGenerationSettings {
 	return WarmupGenerationSettings{
 		GenerationEnabled:    true,
 		Enabled:              true,
 		ScheduleEnabled:      true,
 		CadenceHours:         6,
-		RefreshEnabled:       true,
+		RefreshEnabled:       false,
 		RefreshPerRun:        10,
 		Model:                "gpt-6-luna",
 		MaxMessagesPerThread: 5,
 		DailyGenerationCap:   1000,
-		AISelectionShare:     70,
+		AISelectionShare:     100,
 		Pools: []WarmupGenerationPoolConfig{
 			{PoolType: "premium", Enabled: true, TargetActiveThreads: 200, Segments: []string{""}},
 		},

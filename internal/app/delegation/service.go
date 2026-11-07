@@ -60,6 +60,9 @@ type Config struct {
 	// GoogleMissing and MicrosoftMissing name the settings an operator still has to set; empty when enabled.
 	GoogleMissing    []string `json:"google_missing"`
 	MicrosoftMissing []string `json:"microsoft_missing"`
+
+	// GoogleMailboxClientID is the per-mailbox sign-in client a Workspace admin marks Trusted; empty with none configured.
+	GoogleMailboxClientID string `json:"google_mailbox_client_id,omitempty"`
 }
 
 // Stable codes for refusals a client branches on.
@@ -67,6 +70,8 @@ const (
 	ErrIDNotConfigured      = "mailbox_grant_not_configured"
 	ErrIDGoogleUnauthorized = "google_delegation_unauthorized"
 	ErrIDMicrosoftConsent   = "microsoft_consent_missing"
+	// ErrIDGoogleRetired refuses a Google domain-wide delegation grant for a domain the workspace holds none for.
+	ErrIDGoogleRetired      = "google_delegation_retired"
 	ErrIDState              = "mailbox_grant_state_invalid"
 	ErrIDNotCovered         = "mailbox_grant_domain_mismatch"
 	ErrIDMailboxUnreachable = "mailbox_grant_mailbox_unreachable"
@@ -133,6 +138,8 @@ type Service struct {
 	msLoginBase    string
 	graphBase      string
 
+	googleMailboxClientID string
+
 	sources sync.Map // cache key -> oauth2.TokenSource
 }
 
@@ -152,6 +159,9 @@ type Deps struct {
 	GoogleSignin *oauth2.Config
 	Prover       *domainproof.Prover
 	TXT          TXTLookup
+
+	// GoogleMailboxClientID is shown to a Workspace admin trusting per-mailbox sign-in.
+	GoogleMailboxClientID string
 }
 
 func NewService(d Deps) *Service {
@@ -166,6 +176,8 @@ func NewService(d Deps) *Service {
 		gmailBase:      "https://gmail.googleapis.com/gmail/v1",
 		msLoginBase:    "https://login.microsoftonline.com",
 		graphBase:      "https://graph.microsoft.com/v1.0",
+
+		googleMailboxClientID: d.GoogleMailboxClientID,
 	}
 	if s.txt == nil {
 		s.txt = net.DefaultResolver
@@ -200,6 +212,7 @@ func (s *Service) Config() Config {
 		GoogleEnabled: s.googleEnabled(), GoogleClientID: s.googleClientID,
 		GoogleScopes: config.GoogleDelegationScopes, MicrosoftEnabled: s.microsoftEnabled(),
 		GoogleMissing: []string{}, MicrosoftMissing: []string{},
+		GoogleMailboxClientID: s.googleMailboxClientID,
 	}
 	if !c.GoogleEnabled {
 		c.GoogleMissing = append(c.GoogleMissing, "GOOGLE_WORKSPACE_DELEGATION_KEY")
@@ -413,7 +426,7 @@ func unavailable(err error) bool {
 	}
 	var re *oauth2.RetrieveError
 	if errors.As(err, &re) {
-		return re.Response != nil && re.Response.StatusCode >= 500
+		return re.Response != nil && (re.Response.StatusCode >= 500 || re.Response.StatusCode == http.StatusTooManyRequests)
 	}
 	return true
 }
@@ -749,6 +762,15 @@ func (s *Service) Connect(ctx context.Context, orgID uuid.UUID, userID string, g
 // AccessToken is a worker's token for a delegated mailbox; handled is false
 // for any other mailbox, so the caller can try its own broker.
 func (s *Service) AccessToken(ctx context.Context, accountID uuid.UUID) (*models.PoolLinkAccessToken, bool, *errx.Error) {
+	return s.accessToken(ctx, accountID, false)
+}
+
+// IMAPAccessToken is a delegated Google mailbox's token under the optional https://mail.google.com/ scope, for Gmail IMAP.
+func (s *Service) IMAPAccessToken(ctx context.Context, accountID uuid.UUID) (*models.PoolLinkAccessToken, bool, *errx.Error) {
+	return s.accessToken(ctx, accountID, true)
+}
+
+func (s *Service) accessToken(ctx context.Context, accountID uuid.UUID, imap bool) (*models.PoolLinkAccessToken, bool, *errx.Error) {
 	d, xerr := s.store.GetDelegation(ctx, accountID)
 	if xerr != nil {
 		return nil, true, xerr
@@ -772,12 +794,20 @@ func (s *Service) AccessToken(ctx context.Context, accountID uuid.UUID) (*models
 		if !s.googleEnabled() {
 			return nil, true, notConfigured("Google Workspace")
 		}
-		src, err := s.googleSource(d.Subject, gmail.GmailModifyScope, gmail.GmailSettingsBasicScope)
+		// IMAP is minted on its own, so a delegation entry without the optional scope still serves the API token.
+		scopes := []string{gmail.GmailModifyScope, gmail.GmailSettingsBasicScope}
+		if imap {
+			scopes = []string{gmail.MailGoogleComScope}
+		}
+		src, err := s.googleSource(d.Subject, scopes...)
 		if err != nil {
 			return nil, true, errx.InternalError()
 		}
 		ts = src
 	case models.InboxProviderOutlook:
+		if imap {
+			return nil, true, errx.ErrNotFound
+		}
 		if !s.microsoftEnabled() {
 			return nil, true, notConfigured("Microsoft 365")
 		}
@@ -787,6 +817,10 @@ func (s *Service) AccessToken(ctx context.Context, accountID uuid.UUID) (*models
 	}
 	tok, err := ts.Token()
 	if err != nil {
+		// The worker remembers a refused IMAP token for the mailbox, so a provider outage must not read as one.
+		if imap && unavailable(err) {
+			return nil, true, unavailableErr()
+		}
 		provider := models.GrantProviderGoogle
 		if d.Provider == models.InboxProviderOutlook {
 			provider = models.GrantProviderMicrosoft
@@ -840,8 +874,8 @@ func sortedKeys(m map[string]bool) []string {
 }
 
 // SigninMigration is every mailbox still on per-mailbox Google sign-in, by
-// domain, with where it moves: the domain's grant, or an app password for a
-// shared address like gmail.com.
+// domain, with the domain's existing active grant when it has one; a shared
+// address like gmail.com is marked personal.
 func (s *Service) SigninMigration(ctx context.Context, orgID uuid.UUID) ([]models.SigninMigration, *errx.Error) {
 	boxes, xerr := s.store.ListSigninRetiring(ctx, orgID)
 	if xerr != nil {

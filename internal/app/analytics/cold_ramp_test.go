@@ -71,6 +71,18 @@ func TestColdRampUnknownFeedbackKeepsConservativeMailboxExplanation(t *testing.T
 	}
 }
 
+func TestColdRampNoticeQuietOnceWarmupStopped(t *testing.T) {
+	warmed := time.Now().Add(-90 * 24 * time.Hour)
+	stopped := time.Now().Add(-time.Hour)
+	email := &models.Email{ID: uuid.New(), Warmup: &warmed, CampaignLimit: 50}
+	s := &analyticsService{warmupRepo: coldRampRepositoryStub{states: map[uuid.UUID]repository.ColdRampState{
+		email.ID: {WarmupStartedAt: &warmed, WarmupStoppedAt: &stopped},
+	}}}
+	if info := coldRampFor(t, s, email); info != nil {
+		t.Fatal("stopped mailbox still shows the cold ceiling", info)
+	}
+}
+
 // coldRampFor reads one mailbox's cold-ramp notice the way a status page does.
 func coldRampFor(t *testing.T, s *analyticsService, email *models.Email) *models.ColdRampInfo {
 	t.Helper()

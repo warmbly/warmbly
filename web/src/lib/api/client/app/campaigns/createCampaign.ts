@@ -10,6 +10,7 @@ export interface CreateCampaignInput {
 
     // Sending rules / tracking
     stop_on_reply?: boolean;
+    stop_on_meeting?: boolean;
     open_tracking?: boolean;
     link_tracking?: boolean;
     utm_tracking?: boolean;
@@ -39,6 +40,7 @@ export interface CreateCampaignInput {
     // Net-new send controls (all optional; backend defaults reproduce today's behavior)
     sender_strategy?: 'tags' | 'explicit';
     rotation_mode?: 'weighted' | 'round_robin' | 'least_recently_used';
+    follow_up_sender?: 'same' | 'same_domain' | 'rotate';
     ramp_enabled?: boolean;
     ramp_start?: number;
     ramp_increment?: number;

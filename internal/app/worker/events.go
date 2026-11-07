@@ -29,6 +29,7 @@ func (w *WorkerService) InitEvents() {
 	Register(w, models.WorkerEventTypeMessageSeen, w.HandleMessageSeen)
 	Register(w, models.WorkerEventTypeMessageFolder, w.HandleMessageFolder)
 	Register(w, models.WorkerEventTypeMailboxIdentity, w.HandleMailboxIdentity)
+	Register(w, models.WorkerEventTypeSyncWake, w.HandleSyncWake)
 }
 
 func Register[T any](w *WorkerService, eventType models.WorkerEventType, handler EventHandler[T]) {

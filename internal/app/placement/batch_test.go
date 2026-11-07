@@ -22,7 +22,7 @@ type fakeBatches struct {
 	batches  map[uuid.UUID]*models.PlacementBatch
 	senders  []*models.PlacementBatchSender
 	open     int
-	credits  int
+	spent    models.Micro
 	finished []string
 }
 
@@ -122,8 +122,8 @@ func (f *fakeBatches) CloseOpenBatchSenders(_ context.Context, batchID uuid.UUID
 	}
 	return nil
 }
-func (f *fakeBatches) AddBatchCredits(_ context.Context, _ uuid.UUID, n int) error {
-	f.credits += n
+func (f *fakeBatches) AddBatchSpend(_ context.Context, _ uuid.UUID, n models.Micro) error {
+	f.spent += n
 	return nil
 }
 func (f *fakeBatches) MarkBatchStarted(_ context.Context, id uuid.UUID) error {

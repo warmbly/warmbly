@@ -33,6 +33,7 @@ const (
 	flagInt
 	flagBool
 	flagStrings
+	flagFloat
 )
 
 // argSpec is one positional argument, filling the next {} in the path.
@@ -152,12 +153,15 @@ func buildEndpoint(f *Factory, r resource, e endpoint) *cobra.Command {
 	// Flag values are held here so the runner reads whatever cobra parsed.
 	strs := map[string]*string{}
 	ints := map[string]*int{}
+	floats := map[string]*float64{}
 	bools := map[string]*bool{}
 	slices := map[string]*[]string{}
 	for _, fl := range e.Flag {
 		switch fl.Kind {
 		case flagInt:
 			ints[fl.Name] = cmd.Flags().IntP(fl.Name, fl.Short, 0, fl.Help)
+		case flagFloat:
+			floats[fl.Name] = cmd.Flags().Float64P(fl.Name, fl.Short, 0, fl.Help)
 		case flagBool:
 			bools[fl.Name] = cmd.Flags().BoolP(fl.Name, fl.Short, false, fl.Help)
 		case flagStrings:
@@ -204,6 +208,8 @@ func buildEndpoint(f *Factory, r resource, e endpoint) *cobra.Command {
 			switch fl.Kind {
 			case flagInt:
 				value = *ints[fl.Name]
+			case flagFloat:
+				value = *floats[fl.Name]
 			case flagBool:
 				value = *bools[fl.Name]
 			case flagStrings:

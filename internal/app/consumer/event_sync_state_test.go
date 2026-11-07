@@ -2,12 +2,14 @@ package jobs
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -17,9 +19,12 @@ var syncTestGeneration = uuid.New()
 // stubSyncStateRepo accepts what the worker relays.
 type stubSyncStateRepo struct {
 	repository.EmailSyncStateRepository
-	put    *models.SyncState
-	saved  *models.SyncState
-	getErr error
+	put              *models.SyncState
+	saved            *models.SyncState
+	getErr           error
+	reportWorker     uuid.UUID
+	reportGeneration uuid.UUID
+	reportAccepted   bool
 }
 
 func (s *stubSyncStateRepo) Get(context.Context, uuid.UUID) (*models.SyncState, error) {
@@ -29,6 +34,81 @@ func (s *stubSyncStateRepo) Get(context.Context, uuid.UUID) (*models.SyncState, 
 func (s *stubSyncStateRepo) Put(_ context.Context, _, _ uuid.UUID, st *models.SyncState) error {
 	s.put = st
 	return nil
+}
+
+func (s *stubSyncStateRepo) PutFromWorker(ctx context.Context, _, _, workerID, generation uuid.UUID, st *models.SyncState, before func(context.Context, *repository.SyncStatePrior) error) (bool, *repository.SyncStatePrior, error) {
+	s.reportWorker = workerID
+	s.reportGeneration = generation
+	prior := repository.PriorOf(s.saved)
+	if s.reportAccepted {
+		if before != nil {
+			if err := before(ctx, prior); err != nil {
+				return false, nil, err
+			}
+		}
+		s.put = st
+	}
+	return s.reportAccepted, prior, nil
+}
+
+type syncStateBus struct {
+	calls  int
+	types  []string
+	status []string
+}
+
+func (b *syncStateBus) Publish(_ context.Context, _ string, event any, attrs map[string]string) error {
+	b.calls++
+	b.types = append(b.types, attrs["event_type"])
+	var body struct {
+		Status string `json:"status"`
+	}
+	data, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(data, &body); err != nil {
+		return err
+	}
+	b.status = append(b.status, body.Status)
+	return nil
+}
+
+type syncStateEmailRepo struct {
+	repository.EmailRepository
+	account *models.Email
+}
+
+func (r syncStateEmailRepo) GetByID(context.Context, uuid.UUID) (*models.Email, *errx.Error) {
+	return r.account, nil
+}
+
+func TestSyncStateChecksReportingWorkerBeforeSaving(t *testing.T) {
+	for _, accepted := range []bool{false, true} {
+		repo := &stubSyncStateRepo{reportAccepted: accepted}
+		errRepo := &stubErrorRepo{}
+		bus := &syncStateBus{}
+		org := uuid.New()
+		s := &JobsService{EmailSyncStateRepository: repo, EmailAccountErrorRepository: errRepo,
+			EmailRepository:    syncStateEmailRepo{account: &models.Email{OrganizationID: &org}},
+			StreamingPublisher: pubsub.NewStreamingPublisher(bus, removeSyncAudience{org: org})}
+		workerID := uuid.New()
+		at := time.Now().Add(-time.Minute)
+		event := &models.JobEventSyncState{WorkerID: &workerID, ReportGeneration: syncTestGeneration, UserID: uuid.New(), EmailID: uuid.New(),
+			State: models.SyncState{TransportGeneration: syncTestGeneration, LastSyncedAt: &at, BackfillStatus: models.SyncBackfillComplete, FoldersSkippedCap: 4}}
+		if err := s.HandleSyncState(t.Context(), event); err != nil {
+			t.Fatal(err)
+		}
+		if repo.reportWorker != workerID || repo.reportGeneration != syncTestGeneration || (repo.put != nil) != accepted {
+			t.Fatalf("worker=%s accepted=%t saved=%+v", repo.reportWorker, accepted, repo.put)
+		}
+		if (bus.calls > 0) != accepted || (errRepo.calls > 0) != accepted {
+			t.Fatalf("accepted=%t published=%d recovery=%d", accepted, bus.calls, errRepo.calls)
+		}
+		if accepted && (len(bus.types) == 0 || bus.types[0] != string(pubsub.EventAccountSyncState) || bus.status[0] != string(models.SyncBackfillComplete)) {
+			t.Fatalf("published types=%v status=%v", bus.types, bus.status)
+		}
+	}
 }
 
 // stubErrorRepo records which codes were resolved and how far back.

@@ -21,11 +21,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/idlepoll"
 	"github.com/warmbly/warmbly/internal/pkg/safehttp"
 	"github.com/warmbly/warmbly/internal/pkg/whdomain"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -650,6 +652,7 @@ type DeliveryWorker struct {
 	reapEvery        time.Duration
 	autoDisableAfter time.Duration
 	lastReap         time.Time
+	wake             chan struct{}
 }
 
 // DeliveryWorkerOptions configures the worker. Sensible defaults are
@@ -710,27 +713,84 @@ func NewDeliveryWorker(repo repository.WebhookRepository, opts DeliveryWorkerOpt
 		leaseTimeout:     opts.LeaseTimeout,
 		reapEvery:        time.Minute,
 		autoDisableAfter: opts.AutoDisableAfter,
+		wake:             make(chan struct{}, 1),
 	}
 }
 
-// Run blocks until ctx is cancelled, draining the delivery queue on a
-// fixed interval. Errors are logged but do not stop the loop — the queue
-// stays in Postgres, so a crashed dispatcher resumes on restart.
+// Wake makes Run poll now instead of waiting out an idle interval.
+func (w *DeliveryWorker) Wake() {
+	select {
+	case w.wake <- struct{}{}:
+	default:
+	}
+}
+
+// listenRetry is how long Listen waits before reopening a lost connection; the poll covers the gap.
+const listenRetry = 30 * time.Second
+
+// Listen wakes the worker on every enqueue from any process, through
+// LISTEN on a direct connection, until ctx ends.
+func (w *DeliveryWorker) Listen(ctx context.Context, connect func(context.Context) (*pgx.Conn, error)) {
+	for ctx.Err() == nil {
+		if err := w.listenOnce(ctx, connect); err != nil && ctx.Err() == nil {
+			log.Warn().Err(err).Msg("webhook: delivery listener stopped; polling until it reconnects")
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(listenRetry):
+		}
+	}
+}
+
+func (w *DeliveryWorker) listenOnce(ctx context.Context, connect func(context.Context) (*pgx.Conn, error)) error {
+	dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	conn, err := connect(dialCtx)
+	cancel()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		_ = conn.Close(closeCtx)
+	}()
+	if _, err := conn.Exec(ctx, "LISTEN "+repository.WebhookDeliveryChannel); err != nil {
+		return err
+	}
+	// Anything enqueued before LISTEN took effect is picked up by this poll.
+	w.Wake()
+	for {
+		if _, err := conn.WaitForNotification(ctx); err != nil {
+			return err
+		}
+		w.Wake()
+	}
+}
+
+// Run blocks until ctx is cancelled, draining the delivery queue: at once
+// while batches come back full, slowing to 5x the poll interval while empty.
+// Errors are logged but do not stop the loop — the queue stays in Postgres,
+// so a crashed dispatcher resumes on restart.
 func (w *DeliveryWorker) Run(ctx context.Context) {
-	t := time.NewTicker(w.pollEvery)
+	pace := idlepoll.Pace{Min: w.pollEvery, Max: 5 * w.pollEvery}
+	t := time.NewTimer(w.pollEvery)
 	defer t.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-w.wake:
+			n := w.tick(ctx)
+			t.Reset(pace.Next(n, n >= w.batchSize))
 		case <-t.C:
-			w.tick(ctx)
+			n := w.tick(ctx)
+			t.Reset(pace.Next(n, n >= w.batchSize))
 		}
 	}
 }
 
-func (w *DeliveryWorker) tick(ctx context.Context) {
+func (w *DeliveryWorker) tick(ctx context.Context) int {
 	// Periodically re-queue deliveries stranded in_flight by a crashed worker.
 	if now := time.Now(); now.Sub(w.lastReap) >= w.reapEvery {
 		w.lastReap = now
@@ -744,11 +804,12 @@ func (w *DeliveryWorker) tick(ctx context.Context) {
 	deliveries, err := w.repo.ClaimDueDeliveries(ctx, w.batchSize)
 	if err != nil {
 		log.Warn().Err(err).Msg("Failed to claim webhook deliveries")
-		return
+		return 0
 	}
 	for i := range deliveries {
 		w.deliver(ctx, &deliveries[i])
 	}
+	return len(deliveries)
 }
 
 // rateLimited reports whether the endpoint is over its per-second delivery

@@ -38,6 +38,7 @@ func (w *WorkerService) HandleAddEmail(ctx context.Context, e *models.AddWorkerE
 		// budget so an operator's settings change reaches this mailbox.
 		if mail := w.mailManager.Get(e.ID); mail != nil && mail.SameExecution(e) {
 			mail.ApplySyncPolicy(e.Sync)
+			mail.ApplyPush(e.Push)
 			return nil
 		}
 	}

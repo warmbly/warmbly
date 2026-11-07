@@ -3,7 +3,7 @@
 // sign-in skip that code; the server still asks for the password, TOTP and,
 // when the sign-in looks unusual, the code anyway.
 //
-// It belongs to the browser rather than the session, so signing out keeps it.
+// Signing out forgets the tokens this browser holds, on the server and here.
 // The server forgets every token when the password changes or the user signs
 // out everywhere.
 const KEY = "warmbly-trusted-devices";
@@ -44,4 +44,12 @@ export function forgetTrustedDevice(email: string) {
     const store = read();
     delete store[accountKey(email)];
     write(store);
+}
+
+export function allTrustedDevices(): string[] {
+    return Object.values(read()).filter((tok): tok is string => typeof tok === "string" && tok !== "");
+}
+
+export function forgetAllTrustedDevices() {
+    write({});
 }

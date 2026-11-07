@@ -63,6 +63,8 @@ export function redirectBlocked(r: DomainRedirect | null | undefined): boolean {
 }
 
 export function redirectState(d: SendingDomain): RedirectState {
+    // A destination not yet the workspace's is not served, whatever DNS says.
+    if (d.redirect?.target_active === false) return "pending";
     if (d.redirect?.verified) return redirectBlocked(d.redirect) ? "blocked" : "live";
     if (d.vendor_domain?.forwarding) return "vendor";
     if (d.redirect) return "pending";
@@ -158,9 +160,18 @@ export const REDIRECT_NOT_OWN_DOMAIN = "redirect_target_not_own_domain";
 
 /** Where a redirect may point, shown under every destination field. */
 export const OWN_DOMAIN_HINT =
-    "Must be a page on one of your workspace's own domains: a domain you have a mailbox on (not gmail.com or another shared provider), your verified tracking domain, your verified forms domain, or a subdomain of one.";
+    "Usually your main website. If you do not send from its domain, Warmbly asks for one TXT record there once, to confirm the website is yours.";
+
+/** The redirect waits for its website's TXT record before it is served. */
+export function websiteUnproved(r: DomainRedirect | null | undefined): boolean {
+    return !!r && r.target_active === false && !!r.website?.record && !r.website.verified;
+}
 
 export function redirectPill(d: SendingDomain): PillInfo {
+    if (websiteUnproved(d.redirect)) {
+        const site = d.redirect!.website!.domain;
+        return { tone: "amber", label: "Confirm website", title: `Add the TXT record for ${site} to confirm the website is this workspace's.` };
+    }
     if (d.redirect && d.redirect.target_active === false) {
         return {
             tone: "amber",

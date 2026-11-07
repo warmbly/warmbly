@@ -150,11 +150,33 @@ func (s *service) executeAutomationGraph(ctx context.Context, a models.Automatio
 		status = "error"
 	}
 	_ = s.repo.FinishAutomationRun(ctx, run.ID, status, "", results)
+	s.announceRun(ctx, a, run.ID, eventType, status, data)
 
 	// Best-effort realtime: refresh the builder's run history live.
 	if s.publisher != nil {
 		s.publisher.PublishAutomationEvent(ctx, a.OrganizationID, uuid.Nil, pubsub.EventAutomationRun, a.ID.String(), a.Name)
 	}
+}
+
+// announceRun delivers automation.run. Dispatch never starts an automation on
+// it, so a flow cannot re-trigger itself through its own run event.
+func (s *service) announceRun(ctx context.Context, a models.Automation, runID uuid.UUID, eventType, status string, data map[string]any) {
+	if s.events == nil {
+		return
+	}
+	payload := map[string]any{
+		"automation_id":   a.ID.String(),
+		"automation_name": a.Name,
+		"run_id":          runID.String(),
+		"trigger_event":   eventType,
+		"status":          status,
+	}
+	for _, k := range []string{"contact_id", "contact_email", "campaign_id"} {
+		if v, ok := data[k].(string); ok && v != "" {
+			payload[k] = v
+		}
+	}
+	_, _ = s.events.Dispatch(ctx, a.OrganizationID, models.WebhookEventAutomationRun, payload)
 }
 
 // conditionSummary is a short backend label for a condition node in run history.

@@ -174,6 +174,7 @@ type tasksService struct {
 	// warmupSettings caches the warmup generation settings in-process so the
 	// per-send AI-vs-static decision doesn't hit Postgres on every warmup.
 	warmupSettings *warmupSettingsCache
+	staticSeed     staticSeedState
 
 	// domainAuth resolves the operator's sending-domain authentication gate.
 	// Optional/nil-safe: without it the persisted auth state stays
@@ -206,6 +207,12 @@ func (s *tasksService) SetUnsubscribeLinks(signer *unsublink.Signer, tickets rep
 // instancesettings.Service satisfies it.
 type DomainAuthPolicy interface {
 	DomainAuth(ctx context.Context) (enforce bool, grace time.Duration)
+}
+
+// staticSeedState records that the built-in library is mirrored into the content bank.
+type staticSeedState struct {
+	sync.Mutex
+	done bool
 }
 
 // warmupSettingsCache is a tiny TTL cache over the generation settings.

@@ -220,3 +220,51 @@ func TestLimitRequestsRequireUnrestrictedTargetMembership(t *testing.T) {
 		}
 	}
 }
+
+type actsInScopeRepo struct {
+	repository.OrganizationRepository
+	role    models.OrganizationRole
+	actor   models.OrganizationMember
+	updated *models.OrganizationRole
+}
+
+func (r *actsInScopeRepo) GetRoleByID(context.Context, uuid.UUID, uuid.UUID) (*models.OrganizationRole, error) {
+	role := r.role
+	return &role, nil
+}
+
+func (r *actsInScopeRepo) GetMember(context.Context, uuid.UUID, uuid.UUID) (*models.OrganizationMember, error) {
+	actor := r.actor
+	return &actor, nil
+}
+
+func (r *actsInScopeRepo) UpdateRole(_ context.Context, role *models.OrganizationRole) error {
+	r.updated = role
+	return nil
+}
+
+// Letting restricted members act with a role changes what the role does, so only an actor holding it may switch that.
+func TestActsInScopeNeedsTheRolesPermissions(t *testing.T) {
+	role := models.OrganizationRole{ID: uuid.New(), Name: "Client: manage campaigns", Permissions: models.ScopeActionPermissions}
+	on := true
+	for _, tc := range []struct {
+		name  string
+		actor models.OrganizationPermission
+		ok    bool
+	}{
+		{"actor holds the role", models.ScopeActionPermissions | models.PermManageTeam, true},
+		{"actor lacks send_campaigns", models.RestrictedReadPermissions | models.PermManageCampaigns | models.PermManageTeam, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &actsInScopeRepo{role: role, actor: models.OrganizationMember{Role: "Admin", Permissions: tc.actor}}
+			s := &organizationService{orgRepo: repo}
+			got, xerr := s.UpdateRole(context.Background(), uuid.New(), uuid.New(), role.ID, &models.UpdateOrganizationRoleRequest{ActsInScope: &on})
+			if tc.ok != (xerr == nil) || tc.ok != (repo.updated != nil) {
+				t.Fatalf("err=%v written=%v, want ok=%v", xerr, repo.updated != nil, tc.ok)
+			}
+			if tc.ok && !got.ActsInScope {
+				t.Fatal("the role does not act in scope")
+			}
+		})
+	}
+}

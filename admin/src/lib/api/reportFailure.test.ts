@@ -6,7 +6,7 @@ vi.mock("@/lib/observability", () => ({
     noteStep: () => {},
 }));
 
-import { APIError, SessionExpiredError } from "@/lib/api/client";
+import { APIError, ReauthCancelledError, SessionExpiredError } from "@/lib/api/client";
 import { reportFailure } from "./reportFailure";
 
 function apiError(status: number): APIError {
@@ -43,6 +43,11 @@ describe("reportFailure", () => {
     it("skips expected answers, the network and a lapsed session", () => {
         for (const status of [0, 401, 403, 404, 429]) reportFailure(apiError(status), "query");
         reportFailure(new SessionExpiredError(), "query");
+        expect(captured).toHaveLength(0);
+    });
+
+    it("skips a confirmation the operator cancelled", () => {
+        reportFailure(new ReauthCancelledError(), "mutation");
         expect(captured).toHaveLength(0);
     });
 

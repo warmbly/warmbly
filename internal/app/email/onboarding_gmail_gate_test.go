@@ -53,3 +53,25 @@ func TestOAuthReauth_GmailNotGated(t *testing.T) {
 		t.Fatal("reauth of an existing Gmail mailbox must not be refused by the new-mailbox gate")
 	}
 }
+
+// A personal Gmail hint is steered to app passwords before any consent; a Workspace hint passes the gate.
+func TestOAuthStart_PersonalGmailRefused(t *testing.T) {
+	t.Setenv("BOX_GOOGLE_OAUTH_CONNECT", "true")
+	t.Setenv("BOX_GOOGLE_CLIENT_ID", "test-client")
+	t.Setenv("BOX_GOOGLE_CLIENT_SECRET", "test-secret")
+	org := uuid.New()
+	svc := &emailService{}
+
+	for hint, want := range map[string]*errx.Error{
+		"someone" + "@gmail.com":          errx.ErrEmailOnboardGooglePersonal,
+		" Someone" + "@GoogleMail.com ":   errx.ErrEmailOnboardGooglePersonal,
+		"someone" + "@example.com":        errx.ErrEmailOnboardGoogleNotConfigured,
+		"someone" + "@gmail.com.evil.org": errx.ErrEmailOnboardGoogleNotConfigured,
+		"":                                errx.ErrEmailOnboardGoogleNotConfigured,
+	} {
+		_, xerr := svc.OAuthStart(context.Background(), uuid.NewString(), &org, models.InboxProviderGoogle, hint, false, "")
+		if xerr != want {
+			t.Errorf("hint %q: got %v, want %v", hint, xerr, want)
+		}
+	}
+}

@@ -101,7 +101,8 @@ func followUpPageSQL(keyset string) string {
 }
 
 // followUpStatesSQL resolves follow-up facts for the threads in a heads(id, thread_id) CTE; $1 is the org.
-const followUpStatesSQL = `states AS (
+// MATERIALIZED so the facts resolve once per query, not once per page row when the planner nests the join.
+const followUpStatesSQL = `states AS MATERIALIZED (
 		SELECT h.id, h.thread_id, agg.last_in, agg.last_out, agg.last_any,
 		       COALESCE(best.intent, '') AS intent, COALESCE(newest.kind, '') AS kind
 		FROM heads h

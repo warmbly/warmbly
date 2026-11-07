@@ -10,26 +10,8 @@ import (
 )
 
 func (s *tokenService) GetSession(ctx context.Context, sessionID uuid.UUID) (*models.Session, *errx.Error) {
-	sess, err := s.getSession(ctx, sessionID)
-	if err != nil {
-		return nil, err
-	}
-
-	if sess != nil {
-		return sess, nil
-	}
-
-	sess, err = s.tokenRepository.GetSession(ctx, sessionID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Best effort: the session is already resolved, and failing to cache it
-	// only costs the next request a database read. Returning the error here
-	// meant a Redis write that was refused, on quota or anything else, failed
-	// every authenticated request with a 500.
-	s.fillSession(ctx, sess)
-	return sess, nil
+	// PostgreSQL is authoritative for session state on every request.
+	return s.tokenRepository.GetSession(ctx, sessionID)
 }
 
 func sameTokenIssueTime(a, b time.Time) bool {
@@ -53,10 +35,7 @@ func (s *tokenService) ValidateAccessToken(ctx context.Context, accessToken stri
 		return nil, err
 	}
 
-	// A revoked session is dead immediately. Revocation busts the Redis cache,
-	// so the next read here re-loads the row with revoked_at set and the token
-	// stops working without waiting for the cache TTL or a refresh. A session
-	// past its expires_at is dead the same way.
+	// Revocation and absolute expiry are checked against the authoritative row.
 	if !session.Live(time.Now()) {
 		return nil, errx.ErrSessionEnded
 	}

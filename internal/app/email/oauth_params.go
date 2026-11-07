@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/mailhost"
 	"golang.org/x/oauth2"
 )
 
@@ -49,6 +50,15 @@ func loginHintOrEmpty(hint string) string {
 		return ""
 	}
 	return hint
+}
+
+// personalGmail reports whether an address is a consumer Gmail one, which connects with an app password.
+func personalGmail(addr string) bool {
+	if !strings.Contains(addr, "@") {
+		return false
+	}
+	d := mailhost.NormalizeDomain(addr)
+	return d == "gmail.com" || d == "googlemail.com"
 }
 
 // OutlookAdminApprovalState marks the return from an administrator approving

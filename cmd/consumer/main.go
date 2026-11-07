@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"github.com/warmbly/warmbly/internal/app/cloudlink"
+	"github.com/warmbly/warmbly/internal/app/consumermetrics"
 	emailverifyapp "github.com/warmbly/warmbly/internal/app/emailverify"
+	"github.com/warmbly/warmbly/internal/app/mailpush"
 	"github.com/warmbly/warmbly/internal/app/slackapp"
 	"log"
 	"os"
@@ -20,11 +22,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/app/advanced"
 	"github.com/warmbly/warmbly/internal/app/audit"
+	"github.com/warmbly/warmbly/internal/app/balance"
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	jobs "github.com/warmbly/warmbly/internal/app/consumer"
 	"github.com/warmbly/warmbly/internal/app/contact"
 	"github.com/warmbly/warmbly/internal/app/credits"
-	"github.com/warmbly/warmbly/internal/app/creditwatch"
 	"github.com/warmbly/warmbly/internal/app/crmmode"
 	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/app/hubspot"
@@ -64,6 +66,7 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/pkg/geo"
 	"github.com/warmbly/warmbly/internal/pkg/nodeagent"
+	"github.com/warmbly/warmbly/internal/pkg/nodeauth"
 	"github.com/warmbly/warmbly/internal/pkg/typesafe"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/tasks"
@@ -146,14 +149,10 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Event bus + codec. Kafka bootstrap/SASL is only loaded for
-	// EVENTBUS_PROVIDER=kafka; codec.FromEnv owns serialization (Avro pulls
-	// SCHEMA_REGISTRY_URL from env, JSON needs nothing). The bus drives both the
-	// inbound worker-events subscription and outbound publishing, so a NATS +
-	// JSON self-host needs no Kafka or Schema Registry config.
+	// Dual readers retain Kafka credentials until its backlog and rollback window close.
 	var kafkaBootstrapServers string
 	var kafkaSaslConfig *kafka.SASLConfig
-	if config.EventBusProvider() == "kafka" {
+	if config.EventBusUsesKafka() {
 		kafkaBootstrapServers, err = cfg.LoadKafkaBootstrapServers(ctx)
 		if err != nil {
 			log.Fatal(err)
@@ -222,6 +221,12 @@ func main() {
 	emailGraphDeltaRepo := repository.NewEmailGraphDeltaRepository(primaryDB)
 	emailAccountErrorRepo := repository.NewEmailAccountErrorRepository(primaryDB)
 	warmupRepo := repository.NewWarmupRepository(primaryDB.Pool)
+	// Behind a transaction pooler a receipt's lock waits on a direct session, never on a pooled connection.
+	if locks, err := primaryDB.SessionLocks(); err != nil {
+		log.Fatalf("Failed to prepare direct database sessions for warmup receipt locks: %v", err)
+	} else if locks != nil {
+		warmupRepo.(repository.WarmupSessionLocker).UseSessionLocks(locks)
+	}
 	warmupService := warmupapp.NewService(warmupRepo)
 	// Push warmup-health transitions live to the dashboard. The health sweep
 	// runs in this process, so the realtime publisher is wired here.
@@ -256,6 +261,7 @@ func main() {
 	integrationRepoC := repository.NewIntegrationRepository(primaryDB.Pool)
 	integrationServiceC := integration.NewService(integrationRepoC, cipherService, integration.NewOAuthManager())
 	webhookService.WireDispatchSink(integrationServiceC.DispatchAny)
+	integrationServiceC.SetEvents(webhookService)
 	// Replies, opens and clicks are raised here, so the Salesforce outbox
 	// records them here too; the backend drains it. Automation upserts take
 	// the native path as well.
@@ -275,10 +281,14 @@ func main() {
 	// optional model layer rides the same OpenAI-first provider.
 	creditRepoC := repository.NewCreditRepository(primaryDB)
 	aiSettingsRepoC := repository.NewAISettingsRepository(primaryDB)
-	creditServiceC := credits.NewService(creditRepoC, aiSettingsRepoC, redisCache)
+	creditServiceC := credits.NewService(creditRepoC, aiSettingsRepoC, instancesettings.NewService(instancesettings.NewStore(primaryDB.Pool)), redisCache)
 	// Consumer-side debits (automation AI nodes) also feed the low-balance
 	// alert. Auto top-up stays backend-only (no Stripe service here).
-	creditServiceC.SetMonitor(creditwatch.New(aiSettingsRepoC, creditRepoC, redisCache, streamingPublisher, nil).OnBalanceChanged)
+	// No Stripe here: the backend's sweep starts reloads for work charged in
+	// this process; notices go out from here.
+	balanceC := balance.New(creditServiceC, aiSettingsRepoC, repository.NewSavedCardChargeRepository(primaryDB),
+		repository.NewSubscriptionRepository(primaryDB.Pool), nil, redisCache, streamingPublisher, nil, nil)
+	creditServiceC.SetMonitor(balanceC.OnBalanceChanged)
 	var aiProviderC generation.Provider
 	// Pluggable web search (Serper/SearXNG) backs the AI switch's optional
 	// company lookup on reply-triggered automations that run in the consumer.
@@ -308,7 +318,11 @@ func main() {
 	// no key is configured, and every feature that reads it stays off.
 	var typeSafeClient *typesafe.Client
 	if key := config.TypeSafeAPIKey(); key != "" {
-		typeSafeClient = typesafe.NewClient(key, typesafe.WithBillingRedis(redisCache.Client))
+		endpoint, err := config.TypeSafeEndpoint()
+		if err != nil {
+			log.Fatal(err)
+		}
+		typeSafeClient = typesafe.NewClient(key, typesafe.WithBillingRedis(redisCache.Client), typesafe.WithEndpoint(endpoint))
 	}
 	if aiProviderC != nil {
 		replyclassify.SetModelClassifier(func(ctx context.Context, system, user string) (string, error) {
@@ -463,6 +477,7 @@ func main() {
 	}
 	notificationService.WirePush(pushSender, repository.NewDeviceTokenRepository(primaryDB.Pool), redisCache.Client)
 	advancedService.WireNotifier(notificationService)
+	balanceC.WireNotifier(notificationService)
 	// Reply pulses fire in THIS process too (inbox ingest classifies replies).
 	advancedService.WireRealtime(streamingPublisher)
 	// A lifted reply opt-out is recorded like a member lifting one by hand.
@@ -543,6 +558,8 @@ func main() {
 	}
 
 	jobsService := &jobs.JobsService{
+		CampaignIsolationEnabled:    config.CampaignSendIsolationEnabled(),
+		DBConns:                     primaryDB.Pool.Config().MaxConns,
 		Bus:                         consumerBus,
 		Codec:                       consumerCodec,
 		UniboxRepository:            uniboxRepo,
@@ -551,6 +568,7 @@ func main() {
 		EmailHistoryIDRepository:    emailHistoryIDRepo,
 		EmailGraphDeltaRepository:   emailGraphDeltaRepo,
 		EmailSyncStateRepository:    repository.NewEmailSyncStateRepository(primaryDB),
+		MailboxPushRepository:       repository.NewMailboxPushRepository(primaryDB),
 		ArrivalOutbox:               repository.NewDurableEmailMessageMapRepository(primaryDB, cipherService),
 		EmailAccountErrorRepository: emailAccountErrorRepo,
 		WarmupRepo:                  warmupRepo,
@@ -575,6 +593,7 @@ func main() {
 		AdminRepo:                   repository.NewAdminRepository(primaryDB.Pool),
 		AssignmentService:           workerAssignmentSvc,
 		Notifier:                    notificationService,
+		UniboxAccess:                feature.NewService(subscriptionRepoConsumer, planRepoConsumer),
 		OpsNotifier:                 opsNotifierC,
 		TaskRepo:                    taskRepo,
 		CampaignRepo:                campaignRepo,
@@ -604,6 +623,9 @@ func main() {
 
 	// Start DLQ auto-retry loop in background (every 60 seconds)
 	go jobsService.StartDLQRetryLoop(ctx, 60*time.Second)
+
+	// Hand significant step A/B winners their step when auto-promote is on.
+	go jobsService.StartABAutoPromoteLoop(ctx, 15*time.Minute)
 
 	// Start warmup health evaluation sweep (every hour)
 	go jobsService.StartWarmupHealthSweep(ctx, 1*time.Hour)
@@ -647,6 +669,26 @@ func main() {
 	// Resolve campaign sends that were reserved and dispatched but whose worker
 	// result never came back, so a lead is never held in flight forever.
 	go jobsService.StartStuckSendReclaimer(ctx, 5*time.Minute)
+
+	// Gmail push: the watch notifications each Gmail mailbox's worker opened arrive on
+	// this Pub/Sub subscription and wake that worker. Unset keeps Gmail polling.
+	if subscription := config.GmailPushSubscription(); subscription != "" {
+		waker := mailpush.NewWaker(repository.NewMailboxPushRepository(primaryDB), eventsPublisher, redisCache)
+		go func() {
+			for ctx.Err() == nil {
+				err := mailpush.RunGmailSubscriber(ctx, subscription, os.Getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"), waker)
+				if ctx.Err() != nil {
+					return
+				}
+				log.Printf("Warning: Gmail push subscriber stopped, restarting in 30s: %v", err)
+				select {
+				case <-ctx.Done():
+				case <-time.After(30 * time.Second):
+				}
+			}
+		}()
+		log.Println("Gmail push: reading watch notifications from " + subscription)
+	}
 
 	if mailboxCredentials.Reseals() {
 		// Moves credentials onto workspace keys, or seals legacy plaintext OAuth tokens under the instance key.
@@ -739,6 +781,19 @@ func main() {
 		newConsumerAgent().Run(ctx)
 	}()
 
+	// The consumer's ECS service scales on this; unset on every other deployment.
+	if name := consumermetrics.Name(); name != "" {
+		if diagnostics, ok := consumerBus.(eventbus.Diagnostics); ok {
+			go func() {
+				if err := consumermetrics.Run(ctx, diagnostics, name); err != nil {
+					log.Printf("Warning: worker event backlog metric disabled: %v", err)
+				}
+			}()
+		} else {
+			log.Printf("Warning: worker event backlog metric disabled: the %s bus reports no backlog", consumerBus.Name())
+		}
+	}
+
 	log.Println("Consumer started, listening on", kafka.TopicWorkerEvents)
 	jobsService.Start(ctx)
 
@@ -767,6 +822,7 @@ func newConsumerAgent() *nodeagent.Agent {
 		Version:           os.Getenv("WARMBLY_VERSION"),
 		BaseURL:           consumerBackendURL(),
 		Token:             config.NodeAPIToken(),
+		Credential:        nodeauth.FromEnv().Credential,
 		TargetVersionPath: os.Getenv("WARMBLY_TARGET_VERSION_PATH"),
 	})
 }

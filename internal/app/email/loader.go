@@ -3,6 +3,7 @@ package email
 import (
 	"context"
 	"fmt"
+	"github.com/warmbly/warmbly/internal/app/mailpush"
 	"math/rand"
 	"strings"
 	"time"
@@ -21,6 +22,12 @@ import (
 // WireGraphDelta attaches the Graph delta-cursor repository so the reconciler can
 // seed a Graph mailbox's saved per-folder cursors when (re)loading it. Optional;
 // when unset, Graph mailboxes recover from empty on load.
+// WirePush attaches the provider push settings each ADD_EMAIL carries. Optional;
+// when unset every mailbox polls.
+func (s *emailService) WirePush(settings *mailpush.Settings) {
+	s.push = settings
+}
+
 func (s *emailService) WireGraphDelta(repo repository.EmailGraphDeltaRepository) {
 	s.graphDelta = repo
 }
@@ -435,6 +442,7 @@ func (s *emailService) buildAddWorkerEmailSnapshot(ctx context.Context, acc *mod
 		Sync:                sync,
 		// Only SMTP/IMAP acts on this; Gmail and Graph file their own copy.
 		SaveToSent: &saveToSent,
+		Push:       s.push.For(ctx, acc.ID, provider),
 	}
 	if provider == models.InboxProviderOutlook {
 		var links map[string]string
@@ -500,8 +508,9 @@ func (s *emailService) buildAddWorkerEmailSnapshot(ctx context.Context, acc *mod
 			return nil, cerr
 		}
 		out.Google = &models.AddWorkerEmailGoogleData{
-			Token:         oauthToken(creds),
-			LastHistoryID: s.workerHistoryID(ctx, userID, acc, preload),
+			Token:          oauthToken(creds),
+			LastHistoryID:  s.workerHistoryID(ctx, userID, acc, preload),
+			FullMailAccess: models.FullMailAccess(creds.GrantedScopes),
 		}
 	case models.InboxProviderOutlook:
 		creds, cerr := repo.GetOAuthCredentials(ctx, acc.ID)

@@ -613,3 +613,389 @@ func TestLiveMailTransportSyncTimestampIsMonotonic(t *testing.T) {
 		t.Fatalf("account/table clocks diverged: %v %v", accountAt, err)
 	}
 }
+
+func TestLiveMailTransportSyncFolderCoveragePersistsAndClears(t *testing.T) {
+	f := newTransportFixture(t)
+	repo := NewEmailSyncStateRepository(f.db)
+	if _, err := f.pool.Exec(t.Context(), `INSERT INTO email_sync_state(email_id,user_id) VALUES($1,$2)`, f.account, f.user); err != nil {
+		t.Fatal(err)
+	}
+	assertCoverage := func(capCount, conflicts int) {
+		t.Helper()
+		state, err := repo.Get(t.Context(), f.account)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if state == nil || state.FoldersSkippedCap != capCount || state.FoldersSkippedConflict != conflicts || state.LastSyncedAt != nil {
+			t.Fatalf("unexpected folder coverage or successful sync: %+v", state)
+		}
+	}
+	assertCoverage(0, 0)
+	if _, err := f.pool.Exec(t.Context(), `DELETE FROM email_sync_state WHERE email_id=$1`, f.account); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Put(t.Context(), f.user, f.account, &models.SyncState{FoldersSkippedCap: 17, FoldersSkippedConflict: 2}); err != nil {
+		t.Fatal(err)
+	}
+	assertCoverage(17, 2)
+	if err := repo.Put(t.Context(), f.user, f.account, &models.SyncState{Deferred: 1, FoldersSkippedCap: 17, FoldersSkippedConflict: 2}); err != nil {
+		t.Fatal(err)
+	}
+	assertCoverage(17, 2)
+	if err := repo.Put(t.Context(), f.user, f.account, &models.SyncState{}); err != nil {
+		t.Fatal(err)
+	}
+	assertCoverage(0, 0)
+}
+
+func TestLiveMailTransportSyncFolderCoverageRejectsOlderCompletion(t *testing.T) {
+	f := newTransportFixture(t)
+	repo := NewEmailSyncStateRepository(f.db)
+	completed := time.Now().UTC().Add(-2 * time.Minute).Truncate(time.Microsecond)
+	older := completed.Add(-time.Minute)
+	for _, state := range []*models.SyncState{
+		{LastSyncedAt: &completed, FoldersSkippedCap: 17, FoldersSkippedConflict: 2},
+		{LastSyncedAt: &older},
+	} {
+		if err := repo.Put(t.Context(), f.user, f.account, state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := repo.Get(t.Context(), f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FoldersSkippedCap != 17 || got.FoldersSkippedConflict != 2 || got.LastSyncedAt == nil || !got.LastSyncedAt.Equal(completed) {
+		t.Fatalf("older completion replaced current coverage: %+v", got)
+	}
+	if err := repo.Put(t.Context(), f.user, f.account, &models.SyncState{FoldersSkippedCap: 4, FoldersSkippedConflict: 1}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = repo.Get(t.Context(), f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FoldersSkippedCap != 4 || got.FoldersSkippedConflict != 1 {
+		t.Fatalf("progress counters: %+v", got)
+	}
+	newer := completed.Add(time.Minute)
+	if err := repo.Put(t.Context(), f.user, f.account, &models.SyncState{LastSyncedAt: &newer}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = repo.Get(t.Context(), f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FoldersSkippedCap != 0 || got.FoldersSkippedConflict != 0 {
+		t.Fatalf("new completion counters: %+v", got)
+	}
+}
+
+func TestLiveMailTransportSyncFolderCoverageOrdersProgressObservations(t *testing.T) {
+	f := newTransportFixture(t)
+	repo := NewEmailSyncStateRepository(f.db)
+	completed := time.Now().UTC().Add(-time.Hour).Truncate(time.Millisecond)
+	first := completed.Add(time.Minute)
+	latest := first.Add(time.Minute)
+	put := func(state models.SyncState) {
+		t.Helper()
+		if err := repo.Put(t.Context(), f.user, f.account, &state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertCoverage := func(capCount, conflicts int, observed *time.Time) {
+		t.Helper()
+		got, err := repo.Get(t.Context(), f.account)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got == nil || got.FoldersSkippedCap != capCount || got.FoldersSkippedConflict != conflicts {
+			t.Fatalf("coverage: %+v", got)
+		}
+		if observed == nil {
+			if got.FolderCoverageObservedAt != nil {
+				t.Fatalf("legacy observation manufactured: %+v", got)
+			}
+		} else if got.FolderCoverageObservedAt == nil || !got.FolderCoverageObservedAt.Equal(*observed) {
+			t.Fatalf("observation: %+v", got)
+		}
+	}
+	put(models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &first, FoldersSkippedCap: 17, FoldersSkippedConflict: 2})
+	put(models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &latest})
+	put(models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &first, FoldersSkippedCap: 17, FoldersSkippedConflict: 2})
+	assertCoverage(0, 0, &latest)
+	put(models.SyncState{FolderCoverageObservedAt: &first, FoldersSkippedCap: 17, FoldersSkippedConflict: 2})
+	assertCoverage(0, 0, &latest)
+	put(models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &latest, FoldersSkippedCap: 17, FoldersSkippedConflict: 2})
+	assertCoverage(0, 0, &latest)
+	put(models.SyncState{LastSyncedAt: &completed, FoldersSkippedCap: 17, FoldersSkippedConflict: 2})
+	put(models.SyncState{FoldersSkippedCap: 17, FoldersSkippedConflict: 2})
+	assertCoverage(0, 0, &latest)
+	delayed := latest.Add(time.Minute)
+	completed = delayed.Add(time.Minute)
+	put(models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &latest})
+	put(models.SyncState{LastSyncedAt: &delayed, FoldersSkippedCap: 17, FoldersSkippedConflict: 2})
+	assertCoverage(0, 0, &latest)
+	got, err := repo.Get(t.Context(), f.account)
+	if err != nil || got.LastSyncedAt == nil || !got.LastSyncedAt.Equal(completed) {
+		t.Fatalf("latest completion: %+v %v", got, err)
+	}
+	newer := completed.Add(time.Minute)
+	put(models.SyncState{LastSyncedAt: &newer, FoldersSkippedCap: 4, FoldersSkippedConflict: 1})
+	assertCoverage(4, 1, nil)
+	put(models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &latest})
+	assertCoverage(4, 1, nil)
+	put(models.SyncState{FoldersSkippedCap: 3})
+	assertCoverage(3, 0, nil)
+}
+
+func TestLiveMailTransportSyncFolderCoverageRejectsInvalidObservation(t *testing.T) {
+	for _, invalid := range []time.Time{time.Now().Add(time.Hour), {}, time.Unix(0, 0)} {
+		t.Run(invalid.String(), func(t *testing.T) {
+			f := newTransportFixture(t)
+			repo := NewEmailSyncStateRepository(f.db)
+			completed := time.Now().UTC().Add(-time.Hour).Truncate(time.Millisecond)
+			first := completed.Add(time.Minute)
+			latest := first.Add(time.Minute)
+			bad := models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &invalid, FoldersSkippedCap: 17, FoldersSkippedConflict: 2}
+			put := func(state models.SyncState) {
+				t.Helper()
+				if err := repo.Put(t.Context(), f.user, f.account, &state); err != nil {
+					t.Fatal(err)
+				}
+			}
+			assertCoverage := func(capCount int, observed *time.Time) {
+				t.Helper()
+				got, err := repo.Get(t.Context(), f.account)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got == nil || got.FoldersSkippedCap != capCount || got.FoldersSkippedConflict != 0 || got.LastSyncedAt == nil || !got.LastSyncedAt.Equal(completed) {
+					t.Fatalf("coverage or completion: %+v", got)
+				}
+				if (observed == nil) != (got.FolderCoverageObservedAt == nil) || (observed != nil && !got.FolderCoverageObservedAt.Equal(*observed)) {
+					t.Fatalf("observation: %+v; want %v", got, observed)
+				}
+			}
+			put(bad)
+			assertCoverage(0, nil)
+			put(models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &first, FoldersSkippedCap: 4})
+			put(bad)
+			assertCoverage(4, &first)
+			put(models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &latest, FoldersSkippedCap: 3})
+			put(bad)
+			assertCoverage(3, &latest)
+		})
+	}
+}
+
+func TestLiveMailTransportSyncFolderCoverageAllowsBoundedClockSkew(t *testing.T) {
+	f := newTransportFixture(t)
+	repo := NewEmailSyncStateRepository(f.db)
+	var observed time.Time
+	if err := f.pool.QueryRow(t.Context(), `SELECT now() + interval '4 seconds'`).Scan(&observed); err != nil {
+		t.Fatal(err)
+	}
+	completed := observed.Add(-time.Hour)
+	first := models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &observed, FoldersSkippedCap: 4}
+	if err := repo.Put(t.Context(), f.user, f.account, &first); err != nil {
+		t.Fatal(err)
+	}
+	got, err := repo.Get(t.Context(), f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FoldersSkippedCap != 4 || got.FolderCoverageObservedAt == nil || !got.FolderCoverageObservedAt.Equal(observed) {
+		t.Fatalf("bounded lead was dropped or restamped: %+v", got)
+	}
+	latest := observed.Add(time.Millisecond)
+	if err := repo.Put(t.Context(), f.user, f.account, &models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &latest, FoldersSkippedCap: 3}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Put(t.Context(), f.user, f.account, &first); err != nil {
+		t.Fatal(err)
+	}
+	got, err = repo.Get(t.Context(), f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FoldersSkippedCap != 3 || got.FolderCoverageObservedAt == nil || !got.FolderCoverageObservedAt.Equal(latest) || got.LastSyncedAt == nil || !got.LastSyncedAt.Equal(completed) {
+		t.Fatalf("replay ordering or successful-sync clock changed: %+v", got)
+	}
+}
+
+func TestLiveMailTransportSyncFolderCoverageRequiresCurrentWorker(t *testing.T) {
+	f := newTransportFixture(t)
+	repo := NewEmailSyncStateRepository(f.db)
+	oldWorker, currentWorker := uuid.New(), uuid.New()
+	if _, err := f.pool.Exec(t.Context(), `INSERT INTO fleet_nodes(id,role) VALUES($1,'worker'),($2,'worker')`, oldWorker, currentWorker); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := f.pool.Exec(context.Background(), `DELETE FROM fleet_nodes WHERE id IN ($1,$2)`, oldWorker, currentWorker); err != nil {
+			t.Error(err)
+		}
+	})
+	if _, err := f.pool.Exec(t.Context(), `INSERT INTO workers(id) VALUES($1),($2)`, oldWorker, currentWorker); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := f.pool.Exec(context.Background(), `DELETE FROM workers WHERE id IN ($1,$2)`, oldWorker, currentWorker); err != nil {
+			t.Error(err)
+		}
+	})
+	assign := func(worker *uuid.UUID) {
+		t.Helper()
+		if _, err := f.pool.Exec(t.Context(), `UPDATE email_accounts SET worker_id=$2 WHERE id=$1`, f.account, worker); err != nil {
+			t.Fatal(err)
+		}
+	}
+	completed := time.Now().UTC().Add(-time.Hour).Truncate(time.Millisecond)
+	first := completed.Add(time.Minute)
+	latestOld := first.Add(2 * time.Minute)
+	oldReport := models.SyncState{LastSyncedAt: &completed, FolderCoverageObservedAt: &first, FoldersSkippedCap: 4}
+	put := func(worker uuid.UUID, state *models.SyncState, want bool) {
+		t.Helper()
+		accepted, _, err := repo.PutFromWorker(t.Context(), f.user, f.account, worker, uuid.Nil, state, nil)
+		if err != nil || accepted != want {
+			t.Fatalf("accepted=%t want=%t err=%v", accepted, want, err)
+		}
+	}
+	put(oldWorker, &oldReport, false)
+	assign(&oldWorker)
+	put(oldWorker, &oldReport, true)
+	seed, err := repo.Get(t.Context(), f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assign(&currentWorker)
+	oldReport.FolderCoverageObservedAt = &latestOld
+	oldReport.FoldersSkippedCap = 17
+	oldReport.BackfillSynced = 99
+	put(oldWorker, &oldReport, false)
+	put(uuid.Nil, &oldReport, false)
+	currentObservation := first.Add(time.Minute)
+	seed.FolderCoverageObservedAt = &currentObservation
+	seed.FoldersSkippedCap = 0
+	put(currentWorker, seed, true)
+	put(oldWorker, &oldReport, false)
+	got, err := repo.Get(t.Context(), f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FoldersSkippedCap != 0 || got.BackfillSynced != 0 || got.FolderCoverageObservedAt == nil || !got.FolderCoverageObservedAt.Equal(currentObservation) {
+		t.Fatalf("current owner's report: %+v", got)
+	}
+	assign(nil)
+	put(currentWorker, &oldReport, false)
+}
+
+func TestLiveMailTransportSyncReportRequiresCurrentGeneration(t *testing.T) {
+	f := newTransportFixture(t)
+	repo := NewEmailSyncStateRepository(f.db)
+	worker := uuid.New()
+	if _, err := f.pool.Exec(t.Context(), `INSERT INTO fleet_nodes(id,role) VALUES($1,'worker')`, worker); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := f.pool.Exec(context.Background(), `DELETE FROM fleet_nodes WHERE id=$1`, worker); err != nil {
+			t.Error(err)
+		}
+	})
+	if _, err := f.pool.Exec(t.Context(), `INSERT INTO workers(id) VALUES($1)`, worker); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(t.Context(), `UPDATE email_accounts SET worker_id=$2 WHERE id=$1`, f.account, worker); err != nil {
+		t.Fatal(err)
+	}
+	put := func(report uuid.UUID, state models.SyncState, want bool) {
+		t.Helper()
+		accepted, _, err := repo.PutFromWorker(t.Context(), f.user, f.account, worker, report, &state, nil)
+		if err != nil || accepted != want {
+			t.Fatalf("report=%s pass=%s accepted=%t want=%t err=%v", report, state.TransportGeneration, accepted, want, err)
+		}
+	}
+	put(f.generation, models.SyncState{TransportGeneration: f.generation, BackfillStatus: models.SyncBackfillRunning, BackfillSynced: 3}, true)
+	var current uuid.UUID
+	if err := f.pool.QueryRow(t.Context(), `UPDATE email_accounts SET transport_generation=gen_random_uuid() WHERE id=$1 RETURNING transport_generation`, f.account).Scan(&current); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(t.Context(), `UPDATE email_sync_state SET backfill_status='complete', backfill_synced=0 WHERE email_id=$1`, f.account); err != nil {
+		t.Fatal(err)
+	}
+	put(uuid.Nil, models.SyncState{TransportGeneration: f.generation, BackfillStatus: models.SyncBackfillRunning, BackfillSynced: 9}, false)
+	put(f.generation, models.SyncState{BackfillStatus: models.SyncBackfillRunning, BackfillSynced: 9}, false)
+	got, err := repo.Get(t.Context(), f.account)
+	if err != nil || got.BackfillStatus != models.SyncBackfillComplete || got.BackfillSynced != 0 {
+		t.Fatalf("superseded generation wrote: %+v err=%v", got, err)
+	}
+	put(current, models.SyncState{BackfillStatus: models.SyncBackfillComplete, BackfillSynced: 1}, true)
+	put(uuid.Nil, models.SyncState{BackfillStatus: models.SyncBackfillComplete, BackfillSynced: 2}, true)
+	put(current, models.SyncState{TransportGeneration: current, BackfillStatus: models.SyncBackfillComplete, BackfillSynced: 3}, true)
+}
+
+func TestLiveMailTransportSyncReportCommitsRecoveryAndBothClocks(t *testing.T) {
+	f := newTransportFixture(t)
+	repo := NewEmailSyncStateRepository(f.db)
+	worker := uuid.New()
+	if _, err := f.pool.Exec(t.Context(), `INSERT INTO fleet_nodes(id,role) VALUES($1,'worker')`, worker); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := f.pool.Exec(context.Background(), `DELETE FROM fleet_nodes WHERE id=$1`, worker); err != nil {
+			t.Error(err)
+		}
+	})
+	if _, err := f.pool.Exec(t.Context(), `INSERT INTO workers(id) VALUES($1)`, worker); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(t.Context(), `UPDATE email_accounts SET worker_id=$2 WHERE id=$1`, f.account, worker); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().UTC().Add(-time.Hour).Truncate(time.Millisecond)
+	if _, err := f.repo.CreateOnce(t.Context(), f.report(models.MailTransportSync, &old)); err != nil {
+		t.Fatal(err)
+	}
+	synced := old.Add(time.Minute)
+	state := &models.SyncState{LastSyncedAt: &synced, FolderCoverageObservedAt: &synced, FoldersSkippedCap: -1}
+	calls := 0
+	recover := func(ctx context.Context, _ *SyncStatePrior) error {
+		calls++
+		if xerr := f.repo.RecordTransportSuccess(ctx, f.account, models.MailTransportSync, synced, nil, f.generation); xerr != nil {
+			return xerr
+		}
+		return nil
+	}
+	if accepted, _, err := repo.PutFromWorker(t.Context(), f.user, f.account, uuid.New(), uuid.Nil, state, recover); err != nil || accepted || calls != 0 {
+		t.Fatalf("declined report recovered: accepted=%t calls=%d err=%v", accepted, calls, err)
+	}
+	if accepted, _, err := repo.PutFromWorker(t.Context(), f.user, f.account, worker, uuid.Nil, state, recover); err == nil || accepted {
+		t.Fatalf("invalid state committed: accepted=%t err=%v", accepted, err)
+	}
+	var accountAt *time.Time
+	var recoveries int
+	if err := f.pool.QueryRow(t.Context(), `SELECT last_synced_at FROM email_accounts WHERE id=$1`, f.account).Scan(&accountAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.pool.QueryRow(t.Context(), `SELECT count(*) FROM email_account_transport_recovery WHERE email_account_id=$1`, f.account).Scan(&recoveries); err != nil {
+		t.Fatal(err)
+	}
+	got, err := repo.Get(t.Context(), f.account)
+	if err != nil || got != nil || accountAt != nil || recoveries != 0 || len(f.errors(t, true)) != 1 || calls != 1 {
+		t.Fatalf("failed state escaped rollback: state=%+v account=%v recoveries=%d calls=%d err=%v", got, accountAt, recoveries, calls, err)
+	}
+	state.FoldersSkippedCap = 4
+	if accepted, _, err := repo.PutFromWorker(t.Context(), f.user, f.account, worker, uuid.Nil, state, recover); err != nil || !accepted {
+		t.Fatalf("accepted=%t err=%v", accepted, err)
+	}
+	got, err = repo.Get(t.Context(), f.account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.pool.QueryRow(t.Context(), `SELECT last_synced_at FROM email_accounts WHERE id=$1`, f.account).Scan(&accountAt); err != nil {
+		t.Fatal(err)
+	}
+	if got.LastSyncedAt == nil || accountAt == nil || !got.LastSyncedAt.Equal(synced) || !accountAt.Equal(synced) || len(f.errors(t, true)) != 0 || calls != 2 {
+		t.Fatalf("accepted clocks/recovery: state=%+v account=%v calls=%d", got, accountAt, calls)
+	}
+}

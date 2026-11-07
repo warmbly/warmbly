@@ -197,24 +197,41 @@ func (r *webauthnRepository) Rename(ctx context.Context, userID, id uuid.UUID, n
 	return nil
 }
 
+// Delete removes a passkey unless it is the account's last way to sign in.
 func (r *webauthnRepository) Delete(ctx context.Context, userID, id uuid.UUID) *errx.Error {
-	query := `
-		DELETE FROM webauthn_credentials
-		WHERE id = $1 AND user_id = $2
-	`
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		db.CaptureError(err, "begin passkey delete", []any{userID, id}, "begin")
+		return errx.InternalError()
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
 
+	remains, err := signInMethodRemains(ctx, tx, userID, "", id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errx.ErrPasskeyNotFound
+	}
+	if err != nil {
+		db.CaptureError(err, "lock sign-in methods", []any{userID, id}, "queryrow")
+		return errx.InternalError()
+	}
+
+	query := `DELETE FROM webauthn_credentials WHERE id = $1 AND user_id = $2`
 	params := []any{id, userID}
-
-	cmd, err := r.DB.Exec(ctx, query, params...)
+	cmd, err := tx.Exec(ctx, query, params...)
 	if err != nil {
 		db.CaptureError(err, query, params, "exec")
 		return errx.InternalError()
 	}
-
 	if cmd.RowsAffected() == 0 {
 		return errx.ErrPasskeyNotFound
 	}
-
+	if !remains {
+		return errx.ErrLastSignInMethod
+	}
+	if err := tx.Commit(ctx); err != nil {
+		db.CaptureError(err, query, params, "commit")
+		return errx.InternalError()
+	}
 	return nil
 }
 

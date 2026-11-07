@@ -76,6 +76,8 @@ their TLS certificates and origin configuration. Put those hostnames in
 the tracking service. The empty default keeps ordinary single-host deployments
 unchanged. Validate each hostname before moving its traffic.
 
+Customer domains that verify later need no list. Set `tracking_serves_unmatched_hosts = true` and the listener sends any host no rule matches to the tracking service instead of answering `404`, and the backend registers each verified domain at the edge itself when the [Cloudflare for SaaS settings](/development/configuration/#customer-domains-behind-cloudflare-for-saas) are set. The tracking service answers an unknown host with its own `404` and remembers the miss for a minute, so the backend is asked about each unknown name about once a minute. Turn it on once the tracking service has running tasks: the listener then sends every customer host to the same target group as the tracking host itself. The default keeps the `404` at the listener.
+
 ## Size tasks from measurements
 
 Fargate bills provisioned CPU and memory. Its smallest Linux task has 0.25 vCPU
@@ -116,6 +118,35 @@ IP per worker. The root uses standard CPU credits to cap burst charges. Bootstra
 prepares each host without starting its worker, so identity and credentials can
 be checked before a sequential handover. Check mailbox authentication when the
 outbound IP changes, and preserve each worker ID throughout the move.
+The same root can instead run an autoscaling fleet with no public IPv4 address
+on any worker; see [AWS worker fleet](/development/aws-workers/).
+
+## Scale tasks
+
+Terraform sets each service's task count once and then leaves it alone, so the
+runtime root's `autoscaling` map is what moves it afterwards. A service that is
+not listed keeps the count it was given by hand.
+
+- The consumer is listed by default, between one and six tasks. Every consumer
+  task reads one shared queue, so the root scales it on that queue's backlog:
+  worker events still waiting for a free lane. A backlog of
+  `consumer_backlog_scale_out` events (default `1000`) held for two minutes adds
+  a task, and ten times that adds two. After `consumer_quiet_minutes` (default
+  `30`) with nothing waiting, one task is removed. The consumer publishes the
+  backlog every minute through `CONSUMER_METRICS_CLOUDWATCH`, which the root
+  sets along with permission to publish it. A missing metric neither adds nor
+  removes tasks, and a consumer image from before the publisher (including one
+  restored by a rollback) publishes nothing, so after a deploy or rollback check
+  that `WorkerEventBacklog` still has fresh data points. A task keeps each mailbox's events in order among the ones it
+  took; with more than one task, two events for one mailbox can be handled at
+  the same time by different tasks.
+- `backend`, `tracking` and `forms` scale on average CPU when listed, at `cpu`
+  percent (default `60`). Set `min` to the count each one runs today.
+- `realtime` keeps a fixed count. Presence is tracked inside each task, so
+  members connected to different tasks would not see each other.
+
+To hold a service at one count, suspend its scaling activities in Application
+Auto Scaling, or remove it from `autoscaling`.
 
 ## Prepare configuration
 
@@ -204,7 +235,8 @@ Terraform applies share one queue, so only one change reaches production at a
 time and none is cancelled by the next.
 
 Terraform owns the shape of every task definition (environment, secret
-references, sizes, health checks) and the workflow owns only the image. A deploy:
+references, sizes, health checks). The deployment workflow selects images and
+preserves the narrowly scoped attachment setting described below. A deploy:
 
 1. Checks that the tag's commit is on `main`, that every image digest carries
    build provenance from the release workflow, and that the tag is not older
@@ -220,7 +252,18 @@ references, sizes, health checks) and the workflow owns only the image. A deploy
    stable.
 5. Starts a [canary rollout](/development/warmblyctl/#fleet) of the worker and
    consumer hosts from the `ops` task. The first host moves alone and the rest
-   follow after it has stayed healthy for 30 minutes.
+   follow after it has stayed healthy for five minutes by default. Every host
+   must then finish the same healthy-uptime bake before the rollout completes.
+   Two stages therefore need at least ten minutes, plus image pulls, restarts
+   and heartbeat delivery. Missing heartbeats, host rollback and repeated
+   restarts still stop admission. Self-hosted CLI rollout defaults remain
+   unchanged at 30 minutes per stage.
+
+The fleet-start task retries an image-pull failure at most twice, after 30 and
+60 seconds, only when ECS confirms the task stopped before its command ran.
+It reuses the exact task definition and command with an idempotent token per
+attempt. An executed command failure or unresolved task requires inspection;
+migration tasks are never automatically retried by this recovery path.
 
 During the bake, a service fails when one of its alarms fires or ECS rolls it
 back. Each public service has two alarms, which ECS also uses to roll back on
@@ -250,10 +293,59 @@ change to a value they hold once their env refreshes
 ([keeping a node's env current](/development/configuration/#keeping-a-nodes-env-current)).
 
 `services` limits a run to some of the five services, and `bake_seconds` changes
-the bake. Releases published before build provenance existed fail the provenance
+the ECS service bake. `fleet_bake_seconds` sets the healthy uptime required per
+worker stage, from 300 through 3600 seconds. Automatic releases use the
+`AWS_FLEET_BAKE_SECONDS` repository variable, defaulting to 300. Set it to 1800
+for a longer observation window. This changes future rollouts; the policy of an
+active rollout stays fixed. Releases published before build provenance existed fail the provenance
 check; dispatch those once with `require_attestation` off. The automatic
 redeploy after a Terraform apply cannot turn it off, so until a release with
 provenance is running it stops at that check and changes nothing.
+
+### Configure private attachment downloads
+
+After every backend runs a published release at least `v0.6.75`, dispatch
+**Configure AWS backend** on `main`. Supply the running release tag, exact live
+backend task definition ARN, a JSON array of every current running backend task
+ARN in `expected_backend_tasks`, and the desired `attachment_download_proxy` boolean.
+The workflow requires `AWS_DEPLOY_ENABLED=true`, uses `aws-production` and shares
+the deployment queue. Collect the task identities through the operator's normal
+read-only inventory access. The workflow uses the existing deployment role's
+task-description and service-update permissions.
+
+Keep backend configuration changes exclusive for the entire run. Routine writers
+use the shared `aws-production` queue. Before an emergency console or CLI change,
+stop and settle the active workflow and inspect the current service. The expected
+revision is a snapshot check: ECS `UpdateService` has no atomic expected-revision
+precondition to fence a writer outside that queue.
+
+The operation verifies release provenance and every supplied backend task against
+the service's complete deployment and running count, then
+clones the live definition and changes only `CAMPAIGN_ATTACHMENT_DOWNLOAD_PROXY`.
+It preserves images, roles, secret references and version pins, TLS settings,
+resources, health checks, stop timeout and desired count. It watches the stable
+service and alarms for 300 seconds, reads back the definition, and restores
+and verifies the exact previous revision and service counts on failure. A concurrent revision or
+count change stops automatic rollback for operator inspection. It runs no
+migration, one-off task or fleet rollout and does not modify another service.
+Refresh the task snapshot before a repeated request. A stale, missing, duplicate,
+foreign or draining task is refused. A request for the existing setting observes
+another full bake without rolling again. An already enabled setting requires
+either its live management tag or a value in the latest deployment definition.
+If neither owns it, set the value explicitly in Terraform before requesting no change.
+
+The task definition records the setting in
+`warmbly-config-attachment-download-proxy`. Future deployments and secret
+refreshes carry the live managed value when Terraform does not explicitly set
+the environment variable. An explicit Terraform `true` or `false` value takes
+ownership. A prepared revision that never reached the service cannot activate
+the setting during a later release. To roll back below `v0.6.75`, explicitly
+disable the proxy first; confirm existing download links have expired before
+removing route support. After rollout, independently inventory and describe every
+new running task, confirm the expected task definition and image, then perform an
+authorized download check of the bytes and response headers. Workflow success
+alone does not complete those independent checks. Self-host configuration remains opt-in
+and defaults to `false`.
 
 ## Rotate keys
 
@@ -317,7 +409,8 @@ plan reaches a log, a comment or an artifact.
   password, which the plan role may not.
 - On merge, each stack is planned in order: foundation, runtime, workers. A
   stack that only creates and updates applies on its own. One that replaces or
-  destroys anything stops and waits for approval in the
+  destroys anything, or changes the dedicated recovery evidence IAM role or its
+  inline policy, stops and waits for approval in the
   `aws-infrastructure-approval` environment, and the stacks after it wait too.
   On approval it plans again and applies only if the plan is still the one that
   was approved. A new task definition revision counts as an update, because the
@@ -328,6 +421,280 @@ plan reaches a log, a comment or an artifact.
 The bootstrap stack stays manual. So does any change to the CI roles themselves: the apply role cannot
 change its own permissions or trust, or the plan role's, so an administrator
 applies those by hand.
+
+## Private recovery evidence writer
+
+The hosted runtime supports a separate private archive writer with
+`tls_recovery_evidence_writer = true`. It defaults to `false`, including when
+`terraform_ci` is already enabled, and changes no existing self-host configuration.
+It requires the hosted production account, deployment name, state bucket,
+`github_repository = "warmbly/warmbly"` and `terraform_ci = true`.
+
+The setting creates `warmbly-production-tls-recovery-evidence` and one inline
+policy. The role accepts GitHub OIDC only for the immutable Warmbly repository
+and owner IDs, `main`, and the `aws-infrastructure-plan` or
+`aws-infrastructure-approval` environments. These claims do not uniquely identify
+a workflow file; reviewed main source and environment controls remain required.
+The role has no managed-policy attachments and its sessions are limited to one hour.
+
+Uploads are limited to `plan.tgz`, `apply.tgz` and `verify.tgz` under
+`warmbly/production/diagnostics/runtime-tls-recovery/*/1/` in the hosted state
+bucket. Each request must use TLS, specify AES256 encryption and the expected
+resource account, and include `If-None-Match` for conditional creation. The
+uploader validates its SHA-256 checksum and the returned S3 version. The IAM
+wildcard does not validate numeric run IDs; the uploader must check the run and
+attempt. This role grants no object reads, deletes, state writes or deployment
+permissions. It does not establish Object Lock or retention protection against
+other principals.
+
+Any managed change to this role or policy, including creation, requires the
+existing `aws-infrastructure-approval` gate. Review the complete plan and require
+only the two expected create-only resources when provisioning the writer.
+After approval, read back its trust, inline policy and attachments before use.
+The `tls_recovery_evidence_role_arn` output is present only when enabled.
+
+Provisioning the role does not enable or dispatch recovery. Configure its ARN as
+`AWS_TLS_RECOVERY_EVIDENCE_ROLE_ARN` where both recovery job environments can read
+it. A recovery workflow, its immutable private contract and snapshots, required
+reviewers, self-review prevention and administrator-bypass restrictions need
+separate review before enablement. Keep recovery disabled until those checks pass.
+An existing environment is not proof that these additional controls are configured.
+
+## Encrypt traffic inside the VPC
+
+The load balancer terminates the public TLS connection. With `target_tls` set,
+the hops behind it are TLS too: the load balancer reaches each task over HTTPS
+with HTTPS health checks, and the forms and tracking services reach the
+backend's internal API at `https://backend.<namespace>:<target_tls_port>`,
+verifying its certificate. The services read the settings described under
+[TLS listeners](/development/configuration/#tls-listeners).
+
+The two hops trust different things. A load balancer does not validate its
+targets' certificates, so forms, tracking and realtime serve a certificate
+generated in memory at boot. The forms and tracking services do verify the
+backend, so it serves a certificate you supply, and they trust exactly that
+certificate (`BACKEND_INTERNAL_CA`) rather than any public authority. The
+internal hop stays on the private service-discovery name, so the internal API
+token never leaves the VPC.
+
+### Prepare the backend certificate
+
+Create a key pair naming the private host. Use the runtime `namespace`
+(`warmbly.internal` by default):
+
+```bash
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 825 \
+  -subj "/CN=backend.warmbly.internal" \
+  -addext "subjectAltName=DNS:backend.warmbly.internal" \
+  -addext "basicConstraints=critical,CA:FALSE" \
+  -addext "keyUsage=critical,digitalSignature" \
+  -addext "extendedKeyUsage=serverAuth" \
+  -keyout key.pem -out cert.pem
+```
+
+Add the contents of `key.pem` to a new version of the backend secret as
+`SERVE_TLS_KEY`, add `SERVE_TLS_KEY` to the backend's `secret_keys` and point
+its `secret_version_id` at that version. Put the contents of `cert.pem` in the
+runtime var file as `backend_internal_certificate`; it is public. The plan
+refuses `target_tls` without both. Replace the pair before it expires: the
+backend logs a line at boot inside the last 30 days, and an expired certificate
+stops click tracking and hosted forms.
+
+### Move through the stages
+
+`target_tls` takes six values. Change it one stage at a time, and let each
+merge finish its apply and redeploy before the next:
+
+| Stage | What changes |
+|---|---|
+| `off` | Nothing; tasks serve plain HTTP only |
+| `serve` | Every load-balanced task also serves TLS on `target_tls_port` (default `8443`), and the security groups open that port to the load balancer and between tasks. Traffic is unchanged |
+| `both` | An HTTPS target group per service is attached to its listener rule at weight 0 and the tasks register in both groups. The forms and tracking services move to the backend's TLS port |
+| `route` | Listener rules forward to HTTPS and alarms watch the HTTPS groups. The HTTP groups, healthy registrations and network rules remain ready while the new path bakes |
+| `drain` | After the route deployment and bakes pass, ECS stops registering HTTP targets and listeners drop their HTTP references. The groups and network rules remain while connections drain |
+| `on` | After the drain deployment and bakes pass, the empty HTTP groups, the plain-port security group rules and the internal `8080` rule are removed. Every plain listener is bound to loopback for the container health check only |
+
+Each stage keeps the listeners the previous one used, so a rolling deploy never
+meets a task that cannot answer. `serve` and `both` only add task definition
+revisions and resources, so they apply on their own. `route` performs the traffic
+switch without deleting network rules or target groups. It must finish its normal
+release redeploy and bakes before a separately approved `drain` run. Cleanup checks
+that the HTTP groups have no load balancer references or registered targets and
+that every public service uses only its HTTPS target group. ECS waits for a steady
+state during these stages.
+
+Before `serve`, the running release has to support `SERVE_TLS`. An older image
+ignores the setting and keeps working in `serve`, but not in `both` or `on`, so
+advance past `serve` only once rolling back to a release without it is no longer
+needed. A stage can be undone by setting the previous one while the current
+one is `serve` or `both`. From `route`, returning to `both` sends traffic to the
+still-registered HTTP targets. From `drain`, return to `route` first and wait for
+healthy HTTP registrations before returning to `both`. Stepping back from `on` is not supported, because it
+would forward to an HTTP target group that has no tasks yet; roll back images
+among releases that support `SERVE_TLS` instead.
+
+### Finalize TLS independently
+
+The manual **Finalize runtime TLS** workflow advances `both` to `route`, then
+`drain` and `on` in separate approved runs without applying other infrastructure
+changes. After verifying the pinned backend hop
+and every HTTPS target, upload the reviewed `both` runtime var file to
+`warmbly/production/vars/runtime-tls.tfvars.json` in the private state bucket.
+Keep its S3 version ID: the workflow reads that exact version in both jobs.
+
+Dispatch the workflow from `main` with stage `route`, that version ID and the
+currently deployed release tag. It prints resource addresses and actions for review and
+waits in `aws-infrastructure-approval`. After approval it rechecks HTTPS target
+health, replans and requires the complete resource changes to match the approved
+digest. Each job first requires all four services to be stable on the selected
+release with compatible TLS listeners and registrations. Route also requires
+healthy HTTP fallback targets. Route and drain plans refuse target-group and security-rule deletions. The scope
+guard refuses changes to other task definitions or infrastructure.
+
+After applying, it redeploys the same release to backend, forms, tracking and
+realtime through the normal attestation, secret comparison, alarm and bake gates.
+It does not start a worker rollout. After that run succeeds, persist
+`target_tls=route`, verify HTTPS health and routes, and upload a new versioned
+snapshot. Dispatch stage `drain` with that snapshot and the successful route run ID
+as `previous_run`. After the drain run succeeds, persist `target_tls=drain`, upload
+a new snapshot, and dispatch `on` with the successful drain run ID. Each stage
+verifies the preceding workflow completed all bakes. Cleanup is refused until
+HTTP references and registrations have drained. Review and approve each
+plan separately. The scoped plan explicitly targets the HTTP groups, and an
+`on` plan must delete exactly the four groups for backend, forms, tracking and
+realtime. A plan that omits any group is refused. This check expects the normal
+drain-to-on transition; a partially completed transition requires a separately
+reviewed recovery path rather than an unchanged retry. Persist `target_tls=on` only after it succeeds, then verify the
+effective loopback listeners and HTTPS routes.
+
+### Validate recovery evidence
+
+The recovery validators keep a recovery contract separate from the normal
+route, drain and on transition checks. The baseline identifies four drained HTTP groups
+and their reviewed state projection. `check-state` verifies a supplied raw
+Terraform state file against the baseline SHA-256, lineage, serial and exact
+group identities. `check-plan` permits only the four corresponding deletions
+without refresh drift. The baseline and state version must come from a trusted,
+reviewed collection process; matching a file hash alone does not establish that
+provenance.
+
+`runtime-tls-recovery-lineage.sh` collects and checks the GitHub portion of a
+recovery contract. Its version 1 contract names `warmbly/warmbly` and three
+identities, `release`, `drain` and `failedOn`, each with a stable release `tag`,
+40-character commit `source`, numeric `runId` and numeric `attempt`. The current
+release is distinct from the historical release retained by both TLS runs.
+Collection reads the exact run attempts and the complete failed ON job inventory.
+It requires the current release and historical drain to have succeeded, the ON
+apply to have succeeded before a failed redeploy, and each workflow path, branch,
+title and source to match its declared role. The local checkout must include the
+release tag and full commit history so the checker can verify the tag and
+drain-to-ON-to-release ancestry. Collection writes a new private directory and
+refuses to overwrite a prior collection.
+
+`runtime-tls-recovery-inputs.sh` collects the private S3 inputs using only STS
+identity and S3 get/head operations. The baseline names the production `bucket`,
+the state `key`, version and hash, and a `snapshot` with its `key`, `versionId`,
+`sha256` and declared `releaseTag`. The cleanup vars use a new key under
+`warmbly/production/vars/runtime-tls-recovery/`, separate from the normal stage
+snapshot. Collection requires the expected account and bucket owner, exact
+version metadata, server-side encryption and matching file hashes. It validates
+the raw state identities and requires the latest state version to remain the
+reviewed one. The vars must name `warmbly-production` and `target_tls=on`.
+The resulting private directory contains raw state and vars and must remain
+private. Its `inputs.json` binds the selected versions and hashes; it does not
+establish that the declared release matches the live services or that those
+services are healthy.
+
+`runtime-tls-recovery-live.sh` collects current service and task descriptions,
+target health, listener rules, task security groups, alarms and public health
+responses. The reviewed raw state identifies the five services, four HTTPS
+groups, listener, nine forwarding rules and task security groups. All services
+must be stable with running tasks on the declared release's digest-pinned
+images. The four HTTP services require healthy tasks. A consumer definition
+without a health check has the explicit ECS `UNKNOWN` status rather than a
+synthetic healthy result. Registry manifest bytes are checked against their digest.
+A task may report the pinned index digest or its matching Linux platform digest;
+an index must contain the task definition's CPU architecture. An index report
+does not independently identify the resolved platform digest. The collector requires configured TLS,
+loopback-only HTTP, the reviewed backend certificate and pinned forms and tracking
+backend URL and CA. HTTPS targets must match running task addresses. It also
+requires nine HTTPS-only forwarding rules, no task ingress on the old HTTP ports,
+eight OK alarms and five HTTP 200 public responses. These observations verify
+configuration and health at collection time; they do not replace inspection of
+deployment logs or independent internal certificate-handshake evidence.
+
+### Review and run partial cleanup
+
+`runtime-tls-recovery.yml` is a separate manual recovery path. Normal TLS stage
+and predecessor checks remain unchanged. It never relabels an earlier release's
+drain, creates a release or starts a worker rollout. Existing self-host deployment
+and upgrade paths are unaffected.
+
+The recovery contract combines the baseline, S3 input and workflow-lineage
+fields above. Its `release.imagesSha256` binds the exact published `images.json`
+bytes. `planChangesSha256` binds the complete privately reviewed plan changes,
+including read and no-op entries and refresh drift. Calculate this hash from
+the private candidate plan with:
+
+```sh
+jq -cS '{resource_changes:(.resource_changes | sort_by(.address)),resource_drift:(.resource_drift // [] | sort_by(.address))}' \
+  private-plan.json | sha256sum
+```
+
+The private full plan must be inspected before this hash is accepted. Keep it,
+the contract, state and vars outside the checkout and public workflow artifacts.
+The workflow publishes only hashes and a scope summary. A dedicated evidence
+role archives complete runner files, including raw collections and Terraform
+logs, to a new private S3 object after each plan, apply and final verification,
+including failed attempts. Archives require encryption, checksum agreement,
+versioning and conditional creation without replacement. Archive failure blocks
+the next job. No raw evidence is uploaded to public workflow artifacts.
+
+Store the reviewed contract at a new key under
+`warmbly/production/vars/runtime-tls-recovery/` ending in `.contract.json`.
+Dispatch accepts its exact key, S3 version and file SHA-256. Repository variable
+`AWS_TLS_RECOVERY_ENABLED=true` explicitly enables this hosted-only path; it is
+disabled when unset. The approval environment must have required reviewers,
+prevent self-review and disallow administrator bypass. Missing configuration or
+unavailable environment metadata stops recovery. No role or environment policy
+is changed by the workflow.
+
+Before enabling recovery, provision and review the dedicated
+`warmbly-production-tls-recovery-evidence` role through the normal infrastructure
+approval process, then set `AWS_TLS_RECOVERY_EVIDENCE_ROLE_ARN` to its ARN in
+account `925323749693`. Its OIDC trust permits only this repository's
+`aws-infrastructure-plan` and `aws-infrastructure-approval` environments. Grant
+only `s3:PutObject` on
+`warmbly-terraform-use1-925323749693/warmbly/production/diagnostics/runtime-tls-recovery/*`,
+requiring AES256 server-side encryption. It needs no object read/delete or
+production management permissions. The existing plan role's state-lock-only
+write policy remains unchanged. The workflow refuses a missing or differently
+named evidence role; it does not create or grant permissions to that role.
+
+Plan and apply each re-collect exact workflow lineage, versioned S3 inputs and
+fresh live evidence. All ten published image variants require release-workflow
+provenance for the declared source commit. The only Terraform target is
+`aws_lb_target_group.service`, and the only permitted mutations are exactly four
+reviewed HTTP group deletions. Complete changes must match the contract's hash.
+Approval binds that hash, the exact contract bytes and workflow source. Apply
+uses `aws-infrastructure-approval` and the existing `aws-production` concurrency
+group, replans after approval and repeats live checks immediately before applying
+the saved plan. State advancement or any digest mismatch stops the run.
+
+After apply, state must retain every other resource unchanged and AWS must have
+no matching HTTP groups. A same-release redeploy uses the normal attested
+deployment path for all five services with explicit 300-second bakes, migration
+and secret checks, dropped-secret allowance disabled and `fleet=false`. The final
+job repeats state and live checks. Its `collect-archived` input mode reads the
+original reviewed state version solely for comparison with the new state; normal
+plan and apply collection still requires the reviewed state to be latest.
+
+Workflow reruns and local execution are refused. After a failure, inspect the
+private plan, state and logs and prepare a new reviewed recovery contract rather
+than retrying unchanged. Workflow success does not itself update a local TLS
+stage or attest worker broker credentials. Inspect actual provenance, migration
+and bake logs, preserve independent TLS and worker proof, and verify effective
+production state before recording ON as complete.
 
 ## One-time GitHub setup
 

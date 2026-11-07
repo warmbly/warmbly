@@ -25,6 +25,7 @@ func TestRequestLoggerKeepsCredentialsOutOfTheLog(t *testing.T) {
 	r.GET("/mailboxes/:remoteId/warmup-tokens/:token", ok)
 	r.GET("/invitations/lookup", ok)
 	r.POST("/cli-auth/codes/:code/approve", ok)
+	r.GET("/v1/campaign-attachments/download/:token", ok)
 
 	cases := []struct{ method, target, want, leak string }{
 		{"POST", "/api/v1/integrations/inbound/calendly/whsec-abc", "/api/v1/integrations/inbound/calendly/:secret", "whsec-abc"},
@@ -32,6 +33,7 @@ func TestRequestLoggerKeepsCredentialsOutOfTheLog(t *testing.T) {
 		{"GET", "/mailboxes/remote-7/warmup-tokens/warm-tok", "/mailboxes/remote-7/warmup-tokens/:token", "warm-tok"},
 		{"GET", "/invitations/lookup?token=invite-tok", "/invitations/lookup", "invite-tok"},
 		{"POST", "/cli-auth/codes/PAIR1234/approve", "/cli-auth/codes/:code/approve", "PAIR1234"},
+		{"GET", "/v1/campaign-attachments/download/private-file-capability", "/v1/campaign-attachments/download/:token", "private-file-capability"},
 	}
 	for _, tc := range cases {
 		buf.Reset()

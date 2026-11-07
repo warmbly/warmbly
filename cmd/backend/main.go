@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/warmbly/warmbly/internal/app/fleetmetrics"
+	"github.com/warmbly/warmbly/internal/app/mailpush"
 	"log"
 	"net/http"
 	"net/url"
@@ -27,6 +29,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/adminoutreach"
 	"github.com/warmbly/warmbly/internal/app/advanced"
 	"github.com/warmbly/warmbly/internal/app/appattest"
+	"github.com/warmbly/warmbly/internal/app/attachmentdownload"
 	"github.com/warmbly/warmbly/internal/app/unsublink"
 	"github.com/warmbly/warmbly/internal/observability/errs"
 
@@ -41,6 +44,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/appdirectory"
 	"github.com/warmbly/warmbly/internal/app/audit"
 	"github.com/warmbly/warmbly/internal/app/auth"
+	"github.com/warmbly/warmbly/internal/app/balance"
 	behaviorapp "github.com/warmbly/warmbly/internal/app/behavior"
 	"github.com/warmbly/warmbly/internal/app/bootstrap"
 	"github.com/warmbly/warmbly/internal/app/campaign"
@@ -52,7 +56,6 @@ import (
 	"github.com/warmbly/warmbly/internal/app/contact"
 	"github.com/warmbly/warmbly/internal/app/contactimport"
 	"github.com/warmbly/warmbly/internal/app/credits"
-	"github.com/warmbly/warmbly/internal/app/creditwatch"
 	"github.com/warmbly/warmbly/internal/app/crm"
 	"github.com/warmbly/warmbly/internal/app/crmmode"
 	"github.com/warmbly/warmbly/internal/app/customhost"
@@ -60,6 +63,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/dangerzone"
 	"github.com/warmbly/warmbly/internal/app/delegation"
 	"github.com/warmbly/warmbly/internal/app/discount"
+	"github.com/warmbly/warmbly/internal/app/edgehost"
 	"github.com/warmbly/warmbly/internal/app/email"
 	"github.com/warmbly/warmbly/internal/app/emailsend"
 	emailverifyapp "github.com/warmbly/warmbly/internal/app/emailverify"
@@ -79,6 +83,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/instancesettings"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/keystatus"
+	"github.com/warmbly/warmbly/internal/app/leadfinder"
 	"github.com/warmbly/warmbly/internal/app/leadsync"
 	"github.com/warmbly/warmbly/internal/app/mailboxavatar"
 	"github.com/warmbly/warmbly/internal/app/mailboximport"
@@ -87,6 +92,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/monitoring"
 	"github.com/warmbly/warmbly/internal/app/nativeactions"
 	"github.com/warmbly/warmbly/internal/app/nodelogs"
+	"github.com/warmbly/warmbly/internal/app/nodescope"
 	"github.com/warmbly/warmbly/internal/app/notification"
 	"github.com/warmbly/warmbly/internal/app/oauth"
 	"github.com/warmbly/warmbly/internal/app/oidcauth"
@@ -148,12 +154,14 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/storage"
 	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/jobs"
+	"github.com/warmbly/warmbly/internal/leader"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/notify"
 	"github.com/warmbly/warmbly/internal/observability"
 	productanalytics "github.com/warmbly/warmbly/internal/observability/analytics"
 	"github.com/warmbly/warmbly/internal/pkg/appleauth"
 	"github.com/warmbly/warmbly/internal/pkg/captcha"
+	"github.com/warmbly/warmbly/internal/pkg/cfsaas"
 	"github.com/warmbly/warmbly/internal/pkg/domainproof"
 	"github.com/warmbly/warmbly/internal/pkg/emailverify"
 	"github.com/warmbly/warmbly/internal/pkg/encrypt"
@@ -162,6 +170,7 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/idtoken"
 	"github.com/warmbly/warmbly/internal/pkg/mailhost"
 	"github.com/warmbly/warmbly/internal/pkg/mailvendor"
+	"github.com/warmbly/warmbly/internal/pkg/servetls"
 	"github.com/warmbly/warmbly/internal/pkg/typesafe"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/scheduler"
@@ -226,15 +235,18 @@ func main() {
 	var fleetNodeRepo repository.FleetNodeRepository
 	var fleetSettingsRepo repository.FleetSettingsRepository
 	var fleetNodeService *fleetnode.Service
+	var nodeScopeService *nodescope.Service
 	var keyStatusDB keystatus.DB
 	var tasksService tasks.TasksService
 	var advancedService advanced.Service
 	var unsubSigner *unsublink.Signer
+	var attachmentDownloads *attachmentdownload.Signer
 	var warmupContentRepo repository.WarmupContentRepository
 	var warmupContentService warmupcontent.Service
 	var creditRepository repository.CreditRepository
 	var aiSettingsRepository repository.AISettingsRepository
 	var creditService credits.CreditService
+	var balanceService *balance.Service
 	var aiDraftRepo repository.AIDraftRepository
 	var writingGenerator generation.WritingGenerator
 	var aiProvider generation.Provider
@@ -266,7 +278,6 @@ func main() {
 	var subscriptionService subscription.SubscriptionService
 	var stripeService stripe.StripeService
 	var discountService discount.DiscountService
-	var referralService referral.Service
 	var organizationService organization.OrganizationService
 	// Private plan offers and the credential-free Cloud warmup grant; selfExecutionGrants is shared with the pool link.
 	var planOfferService planoffer.Service
@@ -334,6 +345,8 @@ func main() {
 
 	// Pub/Sub for realtime streaming
 	var streamingPublisher *pubsub.StreamingPublisher
+	var mailPushSettings *mailpush.Settings
+	var mailPushWaker *mailpush.Waker
 
 	// Surfaced into the handler for avatar uploads and other direct
 	// repository / object-storage needs. Declared up here so they
@@ -377,6 +390,7 @@ func main() {
 	var leadSyncServiceForHandler leadsync.Service
 	var salesforceServiceForHandler *salesforce.Service
 	var apolloServiceForHandler *apollo.Service
+	var leadFinderServiceForHandler *leadfinder.Service
 	var clayServiceForHandler *clay.Service
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -625,14 +639,10 @@ func main() {
 			}
 		}
 
-		// Event bus + codec. Kafka bootstrap/SASL is only loaded for
-		// EVENTBUS_PROVIDER=kafka; the default NATS path needs none of it. The
-		// codec (codec.FromEnv) owns serialization end-to-end — Avro pulls
-		// SCHEMA_REGISTRY_URL from env, JSON needs nothing — so a NATS + JSON
-		// self-host requires no Kafka or Schema Registry config.
+		// Dual readers retain Kafka credentials until its backlog and rollback window close.
 		var kafkaBootstrapServers string
 		var kafkaSaslConfig *kafka.SASLConfig
-		if config.EventBusProvider() == "kafka" {
+		if config.EventBusUsesKafka() {
 			kafkaBootstrapServers, err = cfg.LoadKafkaBootstrapServers(ctx)
 			if err != nil {
 				errs.CaptureFatal(err)
@@ -710,7 +720,11 @@ func main() {
 		inboxTagRepository = repository.NewInboxTagRepository(primaryDB.Pool)
 		if key := config.TypeSafeAPIKey(); key != "" {
 			// One TypeSafe client for every typed judgment in this process.
-			typeSafeClient = typesafe.NewClient(key, typesafe.WithBillingRedis(cache.Client))
+			endpoint, err := config.TypeSafeEndpoint()
+			if err != nil {
+				log.Fatal(err)
+			}
+			typeSafeClient = typesafe.NewClient(key, typesafe.WithBillingRedis(cache.Client), typesafe.WithEndpoint(endpoint))
 		}
 		unsubscribeLinkRepository = repository.NewUnsubscribeLinkRepository(primaryDB.Pool)
 		customDomainRepository = repository.NewCustomDomainRepository(primaryDB.Pool)
@@ -796,8 +810,7 @@ func main() {
 
 		// Warmup content bank + offline AI generator. The generator rides OpenAI's
 		// Batch API specifically, so it only runs when the selected provider is
-		// OpenAI itself; otherwise the live send path keeps using the static
-		// library and admin generation returns "not configured".
+		// OpenAI itself; otherwise new threads wait for fresh approved content.
 		var generationClient *generation.GenerationClient
 		if (aiProviderName == "" || aiProviderName == "openai") && aiKey != "" {
 			generationClient = generation.NewClient(aiKey)
@@ -818,9 +831,9 @@ func main() {
 			writingGenerator = generation.NewAnthropicClient(aiKey)
 		}
 		creditRepository = repository.NewCreditRepository(primaryDB)
-		creditAutoTopUpAttemptRepository := repository.NewCreditAutoTopUpAttemptRepository(primaryDB)
+		savedCardChargeRepository := repository.NewSavedCardChargeRepository(primaryDB)
 		aiSettingsRepository = repository.NewAISettingsRepository(primaryDB)
-		creditService = credits.NewService(creditRepository, aiSettingsRepository, cache)
+		creditService = credits.NewService(creditRepository, aiSettingsRepository, instanceSettings, cache)
 		webhookRepository := repository.NewWebhookRepositorySealed(primaryDB.Pool, credEncrypter)
 		webhookService := webhook.NewService(webhookRepository)
 		webhookServiceForHandler = webhookService
@@ -862,6 +875,8 @@ func main() {
 			Cache:      cache,
 			AppDomains: oauthService.AllowedWebhookDomains,
 		})
+		// An enqueue in any process wakes the worker, so an idle queue's slower poll never delays a delivery.
+		go webhookWorker.Listen(ctx, primaryDB.ConnectSession)
 		go webhookWorker.Run(ctx)
 		campaignProgressRepository := repository.NewCampaignProgressRepository(primaryDB.Pool)
 		warmupService = warmupapp.NewService(warmupRepository)
@@ -873,7 +888,7 @@ func main() {
 		// Initialize new services for trial, feature gates, and worker assignment.
 		// The trial service seeds the free plan's monthly AI-credit allowance at
 		// trial start (planRepo + creditService, both already constructed above).
-		trialService = trial.NewService(subscriptionRepository, userRepostory, planRepository, creditService)
+		trialService = trial.NewService(subscriptionRepository, planRepository, creditService)
 		featureGateService = feature.NewService(subscriptionRepository, planRepository)
 		// An approved daily-send increase must raise what is enforced, not
 		// only what the dashboard shows.
@@ -913,12 +928,15 @@ func main() {
 				errs.CaptureFatal(err)
 				log.Fatal(err)
 			}
-			stripeService = stripe.NewService(stripeCfg, subscriptionRepository, planRepository, workerAssignmentService, discountService, creditAutoTopUpAttemptRepository)
+			stripeService = stripe.NewService(stripeCfg, subscriptionRepository, planRepository, workerAssignmentService, discountService, savedCardChargeRepository)
 		} else {
 			stripeService = stripe.NewDisabledService()
 		}
 
 		tokenService = token.NewService(primaryDB, tokenRepostory, cache, geoloc, authCfg.AuthSecret)
+		if os.Getenv("CAMPAIGN_ATTACHMENT_DOWNLOAD_PROXY") == "true" {
+			attachmentDownloads = attachmentdownload.New(authCfg.AuthSecret)
+		}
 		adminDevice = admindevice.New(cache, tokenService, oauthPublicBaseURL(apiCfg.Hostname), authCfg.AuthSecret)
 		// A revoked session takes the user's open sockets with it.
 		if streamingPublisher != nil {
@@ -964,11 +982,13 @@ func main() {
 		// views refresh live via the spine.
 		stripeService.WireCredits(creditService, auditService)
 
-		// Credit watch: after every fresh debit it fires the low-balance alert
-		// (once per day) and, when enabled, buys the configured pack off-session
-		// (auto top-up). Runs detached so charges are never slowed.
-		creditWatch := creditwatch.New(aiSettingsRepository, creditRepository, cache, streamingPublisher, stripeService)
-		creditService.SetMonitor(creditWatch.OnBalanceChanged)
+		// Balance: after every fresh debit it sends the low and empty balance
+		// notices and starts an automatic reload on the saved card. Runs
+		// detached so charges are never slowed; a sweep resumes retries.
+		balanceService = balance.New(creditService, aiSettingsRepository, savedCardChargeRepository, subscriptionRepository,
+			stripeService, cache, streamingPublisher, nil, auditService)
+		creditService.SetMonitor(balanceService.OnBalanceChanged)
+		stripeService.WireBalance(balanceService)
 
 		authService = auth.NewService(
 			authRepostory,
@@ -1146,22 +1166,17 @@ func main() {
 			GoogleIOSClientID: authCfg.GoogleIOSClientID,
 		}
 
-		// Referral program. Wired bidirectionally with Stripe (webhooks reward and
-		// claw back; the earnings ledger nets onto the referrer's customer balance)
-		// and into auth so a signup carrying ?ref= is attributed to its referrer.
-		referralRepository := repository.NewReferralRepository(primaryDB.Pool)
-		referralService = referral.NewService(
-			referralRepository,
-			discountCodeRepository,
+		// Referrals already attributed are still rewarded and clawed back by the
+		// Stripe webhooks, onto the referrer's customer balance.
+		referralService := referral.NewService(
+			repository.NewReferralRepository(primaryDB.Pool),
 			planRepository,
 			subscriptionRepository,
 			userRepostory,
 			auditService,
-			os.Getenv("APP_URL"),
 		)
 		stripeService.WireReferral(referralService)
 		referralService.WireBalancer(stripeService)
-		authService.WireReferral(referralService)
 		var passkeyErr error
 		passkeyService, passkeyErr = passkey.New(passkey.Deps{
 			Repo:          webauthnRepository,
@@ -1203,6 +1218,7 @@ func main() {
 		// Fan platform events (replies, bounces, warmup health, booked meetings)
 		// out to integration actions alongside customer webhooks.
 		webhookService.WireDispatchSink(integrationServiceForHandler.DispatchAny)
+		integrationServiceForHandler.SetEvents(webhookService)
 
 		// Reflect the active infrastructure backends into storage_backends so
 		// the admin UI can display what's running. Read-only entries — they
@@ -1212,6 +1228,7 @@ func main() {
 		fleetNodeRepo = repository.NewFleetNodeRepository(primaryDB)
 		fleetSettingsRepo = repository.NewFleetSettingsRepository(primaryDB)
 		fleetNodeService = fleetnode.New(fleetNodeRepo, workerRepository, fleetSettingsRepo)
+		nodeScopeService = nodescope.New(repository.NewNodeScopeRepository(primaryDB), cache.Client)
 		// Idle unless a staged rollout was started; every replica may run it.
 		go fleetNodeService.RunRolloutLoop(ctx, 30*time.Second)
 		settingsRegistrar := settings.NewRegistrar(storageBackendRepo)
@@ -1277,6 +1294,14 @@ func main() {
 			UpdaterToken: getenvDefault("UPDATER_TOKEN", os.Getenv("INTERNAL_API_TOKEN")),
 		})
 		updatesService.Start(ctx)
+		// The worker Auto Scaling Group scales on this; unset on every other deployment.
+		if fleet := fleetmetrics.FleetName(); fleet != "" {
+			go func() {
+				if err := fleetmetrics.Run(ctx, primaryDB, fleet); err != nil {
+					log.Printf("Warning: fleet utilization metric disabled: %v", err)
+				}
+			}()
+		}
 
 		// Warmup for a mailbox a linked instance runs is queued for that instance instead of a worker.
 		eventsPublisher := poollink.NewSelfExecutionPublisher(events.NewPublisher(bus, s3, codecImpl, cipherService),
@@ -1307,6 +1332,11 @@ func main() {
 		emailService.WireMailboxCredentials(mailboxCredentials)
 		// Seed Graph delta cursors when the reconciler reloads mailboxes.
 		emailService.WireGraphDelta(repository.NewEmailGraphDeltaRepository(primaryDB))
+		// Provider push: Graph webhooks and Gmail watches wake the worker holding the mailbox.
+		mailPushRepository := repository.NewMailboxPushRepository(primaryDB)
+		mailPushSettings = mailpush.NewSettings(authCfg.AuthSecret, mailPushRepository)
+		mailPushWaker = mailpush.NewWaker(mailPushRepository, eventsPublisher, cache)
+		emailService.WirePush(mailPushSettings)
 		// The Gmail equivalent: without it a reloaded mailbox re-bootstraps its
 		// history cursor and skips everything that arrived since the last sync.
 		emailService.WireEmailHistoryID(repository.NewEmailHistoryIDRepository(primaryDB))
@@ -1350,7 +1380,7 @@ func main() {
 		// codes and runs enrolled mailboxes as warmup-only accounts; the
 		// self-hosted side keeps the link and mirrors the cloud's state.
 		poolLinkRepository := repository.NewPoolLinkRepository(primaryDB.Pool, primaryDB.ConnectSession)
-		poolLinkService = poollink.NewService(poolLinkRepository, emailRepostory, emailService, analyticsService, warmupRepository, featureGateService, organizationService, planRepository)
+		poolLinkService = poollink.NewService(poolLinkRepository, emailRepostory, emailService, analyticsService, warmupRepository, featureGateService, organizationService)
 		emailService.WirePoolLink(poolLinkRepository)
 		if g, ok := featureGateService.(interface{ WirePoolLink(feature.PoolLinkReader) }); ok {
 			g.WirePoolLink(poolLinkService)
@@ -1544,6 +1574,10 @@ func main() {
 		// undeliverable, using the same projection preflight reports.
 		if aware, ok := campaignService.(campaign.AudienceAware); ok {
 			aware.WireAudience(campaignAudienceRepository)
+		}
+		// A start checks the copy of every active A/B variant, not only the steps.
+		if aware, ok := campaignService.(campaign.VariantAware); ok {
+			aware.WireVariants(advancedRepository)
 		}
 		// A start with nothing left to send says whether verification is why.
 		if aware, ok := campaignService.(campaign.ProgressAware); ok {
@@ -1804,6 +1838,9 @@ func main() {
 		}
 		notificationService.WirePush(pushSender, repository.NewDeviceTokenRepository(primaryDB.Pool), cache.Client)
 		advancedService.WireNotifier(notificationService)
+		if balanceService != nil {
+			balanceService.WireNotifier(notificationService)
+		}
 		// New-device sign-in alerts: the token service fires this on session
 		// creation from an unrecognized device, delivered as a security
 		// notification (in-app + email per the user's channels).
@@ -1936,6 +1973,11 @@ func main() {
 				Scopes: []string{"openid", "email"}, Endpoint: g.Endpoint,
 			}
 		}
+		var googleMailboxClientID string
+		// Named only when the client can complete a sign-in, so the dashboard offers no Google reconnect that cannot work.
+		if g := oauth2Cfg.InboxAuthorization.Google; g != nil && g.ClientSecret != "" {
+			googleMailboxClientID = g.ClientID
+		}
 		delegationService = delegation.NewService(delegation.Deps{
 			Repo:              repository.NewDomainGrantRepository(primaryDB),
 			Mailboxes:         emailService,
@@ -1947,6 +1989,8 @@ func main() {
 			MicrosoftRedirect: outlookApp.RedirectURL,
 			GoogleSignin:      googleSignin,
 			Prover:            domainProver,
+
+			GoogleMailboxClientID: googleMailboxClientID,
 		})
 		if w, ok := poolLinkService.(interface {
 			WireDelegation(poollink.DelegatedTokenBroker)
@@ -1969,6 +2013,7 @@ func main() {
 			Mailboxes: emailRepostory,
 			Reconnect: emailService,
 			Grants:    delegationService,
+			Consent:   emailService,
 			Cache:     cache,
 			NewClient: sandboxVendors,
 		})
@@ -1976,8 +2021,18 @@ func main() {
 		// Sending domains: tracking host per domain and the bare-domain redirect.
 		sendingDomainService = sendingdomain.NewService(repository.NewDomainRedirectRepository(primaryDB), emailRepostory, nil, domainProver)
 		sendingDomainService.WireAuditor(auditService)
+		// A website the workspace proves with its TXT record becomes one of its own domains too.
+		ownDomains.WireWebsites(repository.NewWebsiteDomainRepository(primaryDB), domainProver, nil)
 		sendingDomainService.WireOwnDomains(ownDomains)
 		sendingDomainService.WireCustomHosts(customHosts)
+		// Behind a Cloudflare for SaaS zone, every served customer name is registered there as it verifies.
+		if edge := cfsaas.New(cfsaas.Config{ZoneID: config.CloudflareSaaSZoneID(), APIToken: config.CloudflareSaaSAPIToken(), Origin: config.CloudflareSaaSOrigin()}); edge != nil {
+			edgeHosts := edgehost.New(repository.NewEdgeHostnameRepository(primaryDB.Pool), edge, func() []string {
+				return []string{config.TrackingHostname(), config.FormsHostname()}
+			})
+			sendingDomainService.WireEdge(edgeHosts)
+			go edgeHosts.Start(ctx)
+		}
 		// A linked self-hosted instance can have Warmbly Cloud serve a redirect instead.
 		sendingDomainService.WireCloud(cloudLinkService)
 		cloudLinkService.OnDisconnect(sendingDomainService.MarkCloudUnlinked)
@@ -2015,6 +2070,9 @@ func main() {
 			go mailboxAvatars.Start(ctx)
 		}
 		vendorConnService.SetImporter(mailboxImportService)
+		vendorConnService.WireSigninSwitch(auditService, func(ctx context.Context) bool {
+			return instanceSettings == nil || instanceSettings.AutoVendorReconnect(ctx)
+		})
 		sendingDomainService.WireVendors(vendorConnService)
 		go vendorConnService.StartReconnect(ctx)
 		go mailboxImportService.Start(ctx)
@@ -2078,6 +2136,9 @@ func main() {
 			trialExpirationJob.WireNotifier(notificationService)
 			trialScheduler := jobs.NewTrialExpirationScheduler(trialExpirationJob, 1*time.Hour)
 			go trialScheduler.Start(ctx)
+			if balanceService != nil {
+				go balanceService.Start(ctx)
+			}
 		}
 
 		// Local task dispatcher (TASKS_PROVIDER=local): the in-process poller
@@ -2129,20 +2190,26 @@ func main() {
 			go segmentService.StartCampaignSegmentSync(ctx, 2*time.Minute)
 		}
 
+		// Loops that keep their place in memory run on one backend at a time, the
+		// same one for as long as it holds the lock, so a fleet of replicas does
+		// the work once instead of once per replica.
+		elector := leader.New(primaryDB, "backend")
+
 		// Worker reconciler: assign + (re)load every active mailbox onto its
 		// worker. Workers hold accounts in memory only, so this is what makes a
 		// freshly onboarded account send/sync and re-seeds a restarted worker.
-		go emailService.StartWorkerReconciler(ctx, 60*time.Second)
+		elector.Go("worker_reconciler", func(ctx context.Context) { emailService.StartWorkerReconciler(ctx, 60*time.Second) })
 
 		// Unibox search backfill: record the searchable text of messages synced
 		// before bodies were indexed, so search covers the whole archive and not
 		// just new mail. Walks the table once, then returns.
-		go uniboxService.StartBodyTextBackfill(ctx)
+		elector.Go("unibox_body_backfill", uniboxService.StartBodyTextBackfill)
 
 		// Automation signing secrets live in each connection's sealed config.
 		if m, ok := integrationServiceForHandler.(interface{ StartSigningSecretMigration(context.Context) }); ok {
-			go m.StartSigningSecretMigration(ctx)
+			elector.Go("signing_secret_migration", m.StartSigningSecretMigration)
 		}
+		go elector.Run(ctx)
 
 		// Danger zone: schedule + execute delayed deletions (orgs, accounts).
 		dangerZoneRepository := repository.NewDangerZoneRepository(primaryDB.Pool)
@@ -2153,6 +2220,7 @@ func main() {
 			emailNotificationService,
 			eventsPublisher,
 			os.Getenv("FRONTEND_BASE_URL"),
+			dangerZoneBilling(stripeService),
 		)
 		dangerZoneJob := jobs.NewDangerZoneJob(dangerZoneService)
 		dangerZoneScheduler := jobs.NewDangerZoneScheduler(dangerZoneJob, 1*time.Hour)
@@ -2195,6 +2263,9 @@ func main() {
 		auditRetentionJob := jobs.NewAuditRetentionJob(auditRepository).WireRetention(instanceSettings)
 		auditRetentionScheduler := jobs.NewAuditRetentionScheduler(auditRetentionJob, 6*time.Hour)
 		go auditRetentionScheduler.Start(ctx)
+
+		// Feeds, logs and finished bookkeeping rows past their windows, in batches.
+		go jobs.NewTableRetentionJob(repository.NewTableRetentionRepository(primaryDB.Pool), instanceSettings).Start(ctx, 6*time.Hour)
 
 		// Website tracking: the snippet's settings, the ingest path the tracking
 		// service forwards page views to, and the per-workspace retention sweep
@@ -2247,10 +2318,34 @@ func main() {
 				Repo:      repository.NewContactImportRepository(primaryDB),
 				Contacts:  contactService,
 				Publisher: streamingPublisher,
+				Events:    webhookServiceForHandler,
 				// New addresses are checked right away rather than on the next tick.
 				Kicked: emailVerifyService.Kick,
 			})
 			go contactImportService.Run(ctx)
+		}
+		if contactService != nil {
+			// The lead finder's keyed providers read the workspace's own key first,
+			// then the operator's; OpenStreetMap needs none.
+			leadfinder.RegisterKeyChecks(integrationServiceForHandler)
+			leadFinderServiceForHandler = leadfinder.NewService(leadfinder.Deps{
+				Repo:         repository.NewLeadFinderRepository(primaryDB.Pool),
+				Integrations: integrationServiceForHandler,
+				Contacts:     contactService,
+				Verifier:     emailVerifyService,
+				Credits:      creditService,
+				Audit:        auditService,
+				Config: leadfinder.Config{
+					OverpassURL:   cfg.GetStringOptional(ctx, "LEAD_FINDER_OVERPASS_URL", "lead_finder/overpass_url", ""),
+					GeocoderURL:   cfg.GetStringOptional(ctx, "LEAD_FINDER_GEOCODER_URL", "lead_finder/geocoder_url", ""),
+					MapStyleLight: cfg.GetStringOptional(ctx, "LEAD_FINDER_MAP_STYLE_URL", "lead_finder/map_style_url", ""),
+					MapStyleDark:  cfg.GetStringOptional(ctx, "LEAD_FINDER_MAP_STYLE_DARK_URL", "lead_finder/map_style_dark_url", ""),
+					GoogleKey:     cfg.GetSecretOptional(ctx, "LEAD_FINDER_GOOGLE_PLACES_API_KEY", "lead_finder/google_places_api_key", ""),
+					FoursquareKey: cfg.GetSecretOptional(ctx, "LEAD_FINDER_FOURSQUARE_API_KEY", "lead_finder/foursquare_api_key", ""),
+					OutscraperKey: cfg.GetSecretOptional(ctx, "LEAD_FINDER_OUTSCRAPER_API_KEY", "lead_finder/outscraper_api_key", ""),
+				},
+			})
+			go jobrun.Loop(ctx, "lead_enrichment_runs", time.Minute, true, leadFinderServiceForHandler.RunPendingEnrichment)
 		}
 
 		// HubSpot as the workspace CRM: write-through for the CRM service, the
@@ -2522,7 +2617,6 @@ func main() {
 		SubscriptionService: subscriptionService,
 		StripeService:       stripeService,
 		DiscountService:     discountService,
-		ReferralService:     referralService,
 		PlanOfferService:    planOfferService,
 
 		// Trial & feature gates
@@ -2560,8 +2654,9 @@ func main() {
 		EmailNotificationService: emailNotificationService,
 
 		// Advanced outreach controls
-		AdvancedService:  advancedService,
-		UnsubscribeLinks: unsubSigner,
+		AdvancedService:     advancedService,
+		UnsubscribeLinks:    unsubSigner,
+		AttachmentDownloads: attachmentDownloads,
 
 		// Warmup health
 		WarmupService:     warmupService,
@@ -2574,6 +2669,7 @@ func main() {
 
 		// AI writing assistant + credit ledger
 		CreditService:    creditService,
+		BalanceService:   balanceService,
 		WritingGenerator: writingGenerator,
 		AIProvider:       aiProvider,
 		TypeSafe:         typeSafeAsker(typeSafeClient),
@@ -2581,6 +2677,9 @@ func main() {
 		AITools:          aiToolRegistry,
 		AIAgentService:   aiAgentService,
 		SlackService:     slackService,
+		MailPush:         mailPushSettings,
+		MailPushWaker:    mailPushWaker,
+		GmailPush:        mailpush.NewGmailPush(),
 		ResearchService:  researchService,
 		SkillsService:    skillsService,
 		MCPService:       mcpService,
@@ -2615,6 +2714,7 @@ func main() {
 		SalesforceService: salesforceServiceForHandler,
 		ApolloService:     apolloServiceForHandler,
 		ClayService:       clayServiceForHandler,
+		LeadFinderService: leadFinderServiceForHandler,
 
 		WebsocketURI: websocketURI,
 
@@ -2640,6 +2740,7 @@ func main() {
 		FleetNodeRepo:          fleetNodeRepo,
 		FleetSettingsRepo:      fleetSettingsRepo,
 		FleetNodes:             fleetNodeService,
+		NodeScope:              nodeScopeService,
 		KeyStatusDB:            keyStatusDB,
 
 		// Danger zone
@@ -2672,6 +2773,9 @@ func main() {
 		Cache:               authCache,
 		PoolLinkService:     poolLinkService,
 	}
+	if fleetNodeService != nil {
+		m.NodeCredentials = fleetNodeService
+	}
 
 	oidcH := &middleware.OidcHandler{
 		ServiceAccount: serviceAccount,
@@ -2684,19 +2788,30 @@ func main() {
 
 	router := api.Run(h, m, oidcH, addr, ginMode, allowedOrigins)
 
-	srv := &http.Server{
-		Addr:    addr,
-		Handler: router,
+	tlsListen, err := servetls.FromEnv(os.Getenv)
+	if err != nil {
+		log.Fatalf("Invalid TLS listener setting: %v", err)
+	}
+	srv, tlsSrv, err := tlsListen.Servers(addr, router)
+	if err != nil {
+		log.Fatalf("TLS listener: %v", err)
+	}
+	servers := []*http.Server{srv}
+	if tlsSrv != nil {
+		servers = append(servers, tlsSrv)
+		if exp := servetls.Expiry(tlsSrv.TLSConfig); time.Until(exp) < 30*24*time.Hour {
+			log.Printf("TLS listener certificate expires %s; replace it before then", exp.Format(time.RFC3339))
+		}
 	}
 
-	// Start server in a goroutine
-	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server error: %v", err)
-		}
-	}()
-
-	log.Println("Backend started on", addr)
+	for _, s := range servers {
+		go func(s *http.Server) {
+			if err := servetls.ListenAndServe(s); err != nil && err != http.ErrServerClosed {
+				log.Fatalf("Server error: %v", err)
+			}
+		}(s)
+		log.Println("Backend started on", s.Addr)
+	}
 
 	// Wait for interrupt signal for graceful shutdown
 	sigCh := make(chan os.Signal, 1)
@@ -2723,8 +2838,10 @@ func main() {
 			}
 		}()
 	}
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("Server shutdown error: %v", err)
+	for _, s := range servers {
+		if err := s.Shutdown(shutdownCtx); err != nil {
+			log.Printf("Server shutdown error: %v", err)
+		}
 	}
 	drained.Wait()
 
@@ -2901,4 +3018,13 @@ func typeSafeAsker(c *typesafe.Client) typesafe.Asker {
 		return nil
 	}
 	return c
+}
+
+// dangerZoneBilling is the provider account deletion asks about owned
+// subscriptions, or nil when billing is off and the local record is the answer.
+func dangerZoneBilling(svc stripe.StripeService) dangerzone.BillingLookup {
+	if config.BillingProvider() != "stripe" {
+		return nil
+	}
+	return svc
 }

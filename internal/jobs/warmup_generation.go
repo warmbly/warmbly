@@ -5,8 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/warmbly/warmbly/internal/observability/errs"
-
 	"github.com/warmbly/warmbly/internal/app/warmupcontent"
 	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -36,9 +34,9 @@ func (j *WarmupGenerationJob) Run(ctx context.Context) error {
 	if j.svc == nil || j.repo == nil || !j.svc.Enabled() {
 		return nil
 	}
+	// jobrun reports the returned error; capturing it here as well would file it twice.
 	settings, err := j.repo.GetGenerationSettings(ctx)
 	if err != nil {
-		errs.CaptureException(err)
 		return err
 	}
 	if settings == nil || !settings.ScheduleEnabled {
@@ -47,17 +45,15 @@ func (j *WarmupGenerationJob) Run(ctx context.Context) error {
 
 	cadence := time.Duration(settings.CadenceHours) * time.Hour
 	j.mu.Lock()
+	defer j.mu.Unlock()
 	if !j.lastRun.IsZero() && cadence > 0 && time.Since(j.lastRun) < cadence {
-		j.mu.Unlock()
 		return nil
 	}
-	j.lastRun = time.Now()
-	j.mu.Unlock()
 
 	if err := j.svc.RunScheduled(ctx); err != nil {
-		errs.CaptureException(err)
 		return err
 	}
+	j.lastRun = time.Now()
 	return nil
 }
 

@@ -29,7 +29,7 @@ export interface EditorAIRunSpec {
 
 export interface EditorAIRun {
     phase: EditorAIPhase;
-    usage: { charged: number; tokens: number } | null;
+    usage: { chargedUsd: number; tokens: number } | null;
     // Words in the passage under review, and whether the last run changed it.
     words: number;
     changed: boolean;
@@ -140,7 +140,7 @@ export default function useEditorAIRun(editor: Editor, onSettle?: () => void): E
                 .then((res) => {
                     if (runId.current !== id) return;
                     editor.setEditable(true, false);
-                    setUsage({ charged: res.credits_charged ?? 0, tokens: res.tokens_used ?? 0 });
+                    setUsage({ chargedUsd: res.charged_usd ?? 0, tokens: res.tokens_used ?? 0 });
                     land(shape(spec, res.text));
                 })
                 .catch((e) => {

@@ -107,7 +107,6 @@ test("renders the imported production settings with the real dashboard entrypoin
     runInNewContext(readFileSync(output, "utf8"), { window });
     assert.equal(window.__WARMBLY_ENV__.API_URL, "production-WARMBLY_API_URL");
     assert.equal(window.__WARMBLY_ENV__.TURNSTILE_KEY, "production-WARMBLY_TURNSTILE_KEY");
-    assert.equal(window.__WARMBLY_ENV__.GMAIL_OAUTH_CONNECT, "production-WARMBLY_GMAIL_OAUTH_CONNECT");
     assert.equal(window.__WARMBLY_ENV__.COMPANY_LOGOS, 'logos "quoted"\\path');
   } finally {
     rmSync(work, { recursive: true, force: true });

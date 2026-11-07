@@ -11,6 +11,7 @@ import {
     setDomainVendorForwarding,
     setDomainVendorTracking,
     verifyDomainRedirect,
+    verifyRedirectWebsite,
 } from "@/lib/api/client/app/emails/sendingDomains";
 import type {
     BulkDomainResult,
@@ -98,6 +99,17 @@ export function useVerifyDomainRedirect() {
     return useMutation({
         mutationFn: (domain: string) => verifyDomainRedirect(domain),
         onSuccess: (r, domain) => store(domain, r),
+    });
+}
+
+// A website that verifies changes which redirects are served, so the list is read again.
+export function useVerifyRedirectWebsite() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: ({ domain, url }: { domain: string; url: string }) => verifyRedirectWebsite(domain, url),
+        onSuccess: (w) => {
+            if (w.verified) qc.invalidateQueries({ queryKey: SENDING_DOMAINS_KEY });
+        },
     });
 }
 

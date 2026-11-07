@@ -27,3 +27,17 @@ func TestWorkerCapacityTarget(t *testing.T) {
 		})
 	}
 }
+
+func TestWorkerCapacityAutoSizesFromMemory(t *testing.T) {
+	t.Setenv("WARMBLY_WORKER_CAPACITY", "auto")
+	if workerCapacityFromMemory(func() int { return 0 }) == nil {
+		t.Fatal("auto did not size the target from memory")
+	}
+	if got := workerCapacityTarget(); got != defaultWorkerCapacityTarget {
+		t.Fatalf("auto's first beat before a memory reading falls back to %v, got %v", defaultWorkerCapacityTarget, got)
+	}
+	t.Setenv("WARMBLY_WORKER_CAPACITY", "500")
+	if workerCapacityFromMemory(func() int { return 0 }) != nil {
+		t.Fatal("a fixed target was replaced by the memory sizing")
+	}
+}

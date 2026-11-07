@@ -2,12 +2,16 @@ package twofa
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/google/uuid"
 
+	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/observability/errs"
 	"github.com/warmbly/warmbly/internal/pkg/argon2"
 	"github.com/warmbly/warmbly/internal/pkg/crypt"
+	"github.com/warmbly/warmbly/internal/repository"
 )
 
 // generateRecoveryCodes returns recoveryCount plaintext codes (xxxxx-xxxxx) plus
@@ -36,20 +40,35 @@ func isRecoveryFormat(code string) bool {
 }
 
 // tryConsumeRecoveryCode verifies a recovery code (constant-time argon2) and
-// marks the matched one used (single-use). Returns false if none match.
-func (s *service) tryConsumeRecoveryCode(ctx context.Context, userID uuid.UUID, code string) bool {
+// marks the matched one used (single-use).
+func (s *service) tryConsumeRecoveryCode(ctx context.Context, userID uuid.UUID, code string) *errx.Error {
 	code = strings.ToLower(strings.TrimSpace(code))
 	rows, err := s.repo.ListUnusedRecoveryCodes(ctx, userID)
 	if err != nil {
-		return false
+		errs.CaptureException(err)
+		return errx.InternalError()
 	}
+	var verifyErr error
 	for _, rc := range rows {
-		if ok, verr := argon2.Verify(code, rc.CodeHash); verr == nil && ok {
+		ok, verr := argon2.Verify(code, rc.CodeHash)
+		if verr != nil {
+			verifyErr = verr
+			continue
+		}
+		if ok {
 			if cerr := s.repo.ConsumeRecoveryCode(ctx, rc.ID); cerr != nil {
-				return false
+				if errors.Is(cerr, repository.ErrRecoveryCodeUsed) {
+					return ErrInvalidCode()
+				}
+				errs.CaptureException(cerr)
+				return errx.InternalError()
 			}
-			return true
+			return nil
 		}
 	}
-	return false
+	if verifyErr != nil {
+		errs.CaptureException(verifyErr)
+		return errx.InternalError()
+	}
+	return ErrInvalidCode()
 }

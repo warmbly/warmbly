@@ -51,6 +51,10 @@ import InsertBookingLink from "../InsertBookingLink";
 import AIDraftBar, { useAIDraft } from "@/components/app/ai/AIDraftBar";
 import TextareaAIEdit from "@/components/app/ai/TextareaAIEdit";
 import TextareaAICaret from "@/components/app/ai/TextareaAICaret";
+import { reportAIError } from "@/components/app/ai/reportAIError";
+import useAiMetered from "@/hooks/useAiMetered";
+import { fmtUsdAbout } from "@/lib/money";
+import { AI_ESTIMATE_USD } from "@/lib/aiEstimates";
 import ContactRecipientField from "./ContactRecipientField";
 import SeedRecipientsButton from "./SeedRecipientsButton";
 import MailboxPicker from "./MailboxPicker";
@@ -287,6 +291,7 @@ function ComposeWindowInner({
 
     // Subject suggestion: one cheap generation over the drafted body.
     const subjectMut = useGenerateWrite();
+    const metered = useAiMetered();
     const suggestSubject = async () => {
         if (!body.trim() || subjectMut.isPending) return;
         try {
@@ -296,8 +301,7 @@ function ComposeWindowInner({
             const line = res.text.trim().split("\n")[0].replace(/^["']|["']$/g, "");
             if (line) setSubject(line);
         } catch (e) {
-            const err = e as AppError;
-            toast.error(err?.status === 402 ? "You're out of AI credits." : buildError(err));
+            reportAIError(e);
         }
     };
 
@@ -675,7 +679,7 @@ function ComposeWindowInner({
                                 type="button"
                                 onClick={suggestSubject}
                                 disabled={subjectMut.isPending}
-                                title="Suggest a subject from the body (from 1 credit)"
+                                title={`Suggest a subject from the body${metered ? ` (${fmtUsdAbout(AI_ESTIMATE_USD.writingAssistant)})` : ""}`}
                                 className="shrink-0 h-5 px-1.5 rounded inline-flex items-center gap-1 text-[10.5px] text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors disabled:opacity-50"
                             >
                                 {subjectMut.isPending && (
@@ -750,7 +754,7 @@ function ComposeWindowInner({
                     onChange={(next) => setBody(next.slice(0, MAX_BODY_LEN))}
                     onDraftReply={() => aiDraft.start()}
                     draftLabel="Draft this email with AI"
-                    draftCost="from 2 credits"
+                    draftCost={fmtUsdAbout(AI_ESTIMATE_USD.replyDraft)}
                     contextHint={`It is a new outbound email${contactDisplay ? ` to ${contactDisplay}` : ""}${subject.trim() ? ` with the subject "${subject.trim()}"` : ""}.`}
                     maxLen={MAX_BODY_LEN}
                 />

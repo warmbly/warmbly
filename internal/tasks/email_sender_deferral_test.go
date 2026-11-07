@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/scheduler"
 	"github.com/warmbly/warmbly/internal/tasks/proto"
@@ -96,10 +97,35 @@ func TestLiveWarmupTaskDoesNotApplyResultsAfterConfirmedDeferral(t *testing.T) {
 	exec(`UPDATE email_accounts SET worker_id=$1,warmup=NOW()-INTERVAL '30 days',warmup_days=127,warmup_pool_type='free' WHERE organization_id=$2`, worker, f.org)
 	exec(`INSERT INTO tasks(id,email_account_id,task_type,status,message_id,scheduled_at) VALUES($1,$2,'warmup','pending','',NOW()-INTERVAL '1 minute')`, task, f.sender.ID)
 	exec(`INSERT INTO warmup_tasks(task_id) VALUES($1)`, task)
+	exec(`UPDATE email_accounts SET test_receive_enabled=false WHERE id=$1`, f.atSmallHost)
+	contentRepo := repository.NewWarmupContentRepository(f.pool)
+	scenario, rendering := generation.WarmupScenarioVersion, generation.CanonicalRenderingVersion
+	conversation := &models.WarmupConversation{
+		ID: uuid.New(), PoolType: "premium", Source: models.WarmupContentSourceAI,
+		Subject: "A card count", Description: "We sorted the supply cupboard and found three boxes of index cards nobody remembers ordering. Do you still plan on cards?",
+		Messages: []string{"I do, mostly for sketching out a week at a glance.", "Same here. Good to know I'm not the only one."},
+		Status:   models.WarmupConversationActive, ReplyEligible: true, LintPassed: true,
+		ScenarioVersion: &scenario, RenderingVersion: &rendering, SemanticReview: "passed",
+	}
+	if err := contentRepo.InsertConversation(ctx, conversation); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = contentRepo.DeleteConversation(context.Background(), conversation.ID) })
+	f.svc.warmupContentRepo = contentRepo
 	f.svc.taskRepo = repository.NewTaskRepository(f.pool)
 	f.svc.scheduler = preparationScheduler{}
 	sender := &preparationDeferringSender{repo: f.svc.taskRepo.(repository.WarmupDispatchRepository)}
 	f.svc.emailSender = sender
+	f.svc.warmupContentRepo = &qualityContentRepo{pickErr: errors.New("temporary repository failure")}
+	if xerr := f.svc.HandleEmailTask(&proto.ProcessTask{TaskId: task.String()}); xerr == nil {
+		t.Fatal("repository failure was not retryable")
+	}
+	var retryStatus string
+	if err := f.pool.QueryRow(ctx, `SELECT status FROM tasks WHERE id=$1`, task).Scan(&retryStatus); err != nil || retryStatus != "pending" || sender.calls != 0 {
+		t.Fatalf("repository failure lost claimed task: status=%s calls=%d err=%v", retryStatus, sender.calls, err)
+	}
+	f.svc.warmupContentRepo = contentRepo
+	exec(`UPDATE tasks SET scheduled_at=NOW()-INTERVAL '1 minute' WHERE id=$1`, task)
 	for i := 1; i <= 2; i++ {
 		if xerr := f.svc.HandleEmailTask(&proto.ProcessTask{TaskId: task.String()}); xerr != nil {
 			t.Fatal(xerr)

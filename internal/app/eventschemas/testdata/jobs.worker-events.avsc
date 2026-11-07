@@ -677,6 +677,58 @@
               "type": "string"
             },
             {
+              "default": null,
+              "name": "state",
+              "type": [
+                "null",
+                {
+                  "fields": [
+                    {
+                      "default": "",
+                      "name": "provider",
+                      "type": "string"
+                    },
+                    {
+                      "default": "",
+                      "name": "subscription_id",
+                      "type": "string"
+                    },
+                    {
+                      "default": 0,
+                      "name": "expires_at",
+                      "type": {
+                        "logicalType": "timestamp-millis",
+                        "type": "long"
+                      }
+                    },
+                    {
+                      "default": "",
+                      "name": "credential",
+                      "type": "string"
+                    }
+                  ],
+                  "name": "warmbly.events.MailboxPushState",
+                  "type": "record"
+                }
+              ]
+            }
+          ],
+          "name": "warmbly.events.JobEventPushState",
+          "type": "record"
+        },
+        {
+          "fields": [
+            {
+              "default": "",
+              "name": "user_id",
+              "type": "string"
+            },
+            {
+              "default": "",
+              "name": "email_id",
+              "type": "string"
+            },
+            {
               "default": "",
               "name": "id",
               "type": "string"
@@ -692,6 +744,19 @@
         },
         {
           "fields": [
+            {
+              "default": null,
+              "name": "worker_id",
+              "type": [
+                "null",
+                "string"
+              ]
+            },
+            {
+              "default": "",
+              "name": "report_generation",
+              "type": "string"
+            },
             {
               "default": "",
               "name": "user_id",
@@ -715,6 +780,7 @@
                 "backfill_status": "",
                 "backfill_synced": 0,
                 "deferred": 0,
+                "folder_coverage_observed_at": null,
                 "folders_skipped_cap": 0,
                 "folders_skipped_conflict": 0,
                 "last_synced_at": null,
@@ -891,6 +957,17 @@
                     "default": 0,
                     "name": "folders_skipped_conflict",
                     "type": "int"
+                  },
+                  {
+                    "default": null,
+                    "name": "folder_coverage_observed_at",
+                    "type": [
+                      "null",
+                      {
+                        "logicalType": "timestamp-millis",
+                        "type": "long"
+                      }
+                    ]
                   },
                   {
                     "default": null,

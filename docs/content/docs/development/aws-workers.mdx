@@ -1,0 +1,315 @@
+---
+title: AWS worker fleet
+description: Run mail workers in an Auto Scaling group with no public IPv4 address, scale them on memory and CPU, and retire fixed worker hosts.
+---
+
+The workers root in `deploy/terraform/aws/workers/` can run mail workers as an
+EC2 Auto Scaling group instead of a fixed list of hosts. Fleet workers have no
+public IPv4 address and accept no inbound connection. Each one joins the fleet
+at boot with the same `join.sh` that any other machine uses, and the control
+plane decides what runs on it. The fleet is opt-in: until `fleet_enabled` is
+set, the root plans exactly what it planned before, and the fixed hosts in the
+`workers` map keep running untouched.
+
+## How the fleet is built
+
+**Network.** The fleet gets its own subnet in each of the foundation's two
+zones. Each subnet is dual-stack: a `/24` from the VPC's IPv4 block and a `/64`
+from the VPC's Amazon-provided IPv6 block, which the foundation root adds.
+
+- IPv6 leaves through an egress-only internet gateway. Every worker has its own
+  global IPv6 address, and nothing on the internet can open a connection to it.
+- IPv4 leaves through one NAT instance per zone: a small Graviton instance with
+  forwarding and `MASQUERADE`, kept at one instance by its own Auto Scaling
+  group. A replacement claims the zone's Elastic IP and rewrites the zone's
+  default route at boot, so the zone's IPv4 egress address never changes.
+- S3 traffic goes through a gateway endpoint on the fleet's route tables.
+
+Many IMAP and SMTP servers are reachable only over IPv4, which is why the NAT
+exists. NAT64 is not used: a worker refuses mail servers at addresses that are
+not publicly routable, and the NAT64 prefix is one of them.
+
+**Workers.** A launch template starts on-demand Graviton instances (default
+`t4g.medium`, 4 GiB) from the current Amazon Linux 2023 AMI, with IMDSv2
+required, no public IPv4 address, one IPv6 address and a security group with no
+inbound rules. The fleet security group may reach the private Valkey cache and,
+when `nats_security_group_id` is set, the NATS brokers.
+
+At first boot the user data:
+
+1. Installs Docker and raises the open-file limit Docker gives containers to
+   1,048,576, because one worker holds thousands of IMAP sessions.
+2. Restricts instance metadata to root, so the worker container, which shares
+   the host network, cannot use the instance role.
+3. Writes `/etc/warmbly/node.local.env` with
+   `WARMBLY_WORKER_CAPACITY=<fleet_worker_capacity>` and `GOMEMLIMIT` set to
+   80% of the instance's memory, read from `/proc/meminfo` at boot (about
+   3,000 MiB on a `t4g.medium`). The limit makes the worker's garbage
+   collector work within the machine, leaving the rest to the host and Docker.
+   `join.sh` never rewrites that file.
+4. Reads the join token from Parameter Store, downloads `join.sh` from the
+   Warmbly instance and runs it with `--role worker`. The node is named
+   `<name>-fleet-<instance id>`. The token is held in memory only and is not
+   written to disk or user data.
+
+If the join keeps failing for about 15 minutes, the instance powers off and
+terminates, and the group launches a replacement.
+
+**Permissions.** The fleet's instance role may read the join token parameter
+and nothing else. Workers use brokered KMS and blob operations through the
+backend, so the role holds no S3, KMS data key or Secrets Manager permission.
+When the parameter is encrypted with a customer managed key, set
+`fleet_join_token_kms_key_arn` and the role may also decrypt with that key
+through Parameter Store. The NAT instances' roles may associate their own
+Elastic IP, turn off their own source/destination check and write one route
+table's default route.
+
+## Prepare the join token
+
+Issue a join token on the Warmbly instance and store it as a SecureString:
+
+```sh
+warmblyctl fleet join-token --ttl 720h
+aws ssm put-parameter --region us-east-1 --type SecureString --overwrite \
+  --name /warmbly-production/fleet/join-token --value '<token>'
+```
+
+The parameter name defaults to `/<name>/fleet/join-token` and can be changed
+with `fleet_join_token_parameter`. A join token works for at most 30 days, and
+issuing a new one revokes the previous one. Joined workers are unaffected, but a
+worker launched with an expired token cannot join. Issue and store a new token
+before the old one expires, for example every three weeks, or scale-out stops
+producing working workers.
+
+## Enable the fleet
+
+1. Apply the foundation root. It associates an Amazon-provided IPv6 block with
+   the VPC; existing subnets stay IPv4-only.
+2. Store the join token as above.
+3. Set at least these in the workers var file, then plan and apply the workers
+   root:
+
+```json
+{
+  "fleet_enabled": true,
+  "fleet_instance_url": "https://app.example.com",
+  "nats_security_group_id": "sg-..."
+}
+```
+
+`nats_security_group_id` is the NATS root's broker security group. Leave it
+unset only when workers reach the event bus some other way.
+
+4. Set `FLEET_METRICS_CLOUDWATCH` on the backend to the root's `name` and give
+   its role `cloudwatch:PutMetricData` (see the [metric contract](#metric-contract)).
+   Without it nothing publishes `WorkerMemoryPercent`, so the fleet scales out
+   on CPU only and never scales in.
+
+The `fleet` output names the group, its subnets and security group, the join
+token parameter, the metric contract and `nat_ipv4_addresses`. Workers appear in
+`warmblyctl fleet list` within a few minutes of launching.
+
+### Variables
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `fleet_enabled` | `false` | Create the fleet and its network |
+| `fleet_instance_url` | none | HTTPS origin of the Warmbly instance, passed to `join.sh --url`. Required when enabled |
+| `fleet_join_token_parameter` | `/<name>/fleet/join-token` | SecureString parameter holding the join token |
+| `fleet_join_token_kms_key_arn` | `null` | Customer managed key for that parameter; `null` means `aws/ssm` |
+| `fleet_instance_type` | `t4g.medium` | Graviton type for workers |
+| `fleet_cpu_credits` | `standard` | CPU credit mode for burstable types |
+| `fleet_root_volume_gb` | `20` | Encrypted gp3 root volume size |
+| `fleet_min_size` | `2` | Smallest fleet |
+| `fleet_max_size` | `10` | Largest fleet |
+| `fleet_desired_capacity` | `null` | Starting size; scaling owns it afterwards. `null` starts at the minimum |
+| `fleet_worker_capacity` | `auto` | `WARMBLY_WORKER_CAPACITY` on every fleet worker: `auto`, or a whole number of mailboxes from 1 to 99999999 |
+| `fleet_region_label` | empty | Optional `--region` label for placement |
+| `fleet_image_repository` | `ghcr.io/warmbly/warmbly` | Repository `join.sh` pulls the worker image from |
+| `fleet_target_memory` | `65` | Target for `WorkerMemoryPercent`, the fleet's memory in use |
+| `fleet_target_cpu` | `60` | Target average CPU percent |
+| `fleet_scale_in_memory_below` | `35` | Fleet memory percent the fleet must stay under before it shrinks |
+| `fleet_scale_in_memory_max_below` | `60` | Memory percent the fullest worker must stay under before the fleet shrinks |
+| `fleet_scale_in_cpu_below` | `30` | CPU percent the busiest worker must stay under before the fleet shrinks |
+| `fleet_scale_in_after_hours` | `3` | How long all three must hold, and the pause between removals (1 to 24) |
+| `fleet_termination_hook_seconds` | `900` | How long a terminating worker is held after it stops |
+| `fleet_instance_warmup_seconds` | `900` | Seconds before a new worker's metrics count toward scaling |
+| `fleet_refresh_warmup_seconds` | `1800` | Seconds an instance refresh waits after each replacement |
+| `fleet_subnet_netnums` | `[20, 21]` | Subnet numbers for the fleet subnets in the VPC's IPv4 and IPv6 blocks |
+| `nat_instance_type` | `t4g.micro` | Graviton type for each zone's NAT instance |
+| `nat_conntrack_max` | `524288` | Connection-tracking entries per NAT instance |
+| `nats_security_group_id` | `null` | NATS broker security group the fleet may reach on 4222 |
+
+## How the fleet scales
+
+The fleet scales on what its machines are using: memory, which is what a
+worker's mailbox sessions consume, and CPU. Mailbox counts do not move it.
+Moving a mailbox to another worker changes the address its provider sees and
+forces a reconnect, so the fleet grows readily and shrinks rarely.
+
+**Scale-out** comes from two target-tracking policies, both with scale-in
+disabled:
+
+- `WorkerMemoryPercent`, the fleet's memory in use, held at
+  `fleet_target_memory`
+- the group's average CPU held at `fleet_target_cpu`
+
+With `standard` CPU credits, a `t4g` worker that has spent its credits runs at
+its baseline (20% for `t4g.medium`), so the CPU signal mostly reacts to bursts.
+Memory is the primary signal.
+
+**A full worker is a placement matter, not a fleet-size one.** Adding a worker
+does not relieve a full one, because mailboxes already placed stay where they
+are, so no rule grows the fleet for one hot machine. With
+`WARMBLY_WORKER_CAPACITY=auto` a worker's mailbox target falls as its memory
+fills, so placement stops sending it new mailboxes and the rotation loop moves
+mailboxes off a worker that stays over its target. `WorkerMemoryMaxPercent`
+still keeps the fleet from shrinking while any worker is full.
+
+**Scale-in** is one simple policy that removes one worker, driven by one alarm.
+The alarm fires only when all of these stay true for
+`fleet_scale_in_after_hours`:
+
+- `WorkerMemoryPercent` stays below `fleet_scale_in_memory_below`
+- the fullest worker's memory stays below `fleet_scale_in_memory_max_below`
+- the busiest worker's EC2 CPU stays below `fleet_scale_in_cpu_below`
+
+Each is read at its highest value in every five minutes. The policy's cooldown
+is the same length as the quiet period, so the next removal needs another quiet
+period, and the group never goes below `fleet_min_size`. Missing data never
+counts as quiet, so the fleet does not shrink while the metrics are not
+published. The group removes its newest worker, which has the fewest mailboxes,
+and zone rebalancing is suspended so the group never moves workers for symmetry
+alone.
+
+**Worker capacity.** With `fleet_worker_capacity` left at `auto`, each worker
+sizes its own mailbox target from its memory, so a larger instance type takes
+more mailboxes without a change here. A whole number fixes the target on every
+fleet worker instead. Either way, the target guides placement; it does not
+scale the fleet.
+
+**Termination.** A terminating worker is held by a lifecycle hook for
+`fleet_termination_hook_seconds`. The worker watches its own lifecycle state in
+instance metadata and stops its node as soon as termination begins. Its
+heartbeat stops and the control plane places its mailboxes elsewhere before the
+instance goes. The hook then times out and termination continues.
+
+**Instance refresh.** A change to the launch template starts a rolling refresh
+that launches a replacement before terminating each old worker, one at a time
+while the fleet has fewer than 100 workers, and waits
+`fleet_refresh_warmup_seconds` between replacements. The AMI is resolved when
+each instance launches, so new AMIs reach new workers without refreshing
+existing ones. Health checks are EC2 status checks.
+
+### Metric contract
+
+The backend publishes the fleet's metrics every minute when its
+[`FLEET_METRICS_CLOUDWATCH`](/development/configuration/#workers) is set to the
+root's `name`. It uses the AWS default credential chain, so the backend's role
+needs `cloudwatch:PutMetricData`. The values come from worker heartbeats: each
+worker reports its host's memory in use and in total about every 100 seconds.
+
+| Field | Value |
+|---|---|
+| Namespace | `Warmbly/Fleet` |
+| Dimension | `Fleet` = the root's `name` (default `warmbly-production`) |
+| Unit | `Percent` |
+
+| Metric | Value | Used for |
+|---|---|---|
+| `WorkerMemoryPercent` | Memory in use across live workers divided by their total memory, times 100 | Scale-out target and scale-in |
+| `WorkerMemoryMaxPercent` | Memory percent of the fullest live worker | Scale-in guard |
+| `WorkerUtilizationPercent` | Assigned mailboxes divided by the fleet's planned capacity, times 100 | Reading only; nothing scales on it |
+
+When no live worker reports memory, the backend publishes nothing. Missing data
+triggers no scale-out and never counts as quiet for scale-in, so a fleet whose
+workers stop reporting holds its size until they report again.
+
+The policies and alarms read the metrics at the deployment's own `Fleet` value
+only, so two deployments in one account do not scale on each other's load. The
+`fleet` output lists the namespace, dimension and all three metric names.
+
+## Egress addresses
+
+A fleet worker reaches a server that has an IPv6 address from its own IPv6
+address, which stays the same for the life of the instance. Gmail and Microsoft
+365 both publish IPv6 addresses. A server reachable only over IPv4 sees the NAT
+address of the worker's zone. `nat_ipv4_addresses` lists those addresses for
+customers who allowlist the addresses Warmbly connects from. Keep them: the
+Elastic IPs have a destruction guard.
+
+Every worker in a zone shares that zone's IPv4 address toward IPv4-only
+servers, so a server's per-address limits on logins and connections apply to
+the zone rather than to one worker.
+
+Replacing a NAT instance, after a failure or to apply a changed NAT launch
+template, closes every IPv4 connection from that zone. Workers reconnect once
+the replacement has claimed the route, usually within a few minutes. A NAT
+launch template change does not replace the running instance. To apply it,
+terminate the NAT instance in a quiet period and let its group replace it.
+
+Each NAT instance keeps an idle established TCP connection tracked for two days
+and holds `nat_conntrack_max` connections, so an idle IMAP session is never cut
+by the NAT. The `t4g.micro` default has a modest baseline network bandwidth;
+raise `nat_instance_type` when a zone's IPv4 traffic grows.
+
+## Retire the fixed workers
+
+The fixed hosts and the fleet can run side by side for as long as needed. Retire
+one fixed host at a time:
+
+1. Confirm the fleet has room, `warmblyctl fleet list` shows its workers live,
+   and IPv4-only mailboxes on fleet workers connect.
+2. On the fixed host, stop the worker and keep it stopped:
+   `sudo systemctl disable --now warmbly-worker warmbly-node-update.timer`.
+   Its heartbeat stops and its mailboxes are placed on other workers. Wait until
+   the host shows no assigned mailboxes, then run `warmblyctl fleet remove` for
+   it.
+3. Remove the host from Terraform state without destroying through the plan,
+   because its instance and Elastic IP have destruction guards:
+
+```sh
+terraform -chdir=deploy/terraform/aws/workers state rm \
+  'aws_eip_association.worker["<host>"]' 'aws_eip.worker["<host>"]' \
+  'aws_instance.worker["<host>"]' 'aws_secretsmanager_secret.worker["<host>"]'
+```
+
+4. Remove the host from the `workers` map in the var file.
+5. Terminate the instance and release its Elastic IP in the console or CLI
+   once no customer allowlist names that address. Delete its Secrets Manager
+   container when its contents are no longer needed for rollback.
+
+When the map is empty, the shared worker security group, SSH rules and key pair
+remain. The NATS root may still reference that security group; leave it in
+place, or point the NATS root's `worker_security_group_id` elsewhere first.
+
+## Operations
+
+Fleet workers have no SSH key, no inbound rule and no Session Manager
+permission, so there is no shell on them. Replace an unhealthy worker
+(terminate it; the group launches another) rather than repairing it. Each
+worker keeps itself on the fleet's version through the standard
+`warmbly-node-update` timer, exactly like a machine joined by hand. See
+[updates](/development/updates/) and [warmblyctl fleet](/development/warmblyctl/#fleet).
+
+## Cost notes
+
+Prices below are US East (N. Virginia) list prices when this page was written.
+Check current pricing before planning.
+
+- **Public IPv4.** AWS bills every public IPv4 address, about $3.65 a month
+  each. Fixed hosts hold one per worker. The fleet holds one per zone, on the
+  NAT instance, however many workers it runs. A NAT instance briefly holds a
+  second address at boot, which is released when it claims its Elastic IP.
+- **NAT instance or NAT gateway.** A `t4g.micro` NAT instance costs about $6 a
+  month and charges nothing per GB beyond normal data transfer out. A NAT
+  gateway costs about $33 a month per zone plus $0.045 per GB it processes,
+  which a fleet syncing mailboxes all day pays on every byte. A NAT gateway
+  also closes a TCP connection after 350 seconds idle, which drops idle IMAP
+  sessions. The NAT instance is the cheaper and the safer choice here; the
+  trade-off is that its replacement is not instant.
+- **Free parts.** The egress-only internet gateway and the S3 gateway endpoint
+  have no hourly or per-GB charge. Data transfer out to the internet is billed
+  the same through either gateway.
+- **Workers.** On-demand only. A `t4g.medium` with `standard` credits never
+  bills surplus CPU credits; `unlimited` can.

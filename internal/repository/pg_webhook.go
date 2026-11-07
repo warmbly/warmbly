@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -490,6 +491,19 @@ func (r *webhookRepository) MatchingEndpoints(ctx context.Context, orgID uuid.UU
 	return out, rows.Err()
 }
 
+// WebhookDeliveryChannel is the NOTIFY channel an enqueued delivery signals.
+const WebhookDeliveryChannel = "warmbly_webhook_delivery"
+
+// webhookNotifyEvery spaces this process's notifications, since commits that NOTIFY serialize on one lock; the woken poll then drains what follows.
+const webhookNotifyEvery = 200 * time.Millisecond
+
+var lastDeliveryNotify atomic.Int64
+
+func deliveryNotifyDue() bool {
+	now, last := time.Now().UnixNano(), lastDeliveryNotify.Load()
+	return now-last >= int64(webhookNotifyEvery) && lastDeliveryNotify.CompareAndSwap(last, now)
+}
+
 func (r *webhookRepository) EnqueueDelivery(ctx context.Context, delivery *models.WebhookDelivery) error {
 	if id := SendResultEffectEventID(ctx); id != uuid.Nil {
 		delivery.ID = uuid.NewSHA1(id, []byte(delivery.EndpointID.String()))
@@ -506,12 +520,16 @@ func (r *webhookRepository) EnqueueDelivery(ctx context.Context, delivery *model
 	if delivery.Status == "" {
 		delivery.Status = models.WebhookDeliveryPending
 	}
-	_, err := r.db.Exec(ctx, `
+	insert := `
 		INSERT INTO webhook_deliveries (
 			id, endpoint_id, organization_id, event_type, event_id, payload,
 			status, attempt_count, max_attempts, next_attempt_at, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW()) ON CONFLICT(id) DO NOTHING
-	`,
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW()) ON CONFLICT(id) DO NOTHING`
+	if deliveryNotifyDue() {
+		// Delivered on commit, so a listening delivery worker wakes once the row is visible.
+		insert = `WITH queued AS (` + insert + `) SELECT pg_notify('` + WebhookDeliveryChannel + `', '')`
+	}
+	_, err := r.db.Exec(ctx, insert,
 		delivery.ID, delivery.EndpointID, delivery.OrganizationID,
 		delivery.EventType, delivery.EventID, json.RawMessage(delivery.Payload),
 		string(delivery.Status), delivery.AttemptCount, delivery.MaxAttempts,

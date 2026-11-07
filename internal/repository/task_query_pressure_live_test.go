@@ -124,7 +124,7 @@ func TestLiveTaskLedgerRangesAndClocksMatchLegacy(t *testing.T) {
 			if got, err := r.CountEmailsSentToday(ctx, f.sender); err != nil || got != wantAll {
 				t.Fatalf("all count=%d want=%d err=%v", got, wantAll, err)
 			}
-			if got, err := r.CountWarmupEmailsSentToday(ctx, f.sender); err != nil || got != wantWarm {
+			if got, err := r.CountWarmupEmailsSentBetween(ctx, f.sender, localStart, localEnd); err != nil || got != wantWarm {
 				t.Fatalf("warmup count=%d want=%d err=%v", got, wantWarm, err)
 			}
 			for _, claim := range []any{nil, utcStart.Add(-48 * time.Hour), utcEnd.Add(48 * time.Hour)} {

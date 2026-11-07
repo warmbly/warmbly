@@ -1,13 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "motion/react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import toast from "react-hot-toast/headless";
-import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
-import { useInstanceAdmin } from "@/hooks/usePermission";
-import CloudLinkCard from "@/components/app/cloud/CloudLinkCard";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 
@@ -19,6 +16,8 @@ import type Organization from "@/lib/api/models/app/organizations/Organization";
 import { browserTimezone } from "@/lib/timezone";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
+import { postAuthNext } from "@/lib/helper/safeNext";
+import { hrefTarget } from "@/lib/routerSearch";
 import { PERSON_NAME_MAX, WORKSPACE_NAME_MAX, nameError, normalizeName, type NameKind } from "@/lib/displayName";
 
 /* ── Schema ─────────────────────── */
@@ -48,7 +47,7 @@ type OnboardingForm = z.infer<typeof schema>;
 
 const INPUT = "w-full h-11 rounded-lg border border-slate-200 bg-white px-4 text-[15px] text-slate-900 placeholder:text-slate-400 outline-none transition-colors duration-200 focus:border-sky-400 focus:ring-4 focus:ring-sky-400/15";
 
-const BASE_STEPS = [
+const STEPS = [
     {
         fields: ["first_name", "last_name"] as const,
         title: "Welcome to Warmbly",
@@ -65,14 +64,6 @@ const BASE_STEPS = [
         subtitle: "This helps us tailor Warmbly to how you send.",
     },
 ];
-
-// Self-hosted instances get one more step: linking to Warmbly Cloud so the
-// pool warms their mailboxes. Skippable; Settings > Warmbly Cloud has it too.
-const CLOUD_STEP = {
-    fields: [] as const,
-    title: "Warm up your mailboxes",
-    subtitle: "Get started links this instance to Warmbly Cloud so it warms your mailboxes. You can skip it.",
-};
 
 const ROLES = [
     { value: "founder", label: "Founder" },
@@ -166,16 +157,6 @@ export default function OnboardingPage() {
     const updateOrganization = useUpdateOrganization();
     const { data: org, refetch: refetchOrg } = useCurrentOrganization();
 
-    const authConfig = useAuthConfig();
-    const selfHosted = authConfig.data?.self_hosted === true;
-    // Linking is instance-wide, so only an instance admin who can complete it sees the step.
-    const instanceAdmin = useInstanceAdmin();
-    const canLink = selfHosted && instanceAdmin.allowed;
-    const STEPS = useMemo(() => (canLink ? [...BASE_STEPS, CLOUD_STEP] : BASE_STEPS), [canLink]);
-    const cloudStep = canLink ? STEPS.length - 1 : -1;
-    const [cloudLinked, setCloudLinked] = useState(false);
-    const [cloudOrg, setCloudOrg] = useState("");
-    const [cloudStart, setCloudStart] = useState(0);
 
     const [step, setStep] = useState(0);
     const isLast = step === STEPS.length - 1;
@@ -223,7 +204,7 @@ export default function OnboardingPage() {
                 team_size: data.team_size,
             });
             queryClient.removeQueries({ queryKey: ["auth", "me"] });
-            navigate({ to: "/app/emails" });
+            navigate(hrefTarget(postAuthNext(new URLSearchParams(window.location.search).get("next"))));
         } catch (e) {
             toast.error(buildError(e as AppError));
         }
@@ -234,11 +215,6 @@ export default function OnboardingPage() {
         if (pending) return;
         const ok = await trigger(STEPS[step].fields as unknown as (keyof OnboardingForm)[]);
         if (!ok) return;
-        if (step === cloudStep && !cloudLinked) {
-            // First press asks the cloud for a code; the card then waits for approval.
-            setCloudStart((n) => n + 1);
-            return;
-        }
         if (isLast) await finish();
         else setStep((s) => s + 1);
     };
@@ -352,39 +328,11 @@ export default function OnboardingPage() {
                             </div>
                         )}
 
-                        {step === cloudStep && (
-                            <div className="rounded-lg border border-slate-200 bg-white p-4">
-                                <CloudLinkCard
-                                    compact
-                                    minimal
-                                    startSignal={cloudStart}
-                                    linked={cloudLinked}
-                                    orgName={cloudOrg}
-                                    onLinked={(name) => {
-                                        setCloudOrg(name);
-                                        setCloudLinked(true);
-                                    }}
-                                />
-                            </div>
-                        )}
                     </motion.div>
                 </AnimatePresence>
 
-                <AuthButton loading={isLast && pending}>{step === cloudStep && cloudStart > 0 && !cloudLinked ? "Waiting for approval" : isLast ? "Get started" : "Continue"}</AuthButton>
+                <AuthButton loading={isLast && pending}>{isLast ? "Get started" : "Continue"}</AuthButton>
 
-                {isLast && step === cloudStep && (
-                    <button
-                        type="button"
-                        onClick={() => {
-                            if (pending) return;
-                            void finish();
-                        }}
-                        disabled={pending}
-                        className="w-full text-center text-sm font-medium text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-50 disabled:pointer-events-none"
-                    >
-                        Skip for now
-                    </button>
-                )}
             </form>
         </div>
     );

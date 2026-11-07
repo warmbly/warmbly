@@ -43,11 +43,11 @@ export const PLAN_CATALOG: Record<PlanID, PlanDef> = {
     free: {
         id: "free",
         label: "Free",
-        description: "Warm up to 10 mailboxes in the Warmbly pool.",
+        description: "Look around the dashboard. Mailboxes and warmup start with a plan.",
         priceMonthly: 0,
         priceAnnual: 0,
         sendsPerDay: 0,
-        bullets: ["Up to 10 mailboxes with warmup", "Replies and spam rescue included", "No sending"],
+        bullets: ["Explore the dashboard", "No mailboxes or warmup", "No sending"],
         accent: "slate",
         isolatedSending: false,
     },
@@ -65,7 +65,7 @@ export const PLAN_CATALOG: Record<PlanID, PlanDef> = {
     partnership: {
         id: "partnership",
         label: "Partnership",
-        description: "The Warmup plan for partners: the premium warmup pool and no mailbox cap, offered by Warmbly.",
+        description: "The premium warmup pool and no mailbox cap, offered by Warmbly to partners.",
         priceMonthly: 90,
         priceAnnual: null,
         sendsPerDay: 0,

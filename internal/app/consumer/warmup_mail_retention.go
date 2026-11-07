@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/config"
@@ -34,7 +35,9 @@ import (
 // retention.warmup_event_days once a full pass has completed.
 
 const (
-	warmupRetentionBatch = 100
+	warmupRetentionBatch = 500
+	// warmupRetentionRunBudget is how long one run keeps taking batches, so a backlog clears in hours, not weeks.
+	warmupRetentionRunBudget = 40 * time.Second
 	// warmupRetentionPassEvery is how often a completed pass is repeated. The
 	// windows are whole days, so nothing is gained by walking the tables
 	// more often than this.
@@ -52,13 +55,29 @@ func (s *JobsService) StartWarmupMailRetention(ctx context.Context) {
 		if time.Now().Before(nextPass) {
 			return nil
 		}
-		batchCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+		batchCtx, cancel := context.WithTimeout(ctx, 55*time.Second)
 		defer cancel()
-		done, err := s.retireWarmupMailBatch(batchCtx)
-		if err != nil || !done {
-			return err
+		started, run := time.Now(), newRetireRun()
+		for {
+			done, err := s.retireWarmupMailBatch(batchCtx, run)
+			if err != nil {
+				return err
+			}
+			if done {
+				break
+			}
+			if time.Since(started) > warmupRetentionRunBudget {
+				return nil
+			}
 		}
-		if err := s.pruneWarmupEvents(batchCtx); err != nil {
+		if run.full {
+			// A mailbox took its whole share this run and may hold more; the next run continues it.
+			return nil
+		}
+		// The record prune gets its own budget, so a long retirement run cannot starve it.
+		pruneCtx, cancelPrune := context.WithTimeout(ctx, 5*time.Minute)
+		defer cancelPrune()
+		if err := s.pruneWarmupEvents(pruneCtx); err != nil {
 			return err
 		}
 		nextPass = time.Now().Add(warmupRetentionPassEvery)
@@ -82,13 +101,43 @@ func (s *JobsService) warmupRetentionDays(ctx context.Context) (mail, events int
 	return mail, events
 }
 
+// retireRun is what one run has handed each mailbox, so no mailbox gets more than its share a run.
+type retireRun struct {
+	received, sent map[uuid.UUID]bool
+	// full is set when a mailbox took its whole share, so the pass is not complete.
+	full bool
+}
+
+func newRetireRun() *retireRun {
+	return &retireRun{received: map[uuid.UUID]bool{}, sent: map[uuid.UUID]bool{}}
+}
+
+// take records a batch against the run and reports whether the listing ran out; a mailbox it skips next is marked by full.
+func (r *retireRun) take(served map[uuid.UUID]bool, batch []repository.WarmupMailToRetire) bool {
+	for _, m := range batch {
+		served[m.EmailAccountID] = true
+	}
+	if atShare(batch) {
+		r.full = true
+	}
+	return len(batch) < warmupRetentionBatch
+}
+
+func keys(m map[uuid.UUID]bool) []uuid.UUID {
+	out := make([]uuid.UUID, 0, len(m))
+	for id := range m {
+		out = append(out, id)
+	}
+	return out
+}
+
 // retireWarmupMailBatch offers one batch of received copies and one of sent
-// copies to the workers. It reports done when both listings came back short,
-// which means nothing older is waiting.
-func (s *JobsService) retireWarmupMailBatch(ctx context.Context) (bool, error) {
+// copies to the workers, skipping mailboxes this run already served. It
+// reports done when both listings came back drained.
+func (s *JobsService) retireWarmupMailBatch(ctx context.Context, run *retireRun) (bool, error) {
 	days, _ := s.warmupRetentionDays(ctx)
 
-	received, err := s.WarmupRepo.ListWarmupMailToRetire(ctx, days, warmupRetentionBatch)
+	received, err := s.WarmupRepo.ListWarmupMailToRetire(ctx, days, warmupRetentionBatch, keys(run.received))
 	if err != nil {
 		return false, err
 	}
@@ -104,7 +153,7 @@ func (s *JobsService) retireWarmupMailBatch(ctx context.Context) (bool, error) {
 		}
 	}
 
-	sent, err := s.WarmupRepo.ListWarmupSentCopiesToRetire(ctx, days, warmupRetentionBatch)
+	sent, err := s.WarmupRepo.ListWarmupSentCopiesToRetire(ctx, days, warmupRetentionBatch, keys(run.sent))
 	if err != nil {
 		return false, errors.Join(append(failures, err)...)
 	}
@@ -124,7 +173,24 @@ func (s *JobsService) retireWarmupMailBatch(ctx context.Context) (bool, error) {
 		// the pass is not complete until every row of the batch went.
 		return false, errors.Join(failures...)
 	}
-	return len(received) < warmupRetentionBatch && len(sent) < warmupRetentionBatch, nil
+	doneReceived, doneSent := run.take(run.received, received), run.take(run.sent, sent)
+	return doneReceived && doneSent, nil
+}
+
+// drained is a listing that came back short with no mailbox at its per-mailbox share, so nothing older is waiting.
+func drained(batch []repository.WarmupMailToRetire) bool {
+	return len(batch) < warmupRetentionBatch && !atShare(batch)
+}
+
+// atShare reports a mailbox that took its whole per-mailbox share and may hold more.
+func atShare(batch []repository.WarmupMailToRetire) bool {
+	per := map[uuid.UUID]int{}
+	for _, m := range batch {
+		if per[m.EmailAccountID]++; per[m.EmailAccountID] >= repository.WarmupRetirePerMailbox {
+			return true
+		}
+	}
+	return false
 }
 
 // publishWarmupDelete sends the delete for one message to the worker holding
@@ -153,9 +219,9 @@ func (s *JobsService) publishWarmupDelete(ctx context.Context, m *repository.War
 // window. Runs after a complete retention pass, so a record is only ever
 // pruned once the mail it describes has been retired.
 func (s *JobsService) pruneWarmupEvents(ctx context.Context) error {
-	_, days := s.warmupRetentionDays(ctx)
+	mailDays, days := s.warmupRetentionDays(ctx)
 	before := time.Now().AddDate(0, 0, -days)
-	pruned, err := s.WarmupRepo.PruneWarmupEventsBefore(ctx, before)
+	pruned, err := s.WarmupRepo.PruneWarmupEventsBefore(ctx, before, mailDays)
 	if err != nil {
 		return err
 	}

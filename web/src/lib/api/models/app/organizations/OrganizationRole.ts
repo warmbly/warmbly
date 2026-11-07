@@ -7,6 +7,8 @@ export default interface OrganizationRole {
     description: string;
     color: string;
     permissions: number;
+    // Lets a restricted member holding the role act inside their grants, not only read.
+    acts_in_scope?: boolean;
     member_count: number;
     created_at: Date;
     updated_at: Date;

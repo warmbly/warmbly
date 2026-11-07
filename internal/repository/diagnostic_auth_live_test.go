@@ -124,7 +124,7 @@ func TestLiveDiagnosticAuthRelayRewriteUsesOnlyBoundReceivedID(t *testing.T) {
 	t.Cleanup(func() { _, _ = f.pool.Exec(context.Background(), `DELETE FROM fleet_nodes WHERE id=$1`, worker) })
 	exec(`UPDATE email_accounts SET worker_id=$1,provider=$3 WHERE id=$2`, worker, f.recipient, models.InboxProviderGoogle)
 	exec(`INSERT INTO warmup_pool_participants(pool_id,email_account_id)SELECT id,$1 FROM warmup_pools WHERE pool_type='free'`, f.recipient)
-	exec(`INSERT INTO warmup_tasks(task_id,lineage_version,subject,scenario_version,rendering_version,max_turns)VALUES($1,1,'Diagnostic','diagnostic-v1','canonical-v1',1)`, f.task)
+	exec(`INSERT INTO warmup_tasks(task_id,lineage_version,subject,scenario_version,rendering_version,max_turns)VALUES($1,1,'Paper notes again','natural-v1','canonical-v1',1)`, f.task)
 	exec(`INSERT INTO warmup_tokens(token,task_id,sender_account_id,recipient_account_id,sent_message_id)VALUES($1,$2,$3,$4,'<sent@example.test>')`, token, f.task, f.sender, f.recipient)
 	exec(`INSERT INTO warmup_received(email_account_id,internal_id,sender_account_id,message_id)VALUES($1,$2,$3,'received@mailjet.com')`, f.recipient, receipt, f.sender)
 	request := models.DiagnosticAuthRequest{Token: token, MailboxID: f.recipient, WorkerID: worker, MessageID: "<received@mailjet.com>"}

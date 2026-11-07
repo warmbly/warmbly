@@ -13,7 +13,7 @@ const MaxJSONKeyLength = 255
 // actually address. A key is either a plain identifier ("role") or
 // identifier segments joined by spaces/dashes ("Company Mobile",
 // "first-name"). That is exactly what the campaign template engine can
-// resolve: tasks.rewriteSpacedFieldRefs turns `{{.Company Mobile}}`
+// resolve: tmplvars.Normalize turns `{{.Company Mobile}}`
 // into `(index . "Company Mobile")`, so spaced and dashed keys work
 // everywhere a plain one does. Anything outside this set would produce a
 // field the user can never reference in an email.

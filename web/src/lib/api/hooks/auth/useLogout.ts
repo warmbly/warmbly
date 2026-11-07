@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import logout from "../../client/auth/logout";
 import { clearClientSession } from "@/lib/session";
+import { allTrustedDevices, forgetAllTrustedDevices } from "@/lib/trustedDevice";
 
 // Single source of truth for "log this user out fully". Order matters:
 //
@@ -24,7 +25,7 @@ export default function useLogout() {
     return useMutation({
         mutationFn: async () => {
             try {
-                await logout();
+                await logout(allTrustedDevices());
             } catch {
                 // Server revoke best-effort. We still clear locally so
                 // the user isn't stuck in a "logged in" state because
@@ -33,6 +34,9 @@ export default function useLogout() {
         },
         // Shared with the session-expiry paths, so signing out and being signed
         // out leave the browser in the same state.
-        onSettled: () => clearClientSession(queryClient),
+        onSettled: () => {
+            forgetAllTrustedDevices();
+            clearClientSession(queryClient);
+        },
     });
 }

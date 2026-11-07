@@ -52,7 +52,7 @@ func Limits() []LimitGroup {
 			Title: "Mailbox allowance",
 			Entries: []LimitEntry{
 				{"Fair-use sends per mailbox", n(config.FairUseSendsPerMailbox), "sends/day", "A paid plan holds one mailbox for every this many daily sends it includes; a plan with no daily cap holds unlimited mailboxes."},
-				{"Free workspace mailboxes", n(models.FreeWorkspaceMailboxLimit), "per organization", "Without a paid plan."},
+				{"Free workspace mailboxes", n(models.FreeWorkspaceMailboxLimit), "per organization", "Only workspaces that kept the free plan; new ones need a paid plan."},
 				{"Bulk connect batch", n(config.MailboxBulkBatchMax), "rows/request", "The most SMTP/IMAP rows one bulk connect call carries; the dashboard streams a CSV through batches of this size."},
 				{"Bulk connect concurrency", n(config.MailboxBulkConcurrency), "validations", "Credentials dialled at the same time within one batch."},
 			},

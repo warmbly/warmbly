@@ -32,7 +32,7 @@ type SegmentRepository interface {
 	// MemberModes reports the manual override of each listed contact.
 	MemberModes(ctx context.Context, segmentID uuid.UUID, contactIDs []uuid.UUID) (map[uuid.UUID]models.SegmentMemberMode, *errx.Error)
 	// AddToCampaign enrols every current member of the segment as a lead.
-	AddToCampaign(ctx context.Context, orgID uuid.UUID, actor string, segmentID, campaignID uuid.UUID) (*models.SegmentAddToCampaignResult, *errx.Error)
+	AddToCampaign(ctx context.Context, orgID uuid.UUID, actor string, segmentID, campaignID uuid.UUID, skipActiveElsewhere bool) (*models.SegmentAddToCampaignResult, *errx.Error)
 	// ListForCampaign lists the segments linked to a campaign.
 	ListForCampaign(ctx context.Context, orgID, campaignID uuid.UUID) ([]models.CampaignSegmentLink, *errx.Error)
 	// SetForCampaign replaces the campaign's linked segments, withdrawing the
@@ -369,7 +369,7 @@ func (r *segmentRepository) MemberModes(ctx context.Context, segmentID uuid.UUID
 	return out, nil
 }
 
-func (r *segmentRepository) AddToCampaign(ctx context.Context, orgID uuid.UUID, actor string, segmentID, campaignID uuid.UUID) (*models.SegmentAddToCampaignResult, *errx.Error) {
+func (r *segmentRepository) AddToCampaign(ctx context.Context, orgID uuid.UUID, actor string, segmentID, campaignID uuid.UUID, skipActiveElsewhere bool) (*models.SegmentAddToCampaignResult, *errx.Error) {
 	tx, err := r.DB.Begin(ctx)
 	if err != nil {
 		db.CaptureError(err, "", nil, "begin")
@@ -403,7 +403,7 @@ func (r *segmentRepository) AddToCampaign(ctx context.Context, orgID uuid.UUID, 
 		return nil, errx.InternalError()
 	}
 
-	links, err := insertSegmentLeads(ctx, tx, orgID, actorID(actor), clause, args, campaignID, leadSourceManual)
+	links, err := insertSegmentLeads(ctx, tx, orgID, actorID(actor), clause, args, campaignID, leadSourceManual, skipActiveElsewhere)
 	if err != nil {
 		db.CaptureError(err, "segment enrol", nil, "query")
 		return nil, errx.InternalError()
@@ -443,9 +443,13 @@ const claimLeadsManualSQL = `UPDATE campaign_leads SET source = 'manual'
 // insertSegmentLeads enrols every contact matching the precompiled segment
 // clause as a lead, logging a campaign_added activity for each row that was
 // actually new. The campaign is bound after the clause's own parameters.
-func insertSegmentLeads(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, actor *uuid.UUID, clause string, args []any, campaignID uuid.UUID, src leadSource) ([]contactLink, error) {
+// skipActiveElsewhere leaves a member running in another campaign untouched.
+func insertSegmentLeads(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, actor *uuid.UUID, clause string, args []any, campaignID uuid.UUID, src leadSource, skipActiveElsewhere bool) ([]contactLink, error) {
 	args = append(args, campaignID)
 	cp := len(args)
+	if skipActiveElsewhere {
+		clause = "(" + clause + ") AND NOT " + activeElsewhereClause(fmt.Sprintf("$%d", cp))
+	}
 	// members is the clause as a contact-id subquery, reused by the three
 	// statements below so they cannot drift apart.
 	members := fmt.Sprintf(`SELECT c.id FROM contacts c WHERE c.organization_id = $1 AND (%s)`, clause)
@@ -915,7 +919,7 @@ func syncCampaignSegmentsTx(ctx context.Context, tx pgx.Tx, orgID, campaignID uu
 		if clause == "FALSE" {
 			continue
 		}
-		links, lerr := insertSegmentLeads(ctx, tx, orgID, nil, clause, args, campaignID, leadSourceSegment)
+		links, lerr := insertSegmentLeads(ctx, tx, orgID, nil, clause, args, campaignID, leadSourceSegment, false)
 		if lerr != nil {
 			db.CaptureError(lerr, "segment enrol", nil, "query")
 			return 0, errx.InternalError()

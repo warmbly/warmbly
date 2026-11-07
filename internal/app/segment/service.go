@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -344,7 +345,7 @@ func (s *service) AddToCampaign(ctx context.Context, orgID uuid.UUID, actor stri
 	if err != nil {
 		return nil, errx.New(errx.BadRequest, "invalid campaign id")
 	}
-	res, xerr := s.repo.AddToCampaign(ctx, orgID, actor, id, campaignID)
+	res, xerr := s.repo.AddToCampaign(ctx, orgID, actor, id, campaignID, in.SkipActiveInOtherCampaigns)
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -490,21 +491,12 @@ func (s *service) runOrgSyncPass(ctx context.Context, orgID uuid.UUID) {
 	}
 }
 
+// StartCampaignSegmentSync sweeps linked campaigns every interval on one replica per pass, and once on boot so links catch up promptly.
 func (s *service) StartCampaignSegmentSync(ctx context.Context, interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	// Sweep once on boot so links catch up promptly after a restart.
-	s.sweepLinkedCampaigns(ctx)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			s.sweepLinkedCampaigns(ctx)
-		}
-	}
+	jobrun.Loop(ctx, "campaign_segment_sync", interval, true, func(ctx context.Context) error {
+		s.sweepLinkedCampaigns(ctx)
+		return nil
+	})
 }
 
 func (s *service) sweepLinkedCampaigns(ctx context.Context) {

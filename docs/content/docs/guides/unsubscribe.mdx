@@ -37,7 +37,7 @@ To use a different mode for one campaign, set it under **Preferences** on that c
 
 ## Good to know
 
-- A reply asking to stop, such as "remove me", puts the sender on the suppression list. A reply saying "not interested" does not.
+- A reply asking to stop, such as "remove me" or just "STOP", puts the sender on the suppression list. A reply saying "not interested" does not.
 - **Contacts > Suppression list** is workspace-wide: no campaign emails an address on it.
 - A bare domain such as `acme.com` suppresses every address at it.
 - An unsubscribe link opens a confirmation page, and nothing happens until the recipient presses its button.
@@ -121,6 +121,8 @@ Two things to know. Gmail only shows its button for mail it already classes as b
 
 Warmbly reads every reply to a campaign email. One that asks to stop, in wording such as "unsubscribe", "remove me", "stop emailing me", "opt out" or "do not contact", puts the sender on the suppression list immediately. Replies in every tagging language are read the same way, whatever languages the workspace tags in: "bitte austragen", "désinscrivez-moi", "denme de baja", "wypiszcie mnie", "отпишите меня" or "配信停止" opt the sender out too. The quoted history is cut in each of those languages as well, so a campaign that carries its own opt-out line in German or Japanese does not opt out everyone who answers it. Only the new text of the reply is read: the quoted history below it carries your own opt-out wording and is ignored. Phrases match on whole words, so "stop by our booth" does not opt anyone out.
 
+A reply that is nothing but the command opts out too: "STOP", "Stop.", "stop please", "Remove", "Unsubscribe", "opt out", and the single-word "Stopp", "Abmelden", "Austragen", "Afmelden" or "Baja", in any case and with any punctuation. A greeting above the word is ignored, and so is what a client or a person adds below it: a sign-off such as "Thanks," or "Best regards, Jane", a name line (with pronouns if you like), a signature block below a "-- " line, or a mobile footer such as "Sent from my iPhone". Any other line below the command means the reply is read as a reply, not an opt-out. The word counts only when it is the whole message: "Stop by tomorrow", "I can't stop thinking about this" and "remove the attachment" opt nobody out, and neither does "Stop" followed by a sentence.
+
 Only a person answering you can opt out this way: someone replying in one of your campaign threads, or one of your contacts writing to you. Everything else that lands in a mailbox is left alone, even when it says "unsubscribe":
 
 - a bounce or delivery failure, which returns your own email (and its unsubscribe header) inside the notice
@@ -146,7 +148,7 @@ Turn this off with **Settings > Sending > Honour replies that ask to stop** if y
 | --- | --- |
 | Unsubscribed | Clicked the link, pressed the mail client's button, or replied asking to stop |
 | Spam complaint | The recipient's provider sent a complaint report for a message you sent |
-| Bounced | A permanent delivery failure for the address |
+| Bounced | A bounce that says the address cannot receive mail, shown with its cause. A full mailbox, a block by the receiving provider, a temporary failure or a bounce with no reason never lists the address ([how bounces are read](/guides/deliverability/#built-in-protections)), and **Settings > Sending > Bounces** turns this source off |
 | Added by hand | Someone on the team added it |
 | Imported | Pasted in as part of a list |
 

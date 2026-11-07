@@ -38,7 +38,7 @@ export function inboxPresetDate(preset: UniboxSearchParams["datePreset"], now = 
   return date;
 }
 
-export function composeInboxParams(base: UniboxSearchParams, filters: InboxFilters, accounts: { id: string; tags?: string[] }[]): UniboxSearchParams {
+export function composeInboxParams(base: UniboxSearchParams, filters: InboxFilters): UniboxSearchParams {
   const next = { ...base, from: filters.from };
   if (base.unseen === undefined) next.unseen = filters.unseen;
   if (!base.since && !base.until) {
@@ -47,11 +47,10 @@ export function composeInboxParams(base: UniboxSearchParams, filters: InboxFilte
     next.until = filters.until;
   }
   if (!base.categoryIds) next.categoryIds = filters.categoryIds;
-  if (!base.accountIds) {
+  // A tag is resolved by the server, so membership changes need no client recompose.
+  if (!base.accountIds && !base.tagId) {
     next.tagId = filters.tagId;
-    next.accountIds = filters.tagId
-      ? accounts.filter((account) => account.tags?.includes(filters.tagId!)).map((account) => account.id)
-      : filters.accountIds;
+    next.accountIds = filters.tagId ? undefined : filters.accountIds;
   }
   return next;
 }
@@ -68,7 +67,7 @@ export function inboxUserOverrides(params: UniboxSearchParams, base: UniboxSearc
     }
   }
   if (!base.categoryIds && params.categoryIds?.length) filters.categoryIds = params.categoryIds;
-  if (!base.accountIds) {
+  if (!base.accountIds && !base.tagId) {
     if (params.tagId) filters.tagId = params.tagId;
     else if (params.accountIds?.length) filters.accountIds = params.accountIds;
   }

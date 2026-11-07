@@ -117,6 +117,8 @@ type call struct {
 	body   any
 	header http.Header
 	limit  int64
+	// once answers a 429 at once, for a call the vendor counts against a budget.
+	once bool
 }
 
 // do runs one call, retrying a 429 up to maxAttempts, and decodes a 2xx body into out.
@@ -147,7 +149,7 @@ func (t *transport) do(ctx context.Context, c call, out any) error {
 		}
 		if status == http.StatusTooManyRequests {
 			wait, ok := retryAfter(header, attempt)
-			if attempt >= maxAttempts || !ok {
+			if c.once || attempt >= maxAttempts || !ok {
 				return statusErr(t.vendor, status)
 			}
 			if err := t.sleep(ctx, wait); err != nil {

@@ -20,6 +20,7 @@
     "advisor",
     "---Contacts and inbox---",
     "contacts-crm",
+    "lead-finder",
     "segments",
     "forms",
     "website-tracking",
@@ -58,7 +59,6 @@
     "security",
     "workspace-export-import",
     "team-roles",
-    "collaboration",
-    "referral-program"
+    "collaboration"
   ]
 }

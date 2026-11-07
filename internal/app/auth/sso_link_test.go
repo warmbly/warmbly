@@ -190,3 +190,5 @@ func TestFederatedSignInRefusesAnIdentityAnotherAccountHolds(t *testing.T) {
 		t.Fatalf("got %v, want a Forbidden refusal", err)
 	}
 }
+
+func (m *memoryIdentities) Unlink(context.Context, uuid.UUID, string) error { return nil }

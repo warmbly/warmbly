@@ -111,12 +111,12 @@ func (r *campaignRepository) Duplicate(ctx context.Context, in DuplicateCampaign
 	const copyCampaign = `
 		INSERT INTO campaigns (
 			id, user_id, organization_id, name, description, status,
-			stop_on_reply, open_tracking, link_tracking, text_only,
+			stop_on_reply, stop_on_meeting, open_tracking, link_tracking, text_only,
 			daily_limit, unsubscribe_header, risky_emails,
 			cc_addr, bcc_addr,
 			start_date, end_date, timezone, days, start_time, end_time, schedule_windows,
 			contact_order_by, contact_order_dir, contact_order_field,
-			sender_strategy, rotation_mode,
+			sender_strategy, rotation_mode, follow_up_sender,
 			ramp_enabled, ramp_start, ramp_increment, ramp_ceiling, ramp_level, ramp_level_date,
 			esp_match_mode, max_new_leads_per_day, prioritize_new_leads, continuous, entry_delay_minutes,
 			tracking_domain, tracking_domain_verified, tracking_domain_verified_at,
@@ -128,14 +128,14 @@ func (r *campaignRepository) Duplicate(ctx context.Context, in DuplicateCampaign
 		)
 		SELECT
 			$2, $3, organization_id, $4, description, 'draft',
-			stop_on_reply, open_tracking, link_tracking, text_only,
+			stop_on_reply, stop_on_meeting, open_tracking, link_tracking, text_only,
 			daily_limit, unsubscribe_header, risky_emails,
 			cc_addr, bcc_addr,
 			CASE WHEN start_date > NOW() THEN start_date END,
 			CASE WHEN end_date > NOW() THEN end_date END,
 			timezone, days, start_time, end_time, schedule_windows,
 			contact_order_by, contact_order_dir, contact_order_field,
-			sender_strategy, rotation_mode,
+			sender_strategy, rotation_mode, follow_up_sender,
 			ramp_enabled, ramp_start, ramp_increment, ramp_ceiling, 0, NULL,
 			esp_match_mode, max_new_leads_per_day, prioritize_new_leads, continuous, entry_delay_minutes,
 			tracking_domain, tracking_domain_verified, tracking_domain_verified_at,

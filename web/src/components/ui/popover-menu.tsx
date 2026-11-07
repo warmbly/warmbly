@@ -381,6 +381,7 @@ export function PopoverMenuItem({
     disabled = false,
     closeOnSelect = true,
     trailing,
+    description,
 }: {
     children: React.ReactNode;
     onSelect?: () => void;
@@ -392,6 +393,8 @@ export function PopoverMenuItem({
     /** Custom right-aligned content. When set, it replaces the default
      *  `selected` dot — e.g. pass a checkmark for multi-select menus. */
     trailing?: React.ReactNode;
+    /** A second, muted line under the label; the row grows to fit it. */
+    description?: React.ReactNode;
 }) {
     const { setOpen } = useMenu();
     return (
@@ -406,7 +409,8 @@ export function PopoverMenuItem({
                 if (closeOnSelect) setOpen(false);
             }}
             className={cn(
-                "w-full h-7 px-3 flex items-center gap-2 text-[12.5px] text-left transition-colors outline-none",
+                "w-full px-3 flex items-center gap-2 text-[12.5px] text-left transition-colors outline-none",
+                description ? "min-h-7 py-1.5" : "h-7",
                 danger
                     ? "text-red-600 hover:bg-red-50 focus-visible:bg-red-50"
                     : "text-slate-700 hover:bg-slate-50 hover:text-slate-900 focus-visible:bg-slate-50 focus-visible:text-slate-900",
@@ -415,7 +419,14 @@ export function PopoverMenuItem({
             )}
         >
             {icon && <span className={cn("shrink-0", danger ? "text-red-500" : "text-slate-400")}>{icon}</span>}
-            <span className="flex-1 truncate">{children}</span>
+            {description ? (
+                <span className="flex-1 min-w-0">
+                    <span className="block truncate">{children}</span>
+                    <span className="block truncate text-[11px] font-normal text-slate-400">{description}</span>
+                </span>
+            ) : (
+                <span className="flex-1 truncate">{children}</span>
+            )}
             {trailing !== undefined ? (
                 <span className="shrink-0">{trailing}</span>
             ) : selected ? (
