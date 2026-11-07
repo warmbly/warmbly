@@ -47,22 +47,19 @@ func (c *Client) foldersCapped(limit int) ([]models.Mailbox, *errx.MailError) {
 }
 
 func (c *Client) listFoldersCapped(limit int) (FolderListing, *errx.MailError) {
-	if err := c.ensureConnected(); err != nil {
-		return FolderListing{}, err
-	}
-	var pending []int
-	listing, err := c.listFoldersOnce(limit, &pending)
-	if err != nil || len(pending) == 0 {
+	listing, unpaired, err := c.listFoldersStatus(limit)
+	if err != nil || len(unpaired) == 0 {
 		return listing, err
 	}
-	return c.fillUnmatchedStatus(listing, pending)
+	return c.examineUnpaired(listing, unpaired)
 }
 
-// listFoldersOnce is the listing every server gets: LIST, then a STATUS for
-// each folder the LIST did not already answer. A folder whose STATUS reply the
-// client cannot pair with the request is appended without cursors, and its
-// index in the listing goes into pending for fillUnmatchedStatus.
-func (c *Client) listFoldersOnce(limit int, pending *[]int) (FolderListing, *errx.MailError) {
+// listFoldersStatus is the listing with each folder's STATUS. It also returns
+// the folders whose STATUS reply go-imap could not pair, left with no cursors.
+func (c *Client) listFoldersStatus(limit int) (FolderListing, map[string]struct{}, *errx.MailError) {
+	if err := c.ensureConnected(); err != nil {
+		return FolderListing{}, nil, err
+	}
 	c.lifecycle.RLock()
 	defer c.lifecycle.RUnlock()
 	defer c.begin()()
@@ -99,7 +96,7 @@ func (c *Client) listFoldersOnce(limit int, pending *[]int) (FolderListing, *err
 		}
 	}
 	if err := cmd.Close(); err != nil {
-		return FolderListing{}, c.handleError(err)
+		return FolderListing{}, nil, c.handleError(err)
 	}
 
 	// Before the cap, not after: a name the server listed twice would
@@ -111,6 +108,7 @@ func (c *Client) listFoldersOnce(limit int, pending *[]int) (FolderListing, *err
 	kept, overflow := rankFolders(all, limit)
 	c.folderOverflow.Store(int32(overflow))
 
+	var unpaired map[string]struct{}
 	resp := make([]models.Mailbox, 0, len(kept))
 	for _, box := range kept {
 		st := statuses[box.Name]
@@ -123,23 +121,20 @@ func (c *Client) listFoldersOnce(limit int, pending *[]int) (FolderListing, *err
 					delete(present, box.Name)
 					continue
 				}
-				return FolderListing{}, merr
+				return FolderListing{}, nil, merr
+			}
+			if data.Mailbox == "" && encodedOnWire(box.Name) {
+				if unpaired == nil {
+					unpaired = map[string]struct{}{}
+				}
+				unpaired[box.Name] = struct{}{}
+				resp = append(resp, box)
+				continue
 			}
 			st = data
 		}
-		if unmatchedStatus(st) && nonASCIIName(box.Name) {
-			// A server that answers STATUS under another spelling of a non-ASCII
-			// folder name (NetEase Enterprise Mail masks it as "???") has its
-			// reply dropped by the client, which pairs replies with commands by
-			// name. The cursors are read from the folder itself instead. An ASCII
-			// name cannot be masked this way, so an empty answer for one stays the
-			// retryable failure it always was.
-			*pending = append(*pending, len(resp))
-			resp = append(resp, box)
-			continue
-		}
 		if st == nil || st.UIDValidity == 0 || st.UIDNext == 0 {
-			return FolderListing{}, errx.ErrMailServerUnreachable
+			return FolderListing{}, nil, errx.ErrMailServerUnreachable
 		}
 		box.UIDValidity = st.UIDValidity
 		box.UIDNext = uint32(st.UIDNext)
@@ -150,73 +145,58 @@ func (c *Client) listFoldersOnce(limit int, pending *[]int) (FolderListing, *err
 		resp = append(resp, box)
 	}
 
-	return FolderListing{Folders: resp, Present: present}, nil
+	return FolderListing{Folders: resp, Present: present}, unpaired, nil
 }
 
-// unmatchedStatus is a STATUS result that no reply was paired with. go-imap
-// pairs a reply with its command by mailbox name and drops one it cannot
-// pair, which leaves the zero value; a reply that did arrive always names its
-// mailbox.
-func unmatchedStatus(st *imap.StatusData) bool {
-	return st != nil && st.Mailbox == "" && st.UIDValidity == 0 && st.UIDNext == 0
-}
-
-// nonASCIIName reports whether a folder name has a character that a server
-// can fail to echo back in a STATUS reply.
-func nonASCIIName(name string) bool {
-	for _, r := range name {
-		if r >= utf8.RuneSelf {
-			return true
-		}
-	}
-	return false
-}
-
-// fillUnmatchedStatus reads the cursors of the folders whose STATUS reply was
-// not paired, from a read-only SELECT of each. SELECT changes the selected
-// mailbox, so it runs under mu like every other path that does. The lock is
-// taken here and not for the whole listing, so a server that answers STATUS
-// normally keeps the lock-free listing it always had.
-func (c *Client) fillUnmatchedStatus(listing FolderListing, pending []int) (FolderListing, *errx.MailError) {
+// examineUnpaired reads the cursors of the folders whose STATUS reply go-imap
+// pairs by name and could not pair (NetEase echoes a non-ASCII name as "???")
+// from EXAMINE. It takes mu, because EXAMINE moves the selection a warmup
+// action works in, so a listing that needs none of this never waits on mu.
+func (c *Client) examineUnpaired(listing FolderListing, unpaired map[string]struct{}) (FolderListing, *errx.MailError) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if err := c.ensureConnected(); err != nil {
+		return FolderListing{}, err
+	}
 	c.lifecycle.RLock()
 	defer c.lifecycle.RUnlock()
 	defer c.begin()()
 
-	gone := make(map[int]struct{})
-	for _, i := range pending {
-		box := &listing.Folders[i]
-		sel, err := c.selectMailbox(box.Name, &imap.SelectOptions{ReadOnly: true})
-		if err != nil {
-			merr := c.handleError(err)
-			if merr.Code == errx.ErrMailResourceNotFound.Code {
-				// Only explicit absence can retire a folder's stored state.
-				delete(listing.Present, box.Name)
-				gone[i] = struct{}{}
-				continue
+	folders := listing.Folders[:0]
+	for _, box := range listing.Folders {
+		if _, ok := unpaired[box.Name]; ok {
+			sel, err := c.examineLocked(box.Name)
+			if err != nil {
+				merr := c.handleError(err)
+				if merr.Code == errx.ErrMailResourceNotFound.Code {
+					delete(listing.Present, box.Name)
+					continue
+				}
+				return FolderListing{}, merr
 			}
-			return FolderListing{}, merr
+			if sel.UIDValidity == 0 || sel.UIDNext == 0 {
+				return FolderListing{}, errx.ErrMailServerUnreachable
+			}
+			box.UIDValidity = sel.UIDValidity
+			box.UIDNext = uint32(sel.UIDNext)
+			box.HighestModSeq = sel.HighestModSeq
+			box.Messages = sel.NumMessages
 		}
-		if sel.UIDValidity == 0 || sel.UIDNext == 0 {
-			return FolderListing{}, errx.ErrMailServerUnreachable
-		}
-		box.UIDValidity = sel.UIDValidity
-		box.UIDNext = uint32(sel.UIDNext)
-		box.HighestModSeq = sel.HighestModSeq
-		box.Messages = sel.NumMessages
+		folders = append(folders, box)
 	}
-	if len(gone) == 0 {
-		return listing, nil
-	}
-	kept := listing.Folders[:0]
-	for i, box := range listing.Folders {
-		if _, ok := gone[i]; !ok {
-			kept = append(kept, box)
-		}
-	}
-	listing.Folders = kept
+	listing.Folders = folders
 	return listing, nil
+}
+
+// encodedOnWire is whether a mailbox name goes out in modified UTF-7 rather
+// than as written (RFC 3501 5.1.3), the only names a reply can echo differently.
+func encodedOnWire(name string) bool {
+	for _, r := range name {
+		if r < 0x20 || r > 0x7e || r == '&' {
+			return true
+		}
+	}
+	return false
 }
 
 // listOptionsFor is the LIST options a server's capabilities allow, and

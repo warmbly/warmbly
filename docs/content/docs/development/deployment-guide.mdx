@@ -474,7 +474,7 @@ In the [Google Cloud console](https://console.cloud.google.com/), create (or pic
 </Step>
 
 <Step>
-Configure the OAuth consent screen. For your own Workspace domain only, choose **Internal** to skip Google's verification review; an Internal client is exempt from the 100-user cap ([Google's help](https://support.google.com/cloud/answer/13464323)). To connect mailboxes on other Workspace domains you need **External**: until Google verifies the app it is limited to 100 new users, except on domains whose administrator marks the client ID Trusted under **Security > Access and data control > API controls > Manage Third-Party App Access**. Personal Gmail never signs in this way; it connects with an app password.
+Configure the OAuth consent screen. For your own Workspace domain only, choose **Internal** to skip Google's verification review; an Internal client is exempt from the 100-user cap ([Google's help](https://support.google.com/cloud/answer/13464323)). To connect mailboxes on other Workspace domains you need **External**: until Google verifies the app it is limited to 100 new users, except on domains whose administrator marks the client ID Trusted under **Security > API Controls > App Access Control**. Personal Gmail never signs in this way; it connects with an app password.
 
 Under **Data access**, add the two scopes Warmbly requests: `https://mail.google.com/` and `https://www.googleapis.com/auth/gmail.settings.basic`. Full mail access is what lets a mailbox run its warmup engagement over IMAP; a mailbox connected earlier under `gmail.modify` keeps working on the Gmail API until it is re-authorized. Workers reach `imap.gmail.com` on port `993` for that, so allow it outbound wherever workers have an egress allowlist.
 </Step>

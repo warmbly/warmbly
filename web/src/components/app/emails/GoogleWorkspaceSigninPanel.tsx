@@ -14,10 +14,10 @@ import { CopyValue } from "@/components/app/emails/import/parts";
 import { Crumbs, Instruction } from "@/components/app/emails/import/grants/GrantSetupSteps";
 import { isPersonalGmail } from "@/lib/mailHost";
 
-/** Admin console > Security > Access and data control > API controls > Manage Third-Party App Access. */
+/** Admin console > Security > API Controls > App Access Control. */
 export const GOOGLE_THIRD_PARTY_APPS_URL = "https://admin.google.com/ac/owl/list?tab=configuredApps";
 
-const THIRD_PARTY_PATH = ["Security", "Access and data control", "API controls", "Manage Third-Party App Access"];
+const THIRD_PARTY_PATH = ["Security", "API Controls", "App Access Control"];
 
 const ADDRESS_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -170,12 +170,11 @@ export function TrustedAppSteps({ clientId }: { clientId?: string }) {
                 <p>Go to</p>
                 <Crumbs items={THIRD_PARTY_PATH} />
                 <p>
-                    and click <span className="font-medium text-slate-900">Configure new app</span> (or{" "}
-                    <span className="font-medium text-slate-900">Add app &gt; OAuth App Name or Client ID</span>).
+                    and click <span className="font-medium text-slate-900">Configure new app</span>.
                 </p>
             </Instruction>
             <Instruction n={3}>
-                <p>Search by this client ID and select Warmbly.</p>
+                <p>Search by this client ID and select the app it finds.</p>
                 {clientId ? (
                     <CopyValue label="Client ID" value={clientId} />
                 ) : (
@@ -184,8 +183,9 @@ export function TrustedAppSteps({ clientId }: { clientId?: string }) {
             </Instruction>
             <Instruction n={4}>
                 <p>
-                    Choose <span className="font-medium text-slate-900">All users</span> (or the organizational unit that holds the
-                    mailboxes), then <span className="font-medium text-slate-900">Trusted</span>, and finish.
+                    For scope, choose <span className="font-medium text-slate-900">All in your organization (all users)</span> or the
+                    org units that hold the mailboxes. For access to Google data, choose{" "}
+                    <span className="font-medium text-slate-900">Trusted</span>, then <span className="font-medium text-slate-900">Finish</span>.
                 </p>
             </Instruction>
         </ol>
@@ -206,8 +206,7 @@ export function BlockedByAdminHint({ clientId }: { clientId?: string }) {
                 <div className="min-w-0 space-y-1">
                     <div className="text-[12px] font-medium text-amber-900">Google said the app is blocked by your admin?</div>
                     <p className="text-[11.5px] text-amber-800 leading-relaxed">
-                        Your Workspace admin has to add Warmbly&apos;s client ID as a trusted app under Manage Third-Party App Access, for All
-                        users, then the mailbox can sign in again.
+                        Your Workspace admin has to add Warmbly&apos;s client ID as a trusted app under App Access Control, for the users or org units whose mailboxes connect, then the mailbox can sign in again.
                     </p>
                 </div>
             </div>

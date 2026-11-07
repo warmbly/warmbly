@@ -3,7 +3,7 @@ title: Whole-domain mailbox connects
 description: "Set up the Google service account and the Microsoft app that let a workspace connect every mailbox on a Google Workspace domain or Microsoft 365 organization with one administrator's approval."
 ---
 
-A workspace can connect every mailbox on a Google Workspace domain or a Microsoft 365 organization through one administrator's approval, with no password and no sign-in per mailbox. In the dashboard these are **Add account > Microsoft > Whole organization**, the recommended way to connect Microsoft 365 mailboxes, and **Add account > Google > Whole Workspace domain**, which is legacy: new Google Workspace domains are no longer connected through delegation, and the Google half of this page keeps the grants a workspace already holds working. The customer side is in [connect a whole Google Workspace domain](/guides/mailbox-import/#connect-a-whole-google-workspace-domain) and [connect a whole Microsoft 365 organization](/guides/mailbox-import/#connect-a-whole-microsoft-365-organization).
+A workspace can connect every mailbox on a Google Workspace domain or a Microsoft 365 organization through one administrator's approval, with no password and no sign-in per mailbox. In the dashboard these are **Add account > Microsoft > Whole organization**, the recommended way to connect Microsoft 365 mailboxes, and the legacy Google Workspace domain grant, which **Add account** no longer offers: new Google Workspace domains are not connected through delegation, and the Google half of this page keeps the grants a workspace already holds working. Those grants are reached from **View the grant** (**Check the grant** when the grant is invalid) in the drawer of a mailbox they connected; a grant with no mailbox left appears under **Add account > Google > Workspace domain grant** while the service account key is loaded. The customer side is in [connect a whole Google Workspace domain](/guides/mailbox-import/#connect-a-whole-google-workspace-domain) and [connect a whole Microsoft 365 organization](/guides/mailbox-import/#connect-a-whole-microsoft-365-organization).
 
 This page is the operator side: what the instance needs before either option works. Both are off until you set them up, and a self-hosted instance shows them switched off in the dashboard, naming the settings still unset. `GET /emails/grants/config` reports the same as `google_missing` and `microsoft_missing`.
 
@@ -52,7 +52,7 @@ If Google answers that service account key creation is disabled, an organization
 </Step>
 
 <Step>
-**Find the Client ID.** It is the numeric `client_id` in the key file, and the same number the console shows as the service account's **Unique ID**. You do not need to copy it anywhere yourself: once the key is loaded, the dashboard shows it to customers in the **Whole Workspace domain** dialog, together with the scopes to authorize. It is not the `...apps.googleusercontent.com` ID of an OAuth client.
+**Find the Client ID.** It is the numeric `client_id` in the key file, and the same number the console shows as the service account's **Unique ID**. Once the key is loaded, `GET /emails/grants/config` reports it as `google_client_id`; the scopes to authorize are listed below. It is not the `...apps.googleusercontent.com` ID of an OAuth client.
 </Step>
 
 <Step>
@@ -79,7 +79,7 @@ The backend runs as uid `1000`, so the file has to be readable by that user (`ch
 </Step>
 
 <Step>
-**Restart the backend** and check the result. **Add account > Google > Whole Workspace domain** is now offered, and `GET /emails/grants/config` answers `google_enabled: true` with the service account's `google_client_id`. A value that is not a service account key logs one line at boot and leaves the option off. The admin panel shows both settings under **Instance > Configuration > Environment**, as set or unset with a short fingerprint, never the value.
+**Restart the backend** and check the result: `GET /emails/grants/config` answers `google_enabled: true` with the service account's `google_client_id`, which confirms only that the key is loaded. A grant works once its domain's administrator has authorized that client ID with the scopes below. To replace the service account, have every domain's administrator authorize the new client ID with the same scopes first, then switch the key and restart, then **Check again** on each grant; keep the old ID authorized until the old key can no longer come back in a rollback. A value that is not a service account key logs one line at boot and leaves the option off. The admin panel shows both settings under **Instance > Configuration > Environment**, as set or unset with a short fingerprint, never the value.
 </Step>
 
 </Steps>

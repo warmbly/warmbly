@@ -53,13 +53,12 @@ Browsing filters, searches and view choices are [remembered in your browser tab]
 
 Only an address and a password are required. Servers, ports and encryption are found for you.
 
-Three other sources skip the file entirely, each reached from the same **Add account** dialog:
+Two other sources skip the file entirely, each reached from the same **Add account** dialog:
 
 - **Inbox vendor**: read the mailboxes straight from the vendor you bought them from, with an API key. See [import from an inbox vendor](#import-from-an-inbox-vendor).
-- **Google > Whole Workspace domain**: for a workspace that already holds a Google domain grant, connect more of its mailboxes without a password. New domains are no longer connected this way. See [connect a whole Google Workspace domain](#connect-a-whole-google-workspace-domain).
 - **Microsoft > Whole organization**: a Global Administrator consents once, and every licensed mailbox in the organization connects without a sign-in each. See [connect a whole Microsoft 365 organization](#connect-a-whole-microsoft-365-organization).
 
-All three create the same kind of import as a file: it runs in the background, shows the same progress, and groups failures by cause.
+Both create the same kind of import as a file, and so does a Google domain grant a workspace already holds ([connect a whole Google Workspace domain](#connect-a-whole-google-workspace-domain)): it runs in the background, shows the same progress, and groups failures by cause.
 
 </Fold>
 
@@ -210,7 +209,7 @@ A Google Workspace domain grant is domain-wide delegation: a super admin authori
 
 New Google Workspace domains are no longer connected this way. Connect a Workspace mailbox by having the administrator mark Warmbly as a trusted app and signing the mailbox in with Google, see [Google Workspace with Google sign-in](/guides/mailboxes/#google-workspace-with-google-sign-in), or with an [app password](/guides/mailboxes/#personal-gmail). Personal Gmail addresses are on no Workspace domain and always use an app password. Microsoft 365 organizations are unaffected.
 
-A grant a workspace already holds keeps working. **Add account > Google > Whole Workspace domain** appears only for such a workspace, and lists its grants: pick one to connect more of its mailboxes, check it again, or remove it. Starting a grant for a domain the workspace holds none for is refused with [`google_delegation_retired`](/api/error-codes/#google_delegation_retired).
+A grant a workspace already holds keeps working. **Add account** no longer offers Google domain grants; to reach one, open a mailbox it connected and choose **View the grant** (**Check the grant** when the grant is invalid) in the mailbox's drawer. From there you can connect more of its mailboxes, check it again, or remove it. A grant with no mailbox left to open it from appears under **Add account > Google > Workspace domain grant** instead. Starting a grant for a domain the workspace holds none for is refused with [`google_delegation_retired`](/api/error-codes/#google_delegation_retired).
 
 A domain that is already connected can move its warmup engagement to IMAP: the super admin edits the existing delegation entry and adds `https://mail.google.com/` after the three scopes. The three stay required; the added one is optional, and without it warmup engagement runs on the Gmail API as before. See [optional scope for warmup engagement over IMAP](/development/whole-domain-connect/#optional-scope-for-warmup-engagement-over-imap).
 
@@ -239,7 +238,7 @@ The grant is checked again every hour. When Google stops honoring it (the entry 
 
 Connecting mailboxes through a grant and deleting a grant both reach a whole domain's mail, so like recording one they need a recent confirmation of your sign-in.
 
-To remove a grant, open **Add account > Google > Whole Workspace domain** or **Microsoft > Whole organization**, use the grant's **More** menu, and choose **Remove grant**. Confirm the removal, then complete **Confirm it is you** if prompted. The removal waits for this identity check and continues automatically when it succeeds. A `403` with code `reauth_required` means this check is needed, not that the domain is owned by another instance. Removing the grant stops its mailboxes on this instance; it does not delete mailboxes connected with app passwords on a separate self-hosted instance.
+To remove a grant, open **Add account > Microsoft > Whole organization** (for a Google grant, open a mailbox it connected and choose **View the grant** in the mailbox's drawer), use the grant's **More** menu, and choose **Remove grant**. Confirm the removal, then complete **Confirm it is you** if prompted. The removal waits for this identity check and continues automatically when it succeeds. A `403` with code `reauth_required` means this check is needed, not that the domain is owned by another instance. Removing the grant stops its mailboxes on this instance; it does not delete mailboxes connected with app passwords on a separate self-hosted instance.
 
 </Fold>
 
