@@ -955,7 +955,7 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
                     >
                         <SettingsRow
                             label="Reconnect vendor mailboxes automatically"
-                            description="On, Warmbly asks the vendor on its own for each linked Google mailbox on the older Google sign-in or a legacy domain grant, at most once a week per mailbox. Off leaves it to a member to click Reconnect."
+                            description="On, Warmbly asks the vendor on its own for each linked Google Workspace mailbox on an app password, the older Google sign-in or a legacy domain grant, at most once a week per mailbox. Off leaves it to a member to click Reconnect."
                         >
                             <Switch
                                 checked={form.autoVendorReconnect}
