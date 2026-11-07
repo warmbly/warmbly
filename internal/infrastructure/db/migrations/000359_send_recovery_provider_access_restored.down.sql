@@ -2,7 +2,7 @@
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM send_recovery_resolutions WHERE evidence_type = 'provider_access_restored') THEN
-        RAISE EXCEPTION 'send_recovery_resolutions holds provider_access_restored releases; roll forward instead of downgrading past 000357';
+        RAISE EXCEPTION 'send_recovery_resolutions holds provider_access_restored releases; roll forward instead of downgrading past 000359';
     END IF;
 END $$;
 ALTER TABLE send_recovery_resolutions
