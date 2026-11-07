@@ -404,3 +404,34 @@ run "realtime_keeps_a_fixed_count" {
   }
   expect_failures = [var.autoscaling]
 }
+
+run "unmatched_hosts_answer_404_by_default" {
+  command = apply
+  assert {
+    condition     = aws_lb_listener.https.default_action[0].type == "fixed-response" && aws_lb_listener.https.default_action[0].fixed_response[0].status_code == "404"
+    error_message = "a host no rule matches is refused unless tracking is asked to serve it"
+  }
+}
+
+run "unmatched_hosts_reach_tracking_when_enabled" {
+  command = apply
+  variables {
+    tracking_serves_unmatched_hosts = true
+  }
+  assert {
+    condition     = aws_lb_listener.https.default_action[0].type == "forward" && aws_lb_listener.https.default_action[0].target_group_arn == aws_lb_target_group.service["tracking"].arn
+    error_message = "a host no rule matches goes to tracking"
+  }
+}
+
+run "unmatched_hosts_follow_the_tls_route" {
+  command = apply
+  variables {
+    tracking_serves_unmatched_hosts = true
+    target_tls                      = "route"
+  }
+  assert {
+    condition     = alltrue([for group in aws_lb_listener.https.default_action[0].forward[0].target_group : group.arn == aws_lb_target_group.service_tls["tracking"].arn ? group.weight == 1 : group.weight == 0])
+    error_message = "the catch-all moves to HTTPS with every other tracking rule"
+  }
+}

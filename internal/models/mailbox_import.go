@@ -541,6 +541,10 @@ const (
 	RedirectHintNoListener  RedirectReachHint = "no_listener"
 	// RedirectHintSettling: the tracking service answered for the domain but has not picked the redirect up yet.
 	RedirectHintSettling RedirectReachHint = "settling"
+	// RedirectHintEdgeRecord: Cloudflare refused the name because its records point at Cloudflare's own addresses.
+	RedirectHintEdgeRecord RedirectReachHint = "edge_record"
+	// RedirectHintEdgeInactive: Cloudflare received the visit but has not activated the name for the tracking host.
+	RedirectHintEdgeInactive RedirectReachHint = "edge_inactive"
 )
 
 // RedirectReach is one HTTP check of a verified redirect's domain.

@@ -19,11 +19,13 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/app/customhost"
+	"github.com/warmbly/warmbly/internal/app/edgehost"
 	"github.com/warmbly/warmbly/internal/app/owndomain"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/cfsaas"
 	"github.com/warmbly/warmbly/internal/pkg/domainproof"
 	"github.com/warmbly/warmbly/internal/pkg/mailhost"
 	"github.com/warmbly/warmbly/internal/pkg/trackdns"
@@ -85,12 +87,17 @@ type Service struct {
 	proof     *domainproof.Prover
 	// customHosts gates a new tracking host on the workspace's TXT proof.
 	customHosts *customhost.Checker
+	// edge registers served names at the provider in front of the tracking host; nil when there is none.
+	edge *edgehost.Service
 	// target is this instance's tracking host; "" when tracking is not set up.
 	target func() string
 }
 
 // WireCustomHosts attaches the custom-domain ownership checks.
 func (s *Service) WireCustomHosts(c *customhost.Checker) { s.customHosts = c }
+
+// WireEdge attaches the edge registration; optional.
+func (s *Service) WireEdge(e *edgehost.Service) { s.edge = e }
 
 func NewService(redirects repository.DomainRedirectRepository, mailboxes Mailboxes, resolver Resolver, proof *domainproof.Prover) *Service {
 	if resolver == nil {
@@ -203,10 +210,15 @@ func (s *Service) Overview(ctx context.Context, orgID uuid.UUID) ([]models.Sendi
 	if xerr != nil {
 		return nil, xerr
 	}
+	ptrs := make([]*models.DomainRedirect, len(redirects))
+	for i := range redirects {
+		ptrs[i] = &redirects[i]
+	}
+	pending := s.edgePending(ctx, ptrs...)
 	byDomain := map[string]*models.DomainRedirect{}
 	for i := range redirects {
 		r := redirects[i]
-		s.decorate(&r, nil)
+		s.decorate(&r, nil, pending)
 		s.markTarget(&r, own)
 		byDomain[r.Domain] = &r
 	}
@@ -480,9 +492,17 @@ func (s *Service) probe(ctx context.Context, r *models.DomainRedirect) probe {
 		p.targetReason = "The tracking host " + target + " does not resolve, so no address can be compared."
 	}
 	if r.IncludeWWW {
-		p.www = trackdns.VerifyWith(cctx, s.resolver, "www."+r.Domain, target).Verified
+		p.www = s.wwwPoints(cctx, r.Domain, target, p.apex)
 	}
 	return p
+}
+
+// wwwPoints accepts www as a CNAME to the root (when the root points here) or anything that reaches the tracking host.
+func (s *Service) wwwPoints(ctx context.Context, domain, target string, apex bool) bool {
+	if cname, err := s.resolver.LookupCNAME(ctx, "www."+domain); err == nil && apex && strings.TrimSuffix(strings.ToLower(cname), ".") == domain {
+		return true
+	}
+	return trackdns.VerifyWith(ctx, s.resolver, "www."+domain, target).Verified
 }
 
 // check verifies one redirect and records the verdict. A verified redirect
@@ -524,6 +544,16 @@ func (s *Service) check(ctx context.Context, r *models.DomainRedirect, force boo
 		}
 		return nil, errx.InternalError()
 	}
+	// The edge in front of the tracking host has to know the names before a visit can reach it; a slow edge is left to the sweep.
+	if verified && s.edge.Enabled() {
+		hosts := []string{r.Domain}
+		if r.IncludeWWW {
+			hosts = append(hosts, "www."+r.Domain)
+		}
+		ectx, cancel := context.WithTimeout(ctx, edgeRegisterTimeout)
+		s.edge.Register(ectx, hosts...)
+		cancel()
+	}
 	// DNS proves the name points here; opening it proves a visitor gets the redirect, which is withheld until the destination is the workspace's.
 	var reach *models.RedirectReach
 	if verified && s.reach != nil && ownErr == nil && ownTarget {
@@ -532,6 +562,13 @@ func (s *Service) check(ctx context.Context, r *models.DomainRedirect, force boo
 		if got.Hint == models.RedirectHintSettling && r.Verified && r.VerifiedAt != nil && time.Since(*r.VerifiedAt) > settleGrace {
 			got = models.RedirectReach{Status: models.RedirectReachNotReaching, Hint: models.RedirectHintNotRouted, Proxy: got.Proxy,
 				Detail: "Warmbly's tracking service answers for " + r.Domain + " but serves no redirect for it, so the domain may point at a different Warmbly instance."}
+		}
+		if got.Hint == models.RedirectHintEdgeInactive {
+			if s.edge.Enabled() {
+				got.Detail += " Warmbly activates a verified domain there by itself within a few minutes."
+			} else {
+				got.Detail += " Cloudflare only serves names its own zone knows, so point the domain's records straight at this server, or add the domain to that zone as a custom hostname."
+			}
 		}
 		reach = &got
 	}
@@ -543,6 +580,9 @@ func (s *Service) check(ctx context.Context, r *models.DomainRedirect, force boo
 
 // sweepConcurrency bounds the checks one sweep runs at once.
 const sweepConcurrency = 8
+
+// edgeRegisterTimeout is what one check may spend registering its names, leaving the rest of a request's deadline to finish it.
+const edgeRegisterTimeout = 5 * time.Second
 
 // settleGrace is how long after verifying a tracking miss is put down to its cache rather than to the setup.
 const settleGrace = 3 * time.Minute
@@ -557,7 +597,7 @@ func (s *Service) finish(ctx context.Context, before *models.DomainRedirect, p *
 		s.auditor.LogAction(ctx, fresh.OrganizationID, *fresh.CreatedBy, models.AuditActionUpdate, models.AuditEntityDomainRedirect, &fresh.ID, "", "",
 			map[string]string{"verified": strconv.FormatBool(fresh.Verified), "reaching": strconv.FormatBool(!blocked(fresh))}, map[string]string{"domain": fresh.Domain})
 	}
-	s.decorate(fresh, p)
+	s.decorate(fresh, p, s.edgePending(ctx, fresh))
 	if fresh.LinkedInstanceID == nil {
 		if own, xerr := s.ownDomains().Set(ctx, fresh.OrganizationID); xerr == nil {
 			s.markTarget(fresh, own)
@@ -573,7 +613,8 @@ func blocked(r *models.DomainRedirect) bool {
 }
 
 // decorate fills the records to add and the host that answers, from Cloud's mirror when Cloud serves it.
-func (s *Service) decorate(r *models.DomainRedirect, p *probe) {
+// pending is the edge's outstanding TXT per hostname, from edgePending.
+func (s *Service) decorate(r *models.DomainRedirect, p *probe, pending map[string]cfsaas.TXTRecord) {
 	if r.ServedBy == models.RedirectServedByCloud {
 		r.Records, r.ServeHost = r.RemoteRecords, r.RemoteHost
 		if r.Records == nil {
@@ -581,30 +622,64 @@ func (s *Service) decorate(r *models.DomainRedirect, p *probe) {
 		}
 		return
 	}
-	r.Records, r.ServeHost = s.records(r, p), s.target()
+	r.Records, r.ServeHost = s.records(r, p, pending), s.target()
+}
+
+// edgePending is the edge's outstanding TXT for each verified redirect's names, in one read.
+func (s *Service) edgePending(ctx context.Context, rs ...*models.DomainRedirect) map[string]cfsaas.TXTRecord {
+	if !s.edge.Enabled() {
+		return nil
+	}
+	var hosts []string
+	for _, r := range rs {
+		if r != nil && r.Verified && r.ServedBy != models.RedirectServedByCloud {
+			hosts = append(hosts, r.Domain, "www."+r.Domain)
+		}
+	}
+	if len(hosts) == 0 {
+		return nil
+	}
+	return s.edge.Pending(ctx, hosts...)
 }
 
 // records are what the customer adds at their DNS provider.
-func (s *Service) records(r *models.DomainRedirect, p *probe) []models.DNSRecord {
+func (s *Service) records(r *models.DomainRedirect, p *probe, pending map[string]cfsaas.TXTRecord) []models.DNSRecord {
 	target := s.target()
 	ok := func(v bool) bool { return p != nil && v }
 	out := []models.DNSRecord{
 		{Purpose: "ownership", Type: "TXT", Name: domainproof.Name(r.Domain), Value: s.proof.Value(r.OrganizationID, r.Domain), OK: ok(p != nil && p.txt) || r.Verified},
 	}
-	addrs := s.targetAddresses(target)
-	if len(addrs) > 0 {
+	rootOK := ok(p != nil && p.apex) || r.Verified
+	// Behind an edge the tracking host's addresses are the provider's shared ones, which change, so the root follows the name.
+	var addrs []string
+	if !s.edge.Enabled() {
+		addrs = s.targetAddresses(target)
+	}
+	switch {
+	case s.edge.Enabled():
+		out = append(out, models.DNSRecord{Purpose: "root", Type: "CNAME", Name: r.Domain, Value: target, OK: rootOK})
+	case len(addrs) > 0:
 		for _, a := range addrs {
 			kind := "A"
 			if strings.Contains(a, ":") {
 				kind = "AAAA"
 			}
-			out = append(out, models.DNSRecord{Purpose: "root", Type: kind, Name: r.Domain, Value: a, OK: ok(p != nil && p.apex) || r.Verified})
+			out = append(out, models.DNSRecord{Purpose: "root", Type: kind, Name: r.Domain, Value: a, OK: rootOK})
 		}
-	} else {
-		out = append(out, models.DNSRecord{Purpose: "root", Type: "ALIAS", Name: r.Domain, Value: target, OK: ok(p != nil && p.apex) || r.Verified})
+	default:
+		out = append(out, models.DNSRecord{Purpose: "root", Type: "ALIAS", Name: r.Domain, Value: target, OK: rootOK})
 	}
 	if r.IncludeWWW {
-		out = append(out, models.DNSRecord{Purpose: "www", Type: "CNAME", Name: "www." + r.Domain, Value: target, OK: ok(p != nil && p.www), Optional: true})
+		out = append(out, models.DNSRecord{Purpose: "www", Type: "CNAME", Name: "www." + r.Domain, Value: r.Domain, OK: ok(p != nil && p.www), Optional: true})
+	}
+	names := []string{r.Domain}
+	if r.IncludeWWW {
+		names = append(names, "www."+r.Domain)
+	}
+	for _, n := range names {
+		if txt, waiting := pending[n]; waiting {
+			out = append(out, models.DNSRecord{Purpose: "edge", Type: "TXT", Name: txt.Name, Value: txt.Value})
+		}
 	}
 	return out
 }

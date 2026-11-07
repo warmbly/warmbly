@@ -90,7 +90,7 @@ const TABS: { key: DomainTab; label: string; icon: typeof GlobeIcon }[] = [
     { key: "redirect", label: "Redirect", icon: GlobeIcon },
 ];
 
-const PURPOSE_LABEL: Record<string, string> = { ownership: "Ownership", root: "Root", www: "www" };
+const PURPOSE_LABEL: Record<string, string> = { ownership: "Ownership", root: "Root", www: "www", edge: "Activation" };
 
 const paneVariants = {
     enter: (dir: 1 | -1) => ({ x: dir * 24, opacity: 0 }),
@@ -1262,6 +1262,16 @@ function DnsRedirect({
                             ? `These point ${domain.domain} at Warmbly Cloud and replace whatever it serves today. New records can take a few minutes to a few hours to show up.`
                             : `These point ${domain.domain} at this server and replace whatever it serves today. New records can take a few minutes to a few hours to show up.`}
                     </p>
+                    {redirect.records.some((r) => r.purpose === "root" && r.type === "CNAME") && (
+                        <p className="text-[11.5px] text-slate-500 leading-relaxed">
+                            A root CNAME works where your DNS provider flattens it, as Cloudflare does on its own. Elsewhere, add it as an ALIAS or ANAME record. If your provider has neither, use its domain forwarding to send {domain.domain} to your website instead.
+                        </p>
+                    )}
+                    {redirect.records.some((r) => r.purpose === "edge") && (
+                        <p className="text-[11.5px] text-slate-500 leading-relaxed">
+                            The activation record is only needed while it is listed. It goes away once the domain is live.
+                        </p>
+                    )}
                 </div>
             )}
 

@@ -12,10 +12,10 @@ import {
     ServerIcon,
     ZapIcon,
 } from "lucide-react";
-import type { DomainRedirect, RedirectServer } from "@/lib/api/models/app/emails/SendingDomain";
+import type { DNSRecordPurpose, DomainRedirect, RedirectServer } from "@/lib/api/models/app/emails/SendingDomain";
 import timeAgo from "@/lib/helper/timeAgo";
 import { cn } from "@/lib/utils";
-import { CopyButton, DnsRecordsTable } from "./parts";
+import { CopyButton, DnsRecordsTable, type RecordRow } from "./parts";
 import { PROXY_NAMES, redirectBlocked, shortUrl } from "./rules";
 import type { CloudServing } from "./cloudServing";
 
@@ -378,6 +378,10 @@ function initialProxy(proxy?: string): ProxyKey {
     return proxy === "nginx" || proxy === "caddy" ? proxy : "traefik";
 }
 
+function recordRows(redirect: DomainRedirect, purpose: DNSRecordPurpose): RecordRow[] {
+    return redirect.records.filter((r) => r.purpose === purpose).map((r, i) => ({ key: `${purpose}-${i}`, type: r.type, name: r.name, value: r.value }));
+}
+
 function CodeLine({ code }: { code: string }) {
     return (
         <div className="mt-1 rounded-md bg-slate-900 text-slate-100 flex items-start gap-2 pl-2.5 pr-1 py-1.5">
@@ -410,9 +414,22 @@ export function ReachFix({
     const host = redirect.serve_host || "your tracking host";
     const www = redirect.include_www;
     const named = reach.proxy ? PROXY_NAMES[reach.proxy] : "";
+    const edge = reach.hint === "edge_record" || reach.hint === "edge_inactive";
     let intro: React.ReactNode;
     let showProxies = true;
-    if (redirect.served_by === "cloud") {
+    // The records to add in place of what Cloudflare refused, shown without the state of the records they replace.
+    let fixRecords: RecordRow[] = [];
+    if (reach.hint === "edge_record") {
+        intro = `Cloudflare refuses ${domain} because its A or AAAA records point straight at Cloudflare's own addresses. Delete every A and AAAA record on ${domain}, then add what is listed here, set to DNS only (grey cloud):`;
+        fixRecords = [...recordRows(redirect, "root"), ...recordRows(redirect, "edge")];
+        showProxies = false;
+    } else if (reach.hint === "edge_inactive") {
+        fixRecords = recordRows(redirect, "edge");
+        intro = fixRecords.length
+            ? `Cloudflare receives visits to ${domain} but has not activated it yet, because it could not confirm the domain points here. Add this record and it activates within a few minutes:`
+            : null;
+        showProxies = false;
+    } else if (redirect.served_by === "cloud") {
         intro = `Warmbly Cloud serves ${domain}, but the check did not reach it. Make sure the root records point only at the addresses below, and remove any other A or AAAA record for ${domain}.`;
         showProxies = false;
     } else {
@@ -447,7 +464,8 @@ export function ReachFix({
         <div className="rounded-md border border-slate-200 bg-white">
             <div className="px-3 py-2.5 space-y-2 text-[11.5px] text-slate-600 leading-relaxed">
                 <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">How to fix it</div>
-                <p>{intro}</p>
+                {intro && <p>{intro}</p>}
+                {fixRecords.length > 0 && <DnsRecordsTable records={fixRecords} className="bg-white" />}
                 {reach.hint === "host_header" && redirect.served_by !== "cloud" && <CodeLine code="proxy_set_header Host $host;" />}
                 {showProxies && (
                     <>
@@ -492,7 +510,7 @@ export function ReachFix({
                 )}
                 <p className="text-[11px] text-slate-500">After changing it, press Check now. Warmbly also checks again every 10 minutes.</p>
             </div>
-            {redirect.served_by !== "cloud" && cloud.canServe && (
+            {redirect.served_by !== "cloud" && cloud.canServe && !edge && (
                 <div className="border-t border-slate-100 px-3 py-2.5 flex items-start gap-2.5 bg-slate-50/60 rounded-b-md">
                     <CloudIcon className="w-3.5 h-3.5 text-sky-600 mt-0.5 shrink-0" />
                     <div className="min-w-0 flex-1 text-[11.5px] text-slate-600 leading-relaxed">
