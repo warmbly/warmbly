@@ -56,7 +56,8 @@ func TestLiveSigninSwitchSelection(t *testing.T) {
 
 	ineligible := map[string]uuid.UUID{
 		"full mail access":         box("full", "gmail", "oauth", "google_workspace", zap, full),
-		"another mail host":        box("elsewhere", "smtp_imap", "password", "other", zap, nil),
+		"another mail host":        box("elsewhere", "smtp_imap", "app_password", "other", zap, nil),
+		"a plain password":         box("plain", "smtp_imap", "password", "google_workspace", zap, nil),
 		"a vendor that cannot":     box("forge", "gmail", "oauth", "google_workspace", forge, nil),
 		"an invalid vendor key":    box("broken", "gmail", "oauth", "google_workspace", broken, nil),
 		"personal Gmail":           box("personal", "gmail", "oauth", "gmail", zap, nil),

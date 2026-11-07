@@ -26,7 +26,7 @@ const SigninSwitchRetry = 7 * 24 * time.Hour
 const signinSwitchDue = `(ea.signin_switch_at IS NULL OR (ea.signin_switch_state IS DISTINCT FROM 'connected' AND ea.signin_switch_at < now() - $3::interval))`
 
 // googleWithoutFullMail is a Google mailbox on a grant, an app password, or its own sign-in without full mail access recorded; $4 is the scope.
-const googleWithoutFullMail = `((ea.provider = 'smtp_imap' AND ea.mail_host = 'google_workspace') OR (ea.provider = 'gmail' AND (ea.auth_method = 'delegated' OR
+const googleWithoutFullMail = `((ea.provider = 'smtp_imap' AND ea.auth_method = 'app_password' AND ea.mail_host = 'google_workspace') OR (ea.provider = 'gmail' AND (ea.auth_method = 'delegated' OR
 	(ea.auth_method = 'oauth' AND NOT COALESCE((SELECT $4 = ANY(o.granted_scopes) FROM email_accounts_oauth o WHERE o.email_account_id = ea.id), false)))))`
 
 // AutoSwitchCandidates are active Google mailboxes, linked to a healthy connection of one of vendors, that
