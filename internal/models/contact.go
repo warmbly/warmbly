@@ -653,8 +653,10 @@ type ContactTimelineEvent struct {
 	Reason   *string `json:"reason,omitempty"`   // deliverability / suppression / meeting cancellation
 	Source   *string `json:"source,omitempty"`   // suppression: bounce/complaint/unsubscribe; meeting: calendly/cal_com
 	Provider *string `json:"provider,omitempty"` // deliverability provider
-	Intent   *string `json:"intent,omitempty"`   // reply_intent classification
-	Content  *string `json:"content,omitempty"`  // note body
+	// BounceCause is what a bounce was about (dsn.Cause), absent when unclassified.
+	BounceCause *string `json:"bounce_cause,omitempty"`
+	Intent      *string `json:"intent,omitempty"`  // reply_intent classification
+	Content     *string `json:"content,omitempty"` // note body
 
 	// Meeting events (meeting_booked / rescheduled / canceled).
 	ScheduledFor *time.Time `json:"scheduled_for,omitempty"` // when the call is set for

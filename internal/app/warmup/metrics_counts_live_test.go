@@ -37,6 +37,11 @@ func TestLiveCombinedMetricCountsSplitTheirTables(t *testing.T) {
 	event("bounce", "1 hour", 4)
 	event("bounce", "3 hours", 1)
 	event("open", "1 hour", 1)
+	// Bounces not about the address are not hard bounces; a recipient_invalid one is.
+	for _, cause := range []string{"mailbox_full", "reputation_block", "transient", "recipient_invalid"} {
+		exec(`INSERT INTO deliverability_events (organization_id, task_id, event_type, recipient_email, idempotency_key, metadata, created_at)
+		      VALUES ($1, $2, 'bounce', 'x', gen_random_uuid()::text, jsonb_build_object('bounce_cause', $3::text), NOW() - INTERVAL '1 hour')`, f.org, task, cause)
+	}
 
 	// Two deletions and one spam flag after the floor, a deletion before it.
 	harm := func(kind, offset string, n int) {
@@ -59,8 +64,8 @@ func TestLiveCombinedMetricCountsSplitTheirTables(t *testing.T) {
 		t.Fatalf("loadMetrics: %v", err)
 	}
 	got := [6]int{metrics.SpamPlacementsLast7d, metrics.UserComplaintsLast7d, metrics.ComplaintsLast30d, metrics.BouncesLast30d, metrics.DeletionsLast7d, metrics.SpamFlagsLast7d}
-	if got != [6]int{3, 2, 2, 4, 2, 1} {
-		t.Fatalf("placements, complaints, external complaints, bounces, deletions, spam flags = %v, want [3 2 2 4 2 1]", got)
+	if got != [6]int{3, 2, 2, 5, 2, 1} {
+		t.Fatalf("placements, complaints, external complaints, bounces, deletions, spam flags = %v, want [3 2 2 5 2 1]", got)
 	}
 }
 

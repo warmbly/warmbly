@@ -398,7 +398,8 @@ func contextWithDeadline(t *testing.T, d time.Duration) (context.Context, contex
 	return context.WithTimeout(t.Context(), d)
 }
 
-// Native codes explain refusal without transporting raw provider messages.
+// A refused recipient carries the server's own words, bounded and with any
+// address masked: the status alone cannot tell a missing mailbox from a block.
 func TestRecipientRejectionCarriesTheServersReason(t *testing.T) {
 	srv := newRejectingServer(t, "LOGIN", map[string]string{"RCPT": "550 5.1.1 no such user here"})
 	host, port := srv.addr()
@@ -408,8 +409,8 @@ func TestRecipientRejectionCarriesTheServersReason(t *testing.T) {
 	if err == nil {
 		t.Fatal("send succeeded against a refused recipient")
 	}
-	if err.Failure == nil || err.Failure.EnhancedStatus != "5.1.1" || err.Failure.Status != 550 || !strings.Contains(err.Message, "5.1.1") || strings.Contains(err.Message, "no such user here") {
-		t.Errorf("message=%q failure=%+v, want safe native recipient evidence", err.Message, err.Failure)
+	if err.Failure == nil || err.Failure.EnhancedStatus != "5.1.1" || err.Failure.Status != 550 || !strings.Contains(err.Message, "5.1.1") || !strings.Contains(err.Message, "no such user here") {
+		t.Errorf("message=%q failure=%+v, want the status and the server's own reason", err.Message, err.Failure)
 	}
 	// Named apart from the message, so a refused copy is not read as the lead.
 	if err.Recipient != "to@example.test" {

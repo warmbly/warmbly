@@ -892,9 +892,12 @@ func (r *warmupRepository) ListParticipantHealth(ctx context.Context) ([]models.
 	return out, rows.Err()
 }
 
+// Bounces here are hard bounces: one recorded as a full mailbox, a block or a
+// temporary failure is not about the address and stays out of the rate.
 const healthFeedbackCountsSQL = `SELECT
 	COUNT(*) FILTER (WHERE de.event_type = 'complaint') AS complaints,
-	COUNT(*) FILTER (WHERE de.event_type = 'bounce') AS bounces
+	COUNT(*) FILTER (WHERE de.event_type = 'bounce'
+		AND COALESCE(de.metadata->>'bounce_cause', '') NOT IN ('mailbox_full', 'reputation_block', 'transient')) AS bounces
 	FROM deliverability_events de JOIN tasks t ON t.id = de.task_id
 	WHERE t.email_account_id = $1 AND de.created_at >= $3 AND de.event_type IN ('complaint', 'bounce')`
 

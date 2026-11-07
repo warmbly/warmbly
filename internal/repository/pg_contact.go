@@ -4295,7 +4295,7 @@ func (r *contactRepository) ListTimeline(ctx context.Context, orgID, contactID u
 	// 3. Deliverability events (bounce / complaint / unsubscribe).
 	delivQuery := `
 			SELECT de.id, de.created_at, de.event_type, de.provider, de.reason,
-			       de.campaign_id, cam.name, de.task_id
+			       de.campaign_id, cam.name, de.task_id, de.metadata->>'bounce_cause'
 			FROM deliverability_events de
 			LEFT JOIN campaigns cam ON cam.id = de.campaign_id
 			WHERE de.organization_id = $1
@@ -4313,7 +4313,8 @@ func (r *contactRepository) ListTimeline(ctx context.Context, orgID, contactID u
 		var ev models.ContactTimelineEvent
 		var id uuid.UUID
 		var eventType, provider, reason string
-		if err := drows.Scan(&id, &ev.At, &eventType, &provider, &reason, &ev.CampaignID, &ev.CampaignName, &ev.TaskID); err != nil {
+		var bounceCause *string
+		if err := drows.Scan(&id, &ev.At, &eventType, &provider, &reason, &ev.CampaignID, &ev.CampaignName, &ev.TaskID, &bounceCause); err != nil {
 			drows.Close()
 			db.CaptureError(err, "", nil, "ListTimeline deliv scan")
 			return nil, errx.InternalError()
@@ -4324,6 +4325,9 @@ func (r *contactRepository) ListTimeline(ctx context.Context, orgID, contactID u
 		ev.Provider = &provider
 		if reason != "" {
 			ev.Reason = &reason
+		}
+		if eventType == string(models.DeliverabilityEventBounce) && bounceCause != nil && *bounceCause != "" {
+			ev.BounceCause = bounceCause
 		}
 		events = append(events, ev)
 	}

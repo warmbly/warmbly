@@ -726,8 +726,10 @@ type SuppressedRecipient struct {
 	CampaignID *uuid.UUID              `json:"campaign_id,omitempty"`
 	ExpiresAt  *time.Time              `json:"expires_at,omitempty"`
 	Metadata   map[string]interface{}  `json:"metadata,omitempty"`
-	CreatedAt  time.Time               `json:"created_at"`
-	UpdatedAt  time.Time               `json:"updated_at"`
+	// BounceCause is read from Metadata for a bounce entry; never written.
+	BounceCause string    `json:"bounce_cause,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type CampaignABVariant struct {
