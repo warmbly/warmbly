@@ -238,11 +238,12 @@ A vendor reconnect shows where it stands as it moves, without refreshing: about 
 
 #### Automatic reconnect for vendor mailboxes
 
-A Google mailbox imported from InboxKit or Zapmail reconnects on its own, with no click, when it is on the older Google sign-in without full mail access or on a legacy domain grant. Warmbly asks the vendor, the vendor marks Warmbly trusted on the domain and signs in as the mailbox, and the mailbox moves onto its own Google sign-in with full mail access in place. The Sign-in section says when this is coming and how it ended.
+A Google Workspace mailbox imported from InboxKit or Zapmail reconnects on its own, with no click, when it connects with an app password, is on the older Google sign-in without full mail access, or is on a legacy domain grant. Warmbly asks the vendor, the vendor marks Warmbly trusted on the domain and signs in as the mailbox, and the mailbox moves onto its own Google sign-in with full mail access in place. The Sign-in section says when this is coming and how it ended.
 
 - A mailbox has at most one request open at a time, and after a request ends Warmbly waits a week before asking again on its own. Zapmail takes at most 3 sign-in requests per mailbox every 7 days, so this stays well inside it.
-- A mailbox that reconnected is not asked again. One that failed keeps working on its current sign-in and is tried again after the week; **Reconnect** in the Sign-in section asks sooner.
-- Only mailboxes that are switched on are reconnected, and app-password mailboxes are left as they are: they already work over IMAP.
+- The mailbox keeps working on its current sign-in the whole time. It moves only once Google has granted full mail access and the new sign-in has read the mailbox as that exact address; the switch then keeps the same mailbox, its history, campaigns and warmup, and nothing is imported again.
+- A mailbox that reconnected is not asked again. One that failed, for example because the domain does not trust Warmbly yet, stays on its app password or current sign-in and is tried again after the week; **Reconnect** in the Sign-in section asks sooner.
+- Only mailboxes that are switched on are reconnected. Personal Gmail addresses are never switched: they connect only with an app password.
 - It runs every 15 minutes and takes a bounded number of mailboxes each time, so a large vendor account switches over a few hours.
 
 The instance operator turns it off in the admin panel under **Instance > Configuration > Settings > Mailbox sign-in**, the [`mailbox_signin.auto_vendor_reconnect`](/development/configuration/#settings-stored-in-the-database) setting. Off, a member reconnects from the Sign-in section, the banner, or the vendor account's menu.

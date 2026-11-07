@@ -12,8 +12,8 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/mailvendor"
 )
 
-// The automatic switch reconnects only vendor-linked Google mailboxes that lack
-// full mail access, at most once in flight and once a week after it ends.
+// The automatic switch reconnects only vendor-linked Google Workspace mailboxes on an app password, a grant
+// or a sign-in without full mail access, at most once in flight and once a week after it ends.
 func TestLiveSigninSwitchSelection(t *testing.T) {
 	handle, pool := liveContactDB(t)
 	requireSchemaVersion(t, pool, 357)
@@ -51,11 +51,13 @@ func TestLiveSigninSwitchSelection(t *testing.T) {
 	delegated := box("delegated", "gmail", "delegated", "google_workspace", zap, nil)
 	unknown := box("unknown", "gmail", "oauth", "google_workspace", zap, nil)
 	older := box("older", "gmail", "oauth", "google_workspace", zap, modify)
-	eligible := []uuid.UUID{delegated, unknown, older}
+	password := box("password", "smtp_imap", "app_password", "google_workspace", zap, nil)
+	eligible := []uuid.UUID{delegated, unknown, older, password}
 
 	ineligible := map[string]uuid.UUID{
 		"full mail access":         box("full", "gmail", "oauth", "google_workspace", zap, full),
-		"app password":             box("password", "smtp_imap", "app_password", "google_workspace", zap, nil),
+		"another mail host":        box("elsewhere", "smtp_imap", "app_password", "other", zap, nil),
+		"a plain password":         box("plain", "smtp_imap", "password", "google_workspace", zap, nil),
 		"a vendor that cannot":     box("forge", "gmail", "oauth", "google_workspace", forge, nil),
 		"an invalid vendor key":    box("broken", "gmail", "oauth", "google_workspace", broken, nil),
 		"personal Gmail":           box("personal", "gmail", "oauth", "gmail", zap, nil),
@@ -96,7 +98,7 @@ func TestLiveSigninSwitchSelection(t *testing.T) {
 	}
 
 	claimed, err := repo.StartSigninSwitch(ctx, f.org, eligible, true)
-	if err != nil || len(claimed) != 3 {
+	if err != nil || len(claimed) != len(eligible) {
 		t.Fatalf("claim = %v, %v", claimed, err)
 	}
 	if again, _ := repo.StartSigninSwitch(ctx, f.org, eligible, true); len(again) != 0 {
