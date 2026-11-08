@@ -100,16 +100,31 @@ import {
     PageBody,
     PageTopbar,
     SectionBar,
-    Stat,
-    StatStrip,
     TopbarAction,
 } from "@/components/layout/Page";
+import AccountsTrendStrip, { type WarmupToday } from "@/components/app/emails/AccountsTrendStrip";
 
 const DefaultFolder = {
     title: "All accounts",
     color: "#c4c8cf",
 } as Tag;
 const NO_TAGS: Tag[] = [];
+
+// One mailbox status count in the list header; a zero fades, an alert count turns amber.
+function StatusCount({ label, dot, count, pending, alert = false, detail }: { label: string; dot: string; count: number; pending?: string; alert?: boolean; detail?: string }) {
+    const zero = pending === undefined && count === 0;
+    const alerting = pending === undefined && alert && count > 0;
+    return (
+        <span className={cn("inline-flex items-center gap-1.5 text-[11.5px] whitespace-nowrap", alerting ? "text-amber-700" : "text-slate-500")}>
+            <span className={cn("size-1.5 rounded-full", zero ? "bg-slate-300" : dot)} />
+            <span>{label}</span>
+            <span className={cn("tabular-nums font-medium", pending !== undefined ? "text-slate-400 font-normal" : alerting ? "text-amber-700" : zero ? "text-slate-400" : "text-slate-900")}>
+                {pending ?? <AnimatedNumber value={count} />}
+            </span>
+            {detail && pending === undefined && <span className="text-slate-400">{detail}</span>}
+        </span>
+    );
+}
 
 /* ── health helpers ───────────────────────────────── */
 
@@ -135,7 +150,7 @@ import AdvisorSummaryBar from "@/components/app/advisor/AdvisorSummaryBar";
 import { useAdvisorEntityIndex } from "@/lib/api/hooks/app/advisor/useAdvisor";
 import type { AdvisorFinding } from "@/lib/api/models/app/advisor/Advisor";
 import { Checkbox } from "@/components/ui/checkbox";
-import { labelInk } from "@/lib/utils";
+import { cn, labelInk } from "@/lib/utils";
 import { nextSlotLabel } from "@/lib/helper/nextSlot";
 
 export default function AddressesPage() {
@@ -459,6 +474,20 @@ export default function AddressesPage() {
         return s;
     }, [emailsData.emails, statusById, warmupFor]);
 
+    const statusPending = statusChecking ? "Checking…" : statusUnavailable ? "Unavailable" : undefined;
+    const warmupToday = useMemo<WarmupToday>(() => {
+        const out: WarmupToday = { state: statusChecking ? "checking" : statusUnavailable ? "unavailable" : "ready", sent: 0, target: 0, mailboxes: 0, inCampaign: 0 };
+        for (const e of emailsData.emails ?? []) {
+            if (statusById.get(e.id)?.in_campaign) out.inCampaign++;
+            const w = warmupFor(e);
+            if (w.activity !== "active") continue;
+            out.mailboxes++;
+            out.sent += w.sentToday ?? 0;
+            out.target += w.info?.target_volume ?? e.warmup_base;
+        }
+        return out;
+    }, [emailsData.emails, statusById, warmupFor, statusChecking, statusUnavailable]);
+
     // Mailboxes actively warming (enabled and not paused). Warmup pairs mailboxes
     // with each other, so too few starves it; the notice below warns on that.
     const warmupActive = useMemo(
@@ -571,14 +600,19 @@ export default function AddressesPage() {
                 </TopbarAction>
             </PageTopbar>
 
-            <StatStrip cols={4}>
-                <Stat label="Total" value={emailsData.isLoading ? "Checking…" : inventoryUnavailable ? "Unavailable" : <AnimatedNumber value={stats.total} />} sub="connected" />
-                <Stat label="Healthy" value={statusChecking ? "Checking…" : statusUnavailable ? "Unavailable" : <AnimatedNumber value={stats.healthy} />} sub="no reported health issues" accent={!statusChecking && !statusUnavailable && stats.healthy > 0} />
-                <Stat label="Warming" value={statusChecking ? "Checking…" : statusUnavailable ? "Unavailable" : <AnimatedNumber value={stats.warming} />} sub={stats.slowed > 0 ? `ramping up, ${stats.slowed} slowed` : "ramping up"} />
-                <Stat label="Needs attention" value={statusChecking ? "Checking…" : statusUnavailable ? "Unavailable" : <AnimatedNumber value={stats.issues} />} sub="paused or failing" last />
-            </StatStrip>
+            <AccountsTrendStrip warmup={warmupToday} filtered={!!query || !!tag} />
 
-            <SectionBar label="Mailboxes" count={emailsData.emails?.length ?? 0}>
+            <SectionBar
+                label="Mailboxes"
+                count={emailsData.emails?.length ?? 0}
+                meta={
+                    <>
+                        <StatusCount label="Healthy" dot="bg-emerald-500" count={stats.healthy} pending={statusPending} />
+                        <StatusCount label="Warming" dot="bg-sky-500" count={stats.warming} pending={statusPending} detail={stats.slowed > 0 ? `${stats.slowed} slowed` : undefined} />
+                        <StatusCount label="Needs attention" dot="bg-amber-500" count={stats.issues} pending={statusPending} alert />
+                    </>
+                }
+            >
                 <SearchInput
                     value={query}
                     onChange={setQuery}

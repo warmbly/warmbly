@@ -23,9 +23,11 @@ import {
     PageBody,
     PageTopbar,
     SectionBar,
-    Stat,
     StatStrip,
 } from "@/components/layout/Page";
+import { TrendStat } from "@/components/ui/TrendStat";
+import useUtcToday from "@/hooks/useUtcToday";
+import { dailyPoints, utcDayRange } from "@/lib/trendPoints";
 import { MultiTrend, type TrendSeries } from "@/components/ui/charts";
 import { TONE_DOT } from "@/components/ui/tones";
 import type { DitherTone } from "@/components/ui/dither";
@@ -99,7 +101,17 @@ export default function AnalyticsPage() {
             return [...cur, k];
         });
 
-    const chartRange = useMemo(() => periodWindow({ key: range }), [range]);
+    const today = useUtcToday();
+    const chartRange = useMemo(() => periodWindow({ key: range }, today), [range, today]);
+    const dayPoints = useMemo(() => {
+        const days = chartRange ? utcDayRange(chartRange.from, chartRange.to) : [];
+        const rows = d?.daily_trend;
+        return {
+            sent: dailyPoints(days, rows, (p) => p.sent),
+            opens: dailyPoints(days, rows, (p) => p.opens),
+            replies: dailyPoints(days, rows, (p) => p.replies),
+        };
+    }, [chartRange, d?.daily_trend]);
     const trend = useMemo(() => {
         const rows = d?.daily_trend ?? [];
         const series: TrendSeries[] = METRICS.filter((m) => !hiddenMetrics.includes(m.key)).map((m) => ({
@@ -145,10 +157,42 @@ export default function AnalyticsPage() {
             </PageTopbar>
 
             <StatStrip cols={4}>
-                <Stat label="Total sent" value={num(os?.total_emails_sent)} sub="in range" accent={!!os && os.total_emails_sent > 0} />
-                <Stat label="Open rate" value={pct(os?.open_rate)} sub="after delivery" />
-                <Stat label="Reply rate" value={pct(os?.reply_rate)} sub="incl. positive" />
-                <Stat label="Bounce rate" value={pct(os?.bounce_rate)} sub="hard + soft" last />
+                <TrendStat
+                    label="Total sent"
+                    value={num(os?.total_emails_sent)}
+                    unit="in range"
+                    points={d && !dash.isPlaceholderData ? dayPoints.sent : undefined}
+                    pending={dash.isPending || dash.isPlaceholderData}
+                    kind="area"
+                    tone="sky"
+                    format={(v) => `${v.toLocaleString()} sent`}
+                />
+                <TrendStat
+                    label="Open rate"
+                    value={pct(os?.open_rate)}
+                    unit="after delivery"
+                    points={d && !dash.isPlaceholderData ? dayPoints.opens : undefined}
+                    pending={dash.isPending || dash.isPlaceholderData}
+                    tone="slate"
+                    format={(v) => `${v.toLocaleString()} opens`}
+                />
+                <TrendStat
+                    label="Reply rate"
+                    value={pct(os?.reply_rate)}
+                    unit="incl. positive"
+                    points={d && !dash.isPlaceholderData ? dayPoints.replies : undefined}
+                    pending={dash.isPending || dash.isPlaceholderData}
+                    kind="bars"
+                    tone="slate"
+                    format={(v) => `${v.toLocaleString()} ${v === 1 ? "reply" : "replies"}`}
+                />
+                <TrendStat
+                    label="Bounce rate"
+                    value={pct(os?.bounce_rate)}
+                    unit="hard + soft"
+                    note={os && os.bounce_rate >= 5 ? <span className="text-amber-700">high</span> : undefined}
+                    last
+                />
             </StatStrip>
 
             {dash.isError ? (

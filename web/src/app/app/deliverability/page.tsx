@@ -10,6 +10,9 @@ import { deliverabilityView, deliverabilityHiddenMetrics } from "@/lib/browse-ac
 import { Link } from "@tanstack/react-router";
 import { AlertTriangleIcon, ArrowUpRightIcon, CheckIcon, RefreshCcwIcon, SlidersHorizontalIcon } from "lucide-react";
 import { EmptyBlock, Page, PageBody, PageTopbar, SectionBar, Stat, StatStrip } from "@/components/layout/Page";
+import { TrendStat } from "@/components/ui/TrendStat";
+import useUtcToday from "@/hooks/useUtcToday";
+import { dailyPoints, utcDayRange } from "@/lib/trendPoints";
 import { MultiTrend, type TrendSeries } from "@/components/ui/charts";
 import { TONE_DOT } from "@/components/ui/tones";
 import { DitherStack, type DitherTone } from "@/components/ui/dither";
@@ -145,7 +148,15 @@ export default function DeliverabilityPage() {
     const toggleSection = (k: SectionKey) =>
         updateView({ ...view, hidden: show(k) ? [...view.hidden, k] : view.hidden.filter((h) => h !== k) });
 
-    const chartRange = useMemo(() => periodWindow({ key: view.range }), [view.range]);
+    const today = useUtcToday();
+    const chartRange = useMemo(() => periodWindow({ key: view.range }, today), [view.range, today]);
+    const dayPoints = useMemo(() => {
+        const days = chartRange ? utcDayRange(chartRange.from, chartRange.to) : [];
+        return {
+            bounces: dailyPoints(days, d?.timeseries, (p) => p.bounces),
+            complaints: dailyPoints(days, d?.timeseries, (p) => p.complaints),
+        };
+    }, [chartRange, d?.timeseries]);
     const trend = useMemo(() => {
         const rows = d?.timeseries ?? [];
         const series: TrendSeries[] = METRICS.filter((m) => !hiddenMetrics.includes(m.key)).map((m) => ({
@@ -184,13 +195,28 @@ export default function DeliverabilityPage() {
                     }
                     sub={hasActivity ? "out of 100" : "no activity in this window"}
                 />
-                <Stat
+                <TrendStat
                     label="Bounce rate"
                     value={pct(d?.bounce_rate)}
-                    sub={`${num(d?.bounce_count)} of ${num(d?.emails_sent)} sent`}
-                    accent={!!d && d.bounce_rate >= 5}
+                    unit={`${num(d?.bounce_count)} of ${num(d?.emails_sent)} sent`}
+                    note={d && d.bounce_rate >= 5 ? <span className="text-amber-700">high</span> : undefined}
+                    points={d ? dayPoints.bounces : undefined}
+                    pending={q.isPending}
+                    kind="bars"
+                    tone="rose"
+                    format={(v) => `${v.toLocaleString()} ${v === 1 ? "bounce" : "bounces"}`}
                 />
-                <Stat label="Complaint rate" value={pct(d?.complaint_rate)} sub={`${num(d?.complaint_count)} complaints`} accent={!!d && d.complaint_rate >= 0.1} />
+                <TrendStat
+                    label="Complaint rate"
+                    value={pct(d?.complaint_rate)}
+                    unit={`${num(d?.complaint_count)} complaints`}
+                    note={d && d.complaint_rate >= 0.1 ? <span className="text-amber-700">high</span> : undefined}
+                    points={d ? dayPoints.complaints : undefined}
+                    pending={q.isPending}
+                    kind="bars"
+                    tone="amber"
+                    format={(v) => `${v.toLocaleString()} ${v === 1 ? "complaint" : "complaints"}`}
+                />
                 <Stat
                     label="Spam placement"
                     value={d?.placement_samples ? pct(d?.spam_placement_rate) : "—"}

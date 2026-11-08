@@ -43,6 +43,8 @@ import { sequencesQuery } from "./lib/api/hooks/app/campaigns/sequences/useSeque
 import { campaignAnalyticsQuery } from "./lib/api/hooks/app/analytics/useCampaignAnalytics";
 import { campaignDailyStatsQuery } from "./lib/api/hooks/app/analytics/useCampaignDailyStats";
 import { dashboardQuery } from "./lib/api/hooks/app/analytics/useDashboard";
+import { warmupPlacementQuery } from "./lib/api/hooks/app/analytics/useWarmupPlacement";
+import { accountsTrendWindow } from "./components/app/emails/accountsTrend";
 import { deliverabilityQuery } from "./lib/api/hooks/app/analytics/useDeliverability";
 import { usageOverviewQuery } from "./lib/api/hooks/app/analytics/useUsageOverview";
 import {
@@ -146,12 +148,17 @@ function contactsList(qc: QueryClient, view: ColumnViewName, scope: { campaignId
     ];
 }
 
-export const emailsLoader = pageLoader((qc) => [
-    can("MANAGE_EMAILS") && qc.prefetchInfiniteQuery(emailsListQuery({ query: "", tag: "" })),
-    can("MANAGE_EMAILS") && qc.prefetchQuery(signinMigrationQuery),
-    qc.prefetchQuery(advisorSurfaceQuery("emails")),
-    qc.prefetchQuery(featureStatusQuery),
-]);
+export const emailsLoader = pageLoader((qc) => {
+    const trend = accountsTrendWindow();
+    return [
+        can("MANAGE_EMAILS") && qc.prefetchInfiniteQuery(emailsListQuery({ query: "", tag: "" })),
+        can("MANAGE_EMAILS") && qc.prefetchQuery(signinMigrationQuery),
+        qc.prefetchQuery(advisorSurfaceQuery("emails")),
+        qc.prefetchQuery(featureStatusQuery),
+        can("VIEW_ANALYTICS") && qc.prefetchQuery(dashboardQuery("30d")),
+        can("VIEW_ANALYTICS") && qc.prefetchQuery(warmupPlacementQuery(undefined, trend.from, trend.to)),
+    ];
+});
 
 export const domainsLoader = pageLoader((qc) => [can("MANAGE_EMAILS") && qc.prefetchQuery(sendingDomainsQuery)]);
 

@@ -19,7 +19,7 @@
 
 import { NoAccess } from "@/components/layout/NoAccess";
 import { usePermission } from "@/hooks/usePermission";
-import React from "react";
+import React, { useMemo } from "react";
 import useBrowseState from "@/hooks/useBrowseState";
 import { browseSearchSchema } from "@/lib/browse-other-lists";
 import {
@@ -46,6 +46,8 @@ import {
     StatStrip,
     TopbarAction,
 } from "@/components/layout/Page";
+import { TrendStat } from "@/components/ui/TrendStat";
+import type { TrendPoint } from "@/lib/trendPoints";
 import useAPIKeys from "@/lib/api/hooks/app/api-keys/useAPIKeys";
 import useAPIKeyUsageSummary from "@/lib/api/hooks/app/api-keys/useAPIKeyUsageSummary";
 import useAPIKeyAnalytics from "@/lib/api/hooks/app/api-keys/useAPIKeyAnalytics";
@@ -56,11 +58,27 @@ import KeyDetailDrawer from "./_components/KeyDetailDrawer";
 import { StackedBars } from "./_components/Sparkline";
 import useBrand from "@/hooks/useBrand";
 
+const hourLabel = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+
 export default function APIKeysPage() {
     const canManage = usePermission("MANAGE_API_KEYS");
     const summary = useAPIKeyUsageSummary();
     const keys = useAPIKeys();
     const analytics = useAPIKeyAnalytics("all");
+    // One point per hour the rolling 24h touches (25, both partial ends), so a quiet hour reads as zero.
+    const hourly = useMemo(() => {
+        const byHour = new Map((analytics.data?.buckets ?? []).map((b) => [new Date(b.bucket).toISOString().slice(0, 13), b]));
+        const now = new Date();
+        now.setUTCMinutes(0, 0, 0);
+        const hours = Array.from({ length: 25 }, (_, i) => new Date(now.getTime() - (24 - i) * 3_600_000).toISOString());
+        return {
+            requests: hours.map<TrendPoint>((date) => ({ date, value: byHour.get(date.slice(0, 13))?.total ?? 0 })),
+            latency: hours.map<TrendPoint>((date) => {
+                const b = byHour.get(date.slice(0, 13));
+                return { date, value: b && b.total > 0 ? b.avg_latency_ms : null };
+            }),
+        };
+    }, [analytics.data?.buckets]);
 
     const [createOpen, setCreateOpen] = React.useState(false);
     const [selected, setSelected] = React.useState<APIKey | null>(null);
@@ -108,15 +126,26 @@ export default function APIKeysPage() {
                     sub={summary.data ? `${summary.data.revoked_keys + summary.data.expired_keys} inactive` : "—"}
                     accent={(summary.data?.active_keys ?? 0) > 0}
                 />
-                <Stat
+                <TrendStat
                     label="Requests · 24h"
-                    value={summary.data?.requests_24h ?? 0}
-                    sub={summary.data ? `${summary.data.errors_24h} errors` : "—"}
+                    value={(summary.data?.requests_24h ?? 0).toLocaleString()}
+                    unit={summary.data ? `${summary.data.errors_24h.toLocaleString()} errors` : undefined}
+                    points={analytics.data ? hourly.requests : undefined}
+                    pending={analytics.isPending}
+                    kind="bars"
+                    tone="sky"
+                    when={hourLabel}
+                    format={(v) => `${v.toLocaleString()} ${v === 1 ? "request" : "requests"}`}
                 />
-                <Stat
+                <TrendStat
                     label="Avg latency · 24h"
                     value={summary.data ? `${Math.round(summary.data.avg_latency_ms_24h)}ms` : "—"}
-                    sub="across all keys"
+                    unit="across all keys"
+                    points={analytics.data ? hourly.latency : undefined}
+                    pending={analytics.isPending}
+                    tone="slate"
+                    when={hourLabel}
+                    format={(v) => `${Math.round(v)}ms`}
                 />
                 <Stat
                     label="Last call"

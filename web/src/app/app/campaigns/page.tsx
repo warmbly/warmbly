@@ -358,6 +358,7 @@ export default function CampaignsPage() {
                     label="All"
                     value={counts.total}
                     sub="campaigns"
+                    active={status === "all"}
                     onClick={() => setStatus("all")}
                 />
                 <Stat
@@ -365,18 +366,21 @@ export default function CampaignsPage() {
                     value={counts.active}
                     sub="sending now"
                     accent={counts.active > 0}
+                    active={status === "active"}
                     onClick={() => setStatus("active")}
                 />
                 <Stat
                     label="Paused"
                     value={counts.paused}
                     sub="resumable"
+                    active={status === "paused"}
                     onClick={() => setStatus("paused")}
                 />
                 <Stat
                     label="Draft"
                     value={counts.draft}
                     sub="not started"
+                    active={status === "draft"}
                     onClick={() => setStatus("draft")}
                 />
                 <Stat
@@ -384,6 +388,7 @@ export default function CampaignsPage() {
                     value={counts.completed}
                     sub="finished"
                     last
+                    active={status === "completed"}
                     onClick={() => setStatus("completed")}
                 />
             </StatStrip>

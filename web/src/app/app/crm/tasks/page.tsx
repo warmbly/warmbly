@@ -339,7 +339,7 @@ export default function TasksPage() {
                     label="Overdue"
                     value={sum ? sum.overdue_count : "—"}
                     sub="needs attention"
-                    accent={!!sum && sum.overdue_count > 0}
+                    tone="warn"
                 />
                 <Stat
                     label="High priority"
