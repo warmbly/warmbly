@@ -31,7 +31,9 @@ func reportable(err error) bool {
 		errx.MailErrorCodeServerUnreachable,
 		errx.MailErrorCodeConnectionLost,
 		errx.MailErrorCodeTLSCertificateChanged,
-		errx.MailErrorCodeTLSCertificateUnconfirmed:
+		errx.MailErrorCodeTLSCertificateUnconfirmed,
+		// A folder or message gone from the server: the folder walk re-lists and the relay still runs.
+		errx.MailErrorCodeNotFound:
 		return false
 	case errx.MailErrorCodeGoogleAuth, errx.MailErrorCodeInvalidCredentials:
 		// Relayed below, which deactivates the mailbox and tells its owner.
