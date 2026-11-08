@@ -600,7 +600,7 @@ export default function AddressesPage() {
                 </TopbarAction>
             </PageTopbar>
 
-            <AccountsTrendStrip warmup={warmupToday} />
+            <AccountsTrendStrip warmup={warmupToday} filtered={!!query || !!tag} />
 
             <SectionBar
                 label="Mailboxes"

@@ -89,8 +89,12 @@ function TemplatesList() {
     >(null);
 
     const editedThisWeek = React.useMemo(() => {
-        const since = Date.now() - 7 * 86_400_000;
-        return list.filter((t) => new Date(t.updated_at).getTime() >= since).length;
+        const now = Date.now();
+        const since = now - 7 * 86_400_000;
+        return list.filter((t) => {
+            const at = new Date(t.updated_at).getTime();
+            return at >= since && at <= now;
+        }).length;
     }, [list]);
 
     const lastEdited = React.useMemo(() => {

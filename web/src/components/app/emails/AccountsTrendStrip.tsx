@@ -9,6 +9,7 @@ import { TrendStat, type TrendTone } from "@/components/ui/TrendStat";
 import { dailyPoints, utcDayRange, type TrendPoint } from "@/lib/trendPoints";
 import { StatStrip } from "@/components/layout/Page";
 import { usePermission } from "@/hooks/usePermission";
+import useUtcToday from "@/hooks/useUtcToday";
 import { dashboardQuery } from "@/lib/api/hooks/app/analytics/useDashboard";
 import useWarmupPlacement from "@/lib/api/hooks/app/analytics/useWarmupPlacement";
 import type { PlacementBand } from "@/lib/api/models/app/analytics/WarmupPlacement";
@@ -26,23 +27,24 @@ const BAND_TONE: Record<PlacementBand, TrendTone> = { good: "emerald", fair: "am
 
 const muted = (text: string) => <span className="text-slate-400">{text}</span>;
 
-export default function AccountsTrendStrip({ warmup }: { warmup: WarmupToday }) {
+export default function AccountsTrendStrip({ warmup, filtered = false }: { warmup: WarmupToday; filtered?: boolean }) {
     const canAnalytics = usePermission("VIEW_ANALYTICS");
     const dash = useQuery({ ...dashboardQuery("30d"), enabled: canAnalytics });
-    const { from, to } = useMemo(accountsTrendWindow, []);
+    const today = useUtcToday();
+    const { from, to } = useMemo(() => accountsTrendWindow(today), [today]);
     const placement = useWarmupPlacement(undefined, from, to, canAnalytics);
     const days = useMemo(() => utcDayRange(from, to), [from, to]);
 
     const series = useMemo(() => {
         const trend = dash.data?.daily_trend;
         const placed = placement.data?.daily;
-        const today = days[days.length - 1];
+        const lastDay = days[days.length - 1];
         const warmupDays = dailyPoints(days, placed, (d) => d.sent);
         return {
             sent: dailyPoints(days, trend, (d) => d.sent),
             replies: dailyPoints(days, trend, (d) => d.replies),
             // Today's warmup is the mailboxes' own count, so the line ends where the number says.
-            warmup: warmupDays.map((p) => (p.date === today && warmup.state === "ready" ? { ...p, value: warmup.sent } : p)),
+            warmup: warmupDays.map((p) => (p.date === lastDay && warmup.state === "ready" ? { ...p, value: warmup.sent } : p)),
             inbox: dailyPoints(days, placed, (d) => d.rolling_inbox_rate, null),
         };
     }, [dash.data, placement.data, days, warmup.state, warmup.sent]);
@@ -79,9 +81,9 @@ export default function AccountsTrendStrip({ warmup }: { warmup: WarmupToday }) 
             <TrendStat
                 label="Warmup today"
                 value={warmupValue}
-                unit={warmup.state === "ready" && warmup.target > 0 ? `/ ${warmup.target.toLocaleString()}` : undefined}
+                unit={warmup.state === "ready" && warmup.target > 0 ? `/ ${warmup.target.toLocaleString()}${filtered ? ", matching" : ""}` : undefined}
                 note={warmup.state === "ready" && warmup.mailboxes > 0 ? muted(`${warmup.mailboxes} warming`) : undefined}
-                points={canAnalytics && placement.data ? series.warmup : undefined}
+                points={canAnalytics && placement.data && !filtered ? series.warmup : undefined}
                 pending={canAnalytics && placement.isPending}
                 kind="area"
                 tone="sky"
@@ -99,7 +101,7 @@ export default function AccountsTrendStrip({ warmup }: { warmup: WarmupToday }) 
                             : undefined
                 }
                 note={
-                    delta == null ? undefined : delta === 0 ? muted("steady") : (
+                    !canAnalytics || delta == null ? undefined : delta === 0 ? muted("steady") : (
                         <span className={delta > 0 ? "text-emerald-700" : "text-amber-700"}>
                             {delta > 0 ? "+" : "−"}
                             {Math.abs(delta)} {Math.abs(delta) === 1 ? "pt" : "pts"}
@@ -114,10 +116,10 @@ export default function AccountsTrendStrip({ warmup }: { warmup: WarmupToday }) 
                 format={(v) => `${Math.round(v)}%`}
             />
             <TrendStat
-                label="Replies today"
+                label="Replies"
                 value={analyticsValue(dash, () => <AnimatedNumber value={last(series.replies)} />)}
-                unit={!canAnalytics ? "no analytics access" : undefined}
-                note={canAnalytics && dash.data ? muted(`${repliesTotal.toLocaleString()} in ${ACCOUNTS_TREND_DAYS} days`) : undefined}
+                unit={!canAnalytics ? "no analytics access" : "to today's sends"}
+                note={canAnalytics && dash.data ? muted(`${repliesTotal.toLocaleString()} over ${ACCOUNTS_TREND_DAYS} days`) : undefined}
                 points={canAnalytics && dash.data ? series.replies : undefined}
                 pending={canAnalytics && dash.isPending}
                 kind="bars"

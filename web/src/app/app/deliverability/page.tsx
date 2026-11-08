@@ -11,6 +11,7 @@ import { Link } from "@tanstack/react-router";
 import { AlertTriangleIcon, ArrowUpRightIcon, CheckIcon, RefreshCcwIcon, SlidersHorizontalIcon } from "lucide-react";
 import { EmptyBlock, Page, PageBody, PageTopbar, SectionBar, Stat, StatStrip } from "@/components/layout/Page";
 import { TrendStat } from "@/components/ui/TrendStat";
+import useUtcToday from "@/hooks/useUtcToday";
 import { dailyPoints, utcDayRange } from "@/lib/trendPoints";
 import { MultiTrend, type TrendSeries } from "@/components/ui/charts";
 import { TONE_DOT } from "@/components/ui/tones";
@@ -147,7 +148,8 @@ export default function DeliverabilityPage() {
     const toggleSection = (k: SectionKey) =>
         updateView({ ...view, hidden: show(k) ? [...view.hidden, k] : view.hidden.filter((h) => h !== k) });
 
-    const chartRange = useMemo(() => periodWindow({ key: view.range }), [view.range]);
+    const today = useUtcToday();
+    const chartRange = useMemo(() => periodWindow({ key: view.range }, today), [view.range, today]);
     const dayPoints = useMemo(() => {
         const days = chartRange ? utcDayRange(chartRange.from, chartRange.to) : [];
         return {

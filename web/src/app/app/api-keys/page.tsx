@@ -65,12 +65,12 @@ export default function APIKeysPage() {
     const summary = useAPIKeyUsageSummary();
     const keys = useAPIKeys();
     const analytics = useAPIKeyAnalytics("all");
-    // The last 24 hours, one point each, so a quiet hour reads as zero rather than vanishing.
+    // One point per hour the rolling 24h touches (25, both partial ends), so a quiet hour reads as zero.
     const hourly = useMemo(() => {
         const byHour = new Map((analytics.data?.buckets ?? []).map((b) => [new Date(b.bucket).toISOString().slice(0, 13), b]));
         const now = new Date();
         now.setUTCMinutes(0, 0, 0);
-        const hours = Array.from({ length: 24 }, (_, i) => new Date(now.getTime() - (23 - i) * 3_600_000).toISOString());
+        const hours = Array.from({ length: 25 }, (_, i) => new Date(now.getTime() - (24 - i) * 3_600_000).toISOString());
         return {
             requests: hours.map<TrendPoint>((date) => ({ date, value: byHour.get(date.slice(0, 13))?.total ?? 0 })),
             latency: hours.map<TrendPoint>((date) => {

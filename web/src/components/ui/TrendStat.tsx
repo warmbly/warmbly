@@ -97,6 +97,20 @@ export function TrendStat({
         setHovered(kind === "bars" ? Math.min(n - 1, Math.floor(t * n)) : Math.round(t * (n - 1)));
     };
 
+    // Arrow keys walk the days the pointer scrubs, so the history reads without a mouse.
+    const onKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        if (!n) return;
+        const at = hovered ?? n - 1;
+        const next = { ArrowLeft: at - 1, ArrowRight: at + 1, Home: 0, End: n - 1 }[e.key];
+        if (next === undefined) return;
+        e.preventDefault();
+        setHovered(Math.min(n - 1, Math.max(0, next)));
+    };
+    const readout = (i: number) => {
+        const p = points![i];
+        return `${when(p.date)}: ${p.value == null ? "no data" : format(p.value)}`;
+    };
+
     const slot = n ? W / n : 0;
     const bw = slot * 0.62;
 
@@ -113,10 +127,26 @@ export function TrendStat({
                 <span className="text-[12px] text-slate-400 tabular-nums truncate">{scrub ? when(scrub.date) : unit}</span>
             </div>
             <div
-                className={cn("relative mt-2.5 h-7", TONE[tone], n > 0 && "cursor-crosshair")}
+                className={cn(
+                    "relative mt-2.5 h-7 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-sky-200",
+                    TONE[tone],
+                    n > 0 && "cursor-crosshair",
+                )}
                 onPointerMove={onMove}
                 onPointerLeave={() => setHovered(null)}
-                aria-hidden
+                {...(n > 0 && !pending
+                    ? {
+                          role: "slider",
+                          tabIndex: 0,
+                          "aria-label": `${label} over time`,
+                          "aria-valuemin": 0,
+                          "aria-valuemax": n - 1,
+                          "aria-valuenow": focus ?? n - 1,
+                          "aria-valuetext": readout(focus ?? n - 1),
+                          onKeyDown: onKey,
+                          onBlur: () => setHovered(null),
+                      }
+                    : { "aria-hidden": true })}
             >
                 {pending ? (
                     <div className="h-full rounded bg-slate-100 animate-pulse" />
@@ -124,7 +154,7 @@ export function TrendStat({
                     <div className="absolute inset-x-0 bottom-0 border-t border-dashed border-slate-200" />
                 ) : (
                     <>
-                        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="block w-full h-full overflow-visible">
+                        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden className="block w-full h-full overflow-visible">
                             {kind === "bars" ? (
                                 points!.map((p, i) => {
                                     const v = p.value ?? 0;

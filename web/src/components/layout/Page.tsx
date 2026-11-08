@@ -287,6 +287,8 @@ export function SectionBar({
                 // Single 36px row on >=md; on mobile a toolbar holding a search
                 // takes its own full-width row instead of crowding the label.
                 "min-h-9 md:h-9 px-5 py-1.5 md:py-0 border-b border-slate-200/60 flex flex-wrap md:flex-nowrap items-center gap-x-2.5 gap-y-1.5 shrink-0",
+                // Inline facts beside a toolbar can outgrow one row; let the bar grow instead of overflowing.
+                meta && "md:h-auto md:py-1.5 md:flex-wrap",
                 className,
             )}
         >
