@@ -36,7 +36,7 @@ import {
     SENTRY_ENVIRONMENT,
     SENTRY_RELEASE,
 } from "./information";
-import { canReloadForStaleChunk, isModuleLoadMessage } from "./moduleLoadError";
+import { canReloadForStaleChunk, isModuleLinkMessage, isModuleLoadMessage } from "./moduleLoadError";
 
 export type PostHogIdentity = {
     userId: string;
@@ -301,7 +301,8 @@ function isStaleChunk(properties: Properties): boolean {
         const entry = (exception ?? {}) as Record<string, unknown>;
         const type = entry.type ?? entry.$exception_type;
         const value = entry.value ?? entry.$exception_value;
-        return type === "TypeError" && typeof value === "string" && isModuleLoadMessage(value);
+        if (typeof value !== "string") return false;
+        return (type === "TypeError" && isModuleLoadMessage(value)) || (type === "SyntaxError" && isModuleLinkMessage(value));
     });
 }
 

@@ -220,7 +220,12 @@ export { Outlet };
 // Before the first render, so a boot failure is reported too.
 initErrorReporting();
 
-createRoot(document.getElementById("root")!).render(
+// A caught error is reported by the boundary that caught it; React's console copy would report it twice.
+const logCaughtInDev = (error: unknown, info: { componentStack?: string }) => {
+    if (import.meta.env.DEV) console.error(error, info.componentStack);
+};
+
+createRoot(document.getElementById("root")!, { onCaughtError: logCaughtInDev }).render(
     <StrictMode>
         <QueryClientProvider client={queryClient}>
             <RouterProvider router={router} />

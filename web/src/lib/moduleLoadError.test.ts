@@ -12,7 +12,17 @@ describe("module-load recovery", () => {
     });
 
     it.each([
+        "Importing binding name 't' is not found.",
+        "Importing binding name 'default' cannot be resolved by star export entries.",
+        "The requested module './chunk-aB12.js' does not provide an export named 't'",
+        "import not found: t",
+    ])("recognizes chunks that do not link: %s", (message) => {
+        expect(isModuleLoadError(new SyntaxError(message))).toBe(true);
+    });
+
+    it.each([
         new SyntaxError("Unterminated regular expression literal '/'"),
+        new TypeError("Importing binding name 't' is not found."),
         new SyntaxError("Unexpected end of script"),
         new Error("Failed to fetch dynamically imported module"),
         new TypeError("Failed to fetch"),

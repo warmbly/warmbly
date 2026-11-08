@@ -51,7 +51,8 @@ export class ErrorBoundary extends React.Component<BoundaryProps, State> {
         // the deployment configured. Reading a global off `window` found the
         // SDK only when it had put itself there, which a bundled one does not.
         captureException(error);
-        console.error("[ErrorBoundary]", error, info?.componentStack);
+        // Reported just above; console capture would file the same error again.
+        if (import.meta.env.DEV) console.error("[ErrorBoundary]", error, info?.componentStack);
     }
 
     reset = () => {
