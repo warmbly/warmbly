@@ -374,6 +374,10 @@ run "consumer_scales_on_its_backlog_by_default" {
     error_message = "A sustained backlog adds tasks, half an hour quiet removes one, and missing data does neither."
   }
   assert {
+    condition     = startswith(aws_cloudwatch_metric_alarm.consumer_backlog[0].alarm_name, "warmbly-production-consumer-") && !startswith(aws_cloudwatch_metric_alarm.consumer_quiet[0].alarm_name, "warmbly-production-consumer-")
+    error_message = "A consumer deploy bakes against the backlog alarm and never against the quiet alarm, which fires whenever the consumer is idle."
+  }
+  assert {
     condition     = contains(jsondecode(aws_ecs_task_definition.service["consumer"].container_definitions)[0].environment, { name = "CONSUMER_METRICS_CLOUDWATCH", value = "warmbly-production" }) && length(aws_iam_role_policy.consumer_metrics) == 1
     error_message = "The consumer publishes the backlog its alarms read, and its role may publish it."
   }
