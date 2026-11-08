@@ -192,21 +192,43 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # A cached protoc skips the download; one whose digest no longer matches is fetched again below.
+      - name: Restore protoc
+        if: matrix.suite == 'lint'
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/protoc
+          key: protoc-33.6-linux-x86_64-bdf948836dcd45f5
+
       # A pinned release verified by digest; resolving "latest" lists every protobuf release and fails when that listing is cut short.
+      # Maven Central publishes the same binary, so a GitHub release-download outage falls back to it instead of failing lint.
       - name: Set up protoc
         if: matrix.suite == 'lint'
         env:
           PROTOC_VERSION: "33.6"
-          PROTOC_SHA256: 9c49962391ff8b5754342509efc3885db91dfe11a358e1e98c9a71518f0ad199
+          PROTOC_BIN_SHA256: bdf948836dcd45f5595eb45e0824867965ac1227cc430e957b0482b4fe876d01
         run: |
           set -eu
-          archive="$RUNNER_TEMP/protoc.zip"
-          curl -fsSL --retry 5 --retry-all-errors -o "$archive" \
-            "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip"
-          echo "${PROTOC_SHA256}  ${archive}" | sha256sum -c -
-          unzip -q -o "$archive" -d "$RUNNER_TEMP/protoc"
-          echo "$RUNNER_TEMP/protoc/bin" >> "$GITHUB_PATH"
-          "$RUNNER_TEMP/protoc/bin/protoc" --version
+          dir="$RUNNER_TEMP/protoc/bin"
+          bin="$dir/protoc"
+          if ! echo "${PROTOC_BIN_SHA256}  ${bin}" | sha256sum -c --status - 2>/dev/null; then
+            mkdir -p "$dir"
+            archive="$RUNNER_TEMP/protoc.zip"
+            # A capped attempt: a hung download falls back instead of holding the job until its timeout.
+            if curl -fsSL --connect-timeout 10 --max-time 30 --retry 1 --retry-all-errors -o "$archive" \
+              "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip" \
+              && unzip -q -o -j "$archive" bin/protoc -d "$dir"; then
+              echo "protoc from GitHub releases"
+            else
+              echo "GitHub release download failed; fetching protoc ${PROTOC_VERSION} from Maven Central"
+              curl -fsSL --connect-timeout 10 --max-time 120 --retry 5 --retry-all-errors -o "$bin" \
+                "https://repo1.maven.org/maven2/com/google/protobuf/protoc/4.${PROTOC_VERSION}/protoc-4.${PROTOC_VERSION}-linux-x86_64.exe"
+            fi
+            echo "${PROTOC_BIN_SHA256}  ${bin}" | sha256sum -c -
+            chmod +x "$bin"
+          fi
+          echo "$dir" >> "$GITHUB_PATH"
+          "$bin" --version
 
       - name: Install required Go tools
         if: matrix.suite == 'lint'
