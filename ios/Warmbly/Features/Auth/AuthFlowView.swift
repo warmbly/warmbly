@@ -849,8 +849,9 @@ struct AuthFlowView: View {
                 // Back may have abandoned this attempt while it was in flight.
                 guard step == .link(challenge) else { return }
                 handleSocial(outcome)
-            } catch let error as APIError where error.code == "sso_link_expired" {
-                expired = true
+            } catch {
+                guard step == .link(challenge) else { return }
+                expired = (error as? APIError)?.code == "sso_link_expired"
                 throw error
             }
         }

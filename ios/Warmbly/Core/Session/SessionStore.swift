@@ -382,7 +382,9 @@ final class SessionStore {
         var browserHost: String?
         if let config = await config,
            config.providers?.contains("google") == true,
-           let host = config.appURL.flatMap({ URL(string: $0)?.host() }),
+           let url = config.appURL.flatMap({ URL(string: $0) }),
+           url.scheme == "https",
+           let host = url.host(),
            AppConfig.associatedWebHosts.contains(host)
         {
             browserHost = host
