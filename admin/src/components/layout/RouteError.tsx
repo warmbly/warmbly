@@ -1,26 +1,15 @@
 // Error boundary for the authenticated shell. A page that throws during
 // render (or a loader that rejects) lands here instead of a blank screen:
 // the message, the backend code and request id when it was an API error,
-// and a way to retry. Reported once to whichever error backend is configured.
+// and a way to retry. Reported once by RouterProvider's onError in main.tsx.
 
-import { useEffect, useRef } from "react";
 import { isRouteErrorResponse, Link, useRouteError } from "react-router-dom";
 import { AlertTriangle, House, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { APIError, SessionExpiredError } from "@/lib/api/client";
-import { captureException } from "@/lib/observability";
 
 export function RouteError() {
     const error = useRouteError();
-    const reported = useRef(false);
-
-    useEffect(() => {
-        if (reported.current) return;
-        reported.current = true;
-        // A lapsed session is the sign-in screen's job, not a fault to report.
-        if (error instanceof SessionExpiredError) return;
-        captureException(error);
-    }, [error]);
 
     const api = error instanceof APIError ? error : null;
     let title = "This page hit an error";

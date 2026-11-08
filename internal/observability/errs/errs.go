@@ -22,9 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net/url"
-	"sort"
-	"strconv"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -321,51 +319,35 @@ type querylessError struct {
 
 func (e *querylessError) Error() string { return e.msg }
 
-// withoutURLQuery drops every failed request's query, whose ids would otherwise make every call its own issue.
+// reportedURL is a URL in error text: a backslash escape (url.Error quotes its URL) stays inside it.
+var reportedURL = regexp.MustCompile(`(?i)\b[a-z][a-z0-9+.-]*://(?:[^\s"'<>\\]|\\.)+`)
+
+// withoutURLQuery drops every URL's query, fragment and credentials, whose ids would otherwise make every call its own issue.
 func withoutURLQuery(err error) error {
 	msg := err.Error()
-	changed := false
-	found := urlErrors(err)
-	// Longest first, so a URL that prefixes another cannot leave the longer one's query behind.
-	sort.SliceStable(found, func(i, j int) bool { return len(found[i].URL) > len(found[j].URL) })
-	for _, u := range found {
-		bare, _, _ := strings.Cut(u.URL, "?")
-		bare, _, _ = strings.Cut(bare, "#")
-		if bare == u.URL {
-			continue
-		}
-		// url.Error renders its URL with %q, so the quoted form is what appears in the text.
-		msg = strings.ReplaceAll(msg, strconv.Quote(u.URL), strconv.Quote(bare))
-		msg = strings.ReplaceAll(msg, u.URL, bare)
-		changed = true
-	}
-	if !changed {
+	cleaned := reportedURL.ReplaceAllStringFunc(msg, bareURL)
+	if cleaned == msg {
 		return err
 	}
-	return &querylessError{typeName: fmt.Sprintf("%T", err), msg: msg}
+	return &querylessError{typeName: fmt.Sprintf("%T", err), msg: cleaned}
 }
 
-// urlErrors finds every *url.Error in err's tree, through joined errors as well as wrapped ones.
-func urlErrors(err error) []*url.Error {
-	var found []*url.Error
-	var walk func(error)
-	walk = func(e error) {
-		if u, ok := e.(*url.Error); ok {
-			found = append(found, u)
-		}
-		switch w := e.(type) {
-		case interface{ Unwrap() []error }:
-			for _, inner := range w.Unwrap() {
-				walk(inner)
-			}
-		case interface{ Unwrap() error }:
-			if inner := w.Unwrap(); inner != nil {
-				walk(inner)
-			}
-		}
+// bareURL keeps a URL's scheme, host and path, as text, so a URL that will not parse is cut the same way.
+func bareURL(raw string) string {
+	bare, _, _ := strings.Cut(raw, "?")
+	bare, _, _ = strings.Cut(bare, "#")
+	scheme, rest, ok := strings.Cut(bare, "://")
+	if !ok {
+		return bare
 	}
-	walk(err)
-	return found
+	authority, path, hasPath := strings.Cut(rest, "/")
+	if at := strings.LastIndex(authority, "@"); at >= 0 {
+		authority = authority[at+1:]
+	}
+	if hasPath {
+		return scheme + "://" + authority + "/" + path
+	}
+	return scheme + "://" + authority
 }
 
 // exceptionType names the Go type an issue is titled with.

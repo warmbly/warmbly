@@ -15,7 +15,8 @@ import "@fontsource/inter/400.css";
 import "@fontsource/inter/500.css";
 import "@fontsource/inter/600.css";
 
-import { initErrorReporting } from "@/lib/observability";
+import { ReauthCancelledError, SessionExpiredError } from "@/lib/api/client";
+import { captureException, initErrorReporting, REPORTS_ERRORS } from "@/lib/observability";
 import { reportFailure } from "@/lib/api/reportFailure";
 
 import { Toaster } from "@/components/ui/sonner";
@@ -220,15 +221,23 @@ export { Outlet };
 // Before the first render, so a boot failure is reported too.
 initErrorReporting();
 
-// A caught error is reported by the boundary that caught it; React's console copy would report it twice.
-const logCaughtInDev = (error: unknown, info: { componentStack?: string }) => {
-    if (import.meta.env.DEV) console.error(error, info.componentStack);
+// A caught error is reported by reportRouteError below; React's console copy would report it twice.
+const logCaught = (error: unknown, info: { componentStack?: string }) => {
+    if (import.meta.env.DEV || !REPORTS_ERRORS) console.error(error, info.componentStack);
 };
 
-createRoot(document.getElementById("root")!, { onCaughtError: logCaughtInDev }).render(
+// The one report for every route's render, loader and action errors, including routes with no errorElement.
+const reportRouteError = (error: unknown) => {
+    if (import.meta.env.DEV || !REPORTS_ERRORS) console.error(error);
+    // A lapsed session is the sign-in screen's job, and a closed confirm prompt is a choice.
+    if (error instanceof SessionExpiredError || error instanceof ReauthCancelledError) return;
+    captureException(error);
+};
+
+createRoot(document.getElementById("root")!, { onCaughtError: logCaught }).render(
     <StrictMode>
         <QueryClientProvider client={queryClient}>
-            <RouterProvider router={router} />
+            <RouterProvider router={router} onError={reportRouteError} />
             <Toaster position="top-center" />
             {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
         </QueryClientProvider>

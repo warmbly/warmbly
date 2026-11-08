@@ -244,3 +244,23 @@ func TestOverlappingRequestURLsLoseTheirWholeQuery(t *testing.T) {
 		t.Errorf("reported %q, which still carries part of a query", got)
 	}
 }
+
+// Credentials in a URL never reach a report, with or without a query, and a cause's longer URL is cut whole.
+func TestReportedURLsLoseCredentialsAndWholeQueries(t *testing.T) {
+	err := fmt.Errorf("publish: %w", &url.Error{
+		Op:  "Post",
+		URL: "https://user:hunter2@broker.example.test/%zz",
+		Err: errors.New("redirected to https://api.example.test/x?token=abcdef"),
+	})
+	err = fmt.Errorf("get: %w", errors.Join(err, &url.Error{Op: "Get", URL: "https://api.example.test/x?token=a", Err: errors.New("refused")}))
+
+	got := redact(err).Error()
+	for _, leaked := range []string{"hunter2", "user:", "token", "bcdef"} {
+		if strings.Contains(got, leaked) {
+			t.Errorf("reported %q, which still carries %q", got, leaked)
+		}
+	}
+	if !strings.Contains(got, "https://broker.example.test/%zz") || !strings.Contains(got, "https://api.example.test/x") {
+		t.Errorf("reported %q, want each URL kept without its credentials and query", got)
+	}
+}
