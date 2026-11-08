@@ -220,7 +220,7 @@ func projectRampLevel(c *models.Campaign, now time.Time) {
 	if c.RampLevelDate != nil && !c.RampLevelDate.UTC().Truncate(24*time.Hour).Before(today) {
 		return
 	}
-	c.RampLevel = min(c.RampCeiling, max(c.RampLevel, c.RampStart)+c.RampIncrement)
+	c.RampLevel = nextRampLevel(c.RampLevel, c.RampStart, c.RampIncrement, c.RampCeiling)
 	c.RampLevelDate = &today
 }
 

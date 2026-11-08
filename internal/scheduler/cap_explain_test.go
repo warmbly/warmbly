@@ -18,7 +18,7 @@ func TestExplainCapNamesTheClampThatDecided(t *testing.T) {
 	warmed := time.Now().Add(-2 * 24 * time.Hour)
 	base := func() *campaignPass {
 		return &campaignPass{
-			campaign:  &models.Campaign{DailyLimit: 50},
+			campaign:  &models.Campaign{DailyLimit: 50, WarmupGraduation: true},
 			coldRamp:  map[uuid.UUID]repository.ColdRampState{},
 			risk:      models.OrgRiskTrusted,
 			sentToday: map[uuid.UUID]int{},
@@ -67,7 +67,7 @@ func TestPoolBudgetReportsEveryMailbox(t *testing.T) {
 	open, shut := uuid.New(), uuid.New()
 	warmed := time.Now().Add(-24 * time.Hour)
 	pass := &campaignPass{
-		campaign:  &models.Campaign{DailyLimit: 50},
+		campaign:  &models.Campaign{DailyLimit: 50, WarmupGraduation: true},
 		coldRamp:  map[uuid.UUID]repository.ColdRampState{shut: {WarmupStartedAt: &warmed}},
 		risk:      models.OrgRiskTrusted,
 		sentToday: map[uuid.UUID]int{open: 0, shut: 5},
@@ -102,7 +102,7 @@ func TestPoolBudgetCountsTheSendInFlight(t *testing.T) {
 	id := uuid.New()
 	warmed := time.Now().Add(-24 * time.Hour)
 	pass := &campaignPass{
-		campaign:  &models.Campaign{DailyLimit: 50},
+		campaign:  &models.Campaign{DailyLimit: 50, WarmupGraduation: true},
 		coldRamp:  map[uuid.UUID]repository.ColdRampState{id: {WarmupStartedAt: &warmed}},
 		risk:      models.OrgRiskRestricted,
 		sentToday: map[uuid.UUID]int{id: 0},

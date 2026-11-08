@@ -272,8 +272,8 @@ function ColdRampNotice({ ramp }: { ramp: import("@/lib/api/models/app/analytics
                     </p>
                     <p className="text-[11.5px] text-sky-800/90 leading-relaxed mt-0.5">
                         {ramp.held ? "Recent negative feedback is holding the pacing policy. " : ""}
-                        Automated test history does not prove real-recipient readiness. This conservative policy
-                        requires recent human campaign replies before increasing volume. No full-speed date or safe volume is guaranteed.
+                        In campaigns that ramp up as replies come in, this mailbox starts low and gains volume as recipients reply.
+                        Campaigns set to ramp on a schedule or send at full volume are not held to this. No full-speed date or safe volume is guaranteed.
                     </p>
                 </div>
             </div>

@@ -1109,6 +1109,44 @@ const estimateHorizonDays = 2 * 366
 // wired it simulates the campaign day by day under the send path's clamps and
 // the warmup mail running alongside; without it, it applies only the cap rule
 // and the result is the earliest the last send can land.
+// estimateRampUp gives the draft the ramp-up the wizard has: what was sent,
+// else the saved campaign's, else a new campaign's defaults.
+func estimateRampUp(draft, saved *models.Campaign, in *models.CampaignEstimate) *errx.Error {
+	draft.WarmupGraduation = true
+	draft.RampStart, draft.RampIncrement, draft.RampCeiling = config.CampaignRampStartDefault, config.CampaignRampIncrementDefault, config.CampaignRampCeilingDefault
+	if saved != nil {
+		draft.WarmupGraduation, draft.RampEnabled = saved.WarmupGraduation, saved.RampEnabled
+		draft.RampStart, draft.RampIncrement, draft.RampCeiling = saved.RampStart, saved.RampIncrement, saved.RampCeiling
+		draft.RampLevel, draft.RampLevelDate = saved.RampLevel, saved.RampLevelDate
+	}
+	if in.WarmupGraduation != nil {
+		draft.WarmupGraduation = *in.WarmupGraduation
+	}
+	if in.RampEnabled != nil {
+		draft.RampEnabled = *in.RampEnabled
+	}
+	edited := false
+	for _, f := range []struct {
+		v   *int
+		dst *int
+	}{{in.RampStart, &draft.RampStart}, {in.RampIncrement, &draft.RampIncrement}, {in.RampCeiling, &draft.RampCeiling}} {
+		if f.v != nil && *f.v != *f.dst {
+			*f.dst, edited = *f.v, true
+		}
+	}
+	if !draft.RampEnabled {
+		return nil
+	}
+	if xerr := validate.CampaignRamp(draft.RampStart, draft.RampIncrement, draft.RampCeiling); xerr != nil {
+		return xerr
+	}
+	// A ramp edited in the wizard is drawn from its first day.
+	if edited || saved == nil || !saved.RampEnabled {
+		draft.RampLevel, draft.RampLevelDate = 0, nil
+	}
+	return nil
+}
+
 func (s *campaignService) Estimate(ctx context.Context, orgID uuid.UUID, in *models.CampaignEstimate) (*models.CampaignEstimateResult, *errx.Error) {
 	out := &models.CampaignEstimateResult{}
 
@@ -1225,6 +1263,9 @@ func (s *campaignService) Estimate(ctx context.Context, orgID uuid.UUID, in *mod
 		zone = *in.Timezone
 	}
 	draft := &models.Campaign{OrganizationID: &orgID, DailyLimit: dailyLimit, Days: days, Timezone: zone, StartDate: in.StartDate, StartTime: startTime, EndTime: endTime}
+	if xerr := estimateRampUp(draft, saved, in); xerr != nil {
+		return nil, xerr
+	}
 	// A saved campaign's own per-day windows stand unless a window is sent.
 	if saved != nil && !timesSent && !saved.ScheduleWindows.IsEmpty() {
 		draft.ScheduleWindows = saved.ScheduleWindows
@@ -1235,7 +1276,11 @@ func (s *campaignService) Estimate(ctx context.Context, orgID uuid.UUID, in *mod
 	// domain authentication, cold rotation), so the wizard promises what the
 	// send path will honour rather than the caps added up.
 	if planner, ok := s.planner(); ok {
-		capacity, err := planner.PoolCapacityToday(ctx, &models.Campaign{OrganizationID: &orgID, DailyLimit: dailyLimit}, accounts)
+		capacity, err := planner.PoolCapacityToday(ctx, &models.Campaign{
+			OrganizationID: &orgID, DailyLimit: dailyLimit, WarmupGraduation: draft.WarmupGraduation,
+			RampEnabled: draft.RampEnabled, RampStart: draft.RampStart, RampIncrement: draft.RampIncrement,
+			RampCeiling: draft.RampCeiling, RampLevel: draft.RampLevel,
+		}, accounts)
 		if err != nil {
 			errs.CaptureException(err)
 			return nil, errx.InternalError()
@@ -1535,7 +1580,7 @@ func (s *campaignService) WorkspaceCapacity(ctx context.Context, orgID uuid.UUID
 	if xerr != nil {
 		return nil, xerr
 	}
-	out, err := planner.PoolCapacityToday(ctx, &models.Campaign{OrganizationID: &orgID}, accounts)
+	out, err := planner.PoolCapacityToday(ctx, &models.Campaign{OrganizationID: &orgID, WarmupGraduation: true}, accounts)
 	if err != nil {
 		errs.CaptureException(err)
 		return nil, errx.InternalError()

@@ -15,6 +15,7 @@ import deleteSequence from "@/lib/api/client/app/campaigns/sequences/deleteSeque
 import { listCampaignSegments, setCampaignSegments } from "@/lib/api/client/app/segments";
 import estimateCampaign from "@/lib/api/client/app/campaigns/estimateCampaign";
 import { htmlToPlain } from "@/components/app/campaigns/sequences/emailPreview";
+import { rampUpPayload } from "@/components/app/campaigns/rampUp";
 import { hasContent, initialDraft, scheduledDate, toCreateInput, writtenEmails, type Draft, type EmailDraft } from "./draft";
 
 export type DraftMeta = {
@@ -112,6 +113,13 @@ export async function loadServerDraft(id: string): Promise<LoadedDraft> {
         scheduledAt: start && start.getTime() > Date.now() ? localInput(start) : "",
         emailTagIds: campaign.email_tags ?? [],
         dailyLimit: campaign.daily_limit || base.dailyLimit,
+        rampUp: {
+            warmup_graduation: campaign.warmup_graduation !== false,
+            ramp_enabled: campaign.ramp_enabled,
+            ramp_start: campaign.ramp_start || base.rampUp.ramp_start,
+            ramp_increment: campaign.ramp_increment ?? base.rampUp.ramp_increment,
+            ramp_ceiling: campaign.ramp_ceiling || base.rampUp.ramp_ceiling,
+        },
         stopOnReply: campaign.stop_on_reply,
         stopOnMeeting: campaign.stop_on_meeting ?? base.stopOnMeeting,
         openTracking: campaign.open_tracking,
@@ -160,6 +168,7 @@ export async function saveServerDraft(
         utm_tracking: d.utmTracking,
         unsubscribe_header: d.unsubHeader,
         daily_limit: d.dailyLimit,
+        ...rampUpPayload(d.rampUp),
         timezone: d.timezone,
         timezone_mode: d.recipientTime ? "recipient" : "campaign",
         start_date: at ?? null,

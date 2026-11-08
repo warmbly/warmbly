@@ -138,6 +138,7 @@ func (d Deps) registerCampaignTools(r *Registry) {
 			"ramp_start":         intProp("Ramp starting volume."),
 			"ramp_increment":     intProp("Ramp daily increment."),
 			"ramp_ceiling":       intProp("Ramp ceiling."),
+			"warmup_graduation":  boolProp("Start mailboxes leaving warmup at 5 a day and raise them as campaign recipients reply. Off sends up to each mailbox's daily limit, or the ramp when it is on."),
 			"entry_delay_minutes": intProp(
 				"Minutes to wait before a contact's FIRST email, counted from when they entered the campaign. 0 sends it as soon as the schedule allows; max 129600 (90 days)."),
 		}, "campaign_id"),
@@ -253,6 +254,7 @@ func (d Deps) updateCampaign(ctx context.Context, inv Invocation, args json.RawM
 		RampStart         *int    `json:"ramp_start"`
 		RampIncrement     *int    `json:"ramp_increment"`
 		RampCeiling       *int    `json:"ramp_ceiling"`
+		WarmupGraduation  *bool   `json:"warmup_graduation"`
 		EntryDelayMinutes *int    `json:"entry_delay_minutes"`
 	}](args)
 	if err != nil {
@@ -281,6 +283,7 @@ func (d Deps) updateCampaign(ctx context.Context, inv Invocation, args json.RawM
 		RampStart:         in.RampStart,
 		RampIncrement:     in.RampIncrement,
 		RampCeiling:       in.RampCeiling,
+		WarmupGraduation:  in.WarmupGraduation,
 		EntryDelayMinutes: in.EntryDelayMinutes,
 	}
 	camp, xerr := d.Campaigns.Update(ctx, inv.OrgID.String(), in.CampaignID, upd)

@@ -54,6 +54,7 @@ import {
 import { draftSignature, freshMeta, loadServerDraft, saveServerDraft, type DraftMeta } from "./new/serverDraft";
 import { EmailsStep, LeadsStep, LaunchPlanRail, ReviewStep, ScheduleStep, type EstimateState } from "./new/steps";
 import type { Patch } from "./new/fields";
+import { rampUpInvalid, rampUpPayload } from "./rampUp";
 
 interface Props {
     open: boolean;
@@ -186,6 +187,8 @@ export function NewCampaignDialog({ open, onClose, draftId = null }: Props) {
             start_time: !meta?.customWindows && draft.startTime < draft.endTime ? draft.startTime : undefined,
             end_time: !meta?.customWindows && draft.startTime < draft.endTime ? draft.endTime : undefined,
             start_date: at && at.getTime() > Date.now() ? at.toISOString() : undefined,
+            // An invalid ramp is refused by the server; the step explains it instead.
+            ...(rampUpInvalid(draft.rampUp) ? {} : rampUpPayload(draft.rampUp)),
             campaign_id: existing?.id,
             step_waits: lockedEmails ? lockedEmails.slice(1).map((s) => Math.max(0, s.wait_after)) : stepWaits(draft),
         },

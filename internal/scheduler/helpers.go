@@ -424,6 +424,15 @@ func poolRemainingOn(pool []AccountCandidate, at time.Time) int {
 	return total
 }
 
+// nextRampLevel is the ramp level after one day's advance, mirroring
+// campaignRepo.AdvanceRampLevel: the first sending day is ramp_start.
+func nextRampLevel(level, start, increment, ceiling int) int {
+	if level < start {
+		return min(ceiling, start)
+	}
+	return min(ceiling, level+increment)
+}
+
 // campaignRampCeiling returns the day's effective ramp ceiling. When ramp is
 // disabled it returns the campaign ceiling unchanged (the caller still min()s
 // against the per-mailbox cap). When enabled it returns the already-advanced

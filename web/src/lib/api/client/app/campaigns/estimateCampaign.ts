@@ -17,6 +17,12 @@ export interface CampaignEstimateInput {
     end_time?: string;
     // Each follow-up's wait in days, in order. Empty is a single email.
     step_waits?: number[];
+    // The ramp-up the wizard has; unsent fields come from the saved draft.
+    warmup_graduation?: boolean;
+    ramp_enabled?: boolean;
+    ramp_start?: number;
+    ramp_increment?: number;
+    ramp_ceiling?: number;
     // A saved draft: its leads count too, and its own senders and windows apply.
     campaign_id?: string;
 }
@@ -24,6 +30,7 @@ export interface CampaignEstimateInput {
 export type EstimateBottleneck =
     | ""
     | "campaign_limit"
+    | "campaign_ramp"
     | "warmup_graduation"
     | "spacing"
     | "other_campaigns"

@@ -74,6 +74,8 @@ export default interface Campaign {
     ramp_ceiling: number;
     ramp_level: number;
     ramp_level_date?: Date | null;
+    // Mailboxes leaving warmup earn volume from replies. Absent from an older backend, which means on.
+    warmup_graduation?: boolean;
 
     // Match the sending mailbox provider to the recipient's provider.
     esp_match_mode: 'off' | 'prefer' | 'strict';

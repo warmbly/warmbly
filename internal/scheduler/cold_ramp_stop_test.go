@@ -49,7 +49,7 @@ func TestStoppedWarmupLiftsColdCeilingForEveryReader(t *testing.T) {
 		account.ID: {WarmupStartedAt: &warmed, WarmupStoppedAt: &stopped},
 	}}}
 	states := s.coldRampStates(t.Context(), []models.Email{account})
-	pass := &campaignPass{campaign: &models.Campaign{DailyLimit: 50}, coldRamp: states, risk: models.OrgRiskTrusted,
+	pass := &campaignPass{campaign: &models.Campaign{DailyLimit: 50, WarmupGraduation: true}, coldRamp: states, risk: models.OrgRiskTrusted,
 		health: map[uuid.UUID]healthRead{account.ID: {}}}
 	if cap := pass.explainCap(account); cap.Cap != 50 || cap.LimitedBy == capByGraduation {
 		t.Fatal("execution kept the ceiling on a stopped mailbox", cap)
@@ -60,7 +60,7 @@ func TestStoppedWarmupLiftsColdCeilingForEveryReader(t *testing.T) {
 	}
 	p := &projectedSender{acct: account, cap: 50, loc: time.UTC, cold: states[account.ID], hasCold: true}
 	mid, spans := workday(time.UTC, now.AddDate(0, 0, 10))
-	if day := projectSenderDay(p, spans, mid, now, false); day.graduation != 0 {
+	if day := projectSenderDay(p, spans, mid, now, false, -1); day.graduation != 0 {
 		t.Fatal("projection kept the ceiling on a stopped mailbox", day)
 	}
 	if !fullCapacityEvidenceKnown([]*projectedSender{p}) {

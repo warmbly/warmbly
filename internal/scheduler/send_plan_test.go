@@ -23,9 +23,9 @@ func TestStagedCapAgreesWithExplainCap(t *testing.T) {
 		{"plain", &campaignPass{campaign: &models.Campaign{DailyLimit: 50}, risk: models.OrgRiskTrusted}, models.Email{ID: id, CampaignLimit: 50}},
 		{"campaign limit", &campaignPass{campaign: &models.Campaign{DailyLimit: 20}, risk: models.OrgRiskTrusted}, models.Email{ID: id, CampaignLimit: 50}},
 		{"ramp", &campaignPass{campaign: &models.Campaign{DailyLimit: 50, RampEnabled: true, RampStart: 10, RampCeiling: 50, RampLevel: 15}, risk: models.OrgRiskTrusted}, models.Email{ID: id, CampaignLimit: 50}},
-		{"graduation", &campaignPass{campaign: &models.Campaign{DailyLimit: 50}, coldRamp: map[uuid.UUID]repository.ColdRampState{id: {WarmupStartedAt: &warmed}}, risk: models.OrgRiskTrusted}, models.Email{ID: id, CampaignLimit: 50}},
+		{"graduation", &campaignPass{campaign: &models.Campaign{DailyLimit: 50, WarmupGraduation: true}, coldRamp: map[uuid.UUID]repository.ColdRampState{id: {WarmupStartedAt: &warmed}}, risk: models.OrgRiskTrusted}, models.Email{ID: id, CampaignLimit: 50}},
 		{"restricted", &campaignPass{campaign: &models.Campaign{DailyLimit: 50}, risk: models.OrgRiskRestricted}, models.Email{ID: id, CampaignLimit: 50}},
-		{"everything", &campaignPass{campaign: &models.Campaign{DailyLimit: 30, RampEnabled: true, RampStart: 10, RampCeiling: 50, RampLevel: 25}, coldRamp: map[uuid.UUID]repository.ColdRampState{id: {WarmupStartedAt: &warmed}}, risk: models.OrgRiskRestricted}, models.Email{ID: id, CampaignLimit: 80}},
+		{"everything", &campaignPass{campaign: &models.Campaign{DailyLimit: 30, WarmupGraduation: true, RampEnabled: true, RampStart: 10, RampCeiling: 50, RampLevel: 25}, coldRamp: map[uuid.UUID]repository.ColdRampState{id: {WarmupStartedAt: &warmed}}, risk: models.OrgRiskRestricted}, models.Email{ID: id, CampaignLimit: 80}},
 	} {
 		stages, by := stagedCap(tc.pass, tc.acct)
 		want := tc.pass.explainCap(tc.acct)

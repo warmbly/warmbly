@@ -11,65 +11,9 @@ import type Campaign from "@/lib/api/models/app/campaigns/Campaign";
 import { Label, NumberInput } from "@/components/ui/field";
 import { EmailListInput, OptionSelect, SettingRow, Toggle } from "./components/CampaignPreferenceBoolBox";
 import EspCoveragePanel from "./EspCoveragePanel";
+import RampUpChoice from "@/components/app/campaigns/RampUpChoice";
 
 type SetCampaign = React.Dispatch<React.SetStateAction<Campaign>>;
-
-/** RampPreview — a small day-by-day projection of the per-mailbox ramp curve
- *  (Day 1 = start, +increment each day, capped at the ceiling). Highlights the
- *  bar nearest today's live cap (ramp_level). */
-function RampPreview({
-    start,
-    increment,
-    ceiling,
-    level,
-}: {
-    start: number;
-    increment: number;
-    ceiling: number;
-    level: number;
-}) {
-    if (start <= 0 || ceiling <= 0 || start > ceiling) return null;
-    const days: number[] = [];
-    let v = start;
-    let guard = 0;
-    while (guard < 60) {
-        const capped = Math.min(v, ceiling);
-        days.push(capped);
-        if (capped >= ceiling) break;
-        v += Math.max(1, increment);
-        guard++;
-    }
-    const MAX_BARS = 14;
-    const shown = days.slice(0, MAX_BARS);
-    const more = days.length - shown.length;
-    const todayIdx = days.findIndex((d) => d >= level);
-
-    return (
-        <div>
-            <div className="flex items-end gap-1 h-14">
-                {shown.map((val, i) => {
-                    const today = i === todayIdx;
-                    return (
-                        <div
-                            key={i}
-                            title={`Day ${i + 1}: ${val}/day`}
-                            className={`flex-1 min-w-[4px] rounded-t-sm ${today ? "bg-sky-500" : "bg-sky-200"}`}
-                            style={{ height: `${Math.max(10, (val / ceiling) * 100)}%` }}
-                        />
-                    );
-                })}
-            </div>
-            <div className="flex items-center justify-between mt-1.5 text-[10px] text-slate-400">
-                <span>
-                    Day 1 · {start}/day
-                </span>
-                <span>
-                    {more > 0 ? `+${more} more · ` : ""}Day {days.length} · {ceiling}/day, then steady
-                </span>
-            </div>
-        </div>
-    );
-}
 
 /** Which mailbox a lead's follow-ups leave from, with the tradeoff spelled out
  *  whenever follow-ups stop being pinned to one address. */
@@ -134,7 +78,7 @@ function FollowUpSenderSetting({
     );
 }
 
-/** Inbox rotation — distribution mode + per-mailbox daily ramp-up. */
+/** Inbox rotation — distribution mode + how per-mailbox volume ramps up. */
 export function RotationRampSection({
     newCampaign,
     setNewCampaign,
@@ -142,7 +86,6 @@ export function RotationRampSection({
     newCampaign: Campaign;
     setNewCampaign: SetCampaign;
 }) {
-    const rampInvalid = newCampaign.ramp_enabled && newCampaign.ramp_start > newCampaign.ramp_ceiling;
     return (
         <div className="space-y-5">
             {/* Inbox rotation */}
@@ -187,74 +130,25 @@ export function RotationRampSection({
 
             <FollowUpSenderSetting newCampaign={newCampaign} setNewCampaign={setNewCampaign} />
 
-            {/* Daily ramp-up */}
+            {/* Ramp-up */}
             <SettingRow
-                title="Daily ramp-up"
-                description="Gradually raise each mailbox's daily volume instead of starting at full limit — a smooth growth curve protects deliverability. (Separate from warmup.)"
+                title="Ramp-up"
+                description="How each mailbox's daily volume grows in this campaign. Separate from warmup, which keeps running alongside."
+                stack
                 control={
-                    <Toggle
-                        id="campaign-pref-ramp"
-                        value={newCampaign.ramp_enabled}
-                        onChange={(v) => setNewCampaign((bef) => ({ ...bef, ramp_enabled: v }))}
+                    <RampUpChoice
+                        value={{
+                            warmup_graduation: newCampaign.warmup_graduation !== false,
+                            ramp_enabled: newCampaign.ramp_enabled,
+                            ramp_start: newCampaign.ramp_start,
+                            ramp_increment: newCampaign.ramp_increment,
+                            ramp_ceiling: newCampaign.ramp_ceiling,
+                        }}
+                        onChange={(p) => setNewCampaign((bef) => ({ ...bef, ...p }))}
+                        level={newCampaign.ramp_level}
                     />
                 }
             />
-            {newCampaign.ramp_enabled && (
-                <div className="rounded-md border border-slate-200 bg-slate-50/40 p-3.5 space-y-3.5">
-                    <div className="flex flex-wrap items-end gap-4">
-                        <div>
-                            <Label>Start</Label>
-                            <NumberInput
-                                value={newCampaign.ramp_start}
-                                min={1}
-                                max={5000}
-                                onChange={(v) => setNewCampaign((bef) => ({ ...bef, ramp_start: v }))}
-                                suffix="/ day"
-                                className="w-36"
-                            />
-                        </div>
-                        <div>
-                            <Label>Increase by</Label>
-                            <NumberInput
-                                value={newCampaign.ramp_increment}
-                                min={1}
-                                max={100}
-                                onChange={(v) => setNewCampaign((bef) => ({ ...bef, ramp_increment: v }))}
-                                suffix="/ day"
-                                className="w-36"
-                            />
-                        </div>
-                        <div>
-                            <Label>Ceiling</Label>
-                            <NumberInput
-                                value={newCampaign.ramp_ceiling}
-                                min={1}
-                                max={5000}
-                                onChange={(v) => setNewCampaign((bef) => ({ ...bef, ramp_ceiling: v }))}
-                                suffix="/ day"
-                                className="w-36"
-                            />
-                        </div>
-                        <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md bg-sky-50 text-sky-700 text-[11.5px] font-medium">
-                            Today's cap
-                            <span className="font-mono tabular-nums">{newCampaign.ramp_level}</span>
-                        </span>
-                    </div>
-                    {rampInvalid ? (
-                        <p className="flex items-center gap-1.5 text-[11px] text-rose-500">
-                            <AlertCircleIcon className="w-3.5 h-3.5 shrink-0" />
-                            Start must be less than or equal to the ceiling.
-                        </p>
-                    ) : (
-                        <RampPreview
-                            start={newCampaign.ramp_start}
-                            increment={newCampaign.ramp_increment}
-                            ceiling={newCampaign.ramp_ceiling}
-                            level={newCampaign.ramp_level}
-                        />
-                    )}
-                </div>
-            )}
         </div>
     );
 }

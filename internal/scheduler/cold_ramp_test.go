@@ -47,7 +47,7 @@ func TestColdRampUnknownFeedbackPreservesKnownWarmupInExecutionAndProjection(t *
 			if state := states[account.ID]; state.WarmupStartedAt == nil || !state.WarmupStartedAt.Equal(warmed) || state.ConfirmedReplies != 0 {
 				t.Fatal("unknown feedback erased history or manufactured replies", state)
 			}
-			pass := &campaignPass{campaign: &models.Campaign{DailyLimit: 50}, coldRamp: states, risk: models.OrgRiskTrusted,
+			pass := &campaignPass{campaign: &models.Campaign{DailyLimit: 50, WarmupGraduation: true}, coldRamp: states, risk: models.OrgRiskTrusted,
 				health: map[uuid.UUID]healthRead{account.ID: {}}}
 			if cap := pass.explainCap(account); cap.Cap != 5 || cap.LimitedBy != capByGraduation {
 				t.Fatal("execution lifted unknown evidence to full cap", cap)
@@ -61,7 +61,7 @@ func TestColdRampUnknownFeedbackPreservesKnownWarmupInExecutionAndProjection(t *
 			}
 			p := &projectedSender{acct: account, cap: 50, loc: time.UTC, cold: states[account.ID], hasCold: true}
 			mid, spans := workday(time.UTC, now.AddDate(0, 0, 10))
-			if day := projectSenderDay(p, spans, mid, now, false); day.sends != 5 || day.graduation != 45 {
+			if day := projectSenderDay(p, spans, mid, now, false, -1); day.sends != 5 || day.graduation != 45 {
 				t.Fatal("projection turned unknown feedback into readiness", day)
 			}
 			if fullCapacityEvidenceKnown([]*projectedSender{p}) {
@@ -69,7 +69,7 @@ func TestColdRampUnknownFeedbackPreservesKnownWarmupInExecutionAndProjection(t *
 			}
 		})
 	}
-	pass := &campaignPass{campaign: &models.Campaign{DailyLimit: 50}, risk: models.OrgRiskTrusted}
+	pass := &campaignPass{campaign: &models.Campaign{DailyLimit: 50, WarmupGraduation: true}, risk: models.OrgRiskTrusted}
 	if cap := pass.explainCap(account); cap.Cap != 5 {
 		t.Fatal("missing pass entry bypassed known warmup", cap)
 	}

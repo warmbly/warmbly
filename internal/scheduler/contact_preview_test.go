@@ -21,10 +21,16 @@ func TestProjectRampLevelMatchesDailyAdvance(t *testing.T) {
 		t.Fatalf("already advanced today must not advance again: got %d", c.RampLevel)
 	}
 
-	c = &models.Campaign{RampEnabled: true, RampStart: 10, RampIncrement: 5, RampCeiling: 12}
+	c = &models.Campaign{RampEnabled: true, RampStart: 10, RampIncrement: 5, RampCeiling: 50}
 	projectRampLevel(c, now)
-	if c.RampLevel != 12 {
-		t.Fatalf("first advance starts from ramp_start and clamps to the ceiling: got %d", c.RampLevel)
+	if c.RampLevel != 10 {
+		t.Fatalf("the first sending day sends ramp_start: got %d", c.RampLevel)
+	}
+
+	c = &models.Campaign{RampEnabled: true, RampStart: 10, RampIncrement: 5, RampCeiling: 8}
+	projectRampLevel(c, now)
+	if c.RampLevel != 8 {
+		t.Fatalf("the first advance clamps to the ceiling: got %d", c.RampLevel)
 	}
 
 	c = &models.Campaign{RampEnabled: false, RampLevel: 3}
