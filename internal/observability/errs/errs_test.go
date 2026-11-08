@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -189,5 +190,25 @@ func TestSensitiveErrorReachesRemoteAsItsPublicSentence(t *testing.T) {
 	}
 	if !errors.Is(err, raw) || strings.Contains(err.Error(), "10.9.8.7") {
 		t.Errorf("want the original reachable through Unwrap and hidden from the text: %v", err)
+	}
+}
+
+// A failed request groups by endpoint: its query's ids never reach the report, and the issue keeps the caller's type.
+func TestFailedRequestReportsWithoutItsQuery(t *testing.T) {
+	cause := &url.Error{Op: "Get", URL: "https://api.example.test/api/v1/internal/email-message-map?email_id=abc&message_id=def", Err: errors.New("connection refused")}
+	err := fmt.Errorf("email_message_map.http: get: %w", cause)
+
+	got := redact(err)
+	want := `email_message_map.http: get: Get "https://api.example.test/api/v1/internal/email-message-map": connection refused`
+	if got.Error() != want {
+		t.Errorf("reported %q, want %q", got.Error(), want)
+	}
+	if typ := exceptionType(got); typ != "*fmt.wrapError" {
+		t.Errorf("type = %q, want the original *fmt.wrapError", typ)
+	}
+
+	plain := fmt.Errorf("get: %w", &url.Error{Op: "Get", URL: "https://api.example.test/health", Err: errors.New("timeout")})
+	if redact(plain) != plain {
+		t.Error("an error whose URL has no query should pass through untouched")
 	}
 }

@@ -20,7 +20,10 @@ package errs
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
+	"net/url"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -298,7 +301,7 @@ func redact(err error) error {
 		if errors.As(err, &sensitive) {
 			return errors.New(sensitive.Error())
 		}
-		return err
+		return withoutURLQuery(err)
 	}
 	out := &DatabaseConnectError{}
 	var server *pgconn.PgError
@@ -306,4 +309,37 @@ func redact(err error) error {
 		out.Code = server.Code
 	}
 	return out
+}
+
+// querylessError is an error whose request URL lost its query string, keeping the original's type for the issue title.
+type querylessError struct {
+	typeName string
+	msg      string
+}
+
+func (e *querylessError) Error() string { return e.msg }
+
+// withoutURLQuery drops a failed request's query, whose ids would otherwise make every call its own issue.
+func withoutURLQuery(err error) error {
+	var urlErr *url.Error
+	if !errors.As(err, &urlErr) {
+		return err
+	}
+	u, parseErr := url.Parse(urlErr.URL)
+	if parseErr != nil || (u.RawQuery == "" && u.Fragment == "") {
+		return err
+	}
+	u.RawQuery, u.Fragment = "", ""
+	return &querylessError{
+		typeName: fmt.Sprintf("%T", err),
+		msg:      strings.ReplaceAll(err.Error(), urlErr.URL, u.String()),
+	}
+}
+
+// exceptionType names the Go type an issue is titled with.
+func exceptionType(err error) string {
+	if q, ok := err.(*querylessError); ok {
+		return q.typeName
+	}
+	return fmt.Sprintf("%T", err)
 }

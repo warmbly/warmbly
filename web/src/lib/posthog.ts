@@ -21,7 +21,8 @@
 // run in.
 //
 // Everything the SDK can observe is on: autocapture, pageviews and pageleaves,
-// heatmaps, rage and dead clicks, web vitals, network timing, session replay,
+// heatmaps, rage and dead clicks, web vitals, network timing, session replay
+// (started by the project's $exception trigger, so only sessions that hit an error),
 // surveys and exceptions. Replay masks password fields, one-time codes and any
 // secret the page reveals (data-ph-mask). The privacy page on the marketing
 // site describes exactly this and has to change with it.
