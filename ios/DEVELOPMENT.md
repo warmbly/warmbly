@@ -67,9 +67,13 @@ After login the app resolves your workspace (auto-selects if you have exactly on
 The email step shows native **Sign in with Apple** and **Continue with Google** buttons based on what the connected backend advertises at `GET /v1/auth/providers`:
 
 - **Apple** — enabled whenever the backend has an expected bundle ID (`APPLE_IOS_BUNDLE_ID`, default `com.warmbly.app`). The app sends the Apple identity token to `POST /v1/auth/apple`, which verifies it against Apple's public keys. Trying it end-to-end needs a signed build and a simulator/device signed into an Apple ID.
-- **Google** — hidden until the backend sets `GOOGLE_IOS_CLIENT_ID` (an iOS OAuth client ID from Google Cloud Console). The app runs the OAuth ceremony in an in-app browser with PKCE, exchanges the code on device (iOS clients have no secret), and sends the ID token to `POST /v1/auth/google`.
+- **Google** — with `GOOGLE_IOS_CLIENT_ID` set (an iOS OAuth client ID from Google Cloud Console), the app runs the OAuth ceremony in an in-app browser with PKCE, exchanges the code on device (iOS clients have no secret), and sends the ID token to `POST /v1/auth/google`. Without it, when `GET /v1/auth/config` lists `google` and its `app_url` is a host the app is associated with (`AppConfig.associatedWebHosts`, today `app.warmbly.com`), the app runs the website's own Google sign-in instead: `POST /v1/auth/google/begin`, the returned URL in an in-app browser, the backend callback's redirect to `https://app.warmbly.com/auth/sso?code=` caught by the browser session, and `POST /v1/auth/sso/exchange` with the code and the binding from begin. Otherwise the button is hidden.
 
-First-time social sign-ins auto-provision the user, workspace, and trial server-side; there is no OTP step because the provider identity is already verified.
+First-time social sign-ins auto-provision the user, workspace, and trial server-side; there is no OTP step because the provider identity is already verified. An Apple or Google sign-in on an address that already has a password asks for that password once (`POST /v1/auth/sso/link`) before the identity is linked.
+
+### Saved passwords
+
+The entitlement `webcredentials:app.warmbly.com` and the dashboard's `/.well-known/apple-app-site-association` (in `web/public`) let iOS AutoFill offer passwords saved for the dashboard on the email and password fields, and save new ones there. The App ID needs the Associated Domains capability; automatic signing with `-allowProvisioningUpdates` enables it. A domain change takes effect after Apple's CDN refetches the file, so a fresh install picks it up first. Self-hosted dashboards are not associated with the App Store build.
 
 ### Confirming a recent sign-in
 

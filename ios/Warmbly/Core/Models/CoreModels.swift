@@ -28,6 +28,10 @@ struct LoginResult: Codable, Sendable {
     var twoFARequired: Bool?
     var pendingToken: String?
     var expiresIn: Int?
+    /// A federated sign-in on an address that already has a password.
+    var linkRequired: Bool?
+    var linkEmail: String?
+    var linkProvider: String?
 
     enum CodingKeys: String, CodingKey {
         case accessToken = "access_token"
@@ -37,6 +41,9 @@ struct LoginResult: Codable, Sendable {
         case twoFARequired = "two_fa_required"
         case pendingToken = "pending_token"
         case expiresIn = "expires_in"
+        case linkRequired = "link_required"
+        case linkEmail = "link_email"
+        case linkProvider = "link_provider"
     }
 
     var token: AuthToken? {
@@ -92,12 +99,20 @@ struct AuthProvidersInfo: Codable, Sendable {
 
     var apple: Provider?
     var google: Provider?
+    /// From `GET /auth/config`: set when the website's Google sign-in can hand back to the app.
+    var googleBrowserHost: String?
+
+    enum CodingKeys: String, CodingKey {
+        case apple, google
+    }
 
     var appleEnabled: Bool { apple?.enabled == true }
     var googleClientID: String? {
         guard google?.enabled == true, let id = google?.clientID, !id.isEmpty else { return nil }
         return id
     }
+
+    var googleAvailable: Bool { googleClientID != nil || googleBrowserHost != nil }
 }
 
 // MARK: - Errors

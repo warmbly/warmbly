@@ -14,6 +14,8 @@ enum AppConfig {
     /// local stack.
     static let defaultOrigin = cloudOrigin
     static let defaultTurnstileToken = ""
+    /// The `webcredentials` hosts in Warmbly.entitlements; saved passwords and web sign-in callbacks work only there.
+    static let associatedWebHosts: Set<String> = ["app.warmbly.com"]
 
     /// Bare origin, no path. The `/v1` prefix is applied in APIClient,
     /// mirroring the web's `API_BASE_URL = ${API_URL}/v1`.

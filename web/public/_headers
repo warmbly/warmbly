@@ -39,3 +39,8 @@
 # config.js is the runtime configuration and must never outlive a change to it; same rule as the nginx image.
 /config.js
   Cache-Control: no-store
+
+# Lets the iOS app fill passwords saved for this site and finish web sign-in; Apple fetches it as JSON.
+/.well-known/apple-app-site-association
+  Content-Type: application/json
+  Cache-Control: public, max-age=3600

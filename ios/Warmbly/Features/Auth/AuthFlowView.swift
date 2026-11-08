@@ -13,6 +13,8 @@ struct AuthFlowView: View {
         case password
         case verify(session: String)
         case twoFA(pendingToken: String)
+        /// Apple or Google signed in to an address that already has a password.
+        case link(SSOLinkChallenge)
         case resetSent
     }
 
@@ -57,7 +59,7 @@ struct AuthFlowView: View {
         .sensoryFeedback(.impact(weight: .light), trigger: step)
         .sensoryFeedback(.error, trigger: errorPulse)
         .sheet(isPresented: $showServerConfig) { ServerConfigSheet() }
-        .task { providers = await env.session.fetchAuthProviders() }
+        .task { providers = await env.session.fetchSignInProviders() }
         #if DEBUG
         // Scripted runs can open a later step (WARMBLY_DEBUG_AUTH) to see it.
         .onAppear {
@@ -68,6 +70,7 @@ struct AuthFlowView: View {
             case "password": step = .password
             case "verify": step = .verify(session: "debug")
             case "twofa": step = .twoFA(pendingToken: "debug")
+            case "link": step = .link(SSOLinkChallenge(pendingToken: "debug", email: email, provider: "google"))
             case "reset": step = .resetSent
             case "server": showServerConfig = true
             default: break
@@ -173,6 +176,8 @@ struct AuthFlowView: View {
             return (2, "envelope.open.fill", "Check your email")
         case .twoFA:
             return (2, "shield.lefthalf.filled", "Two-factor check")
+        case .link:
+            return (1, "link", "Confirm it's you")
         }
     }
 
@@ -191,6 +196,8 @@ struct AuthFlowView: View {
                     verifyStep
                 case .twoFA:
                     twoFAStep
+                case let .link(challenge):
+                    linkStep(challenge)
                 case .resetSent:
                     resetSentStep
                 }
@@ -245,7 +252,7 @@ struct AuthFlowView: View {
             code = ""
             infoMessage = nil
             go(to: .password, direction: -1)
-        case .twoFA:
+        case .twoFA, .link:
             restart()
         default:
             break
@@ -380,10 +387,7 @@ struct AuthFlowView: View {
                         providers: providers,
                         busy: $busy,
                         onError: { message in showError(message) },
-                        onTwoFA: { pendingToken in
-                            code = ""
-                            go(to: .twoFA(pendingToken: pendingToken))
-                        }
+                        onChallenge: { outcome in handleSocial(outcome) }
                     )
 
                     HStack(spacing: 12) {
@@ -403,8 +407,9 @@ struct AuthFlowView: View {
 
             VStack(spacing: 12) {
                 authField(
+                    // .username is what AutoFill matches saved passwords against.
                     TextField("name@company.com", text: $email)
-                        .textContentType(.emailAddress)
+                        .textContentType(.username)
                         .keyboardType(.emailAddress)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -459,6 +464,7 @@ struct AuthFlowView: View {
                     emailPill
                     Spacer()
                 }
+                .background(autofillUsername)
 
                 authField(
                     SecureField("Password", text: $password)
@@ -497,6 +503,66 @@ struct AuthFlowView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.top, 18)
+        }
+        .onAppear { focusedField = .password }
+    }
+
+    /// The address again, invisible, beside a password field on its own page:
+    /// AutoFill needs a username field there to fill and save the right account.
+    private var autofillUsername: some View {
+        TextField("", text: $email)
+            .textContentType(.username)
+            .frame(width: 1, height: 1)
+            .opacity(0.01)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
+    // MARK: - Step: link a provider to a password account
+
+    private func providerName(_ provider: String) -> String {
+        switch provider {
+        case "google": "Google"
+        case "apple": "Apple"
+        default: "single sign-on"
+        }
+    }
+
+    private func linkStep(_ challenge: SSOLinkChallenge) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sheetTitle(
+                "Confirm it's you",
+                "This address already has a Warmbly account. Enter its password to add \(providerName(challenge.provider)) sign-in to it."
+            )
+
+            VStack(spacing: 12) {
+                HStack {
+                    Text(challenge.email)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .font(.system(size: 14))
+                        .foregroundStyle(WTheme.inkSecondary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .background(WTheme.surface, in: Capsule())
+                        .overlay(Capsule().strokeBorder(WTheme.hairlineStrong, lineWidth: 1))
+                    Spacer()
+                }
+                .background(autofillUsername)
+
+                authField(
+                    SecureField("Password", text: $password)
+                        .textContentType(.password)
+                        .focused($focusedField, equals: .password)
+                        .submitLabel(.go)
+                        .onSubmit { Task { await submitLink() } },
+                    focused: focusedField == .password
+                )
+
+                primaryButton("Link and sign in", disabled: password.isEmpty) {
+                    await submitLink()
+                }
+            }
         }
         .onAppear { focusedField = .password }
     }
@@ -752,6 +818,39 @@ struct AuthFlowView: View {
             try await env.session.verifyTwoFA(pendingToken: pendingToken, code: submitted.trimmingCharacters(in: .whitespaces))
         }
         if errorMessage != nil { code = "" }
+    }
+
+    private func handleSocial(_ outcome: SocialOutcome) {
+        switch outcome {
+        case .loggedIn:
+            return
+        case let .needsTwoFA(pendingToken):
+            code = ""
+            go(to: .twoFA(pendingToken: pendingToken))
+        case let .needsLink(challenge):
+            email = challenge.email
+            password = ""
+            go(to: .link(challenge))
+        }
+    }
+
+    private func submitLink() async {
+        guard case let .link(challenge) = step, !busy, !password.isEmpty else { return }
+        var expired = false
+        await run {
+            do {
+                handleSocial(try await env.session.confirmSSOLink(pendingToken: challenge.pendingToken, password: password))
+            } catch let error as APIError where error.code == "sso_link_expired" {
+                expired = true
+                throw error
+            }
+        }
+        // The challenge is spent, so the form can only fail from here.
+        if expired {
+            let message = errorMessage
+            restart()
+            if let message { showError(message) }
+        }
     }
 
     private func submitReset() async {
