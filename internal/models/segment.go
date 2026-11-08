@@ -152,6 +152,11 @@ var SegmentFieldCatalog = []SegmentFieldSpec{
 
 	{Field: "company", Label: "Company name", Group: "Company", Kind: SegmentFieldText},
 
+	{Field: "world_region", Label: "World region", Group: "Location", Kind: SegmentFieldEnum, Options: worldRegionOptions(), OptionLabels: worldRegionLabels()},
+	{Field: "country", Label: "Country", Group: "Location", Kind: SegmentFieldEnum, Options: countryOptions(), OptionLabels: countryLabels()},
+	{Field: "timezone", Label: "Timezone", Group: "Location", Kind: SegmentFieldEnum, Options: timezoneOptions(), OptionLabels: timezoneLabels()},
+	{Field: "location_known", Label: "Location known", Group: "Location", Kind: SegmentFieldBool},
+
 	{Field: "campaign", Label: "In campaign", Group: "Campaign activity", Kind: SegmentFieldCampaign},
 	{Field: "campaign_count", Label: "Number of campaigns", Group: "Campaign activity", Kind: SegmentFieldNumber},
 	{Field: "emails_sent", Label: "Emails sent", Group: "Email engagement", Kind: SegmentFieldNumber},

@@ -1484,6 +1484,7 @@ func main() {
 		formService.SetCustomHosts(customHosts)
 		go jobs.NewFormsDomainSweep(organizationRepoForHandler, customHosts).Start(ctx, time.Hour)
 		go jobs.NewContactMailHostSweep(contactRepoForHandler, cache, streamingPublisher).Start(ctx)
+		go jobs.NewContactLocationSweep(contactRepoForHandler, cache, streamingPublisher).Start(ctx)
 		// A visibly bad import is filed on the workspace's posture. On its own
 		// it can only reach `watch`, which changes nothing.
 		if aware, ok := contactService.(contact.OrgRiskAware); ok && orgRiskService != nil {

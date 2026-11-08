@@ -383,6 +383,8 @@ var Tables = []Table{
 	{
 		Name: "contacts", Group: models.OrgDataGroupContacts,
 		Scope: scopeOrg,
+		// The destination re-derives location with its own resolver.
+		ResetOnImport: []string{"location_fingerprint"},
 	},
 	{
 		Name: "contact_import_mappings", Group: models.OrgDataGroupContacts,

@@ -510,6 +510,26 @@ func (h *Handler) GetCampaignSendPlan(c *gin.Context) {
 	c.JSON(http.StatusOK, plan)
 }
 
+// GetCampaignLeadTimezones counts a campaign's leads by the timezone their
+// records resolve to. GET /campaigns/:id/lead-timezones
+func (h *Handler) GetCampaignLeadTimezones(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.ErrNoOrganization)
+		return
+	}
+	if _, err := uuid.Parse(c.Param("id")); err != nil {
+		errx.JSON(c, errx.ErrNotFound)
+		return
+	}
+	out, xerr := h.CampaignService.LeadTimezones(c.Request.Context(), *orgID, c.Param("id"))
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, out)
+}
+
 // ListCampaignSenders returns a campaign's explicit sender pool.
 // GET /campaigns/:id/senders
 func (h *Handler) ListCampaignSenders(c *gin.Context) {

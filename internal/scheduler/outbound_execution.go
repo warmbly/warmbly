@@ -9,7 +9,17 @@ import (
 	"github.com/warmbly/warmbly/internal/app/behavior"
 )
 
-func (s *schedulerService) OutboundExecutionNotBefore(ctx context.Context, mailbox, campaign, task uuid.UUID, now time.Time) (time.Time, error) {
+// OutboundExecutionGate is the start check the tasks service asks of the scheduler.
+type OutboundExecutionGate interface {
+	OutboundExecutionNotBefore(ctx context.Context, mailbox, campaign, contact, task uuid.UUID, now time.Time) (time.Time, error)
+}
+
+var _ OutboundExecutionGate = (*schedulerService)(nil)
+
+// OutboundExecutionNotBefore is when a reserved campaign send may start. contact
+// is the lead, uuid.Nil when unknown; a recipient-local campaign reads its
+// window on that lead's clock, the one the send was placed on.
+func (s *schedulerService) OutboundExecutionNotBefore(ctx context.Context, mailbox, campaign, contact, task uuid.UUID, now time.Time) (time.Time, error) {
 	a, xerr := s.emailRepo.GetByID(ctx, mailbox)
 	if xerr != nil {
 		return time.Time{}, xerr
@@ -24,7 +34,13 @@ func (s *schedulerService) OutboundExecutionNotBefore(ctx context.Context, mailb
 	if c == nil || c.Status != "active" || c.OrganizationID == nil || a.OrganizationID == nil || *c.OrganizationID != *a.OrganizationID {
 		return time.Time{}, errors.New("campaign unavailable")
 	}
-	at := nextScheduleSlot(now, effectiveWindows(c), loadLocation(c.EffectiveTimezone))
+	clock := loadLocation(c.EffectiveTimezone)
+	if c.SendsInRecipientTimezone() && contact != uuid.Nil && s.contactRepo != nil {
+		if lead, cerr := s.contactRepo.GetByID(ctx, contact); cerr == nil {
+			clock = scheduleClock(c, clock, lead)
+		}
+	}
+	at := nextScheduleSlot(now, effectiveWindows(c), clock)
 	if at.After(now) {
 		return at, nil
 	}

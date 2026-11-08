@@ -204,7 +204,7 @@ function SendingSettings() {
                             <>
                                 <Row
                                     label="Read each contact's timezone"
-                                    description="Uses the contact's timezone field, then the country its email domain points at. Falls back to the timezone below."
+                                    description="Uses the contact's timezone, state, city, country or location, then their phone number and email domain. Falls back to the timezone below."
                                 >
                                     <Toggle
                                         on={!!sto.use_contact_timezone}

@@ -147,16 +147,14 @@ Sending behavior places a send inside the **mailbox's** day. Send-time optimizat
 | Setting | What it does |
 |---------|--------------|
 | Use the recipient's local hours | The switch for the whole feature |
-| Read each contact's timezone | Uses the contact's `timezone` field first, then the country its email domain points at |
+| Read each contact's timezone | Works out each contact's timezone from their record (see below) |
 | Fallback timezone | Used when a contact's timezone cannot be worked out |
 | Skip weekends | Pushes a Saturday or Sunday send to the next weekday |
 | Delivery hours | The local hours a send is allowed to land in |
 
-Warmbly works out the recipient's timezone in this order:
+Warmbly works out the recipient's timezone the same way everywhere, described in [how a contact's location is worked out](/guides/regions-and-timezones/#how-a-contacts-location-is-worked-out): a timezone, state, city, country or location field, then the phone number, then a country-code email domain. When none of them says, the fallback timezone you set is used.
 
-1. The contact's `timezone` custom field, when it holds a valid IANA name such as `America/Denver`.
-2. The country implied by the email domain's country-code suffix: `acme.de` is read as Berlin, `acme.co.uk` as London. Generic domains like `.com` and `.io` carry no location, so they fall through.
-3. The fallback timezone you set.
+This setting adds preferred delivery hours on top of every campaign's own window. To read a campaign's window itself in each lead's timezone, use [each lead's local time](/guides/campaigns/#sending-in-each-leads-local-time) on its Schedule tab instead.
 
 <Callout type="info" title="It only ever delays a send">
 Send-time optimization can move a send later, never earlier. Every other constraint still binds: the campaign's own sending window, the mailbox's workday and daily cap, the minimum gap between sends. If the recipient's hours and the mailbox's hours never overlap, the send goes out at the next moment both calendars allow rather than not at all. It will also never push a send past the campaign's end date.

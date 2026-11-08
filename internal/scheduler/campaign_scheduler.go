@@ -83,6 +83,7 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 	// The due leads this pass may try, in routing order. More than one, because
 	// placement can refuse a lead for a reason that is that lead's alone while
 	// the lead behind them is sendable this second (issue #437).
+	open := openClocks(campaign, time.Now())
 	candidates, recheckAt, senderWait, err := s.campaignProgressRepo.FindRoutedPairs(
 		ctx,
 		campaignID,
@@ -92,6 +93,7 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 		campaign.PrioritizeNewLeads,
 		excludeNewLeads,
 		paced,
+		open,
 		config.CampaignPlacementCandidates,
 	)
 	if err != nil {
@@ -106,7 +108,7 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 		if excludeNewLeads {
 			again, againDue, againSenderWait, aerr := s.campaignProgressRepo.FindRoutedPairs(
 				ctx, campaignID, campaign.ContactOrderBy, campaign.ContactOrderDir, orderField,
-				campaign.PrioritizeNewLeads, false, paced, 1,
+				campaign.PrioritizeNewLeads, false, paced, open, 1,
 			)
 			switch {
 			case aerr != nil:
@@ -282,7 +284,7 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 
 	// Loaded once: ESP matching and send-time optimization share the row.
 	var recipientContact *models.Contact
-	if (campaign.ESPMatchMode != "off" || sendPref.enabled) && s.contactRepo != nil {
+	if (campaign.ESPMatchMode != "off" || sendPref.enabled || campaign.SendsInRecipientTimezone()) && s.contactRepo != nil {
 		if contact, cerr := s.contactRepo.GetByID(ctx, nextPair.ContactID); cerr == nil {
 			recipientContact = contact
 		}
@@ -342,6 +344,9 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 	// Fall back to UTC if campaign has no timezone set (account timezone checked later)
 	campaignTZName := campaign.ClockTimezone()
 	campaignTZ := pass.location(campaignTZName)
+	// A recipient-local campaign reads its windows on the lead's clock, so every
+	// window gate below is the lead's, and waiting on one is this lead's wait.
+	campaignTZ = scheduleClock(campaign, campaignTZ, recipientContact)
 	// Authoritative per-day sending windows (or derived from the legacy
 	// days/start/end fields). Drives every day-of-week + time-window gate below.
 	windows := effectiveWindows(campaign)
@@ -359,7 +364,9 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 	// STEP 6+7: Snap to the next allowed per-day sending window (handles both
 	// the day-of-week gate and the time-of-day window, including multiple
 	// intervals per day).
+	beforeWindow := candidateTime
 	candidateTime = nextScheduleSlot(candidateTime, windows, campaignTZ)
+	leadWindowWait := campaign.SendsInRecipientTimezone() && candidateTime.After(beforeWindow)
 
 	// The organization's own posture. A restricted organization keeps sending at
 	// a fraction of the volume (folded into pass.effectiveCap); a suspended one
@@ -811,7 +818,7 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 	// leadFloor records that the hard floor below belongs to THIS lead and not
 	// to the pool, so a refusal moves the pass to the next lead instead of
 	// parking the campaign (issue #437).
-	leadFloor := false
+	leadFloor := leadWindowWait
 
 	// Move the candidate onto the mailbox's own workday before the spacing
 	// maths below runs, so distribution is computed against the window the send
@@ -821,7 +828,7 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 		// Waiting for a mailbox to reopen is this lead's own wait only when the
 		// lead is BOUND to it, for the reason spelled out at the min-gap below:
 		// an unbound lead is one rotation places, and rotation gets another go.
-		leadFloor = bound != nil && bound.ID == account.ID
+		leadFloor = leadFloor || (bound != nil && bound.ID == account.ID)
 	}
 
 	// hardFloor is the earliest moment this send is ALLOWED: wait_after,

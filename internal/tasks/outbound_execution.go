@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/scheduler"
 )
 
 func (s *tasksService) ValidateOutboundExecution(ctx context.Context, taskID uuid.UUID) error {
@@ -50,14 +51,16 @@ func (s *tasksService) ValidateOutboundExecution(ctx context.Context, taskID uui
 		if ct == nil || ct.CampaignID == nil {
 			return errors.New("campaign unavailable")
 		}
-		gate, ok := s.scheduler.(interface {
-			OutboundExecutionNotBefore(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, time.Time) (time.Time, error)
-		})
+		gate, ok := s.scheduler.(scheduler.OutboundExecutionGate)
 		if !ok {
 			return errors.New("campaign execution policy unavailable")
 		}
 		now := time.Now()
-		at, err := gate.OutboundExecutionNotBefore(ctx, a.ID, *ct.CampaignID, taskID, now)
+		contact := uuid.Nil
+		if ct.ContactID != nil {
+			contact = *ct.ContactID
+		}
+		at, err := gate.OutboundExecutionNotBefore(ctx, a.ID, *ct.CampaignID, contact, taskID, now)
 		if err != nil {
 			return err
 		}

@@ -300,7 +300,7 @@ type CampaignProgressRepository interface {
 	// waitingOnSender reports that the returned next-due moment is a lead
 	// waiting for its own mailbox rather than for a step's wait or a condition
 	// window, so the caller can say which.
-	FindRoutedPairs(ctx context.Context, campaignID uuid.UUID, orderBy, orderDir, orderField string, prioritizeNewLeads, excludeNewLeads bool, paced PacedSenders, limit int) (pairs []ContactSequencePair, nextDue *time.Time, waitingOnSender bool, err error)
+	FindRoutedPairs(ctx context.Context, campaignID uuid.UUID, orderBy, orderDir, orderField string, prioritizeNewLeads, excludeNewLeads bool, paced PacedSenders, open *OpenClocks, limit int) (pairs []ContactSequencePair, nextDue *time.Time, waitingOnSender bool, err error)
 	// RouteContact runs the same routing for ONE contact and reports where
 	// their flow goes next, plus the pre-send gate that excludes them, so a
 	// per-contact preview reads the facts the send path reads.
@@ -1418,7 +1418,7 @@ func undeliverableClause(cp string) string {
 // lead is offered, and the placer moves it to another mailbox.
 //
 // Returns no pairs and a nil next-due when the campaign is genuinely complete.
-func (r *campaignProgressRepository) FindRoutedPairs(ctx context.Context, campaignID uuid.UUID, orderBy, orderDir, orderField string, prioritizeNewLeads, excludeNewLeads bool, paced PacedSenders, limit int) ([]ContactSequencePair, *time.Time, bool, error) {
+func (r *campaignProgressRepository) FindRoutedPairs(ctx context.Context, campaignID uuid.UUID, orderBy, orderDir, orderField string, prioritizeNewLeads, excludeNewLeads bool, paced PacedSenders, open *OpenClocks, limit int) ([]ContactSequencePair, *time.Time, bool, error) {
 	if limit < 1 {
 		limit = 1
 	}
@@ -1472,9 +1472,15 @@ func (r *campaignProgressRepository) FindRoutedPairs(ctx context.Context, campai
 		dir = "DESC"
 	}
 	orderPrefix := ""
+	if open != nil {
+		// A recipient-local campaign tries first the leads whose own day is open,
+		// ahead of new-lead priority: a lead at night cannot be sent either way.
+		p1args = append(p1args, open.Zones, open.Unknown)
+		orderPrefix = fmt.Sprintf("COALESCE(c.location_timezone = ANY($%d::text[]) OR (c.location_timezone = '' AND $%d::bool), false) DESC, ", len(p1args)-1, len(p1args))
+	}
 	if prioritizeNewLeads {
 		// Priority needs existence, not the last sent step or its per-lead sort.
-		orderPrefix = `NOT EXISTS (
+		orderPrefix += `NOT EXISTS (
 			SELECT 1 FROM campaign_contact_progress p
 			WHERE p.campaign_id = $1 AND p.contact_id = cl.contact_id AND p.sent_at IS NOT NULL
 		) DESC, `
@@ -1932,6 +1938,14 @@ func (in routeInput) heldShift(now time.Time) time.Duration {
 // by warmup health is absent, so the leads bound to it are routed and moved
 // off it rather than left waiting for a return that is not coming.
 type PacedSenders map[uuid.UUID]time.Time
+
+// OpenClocks names the lead clocks a recipient-local campaign can send on now:
+// the zones whose window is open, and whether the campaign's own is (the clock
+// of a lead with no known zone). Routing tries those leads first.
+type OpenClocks struct {
+	Zones   []string
+	Unknown bool
+}
 
 // reopening reports when a lead's bound mailbox is expected back, and whether
 // it is paced at all. An unassigned lead is never paced: rotation is still

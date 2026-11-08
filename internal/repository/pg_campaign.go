@@ -16,6 +16,7 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/geo"
 	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
 	"github.com/warmbly/warmbly/internal/utils"
 	"github.com/warmbly/warmbly/internal/utils/paging"
@@ -116,6 +117,8 @@ type CampaignRepository interface {
 	// CountNewLeadsStartedToday returns new_leads_started for the current UTC
 	// day (0 when no row exists yet).
 	CountNewLeadsStartedToday(ctx context.Context, campaignID uuid.UUID) (int, error)
+	// LeadTimezones counts the campaign's leads by resolved timezone, largest first.
+	LeadTimezones(ctx context.Context, orgID, campaignID uuid.UUID) (*models.CampaignLeadTimezones, error)
 	// DecrementCampaignDailySend gives back a send that never left, against the
 	// day it was counted on (sentAt), so the new-lead cap does not charge for
 	// it. The matching increment lives in CampaignProgressRepository.ReserveSend,
@@ -175,7 +178,7 @@ const CAMPAIGN_SELECT = `id, name, description, status,
 		  utm_tracking, utm_source, utm_medium, utm_campaign,
 		  unsubscribe_mode,
 		  continuous, idle_since, stop_on_meeting,
-		  follow_up_sender`
+		  follow_up_sender, timezone_mode`
 
 func getCampaign(rows db.Scannable, campaign *models.Campaign, extra ...any) error {
 	var dest []any = []any{
@@ -197,7 +200,7 @@ func getCampaign(rows db.Scannable, campaign *models.Campaign, extra ...any) err
 		&campaign.UTMTracking, &campaign.UTMSource, &campaign.UTMMedium, &campaign.UTMCampaign,
 		&campaign.UnsubscribeMode,
 		&campaign.Continuous, &campaign.IdleSince, &campaign.StopOnMeeting,
-		&campaign.FollowUpSender,
+		&campaign.FollowUpSender, &campaign.TimezoneMode,
 	}
 	dest = append(dest, extra...)
 	return rows.Scan(
@@ -224,7 +227,7 @@ const CAMPAIGN_SELECT_FULL = `
 	c.utm_tracking, c.utm_source, c.utm_medium, c.utm_campaign,
 	c.unsubscribe_mode,
 	c.continuous, c.idle_since, c.stop_on_meeting,
-	c.follow_up_sender,
+	c.follow_up_sender, c.timezone_mode,
 	COALESCE(array_agg(cet.tag_id) FILTER (WHERE cet.tag_id IS NOT NULL), '{}') AS email_tag_ids,
 	COALESCE(array_agg(cec.folder_id) FILTER (WHERE cec.folder_id IS NOT NULL), '{}') AS email_folder_ids
 `
@@ -426,6 +429,13 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 		}
 		followUpSender = *data.FollowUpSender
 	}
+	timezoneMode := string(models.TimezoneModeCampaign)
+	if data.TimezoneMode != nil {
+		if err := validate.CampaignTimezoneMode(*data.TimezoneMode); err != nil {
+			return nil, err
+		}
+		timezoneMode = *data.TimezoneMode
+	}
 	rampEnabled := false
 	if data.RampEnabled != nil {
 		rampEnabled = *data.RampEnabled
@@ -519,7 +529,7 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 			tracking_domain,
 			utm_tracking, utm_source, utm_medium, utm_campaign,
 			unsubscribe_mode, continuous, entry_delay_minutes,
-			stop_on_meeting, follow_up_sender,
+			stop_on_meeting, follow_up_sender, timezone_mode,
 			created_at, updated_at
 		) VALUES (
 			gen_random_uuid(), $1, $2, $3, $4,
@@ -533,7 +543,7 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 			$30,
 			$31, $32, $33, $34,
 			$35, $36, $37,
-			$38, $39,
+			$38, $39, $40,
 			NOW(), NOW()
 		)
 		RETURNING %s
@@ -579,6 +589,7 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 		entryDelay,         // $37
 		stopOnMeeting,      // $38
 		followUpSender,     // $39
+		timezoneMode,       // $40
 	}
 
 	row := tx.QueryRow(ctx, insertSQL, params...)
@@ -1185,6 +1196,14 @@ func (r *campaignRepository) Update(ctx context.Context, orgID, campaignID strin
 		args = append(args, *data.FollowUpSender)
 		argPos++
 	}
+	if data.TimezoneMode != nil {
+		if err := validate.CampaignTimezoneMode(*data.TimezoneMode); err != nil {
+			return nil, err
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "timezone_mode", argPos))
+		args = append(args, *data.TimezoneMode)
+		argPos++
+	}
 	if data.RampEnabled != nil {
 		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "ramp_enabled", argPos))
 		args = append(args, *data.RampEnabled)
@@ -1488,7 +1507,7 @@ func (r *campaignRepository) GetByID(ctx context.Context, campaignID uuid.UUID) 
 		&campaign.UTMTracking, &campaign.UTMSource, &campaign.UTMMedium, &campaign.UTMCampaign,
 		&campaign.UnsubscribeMode,
 		&campaign.Continuous, &campaign.IdleSince, &campaign.StopOnMeeting,
-		&campaign.FollowUpSender,
+		&campaign.FollowUpSender, &campaign.TimezoneMode,
 		&campaign.EmailTags, &campaign.Folders,
 	)
 	if err != nil {
@@ -2484,4 +2503,39 @@ func (r *campaignRepository) ActiveCampaignIDsForOrganization(ctx context.Contex
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+func (r *campaignRepository) LeadTimezones(ctx context.Context, orgID, campaignID uuid.UUID) (*models.CampaignLeadTimezones, error) {
+	query := `
+		SELECT c.location_timezone, COUNT(*),
+		       COUNT(*) FILTER (WHERE c.location_fingerprint IS DISTINCT FROM contact_location_fingerprint(c.custom_fields, c.phone, c.email))
+		FROM campaign_leads cl
+		JOIN campaigns ca ON ca.id = cl.campaign_id
+		JOIN contacts c ON c.id = cl.contact_id
+		WHERE cl.campaign_id = $1 AND ca.organization_id = $2
+		GROUP BY c.location_timezone
+		ORDER BY COUNT(*) DESC, c.location_timezone
+	`
+	rows, err := resultDB(ctx, r.DB).Query(ctx, query, campaignID, orgID)
+	if err != nil {
+		db.CaptureError(err, query, nil, "query")
+		return nil, err
+	}
+	defer rows.Close()
+	out := &models.CampaignLeadTimezones{CampaignID: campaignID, Zones: []models.CampaignLeadZone{}}
+	for rows.Next() {
+		var zone string
+		var leads, resolving int
+		if err := rows.Scan(&zone, &leads, &resolving); err != nil {
+			return nil, err
+		}
+		out.Total += leads
+		out.Resolving += resolving
+		if zone == "" {
+			out.Unknown += leads
+			continue
+		}
+		out.Zones = append(out.Zones, models.CampaignLeadZone{Timezone: zone, Country: geo.ZoneCountry(zone), Leads: leads})
+	}
+	return out, rows.Err()
 }

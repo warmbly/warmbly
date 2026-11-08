@@ -416,6 +416,14 @@ The spacing sits between sends, never in front of the first one. A campaign you 
 
 When nothing is due (every lead is inside a step's wait, for example), the campaign re-checks itself at least every `15` minutes rather than sleeping until the next step falls due; the activity log notes it once a day rather than on every check. Leads added to a waiting campaign are sent on the same terms, without waiting for that re-check or a restart, unless the campaign sets a delay before the first email. Leads added while a campaign is mid-send join the queue and go out at its current pace, so adding leads never shortens the gap between two sends.
 
+### Sending in each lead's local time
+
+Under **Whose time** on the Schedule tab, pick **Each lead's local time** to read the same weekly windows in every recipient's own timezone instead of the campaign's: a `Mon-Fri 9-5` window reaches a lead in Tokyo between 9 and 5 Tokyo time and a lead in Chicago between 9 and 5 Chicago time, from one campaign. The new-campaign wizard has the same switch under its sending window. A lead whose record says nothing about where they are is sent on the campaign's timezone.
+
+**Where your leads are**, below the choice, counts the campaign's leads by timezone before you launch, with the time it is there now and, for the campaign's own timezone, where today's window lands on their clock (a New York `9-5` reads `23:00-07:00` in Tokyo). It also says how many leads have no location, so you can fill the gaps before they are sent on the fallback.
+
+While one lead waits for their morning, the campaign keeps sending to the leads whose day is open, so a campaign with leads on several continents spreads its day across them. Daily limits still reset at midnight UTC. Each mailbox still keeps its own hours, its [working hours](/guides/sending-behavior/) or `8am` to `8pm` in its own timezone: a lead whose day never overlaps any of the campaign's mailboxes waits, so add mailboxes set to that region's timezone or run the region as its own campaign. See [Sending by region and timezone](/guides/regions-and-timezones/).
+
 ### Delay before the first email
 
 By default a contact's first email is due the moment they enter the campaign. The campaign's **Settings** > **First email** holds it back instead: choose **After a wait**, then pick a preset (`1 hour`, `4 hours`, `1 day`, `2 days`, `3 days`, `1 week`) or a custom amount in minutes, hours or days, up to `90` days. The same control is on the **Start** card at the top of the Steps canvas and on the line under it, and all of them write one setting.

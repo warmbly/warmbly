@@ -17,6 +17,7 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/emailverify"
+	"github.com/warmbly/warmbly/internal/pkg/geo"
 	"github.com/warmbly/warmbly/internal/pkg/listquality"
 	"github.com/warmbly/warmbly/internal/pkg/spreadsheet"
 	"github.com/warmbly/warmbly/internal/pkg/typesafe"
@@ -1085,7 +1086,39 @@ func suggestMapping(headers []string, sample [][]string, shapes []importmap.Shap
 	// cannot go without.
 	matchEmailByValues(out, shapes)
 	matchExistingCustomFields(out, headers, existingKeys)
+	matchLocationColumns(out, headers, existingKeys)
 	return out
+}
+
+// matchLocationColumns keeps the columns that say where a contact is (country,
+// state, city, location, timezone) instead of dropping them, under the key the
+// location resolver reads, so recipient-local sending and the location segment
+// fields work from the import alone.
+func matchLocationColumns(out []models.ContactImportColumnMapping, headers, existingKeys []string) {
+	claimed := map[string]bool{}
+	for _, m := range out {
+		if m.Target == models.ContactImportTargetCustom {
+			claimed[FoldCustomFieldKey(m.CustomKey)] = true
+		}
+	}
+	spelling := make(map[string]string, len(existingKeys))
+	for _, k := range existingKeys {
+		spelling[FoldCustomFieldKey(k)] = k
+	}
+	for i, h := range headers {
+		if out[i].Target != models.ContactImportTargetIgnore {
+			continue
+		}
+		key, ok := geo.CanonicalFieldKey(h)
+		if !ok || claimed[FoldCustomFieldKey(key)] {
+			continue
+		}
+		claimed[FoldCustomFieldKey(key)] = true
+		if existing, ok := spelling[FoldCustomFieldKey(key)]; ok {
+			key = existing
+		}
+		out[i] = models.ContactImportColumnMapping{Index: i, Target: models.ContactImportTargetCustom, CustomKey: key}
+	}
 }
 
 // matchEmailByValues maps the first column of addresses to Email when no

@@ -99,6 +99,14 @@ export function TimezoneField({ draft, patch }: { draft: Draft; patch: Patch }) 
                 placeholder="Select a timezone"
                 aria-label="Sending timezone"
             />
+            <div className="mt-2 rounded-md border border-slate-200 overflow-hidden">
+                <SwitchRow
+                    label="Send in each lead's local time"
+                    description="The window lands in each recipient's own day, worked out from their country, state, city or timezone. Leads with no location use the timezone above."
+                    value={draft.recipientTime}
+                    onChange={(v) => patch({ recipientTime: v })}
+                />
+            </div>
         </div>
     );
 }

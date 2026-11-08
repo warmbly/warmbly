@@ -33,6 +33,9 @@ const (
 	// ConstraintLeadHold is this one lead parked: an out-of-office auto-reply
 	// holding the contact until they are back, or a member pausing them.
 	ConstraintLeadHold ContactSendConstraint = "lead_hold"
+	// ConstraintRecipientHours is a recipient-local campaign waiting for the
+	// sending window to open on the lead's own clock.
+	ConstraintRecipientHours ContactSendConstraint = "recipient_hours"
 )
 
 // ContactSendPreview is a read-only "what happens next" for one contact in
@@ -50,6 +53,9 @@ type ContactSendPreview struct {
 	ScheduledAt *time.Time
 	NotBefore   *time.Time
 	Constraint  ContactSendConstraint
+	// RecipientTimezone is the lead's zone when a recipient-local campaign
+	// places them on it.
+	RecipientTimezone string
 }
 
 // ContactSendPreviewer is satisfied by the scheduler service.
@@ -139,7 +145,7 @@ func (s *schedulerService) PreviewContactSend(ctx context.Context, campaignID, c
 			slot = *route.DueAt
 		}
 		pv.NotBefore = &slot
-		pv.Constraint = s.deferralConstraint(ctx, campaign, route)
+		pv.Constraint, pv.RecipientTimezone = s.deferralConstraint(ctx, campaign, route, contactID)
 		// The pool is not the gate here, one mailbox is: say which, rather than
 		// blaming "no mailbox can take it" while two others sit idle.
 		if errors.Is(perr, ErrSenderBusy) && pv.Constraint == ConstraintCapacity {
@@ -167,28 +173,40 @@ func (s *schedulerService) PreviewContactSend(ctx context.Context, campaignID, c
 // step, the campaign's entry delay), the campaign start date, the sending
 // window, today's new-lead cap, and otherwise the mailbox pool (daily caps,
 // spacing, health, rest).
-func (s *schedulerService) deferralConstraint(ctx context.Context, campaign *models.Campaign, route *repository.ContactRoute) ContactSendConstraint {
+func (s *schedulerService) deferralConstraint(ctx context.Context, campaign *models.Campaign, route *repository.ContactRoute, contactID uuid.UUID) (ContactSendConstraint, string) {
 	grace := time.Now().Add(config.CampaignNotDueGraceSeconds * time.Second)
+	clock := loadLocation(campaign.ClockTimezone())
+	leadZone := ""
+	if campaign.SendsInRecipientTimezone() && s.contactRepo != nil {
+		if contact, err := s.contactRepo.GetByID(ctx, contactID); err == nil {
+			if loc, ok := models.RecipientLocation(contact); ok {
+				clock, leadZone = loc, loc.String()
+			}
+		}
+	}
 	if route.DueAt != nil && route.DueAt.After(grace) {
 		// A first step's wait is the campaign's entry delay, not a step wait —
 		// the drawer words the two differently.
 		if route.IsNewLead {
-			return ConstraintEntryDelay
+			return ConstraintEntryDelay, ""
 		}
-		return ConstraintStepWait
+		return ConstraintStepWait, ""
 	}
 	if campaign.StartDate != nil && campaign.StartDate.After(grace) {
-		return ConstraintStartDate
+		return ConstraintStartDate, ""
 	}
-	if nextScheduleSlot(time.Now(), effectiveWindows(campaign), loadLocation(campaign.ClockTimezone())).After(grace) {
-		return ConstraintSendingWindow
+	if nextScheduleSlot(time.Now(), effectiveWindows(campaign), clock).After(grace) {
+		if leadZone != "" {
+			return ConstraintRecipientHours, leadZone
+		}
+		return ConstraintSendingWindow, ""
 	}
 	if route.IsNewLead && campaign.MaxNewLeadsPerDay > 0 {
 		if n, err := s.campaignRepo.CountNewLeadsStartedToday(ctx, campaign.ID); err == nil && n >= campaign.MaxNewLeadsPerDay {
-			return ConstraintNewLeadCap
+			return ConstraintNewLeadCap, ""
 		}
 	}
-	return ConstraintCapacity
+	return ConstraintCapacity, ""
 }
 
 // projectRampLevel applies today's ramp advance in memory, mirroring

@@ -100,7 +100,7 @@ func newRoutedPairsFixture(t *testing.T, pool *pgxpool.Pool, leads int) *routedP
 func (f *routedPairsFixture) find(t *testing.T, paced PacedSenders, limit int) ([]ContactSequencePair, *time.Time, bool) {
 	t.Helper()
 	pairs, nextDue, onSender, err := NewCampaignProgressRepository(f.pool).FindRoutedPairs(
-		context.Background(), f.campaign, "created_at", "asc", "", false, false, paced, limit)
+		context.Background(), f.campaign, "created_at", "asc", "", false, false, paced, nil, limit)
 	if err != nil {
 		t.Fatalf("find routed pairs: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestLiveFindRoutedPairsPriorityMatchesLegacyOrdering(t *testing.T) {
 						t.Fatal(err)
 					}
 					for _, excludeNew := range []bool{false, true} {
-						pairs, _, _, err := NewCampaignProgressRepository(pool).FindRoutedPairs(ctx, f.campaign, tc.by, dir, tc.field, priority, excludeNew, nil, 10)
+						pairs, _, _, err := NewCampaignProgressRepository(pool).FindRoutedPairs(ctx, f.campaign, tc.by, dir, tc.field, priority, excludeNew, nil, nil, 10)
 						if err != nil {
 							t.Fatal(err)
 						}

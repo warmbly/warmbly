@@ -108,7 +108,7 @@ The `unsubscribe` block is the workspace default for the opt-out appended after 
 </Callout>
 
 <Callout type="info" title="Send-time optimization is off by default">
-`send_time_optimization.enabled` defaults to `false`. Set it to `true` and campaign scheduling holds each send until the recipient's local clock reaches one of `preferred_hours`, resolving the recipient's timezone from the contact's `timezone` custom field, then the country-code suffix of its email domain, then `default_contact_timezone`. It can only delay a send: the campaign window, the mailbox's sending profile, its daily cap, and the campaign end date all still bind. See [Sending behavior](/guides/sending-behavior/).
+`send_time_optimization.enabled` defaults to `false`. Set it to `true` and campaign scheduling holds each send until the recipient's local clock reaches one of `preferred_hours`, resolving the recipient's timezone from the contact's record (a timezone, state, city, country or location custom field, then the phone number, then a country-code email domain; see [how a contact's location is worked out](/guides/regions-and-timezones/#how-a-contacts-location-is-worked-out)), then `default_contact_timezone`. It can only delay a send: the campaign window, the mailbox's sending profile, its daily cap, and the campaign end date all still bind. See [Sending behavior](/guides/sending-behavior/).
 </Callout>
 
 <Callout type="info" title="A/B winners are promoted only when asked">

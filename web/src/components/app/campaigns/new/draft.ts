@@ -27,6 +27,8 @@ export type Draft = {
     segmentIds: string[];
     emails: EmailDraft[];
     timezone: string;
+    // Read the window in each lead's own timezone instead of the one above.
+    recipientTime: boolean;
     days: number;
     startTime: string;
     endTime: string;
@@ -76,6 +78,7 @@ export const initialDraft = (timezone: string): Draft => ({
     segmentIds: [],
     emails: [newEmail(0)],
     timezone,
+    recipientTime: false,
     days: WEEKDAYS_MASK,
     startTime: "08:00",
     endTime: "18:00",
@@ -205,6 +208,7 @@ export function toCreateInput(d: Draft, name: string): CreateCampaignInput {
         stop_on_reply: d.stopOnReply,
         stop_on_meeting: d.stopOnMeeting,
         timezone: d.timezone,
+        timezone_mode: d.recipientTime ? "recipient" : "campaign",
         days: d.days,
         start_time: d.startTime,
         end_time: d.endTime,

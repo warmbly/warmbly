@@ -39,6 +39,9 @@ type CampaignService interface {
 	// will go out today and every limit that decided it, derived through the
 	// scheduler's own gates. Read-only.
 	SendPlan(ctx context.Context, orgID uuid.UUID, campaignID string) (*models.CampaignSendPlan, *errx.Error)
+	// LeadTimezones is where one of orgID's campaigns' leads are, by resolved
+	// timezone, for checking the schedule before launch. Read-only.
+	LeadTimezones(ctx context.Context, orgID uuid.UUID, campaignID string) (*models.CampaignLeadTimezones, *errx.Error)
 	// WorkspaceCapacity is what the workspace's active mailboxes can send
 	// today between them, under the same clamps. Read-only.
 	WorkspaceCapacity(ctx context.Context, orgID uuid.UUID) (*models.WorkspaceSendCapacity, *errx.Error)

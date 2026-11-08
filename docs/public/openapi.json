@@ -6762,6 +6762,54 @@
         }
       }
     },
+    "/campaigns/{id}/lead-timezones": {
+      "get": {
+        "operationId": "campaigns_lead_timezones",
+        "summary": "Leads by timezone",
+        "description": "The campaign's leads counted by the timezone their records resolve to (a timezone, state, city, country or location field, then the phone number, then a country-code email domain), largest first, plus the leads nothing places. Read it before launching a campaign whose timezone_mode is recipient. Scope READ_CAMPAIGNS, org permission view_campaigns.",
+        "tags": [
+          "campaigns"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The campaign's leads by timezone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CampaignLeadTimezones"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Campaign not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/campaigns/{id}/send-plan": {
       "get": {
         "operationId": "campaigns_send_plan",
@@ -34026,6 +34074,14 @@
               "rotate"
             ]
           },
+          "timezone_mode": {
+            "type": "string",
+            "description": "Whose clock the sending schedule is read on: campaign (default, the campaign's timezone) or recipient (each lead's own timezone, worked out from their record, falling back to the campaign's when it is not known).",
+            "enum": [
+              "campaign",
+              "recipient"
+            ]
+          },
           "ramp_enabled": {
             "type": "boolean"
           },
@@ -34210,6 +34266,14 @@
               "rotate"
             ]
           },
+          "timezone_mode": {
+            "type": "string",
+            "description": "Whose clock the sending schedule is read on: campaign (default, the campaign's timezone) or recipient (each lead's own timezone, worked out from their record, falling back to the campaign's when it is not known).",
+            "enum": [
+              "campaign",
+              "recipient"
+            ]
+          },
           "senders": {
             "type": "array",
             "items": {
@@ -34384,6 +34448,14 @@
               "same",
               "same_domain",
               "rotate"
+            ]
+          },
+          "timezone_mode": {
+            "type": "string",
+            "description": "Whose clock the sending schedule is read on: campaign (default, the campaign's timezone) or recipient (each lead's own timezone, worked out from their record, falling back to the campaign's when it is not known).",
+            "enum": [
+              "campaign",
+              "recipient"
             ]
           },
           "ramp_enabled": {
@@ -35347,6 +35419,56 @@
           },
           "remaining": {
             "type": "integer"
+          }
+        }
+      },
+      "CampaignLeadTimezones": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "timezone_mode": {
+            "type": "string",
+            "enum": [
+              "campaign",
+              "recipient"
+            ]
+          },
+          "timezone": {
+            "type": "string",
+            "description": "The campaign's own timezone: the clock a lead nothing places is sent on."
+          },
+          "total": {
+            "type": "integer"
+          },
+          "unknown": {
+            "type": "integer",
+            "description": "Leads whose record says nothing about where they are."
+          },
+          "resolving": {
+            "type": "integer",
+            "description": "Leads whose record changed and is still being read; counted under their previous answer meanwhile."
+          },
+          "zones": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "timezone": {
+                  "type": "string",
+                  "description": "An IANA timezone, UTC, or an Etc/GMT fixed offset."
+                },
+                "country": {
+                  "type": "string",
+                  "description": "The zone's ISO 3166-1 alpha-2 country, empty for UTC and fixed offsets."
+                },
+                "leads": {
+                  "type": "integer"
+                }
+              }
+            }
           }
         }
       },

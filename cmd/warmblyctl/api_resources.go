@@ -66,6 +66,7 @@ var apiSpecs = []apiSpec{
 	{name: "campaign stop", summary: "Stop the campaign", method: "POST", path: "/campaigns/{id}/stop"},
 	{name: "campaign logs", summary: "The campaign's send log", method: "GET", path: "/campaigns/{id}/logs", query: []string{"limit", "cursor"}},
 	{name: "campaign plan", summary: "Today's sending plan and every limit that decided it", method: "GET", path: "/campaigns/{id}/send-plan"},
+	{name: "campaign timezones", summary: "The campaign's leads by timezone", method: "GET", path: "/campaigns/{id}/lead-timezones"},
 	// Per-lead hold: park ONE contact's flow in THIS campaign without
 	// unsubscribing them or removing them from it. --data carries
 	// {"until": "<RFC 3339>", "reason": "..."}; no until holds with no end.

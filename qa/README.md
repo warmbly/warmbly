@@ -335,3 +335,19 @@ QA_WARMUP_PLACEMENT_FIXTURES=1 pnpm proof warmup-placement
 ```
 
 The placement numbers are fixture data, not a measurement of real delivery.
+
+## Regions and timezones proof fixtures
+
+`flows/regions-and-timezones.flow.ts` is opt-in: apply `fixtures/regions-and-timezones.sql`
+to this worktree's rich-seed database. It adds 120 leads on the reserved `.example` TLD
+whose custom fields carry a country, state, city, location or timezone in the shapes
+exports use (a tenth carry none), a **Prospects worldwide** segment holding them, and a
+draft **Worldwide outreach** campaign on New York time with the same leads. It is
+re-runnable: it removes the region segments a previous run created and resets the
+campaign to its own timezone. The stack's backend works the locations out within a minute.
+
+```bash
+docker exec -i warmbly-postgres-1 psql -U warmbly -d warmbly_qa_<worktree> < fixtures/regions-and-timezones.sql
+docker exec wqa-<worktree>-redis redis-cli FLUSHDB
+QA_REGIONS_FIXTURES=1 pnpm proof regions-and-timezones
+```

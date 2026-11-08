@@ -429,7 +429,7 @@ func (s *schedulerService) PlanCampaignDay(ctx context.Context, campaignID uuid.
 	now := time.Now()
 	projectRampLevel(campaign, now)
 	tz := loadLocation(campaign.ClockTimezone())
-	window, windowSecondsLeft, closesAt := dayWindow(campaign, now)
+	window, windowSecondsLeft, closesAt := s.planDayWindow(ctx, campaign, now)
 
 	plan := &models.CampaignSendPlan{
 		CampaignID: campaign.ID,

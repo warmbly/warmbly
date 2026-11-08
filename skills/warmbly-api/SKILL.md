@@ -86,6 +86,12 @@ These commands put real mail on the wire: `campaign start`,
 - When a campaign sends less than expected, `campaign plan --id <id>` is the
   answer: today's projected sends and every limit that lowered them. Read it
   before touching a cap.
+- To send each lead inside their own working day, set the campaign's
+  `timezone_mode` to `recipient`, then check `campaign timezones --id <id>`:
+  its leads by timezone and how many have no location (those are sent on the
+  campaign's own timezone). Location comes from the contacts' country, state,
+  city, location or timezone fields, then phone and email domain; segment
+  conditions `world_region`, `country` and `timezone` split an audience by it.
 - Never raise a mailbox's daily cap casually. The platform default is 50
   campaign emails per mailbox per day with 600 seconds between sends; a fresh
   mailbox should start around 10-20. Do not set a cap above 50 unless the

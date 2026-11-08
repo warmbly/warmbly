@@ -104,6 +104,7 @@ export async function loadServerDraft(id: string): Promise<LoadedDraft> {
                   wait_after: s.wait_after ?? 0,
               })),
         timezone: campaign.timezone ?? "",
+        recipientTime: campaign.timezone_mode === "recipient",
         days: campaign.days || base.days,
         startTime: hhmm(campaign.start_time, base.startTime),
         endTime: hhmm(campaign.end_time, base.endTime),
@@ -160,6 +161,7 @@ export async function saveServerDraft(
         unsubscribe_header: d.unsubHeader,
         daily_limit: d.dailyLimit,
         timezone: d.timezone,
+        timezone_mode: d.recipientTime ? "recipient" : "campaign",
         start_date: at ?? null,
     };
     if (!meta.customWindows) Object.assign(patch, { days: d.days, start_time: d.startTime, end_time: d.endTime });

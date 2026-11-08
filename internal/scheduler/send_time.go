@@ -3,7 +3,6 @@ package scheduler
 import (
 	"context"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/warmbly/warmbly/internal/app/behavior"
@@ -59,70 +58,15 @@ func normalizeHours(hours []int) []int {
 	return out
 }
 
-// ccTLDTimezone maps a country-code TLD to that country's business timezone.
-// Multi-zone countries resolve to their most populous zone: this only picks
-// which local hour a send aims for, so an approximation beats UTC.
-var ccTLDTimezone = map[string]string{
-	"uk": "Europe/London", "ie": "Europe/Dublin", "fr": "Europe/Paris",
-	"de": "Europe/Berlin", "at": "Europe/Vienna", "ch": "Europe/Zurich",
-	"nl": "Europe/Amsterdam", "be": "Europe/Brussels", "es": "Europe/Madrid",
-	"pt": "Europe/Lisbon", "it": "Europe/Rome", "dk": "Europe/Copenhagen",
-	"se": "Europe/Stockholm", "no": "Europe/Oslo", "fi": "Europe/Helsinki",
-	"pl": "Europe/Warsaw", "cz": "Europe/Prague", "sk": "Europe/Bratislava",
-	"hu": "Europe/Budapest", "ro": "Europe/Bucharest", "bg": "Europe/Sofia",
-	"gr": "Europe/Athens", "tr": "Europe/Istanbul", "ua": "Europe/Kyiv",
-	"il": "Asia/Jerusalem", "ae": "Asia/Dubai", "sa": "Asia/Riyadh",
-	"in": "Asia/Kolkata", "pk": "Asia/Karachi", "sg": "Asia/Singapore",
-	"my": "Asia/Kuala_Lumpur", "th": "Asia/Bangkok", "vn": "Asia/Ho_Chi_Minh",
-	"id": "Asia/Jakarta", "ph": "Asia/Manila", "hk": "Asia/Hong_Kong",
-	"jp": "Asia/Tokyo", "kr": "Asia/Seoul", "cn": "Asia/Shanghai",
-	"tw": "Asia/Taipei", "nz": "Pacific/Auckland", "za": "Africa/Johannesburg",
-	"ng": "Africa/Lagos", "ke": "Africa/Nairobi", "eg": "Africa/Cairo",
-	"mx": "America/Mexico_City", "br": "America/Sao_Paulo",
-	"ar": "America/Argentina/Buenos_Aires", "cl": "America/Santiago",
-	"co": "America/Bogota", "pe": "America/Lima",
-	"au": "Australia/Sydney", "ca": "America/Toronto", "us": "America/New_York",
-	"ru": "Europe/Moscow",
-}
-
 // recipientLocation resolves the timezone to aim at, most confident source
 // first. Never fails: an unresolvable name degrades to the next source.
 func recipientLocation(contact *models.Contact, pref sendTimePreference) *time.Location {
 	if pref.useContactTZ && contact != nil {
-		if tz, ok := contact.CustomFields["timezone"]; ok {
-			if loc, err := time.LoadLocation(strings.TrimSpace(tz)); err == nil {
-				return loc
-			}
-		}
-		if tz := timezoneForEmailDomain(contactEmail(contact)); tz != "" {
-			if loc, err := time.LoadLocation(tz); err == nil {
-				return loc
-			}
+		if loc, ok := models.RecipientLocation(contact); ok {
+			return loc
 		}
 	}
 	return loadLocation(pref.defaultTZ)
-}
-
-func contactEmail(contact *models.Contact) string {
-	if contact == nil {
-		return ""
-	}
-	return contact.Email
-}
-
-// timezoneForEmailDomain infers a timezone from an address's country-code TLD.
-// Returns "" for gTLDs (.com/.io/...), which carry no location signal.
-func timezoneForEmailDomain(email string) string {
-	at := strings.LastIndex(email, "@")
-	if at < 0 {
-		return ""
-	}
-	domain := strings.ToLower(strings.TrimSpace(email[at+1:]))
-	labels := strings.Split(domain, ".")
-	if len(labels) < 2 {
-		return ""
-	}
-	return ccTLDTimezone[labels[len(labels)-1]]
 }
 
 // snapToPreferredHour moves t forward to the next preferred local hour in loc,

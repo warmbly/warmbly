@@ -253,7 +253,7 @@ func TestLiveHandleEmailFailedWalksBackAndRetriesUntilCap(t *testing.T) {
 	}
 	nextPair := func() *repository.ContactSequencePair {
 		t.Helper()
-		pairs, _, _, err := s.CampaignProgressRepo.FindRoutedPairs(ctx, f.campaign, "created_at", "asc", "", false, false, nil, 1)
+		pairs, _, _, err := s.CampaignProgressRepo.FindRoutedPairs(ctx, f.campaign, "created_at", "asc", "", false, false, nil, nil, 1)
 		if err != nil {
 			t.Fatalf("next pair: %v", err)
 		}

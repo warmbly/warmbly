@@ -484,6 +484,12 @@ const (
 	// sweeps and backend replicas.
 	ContactMailHostCacheHours = 24
 
+	// ContactLocationBatchSize is how many contacts one location sweep pass reads.
+	ContactLocationBatchSize = 2000
+	// ContactLocationIntervalSeconds is how often the location sweep passes; a
+	// full batch runs again immediately, so an import drains without waiting.
+	ContactLocationIntervalSeconds = 30
+
 	// VerificationRecheckDays is how long a verification verdict is trusted
 	// before the address is checked again. Mailboxes get created and closed;
 	// a verdict from last quarter is a guess.

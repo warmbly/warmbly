@@ -29,6 +29,7 @@ export interface CreateCampaignInput {
     start_date?: string | null;
     end_date?: string | null;
     timezone?: string;
+    timezone_mode?: 'campaign' | 'recipient';
     days?: number;
     start_time?: string;
     end_time?: string;
