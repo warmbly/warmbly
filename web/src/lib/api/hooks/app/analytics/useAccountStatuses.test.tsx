@@ -111,6 +111,28 @@ describe("account status aggregation", () => {
         unmount(); client.clear();
     });
 
+    it("keeps the same data array when a refetch returns the same statuses", async () => {
+        const { client, wrapper } = harness();
+        const ids = Array.from({ length: 150 }, (_, i) => String(i));
+        const { result, unmount } = renderHook(() => useAccountStatuses(ids), { wrapper });
+        await waitFor(() => expect(result.current.data).toHaveLength(150));
+        await waitFor(() => expect(result.current.observations.every((o) => o.current)).toBe(true));
+        const data = result.current.data;
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        vi.mocked(getAccountStatuses).mockImplementation(async (chunkIds) => { await gate; return chunkIds.map(status); });
+        act(() => { void client.invalidateQueries({ queryKey: ["analytics", "accounts"] }); });
+        await waitFor(() => expect(result.current.isFetching).toBe(true));
+        expect(result.current.data).toBe(data);
+        act(() => release());
+        await waitFor(() => expect(result.current.isFetching).toBe(false));
+        expect(result.current.data).toBe(data);
+        expect(result.current.observations.every((o) => o.current)).toBe(true);
+        act(() => client.setQueryData(client.getQueryCache().getAll()[0].queryKey, [status("updated")]));
+        await waitFor(() => expect(result.current.data).not.toBe(data));
+        unmount(); client.clear();
+    });
+
     it("marks retained observations non-current during refetch and on refetch failure", async () => {
         const { client, wrapper } = harness();
         const ids = ["a"];

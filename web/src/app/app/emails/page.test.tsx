@@ -34,7 +34,8 @@ vi.mock("@/hooks/context/user", async (original) => ({
     ...await original<typeof UserModule>(),
     useUserProfile: () => ({ user: { id: "tag-order-user", tags } }),
 }));
-vi.mock("@/hooks/context/confirm", () => ({ useConfirm: () => ({ show: confirm }) }));
+const confirmContext = vi.hoisted(() => ({ value: undefined as unknown }));
+vi.mock("@/hooks/context/confirm", () => ({ useConfirm: () => (confirmContext.value ??= { show: confirm }) }));
 vi.mock("@/hooks/usePermission", () => ({ usePermission: () => true }));
 vi.mock("@/lib/api/hooks/app/emails/useEmails", () => ({
     default: ({ tag }: { tag: string }) => ({ emails: statusState.emailsLoading || statusState.emailsError ? [] : tag ? rows.filter((row) => row.tags.includes(tag)) : rows, isLoading: statusState.emailsLoading, isPending: statusState.emailsLoading, isError: statusState.emailsError || statusState.emailsIncomplete, isIncomplete: statusState.emailsIncomplete, refetch: vi.fn() }),
@@ -43,8 +44,13 @@ vi.mock("@/lib/api/hooks/app/analytics/useAccountStatuses", () => ({ default: ()
 vi.mock("@/lib/api/hooks/app/subscription/useFeatureStatus", () => ({ default: () => ({ data: { can_use_warmup: true } }) }));
 vi.mock("@/lib/api/hooks/auth/useAuthConfig", () => ({ default: () => ({ data: {}, isLoading: false }) }));
 vi.mock("@/lib/api/hooks/app/emails/useMailboxGrants", () => ({ useSigninMigration: () => ({ data: { data: [] } }) }));
-vi.mock("@/lib/api/hooks/app/advisor/useAdvisor", () => ({ useAdvisorEntityIndex: () => ({ get: () => [] }) }));
-vi.mock("@/hooks/useCloudPool", () => ({ default: () => ({ selfHosted: false, connected: statusState.cloudConnected, loading: statusState.cloudLoading, refreshing: statusState.cloudRefreshing, unavailable: statusState.cloudUnavailable, observedAt: 0, rowFor: (id: string) => cloudRows.get(id), isEnrolled: (id: string) => cloudRows.get(id)?.enrolled === true }) }));
+// Stable like the real hooks, so memoized rows can skip a render.
+const stableHooks = vi.hoisted(() => {
+    const noFindings: never[] = [];
+    return { advisor: { get: () => noFindings }, rowFor: (id: string) => cloudRows.get(id), isEnrolled: (id: string) => cloudRows.get(id)?.enrolled === true };
+});
+vi.mock("@/lib/api/hooks/app/advisor/useAdvisor", () => ({ useAdvisorEntityIndex: () => stableHooks.advisor }));
+vi.mock("@/hooks/useCloudPool", () => ({ default: () => ({ selfHosted: false, connected: statusState.cloudConnected, loading: statusState.cloudLoading, refreshing: statusState.cloudRefreshing, unavailable: statusState.cloudUnavailable, observedAt: 0, rowFor: stableHooks.rowFor, isEnrolled: stableHooks.isEnrolled }) }));
 vi.mock("@/lib/api/hooks/app/cloudlink/useCloudLink", () => ({
     useEnrollCloudLinkMailbox: () => ({}), useUnenrollCloudLinkMailbox: () => ({}), useCloudLinkMailboxLifecycle: () => ({}),
 }));
@@ -61,6 +67,9 @@ vi.mock("@/components/app/emails/import/MailboxImportsMenu", () => ({ default: (
 vi.mock("@/components/app/emails/CloudPathsPanel", () => ({ default: () => null }));
 vi.mock("@/components/app/advisor/AdvisorRowFlag", () => ({ default: () => null }));
 vi.mock("@/components/app/advisor/AdvisorSummaryBar", () => ({ default: () => null }));
+// One logo per row, so its render count is the number of row renders.
+const providerLogoRenders = vi.hoisted(() => ({ count: 0 }));
+vi.mock("@/components/app/emails/ProviderLogo", () => ({ default: () => { providerLogoRenders.count++; return null; } }));
 
 async function renderPage(tag = "", client = new QueryClient({ defaultOptions: { queries: { retry: false } } }), observe?: () => void) {
     function PageWithReports() {
@@ -129,6 +138,15 @@ describe("mailbox ordering with a tag filter", () => {
     it("keeps the existing All Accounts tag-set grouping and email order", async () => {
         await renderPage();
         expect(orderedEmails()).toEqual(["ananya@serveblink.example", "julie@serveblink.example", "kavya@serveblink.example", "sara@virevow.example"]);
+    });
+
+    it("re-renders only the row whose selection changed", async () => {
+        statusState.data = rows.map(measuredStatus);
+        await renderPage();
+        const before = providerLogoRenders.count;
+        fireEvent.click(within(screen.getByRole("row", { name: /julie@serveblink.example/ })).getByRole("checkbox"));
+        expect(within(screen.getByRole("row", { name: /julie@serveblink.example/ })).getByRole("checkbox")).toBeChecked();
+        expect(providerLogoRenders.count - before).toBe(1);
     });
 
     it.each(["cloudLoading", "cloudUnavailable"] as const)("defers disconnect, bulk removal and warmup start while ownership is %s", async (unknown) => {
