@@ -127,9 +127,9 @@ type projectedSender struct {
 	state    string
 	held     bool
 	heldTill *time.Time
-	cap      int // mailbox cap after the campaign limit and workspace risk
-	capLoss  int // sends the campaign limit took from the mailbox cap
-	riskLoss int
+	cap      int                 // mailbox cap after the campaign limit
+	capLoss  int                 // sends the campaign limit took from the mailbox cap
+	risk     models.OrgRiskState // workspace risk, applied after the ramp and graduation as stagedCap does
 	cold     repository.ColdRampState
 	hasCold  bool
 	health   models.WarmupHealthState
@@ -139,10 +139,18 @@ type projectedSender struct {
 	sentAll  int
 }
 
+// riskCut is what workspace risk takes from a cap, as stagedCap rounds it.
+func (p *projectedSender) riskCut(c int) int {
+	if m := p.risk.CapMultiplier(); m < 1 {
+		return max(0, c-max(1, int(float64(c)*m+0.5)))
+	}
+	return 0
+}
+
 // senderDay is one mailbox's day with the clamps that shaped it.
 type senderDay struct {
-	sends, warmup                                                int
-	ramp, graduation, other, health, spacing, behaviorLoss, held int
+	sends, warmup                                                      int
+	ramp, graduation, risk, other, health, spacing, behaviorLoss, held int
 }
 
 // warmupOnDay is the warmup mail a mailbox sends on its local day, while it
@@ -206,7 +214,8 @@ func projectSenderDay(p *projectedSender, spans []span, midnight, rampStart time
 	c := p.cap
 	if p.held {
 		if p.heldTill == nil || !p.heldTill.Before(spans[len(spans)-1].to) {
-			d.held = c
+			d.risk = p.riskCut(c)
+			d.held = c - d.risk
 			return d
 		}
 		spans = clipSpans(spans, *p.heldTill)
@@ -229,6 +238,8 @@ func projectSenderDay(p *projectedSender, spans []span, midnight, rampStart time
 			c = g
 		}
 	}
+	d.risk = p.riskCut(c)
+	c -= d.risk
 
 	// The mailbox's own clock: a behaviour profile's workday, or the 8am-8pm
 	// band in its own timezone when that differs from the campaign's.
@@ -339,7 +350,6 @@ func (s *schedulerService) ProjectCampaign(ctx context.Context, in CampaignProje
 		}
 	}
 
-	riskMul := pass.risk.CapMultiplier()
 	senders := make([]*projectedSender, 0, len(in.Accounts))
 	otherPerDay := 0.0
 	for _, acct := range in.Accounts {
@@ -350,13 +360,7 @@ func (s *schedulerService) ProjectCampaign(ctx context.Context, in CampaignProje
 			p.capLoss = p.cap - campaign.DailyLimit
 			p.cap = campaign.DailyLimit
 		}
-		if riskMul < 1 {
-			r := max(1, int(float64(p.cap)*riskMul+0.5))
-			if r < p.cap {
-				p.riskLoss = p.cap - r
-				p.cap = r
-			}
-		}
+		p.risk = pass.risk
 		p.cold = pass.coldRamp[acct.ID].WithKnownWarmup(acct.Warmup)
 		p.hasCold = campaign.WarmupGraduation && p.cold.CeilingApplies()
 		h := s.healthFor(ctx, pass, acct.ID)
@@ -542,7 +546,7 @@ func (s *schedulerService) ProjectCampaign(ctx context.Context, in CampaignProje
 			first = d.sends
 			losses[models.EstimateBottleneckCampaignLimit] += p.capLoss
 			losses[models.EstimateBottleneckCampaignRamp] += d.ramp
-			losses[models.EstimateBottleneckWorkspaceRisk] += p.riskLoss
+			losses[models.EstimateBottleneckWorkspaceRisk] += d.risk
 			losses[models.EstimateBottleneckGraduation] += d.graduation
 			losses[models.EstimateBottleneckOtherCampaigns] += d.other
 			losses[models.EstimateBottleneckHealth] += d.health

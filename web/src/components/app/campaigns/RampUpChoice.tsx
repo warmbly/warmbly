@@ -1,6 +1,7 @@
 // How a campaign's per-mailbox volume grows: the one picker the new-campaign
 // wizard and the campaign settings share, over the two server fields it maps to.
 
+import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertCircleIcon, GaugeIcon, MessageSquareReplyIcon, TrendingUpIcon } from "lucide-react";
 import { Label, NumberInput } from "@/components/ui/field";
@@ -25,6 +26,7 @@ export default function RampUpChoice({
 }) {
     const mode = rampUpMode(value);
     const invalid = rampUpInvalid(value);
+    const id = React.useId();
     return (
         <div>
             <div role="radiogroup" aria-label="Ramp-up" className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -63,8 +65,9 @@ export default function RampUpChoice({
                         <div className="mt-3 rounded-md border border-slate-200 bg-slate-50/40 p-3.5 space-y-3.5">
                             <div className="flex flex-wrap items-end gap-4">
                                 <div>
-                                    <Label>Start</Label>
+                                    <Label htmlFor={`${id}-start`}>Start</Label>
                                     <NumberInput
+                                        id={`${id}-start`}
                                         value={value.ramp_start}
                                         min={1}
                                         max={5000}
@@ -74,8 +77,9 @@ export default function RampUpChoice({
                                     />
                                 </div>
                                 <div>
-                                    <Label>Increase by</Label>
+                                    <Label htmlFor={`${id}-increment`}>Increase by</Label>
                                     <NumberInput
+                                        id={`${id}-increment`}
                                         value={value.ramp_increment}
                                         min={0}
                                         max={100}
@@ -85,8 +89,9 @@ export default function RampUpChoice({
                                     />
                                 </div>
                                 <div>
-                                    <Label>Ceiling</Label>
+                                    <Label htmlFor={`${id}-ceiling`}>Ceiling</Label>
                                     <NumberInput
+                                        id={`${id}-ceiling`}
                                         value={value.ramp_ceiling}
                                         min={1}
                                         max={5000}
@@ -152,19 +157,13 @@ export function RampPreview({
     level: number;
 }) {
     if (start <= 0 || ceiling <= 0 || start > ceiling) return null;
-    const days: number[] = [];
-    let v = start;
-    for (let guard = 0; guard < 60; guard++) {
-        const capped = Math.min(v, ceiling);
-        days.push(capped);
-        if (capped >= ceiling || increment <= 0) break;
-        v += increment;
-    }
+    // The climb reaches its ceiling on steadyDay; the chart shows its first MAX_BARS days.
+    const steadyDay = increment > 0 ? 1 + Math.ceil((ceiling - start) / increment) : 1;
+    const steady = increment > 0 ? ceiling : start;
     const MAX_BARS = 14;
-    const shown = days.slice(0, MAX_BARS);
-    const more = days.length - shown.length;
-    const todayIdx = level > 0 ? days.findIndex((d) => d >= level) : -1;
-    const steady = days[days.length - 1];
+    const shown = Array.from({ length: Math.min(steadyDay, MAX_BARS) }, (_, i) => Math.min(ceiling, start + i * increment));
+    const more = steadyDay - shown.length;
+    const todayIdx = level > 0 ? shown.findIndex((d) => d >= level) : -1;
 
     return (
         <div>
@@ -181,7 +180,7 @@ export function RampPreview({
             <div className="flex items-center justify-between mt-1.5 text-[10px] text-slate-400">
                 <span>Day 1 · {start}/day</span>
                 <span>
-                    {more > 0 ? `+${more} more · ` : ""}Day {days.length} · {steady}/day, then steady
+                    {more > 0 ? `+${more} more · ` : ""}Day {steadyDay} · {steady}/day, then steady
                 </span>
             </div>
         </div>
