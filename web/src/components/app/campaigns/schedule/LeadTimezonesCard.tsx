@@ -74,16 +74,21 @@ export default function LeadTimezonesCard({
                     {MODES.map((m) => {
                         const active = mode === m.value;
                         return (
-                            <button
+                            // A real radio under the card, so arrow keys and the single tab stop are native.
+                            <label
                                 key={m.value}
-                                type="button"
-                                role="radio"
-                                aria-checked={active}
-                                onClick={() => onModeChange(m.value)}
-                                className={`text-left rounded-md border px-3 py-2.5 transition-colors ${
+                                className={`block cursor-pointer text-left rounded-md border px-3 py-2.5 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-sky-200 ${
                                     active ? "border-sky-400 bg-sky-50/60 ring-2 ring-sky-100" : "border-slate-200 hover:border-slate-300"
                                 }`}
                             >
+                                <input
+                                    type="radio"
+                                    name={`timezone-mode-${campaignId}`}
+                                    value={m.value}
+                                    checked={active}
+                                    onChange={() => onModeChange(m.value)}
+                                    className="sr-only"
+                                />
                                 <span className="flex items-center gap-2">
                                     <span
                                         className={`size-3.5 rounded-full border inline-flex items-center justify-center shrink-0 ${
@@ -97,7 +102,7 @@ export default function LeadTimezonesCard({
                                     </span>
                                 </span>
                                 <span className="block text-[11.5px] leading-snug text-slate-500 mt-1 pl-5.5">{m.body(zonePhrase)}</span>
-                            </button>
+                            </label>
                         );
                     })}
                 </div>

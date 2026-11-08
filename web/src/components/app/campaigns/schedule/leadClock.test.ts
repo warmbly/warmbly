@@ -29,6 +29,13 @@ describe("leadClock", () => {
         expect(opensOnTheirClock(weekdays, "Europe/Berlin", new Date(Date.UTC(2026, 10, 13, 19, 0)))).toBe("Mon 09:00");
     });
 
+    it("places a window on a daylight-saving day at its wall time", () => {
+        // Sunday 8 March 2026: New York springs forward at 02:00.
+        const dstDay = Array.from({ length: 7 }, (_, i) => (i === 6 ? [{ start: 210, end: 600 }] : []));
+        const saturday = new Date(Date.UTC(2026, 2, 7, 20, 0));
+        expect(opensOnTheirClock(dstDay, "America/New_York", saturday)).toBe("Sun 03:30");
+    });
+
     it("reads offsets and labels", () => {
         expect(zoneOffset("Asia/Kolkata", at)).toBe(330);
         expect(zoneOffset("UTC", at)).toBe(0);

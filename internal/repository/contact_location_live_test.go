@@ -183,3 +183,15 @@ func TestLiveContactLocationOpenClocksOrderRoutingAndCountLeads(t *testing.T) {
 		t.Fatalf("lead timezones leaked across workspaces: %+v, %v", other, err)
 	}
 }
+
+// A world region this build does not know matches nobody, in either direction.
+func TestLiveContactLocationUnknownRegionMatchesNobody(t *testing.T) {
+	f, segments := newSegmentFixture(t)
+	for _, op := range []string{"in", "not_in"} {
+		cond := models.SegmentCondition{Field: "world_region", Operator: op, Values: []string{"atlantis"}}
+		n, xerr := segments.Count(context.Background(), f.org, nil, models.SegmentMatchAll, []models.SegmentCondition{cond})
+		if xerr != nil || n != 0 {
+			t.Fatalf("%s an unknown region matched %d (%v), want 0", op, n, xerr)
+		}
+	}
+}

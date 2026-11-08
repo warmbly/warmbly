@@ -1150,7 +1150,7 @@ The campaign's leads counted by the timezone their records resolve to, largest f
 }
 ```
 
-`timezone` is the campaign's own clock, the one an `unknown` lead is sent on. `resolving` counts leads whose record changed in the last minute and has not been read again yet; they are counted under their previous answer meanwhile. A zone's `country` is empty for `UTC` and fixed offsets (`Etc/GMT-2` is `UTC+2`). An unknown campaign is `404`.
+`timezone` is the campaign's own clock, the one an `unknown` lead is sent on. `resolving` counts leads whose record changed and has not been read again yet, usually for under a minute; they are counted under their previous answer meanwhile. A zone's `country` is empty for `UTC` and fixed offsets (`Etc/GMT-2` is `UTC+2`). An unknown campaign is `404`.
 
 ## Today's sending plan
 

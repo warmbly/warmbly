@@ -63,8 +63,9 @@ func scheduleClock(campaign *models.Campaign, campaignTZ *time.Location, contact
 	return campaignTZ
 }
 
-// planClockZones bounds how many of a campaign's lead zones the send plan walks.
-const planClockZones = 64
+// recipientClockRecheck bounds how long a recipient-local campaign waits on its
+// leads' hours before routing again.
+const recipientClockRecheck = 15 * time.Minute
 
 // planDayWindow is the send plan's calendar for today. A recipient-local
 // campaign's day is the union of its leads' windows: open while any lead's
@@ -78,8 +79,8 @@ func (s *schedulerService) planDayWindow(ctx context.Context, campaign *models.C
 	if err != nil || len(leads.Zones) == 0 {
 		return base, baseLeft, baseCloses
 	}
-	zones := make([]string, 0, min(len(leads.Zones), planClockZones)+1)
-	for _, z := range leads.Zones[:min(len(leads.Zones), planClockZones)] {
+	zones := make([]string, 0, len(leads.Zones)+1)
+	for _, z := range leads.Zones {
 		zones = append(zones, z.Timezone)
 	}
 	if leads.Unknown > 0 {
@@ -109,6 +110,11 @@ func (s *schedulerService) planDayWindow(ctx context.Context, campaign *models.C
 	}
 	if closes.IsZero() {
 		closes = baseCloses
+	}
+	// Today's budget ends at midnight UTC, whatever clock a lead is on.
+	if reset := now.UTC().Truncate(24 * time.Hour).Add(24 * time.Hour); closes.After(reset) {
+		closes = reset
+		out.ClosesAt = &reset
 	}
 	left := min(sum, max(0, int(closes.Sub(now).Seconds())))
 	out.MinutesLeft = left / 60

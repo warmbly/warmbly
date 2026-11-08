@@ -46,7 +46,10 @@ function instantIn(zone: string, at: Date, days: number, minutes: number): Date 
     const parts = new Intl.DateTimeFormat("en-US", { timeZone: zone, year: "numeric", month: "numeric", day: "numeric" }).formatToParts(at);
     const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
     const wall = Date.UTC(get("year"), get("month") - 1, get("day") + days, 0, minutes);
-    return new Date(wall - zoneOffset(zone, new Date(wall)) * 60_000);
+    // Read the offset again at the first answer: on a daylight-saving day the
+    // offset at the wall time differs from the one at UTC midnight.
+    const first = wall - zoneOffset(zone, new Date(wall)) * 60_000;
+    return new Date(wall - zoneOffset(zone, new Date(first)) * 60_000);
 }
 
 const dayAndTime = (zone: string, at: Date) =>

@@ -201,6 +201,13 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 	s.logCampaignDecisionOnce(ctx, campaignID, "leads_waiting",
 		fmt.Sprintf("None of the %d leads due now can be sent this minute: each is waiting for its own mailbox, a same-provider mailbox or its recipient's working hours", len(candidates)),
 		map[string]interface{}{"leads_tried": len(candidates), "waiting_on_sender": busy, "recheck_at": leadSlot.UTC().Format(time.RFC3339)})
+	// Routing orders a recipient-local campaign by stored zones, which trail a
+	// fresh import by a sweep; look again soon so an open lead is not hidden for hours.
+	if campaign.SendsInRecipientTimezone() {
+		if soon := time.Now().Add(recipientClockRecheck); leadSlot.IsZero() || leadSlot.After(soon) {
+			leadSlot = soon
+		}
+	}
 	return leadSlot, nil, leadAccount, ErrCampaignDeferred
 }
 
@@ -649,6 +656,10 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 						"resumes_at":       resume.UTC().Format(time.RFC3339),
 						"mailboxes":        s.poolBudget(pass, accounts, gates, uuid.Nil),
 					})
+			}
+			if leadWindowWait && budgetSpent == 0 {
+				// The mailboxes are shut at THIS lead's hour, not at the next lead's.
+				return resume, nil, accounts[0].ID, ErrLeadDeferred
 			}
 			return resume, nil, accounts[0].ID, ErrCampaignDeferred
 		case lifecycleGated == len(accounts):

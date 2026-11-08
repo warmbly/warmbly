@@ -200,7 +200,13 @@ func (b *segmentBuilder) condition(c models.SegmentCondition, visited map[uuid.U
 					none = true
 					continue
 				}
-				countries = append(countries, models.SegmentWorldRegionCountries(r)...)
+				in := models.SegmentWorldRegionCountries(r)
+				if len(in) == 0 {
+					// A region this build does not know (an archive from a newer instance)
+					// matches nobody, either way round, rather than everybody.
+					return "FALSE"
+				}
+				countries = append(countries, in...)
 			}
 			match = fmt.Sprintf("(%s = ANY(%s::text[]) OR (%s::bool AND %s = ''))", expr, b.bind(countries), b.bind(none), expr)
 		}

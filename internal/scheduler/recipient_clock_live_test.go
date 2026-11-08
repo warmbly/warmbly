@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -73,15 +74,37 @@ func TestLiveRecipientClockSendsALeadWhoseDayIsOpen(t *testing.T) {
 
 func TestLiveRecipientClockHoldsALeadUntilTheirMorning(t *testing.T) {
 	f, s := recipientClockFixture(t)
+	ctx := context.Background()
 	tz := offsetWhereItIs(21)
 	f.setContactTimezone(t, tz)
 
-	at, _ := scheduleSlot(t, s, f.campaign)
-	if local := at.In(offsetLocation(t, tz)); local.Hour() != 9 {
-		t.Errorf("slot %s, want the lead's next 09:00", local.Format(time.RFC3339))
+	// The campaign holds the lead and looks again soon, in case routing's stored
+	// zones were hiding a lead whose day is open.
+	at, pair, _, err := s.CalculateNextCampaignTime(ctx, f.campaign)
+	if !errors.Is(err, ErrCampaignDeferred) || pair != nil {
+		t.Fatalf("a lead at 21:00 local was offered: pair=%v err=%v", pair, err)
 	}
-	if time.Until(at) < 10*time.Hour {
-		t.Errorf("a lead at 21:00 local was slotted %v out, before their morning", time.Until(at).Truncate(time.Minute))
+	if time.Until(at) > recipientClockRecheck+time.Minute {
+		t.Errorf("the campaign rechecks in %v, want within %v", time.Until(at).Truncate(time.Minute), recipientClockRecheck)
+	}
+
+	// The lead itself waits for its own morning, and the drawer says why.
+	var lead uuid.UUID
+	if err := f.pool.QueryRow(ctx, `SELECT contact_id FROM campaign_leads WHERE campaign_id = $1`, f.campaign).Scan(&lead); err != nil {
+		t.Fatal(err)
+	}
+	pv, err := s.(ContactSendPreviewer).PreviewContactSend(ctx, f.campaign, lead)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pv.NotBefore == nil {
+		t.Fatalf("preview %+v has no not-before", pv)
+	}
+	if local := pv.NotBefore.In(offsetLocation(t, tz)); local.Hour() != 9 {
+		t.Errorf("lead held until %s, want their next 09:00", local.Format(time.RFC3339))
+	}
+	if pv.Constraint != ConstraintRecipientHours {
+		t.Errorf("constraint %q, want %q", pv.Constraint, ConstraintRecipientHours)
 	}
 }
 
@@ -194,5 +217,37 @@ func TestLiveRecipientClockStartCheckFollowsTheLead(t *testing.T) {
 	}
 	if at, err = gate.OutboundExecutionNotBefore(ctx, f.mailbox, f.campaign, uuid.Nil, uuid.New(), now); err != nil || !at.After(now) {
 		t.Fatalf("with no lead the campaign's night clock must hold the send: at=%s err=%v", at, err)
+	}
+}
+
+// A closed lead whose morning falls outside the mailbox's own hours is that
+// lead's wait, not the pool's: the open lead behind them is still sent.
+func TestLiveRecipientClockMovesPastALeadOutsideMailboxHours(t *testing.T) {
+	f, s := recipientClockFixture(t)
+	ctx := context.Background()
+	noon, _ := geo.ParseTimezone(offsetWhereItIs(12))
+	if _, err := f.pool.Exec(ctx, `UPDATE email_accounts SET timezone = $2 WHERE id = $1`, f.mailbox, noon); err != nil {
+		t.Fatal(err)
+	}
+	// The lead's next 09:00 is midnight on the mailbox's clock.
+	f.setContactTimezone(t, offsetWhereItIs(21))
+
+	open := uuid.New()
+	if _, err := f.pool.Exec(ctx, `
+		INSERT INTO contacts (id, user_id, organization_id, email, first_name, last_name, company, phone, custom_fields, created_at)
+		VALUES ($1, $2, $3, $4, 'Open', 'Lead', '', '', jsonb_build_object('timezone', $5::text), NOW() + interval '1 second')`,
+		open, f.user, f.org, "open-"+open.String()[:8]+"@test.local", offsetWhereItIs(9)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(ctx, `INSERT INTO campaign_leads (campaign_id, contact_id, position) VALUES ($1, $2, 1)`, f.campaign, open); err != nil {
+		t.Fatal(err)
+	}
+
+	_, pair, _, err := s.CalculateNextCampaignTime(ctx, f.campaign)
+	if err != nil {
+		t.Fatalf("the campaign deferred instead of sending the open lead: %v", err)
+	}
+	if pair == nil || pair.ContactID != open {
+		t.Fatalf("sent %v, want the lead whose day is open (%s)", pair, open)
 	}
 }

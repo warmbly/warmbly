@@ -27,12 +27,18 @@ const PARTS: Part[] = [
     { key: "none", label: "No known region", color: "#64748b", condition: { field: "world_region", operator: "in", values: ["none"] } },
 ];
 
-// SegmentMaxNameLen on the backend.
-const MAX_NAME = 120;
+// SegmentMaxNameLen on the backend, which counts UTF-8 bytes.
+const MAX_NAME_BYTES = 120;
+const utf8 = new TextEncoder();
+const byteLength = (s: string) => utf8.encode(s).length;
 
 function partName(base: string, label: string): string {
     const suffix = ` · ${label}`;
-    return base.length + suffix.length <= MAX_NAME ? base + suffix : base.slice(0, MAX_NAME - suffix.length - 1).trimEnd() + "…" + suffix;
+    if (byteLength(base + suffix) <= MAX_NAME_BYTES) return base + suffix;
+    // Cut whole characters, never half of one.
+    const chars = Array.from(base);
+    while (chars.length > 0 && byteLength(chars.join("").trimEnd() + "…" + suffix) > MAX_NAME_BYTES) chars.pop();
+    return chars.join("").trimEnd() + "…" + suffix;
 }
 
 export default function SplitByRegionDialog({ open, onClose, segment }: { open: boolean; onClose: () => void; segment: Segment }) {
@@ -96,6 +102,12 @@ export default function SplitByRegionDialog({ open, onClose, segment }: { open: 
                     conditions: conditionsFor(p),
                 });
                 made++;
+                // A retry after a later failure must not create this one again.
+                setPicked((prev) => {
+                    const next = new Set(prev ?? []);
+                    next.delete(p.key);
+                    return next;
+                });
             }
             toast.success(`Created ${made} segment${made === 1 ? "" : "s"} from ${segment.name}`);
             onClose();
