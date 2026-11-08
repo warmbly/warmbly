@@ -249,13 +249,13 @@ func TestOverlappingRequestURLsLoseTheirWholeQuery(t *testing.T) {
 func TestReportedURLsLoseCredentialsAndWholeQueries(t *testing.T) {
 	err := fmt.Errorf("publish: %w", &url.Error{
 		Op:  "Post",
-		URL: "https://user:hunter2@broker.example.test/%zz",
+		URL: "https://user:hun#ter?2@broker.example.test/%zz",
 		Err: errors.New("redirected to https://api.example.test/x?token=abcdef"),
 	})
 	err = fmt.Errorf("get: %w", errors.Join(err, &url.Error{Op: "Get", URL: "https://api.example.test/x?token=a", Err: errors.New("refused")}))
 
 	got := redact(err).Error()
-	for _, leaked := range []string{"hunter2", "user:", "token", "bcdef"} {
+	for _, leaked := range []string{"hun", "ter", "user:", "token", "bcdef"} {
 		if strings.Contains(got, leaked) {
 			t.Errorf("reported %q, which still carries %q", got, leaked)
 		}

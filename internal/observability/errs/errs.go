@@ -333,21 +333,24 @@ func withoutURLQuery(err error) error {
 }
 
 // bareURL keeps a URL's scheme, host and path, as text, so a URL that will not parse is cut the same way.
+// Credentials go first: a password may hold the "?" or "#" the query and fragment are cut at.
 func bareURL(raw string) string {
-	bare, _, _ := strings.Cut(raw, "?")
-	bare, _, _ = strings.Cut(bare, "#")
-	scheme, rest, ok := strings.Cut(bare, "://")
+	scheme, rest, ok := strings.Cut(raw, "://")
 	if !ok {
+		bare, _, _ := strings.Cut(raw, "?")
+		bare, _, _ = strings.Cut(bare, "#")
 		return bare
 	}
-	authority, path, hasPath := strings.Cut(rest, "/")
-	if at := strings.LastIndex(authority, "@"); at >= 0 {
-		authority = authority[at+1:]
+	authorityEnd := strings.Index(rest, "/")
+	if authorityEnd < 0 {
+		authorityEnd = len(rest)
 	}
-	if hasPath {
-		return scheme + "://" + authority + "/" + path
+	if at := strings.LastIndex(rest[:authorityEnd], "@"); at >= 0 {
+		rest = rest[at+1:]
 	}
-	return scheme + "://" + authority
+	rest, _, _ = strings.Cut(rest, "?")
+	rest, _, _ = strings.Cut(rest, "#")
+	return scheme + "://" + rest
 }
 
 // exceptionType names the Go type an issue is titled with.
