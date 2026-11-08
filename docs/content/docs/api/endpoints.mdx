@@ -111,6 +111,7 @@ Campaigns, steps and activity logs are scoped to the selected organization for s
 | GET | `/campaigns/:id/leads/:contactId/cc/suggestions` | `READ_CAMPAIGNS` + `READ_CONTACTS` |
 | GET | `/campaigns/:id/logs` | `READ_CAMPAIGNS` |
 | GET | `/campaigns/:id/send-plan` | `READ_CAMPAIGNS` |
+| GET | `/campaigns/:id/lead-timezones` | `READ_CAMPAIGNS` |
 | GET | `/campaigns/:id/forms` | `READ_CAMPAIGNS` |
 | GET/POST/PATCH/DELETE | `/campaigns/:id/steps[/:sid]` | `READ_CAMPAIGNS` for GET, `WRITE_CAMPAIGNS` otherwise |
 | PATCH | `/campaigns/:id/step-layout` | `WRITE_CAMPAIGNS` |

@@ -288,10 +288,13 @@ export function useRealtimeEvents() {
       if (includes('CONTACT')) {
         invalidate([
           ['contacts'],
+          ['segments'],
           ['campaigns', 'list'],
           ['analytics'],
           ['organizations', 'limits'],
         ])
+        // A contact's location feeds the location segment fields and each campaign's lead timezones.
+        gate.invalidate({ predicate: (q) => q.queryKey[0] === 'campaigns' && q.queryKey[2] === 'lead-timezones' })
         if (contactId) invalidate([['contacts', contactId]])
         return
       }

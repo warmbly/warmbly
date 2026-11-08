@@ -106,7 +106,19 @@ func (s *contactService) fillNextAction(ctx context.Context, st *models.ContactC
 	if pv.Constraint == scheduler.ConstraintLeadHold {
 		next.Constraint = holdCopy(st.Hold)
 	}
+	if pv.Constraint == scheduler.ConstraintRecipientHours {
+		next.Constraint = recipientHoursCopy(pv.RecipientTimezone)
+	}
 	st.Next = next
+}
+
+// recipientHoursCopy names the clock a recipient-local campaign is waiting on.
+func recipientHoursCopy(zone string) string {
+	city := strings.ReplaceAll(zone[strings.LastIndex(zone, "/")+1:], "_", " ")
+	if city == "" || strings.HasPrefix(zone, "Etc/") || zone == "UTC" {
+		return "Waiting for the sending window to open in their timezone (" + zone + ")"
+	}
+	return "Waiting for the sending window to open in their timezone (" + city + " time)"
 }
 
 // holdCopy words a per-lead hold for the drawer: why the flow is parked and,

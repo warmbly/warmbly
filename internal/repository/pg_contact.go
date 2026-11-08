@@ -69,6 +69,12 @@ type ContactRepository interface {
 	// SetContactMailHosts stores the sweep's results and returns the
 	// organizations whose contacts changed.
 	SetContactMailHosts(ctx context.Context, results []ContactMailHostResult) ([]uuid.UUID, error)
+	// ListLocationPending returns contacts whose location inputs changed since
+	// the location sweep read them. Instance-wide: control plane only.
+	ListLocationPending(ctx context.Context, limit int) ([]ContactLocationPending, error)
+	// SetContactLocations stores the sweep's answers and returns the
+	// organizations whose contacts it answered.
+	SetContactLocations(ctx context.Context, results []ContactLocationResult) ([]uuid.UUID, error)
 	GetByEmailsAndUser(ctx context.Context, userID uuid.UUID, emails []string) (map[string]models.Contact, *errx.Error)
 	// ImportLookup resolves an import's addresses: the workspace's contact for
 	// each it already has, and the ones the importing member holds as a
@@ -719,6 +725,121 @@ func (r *contactRepository) SetContactMailHosts(ctx context.Context, results []C
 	`
 	args := []any{ids, emails, hosts, esps, transient, config.ContactMailHostRecheckDays, config.ContactMailHostRetryMinutes}
 	rows, err := resultDB(ctx, r.DB).Query(ctx, query, args...)
+	if err != nil {
+		db.CaptureError(err, query, nil, "query")
+		return nil, err
+	}
+	defer rows.Close()
+	var orgs []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		orgs = append(orgs, id)
+	}
+	return orgs, rows.Err()
+}
+
+// ContactLocationPending is one contact whose location inputs changed since
+// the location sweep last read them. Fingerprint is those inputs' hash now.
+type ContactLocationPending struct {
+	ID           uuid.UUID
+	CustomFields map[string]string
+	Phone        string
+	Email        string
+	Fingerprint  string
+}
+
+// ContactLocationResult is the sweep's answer for one contact. It lands only
+// while the contact's inputs still hash to Fingerprint.
+type ContactLocationResult struct {
+	ID          uuid.UUID
+	Fingerprint string
+	Timezone    string
+	Country     string
+	Source      string
+}
+
+// contactLocationStale matches idx_contacts_location_pending's predicate
+// exactly, so the planner reads the pending set from that index.
+const contactLocationStale = `location_fingerprint IS DISTINCT FROM contact_location_fingerprint(custom_fields, phone, email)`
+
+func (r *contactRepository) ListLocationPending(ctx context.Context, limit int) ([]ContactLocationPending, error) {
+	query := `
+		SELECT id, custom_fields, phone, email, contact_location_fingerprint(custom_fields, phone, email)
+		FROM contacts
+		WHERE ` + contactLocationStale + `
+		LIMIT $1
+	`
+	rows, err := resultDB(ctx, r.DB).Query(ctx, query, limit)
+	if err != nil {
+		db.CaptureError(err, query, []any{limit}, "query")
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ContactLocationPending
+	for rows.Next() {
+		var p ContactLocationPending
+		var raw []byte
+		if err := rows.Scan(&p.ID, &raw, &p.Phone, &p.Email, &p.Fingerprint); err != nil {
+			return nil, err
+		}
+		p.CustomFields = decodeLocationFields(raw)
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// decodeLocationFields reads custom fields leniently: a value that is not a
+// string (an imported number or nested object) is skipped, not fatal.
+func decodeLocationFields(raw []byte) map[string]string {
+	var loose map[string]any
+	if err := json.Unmarshal(raw, &loose); err != nil {
+		return nil
+	}
+	out := make(map[string]string, len(loose))
+	for k, v := range loose {
+		if s, ok := v.(string); ok {
+			out[k] = s
+		}
+	}
+	return out
+}
+
+// SetContactLocations stores the sweep's answers and returns the
+// organizations whose contacts it answered, so their lists and lead counts refresh.
+func (r *contactRepository) SetContactLocations(ctx context.Context, results []ContactLocationResult) ([]uuid.UUID, error) {
+	if len(results) == 0 {
+		return nil, nil
+	}
+	ids := make([]uuid.UUID, len(results))
+	prints := make([]string, len(results))
+	zones := make([]string, len(results))
+	countries := make([]string, len(results))
+	sources := make([]string, len(results))
+	for i, res := range results {
+		ids[i], prints[i], zones[i], countries[i], sources[i] = res.ID, res.Fingerprint, res.Timezone, res.Country, res.Source
+	}
+	query := `
+		WITH u AS (
+			SELECT * FROM unnest($1::uuid[], $2::text[], $3::text[], $4::text[], $5::text[])
+				AS t(id, fingerprint, tz, country, source)
+		), changed AS (
+			UPDATE contacts c
+			SET location_timezone = u.tz,
+			    location_country = u.country,
+			    location_source = u.source,
+			    location_fingerprint = u.fingerprint
+			FROM u
+			WHERE c.id = u.id
+			  AND contact_location_fingerprint(c.custom_fields, c.phone, c.email) = u.fingerprint
+			RETURNING c.organization_id
+		)
+		SELECT DISTINCT organization_id FROM changed
+		WHERE organization_id IS NOT NULL
+	`
+	rows, err := resultDB(ctx, r.DB).Query(ctx, query, ids, prints, zones, countries, sources)
 	if err != nil {
 		db.CaptureError(err, query, nil, "query")
 		return nil, err

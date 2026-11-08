@@ -1,0 +1,125 @@
+package geo
+
+// subdivision is one state or province: its code, its name, and the zone most
+// of its people live in (a state split across offsets takes its majority).
+type subdivision struct {
+	code, name, zone string
+}
+
+// subdivisions covers the countries where the country alone cannot pick the
+// clock and exporters reliably write the state.
+var subdivisions = map[string][]subdivision{
+	"US": {
+		{"AL", "Alabama", "America/Chicago"}, {"AK", "Alaska", "America/Anchorage"},
+		{"AZ", "Arizona", "America/Phoenix"}, {"AR", "Arkansas", "America/Chicago"},
+		{"CA", "California", "America/Los_Angeles"}, {"CO", "Colorado", "America/Denver"},
+		{"CT", "Connecticut", "America/New_York"}, {"DE", "Delaware", "America/New_York"},
+		{"DC", "District of Columbia", "America/New_York"}, {"FL", "Florida", "America/New_York"},
+		{"GA", "Georgia", "America/New_York"}, {"HI", "Hawaii", "Pacific/Honolulu"},
+		{"ID", "Idaho", "America/Boise"}, {"IL", "Illinois", "America/Chicago"},
+		{"IN", "Indiana", "America/Indiana/Indianapolis"}, {"IA", "Iowa", "America/Chicago"},
+		{"KS", "Kansas", "America/Chicago"}, {"KY", "Kentucky", "America/New_York"},
+		{"LA", "Louisiana", "America/Chicago"}, {"ME", "Maine", "America/New_York"},
+		{"MD", "Maryland", "America/New_York"}, {"MA", "Massachusetts", "America/New_York"},
+		{"MI", "Michigan", "America/Detroit"}, {"MN", "Minnesota", "America/Chicago"},
+		{"MS", "Mississippi", "America/Chicago"}, {"MO", "Missouri", "America/Chicago"},
+		{"MT", "Montana", "America/Denver"}, {"NE", "Nebraska", "America/Chicago"},
+		{"NV", "Nevada", "America/Los_Angeles"}, {"NH", "New Hampshire", "America/New_York"},
+		{"NJ", "New Jersey", "America/New_York"}, {"NM", "New Mexico", "America/Denver"},
+		{"NY", "New York", "America/New_York"}, {"NC", "North Carolina", "America/New_York"},
+		{"ND", "North Dakota", "America/Chicago"}, {"OH", "Ohio", "America/New_York"},
+		{"OK", "Oklahoma", "America/Chicago"}, {"OR", "Oregon", "America/Los_Angeles"},
+		{"PA", "Pennsylvania", "America/New_York"}, {"RI", "Rhode Island", "America/New_York"},
+		{"SC", "South Carolina", "America/New_York"}, {"SD", "South Dakota", "America/Chicago"},
+		{"TN", "Tennessee", "America/Chicago"}, {"TX", "Texas", "America/Chicago"},
+		{"UT", "Utah", "America/Denver"}, {"VT", "Vermont", "America/New_York"},
+		{"VA", "Virginia", "America/New_York"}, {"WA", "Washington", "America/Los_Angeles"},
+		{"WV", "West Virginia", "America/New_York"}, {"WI", "Wisconsin", "America/Chicago"},
+		{"WY", "Wyoming", "America/Denver"},
+	},
+	"CA": {
+		{"AB", "Alberta", "America/Edmonton"}, {"BC", "British Columbia", "America/Vancouver"},
+		{"MB", "Manitoba", "America/Winnipeg"}, {"NB", "New Brunswick", "America/Moncton"},
+		{"NL", "Newfoundland and Labrador", "America/St_Johns"}, {"NS", "Nova Scotia", "America/Halifax"},
+		{"NT", "Northwest Territories", "America/Edmonton"}, {"NU", "Nunavut", "America/Iqaluit"},
+		{"ON", "Ontario", "America/Toronto"}, {"PE", "Prince Edward Island", "America/Halifax"},
+		{"QC", "Quebec", "America/Toronto"}, {"SK", "Saskatchewan", "America/Regina"},
+		{"YT", "Yukon", "America/Whitehorse"},
+	},
+	"AU": {
+		{"NSW", "New South Wales", "Australia/Sydney"}, {"VIC", "Victoria", "Australia/Melbourne"},
+		{"QLD", "Queensland", "Australia/Brisbane"}, {"WA", "Western Australia", "Australia/Perth"},
+		{"SA", "South Australia", "Australia/Adelaide"}, {"TAS", "Tasmania", "Australia/Hobart"},
+		{"ACT", "Australian Capital Territory", "Australia/Sydney"}, {"NT", "Northern Territory", "Australia/Darwin"},
+	},
+}
+
+// subdivisionCountryOrder is the order a bare state is tried in when no
+// country says which one it belongs to: "CA" alone is California.
+var subdivisionCountryOrder = []string{"US", "CA", "AU"}
+
+// extraCities are the large business cities that are not themselves zone
+// names; zone.tab's own cities (New York, London, Tokyo) are added on load.
+var extraCities = map[string]string{
+	"San Francisco": "America/Los_Angeles", "San Jose": "America/Los_Angeles", "San Diego": "America/Los_Angeles",
+	"Seattle": "America/Los_Angeles", "Portland": "America/Los_Angeles", "Las Vegas": "America/Los_Angeles",
+	"Sacramento": "America/Los_Angeles", "Oakland": "America/Los_Angeles", "Palo Alto": "America/Los_Angeles",
+	"Mountain View": "America/Los_Angeles", "Santa Monica": "America/Los_Angeles", "Irvine": "America/Los_Angeles",
+	"Silicon Valley": "America/Los_Angeles", "San Francisco Bay": "America/Los_Angeles",
+	"Salt Lake City": "America/Denver", "Boulder": "America/Denver", "Albuquerque": "America/Denver",
+	"Scottsdale": "America/Phoenix", "Tempe": "America/Phoenix",
+	"Dallas": "America/Chicago", "Houston": "America/Chicago", "Austin": "America/Chicago",
+	"San Antonio": "America/Chicago", "Minneapolis": "America/Chicago", "St Louis": "America/Chicago",
+	"Saint Louis": "America/Chicago", "Kansas City": "America/Chicago", "Nashville": "America/Chicago",
+	"New Orleans": "America/Chicago", "Milwaukee": "America/Chicago", "Omaha": "America/Chicago",
+	"Dallas Fort Worth": "America/Chicago", "Fort Worth": "America/Chicago",
+	"Brooklyn": "America/New_York", "Manhattan": "America/New_York", "New York City": "America/New_York",
+	"NYC": "America/New_York", "Boston": "America/New_York", "Philadelphia": "America/New_York",
+	"Washington": "America/New_York", "Washington DC": "America/New_York", "Atlanta": "America/New_York",
+	"Miami": "America/New_York", "Orlando": "America/New_York", "Tampa": "America/New_York",
+	"Charlotte": "America/New_York", "Raleigh": "America/New_York", "Pittsburgh": "America/New_York",
+	"Baltimore": "America/New_York", "Columbus": "America/New_York", "Cleveland": "America/New_York",
+	"Cincinnati": "America/New_York", "Jacksonville": "America/New_York", "Durham": "America/New_York",
+	"Montreal": "America/Toronto", "Ottawa": "America/Toronto", "Calgary": "America/Edmonton",
+	"Manchester": "Europe/London", "Birmingham": "Europe/London", "Edinburgh": "Europe/London",
+	"Glasgow": "Europe/London", "Leeds": "Europe/London", "Liverpool": "Europe/London",
+	"Bristol": "Europe/London", "Cambridge": "Europe/London", "Oxford": "Europe/London",
+	"Munich": "Europe/Berlin", "Munchen": "Europe/Berlin", "Hamburg": "Europe/Berlin",
+	"Frankfurt": "Europe/Berlin", "Cologne": "Europe/Berlin", "Koln": "Europe/Berlin",
+	"Dusseldorf": "Europe/Berlin", "Stuttgart": "Europe/Berlin", "Lyon": "Europe/Paris",
+	"Marseille": "Europe/Paris", "Toulouse": "Europe/Paris", "Nice": "Europe/Paris",
+	"Barcelona": "Europe/Madrid", "Valencia": "Europe/Madrid", "Seville": "Europe/Madrid",
+	"Milan": "Europe/Rome", "Milano": "Europe/Rome", "Turin": "Europe/Rome", "Naples": "Europe/Rome",
+	"Florence": "Europe/Rome", "Rotterdam": "Europe/Amsterdam", "Utrecht": "Europe/Amsterdam",
+	"The Hague": "Europe/Amsterdam", "Eindhoven": "Europe/Amsterdam", "Geneva": "Europe/Zurich",
+	"Basel": "Europe/Zurich", "Bern": "Europe/Zurich", "Lausanne": "Europe/Zurich",
+	"Gothenburg": "Europe/Stockholm", "Malmo": "Europe/Stockholm", "Krakow": "Europe/Warsaw",
+	"Wroclaw": "Europe/Warsaw", "Gdansk": "Europe/Warsaw", "Antwerp": "Europe/Brussels",
+	"Porto": "Europe/Lisbon", "Cork": "Europe/Dublin", "Galway": "Europe/Dublin",
+	"Ankara": "Europe/Istanbul", "Izmir": "Europe/Istanbul", "Tel Aviv": "Asia/Jerusalem",
+	"Haifa": "Asia/Jerusalem", "Abu Dhabi": "Asia/Dubai", "Jeddah": "Asia/Riyadh",
+	"Mumbai": "Asia/Kolkata", "Bombay": "Asia/Kolkata", "Delhi": "Asia/Kolkata",
+	"New Delhi": "Asia/Kolkata", "Bangalore": "Asia/Kolkata", "Bengaluru": "Asia/Kolkata",
+	"Hyderabad": "Asia/Kolkata", "Chennai": "Asia/Kolkata", "Pune": "Asia/Kolkata",
+	"Gurgaon": "Asia/Kolkata", "Gurugram": "Asia/Kolkata", "Noida": "Asia/Kolkata",
+	"Ahmedabad": "Asia/Kolkata", "Beijing": "Asia/Shanghai", "Shenzhen": "Asia/Shanghai",
+	"Guangzhou": "Asia/Shanghai", "Osaka": "Asia/Tokyo", "Kyoto": "Asia/Tokyo",
+	"Yokohama": "Asia/Tokyo", "Busan": "Asia/Seoul", "Canberra": "Australia/Sydney",
+	"Wellington": "Pacific/Auckland", "Christchurch": "Pacific/Auckland",
+	"Rio de Janeiro": "America/Sao_Paulo", "Brasilia": "America/Sao_Paulo",
+	"Belo Horizonte": "America/Sao_Paulo", "Porto Alegre": "America/Sao_Paulo",
+	"Curitiba": "America/Sao_Paulo", "Guadalajara": "America/Mexico_City",
+	"Cape Town": "Africa/Johannesburg", "Durban": "Africa/Johannesburg",
+	"Pretoria": "Africa/Johannesburg", "Abuja": "Africa/Lagos", "Hanoi": "Asia/Ho_Chi_Minh",
+	"Saigon": "Asia/Ho_Chi_Minh", "Cebu": "Asia/Manila", "Makati": "Asia/Manila",
+	"Quezon City": "Asia/Manila", "Bali": "Asia/Makassar", "Denpasar": "Asia/Makassar",
+	"Surabaya": "Asia/Jakarta", "Bandung": "Asia/Jakarta", "Lahore": "Asia/Karachi",
+	"Islamabad": "Asia/Karachi", "Kiev": "Europe/Kyiv",
+	"Mississauga": "America/Toronto", "Brampton": "America/Toronto", "Quebec City": "America/Toronto",
+	"Kitchener": "America/Toronto", "Leipzig": "Europe/Berlin",
+	"Dresden": "Europe/Berlin", "Hannover": "Europe/Berlin", "Nuremberg": "Europe/Berlin",
+	"Bonn": "Europe/Berlin", "Medellin": "America/Bogota", "Cali": "America/Bogota",
+	"Kochi": "Asia/Kolkata", "Jaipur": "Asia/Kolkata", "Lucknow": "Asia/Kolkata",
+	"Chandigarh": "Asia/Kolkata", "Indore": "Asia/Kolkata", "Coimbatore": "Asia/Kolkata",
+	"Gdynia": "Europe/Warsaw", "Poznan": "Europe/Warsaw", "Lodz": "Europe/Warsaw",
+}

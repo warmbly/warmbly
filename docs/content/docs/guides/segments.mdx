@@ -71,6 +71,8 @@ Give the segment a name and a color, then add conditions. Each condition is a fi
 | Contact | Created, updated | in the last N days, not in the last N days, after, before |
 | Contact | Label | has any of, has none of, has none, has any |
 | Company | Company name | the text operators above |
+| Location | World region, country, timezone | is any of, is none of |
+| Location | Location known | is yes, is no |
 | Campaign activity | In campaign | is in any of, is in none of, is in no campaign, is in a campaign |
 | Campaign activity | Number of campaigns | is, is not, more than, at least, less than, at most |
 | Email engagement | Emails sent, emails opened, links clicked, replies, bounces | the number operators above |
@@ -78,6 +80,8 @@ Give the segment a name and a color, then add conditions. Each condition is a fi
 | Segments | In segment | is in any of, is in none of |
 
 **Email provider** is who hosts the contact's inbox (Google Workspace, Microsoft 365, Yahoo Mail, and so on), read from the domain's mail records; **email provider family** groups those into Google, Microsoft and other, the grouping [ESP matching](/guides/campaigns/) uses. See [email provider](/guides/contacts-crm/#email-provider).
+
+**Location** is where the contact is, worked out from what the record already carries: a timezone, country, state, city or location field from an import or an integration, then the phone number's country code, then a country-code email domain such as `.de`. **World region** groups countries into North America, Latin America, Europe, Middle East and Africa, and Asia-Pacific, plus **No known region** for a contact with no country (nothing places it, or only a bare UTC offset does). **Location known** is no for a contact nothing places. A contact's location is read again within a minute of its record changing. See [Sending by region and timezone](/guides/regions-and-timezones/).
 
 Engagement counts add up every campaign the contact has been in. Opens count human opens only; automated fetches are ignored, the same way the campaign analytics report them. Text comparisons ignore case.
 
@@ -117,6 +121,7 @@ A segment with no conditions at all is a plain list: it holds exactly the contac
 - **Filter**: the contact list's filter bar has a **Segment** pill, and the same scope carries into an export.
 - **Export**: **Export** on a segment page downloads its members as CSV, XLSX or JSON, either every member, the ones matching the page's filters, or the selected rows.
 - **Duplicate**: the segment menu copies a definition to start a variation from.
+- **Split by region**: on a segment page, creates one live segment per world region the members fall in, plus one for members with no known region if you want it, so every member lands in exactly one, each named after the segment and the region and counted before you create it. Contacts move between them as their location changes. Use it to give each region its own campaign, schedule and mailboxes; the original segment is kept.
 - **Search and export**: the contact search and export accept `segment_ids`, so anything that takes a contact filter can be scoped to a segment.
 
 </Fold>

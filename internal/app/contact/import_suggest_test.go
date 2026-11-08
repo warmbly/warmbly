@@ -93,3 +93,27 @@ func TestSuggestMappingFindsEmailByItsValues(t *testing.T) {
 		t.Fatalf("got %+v, want only the named column as email", got)
 	}
 }
+
+func TestSuggestMappingKeepsLocationColumns(t *testing.T) {
+	headers := []string{"Email", "Country/Region", "State/Province", "City", "Time Zone", "Company Country", "Region", "Industry"}
+	got := SuggestMapping(headers, nil, []string{"Country"})
+	want := []string{"", "Country", "state", "city", "timezone", "company_country", "region", ""}
+	for i, key := range want {
+		if key == "" {
+			continue
+		}
+		if got[i].Target != models.ContactImportTargetCustom || got[i].CustomKey != key {
+			t.Errorf("%q mapped to %q/%q, want custom %q", headers[i], got[i].Target, got[i].CustomKey, key)
+		}
+	}
+	if got[7].Target != models.ContactImportTargetIgnore {
+		t.Errorf("Industry mapped to %q, want ignore", got[7].Target)
+	}
+}
+
+func TestSuggestMappingGivesALocationKeyOneColumn(t *testing.T) {
+	got := SuggestMapping([]string{"email", "Country", "Country Code"}, nil, nil)
+	if got[1].CustomKey != "country" || got[2].Target != models.ContactImportTargetIgnore {
+		t.Fatalf("got %+v, want only the first country column kept", got)
+	}
+}

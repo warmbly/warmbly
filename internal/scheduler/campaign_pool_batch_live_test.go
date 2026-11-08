@@ -132,7 +132,7 @@ func TestLiveCampaignPoolStandalonePlacementIsBatched(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pairs, _, _, err := s.campaignProgressRepo.FindRoutedPairs(t.Context(), f.campaign, "created_at", "asc", "", false, false, nil, 1)
+	pairs, _, _, err := s.campaignProgressRepo.FindRoutedPairs(t.Context(), f.campaign, "created_at", "asc", "", false, false, nil, nil, 1)
 	if err != nil || len(pairs) != 1 {
 		t.Fatalf("pairs=%v err=%v", pairs, err)
 	}

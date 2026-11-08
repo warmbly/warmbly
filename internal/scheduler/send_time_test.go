@@ -7,27 +7,6 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 )
 
-func TestTimezoneForEmailDomain(t *testing.T) {
-	tests := []struct {
-		email string
-		want  string
-	}{
-		{"a@example.de", "Europe/Berlin"},
-		{"a@sub.example.co.uk", "Europe/London"},
-		{"a@example.jp", "Asia/Tokyo"},
-		{"a@example.com", ""},             // gTLD carries no location signal
-		{"a@example.io", ""},              // ditto
-		{"not-an-email", ""},              // no @
-		{"a@localhost", ""},               // single label
-		{"A@Example.DE", "Europe/Berlin"}, // case-insensitive
-	}
-	for _, tt := range tests {
-		if got := timezoneForEmailDomain(tt.email); got != tt.want {
-			t.Errorf("timezoneForEmailDomain(%q) = %q, want %q", tt.email, got, tt.want)
-		}
-	}
-}
-
 func TestNormalizeHoursRejectsGarbageAndNeverEmpties(t *testing.T) {
 	// An empty result would mean "no hour is acceptable", which would stall
 	// every campaign on the org, so it must fall back to business hours.
@@ -64,6 +43,11 @@ func TestRecipientLocationPrefersContactFieldThenDomain(t *testing.T) {
 	explicit := &models.Contact{Email: "a@example.de", CustomFields: map[string]string{"timezone": "Asia/Tokyo"}}
 	if got := recipientLocation(explicit, pref); got.String() != "Asia/Tokyo" {
 		t.Errorf("explicit contact timezone ignored: got %s", got)
+	}
+
+	byState := &models.Contact{Email: "a@example.com", CustomFields: map[string]string{"State": "Texas"}}
+	if got := recipientLocation(byState, pref); got.String() != "America/Chicago" {
+		t.Errorf("state inference failed: got %s", got)
 	}
 
 	byDomain := &models.Contact{Email: "a@example.de"}

@@ -117,6 +117,13 @@ Everything else is safe to run freely.
   is the answer: today's projected sends and every limit that lowered them
   (easing out of warmup, the campaign limit, other campaigns on the same
   mailboxes, the plan's allowance, leads due). Read it before touching a cap.
+- To send each lead inside their own working day, set the campaign's
+  `timezone_mode` to `recipient`, then run `warmbly campaign timezones
+  CAMPAIGN_ID`: its leads by timezone and how many have no location (those are
+  sent on the campaign's own timezone). Location comes from the contacts'
+  country, state, city, location or timezone fields, then phone and email
+  domain; segment conditions `world_region`, `country` and `timezone` split an
+  audience by it.
 - Never raise a mailbox's daily cap casually. The default is 50 campaign
   emails per mailbox per day with 600 seconds between sends; a fresh mailbox
   starts around 10-20. Do not go above 50 unless the user asked and the

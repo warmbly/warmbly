@@ -195,3 +195,10 @@ func CampaignUTMValue(v string) *errx.Error {
 	}
 	return nil
 }
+
+func CampaignTimezoneMode(s string) *errx.Error {
+	if !models.TimezoneMode(s).Valid() {
+		return errx.New(errx.BadRequest, "timezone_mode must be one of campaign, recipient")
+	}
+	return nil
+}

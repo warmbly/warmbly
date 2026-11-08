@@ -1,0 +1,125 @@
+---
+title: Sending by region and timezone
+description: Place every contact from what their record already says, split an audience by region, and send each lead inside their own working day.
+---
+
+Warmbly works out where each contact is from the data you already have: the timezone, country, state, city or location columns you import or sync, the phone number and the email domain. Nothing has to be typed in. That location powers three things: segment conditions by region, country and timezone; campaigns that read their sending window in each lead's own timezone; and a per-campaign breakdown of where its leads are.
+
+## Send to a region in its own hours
+
+<Steps>
+
+<Step>
+
+Import your contacts with whatever location columns your export has. `Country`, `State`, `City`, `Location` and `Time Zone` are kept automatically; see [importing](/guides/contacts-crm/#mapping-into-your-custom-fields).
+
+</Step>
+
+<Step>
+
+Open the segment (or create one), then choose **Split by region** to get one live segment per region. Or add a **World region**, **Country** or **Timezone** condition yourself.
+
+</Step>
+
+<Step>
+
+Create a campaign for the segment. On its sending window (or the Schedule tab later), turn on **Send in each lead's local time**.
+
+</Step>
+
+<Step>
+
+Check **Where your leads are** on the Schedule tab: how many leads are in each timezone, and how many have no location yet.
+
+</Step>
+
+<Step>
+
+For mailboxes meant for one region, set their timezone under **Settings > Profile > Timezones**, so their warmup and working hours follow that region's day.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- Location is derived, never a field you maintain. Edit a contact's country or state and it is read again within a minute.
+- A campaign in local-time mode sends a lead with no location on the campaign's own timezone.
+- Each mailbox still keeps its own hours, so pick mailboxes whose day overlaps the region you are writing to.
+- Location never decides whether someone is emailed, only when.
+
+<Fold>
+
+## How a contact's location is worked out
+
+Warmbly reads the record in this order and stops at the first answer:
+
+1. **A timezone field** (`timezone`, `Time Zone`, `tz` and similar).
+2. **A state or province** (`state`, `State/Region`, `province`, `region`), for the United States, Canada and Australia, where the country alone cannot pick the clock.
+3. **A city** (`city`), for major cities worldwide.
+4. **A country** (`country`, `Country/Region`, `country_code`).
+5. Any of the above inside one **location** field (`location`, `address`), such as `Denver, CO`, `Seattle, Washington, United States` or LinkedIn's `San Francisco Bay Area`.
+6. The same fields for the **company** (`company_country`, `company_location`), when the person's own say nothing.
+7. The **phone number's** country code, when it is written internationally (`+44 20...` or `0044 20...`).
+8. A **country-code email domain**: `acme.de` is Germany and `acme.co.uk` the United Kingdom. Generic domains (`.com`, `.io`, `.co`, `.ai` and other country codes sold as generic names) say nothing.
+
+Field names are matched loosely, ignoring case, spaces and punctuation, so `Country/Region`, `country_region` and `COUNTRY` are all read as a country.
+
+| Field | Accepted values |
+|-------|-----------------|
+| Timezone | IANA names in any case (`America/Chicago`), abbreviations (`EST`, `CET`, `IST`, `AEST`), Windows and Outlook names (`(GMT-05:00) Eastern Time (US & Canada)`), and offsets (`UTC+2`, `GMT-05:00`, `+05:30`) |
+| Country | English names (`Germany`, `United States`), common local names and aliases (`Deutschland`, `USA`, `UK`), and two- or three-letter ISO codes (`DE`, `DEU`) |
+| State or province | Names and postal codes (`Texas`, `TX`, `British Columbia`, `BC`, `NSW`) and ISO codes (`US-TX`) |
+
+A country with several timezones takes its most populous one when nothing narrows it: the United States reads as New York, Canada as Toronto, Australia as Sydney. Give the state to place someone in Los Angeles or Perth. A bare offset such as `UTC+2` is a fixed offset and does not follow daylight saving time; a name such as `Europe/Berlin` does. `IST` is read as India.
+
+</Fold>
+
+<Fold>
+
+## Segments by region
+
+The segment editor's **Location** group has four fields:
+
+| Field | Matches |
+|-------|---------|
+| World region | North America, Latin America, Europe, Middle East and Africa, Asia-Pacific, or no known region (no country: nothing places the contact, or only a bare UTC offset does) |
+| Country | Any country |
+| Timezone | Any timezone, searchable by city or country |
+| Location known | Whether anything on the record places the contact |
+
+**Split by region** on a segment page creates one segment per world region from the segment's members, plus one for members with no known region if you tick it, so every member lands in exactly one. Each shows its count before you create it, and each is a live segment: a contact whose location changes moves to the right one. See [segments](/guides/segments/).
+
+</Fold>
+
+<Fold>
+
+## Campaigns in each lead's local time
+
+A campaign's schedule is read either on the campaign's timezone (the default) or on each lead's own. In local-time mode one campaign covers every region: a weekday `9-5` window reaches each lead between 9 and 5 where they are, and while one lead waits for their morning the campaign keeps sending to the leads whose day is open.
+
+**Where your leads are** on the Schedule tab counts the campaign's leads by timezone, shows the time it is there now, and in campaign-timezone mode shows where today's window lands on their clock, which is the quickest way to see that a New York schedule reaches Tokyo overnight. Leads with no location are counted separately, with the timezone they will be sent on. See [scheduling](/guides/campaigns/#sending-in-each-leads-local-time).
+
+The workspace's [send-time optimization](/guides/sending-behavior/#sending-in-the-recipients-timezone) uses the same location to hold sends for preferred delivery hours, and works with either mode.
+
+</Fold>
+
+<Fold>
+
+## Mailboxes for a region
+
+A mailbox's timezone decides its day: when it warms up, when its [working hours](/guides/sending-behavior/) run, and its `8am` to `8pm` sending band. Set it per mailbox on the **Settings** tab of its drawer, for many at once under **Settings > Profile > Timezones**, or with a `timezone` column in a [mailbox import](/guides/mailbox-import/). A mailbox with no timezone follows the workspace's.
+
+A campaign in local-time mode still respects every mailbox's hours. A lead whose working day never overlaps any of the campaign's mailboxes waits until one can reach them, so for a region far from your team, add mailboxes set to that region's timezone, or give the region its own campaign with those mailboxes as senders.
+
+</Fold>
+
+<Fold>
+
+## Exports, imports and the API
+
+A [workspace export](/guides/workspace-export-import/) carries the contact fields location is read from; the destination works location out again on arrival.
+
+In the API, a campaign's `timezone_mode` is `campaign` or `recipient`, and `GET /campaigns/:id/lead-timezones` returns its leads by timezone. Segment conditions take the fields `world_region`, `country`, `timezone` and `location_known`. See [campaigns](/api/reference/campaigns/) and [segments](/api/reference/contacts/#segments).
+
+</Fold>

@@ -129,6 +129,10 @@ var segmentEnumColumns = map[string]string{
 	"verification_status": "c.verification_status",
 	"esp_provider":        "c.esp_provider",
 	"mail_host":           "c.mail_host",
+	"country":             "c.location_country",
+	"timezone":            "c.location_timezone",
+	// world_region is filtered as the list of its countries; see condition.
+	"world_region": "c.location_country",
 }
 
 var segmentDateExprs = map[string]string{
@@ -185,11 +189,31 @@ func (b *segmentBuilder) condition(c models.SegmentCondition, visited map[uuid.U
 		return b.textOp(expr, c)
 	case models.SegmentFieldEnum:
 		expr := segmentEnumColumns[spec.Field]
-		list := b.bind(c.Values)
-		if c.Operator == models.SegOpNotIn {
-			return fmt.Sprintf("NOT (%s = ANY(%s::text[]))", expr, list)
+		var match string
+		if spec.Field != "world_region" {
+			match = fmt.Sprintf("%s = ANY(%s::text[])", expr, b.bind(c.Values))
+		} else {
+			// A region is the list of its countries; "none" is a contact with no country.
+			countries, none := []string{}, false
+			for _, r := range c.Values {
+				if r == models.SegmentWorldRegionNone {
+					none = true
+					continue
+				}
+				in := models.SegmentWorldRegionCountries(r)
+				if len(in) == 0 {
+					// A region this build does not know (an archive from a newer instance)
+					// matches nobody, either way round, rather than everybody.
+					return "FALSE"
+				}
+				countries = append(countries, in...)
+			}
+			match = fmt.Sprintf("(%s = ANY(%s::text[]) OR (%s::bool AND %s = ''))", expr, b.bind(countries), b.bind(none), expr)
 		}
-		return fmt.Sprintf("%s = ANY(%s::text[])", expr, list)
+		if c.Operator == models.SegOpNotIn {
+			return "NOT (" + match + ")"
+		}
+		return match
 	case models.SegmentFieldBool:
 		var expr string
 		switch spec.Field {
@@ -197,6 +221,8 @@ func (b *segmentBuilder) condition(c models.SegmentCondition, visited map[uuid.U
 			expr = "c.subscribed"
 		case "is_catch_all":
 			expr = "c.is_catch_all"
+		case "location_known":
+			expr = "c.location_timezone <> ''"
 		case "suppressed":
 			expr = fmt.Sprintf("recipient_suppressed(%s, c.email)", b.bind(b.orgID))
 		default:

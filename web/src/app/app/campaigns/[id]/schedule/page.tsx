@@ -4,6 +4,7 @@ import { ArrowRightIcon, Building2Icon, CalendarClockIcon, CalendarRangeIcon, Gl
 import { addDays, differenceInCalendarDays, format } from "date-fns";
 import DateSelect from "@/components/app/campaigns/schedule/ScheduleDateSelect";
 import WeekScheduleGrid, { type Interval } from "@/components/app/campaigns/schedule/WeekScheduleGrid";
+import LeadTimezonesCard from "@/components/app/campaigns/schedule/LeadTimezonesCard";
 import { Loading } from "@/components/loader";
 import {
     PopoverMenu,
@@ -103,6 +104,7 @@ export default function CampaignSchedule() {
         ...(newData.start_date !== campaign.start_date && { start_date: newData.start_date }),
         ...(newData.end_date !== campaign.end_date && { end_date: newData.end_date }),
         ...(newData.timezone !== campaign.timezone && { timezone: newData.timezone }),
+        ...(newData.timezone_mode !== campaign.timezone_mode && { timezone_mode: newData.timezone_mode }),
     });
 
     const hasChanges = windowsChanged || Object.keys(fieldChanges()).length > 0;
@@ -136,6 +138,8 @@ export default function CampaignSchedule() {
     const followLabel = followWorkspaceLabel(org.data?.timezone);
     const tzLabel = newData.timezone === "" ? followLabel : (u.timezones.find((tz) => tz.name === newData.timezone)?.display_name ?? newData.timezone);
     const tzPhrase = newData.timezone === "" ? `the workspace timezone (${org.data?.timezone || "UTC"})` : tzLabel;
+    const draftZone = newData.timezone || org.data?.timezone || "UTC";
+    const recipientClock = newData.timezone_mode === "recipient";
 
     const startDate = newData.start_date instanceof Date ? newData.start_date : null;
     const endDate = newData.end_date instanceof Date ? newData.end_date : null;
@@ -240,11 +244,22 @@ export default function CampaignSchedule() {
                         <WeekScheduleGrid windows={windows} onChange={setWindows} />
                     </div>
                     <p className="text-[11px] text-slate-400 mt-3">
-                        Each day is independent — set different windows per day, or several windows in one day. Sends
-                        are scheduled in {tzPhrase}; worker IPs spread distribution naturally.
+                        Each day is independent: set different windows per day, or several windows in one day.{" "}
+                        {recipientClock
+                            ? `Windows are read in each lead's own timezone; leads with no location use ${tzPhrase}.`
+                            : `Sends are scheduled in ${tzPhrase}.`}
                     </p>
                 </div>
             </section>
+
+            <LeadTimezonesCard
+                campaignId={campaign.id}
+                mode={newData.timezone_mode ?? "campaign"}
+                onModeChange={(timezone_mode) => setNewData((b) => ({ ...b, timezone_mode }))}
+                windows={windows}
+                campaignZone={draftZone}
+                zonePhrase={tzPhrase}
+            />
 
             {/* Run dates */}
             <section className="rounded-lg border border-slate-200 bg-white px-4 pt-3 pb-4">

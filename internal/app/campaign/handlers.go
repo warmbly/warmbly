@@ -1552,3 +1552,18 @@ func (s *campaignService) WorkspaceCapacity(ctx context.Context, orgID uuid.UUID
 	}
 	return out, nil
 }
+
+func (s *campaignService) LeadTimezones(ctx context.Context, orgID uuid.UUID, campaignID string) (*models.CampaignLeadTimezones, *errx.Error) {
+	campaign, xerr := s.Get(ctx, orgID.String(), campaignID)
+	if xerr != nil {
+		return nil, xerr
+	}
+	out, err := s.campaignRepository.LeadTimezones(ctx, orgID, campaign.ID)
+	if err != nil {
+		log.Error().Err(err).Str("campaign_id", campaign.ID.String()).Msg("campaign lead timezones")
+		return nil, errx.InternalError()
+	}
+	out.TimezoneMode = campaign.TimezoneMode
+	out.Timezone = campaign.ClockTimezone()
+	return out, nil
+}

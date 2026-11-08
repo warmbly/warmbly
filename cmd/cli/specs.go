@@ -247,6 +247,14 @@ scheduler's own gates, and list every limit that took the number below what the
 mailbox caps add up to. Nothing is sent or written.`,
 			},
 			{
+				Name: "timezones", Aliases: []string{"lead-timezones"}, Short: "Where the campaign's leads are, by timezone",
+				Method: http.MethodGet, Path: "/campaigns/{id}/lead-timezones",
+				Args: []argSpec{{Name: "id", Help: "The campaign's id"}},
+				Long: `Count the campaign's leads by the timezone their records resolve to, with
+the leads nothing places, so a schedule read in each lead's own time can be
+checked before launch. Nothing is sent or written.`,
+			},
+			{
 				Name: "preflight", Short: "Run the pre-send checks without sending",
 				Method: http.MethodPost, Path: "/campaigns/{id}/preflight", Body: bodyOptional,
 				Args: []argSpec{{Name: "id", Help: "The campaign's id"}},

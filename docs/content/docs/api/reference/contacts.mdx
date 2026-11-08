@@ -1271,13 +1271,15 @@ Each condition names a `field`, an `operator`, and either a `value` (scalar oper
 | Kind | Fields | Operators | Value |
 | --- | --- | --- | --- |
 | text | `first_name`, `last_name`, `email`, `email_domain`, `phone`, `company`, `custom.*` | `equals`, `not_equals`, `contains`, `not_contains`, `starts_with`, `ends_with`, `is_empty`, `is_not_empty` | `value` string; comparisons ignore case |
-| enum | `source`, `verification_status`, `mail_host`, `esp_provider` | `in`, `not_in` | `values`, drawn from the field's `options`; `option_labels` names them for display |
-| bool | `subscribed`, `suppressed`, `is_catch_all` | `is_true`, `is_false` | none |
+| enum | `source`, `verification_status`, `mail_host`, `esp_provider`, `world_region`, `country`, `timezone` | `in`, `not_in` | `values`, drawn from the field's `options`; `option_labels` names them for display |
+| bool | `subscribed`, `suppressed`, `is_catch_all`, `location_known` | `is_true`, `is_false` | none |
 | date | `created_at`, `updated_at`, `last_sent_at`, `last_opened_at`, `last_clicked_at`, `last_replied_at` | `within_days`, `not_within_days` (`value` is a day count, 1 to 3650); `before`, `after` (`value` is `YYYY-MM-DD` or RFC 3339); `is_empty`, `is_not_empty` | see operators |
 | number | `campaign_count`, `emails_sent`, `emails_opened`, `emails_clicked`, `emails_replied`, `emails_bounced` | `equals`, `not_equals`, `gt`, `gte`, `lt`, `lte` | `value`, a whole number |
 | category | `category` | `in`, `not_in`, `is_empty`, `is_not_empty` | `values`, label ids |
 | campaign | `campaign` | `in`, `not_in`, `is_empty`, `is_not_empty` | `values`, campaign ids |
 | segment | `segment` | `in`, `not_in` | `values`, segment ids; at most five levels deep, no loops |
+
+The location fields read where Warmbly places the contact from its record (a timezone, state, city, country or location custom field, then the phone number, then a country-code email domain; see [how a contact's location is worked out](/guides/regions-and-timezones/#how-a-contacts-location-is-worked-out)). `world_region` is one of `north_america`, `latin_america`, `emea`, `apac`, or `none` for a contact with no country; `country` is an ISO 3166-1 alpha-2 code; `timezone` is an IANA name, `UTC`, or an `Etc/GMT` fixed offset; `location_known` is false for a contact nothing places. A contact is placed again within a minute of its record changing.
 
 Engagement counters add up every campaign the contact has been in, and opens count human opens only. Limits: 50 conditions per segment, 200 values per list condition, 200 segments per workspace. A condition that fails validation is rejected with `400` and a message naming the condition.
 

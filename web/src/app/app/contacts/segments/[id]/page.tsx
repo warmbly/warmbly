@@ -3,12 +3,13 @@
 
 import React from "react";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
-import { ArrowLeftIcon, CheckIcon, ChevronDownIcon, CopyIcon, MegaphoneIcon, PencilIcon, Trash2Icon } from "lucide-react";
+import { ArrowLeftIcon, CheckIcon, ChevronDownIcon, CopyIcon, GlobeIcon, MegaphoneIcon, PencilIcon, Trash2Icon } from "lucide-react";
 import toast from "react-hot-toast/headless";
 
 import ContactsTable from "@/components/app/contacts/ContactsTable";
 import SegmentEditor from "@/components/app/segments/SegmentEditor";
 import AddSegmentToCampaignDialog from "@/components/app/segments/AddSegmentToCampaignDialog";
+import SplitByRegionDialog from "@/components/app/segments/SplitByRegionDialog";
 import { EmptyBlock } from "@/components/layout/Page";
 import { NoAccess } from "@/components/layout/NoAccess";
 import { useConfirm } from "@/hooks/context/confirm";
@@ -45,6 +46,7 @@ function SegmentDetail() {
     const remove = useDeleteSegment();
     const [editorOpen, setEditorOpen] = React.useState(false);
     const [campaignOpen, setCampaignOpen] = React.useState(false);
+    const [splitOpen, setSplitOpen] = React.useState(false);
 
     if (segment.isPending) {
         return (
@@ -108,6 +110,15 @@ function SegmentDetail() {
                         </button>
                         <button
                             type="button"
+                            onClick={write.guard(() => setSplitOpen(true))}
+                            className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-slate-700 hover:text-slate-900 bg-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
+                        >
+                            <GlobeIcon className="w-3 h-3" />
+                            <span className="hidden sm:inline">Split by region</span>
+                            <span className="sm:hidden">Split</span>
+                        </button>
+                        <button
+                            type="button"
                             onClick={campaigns.guard(() => setCampaignOpen(true))}
                             className="h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
                         >
@@ -132,6 +143,7 @@ function SegmentDetail() {
 
             <SegmentEditor open={editorOpen} onClose={() => setEditorOpen(false)} segment={s} />
             <AddSegmentToCampaignDialog open={campaignOpen} onClose={() => setCampaignOpen(false)} segment={s} />
+            <SplitByRegionDialog open={splitOpen} onClose={() => setSplitOpen(false)} segment={s} />
         </div>
     );
 }
