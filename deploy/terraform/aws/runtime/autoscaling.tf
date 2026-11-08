@@ -122,9 +122,10 @@ resource "aws_appautoscaling_policy" "consumer_scale_in" {
 }
 
 # Missing data never counts: no publisher means no scaling either way.
+# Named outside ${var.name}-consumer-*, which a deploy bakes against; the quiet alarm fires whenever the consumer is idle.
 resource "aws_cloudwatch_metric_alarm" "consumer_backlog" {
   count               = local.backlog_scaling ? 1 : 0
-  alarm_name          = "${var.name}-consumer-backlog"
+  alarm_name          = "${var.name}-scale-consumer-backlog"
   alarm_description   = "Worker events waited for a free consumer lane for two minutes; adds consumer tasks"
   namespace           = local.consumer_metric.namespace
   metric_name         = local.consumer_metric.name
@@ -141,7 +142,7 @@ resource "aws_cloudwatch_metric_alarm" "consumer_backlog" {
 
 resource "aws_cloudwatch_metric_alarm" "consumer_quiet" {
   count               = local.backlog_scaling ? 1 : 0
-  alarm_name          = "${var.name}-consumer-quiet"
+  alarm_name          = "${var.name}-scale-consumer-quiet"
   alarm_description   = "No worker event waited for ${var.consumer_quiet_minutes} minutes; removes one consumer task"
   namespace           = local.consumer_metric.namespace
   metric_name         = local.consumer_metric.name
