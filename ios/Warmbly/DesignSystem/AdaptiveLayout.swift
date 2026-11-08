@@ -274,9 +274,15 @@ struct ReadableMargins: ViewModifier {
     @State private var width: CGFloat = 0
 
     func body(content: Content) -> some View {
-        content
-            .contentMargins(.horizontal, max(0, (width - maxWidth) / 2), for: .scrollContent)
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        Group {
+            // Narrower than the column, the list keeps its own default margins.
+            if width > maxWidth {
+                content.contentMargins(.horizontal, (width - maxWidth) / 2, for: .scrollContent)
+            } else {
+                content
+            }
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
     }
 }
 
