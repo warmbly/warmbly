@@ -156,10 +156,6 @@ resource "aws_cloudwatch_metric_alarm" "consumer_quiet" {
   threshold           = 1
   treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_appautoscaling_policy.consumer_scale_in[0].arn]
-  # A rename replaces the alarm; scale-in keeps one throughout.
-  lifecycle {
-    create_before_destroy = true
-  }
 }
 
 data "aws_iam_policy_document" "consumer_metrics" {
