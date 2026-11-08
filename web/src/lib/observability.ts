@@ -53,8 +53,10 @@ let identity: Identity = null;
 let awaiting = 0;
 let removeEarlyHandlers: (() => void) | null = null;
 
-// REPORTS_ERRORS is whether a configured backend receives captureException; without one the console is the only record.
-export const REPORTS_ERRORS = (Boolean(POSTHOG_KEY) && POSTHOG_ERROR_TRACKING) || Boolean(SENTRY_DSN);
+// reportsErrors is whether a configured backend receives captureException; without one the console is the only record.
+export function reportsErrors(): boolean {
+    return (Boolean(POSTHOG_KEY) && POSTHOG_ERROR_TRACKING) || Boolean(SENTRY_DSN);
+}
 
 // initErrorReporting is called once, before the app renders.
 export function initErrorReporting(): void {

@@ -8,7 +8,7 @@ import { ReactQueryDevtools } from "@tanstack/react-query-devtools"
 import { RouterProvider } from "@tanstack/react-router";
 
 import { Toaster } from '@/components/ui/toaster';
-import { initErrorReporting, REPORTS_ERRORS } from "@/lib/observability";
+import { initErrorReporting, reportsErrors } from "@/lib/observability";
 import { initProductAnalytics } from "@/lib/productAnalytics";
 import { installDomMutationGuard } from "@/lib/domGuard";
 import { queryClient } from "@/lib/queryClient";
@@ -24,7 +24,7 @@ initProductAnalytics();
 
 // A caught error is reported by the boundary that caught it; React's console copy would report it twice.
 const logCaught = (error: unknown, info: { componentStack?: string }) => {
-  if (import.meta.env.DEV || !REPORTS_ERRORS) console.error(error, info.componentStack)
+  if (import.meta.env.DEV || !reportsErrors()) console.error(error, info.componentStack)
 }
 
 const rootEl = document.getElementById('root')!

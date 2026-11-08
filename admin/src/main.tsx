@@ -16,7 +16,7 @@ import "@fontsource/inter/500.css";
 import "@fontsource/inter/600.css";
 
 import { ReauthCancelledError, SessionExpiredError } from "@/lib/api/client";
-import { captureException, initErrorReporting, REPORTS_ERRORS } from "@/lib/observability";
+import { captureException, initErrorReporting, reportsErrors } from "@/lib/observability";
 import { reportFailure } from "@/lib/api/reportFailure";
 
 import { Toaster } from "@/components/ui/sonner";
@@ -223,12 +223,12 @@ initErrorReporting();
 
 // A caught error is reported by reportRouteError below; React's console copy would report it twice.
 const logCaught = (error: unknown, info: { componentStack?: string }) => {
-    if (import.meta.env.DEV || !REPORTS_ERRORS) console.error(error, info.componentStack);
+    if (import.meta.env.DEV || !reportsErrors()) console.error(error, info.componentStack);
 };
 
 // The one report for every route's render, loader and action errors, including routes with no errorElement.
 const reportRouteError = (error: unknown) => {
-    if (import.meta.env.DEV || !REPORTS_ERRORS) console.error(error);
+    if (import.meta.env.DEV || !reportsErrors()) console.error(error);
     // A lapsed session is the sign-in screen's job, and a closed confirm prompt is a choice.
     if (error instanceof SessionExpiredError || error instanceof ReauthCancelledError) return;
     captureException(error);
