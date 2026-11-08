@@ -104,7 +104,12 @@ struct ContactsRootView: View {
         ) { contact in
             Button("Delete contact", role: .destructive) {
                 Task {
-                    do { try await store.delete(env.api, id: contact.id) } catch { actionError = error.localizedDescription }
+                    do {
+                        try await store.delete(env.api, id: contact.id)
+                        closeDeleted([contact.id])
+                    } catch {
+                        actionError = error.localizedDescription
+                    }
                 }
             }
         } message: { _ in
@@ -122,7 +127,13 @@ struct ContactsRootView: View {
         ) {
             Button("Delete \(store.selectedCount)", role: .destructive) {
                 Task {
-                    try? await store.bulkDelete(env.api, ids: Array(store.selected))
+                    let ids = store.selected
+                    do {
+                        try await store.bulkDelete(env.api, ids: Array(ids))
+                        closeDeleted(ids)
+                    } catch {
+                        actionError = error.localizedDescription
+                    }
                     store.exitSelection()
                 }
             }
@@ -504,11 +515,20 @@ struct ContactsRootView: View {
     }
 
     private func detail(_ contact: Contact) -> some View {
-        ContactDetailView(contact: contact) { updated in
+        ContactDetailView(
+            contact: contact,
+            listSubscribed: store.contacts.first(where: { $0.id == contact.id }).map { $0.subscribed != false }
+        ) { updated in
             store.apply(updated)
         } onDeleted: { id in
             store.remove(id: id)
         }
+    }
+
+    /// Deleted from the list: out of the detail column and the stack too, wherever a resize moved it.
+    private func closeDeleted(_ ids: Set<String>) {
+        if let open = openContact, ids.contains(open.id) { openContact = nil }
+        path.removeAll { ids.contains($0.id) }
     }
 
     /// Pushes on a narrow window, fills the detail column on a wide one.

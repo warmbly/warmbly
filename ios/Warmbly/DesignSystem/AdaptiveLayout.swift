@@ -62,7 +62,7 @@ struct DetailColumn<Item: Hashable, Detail: View>: View {
     let placeholderTitle: String
     let placeholderMessage: String
     let placeholderSymbol: String
-    let onClose: () -> Void
+    let onClose: (Item) -> Void
     @ViewBuilder let detail: (Item) -> Detail
 
     var body: some View {
@@ -72,7 +72,7 @@ struct DetailColumn<Item: Hashable, Detail: View>: View {
                     detail(item)
                 }
                 .id(item)
-                .environment(\.closeDetail, onClose)
+                .environment(\.closeDetail, { onClose(item) })
                 .transition(.opacity)
             } else {
                 DetailPlaceholder(title: placeholderTitle, message: placeholderMessage, symbol: placeholderSymbol)
@@ -157,7 +157,8 @@ struct ListDetailShell<Item: Hashable, ListContent: View, Drawer: View, Detail: 
                             placeholderTitle: placeholder.title,
                             placeholderMessage: placeholder.message,
                             placeholderSymbol: placeholder.symbol,
-                            onClose: { openItem = nil },
+                            // An action finishing on an item the user already left must not close the newer one.
+                            onClose: { item in if openItem == item { openItem = nil } },
                             detail: detail
                         )
                     }
@@ -274,15 +275,10 @@ struct ReadableMargins: ViewModifier {
     @State private var width: CGFloat = 0
 
     func body(content: Content) -> some View {
-        Group {
-            // Narrower than the column, the list keeps its own default margins.
-            if width > maxWidth {
-                content.contentMargins(.horizontal, (width - maxWidth) / 2, for: .scrollContent)
-            } else {
-                content
-            }
-        }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        // nil keeps the list's default margins; one branch keeps its scroll position across a resize.
+        content
+            .contentMargins(.horizontal, width > maxWidth ? (width - maxWidth) / 2 : nil, for: .scrollContent)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
     }
 }
 
@@ -291,12 +287,14 @@ struct ReadableMargins: ViewModifier {
 #if DEBUG
 /// WARMBLY_DEBUG_FRAME=<width>x<height> renders the app in a window of that
 /// size, so a scripted run on an iPad simulator can show another device's
-/// layout (951x669 is an unfolded iPhone Duo).
+/// layout (951x669 is an unfolded iPhone Duo). It sets the size only: safe-area
+/// insets and full-screen covers still come from the host, so check those on
+/// the target simulator.
 struct DebugWindowFrame: ViewModifier {
     private let size: CGSize? = {
         guard let raw = ProcessInfo.processInfo.environment["WARMBLY_DEBUG_FRAME"] else { return nil }
         let parts = raw.lowercased().split(separator: "x").compactMap { Double($0) }
-        guard parts.count == 2 else { return nil }
+        guard parts.count == 2, parts.allSatisfy({ $0.isFinite && $0 > 0 }) else { return nil }
         return CGSize(width: parts[0], height: parts[1])
     }()
 

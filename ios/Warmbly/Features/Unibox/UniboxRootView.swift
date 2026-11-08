@@ -23,6 +23,8 @@ struct UniboxRootView: View {
     /// What the detail column shows when the list and detail sit side by side.
     @State private var openRoute: UniboxRoute?
     @State private var layout = SplitMetrics.stacked
+    /// Bumped when Reply is chosen for the thread already open in the detail column.
+    @State private var replyRequest = 0
 
     private static let sidebarWidth: CGFloat = 320
 
@@ -54,6 +56,7 @@ struct UniboxRootView: View {
             sidebar(topInset: topInset, revealed: revealed)
         } detail: { route in
             destination(route)
+                .environment(\.threadReplyRequest, replyRequest)
         }
         .task(id: store.query) {
             store.includeSentStats = env.session.can(.viewAnalytics)
@@ -139,6 +142,11 @@ struct UniboxRootView: View {
     /// Pushes on a narrow window, fills the detail column on a wide one.
     private func open(_ route: UniboxRoute) {
         if layout.showsDetail {
+            // Already open beside the list: ask that thread for its composer instead of reopening it.
+            if case let .thread(thread, reply) = route, case let .thread(current, _) = openRoute, current.key == thread.key {
+                if reply { replyRequest += 1 }
+                return
+            }
             openRoute = route
         } else {
             path.append(route)
@@ -841,21 +849,27 @@ struct UniboxRootView: View {
         withAnimation(.snappy) { selectedIDs.removeAll() }
         for message in targets {
             try? await store.snooze(env.api, threadKey: message.threadKey, until: until)
-            store.removeLocal(threadKey: message.threadKey)
+            dropLocal(message.threadKey)
         }
         await store.loadOverview(env.api)
     }
 
     private func snooze(_ message: UniboxMessage, until: Date) async {
         try? await store.snooze(env.api, threadKey: message.threadKey, until: until)
-        store.removeLocal(threadKey: message.threadKey)
+        dropLocal(message.threadKey)
         await store.loadOverview(env.api)
     }
 
     private func unsnooze(_ message: UniboxMessage) async {
         try? await store.unsnooze(env.api, threadKey: message.threadKey)
-        store.removeLocal(threadKey: message.threadKey)
+        dropLocal(message.threadKey)
         await store.loadOverview(env.api)
+    }
+
+    /// Drops a thread from the list and from the detail column if it is open there.
+    private func dropLocal(_ threadKey: String) {
+        store.removeLocal(threadKey: threadKey)
+        if case let .thread(thread, _) = openRoute, thread.key == threadKey { openRoute = nil }
     }
 
     private func threadValue(_ message: UniboxMessage) -> UniboxThread {

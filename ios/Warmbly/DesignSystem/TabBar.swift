@@ -118,8 +118,8 @@ struct WTabBar: View {
         GlassEffectContainer(spacing: 14) {
             HStack(spacing: 10) {
                 HStack(spacing: 2) {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        button(item, shortcut: index < 9 ? KeyEquivalent(Character("\(index + 1)")) : nil)
+                    ForEach(items) { item in
+                        button(item)
                     }
                 }
                 .padding(5)
@@ -157,7 +157,7 @@ struct WTabBar: View {
         .sensoryFeedback(.selection, trigger: selection)
     }
 
-    private func button(_ item: WTabItem, shortcut: KeyEquivalent?) -> some View {
+    private func button(_ item: WTabItem) -> some View {
         let selected = item.tab == selection
         return Button {
             if selected {
@@ -185,7 +185,6 @@ struct WTabBar: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(TabPressStyle())
-        .modifier(OptionalShortcut(key: shortcut))
         .accessibilityLabel(item.title)
         .accessibilityValue(item.badge > 0 ? "\(item.badge) unread" : "")
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -208,8 +207,8 @@ struct WTabRail: View {
         GlassEffectContainer(spacing: 14) {
             VStack(spacing: 10) {
                 VStack(spacing: 2) {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        button(item, shortcut: index < 9 ? KeyEquivalent(Character("\(index + 1)")) : nil)
+                    ForEach(items) { item in
+                        button(item)
                     }
                 }
                 .padding(5)
@@ -247,7 +246,7 @@ struct WTabRail: View {
         .sensoryFeedback(.selection, trigger: selection)
     }
 
-    private func button(_ item: WTabItem, shortcut: KeyEquivalent?) -> some View {
+    private func button(_ item: WTabItem) -> some View {
         let selected = item.tab == selection
         return Button {
             if selected {
@@ -275,7 +274,6 @@ struct WTabRail: View {
         }
         .buttonStyle(TabPressStyle())
         .hoverEffect(.highlight)
-        .modifier(OptionalShortcut(key: shortcut))
         .help(item.title)
         .accessibilityLabel(item.title)
         .accessibilityValue(item.badge > 0 ? "\(item.badge) unread" : "")
@@ -284,15 +282,18 @@ struct WTabRail: View {
 }
 
 /// Command-number switches tabs on a hardware keyboard, like Mail and Safari.
-struct OptionalShortcut: ViewModifier {
-    let key: KeyEquivalent?
+/// Mounted on the shell, so it keeps working while a screen hides the bar.
+struct TabShortcuts: View {
+    let items: [WTabItem]
+    @Binding var selection: AppTab
 
-    func body(content: Content) -> some View {
-        if let key {
-            content.keyboardShortcut(key, modifiers: .command)
-        } else {
-            content
+    var body: some View {
+        ForEach(Array(items.prefix(9).enumerated()), id: \.element.id) { index, item in
+            Button(item.title) { selection = item.tab }
+                .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
         }
+        .opacity(0)
+        .accessibilityHidden(true)
     }
 }
 

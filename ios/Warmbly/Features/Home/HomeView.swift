@@ -173,6 +173,8 @@ struct HomeView: View {
         case .card:
             VStack(alignment: .leading, spacing: 0) {
                 topBar
+                    .frame(maxWidth: Self.maxContentWidth)
+                    .frame(maxWidth: .infinity)
                     .padding(.horizontal, 20)
                     .padding(side)
                     .padding(.top, topInset + 4)
@@ -191,6 +193,9 @@ struct HomeView: View {
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
                 }
+                // The card runs 8pt past the sections on each side, as it does on a phone.
+                .frame(maxWidth: Self.maxContentWidth + 16)
+                .frame(maxWidth: .infinity)
                 .padding(.horizontal, 12)
                 .padding(side)
                 .padding(.top, 16)
@@ -521,7 +526,7 @@ struct HomeView: View {
                 starterChips.reveal(shown, 0)
             }
             if store.hasLoaded {
-                if wide {
+                if wide, hasPerformanceSections {
                     HStack(alignment: .top, spacing: 36) {
                         VStack(alignment: .leading, spacing: 34) { performanceSections }
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -536,6 +541,11 @@ struct HomeView: View {
                 loadingCards
             }
         }
+    }
+
+    /// Without these the left column would stand empty, so Home stays one column.
+    private var hasPerformanceSections: Bool {
+        canAnalytics || (canEmails && store.warmingCount > 0)
     }
 
     @ViewBuilder
@@ -879,7 +889,8 @@ struct HomeView: View {
                 Text(account.email)
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(WTheme.ink)
-                    .lineLimit(1)
+                    // Two lines, so a long address still fits a narrower two-column layout.
+                    .lineLimit(2)
                 HStack(spacing: 5) {
                     if account.isWarmingActive {
                         LiveDot(color: Tone.orange.color, size: 5, pulsing: false)

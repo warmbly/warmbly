@@ -75,6 +75,7 @@ struct MainTabView: View {
                 }
                 tabs
             }
+            .background { TabShortcuts(items: items, selection: $selection) }
             .background(WTheme.canvas.ignoresSafeArea())
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if !shell.usesRail, !tabBar.isHidden {

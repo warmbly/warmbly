@@ -239,19 +239,23 @@ struct AssistantView: View {
                     .fill(WTheme.fill)
                     .frame(width: 170, height: 42)
             }
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach([0.94, 0.82, 0.58], id: \.self) { width in
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(WTheme.fill)
-                        .frame(height: 13)
-                        .containerRelativeFrame(.horizontal) { length, _ in (length - 40) * width }
+            // Sized off the column, not the window, so it matches the transcript that replaces it.
+            GeometryReader { proxy in
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach([0.94, 0.82, 0.58], id: \.self) { width in
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(WTheme.fill)
+                            .frame(width: proxy.size.width * width, height: 13)
+                    }
                 }
             }
+            .frame(height: 59)
             Spacer()
         }
         .skeletonShimmer()
         .padding(20)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: Self.readableWidth)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     // MARK: Turns
