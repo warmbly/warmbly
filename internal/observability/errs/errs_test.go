@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -189,5 +190,77 @@ func TestSensitiveErrorReachesRemoteAsItsPublicSentence(t *testing.T) {
 	}
 	if !errors.Is(err, raw) || strings.Contains(err.Error(), "10.9.8.7") {
 		t.Errorf("want the original reachable through Unwrap and hidden from the text: %v", err)
+	}
+}
+
+// A failed request groups by endpoint: its query's ids never reach the report, and the issue keeps the caller's type.
+func TestFailedRequestReportsWithoutItsQuery(t *testing.T) {
+	cause := &url.Error{Op: "Get", URL: "https://api.example.test/api/v1/internal/email-message-map?email_id=abc&message_id=def", Err: errors.New("connection refused")}
+	err := fmt.Errorf("email_message_map.http: get: %w", cause)
+
+	got := redact(err)
+	want := `email_message_map.http: get: Get "https://api.example.test/api/v1/internal/email-message-map": connection refused`
+	if got.Error() != want {
+		t.Errorf("reported %q, want %q", got.Error(), want)
+	}
+	if typ := exceptionType(got); typ != "*fmt.wrapError" {
+		t.Errorf("type = %q, want the original *fmt.wrapError", typ)
+	}
+
+	plain := fmt.Errorf("get: %w", &url.Error{Op: "Get", URL: "https://api.example.test/health", Err: errors.New("timeout")})
+	if redact(plain) != plain {
+		t.Error("an error whose URL has no query should pass through untouched")
+	}
+}
+
+// Every request in a joined error loses its query, including one that will not parse or carries a quote.
+func TestEveryFailedRequestInAnErrorTreeLosesItsQuery(t *testing.T) {
+	err := fmt.Errorf("sync: %w", errors.Join(
+		&url.Error{Op: "Get", URL: "https://a.example.test/one?token=first", Err: errors.New("refused")},
+		&url.Error{Op: "Post", URL: "https://b.example.test/%zz?token=second", Err: errors.New("bad escape")},
+		&url.Error{Op: "Get", URL: `https://c.example.test/three?q="third"`, Err: errors.New("timeout")},
+	))
+
+	got := redact(err).Error()
+	for _, leaked := range []string{"first", "second", "third", "token"} {
+		if strings.Contains(got, leaked) {
+			t.Errorf("reported %q, which still carries %q", got, leaked)
+		}
+	}
+	for _, kept := range []string{"https://a.example.test/one", "https://b.example.test/%zz", "https://c.example.test/three"} {
+		if !strings.Contains(got, kept) {
+			t.Errorf("reported %q, want it to keep %q", got, kept)
+		}
+	}
+}
+
+// A URL that prefixes another in the same error leaves nothing of the longer one's query.
+func TestOverlappingRequestURLsLoseTheirWholeQuery(t *testing.T) {
+	err := errors.Join(
+		&url.Error{Op: "Get", URL: "https://a.example.test/x?token=a", Err: errors.New("refused")},
+		&url.Error{Op: "Get", URL: "https://a.example.test/x?token=abcdef", Err: errors.New("refused")},
+	)
+	if got := redact(err).Error(); strings.Contains(got, "bcdef") || strings.Contains(got, "token") {
+		t.Errorf("reported %q, which still carries part of a query", got)
+	}
+}
+
+// Credentials in a URL never reach a report, with or without a query, and a cause's longer URL is cut whole.
+func TestReportedURLsLoseCredentialsAndWholeQueries(t *testing.T) {
+	err := fmt.Errorf("publish: %w", &url.Error{
+		Op:  "Post",
+		URL: "https://user:hun#ter?2@broker.example.test/%zz",
+		Err: errors.New("redirected to https://api.example.test/x?token=abcdef"),
+	})
+	err = fmt.Errorf("get: %w", errors.Join(err, &url.Error{Op: "Get", URL: "https://api.example.test/x?token=a", Err: errors.New("refused")}))
+
+	got := redact(err).Error()
+	for _, leaked := range []string{"hun", "ter", "user:", "token", "bcdef"} {
+		if strings.Contains(got, leaked) {
+			t.Errorf("reported %q, which still carries %q", got, leaked)
+		}
+	}
+	if !strings.Contains(got, "https://broker.example.test/%zz") || !strings.Contains(got, "https://api.example.test/x") {
+		t.Errorf("reported %q, want each URL kept without its credentials and query", got)
 	}
 }

@@ -200,6 +200,9 @@ func TestHandleErrorProviderConditions(t *testing.T) {
 		{"gmail invalid app password", models.AuthPlain, &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeAlert, Text: "Invalid credentials (Failure)"}, errx.MailErrorCodeInvalidCredentials},
 		{"gmail invalid credentials on oauth", models.AuthOAuth2, &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeAlert, Text: "Invalid credentials (Failure)"}, errx.MailErrorCodeAuthenticationFailed},
 		{"TRYCREATE on a missing folder", models.AuthPlain, &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeTryCreate, Text: "No such mailbox."}, errx.MailErrorCodeNotFound},
+		{"older dovecot codeless missing folder", models.AuthPlain, &goimap.Error{Type: goimap.StatusResponseTypeNo, Text: "Mailbox doesn't exist: Warmbly (0.001 + 0.000 secs)."}, errx.MailErrorCodeNotFound},
+		{"codeless does not exist", models.AuthPlain, &goimap.Error{Type: goimap.StatusResponseTypeNo, Text: "Mailbox does not exist"}, errx.MailErrorCodeNotFound},
+		{"BAD missing folder stays unknown", models.AuthPlain, &goimap.Error{Type: goimap.StatusResponseTypeBad, Text: "Mailbox doesn't exist: Warmbly"}, errx.MailErrorCodeImapUnknown},
 		{"unknown alert", models.AuthPlain, &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeAlert, Text: "Maintenance tonight"}, errx.MailErrorCodeImapUnknown},
 		{"expired passphrase", models.AuthPlain, &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeExpired, Text: "Password expired"}, errx.MailErrorCodeInvalidCredentials},
 		{"ovh LIST failed", models.AuthPlain, &goimap.Error{Type: goimap.StatusResponseTypeNo, Text: "LIST failed"}, errx.MailErrorCodeServerUnreachable},
@@ -235,5 +238,25 @@ func TestHandleErrorZohoWrongServerKeepsAlert(t *testing.T) {
 	}
 	if info := got.GetUserErrorInfo(); info.Title != "Wrong mail server" || !strings.Contains(info.ActionRequired, "Update credentials") {
 		t.Errorf("GetUserErrorInfo = %+v, want the wrong-server title and the Update credentials fix", info)
+	}
+}
+
+// A sign-in refusal worded like a missing mailbox stays unknown: no folder is selected at login.
+func TestLoginErrorKeepsMissingMailboxTextOutOfFolderClasses(t *testing.T) {
+	c := &Client{AuthType: models.AuthPlain}
+	reply := &goimap.Error{Type: goimap.StatusResponseTypeNo, Text: "Mailbox doesn't exist: user@example.test"}
+	if got := c.loginError(reply); got.Code != errx.MailErrorCodeImapUnknown {
+		t.Errorf("login reply = %q, want %q", got.Code, errx.MailErrorCodeImapUnknown)
+	}
+	if got := c.handleError(reply); got.Code != errx.MailErrorCodeNotFound {
+		t.Errorf("folder reply = %q, want %q", got.Code, errx.MailErrorCodeNotFound)
+	}
+	throttled := &goimap.Error{Type: goimap.StatusResponseTypeNo, Text: "Mailbox doesn't exist or too many login attempts"}
+	if got := c.loginError(throttled); got.Code == errx.MailErrorCodeImapUnknown || got.Code == errx.MailErrorCodeNotFound {
+		t.Errorf("throttled login = %q, want the login cooldown", got.Code)
+	}
+	refused := &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeAuthenticationFailed, Text: "Authentication failed."}
+	if got := c.loginError(refused); got.Code != errx.MailErrorCodeInvalidCredentials {
+		t.Errorf("credential refusal = %q, want %q", got.Code, errx.MailErrorCodeInvalidCredentials)
 	}
 }

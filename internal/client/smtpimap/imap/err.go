@@ -93,6 +93,9 @@ func (c *Client) handleError(err error) *errx.MailError {
 			if imapErr.Type == imap.StatusResponseTypeNo && bareCommandFailure(imapErr.Text) {
 				return errx.ErrMailServerUnreachable
 			}
+			if imapErr.Type == imap.StatusResponseTypeNo && missingMailboxText(imapErr.Text) {
+				return errx.ErrMailResourceNotFound
+			}
 			return errx.ErrMailUnknownImapError(imapErrDetail(imapErr))
 		default:
 			return errx.ErrMailUnknownImapError(imapErrDetail(imapErr))
@@ -180,6 +183,22 @@ func (c *Client) classifyAlert(alert *imap.Error) *errx.MailError {
 		}
 	}
 	return nil
+}
+
+// loginError classifies a sign-in refusal; no folder is involved yet, so a missing-mailbox text there is not a missing folder.
+func (c *Client) loginError(err error) *errx.MailError {
+	mailErr := c.handleError(err)
+	var imapErr *imap.Error
+	if mailErr.Code == errx.MailErrorCodeNotFound && errors.As(err, &imapErr) && imapErr.Code == "" && missingMailboxText(imapErr.Text) {
+		return errx.ErrMailUnknownImapError(imapErrDetail(imapErr))
+	}
+	return mailErr
+}
+
+// missingMailboxText is a codeless NO naming a missing folder, the way older Dovecot says [NONEXISTENT].
+func missingMailboxText(text string) bool {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	return strings.HasPrefix(lower, "mailbox doesn't exist") || strings.HasPrefix(lower, "mailbox does not exist")
 }
 
 // bareCommandFailure is a reasonless "LIST failed" / "UID FETCH failed" (OVH, Zoho); LOGIN stays out.

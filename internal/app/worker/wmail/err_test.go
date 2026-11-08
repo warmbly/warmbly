@@ -38,6 +38,7 @@ func TestTransientProviderFailuresAreNotReportedAsApplicationErrors(t *testing.T
 		errx.MError(errx.MailErrorWarning, errx.MailErrorCodeConnectionLost, "connection closed", errx.MailErrorResolveMethodRetry),
 		errx.ErrMailSendingTooFast,
 		errx.ErrMailQuotaExceeded,
+		errx.ErrMailResourceNotFound,
 	} {
 		if reportable(mailErr) {
 			t.Errorf("%s was reportable; the worker retries this expected provider condition", mailErr.Code)

@@ -21,7 +21,8 @@
 // run in.
 //
 // Everything the SDK can observe is on: autocapture, pageviews and pageleaves,
-// heatmaps, rage and dead clicks, web vitals, network timing, session replay,
+// heatmaps, rage and dead clicks, web vitals, network timing, session replay
+// (started by the project's $exception trigger, so only sessions that hit an error),
 // surveys and exceptions. Replay masks password fields, one-time codes and any
 // secret the page reveals (data-ph-mask). The privacy page on the marketing
 // site describes exactly this and has to change with it.
@@ -35,7 +36,7 @@ import {
     SENTRY_ENVIRONMENT,
     SENTRY_RELEASE,
 } from "./information";
-import { canReloadForStaleChunk, isModuleLoadMessage } from "./moduleLoadError";
+import { canReloadForStaleChunk, isModuleLinkMessage, isModuleLoadMessage } from "./moduleLoadError";
 
 export type PostHogIdentity = {
     userId: string;
@@ -300,7 +301,8 @@ function isStaleChunk(properties: Properties): boolean {
         const entry = (exception ?? {}) as Record<string, unknown>;
         const type = entry.type ?? entry.$exception_type;
         const value = entry.value ?? entry.$exception_value;
-        return type === "TypeError" && typeof value === "string" && isModuleLoadMessage(value);
+        if (typeof value !== "string") return false;
+        return (type === "TypeError" && isModuleLoadMessage(value)) || (type === "SyntaxError" && isModuleLinkMessage(value));
     });
 }
 

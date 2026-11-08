@@ -53,6 +53,11 @@ let identity: Identity = null;
 let awaiting = 0;
 let removeEarlyHandlers: (() => void) | null = null;
 
+// reportsErrors is whether a backend loaded, or is loading and will replay; otherwise the console is the only record.
+export function reportsErrors(): boolean {
+    return backends.length > 0 || awaiting > 0;
+}
+
 // initErrorReporting is called once, before the app renders. The name is
 // historical: on PostHog it is also what starts analytics and session replay,
 // which are the same SDK and the same key.
@@ -286,6 +291,11 @@ function settle(backend: Backend | null): void {
 
     awaiting--;
     if (awaiting > 0) return;
+
+    // Every backend failed to load (a blocked SDK), so the console is the only record of what was held for them.
+    if (backends.length === 0) {
+        for (const entry of early) console.error(entry.error);
+    }
 
     // Every configured backend has its own global handlers installed by now, so
     // keeping ours would report the next unhandled error twice.

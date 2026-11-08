@@ -1,5 +1,13 @@
 export function isModuleLoadError(error: unknown): boolean {
-    return error instanceof TypeError && isModuleLoadMessage(error.message);
+    if (error instanceof TypeError) return isModuleLoadMessage(error.message);
+    return error instanceof SyntaxError && isModuleLinkMessage(error.message);
+}
+
+// isModuleLinkMessage is a chunk importing a name another chunk does not export, which only mixed builds produce.
+export function isModuleLinkMessage(message: string): boolean {
+    return /^Importing binding name '[^']+' (is not found|cannot be resolved)/.test(message)
+        || /^The requested module '[^']+' does not provide an export named '[^']+'$/.test(message)
+        || /^import not found: \S+$/.test(message);
 }
 
 export function isModuleLoadMessage(message: string): boolean {
