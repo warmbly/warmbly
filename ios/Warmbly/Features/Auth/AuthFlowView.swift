@@ -40,6 +40,7 @@ struct AuthFlowView: View {
     @State private var resendRemaining = 0
     @State private var providers: AuthProvidersInfo?
     @State private var showServerConfig = false
+    @State private var providersGeneration = 0
     @State private var heroAppeared = false
     @State private var modeSwitchEdge = Edge.trailing
 
@@ -58,8 +59,13 @@ struct AuthFlowView: View {
         }
         .sensoryFeedback(.impact(weight: .light), trigger: step)
         .sensoryFeedback(.error, trigger: errorPulse)
-        .sheet(isPresented: $showServerConfig) { ServerConfigSheet() }
-        .task { providers = await env.session.fetchSignInProviders() }
+        // The sheet can change the server, so the sign-in options are read again when it closes.
+        .sheet(isPresented: $showServerConfig, onDismiss: { providersGeneration += 1 }) { ServerConfigSheet() }
+        .task(id: providersGeneration) {
+            providers = nil
+            let loaded = await env.session.fetchSignInProviders()
+            if !Task.isCancelled { providers = loaded }
+        }
         #if DEBUG
         // Scripted runs can open a later step (WARMBLY_DEBUG_AUTH) to see it.
         .onAppear {
@@ -839,14 +845,17 @@ struct AuthFlowView: View {
         var expired = false
         await run {
             do {
-                handleSocial(try await env.session.confirmSSOLink(pendingToken: challenge.pendingToken, password: password))
+                let outcome = try await env.session.confirmSSOLink(pendingToken: challenge.pendingToken, password: password)
+                // Back may have abandoned this attempt while it was in flight.
+                guard step == .link(challenge) else { return }
+                handleSocial(outcome)
             } catch let error as APIError where error.code == "sso_link_expired" {
                 expired = true
                 throw error
             }
         }
         // The challenge is spent, so the form can only fail from here.
-        if expired {
+        if expired, step == .link(challenge) {
             let message = errorMessage
             restart()
             if let message { showError(message) }

@@ -379,14 +379,17 @@ final class SessionStore {
     func fetchSignInProviders() async -> AuthProvidersInfo? {
         async let native = fetchAuthProviders()
         async let config: BrowserSignInConfig? = try? api.get("auth/config", authorized: false)
-        guard var info = await native else { return nil }
+        var browserHost: String?
         if let config = await config,
            config.providers?.contains("google") == true,
            let host = config.appURL.flatMap({ URL(string: $0)?.host() }),
            AppConfig.associatedWebHosts.contains(host)
         {
-            info.googleBrowserHost = host
+            browserHost = host
         }
+        // Unknown native providers keep Apple optimistic, as a nil answer does.
+        var info = await native ?? (browserHost == nil ? nil : AuthProvidersInfo(apple: .init(enabled: true)))
+        info?.googleBrowserHost = browserHost
         return info
     }
 
