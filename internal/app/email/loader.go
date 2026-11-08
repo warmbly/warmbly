@@ -442,7 +442,7 @@ func (s *emailService) buildAddWorkerEmailSnapshot(ctx context.Context, acc *mod
 		Sync:                sync,
 		// Only SMTP/IMAP acts on this; Gmail and Graph file their own copy.
 		SaveToSent: &saveToSent,
-		Push:       s.push.For(ctx, acc.ID, provider),
+		Push:       s.push.For(ctx, acc.ID, provider, acc.AuthMethod),
 	}
 	if provider == models.InboxProviderOutlook {
 		var links map[string]string
