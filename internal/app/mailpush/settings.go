@@ -39,7 +39,12 @@ func NewSettings(secret string, states repository.MailboxPushRepository) *Settin
 	mac.Write([]byte("warmbly mailbox push v1"))
 	s := &Settings{gmailTopic: config.GmailPushTopic(), key: mac.Sum(nil), states: states}
 	if project := topicProject(s.gmailTopic); project != "" {
-		s.gmailDelegated = project == keyProject(config.GoogleDelegationKey())
+		key := config.GoogleDelegationKey()
+		keyProj := keyProject(key)
+		s.gmailDelegated = project == keyProj
+		if len(key) > 0 && !s.gmailDelegated {
+			log.Info().Str("topic_project", project).Str("key_project", keyProj).Msg("mailpush: whole-domain grant Gmail mailboxes keep polling; the delegation key is not in the push topic's project")
+		}
 	}
 	if config.GraphPushEnabled() {
 		s.graphBase = config.BackendPublicURL() + GraphNotificationPath

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"google.golang.org/api/gmail/v1"
+	"google.golang.org/api/googleapi"
 )
 
 // Watch asks Gmail to publish this mailbox's changes to a Pub/Sub topic and
@@ -15,6 +16,11 @@ func (c *Client) Watch(ctx context.Context, topic string) (time.Time, error) {
 	// No label filter: the sync follows every label, so every change is worth a wake.
 	resp, err := c.srv.Users.Watch("me", &gmail.WatchRequest{TopicName: topic}).Context(ctx).Do()
 	if err != nil {
+		// Keep Google's reason (an unknown topic, a missing publisher grant): it names the fix.
+		var gerr *googleapi.Error
+		if errors.As(err, &gerr) {
+			return time.Time{}, fmt.Errorf("gmail users.watch: %d %s: %w", gerr.Code, gerr.Message, HandleError(err))
+		}
 		return time.Time{}, fmt.Errorf("gmail users.watch: %w", HandleError(err))
 	}
 	if resp.Expiration <= 0 {

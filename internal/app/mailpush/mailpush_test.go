@@ -118,6 +118,23 @@ func TestGmailWatchNeedsTheTopicInTheCallersProject(t *testing.T) {
 	}
 }
 
+func TestGmailWatchSkipsGrantsOnAMalformedTopicOrKey(t *testing.T) {
+	id := uuid.New()
+	for _, c := range []struct{ topic, key string }{
+		{"mailboxes", `{"project_id":"mailboxes"}`},
+		{"projects/mailboxes/subscriptions/gmail", `{"project_id":"mailboxes"}`},
+		{"projects/mailboxes/topics/gmail", `not json`},
+		{"projects/mailboxes/topics/gmail", `{"type":"service_account"}`},
+	} {
+		t.Setenv("GMAIL_PUSH_TOPIC", c.topic)
+		t.Setenv("GOOGLE_WORKSPACE_DELEGATION_KEY", c.key)
+		got := NewSettings("an-auth-secret-of-at-least-32-bytes!!", &fakeStates{}).For(t.Context(), id, models.InboxProviderGoogle, models.MailAuthDelegated)
+		if got != nil && got.GmailTopic != "" {
+			t.Fatalf("topic %q key %q: a granted mailbox was asked to watch", c.topic, c.key)
+		}
+	}
+}
+
 func TestForHandsBackAStaleChannelSoTheWorkerClosesIt(t *testing.T) {
 	t.Setenv("GRAPH_PUSH", "")
 	t.Setenv("GMAIL_PUSH_TOPIC", "")
