@@ -383,8 +383,8 @@ final class SessionStore {
         if let config = await config,
            config.providers?.contains("google") == true,
            let url = config.appURL.flatMap({ URL(string: $0) }),
-           url.scheme == "https",
-           let host = url.host(),
+           url.scheme?.lowercased() == "https",
+           let host = url.host()?.lowercased(),
            AppConfig.associatedWebHosts.contains(host)
         {
             browserHost = host
