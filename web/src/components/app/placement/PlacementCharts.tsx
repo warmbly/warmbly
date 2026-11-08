@@ -353,7 +353,7 @@ function PlacementBar({ counts, height = 6 }: { counts: PlacementCounts; height?
     const total = Math.max(1, inbox + tabs + spam + (unknown ?? 0) + (archived ?? 0) + (custom ?? 0));
     const title = `${inbox} inbox · ${tabs} other tabs · ${spam} spam` + (unknown != null ? ` · ${unknown} unknown · ${archived} archive · ${custom} custom` : " · unclassified evidence unavailable");
     if (counts.delivered < SHARE_MIN_SAMPLE) {
-        const filled = LANDED.flatMap((l) => Array<string>(counts[l.key] ?? 0).fill(l.dot)).slice(0, SHARE_MIN_SAMPLE);
+        const filled = LANDED.flatMap((l) => Array<string>(Math.min(counts[l.key] ?? 0, SHARE_MIN_SAMPLE)).fill(l.dot)).slice(0, SHARE_MIN_SAMPLE);
         const slots = [...filled, ...Array<string>(SHARE_MIN_SAMPLE - filled.length).fill("bg-slate-100")];
         return (
             <div className="flex-1 min-w-12 flex items-center gap-[3px]" title={`${title}. A share is shown after ${SHARE_MIN_SAMPLE} classified receipts.`}>
@@ -389,7 +389,7 @@ function RateCells({ counts }: { counts: PlacementCounts }) {
         const note = `Shares are shown after ${SHARE_MIN_SAMPLE} classified receipts`;
         return (
             <span className="flex items-center gap-2 sm:gap-3 font-mono text-[11px] tabular-nums shrink-0 text-slate-500">
-                <span title={note}>{fmtNum(counts.inbox + counts.tabs)} inbox</span>
+                <span title={`${note}. Non-spam counts the inbox and category tabs`}>{fmtNum(counts.inbox + counts.tabs)} non-spam</span>
                 <span title={note} className="hidden sm:inline w-12 text-right">{fmtNum(counts.spam)} spam</span>
                 <span title="Classified receipts" className="text-slate-400 w-10 text-right">{fmtNum(delivered)}</span>
             </span>

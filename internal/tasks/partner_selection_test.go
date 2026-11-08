@@ -75,20 +75,24 @@ func TestPickWeightedPartnerBalancesProviderGroupsBeforeHosts(t *testing.T) {
 		domainsByID: map[uuid.UUID]string{google: "g.test", microsoft: "m.test"},
 		hostsByID:   map[uuid.UUID]string{google: "google_workspace", microsoft: "microsoft365"},
 	}
-	for i, host := range []string{"other", "ionos", "zoho", "ovh", "hostinger", "rackspace"} {
+	groupOf := map[string]string{"google_workspace": "google", "microsoft365": "microsoft"}
+	for i, host := range []string{"yahoo", "aol", "other", "ionos", "zoho", "ovh", "hostinger", "rackspace"} {
 		id := uuid.New()
 		candidates = append(candidates, id)
 		sig.domainsByID[id] = fmt.Sprintf("small-%d.test", i)
 		sig.hostsByID[id] = host
+		groupOf[host] = "other"
+		if host == "yahoo" || host == "aol" {
+			groupOf[host] = "yahoo"
+		}
 	}
 	groups := map[string]int{}
-	for range 6000 {
-		host := sig.hostsByID[pickWeightedPartner(candidates, sig)]
-		groups[models.WarmupRecipientGroup(host, "")]++
+	for range 8000 {
+		groups[groupOf[sig.hostsByID[pickWeightedPartner(candidates, sig)]]]++
 	}
-	for _, group := range []string{models.WarmupRecipientGoogle, models.WarmupRecipientMicrosoft, models.WarmupRecipientOther} {
+	for _, group := range []string{"google", "microsoft", "yahoo", "other"} {
 		if got := groups[group]; got < 1700 || got > 2300 {
-			t.Errorf("%s drawn %d/6000, want about a third: %v", group, got, groups)
+			t.Errorf("%s drawn %d/8000, want about a quarter: %v", group, got, groups)
 		}
 	}
 }

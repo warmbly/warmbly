@@ -89,7 +89,7 @@ export default function WarmupPlacementSection({ days }: { days: number }) {
                 />
                 <Stat
                     label="Non-spam share · window"
-                    value={<span className={BAND[bandForRate(share)].text}>{fmtPct(share)}</span>}
+                    value={share != null ? <span className={BAND[bandForRate(share)].text}>{fmtPct(share)}</span> : fmtNum(t.inbox + t.tabs)}
                     sub={share == null ? shareWithheld(t.delivered) : filtered ? `at ${GROUP_LABEL[activeGroup]}` : `${fmtNum(t.inbox)} primary · ${fmtNum(t.tabs)} tabs`}
                 />
                 <Stat label="Classified receipts" value={t.delivered} sub={filtered ? "sends are not split by provider" : `of ${fmtNum(t.sent)} submissions`} />

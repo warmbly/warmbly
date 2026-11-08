@@ -153,7 +153,7 @@ export default function MailboxPlacementTab({ mailboxId, poolHealth }: { mailbox
                     {/* Window counts, narrowed by the provider filter */}
                     <div className="grid grid-cols-3 divide-x divide-y divide-slate-200/60 [&>*:nth-child(-n+3)]:border-t-0">
                         <Cell label="Classified receipts" value={fmtNum(t.delivered)} sub={filtered ? `at ${GROUP_LABEL[activeGroup]}` : `of ${fmtNum(t.sent)} submissions`} />
-                        <Cell label="Non-spam share" value={fmtPct(share)} sub={share != null ? `${fmtNum(t.inbox)} primary inbox` : shareWithheld(t.delivered)} tone={BAND[bandForRate(share)].text} />
+                        <Cell label="Non-spam share" value={share != null ? fmtPct(share) : fmtNum(t.inbox + t.tabs)} sub={share != null ? `${fmtNum(t.inbox)} primary inbox` : shareWithheld(t.delivered)} tone={share != null ? BAND[bandForRate(share)].text : undefined} />
                         <Cell label="Spam" value={fmtNum(t.spam)} sub={spamShare != null ? `${fmtPct(spamShare)} of classified receipts` : shareWithheld(t.delivered)} tone={t.spam > 0 ? "text-rose-600" : undefined} />
                         <Cell label="Other tabs" value={fmtNum(t.tabs)} sub="Promotions, Updates…" />
                         <Cell label="Confirmed out of spam" value={fmtNum(t.rescueConfirmed)} sub={rescueSummary(t)} wrap tone={t.rescueConfirmed > 0 ? "text-emerald-600" : undefined} />
