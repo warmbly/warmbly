@@ -240,3 +240,19 @@ func TestHandleErrorZohoWrongServerKeepsAlert(t *testing.T) {
 		t.Errorf("GetUserErrorInfo = %+v, want the wrong-server title and the Update credentials fix", info)
 	}
 }
+
+// A sign-in refusal worded like a missing mailbox stays unknown: no folder is selected at login.
+func TestLoginErrorKeepsMissingMailboxTextOutOfFolderClasses(t *testing.T) {
+	c := &Client{AuthType: models.AuthPlain}
+	reply := &goimap.Error{Type: goimap.StatusResponseTypeNo, Text: "Mailbox doesn't exist: user@example.test"}
+	if got := c.loginError(reply); got.Code != errx.MailErrorCodeImapUnknown {
+		t.Errorf("login reply = %q, want %q", got.Code, errx.MailErrorCodeImapUnknown)
+	}
+	if got := c.handleError(reply); got.Code != errx.MailErrorCodeNotFound {
+		t.Errorf("folder reply = %q, want %q", got.Code, errx.MailErrorCodeNotFound)
+	}
+	refused := &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeAuthenticationFailed, Text: "Authentication failed."}
+	if got := c.loginError(refused); got.Code != errx.MailErrorCodeInvalidCredentials {
+		t.Errorf("credential refusal = %q, want %q", got.Code, errx.MailErrorCodeInvalidCredentials)
+	}
+}

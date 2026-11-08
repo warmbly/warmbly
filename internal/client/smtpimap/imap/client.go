@@ -375,7 +375,7 @@ func (c *Client) Close() error {
 // loopback-proved unencrypted mode.
 func (c *Client) plainAuth() *errx.MailError {
 	if err := c.client.Login(c.Credentials.Username, c.Credentials.Password).Wait(); err != nil {
-		return c.handleError(err)
+		return c.loginError(err)
 	}
 
 	return nil
@@ -406,7 +406,7 @@ func (c *Client) oauth2Auth() *errx.MailError {
 		if errors.As(err, &bearer) {
 			return errx.ErrMailAuthenticationFailed
 		}
-		return c.handleError(err)
+		return c.loginError(err)
 	}
 
 	return nil

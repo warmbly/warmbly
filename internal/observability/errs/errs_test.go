@@ -212,3 +212,24 @@ func TestFailedRequestReportsWithoutItsQuery(t *testing.T) {
 		t.Error("an error whose URL has no query should pass through untouched")
 	}
 }
+
+// Every request in a joined error loses its query, including one that will not parse or carries a quote.
+func TestEveryFailedRequestInAnErrorTreeLosesItsQuery(t *testing.T) {
+	err := fmt.Errorf("sync: %w", errors.Join(
+		&url.Error{Op: "Get", URL: "https://a.example.test/one?token=first", Err: errors.New("refused")},
+		&url.Error{Op: "Post", URL: "https://b.example.test/%zz?token=second", Err: errors.New("bad escape")},
+		&url.Error{Op: "Get", URL: `https://c.example.test/three?q="third"`, Err: errors.New("timeout")},
+	))
+
+	got := redact(err).Error()
+	for _, leaked := range []string{"first", "second", "third", "token"} {
+		if strings.Contains(got, leaked) {
+			t.Errorf("reported %q, which still carries %q", got, leaked)
+		}
+	}
+	for _, kept := range []string{"https://a.example.test/one", "https://b.example.test/%zz", "https://c.example.test/three"} {
+		if !strings.Contains(got, kept) {
+			t.Errorf("reported %q, want it to keep %q", got, kept)
+		}
+	}
+}

@@ -185,6 +185,15 @@ func (c *Client) classifyAlert(alert *imap.Error) *errx.MailError {
 	return nil
 }
 
+// loginError classifies a sign-in refusal; no folder is involved yet, so a missing-mailbox text there is not a missing folder.
+func (c *Client) loginError(err error) *errx.MailError {
+	var imapErr *imap.Error
+	if errors.As(err, &imapErr) && imapErr.Code == "" && missingMailboxText(imapErr.Text) {
+		return errx.ErrMailUnknownImapError(imapErrDetail(imapErr))
+	}
+	return c.handleError(err)
+}
+
 // missingMailboxText is a codeless NO naming a missing folder, the way older Dovecot says [NONEXISTENT].
 func missingMailboxText(text string) bool {
 	lower := strings.ToLower(strings.TrimSpace(text))

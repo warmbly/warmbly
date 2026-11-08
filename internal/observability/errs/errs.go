@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -319,21 +320,48 @@ type querylessError struct {
 
 func (e *querylessError) Error() string { return e.msg }
 
-// withoutURLQuery drops a failed request's query, whose ids would otherwise make every call its own issue.
+// withoutURLQuery drops every failed request's query, whose ids would otherwise make every call its own issue.
 func withoutURLQuery(err error) error {
-	var urlErr *url.Error
-	if !errors.As(err, &urlErr) {
+	msg := err.Error()
+	changed := false
+	for _, u := range urlErrors(err) {
+		bare, _, _ := strings.Cut(u.URL, "?")
+		bare, _, _ = strings.Cut(bare, "#")
+		if bare == u.URL {
+			continue
+		}
+		// url.Error renders its URL with %q, so the quoted form is what appears in the text.
+		msg = strings.ReplaceAll(msg, strconv.Quote(u.URL), strconv.Quote(bare))
+		msg = strings.ReplaceAll(msg, u.URL, bare)
+		changed = true
+	}
+	if !changed {
 		return err
 	}
-	u, parseErr := url.Parse(urlErr.URL)
-	if parseErr != nil || (u.RawQuery == "" && u.Fragment == "") {
-		return err
+	return &querylessError{typeName: fmt.Sprintf("%T", err), msg: msg}
+}
+
+// urlErrors finds every *url.Error in err's tree, through joined errors as well as wrapped ones.
+func urlErrors(err error) []*url.Error {
+	var found []*url.Error
+	var walk func(error)
+	walk = func(e error) {
+		if u, ok := e.(*url.Error); ok {
+			found = append(found, u)
+		}
+		switch w := e.(type) {
+		case interface{ Unwrap() []error }:
+			for _, inner := range w.Unwrap() {
+				walk(inner)
+			}
+		case interface{ Unwrap() error }:
+			if inner := w.Unwrap(); inner != nil {
+				walk(inner)
+			}
+		}
 	}
-	u.RawQuery, u.Fragment = "", ""
-	return &querylessError{
-		typeName: fmt.Sprintf("%T", err),
-		msg:      strings.ReplaceAll(err.Error(), urlErr.URL, u.String()),
-	}
+	walk(err)
+	return found
 }
 
 // exceptionType names the Go type an issue is titled with.
