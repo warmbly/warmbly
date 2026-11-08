@@ -30,6 +30,7 @@ import type ReauthMethods from "@/lib/api/models/auth/ReauthMethods";
 import useLogout from "@/lib/api/hooks/auth/useLogout";
 import { Google } from "@/components/svg";
 import { PasskeyCancelled, confirmWithPasskey, passkeySupported } from "@/lib/passkey";
+import { currentPortal, mainHost, signsInOnMain } from "@/lib/portal";
 import { acceptReauthReturn } from "@/lib/oauthReturn";
 import { POPUP_CLOSED, closePopup, navigatePopup, notifyPopupBlocked, reservePopup, waitForPopupMessage } from "@/lib/popup";
 
@@ -104,7 +105,7 @@ export default function ReauthModal() {
                 .then((m) => {
                     if (attempt.current !== mine) return;
                     setMethods(m);
-                    if (m.passkey && passkeySupported()) preparePasskey();
+                    if (m.passkey && passkeySupported() && !currentPortal().portal) preparePasskey();
                 })
                 .catch(() => {
                     if (attempt.current === mine) setMethods("unknown");
@@ -246,10 +247,14 @@ export default function ReauthModal() {
     }
 
     const known = methods !== null && methods !== "unknown" ? methods : null;
-    const showPassword = methods === "unknown" || Boolean(known?.password);
-    const showCode = methods === "unknown" || Boolean(known?.totp);
-    const showPasskey = Boolean(known?.passkey) && passkeySupported();
-    const providers = known?.providers ?? [];
+    // A portal that signs clients in on the main address takes no credential here: signing in again confirms it.
+    const typesHere = !signsInOnMain(currentPortal());
+    const showPassword = typesHere && (methods === "unknown" || Boolean(known?.password));
+    const showCode = typesHere && (methods === "unknown" || Boolean(known?.totp));
+    // A passkey or a provider only completes on the main address, never on an agency's portal domain.
+    const onPortal = currentPortal().portal;
+    const showPasskey = Boolean(known?.passkey) && passkeySupported() && !onPortal;
+    const providers = onPortal ? [] : known?.providers ?? [];
     const hasButtons = showPasskey || providers.length > 0;
     const hasFields = showPassword || showCode;
     const nothing = known !== null && !hasButtons && !hasFields;
@@ -314,9 +319,18 @@ export default function ReauthModal() {
                             </div>
                         ) : nothing ? (
                             <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5 text-[12.5px] leading-relaxed text-slate-600">
-                                This account has no password, passkey or authenticator yet. Sign in again and repeat
-                                this within five minutes. To skip this next time, add a passkey or two-factor
-                                authentication under Settings &gt; Security.
+                                {onPortal ? (
+                                    <>
+                                        Sign in again and repeat this within five minutes, or make this change at{" "}
+                                        {mainHost(currentPortal())}, where your passkey works.
+                                    </>
+                                ) : (
+                                    <>
+                                        This account has no password, passkey or authenticator yet. Sign in again and repeat
+                                        this within five minutes. To skip this next time, add a passkey or two-factor
+                                        authentication under Settings &gt; Security.
+                                    </>
+                                )}
                             </div>
                         ) : (
                             <>

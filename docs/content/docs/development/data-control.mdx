@@ -30,6 +30,8 @@ An [install from `install.sh`](/development/install/) points all six under one d
 
 Only the first two carry anything you cannot rebuild. The other four are state a fresh container reconstructs, which is why a backup does not include them.
 
+The [portal service](/development/configuration/#portal-service), which serves client connect pages and shared reports, has no variable here because it stores nothing: no volume, no database and no file. Every link and report is read from the backend when it is opened. It keeps whether a host is a portal domain for a minute, a report's answer for a minute and per-visitor request counts for a minute, all in its own memory, and a restart clears them. Nothing about it needs backing up or moving.
+
 ### Encryption
 
 Two keys, and they are not interchangeable.
@@ -399,7 +401,7 @@ What a reported error carries is the exception, its stack trace, the service, th
 
 Server-side reports that belong to no request, a scheduled job or a worker, are attributed to the process that raised them and to nobody.
 
-The `warmbly` CLI runs on your own machine and reports nowhere, ever. It has nothing to set.
+The `warmbly` CLI runs on your own machine and reports nowhere, ever. It has nothing to set. Neither has the portal service, nor the connect and report pages it serves: they report no error to anybody and load no reporting code.
 
 ### Usage analytics
 

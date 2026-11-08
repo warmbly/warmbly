@@ -33,7 +33,7 @@ defmodule RealtimeWeb.AccountChannel do
 
       case user_id
            |> Auth.check_email_account_access(account_id)
-           |> Auth.confine(socket.assigns[:credential]) do
+           |> Auth.confine_socket(socket.assigns) do
         {:ok, member} ->
           Logger.debug("User #{user_id} joined account:#{account_id}")
 
@@ -94,7 +94,7 @@ defmodule RealtimeWeb.AccountChannel do
       fn ->
         socket.assigns.user_id
         |> Auth.check_email_account_access(socket.assigns.account_id)
-        |> Auth.confine(socket.assigns[:credential])
+        |> Auth.confine_socket(socket.assigns)
       end,
       force
     )

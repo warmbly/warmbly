@@ -61,6 +61,8 @@ type Service interface {
 	UnreadCount(ctx context.Context, userID uuid.UUID) (int, *errx.Error)
 	MarkRead(ctx context.Context, userID, notifID uuid.UUID) *errx.Error
 	MarkAllRead(ctx context.Context, userID uuid.UUID) *errx.Error
+	// MarkReadIn marks read only notifications from orgIDs: notifID alone when set, else every unread one.
+	MarkReadIn(ctx context.Context, userID uuid.UUID, notifID *uuid.UUID, orgIDs []uuid.UUID) *errx.Error
 
 	// Notify is the gated ingress — best-effort, never errors out the caller.
 	Notify(ctx context.Context, userID uuid.UUID, orgID *uuid.UUID, category models.NotificationCategory, title, body, link string, meta map[string]any)
@@ -160,6 +162,13 @@ func (s *service) MarkRead(ctx context.Context, userID, notifID uuid.UUID) *errx
 
 func (s *service) MarkAllRead(ctx context.Context, userID uuid.UUID) *errx.Error {
 	if err := s.repo.MarkAllRead(ctx, userID); err != nil {
+		return errx.InternalError()
+	}
+	return nil
+}
+
+func (s *service) MarkReadIn(ctx context.Context, userID uuid.UUID, notifID *uuid.UUID, orgIDs []uuid.UUID) *errx.Error {
+	if err := s.repo.MarkReadIn(ctx, userID, notifID, orgIDs); err != nil {
 		return errx.InternalError()
 	}
 	return nil

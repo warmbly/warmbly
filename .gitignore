@@ -117,3 +117,6 @@ xcuserdata/
 # The CASA evidence pack lives outside this repository on purpose: it maps every
 # control to its file and lists the advisories still open. See AGENTS.md.
 compliance/
+
+# Local Cloudflare Worker dev state (wrangler dev)
+.wrangler/

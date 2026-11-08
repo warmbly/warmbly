@@ -45,6 +45,10 @@ defmodule RealtimeWeb.AdminChannel do
       Map.get(socket.assigns, :mfa_verified) != true ->
         ChannelGuard.join_error("admin_mfa_required")
 
+      # A session signed in on an agency portal never reaches the operator surface.
+      not is_nil(Map.get(socket.assigns, :portal_agency_id)) ->
+        ChannelGuard.join_error("portal_session_restricted")
+
       true ->
         authorize_admin(socket, user_id)
     end

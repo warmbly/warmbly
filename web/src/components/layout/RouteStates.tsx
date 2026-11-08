@@ -2,7 +2,7 @@
 
 import { useRouter, type ErrorComponentProps } from "@tanstack/react-router";
 import { useEffect, type CSSProperties } from "react";
-import { Logo } from "@/components/svg";
+import ProductMark from "@/components/shared/ProductMark";
 import { cn } from "@/lib/utils";
 import { captureException } from "@/lib/observability";
 import { canReloadForStaleChunk, isModuleLoadError, reloadForStaleChunk } from "@/lib/moduleLoadError";
@@ -141,13 +141,10 @@ export function ShellSkeleton() {
             <div className="relative z-10 flex flex-col h-full">
                 <div className="h-14 flex items-center shrink-0">
                     <div className={cn("h-full flex items-center gap-2.5 shrink-0 pl-4 pr-3", collapsed ? "md:w-14 md:px-0 md:justify-center" : "md:w-64 md:px-5")}>
-                        <Logo className="w-7 text-slate-900" />
-                        <span
-                            style={{ fontFamily: "var(--font-display)" }}
-                            className={cn("wb-title font-extrabold text-[15.5px] tracking-tight text-slate-900", collapsed ? "hidden" : "hidden md:inline")}
-                        >
-                            Warmbly
-                        </span>
+                        <ProductMark
+                            logoClassName="w-7 text-slate-900"
+                            nameClassName={cn("wb-title font-extrabold text-[15.5px] tracking-tight text-slate-900", collapsed ? "hidden" : "hidden md:inline")}
+                        />
                     </div>
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                         <Bar className="size-5 rounded-md" />

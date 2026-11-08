@@ -19,6 +19,8 @@ The `wmbly_` prefix identifies the key as a Warmbly key. The remaining 43 charac
 
 Keys are stored as a SHA-256 hash; the plaintext is shown exactly once on creation. To help you spot a key in the dashboard without exposing the secret, we store the first 8 characters (`key_prefix`, e.g. `wmbly_ab`) and the last 4 characters (`key_suffix`, e.g. `wxyz`). Render them as `wmbly_ab…wxyz`.
 
+An [agency API key](#agency-api-keys) has the same shape with its own prefix, `wmagency_<43 characters>`, and is shown as `wmagency_ab…wxyz`.
+
 ## Three ways to get a key
 
 1. **The dashboard.** Settings > API keys, pick the scopes, copy the secret. This is the right path for a key a server will use.
@@ -83,6 +85,96 @@ For a restricted session, `/auth/me` returns only conversation categories applie
 ## OAuth access tokens
 
 API keys authenticate your own scripts. If you are building an app that other people connect their Warmbly workspace to, use OAuth instead: the user grants your app scoped access and you receive a bearer **access token** (prefix `wmat_`). It goes in the same `Authorization: Bearer` header and is checked against the same permissions, so every endpoint below behaves identically whether you present an API key or an OAuth token, with two differences: an OAuth token also acts within the approving member's current role, and it can never manage API keys or OAuth apps. See [OAuth](/api/oauth/) for the full flow.
+
+## Agency API keys
+
+An [agency](/guides/agencies/) is a workspace that holds other workspaces as clients, and it gets keys that work across all of them. An agency key reaches each client workspace of its agency and the agency's own endpoints under `/v1/agency/:agencyId`.
+
+- **Creating one.** An owner or admin of the agency creates it under Agency > API keys in the dashboard, or with `POST /v1/agency/:agencyId/api-keys` from a signed-in session that confirmed it is them in the last few minutes. The secret is in that response only and is stored as a SHA-256 hash. Agency keys are managed from a session only: an API key cannot create, edit or revoke one.
+- **Who it acts for.** The key acts for the staff member who created it, through the Admin membership the agency gives them in each client workspace, and within the key's bits. It stops working, with `401` `agency_key_holder_left`, when that person is no longer an owner or admin of the agency, when their password is changed or reset, or when they are banned.
+- **Which workspace.** A request to a workspace endpoint names one client workspace in the `Warmbly-Organization` header. Before anything else runs, Warmbly checks that this workspace is a client of the key's agency at that moment, then treats the request exactly like a workspace key in that workspace. A missing or malformed header answers `400` `agency_key_organization_required`; a workspace that is not a client (or no longer is: detaching a client cuts the key off on its next request) answers `403` `agency_key_not_client`.
+- **Agency endpoints.** `/v1/agency/:agencyId/...` takes no header. The key reaches its own agency only (any other answers `404` `agency_not_found`), through the [agency bits](/api/permissions/#agency). See [which agency endpoints accept a key](/api/endpoints/#agencies).
+- **Limits.** An agency key carries an IP allowlist and its own per-minute rate limit (60 by default) with the same `X-RateLimit-*` headers as a workspace key. `Idempotency-Key` works on both kinds of endpoint; on agency endpoints it is scoped to the agency.
+- **What it cannot do.** It cannot manage workspace API keys or OAuth apps, open the realtime websocket, call the MCP server, or reach a session-only route; those answer `403` `agency_key_not_allowed`. Agency checkout, top-ups and the billing portal open a browser page, so they stay with a session. There are no OAuth apps for agencies yet.
+
+Audit entries for changes made with an agency key name the staff member it acts for, and carry `actor_type` `agency_api_key` with the key's id and name in their metadata. `GET /v1/me` with an agency key returns the client workspace and an `agency_id`.
+
+<Tabs defaultValue="javascript">
+
+<TabsList>
+  <LangTab lang="javascript" />
+  <LangTab lang="python" />
+  <LangTab lang="go" />
+</TabsList>
+
+<Tab value="javascript">
+
+```ts
+const headers = {
+  Authorization: `Bearer ${process.env.WARMBLY_AGENCY_KEY}`,
+  "Warmbly-Organization": clientWorkspaceId,
+};
+
+// One client's campaigns
+const campaigns = await fetch("https://api.warmbly.com/v1/campaigns", { headers }).then((r) => r.json());
+
+// The agency's clients (no Warmbly-Organization header)
+const clients = await fetch(`https://api.warmbly.com/v1/agency/${agencyId}/clients`, {
+  headers: { Authorization: headers.Authorization },
+}).then((r) => r.json());
+```
+
+</Tab>
+
+<Tab value="python">
+
+```python
+import os
+import requests
+
+key = os.environ["WARMBLY_AGENCY_KEY"]
+
+# One client's campaigns
+campaigns = requests.get(
+    "https://api.warmbly.com/v1/campaigns",
+    headers={"Authorization": f"Bearer {key}", "Warmbly-Organization": client_workspace_id},
+).json()
+
+# The agency's clients (no Warmbly-Organization header)
+clients = requests.get(
+    f"https://api.warmbly.com/v1/agency/{agency_id}/clients",
+    headers={"Authorization": f"Bearer {key}"},
+).json()
+```
+
+</Tab>
+
+<Tab value="go">
+
+```go
+req, _ := http.NewRequest("GET", "https://api.warmbly.com/v1/campaigns", nil)
+req.Header.Set("Authorization", "Bearer "+os.Getenv("WARMBLY_AGENCY_KEY"))
+req.Header.Set("Warmbly-Organization", clientWorkspaceID)
+res, err := http.DefaultClient.Do(req)
+if err != nil {
+    log.Fatal(err)
+}
+defer res.Body.Close()
+```
+
+</Tab>
+
+</Tabs>
+
+### Managing agency keys
+
+| Method | Path | Notes |
+|--------|------|-------|
+| `GET` | `/v1/agency/:agencyId/api-keys` | Owners and admins. `data` plus `pagination` with an opaque `cursor`; `limit` is 1 to 100 (default 50) |
+| `GET` | `/v1/agency/:agencyId/api-keys/permissions` | The bits an agency key may hold, grouped as `workspace` and `agency`, with presets |
+| `POST` | `/v1/agency/:agencyId/api-keys` | `name`, `permissions`, optional `allowed_ips`, `rate_limit_per_minute`, `expires_at`. Fresh sign-in; supports `Idempotency-Key` |
+| `PATCH` | `/v1/agency/:agencyId/api-keys/:keyId` | `name` and `allowed_ips` (an empty list allows any address). Fresh sign-in; repeating it is safe |
+| `DELETE` | `/v1/agency/:agencyId/api-keys/:keyId` | Revokes the key. Fresh sign-in; revoking a revoked key succeeds, so a retry is safe |
 
 ## Key security best practices
 
@@ -222,6 +314,7 @@ Returned when:
 - API key lacks required permissions
 - Request IP is not in allowlist
 - Email account is not in allowlist
+- An agency key names a workspace that is not a client of its agency (`agency_key_not_client`) or calls a route it cannot use (`agency_key_not_allowed`)
 
 ```json
 {

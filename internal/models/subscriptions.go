@@ -81,6 +81,13 @@ type Plan struct {
 	// month-equivalent). Defaults to 100 for every plan.
 	ReferralRewardPercent int `json:"referral_reward_percent"`
 
+	// MonthlySendPool marks an agency plan: the sends shared by all its
+	// clients each period. Zero is an agency plan with no pool cap.
+	MonthlySendPool *int `json:"monthly_send_pool,omitempty"`
+	// AgencyAIAllowance is what an agency plan refills the agency's shared AI balance to each period.
+	AgencyAIAllowance    *Micro   `json:"-"`
+	AgencyAIAllowanceUSD *float64 `json:"agency_ai_allowance_usd,omitempty"`
+
 	UpdatedAt time.Time `json:"updated_at"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -162,6 +169,8 @@ type Subscription struct {
 	// paying Stripe for one plan and granted another goes back to the one it
 	// pays for when the grant ends.
 	ManagedPlanID *uuid.UUID `json:"managed_plan_id,omitempty"`
+	// ManagedByAgencyID is the agency whose subscription the grant mirrors.
+	ManagedByAgencyID *uuid.UUID `json:"managed_by_agency_id,omitempty"`
 	// Managed is IsManaged resolved server-side, carried on the base type so
 	// every endpoint that returns a subscription reports it. A granted plan
 	// never touches Stripe, so Status stays whatever it was ("incomplete" on a

@@ -46,7 +46,7 @@ func newState(web bool) (string, error) {
 // OAuthStart issues a fresh state nonce and returns the provider-specific authorization URL.
 // The caller is expected to redirect the user to the URL and post back to OAuthFinish on return.
 func (s *emailService) OAuthStart(ctx context.Context, userID string, orgID *uuid.UUID, provider models.InboxProvider, loginHint string, web bool, returnOrigin string) (*models.EmailOnboardingStartResponse, *errx.Error) {
-	if returnOrigin != "" && (!web || config.DashboardOrigin(returnOrigin) == "") {
+	if returnOrigin != "" && (!web || config.TrustedOrigin(returnOrigin) == "") {
 		return nil, errx.ErrEmailOnboardReturnOrigin
 	}
 	cfg, appID, xerr := s.signinConfig(ctx, orgID, provider)

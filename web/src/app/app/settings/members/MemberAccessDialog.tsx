@@ -472,7 +472,7 @@ interface PickerItem {
 }
 
 /** Chip box plus a searchable dropdown of checkbox rows. */
-function ResourcePicker({
+export function ResourcePicker({
     icon: Icon,
     items,
     value,

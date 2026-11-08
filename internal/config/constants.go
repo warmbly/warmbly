@@ -699,6 +699,10 @@ const (
 	NotificationEmailWindowMinMinutes     = 30
 	NotificationEmailWindowDefaultMinutes = 30
 	NotificationEmailWindowMaxMinutes     = 1440
+
+	// AgencyIsolatedEgressMaxClients is how many of one agency's client
+	// workspaces hold a reserved worker at once, oldest attached first.
+	AgencyIsolatedEgressMaxClients = 20
 )
 
 // InboundClassificationHeaders are the internet headers the API-based inbound

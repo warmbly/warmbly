@@ -76,5 +76,5 @@ func (s *emailService) OAuthReturnOrigin(ctx context.Context, state string) stri
 	if data.ReturnOrigin == "" {
 		return config.PrimaryDashboardOrigin()
 	}
-	return config.DashboardOrigin(data.ReturnOrigin)
+	return config.TrustedOrigin(data.ReturnOrigin)
 }

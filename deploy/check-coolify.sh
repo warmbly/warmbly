@@ -28,14 +28,15 @@ check() {
     fi
 }
 
-check '(.services | keys) == ["admin", "backend", "consumer", "forms", "nats", "postgres", "realtime", "redis", "tracking", "web", "worker"]' 'complete stack'
+check '(.services | keys) == ["admin", "backend", "consumer", "forms", "nats", "portal", "postgres", "realtime", "redis", "tracking", "web", "worker"]' 'complete stack'
 check 'all(.services[]; (has("build") or has("ports") or has("env_file") or has("container_name") or has("privileged")) | not)' 'no builds, published ports, external env files, fixed container names, or privileges'
 check 'all(.services[].volumes[]?; .type == "volume")' 'named volumes only, no host or Docker socket mounts'
 check '(.volumes | keys) == ["blobs", "nats_data", "postgres_data", "redis_data", "worker_state"]' 'all persistent stores'
-check '. as $config | all(["backend", "consumer", "worker", "forms", "tracking", "realtime", "web", "admin"][]; $config.services[.].image == "ghcr.io/warmbly/warmbly/" + . + ":coolify-validation")' 'matching service images with one release tag'
+check '. as $config | all(["backend", "consumer", "worker", "forms", "portal", "tracking", "realtime", "web", "admin"][]; $config.services[.].image == "ghcr.io/warmbly/warmbly/" + . + ":coolify-validation")' 'matching service images with one release tag'
 check 'all([.services.backend, .services.consumer, .services.worker, .services.tracking, .services.forms, .services.realtime][]; .environment.APP_ENV == "prod")' 'production environment'
 check '.services.backend.environment.AUTH_SECRET == .services.realtime.environment.JWT_SECRET' 'shared JWT secret'
 check '.services.backend.environment.NODE_BROKER_TOKEN == .services.worker.environment.ENCRYPTED_KEYS_WORKER_TOKEN and .services.tracking.environment.INTERNAL_API_TOKEN == .services.backend.environment.INTERNAL_API_TOKEN and .services.forms.environment.INTERNAL_API_TOKEN == .services.backend.environment.INTERNAL_API_TOKEN' 'separate worker and edge tokens'
+check '.services.portal.environment.PORTAL_EDGE_TOKEN == .services.backend.environment.PORTAL_EDGE_TOKEN and .services.portal.environment.PORTAL_DOMAIN == .services.backend.environment.PORTAL_DOMAIN and (.services.portal.environment | has("INTERNAL_API_TOKEN") or has("NODE_BROKER_TOKEN") | not)' 'portal holds only its own token'
 check '.services.worker.environment.MAIL_TLS_INSECURE == "false" and .services.worker.environment.ENCRYPTED_KEYS_PROVIDER == "http" and (.services.worker.environment | has("PRIMARY_DB") | not)' 'worker TLS and database boundary'
 check '.services.postgres.environment.POSTGRES_PASSWORD as $password | .services.backend.environment.PRIMARY_DB == .services.consumer.environment.PRIMARY_DB and .services.backend.environment.PRIMARY_DB == .services.realtime.environment.DATABASE_URL and (.services.backend.environment.PRIMARY_DB | contains($password))' 'database clients share credentials'
 check '.services.backend.environment.UPDATER_URL == "none" and (.services | has("updater") | not)' 'Coolify owns updates'
@@ -43,8 +44,8 @@ check '.services.backend.environment.WEBSOCKET_URL == "wss://realtime.example.co
 check '.services.web.environment.WARMBLY_API_URL == "https://api.example.com" and .services.admin.environment.WARMBLY_API_URL == "https://api.example.com"' 'runtime frontend API URLs'
 check '.services.backend.environment.MAIL_TRANSPORT == .services.consumer.environment.MAIL_TRANSPORT' 'platform mail reaches notifications'
 check 'all([.services.backend, .services.consumer][]; .environment.GEODB_PATH == "/data/blobs/geo/GeoLite2-City.mmdb")' 'GeoIP path configured without requiring an external database'
-check 'all(["backend", "tracking", "realtime", "forms", "web", "admin"][] as $name | .services[$name].healthcheck.test; any(.[]; contains("http://127.0.0.1:")))' 'HTTP probes use the container IPv4 loopback'
-check 'all(["consumer", "worker", "tracking", "realtime", "forms", "web", "admin"][] as $name | .services[$name].depends_on.backend.condition; . == "service_healthy")' 'wait for backend migrations'
+check 'all(["backend", "tracking", "realtime", "forms", "portal", "web", "admin"][] as $name | .services[$name].healthcheck.test; any(.[]; contains("http://127.0.0.1:")))' 'HTTP probes use the container IPv4 loopback'
+check 'all(["consumer", "worker", "tracking", "realtime", "forms", "portal", "web", "admin"][] as $name | .services[$name].depends_on.backend.condition; . == "service_healthy")' 'wait for backend migrations'
 
 for required in AUTH_SECRET INTERNAL_API_TOKEN NODE_BROKER_TOKEN SECRET_KEY_BASE KMS_LOCAL_MASTER_KEY CREDENTIALS_ENCRYPTION_KEY POSTGRES_PASSWORD APP_URL ADMIN_URL API_PUBLIC_URL REALTIME_HOST TRACKING_DOMAIN FORMS_DOMAIN; do
     if env -u "$required" "${compose[@]}" config --quiet >/dev/null 2>&1; then

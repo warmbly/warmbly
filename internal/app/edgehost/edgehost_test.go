@@ -2,18 +2,30 @@ package edgehost
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/cfsaas"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
 type memRepo struct {
+	kind   repository.EdgeKind
 	wanted []string
 	rows   map[string]repository.EdgeHostname
+}
+
+func (m *memRepo) Kind() repository.EdgeKind {
+	if m.kind == "" {
+		return repository.EdgeTracking
+	}
+	return m.kind
 }
 
 func (m *memRepo) Wanted(context.Context) ([]string, error) { return m.wanted, nil }
@@ -277,5 +289,97 @@ func TestRegisterAsksAgainAboutAPendingName(t *testing.T) {
 	s.Register(context.Background(), "acme.io")
 	if len(edge.ensured) != 2 {
 		t.Fatalf("a check on a pending name did not reach the edge: %v", edge.ensured)
+	}
+}
+
+// cloudflare stands in for the custom hostname API of one zone, recording each name created on it.
+func cloudflare(t *testing.T, zone string) (*httptest.Server, *[]string) {
+	t.Helper()
+	var created []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/zones/"+zone+"/custom_hostnames" {
+			t.Errorf("call outside the zone: %s %s", r.Method, r.URL.Path)
+		}
+		result := any([]any{})
+		if r.Method == http.MethodPost {
+			var body struct {
+				Hostname string `json:"hostname"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			created = append(created, body.Hostname)
+			result = map[string]any{"id": "h1", "hostname": body.Hostname, "status": "pending",
+				"ownership_verification": map[string]string{"type": "txt", "name": "_cf-custom-hostname." + body.Hostname, "value": "proof"}}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "result": result})
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &created
+}
+
+func TestOpenRegistersNothingWithoutAZone(t *testing.T) {
+	repo := &memRepo{kind: repository.EdgePortal, rows: map[string]repository.EdgeHostname{}}
+	for _, cfg := range []cfsaas.Config{{}, {ZoneID: "zone-p"}, {APIToken: "token"}} {
+		s := Open(repo, cfg, nil)
+		if s.Enabled() {
+			t.Fatalf("%+v opened a zone", cfg)
+		}
+		s.Register(context.Background(), "portal.agency.test")
+		s.Start(context.Background())
+		if recs := s.Records(context.Background(), "portal.agency.test"); len(recs) != 0 || len(repo.rows) != 0 {
+			t.Fatalf("an unset zone registered %v and shows %v", repo.rows, recs)
+		}
+	}
+
+	srv, created := cloudflare(t, "zone-p")
+	s := Open(repo, cfsaas.Config{ZoneID: "zone-p", APIToken: "token", BaseURL: srv.URL}, nil)
+	s.Register(context.Background(), "Portal.Agency.test")
+	if len(*created) != 1 || (*created)[0] != "portal.agency.test" || repo.rows["portal.agency.test"].Zone != "zone-p" {
+		t.Fatalf("created %v, rows %v", *created, repo.rows)
+	}
+	want := []models.DNSRecord{{Purpose: "edge", Type: "TXT", Name: "_cf-custom-hostname.portal.agency.test", Value: "proof"}}
+	if got := s.Records(context.Background(), "portal.agency.test"); len(got) != 1 || got[0] != want[0] {
+		t.Fatalf("records = %+v", got)
+	}
+}
+
+func TestPortalZoneLeavesTheTrackingZoneAlone(t *testing.T) {
+	tracking, trackingRepo, trackingEdge := newTest("link.acme.test")
+	_ = tracking.Sweep(context.Background())
+	before := trackingRepo.rows["link.acme.test"]
+
+	portalRepo := &memRepo{kind: repository.EdgePortal, wanted: []string{"portal.agency.test", "portal.other.test", "portal.warmbly.test"}, rows: map[string]repository.EdgeHostname{}}
+	portalEdge := &fakeEdge{status: "pending", zone: "zone-p"}
+	portal := New(portalRepo, portalEdge, func() []string { return []string{"portal.warmbly.test"} })
+	if portal.job() == tracking.job() || tracking.job() != "edge_hostname_sweep" {
+		t.Fatalf("the two sweeps share a job: %q %q", portal.job(), tracking.job())
+	}
+	if err := portal.Sweep(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(portalEdge.ensured) != 2 || portalRepo.rows["portal.other.test"].Zone != "zone-p" {
+		t.Fatalf("portal zone ensured %v", portalEdge.ensured)
+	}
+	if len(trackingEdge.ensured) != 1 || len(trackingRepo.rows) != 1 || trackingRepo.rows["link.acme.test"] != before {
+		t.Fatalf("the portal sweep touched the tracking zone: %v %v", trackingEdge.ensured, trackingRepo.rows)
+	}
+	if got := tracking.Records(context.Background(), "portal.other.test"); len(got) != 0 {
+		t.Fatalf("the tracking zone shows a portal record: %v", got)
+	}
+
+	// A portal domain that stops verifying keeps its hostname for a day, then is removed from the portal zone only.
+	portalRepo.wanted = []string{"portal.other.test"}
+	_ = portal.Sweep(context.Background())
+	if len(portalEdge.removed) != 0 {
+		t.Fatalf("removed at once: %v", portalEdge.removed)
+	}
+	r := portalRepo.rows["portal.agency.test"]
+	r.UnwantedSince = ago(removeAfter)
+	portalRepo.rows["portal.agency.test"] = r
+	_ = portal.Sweep(context.Background())
+	if len(portalEdge.removed) != 1 || portalEdge.removed[0] != "portal.agency.test" || len(trackingEdge.removed) != 0 {
+		t.Fatalf("removed portal %v, tracking %v", portalEdge.removed, trackingEdge.removed)
+	}
+	if _, ok := portalRepo.rows["portal.agency.test"]; ok {
+		t.Fatal("a removed portal name kept its row")
 	}
 }

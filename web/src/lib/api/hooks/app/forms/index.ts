@@ -176,8 +176,10 @@ export function useCampaignForms(campaignId: string | undefined) {
 
 // The custom forms domain is workspace-wide: every form URL is built on it,
 // so saving it invalidates every form read.
+export const formsDomainQuery = queryOptions({ queryKey: ["forms", "domain"], queryFn: getFormsDomain });
+
 export function useFormsDomain() {
-    return useQuery({ queryKey: ["forms", "domain"], queryFn: getFormsDomain });
+    return useQuery(formsDomainQuery);
 }
 
 export function useSetFormsDomain() {

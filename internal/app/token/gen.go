@@ -75,11 +75,11 @@ func (s *tokenService) VerifyToken(tokenStr string) (*TokenClaims, *errx.Error) 
 }
 
 // GenerateWebsocketTicket mints a socket ticket the realtime service accepts once,
-// and only while the session it names is live.
-func (s *tokenService) GenerateWebsocketTicket(userID, ticketID, sessionID uuid.UUID, nonce string, issuedAt, expiresAt time.Time) (string, error) {
+// and only while the session it names is live; portal names a session bound to an agency portal.
+func (s *tokenService) GenerateWebsocketTicket(userID, ticketID, sessionID uuid.UUID, nonce string, issuedAt, expiresAt time.Time, portal bool) (string, error) {
 	claims := TokenClaims{
 		UserID: userID, SessionID: ticketID, Nonce: nonce,
-		Purpose: PurposeWebSocket, TicketSession: sessionID.String(),
+		Purpose: WebSocketPurpose(portal), TicketSession: sessionID.String(),
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(issuedAt),
@@ -129,6 +129,9 @@ func (s *tokenService) ReissueSession(ctx context.Context, userID uuid.UUID, cur
 		provider = current.AuthProvider
 		orgID = current.CurrentOrganizationID
 		mfaVerified = current.MFAVerified
+		if current.PortalAgencyID != nil {
+			ctx = WithPortalAgency(ctx, *current.PortalAgencyID)
+		}
 	}
 
 	err := s.revokeOthers(ctx, userID, uuid.Nil)
@@ -143,10 +146,23 @@ func (s *tokenService) ReissueSession(ctx context.Context, userID uuid.UUID, cur
 
 // signIn is false when re-minting for a device that is already signed in.
 func (s *tokenService) generateSession(ctx context.Context, userID uuid.UUID, email, ipaddr, userAgent, authProvider string, orgID *uuid.UUID, mfaVerified, signIn bool) (*models.Token, *errx.Error) {
+	portalAgency, xerr := s.portalBinding(ctx)
+	if xerr != nil {
+		return nil, xerr
+	}
+	// A portal session starts in one of the agency's client workspaces, or in none.
+	if portalAgency != nil {
+		resolved, xerr := s.tokenRepository.DefaultOrganizationInAgency(ctx, userID, *portalAgency)
+		if xerr != nil {
+			return nil, xerr
+		}
+		orgID = resolved
+	}
+
 	// A session always starts inside a workspace. Without one the caller would
 	// reach org-scoped writes with no tenant, and the rows they create are the
 	// ones that later skip suppression and the entitlement gate (issue #168).
-	if orgID == nil {
+	if orgID == nil && portalAgency == nil {
 		resolved, xerr := s.tokenRepository.DefaultOrganization(ctx, userID)
 		if xerr != nil {
 			return nil, xerr
@@ -199,8 +215,9 @@ func (s *tokenService) generateSession(ctx context.Context, userID uuid.UUID, em
 		BrowserName: userAgentInfo.Name,
 		OSName:      userAgentInfo.OS,
 
-		AuthProvider: authProvider,
-		MFAVerified:  mfaVerified,
+		AuthProvider:   authProvider,
+		MFAVerified:    mfaVerified,
+		PortalAgencyID: portalAgency,
 	}
 
 	tx, err := s.db.Begin(ctx)
@@ -224,7 +241,7 @@ func (s *tokenService) generateSession(ctx context.Context, userID uuid.UUID, em
 	}
 	session.AccessNonce = accessNonce
 
-	accessToken, err := s.GenerateTokenFor(PurposeAccess, userID, session.ID, email, accessNonce, issuedAt, accessTokenExpiresAt)
+	accessToken, err := s.GenerateTokenFor(accessPurpose(portalAgency != nil), userID, session.ID, email, accessNonce, issuedAt, accessTokenExpiresAt)
 	if err != nil {
 		errs.CaptureException(err)
 		return nil, errx.InternalError()
@@ -239,7 +256,7 @@ func (s *tokenService) generateSession(ctx context.Context, userID uuid.UUID, em
 	}
 	session.RefreshNonce = refreshNonce
 
-	refreshToken, err := s.GenerateTokenFor(PurposeRefresh, userID, session.ID, email, refreshNonce, issuedAt, refreshTokenExpiresAt)
+	refreshToken, err := s.GenerateTokenFor(refreshPurpose(portalAgency != nil), userID, session.ID, email, refreshNonce, issuedAt, refreshTokenExpiresAt)
 	if err != nil {
 		errs.CaptureException(err)
 		return nil, errx.InternalError()

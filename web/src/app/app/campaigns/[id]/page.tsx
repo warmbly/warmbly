@@ -22,6 +22,7 @@ import { MultiTrend, type TrendSeries } from "@/components/ui/charts";
 import { TONE_DOT } from "@/components/ui/tones";
 import type { DitherTone } from "@/components/ui/dither";
 import AnalyticsShareButton from "@/components/app/analytics/AnalyticsShareButton";
+import ShareCampaignReportButton from "@/components/app/reports/ShareCampaignReportButton";
 import TaskPreview from "@/components/app/campaigns/TaskPreview";
 import SendPlanCard from "@/components/app/campaigns/SendPlanCard";
 import DraftSetupCard from "@/components/app/campaigns/DraftSetupCard";
@@ -210,6 +211,7 @@ export default function CampaignOverview() {
                                 data={shareData}
                                 filename={`warmbly-${campaign.id}.png`}
                             />
+                            {!restricted && <ShareCampaignReportButton campaignId={campaign.id} campaignName={campaign.name} />}
                         </SectionBar>
                         <StatStrip cols={6}>
                             <TrendStat

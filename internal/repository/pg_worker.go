@@ -109,6 +109,9 @@ type WorkerRepository interface {
 	// counts the placement score needs, resolved in one round trip.
 	ListPlacementCandidates(ctx context.Context, orgID uuid.UUID, provider string, allowedStates []models.WorkerHealthState) ([]PlacementCandidateRow, error)
 	CountOrgMailboxes(ctx context.Context, orgID uuid.UUID) (int, error)
+	// AgencyEgressSlot reports whether the workspace is among the agency's
+	// first limit clients with a mailbox, oldest attached first.
+	AgencyEgressSlot(ctx context.Context, agencyID, orgID uuid.UUID, limit int) (bool, error)
 	ListRotationCandidates(ctx context.Context, hotUtilization float64, limit int) ([]MailboxPlacementState, error)
 	GetCapacityRow(ctx context.Context, workerID uuid.UUID) (*WorkerCapacityRowDB, error)
 	AddLoadScore(ctx context.Context, workerID uuid.UUID, delta float64) error

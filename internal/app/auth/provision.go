@@ -284,6 +284,24 @@ func (s *authService) signupAllowed(ctx context.Context, address, invite string)
 	return errx.ErrRegistrationClosed
 }
 
+// ErrPortalRegistrationClosed refuses a signup sent from an agency portal that carries no invitation.
+var ErrPortalRegistrationClosed = errx.NewWithIdentifier(errx.Forbidden, "portal_registration_closed",
+	"Accounts on an agency portal are set up from an invitation. Open the link in the invitation you received.")
+
+// portalSignupAllowed holds a signup sent from a verified portal origin to a live invitation for this address.
+func (s *authService) portalSignupAllowed(ctx context.Context, address, invite string) *errx.Error {
+	if config.PortalOrigin(config.DashboardOriginFromContext(ctx)) == "" {
+		return nil
+	}
+	if invite == "" {
+		return ErrPortalRegistrationClosed
+	}
+	if !s.inviteAllows(ctx, invite, address) {
+		return errx.ErrInvitationInvalid
+	}
+	return nil
+}
+
 // invitedSignupAllowed reports whether an invitee may create their own account.
 // Defaults to true, so an unwired settings service keeps the invite flow working.
 func (s *authService) invitedSignupAllowed(ctx context.Context) bool {

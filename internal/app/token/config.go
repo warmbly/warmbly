@@ -42,4 +42,33 @@ const (
 	PurposeSSOLink = "sso_link"
 	// PurposeInitialPassword lets the holder of an issued initial password choose their own; it opens nothing else.
 	PurposeInitialPassword = "initial_password"
+
+	// A session signed in on an agency portal carries these instead of access, refresh and ws, so a release
+	// that does not hold such a session to its agency refuses its tokens rather than serving them unrestricted.
+	PurposePortalAccess    = "portal_access"
+	PurposePortalRefresh   = "portal_refresh"
+	PurposePortalWebSocket = "portal_ws"
 )
+
+// accessPurpose, refreshPurpose and WebSocketPurpose name what a session's tokens carry: the portal
+// purposes exactly when the session is bound to an agency portal.
+func accessPurpose(portal bool) string {
+	if portal {
+		return PurposePortalAccess
+	}
+	return PurposeAccess
+}
+
+func refreshPurpose(portal bool) string {
+	if portal {
+		return PurposePortalRefresh
+	}
+	return PurposeRefresh
+}
+
+func WebSocketPurpose(portal bool) string {
+	if portal {
+		return PurposePortalWebSocket
+	}
+	return PurposeWebSocket
+}

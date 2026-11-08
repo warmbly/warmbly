@@ -99,7 +99,8 @@ export function PlanPill() {
 
     const plan = getPlan(access.plan);
     const accent = PLAN_ACCENT_CLASSES[plan.accent];
-    const label = access.status === "trialing" ? `${plan.label} · Trial` : plan.label;
+    const name = access.planLabel ?? plan.label;
+    const label = access.status === "trialing" && !access.managed ? `${name} · Trial` : name;
     const dest = access.isOwner ? "/app/settings/billing" : "/app/settings/roles";
 
     return (
@@ -108,7 +109,7 @@ export function PlanPill() {
             className={accent.pill}
             dot={accent.dot}
             label={label}
-            title={`Workspace plan: ${plan.label}${access.isOwner ? " — manage" : ""}`}
+            title={`Workspace plan: ${name}${access.isOwner ? " (manage)" : ""}`}
             icon={plan.id === "enterprise" || plan.id === "business"}
         />
     );

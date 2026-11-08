@@ -26,6 +26,9 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+		if refuseAgencyKeyHeader(c) {
+			return
+		}
 
 		token := strings.TrimPrefix(authHeader, "Bearer ")
 
@@ -40,6 +43,9 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 		c.Set(SessionKey, session)
 		c.Set(AccessTokenKey, token)
 
+		if !h.enforcePortalSession(c, session) {
+			return
+		}
 		if xerr := h.setSessionOrganization(c, session); xerr != nil {
 			errx.JSON(c, xerr)
 			c.Abort()
@@ -57,6 +63,15 @@ func (h *Handler) setSessionOrganization(c *gin.Context, session *models.Session
 		return nil
 	}
 	orgID := *session.CurrentOrganizationID
+	// A portal session keeps a workspace only while it is a client of the session's agency.
+	if allowed, xerr := PortalAllowsWorkspace(c, orgID); xerr != nil {
+		return xerr
+	} else if !allowed {
+		detached := *session
+		detached.CurrentOrganizationID = nil
+		c.Set(SessionKey, &detached)
+		return nil
+	}
 	if h.OrganizationService == nil {
 		c.Set(OrganizationIDKey, orgID)
 		return nil

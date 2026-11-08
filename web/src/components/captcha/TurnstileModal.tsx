@@ -1,6 +1,8 @@
 import { useEffect, useRef, useCallback } from "react";
 import Turnstile, { type BoundTurnstileObject } from "react-turnstile";
 import { TURNSTILE_KEY } from "@/lib/information";
+import { captchaMode, currentPortal } from "@/lib/portal";
+import CaptchaFrame, { CaptchaUnavailable } from "./CaptchaFrame";
 
 interface Props {
     visible: boolean;
@@ -61,6 +63,18 @@ export function TurnstileModal({ visible, onToken }: Props) {
     // No sitekey means no captcha on this deployment; mounting the widget
     // with an empty one only makes Cloudflare reject the parameter.
     if (bypassToken || !TURNSTILE_KEY) return null;
+
+    // On a portal domain the challenge is drawn by the API origin and stays on screen.
+    const mode = captchaMode(currentPortal());
+    if (mode === "unavailable") return <CaptchaUnavailable />;
+    if (mode === "frame") {
+        return <CaptchaFrame
+            onLoad={(bound) => { turnstileRef.current = bound; }}
+            onVerify={handleVerify}
+            onExpire={() => { tokenRef.current = ""; }}
+            onError={() => { tokenRef.current = ""; }}
+        />;
+    }
 
     const turnstileProps = {
         sitekey: TURNSTILE_KEY,

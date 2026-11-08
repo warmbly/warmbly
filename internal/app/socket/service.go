@@ -10,8 +10,8 @@ import (
 )
 
 type SocketService interface {
-	// GenerateWebsocketToken mints a short-lived socket ticket bound to the caller's session.
-	GenerateWebsocketToken(ctx context.Context, userID, sessionID uuid.UUID) (string, *errx.Error)
+	// GenerateWebsocketToken mints a short-lived socket ticket bound to the caller's session; portal for a session bound to an agency portal.
+	GenerateWebsocketToken(ctx context.Context, userID, sessionID uuid.UUID, portal bool) (string, *errx.Error)
 }
 
 type socketService struct {

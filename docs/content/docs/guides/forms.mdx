@@ -170,6 +170,8 @@ Verification proves DNS, not HTTPS. Warmbly Cloud and a self-hosted instance ins
 
 Links already sent keep resolving on whichever host they were built with. Only new links pick up a change.
 
+A forms domain serves forms only. Client connect links and shared reports are served by the portal service, on the shared portal address or an agency's [portal domain](/guides/white-label/#your-own-domain), and form links are never built on either: a client workspace's form links use its own forms domain, or the shared host when it has none.
+
 ### Forms in a campaign
 
 A campaign that links to a form grows a **Forms** panel on its overview page, listing every form it references with, per form: how many recipients were handed a personalized link, how many opened it, how many started filling it in, how many submitted, and the resulting submission rate. A form appears there as soon as it is written into a step, at zero, so you can confirm the wiring before launching.

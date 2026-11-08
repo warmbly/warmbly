@@ -1,6 +1,8 @@
 // Package edgehost keeps every customer hostname this instance serves
-// registered at the edge provider in front of its tracking host, so a domain
-// that verifies starts answering without anyone adding it by hand.
+// registered at the edge provider in front of the service that answers it, so
+// a domain that verifies starts answering without anyone adding it by hand.
+// Each edge zone is one Service: tracking hosts and redirects on one, agency
+// portal domains on another.
 package edgehost
 
 import (
@@ -12,6 +14,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/jobrun"
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/cfsaas"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -37,7 +40,7 @@ const (
 	removalsPerSweep = 20
 )
 
-// Service registers and retires customer hostnames at the edge.
+// Service registers and retires one kind of customer hostname on one edge zone.
 type Service struct {
 	repo repository.EdgeHostnameRepository
 	edge Edge
@@ -53,6 +56,15 @@ func New(repo repository.EdgeHostnameRepository, edge Edge, skip func() []string
 	return &Service{repo: repo, edge: edge, skip: skip}
 }
 
+// Open is the Service for one Cloudflare for SaaS zone, nil unless cfg names both a zone and a token.
+func Open(repo repository.EdgeHostnameRepository, cfg cfsaas.Config, skip func() []string) *Service {
+	edge := cfsaas.New(cfg)
+	if edge == nil {
+		return nil
+	}
+	return New(repo, edge, skip)
+}
+
 // Enabled reports whether this instance registers hostnames at an edge provider.
 func (s *Service) Enabled() bool { return s != nil }
 
@@ -61,11 +73,19 @@ func (s *Service) Start(ctx context.Context) {
 	if s == nil {
 		return
 	}
-	jobrun.Loop(ctx, "edge_hostname_sweep", sweepInterval, true, func(ctx context.Context) error {
+	jobrun.Loop(ctx, s.job(), sweepInterval, true, func(ctx context.Context) error {
 		sweepCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 		defer cancel()
 		return s.Sweep(sweepCtx)
 	})
+}
+
+// job keeps the tracking sweep's original name, so replicas of an older release share its lock.
+func (s *Service) job() string {
+	if k := s.repo.Kind(); k != repository.EdgeTracking {
+		return "edge_hostname_sweep_" + string(k)
+	}
+	return "edge_hostname_sweep"
 }
 
 // Register asks the edge for hosts now rather than at the next sweep; a failure is left to the sweep.
@@ -106,6 +126,18 @@ func (s *Service) Pending(ctx context.Context, hosts ...string) map[string]cfsaa
 	for _, r := range rows {
 		if r.Zone == s.edge.Zone() && r.Status != "active" && r.OwnershipName != "" && r.UnwantedSince == nil {
 			out[r.Hostname] = cfsaas.TXTRecord{Name: r.OwnershipName, Value: r.OwnershipValue}
+		}
+	}
+	return out
+}
+
+// Records are the edge's outstanding TXT records for hosts as records to add, in hosts' order; none once each is active.
+func (s *Service) Records(ctx context.Context, hosts ...string) []models.DNSRecord {
+	pending := s.Pending(ctx, hosts...)
+	var out []models.DNSRecord
+	for _, h := range normalizeAll(hosts) {
+		if txt, ok := pending[h]; ok {
+			out = append(out, models.DNSRecord{Purpose: "edge", Type: "TXT", Name: txt.Name, Value: txt.Value})
 		}
 	}
 	return out
@@ -157,7 +189,7 @@ func (s *Service) Sweep(ctx context.Context) error {
 
 	// An empty read next to a populated table is more likely a fault than every domain leaving at once.
 	if len(want) == 0 && len(rows) > 0 {
-		log.Warn().Int("registered", len(rows)).Msg("edge hostnames: nothing is served, keeping every registration")
+		log.Warn().Str("edge", string(s.repo.Kind())).Int("registered", len(rows)).Msg("edge hostnames: nothing is served, keeping every registration")
 		return nil
 	}
 	var fresh []string
@@ -182,7 +214,7 @@ func (s *Service) Sweep(ctx context.Context) error {
 		return err
 	}
 	if registered > 0 || removed > 0 {
-		log.Info().Int("checked", registered).Int("removed", removed).Msg("edge hostnames: swept")
+		log.Info().Str("edge", string(s.repo.Kind())).Int("checked", registered).Int("removed", removed).Msg("edge hostnames: swept")
 	}
 	return nil
 }

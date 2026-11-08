@@ -13,9 +13,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/warmbly/warmbly/internal/app/brandkit"
 	"github.com/warmbly/warmbly/internal/app/unsublink"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/observability/errs"
+	"github.com/warmbly/warmbly/internal/pkg/displayname"
 )
 
 // The recipient-facing unsubscribe endpoints. PUBLIC and unauthenticated by
@@ -49,7 +51,7 @@ func (h *Handler) UnsubscribePage(c *gin.Context) {
 		renderUnsubPage(c, http.StatusOK, unsubView{Title: t.TestTitle, Body: t.TestBody})
 		return
 	}
-	renderUnsubPage(c, http.StatusOK, unsubView{Title: t.ConfirmTitle, Body: t.ConfirmBody, Confirm: c.Request.URL.Path})
+	renderUnsubPage(c, http.StatusOK, h.withUnsubBrand(c, claims.OrgID, unsubView{Title: t.ConfirmTitle, Body: t.ConfirmBody, Confirm: c.Request.URL.Path}))
 }
 
 // unsubscribeBodyLimit caps the public POST bodies. The engine-wide limit is
@@ -91,7 +93,7 @@ func (h *Handler) UnsubscribeSubmit(c *gin.Context) {
 	// A browser POST without the confirm field is not the button: show the
 	// confirm page again rather than act on it.
 	if !oneClick && !confirmed {
-		renderUnsubPage(c, http.StatusOK, unsubView{Title: t.ConfirmTitle, Body: t.ConfirmBody, Confirm: c.Request.URL.Path})
+		renderUnsubPage(c, http.StatusOK, h.withUnsubBrand(c, claims.OrgID, unsubView{Title: t.ConfirmTitle, Body: t.ConfirmBody, Confirm: c.Request.URL.Path}))
 		return
 	}
 
@@ -110,10 +112,10 @@ func (h *Handler) UnsubscribeSubmit(c *gin.Context) {
 		return
 	}
 	if xerr != nil {
-		renderUnsubPage(c, http.StatusOK, unsubView{Title: t.FailedTitle, Body: t.FailedBody})
+		renderUnsubPage(c, http.StatusOK, h.withUnsubBrand(c, claims.OrgID, unsubView{Title: t.FailedTitle, Body: t.FailedBody}))
 		return
 	}
-	renderUnsubPage(c, http.StatusOK, unsubView{Title: t.DoneTitle, Body: t.DoneBody, Resubscribe: c.Request.URL.Path + "/resubscribe"})
+	renderUnsubPage(c, http.StatusOK, h.withUnsubBrand(c, claims.OrgID, unsubView{Title: t.DoneTitle, Body: t.DoneBody, Resubscribe: c.Request.URL.Path + "/resubscribe"}))
 }
 
 func (h *Handler) UnsubscribeUndo(c *gin.Context) {
@@ -128,10 +130,10 @@ func (h *Handler) UnsubscribeUndo(c *gin.Context) {
 		return
 	}
 	if xerr := h.AdvancedService.Resubscribe(c.Request.Context(), claims.OrgID, claims.ContactID); xerr != nil {
-		renderUnsubPage(c, http.StatusOK, unsubView{Title: t.FailedTitle, Body: t.FailedResubscribeBody})
+		renderUnsubPage(c, http.StatusOK, h.withUnsubBrand(c, claims.OrgID, unsubView{Title: t.FailedTitle, Body: t.FailedResubscribeBody}))
 		return
 	}
-	renderUnsubPage(c, http.StatusOK, unsubView{Title: t.ResubscribedTitle, Body: t.ResubscribedBody})
+	renderUnsubPage(c, http.StatusOK, h.withUnsubBrand(c, claims.OrgID, unsubView{Title: t.ResubscribedTitle, Body: t.ResubscribedBody}))
 }
 
 // errUnsubUnavailable is a ticket lookup that failed rather than a link that
@@ -207,6 +209,25 @@ type unsubView struct {
 	// Set by renderUnsubPage from the request's language.
 	Lang, ConfirmButton, ResubscribeButton string
 	RTL                                    bool
+
+	// BrandName and Accent are the workspace's own brand, set only when it chose one.
+	BrandName, Accent string
+}
+
+// withUnsubBrand names the sending workspace's own brand on the page; the deployment's brand never appears here.
+func (h *Handler) withUnsubBrand(c *gin.Context, orgID uuid.UUID, v unsubView) unsubView {
+	if orgID == uuid.Nil {
+		return v
+	}
+	res := h.publicBrand(c.Request.Context(), orgID)
+	if !res.Custom() {
+		return v
+	}
+	v.BrandName = displayname.DisplayableOr(res.Brand.Name, "")
+	if accent, ok := brandkit.NormalizeAccent(res.Brand.AccentColor); ok {
+		v.Accent = accent
+	}
+	return v
 }
 
 // unsubLanguage picks the page's language from the browser's
@@ -269,14 +290,15 @@ func unsubCopyFor(acceptLanguage string) unsubCopy {
 }
 
 // A neutral page: the email came from the customer's mailbox, so the page
-// names no brand and carries no scripts or external assets.
+// names no brand but the workspace's own, and carries no scripts or external assets.
 var unsubTemplate = template.Must(template.New("unsubscribe").Parse(`<!doctype html><html lang="{{.Lang}}"{{if .RTL}} dir="rtl"{{end}}><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>{{.Title}}</title>
 <style>body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;max-width:32rem;margin:4rem auto;padding:0 1.25rem;color:#0f172a;line-height:1.5}
 h1{font-size:1.25rem;margin:0 0 .5rem}p{color:#475569;margin:0 0 1.25rem}
 button{font:inherit;padding:.55rem 1rem;border-radius:.375rem;border:1px solid #0284c7;background:#0284c7;color:#fff;cursor:pointer}
-button.secondary{background:#fff;color:#0f172a;border-color:#cbd5e1}</style></head>
-<body><h1>{{.Title}}</h1><p>{{.Body}}</p>
+button.secondary{background:#fff;color:#0f172a;border-color:#cbd5e1}.brand{font-size:.8rem;font-weight:600;color:#334155;margin:0 0 1.5rem}
+{{if .Accent}}button:not(.secondary){background:{{.Accent}};border-color:{{.Accent}}}{{end}}</style></head>
+<body>{{if .BrandName}}<p class="brand">{{.BrandName}}</p>{{end}}<h1>{{.Title}}</h1><p>{{.Body}}</p>
 {{if .Confirm}}<form method="post" action="{{.Confirm}}"><input type="hidden" name="confirm" value="1"><button type="submit">{{.ConfirmButton}}</button></form>{{end}}
 {{if .Resubscribe}}<form method="post" action="{{.Resubscribe}}"><button type="submit" class="secondary">{{.ResubscribeButton}}</button></form>{{end}}
 </body></html>`))

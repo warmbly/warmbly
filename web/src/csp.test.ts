@@ -22,6 +22,12 @@ describe("dashboard CSP", () => {
         expect(mailPreviewCsp).toContain("script-src 'none'");
         expect(mailPreviewCsp).toContain("img-src data: https: http:");
     });
+    it("frames the API origin for the captcha bridge and nothing else", () => {
+        const frames = dashboardCsp({ frames: ["https://api.example.test"] }).split("; ").find((directive) => directive.startsWith("frame-src "));
+        expect(frames).toBe("frame-src 'self' https://challenges.cloudflare.com https://api.example.test");
+        expect(dashboardCsp().split("; ")).toContain("frame-src 'self' https://challenges.cloudflare.com");
+        expect(configuredSources({ VITE_API_URL: "https://api.example.test/v1" }).frames).toEqual(["https://api.example.test"]);
+    });
     it("serves final Vite HTML with a matching fresh nonce for concurrent requests", async () => {
         const temporary = mkdtempSync(path.join(tmpdir(), "warmbly-csp-dev-"));
         const server = await createServer({ root: temporary, configFile: false, html: { cspNonce: noncePlaceholder }, plugins: [dashboardCspPlugin({})], server: { host: "127.0.0.1", port: 0 }, logLevel: "silent" });
@@ -100,6 +106,7 @@ describe("dashboard CSP", () => {
             connections: ["https://api.example.test", "wss://api.example.test", "wss://realtime.example.test"],
             analytics: ["https://eu.i.posthog.com", "https://eu-assets.i.posthog.com"],
             images: ["https://api.example.test"],
+            frames: ["https://api.example.test"],
         });
         expect(origin("https://public-key@sentry.example.test/123")).toBe("https://sentry.example.test");
         expect(origin("/ingest")).toBe("");

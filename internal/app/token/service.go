@@ -21,7 +21,9 @@ type TokenService interface {
 	GenerateTokenFor(purpose string, userID, sessionID uuid.UUID, email, nonce string, issuedAt, expiresAt time.Time) (string, error)
 	GenerateWebsocketProxyProof(ticket *TokenClaims, clientIP string) (string, error)
 	// GenerateWebsocketTicket mints a socket ticket bound to the session it was minted from.
-	GenerateWebsocketTicket(userID, ticketID, sessionID uuid.UUID, nonce string, issuedAt, expiresAt time.Time) (string, error)
+	GenerateWebsocketTicket(userID, ticketID, sessionID uuid.UUID, nonce string, issuedAt, expiresAt time.Time, portal bool) (string, error)
+	// VerifyWebsocketTicket accepts a socket ticket minted for a normal or a portal session.
+	VerifyWebsocketTicket(tokenStr string) (*TokenClaims, *errx.Error)
 	VerifyToken(tokenStr string) (*TokenClaims, *errx.Error)
 	// VerifyTokenFor also requires the token to have been minted for this
 	// purpose, so one flow's token cannot be spent on another.
@@ -35,6 +37,8 @@ type TokenService interface {
 	WireSignInAlerter(a SignInAlerter)
 	WireSessionObserver(o SessionObserver)
 	WireRevocationPublisher(p RevocationPublisher)
+	// WirePortalResolver lets sign-in bind a session to the agency portal it was minted for.
+	WirePortalResolver(r PortalResolver)
 	GetSession(ctx context.Context, sessionID uuid.UUID) (*models.Session, *errx.Error)
 	ValidateAccessToken(ctx context.Context, accessToken string) (*models.Session, *errx.Error)
 	RefreshToken(ctx context.Context, refreshToken string) (*models.Token, *errx.Error)
@@ -72,6 +76,7 @@ type tokenService struct {
 	signInAlert     SignInAlerter
 	sessionObserver SessionObserver
 	revocations     RevocationPublisher
+	portals         PortalResolver
 
 	AuthSecret string
 }

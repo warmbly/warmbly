@@ -10,10 +10,15 @@ import { AuthError } from "./errors/auth";
 import type { AppError } from "./api/client/normalizeError";
 import switchOrganization from "./api/client/app/organizations/switchOrganization";
 import { organizationsQuery } from "./api/hooks/app/organizations/useOrganizations";
+import { agenciesQuery } from "./api/hooks/app/agency/useAgency";
+import { isAgencyPath, lastView } from "./agencyView";
+import { currentPortal } from "./portal";
 import { userQuery } from "./api/hooks/auth/useUser";
 import { timezonesQuery } from "./api/hooks/app/useTimezones";
 import { subscriptionQuery } from "./api/hooks/app/subscription/useSubscription";
 import { authConfigQuery } from "./api/hooks/auth/useAuthConfig";
+import { workspaceBrandQuery } from "./api/hooks/app/brand";
+import { isAccessRestricted } from "@/hooks/usePermission";
 import { useAppStore } from "@/stores/useAppStore";
 
 let boot: Promise<void> | null = null;
@@ -77,29 +82,49 @@ async function runBoot(queryClient: QueryClient, location: { pathname: string; h
     try {
         // The remembered workspace goes on the session in parallel with the
         // membership list; a stale one is refused and resolved below.
-        const [orgs, rememberedSync] = await Promise.all([
+        const [orgs, agencies, rememberedSync] = await Promise.all([
             queryClient.ensureQueryData(organizationsQuery),
+            queryClient.ensureQueryData(agenciesQuery).then((r) => r.data, () => []),
             remembered
                 ? switchOrganization(remembered.id).then(() => true, () => false)
                 : Promise.resolve(false),
         ]);
         store.setOrganizations(orgs);
 
+        // Agency pages belong to the agency, so they render with no workspace picked.
+        const inAgency = isAgencyPath(location.pathname);
+        const staff = agencies.length > 0;
+        // Agency staff signing in on their agency's portal domain open the agency view first.
+        const portalStaff = staff && currentPortal().portal;
         const stillMember = !!remembered && orgs.some((o) => o.id === remembered.id);
         if (stillMember && remembered) {
             if (rememberedSync) syncedOrgId = remembered.id;
-        } else if (orgs.length === 1) {
+        } else if (inAgency) {
+            // Nothing to pick.
+        } else if (orgs.length === 1 && !portalStaff) {
             await switchOrganization(orgs[0].id);
             syncedOrgId = orgs[0].id;
             store.setCurrentOrganization(orgs[0]);
+        } else if (staff) {
+            throw redirect({ to: "/app/agency", replace: true });
         } else {
             throw redirect({ to: "/select-org", search: { next: location.href }, replace: true });
         }
+        // Reopening the app returns to the agency view when that is where it was left.
+        if (staff && !inAgency && isDefaultLanding(location) && lastView(portalStaff ? "agency" : "workspace") === "agency") {
+            throw redirect({ to: "/app/agency", replace: true });
+        }
 
         // Identity carries the workspace's folders and labels, so it follows the switch.
+        // A client member sees the workspace's brand in the chrome, so it is there before the first paint.
+        const current = useAppStore.getState().currentOrganization;
+        const managed = !!current?.agency && !agencies.some((a) => a.id === current.agency?.id);
         const [user] = await Promise.all([
             queryClient.ensureQueryData(userQuery),
-            queryClient.ensureQueryData(subscriptionQuery).catch(() => undefined),
+            current ? queryClient.ensureQueryData(subscriptionQuery).catch(() => undefined) : undefined,
+            current && (managed || isAccessRestricted(current))
+                ? queryClient.ensureQueryData(workspaceBrandQuery).catch(() => undefined)
+                : undefined,
         ]);
         if (!user.onboarding_completed_at) {
             // Kept through onboarding, so a sign-up from a link still lands where it pointed.
@@ -114,4 +139,10 @@ async function runBoot(queryClient: QueryClient, location: { pathname: string; h
         // Anything else is shown by the providers' error states, and the next navigation boots again.
         boot = null;
     }
+}
+
+// Where opening the app or signing in lands when nothing named a page.
+function isDefaultLanding(location: { pathname: string; href: string }): boolean {
+    const url = new URL(location.href, window.location.origin);
+    return url.pathname.replace(/\/+$/, "") === "/app/emails" && !url.searchParams.has("agent_session");
 }

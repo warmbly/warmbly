@@ -31,6 +31,7 @@ import {
     UsersIcon,
     WebhookIcon,
     GlobeIcon,
+    PaletteIcon,
     TagsIcon,
 } from "lucide-react";
 import { UnsavedProvider, useUnsavedRegistry } from "@/hooks/context/unsaved";
@@ -82,6 +83,7 @@ const GROUPS: SectionGroup[] = [
             { path: "workspace", label: "Workspace", icon: BriefcaseIcon, description: "Org-wide settings.", ownerOnly: true },
             { path: "sending", label: "Sending", icon: SendIcon, description: "When campaign mail reaches each recipient.", permission: "MANAGE_SETTINGS" },
             { path: "tracking", label: "Website tracking", icon: GlobeIcon, description: "Page views on your site, in the contact timeline.", permission: "MANAGE_SETTINGS" },
+            { path: "branding", label: "Branding", icon: PaletteIcon, description: "Your brand and domain on the pages clients see.", permission: "MANAGE_SETTINGS" },
             { path: "inbox-tagging", label: "Inbox tagging", icon: TagsIcon, description: "Label and score inbound mail automatically.", permission: "VIEW_ANALYTICS" },
             { path: "ai-skills", label: "AI skills", icon: SparklesIcon, description: "Playbooks your AI features follow.", permission: "MANAGE_SETTINGS" },
             { path: "billing", label: "Billing", icon: CreditCardIcon, description: "Plan, balance, invoices.", permission: "MANAGE_BILLING", billingOnly: true },

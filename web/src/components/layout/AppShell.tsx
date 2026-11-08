@@ -24,6 +24,7 @@ import { AppNav } from "./AppNav";
 import PendingDeletionBar from "./PendingDeletionBar";
 import SendingRestrictedBar from "./SendingRestrictedBar";
 import TrialBar from "./TrialBar";
+import { useClientBrand } from "@/hooks/useClientBrand";
 import BalanceBanner from "@/components/app/billing/BalanceBanner";
 import { RouteBoundary } from "./ErrorBoundary";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -31,6 +32,7 @@ import { GlobalCursorsProvider } from "@/components/app/presence/GlobalCursors";
 import { useRouteKey } from "@/hooks/useRouteKey";
 import { useScrollMemory, type ScrollStore } from "@/hooks/useScrollMemory";
 import { RouteFallback } from "./RouteStates";
+import { rememberView } from "@/lib/agencyView";
 
 // Overlays closed on first paint, so the frame does not wait on their code.
 const ShortcutsModal = lazy(() => import("@/components/shared/ShortcutsModal").then((m) => ({ default: m.ShortcutsModal })));
@@ -47,9 +49,12 @@ export function AppShell() {
     // Mobile nav drawer. On >=md the sidebar is a static column and this is
     // ignored; below md it's an off-canvas drawer toggled from the header.
     const [navOpen, setNavOpen] = useState(false);
+    // A client member of a branded workspace is not shown Warmbly's trial or balance prompts.
+    const clientBrand = useClientBrand();
     const { pathname } = useLocation();
     // Close the drawer whenever the route changes (tapping a nav link).
     useEffect(() => setNavOpen(false), [pathname]);
+    useEffect(() => rememberView("workspace"), []);
 
     // The page content's scroll container, anchor for the global cursor layer.
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -71,8 +76,8 @@ export function AppShell() {
                     own account is scheduled for deletion. */}
                 <SendingRestrictedBar />
                 <PendingDeletionBar />
-                <TrialBar />
-                <BalanceBanner />
+                {!clientBrand && <TrialBar />}
+                {!clientBrand && <BalanceBanner />}
 
                 <AppHeader onMenu={() => setNavOpen(true)} />
 

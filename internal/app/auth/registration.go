@@ -28,6 +28,9 @@ func (s *authService) RegistrationStart(ctx context.Context, data *AuthData, ori
 	if err := s.signupAllowed(ctx, data.Email, data.Invite); err != nil {
 		return nil, err
 	}
+	if err := s.portalSignupAllowed(ctx, data.Email, data.Invite); err != nil {
+		return nil, err
+	}
 
 	// The caller's 400, not an incident. See LoginStart.
 	if xerr := s.verifyHuman(ctx, appattest.ActionRegister, data.Turnstile, data.AppAttest, ipaddr); xerr != nil {
@@ -159,6 +162,9 @@ func (s *authService) RegistrationConfirm(ctx context.Context, data *ConfirmData
 	// Re-check the policy: a session minted while signups were open must not
 	// outlive a lockdown applied before the code came back.
 	if err := s.signupAllowed(ctx, claims.Email, sess.Invite); err != nil {
+		return nil, err
+	}
+	if err := s.portalSignupAllowed(ctx, claims.Email, sess.Invite); err != nil {
 		return nil, err
 	}
 

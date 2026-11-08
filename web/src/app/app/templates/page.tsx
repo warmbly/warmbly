@@ -11,7 +11,9 @@ import { browseSearchSchema } from "@/lib/browse-other-lists";
 import { UserContext } from "@/hooks/context/user";
 import { useAppStore } from "@/stores/useAppStore";
 import {
+    CheckIcon,
     CopyIcon,
+    CopyPlusIcon,
     FileTextIcon,
     Loader2Icon,
     MoreHorizontalIcon,
@@ -60,6 +62,7 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import { TEMPLATE_PRESETS, type TemplatePreset } from "./presets";
 import { Checkbox } from "@/components/ui/checkbox";
+import CopyToWorkspaceDialog, { type CopySubject } from "@/components/app/workspaceCopy/CopyToWorkspaceDialog";
 
 // Standard merge fields come from the shared catalog (@/lib/templateVars) so
 // this surface never drifts from the campaign editor or the send-time renderer.
@@ -246,6 +249,26 @@ function TemplateList({
     onEdit: (t: Template) => void;
 }) {
     const reorder = useReorderTemplates();
+    const hasOtherWorkspaces = useAppStore((s) => s.organizations.length > 1);
+    const [selected, setSelected] = React.useState<string[]>([]);
+    const [copySubject, setCopySubject] = React.useState<CopySubject | null>(null);
+
+    // A template deleted here or by a teammate drops out of the selection.
+    React.useEffect(() => {
+        setSelected((prev) => {
+            const next = prev.filter((id) => templates.some((t) => t.id === id));
+            return next.length === prev.length ? prev : next;
+        });
+    }, [templates]);
+
+    function toggleSelected(id: string) {
+        setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    }
+
+    function copySelected() {
+        const picked = templates.filter((t) => selected.includes(t.id)).map((t) => ({ id: t.id, name: t.name }));
+        if (picked.length > 0) setCopySubject({ kind: "templates", templates: picked });
+    }
 
     async function move(idx: number, dir: -1 | 1) {
         const next = idx + dir;
@@ -261,6 +284,7 @@ function TemplateList({
     }
 
     return (
+        <>
         <div className="rounded-md border border-slate-200 bg-white divide-y divide-slate-200 overflow-hidden">
             {templates.map((t, idx) => (
                 <TemplateRow
@@ -272,9 +296,55 @@ function TemplateList({
                     onMoveUp={() => move(idx, -1)}
                     onMoveDown={() => move(idx, 1)}
                     reordering={reorder.isPending}
+                    selectable={hasOtherWorkspaces}
+                    selected={selected.includes(t.id)}
+                    onToggleSelected={() => toggleSelected(t.id)}
+                    onCopyToWorkspace={
+                        hasOtherWorkspaces
+                            ? () => setCopySubject({ kind: "templates", templates: [{ id: t.id, name: t.name }] })
+                            : undefined
+                    }
                 />
             ))}
         </div>
+        <AnimatePresence>
+            {selected.length > 0 && (
+                <motion.div
+                    initial={{ y: 16, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    exit={{ y: 16, opacity: 0 }}
+                    transition={{ duration: 0.16 }}
+                    className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center max-w-[calc(100vw-16px)] flex-wrap justify-center md:max-w-none md:flex-nowrap gap-1.5 rounded-md border border-slate-200 bg-white shadow-[0_6px_20px_-4px_rgba(15,23,42,0.12),0_2px_4px_rgba(15,23,42,0.04)] px-2 py-1.5"
+                >
+                    <div className="inline-flex items-center gap-1.5 px-2 h-7 rounded bg-sky-50 text-sky-700 text-[12px] font-medium">
+                        <CheckIcon className="w-3 h-3" />
+                        <span>{selected.length.toLocaleString()} selected</span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={copySelected}
+                        className="h-7 px-2.5 rounded-md text-[12px] font-medium text-slate-700 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center gap-1.5"
+                    >
+                        <CopyPlusIcon className="w-3.5 h-3.5" />
+                        Copy to workspace…
+                    </button>
+                    <button
+                        type="button"
+                        aria-label="Clear selection"
+                        onClick={() => setSelected([])}
+                        className="size-7 rounded-md text-slate-400 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center"
+                    >
+                        <XIcon className="w-3.5 h-3.5" />
+                    </button>
+                </motion.div>
+            )}
+        </AnimatePresence>
+        <CopyToWorkspaceDialog
+            open={copySubject !== null}
+            onClose={() => setCopySubject(null)}
+            subject={copySubject}
+        />
+        </>
     );
 }
 
@@ -286,6 +356,10 @@ function TemplateRow({
     onMoveUp,
     onMoveDown,
     reordering,
+    selectable,
+    selected,
+    onToggleSelected,
+    onCopyToWorkspace,
 }: {
     template: Template;
     index: number;
@@ -294,6 +368,10 @@ function TemplateRow({
     onMoveUp: () => void;
     onMoveDown: () => void;
     reordering: boolean;
+    selectable: boolean;
+    selected: boolean;
+    onToggleSelected: () => void;
+    onCopyToWorkspace?: () => void;
 }) {
     const duplicate = useDuplicateTemplate();
     const del = useDeleteTemplate();
@@ -330,6 +408,15 @@ function TemplateRow({
 
     return (
         <div className="px-4 py-3 flex items-start gap-3 hover:bg-slate-50/60 transition-colors">
+            {selectable && (
+                <Checkbox
+                    className="pt-1.5"
+                    checked={selected}
+                    onChange={onToggleSelected}
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label={`Select ${template.name}`}
+                />
+            )}
             <div className="flex flex-col items-center gap-0.5 pt-1 shrink-0">
                 <button
                     type="button"
@@ -405,6 +492,14 @@ function TemplateRow({
                         >
                             Duplicate
                         </PopoverMenuItem>
+                        {onCopyToWorkspace && (
+                            <PopoverMenuItem
+                                onSelect={onCopyToWorkspace}
+                                icon={<CopyPlusIcon className="w-3 h-3" />}
+                            >
+                                Copy to workspace…
+                            </PopoverMenuItem>
+                        )}
                         <PopoverMenuSeparator />
                         <PopoverMenuItem
                             onSelect={doDelete}

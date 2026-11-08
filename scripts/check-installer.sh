@@ -68,6 +68,21 @@ done
 grep -q '^WARMBLY_TAG=v0.0.0-test$' "$work/env" || fail "--version was not pinned into .env"
 pass "--print-env writes a complete .env"
 
+# A re-run adopts every secret it finds and adds only the ones missing. The
+# portal token is the one an install from before the portal lacks.
+mkdir -p "$work/rerun"
+grep -v '^PORTAL_EDGE_TOKEN=' "$work/env" >"$work/rerun/.env"
+sh "$SCRIPT" --print-env --no-color --dir "$work/rerun" >"$work/rerun.env" || fail "--print-env over an existing .env failed"
+for key in AUTH_SECRET CREDENTIALS_ENCRYPTION_KEY KMS_LOCAL_MASTER_KEY INTERNAL_API_TOKEN SECRET_KEY_BASE; do
+  [[ "$(grep "^${key}=" "$work/env")" == "$(grep "^${key}=" "$work/rerun.env")" ]] || fail "a re-run changed $key"
+done
+token=$(sed -n 's/^PORTAL_EDGE_TOKEN=//p' "$work/rerun.env")
+(( ${#token} >= 32 )) || fail "a re-run over an .env without PORTAL_EDGE_TOKEN did not add one"
+cp "$work/rerun.env" "$work/rerun/.env"
+sh "$SCRIPT" --print-env --no-color --dir "$work/rerun" >"$work/rerun2.env" || fail "a second re-run failed"
+[[ "$(sed -n 's/^PORTAL_EDGE_TOKEN=//p' "$work/rerun2.env")" == "$token" ]] || fail "a re-run regenerated PORTAL_EDGE_TOKEN"
+pass "a re-run keeps every secret and adds a missing portal token once"
+
 # Every shape of answer has to produce a compose file compose accepts. These
 # are the four that change the file's structure rather than its values.
 check_shape() {
@@ -97,6 +112,13 @@ extract("docker-compose.yml", "docker-compose.yml")
 extract("Caddyfile", "Caddyfile")
 PY
   [[ -f "$dir/docker-compose.yml" ]] || fail "--dry-run printed no compose file for: $label"
+  # The portal ships with tracking and forms, and the backend only builds links on it with PORTAL_DOMAIN set.
+  if grep -q '^  tracking:$' "$dir/docker-compose.yml"; then
+    grep -q '^  portal:$' "$dir/docker-compose.yml" || fail "no portal service for: $label"
+    grep -q '^PORTAL_DOMAIN=.' "$dir/.env" || fail "no PORTAL_DOMAIN for: $label"
+  else
+    ! grep -q '^  portal:$' "$dir/docker-compose.yml" || fail "a portal service without tracking for: $label"
+  fi
   if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
     ( cd "$dir" && docker compose config >/dev/null ) || fail "invalid compose file for: $label"
   fi

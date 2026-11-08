@@ -28,6 +28,9 @@ type EmailImageRepository interface {
 	ListByOrg(ctx context.Context, orgID uuid.UUID, limit int, beforeCreatedAt time.Time, beforeID uuid.UUID) ([]models.EmailImage, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*models.EmailImage, error)
 	Delete(ctx context.Context, id uuid.UUID) error
+	// ListReferenced returns orgID's images whose URL appears in the steps or
+	// variants of campaignID (uuid.Nil for none) or in any of texts.
+	ListReferenced(ctx context.Context, orgID, campaignID uuid.UUID, texts []string) ([]models.EmailImage, error)
 }
 
 type emailImageRepository struct {
@@ -125,4 +128,36 @@ func (r *emailImageRepository) GetByID(ctx context.Context, id uuid.UUID) (*mode
 func (r *emailImageRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	_, err := r.DB.Exec(ctx, `DELETE FROM email_images WHERE id = $1`, id)
 	return err
+}
+
+func (r *emailImageRepository) ListReferenced(ctx context.Context, orgID, campaignID uuid.UUID, texts []string) ([]models.EmailImage, error) {
+	query := `SELECT ` + emailImageCols + `
+		FROM email_images i
+		WHERE i.organization_id = $1 AND i.url <> '' AND (
+			EXISTS (SELECT 1 FROM sequences s
+				WHERE s.campaign_id = $2 AND s.organization_id = $1
+				  AND (strpos(s.body_html, i.url) > 0 OR strpos(s.body_plain, i.url) > 0))
+			OR EXISTS (SELECT 1 FROM campaign_ab_variants v JOIN campaigns c ON c.id = v.campaign_id
+				WHERE v.campaign_id = $2 AND c.organization_id = $1
+				  AND (strpos(v.body_html, i.url) > 0 OR strpos(v.body_plain, i.url) > 0))
+			OR EXISTS (SELECT 1 FROM unnest($3::text[]) AS t(body) WHERE strpos(t.body, i.url) > 0)
+		)
+		ORDER BY i.created_at, i.id`
+	if texts == nil {
+		texts = []string{}
+	}
+	rows, err := r.DB.Query(ctx, query, orgID, campaignID, texts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]models.EmailImage, 0)
+	for rows.Next() {
+		var img models.EmailImage
+		if err := scanEmailImage(rows, &img); err != nil {
+			return nil, err
+		}
+		out = append(out, img)
+	}
+	return out, rows.Err()
 }

@@ -10,7 +10,7 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/crypt"
 )
 
-func (s *socketService) GenerateWebsocketToken(ctx context.Context, userID, sessionID uuid.UUID) (string, *errx.Error) {
+func (s *socketService) GenerateWebsocketToken(ctx context.Context, userID, sessionID uuid.UUID, portal bool) (string, *errx.Error) {
 	if sessionID == uuid.Nil {
 		return "", errx.ErrUnauthorized
 	}
@@ -23,7 +23,7 @@ func (s *socketService) GenerateWebsocketToken(ctx context.Context, userID, sess
 		return "", errx.InternalError()
 	}
 
-	wsToken, err := s.tokenService.GenerateWebsocketTicket(userID, id, sessionID, nonce, issuedAt, expiresAt)
+	wsToken, err := s.tokenService.GenerateWebsocketTicket(userID, id, sessionID, nonce, issuedAt, expiresAt, portal)
 	if err != nil {
 		errs.CaptureException(err)
 		return "", errx.InternalError()

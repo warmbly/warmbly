@@ -13,13 +13,13 @@ import { PERMISSION_BITS } from "./permissions";
 
 describe("isScopedPath", () => {
     it("opens the surfaces a restricted scope filters", () => {
-        for (const p of ["/app/campaigns", "/app/campaigns/abc", "/app/campaigns/abc/steps", "/app/campaigns/abc/schedule", "/app/unibox/inbox/t1", "/app/analytics", "/app/settings/profile"]) {
+        for (const p of ["/app/campaigns", "/app/campaigns/abc", "/app/campaigns/abc/steps", "/app/campaigns/abc/schedule", "/app/unibox/inbox/t1", "/app/analytics", "/app/settings/profile", "/app/agency", "/app/agency/inbox"]) {
             expect(isScopedPath(p)).toBe(true);
         }
     });
 
     it("keeps everything else closed, including campaign tabs that read contacts or settings", () => {
-        for (const p of ["/app/emails", "/app/contacts", "/app/settings/members", "/app/settings/roles", "/app/campaigns/abc/leads", "/app/campaigns/abc/preferences", "/app/campaignsx"]) {
+        for (const p of ["/app/emails", "/app/contacts", "/app/settings/members", "/app/settings/roles", "/app/campaigns/abc/leads", "/app/campaigns/abc/preferences", "/app/campaignsx", "/app/agencyx"]) {
             expect(isScopedPath(p)).toBe(false);
         }
     });

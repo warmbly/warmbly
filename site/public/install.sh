@@ -62,6 +62,7 @@ PORT_ADMIN=5174
 PORT_TRACKING=3000
 PORT_REALTIME=4000
 PORT_FORMS=8090
+PORT_PORTAL=8095
 
 # ─────────────────────────────────────────────────────────────────────────
 # Answers. Every one is a flag, an environment variable and a wizard question,
@@ -74,6 +75,7 @@ TLS="${WARMBLY_TLS:-none}"
 DATA_ROOT="${WARMBLY_DATA_ROOT:-}"          # empty = <dir>/data; "volumes" = docker named volumes
 BLOBS="${WARMBLY_BLOBS:-filesystem}"        # filesystem | s3
 COMPONENTS="${WARMBLY_COMPONENTS:-full}"    # core | full
+PORTAL_ANSWER="${WARMBLY_PORTAL_DOMAIN:-}"  # empty = derived like the forms host
 VERSION="${WARMBLY_VERSION:-}"              # empty = resolve the newest release
 CHANNEL="${WARMBLY_CHANNEL:-stable}"
 REGISTRY="${WARMBLY_IMAGE_PREFIX:-$DEFAULT_REGISTRY}"
@@ -1016,9 +1018,10 @@ derive() {
             H_APP="app.$HOSTNAME_ANSWER"; H_API="api.$HOSTNAME_ANSWER"
             H_ADMIN="admin.$HOSTNAME_ANSWER"; H_WS="ws.$HOSTNAME_ANSWER"
             H_TRACK="track.$HOSTNAME_ANSWER"; H_FORMS="forms.$HOSTNAME_ANSWER"
+            H_PORTAL="${PORTAL_ANSWER:-portal.$HOSTNAME_ANSWER}"
             URL_APP="https://$H_APP"; URL_API="https://$H_API"; URL_ADMIN="https://$H_ADMIN"
             URL_WS="wss://$H_WS/socket/websocket"
-            TRACKING_DOMAIN="$H_TRACK"; FORMS_DOMAIN="$H_FORMS"
+            TRACKING_DOMAIN="$H_TRACK"; FORMS_DOMAIN="$H_FORMS"; PORTAL_DOMAIN="$H_PORTAL"
             PHX_HOST="$H_WS"
             # The origins a browser connects FROM, which are the dashboard and
             # the admin panel, not this service's own host.
@@ -1038,6 +1041,7 @@ derive() {
             URL_WS="${WARMBLY_WS_URL:-wss://ws.$HOSTNAME_ANSWER/socket/websocket}"
             TRACKING_DOMAIN="${WARMBLY_TRACKING_DOMAIN:-track.$HOSTNAME_ANSWER}"
             FORMS_DOMAIN="${WARMBLY_FORMS_DOMAIN:-forms.$HOSTNAME_ANSWER}"
+            PORTAL_DOMAIN="${PORTAL_ANSWER:-portal.$HOSTNAME_ANSWER}"
             PHX_HOST=$(printf '%s' "$URL_WS" | sed -e 's|^wss\{0,1\}://||' -e 's|/.*$||')
             CHECK_ORIGIN_HOSTS="$URL_APP,$URL_ADMIN"
             TRUSTED="$PROXY_CIDRS"
@@ -1051,6 +1055,7 @@ derive() {
             URL_WS="ws://$HOSTNAME_ANSWER:$PORT_REALTIME/socket/websocket"
             TRACKING_DOMAIN="$HOSTNAME_ANSWER:$PORT_TRACKING"
             FORMS_DOMAIN="$HOSTNAME_ANSWER:$PORT_FORMS"
+            PORTAL_DOMAIN="${PORTAL_ANSWER:-$HOSTNAME_ANSWER:$PORT_PORTAL}"
             PHX_HOST="$HOSTNAME_ANSWER"
             # Plain HTTP on a LAN: the origin is whatever host the person typed,
             # which this install cannot know, so the check stays off. The socket
@@ -1077,14 +1082,15 @@ derive() {
     fi
 
     # The component set decides which services exist at all. A core install
-    # has no tracking and no forms service, so naming a host for either is
-    # worse than leaving it unset: campaign mail would ship links, an opt-out
-    # address and share URLs pointing at a name nothing answers on.
+    # has no tracking, forms or portal service, so naming a host for any of
+    # them is worse than leaving it unset: campaign mail would ship links, an
+    # opt-out address and share URLs pointing at a name nothing answers on.
+    # Without PORTAL_DOMAIN the backend refuses connect and report links.
     if [ "$COMPONENTS" = "core" ]; then
-        WANT_TRACKING=0; WANT_REALTIME=0; WANT_FORMS=0
-        TRACKING_DOMAIN=""; FORMS_DOMAIN=""
+        WANT_TRACKING=0; WANT_REALTIME=0; WANT_FORMS=0; WANT_PORTAL=0
+        TRACKING_DOMAIN=""; FORMS_DOMAIN=""; PORTAL_DOMAIN=""
     else
-        WANT_TRACKING=1; WANT_REALTIME=1; WANT_FORMS=1
+        WANT_TRACKING=1; WANT_REALTIME=1; WANT_FORMS=1; WANT_PORTAL=1
     fi
     [ "$TLS" = "caddy" ] && WANT_CADDY=1 || WANT_CADDY=0
 }
@@ -1127,6 +1133,9 @@ CHECK_ORIGIN_HOSTS=$CHECK_ORIGIN_HOSTS
 # recipients' unsubscribe link there; otherwise it stays on API_PUBLIC_URL.
 TRACKING_DOMAIN=$TRACKING_DOMAIN
 FORMS_DOMAIN=$FORMS_DOMAIN
+# The portal service's shared address: client connect pages and shared
+# reports. Unset, the backend builds neither link.
+PORTAL_DOMAIN=$PORTAL_DOMAIN
 # CIDRs allowed to set X-Forwarded-For. Empty trusts nothing, which is correct
 # for a directly exposed backend and wrong the moment a proxy is in front.
 TRUSTED_PROXIES=$TRUSTED
@@ -1157,6 +1166,8 @@ KMS_LOCAL_MASTER_KEY=$KMS_LOCAL_MASTER_KEY
 AUTH_SECRET=$AUTH_SECRET
 INTERNAL_API_TOKEN=$INTERNAL_API_TOKEN
 $(render_env_node_token)
+# What the portal service presents to the backend; it opens nothing else.
+PORTAL_EDGE_TOKEN=$PORTAL_EDGE_TOKEN
 SECRET_KEY_BASE=$SECRET_KEY_BASE
 
 # ── Providers (all local; no cloud account of any kind) ──────────────────
@@ -1291,7 +1302,7 @@ MAILEOF
 #
 # Generated rather than downloaded, because the answers change the SHAPE of
 # the file and not only its values: an external database means no postgres
-# service at all, "core only" means no tracking, realtime or forms, and a
+# service at all, "core only" means no tracking, realtime, forms or portal, and a
 # bundled Caddy adds one. Every service reads the .env next to it, so there is
 # one place to change a setting and it is the file an operator would look in.
 # ─────────────────────────────────────────────────────────────────────────
@@ -1495,6 +1506,27 @@ RTEOF
       backend: { condition: service_healthy }
 FORMSEOF
 
+    [ "$WANT_PORTAL" = 1 ] && cat <<PORTALEOF
+
+  # Client connect pages, shared reports and agency portal domains. It reads
+  # only the two values below from .env, not the whole file. A host that is
+  # not a portal domain is handed to tracking unchanged, so the customer-domain
+  # door in front of both keeps behaving as it did before the portal existed.
+  portal:
+    restart: unless-stopped
+    image: \${WARMBLY_IMAGE_PREFIX}/portal:\${WARMBLY_TAG}
+    ports: ["${BIND}${PORT_PORTAL}:8095"]
+    environment:
+      API_ORIGIN: http://backend:8080
+      PORTAL_DOMAIN: \${PORTAL_DOMAIN}
+      PORTAL_EDGE_TOKEN: \${PORTAL_EDGE_TOKEN}
+      DASHBOARD_ORIGIN: http://web:80
+      FALLBACK_ORIGIN: http://tracking:3000
+      CLIENT_IP_HEADER: X-Forwarded-For
+    depends_on:
+      backend: { condition: service_healthy }
+PORTALEOF
+
     cat <<UPDEOF
 
   # "Update and restart" in the admin panel. Image mode: it pins the release
@@ -1576,7 +1608,7 @@ render_caddyfile() {
 # obtain a certificate for it. Check with:  dig +short $H_APP
 #
 # on_demand_tls covers the hostnames that are not knowable at install time: a
-# workspace can point its own tracking or forms domain here later, and Caddy
+# workspace can point its own tracking, forms or portal domain here later, and Caddy
 # asks the backend whether it has verified that name before obtaining a
 # certificate for it. Without the ask, Caddy would issue for anything anyone
 # aimed at this machine.
@@ -1606,6 +1638,17 @@ render_caddyfile() {
 	header {
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
+		-Strict-Transport-Security
+		-Server
+	}
+}
+
+# The portal sets its own Referrer-Policy (no-referrer on client pages, whose
+# links carry a token), so here it is only a default for what sets none.
+(portal_headers) {
+	header {
+		X-Content-Type-Options "nosniff"
+		?Referrer-Policy "strict-origin-when-cross-origin"
 		-Strict-Transport-Security
 		-Server
 	}
@@ -1647,6 +1690,14 @@ $H_FORMS {
 	reverse_proxy forms:8090
 }
 CADDYFILE
+    [ "$WANT_PORTAL" = 1 ] && cat <<CADDYFILE
+
+$H_PORTAL {
+	import portal_headers
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	reverse_proxy portal:8095
+}
+CADDYFILE
     render_caddy_custom_domains
     return 0
 }
@@ -1656,46 +1707,40 @@ CADDYFILE
 # about, and `tls { on_demand }` is what makes the certificate for that name
 # appear. Every request through here has already passed the ask endpoint.
 #
-# Forms and tracking share the block because they share the door: the two
-# services have disjoint paths, so the path decides which one answers rather
-# than a hostname list this file cannot know.
+# Tracking, forms and the portal share the block because they share the door,
+# and the path decides who answers rather than a hostname list this file cannot
+# know. Tracking's and the forms service's paths go straight to them; the rest
+# goes to the portal, which serves an agency portal domain itself and hands any
+# other host to tracking unchanged, so tracking and redirect domains answer
+# exactly as they did before the portal existed.
 render_caddy_custom_domains() {
     [ "$WANT_TRACKING" = 1 ] || [ "$WANT_FORMS" = 1 ] || return 0
 
     cat <<'CADDYFILE'
 
-# Custom tracking and forms domains a workspace points here (CNAME). Caddy
-# obtains the certificate on the first request, after /tls/authorize confirms
-# this instance has verified the name.
+# Custom tracking, forms and portal domains a workspace points here (CNAME).
+# Caddy obtains the certificate on the first request, after /tls/authorize
+# confirms this instance has verified the name.
 https:// {
-	import customer_headers
 	tls {
 		on_demand
 	}
-CADDYFILE
-
-    if [ "$WANT_FORMS" = 1 ] && [ "$WANT_TRACKING" = 1 ]; then
-        cat <<'CADDYFILE'
+	@tracking path /t/* /c/* /tracking.js /p /unsubscribe/*
+	handle @tracking {
+		import customer_headers
+		reverse_proxy tracking:3000
+	}
 	@forms path /f/* /forms.js /api/forms/*
 	handle @forms {
+		import customer_headers
 		reverse_proxy forms:8090
 	}
 	handle {
-		reverse_proxy tracking:3000
+		import portal_headers
+		reverse_proxy portal:8095
 	}
 }
 CADDYFILE
-    elif [ "$WANT_FORMS" = 1 ]; then
-        cat <<'CADDYFILE'
-	reverse_proxy forms:8090
-}
-CADDYFILE
-    else
-        cat <<'CADDYFILE'
-	reverse_proxy tracking:3000
-}
-CADDYFILE
-    fi
     return 0
 }
 
@@ -1889,6 +1934,7 @@ adopt_existing() {
     INTERNAL_API_TOKEN=$(env_get "$_env" INTERNAL_API_TOKEN)
     NODE_BROKER_TOKEN=$(env_get "$_env" NODE_BROKER_TOKEN)
     UPDATER_TOKEN=$(env_get "$_env" UPDATER_TOKEN)
+    PORTAL_EDGE_TOKEN=$(env_get "$_env" PORTAL_EDGE_TOKEN)
     SECRET_KEY_BASE=$(env_get "$_env" SECRET_KEY_BASE)
     KMS_LOCAL_MASTER_KEY=$(env_get "$_env" KMS_LOCAL_MASTER_KEY)
     CREDENTIALS_ENCRYPTION_KEY=$(env_get "$_env" CREDENTIALS_ENCRYPTION_KEY)
@@ -1921,6 +1967,8 @@ ensure_secrets() {
         NODE_BROKER_TOKEN=$(gen_hex 32)
     fi
     [ -n "${UPDATER_TOKEN:-}" ] || UPDATER_TOKEN=$(gen_hex 32)
+    # Added to an install from before the portal too: nothing holds it yet.
+    [ -n "${PORTAL_EDGE_TOKEN:-}" ] || PORTAL_EDGE_TOKEN=$(gen_hex 32)
     [ -n "${SECRET_KEY_BASE:-}" ] || SECRET_KEY_BASE=$(gen_hex 48)
     [ -n "${KMS_LOCAL_MASTER_KEY:-}" ] || KMS_LOCAL_MASTER_KEY=$(gen_b64 32)
     [ -n "${CREDENTIALS_ENCRYPTION_KEY:-}" ] || CREDENTIALS_ENCRYPTION_KEY=$(gen_hex 32)
@@ -1993,6 +2041,7 @@ wiz_access() {
         note "Caddy serves one hostname per surface, all under $HOSTNAME_ANSWER:"
         note "  app.$HOSTNAME_ANSWER      admin.$HOSTNAME_ANSWER      api.$HOSTNAME_ANSWER"
         note "  ws.$HOSTNAME_ANSWER       track.$HOSTNAME_ANSWER      forms.$HOSTNAME_ANSWER"
+        note "  ${PORTAL_ANSWER:-portal.$HOSTNAME_ANSWER}"
         note "Each needs an A record pointing at this machine before it can get a"
         note "certificate. The exact list is printed again at the end."
         say ""
@@ -2005,7 +2054,8 @@ wiz_access() {
         note "proxied install: without it every request looks like it came from the"
         note "proxy, so per-IP rate limits and click deduplication stop working."
         note "Domains a workspace points here later (tracking hosts, root redirects)"
-        note "go to the tracking port too, with the original Host header."
+        note "go to the tracking port too, with the original Host header; agency"
+        note "portal domains go to the portal port ($PORT_PORTAL)."
         say ""
         ask "Public dashboard URL" "https://$HOSTNAME_ANSWER"
         WARMBLY_APP_URL=$ANSWER
@@ -2016,6 +2066,10 @@ wiz_access() {
         # with an error that does not say why.
         ask "Public admin panel URL" "https://admin.$HOSTNAME_ANSWER"
         WARMBLY_ADMIN_URL=$ANSWER
+        # Every connect link and shared report is built on it, so it is asked
+        # rather than left to a guess the proxy may not route.
+        ask "Portal host (connect links, reports)" "${PORTAL_ANSWER:-portal.$HOSTNAME_ANSWER}"
+        PORTAL_ANSWER=$ANSWER
         ask "Trusted proxy CIDRs" "$PROXY_CIDRS"
         PROXY_CIDRS=$ANSWER
     fi
@@ -2266,13 +2320,13 @@ wiz_footprint() {
     say ""
     _cdef=1; [ "$COMPONENTS" = "core" ] && _cdef=2
     choose "$_cdef" \
-        "Everything|Adds open and click tracking, live updates, and hosted forms." \
-        "Core only|API, dashboard, admin, worker. No tracking, websockets or forms."
+        "Everything|Adds tracking, live updates, hosted forms and client pages." \
+        "Core only|API, dashboard, admin, worker. No tracking, forms or portal."
     [ "$CHOICE" = 2 ] && COMPONENTS=core || COMPONENTS=full
 
     say ""
     _ports="$PORT_BACKEND $PORT_WEB $PORT_ADMIN"
-    [ "$COMPONENTS" = "full" ] && _ports="$_ports $PORT_TRACKING $PORT_REALTIME $PORT_FORMS"
+    [ "$COMPONENTS" = "full" ] && _ports="$_ports $PORT_TRACKING $PORT_REALTIME $PORT_FORMS $PORT_PORTAL"
     [ "$TLS" = "caddy" ] && _ports="80 443 $_ports"
     _busy=$(check_ports "$_ports")
     if [ -n "$_busy" ] && [ "$DEMO" = 1 ]; then
@@ -2316,6 +2370,7 @@ summary_rows() {
 "${DIM}Sign-ups${R}       ${WHITE}$(registration_label)${R}" \
 "${DIM}Platform mail${R}  ${WHITE}$(mail_label)${R}" \
 "${DIM}Components${R}     ${WHITE}$(components_label)${R}" \
+"${DIM}Portal${R}         ${WHITE}$(portal_label)${R}" \
 "${DIM}Update check${R}   ${WHITE}${UPDATE_CHECK}${R}"
 }
 
@@ -2344,7 +2399,11 @@ registration_label() {
     esac
 }
 mail_label() { [ "$MAIL_MODE" = "smtp" ] && printf 'SMTP via %s' "$SMTP_HOST" || printf 'log only (codes printed to the backend log)'; }
-components_label() { [ "$COMPONENTS" = "core" ] && printf 'core only' || printf 'everything (tracking, realtime, forms)'; }
+components_label() { [ "$COMPONENTS" = "core" ] && printf 'core only' || printf 'everything (tracking, realtime, forms, portal)'; }
+portal_label() {
+    [ -n "$PORTAL_DOMAIN" ] || { printf 'none, so no connect or report links'; return; }
+    printf '%s://%s' "$SCHEME" "$PORTAL_DOMAIN"
+}
 
 review() {
     while :; do
@@ -2589,14 +2648,14 @@ verify_digests() {
     fi
 
     _checked=0; _bad=""
-    for _svc in backend consumer worker forms updater web admin tracking realtime; do
+    for _svc in backend consumer worker forms portal updater web admin tracking realtime; do
         _want=$(sed -n "s/.*\"${_svc}\": *\"\([^\"]*\)\".*/\1/p" "$_man" | head -1)
         [ -n "$_want" ] || continue
         _ref="$REGISTRY/$_svc:$RESOLVED_TAG"
         _got=$(dockerc image inspect "$_ref" --format '{{range .RepoDigests}}{{println .}}{{end}}' 2>/dev/null |
             sed -n "s|^${REGISTRY}/${_svc}@||p" | head -1)
         # Not pulled at all is not a mismatch: a core-only install has no
-        # tracking, realtime or forms image and the manifest still lists them.
+        # tracking, realtime, forms or portal image and the manifest lists them.
         [ -n "$_got" ] || continue
         _checked=$((_checked + 1))
         [ "$_got" = "$_want" ] || _bad="$_bad $_svc"
@@ -2753,13 +2812,14 @@ finale() {
     out "    ${DIM}Admin${R}       $URL_ADMIN"
     out "    ${DIM}API${R}         $URL_API"
     [ "$WANT_FORMS" = 1 ] && out "    ${DIM}Forms${R}       ${SCHEME}://$FORMS_DOMAIN"
+    [ "$WANT_PORTAL" = 1 ] && out "    ${DIM}Portal${R}      ${SCHEME}://$PORTAL_DOMAIN"
     out "    ${DIM}Install${R}     $DIR"
     out "    ${DIM}Data${R}        $DATA_DESC"
 
     if [ "$TLS" = "caddy" ]; then
         say ""
         out "  ${B}DNS${R} ${DIM}each of these must resolve to this machine${R}"
-        for _h in "$H_APP" "$H_ADMIN" "$H_API" "$H_WS" "$H_TRACK" "$H_FORMS"; do
+        for _h in "$H_APP" "$H_ADMIN" "$H_API" "$H_WS" "$H_TRACK" "$H_FORMS" "$H_PORTAL"; do
             out "    ${DIM}A${R}  $_h"
         done
         note "Caddy retries until they do; until then the names return an error."
@@ -2830,7 +2890,7 @@ demo_refs() {
         printf '%s/%s:%s\n' "$REGISTRY" "$_s" "$RESOLVED_TAG"
     done
     if [ "$COMPONENTS" = "full" ]; then
-        for _s in tracking realtime forms; do
+        for _s in tracking realtime forms portal; do
             printf '%s/%s:%s\n' "$REGISTRY" "$_s" "$RESOLVED_TAG"
         done
     fi
@@ -2890,7 +2950,7 @@ demo_services() {
     [ "$BUNDLED_REDIS" = 1 ] && printf 'redis\n'
     printf 'nats\nbackend\nconsumer\nworker\nweb\nadmin\n'
     if [ "$COMPONENTS" = "full" ]; then
-        printf 'tracking\nrealtime\nforms\n'
+        printf 'tracking\nrealtime\nforms\nportal\n'
     fi
     printf 'updater\n'
     [ "$WANT_CADDY" = 1 ] && printf 'caddy\n'
@@ -3094,6 +3154,7 @@ Answers                                        environment variable
   --database-url URL    Use an external Postgres      WARMBLY_DATABASE_URL
   --redis-url URL       Use an external Redis         WARMBLY_REDIS_URL
   --components SET      core|full              WARMBLY_COMPONENTS   [full]
+  --portal-domain HOST  Connect links, reports WARMBLY_PORTAL_DOMAIN [portal.<host>]
   --version TAG         Release to install     WARMBLY_VERSION      [newest]
   --channel NAME        stable|dev             WARMBLY_CHANNEL      [stable]
   --registry PREFIX     Image namespace        WARMBLY_IMAGE_PREFIX [$DEFAULT_REGISTRY]
@@ -3142,6 +3203,7 @@ parse_args() {
             --database-url) EXTERNAL_DB=$(need_value "$@"); shift ;;
             --redis-url) EXTERNAL_REDIS=$(need_value "$@"); shift ;;
             --components) COMPONENTS=$(need_value "$@"); shift ;;
+            --portal-domain) PORTAL_ANSWER=$(need_value "$@"); shift ;;
             --version) VERSION=$(need_value "$@"); VERSION_SET=1; shift ;;
             --channel) CHANNEL=$(need_value "$@"); shift ;;
             --registry) REGISTRY=$(need_value "$@"); shift ;;

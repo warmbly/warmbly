@@ -54,6 +54,10 @@ type AnalyticsRepository interface {
 	GetTopCampaigns(ctx context.Context, orgID uuid.UUID, from, to time.Time, limit int, sortBy string, scope *models.CampaignScope) ([]models.TopCampaignStats, *errx.Error)
 	GetDashboardDailyTrend(ctx context.Context, orgID uuid.UUID, from, to time.Time, scope *models.CampaignScope) ([]models.DashboardDailyStats, *errx.Error)
 	GetAccountHealthSummary(ctx context.Context, orgID uuid.UUID, mailboxes []uuid.UUID) (*models.AccountHealthSummary, *errx.Error)
+	// GetReportCampaignTable is the dashboard's send cohort per campaign, busiest first.
+	GetReportCampaignTable(ctx context.Context, orgID uuid.UUID, from, to time.Time, scope *models.CampaignScope, limit int) ([]models.ClientReportCampaign, *errx.Error)
+	// GetReportReplies is the newest human replies received in the window.
+	GetReportReplies(ctx context.Context, orgID uuid.UUID, from, to time.Time, scope *models.CampaignScope, positiveOnly, withSnippet bool, limit int) ([]models.ClientReportReply, *errx.Error)
 
 	// Campaign hourly stats
 	GetCampaignHourlyStats(ctx context.Context, campaignID uuid.UUID, date time.Time) ([]models.CampaignHourlyStats, *errx.Error)

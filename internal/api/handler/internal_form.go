@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/app/customhost"
 	"github.com/warmbly/warmbly/internal/app/form"
 	"github.com/warmbly/warmbly/internal/config"
@@ -52,7 +54,7 @@ func (h *Handler) InternalGetPublicForm(c *gin.Context) {
 		BackgroundURL:  f.BackgroundURL,
 		AllowedDomains: f.AllowedDomains,
 		CaptchaSiteKey: formCaptchaSiteKey(f),
-		Brand:          formBrand(),
+		Brand:          h.formBrand(c.Request.Context(), f.OrganizationID),
 	}
 	if token := c.Query("t"); token != "" {
 		if link, prefill := h.FormService.ResolveLink(c.Request.Context(), f, token); link != nil {
@@ -64,15 +66,16 @@ func (h *Handler) InternalGetPublicForm(c *gin.Context) {
 }
 
 // formBrand is the "powered by" line a public form page carries, or nil when
-// this deployment set none. A self-host that configured no EMAIL_BRAND_* shows
-// no attribution at all: the page is the operator's, seen by the operator's
-// leads, and the platform has no claim on that footer.
-func formBrand() *formwire.Brand {
-	b := config.Brand()
-	if b.WebsiteURL == "" {
+// this deployment set none or the workspace's brand removed it. A self-host
+// that configured no EMAIL_BRAND_* shows no attribution at all: the page is the
+// operator's, seen by the operator's leads, and the platform has no claim on
+// that footer.
+func (h *Handler) formBrand(ctx context.Context, orgID uuid.UUID) *formwire.Brand {
+	p := h.publicBrand(ctx, orgID).Brand.PoweredBy
+	if p == nil {
 		return nil
 	}
-	return &formwire.Brand{Name: b.Name, URL: b.WebsiteURL}
+	return &formwire.Brand{Name: p.Name, URL: p.URL}
 }
 
 // InternalRecordFormEvent stores one funnel event; the forms service already

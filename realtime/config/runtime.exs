@@ -74,10 +74,21 @@ if config_env() == :prod do
     rate_limit_ws_join: String.to_integer(System.get_env("RATE_LIMIT_WS_JOIN") || "30"),
     rate_limit_ws_event: String.to_integer(System.get_env("RATE_LIMIT_WS_EVENT") || "60")
 
+  # With CHECK_ORIGIN_HOSTS set, verified agency portal domains are accepted as well
+  # (Realtime.OriginCheck); the list is parsed here into the shape it compares.
   check_origin =
     case System.get_env("CHECK_ORIGIN_HOSTS", "") |> String.split(",", trim: true) do
-      [] -> System.get_env("CHECK_ORIGIN", "false") == "true"
-      origins -> Enum.map(origins, &String.trim/1)
+      [] ->
+        System.get_env("CHECK_ORIGIN", "false") == "true"
+
+      origins ->
+        allowed =
+          origins
+          |> Enum.map(&URI.parse(String.trim(&1)))
+          |> Enum.filter(&(is_binary(&1.host) and &1.host != ""))
+          |> Enum.map(&%{scheme: &1.scheme, host: String.downcase(&1.host), port: &1.port})
+
+        {Realtime.OriginCheck, :allowed?, [allowed]}
     end
 
   config :realtime, RealtimeWeb.Endpoint,

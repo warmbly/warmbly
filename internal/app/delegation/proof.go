@@ -55,7 +55,7 @@ func (s *Service) OAuthReturnOrigin(ctx context.Context, state string) string {
 	if st.ReturnOrigin == "" {
 		return config.PrimaryDashboardOrigin()
 	}
-	return config.DashboardOrigin(st.ReturnOrigin)
+	return config.TrustedOrigin(st.ReturnOrigin)
 }
 
 // TXTLookup reads a domain's TXT records, for the DNS proof.

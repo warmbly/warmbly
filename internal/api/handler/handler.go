@@ -6,6 +6,8 @@ import (
 	"github.com/warmbly/warmbly/internal/app/adminoutreach"
 	"github.com/warmbly/warmbly/internal/app/advanced"
 	"github.com/warmbly/warmbly/internal/app/advisor"
+	"github.com/warmbly/warmbly/internal/app/agency"
+	"github.com/warmbly/warmbly/internal/app/agencyhome"
 	"github.com/warmbly/warmbly/internal/app/aiagent"
 	"github.com/warmbly/warmbly/internal/app/aitools"
 	"github.com/warmbly/warmbly/internal/app/analytics"
@@ -19,16 +21,20 @@ import (
 	"github.com/warmbly/warmbly/internal/app/balance"
 	"github.com/warmbly/warmbly/internal/app/behavior"
 	"github.com/warmbly/warmbly/internal/app/bootstrap"
+	"github.com/warmbly/warmbly/internal/app/brandkit"
 	"github.com/warmbly/warmbly/internal/app/campaign"
 	"github.com/warmbly/warmbly/internal/app/clay"
 	"github.com/warmbly/warmbly/internal/app/cliauth"
+	"github.com/warmbly/warmbly/internal/app/clientreport"
 	"github.com/warmbly/warmbly/internal/app/cloudlink"
 	"github.com/warmbly/warmbly/internal/app/compose"
+	"github.com/warmbly/warmbly/internal/app/connectlink"
 	"github.com/warmbly/warmbly/internal/app/contact"
 	"github.com/warmbly/warmbly/internal/app/contactimport"
 	"github.com/warmbly/warmbly/internal/app/credits"
 	"github.com/warmbly/warmbly/internal/app/crm"
 	"github.com/warmbly/warmbly/internal/app/crmmode"
+	"github.com/warmbly/warmbly/internal/app/crossorgcopy"
 	"github.com/warmbly/warmbly/internal/app/customhost"
 	"github.com/warmbly/warmbly/internal/app/dangerzone"
 	"github.com/warmbly/warmbly/internal/app/delegation"
@@ -67,6 +73,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/placement"
 	"github.com/warmbly/warmbly/internal/app/planoffer"
 	"github.com/warmbly/warmbly/internal/app/poollink"
+	"github.com/warmbly/warmbly/internal/app/portalhandoff"
 	"github.com/warmbly/warmbly/internal/app/ratelimit"
 	"github.com/warmbly/warmbly/internal/app/research"
 	"github.com/warmbly/warmbly/internal/app/salesforce"
@@ -149,8 +156,12 @@ type Handler struct {
 	ContactService       contact.ContactService
 	SegmentService       segment.Service
 	FormService          form.Service
-	SequenceService      sequence.SequenceService
-	UniboxService        unibox.UniboxService
+	// ClientReportService keeps shared client reports and their schedules. Nil-safe.
+	ClientReportService clientreport.Service
+	// ConnectLinkService backs client connect links; nil answers client_links_unavailable.
+	ConnectLinkService *connectlink.Service
+	SequenceService    sequence.SequenceService
+	UniboxService      unibox.UniboxService
 
 	FolderService   group.GroupService
 	TagService      group.GroupService
@@ -176,6 +187,12 @@ type Handler struct {
 	DiscountService     discount.DiscountService
 	// PlanOfferService holds private plan offers. Nil-safe.
 	PlanOfferService planoffer.Service
+	// AgencyService runs agencies, their clients and the shared send pool. Nil-safe.
+	AgencyService *agency.Service
+	// AgencyHomeService reads the agency home and the cross-client inbox. Nil-safe.
+	AgencyHomeService *agencyhome.Service
+	// AgencyKeyService issues agency API keys. Nil-safe.
+	AgencyKeyService *apikey.AgencyKeyService
 
 	// Trial & feature gates
 	TrialService       trial.TrialService
@@ -404,6 +421,12 @@ type Handler struct {
 	CustomDomains repository.CustomDomainRepository
 	// CustomHosts confines a workspace's custom host to that workspace's forms and tracked links.
 	CustomHosts *customhost.Checker
+	// BrandService stores workspace and agency brands; its resolver is what public pages show.
+	BrandService *brandkit.Service
+	// PortalHandoff signs clients in to a portal from the main address; nil answers 404.
+	PortalHandoffs *portalhandoff.Service
+	// CrossOrgCopy copies campaigns and templates into the caller's other workspaces.
+	CrossOrgCopy *crossorgcopy.Service
 
 	// Direct repositories used by handlers that don't yet have a
 	// service layer (avatars, etc.). Keep narrow and add a service

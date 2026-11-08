@@ -12,6 +12,7 @@ consumer                worker                  KMS key
 realtime                nats + redis            S3 bucket
 tracking                                        SES
 forms
+portal
 web / admin
 ```
 

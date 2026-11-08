@@ -33,7 +33,7 @@ defmodule RealtimeWeb.CampaignChannel do
 
       case user_id
            |> Auth.check_campaign_access(campaign_id)
-           |> Auth.confine(socket.assigns[:credential]) do
+           |> Auth.confine_socket(socket.assigns) do
         {:ok, member} ->
           Logger.debug("User #{user_id} joined campaign:#{campaign_id}")
 
@@ -94,7 +94,7 @@ defmodule RealtimeWeb.CampaignChannel do
       fn ->
         socket.assigns.user_id
         |> Auth.check_campaign_access(socket.assigns.campaign_id)
-        |> Auth.confine(socket.assigns[:credential])
+        |> Auth.confine_socket(socket.assigns)
       end,
       force
     )

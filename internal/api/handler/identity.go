@@ -37,6 +37,7 @@ func (h *Handler) GetIdentity(c *gin.Context) {
 		LastName:  u.LastName,
 		Name:      strings.TrimSpace(u.FirstName + " " + u.LastName),
 		AuthType:  middleware.GetAuthType(c),
+		AgencyID:  middleware.GetAgencyKeyAgencyID(c),
 		Scopes:    []string{},
 	}
 

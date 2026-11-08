@@ -13,6 +13,8 @@
 //   - Safari historically ignores JS favicon changes — the document.title count
 //     is the reliable cross-browser surface; the badge is progressive polish.
 
+import { currentPortal } from "./portal";
+
 const BASE_ICON = "/favicon-96x96.png";
 const LINK_ID = "favicon-badge";
 const BADGE_COLOR = "#ef4444"; // red-500 — universal "unread" affordance
@@ -44,7 +46,8 @@ export async function setFaviconBadge(count: number): Promise<void> {
     if (typeof document === "undefined") return;
     const req = ++lastReq;
 
-    if (!count || count <= 0) {
+    // A portal's favicon is the agency's logo, which a canvas cannot read back across origins.
+    if (!count || count <= 0 || currentPortal().portal) {
         clearBadge();
         return;
     }

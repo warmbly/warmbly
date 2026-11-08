@@ -48,7 +48,20 @@ func Platform(host string) bool {
 	if host == "" {
 		return false
 	}
-	return host == config.TrackingHostname() || host == config.FormsHostname()
+	return host == config.TrackingHostname() || host == config.FormsHostname() || host == config.PortalCNAMETarget()
+}
+
+// Verifier is one DNS check of domain against target; trackdns.Verify satisfies it.
+type Verifier func(ctx context.Context, domain, target string) trackdns.Result
+
+// VerifyPortal checks domain against the one host a portal domain points at; without PORTAL_DOMAIN nothing verifies.
+func VerifyPortal(ctx context.Context, verify Verifier, domain string) trackdns.Result {
+	target := config.PortalCNAMETarget()
+	if target == "" {
+		return trackdns.Result{Domain: Normalize(domain), Code: trackdns.CodeNoTarget,
+			Reason: "This Warmbly install has no portal address configured, so there is nothing to point a CNAME at yet. Ask your administrator to set PORTAL_DOMAIN."}
+	}
+	return verify(ctx, domain, target)
 }
 
 // Holds reports whether orgID already has host verified as one of its custom domains.
@@ -123,4 +136,30 @@ func Allowed(owners []uuid.UUID, orgID *uuid.UUID) bool {
 		}
 	}
 	return false
+}
+
+// ValidHost rejects the obvious non-domains before a DNS lookup: a
+// bare label, an IP-looking value, or anything with characters a hostname
+// cannot carry.
+func ValidHost(host string) bool {
+	if len(host) > 253 || !strings.Contains(host, ".") {
+		return false
+	}
+	for _, label := range strings.Split(host, ".") {
+		if label == "" || len(label) > 63 {
+			return false
+		}
+		for i, r := range label {
+			isAlnum := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+			if isAlnum {
+				continue
+			}
+			// A hyphen is legal inside a label, never at either end.
+			if r == '-' && i > 0 && i < len(label)-1 {
+				continue
+			}
+			return false
+		}
+	}
+	return true
 }

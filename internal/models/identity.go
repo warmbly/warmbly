@@ -17,6 +17,8 @@ type Identity struct {
 	OrganizationName string     `json:"organization_name,omitempty"`
 	// AuthType is "api_key", "oauth", or "jwt".
 	AuthType string `json:"auth_type"`
+	// AgencyID is set when the credential is an agency API key acting on one of its clients.
+	AgencyID *uuid.UUID `json:"agency_id,omitempty"`
 	// Scopes lists the granted API scopes for api_key/oauth callers; empty for
 	// JWT sessions, which carry organization-role permissions instead.
 	Scopes []string `json:"scopes"`

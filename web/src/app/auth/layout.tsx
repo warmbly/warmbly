@@ -1,10 +1,12 @@
 import React from "react";
-import { Navigate, Outlet, useMatches, useNavigate } from "@tanstack/react-router";
+import { Navigate, Outlet, useLocation, useMatches, useNavigate } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "motion/react";
 import { APP_URL } from "@/lib/information";
 import useBrand from "@/hooks/useBrand";
 import BrandMark from "@/components/shared/BrandMark";
 import getToken from "@/lib/helper/getToken";
+import { currentPortal } from "@/lib/portal";
+import { cn } from "@/lib/utils";
 import AuthShowcase from "./_components/AuthShowcase";
 
 /* ═══════════════════════════════════════════
@@ -24,6 +26,11 @@ export default function AuthLayout({
     // The rendered page's path, which changes with the Outlet rather than ahead of it.
     const pathname = useMatches({ select: (m) => m[m.length - 1]?.pathname ?? "" });
     const brand = useBrand();
+    // On a portal the footer carries the agency and, when its plan keeps it, the service's attribution.
+    const portal = currentPortal();
+    const footerLinks = !portal.portal;
+    const showcase = !portal.portal;
+    const poweredBy = portal.portal ? portal.brand.powered_by : undefined;
 
     React.useEffect(() => {
         const receiveMessage = (event: MessageEvent) => {
@@ -34,8 +41,9 @@ export default function AuthLayout({
         return () => window.removeEventListener("message", receiveMessage);
     }, [navigate]);
 
-    // A reset link is opened from mail, often in the browser that is signed in.
-    const opensSignedIn = pathname.startsWith("/auth/reset-password");
+    // A reset link is opened from mail, often in the browser that is signed in; a portal sign-in may use another account.
+    const portalHandoff = useLocation({ select: (l) => new URLSearchParams(l.searchStr).has("portal") });
+    const opensSignedIn = pathname.startsWith("/auth/reset-password") || portalHandoff;
     if (redirectIfAuthenticated && !opensSignedIn && getToken()) {
         return <Navigate to="/app/emails" replace />;
     }
@@ -51,17 +59,19 @@ export default function AuthLayout({
                 <img src="/backdrops/cloud-4.webp" alt="" aria-hidden="true" decoding="async" className="cloud-drift cloud-2 absolute select-none" style={{ bottom: "12%", right: "-14%", width: 240, opacity: 0.5, height: "auto" }} />
             </div>
 
-            <div className="relative z-10 w-full max-w-[400px] lg:max-w-[900px]">
+            <div className={cn("relative z-10 w-full max-w-[400px]", showcase && "lg:max-w-[900px]")}>
                 {/* Mobile logo — white, on the sky, above the card */}
-                <BrandMark className="mb-5 flex w-fit items-center gap-2.5 mx-auto lg:hidden" />
+                <BrandMark className={cn("mb-5 flex w-fit items-center gap-2.5 mx-auto", showcase && "lg:hidden")} />
 
                 {/* Card */}
-                <div className="animate-card-float grid overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_30px_70px_-32px_rgba(15,23,42,0.32)] lg:grid-cols-2 lg:min-h-[580px]">
-                    {/* Showcase — desktop only */}
-                    <div className="relative hidden lg:block lg:border-r lg:border-slate-200">
-                        <AuthShowcase />
-                        <BrandMark className="absolute left-8 top-8 z-20 flex items-center gap-2.5" />
-                    </div>
+                <div className={cn("animate-card-float grid overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_30px_70px_-32px_rgba(15,23,42,0.32)]", showcase && "lg:grid-cols-2 lg:min-h-[580px]")}>
+                    {/* Showcase, desktop only; an agency portal shows only its own brand */}
+                    {showcase && (
+                        <div className="relative hidden lg:block lg:border-r lg:border-slate-200">
+                            <AuthShowcase />
+                            <BrandMark className="absolute left-8 top-8 z-20 flex items-center gap-2.5" />
+                        </div>
+                    )}
 
                     {/* Form column */}
                     <div className="flex flex-col px-6 py-9 sm:px-10">
@@ -85,8 +95,9 @@ export default function AuthLayout({
 
                             {/* Footer — desktop, inside the card */}
                             <div className="hidden items-center gap-3 pt-9 text-[12px] text-slate-400 lg:flex">
-                                {brand.terms_url && <a href={brand.terms_url} target="_blank" rel="noopener noreferrer" className="hover:text-slate-700 transition-colors">Terms</a>}
-                                {brand.privacy_url && <a href={brand.privacy_url} target="_blank" rel="noopener noreferrer" className="hover:text-slate-700 transition-colors">Privacy</a>}
+                                {footerLinks && brand.terms_url && <a href={brand.terms_url} target="_blank" rel="noopener noreferrer" className="hover:text-slate-700 transition-colors">Terms</a>}
+                                {footerLinks && brand.privacy_url && <a href={brand.privacy_url} target="_blank" rel="noopener noreferrer" className="hover:text-slate-700 transition-colors">Privacy</a>}
+                                {poweredBy && <PoweredBy name={poweredBy.name} url={poweredBy.url} className="hover:text-slate-700" />}
                                 <span className="ml-auto">© {new Date().getFullYear()} {brand.name}</span>
                             </div>
                         </div>
@@ -95,12 +106,16 @@ export default function AuthLayout({
 
                 {/* Footer — mobile, on the sky below the card */}
                 <div className="theme-solid mt-5 flex items-center justify-center gap-3 text-[12px] text-white/70 lg:hidden">
-                    {brand.terms_url && <>
+                    {footerLinks && brand.terms_url && <>
                         <a href={brand.terms_url} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Terms</a>
                         <span className="text-white/40">·</span>
                     </>}
-                    {brand.privacy_url && <>
+                    {footerLinks && brand.privacy_url && <>
                         <a href={brand.privacy_url} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Privacy</a>
+                        <span className="text-white/40">·</span>
+                    </>}
+                    {poweredBy && <>
+                        <PoweredBy name={poweredBy.name} url={poweredBy.url} className="hover:text-white" />
                         <span className="text-white/40">·</span>
                     </>}
                     <span>© {new Date().getFullYear()} {brand.name}</span>
@@ -108,4 +123,9 @@ export default function AuthLayout({
             </div>
         </div>
     );
+}
+
+function PoweredBy({ name, url, className }: { name: string; url?: string; className: string }) {
+    if (!url) return <span>Powered by {name}</span>;
+    return <a href={url} target="_blank" rel="noopener noreferrer" className={`${className} transition-colors`}>Powered by {name}</a>;
 }

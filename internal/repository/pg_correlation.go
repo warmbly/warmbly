@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
 )
 
@@ -65,6 +66,7 @@ func (r *correlationRepository) ClustersBySignupIP(ctx context.Context, minMembe
 		         OR u.signup_ip <<= 'fc00::/7'::inet
 		         OR u.signup_ip <<= 'fe80::/10'::inet)
 		   AND o.created_at >= $2
+		   AND `+agencyClientExempt()+`
 		 GROUP BY 1
 		HAVING COUNT(DISTINCT o.id) >= $1
 	`, minMembers, since)
@@ -78,9 +80,22 @@ func (r *correlationRepository) ClustersBySignupIdentity(ctx context.Context, mi
 		 WHERE u.signup_email_normalized IS NOT NULL
 		   AND u.signup_email_normalized <> ''
 		   AND o.created_at >= $2
+		   AND `+agencyClientExempt()+`
 		 GROUP BY 1
 		HAVING COUNT(DISTINCT o.id) >= $1
 	`, minMembers, since)
+}
+
+// agencyClientExempt drops an agency's client workspaces from the signup
+// clusters: one operator opening many of them is the product working. On a
+// billed instance only a paying agency's clients are exempt.
+func agencyClientExempt() string {
+	billed := ""
+	if config.BillingProvider() == "stripe" {
+		billed = " AND a.status IN ('active', 'trialing', 'past_due')"
+	}
+	return `NOT EXISTS (SELECT 1 FROM agency_clients ac JOIN agencies a ON a.id = ac.agency_id
+		WHERE ac.organization_id = o.id` + billed + `)`
 }
 
 func (r *correlationRepository) OrgsConnectingMailboxesFast(ctx context.Context, minMailboxes int, within time.Duration) ([]Cluster, error) {

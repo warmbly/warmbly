@@ -170,6 +170,18 @@ const (
 	// Partnership tools: a workspace's own OAuth app saved or removed, and a sign-in link made or revoked.
 	AuditEntityMailboxOAuthApp    AuditEntityType = "mailbox_oauth_app"
 	AuditEntityMailboxConnectLink AuditEntityType = "mailbox_connect_link"
+
+	// An agency changed: renamed, staff, clients, a client's monthly limit, billing.
+	AuditEntityAgency AuditEntityType = "agency"
+
+	// The brand a workspace's public pages and client members' dashboard show.
+	AuditEntityWorkspaceBrand AuditEntityType = "workspace_brand"
+
+	// A client connect link created, revoked, or used to connect a mailbox.
+	AuditEntityClientConnectLink AuditEntityType = "client_connect_link"
+
+	// A client report, its share link or its email schedule.
+	AuditEntityClientReport AuditEntityType = "client_report"
 )
 
 // AuditActor is the minimal identity of the member who performed an action,

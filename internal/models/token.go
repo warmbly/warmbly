@@ -90,6 +90,9 @@ type Session struct {
 	// RequireFreshAuth.
 	ReauthAt *time.Time `json:"reauth_at,omitempty"`
 
+	// PortalAgencyID is the agency whose portal domain this session was signed in for; it then reaches only that agency.
+	PortalAgencyID *uuid.UUID `json:"portal_agency_id,omitempty"`
+
 	CreatedAt time.Time  `json:"created_at"`
 	RevokedAt *time.Time `json:"revoked_at"`
 	ExpiresAt *time.Time `json:"expires_at"`

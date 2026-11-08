@@ -20,6 +20,9 @@ import (
 func (h *Handler) MCPAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
+		if refuseAgencyKeyHeader(c) {
+			return
+		}
 		switch {
 		case strings.HasPrefix(authHeader, "Bearer "+apikey.KeyPrefix):
 			// Reuse the full API-key path (IP allowlist, per-key rate limit, usage).

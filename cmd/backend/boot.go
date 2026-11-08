@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/notify"
 )
@@ -58,6 +59,13 @@ func checkSecrets() []string {
 		"Those defaults are public, so they provide no protection. Generate real values (make gen-key) and put them in .env, "+
 		"or set ALLOW_INSECURE_DEFAULTS=true if this instance is genuinely disposable.", list)
 	return offenders
+}
+
+// checkPortalEdgeToken refuses to start with a PORTAL_EDGE_TOKEN too short to be accepted, rather than letting the portal service fail every call.
+func checkPortalEdgeToken() {
+	if v := os.Getenv("PORTAL_EDGE_TOKEN"); v != "" && len(v) < middleware.MinPortalEdgeTokenLength {
+		log.Fatalf("Refusing to start: PORTAL_EDGE_TOKEN must be at least %d characters; generate one with: make gen-key", middleware.MinPortalEdgeTokenLength)
+	}
 }
 
 func isDevEnv() bool {

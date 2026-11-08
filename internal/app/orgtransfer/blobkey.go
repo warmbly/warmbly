@@ -110,7 +110,7 @@ func (s blobKeyScope) plan(key string) (string, bool) {
 	}
 	parts := strings.Split(key, "/")
 	switch parts[0] + "/" {
-	case models.EmailImageKeyPrefix, "form-assets/":
+	case models.EmailImageKeyPrefix, "form-assets/", models.BrandAssetKeyPrefix:
 		parts[1] = s.orgID.String()
 		return strings.Join(parts, "/"), true
 	}
@@ -136,8 +136,8 @@ func (s blobKeyScope) allows(key string) bool {
 	}
 
 	switch parts[0] + "/" {
-	case models.EmailImageKeyPrefix, "form-assets/":
-		// email-images/<orgID>/<name>.<ext>, form-assets/<orgID>/<name>.<ext>.
+	case models.EmailImageKeyPrefix, "form-assets/", models.BrandAssetKeyPrefix:
+		// email-images/<orgID>/<name>.<ext>, form-assets/<orgID>/<name>.<ext>, brand-assets/<orgID>/<name>.<ext>.
 		// Both are served from /public, so the extension has to be an image.
 		// The workspace segment is not compared: it names the SOURCE workspace
 		// and plan rewrites it to this one, which is what decides the prefix the

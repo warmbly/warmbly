@@ -1,4 +1,4 @@
-// The campaign "⋯" menu: Edit, Duplicate, Start/Pause, Delete. Used by the
+// The campaign "⋯" menu: Edit, Duplicate, Copy to workspace, Start/Pause, Delete. Used by the
 // campaigns list row (compact, hover-revealed trigger) and the campaign
 // detail header. Destructive and copy actions are permission-gated: a member
 // without manage_campaigns gets the standard explanation instead of a request.
@@ -7,6 +7,7 @@ import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
     CopyIcon,
+    CopyPlusIcon,
     MoreHorizontalIcon,
     PauseIcon,
     PencilIcon,
@@ -24,6 +25,8 @@ import { cn } from "@/lib/utils";
 import type Campaign from "@/lib/api/models/app/campaigns/Campaign";
 import { canStartCampaign, gate, useCampaignActions } from "./useCampaignActions";
 import { useAccessRestricted } from "@/hooks/usePermission";
+import { useAppStore } from "@/stores";
+import CopyToWorkspaceDialog from "@/components/app/workspaceCopy/CopyToWorkspaceDialog";
 
 interface Props {
     campaign: Campaign;
@@ -36,17 +39,20 @@ interface Props {
 
 export default function CampaignActionsMenu({ campaign, variant, onToggle, afterDelete }: Props) {
     const [open, setOpen] = useState(false);
+    const [copyOpen, setCopyOpen] = useState(false);
     const navigate = useNavigate();
+    const hasOtherWorkspaces = useAppStore((s) => s.organizations.length > 1);
     const actions = useCampaignActions();
 
     const status = campaign.status ?? "draft";
     const isActive = status === "active";
     const showToggle = onToggle !== undefined && (isActive || canStartCampaign(status));
-    // Settings, copies and deletion reach past a restricted member's grants; they keep start and pause.
+    // Settings, duplicates, copies and deletion reach past a restricted member's grants; they keep start and pause.
     const restricted = useAccessRestricted();
     if (restricted && !showToggle) return null;
 
     return (
+        <>
         <PopoverMenu open={open} onOpenChange={setOpen} align="end">
             <PopoverMenuTrigger asChild>
                 <button
@@ -81,6 +87,14 @@ export default function CampaignActionsMenu({ campaign, variant, onToggle, after
                         </PopoverMenuItem>
                     </>
                 )}
+                {hasOtherWorkspaces && !restricted && (
+                    <PopoverMenuItem
+                        onSelect={() => setCopyOpen(true)}
+                        icon={<CopyPlusIcon className="w-3 h-3" />}
+                    >
+                        Copy to workspace…
+                    </PopoverMenuItem>
+                )}
                 {showToggle && (
                     <PopoverMenuItem
                         onSelect={gate("SEND_CAMPAIGNS", () => onToggle?.())}
@@ -110,5 +124,11 @@ export default function CampaignActionsMenu({ campaign, variant, onToggle, after
                 )}
             </PopoverMenuContent>
         </PopoverMenu>
+        <CopyToWorkspaceDialog
+            open={copyOpen}
+            onClose={() => setCopyOpen(false)}
+            subject={{ kind: "campaign", campaign: { id: campaign.id, name: campaign.name } }}
+        />
+        </>
     );
 }

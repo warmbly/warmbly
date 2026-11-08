@@ -12,6 +12,9 @@ import { usePasswordStrength } from "@/hooks/usePasswordStrength";
 import Turnstile, { type BoundTurnstileObject } from "react-turnstile";
 import AuthButton from "@/components/auth/button";
 import ExternalLogin from "@/components/auth/external";
+import CaptchaFrame, { CaptchaUnavailable } from "@/components/captcha/CaptchaFrame";
+import { captchaMode, currentPortal, mainHost, portalBrandName, portalHostParam } from "@/lib/portal";
+import { goToPortal, rememberPortalHandoff, usePortalForSignIn } from "@/lib/portalHandoff";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 
 import useLogin from "@/lib/api/hooks/auth/useLogin";
@@ -163,12 +166,13 @@ type Step = "email" | "signin" | "signup" | "verify" | "2fa" | "link" | "initial
 type PasskeyStatus = "preparing" | "ready" | "waiting" | "timeout" | "not-found" | "error";
 // Why a signup cannot proceed. Either read off /auth/config before the form is
 // shown, or returned by the API when the policy changed mid-session.
-type SignupBlock = "invite_only" | "closed" | "invitation_invalid";
+type SignupBlock = "invite_only" | "closed" | "invitation_invalid" | "portal_invite_only";
 
 const REFUSAL_CODES: Record<string, SignupBlock> = {
     registration_invite_only: "invite_only",
     registration_closed: "closed",
     invitation_invalid: "invitation_invalid",
+    portal_registration_closed: "portal_invite_only",
 };
 
 export default function LoginPage() {
@@ -240,14 +244,24 @@ export default function LoginPage() {
         return isEmpty(acq) ? undefined : acq;
     }, []);
 
-    const signupPossible = authConfig.registration === "false" || !!inviteToken;
+    // A portal domain creates accounts only from an agency's invitation.
+    const onPortal = currentPortal().portal;
+    const signupPossible = onPortal ? !!inviteToken : authConfig.registration === "false" || !!inviteToken;
     // Set when the API refuses a signup the screen believed was possible.
     const [refusal, setRefusal] = useState<SignupBlock | null>(null);
     const signupGate = mode === "signup" && !authConfigReady;
     const showSignupUnavailable = mode === "signup" && authConfigReady && (!signupPossible || !!refusal);
     const signupBlock: SignupBlock =
-        refusal ?? (authConfig.registration === "invite_only" ? "invite_only" : "closed");
-    const passkeysEnabled = authConfig.passkeys;
+        refusal ?? (onPortal ? "portal_invite_only" : authConfig.registration === "invite_only" ? "invite_only" : "closed");
+    // A passkey is bound to the main address, so a portal domain offers every other method.
+    const passkeysEnabled = authConfig.passkeys && !onPortal;
+    // Set when an agency portal sent the person here to sign in; the session then goes to that portal.
+    const handoffHost = useMemo(
+        () => (onPortal ? "" : portalHostParam(new URLSearchParams(location.searchStr).get("portal"))),
+        [onPortal, location.searchStr],
+    );
+    const handoffPortal = usePortalForSignIn(handoffHost).data ?? null;
+    const providers = authConfig.providers;
 
     /* Mode change — update URL without remounting */
     const invitationConsumed = useRef(false);
@@ -311,6 +325,15 @@ export default function LoginPage() {
     const passkeyAutofillUnavailableRef = useRef(false);
 
     const completeSession = useCallback(async (token: Token) => {
+        // A sign-in made for a portal goes there and leaves no session on this address.
+        if (handoffHost) {
+            try {
+                await goToPortal(handoffHost, token.access_token);
+            } catch (err) {
+                toast.error(buildError(err as AppError));
+            }
+            return;
+        }
         saveTokens(token as unknown as Record<string, unknown>);
         // Drop any cache from the logged-out state. `useUser` is
         // `refetchOnMount: false`, so a stale/errored ["auth","me"] entry would
@@ -333,7 +356,7 @@ export default function LoginPage() {
         const params = new URLSearchParams(location.searchStr);
         const next = params.get("next");
         navigate(hrefTarget(postAuthNext(next, invitationConsumed.current)));
-    }, [navigate, queryClient, location.searchStr]);
+    }, [navigate, queryClient, location.searchStr, handoffHost]);
 
     // Conditional UI: surface passkeys inside the email field's native autofill
     // — no modal, no layout shift. Stays pending until the user picks a passkey
@@ -560,11 +583,12 @@ export default function LoginPage() {
         try {
             const { url } = await beginSSO(provider);
             rememberSSONext(new URLSearchParams(window.location.search).get("next"));
+            rememberPortalHandoff(handoffHost);
             window.location.href = url;
         } catch (e) {
             toast.error(buildError(e as AppError));
         }
-    }, []);
+    }, [handoffHost]);
     const handleSSO = useCallback(() => handleProvider("oidc"), [handleProvider]);
 
     /* ── Step 1: Email ─────────────────────── */
@@ -628,7 +652,7 @@ export default function LoginPage() {
                 if (!res.code_required) {
                     invitationConsumed.current = !!inviteToken;
                     if (res.token) {
-                        toast.success("Welcome to Warmbly!");
+                        toast.success(`Welcome to ${portalBrandName(currentPortal(), "Warmbly")}!`);
                         await completeSession(res.token);
                         return;
                     }
@@ -692,7 +716,7 @@ export default function LoginPage() {
                     const created = await registerConfirmMutation.mutateAsync({ session, code });
                     invitationConsumed.current = !!inviteToken;
                     if (created?.token) {
-                        toast.success("Welcome to Warmbly!");
+                        toast.success(`Welcome to ${portalBrandName(currentPortal(), "Warmbly")}!`);
                         await completeSession(created.token);
                         return;
                     }
@@ -833,6 +857,12 @@ export default function LoginPage() {
 
     return (
         <div className="relative">
+            {handoffPortal && (
+                <div className="mb-5 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-[12.5px] leading-relaxed text-slate-600">
+                    Sign in to continue to <span className="font-medium text-slate-800">{handoffPortal.brand.name}</span> at{" "}
+                    <span className="font-medium text-slate-800 break-all">{handoffPortal.host}</span>.
+                </div>
+            )}
             {authConfigUnreachable && (
                 <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] leading-relaxed text-amber-800">
                     Could not reach the API at <span className="font-mono break-all">{API_URL}</span>. The sign-in
@@ -854,7 +884,7 @@ export default function LoginPage() {
                     <MotionWrap key="signup-unavailable" direction={direction}>
                         <SignupUnavailable
                             block={signupBlock}
-                            docsUrl={authConfig.docs_url}
+                            docsUrl={onPortal ? "" : authConfig.docs_url}
                             onBack={() => {
                                 handleModeChange("signin");
                                 goTo("email", -1);
@@ -868,8 +898,9 @@ export default function LoginPage() {
                             mode={mode}
                             canSignUp={signupPossible && authConfigReady}
                             invited={!!inviteToken}
-                            providers={authConfig.providers}
+                            providers={providers}
                             passkeysEnabled={passkeysEnabled}
+                            portalNote={onPortal && authConfig.passkeys}
                             onProvider={handleProvider}
                             onModeChange={handleModeChange}
                             defaultEmail={email}
@@ -887,7 +918,7 @@ export default function LoginPage() {
                         <SignInStep
                             email={email}
                             pending={pending}
-                            ssoEnabled={authConfig.providers.includes("oidc")}
+                            ssoEnabled={providers.includes("oidc")}
                             ssoLabel={authConfig.provider_labels?.oidc}
                             onSSO={handleSSO}
                             onBack={() => goTo("email", -1)}
@@ -1011,6 +1042,20 @@ function CaptchaWidget({
     unmountRef.current = onUnmount;
     useEffect(() => () => unmountRef.current(), []);
 
+    const mode = captchaMode(currentPortal());
+    if (mode === "unavailable") return <CaptchaUnavailable />;
+    if (mode === "frame") {
+        return (
+            <CaptchaFrame
+                onLoad={onLoad}
+                onVerify={onVerify}
+                onError={onError}
+                onExpire={onExpire}
+                onBeforeInteractive={onBeforeInteractive}
+            />
+        );
+    }
+
     return (
         <Turnstile
             sitekey={TURNSTILE_KEY}
@@ -1081,6 +1126,7 @@ function EmailStep({
     passkeyPending,
     passkeyStatus,
     noPasskey,
+    portalNote,
 }: {
     mode: "signin" | "signup";
     canSignUp: boolean;
@@ -1096,6 +1142,8 @@ function EmailStep({
     passkeyPending: boolean;
     passkeyStatus: PasskeyStatus;
     noPasskey: boolean;
+    /** On a portal domain: passkeys live on the main address. */
+    portalNote: boolean;
 }) {
     const { register, handleSubmit, formState: { errors } } = useForm<z.infer<typeof emailSchema>>({
         resolver: zodResolver(emailSchema),
@@ -1188,6 +1236,8 @@ function EmailStep({
                 <AuthButton loading={false}>Continue</AuthButton>
             </form>
 
+            {portalNote && mode === "signin" && <PortalSignInNote />}
+
             {/* Alternative sign-in: one balanced row under a single divider.
                 Hidden entirely when this deployment offers neither. */}
             {(passkeyCell || socialCell) && (
@@ -1250,6 +1300,19 @@ function EmailStep({
     );
 }
 
+/* ── Portal note ─────────────────────── */
+
+function PortalSignInNote() {
+    const portal = currentPortal();
+    const url = portal.portal ? portal.main_url : "";
+    return (
+        <p className="text-center text-[12.5px] leading-relaxed text-slate-500">
+            Passkeys work at{" "}
+            {url ? <a href={url} className="font-medium text-slate-700 underline">{mainHost(portal)}</a> : mainHost(portal)}.
+        </p>
+    );
+}
+
 /* ── Signup unavailable ─────────────────────── */
 
 // What /auth/register shows when this deployment will not accept the signup.
@@ -1266,14 +1329,16 @@ function SignupUnavailable({
 }) {
     const title =
         block === "invitation_invalid" ? "Invitation not valid"
-            : block === "invite_only" ? "Invitations only"
+            : block === "invite_only" || block === "portal_invite_only" ? "Invitations only"
                 : "Signups are closed";
     const body =
         block === "invitation_invalid"
             ? "That invitation link is invalid, expired, or issued for a different email address. Ask whoever invited you for a fresh one."
             : block === "invite_only"
                 ? "This server is invite only. Ask an administrator to invite you, then open the link in the invitation to create your account."
-                : "This server is not accepting new accounts.";
+                : block === "portal_invite_only"
+                    ? "Accounts here are set up from an invitation. Open the link in the invitation you received to create yours."
+                    : "This server is not accepting new accounts.";
 
     return (
         <div>
@@ -1416,7 +1481,7 @@ function LinkStep({
                 <EmailPill email={email} onEdit={onBack} />
                 <h1 className="text-[28px] font-bold text-slate-900 tracking-tight leading-tight">Confirm it's you</h1>
                 <p className="text-sm text-slate-400 mt-1.5">
-                    This address already has a Warmbly account. Enter its password to add {providerLabel} sign-in to it.
+                    This address already has an account. Enter its password to add {providerLabel} sign-in to it.
                 </p>
             </div>
 

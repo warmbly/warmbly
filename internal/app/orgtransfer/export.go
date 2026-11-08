@@ -454,7 +454,7 @@ func (b *blobCollector) addURL(url, table, column string) {
 }
 
 // publicKeyPrefixes are the object-key prefixes reachable through a public URL.
-var publicKeyPrefixes = []string{"avatars/", "form-assets/", models.EmailImageKeyPrefix}
+var publicKeyPrefixes = []string{"avatars/", "form-assets/", models.EmailImageKeyPrefix, models.BrandAssetKeyPrefix}
 
 // isPublicBlobKey reports whether an object key belongs to one of those
 // prefixes, so import can restore it public-read rather than private.

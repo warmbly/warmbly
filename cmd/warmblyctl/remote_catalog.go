@@ -32,6 +32,8 @@ var remoteAdminRoutes = []remoteAdminRoute{
 	{"GET", "/admin/organizations/:id/members", []string{"ViewOrganizations"}, false, ""},
 	{"GET", "/admin/organizations/:id/roles", []string{"ViewOrganizations"}, false, ""},
 	{"GET", "/admin/organizations/:id/overrides", []string{"ViewOrganizations"}, false, ""},
+	{"GET", "/admin/agencies", []string{"ViewOrganizations"}, false, ""},
+	{"GET", "/admin/agencies/:id", []string{"ViewOrganizations"}, false, ""},
 	{"PUT", "/admin/organizations/:id/overrides", []string{"ManageOrganizations"}, false, ""},
 	{"GET", "/admin/plans", []string{"ViewOrganizations"}, false, ""},
 	{"GET", "/admin/organizations/:id/managed-plan", []string{"ViewOrganizations"}, false, ""},

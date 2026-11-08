@@ -19,6 +19,7 @@ import useCancelOrganizationDeletion from "@/lib/api/hooks/app/dangerzone/useCan
 import useCancelAccountDeletion from "@/lib/api/hooks/app/dangerzone/useCancelAccountDeletion";
 import buildError from "@/lib/helper/buildError";
 import type { AppError } from "@/lib/api/client/normalizeError";
+import { currentPortal } from "@/lib/portal";
 
 // Re-render every minute so "X days Y hours" stays honest on a tab
 // that's been open for hours. Cheap — single setState per banner.
@@ -47,7 +48,8 @@ export default function PendingDeletionBar() {
 
     const access = useFeatureAccess();
     const org = useOrganizationDangerZone();
-    const account = useAccountDangerZone();
+    // A portal session cannot read the account's deletion state; the main address shows it.
+    const account = useAccountDangerZone(!currentPortal().portal);
 
     const cancelOrg = useCancelOrganizationDeletion();
     const cancelAccount = useCancelAccountDeletion();

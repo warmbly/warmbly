@@ -92,6 +92,18 @@ Annual billing is 20% off the monthly price. The same lineup is on the [pricing 
 
 Unlimited mailboxes means exactly that, under a fair-use allowance of one mailbox for every send a day the plan includes: Grow holds `3,000`, Business `15,000`, and either can be raised on request. See [mailbox allowance](/guides/mailboxes/#mailbox-allowance).
 
+### Agency plans
+
+Agencies running outreach for many clients buy one plan for the whole agency instead of one per workspace. There is no per-client fee, and every client workspace sends from one shared monthly pool rather than a daily cap. See [agencies](/guides/agencies/#billing-and-top-ups).
+
+| Plan | Monthly | Annual (per month) | Shared sends a month | Includes |
+| --- | --- | --- | --- | --- |
+| Agency | $249 | $199 | 150,000 | Unlimited clients, logo, accent colour and portal domain on client pages, $10 of shared AI a month |
+| Agency Pro | $599 | $479 | 500,000 | Everything in Agency, no "Powered by Warmbly" line, sending kept apart from other customers, webhooks, $30 of shared AI a month |
+| Agency Scale | Custom | Custom | 1,000,000+ | Everything in Agency Pro |
+
+Top-up packs add 50,000 sends to the current period: $85 on Agency, $60 on Agency Pro. A client workspace's billing page shows **Billed through** and the agency's name, and its plan is managed from the agency. Each client spends its own AI balance first and then the agency's shared AI balance, which includes $10 a month on Agency and $30 on Agency Pro. See [the shared AI balance](/guides/agencies/#the-shared-ai-balance).
+
 ### The Warmup plan
 
 The Warmup plan is no longer sold, to hosted or self-hosted workspaces. A workspace already on it keeps it, unchanged, for as long as it stays subscribed; once cancelled it cannot be bought again, and the workspace picks one of the plans above instead.
@@ -165,7 +177,11 @@ Operators grant one from the admin panel on the workspace, under **Plan**. The o
 
 A grant is held beside the plan a workspace pays for, never on top of it, so a paying workspace that is granted a different plan goes back to the one it pays for when the grant ends. Revoking returns the workspace to whatever it actually pays for, which can be no plan at all.
 
+An [agency's](/guides/agencies/) client workspaces hold the agency's plan the same way, as a grant the agency keeps in step with its own subscription. An operator grant made on a client workspace takes precedence and is never overwritten by the agency; revoking it hands the workspace back to the agency's grant within minutes.
+
 One thing a grant does not do: the monthly balance allowance is granted when an invoice is paid, and a granted plan raises no invoice, so a managed workspace does not receive a recurring allowance. Add money to its balance directly if it needs AI.
+
+A grant onto a plan with sending kept apart from other customers reserves a worker for the workspace, as a paid plan change does, and revoking the grant releases it unless the plan the workspace pays for includes it too.
 
 </Fold>
 

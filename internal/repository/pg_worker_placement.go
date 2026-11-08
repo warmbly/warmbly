@@ -186,6 +186,23 @@ func (r *workerRepository) CountOrgMailboxes(ctx context.Context, orgID uuid.UUI
 	return n, nil
 }
 
+func (r *workerRepository) AgencyEgressSlot(ctx context.Context, agencyID, orgID uuid.UUID, limit int) (bool, error) {
+	var ok bool
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM (
+				SELECT ac.organization_id
+				FROM agency_clients ac
+				WHERE ac.agency_id = $1
+				  AND EXISTS (SELECT 1 FROM email_accounts ea WHERE ea.organization_id = ac.organization_id)
+				ORDER BY ac.added_at, ac.organization_id
+				LIMIT $3
+			) slots
+			WHERE slots.organization_id = $2
+		)`, agencyID, orgID, limit).Scan(&ok)
+	return ok, err
+}
+
 const mailboxPlacementStateSelect = `
 	WITH shared_workers AS MATERIALIZED (
 	    SELECT live_worker.id

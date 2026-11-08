@@ -573,7 +573,7 @@ func (s *service) OAuthReturnOrigin(ctx context.Context, state string) string {
 	if origin == "" {
 		return config.PrimaryDashboardOrigin()
 	}
-	return config.DashboardOrigin(origin)
+	return config.TrustedOrigin(origin)
 }
 
 func (s *service) OAuthFinish(ctx context.Context, userID uuid.UUID, code, state string, authorize func(ctx context.Context, orgID uuid.UUID) error) (*models.IntegrationConnection, error) {

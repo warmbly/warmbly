@@ -1,0 +1,332 @@
+/* The client connect page. --cx-accent is the workspace's brand colour. */
+
+.cx {
+    --cx-accent: #0284c7;
+    --cx-ink: #0f172a;
+    --cx-muted: #64748b;
+    --cx-line: #e2e8f0;
+    min-height: 100vh;
+    padding: 2.5rem 1rem 2rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.25rem;
+    background: #f8fafc;
+    color: var(--cx-ink);
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+}
+body.embed .cx {
+    min-height: auto;
+    padding: 0.5rem 0.25rem;
+    background: transparent;
+}
+
+.cx-head {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2rem;
+}
+.cx-head a {
+    display: inline-flex;
+    color: inherit;
+    text-decoration: none;
+}
+.cx-logo {
+    max-height: 2.25rem;
+    max-width: 12rem;
+    object-fit: contain;
+}
+.cx-brand {
+    font-weight: 600;
+    font-size: 1rem;
+    letter-spacing: -0.01em;
+}
+
+.cx-card {
+    width: 100%;
+    max-width: 30rem;
+    background: #fff;
+    border: 1px solid var(--cx-line);
+    border-radius: 0.6rem;
+    padding: 1.5rem;
+    box-shadow: 0 12px 32px -18px rgba(15, 23, 42, 0.25);
+}
+body.embed .cx-card {
+    box-shadow: none;
+}
+
+.cx-title {
+    font-size: 1.15rem;
+    line-height: 1.35;
+    margin: 0 0 0.4rem;
+    letter-spacing: -0.01em;
+}
+.cx-sub {
+    margin: 0 0 1rem;
+    color: var(--cx-muted);
+}
+.cx-count {
+    margin: 0 0 0.75rem;
+    font-size: 0.85rem;
+    color: var(--cx-muted);
+}
+
+.cx-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.cx-provider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    height: 2.6rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.45rem;
+    background: #fff;
+    color: var(--cx-ink);
+    font: inherit;
+    font-weight: 500;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+}
+.cx-provider:hover:not(:disabled) {
+    border-color: var(--cx-accent);
+    background: #f8fafc;
+}
+.cx-provider:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+.cx-provider:focus-visible,
+.cx-primary:focus-visible,
+.cx-link:focus-visible {
+    outline: 2px solid var(--cx-accent);
+    outline-offset: 2px;
+}
+.cx-mark {
+    width: 1.1rem;
+    height: 1.1rem;
+    flex: none;
+}
+.cx-mark-mail {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    color: var(--cx-muted);
+}
+
+.cx-primary {
+    width: 100%;
+    height: 2.6rem;
+    margin-top: 0.75rem;
+    border: 0;
+    border-radius: 0.45rem;
+    background: var(--cx-accent);
+    color: #fff;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+.cx-primary:disabled {
+    opacity: 0.75;
+    cursor: default;
+}
+.cx-link {
+    border: 0;
+    background: none;
+    padding: 0;
+    font: inherit;
+    font-size: 0.85rem;
+    color: var(--cx-accent);
+    cursor: pointer;
+}
+.cx-back {
+    margin-bottom: 0.75rem;
+}
+
+.cx-error {
+    margin: 0 0 0.75rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid #fecaca;
+    border-radius: 0.45rem;
+    background: #fef2f2;
+    color: #b91c1c;
+    font-size: 0.85rem;
+}
+.cx-note {
+    margin: 0.5rem 0 0;
+    font-size: 0.8rem;
+    color: var(--cx-muted);
+    text-align: center;
+}
+
+.cx-connected {
+    list-style: none;
+    margin: 0 0 1rem;
+    padding: 0;
+    border: 1px solid var(--cx-line);
+    border-radius: 0.45rem;
+}
+.cx-connected li {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+}
+.cx-connected li + li {
+    border-top: 1px solid var(--cx-line);
+}
+.cx-check {
+    color: #059669;
+    font-weight: 700;
+}
+.cx-addr {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cx-via {
+    color: var(--cx-muted);
+    font-size: 0.75rem;
+}
+
+.cx-state {
+    text-align: center;
+    padding: 0.5rem 0;
+}
+.cx-state h1 {
+    font-size: 1.1rem;
+    margin: 0.5rem 0 0.35rem;
+}
+.cx-state p {
+    margin: 0 0 0.75rem;
+    color: var(--cx-muted);
+}
+.cx-state .cx-connected {
+    text-align: left;
+}
+
+.cx-spinner {
+    display: inline-block;
+    width: 1.5rem;
+    height: 1.5rem;
+    border: 2px solid var(--cx-line);
+    border-top-color: var(--cx-accent);
+    border-radius: 50%;
+    animation: cx-spin 0.8s linear infinite;
+}
+.cx-spinner-sm {
+    width: 0.9rem;
+    height: 0.9rem;
+    border-color: rgba(255, 255, 255, 0.4);
+    border-top-color: #fff;
+}
+@keyframes cx-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.cx-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+.cx-form .cx-title,
+.cx-form .cx-sub {
+    margin-bottom: 0;
+}
+.cx-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.65rem;
+}
+.cx-row-server {
+    grid-template-columns: 1fr 4.5rem 6.5rem;
+}
+@media (max-width: 30rem) {
+    .cx-row,
+    .cx-row-server {
+        grid-template-columns: 1fr;
+    }
+}
+.cx-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
+}
+.cx-field > span {
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: #334155;
+}
+.cx-field small {
+    font-size: 0.75rem;
+    color: var(--cx-muted);
+}
+.cx-field input,
+.cx-field select {
+    height: 2.25rem;
+    padding: 0 0.6rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.4rem;
+    background: #fff;
+    color: var(--cx-ink);
+    font: inherit;
+    min-width: 0;
+}
+.cx-field input:focus,
+.cx-field select:focus {
+    outline: none;
+    border-color: var(--cx-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--cx-accent) 18%, transparent);
+}
+.cx-servers {
+    margin: 0;
+    padding: 0.65rem 0.75rem 0.75rem;
+    border: 1px solid var(--cx-line);
+    border-radius: 0.45rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+.cx-servers legend {
+    padding: 0 0.25rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--cx-muted);
+}
+.cx-check-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.82rem;
+    color: #334155;
+}
+.cx-check-row input {
+    accent-color: var(--cx-accent);
+}
+
+.cx-foot {
+    font-size: 0.75rem;
+    color: var(--cx-muted);
+}
+.cx-foot a {
+    color: inherit;
+}

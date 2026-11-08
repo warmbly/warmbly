@@ -156,6 +156,10 @@ func (h *Handler) GetBalance(c *gin.Context) {
 			"presets_usd": []int{10, 25, 50, 100, 250}, "default_usd": 25,
 		},
 	}
+	// What the workspace's agency balance would add, so the dashboard does not call a funded client out of balance.
+	if agency := h.CreditService.AgencyAvailable(ctx, orgID); agency > 0 {
+		out["agency_usd"] = usd(agency)
+	}
 	if h.BalanceService != nil {
 		st, err := h.BalanceService.State(ctx, orgID)
 		if err != nil {
@@ -413,6 +417,7 @@ func creditTxnJSON(t models.CreditTransaction) gin.H {
 		"monthly_after_usd":   usd(t.MonthlyAfter),
 		"purchased_after_usd": usd(t.PurchasedAfter),
 		"purchased_delta_usd": usd(t.PurchasedDelta),
+		"agency_delta_usd":    usd(t.AgencyDelta),
 		"actor_user_id":       t.ActorUserID, "context": t.Context, "created_at": t.CreatedAt,
 		"amount":                  int(math.Round(float64(t.Amount) / float64(models.LegacyCreditMicro))),
 		"tokens_used":             t.InputTokens + t.OutputTokens,

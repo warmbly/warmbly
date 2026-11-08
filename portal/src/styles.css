@@ -1,0 +1,46 @@
+/* Page chrome shared by the connect page and the report; each styles itself in its own file. */
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+html,
+body {
+    margin: 0;
+    padding: 0;
+}
+body {
+    -webkit-font-smoothing: antialiased;
+}
+
+.plain {
+    font-family: system-ui, -apple-system, sans-serif;
+    max-width: 26rem;
+    margin: 5rem auto;
+    padding: 0 1rem;
+    color: #0f172a;
+    text-align: center;
+}
+.plain h1 {
+    font-size: 1.1rem;
+    margin: 0 0 0.5rem;
+}
+.plain p {
+    font-size: 0.9rem;
+    color: #475569;
+}
+.plain button {
+    font: inherit;
+    font-size: 0.85rem;
+    margin-top: 0.75rem;
+    padding: 0.45rem 1rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.4rem;
+    background: #fff;
+    color: #0f172a;
+    cursor: pointer;
+}
+.plain button:hover {
+    background: #f8fafc;
+}

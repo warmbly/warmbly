@@ -25,6 +25,8 @@ Three token types are accepted:
 
 - **API key** (`wmbly_…`): send a key with the `REALTIME_SUBSCRIBE` permission (bit 11) in the `X-Warmbly-Token` request header of the WebSocket handshake. See [Permissions](/api/permissions/) for how to grant it.
 - **OAuth access token** (`wmat_…`): send an access token whose grant includes the realtime scope (the lowercased permission, `realtime_subscribe`) in the same `X-Warmbly-Token` header. It connects on the granting user's behalf with exactly the scopes they approved. See [OAuth](/api/oauth/).
+
+An [agency API key](/api/authentication/#agency-api-keys) (`wmagency_…`) cannot open the socket, and neither can a ticket from one: `POST /getaway` refuses it with `403` `agency_key_not_allowed`. Subscribe with a workspace key in each client, or poll the REST endpoints with the agency key.
 - **Short-lived JWT**: browser sessions call the authenticated socket endpoint to mint a 10-minute connection token and pass it as the `token` query parameter. This is what the dashboard itself uses. Each token opens one socket, and only while the session that minted it is still signed in, so mint a fresh one for every connection attempt.
 
 Send API keys and OAuth access tokens in the `x-warmbly-token` header. An API key or OAuth token in the URL as `token` is refused with code `4003`: URLs end up in proxy and access logs, and these credentials outlive any session. A self-hosted instance with an older client that cannot set the header can accept them there again with `REALTIME_ALLOW_QUERY_CREDENTIALS=true` on the realtime service (see [Configuration](/development/configuration/)). The 10-minute connection token belongs in the query string. Browsers cannot set headers on a WebSocket, so connect with an API key or OAuth token from a server-side client.
@@ -387,7 +389,9 @@ The connect-level refusals you are most likely to meet:
 
 A server-side client can read that body from the failed upgrade. A browser's `WebSocket` exposes no handshake body, so there treat any failed upgrade as "mint a new token, then back off". Post-join rejections are machine-readable through `{ code, reason }` everywhere.
 
-The admin panel's own `admin:platform` feed is not open to developers. Its join is refused with `jwt_required` for an API key or OAuth token, `admin_mfa_required` when the session that minted the connection token did not verify a second factor (sign in again with your authenticator or passkey), and `not_an_admin` for anyone without platform admin permissions.
+The admin panel's own `admin:platform` feed is not open to developers. Its join is refused with `jwt_required` for an API key or OAuth token, `admin_mfa_required` when the session that minted the connection token did not verify a second factor (sign in again with your authenticator or passkey), `portal_session_restricted` when that session was signed in on an agency portal, and `not_an_admin` for anyone without platform admin permissions.
+
+A connection token minted by a session signed in on an [agency portal](/guides/white-label/#where-clients-sign-in) reaches only that agency's current client workspaces. Joining any other workspace's `org`, `campaign` or `account` topic is refused with `portal_session_restricted` (code 4010), events from other workspaces are not delivered on `user` or `bulk` topics, and a workspace detached from the agency stops delivering within 30 seconds.
 
 ## Delivery guarantees
 

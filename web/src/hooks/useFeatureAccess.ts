@@ -29,6 +29,7 @@ import {
     WARMUP_PLAN_ID,
     PARTNERSHIP_PLAN_ID,
     TEST_PLAN_ID,
+    AGENCY_PLAN_TIERS,
     getPlan,
     isAtLeast,
     isWarmupOnlyPlan,
@@ -41,6 +42,10 @@ export interface FeatureAccess {
     loading: boolean;
     status?: Subscription["status"];
     plan: PlanID;
+    /** The plan's own name when it is not a catalog plan (an agency plan), shown instead of the catalog label. */
+    planLabel?: string;
+    /** The plan is a grant (an operator's or an agency's), so the workspace's own trial status does not apply. */
+    managed?: boolean;
     /** False on a deployment running without a billing provider: every gate
      *  below is open and billing surfaces do not apply. */
     billing: boolean;
@@ -128,8 +133,11 @@ export default function useFeatureAccess(): FeatureAccess {
     }
 
     const testGrant = sub.data?.managed === true && sub.data.plan?.id === TEST_PLAN_ID;
+    const agencyPlan = sub.data?.plan?.id ? AGENCY_PLAN_TIERS[sub.data.plan.id] : undefined;
     const planId = testGrant
         ? "business"
+        : agencyPlan
+        ? agencyPlan.tier
         : sub.data?.plan?.id === WARMUP_PLAN_ID
         ? "warmup"
         : sub.data?.plan?.id === PARTNERSHIP_PLAN_ID
@@ -164,6 +172,8 @@ export default function useFeatureAccess(): FeatureAccess {
         loading: sub.isPending || authConfig.isLoading,
         status,
         plan,
+        planLabel: agencyPlan?.label,
+        managed,
         billing: true,
         paid: isPaid,
         warmupOnly,

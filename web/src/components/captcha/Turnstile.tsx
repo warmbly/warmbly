@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import * as TurnstileObj from "react-turnstile";
 import { TURNSTILE_KEY } from "@/lib/information";
+import { captchaMode, currentPortal } from "@/lib/portal";
+import CaptchaFrame, { CaptchaUnavailable } from "./CaptchaFrame";
 
 interface Props {
     setToken: (token: string) => void;
@@ -19,6 +21,10 @@ export default function Turnstile({setToken}: Props) {
     // A deployment that configured no sitekey has no captcha. Rendering the
     // widget anyway makes Cloudflare reject the empty parameter.
     if (bypassToken || !TURNSTILE_KEY) return null;
+
+    const mode = captchaMode(currentPortal());
+    if (mode === "frame") return <CaptchaFrame onVerify={(token) => setToken(token)} onExpire={() => setToken("")} onError={() => setToken("")} />;
+    if (mode === "unavailable") return <CaptchaUnavailable />;
 
     return <>
         <TurnstileObj.default

@@ -8,7 +8,9 @@ export type BalanceAlert = "out" | "low";
 /** Out (AI paused) or running low; null when there is nothing to say. */
 export function balanceAlert(b: Balance | null | undefined): BalanceAlert | null {
     if (!b || b.unlimited) return null;
-    if (b.balance_usd < OUT_OF_BALANCE_BELOW) return "out";
+    // An agency client spends the agency's balance once its own runs out.
+    if (b.balance_usd + (b.agency_usd ?? 0) < OUT_OF_BALANCE_BELOW) return "out";
+    if (b.agency_usd) return null;
     const lowAt = b.auto_reload?.enabled ? b.auto_reload.threshold_usd : (b.low_balance_usd ?? 0);
     return b.balance_usd < lowAt ? "low" : null;
 }
@@ -104,6 +106,7 @@ const REASONS: Record<string, string> = {
     auto_reload: "Automatic reload",
     credit_auto_topup: "Automatic reload",
     monthly_reset: "Monthly included usage",
+    agency_transfer: "Added by your agency",
     trial_grant: "Trial balance",
     tester_grant: "Test balance",
 };

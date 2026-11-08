@@ -15,6 +15,7 @@ import (
 
 type memEdgeRows map[string]repository.EdgeHostname
 
+func (m memEdgeRows) Kind() repository.EdgeKind                { return repository.EdgeTracking }
 func (m memEdgeRows) Wanted(context.Context) ([]string, error) { return nil, nil }
 func (m memEdgeRows) List(context.Context) ([]repository.EdgeHostname, error) {
 	return nil, nil

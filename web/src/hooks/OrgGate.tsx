@@ -31,11 +31,12 @@
 // mount to guarantee the session row matches the local pointer.
 
 import { useEffect, useRef } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import useOrganizations from "@/lib/api/hooks/app/organizations/useOrganizations";
 import useSwitchOrganization from "@/lib/api/hooks/app/organizations/useSwitchOrganization";
 import { useAppStore } from "@/stores";
 import { isOrgSynced } from "@/lib/boot";
+import { isAgencyPath } from "@/lib/agencyView";
 
 export function OrgGate() {
     const navigate = useNavigate();
@@ -43,6 +44,8 @@ export function OrgGate() {
     const setOrganizations = useAppStore((s) => s.setOrganizations);
     const setCurrentOrganization = useAppStore((s) => s.setCurrentOrganization);
     const currentOrg = useAppStore((s) => s.currentOrganization);
+    // Agency pages need no workspace, so nothing is picked for them.
+    const inAgency = useLocation({ select: (l) => isAgencyPath(l.pathname) });
 
     // Destructure `mutate` — react-query returns a new wrapper object
     // each render, but the bound mutate fn is stable. Putting the
@@ -99,6 +102,8 @@ export function OrgGate() {
             return;
         }
 
+        if (inAgency) return;
+
         if (list.length === 0) {
             const key = "empty";
             if (lastRedirectKey.current === key) return;
@@ -132,6 +137,7 @@ export function OrgGate() {
         orgs.isPending,
         orgs.data,
         currentOrg,
+        inAgency,
         setOrganizations,
         setCurrentOrganization,
         switchOrgMutate,

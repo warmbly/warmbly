@@ -1,6 +1,7 @@
 ---
 title: Permissions reference
 description: Complete reference for the 25 API permissions available in Warmbly.
+description: Complete reference for the 25 workspace and 4 agency API permissions available in Warmbly.
 ---
 
 Warmbly uses a bitmask system for API permissions. Each permission is one bit in a `uint64`, so a single integer can express any combination of the permissions below.
@@ -36,10 +37,19 @@ These same permissions are the [OAuth](/api/oauth/) scopes, lowercased: `READ_EM
 | `AI_AGENT` | 22 | 4194304 | special | Run the AI assistant and MCP tools |
 | `AI_RESEARCH` | 23 | 8388608 | special | Run AI contact research |
 | `CONNECT_EMAILS` | 24 | 16777216 | special | Connect mailboxes and create sign-in links (Partnership plan) |
+| `MANAGE_REPORTS` | 25 | 33554432 | write | Create, share and schedule client reports |
+| `AGENCY_READ` | 26 | 67108864 | agency | View the agency, its staff, clients, overview, inbox and brand |
+| `AGENCY_MANAGE_CLIENTS` | 27 | 134217728 | agency | Create, attach, cap and detach client workspaces |
+| `AGENCY_READ_USAGE` | 28 | 268435456 | agency | View the shared send pool and AI balance |
+| `AGENCY_TRANSFER_AI` | 29 | 536870912 | agency | Move AI balance from the agency into a client workspace |
+
+Bits 26 to 29 exist only on [agency API keys](/api/authentication/#agency-api-keys). A workspace key or OAuth app never holds them, and `POST /api-keys` refuses them as unknown bits.
 
 `AI_AGENT` gates the web and playbook tools (`search_web`, `fetch_url`, `load_skill`) on [`/v1/mcp`](/api/mcp/) and [`/ai/tools`](/api/agent-tools/); every other tool there checks its own scope. It also gates the [AI skills](/api/endpoints/#ai-skills) endpoints for keys; creating, editing or deleting a playbook with a key further needs the member who created the key to hold `manage_settings`.
 
 `CONNECT_EMAILS` is the only scope that lets a key hand Warmbly a mailbox password: it gates the [mailbox connect](/api/endpoints/#mailbox-connect-partnership) routes, which take SMTP/IMAP credentials, mint Google and Microsoft sign-in links and save the workspace's own OAuth apps. Those routes also refuse a workspace that is not on the [Partnership plan](/guides/partnership/) with `403` `partnership_plan_required`. It is left out of the Full access preset, and an OAuth app can never be granted it.
+
+`MANAGE_REPORTS` covers creating and editing [client reports](/guides/client-reports/), minting and revoking their public links and setting their email schedules. A report link shows analytics to anyone who holds it, so this is separate from `READ_ANALYTICS`, which is all that listing, reading and previewing a report takes.
 
 `SEND_CAMPAIGNS` is intentionally separate from `WRITE_CAMPAIGNS`: editing a campaign draft and starting one that actually transmits mail are different blast radii, so a key can be granted the first without the second. An [inbox placement test](/guides/placement-tests/) sends real mail from a real mailbox too, so starting or cancelling one, and scheduling a campaign's placement monitor, takes `SEND_CAMPAIGNS`, while reading results takes `READ_ANALYTICS`.
 
@@ -61,6 +71,19 @@ High-volume operations. These can touch large numbers of rows in a single reques
 
 Realtime subscriptions, webhooks, integrations, warmup routing, AI assistant / MCP access, AI contact research, mailbox connect, and self-service key management. Grant individually.
 
+### Agency
+
+The agency's own endpoints under `/v1/agency/:agencyId`. Only an agency API key carries these, and it carries them alongside the workspace bits it uses in each client workspace.
+
+| Agency permission | Endpoints |
+|-------------------|-----------|
+| `AGENCY_READ` | `GET /agency`, `GET /agency/plans`, `GET /agency/:agencyId`, its staff, clients, overview and brand; with `READ_UNIBOX` also the cross-client inbox |
+| `AGENCY_MANAGE_CLIENTS` | Create, attach, update (send and AI caps) and detach clients |
+| `AGENCY_READ_USAGE` | `GET /agency/:agencyId/usage` and `GET /agency/:agencyId/ai-balance` |
+| `AGENCY_TRANSFER_AI` | `POST /agency/:agencyId/clients/:orgId/ai-balance` |
+
+An agency key never holds `API_KEYS`, `REALTIME_SUBSCRIBE` or `CONNECT_EMAILS`: it manages no workspace keys, opens no realtime socket and takes no mailbox credentials.
+
 ## What a role can delegate
 
 An API key or an OAuth grant acts for a member of the workspace, so it never holds a permission that member's role does not cover. Each API permission maps to the [team role permission](/guides/team-roles/) it needs; the workspace owner covers every one.
@@ -80,7 +103,10 @@ An API key or an OAuth grant acts for a member of the workspace, so it never hol
 | `INTEGRATIONS` | `use_integrations` |
 | `AI_AGENT` | `use_ai` |
 | `AI_RESEARCH` | `view_contacts` and `use_ai` |
+| `MANAGE_REPORTS` | `view_analytics` and `manage_campaigns` |
 | `REALTIME_SUBSCRIBE` | any member |
+
+An agency key acts for the agency owner or admin who created it, through the membership the agency gives them in each client workspace (Admin), so the same table bounds it there. The agency bits need that person to still be an owner or admin of the agency.
 
 Where it applies:
 
@@ -104,13 +130,20 @@ READ_EMAILS | READ_CAMPAIGNS | READ_CONTACTS | READ_UNIBOX | READ_ANALYTICS
 = 688159
 ```
 
-### Full access (16777215)
+### Full access (50331647)
 
-Every permission except `CONNECT_EMAILS`, which is granted by hand:
+Every workspace permission except `CONNECT_EMAILS`, which is granted by hand:
 
 ```
-(1 << 24) - 1 = 16777215
+((1 << 26) - 1) & ~16777216 = 50331647
 ```
+
+### Agency key presets
+
+`GET /agency/:agencyId/api-keys/permissions` returns the bits an agency key may hold, grouped as `workspace` and `agency`, with two presets:
+
+- **Read only (336232479)**: the workspace read set plus `AGENCY_READ` and `AGENCY_READ_USAGE`, `688159 | 67108864 | 268435456`.
+- **Full access (1056954367)**: every bit an agency key may hold, which is every workspace bit except `API_KEYS`, `REALTIME_SUBSCRIBE` and `CONNECT_EMAILS` (50321407) plus the four agency bits (1006632960).
 
 ## Working with bitmasks
 
@@ -138,7 +171,7 @@ hasPermission(16387, 64);    // false: WRITE_CAMPAIGNS missing
 
 ### Rejecting unknown bits
 
-`POST /api-keys` rejects any request whose `permissions` field has bits outside the known set, so a stale client can't accidentally request a future permission. The current mask of valid bits is `4194303`.
+`POST /api-keys` rejects any request whose `permissions` field has bits outside the known set, so a stale client can't accidentally request a future permission. The current mask of valid bits is `33554431`. `POST /agency/:agencyId/api-keys` does the same against `536860671` and answers `400` `invalid_agency_key_permissions`.
 
 ## Common permission sets
 
@@ -221,6 +254,12 @@ export const Permissions = {
   AI_AGENT: 4194304,
   AI_RESEARCH: 8388608,
   CONNECT_EMAILS: 16777216,
+  MANAGE_REPORTS: 33554432,
+  // Agency API keys only
+  AGENCY_READ: 67108864,
+  AGENCY_MANAGE_CLIENTS: 134217728,
+  AGENCY_READ_USAGE: 268435456,
+  AGENCY_TRANSFER_AI: 536870912,
 } as const;
 ```
 
@@ -255,6 +294,12 @@ class Permissions:
     AI_AGENT = 4194304
     AI_RESEARCH = 8388608
     CONNECT_EMAILS = 16777216
+    MANAGE_REPORTS = 33554432
+    # Agency API keys only
+    AGENCY_READ = 67108864
+    AGENCY_MANAGE_CLIENTS = 134217728
+    AGENCY_READ_USAGE = 268435456
+    AGENCY_TRANSFER_AI = 536870912
 ```
 
 </Tab>
@@ -288,6 +333,12 @@ const (
     APIPermAIAgent                              // 4194304
     APIPermAIResearch                           // 8388608
     APIPermConnectEmails                        // 16777216
+    APIPermManageReports                        // 33554432
+    // Agency API keys only
+    APIPermAgencyRead                           // 67108864
+    APIPermAgencyManageClients                  // 134217728
+    APIPermAgencyReadUsage                      // 268435456
+    APIPermAgencyTransferAI                     // 536870912
 )
 ```
 

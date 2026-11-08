@@ -65,7 +65,7 @@ func (r *organizationRepository) SetFormsDomainVerified(ctx context.Context, org
 	return err
 }
 
-// FormsDomainHeldElsewhere reports whether an organization other than orgID has domain verified as a forms, tracking or redirect domain.
+// FormsDomainHeldElsewhere reports whether an organization other than orgID has domain verified as a forms, tracking or redirect domain, or an agency holds it as a portal domain.
 func (r *organizationRepository) FormsDomainHeldElsewhere(ctx context.Context, orgID uuid.UUID, domain string) (bool, error) {
 	if domain == "" {
 		return false, nil
@@ -85,6 +85,9 @@ func (r *organizationRepository) FormsDomainHeldElsewhere(ctx context.Context, o
 			SELECT 1 FROM domain_redirects
 			WHERE verified AND served_by = 'instance' AND organization_id <> $2
 			  AND (domain = $1 OR (include_www AND 'www.' || domain = $1))
+			UNION ALL
+			SELECT 1 FROM agency_brands
+			WHERE portal_domain = $1 AND portal_domain_verified
 		)
 	`, domain, orgID).Scan(&held)
 	return held, err

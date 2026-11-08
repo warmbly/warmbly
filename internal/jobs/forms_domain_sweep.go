@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/app/customhost"
@@ -21,8 +22,21 @@ import (
 // that later stops pointing here stops being used instead of quietly serving
 // form links on a host that no longer answers.
 type FormsDomainSweep struct {
-	orgs  repository.OrganizationRepository
-	hosts *customhost.Checker
+	orgs    repository.OrganizationRepository
+	hosts   *customhost.Checker
+	portals repository.BrandRepository
+	checker PortalChecker
+}
+
+// PortalChecker is the DNS verdict on an agency portal host; satisfied by brandkit.Service.
+type PortalChecker interface {
+	CheckPortal(ctx context.Context, agencyID uuid.UUID, domain string, held bool) trackdns.Result
+}
+
+// WithPortals sweeps agency portal domains on the same interval.
+func (j *FormsDomainSweep) WithPortals(portals repository.BrandRepository, checker PortalChecker) *FormsDomainSweep {
+	j.portals, j.checker = portals, checker
+	return j
 }
 
 func NewFormsDomainSweep(orgs repository.OrganizationRepository, hosts *customhost.Checker) *FormsDomainSweep {
@@ -30,6 +44,13 @@ func NewFormsDomainSweep(orgs repository.OrganizationRepository, hosts *customho
 }
 
 func (j *FormsDomainSweep) Run(ctx context.Context) error {
+	if err := j.sweepForms(ctx); err != nil {
+		return err
+	}
+	return j.sweepPortals(ctx)
+}
+
+func (j *FormsDomainSweep) sweepForms(ctx context.Context) error {
 	if j.orgs == nil {
 		return nil
 	}
@@ -74,6 +95,42 @@ func (j *FormsDomainSweep) Run(ctx context.Context) error {
 			Bool("verified", res.Verified).
 			Str("code", res.Code).
 			Msg("forms domain verification changed")
+	}
+	return nil
+}
+
+// sweepPortals re-resolves agency portal domains with the same rules as forms domains.
+func (j *FormsDomainSweep) sweepPortals(ctx context.Context) error {
+	if j.portals == nil || j.checker == nil || config.PortalCNAMETarget() == "" {
+		return nil
+	}
+	rows, err := j.portals.ListPortalDomains(ctx)
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		res := j.checker.CheckPortal(ctx, row.AgencyID, row.PortalDomain, row.PortalDomainVerified)
+		if res.Code == trackdns.CodeLookupError || res.Verified == row.PortalDomainVerified {
+			continue
+		}
+		if res.Verified {
+			if held, err := j.portals.PortalHostHeldElsewhere(ctx, row.AgencyID, row.PortalDomain); err != nil || held {
+				continue
+			}
+		}
+		var at *time.Time
+		if res.Verified {
+			now := time.Now().UTC()
+			at = &now
+		}
+		if err := j.portals.SetAgencyPortalDomainVerified(ctx, row.AgencyID, row.PortalDomain, res.Verified, at); err != nil {
+			if !errors.Is(err, repository.ErrPortalDomainTaken) {
+				log.Warn().Err(err).Str("agency_id", row.AgencyID.String()).Msg("portal domain sweep: persist failed")
+			}
+			continue
+		}
+		log.Info().Str("agency_id", row.AgencyID.String()).Str("domain", row.PortalDomain).
+			Bool("verified", res.Verified).Str("code", res.Code).Msg("portal domain verification changed")
 	}
 	return nil
 }
