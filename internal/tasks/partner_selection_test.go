@@ -67,6 +67,32 @@ func TestPickWeightedPartnerRetainsDomainDiversityWithinAHost(t *testing.T) {
 	}
 }
 
+// A long tail of small hosts shares one provider group's weight, so it cannot outvote Google and Microsoft.
+func TestPickWeightedPartnerBalancesProviderGroupsBeforeHosts(t *testing.T) {
+	google, microsoft := uuid.New(), uuid.New()
+	candidates := []uuid.UUID{google, microsoft}
+	sig := partnerSignals{
+		domainsByID: map[uuid.UUID]string{google: "g.test", microsoft: "m.test"},
+		hostsByID:   map[uuid.UUID]string{google: "google_workspace", microsoft: "microsoft365"},
+	}
+	for i, host := range []string{"other", "ionos", "zoho", "ovh", "hostinger", "rackspace"} {
+		id := uuid.New()
+		candidates = append(candidates, id)
+		sig.domainsByID[id] = fmt.Sprintf("small-%d.test", i)
+		sig.hostsByID[id] = host
+	}
+	groups := map[string]int{}
+	for range 6000 {
+		host := sig.hostsByID[pickWeightedPartner(candidates, sig)]
+		groups[models.WarmupRecipientGroup(host, "")]++
+	}
+	for _, group := range []string{models.WarmupRecipientGoogle, models.WarmupRecipientMicrosoft, models.WarmupRecipientOther} {
+		if got := groups[group]; got < 1700 || got > 2300 {
+			t.Errorf("%s drawn %d/6000, want about a third: %v", group, got, groups)
+		}
+	}
+}
+
 func TestPickWeightedPartner_FallsBackToUniformWithoutDomains(t *testing.T) {
 	a := uuid.New()
 	b := uuid.New()

@@ -38,3 +38,26 @@ describe("provider expansion browse persistence", () => {
         expect(screen.getByRole("button")).toHaveAttribute("aria-expanded", "false");
     });
 });
+
+describe("provider rows below the share floor", () => {
+    beforeEach(() => {
+        sessionStorage.clear();
+        useAppStore.setState({ currentOrganization: { id: "workspace", name: "Workspace", role: "owner" } });
+    });
+
+    it("shows counts, not a 50% spam share, for two receipts", () => {
+        const two = { ...counts, sent: 2, delivered: 2, inbox: 1, spam: 1, inbox_rate: 50, spam_rate: 50 };
+        const profile = { user: { id: "account-user" } } as ComponentProps<typeof UserContext.Provider>["value"];
+        render(<UserContext.Provider value={profile}><ProviderBreakdown browseScope="x" providers={[{ ...two, group: "google", hosts: [] }]} /></UserContext.Provider>);
+        expect(screen.queryByText(/50%/)).toBeNull();
+        expect(screen.getByText("1 spam")).toBeInTheDocument();
+        expect(screen.getByText("1 inbox")).toBeInTheDocument();
+    });
+
+    it("shows shares once the floor is met", () => {
+        const profile = { user: { id: "account-user" } } as ComponentProps<typeof UserContext.Provider>["value"];
+        render(<UserContext.Provider value={profile}><ProviderBreakdown browseScope="y" providers={[{ ...counts, group: "google", hosts: [] }]} /></UserContext.Provider>);
+        expect(screen.getByText("80%")).toBeInTheDocument();
+        expect(screen.getByText("20% spam")).toBeInTheDocument();
+    });
+});

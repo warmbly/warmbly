@@ -93,6 +93,8 @@ Warmup's non-spam share includes inbox and category tabs among classified receip
 
 Metric metadata specifies the population, numerator, denominator, missingness, unit, source, and classification policy. Warmup reports include their date range; the headline rate uses a seven-day window. The optional 95% Wilson interval assumes independent observations. Repeated mailboxes, seeds, routes, and timing violate that assumption, so this interval is not an efficacy claim or calibrated real-recipient inbox probability.
 
+In the dashboard, a provider, a mail host or a window with fewer than 10 classified warmup receipts shows its counts instead of a share, and its bar draws one square per receipt, because one email moves a share that small by 10 points or more. The API still returns every rate.
+
 Google, Microsoft, and Yahoo family totals are not interchangeable with their consumer and business services. Inspect the host-level breakdown when Gmail versus Google Workspace or Outlook.com versus Microsoft 365 matters. Hosts that cannot be distinguished remain unknown. Pool placement, organic recipient activity, opens, bounces, and complaints stay separate. A **rescue request** is an action attempt, not confirmed movement or proof that reputation recovered.
 
 </Fold>

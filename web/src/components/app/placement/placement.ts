@@ -53,6 +53,19 @@ export const BAND: Record<PlacementBand, BandStyle> = {
     none: { label: "No classified receipts", text: "text-slate-400", dot: "bg-slate-200", chip: "bg-slate-50 text-slate-500 border-slate-200", tone: "slate" },
 };
 
+// Below this many classified receipts one email moves a share by 10+ points, so counts are shown instead.
+export const SHARE_MIN_SAMPLE = 10;
+
+/** A share over `delivered` classified receipts, or null below SHARE_MIN_SAMPLE. */
+export function sampledShare(rate: number | null | undefined, delivered: number): number | null {
+    return rate != null && delivered >= SHARE_MIN_SAMPLE ? rate : null;
+}
+
+/** What a withheld share says instead: how many receipts are in and how many it needs. */
+export function shareWithheld(delivered: number): string {
+    return delivered === 0 ? "no classified receipts" : `${fmtNum(delivered)} of ${SHARE_MIN_SAMPLE} receipts for a share`;
+}
+
 // Same thresholds as the backend bands, for per-day and per-provider rates.
 export function bandForRate(rate: number | null | undefined): PlacementBand {
     if (rate == null) return "none";

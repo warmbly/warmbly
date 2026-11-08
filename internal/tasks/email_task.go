@@ -869,10 +869,17 @@ func pickWeightedPartner(candidates []uuid.UUID, sig partnerSignals) uuid.UUID {
 
 	weights := make([]float64, len(candidates))
 	hostTotals := make(map[string]float64)
-	// Normalize only the coverage base; quality and customer rules still change host share.
+	groupHosts := make(map[string]map[string]struct{})
+	// Normalize only the coverage base (equal per provider group, then per host
+	// within it); quality and customer rules still change the shares.
 	for _, id := range candidates {
 		if host := sig.hostsByID[id]; host != "" {
 			hostTotals[host] += 1.0 / float64(1+sig.domainCounts[sig.domainsByID[id]])
+			group := models.WarmupRecipientGroup(host, "")
+			if groupHosts[group] == nil {
+				groupHosts[group] = make(map[string]struct{})
+			}
+			groupHosts[group][host] = struct{}{}
 		}
 	}
 	var total float64
@@ -880,8 +887,9 @@ func pickWeightedPartner(candidates []uuid.UUID, sig partnerSignals) uuid.UUID {
 		domain := sig.domainsByID[id]
 		// Diversity base weight.
 		w := 1.0 / float64(1+sig.domainCounts[domain])
-		if hostTotal := hostTotals[sig.hostsByID[id]]; hostTotal > 0 {
-			w /= hostTotal
+		host := sig.hostsByID[id]
+		if hostTotal := hostTotals[host]; hostTotal > 0 {
+			w /= hostTotal * float64(len(groupHosts[models.WarmupRecipientGroup(host, "")]))
 		}
 
 		// Per-host placement feedback.
