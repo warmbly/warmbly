@@ -181,6 +181,17 @@ The import pair is two steps over the same file: preview parses it and suggests 
 
 AI contact research is charged to the workspace balance for the tokens and web searches it uses (a run that finds nothing is still charged for its searching) and only saves cited findings. See the [AI contact research](/guides/ai-contact-research/) guide. The batch endpoint accepts up to 500 contact ids and drains in the background.
 
+### Meetings
+
+| Method | Path | API Permission |
+|--------|------|----------------|
+| GET | `/meetings` | `READ_CONTACTS` |
+| GET | `/meetings/summary` | `READ_CONTACTS` |
+| POST | `/meetings` | `WRITE_CONTACTS` |
+| DELETE | `/meetings/:id` | `WRITE_CONTACTS` |
+
+Meetings follow the contact scopes and the **View contacts** and **Manage contacts** member permissions, and are scoped to the workspace of the caller.
+
 ### Lead finder
 
 | Method | Path | API Permission |
