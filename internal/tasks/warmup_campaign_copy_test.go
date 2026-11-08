@@ -96,6 +96,11 @@ func TestOwnCopyDrawNeedsAMatureSenderAndAnOutOfInboxRecipient(t *testing.T) {
 		if !ownCopyDraw(sender, recipient, now, 0) {
 			t.Fatalf("own copy skipped %s", recipient.Email)
 		}
+		inbox := *recipient
+		inbox.WarmupPlacement = models.WarmupPlacementInbox
+		if ownCopyDraw(sender, &inbox, now, 0) {
+			t.Fatalf("own copy went to %s, which reads warmup in its inbox", inbox.Email)
+		}
 	}
 	if !ownCopyDraw(sender, folder, now, models.WarmupOwnCopySharePercent-1) {
 		t.Fatal("a roll under the share did not draw own copy")

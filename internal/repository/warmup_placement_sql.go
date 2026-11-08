@@ -17,6 +17,13 @@ func recipientGroupSQL(alias string) string {
 	END`, alias)
 }
 
+// consumerAddressSQL holds for a free Gmail or Outlook.com address, which
+// mailhost.Refine tells apart from a business domain on the same provider.
+func consumerAddressSQL(alias string) string {
+	return fmt.Sprintf(`(lower(split_part(%[1]s.email, '@', 2)) IN ('gmail.com', 'googlemail.com', 'msn.com', 'passport.com', 'windowslive.com')
+		OR lower(split_part(%[1]s.email, '@', 2)) ~ '^(hotmail|live|outlook)\.[a-z]{2,3}(\.[a-z]{2})?$')`, alias)
+}
+
 // majorRecipientSQL holds for a spam report filed at Google, Microsoft or
 // Yahoo by a trusted reporter, the only placements held against a sender.
 var majorRecipientSQL = fmt.Sprintf(`EXISTS (

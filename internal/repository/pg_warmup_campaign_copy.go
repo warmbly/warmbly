@@ -107,6 +107,7 @@ func (r *warmupContentRepository) CampaignStepPlacement(ctx context.Context, org
 		     AND btrim(wr.message_id, '<>') = btrim(wt.sent_message_id, '<>')
 		WHERE wt.content_source = 'campaign' AND wt.conversation_turn = 0 AND wt.sent_message_id <> ''
 		  AND `+recipientGroupSQL("rec")+` IN ('google', 'microsoft') AND rec.mail_host NOT IN ('gmail', 'outlook')
+		  AND NOT (rec.mail_host = '' AND `+consumerAddressSQL("rec")+`)
 		GROUP BY 1, 2, 3
 		ORDER BY 1, 2 NULLS FIRST, 3`, orgID, campaignID, since)
 	if err != nil {

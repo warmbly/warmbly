@@ -162,7 +162,21 @@ func TestLiveCampaignStepPlacement(t *testing.T) {
 			t.Fatalf("a %s recipient counted toward the step's placement: %+v %v", host, steps, err)
 		}
 	}
-	if _, err := f.pool.Exec(ctx, `UPDATE email_accounts SET mail_host = 'google_workspace' WHERE id = $1`, f.recipient); err != nil {
+	var address, provider string
+	if err := f.pool.QueryRow(ctx, `SELECT email, provider::text FROM email_accounts WHERE id = $1`, f.recipient).Scan(&address, &provider); err != nil {
+		t.Fatal(err)
+	}
+	// A free address whose host was never detected is still not a business inbox.
+	for _, free := range []struct{ provider, domain string }{{"gmail", "gmail.com"}, {"outlook", "hotmail.co.uk"}} {
+		if _, err := f.pool.Exec(ctx, `UPDATE email_accounts SET mail_host = '', provider = $2, email = $3 WHERE id = $1`,
+			f.recipient, free.provider, uuid.NewString()+"@"+free.domain); err != nil {
+			t.Fatal(err)
+		}
+		if steps, err := r.CampaignStepPlacement(ctx, f.org, c.campaign, since); err != nil || len(steps) != 0 {
+			t.Fatalf("a %s address with no detected host counted toward the step's placement: %+v %v", free.domain, steps, err)
+		}
+	}
+	if _, err := f.pool.Exec(ctx, `UPDATE email_accounts SET mail_host = 'google_workspace', email = $2, provider = $3 WHERE id = $1`, f.recipient, address, provider); err != nil {
 		t.Fatal(err)
 	}
 
