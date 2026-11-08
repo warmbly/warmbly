@@ -32053,7 +32053,7 @@
                 "$ref": "#/components/schemas/WarmupCopyPlacement"
               }
             ],
-            "description": "Business inboxes on Google Workspace and Microsoft 365 only, the only recipients campaign copy is sent to."
+            "description": "Business inboxes on Google Workspace and Microsoft 365 only; sends to other recipients are not reported."
           },
           "by_group": {
             "type": "array",

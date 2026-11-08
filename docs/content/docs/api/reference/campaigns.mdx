@@ -680,7 +680,7 @@ Where each arm of the campaign's opening steps landed when its senders' warmup o
 
 ### Response
 
-`variant_id` is `null` for the step's own copy. Campaign copy is only sent to business inboxes on Google Workspace and Microsoft 365, and only those are counted: `by_group` splits the sends into `google` (Google Workspace) and `microsoft` (Microsoft 365), and `placement` adds them up. `sent` counts the openings and `reported` how many of them the recipient has filed a receipt for; `inbox`, `tabs`, `spam` and `rescued` count within those receipts, so read rates over `reported`.
+`variant_id` is `null` for the step's own copy. Campaign copy goes to every recipient warmup picks, but only business inboxes on Google Workspace and Microsoft 365 are counted: `by_group` splits the sends into `google` (Google Workspace) and `microsoft` (Microsoft 365), and `placement` adds them up. `sent` counts the openings and `reported` how many of them the recipient has filed a receipt for; `inbox`, `tabs`, `spam` and `rescued` count within those receipts, so read rates over `reported`.
 
 ```json
 {

@@ -55,7 +55,7 @@ type WarmupCopyGroupPlacement struct {
 type WarmupStepPlacement struct {
 	SequenceID uuid.UUID  `json:"sequence_id"`
 	VariantID  *uuid.UUID `json:"variant_id"`
-	// Placement counts business inboxes on Google Workspace and Microsoft 365, the only ones campaign copy is sent to.
+	// Placement counts business inboxes on Google Workspace and Microsoft 365; sends to other recipients are not reported.
 	Placement WarmupCopyPlacement        `json:"placement"`
 	ByGroup   []WarmupCopyGroupPlacement `json:"by_group"`
 }
