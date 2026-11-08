@@ -122,6 +122,7 @@ func TestGmailWatchSkipsGrantsOnAMalformedTopicOrKey(t *testing.T) {
 	id := uuid.New()
 	for _, c := range []struct{ topic, key string }{
 		{"mailboxes", `{"project_id":"mailboxes"}`},
+		{"projects/mailboxes/topics/", `{"project_id":"mailboxes"}`},
 		{"projects/mailboxes/subscriptions/gmail", `{"project_id":"mailboxes"}`},
 		{"projects/mailboxes/topics/gmail", `not json`},
 		{"projects/mailboxes/topics/gmail", `{"type":"service_account"}`},

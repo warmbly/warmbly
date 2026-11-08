@@ -26,7 +26,7 @@ func TestWatchRefusalKeepsGooglesReason(t *testing.T) {
 	}
 	_, err = (&Client{srv: svc}).Watch(t.Context(), "projects/grants/topics/gmail")
 	var mailErr *errx.MailError
-	if err == nil || !strings.Contains(err.Error(), "Invalid topicName") || !errors.As(err, &mailErr) {
+	if err == nil || !strings.Contains(err.Error(), "400 Invalid topicName") || !errors.As(err, &mailErr) {
 		t.Fatalf("watch refusal = %v, want Google's reason and a classifiable MailError", err)
 	}
 }

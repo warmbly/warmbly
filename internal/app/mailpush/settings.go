@@ -38,6 +38,9 @@ func NewSettings(secret string, states repository.MailboxPushRepository) *Settin
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte("warmbly mailbox push v1"))
 	s := &Settings{gmailTopic: config.GmailPushTopic(), key: mac.Sum(nil), states: states}
+	if s.gmailTopic != "" && topicProject(s.gmailTopic) == "" {
+		log.Warn().Msg("mailpush: GMAIL_PUSH_TOPIC is not projects/<project>/topics/<topic>; whole-domain grant Gmail mailboxes keep polling")
+	}
 	if project := topicProject(s.gmailTopic); project != "" {
 		key := config.GoogleDelegationKey()
 		keyProj := keyProject(key)
@@ -70,7 +73,7 @@ func (s *Settings) VerifyGraphClientState(emailID uuid.UUID, got string) bool {
 // topicProject is the project id in "projects/<project>/topics/<topic>".
 func topicProject(topic string) string {
 	parts := strings.Split(topic, "/")
-	if len(parts) != 4 || parts[0] != "projects" || parts[2] != "topics" {
+	if len(parts) != 4 || parts[0] != "projects" || parts[1] == "" || parts[2] != "topics" || parts[3] == "" {
 		return ""
 	}
 	return parts[1]
