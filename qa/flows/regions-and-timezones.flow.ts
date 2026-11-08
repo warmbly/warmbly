@@ -35,8 +35,11 @@ test.describe("regions and timezones", () => {
         await expect(page.getByText(/Chicago/).first()).toBeVisible(SWEEP);
         await proof.chapter("Whose time", "A weekday 9-5 campaign on New York time");
         await expect(page.getByText(/Lands .* their time/).first()).toBeVisible();
+        const card = page.getByRole("region", { name: "Whose time" });
+        await card.scrollIntoViewIfNeeded();
         await proof.shot("campaign-clock", {
-            caption: "On the campaign's clock, where today's window lands for each region",
+            caption: "On the campaign's clock, where its next window lands for each region",
+            target: card,
             ignore: [page.getByText(/there$/), page.getByText(/^Lands /)],
         });
 
@@ -46,6 +49,7 @@ test.describe("regions and timezones", () => {
         await proof.dwell();
         await proof.shot("lead-clock", {
             caption: "Read in each lead's own day, with the leads nothing places called out",
+            target: card,
             ignore: [page.getByText(/there$/), page.getByText(/their window|their time$/)],
         });
 

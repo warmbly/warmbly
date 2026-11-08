@@ -64,7 +64,7 @@ export default function LeadTimezonesCard({
             : 0;
 
     return (
-        <section className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+        <section aria-label="Whose time" className="rounded-lg border border-slate-200 bg-white overflow-hidden">
             <div className="px-4 pt-3 pb-3 border-b border-slate-200/70">
                 <div className="flex items-center gap-2 mb-2.5">
                     <GlobeIcon className="w-3.5 h-3.5 text-slate-400" />
@@ -142,7 +142,7 @@ export default function LeadTimezonesCard({
                                 return (
                                     <li
                                         key={z.timezone}
-                                        className="grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_88px_200px] items-center gap-x-3 h-7 text-[12px]"
+                                        className="grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_88px_250px] items-center gap-x-3 h-7 text-[12px]"
                                     >
                                         <span className="relative min-w-0 h-6 flex items-center px-2 rounded">
                                             <span className="absolute inset-y-0 left-0 rounded bg-sky-50" style={{ width: `${(z.leads / max) * 100}%` }} />
