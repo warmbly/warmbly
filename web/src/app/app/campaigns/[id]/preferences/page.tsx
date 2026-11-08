@@ -238,6 +238,9 @@ export default function CampaignPreferences() {
             ...(newData.ramp_start !== campaign.ramp_start && { ramp_start: newData.ramp_start }),
             ...(newData.ramp_increment !== campaign.ramp_increment && { ramp_increment: newData.ramp_increment }),
             ...(newData.ramp_ceiling !== campaign.ramp_ceiling && { ramp_ceiling: newData.ramp_ceiling }),
+            ...((newData.warmup_graduation !== false) !== (campaign.warmup_graduation !== false) && {
+                warmup_graduation: newData.warmup_graduation !== false,
+            }),
 
             // First email timing
             ...(newData.entry_delay_minutes !== campaign.entry_delay_minutes && {

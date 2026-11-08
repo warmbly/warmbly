@@ -154,6 +154,11 @@ type Campaign struct {
 	RampLevel     int        `json:"ramp_level"`
 	RampLevelDate *time.Time `json:"ramp_level_date,omitempty"`
 
+	// WarmupGraduation holds a mailbox leaving warmup to the reply-earned cold
+	// ceiling in this campaign. Off leaves the mailbox cap, the campaign limit
+	// and the campaign ramp as its only volume limits.
+	WarmupGraduation bool `json:"warmup_graduation"`
+
 	// ESP/provider matching: off | prefer | strict.
 	ESPMatchMode string `json:"esp_match_mode"`
 
@@ -273,6 +278,13 @@ type CampaignEstimate struct {
 	// StepWaits is each follow-up's wait_after in days, in order. Empty is a
 	// single email.
 	StepWaits []int `json:"step_waits,omitempty"`
+	// The campaign's ramp-up as the wizard has it; unsent fields come from the
+	// saved campaign, else a new campaign's defaults.
+	WarmupGraduation *bool `json:"warmup_graduation,omitempty"`
+	RampEnabled      *bool `json:"ramp_enabled,omitempty"`
+	RampStart        *int  `json:"ramp_start,omitempty"`
+	RampIncrement    *int  `json:"ramp_increment,omitempty"`
+	RampCeiling      *int  `json:"ramp_ceiling,omitempty"`
 	// CampaignID projects a saved campaign, filling anything not sent from it.
 	CampaignID *string `json:"campaign_id,omitempty"`
 }
@@ -349,6 +361,7 @@ const (
 // Bottleneck values of a campaign estimate.
 const (
 	EstimateBottleneckCampaignLimit   = "campaign_limit"
+	EstimateBottleneckCampaignRamp    = "campaign_ramp"
 	EstimateBottleneckGraduation      = "warmup_graduation"
 	EstimateBottleneckSpacing         = "spacing"
 	EstimateBottleneckOtherCampaigns  = "other_campaigns"
@@ -465,6 +478,8 @@ type UpdateCampaign struct {
 	RampIncrement *int  `json:"ramp_increment,omitempty"`
 	RampCeiling   *int  `json:"ramp_ceiling,omitempty"`
 
+	WarmupGraduation *bool `json:"warmup_graduation,omitempty"`
+
 	ESPMatchMode       *string `json:"esp_match_mode,omitempty"`
 	MaxNewLeadsPerDay  *int    `json:"max_new_leads_per_day,omitempty"`
 	PrioritizeNewLeads *bool   `json:"prioritize_new_leads,omitempty"`
@@ -499,7 +514,7 @@ func (u *UpdateCampaign) TouchesSchedule() bool {
 // TouchesPacing reports whether the patch changes how much the campaign may send or from which mailboxes, which a parked wakeup was placed under too.
 func (u *UpdateCampaign) TouchesPacing() bool {
 	return u.DailyLimit != nil || u.EmailTags != nil || u.SenderStrategy != nil || u.RotationMode != nil || u.FollowUpSender != nil ||
-		u.RampEnabled != nil || u.RampStart != nil || u.RampIncrement != nil || u.RampCeiling != nil ||
+		u.RampEnabled != nil || u.RampStart != nil || u.RampIncrement != nil || u.RampCeiling != nil || u.WarmupGraduation != nil ||
 		u.MaxNewLeadsPerDay != nil || u.ESPMatchMode != nil
 }
 
@@ -552,6 +567,8 @@ type CreateCampaign struct {
 	RampStart     *int  `json:"ramp_start,omitempty"`
 	RampIncrement *int  `json:"ramp_increment,omitempty"`
 	RampCeiling   *int  `json:"ramp_ceiling,omitempty"`
+	// WarmupGraduation defaults to true: mailboxes leaving warmup earn volume with replies.
+	WarmupGraduation *bool `json:"warmup_graduation,omitempty"`
 
 	// ESP/provider matching + new-lead throttle + tracking-domain override.
 	ESPMatchMode       *string `json:"esp_match_mode,omitempty"`

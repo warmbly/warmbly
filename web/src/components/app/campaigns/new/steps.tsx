@@ -51,6 +51,8 @@ import EstimateTimeline from "./EstimateTimeline";
 import { BottleneckNote, FinishSooner, MailboxMix, SenderList, WarmupNote } from "./EstimateInsights";
 import { estimateHeadline, paceLabel, rampStart } from "./estimateText";
 import { htmlToPlain } from "@/components/app/campaigns/sequences/emailPreview";
+import RampUpChoice from "@/components/app/campaigns/RampUpChoice";
+import { rampUpMode, rampUpSummary } from "@/components/app/campaigns/rampUp";
 
 export type EstimateState = {
     data: CampaignEstimateResult | undefined;
@@ -573,6 +575,16 @@ export function ScheduleStep({
                 </div>
 
                 <div>
+                    <SectionLabel right={<span className="text-[11px] text-slate-500">{rampUpSummary(draft.rampUp)}</span>}>
+                        Ramp-up
+                    </SectionLabel>
+                    <RampUpChoice
+                        value={draft.rampUp}
+                        onChange={(p) => patch((d) => ({ rampUp: { ...d.rampUp, ...p } }))}
+                    />
+                </div>
+
+                <div>
                     <button
                         type="button"
                         onClick={() => setMore((v) => !v)}
@@ -641,6 +653,22 @@ export function ScheduleStep({
 }
 
 // Review -------------------------------------------------------------------
+
+// How the senders' daily volume grows, for the review's Senders row.
+function senderPace(draft: Draft, replyStart: number | null): string {
+    const r = draft.rampUp;
+    switch (rampUpMode(r)) {
+        case "schedule": {
+            const top = Math.min(r.ramp_ceiling, draft.dailyLimit);
+            return r.ramp_start < top ? `${r.ramp_start}/day each to start, +${r.ramp_increment} a day up to ${top}` : `up to ${top}/day each`;
+        }
+        case "replies":
+            if (replyStart !== null && replyStart < draft.dailyLimit) return `${replyStart}/day each to start, up to ${draft.dailyLimit} as leads reply`;
+            return `up to ${draft.dailyLimit}/day each`;
+        default:
+            return `up to ${draft.dailyLimit}/day each from day one`;
+    }
+}
 
 export type LaunchBlock = string | null;
 
@@ -715,7 +743,7 @@ export function ReviewStep({
             value: e
                 ? e.mailboxes === 0
                     ? "No active mailbox"
-                    : `${plural(e.mailboxes, "mailbox", "mailboxes")}, ${start !== null && start < draft.dailyLimit ? `${start}/day each to start, up to ${draft.dailyLimit} as leads reply` : `up to ${draft.dailyLimit}/day each`}${e.held > 0 ? ` (${e.held} held)` : ""}`
+                    : `${plural(e.mailboxes, "mailbox", "mailboxes")}, ${senderPace(draft, start)}${e.held > 0 ? ` (${e.held} held)` : ""}`
                 : "…",
             warn: !!e && (e.mailboxes === 0 || e.held > 0),
         },

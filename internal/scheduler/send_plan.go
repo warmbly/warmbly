@@ -80,8 +80,12 @@ func stagedCap(p *campaignPass, acct models.Email) (stages [5]int, limitedBy str
 		stages[2] = cur
 	}
 	// Graduation ceiling: a mailbox at its warmup ceiling must not reach the
-	// full cold cap the day it joins a campaign.
-	clamp(3, coldCeilingFor(p.coldRamp[acct.ID].WithKnownWarmup(acct.Warmup), cur), capByGraduation)
+	// full cold cap the day it joins a campaign, unless the campaign opted out.
+	if c.WarmupGraduation {
+		clamp(3, coldCeilingFor(p.coldRamp[acct.ID].WithKnownWarmup(acct.Warmup), cur), capByGraduation)
+	} else {
+		stages[3] = cur
+	}
 	if m := p.risk.CapMultiplier(); m < 1 {
 		risked := int(float64(cur)*m + 0.5)
 		// A restricted organization still sends, just far less. Zeroing it
@@ -647,7 +651,7 @@ func (s *schedulerService) PlanCampaignDay(ctx context.Context, campaignID uuid.
 // PoolCapacityToday implements CampaignSendPlanner.
 func (s *schedulerService) PoolCapacityToday(ctx context.Context, campaign *models.Campaign, accounts []models.Email) (*models.WorkspaceSendCapacity, error) {
 	if campaign == nil {
-		campaign = &models.Campaign{}
+		campaign = &models.Campaign{WarmupGraduation: true}
 	}
 	pass := s.newCampaignPass(ctx, campaign, accounts)
 	// One read for the whole pool. A miss is not an error here: a mailbox

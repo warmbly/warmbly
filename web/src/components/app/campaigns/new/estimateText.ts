@@ -75,6 +75,8 @@ export function paceLabel(e: CampaignEstimateResult | undefined): string | null 
             return "Paced by the sending window";
         case "campaign_limit":
             return "Paced by the daily limit";
+        case "campaign_ramp":
+            return "Paced by the ramp-up";
         case "other_campaigns":
             return "Shared with other campaigns";
         case "health":
@@ -117,6 +119,8 @@ export function wontHelpText(e: CampaignEstimateResult): string | null {
             return "Raising the daily limit would not change the date: replies set the pace, not the limit.";
         case "spacing":
             return "Raising the daily limit would not change the date: mailboxes run out of hours first.";
+        case "campaign_ramp":
+            return "Raising the daily limit would not change the date: the ramp-up sets the pace until it reaches its ceiling.";
         default:
             return null;
     }
@@ -145,6 +149,8 @@ export function bottleneckText(e: CampaignEstimateResult, limit?: number): strin
         }
         case "spacing":
             return "The sending window is the limit: with the gap between sends, and warmup sharing the same clock, mailboxes run out of hours before they reach their cap. A wider window goes faster.";
+        case "campaign_ramp":
+            return "The ramp-up schedule is the limit: every mailbox starts at its first-day volume and adds the same amount each sending day until the ceiling. A higher start or a faster increase goes sooner.";
         case "campaign_limit":
             return "The configured daily limit per mailbox is the constraint. Raising it is not proof that a higher volume is safe; consider provider policies, recipient permission and observed feedback.";
         case "other_campaigns":

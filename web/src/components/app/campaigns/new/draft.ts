@@ -3,6 +3,7 @@
 
 import type { CreateCampaignInput } from "@/lib/api/client/app/campaigns/createCampaign";
 import { htmlToPlain } from "@/components/app/campaigns/sequences/emailPreview";
+import { rampUpInvalid, rampUpPayload, type RampUp } from "@/components/app/campaigns/rampUp";
 
 export type EmailDraft = {
     id: string;
@@ -37,6 +38,7 @@ export type Draft = {
     scheduledAt: string;
     emailTagIds: string[];
     dailyLimit: number;
+    rampUp: RampUp;
     stopOnReply: boolean;
     stopOnMeeting: boolean;
     openTracking: boolean;
@@ -86,6 +88,7 @@ export const initialDraft = (timezone: string): Draft => ({
     scheduledAt: "",
     emailTagIds: [],
     dailyLimit: 50,
+    rampUp: { warmup_graduation: true, ramp_enabled: false, ramp_start: 10, ramp_increment: 5, ramp_ceiling: 50 },
     stopOnReply: true,
     stopOnMeeting: true,
     openTracking: true,
@@ -172,6 +175,8 @@ export function stepIssue(key: StepKey, d: Draft): string | null {
                 if (at.getTime() < Date.now()) return "The start time has already passed";
             }
             if (d.dailyLimit < 3 || d.dailyLimit > 5000) return "Daily limit must be between 3 and 5,000";
+            const ramp = rampUpInvalid(d.rampUp);
+            if (ramp) return `Ramp-up: ${ramp.charAt(0).toLowerCase()}${ramp.slice(1)}`;
             return null;
         }
         default:
@@ -213,6 +218,7 @@ export function toCreateInput(d: Draft, name: string): CreateCampaignInput {
         start_time: d.startTime,
         end_time: d.endTime,
         daily_limit: d.dailyLimit,
+        ...rampUpPayload(d.rampUp),
         open_tracking: d.openTracking,
         link_tracking: d.linkTracking,
         utm_tracking: d.utmTracking,

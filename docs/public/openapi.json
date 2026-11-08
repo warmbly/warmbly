@@ -49783,6 +49783,10 @@
           "ramp_ceiling": {
             "type": "integer"
           },
+          "warmup_graduation": {
+            "type": "boolean",
+            "description": "Hold mailboxes whose warmup is running or paused to the reply-earned ceiling in this campaign: 5 a day, plus one a day for each lead who replied in the last seven days. Default true. false leaves each mailbox's daily cap, daily_limit and the ramp."
+          },
           "ramp_level": {
             "type": "integer",
             "description": "Server-managed current ramp level."
@@ -49982,6 +49986,10 @@
           "ramp_ceiling": {
             "type": "integer"
           },
+          "warmup_graduation": {
+            "type": "boolean",
+            "description": "Hold mailboxes whose warmup is running or paused to the reply-earned ceiling in this campaign: 5 a day, plus one a day for each lead who replied in the last seven days. Default true. false leaves each mailbox's daily cap, daily_limit and the ramp."
+          },
           "esp_match_mode": {
             "type": "string",
             "enum": [
@@ -50158,6 +50166,10 @@
           },
           "ramp_ceiling": {
             "type": "integer"
+          },
+          "warmup_graduation": {
+            "type": "boolean",
+            "description": "Hold mailboxes whose warmup is running or paused to the reply-earned ceiling in this campaign: 5 a day, plus one a day for each lead who replied in the last seven days. Default true. false leaves each mailbox's daily cap, daily_limit and the ramp."
           },
           "esp_match_mode": {
             "type": "string",

@@ -141,8 +141,8 @@ type projectedSender struct {
 
 // senderDay is one mailbox's day with the clamps that shaped it.
 type senderDay struct {
-	sends, warmup                                          int
-	graduation, other, health, spacing, behaviorLoss, held int
+	sends, warmup                                                int
+	ramp, graduation, other, health, spacing, behaviorLoss, held int
 }
 
 // warmupOnDay is the warmup mail a mailbox sends on its local day, while it
@@ -191,8 +191,9 @@ func warmupOnDay(p *projectedSender, localNoon time.Time, inCampaign bool) (int,
 // projectSenderDay walks one mailbox through one campaign day. spans is the
 // campaign's sending time that day, already clipped to the start; rampStart is
 // when the mailbox's cold ramp starts climbing if it has not yet; today marks
-// the day that already has sends on the ledger.
-func projectSenderDay(p *projectedSender, spans []span, midnight, rampStart time.Time, today bool) senderDay {
+// the day that already has sends on the ledger; rampCap is the campaign ramp's
+// level that day, negative when the campaign has no ramp.
+func projectSenderDay(p *projectedSender, spans []span, midnight, rampStart time.Time, today bool, rampCap int) senderDay {
 	var d senderDay
 	noon := midnight.Add(12 * time.Hour)
 	// Warmup keeps running on the side, on every warmup day, on the same
@@ -209,6 +210,11 @@ func projectSenderDay(p *projectedSender, spans []span, midnight, rampStart time
 			return d
 		}
 		spans = clipSpans(spans, *p.heldTill)
+	}
+
+	if rampCap >= 0 && rampCap < c {
+		d.ramp = c - rampCap
+		c = rampCap
 	}
 
 	// Graduation: a warmed mailbox climbs from its starting volume.
@@ -307,7 +313,7 @@ func projectSenderDay(p *projectedSender, spans []span, midnight, rampStart time
 func (s *schedulerService) ProjectCampaign(ctx context.Context, in CampaignProjectionInput) (*models.CampaignEstimateResult, error) {
 	campaign := in.Campaign
 	if campaign == nil {
-		campaign = &models.Campaign{}
+		campaign = &models.Campaign{WarmupGraduation: true}
 	}
 	now := time.Now()
 	out := &models.CampaignEstimateResult{
@@ -352,7 +358,7 @@ func (s *schedulerService) ProjectCampaign(ctx context.Context, in CampaignProje
 			}
 		}
 		p.cold = pass.coldRamp[acct.ID].WithKnownWarmup(acct.Warmup)
-		p.hasCold = p.cold.CeilingApplies()
+		p.hasCold = campaign.WarmupGraduation && p.cold.CeilingApplies()
 		h := s.healthFor(ctx, pass, acct.ID)
 		if h.known {
 			p.health = h.state
@@ -443,6 +449,9 @@ func (s *schedulerService) ProjectCampaign(ctx context.Context, in CampaignProje
 		}
 		return total
 	}
+	// The campaign ramp advances once per sending day from its persisted level.
+	rampLevel := campaign.RampLevel
+	rampAdvancedToday := campaign.RampLevelDate != nil && !campaign.RampLevelDate.UTC().Truncate(24*time.Hour).Before(now.UTC().Truncate(24*time.Hour))
 	firstFull := -1
 	var lossOrg int
 	for i := 0; i < projectionExactDays; i++ {
@@ -460,21 +469,28 @@ func (s *schedulerService) ProjectCampaign(ctx context.Context, in CampaignProje
 				everySpans = clipSpans(everySpans, start)
 			}
 		}
+		rampCap := -1
+		if campaign.RampEnabled {
+			if sendingExact[i] && !(isToday && rampAdvancedToday) {
+				rampLevel = nextRampLevel(rampLevel, campaign.RampStart, campaign.RampIncrement, campaign.RampCeiling)
+			}
+			rampCap = campaignRampCeiling(true, campaign.RampStart, campaign.RampIncrement, campaign.RampCeiling, rampLevel)
+		}
 		row := make([]senderDay, len(senders))
 		total, open, every := 0, 0, 0
 		for j, p := range senders {
-			row[j] = projectSenderDay(p, spans, mid, startDay, isToday)
+			row[j] = projectSenderDay(p, spans, mid, startDay, isToday, rampCap)
 			total += row[j].sends
 			warmupExact[i] += row[j].warmup
 			if p.hasCold {
 				unramped := *p
 				unramped.hasCold = false
-				open += projectSenderDay(&unramped, spans, mid, startDay, isToday).sends
+				open += projectSenderDay(&unramped, spans, mid, startDay, isToday, rampCap).sends
 			} else {
 				open += row[j].sends
 			}
 			if len(everySpans) > 0 {
-				every += projectSenderDay(p, everySpans, mid, startDay, isToday).sends
+				every += projectSenderDay(p, everySpans, mid, startDay, isToday, rampCap).sends
 			}
 		}
 		if room := roomOn(i); !pass.risk.BlocksSending() && room >= 0 && total > room && firstFull < 0 && !isToday && sendingExact[i] {
@@ -525,6 +541,7 @@ func (s *schedulerService) ProjectCampaign(ctx context.Context, in CampaignProje
 			d := exact[firstFull][j]
 			first = d.sends
 			losses[models.EstimateBottleneckCampaignLimit] += p.capLoss
+			losses[models.EstimateBottleneckCampaignRamp] += d.ramp
 			losses[models.EstimateBottleneckWorkspaceRisk] += p.riskLoss
 			losses[models.EstimateBottleneckGraduation] += d.graduation
 			losses[models.EstimateBottleneckOtherCampaigns] += d.other
@@ -575,7 +592,7 @@ func (s *schedulerService) ProjectCampaign(ctx context.Context, in CampaignProje
 	biggest := 0
 	for _, kind := range []string{
 		models.EstimateBottleneckWorkspaceRisk, models.EstimateBottleneckHeld, models.EstimateBottleneckCampaignLimit,
-		models.EstimateBottleneckGraduation, models.EstimateBottleneckOtherCampaigns, models.EstimateBottleneckHealth,
+		models.EstimateBottleneckCampaignRamp, models.EstimateBottleneckGraduation, models.EstimateBottleneckOtherCampaigns, models.EstimateBottleneckHealth,
 		models.EstimateBottleneckSendingBehavior, models.EstimateBottleneckSpacing, models.EstimateBottleneckOrgDailyLimit,
 	} {
 		if losses[kind] > biggest {

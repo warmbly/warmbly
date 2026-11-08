@@ -67,6 +67,7 @@ A `data` plus `pagination` envelope. `next_cursor` is the campaign id to resume 
       "ramp_increment": 0,
       "ramp_ceiling": 0,
       "ramp_level": 0,
+      "warmup_graduation": true,
       "esp_match_mode": "off",
       "max_new_leads_per_day": 0,
       "prioritize_new_leads": false,
@@ -116,7 +117,7 @@ Status-bucket counts plus per-folder totals for the organization, used to drive 
 
 `POST /campaigns-estimate`
 
-Project an audience against a sender pool before a campaign exists. The campaign is simulated day by day under the scheduler's own rules: each mailbox's cap and the campaign limit, the warmup graduation ceiling as it climbs, the workspace's risk band, health bands and holds, domain authentication, cold rotation, sending behaviour profiles, the plan's daily allowance, what other campaigns already send from the same mailboxes, and the sending window with its spacing. The warmup mail each warming mailbox keeps sending shares that spacing, so it is counted too. For a sequence, due follow-ups go out before new contacts start, and the totals assume nobody replies. Nothing is written, so it needs no `Idempotency-Key`. The dashboard's new-campaign flow shows this as its launch plan. **Scope** `READ_CAMPAIGNS` · **Org permission** `view_campaigns`.
+Project an audience against a sender pool before a campaign exists. The campaign is simulated day by day under the scheduler's own rules: each mailbox's cap and the campaign limit, the campaign's ramp-up (its schedule as it climbs, or the warmup graduation ceiling when it ramps as replies come in), the workspace's risk band, health bands and holds, domain authentication, cold rotation, sending behaviour profiles, the plan's daily allowance, what other campaigns already send from the same mailboxes, and the sending window with its spacing. The warmup mail each warming mailbox keeps sending shares that spacing, so it is counted too. For a sequence, due follow-ups go out before new contacts start, and the totals assume nobody replies. Nothing is written, so it needs no `Idempotency-Key`. The dashboard's new-campaign flow shows this as its launch plan. **Scope** `READ_CAMPAIGNS` · **Org permission** `view_campaigns`.
 
 ### Request body
 
@@ -131,6 +132,8 @@ Project an audience against a sender pool before a campaign exists. The campaign
 | `start_time` | string | no | Daily window start (`HH:MM`). Defaults to `08:00`, the window a new campaign gets. |
 | `end_time` | string | no | Daily window end (`HH:MM`). Defaults to `18:00`. An end at or before the start returns `400`. |
 | `step_waits` | integer[] | no | Each follow-up's `wait_after` in days (0 to 365), in order. Omit for a single email. At most 30. |
+| `warmup_graduation` | boolean | no | As on create. Defaults to the saved campaign's, else `true`. |
+| `ramp_enabled`, `ramp_start`, `ramp_increment`, `ramp_ceiling` | boolean, integers | no | The ramp schedule to project, as on create. Unsent fields come from the saved campaign, else a new campaign's defaults. A saved campaign's ramp keeps the level it has reached unless one of the numbers changes. |
 | `campaign_id` | string | no | Project a saved campaign of this workspace. Its leads that no linked segment enrolled count toward `recipients` together with `segment_ids` (each contact once; leads a segment link enrolled count only while that segment is in `segment_ids`, since unlinking it withdraws them). Anything not sent (`daily_limit`, `days`, `timezone`, the window, including per-day windows) is taken from the campaign, and one that sends from mailboxes picked one by one uses those. A campaign from another workspace returns `404`. |
 
 ### Response
@@ -141,10 +144,10 @@ Project an audience against a sender pool before a campaign exists. The campaign
 | --- | --- |
 | `steps`, `total_sends` | Emails per contact, and `recipients` times `steps`. |
 | `first_touch_finish_at` | The day the last contact gets their first email. |
-| `ramping`, `held` | Mailboxes still climbing their graduation ceiling, and mailboxes that send nothing today. |
+| `ramping`, `held` | Mailboxes still climbing their warmup graduation ceiling, and mailboxes that send nothing today. A campaign that ramps on a schedule shows its climb in `first_day_cap`, `steady_cap` and `full_capacity_at` instead. |
 | `warmup` | `{mailboxes, per_day, per_day_without, reply_rate}`: the warmup mail running alongside the campaign, what the same mailboxes warm at with no live campaign, and the least chance (in percent) that a pool partner with reply share left answers it on arrival while the campaign runs. Partners answer this warmup before other warmup mail, within their own reply rate. |
 | `other_campaigns_per_day` | What the pool's mailboxes sent for other campaigns on an average day over the last week. |
-| `bottleneck` | The clamp that costs the most sends on the first full sending day: `campaign_limit`, `warmup_graduation`, `spacing`, `other_campaigns`, `health`, `held`, `workspace_risk`, `org_daily_limit` or `sending_behavior`. Empty when the mailboxes' own caps are the limit. |
+| `bottleneck` | The clamp that costs the most sends on the first full sending day: `campaign_limit`, `campaign_ramp`, `warmup_graduation`, `spacing`, `other_campaigns`, `health`, `held`, `workspace_risk`, `org_daily_limit` or `sending_behavior`. Empty when the mailboxes' own caps are the limit. |
 | `timeline` | Up to 120 days from the start: `date`, `sending_day`, `capacity`, `sends`, `first_emails`, `follow_ups`, `warmup`. |
 | `senders` | Up to 200 mailboxes: `id`, `email`, `provider`, `state` (`ready`, `ramping`, `throttled`, `health_hold`, `domain_auth`, `resting`, `no_worker`), `first_day_cap`, `steady_cap`, `warmup_per_day`, `warmup_without`, `full_cap_at`. |
 | `scenarios` | Changes that would finish sooner, each simulated the same way and listed only when it beats `estimated_finish_at`: `kind` (`replies`: the given percent of leads reply, `more_mailboxes`: that many more mailboxes like these, `every_day`: the same hours on every day of the week), `value`, `finish_at`. |
@@ -220,10 +223,11 @@ Create a campaign. Only `name` is required, every other field is optional and ap
 | `rotation_mode` | string | no | How volume spreads across the chosen mailboxes. |
 | `follow_up_sender` | string | no | Which mailbox sends a lead's follow-ups: `same` (default, the mailbox that sent the first email), `same_domain` (rotate among mailboxes on that domain) or `rotate` (rotate across the pool). Any other value is `400`. |
 | `senders` | object[] | no | Explicit-strategy mailbox pool (see sender input below). |
-| `ramp_enabled` | boolean | no | Enable per-campaign daily ramp-up. |
-| `ramp_start` | integer | no | Ramp starting volume. |
-| `ramp_increment` | integer | no | Daily ramp increment. |
-| `ramp_ceiling` | integer | no | Ramp ceiling (never raises above the per-mailbox cap). |
+| `ramp_enabled` | boolean | no | Ramp each mailbox's volume on a schedule: `ramp_start` on the first sending day, plus `ramp_increment` each sending day, up to `ramp_ceiling`. Default `false`. |
+| `ramp_start` | integer | no | Ramp starting volume, `1` to `5000` (default `10`). |
+| `ramp_increment` | integer | no | Daily ramp increment, `0` to `100` (default `5`). |
+| `ramp_ceiling` | integer | no | Ramp ceiling, `1` to `5000` and at least `ramp_start` (default `50`). It never raises a mailbox above its own cap. |
+| `warmup_graduation` | boolean | no | Hold mailboxes whose warmup is running or paused to the reply-earned ceiling in this campaign: `5` a day, plus one a day for each lead who replied in the last seven days. Default `true`. `false` leaves each mailbox's daily cap, `daily_limit` and the ramp. The dashboard sets `false` with `ramp_enabled: true` for **On a schedule**, and both `false` for **Full volume**. See [ramp-up](/guides/campaigns/#ramp-up). |
 | `esp_match_mode` | string | no | `off`, `prefer`, or `strict`. |
 | `max_new_leads_per_day` | integer | no | New-lead throttle, `0` is unlimited. |
 | `prioritize_new_leads` | boolean | no | Prefer new leads in each send window. |
@@ -290,7 +294,7 @@ Patch any subset of campaign fields. Omitted fields are left unchanged. The expl
 
 ### Request body
 
-Every field is optional. Scalar fields use nullable pointers, so any field you send is applied. `timezone` accepts `""` to make the campaign follow the workspace timezone. `start_date` and `end_date` additionally accept an explicit `null` to clear the stored date: a null `start_date` means "start now" and a null `end_date` means "run open-ended". Changing any schedule field (`start_date`, `end_date`, `timezone`, `timezone_mode`, `days`, `start_time`, `end_time`, `schedule_windows`, `entry_delay_minutes`) on an active campaign reschedules its next send immediately, so clearing a future start date or shortening the entry delay takes effect right away. Notable fields: `name`, `description`, `status`, `stop_on_reply`, `stop_on_meeting`, `open_tracking`, `link_tracking`, `text_only`, `daily_limit`, `unsubscribe_header`, `risky_emails`, `cc`, `bcc`, `start_date`, `end_date`, `timezone`, `timezone_mode`, `days`, `start_time`, `end_time`, `schedule_windows`, `email_tags`, `folders`, `contact_order_by`, `contact_order_dir`, `contact_order_field`, `sender_strategy`, `rotation_mode`, `follow_up_sender`, `ramp_enabled`, `ramp_start`, `ramp_increment`, `ramp_ceiling`, `esp_match_mode`, `max_new_leads_per_day`, `prioritize_new_leads`, `entry_delay_minutes`, `continuous`, `tracking_domain`, `utm_tracking`, `utm_source`, `utm_medium`, `utm_campaign`.
+Every field is optional. Scalar fields use nullable pointers, so any field you send is applied. `timezone` accepts `""` to make the campaign follow the workspace timezone. `start_date` and `end_date` additionally accept an explicit `null` to clear the stored date: a null `start_date` means "start now" and a null `end_date` means "run open-ended". Changing any schedule field (`start_date`, `end_date`, `timezone`, `timezone_mode`, `days`, `start_time`, `end_time`, `schedule_windows`, `entry_delay_minutes`) on an active campaign reschedules its next send immediately, so clearing a future start date or shortening the entry delay takes effect right away. Notable fields: `name`, `description`, `status`, `stop_on_reply`, `stop_on_meeting`, `open_tracking`, `link_tracking`, `text_only`, `daily_limit`, `unsubscribe_header`, `risky_emails`, `cc`, `bcc`, `start_date`, `end_date`, `timezone`, `timezone_mode`, `days`, `start_time`, `end_time`, `schedule_windows`, `email_tags`, `folders`, `contact_order_by`, `contact_order_dir`, `contact_order_field`, `sender_strategy`, `rotation_mode`, `follow_up_sender`, `ramp_enabled`, `ramp_start`, `ramp_increment`, `ramp_ceiling`, `warmup_graduation`, `esp_match_mode`, `max_new_leads_per_day`, `prioritize_new_leads`, `entry_delay_minutes`, `continuous`, `tracking_domain`, `utm_tracking`, `utm_source`, `utm_medium`, `utm_campaign`.
 
 `entry_delay_minutes` is anchored on when each contact entered the campaign, not on when the campaign started, so a contact enrolled by a linked segment next week waits the same amount from their own arrival. Leads that were in the campaign before the field existed count from the campaign's `created_at`, so turning a delay on never re-delays leads that have been enrolled for weeks.
 

@@ -178,7 +178,7 @@ const CAMPAIGN_SELECT = `id, name, description, status,
 		  utm_tracking, utm_source, utm_medium, utm_campaign,
 		  unsubscribe_mode,
 		  continuous, idle_since, stop_on_meeting,
-		  follow_up_sender, timezone_mode`
+		  follow_up_sender, timezone_mode, warmup_graduation`
 
 func getCampaign(rows db.Scannable, campaign *models.Campaign, extra ...any) error {
 	var dest []any = []any{
@@ -200,7 +200,7 @@ func getCampaign(rows db.Scannable, campaign *models.Campaign, extra ...any) err
 		&campaign.UTMTracking, &campaign.UTMSource, &campaign.UTMMedium, &campaign.UTMCampaign,
 		&campaign.UnsubscribeMode,
 		&campaign.Continuous, &campaign.IdleSince, &campaign.StopOnMeeting,
-		&campaign.FollowUpSender, &campaign.TimezoneMode,
+		&campaign.FollowUpSender, &campaign.TimezoneMode, &campaign.WarmupGraduation,
 	}
 	dest = append(dest, extra...)
 	return rows.Scan(
@@ -227,7 +227,7 @@ const CAMPAIGN_SELECT_FULL = `
 	c.utm_tracking, c.utm_source, c.utm_medium, c.utm_campaign,
 	c.unsubscribe_mode,
 	c.continuous, c.idle_since, c.stop_on_meeting,
-	c.follow_up_sender, c.timezone_mode,
+	c.follow_up_sender, c.timezone_mode, c.warmup_graduation,
 	COALESCE(array_agg(cet.tag_id) FILTER (WHERE cet.tag_id IS NOT NULL), '{}') AS email_tag_ids,
 	COALESCE(array_agg(cec.folder_id) FILTER (WHERE cec.folder_id IS NOT NULL), '{}') AS email_folder_ids
 `
@@ -457,6 +457,10 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 			return nil, err
 		}
 	}
+	warmupGraduation := true
+	if data.WarmupGraduation != nil {
+		warmupGraduation = *data.WarmupGraduation
+	}
 	espMatchMode := "off"
 	if data.ESPMatchMode != nil {
 		if err := validate.CampaignESPMatchMode(*data.ESPMatchMode); err != nil {
@@ -529,7 +533,7 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 			tracking_domain,
 			utm_tracking, utm_source, utm_medium, utm_campaign,
 			unsubscribe_mode, continuous, entry_delay_minutes,
-			stop_on_meeting, follow_up_sender, timezone_mode,
+			stop_on_meeting, follow_up_sender, timezone_mode, warmup_graduation,
 			created_at, updated_at
 		) VALUES (
 			gen_random_uuid(), $1, $2, $3, $4,
@@ -543,7 +547,7 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 			$30,
 			$31, $32, $33, $34,
 			$35, $36, $37,
-			$38, $39, $40,
+			$38, $39, $40, $41,
 			NOW(), NOW()
 		)
 		RETURNING %s
@@ -590,6 +594,7 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 		stopOnMeeting,      // $38
 		followUpSender,     // $39
 		timezoneMode,       // $40
+		warmupGraduation,   // $41
 	}
 
 	row := tx.QueryRow(ctx, insertSQL, params...)
@@ -1259,6 +1264,11 @@ func (r *campaignRepository) Update(ctx context.Context, orgID, campaignID strin
 			return nil, errx.New(errx.BadRequest, "ramp start cannot exceed ramp ceiling")
 		}
 	}
+	if data.WarmupGraduation != nil {
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "warmup_graduation", argPos))
+		args = append(args, *data.WarmupGraduation)
+		argPos++
+	}
 	if data.ESPMatchMode != nil {
 		if err := validate.CampaignESPMatchMode(*data.ESPMatchMode); err != nil {
 			return nil, err
@@ -1507,7 +1517,7 @@ func (r *campaignRepository) GetByID(ctx context.Context, campaignID uuid.UUID) 
 		&campaign.UTMTracking, &campaign.UTMSource, &campaign.UTMMedium, &campaign.UTMCampaign,
 		&campaign.UnsubscribeMode,
 		&campaign.Continuous, &campaign.IdleSince, &campaign.StopOnMeeting,
-		&campaign.FollowUpSender, &campaign.TimezoneMode,
+		&campaign.FollowUpSender, &campaign.TimezoneMode, &campaign.WarmupGraduation,
 		&campaign.EmailTags, &campaign.Folders,
 	)
 	if err != nil {
@@ -2308,7 +2318,7 @@ func (r *campaignRepository) AdvanceCampaignSender(ctx context.Context, campaign
 func (r *campaignRepository) AdvanceRampLevel(ctx context.Context, campaignID uuid.UUID) error {
 	_, err := resultDB(ctx, r.DB).Exec(ctx, `
 		UPDATE campaigns
-		SET ramp_level = LEAST(ramp_ceiling, GREATEST(ramp_level, ramp_start) + ramp_increment),
+		SET ramp_level = LEAST(ramp_ceiling, CASE WHEN ramp_level < ramp_start THEN ramp_start ELSE ramp_level + ramp_increment END),
 		    ramp_level_date = CURRENT_DATE
 		WHERE id = $1
 		  AND ramp_enabled

@@ -41,6 +41,7 @@ struct Campaign: Codable, Identifiable, Hashable, Sendable {
     var rampIncrement: Int?
     var rampCeiling: Int?
     var rampLevel: Int?
+    var warmupGraduation: Bool?
     var espMatchMode: String?
     var maxNewLeadsPerDay: Int?
     var prioritizeNewLeads: Bool?
@@ -77,6 +78,7 @@ struct Campaign: Codable, Identifiable, Hashable, Sendable {
         case rampIncrement = "ramp_increment"
         case rampCeiling = "ramp_ceiling"
         case rampLevel = "ramp_level"
+        case warmupGraduation = "warmup_graduation"
         case espMatchMode = "esp_match_mode"
         case maxNewLeadsPerDay = "max_new_leads_per_day"
         case prioritizeNewLeads = "prioritize_new_leads"
@@ -165,6 +167,7 @@ struct CampaignUpdateBody: Encodable {
     var rampStart: Int? = nil
     var rampIncrement: Int? = nil
     var rampCeiling: Int? = nil
+    var warmupGraduation: Bool? = nil
 
     enum CodingKeys: String, CodingKey {
         case name, description, timezone
@@ -186,6 +189,7 @@ struct CampaignUpdateBody: Encodable {
         case rampStart = "ramp_start"
         case rampIncrement = "ramp_increment"
         case rampCeiling = "ramp_ceiling"
+        case warmupGraduation = "warmup_graduation"
     }
 }
 

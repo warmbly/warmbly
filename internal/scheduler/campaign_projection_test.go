@@ -101,7 +101,7 @@ func TestProjectSenderDayGraduationRequiresConfirmedReplies(t *testing.T) {
 			}
 			for i, day := range []int{0, 2, 10} {
 				mid, spans := workday(loc, start.AddDate(0, 0, day))
-				if d := projectSenderDay(p, spans, mid, start, false); d.sends != tc.caps[i] || d.graduation != 50-tc.caps[i] {
+				if d := projectSenderDay(p, spans, mid, start, false, -1); d.sends != tc.caps[i] || d.graduation != 50-tc.caps[i] {
 					t.Fatalf("day %d: %+v, want %d sends and %d withheld", day, d, tc.caps[i], 50-tc.caps[i])
 				}
 			}
@@ -122,7 +122,7 @@ func TestProjectSenderDayWarmupTakesSpacingSlots(t *testing.T) {
 		cap: 100, loc: loc,
 	}
 	mid, spans := workday(loc, day)
-	d := projectSenderDay(p, spans, mid, day, false)
+	d := projectSenderDay(p, spans, mid, day, false, -1)
 	// Ten hours at a 20 minute gap is 31 slots; the 5 warmup emails a
 	// mailbox in a live campaign keeps sending take 5 of them.
 	if d.warmup != warmupramp.ActiveCampaignCap || d.sends != 31-warmupramp.ActiveCampaignCap {
@@ -135,7 +135,7 @@ func TestProjectSenderDayOtherCampaignsShareTheCap(t *testing.T) {
 	day := time.Date(2026, 3, 2, 0, 0, 0, 0, loc)
 	p := &projectedSender{acct: models.Email{CampaignLimit: 50, MinWaitTime: 60}, cap: 50, loc: loc, other: 20}
 	mid, spans := workday(loc, day)
-	if d := projectSenderDay(p, spans, mid, day, false); d.sends != 30 || d.other != 20 {
+	if d := projectSenderDay(p, spans, mid, day, false, -1); d.sends != 30 || d.other != 20 {
 		t.Fatalf("got %+v, want 30 sends and 20 taken by other campaigns", d)
 	}
 }
@@ -147,11 +147,11 @@ func TestProjectSenderDayHealthHoldLapses(t *testing.T) {
 	p := &projectedSender{acct: models.Email{CampaignLimit: 50, MinWaitTime: 600}, cap: 50, loc: loc, held: true, heldTill: &until}
 	mid, spans := workday(loc, day)
 	// Five hours left after the hold at a 10 minute gap: 31 slots.
-	if d := projectSenderDay(p, spans, mid, day, false); d.sends != 31 {
+	if d := projectSenderDay(p, spans, mid, day, false, -1); d.sends != 31 {
 		t.Fatalf("got %d sends after the hold lapsed, want 31", d.sends)
 	}
 	p.heldTill = nil
-	if d := projectSenderDay(p, spans, mid, day, false); d.sends != 0 || d.held != 50 {
+	if d := projectSenderDay(p, spans, mid, day, false, -1); d.sends != 0 || d.held != 50 {
 		t.Fatalf("an open-ended hold sends nothing: %+v", d)
 	}
 }

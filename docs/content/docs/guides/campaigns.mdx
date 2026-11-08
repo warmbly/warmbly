@@ -93,7 +93,7 @@ Campaign names take priority over descriptions in the list. Descriptions use the
 
 1. **Leads**: name the campaign at the top (left blank, it is named after its first list, or "Campaign" and the date; rename it any time), then pick one or more lead lists. Lists are your [segments](/guides/segments/), shown with how many leads each holds; someone on several lists is emailed once, and the total below counts each lead once. **Import new leads** takes you to Contacts to bring in a CSV and keeps the draft for when you return. Picking no list is fine: **Continue without leads** creates the campaign so you can add leads afterwards.
 2. **Emails**: the same editor as the Steps tab, with templates, **Write with AI**, variables, a preview rendered through the send engine and the content score. Selecting a template applies both its saved subject and its body. A template without a subject keeps the email's existing subject. Add follow-ups here, each sent a number of days after the previous email (and stopping for anyone who replies or books a meeting, when **Stop on reply** or **Stop on meeting booked** is on). **Add the usual two follow-ups** adds two at 3 and 7 days. A follow-up with no subject replies in the same thread. The emails can also be left for the Steps tab, where you can branch them and add A/B variants.
-3. **Schedule**: start at launch or on a date, the timezone, sending days and hours, the mailbox tags to send from, and the daily limit per mailbox. Every mailbox in the pool is listed with what it can send: **Ramping up** while it is still graduating from warmup, **Reduced volume** in a watch or throttled health band, **On hold**, **DNS failing** or **Resting** when it will not send. Tracking, UTM parameters, the unsubscribe header, stop on reply and stop on meeting booked are under **Tracking and replies**.
+3. **Schedule**: start at launch or on a date, the timezone, sending days and hours, the mailbox tags to send from, the daily limit per mailbox, and the [ramp-up](#ramp-up). Every mailbox in the pool is listed with what it can send: **Ramping up** while it is still graduating from warmup, **Reduced volume** in a watch or throttled health band, **On hold**, **DNS failing** or **Resting** when it will not send. Tracking, UTM parameters, the unsubscribe header, stop on reply and stop on meeting booked are under **Tracking and replies**.
 4. **Review**: the finish date with the arithmetic behind it and what sets the pace, a chart of first emails, follow-ups and warmup against what the pool can send for the campaign, what would finish it sooner, what each mailbox sends with and without the campaign, and a summary with a link back to each step.
 
 While you work, a **Launch plan** beside the Leads and Schedule steps keeps the estimate current. See [How the estimate works](#how-the-estimate-works).
@@ -244,8 +244,8 @@ The number is the sends already out plus what is still expected, and the list un
 | Limit | What it means |
 | --- | --- |
 | Campaign daily limit | The campaign caps each mailbox below the mailbox's own cap |
-| Campaign ramp-up | Daily ramp-up is still climbing toward its ceiling |
-| Easing out of warmup | A mailbox whose warmup is running or paused starts cold at `5` a day and adds at most `5` per clean day, never more than its confirmed replies (see [easing out of warmup](#easing-out-of-warmup)) |
+| Campaign ramp-up | The campaign ramps **on a schedule** and has not reached its ceiling yet |
+| Easing out of warmup | The campaign ramps **as replies come in**, and a mailbox whose warmup is running or paused starts cold at `5` a day and adds at most `5` per clean day, never more than its confirmed replies (see [easing out of warmup](#easing-out-of-warmup)) |
 | Workspace sending posture | A restricted workspace sends a fraction of every cap (see [workspace sending posture](/guides/deliverability/#workspace-sending-posture)) |
 | Domain authentication failing, Resting or in reserve, Held by warmup health | A mailbox that sends nothing cold today, and why |
 | Waiting for Warmbly Cloud status | [Warmbly Cloud](/guides/warmbly-cloud/#safety-and-enforcement) has not reported a current status for a mailbox it warms. Cold sends from it wait until one arrives; it is not a Cloud quarantine or block |
@@ -266,7 +266,19 @@ The sidebar's **sent today** meter reads its denominator the same way: what the 
 Anything above `50`/day per cold mailbox needs positive reputation signals and a low complaint rate behind it. Adding mailboxes is safer than forcing a few to send more.
 </Callout>
 
-**Daily ramp-up** grows volume gradually instead of starting at full limit: **ramp start** (default `10`), **ramp increment** (default `5`), and **ramp ceiling** (default `50`). It applies as another minimum, so it only lowers today's volume while ramping. This is separate from mailbox warmup; the two work together.
+### Ramp-up
+
+**Ramp-up** decides how each mailbox's daily volume grows in this campaign. Pick it in the wizard's **Schedule** step or in the campaign's preferences under **Rotation & ramp-up**:
+
+| Option | What each mailbox sends |
+| --- | --- |
+| **As replies come in** (the default) | A mailbox whose warmup is running or paused starts at `5` a day and gains one a day for each lead who replied to it in the last seven days, at most `5` more per clean day (see [easing out of warmup](#easing-out-of-warmup)). A mailbox that never warmed, or whose warmup is stopped, sends at its own limit. With a typical cold reply rate this stays close to `5` a day |
+| **On a schedule** | Starts at the **start** volume (default `10`) on the first sending day and adds the **increase** (default `5`) every sending day until the **ceiling** (default `50`), whatever the replies |
+| **Full volume** | Up to its daily limit from the first day |
+
+Every option applies as another minimum against the mailbox's own daily cap, the campaign's daily limit and the minimum gap between sends, so none of them raises a mailbox above its cap. The schedule does not pause on a bounce or a spam placement, and full volume does not climb at all, so watch the campaign's health while volume rises. Warmup keeps running alongside in all three. The launch plan and the estimate in the wizard follow the option you pick.
+
+Changing the option on an active campaign takes effect from its next send. Setting the schedule's numbers again keeps the level it has reached; it never goes back below the start.
 
 **Lead flow** throttles new contacts with **Max new leads per day** (`0` for unlimited, up to `1000`). At the cap, follow-ups to in-flight contacts continue and new leads resume tomorrow. You can prioritize new leads over follow-ups, and choose whether to attempt addresses verification flagged risky.
 
@@ -587,6 +599,8 @@ A **placement monitor** repeats that on a schedule while the campaign runs, ever
 A diagnostic-history mailbox starts cold sending at a conservative ceiling of five/day. Synthetic traffic and elapsed age do not show that real recipients welcome outreach.
 
 Confirmed human replies to actual campaign recipients in the last seven days permit bounded increases: at most five per clean day, and never more than the confirmed reply count. Complaints clear positive progression. Without reply evidence, the ceiling stays five/day.
+
+This applies to campaigns whose [ramp-up](#ramp-up) is **As replies come in**, the default. A campaign set to ramp **on a schedule** or send at **full volume** does not hold its mailboxes to this ceiling.
 
 Configured campaign/mailbox caps, shared daily/rolling recipient limits and negative-feedback holds still bind. This is product pacing, not a universal provider-approved safe volume or proven reputation benefit. Missing evidence leaves full-cap dates unknown rather than projecting synthetic age into readiness. If the feedback lookup fails or omits a known warmed mailbox, its execution, projection and displayed explanation retain the conservative ceiling. A missing lookup does not mean the mailbox never warmed.
 
