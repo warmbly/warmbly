@@ -18,6 +18,7 @@ private extension ContactDetailTab {
 struct ContactDetailView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.closeDetail) private var closeDetail
 
     @State private var store: ContactDetailStore
     @State private var categoryStore = ContactCategoryStore()
@@ -96,9 +97,14 @@ struct ContactDetailView: View {
                 onUpdated(updated)
             } onDeleted: {
                 onDeleted(contact.id)
-                dismiss()
+                leave()
             }
         }
+    }
+
+    /// Back to the list: pops the stack, or empties the detail column beside it.
+    private func leave() {
+        if let closeDetail { closeDetail() } else { dismiss() }
     }
 
     // MARK: Hero

@@ -9,6 +9,7 @@ import SwiftUI
 struct UniboxThreadView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.closeDetail) private var closeDetail
 
     @State private var store: UniboxThreadStore
     @State private var showComposer = false
@@ -512,11 +513,16 @@ struct UniboxThreadView: View {
 
     // MARK: Actions
 
+    /// Back to the list: pops the stack, or empties the detail column beside it.
+    private func leave() {
+        if let closeDetail { closeDetail() } else { dismiss() }
+    }
+
     private func snooze(until: Date) async {
         do {
             try await store.snooze(env.api, until: until)
             snoozed.toggle()
-            dismiss()
+            leave()
         } catch {
             actionError = error.localizedDescription
         }

@@ -10,7 +10,6 @@ struct UniboxRootView: View {
     @State private var rail = UniboxRailStore()
     @State private var path: [UniboxRoute] = []
     @State private var sidebarOpen = false
-    @State private var sidebarDrag: CGFloat = 0
     @State private var selectedIDs: Set<String> = []
     /// Row whose labels are being edited from the context menu.
     @State private var labelTarget: UniboxMessage?
@@ -21,6 +20,9 @@ struct UniboxRootView: View {
     /// Instant send inside its undo window; replaces the sent toast.
     @State private var undoSend: ComposeUndoSend?
     @FocusState private var searchFocused: Bool
+    /// What the detail column shows when the list and detail sit side by side.
+    @State private var openRoute: UniboxRoute?
+    @State private var layout = SplitMetrics.stacked
 
     private static let sidebarWidth: CGFloat = 320
 
@@ -30,32 +32,28 @@ struct UniboxRootView: View {
     private var canCompose: Bool { canAct && env.session.can(.manageEmails) }
 
     var body: some View {
-        NavigationStack(path: $path) {
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    mainPane
-                        .scaleEffect(sidebarOpen ? 0.97 : 1, anchor: .trailing)
-                    if sidebarOpen {
-                        Color.black.opacity(0.24)
-                            .ignoresSafeArea()
-                            .transition(.opacity)
-                            .onTapGesture { closeSidebar() }
-                    }
-                    drawer(topInset: geo.safeAreaInsets.top)
+        ListDetailShell(
+            path: $path,
+            openItem: $openRoute,
+            sidebarOpen: $sidebarOpen,
+            layout: $layout,
+            sidebarWidth: Self.sidebarWidth,
+            placeholder: DetailPlaceholder(
+                title: "No conversation open",
+                message: "Pick a conversation to read it here.",
+                symbol: "tray"
+            )
+        ) {
+            mainPane
+                .toolbar(.hidden, for: .navigationBar)
+                .tabBarHidden(sidebarOpen)
+                .navigationDestination(for: UniboxRoute.self) { route in
+                    destination(route)
                 }
-            }
-            .toolbar(.hidden, for: .navigationBar)
-            .tabBarHidden(sidebarOpen)
-            .navigationDestination(for: UniboxRoute.self) { route in
-                switch route {
-                case let .thread(thread, reply): UniboxThreadView(thread: thread, openComposerOnAppear: reply)
-                case .scheduled: UniboxScheduledView()
-                case .drafts:
-                    ComposeDraftsView { draft in
-                        composeItem = ComposeSheetItem(id: draft.id, draft: draft)
-                    }
-                }
-            }
+        } drawer: { topInset, revealed in
+            sidebar(topInset: topInset, revealed: revealed)
+        } detail: { route in
+            destination(route)
         }
         .task(id: store.query) {
             store.includeSentStats = env.session.can(.viewAnalytics)
@@ -82,9 +80,9 @@ struct UniboxRootView: View {
         }
         // WARMBLY_DEBUG_THREAD=1 opens the newest conversation once the list loads.
         .onChange(of: store.messages.first?.id) {
-            guard path.isEmpty, ProcessInfo.processInfo.environment["WARMBLY_DEBUG_THREAD"] != nil,
+            guard path.isEmpty, openRoute == nil, ProcessInfo.processInfo.environment["WARMBLY_DEBUG_THREAD"] != nil,
                   let first = store.messages.first else { return }
-            path.append(.thread(threadValue(first), reply: false))
+            open(.thread(threadValue(first), reply: false))
         }
         #endif
         .sensoryFeedback(.impact(weight: .light), trigger: sidebarOpen)
@@ -122,6 +120,34 @@ struct UniboxRootView: View {
                 }
             }
         }
+    }
+
+    // MARK: Columns
+
+    @ViewBuilder
+    private func destination(_ route: UniboxRoute) -> some View {
+        switch route {
+        case let .thread(thread, reply): UniboxThreadView(thread: thread, openComposerOnAppear: reply)
+        case .scheduled: UniboxScheduledView()
+        case .drafts:
+            ComposeDraftsView { draft in
+                composeItem = ComposeSheetItem(id: draft.id, draft: draft)
+            }
+        }
+    }
+
+    /// Pushes on a narrow window, fills the detail column on a wide one.
+    private func open(_ route: UniboxRoute) {
+        if layout.showsDetail {
+            openRoute = route
+        } else {
+            path.append(route)
+        }
+    }
+
+    private func isOpen(_ message: UniboxMessage) -> Bool {
+        guard layout.showsDetail, case let .thread(thread, _) = openRoute else { return false }
+        return thread.key == message.threadKey
     }
 
     // MARK: Main pane
@@ -443,19 +469,19 @@ struct UniboxRootView: View {
             if inSelectionMode {
                 toggleSelection(message)
             } else {
-                path.append(.thread(threadValue(message), reply: false))
+                open(.thread(threadValue(message), reply: false))
             }
         } label: {
             rowLabel(message, selected: selected, viewers: viewers)
         }
         .buttonStyle(.plain)
-        .listRowBackground(selected ? WTheme.fill : WTheme.canvas)
+        .listRowBackground(selected ? WTheme.fill : isOpen(message) ? WTheme.accentSoft : WTheme.canvas)
         .listRowSeparatorTint(WTheme.hairline)
         .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 18))
         .contextMenu {
             if canAct {
                 Button {
-                    path.append(.thread(threadValue(message), reply: true))
+                    open(.thread(threadValue(message), reply: true))
                 } label: {
                     Label("Reply", systemImage: "arrowshape.turn.up.left")
                 }
@@ -696,14 +722,14 @@ struct UniboxRootView: View {
         }
     }
 
-    private func drawer(topInset: CGFloat) -> some View {
+    private func sidebar(topInset: CGFloat, revealed: Bool) -> some View {
         UniboxSidebar(
             store: store,
             rail: rail,
             labels: drawerLabels,
             selection: store.scope,
             topInset: topInset,
-            revealed: sidebarOpen,
+            revealed: revealed,
             canCompose: canCompose,
             canMarkRead: canAct
         ) { scope in
@@ -715,41 +741,15 @@ struct UniboxRootView: View {
             }
         } onScheduled: {
             closeSidebar()
-            path.append(.scheduled)
+            open(.scheduled)
         } onDrafts: {
             closeSidebar()
-            path.append(.drafts)
+            open(.drafts)
         }
-        .frame(width: Self.sidebarWidth)
-        .frame(maxHeight: .infinity)
-        .background(WTheme.canvas)
-        .clipShape(UnevenRoundedRectangle(bottomTrailingRadius: 20, topTrailingRadius: 20, style: .continuous))
-        .overlay {
-            UnevenRoundedRectangle(bottomTrailingRadius: 20, topTrailingRadius: 20, style: .continuous)
-                .stroke(WTheme.hairlineStrong, lineWidth: 1)
-        }
-        .ignoresSafeArea()
-        .offset(x: drawerOffset)
-        .gesture(
-            DragGesture()
-                .onChanged { value in
-                    sidebarDrag = min(0, value.translation.width)
-                }
-                .onEnded { value in
-                    if value.translation.width < -80 || value.predictedEndTranslation.width < -160 {
-                        closeSidebar()
-                    } else {
-                        withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { sidebarDrag = 0 }
-                    }
-                }
-        )
-    }
-
-    private var drawerOffset: CGFloat {
-        (sidebarOpen ? 0 : -Self.sidebarWidth - 40) + sidebarDrag
     }
 
     private func openSidebar() {
+        guard !layout.pinsSidebar else { return }
         searchFocused = false
         withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) { sidebarOpen = true }
     }
@@ -757,7 +757,6 @@ struct UniboxRootView: View {
     private func closeSidebar() {
         withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
             sidebarOpen = false
-            sidebarDrag = 0
         }
     }
 

@@ -512,6 +512,7 @@ struct AuditLogView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .readableMargins()
         .listSectionSpacing(18)
         .contentMargins(.horizontal, 16, for: .scrollContent)
         .contentMargins(.top, 4, for: .scrollContent)

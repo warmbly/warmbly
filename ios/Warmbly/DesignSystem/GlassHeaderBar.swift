@@ -15,6 +15,7 @@ struct GlassHeaderBar<Trailing: View>: View {
 
     @State private var searchOpen = false
     @Namespace private var glass
+    @Environment(\.drawerPinned) private var drawerPinned
 
     var body: some View {
         GlassEffectContainer(spacing: 10) {
@@ -53,8 +54,10 @@ struct GlassHeaderBar<Trailing: View>: View {
                     GlassCircleButton(symbol: "xmark", label: "Close search") { close() }
                         .glassEffectID("menu", in: glass)
                 } else {
-                    GlassCircleButton(symbol: "line.3.horizontal", label: menuLabel, action: onMenu)
-                        .glassEffectID("menu", in: glass)
+                    if !drawerPinned {
+                        GlassCircleButton(symbol: "line.3.horizontal", label: menuLabel, action: onMenu)
+                            .glassEffectID("menu", in: glass)
+                    }
 
                     VStack(alignment: .leading, spacing: 1) {
                         Text(title)

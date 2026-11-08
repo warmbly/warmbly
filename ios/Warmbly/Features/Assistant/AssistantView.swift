@@ -52,6 +52,9 @@ struct AssistantView: View {
         }
     }
 
+    /// The conversation and composer keep a reading width on a wide window.
+    private static let readableWidth: CGFloat = 760
+
     var body: some View {
         NavigationStack {
             content
@@ -187,6 +190,7 @@ struct AssistantView: View {
             }
             .defaultScrollAnchor(.bottom)
             .defaultScrollAnchor(.bottom, for: .sizeChanges)
+            .readableMargins(Self.readableWidth)
             .scrollEdgeEffectStyle(.soft, for: .vertical)
             .scrollDismissesKeyboard(.interactively)
             .onScrollGeometryChange(for: Bool.self) { geo in
@@ -471,6 +475,8 @@ struct AssistantView: View {
             footnote
                 .padding(.horizontal, 20)
         }
+        .frame(maxWidth: Self.readableWidth)
+        .frame(maxWidth: .infinity)
         .padding(.top, 8)
         .padding(.bottom, 4)
         .animation(.spring(response: 0.4, dampingFraction: 0.88), value: chat.turns.isEmpty)

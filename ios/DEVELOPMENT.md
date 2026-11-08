@@ -107,6 +107,18 @@ cd ios && find Warmbly -name '*.swift' -print0 | xargs -0 swiftc -parse
 
 A real typecheck happens when you build in Xcode.
 
+## Layout on iPad, iPhone Duo and landscape
+
+One layout adapts to the window rather than to the device (`DesignSystem/AdaptiveLayout.swift`), so Split View, Stage Manager, rotation and folding all land on the same rules:
+
+- **Phone-width windows** (under 600pt: a phone in portrait, the iPhone Duo folded, a narrow iPad split) keep the floating tab bar at the bottom.
+- **Wide windows** (iPad, the iPhone Duo unfolded, a phone in landscape) move the same bar to a rail on the leading edge (`WTabRail`), where a thumb rests when holding a tablet or an unfolded phone, and leave the height to content. Command-1 to Command-5 switch tabs and Command-N runs the round action on a hardware keyboard.
+- **Inbox, Campaigns and Contacts** (`ListDetailShell`) show the open item beside the list once there is 760pt of content, and pin the drawer open as a first column past 1180pt. Without a pinned drawer the list ends at the middle of the window, so on the unfolded iPhone Duo the list and the open conversation each sit on their own half of the fold. Whatever is open moves between the stack and the detail column when the window changes size.
+- **Pages** (settings, analytics, CRM lists, mailboxes) keep their content at a reading width (`readableMargins`), and Home becomes a two-column dashboard past 840pt.
+- The iPhone Duo cover screen puts the status bar in a strip down the trailing edge. Backgrounds run under it and content stays clear of it, through the safe area.
+
+To see the unfolded Duo without folding a simulator, launch on an iPad with `WARMBLY_DEBUG_FRAME=951x669` (below).
+
 ### Scripted simulator runs
 
 Debug builds read launch environment variables so a script can open the app signed in on a given tab without tapping through sign-in (both are compiled out of Release builds):
@@ -122,6 +134,7 @@ Debug builds read launch environment variables so a script can open the app sign
 - `WARMBLY_DEBUG_SETTINGS`: with `WARMBLY_DEBUG_TAB=more`, opens a settings page (`profile`, `notifications`, `security`, `billing`, `team`, `templates` or `activity`) or a full-screen browser (`analytics`, `mailboxes`, `deals`, `tasks` or `meetings`). `WARMBLY_DEBUG_NOTIFICATIONS=preferences` opens the notifications page on its preferences. `WARMBLY_DEBUG_ANALYTICS` picks the analytics page (`overview`, `deliverability`, `warmup` or `accounts`), and `WARMBLY_DEBUG_ANALYTICS_ACCOUNT=1` then opens a mailbox's health. `WARMBLY_DEBUG_TEMPLATE=1` opens the first template and `WARMBLY_DEBUG_AUDIT_ENTRY=1` the newest activity entry. With `mailboxes`, `WARMBLY_DEBUG_CONNECT` opens the add-a-mailbox flow on a step (`provider`, `google`, `twostep`, `apppassword`, `appconnect`, `account`, `imap`, `smtp`, `grants`, `users`, `vendors`, `vendorkey`, `vendormailboxes`, `file`, `filereview` or `running`); every step past `provider` uses sample data, including an admin grant, a vendor catalog and a file preview, and `home` opens the first step with that data.
 - `WARMBLY_DEBUG_PHASE`: opens a screen from before the app, leaving the stored session alone: `launching` holds the splash, `signedout` shows sign-in, `onboarding` the first-run questions and `workspace` the create-a-workspace step. With `signedout`, `WARMBLY_DEBUG_AUTH` opens a later sign-in step (`signup`, `password`, `verify`, `twofa` or `reset`), or `server` to open the Server sheet; with `onboarding`, `WARMBLY_DEBUG_ONBOARDING` opens `referral`, `role` or `team`.
 - `WARMBLY_DEBUG_ASSISTANT`: opens Remie on launch. `1` opens it empty, any other text is sent as the first message, and `demo` or `demo-approval` plays a scripted run (tool steps, a streamed answer and, for the second, an approval card) without calling the AI provider, which the local stack does not configure.
+- `WARMBLY_DEBUG_FRAME`: renders the app in a window of `<width>x<height>` points, scaled to fit, so an iPad simulator can show another device's layout. `951x669` is an unfolded iPhone Duo, `1376x1032` a 13-inch iPad in landscape.
 
 `simctl` forwards variables prefixed with `SIMCTL_CHILD_`:
 
@@ -152,7 +165,7 @@ xcrun simctl io booted screenshot inbox.png
 
 ## Releasing to TestFlight and the App Store
 
-The app ships for iPhone only. Every merge to `main` that touches `ios/` runs `.github/workflows/ios-release.yml` on a `macos-26` runner: it archives a Release build, signs it with cloud-managed certificates through an App Store Connect API key, and uploads it to TestFlight. The build number is the workflow's run number; the version is `MARKETING_VERSION` in the project. **Run workflow** on the Actions tab uploads a build without a merge. Promoting a build to the App Store stays a manual step in App Store Connect.
+The app ships for iPhone and iPad (`TARGETED_DEVICE_FAMILY = "1,2"`). Every merge to `main` that touches `ios/` runs `.github/workflows/ios-release.yml` on a `macos-26` runner: it archives a Release build, signs it with cloud-managed certificates through an App Store Connect API key, and uploads it to TestFlight. The build number is the workflow's run number; the version is `MARKETING_VERSION` in the project. **Run workflow** on the Actions tab uploads a build without a merge. Promoting a build to the App Store stays a manual step in App Store Connect.
 
 ### One-time setup
 
@@ -178,7 +191,7 @@ Environment secrets never reach a pull request from a fork, and the job only run
 
 - **Review account.** Create an account for App Review on the production instance, then turn on **Skip emailed sign-in code** for it in the admin panel (or `warmblyctl user login-code-exempt`), so a reviewer can sign in with only the password. Give them a workspace with sample mailboxes and campaigns, and put the credentials in the review notes.
 - **App Attest.** The production backend must accept the App Store build: `APP_ATTEST_APP_IDS` defaults to `APPLE_TEAM_ID.APPLE_IOS_BUNDLE_ID`, so setting `APPLE_TEAM_ID` is enough.
-- **Store listing.** iPhone screenshots (6.9-inch), the privacy policy URL `https://warmbly.com/privacy/`, a support URL, and the App Privacy answers, which match `Warmbly/PrivacyInfo.xcprivacy`: email address, name, emails and other user content, linked to the user, used for app functionality, no tracking.
+- **Store listing.** iPhone screenshots (6.9-inch) and, because the app runs natively on iPad, iPad screenshots (13-inch), the privacy policy URL `https://warmbly.com/privacy/`, a support URL, and the App Privacy answers, which match `Warmbly/PrivacyInfo.xcprivacy`: email address, name, emails and other user content, linked to the user, used for app functionality, no tracking.
 - **Billing.** The app shows the plan, usage and credits and sells nothing; it carries no purchase link, because plans are bought outside the App Store.
 
 ### Shipping a version
