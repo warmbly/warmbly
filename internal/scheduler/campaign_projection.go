@@ -139,6 +139,14 @@ type projectedSender struct {
 	sentAll  int
 }
 
+// riskCut is what workspace risk takes from a cap, as stagedCap rounds it.
+func (p *projectedSender) riskCut(c int) int {
+	if m := p.risk.CapMultiplier(); m < 1 {
+		return max(0, c-max(1, int(float64(c)*m+0.5)))
+	}
+	return 0
+}
+
 // senderDay is one mailbox's day with the clamps that shaped it.
 type senderDay struct {
 	sends, warmup                                                      int
@@ -206,7 +214,8 @@ func projectSenderDay(p *projectedSender, spans []span, midnight, rampStart time
 	c := p.cap
 	if p.held {
 		if p.heldTill == nil || !p.heldTill.Before(spans[len(spans)-1].to) {
-			d.held = c
+			d.risk = p.riskCut(c)
+			d.held = c - d.risk
 			return d
 		}
 		spans = clipSpans(spans, *p.heldTill)
@@ -229,12 +238,8 @@ func projectSenderDay(p *projectedSender, spans []span, midnight, rampStart time
 			c = g
 		}
 	}
-	if m := p.risk.CapMultiplier(); m < 1 {
-		if r := max(1, int(float64(c)*m+0.5)); r < c {
-			d.risk = c - r
-			c = r
-		}
-	}
+	d.risk = p.riskCut(c)
+	c -= d.risk
 
 	// The mailbox's own clock: a behaviour profile's workday, or the 8am-8pm
 	// band in its own timezone when that differs from the campaign's.
