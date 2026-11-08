@@ -233,11 +233,11 @@ export default function CampaignPreferences() {
                 follow_up_sender: newData.follow_up_sender,
             }),
 
-            // Ramp-up
+            // Ramp-up: the numbers only while the schedule is on, so hidden stale ones are never refused.
             ...(newData.ramp_enabled !== campaign.ramp_enabled && { ramp_enabled: newData.ramp_enabled }),
-            ...(newData.ramp_start !== campaign.ramp_start && { ramp_start: newData.ramp_start }),
-            ...(newData.ramp_increment !== campaign.ramp_increment && { ramp_increment: newData.ramp_increment }),
-            ...(newData.ramp_ceiling !== campaign.ramp_ceiling && { ramp_ceiling: newData.ramp_ceiling }),
+            ...(newData.ramp_enabled && newData.ramp_start !== campaign.ramp_start && { ramp_start: newData.ramp_start }),
+            ...(newData.ramp_enabled && newData.ramp_increment !== campaign.ramp_increment && { ramp_increment: newData.ramp_increment }),
+            ...(newData.ramp_enabled && newData.ramp_ceiling !== campaign.ramp_ceiling && { ramp_ceiling: newData.ramp_ceiling }),
             ...((newData.warmup_graduation !== false) !== (campaign.warmup_graduation !== false) && {
                 warmup_graduation: newData.warmup_graduation !== false,
             }),

@@ -48,6 +48,12 @@ func TestProjectSenderDayAppliesTheCampaignRamp(t *testing.T) {
 	if d := projectSenderDay(p, spans, mid, day, false, -1); d.sends != 50 || d.ramp != 0 {
 		t.Fatalf("no ramp: got %+v, want the full cap", d)
 	}
+	// Workspace risk cuts what the ramp left, as stagedCap does.
+	p.risk = models.OrgRiskRestricted
+	want := max(1, int(10*p.risk.CapMultiplier()+0.5))
+	if d := projectSenderDay(p, spans, mid, day, false, 10); d.sends != want || d.ramp != 40 || d.risk != 10-want {
+		t.Fatalf("restricted: got %+v, want %d sends after the ramp", d, want)
+	}
 }
 
 func TestNextRampLevelStartsAtRampStart(t *testing.T) {

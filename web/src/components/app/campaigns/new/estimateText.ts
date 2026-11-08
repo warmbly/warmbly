@@ -119,8 +119,6 @@ export function wontHelpText(e: CampaignEstimateResult): string | null {
             return "Raising the daily limit would not change the date: replies set the pace, not the limit.";
         case "spacing":
             return "Raising the daily limit would not change the date: mailboxes run out of hours first.";
-        case "campaign_ramp":
-            return "Raising the daily limit would not change the date: the ramp-up sets the pace until it reaches its ceiling.";
         default:
             return null;
     }

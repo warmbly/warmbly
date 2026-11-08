@@ -182,12 +182,12 @@ struct CampaignSettingsPage: View {
             if campaign.rampEnabled == true {
                 stepperRow(
                     "Start", subtitle: "emails/day on day one", icon: "1.circle.fill", tone: .orange,
-                    value: campaign.rampStart ?? 10, range: 1...100,
+                    value: campaign.rampStart ?? 10, range: 1...5000,
                     body: { CampaignUpdateBody(rampStart: $0) }, mutate: { $0.rampStart = $1 }
                 )
                 stepperRow(
                     "Ceiling", subtitle: "the most it ramps to", icon: "arrow.up.to.line", tone: .orange,
-                    value: campaign.rampCeiling ?? 50, range: max(campaign.rampStart ?? 1, 1)...100,
+                    value: campaign.rampCeiling ?? 50, range: min(max(campaign.rampStart ?? 1, 1), 5000)...5000,
                     body: { CampaignUpdateBody(rampCeiling: $0) }, mutate: { $0.rampCeiling = $1 }
                 )
                 stepperRow(

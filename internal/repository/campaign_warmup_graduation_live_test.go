@@ -15,7 +15,7 @@ import (
 //	  go test ./internal/repository/ -run LiveCampaignWarmupGraduation -v
 func TestLiveCampaignWarmupGraduation(t *testing.T) {
 	handle, pool := liveContactDB(t)
-	requireSchemaVersion(t, pool, 368)
+	requireSchemaVersion(t, pool, 370)
 	f := newSharedOrgFixture(t, pool)
 	repo := NewCampaignRepostory(handle)
 	ctx := context.Background()
