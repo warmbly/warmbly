@@ -10,7 +10,7 @@ import toast from "react-hot-toast/headless";
 
 import { Checkbox } from "@/components/ui/checkbox";
 import { previewSegment } from "@/lib/api/client/app/segments";
-import { useCreateSegment } from "@/lib/api/hooks/app/segments";
+import { useCreateSegment, useSegments } from "@/lib/api/hooks/app/segments";
 import type Segment from "@/lib/api/models/app/segments/Segment";
 import type { SegmentCondition } from "@/lib/api/models/app/segments/Segment";
 import type { AppError } from "@/lib/api/client/normalizeError";
@@ -58,7 +58,12 @@ export default function SplitByRegionDialog({ open, onClose, segment }: { open: 
             staleTime: 30_000,
         })),
     });
-    const loaded = counts.every((c) => c.data !== undefined);
+    // A region whose segment already exists (an earlier, partly failed split, or a
+    // create whose answer was lost) is shown as done and never submitted again.
+    const segments = useSegments(open);
+    const existing = React.useMemo(() => new Set((segments.data ?? []).map((s) => s.name.toLowerCase())), [segments.data]);
+    const exists = React.useCallback((p: Part) => existing.has(partName(segment.name, p.label).toLowerCase()), [existing, segment.name]);
+    const loaded = counts.every((c) => c.data !== undefined) && segments.data !== undefined;
 
     // Preselect every region that has members once the counts land.
     React.useEffect(() => {
@@ -67,9 +72,9 @@ export default function SplitByRegionDialog({ open, onClose, segment }: { open: 
             return;
         }
         if (picked === null && loaded) {
-            setPicked(new Set(PARTS.filter((_, i) => (counts[i].data ?? 0) > 0).map((p) => p.key)));
+            setPicked(new Set(PARTS.filter((p, i) => (counts[i].data ?? 0) > 0 && !exists(p)).map((p) => p.key)));
         }
-    }, [open, loaded, picked, counts]);
+    }, [open, loaded, picked, counts, exists]);
 
     // Focus moves into the dialog on open and back to what opened it on close.
     const cardRef = React.useRef<HTMLDivElement>(null);
@@ -98,7 +103,7 @@ export default function SplitByRegionDialog({ open, onClose, segment }: { open: 
         return () => document.removeEventListener("keydown", onKey);
     }, [open, requestClose]);
 
-    const chosen = PARTS.filter((p) => picked?.has(p.key));
+    const chosen = PARTS.filter((p) => picked?.has(p.key) && !exists(p));
 
     async function submit() {
         if (busy || chosen.length === 0) return;
@@ -106,13 +111,18 @@ export default function SplitByRegionDialog({ open, onClose, segment }: { open: 
         let made = 0;
         try {
             for (const p of chosen) {
-                await create.mutateAsync({
-                    name: partName(segment.name, p.label),
-                    description: p.key === "none" ? `Contacts in ${segment.name} with no known country.` : `Contacts in ${segment.name} located in ${p.label}.`,
-                    color: p.color,
-                    match: "all",
-                    conditions: conditionsFor(p),
-                });
+                try {
+                    await create.mutateAsync({
+                        name: partName(segment.name, p.label),
+                        description: p.key === "none" ? `Contacts in ${segment.name} with no known country.` : `Contacts in ${segment.name} located in ${p.label}.`,
+                        color: p.color,
+                        match: "all",
+                        conditions: conditionsFor(p),
+                    });
+                } catch (err) {
+                    // The name is taken: an earlier attempt created it after all.
+                    if ((err as AppError).status !== 409) throw err;
+                }
                 made++;
                 // A retry after a later failure must not create this one again.
                 setPicked((prev) => {
@@ -185,8 +195,8 @@ export default function SplitByRegionDialog({ open, onClose, segment }: { open: 
                                         <label className="h-9 px-2 rounded-md flex items-center gap-2.5 cursor-pointer select-none hover:bg-slate-50">
                                             <Checkbox
                                                 tone="slate"
-                                                checked={picked?.has(p.key) ?? false}
-                                                disabled={!picked}
+                                                checked={exists(p) || (picked?.has(p.key) ?? false)}
+                                                disabled={!picked || busy || exists(p)}
                                                 onChange={(e) =>
                                                     setPicked((prev) => {
                                                         const next = new Set(prev ?? []);
@@ -198,6 +208,7 @@ export default function SplitByRegionDialog({ open, onClose, segment }: { open: 
                                             />
                                             <span className="size-2.5 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
                                             <span className="text-[12.5px] text-slate-800 truncate">{p.label}</span>
+                                            {exists(p) && <span className="text-[10.5px] text-emerald-600">Already created</span>}
                                             <span className="ml-auto font-mono text-[11px] tabular-nums text-slate-500">
                                                 {n === undefined ? (
                                                     <span className="inline-block h-3 w-8 rounded bg-slate-100 animate-pulse align-middle" />
