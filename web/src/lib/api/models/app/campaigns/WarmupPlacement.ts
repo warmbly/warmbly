@@ -21,7 +21,7 @@ export interface WarmupStepPlacement {
     sequence_id: string;
     // Null is the step's own copy (the Original); otherwise one of its A/B variants.
     variant_id: string | null;
-    // Business inboxes on Google Workspace and Microsoft 365, the only ones campaign copy is sent to.
+    // Business inboxes on Google Workspace and Microsoft 365 only; sends to other recipients are not reported.
     placement: WarmupCopyPlacement;
     by_group: WarmupCopyGroupPlacement[];
 }

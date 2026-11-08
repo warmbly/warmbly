@@ -78,7 +78,7 @@ func TestCopyFillableSkipsRecipientsMissingAField(t *testing.T) {
 	}
 }
 
-func TestOwnCopyDrawNeedsAMatureSenderAndAnOutOfInboxBusinessRecipient(t *testing.T) {
+func TestOwnCopyDrawNeedsAMatureSenderAndAnOutOfInboxRecipient(t *testing.T) {
 	org := uuid.New()
 	now := time.Now()
 	mature := now.AddDate(0, 0, -models.WarmupOwnCopyMinDays)
@@ -86,19 +86,27 @@ func TestOwnCopyDrawNeedsAMatureSenderAndAnOutOfInboxBusinessRecipient(t *testin
 	sender := Email{OrganizationID: &org, Warmup: &mature}
 	at := func(domain string) string { return "priya" + "@" + domain }
 	folder := &Email{Email: at("northridge.example"), MailHost: "google_workspace"}
-	for _, business := range []*Email{folder, {Email: at("northridge.example"), Provider: "outlook"}, {Email: at("northridge.example"), Provider: "gmail"}} {
-		if !ownCopyDraw(sender, business, now, 0) {
-			t.Fatalf("own copy skipped the business inbox %s", business.Email)
-		}
-	}
-	for _, elsewhere := range []*Email{
+	for _, recipient := range []*Email{
+		folder,
 		{Email: at("gmail.com"), Provider: "gmail"},
 		{Email: at("outlook.com"), MailHost: "outlook", Provider: "outlook"},
 		{Email: at("yahoo.com"), MailHost: "yahoo"},
 		{Email: at("smallhost.example"), Provider: "smtp_imap"},
 	} {
-		if ownCopyDraw(sender, elsewhere, now, 0) {
-			t.Fatalf("own copy went to %s, which is not a business inbox on Google Workspace or Microsoft 365", elsewhere.Email)
+		if !ownCopyDraw(sender, recipient, now, 0) {
+			t.Fatalf("own copy skipped %s", recipient.Email)
+		}
+		for _, placement := range []string{models.WarmupPlacementFolder, models.WarmupPlacementArchive} {
+			filed := *recipient
+			filed.WarmupPlacement = placement
+			if !ownCopyDraw(sender, &filed, now, 0) {
+				t.Fatalf("own copy skipped %s filing warmup to %s", filed.Email, placement)
+			}
+		}
+		inbox := *recipient
+		inbox.WarmupPlacement = models.WarmupPlacementInbox
+		if ownCopyDraw(sender, &inbox, now, 0) {
+			t.Fatalf("own copy went to %s, which reads warmup in its inbox", inbox.Email)
 		}
 	}
 	if !ownCopyDraw(sender, folder, now, models.WarmupOwnCopySharePercent-1) {

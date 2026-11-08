@@ -108,11 +108,9 @@ func ownCopyDraw(account Email, recipient *Email, now time.Time, roll int) bool 
 	return account.OrganizationID != nil && ownCopyMature(account, now) && ownCopyRecipient(recipient) && roll < models.WarmupOwnCopySharePercent
 }
 
-// ownCopyRecipient reports whether the recipient is a business inbox on Google
-// Workspace or Microsoft 365, where cold copy is read, and files warmup mail
-// out of its inbox.
+// ownCopyRecipient reports whether the recipient files warmup mail out of its inbox.
 func ownCopyRecipient(recipient *Email) bool {
-	if !recipient.BusinessMailbox() {
+	if recipient == nil {
 		return false
 	}
 	placement, _ := recipient.WarmupFiling()

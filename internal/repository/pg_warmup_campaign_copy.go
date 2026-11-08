@@ -88,7 +88,7 @@ func (r *warmupContentRepository) CampaignCopyCandidates(ctx context.Context, or
 
 func (r *warmupContentRepository) CampaignStepPlacement(ctx context.Context, orgID, campaignID uuid.UUID, since time.Time) ([]models.WarmupStepPlacement, error) {
 	// Each opening a sender of the organization carried for one of the campaign's steps, joined to the receipt its recipient filed.
-	// Read at business inboxes on Google Workspace and Microsoft 365 only, the inboxes the copy is written for and the only ones it is sent to.
+	// Reported at business inboxes on Google Workspace and Microsoft 365 only, the inboxes the copy is written for.
 	rows, err := r.db.Query(ctx, `
 		SELECT wt.sequence_id, wt.variant_id, `+recipientGroupSQL("rec")+` AS grp,
 		       COUNT(*)::int AS sent,
@@ -107,6 +107,7 @@ func (r *warmupContentRepository) CampaignStepPlacement(ctx context.Context, org
 		     AND btrim(wr.message_id, '<>') = btrim(wt.sent_message_id, '<>')
 		WHERE wt.content_source = 'campaign' AND wt.conversation_turn = 0 AND wt.sent_message_id <> ''
 		  AND `+recipientGroupSQL("rec")+` IN ('google', 'microsoft') AND rec.mail_host NOT IN ('gmail', 'outlook')
+		  AND NOT `+consumerAddressSQL("rec")+`
 		GROUP BY 1, 2, 3
 		ORDER BY 1, 2 NULLS FIRST, 3`, orgID, campaignID, since)
 	if err != nil {
