@@ -251,6 +251,10 @@ func TestLoginErrorKeepsMissingMailboxTextOutOfFolderClasses(t *testing.T) {
 	if got := c.handleError(reply); got.Code != errx.MailErrorCodeNotFound {
 		t.Errorf("folder reply = %q, want %q", got.Code, errx.MailErrorCodeNotFound)
 	}
+	throttled := &goimap.Error{Type: goimap.StatusResponseTypeNo, Text: "Mailbox doesn't exist or too many login attempts"}
+	if got := c.loginError(throttled); got.Code == errx.MailErrorCodeImapUnknown || got.Code == errx.MailErrorCodeNotFound {
+		t.Errorf("throttled login = %q, want the login cooldown", got.Code)
+	}
 	refused := &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeAuthenticationFailed, Text: "Authentication failed."}
 	if got := c.loginError(refused); got.Code != errx.MailErrorCodeInvalidCredentials {
 		t.Errorf("credential refusal = %q, want %q", got.Code, errx.MailErrorCodeInvalidCredentials)

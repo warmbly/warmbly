@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -324,7 +325,10 @@ func (e *querylessError) Error() string { return e.msg }
 func withoutURLQuery(err error) error {
 	msg := err.Error()
 	changed := false
-	for _, u := range urlErrors(err) {
+	found := urlErrors(err)
+	// Longest first, so a URL that prefixes another cannot leave the longer one's query behind.
+	sort.SliceStable(found, func(i, j int) bool { return len(found[i].URL) > len(found[j].URL) })
+	for _, u := range found {
 		bare, _, _ := strings.Cut(u.URL, "?")
 		bare, _, _ = strings.Cut(bare, "#")
 		if bare == u.URL {

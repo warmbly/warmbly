@@ -233,3 +233,14 @@ func TestEveryFailedRequestInAnErrorTreeLosesItsQuery(t *testing.T) {
 		}
 	}
 }
+
+// A URL that prefixes another in the same error leaves nothing of the longer one's query.
+func TestOverlappingRequestURLsLoseTheirWholeQuery(t *testing.T) {
+	err := errors.Join(
+		&url.Error{Op: "Get", URL: "https://a.example.test/x?token=a", Err: errors.New("refused")},
+		&url.Error{Op: "Get", URL: "https://a.example.test/x?token=abcdef", Err: errors.New("refused")},
+	)
+	if got := redact(err).Error(); strings.Contains(got, "bcdef") || strings.Contains(got, "token") {
+		t.Errorf("reported %q, which still carries part of a query", got)
+	}
+}
