@@ -4,6 +4,7 @@
 package geo
 
 import (
+	"sort"
 	"strings"
 )
 
@@ -110,6 +111,12 @@ func CanonicalFieldKey(header string) (string, bool) {
 	return "", false
 }
 
+// plainFieldName are the keys an import writes and a person types, read first.
+var plainFieldName = map[string]bool{
+	"timezone": true, "country": true, "state": true, "region": true, "city": true, "location": true,
+	"companytimezone": true, "companycountry": true, "companystate": true, "companycity": true, "companylocation": true,
+}
+
 // place is the location fields of one party (the person or their company).
 type place struct {
 	timezone, country, region, city, location string
@@ -117,9 +124,23 @@ type place struct {
 
 func (p place) empty() bool { return p == place{} }
 
+// splitPlaces reads the fields in a fixed order (the plain name, "timezone",
+// before an alias, "tz"), and keeps a timezone or country only when it parses,
+// so the answer never depends on map order and a junk alias never hides a good one.
 func splitPlaces(fields map[string]string) (person, company place) {
-	for k, v := range fields {
-		v = strings.TrimSpace(v)
+	keys := make([]string, 0, len(fields))
+	for k := range fields {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		pi, pj := !plainFieldName[fold(keys[i])], !plainFieldName[fold(keys[j])]
+		if pi != pj {
+			return !pi
+		}
+		return keys[i] < keys[j]
+	})
+	for _, k := range keys {
+		v := strings.TrimSpace(fields[k])
 		if v == "" {
 			continue
 		}
@@ -133,9 +154,13 @@ func splitPlaces(fields map[string]string) (person, company place) {
 		}
 		switch kind &^ kindCompany {
 		case kindTimezone:
-			dst.timezone = firstOf(dst.timezone, v)
+			if _, ok := ParseTimezone(v); ok {
+				dst.timezone = firstOf(dst.timezone, v)
+			}
 		case kindCountry:
-			dst.country = firstOf(dst.country, v)
+			if _, ok := ParseCountry(v); ok {
+				dst.country = firstOf(dst.country, v)
+			}
 		case kindRegion:
 			dst.region = firstOf(dst.region, v)
 		case kindCity:
@@ -161,6 +186,10 @@ func firstOf(have, v string) string {
 func Resolve(in Input) Location {
 	phoneCountry := PhoneCountry(in.Phone)
 	emailCountry := EmailDomainCountry(in.Email)
+	// +1 and +7 each span two countries; a domain in the other one settles it.
+	if sharedCallingCode[phoneCountry] == emailCountry && emailCountry != "" {
+		phoneCountry = emailCountry
+	}
 	// The phone and domain also settle a token that reads two ways ("DE" is
 	// Delaware or Germany).
 	hint := firstOf(phoneCountry, emailCountry)
@@ -310,17 +339,21 @@ func parseLocation(s, knownCountry, hint string) (country, region, city string) 
 		return "", "", ""
 	}
 	country = knownCountry
-	if country == "" && len(parts) > 1 {
+	if len(parts) > 1 {
 		last := parts[len(parts)-1]
 		if code, ok := ParseCountry(last); ok {
-			if !lastIsState(last, parts[:len(parts)-1], code, hint) {
+			switch {
+			case knownCountry != "" && code == knownCountry:
+				// It repeats the country column: "Kelowna, BC, Canada".
+				parts = parts[:len(parts)-1]
+			case knownCountry == "" && !lastIsState(last, parts[:len(parts)-1], code, hint):
 				country = code
 				parts = parts[:len(parts)-1]
 			}
 		}
 	} else if country == "" {
-		// One token: a country, a state or a city, tried in that order.
-		if code, ok := ParseCountry(parts[0]); ok && len(parts[0]) > 2 && !lastIsState(parts[0], nil, code, hint) {
+		// One token: a country ("Netherlands", "GB"), a state ("CA") or a city.
+		if code, ok := ParseCountry(parts[0]); ok && !lastIsState(parts[0], nil, code, hint) {
 			return code, "", ""
 		}
 	}

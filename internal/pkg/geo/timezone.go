@@ -5,7 +5,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // zoneNames maps the abbreviations and Windows, Rails and Outlook display
@@ -52,6 +51,9 @@ var zoneNames = map[string]string{
 	"art": "America/Argentina/Buenos_Aires", "argentinastandardtime": "America/Argentina/Buenos_Aires",
 	"centralstandardtimemexico": "America/Mexico_City", "sapacificstandardtime": "America/Bogota", "cot": "America/Bogota",
 	"utc": "UTC", "z": "UTC", "zulu": "UTC", "coordinateduniversaltime": "UTC", "universal": "UTC", "etcutc": "UTC",
+	"etcgmt": "UTC", "etcuniversal": "UTC", "etczulu": "UTC", "gmt0": "UTC", "etcgmt0": "UTC", "uct": "UTC",
+	"etcuct": "UTC", "greenwich": "UTC", "etcgreenwich": "UTC",
+	"est5edt": "America/New_York", "cst6cdt": "America/Chicago", "mst7mdt": "America/Denver", "pst8pdt": "America/Los_Angeles",
 }
 
 // fractionalOffsets names a real zone for each offset that is not whole hours;
@@ -87,18 +89,12 @@ func ParseTimezone(s string) (string, bool) {
 		}
 		return offsetZone(m[1])
 	}
-	if z, ok := ianaZone(s); ok {
-		return z, true
-	}
-	if z, ok := namedZone(s); ok {
-		return z, true
-	}
-	return offsetZone(s)
-}
-
-func ianaZone(s string) (string, bool) {
 	t := load()
 	if z, ok := t.zoneFold[strings.ToLower(s)]; ok {
+		return z, true
+	}
+	// An abbreviation before a legacy link: EST is New York, not the Panama link.
+	if z, ok := namedZone(s); ok {
 		return z, true
 	}
 	// A legacy name reads as the zone it now links to, so it carries a country.
@@ -107,14 +103,14 @@ func ianaZone(s string) (string, bool) {
 			return canonical, true
 		}
 	}
-	// Backward links (US/Eastern, Asia/Calcutta) and Etc/ zones load but are
-	// not in zone.tab; keep them as written, which Postgres reads too.
-	if strings.Contains(s, "/") && !strings.ContainsAny(s, " .") {
-		if loc, err := time.LoadLocation(s); err == nil {
-			return loc.String(), true
+	// A fixed-offset zone as written ("Etc/GMT-2"). Nothing else is stored, so
+	// every stored zone is one routing and the segment picker know.
+	for _, z := range OffsetZones() {
+		if strings.EqualFold(z, s) {
+			return z, true
 		}
 	}
-	return "", false
+	return offsetZone(s)
 }
 
 func namedZone(s string) (string, bool) {

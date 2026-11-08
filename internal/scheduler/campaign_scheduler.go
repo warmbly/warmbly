@@ -292,8 +292,13 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 	// Loaded once: ESP matching and send-time optimization share the row.
 	var recipientContact *models.Contact
 	if (campaign.ESPMatchMode != "off" || sendPref.enabled || campaign.SendsInRecipientTimezone()) && s.contactRepo != nil {
-		if contact, cerr := s.contactRepo.GetByID(ctx, nextPair.ContactID); cerr == nil {
+		contact, cerr := s.contactRepo.GetByID(ctx, nextPair.ContactID)
+		switch {
+		case cerr == nil:
 			recipientContact = contact
+		case campaign.SendsInRecipientTimezone():
+			// The lead's clock decides when it may be sent; never fall back to a guess.
+			return time.Time{}, nil, uuid.Nil, cerr
 		}
 	}
 

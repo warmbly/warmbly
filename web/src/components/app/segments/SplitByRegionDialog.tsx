@@ -71,6 +71,18 @@ export default function SplitByRegionDialog({ open, onClose, segment }: { open: 
         }
     }, [open, loaded, picked, counts]);
 
+    // Focus moves into the dialog on open and back to what opened it on close.
+    const cardRef = React.useRef<HTMLDivElement>(null);
+    React.useEffect(() => {
+        if (!open) return;
+        const back = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        const t = window.setTimeout(() => cardRef.current?.focus(), 0);
+        return () => {
+            window.clearTimeout(t);
+            back?.focus();
+        };
+    }, [open]);
+
     const requestClose = React.useCallback(() => {
         if (!busy) onClose();
     }, [busy, onClose]);
@@ -135,12 +147,14 @@ export default function SplitByRegionDialog({ open, onClose, segment }: { open: 
                         role="dialog"
                         aria-modal="true"
                         aria-label="Split segment by region"
+                        ref={cardRef}
+                        tabIndex={-1}
                         initial={{ y: 8, opacity: 0, scale: 0.985 }}
                         animate={{ y: 0, opacity: 1, scale: 1 }}
                         exit={{ y: 8, opacity: 0, scale: 0.985 }}
                         transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
                         onMouseDown={(e) => e.stopPropagation()}
-                        className="w-full max-w-[480px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden flex flex-col max-h-[80dvh]"
+                        className="w-full max-w-[480px] rounded-lg outline-none bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden flex flex-col max-h-[80dvh]"
                     >
                         <header className="h-12 px-4 border-b border-slate-200 flex items-center gap-2.5 shrink-0">
                             <div className="size-5 rounded bg-slate-100 text-slate-600 flex items-center justify-center">

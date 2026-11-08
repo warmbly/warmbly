@@ -73,7 +73,7 @@ type ContactRepository interface {
 	// the location sweep read them. Instance-wide: control plane only.
 	ListLocationPending(ctx context.Context, limit int) ([]ContactLocationPending, error)
 	// SetContactLocations stores the sweep's answers and returns the
-	// organizations where a contact's timezone or country changed.
+	// organizations whose contacts it answered.
 	SetContactLocations(ctx context.Context, results []ContactLocationResult) ([]uuid.UUID, error)
 	GetByEmailsAndUser(ctx context.Context, userID uuid.UUID, emails []string) (map[string]models.Contact, *errx.Error)
 	// ImportLookup resolves an import's addresses: the workspace's contact for
@@ -808,7 +808,7 @@ func decodeLocationFields(raw []byte) map[string]string {
 }
 
 // SetContactLocations stores the sweep's answers and returns the
-// organizations where a contact's timezone or country actually changed.
+// organizations whose contacts it answered, so their lists and lead counts refresh.
 func (r *contactRepository) SetContactLocations(ctx context.Context, results []ContactLocationResult) ([]uuid.UUID, error) {
 	if len(results) == 0 {
 		return nil, nil
@@ -825,22 +825,19 @@ func (r *contactRepository) SetContactLocations(ctx context.Context, results []C
 		WITH u AS (
 			SELECT * FROM unnest($1::uuid[], $2::text[], $3::text[], $4::text[], $5::text[])
 				AS t(id, fingerprint, tz, country, source)
-		), before AS (
-			SELECT c.id, c.location_timezone, c.location_country
-			FROM contacts c JOIN u ON u.id = c.id
 		), changed AS (
 			UPDATE contacts c
 			SET location_timezone = u.tz,
 			    location_country = u.country,
 			    location_source = u.source,
 			    location_fingerprint = u.fingerprint
-			FROM u JOIN before b ON b.id = u.id
+			FROM u
 			WHERE c.id = u.id
 			  AND contact_location_fingerprint(c.custom_fields, c.phone, c.email) = u.fingerprint
-			RETURNING c.organization_id, (b.location_timezone <> u.tz OR b.location_country <> u.country) AS moved
+			RETURNING c.organization_id
 		)
 		SELECT DISTINCT organization_id FROM changed
-		WHERE moved AND organization_id IS NOT NULL
+		WHERE organization_id IS NOT NULL
 	`
 	rows, err := resultDB(ctx, r.DB).Query(ctx, query, ids, prints, zones, countries, sources)
 	if err != nil {

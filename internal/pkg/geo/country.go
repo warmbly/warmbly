@@ -7,6 +7,8 @@ import (
 	"sync"
 	// Every zone the resolver hands out must load on any image, whatever tzdata it ships.
 	_ "time/tzdata"
+
+	"golang.org/x/text/language"
 )
 
 // The two tzdb tables (public domain): ISO 3166 names, and each zone with its country.
@@ -204,8 +206,27 @@ func ParseCountry(s string) (string, bool) {
 		}
 		return "", false
 	}
-	code, ok := t.byName[fold(s)]
-	return code, ok
+	if code, ok := t.byName[fold(s)]; ok {
+		return code, true
+	}
+	// Every ISO 3166-1 alpha-3 code ("AFG"), from the CLDR region table.
+	if len(s) == 3 && isLetters(s) {
+		if r, err := language.ParseRegion(s); err == nil {
+			if c, ok := t.countries[r.String()]; ok && c.Zone != "" {
+				return c.Code, true
+			}
+		}
+	}
+	return "", false
+}
+
+func isLetters(s string) bool {
+	for _, r := range s {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') {
+			return false
+		}
+	}
+	return true
 }
 
 // Zones lists every zone the resolver can produce from location data, sorted.

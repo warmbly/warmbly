@@ -56,6 +56,19 @@ func TestResolveReadsWhatImportsCarry(t *testing.T) {
 		{"legacy zone name", Input{Fields: map[string]string{"timezone": "US/Eastern"}}, "America/New_York", "US", SourceTimezone},
 		{"legacy zone name with a country", Input{Fields: map[string]string{"timezone": "Asia/Calcutta"}}, "Asia/Kolkata", "IN", SourceTimezone},
 		{"a direction is not a timezone", Input{Fields: map[string]string{"timezone": "West"}}, "", "", SourceNone},
+		{"any alpha-3 code", Input{Fields: map[string]string{"country": "AFG"}}, "Asia/Kabul", "AF", SourceCountry},
+		{"location repeats the country column", Input{Fields: map[string]string{"country": "Canada", "location": "Kelowna, BC, Canada"}}, "America/Vancouver", "CA", SourceRegion},
+		{"bare country code location", Input{Fields: map[string]string{"location": "GB"}}, "Europe/London", "GB", SourceCountry},
+		{"canadian area code", Input{Phone: "+1 416 555 0100"}, "America/Toronto", "CA", SourcePhone},
+		{"us area code", Input{Phone: "+1 (415) 555-0100 ext 22"}, "America/New_York", "US", SourcePhone},
+		{"kazakh number", Input{Phone: "+7 717 212 3456"}, "Asia/Almaty", "KZ", SourcePhone},
+		{"shared code settled by the domain", Input{Phone: "+1 212 555 0100", Email: "a@firma.ca"}, "America/Toronto", "CA", SourcePhone},
+		{"less common calling code", Input{Phone: "+225 27 20 21 22 23"}, "Africa/Abidjan", "CI", SourcePhone},
+		{"malformed phone yields to the domain", Input{Phone: "+491garbage", Email: "a@societe.fr"}, "Europe/Paris", "FR", SourceEmailDomain},
+		{"business abbreviation beats a legacy link", Input{Fields: map[string]string{"timezone": "EST"}}, "America/New_York", "US", SourceTimezone},
+		{"a UTC spelling", Input{Fields: map[string]string{"timezone": "Etc/UTC"}}, "UTC", "", SourceTimezone},
+		{"plain field name wins over an alias", Input{Fields: map[string]string{"tz": "Asia/Tokyo", "timezone": "Europe/Berlin"}}, "Europe/Berlin", "DE", SourceTimezone},
+		{"a junk alias does not hide a good one", Input{Fields: map[string]string{"timezone": "whenever", "tz": "Asia/Tokyo"}}, "Asia/Tokyo", "JP", SourceTimezone},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

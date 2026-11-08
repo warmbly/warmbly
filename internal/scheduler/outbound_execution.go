@@ -36,9 +36,12 @@ func (s *schedulerService) OutboundExecutionNotBefore(ctx context.Context, mailb
 	}
 	clock := loadLocation(c.EffectiveTimezone)
 	if c.SendsInRecipientTimezone() && contact != uuid.Nil && s.contactRepo != nil {
-		if lead, cerr := s.contactRepo.GetByID(ctx, contact); cerr == nil {
-			clock = scheduleClock(c, clock, lead)
+		lead, cerr := s.contactRepo.GetByID(ctx, contact)
+		if cerr != nil {
+			// Refuse rather than check the send against a clock it was not placed on.
+			return time.Time{}, cerr
 		}
+		clock = scheduleClock(c, clock, lead)
 	}
 	at := nextScheduleSlot(now, effectiveWindows(c), clock)
 	if at.After(now) {

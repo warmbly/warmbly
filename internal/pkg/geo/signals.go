@@ -8,7 +8,7 @@ import (
 // callingCodes maps an international dialling prefix to its country. +1 is
 // the whole North American plan and reads as the US; +7 reads as Russia.
 var callingCodes = map[string]string{
-	"1": "US", "7": "RU", "20": "EG", "27": "ZA", "30": "GR", "31": "NL", "32": "BE", "33": "FR",
+	"20": "EG", "27": "ZA", "30": "GR", "31": "NL", "32": "BE", "33": "FR",
 	"34": "ES", "36": "HU", "39": "IT", "40": "RO", "41": "CH", "43": "AT", "44": "GB", "45": "DK",
 	"46": "SE", "47": "NO", "48": "PL", "49": "DE", "51": "PE", "52": "MX", "53": "CU", "54": "AR",
 	"55": "BR", "56": "CL", "57": "CO", "58": "VE", "60": "MY", "61": "AU", "62": "ID", "63": "PH",
@@ -26,6 +26,29 @@ var callingCodes = map[string]string{
 	"968": "OM", "970": "PS", "971": "AE", "972": "IL", "973": "BH", "974": "QA", "975": "BT",
 	"976": "MN", "977": "NP", "992": "TJ", "993": "TM", "994": "AZ", "995": "GE", "996": "KG",
 	"998": "UZ",
+	"222": "MR", "223": "ML", "224": "GN", "225": "CI", "226": "BF", "227": "NE", "228": "TG", "229": "BJ",
+	"230": "MU", "231": "LR", "232": "SL", "235": "TD", "236": "CF", "238": "CV", "239": "ST", "240": "GQ",
+	"241": "GA", "242": "CG", "243": "CD", "244": "AO", "245": "GW", "248": "SC", "249": "SD", "250": "RW",
+	"252": "SO", "253": "DJ", "257": "BI", "258": "MZ", "261": "MG", "262": "RE", "264": "NA", "265": "MW",
+	"266": "LS", "267": "BW", "268": "SZ", "269": "KM", "291": "ER", "297": "AW", "298": "FO", "299": "GL",
+	"350": "GI", "376": "AD", "377": "MC", "378": "SM", "501": "BZ", "508": "PM", "509": "HT", "590": "GP",
+	"592": "GY", "594": "GF", "596": "MQ", "597": "SR", "670": "TL", "673": "BN", "675": "PG", "676": "TO",
+	"677": "SB", "678": "VU", "679": "FJ", "680": "PW", "685": "WS", "686": "KI", "687": "NC", "689": "PF",
+	"691": "FM", "692": "MH", "850": "KP",
+}
+
+// sharedCallingCode pairs the countries one calling code covers (+1, +7).
+var sharedCallingCode = map[string]string{"US": "CA", "CA": "US", "RU": "KZ", "KZ": "RU"}
+
+// canadianAreaCodes are the North American area codes that ring in Canada.
+var canadianAreaCodes = map[string]bool{
+	"204": true, "226": true, "236": true, "249": true, "250": true, "263": true, "289": true, "306": true,
+	"343": true, "354": true, "365": true, "367": true, "368": true, "382": true, "403": true, "416": true,
+	"418": true, "428": true, "431": true, "437": true, "438": true, "450": true, "468": true, "474": true,
+	"506": true, "514": true, "519": true, "548": true, "579": true, "581": true, "584": true, "587": true,
+	"604": true, "613": true, "639": true, "647": true, "672": true, "683": true, "705": true, "709": true,
+	"742": true, "753": true, "778": true, "780": true, "782": true, "807": true, "819": true, "825": true,
+	"867": true, "873": true, "879": true, "902": true, "905": true,
 }
 
 // PhoneCountry reads the country from an international number (+44..., 0044...).
@@ -40,25 +63,43 @@ func PhoneCountry(phone string) string {
 	default:
 		return ""
 	}
+	// An extension is not part of the number.
+	low := strings.ToLower(p)
+	for _, mark := range []string{"ext", "x", "#"} {
+		if i := strings.Index(low, mark); i > 0 {
+			p, low = p[:i], low[:i]
+		}
+	}
 	var digits strings.Builder
 	for _, r := range p {
 		switch {
 		case r >= '0' && r <= '9':
 			digits.WriteRune(r)
-		case r == ' ' || r == '-' || r == '.' || r == '(' || r == ')':
+		case r == ' ' || r == '-' || r == '.' || r == '(' || r == ')' || r == '/':
 		default:
+			// The whole value has to be a number before its code is trusted.
 			return ""
-		}
-		if digits.Len() == 3 {
-			break
 		}
 	}
 	d := digits.String()
-	if len(d) < 3 {
-		// Too short to be a number at all.
+	if len(d) < 8 || len(d) > 15 {
 		return ""
 	}
-	for n := 3; n >= 1; n-- {
+	switch d[0] {
+	case '1':
+		// The North American plan: the area code tells Canada from the US.
+		if canadianAreaCodes[d[1:4]] {
+			return "CA"
+		}
+		return "US"
+	case '7':
+		// +7 6xx and +7 7xx are Kazakhstan; the rest of +7 is Russia.
+		if d[1] == '6' || d[1] == '7' {
+			return "KZ"
+		}
+		return "RU"
+	}
+	for n := 3; n >= 2; n-- {
 		if c, ok := callingCodes[d[:n]]; ok {
 			return c
 		}

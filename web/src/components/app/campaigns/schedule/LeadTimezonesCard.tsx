@@ -133,6 +133,13 @@ export default function LeadTimezonesCard({
                             <div key={i} className="h-6 rounded bg-slate-100 animate-pulse" />
                         ))}
                     </div>
+                ) : q.isError && !data ? (
+                    <p className="text-[12px] text-slate-500">
+                        Could not load where this campaign's leads are.{" "}
+                        <button type="button" onClick={() => q.refetch()} className="text-sky-700 hover:text-sky-800 font-medium">
+                            Try again
+                        </button>
+                    </p>
                 ) : !data || data.total === 0 ? (
                     <p className="text-[12px] text-slate-500">
                         Add leads to see their timezones. Warmbly reads a timezone, country, state, city or location column from your import,
