@@ -79,7 +79,7 @@ Both end the same way: the mailbox's worker is sent `SYNC_WAKE` and runs its usu
 
 Gmail names a mailbox only by its address, so a notification reaches a mailbox once its channel is stored. When the consumer stores a Gmail channel it wakes that mailbox once, so a change that landed while the watch was opening is not left for the poll.
 
-Set up, once per instance, in the Google Cloud project that holds the Gmail OAuth client (`BOX_GOOGLE_CLIENT_ID`). Gmail only accepts a topic in the project making the watch call, so a [whole-domain grant's](/development/whole-domain-connect/) delegation service account must live in the same project:
+Set up, once per instance, in the Google Cloud project that holds the Gmail OAuth client (`BOX_GOOGLE_CLIENT_ID`). Gmail only accepts a topic in the project making the watch call. Mailboxes connected with Google sign-in all watch it. Mailboxes on a [whole-domain grant](/development/whole-domain-connect/) watch it only when the delegation service account (`GOOGLE_WORKSPACE_DELEGATION_KEY`) belongs to the topic's project; otherwise they are never asked to and keep polling:
 
 1. Under **APIs & Services > Library**, enable the **Cloud Pub/Sub API**.
 2. Under **Pub/Sub > Topics**, create a topic, for example `gmail-push`. Its full name is `projects/<project>/topics/gmail-push`.
@@ -129,11 +129,13 @@ Migration `000351` adds `fleet_nodes.sync_wake_protocol` (default `0`) and the `
 
 ## Troubleshooting
 
+When a worker cannot open a mailbox's Gmail watch or Graph subscription, it reports the first failure for that mailbox to error tracking (PostHog or Sentry, when configured), tagged `component=mailbox_push`, with the provider's own message. The mailbox keeps polling meanwhile.
+
 | Symptom | Cause and fix |
 |---|---|
 | Outlook mail still takes about a minute | Check that `GRAPH_PUSH=true` and that `BACKEND_PUBLIC_URL` (or `API_PUBLIC_URL`) is an `https://` URL. Plain `http` leaves push off. From outside your network, `curl -X POST '<url>/api/v1/mailbox-push/graph/x?validationToken=ok'` must answer `ok`; Microsoft sends the same request when it creates a subscription |
 | Graph subscriptions are never created | Microsoft cannot reach the URL, or the proxy in front of the backend does not forward `/api/v1/mailbox-push/`. Workers retry every 30 minutes and log the refusal at debug level |
-| Gmail watch fails with `Invalid topicName` | The topic is in a different project from the OAuth client or delegation service account making the call. Create it in that project |
+| Gmail watch fails with `Invalid topicName` | The topic is in a different project from `BOX_GOOGLE_CLIENT_ID`. Create it in that project. Whole-domain grant mailboxes are only asked to watch when the delegation key's `project_id` matches the topic's project |
 | Gmail watch fails with a permission error | Gmail's push service account `gmail-api-push@system.gserviceaccount.com` lacks **Pub/Sub Publisher** on the topic, often because domain restricted sharing refused the grant |
 | Pub/Sub shows push deliveries failing with `401` | The subscription signs with a different service account than `GMAIL_PUSH_SERVICE_ACCOUNT`, authentication is off, or its audience was set to something other than the endpoint URL |
 | Pub/Sub shows push deliveries failing with `404` | `GMAIL_PUSH_SERVICE_ACCOUNT` is unset on the backend, or `BACKEND_PUBLIC_URL` is not `https` |

@@ -15,6 +15,7 @@ import (
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/observability/errs"
 	"golang.org/x/time/rate"
 )
 
@@ -139,6 +140,8 @@ func (w *WMail) maintainPush(ctx context.Context) {
 		event := log.Debug()
 		if !w.push.failing.Swap(true) {
 			event = log.Warn()
+			// Workers ship no logs, so the first failure per mailbox is how an operator sees why push is off.
+			errs.CaptureException(err, errs.Tag("component", "mailbox_push"), errs.Tag("provider", string(w.EmailType)), errs.Tag("email_id", w.ID.String()))
 		}
 		event.Err(err).Str("email_id", w.ID.String()).Msg("mailbox push channel not opened; polling continues")
 	} else {

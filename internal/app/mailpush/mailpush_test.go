@@ -82,16 +82,57 @@ func TestForCarriesOnlyWhatTheProviderUses(t *testing.T) {
 	s := NewSettings("an-auth-secret-of-at-least-32-bytes!!", &fakeStates{})
 	id := uuid.New()
 
-	graph := s.For(t.Context(), id, models.InboxProviderOutlook)
+	graph := s.For(t.Context(), id, models.InboxProviderOutlook, models.MailAuthOAuth)
 	if graph == nil || graph.GraphNotificationURL != "https://api.example.com"+GraphNotificationPath+id.String() || graph.GmailTopic != "" {
 		t.Fatalf("outlook push = %+v", graph)
 	}
-	gmail := s.For(t.Context(), id, models.InboxProviderGoogle)
+	gmail := s.For(t.Context(), id, models.InboxProviderGoogle, models.MailAuthOAuth)
 	if gmail == nil || gmail.GmailTopic != "projects/p/topics/gmail" || gmail.GraphNotificationURL != "" {
 		t.Fatalf("gmail push = %+v", gmail)
 	}
-	if s.For(t.Context(), id, models.InboxProviderSMTPIMAP) != nil {
+	if s.For(t.Context(), id, models.InboxProviderSMTPIMAP, models.MailAuthPassword) != nil {
 		t.Fatal("IMAP mailboxes watch with IDLE and carry no provider push")
+	}
+}
+
+func TestGmailWatchNeedsTheTopicInTheCallersProject(t *testing.T) {
+	t.Setenv("GMAIL_PUSH_TOPIC", "projects/mailboxes/topics/gmail")
+	id := uuid.New()
+	for _, c := range []struct {
+		key       string
+		delegated bool
+	}{
+		{"", false},
+		{`{"type":"service_account","project_id":"grants"}`, false},
+		{`{"type":"service_account","project_id":"mailboxes"}`, true},
+	} {
+		t.Setenv("GOOGLE_WORKSPACE_DELEGATION_KEY", c.key)
+		s := NewSettings("an-auth-secret-of-at-least-32-bytes!!", &fakeStates{})
+		if got := s.For(t.Context(), id, models.InboxProviderGoogle, models.MailAuthOAuth); got == nil || got.GmailTopic == "" {
+			t.Fatalf("a sign-in mailbox must watch the topic, got %+v", got)
+		}
+		got := s.For(t.Context(), id, models.InboxProviderGoogle, models.MailAuthDelegated)
+		if watches := got != nil && got.GmailTopic != ""; watches != c.delegated {
+			t.Fatalf("key %q: a granted mailbox watches=%v, want %v", c.key, watches, c.delegated)
+		}
+	}
+}
+
+func TestGmailWatchSkipsGrantsOnAMalformedTopicOrKey(t *testing.T) {
+	id := uuid.New()
+	for _, c := range []struct{ topic, key string }{
+		{"mailboxes", `{"project_id":"mailboxes"}`},
+		{"projects/mailboxes/topics/", `{"project_id":"mailboxes"}`},
+		{"projects/mailboxes/subscriptions/gmail", `{"project_id":"mailboxes"}`},
+		{"projects/mailboxes/topics/gmail", `not json`},
+		{"projects/mailboxes/topics/gmail", `{"type":"service_account"}`},
+	} {
+		t.Setenv("GMAIL_PUSH_TOPIC", c.topic)
+		t.Setenv("GOOGLE_WORKSPACE_DELEGATION_KEY", c.key)
+		got := NewSettings("an-auth-secret-of-at-least-32-bytes!!", &fakeStates{}).For(t.Context(), id, models.InboxProviderGoogle, models.MailAuthDelegated)
+		if got != nil && got.GmailTopic != "" {
+			t.Fatalf("topic %q key %q: a granted mailbox was asked to watch", c.topic, c.key)
+		}
 	}
 }
 
@@ -99,7 +140,7 @@ func TestForHandsBackAStaleChannelSoTheWorkerClosesIt(t *testing.T) {
 	t.Setenv("GRAPH_PUSH", "")
 	t.Setenv("GMAIL_PUSH_TOPIC", "")
 	stale := &models.MailboxPushState{Provider: models.MailboxPushGraph, SubscriptionID: "sub", ExpiresAt: time.Now().Add(time.Hour)}
-	got := NewSettings("an-auth-secret-of-at-least-32-bytes!!", &fakeStates{state: stale}).For(t.Context(), uuid.New(), models.InboxProviderOutlook)
+	got := NewSettings("an-auth-secret-of-at-least-32-bytes!!", &fakeStates{state: stale}).For(t.Context(), uuid.New(), models.InboxProviderOutlook, models.MailAuthOAuth)
 	if got == nil || got.GraphNotificationURL != "" || got.State == nil || got.State.SubscriptionID != "sub" {
 		t.Fatalf("push turned off must still hand back the open channel, got %+v", got)
 	}
