@@ -166,15 +166,25 @@ func TestLiveCampaignStepPlacement(t *testing.T) {
 	if err := f.pool.QueryRow(ctx, `SELECT email, provider::text FROM email_accounts WHERE id = $1`, f.recipient).Scan(&address, &provider); err != nil {
 		t.Fatal(err)
 	}
-	// A free address whose host was never detected is still not a business inbox.
-	for _, free := range []struct{ provider, domain string }{{"gmail", "gmail.com"}, {"outlook", "hotmail.co.uk"}} {
-		if _, err := f.pool.Exec(ctx, `UPDATE email_accounts SET mail_host = '', provider = $2, email = $3 WHERE id = $1`,
-			f.recipient, free.provider, uuid.NewString()+"@"+free.domain); err != nil {
+	// A free address is never a business inbox, whatever host is stored for it.
+	for _, free := range []struct{ host, provider, domain string }{
+		{"", "gmail", "gmail.com"}, {"", "outlook", "hotmail.co.uk"}, {"google_workspace", "gmail", "gmail.com"},
+	} {
+		if _, err := f.pool.Exec(ctx, `UPDATE email_accounts SET mail_host = $2, provider = $3, email = $4 WHERE id = $1`,
+			f.recipient, free.host, free.provider, uuid.NewString()+"@"+free.domain); err != nil {
 			t.Fatal(err)
 		}
 		if steps, err := r.CampaignStepPlacement(ctx, f.org, c.campaign, since); err != nil || len(steps) != 0 {
-			t.Fatalf("a %s address with no detected host counted toward the step's placement: %+v %v", free.domain, steps, err)
+			t.Fatalf("a %s address with host %q counted toward the step's placement: %+v %v", free.domain, free.host, steps, err)
 		}
+	}
+	// A business domain whose host was never detected is still read from its provider.
+	if _, err := f.pool.Exec(ctx, `UPDATE email_accounts SET mail_host = '', provider = 'gmail', email = $2 WHERE id = $1`,
+		f.recipient, uuid.NewString()+"@northridge.example"); err != nil {
+		t.Fatal(err)
+	}
+	if steps, err := r.CampaignStepPlacement(ctx, f.org, c.campaign, since); err != nil || len(steps) != 1 || steps[0].ByGroup[0].Group != "google" {
+		t.Fatalf("a business address with no detected host was not counted at Google: %+v %v", steps, err)
 	}
 	if _, err := f.pool.Exec(ctx, `UPDATE email_accounts SET mail_host = 'google_workspace', email = $2, provider = $3 WHERE id = $1`, f.recipient, address, provider); err != nil {
 		t.Fatal(err)

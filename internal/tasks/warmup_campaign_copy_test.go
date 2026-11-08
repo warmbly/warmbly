@@ -96,6 +96,13 @@ func TestOwnCopyDrawNeedsAMatureSenderAndAnOutOfInboxRecipient(t *testing.T) {
 		if !ownCopyDraw(sender, recipient, now, 0) {
 			t.Fatalf("own copy skipped %s", recipient.Email)
 		}
+		for _, placement := range []string{models.WarmupPlacementFolder, models.WarmupPlacementArchive} {
+			filed := *recipient
+			filed.WarmupPlacement = placement
+			if !ownCopyDraw(sender, &filed, now, 0) {
+				t.Fatalf("own copy skipped %s filing warmup to %s", filed.Email, placement)
+			}
+		}
 		inbox := *recipient
 		inbox.WarmupPlacement = models.WarmupPlacementInbox
 		if ownCopyDraw(sender, &inbox, now, 0) {
