@@ -9,6 +9,8 @@ import SwiftUI
 struct UniboxThreadView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.closeDetail) private var closeDetail
+    @Environment(\.threadReplyRequest) private var replyRequest
 
     @State private var store: UniboxThreadStore
     @State private var showComposer = false
@@ -39,6 +41,7 @@ struct UniboxThreadView: View {
 
     init(thread: UniboxThread, openComposerOnAppear: Bool = false) {
         _store = State(initialValue: UniboxThreadStore(thread: thread))
+        _undoSend = State(initialValue: ReplyUndoSend.pending(for: thread.key))
         self.openComposerOnAppear = openComposerOnAppear
     }
 
@@ -69,6 +72,12 @@ struct UniboxThreadView: View {
                     await store.load(env.api)
                     await loadAgentDraft()
                 }
+            }
+            .onChange(of: replyRequest) {
+                if canReply, composeContext != nil { openComposer(drafting: false) }
+            }
+            .onChange(of: undoSend?.taskID) {
+                ReplyUndoSend.remember(undoSend, for: store.thread.key)
             }
             .overlay(alignment: .bottom) {
                 VStack(spacing: 8) {
@@ -140,6 +149,8 @@ struct UniboxThreadView: View {
             }
             .sheet(isPresented: $showContactPanel) {
                 UniboxContactPanel(email: store.counterpartyAddress ?? "")
+                    // The panel is its own sheet; leaving it must not close the thread behind it.
+                    .environment(\.closeDetail, nil)
             }
             .sensoryFeedback(.impact(weight: .light), trigger: snoozed)
             .confirmationDialog(
@@ -512,11 +523,16 @@ struct UniboxThreadView: View {
 
     // MARK: Actions
 
+    /// Back to the list: pops the stack, or empties the detail column beside it.
+    private func leave() {
+        if let closeDetail { closeDetail() } else { dismiss() }
+    }
+
     private func snooze(until: Date) async {
         do {
             try await store.snooze(env.api, until: until)
             snoozed.toggle()
-            dismiss()
+            leave()
         } catch {
             actionError = error.localizedDescription
         }
@@ -562,6 +578,23 @@ private struct ReplyUndoSend {
     let taskID: String
     let scheduledAt: Date
     let snapshot: UniboxReplySnapshot
+
+    /// Kept per thread, so a view rebuilt mid-window (a resize across the split) still offers undo.
+    @MainActor private static var byThread: [String: ReplyUndoSend] = [:]
+
+    @MainActor static func pending(for threadKey: String) -> ReplyUndoSend? {
+        guard let undo = byThread[threadKey], undo.scheduledAt > .now else { return nil }
+        return undo
+    }
+
+    @MainActor static func remember(_ undo: ReplyUndoSend?, for threadKey: String) {
+        byThread[threadKey] = undo
+    }
+}
+
+extension EnvironmentValues {
+    /// Bumped by the list to open the composer of the thread already on screen.
+    @Entry var threadReplyRequest = 0
 }
 
 // MARK: - Message row

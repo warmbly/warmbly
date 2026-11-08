@@ -173,6 +173,7 @@ struct AnalyticsRootView: View {
             .scrollIndicators(.hidden)
             .defaultScrollAnchor(SettingsDebug.anchor)
             .refreshable { await store.load(env.api) }
+            .readableMargins(900)
         }
         .background(WTheme.groupedPage)
         .simultaneousGesture(

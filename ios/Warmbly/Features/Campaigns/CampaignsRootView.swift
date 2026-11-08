@@ -11,7 +11,9 @@ struct CampaignsRootView: View {
     @State private var store = CampaignsStore()
     @State private var path: [Campaign] = []
     @State private var sidebarOpen = false
-    @State private var sidebarDrag: CGFloat = 0
+    /// What the detail column shows when the list and detail sit side by side.
+    @State private var openCampaign: Campaign?
+    @State private var layout = SplitMetrics.stacked
     @State private var showCreate = false
     @State private var pendingDelete: Campaign?
     @State private var deleteError: String?
@@ -33,61 +35,66 @@ struct CampaignsRootView: View {
     }
 
     var body: some View {
-        NavigationStack(path: $path) {
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    mainPane
-                        .scaleEffect(sidebarOpen ? 0.97 : 1, anchor: .trailing)
-                    if sidebarOpen {
-                        Color.black.opacity(0.28)
-                            .ignoresSafeArea()
-                            .transition(.opacity)
-                            .onTapGesture { closeSidebar() }
-                    }
-                    drawer(topInset: geo.safeAreaInsets.top)
+        ListDetailShell(
+            path: $path,
+            openItem: $openCampaign,
+            sidebarOpen: $sidebarOpen,
+            layout: $layout,
+            sidebarWidth: Self.sidebarWidth,
+            drawerRadius: 26,
+            dimOpacity: 0.28,
+            placeholder: DetailPlaceholder(
+                title: "No campaign open",
+                message: "Pick a campaign to see its progress, leads and schedule here.",
+                symbol: "paperplane"
+            )
+        ) {
+            mainPane
+                .toolbar(.hidden, for: .navigationBar)
+                .tabBarHidden(sidebarOpen)
+                .navigationDestination(for: Campaign.self) { campaign in
+                    CampaignDetailView(campaign: campaign)
                 }
+        } drawer: { topInset, revealed in
+            sidebar(topInset: topInset, revealed: revealed)
+        } detail: { campaign in
+            CampaignDetailView(campaign: campaign)
+        }
+        .fullScreenCover(isPresented: $showCreate) {
+            CampaignCreateFlow(store: store) { campaign in
+                open(campaign)
             }
-            .toolbar(.hidden, for: .navigationBar)
-            .tabBarHidden(sidebarOpen)
-            .navigationDestination(for: Campaign.self) { campaign in
-                CampaignDetailView(campaign: campaign)
+        }
+        .confirmationDialog(
+            "Delete campaign?",
+            isPresented: Binding(
+                get: { pendingDelete != nil },
+                set: { if !$0 { pendingDelete = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingDelete
+        ) { campaign in
+            Button("Delete \(campaign.name)", role: .destructive) {
+                Task { await deleteCampaign(campaign) }
             }
-            .fullScreenCover(isPresented: $showCreate) {
-                CampaignCreateFlow(store: store) { campaign in
-                    path.append(campaign)
-                }
-            }
-            .confirmationDialog(
-                "Delete campaign?",
-                isPresented: Binding(
-                    get: { pendingDelete != nil },
-                    set: { if !$0 { pendingDelete = nil } }
-                ),
-                titleVisibility: .visible,
-                presenting: pendingDelete
-            ) { campaign in
-                Button("Delete \(campaign.name)", role: .destructive) {
-                    Task { await deleteCampaign(campaign) }
-                }
-            } message: { _ in
-                Text("Leads stay in your contacts. This can't be undone.")
-            }
-            .alert("Couldn't delete campaign", isPresented: Binding(
-                get: { deleteError != nil },
-                set: { if !$0 { deleteError = nil } }
-            )) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(deleteError ?? "")
-            }
-            .alert("Couldn't update campaign", isPresented: Binding(
-                get: { store.actionError != nil },
-                set: { if !$0 { store.actionError = nil } }
-            )) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(store.actionError ?? "")
-            }
+        } message: { _ in
+            Text("Leads stay in your contacts. This can't be undone.")
+        }
+        .alert("Couldn't delete campaign", isPresented: Binding(
+            get: { deleteError != nil },
+            set: { if !$0 { deleteError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(deleteError ?? "")
+        }
+        .alert("Couldn't update campaign", isPresented: Binding(
+            get: { store.actionError != nil },
+            set: { if !$0 { store.actionError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(store.actionError ?? "")
         }
         .task(id: store.query) {
             // First run loads immediately; subsequent runs debounce typing.
@@ -122,10 +129,10 @@ struct CampaignsRootView: View {
         }
         // WARMBLY_DEBUG_CAMPAIGN opens the campaign whose name contains it.
         .onChange(of: store.hasLoaded) { _, loaded in
-            guard loaded, path.isEmpty, let match = ProcessInfo.processInfo.environment["WARMBLY_DEBUG_CAMPAIGN"],
+            guard loaded, path.isEmpty, openCampaign == nil, let match = ProcessInfo.processInfo.environment["WARMBLY_DEBUG_CAMPAIGN"],
                   let campaign = store.campaigns.first(where: { $0.name.localizedCaseInsensitiveContains(match) }) ?? store.campaigns.first
             else { return }
-            path.append(campaign)
+            open(campaign)
         }
         #endif
         .background(WTheme.canvas)
@@ -278,12 +285,12 @@ struct CampaignsRootView: View {
 
     private func row(_ campaign: Campaign) -> some View {
         Button {
-            path.append(campaign)
+            open(campaign)
         } label: {
             rowLabel(campaign)
         }
         .buttonStyle(TapScaleStyle())
-        .listRowBackground(WTheme.canvas)
+        .listRowBackground(isOpen(campaign) ? WTheme.accentSoft : WTheme.canvas)
         .listRowSeparatorTint(WTheme.hairline)
         .listRowInsets(EdgeInsets(top: 4, leading: 18, bottom: 4, trailing: 18))
         .contextMenu {
@@ -435,13 +442,13 @@ struct CampaignsRootView: View {
 
     // MARK: Drawer
 
-    private func drawer(topInset: CGFloat) -> some View {
+    private func sidebar(topInset: CGFloat, revealed: Bool) -> some View {
         CampaignsSidebar(
             store: store,
             folders: drawerFolders,
             selection: store.scope,
             topInset: topInset,
-            revealed: sidebarOpen
+            revealed: revealed
         ) { scope in
             withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) { store.scope = scope }
             // Let the highlight capsule slide to the tapped row before closing.
@@ -450,36 +457,23 @@ struct CampaignsRootView: View {
                 closeSidebar()
             }
         }
-        .frame(width: Self.sidebarWidth)
-        .frame(maxHeight: .infinity)
-        .background(WTheme.canvas)
-        .clipShape(UnevenRoundedRectangle(bottomTrailingRadius: 26, topTrailingRadius: 26, style: .continuous))
-        .overlay(
-            UnevenRoundedRectangle(bottomTrailingRadius: 26, topTrailingRadius: 26, style: .continuous)
-                .strokeBorder(WTheme.hairlineStrong, lineWidth: 1)
-        )
-        .ignoresSafeArea()
-        .offset(x: drawerOffset)
-        .gesture(
-            DragGesture()
-                .onChanged { value in
-                    sidebarDrag = min(0, value.translation.width)
-                }
-                .onEnded { value in
-                    if value.translation.width < -80 || value.predictedEndTranslation.width < -160 {
-                        closeSidebar()
-                    } else {
-                        withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { sidebarDrag = 0 }
-                    }
-                }
-        )
     }
 
-    private var drawerOffset: CGFloat {
-        (sidebarOpen ? 0 : -Self.sidebarWidth - 40) + sidebarDrag
+    /// Pushes on a narrow window, fills the detail column on a wide one.
+    private func open(_ campaign: Campaign) {
+        if layout.showsDetail {
+            openCampaign = campaign
+        } else {
+            path.append(campaign)
+        }
+    }
+
+    private func isOpen(_ campaign: Campaign) -> Bool {
+        layout.showsDetail && openCampaign?.id == campaign.id
     }
 
     private func openSidebar() {
+        guard !layout.pinsSidebar else { return }
         searchFocused = false
         withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) { sidebarOpen = true }
     }
@@ -487,7 +481,6 @@ struct CampaignsRootView: View {
     private func closeSidebar() {
         withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
             sidebarOpen = false
-            sidebarDrag = 0
         }
     }
 
@@ -495,6 +488,7 @@ struct CampaignsRootView: View {
         do {
             try await store.delete(env.api, campaign: campaign)
             path.removeAll { $0.id == campaign.id }
+            if openCampaign?.id == campaign.id { openCampaign = nil }
         } catch {
             deleteError = error.localizedDescription
         }

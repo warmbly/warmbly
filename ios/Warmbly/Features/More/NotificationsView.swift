@@ -330,6 +330,7 @@ struct NotificationsView: View {
             }
             .scrollIndicators(.hidden)
             .refreshable { await store.load(env.api) }
+            .readableMargins()
         }
     }
 

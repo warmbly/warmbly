@@ -18,6 +18,7 @@ private extension ContactDetailTab {
 struct ContactDetailView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.closeDetail) private var closeDetail
 
     @State private var store: ContactDetailStore
     @State private var categoryStore = ContactCategoryStore()
@@ -31,13 +32,17 @@ struct ContactDetailView: View {
     /// Push the fresh contact back into the list when edited or deleted.
     private let onUpdated: (Contact) -> Void
     private let onDeleted: (String) -> Void
+    /// The list row's subscription, so a change made from the list (and its rollback) shows here.
+    private let listSubscribed: Bool?
 
     init(
         contact: Contact,
+        listSubscribed: Bool? = nil,
         onUpdated: @escaping (Contact) -> Void = { _ in },
         onDeleted: @escaping (String) -> Void = { _ in }
     ) {
         _store = State(initialValue: ContactDetailStore(contact: contact))
+        self.listSubscribed = listSubscribed
         self.onUpdated = onUpdated
         self.onDeleted = onDeleted
     }
@@ -65,6 +70,12 @@ struct ContactDetailView: View {
         .task { await categoryStore.load(env.api) }
         .onChange(of: env.realtime.pulse(for: .contacts)) {
             Task { await store.refreshHeader(env.api) }
+        }
+        .onChange(of: listSubscribed) { _, subscribed in
+            guard let subscribed, subscribed != (contact.subscribed != false) else { return }
+            var updated = contact
+            updated.subscribed = subscribed
+            store.applyLocal(updated)
         }
         .sheet(isPresented: $composing) {
             ComposeView(prefillTo: [contact.email ?? ""].filter { !$0.isEmpty })
@@ -96,9 +107,14 @@ struct ContactDetailView: View {
                 onUpdated(updated)
             } onDeleted: {
                 onDeleted(contact.id)
-                dismiss()
+                leave()
             }
         }
+    }
+
+    /// Back to the list: pops the stack, or empties the detail column beside it.
+    private func leave() {
+        if let closeDetail { closeDetail() } else { dismiss() }
     }
 
     // MARK: Hero

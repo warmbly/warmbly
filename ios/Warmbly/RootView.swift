@@ -21,6 +21,9 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: env.session.phase)
+        #if DEBUG
+        .modifier(DebugWindowFrame())
+        #endif
         .task {
             if env.session.phase == .launching {
                 await env.session.bootstrap()

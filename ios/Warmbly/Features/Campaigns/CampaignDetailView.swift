@@ -73,6 +73,7 @@ final class CampaignDetailStore {
 struct CampaignDetailView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.closeDetail) private var closeDetail
 
     @State private var store: CampaignDetailStore
     @State private var overviewStore = CampaignOverviewStore()
@@ -667,7 +668,7 @@ struct CampaignDetailView: View {
         }
         plainRow {
             navRow(icon: "gearshape", title: "Settings", value: nil) {
-                CampaignSettingsPage(store: store, onDeleted: { dismiss() })
+                CampaignSettingsPage(store: store, onDeleted: { leave() })
             }
         }
     }
@@ -695,10 +696,15 @@ struct CampaignDetailView: View {
         }
     }
 
+    /// Back to the list: pops the stack, or empties the detail column beside it.
+    private func leave() {
+        if let closeDetail { closeDetail() } else { dismiss() }
+    }
+
     private func deleteCampaign() async {
         do {
             try await store.delete(env.api)
-            dismiss()
+            leave()
         } catch {
             deleteError = error.localizedDescription
         }

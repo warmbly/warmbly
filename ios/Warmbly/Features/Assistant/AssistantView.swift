@@ -52,6 +52,9 @@ struct AssistantView: View {
         }
     }
 
+    /// The conversation and composer keep a reading width on a wide window.
+    private static let readableWidth: CGFloat = 760
+
     var body: some View {
         NavigationStack {
             content
@@ -187,6 +190,7 @@ struct AssistantView: View {
             }
             .defaultScrollAnchor(.bottom)
             .defaultScrollAnchor(.bottom, for: .sizeChanges)
+            .readableMargins(Self.readableWidth)
             .scrollEdgeEffectStyle(.soft, for: .vertical)
             .scrollDismissesKeyboard(.interactively)
             .onScrollGeometryChange(for: Bool.self) { geo in
@@ -235,19 +239,23 @@ struct AssistantView: View {
                     .fill(WTheme.fill)
                     .frame(width: 170, height: 42)
             }
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach([0.94, 0.82, 0.58], id: \.self) { width in
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(WTheme.fill)
-                        .frame(height: 13)
-                        .containerRelativeFrame(.horizontal) { length, _ in (length - 40) * width }
+            // Sized off the column, not the window, so it matches the transcript that replaces it.
+            GeometryReader { proxy in
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach([0.94, 0.82, 0.58], id: \.self) { width in
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(WTheme.fill)
+                            .frame(width: proxy.size.width * width, height: 13)
+                    }
                 }
             }
+            .frame(height: 59)
             Spacer()
         }
         .skeletonShimmer()
         .padding(20)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: Self.readableWidth)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     // MARK: Turns
@@ -471,6 +479,8 @@ struct AssistantView: View {
             footnote
                 .padding(.horizontal, 20)
         }
+        .frame(maxWidth: Self.readableWidth)
+        .frame(maxWidth: .infinity)
         .padding(.top, 8)
         .padding(.bottom, 4)
         .animation(.spring(response: 0.4, dampingFraction: 0.88), value: chat.turns.isEmpty)

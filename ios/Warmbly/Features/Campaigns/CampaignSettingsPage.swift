@@ -40,6 +40,7 @@ struct CampaignSettingsPage: View {
             }
         }
         .listStyle(.insetGrouped)
+        .readableMargins()
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

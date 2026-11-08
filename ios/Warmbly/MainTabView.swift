@@ -18,7 +18,8 @@ extension AppTab {
 
 /// Home is the workspace pulse and the front door to mailboxes/analytics;
 /// Inbox carries the unread badge. Tabs the member lacks permission for are
-/// hidden, like the web sidebar. The system tab bar is replaced by `WTabBar`.
+/// hidden, like the web sidebar. The system tab bar is replaced by `WTabBar`
+/// on a phone-width window and by the side `WTabRail` on a wide one.
 struct MainTabView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var selection: AppTab = .launchTab
@@ -63,6 +64,48 @@ struct MainTabView: View {
     }
 
     var body: some View {
+        GeometryReader { geo in
+            let shell = ShellLayout.resolve(geo.size)
+            // A column, not a safe-area inset: the tab hosts don't pass a leading inset on to their content.
+            HStack(spacing: 0) {
+                if shell.usesRail {
+                    WTabRail(items: items, selection: $selection, action: barAction)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                    VerticalHairline()
+                }
+                tabs
+            }
+            .background { TabShortcuts(items: items, selection: $selection) }
+            .background(WTheme.canvas.ignoresSafeArea())
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if !shell.usesRail, !tabBar.isHidden {
+                    WTabBar(items: items, selection: $selection, action: barAction)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.spring(response: 0.34, dampingFraction: 0.86), value: shell.usesRail)
+            .environment(\.shellLayout, shell)
+        }
+        .animation(.spring(response: 0.34, dampingFraction: 0.86), value: tabBar.isHidden)
+        .environment(tabBar)
+        .fullScreenCover(isPresented: $showAssistant) {
+            AssistantView(page: selection.rawValue, initialPrompt: debugPrompt.flatMap { $0.isEmpty ? nil : $0 })
+        }
+        .onAppear {
+            if debugPrompt != nil { showAssistant = true }
+        }
+        .environment(\.switchTab) { tab in
+            selection = tab
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            tabBar.setKeyboard(true)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            tabBar.setKeyboard(false)
+        }
+    }
+
+    private var tabs: some View {
         TabView(selection: $selection) {
             Tab("Home", systemImage: "house", value: AppTab.home) {
                 HomeView().toolbarVisibility(.hidden, for: .tabBar)
@@ -86,28 +129,7 @@ struct MainTabView: View {
                 MoreRootView().toolbarVisibility(.hidden, for: .tabBar)
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !tabBar.isHidden {
-                WTabBar(items: items, selection: $selection, action: barAction)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .animation(.spring(response: 0.34, dampingFraction: 0.86), value: tabBar.isHidden)
-        .environment(tabBar)
-        .fullScreenCover(isPresented: $showAssistant) {
-            AssistantView(page: selection.rawValue, initialPrompt: debugPrompt.flatMap { $0.isEmpty ? nil : $0 })
-        }
-        .onAppear {
-            if debugPrompt != nil { showAssistant = true }
-        }
-        .environment(\.switchTab) { tab in
-            selection = tab
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
-            tabBar.setKeyboard(true)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
-            tabBar.setKeyboard(false)
-        }
+        // The system's own iPad tab strip would sit above our bar or rail.
+        .tabViewStyle(.tabBarOnly)
     }
 }

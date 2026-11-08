@@ -147,6 +147,7 @@ struct WTabBar: View {
                     .background(WTheme.glassTint, in: Circle())
                     .glassEffect(.regular.tint(WTheme.glassTint).interactive(), in: Circle())
                     .glassEffectID("action", in: glassNS)
+                    .keyboardShortcut("n", modifiers: .command)
                     .accessibilityLabel(action.title)
                 }
             }
@@ -180,7 +181,7 @@ struct WTabBar: View {
                             .matchedGeometryEffect(id: "active", in: activeNS)
                     }
                 }
-                .overlay(alignment: .top) { badge(item.badge) }
+                .overlay(alignment: .top) { TabBadge(count: item.badge).offset(x: 12, y: 4) }
                 .contentShape(Capsule())
         }
         .buttonStyle(TabPressStyle())
@@ -188,9 +189,118 @@ struct WTabBar: View {
         .accessibilityValue(item.badge > 0 ? "\(item.badge) unread" : "")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
+}
 
-    @ViewBuilder
-    private func badge(_ count: Int) -> some View {
+/// The tab bar stood on its side for a wide window: the same glass capsule
+/// and round action, stacked along the leading edge and centered on it, where
+/// a thumb holding an unfolded phone or a tablet already rests.
+struct WTabRail: View {
+    let items: [WTabItem]
+    @Binding var selection: AppTab
+    var action: TabBarAction?
+    var onReselect: (AppTab) -> Void = { _ in }
+
+    @Namespace private var activeNS
+    @Namespace private var glassNS
+
+    var body: some View {
+        GlassEffectContainer(spacing: 14) {
+            VStack(spacing: 10) {
+                VStack(spacing: 2) {
+                    ForEach(items) { item in
+                        button(item)
+                    }
+                }
+                .padding(5)
+                .background(WTheme.glassTint, in: Capsule())
+                .glassEffect(.regular.tint(WTheme.glassTint).interactive(), in: Capsule())
+                .glassEffectID("rail", in: glassNS)
+
+                if let action {
+                    Button(action: action.perform) {
+                        Group {
+                            if action.mark {
+                                RemieMark(size: 24)
+                            } else {
+                                Image(systemName: action.symbol)
+                                    .font(.system(size: 17, weight: .medium))
+                                    .foregroundStyle(WTheme.ink)
+                            }
+                        }
+                        .transition(.scale(scale: 0.5).combined(with: .opacity))
+                        .frame(width: 56, height: 56)
+                        .contentShape(Circle())
+                    }
+                    .buttonStyle(TabPressStyle())
+                    .background(WTheme.glassTint, in: Circle())
+                    .glassEffect(.regular.tint(WTheme.glassTint).interactive(), in: Circle())
+                    .glassEffectID("action", in: glassNS)
+                    .hoverEffect(.highlight)
+                    .keyboardShortcut("n", modifiers: .command)
+                    .accessibilityLabel(action.title)
+                }
+            }
+        }
+        .frame(width: ShellLayout.railWidth)
+        .frame(maxHeight: .infinity)
+        .sensoryFeedback(.selection, trigger: selection)
+    }
+
+    private func button(_ item: WTabItem) -> some View {
+        let selected = item.tab == selection
+        return Button {
+            if selected {
+                onReselect(item.tab)
+            } else {
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                    selection = item.tab
+                }
+            }
+        } label: {
+            Image(systemName: selected ? "\(item.symbol).fill" : item.symbol)
+                .font(.system(size: 18, weight: selected ? .medium : .regular))
+                .foregroundStyle(selected ? WTheme.ink : WTheme.inkTertiary)
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: 46, height: 46)
+                .background {
+                    if selected {
+                        Capsule()
+                            .fill(WTheme.ink.opacity(0.08))
+                            .matchedGeometryEffect(id: "active", in: activeNS)
+                    }
+                }
+                .overlay(alignment: .topTrailing) { TabBadge(count: item.badge).offset(x: 3, y: 1) }
+                .contentShape(Capsule())
+        }
+        .buttonStyle(TabPressStyle())
+        .hoverEffect(.highlight)
+        .help(item.title)
+        .accessibilityLabel(item.title)
+        .accessibilityValue(item.badge > 0 ? "\(item.badge) unread" : "")
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// Command-number switches tabs on a hardware keyboard, like Mail and Safari.
+/// Mounted on the shell, so it keeps working while a screen hides the bar.
+struct TabShortcuts: View {
+    let items: [WTabItem]
+    @Binding var selection: AppTab
+
+    var body: some View {
+        ForEach(Array(items.prefix(9).enumerated()), id: \.element.id) { index, item in
+            Button(item.title) { selection = item.tab }
+                .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
+        }
+        .opacity(0)
+        .accessibilityHidden(true)
+    }
+}
+
+struct TabBadge: View {
+    let count: Int
+
+    var body: some View {
         if count > 0 {
             Text(count > 99 ? "99+" : "\(count)")
                 .font(WFont.meta(9.5, weight: .semibold))
@@ -199,7 +309,6 @@ struct WTabBar: View {
                 .frame(minWidth: 16, minHeight: 16)
                 .background(WTheme.accent, in: Capsule())
                 .overlay(Capsule().strokeBorder(.white.opacity(0.9), lineWidth: 1.5))
-                .offset(x: 12, y: 4)
                 .contentTransition(.numericText())
                 .transition(.scale.combined(with: .opacity))
         }

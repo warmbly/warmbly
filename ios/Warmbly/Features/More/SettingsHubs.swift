@@ -102,6 +102,7 @@ struct SettingsTilesHub: View {
             .padding(.bottom, 120)
         }
         .defaultScrollAnchor(SettingsDebug.anchor)
+        .readableMargins()
         .background(WTheme.groupedPage)
         .onAppear { appeared = true }
     }

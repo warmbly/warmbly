@@ -12,7 +12,9 @@ struct ContactsRootView: View {
     @State private var categoryStore = ContactCategoryStore()
     @State private var path: [Contact] = []
     @State private var sidebarOpen = false
-    @State private var sidebarDrag: CGFloat = 0
+    /// What the detail column shows when the list and detail sit side by side.
+    @State private var openContact: Contact?
+    @State private var layout = SplitMetrics.stacked
     @State private var showCreate = false
     @State private var showFilters = false
     @State private var showBulkEdit = false
@@ -32,99 +34,111 @@ struct ContactsRootView: View {
     private var drawerCategories: [ContactCategory] { categoryStore.categories }
 
     var body: some View {
-        NavigationStack(path: $path) {
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    mainPane
-                        .scaleEffect(sidebarOpen ? 0.97 : 1, anchor: .trailing)
-                    if sidebarOpen {
-                        Color.black.opacity(0.22)
-                            .ignoresSafeArea()
-                            .transition(.opacity)
-                            .onTapGesture { closeSidebar() }
-                    }
-                    drawer(topInset: geo.safeAreaInsets.top)
+        ListDetailShell(
+            path: $path,
+            openItem: $openContact,
+            sidebarOpen: $sidebarOpen,
+            layout: $layout,
+            sidebarWidth: Self.sidebarWidth,
+            drawerRadius: 22,
+            dimOpacity: 0.22,
+            placeholder: DetailPlaceholder(
+                title: "No contact open",
+                message: "Pick a contact to see their journey, notes and campaigns here.",
+                symbol: "person.2"
+            )
+        ) {
+            mainPane
+                .toolbar(.hidden, for: .navigationBar)
+                .tabBarHidden(sidebarOpen || store.selectionMode)
+                .navigationDestination(for: Contact.self) { contact in
+                    detail(contact)
                 }
+        } drawer: { topInset, revealed in
+            sidebar(topInset: topInset, revealed: revealed)
+        } detail: { contact in
+            detail(contact)
+        }
+        .fullScreenCover(isPresented: $showCreate) {
+            ContactAddFlow(store: store, categoryStore: categoryStore) { created in
+                if let first = created.first { open(first) }
             }
-            .toolbar(.hidden, for: .navigationBar)
-            .tabBarHidden(sidebarOpen || store.selectionMode)
-            .navigationDestination(for: Contact.self) { contact in
-                ContactDetailView(contact: contact) { updated in
-                    store.apply(updated)
-                } onDeleted: { id in
-                    store.remove(id: id)
+        }
+        .sheet(isPresented: $showFilters) {
+            ContactFiltersSheet(
+                categories: categoryStore.categories,
+                initial: store.filters
+            ) { store.filters = $0 }
+            .presentationDetents([.large])
+        }
+        .sheet(isPresented: $showBulkEdit) {
+            ContactBulkEditSheet(
+                ids: Array(store.selected),
+                categories: categoryStore.categories,
+                campaigns: store.campaignOptions,
+                loadCampaigns: { await store.loadCampaignOptions(env.api) },
+                perform: { body in
+                    try await store.bulkEdit(env.api, body: body)
+                    await store.load(env.api)
+                    store.exitSelection()
                 }
-            }
-            .fullScreenCover(isPresented: $showCreate) {
-                ContactAddFlow(store: store, categoryStore: categoryStore) { created in
-                    if let first = created.first { path.append(first) }
+            )
+        }
+        .sheet(item: $editing) { contact in
+            ContactBulkEditSheet(
+                ids: [contact.id],
+                categories: categoryStore.categories,
+                campaigns: store.campaignOptions,
+                loadCampaigns: { await store.loadCampaignOptions(env.api) },
+                perform: { body in
+                    try await store.bulkEdit(env.api, body: body)
+                    await store.load(env.api)
                 }
-            }
-            .sheet(isPresented: $showFilters) {
-                ContactFiltersSheet(
-                    categories: categoryStore.categories,
-                    initial: store.filters
-                ) { store.filters = $0 }
-                .presentationDetents([.large])
-            }
-            .sheet(isPresented: $showBulkEdit) {
-                ContactBulkEditSheet(
-                    ids: Array(store.selected),
-                    categories: categoryStore.categories,
-                    campaigns: store.campaignOptions,
-                    loadCampaigns: { await store.loadCampaignOptions(env.api) },
-                    perform: { body in
-                        try await store.bulkEdit(env.api, body: body)
-                        await store.load(env.api)
-                        store.exitSelection()
-                    }
-                )
-            }
-            .sheet(item: $editing) { contact in
-                ContactBulkEditSheet(
-                    ids: [contact.id],
-                    categories: categoryStore.categories,
-                    campaigns: store.campaignOptions,
-                    loadCampaigns: { await store.loadCampaignOptions(env.api) },
-                    perform: { body in
-                        try await store.bulkEdit(env.api, body: body)
-                        await store.load(env.api)
-                    }
-                )
-            }
-            .confirmationDialog(
-                "Delete \(pendingDelete?.displayName ?? "contact")?",
-                isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
-                titleVisibility: .visible,
-                presenting: pendingDelete
-            ) { contact in
-                Button("Delete contact", role: .destructive) {
-                    Task {
-                        do { try await store.delete(env.api, id: contact.id) } catch { actionError = error.localizedDescription }
-                    }
-                }
-            } message: { _ in
-                Text("This removes them from your workspace and every campaign. This can't be undone.")
-            }
-            .alert("Couldn't update contact", isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(actionError ?? "")
-            }
-            .confirmationDialog(
-                "Delete \(store.selectedCount) contact\(store.selectedCount == 1 ? "" : "s")?",
-                isPresented: $confirmBulkDelete,
-                titleVisibility: .visible
-            ) {
-                Button("Delete \(store.selectedCount)", role: .destructive) {
-                    Task {
-                        try? await store.bulkDelete(env.api, ids: Array(store.selected))
-                        store.exitSelection()
+            )
+        }
+        .confirmationDialog(
+            "Delete \(pendingDelete?.displayName ?? "contact")?",
+            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+            titleVisibility: .visible,
+            presenting: pendingDelete
+        ) { contact in
+            Button("Delete contact", role: .destructive) {
+                Task {
+                    do {
+                        try await store.delete(env.api, id: contact.id)
+                        closeDeleted([contact.id])
+                    } catch {
+                        actionError = error.localizedDescription
                     }
                 }
-            } message: {
-                Text("This removes them from your workspace. This can't be undone.")
             }
+        } message: { _ in
+            Text("This removes them from your workspace and every campaign. This can't be undone.")
+        }
+        .alert("Couldn't update contact", isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(actionError ?? "")
+        }
+        .confirmationDialog(
+            "Delete \(store.selectedCount) contact\(store.selectedCount == 1 ? "" : "s")?",
+            isPresented: $confirmBulkDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete \(store.selectedCount)", role: .destructive) {
+                Task {
+                    let ids = store.selected
+                    do {
+                        try await store.bulkDelete(env.api, ids: Array(ids))
+                        closeDeleted(ids)
+                    } catch {
+                        actionError = error.localizedDescription
+                    }
+                    store.exitSelection()
+                }
+            }
+        } message: {
+            Text("This removes them from your workspace. This can't be undone.")
         }
         .task(id: store.query) {
             // First run loads immediately; subsequent runs debounce typing.
@@ -171,10 +185,10 @@ struct ContactsRootView: View {
         }
         // WARMBLY_DEBUG_CONTACT opens the contact whose name or address contains it.
         .onChange(of: store.hasLoaded) { _, loaded in
-            guard loaded, path.isEmpty, let match = ProcessInfo.processInfo.environment["WARMBLY_DEBUG_CONTACT"],
+            guard loaded, path.isEmpty, openContact == nil, let match = ProcessInfo.processInfo.environment["WARMBLY_DEBUG_CONTACT"],
                   let contact = store.contacts.first(where: { $0.displayName.localizedCaseInsensitiveContains(match) || ($0.email ?? "").localizedCaseInsensitiveContains(match) })
             else { return }
-            path.append(contact)
+            open(contact)
         }
         #endif
         .background(WTheme.canvas)
@@ -416,7 +430,7 @@ struct ContactsRootView: View {
             if store.selectionMode {
                 store.toggleSelected(contact.id)
             } else {
-                path.append(contact)
+                open(contact)
             }
         } label: {
             ContactRow(
@@ -426,7 +440,7 @@ struct ContactsRootView: View {
             )
         }
         .buttonStyle(TapScaleStyle())
-        .listRowBackground(store.isSelected(contact.id) ? WTheme.fill : WTheme.canvas)
+        .listRowBackground(store.isSelected(contact.id) ? WTheme.fill : isOpen(contact) ? WTheme.accentSoft : WTheme.canvas)
         .listRowSeparatorTint(WTheme.hairline)
         .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
@@ -483,13 +497,13 @@ struct ContactsRootView: View {
 
     // MARK: Drawer
 
-    private func drawer(topInset: CGFloat) -> some View {
+    private func sidebar(topInset: CGFloat, revealed: Bool) -> some View {
         ContactsSidebar(
             store: store,
             categories: drawerCategories,
             selection: store.scope,
             topInset: topInset,
-            revealed: sidebarOpen
+            revealed: revealed
         ) { scope in
             withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) { store.scope = scope }
             // Let the highlight capsule slide to the tapped row before closing.
@@ -498,37 +512,40 @@ struct ContactsRootView: View {
                 closeSidebar()
             }
         }
-        .frame(width: Self.sidebarWidth)
-        .frame(maxHeight: .infinity)
-        .background(WTheme.canvas)
-        .clipShape(UnevenRoundedRectangle(bottomTrailingRadius: 22, topTrailingRadius: 22, style: .continuous))
-        .overlay {
-            UnevenRoundedRectangle(bottomTrailingRadius: 22, topTrailingRadius: 22, style: .continuous)
-                .strokeBorder(WTheme.hairlineStrong, lineWidth: 1)
-                .opacity(sidebarOpen ? 1 : 0)
-        }
-        .ignoresSafeArea()
-        .offset(x: drawerOffset)
-        .gesture(
-            DragGesture()
-                .onChanged { value in
-                    sidebarDrag = min(0, value.translation.width)
-                }
-                .onEnded { value in
-                    if value.translation.width < -80 || value.predictedEndTranslation.width < -160 {
-                        closeSidebar()
-                    } else {
-                        withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { sidebarDrag = 0 }
-                    }
-                }
-        )
     }
 
-    private var drawerOffset: CGFloat {
-        (sidebarOpen ? 0 : -Self.sidebarWidth - 40) + sidebarDrag
+    private func detail(_ contact: Contact) -> some View {
+        ContactDetailView(
+            contact: contact,
+            listSubscribed: store.contacts.first(where: { $0.id == contact.id }).map { $0.subscribed != false }
+        ) { updated in
+            store.apply(updated)
+        } onDeleted: { id in
+            store.remove(id: id)
+        }
+    }
+
+    /// Deleted from the list: out of the detail column and the stack too, wherever a resize moved it.
+    private func closeDeleted(_ ids: Set<String>) {
+        if let open = openContact, ids.contains(open.id) { openContact = nil }
+        path.removeAll { ids.contains($0.id) }
+    }
+
+    /// Pushes on a narrow window, fills the detail column on a wide one.
+    private func open(_ contact: Contact) {
+        if layout.showsDetail {
+            openContact = contact
+        } else {
+            path.append(contact)
+        }
+    }
+
+    private func isOpen(_ contact: Contact) -> Bool {
+        layout.showsDetail && openContact?.id == contact.id
     }
 
     private func openSidebar() {
+        guard !layout.pinsSidebar else { return }
         searchFocused = false
         withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) { sidebarOpen = true }
     }
@@ -536,7 +553,6 @@ struct ContactsRootView: View {
     private func closeSidebar() {
         withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
             sidebarOpen = false
-            sidebarDrag = 0
         }
     }
 }
