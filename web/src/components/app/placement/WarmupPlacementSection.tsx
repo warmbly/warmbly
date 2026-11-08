@@ -9,7 +9,7 @@ import { EmptyBlock, SectionBar, Stat, StatStrip } from "@/components/layout/Pag
 import useWarmupPlacement from "@/lib/api/hooks/app/analytics/useWarmupPlacement";
 import type { PlacementGroup, PlacementMailbox } from "@/lib/api/models/app/analytics/WarmupPlacement";
 import { cn } from "@/lib/utils";
-import { BAND, GROUP_LABEL, GROUP_ORDER, bandForRate, fmtNum, fmtPct, otherHostsNote, rateSentence, totals, utcWindow, viewDays, type GroupFilter } from "./placement";
+import { BAND, GROUP_LABEL, GROUP_ORDER, bandForRate, fmtNum, fmtPct, otherHostsNote, rateSentence, sampledShare, shareWithheld, totals, utcWindow, viewDays, type GroupFilter } from "./placement";
 import {
     BandChip,
     GroupFilterChips,
@@ -72,6 +72,8 @@ export default function WarmupPlacementSection({ days }: { days: number }) {
 
     const rate = report.rate;
     const filtered = activeGroup !== "all";
+    const share = sampledShare(t.inboxRate, t.delivered);
+    const spamShare = sampledShare(t.spamRate, t.delivered);
 
     return (
         <>
@@ -87,14 +89,14 @@ export default function WarmupPlacementSection({ days }: { days: number }) {
                 />
                 <Stat
                     label="Non-spam share · window"
-                    value={<span className={BAND[bandForRate(t.inboxRate)].text}>{fmtPct(t.inboxRate)}</span>}
-                    sub={filtered ? `at ${GROUP_LABEL[activeGroup]}` : `${fmtNum(t.inbox)} primary · ${fmtNum(t.tabs)} tabs`}
+                    value={share != null ? <span className={BAND[bandForRate(share)].text}>{fmtPct(share)}</span> : fmtNum(t.inbox + t.tabs)}
+                    sub={share == null ? shareWithheld(t.delivered) : filtered ? `at ${GROUP_LABEL[activeGroup]}` : `${fmtNum(t.inbox)} primary · ${fmtNum(t.tabs)} tabs`}
                 />
                 <Stat label="Classified receipts" value={t.delivered} sub={filtered ? "sends are not split by provider" : `of ${fmtNum(t.sent)} submissions`} />
                 <Stat
                     label="Spam"
                     value={<span className={t.spam > 0 ? "text-rose-600" : undefined}>{fmtNum(t.spam)}</span>}
-                    sub={`${fmtPct(t.spamRate)} · ${fmtNum(t.rescueConfirmed)} of ${fmtNum(t.rescued)} confirmed out of spam`}
+                    sub={`${spamShare != null ? fmtPct(spamShare) : shareWithheld(t.delivered)} · ${fmtNum(t.rescueConfirmed)} of ${fmtNum(t.rescued)} confirmed out of spam`}
                 />
                 <Stat label="Unconfirmed" value={filtered ? "—" : t.unconfirmed} sub="sent 24h+ ago, not seen yet" last />
             </StatStrip>

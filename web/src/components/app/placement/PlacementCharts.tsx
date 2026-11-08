@@ -11,7 +11,7 @@ import ProviderLogo from "@/components/app/emails/ProviderLogo";
 import { mailHostLabel } from "@/lib/mailHost";
 import ScrollStrip from "@/components/ui/scroll-strip";
 import { cn } from "@/lib/utils";
-import type { PlacementGroup, PlacementProvider, PlacementRate } from "@/lib/api/models/app/analytics/WarmupPlacement";
+import type { PlacementCounts, PlacementGroup, PlacementProvider, PlacementRate } from "@/lib/api/models/app/analytics/WarmupPlacement";
 import {
     BAND,
     GROUP_LABEL,
@@ -23,7 +23,9 @@ import {
     fmtPct,
     observedCount,
     rateSentence,
+    sampledShare,
     shortDate,
+    SHARE_MIN_SAMPLE,
     type DayView,
     type GroupFilter,
     type RangeKey,
@@ -324,16 +326,16 @@ export function ProviderBreakdown({ providers, browseScope }: { providers: Place
                             <ChevronRightIcon className={cn("w-3 h-3 shrink-0 text-slate-300 transition-transform", expanded && "rotate-90", !canExpand && "invisible")} />,
                             <ProviderLogo id={GROUP_LOGO[p.group]} size="sm" />,
                             <span className="text-[12.5px] font-medium text-slate-900 w-24 sm:w-32 shrink-0 truncate">{GROUP_LABEL[p.group]}</span>,
-                            <PlacementBar inbox={p.inbox} tabs={p.tabs} spam={p.spam} unknown={p.unknown} archived={p.archived} custom={p.custom} />,
-                            <RateCells inbox={p.inbox_rate} spam={p.spam_rate} delivered={p.delivered} />,
+                            <PlacementBar counts={p} />,
+                            <RateCells counts={p} />,
                         )}
                         {expanded && (
                             <div className="bg-slate-50/50 divide-y divide-slate-200/40">
                                 {hosts.map((h) => (
                                     <div key={h.host || "unknown"} className="min-h-9 pl-14 pr-5 py-1.5 flex items-center gap-3">
                                         <span className="text-[11.5px] text-slate-600 w-24 sm:w-32 shrink-0 truncate">{mailHostLabel(h.host) || "Host not detected"}</span>
-                                        <PlacementBar inbox={h.inbox} tabs={h.tabs} spam={h.spam} unknown={h.unknown} archived={h.archived} custom={h.custom} height={4} />
-                                        <RateCells inbox={h.inbox_rate} spam={h.spam_rate} delivered={h.delivered} />
+                                        <PlacementBar counts={h} height={4} />
+                                        <RateCells counts={h} />
                                     </div>
                                 ))}
                             </div>
@@ -345,9 +347,22 @@ export function ProviderBreakdown({ providers, browseScope }: { providers: Place
     );
 }
 
-function PlacementBar({ inbox, tabs, spam, unknown, archived, custom, height = 6 }: { inbox: number; tabs: number; spam: number; unknown?: number; archived?: number; custom?: number; height?: number }) {
+// Below the share floor each receipt is its own square, with empty ones up to the floor, so two emails read as two emails.
+function PlacementBar({ counts, height = 6 }: { counts: PlacementCounts; height?: number }) {
+    const { inbox, tabs, spam, unknown, archived, custom } = counts;
     const total = Math.max(1, inbox + tabs + spam + (unknown ?? 0) + (archived ?? 0) + (custom ?? 0));
     const title = `${inbox} inbox · ${tabs} other tabs · ${spam} spam` + (unknown != null ? ` · ${unknown} unknown · ${archived} archive · ${custom} custom` : " · unclassified evidence unavailable");
+    if (counts.delivered < SHARE_MIN_SAMPLE) {
+        const filled = LANDED.flatMap((l) => Array<string>(Math.min(counts[l.key] ?? 0, SHARE_MIN_SAMPLE)).fill(l.dot)).slice(0, SHARE_MIN_SAMPLE);
+        const slots = [...filled, ...Array<string>(SHARE_MIN_SAMPLE - filled.length).fill("bg-slate-100")];
+        return (
+            <div className="flex-1 min-w-12 flex items-center gap-[3px]" title={`${title}. A share is shown after ${SHARE_MIN_SAMPLE} classified receipts.`}>
+                {slots.map((dot, i) => (
+                    <span key={i} className={cn("flex-1 max-w-3 rounded-[1px]", dot)} style={{ height }} />
+                ))}
+            </div>
+        );
+    }
     return (
         <div className="flex-1 min-w-12" title={title}>
             <DitherStack
@@ -365,7 +380,21 @@ function PlacementBar({ inbox, tabs, spam, unknown, archived, custom, height = 6
     );
 }
 
-function RateCells({ inbox, spam, delivered }: { inbox: number | null; spam: number | null; delivered: number }) {
+// Counts, not shares, until a share means something.
+function RateCells({ counts }: { counts: PlacementCounts }) {
+    const { delivered } = counts;
+    const inbox = sampledShare(counts.inbox_rate, delivered);
+    const spam = sampledShare(counts.spam_rate, delivered);
+    if (inbox == null || spam == null) {
+        const note = `Shares are shown after ${SHARE_MIN_SAMPLE} classified receipts`;
+        return (
+            <span className="flex items-center gap-2 sm:gap-3 font-mono text-[11px] tabular-nums shrink-0 text-slate-500">
+                <span title={`${note}. Non-spam counts the inbox and category tabs`}>{fmtNum(counts.inbox + counts.tabs)} non-spam</span>
+                <span title={note} className="hidden sm:inline w-12 text-right">{fmtNum(counts.spam)} spam</span>
+                <span title="Classified receipts" className="text-slate-400 w-10 text-right">{fmtNum(delivered)}</span>
+            </span>
+        );
+    }
     return (
         <span className="flex items-center gap-2 sm:gap-3 font-mono text-[11px] tabular-nums shrink-0">
             <span title="Non-spam share among classified receipts (includes tabs)" className={BAND[bandForRate(inbox)].text}>{fmtPct(inbox)}</span>
