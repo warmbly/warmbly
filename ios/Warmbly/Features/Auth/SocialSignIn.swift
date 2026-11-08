@@ -2,10 +2,12 @@ import AuthenticationServices
 import CryptoKit
 import SwiftUI
 
-/// Native Sign in with Apple plus Google via an in-app web ceremony. Rendered
-/// optimistically: until `GET /auth/providers` answers, both buttons show (the
-/// hosted service supports both); once a backend explicitly disables a
-/// provider, its button disappears. One shipped binary, every deployment.
+/// Native Sign in with Apple plus Google via an in-app web ceremony: the iOS
+/// client when the backend advertises one, else the website's own Google
+/// sign-in handing back to the app. Rendered optimistically: until the
+/// providers answer, both buttons show (the hosted service supports both);
+/// once a backend has neither, its button disappears. One shipped binary,
+/// every deployment.
 struct SocialSignInRow: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.colorScheme) private var colorScheme
@@ -13,14 +15,13 @@ struct SocialSignInRow: View {
     let providers: AuthProvidersInfo?
     @Binding var busy: Bool
     let onError: (String) -> Void
-    /// Social sign-in runs the same 2FA gate as password login, so it can end
-    /// in a challenge rather than a session.
-    var onTwoFA: (String) -> Void = { _ in }
+    /// A sign-in that ends in a 2FA or link challenge rather than a session.
+    var onChallenge: (SocialOutcome) -> Void = { _ in }
 
     @State private var googleFlow = GoogleSignInFlow()
 
     private var showApple: Bool { providers == nil || providers?.appleEnabled == true }
-    private var showGoogle: Bool { providers == nil || providers?.googleClientID != nil }
+    private var showGoogle: Bool { providers == nil || providers?.googleAvailable == true }
 
     var body: some View {
         VStack(spacing: 12) {
@@ -40,11 +41,7 @@ struct SocialSignInRow: View {
 
             if showGoogle {
                 Button {
-                    if let clientID = providers?.googleClientID {
-                        signInWithGoogle(clientID: clientID)
-                    } else {
-                        onError("Google sign-in isn't set up on this server yet.")
-                    }
+                    signInWithGoogle()
                 } label: {
                     HStack(spacing: 10) {
                         GoogleGlyph()
@@ -81,7 +78,8 @@ struct SocialSignInRow: View {
                 defer { busy = false }
                 do {
                     let outcome = try await env.session.signInWithApple(identityToken: identityToken, firstName: first, lastName: last)
-                    if case let .needsTwoFA(pendingToken) = outcome { onTwoFA(pendingToken) }
+                    if case .loggedIn = outcome { return }
+                    onChallenge(outcome)
                 } catch {
                     onError((error as? APIError)?.errorDescription ?? error.localizedDescription)
                 }
@@ -93,14 +91,28 @@ struct SocialSignInRow: View {
         }
     }
 
-    private func signInWithGoogle(clientID: String) {
+    private func signInWithGoogle() {
+        guard let providers, providers.googleAvailable else {
+            onError("Google sign-in isn't set up on this server yet.")
+            return
+        }
         busy = true
         Task {
             defer { busy = false }
             do {
-                let idToken = try await googleFlow.signIn(clientID: clientID)
-                let outcome = try await env.session.signInWithGoogle(idToken: idToken)
-                if case let .needsTwoFA(pendingToken) = outcome { onTwoFA(pendingToken) }
+                let outcome: SocialOutcome
+                if let clientID = providers.googleClientID {
+                    let idToken = try await googleFlow.signIn(clientID: clientID)
+                    outcome = try await env.session.signInWithGoogle(idToken: idToken)
+                } else if let host = providers.googleBrowserHost {
+                    let begun = try await env.session.beginBrowserSignIn("google")
+                    let code = try await googleFlow.handoffCode(from: begun.url, callbackHost: host)
+                    outcome = try await env.session.finishBrowserSignIn(code: code, binding: begun.binding)
+                } else {
+                    return
+                }
+                if case .loggedIn = outcome { return }
+                onChallenge(outcome)
             } catch GoogleSignInFlow.Failure.cancelled {
                 // User closed the sheet; stay quiet.
             } catch {
@@ -185,7 +197,7 @@ final class GoogleSignInFlow: NSObject, ASWebAuthenticationPresentationContextPr
             authorize.queryItems?.append(URLQueryItem(name: "nonce", value: nonce))
         }
 
-        let callback = try await runWebAuth(url: authorize.url!, callbackScheme: scheme)
+        let callback = try await runWebAuth(url: authorize.url!, callback: .customScheme(scheme))
         guard
             let items = URLComponents(url: callback, resolvingAgainstBaseURL: false)?.queryItems,
             let code = items.first(where: { $0.name == "code" })?.value
@@ -196,9 +208,29 @@ final class GoogleSignInFlow: NSObject, ASWebAuthenticationPresentationContextPr
         return try await exchange(code: code, clientID: clientID, redirectURI: redirectURI, verifier: verifier)
     }
 
-    private func runWebAuth(url: URL, callbackScheme: String) async throws -> URL {
+    /// The website's sign-in: the backend's callback redirects to
+    /// `https://<callbackHost>/auth/sso?code=`, which the session catches
+    /// because the app holds `webcredentials` for that host. The browser
+    /// session shares Safari's cookies, so a Google account already signed in
+    /// there is one tap.
+    func handoffCode(from url: URL, callbackHost: String) async throws -> String {
+        guard let window = Self.keyWindow else { throw Failure.malformedResponse }
+        presentationWindow = window
+        defer { presentationWindow = nil }
+
+        let callback = try await runWebAuth(url: url, callback: .https(host: callbackHost, path: "/auth/sso"))
+        guard
+            let items = URLComponents(url: callback, resolvingAgainstBaseURL: false)?.queryItems,
+            let code = items.first(where: { $0.name == "code" })?.value, !code.isEmpty
+        else {
+            throw Failure.malformedResponse
+        }
+        return code
+    }
+
+    private func runWebAuth(url: URL, callback: ASWebAuthenticationSession.Callback) async throws -> URL {
         try await withCheckedThrowingContinuation { continuation in
-            let session = ASWebAuthenticationSession(url: url, callbackURLScheme: callbackScheme) { [weak self] callbackURL, error in
+            let session = ASWebAuthenticationSession(url: url, callback: callback) { [weak self] callbackURL, error in
                 Task { @MainActor in self?.activeSession = nil }
                 if let error {
                     if let webError = error as? ASWebAuthenticationSessionError, webError.code == .canceledLogin {
