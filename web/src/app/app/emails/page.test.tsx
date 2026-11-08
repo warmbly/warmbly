@@ -660,8 +660,8 @@ describe("mailbox status while account and Cloud checks settle", () => {
             statusState.data[0] = { ...measuredStatus(rows[0]), health: { status: "warning", score: 87, issues: ["Warmup reputation needs watching"] }, warmup_health: band };
             statusState.observations = statusState.data.map((status) => ({ status, observedAt: Date.now(), current: true }));
             await renderPage();
-            expect(screen.getByText("ramping up, 1 slowed")).toBeInTheDocument();
-            expect(screen.getByText("Needs attention").closest("div")?.parentElement).toHaveTextContent(/^Needs attention0/);
+            expect(screen.getByText("1 slowed")).toBeInTheDocument();
+            expect(screen.getByText("Needs attention").parentElement).toHaveTextContent(/^Needs attention0$/);
         } finally {
             Object.keys(rows[0]).forEach((key) => delete (rows[0] as unknown as Record<string, unknown>)[key]);
             Object.assign(rows[0], original);

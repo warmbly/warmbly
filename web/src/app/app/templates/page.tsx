@@ -80,13 +80,18 @@ function TemplatesList() {
     }, [search]);
 
     const query = useTemplates(debouncedSearch || undefined);
-    const list = query.data ?? [];
+    const list = React.useMemo(() => query.data ?? [], [query.data]);
 
     const [editor, setEditor] = React.useState<
         | { mode: "create" }
         | { mode: "edit"; template: Template }
         | null
     >(null);
+
+    const editedThisWeek = React.useMemo(() => {
+        const since = Date.now() - 7 * 86_400_000;
+        return list.filter((t) => new Date(t.updated_at).getTime() >= since).length;
+    }, [list]);
 
     const lastEdited = React.useMemo(() => {
         if (list.length === 0) return "—";
@@ -116,8 +121,8 @@ function TemplatesList() {
             </PageTopbar>
 
             <StatStrip cols={4}>
-                <Stat label="Saved" value={list.length} sub="reusable drafts" />
-                <Stat label="Searching" value={debouncedSearch ? "yes" : "no"} sub="filter active" />
+                <Stat label={debouncedSearch ? "Matching" : "Saved"} value={list.length} sub={debouncedSearch ? `for "${debouncedSearch}"` : "reusable drafts"} />
+                <Stat label="Edited this week" value={editedThisWeek} sub="last 7 days" accent={editedThisWeek > 0} />
                 <Stat label="Last edited" value={lastEdited} sub="any template" />
                 <Stat label="Variables" value={VARIABLE_HINTS.length} sub="built-in" last />
             </StatStrip>

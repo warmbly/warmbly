@@ -15,7 +15,9 @@ import { useCampaign } from "@/hooks/context/campaign";
 import useCampaignAnalytics from "@/lib/api/hooks/app/analytics/useCampaignAnalytics";
 import type { CampaignEngagementBreakdown, CampaignSummary, EngagementBucket } from "@/lib/api/models/app/analytics/CampaignAnalytics";
 import useCampaignDailyStats from "@/lib/api/hooks/app/analytics/useCampaignDailyStats";
-import { SectionBar, Stat, StatStrip } from "@/components/layout/Page";
+import { SectionBar, StatStrip } from "@/components/layout/Page";
+import { TrendStat } from "@/components/ui/TrendStat";
+import { dailyPoints, utcDayRange } from "@/lib/trendPoints";
 import { MultiTrend, type TrendSeries } from "@/components/ui/charts";
 import { TONE_DOT } from "@/components/ui/tones";
 import type { DitherTone } from "@/components/ui/dither";
@@ -106,6 +108,21 @@ export default function CampaignOverview() {
         return { labels: rows.map((d) => d.date), series };
     }, [daily.data, hiddenMetrics]);
 
+    // The strip's lines span the same days as the chart, quiet days included.
+    const chartFrom = chartWindow?.from;
+    const chartTo = chartWindow?.to;
+    const dayPoints = useMemo(() => {
+        const days = chartFrom && chartTo ? utcDayRange(chartFrom, chartTo) : [];
+        const rows = daily.data;
+        return {
+            sent: dailyPoints(days, rows, (d) => d.sent),
+            opens: dailyPoints(days, rows, (d) => d.opens),
+            clicks: dailyPoints(days, rows, (d) => d.clicks),
+            replies: dailyPoints(days, rows, (d) => d.replies),
+            positive: dailyPoints(days, rows, (d) => d.positive_replies),
+        };
+    }, [chartFrom, chartTo, daily.data]);
+
     // A previous period's figures kept on screen while the new one loads must
     // not sit under the new period's label or reach a share export.
     const loading =
@@ -195,36 +212,59 @@ export default function CampaignOverview() {
                             />
                         </SectionBar>
                         <StatStrip cols={6}>
-                            <Stat
+                            <TrendStat
                                 label="Sent"
                                 value={loading ? "—" : <AnimatedNumber value={summary?.emails_sent ?? 0} />}
-                                sub="emails"
-                                accent={hasSends}
+                                unit="emails"
+                                points={loading ? undefined : dayPoints.sent}
+                                pending={loading}
+                                kind="area"
+                                tone="sky"
+                                format={(v) => `${v.toLocaleString()} sent`}
                             />
-                            <Stat
+                            <TrendStat
                                 label="Open rate"
                                 value={loading ? "—" : <AnimatedNumber value={summary?.open_rate ?? 0} format={pctFmt} />}
-                                sub="after delivery"
+                                unit="after delivery"
+                                points={loading ? undefined : dayPoints.opens}
+                                pending={loading}
+                                tone="slate"
+                                format={(v) => `${v.toLocaleString()} opens`}
                             />
-                            <Stat
+                            <TrendStat
                                 label="Click rate"
                                 value={loading ? "—" : <AnimatedNumber value={summary?.click_rate ?? 0} format={pctFmt} />}
-                                sub="of delivered"
+                                unit="of delivered"
+                                points={loading ? undefined : dayPoints.clicks}
+                                pending={loading}
+                                tone="slate"
+                                format={(v) => `${v.toLocaleString()} clicks`}
                             />
-                            <Stat
+                            <TrendStat
                                 label="Reply rate"
                                 value={loading ? "—" : <AnimatedNumber value={summary?.reply_rate ?? 0} format={pctFmt} />}
-                                sub="human replies"
+                                unit="human replies"
+                                points={loading ? undefined : dayPoints.replies}
+                                pending={loading}
+                                kind="bars"
+                                tone="slate"
+                                format={(v) => `${v.toLocaleString()} ${v === 1 ? "reply" : "replies"}`}
                             />
-                            <Stat
+                            <TrendStat
                                 label="Positive rate"
                                 value={loading ? "—" : <AnimatedNumber value={summary?.positive_reply_rate ?? 0} format={pctFmt} />}
-                                sub={loading ? undefined : `${num(summary?.interested_leads)} interested`}
+                                unit={loading ? undefined : `${num(summary?.interested_leads)} interested`}
+                                points={loading ? undefined : dayPoints.positive}
+                                pending={loading}
+                                kind="bars"
+                                tone="emerald"
+                                format={(v) => `${v.toLocaleString()} positive`}
                             />
-                            <Stat
+                            <TrendStat
                                 label="Bounce rate"
                                 value={loading ? "—" : <AnimatedNumber value={summary?.bounce_rate ?? 0} format={pctFmt} />}
-                                sub="hard + soft"
+                                unit="hard + soft"
+                                note={!loading && (summary?.bounce_rate ?? 0) >= 5 ? <span className="text-amber-700">high</span> : undefined}
                                 last
                             />
                         </StatStrip>
