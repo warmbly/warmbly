@@ -178,3 +178,13 @@ func TestAnInstanceSearchThatFindsNothingIsRefunded(t *testing.T) {
 		t.Fatalf("a search that found something was refunded: %v", l.refunded)
 	}
 }
+
+func TestHTTPRetrySkipsTheReaderItAlreadyTried(t *testing.T) {
+	c := NewCrawler("test").withFallback(&stubReader{})
+	if c.httpRetry(&blockedError{status: 403, reader: true}).fallback != nil {
+		t.Fatal("the http retry would ask the reader again")
+	}
+	if c.httpRetry(errors.New("the website did not answer")).fallback == nil {
+		t.Fatal("an unanswered https origin lost its reader for the http retry")
+	}
+}

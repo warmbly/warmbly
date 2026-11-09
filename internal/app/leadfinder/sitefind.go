@@ -2,7 +2,6 @@ package leadfinder
 
 import (
 	"context"
-	"errors"
 	"net"
 	"net/url"
 	"regexp"
@@ -137,10 +136,9 @@ func (c *Crawler) FindWebsite(ctx context.Context, l *models.Lead, searched []st
 		start := &url.URL{Scheme: "https", Host: host, Path: "/"}
 		rules := c.robots(ctx, start)
 		p, err := c.fetch(ctx, start.String(), rules, false)
-		var blocked *blockedError
-		if err != nil && !errors.As(err, &blocked) {
+		if err != nil {
 			start.Scheme = "http"
-			p, err = c.fetch(ctx, start.String(), c.robots(ctx, start), false)
+			p, err = c.httpRetry(err).fetch(ctx, start.String(), c.robots(ctx, start), false)
 		}
 		if err != nil || !confirmsBusiness(p, l) {
 			continue

@@ -316,6 +316,9 @@ function Finder({ config }: { config: LeadFinderConfig }) {
     };
 
     const webSearch = prefs.webSearch !== false;
+    const webSearchChoice = config.web_search.available
+        ? { on: webSearch, costUsd: config.web_search.cost_usd, onChange: (on: boolean) => patchPrefs({ webSearch: on }) }
+        : undefined;
     const startEnrich = async (sel: LeadSelection) => {
         try {
             const run = await enrich.mutateAsync({ ...sel, verify: true, people: true, web_search: webSearch });
@@ -611,7 +614,7 @@ function Finder({ config }: { config: LeadFinderConfig }) {
                     <LeadDrawer
                         id={activeId}
                         config={config}
-                        webSearch={webSearch}
+                        webSearch={webSearchChoice}
                         onClose={() => setActiveId(null)}
                         onAddToContacts={(id) => setDialog({ kind: "contacts", selection: { lead_ids: [id] }, count: 1 })}
                     />
@@ -622,11 +625,7 @@ function Finder({ config }: { config: LeadFinderConfig }) {
                 count={selectedCount}
                 enrichCost={config.enrich_cost_usd}
                 enriching={enrich.isPending}
-                webSearch={
-                    config.web_search.available
-                        ? { on: webSearch, costUsd: config.web_search.cost_usd, onChange: (on) => patchPrefs({ webSearch: on }) }
-                        : undefined
-                }
+                webSearch={webSearchChoice}
                 onEnrich={() => startEnrich(selection)}
                 onAddToContacts={() => setDialog({ kind: "contacts", selection, count: selectedCount })}
                 onExport={() => setDialog({ kind: "export", selection, count: selectedCount })}

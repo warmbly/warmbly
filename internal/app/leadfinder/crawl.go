@@ -111,13 +111,12 @@ func (c *Crawler) Crawl(ctx context.Context, website string) (*CrawlResult, erro
 	rules := c.robots(ctx, start)
 
 	home, err := c.fetch(ctx, start.String(), rules, false)
-	var blocked *blockedError
-	if err != nil && start.Scheme == "https" && !errors.As(err, &blocked) {
+	if err != nil && start.Scheme == "https" {
 		alt := *start
 		alt.Scheme = "http"
 		// The http origin answers for itself, here and for every page read after.
 		altRules := c.robots(ctx, &alt)
-		if h, e := c.fetch(ctx, alt.String(), altRules, false); e == nil {
+		if h, e := c.httpRetry(err).fetch(ctx, alt.String(), altRules, false); e == nil {
 			home, err, rules = h, nil, altRules
 		}
 	}
@@ -367,6 +366,16 @@ func (c *Crawler) fetch(ctx context.Context, target string, rules *robotsRules, 
 	p := parsePage(string(body))
 	p.url = resp.Request.URL
 	return p, nil
+}
+
+// httpRetry is the crawler to try a site's http origin with after its https
+// one failed: one that already went to the reader is not sent there twice.
+func (c *Crawler) httpRetry(err error) *Crawler {
+	var blocked *blockedError
+	if errors.As(err, &blocked) && blocked.reader {
+		return c.withFallback(nil)
+	}
+	return c
 }
 
 // read fetches a page through the reader service after the site answered status.

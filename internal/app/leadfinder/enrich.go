@@ -16,6 +16,7 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/emailverify"
+	"github.com/warmbly/warmbly/internal/pkg/generation"
 )
 
 const (
@@ -26,6 +27,10 @@ const (
 	enrichLeadTimeout = 50 * time.Second
 	// enrichLeadSlowTimeout leaves room for a reader service and web searches.
 	enrichLeadSlowTimeout = 2 * time.Minute
+	// enrichSearchTimeout bounds one web search so it cannot eat a lead's budget.
+	enrichSearchTimeout = 30 * time.Second
+	// enrichSaveTimeout is kept apart from the lead's budget so a slow read is still saved.
+	enrichSaveTimeout = 15 * time.Second
 )
 
 // errOutOfBalance stops a run when the workspace cannot pay for the next site.
@@ -206,11 +211,21 @@ func (s *Service) enrichLead(ctx context.Context, run *models.LeadEnrichmentRun,
 	defer cancel()
 	l.OrganizationID = run.OrganizationID
 	idem := run.ID.String() + ":" + l.ID.String()
+	save := func() error {
+		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), enrichSaveTimeout)
+		defer cancel()
+		return s.Repo.SaveEnrichment(sctx, l)
+	}
+	search := func(query, key string) []generation.SearchResult {
+		sctx, cancel := context.WithTimeout(lctx, enrichSearchTimeout)
+		defer cancel()
+		return s.search(sctx, run.OrganizationID, tools.searches, query, idem+key)
+	}
 	found := l.Site.FoundWebsite
 	if l.Website == "" {
 		var searched []string
 		if len(tools.searches) > 0 && strings.TrimSpace(l.Name) != "" {
-			searched = searchedHosts(s.search(lctx, run.OrganizationID, tools.searches, siteQuery(l), idem+":site"))
+			searched = searchedHosts(search(siteQuery(l), ":site"))
 		}
 		l.Website, l.Domain = tools.crawler.FindWebsite(lctx, l, searched)
 		found = l.Website != ""
@@ -218,7 +233,7 @@ func (s *Service) enrichLead(ctx context.Context, run *models.LeadEnrichmentRun,
 	if l.Website == "" {
 		l.EnrichmentStatus = models.LeadEnrichmentNoWebsite
 		s.finishEmails(lctx, run, l, nil)
-		return outcomeNoWebsite, 0, 0, s.Repo.SaveEnrichment(lctx, l)
+		return outcomeNoWebsite, 0, 0, save()
 	}
 	key := "lead_enrich:" + run.ID.String() + ":" + l.ID.String()
 	var charged models.Micro
@@ -239,8 +254,13 @@ func (s *Service) enrichLead(ctx context.Context, run *models.LeadEnrichmentRun,
 	}
 	// A site that could not be read, or published no address, may have one
 	// shown on pages about it.
-	if len(tools.searches) > 0 && len(res.Emails) == 0 && len(l.Emails) == 0 && l.Domain != "" {
-		res.Emails = searchedEmails(s.search(lctx, run.OrganizationID, tools.searches, `"@`+l.Domain+`"`, idem+":emails"), l.Domain)
+	// The domain the site lands on after redirects is the one its addresses use.
+	domain := res.Domain
+	if domain == "" {
+		domain = l.Domain
+	}
+	if len(tools.searches) > 0 && len(res.Emails) == 0 && len(l.Emails) == 0 && domain != "" {
+		res.Emails = searchedEmails(search(`"@`+domain+`"`, ":emails"), domain)
 	}
 	// What earlier runs learned about the domain's addresses outlives this read.
 	prev := l.Site
@@ -285,7 +305,7 @@ func (s *Service) enrichLead(ctx context.Context, run *models.LeadEnrichmentRun,
 		}
 		people = n
 	}
-	return outcome, people, charged, s.Repo.SaveEnrichment(lctx, l)
+	return outcome, people, charged, save()
 }
 
 // finishEmails merges found addresses into the lead, verifies the best few

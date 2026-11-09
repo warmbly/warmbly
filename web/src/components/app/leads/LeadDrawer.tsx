@@ -35,6 +35,7 @@ import timeAgo from "@/lib/helper/timeAgo";
 import { cn } from "@/lib/utils";
 import PeopleTab from "./PeopleTab";
 import { ScoreBar } from "./badges";
+import { WebSearchOption, type WebSearchChoice } from "./LeadSelectionBar";
 import { unreadDetail, unreadReason } from "./unread";
 import { STATUS_LABEL, emailVerdict } from "./verdict";
 
@@ -61,14 +62,14 @@ const SOCIAL_LABEL: Record<string, string> = {
 export default function LeadDrawer({
     id,
     config,
-    webSearch = true,
+    webSearch,
     onClose,
     onAddToContacts,
 }: {
     id: string | null;
     config: LeadFinderConfig;
-    // Whether a run started here may search the web, as picked in the selection bar.
-    webSearch?: boolean;
+    // The web search choice runs started here follow; unset when no search is available.
+    webSearch?: WebSearchChoice;
     onClose: () => void;
     onAddToContacts: (id: string) => void;
 }) {
@@ -126,7 +127,7 @@ function Body({
 }: {
     lead: Lead;
     config: LeadFinderConfig;
-    webSearch: boolean;
+    webSearch?: WebSearchChoice;
     tab: Tab;
     onTab: (t: Tab) => void;
     onClose: () => void;
@@ -141,7 +142,7 @@ function Body({
 
     const findEmails = async () => {
         try {
-            await enrich.mutateAsync({ lead_ids: [lead.id], verify: true, people: true, web_search: webSearch });
+            await enrich.mutateAsync({ lead_ids: [lead.id], verify: true, people: true, web_search: webSearch?.on ?? true });
             toast.success(lead.website ? `Reading ${lead.domain || "the website"} for people and contact details` : `Looking for ${lead.name}'s website`);
         } catch (e) {
             toast.error(buildError(e as AppError));
@@ -205,6 +206,7 @@ function Body({
                         )}
                         {lead.enrichment_status === "queued" ? (lead.website ? "Reading website…" : "Looking for a website…") : lead.enriched_at ? "Read again" : "Find people and emails"}
                     </button>
+                    {webSearch && <WebSearchOption choice={webSearch} side="bottom" />}
                     {lead.contact_id ? (
                         <Link
                             to="/app/contacts"

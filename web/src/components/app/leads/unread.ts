@@ -17,7 +17,10 @@ export function unreadDetail(site: LeadSite): string {
             return "This website doesn't let automated visitors read it.";
         case "robots":
             return "This website asks crawlers not to read it, so it was left alone.";
-        default:
-            return "The website didn't respond when it was read.";
+        default: {
+            // The recorded reason is specific (a 404, not a web page) and worth showing as is.
+            const why = site.error?.trim().replace(/\.$/, "");
+            return why ? `${why.charAt(0).toUpperCase()}${why.slice(1)}.` : "The website didn't respond when it was read.";
+        }
     }
 }
