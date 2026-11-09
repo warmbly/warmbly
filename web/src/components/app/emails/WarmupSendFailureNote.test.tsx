@@ -39,6 +39,17 @@ describe("WarmupSendFailureNote", () => {
         expect(screen.getByText(/No later successful warmup send has been confirmed/)).toBeInTheDocument();
     });
 
+    it.each([
+        ["outlook", "Microsoft"],
+        ["gmail", "Google"],
+        ["smtp_imap", "The mail server"],
+    ])("explains a %s throttle calmly instead of reporting a failure", (provider, who) => {
+        const throttle = { message: "Emails are being sent too quickly. Please wait before sending more emails.", at: "2026-10-09T05:20:00Z", kind: "provider_throttle" as const };
+        render(<WarmupSendFailureNote failure={throttle} provider={provider} />);
+        expect(screen.getByText(new RegExp(`^${who} asked this mailbox to slow down`))).toHaveTextContent(/Nothing needs doing/);
+        expect(screen.queryByText(/failed warmup send|No later successful|sent too quickly/)).not.toBeInTheDocument();
+    });
+
     const loading = { message: "The sending worker has not loaded this mailbox yet.", at: "2026-10-09T05:30:00Z", kind: "mailbox_loading" as const, first_failure_at: "2026-10-09T03:00:00Z" };
 
     it("shows only a fresh persistent loading incident without blaming credentials", () => {

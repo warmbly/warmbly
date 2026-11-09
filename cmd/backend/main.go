@@ -360,6 +360,7 @@ func main() {
 	var warmupDispatchRepository repository.WarmupDispatchRepository
 	var trackedLinkRepository repository.TrackedLinkRepository
 	var inboxTagRepository repository.InboxTagRepository
+	var warmupFilterTagRepository *repository.WarmupFilterTagRepository
 	var typeSafeClient *typesafe.Client
 	var unsubscribeLinkRepository repository.UnsubscribeLinkRepository
 	var customDomainRepository repository.CustomDomainRepository
@@ -718,6 +719,7 @@ func main() {
 		emailMessageMapForHandler = repository.NewEmailMessageMapRepository(primaryDB)
 		trackedLinkRepository = repository.NewTrackedLinkRepository(primaryDB.Pool)
 		inboxTagRepository = repository.NewInboxTagRepository(primaryDB.Pool)
+		warmupFilterTagRepository = repository.NewWarmupFilterTagRepository(primaryDB.Pool)
 		if key := config.TypeSafeAPIKey(); key != "" {
 			// One TypeSafe client for every typed judgment in this process.
 			endpoint, err := config.TypeSafeEndpoint()
@@ -2661,6 +2663,7 @@ func main() {
 
 		// Warmup health
 		WarmupService:     warmupService,
+		WarmupFilterTags:  warmupFilterTagRepository,
 		WarmupRoutingRepo: warmupRoutingRepoForHandler,
 		WebhookService:    webhookServiceForHandler,
 

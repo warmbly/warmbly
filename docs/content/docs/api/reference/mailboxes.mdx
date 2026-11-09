@@ -614,6 +614,32 @@ Auth: **Scope** `READ_EMAILS` · **Org permission** `view_campaigns`
 
 `reason`, `blocked_at`, and `blocked_until` are omitted when the mailbox is not blocked. `health_state` reflects the mailbox's rolling warmup health (for example `healthy`, `watch`, `throttled`, `quarantined`, or `blocked`).
 
+## Warmup filter tag
+
+`GET /emails/:id/warmup-filter-tag` · `PUT /emails/:id/warmup-filter-tag` · `DELETE /emails/:id/warmup-filter-tag`
+
+An opt-in code Warmbly adds as the last line of every warmup email a mailbox of the caller's workspace receives, so the owner can filter warmup out in a mail client or another inbox tool. It is off (`null`) until set. `PUT` with no body, or no `tag`, issues a new random code such as `k7q2-mx94-ab3d` and replaces any earlier one; `PUT` with a `tag` uses that code. `DELETE` turns it off. Each answers with the current state. The code is added at send time, so mail already sent keeps whatever it had. It applies to warmup sent by this instance; a mailbox [Warmbly Cloud](/guides/warmbly-cloud/) warms takes its warmup from Cloud, which does not read this setting. A mailbox outside the workspace answers `404`. Send an `Idempotency-Key` with a bodyless `PUT` if a retry must not issue a second code.
+
+Auth: `GET` **Scope** `READ_EMAILS` · `PUT`, `DELETE` **Scope** `WRITE_EMAILS` · **Org permission** `manage_emails`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | string (UUID) | The mailbox id. |
+
+### Request body (`PUT`, optional)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `tag` | string | no | The code to use: 6 to 40 letters, digits, spaces, hyphens or underscores, and not wording that calls the mail warmup, automated or a test. Refused with `400 invalid_filter_tag`. Omit it for a random code. |
+
+### Response
+
+```json
+{
+  "tag": "k7q2-mx94-ab3d"
+}
+```
+
 ## Submit a warmup appeal
 
 `POST /emails/:id/warmup/appeal`

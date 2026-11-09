@@ -242,6 +242,8 @@ type Handler struct {
 
 	// Warmup health
 	WarmupService warmup.Service
+	// WarmupFilterTags is each mailbox's opt-in filter tag for the warmup it receives.
+	WarmupFilterTags *repository.WarmupFilterTagRepository
 
 	// Warmup routing rules — customer-defined preferences for premium-pool
 	// partner selection (e.g. Gmail recipients from Google Workspace senders).

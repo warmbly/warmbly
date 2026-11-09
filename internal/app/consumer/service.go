@@ -87,6 +87,9 @@ type JobsService struct {
 	// Pub/Sub for real-time notifications to users
 	StreamingPublisher *pubsub.StreamingPublisher
 	AdvancedService    advanced.Service
+	// ExternalWarmup keeps other services' warmup out of the inbox when a workspace asks. Nil skips it.
+	ExternalWarmup ExternalWarmupStore
+	externalWarmup externalWarmupState
 
 	// SlackInbox mirrors inbox arrivals into the workspace's Slack inbox
 	// channel. Optional; nil skips the mirror.

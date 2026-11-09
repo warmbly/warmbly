@@ -54,7 +54,7 @@ export interface WarmupStatusInfo {
 export interface WarmupSendFailure {
     message: string;
     at: string;
-    kind?: "mailbox_loading";
+    kind?: "mailbox_loading" | "provider_throttle";
     first_failure_at?: string;
 }
 

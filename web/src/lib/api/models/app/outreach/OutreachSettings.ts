@@ -267,7 +267,34 @@ export interface OutreachSettings {
     preflight: PreflightSettings;
     dashboard: Record<string, unknown>;
     unsubscribe: UnsubscribeSettings;
+    external_warmup?: ExternalWarmupSettings;
     custom?: Record<string, unknown>;
+}
+
+// Warmup another service sends through these mailboxes, kept out of the inbox.
+export interface ExternalWarmupSettings {
+    /** Hide mail carrying a Warmbly warmup marker this instance cannot verify. */
+    hide_warmbly_marked: boolean;
+    /** Codes other warmup services put in every warmup email, matched case-insensitively. */
+    tags: string[];
+}
+
+export const DEFAULT_EXTERNAL_WARMUP: ExternalWarmupSettings = { hide_warmbly_marked: false, tags: [] };
+// Mirrors models.ExternalWarmupTag* so the form explains a refusal before saving.
+export const EXTERNAL_WARMUP_TAG_MIN = 4;
+export const EXTERNAL_WARMUP_TAG_MAX = 120;
+export const EXTERNAL_WARMUP_MAX_TAGS = 20;
+
+// Why a tag cannot be added, or null when it can.
+export function warmupTagProblem(tag: string, existing: string[]): string | null {
+    const value = tag.trim();
+    if (!value) return null;
+    if ([...value].length < EXTERNAL_WARMUP_TAG_MIN)
+        return `Use at least ${EXTERNAL_WARMUP_TAG_MIN} characters, so the tag cannot match ordinary mail.`;
+    if ([...value].length > EXTERNAL_WARMUP_TAG_MAX) return `A tag can be at most ${EXTERNAL_WARMUP_TAG_MAX} characters.`;
+    if (existing.some((t) => t.toLowerCase() === value.toLowerCase())) return "That tag is already on the list.";
+    if (existing.length >= EXTERNAL_WARMUP_MAX_TAGS) return `At most ${EXTERNAL_WARMUP_MAX_TAGS} tags.`;
+    return null;
 }
 
 // Business hours, matching the backend default.

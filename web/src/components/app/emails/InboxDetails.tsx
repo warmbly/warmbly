@@ -105,6 +105,7 @@ import SyncStatusCard from "./SyncStatusCard";
 import SendPauseNotice from "./SendPauseNotice";
 import ServerCertificatesCard from "./ServerCertificatesCard";
 import CloudWarmupCard from "./CloudWarmupCard";
+import WarmupFilterTagField from "./WarmupFilterTagField";
 import WarmupPartnerDiversity from "./WarmupPartnerDiversity";
 import useCloudPool from "@/hooks/useCloudPool";
 import { resolveMailboxWarmup, warmupActivityLabel, warmupUnknown, type MailboxWarmup } from "@/lib/mailboxWarmup";
@@ -1625,6 +1626,7 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true, warmup }: 
             {!inCloud && (
                 <div className="px-5 py-5 space-y-4">
                     <WarmupPlacementFields form={form} update={update} provider={mailbox.provider} />
+                    <WarmupFilterTagField mailboxId={mailbox.id} provider={mailbox.provider} />
                 </div>
             )}
 

@@ -1207,8 +1207,7 @@ func (r *warmupRepository) LastWarmupSendFailure(ctx context.Context, accountID 
 	if err != nil {
 		return nil, err
 	}
-	if strings.HasPrefix(f.Message, models.MailboxNotLoadedPrefix) {
-		f.Kind = models.WarmupFailureLoading
+	if f.Kind = models.WarmupSendFailureKind(f.Message); f.Kind == models.WarmupFailureLoading {
 		f.FirstFailureAt = &first
 	}
 	return f, nil

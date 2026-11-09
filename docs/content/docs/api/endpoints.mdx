@@ -55,6 +55,9 @@ These checks use existing grants on hosted and self-hosted instances and need no
 | PATCH | `/emails/:id/direct-tracking` | `WRITE_EMAILS` |
 | GET | `/emails/:id/sync` | `READ_EMAILS` |
 | PUT | `/emails/:id/sync` | `WRITE_EMAILS` |
+| GET | `/emails/:id/warmup-filter-tag` | `READ_EMAILS` |
+| PUT | `/emails/:id/warmup-filter-tag` | `WRITE_EMAILS` |
+| DELETE | `/emails/:id/warmup-filter-tag` | `WRITE_EMAILS` |
 | GET | `/emails/:id/certificates` | `READ_EMAILS` |
 | GET | `/emails/:id/identity` | `READ_EMAILS` |
 | POST | `/emails/:id/identity/refresh` | `WRITE_EMAILS` |

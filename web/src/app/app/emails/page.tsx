@@ -1027,7 +1027,9 @@ const MailboxRow = React.memo(function MailboxRow({
     };
 
     // A refused send outranks the count: it is why the count is not moving.
-    const sendFailure = inCloud ? cloudSendFailure(cloud?.cloud) : warming ? ws?.send_failure : undefined;
+    const reportedFailure = inCloud ? cloudSendFailure(cloud?.cloud) : warming ? ws?.send_failure : undefined;
+    // Provider pacing is absorbed by the scheduler; the drawer explains it.
+    const sendFailure = reportedFailure?.kind === "provider_throttle" ? undefined : reportedFailure;
     const nextWarmup = warming && ws?.next_send_at ? nextSlotLabel(ws.next_send_at, undefined, box.timezone || workspaceZone || "UTC") : undefined;
 
     // Warmup column: what's flowing today and why.

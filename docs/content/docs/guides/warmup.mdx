@@ -86,6 +86,8 @@ The Warmup tab shows provider failures from the last 24 hours with their reporte
 
 A worker-loading warning appears only for an active, sending-enabled mailbox after repeated loading failures span at least an hour and the latest failure is less than an hour old. It expires when that evidence becomes stale, including on an already-open page, and is hidden when participation is paused or stopped. One historical failed attempt is never displayed indefinitely as an active loading problem. A later provider-confirmed warmup send clears it; synchronization or a dispatched task alone does not prove delivery.
 
+When the provider asks a mailbox to slow down (Microsoft and Google both do this to new mailboxes from time to time), the held-back email is not counted against the day, and warmup carries on at the provider's pace. The Accounts list keeps showing the next send, and the Warmup tab shows a short grey note rather than an error. Nothing needs doing.
+
 "The sending worker has not loaded this mailbox yet" means that attempt did not send. It is not proof of a deliverability hold, a refused sign-in or an IP allowlist problem. Active mailboxes are reloaded automatically; after a worker restarts, it keeps reporting its restart until the backend acknowledges the request to reload its mailboxes.
 
 Persistent loading failures and pending warmup tasks at least an hour past their intended schedule are checked every five minutes and reported to configured operator channels and error tracking. The latter is a dispatch problem, not evidence of rejected credentials. The local dispatcher persists a five-minute retry delay after internal failures so an old failing batch cannot indefinitely block newer tasks. Backoff does not alter the intended send time, clear a safety hold, or bypass provider limits. A send whose preparation was interrupted before it was handed to a worker (for example by a restart) is retired after ten minutes, so it never holds up the mailbox's next warmup email.
@@ -325,6 +327,18 @@ If filing fails, it is not reported as completed. An updated worker can release 
 A sweep identifies missed application-owned diagnostics and applies authorized housekeeping. It does not establish retroactive authentication or engagement. Leaving mail in the inbox remains an owner choice.
 
 The sweep repairs what it can still see, so it does not clear a backlog that built up before the setting existed. To do that on Gmail, search `label:Warmbly` and archive the results: warmup mail has always carried the label, so that selects exactly it. On Outlook and IMAP the received mail is already in the folder, and only the Sent copies from before this change stay in Sent.
+
+### In another inbox tool
+
+A tool that reads only the inbox stops seeing warmup once it is filed. One that reads every folder, such as a shared inbox or another outreach platform, still picks it up from the `Warmbly` folder; exclude that folder in the tool. Another Warmbly workspace or instance can hide it with [warmup from other services](/guides/unibox/#warmup-from-other-services).
+
+When a tool can only filter on what a message says, turn on **Filter tag** on the mailbox's **Warmup** tab. Every warmup email the mailbox receives then ends with a short code, `k7q2-mx94-ab3d` for example, and a filter on that code catches all of it:
+
+- **Gmail:** search for the code, choose **Create filter**, then **Skip the Inbox** or **Apply the label**.
+- **Outlook:** add a rule for messages whose body includes the code, and move them to a folder.
+- **Other tools:** match mail whose body contains the code.
+
+It is off by default, and nothing about a mailbox's warmup changes until it is turned on. Use your own code instead of the random one through the [API](/api/reference/mailboxes/#warmup-filter-tag); **New code** issues a fresh one, after which filters on the old code stop matching new mail. The code goes only on mail this mailbox receives, and only from the moment it is on. The same code on every warmup email to the mailbox is a pattern its provider can see, which warmup otherwise avoids, so leave it off unless a tool needs it. A mailbox [Warmbly Cloud](/guides/warmbly-cloud/) warms gets its warmup from Cloud, which does not add the code.
 
 ### Retention
 
