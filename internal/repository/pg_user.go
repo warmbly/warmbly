@@ -390,7 +390,11 @@ func (r *userRepository) ListLoginCodeExempt(ctx context.Context) ([]models.Logi
 		LEFT JOIN LATERAL (
 			SELECT o.id, `+testerWorkspaceActiveSQL("$1")+` AS active FROM organizations o
 			WHERE o.owner_user_id = u.id AND o.category = 'test'
-			ORDER BY o.created_at, o.id LIMIT 1
+			-- Of several owned Test workspaces, list the one sample data can still be added to.
+			ORDER BY active DESC, EXISTS (
+				SELECT 1 FROM admin_audit_logs a
+				WHERE a.target_type = 'organization' AND a.target_id = o.id AND a.action = 'seed_tester_workspace'
+			), o.created_at, o.id LIMIT 1
 		) workspace ON true
 		LEFT JOIN LATERAL (
 			SELECT a.created_at FROM admin_audit_logs a

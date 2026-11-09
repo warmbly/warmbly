@@ -289,3 +289,40 @@ func TestLiveTesterSampleDataSurvivesInitialPasswordReplacement(t *testing.T) {
 		t.Fatalf("revoked tester returned %v", err)
 	}
 }
+
+// A tester owning several Test workspaces is listed with the one sample data can still be added to.
+func TestLiveTesterSampleDataListsTheSeedableWorkspace(t *testing.T) {
+	db, pool := liveContactDB(t)
+	requireSchemaVersion(t, pool, 336)
+	ctx := context.Background()
+	f := newTesterSampleFixture(t, pool, NewUserRepostory(db, nil))
+	second := newTesterSampleFixture(t, pool, f.users)
+	for _, q := range []string{
+		`UPDATE organizations SET created_at = now() - interval '1 day' WHERE id = $1`,
+		`UPDATE subscriptions SET managed_until = now() - interval '1 hour' WHERE organization_id = $1`,
+	} {
+		if _, err := pool.Exec(ctx, q, f.orgID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := pool.Exec(ctx, `UPDATE organizations SET owner_user_id = $2 WHERE id = $1`, second.orgID, f.userID); err != nil {
+		t.Fatal(err)
+	}
+	listed := func(want uuid.UUID, seeded bool) {
+		t.Helper()
+		entry := testerListEntry(t, f)
+		if entry.TestWorkspaceID == nil || *entry.TestWorkspaceID != want || !entry.SampleDataEligible || (entry.SampleDataSeededAt != nil) != seeded {
+			t.Fatalf("listed %v, eligible %v, seeded %v; want %v", entry.TestWorkspaceID, entry.SampleDataEligible, entry.SampleDataSeededAt, want)
+		}
+	}
+
+	listed(second.orgID, false)
+	if _, err := f.orgs.SeedTesterWorkspace(ctx, second.orgID, f.userID, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	listed(second.orgID, true)
+	if _, err := pool.Exec(ctx, `UPDATE subscriptions SET managed_until = now() + interval '1 day' WHERE organization_id = $1`, f.orgID); err != nil {
+		t.Fatal(err)
+	}
+	listed(f.orgID, false)
+}
