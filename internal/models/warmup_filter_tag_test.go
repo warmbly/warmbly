@@ -55,4 +55,8 @@ func TestAppendWarmupFilterTag(t *testing.T) {
 	if _, h := AppendWarmupFilterTag("", "<p>Hi</p>", "k7q2-mx94-ab3d"); h != "<p>Hi</p><p>k7q2-mx94-ab3d</p>" {
 		t.Errorf("html without a body element = %q", h)
 	}
+	// İ and the Kelvin sign shrink when lower-cased; the tag still lands right before </body>.
+	if _, h := AppendWarmupFilterTag("", "<body>İstanbul 300K</body>", "k7q2-mx94-ab3d"); h != "<body>İstanbul 300K<p>k7q2-mx94-ab3d</p></body>" {
+		t.Errorf("html with case-changing characters = %q", h)
+	}
 }

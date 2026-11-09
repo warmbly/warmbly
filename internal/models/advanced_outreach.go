@@ -1219,6 +1219,7 @@ func DefaultAdvancedOutreachSettings() AdvancedOutreachSettings {
 			LinkIntro: DefaultUnsubscribeLinkIntro,
 			LinkText:  DefaultUnsubscribeLinkText,
 		},
-		Custom: map[string]interface{}{},
+		ExternalWarmup: ExternalWarmupSettings{Tags: []string{}},
+		Custom:         map[string]interface{}{},
 	}
 }

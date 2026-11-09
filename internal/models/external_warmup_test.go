@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -45,6 +46,15 @@ func TestExternalWarmupSettingsAreCleanedAndBounded(t *testing.T) {
 	}
 	if err := s.Validate(); err != nil {
 		t.Fatalf("Validate: %v", err)
+	}
+
+	// No tags reads back as [], never null, both unsaved and after a save cleared them.
+	for _, empty := range []AdvancedOutreachSettings{DefaultAdvancedOutreachSettings(), {ExternalWarmup: ExternalWarmupSettings{Tags: []string{" "}}}} {
+		empty.Normalize()
+		raw, _ := json.Marshal(empty.ExternalWarmup)
+		if !strings.Contains(string(raw), `"tags":[]`) {
+			t.Errorf("empty tags encode as %s", raw)
+		}
 	}
 
 	short := DefaultAdvancedOutreachSettings()

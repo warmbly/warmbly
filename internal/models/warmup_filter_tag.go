@@ -4,9 +4,13 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 )
+
+// bodyCloseTag is matched on the original HTML: lower-casing a copy can change byte offsets.
+var bodyCloseTag = regexp.MustCompile(`(?i)</body\s*>`)
 
 const (
 	WarmupFilterTagMinLength = 6
@@ -58,7 +62,8 @@ func AppendWarmupFilterTag(plain, html, tag string) (string, string) {
 	}
 	if html != "" {
 		line := "<p>" + tag + "</p>"
-		if i := strings.LastIndex(strings.ToLower(html), "</body>"); i >= 0 {
+		if locs := bodyCloseTag.FindAllStringIndex(html, -1); len(locs) > 0 {
+			i := locs[len(locs)-1][0]
 			html = html[:i] + line + html[i:]
 		} else {
 			html += line

@@ -77,7 +77,8 @@ func HasWarmupMarker(flags []string) bool {
 }
 
 func (s *ExternalWarmupSettings) normalize() {
-	var out []string
+	// Never nil, so the API answers "tags": [] rather than null.
+	out := make([]string, 0, len(s.Tags))
 	for _, t := range s.Tags {
 		t = strings.TrimSpace(t)
 		if t == "" || slicesContainFold(out, t) {
