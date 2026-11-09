@@ -200,7 +200,6 @@ func TestLiveTesterSampleDataRejectsNonTestAndInactiveWorkspaces(t *testing.T) {
 		name, query string
 	}{
 		{"standard workspace", `UPDATE organizations SET category = 'standard' WHERE id = $1`},
-		{"expired password", `UPDATE users SET password_expires_at = now() - interval '1 hour' WHERE id = (SELECT owner_user_id FROM organizations WHERE id = $1)`},
 		{"revoked exemption", `UPDATE users SET login_code_exempt = false WHERE id = (SELECT owner_user_id FROM organizations WHERE id = $1)`},
 		{"expired grant", `UPDATE subscriptions SET managed_until = now() - interval '1 hour' WHERE organization_id = $1`},
 		{"different managed plan", `UPDATE subscriptions SET managed_plan_id = '00000000-0000-0000-0000-000000000001' WHERE organization_id = $1`},
@@ -210,10 +209,120 @@ func TestLiveTesterSampleDataRejectsNonTestAndInactiveWorkspaces(t *testing.T) {
 			if _, err := pool.Exec(ctx, tc.query, f.orgID); err != nil {
 				t.Fatal(err)
 			}
+			if testerListEntry(t, f).SampleDataEligible {
+				t.Fatal("tester list offers sample data for an ineligible workspace")
+			}
 			if _, err := f.orgs.SeedTesterWorkspace(ctx, f.orgID, f.userID, "", ""); !errors.Is(err, ErrTesterWorkspaceInactive) {
 				t.Fatalf("ineligible workspace returned %v", err)
 			}
 			assertTesterSampleCounts(t, pool, f.orgID, 0)
 		})
 	}
+}
+
+func testerListEntry(t *testing.T, f testerSampleFixture) models.LoginCodeExemption {
+	t.Helper()
+	list, err := f.users.ListLoginCodeExempt(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tester := range list {
+		if tester.UserID == f.userID {
+			return tester
+		}
+	}
+	return models.LoginCodeExemption{UserID: f.userID}
+}
+
+func testerGrantUntil(t *testing.T, pool *pgxpool.Pool, orgID uuid.UUID) time.Time {
+	t.Helper()
+	var until time.Time
+	if err := pool.QueryRow(context.Background(), `SELECT managed_until FROM subscriptions WHERE organization_id = $1`, orgID).Scan(&until); err != nil {
+		t.Fatal(err)
+	}
+	return until
+}
+
+// The grant, not the initial password, decides seeding: replacing or reissuing it keeps the workspace eligible.
+func TestLiveTesterSampleDataSurvivesInitialPasswordReplacement(t *testing.T) {
+	db, pool := liveContactDB(t)
+	requireSchemaVersion(t, pool, 336)
+	ctx := context.Background()
+	f := newTesterSampleFixture(t, pool, NewUserRepostory(db, nil))
+	auth := NewAuthRepostory(db)
+	if _, err := pool.Exec(ctx, `INSERT INTO admin_audit_logs (admin_user_id, action, target_type, target_id, details)
+		VALUES ($1, 'create_tester', 'user', $1, '{}'::jsonb)`, f.userID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM admin_audit_logs WHERE target_id = $1`, f.userID) })
+	grant := testerGrantUntil(t, pool, f.orgID)
+
+	if ok, xerr := auth.ReplaceInitialPassword(ctx, f.userID, "hash", "chosen-hash"); xerr != nil || !ok {
+		t.Fatalf("replace = %v, %v", ok, xerr)
+	}
+	if entry := testerListEntry(t, f); entry.PasswordExpiresAt != nil || !entry.SampleDataEligible {
+		t.Fatalf("after replacement: password_expires_at %v, eligible %v", entry.PasswordExpiresAt, entry.SampleDataEligible)
+	}
+	if _, err := f.users.ReissueTesterPassword(ctx, f.userID, "reissued-hash"); err != nil {
+		t.Fatal(err)
+	}
+	if ok, xerr := auth.ReplaceInitialPassword(ctx, f.userID, "reissued-hash", "second-chosen-hash"); xerr != nil || !ok {
+		t.Fatalf("replace reissued = %v, %v", ok, xerr)
+	}
+	if got := testerGrantUntil(t, pool, f.orgID); !got.Equal(grant) {
+		t.Fatalf("grant expiry moved from %v to %v", grant, got)
+	}
+	if !testerListEntry(t, f).SampleDataEligible {
+		t.Fatal("tester list withholds sample data from an active Test workspace")
+	}
+
+	result, err := f.orgs.SeedTesterWorkspace(ctx, f.orgID, f.userID, "", "")
+	if err != nil || result == nil || !result.Created {
+		t.Fatalf("seed after replacement = %+v, %v", result, err)
+	}
+	assertTesterSampleCounts(t, pool, f.orgID, 1)
+
+	if _, err := f.users.RevokeTester(ctx, f.userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.orgs.SeedTesterWorkspace(ctx, f.orgID, f.userID, "", ""); !errors.Is(err, ErrTesterWorkspaceInactive) {
+		t.Fatalf("revoked tester returned %v", err)
+	}
+}
+
+// A tester owning several Test workspaces is listed with the one sample data can still be added to.
+func TestLiveTesterSampleDataListsTheSeedableWorkspace(t *testing.T) {
+	db, pool := liveContactDB(t)
+	requireSchemaVersion(t, pool, 336)
+	ctx := context.Background()
+	f := newTesterSampleFixture(t, pool, NewUserRepostory(db, nil))
+	second := newTesterSampleFixture(t, pool, f.users)
+	for _, q := range []string{
+		`UPDATE organizations SET created_at = now() - interval '1 day' WHERE id = $1`,
+		`UPDATE subscriptions SET managed_until = now() - interval '1 hour' WHERE organization_id = $1`,
+	} {
+		if _, err := pool.Exec(ctx, q, f.orgID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := pool.Exec(ctx, `UPDATE organizations SET owner_user_id = $2 WHERE id = $1`, second.orgID, f.userID); err != nil {
+		t.Fatal(err)
+	}
+	listed := func(want uuid.UUID, seeded bool) {
+		t.Helper()
+		entry := testerListEntry(t, f)
+		if entry.TestWorkspaceID == nil || *entry.TestWorkspaceID != want || !entry.SampleDataEligible || (entry.SampleDataSeededAt != nil) != seeded {
+			t.Fatalf("listed %v, eligible %v, seeded %v; want %v", entry.TestWorkspaceID, entry.SampleDataEligible, entry.SampleDataSeededAt, want)
+		}
+	}
+
+	listed(second.orgID, false)
+	if _, err := f.orgs.SeedTesterWorkspace(ctx, second.orgID, f.userID, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	listed(second.orgID, true)
+	if _, err := pool.Exec(ctx, `UPDATE subscriptions SET managed_until = now() + interval '1 day' WHERE organization_id = $1`, f.orgID); err != nil {
+		t.Fatal(err)
+	}
+	listed(f.orgID, false)
 }

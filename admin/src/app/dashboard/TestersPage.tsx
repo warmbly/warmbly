@@ -334,6 +334,8 @@ export default function TestersPage() {
                             {rows.map((t) => {
                                 const expired =
                                     !!t.password_expires_at && new Date(t.password_expires_at) <= new Date();
+                                // A backend from before sample_data_eligible gated seeding on the outstanding password.
+                                const canSeed = t.sample_data_eligible ?? (!!t.password_expires_at && !expired);
                                 return (
                                     <li
                                         key={t.user_id}
@@ -371,7 +373,7 @@ export default function TestersPage() {
                                                     <Button
                                                         size="xs"
                                                         variant="outline"
-                                                        disabled={expired || !t.password_expires_at || !!t.sample_data_seeded_at || seed.isPending || revoke.isPending}
+                                                        disabled={!canSeed || !!t.sample_data_seeded_at || seed.isPending || revoke.isPending}
                                                         aria-label={`Add sample data for ${t.email}`}
                                                         onClick={() => setSampleTarget({ organizationID: t.test_workspace_id!, email: t.email })}
                                                     >
