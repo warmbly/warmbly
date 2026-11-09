@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"slices"
 	"strings"
@@ -32,7 +33,11 @@ import (
 type perOrgKeys map[uuid.UUID]cipher.CipherService
 
 func (k perOrgKeys) Cipher(ctx context.Context, orgID uuid.UUID) (*cipher.Cipher, error) {
-	return k[orgID].Cipher(ctx, orgID)
+	keys, ok := k[orgID]
+	if !ok {
+		return nil, errors.New("no key for this organization")
+	}
+	return keys.Cipher(ctx, orgID)
 }
 
 func keyedImportService(t *testing.T, keys perOrgKeys) (Service, *pgxpool.Pool) {

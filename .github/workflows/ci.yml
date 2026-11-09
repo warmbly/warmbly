@@ -472,9 +472,9 @@ jobs:
           WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
         run: |
           set -o pipefail
-          go test -race -v -p 1 ./internal/app/integration ./internal/app/orgtransfer -run '^TestLive(InboundSecretSealedAcrossWriteBackfillAndRead|InboundSecretUnsealedRowStillResolves|ArchiveCarriesInboundSecretsOnlySealed|ImportFlagsEachIntegrationOnceAndClosesItsInboundURL|ReconnectFlagClearsSealedInboundSecret)$' -count=1 | tee inbound-secret.log
+          go test -race -v -p 1 ./internal/app/integration ./internal/app/orgtransfer -run '^TestLive(InboundSecretSealedAcrossWriteBackfillAndRead|InboundSecretUnsealedRowStillResolves|ArchiveCarriesInboundSecretsOnlySealed|ImportFlagsEachIntegrationOnceAndClosesItsInboundURL|ReconnectFlagClearsSealedInboundSecret|PreviousReleaseArchiveKeepsInboundURLs)$' -count=1 | tee inbound-secret.log
           if grep -q -- '--- SKIP:' inbound-secret.log; then exit 1; fi
-          for test in TestLiveInboundSecretSealedAcrossWriteBackfillAndRead TestLiveInboundSecretUnsealedRowStillResolves TestLiveArchiveCarriesInboundSecretsOnlySealed TestLiveImportFlagsEachIntegrationOnceAndClosesItsInboundURL TestLiveReconnectFlagClearsSealedInboundSecret; do
+          for test in TestLiveInboundSecretSealedAcrossWriteBackfillAndRead TestLiveInboundSecretUnsealedRowStillResolves TestLiveArchiveCarriesInboundSecretsOnlySealed TestLiveImportFlagsEachIntegrationOnceAndClosesItsInboundURL TestLiveReconnectFlagClearsSealedInboundSecret TestLivePreviousReleaseArchiveKeepsInboundURLs; do
             grep -q "^--- PASS: $test " inbound-secret.log
           done
 

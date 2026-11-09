@@ -318,6 +318,8 @@ func (s *service) importTable(
 	// Columns rebuilt from a sealed one are written whenever that one arrives.
 	for _, sc := range t.Secrets {
 		if !slices.Contains(insertCols, sc.Column) {
+			// Without its sealed column only a clear value may travel (a previous-release archive), never a digest.
+			insertCols = slices.DeleteFunc(insertCols, func(c string) bool { return sc.Digest != "" && c == sc.Digest })
 			continue
 		}
 		for _, c := range []string{sc.Plaintext, sc.Digest} {
@@ -499,18 +501,20 @@ func (s *service) importRow(
 
 	for _, sc := range t.Secrets {
 		raw, ok := obj[sc.Column]
+		if sc.Plaintext != "" && !IsSealed(jsonString(raw)) {
+			importUnsealedSecret(obj, sc, raw)
+			continue
+		}
 		if !ok {
 			continue
 		}
 		stored := jsonString(raw)
 		if stored == "" {
-			setDerived(obj, sc, "")
 			continue
 		}
 		if !IsSealed(stored) {
 			// Exported without secrets, so the column is already blank or was
 			// never ciphertext. Nothing to re-key.
-			setDerived(obj, sc, "")
 			continue
 		}
 		if ic.archiveKey == nil {
@@ -562,6 +566,22 @@ func integrationReconnectWarning(c repository.IntegrationReconnect) string {
 		missing = "its inbound URL"
 	}
 	return fmt.Sprintf("The %s integration arrived without %s and is marked for reconnection.", name, missing)
+}
+
+// importUnsealedSecret keeps only a clear value the archive carried (the sweep seals it here), never foreign ciphertext or a digest;
+// with no clear value it blanks the secret so the reconnect step closes the URL and names the connection.
+func importUnsealedSecret(obj map[string]json.RawMessage, sc SecretColumn, raw json.RawMessage) {
+	clear := jsonString(obj[sc.Plaintext])
+	hadSecret := jsonString(raw) != "" || string(bytes.TrimSpace(raw)) == `""` || (sc.Digest != "" && jsonString(obj[sc.Digest]) != "")
+	obj[sc.Column] = json.RawMessage(`null`)
+	setDerived(obj, sc, "")
+	switch {
+	case clear != "":
+		enc, _ := json.Marshal(clear)
+		obj[sc.Plaintext] = enc
+	case hadSecret:
+		obj[sc.Column] = json.RawMessage(`""`)
+	}
 }
 
 // setDerived rebuilds the clear and digest columns of a sealed one from its plaintext; "" clears them.
