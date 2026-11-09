@@ -40,8 +40,14 @@ func (r *WarmupFilterTagRepository) Set(ctx context.Context, orgID, accountID uu
 func (r *warmupRepository) RecipientWarmupFilterTag(ctx context.Context, accountID uuid.UUID) (string, error) {
 	var tag *string
 	err := resultDB(ctx, r.db).QueryRow(ctx, `SELECT warmup_filter_tag FROM email_accounts WHERE id = $1`, accountID).Scan(&tag)
-	if errors.Is(err, pgx.ErrNoRows) || tag == nil {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
 	}
-	return *tag, err
+	if err != nil {
+		return "", err
+	}
+	if tag == nil {
+		return "", nil
+	}
+	return *tag, nil
 }

@@ -25,6 +25,9 @@ func (f *externalWarmupFake) ExternalWarmupRule(context.Context, uuid.UUID) (mod
 }
 
 func (f *externalWarmupFake) ExternalWarmupRules(context.Context) (map[uuid.UUID]models.ExternalWarmupSettings, error) {
+	if !f.rule.Enabled() {
+		return map[uuid.UUID]models.ExternalWarmupSettings{}, nil
+	}
 	return map[uuid.UUID]models.ExternalWarmupSettings{externalWarmupOrg: f.rule}, nil
 }
 
@@ -118,5 +121,19 @@ func TestExternalWarmupSweepRunsOncePerRule(t *testing.T) {
 	}
 	if store.sweeps != 3 {
 		t.Fatal("a changed rule was not swept")
+	}
+
+	// Off then on with the same rule sweeps again: mail stored while it was off is removed.
+	on := store.rule
+	store.rule = models.ExternalWarmupSettings{}
+	if err := s.sweepExternalWarmup(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	store.rule = on
+	if err := s.sweepExternalWarmup(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if store.sweeps != 4 {
+		t.Fatalf("re-enabling an unchanged rule ran %d sweeps, want the one it missed", store.sweeps-3)
 	}
 }

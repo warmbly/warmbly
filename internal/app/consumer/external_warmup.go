@@ -97,6 +97,14 @@ func (s *JobsService) sweepExternalWarmup(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// A rule turned off forgets its sweep, so turning it back on sweeps what arrived meanwhile.
+	s.externalWarmup.mu.Lock()
+	for orgID := range s.externalWarmup.swept {
+		if _, ok := rules[orgID]; !ok {
+			delete(s.externalWarmup.swept, orgID)
+		}
+	}
+	s.externalWarmup.mu.Unlock()
 	var failures []error
 	for orgID, rule := range rules {
 		if !s.externalWarmupSweepDue(orgID, rule) {

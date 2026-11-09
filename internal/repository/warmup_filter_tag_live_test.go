@@ -54,4 +54,11 @@ func TestLiveWarmupFilterTagIsScopedAndReadBySends(t *testing.T) {
 	if got, err := warmup.RecipientWarmupFilterTag(ctx, uuid.New()); err != nil || got != "" {
 		t.Fatalf("unknown mailbox = %q, %v", got, err)
 	}
+
+	// A failed read is an error, so the send retries instead of going out without an opted-in tag.
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err := warmup.RecipientWarmupFilterTag(cancelled, f.mailbox); err == nil {
+		t.Fatal("a failed read reported no tag and no error")
+	}
 }
