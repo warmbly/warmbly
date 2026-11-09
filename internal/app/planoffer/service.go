@@ -1,6 +1,4 @@
-// Package planoffer holds the two operator grants a workspace cannot give
-// itself: an offer to buy a private plan, and permission for its linked
-// instances to warm in the Cloud pool without handing over credentials.
+// Package planoffer holds the operator's offers that let one workspace buy a private plan.
 package planoffer
 
 import (
@@ -20,7 +18,7 @@ import (
 var ErrOfferRequired = errx.NewWithIdentifier(errx.Forbidden, "plan_offer_required",
 	"This plan is available by invitation only. Ask Warmbly to offer it to this workspace.")
 
-// Service manages plan offers and self-execution grants.
+// Service manages plan offers.
 type Service interface {
 	ListOffers(ctx context.Context, orgID uuid.UUID) ([]*models.PlanOffer, *errx.Error)
 	// ActiveOffers lists offers still open, each with its plan.
@@ -35,22 +33,17 @@ type Service interface {
 	AuthorizePrice(ctx context.Context, orgID uuid.UUID, priceID string) *errx.Error
 	// AuthorizePlanID loads a plan and applies AuthorizePurchase.
 	AuthorizePlanID(ctx context.Context, orgID, planID uuid.UUID) *errx.Error
-
-	GetSelfExecutionGrant(ctx context.Context, orgID uuid.UUID) (*models.SelfExecutionGrant, *errx.Error)
-	GrantSelfExecution(ctx context.Context, orgID, adminID uuid.UUID, reason string, expiresAt *time.Time) (*models.SelfExecutionGrant, *errx.Error)
-	RevokeSelfExecution(ctx context.Context, orgID uuid.UUID) *errx.Error
 }
 
 type service struct {
 	offers repository.PlanOfferRepository
-	grants repository.SelfExecutionGrantRepository
 	plans  repository.PlanRepository
 	now    func() time.Time
 }
 
 // New returns the plan offer service.
-func New(offers repository.PlanOfferRepository, grants repository.SelfExecutionGrantRepository, plans repository.PlanRepository) Service {
-	return &service{offers: offers, grants: grants, plans: plans, now: time.Now}
+func New(offers repository.PlanOfferRepository, plans repository.PlanRepository) Service {
+	return &service{offers: offers, plans: plans, now: time.Now}
 }
 
 func internalErr(err error, msg string) *errx.Error {
@@ -206,38 +199,4 @@ func (s *service) AuthorizePlanID(ctx context.Context, orgID, planID uuid.UUID) 
 		return errx.New(errx.NotFound, "plan not found")
 	}
 	return s.AuthorizePurchase(ctx, orgID, plan)
-}
-
-func (s *service) GetSelfExecutionGrant(ctx context.Context, orgID uuid.UUID) (*models.SelfExecutionGrant, *errx.Error) {
-	g, err := s.grants.GetSelfExecutionGrant(ctx, orgID)
-	if err != nil {
-		return nil, internalErr(err, "get self-execution grant")
-	}
-	return g, nil
-}
-
-func (s *service) GrantSelfExecution(ctx context.Context, orgID, adminID uuid.UUID, reason string, expiresAt *time.Time) (*models.SelfExecutionGrant, *errx.Error) {
-	now := s.now()
-	reason, xerr := validateGrant(reason, expiresAt, now)
-	if xerr != nil {
-		return nil, xerr
-	}
-	admin := adminID
-	g, err := s.grants.UpsertSelfExecutionGrant(ctx, &models.SelfExecutionGrant{
-		OrganizationID: orgID, GrantedBy: &admin, Reason: reason, GrantedAt: now.UTC(), ExpiresAt: expiresAt,
-	})
-	if err != nil {
-		if repository.IsForeignKeyViolation(err) {
-			return nil, errx.New(errx.NotFound, "that workspace does not exist")
-		}
-		return nil, internalErr(err, "upsert self-execution grant")
-	}
-	return g, nil
-}
-
-func (s *service) RevokeSelfExecution(ctx context.Context, orgID uuid.UUID) *errx.Error {
-	if _, err := s.grants.DeleteSelfExecutionGrant(ctx, orgID); err != nil {
-		return internalErr(err, "delete self-execution grant")
-	}
-	return nil
 }

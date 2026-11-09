@@ -98,10 +98,6 @@ func (s *JobsService) applyEmailSent(ctx context.Context, result models.SendEmai
 				log.Warn().Err(err).Str("task_id", task.ID.String()).Msg("could not record a placement probe's message id")
 			}
 		}
-	case repository.TaskTypeCloudWarmup:
-		if s.CloudExec != nil {
-			return s.CloudExec.SendResolved(ctx, task.ID, result)
-		}
 	case "warmup":
 		// Without this the recipient has nothing to match a warmup email
 		// against when the verify header did not survive delivery.
@@ -226,10 +222,6 @@ func (s *JobsService) applyEmailFailed(ctx context.Context, result models.SendEm
 	case "placement":
 		if s.PlacementRepo != nil {
 			return s.PlacementRepo.FailProbeByTask(ctx, task.ID, reason)
-		}
-	case repository.TaskTypeCloudWarmup:
-		if s.CloudExec != nil {
-			return s.CloudExec.SendResolved(ctx, task.ID, result)
 		}
 	}
 	return nil

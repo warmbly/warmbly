@@ -9,7 +9,7 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 )
 
-func TestLivePlanOffersAndSelfExecutionGrants(t *testing.T) {
+func TestLivePlanOffers(t *testing.T) {
 	_, pool := liveContactDB(t)
 	requireSchemaVersion(t, pool, 328)
 	ctx := context.Background()
@@ -46,23 +46,5 @@ func TestLivePlanOffersAndSelfExecutionGrants(t *testing.T) {
 	}
 	if ok, err := offers.DeletePlanOffer(ctx, org, models.PartnershipPlanID); err != nil || !ok {
 		t.Fatalf("withdraw: %v %v", ok, err)
-	}
-
-	grants := NewSelfExecutionGrantRepository(pool)
-	if g, err := grants.GetSelfExecutionGrant(ctx, org); err != nil || g != nil {
-		t.Fatalf("no grant yet: got %+v, %v", g, err)
-	}
-	if _, err := grants.UpsertSelfExecutionGrant(ctx, &models.SelfExecutionGrant{OrganizationID: org, GrantedBy: &user, Reason: "partner"}); err != nil {
-		t.Fatal(err)
-	}
-	g, err := grants.GetSelfExecutionGrant(ctx, org)
-	if err != nil || g == nil || !g.Active(time.Now()) {
-		t.Fatalf("grant should be active: %+v, %v", g, err)
-	}
-	if _, err := grants.UpsertSelfExecutionGrant(ctx, &models.SelfExecutionGrant{OrganizationID: uuid.New(), Reason: "r"}); !IsForeignKeyViolation(err) {
-		t.Fatalf("an unknown workspace must be a foreign key violation, got %v", err)
-	}
-	if ok, err := grants.DeleteSelfExecutionGrant(ctx, org); err != nil || !ok {
-		t.Fatalf("revoke: %v %v", ok, err)
 	}
 }

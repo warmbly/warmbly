@@ -10,7 +10,11 @@ import (
 // manifest. Bump it only for a change an older importer could not read; the
 // importer already tolerates unknown tables and unknown columns, so adding
 // either is not a format change.
-const OrgTransferFormatVersion = 1
+const OrgTransferFormatVersion = 2
+
+// OrgTransferFormatVersionBase is written when nothing newer travels, so older instances still import the archive.
+// Version 2 marks an archive carrying a workspace's own OAuth apps, whose grants an older importer would strand.
+const OrgTransferFormatVersionBase = 1
 
 // OrgTransferStatus is the lifecycle of one export or import job. Export adds
 // "expired": the archive is deleted from blob storage after its retention

@@ -147,7 +147,7 @@ func (h *Handler) CloudLinkEnroll(c *gin.Context) {
 	if !ok {
 		return
 	}
-	// An empty body keeps an enrolled mailbox's executor; executor switches it.
+	// An empty body keeps an enrolled mailbox's executor; executor cloud hands Cloud a credential kept here.
 	var req struct {
 		Executor models.PoolLinkExecutor `json:"executor"`
 	}
@@ -357,6 +357,21 @@ func (h *Handler) InternalCloudLinkToken(c *gin.Context) {
 			logBrokerAccess(c, "cloud_link.token.delegated", id.String(), true, "")
 			c.Header("Cache-Control", "no-store")
 			c.JSON(http.StatusOK, tok)
+			return
+		}
+	}
+	// A mailbox a workspace's own OAuth app signed in is refreshed here, where that app's secret is.
+	if h.EmailService != nil {
+		tok, handled, xerr := h.EmailService.WorkspaceGrantToken(c.Request.Context(), id)
+		if handled {
+			if xerr != nil {
+				logBrokerAccess(c, "cloud_link.token.workspace_app", id.String(), false, xerr.ResponseCode())
+				errx.JSON(c, xerr)
+				return
+			}
+			logBrokerAccess(c, "cloud_link.token.workspace_app", id.String(), true, "")
+			c.Header("Cache-Control", "no-store")
+			c.JSON(http.StatusOK, gin.H{"access_token": tok.AccessToken, "expires_at": tok.Expiry})
 			return
 		}
 	}

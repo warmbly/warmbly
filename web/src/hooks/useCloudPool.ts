@@ -8,7 +8,6 @@ import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
 import { useInstanceAdmin, usePermission } from "@/hooks/usePermission";
 import { useCloudLinkMailboxes, useCloudLinkStatus } from "@/lib/api/hooks/app/cloudlink/useCloudLink";
 import type { CloudLinkMailboxRow, PoolLinkPlan } from "@/lib/api/models/app/cloudlink/CloudLink";
-import { selfExecutionGranted } from "@/lib/mailboxWarmup";
 
 export default function useCloudPool() {
     const authConfig = useAuthConfig();
@@ -46,7 +45,6 @@ export default function useCloudPool() {
         unavailable: authConfig.isError || manageable && (status.isError || (connected && mailboxes.isError)),
         reportsUnavailable: connected && mailboxes.isError,
         ownershipHidden: selfHosted && !manageable,
-        selfExecutionGranted: selfExecutionGranted(status.data?.info?.self_execution),
         observedAt: connected ? mailboxes.dataUpdatedAt : 0,
     };
 }

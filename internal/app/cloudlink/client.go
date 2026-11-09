@@ -140,9 +140,17 @@ func remoteCode(status int) errx.Code {
 		return errx.Code(status)
 	case http.StatusGone:
 		return errx.NotFound
+	// A timeout says nothing about whether the cloud acted, so it is answered as unknown, never as a refusal.
+	case http.StatusRequestTimeout:
+		return errx.ServiceUnavailable
 	}
 	if status >= 500 {
 		return errx.ServiceUnavailable
 	}
 	return errx.BadRequest
+}
+
+// cloudRefused reports a definite answer from the cloud that it did not act, as opposed to an unknown outcome.
+func cloudRefused(xerr *errx.Error) bool {
+	return xerr != nil && xerr.Code >= 400 && xerr.Code < 500 && xerr.Code != errx.Code(http.StatusTooManyRequests)
 }

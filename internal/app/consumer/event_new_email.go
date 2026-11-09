@@ -64,13 +64,6 @@ func (s *JobsService) ingestNewEmail(ctx context.Context, e *models.JobEventNewE
 			return fmt.Errorf("record seed observation: %w", err)
 		}
 	}
-	if s.CloudExec != nil {
-		if own, err := s.CloudExec.OwnSentCopy(ctx, e.Message); err != nil {
-			return fmt.Errorf("%w: %w", errWarmupVerification, err)
-		} else if own {
-			return nil
-		}
-	}
 	warmupToken := warmupTokenFromMessage(e.Message)
 	if warmupToken != "" {
 		handled, err := s.handleWarmupEmail(ctx, e, warmupToken)
@@ -89,12 +82,12 @@ func (s *JobsService) ingestNewEmail(ctx context.Context, e *models.JobEventNewE
 	if warmup, err := s.isKnownWarmupEmail(ctx, e); err != nil {
 		return fmt.Errorf("%w: %w", errWarmupVerification, err)
 	} else if warmup {
-		return s.fileOrReportWarmup(ctx, e)
+		return s.fileWarmupOutOfMailbox(ctx, e)
 	}
 	if reply, err := s.isWarmupThreadReply(ctx, e); err != nil {
 		return fmt.Errorf("%w: %w", errWarmupVerification, err)
 	} else if reply {
-		return s.fileOrReportWarmup(ctx, e)
+		return s.fileWarmupOutOfMailbox(ctx, e)
 	}
 	if report, err := s.isWarmupReport(ctx, e); err != nil {
 		return fmt.Errorf("%w: %w", errWarmupVerification, err)
@@ -371,25 +364,6 @@ func (s *JobsService) isWarmupReport(ctx context.Context, e *models.JobEventNewE
 			Msg("delivery report is about a warmup send; kept out of the unibox")
 	}
 	return known, nil
-}
-
-// fileOrReportWarmup hands warmup mail in an instance-executed mailbox to Cloud, which decides its engagement.
-func (s *JobsService) fileOrReportWarmup(ctx context.Context, e *models.JobEventNewEmail) error {
-	if s.CloudExec != nil {
-		handled, err := s.CloudExec.ReportArrival(ctx, e.UserID, e.Message, warmupTokenFromMessage(e.Message), firstSenderAddress(e.Message.FromAddr))
-		if err != nil {
-			return fmt.Errorf("%w: report cloud warmup arrival: %w", errWarmupVerification, err)
-		}
-		if handled {
-			if s.WarmupRecoveryRepo != nil {
-				if err := s.WarmupRecoveryRepo.RememberMessage(ctx, e.Message.EmailID, e.Message.MessageID, e.Message.InternalDate); err != nil {
-					return fmt.Errorf("%w: remember warmup message: %w", errWarmupVerification, err)
-				}
-			}
-			return nil
-		}
-	}
-	return s.fileWarmupOutOfMailbox(ctx, e)
 }
 
 // isKnownWarmupEmail separates inbox visibility from single-use recipient engagement.

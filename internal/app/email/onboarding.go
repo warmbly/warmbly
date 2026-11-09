@@ -49,14 +49,15 @@ func (s *emailService) OAuthStart(ctx context.Context, userID string, orgID *uui
 	if returnOrigin != "" && (!web || config.DashboardOrigin(returnOrigin) == "") {
 		return nil, errx.ErrEmailOnboardReturnOrigin
 	}
-	// A new mailbox only; OAuthReauth renews an existing one and is not gated.
-	if provider == models.InboxProviderGoogle && !config.GoogleOAuthConnect() {
+	cfg, appID, xerr := s.signinConfig(ctx, orgID, provider)
+	// A new mailbox only; OAuthReauth renews an existing one and is not gated. A workspace's own client is its own call.
+	if provider == models.InboxProviderGoogle && appID == nil && !config.GoogleOAuthConnect() &&
+		(xerr == nil || xerr == errx.ErrEmailOnboardGoogleNotConfigured) {
 		return nil, errx.ErrEmailOnboardGoogleOAuthDisabled
 	}
 	if provider == models.InboxProviderGoogle && personalGmail(loginHint) {
 		return nil, errx.ErrEmailOnboardGooglePersonal
 	}
-	cfg, xerr := s.oauthConfigFor(provider)
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -85,6 +86,7 @@ func (s *emailService) OAuthStart(ctx context.Context, userID string, orgID *uui
 		Nonce:          state,
 		CodeVerifier:   verifier,
 		ReturnOrigin:   returnOrigin,
+		OAuthAppID:     appID,
 	}); xerr != nil {
 		return nil, xerr
 	}
@@ -176,7 +178,7 @@ func (s *emailService) OAuthFinish(ctx context.Context, userID, code, state stri
 	}
 
 	provider := models.InboxProvider(sess.Provider)
-	cfg, xerr := s.oauthConfigFor(provider)
+	cfg, xerr := s.grantConfig(ctx, sess.OAuthAppID, provider)
 	if xerr != nil {
 		return nil, false, xerr
 	}
@@ -227,12 +229,12 @@ func (s *emailService) OAuthFinish(ctx context.Context, userID, code, state stri
 		return nil, false, errx.ErrEmailOnboardGooglePersonal
 	}
 
-	acc, xerr := s.createOAuthMailbox(ctx, userID, sess.OrganizationID, allowance, provider, tok, owner)
+	acc, xerr := s.createOAuthMailbox(ctx, userID, sess.OrganizationID, allowance, provider, tok, owner, sess.OAuthAppID)
 	return acc, false, xerr
 }
 
 // createOAuthMailbox stores a first-connect OAuth mailbox and puts it to work.
-func (s *emailService) createOAuthMailbox(ctx context.Context, userID string, orgID *uuid.UUID, allowance *models.MailboxAllowance, provider models.InboxProvider, tok *oauth2.Token, owner *inboxOwner) (*models.Email, *errx.Error) {
+func (s *emailService) createOAuthMailbox(ctx context.Context, userID string, orgID *uuid.UUID, allowance *models.MailboxAllowance, provider models.InboxProvider, tok *oauth2.Token, owner *inboxOwner, appID *uuid.UUID) (*models.Email, *errx.Error) {
 	// A first connect with no refresh token is a mailbox with about an hour to
 	// live: the access token expires and nothing can renew it. reauth.go
 	// deliberately tolerates an absent one because it keeps the stored value,
@@ -265,6 +267,7 @@ func (s *emailService) createOAuthMailbox(ctx context.Context, userID string, or
 		ExpiresAt:      tok.Expiry,
 		MailHost:       oauthMailHost(provider, owner.Email),
 		GrantedScopes:  recordedScopes(tok),
+		OAuthAppID:     appID,
 	})
 	if xerr == nil && acc != nil {
 		s.captureSendIdentity(ctx, acc, tok)

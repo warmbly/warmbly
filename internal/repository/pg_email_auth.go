@@ -138,6 +138,20 @@ func (r *emailRepository) RevokeOauth(ctx context.Context, id string) *errx.Erro
 }
 
 func (r *emailRepository) RefreshBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time) error {
+	return r.refreshBoxToken(ctx, id, accessToken, refreshToken, expiresAt, false, nil)
+}
+
+// RefreshWorkerBoxToken stores a token a worker refreshed with this deployment's client; dropped once a workspace app owns the grant.
+func (r *emailRepository) RefreshWorkerBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time) error {
+	return r.refreshBoxToken(ctx, id, accessToken, refreshToken, expiresAt, true, nil)
+}
+
+// RefreshBoxTokenForApp stores a token refreshed through appID, only while that client still owns the grant.
+func (r *emailRepository) RefreshBoxTokenForApp(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time, appID *uuid.UUID) error {
+	return r.refreshBoxToken(ctx, id, accessToken, refreshToken, expiresAt, true, appID)
+}
+
+func (r *emailRepository) refreshBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time, guarded bool, appID *uuid.UUID) error {
 	// Refreshed tokens land here from the worker's OnTokenRefresh callback and
 	// must be sealed on the same terms as the ones written at connect time,
 	// otherwise the first refresh silently reverts the row to plaintext.
@@ -160,12 +174,16 @@ func (r *emailRepository) RefreshBoxToken(ctx context.Context, id uuid.UUID, acc
 		SET access_token = $1, refresh_token = $2, expires_at = $3
 		WHERE email_account_id = $4
 	`
-
 	params := []any{
 		encAccessToken,
 		encRefreshToken,
 		expiresAt,
 		id,
+	}
+	// A refresh through one client never lands on a grant another client issued since.
+	if guarded {
+		query += ` AND oauth_app_id IS NOT DISTINCT FROM $5::uuid`
+		params = append(params, appID)
 	}
 
 	if _, err := r.DB.Exec(
@@ -184,7 +202,7 @@ func (r *emailRepository) RefreshBoxToken(ctx context.Context, id uuid.UUID, acc
 var ErrNoOAuthRow = errors.New("mailbox has no OAuth sign-in to replace")
 
 // ReplaceBoxToken is RefreshBoxToken for a new consent, which also records what it granted.
-func (r *emailRepository) ReplaceBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time, scopes []string) error {
+func (r *emailRepository) ReplaceBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time, scopes []string, appID *uuid.UUID) error {
 	orgID, err := r.mailboxOrganization(ctx, id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
@@ -198,9 +216,9 @@ func (r *emailRepository) ReplaceBoxToken(ctx context.Context, id uuid.UUID, acc
 		return err
 	}
 	query := `UPDATE email_accounts_oauth
-		SET access_token = $1, refresh_token = $2, expires_at = $3, granted_scopes = $4, updated_at = now()
+		SET access_token = $1, refresh_token = $2, expires_at = $3, granted_scopes = $4, oauth_app_id = $6, updated_at = now()
 		WHERE email_account_id = $5`
-	tag, err := r.DB.Exec(ctx, query, sealed[0], sealed[1], expiresAt, scopes, id)
+	tag, err := r.DB.Exec(ctx, query, sealed[0], sealed[1], expiresAt, scopes, id, appID)
 	if err != nil {
 		// The parameters hold the sealed tokens; keep them out of the error report.
 		db.CaptureError(err, query, nil, "exec")
@@ -235,7 +253,7 @@ func (r *emailRepository) RefreshBoxTokenSealed(ctx context.Context, id uuid.UUI
 	if v.Token == nil {
 		return errors.New("sealed token update carries no token")
 	}
-	return r.RefreshBoxToken(ctx, id, v.Token.AccessToken, v.Token.RefreshToken, expiresAt)
+	return r.RefreshWorkerBoxToken(ctx, id, v.Token.AccessToken, v.Token.RefreshToken, expiresAt)
 }
 
 func (r *emailRepository) ReplaceSMTPIMAPCredentials(ctx context.Context, id uuid.UUID, creds *models.SmtpImap) error {

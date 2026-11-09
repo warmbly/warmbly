@@ -111,8 +111,6 @@ type WarmupActionRequest struct {
 	WorkerID  uuid.UUID `json:"worker_id"`
 	Actions   []string  `json:"actions"`
 	FilingID  string    `json:"filing_id,omitempty"`
-	// CommandID is the Warmbly Cloud command an instance-executed mailbox's action runs under.
-	CommandID string `json:"command_id,omitempty"`
 }
 
 type WarmupActionDecision struct {
@@ -187,8 +185,6 @@ type WarmupEmailAction struct {
 	// the worker to answer with WARMUP_RESCUED.
 	InternalID string `json:"internal_id,omitempty" avro:"internal_id"`
 	FilingID   string `json:"filing_id,omitempty" avro:"filing_id"`
-	// CommandID binds the action to the Warmbly Cloud command it executes; empty for local warmup.
-	CommandID string `json:"command_id,omitempty" avro:"command_id"`
 
 	// Recheck marks a verify_removal for a strike recorded before removals
 	// were searched; the answer echoes it.

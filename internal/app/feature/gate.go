@@ -52,6 +52,12 @@ type FeatureGateService interface {
 	// product (sending, inbox, AI, integrations). The Warmup plan does not.
 	IsPaidOrganization(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error)
 
+	// HasPartnership reports the Partnership plan in force; a self-hosted instance has no plans, so never.
+	HasPartnership(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error)
+
+	// CanUsePartnerTools gates the Partnership tools (mailbox connect API, own OAuth apps, placement tests).
+	CanUsePartnerTools(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error)
+
 	// HasPremiumWarmup reports whether the organization pays for any plan,
 	// the Warmup plan included, which is what the premium pool follows.
 	HasPremiumWarmup(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error)
@@ -385,4 +391,22 @@ func (s *featureGateService) HasPremiumWarmup(ctx context.Context, orgID uuid.UU
 		return false, errx.New(errx.Internal, "failed to get subscription")
 	}
 	return sub != nil && sub.HasPaidSubscription(), nil
+}
+
+func (s *featureGateService) HasPartnership(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error) {
+	if s.selfHost {
+		return false, nil
+	}
+	sub, err := s.subRepo.GetByOrganizationID(ctx, orgID)
+	if err != nil {
+		return false, errx.New(errx.Internal, "failed to get subscription")
+	}
+	return sub != nil && sub.IsPartnership(), nil
+}
+
+func (s *featureGateService) CanUsePartnerTools(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error) {
+	if s.selfHost {
+		return true, nil
+	}
+	return s.HasPartnership(ctx, orgID)
 }

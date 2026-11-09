@@ -53,11 +53,6 @@ func (s *JobsService) publishRemovalCheck(ctx context.Context, workerID, userID,
 // message. A recheck never adds a strike; it confirms or withdraws the one
 // recorded, and withdraws it when retention since removed the message itself.
 func (s *JobsService) HandleWarmupRemovalChecked(ctx context.Context, e *models.JobEventWarmupRemovalChecked) error {
-	if e != nil && s.CloudExec != nil {
-		if err := s.CloudExec.RemovalChecked(ctx, e.EmailID, e.RFCMessageID, e.Outcome); err != nil {
-			return fmt.Errorf("answer cloud removal command: %w", err)
-		}
-	}
 	if s.WarmupService == nil || e == nil || e.RFCMessageID == "" {
 		return nil
 	}

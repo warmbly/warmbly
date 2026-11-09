@@ -560,6 +560,9 @@ export function useRealtimeEvents() {
           mailbox_grant: [['mailbox-grants'], ['emails', 'list'], ['mailbox-signin']],
           // A vendor reconnect moving on also moves the drawer's Sign-in section.
           mailbox_vendor: [['mailbox-vendors'], ['sending-domains'], ['mailbox-signin']],
+          // Partnership: a teammate saved or removed the workspace's own OAuth app, or made or revoked a sign-in link.
+          mailbox_oauth_app: [['mailbox-oauth-apps']],
+          mailbox_connect_link: [['mailbox-connect-links']],
           // A sending domain's root redirect or vendor forwarding changed. Its
           // tracking host is an email_account write, covered above.
           domain_redirect: [['sending-domains']],

@@ -59,7 +59,6 @@ import { OrganizationOverridesDialog } from "./OrganizationOverridesDialog";
 import { OrganizationRiskCard, RiskBadge } from "./OrganizationRiskCard";
 import { OrganizationManagedPlanCard } from "./OrganizationManagedPlanCard";
 import { OrganizationPlanOffersCard } from "./OrganizationPlanOffersCard";
-import { OrganizationSelfExecutionCard } from "./OrganizationSelfExecutionCard";
 
 const TABS = [
     { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -201,10 +200,6 @@ export default function OrganizationDetailPage() {
                                 <OrganizationManagedPlanCard orgId={org.id} />
                                 <OrganizationPlanOffersCard orgId={org.id} />
                             </div>
-                        </Section>
-
-                        <Section title="Warmbly Cloud link">
-                            <OrganizationSelfExecutionCard orgId={org.id} />
                         </Section>
 
                         <Section title="Abuse posture">

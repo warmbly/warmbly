@@ -1,0 +1,299 @@
+---
+title: Partnership plan
+description: "Connect mailboxes through the API, sign Google and Microsoft mailboxes in through your own OAuth app, and let Warmbly run their warmup on Warmbly Cloud."
+---
+
+The Partnership plan is for a business that brings many mailboxes to Warmbly from its own product. You connect mailboxes through the API, Warmbly warms them in the premium pool on its own workers, and you read their health and placement back through the same API.
+
+## Good to know
+
+- The plan is offered by Warmbly to one workspace at a time. Ask Warmbly to offer it, then buy it under **Settings > Billing**. See [billing](/guides/billing/).
+- It runs on Warmbly Cloud only. Each mailbox's credential is stored in your workspace on Warmbly Cloud, sealed with your workspace's own key, and Warmbly's workers send and receive its warmup mail. There is no option to keep credentials on your own servers.
+- Mailboxes warm in the premium pool with no mailbox cap. Campaigns, the unified inbox and the other product pages are not part of the plan.
+- Google and Microsoft mailboxes sign in through **your own OAuth app**, never through Warmbly's. The owner signs in once, on your site, and your server [hands that sign-in to Warmbly](#google-and-microsoft-mailboxes-one-sign-in). A Google or Microsoft sign-in in a Partnership workspace without one is refused with `partnership_oauth_app_required`. Mailboxes connected with an app password or SMTP/IMAP need no OAuth app at all.
+- Placement tests are included, on your own seed inboxes and on Warmbly's shared panel.
+- The API routes on this page answer `403` `partnership_plan_required` in a workspace on any other plan.
+
+## Set up an API key
+
+Create a key under **API keys** in the dashboard. The routes on this page need `CONNECT_EMAILS`, which the Full access preset leaves out on purpose, so tick it by hand. A typical Partnership key holds:
+
+| Permission | For |
+|------------|-----|
+| `CONNECT_EMAILS` | Connecting mailboxes, sign-in links and your OAuth apps |
+| `READ_EMAILS`, `WRITE_EMAILS` | Reading mailboxes and changing their warmup |
+| `READ_ANALYTICS` | Warmup and placement reports |
+| `SEND_CAMPAIGNS` | Starting placement tests |
+
+The member who creates the key needs the **Manage mailboxes** permission. See [permissions](/api/permissions/) for the full list.
+
+## Connect a mailbox and start warmup
+
+One call connects an SMTP/IMAP mailbox, checks its credentials against a live worker, and starts its warmup. Google Workspace and Microsoft 365 mailboxes with an app password connect the same way.
+
+```bash
+curl -X POST "https://api.warmbly.com/v1/emails/connect/smtp-imap" \
+  -H "Authorization: Bearer wmbly_..." \
+  -H "Idempotency-Key: 6f1c2b9e-mailbox-ana" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "ana@acme.com",
+    "name": "Ana Lopez",
+    "smtp": { "host": "smtp.acme.com", "port": 587, "username": "ana@acme.com", "password": "...", "security": "starttls" },
+    "imap": { "host": "imap.acme.com", "port": 993, "username": "ana@acme.com", "password": "...", "security": "tls" },
+    "warmup": { "enabled": true, "start": 10, "max": 40, "increase": 1, "reply_rate": 30 }
+  }'
+```
+
+It answers `201` with `mailbox`, the new mailbox, and `warmup_note`, which is empty unless a warmup value did not apply. The mailbox is connected either way. Leave out `start`, `max`, `increase` or `reply_rate` to keep the defaults (10 a day, rising by 1 a day to 40). Leave out `warmup`, or set `enabled` to `false`, to connect without warming.
+
+To connect many at once, send up to 50 rows in `accounts` to `POST /emails/connect/smtp-imap/bulk`, with one `warmup` for all of them. It always answers `200` with a status per row (`connected`, `skipped` for an address already in the workspace, or `failed` with a `code`), so sending the same batch again is safe.
+
+Once connected, warmup runs on its own. Change a mailbox's ramp with `PATCH /emails/:id`, pause and resume it with `POST /emails/:id/warmup/pause` and `/resume`, and read its progress with `GET /analytics/warmup`. See [warmup](/guides/warmup/) for how the ramp, the pool and its safety bands work.
+
+## Google and Microsoft mailboxes: one sign-in
+
+The mailbox owner signs in once, on your site, through your own OAuth app. Because Warmbly holds that same app (see [your own OAuth app](#your-own-oauth-app)), your server can hand that sign-in to Warmbly and nobody signs in a second time. The consent screen, the redirect and every page the owner sees are yours.
+
+<Steps>
+
+<Step>
+
+Send the owner to Google or Microsoft with your app's client ID and your own redirect URI, as you already do for your product. Ask for Warmbly's permissions as well as yours:
+
+- Google: `https://mail.google.com/` and `https://www.googleapis.com/auth/gmail.settings.basic`, with `access_type=offline` and `prompt=consent` so Google returns a refresh token.
+- Microsoft: `offline_access`, `User.Read`, `Mail.Send` and `Mail.ReadWrite`.
+
+</Step>
+
+<Step>
+
+The provider redirects to your callback with a code. Hand it to Warmbly in one of two ways:
+
+- **You keep the mailbox too.** Exchange the code yourself, as usual, and send Warmbly the refresh token. You and Warmbly then each refresh it independently; neither one's use affects the other's.
+- **Only Warmbly needs it.** Send Warmbly the code itself, with the `redirect_uri` it was issued for and your PKCE `code_verifier` if you used one. Warmbly redeems it, so do not redeem it yourself: a code works once.
+
+</Step>
+
+<Step>
+
+Call the API from your server:
+
+```bash
+curl -X POST "https://api.warmbly.com/v1/emails/connect/oauth" \
+  -H "Authorization: Bearer wmbly_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider": "gmail",
+    "refresh_token": "1//0g...",
+    "email": "ben@acme.com",
+    "warmup": { "enabled": true }
+  }'
+```
+
+or, with the code, `"code": "4/0Ab...", "redirect_uri": "https://app.yourproduct.com/oauth/google/callback", "code_verifier": "..."` in place of `refresh_token`.
+
+</Step>
+
+</Steps>
+
+Warmbly redeems the grant through your app, checks that every permission it needs was granted and, when you send `email`, that the sign-in belongs to that address. It answers `201` with `mailbox`, `renewed: false` and `warmup_note`, and starts the mailbox's warmup.
+
+- Handing over a sign-in for a mailbox the workspace already has renews its token instead (`200`, `renewed: true`), and leaves its warmup as it is. That is also how you repair a mailbox whose owner signed in again on your side.
+- Only sign-ins issued by the app saved for this workspace are accepted. A token from any other app is refused with `connect_grant_refused`.
+- `POST /emails/connect/oauth/bulk` takes up to 50 `grants` and one `warmup`, and answers `200` with a status per sign-in (`connected`, `renewed` or `failed` with a `code`). Use it to bring over mailboxes your users connected before.
+- Neither route ever returns a token, and Warmbly keeps only the sealed tokens, never the code.
+
+## Google and Microsoft mailboxes: sign-in links
+
+When you have no sign-in of your own to hand over, for example a mailbox your product does not connect, send the owner a sign-in link instead. It is a second sign-in, through the same app of yours. A link is a single-use URL you hand to that person: by email, in your own product, wherever they are.
+
+```bash
+curl -X POST "https://api.warmbly.com/v1/emails/connect/links" \
+  -H "Authorization: Bearer wmbly_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider": "gmail",
+    "email": "ben@acme.com",
+    "warmup": { "enabled": true },
+    "return_url": "https://app.yourproduct.com/mailboxes/connected",
+    "expires_in_hours": 72
+  }'
+```
+
+| Field | Meaning |
+|-------|---------|
+| `provider` | `gmail` for Google, `outlook` for Microsoft |
+| `email` | Optional. When set, only that mailbox can complete the link |
+| `warmup` | Started on the mailbox once it connects, as above |
+| `return_url` | Optional `https` page the owner lands on afterwards, with `warmbly_link`, `status` (`connected` or `failed`), `code` and `email_account_id` added to its query string. Without one, Warmbly shows a short confirmation |
+| `expires_in_hours` | `1` to `168`, default `72` |
+
+The answer carries `url`. It is returned only here, so store or send it straight away. The person who opens it sees a Warmbly page naming your workspace and your app, presses **Continue**, and signs in with Google or Microsoft through your OAuth app. The mailbox is then created in your workspace and starts warming.
+
+- A link connects one mailbox, once. A refused attempt (a cancelled consent, the wrong address, a permission left unticked) keeps the link usable until it expires, and records why in `error_code`.
+- The sign-in completes only in the browser that pressed **Continue**.
+- Read a link with `GET /emails/connect/links/:id`, list them with `GET /emails/connect/links` (newest first, `limit` and `cursor`), and end one that has not connected yet with `DELETE /emails/connect/links/:id`. `status` is `pending`, `connecting`, `connected`, `failed`, `revoked` or `expired`.
+- The [`email_account.connected`](/guides/webhooks/) webhook fires when the mailbox is connected, so you do not need to poll.
+- The link acts for the member whose key created it. If that member can no longer manage mailboxes when the link is opened, it is refused.
+- A connected link with `error_code` `connect_warmup_failed` connected its mailbox, but warmup did not start; the owner is told so, `return_url` gets `code=connect_warmup_failed`, and you start it with `POST /emails/:id/warmup/start`.
+- `connect_warmup_settings_failed` on a connected link means warmup is running on the default ramp because the link's ramp settings were refused; apply them with `PATCH /emails/:id`.
+- A link whose sign-in is being completed cannot be revoked until it finishes. A link left that way for 15 minutes can be revoked, but it never opens again: one link connects at most one mailbox, so create a new one.
+- A link only connects while the workspace is on the Partnership plan; otherwise it is refused with `partnership_plan_required`.
+
+## Your own OAuth app
+
+The consent screen a mailbox owner sees names the app asking for access. On the Partnership plan that app is yours: your name, your logo, your privacy policy. Warmbly stores its client secret sealed with your workspace's key, and uses it for every Google or Microsoft sign-in your workspace starts, from a sign-in link or from the dashboard.
+
+Add the app under **Settings > Mailbox sign-in**, or with the API:
+
+```bash
+curl -X PUT "https://api.warmbly.com/v1/emails/oauth-apps/gmail" \
+  -H "Authorization: Bearer wmbly_..." \
+  -H "Content-Type: application/json" \
+  -d '{ "app_name": "Acme Mail", "client_id": "1234-abc.apps.googleusercontent.com", "client_secret": "GOCSPX-...", "redirect_url": "" }'
+```
+
+The provider is `gmail` or `outlook` in the path. Warmbly checks the client ID and secret with the provider before saving, and refuses a pair it rejects with `oauth_app_rejected`. `GET /emails/oauth-apps` lists your apps (never their secrets) together with `callbacks`, the redirect URI each provider needs registered.
+
+### Google
+
+<Steps>
+
+<Step>
+
+In the [Google Cloud console](https://console.cloud.google.com/), create a project for the app and enable the **Gmail API** under **APIs & Services > Library**.
+
+</Step>
+
+<Step>
+
+Under **Google Auth Platform > Branding**, set the app name, support email, logo, home page, privacy policy and terms. This is what mailbox owners see. Under **Audience**, choose **External** so mailboxes outside your own organization can sign in.
+
+</Step>
+
+<Step>
+
+Under **Data Access**, add the scopes `https://mail.google.com/` and `https://www.googleapis.com/auth/gmail.settings.basic`. The first lets Warmbly send, read and file warmup mail; the second reads the mailbox's send-as addresses.
+
+</Step>
+
+<Step>
+
+Under **Clients**, create a client of type **Web application**. Add the redirect URI shown under **Settings > Mailbox sign-in** (or in `callbacks`) to **Authorized redirect URIs**, exactly as shown. Copy the client ID and secret.
+
+</Step>
+
+<Step>
+
+Save them in Warmbly under **Settings > Mailbox sign-in > Google**.
+
+</Step>
+
+</Steps>
+
+`https://mail.google.com/` is a restricted scope. Until Google has verified the app, which for this scope includes a security assessment, it works for up to 100 users you list as test users, and refresh grants issued while the app is in testing expire after seven days, so those mailboxes need signing in again. Publish the app and complete verification before connecting customers' mailboxes. A Google Workspace administrator can also mark the app as trusted for their own domain in the Admin console under **Security > API controls**, which lets that domain's mailboxes sign in without the unverified-app limits.
+
+### Microsoft
+
+<Steps>
+
+<Step>
+
+In the [Microsoft Entra admin center](https://entra.microsoft.com/), open **App registrations > New registration**. Name it as mailbox owners should see it, and under **Supported account types** choose **Accounts in any organizational directory and personal Microsoft accounts**.
+
+</Step>
+
+<Step>
+
+Under **Redirect URI**, pick **Web** and paste the redirect URI shown under **Settings > Mailbox sign-in > Microsoft**. Register the app and copy its **Application (client) ID**.
+
+</Step>
+
+<Step>
+
+Under **API permissions**, add these Microsoft Graph **delegated** permissions: `offline_access`, `openid`, `email`, `profile`, `User.Read`, `Mail.Send` and `Mail.ReadWrite`.
+
+</Step>
+
+<Step>
+
+Under **Certificates & secrets**, create a client secret and copy its **Value** (not its ID).
+
+</Step>
+
+<Step>
+
+Under **Branding & properties**, add your logo, home page, terms and privacy statement, and complete publisher verification. Many organizations only let their users consent to apps from a verified publisher.
+
+</Step>
+
+<Step>
+
+Save the client ID and secret in Warmbly under **Settings > Mailbox sign-in > Microsoft**.
+
+</Step>
+
+</Steps>
+
+A Microsoft client secret expires (24 months at most). Create the next one before it does and save it with the same client ID; mailboxes already signed in keep working throughout.
+
+### A callback on your own domain
+
+Google only verifies an app whose redirect URIs are on domains you own, so a verified Google app cannot register Warmbly's callback directly. Register a callback on your own domain instead, and set it as the app's **Your own redirect URI** in Warmbly. That page must redirect the browser to Warmbly's callback (the one shown under **Settings > Mailbox sign-in**) with its query string unchanged, for example in nginx:
+
+```nginx
+location = /oauth/google/callback {
+    return 302 https://api.warmbly.com/addresses/google/callback$is_args$args;
+}
+```
+
+The authorization code in that query string is useless to anyone but Warmbly, because every sign-in is protected with PKCE. Microsoft accepts Warmbly's callback as it is, but you can use your own there too.
+
+### Changing or removing an app
+
+- Saving a new secret for the same client ID never affects mailboxes already signed in. Leave the secret empty to change only the name or the redirect URI.
+- A workspace that leaves the Partnership plan keeps its apps, and they keep refreshing the mailboxes they signed in. It can still save a new secret for them and remove them, but not add a new one.
+- A different client ID is refused with `oauth_app_in_use` while mailboxes are signed in through the current one, because a grant can only be refreshed by the app that issued it. The same applies to removing the app.
+- Warmbly refreshes the access tokens of these mailboxes itself; your client secret never reaches a worker.
+- Gmail mailboxes signed in through your own app are checked for new mail on a schedule rather than by push, because Gmail only delivers push notifications to a topic in the app's own Google Cloud project.
+- Mailboxes that signed in through Warmbly's app before your workspace moved to the Partnership plan keep working. Signing one in again goes through your app.
+
+Inbox-vendor sign-in (InboxKit, Zapmail and similar, which pre-approve Warmbly's own Google app) and domain-wide admin grants rely on Warmbly's apps, so they are not available on the Partnership plan. Connect those mailboxes with app passwords, or sign them in with a link.
+
+## Placement tests from your own mailboxes
+
+[Placement tests](/guides/placement-tests/) are included. Mark mailboxes you control at each provider as seed inboxes, then test any connected mailbox against them:
+
+```bash
+# Make a mailbox one of your seed inboxes
+curl -X PUT "https://api.warmbly.com/v1/placement/seeds/SEED_MAILBOX_ID" \
+  -H "Authorization: Bearer wmbly_..." -H "Content-Type: application/json" \
+  -d '{ "seed": true }'
+
+# Send a test from a mailbox to your seeds
+curl -X POST "https://api.warmbly.com/v1/placement/tests" \
+  -H "Authorization: Bearer wmbly_..." -H "Content-Type: application/json" \
+  -d '{ "sender_account_id": "MAILBOX_ID", "panel": "workspace", "subject": "Quick question", "body_plain": "Hi, are you free on Thursday?" }'
+```
+
+Read the result with `GET /placement/tests/:id`. Tests on your own seed inboxes are never counted. Tests on Warmbly's shared panel (`"panel": "instance"`) use the paid plans' monthly free tests; past them, a test waits for the next month.
+
+## Error codes
+
+| Code | Status | Meaning |
+|------|--------|---------|
+| `partnership_plan_required` | 403 | The workspace is not on the Partnership plan |
+| `partnership_oauth_app_required` | 422 | A Google or Microsoft sign-in needs your own OAuth app for that provider first |
+| `connect_grant_refused` | 422 | The provider refused the handed-over token or code, or it came from a different app than the one saved |
+| `connect_grant_offline` | 422 | The handed-over sign-in has no refresh token: ask for offline access |
+| `connect_link_unavailable` | 404 | The sign-in link expired, was revoked or already connected its mailbox |
+| `connect_link_wrong_mailbox` | 403 | The owner signed in with a different address than the link names |
+| `oauth_app_rejected` | 422 | The provider did not accept the client ID and secret |
+| `oauth_app_in_use` | 409 | Mailboxes are signed in through the app being replaced or removed |
+
+The full list is in [error codes](/api/error-codes/).
+
+## Self-hosted instances
+
+A self-hosted instance has no plans, so the mailbox connect routes and sign-in links are open in every workspace there, and Google and Microsoft sign-ins use the instance's own OAuth apps (`BOX_GOOGLE_*`, `BOX_OUTLOOK_*`). A workspace's own OAuth app is a Partnership feature, and a self-hosted instance cannot save one. A workspace that brings one in an import can still replace its secret or remove it. See [configuration](/development/configuration/).

@@ -82,6 +82,7 @@ import { auditLogsQuery } from "./lib/api/hooks/app/audit/useAuditLogs";
 import { uniboxOverviewQuery } from "./lib/api/hooks/app/unibox/useUniboxOverview";
 import { uniboxSearchQuery } from "./lib/api/hooks/app/unibox/useUniboxSearch";
 import { webhookDropsQuery, webhooksListQuery } from "./lib/api/hooks/app/webhooks/useWebhooks";
+import { mailboxOAuthAppsQuery } from "./lib/api/hooks/app/emails/useMailboxOAuthApps";
 import { appliedDiscountsQuery } from "./lib/api/hooks/app/subscription/useAppliedDiscounts";
 import { planOffersQuery } from "./lib/api/hooks/app/subscription/usePlanOffers";
 
@@ -399,6 +400,8 @@ export const rolesLoader = pageLoader((qc) => [canManageTeam() && qc.prefetchQue
 export const webhooksLoader = pageLoader((qc) =>
     can("MANAGE_SETTINGS") ? [qc.prefetchQuery(webhooksListQuery), qc.prefetchQuery(webhookDropsQuery)] : [],
 );
+
+export const mailboxSignInLoader = pageLoader((qc) => (can("MANAGE_EMAILS") ? [qc.prefetchQuery(mailboxOAuthAppsQuery)] : []));
 
 // The overview tab for the owner, and the balance tab for anyone who manages billing, on a deployment that bills.
 export const billingLoader = pageLoader((qc, { params }) => {

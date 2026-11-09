@@ -46,6 +46,8 @@ type Policy interface {
 type Entitlements interface {
 	CanSendCampaignEmail(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error)
 	IsPaidOrganization(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error)
+	// HasPartnership opens tests, on the paid allowance, to the warming-only Partnership plan.
+	HasPartnership(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error)
 }
 
 // Publisher tells the dashboard a test moved. pubsub.StreamingPublisher
@@ -239,10 +241,8 @@ func (s *service) CreateTests(ctx context.Context, in CreateInput) ([]TestView, 
 		return nil, errx.New(errx.BadRequest, "tracking must be campaign, on, off or compare")
 	}
 
-	if s.Gate != nil && !config.SelfHosted() {
-		if ok, _ := s.Gate.CanSendCampaignEmail(ctx, in.OrgID); !ok {
-			return nil, placementErr(errx.PaymentRequired, "placement_not_entitled", "Placement tests need an active trial or subscription.")
-		}
+	if s.Gate != nil && !config.SelfHosted() && !s.entitled(ctx, in.OrgID) {
+		return nil, placementErr(errx.PaymentRequired, "placement_not_entitled", "Placement tests need an active trial or subscription.")
 	}
 
 	// The sender: an active mailbox of this workspace, on a worker, not itself
@@ -1033,4 +1033,28 @@ func (s *service) GetTest(ctx context.Context, orgID *uuid.UUID, id uuid.UUID) (
 		detail.Compare = &v
 	}
 	return detail, nil
+}
+
+// entitled reports a workspace that may start tests: one that sends, or one on the Partnership plan.
+func (s *service) entitled(ctx context.Context, orgID uuid.UUID) bool {
+	if ok, _ := s.Gate.CanSendCampaignEmail(ctx, orgID); ok {
+		return true
+	}
+	ok, _ := s.Gate.HasPartnership(ctx, orgID)
+	return ok
+}
+
+// paidAllowance reports a workspace on the paid monthly allowance, the Partnership plan included.
+func (s *service) paidAllowance(ctx context.Context, orgID uuid.UUID) bool {
+	if paid, _ := s.Gate.IsPaidOrganization(ctx, orgID); paid {
+		return true
+	}
+	ok, _ := s.Gate.HasPartnership(ctx, orgID)
+	return ok
+}
+
+// balanceUsable reports a workspace whose plan carries the balance that pays for tests past the free ones.
+func (s *service) balanceUsable(ctx context.Context, orgID uuid.UUID) bool {
+	ok, _ := s.Gate.IsPaidOrganization(ctx, orgID)
+	return ok
 }

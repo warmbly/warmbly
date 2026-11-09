@@ -664,6 +664,8 @@ type NewOauthAccount struct {
 	MailHost string
 	// GrantedScopes is what the provider says it granted; nil when it did not say.
 	GrantedScopes []string
+	// OAuthAppID is the workspace client that issued the grant; nil is this deployment's own.
+	OAuthAppID *uuid.UUID
 }
 
 // GoogleFullMailScope is the Google consent that lets a token sign in over IMAP.
@@ -758,6 +760,8 @@ type EmailOnboardingState struct {
 	// code intercepted anywhere between the provider and this backend is not
 	// redeemable. A state without one is refused.
 	CodeVerifier string `json:"code_verifier,omitempty"`
+	// OAuthAppID is the workspace client the round trip started with; nil is this deployment's own.
+	OAuthAppID *uuid.UUID `json:"oauth_app_id,omitempty"`
 }
 
 // VendorConsentRequest names the import row, or the existing mailbox, an inbox vendor is asked to sign in for.

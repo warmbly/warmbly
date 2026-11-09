@@ -25,7 +25,7 @@ vi.mock("@/lib/api/client/Request", () => ({ default: async ({ url, method, data
 beforeEach(() => { fixture.paused = fixture.fail = fixture.partial = false; fixture.wait = undefined; fixture.writes = []; });
 afterEach(() => { cleanup(); focusManager.setFocused(undefined); onlineManager.setOnline(true); });
 
-it.each([false, true])("preserves the selected executor and refreshes reports after enrollment (failure: %s)", async (fail) => {
+it.each([false, true])("sends a credential handover to Cloud and refreshes reports after enrollment (failure: %s)", async (fail) => {
     fixture.fail = fail;
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     client.setQueryData(["organizations", "current"], { id: "workspace" });
@@ -33,8 +33,8 @@ it.each([false, true])("preserves the selected executor and refreshes reports af
         wrapper: ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
     });
     await waitFor(() => expect(hook.result.current.report.data?.[0].cloud?.warmup?.paused).toBe(false));
-    await act(async () => { await hook.result.current.enroll.mutateAsync({ id: "mailbox", executor: "instance" }).catch(() => {}); });
-    expect(fixture.writes).toContainEqual({ url: "/cloud-link/mailboxes/mailbox/enroll", data: { executor: "instance" } });
+    await act(async () => { await hook.result.current.enroll.mutateAsync({ id: "mailbox", executor: "cloud" }).catch(() => {}); });
+    expect(fixture.writes).toContainEqual({ url: "/cloud-link/mailboxes/mailbox/enroll", data: { executor: "cloud" } });
     await waitFor(() => expect(hook.result.current.report.data?.[0].cloud?.warmup?.paused).toBe(true));
 });
 

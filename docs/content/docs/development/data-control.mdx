@@ -100,7 +100,7 @@ See [Automatic inbox tagging](/guides/inbox-tagging/), [Advisor](/guides/advisor
 | `retention.form_event_days` | 180 | Form funnel events: views, starts, field-level drop-off |
 | `retention.audit_log_days` | 90 | The audit trail: actor, IP address, user agent, change payload |
 | `retention.warmup_mail_days` | 30 | Warmup mail in the mailboxes themselves, and the stored copy of each message's body. Deleted by the platform once older than this, wherever the mailbox files it; a mailbox can set its own window |
-| `retention.warmup_event_days` | 365 | Per-message warmup records: tokens, receipts, tampering events, spam moves and their attribution, spam reports, and which messages belong to a warmup thread, and for a linked instance that runs its own mailboxes, the commands Cloud queued for it once they are closed and the warmup mail it reported once retired. The daily sent and received counts behind the analytics are kept. When each mailbox's owner last acted in it (five-minute marks, no message content) is kept 30 days whatever this is set to |
+| `retention.warmup_event_days` | 365 | Per-message warmup records: tokens, receipts, tampering events, spam moves and their attribution, spam reports, which messages belong to a warmup thread, and linked instances' retired warmup commands and reports. The daily sent and received counts behind the analytics are kept. When each mailbox's owner last acted in it (five-minute marks, no message content) is kept 30 days whatever this is set to |
 | `retention.campaign_log_days` | 0 (kept) | Each campaign's activity feed: failed and deferred sends, pauses and their reasons |
 | `retention.notification_days` | 0 (kept) | In-app notifications, read or unread. One still waiting to be emailed is kept until it is sent or skipped |
 | `retention.webhook_delivery_days` | 0 (kept) | Each webhook endpoint's delivery log of settled deliveries, with the payload and the response excerpt. A delivery still being retried is kept until it settles |
@@ -158,6 +158,12 @@ Failed deferral writes remain unacknowledged. The worker retains the scoped dead
 A [mailbox import](/guides/mailbox-import/) keeps each row's credentials in `mailbox_import_rows`, sealed with the workspace's own data key, until the row is connected. The credentials of rows that did not connect are kept for 7 days after the import finishes, so a failed row can be fixed and retried, and are then deleted. A finished import and its rows (address, status, cause, and the uploaded cells that are not passwords, which feed the failed-rows download) are deleted 30 days after it finished. Both windows are fixed rather than settings, and the sweep that applies them runs every minute. A connected mailbox's credentials are stored like any other mailbox's.
 
 The column mappings an import saves (`mailbox_import_mappings`: which field each header of a file means, no values) are kept until the workspace is deleted, and travel in a [workspace export](/guides/workspace-export-import/). Imports themselves do not.
+
+### Partnership sign-in links and OAuth apps
+
+A [sign-in link](/guides/partnership/#google-and-microsoft-mailboxes-sign-in-links) is a row in `mailbox_connect_links` holding the SHA-256 of its secret, never the secret, with its provider, the address it names, its warmup settings, its return page and its outcome. Links are kept until the workspace is deleted, and do not travel in a workspace export. The provider round trip a link starts lives in Redis for 15 minutes.
+
+A workspace's own Google and Microsoft OAuth apps (`organization_oauth_apps`) keep their client secret sealed with the workspace's own data key until the app is removed. They travel in a workspace export, the secret only when the export includes credentials. Each OAuth mailbox records which app issued its grant (`email_accounts_oauth.oauth_app_id`), so a removed app cannot strand a mailbox: removal is refused while one still uses it.
 
 ### Contact import files
 

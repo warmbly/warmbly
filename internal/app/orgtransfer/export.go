@@ -63,7 +63,7 @@ func (s *service) ExportTo(
 
 	manifest := &Manifest{
 		Kind:             ArchiveKind,
-		FormatVersion:    models.OrgTransferFormatVersion,
+		FormatVersion:    models.OrgTransferFormatVersionBase,
 		SourceInstance:   s.instance.PublicURL,
 		SourceAppVersion: s.instance.AppVersion,
 		ExportedAt:       time.Now().UTC(),
@@ -177,6 +177,9 @@ func (s *service) ExportTo(
 			return nil, err
 		}
 		manifest.Tables = append(manifest.Tables, mt)
+		if t.Name == oauthAppsTable && mt.Rows > 0 {
+			manifest.FormatVersion = models.OrgTransferFormatVersion
+		}
 	}
 
 	report(86, "collecting attachments")

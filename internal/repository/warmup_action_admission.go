@@ -7,7 +7,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -24,7 +23,7 @@ type WarmupActionRecoveryAdmission interface {
 }
 
 func (r *taskRepository) AdmitWarmupAction(ctx context.Context, req models.WarmupActionRequest) (models.WarmupActionDecision, error) {
-	actions, err := permittedWarmupActionsFor(ctx, r.db, req.MailboxID, req.WorkerID, req.Actions, req.CommandID)
+	actions, err := r.PermittedWarmupActions(ctx, req.MailboxID, req.WorkerID, req.Actions)
 	out := models.WarmupActionDecision{Actions: actions}
 	if err != nil || req.FilingID == "" || len(req.Actions) != 1 || req.Actions[0] != models.WarmupActionFile || len(actions) != 1 || actions[0] != models.WarmupActionFile {
 		return out, err
@@ -55,33 +54,14 @@ type warmupActionQuery interface {
 }
 
 func permittedWarmupActions(ctx context.Context, q warmupActionQuery, mailbox, worker uuid.UUID, actions []string) ([]string, error) {
-	return permittedWarmupActionsFor(ctx, q, mailbox, worker, actions, "")
-}
-
-// permittedWarmupActionsFor admits an instance-executed mailbox's actions only under the one Cloud command they carry.
-func permittedWarmupActionsFor(ctx context.Context, q warmupActionQuery, mailbox, worker uuid.UUID, actions []string, command string) ([]string, error) {
 	if len(actions) > 16 {
 		return nil, ErrSendAdmissionDenied
 	}
-	var commandID *uuid.UUID
-	if command != "" {
-		id, err := uuid.Parse(command)
-		if err != nil || id == uuid.Nil {
-			return nil, nil
-		}
-		commandID = &id
-	}
 	var a models.Email
 	var active bool
-	var cloud cloudCommandAdmission
-	var executor *string
 	err := q.QueryRow(ctx, `SELECT ea.status='active' AND ea.worker_id=$2 AND n.role='worker' AND n.active AND n.last_seen_at>NOW()-INTERVAL '10 minutes' AND n.warmup_send_protocol>=2
- AND o.risk_state IN ('trusted','watch'),ea.test_mode,ea.test_send_enabled,ea.test_receive_enabled,c.executor,
- k.admit_until,COALESCE(k.actions,'{}')
- FROM email_accounts ea JOIN organizations o ON o.id=ea.organization_id JOIN fleet_nodes n ON n.id=ea.worker_id
- LEFT JOIN cloud_link_mailboxes c ON c.email_account_id=ea.id
- LEFT JOIN cloud_link_commands k ON k.id=$3 AND k.email_account_id=ea.id AND k.instance_id=c.instance_id AND k.kind='action' AND k.state='dispatched'
- WHERE ea.id=$1`, mailbox, worker, commandID).Scan(&active, &a.TestMode, &a.TestSendEnabled, &a.TestReceiveEnabled, &executor, &cloud.AdmitUntil, &cloud.Actions)
+ AND o.risk_state IN ('trusted','watch') AND NOT EXISTS(SELECT 1 FROM cloud_link_mailboxes c WHERE c.email_account_id=ea.id) AND NOT `+instanceExecutedSQL("ea.id")+`,ea.test_mode,ea.test_send_enabled,ea.test_receive_enabled
+ FROM email_accounts ea JOIN organizations o ON o.id=ea.organization_id JOIN fleet_nodes n ON n.id=ea.worker_id WHERE ea.id=$1`, mailbox, worker).Scan(&active, &a.TestMode, &a.TestSendEnabled, &a.TestReceiveEnabled)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -91,17 +71,7 @@ func permittedWarmupActionsFor(ctx context.Context, q warmupActionQuery, mailbox
 	if !active {
 		return nil, nil
 	}
-	if executor != nil {
-		cloud.Linked, cloud.Executor = true, models.PoolLinkExecutor(*executor)
-	}
-	out := a.PermittedWarmupActions(cloudActionsAdmitted(cloud, actions, time.Now()))
-	if cloud.Linked && commandID != nil && len(out) > 0 {
-		var stamped uuid.UUID
-		if err := q.QueryRow(ctx, `UPDATE cloud_link_commands SET admitted_at=COALESCE(admitted_at,NOW()) WHERE id=$1 RETURNING id`, *commandID).Scan(&stamped); err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
+	return a.PermittedWarmupActions(actions), nil
 }
 
 func (r *httpSyncContextRepository) PermittedWarmupActions(ctx context.Context, mailbox, worker uuid.UUID, actions []string) ([]string, error) {

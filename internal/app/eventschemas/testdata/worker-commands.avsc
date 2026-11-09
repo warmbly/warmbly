@@ -1076,11 +1076,6 @@
               "type": "string"
             },
             {
-              "default": "",
-              "name": "command_id",
-              "type": "string"
-            },
-            {
               "default": false,
               "name": "recheck",
               "type": "boolean"

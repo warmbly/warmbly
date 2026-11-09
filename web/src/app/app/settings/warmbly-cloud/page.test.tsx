@@ -69,12 +69,24 @@ describe("existing Cloud connections", () => {
         await waitFor(() => expect(fixture.enroll).toHaveBeenCalledWith("mailbox"));
     });
 
-    it("enrolls with the server executor when the Cloud grant offers it", async () => {
-        fixture.status.info = { self_execution: { protocol: 1, granted: true } } as CloudLinkStatus["info"];
+    it("hands the credential of a mailbox kept on this server to Cloud only on request", async () => {
+        fixture.rows[0] = { ...fixture.rows[0], enrolled: true, executor: "instance", enrollment_state: "active" };
         draw();
-        expect(screen.getByRole("group", { name: "Where the credential lives" })).toBeInTheDocument();
-        fireEvent.click(screen.getByRole("switch"));
-        await waitFor(() => expect(fixture.enroll).toHaveBeenCalledWith({ id: "mailbox", executor: "instance" }));
+        expect(screen.getByText(/mailboxes whose credential stayed on this server are paused/)).toBeInTheDocument();
+        expect(screen.queryByRole("group", { name: "Where the credential lives" })).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: /Hand to Cloud/ }));
+        expect(fixture.enroll).not.toHaveBeenCalled();
+        expect(fixture.confirm.mock.calls[0][0]).toContain("Hand sender@test.local's credential to Warmbly Cloud");
+        await fixture.confirm.mock.calls[0][1]();
+        expect(fixture.enroll).toHaveBeenCalledWith({ id: "mailbox", executor: "cloud" });
+    });
+
+    it("offers no handover for a Google or Microsoft mailbox kept on this server, only removal", () => {
+        fixture.rows[0] = { ...fixture.rows[0], provider: "gmail", enrolled: true, executor: "instance", enrollment_state: "active" };
+        draw();
+        expect(screen.queryByRole("button", { name: /Hand to Cloud/ })).not.toBeInTheDocument();
+        expect(screen.getByText(/remove it and add it again through Warmbly Cloud sign-in/)).toBeInTheDocument();
+        expect(screen.getByRole("switch")).toBeEnabled();
     });
 
     it("still prevents enrollment of an unsupported local OAuth mailbox", () => {

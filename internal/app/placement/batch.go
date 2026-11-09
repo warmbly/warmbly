@@ -187,10 +187,8 @@ func (s *service) validateBatch(ctx context.Context, in *BatchInput, copyGiven b
 	}
 	in.Families = families
 
-	if s.Gate != nil && !config.SelfHosted() {
-		if ok, _ := s.Gate.CanSendCampaignEmail(ctx, in.OrgID); !ok {
-			return nil, placementErr(errx.PaymentRequired, "placement_not_entitled", "Placement tests need an active trial or subscription.")
-		}
+	if s.Gate != nil && !config.SelfHosted() && !s.entitled(ctx, in.OrgID) {
+		return nil, placementErr(errx.PaymentRequired, "placement_not_entitled", "Placement tests need an active trial or subscription.")
 	}
 
 	// A preview asked before the copy is chosen counts senders alone; the
