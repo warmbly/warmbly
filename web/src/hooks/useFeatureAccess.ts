@@ -49,6 +49,8 @@ export interface FeatureAccess {
     /** On a warming-only plan (Warmup, Partnership): the premium pool and no mailbox cap, nothing else.
      *  Every surface a free workspace cannot use stays locked. */
     warmupOnly: boolean;
+    /** On the Partnership plan: warming only, plus the API, placement tests and its own OAuth apps. */
+    partnership: boolean;
     /** Unpaid workspace that kept the free allowance: 10 mailboxes in the free pool. A new one gets none. */
     keptFreeWarmup: boolean;
     /** Unpaid workspace inside its free trial: sending, the inbox and a small mailbox allowance, until trialEndsAt. */
@@ -107,6 +109,7 @@ export default function useFeatureAccess(): FeatureAccess {
             billing: false,
             paid: true,
             warmupOnly: false,
+            partnership: false,
             keptFreeWarmup: false,
             trial: false,
             trialEnded: false,
@@ -164,6 +167,7 @@ export default function useFeatureAccess(): FeatureAccess {
         billing: true,
         paid: isPaid,
         warmupOnly,
+        partnership: warmupOnly && plan === "partnership",
         keptFreeWarmup: !isPaid && sub.data?.keeps_free_warmup === true,
         trial,
         trialEnded: !!trialEndsAt && !trial,

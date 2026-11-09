@@ -50,6 +50,8 @@ type OAuthCredentials struct {
 	ExpiresAt    time.Time
 	// GrantedScopes is what the provider granted the token; nil when not recorded.
 	GrantedScopes []string
+	// OAuthAppID is the workspace client that issued the grant; nil is this deployment's own.
+	OAuthAppID *uuid.UUID
 }
 
 // AccountScope confines a mailbox lookup to one tenant. The organization is the
@@ -173,9 +175,13 @@ type EmailRepository interface {
 	NewSMTPIMAPAccount(ctx context.Context, userID string, data models.NewSMTPIMAPAccount) (*models.Email, *errx.Error)
 	RefreshBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time) error
 	// ReplaceBoxToken stores a new consent's tokens with the scopes it granted; nil scopes records them as unknown.
-	ReplaceBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time, scopes []string) error
+	ReplaceBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time, scopes []string, appID *uuid.UUID) error
 	// RefreshBoxTokenSealed stores a refreshed token a worker sealed under the mailbox's organization key.
 	RefreshBoxTokenSealed(ctx context.Context, id uuid.UUID, sealed string, expiresAt time.Time) error
+	// RefreshWorkerBoxToken is RefreshBoxToken for a worker's refresh, dropped for a mailbox a workspace app signed in.
+	RefreshWorkerBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time) error
+	// RefreshBoxTokenForApp stores a backend refresh through appID, dropped when another client issued the grant since.
+	RefreshBoxTokenForApp(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time, appID *uuid.UUID) error
 	// ReplaceSMTPIMAPCredentials overwrites a mailbox's SMTP/IMAP credential
 	// row, sealed on the same terms as at connect time.
 	ReplaceSMTPIMAPCredentials(ctx context.Context, id uuid.UUID, creds *models.SmtpImap) error
@@ -1045,8 +1051,8 @@ func (r *emailRepository) NewOauthAccount(ctx context.Context, userID string, da
 	}
 
 	query = `
-		INSERT INTO email_accounts_oauth (email_account_id, access_token, refresh_token, expires_at, granted_scopes)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO email_accounts_oauth (email_account_id, access_token, refresh_token, expires_at, granted_scopes, oauth_app_id)
+		VALUES ($1, $2, $3, $4, $5, $6)
 	`
 
 	params = []any{
@@ -1055,6 +1061,7 @@ func (r *emailRepository) NewOauthAccount(ctx context.Context, userID string, da
 		encRefreshToken,
 		data.ExpiresAt,
 		data.GrantedScopes,
+		data.OAuthAppID,
 	}
 
 	_, err = tx.Exec(
@@ -2772,7 +2779,7 @@ func (r *emailRepository) GetOAuthCredentials(ctx context.Context, emailAccountI
 		return nil, errx.InternalError()
 	}
 	query := `
-		SELECT ea.organization_id, o.access_token, o.refresh_token, o.expires_at, o.granted_scopes
+		SELECT ea.organization_id, o.access_token, o.refresh_token, o.expires_at, o.granted_scopes, o.oauth_app_id
 		FROM email_accounts_oauth o
 		JOIN email_accounts ea ON ea.id = o.email_account_id
 		WHERE o.email_account_id = $1
@@ -2782,9 +2789,10 @@ func (r *emailRepository) GetOAuthCredentials(ctx context.Context, emailAccountI
 	var accessToken, refreshToken string
 	var expiresAt time.Time
 	var scopes []string
+	var appID *uuid.UUID
 
 	err := r.transportQueryRow(ctx, query, emailAccountID).Scan(
-		&orgID, &accessToken, &refreshToken, &expiresAt, &scopes,
+		&orgID, &accessToken, &refreshToken, &expiresAt, &scopes, &appID,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -2814,6 +2822,7 @@ func (r *emailRepository) GetOAuthCredentials(ctx context.Context, emailAccountI
 		RefreshToken:  decryptedRefreshToken,
 		ExpiresAt:     expiresAt,
 		GrantedScopes: scopes,
+		OAuthAppID:    appID,
 	}, nil
 }
 

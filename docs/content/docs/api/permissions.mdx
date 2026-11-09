@@ -1,6 +1,6 @@
 ---
 title: Permissions reference
-description: Complete reference for the 22 API permissions available in Warmbly.
+description: Complete reference for the 25 API permissions available in Warmbly.
 ---
 
 Warmbly uses a bitmask system for API permissions. Each permission is one bit in a `uint64`, so a single integer can express any combination of the permissions below.
@@ -35,8 +35,11 @@ These same permissions are the [OAuth](/api/oauth/) scopes, lowercased: `READ_EM
 | `WARMUP_ROUTING` | 21 | 2097152 | special | Manage warmup routing rules |
 | `AI_AGENT` | 22 | 4194304 | special | Run the AI assistant and MCP tools |
 | `AI_RESEARCH` | 23 | 8388608 | special | Run AI contact research |
+| `CONNECT_EMAILS` | 24 | 16777216 | special | Connect mailboxes and create sign-in links (Partnership plan) |
 
 `AI_AGENT` gates the web and playbook tools (`search_web`, `fetch_url`, `load_skill`) on [`/v1/mcp`](/api/mcp/) and [`/ai/tools`](/api/agent-tools/); every other tool there checks its own scope. It also gates the [AI skills](/api/endpoints/#ai-skills) endpoints for keys; creating, editing or deleting a playbook with a key further needs the member who created the key to hold `manage_settings`.
+
+`CONNECT_EMAILS` is the only scope that lets a key hand Warmbly a mailbox password: it gates the [mailbox connect](/api/endpoints/#mailbox-connect-partnership) routes, which take SMTP/IMAP credentials, mint Google and Microsoft sign-in links and save the workspace's own OAuth apps. Those routes also refuse a workspace that is not on the [Partnership plan](/guides/partnership/) with `403` `partnership_plan_required`. It is left out of the Full access preset, and an OAuth app can never be granted it.
 
 `SEND_CAMPAIGNS` is intentionally separate from `WRITE_CAMPAIGNS`: editing a campaign draft and starting one that actually transmits mail are different blast radii, so a key can be granted the first without the second. An [inbox placement test](/guides/placement-tests/) sends real mail from a real mailbox too, so starting or cancelling one, and scheduling a campaign's placement monitor, takes `SEND_CAMPAIGNS`, while reading results takes `READ_ANALYTICS`.
 
@@ -56,7 +59,7 @@ High-volume operations. These can touch large numbers of rows in a single reques
 
 ### Special
 
-Realtime subscriptions, webhooks, integrations, warmup routing, AI assistant / MCP access, AI contact research, and self-service key management. Grant individually.
+Realtime subscriptions, webhooks, integrations, warmup routing, AI assistant / MCP access, AI contact research, mailbox connect, and self-service key management. Grant individually.
 
 ## What a role can delegate
 
@@ -68,7 +71,7 @@ An API key or an OAuth grant acts for a member of the workspace, so it never hol
 | `READ_CONTACTS`, `READ_CRM` | `view_contacts` |
 | `READ_UNIBOX`, `WRITE_UNIBOX` | `access_unibox` |
 | `READ_ANALYTICS`, `READ_AUDIT_LOGS` | `view_analytics` |
-| `WRITE_EMAILS` | `manage_emails` |
+| `WRITE_EMAILS`, `CONNECT_EMAILS` | `manage_emails` |
 | `WRITE_CAMPAIGNS`, `WRITE_TEMPLATES`, `BULK_CAMPAIGNS` | `manage_campaigns` |
 | `WRITE_CONTACTS`, `WRITE_CRM`, `BULK_CONTACTS` | `manage_contacts` |
 | `SEND_CAMPAIGNS` | `send_campaigns` |
@@ -83,7 +86,7 @@ Where it applies:
 
 - **Creating or editing an API key** from the dashboard refuses a permission outside the member's role with `403` `api_key_permissions_exceed_caller`.
 - **Creating or editing an API key with an API key** keeps the result inside the calling key: no permission it lacks, and when the calling key is limited to some mailboxes or IP addresses, the new or edited key must be limited to a subset of them. The same `403` `api_key_permissions_exceed_caller` answers otherwise.
-- **An OAuth grant** carries only the requested scopes the approving member's role covers, re-checked against the member's current role on every request. See [OAuth scopes](/api/oauth/#scopes). `API_KEYS` is never granted to an OAuth app, and OAuth tokens cannot create, edit, revoke or delete API keys (`403` `oauth_token_not_allowed`).
+- **An OAuth grant** carries only the requested scopes the approving member's role covers, re-checked against the member's current role on every request. See [OAuth scopes](/api/oauth/#scopes). `API_KEYS` and `CONNECT_EMAILS` are never granted to an OAuth app, and OAuth tokens cannot create, edit, revoke or delete API keys (`403` `oauth_token_not_allowed`).
 - **A member restricted to [selected resources](/guides/team-roles/#access-scope)** holds `view_campaigns`, `view_analytics` and `access_unibox` from any role, and `manage_campaigns` and `send_campaigns` only from a role that [lets clients act](/guides/team-roles/#client-roles). A key or grant acting for them is limited to the API permissions those cover, to the routes their scope allows, and to their grants ([which routes](/api/endpoints/)); `access_unibox` covers inbox writes only through a role that lets clients act. A key's own mailbox allowlist still applies on top. Restricted members cannot create keys.
 
 ## Preset combinations
@@ -103,7 +106,7 @@ READ_EMAILS | READ_CAMPAIGNS | READ_CONTACTS | READ_UNIBOX | READ_ANALYTICS
 
 ### Full access (16777215)
 
-All 24 permissions:
+Every permission except `CONNECT_EMAILS`, which is granted by hand:
 
 ```
 (1 << 24) - 1 = 16777215
@@ -217,6 +220,7 @@ export const Permissions = {
   WARMUP_ROUTING: 2097152,
   AI_AGENT: 4194304,
   AI_RESEARCH: 8388608,
+  CONNECT_EMAILS: 16777216,
 } as const;
 ```
 
@@ -250,6 +254,7 @@ class Permissions:
     WARMUP_ROUTING = 2097152
     AI_AGENT = 4194304
     AI_RESEARCH = 8388608
+    CONNECT_EMAILS = 16777216
 ```
 
 </Tab>
@@ -282,6 +287,7 @@ const (
     APIPermWarmupRouting                        // 2097152
     APIPermAIAgent                              // 4194304
     APIPermAIResearch                           // 8388608
+    APIPermConnectEmails                        // 16777216
 )
 ```
 

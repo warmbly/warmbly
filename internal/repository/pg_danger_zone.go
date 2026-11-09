@@ -656,3 +656,6 @@ func isUniqueViolation(err error) bool {
 	}
 	return false
 }
+
+// IsUniqueViolation is isUniqueViolation for callers outside this package.
+func IsUniqueViolation(err error) bool { return isUniqueViolation(err) }

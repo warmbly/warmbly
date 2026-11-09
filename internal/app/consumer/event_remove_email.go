@@ -57,12 +57,6 @@ func (s *JobsService) HandleRemoveEmail(ctx context.Context, e *models.JobEventR
 		}
 	}
 
-	if s.CloudExec != nil && e.SkippedFolder == "" {
-		if err := s.CloudExec.ObserveRemoval(ctx, e.EmailID, e.ID); err != nil {
-			log.Warn().Err(err).Str("email_id", e.EmailID.String()).Msg("cloud warmup removal not queued for Cloud")
-		}
-	}
-
 	if s.UniboxRepository != nil {
 		if err := s.UniboxRepository.Delete(ctx, e.UserID, e.ID); err != nil {
 			return errors.Join(checkErr, err)

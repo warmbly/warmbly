@@ -125,8 +125,6 @@ type PoolLinkInstanceInfo struct {
 	Plan                    PoolLinkPlan     `json:"plan"`
 	// Redirects is nil from a Cloud that does not serve root redirects.
 	Redirects *PoolLinkRedirectOffer `json:"redirects,omitempty"`
-	// SelfExecution is nil from a Cloud that cannot leave credentials on the instance.
-	SelfExecution *PoolLinkSelfExecution `json:"self_execution,omitempty"`
 }
 
 const SMTPAssociationProtocol = 1
@@ -179,7 +177,7 @@ type PoolLinkEnrollRequest struct {
 	OAuth    *PoolLinkOAuthCredential `json:"oauth,omitempty"`
 	SMTPIMAP *SmtpImap                `json:"smtp_imap,omitempty"`
 	Warmup   PoolLinkWarmupSettings   `json:"warmup"`
-	// Executor instance carries no credential: the instance runs the mailbox's warmup.
+	// Executor is cloud or empty; Cloud refuses instance.
 	Executor PoolLinkExecutor `json:"executor,omitempty"`
 }
 
@@ -282,15 +280,12 @@ type PoolLinkMailboxStanding struct {
 	RemoteID uuid.UUID         `json:"remote_id"`
 	Health   *WarmupHealthInfo `json:"health,omitempty"`
 	Executor PoolLinkExecutor  `json:"executor,omitempty"`
-	// Paused names why an instance-executed mailbox's Cloud warmup is stopped in both directions.
+	// Paused names why the mailbox's Cloud warmup is stopped in both directions.
 	Paused string `json:"paused,omitempty"`
 }
 
-// Reasons an instance-executed mailbox's Cloud warmup is paused.
-const (
-	PoolLinkPausedNotGranted      = "self_execution_not_granted"
-	PoolLinkPausedExecutorOffline = "executor_offline"
-)
+// PoolLinkPausedCredentialRequired pauses a mailbox whose credential Cloud does not hold.
+const PoolLinkPausedCredentialRequired = "credential_required"
 
 // PoolLinkMailboxPatch updates a mailbox's ramp or lifecycle on the cloud.
 type PoolLinkMailboxPatch struct {
@@ -342,7 +337,7 @@ type CloudLinkMailbox struct {
 	StandingObservedAt *time.Time `json:"standing_observed_at,omitempty"`
 	// SettingsObservedAt is when the local warmup columns last mirrored the cloud's settings.
 	SettingsObservedAt *time.Time `json:"settings_observed_at,omitempty"`
-	// Executor is who runs the warmup; instance means Cloud holds no credential.
+	// Executor instance marks a legacy mailbox whose credential Cloud does not hold.
 	Executor PoolLinkExecutor `json:"executor,omitempty"`
 	// Standing is the warmup health the cloud last reported; nil until it has.
 	Standing *WarmupHealthInfo `json:"-"`
@@ -393,9 +388,6 @@ type CloudLinkMailboxRow struct {
 	StandingObservedAt *time.Time            `json:"standing_observed_at,omitempty"`
 	SettingsObservedAt *time.Time            `json:"settings_observed_at,omitempty"`
 	Executor           PoolLinkExecutor      `json:"executor,omitempty"`
-	// Commands Cloud handed this instance for the mailbox: waiting, and failed in the last day.
-	CommandsPending int `json:"commands_pending,omitempty"`
-	CommandsFailed  int `json:"commands_failed,omitempty"`
 }
 
 // PoolLinkOffer is the retired Warmup plan as older upgrade prompts read it; it is always unavailable.

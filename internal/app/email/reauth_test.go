@@ -54,7 +54,7 @@ func (s *stubReauthRepo) RefreshBoxToken(ctx context.Context, id uuid.UUID, acce
 	return nil
 }
 
-func (s *stubReauthRepo) ReplaceBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time, scopes []string) error {
+func (s *stubReauthRepo) ReplaceBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time, scopes []string, appID *uuid.UUID) error {
 	s.wroteScopes = scopes
 	return s.RefreshBoxToken(ctx, id, accessToken, refreshToken, expiresAt)
 }

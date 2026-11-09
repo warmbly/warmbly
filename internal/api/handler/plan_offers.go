@@ -14,7 +14,7 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 )
 
-// adminGrantRequest is an offer or a self-execution grant; the reason keeps it answerable later.
+// adminGrantRequest is an offer grant; the reason keeps it answerable later.
 type adminGrantRequest struct {
 	Reason    string     `json:"reason"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
@@ -23,11 +23,6 @@ type adminGrantRequest struct {
 type adminPlanOfferView struct {
 	*models.PlanOffer
 	Active bool `json:"active"`
-}
-
-type adminSelfExecutionView struct {
-	Grant  *models.SelfExecutionGrant `json:"grant"`
-	Active bool                       `json:"active"`
 }
 
 func (h *Handler) planOffersReady(c *gin.Context) bool {
@@ -119,68 +114,6 @@ func (h *Handler) AdminDeleteOrgPlanOffer(c *gin.Context) {
 		return
 	}
 	h.logOrgPlanAction(c, *adminID, orgID, "withdraw_plan_offer", map[string]any{"plan_id": planID.String()})
-	c.Status(http.StatusNoContent)
-}
-
-// AdminGetOrgSelfExecution reports whether a workspace may warm linked mailboxes without handing over credentials.
-func (h *Handler) AdminGetOrgSelfExecution(c *gin.Context) {
-	orgID, ok := adminOrgParam(c)
-	if !ok || !h.planOffersReady(c) {
-		return
-	}
-	grant, xerr := h.PlanOfferService.GetSelfExecutionGrant(c.Request.Context(), orgID)
-	if xerr != nil {
-		errx.JSON(c, xerr)
-		return
-	}
-	c.JSON(http.StatusOK, adminSelfExecutionView{Grant: grant, Active: grant.Active(time.Now())})
-}
-
-// AdminPutOrgSelfExecution grants or renews credential-free Cloud warmup.
-func (h *Handler) AdminPutOrgSelfExecution(c *gin.Context) {
-	adminID := middleware.GetAdminUserID(c)
-	if adminID == nil {
-		errx.JSON(c, errx.ErrUnauthorized)
-		return
-	}
-	orgID, ok := adminOrgParam(c)
-	if !ok || !h.planOffersReady(c) {
-		return
-	}
-	var req adminGrantRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		errx.JSON(c, errx.New(errx.BadRequest, "a reason is required"))
-		return
-	}
-	grant, xerr := h.PlanOfferService.GrantSelfExecution(c.Request.Context(), orgID, *adminID, req.Reason, req.ExpiresAt)
-	if xerr != nil {
-		errx.JSON(c, xerr)
-		return
-	}
-	details := map[string]any{"reason": grant.Reason}
-	if req.ExpiresAt != nil {
-		details["expires_at"] = req.ExpiresAt.UTC().Format(time.RFC3339)
-	}
-	h.logOrgPlanAction(c, *adminID, orgID, "grant_self_execution", details)
-	c.JSON(http.StatusOK, adminSelfExecutionView{Grant: grant, Active: grant.Active(time.Now())})
-}
-
-// AdminDeleteOrgSelfExecution revokes credential-free Cloud warmup.
-func (h *Handler) AdminDeleteOrgSelfExecution(c *gin.Context) {
-	adminID := middleware.GetAdminUserID(c)
-	if adminID == nil {
-		errx.JSON(c, errx.ErrUnauthorized)
-		return
-	}
-	orgID, ok := adminOrgParam(c)
-	if !ok || !h.planOffersReady(c) {
-		return
-	}
-	if xerr := h.PlanOfferService.RevokeSelfExecution(c.Request.Context(), orgID); xerr != nil {
-		errx.JSON(c, xerr)
-		return
-	}
-	h.logOrgPlanAction(c, *adminID, orgID, "revoke_self_execution", nil)
 	c.Status(http.StatusNoContent)
 }
 

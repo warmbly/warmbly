@@ -37,7 +37,14 @@ var (
 	ErrBadCredential       = errx.NewWithIdentifier(errx.BadRequest, "pool_link_credential", "A credential matching the provider is required.")
 	ErrBadRequest          = errx.NewWithIdentifier(errx.BadRequest, "pool_link_request", "Instance name is required.")
 	ErrCleartextMailbox    = errx.NewWithIdentifier(errx.Unprocessable, "pool_link_cleartext_mailbox", "Warmbly Cloud reaches your mail server over the internet, so it needs TLS or STARTTLS on both SMTP and IMAP. This mailbox uses security \"none\", which only works for a mail server on your instance's own machine. Switch it to TLS, or keep warming it on your instance.")
+	ErrExecutorInvalid     = errx.NewWithIdentifier(errx.BadRequest, "pool_link_executor", "Warmbly Cloud runs the warmup of every mailbox it holds, so executor must be cloud.")
+	ErrExecutorConflict    = errx.NewWithIdentifier(errx.Conflict, "pool_link_executor_conflict", "This mailbox's credential is still on your instance. Enroll it again with its credential to hand it to Warmbly Cloud.")
 )
+
+// CredentialRestorer writes the credential of a mailbox handed back to Cloud.
+type CredentialRestorer interface {
+	RestoreMailboxCredential(ctx context.Context, id uuid.UUID, oauth *models.PoolLinkOAuthCredential, creds *models.SmtpImap) error
+}
 
 // cloudReachable refuses an SMTP/IMAP credential this instance's workers cannot use, before anything is stored.
 func cloudReachable(c *models.SmtpImap) *errx.Error {
@@ -117,7 +124,7 @@ type service struct {
 	cache      *cache.Cache
 	campaigns  CampaignUsage
 	delegation DelegatedTokenBroker
-	exec       *selfExecution
+	restorer   CredentialRestorer
 }
 
 // DelegatedTokenBroker mints tokens without moving the administrator's grant to an instance.
@@ -141,7 +148,9 @@ func NewService(
 	gate feature.FeatureGateService,
 	orgs organization.OrganizationService,
 ) Service {
-	return &service{repo: repo, emails: emails, emailSvc: emailSvc, analytics: analyticsSvc, warmup: warmup, gate: gate, orgs: orgs}
+	s := &service{repo: repo, emails: emails, emailSvc: emailSvc, analytics: analyticsSvc, warmup: warmup, gate: gate, orgs: orgs}
+	s.restorer, _ = emails.(CredentialRestorer)
+	return s
 }
 
 // WireScheduler attaches the warmup task seeder after construction.
@@ -327,7 +336,6 @@ func (s *service) InstanceInfo(ctx context.Context, inst *models.PoolLinkInstanc
 		Instance:                *inst,
 		Organization:            models.PoolLinkOrgInfo{ID: org.ID, Name: org.Name},
 		Plan:                    plan,
-		SelfExecution:           s.selfExecutionInfo(ctx, inst.OrganizationID),
 	}, nil
 }
 
@@ -399,6 +407,72 @@ func (s *service) ownerUserID(ctx context.Context, inst *models.PoolLinkInstance
 		return "", xerr
 	}
 	return org.OwnerUserID.String(), nil
+}
+
+// enrollExecutor refuses instance execution and hands a legacy instance-run mailbox to Cloud once its credential arrives.
+func (s *service) enrollExecutor(ctx context.Context, inst *models.PoolLinkInstance, existing *models.PoolLinkMailbox, req models.PoolLinkEnrollRequest) (*models.PoolLinkMailboxState, *errx.Error, bool) {
+	if req.Executor.OrCloud() != models.PoolLinkExecutorCloud {
+		return nil, ErrExecutorInvalid, true
+	}
+	if existing == nil || existing.Executor.OrCloud() != models.PoolLinkExecutorInstance {
+		return nil, nil, false
+	}
+	if req.OAuth == nil && req.SMTPIMAP == nil {
+		// Without a credential the mailbox stays out of the pool; only its ramp is kept current.
+		out, xerr := s.PatchMailbox(ctx, inst, req.RemoteID, models.PoolLinkMailboxPatch{Warmup: &req.Warmup})
+		return out, xerr, true
+	}
+	out, xerr := s.convertToCloud(ctx, inst, existing, req)
+	return out, xerr, true
+}
+
+// convertToCloud returns an instance-run mailbox to Cloud with the credential the instance now shares.
+func (s *service) convertToCloud(ctx context.Context, inst *models.PoolLinkInstance, existing *models.PoolLinkMailbox, req models.PoolLinkEnrollRequest) (*models.PoolLinkMailboxState, *errx.Error) {
+	acc, xerr := s.emails.GetByID(ctx, existing.EmailAccountID)
+	if xerr != nil {
+		return nil, xerr
+	}
+	// Only SMTP/IMAP returns this way; Cloud cannot refresh a grant the instance's own app issued.
+	switch models.InboxProvider(acc.Provider) {
+	case models.InboxProviderSMTPIMAP:
+		if req.OAuth != nil || req.SMTPIMAP == nil || req.SMTPIMAP.SMTP == nil || req.SMTPIMAP.IMAP == nil {
+			return nil, ErrBadCredential
+		}
+		if xerr := cloudReachable(req.SMTPIMAP); xerr != nil {
+			return nil, xerr
+		}
+	default:
+		return nil, ErrBadCredential
+	}
+	converter, ok := s.repo.(repository.PoolLinkConversionRepository)
+	if !ok || s.restorer == nil {
+		return nil, errx.InternalError()
+	}
+	if _, ok := s.repo.(repository.PoolLinkManagedRepository); ok && !managedOperationLocked(ctx) {
+		var out *models.PoolLinkMailboxState
+		xerr := s.withManagedOperationLock(ctx, inst.ID, func(ctx context.Context) *errx.Error {
+			var xerr *errx.Error
+			out, xerr = s.convertToCloud(ctx, inst, existing, req)
+			return xerr
+		})
+		return out, xerr
+	}
+	if err := s.restorer.RestoreMailboxCredential(ctx, existing.EmailAccountID, req.OAuth, req.SMTPIMAP); err != nil {
+		return nil, errx.InternalError()
+	}
+	if err := converter.ConvertToCloud(ctx, inst.ID, req.RemoteID); err != nil {
+		return nil, errx.InternalError()
+	}
+	if userID, xerr := s.ownerUserID(ctx, inst); xerr == nil {
+		s.applyWarmupSettings(ctx, inst.OrganizationID, userID, existing.EmailAccountID, req.Warmup)
+	}
+	if err := s.emailSvc.LoadAccountOntoWorker(ctx, existing.EmailAccountID); err != nil {
+		log.Warn().Err(err).Str("account_id", existing.EmailAccountID.String()).Msg("pool link: worker load failed after return to Cloud; reconciler will retry")
+	}
+	if s.scheduler != nil {
+		_ = s.scheduler.EnsureWarmupScheduled(ctx, existing.EmailAccountID)
+	}
+	return s.GetMailbox(ctx, inst, req.RemoteID)
 }
 
 func (s *service) Enroll(ctx context.Context, inst *models.PoolLinkInstance, req models.PoolLinkEnrollRequest) (*models.PoolLinkMailboxState, *errx.Error) {
@@ -809,7 +883,7 @@ func (s *service) PatchMailbox(ctx context.Context, inst *models.PoolLinkInstanc
 	}
 	reload := false
 	if patch.OAuth != nil && patch.OAuth.RefreshToken != "" {
-		if err := s.emails.RefreshBoxToken(ctx, m.EmailAccountID, patch.OAuth.AccessToken, patch.OAuth.RefreshToken, patch.OAuth.ExpiresAt); err != nil {
+		if err := s.emails.RefreshBoxTokenForApp(ctx, m.EmailAccountID, patch.OAuth.AccessToken, patch.OAuth.RefreshToken, patch.OAuth.ExpiresAt, nil); err != nil {
 			return nil, errx.InternalError()
 		}
 		reload = true
@@ -879,7 +953,6 @@ func (s *service) unenroll(ctx context.Context, inst *models.PoolLinkInstance, r
 	if xerr := s.stopParticipation(ctx, inst, *m); xerr != nil {
 		return xerr
 	}
-	s.cancelSelfExecutedCommands(ctx, *m)
 	if !m.Managed {
 		if xerr := s.emailSvc.Delete(ctx, inst.OrganizationID.String(), m.EmailAccountID.String()); xerr != nil && xerr != errx.ErrNotFound {
 			return xerr

@@ -44,10 +44,10 @@ func (r *taskRepository) AuthorizeWarmupDispatch(ctx context.Context, task, mail
 	}
 	nonce := uuid.New()
 	var saved uuid.UUID
-	err = tx.QueryRow(ctx, `UPDATE warmup_tasks w SET dispatch_nonce=$4,dispatch_worker_id=NULLIF($3::uuid,`+nilUUIDSQL+`),
+	err = tx.QueryRow(ctx, `UPDATE warmup_tasks w SET dispatch_nonce=$4,dispatch_worker_id=$3,
 		warmup_charged_date=(NOW() AT TIME ZONE 'UTC')::date,warmup_reply_charged=(w.parent_task_id IS NOT NULL),warmup_refunded_at=NULL
-        FROM tasks t JOIN email_accounts ea ON ea.id=t.email_account_id LEFT JOIN fleet_nodes n ON n.id=ea.worker_id
-        WHERE w.task_id=t.id AND t.id=$1 AND t.email_account_id=$2 AND t.status='active'
+        FROM tasks t JOIN email_accounts ea ON ea.id=t.email_account_id JOIN fleet_nodes n ON n.id=ea.worker_id
+        WHERE w.task_id=t.id AND t.id=$1 AND t.email_account_id=$2 AND ea.worker_id=$3 AND t.status='active'
 		AND w.lineage_version=1 AND w.dispatch_nonce IS NULL
 		AND `+testSenderSQL+` AND EXISTS(SELECT 1 FROM warmup_tokens wt
 		JOIN email_accounts ea ON ea.id=wt.recipient_account_id
@@ -55,8 +55,8 @@ func (r *taskRepository) AuthorizeWarmupDispatch(ctx context.Context, task, mail
 		WHERE wt.task_id=t.id AND `+partnerEligibleSQL+`)
 		AND (w.warmup_charged_date IS NULL OR w.warmup_refunded_at IS NOT NULL) AND ea.status='active'
         AND NOT ea.send_recovery_hold AND (ea.send_cooldown_until IS NULL OR ea.send_cooldown_until<=NOW())
-        AND (($3<>`+nilUUIDSQL+` AND ea.worker_id=$3 AND NOT `+instanceExecutedSQL("ea.id")+` AND n.role='worker' AND n.active AND n.last_seen_at>NOW()-$5::interval AND n.warmup_send_protocol>=1)
-         OR ($3=`+nilUUIDSQL+` AND `+selfExecutionLiveSQL("ea.id")+`))
+        AND NOT `+instanceExecutedSQL("ea.id")+`
+        AND n.role='worker' AND n.active AND n.last_seen_at>NOW()-$5::interval AND n.warmup_send_protocol>=1
 		RETURNING w.dispatch_nonce`, task, mailbox, worker, nonce, WorkerLivenessWindow).Scan(&saved)
 	if err != nil {
 		return uuid.Nil, err
@@ -179,7 +179,7 @@ func (r *taskRepository) DeferWarmupDispatch(ctx context.Context, task, mailbox,
 	}
 	var deferred uuid.UUID
 	err = tx.QueryRow(ctx, `UPDATE warmup_tasks w SET dispatch_nonce=NULL,dispatch_worker_id=NULL,schedule_revision=schedule_revision+1
-        FROM tasks t WHERE w.task_id=t.id AND t.id=$1 AND t.email_account_id=$2 AND w.dispatch_worker_id IS NOT DISTINCT FROM NULLIF($3::uuid,`+nilUUIDSQL+`) AND w.dispatch_nonce=$4
+        FROM tasks t WHERE w.task_id=t.id AND t.id=$1 AND t.email_account_id=$2 AND w.dispatch_worker_id=$3 AND w.dispatch_nonce=$4
         AND w.dispatch_started_at IS NULL AND w.dispatch_result IS NULL AND t.send_result_applied_at IS NULL
 		RETURNING w.task_id`, task, mailbox, worker, nonce).Scan(&deferred)
 	if err != nil {

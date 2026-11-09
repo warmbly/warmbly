@@ -656,13 +656,13 @@ func TestLiveMailboxSourcesSigninConversions(t *testing.T) {
 			t.Fatalf("after refresh = %v", got)
 		}
 		modify := []string{"https://www.googleapis.com/auth/gmail.modify"}
-		if err := emails.ReplaceBoxToken(ctx, me, "a3", "r3", exp, modify); err != nil {
+		if err := emails.ReplaceBoxToken(ctx, me, "a3", "r3", exp, modify, nil); err != nil {
 			t.Fatal(err)
 		}
 		if got := read(); !slices.Equal(got, modify) {
 			t.Fatalf("after reauth = %v", got)
 		}
-		if err := emails.ReplaceBoxToken(ctx, me, "a4", "r4", exp, nil); err != nil {
+		if err := emails.ReplaceBoxToken(ctx, me, "a4", "r4", exp, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 		if got := read(); got != nil {

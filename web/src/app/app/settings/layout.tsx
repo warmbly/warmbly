@@ -20,6 +20,7 @@ import {
     CloudIcon,
     DatabaseIcon,
     GaugeIcon,
+    KeyRoundIcon,
     Loader2Icon,
     PlugIcon,
     ShieldCheckIcon,
@@ -38,6 +39,7 @@ import { Page, PageTopbar } from "@/components/layout/Page";
 import useFeatureAccess from "@/hooks/useFeatureAccess";
 import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
 import { useCloudLinkStatus, usePoolLinkInstances } from "@/lib/api/hooks/app/cloudlink/useCloudLink";
+import { useMailboxOAuthApps } from "@/lib/api/hooks/app/emails/useMailboxOAuthApps";
 
 interface SectionDef {
     path: string;
@@ -53,6 +55,8 @@ interface SectionDef {
     hostedDescription?: string;
     /** Open to a member restricted to selected resources: their own account only. */
     scoped?: boolean;
+    /** Only on the Partnership plan, or while the workspace keeps an app it saved. */
+    partnerOnly?: boolean;
 }
 
 interface SectionGroup {
@@ -87,6 +91,7 @@ const GROUPS: SectionGroup[] = [
     {
         label: "Developers",
         items: [
+            { path: "mailbox-sign-in", label: "Mailbox sign-in", icon: KeyRoundIcon, description: "Your own Google and Microsoft OAuth apps for mailbox sign-in.", permission: "MANAGE_EMAILS", partnerOnly: true },
             { path: "oauth-apps", label: "OAuth apps", icon: BoxesIcon, description: "Apps that connect via OAuth2, and the apps you've authorized.", permission: "MANAGE_API_KEYS" },
             { path: "webhooks", label: "Webhooks", icon: WebhookIcon, description: "Realtime HTTP callbacks for workspace events.", permission: "MANAGE_SETTINGS" },
             { path: "connections", label: "Connections", icon: PlugIcon, description: "External MCP servers that add tools to the AI.", permission: "MANAGE_SETTINGS" },
@@ -117,6 +122,10 @@ function SettingsLayoutInner() {
     const hosted = selfHosted === false;
     const canManageApiKeys = usePermission("MANAGE_API_KEYS");
     const canManageSettings = usePermission("MANAGE_SETTINGS");
+    const canManageEmails = usePermission("MANAGE_EMAILS");
+    // Off the Partnership plan, Mailbox sign-in stays listed while the workspace keeps an app it saved.
+    const oauthApps = useMailboxOAuthApps(canManageEmails && !access.partnership);
+    const keepsOAuthApps = (oauthApps.data?.data.length ?? 0) > 0;
     // Warmbly Cloud only shows where a link exists: an instance linked to it, or a hosted workspace with linked instances.
     const cloudStatus = useCloudLinkStatus(selfHosted === true && canManageSettings);
     const linkedInstances = usePoolLinkInstances(hosted && canManageSettings);
@@ -189,6 +198,8 @@ function SettingsLayoutInner() {
                     (!s.ownerOnly || access.isOwner) &&
                     (!s.billingOnly || access.billing) &&
                     (s.path !== "warmbly-cloud" || hasCloudLink) &&
+                    (!s.partnerOnly || access.partnership || keepsOAuthApps) &&
+                    (s.permission !== "MANAGE_EMAILS" || canManageEmails) &&
                     (s.permission !== "MANAGE_API_KEYS" || canManageApiKeys) &&
                     (s.permission !== "MANAGE_SETTINGS" || canManageSettings) &&
                     (s.permission !== "VIEW_ANALYTICS" || canViewAnalytics) &&

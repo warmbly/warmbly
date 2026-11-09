@@ -256,6 +256,43 @@ Scheduling an account deletion is refused with one of these codes, or with `orga
 | `account_has_shared_work` | 409 | The account still holds mailboxes, contacts, campaigns, campaign attachments, reply templates, API keys, apps or shared assistant conversations in a workspace it does not own. Remove them before scheduling deletion of the account |
 | `workspace_subscription_active` | 409 | A workspace the account owns has a subscription that will renew. Cancel it before scheduling deletion of the account |
 
+#### Partnership refusals
+
+The [Partnership plan](/guides/partnership/) routes under `/emails/connect` and `/emails/oauth-apps`, its sign-in links, and Google and Microsoft sign-in on that plan.
+
+| `code` | Status | Meaning |
+|--------|--------|---------|
+| `partnership_plan_required` | 403 | The workspace is not on the Partnership plan, so the mailbox connect API, sign-in links and its own OAuth apps are not available |
+| `partnership_oauth_app_required` | 422 | On the Partnership plan, Google and Microsoft mailboxes sign in only through the workspace's own OAuth app, and it has none for this provider. Also returned for inbox-vendor sign-in and domain-wide grants, which only Warmbly's own apps can serve |
+| `connect_grant_app_required` | 422 | A handed-over sign-in (`POST /emails/connect/oauth`) needs the workspace's own OAuth app for that provider saved first |
+| `connect_grant_input` | 400 | Send either `refresh_token`, or `code` with the `redirect_uri` it was issued for |
+| `connect_grant_redirect_uri` | 400 | `redirect_uri` must be the `https` callback the code was issued for |
+| `connect_grant_refused` | 422 | The provider refused the token or code: revoked, expired, already used, issued for another `redirect_uri`, or from a different app than the one saved |
+| `connect_grant_offline` | 422 | The sign-in carries no refresh token. Ask for offline access (`access_type=offline` and `prompt=consent` on Google, `offline_access` on Microsoft) |
+| `connect_grant_wrong_mailbox` | 403 | The sign-in belongs to a different address than the `email` sent with it |
+| `connect_grant_mailbox_not_allowed` | 403 | The sign-in would renew a mailbox outside the mailboxes this API key may act on |
+| `connect_link_provider` | 400 | `provider` must be `gmail` or `outlook` |
+| `connect_link_email` | 400 | `email` must be a single bare address |
+| `connect_link_return_url` | 400 | `return_url` must be an `https` address with no fragment |
+| `connect_link_expiry` | 400 | `expires_in_hours` must be between 1 and 168 |
+| `connect_warmup` | 400 | A `warmup` value is not positive, or `reply_rate` is outside 1 to 100 |
+| `connect_link_not_found` | 404 | The workspace has no sign-in link with that id |
+| `connect_link_unavailable` | 404 | The sign-in link expired, was revoked or already connected its mailbox |
+| `connect_link_browser` | 403 | The sign-in was finished in a different browser from the one that opened the link. Open the link again |
+| `connect_link_wrong_mailbox` | 403 | The owner signed in with a different address than the one the link names |
+| `connect_link_declined` | 400 | The owner cancelled the provider's consent screen. The link stays usable |
+| `connect_link_creator_left` | 403 | The member whose key created the link can no longer manage mailboxes in the workspace |
+| `connect_warmup_failed` | none | Set as `error_code` on a connected link: the mailbox connected, but its warmup did not start. Start it with `POST /emails/:id/warmup/start` |
+| `connect_warmup_settings_failed` | none | Set as `error_code` on a connected link: warmup started on the default ramp because the link's ramp settings were refused. Apply them with `PATCH /emails/:id` |
+| `oauth_app_provider` | 400 | The provider in the path must be `gmail` or `outlook` |
+| `oauth_app_client_id` | 400 | The client ID does not fit the provider: Google client IDs end in `.apps.googleusercontent.com`, Microsoft ones are a GUID |
+| `oauth_app_client_secret` | 400 | A new app, or a new client ID, needs its client secret |
+| `oauth_app_redirect_url` | 400 | `redirect_url` must be an `https` address with a path and no fragment |
+| `oauth_app_rejected` | 422 | The provider did not accept the client ID and secret |
+| `oauth_app_in_use` | 409 | Mailboxes are signed in through the app, so its client ID cannot change and it cannot be removed. A new secret for the same client ID can be saved at any time |
+| `oauth_app_not_found` | 404 | The workspace has no OAuth app for that provider |
+| `oauth_app_secret_missing` | 422 | The app has no client secret, which happens after a workspace import without credentials. Save it again |
+
 #### Cloud connection refusals
 
 | `code` | Status | Meaning |
@@ -272,10 +309,8 @@ Scheduling an account deletion is refused with one of these codes, or with `orga
 | `cloud_link_mailbox_inactive` | 422 | Only active mailboxes can be enrolled in Warmbly Cloud warmup |
 | `cloud_link_oauth_mailbox` | 422 | A Google or Microsoft mailbox connected with this instance's own OAuth app cannot be warmed by Warmbly Cloud, because its refresh grant is bound to that app. The `message` says how to connect it instead |
 | `cloud_link_lifecycle` | 400 | A pause or resume request named an action other than `pause` or `resume` |
-| `cloud_link_executor` | 400 | An enrollment named an `executor` other than `cloud` or `instance` |
-| `cloud_link_self_execution_not_granted` | 403 | Keeping a mailbox's credential on this server needs a permission Warmbly grants to the linked Cloud workspace, and it has none or it expired. Ask Warmbly support, or enroll with `executor` `cloud` |
-| `cloud_link_self_execution_unavailable` | 409 | The connected Warmbly Cloud cannot run warmup for a mailbox whose credential stays on this server. Upgrade Cloud, or enroll with `executor` `cloud` |
-| `cloud_link_self_execution_managed` | 422 | The mailbox signs in through Warmbly Cloud or is associated with its app-password copy there, so its credential already lives on Cloud and cannot stay on this server |
+| `cloud_link_executor` | 400 | An enrollment named an `executor` other than `cloud`. Warmbly Cloud warms only mailboxes whose credential it holds |
+| `cloud_link_credential_required` | 409 | The mailbox's credential stayed on this server, so Warmbly Cloud keeps it out of the pool. Enroll it with `executor` `cloud` to hand the credential over; a Google or Microsoft mailbox is added again through Warmbly Cloud sign-in |
 
 #### Warmbly Cloud pool link
 
@@ -302,21 +337,8 @@ These come from Warmbly Cloud's side of the connection (`/v1/pool-link/*`), whic
 | `pool_link_warmup_unavailable` | 403 | Warmup is not available on the Cloud workspace |
 | `pool_link_oauth_pending` | 409 | A mailbox sign-in started through Warmbly Cloud has not completed yet. Poll again |
 | `pool_link_oauth_session` | 404 | The mailbox sign-in session is unknown or has expired. Start the sign-in again |
-| `pool_link_executor` | 400 | On Warmbly Cloud's linked-instance API: an enrollment named an `executor` other than `cloud` or `instance` |
-| `pool_link_executor_credential` | 400 | On Warmbly Cloud's linked-instance API: an enrollment for a mailbox the instance runs carried a credential. Those mailboxes are enrolled without one |
-| `pool_link_executor_conflict` | 409 | On Warmbly Cloud's linked-instance API: a credential was sent for a mailbox whose credential stays on the instance, without `executor` `cloud`. Update the instance, or switch the mailbox to Cloud explicitly |
-| `pool_link_executor_managed` | 422 | On Warmbly Cloud's linked-instance API: a mailbox Cloud connected through its own sign-in cannot be run by the instance |
-| `pool_link_self_execution_not_granted` | 403 | On Warmbly Cloud's linked-instance API: the Cloud workspace has no active permission to keep mailbox credentials on the instance |
-| `pool_link_self_execution_unavailable` | 409 | On Warmbly Cloud's linked-instance API: this Cloud deployment cannot run warmup through the instance |
-| `pool_link_mailbox_not_self_executed` | 409 | On Warmbly Cloud's linked-instance API: Cloud runs this mailbox's warmup, so it takes no warmup reports for it from the instance |
-| `pool_link_command_not_found` | 404 | On Warmbly Cloud's linked-instance API: no command with that ID belongs to the calling instance |
-| `pool_link_command_not_leased` | 409 | On Warmbly Cloud's linked-instance API: a command was answered before it was leased |
-| `pool_link_command_answered` | 409 | On Warmbly Cloud's linked-instance API: the command already has a different answer, expired, or was withdrawn. Repeating the stored answer returns `204` |
-| `pool_link_command_result_invalid` | 422 | On Warmbly Cloud's linked-instance API: the outcome does not fit the command kind, or a `sent` result has no valid `message_id` |
-| `pool_link_arrival_invalid` | 400 | On Warmbly Cloud's linked-instance API: a warmup report is missing its message handle, Message-ID, sender or received time |
-| `pool_link_arrival_pending` | 503 | On Warmbly Cloud's linked-instance API: Cloud has not recorded the send this report matches yet. Report it again shortly |
-| `pool_link_arrival_not_found` | 404 | On Warmbly Cloud's linked-instance API: an observation named a message Cloud never accepted from this mailbox |
-| `pool_link_observation_invalid` | 400 | On Warmbly Cloud's linked-instance API: the observation `kind` is not `removed`, `moved_to_spam` or `owner_activity` |
+| `pool_link_executor` | 400 | On Warmbly Cloud's linked-instance API: an enrollment named an `executor` other than `cloud`. Cloud runs every mailbox it warms |
+| `pool_link_executor_conflict` | 409 | On Warmbly Cloud's linked-instance API: a credential update was sent for a mailbox whose credential stayed on the instance. Enroll the mailbox again with its credential to hand it to Cloud |
 
 #### CLI sign-in
 

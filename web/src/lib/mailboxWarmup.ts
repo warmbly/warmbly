@@ -1,7 +1,7 @@
 import type Inbox from "@/lib/api/models/app/emails/Inbox";
 import type AccountStatus from "@/lib/api/models/app/analytics/AccountStatus";
 import type { WarmupStatusInfo } from "@/lib/api/models/app/analytics/AccountStatus";
-import type { CloudLinkMailboxRow, PoolLinkSelfExecution } from "@/lib/api/models/app/cloudlink/CloudLink";
+import type { CloudLinkMailboxRow } from "@/lib/api/models/app/cloudlink/CloudLink";
 import { diagnosticSendingAllowed } from "./diagnosticParticipation";
 
 export interface WarmupSource {
@@ -11,12 +11,10 @@ export interface WarmupSource {
     reportsUnavailable?: boolean;
     /** Cloud enrollment is not readable by this member, so no mailbox can be confirmed local. */
     ownershipHidden?: boolean;
-    /** Cloud's answer on whether this server may run its mailboxes' warmup; undefined when Cloud did not say. */
-    selfExecutionGranted?: boolean;
     rowFor: (id: string) => CloudLinkMailboxRow | undefined;
 }
 
-export type WarmupActivity = "active" | "paused" | "receive_only" | "off" | "inactive" | "ungranted" | "unconfirmed" | "connecting" | "removing" | "checking" | "unavailable";
+export type WarmupActivity = "active" | "paused" | "receive_only" | "off" | "inactive" | "needs_credential" | "connecting" | "removing" | "checking" | "unavailable";
 
 export interface MailboxWarmup {
     source: "local" | "cloud" | "unknown";
@@ -28,25 +26,18 @@ export interface MailboxWarmup {
 
 export const warmupActivityLabel: Record<WarmupActivity, string> = {
     active: "warming up", paused: "warmup paused", receive_only: "receiving warmup only",
-    off: "warmup off", inactive: "warmup mailbox off", ungranted: "waiting for permission to run on this server",
-    unconfirmed: "permission to run on this server unconfirmed",
+    off: "warmup off", inactive: "warmup mailbox off", needs_credential: "paused until Warmbly Cloud holds its credential",
     connecting: "Cloud enrollment pending", removing: "Cloud removal pending",
     checking: "warmup status checking", unavailable: "warmup status unavailable",
 };
 
 export function warmupUnknown(warmup: MailboxWarmup): boolean {
-    return ["checking", "unavailable", "unconfirmed", "connecting", "removing"].includes(warmup.activity);
+    return ["checking", "unavailable", "connecting", "removing"].includes(warmup.activity);
 }
 
-// Cloud lifecycle controls need a Cloud report to act on; an unconfirmed grant still has one.
+// Cloud lifecycle controls need a Cloud report to act on.
 export function cloudReportMissing(warmup: MailboxWarmup): boolean {
     return warmup.cloudActivity === undefined;
-}
-
-// Undefined when Cloud did not answer about the grant; a lapsed expiry counts as withdrawn.
-export function selfExecutionGranted(grant: PoolLinkSelfExecution | null | undefined, now = Date.now()): boolean | undefined {
-    if (!grant) return undefined;
-    return grant.granted && !(grant.expires_at && new Date(grant.expires_at).getTime() <= now);
 }
 
 // An enrollment owns warmup even when its report is missing or its local anchor is absent.
@@ -54,8 +45,10 @@ export function resolveMailboxWarmup(mailbox: Pick<Inbox, "id" | "status" | "war
     const row = pool?.connected ? pool.rowFor(mailbox.id) : undefined;
     if (row?.enrolled) {
         const source = "cloud" as const;
-        if (row.enrollment_state === "pending_enroll") return { source, activity: "connecting" };
+        // A removal under way wins; otherwise Cloud keeps a mailbox whose credential stayed here out of the pool.
         if (row.enrollment_state === "pending_remove") return { source, activity: "removing" };
+        if (row.executor === "instance") return { source, activity: "needs_credential" };
+        if (row.enrollment_state === "pending_enroll") return { source, activity: "connecting" };
         const cloud = row.cloud;
         if (pool?.reportsUnavailable || !cloud) return { source, activity: "unavailable" };
         const info = cloud.warmup ? { ...cloud.warmup, current_volume: cloud.sent_today } : undefined;
@@ -65,12 +58,7 @@ export function resolveMailboxWarmup(mailbox: Pick<Inbox, "id" | "status" | "war
             : info.paused ? "paused"
             : cloud.participation && !cloud.participation.send ? cloud.participation.receive ? "receive_only" : "off"
             : "active";
-        // This server runs the plan, so it only warms while the mailbox is on here and Cloud still grants it.
-        const instance = row.executor === "instance";
-        const activity = instance && mailbox.status !== "active" ? "inactive"
-            : instance && cloudActivity === "active" && pool?.selfExecutionGranted !== true ? pool?.selfExecutionGranted === false ? "ungranted" : "unconfirmed"
-            : cloudActivity;
-        return { ...values, activity, cloudActivity };
+        return { ...values, activity: cloudActivity, cloudActivity };
     }
     if (pool?.loading) return { source: "unknown", activity: "checking" };
     if (pool?.unavailable || pool?.ownershipHidden) return { source: "unknown", activity: "unavailable" };

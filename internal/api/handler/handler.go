@@ -48,6 +48,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/keystatus"
 	"github.com/warmbly/warmbly/internal/app/leadfinder"
 	"github.com/warmbly/warmbly/internal/app/leadsync"
+	"github.com/warmbly/warmbly/internal/app/mailboxconnect"
 	"github.com/warmbly/warmbly/internal/app/mailboximport"
 	"github.com/warmbly/warmbly/internal/app/mailpush"
 	"github.com/warmbly/warmbly/internal/app/mcp"
@@ -56,6 +57,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/nodescope"
 	"github.com/warmbly/warmbly/internal/app/notification"
 	"github.com/warmbly/warmbly/internal/app/oauth"
+	"github.com/warmbly/warmbly/internal/app/oauthapp"
 	"github.com/warmbly/warmbly/internal/app/opsnotify"
 	"github.com/warmbly/warmbly/internal/app/organization"
 	"github.com/warmbly/warmbly/internal/app/orgrisk"
@@ -172,12 +174,15 @@ type Handler struct {
 	SubscriptionService subscription.SubscriptionService
 	StripeService       stripe.StripeService
 	DiscountService     discount.DiscountService
-	// PlanOfferService holds private plan offers and credential-free Cloud warmup grants. Nil-safe.
+	// PlanOfferService holds private plan offers. Nil-safe.
 	PlanOfferService planoffer.Service
 
 	// Trial & feature gates
-	TrialService            trial.TrialService
-	FeatureGateService      feature.FeatureGateService
+	TrialService       trial.TrialService
+	FeatureGateService feature.FeatureGateService
+	// MailboxConnectService and MailboxOAuthAppService are the Partnership tools. Nil-safe.
+	MailboxConnectService   *mailboxconnect.Service
+	MailboxOAuthAppService  oauthapp.Service
 	WorkerAssignmentService worker.WorkerAssignmentService
 
 	// Organization & IAM

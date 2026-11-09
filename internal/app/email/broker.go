@@ -140,8 +140,8 @@ func (s *emailService) OAuthAccessToken(ctx context.Context, accountID uuid.UUID
 	if current.AccessToken != "" && time.Until(current.Expiry) > 2*time.Minute {
 		return current, nil
 	}
-	// The client config is only needed to refresh.
-	cfg, xerr := s.oauthConfigFor(models.InboxProvider(acc.Provider))
+	// Only the client that issued the grant can refresh it.
+	cfg, xerr := s.grantConfig(ctx, creds.OAuthAppID, models.InboxProvider(acc.Provider))
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -153,7 +153,7 @@ func (s *emailService) OAuthAccessToken(ctx context.Context, accountID uuid.UUID
 	if fresh.RefreshToken == "" {
 		fresh.RefreshToken = current.RefreshToken
 	}
-	if err := s.emailRepository.RefreshBoxToken(ctx, accountID, fresh.AccessToken, fresh.RefreshToken, fresh.Expiry); err != nil {
+	if err := s.emailRepository.RefreshBoxTokenForApp(ctx, accountID, fresh.AccessToken, fresh.RefreshToken, fresh.Expiry, creds.OAuthAppID); err != nil {
 		log.Warn().Err(err).Str("account_id", accountID.String()).Msg("brokered token persist failed")
 	}
 	return fresh, nil

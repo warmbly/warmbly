@@ -339,22 +339,17 @@ describe("Cloud warmup values", () => {
         else expect(screen.getByRole("menuitem", { name: "Resume in Warmbly Cloud" })).toBeEnabled();
     });
 
-    it.each([false, true])("keeps the Cloud action available for a locally disabled instance executor (paused: %s)", async (paused) => {
-        const originalStatus = rows[0].status;
-        rows[0].status = "inactive";
-        try {
-            statusState.data = rows.map(measuredStatus);
-            statusState.cloudConnected = true;
-            setCloudRows([{ id: rows[0].id, enrolled: true, executor: "instance", cloud: {
-                sent_today: 5, health: { state: "healthy" }, settings: { base: 10 }, warmup: { enabled: true, paused },
-            } } as CloudLinkMailboxRow]);
-            await renderPage();
-            const row = screen.getAllByRole("row").find((element) => element.textContent?.includes(rows[0].email))!;
-            fireEvent.click(within(row).getByRole("button", { name: "Warmup actions" }));
-            expect(screen.getByRole("menuitem", { name: paused ? "Resume in Warmbly Cloud" : "Pause in Warmbly Cloud" })).toBeEnabled();
-        } finally {
-            rows[0].status = originalStatus;
-        }
+    it("holds a mailbox whose credential stayed on this server out of the Cloud lifecycle action", async () => {
+        statusState.data = rows.map(measuredStatus);
+        statusState.cloudConnected = true;
+        setCloudRows([{ id: rows[0].id, enrolled: true, executor: "instance", cloud: {
+            sent_today: 5, health: { state: "healthy" }, settings: { base: 10 }, warmup: { enabled: true, paused: false },
+        } } as CloudLinkMailboxRow]);
+        await renderPage();
+        const row = screen.getAllByRole("row").find((element) => element.textContent?.includes(rows[0].email))!;
+        fireEvent.click(within(row).getByRole("button", { name: "Warmup actions" }));
+        expect(screen.getByRole("menuitem", { name: "Paused until Cloud holds its credential" })).toBeDisabled();
+        expect(screen.getByRole("menuitem", { name: "Remove from Warmbly Cloud" })).toBeEnabled();
     });
 
     it.each(["cloudLoading", "cloudUnavailable"] as const)("offers no local warmup action while Cloud ownership is %s", async (unknown) => {

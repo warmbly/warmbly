@@ -82,24 +82,6 @@ type emailSender struct {
 	publisher events.Publisher
 	liveness  WorkerLiveness
 	admission repository.OutboundAdmissionRepository
-	selfExec  SelfExecution
-}
-
-// SelfExecution says whether a linked instance, not a worker, runs a mailbox's
-// warmup, and whether that instance is live and still granted to.
-type SelfExecution interface {
-	SelfExecutionReady(ctx context.Context, accountID uuid.UUID) (executed, ready bool, err error)
-}
-
-// WireSelfExecution lets warmup run on mailboxes a linked instance executes.
-func (s *emailSender) WireSelfExecution(x SelfExecution) { s.selfExec = x }
-
-// SelfExecutionReady is the instance-executed half of WarmupWorkerReady; the executor outranks any worker assignment.
-func (s *emailSender) SelfExecutionReady(ctx context.Context, account models.Email) (executed, ready bool, err error) {
-	if s.selfExec == nil {
-		return false, false, nil
-	}
-	return s.selfExec.SelfExecutionReady(ctx, account.ID)
 }
 
 // NewEmailSender creates a new email sender
@@ -117,9 +99,6 @@ func (s *emailSender) WireWorkerLiveness(l WorkerLiveness) {
 }
 
 func (s *emailSender) WarmupWorkerReady(ctx context.Context, account models.Email) (bool, error) {
-	if executed, ready, err := s.SelfExecutionReady(ctx, account); err != nil || executed {
-		return ready, err
-	}
 	capable, ok := s.liveness.(interface {
 		SupportsWarmupSendProtocol(context.Context, uuid.UUID) (bool, error)
 	})
@@ -135,21 +114,10 @@ func (s *emailSender) WireSendAdmission(r repository.OutboundAdmissionRepository
 func (s *emailSender) Send(ctx context.Context, taskID uuid.UUID, msg EmailMessage, account models.Email) error {
 	// Get worker ID for this email account
 	workerID := account.WorkerID
-	if msg.IsWarmup {
-		// An instance-executed mailbox's warmup is queued for its linked instance under the nil worker.
-		if executed, ready, err := s.SelfExecutionReady(ctx, account); err != nil {
-			return fmt.Errorf("%w: mailbox %s: %w", ErrWorkerUnconfirmed, account.Email, err)
-		} else if executed && !ready {
-			return fmt.Errorf("%w: the linked instance running mailbox %s is not live", ErrWorkerOffline, account.Email)
-		} else if executed {
-			queued := uuid.Nil
-			workerID = &queued
-		}
-	}
 	if workerID == nil {
 		return fmt.Errorf("%w: no worker holds mailbox %s", ErrWorkerOffline, account.Email)
 	}
-	if s.liveness != nil && *workerID != uuid.Nil {
+	if s.liveness != nil {
 		live, err := s.liveness.IsWorkerLive(ctx, *workerID)
 		if err != nil {
 			return fmt.Errorf("%w: worker %s: %w", ErrWorkerUnconfirmed, workerID, err)
@@ -303,13 +271,13 @@ func (l *workerLiveness) IsWorkerLive(ctx context.Context, workerID uuid.UUID) (
 	return n > 0, nil
 }
 
-// selfExecutionReady reports whether a linked instance runs the mailbox's warmup and is ready to.
-func (s *tasksService) selfExecutionReady(ctx context.Context, account *Email) (executed, ready bool, err error) {
-	x, ok := s.emailSender.(interface {
-		SelfExecutionReady(context.Context, models.Email) (bool, bool, error)
+// instanceExecuted reports a legacy mailbox whose credential stayed on its linked instance.
+func (s *tasksService) instanceExecuted(ctx context.Context, accountID uuid.UUID) (bool, error) {
+	probe, ok := s.emailRepo.(interface {
+		InstanceExecuted(context.Context, uuid.UUID) (bool, error)
 	})
-	if !ok || account == nil {
-		return false, false, nil
+	if !ok {
+		return false, nil
 	}
-	return x.SelfExecutionReady(ctx, *account)
+	return probe.InstanceExecuted(ctx, accountID)
 }

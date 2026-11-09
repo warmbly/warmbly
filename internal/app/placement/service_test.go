@@ -625,6 +625,9 @@ func (g fakeGate) CanSendCampaignEmail(context.Context, uuid.UUID) (bool, *errx.
 func (g fakeGate) IsPaidOrganization(context.Context, uuid.UUID) (bool, *errx.Error) {
 	return g.paid, nil
 }
+func (g fakeGate) HasPartnership(context.Context, uuid.UUID) (bool, *errx.Error) {
+	return false, nil
+}
 
 type settleRepo struct {
 	*fakeRepo
@@ -663,5 +666,33 @@ func TestSettleCreditsRefundsOnlyWhatDeliveredNothing(t *testing.T) {
 	}
 	if again := h.svc.settleCredits(context.Background()); len(again) != 0 || c.balance != fakeTestPrice {
 		t.Fatalf("a second pass refunded %v (balance %d); want nothing more", again, c.balance)
+	}
+}
+
+type partnerGate struct{ partner bool }
+
+func (partnerGate) CanSendCampaignEmail(context.Context, uuid.UUID) (bool, *errx.Error) {
+	return false, nil
+}
+func (partnerGate) IsPaidOrganization(context.Context, uuid.UUID) (bool, *errx.Error) {
+	return false, nil
+}
+func (g partnerGate) HasPartnership(context.Context, uuid.UUID) (bool, *errx.Error) {
+	return g.partner, nil
+}
+
+// The Partnership plan sends no campaigns, yet tests on the paid allowance.
+func TestPartnershipMayTestOnThePaidAllowance(t *testing.T) {
+	ctx := context.Background()
+	on := &service{Deps: Deps{Gate: partnerGate{partner: true}}}
+	if !on.entitled(ctx, uuid.New()) || !on.paidAllowance(ctx, uuid.New()) {
+		t.Fatal("a Partnership workspace must start tests on the paid allowance")
+	}
+	if on.balanceUsable(ctx, uuid.New()) {
+		t.Fatal("a Partnership workspace must not pay for tests from a balance")
+	}
+	off := &service{Deps: Deps{Gate: partnerGate{}}}
+	if off.entitled(ctx, uuid.New()) || off.paidAllowance(ctx, uuid.New()) {
+		t.Fatal("a warming-only workspace off the Partnership plan must not start tests")
 	}
 }
