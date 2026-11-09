@@ -70,7 +70,7 @@ A command that would set a password refuses on a non-TTY unless you passed `--pa
 | `WARMBLY_API_KEY` | every API command | The command stops and explains where a key comes from |
 | `WARMBLY_API_URL` | every API command | Falls back to the instance's own `API_PUBLIC_URL`, then the hosted service |
 
-`backup` and `restore` also need `pg_dump` and `psql`, which the backend image ships for exactly this reason. Inside the backend container all of these are already set, except the API key, which is yours. Outside it, export what the command needs, and match `AUTH_SECRET` to the backend's exactly.
+`backup` and `restore` also need `pg_dump` and `psql` of the server's major version, or a newer one. The backend image ships the 16, 17 and 18 clients for exactly this reason, and outside it the command looks in `/usr/libexec/postgresqlNN` (Alpine), `/usr/lib/postgresql/NN/bin` (Debian and Ubuntu) and then `PATH`. Inside the backend container all of these are already set, except the API key, which is yours. Outside it, export what the command needs, and match `AUTH_SECRET` to the backend's exactly.
 
 Remote administrator commands require none of those instance secrets. They do not read `API_PUBLIC_URL`, `WARMBLY_API_URL` or `WARMBLY_API_KEY` to choose an instance or authenticate. Their only configuration-directory dependency is the operating system's user configuration location (`XDG_CONFIG_HOME` on Linux when set).
 
@@ -464,7 +464,7 @@ docker compose -p warmbly cp backend:/data/blobs/warmbly.tar.gz ./warmbly.tar.gz
 
 `/data/blobs` is the one path the container and the host both see, so it is the hand-off. Move the bundle out and delete it: `backup` excludes its own output from the archive, but a bundle left behind is swept into the next one. The delete is chained with `&&` so a failed copy cannot take the only copy with it.
 
-Writes one bundle holding the three things that only restore together: a `pg_dump` of the database, the blob root (message bodies, attachments, avatars), and the encryption keys.
+Writes one bundle holding the three things that only restore together: a `pg_dump` of the database, the blob root (message bodies, attachments, avatars), and the encryption keys. The dump is taken with the client matching the server's major version, and the manifest records both versions.
 
 That combination is the whole reason this is a command rather than a documented list of steps. A dump alone restores an instance whose every mailbox credential decrypts to nothing, because the ciphertext is in the database and the key that opens it is in `.env`. The blob root alone restores bodies nothing points at.
 
@@ -490,7 +490,9 @@ docker compose -p warmbly exec backend warmblyctl restore --file /data/blobs/war
 docker compose -p warmbly restart
 ```
 
-Empties the schema and replays the bundle into it, so it replaces every organization, user, campaign and mailbox currently on the instance. It prints what the bundle holds and asks you to type `restore` before it does; `--yes` skips that for scripts.
+Replaces the schema with the bundle's, so it replaces every organization, user, campaign and mailbox currently on the instance. It prints what the bundle holds and asks you to type `restore` before it does; `--yes` skips that for scripts.
+
+The drop and the load run as one transaction, so a dump that fails to load leaves the instance exactly as it was. A bundle written by a newer `pg_dump` restores onto an older server: settings the server does not have (PostgreSQL 17 added `transaction_timeout`) are skipped from the dump's header and listed. A server with a small lock table can refuse the transaction with `out of shared memory`; raise `max_locks_per_transaction` and run it again. [Data control](/development/data-control/#restore) has the details.
 
 Before anything is written it compares the bundle's `CREDENTIALS_ENCRYPTION_KEY` and `KMS_LOCAL_MASTER_KEY` against this host's, and refuses to continue when they differ, printing the two lines to put in `.env` first. That check is the point of the command: without it a restore looks like it worked, and every mailbox fails to authenticate days later with no error that names the cause.
 

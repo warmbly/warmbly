@@ -39,10 +39,13 @@ RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
 FROM alpine:3.23
 
 ARG GO_TAGS=""
-# postgresql-client is here for `warmblyctl backup` and `warmblyctl restore`:
-# the instance bundle is a pg_dump and the restore replays it with psql, and the
-# backend container is where the CLI already has PRIMARY_DB and the blob root.
-RUN apk add --no-cache ca-certificates tzdata postgresql-client && \
+# The PostgreSQL clients are here for `warmblyctl backup` and `warmblyctl restore`,
+# which run where the CLI already has PRIMARY_DB and the blob root. One per
+# supported server major: warmblyctl picks the one matching the server, because
+# an older pg_dump refuses a newer server and a newer one writes SQL an older
+# server rejects. They land in /usr/libexec/postgresqlNN.
+RUN apk add --no-cache ca-certificates tzdata \
+      postgresql16-client postgresql17-client postgresql18-client && \
     if echo "$GO_TAGS" | grep -qw kafka; then apk add --no-cache librdkafka; fi && \
     adduser -D -u 1000 warmbly
 

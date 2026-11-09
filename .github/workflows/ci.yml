@@ -320,6 +320,19 @@ jobs:
         run: |
           go test -race -p 1 ./internal/repository ./internal/scheduler ./internal/tasks -run '^TestLive(MailboxSendClaim(AdmitsOnePerGap|WaitsOutAReservedSend)|BookedSendsLeaveOutCampaignWakeups|ParkedCampaignDoesNotThrottleItsPoolMate|BookedSendsStillSpaceTheCampaign|ClaimedMailboxIsPassedOver|CampaignsSharingAMailboxSendOncePerGap|LostMailboxClaimReschedulesWithoutSending)$' -count=1
 
+      # A real pg_dump and psql against the same major the self-host compose ships.
+      - name: Instance backup and restore round trip (PostgreSQL)
+        if: matrix.suite == 'live-3'
+        env:
+          WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
+        run: |
+          set -o pipefail
+          if [ ! -x /usr/lib/postgresql/16/bin/pg_dump ]; then
+            sudo apt-get update -q && sudo apt-get install -y -q postgresql-client-16
+          fi
+          go test -race -v ./cmd/warmblyctl -run '^TestLiveBackupRestoreRoundTrip$' -count=1 | tee backup-restore.log
+          grep -q -- '--- PASS: TestLiveBackupRestoreRoundTrip ' backup-restore.log
+
       - name: Postgres queue claim regressions (PostgreSQL)
         if: matrix.suite == 'live-3'
         env:
