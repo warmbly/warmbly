@@ -12,7 +12,7 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 )
 
-// ConnectLinkClaimStale is how long a claimed round trip holds a link before another may take it.
+// ConnectLinkClaimStale is how long a claimed round trip holds a link before it may be revoked.
 const ConnectLinkClaimStale = 15 * time.Minute
 
 // ConnectLinkCursor pages links newest first.
@@ -31,7 +31,7 @@ type MailboxConnectLinkRepository interface {
 	ListConnectLinks(ctx context.Context, orgID uuid.UUID, after *ConnectLinkCursor, limit int) ([]*models.MailboxConnectLink, error)
 	// RevokeConnectLink ends a link that has not connected and no sign-in is completing; false when there was none to end.
 	RevokeConnectLink(ctx context.Context, orgID, id uuid.UUID) (bool, error)
-	// ClaimConnectLink takes a live link for one round trip; nil, nil when it is used, ended or claimed.
+	// ClaimConnectLink takes a pending link for one round trip; a claim is never reopened, so one link connects one mailbox.
 	ClaimConnectLink(ctx context.Context, id uuid.UUID) (*models.MailboxConnectLink, error)
 	// ReleaseConnectLink hands a claimed link back for another attempt, recording why this one failed.
 	ReleaseConnectLink(ctx context.Context, id uuid.UUID, errorCode string) error
@@ -137,9 +137,8 @@ func (r *mailboxConnectLinkRepository) RevokeConnectLink(ctx context.Context, or
 func (r *mailboxConnectLinkRepository) ClaimConnectLink(ctx context.Context, id uuid.UUID) (*models.MailboxConnectLink, error) {
 	return noLink(scanConnectLink(r.db.QueryRow(ctx, `
 		UPDATE mailbox_connect_links SET status = 'connecting', updated_at = now()
-		WHERE id = $1 AND expires_at > now()
-		  AND (status = 'pending' OR (status = 'connecting' AND updated_at < now() - make_interval(secs => $2)))
-		RETURNING `+connectLinkColumns, id, ConnectLinkClaimStale.Seconds())))
+		WHERE id = $1 AND expires_at > now() AND status = 'pending'
+		RETURNING `+connectLinkColumns, id)))
 }
 
 func (r *mailboxConnectLinkRepository) ReleaseConnectLink(ctx context.Context, id uuid.UUID, errorCode string) error {

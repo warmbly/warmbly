@@ -31,7 +31,7 @@ const PROVIDERS: { id: MailboxOAuthProvider; label: string; clientHint: string; 
 export default function MailboxSignInPage() {
     const canManage = usePermission("MANAGE_EMAILS");
     const access = useFeatureAccess();
-    const partner = !access.billing || access.partnership;
+    const partner = access.partnership;
     // A workspace off the plan still maintains an app it saved, since that app refreshes its mailboxes.
     const apps = useMailboxOAuthApps(canManage && !partner);
     const keeps = (apps.data?.data.length ?? 0) > 0;

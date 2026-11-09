@@ -28,8 +28,9 @@ func (h *Handler) oauthAppOrg(c *gin.Context, provider models.InboxProvider) (uu
 	if !h.mailboxOAuthAppsReady(c) {
 		return uuid.Nil, false
 	}
+	// Partnership only: a self-hosted instance signs mailboxes in with its own instance apps.
 	if h.FeatureGateService != nil {
-		if ok, _ := h.FeatureGateService.CanUsePartnerTools(c.Request.Context(), *orgID); ok {
+		if ok, _ := h.FeatureGateService.HasPartnership(c.Request.Context(), *orgID); ok {
 			return *orgID, true
 		}
 	}

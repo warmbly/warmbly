@@ -1345,8 +1345,9 @@ func (r *orgTransferRepository) OAuthAppSecrets(ctx context.Context, tx pgx.Tx, 
 	if len(ids) == 0 {
 		return out, nil
 	}
+	// Every matching row is locked, empty secret or not, so a save racing the import waits for it.
 	rows, err := tx.Query(ctx, `SELECT id, client_secret FROM organization_oauth_apps
-		WHERE organization_id = $1 AND id = ANY($2::uuid[]) AND client_secret <> '' FOR UPDATE`, orgID, ids)
+		WHERE organization_id = $1 AND id = ANY($2::uuid[]) FOR UPDATE`, orgID, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -1357,7 +1358,9 @@ func (r *orgTransferRepository) OAuthAppSecrets(ctx context.Context, tx pgx.Tx, 
 		if err := rows.Scan(&id, &secret); err != nil {
 			return nil, err
 		}
-		out[id] = secret
+		if secret != "" {
+			out[id] = secret
+		}
 	}
 	return out, rows.Err()
 }
