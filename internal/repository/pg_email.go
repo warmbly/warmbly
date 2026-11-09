@@ -180,6 +180,8 @@ type EmailRepository interface {
 	RefreshBoxTokenSealed(ctx context.Context, id uuid.UUID, sealed string, expiresAt time.Time) error
 	// RefreshWorkerBoxToken is RefreshBoxToken for a worker's refresh, dropped for a mailbox a workspace app signed in.
 	RefreshWorkerBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time) error
+	// RefreshBoxTokenForApp stores a backend refresh through appID, dropped when another client issued the grant since.
+	RefreshBoxTokenForApp(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time, appID *uuid.UUID) error
 	// ReplaceSMTPIMAPCredentials overwrites a mailbox's SMTP/IMAP credential
 	// row, sealed on the same terms as at connect time.
 	ReplaceSMTPIMAPCredentials(ctx context.Context, id uuid.UUID, creds *models.SmtpImap) error

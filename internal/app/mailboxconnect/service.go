@@ -31,6 +31,8 @@ const (
 	LinkPath = "/addresses/link/"
 	// StatePrefix marks a provider round trip a link started.
 	StatePrefix = "mc."
+	// WarmupFailedCode marks a connected link whose mailbox did not start warming.
+	WarmupFailedCode = "connect_warmup_failed"
 
 	DefaultLinkHours = 72
 	MaxLinkHours     = 168
@@ -50,6 +52,7 @@ var (
 	ErrCursor        = errx.NewWithIdentifier(errx.BadRequest, "invalid_cursor", "cursor is not one this endpoint issued.")
 	ErrLimit         = errx.NewWithIdentifier(errx.BadRequest, "invalid_limit", fmt.Sprintf("limit must be between 1 and %d.", listMax))
 	ErrWarmup        = errx.NewWithIdentifier(errx.BadRequest, "connect_warmup", "warmup values must be positive, and reply_rate between 1 and 100.")
+	ErrPlanRequired  = errx.NewWithIdentifier(errx.Forbidden, "partnership_plan_required", "This workspace is no longer on the Partnership plan, so this sign-in link cannot connect a mailbox.")
 )
 
 // Mailboxes is the mailbox service surface a connect needs; email.EmailService satisfies it.
@@ -89,9 +92,11 @@ type LinkView struct {
 
 // Finished is a completed or refused round trip, and where to send the browser after it.
 type Finished struct {
-	Link      *models.MailboxConnectLink
-	Account   *models.Email
-	ReturnURL string
+	Link    *models.MailboxConnectLink
+	Account *models.Email
+	// WarmupNote says what of the link's warmup did not apply; empty when it all did.
+	WarmupNote string
+	ReturnURL  string
 }
 
 // Service connects mailboxes through the API and sign-in links.
@@ -101,6 +106,7 @@ type Service struct {
 	warmup    WarmupScheduler
 	authority Authority
 	describe  Describer
+	tools     PartnerTools
 	cache     *cache.Cache
 	// publicBase is this deployment's public API origin, where links open.
 	publicBase string
@@ -134,26 +140,34 @@ func ValidateWarmup(w *models.MailboxConnectWarmup) *errx.Error {
 	return nil
 }
 
-// ApplyWarmup sets a new mailbox's ramp and starts its warmup; it never fails the connect and says what did not apply.
-func (s *Service) ApplyWarmup(ctx context.Context, orgID uuid.UUID, userID string, accountID uuid.UUID, w *models.MailboxConnectWarmup) string {
+// ApplyWarmup sets a new mailbox's ramp and starts its warmup, returning the mailbox as stored after it (nil when
+// nothing was written) and what did not apply. It never fails the connect.
+func (s *Service) ApplyWarmup(ctx context.Context, orgID uuid.UUID, userID string, accountID uuid.UUID, w *models.MailboxConnectWarmup) (*models.Email, string) {
 	if w == nil || !w.Enabled {
-		return ""
+		return nil, ""
 	}
+	var latest *models.Email
 	var notes []string
 	if w.Start != nil || w.Max != nil || w.Increase != nil || w.ReplyRate != nil {
 		upd := models.UpdateEmail{WarmupBase: w.Start, WarmupMax: w.Max, WarmupIncrease: w.Increase, WarmupReplyRate: w.ReplyRate}
-		if _, xerr := s.mailboxes.Update(ctx, orgID.String(), userID, accountID.String(), &upd); xerr != nil {
+		if acc, xerr := s.mailboxes.Update(ctx, orgID.String(), userID, accountID.String(), &upd); xerr != nil {
 			notes = append(notes, "Warmup settings not applied: "+xerr.Message)
+		} else if acc != nil && acc.ID == accountID {
+			latest = acc
 		}
 	}
-	if _, xerr := s.mailboxes.SetWarmupLifecycle(ctx, orgID.String(), accountID.String(), "start"); xerr != nil {
+	acc, xerr := s.mailboxes.SetWarmupLifecycle(ctx, orgID.String(), accountID.String(), "start")
+	if xerr != nil {
 		notes = append(notes, "Warmup not started: "+xerr.Message)
-	} else if s.warmup != nil {
+	} else if acc != nil && acc.ID == accountID {
+		latest = acc
+	}
+	if xerr == nil && s.warmup != nil {
 		if err := s.warmup.EnsureWarmupScheduled(ctx, accountID); err != nil {
 			errs.CaptureException(fmt.Errorf("seed warmup after connect: %w", err))
 		}
 	}
-	return strings.Join(notes, " ")
+	return latest, strings.Join(notes, " ")
 }
 
 // ConnectSMTP connects one SMTP/IMAP mailbox and starts its warmup when asked.
@@ -165,7 +179,10 @@ func (s *Service) ConnectSMTP(ctx context.Context, orgID uuid.UUID, userID strin
 	if xerr != nil {
 		return nil, "", xerr
 	}
-	note := s.ApplyWarmup(ctx, orgID, userID, acc.ID, w)
+	stored, note := s.ApplyWarmup(ctx, orgID, userID, acc.ID, w)
+	if stored != nil {
+		acc = stored
+	}
 	return acc, note, nil
 }
 
@@ -180,7 +197,7 @@ func (s *Service) ConnectSMTPBulk(ctx context.Context, orgID uuid.UUID, userID s
 		if r.Status != models.MailboxBulkConnected || r.ID == nil {
 			continue
 		}
-		if note := s.ApplyWarmup(ctx, orgID, userID, *r.ID, w); note != "" {
+		if _, note := s.ApplyWarmup(ctx, orgID, userID, *r.ID, w); note != "" {
 			r.Message = note
 		}
 	}
@@ -441,19 +458,32 @@ func (s *Service) Finish(ctx context.Context, code, state, providerErr, binding 
 			return fail(errx.NewWithIdentifier(errx.Forbidden, "connect_link_creator_left", "Whoever created this link can no longer connect mailboxes to the workspace. Ask for a new link."))
 		}
 	}
+	// The link is held to the same plan as the API that made it.
+	if s.tools != nil {
+		if ok, xerr := s.tools.CanUsePartnerTools(ctx, l.OrganizationID); xerr != nil {
+			return fail(xerr)
+		} else if !ok {
+			return fail(ErrPlanRequired)
+		}
+	}
 	acc, xerr := s.mailboxes.LinkSigninFinish(ctx, l.CreatedBy.String(), l.OrganizationID, l.Provider, st.OAuthAppID, code, st.Verifier, l.ExpectedEmail)
 	if xerr != nil {
 		return fail(xerr)
 	}
-	if err := s.links.CompleteConnectLink(ctx, l.ID, acc.ID); err != nil {
-		errs.CaptureException(fmt.Errorf("complete connect link: %w", err))
-	}
 	warmup := l.Warmup
-	s.ApplyWarmup(ctx, l.OrganizationID, l.CreatedBy.String(), acc.ID, &warmup)
+	stored, note := s.ApplyWarmup(ctx, l.OrganizationID, l.CreatedBy.String(), acc.ID, &warmup)
+	if stored != nil {
+		acc = stored
+	}
+	warning := ""
+	if note != "" {
+		warning = WarmupFailedCode
+	}
+	s.completeLink(ctx, l.ID, acc.ID, warning)
 	now := s.now()
 	id := acc.ID
-	l.Status, l.ErrorCode, l.EmailAccountID, l.CompletedAt = models.ConnectLinkConnected, "", &id, &now
-	return &Finished{Link: l, Account: acc, ReturnURL: s.returnTo(l, "connected", "")}, nil
+	l.Status, l.ErrorCode, l.EmailAccountID, l.CompletedAt = models.ConnectLinkConnected, warning, &id, &now
+	return &Finished{Link: l, Account: acc, WarmupNote: note, ReturnURL: s.returnTo(l, "connected", warning)}, nil
 }
 
 // returnTo is the workspace's own page with the outcome appended; empty when the link names none.
@@ -477,3 +507,23 @@ func (s *Service) returnTo(l *models.MailboxConnectLink, status, code string) st
 	u.RawQuery = q.Encode()
 	return u.String()
 }
+
+// completeLink records the link's mailbox, retried briefly; the mailbox exists whether or not it is recorded.
+func (s *Service) completeLink(ctx context.Context, linkID, accountID uuid.UUID, warning string) {
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		if err = s.links.CompleteConnectLink(ctx, linkID, accountID, warning); err == nil {
+			return
+		}
+		time.Sleep(time.Duration(attempt+1) * 200 * time.Millisecond)
+	}
+	errs.CaptureException(fmt.Errorf("complete connect link: %w", err))
+}
+
+// PartnerTools reports a workspace that may use the Partnership tools; feature.FeatureGateService satisfies it.
+type PartnerTools interface {
+	CanUsePartnerTools(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error)
+}
+
+// WirePartnerTools holds a link's completion to the plan its API requires.
+func (s *Service) WirePartnerTools(t PartnerTools) { s.tools = t }

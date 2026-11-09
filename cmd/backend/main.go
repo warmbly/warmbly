@@ -1920,6 +1920,7 @@ func main() {
 		tasksService.SetUnsubscribeLinks(unsubSigner, unsubscribeLinkRepository)
 		mailboxConnectService = mailboxconnect.New(repository.NewMailboxConnectLinkRepository(primaryDB.Pool), emailService, tasksService,
 			organizationService, connectDescriber{orgs: organizationService, apps: mailboxOAuthAppService}, cache, oauthPublicBaseURL(apiCfg.Hostname))
+		mailboxConnectService.WirePartnerTools(featureGateService)
 		// Sequence action nodes that pin a contact into or out of a segment,
 		// both on the scheduled path (tasks) and the instant reply path (advanced).
 		if aware, ok := tasksService.(tasks.SegmentAware); ok {

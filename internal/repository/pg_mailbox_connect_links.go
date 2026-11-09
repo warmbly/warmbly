@@ -35,7 +35,8 @@ type MailboxConnectLinkRepository interface {
 	ClaimConnectLink(ctx context.Context, id uuid.UUID) (*models.MailboxConnectLink, error)
 	// ReleaseConnectLink hands a claimed link back for another attempt, recording why this one failed.
 	ReleaseConnectLink(ctx context.Context, id uuid.UUID, errorCode string) error
-	CompleteConnectLink(ctx context.Context, id, accountID uuid.UUID) error
+	// CompleteConnectLink records the connected mailbox; warning flags one that did not start warming.
+	CompleteConnectLink(ctx context.Context, id, accountID uuid.UUID, warning string) error
 }
 
 type mailboxConnectLinkRepository struct {
@@ -146,9 +147,9 @@ func (r *mailboxConnectLinkRepository) ReleaseConnectLink(ctx context.Context, i
 	return err
 }
 
-func (r *mailboxConnectLinkRepository) CompleteConnectLink(ctx context.Context, id, accountID uuid.UUID) error {
+func (r *mailboxConnectLinkRepository) CompleteConnectLink(ctx context.Context, id, accountID uuid.UUID, warning string) error {
 	_, err := r.db.Exec(ctx, `UPDATE mailbox_connect_links
-		SET status = 'connected', error_code = '', email_account_id = $2, completed_at = now(), updated_at = now()
-		WHERE id = $1 AND status = 'connecting'`, id, accountID)
+		SET status = 'connected', error_code = $3, email_account_id = $2, completed_at = now(), updated_at = now()
+		WHERE id = $1 AND status = 'connecting'`, id, accountID, warning)
 	return err
 }

@@ -153,7 +153,7 @@ func (s *emailService) OAuthAccessToken(ctx context.Context, accountID uuid.UUID
 	if fresh.RefreshToken == "" {
 		fresh.RefreshToken = current.RefreshToken
 	}
-	if err := s.emailRepository.RefreshBoxToken(ctx, accountID, fresh.AccessToken, fresh.RefreshToken, fresh.Expiry); err != nil {
+	if err := s.emailRepository.RefreshBoxTokenForApp(ctx, accountID, fresh.AccessToken, fresh.RefreshToken, fresh.Expiry, creds.OAuthAppID); err != nil {
 		log.Warn().Err(err).Str("account_id", accountID.String()).Msg("brokered token persist failed")
 	}
 	return fresh, nil

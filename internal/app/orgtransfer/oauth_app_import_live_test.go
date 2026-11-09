@@ -58,12 +58,16 @@ func TestLiveImportRefusesAnOAuthAppThatWouldChangeClient(t *testing.T) {
 			if !c.refused && err != nil {
 				t.Fatalf("import: %v", err)
 			}
-			var client string
-			if err := pool.QueryRow(ctx, `SELECT client_id FROM organization_oauth_apps WHERE id = $1`, existing).Scan(&client); err != nil {
+			var client, secret string
+			if err := pool.QueryRow(ctx, `SELECT client_id, client_secret FROM organization_oauth_apps WHERE id = $1`, existing).Scan(&client, &secret); err != nil {
 				t.Fatal(err)
 			}
 			if client != "dest.apps.googleusercontent.com" {
 				t.Fatalf("the destination app's client changed to %s", client)
+			}
+			// The archive carries no secret, which never blanks the one the destination holds.
+			if secret != "sealed" {
+				t.Fatalf("the destination app's secret changed to %q", secret)
 			}
 		})
 	}

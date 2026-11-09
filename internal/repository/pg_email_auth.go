@@ -138,16 +138,20 @@ func (r *emailRepository) RevokeOauth(ctx context.Context, id string) *errx.Erro
 }
 
 func (r *emailRepository) RefreshBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time) error {
-	return r.refreshBoxToken(ctx, id, accessToken, refreshToken, expiresAt, false)
+	return r.refreshBoxToken(ctx, id, accessToken, refreshToken, expiresAt, false, nil)
 }
 
-// RefreshWorkerBoxToken stores a token a worker refreshed. A mailbox a workspace's own app signed in is refreshed
-// by the backend only, so a worker update for it is stale and dropped.
+// RefreshWorkerBoxToken stores a token a worker refreshed with this deployment's client; dropped once a workspace app owns the grant.
 func (r *emailRepository) RefreshWorkerBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time) error {
-	return r.refreshBoxToken(ctx, id, accessToken, refreshToken, expiresAt, true)
+	return r.refreshBoxToken(ctx, id, accessToken, refreshToken, expiresAt, true, nil)
 }
 
-func (r *emailRepository) refreshBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time, fromWorker bool) error {
+// RefreshBoxTokenForApp stores a token refreshed through appID, only while that client still owns the grant.
+func (r *emailRepository) RefreshBoxTokenForApp(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time, appID *uuid.UUID) error {
+	return r.refreshBoxToken(ctx, id, accessToken, refreshToken, expiresAt, true, appID)
+}
+
+func (r *emailRepository) refreshBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time, guarded bool, appID *uuid.UUID) error {
 	// Refreshed tokens land here from the worker's OnTokenRefresh callback and
 	// must be sealed on the same terms as the ones written at connect time,
 	// otherwise the first refresh silently reverts the row to plaintext.
@@ -170,15 +174,16 @@ func (r *emailRepository) refreshBoxToken(ctx context.Context, id uuid.UUID, acc
 		SET access_token = $1, refresh_token = $2, expires_at = $3
 		WHERE email_account_id = $4
 	`
-	if fromWorker {
-		query += ` AND oauth_app_id IS NULL`
-	}
-
 	params := []any{
 		encAccessToken,
 		encRefreshToken,
 		expiresAt,
 		id,
+	}
+	// A refresh through one client never lands on a grant another client issued since.
+	if guarded {
+		query += ` AND oauth_app_id IS NOT DISTINCT FROM $5::uuid`
+		params = append(params, appID)
 	}
 
 	if _, err := r.DB.Exec(

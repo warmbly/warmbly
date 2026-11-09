@@ -91,6 +91,10 @@ type OrgTransferRepository interface {
 	MarkMailboxesNeedingReconnect(ctx context.Context, tx pgx.Tx, orgID uuid.UUID) (int64, error)
 	// MissingOAuthApps counts the archived OAuth app ids the destination workspace does not hold after their insert.
 	MissingOAuthApps(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, ids []uuid.UUID) (int64, error)
+	// OAuthAppSecrets reads the stored secrets of the destination's apps among ids, skipping empty ones.
+	OAuthAppSecrets(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error)
+	// RestoreOAuthAppSecret puts a destination app's secret back after a row without one overwrote it.
+	RestoreOAuthAppSecret(ctx context.Context, tx pgx.Tx, orgID, id uuid.UUID, secret string) error
 	// ChangedOAuthAppClients counts archived OAuth apps whose id the destination already holds under a different client.
 	ChangedOAuthAppClients(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, ids []uuid.UUID, clientIDs []string) (int64, error)
 	// MarkIntegrationsNeedingReconnect flags connections whose credentials did not travel.
@@ -1317,4 +1321,32 @@ func (r *orgTransferRepository) ChangedOAuthAppClients(ctx context.Context, tx p
 		JOIN organization_oauth_apps a ON a.id = u.id
 		WHERE a.organization_id <> $1 OR a.client_id <> u.client_id`, orgID, ids, clientIDs).Scan(&n)
 	return n, err
+}
+
+func (r *orgTransferRepository) OAuthAppSecrets(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error) {
+	out := map[uuid.UUID]string{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	rows, err := tx.Query(ctx, `SELECT id, client_secret FROM organization_oauth_apps
+		WHERE organization_id = $1 AND id = ANY($2::uuid[]) AND client_secret <> ''`, orgID, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id uuid.UUID
+		var secret string
+		if err := rows.Scan(&id, &secret); err != nil {
+			return nil, err
+		}
+		out[id] = secret
+	}
+	return out, rows.Err()
+}
+
+func (r *orgTransferRepository) RestoreOAuthAppSecret(ctx context.Context, tx pgx.Tx, orgID, id uuid.UUID, secret string) error {
+	_, err := tx.Exec(ctx, `UPDATE organization_oauth_apps SET client_secret = $3
+		WHERE organization_id = $1 AND id = $2 AND client_secret = ''`, orgID, id, secret)
+	return err
 }

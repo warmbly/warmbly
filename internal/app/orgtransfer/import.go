@@ -376,8 +376,12 @@ func (s *service) importTable(
 		if foreign > 0 {
 			return fmt.Errorf("%s: %w", t.Name, ErrForeignRows)
 		}
+		var keptSecrets map[uuid.UUID]string
 		if t.Name == oauthAppsTable {
 			if err := s.refuseChangedOAuthApps(ctx, tx, orgID, batch); err != nil {
+				return err
+			}
+			if keptSecrets, err = s.repo.OAuthAppSecrets(ctx, tx, orgID, blankSecretApps(batch)); err != nil {
 				return err
 			}
 		}
@@ -391,6 +395,12 @@ func (s *service) importTable(
 		if t.Name == oauthAppsTable {
 			if err := s.requireImportedOAuthApps(ctx, tx, orgID, batch); err != nil {
 				return err
+			}
+			// An archive without credentials never blanks the secret of an app the destination already holds.
+			for id, secret := range keptSecrets {
+				if err := s.repo.RestoreOAuthAppSecret(ctx, tx, orgID, id, secret); err != nil {
+					return err
+				}
 			}
 		}
 		total += n
@@ -1076,4 +1086,19 @@ func (s *service) refuseChangedOAuthApps(ctx context.Context, tx pgx.Tx, orgID u
 		return ErrOAuthAppConflict
 	}
 	return nil
+}
+
+// blankSecretApps lists the archived OAuth apps that carry no client secret.
+func blankSecretApps(batch []json.RawMessage) []uuid.UUID {
+	var ids []uuid.UUID
+	for _, raw := range batch {
+		var row struct {
+			ID           uuid.UUID `json:"id"`
+			ClientSecret string    `json:"client_secret"`
+		}
+		if json.Unmarshal(raw, &row) == nil && row.ClientSecret == "" {
+			ids = append(ids, row.ID)
+		}
+	}
+	return ids
 }

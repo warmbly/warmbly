@@ -136,6 +136,8 @@ The answer carries `url`. It is returned only here, so store or send it straight
 - Read a link with `GET /emails/connect/links/:id`, list them with `GET /emails/connect/links` (newest first, `limit` and `cursor`), and end one that has not connected yet with `DELETE /emails/connect/links/:id`. `status` is `pending`, `connecting`, `connected`, `failed`, `revoked` or `expired`.
 - The [`email_account.connected`](/guides/webhooks/) webhook fires when the mailbox is connected, so you do not need to poll.
 - The link acts for the member whose key created it. If that member can no longer manage mailboxes when the link is opened, it is refused.
+- A connected link with `error_code` `connect_warmup_failed` connected its mailbox, but warmup did not start; the owner is told so, `return_url` gets `code=connect_warmup_failed`, and you start it with `POST /emails/:id/warmup/start`.
+- A link only connects while the workspace is on the Partnership plan; otherwise it is refused with `partnership_plan_required`.
 
 ## Your own OAuth app
 

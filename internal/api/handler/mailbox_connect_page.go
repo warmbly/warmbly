@@ -133,8 +133,8 @@ func (h *Handler) finishConnectLink(c *gin.Context, code, state, providerErr str
 					"provider": res.Account.Provider, "email": res.Account.Email, "via": "connect_link", "link_id": res.Link.ID.String(),
 				})
 		}
+		// The cookie is left to expire: other sign-ins open in this browser still need it.
 		if res.ReturnURL != "" {
-			setConnectCookie(c, "", -1)
 			c.Redirect(http.StatusFound, res.ReturnURL)
 			return
 		}
@@ -143,6 +143,9 @@ func (h *Handler) finishConnectLink(c *gin.Context, code, state, providerErr str
 		renderConnectNotice(c, "Mailbox not connected", xerr)
 		return
 	}
-	setConnectCookie(c, "", -1)
+	if res != nil && res.WarmupNote != "" {
+		renderNotice(c, http.StatusOK, "Mailbox connected", "Your mailbox is connected, but its warmup did not start: "+res.WarmupNote+" The workspace that sent this link can start it. You can close this tab.")
+		return
+	}
 	renderNotice(c, http.StatusOK, "Mailbox connected", "Your mailbox is connected. You can close this tab.")
 }

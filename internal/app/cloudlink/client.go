@@ -140,6 +140,9 @@ func remoteCode(status int) errx.Code {
 		return errx.Code(status)
 	case http.StatusGone:
 		return errx.NotFound
+	// A timeout says nothing about whether the cloud acted, so it is answered as unknown, never as a refusal.
+	case http.StatusRequestTimeout:
+		return errx.ServiceUnavailable
 	}
 	if status >= 500 {
 		return errx.ServiceUnavailable

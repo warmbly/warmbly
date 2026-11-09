@@ -29,7 +29,11 @@ func (s *Service) ConnectGrant(ctx context.Context, orgID uuid.UUID, userID stri
 	if renewed {
 		return acc, true, "", nil
 	}
-	return acc, false, s.ApplyWarmup(ctx, orgID, userID, acc.ID, w), nil
+	stored, note := s.ApplyWarmup(ctx, orgID, userID, acc.ID, w)
+	if stored != nil {
+		acc = stored
+	}
+	return acc, false, note, nil
 }
 
 // ConnectGrantBulk hands over many sign-ins with one warmup setting, answering each one.

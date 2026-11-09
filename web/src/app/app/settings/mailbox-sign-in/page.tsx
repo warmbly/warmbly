@@ -9,6 +9,8 @@ import { NoAccess } from "@/components/layout/NoAccess";
 import { Label, TextInput } from "@/components/ui/field";
 import { usePermission } from "@/hooks/usePermission";
 import { useConfirm } from "@/hooks/context/confirm";
+import { useRegisterUnsaved } from "@/hooks/context/unsaved";
+import type { AutosaveHandle } from "@/hooks/useAutosave";
 import useFeatureAccess from "@/hooks/useFeatureAccess";
 import { errorMessage } from "@/lib/errors/message";
 import {
@@ -18,7 +20,8 @@ import {
 } from "@/lib/api/hooks/app/emails/useMailboxOAuthApps";
 import type { MailboxOAuthApp, MailboxOAuthProvider } from "@/lib/api/models/app/emails/MailboxOAuthApp";
 
-const GUIDE = "https://docs.warmbly.com/guides/partnership/#your-own-oauth-app";
+const GUIDE_PAGE = "https://docs.warmbly.com/guides/partnership/";
+const GUIDE = GUIDE_PAGE + "#your-own-oauth-app";
 
 const PROVIDERS: { id: MailboxOAuthProvider; label: string; clientHint: string; anchor: string }[] = [
     { id: "gmail", label: "Google", clientHint: "1234567890-abc.apps.googleusercontent.com", anchor: "#google" },
@@ -143,21 +146,48 @@ function ProviderCard({
     const missing = !appName.trim() ? "Give the app a name." : !clientId.trim() ? "Paste the client ID." : needsSecret ? "Paste the client secret." : "";
     const lockedClient = !!app && app.mailboxes > 0 && !sameClient;
 
-    async function onSave() {
+    const savedRedirect = app?.custom_redirect ? app.redirect_url : "";
+    const dirty = appName.trim() !== (app?.app_name ?? "") || clientId.trim() !== (app?.client_id ?? "") ||
+        secret.trim() !== "" || redirect.trim() !== savedRedirect;
+
+    // Throws on a refused or failed save, so leaving the page through the unsaved guard keeps the draft.
+    async function persist() {
         if (missing) {
             toast.error(missing);
-            return;
+            throw new Error(missing);
         }
         try {
             await save.mutateAsync({
                 provider: provider.id,
                 data: { app_name: appName.trim(), client_id: clientId.trim(), client_secret: secret.trim(), redirect_url: redirect.trim() },
             });
-            setSecret("");
-            toast.success(`${provider.label} app saved`);
         } catch (e) {
             toast.error(errorMessage(e, `Could not save the ${provider.label} app`));
+            throw e;
         }
+        setSecret("");
+        toast.success(`${provider.label} app saved`);
+    }
+
+    function discard() {
+        setAppName(app?.app_name ?? "");
+        setClientId(app?.client_id ?? "");
+        setRedirect(savedRedirect);
+        setSecret("");
+    }
+
+    const draft: AutosaveHandle<null> = {
+        status: save.isPending ? "saving" : "idle",
+        dirty,
+        flush: persist,
+        retry: () => void persist().catch(() => undefined),
+        savedValue: null,
+        markSaved: () => undefined,
+    };
+    useRegisterUnsaved(draft, discard);
+
+    function onSave() {
+        void persist().catch(() => undefined);
     }
 
     function onRemove() {
@@ -210,7 +240,7 @@ function ProviderCard({
                     <CopyValue value={app?.custom_redirect ? app.redirect_url : callback} />
                     <p className="mt-1 text-[11.5px] text-slate-500">
                         Add it to the app in {provider.id === "gmail" ? "Google Cloud" : "Microsoft Entra"} exactly as shown.{" "}
-                        <a href={GUIDE + provider.anchor} target="_blank" rel="noreferrer" className="text-sky-700 hover:underline">How</a>
+                        <a href={GUIDE_PAGE + provider.anchor} target="_blank" rel="noreferrer" className="text-sky-700 hover:underline">How</a>
                     </p>
                 </div>
                 <div>
