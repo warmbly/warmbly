@@ -281,6 +281,8 @@ services:
   postgres:
     restart: unless-stopped
     image: postgres:16-alpine
+    # warmblyctl restore replaces every table in one transaction, which needs a larger lock table than the default.
+    command: ["postgres", "-c", "max_locks_per_transaction=256"]
     environment:
       POSTGRES_USER: warmbly
       POSTGRES_PASSWORD: warmbly

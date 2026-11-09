@@ -241,7 +241,7 @@ Both commands use the PostgreSQL client matching the server's major version. The
 
 A bundle written by a newer `pg_dump` still restores onto an older server. Settings the destination does not have, such as the `transaction_timeout` that PostgreSQL 17 added, are skipped from the dump's header, and the restore lists what it skipped.
 
-Holding the whole replacement in one transaction takes a lock on every table and index it drops and creates. A default server has room for that, but one with a small lock table (`max_connections` well below the default 100) can refuse with `out of shared memory`. The restore then changes nothing and says to raise `max_locks_per_transaction` (for example to 1024).
+Holding the whole replacement in one transaction takes a lock on every table and index it drops and creates. The bundled PostgreSQL in the installer and Compose files runs with `max_locks_per_transaction=256` for this. A server you run yourself with the default lock table usually has room, but one with a smaller lock table (`max_connections` well below the default 100) can refuse with `out of shared memory`. The restore then changes nothing and says to raise `max_locks_per_transaction` (for example to 1024).
 
 Before it does anything it compares the bundle's `CREDENTIALS_ENCRYPTION_KEY` and `KMS_LOCAL_MASTER_KEY` against the destination's and refuses to continue when they differ, printing the two lines to put in `.env`. That check is the point of the command: without it a restore looks like it worked and every mailbox fails to authenticate days later, with no error that names the cause.
 
