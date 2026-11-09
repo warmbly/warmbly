@@ -44,6 +44,10 @@ struct AuthFlowView: View {
     @State private var resendRemaining = 0
     @State private var providers: AuthProvidersInfo?
     @State private var showServerConfig = false
+    /// The server a sign-in in progress is talking to, read when the settings sheet opens.
+    @State private var originBeforeSettings = AppConfig.serverOrigin
+    /// A chosen password whose save went unanswered, so it may be the account's password now.
+    @State private var unconfirmedPassword: String?
     @State private var providersGeneration = 0
     @State private var heroAppeared = false
     @State private var modeSwitchEdge = Edge.trailing
@@ -64,7 +68,7 @@ struct AuthFlowView: View {
         .sensoryFeedback(.impact(weight: .light), trigger: step)
         .sensoryFeedback(.error, trigger: errorPulse)
         // The sheet can change the server, so the sign-in options are read again when it closes.
-        .sheet(isPresented: $showServerConfig, onDismiss: { providersGeneration += 1 }) { ServerConfigSheet() }
+        .sheet(isPresented: $showServerConfig, onDismiss: settingsClosed) { ServerConfigSheet() }
         .task(id: providersGeneration) {
             providers = nil
             let loaded = await env.session.fetchSignInProviders()
@@ -83,7 +87,7 @@ struct AuthFlowView: View {
             case "newpassword": step = .newPassword(pendingToken: "debug")
             case "link": step = .link(SSOLinkChallenge(pendingToken: "debug", email: email, provider: "google"))
             case "reset": step = .resetSent
-            case "server": showServerConfig = true
+            case "server": openSettings()
             default: break
             }
         }
@@ -118,7 +122,7 @@ struct AuthFlowView: View {
                 onBack: step == .email ? nil : { goBackOneStep() },
                 progress: stepProgress.map { ($0.index, 3) }
             ) {
-                FlowSkyButton(symbol: "gearshape", label: "Settings") { showServerConfig = true }
+                FlowSkyButton(symbol: "gearshape", label: "Settings") { openSettings() }
             }
 
             heroArea
@@ -268,6 +272,8 @@ struct AuthFlowView: View {
             infoMessage = nil
             go(to: .password, direction: -1)
         case .newPassword:
+            // A save in flight finishes the sign-in it started.
+            guard !busy else { return }
             // The issued password opens a fresh challenge when entered again.
             password = ""
             newPassword = ""
@@ -768,6 +774,28 @@ struct AuthFlowView: View {
 
     // MARK: - Actions
 
+    private func openSettings() {
+        // A request in flight is answered by the server it was sent to.
+        guard !busy else { return }
+        originBeforeSettings = AppConfig.serverOrigin
+        showServerConfig = true
+    }
+
+    private func settingsClosed() {
+        providersGeneration += 1
+        guard AppConfig.serverOrigin != originBeforeSettings else { return }
+        // Codes, challenges and passwords belong to the server that issued them.
+        switch step {
+        case .email, .password, .resetSent:
+            break
+        default:
+            password = ""
+            newPassword = ""
+            confirmPassword = ""
+            restart()
+        }
+    }
+
     private func restart() {
         code = ""
         recoveryCode = ""
@@ -917,6 +945,7 @@ struct AuthFlowView: View {
     }
 
     private func showNewPassword(_ pendingToken: String) {
+        unconfirmedPassword = nil
         newPassword = ""
         confirmPassword = ""
         infoMessage = nil
@@ -925,14 +954,15 @@ struct AuthFlowView: View {
 
     private func submitNewPassword() async {
         guard case let .newPassword(pendingToken) = step, !busy, newPasswordReady else { return }
+        let chosen = newPassword
         var expired = false
         await run {
             do {
-                let outcome = try await env.session.chooseInitialPassword(pendingToken: pendingToken, password: newPassword)
-                // Back may have abandoned this attempt while it was in flight.
+                let outcome = try await env.session.chooseInitialPassword(pendingToken: pendingToken, password: chosen)
                 guard step == .newPassword(pendingToken: pendingToken) else { return }
                 // A resent code signs in again, now with the chosen password.
-                password = newPassword
+                password = chosen
+                unconfirmedPassword = nil
                 newPassword = ""
                 confirmPassword = ""
                 switch outcome {
@@ -954,18 +984,35 @@ struct AuthFlowView: View {
             } catch {
                 guard step == .newPassword(pendingToken: pendingToken) else { return }
                 expired = (error as? APIError)?.code == "password_change_expired"
+                if !expired, !Self.refusedBeforeSaving(error) { unconfirmedPassword = chosen }
                 throw error
             }
         }
         // The challenge is spent, expired or voided by a reissue: only a new sign-in continues.
         if expired, step == .newPassword(pendingToken: pendingToken) {
             let message = errorMessage
-            password = ""
             newPassword = ""
             confirmPassword = ""
-            go(to: .password, direction: -1)
-            if let message { showError(message) }
+            if let saved = unconfirmedPassword {
+                // An earlier attempt may have saved it before its answer was lost.
+                unconfirmedPassword = nil
+                password = saved
+                go(to: .password, direction: -1)
+                withAnimation(.easeOut(duration: 0.2)) {
+                    infoMessage = "Your new password may already be saved, so it is filled in. Continue with it, or enter the password you were given if it is refused."
+                }
+            } else {
+                password = ""
+                go(to: .password, direction: -1)
+                if let message { showError(message) }
+            }
         }
+    }
+
+    /// A refusal the server gives before it writes the password, so the issued one still stands.
+    private static func refusedBeforeSaving(_ error: Error) -> Bool {
+        guard let code = (error as? APIError)?.code else { return false }
+        return ["password_reused", "password_breached", "sessions_not_ended"].contains(code)
     }
 
     private func handleSocial(_ outcome: SocialOutcome) {
