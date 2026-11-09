@@ -196,7 +196,7 @@ func (s *service) ImportFrom(
 	}
 
 	if selected[models.OrgDataGroupAutomations] {
-		stale, err := s.repo.MarkIntegrationsNeedingReconnect(ctx, tx, orgID, integrationReconnectDetail)
+		stale, err := s.repo.MarkIntegrationsNeedingReconnect(ctx, tx, orgID, integrationReconnectDetail, inboundReconnectDetail)
 		if err != nil {
 			return nil, err
 		}
@@ -313,6 +313,17 @@ func (s *service) importTable(
 			insertCols = append(insertCols, c)
 		default:
 			unknown++
+		}
+	}
+	// Columns rebuilt from a sealed one are written whenever that one arrives.
+	for _, sc := range t.Secrets {
+		if !slices.Contains(insertCols, sc.Column) {
+			continue
+		}
+		for _, c := range []string{sc.Plaintext, sc.Digest} {
+			if c != "" && writable[c] && !slices.Contains(insertCols, c) {
+				insertCols = append(insertCols, c)
+			}
 		}
 	}
 	if len(insertCols) == 0 {
@@ -493,17 +504,20 @@ func (s *service) importRow(
 		}
 		stored := jsonString(raw)
 		if stored == "" {
+			setDerived(obj, sc, "")
 			continue
 		}
 		if !IsSealed(stored) {
 			// Exported without secrets, so the column is already blank or was
 			// never ciphertext. Nothing to re-key.
+			setDerived(obj, sc, "")
 			continue
 		}
 		if ic.archiveKey == nil {
 			// Sealed, but no passphrase. Blank it rather than storing a value
 			// this instance's keys can never open.
 			blankSecret(obj, sc)
+			setDerived(obj, sc, "")
 			continue
 		}
 		plain, oerr := OpenValue(ic.archiveKey, stored)
@@ -522,6 +536,7 @@ func (s *service) importRow(
 			return nil, merr
 		}
 		obj[sc.Column] = enc
+		setDerived(obj, sc, plain)
 	}
 
 	return json.Marshal(obj)
@@ -530,13 +545,44 @@ func (s *service) importRow(
 // integrationReconnectDetail is the health detail an integration without its credentials carries.
 const integrationReconnectDetail = "Credentials did not come across with the workspace import: reconnect this integration."
 
-// integrationReconnectWarning names one connection by its provider and label, never by a credential.
+// inboundReconnectDetail is the health detail of a connection whose inbound URL alone did not travel.
+const inboundReconnectDetail = "The inbound URL did not come across with the workspace import: reconnect this integration for a new one."
+
+// integrationReconnectWarning is the one warning per connection, naming its provider and label, never a credential.
 func integrationReconnectWarning(c repository.IntegrationReconnect) string {
 	name := c.Provider
 	if c.Label != "" {
 		name = fmt.Sprintf("%s (%s)", c.Provider, c.Label)
 	}
-	return fmt.Sprintf("The %s integration arrived without its credentials and is marked for reconnection.", name)
+	missing := "its credentials"
+	switch {
+	case c.CredentialsMissing && c.InboundClosed:
+		missing = "its credentials or inbound URL"
+	case !c.CredentialsMissing:
+		missing = "its inbound URL"
+	}
+	return fmt.Sprintf("The %s integration arrived without %s and is marked for reconnection.", name, missing)
+}
+
+// setDerived rebuilds the clear and digest columns of a sealed one from its plaintext; "" clears them.
+func setDerived(obj map[string]json.RawMessage, sc SecretColumn, plain string) {
+	set := func(column, value string) {
+		if column == "" {
+			return
+		}
+		if value == "" {
+			obj[column] = json.RawMessage(`null`)
+			return
+		}
+		enc, _ := json.Marshal(value)
+		obj[column] = enc
+	}
+	set(sc.Plaintext, plain)
+	digest := ""
+	if plain != "" {
+		digest = repository.InboundSecretDigest(plain)
+	}
+	set(sc.Digest, digest)
 }
 
 // sealSecret re-encrypts a plaintext under this instance's key for that domain.

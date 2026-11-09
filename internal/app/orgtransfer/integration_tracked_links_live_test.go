@@ -277,6 +277,18 @@ func TestLiveArchiveCarriesIntegrationCredentialsAndDirectMailLinks(t *testing.T
 					reconnect = append(reconnect, w)
 				}
 			}
+			// Each connection is named once, whatever of its credentials and inbound URL stayed behind.
+			for _, name := range []string{"apollo (Prospecting)", "The hubspot integration", "calendly (Bookings)"} {
+				n := 0
+				for _, w := range result.Warnings {
+					if strings.Contains(w, name) {
+						n++
+					}
+				}
+				if n > 1 {
+					t.Fatalf("%s is named in %d import warnings, want one", name, n)
+				}
+			}
 
 			apollo, hubspot, calendly := read(srcConns.apollo), read(srcConns.hubspot), read(srcConns.calendly)
 			for _, c := range []conn{apollo, hubspot, calendly} {

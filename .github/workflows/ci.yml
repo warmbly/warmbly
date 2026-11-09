@@ -466,6 +466,18 @@ jobs:
             grep -q "^--- PASS: $test " workspace-isolation.log
           done
 
+      - name: Integration inbound secret sealing (PostgreSQL)
+        if: matrix.suite == 'live-3'
+        env:
+          WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
+        run: |
+          set -o pipefail
+          go test -race -v -p 1 ./internal/app/integration ./internal/app/orgtransfer -run '^TestLive(InboundSecretSealedAcrossWriteBackfillAndRead|InboundSecretUnsealedRowStillResolves|ArchiveCarriesInboundSecretsOnlySealed|ImportFlagsEachIntegrationOnceAndClosesItsInboundURL|ReconnectFlagClearsSealedInboundSecret)$' -count=1 | tee inbound-secret.log
+          if grep -q -- '--- SKIP:' inbound-secret.log; then exit 1; fi
+          for test in TestLiveInboundSecretSealedAcrossWriteBackfillAndRead TestLiveInboundSecretUnsealedRowStillResolves TestLiveArchiveCarriesInboundSecretsOnlySealed TestLiveImportFlagsEachIntegrationOnceAndClosesItsInboundURL TestLiveReconnectFlagClearsSealedInboundSecret; do
+            grep -q "^--- PASS: $test " inbound-secret.log
+          done
+
       - name: Monitoring database observation regressions (PostgreSQL)
         if: matrix.suite == 'live-2'
         env:
