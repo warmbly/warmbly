@@ -548,6 +548,7 @@ function SendingSettings() {
                             <Toggle
                                 on={externalWarmup.hide_warmbly_marked}
                                 onChange={(on) => patchExternalWarmup({ hide_warmbly_marked: on })}
+                                label="Hide warmup from another Warmbly"
                             />
                         </Row>
                         <Row
