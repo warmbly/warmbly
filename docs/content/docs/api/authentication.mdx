@@ -53,7 +53,7 @@ curl -X GET "https://api.warmbly.com/v1/api-keys" \
   -H "Content-Type: application/json"
 ```
 
-For mutation retries, include an `Idempotency-Key` header with a unique value per logical operation. Warmbly stores completed mutation responses for 24 hours per organization and key, then replays matching retries instead of performing the operation again.
+For mutation retries, include an `Idempotency-Key` header with a unique value per logical operation. Warmbly stores completed mutation responses for 24 hours per organization and key, then replays matching retries instead of performing the operation again. A key belongs to the credential and the exact request that first used it, resource ids included; see [retry safety](/api/endpoints/#retry-safety) for how refusals and server errors are handled.
 
 ## Verifying a credential
 

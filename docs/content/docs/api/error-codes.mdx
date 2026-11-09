@@ -979,6 +979,7 @@ A few conflicts carry their own `code`. The mailbox import's are under [mailbox 
 | `approval_not_pending` | 409 | `POST /ai/sessions/:id/approve` named a tool call the conversation is not waiting on: it was already decided, in another tab or in Slack, or a newer message replaced it |
 | `payment_method_required` | 409 | `POST /subscription/balance/top-up`, or turning on automatic reload with `PATCH /subscription/balance/auto-reload`, with no saved card. Save one with `POST /subscription/balance/payment-method`, or pay through `POST /subscription/balance/checkout` |
 | `charge_in_progress` | 409 | `POST /subscription/balance/top-up` while another payment for the workspace is still going through. Try again in a minute |
+| `idempotency_outcome_unknown` | 409 | The request that first used this `Idempotency-Key` ended in a server error or never finished, so whether it took effect is unknown and it is not run again. Read the resource back, then retry with a new key if the change did not happen. See [retry safety](/api/endpoints/#retry-safety) |
 | `mailbox_cloud_unenroll_failed` | 409 | The mailbox is linked to [Warmbly Cloud](/guides/warmbly-cloud/) and its link could not be released, so `DELETE /emails/{id}` would leave Warmbly Cloud holding its credential or its claim on it. The mailbox record remains, and restoration onto its worker is attempted |
 
 `mailbox_cloud_unenroll_failed` is a self-hosted instance losing contact with Warmbly Cloud mid-delete. Deleting an enrolled mailbox has to revoke its enrollment before the record goes, because the pool holds the mailbox's own SMTP/IMAP credentials and that record is the only thing that knows the enrollment exists. The same call releases a cloud-managed mirror before the record goes, so the mailbox returns to the cloud workspace and can be adopted again instead of staying claimed by an instance that no longer keeps it. The mailbox record remains. Warmbly attempts to restore it onto its worker immediately, and the worker reconciler may restore it later if that attempt fails. Retry the delete once the instance can reach the cloud again. Unenrolling under **Settings > Warmbly Cloud** first does not help: it makes the same call.
@@ -1400,6 +1401,8 @@ async function requestWithRetry(url, options, maxRetries = 3) {
   }
 }
 ```
+
+A retry of a write that carries an `Idempotency-Key` behaves differently: after a `429` the same key runs the request, and after a `5xx` the same key answers `409 idempotency_outcome_unknown` instead of running it again. Read the resource back before retrying such a write with a new key. See [retry safety](/api/endpoints/#retry-safety).
 
 ### Parse error responses
 
