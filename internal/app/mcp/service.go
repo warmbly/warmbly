@@ -36,6 +36,9 @@ type Service interface {
 
 	// ToolsForInvocation contributes the org's enabled MCP tools to the agent.
 	ToolsForInvocation(ctx context.Context, inv aitools.Invocation) []generation.ToolDef
+	// WebSearch is the workspace's web search through the tool an admin picked
+	// on an enabled server, nil when none is picked.
+	WebSearch(ctx context.Context, orgID uuid.UUID) generation.SearchClient
 }
 
 type service struct {
@@ -132,6 +135,15 @@ func (s *service) Update(ctx context.Context, orgID, id uuid.UUID, req *models.U
 	if req.Enabled != nil {
 		sv.Enabled = *req.Enabled
 	}
+	if req.SearchTool != nil {
+		tool := strings.TrimSpace(*req.SearchTool)
+		if tool != "" {
+			if err := validSearchTool(sv, tool); err != nil {
+				return nil, errx.New(errx.BadRequest, err.Error())
+			}
+		}
+		sv.SearchTool = tool
+	}
 	if err := s.repo.Update(ctx, sv); err != nil {
 		return nil, errx.New(errx.Conflict, "a connection with that name already exists")
 	}
@@ -175,6 +187,10 @@ func (s *service) discover(ctx context.Context, sv *models.MCPServer, token stri
 	}
 	sv.DiscoveredTools = out
 	sv.LastError = ""
+	// A search tool the server no longer offers as one stops being the search.
+	if sv.SearchTool != "" && validSearchTool(sv, sv.SearchTool) != nil {
+		sv.SearchTool = ""
+	}
 }
 
 func (s *service) ToolsForInvocation(ctx context.Context, inv aitools.Invocation) []generation.ToolDef {

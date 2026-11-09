@@ -24,7 +24,8 @@ export type LeadArea =
 
 export interface LeadEmail {
     email: string;
-    source: string;
+    // "website" when read off the site, "search" when a web search showed it on a page about the business, else the provider.
+    source: "website" | "search" | (string & {});
     url?: string;
     domain_match: boolean;
     status?: "valid" | "risky" | "invalid" | "unknown" | "suppressed" | "";
@@ -47,9 +48,17 @@ export interface LeadSite {
     accepts_all?: boolean;
     // The listing had no website; the finder worked this one out from the name and confirmed it.
     found_website?: boolean;
+    // The reader service that fetched the site after it turned a direct visit away; empty when read directly.
+    read_via?: LeadReaderService;
+    // Why an unread site was not read; empty when it was.
+    unread?: LeadSiteUnread;
     error?: string;
     checked_at?: string;
 }
+
+export type LeadSiteUnread = "blocked" | "robots" | "unreachable";
+
+export type LeadReaderService = "jina" | "crawl4ai" | "ddgs" | "custom" | (string & {});
 
 export type LeadSeniority = "owner" | "executive" | "manager" | "staff";
 export type LeadPersonSource = "schema" | "page" | "imprint" | "email" | "linkedin" | "manual";
@@ -239,6 +248,17 @@ export interface LeadFinderConfig {
     person_columns: LeadExportColumn[];
     default_export_columns: string[];
     map: { style_light: string; style_dark: string };
+    web_reader: LeadWebFallback;
+    web_search: LeadWebFallback;
+}
+
+// One way past a site that turns the finder away.
+export interface LeadWebFallback {
+    available: boolean;
+    // Tried in order: reader or search names, "mcp", "workspace_jina", "instance".
+    sources: string[];
+    // What one instance search costs the balance; 0 when free.
+    cost_usd: number;
 }
 
 export interface GeocodeResult {
@@ -285,11 +305,19 @@ export interface LeadPage {
     pagination: { next_cursor: string | null; has_more: boolean; total: number };
 }
 
+export interface LeadEnrichRequest extends LeadSelection {
+    verify?: boolean;
+    people?: boolean;
+    // Search the web for a missing site or a blocked site's addresses; on unless false.
+    web_search?: boolean;
+}
+
 export interface LeadEnrichmentRun {
     id: string;
     requested_by_user_id: string | null;
     verify: boolean;
     people: boolean;
+    web_search: boolean;
     status: "queued" | "running" | "done" | "error";
     total: number;
     processed: number;

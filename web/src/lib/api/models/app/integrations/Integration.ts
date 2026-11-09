@@ -20,6 +20,7 @@ export type IntegrationProvider =
     | "google_places"
     | "foursquare"
     | "outscraper"
+    | "jina"
     | "millionverifier"
     | "cleanmylist";
 
@@ -381,6 +382,7 @@ export const PROVIDER_LABELS: Record<IntegrationProvider, string> = {
     google_places: "Google Places",
     foursquare: "Foursquare",
     outscraper: "Outscraper",
+    jina: "Jina AI",
     millionverifier: "MillionVerifier",
     cleanmylist: "CleanMyList",
 };

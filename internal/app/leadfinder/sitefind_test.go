@@ -80,11 +80,11 @@ func TestFindWebsite(t *testing.T) {
 		return nil, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
 	}
 
-	website, domain := c.FindWebsite(context.Background(), &models.Lead{Name: "Moon Creek Dental", City: "Boise", Country: "US", Phone: "+1 208 939 7053"})
+	website, domain := c.FindWebsite(context.Background(), &models.Lead{Name: "Moon Creek Dental", City: "Boise", Country: "US", Phone: "+1 208 939 7053"}, nil)
 	if website != "http://moon-creek-dental.com/" || domain != "moon-creek-dental.com" {
 		t.Fatalf("found %q %q", website, domain)
 	}
-	if w, _ := c.FindWebsite(context.Background(), &models.Lead{Name: "Nobody Here", Country: "US"}); w != "" {
+	if w, _ := c.FindWebsite(context.Background(), &models.Lead{Name: "Nobody Here", Country: "US"}, nil); w != "" {
 		t.Fatalf("found %q for a business with no site", w)
 	}
 }

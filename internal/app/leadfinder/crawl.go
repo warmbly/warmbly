@@ -20,6 +20,7 @@ import (
 
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/safehttp"
+	"github.com/warmbly/warmbly/internal/pkg/webread"
 )
 
 const (
@@ -29,12 +30,16 @@ const (
 	crawlMaxEmails   = 8
 	// crawlMaxAddrs bounds every address read, personal ones included.
 	crawlMaxAddrs = 60
+	// crawlMaxReaderPages bounds the pages one site costs a reader service.
+	crawlMaxReaderPages = 4
 )
 
 // FoundEmail is one address read off a page.
 type FoundEmail struct {
 	Email string
 	URL   string
+	// Source is where it was found; empty means the business's own site.
+	Source string
 }
 
 // CrawlResult is everything reading one business's website found.
@@ -56,6 +61,15 @@ type Crawler struct {
 	userAgent string
 	now       func() time.Time
 	lookup    func(ctx context.Context, host string) ([]string, error)
+	// fallback reads a page the site turned a direct visit away from.
+	fallback webread.Reader
+}
+
+// withFallback is the crawler reading blocked pages through r.
+func (c *Crawler) withFallback(r webread.Reader) *Crawler {
+	cp := *c
+	cp.fallback = r
+	return &cp
 }
 
 // NewCrawler builds a crawler over the SSRF-hardened transport. Plain-http
@@ -96,18 +110,20 @@ func (c *Crawler) Crawl(ctx context.Context, website string) (*CrawlResult, erro
 	res := &CrawlResult{Socials: map[string]string{}, Site: models.LeadSite{CheckedAt: &now}}
 	rules := c.robots(ctx, start)
 
-	home, err := c.fetch(ctx, start.String(), rules)
-	if err != nil && start.Scheme == "https" {
+	home, err := c.fetch(ctx, start.String(), rules, false)
+	var blocked *blockedError
+	if err != nil && start.Scheme == "https" && !errors.As(err, &blocked) {
 		alt := *start
 		alt.Scheme = "http"
 		// The http origin answers for itself, here and for every page read after.
 		altRules := c.robots(ctx, &alt)
-		if h, e := c.fetch(ctx, alt.String(), altRules); e == nil {
+		if h, e := c.fetch(ctx, alt.String(), altRules, false); e == nil {
 			home, err, rules = h, nil, altRules
 		}
 	}
 	if err != nil {
 		res.Site.Error = err.Error()
+		res.Site.Unread = unreadReason(err)
 		return res, nil
 	}
 	res.Site.Reachable = true
@@ -116,6 +132,7 @@ func (c *Crawler) Crawl(ctx context.Context, website string) (*CrawlResult, erro
 	res.Site.Title = home.title
 	res.Site.Description = home.description
 	res.Site.Platform, res.Site.Signals = detectSite(home, now)
+	res.Site.ReadVia = home.via
 	pages := []*page{home}
 
 	baseDomain := registrable(home.url.Hostname())
@@ -136,11 +153,17 @@ func (c *Crawler) Crawl(ctx context.Context, website string) (*CrawlResult, erro
 	}
 	// Contact pages first, then about, then the rest.
 	sort.SliceStable(follow, func(i, j int) bool { return contactRank(follow[i]) < contactRank(follow[j]) })
+	// A site that turned the home page away sends every page to the reader.
+	viaReader := home.via != ""
+	limit := crawlMaxPages
+	if viaReader {
+		limit = crawlMaxReaderPages
+	}
 	for _, target := range follow {
-		if len(pages) >= crawlMaxPages || ctx.Err() != nil {
+		if len(pages) >= limit || ctx.Err() != nil {
 			break
 		}
-		if p, err := c.fetch(ctx, target, rules); err == nil {
+		if p, err := c.fetch(ctx, target, rules, viaReader); err == nil {
 			pages = append(pages, p)
 		}
 	}
@@ -259,18 +282,54 @@ type page struct {
 	// segments is the visible text, one entry per element, in page order.
 	segments []string
 	jsonld   []string
+	// via names the reader service that fetched the page, empty when direct.
+	via string
+}
+
+// errRobots is a page the site's robots.txt keeps crawlers out of.
+var errRobots = errors.New("the site's robots.txt asks crawlers not to read this page")
+
+// unreadReason classifies why a site's home page could not be read.
+func unreadReason(err error) models.LeadSiteUnread {
+	var blocked *blockedError
+	switch {
+	case errors.As(err, &blocked):
+		return models.LeadSiteBlocked
+	case errors.Is(err, errRobots):
+		return models.LeadSiteRobots
+	}
+	return models.LeadSiteUnreachable
+}
+
+// blockedError is a site turning the finder away, after any reader tried too.
+type blockedError struct {
+	status int
+	reader bool
+}
+
+func (e *blockedError) Error() string {
+	msg := "the website answered " + strconv.Itoa(e.status)
+	if e.reader {
+		msg += ", and the reader service could not get past it either"
+	}
+	return msg
 }
 
 // inlineTags format text without starting a new piece of it.
 var inlineTags = map[string]bool{"em": true, "i": true, "small": true, "sup": true, "sub": true, "abbr": true, "mark": true, "u": true}
 
-func (c *Crawler) fetch(ctx context.Context, target string, rules *robotsRules) (*page, error) {
+// fetch reads one page, straight through the reader when viaReader is set or
+// when the site turns the direct visit away. robots.txt binds both paths.
+func (c *Crawler) fetch(ctx context.Context, target string, rules *robotsRules, viaReader bool) (*page, error) {
 	u, err := url.Parse(target)
 	if err != nil {
 		return nil, err
 	}
 	if !rules.allowed(u) {
-		return nil, errors.New("the site's robots.txt asks crawlers not to read this page")
+		return nil, errRobots
+	}
+	if viaReader && c.fallback != nil {
+		return c.read(ctx, target, http.StatusForbidden)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
@@ -287,6 +346,12 @@ func (c *Crawler) fetch(ctx context.Context, target string, rules *robotsRules) 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
+		if webread.Blocked(resp.StatusCode) {
+			if c.fallback != nil {
+				return c.read(ctx, target, resp.StatusCode)
+			}
+			return nil, &blockedError{status: resp.StatusCode}
+		}
 		return nil, errors.New("the website answered " + strconv.Itoa(resp.StatusCode))
 	}
 	if ct := resp.Header.Get("Content-Type"); ct != "" {
@@ -301,6 +366,26 @@ func (c *Crawler) fetch(ctx context.Context, target string, rules *robotsRules) 
 	}
 	p := parsePage(string(body))
 	p.url = resp.Request.URL
+	return p, nil
+}
+
+// read fetches a page through the reader service after the site answered status.
+func (c *Crawler) read(ctx context.Context, target string, status int) (*page, error) {
+	rp, err := c.fallback.Read(ctx, target)
+	if err != nil {
+		return nil, &blockedError{status: status, reader: true}
+	}
+	final, err := url.Parse(rp.URL)
+	if err != nil || final.Hostname() == "" {
+		final, _ = url.Parse(target)
+	}
+	src := rp.HTML
+	if len(src) > crawlMaxBytes {
+		src = src[:crawlMaxBytes]
+	}
+	p := parsePage(src)
+	p.url = final
+	p.via = rp.Via
 	return p, nil
 }
 

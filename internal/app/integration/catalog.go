@@ -270,6 +270,19 @@ func Catalog() []models.IntegrationCatalogEntry {
 				"Billed to your Outscraper account, not your Warmbly balance",
 			},
 		},
+		{
+			Provider:   models.IntegrationJina,
+			Name:       "Jina AI",
+			Tagline:    "Read websites that turn the lead finder away, and search the web for a lead's site and addresses.",
+			Category:   models.IntegrationCategoryData,
+			AuthMethod: string(models.IntegrationAuthAPIKey),
+			DocsURL:    "https://docs.warmbly.com/guides/lead-finder/#when-a-site-turns-the-finder-away",
+			Highlights: []string{
+				"Jina Reader fetches a page a site answered 403 or 429 to",
+				"Jina Search finds the website of a lead whose listing has none",
+				"Billed to your Jina account, not your Warmbly balance",
+			},
+		},
 
 		// NOTE: Google Sheets is intentionally NOT a catalog integration. The
 		// google_sheets OAuth connection still exists (it powers the on-demand

@@ -1,0 +1,245 @@
+package mcp
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"regexp"
+	"strings"
+
+	"github.com/google/uuid"
+
+	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/generation"
+)
+
+// queryArgs and limitArgs are the argument names search tools take, best first.
+var (
+	queryArgs = []string{"query", "q", "search_query", "search", "keywords", "term", "text", "prompt"}
+	limitArgs = []string{"max_results", "limit", "count", "num_results", "num", "maxResults", "numResults", "top_k", "n"}
+)
+
+// searchArgs works out how to call a tool as a web search: the argument that
+// takes the query and, when it has one, the argument that bounds the results.
+func searchArgs(t models.MCPTool) (query, limit string, ok bool) {
+	var schema struct {
+		Properties map[string]struct {
+			Type any `json:"type"`
+		} `json:"properties"`
+		Required []string `json:"required"`
+	}
+	if len(t.InputSchema) > 0 {
+		_ = json.Unmarshal(t.InputSchema, &schema)
+	}
+	isType := func(name, want string) bool {
+		p, ok := schema.Properties[name]
+		if !ok {
+			return false
+		}
+		switch v := p.Type.(type) {
+		case string:
+			return v == want
+		case []any:
+			for _, x := range v {
+				if s, _ := x.(string); s == want {
+					return true
+				}
+			}
+		case nil:
+			return true
+		}
+		return false
+	}
+	for _, name := range queryArgs {
+		if isType(name, "string") {
+			query = name
+			break
+		}
+	}
+	if query == "" {
+		// A tool whose only required argument is a string takes the query there.
+		var strs []string
+		for _, r := range schema.Required {
+			if isType(r, "string") {
+				strs = append(strs, r)
+			}
+		}
+		if len(strs) != 1 {
+			return "", "", false
+		}
+		query = strs[0]
+	}
+	for _, name := range limitArgs {
+		if isType(name, "integer") || isType(name, "number") {
+			limit = name
+			break
+		}
+	}
+	for _, r := range schema.Required {
+		if r != query && r != limit {
+			// Something else is required that a search cannot supply.
+			return "", "", false
+		}
+	}
+	return query, limit, true
+}
+
+// validSearchTool checks a server can serve tool as a web search.
+func validSearchTool(sv *models.MCPServer, tool string) error {
+	for _, t := range sv.DiscoveredTools {
+		if t.Name != tool {
+			continue
+		}
+		if _, _, ok := searchArgs(t); !ok {
+			return errors.New("that tool does not take a search query")
+		}
+		return nil
+	}
+	return errors.New("the server has no tool by that name")
+}
+
+// WebSearch is the workspace's web search through the tools its enabled MCP
+// servers offer as one, nil when none does.
+func (s *service) WebSearch(ctx context.Context, orgID uuid.UUID) generation.SearchClient {
+	servers, err := s.repo.List(ctx, orgID, true)
+	if err != nil {
+		return nil
+	}
+	var backends []generation.SearchClient
+	for i := range servers {
+		sv := servers[i]
+		if sv.SearchTool == "" {
+			continue
+		}
+		for _, t := range sv.DiscoveredTools {
+			if t.Name != sv.SearchTool {
+				continue
+			}
+			if q, l, ok := searchArgs(t); ok {
+				backends = append(backends, &toolSearch{s: s, server: sv, tool: t.Name, queryArg: q, limitArg: l})
+			}
+		}
+	}
+	switch len(backends) {
+	case 0:
+		return nil
+	case 1:
+		return backends[0]
+	}
+	return toolSearches(backends)
+}
+
+type toolSearches []generation.SearchClient
+
+func (ts toolSearches) Search(ctx context.Context, query string, limit int) ([]generation.SearchResult, error) {
+	var errs []error
+	for _, t := range ts {
+		res, err := t.Search(ctx, query, limit)
+		if err == nil && len(res) > 0 {
+			return res, nil
+		}
+		if err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return nil, errors.Join(errs...)
+}
+
+// toolSearch calls one MCP tool as a web search.
+type toolSearch struct {
+	s        *service
+	server   models.MCPServer
+	tool     string
+	queryArg string
+	limitArg string
+}
+
+func (t *toolSearch) Search(ctx context.Context, query string, limit int) ([]generation.SearchResult, error) {
+	if limit <= 0 || limit > 10 {
+		limit = 5
+	}
+	args := map[string]any{t.queryArg: query}
+	if t.limitArg != "" {
+		args[t.limitArg] = limit
+	}
+	raw, _ := json.Marshal(args)
+	token, _ := t.s.open(ctx, t.server.OrgID, t.server.CredentialsEncrypted)
+	text, err := t.s.client.CallTool(ctx, t.server.URL, token, t.tool, raw)
+	if err != nil {
+		return nil, err
+	}
+	res := parseSearchText(text)
+	if len(res) > limit {
+		res = res[:limit]
+	}
+	return res, nil
+}
+
+var (
+	urlInText  = regexp.MustCompile(`https?://[^\s<>"'\)\]]+`)
+	urlKeys    = []string{"url", "href", "link", "uri"}
+	titleKeys  = []string{"title", "name"}
+	snippetKey = []string{"body", "snippet", "description", "content", "text", "summary"}
+)
+
+// parseSearchText reads a search tool's answer: JSON results in any of the
+// usual shapes, or else every link in the text with the line around it.
+func parseSearchText(text string) []generation.SearchResult {
+	var v any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(text)), &v); err == nil {
+		var out []generation.SearchResult
+		collectResults(v, &out, 0)
+		if len(out) > 0 {
+			return dedupe(out)
+		}
+	}
+	var out []generation.SearchResult
+	for _, line := range strings.Split(text, "\n") {
+		for _, u := range urlInText.FindAllString(line, -1) {
+			u = strings.TrimRight(u, ".,;:")
+			out = append(out, generation.SearchResult{URL: u, Snippet: strings.TrimSpace(strings.ReplaceAll(line, u, ""))})
+		}
+	}
+	return dedupe(out)
+}
+
+func collectResults(v any, out *[]generation.SearchResult, depth int) {
+	if depth > 6 || len(*out) >= 50 {
+		return
+	}
+	switch x := v.(type) {
+	case []any:
+		for _, e := range x {
+			collectResults(e, out, depth+1)
+		}
+	case map[string]any:
+		if u := pick(x, urlKeys); strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://") {
+			*out = append(*out, generation.SearchResult{URL: u, Title: pick(x, titleKeys), Snippet: pick(x, snippetKey)})
+			return
+		}
+		for _, e := range x {
+			collectResults(e, out, depth+1)
+		}
+	}
+}
+
+func pick(m map[string]any, keys []string) string {
+	for _, k := range keys {
+		if s, ok := m[k].(string); ok && strings.TrimSpace(s) != "" {
+			return strings.TrimSpace(s)
+		}
+	}
+	return ""
+}
+
+func dedupe(in []generation.SearchResult) []generation.SearchResult {
+	seen := map[string]bool{}
+	out := in[:0]
+	for _, r := range in {
+		if !seen[r.URL] {
+			seen[r.URL] = true
+			out = append(out, r)
+		}
+	}
+	return out
+}

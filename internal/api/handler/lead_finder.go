@@ -323,6 +323,9 @@ type leadEnrichRequest struct {
 	Verify *bool `json:"verify"`
 	// People also finds the people each site names and works out their addresses.
 	People *bool `json:"people"`
+	// WebSearch lets the run search the web for a missing site or a blocked
+	// site's addresses, when a search is set up; on unless false.
+	WebSearch *bool `json:"web_search"`
 }
 
 // EnrichLeads starts a background run reading the leads' websites. Send an
@@ -342,9 +345,11 @@ func (h *Handler) EnrichLeads(c *gin.Context) {
 		leadsFail(c, err, "enrich")
 		return
 	}
-	verify := in.Verify == nil || *in.Verify
-	people := in.People == nil || *in.People
-	run, err := h.LeadFinderService.StartEnrichment(c.Request.Context(), orgID, userID, ids, verify, people)
+	run, err := h.LeadFinderService.StartEnrichment(c.Request.Context(), orgID, userID, ids, leadfinder.EnrichOptions{
+		Verify:    in.Verify == nil || *in.Verify,
+		People:    in.People == nil || *in.People,
+		WebSearch: in.WebSearch == nil || *in.WebSearch,
+	})
 	if err != nil {
 		leadsFail(c, err, "enrich")
 		return

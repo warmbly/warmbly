@@ -35,6 +35,7 @@ var curatedOrder = []models.IntegrationProvider{
 	models.IntegrationGooglePlaces,
 	models.IntegrationOutscraper,
 	models.IntegrationFoursquare,
+	models.IntegrationJina,
 }
 
 // popularity returns workspaces per provider from a cache. A stale cache is

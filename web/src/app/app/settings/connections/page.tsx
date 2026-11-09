@@ -1,6 +1,8 @@
 // Connections: external MCP servers that add tools to the AI assistant. Admin
 // connects a server, reviews the tools Warmbly discovered, then enables it. Once
 // enabled, the assistant can use those tools, always asking before it runs one.
+// One discovered tool can also be picked as the workspace's web search, which the
+// lead finder and the assistant's search_web then use while the server is enabled.
 
 import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -14,6 +16,7 @@ import {
     RefreshCwIcon,
     AlertTriangleIcon,
     WrenchIcon,
+    SearchIcon,
 } from "lucide-react";
 import {
     useMCPServers,
@@ -28,6 +31,7 @@ import buildError from "@/lib/helper/buildError";
 import { usePermission } from "@/hooks/usePermission";
 import { useConfirm } from "@/hooks/context/confirm";
 import { TextInput } from "@/components/ui/field";
+import { SelectMenu } from "@/components/ui/select-menu";
 import { SectionShell, Section, Toggle } from "../_components/SectionShell";
 
 export default function ConnectionsSettingsPage() {
@@ -81,6 +85,15 @@ function ServerCard({ server, canManage }: { server: MCPServer; canManage: boole
     const refresh = useRefreshMCPServer();
     const confirm = useConfirm();
 
+    async function setSearchTool(tool: string) {
+        if (tool === server.search_tool) return;
+        try {
+            await update.mutateAsync({ id: server.id, data: { search_tool: tool } });
+            toast.success(tool ? `${tool} is now the workspace's web search` : "Web search cleared");
+        } catch (e) {
+            toast.error(buildError(e as AppError));
+        }
+    }
     async function toggle(next: boolean) {
         try {
             await update.mutateAsync({ id: server.id, data: { enabled: next } });
@@ -147,10 +160,42 @@ function ServerCard({ server, canManage }: { server: MCPServer; canManage: boole
                             </span>
                         ))}
                     </div>
+                    <WebSearchPicker server={server} canManage={canManage} saving={update.isPending} onChange={setSearchTool} />
                 </div>
             ) : (
                 <p className="mt-2 text-[11px] text-slate-400">No tools discovered yet.</p>
             )}
+        </div>
+    );
+}
+
+function WebSearchPicker({ server, canManage, saving, onChange }: { server: MCPServer; canManage: boolean; saving: boolean; onChange: (tool: string) => void }) {
+    if (!canManage && !server.search_tool) return null;
+    return (
+        <div className="mt-3 border-t border-slate-100 pt-2.5">
+            <div className="flex items-center gap-2">
+                <SearchIcon className="w-3 h-3 text-slate-400 shrink-0" />
+                <span className="text-[12px] font-medium text-slate-700">Web search</span>
+                <div className="ml-auto">
+                    {canManage ? (
+                        <SelectMenu
+                            aria-label="Web search tool"
+                            value={server.search_tool ?? ""}
+                            onChange={onChange}
+                            disabled={saving}
+                            align="end"
+                            className="max-w-[220px]"
+                            options={[{ value: "", label: "None" }, ...server.discovered_tools.map((t) => ({ value: t.name, label: t.name }))]}
+                        />
+                    ) : (
+                        <span className="text-[11.5px] font-mono text-slate-600">{server.search_tool}</span>
+                    )}
+                </div>
+            </div>
+            <p className="mt-1 text-[11px] text-slate-400 leading-relaxed">
+                The lead finder and Remie&apos;s search_web use this tool to search the web. The server must be enabled.
+                {server.search_tool && !server.enabled && <span className="text-amber-700"> It is off, so nothing uses it yet.</span>}
+            </p>
         </div>
     );
 }

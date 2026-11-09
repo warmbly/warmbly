@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { BookmarkIcon, CheckIcon, DownloadIcon, Loader2Icon, MoreHorizontalIcon, SparklesIcon, TagIcon, Trash2Icon, UserPlusIcon, XIcon, EyeOffIcon, SendIcon } from "lucide-react";
+import { BookmarkIcon, CheckIcon, ChevronUpIcon, DownloadIcon, Loader2Icon, MoreHorizontalIcon, SparklesIcon, TagIcon, Trash2Icon, UserPlusIcon, XIcon, EyeOffIcon, SendIcon } from "lucide-react";
 import { useState } from "react";
+import { Toggle } from "@/components/app/campaigns/preferences/components/CampaignPreferenceBoolBox";
 import { PopoverMenu, PopoverMenuContent, PopoverMenuItem, PopoverMenuSeparator, PopoverMenuTrigger } from "@/components/ui/popover-menu";
 import type { LeadStatus } from "@/lib/api/models/app/leads/Lead";
 import { fmtUsdCost } from "@/lib/money";
@@ -9,6 +10,7 @@ export default function LeadSelectionBar({
     count,
     enrichCost,
     enriching,
+    webSearch,
     onEnrich,
     onAddToContacts,
     onExport,
@@ -20,6 +22,8 @@ export default function LeadSelectionBar({
     count: number;
     enrichCost: number;
     enriching: boolean;
+    // Set only when the workspace has a web search the run can use.
+    webSearch?: { on: boolean; costUsd: number; onChange: (on: boolean) => void };
     onEnrich: () => void;
     onAddToContacts: () => void;
     onExport: () => void;
@@ -47,6 +51,27 @@ export default function LeadSelectionBar({
                         {enriching ? <Loader2Icon className="size-3.5 animate-spin" /> : <SparklesIcon className="size-3.5" />}
                         Find people and emails
                     </Action>
+                    {webSearch && (
+                        <PopoverMenu side="top" align="center">
+                            <PopoverMenuTrigger asChild>
+                                <button type="button" aria-label="Find people and emails options" className="-ml-1.5 h-7 px-1 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center">
+                                    <ChevronUpIcon className="size-3.5" />
+                                </button>
+                            </PopoverMenuTrigger>
+                            <PopoverMenuContent role="dialog" aria-label="Find people and emails options" minWidth={280}>
+                                <div className="flex items-start gap-3 px-2.5 py-2">
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-[12.5px] font-medium text-slate-800">Search the web</p>
+                                        <p className="mt-0.5 text-[11.5px] leading-snug text-slate-500">
+                                            Looks for a missing website, and for addresses a blocked site shows elsewhere.
+                                            {webSearch.costUsd > 0 && ` ${fmtUsdCost(webSearch.costUsd)} for each search.`}
+                                        </p>
+                                    </div>
+                                    <Toggle value={webSearch.on} onChange={webSearch.onChange} ariaLabel="Search the web" />
+                                </div>
+                            </PopoverMenuContent>
+                        </PopoverMenu>
+                    )}
                     <Action onClick={onAddToContacts}>
                         <UserPlusIcon className="size-3.5" />
                         Add to contacts

@@ -190,6 +190,18 @@ func (c *Config) GetSecretOptional(ctx context.Context, envKey, awsKey, defaultV
 	return defaultVal
 }
 
+// Lookup returns an optional-setting reader for packages that build a list of
+// providers from settings named at run time: secret values come from the
+// secret store, the rest from parameters.
+func (c *Config) Lookup(ctx context.Context) func(envKey, awsKey string, secret bool) string {
+	return func(envKey, awsKey string, secret bool) string {
+		if secret {
+			return c.GetSecretOptional(ctx, envKey, awsKey, "")
+		}
+		return c.GetStringOptional(ctx, envKey, awsKey, "")
+	}
+}
+
 // GetSecretOptionalRaw retrieves an optional secret value using raw AWS key.
 func (c *Config) GetSecretOptionalRaw(ctx context.Context, envKey, awsKey, defaultVal string) string {
 	if val := os.Getenv(envKey); val != "" {

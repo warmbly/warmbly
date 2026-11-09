@@ -24,6 +24,8 @@ const (
 	enrichVerifyMax   = 3
 	enrichRunTimeout  = 45 * time.Minute
 	enrichLeadTimeout = 50 * time.Second
+	// enrichLeadSlowTimeout leaves room for a reader service and web searches.
+	enrichLeadSlowTimeout = 2 * time.Minute
 )
 
 // errOutOfBalance stops a run when the workspace cannot pay for the next site.
@@ -34,14 +36,21 @@ type AuditLogger interface {
 	LogAction(ctx context.Context, orgID, actorID uuid.UUID, action models.AuditAction, entityType models.AuditEntityType, entityID *uuid.UUID, ipAddress, userAgent string, changes, metadata map[string]string)
 }
 
+// EnrichOptions are what an enrichment run does besides reading each site.
+type EnrichOptions struct {
+	Verify    bool
+	People    bool
+	WebSearch bool
+}
+
 // StartEnrichment queues a run reading the leads' websites and starts it in
 // the background.
-func (s *Service) StartEnrichment(ctx context.Context, orgID, userID uuid.UUID, ids []uuid.UUID, verify, people bool) (*models.LeadEnrichmentRun, error) {
+func (s *Service) StartEnrichment(ctx context.Context, orgID, userID uuid.UUID, ids []uuid.UUID, opts EnrichOptions) (*models.LeadEnrichmentRun, error) {
 	if len(ids) == 0 {
 		return nil, errx.New(errx.BadRequest, "select at least one lead to enrich")
 	}
 	uid := userID
-	run := &models.LeadEnrichmentRun{OrganizationID: orgID, RequestedByUserID: &uid, LeadIDs: ids, Verify: verify, People: people, Total: len(ids)}
+	run := &models.LeadEnrichmentRun{OrganizationID: orgID, RequestedByUserID: &uid, LeadIDs: ids, Verify: opts.Verify, People: opts.People, WebSearch: opts.WebSearch, Total: len(ids)}
 	if err := s.Repo.CreateEnrichmentRun(ctx, run); err != nil {
 		return nil, err
 	}
@@ -123,6 +132,10 @@ func (s *Service) runEnrichment(ctx context.Context, id uuid.UUID) {
 
 // enrich walks the run's leads from where it stopped, a chunk at a time.
 func (s *Service) enrich(ctx context.Context, run *models.LeadEnrichmentRun) error {
+	tools := s.webTools(ctx, run.OrganizationID)
+	if !run.WebSearch {
+		tools.searches = nil
+	}
 	for run.Processed < len(run.LeadIDs) {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -144,7 +157,7 @@ func (s *Service) enrich(ctx context.Context, run *models.LeadEnrichmentRun) err
 			go func(l *models.Lead) {
 				defer wg.Done()
 				defer func() { <-sem }()
-				out, found, charged, err := s.enrichLead(ctx, run, l)
+				out, found, charged, err := s.enrichLead(ctx, run, tools, l)
 				mu.Lock()
 				defer mu.Unlock()
 				run.PeopleFound += found
@@ -184,13 +197,22 @@ const (
 )
 
 // enrichLead reads one lead's website and returns what it found and what the read cost, net of a refund.
-func (s *Service) enrichLead(ctx context.Context, run *models.LeadEnrichmentRun, l *models.Lead) (enrichOutcome, int, models.Micro, error) {
-	lctx, cancel := context.WithTimeout(ctx, enrichLeadTimeout)
+func (s *Service) enrichLead(ctx context.Context, run *models.LeadEnrichmentRun, tools webTools, l *models.Lead) (enrichOutcome, int, models.Micro, error) {
+	timeout := enrichLeadTimeout
+	if tools.crawler.fallback != nil || len(tools.searches) > 0 {
+		timeout = enrichLeadSlowTimeout
+	}
+	lctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	l.OrganizationID = run.OrganizationID
+	idem := run.ID.String() + ":" + l.ID.String()
 	found := l.Site.FoundWebsite
 	if l.Website == "" {
-		l.Website, l.Domain = s.crawler.FindWebsite(lctx, l)
+		var searched []string
+		if len(tools.searches) > 0 && strings.TrimSpace(l.Name) != "" {
+			searched = searchedHosts(s.search(lctx, run.OrganizationID, tools.searches, siteQuery(l), idem+":site"))
+		}
+		l.Website, l.Domain = tools.crawler.FindWebsite(lctx, l, searched)
 		found = l.Website != ""
 	}
 	if l.Website == "" {
@@ -210,10 +232,15 @@ func (s *Service) enrichLead(ctx context.Context, run *models.LeadEnrichmentRun,
 		}
 		charged = taken
 	}
-	res, err := s.crawler.Crawl(lctx, l.Website)
+	res, err := tools.crawler.Crawl(lctx, l.Website)
 	if err != nil {
 		now := time.Now()
-		res = &CrawlResult{Site: models.LeadSite{Error: err.Error(), CheckedAt: &now}}
+		res = &CrawlResult{Site: models.LeadSite{Error: err.Error(), Unread: models.LeadSiteUnreachable, CheckedAt: &now}}
+	}
+	// A site that could not be read, or published no address, may have one
+	// shown on pages about it.
+	if len(tools.searches) > 0 && len(res.Emails) == 0 && len(l.Emails) == 0 && l.Domain != "" {
+		res.Emails = searchedEmails(s.search(lctx, run.OrganizationID, tools.searches, `"@`+l.Domain+`"`, idem+":emails"), l.Domain)
 	}
 	// What earlier runs learned about the domain's addresses outlives this read.
 	prev := l.Site
@@ -277,7 +304,11 @@ func (s *Service) finishEmails(ctx context.Context, run *models.LeadEnrichmentRu
 		if byEmail[f.Email] {
 			continue
 		}
-		list = append(list, models.LeadEmail{Email: f.Email, Source: "website", URL: f.URL, DomainMatch: emailDomainMatches(f.Email, l.Domain)})
+		src := f.Source
+		if src == "" {
+			src = "website"
+		}
+		list = append(list, models.LeadEmail{Email: f.Email, Source: src, URL: f.URL, DomainMatch: emailDomainMatches(f.Email, l.Domain)})
 		byEmail[f.Email] = true
 	}
 	if len(list) == 0 {

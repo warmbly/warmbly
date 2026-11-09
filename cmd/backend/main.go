@@ -174,6 +174,7 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/mailvendor"
 	"github.com/warmbly/warmbly/internal/pkg/servetls"
 	"github.com/warmbly/warmbly/internal/pkg/typesafe"
+	"github.com/warmbly/warmbly/internal/pkg/webread"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/scheduler"
 	"github.com/warmbly/warmbly/internal/tasks"
@@ -253,6 +254,7 @@ func main() {
 	var writingGenerator generation.WritingGenerator
 	var aiProvider generation.Provider
 	var aiSearch generation.SearchClient
+	var webReader webread.Reader
 	var aiToolRegistry *aitools.Registry
 	var aiAgentService aiagent.Service
 	var slackService *slackapp.Service
@@ -794,11 +796,10 @@ func main() {
 		// (Serper/SearXNG) backs search_web.
 		aiProviderName := strings.ToLower(strings.TrimSpace(cfg.GetStringOptional(ctx, "AI_PROVIDER", "ai_provider", "")))
 		aiKey := cfg.GetSecretOptional(ctx, "AI_API_KEY", "ai_api_key", "")
-		aiSearch = generation.NewSearchClient(
-			cfg.GetStringOptional(ctx, "SEARCH_PROVIDER", "search/provider", ""),
-			cfg.GetStringOptional(ctx, "SEARCH_API_URL", "search/api_url", ""),
-			cfg.GetSecretOptional(ctx, "SEARCH_API_KEY", "search/api_key", ""),
-		)
+		aiSearch = generation.SearchFromConfig(cfg.Lookup(ctx))
+		// Reader services (Crawl4AI, Jina Reader, DDGS) fetch pages a site turned
+		// a direct visit away from, for the lead finder and fetch_url.
+		webReader = webread.FromConfig(cfg.Lookup(ctx))
 		if cfgAI, rerr := generation.Resolve(generation.ProviderSettings{
 			Provider:   aiProviderName,
 			APIKey:     aiKey,
@@ -1679,14 +1680,21 @@ func main() {
 		// never exceed the caller's permissions. Built once here with the same
 		// service instances the HTTP handlers use.
 		aiToolRegistry = aitools.BuildRegistry(aitools.Deps{
-			Contacts:     contactService,
-			CRM:          crmService,
-			Campaigns:    campaignService,
-			Analytics:    analyticsService,
-			Unibox:       uniboxService,
-			Automations:  integrationServiceForHandler,
-			Audit:        auditService,
-			Search:       aiSearch,
+			Contacts:    contactService,
+			CRM:         crmService,
+			Campaigns:   campaignService,
+			Analytics:   analyticsService,
+			Unibox:      uniboxService,
+			Automations: integrationServiceForHandler,
+			Audit:       auditService,
+			Search:      aiSearch,
+			Reader:      webReader,
+			WorkspaceSearch: func(ctx context.Context, orgID uuid.UUID) generation.SearchClient {
+				if leadFinderServiceForHandler == nil {
+					return nil
+				}
+				return leadFinderServiceForHandler.WorkspaceWebSearch(ctx, orgID)
+			},
 			Cache:        cache,
 			Emails:       emailService,
 			EmailSend:    emailSendService,
@@ -2321,6 +2329,14 @@ func main() {
 				Verifier:     emailVerifyService,
 				Credits:      creditService,
 				Audit:        auditService,
+				Reader:       webReader,
+				WebSearch:    aiSearch,
+				WorkspaceSearch: func(ctx context.Context, orgID uuid.UUID) generation.SearchClient {
+					if mcpService == nil {
+						return nil
+					}
+					return mcpService.WebSearch(ctx, orgID)
+				},
 				Config: leadfinder.Config{
 					OverpassURL:   cfg.GetStringOptional(ctx, "LEAD_FINDER_OVERPASS_URL", "lead_finder/overpass_url", ""),
 					GeocoderURL:   cfg.GetStringOptional(ctx, "LEAD_FINDER_GEOCODER_URL", "lead_finder/geocoder_url", ""),

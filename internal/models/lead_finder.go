@@ -109,7 +109,8 @@ type LeadArea struct {
 // LeadEmail is one address found for a lead and what checking it said.
 type LeadEmail struct {
 	Email string `json:"email"`
-	// Source is "website" when read off the business's site, else the provider.
+	// Source is "website" when read off the business's site, "search" when a
+	// web search showed it on a page about the business, else the provider.
 	Source      string `json:"source"`
 	URL         string `json:"url,omitempty"`
 	DomainMatch bool   `json:"domain_match"`
@@ -136,10 +137,26 @@ type LeadSite struct {
 	AcceptsAll bool `json:"accepts_all,omitempty"`
 	// FoundWebsite is set when the listing had no website and the finder
 	// confirmed one worked out from the business's name.
-	FoundWebsite bool       `json:"found_website,omitempty"`
-	Error        string     `json:"error,omitempty"`
-	CheckedAt    *time.Time `json:"checked_at,omitempty"`
+	FoundWebsite bool `json:"found_website,omitempty"`
+	// ReadVia names the reader service that fetched the site after it turned
+	// a direct visit away; empty when it was read directly.
+	ReadVia string `json:"read_via,omitempty"`
+	// Unread says why a site that could not be read was not: "blocked" (it
+	// turned automated visitors away), "robots" (its robots.txt asks not to)
+	// or "unreachable"; empty when it was read.
+	Unread    LeadSiteUnread `json:"unread,omitempty"`
+	Error     string         `json:"error,omitempty"`
+	CheckedAt *time.Time     `json:"checked_at,omitempty"`
 }
+
+// LeadSiteUnread is why a lead's website could not be read.
+type LeadSiteUnread string
+
+const (
+	LeadSiteBlocked     LeadSiteUnread = "blocked"
+	LeadSiteRobots      LeadSiteUnread = "robots"
+	LeadSiteUnreachable LeadSiteUnread = "unreachable"
+)
 
 // Lead is one business in a workspace's lead finder.
 type Lead struct {
@@ -289,20 +306,23 @@ type LeadEnrichmentRun struct {
 	LeadIDs           []uuid.UUID `json:"-"`
 	Verify            bool        `json:"verify"`
 	People            bool        `json:"people"`
-	Status            string      `json:"status"`
-	Total             int         `json:"total"`
-	Processed         int         `json:"processed"`
-	EmailsFound       int         `json:"emails_found"`
-	PeopleFound       int         `json:"people_found"`
-	NoWebsite         int         `json:"no_website"`
-	Failed            int         `json:"failed"`
-	ChargedMicro      Micro       `json:"-"`
-	ChargedUSD        float64     `json:"charged_usd"`
-	LastError         string      `json:"last_error"`
-	StartedAt         *time.Time  `json:"started_at"`
-	FinishedAt        *time.Time  `json:"finished_at"`
-	CreatedAt         time.Time   `json:"created_at"`
-	UpdatedAt         time.Time   `json:"updated_at"`
+	// WebSearch lets the run search the web for a missing site or for the
+	// addresses a site that could not be read publishes elsewhere.
+	WebSearch    bool       `json:"web_search"`
+	Status       string     `json:"status"`
+	Total        int        `json:"total"`
+	Processed    int        `json:"processed"`
+	EmailsFound  int        `json:"emails_found"`
+	PeopleFound  int        `json:"people_found"`
+	NoWebsite    int        `json:"no_website"`
+	Failed       int        `json:"failed"`
+	ChargedMicro Micro      `json:"-"`
+	ChargedUSD   float64    `json:"charged_usd"`
+	LastError    string     `json:"last_error"`
+	StartedAt    *time.Time `json:"started_at"`
+	FinishedAt   *time.Time `json:"finished_at"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
 // LeadSort orders a lead list.

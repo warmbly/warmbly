@@ -149,6 +149,48 @@ var table = []Entry{
 		DocsAnchor: docsAI,
 		Resolve:    boolOr("INBOX_TAGGING_ENABLED", false),
 	},
+	{
+		Key: "SEARCH_PROVIDER", Group: GroupDeployment, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "Web search for the assistant, research and the lead finder: serper, searxng, ddgs, jina, brave or tavily, comma-separated to fall back in order. Empty runs without it.",
+		DocsAnchor: docsAI,
+		Resolve:    envValue("SEARCH_PROVIDER"),
+	},
+	{
+		Key: "SEARCH_API_URL", Group: GroupDeployment, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "Endpoint of the first search provider. SEARCH_<PROVIDER>_URL sets one per provider.",
+		DocsAnchor: docsAI,
+		Resolve:    envValue("SEARCH_API_URL"),
+	},
+	{
+		Key: "SEARCH_API_KEY", Group: GroupDeployment, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "Key of the first search provider. SEARCH_<PROVIDER>_API_KEY sets one per provider.",
+		DocsAnchor: docsAI,
+		Resolve:    envValue("SEARCH_API_KEY"),
+	},
+	{
+		Key: "WEB_READER", Group: GroupDeployment, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "Reader services (crawl4ai, jina, ddgs, custom), tried in order, that fetch a page a site answered 401, 403, 406, 429 or 503 to. Used by the lead finder and fetch_url.",
+		DocsAnchor: docsAI,
+		Resolve:    envValue("WEB_READER"),
+	},
+	{
+		Key: "WEB_READER_CRAWL4AI_URL", Group: GroupDeployment, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "The Crawl4AI server the crawl4ai reader posts to.",
+		DocsAnchor: docsAI,
+		Resolve:    envValue("WEB_READER_CRAWL4AI_URL"),
+	},
+	{
+		Key: "WEB_READER_DDGS_URL", Group: GroupDeployment, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "The DDGS API server the ddgs reader extracts pages through.",
+		DocsAnchor: docsAI,
+		Resolve:    envValue("WEB_READER_DDGS_URL"),
+	},
+	{
+		Key: "WEB_READER_CUSTOM_URL", Group: GroupDeployment, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "URL template of the custom reader, holding {url} or {url_encoded}.",
+		DocsAnchor: docsAI,
+		Resolve:    envValue("WEB_READER_CUSTOM_URL"),
+	},
 
 	// Addresses.
 	{

@@ -13,6 +13,8 @@ export interface MCPServer {
     enabled: boolean;
     discovered_tools: MCPTool[];
     last_error?: string;
+    // The discovered tool the workspace uses as its web search; empty for none.
+    search_tool: string;
     created_at: Date;
     updated_at: Date;
 }
@@ -28,4 +30,6 @@ export interface UpdateMCPServer {
     name?: string;
     enabled?: boolean;
     token?: string;
+    // One of the server's tools as the workspace's web search; "" clears it.
+    search_tool?: string;
 }

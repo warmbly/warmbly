@@ -28,11 +28,11 @@ func NewMCPRepository(database *db.DB) MCPRepository {
 	return &mcpRepository{DB: database}
 }
 
-const mcpCols = `id, org_id, name, url, auth_type, credentials_encrypted, enabled, discovered_tools, last_error, created_by, created_at, updated_at`
+const mcpCols = `id, org_id, name, url, auth_type, credentials_encrypted, enabled, discovered_tools, last_error, created_by, created_at, updated_at, search_tool`
 
 func scanMCP(row pgx.Row, s *models.MCPServer) error {
 	var toolsRaw []byte
-	if err := row.Scan(&s.ID, &s.OrgID, &s.Name, &s.URL, &s.AuthType, &s.CredentialsEncrypted, &s.Enabled, &toolsRaw, &s.LastError, &s.CreatedBy, &s.CreatedAt, &s.UpdatedAt); err != nil {
+	if err := row.Scan(&s.ID, &s.OrgID, &s.Name, &s.URL, &s.AuthType, &s.CredentialsEncrypted, &s.Enabled, &toolsRaw, &s.LastError, &s.CreatedBy, &s.CreatedAt, &s.UpdatedAt, &s.SearchTool); err != nil {
 		return err
 	}
 	if len(toolsRaw) > 0 {
@@ -48,10 +48,10 @@ func (r *mcpRepository) Create(ctx context.Context, s *models.MCPServer) (*model
 	}
 	out := &models.MCPServer{}
 	err = scanMCP(r.DB.QueryRow(ctx, `
-		INSERT INTO ai_mcp_servers (org_id, name, url, auth_type, credentials_encrypted, enabled, discovered_tools, last_error, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO ai_mcp_servers (org_id, name, url, auth_type, credentials_encrypted, enabled, discovered_tools, last_error, created_by, search_tool)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING `+mcpCols,
-		s.OrgID, s.Name, s.URL, s.AuthType, s.CredentialsEncrypted, s.Enabled, toolsRaw, s.LastError, s.CreatedBy), out)
+		s.OrgID, s.Name, s.URL, s.AuthType, s.CredentialsEncrypted, s.Enabled, toolsRaw, s.LastError, s.CreatedBy, s.SearchTool), out)
 	if err != nil {
 		return nil, err
 	}
@@ -66,9 +66,9 @@ func (r *mcpRepository) Update(ctx context.Context, s *models.MCPServer) error {
 	_, err = r.DB.Exec(ctx, `
 		UPDATE ai_mcp_servers
 		SET name = $3, url = $4, auth_type = $5, credentials_encrypted = $6, enabled = $7,
-		    discovered_tools = $8, last_error = $9, updated_at = now()
+		    discovered_tools = $8, last_error = $9, search_tool = $10, updated_at = now()
 		WHERE id = $1 AND org_id = $2`,
-		s.ID, s.OrgID, s.Name, s.URL, s.AuthType, s.CredentialsEncrypted, s.Enabled, toolsRaw, s.LastError)
+		s.ID, s.OrgID, s.Name, s.URL, s.AuthType, s.CredentialsEncrypted, s.Enabled, toolsRaw, s.LastError, s.SearchTool)
 	return err
 }
 

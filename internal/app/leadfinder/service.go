@@ -16,6 +16,8 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/emailverify"
+	"github.com/warmbly/warmbly/internal/pkg/generation"
+	"github.com/warmbly/warmbly/internal/pkg/webread"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -72,6 +74,12 @@ type Deps struct {
 	Credits      Credits
 	Audit        AuditLogger
 	Config       Config
+	// Reader fetches a page a site turned a direct visit away from (WEB_READER).
+	Reader webread.Reader
+	// Search is the instance's web search (SEARCH_PROVIDER), charged per search.
+	WebSearch generation.SearchClient
+	// WorkspaceSearch is a workspace's own web search, used before the instance's.
+	WorkspaceSearch WorkspaceSearch
 }
 
 // Service finds, enriches, exports and imports leads.
@@ -166,7 +174,15 @@ func (s *Service) instanceKey(id models.LeadProvider) string {
 // workspaceKey is the key from the workspace's own connection, or "".
 func (s *Service) workspaceKey(ctx context.Context, orgID uuid.UUID, id models.LeadProvider, conns []models.IntegrationConnection) string {
 	want, ok := integrationFor[id]
-	if !ok || s.Integrations == nil {
+	if !ok {
+		return ""
+	}
+	return s.integrationKey(ctx, orgID, want, conns)
+}
+
+// integrationKey is the API key of the workspace's live connection to want, or "".
+func (s *Service) integrationKey(ctx context.Context, orgID uuid.UUID, want models.IntegrationProvider, conns []models.IntegrationConnection) string {
+	if s.Integrations == nil {
 		return ""
 	}
 	for _, c := range conns {
@@ -226,6 +242,21 @@ type FinderConfig struct {
 	PersonColumns   []PersonColumn `json:"person_columns"`
 	DefaultColumns  []string       `json:"default_export_columns"`
 	Map             MapConfig      `json:"map"`
+	// WebReader is how a site that turns a direct visit away still gets read.
+	WebReader WebFallback `json:"web_reader"`
+	// WebSearch is how a missing site, or a blocked site's addresses, are searched for.
+	WebSearch WebFallback `json:"web_search"`
+}
+
+// WebFallback is one way past a site that turns the finder away.
+type WebFallback struct {
+	Available bool `json:"available"`
+	// Sources are tried in order: reader or search names, "mcp" for a
+	// workspace's MCP tool, "workspace_jina" for its Jina key, "instance" for
+	// the operator's search.
+	Sources []string `json:"sources"`
+	// CostUSD is what one instance search costs the balance; 0 when free.
+	CostUSD float64 `json:"cost_usd"`
 }
 
 // MapConfig is the vector style the dashboard's map draws.
@@ -270,6 +301,7 @@ func (s *Service) FinderConfig(ctx context.Context, orgID uuid.UUID) *FinderConf
 		out.Providers = append(out.Providers, info)
 	}
 	out.DefaultProvider = string(defaultProvider(out.Providers))
+	out.WebReader, out.WebSearch = s.fallbacks(ctx, orgID)
 	out.Map = MapConfig{StyleLight: s.Config.MapStyleLight, StyleDark: s.Config.MapStyleDark}
 	if out.Map.StyleLight == "" {
 		out.Map.StyleLight = DefaultMapStyleLight

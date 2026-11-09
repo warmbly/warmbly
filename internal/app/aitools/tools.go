@@ -31,6 +31,7 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
+	"github.com/warmbly/warmbly/internal/pkg/webread"
 )
 
 // Deps are the SERVICE-LAYER dependencies the tool handlers close over. Every
@@ -45,7 +46,13 @@ type Deps struct {
 	Automations integration.Service
 	Audit       audit.AuditService
 	Search      generation.SearchClient
-	Cache       *cache.Cache
+	// WorkspaceSearch is a workspace's own web search (an MCP tool it picked,
+	// its Jina key), what search_web uses when the instance has none.
+	WorkspaceSearch func(ctx context.Context, orgID uuid.UUID) generation.SearchClient
+	// Reader fetches a page through a reader service after a site turns
+	// fetch_url away.
+	Reader webread.Reader
+	Cache  *cache.Cache
 	// Emails / EmailSend / Compose / Warmup back the mailbox-management and
 	// unified-inbox send tools. EmailSend is the only path that transmits mail
 	// to a real recipient (its tools are RiskSend).

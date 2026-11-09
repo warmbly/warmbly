@@ -290,11 +290,7 @@ func main() {
 	var aiProviderC generation.Provider
 	// Pluggable web search (Serper/SearXNG) backs the AI switch's optional
 	// company lookup on reply-triggered automations that run in the consumer.
-	aiSearchC := generation.NewSearchClient(
-		cfg.GetStringOptional(ctx, "SEARCH_PROVIDER", "search/provider", ""),
-		cfg.GetStringOptional(ctx, "SEARCH_API_URL", "search/api_url", ""),
-		cfg.GetSecretOptional(ctx, "SEARCH_API_KEY", "search/api_key", ""),
-	)
+	aiSearchC := generation.SearchFromConfig(cfg.Lookup(ctx))
 	// Provider selection mirrors the backend: AI_PROVIDER preset + AI_* vars.
 	if cfgAI, rerr := generation.Resolve(generation.ProviderSettings{
 		Provider:   cfg.GetStringOptional(ctx, "AI_PROVIDER", "ai_provider", ""),
