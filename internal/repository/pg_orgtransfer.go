@@ -890,8 +890,10 @@ func (r *orgTransferRepository) MarkMailboxesNeedingReconnect(ctx context.Contex
 		   AND ea.status <> 'revoked'
 		   AND NOT EXISTS (
 		         SELECT 1 FROM email_accounts_oauth o
+		         LEFT JOIN organization_oauth_apps a ON a.id = o.oauth_app_id
 		          WHERE o.email_account_id = ea.id
 		            AND COALESCE(o.refresh_token, '') <> ''
+		            AND (o.oauth_app_id IS NULL OR COALESCE(a.client_secret, '') <> '')
 		   )
 		   AND NOT EXISTS (
 		         SELECT 1 FROM email_accounts_smtp_imap s

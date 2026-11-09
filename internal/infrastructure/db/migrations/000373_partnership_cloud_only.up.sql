@@ -22,9 +22,6 @@ CREATE TABLE IF NOT EXISTS organization_oauth_apps (
 ALTER TABLE email_accounts_oauth
     ADD COLUMN IF NOT EXISTS oauth_app_id uuid REFERENCES organization_oauth_apps (id);
 
-CREATE INDEX IF NOT EXISTS idx_email_accounts_oauth_app
-    ON email_accounts_oauth (oauth_app_id) WHERE oauth_app_id IS NOT NULL;
-
 -- A single-use sign-in link a mailbox owner opens to connect a Google or Microsoft mailbox.
 CREATE TABLE IF NOT EXISTS mailbox_connect_links (
     id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
