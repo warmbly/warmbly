@@ -125,6 +125,10 @@ func readerClient(base string) *http.Client {
 			if len(via) >= 5 || req.URL.Host != host {
 				return errors.New("the reader redirected away from itself")
 			}
+			// An https reader's key never follows a redirect onto plain http.
+			if via[0].URL.Scheme == "https" && req.URL.Scheme != "https" {
+				return errors.New("the reader redirected from https to http")
+			}
 			return nil
 		},
 	}

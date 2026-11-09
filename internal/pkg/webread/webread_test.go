@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -166,4 +167,23 @@ func TestAReaderCannotRedirectAwayFromItself(t *testing.T) {
 	if _, err := New([]Backend{{Provider: "custom", URL: bouncer.URL + "/{url}"}}).Read(context.Background(), "https://acme.com/"); err == nil {
 		t.Fatal("followed a redirect off the reader's host")
 	}
+}
+
+func TestAnHTTPSReaderCannotRedirectToHTTP(t *testing.T) {
+	c := readerClient("https://reader.example")
+	via := []*http.Request{{URL: mustURL("https://reader.example/read")}}
+	if err := c.CheckRedirect(&http.Request{URL: mustURL("http://reader.example/read")}, via); err == nil {
+		t.Fatal("followed an https to http redirect")
+	}
+	if err := c.CheckRedirect(&http.Request{URL: mustURL("https://reader.example/other")}, via); err != nil {
+		t.Fatalf("refused a same-host https redirect: %v", err)
+	}
+}
+
+func mustURL(raw string) *url.URL {
+	u, err := url.Parse(raw)
+	if err != nil {
+		panic(err)
+	}
+	return u
 }

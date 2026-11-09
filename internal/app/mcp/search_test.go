@@ -58,10 +58,34 @@ func TestParseSearchTextReadsCommonShapes(t *testing.T) {
 	}
 }
 
-func TestSearchCallHonoursTheMinimumCount(t *testing.T) {
-	_, limit, minLimit, ok := searchCall(tool("t", `{"properties":{"query":{"type":"string"},"max_results":{"type":"integer","minimum":10}},"required":["query"]}`))
-	if !ok || limit != "max_results" || minLimit != 10 {
-		t.Fatalf("limit %q min %d ok %v", limit, minLimit, ok)
+func TestSearchCallKeepsTheCountInRange(t *testing.T) {
+	_, limit, counts, ok := searchCall(tool("t", `{"properties":{"query":{"type":"string"},"max_results":{"type":"integer","minimum":5.5,"maximum":20}},"required":["query"]}`))
+	if !ok || limit != "max_results" || counts.clamp(5) != 6 || counts.clamp(50) != 20 {
+		t.Fatalf("limit %q counts %+v ok %v", limit, counts, ok)
+	}
+	_, _, small, _ := searchCall(tool("t", `{"properties":{"q":{"type":"string"},"limit":{"type":"integer","maximum":3}}}`))
+	if small.clamp(5) != 3 {
+		t.Fatalf("a tool allowing three got %d", small.clamp(5))
+	}
+}
+
+func TestEnvelopesAndHitsAreToldApart(t *testing.T) {
+	wrapped := `{"url":"https://search.example/?q=acme","data":{"results":[{"url":"https://acme.com/","snippet":"office@acme.com"}]}}`
+	if got := parseSearchText(wrapped); len(got) != 1 || got[0].URL != "https://acme.com/" {
+		t.Fatalf("wrapped: %+v", got)
+	}
+	related := `[{"url":"https://acme.com/","title":"Acme","snippet":"office@acme.com","related":[{"url":"https://yelp.com/biz/acme"}]}]`
+	if got := parseSearchText(related); len(got) != 1 || got[0].URL != "https://acme.com/" || got[0].Snippet != "office@acme.com" {
+		t.Fatalf("related: %+v", got)
+	}
+}
+
+func TestTextSnippetsJoinMatchingStructuredResults(t *testing.T) {
+	structured := parseSearchJSON([]byte(`{"results":[{"url":"https://acme.com/","title":"Acme"}]}`))
+	text := parseSearchText("Acme https://acme.com/ office@acme.com\nUnrelated https://other.example/")
+	got := dedupe(append(structured, keepMatching(text, structured)...))
+	if len(got) != 1 || !strings.Contains(got[0].Snippet, "office@acme.com") {
+		t.Fatalf("merged: %+v", got)
 	}
 }
 

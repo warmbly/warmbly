@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"regexp"
 	"strings"
 
@@ -26,12 +27,27 @@ func searchArgs(t models.MCPTool) (query, limit string, ok bool) {
 	return query, limit, ok
 }
 
-// searchCall is searchArgs plus the smallest result count the tool accepts.
-func searchCall(t models.MCPTool) (query, limit string, minLimit int, ok bool) {
+// countRange is the result counts a tool accepts; zero means unbounded.
+type countRange struct{ min, max int }
+
+// clamp fits n into the range.
+func (r countRange) clamp(n int) int {
+	if r.min > 0 && n < r.min {
+		n = r.min
+	}
+	if r.max > 0 && n > r.max {
+		n = r.max
+	}
+	return n
+}
+
+// searchCall is searchArgs plus the result counts the tool accepts.
+func searchCall(t models.MCPTool) (query, limit string, counts countRange, ok bool) {
 	var schema struct {
 		Properties map[string]struct {
 			Type    any      `json:"type"`
 			Minimum *float64 `json:"minimum"`
+			Maximum *float64 `json:"maximum"`
 		} `json:"properties"`
 		Required []string `json:"required"`
 	}
@@ -72,7 +88,7 @@ func searchCall(t models.MCPTool) (query, limit string, minLimit int, ok bool) {
 			}
 		}
 		if len(strs) != 1 {
-			return "", "", 0, false
+			return "", "", countRange{}, false
 		}
 		query = strs[0]
 	}
@@ -80,7 +96,10 @@ func searchCall(t models.MCPTool) (query, limit string, minLimit int, ok bool) {
 		if isType(name, "integer") || isType(name, "number") {
 			limit = name
 			if m := schema.Properties[name].Minimum; m != nil && *m > 0 {
-				minLimit = int(*m)
+				counts.min = int(math.Ceil(*m))
+			}
+			if m := schema.Properties[name].Maximum; m != nil && *m >= 1 {
+				counts.max = int(math.Floor(*m))
 			}
 			break
 		}
@@ -88,10 +107,10 @@ func searchCall(t models.MCPTool) (query, limit string, minLimit int, ok bool) {
 	for _, r := range schema.Required {
 		if r != query && r != limit {
 			// Something else is required that a search cannot supply.
-			return "", "", 0, false
+			return "", "", countRange{}, false
 		}
 	}
-	return query, limit, minLimit, true
+	return query, limit, counts, true
 }
 
 // markSearchable flags the server's tools that can be its web search.
@@ -133,7 +152,7 @@ func (s *service) WebSearch(ctx context.Context, orgID uuid.UUID) generation.Sea
 				continue
 			}
 			if q, l, m, ok := searchCall(t); ok {
-				backends = append(backends, &toolSearch{s: s, server: sv, tool: t.Name, queryArg: q, limitArg: l, minLimit: m})
+				backends = append(backends, &toolSearch{s: s, server: sv, tool: t.Name, queryArg: q, limitArg: l, counts: m})
 			}
 		}
 	}
@@ -169,7 +188,7 @@ type toolSearch struct {
 	tool     string
 	queryArg string
 	limitArg string
-	minLimit int
+	counts   countRange
 }
 
 func (t *toolSearch) Search(ctx context.Context, query string, limit int) ([]generation.SearchResult, error) {
@@ -178,7 +197,7 @@ func (t *toolSearch) Search(ctx context.Context, query string, limit int) ([]gen
 	}
 	args := map[string]any{t.queryArg: query}
 	if t.limitArg != "" {
-		args[t.limitArg] = max(limit, t.minLimit)
+		args[t.limitArg] = t.counts.clamp(limit)
 	}
 	raw, _ := json.Marshal(args)
 	token, err := t.s.open(ctx, t.server.OrgID, t.server.CredentialsEncrypted)
@@ -193,8 +212,11 @@ func (t *toolSearch) Search(ctx context.Context, query string, limit int) ([]gen
 	if len(out.Structured) > 0 {
 		res = parseSearchJSON(out.Structured)
 	}
-	if len(res) == 0 {
-		res = parseSearchText(out.Text)
+	if text := parseSearchText(out.Text); len(res) == 0 {
+		res = text
+	} else {
+		// The text may carry what the structured results leave out, an address say.
+		res = dedupe(append(res, keepMatching(text, res)...))
 	}
 	if len(res) > limit {
 		res = res[:limit]
@@ -241,6 +263,24 @@ func parseSearchText(text string) []generation.SearchResult {
 	return dedupe(out)
 }
 
+// keepMatching is the results in from that share a link with one in to.
+func keepMatching(from, to []generation.SearchResult) []generation.SearchResult {
+	have := map[string]bool{}
+	for _, r := range to {
+		have[r.URL] = true
+	}
+	var out []generation.SearchResult
+	for _, r := range from {
+		if have[r.URL] {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// resultKeys name the lists an envelope keeps its hits under, best first.
+var resultKeys = []string{"results", "items", "organic", "hits", "data", "web", "search_results", "value"}
+
 // parseSearchJSON reads results out of JSON in any of the usual shapes.
 func parseSearchJSON(raw []byte) []generation.SearchResult {
 	var v any
@@ -262,24 +302,23 @@ func collectResults(v any, out *[]generation.SearchResult, depth int) {
 			collectResults(e, out, depth+1)
 		}
 	case map[string]any:
-		// Results nested inside an envelope win over the envelope's own link.
+		// An envelope's result collection wins over the envelope's own link.
 		before := len(*out)
-		for _, e := range x {
-			if _, isList := e.([]any); isList {
+		for _, k := range resultKeys {
+			if e, ok := x[k]; ok {
 				collectResults(e, out, depth+1)
 			}
 		}
 		if len(*out) > before {
 			return
 		}
+		// A hit with a link is one result; its related links are not.
 		if u := pick(x, urlKeys); strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://") {
 			*out = append(*out, generation.SearchResult{URL: u, Title: pick(x, titleKeys), Snippet: pick(x, snippetKey)})
 			return
 		}
 		for _, e := range x {
-			if _, isMap := e.(map[string]any); isMap {
-				collectResults(e, out, depth+1)
-			}
+			collectResults(e, out, depth+1)
 		}
 	}
 }
