@@ -90,6 +90,9 @@ type manifest struct {
 	AppURL      string    `json:"app_url,omitempty"`
 	Database    string    `json:"database"`
 	DatabaseSHA string    `json:"database_sha256"`
+	// PostgresVersion and DumpClient say which server was dumped and with what.
+	PostgresVersion string `json:"postgres_version,omitempty"`
+	DumpClient      string `json:"pg_dump_version,omitempty"`
 	// Counts are for the confirmation line, not for logic.
 	Organizations int `json:"organizations"`
 	Users         int `json:"users"`
@@ -132,16 +135,23 @@ func runBackup(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := exec.LookPath("pg_dump"); err != nil {
-		return errors.New("pg_dump is not on PATH, so the database cannot be dumped.\nRun this inside the backend container, where it is installed:\n  " + composeExec + "backup --out /data/blobs/warmbly-backup.tar.gz")
+	server, err := readPGServer(ctx, dsn)
+	if err != nil {
+		return err
+	}
+	pgDump, err := pgTool("pg_dump", server)
+	if err != nil {
+		return err
 	}
 
 	m := manifest{
-		Version:    bundleVersion,
-		CreatedAt:  time.Now().UTC(),
-		AppVersion: version.String(),
-		AppURL:     strings.TrimSpace(os.Getenv("APP_URL")),
-		Database:   databaseName(dsn),
+		Version:         bundleVersion,
+		CreatedAt:       time.Now().UTC(),
+		AppVersion:      version.String(),
+		AppURL:          strings.TrimSpace(os.Getenv("APP_URL")),
+		Database:        databaseName(dsn),
+		PostgresVersion: server.version,
+		DumpClient:      pgClientVersion(pgDump),
 	}
 
 	// Counts first: they are the line that tells an operator this bundle is of
@@ -156,7 +166,7 @@ func runBackup(ctx context.Context, args []string) error {
 
 	fmt.Printf("Backing up %s\n", redact(dsn))
 
-	dumpFile, dumpSize, dumpSHA, err := dumpDatabase(ctx, dsn)
+	dumpFile, dumpSize, dumpSHA, err := dumpDatabase(ctx, pgDump, dsn)
 	if err != nil {
 		return err
 	}
@@ -164,7 +174,7 @@ func runBackup(ctx context.Context, args []string) error {
 		_ = os.Remove(dumpFile)
 	}()
 	m.DatabaseSHA = dumpSHA
-	fmt.Printf("  database    %s\n", humanBytes(dumpSize))
+	fmt.Printf("  database    %s, PostgreSQL %s dumped by %s\n", humanBytes(dumpSize), server.version, m.DumpClient)
 
 	var blobFiles []blobEntry
 	m.BlobProvider = strings.ToLower(strings.TrimSpace(os.Getenv("BLOB_PROVIDER")))
@@ -254,10 +264,6 @@ func runRestore(ctx context.Context, args []string) error {
 	if strings.TrimSpace(*file) == "" {
 		return errors.New("--file is required. Point it at a bundle written by `warmblyctl backup`.")
 	}
-	if _, err := exec.LookPath("psql"); err != nil {
-		return errors.New("psql is not on PATH, so the database cannot be restored.\nRun this inside the backend container, where it is installed.")
-	}
-
 	m, err := readManifest(*file)
 	if err != nil {
 		return err
@@ -270,17 +276,28 @@ func runRestore(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	server, err := readPGServer(ctx, dsn)
+	if err != nil {
+		return err
+	}
+	psql, err := pgTool("psql", server)
+	if err != nil {
+		return err
+	}
 
 	fmt.Printf("Bundle    %s\n", *file)
 	fmt.Printf("  written   %s by Warmbly %s\n", m.CreatedAt.Local().Format(time.RFC1123), m.AppVersion)
 	if m.AppURL != "" {
 		fmt.Printf("  from      %s\n", m.AppURL)
 	}
+	if m.PostgresVersion != "" {
+		fmt.Printf("  dumped    PostgreSQL %s with %s\n", m.PostgresVersion, m.DumpClient)
+	}
 	fmt.Printf("  holds     %d organizations, %d users, %d mailboxes\n", m.Organizations, m.Users, m.Mailboxes)
 	if m.BlobFiles > 0 {
 		fmt.Printf("            %d blob files, %s\n", m.BlobFiles, humanBytes(m.BlobBytes))
 	}
-	fmt.Printf("Target    %s\n\n", redact(dsn))
+	fmt.Printf("Target    %s (PostgreSQL %s)\n\n", redact(dsn), server.version)
 
 	// The key check is the point of this command. A restore onto a host whose
 	// keys differ produces an instance that looks fine and whose every mailbox
@@ -302,9 +319,8 @@ func runRestore(ctx context.Context, args []string) error {
 		fmt.Println()
 	}
 
-	// Checked before anything is dropped: the restore empties the schema first,
-	// so finding out afterwards that the bundle is truncated leaves the target
-	// with neither its own data nor the bundle's.
+	// Checked before the load starts, so a truncated copy is refused in seconds
+	// rather than after replaying most of a large dump.
 	if m.DatabaseSHA != "" {
 		if err := verifyDump(*file, m.DatabaseSHA); err != nil {
 			return err
@@ -313,11 +329,11 @@ func runRestore(ctx context.Context, args []string) error {
 	}
 
 	fmt.Println("Restoring the database...")
-	if err := restoreDatabase(ctx, dsn, *file); err != nil {
+	if err := restoreDatabase(ctx, psql, dsn, *file, server); err != nil {
 		return err
 	}
 	fmt.Println("  database    restored")
-	if err := analyzeDatabase(ctx, dsn); err != nil {
+	if err := analyzeDatabase(ctx, psql, dsn); err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -417,7 +433,7 @@ func checkRestoreKeys(file string, m manifest, force bool) (bool, error) {
 // dumpDatabase writes a plain-SQL dump to a temp file and returns its path,
 // size and digest. Plain rather than custom format so the bundle can be
 // inspected, and so a restore needs psql alone.
-func dumpDatabase(ctx context.Context, dsn string) (string, int64, string, error) {
+func dumpDatabase(ctx context.Context, pgDump, dsn string) (string, int64, string, error) {
 	tmp, err := os.CreateTemp("", "warmbly-dump-*.sql")
 	if err != nil {
 		return "", 0, "", err
@@ -430,7 +446,7 @@ func dumpDatabase(ctx context.Context, dsn string) (string, int64, string, error
 	// No owner or ACL statements: the destination's database user is whatever
 	// its own compose file created, and it is never guaranteed to carry the
 	// same name as this one's.
-	cmd := pgCommand(ctx, "pg_dump", dsn, "--no-owner", "--no-privileges", "--format=plain")
+	cmd := pgCommand(ctx, pgDump, dsn, "--no-owner", "--no-privileges", "--format=plain")
 	cmd.Stdout = w
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
@@ -481,39 +497,50 @@ func short(sum string) string {
 	return sum
 }
 
-// restoreDatabase empties the schema and replays the dump into it. The schema
-// is dropped rather than the dump carrying DROP statements, because the
-// destination has already had migrations applied at boot and objects the
-// bundle does not know about would otherwise survive into the restored
-// instance.
-func restoreDatabase(ctx context.Context, dsn, bundle string) error {
-	reset := pgCommand(ctx, "psql", dsn, "-v", "ON_ERROR_STOP=1", "-q",
-		"-c", "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;")
-	var resetErr strings.Builder
-	reset.Stderr = &resetErr
-	if err := reset.Run(); err != nil {
-		return fmt.Errorf("could not empty the target schema: %s", strings.TrimSpace(resetErr.String()))
-	}
+// restoreSchemaReset runs ahead of the dump. The schema is dropped rather than
+// the dump carrying DROP statements, because the destination has already had
+// migrations applied at boot and objects the bundle does not know about would
+// otherwise survive into the restored instance.
+const restoreSchemaReset = "DROP SCHEMA IF EXISTS public CASCADE;\nCREATE SCHEMA public;\n"
 
-	sql, closeFn, err := openBundleEntry(bundle, databasePath)
+// restoreDatabase replaces the schema with the dump's in one transaction, so a
+// load that fails anywhere leaves the database as it was.
+func restoreDatabase(ctx context.Context, psql, dsn, bundle string, server pgServer) error {
+	dump, closeFn, err := openBundleEntry(bundle, databasePath)
 	if err != nil {
 		return err
 	}
 	defer closeFn()
 
-	load := pgCommand(ctx, "psql", dsn, "-v", "ON_ERROR_STOP=1", "-q")
-	load.Stdin = sql
+	sql, skipped, err := withoutUnknownSettings(dump, server.knows)
+	if err != nil {
+		return fmt.Errorf("reading the bundle's database dump: %w", err)
+	}
+	if len(skipped) > 0 {
+		fmt.Printf("  settings    skipped %s, which PostgreSQL %d does not have\n", strings.Join(skipped, ", "), server.major)
+	}
+
+	load := pgCommand(ctx, psql, dsn, "-v", "ON_ERROR_STOP=1", "-q", "--single-transaction", "--file=-")
+	load.Stdin = io.MultiReader(strings.NewReader(restoreSchemaReset), sql)
 	var loadErr strings.Builder
 	load.Stderr = &loadErr
 	if err := load.Run(); err != nil {
-		return fmt.Errorf("the dump did not load cleanly, so the database is now empty and unusable.\nFix the cause and run the restore again:\n%s", strings.TrimSpace(loadErr.String()))
+		msg := strings.TrimSpace(loadErr.String())
+		if msg == "" {
+			msg = err.Error()
+		}
+		hint := "Fix the cause and run the restore again."
+		if strings.Contains(msg, "max_locks_per_transaction") {
+			hint = "The restore replaces every table in one transaction, which needs more locks than this server allows.\nRaise max_locks_per_transaction (for example to 1024), restart PostgreSQL, and run the restore again."
+		}
+		return fmt.Errorf("the dump did not load, so nothing was changed: the restore runs in one transaction and the database is as it was.\n%s\n%s", hint, msg)
 	}
 	return nil
 }
 
 // analyzeDatabase gathers planner statistics, which a dump does not carry.
-func analyzeDatabase(ctx context.Context, dsn string) error {
-	cmd := pgCommand(ctx, "psql", dsn, "-v", "ON_ERROR_STOP=1", "-q", "-c", "ANALYZE;")
+func analyzeDatabase(ctx context.Context, psql, dsn string) error {
+	cmd := pgCommand(ctx, psql, dsn, "-v", "ON_ERROR_STOP=1", "-q", "-c", "ANALYZE;")
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -533,7 +560,7 @@ func analyzeDatabase(ctx context.Context, dsn string) error {
 // world-readable on Linux, so the DSN that reaches argv carries no password.
 func pgCommand(ctx context.Context, name, dsn string, args ...string) *exec.Cmd {
 	clean, password := splitDSNPassword(dsn)
-	cmd := exec.CommandContext(ctx, name, append([]string{"--dbname=" + clean}, args...)...) //nolint:gosec // name is a literal at every call site
+	cmd := exec.CommandContext(ctx, name, append([]string{"--dbname=" + clean}, args...)...) //nolint:gosec // name is a client binary resolved by pgTool
 	cmd.Env = os.Environ()
 	if password != "" {
 		cmd.Env = append(cmd.Env, "PGPASSWORD="+password)

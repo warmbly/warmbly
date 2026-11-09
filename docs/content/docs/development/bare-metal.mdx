@@ -604,6 +604,8 @@ sudo tar czf blobs.tgz -C /var/lib/warmbly blobs      # 2. uploads and stored me
 sudo cp /etc/warmbly/*.env somewhere-safe/            # 3. the env files, above all the two encryption keys
 ```
 
+Use the `pg_dump` and `psql` of your server's major version: a newer `pg_dump` writes settings an older server rejects, and an older one refuses a newer server. `warmblyctl backup` and `restore` pick the matching client from `/usr/lib/postgresql/NN/bin` themselves.
+
 Restore into an empty database before the backend starts, then start it and it applies only what is newer than the dump. See [restoring](/development/deployment-guide/#restoring); replace the `docker compose exec` commands with plain `psql`.
 
 ## Troubleshooting
