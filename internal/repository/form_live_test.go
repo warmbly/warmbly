@@ -3,9 +3,11 @@ package repository
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/utils/paging"
 )
 
 // Issue #267: forms CRUD, the category aggregation scan and the submission
@@ -177,5 +179,103 @@ func TestLiveFormCreateEmptyLists(t *testing.T) {
 	}
 	if len(updated.AllowedDomains) != 0 || len(updated.Fields) != 0 {
 		t.Fatalf("update round-trip: %#v %#v", updated.AllowedDomains, updated.Fields)
+	}
+}
+
+// Issue #1073: paging through submissions that share a timestamp, or sit a
+// microsecond apart, at every page boundary returns each one exactly once.
+func TestLiveFormSubmissionsPageAcrossEqualAndCloseTimestamps(t *testing.T) {
+	handle, pool := liveContactDB(t)
+	f := newSharedOrgFixture(t, pool)
+	repo := NewFormRepository(handle)
+	ctx := context.Background()
+	t.Cleanup(func() {
+		if _, err := pool.Exec(context.Background(), `DELETE FROM forms WHERE organization_id = $1`, f.org); err != nil {
+			t.Errorf("cleanup forms: %v", err)
+		}
+	})
+
+	form, xerr := repo.Create(ctx, f.org, &f.owner, &models.Form{
+		PublicID:       "livetest-" + uuid.New().String()[:13],
+		Name:           "Paging",
+		Status:         models.FormStatusPublished,
+		SuccessMessage: "Thanks",
+	})
+	if xerr != nil {
+		t.Fatalf("create: %v", xerr)
+	}
+
+	// Five rows on one microsecond, two a microsecond either side, one a
+	// millisecond away: every page size below lands a boundary inside a tie.
+	base := time.Date(2026, 3, 1, 12, 0, 0, 123456000, time.UTC)
+	offsets := []time.Duration{time.Millisecond, time.Microsecond, 0, 0, 0, 0, 0, -time.Microsecond}
+	for _, off := range offsets {
+		if _, err := pool.Exec(ctx, `INSERT INTO form_submissions (form_id, organization_id, created_at) VALUES ($1, $2, $3)`,
+			form.ID, f.org, base.Add(off)); err != nil {
+			t.Fatalf("insert submission: %v", err)
+		}
+	}
+	var want []uuid.UUID
+	rows, err := pool.Query(ctx, `SELECT id FROM form_submissions WHERE form_id = $1 ORDER BY created_at DESC, id DESC`, form.ID)
+	if err != nil {
+		t.Fatalf("expected order: %v", err)
+	}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		want = append(want, id)
+	}
+	rows.Close()
+
+	for limit := 1; limit <= len(want); limit++ {
+		var got []uuid.UUID
+		var after *models.FormSubmissionPosition
+		for pages := 0; ; pages++ {
+			if pages > len(want) {
+				t.Fatalf("limit %d: paging did not terminate", limit)
+			}
+			page, hasMore, xerr := repo.ListSubmissions(ctx, f.org, form.ID, limit, after)
+			if xerr != nil {
+				t.Fatalf("limit %d: list: %v", limit, xerr)
+			}
+			for _, s := range page {
+				got = append(got, s.ID)
+			}
+			if !hasMore {
+				break
+			}
+			// Round-trip the opaque cursor the handler hands out.
+			last := page[len(page)-1]
+			at, id, xerr := paging.DecodeTimeCursor(*paging.EncodeTime(last.CreatedAt, last.ID))
+			if xerr != nil {
+				t.Fatalf("limit %d: cursor: %v", limit, xerr)
+			}
+			after = &models.FormSubmissionPosition{At: at, ID: id}
+		}
+		if len(got) != len(want) {
+			t.Fatalf("limit %d: got %d rows, want %d", limit, len(got), len(want))
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("limit %d: row %d is %s, want %s", limit, i, got[i], want[i])
+			}
+		}
+	}
+
+	// A timestamp-only cursor from the previous release keeps microseconds:
+	// strictly before the tie returns only the row a microsecond older.
+	legacy := base.Format(time.RFC3339Nano)
+	at, err := time.Parse(time.RFC3339Nano, legacy)
+	if err != nil {
+		t.Fatalf("parse legacy cursor: %v", err)
+	}
+	older, _, xerr := repo.ListSubmissions(ctx, f.org, form.ID, 50, &models.FormSubmissionPosition{At: at})
+	if xerr != nil {
+		t.Fatalf("legacy list: %v", xerr)
+	}
+	if len(older) != 1 || older[0].ID != want[len(want)-1] {
+		t.Fatalf("legacy before %s returned %d rows", legacy, len(older))
 	}
 }

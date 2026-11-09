@@ -33,19 +33,41 @@ export async function deleteForm(id: string): Promise<void> {
     await Request<void>({ method: "DELETE", url: `/forms/${id}`, authorization: true });
 }
 
+/** Where the next submissions page starts: the opaque cursor, or the raw
+ * `created_at` an older backend that issues no cursor pages by. */
+export type FormSubmissionsPageParam = { cursor: string } | { before: string };
+
+export interface FormSubmissionsPage {
+    data: FormSubmission[];
+    has_more: boolean;
+    next: FormSubmissionsPageParam | null;
+}
+
 export async function listFormSubmissions(
     id: string,
     limit = 50,
-    before?: string,
-): Promise<{ data: FormSubmission[]; has_more: boolean }> {
+    page?: FormSubmissionsPageParam,
+): Promise<FormSubmissionsPage> {
     const params = new URLSearchParams({ limit: String(limit) });
-    if (before) params.set("before", before);
-    const res = await Request<{ data: FormSubmission[]; has_more: boolean }>({
+    if (page && "cursor" in page) params.set("cursor", page.cursor);
+    if (page && "before" in page) params.set("before", page.before);
+    const res = await Request<{
+        data: FormSubmission[];
+        has_more: boolean;
+        pagination?: { next_cursor: string | null; has_more: boolean };
+    }>({
         method: "GET",
         url: `/forms/${id}/submissions?${params.toString()}`,
         authorization: true,
     });
-    return { data: res.data ?? [], has_more: res.has_more ?? false };
+    const data = res.data ?? [];
+    const hasMore = res.pagination?.has_more ?? res.has_more ?? false;
+    const last = data[data.length - 1];
+    let next: FormSubmissionsPageParam | null = null;
+    if (res.pagination?.next_cursor) next = { cursor: res.pagination.next_cursor };
+    // Verbatim, never through Date: that would drop the microseconds.
+    else if (hasMore && last) next = { before: last.created_at };
+    return { data, has_more: hasMore, next };
 }
 
 export async function deleteFormSubmission(formId: string, submissionId: string): Promise<void> {

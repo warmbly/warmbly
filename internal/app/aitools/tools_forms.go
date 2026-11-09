@@ -3,7 +3,6 @@ package aitools
 import (
 	"context"
 	"encoding/json"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/models"
@@ -304,8 +303,7 @@ func (d Deps) listFormSubmissions(ctx context.Context, inv Invocation, args json
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-	var before *time.Time
-	out, hasMore, xerr := d.Forms.ListSubmissions(ctx, inv.OrgID, id, limit, before)
+	out, hasMore, xerr := d.Forms.ListSubmissions(ctx, inv.OrgID, id, limit, nil)
 	if xerr != nil {
 		return "", fromErrx(xerr)
 	}

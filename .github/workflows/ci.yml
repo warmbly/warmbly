@@ -304,6 +304,15 @@ jobs:
           go test -race -v ./internal/repository -run '^TestLiveContactCampaignStateEmptySteps$' -count=1 | tee contact-campaign-steps.log
           grep -q -- '--- PASS: TestLiveContactCampaignStateEmptySteps ' contact-campaign-steps.log
 
+      - name: Form submission paging across equal timestamps (PostgreSQL)
+        if: matrix.suite == 'live-1'
+        env:
+          WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
+        run: |
+          set -o pipefail
+          go test -race -v ./internal/repository -run '^TestLiveFormSubmissionsPageAcrossEqualAndCloseTimestamps$' -count=1 | tee form-submission-paging.log
+          grep -q -- '--- PASS: TestLiveFormSubmissionsPageAcrossEqualAndCloseTimestamps ' form-submission-paging.log
+
       - name: Campaign send admission regressions (PostgreSQL)
         if: matrix.suite == 'live-2'
         env:
