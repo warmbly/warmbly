@@ -602,13 +602,19 @@ func (r *taskRepository) CancelOutbound(ctx context.Context, task, mailbox, work
 }
 
 func (r *taskRepository) cancelOutbound(ctx context.Context, task, mailbox, worker, nonce uuid.UUID, reason error) error {
+	_, err := r.releaseOutbound(ctx, task, mailbox, worker, nonce, reason)
+	return err
+}
+
+// releaseOutbound walks back a reservation that never started and returns its task type, or "" when there was none to release.
+func (r *taskRepository) releaseOutbound(ctx context.Context, task, mailbox, worker, nonce uuid.UUID, reason error) (string, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer tx.Rollback(ctx)
 	if err = lockSend(ctx, tx, task, mailbox); err != nil {
-		return err
+		return "", err
 	}
 	var lane string
 	err = tx.QueryRow(ctx, `UPDATE tasks SET send_released_at=NOW(),send_result_state='failed',send_result_applied_at=NOW(),status='cancelled'
@@ -616,45 +622,51 @@ func (r *taskRepository) cancelOutbound(ctx context.Context, task, mailbox, work
 	 AND (task_type<>'warmup' OR EXISTS(SELECT 1 FROM warmup_tasks w WHERE w.task_id=tasks.id AND w.dispatch_nonce=$4
 	 AND w.dispatch_worker_id=$3 AND w.dispatch_started_at IS NULL AND w.dispatch_result IS NULL)) RETURNING task_type`, task, mailbox, worker, nonce).Scan(&lane)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil
+		return "", nil
 	}
 	if err != nil {
-		return err
+		return "", err
 	}
 	if lane == "campaign" {
 		var c, contact, sequence uuid.UUID
 		var newLead bool
 		err = tx.QueryRow(ctx, `SELECT ct.campaign_id,ct.contact_id,ct.sequence_id,NOT EXISTS(SELECT 1 FROM campaign_contact_progress p WHERE p.campaign_id=ct.campaign_id AND p.contact_id=ct.contact_id AND p.sent_at IS NOT NULL) FROM campaign_tasks ct WHERE ct.task_id=$1`, task).Scan(&c, &contact, &sequence, &newLead)
 		if err != nil {
-			return err
+			return "", err
 		}
 		inner := context.WithValue(ctx, sendResultKey{}, sendResultContext{tx: tx, taskID: task})
 		if err = NewCampaignProgressRepository(r.db).ReleaseSend(inner, c, contact, sequence, newLead); err != nil {
-			return err
+			return "", err
 		}
 		if reason != nil {
 			if _, err = tx.Exec(ctx, `INSERT INTO task_failures(task_id,title,message) VALUES($1,'Send admission denied',$2)
 			 ON CONFLICT(task_id) DO UPDATE SET title=EXCLUDED.title,message=EXCLUDED.message`, task, reason.Error()); err != nil {
-				return err
+				return "", err
 			}
 			metadata := map[string]any{"level": "error", "code": SendAdmissionCode(reason), "contact_id": contact.String(), "sequence_id": sequence.String(), "account_id": mailbox.String(), "task_id": task.String(), "error": reason.Error(), "will_retry": true}
 			if _, err = tx.Exec(ctx, `INSERT INTO campaign_logs(campaign_id,event_type,message,metadata) VALUES($1,'email_failed',$2,$3)`, c, "Send admission denied before worker execution, will retry: "+reason.Error(), metadata); err != nil {
-				return err
+				return "", err
 			}
 		}
 	}
 	if lane == "warmup" {
 		if err = refundWarmupCharge(ctx, tx, task, mailbox); err != nil {
-			return err
+			return "", err
 		}
 		if _, err = tx.Exec(ctx, `DELETE FROM warmup_tokens WHERE task_id=$1`, task); err != nil {
-			return err
+			return "", err
+		}
+	}
+	if lane == "email" {
+		// The outcome is known now: nothing was sent.
+		if err = resolveSendDeadLetter(ctx, tx, task); err != nil {
+			return "", err
 		}
 	}
 	if err = refreshUnknownSendHold(ctx, tx, mailbox, task); err != nil {
-		return err
+		return "", err
 	}
-	return tx.Commit(ctx)
+	return lane, tx.Commit(ctx)
 }
 
 func checkWarmupRecipientReservation(ctx context.Context, tx pgx.Tx, task, sender uuid.UUID) error {

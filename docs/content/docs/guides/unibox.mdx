@@ -414,7 +414,9 @@ A mailbox that is paused or reconnecting, held after a send problem, or cooling 
 
 A new email or a reply to an address on your [suppression list](/guides/unsubscribe/#the-suppression-list), directly or through its domain, is refused before it is queued, with a message naming the address and the entry that matched it. A forward is not: it passes on mail you already received to people you picked by hand, so you can forward a lead to a client or colleague whose domain you keep out of campaigns. Fair use still counts a forward's recipients.
 
-When a send is refused for one of those reasons, it is not sent and the mailbox owner sees an error naming the cause and the limit it reached, so they can send it later or from another mailbox. If Warmbly cannot confirm the email reached the mailbox's sending worker, the error says so; check **Sent** before sending it again.
+When a send is refused for one of those reasons, it is not sent and the mailbox owner sees an error naming the cause and the limit it reached, so they can send it later or from another mailbox. If Warmbly cannot confirm the email reached the mailbox's sending worker, the error says so; check **Sent** before sending it again. Warmbly never sends that email a second time on its own. If no worker started it within about 30 minutes, it never will: the owner is told it was not sent, and the mailbox sends again.
+
+A send that was interrupted before it was handed to a worker, for example by a restart, is picked up again within a few minutes and goes out once. One that cannot go out within an hour of being sent fails instead, and the owner is told to send it again.
 
 </Fold>
 
