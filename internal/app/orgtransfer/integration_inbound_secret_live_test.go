@@ -321,3 +321,50 @@ func assertInboundClosed(t *testing.T, pool *pgxpool.Pool, conn uuid.UUID, secre
 		t.Fatal("a closed inbound URL still resolves")
 	}
 }
+
+// Overwriting a connection the previous release rotated in the clear still names it when its inbound URL did not travel.
+func TestLiveOverwriteImportFlagsUncarriedInboundURL(t *testing.T) {
+	keys := perOrgKeys{}
+	svc, pool := keyedImportService(t, keys)
+	ctx := context.Background()
+	src := newTenantFixture(t, pool)
+	keys[src.org] = staticKey(1)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM integration_connections WHERE organization_id = $1`, src.org)
+	})
+
+	secret := "calcom_" + hex.EncodeToString(bytes.Repeat([]byte{0x66}, 24))
+	conn := uuid.New()
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO integration_connections (id, organization_id, provider, label, status, auth_method, inbound_secret, inbound_secret_encrypted, inbound_secret_digest, health)
+		VALUES ($1, $2, 'cal_com', 'Bookings', 'connected', 'webhook', $3, $4, $5, 'healthy')`,
+		conn, src.org, secret, sealFixture(t, keys[src.org], secret), repository.InboundSecretDigest(secret)); err != nil {
+		t.Fatal(err)
+	}
+	groups := []models.OrgDataGroup{models.OrgDataGroupAutomations}
+	var archive bytes.Buffer
+	if _, err := svc.ExportTo(ctx, src.org, ExportOptions{Groups: groups}, &archive, nil); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+
+	// The previous release rotates in the clear, which leaves the row unsealed until the sweep reaches it.
+	rotated := "calcom_" + hex.EncodeToString(bytes.Repeat([]byte{0x77}, 24))
+	if _, err := pool.Exec(ctx, `UPDATE integration_connections SET inbound_secret = $2 WHERE id = $1`, conn, rotated); err != nil {
+		t.Fatal(err)
+	}
+	var digest *string
+	if err := pool.QueryRow(ctx, `SELECT inbound_secret_digest FROM integration_connections WHERE id = $1`, conn).Scan(&digest); err != nil || digest != nil {
+		t.Fatalf("fixture row is not clear-only: %v", err)
+	}
+
+	result, err := svc.ImportFrom(ctx, src.org, bytes.NewReader(archive.Bytes()), ImportOptions{
+		Groups: groups, Conflict: models.OrgImportConflictOverwrite, ActorUserID: src.owner,
+	}, nil)
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	assertInboundClosed(t, pool, conn, rotated)
+	if !hasWarning(result.Warnings, "cal_com (Bookings)") {
+		t.Fatal("import did not name the overwritten connection for reconnection")
+	}
+}

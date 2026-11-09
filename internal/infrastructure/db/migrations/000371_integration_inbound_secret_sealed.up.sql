@@ -3,17 +3,16 @@ ALTER TABLE integration_connections
     ADD COLUMN IF NOT EXISTS inbound_secret_encrypted text,
     ADD COLUMN IF NOT EXISTS inbound_secret_digest text;
 
-CREATE INDEX IF NOT EXISTS idx_integration_connections_inbound_digest
-    ON integration_connections (provider, inbound_secret_digest)
-    WHERE inbound_secret_digest IS NOT NULL;
-
 -- A writer that changes only inbound_secret (the previous release) retires the sealed copy, so a rotated URL never keeps resolving.
+-- An import's '' sentinel stays, since it is what flags the connection for reconnection.
 CREATE FUNCTION integration_inbound_secret_retire_sealed() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
     IF NEW.inbound_secret IS DISTINCT FROM OLD.inbound_secret
        AND NEW.inbound_secret_digest IS NOT DISTINCT FROM OLD.inbound_secret_digest THEN
-        NEW.inbound_secret_encrypted := NULL;
+        IF NEW.inbound_secret_encrypted IS DISTINCT FROM '' THEN
+            NEW.inbound_secret_encrypted := NULL;
+        END IF;
         NEW.inbound_secret_digest := NULL;
     END IF;
     RETURN NEW;
