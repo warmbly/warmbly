@@ -10,7 +10,7 @@ import (
 
 func TestMailTransportExportJSONExclusionPreservesEvidence(t *testing.T) {
 	row := []byte(`{"registered":{"transport_generation":"proof","task_id":"kept","success":false,"message_id":"accepted","error":{"code":"KEPT","message":"transport_generation is quoted text","details":[{"transport_generation":"nested","count":9007199254740993},null,true,"transport_generation"]},"future":[{"result":{"transport_generation":"proof","sent_at":"kept"}}]},"unregistered":{"transport_generation":"user-content"},"historical":"kept"}`)
-	out, err := (&service{}).exportRow(context.Background(), &Table{Name: "fixture", ExcludeJSONOnExport: []JSONColumnExclusion{{Column: "registered", Keys: []string{"transport_generation"}}}}, row, nil, nil, nil)
+	out, err := (&service{}).exportRow(context.Background(), &Table{Name: "fixture", ExcludeJSONOnExport: []JSONColumnExclusion{{Column: "registered", Keys: []string{"transport_generation"}}}}, row, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func TestMailTransportExportJSONExclusionPreservesEvidence(t *testing.T) {
 
 func TestMailTransportExportExclusionIsRegistryDirected(t *testing.T) {
 	row := []byte(`{"id":"portable","local_only":"do-not-export","worker_id":"source-worker","historical":"preserved"}`)
-	out, err := (&service{}).exportRow(context.Background(), &Table{Name: "fixture", ExcludeOnExport: []string{"local_only"}, ResetOnImport: []string{"worker_id"}}, row, nil, nil, nil)
+	out, err := (&service{}).exportRow(context.Background(), &Table{Name: "fixture", ExcludeOnExport: []string{"local_only"}, ResetOnImport: []string{"worker_id"}}, row, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
