@@ -1,8 +1,8 @@
 // Connections: external MCP servers that add tools to the AI assistant. Admin
 // connects a server, reviews the tools Warmbly discovered, then enables it. Once
 // enabled, the assistant can use those tools, always asking before it runs one.
-// One discovered tool can also be picked as the workspace's web search, which the
-// lead finder and the assistant's search_web then use while the server is enabled.
+// The exception is a tool picked as the workspace's web search: it gets only
+// search text, so the lead finder and search_web run it without asking.
 
 import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -44,7 +44,7 @@ export default function ConnectionsSettingsPage() {
     return (
         <SectionShell
             title="Connections"
-            description="Connect external MCP servers to give Remie extra tools. Warmbly discovers each server's tools; you review and enable them. Remie always asks before running an external tool."
+            description="Connect external MCP servers to give Remie extra tools. Warmbly discovers each server's tools; you review and enable them. Remie always asks before running an external tool, except a tool you pick as the workspace's web search."
             actions={
                 canManage ? (
                     <button
@@ -170,7 +170,9 @@ function ServerCard({ server, canManage }: { server: MCPServer; canManage: boole
 }
 
 function WebSearchPicker({ server, canManage, saving, onChange }: { server: MCPServer; canManage: boolean; saving: boolean; onChange: (tool: string) => void }) {
+    const eligible = server.discovered_tools.filter((t) => t.search_capable || t.name === server.search_tool);
     if (!canManage && !server.search_tool) return null;
+    if (canManage && eligible.length === 0) return null;
     return (
         <div className="mt-3 border-t border-slate-100 pt-2.5">
             <div className="flex items-center gap-2">
@@ -185,7 +187,7 @@ function WebSearchPicker({ server, canManage, saving, onChange }: { server: MCPS
                             disabled={saving}
                             align="end"
                             className="max-w-[220px]"
-                            options={[{ value: "", label: "None" }, ...server.discovered_tools.map((t) => ({ value: t.name, label: t.name }))]}
+                            options={[{ value: "", label: "None" }, ...eligible.map((t) => ({ value: t.name, label: t.name }))]}
                         />
                     ) : (
                         <span className="text-[11.5px] font-mono text-slate-600">{server.search_tool}</span>
@@ -193,7 +195,8 @@ function WebSearchPicker({ server, canManage, saving, onChange }: { server: MCPS
                 </div>
             </div>
             <p className="mt-1 text-[11px] text-slate-400 leading-relaxed">
-                The lead finder and Remie&apos;s search_web use this tool to search the web. The server must be enabled.
+                The lead finder and Remie&apos;s search_web use this tool to search the web, without asking for approval. It only ever
+                receives search text. The server must be enabled.
                 {server.search_tool && !server.enabled && <span className="text-amber-700"> It is off, so nothing uses it yet.</span>}
             </p>
         </div>

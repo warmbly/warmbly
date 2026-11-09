@@ -133,3 +133,37 @@ func TestBlockedMeansTurnedAway(t *testing.T) {
 		}
 	}
 }
+
+func TestAPrivateOrOddPortPageNeverReachesAReader(t *testing.T) {
+	publicDNS(t)
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		_, _ = w.Write([]byte(page))
+	}))
+	defer srv.Close()
+	r := New([]Backend{{Provider: "custom", URL: srv.URL + "/{url}"}})
+	for _, target := range []string{"http://intranet.example/", "http://10.0.0.7/", "http://acme.com:6379/"} {
+		if _, err := r.Read(context.Background(), target); err != ErrNotPublic {
+			t.Errorf("%s: err = %v", target, err)
+		}
+	}
+	if calls != 0 {
+		t.Fatalf("the reader was called %d times", calls)
+	}
+}
+
+func TestAReaderCannotRedirectAwayFromItself(t *testing.T) {
+	publicDNS(t)
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(page))
+	}))
+	defer elsewhere.Close()
+	bouncer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, elsewhere.URL+"/private", http.StatusFound)
+	}))
+	defer bouncer.Close()
+	if _, err := New([]Backend{{Provider: "custom", URL: bouncer.URL + "/{url}"}}).Read(context.Background(), "https://acme.com/"); err == nil {
+		t.Fatal("followed a redirect off the reader's host")
+	}
+}

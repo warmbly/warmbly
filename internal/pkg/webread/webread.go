@@ -80,14 +80,54 @@ func New(backends []Backend) Reader {
 	case 0:
 		return nil
 	case 1:
-		return rs[0]
+		return guarded{rs[0]}
 	}
-	return chain(rs)
+	return guarded{chain(rs)}
 }
 
 // Jina is a Jina Reader client for a workspace key, keyless when key is empty.
 func Jina(key string) Reader {
-	return build(Backend{Provider: providerJina, Key: key})
+	return guarded{build(Backend{Provider: providerJina, Key: key})}
+}
+
+// guarded hands a reader only pages a caller could have fetched itself.
+type guarded struct{ Reader }
+
+func (g guarded) Read(ctx context.Context, target string) (*Page, error) {
+	if err := publicTarget(ctx, target); err != nil {
+		return nil, err
+	}
+	return g.Reader.Read(ctx, target)
+}
+
+// publicTarget refuses a page on a private address or a non-web port.
+func publicTarget(ctx context.Context, raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ErrNotPublic
+	}
+	if p := u.Port(); p != "" && p != "80" && p != "443" && !config.UnsafeWebhookURLsAllowed() {
+		return ErrNotPublic
+	}
+	return publicURL(ctx, raw)
+}
+
+// readerClient follows redirects only within the reader's own host, so a
+// reader cannot bounce the request to wherever a page points.
+func readerClient(base string) *http.Client {
+	host := ""
+	if u, err := url.Parse(base); err == nil {
+		host = u.Host
+	}
+	return &http.Client{
+		Timeout: readTimeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 || req.URL.Host != host {
+				return errors.New("the reader redirected away from itself")
+			}
+			return nil
+		},
+	}
 }
 
 // Lookup reads one setting: an env var, or its AWS parameter or secret.
@@ -125,28 +165,27 @@ func splitList(raw string) []string {
 func build(b Backend) Reader {
 	base := strings.TrimRight(strings.TrimSpace(b.URL), "/")
 	key := strings.TrimSpace(b.Key)
-	client := &http.Client{Timeout: readTimeout}
 	switch strings.ToLower(strings.TrimSpace(b.Provider)) {
 	case providerJina:
 		if base == "" {
 			base = defaultJina
 		}
-		return &jina{base: base, key: key, http: client}
+		return &jina{base: base, key: key, http: readerClient(base)}
 	case "crawl4ai":
 		if base == "" {
 			return nil
 		}
-		return &crawl4ai{base: base, key: key, http: client}
+		return &crawl4ai{base: base, key: key, http: readerClient(base)}
 	case "ddgs":
 		if base == "" {
 			return nil
 		}
-		return &ddgs{base: base, http: client}
+		return &ddgs{base: base, http: readerClient(base)}
 	case "custom":
 		if !strings.Contains(base, "{url}") && !strings.Contains(base, "{url_encoded}") {
 			return nil
 		}
-		return &custom{template: base, key: key, http: client}
+		return &custom{template: base, key: key, http: readerClient(base)}
 	}
 	return nil
 }

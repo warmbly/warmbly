@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/warmbly/warmbly/internal/models"
@@ -44,8 +45,23 @@ func TestParseSearchTextReadsCommonShapes(t *testing.T) {
 		t.Fatalf("nested: %+v", got)
 	}
 	text := "1. Acme Plumbing - https://acme.com/contact.\n2. Write to office@acme.com, see https://acme.com/contact"
-	if got := parseSearchText(text); len(got) != 1 || got[0].URL != "https://acme.com/contact" || got[0].Snippet == "" {
-		t.Fatalf("text: %+v", got)
+	if got := parseSearchText(text); len(got) != 1 || got[0].URL != "https://acme.com/contact" || !strings.Contains(got[0].Snippet, "office@acme.com") {
+		t.Fatalf("a duplicate link dropped its text: %+v", got)
+	}
+	multi := "Acme Plumbing\nhttps://acme.com/\nEmail: office@acme.com\n\nOther result https://other.example/"
+	if got := parseSearchText(multi); len(got) != 2 || !strings.Contains(got[0].Snippet, "office@acme.com") {
+		t.Fatalf("multiline: %+v", got)
+	}
+	envelope := `{"url":"https://search.example/?q=acme","results":[{"title":"Acme","url":"https://acme.com/","snippet":"office@acme.com"}]}`
+	if got := parseSearchText(envelope); len(got) != 1 || got[0].URL != "https://acme.com/" {
+		t.Fatalf("envelope: %+v", got)
+	}
+}
+
+func TestSearchCallHonoursTheMinimumCount(t *testing.T) {
+	_, limit, minLimit, ok := searchCall(tool("t", `{"properties":{"query":{"type":"string"},"max_results":{"type":"integer","minimum":10}},"required":["query"]}`))
+	if !ok || limit != "max_results" || minLimit != 10 {
+		t.Fatalf("limit %q min %d ok %v", limit, minLimit, ok)
 	}
 }
 

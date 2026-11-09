@@ -2,6 +2,8 @@ export interface MCPTool {
     name: string;
     description: string;
     input_schema?: unknown;
+    // Takes a search query, so it can be picked as the workspace's web search.
+    search_capable?: boolean;
 }
 
 export interface MCPServer {

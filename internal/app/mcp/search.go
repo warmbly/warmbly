@@ -22,9 +22,16 @@ var (
 // searchArgs works out how to call a tool as a web search: the argument that
 // takes the query and, when it has one, the argument that bounds the results.
 func searchArgs(t models.MCPTool) (query, limit string, ok bool) {
+	query, limit, _, ok = searchCall(t)
+	return query, limit, ok
+}
+
+// searchCall is searchArgs plus the smallest result count the tool accepts.
+func searchCall(t models.MCPTool) (query, limit string, minLimit int, ok bool) {
 	var schema struct {
 		Properties map[string]struct {
-			Type any `json:"type"`
+			Type    any      `json:"type"`
+			Minimum *float64 `json:"minimum"`
 		} `json:"properties"`
 		Required []string `json:"required"`
 	}
@@ -65,23 +72,33 @@ func searchArgs(t models.MCPTool) (query, limit string, ok bool) {
 			}
 		}
 		if len(strs) != 1 {
-			return "", "", false
+			return "", "", 0, false
 		}
 		query = strs[0]
 	}
 	for _, name := range limitArgs {
 		if isType(name, "integer") || isType(name, "number") {
 			limit = name
+			if m := schema.Properties[name].Minimum; m != nil && *m > 0 {
+				minLimit = int(*m)
+			}
 			break
 		}
 	}
 	for _, r := range schema.Required {
 		if r != query && r != limit {
 			// Something else is required that a search cannot supply.
-			return "", "", false
+			return "", "", 0, false
 		}
 	}
-	return query, limit, true
+	return query, limit, minLimit, true
+}
+
+// markSearchable flags the server's tools that can be its web search.
+func markSearchable(sv *models.MCPServer) {
+	for i := range sv.DiscoveredTools {
+		_, _, sv.DiscoveredTools[i].SearchCapable = searchArgs(sv.DiscoveredTools[i])
+	}
 }
 
 // validSearchTool checks a server can serve tool as a web search.
@@ -115,8 +132,8 @@ func (s *service) WebSearch(ctx context.Context, orgID uuid.UUID) generation.Sea
 			if t.Name != sv.SearchTool {
 				continue
 			}
-			if q, l, ok := searchArgs(t); ok {
-				backends = append(backends, &toolSearch{s: s, server: sv, tool: t.Name, queryArg: q, limitArg: l})
+			if q, l, m, ok := searchCall(t); ok {
+				backends = append(backends, &toolSearch{s: s, server: sv, tool: t.Name, queryArg: q, limitArg: l, minLimit: m})
 			}
 		}
 	}
@@ -152,6 +169,7 @@ type toolSearch struct {
 	tool     string
 	queryArg string
 	limitArg string
+	minLimit int
 }
 
 func (t *toolSearch) Search(ctx context.Context, query string, limit int) ([]generation.SearchResult, error) {
@@ -160,15 +178,24 @@ func (t *toolSearch) Search(ctx context.Context, query string, limit int) ([]gen
 	}
 	args := map[string]any{t.queryArg: query}
 	if t.limitArg != "" {
-		args[t.limitArg] = limit
+		args[t.limitArg] = max(limit, t.minLimit)
 	}
 	raw, _ := json.Marshal(args)
-	token, _ := t.s.open(ctx, t.server.OrgID, t.server.CredentialsEncrypted)
-	text, err := t.s.client.CallTool(ctx, t.server.URL, token, t.tool, raw)
+	token, err := t.s.open(ctx, t.server.OrgID, t.server.CredentialsEncrypted)
+	if err != nil {
+		return nil, errors.New("mcp: the server's credentials could not be opened")
+	}
+	out, err := t.s.client.CallToolResult(ctx, t.server.URL, token, t.tool, raw)
 	if err != nil {
 		return nil, err
 	}
-	res := parseSearchText(text)
+	var res []generation.SearchResult
+	if len(out.Structured) > 0 {
+		res = parseSearchJSON(out.Structured)
+	}
+	if len(res) == 0 {
+		res = parseSearchText(out.Text)
+	}
 	if len(res) > limit {
 		res = res[:limit]
 	}
@@ -183,23 +210,45 @@ var (
 )
 
 // parseSearchText reads a search tool's answer: JSON results in any of the
-// usual shapes, or else every link in the text with the line around it.
+// usual shapes, or else every link in the text with the text around it.
 func parseSearchText(text string) []generation.SearchResult {
-	var v any
-	if err := json.Unmarshal([]byte(strings.TrimSpace(text)), &v); err == nil {
-		var out []generation.SearchResult
-		collectResults(v, &out, 0)
-		if len(out) > 0 {
-			return dedupe(out)
+	if res := parseSearchJSON([]byte(strings.TrimSpace(text))); len(res) > 0 {
+		return res
+	}
+	// Each link takes the text from its line up to the next link's line, at most three lines.
+	lines := strings.Split(text, "\n")
+	type hit struct{ url, line string }
+	var hits []hit
+	var starts []int
+	for i, line := range lines {
+		for _, u := range urlInText.FindAllString(line, -1) {
+			hits = append(hits, hit{strings.TrimRight(u, ".,;:"), line})
+			starts = append(starts, i)
 		}
 	}
 	var out []generation.SearchResult
-	for _, line := range strings.Split(text, "\n") {
-		for _, u := range urlInText.FindAllString(line, -1) {
-			u = strings.TrimRight(u, ".,;:")
-			out = append(out, generation.SearchResult{URL: u, Snippet: strings.TrimSpace(strings.ReplaceAll(line, u, ""))})
+	for k, h := range hits {
+		end := len(lines)
+		if k+1 < len(hits) && starts[k+1] > starts[k] {
+			end = starts[k+1]
+		} else if k+1 < len(hits) {
+			end = starts[k] + 1
 		}
+		end = min(end, starts[k]+3)
+		block := strings.Join(lines[starts[k]:end], " ")
+		out = append(out, generation.SearchResult{URL: h.url, Snippet: strings.Join(strings.Fields(strings.ReplaceAll(block, h.url, "")), " ")})
 	}
+	return dedupe(out)
+}
+
+// parseSearchJSON reads results out of JSON in any of the usual shapes.
+func parseSearchJSON(raw []byte) []generation.SearchResult {
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return nil
+	}
+	var out []generation.SearchResult
+	collectResults(v, &out, 0)
 	return dedupe(out)
 }
 
@@ -213,12 +262,24 @@ func collectResults(v any, out *[]generation.SearchResult, depth int) {
 			collectResults(e, out, depth+1)
 		}
 	case map[string]any:
+		// Results nested inside an envelope win over the envelope's own link.
+		before := len(*out)
+		for _, e := range x {
+			if _, isList := e.([]any); isList {
+				collectResults(e, out, depth+1)
+			}
+		}
+		if len(*out) > before {
+			return
+		}
 		if u := pick(x, urlKeys); strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://") {
 			*out = append(*out, generation.SearchResult{URL: u, Title: pick(x, titleKeys), Snippet: pick(x, snippetKey)})
 			return
 		}
 		for _, e := range x {
-			collectResults(e, out, depth+1)
+			if _, isMap := e.(map[string]any); isMap {
+				collectResults(e, out, depth+1)
+			}
 		}
 	}
 }
@@ -232,13 +293,22 @@ func pick(m map[string]any, keys []string) string {
 	return ""
 }
 
+// dedupe keeps one result per link, keeping the text every copy carried.
 func dedupe(in []generation.SearchResult) []generation.SearchResult {
-	seen := map[string]bool{}
-	out := in[:0]
+	at := map[string]int{}
+	var out []generation.SearchResult
 	for _, r := range in {
-		if !seen[r.URL] {
-			seen[r.URL] = true
+		i, seen := at[r.URL]
+		if !seen {
+			at[r.URL] = len(out)
 			out = append(out, r)
+			continue
+		}
+		if out[i].Title == "" {
+			out[i].Title = r.Title
+		}
+		if r.Snippet != "" && !strings.Contains(out[i].Snippet, r.Snippet) {
+			out[i].Snippet = strings.TrimSpace(out[i].Snippet + " " + r.Snippet)
 		}
 	}
 	return out

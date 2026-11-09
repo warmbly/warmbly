@@ -33,6 +33,9 @@ type MCPTool struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	InputSchema json.RawMessage `json:"input_schema,omitempty"`
+	// SearchCapable says the tool takes a search query, so it can be picked as
+	// the web search. Worked out on every read, never trusted from storage.
+	SearchCapable bool `json:"search_capable,omitempty"`
 }
 
 // CreateMCPServer is the connect payload.

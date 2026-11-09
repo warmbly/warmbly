@@ -56,6 +56,9 @@ func (s *service) List(ctx context.Context, orgID uuid.UUID) ([]models.MCPServer
 	if err != nil {
 		return nil, errx.New(errx.Internal, "failed to list connections")
 	}
+	for i := range out {
+		markSearchable(&out[i])
+	}
 	return out, nil
 }
 
@@ -107,6 +110,7 @@ func (s *service) Create(ctx context.Context, orgID, createdBy uuid.UUID, req *m
 	if err != nil {
 		return nil, errx.New(errx.Conflict, "a connection with that name already exists")
 	}
+	markSearchable(out)
 	return out, nil
 }
 
@@ -147,6 +151,7 @@ func (s *service) Update(ctx context.Context, orgID, id uuid.UUID, req *models.U
 	if err := s.repo.Update(ctx, sv); err != nil {
 		return nil, errx.New(errx.Conflict, "a connection with that name already exists")
 	}
+	markSearchable(sv)
 	return sv, nil
 }
 
@@ -170,6 +175,7 @@ func (s *service) Refresh(ctx context.Context, orgID, id uuid.UUID) (*models.MCP
 	if err := s.repo.Update(ctx, sv); err != nil {
 		return nil, errx.New(errx.Internal, "failed to save connection")
 	}
+	markSearchable(sv)
 	return sv, nil
 }
 
