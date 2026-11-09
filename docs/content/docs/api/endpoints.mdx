@@ -574,7 +574,9 @@ Starting an [Apollo](/guides/apollo/) enrichment writes contacts and spends the 
 
 ### Retry safety
 
-Mutating API requests may include an `Idempotency-Key` header. Warmbly stores the completed response for 24 hours per organization and key. Reusing the same key with the same method, route, query, and body replays the original response with `X-Idempotent-Replayed: true`; reusing the key with a different request returns `409 Conflict`.
+Mutating API requests may include an `Idempotency-Key` header. Warmbly stores the completed response for 24 hours per organization and key. A request is identified by the credential that sent it (the signed-in user, the API key, or the OAuth authorization), the method, the concrete path including its resource ids, the query and the body. Reusing the same key for the same request replays the original response with `X-Idempotent-Replayed: true` and does not run the operation again; reusing it for anything else, including the same route on a different resource or a different credential, returns `409 Conflict`. A second request sent while the first is still running also gets `409 Conflict`.
+
+The outcome is recorded even when the client disconnects after the operation went through, so retry with the same key rather than assuming it failed. If Warmbly cannot write the outcome down, the key answers as still processing and, after ten minutes, as unknown. A request refused before it ran (`401`, `403` or `429`) does not use up its key, so the same key works once the refusal is resolved; a refusal never clears an outcome an earlier attempt already recorded. A request that ended in a server error (`5xx`), or never finished, has an unknown outcome: for the 24 hours the key is kept it answers `409` with `code: "idempotency_outcome_unknown"` and does not run again. The operation may have happened even when a read shows no trace of it yet (a send can be delivered before its Sent copy appears), so retry with a new key only once you have established that the change did not happen.
 
 ### Identity
 

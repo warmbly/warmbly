@@ -87,14 +87,17 @@ func TestLiveScheduledSendsAreScopedToTheMailboxOrganization(t *testing.T) {
 		t.Errorf("list inside the allowlist = %d rows (err %v), want 1", len(rows), err)
 	}
 
-	if _, ok, err := repo.CancelScheduledInOrg(ctx, taskID, foreignOrg, nil); err != nil || ok {
-		t.Fatalf("foreign cancel ok=%v err=%v, want refused", ok, err)
+	if _, outcome, err := repo.CancelScheduledInOrg(ctx, taskID, foreignOrg, nil); err != nil || outcome != ScheduledCancelNotFound {
+		t.Fatalf("foreign cancel outcome=%v err=%v, want not found", outcome, err)
 	}
-	if _, ok, err := repo.CancelScheduledInOrg(ctx, taskID, org, elsewhere); err != nil || ok {
-		t.Fatalf("cancel outside the allowlist ok=%v err=%v, want refused", ok, err)
+	if _, outcome, err := repo.CancelScheduledInOrg(ctx, taskID, org, elsewhere); err != nil || outcome != ScheduledCancelNotFound {
+		t.Fatalf("cancel outside the allowlist outcome=%v err=%v, want not found", outcome, err)
 	}
-	if _, ok, err := repo.CancelScheduledInOrg(ctx, taskID, org, nil); err != nil || !ok {
-		t.Fatalf("workspace cancel ok=%v err=%v, want cancelled", ok, err)
+	if _, outcome, err := repo.CancelScheduledInOrg(ctx, taskID, org, nil); err != nil || outcome != ScheduledCancelled {
+		t.Fatalf("workspace cancel outcome=%v err=%v, want cancelled", outcome, err)
+	}
+	if _, outcome, err := repo.CancelScheduledInOrg(ctx, taskID, org, nil); err != nil || outcome != ScheduledCancelNotPending {
+		t.Fatalf("second cancel outcome=%v err=%v, want not pending", outcome, err)
 	}
 }
 

@@ -998,9 +998,11 @@ A few conflicts carry their own `code`. The mailbox import's are under [mailbox 
 | `lead_cc_has_copies` | 409 | [Set a lead's CC](/api/reference/campaigns/#set-a-leads-cc) names a contact that has copies of their own in the campaign |
 | `mailbox_is_seed` | 409 | Warmup was started or resumed on a placement seed inbox. See [placement test refusals](#placement-test-refusals) |
 | `mailbox_not_google_signin` | 409 | `POST /emails/onboarding/app-password/:id` on a mailbox that is not a Google mailbox on its own sign-in or an admin grant. See [app password switch refusals](#app-password-switch-refusals) |
+| `scheduled_send_not_pending` | 409 | [Cancel a scheduled send](/api/reference/unibox/#cancel-a-scheduled-send) named a send that is no longer pending: it has started sending, was sent, failed, or was already cancelled. Nothing changed |
 | `approval_not_pending` | 409 | `POST /ai/sessions/:id/approve` named a tool call the conversation is not waiting on: it was already decided, in another tab or in Slack, or a newer message replaced it |
 | `payment_method_required` | 409 | `POST /subscription/balance/top-up`, or turning on automatic reload with `PATCH /subscription/balance/auto-reload`, with no saved card. Save one with `POST /subscription/balance/payment-method`, or pay through `POST /subscription/balance/checkout` |
 | `charge_in_progress` | 409 | `POST /subscription/balance/top-up` while another payment for the workspace is still going through. Try again in a minute |
+| `idempotency_outcome_unknown` | 409 | The request that first used this `Idempotency-Key` ended in a server error or never finished, so whether it took effect is unknown and it is not run again while the key is kept (24 hours). Retry with a new key only once you have established that the change did not happen. See [retry safety](/api/endpoints/#retry-safety) |
 | `mailbox_cloud_unenroll_failed` | 409 | The mailbox is linked to [Warmbly Cloud](/guides/warmbly-cloud/) and its link could not be released, so `DELETE /emails/{id}` would leave Warmbly Cloud holding its credential or its claim on it. The mailbox record remains, and restoration onto its worker is attempted |
 
 `mailbox_cloud_unenroll_failed` is a self-hosted instance losing contact with Warmbly Cloud mid-delete. Deleting an enrolled mailbox has to revoke its enrollment before the record goes, because the pool holds the mailbox's own SMTP/IMAP credentials and that record is the only thing that knows the enrollment exists. The same call releases a cloud-managed mirror before the record goes, so the mailbox returns to the cloud workspace and can be adopted again instead of staying claimed by an instance that no longer keeps it. The mailbox record remains. Warmbly attempts to restore it onto its worker immediately, and the worker reconciler may restore it later if that attempt fails. Retry the delete once the instance can reach the cloud again. Unenrolling under **Settings > Warmbly Cloud** first does not help: it makes the same call.
@@ -1397,31 +1399,41 @@ For transient errors (5xx, 429), implement exponential backoff:
 
 ```javascript
 async function requestWithRetry(url, options, maxRetries = 3) {
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
+  const backoff = (attempt) =>
+    new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+
+  for (let attempt = 0; ; attempt++) {
+    let response;
     try {
-      const response = await fetch(url, options);
-
-      if (response.ok) {
-        return response.json();
-      }
-
-      // Don't retry client errors (4xx) except rate limits
-      if (response.status >= 400 && response.status < 500 && response.status !== 429) {
-        throw new Error(`Client error: ${response.status}`);
-      }
-
-      // Retry server errors and rate limits
-      if (attempt < maxRetries - 1) {
-        const delay = Math.pow(2, attempt) * 1000;
-        await new Promise(resolve => setTimeout(resolve, delay));
-        continue;
-      }
-    } catch (error) {
-      if (attempt === maxRetries - 1) throw error;
+      response = await fetch(url, options);
+    } catch (networkError) {
+      if (attempt === maxRetries - 1) throw networkError;
+      await backoff(attempt);
+      continue;
     }
+
+    if (response.ok) {
+      return response.json();
+    }
+
+    // Retry server errors and rate limits; every other 4xx is final
+    const retryable = response.status === 429 || response.status >= 500;
+    if (retryable && attempt < maxRetries - 1) {
+      await backoff(attempt);
+      continue;
+    }
+
+    // Carry the machine-readable code, e.g. idempotency_outcome_unknown
+    const body = await response.json().catch(() => ({}));
+    const error = new Error(body.message || `HTTP ${response.status}`);
+    error.status = response.status;
+    error.code = body.code;
+    throw error;
   }
 }
 ```
+
+A retry of a write that carries an `Idempotency-Key` answers with whatever the first attempt recorded. A `429` leaves the key as it was, so the same key runs the request unless an earlier attempt already recorded an outcome. A `5xx` from a request that reached the operation makes the same key answer `409 idempotency_outcome_unknown` instead of running it again; a `5xx` from a gateway the request never got past leaves the key unused, so the retry runs it for the first time. On `idempotency_outcome_unknown`, stop retrying and use a new key only once you have established that the change did not happen. See [retry safety](/api/endpoints/#retry-safety).
 
 ### Parse error responses
 

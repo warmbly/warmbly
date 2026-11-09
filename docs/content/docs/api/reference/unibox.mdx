@@ -511,7 +511,12 @@ Cancels a pending scheduled send from any of the organization's mailboxes (for a
 
 ### Response
 
-`204 No Content` with an empty body.
+`204 No Content` with an empty body. Only a send that is still pending can be cancelled, and a cancelled send is never sent, even when its queued run arrives later.
+
+| Status | `code` | When |
+| --- | --- | --- |
+| `404` | `not_found` | No scheduled send with that id is reachable from the workspace (or from the API key's mailboxes). |
+| `409` | `scheduled_send_not_pending` | The send is no longer pending: it has started sending, was sent, failed, or was already cancelled. |
 
 ## Get a message by id
 

@@ -349,6 +349,17 @@ jobs:
         run: |
           go test -race -p 1 ./internal/repository -run '^TestLive(ConcurrentDispatchersNeverClaimTheSameTask|SendResultEffectsBatchClaimsDeliverEachEffectOnce|CRMClaimTakesDueAndLapsedJobsOnce)$' -count=1
 
+      - name: Scheduled email cancel and claim regressions (PostgreSQL)
+        if: matrix.suite == 'live-1'
+        env:
+          WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
+        run: |
+          set -o pipefail
+          go test -race -v -p 1 ./internal/tasks -run '^TestLive(CancelledScheduledEmailIsNeverAdmitted|ClaimedScheduledEmailRefusesCancel|ScheduledEmailCancelAndExecutionNeverBothWin|UniboxSendRefusalIsRecordedNotDeadLettered|UnrecordedUniboxRefusalIsRetried)$' -count=1 | tee scheduled-cancel.log
+          for t in CancelledScheduledEmailIsNeverAdmitted ClaimedScheduledEmailRefusesCancel ScheduledEmailCancelAndExecutionNeverBothWin UniboxSendRefusalIsRecordedNotDeadLettered UnrecordedUniboxRefusalIsRetried; do
+            grep -q -- "--- PASS: TestLive$t " scheduled-cancel.log
+          done
+
       - name: Invited signup atomic provisioning regressions (PostgreSQL)
         if: matrix.suite == 'live-1'
         env:
@@ -417,6 +428,17 @@ jobs:
           go test -race -p 1 ./internal/repository -run '^TestLiveJobRun' -count=1
           go test -race -p 1 ./internal/infrastructure/db -run '^TestLiveScheduledJobRetirementUpgradePreservesExecutionHistory$' -count=1
 
+      - name: Idempotency-Key identity and completion regressions (PostgreSQL)
+        if: matrix.suite == 'live-3'
+        env:
+          WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
+        run: |
+          set -o pipefail
+          go test -race -v -p 1 ./internal/app/idempotency ./internal/api/middleware -run '^TestLiveIdempotency' -count=1 | tee idempotency.log
+          for test in TestLiveIdempotencyConcurrentBeginsClaimOnce TestLiveIdempotencyOutcomes TestLiveIdempotencyPreviousReleaseRecordsNeverMatch TestLiveIdempotencyKeepsIdentityAndCompletion; do
+            grep -q -- "--- PASS: $test " idempotency.log
+          done
+
       - name: Warmup dispatch, upgrade and admin-send regressions (PostgreSQL)
         if: matrix.suite == 'live-3'
         env:
@@ -476,6 +498,18 @@ jobs:
             TestLiveSenderSchedulerNeverPicksAnotherOrgMailbox \
             TestLiveTrackingDomainWriteIsOrgScoped; do
             grep -q "^--- PASS: $test " workspace-isolation.log
+          done
+
+      - name: Integration inbound secret sealing (PostgreSQL)
+        if: matrix.suite == 'live-3'
+        env:
+          WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
+        run: |
+          set -o pipefail
+          go test -race -v -p 1 ./internal/app/integration ./internal/app/orgtransfer -run '^TestLive(InboundSecretSealedAcrossWriteBackfillAndRead|InboundSecretUnsealedRowStillResolves|ArchiveCarriesInboundSecretsOnlySealed|ImportFlagsEachIntegrationOnceAndClosesItsInboundURL|ReconnectFlagClearsSealedInboundSecret|PreviousReleaseArchiveKeepsInboundURLs|OverwriteImportFlagsUncarriedInboundURL)$' -count=1 | tee inbound-secret.log
+          if grep -q -- '--- SKIP:' inbound-secret.log; then exit 1; fi
+          for test in TestLiveInboundSecretSealedAcrossWriteBackfillAndRead TestLiveInboundSecretUnsealedRowStillResolves TestLiveArchiveCarriesInboundSecretsOnlySealed TestLiveImportFlagsEachIntegrationOnceAndClosesItsInboundURL TestLiveReconnectFlagClearsSealedInboundSecret TestLivePreviousReleaseArchiveKeepsInboundURLs TestLiveOverwriteImportFlagsUncarriedInboundURL; do
+            grep -q "^--- PASS: $test " inbound-secret.log
           done
 
       - name: Monitoring database observation regressions (PostgreSQL)

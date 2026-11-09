@@ -135,7 +135,7 @@ func (s *service) ExportTo(
 			Name:  t.Name,
 			Group: t.Group,
 			Columns: slices.DeleteFunc(columnNames(cols), func(column string) bool {
-				return slices.Contains(t.ExcludeOnExport, column)
+				return slices.Contains(t.ExcludeOnExport, column) || slices.Contains(t.derivedColumns(), column)
 			}),
 		}
 		if archiveKey != nil {
@@ -227,12 +227,17 @@ func (s *service) exportRow(
 	}
 
 	for _, sc := range t.Secrets {
+		// A row not yet sealed carries its value only in the clear column, which stands in for it.
+		var clear string
+		if sc.Plaintext != "" {
+			clear = jsonString(obj[sc.Plaintext])
+		}
 		raw, ok := obj[sc.Column]
-		if !ok {
+		if !ok && clear == "" {
 			continue
 		}
 		stored := jsonString(raw)
-		if stored == "" {
+		if stored == "" && clear == "" {
 			continue
 		}
 		// A guarded column only holds ciphertext when its flag is set.
@@ -247,16 +252,19 @@ func (s *service) exportRow(
 			continue
 		}
 
+		var plain string
 		var openErr error
-		if bytea[sc.Column] {
-			if stored, openErr = decodeBytea(stored); openErr == nil && stored == "" {
+		if bytea[sc.Column] && stored != "" {
+			if stored, openErr = decodeBytea(stored); openErr == nil && stored == "" && clear == "" {
 				obj[sc.Column] = json.RawMessage(`null`)
 				continue
 			}
 		}
-		var plain string
-		if openErr == nil {
+		if openErr == nil && stored != "" {
 			plain, openErr = s.openSecret(ctx, sc, stored, orgCipher)
+		}
+		if (stored == "" || openErr != nil) && clear != "" {
+			plain, openErr = clear, nil
 		}
 		if openErr != nil {
 			// One unreadable credential must not sink the export. Blank it and
@@ -273,6 +281,10 @@ func (s *service) exportRow(
 			return nil, err
 		}
 		obj[sc.Column] = enc
+	}
+
+	for _, column := range t.derivedColumns() {
+		delete(obj, column)
 	}
 
 	for _, bc := range t.Blobs {

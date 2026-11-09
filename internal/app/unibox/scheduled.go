@@ -12,6 +12,7 @@ import (
 
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/repository"
 )
 
 // ScheduledListMax bounds the rows returned from /unibox/scheduled.
@@ -92,6 +93,10 @@ func (s *uniboxService) ListScheduledByThread(ctx context.Context, orgID uuid.UU
 	return out, nil
 }
 
+// errScheduledSendNotPending answers a cancel that lost to execution or came after it.
+var errScheduledSendNotPending = errx.NewWithIdentifier(errx.Conflict, "scheduled_send_not_pending",
+	"This send is no longer pending: it is already sending, was sent, or was cancelled.")
+
 // CancelScheduled cancels a pending outbound email.
 //
 // Two-step, belt-and-braces:
@@ -111,15 +116,15 @@ func (s *uniboxService) ListScheduledByThread(ctx context.Context, orgID uuid.UU
 // already-fired — the handler's status check still short-circuits
 // the dispatch into a harmless no-op, so the user is always safe.
 func (s *uniboxService) CancelScheduled(ctx context.Context, orgID, taskID uuid.UUID, accountIDs []uuid.UUID) *errx.Error {
-	cloudTaskName, cancelled, err := s.taskRepo.CancelScheduledInOrg(ctx, taskID, orgID, accountIDs)
+	cloudTaskName, outcome, err := s.taskRepo.CancelScheduledInOrg(ctx, taskID, orgID, accountIDs)
 	if err != nil {
 		errs.CaptureException(err)
 		return errx.InternalError()
 	}
-	if !cancelled {
-		// Either: task doesn't exist, isn't this workspace's, or already
-		// left the pending state (fired / failed / cancelled). All
-		// three look the same from the caller's perspective.
+	if outcome == repository.ScheduledCancelNotPending {
+		return errScheduledSendNotPending
+	}
+	if outcome != repository.ScheduledCancelled {
 		return errx.New(errx.NotFound, "no pending scheduled send for this id")
 	}
 
