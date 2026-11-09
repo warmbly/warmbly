@@ -184,7 +184,7 @@ func (r *emailRepository) RefreshBoxToken(ctx context.Context, id uuid.UUID, acc
 var ErrNoOAuthRow = errors.New("mailbox has no OAuth sign-in to replace")
 
 // ReplaceBoxToken is RefreshBoxToken for a new consent, which also records what it granted.
-func (r *emailRepository) ReplaceBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time, scopes []string) error {
+func (r *emailRepository) ReplaceBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time, scopes []string, appID *uuid.UUID) error {
 	orgID, err := r.mailboxOrganization(ctx, id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
@@ -198,9 +198,9 @@ func (r *emailRepository) ReplaceBoxToken(ctx context.Context, id uuid.UUID, acc
 		return err
 	}
 	query := `UPDATE email_accounts_oauth
-		SET access_token = $1, refresh_token = $2, expires_at = $3, granted_scopes = $4, updated_at = now()
+		SET access_token = $1, refresh_token = $2, expires_at = $3, granted_scopes = $4, oauth_app_id = $6, updated_at = now()
 		WHERE email_account_id = $5`
-	tag, err := r.DB.Exec(ctx, query, sealed[0], sealed[1], expiresAt, scopes, id)
+	tag, err := r.DB.Exec(ctx, query, sealed[0], sealed[1], expiresAt, scopes, id, appID)
 	if err != nil {
 		// The parameters hold the sealed tokens; keep them out of the error report.
 		db.CaptureError(err, query, nil, "exec")

@@ -31,21 +31,19 @@ describe.each([true, false])("Cloud diagnostic participation with workspace conn
         expect(screen.queryByRole("button", { name: "Pause" })).not.toBeInTheDocument();
     });
 
-    it.each([false, true])("keeps Cloud lifecycle controls based on the reported state when the local executor is off (paused: %s)", async (paused) => {
+    it.each([
+        ["smtp_imap", /Hand it to Cloud from Settings > Warmbly Cloud/],
+        ["gmail", /Remove it and add it again through Warmbly Cloud sign-in/],
+    ])("holds a %s mailbox whose credential stayed on this server out of the Cloud controls", async (provider, hint) => {
         fixtures.executor = "instance";
-        if (paused) fixtures.participation = { mode: "diagnostic", send: false, receive: true };
-        render(<QueryClientProvider client={new QueryClient()}><CloudWarmupCard mailboxId="mailbox" email="fixture@example.test" provider="smtp_imap" status="inactive" /></QueryClientProvider>);
-        expect(screen.getByText("Mailbox off on this server")).toBeInTheDocument();
-        fireEvent.click(screen.getByRole("button", { name: paused ? "Resume" : "Pause" }));
-        await waitFor(() => expect(fixtures.lifecycle).toHaveBeenCalledWith({ id: "mailbox", action: paused ? "resume" : "pause" }));
-    });
-
-    it("keeps the reported Cloud controls while this server's permission to run the mailbox is unconfirmed", async () => {
-        fixtures.executor = "instance";
-        draw();
-        expect(screen.getByText("Permission to run on this server unconfirmed")).toBeInTheDocument();
-        fireEvent.click(screen.getByRole("button", { name: "Pause" }));
-        await waitFor(() => expect(fixtures.lifecycle).toHaveBeenCalledWith({ id: "mailbox", action: "pause" }));
+        render(<QueryClientProvider client={new QueryClient()}><CloudWarmupCard mailboxId="mailbox" email="fixture@example.test" provider={provider} status="active" /></QueryClientProvider>);
+        expect(screen.getByText("Paused until Warmbly Cloud holds its credential")).toBeInTheDocument();
+        expect(screen.getByText(hint)).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Pause" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+        expect(fixtures.confirm).toHaveBeenCalledWith(expect.stringContaining("Its credential never left this server"));
+        await waitFor(() => expect(fixtures.unenroll).toHaveBeenCalledWith("mailbox"));
     });
 
     it("retains a positive mailbox report when the separate connection request fails", () => {

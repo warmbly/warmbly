@@ -78,10 +78,6 @@ func (w *WorkerService) handleWarmupAction(ctx context.Context, action models.Wa
 					return nil
 				}
 			}
-		} else if recovery, ok := w.SyncContextRepository.(repository.WarmupActionRecoveryAdmission); ok && action.CommandID != "" {
-			var decision models.WarmupActionDecision
-			decision, err = recovery.AdmitWarmupAction(ctx, models.WarmupActionRequest{MailboxID: action.EmailID, WorkerID: worker, Actions: action.Actions, CommandID: action.CommandID})
-			action.Actions = decision.Actions
 		} else {
 			action.Actions, err = gate.PermittedWarmupActions(ctx, action.EmailID, worker, action.Actions)
 		}

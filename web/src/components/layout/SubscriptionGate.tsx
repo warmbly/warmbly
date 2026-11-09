@@ -10,6 +10,9 @@ import SubscriptionLockedScreen from "./SubscriptionLockedScreen";
 
 const OPEN_PREFIXES = ["/app/emails", "/app/settings", "/app/select-org", "/app/slack"];
 
+// The Partnership plan drives Warmbly through its API and tests placement from its own mailboxes.
+const PARTNER_PREFIXES = ["/app/api-keys", "/app/placement"];
+
 const FEATURE_BY_PREFIX: [string, string][] = [
     ["/app/unibox", "The unified inbox"],
     ["/app/campaigns", "Campaigns"],
@@ -28,8 +31,9 @@ const FEATURE_BY_PREFIX: [string, string][] = [
 export default function SubscriptionGate({ children }: { children: React.ReactNode }) {
     const access = useFeatureAccess();
     const pathname = useLocation({ select: (l) => l.pathname });
-    const open = OPEN_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));
+    const under = (p: string) => pathname === p || pathname.startsWith(p + "/");
+    const open = OPEN_PREFIXES.some(under) || (access.partnership && PARTNER_PREFIXES.some(under));
     if (!access.locked || open) return <>{children}</>;
-    const feature = FEATURE_BY_PREFIX.find(([p]) => pathname === p || pathname.startsWith(p + "/"))?.[1] ?? "This page";
+    const feature = FEATURE_BY_PREFIX.find(([p]) => under(p))?.[1] ?? "This page";
     return <SubscriptionLockedScreen feature={feature} />;
 }

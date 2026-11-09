@@ -172,7 +172,7 @@ func (s *service) usage(ctx context.Context, orgID uuid.UUID) (models.PlacementU
 	pol := s.policy(ctx)
 	limit, paid := pol.TestsPerMonthTrial, false
 	if s.Gate != nil {
-		if paid, _ = s.Gate.IsPaidOrganization(ctx, orgID); paid {
+		if paid = s.paidAllowance(ctx, orgID); paid {
 			limit = pol.TestsPerMonthPaid
 		}
 	}

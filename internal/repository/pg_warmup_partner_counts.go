@@ -67,34 +67,19 @@ func (r *warmupRepository) WarmupPartnerCounts(ctx context.Context, poolType str
 		return nil, err
 	}
 
-	// Two instance-executed mailboxes never pair, matching WarmupPartnerCandidates.
-	executed, err := r.instanceExecutedAmong(ctx, orgs, cands)
-	if err != nil {
-		return nil, err
-	}
 	ownIDs := make(map[uuid.UUID]bool)
 	returnIDs := make(map[uuid.UUID]bool)
 	borrowedByOrg := make(map[uuid.UUID]int)
-	execBorrowedByOrg := make(map[uuid.UUID]int)
-	own, borrowed, execOwn, execBorrowed := 0, 0, 0, 0
+	own, borrowed := 0, 0
 	for _, c := range cands {
 		switch c.Origin {
 		case models.WarmupPartnerOwnTier:
 			own++
 			ownIDs[c.ID] = true
-			if executed[c.ID] {
-				execOwn++
-			}
 		case models.WarmupPartnerBorrowed:
 			borrowed++
-			if executed[c.ID] {
-				execBorrowed++
-			}
 			if c.OrganizationID != nil {
 				borrowedByOrg[*c.OrganizationID]++
-				if executed[c.ID] {
-					execBorrowedByOrg[*c.OrganizationID]++
-				}
 			}
 		case models.WarmupPartnerReturn:
 			returnIDs[c.ID] = true
@@ -107,16 +92,6 @@ func (r *warmupRepository) WarmupPartnerCounts(ctx context.Context, poolType str
 		}
 		if borrows {
 			out[id] += borrowed - borrowedByOrg[org]
-		}
-		if executed[id] {
-			// The sender itself was already taken out of own above.
-			out[id] -= execOwn
-			if ownIDs[id] {
-				out[id]++
-			}
-			if borrows {
-				out[id] -= execBorrowed - execBorrowedByOrg[org]
-			}
 		}
 	}
 	if returnsTo {
@@ -140,7 +115,7 @@ func (r *warmupRepository) WarmupPartnerCounts(ctx context.Context, poolType str
 			if err := rows.Scan(&sender, &partner); err != nil {
 				return nil, err
 			}
-			if _, eligible := orgs[sender]; eligible && returnIDs[partner] && !(executed[sender] && executed[partner]) {
+			if _, eligible := orgs[sender]; eligible && returnIDs[partner] {
 				out[sender]++
 			}
 		}
@@ -149,31 +124,6 @@ func (r *warmupRepository) WarmupPartnerCounts(ctx context.Context, poolType str
 		}
 	}
 	return out, nil
-}
-
-// instanceExecutedAmong names which of the senders and candidates a linked instance executes.
-func (r *warmupRepository) instanceExecutedAmong(ctx context.Context, senders map[uuid.UUID]uuid.UUID, cands []models.WarmupPartnerCandidate) (map[uuid.UUID]bool, error) {
-	ids := make([]uuid.UUID, 0, len(senders)+len(cands))
-	for id := range senders {
-		ids = append(ids, id)
-	}
-	for _, c := range cands {
-		ids = append(ids, c.ID)
-	}
-	rows, err := resultDB(ctx, r.db).Query(ctx, `SELECT email_account_id FROM pool_link_mailboxes WHERE executor = 'instance' AND email_account_id = ANY($1::uuid[])`, ids)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := make(map[uuid.UUID]bool)
-	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		out[id] = true
-	}
-	return out, rows.Err()
 }
 
 func (r *warmupRepository) eligiblePartnerSenders(ctx context.Context, poolType string, senderIDs []uuid.UUID) (map[uuid.UUID]uuid.UUID, error) {

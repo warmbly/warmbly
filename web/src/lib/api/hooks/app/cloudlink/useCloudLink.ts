@@ -19,7 +19,7 @@ import { SENDING_DOMAINS_KEY } from "@/lib/api/hooks/app/emails/useSendingDomain
 import { useInstanceAdmin } from "@/hooks/usePermission";
 import { CLOUD_MAILBOX_PICKER_EVENT, CLOUD_MAILBOX_PICKER_OPENED } from "@/lib/cloudMailboxConnect";
 import type { AppError } from "@/lib/api/client/normalizeError";
-import type { CloudLinkExecutor, CloudLinkMailboxRow } from "@/lib/api/models/app/cloudlink/CloudLink";
+import type { CloudLinkMailboxRow } from "@/lib/api/models/app/cloudlink/CloudLink";
 import { CLOUD_LINK_KEY, cloudLinkScope, invalidateWarmupReports, mirroredSettingsStale } from "./warmupReports";
 
 export { CLOUD_LINK_KEY } from "./warmupReports";
@@ -70,7 +70,7 @@ export function useEnrollCloudLinkMailbox() {
     const admin = useInstanceAdmin();
     return useMutation({
         onMutate: () => cloudLinkScope(qc),
-        mutationFn: async (input: string | { id: string; executor?: CloudLinkExecutor }) => {
+        mutationFn: async (input: string | { id: string; executor?: "cloud" }) => {
             const { id, executor } = typeof input === "string" ? { id: input, executor: undefined } : input;
             try {
                 return await enrollCloudLinkMailbox(id, executor);

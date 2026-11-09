@@ -2,7 +2,6 @@
 
 import Request from "@/lib/api/client/Request";
 import type {
-    CloudLinkExecutor,
     CloudLinkMailboxRow,
     CloudLinkOAuthStart,
     CloudLinkStatus,
@@ -24,8 +23,8 @@ export async function listCloudLinkMailboxes(): Promise<CloudLinkMailboxRow[]> {
     return res.data ?? [];
 }
 
-/** Without an executor an enrolled mailbox keeps its own; with one it switches. */
-export async function enrollCloudLinkMailbox(id: string, executor?: CloudLinkExecutor): Promise<CloudLinkMailboxRow> {
+/** Executor cloud hands Cloud the credential of a mailbox that kept it on this server. */
+export async function enrollCloudLinkMailbox(id: string, executor?: "cloud"): Promise<CloudLinkMailboxRow> {
     return await Request<CloudLinkMailboxRow>({
         method: "POST",
         url: `/cloud-link/mailboxes/${id}/enroll`,

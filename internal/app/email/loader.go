@@ -508,14 +508,27 @@ func (s *emailService) buildAddWorkerEmailSnapshot(ctx context.Context, acc *mod
 			return nil, cerr
 		}
 		out.Google = &models.AddWorkerEmailGoogleData{
-			Token:          oauthToken(creds),
 			LastHistoryID:  s.workerHistoryID(ctx, userID, acc, preload),
 			FullMailAccess: models.FullMailAccess(creds.GrantedScopes),
 		}
+		// Only the backend holds a workspace client's secret, so it refreshes that grant.
+		if creds.OAuthAppID != nil {
+			out.Brokered = true
+			// Gmail watches only a topic in the client's own Google project.
+			if out.Push != nil {
+				out.Push.GmailTopic = ""
+			}
+			return out, nil
+		}
+		out.Google.Token = oauthToken(creds)
 	case models.InboxProviderOutlook:
 		creds, cerr := repo.GetOAuthCredentials(ctx, acc.ID)
 		if cerr != nil {
 			return nil, cerr
+		}
+		if creds.OAuthAppID != nil {
+			out.Brokered = true
+			return out, nil
 		}
 		out.Graph.Token = oauthToken(creds)
 	case models.InboxProviderSMTPIMAP:

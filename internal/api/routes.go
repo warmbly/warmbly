@@ -139,6 +139,9 @@ func Run(
 	// A linked instance's brokered sign-in opens here first: the page names who is asking and binds the browser.
 	r.GET("/addresses/connect", m.PublicIPRateLimitMiddleware(), h.PoolLinkOAuthConsentPage)
 	r.POST("/addresses/connect/continue", m.PublicIPRateLimitMiddleware(), h.PoolLinkOAuthContinue)
+	// A Partnership sign-in link opens here; the page names the workspace asking and binds the browser.
+	r.GET("/addresses/link/:token", m.PublicIPRateLimitMiddleware(), h.MailboxConnectLinkPage)
+	r.POST("/addresses/link/:token/continue", m.PublicIPRateLimitMiddleware(), h.MailboxConnectLinkContinue)
 
 	// Public OAuth callback bouncer for third-party integrations (HubSpot,
 	// Slack, Google, Pipedrive, …). The provider redirects here; the page
@@ -584,6 +587,18 @@ func Run(
 				emails.POST("/bulk/delete", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), h.BulkDeleteEmails)
 				emails.POST("/bulk/warmup", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), h.BulkWarmupEmails)
 				emails.POST("/bulk/status", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), h.BulkStatusEmails)
+				// Partnership tools: connecting mailboxes with their credentials, sign-in links and the workspace's own OAuth apps.
+				emails.POST("/connect/smtp-imap", m.RequireOrganization(), m.RequireAccess(models.PermManageEmails, models.APIPermConnectEmails), h.ConnectMailboxSMTP)
+				emails.POST("/connect/smtp-imap/bulk", m.RequireOrganization(), m.RequireAccess(models.PermManageEmails, models.APIPermConnectEmails), h.ConnectMailboxSMTPBulk)
+				emails.POST("/connect/oauth", m.RequireOrganization(), m.RequireAccess(models.PermManageEmails, models.APIPermConnectEmails), h.ConnectMailboxGrant)
+				emails.POST("/connect/oauth/bulk", m.RequireOrganization(), m.RequireAccess(models.PermManageEmails, models.APIPermConnectEmails), h.ConnectMailboxGrantBulk)
+				emails.POST("/connect/links", m.RequireOrganization(), m.RequireAccess(models.PermManageEmails, models.APIPermConnectEmails), h.CreateMailboxConnectLink)
+				emails.GET("/connect/links", m.RequireOrganization(), m.RequireAccess(models.PermManageEmails, models.APIPermConnectEmails), h.ListMailboxConnectLinks)
+				emails.GET("/connect/links/:id", m.RequireOrganization(), m.RequireAccess(models.PermManageEmails, models.APIPermConnectEmails), h.GetMailboxConnectLink)
+				emails.DELETE("/connect/links/:id", m.RequireOrganization(), m.RequireAccess(models.PermManageEmails, models.APIPermConnectEmails), h.RevokeMailboxConnectLink)
+				emails.GET("/oauth-apps", m.RequireOrganization(), m.RequireAccess(models.PermManageEmails, models.APIPermConnectEmails), h.ListMailboxOAuthApps)
+				emails.PUT("/oauth-apps/:provider", m.RequireOrganization(), m.RequireAccess(models.PermManageEmails, models.APIPermConnectEmails), h.PutMailboxOAuthApp)
+				emails.DELETE("/oauth-apps/:provider", m.RequireOrganization(), m.RequireAccess(models.PermManageEmails, models.APIPermConnectEmails), h.DeleteMailboxOAuthApp)
 				// How many mailboxes the workspace holds and may hold, and why.
 				emails.GET("/allowance", m.RequireOrganization(), m.RequireAccess(models.PermManageEmails, models.APIPermReadEmails), h.GetMailboxAllowance)
 				emails.GET("/:id/track", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), middleware.RequireEmailAccountParam("id"), h.GetEmailTrackingDomain)
@@ -677,15 +692,15 @@ func Run(
 				mailboxGrants.GET("/migration", h.GetSigninMigration)
 				// A grant reaches a whole domain's mail, so recording, removing and
 				// using one needs a recent sign-in.
-				mailboxGrants.POST("/google/start", h.StartGoogleMailboxGrant)
+				mailboxGrants.POST("/google/start", h.RefuseOnPartnership, h.StartGoogleMailboxGrant)
 				mailboxGrants.POST("/google/finish", middleware.RequireFreshAuth(), h.FinishGoogleMailboxGrant)
-				mailboxGrants.POST("/microsoft/start", h.StartMicrosoftMailboxGrant)
+				mailboxGrants.POST("/microsoft/start", h.RefuseOnPartnership, h.StartMicrosoftMailboxGrant)
 				mailboxGrants.POST("/microsoft/finish", middleware.RequireFreshAuth(), h.FinishMicrosoftMailboxGrant)
 				mailboxGrants.GET("/:id", h.GetMailboxGrant)
 				mailboxGrants.POST("/:id/check", h.CheckMailboxGrant)
 				mailboxGrants.DELETE("/:id", middleware.RequireFreshAuth(), h.DeleteMailboxGrant)
 				mailboxGrants.GET("/:id/users", h.ListMailboxGrantUsers)
-				mailboxGrants.POST("/:id/connect", middleware.RequireFreshAuth(), h.ConnectMailboxGrantUsers)
+				mailboxGrants.POST("/:id/connect", middleware.RequireFreshAuth(), h.RefuseOnPartnership, h.ConnectMailboxGrantUsers)
 			}
 
 			// Sending domains: tracking host per domain and the bare-domain redirect.
@@ -1793,11 +1808,6 @@ func Run(
 				poolLinkInstance.GET("/mailboxes/:remoteId/token", h.PoolLinkAccessToken)
 				poolLinkInstance.GET("/mailboxes/:remoteId/warmup-tokens/:token", h.PoolLinkVerifyWarmupToken)
 				poolLinkInstance.POST("/mailboxes/:remoteId/warmup-deliveries", h.PoolLinkVerifyWarmupDelivery)
-				// Mailboxes the instance executes: the command queue and its warmup reports.
-				poolLinkInstance.POST("/commands/lease", h.PoolLinkLeaseCommands)
-				poolLinkInstance.POST("/commands/:id/result", h.PoolLinkCommandResult)
-				poolLinkInstance.POST("/mailboxes/:remoteId/warmup-arrivals", h.PoolLinkWarmupArrival)
-				poolLinkInstance.POST("/mailboxes/:remoteId/warmup-observations", h.PoolLinkWarmupObservation)
 				poolLinkInstance.GET("/workspace-mailboxes", h.PoolLinkWorkspaceMailboxes)
 				poolLinkInstance.POST("/mailboxes/adopt", h.PoolLinkAdopt)
 				// The placement seed panel lent to linked instances.
@@ -1950,10 +1960,6 @@ func Run(
 		adminRoutes.GET("/organizations/:id/plan-offers", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminListOrgPlanOffers)
 		adminRoutes.PUT("/organizations/:id/plan-offers/:planId", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminPutOrgPlanOffer)
 		adminRoutes.DELETE("/organizations/:id/plan-offers/:planId", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminDeleteOrgPlanOffer)
-		adminRoutes.GET("/organizations/:id/self-execution", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminGetOrgSelfExecution)
-		adminRoutes.PUT("/organizations/:id/self-execution", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminPutOrgSelfExecution)
-		adminRoutes.DELETE("/organizations/:id/self-execution", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminDeleteOrgSelfExecution)
-		adminRoutes.GET("/organizations/:id/self-execution/mailboxes", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminListOrgSelfExecutedMailboxes)
 
 		// Promo codes. The customer-facing half (validate + redeem at
 		// checkout) has always existed; this is the operator half that

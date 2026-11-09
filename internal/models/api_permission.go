@@ -51,6 +51,9 @@ const (
 	// AI
 	APIPermAIAgent    // Run the AI assistant / agent (dashboard agent + MCP)
 	APIPermAIResearch // Run AI contact research
+
+	// Connect mailboxes with their credentials; Partnership workspaces only.
+	APIPermConnectEmails
 )
 
 // AllAPIPermissionsMask is the OR of every defined permission bit.
@@ -68,7 +71,8 @@ const AllAPIPermissionsMask uint64 = APIPermReadEmails | APIPermReadCampaigns |
 	APIPermReadCRM | APIPermWriteCRM |
 	APIPermReadAuditLogs |
 	APIPermIntegrations | APIPermWarmupRouting |
-	APIPermAIAgent | APIPermAIResearch
+	APIPermAIAgent | APIPermAIResearch |
+	APIPermConnectEmails
 
 // Preset permission sets surfaced via GET /api-keys/permissions so a
 // caller can grant a sane default without picking bits by hand.
@@ -120,6 +124,7 @@ var AllAPIPermissions = []APIPermission{
 	{"WARMUP_ROUTING", APIPermWarmupRouting, "Manage warmup routing rules", "special"},
 	{"AI_AGENT", APIPermAIAgent, "Run the AI assistant and MCP tools", "special"},
 	{"AI_RESEARCH", APIPermAIResearch, "Run AI contact research", "special"},
+	{"CONNECT_EMAILS", APIPermConnectEmails, "Connect mailboxes and create sign-in links (Partnership plan)", "special"},
 }
 
 // HasAPIPermission reports whether the bitmask grants every bit in `required`.
@@ -157,6 +162,7 @@ var apiPermissionRoleNeeds = map[uint64]OrganizationPermission{
 	APIPermIntegrations:      PermUseIntegrations,
 	APIPermWarmupRouting:     PermManageSettings,
 	APIPermAIAgent:           PermUseAI,
+	APIPermConnectEmails:     PermManageEmails,
 	APIPermAIResearch:        PermViewContacts | PermUseAI,
 }
 
@@ -182,5 +188,5 @@ func APIPermissionsFor(m *OrganizationMember) uint64 {
 	return APIPermissionsForMember(m.Permissions, m.IsOwner())
 }
 
-// AppGrantableScopes is every scope a third-party app may be granted; key management stays with people.
-const AppGrantableScopes = AllAPIPermissionsMask &^ APIPermAPIKeys
+// AppGrantableScopes is every scope a third-party app may be granted; key management and mailbox credentials stay with people.
+const AppGrantableScopes = AllAPIPermissionsMask &^ (APIPermAPIKeys | APIPermConnectEmails)

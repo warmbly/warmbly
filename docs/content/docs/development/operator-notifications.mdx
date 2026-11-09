@@ -69,7 +69,6 @@ A chat webhook URL is a bearer credential: anyone holding it can post to that ch
 | Warmup dispatch is overdue | Active, sending-enabled mailboxes have pending warmup tasks at least an hour past their intended schedule; this is not a provider-error diagnosis |
 | Warmup ban appealed | A blocked mailbox asks to rejoin the warmup pool |
 | Workspace risk escalated | Risk scoring moves a workspace into a different posture |
-| Linked mailbox placement reports untrusted | A mailbox a linked instance runs reports spam placement far from what Cloud-run recipients saw for the same senders, so its placement reports stop counting toward other mailboxes until they agree again |
 | Admin signed in | An account holding platform admin access starts a new session, in the admin panel or the dashboard. The alert names the account, sign-in method, whether a second factor was presented, the device (flagged when it is new), the location and the IP address. Sent only to channels that tick it |
 | Admin access changed | Admin permissions are granted to, changed for, or revoked from an account in the admin panel, with who made the change. Saving permissions unchanged sends nothing. A change made with `warmblyctl` on the server is not reported |
 

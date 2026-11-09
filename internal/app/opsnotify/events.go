@@ -22,7 +22,6 @@ const (
 	EventWarmupDispatchOverdue   = "warmup.dispatch_overdue"
 	EventWarmupDispatchAfterStop = "warmup.dispatch_after_stop"
 	EventOrgRisk                 = "org_risk.escalated"
-	EventWarmupReporterUntrusted = "warmup.reporter_untrusted"
 	EventSubscriptionIssue       = "subscription.payment_failed"
 	EventAdminSignIn             = "admin.signed_in"
 	EventAdminAccess             = "admin.access_changed"
@@ -121,12 +120,6 @@ var Catalog = []EventDef{
 		Key: EventOrgRisk, Group: "Abuse",
 		Label:       "Workspace risk escalated",
 		Description: "Risk scoring moved a workspace into a stricter posture.",
-		Severity:    SeverityWarning, SelfHostRelevant: true,
-	},
-	{
-		Key: EventWarmupReporterUntrusted, Group: "Abuse",
-		Label:       "Linked mailbox placement reports untrusted",
-		Description: "A mailbox a linked instance runs reports spam placement far from what other recipients saw for the same senders, so its reports no longer count toward other mailboxes' placement.",
 		Severity:    SeverityWarning, SelfHostRelevant: true,
 	},
 }

@@ -166,6 +166,10 @@ const (
 	AuditEntityPlacementTest    AuditEntityType = "placement_test"
 	AuditEntityPlacementMonitor AuditEntityType = "placement_monitor"
 	AuditEntityPlacementBatch   AuditEntityType = "placement_batch"
+
+	// Partnership tools: a workspace's own OAuth app saved or removed, and a sign-in link made or revoked.
+	AuditEntityMailboxOAuthApp    AuditEntityType = "mailbox_oauth_app"
+	AuditEntityMailboxConnectLink AuditEntityType = "mailbox_connect_link"
 )
 
 // AuditActor is the minimal identity of the member who performed an action,

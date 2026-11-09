@@ -25,14 +25,13 @@ func consumerAddressSQL(alias string) string {
 }
 
 // majorRecipientSQL holds for a spam report filed at Google, Microsoft or
-// Yahoo by a trusted reporter, the only placements held against a sender.
+// Yahoo, the only placements held against a sender.
 var majorRecipientSQL = fmt.Sprintf(`EXISTS (
 	SELECT 1 FROM email_accounts rec
-	WHERE rec.id = sr.reporter_account_id AND %s <> 'other' AND %s)`, recipientGroupSQL("rec"), trustedReporterSQL("rec.id"))
+	WHERE rec.id = sr.reporter_account_id AND %s <> 'other')`, recipientGroupSQL("rec"))
 
 // placementEvidenceSQL selects models.WarmupPlacementEvidence for one sender
-// since a time, read through its verified receipts at recipients whose
-// placement reports are trusted; both are SQL expressions.
+// since a time, read through its verified receipts; both are SQL expressions.
 func placementEvidenceSQL(sender, since string) string {
 	return fmt.Sprintf(`
 		SELECT
@@ -48,7 +47,6 @@ func placementEvidenceSQL(sender, since string) string {
 				ON sr.reporter_account_id = wr.email_account_id AND sr.message_id = wr.message_id
 				AND sr.report_type = 'spam_placement'
 			WHERE wr.sender_account_id = %[1]s AND wr.created_at >= %[2]s AND wr.message_id <> ''
-			  AND %[4]s
 			  AND (wr.first_landing IN ('inbox','tabs','spam') OR wr.landed_spam OR sr.id IS NOT NULL)
-		) d`, sender, since, recipientGroupSQL("rec"), trustedReporterSQL("wr.email_account_id"))
+		) d`, sender, since, recipientGroupSQL("rec"))
 }

@@ -111,10 +111,12 @@ export default function CloudWarmupCard({ mailboxId, email, provider, status }: 
                     </span>
                     <div className="min-w-0 flex-1">
                         <div className="text-[12.5px] font-medium text-slate-900">
-                            {warmup.activity === "connecting" ? "Cloud enrollment pending" : warmup.activity === "removing" ? "Cloud removal pending" : unknown ? "Cloud warmup status unavailable" : warmup.activity === "off" ? "Diagnostics off in Warmbly Cloud" : warmup.activity === "inactive" ? row.executor === "instance" && status !== "active" ? "Mailbox off on this server" : "Cloud mailbox off" : warmup.activity === "ungranted" ? "Waiting for permission to run on this server" : warmup.activity === "unconfirmed" ? "Permission to run on this server unconfirmed" : paused ? "Diagnostic sending paused in Cloud" : row.managed ? "Signed in through Warmbly Cloud" : "Automated diagnostics in Warmbly Cloud"}
+                            {warmup.activity === "needs_credential" ? "Paused until Warmbly Cloud holds its credential" : warmup.activity === "connecting" ? "Cloud enrollment pending" : warmup.activity === "removing" ? "Cloud removal pending" : unknown ? "Cloud warmup status unavailable" : warmup.activity === "off" ? "Diagnostics off in Warmbly Cloud" : warmup.activity === "inactive" ? "Cloud mailbox off" : paused ? "Diagnostic sending paused in Cloud" : row.managed ? "Signed in through Warmbly Cloud" : "Automated diagnostics in Warmbly Cloud"}
                         </div>
                         <div className="text-[11px] text-slate-500 truncate">
-                            {!unknown && cloud
+                            {warmup.activity === "needs_credential"
+                                ? supported ? "Its credential stayed on this server. Hand it to Cloud from Settings > Warmbly Cloud." : "Its credential stayed on this server. Remove it and add it again through Warmbly Cloud sign-in."
+                                : !unknown && cloud
                                 ? `${cloud.sent_today} of ${cloud.warmup?.target_volume ?? cloud.settings.base} today · ${cloud.sent_7d} in 7 days${cloud.spam_placed_7d ? ` · ${cloud.spam_placed_7d} landed in spam` : ""}${health ? ` · ${health}` : ""}`
                                 : "Waiting for the cloud to report"}
                         </div>

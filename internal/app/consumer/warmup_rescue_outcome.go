@@ -11,11 +11,6 @@ import (
 
 // HandleWarmupRescued records what a spam rescue came to on the sender's placement history.
 func (s *JobsService) HandleWarmupRescued(ctx context.Context, event *models.JobEventWarmupRescued) error {
-	if event != nil && s.CloudExec != nil {
-		if err := s.CloudExec.RescueResolved(ctx, event.EmailID, event.InternalID, event.Outcome); err != nil {
-			return fmt.Errorf("answer cloud rescue command: %w", err)
-		}
-	}
 	if event == nil || s.WarmupPlacementRepo == nil {
 		return nil
 	}

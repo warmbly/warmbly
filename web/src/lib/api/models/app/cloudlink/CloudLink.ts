@@ -49,19 +49,11 @@ export interface PoolLinkRedirectOffer {
     used: number;
 }
 
-/** Which side runs an enrolled mailbox's warmup: Cloud with a copy of its credential, or this instance. */
+/** Who runs an enrolled mailbox's warmup: Cloud, or "instance" on a legacy row whose credential Cloud never received. */
 export type CloudLinkExecutor = "cloud" | "instance";
-
-/** Whether this instance may keep a mailbox's only credential; absent from a Cloud too old to offer it. */
-export interface PoolLinkSelfExecution {
-    protocol: number;
-    granted: boolean;
-    expires_at?: Date | null;
-}
 
 export interface PoolLinkInstanceInfo {
 	 smtp_association_protocol?: number;
-    self_execution?: PoolLinkSelfExecution | null;
     instance: PoolLinkInstance;
     organization: PoolLinkOrgInfo;
     plan: PoolLinkPlan;
@@ -189,10 +181,6 @@ export interface CloudLinkMailboxRow {
     settings_observed_at?: Date | null;
     /** Absent from older servers, which only run the cloud executor. */
     executor?: CloudLinkExecutor;
-    /** Cloud commands this instance has not answered yet. */
-    commands_pending?: number;
-    /** Commands answered failed, refused or expired in the last day. */
-    commands_failed?: number;
 }
 
 /** A Google or Microsoft consent started through Warmbly Cloud. */

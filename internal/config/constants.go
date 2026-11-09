@@ -616,30 +616,13 @@ const (
 
 	// Pool link: mailboxes a self-hosted instance may enroll in the hosted
 	// warmup pool without a paid pool plan, and the handshake lifetimes.
-	PoolLinkCodeTTLMinutes      = 15
-	PoolLinkPollIntervalSeconds = 3
-	PoolLinkPlanID              = "00000000-0000-0000-0000-000000000002"
-	PoolLinkPlanPriceUSD        = 15
-	PoolLinkRedirectLimit       = 200 // root redirects Warmbly Cloud serves for one linked instance
-	// Instance-executed mailboxes: a link that leased within the liveness window
-	// is ready; a lease lasts LeaseSeconds; a send must start within its TTL
-	// (under the 10-minute unstarted-dispatch recovery) and an action within its.
-	PoolLinkExecutorLivenessMinutes = 5
-	PoolLinkCommandLeaseSeconds     = 300
-	PoolLinkSendCommandTTLMinutes   = 8
-	PoolLinkActionCommandTTLHours   = 6
-	PoolLinkLeaseLimitMax           = 100
-	PoolLinkArrivalClockSkewMinutes = 5
-	// Reporter trust: a self-executed mailbox's first-landing spam rate is
-	// compared, over the window, with what Cloud-executed recipients of the same
-	// provider family saw from the same senders.
-	PoolLinkTrustWindowDays          = 14
-	PoolLinkTrustMinReported         = 30
-	PoolLinkTrustMinObserved         = 50
-	PoolLinkTrustProbationDivergence = 0.15
-	PoolLinkTrustUntrustedDivergence = 0.30
-	WarmupPoolFallbackMinAgeDays     = 3  // a free mailbox must have been a pool member this long before premium may borrow it, or write back to one
-	WarmupPoolReturnVisitDays        = 14 // a proven free mailbox may write back to a paying mailbox that wrote to it this recently
+	PoolLinkCodeTTLMinutes       = 15
+	PoolLinkPollIntervalSeconds  = 3
+	PoolLinkPlanID               = "00000000-0000-0000-0000-000000000002"
+	PoolLinkPlanPriceUSD         = 15
+	PoolLinkRedirectLimit        = 200 // root redirects Warmbly Cloud serves for one linked instance
+	WarmupPoolFallbackMinAgeDays = 3   // a free mailbox must have been a pool member this long before premium may borrow it, or write back to one
+	WarmupPoolReturnVisitDays    = 14  // a proven free mailbox may write back to a paying mailbox that wrote to it this recently
 	// New threads one inbox may receive from the pool in a day (replies are not counted): WarmupInboundDailyMultiple
 	// times its own daily sends, never below the floor (a recipient-only mailbox
 	// sends nothing) and never above the ceiling. A recipient at its cap is left

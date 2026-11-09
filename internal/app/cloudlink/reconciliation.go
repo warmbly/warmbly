@@ -118,6 +118,10 @@ func (s *service) reconcileEnrollment(ctx context.Context, l *models.CloudLink, 
 		}
 		return s.removeManaged(ctx, acc.OrganizationID.String(), &m)
 	case "pending_enroll":
+		if m.Executor.OrCloud() == models.PoolLinkExecutorInstance {
+			// Only the owner's handover of the credential moves a legacy instance-run mailbox on.
+			return nil
+		}
 		acc, xerr := s.emails.GetByID(ctx, m.EmailAccountID)
 		if xerr != nil {
 			return xerr

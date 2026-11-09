@@ -188,13 +188,12 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 		return nil
 	}
 
-	// An instance-executed mailbox waits, rather than ending its chain, while its instance is offline or ungranted.
-	if executed, ready, err := s.selfExecutionReady(ctx, account); err != nil {
+	// A legacy mailbox whose credential stayed on its instance ends its chain; handing the credential to Cloud restarts it.
+	if executed, err := s.instanceExecuted(ctx, account.ID); err != nil {
 		return errx.InternalError()
-	} else if executed && !ready {
-		if err := lineage.RescheduleWarmupTask(ctx, taskID, time.Now().Add(5*time.Minute)); err != nil {
-			return errx.InternalError()
-		}
+	} else if executed {
+		_ = s.taskRepo.UpdateTaskStatus(ctx, taskID, "cancelled")
+		executionStatus = "skipped_credential_required"
 		return nil
 	}
 
@@ -443,19 +442,10 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 		return errx.InternalError()
 	}
 	dispatch, ok := s.taskRepo.(repository.WarmupDispatchRepository)
-	if !ok {
+	if !ok || account.WorkerID == nil {
 		return errx.InternalError()
 	}
-	dispatchWorker := uuid.Nil
-	if executed, _, err := s.selfExecutionReady(ctx, account); err != nil {
-		return errx.InternalError()
-	} else if !executed {
-		if account.WorkerID == nil {
-			return errx.InternalError()
-		}
-		dispatchWorker = *account.WorkerID
-	}
-	nonce, err := dispatch.AuthorizeWarmupDispatch(ctx, taskID, account.ID, dispatchWorker)
+	nonce, err := dispatch.AuthorizeWarmupDispatch(ctx, taskID, account.ID, *account.WorkerID)
 	if err != nil {
 		return errx.InternalError()
 	}
@@ -1210,14 +1200,6 @@ func (s *tasksService) replyPartner(ctx context.Context, target uuid.UUID, accou
 	partner, xerr := s.emailRepo.GetByID(ctx, target)
 	if xerr != nil || partner == nil {
 		return nil
-	}
-	// Two instance-executed mailboxes never pair, in either direction.
-	if executed, _, err := s.selfExecutionReady(ctx, account); err != nil {
-		return nil
-	} else if executed {
-		if partnerExecuted, _, err := s.selfExecutionReady(ctx, partner); err != nil || partnerExecuted {
-			return nil
-		}
 	}
 	// An exclusion is about who this mailbox may mail, so it holds for a reply
 	// too; the thread exists because the other side started it (#501).

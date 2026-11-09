@@ -30,6 +30,8 @@ type CloudLinkRepository interface {
 	WithReconciliationLock(ctx context.Context, fn func() error) error
 	SetDisconnectPending(ctx context.Context, instanceID uuid.UUID) error
 	BeginEnrollment(ctx context.Context, accountID, remoteID, instanceID uuid.UUID) error
+	// SetExecutor records who runs an enrolled mailbox's warmup.
+	SetExecutor(ctx context.Context, accountID uuid.UUID, executor models.PoolLinkExecutor) error
 	BeginRemoval(ctx context.Context, accountID uuid.UUID) error
 	InvalidateStanding(ctx context.Context, accountID uuid.UUID) error
 
@@ -384,5 +386,13 @@ func storeCloudHold(ctx context.Context, tx pgx.Tx, accountID uuid.UUID, h *mode
 	 OR (warmup_reputation_ledger.cloud_health_state = EXCLUDED.cloud_health_state
 	 AND warmup_reputation_ledger.cloud_blocked_until IS NOT NULL
 	 AND (EXCLUDED.cloud_blocked_until IS NULL OR EXCLUDED.cloud_blocked_until > warmup_reputation_ledger.cloud_blocked_until))`, accountID, h.State, h.BlockedUntil, h.Reason, h.Score)
+	return err
+}
+
+func (r *cloudLinkRepository) SetExecutor(ctx context.Context, accountID uuid.UUID, executor models.PoolLinkExecutor) error {
+	if !executor.Valid() {
+		return errors.New("unknown executor")
+	}
+	_, err := r.db.Exec(ctx, `UPDATE cloud_link_mailboxes SET executor = $2 WHERE email_account_id = $1`, accountID, string(executor.OrCloud()))
 	return err
 }

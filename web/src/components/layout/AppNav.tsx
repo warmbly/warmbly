@@ -92,6 +92,8 @@ interface NavItem {
     badgeStoreKey?: "unseenCount";
     /** Feature gate key — when set, sidebar dims the row and shows a plan badge. */
     requires?: "inbox" | "advanced" | "subscription";
+    /** Open on the Partnership plan although it sends nothing itself. */
+    partnerOpen?: boolean;
     /** Role gate — when set, sidebar hides the row entirely for non-matching roles. */
     rolesAllowed?: "manage";
     /** Open to a member restricted to selected resources; every other row is locked for them. */
@@ -169,7 +171,7 @@ const sections: NavSection[] = [
             { title: "Forms", requires: "subscription", url: "/app/forms", icon: ClipboardListIcon, permission: "VIEW_CONTACTS", permissionLabel: "View contacts" },
             { title: "Analytics", scoped: true, requires: "subscription", url: "/app/analytics", icon: BarChart3Icon, indicator: "analytics", permission: "VIEW_ANALYTICS", permissionLabel: "View analytics" },
             { title: "Deliverability", requires: "subscription", url: "/app/deliverability", icon: ShieldCheckIcon, advisorSurface: "deliverability", permission: "VIEW_ANALYTICS", permissionLabel: "View analytics" },
-            { title: "Placement tests", requires: "subscription", url: "/app/placement", icon: MailCheckIcon, permission: "VIEW_ANALYTICS", permissionLabel: "View analytics" },
+            { title: "Placement tests", requires: "subscription", partnerOpen: true, url: "/app/placement", icon: MailCheckIcon, permission: "VIEW_ANALYTICS", permissionLabel: "View analytics" },
         ],
     },
     {
@@ -189,7 +191,7 @@ const sections: NavSection[] = [
             { title: "Templates", requires: "subscription", url: "/app/templates", icon: FileTextIcon, indicator: "templates" },
             { title: "Integrations", requires: "subscription", url: "/app/integrations", icon: CableIcon, indicator: "integrations", permission: "USE_INTEGRATIONS", permissionLabel: "Use integrations" },
             { title: "Automations", requires: "subscription", url: "/app/automations", icon: ZapIcon, permission: "USE_INTEGRATIONS", permissionLabel: "Use integrations" },
-            { title: "API Keys", requires: "subscription", url: "/app/api-keys", icon: KeyIcon, indicator: "apikeys", permission: "MANAGE_API_KEYS", permissionLabel: "Manage API keys" },
+            { title: "API Keys", requires: "subscription", partnerOpen: true, url: "/app/api-keys", icon: KeyIcon, indicator: "apikeys", permission: "MANAGE_API_KEYS", permissionLabel: "Manage API keys" },
             { title: "Audit log", requires: "subscription", url: "/app/audit", icon: ListChecksIcon, rolesAllowed: "manage" },
         ],
     },
@@ -311,7 +313,7 @@ function NavRow({ item, collapsed = false }: { item: NavItem; collapsed?: boolea
     const locked =
         (item.requires === "inbox" && !access.hasInbox) ||
         (item.requires === "advanced" && !access.hasAdvanced) ||
-        (item.requires === "subscription" && access.locked);
+        (item.requires === "subscription" && access.locked && !(item.partnerOpen && access.partnership));
 
     const minPlan = locked && item.requires ? REQUIRES_TO_MIN_PLAN[item.requires] : null;
     const planBadge = minPlan
@@ -787,7 +789,7 @@ function Section({
         ? permitted.flatMap((item) =>
             !isNavItemActive(pathname, item) &&
             item.advisorSurface &&
-            !(item.requires === "subscription" && access.locked) &&
+            !(item.requires === "subscription" && access.locked && !(item.partnerOpen && access.partnership)) &&
             (!item.permission || orgHasPermission(org, item.permission))
                 ? [item.advisorSurface]
                 : [],

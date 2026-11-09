@@ -19,14 +19,6 @@ type PlanOfferRepository interface {
 	DeletePlanOffer(ctx context.Context, orgID, planID uuid.UUID) (bool, error)
 }
 
-// SelfExecutionGrantRepository stores the operator's permission for credential-free Cloud warmup.
-type SelfExecutionGrantRepository interface {
-	// GetSelfExecutionGrant returns nil, nil when the workspace holds none (expired grants are returned; check Active).
-	GetSelfExecutionGrant(ctx context.Context, orgID uuid.UUID) (*models.SelfExecutionGrant, error)
-	UpsertSelfExecutionGrant(ctx context.Context, grant *models.SelfExecutionGrant) (*models.SelfExecutionGrant, error)
-	DeleteSelfExecutionGrant(ctx context.Context, orgID uuid.UUID) (bool, error)
-}
-
 type planOfferRepository struct {
 	db *pgxpool.Pool
 }
@@ -34,15 +26,6 @@ type planOfferRepository struct {
 // NewPlanOfferRepository returns the Postgres plan offer store.
 func NewPlanOfferRepository(db *pgxpool.Pool) PlanOfferRepository {
 	return &planOfferRepository{db: db}
-}
-
-type selfExecutionGrantRepository struct {
-	db *pgxpool.Pool
-}
-
-// NewSelfExecutionGrantRepository returns the Postgres self-execution grant store.
-func NewSelfExecutionGrantRepository(db *pgxpool.Pool) SelfExecutionGrantRepository {
-	return &selfExecutionGrantRepository{db: db}
 }
 
 const planOfferColumns = `organization_id, plan_id, granted_by, reason, granted_at, expires_at`
@@ -97,46 +80,6 @@ func (r *planOfferRepository) UpsertPlanOffer(ctx context.Context, offer *models
 
 func (r *planOfferRepository) DeletePlanOffer(ctx context.Context, orgID, planID uuid.UUID) (bool, error) {
 	tag, err := r.db.Exec(ctx, `DELETE FROM organization_plan_offers WHERE organization_id = $1 AND plan_id = $2`, orgID, planID)
-	if err != nil {
-		return false, err
-	}
-	return tag.RowsAffected() > 0, nil
-}
-
-const selfExecutionGrantColumns = `organization_id, granted_by, reason, granted_at, expires_at`
-
-func scanSelfExecutionGrant(row pgx.Row) (*models.SelfExecutionGrant, error) {
-	var g models.SelfExecutionGrant
-	if err := row.Scan(&g.OrganizationID, &g.GrantedBy, &g.Reason, &g.GrantedAt, &g.ExpiresAt); err != nil {
-		return nil, err
-	}
-	return &g, nil
-}
-
-func (r *selfExecutionGrantRepository) GetSelfExecutionGrant(ctx context.Context, orgID uuid.UUID) (*models.SelfExecutionGrant, error) {
-	g, err := scanSelfExecutionGrant(r.db.QueryRow(ctx, `SELECT `+selfExecutionGrantColumns+`
-		FROM pool_link_self_execution_grants WHERE organization_id = $1`, orgID))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	return g, err
-}
-
-func (r *selfExecutionGrantRepository) UpsertSelfExecutionGrant(ctx context.Context, grant *models.SelfExecutionGrant) (*models.SelfExecutionGrant, error) {
-	return scanSelfExecutionGrant(r.db.QueryRow(ctx, `
-		INSERT INTO pool_link_self_execution_grants (organization_id, granted_by, reason, granted_at, expires_at)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (organization_id) DO UPDATE SET
-			granted_by = EXCLUDED.granted_by,
-			reason = EXCLUDED.reason,
-			granted_at = EXCLUDED.granted_at,
-			expires_at = EXCLUDED.expires_at
-		RETURNING `+selfExecutionGrantColumns,
-		grant.OrganizationID, grant.GrantedBy, grant.Reason, grantTime(grant.GrantedAt), grant.ExpiresAt))
-}
-
-func (r *selfExecutionGrantRepository) DeleteSelfExecutionGrant(ctx context.Context, orgID uuid.UUID) (bool, error) {
-	tag, err := r.db.Exec(ctx, `DELETE FROM pool_link_self_execution_grants WHERE organization_id = $1`, orgID)
 	if err != nil {
 		return false, err
 	}

@@ -29,18 +29,6 @@ type CloudLinkVerifier interface {
 	IsCloudWarmupThreadReply(ctx context.Context, accountID uuid.UUID, messageID string, inReplyTo []string) (bool, error)
 }
 
-// CloudExecution runs Cloud's warmup for mailboxes this instance keeps the only credential to.
-type CloudExecution interface {
-	OwnSentCopy(ctx context.Context, msg *models.EmailMessageStoreData) (bool, error)
-	ReportArrival(ctx context.Context, userID uuid.UUID, msg *models.EmailMessageStoreData, token, sender string) (bool, error)
-	ObserveRemoval(ctx context.Context, accountID, internalID uuid.UUID) error
-	ObserveFlags(ctx context.Context, accountID, internalID uuid.UUID, flags []string, added bool) error
-	ObserveFolder(ctx context.Context, accountID, internalID uuid.UUID, folder string) error
-	SendResolved(ctx context.Context, taskID uuid.UUID, result models.SendEmailResult) error
-	RescueResolved(ctx context.Context, accountID, internalID uuid.UUID, outcome string) error
-	RemovalChecked(ctx context.Context, accountID uuid.UUID, rfcMessageID, outcome string) error
-}
-
 type JobsService struct {
 	CampaignIsolationEnabled bool
 	// DBConns is the database pool the event handlers share; it sizes how many mailboxes run at once.
@@ -63,9 +51,7 @@ type JobsService struct {
 	// PoolLinkRepo marks warmup-only mailboxes of linked instances; nil when unused.
 	PoolLinkRepo repository.PoolLinkRepository
 	// CloudLink (self-hosted) verifies cloud warmup mail in mailboxes the cloud warms; nil when unused.
-	CloudLink CloudLinkVerifier
-	// CloudExec reports and executes for instance-executed Cloud mailboxes; nil when unused.
-	CloudExec            CloudExecution
+	CloudLink            CloudLinkVerifier
 	WarmupContentRepo    repository.WarmupContentRepository
 	WarmupEngagementRepo repository.WarmupEngagementRepository
 	WarmupRecoveryRepo   repository.WarmupRecoveryRepository

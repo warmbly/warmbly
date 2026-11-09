@@ -140,8 +140,8 @@ func (s *emailService) OAuthAccessToken(ctx context.Context, accountID uuid.UUID
 	if current.AccessToken != "" && time.Until(current.Expiry) > 2*time.Minute {
 		return current, nil
 	}
-	// The client config is only needed to refresh.
-	cfg, xerr := s.oauthConfigFor(models.InboxProvider(acc.Provider))
+	// Only the client that issued the grant can refresh it.
+	cfg, xerr := s.grantConfig(ctx, creds.OAuthAppID, models.InboxProvider(acc.Provider))
 	if xerr != nil {
 		return nil, xerr
 	}

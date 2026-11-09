@@ -379,7 +379,7 @@ func (r *poolLinkRepository) ListStanding(ctx context.Context, instanceID uuid.U
 	query := `
 		SELECT m.remote_id, COALESCE(s.health_state, 'healthy'), s.pool_type, s.last_health_reason,
 		       COALESCE(s.last_health_score, 0), s.blocked_until, s.last_health_evaluated_at,
-		       m.executor, ` + selfExecPausedSQL("m") + `
+		       m.executor, CASE WHEN m.executor = 'instance' THEN '` + models.PoolLinkPausedCredentialRequired + `' ELSE '' END
 		  FROM pool_link_mailboxes m
 		  LEFT JOIN LATERAL (
 		        SELECT st.* FROM (

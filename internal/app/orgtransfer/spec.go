@@ -288,6 +288,14 @@ var Tables = []Table{
 		},
 	},
 	{
+		Name: "organization_oauth_apps", Group: models.OrgDataGroupCore,
+		Scope: scopeOrg,
+		Secrets: []SecretColumn{
+			{Column: "client_secret", Domain: KeyDomainOrgDEK},
+		},
+		Note: "The workspace's own Google and Microsoft OAuth clients. They travel because the mailboxes they signed in can only be refreshed by them; the destination's callback must be registered on each client before new sign-ins work there.",
+	},
+	{
 		Name: "email_accounts_oauth", Group: models.OrgDataGroupCore,
 		Scope:              `email_account_id IN ` + orgMailboxes,
 		InvalidateOnImport: mailboxCredentialInvalidations(),
@@ -1094,6 +1102,7 @@ var Tables = []Table{
 // with the reason. Kept as data so the docs page and the coverage test both
 // read from one list instead of restating it.
 var ExcludedTables = map[string]string{
+	"mailbox_connect_links":            "Single-use sign-in links whose URL points at the source instance and whose secret only the recipient holds. The mailboxes they connected travel; open links do not, so new ones are created on the destination.",
 	"website_domains":                  "A website's proof is a TXT value bound to the source workspace, so it proves nothing for the destination. The destination shows its own TXT value on each sending-domain redirect that points at the website, and serves redirects and forms there once it is published.",
 	"warmup_conversation_mailboxes":    "Instance-local content reuse reservations against the shared warmup conversation library. Destination mailboxes build their own content history; full instance backups retain these reservations.",
 	"email_account_transport_recovery": "Source-instance sync and provider-confirmed-send recovery clocks cannot authorize destination recovery. Full instance database backups retain them.",
@@ -1128,15 +1137,15 @@ var ExcludedTables = map[string]string{
 	"pool_link_instances":              "Self-hosted instances linked to this workspace's pool allowance. The token hash only authenticates against this instance, and the enrolled mailboxes are mirrors of mailboxes that live elsewhere.",
 	"pool_link_mailboxes":              "Which mailbox rows are warmup-only mirrors for a linked instance. They follow pool_link_instances, which does not travel.",
 	"organization_plan_offers":         "A private plan this instance's operators let the workspace buy. It names a plan and a price on the source instance; the destination's operators decide their own offers.",
-	"pool_link_self_execution_grants":  "An operator's permission on this instance for linked instances to warm without handing over credentials. The destination's operators grant their own.",
-	"pool_link_commands":               "Warmup commands queued for a linked instance that runs a mailbox, sealed with the workspace key. They are bound to that link, which does not travel, and expire within hours.",
-	"pool_link_arrivals":               "Handles a linked instance gave for warmup mail it reported. They name provider coordinates on that instance and follow its link, which does not travel.",
-	"pool_link_reporter_trust":         "How far a linked instance's placement reports agreed with what this instance observed. The destination audits its own reporters.",
+	"pool_link_self_execution_grants":  "Retired operator grants from when linked instances could warm without handing over credentials. Nothing reads them, and they belong to this instance.",
+	"pool_link_commands":               "Retired warmup commands once queued for a linked instance, sealed with the workspace key and bound to its link, which does not travel.",
+	"pool_link_arrivals":               "Retired handles a linked instance gave for warmup mail it reported, bound to provider coordinates on that instance and to its link, which does not travel.",
+	"pool_link_reporter_trust":         "Retired placement-report audits of mailboxes a linked instance ran. They describe this instance's link, which does not travel.",
 	"cloud_link":                       "Workspace connections to Warmbly Cloud and legacy instance links: their encrypted tokens only work on this installation and do not travel.",
 	"cloud_link_mailboxes":             "Which local mailboxes Warmbly Cloud warms for this instance. The enrollment belongs to the link, which does not travel.",
-	"cloud_link_commands":              "Warmup commands Warmbly Cloud leased to this instance, sealed with the workspace key. They are bound to this instance's link and expire within minutes.",
-	"cloud_link_reports":               "Undelivered command results and observations owed to Warmbly Cloud over this instance's link, which does not travel.",
-	"cloud_link_warmup_messages":       "Handles this instance gave Warmbly Cloud for warmup mail, bound to its link and to provider coordinates on this instance.",
+	"cloud_link_commands":              "Retired warmup commands Warmbly Cloud once leased to this instance, sealed with the workspace key and bound to its link, which does not travel.",
+	"cloud_link_reports":               "Retired command results and observations once owed to Warmbly Cloud over this instance's link, which does not travel.",
+	"cloud_link_warmup_messages":       "Retired handles this instance gave Warmbly Cloud for warmup mail, bound to its link and to provider coordinates on this instance.",
 	"warmup_conversations":             "The instance's shared warmup content library, not workspace data.",
 	"copy_judgments":                   "A cache of copy judgments keyed by the hash of the words judged. The destination re-reads a step the first time its Advisor runs.",
 	"warmup_thread_messages":           "Message identifiers this instance recognised as turns of a warmup conversation, so the reply to each is recognised too. The destination syncs provider mail afresh and rebuilds it from the warmup tokens, which do travel.",

@@ -67,9 +67,9 @@ export default function ProductTour() {
     const preview = useMemo(billingPreview, []);
     const access =
         preview === "free"
-            ? { ...real, billing: true, paid: false, warmupOnly: false, locked: true, isOwner: true }
+            ? { ...real, billing: true, paid: false, warmupOnly: false, partnership: false, locked: true, isOwner: true }
             : preview === "paid"
-              ? { ...real, billing: true, paid: true, warmupOnly: false, locked: false, isOwner: true, plan: "grow" as const }
+              ? { ...real, billing: true, paid: true, warmupOnly: false, partnership: false, locked: false, isOwner: true, plan: "grow" as const }
               : real;
     const upgrade = useUpgradeDialog();
     const flow = useUpgradeFlow();

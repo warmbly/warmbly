@@ -82,6 +82,10 @@ func (s *emailService) VendorConsentURL(ctx context.Context, req models.VendorCo
 	if !config.GoogleOAuthConnect() {
 		return "", errx.ErrEmailOnboardGoogleOAuthDisabled
 	}
+	// A vendor trusts this deployment's client, which a Partnership workspace does not sign in through.
+	if xerr := s.RequireOwnOAuthApp(ctx, req.OrganizationID); xerr != nil {
+		return "", xerr
+	}
 	cfg, xerr := s.oauthConfigFor(models.InboxProviderGoogle)
 	if xerr != nil {
 		return "", xerr
@@ -196,6 +200,9 @@ func (s *emailService) finishVendorConsent(ctx context.Context, sess *models.Ven
 	}
 	orgID := sess.OrganizationID
 	reconnect := sess.EmailAccountID != nil
+	if xerr := s.RequireOwnOAuthApp(ctx, orgID); xerr != nil {
+		return nil, xerr
+	}
 	// The member is held to the bar the dashboard holds: membership to connect, manage-emails to renew.
 	if authorize := authorizeFor(sess.UserID.String()); authorize == nil {
 		return nil, errx.ErrForbidden
@@ -253,7 +260,7 @@ func (s *emailService) finishVendorConsent(ctx context.Context, sess *models.Ven
 		} else if existing != nil {
 			return nil, errx.ErrEmailOnboardAlreadyExists
 		}
-		return s.createOAuthMailbox(ctx, sess.UserID.String(), &orgID, allowance, models.InboxProviderGoogle, tok, owner)
+		return s.createOAuthMailbox(ctx, sess.UserID.String(), &orgID, allowance, models.InboxProviderGoogle, tok, owner, nil)
 	}
 	// Nothing about the mailbox changes until every check above has passed and a long-lived token is in hand.
 	if strings.TrimSpace(tok.RefreshToken) == "" {

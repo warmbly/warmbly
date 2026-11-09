@@ -53,7 +53,7 @@ func (s *emailService) OAuthReauth(ctx context.Context, userID string, orgID *uu
 		}
 	}
 
-	cfg, xerr := s.oauthConfigFor(provider)
+	cfg, appID, xerr := s.signinConfig(ctx, orgID, provider)
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -77,6 +77,7 @@ func (s *emailService) OAuthReauth(ctx context.Context, userID string, orgID *uu
 		EmailAccountID: &accountID,
 		CodeVerifier:   verifier,
 		ReturnOrigin:   returnOrigin,
+		OAuthAppID:     appID,
 	}); xerr != nil {
 		return nil, xerr
 	}
@@ -122,7 +123,7 @@ func (s *emailService) finishReauth(ctx context.Context, sess *models.EmailOnboa
 		refresh = creds.RefreshToken
 	}
 
-	if err := s.emailRepository.ReplaceBoxToken(ctx, account.ID, tok.AccessToken, refresh, tok.Expiry, recordedScopes(tok)); err != nil {
+	if err := s.emailRepository.ReplaceBoxToken(ctx, account.ID, tok.AccessToken, refresh, tok.Expiry, recordedScopes(tok), sess.OAuthAppID); err != nil {
 		return nil, errx.InternalError()
 	}
 

@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/warmbly/warmbly/internal/app/delegation"
 	"github.com/warmbly/warmbly/internal/app/email"
+	"github.com/warmbly/warmbly/internal/app/mailboxconnect"
 	"github.com/warmbly/warmbly/internal/app/poollink"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
@@ -143,6 +144,12 @@ func (h *Handler) renderOAuthCallback(c *gin.Context, provider string) {
 			return
 		}
 		c.Redirect(http.StatusFound, to)
+		return
+	}
+
+	// A sign-in link completes only in the browser its landing page bound.
+	if h.MailboxConnectService != nil && mailboxconnect.IsState(state) {
+		h.finishConnectLink(c, code, state, providerErr)
 		return
 	}
 

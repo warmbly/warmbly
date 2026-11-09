@@ -20,6 +20,7 @@ import {
     CloudIcon,
     DatabaseIcon,
     GaugeIcon,
+    KeyRoundIcon,
     Loader2Icon,
     PlugIcon,
     ShieldCheckIcon,
@@ -53,6 +54,8 @@ interface SectionDef {
     hostedDescription?: string;
     /** Open to a member restricted to selected resources: their own account only. */
     scoped?: boolean;
+    /** Only on the Partnership plan, or a deployment that bills nothing. */
+    partnerOnly?: boolean;
 }
 
 interface SectionGroup {
@@ -87,6 +90,7 @@ const GROUPS: SectionGroup[] = [
     {
         label: "Developers",
         items: [
+            { path: "mailbox-sign-in", label: "Mailbox sign-in", icon: KeyRoundIcon, description: "Your own Google and Microsoft OAuth apps for mailbox sign-in.", permission: "MANAGE_EMAILS", partnerOnly: true },
             { path: "oauth-apps", label: "OAuth apps", icon: BoxesIcon, description: "Apps that connect via OAuth2, and the apps you've authorized.", permission: "MANAGE_API_KEYS" },
             { path: "webhooks", label: "Webhooks", icon: WebhookIcon, description: "Realtime HTTP callbacks for workspace events.", permission: "MANAGE_SETTINGS" },
             { path: "connections", label: "Connections", icon: PlugIcon, description: "External MCP servers that add tools to the AI.", permission: "MANAGE_SETTINGS" },
@@ -117,6 +121,7 @@ function SettingsLayoutInner() {
     const hosted = selfHosted === false;
     const canManageApiKeys = usePermission("MANAGE_API_KEYS");
     const canManageSettings = usePermission("MANAGE_SETTINGS");
+    const canManageEmails = usePermission("MANAGE_EMAILS");
     // Warmbly Cloud only shows where a link exists: an instance linked to it, or a hosted workspace with linked instances.
     const cloudStatus = useCloudLinkStatus(selfHosted === true && canManageSettings);
     const linkedInstances = usePoolLinkInstances(hosted && canManageSettings);
@@ -189,6 +194,8 @@ function SettingsLayoutInner() {
                     (!s.ownerOnly || access.isOwner) &&
                     (!s.billingOnly || access.billing) &&
                     (s.path !== "warmbly-cloud" || hasCloudLink) &&
+                    (!s.partnerOnly || access.partnership || !access.billing) &&
+                    (s.permission !== "MANAGE_EMAILS" || canManageEmails) &&
                     (s.permission !== "MANAGE_API_KEYS" || canManageApiKeys) &&
                     (s.permission !== "MANAGE_SETTINGS" || canManageSettings) &&
                     (s.permission !== "VIEW_ANALYTICS" || canViewAnalytics) &&
