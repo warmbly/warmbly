@@ -11,6 +11,7 @@
     <a href="https://dc.warmbly.com"><img src="https://img.shields.io/badge/Discord-5865F2?logo=discord&logoColor=white&style=flat-square" alt="Discord" /></a>
     <a href="https://x.com/WarmblyHQ"><img src="https://img.shields.io/badge/Follow%20on%20X-000000?logo=x&logoColor=white&style=flat-square" alt="Follow @WarmblyHQ on X" /></a>
     <a href="https://docs.warmbly.com"><img src="https://img.shields.io/badge/Docs-1f6feb?style=flat-square" alt="Docs" /></a>
+    <a href="https://github.com/sponsors/warmbly"><img src="https://img.shields.io/badge/Sponsor-EA4AAA?logo=githubsponsors&logoColor=white&style=flat-square" alt="Sponsor Warmbly on GitHub" /></a>
     <a href="https://github.com/warmbly/warmbly/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/warmbly/warmbly/ci.yml?branch=main&style=flat-square&label=CI" alt="CI status" /></a>
     <a href="https://github.com/warmbly/warmbly/releases"><img src="https://img.shields.io/github/v/release/warmbly/warmbly?style=flat-square" alt="Latest release" /></a>
     <a href="./LICENSE"><img src="https://img.shields.io/github/license/warmbly/warmbly?style=flat-square" alt="License" /></a>
@@ -168,6 +169,7 @@ Have a question, found a bug, or want to shape where Warmbly goes next?
 - **[Discord](https://dc.warmbly.com)** - chat with the team and other senders
 - **[GitHub Issues](https://github.com/warmbly/warmbly/issues)** - report bugs and request features
 - **[X / @WarmblyHQ](https://x.com/WarmblyHQ)** - follow along for updates and releases
+- **[GitHub Sponsors](https://github.com/sponsors/warmbly)** - support Warmbly's development
 - **Email** - reach us at `team@warmbly.com`
 
 ## Support and enterprise
