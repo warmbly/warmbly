@@ -11,17 +11,20 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/app/contact"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/displayname"
+	"github.com/warmbly/warmbly/internal/repository"
 )
 
-// EnrichContact uses a stored contact's email or company domain for one lookup,
-// then writes profile fields only. Consent, address, verification, campaigns,
-// categories and segment membership are never part of the update.
+// EnrichContact applies one lookup through the shared importer with a snapshot guard.
 func (s *Service) EnrichContact(ctx context.Context, orgID, connID, userID uuid.UUID, in models.CompanyEnrichContactRequest) (*models.CompanyEnrichContactResult, error) {
 	if in.ContactID == uuid.Nil || userID == uuid.Nil || (in.Kind != "person" && in.Kind != "company") {
 		return nil, invalid("contact_id and kind person or company are required")
+	}
+	if s.Importer == nil {
+		return nil, errx.New(errx.ServiceUnavailable, "Contact enrichment is not available on this instance")
 	}
 	cl, err := s.connection(ctx, orgID, connID)
 	if err != nil {
@@ -64,9 +67,17 @@ func (s *Service) EnrichContact(ctx context.Context, orgID, connID, userID uuid.
 	if len(fields) == 0 {
 		return out, nil
 	}
-	if xerr := s.Contacts.ApplyCompanyEnrichProfile(ctx, orgID, in.ContactID, latest.UpdatedAt, latest.Email, patch); xerr != nil {
-		if xerr.Code == errx.Conflict {
-			return nil, xerr
+	row, mapping := profileImport(*latest, patch)
+	saved, xerr := s.Importer.RunImport(ctx, userID.String(), orgID, []contact.ImportRow{row}, &models.ContactImportCommit{
+		Mapping: mapping, Dedup: models.ContactImportDedupUpdate, SkipMissingSegments: true,
+	}, nil, nil)
+	if xerr != nil || saved == nil || saved.Updated != 1 {
+		if saved != nil {
+			for _, failure := range saved.Errors {
+				if failure.Reason == contact.ImportReasonContactChanged {
+					return nil, errx.NewWithIdentifier(errx.Conflict, "companyenrich_contact_changed", "The contact changed or its custom fields exceed the size limit; no enrichment fields were saved")
+				}
+			}
 		}
 		return nil, errx.NewWithIdentifier(errx.Unprocessable, "companyenrich_save_failed", "The CompanyEnrich lookup completed but the profile was not saved. Check the contact before making another paid request")
 	}
@@ -75,6 +86,33 @@ func (s *Service) EnrichContact(ctx context.Context, orgID, connID, userID uuid.
 		return nil, err
 	}
 	return out, nil
+}
+
+// profileImport carries only selected profile fields and the exact existing target.
+func profileImport(c models.Contact, patch *models.CompanyEnrichProfilePatch) (contact.ImportRow, []models.ContactImportColumnMapping) {
+	row := contact.ImportRow{Line: 1, Cells: []string{c.Email}, Expected: &repository.ContactImportSnapshot{ID: c.ID, Email: c.Email, UpdatedAt: c.UpdatedAt}}
+	mapping := []models.ContactImportColumnMapping{{Index: 0, Target: models.ContactImportTargetEmail}}
+	add := func(target models.ContactImportColumnTarget, custom, value string) {
+		mapping = append(mapping, models.ContactImportColumnMapping{Index: len(row.Cells), Target: target, CustomKey: custom})
+		row.Cells = append(row.Cells, value)
+	}
+	for _, field := range []struct {
+		target models.ContactImportColumnTarget
+		value  *string
+	}{{models.ContactImportTargetFirstName, patch.FirstName}, {models.ContactImportTargetLastName, patch.LastName}, {models.ContactImportTargetCompany, patch.Company}} {
+		if field.value != nil {
+			add(field.target, "", *field.value)
+		}
+	}
+	keys := make([]string, 0, len(patch.CustomFields))
+	for key := range patch.CustomFields {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		add(models.ContactImportTargetCustom, key, patch.CustomFields[key])
+	}
+	return row, mapping
 }
 
 func (s *Service) contact(ctx context.Context, orgID, id uuid.UUID) (*models.Contact, error) {
@@ -175,7 +213,7 @@ func profilePatch(c models.Contact, profile map[string]any, kind string, overwri
 					continue
 				}
 				if company, ok := exp["company"].(map[string]any); ok {
-					put("company", c.Company, displayname.Clean(textField(company, "name"), displayname.Workspace), &patch.Company)
+					put("company", c.Company, textField(company, "name"), &patch.Company)
 					putCustom("companyenrich_company_id", textField(company, "id"))
 					putCustom("companyenrich_domain", companyDomain(textField(company, "domain")))
 					break
@@ -183,7 +221,7 @@ func profilePatch(c models.Contact, profile map[string]any, kind string, overwri
 			}
 		}
 	} else {
-		put("company", c.Company, displayname.Clean(textField(profile, "name"), displayname.Workspace), &patch.Company)
+		put("company", c.Company, textField(profile, "name"), &patch.Company)
 		putCustom("companyenrich_company_id", textField(profile, "id"))
 		putCustom("companyenrich_domain", companyDomain(textField(profile, "domain")))
 		putCustom("companyenrich_website", safeProfileURL(textField(profile, "website")))

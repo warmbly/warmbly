@@ -1788,6 +1788,7 @@ func main() {
 		companyEnrichServiceForHandler = companyenrich.NewService(companyenrich.Deps{
 			Integrations: integrationServiceForHandler,
 			Contacts:     repository.NewCompanyEnrichContactRepository(primaryDB, contactRepostory),
+			Importer:     contactService,
 		})
 		integrationServiceForHandler.SetCredentialCheck(models.IntegrationCompanyEnrich, companyEnrichServiceForHandler.CredentialCheck)
 

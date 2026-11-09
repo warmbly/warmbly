@@ -8,26 +8,19 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
 	"github.com/warmbly/warmbly/internal/models"
-	"github.com/warmbly/warmbly/internal/pkg/displayname"
 )
 
-// CompanyEnrichContactRepository narrows enrichment writes to profile fields
-// and guards the exact contact snapshot used to prepare the update.
+// CompanyEnrichContactRepository reads complete snapshots for guarded imports.
 type CompanyEnrichContactRepository struct {
 	contacts ContactRepository
-	exec     func(context.Context, string, ...any) (pgconn.CommandTag, error)
 	queryRow func(context.Context, string, ...any) pgx.Row
 }
 
 func NewCompanyEnrichContactRepository(database *db.DB, contacts ContactRepository) *CompanyEnrichContactRepository {
-	return &CompanyEnrichContactRepository{contacts: contacts, exec: func(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error) {
-		return resultDB(ctx, database).Exec(ctx, query, args...)
-	}, queryRow: func(ctx context.Context, query string, args ...any) pgx.Row {
+	return &CompanyEnrichContactRepository{contacts: contacts, queryRow: func(ctx context.Context, query string, args ...any) pgx.Row {
 		return resultDB(ctx, database).QueryRow(ctx, query, args...)
 	}}
 }
@@ -72,52 +65,4 @@ FROM contacts c WHERE c.organization_id = $1 AND c.id = $2`, orgID, id).Scan(&ra
 		}
 	}
 	return rows, nil
-}
-
-const companyEnrichProfileSQL = `
-UPDATE contacts SET
- first_name = COALESCE($4, first_name),
- last_name = COALESCE($5, last_name),
- company = COALESCE($6, company),
- custom_fields = COALESCE(custom_fields, '{}'::jsonb) || $7::jsonb,
- updated_at = clock_timestamp()
-WHERE organization_id = $1 AND id = $2 AND updated_at = $3 AND email = $8
- AND octet_length((COALESCE(custom_fields, '{}'::jsonb) || $7::jsonb)::text) <= $9
-`
-
-// ApplyCompanyEnrichProfile atomically refuses a stale/moved contact. The SQL
-// never writes address, consent, verification, membership or source columns.
-func (r *CompanyEnrichContactRepository) ApplyCompanyEnrichProfile(ctx context.Context, orgID, id uuid.UUID, expectedAt time.Time, expectedEmail string, patch *models.CompanyEnrichProfilePatch) *errx.Error {
-	if orgID == uuid.Nil || id == uuid.Nil || expectedAt.IsZero() || expectedEmail == "" || patch == nil {
-		return errx.New(errx.BadRequest, "a current contact snapshot is required")
-	}
-	fields, xerr := normalizeCustomFields(patch.CustomFields)
-	if xerr != nil {
-		return xerr
-	}
-	raw, err := json.Marshal(fields)
-	if err != nil || len(raw) > config.MaxContactSize {
-		return errx.ErrContactSize
-	}
-	clean := func(s *string, kind displayname.Kind) *string {
-		if s == nil {
-			return nil
-		}
-		value := displayname.Clean(*s, kind)
-		if value == "" {
-			return nil
-		}
-		return &value
-	}
-	tag, err := r.exec(ctx, companyEnrichProfileSQL, orgID, id, expectedAt,
-		clean(patch.FirstName, displayname.Person), clean(patch.LastName, displayname.Person), clean(patch.Company, displayname.Workspace),
-		raw, expectedEmail, config.MaxContactSize)
-	if err != nil {
-		db.CaptureError(err, companyEnrichProfileSQL, nil, "CompanyEnrich profile update")
-		return errx.InternalError()
-	}
-	if tag.RowsAffected() != 1 {
-		return errx.NewWithIdentifier(errx.Conflict, "companyenrich_contact_changed", "The contact changed or its custom fields exceed the size limit; no enrichment fields were saved")
-	}
-	return nil
 }

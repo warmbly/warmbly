@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/app/contact"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
@@ -45,7 +46,7 @@ type fakeContacts struct {
 	reads, writes int
 	changeOnRead  int
 	conflict      bool
-	patch         *models.CompanyEnrichProfilePatch
+	importOptions *models.ContactImportCommit
 }
 
 func (f *fakeContacts) GetByIDsAndOrganization(_ context.Context, org uuid.UUID, ids []uuid.UUID) ([]models.Contact, *errx.Error) {
@@ -59,25 +60,36 @@ func (f *fakeContacts) GetByIDsAndOrganization(_ context.Context, org uuid.UUID,
 	}
 	return []models.Contact{f.row}, nil
 }
-func (f *fakeContacts) ApplyCompanyEnrichProfile(_ context.Context, org, id uuid.UUID, expected time.Time, email string, p *models.CompanyEnrichProfilePatch) *errx.Error {
+func (f *fakeContacts) RunImport(_ context.Context, actor string, org uuid.UUID, rows []contact.ImportRow, opts *models.ContactImportCommit, _ contact.ImportSink, _ []uuid.UUID) (*models.ContactImportResult, *errx.Error) {
 	f.writes++
-	f.patch = p
-	if f.conflict || org != f.org || id != f.row.ID || expected != f.row.UpdatedAt || email != f.row.Email {
-		return errx.NewWithIdentifier(errx.Conflict, "companyenrich_contact_changed", "contact changed")
+	f.importOptions = opts
+	if len(rows) != 1 || rows[0].Expected == nil || actor == "" || opts.Dedup != models.ContactImportDedupUpdate {
+		return nil, errx.New(errx.BadRequest, "missing guarded import")
 	}
-	if p.FirstName != nil {
-		f.row.FirstName = *p.FirstName
+	row := rows[0]
+	if f.conflict || org != f.org || row.Expected.ID != f.row.ID || row.Expected.UpdatedAt != f.row.UpdatedAt || row.Expected.Email != f.row.Email {
+		return &models.ContactImportResult{Total: 1, Failed: 1, Errors: []models.ContactImportRowError{{Line: 1, Reason: contact.ImportReasonContactChanged}}}, nil
 	}
-	if p.LastName != nil {
-		f.row.LastName = *p.LastName
+	for _, field := range opts.Mapping {
+		value := row.Cells[field.Index]
+		switch field.Target {
+		case models.ContactImportTargetEmail:
+			if value != f.row.Email {
+				return nil, errx.ErrNotFound
+			}
+		case models.ContactImportTargetFirstName:
+			f.row.FirstName = value
+		case models.ContactImportTargetLastName:
+			f.row.LastName = value
+		case models.ContactImportTargetCompany:
+			f.row.Company = value
+		case models.ContactImportTargetCustom:
+			f.row.CustomFields[field.CustomKey] = value
+		default:
+			return nil, errx.New(errx.BadRequest, "unexpected import target")
+		}
 	}
-	if p.Company != nil {
-		f.row.Company = *p.Company
-	}
-	for k, v := range p.CustomFields {
-		f.row.CustomFields[k] = v
-	}
-	return nil
+	return &models.ContactImportResult{Total: 1, Updated: 1}, nil
 }
 
 func serviceFixture(t *testing.T, body string) (*Service, *fakeConnections, *fakeContacts, *int) {
@@ -85,7 +97,7 @@ func serviceFixture(t *testing.T, body string) (*Service, *fakeConnections, *fak
 	connections := &fakeConnections{org: uuid.New(), id: uuid.New(), provider: models.IntegrationCompanyEnrich}
 	contacts := &fakeContacts{org: connections.org, row: models.Contact{ID: uuid.New(), Email: "person@example.com", FirstName: "Existing", Company: "Existing Company", Subscribed: false, VerificationStatus: "invalid", Phone: "123", CustomFields: map[string]string{"preserved": "value"}, UpdatedAt: time.Now()}}
 	calls := 0
-	s := NewService(Deps{Integrations: connections, Contacts: contacts})
+	s := NewService(Deps{Integrations: connections, Contacts: contacts, Importer: contacts})
 	s.newClient = func(key string) *Client {
 		if key != "private-key" {
 			t.Fatal("wrong credential")
@@ -179,7 +191,7 @@ func TestCompanyEnrichContactOwnershipBeforePaidLookup(t *testing.T) {
 	}
 }
 
-func TestCompanyEnrichContactPreservesIdentityConsentAndMembership(t *testing.T) {
+func TestCompanyEnrichContactUsesGuardedProfileOnlyImport(t *testing.T) {
 	for _, overwrite := range []bool{false, true} {
 		t.Run(map[bool]string{false: "fill blanks", true: "overwrite profile"}[overwrite], func(t *testing.T) {
 			s, c, contacts, calls := serviceFixture(t, `{"id":9223372036854775807,"first_name":"New","last_name":"Person","position":"CTO","email":"different@example.org","subscribed":true,"experiences":[{"isCurrent":true,"company":{"id":"company-id","name":"New Company","domain":"example.org"}}]}`)
@@ -202,7 +214,26 @@ func TestCompanyEnrichContactPreservesIdentityConsentAndMembership(t *testing.T)
 			if out.Contact.CustomFields["preserved"] != "value" || out.Contact.CustomFields["companyenrich_person_id"] != "9223372036854775807" {
 				t.Fatal("custom data or exact ID lost")
 			}
+			if !contacts.importOptions.SkipMissingSegments || len(contacts.importOptions.CampaignIDs) > 0 || len(contacts.importOptions.CategoryIDs) > 0 {
+				t.Fatal("enrichment must not explicitly target a campaign or category")
+			}
 		})
+	}
+}
+
+func TestCompanyEnrichCompanyNameCanResembleDomain(t *testing.T) {
+	s, c, contacts, _ := serviceFixture(t, `{"name":"Booking.com","domain":"booking.com"}`)
+	contacts.row.Company = ""
+	out, err := s.EnrichContact(context.Background(), c.org, c.id, uuid.New(), models.CompanyEnrichContactRequest{ContactID: contacts.row.ID, Kind: "company"})
+	if err != nil || out.Contact.Company != "Booking.com" {
+		t.Fatalf("company name lost: %v, %v", out, err)
+	}
+}
+
+func TestCompanyEnrichUnavailableIsServiceUnavailable(t *testing.T) {
+	var xe *errx.Error
+	if !errors.As(publicError(ErrUnavailable), &xe) || xe.Code != errx.ServiceUnavailable || xe.Identifier != "companyenrich_unavailable" {
+		t.Fatalf("unexpected provider-unavailable response: %v", xe)
 	}
 }
 

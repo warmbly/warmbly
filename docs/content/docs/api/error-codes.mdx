@@ -665,7 +665,7 @@ The [CompanyEnrich query and contact-enrichment endpoints](/api/reference/integr
 | `companyenrich_credits_required` | 422 | The CompanyEnrich account has insufficient credits. Add credits there before another request. |
 | `companyenrich_request_rejected` | 422 | CompanyEnrich refused the request. Review the operation inputs and account capabilities. |
 | `companyenrich_invalid_response` | 422 | The provider response was invalid or exceeded the response-size limit. A charge may already have occurred. |
-| `companyenrich_unavailable` | 422 | The provider request failed or timed out. Check the provider before another request; the original attempt may have consumed credits. |
+| `companyenrich_unavailable` | 503 | The provider request failed or timed out. Check the provider before another request; the original attempt may have consumed credits. |
 | `companyenrich_save_failed` | 422 | The provider lookup completed but the contact update could not be saved. Check the contact before making another paid request. |
 | `companyenrich_rate_limited` | 429 | The provider's rate limit was reached. Wait before explicitly running another request. |
 

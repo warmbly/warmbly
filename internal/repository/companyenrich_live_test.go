@@ -2,9 +2,11 @@ package repository
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
@@ -27,7 +29,8 @@ func TestCompanyEnrichLiveProfileGuardAndPreservedState(t *testing.T) {
 	if _, err := pool.Exec(ctx, `INSERT INTO campaign_leads (campaign_id, contact_id) VALUES ($1, $2)`, f.campaign, f.contact); err != nil {
 		t.Fatal(err)
 	}
-	repo := NewCompanyEnrichContactRepository(handle, NewContactRepostory(handle))
+	writer := NewContactRepostory(handle)
+	repo := NewCompanyEnrichContactRepository(handle, writer)
 	read := func() models.Contact {
 		t.Helper()
 		rows, xerr := repo.GetByIDsAndOrganization(ctx, f.org, []uuid.UUID{f.contact})
@@ -38,16 +41,22 @@ func TestCompanyEnrichLiveProfileGuardAndPreservedState(t *testing.T) {
 	}
 	before := read()
 	name := "Enriched"
-	patch := &models.CompanyEnrichProfilePatch{FirstName: &name, CustomFields: map[string]string{"companyenrich_position": "CTO"}}
-	if xerr := repo.ApplyCompanyEnrichProfile(ctx, uuid.New(), f.contact, before.UpdatedAt, before.Email, patch); xerr == nil || xerr.Code != errx.Conflict {
-		t.Fatalf("wrong organization must refuse update: %v", xerr)
+	apply := func(orgID uuid.UUID, snapshot models.Contact, fields map[string]string, want bool) {
+		t.Helper()
+		found, xerr := writer.ImportUpdate(ctx, orgID, []ContactImportUpdate{{
+			ID: f.contact, Contact: models.AddContact{FirstName: name, CustomFields: fields},
+			Expected: &ContactImportSnapshot{ID: f.contact, Email: snapshot.Email, UpdatedAt: snapshot.UpdatedAt},
+		}})
+		if xerr != nil || len(found) != 1 || found[0] != want {
+			t.Fatalf("guarded import: found=%v, want=%v, error=%v", found, want, xerr)
+		}
 	}
+	fields := map[string]string{"companyenrich_position": "CTO"}
+	apply(uuid.New(), before, fields, false)
 	if _, xerr := repo.GetByIDsAndOrganization(ctx, uuid.New(), []uuid.UUID{f.contact}); xerr == nil || xerr.Code != errx.NotFound {
 		t.Fatalf("wrong organization must refuse read: %v", xerr)
 	}
-	if xerr := repo.ApplyCompanyEnrichProfile(ctx, f.org, f.contact, before.UpdatedAt, before.Email, patch); xerr != nil {
-		t.Fatalf("apply current snapshot: %v", xerr)
-	}
+	apply(f.org, before, fields, true)
 	after := read()
 	if after.FirstName != name || after.CustomFields["companyenrich_position"] != "CTO" || after.CustomFields["existing"] != "keep" {
 		t.Fatalf("profile merge did not persist: %+v", after)
@@ -61,18 +70,21 @@ func TestCompanyEnrichLiveProfileGuardAndPreservedState(t *testing.T) {
 		t.Fatalf("protected state or membership changed/lost: %+v", after)
 	}
 	name = "Must not overwrite"
-	if xerr := repo.ApplyCompanyEnrichProfile(ctx, f.org, f.contact, before.UpdatedAt, before.Email, patch); xerr == nil || xerr.Code != errx.Conflict {
-		t.Fatalf("stale timestamp must refuse update: %v", xerr)
-	}
+	apply(f.org, before, fields, false)
 	// Even a writer that fails to bump updated_at cannot replace the identity
 	// whose paid lookup produced the enrichment result.
 	if _, err := pool.Exec(ctx, `UPDATE contacts SET email = 'changed@example.com' WHERE id = $1`, f.contact); err != nil {
 		t.Fatal(err)
 	}
-	if xerr := repo.ApplyCompanyEnrichProfile(ctx, f.org, f.contact, after.UpdatedAt, after.Email, patch); xerr == nil || xerr.Code != errx.Conflict {
-		t.Fatalf("changed email must refuse update: %v", xerr)
-	}
+	apply(f.org, after, fields, false)
 	if current := read(); current.FirstName != "Enriched" || current.Email != "changed@example.com" {
 		t.Fatalf("refused update mutated contact: %+v", current)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE contacts SET custom_fields = jsonb_build_object('large', $2::text), updated_at = now() WHERE id = $1`, f.contact, strings.Repeat("x", config.MaxContactSize-30)); err != nil {
+		t.Fatal(err)
+	}
+	apply(f.org, read(), map[string]string{"new": strings.Repeat("y", 100)}, false)
+	if current := read(); current.FirstName != "Enriched" || current.CustomFields["new"] != "" {
+		t.Fatal("oversized merged custom fields must not update the contact")
 	}
 }

@@ -664,7 +664,7 @@ For example, a company count can return:
 
 `credits_consumed` is present only when the provider explicitly reports it. Omission means the charge is unknown, not zero. People search returns professional profiles without email addresses; it is not an email-finding or automatic contact-import endpoint.
 
-Each invocation makes one data request. There are no automatic retries, pagination loops, background jobs, result-URL downloads, contact imports, or sends. Choose another page or retry explicitly; an upstream timeout may still have consumed credits.
+Each invocation makes one provider data request. There are no automatic provider retries, pagination loops, background jobs, result-URL downloads, contact imports, or sends. The dashboard can refresh Warmbly authentication and retry a request rejected before the handler runs. Choose another page or retry explicitly; an upstream timeout may still have consumed credits.
 
 ## Enrich a contact with CompanyEnrich
 
@@ -690,7 +690,7 @@ Auth: **Scopes** `INTEGRATIONS` and `WRITE_CONTACTS` · **Org permissions** `use
 }
 ```
 
-Enrichment can update the contact's name and company and the [documented CompanyEnrich custom fields](/guides/companyenrich/#fields-that-can-change). Saved values are limited to 500 characters. It preserves the contact's email, subscription and suppression state, verification status, campaign membership, and unrelated custom fields. Empty provider values never erase a field. The caller cannot use the request to create a contact or supply a different lookup address.
+Enrichment can update the contact's name and company and the [documented CompanyEnrich custom fields](/guides/companyenrich/#fields-that-can-change). Saved values are limited to 500 characters. It preserves the contact's email, subscription and suppression state, verification status, and unrelated custom fields. Changes are saved through the shared contact importer with deduplication set to update; normal segment and linked-campaign rules are reevaluated afterwards. The request does not map campaigns or categories. Empty provider values never erase a field. The caller cannot use the request to create a contact or supply a different lookup address.
 
 ### Response
 
@@ -703,7 +703,7 @@ Enrichment can update the contact's name and company and the [documented Company
 | `updated_fields` | string array | Fields actually changed, such as `company` or `custom_fields.companyenrich_domain`; an empty array is a valid result. |
 | `credits_consumed` | number, optional | Explicit provider-reported charge only. Omitted when unknown. |
 
-One request enriches one contact. There is no background run, bulk import, campaign enrollment, or sending. The same request and credit rules as [query CompanyEnrich](#query-companyenrich) apply. A contact change or save failure after the provider lookup can still have consumed credits; inspect the contact before starting a fresh request. See [CompanyEnrich errors](/api/error-codes/#companyenrich-refusals). See the [CompanyEnrich guide](/guides/companyenrich/) for field mapping and setup.
+One request enriches one existing contact. There is no background enrichment run or bulk lookup, and no new contact is created. Normal segment-driven campaign membership may change after the profile update. The same request and credit rules as [query CompanyEnrich](#query-companyenrich) apply. A contact change or save failure after the provider lookup can still have consumed credits; inspect the contact before starting a fresh request. See [CompanyEnrich errors](/api/error-codes/#companyenrich-refusals). See the [CompanyEnrich guide](/guides/companyenrich/) for field mapping and setup.
 
 ## Salesforce sync
 

@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/app/contact"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
@@ -18,17 +18,21 @@ type Connections interface {
 	MarkConnectionHealth(context.Context, uuid.UUID, models.IntegrationStatus, models.IntegrationHealth, string)
 }
 
-// Contacts is the repository's organization-scoped profile read/write API.
-// It deliberately does not invoke campaign or segment enrollment services.
+// Contacts reads complete organization-scoped contact snapshots.
 type Contacts interface {
 	GetByIDsAndOrganization(context.Context, uuid.UUID, []uuid.UUID) ([]models.Contact, *errx.Error)
-	ApplyCompanyEnrichProfile(context.Context, uuid.UUID, uuid.UUID, time.Time, string, *models.CompanyEnrichProfilePatch) *errx.Error
+}
+
+// ContactImporter retains the shared contact import and membership-sync behavior.
+type ContactImporter interface {
+	RunImport(context.Context, string, uuid.UUID, []contact.ImportRow, *models.ContactImportCommit, contact.ImportSink, []uuid.UUID) (*models.ContactImportResult, *errx.Error)
 }
 
 // Deps supplies the existing encrypted connection store and contact repository.
 type Deps struct {
 	Integrations Connections
 	Contacts     Contacts
+	Importer     ContactImporter
 }
 
 // Service exposes explicit queries and enrichment of existing org contacts.
@@ -138,6 +142,6 @@ func publicError(err error) error {
 	case errors.Is(err, ErrResponse):
 		return errx.NewWithIdentifier(errx.Unprocessable, "companyenrich_invalid_response", ErrResponse.Error())
 	default:
-		return errx.NewWithIdentifier(errx.Unprocessable, "companyenrich_unavailable", ErrUnavailable.Error())
+		return errx.NewWithIdentifier(errx.ServiceUnavailable, "companyenrich_unavailable", ErrUnavailable.Error())
 	}
 }

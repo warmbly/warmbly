@@ -16,8 +16,6 @@ interface AuthRequestConfig extends AxiosRequestConfig {
     // Set on the re-authentication call itself, so a wrong password there
     // reaches the caller instead of reopening the prompt that made it.
     skipReauthPrompt?: boolean
-    // Paid operations must not be replayed after an ambiguous authentication failure.
-    replayAfterAuth?: boolean
     // Provider payloads can contain date-shaped strings that must remain unchanged.
     preserveJson?: boolean
     // Aborts the HTTP request; pass TanStack Query's queryFn signal here.
@@ -162,7 +160,7 @@ export default async function Request<T>(config: AuthRequestConfig): Promise<T> 
 
         // Only an authorized 401 means the session is gone: refresh, retry once,
         // then give up. A public 401 reaches the caller with its code intact.
-        if (config.replayAfterAuth !== false && config.authorization && (appErr?.status === 401 || appErr?.redirect)) {
+        if (config.authorization && (appErr?.status === 401 || appErr?.redirect)) {
             try {
                 const token = await ensureValidToken();
                 config.headers = {
@@ -189,7 +187,6 @@ export default async function Request<T>(config: AuthRequestConfig): Promise<T> 
         if (
             appErr?.code === "reauth_required" &&
             config.authorization &&
-            config.replayAfterAuth !== false &&
             !config.skipReauthPrompt &&
             typeof window !== "undefined"
         ) {

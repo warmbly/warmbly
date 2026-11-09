@@ -41,7 +41,7 @@ export default function ContactEnrichment({ connectionId, enabled }: { connectio
 
     return <section className="space-y-3">
         <h2 className="text-[14px] font-semibold text-slate-900">Enrich an existing contact</h2>
-        <p className="max-w-2xl text-[12.5px] text-slate-500">Fill empty fields using the contact’s saved email or company website. Existing values, email addresses, subscriptions and campaign membership stay unchanged.</p>
+        <p className="max-w-2xl text-[12.5px] text-slate-500">Fill empty fields using the contact’s saved email or company website. Existing values, email addresses and subscriptions stay unchanged. Normal segment and campaign rules apply after an update.</p>
         <div className="space-y-4 rounded-md border border-slate-200 p-4 sm:p-5">
             <fieldset disabled={!enabled || enrich.isPending} className="space-y-4 disabled:opacity-60">
                 <div className="max-w-md">

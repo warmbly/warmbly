@@ -3546,8 +3546,16 @@ func (r *contactRepository) ImportLookup(ctx context.Context, orgID, userID uuid
 
 // ContactImportUpdate is one imported row applied to an existing contact.
 type ContactImportUpdate struct {
-	ID      uuid.UUID
-	Contact models.AddContact
+	ID       uuid.UUID
+	Contact  models.AddContact
+	Expected *ContactImportSnapshot
+}
+
+// ContactImportSnapshot guards an explicit enrichment of an existing contact.
+type ContactImportSnapshot struct {
+	ID        uuid.UUID
+	Email     string
+	UpdatedAt time.Time
 }
 
 func (r *contactRepository) ImportUpdate(ctx context.Context, orgID uuid.UUID, rows []ContactImportUpdate) ([]bool, *errx.Error) {
@@ -3558,6 +3566,14 @@ func (r *contactRepository) ImportUpdate(ctx context.Context, orgID uuid.UUID, r
 	batch := &pgx.Batch{}
 	for _, row := range rows {
 		c := row.Contact
+		var expectedAt *time.Time
+		var expectedEmail string
+		if row.Expected != nil {
+			if row.Expected.ID != row.ID || row.ID == uuid.Nil || row.Expected.UpdatedAt.IsZero() || row.Expected.Email == "" {
+				return nil, errx.New(errx.BadRequest, "a current contact snapshot is required")
+			}
+			expectedAt, expectedEmail = &row.Expected.UpdatedAt, row.Expected.Email
+		}
 		fields := c.CustomFields
 		if fields == nil {
 			fields = map[string]string{}
@@ -3596,12 +3612,15 @@ func (r *contactRepository) ImportUpdate(ctx context.Context, orgID uuid.UUID, r
 			  is_catch_all = CASE WHEN $9::text <> '' THEN ($10::text = 'catch_all') ELSE is_catch_all END,
 			  verification_checked_at = CASE WHEN $9::text <> '' THEN NOW() ELSE verification_checked_at END,
 			  updated_at = NOW()
-			WHERE id = $1 AND organization_id = $2`,
+			WHERE id = $1 AND organization_id = $2
+			  AND ($13::timestamp IS NULL OR (updated_at = $13 AND email = $14))
+			  AND ($13::timestamp IS NULL OR octet_length((COALESCE(custom_fields, '{}'::jsonb) || $7::jsonb)::text) <= $15)`,
 			row.ID, orgID,
 			strings.TrimSpace(c.FirstName), strings.TrimSpace(c.LastName),
 			strings.TrimSpace(c.Company), strings.TrimSpace(c.Phone),
 			fields, c.Subscribed,
 			vStatus, vSub, vReason, vProvider,
+			expectedAt, expectedEmail, config.MaxContactSize,
 		)
 	}
 

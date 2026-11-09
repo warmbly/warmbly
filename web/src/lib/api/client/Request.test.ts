@@ -41,15 +41,16 @@ describe("Request", () => {
         });
     });
 
-    it("does not replay paid requests after authentication failure", async () => {
+    it("retries a CompanyEnrich request refused by Warmbly authentication before the handler", async () => {
         const error = { status: 401, message: "Request refused" };
-        vi.mocked(Client.request).mockRejectedValue(error);
-        await expect(queryCompanyEnrich("id", { operation: "enrich_company", query: { domain: "example.com" } })).rejects.toBe(error);
-        expect(Client.request).toHaveBeenCalledTimes(1);
+        const result = { data: { name: "Example" }, credits_consumed: 1 };
+        vi.mocked(Client.request).mockRejectedValueOnce(error).mockResolvedValueOnce({ data: result });
+        expect(await queryCompanyEnrich("id", { operation: "enrich_company", query: { domain: "example.com" } })).toEqual(result);
+        expect(Client.request).toHaveBeenCalledTimes(2);
     });
 
-    it("does not replay paid requests through a reauthentication prompt", async () => {
-        const error = { status: 403, code: "reauth_required", message: "Request refused" };
+    it("does not replay a provider credential failure after its handler has run", async () => {
+        const error = { status: 422, code: "companyenrich_key_rejected", message: "Provider refused the key" };
         vi.mocked(Client.request).mockRejectedValue(error);
         const prompt = vi.fn();
         window.addEventListener("reauth-required", prompt);

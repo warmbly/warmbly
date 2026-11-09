@@ -2,70 +2,14 @@ package repository
 
 import (
 	"context"
-	"encoding/json"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
-
-func TestCompanyEnrichProfileWriteCarriesExactSnapshot(t *testing.T) {
-	org, id := uuid.New(), uuid.New()
-	at := time.Now()
-	name := "New Name"
-	calls := 0
-	r := &CompanyEnrichContactRepository{exec: func(_ context.Context, query string, args ...any) (pgconn.CommandTag, error) {
-		calls++
-		if len(args) != 9 || args[0] != org || args[1] != id || args[2] != at || args[7] != "same@example.com" {
-			t.Fatalf("snapshot missing: %v", args)
-		}
-		if got := args[3].(*string); *got != name {
-			t.Fatal("profile field missing")
-		}
-		if args[4].(*string) != nil || args[5].(*string) != nil {
-			t.Fatal("absent names overwritten")
-		}
-		var custom map[string]string
-		if json.Unmarshal(args[6].([]byte), &custom) != nil || custom["companyenrich_position"] != "CTO" {
-			t.Fatal("custom field payload lost")
-		}
-		return pgconn.NewCommandTag("UPDATE 1"), nil
-	}}
-	err := r.ApplyCompanyEnrichProfile(context.Background(), org, id, at, "same@example.com", &models.CompanyEnrichProfilePatch{FirstName: &name, CustomFields: map[string]string{"companyenrich_position": "CTO"}})
-	if err != nil || calls != 1 {
-		t.Fatalf("calls=%d err=%v", calls, err)
-	}
-}
-
-func TestCompanyEnrichProfileWriteRefusesStaleSnapshot(t *testing.T) {
-	calls := 0
-	r := &CompanyEnrichContactRepository{exec: func(context.Context, string, ...any) (pgconn.CommandTag, error) {
-		calls++
-		return pgconn.NewCommandTag("UPDATE 0"), nil
-	}}
-	err := r.ApplyCompanyEnrichProfile(context.Background(), uuid.New(), uuid.New(), time.Now(), "same@example.com", &models.CompanyEnrichProfilePatch{})
-	if err == nil || err.Code != errx.Conflict || err.Identifier != "companyenrich_contact_changed" || calls != 1 {
-		t.Fatalf("stale result: %v", err)
-	}
-}
-
-func TestCompanyEnrichProfileWriteRejectsMissingSnapshotAndOversize(t *testing.T) {
-	r := &CompanyEnrichContactRepository{exec: func(context.Context, string, ...any) (pgconn.CommandTag, error) {
-		t.Fatal("invalid update reached DB")
-		return pgconn.CommandTag{}, nil
-	}}
-	if err := r.ApplyCompanyEnrichProfile(context.Background(), uuid.New(), uuid.New(), time.Time{}, "same@example.com", &models.CompanyEnrichProfilePatch{}); err == nil {
-		t.Fatal("missing timestamp accepted")
-	}
-	if err := r.ApplyCompanyEnrichProfile(context.Background(), uuid.New(), uuid.New(), time.Now(), "same@example.com", &models.CompanyEnrichProfilePatch{CustomFields: map[string]string{"companyenrich_position": strings.Repeat("x", 11000)}}); err == nil {
-		t.Fatal("oversized custom data accepted")
-	}
-}
 
 type companyEnrichReadRecorder struct {
 	ContactRepository
