@@ -11813,6 +11813,16 @@
               }
             }
           },
+          "409": {
+            "description": "The send is no longer pending (scheduled_send_not_pending): it has started sending, was sent, failed, or was already cancelled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "429": {
             "description": "Rate limited.",
             "content": {

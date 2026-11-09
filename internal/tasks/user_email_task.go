@@ -145,22 +145,30 @@ func (s *tasksService) HandleUserEmailTask(task *proto.ProcessTask) *errx.Error 
 	}
 
 	// Checked while the task is still pending, so a failed read retries it.
-	if err := s.sendAdmission(ctx, account); err != nil {
-		if !errors.Is(err, repository.ErrSendAdmissionDenied) {
-			errs.CaptureException(err)
-			return errx.InternalError()
-		}
-		return s.refuseUserEmail(ctx, taskID, account, err)
+	admissionErr := s.sendAdmission(ctx, account)
+	if admissionErr != nil && !errors.Is(admissionErr, repository.ErrSendAdmissionDenied) {
+		errs.CaptureException(admissionErr)
+		return errx.InternalError()
 	}
-	planAllowance, xerr := s.manualPlanAllowance(ctx, *account.OrganizationID)
-	if xerr != nil {
-		return xerr
+	planAllowance := 0
+	if admissionErr == nil {
+		if planAllowance, xerr = s.manualPlanAllowance(ctx, *account.OrganizationID); xerr != nil {
+			return xerr
+		}
 	}
 
-	// STEP 5: Mark task as active (with advisory lock)
-	if err := s.taskRepo.UpdateTaskStatusWithLock(ctx, taskID, "active"); err != nil {
+	// STEP 5: Claim from pending only, so a cancel that committed first ends the send here.
+	claimed, err := s.taskRepo.ClaimPendingTask(ctx, taskID)
+	if err != nil {
 		errs.CaptureException(err)
 		return errx.InternalError()
+	}
+	if !claimed {
+		log.Info().Str("task_id", taskID.String()).Msg("user_email skipped: task left pending before it was claimed")
+		return nil
+	}
+	if admissionErr != nil {
+		return s.refuseUserEmail(ctx, taskID, account, admissionErr)
 	}
 
 	// STEP 6: Add signature if SignatureSync, then any forwarded message under it
