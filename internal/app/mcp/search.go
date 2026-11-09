@@ -345,6 +345,9 @@ func dedupe(in []generation.SearchResult) []generation.SearchResult {
 		}
 		if out[i].Title == "" {
 			out[i].Title = r.Title
+		} else if r.Title != "" && r.Title != out[i].Title && !strings.Contains(out[i].Snippet, r.Title) {
+			// A different title can carry what the kept one does not, an address say.
+			out[i].Snippet = strings.TrimSpace(out[i].Snippet + " " + r.Title)
 		}
 		if r.Snippet != "" && !strings.Contains(out[i].Snippet, r.Snippet) {
 			out[i].Snippet = strings.TrimSpace(out[i].Snippet + " " + r.Snippet)

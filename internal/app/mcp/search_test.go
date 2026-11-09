@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/generation"
 )
 
 func tool(name, schema string) models.MCPTool {
@@ -99,5 +100,15 @@ func TestOnlyAToolThatTakesAQueryCanBeTheSearch(t *testing.T) {
 	}
 	if validSearchTool(sv, "extract_content") == nil || validSearchTool(sv, "missing") == nil {
 		t.Fatal("a tool that cannot search was accepted")
+	}
+}
+
+func TestDuplicateLinksKeepEveryTitle(t *testing.T) {
+	got := dedupe([]generation.SearchResult{
+		{URL: "https://acme.com/", Title: "Acme Plumbing"},
+		{URL: "https://acme.com/", Title: "Contact office@acme.com"},
+	})
+	if len(got) != 1 || got[0].Title != "Acme Plumbing" || !strings.Contains(got[0].Snippet, "office@acme.com") {
+		t.Fatalf("got %+v", got)
 	}
 }
