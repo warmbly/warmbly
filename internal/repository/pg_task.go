@@ -228,15 +228,13 @@ type TaskRepository interface {
 	// currently scheduled (regardless of fire time). Used for the
 	// scope-rail counter and the pending-send cap.
 	CountScheduledInOrg(ctx context.Context, orgID uuid.UUID) (int64, error)
-	// CancelScheduledInOrg flips a pending email task to status
-	// 'cancelled' only when (a) it sends from one of the organization's
-	// mailboxes, (b) it's still pending. Returns (cloudTaskName, ok, err) — the
-	// Cloud Task resource name is included so the caller can issue a
-	// best-effort DeleteTask to clean the queue. The handler still
-	// short-circuits on a non-pending status, so a failed DeleteTask
-	// just degrades to a harmless no-op dispatch — never a real send.
-	// `ok` distinguishes 404 (no row updated) from 200.
-	CancelScheduledInOrg(ctx context.Context, taskID, orgID uuid.UUID, accountIDs []uuid.UUID) (cloudTaskName *string, ok bool, err error)
+	// CancelScheduledInOrg cancels an email task sending from one of the
+	// organization's mailboxes, only while it is still pending, and returns its
+	// Cloud Task name for a best-effort queue cleanup.
+	CancelScheduledInOrg(ctx context.Context, taskID, orgID uuid.UUID, accountIDs []uuid.UUID) (cloudTaskName *string, outcome ScheduledCancelOutcome, err error)
+	// ClaimPendingTask moves a task from pending to active and reports whether
+	// this caller made that move; nothing else may then cancel or claim it.
+	ClaimPendingTask(ctx context.Context, taskID uuid.UUID) (bool, error)
 	// ProviderThreadForMailbox returns the provider thread the mailbox itself
 	// holds for a unibox conversation, or "" when it holds none.
 	ProviderThreadForMailbox(ctx context.Context, emailAccountID uuid.UUID, threadID string) (string, error)
@@ -1447,36 +1445,62 @@ func (r *taskRepository) CountScheduledInOrg(ctx context.Context, orgID uuid.UUI
 	return n, err
 }
 
-// CancelScheduledInOrg flips a single pending email task to
-// 'cancelled', enforcing the tenant through the email_accounts join.
-// Returns the Cloud Task resource name (if the row had one) so the
-// caller can issue a best-effort DeleteTask to clean up the GCP
-// queue. ok=false when the task either doesn't exist, sends from
-// another organization's mailbox or one outside accountIDs, isn't an
-// email task, or already left the pending state.
-func (r *taskRepository) CancelScheduledInOrg(ctx context.Context, taskID, orgID uuid.UUID, accountIDs []uuid.UUID) (*string, bool, error) {
+// ScheduledCancelOutcome is how a cancel of a scheduled email ended.
+type ScheduledCancelOutcome int
+
+const (
+	// ScheduledCancelNotFound: no such email task in the organization's reach.
+	ScheduledCancelNotFound ScheduledCancelOutcome = iota
+	// ScheduledCancelled: the task was pending and is now cancelled.
+	ScheduledCancelled
+	// ScheduledCancelNotPending: the task exists but already left pending.
+	ScheduledCancelNotPending
+)
+
+// CancelScheduledInOrg is a compare-and-set from pending, tenant-scoped through the mailbox.
+func (r *taskRepository) CancelScheduledInOrg(ctx context.Context, taskID, orgID uuid.UUID, accountIDs []uuid.UUID) (*string, ScheduledCancelOutcome, error) {
 	query := `
-		UPDATE tasks t
-		SET status = 'cancelled',
-		    updated_at = NOW()
-		FROM email_accounts ea
-		WHERE t.id = $1
-		  AND t.email_account_id = ea.id
-		  AND ea.organization_id = $2
-		  AND t.task_type = 'email'
-		  AND t.status = 'pending'
-		  AND (COALESCE(cardinality($3::uuid[]), 0) = 0 OR ea.id = ANY($3::uuid[]))
-		RETURNING t.cloud_task_name
+		WITH target AS (
+			SELECT t.id
+			FROM tasks t
+			JOIN email_accounts ea ON ea.id = t.email_account_id
+			WHERE t.id = $1
+			  AND ea.organization_id = $2
+			  AND t.task_type = 'email'
+			  AND (COALESCE(cardinality($3::uuid[]), 0) = 0 OR ea.id = ANY($3::uuid[]))
+		), cancelled AS (
+			UPDATE tasks t
+			SET status = 'cancelled',
+			    updated_at = NOW()
+			FROM target
+			WHERE t.id = target.id
+			  AND t.status = 'pending'
+			RETURNING t.cloud_task_name
+		)
+		SELECT EXISTS (SELECT 1 FROM target), EXISTS (SELECT 1 FROM cancelled), (SELECT cloud_task_name FROM cancelled)
 	`
+	var found, cancelled bool
 	var cloudTaskName *string
-	err := r.db.QueryRow(ctx, query, taskID, orgID, accountIDs).Scan(&cloudTaskName)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, false, nil
-		}
-		return nil, false, err
+	if err := r.db.QueryRow(ctx, query, taskID, orgID, accountIDs).Scan(&found, &cancelled, &cloudTaskName); err != nil {
+		return nil, ScheduledCancelNotFound, err
 	}
-	return cloudTaskName, true, nil
+	switch {
+	case cancelled:
+		return cloudTaskName, ScheduledCancelled, nil
+	case found:
+		return nil, ScheduledCancelNotPending, nil
+	default:
+		return nil, ScheduledCancelNotFound, nil
+	}
+}
+
+// ClaimPendingTask is the only pending-to-active transition an executor takes.
+func (r *taskRepository) ClaimPendingTask(ctx context.Context, taskID uuid.UUID) (bool, error) {
+	tag, err := r.db.Exec(ctx, `UPDATE tasks SET status = 'active', updated_at = NOW() WHERE id = $1 AND status = 'pending'`, taskID)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
 }
 
 // ProviderThreadForMailbox returns the provider thread the mailbox holds for a

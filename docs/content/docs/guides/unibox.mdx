@@ -383,7 +383,7 @@ With a recipient set, **History** slides out every conversation you have had wit
 | **Schedule** | Queue a send for later. It appears inline in the thread as a dashed card and in the **Scheduled** view, where anyone in the workspace with Unibox access can cancel it. A usage meter warns as the workspace approaches its queued-send cap. |
 | **Snooze** | Clears a conversation until a time you pick, up to 90 days out, with presets or a custom time. **Un-snooze now** brings it back immediately. |
 
-Scheduled and smart-queued sends skip the undo window, since they already wait. Cancel them from the **Scheduled** view, or via `DELETE /unibox/scheduled/:task_id`.
+Scheduled and smart-queued sends skip the undo window, since they already wait. Cancel them from the **Scheduled** view, or via `DELETE /unibox/scheduled/:task_id`. A send can be cancelled until it starts sending; a cancelled send never goes out, and one that has already started answers that it is no longer pending.
 
 Replies, forwards and new emails from the unibox are conversations, not outreach, so they never count toward a mailbox's daily campaign limit or its warmup volume, and a mailbox that has sent its campaign emails for the day can still answer a lead. They are held to fair use instead, counted in recipients (every To, Cc and Bcc address).
 
