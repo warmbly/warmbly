@@ -36,7 +36,7 @@ export default function MailboxSignInPage() {
     const apps = useMailboxOAuthApps(canManage && !partner);
     const keeps = (apps.data?.data.length ?? 0) > 0;
     if (!canManage) return <NoAccess feature="Mailbox sign-in" permissionLabel="Manage mailboxes" />;
-    if (!access.loading && !partner && !apps.isLoading && !keeps) {
+    if (!access.loading && !partner && apps.isSuccess && !keeps) {
         return (
             <SectionShell title="Mailbox sign-in" description="Your own Google and Microsoft OAuth apps.">
                 <Section eyebrow="Partnership plan" description="Signing mailboxes in through your own OAuth app is part of the Partnership plan. Ask Warmbly to offer it to this workspace.">
