@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -90,7 +91,13 @@ func TestLiveIdempotencyKeepsIdentityAndCompletion(t *testing.T) {
 
 	done := make(chan *httptest.ResponseRecorder)
 	go func() { done <- send(ctx, "/contacts/aaa?mode=hold", "k2") }()
-	<-entered
+	select {
+	case <-entered:
+	case early := <-done:
+		t.Fatalf("held request returned %d %s before reaching the handler", early.Code, early.Body.String())
+	case <-time.After(10 * time.Second):
+		t.Fatal("held request neither reached the handler nor returned")
+	}
 	if second := send(ctx, "/contacts/aaa?mode=hold", "k2"); second.Code != http.StatusConflict || code(second) != "conflict" {
 		t.Fatalf("concurrent duplicate = %d %q, want 409 while the first runs", second.Code, code(second))
 	}

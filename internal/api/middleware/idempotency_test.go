@@ -92,6 +92,15 @@ func asAPIKey(keyID, userID string) func(*gin.Context) {
 	}
 }
 
+func asOAuth(grantID, appID uuid.UUID, userID string) func(*gin.Context) {
+	return func(c *gin.Context) {
+		c.Set(AuthTypeKey, AuthTypeOAuth)
+		c.Set(OAuthGrantIDKey, grantID)
+		c.Set(OAuthApplicationIDKey, appID)
+		c.Set(UserIDKey, userID)
+	}
+}
+
 func sendIdempotent(r http.Handler, method, path, key, body string) *httptest.ResponseRecorder {
 	req := httptest.NewRequestWithContext(context.Background(), method, path, strings.NewReader(body))
 	req.Header.Set(IdempotencyKeyHeader, key)
@@ -155,24 +164,29 @@ func TestIdempotencyIdentityNamesTheConcreteResourceAndCredential(t *testing.T) 
 	asMember := idempotentRouter(svc, orgID, asUser(user), ok)
 	asKeyA := idempotentRouter(svc, orgID, asAPIKey(uuid.NewString(), user), ok)
 	asKeyB := idempotentRouter(svc, orgID, asAPIKey(uuid.NewString(), user), ok)
+	app := uuid.New()
+	asGrantA := idempotentRouter(svc, orgID, asOAuth(uuid.New(), app, user), ok)
+	asGrantB := idempotentRouter(svc, orgID, asOAuth(uuid.New(), app, user), ok)
 
 	sendIdempotent(asMember, http.MethodPatch, "/contacts/aaa", "k", `{"name":"x"}`)
 	sendIdempotent(asMember, http.MethodPatch, "/contacts/bbb", "k", `{"name":"x"}`)
 	sendIdempotent(asKeyA, http.MethodPatch, "/contacts/aaa", "k", `{"name":"x"}`)
 	sendIdempotent(asKeyB, http.MethodPatch, "/contacts/aaa", "k", `{"name":"x"}`)
+	sendIdempotent(asGrantA, http.MethodPatch, "/contacts/aaa", "k", `{"name":"x"}`)
+	sendIdempotent(asGrantB, http.MethodPatch, "/contacts/aaa", "k", `{"name":"x"}`)
 	sendIdempotent(asMember, http.MethodPatch, "/contacts/aaa", "k", `{"name":"x"}`)
 
 	if got := svc.begins[0].path; got != "/contacts/aaa" {
 		t.Fatalf("stored path = %q, want the concrete path", got)
 	}
 	seen := map[string]int{}
-	for i, b := range svc.begins[:4] {
+	for i, b := range svc.begins[:6] {
 		if prev, dup := seen[b.hash]; dup {
 			t.Fatalf("requests %d and %d share an identity hash", prev, i)
 		}
 		seen[b.hash] = i
 	}
-	if svc.begins[4].hash != svc.begins[0].hash {
+	if svc.begins[6].hash != svc.begins[0].hash {
 		t.Fatal("the same request from the same credential produced a different identity")
 	}
 }

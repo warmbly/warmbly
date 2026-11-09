@@ -72,7 +72,8 @@ or `@file`.
 - Retried writes: pass `--idempotency-key <same-key>` so a retry can never
   double-apply. Any unique string works; reuse it only for the identical retry.
   A `409 idempotency_outcome_unknown` means the first attempt ended in a server
-  error: read the resource back, and retry with a new key only if it did not apply.
+  error and may have applied: retry with a new key only once you have
+  established that it did not.
 - `contact list` is a search: `--data` carries the filter body, e.g.
   `--data '{"query":"acme.com"}'`. Omit it to list everything.
 

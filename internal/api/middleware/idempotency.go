@@ -86,7 +86,7 @@ func (h *Handler) IdempotencyMiddleware() gin.HandlerFunc {
 			return
 		case idempotency.StateUncertain:
 			errx.Handle(c, errx.NewWithIdentifier(errx.Conflict, "idempotency_outcome_unknown",
-				"The request with this Idempotency-Key ended without a definite outcome. Check the resource, then retry with a new key."))
+				"The request with this Idempotency-Key ended without a definite outcome. Retry with a new key only once you know the change did not happen."))
 			c.Abort()
 			return
 		}
@@ -166,6 +166,10 @@ func idempotencyPrincipal(c *gin.Context) string {
 			return "api_key:" + id.String()
 		}
 	case AuthTypeOAuth:
+		// A grant keeps its id across refreshes, and each grant holds its own scopes.
+		if grant := GetOAuthGrantID(c); grant != nil {
+			return "oauth_grant:" + grant.String()
+		}
 		if app := GetOAuthApplicationID(c); app != nil {
 			return "oauth:" + app.String() + ":" + GetUserID(c)
 		}

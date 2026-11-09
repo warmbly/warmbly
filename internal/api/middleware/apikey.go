@@ -20,6 +20,7 @@ const (
 	APIKeyAllowedEmailAccountsKey = "api_key_allowed_email_accounts"
 	APIKeyUserIDKey               = "api_key_user_id"
 	OAuthApplicationIDKey         = "oauth_application_id"
+	OAuthGrantIDKey               = "oauth_grant_id"
 	AuthTypeKey                   = "auth_type"
 	AuthTypeJWT                   = "jwt"
 	AuthTypeAPIKey                = "api_key"
@@ -31,6 +32,19 @@ const (
 // app-registered webhook endpoints (and enforce their domain allowlist).
 func GetOAuthApplicationID(c *gin.Context) *uuid.UUID {
 	v, ok := c.Get(OAuthApplicationIDKey)
+	if !ok {
+		return nil
+	}
+	id, ok := v.(uuid.UUID)
+	if !ok || id == uuid.Nil {
+		return nil
+	}
+	return &id
+}
+
+// GetOAuthGrantID returns the grant behind an OAuth access token, or nil otherwise.
+func GetOAuthGrantID(c *gin.Context) *uuid.UUID {
+	v, ok := c.Get(OAuthGrantIDKey)
 	if !ok {
 		return nil
 	}
@@ -192,6 +206,7 @@ func setOAuthCaller(c *gin.Context, claims *oauth.AccessClaims) {
 	c.Set(UserIDKey, claims.UserID.String())
 	c.Set(OrganizationIDKey, claims.OrganizationID)
 	c.Set(OAuthApplicationIDKey, claims.ApplicationID)
+	c.Set(OAuthGrantIDKey, claims.GrantID)
 	if claims.Member != nil {
 		c.Set(SessionMemberKey, claims.Member)
 	}
