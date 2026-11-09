@@ -15,6 +15,9 @@ import (
 // ConnectLinkClaimStale is how long a claimed round trip holds a link before it may be revoked.
 const ConnectLinkClaimStale = 15 * time.Minute
 
+// ErrConnectLinkNotRecorded is a completion for a link that is no longer the claim it was.
+var ErrConnectLinkNotRecorded = errors.New("sign-in link completion was not recorded")
+
 // ConnectLinkCursor pages links newest first.
 type ConnectLinkCursor struct {
 	CreatedAt time.Time
@@ -148,8 +151,14 @@ func (r *mailboxConnectLinkRepository) ReleaseConnectLink(ctx context.Context, i
 }
 
 func (r *mailboxConnectLinkRepository) CompleteConnectLink(ctx context.Context, id, accountID uuid.UUID, warning string) error {
-	_, err := r.db.Exec(ctx, `UPDATE mailbox_connect_links
+	tag, err := r.db.Exec(ctx, `UPDATE mailbox_connect_links
 		SET status = 'connected', error_code = $3, email_account_id = $2, completed_at = now(), updated_at = now()
 		WHERE id = $1 AND status = 'connecting'`, id, accountID, warning)
-	return err
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrConnectLinkNotRecorded
+	}
+	return nil
 }

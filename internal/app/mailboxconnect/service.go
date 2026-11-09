@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/mail"
 	"net/url"
@@ -39,6 +40,7 @@ const (
 	DefaultLinkHours = 72
 	MaxLinkHours     = 168
 	stateTTL         = 15 * time.Minute
+	finishBudget     = 5 * time.Minute
 	listMax          = 100
 	listDefault      = 25
 )
@@ -445,6 +447,9 @@ func (s *Service) Continue(ctx context.Context, token, binding string) (string, 
 
 // Finish completes a round trip in the browser that started it; a refused attempt leaves the link usable until it expires.
 func (s *Service) Finish(ctx context.Context, code, state, providerErr, binding string) (*Finished, *errx.Error) {
+	// The whole round trip ends well inside the stale-claim window, so a revoke never lands before the mailbox does.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), finishBudget)
+	defer cancel()
 	if s.cache == nil {
 		return nil, errx.InternalError()
 	}
@@ -543,12 +548,14 @@ func (s *Service) returnTo(l *models.MailboxConnectLink, status, code string) st
 func (s *Service) completeLink(ctx context.Context, linkID, accountID uuid.UUID, warning string) {
 	var err error
 	for attempt := 0; attempt < 3; attempt++ {
-		if err = s.links.CompleteConnectLink(ctx, linkID, accountID, warning); err == nil {
-			return
+		if err = s.links.CompleteConnectLink(ctx, linkID, accountID, warning); err == nil || errors.Is(err, repository.ErrConnectLinkNotRecorded) {
+			break
 		}
 		time.Sleep(time.Duration(attempt+1) * 200 * time.Millisecond)
 	}
-	errs.CaptureException(fmt.Errorf("complete connect link: %w", err))
+	if err != nil {
+		errs.CaptureException(fmt.Errorf("complete connect link %s for mailbox %s: %w", linkID, accountID, err))
+	}
 }
 
 // PartnerTools reports a workspace that may use the Partnership tools; feature.FeatureGateService satisfies it.
