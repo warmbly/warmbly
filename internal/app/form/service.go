@@ -29,7 +29,7 @@ type Service interface {
 	Create(ctx context.Context, orgID uuid.UUID, createdBy *uuid.UUID, name string) (*models.Form, *errx.Error)
 	Update(ctx context.Context, orgID, id uuid.UUID, in *models.FormWrite) (*models.Form, *errx.Error)
 	Delete(ctx context.Context, orgID, id uuid.UUID) *errx.Error
-	ListSubmissions(ctx context.Context, orgID, formID uuid.UUID, limit int, before *time.Time) ([]models.FormSubmission, bool, *errx.Error)
+	ListSubmissions(ctx context.Context, orgID, formID uuid.UUID, limit int, after *models.FormSubmissionPosition) ([]models.FormSubmission, bool, *errx.Error)
 	DeleteSubmission(ctx context.Context, orgID, formID, subID uuid.UUID) *errx.Error
 	// SetAsset stores an uploaded brand asset URL; an empty url clears it.
 	SetAsset(ctx context.Context, orgID, id uuid.UUID, kind, url string) (*models.Form, *errx.Error)
@@ -420,8 +420,8 @@ func (s *service) Delete(ctx context.Context, orgID, id uuid.UUID) *errx.Error {
 	return s.repo.Delete(ctx, orgID, id)
 }
 
-func (s *service) ListSubmissions(ctx context.Context, orgID, formID uuid.UUID, limit int, before *time.Time) ([]models.FormSubmission, bool, *errx.Error) {
-	return s.repo.ListSubmissions(ctx, orgID, formID, limit, before)
+func (s *service) ListSubmissions(ctx context.Context, orgID, formID uuid.UUID, limit int, after *models.FormSubmissionPosition) ([]models.FormSubmission, bool, *errx.Error) {
+	return s.repo.ListSubmissions(ctx, orgID, formID, limit, after)
 }
 
 func (s *service) DeleteSubmission(ctx context.Context, orgID, formID, subID uuid.UUID) *errx.Error {

@@ -19,6 +19,15 @@ import {
 import type { FormAssetKind } from "@/lib/api/client/app/forms";
 import type { FormWrite } from "@/lib/api/models/app/forms/Form";
 import type { FormStatsRange } from "@/lib/api/models/app/forms/FormStats";
+import {
+    appendPage,
+    mergeRefreshed,
+    readWindow,
+    removeSubmissions,
+    restoreSubmission,
+    SUBMISSIONS_PAGE_SIZE,
+    type SubmissionsWindow,
+} from "./submissionsWindow";
 
 // Every form read lives under ["forms"]: the realtime spine invalidates that
 // prefix on any form mutation, and FORM_SUBMISSION_CREATED events refresh
@@ -40,11 +49,35 @@ export function useFormsConfig() {
     return useQuery({ queryKey: ["forms", "instance-config"], queryFn: getFormsConfig, staleTime: 5 * 60 * 1000 });
 }
 
-export function useFormSubmissions(id: string | undefined, before?: string) {
+export const formSubmissionsKey = (id: string | undefined) => ["forms", id, "submissions"] as const;
+
+// Realtime invalidations of ["forms"] land here: the refresh re-reads every
+// loaded row, so later pages keep their rows and lose deleted ones.
+export function useFormSubmissions(id: string | undefined) {
+    const queryClient = useQueryClient();
     return useQuery({
-        queryKey: ["forms", id, "submissions", before ?? ""],
-        queryFn: () => listFormSubmissions(id as string, 50, before),
+        queryKey: formSubmissionsKey(id),
+        queryFn: async (): Promise<SubmissionsWindow> => {
+            const key = formSubmissionsKey(id);
+            const before = queryClient.getQueryData<SubmissionsWindow>(key);
+            const fresh = await readWindow((page, limit) => listFormSubmissions(id as string, limit, page), before);
+            return mergeRefreshed(fresh, queryClient.getQueryData<SubmissionsWindow>(key));
+        },
         enabled: !!id,
+    });
+}
+
+export function useLoadMoreFormSubmissions(id: string) {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async () => {
+            const next = queryClient.getQueryData<SubmissionsWindow>(formSubmissionsKey(id))?.next;
+            return next ? await listFormSubmissions(id, SUBMISSIONS_PAGE_SIZE, next) : null;
+        },
+        onSuccess: (page) => {
+            if (!page) return;
+            queryClient.setQueryData<SubmissionsWindow>(formSubmissionsKey(id), (w) => (w ? appendPage(w, page) : w));
+        },
     });
 }
 
@@ -108,12 +141,26 @@ export function useDeleteFormImage() {
     });
 }
 
+// Optimistic: the row leaves every loaded page at once and comes back if the
+// server refuses.
 export function useDeleteFormSubmission() {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: ({ formId, submissionId }: { formId: string; submissionId: string }) =>
             deleteFormSubmission(formId, submissionId),
-        onSuccess: () => invalidateForms(queryClient),
+        onMutate: async ({ formId, submissionId }) => {
+            const key = formSubmissionsKey(formId);
+            await queryClient.cancelQueries({ queryKey: key });
+            const removed = queryClient.getQueryData<SubmissionsWindow>(key)?.rows.find((r) => r.id === submissionId);
+            queryClient.setQueryData<SubmissionsWindow>(key, (w) => (w ? removeSubmissions(w, new Set([submissionId])) : w));
+            return { removed };
+        },
+        onError: (_err, { formId }, ctx) => {
+            const removed = ctx?.removed;
+            if (!removed) return;
+            queryClient.setQueryData<SubmissionsWindow>(formSubmissionsKey(formId), (w) => (w ? restoreSubmission(w, removed) : w));
+        },
+        onSettled: () => invalidateForms(queryClient),
     });
 }
 

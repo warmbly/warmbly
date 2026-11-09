@@ -9,7 +9,10 @@ import SubmissionsTab from "./SubmissionsTab";
 vi.mock("@/hooks/context/confirm", () => ({ useConfirm: () => ({ show: vi.fn() }) }));
 vi.mock("@/hooks/usePermission", () => ({ useWriteGuard: () => ({ guard: (fn: () => void) => fn }) }));
 vi.mock("@/lib/api/hooks/app/forms", () => ({
-    useFormSubmissions: () => ({ data: { data: [{ id: "response", contact_name: "Alice", data: {}, created_at: new Date(), triage: "good" }] } }),
+    useFormSubmissions: () => ({
+        data: { rows: [{ id: "response", contact_name: "Alice", data: {}, created_at: new Date().toISOString(), triage: "good" }], next: null, hasMore: false },
+    }),
+    useLoadMoreFormSubmissions: () => ({ isPending: false }),
     useFormStats: () => ({ data: { identified: [] } }),
     useDeleteFormSubmission: () => ({}),
 }));

@@ -30,7 +30,7 @@ type FormRepository interface {
 	RecordView(ctx context.Context, formID uuid.UUID) *errx.Error
 	// CreateSubmission stores the answers and bumps the form's counters.
 	CreateSubmission(ctx context.Context, sub *models.FormSubmission) (*models.FormSubmission, *errx.Error)
-	ListSubmissions(ctx context.Context, orgID, formID uuid.UUID, limit int, before *time.Time) ([]models.FormSubmission, bool, *errx.Error)
+	ListSubmissions(ctx context.Context, orgID, formID uuid.UUID, limit int, after *models.FormSubmissionPosition) ([]models.FormSubmission, bool, *errx.Error)
 	// LogSubmissionActivity adds the form_submitted event to the contact
 	// timeline; best-effort, called after the submission is stored.
 	LogSubmissionActivity(ctx context.Context, orgID, contactID, formID uuid.UUID, formName string, submissionID uuid.UUID) *errx.Error
@@ -326,9 +326,17 @@ func (r *formRepository) CreateSubmission(ctx context.Context, sub *models.FormS
 	return sub, nil
 }
 
-func (r *formRepository) ListSubmissions(ctx context.Context, orgID, formID uuid.UUID, limit int, before *time.Time) ([]models.FormSubmission, bool, *errx.Error) {
+func (r *formRepository) ListSubmissions(ctx context.Context, orgID, formID uuid.UUID, limit int, after *models.FormSubmissionPosition) ([]models.FormSubmission, bool, *errx.Error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
+	}
+	var at *time.Time
+	var afterID *uuid.UUID
+	if after != nil {
+		at = &after.At
+		if after.ID != uuid.Nil {
+			afterID = &after.ID
+		}
 	}
 	rows, err := r.DB.Query(ctx, `
 		SELECT s.id, s.form_id, s.organization_id, s.contact_id, s.campaign_id, s.data, s.source_url, s.triage, s.triage_confidence, s.created_at,
@@ -336,10 +344,10 @@ func (r *formRepository) ListSubmissions(ctx context.Context, orgID, formID uuid
 		FROM form_submissions s
 		LEFT JOIN contacts c ON c.id = s.contact_id
 		LEFT JOIN campaigns cp ON cp.id = s.campaign_id
-		WHERE s.organization_id = $1 AND s.form_id = $2 AND ($3::timestamptz IS NULL OR s.created_at < $3)
-		ORDER BY s.created_at DESC
-		LIMIT $4
-	`, orgID, formID, before, limit+1)
+		WHERE s.organization_id = $1 AND s.form_id = $2 AND ($3::timestamptz IS NULL OR s.created_at < $3 OR (s.created_at = $3 AND s.id < $4::uuid))
+		ORDER BY s.created_at DESC, s.id DESC
+		LIMIT $5
+	`, orgID, formID, at, afterID, limit+1)
 	if err != nil {
 		db.CaptureError(err, "form submissions list", nil, "query")
 		return nil, false, errx.InternalError()

@@ -235,6 +235,13 @@ const (
 
 // FormSubmission is one public submit, kept verbatim. Data is keyed by field
 // id; checkbox groups store a string slice, everything else a string.
+// FormSubmissionPosition is the keyset a submissions page continues after; a
+// nil ID is a legacy timestamp-only cursor and continues strictly before At.
+type FormSubmissionPosition struct {
+	At time.Time
+	ID uuid.UUID
+}
+
 type FormSubmission struct {
 	ID             uuid.UUID  `json:"id"`
 	FormID         uuid.UUID  `json:"form_id"`

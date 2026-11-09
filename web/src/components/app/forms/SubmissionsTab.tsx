@@ -1,7 +1,7 @@
 // SubmissionsTab — the responses table: every submission plus every identified
 // visitor who opened their link but has not finished, one activity-sorted list.
-// The newest submissions page stays live through the realtime spine; older
-// pages are appended on demand.
+// Every loaded page stays live through the realtime spine; older pages are
+// appended on demand.
 
 import React from "react";
 import useBrowseState from "@/hooks/useBrowseState";
@@ -14,8 +14,12 @@ import { EmptyBlock } from "@/components/layout/Page";
 import { SearchInput } from "@/components/ui/field";
 import { useConfirm } from "@/hooks/context/confirm";
 import { useWriteGuard } from "@/hooks/usePermission";
-import { listFormSubmissions } from "@/lib/api/client/app/forms";
-import { useDeleteFormSubmission, useFormStats, useFormSubmissions } from "@/lib/api/hooks/app/forms";
+import {
+    useDeleteFormSubmission,
+    useFormStats,
+    useFormSubmissions,
+    useLoadMoreFormSubmissions,
+} from "@/lib/api/hooks/app/forms";
 import type Form from "@/lib/api/models/app/forms/Form";
 import type { FormSubmission, FormTriage } from "@/lib/api/models/app/forms/Form";
 import type { FormIdentifiedVisitor } from "@/lib/api/models/app/forms/FormStats";
@@ -72,6 +76,7 @@ export default function SubmissionsTab({ form }: { form: Form }) {
     const confirm = useConfirm();
     const write = useWriteGuard("MANAGE_CONTACTS");
     const first = useFormSubmissions(form.id);
+    const more = useLoadMoreFormSubmissions(form.id);
     // Identified-visitor rows come from the stats payload; widest range so an
     // in-progress opener does not vanish from the list after a week.
     const stats = useFormStats(form.id, "90d");
@@ -79,10 +84,6 @@ export default function SubmissionsTab({ form }: { form: Form }) {
 
     const totalPages = React.useMemo(() => splitPages(form.fields).length, [form.fields]);
 
-    // Older pages, loaded past the live first page.
-    const [older, setOlder] = React.useState<FormSubmission[]>([]);
-    const [olderHasMore, setOlderHasMore] = React.useState(false);
-    const [loadingMore, setLoadingMore] = React.useState(false);
     const [selected, setSelected] = React.useState<FormSubmission | null>(null);
 
     const [query, setQuery] = useBrowseState(`forms.${form.id}.submissions.query`, "", browseSearchSchema);
@@ -90,13 +91,9 @@ export default function SubmissionsTab({ form }: { form: Form }) {
     const [checked, setChecked] = React.useState<string[]>([]);
     const [bulkBusy, setBulkBusy] = React.useState(false);
 
-    const firstPage = React.useMemo(() => first.data?.data ?? [], [first.data]);
-    const firstIds = React.useMemo(() => new Set(firstPage.map((s) => s.id)), [firstPage]);
-    const submissions = React.useMemo(
-        () => [...firstPage, ...older.filter((s) => !firstIds.has(s.id))],
-        [firstPage, older, firstIds],
-    );
-    const hasMore = older.length > 0 ? olderHasMore : (first.data?.has_more ?? false);
+    const submissions = React.useMemo(() => first.data?.rows ?? [], [first.data]);
+    const hasMore = first.data?.hasMore ?? false;
+    const loadingMore = more.isPending;
 
     const rows = React.useMemo<Row[]>(() => {
         const out: Row[] = submissions.map((s) => ({
@@ -162,17 +159,10 @@ export default function SubmissionsTab({ form }: { form: Form }) {
     }
 
     async function loadMore() {
-        const last = submissions[submissions.length - 1];
-        if (!last) return;
-        setLoadingMore(true);
         try {
-            const res = await listFormSubmissions(form.id, 50, new Date(last.created_at).toISOString());
-            setOlder((prev) => [...prev, ...res.data]);
-            setOlderHasMore(res.has_more);
+            await more.mutateAsync();
         } catch (err) {
             toast.error(buildError(err as AppError));
-        } finally {
-            setLoadingMore(false);
         }
     }
 
@@ -181,7 +171,6 @@ export default function SubmissionsTab({ form }: { form: Form }) {
             confirm.show("Delete this submission? The contact it created is kept.", async () => {
                 try {
                     await remove.mutateAsync({ formId: form.id, submissionId: s.id });
-                    setOlder((prev) => prev.filter((x) => x.id !== s.id));
                     setChecked((prev) => prev.filter((x) => x !== s.id));
                     setSelected((cur) => (cur?.id === s.id ? null : cur));
                     toast.success("Submission deleted");
@@ -202,7 +191,6 @@ export default function SubmissionsTab({ form }: { form: Form }) {
                 );
                 setBulkBusy(false);
                 const okIds = new Set(ids.filter((_, i) => results[i].status === "fulfilled"));
-                setOlder((prev) => prev.filter((x) => !okIds.has(x.id)));
                 setSelected((cur) => (cur && okIds.has(cur.id) ? null : cur));
                 setChecked([]);
                 if (okIds.size === ids.length) toast.success(`${okIds.size} submissions deleted`);
