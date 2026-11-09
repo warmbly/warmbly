@@ -67,6 +67,8 @@ type TasksService interface {
 	// task chain died (swallowed enqueue / crash between ticks). Campaigns have
 	// no other bootstrap once started, so this is the stall backstop.
 	StartCampaignReconciler(ctx context.Context, interval time.Duration)
+	// StartManualSendRecovery runs again, or fails visibly, a manual send whose execution stopped before it reserved.
+	StartManualSendRecovery(ctx context.Context, interval time.Duration)
 
 	// SetAI wires the LLM provider + credit ledger the campaign "switch" sequence
 	// steps run over (mirrors integration.Service.SetAI). Nil provider leaves
