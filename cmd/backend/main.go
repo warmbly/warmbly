@@ -2214,6 +2214,10 @@ func main() {
 		if m, ok := integrationServiceForHandler.(interface{ StartSigningSecretMigration(context.Context) }); ok {
 			elector.Go("signing_secret_migration", m.StartSigningSecretMigration)
 		}
+		// Inbound URL secrets are sealed with the org DEK; this seals any a writer stored without that copy.
+		if m, ok := integrationServiceForHandler.(interface{ StartInboundSecretSealing(context.Context) }); ok {
+			elector.Go("inbound_secret_sealing", m.StartInboundSecretSealing)
+		}
 		go elector.Run(ctx)
 
 		// Danger zone: schedule + execute delayed deletions (orgs, accounts).

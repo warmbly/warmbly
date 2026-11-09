@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"slices"
 	"strings"
@@ -32,7 +33,11 @@ import (
 type perOrgKeys map[uuid.UUID]cipher.CipherService
 
 func (k perOrgKeys) Cipher(ctx context.Context, orgID uuid.UUID) (*cipher.Cipher, error) {
-	return k[orgID].Cipher(ctx, orgID)
+	keys, ok := k[orgID]
+	if !ok {
+		return nil, errors.New("no key for this organization")
+	}
+	return keys.Cipher(ctx, orgID)
 }
 
 func keyedImportService(t *testing.T, keys perOrgKeys) (Service, *pgxpool.Pool) {
@@ -275,6 +280,18 @@ func TestLiveArchiveCarriesIntegrationCredentialsAndDirectMailLinks(t *testing.T
 			for _, w := range result.Warnings {
 				if strings.Contains(w, "integration arrived without its credentials") {
 					reconnect = append(reconnect, w)
+				}
+			}
+			// Each connection is named once, whatever of its credentials and inbound URL stayed behind.
+			for _, name := range []string{"apollo (Prospecting)", "The hubspot integration", "calendly (Bookings)"} {
+				n := 0
+				for _, w := range result.Warnings {
+					if strings.Contains(w, name) {
+						n++
+					}
+				}
+				if n > 1 {
+					t.Fatalf("%s is named in %d import warnings, want one", name, n)
 				}
 			}
 
