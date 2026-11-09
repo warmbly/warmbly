@@ -120,10 +120,13 @@ func (s *JobsService) reconcileRecordedSendResults(ctx context.Context) {
 		}
 	}
 	if holds, ok := s.TaskRepo.(interface {
-		RecoverUnknownSendHolds(context.Context, time.Time, time.Time, int) (int, error)
+		RecoverUnknownSendHolds(context.Context, time.Time, time.Time, int) (int, []uuid.UUID, error)
 	}); ok {
 		now := time.Now()
-		n, err := holds.RecoverUnknownSendHolds(ctx, now.Add(-10*time.Minute), now.Add(-time.Duration(config.CampaignSendReclaimAfterMinutes)*time.Minute), 200)
+		n, unsent, err := holds.RecoverUnknownSendHolds(ctx, now.Add(-10*time.Minute), now.Add(-time.Duration(config.CampaignSendReclaimAfterMinutes)*time.Minute), 200)
+		for _, id := range unsent {
+			s.notifyManualSendUnsent(ctx, id)
+		}
 		if err != nil {
 			log.Warn().Err(err).Msg("unknown send hold recovery deferred")
 		} else if n > 0 {

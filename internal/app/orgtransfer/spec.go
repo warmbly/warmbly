@@ -953,9 +953,11 @@ var Tables = []Table{
 		Note:             "Historical reports travel; operation and clock provenance reset to unknown on the destination.",
 	},
 	{
+		// A direct send mints its tickets with a nil campaign id, so the owning task scopes them too.
 		Name: "tracked_links", Group: models.OrgDataGroupSending,
-		Scope: `campaign_id IN ` + orgCampaigns,
-		Note:  "Click tickets already in the wild keep resolving after the move, provided the tracking domain follows.",
+		Scope: `(campaign_id IN ` + orgCampaigns + ` OR task_id IN ` + orgTasks + `)`,
+		Owner: `(campaign_id IN ` + orgCampaigns + ` OR task_id IN (SELECT id FROM tasks WHERE email_account_id IN ` + orgMailboxes + `))`,
+		Note:  "Click tickets from campaign and direct sends already in the wild keep resolving after the move, provided the tracking domain follows.",
 	},
 	{
 		// Campaign engagement like campaign_contact_progress, one row per

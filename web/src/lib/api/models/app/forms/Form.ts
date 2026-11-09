@@ -153,7 +153,8 @@ export interface FormSubmission {
     source_url: string;
     triage?: FormTriage;
     triage_confidence?: number;
-    created_at: Date;
+    /** RFC 3339 with microseconds; the paging order, so never round it through Date. */
+    created_at: string;
     contact_email?: string;
     contact_name?: string;
     campaign_name?: string;

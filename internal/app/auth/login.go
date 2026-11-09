@@ -61,6 +61,9 @@ func (s *authService) LoginStart(ctx context.Context, data *AuthData, ipaddr, us
 		return nil, xerr
 	}
 	if pending {
+		if appCannotChangePassword(data, userAgent) {
+			return nil, errx.ErrInitialPasswordWebOnly
+		}
 		return s.createInitialPasswordChallenge(ctx, uid, data.Email, data.Password, verdict)
 	}
 

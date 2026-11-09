@@ -557,6 +557,18 @@ func (s *JobsService) notifyUserSendFailed(ctx context.Context, task *repository
 	})
 }
 
+// notifyManualSendUnsent tells the owner of a manual send that recovery released before any worker started it.
+func (s *JobsService) notifyManualSendUnsent(ctx context.Context, taskID uuid.UUID) {
+	if s.TaskRepo == nil {
+		return
+	}
+	task, err := s.TaskRepo.GetTask(ctx, taskID)
+	if err != nil || task == nil {
+		return
+	}
+	s.notifyUserSendFailed(ctx, task, "it never reached its sending worker, so nothing was sent. Send it again.")
+}
+
 // sendFailureReason picks the most useful human-readable reason and the
 // machine code out of a worker result.
 func sendFailureReason(result models.SendEmailResult) (reason, code string) {

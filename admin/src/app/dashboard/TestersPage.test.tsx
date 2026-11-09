@@ -38,7 +38,7 @@ describe("tester sample-data controls", () => {
     beforeEach(() => { access.canManage = true; });
 
     it("offers sample data for an active owned Test workspace", () => {
-        const document = render({ test_workspace_id: "test-workspace" });
+        const document = render({ test_workspace_id: "test-workspace", sample_data_eligible: true });
         const button = document.querySelector<HTMLButtonElement>('button[aria-label="Add sample data for reviewer@example.test"]');
         expect(button?.disabled).toBe(false);
         expect(button?.textContent).toBe("Add sample data");
@@ -51,9 +51,17 @@ describe("tester sample-data controls", () => {
         expect(render({ test_workspace_id: "test-workspace" }).querySelector('button[aria-label^="Add sample data for"]')).toBeNull();
     });
 
-    it("disables populated, expired and passwordless Test workspaces", () => {
+    it("keeps offering sample data after the tester replaces the initial password", () => {
+        const document = render({ test_workspace_id: "test-workspace", password_expires_at: null, sample_data_eligible: true });
+        const button = document.querySelector<HTMLButtonElement>('button[aria-label="Add sample data for reviewer@example.test"]');
+        expect(button?.disabled).toBe(false);
+    });
+
+    it("disables populated and ineligible Test workspaces", () => {
         for (const tester of [
-            { sample_data_seeded_at: "2026-01-01T00:00:00Z" },
+            { sample_data_eligible: true, sample_data_seeded_at: "2026-01-01T00:00:00Z" },
+            { sample_data_eligible: false },
+            // An older backend sends no eligibility; the outstanding password decides.
             { password_expires_at: "2020-01-01T00:00:00Z" },
             { password_expires_at: null },
         ]) {

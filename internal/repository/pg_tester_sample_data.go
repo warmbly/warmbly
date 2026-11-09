@@ -11,6 +11,15 @@ import (
 
 var ErrTesterWorkspaceInactive = errors.New("sample data requires an active dedicated Test workspace")
 
+// testerWorkspaceActiveSQL is the seeding authority over workspace o and owner u: an active tester
+// and an unexpired managed Test grant, whatever state the owner's initial password is in.
+func testerWorkspaceActiveSQL(planParam string) string {
+	return `o.category = 'test' AND u.login_code_exempt AND EXISTS (
+		SELECT 1 FROM subscriptions s WHERE s.organization_id = o.id
+		  AND s.managed_plan_id = ` + planParam + ` AND s.managed_at IS NOT NULL AND s.managed_until > now()
+	)`
+}
+
 func (r *organizationRepository) SeedTesterWorkspace(ctx context.Context, orgID, adminID uuid.UUID, ip, userAgent string) (*models.TesterSampleData, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
@@ -21,12 +30,7 @@ func (r *organizationRepository) SeedTesterWorkspace(ctx context.Context, orgID,
 	var ownerID uuid.UUID
 	err = tx.QueryRow(ctx, `
 		SELECT o.owner_user_id FROM organizations o JOIN users u ON u.id = o.owner_user_id
-		WHERE o.id = $1 AND o.category = 'test' AND u.login_code_exempt
-		  AND u.password_expires_at > now()
-		  AND EXISTS (
-			SELECT 1 FROM subscriptions s WHERE s.organization_id = o.id
-			  AND s.managed_plan_id = $2 AND s.managed_at IS NOT NULL AND s.managed_until > now()
-		  )
+		WHERE o.id = $1 AND `+testerWorkspaceActiveSQL("$2")+`
 		FOR UPDATE OF o, u`, orgID, models.TestPlanID).Scan(&ownerID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrTesterWorkspaceInactive

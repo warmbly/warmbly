@@ -199,6 +199,16 @@ func (s *service) ImportFrom(
 			"%d mailbox(es) have no usable credentials and are marked for reconnection.", reconnect))
 	}
 
+	if selected[models.OrgDataGroupAutomations] {
+		stale, err := s.repo.MarkIntegrationsNeedingReconnect(ctx, tx, orgID, integrationReconnectDetail)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range stale {
+			result.Warnings = append(result.Warnings, integrationReconnectWarning(c))
+		}
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit import: %w", err)
 	}
@@ -219,6 +229,8 @@ type importContext struct {
 	selected map[models.OrgDataGroup]bool
 	// rules re-apply write rules to the tables in importRules.
 	rules *ruleEnv
+	// bytea names the current table's bytea columns on this instance.
+	bytea map[string]bool
 }
 
 // importTable streams one table's rows out of the archive and into the
@@ -325,6 +337,8 @@ func (s *service) importTable(
 		warnings = append(warnings, fmt.Sprintf(
 			"%s has no primary key, so existing rows there were kept rather than overwritten.", t.Name))
 	}
+
+	ic.bytea = byteaColumns(destCols)
 
 	refs, err := s.referencePlan(ctx, t, destCols, ic.selected)
 	if err != nil {
@@ -517,6 +531,9 @@ func (s *service) importRow(
 		if rerr != nil {
 			return nil, fmt.Errorf("%s.%s: %w", t.Name, sc.Column, rerr)
 		}
+		if ic.bytea[sc.Column] {
+			resealed = encodeBytea(resealed)
+		}
 		enc, merr := json.Marshal(resealed)
 		if merr != nil {
 			return nil, merr
@@ -525,6 +542,18 @@ func (s *service) importRow(
 	}
 
 	return json.Marshal(obj)
+}
+
+// integrationReconnectDetail is the health detail an integration without its credentials carries.
+const integrationReconnectDetail = "Credentials did not come across with the workspace import: reconnect this integration."
+
+// integrationReconnectWarning names one connection by its provider and label, never by a credential.
+func integrationReconnectWarning(c repository.IntegrationReconnect) string {
+	name := c.Provider
+	if c.Label != "" {
+		name = fmt.Sprintf("%s (%s)", c.Provider, c.Label)
+	}
+	return fmt.Sprintf("The %s integration arrived without its credentials and is marked for reconnection.", name)
 }
 
 // sealSecret re-encrypts a plaintext under this instance's key for that domain.

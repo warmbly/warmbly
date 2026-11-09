@@ -70,6 +70,8 @@ struct AuthSession: Codable, Sendable {
     var twoFARequired: Bool?
     var pendingToken: String?
     var expiresIn: Int?
+    /// The password was an issued initial one: `pendingToken` goes to `/auth/login/initial-password`.
+    var passwordChangeRequired: Bool?
 
     enum CodingKeys: String, CodingKey {
         case session
@@ -78,6 +80,7 @@ struct AuthSession: Codable, Sendable {
         case twoFARequired = "two_fa_required"
         case pendingToken = "pending_token"
         case expiresIn = "expires_in"
+        case passwordChangeRequired = "password_change_required"
     }
 
     /// Older backends omit the field entirely; they always sent a code.

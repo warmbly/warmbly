@@ -304,6 +304,15 @@ jobs:
           go test -race -v ./internal/repository -run '^TestLiveContactCampaignStateEmptySteps$' -count=1 | tee contact-campaign-steps.log
           grep -q -- '--- PASS: TestLiveContactCampaignStateEmptySteps ' contact-campaign-steps.log
 
+      - name: Form submission paging across equal timestamps (PostgreSQL)
+        if: matrix.suite == 'live-1'
+        env:
+          WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
+        run: |
+          set -o pipefail
+          go test -race -v ./internal/repository -run '^TestLiveFormSubmissionsPageAcrossEqualAndCloseTimestamps$' -count=1 | tee form-submission-paging.log
+          grep -q -- '--- PASS: TestLiveFormSubmissionsPageAcrossEqualAndCloseTimestamps ' form-submission-paging.log
+
       - name: Campaign send admission regressions (PostgreSQL)
         if: matrix.suite == 'live-2'
         env:
@@ -320,6 +329,19 @@ jobs:
         run: |
           go test -race -p 1 ./internal/repository ./internal/scheduler ./internal/tasks -run '^TestLive(MailboxSendClaim(AdmitsOnePerGap|WaitsOutAReservedSend)|BookedSendsLeaveOutCampaignWakeups|ParkedCampaignDoesNotThrottleItsPoolMate|BookedSendsStillSpaceTheCampaign|ClaimedMailboxIsPassedOver|CampaignsSharingAMailboxSendOncePerGap|LostMailboxClaimReschedulesWithoutSending)$' -count=1
 
+      # A real pg_dump and psql against the same major the self-host compose ships.
+      - name: Instance backup and restore round trip (PostgreSQL)
+        if: matrix.suite == 'live-3'
+        env:
+          WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
+        run: |
+          set -o pipefail
+          if [ ! -x /usr/lib/postgresql/16/bin/pg_dump ]; then
+            sudo apt-get update -q && sudo apt-get install -y -q postgresql-client-16
+          fi
+          go test -race -v ./cmd/warmblyctl -run '^TestLiveBackupRestoreRoundTrip$' -count=1 | tee backup-restore.log
+          grep -q -- '--- PASS: TestLiveBackupRestoreRoundTrip ' backup-restore.log
+
       - name: Postgres queue claim regressions (PostgreSQL)
         if: matrix.suite == 'live-3'
         env:
@@ -332,6 +354,18 @@ jobs:
         env:
           WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
         run: go test -race ./internal/repository -run '^TestLiveInvitedSignup$' -count=1
+
+      - name: Tester initial password and sample data regressions (PostgreSQL)
+        if: matrix.suite == 'live-1'
+        env:
+          WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
+        run: |
+          set -o pipefail
+          go test -race -v -p 1 ./internal/repository -run '^TestLive(InitialPasswordLifecycle|ResetPasswordClearsAnIssuedExpiry|ReissueTesterPassword|TesterSampleData(IsSafeAndPreservesEdits|RollsBackAndSerializesRetries|RejectsNonTestAndInactiveWorkspaces|SurvivesInitialPasswordReplacement|ListsTheSeedableWorkspace))$' -count=1 | tee tester-lifecycle.log
+          for test in TestLiveInitialPasswordLifecycle TestLiveResetPasswordClearsAnIssuedExpiry TestLiveReissueTesterPassword TestLiveTesterSampleDataIsSafeAndPreservesEdits TestLiveTesterSampleDataRollsBackAndSerializesRetries TestLiveTesterSampleDataRejectsNonTestAndInactiveWorkspaces TestLiveTesterSampleDataSurvivesInitialPasswordReplacement TestLiveTesterSampleDataListsTheSeedableWorkspace; do
+            grep -q -- "--- PASS: $test " tester-lifecycle.log
+          done
+          if grep -q -- '--- SKIP:' tester-lifecycle.log; then exit 1; fi
 
       - name: Mailbox batch and folder identity regressions (PostgreSQL)
         if: matrix.suite == 'live-1'
@@ -425,7 +459,7 @@ jobs:
           WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
         run: |
           set -euo pipefail
-          go test -race -v -p 1 ./internal/api/handler ./internal/app/email ./internal/app/contact ./internal/app/contactimport ./internal/app/orgtransfer ./internal/app/form ./internal/app/websitetracking ./internal/repository ./internal/scheduler -run '^TestLive(SharedCampaignAccess|ContactTimelineAccess|TrackingDomain(WriteIsOrgScoped|VerifyRoundTrip|Sweep|BelongsToOneOrganization)|ImportLeavesAnotherWorkspaceAlone|ContactImportIsScopedToItsWorkspace|ImportRefuses(RowsOwnedByAnotherWorkspace|ReferencesIntoAnotherWorkspace)|TenantFamiliesRefuseAnotherOrganization|CampaignChildrenRefuseAnotherWorkspace|CRMSyncIntegrationsRefuseAnotherOrganization|FormLinkTokenIsBoundToItsForm|IdentifyTicketStaysInItsWorkspace|TenantMatrixRefusesAnotherOrganization|SenderResolutionStaysInsideTheCampaignOrg|SenderSchedulerNeverPicksAnotherOrgMailbox|SenderScopeWithoutAnOrganizationReachesNothing|ActiveCampaignLookupIsOrgScoped|OwnConversationDoesNotCrossWorkspaces|UniboxGetBySenderIsScopedToTheOrganization|UniboxMoveFolderIsOrgScoped|UniboxScopeMoveThreadsIsOrgScoped|ScheduledSendsAreScopedToTheMailboxOrganization|NoLabelIsReferencedAcrossWorkspaces|CampaignAudienceIsScoped)$' -count=1 | tee workspace-isolation.log
+          go test -race -v -p 1 ./internal/api/handler ./internal/app/email ./internal/app/contact ./internal/app/contactimport ./internal/app/orgtransfer ./internal/app/form ./internal/app/websitetracking ./internal/repository ./internal/scheduler -run '^TestLive(SharedCampaignAccess|ContactTimelineAccess|TrackingDomain(WriteIsOrgScoped|VerifyRoundTrip|Sweep|BelongsToOneOrganization)|ImportLeavesAnotherWorkspaceAlone|ContactImportIsScopedToItsWorkspace|ImportRefuses(RowsOwnedByAnotherWorkspace|ReferencesIntoAnotherWorkspace)|ArchiveCarriesIntegrationCredentialsAndDirectMailLinks|TenantFamiliesRefuseAnotherOrganization|CampaignChildrenRefuseAnotherWorkspace|CRMSyncIntegrationsRefuseAnotherOrganization|FormLinkTokenIsBoundToItsForm|IdentifyTicketStaysInItsWorkspace|TenantMatrixRefusesAnotherOrganization|SenderResolutionStaysInsideTheCampaignOrg|SenderSchedulerNeverPicksAnotherOrgMailbox|SenderScopeWithoutAnOrganizationReachesNothing|ActiveCampaignLookupIsOrgScoped|OwnConversationDoesNotCrossWorkspaces|UniboxGetBySenderIsScopedToTheOrganization|UniboxMoveFolderIsOrgScoped|UniboxScopeMoveThreadsIsOrgScoped|ScheduledSendsAreScopedToTheMailboxOrganization|NoLabelIsReferencedAcrossWorkspaces|CampaignAudienceIsScoped)$' -count=1 | tee workspace-isolation.log
           if grep -q -- '--- SKIP:' workspace-isolation.log; then
             echo "Workspace isolation regressions must execute without skips"
             exit 1
@@ -438,6 +472,7 @@ jobs:
             TestLiveIdentifyTicketStaysInItsWorkspace \
             TestLiveTenantMatrixRefusesAnotherOrganization \
             TestLiveImportRefusesReferencesIntoAnotherWorkspace \
+            TestLiveArchiveCarriesIntegrationCredentialsAndDirectMailLinks \
             TestLiveSenderSchedulerNeverPicksAnotherOrgMailbox \
             TestLiveTrackingDomainWriteIsOrgScoped; do
             grep -q "^--- PASS: $test " workspace-isolation.log
@@ -513,6 +548,18 @@ jobs:
         run: |
           go test -race -v -p 1 ./internal/repository ./internal/app/consumer ./internal/tasks ./internal/app/orgtransfer -run '^TestLive(Warmup(ReservationPreservesOriginalChargeDay|RefundCASProtectsConcurrentAndRestampedTasks|RefundAndResultRollbackTogether|ReplyRefundUsesChargedShapeAfterParentDeletion|ChargeAndRefundUseUTCInNonUTCSession|ChargeProofRollsBackWhenCounterWriteFails|CancellationPathsRefundOnlyProvenCharge|GenericCompletionDoesNotProveChargedAccounting|SendFailureGivesTheDayBack|SendGiveBackIsIdempotent|SafetyHoldReschedulesInsteadOfBlockingTheDispatcher|Recovery(RetiresExistingUnstartedDispatchOnce|HandlesPartialReservations|PreservesExecutionAndReceiptEvidence|KeepsOtherUnknownAndRestrictiveHolds|AndBeginCannotBothWin))|AppliedWarmupFailureRepairsOnlyRefundedChargeDeadLetters|GiveBackDailySend(ReversesADispatchedWarmupSend|LeavesOtherDaysAlone)|AccountDailyUsage(CountsWarmupTasksNotTheStatisticsRow|ScopesWarmupToTypeAndDay)|ImportWarmupStatisticsCannotGrantChargeRefundAuthority|Legacy(FailedStatusCannotProveNonExecution|JSONAndAvroFailurePersistConservativeAdmission)|AuthoritativeDeadLetterResultsReconcileWithoutReplay|DeadLetterResultEffectsAndSettlementRollBackTogether|Campaign(DeadLetterWorkerResultReleasesReservationOnce|ForeignKeyCleanupDoesNotProveWakeupOnly)|UserEmailDeadLetterUsesUnderlyingSendTaskType|UnknownSendOperatorResolutionReconcilesAndAudits|RecordedWorkerOutcomeSurvivesLostEvent|UnreservedLegacyFailedTaskRetainsUnknownHold|UnknownResolutionRejectsMissingEvidenceAndLiveExecution|SendRecoveryResolutionRequiresEvidenceAndRetainsUnknown|UnstartedDispatchRetainsDeferredOutcomeConflict)$' -count=1
           go test -race -v -p 1 ./internal/infrastructure/db -run '^TestLiveWarmupChargeUpgradeKeepsLegacyUnverifiedAndPreservesEvidence$' -count=1
+
+      - name: Manual send recovery regressions (PostgreSQL)
+        if: matrix.suite == 'live-1'
+        env:
+          WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
+        run: |
+          set -o pipefail
+          go test -race -v -p 1 ./internal/tasks ./internal/repository -run '^TestLive(ManualSendWithUnknownHandOffIsReleasedUnsent|UnansweredManualSendIsReleasedUnsent|ManualSendInterruptedBeforeReservationRunsOnce|StaleOrUnrunnableInterruptedManualSendFails|UnstartedCampaignSendReleasesMailboxAndCannotStartLater|StartedManualSendLiftsHoldWithoutRunningAgain|HoldOnMissingTaskIsCleared)$' -count=1 | tee manual-send-recovery.log
+          for test in TestLiveManualSendWithUnknownHandOffIsReleasedUnsent TestLiveUnansweredManualSendIsReleasedUnsent TestLiveManualSendInterruptedBeforeReservationRunsOnce TestLiveStaleOrUnrunnableInterruptedManualSendFails TestLiveUnstartedCampaignSendReleasesMailboxAndCannotStartLater TestLiveStartedManualSendLiftsHoldWithoutRunningAgain TestLiveHoldOnMissingTaskIsCleared; do
+            grep -q -- "--- PASS: $test " manual-send-recovery.log
+          done
+          if grep -q -- '--- SKIP:' manual-send-recovery.log; then exit 1; fi
 
       - name: Mailbox placement health recovery (PostgreSQL)
         if: matrix.suite == 'live-2'

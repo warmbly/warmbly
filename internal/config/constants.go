@@ -270,6 +270,15 @@ const (
 	// it must stay well clear of a slow provider handshake.
 	CampaignSendReclaimAfterMinutes = 30
 
+	// ManualSendInterruptedAfterMinutes is how long a manual send may sit claimed
+	// without a reservation before recovery treats its execution as lost. It is
+	// well past the handler's two-minute deadline and the execution key's lease.
+	ManualSendInterruptedAfterMinutes = 10
+
+	// ManualSendRetryWithinMinutes bounds how old an interrupted manual send may
+	// be and still go out: older ones fail and the owner is told instead.
+	ManualSendRetryWithinMinutes = 60
+
 	// UnknownSendHoldVisibleAfterMinutes keeps an unconfirmed send out of mailbox health until it outlasts automatic recovery.
 	UnknownSendHoldVisibleAfterMinutes = 2 * CampaignSendReclaimAfterMinutes
 

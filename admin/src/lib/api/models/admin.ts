@@ -988,6 +988,8 @@ export interface LoginCodeExemption {
     password_expires_at?: string | null;
     test_workspace_id?: string | null;
     sample_data_seeded_at?: string | null;
+    /** The backend's seeding check: an active tester whose Test workspace grant is unexpired. */
+    sample_data_eligible?: boolean;
     /** Created through the tester flow, so it can be issued a new password. */
     created_as_tester?: boolean;
 }

@@ -2149,6 +2149,10 @@ func main() {
 		// started, so without this a stranded campaign stops sending forever.
 		go tasksService.StartCampaignReconciler(ctx, 5*time.Minute)
 
+		// Manual send recovery: a unibox send whose execution stopped after its
+		// claim but before its reservation runs again, or fails and says so.
+		go tasksService.StartManualSendRecovery(ctx, time.Minute)
+
 		// Send-plan snapshotter: walk every active campaign's send plan on an
 		// interval and store it, so GET /campaigns/:id/send-plan serves a stored
 		// snapshot instead of running the planner (lead supply, per-mailbox
