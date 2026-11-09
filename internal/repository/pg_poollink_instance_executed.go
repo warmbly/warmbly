@@ -49,10 +49,10 @@ func (r *poolLinkRepository) ConvertToCloud(ctx context.Context, instanceID, rem
 	return tx.Commit(ctx)
 }
 
-// cancelInstanceCommandsTx closes queued instance commands left from the retired protocol, releasing their reservations.
+// cancelInstanceCommandsTx closes retired-protocol commands, leased ones included; only never-started sends are released.
 func cancelInstanceCommandsTx(ctx context.Context, tx pgx.Tx, account uuid.UUID) error {
 	rows, err := tx.Query(ctx, `UPDATE pool_link_commands SET status = 'cancelled'
-		WHERE email_account_id = $1 AND status = 'pending' RETURNING task_id, dispatch_nonce`, account)
+		WHERE email_account_id = $1 AND status IN ('pending', 'leased') RETURNING task_id, dispatch_nonce`, account)
 	if err != nil {
 		return err
 	}
