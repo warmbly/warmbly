@@ -282,6 +282,7 @@ The [Partnership plan](/guides/partnership/) routes under `/emails/connect` and 
 | `connect_link_declined` | 400 | The owner cancelled the provider's consent screen. The link stays usable |
 | `connect_link_creator_left` | 403 | The member whose key created the link can no longer manage mailboxes in the workspace |
 | `connect_warmup_failed` | none | Set as `error_code` on a connected link: the mailbox connected, but its warmup did not start. Start it with `POST /emails/:id/warmup/start` |
+| `connect_warmup_settings_failed` | none | Set as `error_code` on a connected link: warmup started on the default ramp because the link's ramp settings were refused. Apply them with `PATCH /emails/:id` |
 | `oauth_app_provider` | 400 | The provider in the path must be `gmail` or `outlook` |
 | `oauth_app_client_id` | 400 | The client ID does not fit the provider: Google client IDs end in `.apps.googleusercontent.com`, Microsoft ones are a GUID |
 | `oauth_app_client_secret` | 400 | A new app, or a new client ID, needs its client secret |

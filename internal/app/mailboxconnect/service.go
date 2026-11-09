@@ -33,6 +33,8 @@ const (
 	StatePrefix = "mc."
 	// WarmupFailedCode marks a connected link whose mailbox did not start warming.
 	WarmupFailedCode = "connect_warmup_failed"
+	// WarmupSettingsFailedCode marks a connected link whose mailbox warms on its default ramp, the link's settings refused.
+	WarmupSettingsFailedCode = "connect_warmup_settings_failed"
 
 	DefaultLinkHours = 72
 	MaxLinkHours     = 168
@@ -140,25 +142,50 @@ func ValidateWarmup(w *models.MailboxConnectWarmup) *errx.Error {
 	return nil
 }
 
-// ApplyWarmup sets a new mailbox's ramp and starts its warmup, returning the mailbox as stored after it (nil when
-// nothing was written) and what did not apply. It never fails the connect.
+// ApplyWarmup starts a new mailbox's warmup and returns it as stored (nil when nothing was written) and what failed.
 func (s *Service) ApplyWarmup(ctx context.Context, orgID uuid.UUID, userID string, accountID uuid.UUID, w *models.MailboxConnectWarmup) (*models.Email, string) {
+	acc, notes, _ := s.applyWarmup(ctx, orgID, userID, accountID, w)
+	return acc, strings.Join(notes.all(), " ")
+}
+
+// warmupNotes says what of a mailbox's warmup did not apply, settings and start apart.
+type warmupNotes struct{ settings, start string }
+
+func (n warmupNotes) all() []string {
+	var out []string
+	for _, s := range []string{n.settings, n.start} {
+		if s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// publicMessage keeps an internal failure's detail out of what a caller or mailbox owner reads.
+func publicMessage(xerr *errx.Error) string {
+	if xerr.Code == errx.Internal && !xerr.Public {
+		return "Something went wrong on our side."
+	}
+	return xerr.Message
+}
+
+func (s *Service) applyWarmup(ctx context.Context, orgID uuid.UUID, userID string, accountID uuid.UUID, w *models.MailboxConnectWarmup) (*models.Email, warmupNotes, bool) {
+	var notes warmupNotes
 	if w == nil || !w.Enabled {
-		return nil, ""
+		return nil, notes, false
 	}
 	var latest *models.Email
-	var notes []string
 	if w.Start != nil || w.Max != nil || w.Increase != nil || w.ReplyRate != nil {
 		upd := models.UpdateEmail{WarmupBase: w.Start, WarmupMax: w.Max, WarmupIncrease: w.Increase, WarmupReplyRate: w.ReplyRate}
 		if acc, xerr := s.mailboxes.Update(ctx, orgID.String(), userID, accountID.String(), &upd); xerr != nil {
-			notes = append(notes, "Warmup settings not applied: "+xerr.Message)
+			notes.settings = "Warmup settings not applied: " + publicMessage(xerr)
 		} else if acc != nil && acc.ID == accountID {
 			latest = acc
 		}
 	}
 	acc, xerr := s.mailboxes.SetWarmupLifecycle(ctx, orgID.String(), accountID.String(), "start")
 	if xerr != nil {
-		notes = append(notes, "Warmup not started: "+xerr.Message)
+		notes.start = "Warmup not started: " + publicMessage(xerr)
 	} else if acc != nil && acc.ID == accountID {
 		latest = acc
 	}
@@ -167,7 +194,7 @@ func (s *Service) ApplyWarmup(ctx context.Context, orgID uuid.UUID, userID strin
 			errs.CaptureException(fmt.Errorf("seed warmup after connect: %w", err))
 		}
 	}
-	return latest, strings.Join(notes, " ")
+	return latest, notes, xerr == nil
 }
 
 // ConnectSMTP connects one SMTP/IMAP mailbox and starts its warmup when asked.
@@ -471,13 +498,17 @@ func (s *Service) Finish(ctx context.Context, code, state, providerErr, binding 
 		return fail(xerr)
 	}
 	warmup := l.Warmup
-	stored, note := s.ApplyWarmup(ctx, l.OrganizationID, l.CreatedBy.String(), acc.ID, &warmup)
+	stored, notes, started := s.applyWarmup(ctx, l.OrganizationID, l.CreatedBy.String(), acc.ID, &warmup)
 	if stored != nil {
 		acc = stored
 	}
+	note := strings.Join(notes.all(), " ")
 	warning := ""
-	if note != "" {
+	switch {
+	case warmup.Enabled && !started:
 		warning = WarmupFailedCode
+	case notes.settings != "":
+		warning = WarmupSettingsFailedCode
 	}
 	s.completeLink(ctx, l.ID, acc.ID, warning)
 	now := s.now()

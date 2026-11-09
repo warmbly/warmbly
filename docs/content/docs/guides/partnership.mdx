@@ -137,6 +137,8 @@ The answer carries `url`. It is returned only here, so store or send it straight
 - The [`email_account.connected`](/guides/webhooks/) webhook fires when the mailbox is connected, so you do not need to poll.
 - The link acts for the member whose key created it. If that member can no longer manage mailboxes when the link is opened, it is refused.
 - A connected link with `error_code` `connect_warmup_failed` connected its mailbox, but warmup did not start; the owner is told so, `return_url` gets `code=connect_warmup_failed`, and you start it with `POST /emails/:id/warmup/start`.
+- `connect_warmup_settings_failed` on a connected link means warmup is running on the default ramp because the link's ramp settings were refused; apply them with `PATCH /emails/:id`.
+- A link whose sign-in is being completed cannot be revoked until it finishes; one left that way for 15 minutes can.
 - A link only connects while the workspace is on the Partnership plan; otherwise it is refused with `partnership_plan_required`.
 
 ## Your own OAuth app

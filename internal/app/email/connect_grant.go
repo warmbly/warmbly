@@ -127,7 +127,11 @@ func (s *emailService) ConnectWithGrant(ctx context.Context, userID string, orgI
 	acc, xerr := s.createOAuthMailbox(ctx, userID, &orgID, allowance, g.Provider, tok, owner, appID)
 	// A concurrent hand-over for the same address connected it first; this one renews that mailbox.
 	if xerr == errx.ErrEmailOnboardAlreadyExists {
-		if existing, ferr := s.findExisting(ctx, userID, &orgID, owner.Email); ferr == nil && existing != nil {
+		existing, ferr := s.findExisting(ctx, userID, &orgID, owner.Email)
+		if ferr != nil {
+			return nil, false, ferr
+		}
+		if existing != nil {
 			if allow != nil && !allow(existing.ID) {
 				return nil, false, ErrGrantMailboxNotAllowed
 			}

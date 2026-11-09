@@ -17,9 +17,10 @@ import (
 // shown to other people or followed by a browser. A value that fails is
 // dropped, since nobody can be asked to correct an archive.
 var importRules = map[string]func(env *ruleEnv, row map[string]json.RawMessage){
-	"oauth_applications": cleanImportedApp,
-	"forms":              cleanImportedForm,
-	"webhook_endpoints":  cleanImportedWebhook,
+	"organization_oauth_apps": dropUnsealedOAuthSecret,
+	"oauth_applications":      cleanImportedApp,
+	"forms":                   cleanImportedForm,
+	"webhook_endpoints":       cleanImportedWebhook,
 }
 
 // cleanImportedWebhook disables an endpoint whose address a create would refuse.
@@ -151,4 +152,13 @@ func jsonStrings(raw json.RawMessage) []string {
 		return nil
 	}
 	return out
+}
+
+// dropUnsealedOAuthSecret treats an unsealed archived client secret as absent, so the destination keeps its own.
+func dropUnsealedOAuthSecret(_ *ruleEnv, row map[string]json.RawMessage) {
+	if raw, ok := row["client_secret"]; ok {
+		if v := jsonString(raw); v != "" && !IsSealed(v) {
+			setJSON(row, "client_secret", "")
+		}
+	}
 }

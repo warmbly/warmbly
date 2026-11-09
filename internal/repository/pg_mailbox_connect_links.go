@@ -29,7 +29,7 @@ type MailboxConnectLinkRepository interface {
 	// GetConnectLinkByToken returns nil, nil for an unknown secret.
 	GetConnectLinkByToken(ctx context.Context, tokenHash []byte) (*models.MailboxConnectLink, error)
 	ListConnectLinks(ctx context.Context, orgID uuid.UUID, after *ConnectLinkCursor, limit int) ([]*models.MailboxConnectLink, error)
-	// RevokeConnectLink ends a link that has not connected; false when there was none to end.
+	// RevokeConnectLink ends a link that has not connected and no sign-in is completing; false when there was none to end.
 	RevokeConnectLink(ctx context.Context, orgID, id uuid.UUID) (bool, error)
 	// ClaimConnectLink takes a live link for one round trip; nil, nil when it is used, ended or claimed.
 	ClaimConnectLink(ctx context.Context, id uuid.UUID) (*models.MailboxConnectLink, error)
@@ -126,7 +126,8 @@ func (r *mailboxConnectLinkRepository) ListConnectLinks(ctx context.Context, org
 
 func (r *mailboxConnectLinkRepository) RevokeConnectLink(ctx context.Context, orgID, id uuid.UUID) (bool, error) {
 	tag, err := r.db.Exec(ctx, `UPDATE mailbox_connect_links SET status = 'revoked', updated_at = now()
-		WHERE organization_id = $1 AND id = $2 AND status IN ('pending', 'connecting')`, orgID, id)
+		WHERE organization_id = $1 AND id = $2
+		  AND (status = 'pending' OR (status = 'connecting' AND updated_at < now() - make_interval(secs => $3)))`, orgID, id, ConnectLinkClaimStale.Seconds())
 	if err != nil {
 		return false, err
 	}

@@ -144,7 +144,7 @@ func (h *Handler) finishConnectLink(c *gin.Context, code, state, providerErr str
 		return
 	}
 	if res != nil && res.WarmupNote != "" {
-		renderNotice(c, http.StatusOK, "Mailbox connected", "Your mailbox is connected, but its warmup did not start: "+res.WarmupNote+" The workspace that sent this link can start it. You can close this tab.")
+		renderNotice(c, http.StatusOK, "Mailbox connected", "Your mailbox is connected, but not all of its warmup applied: "+res.WarmupNote+" The workspace that sent this link can finish it. You can close this tab.")
 		return
 	}
 	renderNotice(c, http.StatusOK, "Mailbox connected", "Your mailbox is connected. You can close this tab.")

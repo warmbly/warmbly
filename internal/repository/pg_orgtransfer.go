@@ -1344,7 +1344,7 @@ func (r *orgTransferRepository) OAuthAppSecrets(ctx context.Context, tx pgx.Tx, 
 		return out, nil
 	}
 	rows, err := tx.Query(ctx, `SELECT id, client_secret FROM organization_oauth_apps
-		WHERE organization_id = $1 AND id = ANY($2::uuid[]) AND client_secret <> ''`, orgID, ids)
+		WHERE organization_id = $1 AND id = ANY($2::uuid[]) AND client_secret <> '' FOR UPDATE`, orgID, ids)
 	if err != nil {
 		return nil, err
 	}

@@ -883,7 +883,7 @@ func (s *service) PatchMailbox(ctx context.Context, inst *models.PoolLinkInstanc
 	}
 	reload := false
 	if patch.OAuth != nil && patch.OAuth.RefreshToken != "" {
-		if err := s.emails.RefreshBoxToken(ctx, m.EmailAccountID, patch.OAuth.AccessToken, patch.OAuth.RefreshToken, patch.OAuth.ExpiresAt); err != nil {
+		if err := s.emails.RefreshBoxTokenForApp(ctx, m.EmailAccountID, patch.OAuth.AccessToken, patch.OAuth.RefreshToken, patch.OAuth.ExpiresAt, nil); err != nil {
 			return nil, errx.InternalError()
 		}
 		reload = true

@@ -2,6 +2,7 @@ package mailboxconnect
 
 import (
 	"context"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -62,5 +63,43 @@ func TestGrantBulkAnswersEveryRowAndWarmsOnlyNewMailboxes(t *testing.T) {
 	}
 	if ValidateGrantBatch(0) == nil || ValidateGrantBatch(GrantBulkMax+1) == nil || ValidateGrantBatch(GrantBulkMax) != nil {
 		t.Error("batch size bounds")
+	}
+}
+
+// warmupMailboxes refuses the ramp settings, or the start, as each test asks.
+type warmupMailboxes struct {
+	Mailboxes
+	settingsErr, startErr *errx.Error
+}
+
+func (w warmupMailboxes) Update(context.Context, string, string, string, *models.UpdateEmail) (*models.Email, *errx.Error) {
+	return nil, w.settingsErr
+}
+
+func (w warmupMailboxes) SetWarmupLifecycle(_ context.Context, _, id, _ string) (*models.Email, *errx.Error) {
+	if w.startErr != nil {
+		return nil, w.startErr
+	}
+	return &models.Email{ID: uuid.MustParse(id)}, nil
+}
+
+// A refused ramp and a failed start are told apart, and an internal failure's detail never reaches the note.
+func TestApplyWarmupSeparatesSettingsFromStart(t *testing.T) {
+	ctx, org, id := context.Background(), uuid.New(), uuid.New()
+	w := &models.MailboxConnectWarmup{Enabled: true, Start: intp(5)}
+
+	s := New(nil, warmupMailboxes{settingsErr: errx.New(errx.BadRequest, "start too high")}, nil, nil, nil, nil, "")
+	acc, notes, started := s.applyWarmup(ctx, org, "", id, w)
+	if !started || notes.start != "" || notes.settings == "" || acc == nil || acc.ID != id {
+		t.Fatalf("settings refused: started=%v notes=%+v acc=%v", started, notes, acc)
+	}
+
+	s = New(nil, warmupMailboxes{startErr: errx.New(errx.Internal, "Warmbly Cloud answered 500.")}, nil, nil, nil, nil, "")
+	_, notes, started = s.applyWarmup(ctx, org, "", id, w)
+	if started || notes.start == "" {
+		t.Fatalf("start failed: started=%v notes=%+v", started, notes)
+	}
+	if strings.Contains(notes.start, "500") {
+		t.Fatalf("an internal failure leaked into the note: %q", notes.start)
 	}
 }
