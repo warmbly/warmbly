@@ -362,6 +362,11 @@ func (s *service) importTable(
 		if foreign > 0 {
 			return fmt.Errorf("%s: %w", t.Name, ErrForeignRows)
 		}
+		if t.Name == oauthAppsTable {
+			if err := s.refuseChangedOAuthApps(ctx, tx, orgID, batch); err != nil {
+				return err
+			}
+		}
 		n, err := s.repo.InsertBatch(ctx, tx, t.Name, insertCols, batch, ic.conflict, pk, t.OwnerScope(), orgID, resetOnOverwrite, invalidations)
 		if err != nil {
 			if t.Name == oauthAppsTable && repository.IsUniqueViolation(err) {
@@ -1015,6 +1020,30 @@ func (s *service) requireImportedOAuthApps(ctx context.Context, tx pgx.Tx, orgID
 		return err
 	}
 	if missing > 0 {
+		return ErrOAuthAppConflict
+	}
+	return nil
+}
+
+// refuseChangedOAuthApps refuses an app id the destination holds under another client, in either conflict mode.
+func (s *service) refuseChangedOAuthApps(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, batch []json.RawMessage) error {
+	ids := make([]uuid.UUID, 0, len(batch))
+	clients := make([]string, 0, len(batch))
+	for _, raw := range batch {
+		var row struct {
+			ID       uuid.UUID `json:"id"`
+			ClientID string    `json:"client_id"`
+		}
+		if err := json.Unmarshal(raw, &row); err != nil {
+			return err
+		}
+		ids, clients = append(ids, row.ID), append(clients, row.ClientID)
+	}
+	changed, err := s.repo.ChangedOAuthAppClients(ctx, tx, orgID, ids, clients)
+	if err != nil {
+		return err
+	}
+	if changed > 0 {
 		return ErrOAuthAppConflict
 	}
 	return nil

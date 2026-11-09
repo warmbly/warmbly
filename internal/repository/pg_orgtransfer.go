@@ -91,6 +91,8 @@ type OrgTransferRepository interface {
 	MarkMailboxesNeedingReconnect(ctx context.Context, tx pgx.Tx, orgID uuid.UUID) (int64, error)
 	// MissingOAuthApps counts the archived OAuth app ids the destination workspace does not hold after their insert.
 	MissingOAuthApps(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, ids []uuid.UUID) (int64, error)
+	// ChangedOAuthAppClients counts archived OAuth apps whose id the destination already holds under a different client.
+	ChangedOAuthAppClients(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, ids []uuid.UUID, clientIDs []string) (int64, error)
 	// Begin starts the import transaction.
 	Begin(ctx context.Context) (pgx.Tx, error)
 
@@ -1261,5 +1263,13 @@ func (r *orgTransferRepository) MissingOAuthApps(ctx context.Context, tx pgx.Tx,
 	var n int64
 	err := tx.QueryRow(ctx, `SELECT count(*) FROM unnest($2::uuid[]) AS u(id)
 		WHERE NOT EXISTS (SELECT 1 FROM organization_oauth_apps a WHERE a.id = u.id AND a.organization_id = $1)`, orgID, ids).Scan(&n)
+	return n, err
+}
+
+func (r *orgTransferRepository) ChangedOAuthAppClients(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, ids []uuid.UUID, clientIDs []string) (int64, error) {
+	var n int64
+	err := tx.QueryRow(ctx, `SELECT count(*) FROM unnest($2::uuid[], $3::text[]) AS u(id, client_id)
+		JOIN organization_oauth_apps a ON a.id = u.id
+		WHERE a.organization_id <> $1 OR a.client_id <> u.client_id`, orgID, ids, clientIDs).Scan(&n)
 	return n, err
 }
