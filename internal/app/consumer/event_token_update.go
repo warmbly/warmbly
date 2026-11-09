@@ -10,7 +10,7 @@ func (s *JobsService) HandleTokenUpdate(ctx context.Context, e *models.JobEventT
 	if e.SealedTokens != "" {
 		return s.EmailRepository.RefreshBoxTokenSealed(ctx, e.EmailID, e.SealedTokens, e.ExpiresAt)
 	}
-	return s.EmailRepository.RefreshBoxToken(
+	return s.EmailRepository.RefreshWorkerBoxToken(
 		ctx,
 		e.EmailID,
 		e.AccessToken,

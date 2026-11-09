@@ -18,11 +18,11 @@ const grantBulkParallel = 8
 
 // ConnectGrant connects the mailbox a sign-in the workspace's own app completed belongs to.
 // A mailbox the workspace already has gets its token renewed, and its warmup is left as it is.
-func (s *Service) ConnectGrant(ctx context.Context, orgID uuid.UUID, userID string, g models.MailboxOAuthGrant, w *models.MailboxConnectWarmup) (*models.Email, bool, string, *errx.Error) {
+func (s *Service) ConnectGrant(ctx context.Context, orgID uuid.UUID, userID string, g models.MailboxOAuthGrant, w *models.MailboxConnectWarmup, allow func(uuid.UUID) bool) (*models.Email, bool, string, *errx.Error) {
 	if xerr := ValidateWarmup(w); xerr != nil {
 		return nil, false, "", xerr
 	}
-	acc, renewed, xerr := s.mailboxes.ConnectWithGrant(ctx, userID, orgID, g)
+	acc, renewed, xerr := s.mailboxes.ConnectWithGrant(ctx, userID, orgID, g, allow)
 	if xerr != nil {
 		return nil, false, "", xerr
 	}
@@ -33,7 +33,7 @@ func (s *Service) ConnectGrant(ctx context.Context, orgID uuid.UUID, userID stri
 }
 
 // ConnectGrantBulk hands over many sign-ins with one warmup setting, answering each one.
-func (s *Service) ConnectGrantBulk(ctx context.Context, orgID uuid.UUID, userID string, grants []models.MailboxOAuthGrant, w *models.MailboxConnectWarmup) (*models.GrantBulkResult, *errx.Error) {
+func (s *Service) ConnectGrantBulk(ctx context.Context, orgID uuid.UUID, userID string, grants []models.MailboxOAuthGrant, w *models.MailboxConnectWarmup, allow func(uuid.UUID) bool) (*models.GrantBulkResult, *errx.Error) {
 	if xerr := ValidateWarmup(w); xerr != nil {
 		return nil, xerr
 	}
@@ -47,7 +47,7 @@ func (s *Service) ConnectGrantBulk(ctx context.Context, orgID uuid.UUID, userID 
 			defer wg.Done()
 			defer func() { <-sem }()
 			row := models.MailboxBulkRow{Row: i + 1, Email: strings.TrimSpace(g.Email)}
-			acc, renewed, note, xerr := s.ConnectGrant(ctx, orgID, userID, g, w)
+			acc, renewed, note, xerr := s.ConnectGrant(ctx, orgID, userID, g, w, allow)
 			switch {
 			case xerr != nil:
 				row.Status, row.Code, row.Message = models.MailboxBulkFailed, xerr.ResponseCode(), xerr.Message

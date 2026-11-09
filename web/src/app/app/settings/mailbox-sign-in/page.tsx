@@ -28,8 +28,12 @@ const PROVIDERS: { id: MailboxOAuthProvider; label: string; clientHint: string; 
 export default function MailboxSignInPage() {
     const canManage = usePermission("MANAGE_EMAILS");
     const access = useFeatureAccess();
+    const partner = !access.billing || access.partnership;
+    // A workspace off the plan still maintains an app it saved, since that app refreshes its mailboxes.
+    const apps = useMailboxOAuthApps(canManage && !partner);
+    const keeps = (apps.data?.data.length ?? 0) > 0;
     if (!canManage) return <NoAccess feature="Mailbox sign-in" permissionLabel="Manage mailboxes" />;
-    if (access.billing && !access.loading && !access.partnership) {
+    if (!access.loading && !partner && !apps.isLoading && !keeps) {
         return (
             <SectionShell title="Mailbox sign-in" description="Your own Google and Microsoft OAuth apps.">
                 <Section eyebrow="Partnership plan" description="Signing mailboxes in through your own OAuth app is part of the Partnership plan. Ask Warmbly to offer it to this workspace.">
@@ -38,10 +42,10 @@ export default function MailboxSignInPage() {
             </SectionShell>
         );
     }
-    return <MailboxSignInView />;
+    return <MailboxSignInView partner={partner} />;
 }
 
-function MailboxSignInView() {
+function MailboxSignInView({ partner }: { partner: boolean }) {
     const { data, isLoading, isError, refetch } = useMailboxOAuthApps();
     return (
         <SectionShell
@@ -66,7 +70,7 @@ function MailboxSignInView() {
                     </div>
                 ) : (
                     <div className="grid gap-3 lg:grid-cols-2">
-                        {PROVIDERS.map((p) => (
+                        {PROVIDERS.filter((p) => partner || data.data.some((a) => a.provider === p.id)).map((p) => (
                             <ProviderCard
                                 key={p.id}
                                 provider={p}

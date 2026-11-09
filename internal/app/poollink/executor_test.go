@@ -125,3 +125,24 @@ func TestEnrollRefusesACleartextCredentialBeforeConverting(t *testing.T) {
 		t.Fatal("a refused credential was stored")
 	}
 }
+
+// Only an SMTP/IMAP credential returns a mailbox to Cloud: an OAuth grant from the instance's own app is one Cloud cannot refresh.
+func TestEnrollRefusesAnOAuthHandOver(t *testing.T) {
+	oauth := &models.PoolLinkOAuthCredential{RefreshToken: "instance-app-grant"}
+
+	s, repo, accounts, _, inst := newConversion(t)
+	mixed := models.PoolLinkEnrollRequest{RemoteID: repo.mailbox.RemoteID, Email: "kept@example.test", Provider: models.InboxProviderSMTPIMAP, SMTPIMAP: conversionCredential(), OAuth: oauth}
+	if _, xerr := s.Enroll(context.Background(), inst, mixed); xerr != ErrBadCredential {
+		t.Fatalf("smtp mailbox with an OAuth grant too: err %v, want %v", xerr, ErrBadCredential)
+	}
+
+	google := models.Email{ID: repo.mailbox.EmailAccountID, OrganizationID: &inst.OrganizationID, Email: "kept@example.test", Provider: string(models.InboxProviderGoogle), Status: "active"}
+	accounts.accounts[google.ID] = &google
+	req := models.PoolLinkEnrollRequest{RemoteID: repo.mailbox.RemoteID, Email: "kept@example.test", Provider: models.InboxProviderGoogle, OAuth: oauth}
+	if _, xerr := s.Enroll(context.Background(), inst, req); xerr != ErrBadCredential {
+		t.Fatalf("google mailbox with the instance's grant: err %v, want %v", xerr, ErrBadCredential)
+	}
+	if repo.converted || accounts.restored != nil {
+		t.Fatal("a refused hand-over changed the mailbox")
+	}
+}

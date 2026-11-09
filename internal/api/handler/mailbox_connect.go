@@ -162,8 +162,8 @@ func (h *Handler) ListMailboxConnectLinks(c *gin.Context) {
 	limit := 0
 	if raw := c.Query("limit"); raw != "" {
 		n, err := strconv.Atoi(raw)
-		if err != nil {
-			errx.Handle(c, errx.NewWithIdentifier(errx.BadRequest, "invalid_limit", "limit must be a number"))
+		if err != nil || n < 1 {
+			errx.Handle(c, mailboxconnect.ErrLimit)
 			return
 		}
 		limit = n
@@ -264,7 +264,7 @@ func (h *Handler) ConnectMailboxGrant(c *gin.Context) {
 		errx.Handle(c, errx.InvalidBody(err))
 		return
 	}
-	acc, renewed, note, xerr := h.MailboxConnectService.ConnectGrant(c.Request.Context(), orgID, middleware.GetUserID(c), req.MailboxOAuthGrant, req.Warmup)
+	acc, renewed, note, xerr := h.MailboxConnectService.ConnectGrant(c.Request.Context(), orgID, middleware.GetUserID(c), req.MailboxOAuthGrant, req.Warmup, mailboxAllowance(c))
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
@@ -295,7 +295,7 @@ func (h *Handler) ConnectMailboxGrantBulk(c *gin.Context) {
 		errx.Handle(c, xerr)
 		return
 	}
-	result, xerr := h.MailboxConnectService.ConnectGrantBulk(c.Request.Context(), orgID, middleware.GetUserID(c), req.Grants, req.Warmup)
+	result, xerr := h.MailboxConnectService.ConnectGrantBulk(c.Request.Context(), orgID, middleware.GetUserID(c), req.Grants, req.Warmup, mailboxAllowance(c))
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
@@ -312,4 +312,12 @@ func (h *Handler) ConnectMailboxGrantBulk(c *gin.Context) {
 	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, result)
+}
+
+// mailboxAllowance is the caller's mailbox allowlist as a check; nil when it may act on every mailbox.
+func mailboxAllowance(c *gin.Context) func(uuid.UUID) bool {
+	if middleware.AllowedEmailAccounts(c) == nil {
+		return nil
+	}
+	return func(id uuid.UUID) bool { return middleware.EmailAccountAllowed(c, id) }
 }

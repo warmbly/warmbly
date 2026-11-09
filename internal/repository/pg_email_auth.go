@@ -138,6 +138,16 @@ func (r *emailRepository) RevokeOauth(ctx context.Context, id string) *errx.Erro
 }
 
 func (r *emailRepository) RefreshBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time) error {
+	return r.refreshBoxToken(ctx, id, accessToken, refreshToken, expiresAt, false)
+}
+
+// RefreshWorkerBoxToken stores a token a worker refreshed. A mailbox a workspace's own app signed in is refreshed
+// by the backend only, so a worker update for it is stale and dropped.
+func (r *emailRepository) RefreshWorkerBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time) error {
+	return r.refreshBoxToken(ctx, id, accessToken, refreshToken, expiresAt, true)
+}
+
+func (r *emailRepository) refreshBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time, fromWorker bool) error {
 	// Refreshed tokens land here from the worker's OnTokenRefresh callback and
 	// must be sealed on the same terms as the ones written at connect time,
 	// otherwise the first refresh silently reverts the row to plaintext.
@@ -160,6 +170,9 @@ func (r *emailRepository) RefreshBoxToken(ctx context.Context, id uuid.UUID, acc
 		SET access_token = $1, refresh_token = $2, expires_at = $3
 		WHERE email_account_id = $4
 	`
+	if fromWorker {
+		query += ` AND oauth_app_id IS NULL`
+	}
 
 	params := []any{
 		encAccessToken,
@@ -235,7 +248,7 @@ func (r *emailRepository) RefreshBoxTokenSealed(ctx context.Context, id uuid.UUI
 	if v.Token == nil {
 		return errors.New("sealed token update carries no token")
 	}
-	return r.RefreshBoxToken(ctx, id, v.Token.AccessToken, v.Token.RefreshToken, expiresAt)
+	return r.RefreshWorkerBoxToken(ctx, id, v.Token.AccessToken, v.Token.RefreshToken, expiresAt)
 }
 
 func (r *emailRepository) ReplaceSMTPIMAPCredentials(ctx context.Context, id uuid.UUID, creds *models.SmtpImap) error {

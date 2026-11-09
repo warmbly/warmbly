@@ -688,6 +688,9 @@ func TestPartnershipMayTestOnThePaidAllowance(t *testing.T) {
 	if !on.entitled(ctx, uuid.New()) || !on.paidAllowance(ctx, uuid.New()) {
 		t.Fatal("a Partnership workspace must start tests on the paid allowance")
 	}
+	if on.balanceUsable(ctx, uuid.New()) {
+		t.Fatal("a Partnership workspace must not pay for tests from a balance")
+	}
 	off := &service{Deps: Deps{Gate: partnerGate{}}}
 	if off.entitled(ctx, uuid.New()) || off.paidAllowance(ctx, uuid.New()) {
 		t.Fatal("a warming-only workspace off the Partnership plan must not start tests")

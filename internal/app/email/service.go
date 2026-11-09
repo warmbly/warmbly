@@ -167,7 +167,7 @@ type EmailService interface {
 	// WorkspaceGrantToken draws a worker token for a mailbox a workspace client signed in; handled is false otherwise.
 	WorkspaceGrantToken(ctx context.Context, accountID uuid.UUID) (*oauth2.Token, bool, *errx.Error)
 	// ConnectWithGrant connects, or renews, the mailbox a sign-in the workspace's own app completed belongs to.
-	ConnectWithGrant(ctx context.Context, userID string, orgID uuid.UUID, g models.MailboxOAuthGrant) (*models.Email, bool, *errx.Error)
+	ConnectWithGrant(ctx context.Context, userID string, orgID uuid.UUID, g models.MailboxOAuthGrant, allow func(uuid.UUID) bool) (*models.Email, bool, *errx.Error)
 	// LinkSigninURL and LinkSigninFinish carry a sign-in link's round trip, with no Warmbly session.
 	LinkSigninURL(ctx context.Context, orgID uuid.UUID, provider models.InboxProvider, state, verifier, loginHint string) (string, *uuid.UUID, *errx.Error)
 	LinkSigninFinish(ctx context.Context, userID string, orgID uuid.UUID, provider models.InboxProvider, appID *uuid.UUID, code, verifier, expectedEmail string) (*models.Email, *errx.Error)

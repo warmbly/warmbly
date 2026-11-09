@@ -157,7 +157,7 @@ export default function MailboxTable() {
                                         </td>
                                         <td className="px-3 py-2.5">
                                             <div className="flex items-center justify-end gap-2">
-                                                {keptHere && providerSupported(row.provider) && (
+                                                {keptHere && providerSupported(row.provider) && row.enrollment_state !== "pending_remove" && (
                                                     <button
                                                         type="button"
                                                         disabled={busy === row.id}

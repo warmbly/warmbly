@@ -18,13 +18,46 @@ func (h *Handler) mailboxOAuthAppsReady(c *gin.Context) bool {
 	return true
 }
 
+// oauthAppOrg admits Partnership, and a workspace keeping an app it saved: that app still refreshes its mailboxes.
+func (h *Handler) oauthAppOrg(c *gin.Context, provider models.InboxProvider) (uuid.UUID, bool) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.ErrNoOrganization)
+		return uuid.Nil, false
+	}
+	if !h.mailboxOAuthAppsReady(c) {
+		return uuid.Nil, false
+	}
+	if h.FeatureGateService != nil {
+		if ok, _ := h.FeatureGateService.CanUsePartnerTools(c.Request.Context(), *orgID); ok {
+			return *orgID, true
+		}
+	}
+	apps, xerr := h.MailboxOAuthAppService.List(c.Request.Context(), *orgID)
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return uuid.Nil, false
+	}
+	for _, a := range apps {
+		if provider == "" || a.Provider == provider {
+			return *orgID, true
+		}
+	}
+	errx.Handle(c, ErrPartnershipRequired)
+	return uuid.Nil, false
+}
+
 // ListMailboxOAuthApps is GET /emails/oauth-apps: the workspace's own Google and Microsoft clients, secrets never included.
 func (h *Handler) ListMailboxOAuthApps(c *gin.Context) {
-	orgID, ok := h.partnerOrg(c)
-	if !ok || !h.mailboxOAuthAppsReady(c) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.ErrNoOrganization)
 		return
 	}
-	apps, xerr := h.MailboxOAuthAppService.List(c.Request.Context(), orgID)
+	if !h.mailboxOAuthAppsReady(c) {
+		return
+	}
+	apps, xerr := h.MailboxOAuthAppService.List(c.Request.Context(), *orgID)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
@@ -34,8 +67,9 @@ func (h *Handler) ListMailboxOAuthApps(c *gin.Context) {
 
 // PutMailboxOAuthApp is PUT /emails/oauth-apps/:provider; an empty client_secret keeps the stored one.
 func (h *Handler) PutMailboxOAuthApp(c *gin.Context) {
-	orgID, ok := h.partnerOrg(c)
-	if !ok || !h.mailboxOAuthAppsReady(c) {
+	provider := models.InboxProvider(c.Param("provider"))
+	orgID, ok := h.oauthAppOrg(c, provider)
+	if !ok {
 		return
 	}
 	userID, err := uuid.Parse(middleware.GetUserID(c))
@@ -48,7 +82,7 @@ func (h *Handler) PutMailboxOAuthApp(c *gin.Context) {
 		errx.Handle(c, errx.InvalidBody(err))
 		return
 	}
-	app, xerr := h.MailboxOAuthAppService.Save(c.Request.Context(), orgID, userID, models.InboxProvider(c.Param("provider")), req)
+	app, xerr := h.MailboxOAuthAppService.Save(c.Request.Context(), orgID, userID, provider, req)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
@@ -63,11 +97,11 @@ func (h *Handler) PutMailboxOAuthApp(c *gin.Context) {
 
 // DeleteMailboxOAuthApp is DELETE /emails/oauth-apps/:provider; refused while mailboxes hold grants from it.
 func (h *Handler) DeleteMailboxOAuthApp(c *gin.Context) {
-	orgID, ok := h.partnerOrg(c)
-	if !ok || !h.mailboxOAuthAppsReady(c) {
+	provider := models.InboxProvider(c.Param("provider"))
+	orgID, ok := h.oauthAppOrg(c, provider)
+	if !ok {
 		return
 	}
-	provider := models.InboxProvider(c.Param("provider"))
 	if xerr := h.MailboxOAuthAppService.Delete(c.Request.Context(), orgID, provider); xerr != nil {
 		errx.Handle(c, xerr)
 		return

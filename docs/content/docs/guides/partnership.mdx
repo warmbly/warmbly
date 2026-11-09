@@ -249,6 +249,7 @@ The authorization code in that query string is useless to anyone but Warmbly, be
 ### Changing or removing an app
 
 - Saving a new secret for the same client ID never affects mailboxes already signed in. Leave the secret empty to change only the name or the redirect URI.
+- A workspace that leaves the Partnership plan keeps its apps, and they keep refreshing the mailboxes they signed in. It can still save a new secret for them and remove them, but not add a new one.
 - A different client ID is refused with `oauth_app_in_use` while mailboxes are signed in through the current one, because a grant can only be refreshed by the app that issued it. The same applies to removing the app.
 - Warmbly refreshes the access tokens of these mailboxes itself; your client secret never reaches a worker.
 - Gmail mailboxes signed in through your own app are checked for new mail on a schedule rather than by push, because Gmail only delivers push notifications to a topic in the app's own Google Cloud project.

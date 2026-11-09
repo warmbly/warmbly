@@ -60,7 +60,7 @@ type Mailboxes interface {
 	SetWarmupLifecycle(ctx context.Context, orgID, emailAccountID, action string) (*models.Email, *errx.Error)
 	LinkSigninURL(ctx context.Context, orgID uuid.UUID, provider models.InboxProvider, state, verifier, loginHint string) (string, *uuid.UUID, *errx.Error)
 	LinkSigninFinish(ctx context.Context, userID string, orgID uuid.UUID, provider models.InboxProvider, appID *uuid.UUID, code, verifier, expectedEmail string) (*models.Email, *errx.Error)
-	ConnectWithGrant(ctx context.Context, userID string, orgID uuid.UUID, g models.MailboxOAuthGrant) (*models.Email, bool, *errx.Error)
+	ConnectWithGrant(ctx context.Context, userID string, orgID uuid.UUID, g models.MailboxOAuthGrant, allow func(uuid.UUID) bool) (*models.Email, bool, *errx.Error)
 }
 
 // WarmupScheduler seeds a mailbox's warmup chain; tasks.TasksService satisfies it.

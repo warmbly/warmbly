@@ -39,6 +39,10 @@ const (
 var ErrForeignRows = errors.New("this archive holds records that already belong to another workspace on this instance, so nothing was imported. " +
 	"Import it into the workspace it was exported from, or into a workspace on another instance")
 
+// ErrOAuthAppConflict refuses an archive whose own OAuth app collides with one the destination already uses for that provider.
+var ErrOAuthAppConflict = errors.New("this workspace already has its own OAuth app for a provider the archive brings one for, and mailboxes can only be refreshed by the app that signed them in, so nothing was imported. " +
+	"Remove that app under Settings > Mailbox sign-in, or import into a workspace without one")
+
 // ImportFrom applies an archive to a destination workspace.
 //
 // The whole thing runs in one transaction. An import is a rare, deliberate,
@@ -360,7 +364,15 @@ func (s *service) importTable(
 		}
 		n, err := s.repo.InsertBatch(ctx, tx, t.Name, insertCols, batch, ic.conflict, pk, t.OwnerScope(), orgID, resetOnOverwrite, invalidations)
 		if err != nil {
+			if t.Name == oauthAppsTable && repository.IsUniqueViolation(err) {
+				return ErrOAuthAppConflict
+			}
 			return err
+		}
+		if t.Name == oauthAppsTable {
+			if err := s.requireImportedOAuthApps(ctx, tx, orgID, batch); err != nil {
+				return err
+			}
 		}
 		total += n
 		batch = batch[:0]
@@ -982,4 +994,28 @@ func trimNewline(b []byte) []byte {
 		b = b[:len(b)-1]
 	}
 	return b
+}
+
+const oauthAppsTable = "organization_oauth_apps"
+
+// requireImportedOAuthApps refuses a batch the destination skipped: its mailboxes' grants would point at no client.
+func (s *service) requireImportedOAuthApps(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, batch []json.RawMessage) error {
+	ids := make([]uuid.UUID, 0, len(batch))
+	for _, raw := range batch {
+		var row struct {
+			ID uuid.UUID `json:"id"`
+		}
+		if err := json.Unmarshal(raw, &row); err != nil {
+			return err
+		}
+		ids = append(ids, row.ID)
+	}
+	missing, err := s.repo.MissingOAuthApps(ctx, tx, orgID, ids)
+	if err != nil {
+		return err
+	}
+	if missing > 0 {
+		return ErrOAuthAppConflict
+	}
+	return nil
 }

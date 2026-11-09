@@ -16,7 +16,7 @@ type grantMailboxes struct {
 	started atomic.Int32
 }
 
-func (g *grantMailboxes) ConnectWithGrant(_ context.Context, _ string, _ uuid.UUID, gr models.MailboxOAuthGrant) (*models.Email, bool, *errx.Error) {
+func (g *grantMailboxes) ConnectWithGrant(_ context.Context, _ string, _ uuid.UUID, gr models.MailboxOAuthGrant, _ func(uuid.UUID) bool) (*models.Email, bool, *errx.Error) {
 	switch gr.RefreshToken {
 	case "new":
 		return &models.Email{ID: uuid.New(), Email: gr.Email}, false, nil
@@ -40,7 +40,7 @@ func TestGrantBulkAnswersEveryRowAndWarmsOnlyNewMailboxes(t *testing.T) {
 		{RefreshToken: "bad", Email: "c@acme.com"},
 		{RefreshToken: "new", Email: "d@acme.com"},
 	}
-	res, xerr := s.ConnectGrantBulk(context.Background(), uuid.New(), uuid.NewString(), grants, &models.MailboxConnectWarmup{Enabled: true})
+	res, xerr := s.ConnectGrantBulk(context.Background(), uuid.New(), uuid.NewString(), grants, &models.MailboxConnectWarmup{Enabled: true}, nil)
 	if xerr != nil {
 		t.Fatal(xerr)
 	}

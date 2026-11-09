@@ -18,6 +18,9 @@ describe("warmup source and lifecycle", () => {
         }
         expect(resolve({ executor: "cloud", cloud: report }).activity).toBe("active");
     });
+    it("shows a removal under way before the credential notice", () => {
+        expect(resolve({ executor: "instance", enrollment_state: "pending_remove", cloud: report }).activity).toBe("removing");
+    });
     it("keeps a mailbox unknown rather than local when this member cannot read Cloud enrollment", () => {
         expect(resolveMailboxWarmup({ ...mailbox, warmup: undefined }, undefined, { connected: false, ownershipHidden: true, rowFor: () => undefined })).toEqual({ source: "unknown", activity: "unavailable" });
     });

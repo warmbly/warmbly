@@ -39,6 +39,7 @@ import { Page, PageTopbar } from "@/components/layout/Page";
 import useFeatureAccess from "@/hooks/useFeatureAccess";
 import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
 import { useCloudLinkStatus, usePoolLinkInstances } from "@/lib/api/hooks/app/cloudlink/useCloudLink";
+import { useMailboxOAuthApps } from "@/lib/api/hooks/app/emails/useMailboxOAuthApps";
 
 interface SectionDef {
     path: string;
@@ -122,6 +123,9 @@ function SettingsLayoutInner() {
     const canManageApiKeys = usePermission("MANAGE_API_KEYS");
     const canManageSettings = usePermission("MANAGE_SETTINGS");
     const canManageEmails = usePermission("MANAGE_EMAILS");
+    // Off the Partnership plan, Mailbox sign-in stays listed while the workspace keeps an app it saved.
+    const oauthApps = useMailboxOAuthApps(canManageEmails && access.billing && !access.partnership);
+    const keepsOAuthApps = (oauthApps.data?.data.length ?? 0) > 0;
     // Warmbly Cloud only shows where a link exists: an instance linked to it, or a hosted workspace with linked instances.
     const cloudStatus = useCloudLinkStatus(selfHosted === true && canManageSettings);
     const linkedInstances = usePoolLinkInstances(hosted && canManageSettings);
@@ -194,7 +198,7 @@ function SettingsLayoutInner() {
                     (!s.ownerOnly || access.isOwner) &&
                     (!s.billingOnly || access.billing) &&
                     (s.path !== "warmbly-cloud" || hasCloudLink) &&
-                    (!s.partnerOnly || access.partnership || !access.billing) &&
+                    (!s.partnerOnly || access.partnership || !access.billing || keepsOAuthApps) &&
                     (s.permission !== "MANAGE_EMAILS" || canManageEmails) &&
                     (s.permission !== "MANAGE_API_KEYS" || canManageApiKeys) &&
                     (s.permission !== "MANAGE_SETTINGS" || canManageSettings) &&

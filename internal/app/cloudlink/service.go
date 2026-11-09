@@ -779,7 +779,8 @@ func (s *service) enroll(ctx context.Context, orgID, accountID uuid.UUID, want m
 		}
 	}
 	if xerr := s.clientFor(l).do(ctx, http.MethodPost, "/instance/mailboxes", req, &state); xerr != nil {
-		if executor != previous {
+		// Only a refusal undoes the switch; after an unknown outcome the pending row retries the hand-over.
+		if executor != previous && cloudRefused(xerr) {
 			if err := s.repo.SetExecutor(ctx, acc.ID, previous); err != nil {
 				log.Error().Err(err).Str("account_id", acc.ID.String()).Msg("cloud link: executor could not be restored after a refused switch")
 			}

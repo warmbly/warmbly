@@ -89,6 +89,8 @@ type OrgTransferRepository interface {
 	// did not travel, so the dashboard prompts for a reconnect instead of the
 	// worker failing every send against an empty password.
 	MarkMailboxesNeedingReconnect(ctx context.Context, tx pgx.Tx, orgID uuid.UUID) (int64, error)
+	// MissingOAuthApps counts the archived OAuth app ids the destination workspace does not hold after their insert.
+	MissingOAuthApps(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, ids []uuid.UUID) (int64, error)
 	// Begin starts the import transaction.
 	Begin(ctx context.Context) (pgx.Tx, error)
 
@@ -1253,4 +1255,11 @@ func truncateReason(s string) string {
 		return s
 	}
 	return s[:max] + "…"
+}
+
+func (r *orgTransferRepository) MissingOAuthApps(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, ids []uuid.UUID) (int64, error) {
+	var n int64
+	err := tx.QueryRow(ctx, `SELECT count(*) FROM unnest($2::uuid[]) AS u(id)
+		WHERE NOT EXISTS (SELECT 1 FROM organization_oauth_apps a WHERE a.id = u.id AND a.organization_id = $1)`, orgID, ids).Scan(&n)
+	return n, err
 }

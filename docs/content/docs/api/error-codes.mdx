@@ -268,6 +268,7 @@ The [Partnership plan](/guides/partnership/) routes under `/emails/connect` and 
 | `connect_grant_refused` | 422 | The provider refused the token or code: revoked, expired, already used, issued for another `redirect_uri`, or from a different app than the one saved |
 | `connect_grant_offline` | 422 | The sign-in carries no refresh token. Ask for offline access (`access_type=offline` and `prompt=consent` on Google, `offline_access` on Microsoft) |
 | `connect_grant_wrong_mailbox` | 403 | The sign-in belongs to a different address than the `email` sent with it |
+| `connect_grant_mailbox_not_allowed` | 403 | The sign-in would renew a mailbox outside the mailboxes this API key may act on |
 | `connect_link_provider` | 400 | `provider` must be `gmail` or `outlook` |
 | `connect_link_email` | 400 | `email` must be a single bare address |
 | `connect_link_return_url` | 400 | `return_url` must be an `https` address with no fragment |

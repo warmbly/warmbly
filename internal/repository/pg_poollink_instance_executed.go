@@ -145,3 +145,8 @@ func (r *emailRepository) RestoreMailboxCredential(ctx context.Context, id uuid.
 	}
 	return errx.ErrInvalid
 }
+
+// trustedReporterSQL keeps placement reports from a reporter judged untrusted under the retired protocol out of the window.
+func trustedReporterSQL(account string) string {
+	return `NOT (` + instanceExecutedSQL(account) + ` AND EXISTS (SELECT 1 FROM pool_link_reporter_trust prt WHERE prt.email_account_id = ` + account + ` AND prt.trust_state = 'untrusted'))`
+}

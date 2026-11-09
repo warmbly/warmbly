@@ -432,13 +432,10 @@ func (s *service) convertToCloud(ctx context.Context, inst *models.PoolLinkInsta
 	if xerr != nil {
 		return nil, xerr
 	}
+	// Only SMTP/IMAP returns this way; Cloud cannot refresh a grant the instance's own app issued.
 	switch models.InboxProvider(acc.Provider) {
-	case models.InboxProviderGoogle, models.InboxProviderOutlook:
-		if req.OAuth == nil || req.OAuth.RefreshToken == "" {
-			return nil, ErrBadCredential
-		}
 	case models.InboxProviderSMTPIMAP:
-		if req.SMTPIMAP == nil || req.SMTPIMAP.SMTP == nil || req.SMTPIMAP.IMAP == nil {
+		if req.OAuth != nil || req.SMTPIMAP == nil || req.SMTPIMAP.SMTP == nil || req.SMTPIMAP.IMAP == nil {
 			return nil, ErrBadCredential
 		}
 		if xerr := cloudReachable(req.SMTPIMAP); xerr != nil {

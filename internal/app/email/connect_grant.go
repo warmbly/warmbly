@@ -29,6 +29,8 @@ var (
 		"The sign-in carries no refresh token, so the mailbox would stop working within the hour. Ask for offline access: access_type=offline and prompt=consent on Google, the offline_access scope on Microsoft.")
 	ErrGrantWrongMailbox = errx.NewWithIdentifier(errx.Forbidden, "connect_grant_wrong_mailbox",
 		"This sign-in is for a different mailbox than the email you named.")
+	ErrGrantMailboxNotAllowed = errx.NewWithIdentifier(errx.Forbidden, "connect_grant_mailbox_not_allowed",
+		"This sign-in renews a mailbox outside the mailboxes this credential may act on.")
 )
 
 func validGrantRedirect(raw string) bool {
@@ -89,7 +91,7 @@ func (s *emailService) redeemGrant(ctx context.Context, orgID uuid.UUID, g model
 }
 
 // ConnectWithGrant connects the mailbox a handed-over sign-in belongs to, or renews its token when the workspace already has it.
-func (s *emailService) ConnectWithGrant(ctx context.Context, userID string, orgID uuid.UUID, g models.MailboxOAuthGrant) (*models.Email, bool, *errx.Error) {
+func (s *emailService) ConnectWithGrant(ctx context.Context, userID string, orgID uuid.UUID, g models.MailboxOAuthGrant, allow func(uuid.UUID) bool) (*models.Email, bool, *errx.Error) {
 	ctx, cancel := detach(ctx, connectBudget)
 	defer cancel()
 	tok, _, appID, xerr := s.redeemGrant(ctx, orgID, g)
@@ -111,6 +113,10 @@ func (s *emailService) ConnectWithGrant(ctx context.Context, userID string, orgI
 		return nil, false, xerr
 	}
 	if existing != nil {
+		// A caller held to some mailboxes renews only those.
+		if allow != nil && !allow(existing.ID) {
+			return nil, false, ErrGrantMailboxNotAllowed
+		}
 		acc, xerr := s.renewWithGrant(ctx, orgID, existing, g.Provider, tok, appID)
 		return acc, true, xerr
 	}

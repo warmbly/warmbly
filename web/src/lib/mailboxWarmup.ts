@@ -45,10 +45,10 @@ export function resolveMailboxWarmup(mailbox: Pick<Inbox, "id" | "status" | "war
     const row = pool?.connected ? pool.rowFor(mailbox.id) : undefined;
     if (row?.enrolled) {
         const source = "cloud" as const;
-        // Cloud keeps a mailbox whose credential stayed here out of the pool, whatever its report says.
+        // A removal under way wins; otherwise Cloud keeps a mailbox whose credential stayed here out of the pool.
+        if (row.enrollment_state === "pending_remove") return { source, activity: "removing" };
         if (row.executor === "instance") return { source, activity: "needs_credential" };
         if (row.enrollment_state === "pending_enroll") return { source, activity: "connecting" };
-        if (row.enrollment_state === "pending_remove") return { source, activity: "removing" };
         const cloud = row.cloud;
         if (pool?.reportsUnavailable || !cloud) return { source, activity: "unavailable" };
         const info = cloud.warmup ? { ...cloud.warmup, current_volume: cloud.sent_today } : undefined;

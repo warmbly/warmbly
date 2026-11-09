@@ -177,10 +177,10 @@ func (s *service) usage(ctx context.Context, orgID uuid.UUID) (models.PlacementU
 		}
 	}
 	u.Limit = &limit
-	// The balance comes with a paid plan, so a trial past its free tests
-	// waits. A zero placement_test price, or the legacy zero credits_per_test,
-	// turns paid tests off.
-	if paid && s.Credits != nil && !s.Credits.Unmetered() && pol.CreditPrice() > 0 {
+	// The balance comes with a plan that sends, so a trial or the Partnership
+	// plan past its free tests waits. A zero placement_test price, or the legacy
+	// zero credits_per_test, turns paid tests off.
+	if paid && s.balanceUsable(ctx, orgID) && s.Credits != nil && !s.Credits.Unmetered() && pol.CreditPrice() > 0 {
 		if price := s.Credits.Quote(ctx, credits.UnitUsage(instancesettings.UnitPlacementTest, 1)); price > 0 {
 			// An unreadable balance leaves it unknown; the charge itself still
 			// refuses what the workspace cannot pay.

@@ -1052,3 +1052,9 @@ func (s *service) paidAllowance(ctx context.Context, orgID uuid.UUID) bool {
 	ok, _ := s.Gate.HasPartnership(ctx, orgID)
 	return ok
 }
+
+// balanceUsable reports a workspace whose plan carries the balance that pays for tests past the free ones.
+func (s *service) balanceUsable(ctx context.Context, orgID uuid.UUID) bool {
+	ok, _ := s.Gate.IsPaidOrganization(ctx, orgID)
+	return ok
+}

@@ -19,6 +19,9 @@ import (
 
 const connectCookieName = "warmbly_connect"
 
+// connectFormTargets are where Continue may redirect: the Google and Microsoft authorize hosts.
+const connectFormTargets = "https://accounts.google.com https://login.microsoftonline.com"
+
 var connectLinkPage = template.Must(template.New("connect-link").Parse(`<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect your mailbox</title>
 <style>
@@ -87,7 +90,8 @@ func (h *Handler) MailboxConnectLinkPage(c *gin.Context) {
 		ContinueURL: mailboxconnect.LinkPath + token + "/continue",
 		Token:       binding,
 	}
-	c.Header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+	// Browsers hold the redirect a form submission ends in to form-action, so the providers' sign-in hosts are listed.
+	c.Header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self' "+connectFormTargets)
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.Status(http.StatusOK)
 	_ = connectLinkPage.Execute(c.Writer, data)
