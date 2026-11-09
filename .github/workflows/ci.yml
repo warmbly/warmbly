@@ -333,6 +333,18 @@ jobs:
           WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
         run: go test -race ./internal/repository -run '^TestLiveInvitedSignup$' -count=1
 
+      - name: Tester initial password and sample data regressions (PostgreSQL)
+        if: matrix.suite == 'live-1'
+        env:
+          WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
+        run: |
+          set -o pipefail
+          go test -race -v -p 1 ./internal/repository -run '^TestLive(InitialPasswordLifecycle|ResetPasswordClearsAnIssuedExpiry|ReissueTesterPassword|TesterSampleData(IsSafeAndPreservesEdits|RollsBackAndSerializesRetries|RejectsNonTestAndInactiveWorkspaces|SurvivesInitialPasswordReplacement))$' -count=1 | tee tester-lifecycle.log
+          for test in TestLiveInitialPasswordLifecycle TestLiveResetPasswordClearsAnIssuedExpiry TestLiveReissueTesterPassword TestLiveTesterSampleDataIsSafeAndPreservesEdits TestLiveTesterSampleDataRollsBackAndSerializesRetries TestLiveTesterSampleDataRejectsNonTestAndInactiveWorkspaces TestLiveTesterSampleDataSurvivesInitialPasswordReplacement; do
+            grep -q -- "--- PASS: $test " tester-lifecycle.log
+          done
+          if grep -q -- '--- SKIP:' tester-lifecycle.log; then exit 1; fi
+
       - name: Mailbox batch and folder identity regressions (PostgreSQL)
         if: matrix.suite == 'live-1'
         env:

@@ -143,7 +143,7 @@ The managed plan expires when the issued password would have expired, whether or
 
 ### Adding sample data
 
-In **Admins > Testers**, select **Add sample data** beside an active tester who owns a dedicated **Test** workspace, then confirm. This works for both newly created workspaces and existing dedicated Test workspaces after upgrading. Nothing is added automatically during deployment or account creation. The action requires the platform `manage_testers` permission and an MFA-verified admin session. The backend checks the Test category, the owner's current exemption, that the owner's issued password is still outstanding (not yet expired or replaced), and an unexpired managed Test grant. Testers attached to ordinary customer workspaces cannot use it.
+In **Admins > Testers**, select **Add sample data** beside an active tester who owns a dedicated **Test** workspace, then confirm. This works for both newly created workspaces and existing dedicated Test workspaces after upgrading. Nothing is added automatically during deployment or account creation. The action requires the platform `manage_testers` permission and an MFA-verified admin session. The backend checks the Test category, the owner's current exemption and an unexpired managed Test grant. The owner's initial password does not matter: the action stays available after the tester replaces it at first sign-in, or after you issue a new one, until the grant ends. Revoking the tester, or the grant expiring, ends it. Testers attached to ordinary customer workspaces cannot use it.
 
 The dataset contains:
 

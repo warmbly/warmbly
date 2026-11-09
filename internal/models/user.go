@@ -77,6 +77,8 @@ type LoginCodeExemption struct {
 	PasswordExpiresAt  *time.Time `json:"password_expires_at,omitempty"`
 	TestWorkspaceID    *uuid.UUID `json:"test_workspace_id,omitempty"`
 	SampleDataSeededAt *time.Time `json:"sample_data_seeded_at,omitempty"`
+	// SampleDataEligible is the seeding check itself: an active tester with an unexpired Test grant.
+	SampleDataEligible bool `json:"sample_data_eligible"`
 	// CreatedAsTester marks an account the tester flow created, which alone can be issued a new password.
 	CreatedAsTester bool `json:"created_as_tester"`
 }
