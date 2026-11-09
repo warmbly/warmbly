@@ -55,6 +55,15 @@ One inbox for every connected mailbox. Read, sort, and reply from a single scree
 
 Verified [warmup mail](/guides/warmup/) stays out of Unibox, including your mailbox's Sent copies and warmup run by [Warmbly Cloud](/guides/warmbly-cloud/). It does not create inbox notifications, raise the unread count or trigger reply classification. The consumer also checks existing messages in batches (once a day and after every restart) and removes confirmed warmup from Unibox, and any reply notification it had raised goes with it. This leaves the messages in your email provider and keeps ordinary conversations intact.
 
+### Warmup from other services
+
+Warmup sent by anything other than this workspace arrives as ordinary mail: another warmup tool warming the same mailboxes, or [Warmbly Cloud](/guides/warmbly-cloud/) warming a mailbox in a separate workspace without a link to this one. To keep it out, open **Settings > Sending > Warmup from other services**:
+
+- **Hide warmup from another Warmbly** hides mail carrying a Warmbly warmup marker that this workspace did not send. Warmup sent from an Outlook or Microsoft 365 mailbox loses that marker in transit, so it still needs a tag.
+- **Warmup tags** hides mail containing any of the codes you add, anywhere in its subject or text, in any case. Most warmup tools give each account one, usually as the filter tag in their warmup settings. A tag needs at least 4 characters, and up to 20 can be added.
+
+Hidden mail is never stored in Unibox. Mail already there is removed within a few minutes of saving, for every mailbox in the workspace, and the check runs again daily. The messages stay in the mailbox at your provider, untouched, so the other service can still find them. Removal is permanent in Unibox: turning a rule off later does not bring removed mail back, so pick tags that only appear in warmup.
+
 </Fold>
 
 <Fold>

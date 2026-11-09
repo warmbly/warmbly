@@ -103,6 +103,10 @@ func (s *JobsService) ingestNewEmail(ctx context.Context, e *models.JobEventNewE
 		}
 	}
 
+	if s.isExternalWarmup(ctx, e) {
+		return nil
+	}
+
 	// A pool-linked mailbox is warmup-only: everything else is dropped unread.
 	if s.PoolLinkRepo != nil {
 		if linked, lerr := s.PoolLinkRepo.GetMailboxByAccount(ctx, e.Message.EmailID); lerr == nil && linked != nil {

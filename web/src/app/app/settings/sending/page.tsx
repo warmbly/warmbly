@@ -22,6 +22,7 @@ import {
 import VerificationSettings from "@/components/app/contacts/VerificationSettings";
 import {
     AUTOMATED_INTENTS,
+    DEFAULT_EXTERNAL_WARMUP,
     DEFAULT_INBOX_TAGGING,
     DEFAULT_PREFERRED_HOURS,
     DEFAULT_UNSUBSCRIBE,
@@ -29,6 +30,7 @@ import {
     describeHours,
     formatHour,
     taskIntents,
+    type ExternalWarmupSettings,
     type InboxTaggingSettings,
     type OutreachSettings,
     type ReplyIntent,
@@ -40,6 +42,7 @@ import { TextInput } from "@/components/ui/field";
 import { Link } from "@tanstack/react-router";
 import TaggingQuestions from "./TaggingQuestions";
 import LanguagePicker from "./LanguagePicker";
+import WarmupTags from "./WarmupTags";
 
 const UNSUB_MODES: SelectOption[] = [
     { value: "text", label: "Reply to opt out (text line)" },
@@ -119,6 +122,18 @@ function SendingSettings() {
         [],
     );
     const tagging = draft?.inbox_tagging ?? DEFAULT_INBOX_TAGGING;
+
+    const patchExternalWarmup = React.useCallback(
+        (next: Partial<ExternalWarmupSettings>) => {
+            setDraft((prev) =>
+                prev
+                    ? { ...prev, external_warmup: { ...(prev.external_warmup ?? DEFAULT_EXTERNAL_WARMUP), ...next } }
+                    : prev,
+            );
+        },
+        [],
+    );
+    const externalWarmup = draft?.external_warmup ?? DEFAULT_EXTERNAL_WARMUP;
 
     const patchPreflight = React.useCallback(
         (next: Partial<OutreachSettings["preflight"]>) => {
@@ -515,6 +530,38 @@ function SendingSettings() {
                             onChange={(on) => patchInboxTagging({ action_required_in_inbox: on })}
                         />
                     </Row>
+                )}
+            </Section>
+
+            <Section
+                eyebrow="Warmup from other services"
+                description="Warmup Warmbly runs from this workspace never reaches the inbox. When another service also warms these mailboxes, such as Warmbly Cloud in a separate workspace or another warmup tool, its mail arrives as ordinary mail. Hide it here. Hidden mail is never stored in the inbox, and mail already there is removed within a few minutes. It stays in the mailbox at your provider, untouched, so the other service keeps working."
+            >
+                {isLoading || !draft ? (
+                    <div className="h-7 w-40 rounded bg-slate-100 animate-pulse" />
+                ) : (
+                    <>
+                        <Row
+                            label="Hide warmup from another Warmbly"
+                            description="Hides mail carrying a Warmbly warmup marker that this workspace did not send, for example when the same mailbox also warms in Warmbly Cloud or on another instance. Warmup sent from an Outlook or Microsoft 365 mailbox loses its marker in transit, so add a tag below if that is where it comes from."
+                        >
+                            <Toggle
+                                on={externalWarmup.hide_warmbly_marked}
+                                onChange={(on) => patchExternalWarmup({ hide_warmbly_marked: on })}
+                                label="Hide warmup from another Warmbly"
+                            />
+                        </Row>
+                        <Row
+                            label="Warmup tags"
+                            description="Most warmup tools put a unique code in every warmup email and give it to you for exactly this, usually as a filter tag in their warmup settings. Mail with one of these anywhere in the subject or text is hidden. Case does not matter."
+                            align="start"
+                        >
+                            <WarmupTags
+                                value={externalWarmup.tags ?? []}
+                                onChange={(tags) => patchExternalWarmup({ tags })}
+                            />
+                        </Row>
+                    </>
                 )}
             </Section>
 

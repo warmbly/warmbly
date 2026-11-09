@@ -204,8 +204,7 @@ func (r *warmupRepository) LastWarmupSendFailures(ctx context.Context, accountID
 		if _, seen := out[id]; seen {
 			continue
 		}
-		if strings.HasPrefix(f.Message, models.MailboxNotLoadedPrefix) {
-			f.Kind = models.WarmupFailureLoading
+		if f.Kind = models.WarmupSendFailureKind(f.Message); f.Kind == models.WarmupFailureLoading {
 			f.FirstFailureAt = &first
 		}
 		out[id] = f

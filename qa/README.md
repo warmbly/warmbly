@@ -336,6 +336,20 @@ QA_WARMUP_PLACEMENT_FIXTURES=1 pnpm proof warmup-placement
 
 The placement numbers are fixture data, not a measurement of real delivery.
 
+## Warmup filtering proof fixtures
+
+`flows/warmup-filtering.flow.ts` is opt-in: apply `fixtures/warmup-filtering.sql`
+to this worktree's rich-seed database. It marks the owner's product tour
+finished, clears the workspace's `external_warmup` settings and the seeded
+`dev.outbound@warmbly.test` filter tag, so the walkthrough starts from the
+defaults. It is re-runnable. Clear the stack's private Redis afterwards.
+
+```bash
+docker exec -i warmbly-postgres-1 psql -U warmbly -d warmbly_qa_<worktree> < fixtures/warmup-filtering.sql
+docker exec wqa-<worktree>-redis redis-cli FLUSHDB
+QA_WARMUP_FILTERING_FIXTURES=1 pnpm proof warmup-filtering
+```
+
 ## Regions and timezones proof fixtures
 
 `flows/regions-and-timezones.flow.ts` is opt-in: apply `fixtures/regions-and-timezones.sql`

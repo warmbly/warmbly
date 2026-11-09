@@ -377,6 +377,15 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 		return errx.InternalError()
 	}
 
+	// Added after linting: the recipient's opt-in filter tag is the one marker its owner asked for.
+	if tagger, ok := s.warmupRepo.(warmupFilterTagReader); ok {
+		tag, tagErr := tagger.RecipientWarmupFilterTag(ctx, partner.ID)
+		if tagErr != nil {
+			return errx.InternalError()
+		}
+		emailBody, content.bodyHTML = models.AppendWarmupFilterTag(emailBody, content.bodyHTML, tag)
+	}
+
 	// STEP 9: Generate Message-ID
 	messageID := generateMessageID(account.Email)
 	if err := s.taskRepo.UpdateTaskMessageID(ctx, taskID, messageID); err != nil {
@@ -1282,4 +1291,9 @@ func otherPoolType(poolType string) string {
 		return "free"
 	}
 	return "premium"
+}
+
+// warmupFilterTagReader is implemented by the Postgres warmup repository.
+type warmupFilterTagReader interface {
+	RecipientWarmupFilterTag(ctx context.Context, accountID uuid.UUID) (string, error)
 }

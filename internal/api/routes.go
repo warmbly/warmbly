@@ -634,6 +634,10 @@ func Run(
 				emails.PUT("/:id/behavior", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireEmailAccountParam("id"), h.UpdateEmailBehavior)
 				emails.GET("/:id/behavior/plan", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), middleware.RequireEmailAccountParam("id"), h.GetEmailBehaviorPlan)
 				emails.POST("/verify", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), h.VerifyEmail)
+				emails.GET("/:id/warmup-filter-tag", m.RequireAccess(models.PermManageEmails, models.APIPermReadEmails), middleware.RequireEmailAccountParam("id"), h.GetWarmupFilterTag)
+				// PUT without a tag issues a new random one; a repeat with the same Idempotency-Key returns the first.
+				emails.PUT("/:id/warmup-filter-tag", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireEmailAccountParam("id"), h.SetWarmupFilterTag)
+				emails.DELETE("/:id/warmup-filter-tag", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireEmailAccountParam("id"), h.ClearWarmupFilterTag)
 				emails.GET("/:id/warmup/ban-status", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), middleware.RequireEmailAccountParam("id"), h.GetWarmupBanStatus)
 				emails.POST("/:id/warmup/appeal", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireEmailAccountParam("id"), h.SubmitWarmupAppeal)
 				emails.DELETE("/:id", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireEmailAccountParam("id"), h.DeleteEmail)

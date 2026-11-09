@@ -462,6 +462,7 @@ func (s *AdvancedOutreachSettings) Normalize() {
 	s.Unsubscribe.LinkIntro = clampLine(s.Unsubscribe.LinkIntro)
 	s.Unsubscribe.LinkText = clampLine(s.Unsubscribe.LinkText)
 	s.ReplyIntent.CRMTaskIntents = normalizeIntents(s.ReplyIntent.CRMTaskIntents)
+	s.ExternalWarmup.normalize()
 }
 
 // Validate reports the settings a caller may not store. Normalize handles what
@@ -480,6 +481,9 @@ func (s *AdvancedOutreachSettings) Validate() error {
 		if _, ok := MailLanguageNames[lang]; !ok {
 			return fmt.Errorf("%q is not a supported tagging language", lang)
 		}
+	}
+	if err := s.ExternalWarmup.validate(); err != nil {
+		return err
 	}
 	return validateInboxTagQuestions(s.InboxTagging.Questions)
 }
@@ -621,6 +625,7 @@ type AdvancedOutreachSettings struct {
 	Preflight            PreflightValidationSettings     `json:"preflight"`
 	Dashboard            DeliverabilityDashboardSettings `json:"dashboard"`
 	Unsubscribe          UnsubscribeSettings             `json:"unsubscribe"`
+	ExternalWarmup       ExternalWarmupSettings          `json:"external_warmup"`
 	Custom               map[string]interface{}          `json:"custom,omitempty"`
 }
 
@@ -1214,6 +1219,7 @@ func DefaultAdvancedOutreachSettings() AdvancedOutreachSettings {
 			LinkIntro: DefaultUnsubscribeLinkIntro,
 			LinkText:  DefaultUnsubscribeLinkText,
 		},
-		Custom: map[string]interface{}{},
+		ExternalWarmup: ExternalWarmupSettings{Tags: []string{}},
+		Custom:         map[string]interface{}{},
 	}
 }

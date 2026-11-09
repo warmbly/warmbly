@@ -29,6 +29,15 @@ export default function WarmupSendFailureNote({ failure, provider, cloud = false
             </div>
         );
     }
+    if (failure.kind === "provider_throttle") {
+        const who = provider === "gmail" ? "Google" : provider === "outlook" ? "Microsoft" : "The mail server";
+        return (
+            <p className={`mt-2 text-[11.5px] leading-relaxed text-slate-500 ${className}`}>
+                {who} asked this mailbox to slow down, so {cloud ? "Warmbly Cloud" : "Warmbly"} held one warmup email back at{" "}
+                {new Date(failure.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}. Warmup keeps to the provider's pace and the next email goes out on schedule. Nothing needs doing.
+            </p>
+        );
+    }
     const advice = provider === "smtp_imap"
         ? cloud
             ? "If the error above reports a mail-server connection problem, check the SMTP host, port and any IP allowlist. Warmbly Cloud connects from its own network, not this instance's address."

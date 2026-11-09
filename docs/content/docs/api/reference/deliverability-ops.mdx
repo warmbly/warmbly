@@ -85,6 +85,10 @@ Returns the `AdvancedOutreachSettings` object directly (not wrapped in an envelo
     "link_intro": "Not the right person, or not interested?",
     "link_text": "Unsubscribe"
   },
+  "external_warmup": {
+    "hide_warmbly_marked": false,
+    "tags": []
+  },
   "custom": {}
 }
 ```
@@ -117,6 +121,10 @@ The `unsubscribe` block is the workspace default for the opt-out appended after 
 
 <Callout type="info" title="Mail that needs action stays in the inbox by default">
 `inbox_tagging.action_required_in_inbox` defaults to `true`. With automatic inbox tagging on, each automated notification is also asked whether it needs someone to act (a failed payment, a suspended account, a suspicious sign-in, a sending limit, a service about to expire), and the ones that do stay in the inbox labelled Action required instead of moving to the Automated view. A question in `inbox_tagging.questions` with `automated: true` is also asked of notifications. See [Mail that needs your action](/guides/inbox-tagging/#mail-that-needs-your-action).
+</Callout>
+
+<Callout type="info" title="Warmup from other services is shown until you hide it">
+`external_warmup` keeps warmup that another service sends through the workspace's mailboxes out of the inbox. `hide_warmbly_marked` (default `false`) hides mail carrying a Warmbly warmup marker this workspace did not send, such as Warmbly Cloud warming the same mailbox in another workspace. `tags` (default `[]`) are codes other warmup tools put in every warmup email; a message containing one anywhere in its subject or text, in any case, is hidden. Tags are trimmed and de-duplicated without regard to case. A tag shorter than 4 or longer than 120 characters, or more than 20 tags, is refused with `400 invalid_setting`. Hidden mail is never stored in the inbox and mail already stored is removed within minutes; it is left untouched at the provider. Turning a rule off does not bring removed mail back. See [warmup from other services](/guides/unibox/#warmup-from-other-services).
 </Callout>
 
 ## Update outreach settings
