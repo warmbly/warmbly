@@ -91,6 +91,10 @@ var (
 	ErrPasswordChangeRequired = NewWithIdentifier(Forbidden, "password_change_required",
 		"This account still has the password it was issued, which has to be replaced first. Sign in with your email and password to choose your own.")
 
+	// ErrInitialPasswordWebOnly answers an issued initial password from an app build that cannot take the change step.
+	ErrInitialPasswordWebOnly = NewWithIdentifier(Forbidden, "initial_password_web_only",
+		"This account still has the temporary password it was given. Finish your first sign-in on the web, where you choose your own password, then sign in here with that password.")
+
 	// ErrPasswordChangeExpired ends a choose-your-password step that is unknown, expired, already used, or whose issued password ran out.
 	ErrPasswordChangeExpired = NewWithIdentifier(BadRequest, "password_change_expired",
 		"That sign-in request expired or was already used. Sign in again.")

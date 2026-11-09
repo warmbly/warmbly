@@ -13,6 +13,8 @@ struct AuthFlowView: View {
         case password
         case verify(session: String)
         case twoFA(pendingToken: String)
+        /// The password was an issued initial one; the holder chooses their own.
+        case newPassword(pendingToken: String)
         /// Apple or Google signed in to an address that already has a password.
         case link(SSOLinkChallenge)
         case resetSent
@@ -29,6 +31,8 @@ struct AuthFlowView: View {
     @State private var mode = Mode.signIn
     @State private var email = ""
     @State private var password = ""
+    @State private var newPassword = ""
+    @State private var confirmPassword = ""
     @State private var code = ""
     @State private var recoveryCode = ""
     @State private var useRecovery = false
@@ -46,7 +50,7 @@ struct AuthFlowView: View {
 
     @FocusState private var focusedField: Field?
 
-    private enum Field { case email, password, recovery }
+    private enum Field { case email, password, newPassword, confirmPassword, recovery }
 
     /// The email step keeps the big cloud art; deeper steps clear the sky
     /// for the step badge.
@@ -76,6 +80,7 @@ struct AuthFlowView: View {
             case "password": step = .password
             case "verify": step = .verify(session: "debug")
             case "twofa": step = .twoFA(pendingToken: "debug")
+            case "newpassword": step = .newPassword(pendingToken: "debug")
             case "link": step = .link(SSOLinkChallenge(pendingToken: "debug", email: email, provider: "google"))
             case "reset": step = .resetSent
             case "server": showServerConfig = true
@@ -178,6 +183,8 @@ struct AuthFlowView: View {
             return nil
         case .password:
             return (1, "lock.fill", mode == .signIn ? "Your password" : "Choose a password")
+        case .newPassword:
+            return (2, "key.fill", "Choose your password")
         case .verify:
             return (2, "envelope.open.fill", "Check your email")
         case .twoFA:
@@ -202,6 +209,8 @@ struct AuthFlowView: View {
                     verifyStep
                 case .twoFA:
                     twoFAStep
+                case .newPassword:
+                    newPasswordStep
                 case let .link(challenge):
                     linkStep(challenge)
                 case .resetSent:
@@ -257,6 +266,12 @@ struct AuthFlowView: View {
         case .verify:
             code = ""
             infoMessage = nil
+            go(to: .password, direction: -1)
+        case .newPassword:
+            // The issued password opens a fresh challenge when entered again.
+            password = ""
+            newPassword = ""
+            confirmPassword = ""
             go(to: .password, direction: -1)
         case .twoFA, .link:
             restart()
@@ -524,6 +539,75 @@ struct AuthFlowView: View {
             .accessibilityHidden(true)
     }
 
+    // MARK: - Step: choose a password after an issued one
+
+    /// Why the save button is off, once there is enough typed to say.
+    private var newPasswordProblem: String? {
+        if newPassword.count < 8 { return nil }
+        if newPassword == password { return "Choose a password different from the one you were given." }
+        if !confirmPassword.isEmpty, confirmPassword != newPassword { return "The passwords don't match." }
+        return nil
+    }
+
+    private var newPasswordReady: Bool {
+        newPassword.count >= 8 && newPassword != password && confirmPassword == newPassword
+    }
+
+    private var newPasswordStep: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sheetTitle(
+                "Choose your password",
+                "You signed in with a temporary password. Choose your own to finish signing in. At least 8 characters."
+            )
+
+            VStack(spacing: 12) {
+                HStack {
+                    emailPill
+                    Spacer()
+                }
+                .background(autofillUsername)
+
+                authField(
+                    SecureField("New password", text: $newPassword)
+                        .textContentType(.newPassword)
+                        .focused($focusedField, equals: .newPassword)
+                        .submitLabel(.next)
+                        .onSubmit { focusedField = .confirmPassword },
+                    focused: focusedField == .newPassword
+                )
+
+                if !newPassword.isEmpty {
+                    PasswordStrengthBar(password: newPassword)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+
+                authField(
+                    SecureField("Confirm password", text: $confirmPassword)
+                        .textContentType(.newPassword)
+                        .focused($focusedField, equals: .confirmPassword)
+                        .submitLabel(.go)
+                        .onSubmit { Task { await submitNewPassword() } },
+                    focused: focusedField == .confirmPassword
+                )
+
+                if let newPasswordProblem {
+                    Text(newPasswordProblem)
+                        .font(.system(size: 13.5))
+                        .foregroundStyle(WTheme.inkSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .transition(.opacity)
+                }
+
+                primaryButton("Save and sign in", disabled: !newPasswordReady) {
+                    await submitNewPassword()
+                }
+            }
+            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: newPassword.isEmpty)
+            .animation(.easeOut(duration: 0.18), value: newPasswordProblem)
+        }
+        .onAppear { focusedField = .newPassword }
+    }
+
     // MARK: - Step: link a provider to a password account
 
     private func providerName(_ provider: String) -> String {
@@ -733,6 +817,8 @@ struct AuthFlowView: View {
                     infoMessage = nil
                     resendRemaining = 60
                     go(to: .verify(session: session))
+                case let .needsNewPassword(pendingToken):
+                    showNewPassword(pendingToken)
                 }
             case .signUp:
                 registerFlow = true
@@ -751,6 +837,8 @@ struct AuthFlowView: View {
                         code = ""
                         resendRemaining = 60
                         go(to: .verify(session: loginSession))
+                    case let .needsNewPassword(pendingToken):
+                        showNewPassword(pendingToken)
                     }
                     return
                 }
@@ -782,6 +870,8 @@ struct AuthFlowView: View {
                         infoMessage = "Account created. We emailed you a sign-in code."
                     }
                     go(to: .verify(session: loginSession))
+                case let .needsNewPassword(pendingToken):
+                    showNewPassword(pendingToken)
                 }
             } else {
                 let outcome = try await env.session.confirmLogin(session: session, code: submitted)
@@ -824,6 +914,58 @@ struct AuthFlowView: View {
             try await env.session.verifyTwoFA(pendingToken: pendingToken, code: submitted.trimmingCharacters(in: .whitespaces))
         }
         if errorMessage != nil { code = "" }
+    }
+
+    private func showNewPassword(_ pendingToken: String) {
+        newPassword = ""
+        confirmPassword = ""
+        infoMessage = nil
+        go(to: .newPassword(pendingToken: pendingToken))
+    }
+
+    private func submitNewPassword() async {
+        guard case let .newPassword(pendingToken) = step, !busy, newPasswordReady else { return }
+        var expired = false
+        await run {
+            do {
+                let outcome = try await env.session.chooseInitialPassword(pendingToken: pendingToken, password: newPassword)
+                // Back may have abandoned this attempt while it was in flight.
+                guard step == .newPassword(pendingToken: pendingToken) else { return }
+                // A resent code signs in again, now with the chosen password.
+                password = newPassword
+                newPassword = ""
+                confirmPassword = ""
+                switch outcome {
+                case .loggedIn:
+                    return
+                case let .needsTwoFA(pending):
+                    code = ""
+                    go(to: .twoFA(pendingToken: pending))
+                case let .needsCode(session):
+                    code = ""
+                    resendRemaining = 60
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        infoMessage = "Password saved. We emailed you a sign-in code."
+                    }
+                    go(to: .verify(session: session))
+                case let .needsNewPassword(pending):
+                    showNewPassword(pending)
+                }
+            } catch {
+                guard step == .newPassword(pendingToken: pendingToken) else { return }
+                expired = (error as? APIError)?.code == "password_change_expired"
+                throw error
+            }
+        }
+        // The challenge is spent, expired or voided by a reissue: only a new sign-in continues.
+        if expired, step == .newPassword(pendingToken: pendingToken) {
+            let message = errorMessage
+            password = ""
+            newPassword = ""
+            confirmPassword = ""
+            go(to: .password, direction: -1)
+            if let message { showError(message) }
+        }
     }
 
     private func handleSocial(_ outcome: SocialOutcome) {

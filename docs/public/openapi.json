@@ -47951,6 +47951,10 @@
           },
           "app_attest": {
             "$ref": "#/components/schemas/AppAttestProof"
+          },
+          "supports_password_change": {
+            "type": "boolean",
+            "description": "Login only. Sent by the iOS app to say it can take a password_change_required answer. An iOS app build that omits it is answered initial_password_web_only for an issued initial password."
           }
         }
       },
