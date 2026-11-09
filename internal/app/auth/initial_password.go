@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -158,6 +159,16 @@ func (s *authService) CompleteInitialPassword(ctx context.Context, data *Initial
 
 	verdict := authrisk.Verdict{Flagged: pend.AnomalyReason != "", Reason: pend.AnomalyReason}
 	return s.continuePasswordLogin(ctx, pend.UserID, pend.Email, data.DeviceToken, verdict, ipaddr, userAgent)
+}
+
+// appCannotChangePassword is a native app build that predates the change step:
+// it identifies as the app (an App Attest proof or its URLSession User-Agent)
+// without declaring supports_password_change. Browsers and API clients are unaffected.
+func appCannotChangePassword(data *AuthData, userAgent string) bool {
+	if data.SupportsPasswordChange {
+		return false
+	}
+	return data.AppAttest != nil || (strings.HasPrefix(userAgent, "Warmbly/") && strings.Contains(userAgent, " CFNetwork/"))
 }
 
 // passwordDigest names a stored hash without keeping it in the cache.

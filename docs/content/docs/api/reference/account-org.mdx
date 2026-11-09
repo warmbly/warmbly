@@ -29,6 +29,7 @@ Auth: public (not available to API keys).
 | `password` | string | yes | Account password. |
 | `turnstile` | string | yes, unless `app_attest` is sent | Cloudflare Turnstile token. |
 | `app_attest` | object | no | The native app's [App Attest proof](#app-attest-native-apps), sent instead of `turnstile`. |
+| `supports_password_change` | boolean | no | Sent by the iOS app to say it can take a `password_change_required` answer. |
 
 ```json
 {
@@ -56,6 +57,8 @@ When the password is an [issued initial password](/development/accounts-and-acce
   "expires_in": 600
 }
 ```
+
+The iOS app takes this step when it sends `supports_password_change: true`. An earlier app build, which does not send it, is answered `initial_password_web_only` instead, so its holder finishes the first sign-in on the web. Browsers and API clients always get the step above.
 
 ### Choose a password after an issued one
 

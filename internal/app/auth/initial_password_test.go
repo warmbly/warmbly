@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/app/appattest"
 	"github.com/warmbly/warmbly/internal/app/token"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
@@ -347,5 +348,75 @@ func TestInitialPasswordReissueVoidsOpenChallenge(t *testing.T) {
 	}
 	if repo.acct.hash != reissued || repo.acct.expiresAt == nil || tokens.sessions != 0 {
 		t.Fatal("a challenge opened before the reissue replaced the reissued password")
+	}
+}
+
+// Only an app build that does not declare the change step is told to finish on the web.
+func TestAppCannotChangePassword(t *testing.T) {
+	const appUA = "Warmbly/412 CFNetwork/3826.500.131 Darwin/25.0.0"
+	const safariUA = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
+	proof := &appattest.Proof{KeyID: "k", Assertion: "a", Challenge: "c"}
+	cases := []struct {
+		name string
+		data AuthData
+		ua   string
+		want bool
+	}{
+		{"older app by user agent", AuthData{}, appUA, true},
+		{"older app by app attest", AuthData{AppAttest: proof}, "", true},
+		{"current app", AuthData{SupportsPasswordChange: true}, appUA, false},
+		{"current app with app attest", AuthData{AppAttest: proof, SupportsPasswordChange: true}, appUA, false},
+		{"browser", AuthData{}, safariUA, false},
+		{"api client", AuthData{}, "curl/8.7.1", false},
+		{"another app on the same stack", AuthData{}, "OtherApp/3 CFNetwork/3826.500.131 Darwin/25.0.0", false},
+	}
+	for _, tc := range cases {
+		if got := appCannotChangePassword(&tc.data, tc.ua); got != tc.want {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+const olderAppUA = "Warmbly/412 CFNetwork/3826.500.131 Darwin/25.0.0"
+
+// An older app build gets a stable refusal for an issued password, and nothing is opened.
+func TestOlderAppIsSentToTheWebForAnInitialPassword(t *testing.T) {
+	s, repo, tokens := initialFixture(t, 48*time.Hour)
+	res, err := s.LoginStart(context.Background(), &AuthData{Email: repo.acct.email, Password: issuedPassword}, testIP, olderAppUA)
+	if err != errx.ErrInitialPasswordWebOnly || res != nil {
+		t.Fatalf("an older app answered %+v, %v; want ErrInitialPasswordWebOnly", res, err)
+	}
+	if tokens.sessions != 0 {
+		t.Fatal("an older app opened a session with an issued password")
+	}
+	// The issued password still works where the change step is understood.
+	web, err := signIn(s, repo.acct.email, issuedPassword)
+	if err != nil || !web.PasswordChangeRequired {
+		t.Fatalf("the web sign-in after an older app answered %+v, %v", web, err)
+	}
+}
+
+// A wrong password from an older app is refused as a wrong password, so the refusal reveals nothing.
+func TestOlderAppWrongPasswordIsACredentialsError(t *testing.T) {
+	s, repo, _ := initialFixture(t, 48*time.Hour)
+	_, err := s.LoginStart(context.Background(), &AuthData{Email: repo.acct.email, Password: "not-the-password-at-all"}, testIP, olderAppUA)
+	if err != errx.ErrCredentials {
+		t.Fatalf("a wrong password from an older app answered %v; want ErrCredentials", err)
+	}
+}
+
+// A current app build gets the change step and continues the sign-in after it.
+func TestCurrentAppTakesTheChangeStep(t *testing.T) {
+	s, repo, tokens := initialFixture(t, 48*time.Hour)
+	res, err := s.LoginStart(context.Background(), &AuthData{Email: repo.acct.email, Password: issuedPassword, SupportsPasswordChange: true}, testIP, olderAppUA)
+	if err != nil || !res.PasswordChangeRequired || res.PendingToken == "" || res.Token != nil {
+		t.Fatalf("a current app answered %+v, %v", res, err)
+	}
+	done, err := choose(s, res.PendingToken, chosenPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done.PasswordChangeRequired || done.Token == nil || tokens.sessions != 1 {
+		t.Fatalf("the change step answered %+v with %d sessions", done, tokens.sessions)
 	}
 }
