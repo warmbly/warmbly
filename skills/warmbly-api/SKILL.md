@@ -71,6 +71,9 @@ or `@file`.
 - On `rate_limit_exceeded` wait the `Retry-After` the error names, then retry.
 - Retried writes: pass `--idempotency-key <same-key>` so a retry can never
   double-apply. Any unique string works; reuse it only for the identical retry.
+  A `409 idempotency_outcome_unknown` means the first attempt ended in a server
+  error and may have applied: retry with a new key only once you have
+  established that it did not.
 - `contact list` is a search: `--data` carries the filter body, e.g.
   `--data '{"query":"acme.com"}'`. Omit it to list everything.
 

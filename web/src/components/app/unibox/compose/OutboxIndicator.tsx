@@ -98,7 +98,12 @@ export default function OutboxIndicator() {
             }
         } catch (e) {
             const err = e as AppError;
-            if (err?.status === 404) {
+            if (err?.code === "scheduled_send_not_pending") {
+                // Left pending: sending, sent, failed or cancelled, so claim none of them.
+                remove(entry.taskId);
+                void queryClient.invalidateQueries({ queryKey: ["unibox"] });
+                toast.error("This send can no longer be cancelled");
+            } else if (err?.status === 404) {
                 // The task already fired; nothing left to cancel.
                 remove(entry.taskId);
                 void queryClient.invalidateQueries({ queryKey: ["unibox"] });

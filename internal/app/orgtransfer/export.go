@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -134,7 +135,7 @@ func (s *service) ExportTo(
 			Name:  t.Name,
 			Group: t.Group,
 			Columns: slices.DeleteFunc(columnNames(cols), func(column string) bool {
-				return slices.Contains(t.ExcludeOnExport, column)
+				return slices.Contains(t.ExcludeOnExport, column) || slices.Contains(t.derivedColumns(), column)
 			}),
 		}
 		if archiveKey != nil {
@@ -149,11 +150,12 @@ func (s *service) ExportTo(
 		// tables have neither secrets nor blobs, so they stream through
 		// untouched, which is what makes a million-row inbox export cheap.
 		passthrough := len(t.Secrets) == 0 && len(t.Blobs) == 0 && len(t.ExcludeOnExport) == 0 && len(t.ExcludeJSONOnExport) == 0
+		bytea := byteaColumns(cols)
 
 		err = s.repo.StreamScoped(ctx, t.Name, t.Scope, orgID, func(row []byte) error {
 			out := row
 			if !passthrough {
-				transformed, terr := s.exportRow(ctx, t, row, archiveKey, orgCipher, blobs)
+				transformed, terr := s.exportRow(ctx, t, row, bytea, archiveKey, orgCipher, blobs)
 				if terr != nil {
 					return terr
 				}
@@ -198,6 +200,7 @@ func (s *service) exportRow(
 	ctx context.Context,
 	t *Table,
 	row []byte,
+	bytea map[string]bool,
 	archiveKey []byte,
 	orgCipher *cipher.Cipher,
 	blobs *blobCollector,
@@ -224,12 +227,17 @@ func (s *service) exportRow(
 	}
 
 	for _, sc := range t.Secrets {
+		// A row not yet sealed carries its value only in the clear column, which stands in for it.
+		var clear string
+		if sc.Plaintext != "" {
+			clear = jsonString(obj[sc.Plaintext])
+		}
 		raw, ok := obj[sc.Column]
-		if !ok {
+		if !ok && clear == "" {
 			continue
 		}
 		stored := jsonString(raw)
-		if stored == "" {
+		if stored == "" && clear == "" {
 			continue
 		}
 		// A guarded column only holds ciphertext when its flag is set.
@@ -244,10 +252,23 @@ func (s *service) exportRow(
 			continue
 		}
 
-		plain, err := s.openSecret(ctx, sc, stored, orgCipher)
-		if err != nil {
+		var plain string
+		var openErr error
+		if bytea[sc.Column] && stored != "" {
+			if stored, openErr = decodeBytea(stored); openErr == nil && stored == "" && clear == "" {
+				obj[sc.Column] = json.RawMessage(`null`)
+				continue
+			}
+		}
+		if openErr == nil && stored != "" {
+			plain, openErr = s.openSecret(ctx, sc, stored, orgCipher)
+		}
+		if (stored == "" || openErr != nil) && clear != "" {
+			plain, openErr = clear, nil
+		}
+		if openErr != nil {
 			// One unreadable credential must not sink the export. Blank it and
-			// let the mailbox arrive needing a reconnect.
+			// let the mailbox or integration arrive needing a reconnect.
 			blankSecret(obj, sc)
 			continue
 		}
@@ -260,6 +281,10 @@ func (s *service) exportRow(
 			return nil, err
 		}
 		obj[sc.Column] = enc
+	}
+
+	for _, column := range t.derivedColumns() {
+		delete(obj, column)
 	}
 
 	for _, bc := range t.Blobs {
@@ -501,6 +526,30 @@ func toAnyMap(in map[string]json.RawMessage) map[string]any {
 	}
 	return out
 }
+
+// byteaColumns names the bytea columns among cols.
+func byteaColumns(cols []repository.ColumnInfo) map[string]bool {
+	out := map[string]bool{}
+	for _, c := range cols {
+		if c.IsBytea {
+			out[c.Name] = true
+		}
+	}
+	return out
+}
+
+// decodeBytea reads the \x hex form to_jsonb gives a bytea value.
+func decodeBytea(v string) (string, error) {
+	h, ok := strings.CutPrefix(v, `\x`)
+	if !ok {
+		return "", errors.New("bytea value is not in hex form")
+	}
+	b, err := hex.DecodeString(h)
+	return string(b), err
+}
+
+// encodeBytea writes a value in the \x hex form a bytea column accepts.
+func encodeBytea(v string) string { return `\x` + hex.EncodeToString([]byte(v)) }
 
 func columnNames(cols []repository.ColumnInfo) []string {
 	out := make([]string, len(cols))

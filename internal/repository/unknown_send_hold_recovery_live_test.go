@@ -12,7 +12,7 @@ import (
 func recoverHolds(t *testing.T, f *campaignAdmissionFixture) int {
 	t.Helper()
 	now := time.Now()
-	n, err := f.r.RecoverUnknownSendHolds(t.Context(), now.Add(-10*time.Minute), now.Add(-30*time.Minute), 100)
+	n, _, err := f.r.RecoverUnknownSendHolds(t.Context(), now.Add(-10*time.Minute), now.Add(-30*time.Minute), 100)
 	if err != nil {
 		t.Fatal(err)
 	}

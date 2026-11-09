@@ -89,6 +89,8 @@ type OrgTransferRepository interface {
 	// did not travel, so the dashboard prompts for a reconnect instead of the
 	// worker failing every send against an empty password.
 	MarkMailboxesNeedingReconnect(ctx context.Context, tx pgx.Tx, orgID uuid.UUID) (int64, error)
+	// MarkIntegrationsNeedingReconnect flags, once each, connections whose credentials or inbound secret did not travel.
+	MarkIntegrationsNeedingReconnect(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, credentialsDetail, inboundDetail string) ([]IntegrationReconnect, error)
 	// Begin starts the import transaction.
 	Begin(ctx context.Context) (pgx.Tx, error)
 
@@ -129,6 +131,8 @@ type ColumnInfo struct {
 	IsGenerated bool
 	IsIdentity  bool
 	NotNull     bool
+	// IsBytea marks a bytea column, which to_jsonb renders as a \x hex string.
+	IsBytea bool
 }
 
 // Writable reports whether the column accepts a supplied value.
@@ -234,7 +238,8 @@ func (r *orgTransferRepository) TableColumns(ctx context.Context, table string) 
 		SELECT a.attname,
 		       a.attgenerated <> '' AS is_generated,
 		       a.attidentity <> ''  AS is_identity,
-		       a.attnotnull         AS not_null
+		       a.attnotnull         AS not_null,
+		       a.atttypid = 'bytea'::regtype AS is_bytea
 		  FROM pg_attribute a
 		  JOIN pg_class c     ON c.oid = a.attrelid
 		  JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -253,7 +258,7 @@ func (r *orgTransferRepository) TableColumns(ctx context.Context, table string) 
 	var out []ColumnInfo
 	for rows.Next() {
 		var c ColumnInfo
-		if err := rows.Scan(&c.Name, &c.IsGenerated, &c.IsIdentity, &c.NotNull); err != nil {
+		if err := rows.Scan(&c.Name, &c.IsGenerated, &c.IsIdentity, &c.NotNull, &c.IsBytea); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -890,6 +895,61 @@ func (r *orgTransferRepository) MarkMailboxesNeedingReconnect(ctx context.Contex
 		return 0, fmt.Errorf("flag mailboxes needing reconnect: %w", err)
 	}
 	return tag.RowsAffected(), nil
+}
+
+// IntegrationReconnect names a connection an import left needing reconnection.
+type IntegrationReconnect struct {
+	Provider string
+	Label    string
+	// CredentialsMissing reports an API key, OAuth token or config the archive blanked.
+	CredentialsMissing bool
+	// InboundClosed reports that the connection had an inbound URL and it was closed.
+	InboundClosed bool
+}
+
+// MarkIntegrationsNeedingReconnect moves every connection holding a value the archive blanked ("" where the app writes NULL) to reauth_required.
+// A blank config or inbound secret closes the inbound URL in its clear, sealed and digest columns alike.
+func (r *orgTransferRepository) MarkIntegrationsNeedingReconnect(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, credentialsDetail, inboundDetail string) ([]IntegrationReconnect, error) {
+	rows, err := tx.Query(ctx, `
+		WITH stale AS (
+			SELECT id,
+			       COALESCE(config_encrypted = '\x'::bytea OR access_token_encrypted = '' OR refresh_token_encrypted = '', false) AS credentials_missing,
+			       COALESCE(config_encrypted = '\x'::bytea OR inbound_secret_encrypted = '', false) AS close_inbound,
+			       (inbound_secret IS NOT NULL OR inbound_secret_encrypted IS NOT NULL OR inbound_secret_digest IS NOT NULL) AS had_inbound
+			  FROM integration_connections
+			 WHERE organization_id = $1
+			   AND (config_encrypted = '\x'::bytea OR access_token_encrypted = '' OR refresh_token_encrypted = '' OR inbound_secret_encrypted = '')
+			   FOR UPDATE
+		)
+		UPDATE integration_connections ic
+		   SET status = CASE WHEN ic.status = 'disconnected' THEN ic.status ELSE 'reauth_required' END,
+		       health = 'down',
+		       health_detail = CASE WHEN s.credentials_missing THEN $2 ELSE $3 END,
+		       health_checked_at = NOW(),
+		       inbound_secret = CASE WHEN s.close_inbound THEN NULL ELSE ic.inbound_secret END,
+		       inbound_secret_encrypted = CASE WHEN s.close_inbound THEN NULL ELSE ic.inbound_secret_encrypted END,
+		       inbound_secret_digest = CASE WHEN s.close_inbound THEN NULL ELSE ic.inbound_secret_digest END,
+		       config_encrypted = NULLIF(ic.config_encrypted, '\x'::bytea),
+		       access_token_encrypted = NULLIF(ic.access_token_encrypted, ''),
+		       refresh_token_encrypted = NULLIF(ic.refresh_token_encrypted, ''),
+		       updated_at = NOW()
+		  FROM stale s
+		 WHERE ic.id = s.id AND ic.organization_id = $1
+		RETURNING ic.provider, ic.label, s.credentials_missing, s.close_inbound AND s.had_inbound
+	`, orgID, credentialsDetail, inboundDetail)
+	if err != nil {
+		return nil, fmt.Errorf("flag integrations needing reconnect: %w", err)
+	}
+	defer rows.Close()
+	var out []IntegrationReconnect
+	for rows.Next() {
+		var c IntegrationReconnect
+		if err := rows.Scan(&c.Provider, &c.Label, &c.CredentialsMissing, &c.InboundClosed); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
 }
 
 func (r *orgTransferRepository) ResolveUsersByEmail(ctx context.Context, emails []string) (map[string]uuid.UUID, error) {

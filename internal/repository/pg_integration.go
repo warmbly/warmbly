@@ -2,7 +2,9 @@ package repository
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,6 +29,8 @@ type ConnectionWrite struct {
 	AccessTokenEnc  string // base64 ciphertext; "" = leave unchanged
 	RefreshTokenEnc string // base64 ciphertext; "" = leave unchanged
 	InboundSecret   string // "" = leave unchanged
+	// InboundSecretSealed is InboundSecret sealed with the org DEK; set whenever InboundSecret is.
+	InboundSecretSealed string
 }
 
 // ConnectionSecrets carries the encrypted secret material for a connection so
@@ -127,7 +131,11 @@ type IntegrationRepository interface {
 	// config and records in display_fields whether deliveries must be signed.
 	SetInboundSigningConfig(ctx context.Context, orgID, connID uuid.UUID, configEncrypted []byte, signed bool) error
 	// SetInboundSecret replaces a Calendly/Cal.com connection's inbound URL secret.
-	SetInboundSecret(ctx context.Context, orgID, connID uuid.UUID, secret string) error
+	SetInboundSecret(ctx context.Context, orgID, connID uuid.UUID, secret, sealed string) error
+	// ListUnsealedInboundSecrets pages, by id, the connections whose inbound secret has no sealed copy yet.
+	ListUnsealedInboundSecrets(ctx context.Context, after uuid.UUID, limit int) ([]UnsealedInboundSecret, error)
+	// SealInboundSecret stores the sealed copy and digest of a secret, only while the row still holds that secret unsealed.
+	SealInboundSecret(ctx context.Context, id uuid.UUID, secret, sealed string) (bool, error)
 
 	// Sync runs
 	CreateSyncRun(ctx context.Context, run *models.IntegrationSyncRun) error
@@ -191,19 +199,23 @@ func (r *integrationRepository) UpsertConnection(ctx context.Context, w *Connect
 			connected_by_user_id, access_token_encrypted, refresh_token_encrypted,
 			token_expires_at, granted_scopes, external_account_id, external_account_name,
 			health, health_detail, health_checked_at,
-			created_at, updated_at
+			created_at, updated_at,
+			inbound_secret_encrypted, inbound_secret_digest
 		) VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9,
 			$10, $11, $12,
 			$13, $14, $15, $16,
 			$17, $18, $19,
-			$20, $20
+			$20, $20,
+			$21, $22
 		)
 		ON CONFLICT (organization_id, provider, label) DO UPDATE SET
 			status = EXCLUDED.status,
 			auth_method = EXCLUDED.auth_method,
 			inbound_secret = COALESCE(EXCLUDED.inbound_secret, integration_connections.inbound_secret),
+			inbound_secret_encrypted = CASE WHEN EXCLUDED.inbound_secret IS NULL THEN integration_connections.inbound_secret_encrypted ELSE EXCLUDED.inbound_secret_encrypted END,
+			inbound_secret_digest = CASE WHEN EXCLUDED.inbound_secret IS NULL THEN integration_connections.inbound_secret_digest ELSE EXCLUDED.inbound_secret_digest END,
 			config_encrypted = COALESCE(EXCLUDED.config_encrypted, integration_connections.config_encrypted),
 			display_fields = EXCLUDED.display_fields,
 			connected_by_user_id = COALESCE(EXCLUDED.connected_by_user_id, integration_connections.connected_by_user_id),
@@ -224,6 +236,7 @@ func (r *integrationRepository) UpsertConnection(ctx context.Context, w *Connect
 		c.TokenExpiresAt, normalizeScopes(c.GrantedScopes), nullIfEmptyStr(c.ExternalAccountID), nullIfEmptyStr(c.ExternalAccountName),
 		c.Health, c.HealthDetail, c.HealthCheckedAt,
 		now,
+		nullIfEmptyStr(w.InboundSecretSealed), nullIfEmptyStr(inboundDigest(w.InboundSecret)),
 	)
 	return err
 }
@@ -336,9 +349,13 @@ func (r *integrationRepository) GetConnectionByInboundSecret(ctx context.Context
 	if secret == "" {
 		return nil, nil
 	}
+	// The digest is the lookup; a row not yet sealed is still found by its secret.
 	row := r.db.QueryRow(ctx, `SELECT `+connectionPublicCols+`
-		FROM integration_connections WHERE provider = $1 AND inbound_secret = $2 LIMIT 1`,
-		string(provider), secret)
+		FROM integration_connections
+		WHERE provider = $1
+		  AND (inbound_secret_digest = $2 OR (inbound_secret_digest IS NULL AND inbound_secret = $3))
+		LIMIT 1`,
+		string(provider), inboundDigest(secret), secret)
 	var c models.IntegrationConnection
 	if err := scanConnectionInto(row, &c); err != nil {
 		if isNoRows(err) {
@@ -936,11 +953,15 @@ func (r *integrationRepository) SetInboundSigningConfig(ctx context.Context, org
 	return nil
 }
 
-func (r *integrationRepository) SetInboundSecret(ctx context.Context, orgID, connID uuid.UUID, secret string) error {
+func (r *integrationRepository) SetInboundSecret(ctx context.Context, orgID, connID uuid.UUID, secret, sealed string) error {
+	if secret == "" || sealed == "" {
+		return errors.New("inbound secret and its sealed copy are both required")
+	}
 	tag, err := r.db.Exec(ctx, `
-		UPDATE integration_connections SET inbound_secret = $3, updated_at = now()
+		UPDATE integration_connections
+		SET inbound_secret = $3, inbound_secret_encrypted = $4, inbound_secret_digest = $5, updated_at = now()
 		WHERE organization_id = $1 AND id = $2 AND provider IN ('calendly', 'cal_com', 'clay')`,
-		orgID, connID, secret)
+		orgID, connID, secret, sealed, inboundDigest(secret))
 	if err != nil {
 		return err
 	}
@@ -948,6 +969,61 @@ func (r *integrationRepository) SetInboundSecret(ctx context.Context, orgID, con
 		return ErrInboundConnectionNotFound
 	}
 	return nil
+}
+
+// InboundSecretDigest is the lookup key stored for an inbound URL secret: its hex SHA-256.
+func InboundSecretDigest(secret string) string {
+	sum := sha256.Sum256([]byte(secret))
+	return hex.EncodeToString(sum[:])
+}
+
+func inboundDigest(secret string) string {
+	if secret == "" {
+		return ""
+	}
+	return InboundSecretDigest(secret)
+}
+
+// UnsealedInboundSecret is a connection whose inbound secret still has no sealed copy.
+type UnsealedInboundSecret struct {
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
+	Secret         string
+}
+
+func (r *integrationRepository) ListUnsealedInboundSecrets(ctx context.Context, after uuid.UUID, limit int) ([]UnsealedInboundSecret, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT id, organization_id, inbound_secret FROM integration_connections
+		WHERE id > $1 AND inbound_secret IS NOT NULL AND inbound_secret <> '' AND inbound_secret_digest IS NULL
+		ORDER BY id LIMIT $2`, after, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []UnsealedInboundSecret
+	for rows.Next() {
+		var u UnsealedInboundSecret
+		if err := rows.Scan(&u.ID, &u.OrganizationID, &u.Secret); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+func (r *integrationRepository) SealInboundSecret(ctx context.Context, id uuid.UUID, secret, sealed string) (bool, error) {
+	if secret == "" || sealed == "" {
+		return false, errors.New("inbound secret and its sealed copy are both required")
+	}
+	tag, err := r.db.Exec(ctx, `
+		UPDATE integration_connections
+		SET inbound_secret_encrypted = $3, inbound_secret_digest = $4
+		WHERE id = $1 AND inbound_secret = $2 AND inbound_secret_digest IS NULL`,
+		id, secret, sealed, InboundSecretDigest(secret))
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
 }
 
 // ErrInboundConnectionNotFound means no Calendly, Cal.com or Clay connection

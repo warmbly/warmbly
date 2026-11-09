@@ -411,11 +411,14 @@ func (s *service) Connect(ctx context.Context, orgID, userID uuid.UUID, provider
 		}
 	}
 
-	var inboundSecret string
+	var inboundSecret, inboundSealed string
 	var err error
 	if mintsInboundURL(provider) {
 		inboundSecret, err = generateInboundSecret(provider)
 		if err != nil {
+			return nil, err
+		}
+		if inboundSealed, err = s.seal(ctx, orgID, inboundSecret); err != nil {
 			return nil, err
 		}
 	}
@@ -468,9 +471,10 @@ func (s *service) Connect(ctx context.Context, orgID, userID uuid.UUID, provider
 	}
 
 	if err := s.repo.UpsertConnection(ctx, &repository.ConnectionWrite{
-		Conn:            conn,
-		ConfigEncrypted: configEnc,
-		InboundSecret:   inboundSecret,
+		Conn:                conn,
+		ConfigEncrypted:     configEnc,
+		InboundSecret:       inboundSecret,
+		InboundSecretSealed: inboundSealed,
 	}); err != nil {
 		return nil, err
 	}
@@ -774,7 +778,11 @@ func (s *service) RotateInboundSecret(ctx context.Context, orgID, id uuid.UUID) 
 	if err != nil {
 		return "", err
 	}
-	if err := s.repo.SetInboundSecret(ctx, orgID, id, secret); err != nil {
+	sealed, err := s.seal(ctx, orgID, secret)
+	if err != nil {
+		return "", err
+	}
+	if err := s.repo.SetInboundSecret(ctx, orgID, id, secret, sealed); err != nil {
 		return "", err
 	}
 	return BuildInboundURL(conn.Provider, secret), nil
@@ -1602,6 +1610,59 @@ func (s *service) StartSigningSecretMigration(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-time.After(time.Second):
+		}
+	}
+}
+
+// inboundSealingInterval paces the sweep that seals inbound secrets a writer stored without a sealed copy.
+const inboundSealingInterval = 10 * time.Minute
+
+// StartInboundSecretSealing seals every inbound URL secret that has no sealed
+// copy, then repeats, so rows written by a previous release mid-rollout are sealed too.
+func (s *service) StartInboundSecretSealing(ctx context.Context) {
+	for {
+		if _, err := s.SealInboundSecrets(ctx); err != nil && ctx.Err() == nil {
+			log.Warn().Err(err).Msg("integration: sealing inbound secrets failed")
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(inboundSealingInterval):
+		}
+	}
+}
+
+// SealInboundSecrets runs one resumable pass of the inbound secret sealing and reports how many rows it sealed.
+func (s *service) SealInboundSecrets(ctx context.Context) (int, error) {
+	var cursor uuid.UUID
+	sealedRows := 0
+	for {
+		batch, err := s.repo.ListUnsealedInboundSecrets(ctx, cursor, 100)
+		if err != nil {
+			return sealedRows, err
+		}
+		if len(batch) == 0 {
+			return sealedRows, nil
+		}
+		for _, u := range batch {
+			cursor = u.ID
+			sealed, err := s.seal(ctx, u.OrganizationID, u.Secret)
+			if err != nil {
+				log.Warn().Err(err).Str("connection_id", u.ID.String()).Msg("integration: sealing inbound secret failed")
+				continue
+			}
+			ok, err := s.repo.SealInboundSecret(ctx, u.ID, u.Secret, sealed)
+			if err != nil {
+				return sealedRows, err
+			}
+			if ok {
+				sealedRows++
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return sealedRows, ctx.Err()
+		case <-time.After(100 * time.Millisecond):
 		}
 	}
 }

@@ -23,6 +23,8 @@ type AuthData struct {
 	// DeviceToken is what LoginConfirm returned when the user asked to
 	// remember this browser. Login only: it skips the emailed code.
 	DeviceToken string `json:"device_token"`
+	// SupportsPasswordChange says the native app can take a password_change_required answer. Login only.
+	SupportsPasswordChange bool `json:"supports_password_change,omitempty"`
 }
 
 type ConfirmData struct {

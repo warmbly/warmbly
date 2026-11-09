@@ -2177,6 +2177,10 @@ func main() {
 		// started, so without this a stranded campaign stops sending forever.
 		go tasksService.StartCampaignReconciler(ctx, 5*time.Minute)
 
+		// Manual send recovery: a unibox send whose execution stopped after its
+		// claim but before its reservation runs again, or fails and says so.
+		go tasksService.StartManualSendRecovery(ctx, time.Minute)
+
 		// Send-plan snapshotter: walk every active campaign's send plan on an
 		// interval and store it, so GET /campaigns/:id/send-plan serves a stored
 		// snapshot instead of running the planner (lead supply, per-mailbox
@@ -2211,6 +2215,10 @@ func main() {
 		// Automation signing secrets live in each connection's sealed config.
 		if m, ok := integrationServiceForHandler.(interface{ StartSigningSecretMigration(context.Context) }); ok {
 			elector.Go("signing_secret_migration", m.StartSigningSecretMigration)
+		}
+		// Inbound URL secrets are sealed with the org DEK; this seals any a writer stored without that copy.
+		if m, ok := integrationServiceForHandler.(interface{ StartInboundSecretSealing(context.Context) }); ok {
+			elector.Go("inbound_secret_sealing", m.StartInboundSecretSealing)
 		}
 		go elector.Run(ctx)
 

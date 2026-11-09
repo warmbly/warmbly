@@ -16,6 +16,7 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/imagetype"
+	"github.com/warmbly/warmbly/internal/utils/paging"
 )
 
 // formScope pulls the org and the :id path param once per handler.
@@ -381,21 +382,45 @@ func (h *Handler) ListFormSubmissions(c *gin.Context) {
 		}
 		limit = n
 	}
-	var before *time.Time
-	if raw := c.Query("before"); raw != "" {
-		t, err := time.Parse(time.RFC3339Nano, raw)
-		if err != nil {
-			errx.Handle(c, errx.New(errx.BadRequest, "before must be an RFC 3339 timestamp"))
-			return
-		}
-		before = &t
-	}
-	out, hasMore, xerr := h.FormService.ListSubmissions(c.Request.Context(), orgID, id, limit, before)
+	after, xerr := submissionsPosition(c.Query("cursor"), c.Query("before"))
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": out, "has_more": hasMore})
+	out, hasMore, xerr := h.FormService.ListSubmissions(c.Request.Context(), orgID, id, limit, after)
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	page := models.CPagination{HasMore: hasMore}
+	if hasMore && len(out) > 0 {
+		last := out[len(out)-1]
+		page.NextCursor = paging.EncodeTime(last.CreatedAt, last.ID)
+	}
+	// has_more stays at the top level for clients built before pagination.
+	c.JSON(http.StatusOK, gin.H{"data": out, "has_more": hasMore, "pagination": page})
+}
+
+// submissionsPosition reads the opaque cursor, or the RFC 3339 `before`
+// timestamp earlier clients send.
+func submissionsPosition(cursor, before string) (*models.FormSubmissionPosition, *errx.Error) {
+	switch {
+	case cursor != "" && before != "":
+		return nil, errx.New(errx.BadRequest, "send cursor or before, not both")
+	case cursor != "":
+		at, id, xerr := paging.DecodeTimeCursor(cursor)
+		if xerr != nil {
+			return nil, xerr
+		}
+		return &models.FormSubmissionPosition{At: at, ID: id}, nil
+	case before != "":
+		t, err := time.Parse(time.RFC3339Nano, before)
+		if err != nil {
+			return nil, errx.New(errx.BadRequest, "before must be an RFC 3339 timestamp")
+		}
+		return &models.FormSubmissionPosition{At: t}, nil
+	}
+	return nil, nil
 }
 
 func (h *Handler) DeleteFormSubmission(c *gin.Context) {

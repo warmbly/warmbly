@@ -384,13 +384,17 @@ func (r *userRepository) SetLoginCodeExempt(ctx context.Context, id uuid.UUID, e
 func (r *userRepository) ListLoginCodeExempt(ctx context.Context) ([]models.LoginCodeExemption, error) {
 	rows, err := r.DB.Query(ctx, `
 		SELECT u.id, u.email, u.login_code_exempt_reason, u.login_code_exempt_at, u.password_expires_at,
-		       workspace.id, seeded.created_at,
+		       workspace.id, seeded.created_at, COALESCE(workspace.active, false),
 		       EXISTS (SELECT 1 FROM admin_audit_logs t WHERE t.action = 'create_tester' AND t.target_id = u.id)
 		FROM users u
 		LEFT JOIN LATERAL (
-			SELECT o.id FROM organizations o
+			SELECT o.id, `+testerWorkspaceActiveSQL("$1")+` AS active FROM organizations o
 			WHERE o.owner_user_id = u.id AND o.category = 'test'
-			ORDER BY o.created_at, o.id LIMIT 1
+			-- Of several owned Test workspaces, list the one sample data can still be added to.
+			ORDER BY active DESC, EXISTS (
+				SELECT 1 FROM admin_audit_logs a
+				WHERE a.target_type = 'organization' AND a.target_id = o.id AND a.action = 'seed_tester_workspace'
+			), o.created_at, o.id LIMIT 1
 		) workspace ON true
 		LEFT JOIN LATERAL (
 			SELECT a.created_at FROM admin_audit_logs a
@@ -399,7 +403,7 @@ func (r *userRepository) ListLoginCodeExempt(ctx context.Context) ([]models.Logi
 			ORDER BY a.created_at LIMIT 1
 		) seeded ON true
 		WHERE u.login_code_exempt
-		ORDER BY u.login_code_exempt_at NULLS FIRST`)
+		ORDER BY u.login_code_exempt_at NULLS FIRST`, models.TestPlanID)
 	if err != nil {
 		return nil, err
 	}
@@ -408,7 +412,7 @@ func (r *userRepository) ListLoginCodeExempt(ctx context.Context) ([]models.Logi
 	out := []models.LoginCodeExemption{}
 	for rows.Next() {
 		var e models.LoginCodeExemption
-		if err := rows.Scan(&e.UserID, &e.Email, &e.Reason, &e.GrantedAt, &e.PasswordExpiresAt, &e.TestWorkspaceID, &e.SampleDataSeededAt, &e.CreatedAsTester); err != nil {
+		if err := rows.Scan(&e.UserID, &e.Email, &e.Reason, &e.GrantedAt, &e.PasswordExpiresAt, &e.TestWorkspaceID, &e.SampleDataSeededAt, &e.SampleDataEligible, &e.CreatedAsTester); err != nil {
 			return nil, err
 		}
 		out = append(out, e)

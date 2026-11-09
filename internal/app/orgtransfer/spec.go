@@ -59,6 +59,11 @@ type SecretColumn struct {
 	Guard string
 	// PlaintextPrefix marks a value still stored in the clear from before sealing; it travels as is.
 	PlaintextPrefix string
+	// Plaintext names a column still written in the clear beside this one for the previous release.
+	// It never travels: it stands in for this column on a row not yet sealed, and is rebuilt from it on import.
+	Plaintext string
+	// Digest names a lookup column holding repository.InboundSecretDigest of the value; rebuilt on import, never exported.
+	Digest string
 }
 
 // JSONColumnExclusion names instance-local keys inside a stored JSON envelope.
@@ -118,6 +123,19 @@ type Table struct {
 
 	// Note explains a non-obvious policy choice; surfaced in the docs table.
 	Note string
+}
+
+// derivedColumns are the columns rebuilt from a sealed one on import, which never travel.
+func (t *Table) derivedColumns() []string {
+	var out []string
+	for _, sc := range t.Secrets {
+		for _, c := range []string{sc.Plaintext, sc.Digest} {
+			if c != "" {
+				out = append(out, c)
+			}
+		}
+	}
+	return out
 }
 
 // OwnerScope is the WHERE fragment deciding whether an existing row belongs to
@@ -661,6 +679,7 @@ var Tables = []Table{
 			{Column: "config_encrypted", Domain: KeyDomainOrgDEK},
 			{Column: "access_token_encrypted", Domain: KeyDomainOrgDEK},
 			{Column: "refresh_token_encrypted", Domain: KeyDomainOrgDEK},
+			{Column: "inbound_secret_encrypted", Domain: KeyDomainOrgDEK, Plaintext: "inbound_secret", Digest: "inbound_secret_digest"},
 		},
 		ResetOnImport: []string{"last_synced_at", "last_error", "last_error_at", "health_checked_at"},
 	},
@@ -945,9 +964,11 @@ var Tables = []Table{
 		Note:             "Historical reports travel; operation and clock provenance reset to unknown on the destination.",
 	},
 	{
+		// A direct send mints its tickets with a nil campaign id, so the owning task scopes them too.
 		Name: "tracked_links", Group: models.OrgDataGroupSending,
-		Scope: `campaign_id IN ` + orgCampaigns,
-		Note:  "Click tickets already in the wild keep resolving after the move, provided the tracking domain follows.",
+		Scope: `(campaign_id IN ` + orgCampaigns + ` OR task_id IN ` + orgTasks + `)`,
+		Owner: `(campaign_id IN ` + orgCampaigns + ` OR task_id IN (SELECT id FROM tasks WHERE email_account_id IN ` + orgMailboxes + `))`,
+		Note:  "Click tickets from campaign and direct sends already in the wild keep resolving after the move, provided the tracking domain follows.",
 	},
 	{
 		// Campaign engagement like campaign_contact_progress, one row per

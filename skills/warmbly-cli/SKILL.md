@@ -170,6 +170,9 @@ when reporting. On `rate_limit_exceeded`, wait the `Retry-After` it names.
 
 For a write you retry, pass `--idempotency-key <same-key>` so a retry cannot
 double-apply. Any unique string works; reuse it only for the identical retry.
+A `409 idempotency_outcome_unknown` means the first attempt ended in a server
+error and may have applied: retry with a new key only once you have established
+that it did not.
 
 Exit codes: `0` worked, `1` failed, `2` bad command line or a prompt with no
 terminal, `4` credential.
