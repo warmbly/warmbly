@@ -93,14 +93,34 @@ func TestLiveAdvisorSnapshotReadsTheSendPathsFacts(t *testing.T) {
 		fallbackMailbox, fallbackUser, fallbackOrg, "adv-"+fallbackMailbox.String()[:8]+"@test.local")
 	exec(`INSERT INTO campaigns (id, user_id, organization_id, name, description, days, status, sender_strategy, link_tracking, utm_tracking, updated_at, created_at)
 	      VALUES ($1, $2, $3, 'Advisor', '', 62, 'active', 'tags', false, true, NOW(), NOW())`, fallbackCampaign, fallbackUser, fallbackOrg)
+	// A seed mailbox never sends campaign mail, so naming one as the only
+	// sender still leaves the campaign on the fallback.
+	seed := uuid.New()
+	exec(`INSERT INTO email_accounts (id, user_id, organization_id, email, name, signature_plain, signature_html,
+	          provider, status, campaign_limit, min_wait_time, timezone, seed_scope)
+	      VALUES ($1, $2, $3, $4, 'Seed', '', '', 'smtp_imap', 'active', 30, 600, 'UTC', 'workspace')`,
+		seed, fallbackUser, fallbackOrg, "adv-"+seed.String()[:8]+"@test.local")
+	exec(`INSERT INTO campaign_senders (campaign_id, email_account_id, enabled) VALUES ($1, $2, true)`, fallbackCampaign, seed)
 	snap, err = repo.LoadSnapshot(ctx, fallbackOrg, time.Now())
 	if err != nil {
 		t.Fatalf("load fallback snapshot: %v", err)
 	}
-	if len(snap.Mailboxes) != 1 || !snap.Mailboxes[0].InActiveCampaign {
+	byID := map[uuid.UUID]AdvisorMailbox{}
+	for _, m := range snap.Mailboxes {
+		byID[m.ID] = m
+	}
+	if m, ok := byID[fallbackMailbox]; !ok || !m.InActiveCampaign {
 		t.Fatalf("a mailbox the all-active fallback sends from read as idle: %+v", snap.Mailboxes)
 	}
-	if snap.Mailboxes[0].TrackedOnMailboxHost {
+	if byID[fallbackMailbox].TrackedOnMailboxHost {
 		t.Error("UTM tags alone read as tracking through the mailbox's host")
+	}
+	if byID[seed].InActiveCampaign {
+		t.Error("a seed mailbox read as sending for a campaign")
+	}
+	for _, c := range snap.Campaigns {
+		if c.ID == fallbackCampaign && c.SenderCount != 1 {
+			t.Errorf("fallback campaign sender count = %d, want 1 (the seed mailbox never sends)", c.SenderCount)
+		}
 	}
 }

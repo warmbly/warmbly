@@ -152,7 +152,7 @@ func (r *advisorRepository) loadMailboxes(ctx context.Context, orgID uuid.UUID, 
 		) inb ON true
 		LEFT JOIN LATERAL (
 			-- A mailbox counts as "in an active campaign" on ResolveCampaignSenderPool's terms:
-			-- an enabled sender, a tag match, or the all-active fallback.
+			-- an enabled sender, a tag match, or the all-active fallback, and never a seed mailbox.
 			-- tracked: one of them puts a pixel or wrapped links on the mailbox's host (UTM tags alone do not).
 			SELECT true AS active,
 			       bool_or((c.open_tracking OR c.link_tracking)
@@ -160,6 +160,7 @@ func (r *advisorRepository) loadMailboxes(ctx context.Context, orgID uuid.UUID, 
 			FROM campaigns c
 			WHERE c.organization_id = ea.organization_id
 			  AND c.status = 'active'
+			  AND ea.seed_scope IS NULL
 			  AND (
 			    EXISTS (SELECT 1 FROM campaign_senders cs WHERE cs.campaign_id = c.id AND cs.email_account_id = ea.id AND cs.enabled)
 			    OR EXISTS (
@@ -168,14 +169,14 @@ func (r *advisorRepository) loadMailboxes(ctx context.Context, orgID uuid.UUID, 
 			      WHERE cet.campaign_id = c.id AND et.email_id = ea.id
 			    )
 			    OR (
-			      ea.status = 'active' AND ea.seed_scope IS NULL
+			      ea.status = 'active'
 			      AND c.sender_strategy <> 'explicit'
 			      AND NOT EXISTS (SELECT 1 FROM campaign_email_tags cet WHERE cet.campaign_id = c.id)
 			      AND NOT EXISTS (
 			        SELECT 1 FROM campaign_senders cs
 			        JOIN email_accounts sea ON sea.id = cs.email_account_id
 			        WHERE cs.campaign_id = c.id AND cs.enabled
-			          AND sea.organization_id = c.organization_id AND sea.status = 'active'
+			          AND sea.organization_id = c.organization_id AND sea.status = 'active' AND sea.seed_scope IS NULL
 			      )
 			    )
 			  )
@@ -247,6 +248,7 @@ func (r *advisorRepository) loadCampaigns(ctx context.Context, orgID uuid.UUID) 
 			FROM email_accounts ea
 			WHERE ea.organization_id = c.organization_id
 			  AND ea.status = 'active'
+			  AND ea.seed_scope IS NULL
 			  AND (
 			    EXISTS (SELECT 1 FROM campaign_senders cs WHERE cs.campaign_id = c.id AND cs.email_account_id = ea.id AND cs.enabled)
 			    OR EXISTS (
@@ -262,7 +264,7 @@ func (r *advisorRepository) loadCampaigns(ctx context.Context, orgID uuid.UUID) 
 			        SELECT 1 FROM campaign_senders cs
 			        JOIN email_accounts sea ON sea.id = cs.email_account_id
 			        WHERE cs.campaign_id = c.id AND cs.enabled
-			          AND sea.organization_id = c.organization_id AND sea.status = 'active'
+			          AND sea.organization_id = c.organization_id AND sea.status = 'active' AND sea.seed_scope IS NULL
 			      )
 			    )
 			  )
