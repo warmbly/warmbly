@@ -3,6 +3,8 @@ package advisor
 import (
 	"fmt"
 
+	"github.com/google/uuid"
+
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/tmplvars"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -19,20 +21,6 @@ func listDetectors() []Detector {
 			About:    "The share of a campaign's audience that is a shared inbox (info@, sales@, support@). These rarely reply, are frequently monitored by people with no interest in the offer, and complain at a higher rate than named recipients.",
 			Reads:    []repository.AdvisorSection{repository.AdvisorSectionCampaigns, repository.AdvisorSectionLists},
 			Run:      detectRoleAddresses,
-		},
-		{
-			Key:      "list_free_mail_heavy",
-			Category: models.AdvisorCategoryList,
-			About:    "The share of a B2B campaign's audience on consumer mailbox domains. A cold list that is mostly consumer addresses is usually scraped rather than sourced, and both reply and complaint rates reflect that.",
-			Reads:    []repository.AdvisorSection{repository.AdvisorSectionCampaigns, repository.AdvisorSectionLists},
-			Run:      detectFreeMailHeavy,
-		},
-		{
-			Key:      "list_suppressed_share",
-			Category: models.AdvisorCategoryList,
-			About:    "Leads already on the organization's suppression list. They are skipped at send time, so a large share means the campaign delivers far less than its numbers suggest.",
-			Reads:    []repository.AdvisorSection{repository.AdvisorSectionCampaigns, repository.AdvisorSectionLists},
-			Run:      detectSuppressedShare,
 		},
 		{
 			Key:      "list_missing_personalization_data",
@@ -112,100 +100,24 @@ func detectRoleAddresses(s *repository.AdvisorSnapshot) []Finding {
 	return out
 }
 
-func detectFreeMailHeavy(s *repository.AdvisorSnapshot) []Finding {
-	out := []Finding{}
-	for _, cl := range campaignsWithLists(s, 100) {
-		r := rate(cl.List.FreeMail, cl.List.Total)
-		if r < freeMailShareWarn {
-			continue
-		}
-
-		out = append(out, Finding{
-			Key:         "list_free_mail_heavy",
-			GroupTitle:  "{count} campaigns are mailing mostly consumer mailboxes",
-			Category:    models.AdvisorCategoryList,
-			Severity:    models.AdvisorLow,
-			Surface:     models.AdvisorSurfaceContacts,
-			EntityType:  "campaign",
-			EntityID:    ref(cl.Campaign.ID),
-			EntityLabel: cl.Campaign.Name,
-			Impact:      clampImpact(20 + int(r)/2),
-			Title:       fmt.Sprintf("%s of %s is on consumer mailboxes", pct(r), cl.Campaign.Name),
-			Detail: fmt.Sprintf(
-				"%s of the contacts in %s are on gmail, outlook.com, yahoo and similar. For B2B outreach that usually means the list was scraped rather than sourced, and consumer providers are also the strictest filters you will face.",
-				pct(r), cl.Campaign.Name),
-			Remedy: "Check where this list came from. If the target is companies, the addresses should mostly be on company domains.",
-			Steps: []string{
-				"Check where the list came from. A B2B list that is mostly consumer addresses was usually scraped rather than sourced.",
-				"Filter the consumer-domain contacts out and see what is left. If that is most of the list, the list is the problem, not the copy.",
-				"Rebuild from a source that gives you company addresses: an export from your CRM, a provider that verifies, or manual research on a smaller set.",
-				"Keep the consumer addresses out of cold campaigns. They reply less and complain more, and the complaints land on your sending domain.",
-			},
-			Evidence: map[string]any{
-				"campaign":                cl.Campaign.Name,
-				"free_mail_contacts":      cl.List.FreeMail,
-				"contacts":                cl.List.Total,
-				"free_mail_share_percent": band(r),
-			},
-		})
-	}
-	return out
-}
-
-func detectSuppressedShare(s *repository.AdvisorSnapshot) []Finding {
-	out := []Finding{}
-	for _, cl := range campaignsWithLists(s, 50) {
-		r := rate(cl.List.Suppressed, cl.List.Total)
-		if r < suppressedShareWarn {
-			continue
-		}
-
-		out = append(out, Finding{
-			Key:         "list_suppressed_share",
-			GroupTitle:  "{count} campaigns have a large share they will never send to",
-			Category:    models.AdvisorCategoryList,
-			Severity:    models.AdvisorMedium,
-			Surface:     models.AdvisorSurfaceContacts,
-			EntityType:  "campaign",
-			EntityID:    ref(cl.Campaign.ID),
-			EntityLabel: cl.Campaign.Name,
-			Impact:      clampImpact(25 + int(r)),
-			Title:       fmt.Sprintf("%s of %s will never be sent to", pct(r), cl.Campaign.Name),
-			Detail: fmt.Sprintf(
-				"%s of the %s in %s are on your suppression list from a previous bounce, complaint, or unsubscribe. They are skipped at send time, so this campaign will reach far fewer people than its numbers suggest.",
-				plural(cl.List.Suppressed, "contact", "contacts"), plural(cl.List.Total, "contact", "contacts"), cl.Campaign.Name),
-			Remedy: "Clean the suppressed contacts out of the list so the campaign's reported audience matches what it can actually reach, and check where the list overlaps with ones you have already mailed.",
-			Evidence: map[string]any{
-				"campaign":                 cl.Campaign.Name,
-				"suppressed":               cl.List.Suppressed,
-				"contacts":                 cl.List.Total,
-				"suppressed_share_percent": band(r),
-			},
-		})
-	}
-	return out
-}
-
 func detectMissingPersonalizationData(s *repository.AdvisorSnapshot) []Finding {
+	// Only a step that prints the name with no fallback leaves a gap: a
+	// {{if .FirstName}} or a default covers the contacts without one.
+	gapped := map[uuid.UUID]bool{}
+	for _, sc := range emailSteps(s) {
+		parts := []string{sc.step.BodyPlain, sc.step.BodyHTML}
+		if !sc.threaded {
+			parts = append(parts, sc.step.Subject)
+		}
+		if printsBlankFirstName(parts...) {
+			gapped[sc.step.CampaignID] = true
+		}
+	}
+
 	out := []Finding{}
 	for _, cl := range campaignsWithLists(s, 50) {
 		r := rate(cl.List.MissingFirstName, cl.List.Total)
-		if r < missingNameShareWarn {
-			continue
-		}
-
-		// Only worth reporting if the copy actually uses the field.
-		uses := false
-		for _, st := range s.Steps {
-			if st.CampaignID != cl.Campaign.ID {
-				continue
-			}
-			if usesFirstName(st.Subject, st.BodyPlain, st.BodyHTML) {
-				uses = true
-				break
-			}
-		}
-		if !uses {
+		if r < missingNameShareWarn || !gapped[cl.Campaign.ID] {
 			continue
 		}
 
@@ -279,11 +191,16 @@ func detectUnsubscribedEnrolled(s *repository.AdvisorSnapshot) []Finding {
 	return out
 }
 
-// usesFirstName reports whether any part reads the contact's first name, in
-// any spelling the renderer accepts (`.FirstName`, `first_name`, `firstName`).
-func usesFirstName(parts ...string) bool {
+// printsBlankFirstName reports whether any part prints the contact's first
+// name where an empty one leaves a gap. A part that does not parse is sent by
+// plain replacement, so any reference to the name counts.
+func printsBlankFirstName(parts ...string) bool {
 	for _, p := range parts {
-		if tmplvars.References(p)["FirstName"] {
+		gaps, ok := tmplvars.BlankGaps(p)
+		if !ok {
+			gaps = tmplvars.References(p)
+		}
+		if gaps["FirstName"] {
 			return true
 		}
 	}

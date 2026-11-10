@@ -25,18 +25,6 @@ func warmupDetectors() []Detector {
 			Run:      detectWarmupPaused,
 		},
 		{
-			Key:      "warmup_ceiling_too_low",
-			Category: models.AdvisorCategoryWarmup,
-			About:    "A warmup ceiling far below the mailbox's cold cap. Warmup volume should be proportionate to cold volume, otherwise the positive signal is drowned out by the cold traffic it is supposed to balance.",
-			Run:      detectWarmupCeilingTooLow,
-		},
-		{
-			Key:      "warmup_reply_rate_low",
-			Category: models.AdvisorCategoryWarmup,
-			About:    "The share of warmup mail that gets replied to. Warmup works by looking like real correspondence; a low reply rate makes it one-way traffic, which is exactly the pattern it is supposed to counteract.",
-			Run:      detectWarmupReplyRateLow,
-		},
-		{
 			Key:      "cloud_standing_unavailable",
 			Category: models.AdvisorCategoryWarmup,
 			About:    "A Cloud-linked mailbox with missing or stale status evidence. New sends are held until a recognized Cloud observation arrives; this is an availability hold, not a reputation ban or a provider authentication failure.",
@@ -106,7 +94,7 @@ func detectWarmupMailNotArriving(s *repository.AdvisorSnapshot) []Finding {
 func detectWarmupOffWhileSending(s *repository.AdvisorSnapshot) []Finding {
 	out := []Finding{}
 	for _, m := range s.Mailboxes {
-		if !m.InActiveCampaign || m.WarmupActive || m.WarmupPaused {
+		if !m.SendingCold() || m.ColdSent7d == 0 || m.WarmupActive || m.WarmupPaused || s.WarmupUnavailable {
 			continue
 		}
 
@@ -151,13 +139,12 @@ func detectWarmupOffWhileSending(s *repository.AdvisorSnapshot) []Finding {
 func detectWarmupPaused(s *repository.AdvisorSnapshot) []Finding {
 	out := []Finding{}
 	for _, m := range s.Mailboxes {
-		if !m.WarmupPaused {
+		// Resuming is not an option the plan offers, as after a trial ends.
+		// A pause is deliberate; it only costs anything while the mailbox sends cold mail without it.
+		if !m.WarmupPaused || s.WarmupUnavailable || !m.SendingCold() || m.ColdSent7d == 0 {
 			continue
 		}
-		severity := models.AdvisorMedium
-		if m.InActiveCampaign {
-			severity = models.AdvisorHigh
-		}
+		severity := models.AdvisorHigh
 
 		out = append(out, Finding{
 			Key:         "warmup_paused",
@@ -173,11 +160,11 @@ func detectWarmupPaused(s *repository.AdvisorSnapshot) []Finding {
 			Detail: fmt.Sprintf(
 				"Warmup on %s is paused%s. Pausing keeps the ramp progress, so resuming picks up where it left off rather than starting over.",
 				m.Email,
-				map[bool]string{true: " while the mailbox is running cold campaigns", false: ""}[m.InActiveCampaign]),
+				map[bool]string{true: " while the mailbox is running cold campaigns", false: ""}[m.SendingCold()]),
 			Remedy: "Resume warmup unless you paused it deliberately for a reason that still applies.",
 			Evidence: map[string]any{
 				"mailbox":                m.Email,
-				"currently_sending_cold": m.InActiveCampaign,
+				"currently_sending_cold": m.SendingCold(),
 				"cold_sends_7d":          m.ColdSent7d,
 			},
 			Action: withUndo(toolAction("set_mailbox_warmup",
@@ -185,88 +172,6 @@ func detectWarmupPaused(s *repository.AdvisorSnapshot) []Finding {
 				map[string]any{"email_account_id": m.ID.String(), "action": "resume"},
 				change("Warmup", "paused", "running (ramp progress preserved)"),
 			), map[string]any{"email_account_id": m.ID.String(), "action": "pause"}),
-		})
-	}
-	return out
-}
-
-func detectWarmupCeilingTooLow(s *repository.AdvisorSnapshot) []Finding {
-	out := []Finding{}
-	for _, m := range s.Mailboxes {
-		if !m.WarmupActive || !m.InActiveCampaign {
-			continue
-		}
-		want := int(float64(m.CampaignLimit) * warmupCeilingFloorRatio)
-		if want < defaultWarmupBase {
-			want = defaultWarmupBase
-		}
-		if m.WarmupMax >= want {
-			continue
-		}
-
-		out = append(out, Finding{
-			Key:         "warmup_ceiling_too_low",
-			GroupTitle:  "Warmup is too small to balance cold volume on {count} mailboxes",
-			Category:    models.AdvisorCategoryWarmup,
-			Severity:    models.AdvisorMedium,
-			Surface:     models.AdvisorSurfaceMailboxes,
-			EntityType:  "email_account",
-			EntityID:    ref(m.ID),
-			EntityLabel: m.Email,
-			Impact:      clampImpact(25 + (want - m.WarmupMax)),
-			Title:       fmt.Sprintf("Warmup on %s is too small to balance its cold volume", m.Email),
-			Detail: fmt.Sprintf(
-				"%s can send %d cold emails a day but tops out at %d warmup emails a day. Warmup is meant to be a meaningful share of what the mailbox sends, otherwise the positive signal is swamped by the cold traffic it is supposed to balance.",
-				m.Email, m.CampaignLimit, m.WarmupMax),
-			Remedy: fmt.Sprintf("Raise the warmup ceiling to about %d/day, roughly half the cold cap. The ramp still gets there gradually.", want),
-			Evidence: map[string]any{
-				"mailbox":             m.Email,
-				"warmup_ceiling":      m.WarmupMax,
-				"cold_daily_cap":      m.CampaignLimit,
-				"recommended_ceiling": want,
-			},
-			Action: withUndo(mailboxAction(m.ID,
-				fmt.Sprintf("Raise the warmup ceiling to %d/day", want),
-				map[string]any{"warmup_max": want},
-				change("Warmup ceiling", fmt.Sprintf("%d/day", m.WarmupMax), fmt.Sprintf("%d/day", want)),
-			), map[string]any{"email_account_id": m.ID.String(), "warmup_max": m.WarmupMax}),
-		})
-	}
-	return out
-}
-
-func detectWarmupReplyRateLow(s *repository.AdvisorSnapshot) []Finding {
-	out := []Finding{}
-	for _, m := range s.Mailboxes {
-		if !m.WarmupActive || m.WarmupReplyRate >= minWarmupReplyRate {
-			continue
-		}
-
-		out = append(out, Finding{
-			Key:         "warmup_reply_rate_low",
-			GroupTitle:  "Warmup is nearly one-way on {count} mailboxes",
-			Category:    models.AdvisorCategoryWarmup,
-			Severity:    models.AdvisorLow,
-			Surface:     models.AdvisorSurfaceMailboxes,
-			EntityType:  "email_account",
-			EntityID:    ref(m.ID),
-			EntityLabel: m.Email,
-			Impact:      20,
-			Title:       fmt.Sprintf("Warmup on %s is nearly one-way", m.Email),
-			Detail: fmt.Sprintf(
-				"Only %d%% of warmup messages from %s get a reply. Warmup works because it looks like real correspondence; at this rate it is mostly one-way traffic, which is the pattern it is meant to counteract.",
-				m.WarmupReplyRate, m.Email),
-			Remedy: fmt.Sprintf("Raise the warmup reply rate to around %d%%, the platform default.", 30),
-			Evidence: map[string]any{
-				"mailbox":            m.Email,
-				"reply_rate_percent": m.WarmupReplyRate,
-				"recommended":        30,
-			},
-			Action: withUndo(mailboxAction(m.ID,
-				"Raise the warmup reply rate to 30%",
-				map[string]any{"warmup_reply_rate": 30},
-				change("Warmup reply rate", fmt.Sprintf("%d%%", m.WarmupReplyRate), "30%"),
-			), map[string]any{"email_account_id": m.ID.String(), "warmup_reply_rate": m.WarmupReplyRate}),
 		})
 	}
 	return out

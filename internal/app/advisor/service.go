@@ -13,7 +13,6 @@ import (
 	"github.com/warmbly/warmbly/internal/app/aitools"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
-	"github.com/warmbly/warmbly/internal/pkg/typesafe"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -91,12 +90,8 @@ type service struct {
 	// domainAuth resolves the sending-domain authentication gate, so the
 	// domain-auth finding describes what actually happens on this install
 	// rather than what happens on a default one. Optional/nil-safe.
-	domainAuth DomainAuthPolicy
-
-	// The copy judge. Both optional together: without them the copy
-	// detectors that read a verdict never fire, and the regex ones still do.
-	judge      typesafe.Asker
-	judgeCache repository.CopyJudgmentRepository
+	domainAuth   DomainAuthPolicy
+	warmupAccess WarmupAccess
 }
 
 // DomainAuthPolicy resolves whether the sending-domain authentication gate is
@@ -145,16 +140,14 @@ func WithDomainAuthPolicy(p DomainAuthPolicy) Option {
 	return func(s *service) { s.domainAuth = p }
 }
 
-// WithCopyJudge supplies the TypeSafe client and the verdict cache that let
-// the copy detectors read how a step's copy lands with its reader. A nil asker
-// leaves the option inert, so the caller can pass whatever it has.
-func WithCopyJudge(asker typesafe.Asker, cache repository.CopyJudgmentRepository) Option {
-	return func(s *service) {
-		if asker == nil || cache == nil {
-			return
-		}
-		s.judge, s.judgeCache = asker, cache
-	}
+// WarmupAccess answers whether an organization's plan includes warmup.
+type WarmupAccess interface {
+	CanUseWarmup(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error)
+}
+
+// WithWarmupAccess lets the warmup findings stay quiet when the plan cannot warm.
+func WithWarmupAccess(a WarmupAccess) Option {
+	return func(s *service) { s.warmupAccess = a }
 }
 
 // maxNarrationsPerRun bounds how many completions one evaluation can spend.
@@ -196,12 +189,14 @@ func (s *service) Evaluate(ctx context.Context, orgID uuid.UUID, trigger string)
 	if s.domainAuth != nil {
 		snapshot.DomainAuthEnforced, snapshot.DomainAuthGrace = s.domainAuth.DomainAuth(ctx)
 	}
-	unjudged := s.judgeCopy(ctx, snapshot)
+	if s.warmupAccess != nil {
+		if ok, xerr := s.warmupAccess.CanUseWarmup(ctx, orgID); xerr == nil {
+			snapshot.WarmupUnavailable = !ok
+		}
+	}
 	findings := Detect(snapshot, settings)
 
-	// A step the judge did not reach this run is not a step whose copy got
-	// better; its judgment findings stay open until it is read again.
-	keep := keepUnjudged(unjudged)
+	keep := []string{}
 	stored := make([]*models.AdvisorFinding, 0, len(findings))
 	newCount := 0
 	for _, f := range findings {
