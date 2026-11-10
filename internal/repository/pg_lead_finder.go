@@ -715,12 +715,12 @@ func (r *leadFinderRepository) DeleteSearch(ctx context.Context, orgID, id uuid.
 
 // --- enrichment runs --------------------------------------------------------
 
-const leadRunColumns = `id, organization_id, requested_by_user_id, lead_ids, verify, people, status, total, processed,
+const leadRunColumns = `id, organization_id, requested_by_user_id, lead_ids, verify, people, web_search, status, total, processed,
 	emails_found, people_found, no_website, failed, charged_micro, last_error, started_at, finished_at, created_at, updated_at`
 
 func scanLeadRun(row pgx.Row) (models.LeadEnrichmentRun, error) {
 	var run models.LeadEnrichmentRun
-	err := row.Scan(&run.ID, &run.OrganizationID, &run.RequestedByUserID, &run.LeadIDs, &run.Verify, &run.People, &run.Status,
+	err := row.Scan(&run.ID, &run.OrganizationID, &run.RequestedByUserID, &run.LeadIDs, &run.Verify, &run.People, &run.WebSearch, &run.Status,
 		&run.Total, &run.Processed, &run.EmailsFound, &run.PeopleFound, &run.NoWebsite, &run.Failed, &run.ChargedMicro,
 		&run.LastError, &run.StartedAt, &run.FinishedAt, &run.CreatedAt, &run.UpdatedAt)
 	run.ChargedUSD = run.ChargedMicro.USD()
@@ -729,9 +729,9 @@ func scanLeadRun(row pgx.Row) (models.LeadEnrichmentRun, error) {
 
 func (r *leadFinderRepository) CreateEnrichmentRun(ctx context.Context, run *models.LeadEnrichmentRun) error {
 	out, err := scanLeadRun(r.db.QueryRow(ctx, `
-		INSERT INTO lead_enrichment_runs (organization_id, requested_by_user_id, lead_ids, verify, people, total)
-		VALUES ($1,$2,$3,$4,$5,$6) RETURNING `+leadRunColumns,
-		run.OrganizationID, run.RequestedByUserID, run.LeadIDs, run.Verify, run.People, run.Total))
+		INSERT INTO lead_enrichment_runs (organization_id, requested_by_user_id, lead_ids, verify, people, web_search, total)
+		VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING `+leadRunColumns,
+		run.OrganizationID, run.RequestedByUserID, run.LeadIDs, run.Verify, run.People, run.WebSearch, run.Total))
 	if err != nil {
 		return err
 	}

@@ -330,7 +330,7 @@ function ContactCell({ lead, working }: { lead: Lead; working: boolean }) {
             : lead.enrichment_status === "no_website"
               ? "No website found"
               : lead.enrichment_status === "failed"
-                ? "Site did not answer"
+                ? "No info available"
                 : null;
     return (
         <>

@@ -1,14 +1,52 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { BookmarkIcon, CheckIcon, DownloadIcon, Loader2Icon, MoreHorizontalIcon, SparklesIcon, TagIcon, Trash2Icon, UserPlusIcon, XIcon, EyeOffIcon, SendIcon } from "lucide-react";
+import { BookmarkIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, DownloadIcon, Loader2Icon, MoreHorizontalIcon, SparklesIcon, TagIcon, Trash2Icon, UserPlusIcon, XIcon, EyeOffIcon, SendIcon } from "lucide-react";
 import { useState } from "react";
+import { Toggle } from "@/components/app/campaigns/preferences/components/CampaignPreferenceBoolBox";
 import { PopoverMenu, PopoverMenuContent, PopoverMenuItem, PopoverMenuSeparator, PopoverMenuTrigger } from "@/components/ui/popover-menu";
 import type { LeadStatus } from "@/lib/api/models/app/leads/Lead";
 import { fmtUsdCost } from "@/lib/money";
+
+// Whether Find people and emails may search the web, and what one search costs.
+export interface WebSearchChoice {
+    on: boolean;
+    costUsd: number;
+    onChange: (on: boolean) => void;
+}
+
+// The options arrow beside Find people and emails: the web search switch.
+export function WebSearchOption({ choice, side }: { choice: WebSearchChoice; side: "top" | "bottom" }) {
+    return (
+        <PopoverMenu side={side} align="center">
+            <PopoverMenuTrigger asChild>
+                <button
+                    type="button"
+                    aria-label="Find people and emails options"
+                    className="-ml-1 h-7 px-1 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center"
+                >
+                    {side === "top" ? <ChevronUpIcon className="size-3.5" /> : <ChevronDownIcon className="size-3.5" />}
+                </button>
+            </PopoverMenuTrigger>
+            <PopoverMenuContent role="dialog" aria-label="Find people and emails options" minWidth={280}>
+                <div className="flex items-start gap-3 px-2.5 py-2">
+                    <div className="min-w-0 flex-1">
+                        <p className="text-[12.5px] font-medium text-slate-800">Search the web</p>
+                        <p className="mt-0.5 text-[11.5px] leading-snug text-slate-500">
+                            Looks for a missing website, and for addresses a blocked site shows elsewhere.
+                            {choice.costUsd > 0 && ` ${fmtUsdCost(choice.costUsd)} for each search.`}
+                        </p>
+                    </div>
+                    <Toggle value={choice.on} onChange={choice.onChange} ariaLabel="Search the web" />
+                </div>
+            </PopoverMenuContent>
+        </PopoverMenu>
+    );
+}
 
 export default function LeadSelectionBar({
     count,
     enrichCost,
     enriching,
+    webSearch,
     onEnrich,
     onAddToContacts,
     onExport,
@@ -20,6 +58,8 @@ export default function LeadSelectionBar({
     count: number;
     enrichCost: number;
     enriching: boolean;
+    // Set only when the workspace has a web search the run can use.
+    webSearch?: WebSearchChoice;
     onEnrich: () => void;
     onAddToContacts: () => void;
     onExport: () => void;
@@ -47,6 +87,7 @@ export default function LeadSelectionBar({
                         {enriching ? <Loader2Icon className="size-3.5 animate-spin" /> : <SparklesIcon className="size-3.5" />}
                         Find people and emails
                     </Action>
+                    {webSearch && <WebSearchOption choice={webSearch} side="top" />}
                     <Action onClick={onAddToContacts}>
                         <UserPlusIcon className="size-3.5" />
                         Add to contacts

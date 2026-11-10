@@ -39,4 +39,5 @@ func RegisterKeyChecks(reg KeyCheckRegistry) {
 	reg.SetCredentialCheck(models.IntegrationGooglePlaces, check("Google Places", CheckGoogleKey))
 	reg.SetCredentialCheck(models.IntegrationFoursquare, check("Foursquare", CheckFoursquareKey))
 	reg.SetCredentialCheck(models.IntegrationOutscraper, check("Outscraper", CheckOutscraperKey))
+	reg.SetCredentialCheck(models.IntegrationJina, check("Jina AI", CheckJinaKey))
 }

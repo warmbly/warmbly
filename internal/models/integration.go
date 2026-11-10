@@ -43,6 +43,9 @@ const (
 	IntegrationGooglePlaces IntegrationProvider = "google_places"
 	IntegrationFoursquare   IntegrationProvider = "foursquare"
 	IntegrationOutscraper   IntegrationProvider = "outscraper"
+	// IntegrationJina is a Jina AI key: the lead finder reads blocked sites and
+	// searches the web through it.
+	IntegrationJina IntegrationProvider = "jina"
 
 	// Verification
 	IntegrationMillionVerifier IntegrationProvider = "millionverifier"
@@ -74,6 +77,7 @@ var AllIntegrationProviders = []IntegrationProvider{
 	IntegrationGooglePlaces,
 	IntegrationFoursquare,
 	IntegrationOutscraper,
+	IntegrationJina,
 	IntegrationMillionVerifier,
 	IntegrationCleanMyList,
 }

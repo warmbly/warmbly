@@ -12,7 +12,7 @@ Connections live under **Settings, Connections** and require the **Manage settin
 Press **Add server** and provide:
 
 - **Name**: how the connection appears, and part of each tool's name in Remie.
-- **Server URL**: an `https` URL to a streamable-HTTP MCP endpoint. Only public https URLs are allowed; internal or private addresses are rejected.
+- **Server URL**: an `https` URL to a streamable-HTTP MCP endpoint. Only public https URLs are allowed; internal or private addresses are rejected. A self-hosted instance can allow a server on its own network (an `http://` URL or a private address) by setting `WARMBLY_ALLOW_UNSAFE_WEBHOOK_URLS=true` on the backend; see [configuration](/development/configuration/).
 - **Authentication**: **None**, or a **Bearer token**. A bearer token is stored encrypted with your workspace key and is never shown again or returned by the API.
 
 When you connect, Warmbly reaches out to the server, runs the MCP handshake, and lists the tools it offers. The connection starts **disabled** so nothing is exposed to Remie until you have looked at the tools.
@@ -25,14 +25,25 @@ If the server could not be reached, the connection shows the error instead of a 
 
 ## How Remie uses external tools
 
-External tools behave like Warmbly's own write actions with one important difference: they are **always** approval-gated. Remie can never run an external tool automatically, even when a settings manager has chosen "Always allow" for built-in actions. Every external tool call shows you what it will do and waits for your approval.
+External tools behave like Warmbly's own write actions with one important difference: they are **always** approval-gated when Remie calls them by name. Remie can never call an external tool automatically, even when a settings manager has chosen "Always allow" for built-in actions. Every such call shows you what it will do and waits for your approval. The one exception is a tool you picked as the workspace's [web search](#use-a-tool-as-your-web-search), which receives only a search query.
 
 Each tool appears in Remie namespaced by your connection, so it is always clear which server a tool belongs to.
+
+## Use a tool as your web search
+
+A search tool on a connected server can be the workspace's web search, for example `search_text` on the [DDGS](https://github.com/deedy5/ddgs) MCP server, or any tool that takes a search query. Open the server's card, pick the tool under **Web search**, and keep the server enabled. Warmbly offers only tools whose arguments it can fill in: one that takes the query (`query`, `q`, `search` and similar names, or its only required text argument) and, optionally, a result count.
+
+Once picked, the tool runs without asking, because it only ever receives a search query:
+
+- the [lead finder](/guides/lead-finder/#when-a-site-turns-the-finder-away) searches with it for a missing website, or for the addresses a site it could not read shows elsewhere, before any search the instance charges for
+- Remie's built-in `search_web` uses it when the instance has no web search configured
+
+Warmbly reads back the links, titles and text the tool returns, as JSON in any of the usual shapes or as plain text. Clear the setting to stop. Refreshing a server whose tool has gone, or no longer takes a query, clears it too.
 
 ## Removing a connection
 
 Disconnect a server any time from its card. Its tools are removed from Remie immediately, and the stored credentials are deleted.
 
 <Callout type="warn" title="Trust the servers you connect">
-An enabled MCP server's tools run with Remie, on behalf of the member using it. Only connect servers you trust, and prefer scoped tokens. Because external tool calls always require your approval, nothing runs without you seeing it first.
+An enabled MCP server's tools run with Remie, on behalf of the member using it. Only connect servers you trust, and prefer scoped tokens. Apart from a tool picked as the web search, which sees only search queries, external tool calls always require your approval, so nothing else runs without you seeing it first.
 </Callout>

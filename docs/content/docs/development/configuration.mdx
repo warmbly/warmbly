@@ -831,7 +831,14 @@ Salesforce reads `SALESFORCE_OAUTH_CLIENT_ID` and `SALESFORCE_OAUTH_CLIENT_SECRE
 | `AI_MODEL`, `AI_MODEL_TRIAL`, `AI_MODEL_PAID` | Model selection, optionally split by plan | provider preset |
 | `AI_BASE_URL` | Required for `custom`. Any OpenAI compatible endpoint | unset |
 | `AI_FREE` | Treats AI usage as uncharged | derived |
-| `SEARCH_PROVIDER`, `SEARCH_API_URL`, `SEARCH_API_KEY` | Web search for the assistant (`serper` or `searxng`) | unset |
+| `SEARCH_PROVIDER` | Web search for the assistant, contact research, AI variables and the lead finder: `serper`, `searxng`, `ddgs`, `jina`, `brave` or `tavily`. A comma-separated list (`ddgs,jina`) is tried in order, and a provider that errors or finds nothing hands the query to the next | unset |
+| `SEARCH_API_URL`, `SEARCH_API_KEY` | Endpoint and key of the first provider in `SEARCH_PROVIDER`. A single-provider setup needs nothing else | unset |
+| `SEARCH_<PROVIDER>_URL`, `SEARCH_<PROVIDER>_API_KEY` | Per-provider endpoint and key, for example `SEARCH_DDGS_URL=http://ddgs:4479` and `SEARCH_JINA_API_KEY`. `searxng` and `ddgs` need a URL (your own server); `serper`, `jina`, `brave` and `tavily` need a key and default to their public endpoints | unset |
+| `WEB_READER` | Reader services tried in order when a site answers `401`, `403`, `406`, `429` or `503` to the lead finder or the assistant's `fetch_url`: `crawl4ai`, `jina`, `ddgs`, `custom`. A comma-separated list (`crawl4ai,jina`). The lead finder still obeys robots.txt and never hands a reader a page it disallows; `fetch_url` reads only the page the assistant asked for, as it does without a reader | unset |
+| `WEB_READER_CRAWL4AI_URL`, `WEB_READER_CRAWL4AI_API_KEY` | A Crawl4AI server (`http://crawl4ai:11235`) and its bearer token, if it has one | unset |
+| `WEB_READER_JINA_URL`, `WEB_READER_JINA_API_KEY` | Jina Reader. Works without a key at Jina's free rate limit; the URL points at a self-hosted copy | `https://r.jina.ai` |
+| `WEB_READER_DDGS_URL` | A DDGS API server (`ddgs api`, port `4479` by default), read through its `/extract` endpoint | unset |
+| `WEB_READER_CUSTOM_URL`, `WEB_READER_CUSTOM_API_KEY` | Any reader that answers a GET with the page's HTML, or JSON carrying it (`html`, `content`, `data.html`). The URL is a template: `{url}` is replaced by the page address as is, `{url_encoded}` by its query-escaped form. The key is sent as a bearer token | unset |
 | `MAILHOST_ISPDB` | `true` lets mailbox server detection ask Mozilla's Thunderbird ISPDB (`autoconfig.thunderbird.net`) about a domain whose MX records and own autoconfig file name no known provider. Only the domain name is sent. See [data control](/development/data-control/#outbound-calls) | `false` on a self-host, `true` on Warmbly Cloud |
 | `MAILVENDOR_SANDBOX_URL` | Development only. Points every inbox vendor client at the [sandbox's mock vendor API](/development/sandbox/#mock-inbox-vendors) (`<url>/inboxkit`, `<url>/mailforge`) instead of the real vendors. Ignored unless `APP_ENV` is `dev` | unset |
 | `TYPESAFE_API_KEY` | TypeSafe API key. Turns on the typed judgments: reply classification, the copy judgment in the Advisor and the editor, warmup content review (otherwise performed by OpenAI when its generator is configured), bounce classification, import column mapping and per-form triage. Inbox tagging needs the switch below as well. See [data control](/development/data-control/#typesafe-judgments) for what each one sends | unset |
@@ -847,6 +854,10 @@ Model compatibility needs no configuration. Backends disagree about the request 
 The OpenAI-compatible agent loop also handles catalogs larger than 128 tools automatically. It exposes read-only tool discovery and loads up to 20 matching tools at a time, rather than sending the whole catalog in one request. All permitted built-in and connected MCP tools remain discoverable, and their original permissions and approval rules still apply. Existing conversations can continue after upgrading; no database migration or AI configuration change is needed.
 
 Set these on the backend and the consumer.
+
+A reader answers from its own network, so it can follow a site's redirect to anything that network reaches. Warmbly refuses a page when the reader reports it landed on a private address (Jina and Crawl4AI report where they landed; DDGS and most custom readers do not), and it only hands a reader pages on public addresses. Run a self-hosted reader where it cannot reach your private services.
+
+Workspaces can also bring their own: a Jina AI key under Integrations gives that workspace's lead finder Jina Reader and Jina Search, and a tool on a connected MCP server can be picked as the workspace's web search. See [the lead finder](/guides/lead-finder/#when-a-site-turns-the-finder-away).
 
 Automatic inbox tagging is read by the backend, consumer, and `warmblyctl`. Both inbox-tagging variables are required; a key by itself does not start classification. See [Automatic inbox tagging](/guides/inbox-tagging/).
 

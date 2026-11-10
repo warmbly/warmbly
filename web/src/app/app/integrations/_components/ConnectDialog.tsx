@@ -79,6 +79,15 @@ const FIELDS_BY_PROVIDER: Record<string, FieldDef[]> = {
             helper: "Outscraper → Profile → API token. Searches and the email lookup are billed to your Outscraper balance.",
         },
     ],
+    jina: [
+        {
+            key: "api_key",
+            label: "Jina AI API key",
+            type: "password",
+            required: true,
+            helper: "From jina.ai, in the API key section. Reads and searches are billed to your Jina account.",
+        },
+    ],
     cleanmylist: [
         {
             key: "api_key",
@@ -130,6 +139,7 @@ const NEXT_STEP: Record<string, string> = {
     foursquare: "Open the Lead finder and pick Foursquare as the source.",
     outscraper: "Open the Lead finder and pick Outscraper as the source.",
     companyenrich: "Research companies and people, or fill empty fields on an existing contact.",
+    jina: "Enrich leads in the Lead finder; blocked sites are read through Jina Reader.",
     discord: "Choose which Warmbly events post to the channel.",
 };
 

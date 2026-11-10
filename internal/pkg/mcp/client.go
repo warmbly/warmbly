@@ -84,9 +84,24 @@ func (c *Client) ListTools(ctx context.Context, url, bearer string) ([]Tool, err
 
 // CallTool initializes a session and invokes a tool, returning its text content.
 func (c *Client) CallTool(ctx context.Context, url, bearer, name string, args json.RawMessage) (string, error) {
-	sess, err := c.initialize(ctx, url, bearer)
+	res, err := c.CallToolResult(ctx, url, bearer, name, args)
 	if err != nil {
 		return "", err
+	}
+	return res.Text, nil
+}
+
+// ToolResult is a tool's answer: its text, and its structuredContent when it sent one.
+type ToolResult struct {
+	Text       string
+	Structured json.RawMessage
+}
+
+// CallToolResult invokes a tool and keeps its structured content beside the text.
+func (c *Client) CallToolResult(ctx context.Context, url, bearer, name string, args json.RawMessage) (*ToolResult, error) {
+	sess, err := c.initialize(ctx, url, bearer)
+	if err != nil {
+		return nil, err
 	}
 	params := map[string]any{"name": name}
 	if len(args) > 0 {
@@ -96,32 +111,38 @@ func (c *Client) CallTool(ctx context.Context, url, bearer, name string, args js
 	}
 	raw, err := c.call(ctx, url, bearer, sess, "tools/call", params)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	var out struct {
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-		IsError bool `json:"isError"`
+	// isError is read on its own so a non-standard content shape cannot hide it.
+	var head struct {
+		Content           json.RawMessage `json:"content"`
+		StructuredContent json.RawMessage `json:"structuredContent"`
+		IsError           bool            `json:"isError"`
 	}
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return string(raw), nil // pass through non-standard shapes
+	_ = json.Unmarshal(raw, &head)
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
 	}
+	_ = json.Unmarshal(head.Content, &blocks)
 	var b strings.Builder
-	for _, blk := range out.Content {
+	for _, blk := range blocks {
 		if blk.Type == "text" {
 			b.WriteString(blk.Text)
 		}
 	}
-	res := b.String()
-	if res == "" {
-		res = string(raw)
+	text := b.String()
+	if text == "" {
+		text = string(raw)
 	}
-	if out.IsError {
-		return "", fmt.Errorf("mcp tool error: %s", res)
+	if head.IsError {
+		return nil, fmt.Errorf("mcp tool error: %s", text)
 	}
-	return res, nil
+	out := &ToolResult{Text: text}
+	if s := strings.TrimSpace(string(head.StructuredContent)); s != "" && s != "null" {
+		out.Structured = head.StructuredContent
+	}
+	return out, nil
 }
 
 // initialize performs the MCP handshake and returns the session id (may be "").

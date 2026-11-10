@@ -76,11 +76,31 @@ Hovering a pin shows its name, rating and how it can be reached. Clicking one op
 - phone numbers, when the source had none
 - what the site is built with, and signals worth knowing before you reach out: no HTTPS, not mobile friendly, no analytics, an outdated copyright year, online booking, live chat or an online store
 
-When a listing has no website, the finder first looks for one from the business's name: a few likely domains (the name run together or hyphenated, with the town added, on the country's own ending and `.com`). A domain counts only when its home page shows the business's phone number, or its full name together with its town, street or postcode, so a parked domain or a namesake elsewhere is never taken. Many small businesses use a domain that cannot be guessed from their name, so this finds some of the missing websites, not all of them. A website found this way is marked with a sparkle in the list and costs the same as any other read; looking costs nothing.
+When a listing has no website, the finder first looks for one from the business's name: a few likely domains (the name run together or hyphenated, with the town added, on the country's own ending and `.com`). A domain counts only when its home page shows the business's phone number, or its full name together with its town, street or postcode, so a parked domain or a namesake elsewhere is never taken. Many small businesses use a domain that cannot be guessed from their name, so this finds some of the missing websites, not all of them. A website found this way is marked with a sparkle in the list and costs the same as any other read. Guessing domains costs nothing; a web search the instance pays for is charged as below. When a [web search](#when-a-site-turns-the-finder-away) is set up, the finder searches for the business by name and town first and tries the sites it turns up before the guessed domains, skipping directories, maps and social networks. The same check decides whether one is the business's own.
 
 Up to three addresses per lead are then checked with the same verification your contacts get. The best one becomes the lead's primary email: a valid address on the business's own domain first, a front desk address such as `info@` before a named person's, and `noreply` addresses last. An invalid or suppressed address is never picked, but a `noreply` one can be when the lead has nothing better.
 
-Reading a website is charged to your [balance](/guides/ai-credits/), $0.02 at the default prices, including the people it names and their addresses. A site that never answers is refunded, and a lead with no website, even after looking for one, costs nothing. A self-hosted instance without billing charges nothing for the lead finder at all. Runs keep going in the background when you leave the page. Progress shows in a strip above the list, each business being read is marked in its row, and rows update as they are read. A run stops early, leaving the rest untouched, when the workspace balance runs out or a spend limit is reached. A finished run shows what it cost.
+### When a site turns the finder away
+
+Many sites answer an automated visitor with `403 Forbidden`, `429 Too Many Requests` or a `503` challenge page, even though a person in a browser sees the page. Such a lead says **No info available** and why (the site turns automated visitors away, asks crawlers not to read it, or did not respond), and its read is refunded. That is all that happens when nothing below is set up; both fallbacks are optional. When set up, the finder uses whichever are available without you choosing:
+
+- **A reader service** fetches the page instead. When a site answers `401`, `403`, `406`, `429` or `503`, the finder asks the reader for that page, and for the rest of that site's pages goes straight to the reader. A site makes at most four reader requests in all. A page its `robots.txt` asks crawlers to skip is still skipped. The lead's details show which reader read the site.
+- **A web search** looks for what the site would have said. It finds a website a listing is missing (see above), and when a site could not be read at all, or published no address and the lead has none, it searches for `"@domain"` and keeps the addresses on the business's own domain that the results show. An address found this way is marked **Web search** and links to the page it was seen on. To skip it, open the arrow next to **Find people and emails** and turn **Search the web** off; the choice is remembered in your browser.
+
+Where they come from, tried in this order:
+
+| Fallback | Set up by | Charged to |
+|---|---|---|
+| The instance's reader services (Crawl4AI, Jina Reader, DDGS, or any reader your operator points at) | The operator, with [`WEB_READER`](/development/configuration/#ai-and-search) | Included in the website read |
+| A tool on one of your [MCP servers](/guides/connect-mcp-tools/) picked as the workspace's web search | You, under **Settings → Connections** | Nothing on your balance |
+| Jina AI, with your own key | You, under **Integrations** | Your Jina account |
+| The instance's web search (DDGS, SearXNG, Jina, Brave, Tavily or Serper) | The operator, with [`SEARCH_PROVIDER`](/development/configuration/#ai-and-search) | Your balance, $0.0125 a search at the default prices, refunded when it finds nothing |
+
+To use an MCP search tool, connect and enable the server, then pick the tool in its **Web search** setting. Any tool that takes a search query works, for example `search_text` on the DDGS MCP server. The finder sends it only the search text (the business's name and town, or `"@domain"`), and reads back the links and text it returns. The assistant's `search_web` uses the same tool when the instance has no web search of its own. A search you set up yourself is always tried before the instance's, so it is only charged when yours finds nothing.
+
+None of this makes every site readable. Some sites refuse readers too, and a search only finds what has been published somewhere.
+
+Reading a website is charged to your [balance](/guides/ai-credits/), $0.02 at the default prices, including the people it names and their addresses. A site that never answers is refunded, and a lead with no website, even after looking for one, costs nothing beyond any instance web search made while looking. A self-hosted instance without billing charges nothing for the lead finder at all. Runs keep going in the background when you leave the page. Progress shows in a strip above the list, each business being read is marked in its row, and rows update as they are read. A run stops early, leaving the rest untouched, when the workspace balance runs out or a spend limit is reached. A finished run shows what it cost.
 
 ## People
 

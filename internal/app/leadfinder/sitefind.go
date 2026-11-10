@@ -15,6 +15,8 @@ import (
 const (
 	siteFindMaxCandidates = 8
 	siteFindMaxReads      = 3
+	// siteFindMaxSearched is how many hosts from a web search get a read of their own.
+	siteFindMaxSearched   = 3
 	siteFindLookupTimeout = 3 * time.Second
 	siteFindTimeout       = 20 * time.Second
 )
@@ -97,13 +99,20 @@ func siteCandidates(l *models.Lead) []string {
 	return out
 }
 
-// FindWebsite works out the site of a business whose listing has none. A
+// FindWebsite works out the site of a business whose listing has none, trying
+// the hosts a web search turned up before the ones built from its name. A
 // candidate counts only when its home page carries the business's phone
 // number, or its full name together with its town, street or postcode.
-func (c *Crawler) FindWebsite(ctx context.Context, l *models.Lead) (string, string) {
+func (c *Crawler) FindWebsite(ctx context.Context, l *models.Lead, searched []string) (string, string) {
 	ctx, cancel := context.WithTimeout(ctx, siteFindTimeout)
 	defer cancel()
-	cands := siteCandidates(l)
+	var cands []string
+	for _, h := range append(append([]string(nil), searched...), siteCandidates(l)...) {
+		if h = strings.ToLower(h); h != "" && !containsStr(cands, h) {
+			cands = append(cands, h)
+		}
+	}
+	maxReads := siteFindMaxReads + min(len(searched), siteFindMaxSearched)
 	live := make([]bool, len(cands))
 	var wg sync.WaitGroup
 	for i, host := range cands {
@@ -120,16 +129,16 @@ func (c *Crawler) FindWebsite(ctx context.Context, l *models.Lead) (string, stri
 
 	reads := 0
 	for i, host := range cands {
-		if !live[i] || reads >= siteFindMaxReads || ctx.Err() != nil {
+		if !live[i] || reads >= maxReads || ctx.Err() != nil {
 			continue
 		}
 		reads++
 		start := &url.URL{Scheme: "https", Host: host, Path: "/"}
 		rules := c.robots(ctx, start)
-		p, err := c.fetch(ctx, start.String(), rules)
+		p, err := c.fetch(ctx, start.String(), rules, false)
 		if err != nil {
 			start.Scheme = "http"
-			p, err = c.fetch(ctx, start.String(), c.robots(ctx, start))
+			p, err = c.httpRetry(err).fetch(ctx, start.String(), c.robots(ctx, start), false)
 		}
 		if err != nil || !confirmsBusiness(p, l) {
 			continue
