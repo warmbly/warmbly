@@ -54,7 +54,7 @@ export const NOTIFICATION_CATEGORY_GROUPS: { id: string; label: string; categori
         label: "Inbound activity",
         categories: [
             { key: "inbound_positive_reply", label: "Positive reply", hint: "A recipient answered a cold email with interest. On by default." },
-            { key: "inbound_reply", label: "Reply received", hint: "Any recipient replied to a cold email, whatever they said. When on, it covers positive replies too." },
+            { key: "inbound_reply", label: "Reply received", hint: "A person replied to a cold email, whatever they said. When on, it covers positive replies too. Automatic replies have their own setting below." },
             { key: "inbound_out_of_office", label: "Out-of-office detected", hint: "An auto-responder hit one of your sends." },
         ],
     },

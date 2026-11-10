@@ -32,7 +32,7 @@ Under Email delivery, pick how often unread notifications are emailed to you.
 ## Good to know
 
 - Feeds are per user, not shared across the workspace.
-- Health alerts and **Positive reply** are on by default. **Reply received**, which covers every reply, is off by default, so a large campaign does not flood the feed.
+- Health alerts and **Positive reply** are on by default. **Reply received**, which covers every reply a person writes, is off by default, so a large campaign does not flood the feed.
 - Nothing is emailed the moment it happens: unread notifications go out as one bundled email, every 30 minutes by default.
 - Anything you read in the dashboard before the email goes out is never emailed.
 - Every reply still lands in the [Unibox](/guides/unibox/), even with reply notifications off.
@@ -72,7 +72,7 @@ The feed and the bell count update live, without refreshing.
 | Billing alerts | Billing | On, including email | A trial expired or sending was paused for billing |
 | Teammate joined | Team | On | Someone accepted an invitation |
 | Positive reply | Inbound | On | A recipient answered a cold email and the reply was classified as positive |
-| Reply received | Inbound | Off | A recipient replied to a cold email, whatever they said |
+| Reply received | Inbound | Off | A person replied to a cold email, whatever they said. Automatic replies are not included |
 | Out-of-office detected | Inbound | Off | An auto-responder hit one of your sends |
 
 Health defaults **on** because those alerts are operationally important and low volume. **Positive reply** defaults **on** for the same reason: interested replies are few, and they are what a campaign is for. The other inbound categories default **off** because a large campaign would generate one notification per recipient and flood the feed. Turn **Reply received** on only for smaller, higher-touch campaigns.

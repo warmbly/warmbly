@@ -713,7 +713,7 @@ Auth: Session only (not available to API keys).
 
 `PUT /auth/me/notification-preferences`
 
-Saves the caller's preferences. The preferences object is sent under a `preferences` key and the saved result is echoed back.
+Saves the caller's preferences. The preferences object is sent under a `preferences` key and the saved result is returned.
 
 Auth: Session only (not available to API keys).
 
@@ -721,7 +721,7 @@ Auth: Session only (not available to API keys).
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `preferences` | object | yes | The complete preferences object. Each category has `enabled` plus a `channels` object (`in_app`, `email`, `slack`, `push`), alongside `email_digest_minutes` (the email bundling window, `30` to `1440`). A category or field absent from the request keeps its saved value, so a client that does not know a newer category never changes it. |
+| `preferences` | object | yes | The preferences object. Each category has `enabled` plus a `channels` object (`in_app`, `email`, `slack`, `push`), alongside `email_digest_minutes` (the email bundling window, `30` to `1440`). A category or field absent from the request keeps its saved value, so a client that does not know a newer category never changes it. While `inbound_reply.enabled` is true, a positive reply is delivered under `inbound_reply` with its channels, whatever `inbound_positive_reply` is set to; `inbound_positive_reply` applies only while `inbound_reply` is off. |
 
 ```json
 {
@@ -747,7 +747,7 @@ Auth: Session only (not available to API keys).
 
 #### Response
 
-The same `{ "preferences": { ... } }` object that was sent.
+The saved `{ "preferences": { ... } }` object: what was sent, merged over the values already saved for anything the request left out.
 
 ### List notifications
 
