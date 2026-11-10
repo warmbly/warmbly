@@ -2,17 +2,13 @@
 import ScaledStage from '../../ScaledStage.astro';
 import ShareCardMock from '../../ShareCardMock.astro';
 import Ico from './Ico.astro';
-import { WINDOW, FLOAT, EYEBROW, TOPBAR, STAT, STAT_VALUE, STAT_SUB } from '../../../lib/scene';
+import TrendStat from '../TrendStat.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR } from '../../../lib/scene';
 
 /**
  * Share image (AnalyticsShareButton): the preview dialog over the Analytics
  * page, with the aspect presets, the branded card and Copy / Download PNG.
  */
-const stats = [
-  { label: 'Total sent', value: '12,847', sub: 'in range' },
-  { label: 'Open rate', value: '34.2%', sub: 'after delivery' },
-  { label: 'Reply rate', value: '6.1%', sub: 'incl. positive' },
-];
 const bars = [38, 44, 41, 52, 49, 57, 54, 61, 58, 66, 63, 70, 68, 74];
 ---
 <ScaledStage w={760} h={570} photo="sheer-blue">
@@ -23,13 +19,9 @@ const bars = [38, 44, 41, 52, 49, 57, 54, 61, 58, 66, 63, 70, 68, 74];
       <span class="text-[12.5px] text-slate-600">Deliverability across the workspace</span>
     </div>
     <div class="grid grid-cols-3 border-b border-slate-200">
-      {stats.map((s) => (
-        <div class={STAT}>
-          <div class={EYEBROW}>{s.label}</div>
-          <div class={STAT_VALUE}>{s.value}</div>
-          <div class={STAT_SUB}>{s.sub}</div>
-        </div>
-      ))}
+      <TrendStat label="Total sent" value="12,847" unit="in range" points={bars.map((b) => b * 7)} kind="area" tone="sky" />
+      <TrendStat label="Open rate" value="34.2%" unit="after delivery" points={bars.map((b, i) => b * 2 + (i % 3) * 9)} />
+      <TrendStat label="Reply rate" value="6.1%" unit="incl. positive" points={bars.map((b, i) => Math.round(b / 3) + (i % 4))} kind="bars" />
     </div>
     <div class="px-5 pt-6 flex items-end gap-2 h-[220px]">
       {bars.map((b) => <span class="flex-1 rounded-t-sm bg-sky-200" style={`height:${b * 2.4}px`}></span>)}

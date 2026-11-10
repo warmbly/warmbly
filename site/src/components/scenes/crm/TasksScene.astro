@@ -2,7 +2,8 @@
 import ScaledStage from '../../ScaledStage.astro';
 import Glyph from '../Glyph.astro';
 import Ic from '../inbox/Ic.astro';
-import { WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_PRIMARY, STAT, STAT_VALUE, STAT_SUB } from '../../../lib/scene';
+import Stat from '../Stat.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_PRIMARY } from '../../../lib/scene';
 
 /**
  * CRM > Tasks grouped by due date (crm/tasks/page.tsx BucketGroup), with the
@@ -34,7 +35,7 @@ const groups: { label: string; dot: string; text: string; tasks: T[] }[] = [
   ] },
 ];
 const stats = [
-  { label: 'Overdue', value: '2', sub: 'needs attention', accent: true },
+  { label: 'Overdue', value: '2', sub: 'needs attention', tone: 'warn' as const },
   { label: 'High priority', value: '7', sub: 'urgent + high' },
   { label: 'Pending', value: '12', sub: 'not started' },
   { label: 'Active', value: '3', sub: 'in progress' },
@@ -59,13 +60,7 @@ const intents = [
       </div>
     </div>
     <div class="grid grid-cols-5 border-b border-slate-200">
-      {stats.map((s) => (
-        <div class={s.last ? 'px-5 py-4' : STAT}>
-          <div class="flex items-center gap-2"><span class={EYEBROW}>{s.label}</span>{s.accent && <span class="size-1.5 rounded-full bg-red-500"></span>}</div>
-          <div class={STAT_VALUE}>{s.value}</div>
-          <div class={STAT_SUB}>{s.sub}</div>
-        </div>
-      ))}
+      {stats.map((s) => <Stat label={s.label} value={s.value} sub={s.sub} tone={s.tone} last={s.last} />)}
     </div>
     <div class={SECTIONBAR}>
       <span class={EYEBROW}>18 tasks</span>

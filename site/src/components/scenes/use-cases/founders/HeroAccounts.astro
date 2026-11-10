@@ -1,10 +1,9 @@
 ---
 import ScaledStage from '../../../ScaledStage.astro';
 import Glyph from '../../Glyph.astro';
-import {
-  WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_GHOST, ACTION_PRIMARY,
-  STAT, STAT_VALUE, STAT_SUB,
-} from '../../../../lib/scene';
+import TrendStat from '../../TrendStat.astro';
+import MailboxCounts from '../../MailboxCounts.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_GHOST, ACTION_PRIMARY } from '../../../../lib/scene';
 import { TH, CHECK, SEARCH, STATUS, tagStyle } from '../ui';
 
 /**
@@ -24,12 +23,12 @@ const rows: Row[] = [
   { addr: 'intro@out.acme.com', name: 'Maya Okonkwo', tag: cold, warm: [22, 40], collecting: '15/20', day: 13 },
   { addr: 'team@out.acme.com', name: 'Maya Okonkwo', tag: cold, warm: [21, 40], collecting: '12/20', day: 12 },
 ];
-const stats = [
-  { label: 'Total', value: '4', sub: 'connected' },
-  { label: 'Healthy', value: '4', sub: 'all four', pulse: true },
-  { label: 'Warming', value: '4', sub: 'ramping up' },
-  { label: 'Cold today', value: '0', sub: 'founder@ never sends cold', last: true },
-];
+// Fourteen days ending today: no cold mail yet, warmup climbing a step a day.
+const trend = {
+  sent: Array.from({ length: 14 }, () => 0),
+  warmup: [30, 41, 45, 49, 53, 57, 61, 65, 69, 73, 77, 81, 85, 91],
+  inbox: [null, null, null, null, 97, 97, 98, 98, 98, 97, 98, 98, 98, 98],
+};
 const checks = [
   { k: 'SPF', v: 'include:_spf.google.com' },
   { k: 'DMARC', v: 'p=quarantine' },
@@ -48,21 +47,16 @@ const checks = [
     </div>
 
     <div class="grid grid-cols-4 border-b border-slate-200 pr-10">
-      {stats.map((s) => (
-        <div class={s.last ? 'px-5 py-4' : STAT}>
-          <div class="flex items-center gap-2">
-            <span class={EYEBROW}>{s.label}</span>
-            {s.pulse && <span class="size-1.5 rounded-full bg-sky-500 animate-pulse"></span>}
-          </div>
-          <div class={STAT_VALUE}>{s.value}</div>
-          <div class={STAT_SUB}>{s.sub}</div>
-        </div>
-      ))}
+      <TrendStat label="Sent today" value="0" unit="campaign emails" points={trend.sent} />
+      <TrendStat label="Warmup today" value="91" unit="/ 160" note="4 warming" points={trend.warmup} kind="area" tone="sky" />
+      <TrendStat label="Inbox placement" value="98%" unit="7 days" note="steady" points={trend.inbox} tone="emerald" rate />
+      <TrendStat label="Replies" value="0" unit="to today's sends" note="0 over 14 days" points={trend.sent} kind="bars" last />
     </div>
 
     <div class={SECTIONBAR}>
       <span class={EYEBROW}>Mailboxes</span>
       <span class="font-mono text-[10.5px] text-slate-400 tabular-nums">4</span>
+      <MailboxCounts healthy={4} warming={4} issues={0} />
       <div class="ml-auto flex items-center gap-1.5 pr-14">
         <div class={`${SEARCH} w-48`}><Glyph name="search" size={13} />Search by email…</div>
       </div>
@@ -138,7 +132,7 @@ const checks = [
   </div>
 
   <!-- The sub-domain's records, checked on a loop. -->
-  <div class={`${FLOAT} left-[428px] top-[468px] w-[308px] overflow-hidden`}>
+  <div class={`${FLOAT} left-[428px] top-[478px] w-[308px] overflow-hidden`}>
     <div class="flex items-center gap-2.5 border-b border-slate-200 px-4 py-3">
       <span class="inline-flex size-7 items-center justify-center rounded-lg bg-sky-50 text-sky-600"><Glyph name="globe" size={14} /></span>
       <div class="min-w-0">

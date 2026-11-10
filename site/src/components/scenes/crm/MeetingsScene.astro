@@ -3,7 +3,8 @@ import ScaledStage from '../../ScaledStage.astro';
 import Glyph from '../Glyph.astro';
 import Ic from '../inbox/Ic.astro';
 import Mark from './Mark.astro';
-import { WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_PRIMARY, ACTION_GHOST, STAT, STAT_VALUE } from '../../../lib/scene';
+import Stat from '../Stat.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_PRIMARY, ACTION_GHOST } from '../../../lib/scene';
 
 /**
  * CRM > Meetings (crm/meetings/page.tsx): the four counts, the timeframe
@@ -45,12 +46,7 @@ const col = 'text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium'
       </div>
     </div>
     <div class="grid grid-cols-4 border-b border-slate-200">
-      {stats.map((s) => (
-        <div class={s.last ? 'px-5 py-4' : STAT}>
-          <div class="flex items-center gap-2"><span class={EYEBROW}>{s.label}</span>{s.accent && <span class="size-1.5 rounded-full bg-sky-500"></span>}</div>
-          <div class={STAT_VALUE}>{s.value}</div>
-        </div>
-      ))}
+      {stats.map((s) => <Stat label={s.label} value={s.value} sub={s.sub} accent={s.accent} last={s.last} />)}
     </div>
     <div class={SECTIONBAR}>
       <span class={EYEBROW}>Meetings</span>

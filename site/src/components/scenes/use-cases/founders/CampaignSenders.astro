@@ -1,6 +1,7 @@
 ---
 import ScaledStage from '../../../ScaledStage.astro';
 import Glyph from '../../Glyph.astro';
+import TrendStat from '../../TrendStat.astro';
 import { WINDOW, FLOAT, EYEBROW, TAB, SECTIONBAR } from '../../../../lib/scene';
 import { TH } from '../ui';
 
@@ -16,12 +17,6 @@ const tabs = [
   { label: 'Schedule', icon: 'calendar' },
   { label: 'Settings', icon: 'settings' },
 ] as const;
-const perf = [
-  { label: 'Sent', value: '1,284', sub: 'emails', tick: '1284,1299,2600' },
-  { label: 'Open rate', value: '—', sub: 'plain text, untracked' },
-  { label: 'Reply rate', value: '7.9%', sub: '101 replies' },
-  { label: 'Positive', value: '3.1%', sub: '40 interested', last: true },
-];
 const senders = [
   { addr: 'hello@out.acme.com', sent: 431, replies: 36, health: 97 },
   { addr: 'intro@out.acme.com', sent: 428, replies: 38, health: 96 },
@@ -31,6 +26,12 @@ const settings = [
   { t: 'Plain text only', d: 'Send as simple text for the best deliverability (disables tracking).' },
   { t: 'Stop on reply', d: 'Pause follow-ups for a contact once they respond.' },
 ];
+// The strip's sparklines over the last 14 days.
+const trend = {
+  sent: [96, 102, 0, 0, 108, 112, 115, 118, 114, 0, 0, 119, 122, 78],
+  replies: [8, 9, 0, 0, 9, 10, 9, 11, 8, 0, 0, 10, 9, 5],
+  positive: [3, 4, 0, 0, 3, 4, 4, 5, 3, 0, 0, 4, 4, 2],
+};
 ---
 <ScaledStage w={760} h={570} photo="sheer-sky">
   <div class={`${WINDOW} left-[40px] top-[40px] w-[760px] h-[560px]`}>
@@ -51,13 +52,10 @@ const settings = [
     </div>
 
     <div class="grid grid-cols-4 border-b border-slate-200 pr-10">
-      {perf.map((s) => (
-        <div class={`px-5 py-4 ${s.last ? '' : 'border-r border-slate-200'}`}>
-          <div class={EYEBROW}>{s.label}</div>
-          <div class={`mt-2 text-[24px] font-light leading-none tabular-nums ${s.value === '—' ? 'text-slate-300' : 'text-slate-900'}`}>{s.tick ? <span data-tick={s.tick}>{s.value}</span> : s.value}</div>
-          <div class="mt-1.5 truncate font-mono text-[10px] text-slate-400">{s.sub}</div>
-        </div>
-      ))}
+      <TrendStat label="Sent" unit="emails" points={trend.sent} kind="area" tone="sky"><span data-tick="1284,1299,2600">1,284</span></TrendStat>
+      <TrendStat label="Open rate" value="—" unit="plain text, untracked" />
+      <TrendStat label="Reply rate" value="7.9%" unit="human replies" points={trend.replies} kind="bars" />
+      <TrendStat label="Positive rate" value="3.1%" unit="40 interested" points={trend.positive} kind="bars" tone="emerald" last />
     </div>
 
     <div class={SECTIONBAR}><span class={EYEBROW}>By mailbox</span><span class="font-mono text-[10.5px] text-slate-400">3</span></div>

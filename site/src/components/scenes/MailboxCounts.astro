@@ -1,0 +1,27 @@
+---
+/**
+ * The mailbox status counts in the Accounts list header (StatusCount in
+ * web/src/app/app/emails/page.tsx): a zero fades, an alert count turns amber.
+ */
+interface Props { healthy: number; warming: number; issues: number; slowed?: number }
+const { healthy, warming, issues, slowed = 0 } = Astro.props;
+const counts = [
+  { label: 'Healthy', dot: 'bg-emerald-500', count: healthy },
+  { label: 'Warming', dot: 'bg-sky-500', count: warming, detail: slowed > 0 ? `${slowed} slowed` : undefined },
+  { label: 'Needs attention', dot: 'bg-amber-500', count: issues, alert: true },
+];
+---
+<div class="ml-2 flex items-center gap-x-3 min-w-0">
+  {counts.map((c) => {
+    const zero = c.count === 0;
+    const alerting = !!c.alert && c.count > 0;
+    return (
+      <span class={`inline-flex items-center gap-1.5 text-[11.5px] whitespace-nowrap ${alerting ? 'text-amber-700' : 'text-slate-500'}`}>
+        <span class={`size-1.5 rounded-full ${zero ? 'bg-slate-300' : c.dot}`}></span>
+        <span>{c.label}</span>
+        <span class={`tabular-nums font-medium ${alerting ? 'text-amber-700' : zero ? 'text-slate-400' : 'text-slate-900'}`}>{c.count}</span>
+        {c.detail && <span class="text-slate-400">{c.detail}</span>}
+      </span>
+    );
+  })}
+</div>

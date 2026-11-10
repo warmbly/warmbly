@@ -3,7 +3,8 @@ import ScaledStage from '../../ScaledStage.astro';
 import AppShellMock from '../../AppShellMock.astro';
 import Glyph from '../Glyph.astro';
 import Ic from '../inbox/Ic.astro';
-import { WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_PRIMARY, STAT, STAT_VALUE, STAT_SUB } from '../../../lib/scene';
+import Stat from '../Stat.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_PRIMARY } from '../../../lib/scene';
 
 /**
  * The deals board (web/src/app/app/crm/deals) inside the app shell. A deal
@@ -61,13 +62,7 @@ const field = 'h-7 px-2.5 rounded-md border border-slate-200 bg-white text-[12.5
             </div>
           </div>
           <div class="grid grid-cols-4 border-b border-slate-200">
-            {stats.map((s) => (
-              <div class={s.last ? 'px-5 py-4' : STAT}>
-                <span class={EYEBROW}>{s.label}</span>
-                <div class={STAT_VALUE}>{s.value}</div>
-                <div class={STAT_SUB}>{s.sub}</div>
-              </div>
-            ))}
+            {stats.map((s) => <Stat label={s.label} value={s.value} sub={s.sub} last={s.last} />)}
           </div>
           <div class={SECTIONBAR}><span class={EYEBROW}>4 stages</span></div>
 
