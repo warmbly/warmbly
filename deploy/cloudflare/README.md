@@ -174,6 +174,12 @@ no workflow deploys this Worker; a deploy is a reviewed manual step.
    With per-domain routes, unsetting `CLOUDFLARE_SAAS_PORTAL_WORKER` stops new
    routes and leaves the existing ones in place.
 
+A zone that already serves portal domains through a `*/*` route moves to
+per-domain routes in two steps: set `CLOUDFLARE_SAAS_PORTAL_WORKER` and roll the
+backend, then remove the `*/*` route a day later. A domain that is already
+active gets its own route at its next daily check, so the old route has to stay
+until every one has been checked.
+
 To rotate the token, move the current value into the backend's
 `PORTAL_EDGE_PREVIOUS_TOKENS` with a `PORTAL_EDGE_PREVIOUS_UNTIL` cutoff, set the
 new value as `PORTAL_EDGE_TOKEN` and roll the backend, put the new value in the

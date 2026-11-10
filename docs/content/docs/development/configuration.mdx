@@ -195,6 +195,8 @@ Optional, and only for an instance that serves agency portal domains from a Clou
 
 Set `CLOUDFLARE_SAAS_PORTAL_WORKER` when the zone also holds other customer hostnames, such as tracking or redirect domains: one route for every custom hostname would send those to the portal too, and a route for each portal domain touches nothing else. A portal domain reads as registered only once its route to that Worker exists. A domain whose pattern already goes to another Worker is refused, and that route is never changed or removed. On a zone that holds portal domains only, leave it unset and route every custom hostname to the Worker once.
 
+Moving a zone that already serves portal domains from one route for every hostname to a route for each: set the variable first and keep the old route for a day. A domain that is already active gets its own route at its next daily check, not at once, so removing the old route sooner would leave it unanswered until then.
+
 On Warmbly Cloud the [portal service](#portal-service) is a Cloudflare Worker on that zone, configured by `deploy/cloudflare/portal/wrangler.jsonc`; its deployment is in `deploy/cloudflare/README.md`.
 
 ## Network and proxy
