@@ -39,6 +39,8 @@ export interface Agency {
     role?: AgencyRole;
     client_count: number;
     has_billing: boolean;
+    /** A plan the agency holds without a subscription, while it is in force; `plan` is then that plan. */
+    granted?: { plan_id: string; until?: string };
 }
 
 export interface AgenciesResult {

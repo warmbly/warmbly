@@ -131,11 +131,17 @@ func (s *Service) access(ctx context.Context, agencyID, userID uuid.UUID, manage
 	return a, m, nil
 }
 
+// hydrate joins the plan in force, the operator's while it stands in for the subscription's.
 func (s *Service) hydrate(ctx context.Context, a *models.Agency) {
-	if a.PlanID == nil || s.plans == nil {
+	now := s.now()
+	if a.Granted(now) {
+		a.Grant = &models.AgencyGrant{PlanID: *a.ManagedPlanID, Until: a.ManagedUntil}
+	}
+	planID := a.EffectivePlanID(now)
+	if planID == nil || s.plans == nil {
 		return
 	}
-	if p, err := s.plans.GetByID(ctx, *a.PlanID); err == nil {
+	if p, err := s.plans.GetByID(ctx, *planID); err == nil {
 		a.Plan = p
 	}
 }

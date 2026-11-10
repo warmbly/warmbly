@@ -117,30 +117,88 @@ func TestProjectPoolUse(t *testing.T) {
 	}
 }
 
-func TestAgencyGrantUntil(t *testing.T) {
+func TestAgencyEntitlement(t *testing.T) {
 	end := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
+	now := end.Add(-24 * time.Hour)
 	plan := AgencyPlanID
 	base := Agency{PlanID: &plan, CurrentPeriodEnd: &end}
 	for _, st := range []SubscriptionStatus{SubscriptionStatusActive, SubscriptionStatusTrialing, SubscriptionStatusPastDue} {
 		a := base
 		a.Status = st
-		until, ok := AgencyGrantUntil(&a)
-		if !ok || !until.Equal(end.Add(AgencyGrantGrace)) {
-			t.Fatalf("%s: got %s, %v", st, until, ok)
+		got, until, ok := AgencyEntitlement(&a, now)
+		if !ok || got != plan || until == nil || !until.Equal(end.Add(AgencyGrantGrace)) {
+			t.Fatalf("%s: got %s, %v, %v", st, got, until, ok)
+		}
+		if _, _, ok := AgencyEntitlement(&a, end.Add(AgencyGrantGrace)); ok {
+			t.Fatalf("%s must lapse once the grace is over", st)
 		}
 	}
 	for _, st := range []SubscriptionStatus{SubscriptionStatusCanceled, SubscriptionStatusUnpaid, SubscriptionStatusIncomplete, SubscriptionStatusIncompleteExpired, SubscriptionStatusPaused} {
 		a := base
 		a.Status = st
-		if _, ok := AgencyGrantUntil(&a); ok {
+		if _, _, ok := AgencyEntitlement(&a, now); ok {
 			t.Fatalf("%s must not grant", st)
 		}
 	}
 	noPlan := base
 	noPlan.Status = SubscriptionStatusActive
 	noPlan.PlanID = nil
-	if _, ok := AgencyGrantUntil(&noPlan); ok {
+	if _, _, ok := AgencyEntitlement(&noPlan, now); ok {
 		t.Fatal("an agency without a plan must not grant")
+	}
+}
+
+func TestAgencyEntitlementOperatorPlan(t *testing.T) {
+	now := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
+	at := now.Add(-time.Hour)
+	stripe, granted := AgencyPlanID, AgencyProPlanID
+	end := now.Add(10 * 24 * time.Hour)
+	// No subscription at all: the operator's plan alone entitles, with no end.
+	a := Agency{Status: SubscriptionStatusIncomplete, ManagedPlanID: &granted, ManagedAt: &at}
+	got, until, ok := AgencyEntitlement(&a, now)
+	if !ok || got != granted || until != nil {
+		t.Fatalf("open-ended grant: got %s, %v, %v", got, until, ok)
+	}
+	// It stands in for a paid subscription while in force.
+	a = Agency{PlanID: &stripe, Status: SubscriptionStatusActive, CurrentPeriodEnd: &end, ManagedPlanID: &granted, ManagedAt: &at, ManagedUntil: &end}
+	if got, until, ok := AgencyEntitlement(&a, now); !ok || got != granted || until == nil || !until.Equal(end) {
+		t.Fatalf("dated grant: got %s, %v, %v", got, until, ok)
+	}
+	if id := a.EffectivePlanID(now); id == nil || *id != granted {
+		t.Fatalf("effective plan: got %v", id)
+	}
+	// Past its end the subscription is what counts again, with its grace.
+	later := end.Add(time.Hour)
+	if got, _, ok := AgencyEntitlement(&a, later); !ok || got != stripe {
+		t.Fatalf("lapsed grant: got %s, %v", got, ok)
+	}
+	if id := a.EffectivePlanID(later); id == nil || *id != stripe {
+		t.Fatalf("effective plan after the grant: got %v", id)
+	}
+	// A grant whose plan was deleted entitles to nothing.
+	a = Agency{Status: SubscriptionStatusIncomplete, ManagedAt: &at}
+	if _, _, ok := AgencyEntitlement(&a, now); ok {
+		t.Fatal("a grant without a plan must not entitle")
+	}
+}
+
+func TestAgencyAIPeriodOfOverride(t *testing.T) {
+	now := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
+	at := now.Add(-time.Hour)
+	plan := AgencyProPlanID
+	planAllowance, own := 30*MicroPerUSD, 250*MicroPerUSD
+	a := Agency{Status: SubscriptionStatusIncomplete, ManagedPlanID: &plan, ManagedAt: &at}
+	if p := AgencyAIPeriodOf(&a, &planAllowance, true, now); p.Allowance != planAllowance {
+		t.Fatalf("plan allowance: got %d", p.Allowance)
+	}
+	a.AIAllowanceOverride = &own
+	if p := AgencyAIPeriodOf(&a, &planAllowance, true, now); p.Allowance != own {
+		t.Fatalf("override: got %d", p.Allowance)
+	}
+	// Without a plan in force an override refills nothing.
+	a.ManagedAt = nil
+	if p := AgencyAIPeriodOf(&a, &planAllowance, true, now); p.Allowance != 0 {
+		t.Fatalf("no plan: got %d", p.Allowance)
 	}
 }
 

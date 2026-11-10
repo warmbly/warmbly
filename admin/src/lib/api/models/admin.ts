@@ -962,6 +962,10 @@ export interface AdminPlan {
     name?: string | null;
     public?: boolean | null;
     price?: number | string | null;
+    /** Set on an agency plan only: the sends its clients share each period (0 is no cap). */
+    monthly_send_pool?: number | null;
+    /** What an agency plan refills the shared AI balance to each period. */
+    agency_ai_allowance_usd?: number | null;
 }
 
 /** A private plan an operator lets one workspace buy. */

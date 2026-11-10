@@ -91,6 +91,40 @@ type Agency struct {
 	ClientCount int        `json:"client_count"`
 	// HasBilling reports a Stripe customer, so the dashboard can offer the portal.
 	HasBilling bool `json:"has_billing"`
+
+	// A plan an operator gave the agency without Stripe; see Granted.
+	ManagedPlanID *uuid.UUID `json:"-"`
+	ManagedAt     *time.Time `json:"-"`
+	ManagedBy     *uuid.UUID `json:"-"`
+	ManagedReason *string    `json:"-"`
+	ManagedUntil  *time.Time `json:"-"`
+	// What an operator set for this agency in place of its plan's pool and AI allowance.
+	PoolOverride        *int       `json:"-"`
+	AIAllowanceOverride *Micro     `json:"-"`
+	OverrideReason      *string    `json:"-"`
+	OverrideBy          *uuid.UUID `json:"-"`
+	OverrideAt          *time.Time `json:"-"`
+	// Grant is set while an operator's plan is in force, for the dashboard.
+	Grant *AgencyGrant `json:"granted,omitempty"`
+}
+
+// AgencyGrant is the operator's plan an agency holds now; a nil Until has no end.
+type AgencyGrant struct {
+	PlanID uuid.UUID  `json:"plan_id"`
+	Until  *time.Time `json:"until,omitempty"`
+}
+
+// Granted reports an operator's plan in force.
+func (a *Agency) Granted(now time.Time) bool {
+	return a != nil && a.ManagedAt != nil && a.ManagedPlanID != nil && (a.ManagedUntil == nil || a.ManagedUntil.After(now))
+}
+
+// EffectivePlanID is the plan the agency's pool, allowance and prices read: the operator's while in force, else the subscription's.
+func (a *Agency) EffectivePlanID(now time.Time) *uuid.UUID {
+	if a.Granted(now) {
+		return a.ManagedPlanID
+	}
+	return a.PlanID
 }
 
 // AgencyMember is one staff member, joined with the user's name.
@@ -128,6 +162,9 @@ type AgencyPoolTopup struct {
 	StripePaymentIntentID *string   `json:"-"`
 	PeriodStart           time.Time `json:"period_start"`
 	CreatedAt             time.Time `json:"created_at"`
+	// GrantedBy and Reason are set on sends an operator added, which have no payment.
+	GrantedBy *uuid.UUID `json:"-"`
+	Reason    *string    `json:"-"`
 }
 
 // AgencyRef names the agency a workspace belongs to.
@@ -143,16 +180,23 @@ func (p *Plan) IsAgencyPlan() bool {
 	return p != nil && p.MonthlySendPool != nil
 }
 
-// AgencyGrantUntil decides whether an agency's clients hold its plan, and until when.
-func AgencyGrantUntil(a *Agency) (time.Time, bool) {
+// AgencyEntitlement is the plan an agency's clients hold now and when that
+// ends: an operator's plan while in force (a nil end never lapses), else the
+// subscription's until its period end plus the grace.
+func AgencyEntitlement(a *Agency, now time.Time) (uuid.UUID, *time.Time, bool) {
+	if a.Granted(now) {
+		return *a.ManagedPlanID, a.ManagedUntil, true
+	}
 	if a == nil || a.PlanID == nil || a.CurrentPeriodEnd == nil {
-		return time.Time{}, false
+		return uuid.Nil, nil, false
 	}
 	switch a.Status {
 	case SubscriptionStatusActive, SubscriptionStatusTrialing, SubscriptionStatusPastDue:
-		return a.CurrentPeriodEnd.Add(AgencyGrantGrace), true
+		if until := a.CurrentPeriodEnd.Add(AgencyGrantGrace); until.After(now) {
+			return *a.PlanID, &until, true
+		}
 	}
-	return time.Time{}, false
+	return uuid.Nil, nil, false
 }
 
 // AgencyPeriod is the pool's current period: the month of the billing period
@@ -325,7 +369,41 @@ type AdminAgency struct {
 	PoolUsed   int64  `json:"pool_used"`
 	PoolTotal  int64  `json:"pool_total"`
 	Unlimited  bool   `json:"unlimited"`
+	// Entitled reports a plan in force, from Stripe or an operator.
+	Entitled bool `json:"entitled"`
+	// ManagedPlan is the operator's plan as recorded, lapsed ones included.
+	ManagedPlan *AdminAgencyManagedPlan `json:"managed_plan,omitempty"`
+	Overrides   *AdminAgencyOverrides   `json:"overrides,omitempty"`
 }
+
+// AdminAgencyManagedPlan is an operator's plan on an agency, for the admin panel.
+type AdminAgencyManagedPlan struct {
+	PlanID    uuid.UUID  `json:"plan_id"`
+	PlanName  string     `json:"plan_name"`
+	Reason    string     `json:"reason"`
+	Until     *time.Time `json:"until,omitempty"`
+	GrantedAt time.Time  `json:"granted_at"`
+	GrantedBy *uuid.UUID `json:"granted_by,omitempty"`
+	Active    bool       `json:"active"`
+}
+
+// AdminAgencyOverrides is what an operator set for one agency in place of its plan's values.
+type AdminAgencyOverrides struct {
+	MonthlySendPool *int       `json:"monthly_send_pool,omitempty"`
+	AIAllowanceUSD  *float64   `json:"ai_allowance_usd,omitempty"`
+	Reason          string     `json:"reason"`
+	UpdatedAt       *time.Time `json:"updated_at,omitempty"`
+	UpdatedBy       *uuid.UUID `json:"updated_by,omitempty"`
+}
+
+const (
+	// AgencyPoolOverrideMax bounds a pool an operator sets for one agency.
+	AgencyPoolOverrideMax = 100_000_000
+	// AgencyPoolCreditMax bounds the sends an operator adds to one period at once.
+	AgencyPoolCreditMax = 10_000_000
+	// AgencyAIOperatorMax bounds an AI allowance or credit an operator sets, in micro-dollars.
+	AgencyAIOperatorMax Micro = 100_000 * MicroPerUSD
+)
 
 // AgencyInvitation is staff invited by an address no account uses yet.
 type AgencyInvitation struct {
@@ -350,11 +428,15 @@ type AgencyAIPeriod struct {
 }
 
 // AgencyAIPeriodOf is the agency's AI balance period: the send pool's period,
-// refilled to the plan's allowance only while the plan is in force and billed.
+// refilled only while a plan is in force and billed, to the operator's
+// allowance for this agency when one is set, else the plan's.
 func AgencyAIPeriodOf(a *Agency, planAllowance *Micro, billed bool, now time.Time) AgencyAIPeriod {
 	start, end := AgencyPeriod(a.CurrentPeriodStart, a.CurrentPeriodEnd, now)
 	p := AgencyAIPeriod{Start: start, End: end}
-	if until, ok := AgencyGrantUntil(a); billed && ok && until.After(now) && planAllowance != nil {
+	if a.AIAllowanceOverride != nil {
+		planAllowance = a.AIAllowanceOverride
+	}
+	if _, _, ok := AgencyEntitlement(a, now); billed && ok && planAllowance != nil {
 		p.Allowance = *planAllowance
 	}
 	return p

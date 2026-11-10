@@ -168,6 +168,21 @@ Run `QA_FLEET_FIXTURES=1 pnpm proof fleet-telemetry` in `qa/`. Stop the addition
 admin server as well as the stack afterward. This proof does not validate real
 worker sampling, network egress, mail delivery or inbox placement.
 
+## Admin agency proof fixtures
+
+`flows/admin-agencies.flow.ts` records an operator giving an agency a plan, a pool of its own and extra sends
+in the admin panel. Start the lite stack with `QA_STRIPE_SECRET_KEY` set (with billing off every agency already
+holds everything, so a given plan changes nothing), then serve `admin/` separately with `VITE_API_URL` pointing
+to the stack's API and set `QA_WEB_URL` to that localhost admin origin. Sign the seeded account in once so its
+session exists, apply `fixtures/admin-agencies.sql`, and clear the stack's own Redis so the new permissions
+and session state are read. The fixture grants every admin permission and marks the session as having passed
+a second factor: local authentication fixtures, not MFA proof.
+
+Run `QA_ADMIN_AGENCY_FIXTURES=1 pnpm proof admin-agencies` in `qa/`. The flow asserts through the API that the
+client workspace receives the plan and that the pool totals are what the page shows. Then, without `QA_WEB_URL`,
+`QA_ADMIN_AGENCY_FIXTURES=1 pnpm proof agency-arranged-plan` records the agency's own billing page for the plan
+just given. Stop the admin server and the stack afterward.
+
 ## Member access proof fixtures
 
 `flows/member-access.flow.ts` is opt-in: apply `fixtures/member-access.sql` to

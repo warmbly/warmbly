@@ -61,7 +61,7 @@ func (f *fakeRepo) TopupSends(context.Context, uuid.UUID, time.Time) (int64, err
 	return f.topups, nil
 }
 
-func (f *fakeRepo) SyncClientGrant(_ context.Context, _, orgID, planID uuid.UUID, _ time.Time) error {
+func (f *fakeRepo) SyncClientGrant(_ context.Context, _, orgID, planID uuid.UUID, _ *time.Time) error {
 	f.grants[orgID] = planID
 	return nil
 }

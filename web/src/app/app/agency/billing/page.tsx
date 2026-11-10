@@ -158,7 +158,9 @@ function AgencyBilling() {
         }
     };
 
-    const active = agency.status === "active" || agency.status === "trialing" || agency.status === "past_due";
+    // A plan arranged directly is in force whatever the subscription says.
+    const granted = agency.granted;
+    const active = !!granted || agency.status === "active" || agency.status === "trialing" || agency.status === "past_due";
     const current = agency.plan;
     const list = plans.data?.data ?? [];
     const u = usage.data;
@@ -183,13 +185,25 @@ function AgencyBilling() {
             </SectionBar>
             <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-baseline gap-x-4 gap-y-1">
                 <span className="text-[16px] font-medium text-slate-900">{active && current?.name ? current.name : "No plan"}</span>
-                <span className={cn("text-[12px]", agency.status === "past_due" ? "text-amber-700" : "text-slate-500")}>
-                    {STATUS_LABEL[agency.status] ?? agency.status}
-                </span>
-                {active && agency.current_period_end && (
-                    <span className="text-[12px] text-slate-500">
-                        {agency.cancel_at_period_end ? "Ends" : "Renews"} {new Date(agency.current_period_end).toLocaleDateString()}
-                    </span>
+                {granted ? (
+                    <>
+                        <span className="text-[12px] text-slate-500">Active</span>
+                        <span className="text-[12px] text-slate-500">
+                            Arranged directly, not billed here
+                            {granted.until ? `. Ends ${new Date(granted.until).toLocaleDateString()}` : ""}
+                        </span>
+                    </>
+                ) : (
+                    <>
+                        <span className={cn("text-[12px]", agency.status === "past_due" ? "text-amber-700" : "text-slate-500")}>
+                            {STATUS_LABEL[agency.status] ?? agency.status}
+                        </span>
+                        {active && agency.current_period_end && (
+                            <span className="text-[12px] text-slate-500">
+                                {agency.cancel_at_period_end ? "Ends" : "Renews"} {new Date(agency.current_period_end).toLocaleDateString()}
+                            </span>
+                        )}
+                    </>
                 )}
                 {!active && (
                     <p className="basis-full text-[12px] text-slate-500 mt-1">

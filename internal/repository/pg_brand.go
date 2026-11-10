@@ -328,7 +328,10 @@ func (r *brandRepository) AgencyRole(ctx context.Context, agencyID, userID uuid.
 func (r *brandRepository) AgencyPlan(ctx context.Context, agencyID uuid.UUID) (*uuid.UUID, models.SubscriptionStatus, error) {
 	var planID *uuid.UUID
 	var status models.SubscriptionStatus
-	err := r.db.QueryRow(ctx, `SELECT plan_id, status FROM agencies WHERE id = $1`, agencyID).Scan(&planID, &status)
+	// An operator's plan in force stands in for the subscription.
+	err := r.db.QueryRow(ctx, `SELECT CASE WHEN `+agencyGrantLive+` THEN a.managed_plan_id ELSE a.plan_id END,
+			CASE WHEN `+agencyGrantLive+` THEN 'active' ELSE a.status END
+		FROM agencies a WHERE a.id = $1`, agencyID).Scan(&planID, &status)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, "", nil
 	}

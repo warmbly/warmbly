@@ -43,6 +43,11 @@ type AgencyRepository interface {
 	// ListPage is agencies after the cursor in id order, for resumable sweeps.
 	ListPage(ctx context.Context, after uuid.UUID, limit int) ([]models.Agency, error)
 	ListForAdmin(ctx context.Context, search string, limit, offset int) ([]models.AdminAgency, int, error)
+	// SetManagedPlan records an operator's plan on the agency; a nil until has no end.
+	SetManagedPlan(ctx context.Context, agencyID, planID, by uuid.UUID, reason string, until *time.Time) error
+	ClearManagedPlan(ctx context.Context, agencyID uuid.UUID) error
+	// SetOverrides replaces the pool and AI allowance an operator set for the agency; nil is the plan's own.
+	SetOverrides(ctx context.Context, agencyID uuid.UUID, pool *int, aiAllowance *models.Micro, by uuid.UUID, reason string) error
 
 	ListMembers(ctx context.Context, agencyID uuid.UUID) ([]models.AgencyMember, error)
 	UpsertMember(ctx context.Context, agencyID, userID uuid.UUID, role models.AgencyRole) error
@@ -78,8 +83,8 @@ type AgencyRepository interface {
 
 	// SyncClientGrant writes the agency's managed grant onto the workspace's
 	// subscription, creating the row when the workspace has none. An operator
-	// grant in force is left alone.
-	SyncClientGrant(ctx context.Context, agencyID, orgID, planID uuid.UUID, until time.Time) error
+	// grant in force is left alone. A nil until has no end.
+	SyncClientGrant(ctx context.Context, agencyID, orgID, planID uuid.UUID, until *time.Time) error
 	// ClearClientGrant removes a grant only this agency wrote.
 	ClearClientGrant(ctx context.Context, agencyID, orgID uuid.UUID) error
 	// ClearStaleGrants removes this agency's grants from workspaces no longer its clients, returning those workspaces.
@@ -102,16 +107,23 @@ func NewAgencyRepository(db *pgxpool.Pool) AgencyRepository {
 	return &agencyRepository{db: db}
 }
 
+// agencyGrantLive is models.Agency.Granted for agencies a, read at the database's clock.
+const agencyGrantLive = `(a.managed_at IS NOT NULL AND a.managed_plan_id IS NOT NULL AND (a.managed_until IS NULL OR a.managed_until > now()))`
+
 const agencyColumns = `a.id, a.name, a.owner_user_id, a.plan_id, a.stripe_customer_id, a.stripe_subscription_id, a.status,
 	a.current_period_start, a.current_period_end, a.cancel_at_period_end, a.pool_alert_level, a.pool_alert_period,
 	a.created_at, a.updated_at,
-	(SELECT COUNT(*) FROM agency_clients ac WHERE ac.agency_id = a.id)`
+	(SELECT COUNT(*) FROM agency_clients ac WHERE ac.agency_id = a.id),
+	a.managed_plan_id, a.managed_at, a.managed_by, a.managed_reason, a.managed_until,
+	a.pool_override, a.ai_allowance_override_micro, a.override_reason, a.override_by, a.override_at`
 
 func scanAgency(row pgx.Row, extra ...any) (*models.Agency, error) {
 	var a models.Agency
 	dest := []any{&a.ID, &a.Name, &a.OwnerUserID, &a.PlanID, &a.StripeCustomerID, &a.StripeSubscriptionID, &a.Status,
 		&a.CurrentPeriodStart, &a.CurrentPeriodEnd, &a.CancelAtPeriodEnd, &a.PoolAlertLevel, &a.PoolAlertPeriod,
-		&a.CreatedAt, &a.UpdatedAt, &a.ClientCount}
+		&a.CreatedAt, &a.UpdatedAt, &a.ClientCount,
+		&a.ManagedPlanID, &a.ManagedAt, &a.ManagedBy, &a.ManagedReason, &a.ManagedUntil,
+		&a.PoolOverride, &a.AIAllowanceOverride, &a.OverrideReason, &a.OverrideBy, &a.OverrideAt}
 	if err := row.Scan(append(dest, extra...)...); err != nil {
 		return nil, err
 	}
@@ -221,6 +233,24 @@ func (r *agencyRepository) Create(ctx context.Context, a *models.Agency) error {
 
 func (r *agencyRepository) Rename(ctx context.Context, agencyID uuid.UUID, name string) error {
 	_, err := r.db.Exec(ctx, `UPDATE agencies SET name = $2, updated_at = now() WHERE id = $1`, agencyID, name)
+	return err
+}
+
+func (r *agencyRepository) SetManagedPlan(ctx context.Context, agencyID, planID, by uuid.UUID, reason string, until *time.Time) error {
+	_, err := r.db.Exec(ctx, `UPDATE agencies SET managed_plan_id = $2, managed_at = now(), managed_by = $3, managed_reason = $4,
+			managed_until = $5, updated_at = now() WHERE id = $1`, agencyID, planID, by, reason, until)
+	return err
+}
+
+func (r *agencyRepository) ClearManagedPlan(ctx context.Context, agencyID uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `UPDATE agencies SET managed_plan_id = NULL, managed_at = NULL, managed_by = NULL, managed_reason = NULL,
+			managed_until = NULL, updated_at = now() WHERE id = $1`, agencyID)
+	return err
+}
+
+func (r *agencyRepository) SetOverrides(ctx context.Context, agencyID uuid.UUID, pool *int, aiAllowance *models.Micro, by uuid.UUID, reason string) error {
+	_, err := r.db.Exec(ctx, `UPDATE agencies SET pool_override = $2, ai_allowance_override_micro = $3, override_reason = $4,
+			override_by = $5, override_at = now(), updated_at = now() WHERE id = $1`, agencyID, pool, aiAllowance, reason, by)
 	return err
 }
 
@@ -472,9 +502,9 @@ func (r *agencyRepository) RecordTopup(ctx context.Context, t *models.AgencyPool
 	if t.ID == uuid.Nil {
 		t.ID = uuid.New()
 	}
-	tag, err := r.db.Exec(ctx, `INSERT INTO agency_pool_topups (id, agency_id, sends, amount_cents, stripe_payment_intent_id, period_start)
-		VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (stripe_payment_intent_id) DO NOTHING`,
-		t.ID, t.AgencyID, t.Sends, t.AmountCents, t.StripePaymentIntentID, t.PeriodStart)
+	tag, err := r.db.Exec(ctx, `INSERT INTO agency_pool_topups (id, agency_id, sends, amount_cents, stripe_payment_intent_id, period_start, granted_by, reason)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (stripe_payment_intent_id) DO NOTHING`,
+		t.ID, t.AgencyID, t.Sends, t.AmountCents, t.StripePaymentIntentID, t.PeriodStart, t.GrantedBy, t.Reason)
 	if err != nil {
 		return false, err
 	}
@@ -490,7 +520,7 @@ func (r *agencyRepository) ClaimPoolAlert(ctx context.Context, agencyID uuid.UUI
 	return tag.RowsAffected() == 1, nil
 }
 
-func (r *agencyRepository) SyncClientGrant(ctx context.Context, agencyID, orgID, planID uuid.UUID, until time.Time) error {
+func (r *agencyRepository) SyncClientGrant(ctx context.Context, agencyID, orgID, planID uuid.UUID, until *time.Time) error {
 	_, err := r.db.Exec(ctx, `
 		INSERT INTO subscriptions (user_id, organization_id, plan_id, stripe_customer_id, status,
 			managed_at, managed_reason, managed_until, managed_plan_id, managed_by_agency_id)

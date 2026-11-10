@@ -9,6 +9,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { BadgeCheck, CalendarClock, Gift, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,7 @@ import {
     revokeOrganizationManagedPlan,
 } from "@/lib/api/client/admin/organizations";
 import type { ManagedPlan } from "@/lib/api/models/admin";
+import { isAgencyPlan } from "./agencies/agencyFormat";
 
 /** A date input gives "YYYY-MM-DD" with no time. Reading that with `new Date`
  *  yields UTC midnight, so a grant made for today is already expired for
@@ -133,7 +135,8 @@ export function OrganizationManagedPlanCard({ orgId }: { orgId: string }) {
     }
 
     const m = managedQuery.data;
-    const plans = plansQuery.data?.plans ?? [];
+    // An agency plan is held by an agency, never by one workspace; the backend refuses it here.
+    const plans = (plansQuery.data?.plans ?? []).filter((p) => !isAgencyPlan(p));
 
     return (
         <div className="overflow-hidden surface-lit rounded-xl border border-border bg-card">
@@ -217,6 +220,13 @@ export function OrganizationManagedPlanCard({ orgId }: { orgId: string }) {
                                     ))}
                                 </SelectContent>
                             </Select>
+                            <p className="text-xs text-muted-foreground">
+                                Agency plans are given from{" "}
+                                <Link to="/agencies" className="underline underline-offset-2">
+                                    Agencies
+                                </Link>
+                                .
+                            </p>
                         </div>
                         <div className="space-y-1.5">
                             <Label htmlFor="managed-plan-until" className="text-xs font-medium text-muted-foreground">

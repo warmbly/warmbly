@@ -38,12 +38,13 @@ func (s *Service) WireAIBalance(repo repository.AgencyAIRepository, metered bool
 // aiPeriod is the agency balance's current period and the allowance it refills to.
 func (s *Service) aiPeriod(ctx context.Context, a *models.Agency) models.AgencyAIPeriod {
 	var allowance *models.Micro
-	if a.PlanID != nil {
-		if p, err := s.plans.GetByID(ctx, *a.PlanID); err == nil && p != nil {
+	now := s.now()
+	if planID := a.EffectivePlanID(now); planID != nil {
+		if p, err := s.plans.GetByID(ctx, *planID); err == nil && p != nil {
 			allowance = p.AgencyAIAllowance
 		}
 	}
-	return models.AgencyAIPeriodOf(a, allowance, s.billing, s.now())
+	return models.AgencyAIPeriodOf(a, allowance, s.billing, now)
 }
 
 func usdPtr(m *models.Micro) *float64 {

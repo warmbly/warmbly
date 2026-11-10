@@ -81,6 +81,7 @@ Mailbox diagnostic participation, sender/recipient flags and shared/rolling limi
 |---|---|
 | **Users** | Every account, with ban and unban, ban history and rate-limit overrides |
 | **Organizations** | Every workspace, with its members, plan, abuse posture, API keys, webhooks and transfer tabs |
+| **Agencies** | Every agency, with its plan, staff, client workspaces, shared send pool and shared AI balance. Give an agency a plan, a pool or AI allowance of its own, extra sends or AI balance, and attach or release client workspaces; see [agencies](#agencies) |
 | **Limit requests** | Customer requests for a higher allowance, to approve or decline |
 | **Developer apps** | Every OAuth app on the instance, its community directory listing, and who may build apps. Suspend an app, revoke its tokens, remove its logo, feature or hide a listing, and block a workspace or a person from building apps |
 | **Promo codes** | Every discount code on the instance, who has redeemed each one, and the builder that creates them |
@@ -95,6 +96,23 @@ An organization's page has two cards that decide what the workspace may buy, bes
 - **Plan offers** lets the workspace buy a private plan. Pick a private plan, give a reason, and optionally an end date (the end of that day in your timezone). The workspace then sees the plan on its billing overview and can check out; the generic checkout and plan change refuse a private plan to any workspace without an open offer (`plan_offer_required`). Offering the same plan again renews it with the new reason and end date, and **Withdraw** closes it. Neither touches a subscription the workspace already bought. Withdrawing stops new checkouts; a Stripe checkout page the customer already opened stays usable until it lapses, which is at most 24 hours and never past the offer's end date by more than Stripe's 30-minute minimum. The Warmup plan is no longer sold and cannot be offered.
 
 Each grant, renewal and withdrawal is written to the **Audit log** with the reason. Reading the cards needs `view_organizations`; changing them needs `manage_organizations`.
+
+### Agencies
+
+An [agency](/guides/agencies/) is not a workspace: it is one billing account over many client workspaces, and one account can own up to five agencies and be staff in any number of them. So an agency's plan is set on the agency, under **Agencies**, and its client workspaces receive it. The **Managed plan** card on a workspace leaves agency plans out and the API refuses one there (`agency_plan_needs_agency`). A workspace that is a client shows **Client of** and its agency on its own page.
+
+An agency's page has these controls:
+
+- **Give a plan** puts the agency on an agency plan without Stripe, for a negotiated deal, a partner or a support gesture. Pick the plan, give a reason, and optionally an end date; with none the plan has no end. Every client workspace receives the plan at once and keeps it until the plan ends. While it is in force it is the plan that applies, even beside a subscription the agency pays for, and **End plan** hands the agency back to that subscription, or to no plan. The pool of an agency with no subscription renews on the first of each month, UTC. A plan that has lapsed stays on the page as lapsed, with its reason.
+- **Custom pool and AI allowance** replaces the plan's shared sends a month, its monthly AI allowance, or both, for this agency alone. This is how Agency Scale and other custom volumes are set: give or sell the agency a plan, then set its pool. Leave a field empty to use the plan's own value. The pool takes 1 to 100,000,000 sends and the allowance $0 to $100,000 a month, and neither applies while the agency has no plan in force. A new pool applies at once. A new AI allowance is what the balance refills to from the next period, so use **Add AI balance** for the current one.
+- **Add sends** adds 1 to 10,000,000 sends to the current period only, like a top-up pack nobody paid for. They are gone when the period renews.
+- **Add AI balance** adds $0.01 to $100,000 to the shared AI balance. It does not expire, and it needs a recent confirmation of your identity. It is hidden on an instance that does not charge for AI.
+- **Attach workspace** brings a workspace under the agency, and **Release** on a client row takes it out. Attaching gives the agency's staff access to the workspace, so it needs a recent confirmation of your identity and is refused unless the workspace's owner is already on the agency's staff (`agency_client_owner_not_staff`), when the workspace belongs to another agency, or while it pays for its own plan. A released workspace keeps its data and loses the agency's plan and staff.
+- **New agency**, on the list, opens an agency for an existing account by its email address.
+
+A reason is required on every one of these and is written to the **Audit log** with the change. Reading the pages needs `view_organizations`; changing anything needs `manage_organizations`.
+
+A client workspace is still a workspace: its own **Managed plan**, overrides and abuse posture work as they do anywhere else, and a plan an operator gives one client takes precedence over the agency's for that client.
 
 #### Pricing the Partnership plan
 
@@ -175,7 +193,7 @@ Reading the tabs needs `view_organizations`; every action needs `manage_organiza
 | Warmup, Warmup content, Seed panel | `view_warmup_pool` (changing seeds or running a test needs `manage_warmup_bans`) |
 | Warmup appeals | `review_appeals` |
 | Campaigns, Sends | `view_campaigns` |
-| Organizations, Limit requests, Developer apps, Promo codes, Outreach, Transfers | `view_organizations` |
+| Organizations, Agencies, Limit requests, Developer apps, Promo codes, Outreach, Transfers | `view_organizations` |
 | Admins | `grant_admin_access` |
 | Audit log | `view_audit_logs` |
 | Jobs, Setup and health | `view_analytics` |

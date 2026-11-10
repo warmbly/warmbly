@@ -109,7 +109,7 @@ func (s *Service) Topup(ctx context.Context, agencyID, actorID uuid.UUID, succes
 	if unlimited {
 		return "", errx.NewWithIdentifier(errx.BadRequest, "agency_pool_unlimited", "This agency's plan has no send pool to top up.")
 	}
-	cents := models.AgencyTopupPriceCents(a.PlanID)
+	cents := models.AgencyTopupPriceCents(a.EffectivePlanID(s.now()))
 	meta := map[string]string{
 		metaPurpose: purposeAgencyTopup, metaAgencyID: a.ID.String(), "user_id": actorID.String(),
 		"sends": strconv.Itoa(models.AgencyTopupSends), "amount_cents": strconv.FormatInt(cents, 10),

@@ -135,6 +135,12 @@ When the pool runs low, buy a **top-up pack** under **Agency > Billing**: 50,000
 
 Owners and admins manage the plan, top-ups, AI balance purchases, invoices and payment method. **Invoices and payment** opens the billing portal. If a payment fails, client workspaces keep the plan while Stripe retries; if the subscription ends, they keep it until a few days after the period it paid for, then go back to their own plans.
 
+### A plan arranged directly
+
+Agency Scale and other negotiated plans are arranged with Warmbly, or with whoever runs your instance, and not bought at checkout. **Agency > Billing** then shows the plan as **Arranged directly, not billed here**, with its end date when it has one, and there is no subscription to manage. Everything else works the same: every client workspace gets the plan, the pool renews each month (on the first, UTC, when the agency has no subscription), and top-up packs and AI balance can still be bought.
+
+Such an agency can also be given a pool and a monthly AI allowance of its own, larger than its plan's, extra sends for the current period, and AI balance that does not expire. **Agency > Billing** and the usage pages show the totals that apply.
+
 ## The shared AI balance
 
 AI in Warmbly is paid for from a [balance](/guides/ai-credits/). Each client workspace keeps its own, and the agency has one more, shared by every client:

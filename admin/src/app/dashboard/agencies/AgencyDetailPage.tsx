@@ -4,9 +4,11 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Panel, Property, PropertyList, Stat, StatGrid, StatusBadge } from "@/components/ui/kit";
 import { ErrorState } from "@/components/ErrorState";
 import { getAgency } from "@/lib/api/client/admin/agencies";
-import { AGENCY_STATUS_TONE, poolLabel } from "./agencyFormat";
-
-const usd = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+import { AGENCY_STATUS_TONE, poolLabel, usd } from "./agencyFormat";
+import { AgencyClientsPanel } from "./AgencyClientsPanel";
+import { AgencyCreditCard } from "./AgencyCreditCard";
+import { AgencyOverridesCard } from "./AgencyOverridesCard";
+import { AgencyPlanCard } from "./AgencyPlanCard";
 
 export default function AgencyDetailPage() {
     const { id = "" } = useParams();
@@ -32,7 +34,12 @@ export default function AgencyDetailPage() {
             />
             <div className="space-y-4">
                 <StatGrid>
-                    <Stat label="Plan" value={a?.plan?.name ?? "None"} loading={q.isLoading} />
+                    <Stat
+                        label="Plan"
+                        value={a?.plan?.name ?? "None"}
+                        sub={a?.granted ? "Given by an operator" : undefined}
+                        loading={q.isLoading}
+                    />
                     <Stat label="Clients" value={a?.client_count.toLocaleString() ?? "0"} loading={q.isLoading} />
                     <Stat label="Pool this period" value={a ? poolLabel(a) : "0"} loading={q.isLoading} />
                     <Stat
@@ -43,6 +50,13 @@ export default function AgencyDetailPage() {
                         loading={q.isLoading}
                     />
                 </StatGrid>
+                {d && (
+                    <>
+                        <AgencyPlanCard agency={d.agency} />
+                        <AgencyOverridesCard agency={d.agency} />
+                        <AgencyCreditCard detail={d} />
+                    </>
+                )}
                 {a && (
                     <PropertyList title="Details">
                         <Property label="Owner">
@@ -62,7 +76,7 @@ export default function AgencyDetailPage() {
                             <>
                                 <Property label="AI balance">
                                     {usd(d.ai_balance.balance_usd)} left ({usd(d.ai_balance.allowance_left_usd)} of {usd(d.ai_balance.allowance_usd)} plan,{" "}
-                                    {usd(d.ai_balance.purchased_usd)} bought)
+                                    {usd(d.ai_balance.purchased_usd)} bought or added)
                                 </Property>
                                 <Property label="AI spent this period">
                                     {usd(d.ai_balance.spent_usd)} by clients, {usd(d.ai_balance.moved_usd)} moved to clients
@@ -72,39 +86,7 @@ export default function AgencyDetailPage() {
                         <Property label="Created">{new Date(a.created_at).toLocaleString()}</Property>
                     </PropertyList>
                 )}
-                <Panel title="Clients">
-                    {d && d.clients.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">No clients.</p>
-                    ) : (
-                        <table className="w-full text-sm">
-                            <thead>
-                                <tr className="text-left text-muted-foreground">
-                                    <th className="py-1.5 font-medium">Workspace</th>
-                                    <th className="py-1.5 font-medium text-right">Sent this period</th>
-                                    <th className="py-1.5 font-medium text-right">Monthly cap</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {d?.clients.map((c) => {
-                                    const used = d.usage.clients.find((u) => u.organization_id === c.organization_id)?.used ?? 0;
-                                    return (
-                                        <tr key={c.organization_id} className="border-t border-border">
-                                            <td className="py-1.5">
-                                                <Link to={`/organizations/${c.organization_id}`} className="underline underline-offset-2">
-                                                    {c.name}
-                                                </Link>
-                                            </td>
-                                            <td className="py-1.5 text-right tabular-nums">{used.toLocaleString()}</td>
-                                            <td className="py-1.5 text-right tabular-nums">
-                                                {c.monthly_send_limit == null ? "None" : c.monthly_send_limit.toLocaleString()}
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    )}
-                </Panel>
+                {d && <AgencyClientsPanel detail={d} />}
                 <Panel title="Staff">
                     <ul className="text-sm divide-y divide-border">
                         {d?.members.map((m) => (

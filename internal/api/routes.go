@@ -2081,10 +2081,21 @@ func Run(
 		// Organization (Workspace) Management
 		adminRoutes.GET("/agencies", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminListAgencies)
 		adminRoutes.GET("/agencies/:id", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminGetAgency)
+		// What an operator sets on an agency: a plan held without Stripe, a pool and AI allowance of its own, and credits.
+		adminRoutes.POST("/agencies", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminCreateAgency)
+		adminRoutes.PUT("/agencies/:id/managed-plan", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminGrantAgencyPlan)
+		adminRoutes.DELETE("/agencies/:id/managed-plan", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminRevokeAgencyPlan)
+		adminRoutes.PUT("/agencies/:id/overrides", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminSetAgencyOverrides)
+		adminRoutes.POST("/agencies/:id/pool-credit", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminCreditAgencyPool)
+		// Money added to a balance, and a workspace handed to an agency's staff, each take a fresh sign-in.
+		adminRoutes.POST("/agencies/:id/ai-credit", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), middleware.RequireFreshAuth(), h.AdminCreditAgencyAI)
+		adminRoutes.POST("/agencies/:id/clients", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), middleware.RequireFreshAuth(), h.AdminAttachAgencyClient)
+		adminRoutes.DELETE("/agencies/:id/clients/:orgId", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminDetachAgencyClient)
 		adminRoutes.GET("/organizations", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminListOrganizations)
 		adminRoutes.GET("/organizations/:id", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminGetOrganization)
 		adminRoutes.GET("/organizations/:id/members", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminGetOrganizationMembers)
 		adminRoutes.GET("/organizations/:id/roles", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminGetOrganizationRoles)
+		adminRoutes.GET("/organizations/:id/agency", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminGetOrganizationAgency)
 		adminRoutes.GET("/organizations/:id/overrides", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminGetOrgOverrides)
 		adminRoutes.PUT("/organizations/:id/overrides", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminUpdateOrgOverrides)
 		// A plan granted by an operator rather than Stripe. Same permission as

@@ -100,7 +100,7 @@ Agencies running outreach for many clients buy one plan for the whole agency ins
 | --- | --- | --- | --- | --- |
 | Agency | $249 | $199 | 150,000 | Unlimited clients, the API and webhooks in every client workspace, logo, accent colour and portal domain on client pages, $10 of shared AI a month |
 | Agency Pro | $599 | $479 | 500,000 | Everything in Agency, no "Powered by Warmbly" line, sending kept apart from other customers, $30 of shared AI a month |
-| Agency Scale | Custom | Custom | 1,000,000+ | Everything in Agency Pro |
+| Agency Scale | Custom | Custom | 1,000,000+ | Everything in Agency Pro, with a pool and AI allowance sized to the agency |
 
 Top-up packs add 50,000 sends to the current period: $85 on Agency, $60 on Agency Pro. A client workspace's billing page shows **Billed through** and the agency's name, and its plan is managed from the agency. Each client spends its own AI balance first and then the agency's shared AI balance, which includes $10 a month on Agency and $30 on Agency Pro. See [the shared AI balance](/guides/agencies/#the-shared-ai-balance).
 
@@ -176,6 +176,8 @@ Upgrading a workspace with only a managed plan opens Checkout to create a Stripe
 Operators grant one from the admin panel on the workspace, under **Plan**. The organization list marks granted workspaces with a `managed` badge and can filter to them, so "who is paid because we said so" is answerable without checking Stripe. A grant that has lapsed keeps its reason on file and is shown as `grant lapsed` rather than disappearing.
 
 A grant is held beside the plan a workspace pays for, never on top of it, so a paying workspace that is granted a different plan goes back to the one it pays for when the grant ends. Revoking returns the workspace to whatever it actually pays for, which can be no plan at all.
+
+An agency plan is never granted to one workspace. An operator gives it to the [agency](/guides/agencies/#a-plan-arranged-directly), from **Agencies** in the admin panel, and the agency's client workspaces receive it.
 
 An [agency's](/guides/agencies/) client workspaces hold the agency's plan the same way, as a grant the agency keeps in step with its own subscription. An operator grant made on a client workspace takes precedence and is never overwritten by the agency; revoking it hands the workspace back to the agency's grant within minutes.
 

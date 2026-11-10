@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS agency_ai_transactions (
     id                       uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     agency_id                uuid NOT NULL REFERENCES agencies (id) ON DELETE CASCADE,
     organization_id          uuid,
-    kind                     text NOT NULL CHECK (kind IN ('period_reset', 'spend', 'refund', 'transfer', 'topup', 'topup_refund')),
+    kind                     text NOT NULL CHECK (kind IN ('period_reset', 'spend', 'refund', 'transfer', 'topup', 'topup_refund', 'credit')),
     amount_micro             bigint NOT NULL,
     allowance_delta_micro    bigint NOT NULL DEFAULT 0,
     allowance_after_micro    bigint NOT NULL,

@@ -25,6 +25,7 @@ const (
 	agencyAITransfer    = "transfer"
 	agencyAITopup       = "topup"
 	agencyAITopupRefund = "topup_refund"
+	agencyAICredit      = "credit"
 )
 
 // AgencyAIRepository is the agency side of the shared AI balance. Every
@@ -44,6 +45,8 @@ type AgencyAIRepository interface {
 	Transfer(ctx context.Context, agencyID, orgID uuid.UUID, amount models.Micro, period models.AgencyAIPeriod, key string, actor uuid.UUID) (*models.AgencyAITransfer, error)
 	// GrantPurchased adds a paid top-up, once per payment intent.
 	GrantPurchased(ctx context.Context, agencyID uuid.UUID, amount models.Micro, period models.AgencyAIPeriod, paymentIntent string, actor *uuid.UUID) (bool, error)
+	// Credit adds money an operator gave, which never expires, once per key.
+	Credit(ctx context.Context, agencyID uuid.UUID, amount models.Micro, period models.AgencyAIPeriod, reason, key string, actor uuid.UUID) (bool, error)
 	// RefundPurchase takes a refunded top-up back out of the bought balance, as
 	// much of it as is left, once. Found is false for a payment that bought none.
 	RefundPurchase(ctx context.Context, paymentIntent string) (agencyID uuid.UUID, found bool, err error)
@@ -68,20 +71,27 @@ type agencyFunding struct {
 // transaction, so a client detached a moment ago is never charged to it.
 func agencyFundingFor(ctx context.Context, q queryRower, orgID uuid.UUID, billed bool, now time.Time) (*agencyFunding, error) {
 	var a models.Agency
-	var allowance, limit *models.Micro
+	var allowance, granted, limit *models.Micro
 	err := q.QueryRow(ctx, `
 		SELECT a.id, a.plan_id, a.status, a.current_period_start, a.current_period_end,
-		       p.agency_ai_allowance_micro, c.monthly_ai_limit_micro
+		       a.managed_plan_id, a.managed_at, a.managed_until, a.ai_allowance_override_micro,
+		       p.agency_ai_allowance_micro, mp.agency_ai_allowance_micro, c.monthly_ai_limit_micro
 		FROM agency_clients c
 		JOIN agencies a ON a.id = c.agency_id
 		LEFT JOIN plans p ON p.id = a.plan_id
+		LEFT JOIN plans mp ON mp.id = a.managed_plan_id
 		WHERE c.organization_id = $1`, orgID).
-		Scan(&a.ID, &a.PlanID, &a.Status, &a.CurrentPeriodStart, &a.CurrentPeriodEnd, &allowance, &limit)
+		Scan(&a.ID, &a.PlanID, &a.Status, &a.CurrentPeriodStart, &a.CurrentPeriodEnd,
+			&a.ManagedPlanID, &a.ManagedAt, &a.ManagedUntil, &a.AIAllowanceOverride, &allowance, &granted, &limit)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
+	}
+	// An operator's plan in force is the one whose allowance refills the balance.
+	if a.Granted(now) {
+		allowance = granted
 	}
 	return &agencyFunding{agencyID: a.ID, period: models.AgencyAIPeriodOf(&a, allowance, billed, now), limit: limit}, nil
 }
@@ -438,6 +448,39 @@ func (r *agencyAIRepository) GrantPurchased(ctx context.Context, agencyID uuid.U
 	if err := insertAgencyTxn(ctx, tx, agencyTxn{
 		agencyID: agencyID, kind: agencyAITopup, amount: amount, after: l, reason: "agency_ai_topup",
 		key: &key, paymentIntent: &paymentIntent, actor: actor,
+	}); err != nil {
+		return false, err
+	}
+	return true, tx.Commit(ctx)
+}
+
+func (r *agencyAIRepository) Credit(ctx context.Context, agencyID uuid.UUID, amount models.Micro, period models.AgencyAIPeriod, reason, key string, actor uuid.UUID) (bool, error) {
+	if amount <= 0 || key == "" {
+		return false, errors.New("a credit needs a positive amount and a key")
+	}
+	key = "credit:" + key
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(ctx)
+	var seen bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM agency_ai_transactions WHERE idempotency_key = $1)`, key).Scan(&seen); err != nil {
+		return false, err
+	}
+	if seen {
+		return false, tx.Commit(ctx)
+	}
+	l, err := lockAgencyAI(ctx, tx, agencyID, &period)
+	if err != nil {
+		return false, err
+	}
+	l.Purchased += amount
+	if _, err := tx.Exec(ctx, `UPDATE agency_ai_ledger SET purchased_micro = $2, updated_at = now() WHERE agency_id = $1`, agencyID, l.Purchased); err != nil {
+		return false, err
+	}
+	if err := insertAgencyTxn(ctx, tx, agencyTxn{
+		agencyID: agencyID, kind: agencyAICredit, amount: amount, after: l, reason: reason, key: &key, actor: &actor,
 	}); err != nil {
 		return false, err
 	}

@@ -53,16 +53,12 @@ func (s *Service) forgetOrg(orgID uuid.UUID) {
 	s.mu.Unlock()
 }
 
-// grantPlan is the plan an agency's clients hold now, or false when they hold none.
-func (s *Service) grantPlan(a *models.Agency) (uuid.UUID, time.Time, bool) {
+// grantPlan is the plan an agency's clients hold now and when it ends (nil never), or false when they hold none.
+func (s *Service) grantPlan(a *models.Agency) (uuid.UUID, *time.Time, bool) {
 	if !s.billing {
-		return uuid.Nil, time.Time{}, false
+		return uuid.Nil, nil, false
 	}
-	until, ok := models.AgencyGrantUntil(a)
-	if !ok || !until.After(s.now()) {
-		return uuid.Nil, time.Time{}, false
-	}
-	return *a.PlanID, until, true
+	return models.AgencyEntitlement(a, s.now())
 }
 
 // IsolatedEgress converges a workspace's reserved worker on its plan (worker.WorkerAssignmentService).
@@ -171,6 +167,10 @@ func (s *Service) poolSize(ctx context.Context, a *models.Agency) (size int64, u
 	p, err := s.plans.GetByID(ctx, planID)
 	if err != nil || p == nil || p.MonthlySendPool == nil {
 		return 0, false, false
+	}
+	// An operator's pool for this agency stands in for the plan's.
+	if a.PoolOverride != nil {
+		return int64(*a.PoolOverride), false, true
 	}
 	if *p.MonthlySendPool == 0 {
 		return 0, true, true
@@ -337,7 +337,7 @@ func (s *Service) usage(ctx context.Context, a *models.Agency) (*models.AgencyUs
 		Unlimited: unlimited, PeriodStart: start, PeriodEnd: end,
 		DaysLeft: int(math.Ceil(end.Sub(now).Hours() / 24)),
 		PoolSize: size, Topups: topups, Total: size + topups, Used: sum(sends),
-		TopupSends: models.AgencyTopupSends, TopupCents: models.AgencyTopupPriceCents(a.PlanID),
+		TopupSends: models.AgencyTopupSends, TopupCents: models.AgencyTopupPriceCents(a.EffectivePlanID(now)),
 		Clients: []models.AgencyClientUsage{},
 	}
 	u.DaysLeft = max(u.DaysLeft, 0)

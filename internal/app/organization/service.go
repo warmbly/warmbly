@@ -2183,6 +2183,11 @@ func (s *organizationService) GrantManagedPlan(ctx context.Context, orgID, planI
 		if plan == nil {
 			return nil, errx.New(errx.BadRequest, "that plan does not exist")
 		}
+		// An agency plan sends from the agency's pool, which one workspace on its own does not have.
+		if plan.IsAgencyPlan() {
+			return nil, errx.NewWithIdentifier(errx.BadRequest, "agency_plan_needs_agency",
+				"Agency plans are given to an agency, not to one workspace. Open the agency under Agencies and give it the plan there; its client workspaces receive it.")
+		}
 	}
 	if err := s.subRepo.SetManagedPlan(ctx, orgID, planID, adminID, reason, until); err != nil {
 		errs.CaptureException(err)
