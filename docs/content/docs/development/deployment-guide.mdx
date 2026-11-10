@@ -693,7 +693,7 @@ AI_BASE_URL=             # required for custom (any OpenAI-compatible endpoint)
 | `anthropic` | api.anthropic.com | Anthropic connector |
 | `custom` | your `AI_BASE_URL` | vLLM, LocalAI, LM Studio |
 
-`AI_MODEL_TRIAL` and `AI_MODEL_PAID` optionally split models by plan. Web search for the assistant is `SEARCH_PROVIDER=serper` (plus `SEARCH_API_KEY`) or `=searxng` (plus `SEARCH_API_URL`).
+`AI_MODEL_TRIAL` and `AI_MODEL_PAID` optionally split models by plan. Web search for the assistant and the lead finder is `SEARCH_PROVIDER=serper`, `brave`, `tavily` or `jina` (plus `SEARCH_API_KEY`), or `=searxng` or `=ddgs` (plus `SEARCH_API_URL`); list several, comma-separated, to fall back in order. `WEB_READER` adds reader services for sites that turn the lead finder away. See [configuration](/development/configuration/#ai-and-search).
 
 ## Workers
 

@@ -17,6 +17,7 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/pkg/safehttp"
+	"github.com/warmbly/warmbly/internal/pkg/webread"
 )
 
 const (
@@ -58,7 +59,7 @@ func (d Deps) registerWebTools(r *Registry) {
 	})
 }
 
-func (d Deps) searchWeb(ctx context.Context, _ Invocation, args json.RawMessage) (string, error) {
+func (d Deps) searchWeb(ctx context.Context, inv Invocation, args json.RawMessage) (string, error) {
 	in, err := decodeArgs[struct {
 		Query string `json:"query"`
 		Limit int    `json:"limit"`
@@ -69,10 +70,14 @@ func (d Deps) searchWeb(ctx context.Context, _ Invocation, args json.RawMessage)
 	if strings.TrimSpace(in.Query) == "" {
 		return "", ErrInvalidArgs
 	}
-	if d.Search == nil {
+	client := d.Search
+	if client == nil && d.WorkspaceSearch != nil {
+		client = d.WorkspaceSearch(ctx, inv.OrgID)
+	}
+	if client == nil {
 		return "", generation.ErrSearchNotConfigured
 	}
-	results, err := d.Search.Search(ctx, in.Query, in.Limit)
+	results, err := client.Search(ctx, in.Query, in.Limit)
 	if err != nil {
 		return "", err
 	}
@@ -121,14 +126,24 @@ func (d Deps) fetchURL(ctx context.Context, _ Invocation, args json.RawMessage) 
 		return "", err
 	}
 
-	text := string(body)
-	if strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "html") {
+	text, status, via := string(body), resp.StatusCode, ""
+	isHTML := strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "html")
+	if webread.Blocked(status) && d.Reader != nil {
+		if p, rerr := d.Reader.Read(ctx, raw); rerr == nil {
+			text, status, via, isHTML = p.HTML, http.StatusOK, p.Via, true
+		}
+	}
+	if isHTML {
 		text = htmlToText(text)
 	}
 	text = strings.TrimSpace(text)
 	text = truncateRunes(text, 12000)
 
-	result, err := jsonResult(map[string]any{"url": raw, "status": resp.StatusCode, "text": text})
+	out := map[string]any{"url": raw, "status": status, "text": text}
+	if via != "" {
+		out["read_via"] = via
+	}
+	result, err := jsonResult(out)
 	if err != nil {
 		return "", err
 	}

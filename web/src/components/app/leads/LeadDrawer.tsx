@@ -29,15 +29,24 @@ import ScrollStrip from "@/components/ui/scroll-strip";
 import { usePresenceResource } from "@/hooks/PresenceProvider";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import { useEnrichLeads, useLead, useUpdateLead } from "@/lib/api/hooks/app/leads/useLeads";
-import type { Lead, LeadFinderConfig, LeadStatus } from "@/lib/api/models/app/leads/Lead";
+import type { Lead, LeadEmail, LeadFinderConfig, LeadStatus } from "@/lib/api/models/app/leads/Lead";
 import buildError from "@/lib/helper/buildError";
 import timeAgo from "@/lib/helper/timeAgo";
 import { cn } from "@/lib/utils";
 import PeopleTab from "./PeopleTab";
 import { ScoreBar } from "./badges";
+import { WebSearchOption, type WebSearchChoice } from "./LeadSelectionBar";
+import { unreadDetail, unreadReason } from "./unread";
 import { STATUS_LABEL, emailVerdict } from "./verdict";
 
 type Tab = "overview" | "people" | "website" | "notes";
+
+const READER_LABEL: Record<string, string> = {
+    jina: "Jina Reader",
+    crawl4ai: "Crawl4AI",
+    ddgs: "DDGS",
+    custom: "a reader service",
+};
 
 const SOCIAL_LABEL: Record<string, string> = {
     facebook: "Facebook",
@@ -53,11 +62,14 @@ const SOCIAL_LABEL: Record<string, string> = {
 export default function LeadDrawer({
     id,
     config,
+    webSearch,
     onClose,
     onAddToContacts,
 }: {
     id: string | null;
     config: LeadFinderConfig;
+    // The web search choice runs started here follow; unset when no search is available.
+    webSearch?: WebSearchChoice;
     onClose: () => void;
     onAddToContacts: (id: string) => void;
 }) {
@@ -96,7 +108,7 @@ export default function LeadDrawer({
                             )}
                         </div>
                     ) : (
-                        <Body lead={lead.data} config={config} tab={tab} onTab={setTab} onClose={onClose} onAddToContacts={onAddToContacts} />
+                        <Body lead={lead.data} config={config} webSearch={webSearch} tab={tab} onTab={setTab} onClose={onClose} onAddToContacts={onAddToContacts} />
                     )}
                 </motion.aside>
             )}
@@ -107,6 +119,7 @@ export default function LeadDrawer({
 function Body({
     lead,
     config,
+    webSearch,
     tab,
     onTab,
     onClose,
@@ -114,6 +127,7 @@ function Body({
 }: {
     lead: Lead;
     config: LeadFinderConfig;
+    webSearch?: WebSearchChoice;
     tab: Tab;
     onTab: (t: Tab) => void;
     onClose: () => void;
@@ -128,7 +142,7 @@ function Body({
 
     const findEmails = async () => {
         try {
-            await enrich.mutateAsync({ lead_ids: [lead.id], verify: true, people: true });
+            await enrich.mutateAsync({ lead_ids: [lead.id], verify: true, people: true, web_search: webSearch?.on ?? true });
             toast.success(lead.website ? `Reading ${lead.domain || "the website"} for people and contact details` : `Looking for ${lead.name}'s website`);
         } catch (e) {
             toast.error(buildError(e as AppError));
@@ -192,6 +206,7 @@ function Body({
                         )}
                         {lead.enrichment_status === "queued" ? (lead.website ? "Reading website…" : "Looking for a website…") : lead.enriched_at ? "Read again" : "Find people and emails"}
                     </button>
+                    {webSearch && <WebSearchOption choice={webSearch} side="bottom" />}
                     {lead.contact_id ? (
                         <Link
                             to="/app/contacts"
@@ -254,7 +269,7 @@ function Body({
             <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
                 {tab === "overview" && <Overview lead={lead} provider={provider} onPeople={() => onTab("people")} />}
                 {tab === "people" && <PeopleTab lead={lead} onFindPeople={findEmails} finding={enrich.isPending || lead.enrichment_status === "queued"} />}
-                {tab === "website" && <Website lead={lead} />}
+                {tab === "website" && <Website lead={lead} config={config} />}
                 {tab === "notes" && <Notes key={lead.id} lead={lead} />}
             </div>
         </>
@@ -306,7 +321,7 @@ function Overview({ lead, provider, onPeople }: { lead: Lead; provider: string; 
                             : lead.enrichment_status === "done"
                               ? "The website lists no email address."
                               : lead.enrichment_status === "failed"
-                                ? `The website could not be read${lead.site.error ? `: ${lead.site.error}` : "."}`
+                                ? `No info available. ${unreadDetail(lead.site)}`
                                 : "Not looked for yet. Find people and emails reads the business's own site."}
                     </p>
                 ) : (
@@ -327,7 +342,7 @@ function Overview({ lead, provider, onPeople }: { lead: Lead; provider: string; 
                                                 {v.label}
                                             </span>
                                             <span>·</span>
-                                            <span>{e.source === "website" ? "From the website" : `From ${provider}`}</span>
+                                            <EmailSource email={e} provider={provider} />
                                             {e.domain_match && <span>· On their domain</span>}
                                         </div>
                                     </div>
@@ -438,6 +453,18 @@ function Overview({ lead, provider, onPeople }: { lead: Lead; provider: string; 
     );
 }
 
+function EmailSource({ email, provider }: { email: LeadEmail; provider: string }) {
+    if (email.source === "website") return <span>From the website</span>;
+    if (email.source !== "search") return <span>From {provider}</span>;
+    if (!email.url) return <span>Web search</span>;
+    return (
+        <a href={email.url} target="_blank" rel="noopener noreferrer nofollow" title={email.url} className="inline-flex items-center gap-0.5 hover:text-sky-700">
+            Web search
+            <ExternalLinkIcon className="size-2.5" />
+        </a>
+    );
+}
+
 function Fact({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
     return (
         <div className="flex items-start gap-2">
@@ -447,7 +474,7 @@ function Fact({ icon, children }: { icon: React.ReactNode; children: React.React
     );
 }
 
-function Website({ lead }: { lead: Lead }) {
+function Website({ lead, config }: { lead: Lead; config: LeadFinderConfig }) {
     const s = lead.site;
     if (!lead.website)
         return (
@@ -458,7 +485,22 @@ function Website({ lead }: { lead: Lead }) {
             </p>
         );
     if (!s.checked_at) return <p className="text-[12px] text-slate-500">Not read yet. Find people and emails reads the site and reports what it runs on.</p>;
-    if (!s.reachable) return <p className="text-[12px] text-rose-700">The website could not be read{s.error ? `: ${s.error}` : "."}</p>;
+    if (!s.reachable)
+        return (
+            <div className="space-y-1.5 text-[12px]">
+                <p className="font-medium text-slate-700">No info available</p>
+                <p className="text-slate-500">{unreadDetail(s)}</p>
+                {unreadReason(s) === "blocked" && !config.web_reader.available && (
+                    <p className="text-[11.5px] text-slate-400">
+                        Optional: a{" "}
+                        <Link to="/app/integrations" className="underline underline-offset-2 hover:text-slate-600">
+                            Jina AI key
+                        </Link>{" "}
+                        or a reader service your administrator sets up can read sites like this one.
+                    </p>
+                )}
+            </div>
+        );
     return (
         <>
             <Section title="Site">
@@ -475,6 +517,7 @@ function Website({ lead }: { lead: Lead }) {
                         <span className="text-slate-800">
                             {s.pages ?? 1} page{(s.pages ?? 1) === 1 ? "" : "s"} read {timeAgo(s.checked_at)}
                         </span>
+                        {s.read_via && <p className="text-[11px] text-slate-400">Read through {READER_LABEL[s.read_via] ?? "a reader service"}</p>}
                     </Fact>
                 </dl>
                 {(s.title || s.description) && (

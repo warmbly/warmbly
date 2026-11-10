@@ -69,6 +69,8 @@ interface Prefs {
     view: { center: LatLng; zoom: number };
     // The source last picked in the dropdown; a saved search opening its own does not change it.
     provider?: LeadProvider;
+    // Find people and emails may search the web; on unless turned off.
+    webSearch?: boolean;
 }
 
 const PREFS_KEY = "wb.leadFinder.prefs";
@@ -313,9 +315,13 @@ function Finder({ config }: { config: LeadFinderConfig }) {
         toast(inside.length ? `Selected ${inside.length} lead${inside.length === 1 ? "" : "s"} in the shape` : "No leads inside that shape");
     };
 
+    const webSearch = prefs.webSearch !== false;
+    const webSearchChoice = config.web_search.available
+        ? { on: webSearch, costUsd: config.web_search.cost_usd, onChange: (on: boolean) => patchPrefs({ webSearch: on }) }
+        : undefined;
     const startEnrich = async (sel: LeadSelection) => {
         try {
-            const run = await enrich.mutateAsync({ ...sel, verify: true, people: true });
+            const run = await enrich.mutateAsync({ ...sel, verify: true, people: true, web_search: webSearch });
             toast.success(`Reading ${run.total.toLocaleString()} website${run.total === 1 ? "" : "s"} for people and contact details`);
         } catch (e) {
             toast.error(buildError(e as AppError));
@@ -608,6 +614,7 @@ function Finder({ config }: { config: LeadFinderConfig }) {
                     <LeadDrawer
                         id={activeId}
                         config={config}
+                        webSearch={webSearchChoice}
                         onClose={() => setActiveId(null)}
                         onAddToContacts={(id) => setDialog({ kind: "contacts", selection: { lead_ids: [id] }, count: 1 })}
                     />
@@ -618,6 +625,7 @@ function Finder({ config }: { config: LeadFinderConfig }) {
                 count={selectedCount}
                 enrichCost={config.enrich_cost_usd}
                 enriching={enrich.isPending}
+                webSearch={webSearchChoice}
                 onEnrich={() => startEnrich(selection)}
                 onAddToContacts={() => setDialog({ kind: "contacts", selection, count: selectedCount })}
                 onExport={() => setDialog({ kind: "export", selection, count: selectedCount })}

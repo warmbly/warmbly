@@ -6,6 +6,7 @@ import type {
     GeocodeResult,
     LatLng,
     Lead,
+    LeadEnrichRequest,
     LeadEnrichmentRun,
     LeadExportFormat,
     LeadExportRows,
@@ -88,7 +89,7 @@ export async function deleteLeads(sel: LeadSelection): Promise<{ deleted: number
     return await Request<{ deleted: number }>({ method: "DELETE", url: "/leads", data: sel, authorization: true });
 }
 
-export async function enrichLeads(input: LeadSelection & { verify?: boolean; people?: boolean }): Promise<LeadEnrichmentRun> {
+export async function enrichLeads(input: LeadEnrichRequest): Promise<LeadEnrichmentRun> {
     return await Request<LeadEnrichmentRun>({ method: "POST", url: "/leads/enrich", data: input, authorization: true });
 }
 
