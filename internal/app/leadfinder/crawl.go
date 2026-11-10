@@ -30,7 +30,7 @@ const (
 	crawlMaxEmails   = 8
 	// crawlMaxAddrs bounds every address read, personal ones included.
 	crawlMaxAddrs = 60
-	// crawlMaxReaderPages bounds the pages one site costs a reader service.
+	// crawlMaxReaderPages bounds the reader requests one site makes, failed ones included.
 	crawlMaxReaderPages = 4
 )
 
@@ -63,6 +63,8 @@ type Crawler struct {
 	lookup    func(ctx context.Context, host string) ([]string, error)
 	// fallback reads a page the site turned a direct visit away from.
 	fallback webread.Reader
+	// readerLeft is how many reader requests the current site may still make.
+	readerLeft *int
 }
 
 // withFallback is the crawler reading blocked pages through r.
@@ -105,6 +107,11 @@ func (c *Crawler) Crawl(ctx context.Context, website string) (*CrawlResult, erro
 	start, err := url.Parse(website)
 	if err != nil || start.Hostname() == "" {
 		return nil, errors.New("the website address is not valid")
+	}
+	if c.fallback != nil {
+		cp, left := *c, crawlMaxReaderPages
+		cp.readerLeft = &left
+		c = &cp
 	}
 	now := c.now()
 	res := &CrawlResult{Socials: map[string]string{}, Site: models.LeadSite{CheckedAt: &now}}
@@ -380,6 +387,12 @@ func (c *Crawler) httpRetry(err error) *Crawler {
 
 // read fetches a page through the reader service after the site answered status.
 func (c *Crawler) read(ctx context.Context, target string, status int) (*page, error) {
+	if c.readerLeft != nil {
+		if *c.readerLeft <= 0 {
+			return nil, &blockedError{status: status, reader: true}
+		}
+		*c.readerLeft--
+	}
 	rp, err := c.fallback.Read(ctx, target)
 	if err != nil {
 		return nil, &blockedError{status: status, reader: true}

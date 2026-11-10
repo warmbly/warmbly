@@ -188,3 +188,32 @@ func TestHTTPRetrySkipsTheReaderItAlreadyTried(t *testing.T) {
 		t.Fatal("an unanswered https origin lost its reader for the http retry")
 	}
 }
+
+func TestASiteMakesAtMostFourReaderRequests(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/robots.txt":
+			http.NotFound(w, r)
+		case "/":
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte(`<a href="/contact">Contact</a><a href="/team">Team</a><a href="/about">About</a>
+				<a href="/impressum">Impressum</a><a href="/staff">Staff</a><a href="/people">People</a>`))
+		default:
+			http.Error(w, "forbidden", http.StatusForbidden)
+		}
+	}))
+	defer srv.Close()
+	c := NewCrawler("test")
+	c.client = &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{
+		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, network, srv.Listener.Addr().String())
+		},
+	}}
+	r := &stubReader{err: errors.New("no")}
+	if _, err := c.withFallback(r).Crawl(context.Background(), "http://acme.com/"); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.reads) != crawlMaxReaderPages {
+		t.Fatalf("reader requests = %d", len(r.reads))
+	}
+}
