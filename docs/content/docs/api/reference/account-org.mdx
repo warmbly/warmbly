@@ -1643,9 +1643,9 @@ Auth: Session only (not available to API keys). **Org permission** `manage_team`
 
 `POST /organization/transfer-ownership`
 
-Transfers organization ownership to another member.
+Transfers organization ownership to another member. The caller must be the current owner and becomes an Admin; the new owner's roles and restricted access are cleared.
 
-Auth: Session only (not available to API keys). **Org permission** `transfer_ownership`.
+Auth: Session only (not available to API keys). **Org permission** `transfer_ownership`. Requires a recent confirmation (`POST /auth/reauth`); without one it answers `403 reauth_required`.
 
 #### Request body
 
@@ -1662,6 +1662,14 @@ Auth: Session only (not available to API keys). **Org permission** `transfer_own
 ```json
 { "message": "ownership transferred" }
 ```
+
+#### Errors
+
+| Status | When |
+|--------|------|
+| `400` | `new_owner_user_id` is the caller, or is not a member of the organization. |
+| `403` | The caller is not the organization's owner. |
+| `409` | The member's account is scheduled for deletion or suspended. |
 
 ### Upload organization avatar
 
