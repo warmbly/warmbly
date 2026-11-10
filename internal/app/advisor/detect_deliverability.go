@@ -233,6 +233,10 @@ func detectDomainAuth(s *repository.AdvisorSnapshot) []Finding {
 		if m.AuthState == "unknown" || m.AuthState == "" {
 			continue
 		}
+		// The DNS sweep only rechecks active mailboxes, so anything else holds a stale reading.
+		if m.Status != "active" {
+			continue
+		}
 		if m.AuthSPF && m.AuthDMARC {
 			continue
 		}
@@ -253,7 +257,7 @@ func detectDomainAuth(s *repository.AdvisorSnapshot) []Finding {
 		// Unauthenticated mail that is actively going out is a live problem;
 		// on an idle mailbox it is a setup task.
 		severity := models.AdvisorMedium
-		if m.InActiveCampaign {
+		if m.SendingCold() {
 			severity = models.AdvisorCritical
 			if len(missing) == 1 && !m.AuthDMARC {
 				// SPF present, DMARC missing: filtered less aggressively than
@@ -296,7 +300,7 @@ func detectDomainAuth(s *repository.AdvisorSnapshot) []Finding {
 				"dkim_verified":          m.AuthDKIM,
 				"dmarc":                  m.AuthDMARC,
 				"dmarc_policy":           m.AuthDMARCPolicy,
-				"currently_sending_cold": m.InActiveCampaign,
+				"currently_sending_cold": m.SendingCold(),
 				"sending_blocked":        blocked,
 			},
 		})
@@ -325,7 +329,9 @@ func domainAuthGateNote(s *repository.AdvisorSnapshot, m repository.AdvisorMailb
 func detectSharedTrackingDomain(s *repository.AdvisorSnapshot) []Finding {
 	out := []Finding{}
 	for _, m := range s.Mailboxes {
-		if !m.InActiveCampaign {
+		// Nothing goes out on a tracking host unless a campaign tracks opens or
+		// links, and a campaign's own verified domain takes priority.
+		if !m.SendingCold() || !m.TrackedOnMailboxHost {
 			continue
 		}
 		if m.TrackingDomain != "" && m.TrackingDomainVerified {

@@ -1,5 +1,7 @@
 package advisor
 
+import "regexp"
+
 // Thresholds. Every value here traces to the sending-safety and paid-pool
 // policy in CLAUDE.md, or to the provider guidance that policy cites. They are
 // deliberately stricter than the point where mailbox providers start
@@ -19,11 +21,6 @@ const (
 	// minWarmupDeliveriesForPlacement mirrors the documented spam-placement
 	// floor: at least 20 warmup deliveries in the last 7 days.
 	minWarmupDeliveriesForPlacement = 20
-	// minSendsForEngagement is the floor for reply/open-rate advice. Copy
-	// feedback on 30 sends is superstition.
-	minSendsForEngagement = 200
-	// minStepSendsForDropoff is the per-step floor for follow-up advice.
-	minStepSendsForDropoff = 100
 
 	// --- deliverability bands ---------------------------------------------
 	// Google: keep user-reported spam below 0.10%, never reach 0.30%.
@@ -58,46 +55,15 @@ const (
 
 	// --- warmup ------------------------------------------------------------
 	// Repo defaults: base 10/day, ceiling 40/day, +1/day ramp, 30% reply rate.
-	defaultWarmupBase  = 10
-	defaultWarmupMax   = 40
-	minWarmupBase      = 5
-	minWarmupReplyRate = 20
-	// warmupCeilingFloorRatio is the share of a mailbox's cold cap that its
-	// warmup ceiling should at least match. A mailbox sending 50 cold/day on a
-	// 10/day warmup ceiling has almost no positive signal to offset the cold
-	// traffic.
-	warmupCeilingFloorRatio = 0.5
-
-	// --- campaign performance ---------------------------------------------
-	// Cold outreach reply rates below this, at volume, mean the offer or the
-	// list is wrong; more sending will not fix it and will cost reputation.
-	replyRateWeak    = 1.0
-	replyRateVeryLow = 0.3
-	// stepDropoffFactor: a follow-up step whose reply rate is this many times
-	// worse than the campaign's best step is worth rewriting.
-	stepDropoffFactor = 4.0
-
-	// --- sequence shape ----------------------------------------------------
-	// A single-email cold campaign leaves most of its replies unclaimed.
-	minRecommendedSteps = 3
-	// Follow-ups closer together than this read as pestering.
-	minFollowUpDays = 2
-	// And further apart than this lose the thread entirely.
-	maxFollowUpDays = 14
+	defaultWarmupBase = 10
+	defaultWarmupMax  = 40
 
 	// --- list hygiene ------------------------------------------------------
 	roleAddressShareWarn = 15.0
-	freeMailShareWarn    = 40.0
-	suppressedShareWarn  = 10.0
 	missingNameShareWarn = 10.0
-	// listExhaustionDays: a running campaign with fewer than this many days of
-	// leads left needs more list before it silently goes quiet.
-	listExhaustionDays = 7
 
 	// --- copy --------------------------------------------------------------
-	subjectTooLong   = 60
-	bodyTooLongWords = 200
-	maxLinksInBody   = 2
+	maxLinksInBody = 2
 )
 
 // spamTriggerPhrases are the phrases that most reliably move cold B2B mail into
@@ -128,3 +94,18 @@ var spamTriggerPhrases = []string{
 	"100% free",
 	"$$$",
 }
+
+type spamPattern struct {
+	phrase string
+	re     *regexp.Regexp
+}
+
+// spamTriggerPatterns match each phrase at the start of a word, so "act now"
+// is not found inside "contact now" while "guarantee" still finds "guaranteed".
+var spamTriggerPatterns = func() []spamPattern {
+	out := make([]spamPattern, 0, len(spamTriggerPhrases))
+	for _, p := range spamTriggerPhrases {
+		out = append(out, spamPattern{p, regexp.MustCompile(`(?i)(?:^|[^\pL\pN])` + regexp.QuoteMeta(p))})
+	}
+	return out
+}()

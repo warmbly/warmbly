@@ -1186,7 +1186,7 @@ var ExcludedTables = map[string]string{
 	"cloud_link_reports":               "Retired command results and observations once owed to Warmbly Cloud over this instance's link, which does not travel.",
 	"cloud_link_warmup_messages":       "Retired handles this instance gave Warmbly Cloud for warmup mail, bound to its link and to provider coordinates on this instance.",
 	"warmup_conversations":             "The instance's shared warmup content library, not workspace data.",
-	"copy_judgments":                   "A cache of copy judgments keyed by the hash of the words judged. The destination re-reads a step the first time its Advisor runs.",
+	"copy_judgments":                   "A cache of copy judgments keyed by the hash of the words judged, no longer written; nothing reads it.",
 	"warmup_thread_messages":           "Message identifiers this instance recognised as turns of a warmup conversation, so the reply to each is recognised too. The destination syncs provider mail afresh and rebuilds it from the warmup tokens, which do travel.",
 	"sessions":                         "Live login sessions. They are bound to the source instance's signing key and must not survive a move.",
 	"mailbox_erasures":                 "Erasure still owed for a mailbox this instance deleted: a grant to revoke at the provider, and message bodies to remove from this instance's blob store. Both name work on the instance that wrote the row, and the mailboxes are already gone.",

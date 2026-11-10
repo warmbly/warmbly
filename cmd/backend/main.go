@@ -2598,12 +2598,11 @@ func main() {
 			// Normalized: the CNAME value the advisor hands over has to be the
 			// bare host, whatever shape TRACKING_DOMAIN was set in.
 			advisor.WithTrackingHost(config.TrackingHostname()),
-			// Each step's copy is judged for how it reads to its recipient,
-			// cached by the hash of the words so unchanged copy costs nothing.
-			advisor.WithCopyJudge(typeSafeAsker(typeSafeClient), repository.NewCopyJudgmentRepository(primaryDB.Pool)),
 			// So the domain-auth finding reports this install's actual gate
 			// (enforced or not, and the grace window) instead of a default one.
-			advisor.WithDomainAuthPolicy(instanceSettings))
+			advisor.WithDomainAuthPolicy(instanceSettings),
+			// So the warmup findings never ask a plan without warmup to turn it on.
+			advisor.WithWarmupAccess(featureGateService))
 		aitools.RegisterAdvisorTools(aiToolRegistry, advisorService)
 		go (&advisor.Runner{Repo: advisorRepository, Service: advisorService}).Run(ctx)
 
