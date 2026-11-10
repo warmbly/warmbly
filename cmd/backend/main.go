@@ -1532,7 +1532,8 @@ func main() {
 		go jobs.NewFormsDomainSweep(organizationRepoForHandler, customHosts).WithPortals(brandRepository, brandService).Start(ctx, time.Hour)
 		// Behind a Cloudflare for SaaS zone of their own, verified agency portal domains are registered there as they verify.
 		portalEdge := edgehost.Open(repository.NewEdgeHostnameRepository(primaryDB.Pool, repository.EdgePortal),
-			cfsaas.Config{ZoneID: config.CloudflareSaaSPortalZoneID(), APIToken: config.CloudflareSaaSPortalAPIToken(), Origin: config.CloudflareSaaSPortalOrigin()},
+			cfsaas.Config{ZoneID: config.CloudflareSaaSPortalZoneID(), APIToken: config.CloudflareSaaSPortalAPIToken(),
+				Origin: config.CloudflareSaaSPortalOrigin(), Worker: config.CloudflareSaaSPortalWorker()},
 			func() []string {
 				return []string{config.PortalCNAMETarget(), config.FormsHostname(), config.TrackingHostname()}
 			})

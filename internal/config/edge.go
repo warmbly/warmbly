@@ -36,6 +36,9 @@ func CloudflareSaaSOrigin() string {
 // CLOUDFLARE_SAAS_PORTAL_ZONE_ID    the zone PORTAL_DOMAIN is on.
 // CLOUDFLARE_SAAS_PORTAL_API_TOKEN  a token allowed to edit that zone's custom hostnames.
 // CLOUDFLARE_SAAS_PORTAL_ORIGIN     optional origin for the hostnames it creates; empty uses the zone's fallback origin.
+// CLOUDFLARE_SAAS_PORTAL_WORKER     optional name of the portal Worker; each hostname then gets its own route to it,
+//
+//	for a zone that also holds other customer hostnames and so cannot route every one to the portal.
 func CloudflareSaaSPortalZoneID() string {
 	return strings.TrimSpace(os.Getenv("CLOUDFLARE_SAAS_PORTAL_ZONE_ID"))
 }
@@ -46,4 +49,8 @@ func CloudflareSaaSPortalAPIToken() string {
 
 func CloudflareSaaSPortalOrigin() string {
 	return strings.TrimSpace(os.Getenv("CLOUDFLARE_SAAS_PORTAL_ORIGIN"))
+}
+
+func CloudflareSaaSPortalWorker() string {
+	return strings.TrimSpace(os.Getenv("CLOUDFLARE_SAAS_PORTAL_WORKER"))
 }

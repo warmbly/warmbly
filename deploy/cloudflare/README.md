@@ -142,22 +142,43 @@ no workflow deploys this Worker; a deploy is a reviewed manual step.
    Pages origin). Set the token with `wrangler secret put PORTAL_EDGE_TOKEN
    --config deploy/cloudflare/portal/wrangler.jsonc`. Give each rate-limit
    binding a `namespace_id` not used by another Worker on the account.
-4. Route requests to it: a Worker route `portal.warmbly.com/*` for the shared
-   address, a route `*/*` on the zone for custom hostnames, plus routes with no
-   Worker for the zone's other names (`warmbly.com/*`, `*.warmbly.com/*`) so they
-   keep their current handling; the more specific `portal.warmbly.com/*` wins
-   over the last. Confirm that each existing hostname on the zone still answers
-   as before.
+4. Route requests to it. Attach `PORTAL_DOMAIN` to the Worker for the shared
+   address, as a custom domain or a route `portal.warmbly.com/*`. Agency portal
+   domains reach it one of two ways:
+   - **The zone also holds other customer hostnames** (tracking or redirect
+     domains registered through `CLOUDFLARE_SAAS_ZONE_ID`, or any added by
+     hand). Add no catch-all route: it would send those names to the portal,
+     which answers `404` for them. Set `CLOUDFLARE_SAAS_PORTAL_WORKER` to the
+     Worker's name in the next step instead, and the backend adds a route
+     `<domain>/*` for each portal domain as it registers it and removes it with
+     the domain. This is how Warmbly Cloud runs.
+   - **The zone holds portal domains only.** Add one route `*/*` on the zone,
+     plus routes with no Worker for the zone's own names (`warmbly.com/*`,
+     `*.warmbly.com/*`) so they keep their current handling.
+
+   Either way, confirm that each existing hostname on the zone still answers as
+   before.
 5. Set `PORTAL_DOMAIN`, `CLOUDFLARE_SAAS_PORTAL_ZONE_ID` and
-   `CLOUDFLARE_SAAS_PORTAL_API_TOKEN` on the backend and roll it. Connect links
-   and reports are built on the portal address from then on, and verified portal
-   domains are registered on the zone within two minutes.
+   `CLOUDFLARE_SAAS_PORTAL_API_TOKEN` on the backend, and
+   `CLOUDFLARE_SAAS_PORTAL_WORKER` for per-domain routes, then roll it. The
+   token needs `SSL and Certificates: Edit` on the zone, and `Workers Routes:
+   Edit` as well for per-domain routes. Connect links and reports are built on
+   the portal address from then on, and verified portal domains are registered
+   on the zone within two minutes.
 6. Verify on the shared address and on one test portal domain: the certificate,
    a connect link (also framed through `/embed.js`), a report, a `404` for
    `/f/<id>`, the dashboard on the portal domain and the "nothing at this
    address" page at the shared address's root. To roll back, remove the Worker
    routes and unset `PORTAL_DOMAIN` on the backend, which stops new links being
    built; registered hostnames stay and serve nothing until the routes return.
+   With per-domain routes, unsetting `CLOUDFLARE_SAAS_PORTAL_WORKER` stops new
+   routes and leaves the existing ones in place.
+
+A zone that already serves portal domains through a `*/*` route moves to
+per-domain routes in two steps: set `CLOUDFLARE_SAAS_PORTAL_WORKER` and roll the
+backend, then remove the `*/*` route a day later. A domain that is already
+active gets its own route at its next daily check, so the old route has to stay
+until every one has been checked.
 
 To rotate the token, move the current value into the backend's
 `PORTAL_EDGE_PREVIOUS_TOKENS` with a `PORTAL_EDGE_PREVIOUS_UNTIL` cutoff, set the
