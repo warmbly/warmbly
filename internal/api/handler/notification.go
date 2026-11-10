@@ -49,13 +49,19 @@ func (h *Handler) GetNotificationPreferences(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"preferences": prefs, "email_delivery": emailDeliveryInfo()})
 }
 
-// UpdateNotificationPreferences replaces the caller's notification preferences.
+// UpdateNotificationPreferences saves the caller's notification preferences.
 func (h *Handler) UpdateNotificationPreferences(c *gin.Context) {
 	uid, ok := notifActor(c)
 	if !ok {
 		return
 	}
-	var req models.UpdateNotificationPreferencesRequest
+	current, xerr := h.NotificationService.GetPreferences(c.Request.Context(), uid)
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	// Decoded over the stored value, so a client that predates a category leaves it alone.
+	req := models.UpdateNotificationPreferencesRequest{Preferences: *current}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		errx.JSON(c, errx.InvalidBody(err))
 		return

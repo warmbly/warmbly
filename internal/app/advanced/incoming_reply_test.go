@@ -41,6 +41,7 @@ func TestProcessIncomingReplyHonorsMachineVerdicts(t *testing.T) {
 		review     string
 		subject    string
 		sender     string
+		snippet    string
 		flags      []string
 		want       models.NotificationCategory
 	}{
@@ -54,6 +55,7 @@ func TestProcessIncomingReplyHonorsMachineVerdicts(t *testing.T) {
 		{name: "out of office without recognizable subject", kind: inboxtag.KindAutoReplyOOO, confidence: 0.95, want: models.NotifInboundOOO},
 		{name: "ticket acknowledgement without recognizable subject", kind: inboxtag.KindAutoReplyTicket, confidence: 0.95, want: models.NotifInboundOOO},
 		{name: "human reply", kind: inboxtag.KindHumanReply, confidence: 0.95, want: models.NotifInboundReply},
+		{name: "interested human reply", kind: inboxtag.KindHumanReply, confidence: 0.95, snippet: "Yes, I am interested. Can we book a call next week?", want: models.NotifInboundPositiveReply},
 		{name: "uncertain kind", kind: inboxtag.KindNotification, confidence: 0.3, review: "kind", want: models.NotifInboundReply},
 		{name: "kind awaiting review", kind: inboxtag.KindNotification, confidence: 0.95, review: "kind", want: models.NotifInboundReply},
 	} {
@@ -77,6 +79,9 @@ func TestProcessIncomingReplyHonorsMachineVerdicts(t *testing.T) {
 			}
 			if tc.sender != "" {
 				msg.FromAddr = []string{tc.sender}
+			}
+			if tc.snippet != "" {
+				msg.Snippet = tc.snippet
 			}
 			if err := s.ProcessIncomingReply(context.Background(), accountID, msg); err != nil {
 				t.Fatal(err)

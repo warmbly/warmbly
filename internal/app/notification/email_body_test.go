@@ -9,7 +9,7 @@ import (
 
 func TestEmailBodyLeavesAnInboundSubjectOut(t *testing.T) {
 	subject := "Claim your prize at evil.example"
-	for _, cat := range []models.NotificationCategory{models.NotifInboundReply, models.NotifInboundOOO} {
+	for _, cat := range []models.NotificationCategory{models.NotifInboundReply, models.NotifInboundPositiveReply, models.NotifInboundOOO} {
 		if got := emailBody(models.Notification{Category: cat, Body: subject}); strings.Contains(got, subject) {
 			t.Errorf("%s: email body carries the sender's subject", cat)
 		}

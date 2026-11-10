@@ -253,7 +253,7 @@ func (s *service) canPushMessage(ctx context.Context, category models.Notificati
 }
 
 func (s *service) pushMessageEligibility(ctx context.Context, category models.NotificationCategory, p pendingPush) (bool, error) {
-	if (category == models.NotifInboundReply || category == models.NotifInboundOOO) &&
+	if category.IsInboundReply() &&
 		replyclassify.IsSystemReport(replyclassify.Input{Subject: p.Body}) {
 		return false, nil
 	}
@@ -277,6 +277,8 @@ func digestTitle(category models.NotificationCategory, n int) string {
 	switch category {
 	case models.NotifInboundReply:
 		return fmt.Sprintf("%d new replies", n)
+	case models.NotifInboundPositiveReply:
+		return fmt.Sprintf("%d positive replies", n)
 	case models.NotifInboundOOO:
 		return fmt.Sprintf("%d out-of-office replies", n)
 	case models.NotifHealthBounce:

@@ -691,6 +691,7 @@ Auth: Session only (not available to API keys).
 {
   "preferences": {
     "inbound_reply": { "enabled": false, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
+    "inbound_positive_reply": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
     "inbound_out_of_office": { "enabled": false, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
     "health_bounce": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
     "health_complaint": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
@@ -712,7 +713,7 @@ Auth: Session only (not available to API keys).
 
 `PUT /auth/me/notification-preferences`
 
-Replaces the caller's preferences. The full preferences object is sent under a `preferences` key and echoed back.
+Saves the caller's preferences. The preferences object is sent under a `preferences` key and the saved result is echoed back.
 
 Auth: Session only (not available to API keys).
 
@@ -720,12 +721,13 @@ Auth: Session only (not available to API keys).
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `preferences` | object | yes | The complete preferences object. Each category has `enabled` plus a `channels` object (`in_app`, `email`, `slack`, `push`), alongside `email_digest_minutes` (the email bundling window, `30` to `1440`). Categories absent from the request fall back to their defaults. |
+| `preferences` | object | yes | The complete preferences object. Each category has `enabled` plus a `channels` object (`in_app`, `email`, `slack`, `push`), alongside `email_digest_minutes` (the email bundling window, `30` to `1440`). A category or field absent from the request keeps its saved value, so a client that does not know a newer category never changes it. |
 
 ```json
 {
   "preferences": {
     "inbound_reply": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
+    "inbound_positive_reply": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
     "inbound_out_of_office": { "enabled": false, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
     "health_bounce": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },
     "health_complaint": { "enabled": true, "channels": { "in_app": true, "email": false, "slack": false, "push": true } },

@@ -97,7 +97,7 @@ func noticeMessage(n notification.SlackNotice) Message {
 		text += "\n" + escapeMrkdwn(body)
 	}
 	var draft Block
-	if n.Category == models.NotifInboundReply {
+	if n.Category.IsHumanReply() {
 		v := draftReplyValue{EmailID: metaString(n.Meta, "unibox_email_id"), ThreadID: metaString(n.Meta, "thread_id")}
 		if v.EmailID != "" || v.ThreadID != "" {
 			raw, _ := json.Marshal(v)

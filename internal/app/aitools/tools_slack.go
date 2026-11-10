@@ -62,7 +62,7 @@ func RegisterSlackTools(r *Registry, slack SlackControl, audit audit.AuditServic
 
 func slackCategoryNames() []string {
 	return []string{
-		string(models.NotifInboundReply), string(models.NotifInboundOOO), string(models.NotifInboxActionRequired),
+		string(models.NotifInboundReply), string(models.NotifInboundPositiveReply), string(models.NotifInboundOOO), string(models.NotifInboxActionRequired),
 		string(models.NotifCampaignPaused), string(models.NotifHealthBounce), string(models.NotifHealthComplaint),
 		string(models.NotifDomainAuth), string(models.NotifPlacementFinished), string(models.NotifPlacementAlert),
 		string(models.NotifWorkerDowntime), string(models.NotifSecuritySignIn), string(models.NotifBillingAlert), string(models.NotifTeamActivity),
