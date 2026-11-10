@@ -1,12 +1,13 @@
 ---
 import ScaledStage from '../ScaledStage.astro';
+import TrendStat from './TrendStat.astro';
 import { WINDOW, EYEBROW } from '../../lib/scene';
 
 /**
  * The Analytics page: the stat strip and the sends and replies trend, drawn
  * in once as it scrolls into view.
  */
-const W = 420, H = 150;
+const W = 420, H = 134;
 const sent = [62, 70, 66, 80, 86, 78, 92, 98, 94, 108, 112, 104, 120, 126, 118, 134];
 const replies = [5, 6, 5, 8, 7, 9, 8, 10, 11, 10, 12, 13, 12, 14, 15, 16];
 const maxY = 140;
@@ -22,11 +23,11 @@ const smooth = (p: number[][]) => {
 const sentLine = smooth(pts(sent));
 const replyLine = smooth(pts(replies, 4));
 const sentArea = `${sentLine} L ${W} ${H} L 0 ${H} Z`;
-const stats = [
-  { label: 'Sent', value: '2184', sub: 'last 30 days', tick: '2184,2299,1400' },
-  { label: 'Reply rate', value: '8.4%', sub: '183 replies' },
-  { label: 'Bounced', value: '0.6%', sub: '13 bounces', last: true },
-];
+// The strip's sparklines over the 30 days in range.
+const strip = {
+  sent: [61, 66, 64, 70, 74, 22, 19, 73, 77, 79, 75, 81, 26, 22, 79, 83, 80, 85, 88, 28, 24, 86, 89, 87, 91, 94, 31, 26, 92, 96],
+  replies: [5, 6, 5, 7, 7, 1, 1, 6, 7, 8, 6, 8, 2, 1, 7, 8, 7, 8, 9, 2, 2, 8, 9, 8, 9, 10, 3, 2, 9, 10],
+};
 ---
 <ScaledStage w={460} h={345} photo="sheer-lavender">
   <div class={`${WINDOW} left-[26px] top-[26px] w-[460px] h-[340px]`}>
@@ -39,13 +40,9 @@ const stats = [
       </span>
     </div>
     <div class="grid grid-cols-3 border-b border-slate-200">
-      {stats.map((s) => (
-        <div class={`px-4 py-3 ${s.last ? '' : 'border-r border-slate-200'}`}>
-          <div class={EYEBROW}>{s.label}</div>
-          <div class="mt-1.5 text-[22px] font-light leading-none tabular-nums text-slate-900">{s.tick ? <span data-tick={s.tick}>{s.value}</span> : s.value}</div>
-          <div class="mt-1.5 truncate font-mono text-[10px] text-slate-400">{s.sub}</div>
-        </div>
-      ))}
+      <TrendStat label="Total sent" unit="in range" points={strip.sent} kind="area" tone="sky" pad="px-4 py-3"><span data-tick="2184,2299,1400">2184</span></TrendStat>
+      <TrendStat label="Reply rate" value="8.4%" unit="incl. positive" points={strip.replies} kind="bars" pad="px-4 py-3" />
+      <TrendStat label="Bounce rate" value="0.6%" unit="hard + soft" pad="px-4 py-3" last />
     </div>
     <div class="px-4 pt-3">
       <div class="flex items-center gap-3 text-[10px] text-slate-400">

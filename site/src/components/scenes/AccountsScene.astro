@@ -1,14 +1,13 @@
 ---
 import ScaledStage from '../ScaledStage.astro';
 import Glyph from './Glyph.astro';
-import {
-  WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_GHOST, ACTION_PRIMARY,
-  STAT, STAT_VALUE, STAT_SUB,
-} from '../../lib/scene';
+import TrendStat from './TrendStat.astro';
+import MailboxCounts from './MailboxCounts.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_GHOST, ACTION_PRIMARY } from '../../lib/scene';
 
 /**
- * The Accounts page (web/src/app/app/emails/page.tsx): topbar, stat strip,
- * the mailbox table. A mailbox connects at the bottom of the list and its
+ * The Accounts page (web/src/app/app/emails/page.tsx): topbar, the trend
+ * strip (AccountsTrendStrip), the mailbox table. A mailbox connects at the bottom of the list and its
  * domain is checked in the card over it, on a loop.
  */
 type Row = {
@@ -23,12 +22,13 @@ const rows: Row[] = [
   { addr: 'mia@northwind.dev', name: 'Mia Chen', provider: 'Google Workspace', mark: 'google', status: 'warming', warm: [14, 40], inbox: 97, health: 91 },
   { addr: 'jon@northwind.dev', name: 'Jon Reyes', provider: 'Google Workspace', mark: 'google', status: 'warming', warm: [11, 40], health: 90 },
 ];
-const stats = [
-  { label: 'Total', value: '6', sub: 'connected' },
-  { label: 'Healthy', value: '5', sub: 'sending now', pulse: true },
-  { label: 'Warming', value: '3', sub: 'ramping up' },
-  { label: 'Needs attention', value: '0', sub: 'paused or failing', last: true },
-];
+// Fourteen days ending today, as the strip draws them.
+const trend = {
+  sent: [96, 104, 0, 0, 112, 118, 121, 126, 124, 0, 0, 131, 138, 72],
+  warmup: [148, 154, 160, 166, 171, 177, 183, 188, 194, 200, 206, 212, 218, 131],
+  inbox: [93, 93, 94, 94, 94, 95, 94, 95, 95, 96, 96, 95, 96, 96],
+  replies: [3, 5, 0, 0, 4, 2, 6, 3, 5, 0, 0, 4, 2, 4],
+};
 const checks = ['SPF', 'DMARC', 'Tracking domain'];
 const th = 'px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em] text-left';
 ---
@@ -45,23 +45,18 @@ const th = 'px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-
     </div>
 
     <div class="grid grid-cols-4 border-b border-slate-200">
-      {stats.map((s) => (
-        <div class={s.last ? 'px-5 py-4' : STAT}>
-          <div class="flex items-center gap-2">
-            <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">{s.label}</span>
-            {s.pulse && <span class="size-1.5 rounded-full bg-sky-500 animate-pulse"></span>}
-          </div>
-          <div class={STAT_VALUE}>{s.value}</div>
-          <div class={STAT_SUB}>{s.sub}</div>
-        </div>
-      ))}
+      <TrendStat label="Sent today" unit="/ 150" note="3 in campaigns" points={trend.sent}><span data-tick="72,84,2600">72</span></TrendStat>
+      <TrendStat label="Warmup today" value="131" unit="/ 240" note="6 warming" points={trend.warmup} kind="area" tone="sky" />
+      <TrendStat label="Inbox placement" value="96%" unit="7 days" note="+2 pts" noteInk="text-emerald-700" points={trend.inbox} tone="emerald" rate />
+      <TrendStat label="Replies" value="4" unit="to today's sends" note="38 over 14 days" points={trend.replies} kind="bars" last />
     </div>
 
     <div class={SECTIONBAR}>
       <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Mailboxes</span>
       <span class="font-mono text-[10.5px] text-slate-400 tabular-nums">6</span>
+      <MailboxCounts healthy={6} warming={3} issues={0} />
       <div class="ml-auto flex items-center gap-1.5 pr-10">
-        <div class="h-7 w-52 pl-2 pr-1 rounded-md border border-slate-200 bg-white flex items-center gap-1.5">
+        <div class="h-7 w-40 pl-2 pr-1 rounded-md border border-slate-200 bg-white flex items-center gap-1.5">
           <Glyph name="search" size={13} class="text-slate-400" />
           <span class="text-[12.5px] text-slate-400">Search by email…</span>
         </div>
@@ -174,7 +169,7 @@ const th = 'px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-
   </div>
 
   <!-- The sending domain check for the new mailbox. -->
-  <div class={`${FLOAT} left-[440px] top-[372px] w-[280px] overflow-hidden`}>
+  <div class={`${FLOAT} left-[440px] top-[382px] w-[280px] overflow-hidden`}>
     <div class="flex items-center gap-2.5 border-b border-slate-200 px-4 py-3">
       <span class="inline-flex size-7 items-center justify-center rounded-lg bg-sky-50 text-sky-600"><Glyph name="globe" size={14} /></span>
       <div class="min-w-0">

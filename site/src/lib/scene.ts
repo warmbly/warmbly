@@ -14,7 +14,4 @@ export const SECTIONBAR = 'h-9 px-5 border-b border-slate-200/60 flex items-cent
 export const ACTION = 'h-7 px-2.5 rounded-md inline-flex items-center gap-1.5 text-[12px] font-medium';
 export const ACTION_PRIMARY = `${ACTION} bg-sky-600 text-white`;
 export const ACTION_GHOST = `${ACTION} border border-slate-200 text-slate-700 bg-white`;
-export const STAT = 'px-5 py-4 border-r border-slate-200';
-export const STAT_VALUE = 'text-[26px] text-slate-900 font-light leading-none mt-2 tabular-nums';
-export const STAT_SUB = 'text-[10px] text-slate-400 mt-1.5 font-mono truncate';
 export const TAB = 'relative h-10 px-2.5 inline-flex items-center gap-1.5 text-[12.5px]';

@@ -1,7 +1,8 @@
 ---
 import ScaledStage from '../../../ScaledStage.astro';
 import Glyph from '../../Glyph.astro';
-import { EYEBROW, TOPBAR, SECTIONBAR, STAT, STAT_VALUE, STAT_SUB } from '../../../../lib/scene';
+import TrendStat from '../../TrendStat.astro';
+import { EYEBROW, TOPBAR, SECTIONBAR } from '../../../../lib/scene';
 import { TH, MENU, MENU_LABEL, MENU_ITEM, initials } from '../ui';
 
 /**
@@ -37,12 +38,6 @@ const nav = [
     { t: 'Settings', i: 'settings' },
   ] },
 ] as const;
-const stats = [
-  { label: 'Total sent', value: '4,812', sub: 'in range', tick: '4812,4840,1700', pulse: true },
-  { label: 'Open rate', value: '41.3%', sub: 'after delivery' },
-  { label: 'Reply rate', value: '6.4%', sub: 'incl. positive' },
-  { label: 'Bounce rate', value: '0.7%', sub: 'hard + soft', last: true },
-];
 // Sends and replies over 30 days.
 const W = 560, H = 170;
 const sent = [120, 138, 132, 150, 162, 70, 64, 168, 176, 170, 182, 190, 80, 72, 186, 192, 188, 198, 204, 86, 80, 196, 206, 202, 214, 220, 92, 84, 210, 224];
@@ -56,6 +51,12 @@ const campaigns = [
   { name: 'Warehouse automation', status: 'Sending', sent: 1104, reply: 5.8, pos: 1.9 },
   { name: 'Re-engage Q2 trials', status: 'Done', sent: 680, reply: 5.4, pos: 2.0 },
 ];
+// The strip's sparklines over the 30 days in range.
+const trend = {
+  sent: [142, 151, 148, 156, 163, 52, 47, 166, 171, 175, 168, 179, 58, 51, 177, 184, 180, 188, 192, 63, 55, 189, 196, 191, 199, 204, 67, 59, 201, 208],
+  opens: [57, 62, 60, 65, 68, 20, 18, 69, 71, 73, 69, 75, 23, 20, 73, 77, 74, 78, 80, 25, 22, 78, 82, 79, 83, 85, 27, 24, 83, 87],
+  replies: [9, 10, 9, 11, 11, 3, 2, 10, 12, 12, 10, 12, 3, 3, 11, 12, 11, 13, 13, 4, 3, 12, 13, 12, 13, 14, 4, 3, 13, 14],
+};
 ---
 <ScaledStage w={1240} h={720} photo="paint-aqua">
   <div class="absolute left-[44px] top-[44px] w-[1260px] h-[720px] overflow-hidden rounded-tl-[14px] ring-1 ring-slate-900/[0.08] shadow-[0_50px_100px_-40px_rgba(15,23,42,0.55)]" style="background:#f5f6f8 url(/backdrops/shell-ambient.svg) 0 0 / 100% 100% no-repeat;">
@@ -122,13 +123,10 @@ const campaigns = [
           </div>
         </div>
         <div class="grid grid-cols-4 border-b border-slate-200 mr-[60px]">
-          {stats.map((s) => (
-            <div class={s.last ? 'px-5 py-4' : STAT}>
-              <div class="flex items-center gap-2"><span class={EYEBROW}>{s.label}</span>{s.pulse && <span class="size-1.5 rounded-full bg-sky-500 animate-pulse"></span>}</div>
-              <div class={STAT_VALUE}>{s.tick ? <span data-tick={s.tick}>{s.value}</span> : s.value}</div>
-              <div class={STAT_SUB}>{s.sub}</div>
-            </div>
-          ))}
+          <TrendStat label="Total sent" unit="in range" points={trend.sent} kind="area" tone="sky"><span data-tick="4812,4840,1700">4,812</span></TrendStat>
+          <TrendStat label="Open rate" value="41.3%" unit="after delivery" points={trend.opens} />
+          <TrendStat label="Reply rate" value="6.4%" unit="incl. positive" points={trend.replies} kind="bars" />
+          <TrendStat label="Bounce rate" value="0.7%" unit="hard + soft" last />
         </div>
         <div class="flex">
           <div class="flex-1 border-r border-slate-200">

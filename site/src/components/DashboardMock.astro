@@ -4,12 +4,14 @@
  *
  * Chrome (header, sidebar, LivePanel) lives in AppShellMock so the hero and
  * every feature window show the same dashboard. This file is only the
- * content panel, web/src/app/app/emails/page.tsx: PageTopbar, StatStrip,
- * SectionBar and the mailbox table with its Status, Sent today, Warmup,
+ * content panel, web/src/app/app/emails/page.tsx: PageTopbar, the trend
+ * strip, SectionBar with the status counts and the mailbox table with its Status, Sent today, Warmup,
  * Inbox and Health columns and the row actions that show on hover.
  */
 import AppShellMock from './AppShellMock.astro';
 import { PROVIDER_MARKS } from '../lib/marks';
+import TrendStat from './scenes/TrendStat.astro';
+import MailboxCounts from './scenes/MailboxCounts.astro';
 
 type Status = 'active' | 'sending' | 'warming' | 'resting';
 type Row = {
@@ -18,6 +20,14 @@ type Row = {
   inbox?: number; collecting?: string; health: 'healthy' | 'risk' | 'issue'; score: number;
   tag?: { label: string; color: string };
 };
+// Fourteen days ending today, as the strip draws them.
+const trend = {
+  sent: [3610, 3742, 1204, 1118, 3856, 3921, 4012, 4096, 4068, 1296, 1187, 4174, 4231, 2418],
+  warmup: [2710, 2748, 2791, 2826, 2864, 2903, 2937, 2979, 3012, 3046, 3081, 3117, 3152, 1936],
+  inbox: [93, 94, 94, 93, 94, 94, 95, 94, 95, 95, 94, 95, 95, 95],
+  replies: [112, 127, 38, 31, 119, 104, 133, 121, 140, 41, 35, 126, 118, 86],
+};
+const repliesTotal = trend.replies.reduce((a, b) => a + b, 0).toLocaleString('en-US');
 const providerName = { google: 'Google Workspace', microsoft: 'Microsoft 365', imap: 'SMTP / IMAP' } as const;
 const sales = { label: 'Sales', color: '#6366f1' };
 const founders = { label: 'Founders', color: '#0ea5e9' };
@@ -86,29 +96,19 @@ const action = 'size-6 flex items-center justify-center rounded hover:bg-slate-1
       </div>
     </div>
 
-    <!-- StatStrip -->
+    <!-- AccountsTrendStrip -->
     <div class="grid grid-cols-4 border-b border-slate-200 shrink-0 bg-white">
-      {[
-        { label: 'Total',           value: '128', sub: 'connected',         accent: false, last: false },
-        { label: 'Healthy',         value: '98',  sub: 'sending now',       accent: true,  last: false },
-        { label: 'Warming',         value: '21',  sub: 'ramping up',        accent: false, last: false },
-        { label: 'Needs attention', value: '9',   sub: 'paused or failing', accent: false, last: true  },
-      ].map((s) => (
-        <div class={`group px-5 py-4 transition-colors ${!s.last ? 'border-r border-slate-200' : ''}`}>
-          <div class="flex items-center gap-2">
-            <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">{s.label}</span>
-            {s.accent && <span class="size-1.5 rounded-full bg-sky-500 animate-pulse"></span>}
-          </div>
-          <div class="text-[26px] text-slate-900 font-light leading-none mt-2 tabular-nums">{s.value}</div>
-          <div class="text-[10px] text-slate-400 mt-1.5 font-mono truncate">{s.sub}</div>
-        </div>
-      ))}
+      <TrendStat label="Sent today" value="2,418" unit="/ 4,850" note="97 in campaigns" points={trend.sent} />
+      <TrendStat label="Warmup today" value="1,936" unit="/ 3,240" note="112 warming" points={trend.warmup} kind="area" tone="sky" />
+      <TrendStat label="Inbox placement" value="95%" unit="7 days" note="+1 pt" noteInk="text-emerald-700" points={trend.inbox} tone="emerald" rate />
+      <TrendStat label="Replies" value="86" unit="to today's sends" note={`${repliesTotal} over 14 days`} points={trend.replies} kind="bars" last />
     </div>
 
     <!-- SectionBar -->
     <div class="h-9 px-5 border-b border-slate-200/60 flex items-center gap-x-2.5 shrink-0">
       <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Mailboxes</span>
       <span class="font-mono text-[10.5px] text-slate-400 tabular-nums">128</span>
+      <MailboxCounts healthy={98} warming={21} issues={9} slowed={2} />
       <div class="ml-auto flex items-center gap-1.5">
         <div class="h-7 pl-2 pr-1 rounded-md border border-slate-200 bg-white flex items-center gap-1.5 w-56">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 text-slate-400 shrink-0"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
