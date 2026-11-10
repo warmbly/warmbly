@@ -7,10 +7,9 @@ export default function useTransferOwnership() {
     return useMutation({
         mutationFn: (newOwnerUserId: string) => transferOwnership(newOwnerUserId),
         // The workspace list carries the caller's own role, so it is refetched with the roster.
-        onSuccess: () => {
+        onSuccess: () =>
             queryClient.invalidateQueries({
                 queryKey: ["organizations"],
-            })
-        }
+            }),
     })
 }
