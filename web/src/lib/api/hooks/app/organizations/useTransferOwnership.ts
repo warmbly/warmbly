@@ -5,14 +5,11 @@ export default function useTransferOwnership() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: (data: { user_id: string }) => transferOwnership(data),
-        onSuccess: () => {
+        mutationFn: (newOwnerUserId: string) => transferOwnership(newOwnerUserId),
+        // The workspace list carries the caller's own role, so it is refetched with the roster.
+        onSuccess: () =>
             queryClient.invalidateQueries({
-                queryKey: ["organizations", "members"],
-            })
-            queryClient.invalidateQueries({
-                queryKey: ["organizations", "current"],
-            })
-        }
+                queryKey: ["organizations"],
+            }),
     })
 }

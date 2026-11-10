@@ -89,7 +89,7 @@ type OrganizationRepository interface {
 	DeleteExpiredInvitations(ctx context.Context) error
 
 	// Ownership transfer
-	TransferOwnership(ctx context.Context, orgID, newOwnerUserID uuid.UUID) error
+	TransferOwnership(ctx context.Context, orgID, currentOwnerUserID, newOwnerUserID uuid.UUID) error
 
 	// Resource counts
 	GetCampaignCounts(ctx context.Context, orgID uuid.UUID) (total int, active int, err error)
@@ -652,24 +652,69 @@ func (r *organizationRepository) DeleteExpiredInvitations(ctx context.Context) e
 	return err
 }
 
-// TransferOwnership transfers organization ownership to a new user
-func (r *organizationRepository) TransferOwnership(ctx context.Context, orgID, newOwnerUserID uuid.UUID) error {
+// ErrOwnershipNotHeld means the caller does not own the workspace when the transfer is written.
+var ErrOwnershipNotHeld = errors.New("caller does not own the workspace")
+
+// ErrNewOwnerNotMember means the proposed owner has no membership in the workspace.
+var ErrNewOwnerNotMember = errors.New("new owner is not a member of the workspace")
+
+// ErrNewOwnerUnavailable means the proposed owner's account cannot take a workspace.
+var ErrNewOwnerUnavailable = errors.New("new owner's account cannot take a workspace")
+
+// TransferOwnership moves ownership from currentOwnerUserID to another member
+// in one transaction, decided against the locked organization row.
+func (r *organizationRepository) TransferOwnership(ctx context.Context, orgID, currentOwnerUserID, newOwnerUserID uuid.UUID) error {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(ctx) //nolint:errcheck
 
-	// Get current owner
-	var currentOwnerID uuid.UUID
-	err = tx.QueryRow(ctx, `SELECT owner_user_id FROM organizations WHERE id = $1`, orgID).Scan(&currentOwnerID)
+	var owner uuid.UUID
+	err = tx.QueryRow(ctx, `SELECT owner_user_id FROM organizations WHERE id = $1 FOR UPDATE`, orgID).Scan(&owner)
 	if err != nil {
 		return err
 	}
+	if owner != currentOwnerUserID {
+		return ErrOwnershipNotHeld
+	}
+	if newOwnerUserID == owner {
+		return ErrNewOwnerUnavailable
+	}
 
-	// Update organization owner
-	_, err = tx.Exec(ctx, `UPDATE organizations SET owner_user_id = $2, updated_at = $3 WHERE id = $1`, orgID, newOwnerUserID, time.Now())
+	// An account deletion takes the workspaces it owns with it, and a banned account cannot run one.
+	var available bool
+	err = tx.QueryRow(ctx, `SELECT banned_at IS NULL AND deletion_scheduled_for IS NULL FROM users WHERE id = $1 FOR SHARE`, newOwnerUserID).Scan(&available)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNewOwnerNotMember
+	}
 	if err != nil {
+		return err
+	}
+	if !available {
+		return ErrNewOwnerUnavailable
+	}
+
+	// Owner is a membership status, not a role: role_id must be NULL so role
+	// edits can never write through onto the owner row, and it is never scoped.
+	tag, err := tx.Exec(ctx, `
+		UPDATE organization_members SET role = 'owner', role_id = NULL, permissions = $3, access_scope = $4
+		WHERE organization_id = $1 AND user_id = $2`,
+		orgID, newOwnerUserID, models.RolePermissions[models.RoleOwner], models.AccessScopeWorkspace)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNewOwnerNotMember
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM organization_member_roles WHERE organization_id = $1 AND user_id = $2`, orgID, newOwnerUserID); err != nil {
+		return err
+	}
+	if err = writeMemberGrants(ctx, tx, orgID, newOwnerUserID, &models.MemberAccess{Scope: models.AccessScopeWorkspace}, uuid.Nil); err != nil {
+		return err
+	}
+
+	if _, err = tx.Exec(ctx, `UPDATE organizations SET owner_user_id = $2, updated_at = NOW() WHERE id = $1`, orgID, newOwnerUserID); err != nil {
 		return err
 	}
 
@@ -683,15 +728,16 @@ func (r *organizationRepository) TransferOwnership(ctx context.Context, orgID, n
 		FROM (SELECT 1) one
 		LEFT JOIN organization_roles r ON r.organization_id = $1 AND r.name = 'Admin'
 		WHERE om.organization_id = $1 AND om.user_id = $2`,
-		orgID, currentOwnerID, models.RolePermissions[models.RoleAdmin])
+		orgID, owner, models.RolePermissions[models.RoleAdmin])
 	if err != nil {
 		return err
 	}
-
-	// Owner is a membership status, not a role: role_id must be NULL so role
-	// edits can never write through onto the owner row.
-	_, err = tx.Exec(ctx, `UPDATE organization_members SET role = 'owner', role_id = NULL, permissions = $3 WHERE organization_id = $1 AND user_id = $2`,
-		orgID, newOwnerUserID, models.RolePermissions[models.RoleOwner])
+	// The assignment row keeps the snapshot above true through a later recompute.
+	_, err = tx.Exec(ctx, `
+		INSERT INTO organization_member_roles (organization_id, user_id, role_id)
+		SELECT om.organization_id, om.user_id, om.role_id FROM organization_members om
+		WHERE om.organization_id = $1 AND om.user_id = $2 AND om.role_id IS NOT NULL
+		ON CONFLICT DO NOTHING`, orgID, owner)
 	if err != nil {
 		return err
 	}

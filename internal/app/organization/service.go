@@ -1227,22 +1227,24 @@ func (s *organizationService) TransferOwnership(ctx context.Context, orgID, acto
 		return errx.New(errx.Forbidden, "only the workspace owner can transfer ownership")
 	}
 
-	// Verify new owner is a member
-	member, err := s.orgRepo.GetMember(ctx, orgID, newOwnerUserID)
-	if err != nil {
-		errs.CaptureException(err)
-		return errx.New(errx.Internal, "failed to verify membership")
-	}
-	if member == nil {
-		return errx.New(errx.BadRequest, "new owner must be a member of the organization")
+	if newOwnerUserID == actorUserID {
+		return errx.New(errx.BadRequest, "you already own this workspace")
 	}
 
-	if err := s.orgRepo.TransferOwnership(ctx, orgID, newOwnerUserID); err != nil {
+	// The repository decides again against the locked row, so two requests cannot both move it.
+	switch err := s.orgRepo.TransferOwnership(ctx, orgID, actorUserID, newOwnerUserID); {
+	case err == nil:
+		return nil
+	case errors.Is(err, repository.ErrOwnershipNotHeld):
+		return errx.New(errx.Forbidden, "only the workspace owner can transfer ownership")
+	case errors.Is(err, repository.ErrNewOwnerNotMember):
+		return errx.New(errx.BadRequest, "new owner must be a member of the organization")
+	case errors.Is(err, repository.ErrNewOwnerUnavailable):
+		return errx.New(errx.Conflict, "that member's account cannot take ownership right now")
+	default:
 		errs.CaptureException(err)
 		return errx.New(errx.Internal, "failed to transfer ownership")
 	}
-
-	return nil
 }
 
 // HasPermission checks if a user has a specific permission
