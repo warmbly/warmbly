@@ -34,4 +34,7 @@ export default interface Organization {
     // New campaigns start their schedule in it; a mailbox with no timezone of
     // its own keeps its warmup hours and working hours in it.
     timezone?: string
+    // The agency this workspace is a client of, when it is one. can_leave is
+    // false when the workspace's owner also owns the agency.
+    agency?: { id: string; name: string; can_leave?: boolean }
 }

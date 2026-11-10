@@ -1,0 +1,30 @@
+{
+  // The portal service (portal/worker) as a Cloudflare Worker; only this file is Cloudflare's.
+  "name": "warmbly-portal",
+  "main": "../../../portal/worker/index.mjs",
+  "compatibility_date": "2026-11-03",
+  "workers_dev": false,
+  "preview_urls": false,
+  "limits": { "cpu_ms": 20 },
+  // The page bundle, written by `pnpm --dir portal build`; the Worker answers every path first.
+  "assets": {
+    "directory": "../../../portal/dist",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "html_handling": "none",
+    "not_found_handling": "none"
+  },
+  // Per visitor address and Cloudflare location; the backend also limits attempts per link.
+  "ratelimits": [
+    { "name": "CONNECT_VIEWS", "namespace_id": "4101", "simple": { "limit": 30, "period": 60 } },
+    { "name": "CONNECT_ACTIONS", "namespace_id": "4102", "simple": { "limit": 10, "period": 60 } },
+    { "name": "CONNECT_POLLS", "namespace_id": "4103", "simple": { "limit": 60, "period": 60 } },
+    { "name": "REPORT_VIEWS", "namespace_id": "4104", "simple": { "limit": 60, "period": 60 } }
+  ],
+  // Empty values serve nothing; PORTAL_EDGE_TOKEN is set with `wrangler secret put`, never here.
+  "vars": {
+    "API_ORIGIN": "",
+    "PORTAL_DOMAIN": "",
+    "DASHBOARD_ORIGIN": ""
+  }
+}

@@ -5,9 +5,21 @@ import SessionManager from "./SessionManager";
 import TwoFactorManager from "./TwoFactorManager";
 import PasswordSection from "./PasswordSection";
 import SignInMethods from "./SignInMethods";
+import PortalAccountNote from "@/components/shared/PortalAccountNote";
+import { currentPortal } from "@/lib/portal";
 
 export default function SecuritySettingsPage() {
     const navigate = useNavigate();
+    // A portal session cannot change how the account signs in, so the page only says where to.
+    if (currentPortal().portal) {
+        return (
+            <SectionShell title="Security" description="Sign-in protection for your account.">
+                <Section eyebrow="Account security">
+                    <PortalAccountNote what="Manage your password, two-factor, passkeys and sessions" />
+                </Section>
+            </SectionShell>
+        );
+    }
     return (
         <SectionShell title="Security" description="Sign-in protection for your account.">
             <PasskeyManager />

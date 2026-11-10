@@ -142,3 +142,34 @@ func TestVerifiedFormsDomainKeepsWorkingWithoutProof(t *testing.T) {
 		t.Fatalf("a verified domain lost its verdict on re-save: %+v %v", out, xerr)
 	}
 }
+
+// A portal domain never carries forms: they point at, verify against and link on the forms host.
+func TestFormsStayOffThePortalDomain(t *testing.T) {
+	pointsHere(t)
+	t.Setenv("PORTAL_DOMAIN", "portal.warmbly.test")
+	var targets []string
+	prev := verifyCNAME
+	verifyCNAME = func(ctx context.Context, domain, target string) trackdns.Result {
+		targets = append(targets, target)
+		return prev(ctx, domain, target)
+	}
+	prover := domainproof.New("secret")
+	org := uuid.New()
+
+	store := &fakeOrgDomains{domain: "forms.acme.test"}
+	s := newDomainService(store, fakeTXT{"_warmbly.forms.acme.test": {prover.Value(org, "forms.acme.test")}}, prover)
+	if got := s.FormsHost(context.Background(), org); got != "forms.warmbly.test" {
+		t.Fatalf("unverified form links on %q", got)
+	}
+	status, _ := s.FormsDomainStatus(context.Background(), org)
+	if status.CNAMETarget != "forms.warmbly.test" {
+		t.Fatalf("forms domain told to point at %q", status.CNAMETarget)
+	}
+	out, xerr := s.VerifyFormsDomain(context.Background(), org)
+	if xerr != nil || !out.FormsDomainVerified || len(targets) != 1 || targets[0] != "forms.warmbly.test" {
+		t.Fatalf("verified against %v: %+v %v", targets, out, xerr)
+	}
+	if got := s.FormsHost(context.Background(), org); got != "forms.acme.test" {
+		t.Fatalf("verified form links on %q", got)
+	}
+}

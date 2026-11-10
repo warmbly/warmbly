@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/app/token"
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
@@ -74,6 +75,8 @@ type ssoFlow struct {
 	Purpose   string    `json:"purpose,omitempty"`
 	UserID    uuid.UUID `json:"user_id"`
 	SessionID uuid.UUID `json:"session_id"`
+	// ReturnOrigin is the verified portal domain the flow began on; empty returns to APP_URL.
+	ReturnOrigin string `json:"return_origin,omitempty"`
 }
 
 // SSOCallbackResult is where the callback sends the browser: Reauth is set
@@ -232,6 +235,7 @@ func (s *authService) beginFlow(ctx context.Context, p FederatedProvider, flow s
 	}
 
 	flow.Verifier, flow.Nonce, flow.Binding = verifier, nonce, binding
+	flow.ReturnOrigin = config.PortalOrigin(config.DashboardOriginFromContext(ctx))
 	payload, err := json.Marshal(flow)
 	if err != nil {
 		errs.CaptureException(err)
@@ -243,6 +247,22 @@ func (s *authService) beginFlow(ctx context.Context, p FederatedProvider, flow s
 	}
 
 	return &SSORedirect{URL: p.AuthCodeURL(state, nonce, verifier), Binding: binding}, nil
+}
+
+// SSOReturnOrigin is the verified portal origin a flow began on, read without consuming its state; empty means APP_URL.
+func (s *authService) SSOReturnOrigin(ctx context.Context, state string) string {
+	if state == "" {
+		return ""
+	}
+	raw, err := s.cache.Get(ctx, ssoStateKey(state)).Bytes()
+	if err != nil || len(raw) == 0 {
+		return ""
+	}
+	var flow ssoFlow
+	if json.Unmarshal(raw, &flow) != nil {
+		return ""
+	}
+	return config.PortalOrigin(flow.ReturnOrigin)
 }
 
 // SSOCallbackComplete finishes an authorization and returns a single-use
@@ -321,6 +341,11 @@ func (s *authService) ssoCallbackComplete(ctx context.Context, in SSOCallback, r
 	)
 	if rerr != nil {
 		return "", rerr
+	}
+
+	// The callback carries no Origin, so a flow begun on a portal mints its session for that portal.
+	if origin := config.PortalOrigin(flow.ReturnOrigin); origin != "" {
+		ctx = config.WithDashboardOrigin(ctx, origin)
 	}
 
 	// Carried through the handoff like a 2FA challenge is: the dashboard

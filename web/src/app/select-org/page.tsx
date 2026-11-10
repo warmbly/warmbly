@@ -17,7 +17,7 @@
 
 import React from "react";
 import { Navigate, useNavigate } from "@tanstack/react-router";
-import { LogOutIcon, Loader2Icon, MailIcon, PlusIcon, UsersIcon } from "lucide-react";
+import { BuildingIcon, LogOutIcon, Loader2Icon, MailIcon, PlusIcon, UsersIcon } from "lucide-react";
 import toast from "react-hot-toast/headless";
 import getToken from "@/lib/helper/getToken";
 import useOrganizations from "@/lib/api/hooks/app/organizations/useOrganizations";
@@ -28,12 +28,17 @@ import useLogout from "@/lib/api/hooks/auth/useLogout";
 import useUser from "@/lib/api/hooks/auth/useUser";
 import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
 import { useAppStore } from "@/stores";
-import { Logo } from "@/components/svg";
+import ProductMark from "@/components/shared/ProductMark";
+import { currentPortal, mainHost } from "@/lib/portal";
 import { NewWorkspaceDialog } from "@/components/app/organizations/NewWorkspaceDialog";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import { postAuthNext } from "@/lib/helper/safeNext";
 import { hrefTarget } from "@/lib/routerSearch";
+import { rememberAgency, useAgencies } from "@/lib/api/hooks/app/agency/useAgency";
+import { AgencyMark } from "@/components/app/agency/AgencyMark";
+import { groupWorkspaces } from "@/lib/agencyView";
+import type Organization from "@/lib/api/models/app/organizations/Organization";
 
 function relativeAge(d: Date | string): string {
     const date = typeof d === "string" ? new Date(d) : d;
@@ -97,6 +102,8 @@ function SelectOrgPageInner() {
 
     const orgList = orgs.data ?? [];
     const inviteList = invites.data ?? [];
+    const agencies = useAgencies();
+    const { groups, own } = groupWorkspaces(orgList, agencies.data?.data ?? []);
 
     React.useEffect(() => {
         if (orgList.length > 0) setOrganizations(orgList);
@@ -133,20 +140,21 @@ function SelectOrgPageInner() {
         }
     }
 
-    const loading = orgs.isPending || invites.isPending;
-    const noWorkspaces = !loading && orgList.length === 0 && inviteList.length === 0;
+    function onPickAgency(agencyId: string) {
+        rememberAgency(agencyId);
+        navigate({ to: "/app/agency", replace: true });
+    }
+
+    const loading = orgs.isPending || invites.isPending || agencies.isPending;
+    const noWorkspaces = !loading && orgList.length === 0 && inviteList.length === 0 && groups.length === 0;
+    // A portal domain reaches only its agency's workspaces; new ones are made at the main address.
+    const portal = currentPortal();
 
     return (
         <div className="min-h-dvh bg-[#f5f6f8] dark:bg-[var(--wb-chrome)] flex items-center justify-center px-4 py-12">
             <div className="w-full max-w-[480px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.08)] overflow-hidden">
                 <div className="h-12 px-4 border-b border-slate-200 flex items-center gap-2.5">
-                    <Logo className="w-4 text-slate-900 shrink-0" />
-                    <span
-                        style={{ fontFamily: "var(--font-display)" }}
-                        className="font-bold text-[13px] tracking-tight text-slate-900 shrink-0"
-                    >
-                        Warmbly
-                    </span>
+                    <ProductMark logoClassName="w-4 text-slate-900 shrink-0" nameClassName="font-bold text-[13px] tracking-tight text-slate-900 shrink-0" />
                     <div className="h-4 w-px bg-slate-200 shrink-0" />
                     <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium min-w-0 truncate">
                         Workspaces
@@ -160,14 +168,15 @@ function SelectOrgPageInner() {
                         </div>
                     )}
 
-                    {!loading && noWorkspaces && (
-                        <EmptyFirstRun onCreate={() => setCreateOpen(true)} />
+                    {!loading && noWorkspaces && (portal.portal
+                        ? <PortalNoWorkspaces />
+                        : <EmptyFirstRun onCreate={() => setCreateOpen(true)} />
                     )}
 
                     {!loading && !noWorkspaces && (
                         <>
                             <h1 className="text-[16px] font-semibold text-slate-900 mb-1">
-                                Pick a workspace
+                                {groups.length > 0 ? "Pick an agency or a workspace" : "Pick a workspace"}
                             </h1>
                             <p className="text-[12px] text-slate-500 mb-5 leading-relaxed">
                                 Workspaces hold your campaigns, mailboxes and team.
@@ -214,85 +223,76 @@ function SelectOrgPageInner() {
                                 </div>
                             )}
 
-                            {/* Existing memberships — informative rows. Role +
-                                plan + how long ago you joined replace the
-                                opaque "id slice + Open →" filler. */}
-                            {orgList.length > 0 && (
+                            {/* Each agency first, opening the agency view, with its
+                                client workspaces under it; then everything else. */}
+                            {groups.map((g) => (
+                                <div key={g.agency.id} className="mb-5">
+                                    <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium mb-1.5 flex items-center gap-1.5">
+                                        <BuildingIcon className="w-3 h-3" />
+                                        Agency
+                                    </div>
+                                    <div className="border border-slate-200 rounded-md overflow-hidden divide-y divide-slate-200/60">
+                                        <button
+                                            type="button"
+                                            onClick={() => onPickAgency(g.agency.id)}
+                                            className="w-full px-3 py-2.5 flex items-center gap-2.5 transition-colors text-left hover:bg-slate-50/80"
+                                        >
+                                            <AgencyMark name={g.agency.name} />
+                                            <div className="min-w-0 flex-1">
+                                                <div className="text-[12.5px] font-medium text-slate-900 truncate">{g.agency.name}</div>
+                                                <div className="text-[11px] text-slate-500 truncate">
+                                                    Agency · {g.agency.client_count} {g.agency.client_count === 1 ? "client" : "clients"}
+                                                </div>
+                                            </div>
+                                            <span className="text-[11px] text-slate-400 shrink-0">Open agency →</span>
+                                        </button>
+                                        {g.clients.map((o) => (
+                                            <WorkspaceRow
+                                                key={o.id}
+                                                org={o}
+                                                indent
+                                                current={currentOrg?.id === o.id}
+                                                showPlan={false}
+                                                disabled={switchOrg.isPending}
+                                                onPick={() => onPickExisting(o.id)}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+
+                            {own.length > 0 && (
                                 <div className="mb-5">
                                     <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium mb-1.5 flex items-center gap-1.5">
                                         <UsersIcon className="w-3 h-3" />
                                         Your workspaces
-                                        <span className="font-mono tabular-nums">{orgList.length}</span>
+                                        <span className="font-mono tabular-nums">{own.length}</span>
                                     </div>
                                     <div className="border border-slate-200 rounded-md overflow-hidden divide-y divide-slate-200/60">
-                                        {orgList.map((o) => {
-                                            const isCurrent = currentOrg?.id === o.id;
-                                            return (
-                                                <button
-                                                    key={o.id}
-                                                    type="button"
-                                                    onClick={() => onPickExisting(o.id)}
-                                                    disabled={switchOrg.isPending}
-                                                    className={`w-full px-3 py-2.5 flex items-center gap-2.5 transition-colors text-left disabled:opacity-50 ${
-                                                        isCurrent
-                                                            ? "bg-sky-50/60 hover:bg-sky-50"
-                                                            : "hover:bg-slate-50/80"
-                                                    }`}
-                                                >
-                                                    <div className="size-7 rounded bg-slate-900 text-white flex items-center justify-center text-[10px] font-semibold shrink-0">
-                                                        {initials(o.name)}
-                                                    </div>
-                                                    <div className="min-w-0 flex-1">
-                                                        <div className="flex items-center gap-1.5">
-                                                            <span className="text-[12.5px] font-medium text-slate-900 truncate">
-                                                                {o.name}
-                                                            </span>
-                                                            {isCurrent && (
-                                                                <span className="text-[9.5px] uppercase tracking-[0.1em] text-sky-700 bg-sky-100 px-1 rounded-sm font-semibold">
-                                                                    Current
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                        <div className="text-[11px] text-slate-500 truncate flex items-center gap-1.5">
-                                                            <span className="uppercase tracking-[0.08em]">
-                                                                {o.role}
-                                                            </span>
-                                                            {showPlan && o.plan && (
-                                                                <>
-                                                                    <span className="text-slate-300">·</span>
-                                                                    <span>{o.plan}</span>
-                                                                </>
-                                                            )}
-                                                            {o.created_at && (
-                                                                <>
-                                                                    <span className="text-slate-300">·</span>
-                                                                    <span className="font-mono tabular-nums text-slate-400">
-                                                                        joined {relativeAge(o.created_at)}
-                                                                    </span>
-                                                                </>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                    <span className="text-[11px] text-slate-400 shrink-0">
-                                                        {isCurrent ? "Resume →" : "Open →"}
-                                                    </span>
-                                                </button>
-                                            );
-                                        })}
+                                        {own.map((o) => (
+                                            <WorkspaceRow
+                                                key={o.id}
+                                                org={o}
+                                                current={currentOrg?.id === o.id}
+                                                showPlan={showPlan}
+                                                disabled={switchOrg.isPending}
+                                                onPick={() => onPickExisting(o.id)}
+                                            />
+                                        ))}
                                     </div>
                                 </div>
                             )}
 
                             {/* Create new — single action button. Same dialog
                                 the OrgSwitcher uses; no inline form anymore. */}
-                            <button
+                            {!portal.portal && <button
                                 type="button"
                                 onClick={() => setCreateOpen(true)}
                                 className="w-full h-9 rounded-md border border-dashed border-slate-300 hover:border-slate-400 text-slate-700 hover:text-slate-900 inline-flex items-center justify-center gap-1.5 text-[12.5px] font-medium transition-colors"
                             >
                                 <PlusIcon className="w-3.5 h-3.5" />
                                 New workspace
-                            </button>
+                            </button>}
                         </>
                     )}
                 </div>
@@ -326,6 +326,24 @@ function SelectOrgPageInner() {
     );
 }
 
+// On a portal domain with none of the agency's workspaces: the rest live at the main address.
+function PortalNoWorkspaces() {
+    const portal = currentPortal();
+    const url = portal.portal ? portal.main_url : "";
+    return (
+        <div className="text-center py-3">
+            <div className="size-10 rounded-md bg-slate-100 text-slate-600 inline-flex items-center justify-center mb-3">
+                <UsersIcon className="w-4 h-4" />
+            </div>
+            <h1 className="text-[16px] font-semibold text-slate-900 mb-1">No workspaces here</h1>
+            <p className="text-[12px] text-slate-500 leading-relaxed max-w-[38ch] mx-auto">
+                This address only opens the workspaces this agency manages. Your other workspaces are at{" "}
+                {url ? <a href={url} className="font-medium text-slate-700 underline">{mainHost(portal)}</a> : mainHost(portal)}.
+            </p>
+        </div>
+    );
+}
+
 // Cleaner empty state for first-time users: single CTA, no list
 // scaffolding for empty arrays, and a hint about invites.
 function EmptyFirstRun({ onCreate }: { onCreate: () => void }) {
@@ -353,5 +371,70 @@ function EmptyFirstRun({ onCreate }: { onCreate: () => void }) {
                 Already invited? The invitation will appear here once it's sent.
             </p>
         </div>
+    );
+}
+
+function WorkspaceRow({
+    org: o,
+    indent = false,
+    current,
+    showPlan,
+    disabled,
+    onPick,
+}: {
+    org: Organization;
+    indent?: boolean;
+    current: boolean;
+    showPlan: boolean;
+    disabled: boolean;
+    onPick: () => void;
+}) {
+    return (
+        <button
+            type="button"
+            onClick={onPick}
+            disabled={disabled}
+            className={`w-full py-2.5 pr-3 flex items-center gap-2.5 transition-colors text-left disabled:opacity-50 ${indent ? "pl-8" : "pl-3"} ${
+                current ? "bg-sky-50/60 hover:bg-sky-50" : "hover:bg-slate-50/80"
+            }`}
+        >
+            <div className="size-7 rounded bg-slate-900 text-white flex items-center justify-center text-[10px] font-semibold shrink-0">
+                {initials(o.name)}
+            </div>
+            <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                    <span className="text-[12.5px] font-medium text-slate-900 truncate">{o.name}</span>
+                    {current && (
+                        <span className="text-[9.5px] uppercase tracking-[0.1em] text-sky-700 bg-sky-100 px-1 rounded-sm font-semibold">
+                            Current
+                        </span>
+                    )}
+                </div>
+                <div className="text-[11px] text-slate-500 truncate flex items-center gap-1.5">
+                    <span className="uppercase tracking-[0.08em]">{o.role}</span>
+                    {!indent && o.agency ? (
+                        <>
+                            <span className="text-slate-300">·</span>
+                            <span className="truncate">Managed by {o.agency.name}</span>
+                        </>
+                    ) : (
+                        showPlan &&
+                        o.plan && (
+                            <>
+                                <span className="text-slate-300">·</span>
+                                <span>{o.plan}</span>
+                            </>
+                        )
+                    )}
+                    {o.created_at && (
+                        <>
+                            <span className="text-slate-300">·</span>
+                            <span className="font-mono tabular-nums text-slate-400">joined {relativeAge(o.created_at)}</span>
+                        </>
+                    )}
+                </div>
+            </div>
+            <span className="text-[11px] text-slate-400 shrink-0">{current ? "Resume →" : "Open →"}</span>
+        </button>
     );
 }

@@ -1,5 +1,6 @@
 // The organization's custom forms domain. Mirrors models.FormsDomainStatus,
 // and is shaped like the mailbox tracking-domain status on purpose.
+import type { DNSRecord } from "../emails/SendingDomain";
 
 export default interface FormsDomainStatus {
     forms_domain: string;
@@ -16,4 +17,6 @@ export default interface FormsDomainStatus {
     /** What DNS actually returned, so a typo is visible. */
     observed?: string;
     forms_host_unresolvable: boolean;
+    /** TXT records the edge in front of this instance still needs before it serves the domain over HTTPS. */
+    edge_records?: DNSRecord[];
 }

@@ -156,7 +156,7 @@ func (r *campaignRepository) Duplicate(ctx context.Context, in DuplicateCampaign
 		return nil, errx.ErrResourceNotFound
 	}
 
-	stepIDs, err := copyCampaignStepsTx(ctx, tx, in.SourceID, in.NewID)
+	stepIDs, _, err := copyCampaignStepsTx(ctx, tx, in.SourceID, in.NewID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -181,45 +181,8 @@ func (r *campaignRepository) Duplicate(ctx context.Context, in DuplicateCampaign
 		return nil, err
 	}
 
-	if len(in.Attachments) > 0 && in.StorageLimit != nil {
-		if err := LockStorageQuota(ctx, tx, in.OrganizationID); err != nil {
-			db.CaptureError(err, "", nil, "exec")
-			return nil, err
-		}
-		limit, err := in.StorageLimit(ctx)
-		if err != nil {
-			return nil, err
-		}
-		used, err := storageUsedTx(ctx, tx, in.OrganizationID)
-		if err != nil {
-			db.CaptureError(err, "", nil, "queryrow")
-			return nil, err
-		}
-		var adding int64
-		for _, att := range in.Attachments {
-			adding += att.Size
-		}
-		if used+adding > limit {
-			return nil, fmt.Errorf("%w: %d of %d bytes used, %d to add", ErrStorageQuotaExceeded, used, limit, adding)
-		}
-	}
-
-	const insertAttachment = `
-		INSERT INTO campaign_attachments (campaign_id, sequence_id, user_id, filename, size, mime_type, s3_key)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-	`
-	for _, att := range in.Attachments {
-		var seqID *uuid.UUID
-		if att.SequenceID != nil {
-			if mapped, ok := stepIDs[*att.SequenceID]; ok {
-				seqID = &mapped
-			}
-		}
-		args := []any{in.NewID, seqID, in.UserID, att.Filename, att.Size, att.MimeType, att.S3Key}
-		if _, err := tx.Exec(ctx, insertAttachment, args...); err != nil {
-			db.CaptureError(err, insertAttachment, args, "exec")
-			return nil, err
-		}
+	if err := insertCopiedAttachmentsTx(ctx, tx, in.OrganizationID, in.NewID, in.UserID, in.Attachments, stepIDs, in.StorageLimit); err != nil {
+		return nil, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -237,12 +200,63 @@ func (r *campaignRepository) Duplicate(ctx context.Context, in DuplicateCampaign
 	return campaign, nil
 }
 
+// insertCopiedAttachmentsTx inserts a copy's attachment rows, pointing
+// per-step files at the copied step. With a limit, the copies count against
+// orgID's storage quota under the quota lock, and a copy that does not fit
+// returns ErrStorageQuotaExceeded.
+func insertCopiedAttachmentsTx(ctx context.Context, tx pgx.Tx, orgID, campaignID, userID uuid.UUID, attachments []models.CampaignAttachment, stepIDs map[uuid.UUID]uuid.UUID, storageLimit StorageLimitFunc) error {
+	if len(attachments) > 0 && storageLimit != nil {
+		if err := LockStorageQuota(ctx, tx, orgID); err != nil {
+			db.CaptureError(err, "", nil, "exec")
+			return err
+		}
+		limit, err := storageLimit(ctx)
+		if err != nil {
+			return err
+		}
+		used, err := storageUsedTx(ctx, tx, orgID)
+		if err != nil {
+			db.CaptureError(err, "", nil, "queryrow")
+			return err
+		}
+		var adding int64
+		for _, att := range attachments {
+			adding += att.Size
+		}
+		if used+adding > limit {
+			return fmt.Errorf("%w: %d of %d bytes used, %d to add", ErrStorageQuotaExceeded, used, limit, adding)
+		}
+	}
+
+	const insertAttachment = `
+		INSERT INTO campaign_attachments (campaign_id, sequence_id, user_id, filename, size, mime_type, s3_key)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`
+	for _, att := range attachments {
+		var seqID *uuid.UUID
+		if att.SequenceID != nil {
+			if mapped, ok := stepIDs[*att.SequenceID]; ok {
+				seqID = &mapped
+			}
+		}
+		args := []any{campaignID, seqID, userID, att.Filename, att.Size, att.MimeType, att.S3Key}
+		if _, err := tx.Exec(ctx, insertAttachment, args...); err != nil {
+			db.CaptureError(err, insertAttachment, args, "exec")
+			return err
+		}
+	}
+	return nil
+}
+
 // copyCampaignStepsTx copies every step of src under dst with fresh ids and
 // returns the old-to-new id map. Every new id is chosen before the first
 // insert so each step's branch targets can be rewritten in the same statement.
-func copyCampaignStepsTx(ctx context.Context, tx pgx.Tx, src, dst uuid.UUID) (map[uuid.UUID]uuid.UUID, error) {
+// With destOrg the steps land in that workspace instead: settings naming a
+// source-workspace row are cleared, and those plus any form link are returned
+// for review.
+func copyCampaignStepsTx(ctx context.Context, tx pgx.Tx, src, dst uuid.UUID, destOrg *uuid.UUID) (map[uuid.UUID]uuid.UUID, []models.CopyReview, error) {
 	const list = `
-		SELECT id, conditions
+		SELECT id, name, conditions, action, subject, body_html, body_plain
 		FROM sequences
 		WHERE campaign_id = $1
 		ORDER BY position ASC, created_at ASC
@@ -250,25 +264,27 @@ func copyCampaignStepsTx(ctx context.Context, tx pgx.Tx, src, dst uuid.UUID) (ma
 	rows, err := tx.Query(ctx, list, src)
 	if err != nil {
 		db.CaptureError(err, list, []any{src}, "query")
-		return nil, err
+		return nil, nil, err
 	}
 	type step struct {
-		id         uuid.UUID
-		conditions []byte
+		id                   uuid.UUID
+		name                 string
+		conditions, action   []byte
+		subject, html, plain string
 	}
 	var steps []step
 	for rows.Next() {
 		var s step
-		if err := rows.Scan(&s.id, &s.conditions); err != nil {
+		if err := rows.Scan(&s.id, &s.name, &s.conditions, &s.action, &s.subject, &s.html, &s.plain); err != nil {
 			rows.Close()
 			db.CaptureError(err, list, []any{src}, "scan")
-			return nil, err
+			return nil, nil, err
 		}
 		steps = append(steps, s)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	idMap := make(map[uuid.UUID]uuid.UUID, len(steps))
@@ -284,25 +300,44 @@ func copyCampaignStepsTx(ctx context.Context, tx pgx.Tx, src, dst uuid.UUID) (ma
 			created_at, updated_at
 		)
 		SELECT
-			$2, $3, organization_id, name, subject,
+			$2, $3, COALESCE($5::uuid, organization_id), name, subject,
 			body_plain, body_html, body_sync, body_code,
-			wait_after, position, thread_reply, $4::jsonb, kind, action, x, y,
+			wait_after, position, thread_reply, $4::jsonb, kind, COALESCE($6::jsonb, action), x, y,
 			NOW(), NOW()
 		FROM sequences
 		WHERE id = $1
 	`
+	var review []models.CopyReview
 	for _, s := range steps {
 		newID := idMap[s.id]
 		conditions, err := RemapBranchTargets(s.conditions, idMap)
 		if err != nil {
-			return nil, fmt.Errorf("step %s conditions: %w", s.id, err)
+			return nil, nil, fmt.Errorf("step %s conditions: %w", s.id, err)
 		}
-		if _, err := tx.Exec(ctx, copyStep, s.id, newID, dst, conditions); err != nil {
+		var action []byte
+		if destOrg != nil {
+			scrubbed, cleared, err := ScrubForeignStepReferences(s.action)
+			if err != nil {
+				return nil, nil, fmt.Errorf("step %s action: %w", s.id, err)
+			}
+			action = scrubbed
+			for _, part := range []string{s.subject, s.html, s.plain} {
+				if models.FormLinkMarkerRE.MatchString(part) {
+					cleared = append(cleared, "form_link")
+					break
+				}
+			}
+			if len(cleared) > 0 {
+				review = append(review, models.CopyReview{StepID: newID, StepName: s.name, Fields: cleared})
+			}
+		}
+		args := []any{s.id, newID, dst, conditions, destOrg, action}
+		if _, err := tx.Exec(ctx, copyStep, args...); err != nil {
 			db.CaptureError(err, copyStep, []any{s.id, newID, dst}, "exec")
-			return nil, err
+			return nil, nil, err
 		}
 	}
-	return idMap, nil
+	return idMap, review, nil
 }
 
 // copyCampaignVariantsTx copies the A/B variants, pointing per-step variants

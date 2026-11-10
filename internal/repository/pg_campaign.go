@@ -58,6 +58,9 @@ type CampaignRepository interface {
 	// with their branch graph, tags, folders, senders, variants, advanced
 	// settings, attachment rows) and none of its execution state.
 	Duplicate(ctx context.Context, in DuplicateCampaignInput) (*models.Campaign, error)
+	// CopyToOrganization copies a campaign's configuration into a draft in
+	// another workspace, without anything that only means something in the source.
+	CopyToOrganization(ctx context.Context, in CopyCampaignAcrossInput) (*models.Campaign, []models.CopyReview, error)
 
 	// Campaign start/stop
 	StartCampaign(ctx context.Context, campaignID uuid.UUID) error

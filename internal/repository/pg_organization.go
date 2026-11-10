@@ -255,9 +255,12 @@ func (r *organizationRepository) GetUserOrganizations(ctx context.Context, userI
 				JOIN organization_roles r ON r.id = mr.role_id AND r.organization_id = om.organization_id
 				WHERE mr.organization_id = om.organization_id AND mr.user_id = om.user_id AND r.acts_in_scope), 0) & om.permissions::int,
 			o.id, o.name, o.slug, o.avatar_url, o.owner_user_id, o.created_at, o.updated_at,
-			o.deletion_scheduled_at, o.deletion_scheduled_for, o.category
+			o.deletion_scheduled_at, o.deletion_scheduled_for, o.category,
+			ag.id, ag.name, COALESCE(ag.owner_user_id <> o.owner_user_id, false)
 		FROM organization_members om
 		JOIN organizations o ON o.id = om.organization_id
+		LEFT JOIN agency_clients ac ON ac.organization_id = o.id
+		LEFT JOIN agencies ag ON ag.id = ac.agency_id
 		WHERE om.user_id = $1
 		ORDER BY om.invited_at DESC
 	`
@@ -271,16 +274,23 @@ func (r *organizationRepository) GetUserOrganizations(ctx context.Context, userI
 	for rows.Next() {
 		var m models.OrganizationMember
 		var org models.Organization
+		var agencyID *uuid.UUID
+		var agencyName *string
+		var canLeave bool
 		err := rows.Scan(
 			&m.ID, &m.OrganizationID, &m.UserID, &m.Role, &m.Permissions,
 			&m.InvitedBy, &m.InvitedAt, &m.AcceptedAt, &m.AccessScope, &m.ScopeActions,
 			&org.ID, &org.Name, &org.Slug, &org.AvatarURL, &org.OwnerUserID, &org.CreatedAt, &org.UpdatedAt,
 			&org.DeletionScheduledAt, &org.DeletionScheduledFor, &org.Category,
+			&agencyID, &agencyName, &canLeave,
 		)
 		if err != nil {
 			return nil, err
 		}
 		m.Organization = &org
+		if agencyID != nil && agencyName != nil {
+			m.Agency = &models.AgencyRef{ID: *agencyID, Name: *agencyName, CanLeave: canLeave}
+		}
 		if !m.IsRestricted() {
 			m.ScopeActions = 0
 		}

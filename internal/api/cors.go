@@ -4,6 +4,10 @@ import (
 	"net"
 	"net/url"
 	"strings"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/warmbly/warmbly/internal/config"
 )
 
 // tailscaleCGNAT is the 100.64.0.0/10 carrier-grade NAT range Tailscale hands
@@ -63,4 +67,9 @@ func devOriginAllowed(origin string) bool {
 	default:
 		return false
 	}
+}
+
+// portalOriginAllowed accepts the https origin of a verified agency portal domain, and only that.
+func portalOriginAllowed(_ *gin.Context, origin string) bool {
+	return config.PortalOrigin(origin) != ""
 }

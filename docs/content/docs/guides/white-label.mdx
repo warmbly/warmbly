@@ -1,0 +1,195 @@
+---
+title: "White-label"
+description: "Put your own brand, domain, theme and website on the pages your clients see: connect links, shared reports, report emails, forms and the dashboard on your own domain."
+---
+
+White-label puts your brand on every page a client sees instead of Warmbly's. It covers the [client connect page](/guides/agencies/#client-connect-links), [shared reports](/guides/client-reports/) and their emails, [hosted forms](/guides/forms/), the unsubscribe page and, for clients you invite into the dashboard, the dashboard itself.
+
+## Set your brand
+
+<Steps>
+
+<Step>
+
+Open **Settings > Branding** in a workspace, or **Agency > Branding** to brand every client of an [agency](/guides/agencies/) at once.
+
+</Step>
+
+<Step>
+
+Set a **Name**, upload a **Logo** (PNG or JPG, up to 2 MB and 1024px on each side), pick an **Accent colour** and add your **Website** (`https://` only). The preview shows a connect page and a report header as a client sees them.
+
+</Step>
+
+<Step>
+
+Changes save on their own. Public pages pick them up within a minute.
+
+</Step>
+
+</Steps>
+
+### Which brand a page shows
+
+A workspace's public pages show the first brand that is set:
+
+1. The workspace's own brand, from **Settings > Branding**.
+2. Its agency's brand, from **Agency > Branding**.
+3. The brand of the Warmbly instance itself.
+
+A workspace brand replaces the agency's as a whole: setting only a colour in a client workspace shows that colour with no logo, not the agency's logo in a new colour. **Use agency brand** removes the workspace's brand so it inherits again.
+
+The name follows the same rules as a workspace name: no links, web addresses or email addresses. A refused name answers `400` `invalid_name`.
+
+## Portal theme
+
+An agency's brand can carry a full theme on top of its name, logo and accent colour. Owners and admins set it under **Agency > Branding**. It styles the dashboard on your [portal domain](#the-dashboard-on-your-portal-domain) and its sign-in page, and the connect pages and reports of every client that shows your agency's brand.
+
+Every option is optional. Leave one unset and that part keeps its default look. The theme is part of the agency's brand only: a client workspace that sets a brand of its own under **Settings > Branding** shows that brand without your theme. It is included in every agency plan.
+
+### Colours, font and corners
+
+| Option | Choices | What it does |
+|---|---|---|
+| Accent colour | Any colour, as a hex value like `#0f766e` | Colours buttons, links and highlights. It is the same accent you set with your name and logo |
+| Font | Default, System, Geometric or Serif | **System** uses the font of the visitor's own device. **Geometric** is a clean, modern sans serif. **Serif** is a classic, editorial typeface |
+| Corners | Default, Sharp or Round | **Sharp** squares off buttons, fields and cards. **Round** makes them noticeably softer |
+| Default appearance | Light or Dark | The colour scheme a client sees first. Someone who picks light or dark for themselves in the dashboard keeps their own choice |
+
+### Tab icon
+
+Upload a square **Icon** (PNG, up to 1 MB and 512px on each side) to show in the browser tab. Without one, your logo is used there.
+
+### Sign-in page
+
+These options shape the page your clients sign in on when they [sign in on your portal domain](#where-clients-sign-in):
+
+| Option | Choices | What it does |
+|---|---|---|
+| Layout | Default, Split or Cover | The default is a centred card. **Split** puts a panel in your brand beside the sign-in form. **Cover** fills the whole page with a background and floats the form on top |
+| Background | Default, Accent, Dark or Image | What fills the panel or the page: a plain background, your accent colour, a dark tone, or your sign-in image |
+| Sign-in image | PNG or JPG, up to 4 MB and 2560px on each side | The picture the **Image** background shows. Until you upload one, **Image** shows your accent colour |
+| Heading | Up to 60 characters | A short line above the form, such as "Welcome back" |
+| Message | Up to 200 characters | A sentence or two under the heading |
+
+The heading and the message are plain text on one line. Like every name another person reads, they cannot contain links, web addresses, email addresses or markup such as `<` and `>`. Put an address in the support and legal links instead. A refused heading or message answers `400` `invalid_brand_text`, and the message says which one and why.
+
+### Support and legal links
+
+Give your clients somewhere to go for help and for your terms:
+
+- **Support email**: an address such as `help@youragency.com`.
+- **Support link**: a help page or contact form.
+- **Terms link** and **Privacy link**: your own terms of service and privacy policy.
+
+Each link is a full `https://` address. They are shown on your sign-in page and on your clients' connect pages and reports. A link that is not `https://`, or a support email that is not an email address, answers `400` `invalid_brand_link`.
+
+## Powered by
+
+Client pages end with a small "Powered by Warmbly" line. Removing it is part of full white-label:
+
+| Plan | Logo and colour | Own domain | Remove "Powered by" |
+|---|---|---|---|
+| Agency | Yes | Yes | No |
+| Agency Pro | Yes | Yes | Yes |
+| Agency Scale and Enterprise | Yes | Yes | Yes |
+| Self-hosted | Yes | Yes | Yes |
+
+A client workspace of an agency follows the agency's plan. Turning the switch on without the plan answers `403` `white_label_not_entitled`. If a plan changes later, the setting is kept but client pages show the line again until the plan includes it.
+
+A self-hosted instance that sets no `EMAIL_BRAND_*` website shows no "Powered by" line at all, so there is nothing to remove. See [configuration](/development/configuration/).
+
+## Your own domain
+
+Connect pages and shared reports are served by Warmbly's portal service. Without a domain of your own they live on the shared portal address: `portal.warmbly.com` on Warmbly Cloud, or the address a self-hosted instance set as `PORTAL_DOMAIN`.
+
+An agency can serve them on a subdomain it owns instead. Set a **Portal domain** under **Agency > Branding**, such as `portal.youragency.com`, and every client's connect links and reports are built on it. Form links are never built on it: they stay on the client's [forms domain](/guides/forms/#custom-domain) or the shared forms host. A workspace's forms domain serves that workspace's forms only, never its connect links or reports.
+
+Add the two records the page shows, then select **Save and verify**:
+
+| Type | Name | Value |
+|---|---|---|
+| CNAME | `portal.youragency.com` | the shared portal address: `portal.warmbly.com` on Warmbly Cloud (a self-hosted instance shows its own) |
+| TXT | `_warmbly.portal.youragency.com` | the `warmbly-verify=...` value the page shows |
+
+The TXT record is needed only the first time. Links keep working on the shared portal address until the records resolve, and Warmbly re-checks every hour.
+
+HTTPS is set up for you once the domain verifies. On Warmbly Cloud the certificate is issued through Cloudflare, usually within a few minutes. If Cloudflare needs one more proof of the domain first, the page lists a third record, a TXT at `_cf-custom-hostname.portal.youragency.com` (the API returns it in `portal_domain.edge_records`). Add it while it is listed; it goes away once the domain is live. A self-hosted instance obtains the certificate itself the first time the domain is opened.
+
+A portal domain serves only its own agency's clients. Another workspace's connect link or report on your domain answers "not found", and so does any of yours on another agency's domain. Every form answers "not found" there too, because form links are never built on it. The shared portal address serves any workspace's connect links and reports and nothing else: no dashboard and no forms.
+
+## The dashboard on your portal domain
+
+Once an agency's portal domain verifies, it also serves the full dashboard. Your clients sign in at `https://portal.youragency.com` and use the same dashboard as on Warmbly's address, in your brand:
+
+- your logo and name on the sign-in page, in the header and menu, in the browser tab title and as its icon, in your accent colour, and in your [portal theme](#portal-theme) when you set one
+- no Warmbly name or links, and a small "Powered by" line under the sign-in form only while your plan keeps it (see [Powered by](#powered-by))
+- the workspace picker lists only your client workspaces, plus the [agency view](/guides/agencies/#the-agency-view) for your staff, who land there when they sign in. Any other workspace a person belongs to is reachable on the main address
+- mailbox connections, integrations and single sign-on (Google, Apple or your identity provider) return to your domain when they finish
+
+Every sign-in step still asks for the same security check as the main address. Passkeys are bound to the address they were created on, so they are not offered on a portal domain: your clients sign in with their password and code, or single sign-on, and can use or add a passkey at the main address. Emailed invitations to one of your client workspaces link to your domain when they were sent from it; password reset emails always link to the main address.
+
+The main address keeps working for everyone, including your clients. A workspace's own forms domain serves its forms only, not the dashboard.
+
+### Where clients sign in
+
+Your domain is yours, which means the pages it serves are too. Under **Agency > Branding**, owners and admins choose where clients sign in:
+
+- **On your portal domain** (the default): the sign-in form is served from your domain, so it receives what your clients type there.
+- **On the main address**: the sign-in on your domain sends clients to a page on the main dashboard address that shows your brand. They sign in there, with the same security check, passkeys and single sign-on as anywhere else, and are returned to your domain already signed in. Someone already signed in on the main address sees **Continue as** with their address and clicks it to go on; nothing is handed to your domain before that click. A sign-in made only to reach your portal leaves no session behind on the main address. Password resets also happen on the main address, and sign-in requests sent from your domain are refused.
+
+The return to your domain carries a one-time code that works once, for 60 seconds, only on the portal it was issued for.
+
+Your domain offers no way to create an account. You invite clients to their workspace, and the link in the invitation is how an invited person sets up their account: on your domain, or on the main address when that is where your clients sign in, after which they are returned to you.
+
+Whichever you choose, a session that was signed in on your portal domain is held to your agency:
+
+- it opens only your current client workspaces and your agency's view, and its notifications, marking them read included, cover only those workspaces. Detaching a client takes it out of reach within a minute, live updates included
+- it cannot change how the account signs in or who can get in: password, two-factor, passkeys, linked sign-in methods and other sessions are managed on the main address, and so is deleting the account
+- it cannot create a workspace or an agency outside your agency, accept an invitation to a workspace that is not your client, approve an app, a CLI sign-in or a pool link, create workspace or agency API keys, or reach the admin panel
+
+Your staff are held the same way while they are signed in on your domain, which is why the agency view there shows only your agency. Anything else answers with a message naming the main address, where signing in again reaches everything the account can.
+
+## Embed on your website
+
+**Embed on your website** turns a connect link or a report link into code for your own site. Links are shown once when you create them, so paste the one you kept.
+
+The script embed resizes to fit its content:
+
+```html
+<script src="https://portal.youragency.com/embed.js" data-warmbly-report="REPORT_TOKEN" async></script>
+```
+
+Put `data-warmbly-connect="CONNECT_TOKEN"` on the tag instead for a connect page. The attributes also work on a `<div>`, with the script loaded once anywhere on the page. A plain iframe works too:
+
+```html
+<iframe src="https://portal.youragency.com/r/REPORT_TOKEN?embed=1" title="Report" style="width:100%;min-height:720px;border:0"></iframe>
+```
+
+After each mailbox connects, the page fires a `warmbly:connected` event on `document`, with the link's connected count in `detail.connected`.
+
+<Callout type="warn" title="The token is the key">
+A connect link or a report link needs no sign-in: its token is the whole authorisation. A report embedded on a public page can be read by anyone who visits it, and a connect page embedded on a public page lets anyone connect a mailbox while the link is live. Embed them on pages only your client can reach, and revoke a link to take it down everywhere at once.
+</Callout>
+
+Connect and report pages allow framing from any site. Forms keep their own **Embed allowlist**.
+
+## Your brand in the dashboard
+
+Who sees which brand in the dashboard header and menu, in its accent colour:
+
+- **Members of an agency client who are not agency staff** (the client's own team) see the workspace's brand, or the agency's when the workspace sets none. With neither set, they see the agency's name. The workspace menu says **Managed by** and the agency's name, and Warmbly's plan, trial, balance and release prompts are hidden, because the agency pays.
+- **A member restricted to selected campaigns and mailboxes** (see [access scope](/guides/team-roles/#access-scope)) sees the workspace's brand, or its agency's, when one is set, with the same prompts hidden. With no brand set, they see Warmbly.
+- **Agency staff** keep Warmbly's dashboard inside a client, with the agency's mark and a way back to the [agency view](/guides/agencies/#the-agency-view) at the left of the header.
+- **Everyone in a workspace outside any agency** sees Warmbly, unless they are restricted members of a branded workspace.
+- **On an agency's portal domain**, everyone sees the agency's brand, staff included. See [the dashboard on your portal domain](#the-dashboard-on-your-portal-domain).
+
+Names are shown as plain text and follow the same rules as workspace names.
+
+## Who can change it
+
+**Settings > Branding** needs the **Manage settings** permission; every member can see the brand. **Agency > Branding** needs an agency owner or admin; other agency staff can see it. Every change is recorded in the workspace's audit log and [refreshes teammates' screens live](/guides/collaboration/).
+
+## Data and portability
+
+A workspace's own brand and logo travel with a [workspace export](/guides/workspace-export-import/). An agency's brand, portal theme and portal domain stay on the instance, because the agency itself does, and so does a forms domain, which has to verify again on the new instance.

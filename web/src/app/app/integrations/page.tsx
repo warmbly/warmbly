@@ -29,6 +29,7 @@ import {
 import { Page, PageTopbar, TopbarAction } from "@/components/layout/Page";
 import { useSearchParams } from "@/hooks/useSearchParams";
 import ScrollStrip from "@/components/ui/scroll-strip";
+import HelpLink from "@/components/shared/HelpLink";
 import { useCommunityApps } from "@/lib/api/hooks/app/integrations/useCommunityApps";
 import useIntegrationCatalog from "@/lib/api/hooks/app/integrations/useIntegrationCatalog";
 import useIntegrationConnections from "@/lib/api/hooks/app/integrations/useIntegrationConnections";
@@ -650,15 +651,14 @@ function BuildView() {
                     </Link>
                 ))}
             </div>
-            <a
+            <HelpLink
                 href="https://docs.warmbly.com/api/oauth/"
-                target="_blank"
-                rel="noopener noreferrer"
                 className="self-start inline-flex items-center gap-1 text-[12px] text-slate-500 hover:text-sky-700"
+                portalLabel={<>Get help <ArrowRightIcon className="w-3 h-3" /></>}
             >
                 Developer docs
                 <ArrowRightIcon className="w-3 h-3" />
-            </a>
+            </HelpLink>
         </>
     );
 }

@@ -28,4 +28,8 @@ type Handler struct {
 	PoolLinkService poollink.Service
 	// NodeCredentials verifies a fleet node's own credential on the node-only routes; nil admits none.
 	NodeCredentials NodeCredentialVerifier
+	// AgencyKeys authenticates agency API keys; nil admits none.
+	AgencyKeys *apikey.AgencyKeyService
+	// PortalClients holds a portal session to its agency's clients; nil lets a portal session reach no workspace.
+	PortalClients PortalClients
 }

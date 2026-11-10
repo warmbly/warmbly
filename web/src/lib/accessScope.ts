@@ -10,6 +10,8 @@ const SCOPED_PREFIXES = [
     "/app/settings/profile",
     "/app/settings/notifications",
     "/app/settings/security",
+    // Agency pages read each client through the caller's own membership there, not the selected workspace.
+    "/app/agency",
 ];
 
 // Campaign tabs that read contacts, senders or settings outside a campaign's own data.

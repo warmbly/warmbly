@@ -7,7 +7,7 @@
 //   - 401 retried once after a refresh, then bubbles a SessionExpired
 //   - reauth_required opens the confirm-it-is-you dialog, then retries once
 
-import axios, { type AxiosRequestConfig } from "axios";
+import axios, { type AxiosError, type AxiosRequestConfig } from "axios";
 import { API_URL } from "@/lib/env";
 import { noteStep } from "@/lib/observability";
 import {
@@ -182,20 +182,31 @@ export async function Request<T>(config: AuthRequestConfig): Promise<T> {
                 typeof window !== "undefined"
             ) {
                 await promptForReauth();
-                const retry = await http.request<T>({ ...config, headers });
-                return retry.data;
+                try {
+                    const retry = await http.request<T>({ ...config, headers });
+                    return retry.data;
+                } catch (again) {
+                    // The confirmed retry can still be refused, with a message of its own.
+                    throw axios.isAxiosError(again) ? failureOf(config, again) : again;
+                }
             }
-            const failure = new APIError(
-                // message is the sentence written for people; error is only the HTTP title.
-                body.message || (typeof body.error === "string" ? body.error : "") || err.message || "Request failed",
-                status,
-                err.response?.data,
-            );
-            noteFailure(config, failure);
-            throw failure;
+            throw failureOf(config, err);
         }
         throw err;
     }
+}
+
+// failureOf turns a refused call into the APIError pages show, and leaves it on the trail.
+function failureOf(config: AuthRequestConfig, err: AxiosError): APIError {
+    const body = (err.response?.data ?? {}) as { error?: string; message?: string };
+    const failure = new APIError(
+        // message is the sentence written for people; error is only the HTTP title.
+        body.message || (typeof body.error === "string" ? body.error : "") || err.message || "Request failed",
+        err.response?.status ?? 0,
+        err.response?.data,
+    );
+    noteFailure(config, failure);
+    return failure;
 }
 
 // noteFailure leaves the failed call on the trail the next exception carries.

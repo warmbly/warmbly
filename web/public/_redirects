@@ -20,5 +20,7 @@
 /cloud-oauth/done  /  200
 /oauth-return  /  200
 /reauth/complete  /  200
+/portal/sign-in  /  200
+/portal/return  /  200
 /slack/link  /  200
 /setup  /  200

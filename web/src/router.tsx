@@ -21,6 +21,8 @@ import { bootDashboard, requireDashboardToken } from "./lib/boot";
 import { queryClient } from "./lib/queryClient";
 import { parseSearch, stringifySearch, type SearchParams } from "./lib/routerSearch";
 import { acquisitionSearch } from "./lib/acquisition";
+import { currentPortal, mainSignInURL, resolvePortal, signsInOnMain } from "./lib/portal";
+import { API_BASE_URL, APP_URL } from "./lib/information";
 import * as loaders from "./routeLoaders";
 import type { PageLoader } from "./routeLoaders";
 
@@ -67,6 +69,8 @@ export const dashboardPages = {
     campaignSchedule: () => import("./app/app/campaigns/[id]/schedule/page"),
     campaignSteps: () => import("./app/app/campaigns/[id]/steps/page"),
     analytics: () => import("./app/app/analytics/page"),
+    reports: () => import("./app/app/reports/page"),
+    report: () => import("./app/app/reports/[id]/page"),
     deliverability: () => import("./app/app/deliverability/page"),
     placement: () => import("./app/app/placement/page"),
     placementTest: () => import("./app/app/placement/[id]/page"),
@@ -99,6 +103,7 @@ export const dashboardPages = {
     limits: () => import("./app/app/settings/limits/page"),
     sending: () => import("./app/app/settings/sending/page"),
     tracking: () => import("./app/app/settings/tracking/page"),
+    branding: () => import("./app/app/settings/branding/page"),
     inboxTagging: () => import("./app/app/settings/inbox-tagging/page"),
     roles: () => import("./app/app/settings/roles/page"),
     warmblyCloud: () => import("./app/app/settings/warmbly-cloud/page"),
@@ -108,6 +113,14 @@ export const dashboardPages = {
     connections: () => import("./app/app/settings/connections/page"),
     data: () => import("./app/app/settings/data/page"),
     danger: () => import("./app/app/settings/danger/page"),
+    agencyHome: () => import("./app/app/agency/page"),
+    agencyInbox: () => import("./app/app/agency/inbox/page"),
+    agencyClients: () => import("./app/app/agency/clients/page"),
+    agencyStaff: () => import("./app/app/agency/staff/page"),
+    agencyUsage: () => import("./app/app/agency/usage/page"),
+    agencyBilling: () => import("./app/app/agency/billing/page"),
+    agencyBranding: () => import("./app/app/agency/branding/page"),
+    agencyAPIKeys: () => import("./app/app/agency/api-keys/page"),
     notFound: () => import("./app/app/not-found"),
 };
 
@@ -116,6 +129,10 @@ const page = (load: () => Promise<{ default: React.ComponentType }>) => lazyRout
 // The query string is kept as plain strings, so every link already in the
 // wild (emails, Slack, bookmarks) keeps resolving.
 const rootRoute = createRootRouteWithContext<RouterContext>()({
+    // Every page knows whether it is on an agency's portal domain before it renders.
+    beforeLoad: async () => {
+        await resolvePortal(APP_URL, API_BASE_URL);
+    },
     component: RootLayout,
     pendingComponent: BlankPending,
     notFoundComponent: NotFound,
@@ -154,9 +171,25 @@ const authRoute = createRoute({
     pendingComponent: BlankPending,
     component: lazyRouteComponent(() => import("./app/auth/layout")),
 });
+// A portal whose agency signs clients in on the main address sends its sign-in there.
+async function signInOnMain() {
+    const portal = currentPortal();
+    if (typeof window === "undefined" || !signsInOnMain(portal)) return;
+    window.location.replace(mainSignInURL(portal, window.location.host));
+    await new Promise<never>(() => {});
+}
 const loginLayout = lazyRouteComponent(() => import("./app/auth/login/layout"));
 const loginPage = lazyRouteComponent(() => import("./app/auth/login/page"));
-const registerRoute = createRoute({ getParentRoute: () => authRoute, path: "register", component: loginLayout });
+// There, an invited person sets up their account on the main address too, and is then handed to the portal.
+async function registerOnMain({ location }: { location: { searchStr: string } }) {
+    const portal = currentPortal();
+    if (typeof window === "undefined" || !portal.portal || !signsInOnMain(portal)) return;
+    const params = new URLSearchParams(location.searchStr);
+    params.set("portal", window.location.host);
+    window.location.replace(`${portal.main_url}/auth/register?${params}`);
+    await new Promise<never>(() => {});
+}
+const registerRoute = createRoute({ getParentRoute: () => authRoute, path: "register", component: loginLayout, beforeLoad: registerOnMain });
 const registerIndex = createRoute({
     getParentRoute: () => registerRoute,
     path: "/",
@@ -165,7 +198,7 @@ const registerIndex = createRoute({
 });
 // The code step is part of the sign-in and sign-up pages; these paths only forward there.
 const registerConfirm = forward(registerRoute, "confirm", "/auth/register");
-const loginRoute = createRoute({ getParentRoute: () => authRoute, path: "login", component: loginLayout });
+const loginRoute = createRoute({ getParentRoute: () => authRoute, path: "login", component: loginLayout, beforeLoad: signInOnMain });
 const loginIndex = createRoute({
     getParentRoute: () => loginRoute,
     path: "/",
@@ -184,6 +217,13 @@ const resetRoute = createRoute({
     getParentRoute: () => authRoute,
     path: "reset-password",
     component: lazyRouteComponent(() => import("./app/auth/reset-password/layout")),
+    // Such a portal never takes a password, a new one included.
+    beforeLoad: async ({ location }) => {
+        const portal = currentPortal();
+        if (typeof window === "undefined" || !portal.portal || !signsInOnMain(portal)) return;
+        window.location.replace(portal.main_url + location.pathname + location.searchStr);
+        await new Promise<never>(() => {});
+    },
 });
 const resetIndex = createRoute({
     getParentRoute: () => resetRoute,
@@ -228,6 +268,9 @@ const connectRoute = standalone("connect", () => import("./app/connect/page"), "
 const cliRoute = standalone("cli", () => import("./app/cli/page"), "Authorize CLI");
 // Where a "confirm it is you" provider window reports back to the dashboard tab.
 const reauthCompleteRoute = standalone("reauth/complete", () => import("./app/reauth/complete/page"), "Confirm it is you");
+// The main address's sign-in for an agency portal, and the portal page that takes its one-time code.
+const portalSignInRoute = standalone("portal/sign-in", () => import("./app/portal/sign-in/page"), "Sign in");
+const portalReturnRoute = standalone("portal/return", () => import("./app/portal/return/page"), "Signing you in");
 // Where Warmbly Cloud sends the Google/Microsoft popup back to on a linked instance.
 const cloudOAuthDoneRoute = standalone("cloud-oauth/done", () => import("./app/cloud-oauth/done/page"), "Mailbox connected");
 // Where a sign-in window without an opener hands its result to the waiting dashboard tab.
@@ -311,6 +354,9 @@ const campaignSchedule = dash(campaignRoute, "schedule", dashboardPages.campaign
 const campaignSteps = dash(campaignRoute, "steps", dashboardPages.campaignSteps, "Campaign steps", loaders.campaignStepsLoader);
 
 const analyticsRoute = dash(appRoute, "analytics", dashboardPages.analytics, "Analytics", loaders.analyticsLoader);
+const reportsRoute = createRoute({ getParentRoute: () => appRoute, path: "reports" });
+const reportsIndex = dash(reportsRoute, "/", dashboardPages.reports, "Reports", loaders.reportsLoader);
+const reportRoute = dash(reportsRoute, "$id", dashboardPages.report, "Report", loaders.reportLoader);
 const deliverabilityRoute = dash(appRoute, "deliverability", dashboardPages.deliverability, "Deliverability", loaders.deliverabilityLoader);
 
 const placementRoute = createRoute({ getParentRoute: () => appRoute, path: "placement" });
@@ -373,6 +419,7 @@ const settingsChildren = [
     dash(settingsRoute, "limits", dashboardPages.limits, "Plan & limits"),
     dash(settingsRoute, "sending", dashboardPages.sending, "Sending"),
     dash(settingsRoute, "tracking", dashboardPages.tracking, "Website tracking"),
+    dash(settingsRoute, "branding", dashboardPages.branding, "Branding", loaders.brandingLoader),
     dash(settingsRoute, "inbox-tagging", dashboardPages.inboxTagging, "Automatic inbox tagging"),
     dash(settingsRoute, "roles", dashboardPages.roles, "Roles", loaders.rolesLoader),
     dash(settingsRoute, "warmbly-cloud", dashboardPages.warmblyCloud, "Warmbly Cloud"),
@@ -385,6 +432,29 @@ const settingsChildren = [
 ] as const;
 // Legacy /app/billing entry points.
 const billingLegacy = forward(appRoute, "billing", "/app/settings/billing");
+
+// Agency: its own view, outside any one workspace (AgencyShell).
+const agencyRoute = createRoute({ getParentRoute: () => appRoute, path: "agency" });
+const agencyChildren = [
+    dash(agencyRoute, "/", dashboardPages.agencyHome, "Agency", loaders.agencyLoader),
+    dash(agencyRoute, "inbox", dashboardPages.agencyInbox, "Agency inbox", loaders.agencyInboxLoader),
+    dash(agencyRoute, "clients", dashboardPages.agencyClients, "Agency clients", loaders.agencyClientsLoader),
+    dash(agencyRoute, "usage", dashboardPages.agencyUsage, "Agency usage", loaders.agencyUsageLoader),
+    dash(agencyRoute, "billing", dashboardPages.agencyBilling, "Agency billing", loaders.agencyBillingLoader),
+    dash(agencyRoute, "staff", dashboardPages.agencyStaff, "Agency staff", loaders.agencyStaffLoader),
+    dash(agencyRoute, "branding", dashboardPages.agencyBranding, "Agency branding", loaders.agencyBrandingLoader),
+    dash(agencyRoute, "api-keys", dashboardPages.agencyAPIKeys, "Agency API keys", loaders.agencyAPIKeysLoader),
+] as const;
+// The pages used to be tabs under /app/agency/settings; links to those keep working.
+const agencySettingsRoute = createRoute({ getParentRoute: () => agencyRoute, path: "settings" });
+const agencySettingsChildren = [
+    forward(agencySettingsRoute, "/", "/app/agency/clients"),
+    forward(agencySettingsRoute, "clients", "/app/agency/clients", true),
+    forward(agencySettingsRoute, "staff", "/app/agency/staff", true),
+    forward(agencySettingsRoute, "usage", "/app/agency/usage", true),
+    forward(agencySettingsRoute, "billing", "/app/agency/billing", true),
+    forward(agencySettingsRoute, "branding", "/app/agency/branding", true),
+] as const;
 
 // Scope and thread are state inside one page, so the list keeps its scroll offset when a thread opens (issue #396).
 const uniboxRoute = createRoute({
@@ -414,6 +484,8 @@ const routeTree = rootRoute.addChildren([
     cloudOAuthDoneRoute,
     oauthReturnRoute,
     reauthCompleteRoute,
+    portalSignInRoute,
+    portalReturnRoute,
     setupRoute,
     oauthRoute.addChildren([oauthAuthorize]),
     appRoute.addChildren([
@@ -432,6 +504,7 @@ const routeTree = rootRoute.addChildren([
             campaignRoute.addChildren([campaignIndex, campaignLeads, campaignPreferences, campaignSchedule, campaignSteps]),
         ]),
         analyticsRoute,
+        reportsRoute.addChildren([reportsIndex, reportRoute]),
         deliverabilityRoute,
         placementRoute.addChildren([placementIndex, placementBatch, placementTest]),
         crmRoute.addChildren([crmIndex, pipelinesRoute, dealsRoute, tasksRoute, meetingsRoute]),
@@ -452,6 +525,7 @@ const routeTree = rootRoute.addChildren([
         slackRoute,
         settingsRoute.addChildren(settingsChildren),
         billingLegacy,
+        agencyRoute.addChildren([...agencyChildren, agencySettingsRoute.addChildren(agencySettingsChildren)]),
         uniboxRoute,
         teamLegacy,
     ]),

@@ -88,7 +88,7 @@ func (r *planRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Pla
 		SELECT p.id, p.name, p.max_contacts, p.daily_emails, p.ai_generation, p.account_limit,
 			   p.price, p.price_yearly, p.discounted_price, d.title, p.savings, p.public,
 			   p.stripe_price_id, p.stripe_price_id_yearly, p.stripe_product_id, p.dedicated_workers, p.daily_campaign_limit,
-			   p.monthly_allowance_micro, p.referral_reward_percent, p.created_at, p.updated_at
+			   p.monthly_allowance_micro, p.referral_reward_percent, p.monthly_send_pool, p.agency_ai_allowance_micro, p.created_at, p.updated_at
 		FROM plans p
 		LEFT JOIN durations d ON d.id = p.duration_id
 		WHERE p.id = $1
@@ -100,7 +100,7 @@ func (r *planRepository) GetByStripePriceID(ctx context.Context, priceID string)
 		SELECT p.id, p.name, p.max_contacts, p.daily_emails, p.ai_generation, p.account_limit,
 			   p.price, p.price_yearly, p.discounted_price, d.title, p.savings, p.public,
 			   p.stripe_price_id, p.stripe_price_id_yearly, p.stripe_product_id, p.dedicated_workers, p.daily_campaign_limit,
-			   p.monthly_allowance_micro, p.referral_reward_percent, p.created_at, p.updated_at
+			   p.monthly_allowance_micro, p.referral_reward_percent, p.monthly_send_pool, p.agency_ai_allowance_micro, p.created_at, p.updated_at
 		FROM plans p
 		LEFT JOIN durations d ON d.id = p.duration_id
 		WHERE p.stripe_price_id = $1 OR p.stripe_price_id_yearly = $1
@@ -112,7 +112,7 @@ func (r *planRepository) GetByStripeProductID(ctx context.Context, productID str
 		SELECT p.id, p.name, p.max_contacts, p.daily_emails, p.ai_generation, p.account_limit,
 			   p.price, p.price_yearly, p.discounted_price, d.title, p.savings, p.public,
 			   p.stripe_price_id, p.stripe_price_id_yearly, p.stripe_product_id, p.dedicated_workers, p.daily_campaign_limit,
-			   p.monthly_allowance_micro, p.referral_reward_percent, p.created_at, p.updated_at
+			   p.monthly_allowance_micro, p.referral_reward_percent, p.monthly_send_pool, p.agency_ai_allowance_micro, p.created_at, p.updated_at
 		FROM plans p
 		LEFT JOIN durations d ON d.id = p.duration_id
 		WHERE p.stripe_product_id = $1
@@ -129,7 +129,7 @@ func (r *planRepository) scanPlan(ctx context.Context, query string, args ...int
 		&plan.ID, &plan.Name, &plan.MaxContacts, &plan.DailyEmails, &plan.AIGeneration, &plan.AccountLimit,
 		&plan.Price, &plan.PriceYearly, &plan.DiscountedPrice, &duration, &plan.Savings, &plan.Public,
 		&plan.StripePriceID, &plan.StripePriceIDYearly, &plan.StripeProductID, &plan.DedicatedWorkers, &plan.DailyCampaignLimit,
-		&allowance, &plan.ReferralRewardPercent, &plan.CreatedAt, &plan.UpdatedAt,
+		&allowance, &plan.ReferralRewardPercent, &plan.MonthlySendPool, &plan.AgencyAIAllowance, &plan.CreatedAt, &plan.UpdatedAt,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -142,6 +142,7 @@ func (r *planRepository) scanPlan(ctx context.Context, query string, args ...int
 		plan.Duration = models.Duration(*duration)
 	}
 	plan.MonthlyAllowanceUSD, plan.MonthlyCredits = allowance.USD(), models.CreditsFromMicro(allowance)
+	plan.AgencyAIAllowanceUSD = agencyAIAllowanceUSD(plan.AgencyAIAllowance)
 	return &plan, nil
 }
 
@@ -150,7 +151,7 @@ func (r *planRepository) List(ctx context.Context, publicOnly bool) ([]*models.P
 		SELECT p.id, p.name, p.max_contacts, p.daily_emails, p.ai_generation, p.account_limit,
 			   p.price, p.price_yearly, p.discounted_price, d.title, p.savings, p.public,
 			   p.stripe_price_id, p.stripe_price_id_yearly, p.stripe_product_id, p.dedicated_workers, p.daily_campaign_limit,
-			   p.monthly_allowance_micro, p.referral_reward_percent, p.created_at, p.updated_at
+			   p.monthly_allowance_micro, p.referral_reward_percent, p.monthly_send_pool, p.agency_ai_allowance_micro, p.created_at, p.updated_at
 		FROM plans p
 		LEFT JOIN durations d ON d.id = p.duration_id
 	`
@@ -174,7 +175,7 @@ func (r *planRepository) List(ctx context.Context, publicOnly bool) ([]*models.P
 			&plan.ID, &plan.Name, &plan.MaxContacts, &plan.DailyEmails, &plan.AIGeneration, &plan.AccountLimit,
 			&plan.Price, &plan.PriceYearly, &plan.DiscountedPrice, &duration, &plan.Savings, &plan.Public,
 			&plan.StripePriceID, &plan.StripePriceIDYearly, &plan.StripeProductID, &plan.DedicatedWorkers, &plan.DailyCampaignLimit,
-			&allowance, &plan.ReferralRewardPercent, &plan.CreatedAt, &plan.UpdatedAt,
+			&allowance, &plan.ReferralRewardPercent, &plan.MonthlySendPool, &plan.AgencyAIAllowance, &plan.CreatedAt, &plan.UpdatedAt,
 		)
 		if err != nil {
 			return nil, err
@@ -183,6 +184,7 @@ func (r *planRepository) List(ctx context.Context, publicOnly bool) ([]*models.P
 			plan.Duration = models.Duration(*duration)
 		}
 		plan.MonthlyAllowanceUSD, plan.MonthlyCredits = allowance.USD(), models.CreditsFromMicro(allowance)
+		plan.AgencyAIAllowanceUSD = agencyAIAllowanceUSD(plan.AgencyAIAllowance)
 		plans = append(plans, &plan)
 	}
 	return plans, nil
@@ -244,4 +246,12 @@ func (r *planRepository) SetRateLimits(ctx context.Context, limits *models.PlanR
 		now, now,
 	)
 	return err
+}
+
+func agencyAIAllowanceUSD(m *models.Micro) *float64 {
+	if m == nil {
+		return nil
+	}
+	v := m.USD()
+	return &v
 }

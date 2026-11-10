@@ -41,15 +41,16 @@ jobs:
           echo "minor=$(echo "$VERSION" | cut -d. -f1-2)" >> $GITHUB_OUTPUT
           echo "Release version: ${VERSION}"
 
-  # Go services: the Dockerfiles build on $BUILDPLATFORM and cross-compile to
-  # each target arch, so one amd64 runner produces both platforms without QEMU.
+  # Go services, and the portal: the Dockerfiles build on $BUILDPLATFORM and
+  # cross-compile or download for each target arch, so one amd64 runner
+  # produces both platforms without QEMU.
   build-go:
     name: Build ${{ matrix.service }}
     needs: validate-tag
     strategy:
       fail-fast: false
       matrix:
-        service: [backend, consumer, worker, forms, updater, cli]
+        service: [backend, consumer, worker, forms, portal, updater, cli]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -395,7 +396,7 @@ jobs:
         run: |
           set -euo pipefail
           ./scripts/check-images-public.sh --prefix "$IMAGE_PREFIX" --tag "$TAG" \
-            backend consumer worker forms updater web admin tracking realtime \
+            backend consumer worker forms portal updater web admin tracking realtime \
             | grep -E '^[a-z]+[[:space:]]+sha256:' > /tmp/digests.tsv
           # The Kafka builds the hosted deploy and its fleet run, keyed <svc>-kafka.
           ./scripts/check-images-public.sh --prefix "$IMAGE_PREFIX" --tag "$TAG-kafka" \
@@ -416,10 +417,10 @@ jobs:
             printf '\n  }\n}\n'
           } > /tmp/images.json
           cat /tmp/images.json
-          # Nine services in, nine digests out, or the manifest is incomplete
+          # Ten services in, ten digests out, or the manifest is incomplete
           # and the installer would silently skip whatever is missing.
-          [ "$(wc -l < /tmp/digests.tsv)" -eq 9 ] || {
-            echo "::error::expected 9 image digests, got $(wc -l < /tmp/digests.tsv)"; exit 1; }
+          [ "$(wc -l < /tmp/digests.tsv)" -eq 10 ] || {
+            echo "::error::expected 10 image digests, got $(wc -l < /tmp/digests.tsv)"; exit 1; }
           [ "$(wc -l < /tmp/digests-kafka.tsv)" -eq 4 ] || {
             echo "::error::expected 4 Kafka image digests, got $(wc -l < /tmp/digests-kafka.tsv)"; exit 1; }
 
@@ -481,6 +482,7 @@ jobs:
           | Dashboard (web) | `${{ env.IMAGE_PREFIX }}/web:${{ github.ref_name }}` |
           | Admin | `${{ env.IMAGE_PREFIX }}/admin:${{ github.ref_name }}` |
           | Forms | `${{ env.IMAGE_PREFIX }}/forms:${{ github.ref_name }}` |
+          | Portal | `${{ env.IMAGE_PREFIX }}/portal:${{ github.ref_name }}` |
           | Updater | `${{ env.IMAGE_PREFIX }}/updater:${{ github.ref_name }}` |
           | CLI | `${{ env.IMAGE_PREFIX }}/cli:${{ github.ref_name }}` |
 

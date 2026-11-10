@@ -1,0 +1,324 @@
+/* Page chrome and theme tokens shared by the connect page and the report; each page styles itself in its own file.
+   A brand's theme reaches CSS two ways only: data attributes on <html> that select a fixed font, corner scale and
+   palette here, and the --pt-l-* and --pt-d-* colours look.ts derives from the accent (theme.ts). */
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+html,
+body {
+    margin: 0;
+    padding: 0;
+}
+
+:root {
+    /* Light palette. theme.ts mirrors --pt-page, --pt-card and --pt-ink to pick readable accent tones. */
+    --pt-page: #f6f7f9;
+    --pt-card: #ffffff;
+    --pt-raised: #f8fafc;
+    --pt-field: #ffffff;
+    --pt-ink: #0f172a;
+    --pt-ink-2: #334155;
+    --pt-muted: #5b6a7f;
+    --pt-line: #e2e8f0;
+    --pt-line-strong: #cbd5e1;
+    --pt-line-soft: #f1f5f9;
+    --pt-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 14px 34px -20px rgba(15, 23, 42, 0.28);
+    --pt-sk: #e9edf2;
+    --pt-sk-hi: #f4f6f9;
+
+    --pt-ok: #047857;
+    --pt-ok-soft: #ecfdf5;
+    --pt-ok-line: #a7f3d0;
+    --pt-danger: #b91c1c;
+    --pt-danger-soft: #fef2f2;
+    --pt-danger-line: #fecaca;
+    --pt-dot-ok: #10b981;
+    --pt-dot-warn: #f59e0b;
+    --pt-dot-bad: #ef4444;
+
+    --pt-tip: #0f172a;
+    --pt-tip-ink: #ffffff;
+    --pt-tip-muted: #cbd5e1;
+    --pt-tip-line: transparent;
+
+    /* Accent tones: the fallbacks are the default accent's, for a page drawn before look.ts ran. */
+    --pt-accent: var(--pt-l-accent, #0279b7);
+    --pt-accent-hover: var(--pt-l-accent-hover, #02689d);
+    --pt-on-accent: var(--pt-l-on-accent, #ffffff);
+    --pt-accent-edge: var(--pt-l-accent-edge, #0279b7);
+    --pt-link: var(--pt-l-link, #0473ae);
+    --pt-soft: var(--pt-l-soft, #ebf5fb);
+    --pt-halo: var(--pt-l-halo, #c2e1f2);
+    --pt-ring: var(--pt-l-ring, #0284c7);
+    --pt-chart: var(--pt-l-chart, #0284c7);
+
+    /* Font: "" keeps the default stack. */
+    --pt-font: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --pt-size: 14px;
+    --pt-tight: -0.015em;
+
+    /* Corners: one scale, re-pointed by data-corners. connect.css and report.css name their own radii from it. */
+    --pt-r-1: 4px;
+    --pt-r-2: 7px;
+    --pt-r-3: 10px;
+    --pt-r-4: 14px;
+    --pt-r-button: 7px;
+    --pt-r-pill: 999px;
+}
+
+:root[data-font="system"] {
+    --pt-font: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+:root[data-font="geometric"] {
+    --pt-font: "Manrope Variable", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --pt-tight: -0.02em;
+}
+:root[data-font="serif"] {
+    --pt-font: "Source Serif 4 Variable", "Iowan Old Style", "Palatino Linotype", Georgia, "Times New Roman", serif;
+    --pt-size: 15px;
+    --pt-tight: -0.005em;
+}
+
+:root[data-corners="sharp"] {
+    --pt-r-1: 0px;
+    --pt-r-2: 0px;
+    --pt-r-3: 0px;
+    --pt-r-4: 0px;
+    --pt-r-button: 0px;
+    --pt-r-pill: 0px;
+}
+:root[data-corners="round"] {
+    --pt-r-1: 8px;
+    --pt-r-2: 12px;
+    --pt-r-3: 16px;
+    --pt-r-4: 22px;
+    --pt-r-button: 999px;
+}
+
+/* Dark is a screen palette: paper always gets the light one above. */
+@media screen {
+    :root[data-appearance="dark"] {
+        --pt-page: #0b0f17;
+        --pt-card: #131923;
+        --pt-raised: #1a2230;
+        --pt-field: #0e131c;
+        --pt-ink: #e8ecf3;
+        --pt-ink-2: #c3cad6;
+        --pt-muted: #94a0b3;
+        --pt-line: #253042;
+        --pt-line-strong: #354257;
+        --pt-line-soft: #1c2532;
+        --pt-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 18px 40px -22px rgba(0, 0, 0, 0.7);
+        --pt-sk: #1a2230;
+        --pt-sk-hi: #232d3d;
+
+        --pt-ok: #6ee7b7;
+        --pt-ok-soft: #0c2a22;
+        --pt-ok-line: #1c4a3c;
+        --pt-danger: #fca5a5;
+        --pt-danger-soft: #2a1215;
+        --pt-danger-line: #5b2126;
+
+        --pt-tip: #232d3d;
+        --pt-tip-ink: #e8ecf3;
+        --pt-tip-muted: #94a0b3;
+        --pt-tip-line: #354257;
+
+        --pt-accent: var(--pt-d-accent, #0279b7);
+        --pt-accent-hover: var(--pt-d-accent-hover, #02689d);
+        --pt-on-accent: var(--pt-d-on-accent, #ffffff);
+        --pt-accent-edge: var(--pt-d-accent-edge, #0279b7);
+        --pt-link: var(--pt-d-link, #3099d0);
+        --pt-soft: var(--pt-d-soft, #102a3d);
+        --pt-halo: var(--pt-d-halo, #0d405e);
+        --pt-ring: var(--pt-d-ring, #0284c7);
+        --pt-chart: var(--pt-d-chart, #0284c7);
+    }
+    /* Native controls and scrollbars follow. Never on the root of an embedded page: a frame whose scheme differs
+       from its host's is given an opaque backdrop, and the embed is meant to be see-through. */
+    :root[data-appearance="dark"]:not([data-embed]),
+    :root[data-appearance="dark"] body {
+        color-scheme: dark;
+    }
+}
+
+body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    background: var(--pt-page);
+    color: var(--pt-ink);
+    font-family: var(--pt-font);
+    font-size: var(--pt-size);
+    line-height: 1.5;
+}
+/* Embedded: the host page owns the backdrop. */
+body.embed {
+    background: transparent;
+}
+
+:where(a, button, select, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--pt-ring);
+    outline-offset: 2px;
+}
+
+.pt-icon {
+    width: 1.15em;
+    height: 1.15em;
+    flex: none;
+}
+.pt-sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* The agency's mark. */
+.pt-mark {
+    display: inline-flex;
+    align-items: center;
+    color: inherit;
+    text-decoration: none;
+    border-radius: var(--pt-r-1);
+}
+.pt-logo {
+    display: block;
+    max-width: 100%;
+    object-fit: contain;
+}
+.pt-brandname {
+    font-weight: 650;
+    letter-spacing: var(--pt-tight);
+    overflow-wrap: anywhere;
+}
+
+/* The footer both pages end with. */
+.pt-foot {
+    color: var(--pt-muted);
+    font-size: 0.8rem;
+    line-height: 1.6;
+}
+.pt-foot p {
+    margin: 0;
+}
+.pt-foot-help {
+    color: var(--pt-ink-2);
+}
+.pt-foot-help + .pt-foot-meta {
+    margin-top: 0.15rem;
+}
+.pt-foot a {
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-color: var(--pt-line-strong);
+    text-underline-offset: 3px;
+    border-radius: 2px;
+    overflow-wrap: anywhere;
+}
+.pt-foot a:hover {
+    color: var(--pt-ink);
+    text-decoration-color: currentColor;
+}
+.pt-foot-help a {
+    color: var(--pt-link);
+    font-weight: 550;
+    text-decoration-color: transparent;
+}
+.pt-foot-help a:hover {
+    color: var(--pt-link);
+}
+/* Loading placeholders. */
+.pt-sk {
+    display: block;
+    border-radius: var(--pt-r-1);
+    background: linear-gradient(90deg, var(--pt-sk) 25%, var(--pt-sk-hi) 40%, var(--pt-sk) 60%);
+    background-size: 300% 100%;
+    animation: pt-shimmer 1.6s ease-in-out infinite;
+}
+@keyframes pt-shimmer {
+    from {
+        background-position: 100% 0;
+    }
+    to {
+        background-position: 0 0;
+    }
+}
+
+/* Terminal states: nothing here, a stale tab, a report that is gone or down. */
+.plain {
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1.25rem 14vh;
+    text-align: center;
+}
+body.embed .plain {
+    min-height: 0;
+    padding: 2.5rem 1.25rem;
+}
+.plain-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    margin-bottom: 1rem;
+    border: 1px solid var(--pt-line);
+    border-radius: var(--pt-r-pill);
+    background: var(--pt-card);
+    color: var(--pt-muted);
+    font-size: 1.2rem;
+}
+.plain h1 {
+    max-width: 26rem;
+    margin: 0 0 0.4rem;
+    font-size: 1.2rem;
+    line-height: 1.3;
+    font-weight: 650;
+    letter-spacing: var(--pt-tight);
+}
+.plain p {
+    max-width: 24rem;
+    margin: 0;
+    color: var(--pt-muted);
+    font-size: 0.95rem;
+    line-height: 1.55;
+}
+.plain button {
+    margin-top: 1.25rem;
+    min-height: 2.5rem;
+    padding: 0 1.15rem;
+    border: 1px solid var(--pt-accent-edge);
+    border-radius: var(--pt-r-button);
+    background: var(--pt-accent);
+    color: var(--pt-on-accent);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.15s;
+}
+.plain button:hover {
+    background: var(--pt-accent-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}

@@ -7,6 +7,7 @@
 //   GET    /me/danger-zone
 //   POST   /me/danger-zone/delete
 //   DELETE /me/danger-zone/delete
+//   POST   /organization/agency/leave
 //
 // The "delete" actions don't actually delete anything immediately —
 // they mark the resource pending deletion for the configured grace
@@ -15,9 +16,17 @@
 
 import React from "react";
 import { TrashIcon } from "lucide-react";
+import toast from "react-hot-toast/headless";
 import useFeatureAccess from "@/hooks/useFeatureAccess";
+import { useConfirm } from "@/hooks/context/confirm";
+import useCurrentOrganization from "@/lib/api/hooks/app/organizations/useCurrentOrganization";
+import useLeaveAgency from "@/lib/api/hooks/app/organizations/useLeaveAgency";
+import type { AppError } from "@/lib/api/client/normalizeError";
+import buildError from "@/lib/helper/buildError";
 import useOrganizationDangerZone from "@/lib/api/hooks/app/dangerzone/useOrganizationDangerZone";
 import useAccountDangerZone from "@/lib/api/hooks/app/dangerzone/useAccountDangerZone";
+import PortalAccountNote from "@/components/shared/PortalAccountNote";
+import { currentPortal } from "@/lib/portal";
 import useScheduleOrganizationDeletion from "@/lib/api/hooks/app/dangerzone/useScheduleOrganizationDeletion";
 import useCancelOrganizationDeletion from "@/lib/api/hooks/app/dangerzone/useCancelOrganizationDeletion";
 import useScheduleAccountDeletion from "@/lib/api/hooks/app/dangerzone/useScheduleAccountDeletion";
@@ -30,7 +39,9 @@ export default function DangerSettingsPage() {
     const access = useFeatureAccess();
 
     const orgDanger = useOrganizationDangerZone();
-    const accountDanger = useAccountDangerZone();
+    // A portal session cannot delete the account; that is done on the main address.
+    const onPortal = currentPortal().portal;
+    const accountDanger = useAccountDangerZone(!onPortal);
 
     const scheduleOrg = useScheduleOrganizationDeletion();
     const cancelOrg = useCancelOrganizationDeletion();
@@ -43,6 +54,26 @@ export default function DangerSettingsPage() {
     const orgPending = orgDanger.data?.pending_deletion;
     const accPending = accountDanger.data?.pending_deletion;
 
+    const agency = useCurrentOrganization().data?.agency;
+    const leaveAgency = useLeaveAgency();
+    const confirm = useConfirm();
+    const askLeaveAgency = () => {
+        if (!agency) return;
+        confirm.show(
+            `Take this workspace out of ${agency.name}? It keeps its data and the members it added itself. It loses the agency's plan, its campaigns stop counting toward the agency's send pool, and people the agency added lose access.`,
+            async () => {
+                try {
+                    await leaveAgency.mutateAsync();
+                    toast.success(`Left ${agency.name}`);
+                } catch (err) {
+                    toast.error(buildError(err as AppError));
+                }
+            },
+            undefined,
+            { title: "Leave agency", confirmLabel: "Leave agency" },
+        );
+    };
+
     return (
         <SectionShell
             title="Danger zone"
@@ -52,7 +83,9 @@ export default function DangerSettingsPage() {
                 eyebrow="Account"
                 description="Affects you across every workspace."
             >
-                {accPending ? (
+                {onPortal ? (
+                    <PortalAccountNote what="Delete your account" />
+                ) : accPending ? (
                     <PendingDeletionBanner
                         title="Your account is scheduled for deletion"
                         deletion={accPending}
@@ -89,6 +122,26 @@ export default function DangerSettingsPage() {
                     />
                 )}
             </Section>
+
+            {agency && (
+                <Section
+                    eyebrow="Agency"
+                    description={`This workspace is a client of ${agency.name}.`}
+                >
+                    <DangerRow
+                        title="Leave agency"
+                        body="Take this workspace out of its agency. It goes back to its own plan, and the agency's staff lose the access the agency gave them."
+                        cta="Leave agency…"
+                        onClick={askLeaveAgency}
+                        disabled={!access.isOwner || agency.can_leave === false}
+                        disabledReason={
+                            !access.isOwner
+                                ? "Only the workspace owner can take it out of its agency."
+                                : "You own the agency too. Remove this workspace under Agency > Settings > Clients instead."
+                        }
+                    />
+                </Section>
+            )}
 
             {accountDanger.data && (
                 <ScheduleDeletionModal

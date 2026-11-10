@@ -20,6 +20,7 @@ import {
 } from "@/lib/api/hooks/app/emails/useMailboxOAuthApps";
 import type { MailboxOAuthApp, MailboxOAuthProvider } from "@/lib/api/models/app/emails/MailboxOAuthApp";
 
+import HelpLink from "@/components/shared/HelpLink";
 const GUIDE_PAGE = "https://docs.warmbly.com/guides/partnership/";
 const GUIDE = GUIDE_PAGE + "#your-own-oauth-app";
 
@@ -55,9 +56,13 @@ function MailboxSignInView({ partner }: { partner: boolean }) {
             title="Mailbox sign-in"
             description="Google and Microsoft mailboxes sign in through your own OAuth app, so the consent screen shows your name and logo."
             actions={
-                <a href={GUIDE} target="_blank" rel="noreferrer" className="h-7 px-2.5 inline-flex items-center gap-1.5 rounded-md border border-slate-200 text-[12px] text-slate-600 hover:bg-slate-50">
+                <HelpLink
+                    href={GUIDE}
+                    className="h-7 px-2.5 inline-flex items-center gap-1.5 rounded-md border border-slate-200 text-[12px] text-slate-600 hover:bg-slate-50"
+                    portalLabel={<>Get help <ExternalLinkIcon className="w-3.5 h-3.5" /></>}
+                >
                     Setup guide <ExternalLinkIcon className="w-3.5 h-3.5" />
-                </a>
+                </HelpLink>
             }
         >
             <Section
@@ -240,7 +245,7 @@ function ProviderCard({
                     <CopyValue value={app?.custom_redirect ? app.redirect_url : callback} />
                     <p className="mt-1 text-[11.5px] text-slate-500">
                         Add it to the app in {provider.id === "gmail" ? "Google Cloud" : "Microsoft Entra"} exactly as shown.{" "}
-                        <a href={GUIDE_PAGE + provider.anchor} target="_blank" rel="noreferrer" className="text-sky-700 hover:underline">How</a>
+                        <HelpLink href={GUIDE_PAGE + provider.anchor} className="text-sky-700 hover:underline" portalLabel="Get help">How</HelpLink>
                     </p>
                 </div>
                 <div>

@@ -21,7 +21,7 @@ import (
 
 type socketTicketStub struct{ ticket string }
 
-func (s socketTicketStub) GenerateWebsocketToken(context.Context, uuid.UUID, uuid.UUID) (string, *errx.Error) {
+func (s socketTicketStub) GenerateWebsocketToken(context.Context, uuid.UUID, uuid.UUID, bool) (string, *errx.Error) {
 	return s.ticket, nil
 }
 

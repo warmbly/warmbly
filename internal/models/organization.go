@@ -95,6 +95,8 @@ type OrganizationMember struct {
 	// Joined data
 	User         *User         `json:"user,omitempty"`
 	Organization *Organization `json:"organization,omitempty"`
+	// Agency is the agency the workspace is a client of, filled on the caller's own membership list.
+	Agency *AgencyRef `json:"agency,omitempty"`
 
 	// Flattened convenience fields populated from the joined user, so clients
 	// can read member.email / member.name directly (the member list UIs,
@@ -354,6 +356,8 @@ type OrganizationWithLimits struct {
 	Organization
 	Limits *OrganizationLimits `json:"limits,omitempty"`
 	Counts *OrganizationCounts `json:"counts,omitempty"`
+	// Agency is the agency this workspace is a client of, when it is one.
+	Agency *AgencyRef `json:"agency,omitempty"`
 }
 
 // OrganizationLimitOverrides is the per-org override row. Each numeric

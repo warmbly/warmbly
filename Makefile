@@ -40,7 +40,7 @@ PROTO_GEN_FILES := $(PROTO_DIR)/tasks.pb.go
 .PHONY: poollink-dev poollink-dev-down poollink-dev-reset setup-tools fmt schemas lint check-migrations join-check split-cloud-check pages-check kafka-check proto check-proto \
         up upgrade claim doctor cli seed-demo seed seed-plan sandbox sandbox-seed sandbox-simulate reset logs status stop down test-seed \
         restart restart-go restart-all infra infra-down app app-down app-logs \
-        backend forms forms-web consumer worker run dev tracking realtime web \
+        backend forms forms-web portal portal-web consumer worker run dev tracking realtime web \
         admin site docs grant-admin revoke-admin gen-key installer-sha installer-check installer-demo \
         db-reset db-wipe migrate warmbly warmbly-dist cli-sha cli-check images-check casa-evidence
 
@@ -643,6 +643,8 @@ backend:
 	MAILVENDOR_SANDBOX_URL=$(MAILVENDOR_SANDBOX_URL) \
 	API_HOST=0.0.0.0:8080 \
 	FORMS_DOMAIN=localhost:$(FORMS_PORT) \
+	PORTAL_DOMAIN=localhost:$(PORTAL_PORT) \
+	PORTAL_EDGE_TOKEN=$(PORTAL_EDGE_TOKEN_DEV) \
 	GIN_MODE=debug \
 	APP_URL=http://$(WEB_HOST):5173 \
 	CORS_ALLOW_ORIGINS=$(CORS_ORIGINS) \
@@ -669,6 +671,8 @@ backend:
 # Override the port (here AND on make backend, so share links agree) with
 # `make forms FORMS_PORT=8091` when worktrees share the machine.
 FORMS_PORT ?= 8090
+PORTAL_PORT ?= 8095
+PORTAL_EDGE_TOKEN_DEV ?= local-dev-portal-edge-token-0123456789abcdef
 forms:
 	@if [ ! -d forms/node_modules ]; then echo "Installing forms dependencies (first run)..."; cd forms && pnpm install; fi
 	@cd forms && pnpm build --logLevel warn
@@ -683,6 +687,22 @@ forms:
 # when you want hot reload while editing forms/ itself.
 forms-web:
 	cd forms && FORMS_API_URL=http://localhost:$(FORMS_PORT) pnpm dev
+
+# The portal service on :8095 (portal/worker): client connect pages, shared reports and the embed
+# loader, run by wrangler's local workerd from the Cloudflare config. Builds portal/ first. It reaches
+# the backend with PORTAL_EDGE_TOKEN (pre-wired to match make backend) and serves no dashboard, because
+# localhost is its shared address. `make portal PORTAL_PORT=8096` (matched on make backend) moves it.
+portal:
+	@if [ ! -d portal/node_modules ]; then echo "Installing portal dependencies (first run)..."; cd portal && pnpm install; fi
+	@cd portal && pnpm build --logLevel warn
+	pnpm dlx wrangler@4.45.0 dev --config deploy/cloudflare/portal/wrangler.jsonc --ip 0.0.0.0 --port $(PORTAL_PORT) \
+		--show-interactive-dev-session=false \
+		--var API_ORIGIN:http://localhost:8080 --var PORTAL_DOMAIN:localhost:$(PORTAL_PORT) \
+		--var PORTAL_EDGE_TOKEN:$(PORTAL_EDGE_TOKEN_DEV)
+
+# Vite dev server for the portal app (:5176, /api proxied to make portal) when editing portal/ itself.
+portal-web:
+	cd portal && PORTAL_API_URL=http://localhost:$(PORTAL_PORT) pnpm dev
 
 # Event consumer (NATS by default; Kafka with -tags kafka) -> postgres.
 consumer:
@@ -717,10 +737,11 @@ worker:
 # Workers are interchangeable now; run a second `make worker WORKER_ID=<uuid>`
 # in another terminal to add parallelism.
 run:
-	@echo "backend + forms + consumer + worker (native). Ctrl-C stops all. Run 'make infra' first if infra is down."
+	@echo "backend + forms + portal + consumer + worker (native). Ctrl-C stops all. Run 'make infra' first if infra is down."
 	@trap 'kill 0' INT TERM; \
 	$(MAKE) --no-print-directory backend & \
 	$(MAKE) --no-print-directory forms & \
+	$(MAKE) --no-print-directory portal & \
 	$(MAKE) --no-print-directory consumer & \
 	$(MAKE) --no-print-directory worker & \
 	wait
@@ -827,12 +848,13 @@ dev:
 	@echo "Starting realtime + tracking as containers (no host Elixir/cargo needed)..."
 	@BACKEND_INTERNAL_URL=http://host.docker.internal:8080 $(COMPOSE) up -d --build realtime tracking
 	@echo ""
-	@echo "Starting backend + forms + consumer + worker + dashboard + admin. Ctrl-C stops them (infra stays up)."
+	@echo "Starting backend + forms + portal + consumer + worker + dashboard + admin. Ctrl-C stops them (infra stays up)."
 	@echo "Dashboard: $(DASHBOARD_URL)    Admin: $(ADMIN_URL)    Login: dev@warmbly.com / password123"
 	@echo ""
 	@trap 'kill 0' INT TERM; \
 	$(MAKE) --no-print-directory backend & \
 	$(MAKE) --no-print-directory forms & \
+	$(MAKE) --no-print-directory portal & \
 	$(MAKE) --no-print-directory consumer & \
 	$(MAKE) --no-print-directory worker & \
 	$(MAKE) --no-print-directory web & \

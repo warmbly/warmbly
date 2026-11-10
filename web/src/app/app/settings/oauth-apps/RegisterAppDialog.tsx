@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils";
 
 import { CopyButton, EventPicker } from "./parts";
 
+import HelpLink from "@/components/shared/HelpLink";
 const STEPS = ["App", "Access", "Events"] as const;
 type Preset = "read_only" | "full_access" | "custom";
 
@@ -577,9 +578,9 @@ function Credentials({
                         <CopyButton value={authorizeUrl} />
                     </div>
                 </div>
-                <a href="https://docs.warmbly.com/api/oauth/" target="_blank" rel="noopener noreferrer" className="self-start text-[12px] text-sky-700 hover:text-sky-800">
+                <HelpLink href="https://docs.warmbly.com/api/oauth/" className="self-start text-[12px] text-sky-700 hover:text-sky-800" portalLabel="Get help">
                     Read the OAuth guide
-                </a>
+                </HelpLink>
             </div>
             <div className="h-12 px-4 border-t border-slate-200 flex items-center justify-end shrink-0">
                 <button type="button" onClick={onDone} className="h-7 px-3 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium">

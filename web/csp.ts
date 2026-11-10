@@ -31,6 +31,7 @@ export function configuredSources(env: Record<string, string>) {
         connections: [...new Set([api, api.replace(/^http/, "ws"), sentry, ...additional].filter(Boolean))],
         analytics: [...new Set([posthog, assets].filter(Boolean))],
         images: [api].filter(Boolean),
+        frames: [api].filter(Boolean),
     };
 }
 
@@ -66,6 +67,7 @@ export function dashboardCspPlugin(env: Record<string, string>): Plugin {
                 connections: ["__API_SOURCES__", "__SENTRY_SOURCE__", "__CONNECT_SOURCES__"],
                 analytics: ["__ANALYTICS_SOURCES__"],
                 images: ["__API_IMAGE_SOURCE__"],
+                frames: ["__API_IMAGE_SOURCE__"],
             }) });
             this.emitFile({ type: "asset", fileName: "csp-origins.txt", source: [
                 origin(env.VITE_API_URL),

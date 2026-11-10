@@ -32,7 +32,8 @@ import useCloudPool from "@/hooks/useCloudPool";
 import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
 import { cloudMailboxPickerOpened } from "@/lib/cloudMailboxConnect";
 import { providerSupported } from "@/app/app/settings/warmbly-cloud/providers";
-import { CloudIcon, MailCheckIcon } from "lucide-react";
+import { CloudIcon, Link2Icon, MailCheckIcon } from "lucide-react";
+import ConnectLinksDialog from "@/components/app/emails/connect-links/ConnectLinksDialog";
 import { PlacementRateBadge } from "@/components/app/placement/PlacementCharts";
 import type { CloudLinkMailboxRow } from "@/lib/api/models/app/cloudlink/CloudLink";
 import { cloudLinkScope, invalidateWarmupReports } from "@/lib/api/hooks/app/cloudlink/warmupReports";
@@ -170,6 +171,7 @@ export default function AddressesPage() {
     const [removing, setRemoving] = React.useState(false);
     const [bulkStart, setBulkStart] = React.useState<string[] | null>(null);
     const [bulkSignature, setBulkSignature] = React.useState(false);
+    const [inviteOpen, setInviteOpen] = React.useState(false);
     const [searchParams, setSearchParams] = useSearchParams();
     const queryClient = useQueryClient();
 
@@ -592,6 +594,9 @@ export default function AddressesPage() {
                 <TopbarAction variant="ghost" href="/app/emails/domains" icon={<GlobeIcon className="w-3 h-3" />}>
                     <span className="sr-only sm:not-sr-only">Sending domains</span>
                 </TopbarAction>
+                <TopbarAction variant="ghost" onClick={() => setInviteOpen(true)} icon={<Link2Icon className="w-3 h-3" />}>
+                    <span className="sr-only sm:not-sr-only">Invite client to connect</span>
+                </TopbarAction>
                 <TopbarAction
                     onClick={() => p?.setAddEmail(true)}
                     icon={<PlusIcon className="w-3 h-3" />}
@@ -844,6 +849,8 @@ export default function AddressesPage() {
             </PageBody>
 
             <InboxDetails emails={emailsData.emails} view={view} setView={setView} initialTab={viewTab} tabIntentKey={tabIntentKey} onTabIntentConsumed={consumeTabIntent} canWarmup={canWarmup} />
+
+            <ConnectLinksDialog open={inviteOpen} onClose={() => setInviteOpen(false)} />
 
             <SigninMigrationDialog
                 open={migrationOpen}

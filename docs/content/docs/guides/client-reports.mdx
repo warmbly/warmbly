@@ -1,0 +1,112 @@
+---
+title: "Client reports"
+description: "Share a live, branded report of a client's campaigns by link, embed it on your site, and email it to the client every week or month."
+---
+
+A client report is a saved view of the results you get for one client: the campaigns, campaign folders and mailboxes it covers, which sections it shows, and the period it opens on. You share it with a link, and the client sees the same numbers your dashboard shows, without signing in and without seeing anything outside the report.
+
+## Share a report
+
+<Steps>
+
+<Step>
+
+Open **Reports** and select **New report**. Name it after the client.
+
+</Step>
+
+<Step>
+
+Choose what it covers: the whole workspace, or selected campaigns, campaign folders and mailboxes.
+
+</Step>
+
+<Step>
+
+Turn on the sections the client should see and pick the period it opens on.
+
+</Step>
+
+<Step>
+
+Open the report, select **Create link** and copy the link. It is shown once; keep it somewhere safe or create a new one later.
+
+</Step>
+
+<Step>
+
+To send it automatically, open **Schedule**, add the client's addresses and choose weekly or monthly.
+
+</Step>
+
+</Steps>
+
+## Good to know
+
+- A report reads the same numbers as the [analytics dashboard](/guides/analytics/) for the same campaigns and days, in whole UTC days.
+- A folder in a report covers whatever campaigns the folder holds when the report is opened, so a new campaign filed in it appears on its own.
+- Reply snippets are off by default. Turn them on only when the client should read part of what their leads wrote.
+- Creating a new link turns the old one off. **Revoke** turns off the link and the link in every scheduled email already sent.
+- A link expires after 90 days unless you choose a different lifetime, up to a year.
+
+<Fold>
+
+## What a report shows
+
+| Section | Shows |
+|---------|-------|
+| Overview | Emails sent, opened and replied with their rates, and the bounce rate. With **Positive replies** on, the count and rate of replies classified positive |
+| Daily chart | Emails sent per day, with that day's opens and replies on hover and in a table view |
+| Campaigns | One row per campaign that sent in the period: sent, open rate, replies and reply rate, positive replies when that section is on, and bounce rate |
+| Replies | The 25 most recent human replies: who replied, the subject, when, and how the reply was classified. With **Replies** off and **Positive replies** on, only positive replies are listed |
+| Mailboxes | How many of the report's mailboxes are healthy, need attention or are not sending, and the warmup mail they sent, received and replied to in the period |
+
+Sends, opens, replies and bounces belong to the day the email was sent, as on the dashboard. The reply list is ordered by when each reply arrived. Automated replies, such as out-of-office notices, are never listed or counted.
+
+The client chooses between the last 7 days, the last 30 days, this month and last month on the page. The report opens on the period you set.
+
+## What the client can see
+
+A report shows only what you turned on, and only for what it covers. It never shows a campaign, mailbox or reply outside its scope, and a campaign or mailbox you remove from the workspace drops out of it. Campaign and folder names, the names and addresses of people who replied, and reply subjects are part of the Campaigns and Replies sections; turn those sections off to keep them out.
+
+The page carries your brand in its header and footer: the [workspace or agency brand](/guides/agencies/) when one is set, otherwise the instance's. It asks search engines not to index it, sends no referrer when a visitor follows a link from it, and prints cleanly.
+
+## Links
+
+The link is a long random token. Warmbly stores only a hash of it, so the full link is shown once, when you create it; afterwards the report shows its first characters so you can tell links apart. Anyone with a live link can open the report, so share it the way you would share a password-protected document.
+
+The page lives on the shared portal address (`portal.warmbly.com` on Warmbly Cloud), or on the agency's [portal domain](/guides/white-label/#your-own-domain) once it is verified. On a portal domain, only that agency's clients' reports open.
+
+To put a report on your own website, use the embed code on the report's share panel. Any site may frame a report page.
+
+## Scheduled emails
+
+A schedule emails a summary to up to 10 addresses: the headline numbers, the busiest campaigns, and a **View full report** button. Weekly schedules summarize the last 7 days and monthly schedules summarize the previous month. Pick the weekday or the day of the month (1 to 28), the hour and the time zone; the hour stays the same local time across daylight saving changes.
+
+Each email carries its own link, valid for 90 days, so a client can open the report from the email even when you have not created a share link. Revoking the report's link turns those off too. The email comes from the instance's notification address, branded like the page.
+
+Each scheduled run sends once. If the instance was down when a run was due, the next pass sends it once and the schedule moves on, rather than sending one email per missed week. A run that fails is retried a few times over the following half hour.
+
+Pause a schedule to stop emails without losing the recipients.
+
+</Fold>
+
+<Fold>
+
+## Permissions and the API
+
+Seeing reports takes **View analytics**. Creating or changing a report, its link or its schedule also takes **Manage campaigns**, because a link shows the numbers to anyone who holds it. Members limited to [selected resources](/guides/team-roles/#access-scope) cannot open Reports.
+
+With an API key, reads take `READ_ANALYTICS` and changes take `MANAGE_REPORTS`. See [endpoints](/api/endpoints/#client-reports) and [error codes](/api/error-codes/#client-report-refusals).
+
+Every change is recorded in the audit log and refreshes the Reports list for everyone in the workspace.
+
+## Moving a workspace
+
+Reports travel in a [workspace archive](/guides/workspace-export-import/) with the Campaigns group, with sharing off and no schedule. Create a new link and set the schedule again on the destination.
+
+## Self-hosting
+
+Report links need the portal service and its address, `PORTAL_DOMAIN` (see [the portal service](/development/configuration/#portal-service)); without it, creating a link or a schedule is refused with `report_links_unavailable`. Scheduled emails go out through the instance's outgoing mail. Nothing else needs configuring.
+
+</Fold>

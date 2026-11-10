@@ -92,15 +92,20 @@ func NewService(cache *cache.Cache, repo repository.APIKeyRepository) APIKeyServ
 // appropriate here: the input has 256 bits of entropy, so rainbow tables
 // and brute force are computationally infeasible.
 func generateKey() (rawKey, prefix, suffix, hash string, err error) {
+	return generateKeyWith(KeyPrefix)
+}
+
+// generateKeyWith mints a key under brand, showing the brand plus two random characters in lists.
+func generateKeyWith(brand string) (rawKey, prefix, suffix, hash string, err error) {
 	randomBytes := make([]byte, KeyLength)
 	if _, err := rand.Read(randomBytes); err != nil {
 		return "", "", "", "", fmt.Errorf("failed to generate random bytes: %w", err)
 	}
 
 	encoded := base64.RawURLEncoding.EncodeToString(randomBytes)
-	rawKey = KeyPrefix + encoded
+	rawKey = brand + encoded
 
-	prefix = rawKey[:displayPrefixLen]
+	prefix = rawKey[:len(brand)+displayPrefixLen-len(KeyPrefix)]
 	suffix = rawKey[len(rawKey)-displaySuffixLen:]
 
 	hash = hashKey(rawKey)
@@ -271,7 +276,12 @@ func (s *apiKeyService) ValidateKey(ctx context.Context, rawKey string) (*models
 // allowlist. An empty allowlist means "any IP". Entries can be bare IPs
 // (exact match) or CIDR blocks.
 func (s *apiKeyService) ValidateKeyIP(key *models.APIKey, ip string) bool {
-	if len(key.AllowedIPs) == 0 {
+	return ipAllowed(key.AllowedIPs, ip)
+}
+
+// ipAllowed reports whether ip matches the allowlist; an empty list allows any IP.
+func ipAllowed(allowlist []string, ip string) bool {
+	if len(allowlist) == 0 {
 		return true
 	}
 
@@ -282,7 +292,7 @@ func (s *apiKeyService) ValidateKeyIP(key *models.APIKey, ip string) bool {
 		return false
 	}
 
-	for _, allowed := range key.AllowedIPs {
+	for _, allowed := range allowlist {
 		if strings.Contains(allowed, "/") {
 			_, ipnet, err := net.ParseCIDR(allowed)
 			if err != nil {
@@ -326,16 +336,20 @@ func (s *apiKeyService) LogUsage(ctx context.Context, log *models.APIKeyUsageLog
 // Redis Lua script for atomic check-and-increment. Fails open if the cache
 // is unavailable so a Redis outage doesn't take down a customer's integration.
 func (s *apiKeyService) CheckAndIncrementRateLimit(ctx context.Context, key *models.APIKey) (int, int, bool) {
-	limit := key.RateLimitPerMinute
+	return minuteWindow(ctx, s.cache, "apikey:rl:", key.ID, key.RateLimitPerMinute)
+}
+
+// minuteWindow is the per-key minute-window check-and-increment, failing open without Redis.
+func minuteWindow(ctx context.Context, c *cache.Cache, prefix string, keyID uuid.UUID, limit int) (int, int, bool) {
 	if limit <= 0 {
 		limit = defaultRateLimitPerMinute
 	}
-	if s.cache == nil {
+	if c == nil {
 		return limit, 0, true
 	}
 
 	bucket := time.Now().Unix() / 60
-	cacheKey := fmt.Sprintf("apikey:rl:%s:%d", key.ID.String(), bucket)
+	cacheKey := fmt.Sprintf("%s%s:%d", prefix, keyID.String(), bucket)
 
 	script := `
 		local key = KEYS[1]
@@ -355,7 +369,7 @@ func (s *apiKeyService) CheckAndIncrementRateLimit(ctx context.Context, key *mod
 		return {current, ttl, 1}
 	`
 
-	res, err := s.cache.Eval(ctx, script, []string{cacheKey}, limit, 60).Slice()
+	res, err := c.Eval(ctx, script, []string{cacheKey}, limit, 60).Slice()
 	if err != nil || len(res) < 3 {
 		// Fail open: a Redis hiccup shouldn't sink the request.
 		return limit, 0, true

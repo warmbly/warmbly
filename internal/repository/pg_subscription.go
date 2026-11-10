@@ -17,7 +17,7 @@ import (
 // order. With `SELECT *`, the trailing NULL free-trial timestamps land in the
 // non-nullable created_at/updated_at scan slots and pgx fails with
 // "cannot scan NULL into *time.Time", 500-ing every subscription read.
-const subscriptionColumns = `id, user_id, organization_id, plan_id, stripe_customer_id, stripe_subscription_id, stripe_price_id, status, current_period_start, current_period_end, cancel_at_period_end, canceled_at, trial_start, trial_end, free_trial_started_at, free_trial_ends_at, is_enterprise, created_at, updated_at, managed_at, managed_by, managed_reason, managed_until, managed_plan_id, keeps_free_warmup`
+const subscriptionColumns = `id, user_id, organization_id, plan_id, stripe_customer_id, stripe_subscription_id, stripe_price_id, status, current_period_start, current_period_end, cancel_at_period_end, canceled_at, trial_start, trial_end, free_trial_started_at, free_trial_ends_at, is_enterprise, created_at, updated_at, managed_at, managed_by, managed_reason, managed_until, managed_plan_id, keeps_free_warmup, managed_by_agency_id`
 
 type SubscriptionRepository interface {
 	Create(ctx context.Context, sub *models.Subscription) error
@@ -165,7 +165,7 @@ func (r *subscriptionRepository) scanSubscription(ctx context.Context, query str
 		&sub.FreeTrialStartedAt, &sub.FreeTrialEndsAt,
 		&sub.IsEnterprise, &sub.CreatedAt, &sub.UpdatedAt,
 		&sub.ManagedAt, &sub.ManagedBy, &sub.ManagedReason, &sub.ManagedUntil, &sub.ManagedPlanID,
-		&sub.KeepsFreeWarmup,
+		&sub.KeepsFreeWarmup, &sub.ManagedByAgencyID,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -260,6 +260,7 @@ func (r *subscriptionRepository) SetManagedPlan(ctx context.Context, orgID, plan
 		    managed_by      = $3,
 		    managed_reason  = $4,
 		    managed_until   = $5,
+		    managed_by_agency_id = NULL,
 		    updated_at      = NOW()
 		WHERE organization_id = $1`,
 		orgID, planID, adminID, reason, until)
@@ -277,6 +278,7 @@ func (r *subscriptionRepository) ClearManagedPlan(ctx context.Context, orgID uui
 		    managed_reason  = NULL,
 		    managed_until   = NULL,
 		    managed_plan_id = NULL,
+		    managed_by_agency_id = NULL,
 		    updated_at      = NOW()
 		WHERE organization_id = $1`, orgID)
 	return err

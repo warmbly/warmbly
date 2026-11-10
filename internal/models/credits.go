@@ -183,6 +183,8 @@ type CreditDebit struct {
 	// Cost is what the provider charged, before the markup.
 	Cost           Micro
 	IdempotencyKey string
+	// AgencyAllowance is true where agency plans are billed, so an agency's per-period allowance is in force.
+	AgencyAllowance bool
 }
 
 // CreditTransaction is one append-only row in the credit audit trail. Amount is
@@ -207,6 +209,8 @@ type CreditTransaction struct {
 	MonthlyAfter   Micro
 	PurchasedDelta Micro
 	PurchasedAfter Micro
+	// AgencyDelta is the part of Amount the agency's shared balance paid (negative) or got back (positive).
+	AgencyDelta    Micro
 	IdempotencyKey *string
 	// ActorUserID is the teammate who triggered the charge (nil for scheduled
 	// or system work); Context names exactly what ran.

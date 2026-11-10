@@ -95,6 +95,8 @@ defmodule RealtimeWeb.UserSocket do
         |> assign(:credential, Map.get(context, :credential))
         |> assign(:session_id, Map.get(context, :session_id))
         |> assign(:mfa_verified, Map.get(context, :mfa_verified) == true)
+        # The agency a session signed in on its portal domain is held to; nil otherwise.
+        |> assign(:portal_agency_id, Map.get(context, :portal_agency_id))
 
       {:ok, socket}
     else

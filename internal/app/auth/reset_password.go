@@ -130,7 +130,7 @@ func (s *authService) emailResetLink(ctx context.Context, u *models.User, addres
 		return err
 	}
 
-	url := config.GetPasswordResetURL(token, config.DashboardOriginFromContext(ctx))
+	url := config.GetPasswordResetURL(token, config.OperatorOriginFromContext(ctx))
 
 	text, err := templates.GenerateResetPasswordHTML(u.FirstName, url, PasswordResetTTL)
 	if err != nil {

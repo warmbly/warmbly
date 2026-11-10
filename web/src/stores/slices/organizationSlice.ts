@@ -15,6 +15,8 @@ export interface Organization {
   access_scope?: "workspace" | "restricted"
   // What a restricted caller may act with inside their grants; 0 is read-only.
   scope_actions?: number
+  // The agency this workspace is a client of, when it is one.
+  agency?: { id: string; name: string; can_leave?: boolean }
 }
 
 export interface OrganizationSlice {

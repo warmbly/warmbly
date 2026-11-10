@@ -43,8 +43,13 @@ func (h *Handler) IdempotencyMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		orgID := GetOrganizationID(c)
-		if orgID == nil {
+		var scope idempotency.Scope
+		switch orgID, agencyID := GetOrganizationID(c), GetAgencyKeyAgencyID(c); {
+		case orgID != nil:
+			scope = idempotency.OrgScope(*orgID)
+		case agencyID != nil:
+			scope = idempotency.AgencyScope(*agencyID)
+		default:
 			errx.Handle(c, errx.New(errx.BadRequest, "Idempotency-Key requires an organization context"))
 			c.Abort()
 			return
@@ -60,7 +65,7 @@ func (h *Handler) IdempotencyMiddleware() gin.HandlerFunc {
 		// A key belongs to one concrete resource, so identity uses the request path.
 		path := c.Request.URL.Path
 		requestHash := hashRequest(idempotencyPrincipal(c), c.Request.Method, path, c.Request.URL.RawQuery, body)
-		record, state, xerr := h.IdempotencyService.Begin(c.Request.Context(), *orgID, key, c.Request.Method, path, requestHash)
+		record, state, xerr := h.IdempotencyService.Begin(c.Request.Context(), scope, key, c.Request.Method, path, requestHash)
 		if xerr != nil {
 			errx.Handle(c, xerr)
 			c.Abort()

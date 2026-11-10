@@ -83,6 +83,9 @@ type CreditService interface {
 	GetBalance(ctx context.Context, orgID uuid.UUID) (models.Micro, *errx.Error)
 	// GetLedger is the full ledger; a zero-value one when the org has none.
 	GetLedger(ctx context.Context, orgID uuid.UUID) (*models.CreditLedger, *errx.Error)
+	// AgencyAvailable is what the workspace's agency balance would add to its
+	// own right now; zero outside an agency and when unmetered.
+	AgencyAvailable(ctx context.Context, orgID uuid.UUID) models.Micro
 
 	// Reserve checks, before metered work starts, that the workspace can pay
 	// for it: the generation caps, its spend limits, and a balance of at least
@@ -162,6 +165,8 @@ type creditService struct {
 	// selfHost bypasses the ledger (BILLING_PROVIDER=none): the operator pays
 	// their providers directly, so nothing is metered.
 	selfHost bool
+	// agencyBilled puts agency plan allowances in force; only Stripe bills agencies.
+	agencyBilled bool
 }
 
 func NewService(repo repository.CreditRepository, settings repository.AISettingsRepository, prices PriceSource, c *cache.Cache) CreditService {
@@ -173,6 +178,8 @@ func NewService(repo repository.CreditRepository, settings repository.AISettings
 		shortLimit: DefaultShortLimit,
 		dailyLimit: DefaultDailyLimit,
 		selfHost:   config.BillingProvider() == "none",
+		// Matches agency.Service.billing, so an agency's allowance exists exactly where its plan is sold.
+		agencyBilled: config.BillingProvider() == "stripe",
 	}
 }
 
@@ -298,6 +305,17 @@ func (s *creditService) GetLedger(ctx context.Context, orgID uuid.UUID) (*models
 	return ledger, nil
 }
 
+func (s *creditService) AgencyAvailable(ctx context.Context, orgID uuid.UUID) models.Micro {
+	if s.selfHost {
+		return 0
+	}
+	avail, err := s.repo.AgencyAvailable(ctx, orgID, s.agencyBilled)
+	if err != nil {
+		return 0
+	}
+	return avail
+}
+
 func (s *creditService) Reserve(ctx context.Context, orgID uuid.UUID, estimate models.Micro) error {
 	if s.selfHost {
 		return nil
@@ -313,7 +331,7 @@ func (s *creditService) Reserve(ctx context.Context, orgID uuid.UUID, estimate m
 	if xerr != nil {
 		return xerr
 	}
-	if bal < estimate {
+	if bal < estimate && bal+s.AgencyAvailable(ctx, orgID) < estimate {
 		return ErrInsufficientCredits
 	}
 	return nil
@@ -328,7 +346,7 @@ func (s *creditService) Charge(ctx context.Context, orgID uuid.UUID, u Usage, re
 		return 0, nil
 	}
 	return s.debit(ctx, orgID, u, models.CreditDebit{
-		Amount: charge, Clamp: true, Reason: reason, Cost: cost, IdempotencyKey: idempotencyKey,
+		Amount: charge, Clamp: true, Reason: reason, Cost: cost, IdempotencyKey: idempotencyKey, AgencyAllowance: s.agencyBilled,
 	})
 }
 
@@ -344,7 +362,7 @@ func (s *creditService) ChargeUpfront(ctx context.Context, orgID uuid.UUID, u Us
 		return 0, err
 	}
 	return s.debit(ctx, orgID, u, models.CreditDebit{
-		Amount: charge, Reason: reason, Cost: cost, IdempotencyKey: idempotencyKey,
+		Amount: charge, Reason: reason, Cost: cost, IdempotencyKey: idempotencyKey, AgencyAllowance: s.agencyBilled,
 	})
 }
 
@@ -363,7 +381,8 @@ func (s *creditService) debit(ctx context.Context, orgID uuid.UUID, u Usage, d m
 		if u.InputTokens+u.OutputTokens > 0 {
 			s.commitCaps(ctx, orgID)
 		}
-		s.notifyMonitor(orgID, after+taken, after)
+		// The monitor watches the workspace's own balance, not what the agency paid.
+		s.notifyMonitor(orgID, after+taken+txn.AgencyDelta, after)
 	}
 	return taken, nil
 }

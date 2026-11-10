@@ -13,10 +13,12 @@ export function DataSyncProvider({ children }: { children: React.ReactNode }) {
   const setIsLoading = useAppStore((s) => s.setIsLoading)
   const setEmails = useAppStore((s) => s.setEmails)
   const setTags = useAppStore((s) => s.setTags)
+  // The agency view can run with no workspace picked, and mailboxes belong to one.
+  const hasWorkspace = useAppStore((s) => !!s.currentOrganization)
 
   // The whole mailbox directory feeds the store (tag scope, filter sheet, From picker).
   // It is the same cached list the mailboxes page and pickers read, so the app fetches it once.
-  const directory = useEmails({ query: '', tag: '' })
+  const directory = useEmails({ query: '', tag: '', enabled: hasWorkspace })
   const whole = directory.data && !directory.isLoadingRest ? directory.emails : undefined
 
   useSyncToStore(user, (data) => {

@@ -46,6 +46,8 @@ flowchart LR
 
 The toolchains are only needed on the machine that builds. If you would rather not install compilers on the production host, build on another machine of the same architecture and copy `/opt/warmbly` over; nothing below is path-dependent beyond the values you put in the env file.
 
+This guide does not cover the [portal service](/development/configuration/#portal-service), which serves client connect links and shared reports. It runs on workerd rather than as a binary built here, and ships as the `ghcr.io/warmbly/warmbly/portal` image. Without it, leave `PORTAL_DOMAIN` unset: those two links are refused and everything else works.
+
 <Callout type="warn" title="Not a development setup">
 For working on Warmbly itself use `make dev`, which runs the Go services natively already and only puts Postgres, Redis and NATS in containers. This page is for running the product for other people, which means real secrets, TLS and a mail relay.
 </Callout>

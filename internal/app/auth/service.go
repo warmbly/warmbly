@@ -155,6 +155,8 @@ type AuthService interface {
 	// SSOCallbackComplete returns a single-use handoff code, not a session: the
 	// provider redirects a browser here, so the response must be a redirect.
 	SSOCallbackComplete(ctx context.Context, in SSOCallback) (*SSOCallbackResult, *errx.Error)
+	// SSOReturnOrigin is the verified portal origin a flow began on; empty means APP_URL.
+	SSOReturnOrigin(ctx context.Context, state string) string
 	SSOExchange(ctx context.Context, code, binding string) (*models.LoginResult, *errx.Error)
 	// SSOLinkConfirm completes a federated sign-in that came back with
 	// link_required: the address already belongs to a password account, and

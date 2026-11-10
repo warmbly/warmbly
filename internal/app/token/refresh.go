@@ -13,7 +13,7 @@ import (
 )
 
 func (s *tokenService) RefreshToken(ctx context.Context, refreshToken string) (*models.Token, *errx.Error) {
-	t, err := s.VerifyTokenFor(PurposeRefresh, refreshToken)
+	t, err := s.verifySessionToken(PurposeRefresh, PurposePortalRefresh, refreshToken)
 	if err != nil {
 		return nil, err
 	}
@@ -35,6 +35,10 @@ func (s *tokenService) RefreshToken(ctx context.Context, refreshToken string) (*
 	if sess.RefreshNonce != t.Nonce {
 		return nil, s.refusedRefresh(ctx, sess.ID, sess.UserID, t.Nonce)
 	}
+	portal := sess.PortalAgencyID != nil
+	if t.Purpose != refreshPurpose(portal) {
+		return nil, errx.ErrToken
+	}
 
 	issuedAt := time.Now()
 
@@ -45,7 +49,7 @@ func (s *tokenService) RefreshToken(ctx context.Context, refreshToken string) (*
 		return nil, errx.InternalError()
 	}
 
-	newAccessToken, xerr := s.GenerateTokenFor(PurposeAccess, sess.UserID, sess.ID, "", accessNonce, issuedAt, accessTokenExpiresAt)
+	newAccessToken, xerr := s.GenerateTokenFor(accessPurpose(portal), sess.UserID, sess.ID, "", accessNonce, issuedAt, accessTokenExpiresAt)
 	if xerr != nil {
 		errs.CaptureException(xerr)
 		return nil, errx.InternalError()
@@ -58,11 +62,11 @@ func (s *tokenService) RefreshToken(ctx context.Context, refreshToken string) (*
 		return nil, errx.InternalError()
 	}
 
-	// Explicitly PurposeRefresh. GenerateToken defaults to PurposeAccess, so
+	// Explicitly a refresh purpose. GenerateToken defaults to PurposeAccess, so
 	// minting the rotated refresh token through it produced one this very
 	// function would refuse on the next call: the session survived one refresh
 	// and died on the second, about a day after every sign-in.
-	newRefreshToken, xerr := s.GenerateTokenFor(PurposeRefresh, sess.UserID, sess.ID, "", refreshNonce, issuedAt, refreshTokenExpiresAt)
+	newRefreshToken, xerr := s.GenerateTokenFor(refreshPurpose(portal), sess.UserID, sess.ID, "", refreshNonce, issuedAt, refreshTokenExpiresAt)
 	if xerr != nil {
 		errs.CaptureException(xerr)
 		return nil, errx.InternalError()

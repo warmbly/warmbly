@@ -54,6 +54,8 @@ type WorkerAssignmentService interface {
 	ReserveIsolatedWorker(ctx context.Context, orgID, subscriptionID uuid.UUID) error
 	ReleaseIsolatedWorker(ctx context.Context, orgID uuid.UUID) error
 	GetIsolatedWorker(ctx context.Context, orgID uuid.UUID) (*models.Worker, error)
+	// SyncIsolatedEgress reserves or releases to match the org's current plan, grants included.
+	SyncIsolatedEgress(ctx context.Context, orgID uuid.UUID) error
 
 	// SetOrganizationWarmupPool makes every mailbox owned by an organization
 	// agree with its current free or premium subscription tier.
@@ -161,6 +163,10 @@ func NewAssignmentService(
 
 // AssignWorkerToEmail places a mailbox for the first time.
 func (s *workerAssignmentService) AssignWorkerToEmail(ctx context.Context, emailAccountID, orgID uuid.UUID) (*uuid.UUID, error) {
+	// An entitled org without a reservation gets one before its first mailbox lands, so that mailbox lands on it.
+	if err := s.syncIsolatedEgress(ctx, orgID, false); err != nil {
+		log.Warn().Err(err).Str("org_id", orgID.String()).Msg("placement: isolated egress reservation failed")
+	}
 	res, err := s.SelectWorkerFor(ctx, PlacementLookup{EmailAccountID: emailAccountID, OrgID: orgID})
 	if err != nil {
 		return nil, err

@@ -53,7 +53,7 @@ func (s *Service) OAuthReturnOrigin(ctx context.Context, state string) string {
 	if st.ReturnOrigin == "" {
 		return config.PrimaryDashboardOrigin()
 	}
-	return config.DashboardOrigin(st.ReturnOrigin)
+	return config.TrustedOrigin(st.ReturnOrigin)
 }
 
 func verifyKey(state string) string { return "slack:link:verify:" + state }

@@ -1,0 +1,281 @@
+---
+title: "Agencies"
+description: "Run outreach for many clients from one account: a workspace per client, staff who reach every client, one shared monthly send pool, a shared AI balance and one bill."
+---
+
+An agency groups the workspaces you run for clients. Each client keeps its own workspace, with its own mailboxes, contacts, campaigns and inbox, and the agency adds four things on top: your staff reach every client without being invited one by one, every client sends from one shared monthly pool, every client can draw on one shared AI balance, and the whole agency is billed once. There is no per-client fee and no limit on the number of clients.
+
+## Set up an agency
+
+<Steps>
+
+<Step>
+
+Open the workspace menu in the header and select **Set up an agency**. If you picked **Agency** when you signed up, Warmbly offers this at the end of onboarding. You can skip it and come back later.
+
+</Step>
+
+<Step>
+
+Name the agency. You become its owner.
+
+</Step>
+
+<Step>
+
+On a hosted account, choose a plan under **Agency > Billing**. Until you do, client workspaces stay on whatever plan they had. A self-hosted instance has no billing: every agency feature is available, the pool has no cap and AI is not charged.
+
+</Step>
+
+</Steps>
+
+One account can own up to five agencies, and can be staff in any number.
+
+## The agency view
+
+Staff run the agency from its own view, apart from any one workspace. Its header shows the agency's logo (or its initials) and name, the send pool and AI balance used this period, notifications and your account menu. When you are staff in more than one agency, the name opens a menu to switch between them. The workspace switcher and the workspace's plan, trial and balance prompts are not part of it.
+
+The sidebar holds the agency's own pages:
+
+| Page | What it is for |
+| --- | --- |
+| **Overview** | Every client on one screen, problems first. See [agency home and inbox](#agency-home-and-inbox) |
+| **Clients** | Add, detach and cap clients |
+| **Inbox** | Conversations from every client's inbox |
+| **Usage** | The send pool and AI balance, client by client |
+| **Billing** | The agency's plan, top-ups and AI balance purchases |
+| **Staff** | Who runs the agency, and their roles |
+| **Branding** | Your brand, portal domain and website embeds. See [white-label](#white-label) |
+| **API keys** | Keys that call Warmbly for every client from one integration. See [API](#api) |
+
+Below the pages, **Clients** lists every client workspace with a dot for its health: red when something needs attention now, amber for a warning, green when all is well. Select a client to enter its workspace and open its dashboard. **Add client** at the end of the list opens the same dialog as **Agency > Clients**. On a phone, the menu button in the header opens the sidebar.
+
+Inside a client's workspace, the left of the header shows your agency's mark and name with a back arrow, then the client's name. Select it, or **Back to** your agency in the workspace menu, to return to the agency view. Both are there on a phone too.
+
+The workspace menu in the header and the workspace picker group what you can open by agency: each agency you are staff in comes first, labelled **Agency**, and opens the agency view, with its client workspaces listed under it. Your other workspaces follow under **Your workspaces**. Once the list is long, the menu has a search that covers agencies and workspaces alike.
+
+When you sign in without a workspace picked, you land in the agency view instead of the picker. Warmbly also remembers which view you left: if you close the app in the agency view, opening it again returns you there. A link to a page inside a workspace still opens that page.
+
+The pages that were tabs under `/app/agency/settings/` now have their own addresses (`/app/agency/clients`, `/app/agency/usage` and so on), and the old links forward to them.
+
+## Clients
+
+Each client is a workspace. Add one under **Agency > Clients > Add client**:
+
+- **New workspace** opens a workspace for the client. The agency owner owns it, and your staff are added to it straight away. While the agency has an active plan (and always on a self-hosted instance), a client workspace you open this way does not count toward the owner's workspace limit. Until the agency has one, it counts toward that limit like any other workspace the owner creates. The daily limit on creating workspaces applies either way.
+- **Existing workspace** brings in a workspace you own. It keeps its data and its members. A workspace that pays for its own plan has to cancel it first, so it is not billed twice.
+
+A client workspace's plan comes from the agency. Its **Settings > Billing** page says **Billed through** and the agency's name instead of offering a checkout, and its own balance for AI usage stays where it was. When that runs out, it draws on the agency's [shared AI balance](#the-shared-ai-balance).
+
+**Remove from agency** (in the row's menu) detaches a client. The workspace and everything in it stay, along with members it added itself. It loses the agency's plan and goes back to its own, and staff the agency added lose access to it. Select a client's row to open its workspace.
+
+A client can also take its workspace back. The workspace's owner opens **Settings > Danger zone** in that workspace and selects **Leave agency**, which has the same effect as **Remove from agency**. When the agency owner also owns the workspace (every workspace opened with **New workspace**), it is removed from the agency's side instead.
+
+A workspace belongs to at most one agency. The link to an agency, and the agency's record of the sends and AI the workspace took from it, do not travel in a [workspace export](/guides/workspace-export-import/): an imported workspace starts outside any agency.
+
+## Staff
+
+Staff are the people who run the agency. Add them under **Agency > Staff** by email:
+
+| Agency role | In every client workspace | In the agency |
+| --- | --- | --- |
+| Owner | Admin | Everything, including making admins |
+| Admin | Admin | Clients, staff (members only), caps and billing |
+| Member | Manager | Views clients, staff and the pool |
+
+Staff are added to each client workspace when it joins the agency and when they join the agency. Removing someone from the staff, or detaching a client, takes back only the memberships the agency added: someone a client invited directly keeps their access. Anyone can leave an agency they are staff in, except the owner.
+
+Adding an address no Warmbly account uses yet saves an invitation. The person joins the agency the first time they sign in with that address, within 14 days.
+
+## The shared send pool
+
+Instead of a daily cap per workspace, an agency's plan includes a number of campaign sends per billing period, shared by every client. A client with a quiet week leaves its share to the others, and nothing is lost on weekends.
+
+**Agency > Usage** shows the period's pool, top-ups, sends so far, what is left, the days left in the period, and a projection: the sends you will reach by the period's end at the pace so far. Below it, each client's sends this period.
+
+- The pool counts campaign emails sent by client workspaces since they joined the agency. Warmup does not use the pool.
+- A send stays counted for the rest of the period. Removing a client, deleting a campaign or deleting the workspace does not give its sends back to the pool.
+- The pool renews every month on the day your billing period started, on an annual plan too: a year on an annual plan is twelve monthly pools. Unused sends do not carry over.
+- When the pool is used up, campaigns across your clients wait until the period renews or you add a top-up pack. They are not cancelled.
+- Owners and admins are notified when the pool reaches 80% and 100%, once each per period.
+
+### A cap per client
+
+Give a client a **Monthly cap** on the Clients page to hold it to part of the pool. The client stops sending campaigns once it has sent that many this period, even when the pool has more. A cap of `0` pauses the client's campaigns. Select **No cap** to remove it.
+
+### Per-mailbox safety still applies
+
+A large pool never makes one mailbox send faster. Every mailbox keeps its own daily limit, minimum gap between sends, warmup ramp and health checks, exactly as described in [sending behavior](/guides/sending-behavior/) and [warmup](/guides/warmup/). To send more, connect more healthy mailboxes. The pool is a ceiling on the agency's total, not a target.
+
+Like the daily limit it replaces, the pool is checked as campaigns send, so a busy period can go a few sends past it.
+
+## Billing and top-ups
+
+| Plan | Monthly | Annual (per month) | Shared sends a month | Clients |
+| --- | --- | --- | --- | --- |
+| Agency | $249 | $199 | 150,000 | Unlimited |
+| Agency Pro | $599 | $479 | 500,000 | Unlimited |
+| Agency Scale | Custom | Custom | 1,000,000+ | Unlimited |
+
+Every client workspace gets the agency plan's features. Both plans include the CRM, the API and [webhooks](/guides/webhooks/) in every client workspace. Agency includes your logo, accent colour and [portal domain](/guides/white-label/#your-own-domain) on client pages, with a small "Powered by Warmbly" line. Agency Pro can remove that line, and adds sending kept apart from other customers. Agency includes $10 of [shared AI](#the-shared-ai-balance) a month and Agency Pro $30.
+
+### Sending kept apart on Agency Pro
+
+On Agency Pro, each client workspace gets its own reserved worker, so its mailboxes sign in to their providers from an address no other customer, and no other client of yours, uses. One worker per client rather than one for the whole agency keeps a provider's limits on one address from reaching every client at once, and keeps one machine going down from stopping all of them.
+
+- A client is given its worker when its first mailbox connects, not when the workspace is created, so empty workspaces hold nothing back.
+- Mailboxes already connected move onto the reserved worker gradually, not all at once, because every move makes the provider see a new sign-in address.
+- The reservation is a strong preference, not a pin. If the worker goes down, the client's mailboxes keep sending from elsewhere and move back once a reserved worker is available again. When no worker is free to reserve, Warmbly keeps trying and still places the client away from other customers where it can.
+- Up to 20 client workspaces of one agency hold a reserved worker at a time: the 20 that joined the agency first among those with a mailbox. Clients beyond that get every other Agency Pro feature, and Warmbly still places their mailboxes away from other customers where it can, but without a worker of their own. When a client with a reserved worker leaves, the next one in line gets it.
+- Moving to Agency, detaching a client, or the plan ending releases the client's worker. Its mailboxes stay where they are until they are moved for another reason.
+
+### Top-ups and payment
+
+When the pool runs low, buy a **top-up pack** under **Agency > Billing**: 50,000 more sends, $85 on Agency or $60 on Agency Pro. A pack is a one-off payment, added to the current period's pool, and does not carry into the next period. A pack that is fully refunded leaves the pool.
+
+Owners and admins manage the plan, top-ups, AI balance purchases, invoices and payment method. **Invoices and payment** opens the billing portal. If a payment fails, client workspaces keep the plan while Stripe retries; if the subscription ends, they keep it until a few days after the period it paid for, then go back to their own plans.
+
+### A plan arranged directly
+
+Agency Scale and other negotiated plans are arranged with Warmbly, or with whoever runs your instance, and not bought at checkout. **Agency > Billing** then shows the plan as **Arranged directly, not billed here**, with its end date when it has one, and there is no subscription to manage. Everything else works the same: every client workspace gets the plan, the pool renews each month (on the first, UTC, when the agency has no subscription), and top-up packs and AI balance can still be bought.
+
+Such an agency can also be given a pool and a monthly AI allowance of its own, larger than its plan's, extra sends for the current period, and AI balance that does not expire. **Agency > Billing** and the usage pages show the totals that apply.
+
+## The shared AI balance
+
+AI in Warmbly is paid for from a [balance](/guides/ai-credits/). Each client workspace keeps its own, and the agency has one more, shared by every client:
+
+| Plan | Included in the shared AI balance each month |
+| --- | --- |
+| Agency | $10 |
+| Agency Pro | $30 |
+
+The included amount is the agency's, not each client's, so opening more workspaces does not add to it. Client workspaces on an agency plan get no monthly allowance of their own.
+
+- **Spending order.** AI in a client workspace spends that workspace's own balance first. When it runs out, the rest of the charge comes from the agency balance: this period's included amount first, then money the agency bought.
+- **Renewal.** The included amount refills every month on the day the agency's billing period started, on an annual plan too. What is left of it does not carry over. Money the agency bought never expires.
+- **A cap per client.** Give a client an **AI cap** on the Clients page to hold it to part of the agency balance each period. A cap of `$0` keeps the client to its own balance. Select **No cap** to remove it. The cap counts only what the client spent from the agency balance, net of refunds, and starts over each period.
+- **Add balance to a client.** **Add balance** in a client's row menu moves an amount, from $1 to $5,000, out of the agency balance into that workspace's own balance, where it stays and does not expire. It is refused when the agency balance holds less. Moving money asks you to confirm it is you, and does not count toward the client's AI cap.
+- **Buy more.** **Agency > Billing > AI balance** adds money to the agency balance through checkout, dollar for dollar, from $5 to $5,000, while the agency has a plan. A purchase that is fully refunded leaves the balance, except for what was already spent.
+- **Refunds.** When a charge is refunded (a placement test that delivered nothing, for example), the agency's part goes back to the agency balance and the workspace's part to the workspace.
+
+**Agency > Usage** shows the balance next to the send pool: the included amount and what is left of it, what was bought, what clients spent from it this period, what was moved to clients, and each client's spend against its cap. A client workspace's own billing page counts the agency balance as available, so it is not shown as out of balance while the agency can still pay.
+
+Workspace spend limits and member spend limits in a client workspace count everything it spends, whichever balance paid.
+
+A self-hosted instance does not charge for AI, so there is no agency balance to manage there: AI runs without a balance, and moving or buying balance answers `503 agency_billing_disabled`.
+
+The agency balance and its history do not travel in a [workspace export](/guides/workspace-export-import/). Money already moved into a workspace is part of that workspace's own balance.
+
+## Client connect links
+
+Stop asking clients for their mailbox passwords. In a client's workspace, open **Mailboxes** and choose **Invite client to connect**. Pick how the client may connect (Google sign-in, Microsoft sign-in, IMAP and SMTP details, or any of them), how many mailboxes the link connects (up to 500), when it expires (1, 7, 30 or 90 days), the tags each mailbox gets, and whether warmup starts as soon as it connects. A label you give the link is only for your team.
+
+The link is shown once. Copy it and send it to the client; Warmbly keeps only a fingerprint of it, so a lost link cannot be shown again. Revoke it and make a new one instead.
+
+The client needs no Warmbly account. The page shows the workspace's name and brand, and:
+
+- **Google or Microsoft**: the client signs in with their provider in a separate window and approves Warmbly there. Their password goes only to Google or Microsoft.
+- **IMAP and SMTP**: the client picks their mail host from a list (Gmail with an app password, Microsoft 365, Zoho, Yahoo, iCloud, Fastmail, GoDaddy) or enters the servers, passes a security check, and the details are tested against their mail server before anything is saved. The password is stored encrypted and nobody in the workspace can read it.
+
+Each mailbox lands in the workspace exactly as if you connected it, counted against the workspace's [mailbox allowance](/guides/mailboxes/#mailbox-allowance), and in your name: you get a notification each time one connects, and the mailbox list updates for the whole team. When the link reaches its limit the client sees that it is complete; a link that expired or was revoked tells them to ask for a new one, and one whose workspace is full tells them to let you know.
+
+The link opens on your agency's [portal domain](/guides/white-label/#your-own-domain) when it has one, else on the shared portal address (`portal.warmbly.com` on Warmbly Cloud). The page works on its own and inside an iframe on your website, so you can put it on a client onboarding page. **Sent links** in the same dialog lists every link with its status, how many mailboxes it connected and which, and **Revoke**, which stops the link at once and leaves connected mailboxes alone. A link also stops working when the member who made it loses permission to manage mailboxes.
+
+A link is a live way into the workspace, so it does not move with a [workspace export](/guides/workspace-export-import/); the mailboxes it connected do. See [Mailboxes](/guides/mailboxes/#letting-a-client-connect-their-own-mailboxes) and the [connect link endpoints](/api/endpoints/).
+
+## Client reports
+
+Stop building reports by hand. In each client workspace, open **Reports** and save a report over the client's campaigns, campaign folders and mailboxes, with the sections they should see: headline numbers, a daily chart, a campaign table, recent and positive replies, and mailbox health with warmup. Share it with a link that carries your brand, embed it on your own site, or schedule it to email the client every week or month with a **View full report** button.
+
+The client sees the same numbers your dashboard shows, only for what the report covers, and nothing you left off. Reply snippets stay hidden unless you turn them on. A link expires after 90 days by default, and **Revoke** turns off the link and every emailed one at once. See [client reports](/guides/client-reports/).
+
+## White-label
+
+Put your agency's brand on everything a client sees. Under **Agency > Branding**, set a name, logo, accent colour and website once, and every client workspace shows them on its connect links, shared reports, report emails and forms. A client workspace can set its own brand under **Settings > Branding**, which replaces the agency's as a whole.
+
+- **Portal domain**: point one subdomain, such as `portal.youragency.com`, at Warmbly and every client's connect links and reports are built on it instead of the shared portal address. Form links stay on the client's forms domain or the shared forms host. Your clients can also sign in to the full dashboard there, in your brand, with no Warmbly name: see [the dashboard on your portal domain](/guides/white-label/#the-dashboard-on-your-portal-domain). You choose whether they sign in on your domain or on the main address, and either way a session signed in there reaches only your client workspaces: see [where clients sign in](/guides/white-label/#where-clients-sign-in).
+- **Portal theme**: choose a font, corner style and default appearance, upload a tab icon, shape the sign-in page with a layout, background, image, heading and message, and add your support and legal links. See [portal theme](/guides/white-label/#portal-theme).
+- **Embeds**: paste a connect link or a report link into **Embed on your website** for a script tag or an iframe that resizes to fit on your own site.
+- **Your brand in the dashboard**: your client's own team (members who are not your staff) sees your logo and name in the dashboard instead of Warmbly's, a **Managed by** line with your agency's name, and none of Warmbly's plan, trial or balance prompts. Your staff keep Warmbly's dashboard with a way back to the agency view.
+- **Powered by**: Agency shows your logo and colour with a small "Powered by Warmbly" line. Agency Pro and Enterprise can remove it.
+
+See [white-label](/guides/white-label/).
+
+## Copy campaigns to a client
+
+Build a campaign once and reuse it for every client. **Copy to workspace…** sits in a campaign's **⋯** menu, on its row and in its header, and in a template's menu on the **Templates** page. To copy several templates, tick them and use the selection bar. Pick one or more workspaces (up to 10 at a time). When you are agency staff, your client workspaces are grouped under the agency's name.
+
+Each workspace gets a **draft**:
+
+- **What travels**: the steps with their branching, every campaign setting, the schedule and sending windows, A/B variants and attachments. Images in the emails are copied into the client's workspace and the copy points at them there. Turn on **Also copy templates** to send templates along too.
+- **What stays behind**: leads, progress, statistics, activity, sending mailboxes, mailbox tags, folders and the tracking domain. Add leads and mailboxes in the client's workspace before you start the copy.
+- **Settings to pick again**: a step that pointed at something only your workspace has (a tag, segment, pipeline, automation, teammate or form link) loses that setting. The summary lists each one. An AI step loses any action that depended on a cleared setting.
+
+The summary shows the result for each workspace, with a link that switches to that workspace and opens the copy. A workspace that could not be copied into says why, and the others go ahead regardless.
+
+To copy, you need to see the campaign in this workspace, and in each destination you need the **Manage campaigns** permission with access to the whole workspace. A member restricted to selected campaigns cannot copy anything out of the workspace, so a client never takes your campaigns with them. A copy counts toward the destination's daily limit on new campaigns, and its attachments and images count toward that workspace's storage.
+
+API keys and OAuth tokens each reach a single workspace, so they can only copy within it; copying to another workspace needs a signed-in member of both. See [the API](/api/endpoints/) for `POST /campaigns/:id/copy-to` and `POST /templates/copy-to`. This is not the same as [exporting a workspace](/guides/workspace-export-import/), which moves everything a workspace owns to another instance.
+
+## Agency home and inbox
+
+**Agency > Overview** shows every client on one screen, with problems first. From inside any client, the agency's name at the left of the header brings you back to it, on a phone as well.
+
+The top of the page has the send pool meter with its projection to the end of the period, totals across your clients, and **Needs attention**. That list names, per client:
+
+- mailboxes that are disconnected or failing to sign in
+- mailboxes quarantined or blocked from warmup
+- a bounce rate of 5% or more over the last 7 days, once a client has sent at least 20 emails in that time
+- campaigns paused by a sending limit, and campaigns paused until the plan is active
+- a client at 90% or more of its monthly cap
+- the agency's pool when 10% or less is left, or when it is projected to run out before the period ends
+
+Selecting an item opens the page where it is fixed: it switches to that client's workspace first when the fix lives there.
+
+Each client row shows its share of the pool and its monthly cap, emails sent today, replies waiting (unread conversations from people in its inbox), positive replies in the last 7 days, active campaigns, mailboxes with any disconnected ones and their warmup standing (watch, throttled, quarantined, blocked), the 7-day bounce rate, and its open [Advisor](/guides/advisor/) findings by severity. Rows with critical problems come first. Selecting a row opens the client's workspace; its menu also opens the client's inbox, analytics and reports, sends a [connect link](#client-connect-links), starts a [campaign copy](#copy-campaigns-to-a-client) and edits the client's monthly cap.
+
+What a row shows follows your own membership in that client, the same as inside the workspace. Campaign numbers, mailboxes and the bounce rate need **View campaigns**, replies waiting needs **Use unified inbox**, and Advisor findings need **View analytics**. A client where you are restricted to selected campaigns and mailboxes, or where you are not a member, shows its pool use only. Staff are added to every client with access to the whole workspace, so this only differs when a client changed someone's access. The page refreshes on its own: changes in the workspace you are in arrive live, and the rest within a minute or when you come back to the tab.
+
+**Agency > Inbox** lists conversations from every client whose inbox you can read, newest first, each with the client's name. Filter by client, by **Unread**, **Needs reply** (the newest message came from someone else) and **Positive** (a reply classified positive on a campaign), or search subjects, message text and addresses. Opening a conversation shows it read-only and leaves it unread for the client's team. **Reply in** the client's name switches to that client's workspace and opens the same conversation in its inbox, where you reply as usual. If you are restricted to selected mailboxes in a client, you see only the conversations in those mailboxes.
+
+Neither page sends, changes or deletes anything, and both read through the [API](/api/endpoints/) routes `GET /agency/:agencyId/overview` and `GET /agency/:agencyId/inbox`.
+
+## API
+
+An agency gets API keys that work across all of its clients, so one integration can serve every client without a key per workspace.
+
+### Create a key
+
+1. Open **Agency > API keys** and select **Create key**. Only the agency's owner and admins see the keys and can create them.
+2. Name the key and pick its permissions: **Read only**, **Full access**, or **Custom** to choose each one. Agency permissions cover the agency's own endpoints (its clients, usage and AI balance); client workspace permissions cover what the key can do inside each client, the same as a workspace key.
+3. Optionally limit it to IP addresses or ranges.
+4. Confirm it is you, then copy the key. It starts with `wmagency_` and is shown once; Warmbly keeps only a hash of it.
+
+The key list shows each key's prefix, status and when it was last used. Select a key to rename it or change its IP addresses, and revoke it from there or from its menu. A revoked key stops working on its next request.
+
+### Call a client
+
+Send the key as a bearer token and name the client workspace in the `Warmbly-Organization` header:
+
+```bash
+curl https://api.warmbly.com/v1/campaigns \
+  -H "Authorization: Bearer wmagency_..." \
+  -H "Warmbly-Organization: <client workspace id>"
+```
+
+Every request checks that the workspace is still one of your clients before anything else happens, so a client you detach, or one that leaves the agency, is out of reach on the next request. The agency's own endpoints under `/v1/agency/<agency id>` take no header. Client workspace ids are in `GET /v1/agency/<agency id>/clients`. See [agency API keys](/api/authentication/#agency-api-keys) for examples in JavaScript, Python and Go, and [the endpoint map](/api/endpoints/#agencies) for which agency endpoints a key can call.
+
+### What a key acts as
+
+A key acts for the owner or admin who created it, with their Admin access in each client and never more than the permissions you picked. It stops working when that person stops being an owner or admin of the agency, changes or resets their password, or is banned. Changes made with it show in each client's activity log under that person, marked as made with the key.
+
+### What keys cannot do
+
+- Add or change staff, rename the agency, or change its brand or portal domain.
+- Start a checkout, buy a top-up or AI balance, or open the billing portal: those open a browser page.
+- Create, change or revoke API keys, the agency's or a workspace's, or manage OAuth apps.
+- Open the realtime connection or use the MCP server. There are no OAuth apps for agencies yet.
+
+Agency keys belong to the agency, so a [workspace archive](/guides/workspace-export-import/) does not carry them.
+

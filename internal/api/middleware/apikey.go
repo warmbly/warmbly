@@ -87,6 +87,8 @@ func (h *Handler) CombinedAuthMiddleware() gin.HandlerFunc {
 		authHeader := c.GetHeader("Authorization")
 
 		switch {
+		case strings.HasPrefix(authHeader, "Bearer "+apikey.AgencyKeyPrefix):
+			h.validateAgencyKeyForWorkspace(c, strings.TrimPrefix(authHeader, "Bearer "))
 		case strings.HasPrefix(authHeader, "Bearer "+apikey.KeyPrefix):
 			key := strings.TrimPrefix(authHeader, "Bearer ")
 			h.validateAPIKey(c, key)
@@ -101,6 +103,28 @@ func (h *Handler) CombinedAuthMiddleware() gin.HandlerFunc {
 			c.Abort()
 		}
 	}
+}
+
+// applyKeyRateLimit writes the per-key rate-limit headers and answers 429 when the window is spent.
+func applyKeyRateLimit(c *gin.Context, limit, remaining, retryAfter int, allowed bool) bool {
+	if limit <= 0 {
+		limit = 60
+	}
+	c.Header("X-RateLimit-Limit", fmt.Sprintf("%d", limit))
+	c.Header("X-RateLimit-Remaining", fmt.Sprintf("%d", remaining))
+	c.Header("X-RateLimit-Policy", fmt.Sprintf("%d;w=60", limit))
+	if allowed {
+		return true
+	}
+	c.Header("Retry-After", fmt.Sprintf("%d", retryAfter))
+	c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+		"error":       "rate_limit_exceeded",
+		"message":     fmt.Sprintf("API key exceeded %d requests per minute", limit),
+		"code":        "rate_limit_exceeded",
+		"request_id":  c.GetString(RequestIDContextKey),
+		"retry_after": retryAfter,
+	})
+	return false
 }
 
 func (h *Handler) validateAPIKey(c *gin.Context, rawKey string) {
@@ -127,22 +151,7 @@ func (h *Handler) validateAPIKey(c *gin.Context, rawKey string) {
 	// every API-key request so well-behaved clients can self-throttle
 	// before hitting 429. Fails open on cache errors.
 	remaining, retryAfter, allowed := h.APIKeyService.CheckAndIncrementRateLimit(c.Request.Context(), key)
-	limit := key.RateLimitPerMinute
-	if limit <= 0 {
-		limit = 60
-	}
-	c.Header("X-RateLimit-Limit", fmt.Sprintf("%d", limit))
-	c.Header("X-RateLimit-Remaining", fmt.Sprintf("%d", remaining))
-	c.Header("X-RateLimit-Policy", fmt.Sprintf("%d;w=60", limit))
-	if !allowed {
-		c.Header("Retry-After", fmt.Sprintf("%d", retryAfter))
-		c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
-			"error":       "rate_limit_exceeded",
-			"message":     fmt.Sprintf("API key exceeded %d requests per minute", limit),
-			"code":        "rate_limit_exceeded",
-			"request_id":  c.GetString(RequestIDContextKey),
-			"retry_after": retryAfter,
-		})
+	if !applyKeyRateLimit(c, key.RateLimitPerMinute, remaining, retryAfter, allowed) {
 		return
 	}
 
@@ -289,6 +298,9 @@ func (h *Handler) validateJWT(c *gin.Context, token string) {
 	c.Set(UserIDKey, session.UserID.String())
 	c.Set(SessionKey, session)
 	c.Set(AccessTokenKey, token)
+	if !h.enforcePortalSession(c, session) {
+		return
+	}
 	if xerr := h.setSessionOrganization(c, session); xerr != nil {
 		errx.JSON(c, xerr)
 		c.Abort()

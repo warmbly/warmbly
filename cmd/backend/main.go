@@ -36,6 +36,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/warmbly/warmbly/internal/app/admindevice"
 	"github.com/warmbly/warmbly/internal/app/advisor"
+	"github.com/warmbly/warmbly/internal/app/agency"
+	"github.com/warmbly/warmbly/internal/app/agencyhome"
 	"github.com/warmbly/warmbly/internal/app/aiagent"
 	"github.com/warmbly/warmbly/internal/app/aitools"
 	"github.com/warmbly/warmbly/internal/app/analytics"
@@ -47,17 +49,21 @@ import (
 	"github.com/warmbly/warmbly/internal/app/balance"
 	behaviorapp "github.com/warmbly/warmbly/internal/app/behavior"
 	"github.com/warmbly/warmbly/internal/app/bootstrap"
+	"github.com/warmbly/warmbly/internal/app/brandkit"
 	"github.com/warmbly/warmbly/internal/app/campaign"
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	"github.com/warmbly/warmbly/internal/app/clay"
 	"github.com/warmbly/warmbly/internal/app/cliauth"
+	"github.com/warmbly/warmbly/internal/app/clientreport"
 	"github.com/warmbly/warmbly/internal/app/cloudlink"
 	"github.com/warmbly/warmbly/internal/app/compose"
+	"github.com/warmbly/warmbly/internal/app/connectlink"
 	"github.com/warmbly/warmbly/internal/app/contact"
 	"github.com/warmbly/warmbly/internal/app/contactimport"
 	"github.com/warmbly/warmbly/internal/app/credits"
 	"github.com/warmbly/warmbly/internal/app/crm"
 	"github.com/warmbly/warmbly/internal/app/crmmode"
+	"github.com/warmbly/warmbly/internal/app/crossorgcopy"
 	"github.com/warmbly/warmbly/internal/app/customhost"
 	"github.com/warmbly/warmbly/internal/app/dailythrottle"
 	"github.com/warmbly/warmbly/internal/app/dangerzone"
@@ -108,6 +114,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/placement"
 	"github.com/warmbly/warmbly/internal/app/planoffer"
 	"github.com/warmbly/warmbly/internal/app/poollink"
+	"github.com/warmbly/warmbly/internal/app/portalhandoff"
 	"github.com/warmbly/warmbly/internal/app/ratelimit"
 	"github.com/warmbly/warmbly/internal/app/referral"
 	"github.com/warmbly/warmbly/internal/app/releases"
@@ -191,6 +198,7 @@ func main() {
 	// nothing, and a forged token signed with the default AUTH_SECRET is
 	// accepted by the realtime service.
 	insecureDefaultsInUse := checkSecrets()
+	checkPortalEdgeToken()
 
 	var addr string
 	var ginMode string
@@ -227,6 +235,8 @@ func main() {
 	var contactService contact.ContactService
 	var segmentService segment.Service
 	var formService form.Service
+	var connectLinkService *connectlink.Service
+	var clientReportService clientreport.Service
 	var websiteTrackingService websitetracking.Service
 	var socketService socket.SocketService
 	var uniboxService unibox.UniboxService
@@ -273,6 +283,7 @@ func main() {
 	var crmService crm.CRMService
 	var teamService team.TeamService
 	var apiKeyService apikey.APIKeyService
+	var agencyKeyService *apikey.AgencyKeyService
 	var idempotencyService idempotencyapp.Service
 
 	// New services for trial, feature gates, and worker assignment
@@ -288,9 +299,12 @@ func main() {
 	// The Partnership tools: a workspace's own OAuth apps and the mailbox connect API.
 	var mailboxOAuthAppService oauthapp.Service
 	var mailboxConnectService *mailboxconnect.Service
+	var agencyService *agency.Service
+	var agencyHomeService *agencyhome.Service
 
 	// Email send & templates
 	var templateService template.TemplateService
+	var crossOrgCopyService *crossorgcopy.Service
 	var emailSendService emailsend.EmailSendService
 	var composeService compose.Service
 
@@ -371,6 +385,11 @@ func main() {
 	var unsubscribeLinkRepository repository.UnsubscribeLinkRepository
 	var customDomainRepository repository.CustomDomainRepository
 	var customHosts *customhost.Checker
+	// brandService resolves workspace and agency brands for every public page.
+	var brandService *brandkit.Service
+	// A portal session is held to its agency's clients; sign-in on the main address hands a portal its session.
+	var portalHandoffService *portalhandoff.Service
+	var portalClients middleware.PortalClients
 	// instanceSettings and the health registry are built after the handler
 	// dependencies, so the pool is hoisted out of the connection block.
 	var instanceSettings instancesettings.Service
@@ -959,6 +978,30 @@ func main() {
 		})
 		organizationService.WireMemberRemoval(oauthService.RevokeMemberGrants)
 
+		// Agencies: staff mirrored into client workspaces, the shared send pool and agency billing.
+		agencyService = agency.NewService(repository.NewAgencyRepository(primaryDB.Pool), organizationService, userRepostory, subscriptionRepository, planRepository)
+		agencyService.WireMemberRemoval(func(ctx context.Context, orgID, userID uuid.UUID) error {
+			if xerr := tokenService.LeaveOrganization(ctx, userID, orgID); xerr != nil {
+				return xerr
+			}
+			return nil
+		})
+		agencyService.WireMemberRemoval(oauthService.RevokeMemberGrants)
+		agencyService.WireAIBalance(repository.NewAgencyAIRepository(primaryDB), creditService != nil && !creditService.Unmetered())
+		if workerAssignmentService != nil {
+			agencyService.WireIsolatedEgress(workerAssignmentService)
+		}
+		if g, ok := featureGateService.(interface{ WireAgencyPool(feature.AgencyPool) }); ok {
+			g.WireAgencyPool(agencyService)
+		}
+		if o, ok := organizationService.(interface{ WireAgencyPool(feature.AgencyPool) }); ok {
+			o.WireAgencyPool(agencyService)
+		}
+		if w, ok := stripeService.(interface{ WireAgency(stripe.AgencyWebhooks) }); ok {
+			w.WireAgency(agencyService)
+		}
+		go jobrun.Loop(ctx, "agency_sync", 10*time.Minute, false, agencyService.Sweep)
+
 		// A login ban has to end the sessions the person already holds, or it
 		// does nothing until their tokens expire twelve hours later. Wired here
 		// rather than at construction because the admin service is built before
@@ -1474,7 +1517,29 @@ func main() {
 		formService.SetOwnDomains(ownDomains)
 		go jobs.NewFormEventsRetentionJob(formEventRepository).WireRetention(instanceSettings).Start(ctx, 12*time.Hour)
 		formService.SetCustomHosts(customHosts)
-		go jobs.NewFormsDomainSweep(organizationRepoForHandler, customHosts).Start(ctx, time.Hour)
+		// White-label: a workspace's brand, else its agency's, else the deployment's.
+		brandRepository := repository.NewBrandRepository(primaryDB.Pool)
+		brandService = brandkit.NewService(brandRepository,
+			brandkit.NewDBResolver(brandRepository, brandkit.PlanEntitlements{Subs: subscriptionRepository, Plans: planRepository}),
+			planRepository, customHosts)
+		// Verified agency portal domains serve the dashboard: CORS, OAuth returns and SSO trust exactly those.
+		portals := brandkit.NewPortals(brandRepository)
+		brandService.WirePortals(portals)
+		config.SetPortalHosts(portals.Verified)
+		tokenService.WirePortalResolver(portals.Binding)
+		portalHandoffService = portalhandoff.NewService(portalhandoff.RedisStore{Cache: cache}, portals, tokenService, userRepostory)
+		portalClients = middleware.NewPortalClientCache(repository.NewAgencyRepository(primaryDB.Pool))
+		go jobs.NewFormsDomainSweep(organizationRepoForHandler, customHosts).WithPortals(brandRepository, brandService).Start(ctx, time.Hour)
+		// Behind a Cloudflare for SaaS zone of their own, verified agency portal domains are registered there as they verify.
+		portalEdge := edgehost.Open(repository.NewEdgeHostnameRepository(primaryDB.Pool, repository.EdgePortal),
+			cfsaas.Config{ZoneID: config.CloudflareSaaSPortalZoneID(), APIToken: config.CloudflareSaaSPortalAPIToken(), Origin: config.CloudflareSaaSPortalOrigin()},
+			func() []string {
+				return []string{config.PortalCNAMETarget(), config.FormsHostname(), config.TrackingHostname()}
+			})
+		if portalEdge.Enabled() {
+			brandService.WireEdge(portalEdge)
+			go portalEdge.Start(ctx)
+		}
 		go jobs.NewContactMailHostSweep(contactRepoForHandler, cache, streamingPublisher).Start(ctx)
 		go jobs.NewContactLocationSweep(contactRepoForHandler, cache, streamingPublisher).Start(ctx)
 		// A visibly bad import is filed on the workspace's posture. On its own
@@ -1490,8 +1555,9 @@ func main() {
 		leadSyncServiceForHandler = leadsync.NewService(leadSyncRepository, integrationServiceForHandler, contactService)
 
 		apiKeyService = apikey.NewService(cache, apiKeyRepository)
+		agencyKeyService = apikey.NewAgencyKeyService(repository.NewAgencyAPIKeyRepository(primaryDB.Pool), repository.NewAgencyRepository(primaryDB.Pool), cache)
 		// A password change or reset can also end the user's app grants and the API keys they created.
-		authService.WireCredentialRevokers(oauthService, apiKeyService)
+		authService.WireCredentialRevokers(oauthService, apiKeyService, agencyKeyService)
 		// `warmbly auth login`: the browser approval mints an ordinary API key
 		// through the service above, so it has to be built after it.
 		cliAuthService = cliauth.NewService(repository.NewCLIAuthRepository(primaryDB.Pool), apiKeyService, organizationService, userService, organizationRepository)
@@ -1599,6 +1665,17 @@ func main() {
 		if aware, ok := sequenceService.(sequence.AttachmentAware); ok {
 			aware.WireAttachments(attachmentRepoForHandler, s3ForHandler)
 		}
+		crossOrgCopyService = crossorgcopy.NewService(crossorgcopy.Deps{
+			Orgs:        organizationService,
+			Campaigns:   campaignRepostory,
+			Templates:   templateRepository,
+			Attachments: attachmentRepoForHandler,
+			Images:      emailImageRepoForHandler,
+			Storage:     s3ForHandler,
+			Limits:      featureGateService,
+			Throttle:    dailyThrottleService,
+			Logs:        campaignLogRepository,
+		})
 		// Attaching a lead to a running campaign has to wake that campaign's
 		// parked send chain, or the lead sits queued until the chain's next
 		// tick. Wired here because contactService is built before the scheduler
@@ -1642,6 +1719,10 @@ func main() {
 		// Read and unread in the unibox are carried out to the mailbox itself,
 		// so a thread read here is read in Gmail too.
 		uniboxService.WireProviderRelay(eventsPublisher)
+		// The agency home and cross-client inbox read each client through the caller's membership in it.
+		if agencyService != nil {
+			agencyHomeService = agencyhome.NewService(agencyService, repository.NewAgencyHomeRepository(primaryDB.Pool), organizationService, uniboxService, featureGateService)
+		}
 
 		// Org AI skills (playbooks): CRUD for settings + prompt injection + the
 		// load_skill tool source.
@@ -1838,6 +1919,7 @@ func main() {
 		}
 		notificationService.WirePush(pushSender, repository.NewDeviceTokenRepository(primaryDB.Pool), cache.Client)
 		advancedService.WireNotifier(notificationService)
+		agencyService.WireNotifier(notificationService)
 		if balanceService != nil {
 			balanceService.WireNotifier(notificationService)
 		}
@@ -1948,6 +2030,30 @@ func main() {
 		// returning a clean "not available".
 		tasksService.SetAI(aiProvider, creditService)
 
+		// Client connect links: a client connects mailboxes into a workspace through the same connect paths.
+		connectLinkService = connectlink.New(connectlink.Deps{
+			Repo:       repository.NewClientConnectLinkRepository(primaryDB),
+			Mailboxes:  emailService,
+			Workspaces: organizationService,
+			Warmup:     tasksService,
+			Notifier:   notificationService,
+			Captcha:    captcha,
+			Redis:      cache.Client,
+			Brands:     brandService.Resolver(),
+			BaseURL:    brandService.PortalBaseURL,
+		})
+
+		// Client reports: shared by link on the public page host and emailed on a schedule.
+		clientReportService = clientreport.New(clientreport.Deps{
+			Repo:      repository.NewClientReportRepository(primaryDB.Pool),
+			Analytics: analyticsService,
+			Brands:    brandService.Resolver(),
+			Hosts:     brandService,
+			Mail:      emailNotificationService,
+			LinkKey:   clientreport.EmailLinkKey(authCfg.AuthSecret),
+		})
+		go clientReportService.Start(ctx, time.Minute)
+
 		// Mailbox imports: files and pasted lists connected in the background,
 		// with each domain's mail host detected from its DNS.
 		// One prover for every DNS ownership proof, keyed by the instance secret.
@@ -2025,7 +2131,7 @@ func main() {
 		sendingDomainService.WireCustomHosts(customHosts)
 		// Behind a Cloudflare for SaaS zone, every served customer name is registered there as it verifies.
 		if edge := cfsaas.New(cfsaas.Config{ZoneID: config.CloudflareSaaSZoneID(), APIToken: config.CloudflareSaaSAPIToken(), Origin: config.CloudflareSaaSOrigin()}); edge != nil {
-			edgeHosts := edgehost.New(repository.NewEdgeHostnameRepository(primaryDB.Pool), edge, func() []string {
+			edgeHosts := edgehost.New(repository.NewEdgeHostnameRepository(primaryDB.Pool, repository.EdgeTracking), edge, func() []string {
 				return []string{config.TrackingHostname(), config.FormsHostname()}
 			})
 			sendingDomainService.WireEdge(edgeHosts)
@@ -2598,6 +2704,8 @@ func main() {
 		ContactService:       contactService,
 		SegmentService:       segmentService,
 		FormService:          formService,
+		ConnectLinkService:   connectLinkService,
+		ClientReportService:  clientReportService,
 		SequenceService:      sequenceService,
 		UniboxService:        uniboxService,
 
@@ -2622,6 +2730,9 @@ func main() {
 		PlanOfferService:       planOfferService,
 		MailboxConnectService:  mailboxConnectService,
 		MailboxOAuthAppService: mailboxOAuthAppService,
+		AgencyService:          agencyService,
+		AgencyHomeService:      agencyHomeService,
+		AgencyKeyService:       agencyKeyService,
 
 		// Trial & feature gates
 		TrialService:            trialService,
@@ -2643,6 +2754,7 @@ func main() {
 
 		// Email send & templates
 		TemplateService:  templateService,
+		CrossOrgCopy:     crossOrgCopyService,
 		EmailSendService: emailSendService,
 		ComposeService:   composeService,
 
@@ -2736,6 +2848,8 @@ func main() {
 		UnsubscribeTickets:     unsubscribeLinkRepository,
 		CustomDomains:          customDomainRepository,
 		CustomHosts:            customHosts,
+		BrandService:           brandService,
+		PortalHandoffs:         portalHandoffService,
 		WebsiteTrackingService: websiteTrackingService,
 		UserRepo:               userRepoForHandler,
 		OrgRepo:                organizationRepoForHandler,
@@ -2777,6 +2891,8 @@ func main() {
 		OAuthService:        oauthService,
 		Cache:               authCache,
 		PoolLinkService:     poolLinkService,
+		AgencyKeys:          agencyKeyService,
+		PortalClients:       portalClients,
 	}
 	if fleetNodeService != nil {
 		m.NodeCredentials = fleetNodeService

@@ -29,6 +29,7 @@ Everything here is env-var configuration and manifests in [`deploy/split-cloud/`
 | realtime | control | Websocket fanout; needs Redis and a public hostname |
 | tracking | control | Public pixel and click endpoints on their own domain |
 | forms | control | Only if you use hosted forms |
+| portal | control | Only for client connect links and shared reports. Stores nothing; set `PORTAL_DOMAIN` and `PORTAL_EDGE_TOKEN` on it and on the backend |
 | web, admin | control | Static builds, configured at container start |
 | worker | execution | Sends and syncs from machines you control |
 | NATS, Redis | execution side | Both planes reach them; keeping them near the fleet keeps the noisy hop local |

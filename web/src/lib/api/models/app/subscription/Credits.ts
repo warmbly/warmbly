@@ -39,6 +39,8 @@ export interface Balance {
     /** Whether this workspace's plan lets it add money; absent from an older backend. */
     can_add_money?: boolean;
     balance_usd: number;
+    /** What the workspace's agency balance adds on top of its own; absent outside an agency. */
+    agency_usd?: number;
     monthly_usd: number;
     purchased_usd: number;
     monthly_allowance_usd: number;

@@ -27,6 +27,10 @@ describe("nameError", () => {
     it("bounds length by kind", () => {
         expect(nameError("Name", "a".repeat(51), "person")).toMatch(/50/);
         expect(nameError("Name", "a".repeat(64), "workspace")).toBeNull();
+        expect(nameError("The heading", "a".repeat(60), "heading", true)).toBeNull();
+        expect(nameError("The heading", "a".repeat(61), "heading", true)).toMatch(/60/);
+        expect(nameError("The message", "a".repeat(200), "message", true)).toBeNull();
+        expect(nameError("The message", "a".repeat(201), "message", true)).toMatch(/200/);
     });
 
     it("allows an empty optional name", () => {
@@ -51,5 +55,20 @@ describe("appNameError", () => {
     it("keeps an existing name editable", () => {
         expect(appNameError("Name", "Warmbly Sync", "Warmbly Sync")).toBeNull();
         expect(appNameError("Name", "Warmbly Sync 2", "Warmbly Sync")).toMatch(/cannot include Warmbly/);
+    });
+});
+
+describe("page copy", () => {
+    it("accepts a plain sentence or two", () => {
+        expect(nameError("The heading", "Welcome to Northwind", "heading", true)).toBeNull();
+        expect(nameError("The message", "Your campaigns, replies and reports in one place. Sign in to pick up where you left off.", "message", true)).toBeNull();
+        expect(nameError("The heading", "", "heading", true)).toBeNull();
+        expect(nameError("The heading", "2026", "heading", true)).toBeNull();
+    });
+    it("refuses a link, markup and a line with nothing to read", () => {
+        expect(nameError("The message", "Help is at northwind.com", "message", true)).toMatch(/cannot contain a link/);
+        expect(nameError("The message", "Write to help@northwind.test", "message", true)).toMatch(/cannot contain a link/);
+        expect(nameError("The heading", "<b>Welcome</b>", "heading", true)).toMatch(/not allowed/);
+        expect(nameError("The heading", "!!!", "heading", true)).toMatch(/a letter or a number/);
     });
 });

@@ -21,6 +21,11 @@ import type { SlackLinkPreview, SlackUserLink } from "@/lib/api/models/app/integ
 import type { AppError } from "@/lib/api/client/normalizeError";
 import { errorMessage } from "@/lib/errors/message";
 
+import HelpLink from "@/components/shared/HelpLink";
+import { helpLink } from "@/lib/helpLink";
+
+const LINKING_DOCS = "https://docs.warmbly.com/guides/slack/#link-your-slack-account";
+
 export default function SlackLinkPage() {
     if (!getToken()) {
         const next = window.location.pathname + window.location.search;
@@ -145,10 +150,10 @@ function SlackLinkInner() {
                     <Link to="/app/integrations" className="hover:text-white transition-colors">
                         Back to dashboard
                     </Link>
-                    <span className="text-white/60">·</span>
-                    <a href="https://docs.warmbly.com/guides/slack/#link-your-slack-account" target="_blank" rel="noreferrer" className="hover:text-white transition-colors">
+                    {helpLink(LINKING_DOCS) && <span className="text-white/60">·</span>}
+                    <HelpLink href={LINKING_DOCS} className="hover:text-white transition-colors" portalLabel="Support">
                         How linking works
-                    </a>
+                    </HelpLink>
                 </div>
             </div>
         </div>

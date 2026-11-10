@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "./styles/theme-accent.css";
 @import "./styles/theme-dark.css";
 
 @custom-variant dark (&:is(.dark *));
@@ -82,7 +83,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  /* A brand theme sets --wb-font-sans and --wb-font (lib/portalTheme.ts); unset, both are the stock stacks. */
+  --font-sans: var(--wb-font-sans, 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif);
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
   --font-display: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   --font-serif: Georgia, 'Times New Roman', serif;
@@ -127,7 +129,7 @@
 
 body {
   color: var(--foreground);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  font-family: var(--wb-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';

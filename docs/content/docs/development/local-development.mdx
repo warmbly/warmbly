@@ -67,9 +67,9 @@ iterating on those services themselves.
 Day-one:
 
 ```bash
-make dev        # one command: infra + migrations + seed + backend/forms/consumer/worker + realtime + tracking + dashboard + admin
+make dev        # one command: infra + migrations + seed + backend/forms/portal/consumer/worker + realtime + tracking + dashboard + admin
 make infra      # postgres, redis, nats, mailpit (leave running)
-make run        # backend + forms + consumer + worker (native, after make infra)
+make run        # backend + forms + portal + consumer + worker (native, after make infra)
 make up         # the whole no-cloud stack in Docker (docker compose up --build)
 make gen-key    # print a KMS_LOCAL_MASTER_KEY for a real deployment
 make seed       # load rich fixtures (3 orgs, 6 mailboxes, a campaign)
@@ -223,9 +223,11 @@ make infra            # once: the backing services in Docker
 make backend          # API on :8080 (applies migrations on boot)
 make forms            # public forms service on :8090 (builds the forms/ app, then serves it)
 make forms-web        # Vite dev server for forms/ on :5175 when editing the app itself
+make portal           # portal service on :8095 under wrangler dev (builds portal/ first; localhost is its shared address)
+make portal-web       # Vite dev server for portal/ on :5176 when editing the app itself
 make consumer         # event consumer (NATS -> postgres)
 make worker           # send/sync worker (run more for parallelism)
-make run              # backend + forms + consumer + worker in one terminal
+make run              # backend + forms + portal + consumer + worker in one terminal
 make web              # dashboard dev server on :5173
 make admin            # admin app on :5174
 make site             # marketing site on :4321

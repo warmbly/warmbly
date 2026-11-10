@@ -3,13 +3,15 @@ export const mailPreviewCsp = "default-src 'none'; script-src 'none'; object-src
 // The lead finder map's default tiles, styles, sprites and glyphs all come from here.
 export const mapTileOrigin = "https://tiles.openfreemap.org";
 
-export function dashboardCsp({ scripts = [], styles = [], nonce = "", connections = [], analytics = [], images = [] }: {
+export function dashboardCsp({ scripts = [], styles = [], nonce = "", connections = [], analytics = [], images = [], frames = [] }: {
     scripts?: string[];
     styles?: string[];
     nonce?: string;
     connections?: string[];
     analytics?: string[];
     images?: string[];
+    /** The API origin, which serves the captcha bridge a portal domain frames. */
+    frames?: string[];
 } = {}) {
     const authorization = nonce ? [`'nonce-${nonce}'`] : [];
     return [
@@ -21,7 +23,7 @@ export function dashboardCsp({ scripts = [], styles = [], nonce = "", connection
         `connect-src 'self' ${mapTileOrigin} ${[...connections, ...analytics].join(" ")}`,
         `img-src 'self' data: blob: ${images.join(" ")}`,
         "font-src 'self'",
-        "frame-src 'self' https://challenges.cloudflare.com",
+        `frame-src 'self' https://challenges.cloudflare.com ${frames.join(" ")}`,
         "worker-src 'self' blob:",
         "media-src 'self' blob:",
         "manifest-src 'self'",

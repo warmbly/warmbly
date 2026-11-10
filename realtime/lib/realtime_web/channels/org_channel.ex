@@ -59,7 +59,7 @@ defmodule RealtimeWeb.OrgChannel do
 
     case user_id
          |> Auth.check_org_membership(org_id)
-         |> Auth.confine(socket.assigns[:credential]) do
+         |> Auth.confine_socket(socket.assigns) do
       {:ok, member} ->
         Logger.debug("User #{user_id} joined org channel #{org_id}")
 
@@ -99,6 +99,9 @@ defmodule RealtimeWeb.OrgChannel do
 
       {:error, :not_a_member} ->
         ChannelGuard.join_error("not_a_member")
+
+      {:error, :portal_session_restricted} ->
+        ChannelGuard.join_error("portal_session_restricted")
 
       {:error, reason} ->
         Logger.warning("Failed to join org channel: #{inspect(reason)}")
@@ -284,7 +287,7 @@ defmodule RealtimeWeb.OrgChannel do
            fn ->
              socket.assigns.user_id
              |> Auth.check_org_membership(socket.assigns.org_id)
-             |> Auth.confine(socket.assigns[:credential])
+             |> Auth.confine_socket(socket.assigns)
            end,
            force
          ) do

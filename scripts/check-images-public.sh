@@ -39,10 +39,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Every image the release advertises. The nine compose services, plus the cli
+# Every image the release advertises. The ten compose services, plus the cli
 # image, which the release notes table tells people to pull.
 if [[ ${#SERVICES[@]} -eq 0 ]]; then
-  SERVICES=(backend consumer worker forms updater web admin tracking realtime cli)
+  SERVICES=(backend consumer worker forms portal updater web admin tracking realtime cli)
 fi
 
 fail() { printf '\033[31m✗\033[0m %s\n' "$*" >&2; }

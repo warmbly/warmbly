@@ -92,6 +92,7 @@ import { SkeletonCards } from "@/components/app/emails/import/Discovering";
 import { CopyValue } from "@/components/app/emails/import/parts";
 import { Checkbox } from "@/components/ui/checkbox";
 
+import HelpLink from "@/components/shared/HelpLink";
 type View =
     | "pick"
     | "google"
@@ -591,15 +592,14 @@ function ProviderNotConfigured({ provider }: { provider: OAuthProvider }) {
                 </div>
             </div>
 
-            <a
+            <HelpLink
                 href="https://docs.warmbly.com/development/deployment-guide/#connect-mailboxes"
-                target="_blank"
-                rel="noreferrer"
                 className="mt-3 h-7 px-2.5 inline-flex items-center gap-1.5 rounded-md border border-slate-200 text-[12.5px] text-slate-700 hover:bg-slate-50 transition-colors"
+                portalLabel={<><ExternalLinkIcon className="w-3.5 h-3.5" /> Contact support</>}
             >
                 <ExternalLinkIcon className="w-3.5 h-3.5" />
                 Full environment setup guide
-            </a>
+            </HelpLink>
 
             <p className="mt-3 text-[12px] text-slate-500">
                 No setup needed for any other provider: connect it over SMTP and IMAP instead.

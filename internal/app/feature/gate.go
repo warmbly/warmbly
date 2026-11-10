@@ -101,7 +101,18 @@ type featureGateService struct {
 	// increase raises what the sender enforces and not only what the
 	// dashboard shows. Nil when not wired.
 	overrides LimitOverrideReader
+	// agencyPool decides the daily cap of an agency's client workspaces. Nil when not wired.
+	agencyPool AgencyPool
 }
+
+// AgencyPool is the shared monthly send pool of agency clients. ok false
+// leaves the decision to the workspace's own plan.
+type AgencyPool interface {
+	DailyLimit(ctx context.Context, orgID uuid.UUID) (limit int, ok bool)
+}
+
+// WireAgencyPool attaches the agency pool after construction.
+func (s *featureGateService) WireAgencyPool(p AgencyPool) { s.agencyPool = p }
 
 // PoolLinkReader answers whether a workspace has a live self-hosted link.
 type PoolLinkReader interface {
@@ -223,6 +234,12 @@ func (s *featureGateService) CanAddInbox(ctx context.Context, orgID uuid.UUID, c
 
 // GetDailyEmailLimit returns the daily email limit for an organization
 func (s *featureGateService) GetDailyEmailLimit(ctx context.Context, orgID uuid.UUID) (int, *errx.Error) {
+	// An agency client sends from the agency's monthly pool, not a daily plan cap.
+	if s.agencyPool != nil {
+		if limit, ok := s.agencyPool.DailyLimit(ctx, orgID); ok {
+			return limit, nil
+		}
+	}
 	if s.selfHost {
 		return UnlimitedEmails, nil
 	}

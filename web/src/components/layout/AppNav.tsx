@@ -10,6 +10,7 @@ import { Link, useLocation } from "@tanstack/react-router";
 import {
     ClipboardListIcon,
     BarChart3Icon,
+    FileBarChartIcon,
     CableIcon,
     CalendarClockIcon,
     CheckSquareIcon,
@@ -19,6 +20,7 @@ import {
     FlameIcon,
     GitBranchIcon,
     InboxIcon,
+    ArrowLeftIcon,
     KeyIcon,
     ListChecksIcon,
     type LucideIcon,
@@ -64,7 +66,9 @@ import AdvisorNavBadge from "@/components/app/advisor/AdvisorNavBadge";
 import { useAdvisorSummary } from "@/lib/api/hooks/app/advisor/useAdvisor";
 import type { AdvisorSurface } from "@/lib/api/models/app/advisor/Advisor";
 import { UserNav } from "./UserNav";
-import { Logo } from "@/components/svg";
+import { useWorkspaceAgency } from "@/hooks/useClientBrand";
+import { rememberAgency } from "@/lib/api/hooks/app/agency/useAgency";
+import BrandMark from "@/components/app/brand/BrandMark";
 import { Tooltip, TooltipContent, TooltipGroupRoot, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import ShortcutTooltip from "@/components/ui/shortcut-tooltip";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -98,6 +102,8 @@ interface NavItem {
     rolesAllowed?: "manage";
     /** Open to a member restricted to selected resources; every other row is locked for them. */
     scoped?: boolean;
+    /** Active only on its own path, not on the pages under it. */
+    exact?: boolean;
     /** Permission gate — when the member lacks it, the row shows a lock and a
      *  click pops an access dialog instead of navigating to an empty page. */
     permission?: PermissionKey;
@@ -170,6 +176,7 @@ const sections: NavSection[] = [
             { title: "Lead finder", requires: "subscription", url: "/app/leads", icon: MapPinnedIcon, permission: "VIEW_CONTACTS", permissionLabel: "View contacts" },
             { title: "Forms", requires: "subscription", url: "/app/forms", icon: ClipboardListIcon, permission: "VIEW_CONTACTS", permissionLabel: "View contacts" },
             { title: "Analytics", scoped: true, requires: "subscription", url: "/app/analytics", icon: BarChart3Icon, indicator: "analytics", permission: "VIEW_ANALYTICS", permissionLabel: "View analytics" },
+            { title: "Reports", requires: "subscription", url: "/app/reports", icon: FileBarChartIcon, permission: "VIEW_ANALYTICS", permissionLabel: "View analytics" },
             { title: "Deliverability", requires: "subscription", url: "/app/deliverability", icon: ShieldCheckIcon, advisorSurface: "deliverability", permission: "VIEW_ANALYTICS", permissionLabel: "View analytics" },
             { title: "Placement tests", requires: "subscription", partnerOpen: true, url: "/app/placement", icon: MailCheckIcon, permission: "VIEW_ANALYTICS", permissionLabel: "View analytics" },
         ],
@@ -250,6 +257,7 @@ const labelFade = (collapsed: boolean) =>
 const RAIL_MARK_IN = "animate-in fade-in-0 zoom-in-50 duration-200 delay-100 fill-mode-both motion-reduce:animate-none";
 
 function isNavItemActive(pathname: string, item: NavItem): boolean {
+    if (item.exact) return pathname === item.url || pathname === item.url + "/";
     return pathname === item.url || pathname.startsWith(item.url + "/");
 }
 
@@ -1288,6 +1296,8 @@ export function AppNav({ open = false, onClose }: { open?: boolean; onClose?: ()
     const collapsed = useAppStore((s) => s.navCollapsed);
     const toggleSidebar = useAppStore((s) => s.toggleSidebar);
     const iconOnly = collapsed && !isMobile;
+    // Agency staff inside a client workspace get their way back to the agency in the drawer too.
+    const { agency, staff } = useWorkspaceAgency();
 
     return (
         <>
@@ -1321,15 +1331,23 @@ export function AppNav({ open = false, onClose }: { open?: boolean; onClose?: ()
                 {/* Mobile drawer header: brand + close. (The desktop sidebar
                     has no chrome of its own — the brand lives in AppHeader.) */}
                 <div className="md:hidden flex items-center justify-between px-3 h-14 border-b border-slate-200/70">
-                    <Link to="/app/emails" onClick={onClose} className="flex items-center gap-2.5">
-                        <Logo className="w-6 text-slate-900" />
-                        <span
-                            style={{ fontFamily: "var(--font-display)" }}
-                            className="font-extrabold text-[15px] tracking-tight text-slate-900"
+                    {agency && staff ? (
+                        <Link
+                            to="/app/agency"
+                            onClick={() => {
+                                rememberAgency(agency.id);
+                                onClose?.();
+                            }}
+                            className="min-w-0 flex items-center gap-2 text-[13px] font-medium text-slate-700 hover:text-slate-900"
                         >
-                            Warmbly
-                        </span>
-                    </Link>
+                            <ArrowLeftIcon className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+                            <span className="truncate">Back to {agency.name}</span>
+                        </Link>
+                    ) : (
+                        <Link to="/app/emails" onClick={onClose} className="flex items-center gap-2.5">
+                            <BrandMark logoClassName="w-6 text-slate-900" wordmarkClassName="text-[15px]" />
+                        </Link>
+                    )}
                     <button
                         type="button"
                         onClick={onClose}

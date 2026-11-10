@@ -12,13 +12,44 @@ import CloudPoolScene from '../components/scenes/pricing/CloudPoolScene.astro';
 import MailboxLimitScene from '../components/scenes/pricing/MailboxLimitScene.astro';
 import PlacementScene from '../components/scenes/pricing/PlacementScene.astro';
 import SuppressionScene from '../components/scenes/pricing/SuppressionScene.astro';
+import { calc, CLIENTS_DEFAULT, CLIENTS_MAX, CLIENTS_MIN, DAYS_A_MONTH, type CalcPlan, type RegularPlan } from '../lib/agencyCalc';
 
 // Prices and volumes mirror web/src/lib/plans.ts.
 const plans = [
-  { name: 'Starter', price: 29, annual: 23, sends: '150', href: 'https://app.warmbly.com/auth/register?plan=starter', summary: 'For small teams starting cold outreach.' },
-  { name: 'Grow', price: 89, annual: 71, sends: '3,000', href: 'https://app.warmbly.com/auth/register?plan=grow', summary: 'For teams sending from many mailboxes.' },
-  { name: 'Business', price: 329, annual: 263, sends: '15,000', href: 'https://app.warmbly.com/auth/register?plan=business', summary: 'For established teams at real volume.', featured: true },
-  { name: 'Enterprise', price: null, annual: null, sends: '15,000+', href: '/contact/?topic=sales', summary: 'Custom volume, contract and support.' },
+  { name: 'Starter', price: 29, annual: 23, perDay: 150, sends: '150', href: 'https://app.warmbly.com/auth/register?plan=starter', summary: 'For small teams starting cold outreach.' },
+  { name: 'Grow', price: 89, annual: 71, perDay: 3_000, sends: '3,000', href: 'https://app.warmbly.com/auth/register?plan=grow', summary: 'For teams sending from many mailboxes.' },
+  { name: 'Business', price: 329, annual: 263, perDay: 15_000, sends: '15,000', href: 'https://app.warmbly.com/auth/register?plan=business', summary: 'For established teams at real volume.', featured: true },
+  { name: 'Enterprise', price: null, annual: null, perDay: null, sends: '15,000+', href: '/contact/?topic=sales', summary: 'Custom volume, contract and support.' },
+];
+
+// Agency plans: one plan for every client workspace, sending from a shared monthly pool.
+const agencyPlans = [
+  { name: 'Agency', price: 249, annual: 199, pool: 150_000, poolLabel: '150,000', href: 'https://app.warmbly.com/auth/register?plan=agency', summary: 'For agencies running outreach for a handful of clients or dozens.', features: ['Unlimited clients, no per-client fee', 'The CRM, the API and signed webhooks in every client workspace', 'Staff added to every client', 'Your logo, colour and portal domain on client pages', '$10 of shared AI each month', 'Top-up packs: 50,000 sends for $85'] },
+  { name: 'Agency Pro', price: 599, annual: 479, pool: 500_000, poolLabel: '500,000', href: 'https://app.warmbly.com/auth/register?plan=agency-pro', summary: 'For agencies that sell outreach under their own brand.', featured: true, features: ['Everything in Agency', 'Team roles and the audit log in every client workspace', 'No “Powered by Warmbly” on client pages', 'Sending kept apart from other customers', '$30 of shared AI each month', 'Top-up packs: 50,000 sends for $60'] },
+  { name: 'Agency Scale', price: null, annual: null, pool: null, poolLabel: '1,000,000+', href: '/contact/?topic=sales', summary: 'For agencies sending at the largest volumes.', features: ['Everything in Agency Pro', 'Pool sized to your volume', 'Contract and support'] },
+];
+const calcPlans: CalcPlan[] = agencyPlans.flatMap((p) =>
+  p.price !== null && p.annual !== null && p.pool !== null ? [{ name: p.name, price: p.price, annual: p.annual, pool: p.pool }] : [],
+);
+// What a client would otherwise buy: the self-serve plans with a daily cap.
+const regularPlans: RegularPlan[] = plans.flatMap((p) =>
+  p.price !== null && p.annual !== null && p.perDay !== null ? [{ name: p.name, price: p.price, annual: p.annual, perDay: p.perDay }] : [],
+);
+
+// What every agency plan carries, each line from docs/content/docs/guides/agencies.mdx.
+const agencyIncluded = [
+  { icon: 'users', t: 'Unlimited client workspaces', d: 'No limit on clients and no fee per client. Each keeps its own mailboxes, contacts, campaigns and inbox.' },
+  { icon: 'contact', t: 'Staff in every client', d: 'Your team is added to each client as it joins, with a role that follows their agency role.' },
+  { icon: 'layers', t: 'One shared monthly pool', d: 'Every client sends from the same pool, so a quiet week for one is volume another can use.' },
+  { icon: 'filter', t: 'Caps per client', d: 'Hold any client to a monthly share of the pool or of the AI balance, or pause it with a cap of 0.' },
+  { icon: 'spark', t: 'Shared AI balance', d: 'Clients spend their own balance first, then the agency’s, and you can move balance to a client.' },
+  { icon: 'flame', t: 'Warmup in the premium pool', d: 'Every mailbox warms on the same ramp and health rules, and warmup never draws on the send pool.' },
+  { icon: 'link', t: 'Client connect links', d: 'Clients connect their own mailboxes from a link, so their passwords never reach you.' },
+  { icon: 'chart', t: 'Shareable client reports', d: 'Branded report links and embeds, or a summary emailed to the client every week or month.' },
+  { icon: 'inbox', t: 'A cross-client inbox', d: 'Conversations from every client in one list, filtered by client, unread, needs reply or positive.' },
+  { icon: 'shuffle', t: 'Copy campaigns between clients', d: 'Build a campaign once and copy it, with its steps, settings and templates, to up to 10 clients at a time.' },
+  { icon: 'globe', t: 'A portal in your own look', d: 'Your colours, font, logo and sign-in page on a client dashboard at your own domain, on connect links and reports, and in embeds for your site.' },
+  { icon: 'key', t: 'Agency API keys', d: 'One key reaches every client, so one integration serves them all without a key per workspace.' },
 ];
 
 const Y = '✓', N = '–';
@@ -81,6 +112,7 @@ const faq: [string, string][] = [
   ['Can I pay for warmup only?', 'Not any more. The Warmup plan is no longer sold, and workspaces already on it keep it while they stay subscribed. Every paid plan includes unlimited warmup in the premium pool.'],
   ['What does self-hosting cost?', 'Nothing. Warmbly is Apache 2.0, free to run on your own servers and fully functional on its own. Its warmup only pairs the mailboxes on your own instance, with no shared pool, and self-hosted instances do not link to the Warmbly Cloud pool. If deliverability is what you need, Warmbly Cloud is the better choice. Self-hosting suits experienced operators who want to own the whole stack: Warmbly does not support self-hosted instances, and help comes from the community on Discord.'],
   ['Is there a charge per seat?', 'No. Add as many teammates as you like. Roles and the audit log come with Business.'],
+  ['Do you charge per client for agencies?', 'No. An agency plan covers every client workspace, with no limit on clients. Clients share one monthly send pool instead of a daily cap each, and you can add 50,000-send top-up packs when it runs low.'],
   ['Can I pay yearly?', 'Yes, with 20% off. Use the switch at the top of this page.'],
   ['Can I buy as a business?', 'Yes. Add your legal name and tax ID at checkout. They appear on your invoices, and reverse charge is applied where the rules allow it. Taxes are calculated from your billing address and shown before you pay.'],
   ['What is your refund policy?', 'A full refund within 14 days of a paid purchase if Warmbly didn’t work for you.'],
@@ -134,7 +166,7 @@ const faq: [string, string][] = [
               <span class="text-[34px] font-medium tracking-[-0.04em] leading-none text-slate-900">Custom</span>
             )}
           </div>
-          <div class="mt-2 text-[14px] text-slate-600"><span class="font-medium text-slate-900">{p.sends}</span> cold emails a day</div>
+          <div class="mt-2 text-[14px] text-slate-600"><span class="font-medium text-slate-900">{p.sends}</span> cold emails a day{p.perDay !== null && <span class="text-slate-400">, up to {(p.perDay * DAYS_A_MONTH).toLocaleString('en-US')} a month</span>}</div>
           <a href={p.href} class={`mt-5 inline-flex h-10 w-full items-center justify-center rounded-full text-[14px] font-medium transition-colors ${p.featured ? 'bg-slate-900 text-white hover:bg-slate-800' : 'bg-white text-slate-900 ring-1 ring-slate-200 hover:bg-slate-50'}`}>
             {p.price !== null ? 'Get started' : 'Talk to sales'}
           </a>
@@ -198,6 +230,116 @@ const faq: [string, string][] = [
       </table>
     </div>
     <p class="mt-4 text-[13.5px] text-slate-400">Prices in US dollars. Taxes are calculated from your billing address and shown before you pay.</p>
+  </section>
+
+  <!-- AGENCIES: one plan for every client, sending from a shared monthly pool. -->
+  <Rule />
+  <section id="agencies" class="container-page py-20 md:py-28 scroll-mt-24">
+    <div class="grid gap-6 lg:grid-cols-[1.15fr_1fr] lg:items-end lg:gap-16">
+      <h2 class={h2}><span class="text-slate-400">For agencies.</span> Every client on one plan.</h2>
+      <p class={lead}>No per-client fees and no limit on clients. Instead of a daily cap per workspace, every client sends from one monthly pool, so a quiet week for one client is volume another can use. Each mailbox still keeps its own daily cap, spacing and warmup ramp.</p>
+    </div>
+    <div class="mt-12 md:mt-16 grid gap-3 md:grid-cols-3">
+      {agencyPlans.map((p) => (
+        <div class={`flex flex-col rounded-[6px] bg-white p-6 ring-1 ${p.featured ? 'ring-slate-900' : 'ring-slate-200'}`}>
+          <div class="flex items-center gap-2">
+            <span class="text-[17px] font-medium text-slate-900">{p.name}</span>
+            {p.featured && <span class="rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-medium text-white">Full white-label</span>}
+          </div>
+          <p class="mt-1 min-h-[40px] text-[13.5px] leading-snug text-slate-500">{p.summary}</p>
+          <div class="mt-4 flex items-baseline gap-1.5">
+            {p.price !== null ? (
+              <>
+                <span class="text-[36px] font-medium tracking-[-0.04em] leading-none text-slate-900">$<span class="plan-price" data-monthly={p.price} data-annual={p.annual}>{p.annual}</span></span>
+                <span class="text-[13px] text-slate-400">/ month, <span class="plan-note" data-monthly="billed monthly" data-annual="billed yearly">billed yearly</span></span>
+              </>
+            ) : (
+              <span class="text-[36px] font-medium tracking-[-0.04em] leading-none text-slate-900">Custom</span>
+            )}
+          </div>
+          <div class="mt-2 text-[14px] text-slate-600"><span class="font-medium text-slate-900">{p.poolLabel}</span> sends a month, shared by every client</div>
+          <ul class="mt-5 flex-1 space-y-2">
+            {p.features.map((f) => (
+              <li class="flex gap-2 text-[14px] leading-snug text-slate-600"><Icon name="check" size={15} class="mt-0.5 shrink-0 text-slate-900" />{f}</li>
+            ))}
+          </ul>
+          <a href={p.href} class={`mt-6 inline-flex h-10 w-full items-center justify-center rounded-full text-[14px] font-medium transition-colors ${p.featured ? 'bg-slate-900 text-white hover:bg-slate-800' : 'bg-white text-slate-900 ring-1 ring-slate-200 hover:bg-slate-50'}`}>
+            {p.price !== null ? 'Get started' : 'Talk to sales'}
+          </a>
+        </div>
+      ))}
+    </div>
+    <p class="mt-4 text-[13.5px] text-slate-400">Top-up packs are one-off and count for the current billing period. <a href="/use-cases/agencies/" class="text-slate-600 underline decoration-slate-300 underline-offset-4 hover:decoration-slate-900">How agencies use Warmbly</a>.</p>
+
+    <!-- COST PER CLIENT: the plan price spread over the client count, beside a regular plan per client. -->
+    <div class="mt-16 md:mt-20 rounded-[6px] bg-white ring-1 ring-slate-200" data-client-calc data-plans={JSON.stringify(calcPlans)} data-regular={JSON.stringify(regularPlans)}>
+      <div class="flex flex-wrap items-end justify-between gap-x-10 gap-y-6 border-b border-slate-200 p-5 md:p-8">
+        <div class="max-w-md">
+          <h3 class="text-[21px] md:text-[23px] tracking-[-0.02em] text-slate-900">Cost per client</h3>
+          <p class="mt-1.5 text-[15px] leading-[1.55] text-slate-500">The more clients you run, the less each one costs. Prices follow the monthly and yearly switch at the top of the page.</p>
+        </div>
+        <div class="w-full sm:w-auto">
+          <label for="client-count" class="flex items-baseline justify-between gap-4 text-[13px] text-slate-500">
+            <span>Clients</span>
+            <span class="text-[15px] text-slate-900"><span class="font-medium tabular-nums" data-calc-count>{CLIENTS_DEFAULT}</span> <span data-calc-count-label>clients</span></span>
+          </label>
+          <div class="calc-controls mt-2 flex items-center gap-2">
+            <button type="button" data-calc-step="-1" aria-label="One client fewer" class="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-white text-[18px] leading-none text-slate-700 ring-1 ring-slate-200 transition-colors hover:bg-slate-50 disabled:text-slate-300 disabled:hover:bg-white">−</button>
+            <input id="client-count" type="range" min={CLIENTS_MIN} max={CLIENTS_MAX} step="1" value={CLIENTS_DEFAULT} aria-valuetext={`${CLIENTS_DEFAULT} clients`} data-calc-input class="h-9 min-w-0 flex-1 cursor-pointer accent-slate-900 sm:w-64 sm:flex-none" />
+            <button type="button" data-calc-step="1" aria-label="One client more" class="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-white text-[18px] leading-none text-slate-700 ring-1 ring-slate-200 transition-colors hover:bg-slate-50 disabled:text-slate-300 disabled:hover:bg-white">+</button>
+          </div>
+          <noscript><style is:inline>.calc-controls{display:none}</style></noscript>
+          <p class="sr-only" aria-live="polite" data-calc-live></p>
+        </div>
+      </div>
+      <div class="grid divide-y divide-slate-200 md:grid-cols-2 md:divide-x md:divide-y-0">
+        {calcPlans.map((p, i) => {
+          const r = calc(p, regularPlans, CLIENTS_DEFAULT, 'annual');
+          return (
+            <div class="p-5 md:p-8">
+              <div class="text-[15px] font-medium text-slate-900">{p.name}</div>
+              <div class="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <span class="text-[40px] md:text-[48px] font-medium tracking-[-0.045em] leading-none tabular-nums text-slate-900" data-calc-plan={i} data-calc="perClient">{r.perClient}</span>
+                <span class="text-[14px] text-slate-500">per client a month</span>
+              </div>
+              <div class="mt-2 text-[14px] text-slate-500"><span class="font-medium tabular-nums text-slate-900" data-calc-plan={i} data-calc="poolEach">{r.poolEach}</span> shared sends a month per client, on average</div>
+              <dl class="mt-6 divide-y divide-slate-100 border-y border-slate-100 text-[14.5px]">
+                <div class="flex items-baseline justify-between gap-4 py-2.5">
+                  <dt class="text-slate-500" data-calc-plan={i} data-calc="regularLabel">{r.regularLabel}</dt>
+                  <dd class={`tabular-nums text-slate-400 decoration-slate-300 ${r.saving ? 'line-through' : ''}`} data-calc-plan={i} data-calc="regularTotal">{r.regularTotal}</dd>
+                </div>
+                <div class="flex items-baseline justify-between gap-4 py-2.5">
+                  <dt class="text-slate-900">{p.name} for every client</dt>
+                  <dd class="font-medium tabular-nums text-slate-900" data-calc-plan={i} data-calc="agencyTotal">{r.agencyTotal}</dd>
+                </div>
+              </dl>
+              <p class={`mt-4 flex gap-2 text-[14px] leading-snug ${r.saving ? 'text-emerald-700' : 'text-slate-500'}`} data-calc-plan={i} data-calc="verdict-row">
+                <Icon name="check" size={15} class={`mt-0.5 shrink-0 ${r.saving ? '' : 'hidden'}`} />
+                <span data-calc-plan={i} data-calc="verdict">{r.verdict}</span>
+              </p>
+            </div>
+          );
+        })}
+      </div>
+      <p class="border-t border-slate-200 px-5 py-4 md:px-8 text-[13px] leading-[1.55] text-slate-400">This page’s own prices, a month <span data-calc-rate>at the yearly rate</span>. Each client is matched with the cheapest regular plan whose daily cap covers an even share of the pool, counting every one of {DAYS_A_MONTH} days: Starter sends 150 a day, Grow 3,000 and Business 15,000. A regular plan’s unused days don’t carry over, while an agency pool is shared across clients and the whole month. Agency Pro also keeps sending apart from other customers, which regular plans include only on Business.</p>
+    </div>
+
+    <!-- INCLUDED ON EVERY AGENCY PLAN: the shared features, whichever plan. -->
+    <div class="mt-16 md:mt-20">
+      <h3 class="text-[21px] md:text-[23px] tracking-[-0.02em] text-slate-900">Included on every agency plan</h3>
+      <ul class="mt-6 grid gap-px overflow-hidden rounded-[6px] bg-slate-200 ring-1 ring-slate-200 sm:grid-cols-2 lg:grid-cols-3">
+        {agencyIncluded.map((f) => (
+          <li class="flex gap-4 bg-white p-5 md:p-6">
+            <span class="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-white text-slate-700 ring-1 ring-slate-200"><Icon name={f.icon} size={15} /></span>
+            <div>
+              <div class="text-[15px] font-medium text-slate-900">{f.t}</div>
+              <p class="mt-1 text-[14px] leading-[1.5] text-slate-500">{f.d}</p>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <p class="mt-5 flex gap-2 text-[14px] leading-[1.55] text-slate-500"><Icon name="database" size={15} class="mt-0.5 shrink-0 text-slate-400" /><span>Self-hosting? Your own instance gets every agency feature for free, with no cap on the pool and no charge for AI.</span></p>
+    </div>
   </section>
 
   <!-- INCLUDED: what every paid plan carries, each shown working. -->
@@ -294,10 +436,54 @@ const faq: [string, string][] = [
 </Layout>
 
 <script>
+  import { calc, CLIENTS_MAX, CLIENTS_MIN, type Billing, type CalcPlan, type RegularPlan } from '../lib/agencyCalc';
+
   // Monthly and yearly prices, the notes under them, and the switch itself.
   const root = document.querySelector<HTMLElement>('[data-billing-toggle]');
   const buttons = [...(root?.querySelectorAll<HTMLButtonElement>('[data-billing]') ?? [])];
-  const apply = (mode: 'monthly' | 'annual') => {
+  let mode: Billing = 'annual';
+
+  // Cost per client: the count control and every figure under it.
+  const calcRoot = document.querySelector<HTMLElement>('[data-client-calc]');
+  const calcPlans: CalcPlan[] = JSON.parse(calcRoot?.dataset.plans ?? '[]');
+  const regularPlans: RegularPlan[] = JSON.parse(calcRoot?.dataset.regular ?? '[]');
+  const input = calcRoot?.querySelector<HTMLInputElement>('[data-calc-input]');
+  const steps = [...(calcRoot?.querySelectorAll<HTMLButtonElement>('[data-calc-step]') ?? [])];
+  const renderCalc = (announce: boolean) => {
+    if (!calcRoot || !input) return;
+    const n = Math.min(CLIENTS_MAX, Math.max(CLIENTS_MIN, Number(input.value) || CLIENTS_MIN));
+    const noun = n === 1 ? 'client' : 'clients';
+    input.value = String(n);
+    input.setAttribute('aria-valuetext', `${n} ${noun}`);
+    calcRoot.querySelector('[data-calc-count]')!.textContent = String(n);
+    calcRoot.querySelector('[data-calc-count-label]')!.textContent = noun;
+    calcRoot.querySelector('[data-calc-rate]')!.textContent = mode === 'annual' ? 'at the yearly rate' : 'billed monthly';
+    steps.forEach((b) => { b.disabled = Number(b.dataset.calcStep) < 0 ? n <= CLIENTS_MIN : n >= CLIENTS_MAX; });
+    const results = calcPlans.map((p, i) => {
+      const r = calc(p, regularPlans, n, mode);
+      const field = (k: string) => calcRoot.querySelector<HTMLElement>(`[data-calc-plan="${i}"][data-calc="${k}"]`);
+      (['perClient', 'poolEach', 'regularLabel', 'regularTotal', 'agencyTotal', 'verdict'] as const).forEach((k) => {
+        const el = field(k);
+        if (el) el.textContent = r[k];
+      });
+      const row = field('verdict-row');
+      row?.classList.toggle('text-emerald-700', r.saving);
+      row?.classList.toggle('text-slate-500', !r.saving);
+      row?.querySelector('svg')?.classList.toggle('hidden', !r.saving);
+      field('regularTotal')?.classList.toggle('line-through', r.saving);
+      return `${p.name} ${r.perClient} per client`;
+    });
+    if (announce) calcRoot.querySelector('[data-calc-live]')!.textContent = `${n} ${noun}: ${results.join(', ')} a month.`;
+  };
+  input?.addEventListener('input', () => renderCalc(true));
+  steps.forEach((b) => b.addEventListener('click', () => {
+    if (!input) return;
+    input.value = String(Number(input.value) + Number(b.dataset.calcStep));
+    renderCalc(true);
+  }));
+
+  const apply = (next: Billing) => {
+    mode = next;
     buttons.forEach((b) => {
       const on = b.dataset.billing === mode;
       b.classList.toggle('bg-white', on);
@@ -311,6 +497,9 @@ const faq: [string, string][] = [
       const v = el.dataset[mode];
       if (v != null) el.textContent = v;
     });
+    renderCalc(false);
   };
-  buttons.forEach((b) => b.addEventListener('click', () => apply(b.dataset.billing as 'monthly' | 'annual')));
+  buttons.forEach((b) => b.addEventListener('click', () => apply(b.dataset.billing as Billing)));
+  // A restored form value (back navigation) can differ from the rendered default.
+  renderCalc(false);
 </script>

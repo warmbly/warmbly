@@ -33,7 +33,7 @@ type fakeIdempotencyService struct {
 	status    int
 }
 
-func (s *fakeIdempotencyService) Begin(ctx context.Context, orgID uuid.UUID, key, method, path, requestHash string) (*idempotency.Record, idempotency.State, *errx.Error) {
+func (s *fakeIdempotencyService) Begin(ctx context.Context, scope idempotency.Scope, key, method, path, requestHash string) (*idempotency.Record, idempotency.State, *errx.Error) {
 	s.begins = append(s.begins, idempotencyBegin{path: path, hash: requestHash})
 	if s.record == nil {
 		s.record = &idempotency.Record{ID: uuid.New(), StatusCode: http.StatusCreated}

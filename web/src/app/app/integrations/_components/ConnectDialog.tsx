@@ -5,6 +5,7 @@
 
 "use client";
 
+import HelpLink from "@/components/shared/HelpLink";
 import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -538,15 +539,14 @@ export default function ConnectDialog({
                             Back
                         </button>
                     ) : entry.docs_url && phase === "overview" ? (
-                        <a
+                        <HelpLink
                             href={entry.docs_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                            portalLabel={<>Get help <ExternalLinkIcon className="w-3 h-3" /></>}
                             className="inline-flex items-center gap-1 text-[12px] text-slate-500 hover:text-sky-700 transition-colors"
                         >
                             Docs
                             <ExternalLinkIcon className="w-3 h-3" />
-                        </a>
+                        </HelpLink>
                     ) : null}
                     <div className="ml-auto flex items-center gap-2">
                         {phase === "overview" && (

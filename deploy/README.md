@@ -16,6 +16,9 @@ deploy/
 │   ├── consumer.Dockerfile
 │   ├── worker.Dockerfile
 │   ├── realtime.Dockerfile
+│   ├── forms.Dockerfile
+│   ├── portal.Dockerfile           # the portal Worker on workerd
+│   ├── portal/                     # its workerd config and entrypoint
 │   ├── go-dev.Dockerfile           # hot-reload dev images (make app)
 │   ├── rust-dev.Dockerfile
 │   ├── elixir-dev.Dockerfile
@@ -43,6 +46,8 @@ docker build -f deploy/docker/backend.Dockerfile  -t warmbly/backend  .
 docker build -f deploy/docker/consumer.Dockerfile -t warmbly/consumer .
 docker build -f deploy/docker/worker.Dockerfile   -t warmbly/worker   .
 docker build -f deploy/docker/realtime.Dockerfile -t warmbly/realtime .
+docker build -f deploy/docker/forms.Dockerfile    -t warmbly/forms    .
+docker build -f deploy/docker/portal.Dockerfile   -t warmbly/portal   .
 docker build -f tracking/Dockerfile               -t warmbly/tracking tracking/
 docker build -f web/Dockerfile                    -t warmbly/web      web/
 docker build -f admin/Dockerfile                  -t warmbly/admin    admin/

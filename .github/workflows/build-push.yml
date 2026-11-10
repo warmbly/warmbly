@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       service:
-        description: "Service to build (all, backend, consumer, worker, forms, updater, tracking, realtime)"
+        description: "Service to build (all, backend, consumer, worker, forms, portal, updater, tracking, realtime)"
         required: false
         default: "all"
 
@@ -63,6 +63,10 @@ jobs:
               - 'cmd/forms/**'
               - 'forms/**'
               - 'deploy/docker/forms.Dockerfile'
+            portal:
+              - 'portal/**'
+              - 'deploy/docker/portal.Dockerfile'
+              - 'deploy/docker/portal/**'
             updater:
               - 'go.mod'
               - 'go.sum'
@@ -86,6 +90,7 @@ jobs:
           CONSUMER: ${{ steps.filter.outputs.consumer }}
           WORKER: ${{ steps.filter.outputs.worker }}
           FORMS: ${{ steps.filter.outputs.forms }}
+          PORTAL: ${{ steps.filter.outputs.portal }}
           UPDATER: ${{ steps.filter.outputs.updater }}
           TRACKING: ${{ steps.filter.outputs.tracking }}
           REALTIME: ${{ steps.filter.outputs.realtime }}
@@ -95,7 +100,7 @@ jobs:
           native=""
           # A service that talks to the event bus gets a second, Kafka-linked
           # image published as :<tag>-kafka. backend, consumer, worker and
-          # tracking are the four that do; forms and updater never touch it, and
+          # tracking are the four that do; forms, portal and updater never touch it, and
           # realtime is fed by the others rather than reading the bus itself.
           add() {
             case "$1" in
@@ -103,7 +108,7 @@ jobs:
                 go="$go\"$1\","
                 native="$native{\"service\":\"$1\",\"suffix\":\"-kafka\",\"args\":\"GO_TAGS=kafka\\nBUILT_AT=$BUILT_AT\"},"
                 ;;
-              forms|updater)
+              forms|portal|updater)
                 go="$go\"$1\","
                 ;;
               tracking)
@@ -117,7 +122,7 @@ jobs:
           }
           if [ "$EVENT" = "workflow_dispatch" ]; then
             sel="${SELECTED:-all}"
-            for s in backend consumer worker forms updater tracking realtime; do
+            for s in backend consumer worker forms portal updater tracking realtime; do
               if [ "$sel" = "all" ] || [ "$sel" = "$s" ]; then add "$s"; fi
             done
           else
@@ -125,6 +130,7 @@ jobs:
             [ "$CONSUMER" = "true" ] && add consumer
             [ "$WORKER" = "true" ] && add worker
             [ "$FORMS" = "true" ] && add forms
+            [ "$PORTAL" = "true" ] && add portal
             [ "$UPDATER" = "true" ] && add updater
             [ "$TRACKING" = "true" ] && add tracking
             [ "$REALTIME" = "true" ] && add realtime
@@ -316,4 +322,4 @@ jobs:
       - name: Pull-test every image anonymously
         run: |
           ./scripts/check-images-public.sh --prefix "$IMAGE_PREFIX" --tag dev --warn \
-            backend consumer worker forms updater tracking realtime
+            backend consumer worker forms portal updater tracking realtime

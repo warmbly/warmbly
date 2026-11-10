@@ -168,6 +168,21 @@ Run `QA_FLEET_FIXTURES=1 pnpm proof fleet-telemetry` in `qa/`. Stop the addition
 admin server as well as the stack afterward. This proof does not validate real
 worker sampling, network egress, mail delivery or inbox placement.
 
+## Admin agency proof fixtures
+
+`flows/admin-agencies.flow.ts` records an operator giving an agency a plan, a pool of its own and extra sends
+in the admin panel. Start the lite stack with `QA_STRIPE_SECRET_KEY` set (with billing off every agency already
+holds everything, so a given plan changes nothing), then serve `admin/` separately with `VITE_API_URL` pointing
+to the stack's API and set `QA_WEB_URL` to that localhost admin origin. Sign the seeded account in once so its
+session exists, apply `fixtures/admin-agencies.sql`, and clear the stack's own Redis so the new permissions
+and session state are read. The fixture grants every admin permission and marks the session as having passed
+a second factor: local authentication fixtures, not MFA proof.
+
+Run `QA_ADMIN_AGENCY_FIXTURES=1 pnpm proof admin-agencies` in `qa/`. The flow asserts through the API that the
+client workspace receives the plan and that the pool totals are what the page shows. Then, without `QA_WEB_URL`,
+`QA_ADMIN_AGENCY_FIXTURES=1 pnpm proof agency-arranged-plan` records the agency's own billing page for the plan
+just given. Stop the admin server and the stack afterward.
+
 ## Member access proof fixtures
 
 `flows/member-access.flow.ts` is opt-in: apply `fixtures/member-access.sql` to
@@ -364,4 +379,65 @@ campaign to its own timezone. The stack's backend works the locations out within
 docker exec -i warmbly-postgres-1 psql -U warmbly -d warmbly_qa_<worktree> < fixtures/regions-and-timezones.sql
 docker exec wqa-<worktree>-redis redis-cli FLUSHDB
 QA_REGIONS_FIXTURES=1 pnpm proof regions-and-timezones
+```
+
+## Agency proof fixtures
+
+`flows/agency.flow.ts` is opt-in: apply `fixtures/agency.sql` to this worktree's rich-seed
+database. It makes the seeded owner the owner of a **Northwind Growth** agency on Agency Pro, with
+the seeded workspace as its first client and this month's sends in the shared pool. The flow adds two
+more client workspaces (**Bluebird Dental**, **Acme Robotics**) through the API and copies a campaign
+into one, so the account then belongs to several workspaces and every test opens the seeded one from
+the workspace picker. It is re-runnable. A self-host has no pool cap, so start the stack with billing on to show the
+pool meter; no step calls Stripe, so a placeholder test key is enough.
+
+```bash
+QA_STRIPE_SECRET_KEY=sk_test_placeholder pnpm stack restart
+docker exec -i warmbly-postgres-1 psql -U warmbly -d warmbly_qa_<worktree> < fixtures/agency.sql
+docker exec wqa-<worktree>-redis redis-cli FLUSHDB
+QA_AGENCY_FIXTURES=1 pnpm proof agency
+```
+
+### Agency clients and the portal domain
+
+`flows/agency-portal.flow.ts` records what an agency's clients see. Apply `fixtures/agency-clients.sql`
+after `fixtures/agency.sql`: it gives Northwind Growth a brand, a portal theme and a verified portal at `portal.localhost`,
+and adds Casey Client (`casey@client.example`, `password123`), the client's own teammate in Dev's
+Organization. The first test needs nothing more.
+
+The portal tests need the portal service in front of a built dashboard, the way an agency's domain is
+served. The stack's backend expects the portal at `localhost:8095` with the dev portal token (see
+`.artifacts/stack/backend.sh`). Build the dashboard into a scratch directory (the dev server's module paths
+are not proxied), serve it, and run the portal Worker against this stack (ports from `.artifacts/stack/ports`):
+
+```bash
+(cd ../portal && pnpm build)
+(cd ../web && VITE_APP_URL=http://localhost:<WEB> VITE_API_URL=http://localhost:<API> \
+  pnpm exec vite build --outDir /tmp/wqa-portal/web-dist --emptyOutDir)
+(cd ../web && VITE_APP_URL=http://localhost:<WEB> VITE_API_URL=http://localhost:<API> \
+  pnpm exec vite preview --outDir /tmp/wqa-portal/web-dist --port 15291 --host 127.0.0.1) &
+(cd .. && pnpm dlx wrangler@4.45.0 dev --config deploy/cloudflare/portal/wrangler.jsonc --ip 127.0.0.1 --port 8095 \
+  --show-interactive-dev-session=false --var API_ORIGIN:http://localhost:<API> --var PORTAL_DOMAIN:localhost:8095 \
+  --var PORTAL_EDGE_TOKEN:<token from backend.sh> --var DASHBOARD_ORIGIN:http://127.0.0.1:15291) &
+```
+
+Create a connect link (`POST /v1/emails/client-links`) and a report link (`POST /v1/reports/:id/link`) in
+Dev's Organization (both are built on `portal.localhost`), then record with their tokens:
+
+```bash
+QA_AGENCY_FIXTURES=1 QA_PORTAL_URL=http://portal.localhost:8095 QA_PORTAL_CONNECT=<token> \
+  QA_PORTAL_REPORT=<token> pnpm proof agency
+```
+
+Stop the preview and portal processes afterwards along with the stack.
+
+## Marketing site agency pages
+
+`flows/site-agencies.flow.ts` records the agency sections of the marketing site (pricing cards, cost per
+client, what every agency plan includes, the agencies page). Run `pnpm dev --host 127.0.0.1 --port <port>` in
+`site/`, keep this worktree's stack up (the harness checks the backend), then:
+
+```bash
+QA_WEB_URL=http://127.0.0.1:<port> QA_API_URL=http://localhost:<API> QA_MAILPIT_URL=http://localhost:<MAILPIT> \
+  QA_SITE=1 pnpm proof site-agencies
 ```

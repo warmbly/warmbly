@@ -60,6 +60,7 @@ off disk after a real run.
 | `--database-url` | `WARMBLY_DATABASE_URL` | bundled Postgres |
 | `--redis-url` | `WARMBLY_REDIS_URL` | bundled Redis |
 | `--components` | `WARMBLY_COMPONENTS` | `full`, or `core` |
+| `--portal-domain` | `WARMBLY_PORTAL_DOMAIN` | `portal.<host>` (`<host>:8095` on plain HTTP); derived again on every run, so repeat a non-default one |
 | `--version` | `WARMBLY_VERSION` | the newest release |
 | `--channel` | `WARMBLY_CHANNEL` | `stable`, or `dev` |
 | `--registry` | `WARMBLY_IMAGE_PREFIX` | `ghcr.io/warmbly/warmbly` |
@@ -74,6 +75,10 @@ off disk after a real run.
   root. Regenerating `CREDENTIALS_ENCRYPTION_KEY` would make every stored
   mailbox credential permanently unreadable, so it will not do it and neither
   should you.
+- **An install from before the portal gets it on a re-run.** The re-run adds
+  the `portal` service and a `PORTAL_EDGE_TOKEN`, and touches no other value.
+  Until then connect links and shared reports are refused and nothing else
+  changes; the admin panel's update does not add services.
 - **It refuses a non-empty directory it did not create.** That is `--force`,
   and `--force` is a decision about someone else's files.
 - **Pin the version in automation.** Without `--version` it resolves the newest

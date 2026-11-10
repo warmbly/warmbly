@@ -33,6 +33,9 @@ defmodule Realtime.Application do
         # Presence tracker for org-level collaboration (who's online / viewing what)
         RealtimeWeb.Presence,
 
+        # Owns the verified portal origin cache the socket's Origin check reads.
+        Realtime.OriginCheck,
+
         # Phoenix Endpoint (WebSocket server)
         RealtimeWeb.Endpoint,
 

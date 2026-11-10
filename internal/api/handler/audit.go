@@ -36,8 +36,25 @@ func (h *Handler) auditInOrg(c *gin.Context, orgID uuid.UUID, action models.Audi
 	if err != nil {
 		return
 	}
+	metadata = withAgencyKeyActor(c, metadata)
 	h.AuditService.LogAction(c.Request.Context(), orgID, actorID, action, entityType, entityID, c.ClientIP(), c.Request.UserAgent(), changes, metadata)
 	h.refreshAdvisorAfter(orgID, entityType)
+}
+
+// withAgencyKeyActor names the agency API key behind a change, so the trail shows the key as well as the staff member it acts for.
+func withAgencyKeyActor(c *gin.Context, metadata map[string]string) map[string]string {
+	keyID := middleware.GetAgencyKeyID(c)
+	if keyID == nil {
+		return metadata
+	}
+	out := make(map[string]string, len(metadata)+3)
+	for k, v := range metadata {
+		out[k] = v
+	}
+	out["actor_type"] = "agency_api_key"
+	out["agency_api_key_id"] = keyID.String()
+	out["agency_api_key_name"] = middleware.GetAPIKeyName(c)
+	return out
 }
 
 // Campaign and step edits refresh findings; concurrent refreshes coalesce per org.

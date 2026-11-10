@@ -1,10 +1,14 @@
 import React from "react";
-import { Navigate, Outlet, useMatches, useNavigate } from "@tanstack/react-router";
+import { Navigate, Outlet, useLocation, useMatches, useNavigate } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "motion/react";
 import { APP_URL } from "@/lib/information";
 import useBrand from "@/hooks/useBrand";
 import BrandMark from "@/components/shared/BrandMark";
 import getToken from "@/lib/helper/getToken";
+import { currentPortal, portalHostParam } from "@/lib/portal";
+import { usePortalForSignIn } from "@/lib/portalHandoff";
+import { usePortalScope } from "@/hooks/usePortalScope";
+import PortalSignIn from "@/components/shared/PortalSignIn";
 import AuthShowcase from "./_components/AuthShowcase";
 
 /* ═══════════════════════════════════════════
@@ -24,6 +28,14 @@ export default function AuthLayout({
     // The rendered page's path, which changes with the Outlet rather than ahead of it.
     const pathname = useMatches({ select: (m) => m[m.length - 1]?.pathname ?? "" });
     const brand = useBrand();
+    const portal = currentPortal();
+    // The main address signing someone in for an agency portal draws that agency's sign-in page.
+    const handoffHost = useLocation({
+        select: (l) => (portal.portal ? "" : portalHostParam(new URLSearchParams(l.searchStr).get("portal"))),
+    });
+    const handoff = usePortalForSignIn(handoffHost);
+    const agencyBrand = portal.portal ? portal.brand : (handoff.data?.brand ?? undefined);
+    const scope = usePortalScope(agencyBrand);
 
     React.useEffect(() => {
         const receiveMessage = (event: MessageEvent) => {
@@ -34,11 +46,37 @@ export default function AuthLayout({
         return () => window.removeEventListener("message", receiveMessage);
     }, [navigate]);
 
-    // A reset link is opened from mail, often in the browser that is signed in.
-    const opensSignedIn = pathname.startsWith("/auth/reset-password");
+    // A reset link is opened from mail, often in the browser that is signed in; a portal sign-in may use another account.
+    const portalHandoff = useLocation({ select: (l) => new URLSearchParams(l.searchStr).has("portal") });
+    const opensSignedIn = pathname.startsWith("/auth/reset-password") || portalHandoff;
     if (redirectIfAuthenticated && !opensSignedIn && getToken()) {
         return <Navigate to="/app/emails" replace />;
     }
+
+    // Animate full route changes too (login → forgot password).
+    // Enter only: an exiting <Outlet /> would already render the next page.
+    const page = (
+        <AnimatePresence initial={false}>
+            <motion.div
+                key={pathname}
+                initial={{ opacity: 0, x: 12 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+            >
+                <Outlet />
+            </motion.div>
+        </AnimatePresence>
+    );
+
+    if (agencyBrand) {
+        return (
+            <PortalSignIn brand={agencyBrand} scope={scope}>
+                {page}
+            </PortalSignIn>
+        );
+    }
+    // Until the named portal is looked up, neither brand is drawn, so the page never shows one and then the other.
+    if (handoffHost && handoff.isPending) return <div className="min-h-dvh bg-slate-50" />;
 
     return (
         <div className="relative flex min-h-dvh w-full items-center justify-center px-4 py-8 text-slate-900 sm:px-5 sm:py-10 lg:bg-slate-50">
@@ -57,7 +95,7 @@ export default function AuthLayout({
 
                 {/* Card */}
                 <div className="animate-card-float grid overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_30px_70px_-32px_rgba(15,23,42,0.32)] lg:grid-cols-2 lg:min-h-[580px]">
-                    {/* Showcase — desktop only */}
+                    {/* Showcase, desktop only */}
                     <div className="relative hidden lg:block lg:border-r lg:border-slate-200">
                         <AuthShowcase />
                         <BrandMark className="absolute left-8 top-8 z-20 flex items-center gap-2.5" />
@@ -68,18 +106,7 @@ export default function AuthLayout({
                         <div className="mx-auto flex w-full max-w-[360px] flex-1 flex-col">
                             <div className="flex flex-1 items-center">
                                 <div className="w-full">
-                                    {/* Animate full route changes too (login → forgot password).
-                                        Enter only: an exiting <Outlet /> would already render the next page. */}
-                                    <AnimatePresence initial={false}>
-                                        <motion.div
-                                            key={pathname}
-                                            initial={{ opacity: 0, x: 12 }}
-                                            animate={{ opacity: 1, x: 0 }}
-                                            transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-                                        >
-                                            <Outlet />
-                                        </motion.div>
-                                    </AnimatePresence>
+                                    {page}
                                 </div>
                             </div>
 

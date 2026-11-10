@@ -6,12 +6,15 @@
 
 import { AlertTriangleIcon, OctagonXIcon } from "lucide-react";
 import useOrganizationRisk from "@/lib/api/hooks/app/organizations/useOrganizationRisk";
+import { helpLinkProps, portalSupportLink } from "@/lib/helpLink";
 
 export default function SendingRestrictedBar() {
     const { data } = useOrganizationRisk();
     if (!data || (!data.restricted && !data.suspended)) return null;
 
     const suspended = data.suspended;
+    // On an agency's portal domain, support is the agency's.
+    const support = portalSupportLink();
     const Icon = suspended ? OctagonXIcon : AlertTriangleIcon;
 
     return (
@@ -36,7 +39,14 @@ export default function SendingRestrictedBar() {
                     </>
                 )}
                 {data.reason ? <>Reason: {data.reason}. </> : null}
-                Contact support if you think this is wrong.
+                {support ? (
+                    <a {...helpLinkProps(support)} className="font-medium underline underline-offset-2">
+                        Contact support
+                    </a>
+                ) : (
+                    "Contact support"
+                )}{" "}
+                if you think this is wrong.
             </div>
         </div>
     );

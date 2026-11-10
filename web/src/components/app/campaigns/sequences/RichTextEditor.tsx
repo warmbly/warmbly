@@ -88,6 +88,7 @@ import {
 } from "@/lib/templateVars";
 import useCustomFieldKeys from "@/lib/api/hooks/app/contacts/useCustomFieldKeys";
 
+import HelpLink from "@/components/shared/HelpLink";
 // A field token ({{.Company}}, or with a default fallback) becomes an atomic
 // chip; conditionals/spintax/other snippets insert as plain text.
 function insertToken(editor: Editor, token: string) {
@@ -928,16 +929,15 @@ export function VariableMenu({
                             )}
                         </div>
 
-                        <a
+                        <HelpLink
                             href="https://docs.warmbly.com/learn/personalization/"
-                            target="_blank"
-                            rel="noreferrer"
                             onMouseDown={(e) => e.preventDefault()}
                             className="flex items-center justify-between gap-2 border-t border-slate-100 px-3 py-2 text-[11.5px] font-medium text-sky-600 transition-colors hover:bg-sky-50/60"
+                            portalLabel={<>Get help <span aria-hidden="true">↗</span></>}
                         >
                             Full guide &amp; examples
                             <span aria-hidden="true">↗</span>
-                        </a>
+                        </HelpLink>
                             </motion.div>
                         )}
                     </AnimatePresence>,

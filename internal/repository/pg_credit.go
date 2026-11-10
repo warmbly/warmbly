@@ -42,6 +42,10 @@ type CreditRepository interface {
 	// and stamps the reset. The key (the Stripe event id) makes it idempotent.
 	ResetMonthly(ctx context.Context, orgID uuid.UUID, allowance models.Micro, idempotencyKey string) (*models.CreditLedger, error)
 
+	// AgencyAvailable is what the org's agency balance would pay toward a
+	// charge now, after the client's cap; zero for a workspace in no agency.
+	AgencyAvailable(ctx context.Context, orgID uuid.UUID, agencyAllowance bool) (models.Micro, error)
+
 	// RefundSpend gives back what the charge under spendKey took, to the pools
 	// it came from, once (refundKey). Monthly money spent before the last
 	// reset expired with it, so only the purchased part comes back then.
@@ -90,6 +94,7 @@ const creditTxnCols = `id, org_id,
 	COALESCE(balance_after_micro, balance_after::bigint * legacy_credit_micro()),
 	COALESCE(purchased_delta_micro, purchased_delta::bigint * legacy_credit_micro()),
 	COALESCE(purchased_balance_after_micro, purchased_balance_after::bigint * legacy_credit_micro()),
+	COALESCE(agency_delta_micro, 0),
 	idempotency_key, actor_user_id, context, created_at`
 
 func scanTxn(row pgx.Row, t *models.CreditTransaction) error {
@@ -97,7 +102,7 @@ func scanTxn(row pgx.Row, t *models.CreditTransaction) error {
 	if err := row.Scan(
 		&t.ID, &t.OrgID, &t.Amount, &t.Reason, &t.ModelUsed,
 		&t.InputTokens, &t.OutputTokens, &t.Quantity, &t.Cost,
-		&t.MonthlyAfter, &t.PurchasedDelta, &t.PurchasedAfter,
+		&t.MonthlyAfter, &t.PurchasedDelta, &t.PurchasedAfter, &t.AgencyDelta,
 		&t.IdempotencyKey, &t.ActorUserID, &rawCtx, &t.CreatedAt,
 	); err != nil {
 		return err
@@ -178,16 +183,20 @@ func insertTxn(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, t models.CreditT
 			ctxJSON = raw
 		}
 	}
+	var agencyArg *models.Micro
+	if t.AgencyDelta != 0 {
+		agencyArg = &t.AgencyDelta
+	}
 	out := &models.CreditTransaction{}
 	err := scanTxn(tx.QueryRow(ctx, `
 		INSERT INTO credit_ledger_transactions
 			(org_id, amount, balance_after, reason, model_used, input_tokens, output_tokens, quantity, cost_micro,
 			 amount_micro, balance_after_micro, purchased_delta_micro, purchased_balance_after_micro,
-			 idempotency_key, actor_user_id, context)
-		VALUES ($1, 0, 0, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+			 idempotency_key, actor_user_id, context, agency_delta_micro)
+		VALUES ($1, 0, 0, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		RETURNING `+creditTxnCols,
 		orgID, t.Reason, t.ModelUsed, t.InputTokens, t.OutputTokens, t.Quantity, t.Cost,
-		t.Amount, t.MonthlyAfter, t.PurchasedDelta, t.PurchasedAfter, keyArg, actorArg, ctxJSON), out)
+		t.Amount, t.MonthlyAfter, t.PurchasedDelta, t.PurchasedAfter, keyArg, actorArg, ctxJSON, agencyArg), out)
 	if err != nil {
 		return nil, err
 	}
@@ -227,45 +236,70 @@ func (r *creditRepository) Debit(ctx context.Context, orgID uuid.UUID, d models.
 	}
 
 	// The row lock serializes concurrent debits; a missing ledger is an empty one.
-	var monthly, purchased models.Micro
-	err = tx.QueryRow(ctx, `SELECT balance_micro, purchased_micro FROM credit_ledger WHERE org_id = $1 FOR UPDATE`, orgID).
-		Scan(&monthly, &purchased)
-	if errors.Is(err, pgx.ErrNoRows) {
+	monthly, purchased, missing, err := lockOrgLedger(ctx, tx, orgID, false)
+	if err != nil {
+		return 0, nil, false, err
+	}
+	funding, err := agencyFundingFor(ctx, tx, orgID, d.AgencyAllowance, time.Now())
+	if err != nil {
+		return 0, nil, false, err
+	}
+	if missing && funding == nil {
 		if !d.Clamp {
 			return 0, nil, false, ErrInsufficientCredits
 		}
 		return 0, nil, false, tx.Commit(ctx)
 	}
-	if err != nil {
-		return 0, nil, false, err
+	if missing {
+		// A real row keeps the org-then-agency lock order every balance change takes.
+		if monthly, purchased, _, err = lockOrgLedger(ctx, tx, orgID, true); err != nil {
+			return 0, nil, false, err
+		}
+	}
+	var agency models.AgencyAILedger
+	var agencyAvail models.Micro
+	if funding != nil {
+		if agency, agencyAvail, err = agencyCanPay(ctx, tx, orgID, funding); err != nil {
+			return 0, nil, false, err
+		}
 	}
 
+	own := monthly + purchased
 	take := d.Amount
-	if monthly+purchased < take {
+	if own+agencyAvail < take {
 		if !d.Clamp {
 			return 0, nil, false, ErrInsufficientCredits
 		}
-		take = monthly + purchased
+		take = own + agencyAvail
 	}
 	if take == 0 {
-		return monthly + purchased, nil, false, tx.Commit(ctx)
+		return own, nil, false, tx.Commit(ctx)
 	}
 
-	fromMonthly := min(take, monthly)
-	fromPurchased := take - fromMonthly
+	fromOwn := min(take, own)
+	fromAgency := take - fromOwn
+	fromMonthly := min(fromOwn, monthly)
+	fromPurchased := fromOwn - fromMonthly
 	monthly -= fromMonthly
 	purchased -= fromPurchased
 
-	if _, err := tx.Exec(ctx, `
-		UPDATE credit_ledger SET balance_micro = $2, purchased_micro = $3, updated_at = now() WHERE org_id = $1
-	`, orgID, monthly, purchased); err != nil {
-		return 0, nil, false, err
+	if fromOwn > 0 {
+		if _, err := tx.Exec(ctx, `
+			UPDATE credit_ledger SET balance_micro = $2, purchased_micro = $3, updated_at = now() WHERE org_id = $1
+		`, orgID, monthly, purchased); err != nil {
+			return 0, nil, false, err
+		}
+	}
+	if fromAgency > 0 {
+		if err := spendAgency(ctx, tx, orgID, funding.agencyID, agency, fromAgency, d.Reason, keyPtr(key)); err != nil {
+			return 0, nil, false, err
+		}
 	}
 
 	txn, err := insertTxn(ctx, tx, orgID, models.CreditTransaction{
 		Amount: -take, Reason: d.Reason, ModelUsed: d.Model,
 		InputTokens: d.InputTokens, OutputTokens: d.OutputTokens, Quantity: d.Quantity, Cost: d.Cost,
-		MonthlyAfter: monthly, PurchasedDelta: -fromPurchased, PurchasedAfter: purchased,
+		MonthlyAfter: monthly, PurchasedDelta: -fromPurchased, PurchasedAfter: purchased, AgencyDelta: -fromAgency,
 		IdempotencyKey: keyPtr(key),
 	})
 	if err != nil {
@@ -275,6 +309,35 @@ func (r *creditRepository) Debit(ctx context.Context, orgID uuid.UUID, d models.
 		return 0, nil, false, err
 	}
 	return monthly + purchased, txn, false, nil
+}
+
+// lockOrgLedger row-locks the org's ledger, creating it first when create is
+// set; missing reports no row (only when create is not set).
+func lockOrgLedger(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, create bool) (monthly, purchased models.Micro, missing bool, err error) {
+	if create {
+		if _, err := tx.Exec(ctx, `INSERT INTO credit_ledger (org_id) VALUES ($1) ON CONFLICT (org_id) DO NOTHING`, orgID); err != nil {
+			return 0, 0, false, err
+		}
+	}
+	err = tx.QueryRow(ctx, `SELECT balance_micro, purchased_micro FROM credit_ledger WHERE org_id = $1 FOR UPDATE`, orgID).
+		Scan(&monthly, &purchased)
+	if errors.Is(err, pgx.ErrNoRows) && !create {
+		return 0, 0, true, nil
+	}
+	return monthly, purchased, false, err
+}
+
+func (r *creditRepository) AgencyAvailable(ctx context.Context, orgID uuid.UUID, agencyAllowance bool) (models.Micro, error) {
+	f, err := agencyFundingFor(ctx, r.DB, orgID, agencyAllowance, time.Now())
+	if err != nil || f == nil {
+		return 0, err
+	}
+	l, err := readAgencyAILedger(ctx, r.DB, f.agencyID)
+	if err != nil {
+		return 0, err
+	}
+	l = l.In(f.period)
+	return clientAvailable(ctx, r.DB, orgID, f, l)
 }
 
 func (r *creditRepository) RefundSpend(ctx context.Context, orgID uuid.UUID, spendKey, refundKey, reason string) (models.Micro, models.Micro, error) {
@@ -304,12 +367,20 @@ func (r *creditRepository) RefundSpend(ctx context.Context, orgID uuid.UUID, spe
 	if err := tx.QueryRow(ctx, `SELECT month_reset_at FROM credit_ledger WHERE org_id = $1 FOR UPDATE`, orgID).Scan(&resetAt); err != nil {
 		return 0, 0, err
 	}
-	toPurchased := min(-spend.PurchasedDelta, -spend.Amount)
-	toMonthly := -spend.Amount - toPurchased
+	// The agency's part goes back to the agency, the rest to the workspace's own pools.
+	ownPart := -spend.Amount + spend.AgencyDelta
+	toPurchased := min(-spend.PurchasedDelta, ownPart)
+	toMonthly := ownPart - toPurchased
 	if resetAt.After(spend.CreatedAt) {
 		toMonthly = 0
 	}
-	total := toMonthly + toPurchased
+	var toAgency models.Micro
+	if spend.AgencyDelta < 0 {
+		if toAgency, err = refundAgencySpend(ctx, tx, orgID, spendKey, refundKey, reason); err != nil {
+			return 0, 0, err
+		}
+	}
+	total := toMonthly + toPurchased + toAgency
 	if total == 0 {
 		return 0, 0, tx.Commit(ctx)
 	}
@@ -324,7 +395,7 @@ func (r *creditRepository) RefundSpend(ctx context.Context, orgID uuid.UUID, spe
 	}
 	if _, err := insertTxn(ctx, tx, orgID, models.CreditTransaction{
 		Amount: total, Reason: reason,
-		MonthlyAfter: monthly, PurchasedDelta: toPurchased, PurchasedAfter: purchased,
+		MonthlyAfter: monthly, PurchasedDelta: toPurchased, PurchasedAfter: purchased, AgencyDelta: toAgency,
 		IdempotencyKey: keyPtr(refundKey),
 	}); err != nil {
 		return 0, 0, err

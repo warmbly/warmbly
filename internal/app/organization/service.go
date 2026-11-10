@@ -70,6 +70,7 @@ type OrganizationService interface {
 
 	// CRUD
 	Create(ctx context.Context, userID uuid.UUID, name, timezone string) (*models.Organization, *errx.Error)
+	CreateAgencyClient(ctx context.Context, userID uuid.UUID, name, timezone string) (*models.Organization, *errx.Error)
 	Get(ctx context.Context, orgID uuid.UUID) (*models.Organization, *errx.Error)
 	GetBySlug(ctx context.Context, slug string) (*models.Organization, *errx.Error)
 	Update(ctx context.Context, orgID uuid.UUID, req *models.UpdateOrganizationRequest) (*models.Organization, *errx.Error)
@@ -92,6 +93,8 @@ type OrganizationService interface {
 	CreateInvitedUser(ctx context.Context, token string, email *mail.Address, passwordHash string) (*models.User, *models.OrganizationMember, *errx.Error)
 	AcceptInvitationByID(ctx context.Context, invitationID, userID uuid.UUID, email string) (*models.OrganizationMember, *errx.Error)
 	PreviewInvitation(ctx context.Context, token string) (*models.InvitationPreview, *errx.Error)
+	// InvitationOrganization is the workspace an invitation, by token or id, is for; nil when there is none.
+	InvitationOrganization(ctx context.Context, token string, invitationID *uuid.UUID) (*uuid.UUID, *errx.Error)
 	GetInvitationToken(ctx context.Context, orgID, invitationID uuid.UUID) (string, *errx.Error)
 
 	// Custom roles
@@ -230,6 +233,13 @@ func (s *organizationService) notifyOperator(key, title, summary string, fields 
 	s.opsNotify.NotifyOperator(key, title, summary, fields)
 }
 
+// WireAgencyPool lets the limits this service reports follow an agency's shared pool.
+func (s *organizationService) WireAgencyPool(p feature.AgencyPool) {
+	if g, ok := s.gate.(interface{ WireAgencyPool(feature.AgencyPool) }); ok {
+		g.WireAgencyPool(p)
+	}
+}
+
 // WireAuthPolicy attaches the deployment auth policy, so invitations answer to
 // DISABLE_REGISTRATION the same way the signup form does.
 func (s *organizationService) WireAuthPolicy(p *config.AuthPolicy) {
@@ -289,6 +299,16 @@ func NewService(
 
 // Create creates a new organization and adds the user as owner
 func (s *organizationService) Create(ctx context.Context, userID uuid.UUID, name, timezone string) (*models.Organization, *errx.Error) {
+	return s.create(ctx, userID, name, timezone, true)
+}
+
+// CreateAgencyClient is Create for a workspace an agency runs: the daily
+// creation throttle applies, the owned-workspace cap does not.
+func (s *organizationService) CreateAgencyClient(ctx context.Context, userID uuid.UUID, name, timezone string) (*models.Organization, *errx.Error) {
+	return s.create(ctx, userID, name, timezone, false)
+}
+
+func (s *organizationService) create(ctx context.Context, userID uuid.UUID, name, timezone string, ownedCap bool) (*models.Organization, *errx.Error) {
 	name, nerr := displayname.Validate("Workspace name", name, displayname.Workspace, false)
 	if nerr != nil {
 		return nil, nerr
@@ -332,7 +352,7 @@ func (s *organizationService) Create(ctx context.Context, userID uuid.UUID, name
 		return nil, errx.New(errx.NotFound, "user not found")
 	}
 
-	if !config.SelfHosted() {
+	if ownedCap && !config.SelfHosted() {
 		ownedCount, countErr := s.orgRepo.GetUserOwnedOrganizationCount(ctx, userID)
 		if countErr != nil {
 			errs.CaptureException(countErr)
@@ -862,6 +882,26 @@ func (s *organizationService) AcceptInvitationByID(ctx context.Context, invitati
 		return nil, errx.New(errx.NotFound, "invitation not found")
 	}
 	return s.acceptResolved(ctx, inv, userID, email)
+}
+
+func (s *organizationService) InvitationOrganization(ctx context.Context, token string, invitationID *uuid.UUID) (*uuid.UUID, *errx.Error) {
+	var inv *models.OrganizationInvitation
+	var err error
+	switch {
+	case token != "":
+		inv, err = s.orgRepo.GetInvitationByToken(ctx, crypt.SHA256(token))
+	case invitationID != nil:
+		inv, err = s.orgRepo.GetInvitationByID(ctx, *invitationID)
+	}
+	if err != nil {
+		errs.CaptureException(err)
+		return nil, errx.InternalError()
+	}
+	if inv == nil {
+		return nil, nil
+	}
+	id := inv.OrganizationID
+	return &id, nil
 }
 
 // PreviewInvitation returns the safe public view for the /invite landing page.
@@ -2142,6 +2182,11 @@ func (s *organizationService) GrantManagedPlan(ctx context.Context, orgID, planI
 		}
 		if plan == nil {
 			return nil, errx.New(errx.BadRequest, "that plan does not exist")
+		}
+		// An agency plan sends from the agency's pool, which one workspace on its own does not have.
+		if plan.IsAgencyPlan() {
+			return nil, errx.NewWithIdentifier(errx.BadRequest, "agency_plan_needs_agency",
+				"Agency plans are given to an agency, not to one workspace. Open the agency under Agencies and give it the plan there; its client workspaces receive it.")
 		}
 	}
 	if err := s.subRepo.SetManagedPlan(ctx, orgID, planID, adminID, reason, until); err != nil {

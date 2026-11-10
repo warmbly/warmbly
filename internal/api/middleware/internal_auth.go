@@ -49,6 +49,43 @@ func internalAuth(c *gin.Context) {
 	c.Next()
 }
 
+// MinPortalEdgeTokenLength is the floor for PORTAL_EDGE_TOKEN; a shorter value opens nothing.
+const MinPortalEdgeTokenLength = 32
+
+// PortalEdgeAuthMiddleware protects the routes only the portal service calls, on PORTAL_EDGE_TOKEN, which
+// opens nothing else; INTERNAL_API_TOKEN does not open them. It fails closed when the token is unset.
+func (h *Handler) PortalEdgeAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		portalEdgeTokenOnce.Do(loadPortalEdgeToken)
+		if len(portalEdgeToken) == 0 {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "internal auth not configured"})
+			return
+		}
+		header := c.GetHeader("Authorization")
+		if !strings.HasPrefix(header, "Bearer ") {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
+			return
+		}
+		provided := []byte(strings.TrimPrefix(header, "Bearer "))
+		if subtle.ConstantTimeCompare(provided, portalEdgeToken) != 1 && !previousTokenMatches(provided, "PORTAL_EDGE") {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid bearer token"})
+			return
+		}
+		c.Next()
+	}
+}
+
+var (
+	portalEdgeTokenOnce sync.Once
+	portalEdgeToken     []byte
+)
+
+func loadPortalEdgeToken() {
+	if v := os.Getenv("PORTAL_EDGE_TOKEN"); len(v) >= MinPortalEdgeTokenLength {
+		portalEdgeToken = []byte(v)
+	}
+}
+
 // NodeBrokerAuthMiddleware protects the internal routes only fleet nodes
 // call: key material, blob signing, the cloud-link token and the node env.
 //
