@@ -191,6 +191,9 @@ Optional, and only for an instance that serves agency portal domains from a Clou
 | `CLOUDFLARE_SAAS_PORTAL_ZONE_ID` | The Cloudflare zone `PORTAL_DOMAIN` is on | unset | yes |
 | `CLOUDFLARE_SAAS_PORTAL_API_TOKEN` | A token with `SSL and Certificates: Edit` on that zone. Treat it as a secret | unset | yes |
 | `CLOUDFLARE_SAAS_PORTAL_ORIGIN` | Origin server for the hostnames the backend creates, when it differs from the zone's fallback origin | the zone's fallback origin | yes |
+| `CLOUDFLARE_SAAS_PORTAL_WORKER` | Name of the portal Worker on that zone. Each portal domain then gets its own Worker route (`<domain>/*`) when it is registered, removed with it. The token also needs `Workers Routes: Edit` on the zone | unset: the zone routes its custom hostnames itself | yes |
+
+Set `CLOUDFLARE_SAAS_PORTAL_WORKER` when the zone also holds other customer hostnames, such as tracking or redirect domains: one route for every custom hostname would send those to the portal too, and a route for each portal domain touches nothing else. A portal domain reads as registered only once its route exists, and a route to another Worker is never changed or removed. On a zone that holds portal domains only, leave it unset and route every custom hostname to the Worker once.
 
 On Warmbly Cloud the [portal service](#portal-service) is a Cloudflare Worker on that zone, configured by `deploy/cloudflare/portal/wrangler.jsonc`; its deployment is in `deploy/cloudflare/README.md`.
 

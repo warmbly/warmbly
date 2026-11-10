@@ -22,7 +22,9 @@ type Config struct {
 	ZoneID   string
 	APIToken string
 	// Origin overrides the zone's fallback origin for the hostnames this creates; optional.
-	Origin     string
+	Origin string
+	// Worker is the Worker script that answers the hostnames this creates, each through a route of its own; optional.
+	Worker     string
 	BaseURL    string
 	HTTPClient *http.Client
 }
@@ -36,6 +38,7 @@ type Client struct {
 func New(cfg Config) *Client {
 	cfg.ZoneID = strings.TrimSpace(cfg.ZoneID)
 	cfg.APIToken = strings.TrimSpace(cfg.APIToken)
+	cfg.Worker = strings.TrimSpace(cfg.Worker)
 	if cfg.ZoneID == "" || cfg.APIToken == "" {
 		return nil
 	}
@@ -121,6 +124,9 @@ func (e *APIError) Error() string {
 // duplicateCode is Cloudflare's answer to a create for a hostname the zone already has.
 const duplicateCode = 1406
 
+// duplicateRouteCode is Cloudflare's answer to a create for a route pattern the zone already has.
+const duplicateRouteCode = 10020
+
 func (c *Client) do(ctx context.Context, method, path string, body any, out any) error {
 	var rd io.Reader
 	if body != nil {
@@ -185,9 +191,22 @@ func (c *Client) Find(ctx context.Context, name string) (*Hostname, error) {
 	return nil, nil
 }
 
-// Ensure registers name unless the zone already has it, and returns the zone's view either way.
+// Ensure registers name unless the zone already has it, and returns the zone's
+// view either way. With a Worker set, the name also has its route to that
+// Worker before this answers, so a registered name is never left to the origin.
 func (c *Client) Ensure(ctx context.Context, name string) (*Hostname, error) {
 	name = normalize(name)
+	h, err := c.ensureHostname(ctx, name)
+	if err != nil || h == nil {
+		return h, err
+	}
+	if err := c.ensureRoute(ctx, name); err != nil {
+		return nil, err
+	}
+	return h, nil
+}
+
+func (c *Client) ensureHostname(ctx context.Context, name string) (*Hostname, error) {
 	if h, err := c.Find(ctx, name); err != nil || h != nil {
 		return h, err
 	}
@@ -215,8 +234,51 @@ func (c *Client) Ensure(ctx context.Context, name string) (*Hostname, error) {
 	return created.hostname(), nil
 }
 
-// Remove deletes name from the zone; one the zone does not have is already removed.
+// routePattern is every path on one hostname and nothing else, so no other name on the zone is touched.
+func routePattern(name string) string { return name + "/*" }
+
+// ensureRoute sends name to the Worker; a pattern the zone already routes is left as it is.
+func (c *Client) ensureRoute(ctx context.Context, name string) error {
+	if c.cfg.Worker == "" {
+		return nil
+	}
+	err := c.do(ctx, http.MethodPost, "/workers/routes", map[string]any{"pattern": routePattern(name), "script": c.cfg.Worker}, nil)
+	var ae *APIError
+	if errors.As(err, &ae) && ae.has(duplicateRouteCode) {
+		return nil
+	}
+	return err
+}
+
+// removeRoute deletes the route this created for name, never one to another Worker.
+func (c *Client) removeRoute(ctx context.Context, name string) error {
+	if c.cfg.Worker == "" {
+		return nil
+	}
+	var routes []struct {
+		ID      string `json:"id"`
+		Pattern string `json:"pattern"`
+		Script  string `json:"script"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/workers/routes", nil, &routes); err != nil {
+		return err
+	}
+	for _, r := range routes {
+		if r.Pattern == routePattern(name) && r.Script == c.cfg.Worker {
+			if err := c.do(ctx, http.MethodDelete, "/workers/routes/"+url.PathEscape(r.ID), nil, nil); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// Remove deletes name from the zone, its route first; one the zone does not have is already removed.
 func (c *Client) Remove(ctx context.Context, name string) error {
+	name = normalize(name)
+	if err := c.removeRoute(ctx, name); err != nil {
+		return err
+	}
 	h, err := c.Find(ctx, name)
 	if err != nil || h == nil {
 		return err
