@@ -46,6 +46,7 @@ type fakeContacts struct {
 	reads, writes int
 	changeOnRead  int
 	conflict      bool
+	beforeImport  func()
 	importOptions *models.ContactImportCommit
 }
 
@@ -67,6 +68,9 @@ func (f *fakeContacts) RunImport(_ context.Context, actor string, org uuid.UUID,
 		return nil, errx.New(errx.BadRequest, "missing guarded import")
 	}
 	row := rows[0]
+	if f.beforeImport != nil {
+		f.beforeImport()
+	}
 	if f.conflict || org != f.org || row.Expected.ID != f.row.ID || row.Expected.UpdatedAt != f.row.UpdatedAt || row.Expected.Email != f.row.Email {
 		return &models.ContactImportResult{Total: 1, Failed: 1, Errors: []models.ContactImportRowError{{Line: 1, Reason: contact.ImportReasonContactChanged}}}, nil
 	}
@@ -250,6 +254,63 @@ func TestCompanyEnrichRefusesChangedContactWithoutPaidRetry(t *testing.T) {
 			var xe *errx.Error
 			if !errors.As(err, &xe) || xe.Code != errx.Conflict || *calls != 1 || contacts.row.LastName != "" {
 				t.Fatalf("changed contact err=%v calls=%d", err, *calls)
+			}
+		})
+	}
+}
+
+func TestCompanyEnrichRejectsProfileEditsDuringLookup(t *testing.T) {
+	for _, tc := range []struct {
+		name, kind, body string
+		edit             func(*models.Contact)
+	}{
+		{"person name", "person", `{"first_name":"Provider","last_name":"Person"}`, func(c *models.Contact) { c.FirstName = "Edited" }},
+		{"person custom field", "person", `{"position":"Provider role","last_name":"Person"}`, func(c *models.Contact) { c.CustomFields["companyenrich_position"] = "Edited role" }},
+		{"company name", "company", `{"name":"Provider Company","industry":"Software"}`, func(c *models.Contact) { c.Company = "Edited Company" }},
+		{"company custom field", "company", `{"name":"Provider Company","industry":"Software"}`, func(c *models.Contact) { c.CustomFields["companyenrich_industry"] = "Edited industry" }},
+	} {
+		for _, overwrite := range []bool{false, true} {
+			t.Run(tc.name+map[bool]string{false: "/fill blanks", true: "/overwrite"}[overwrite], func(t *testing.T) {
+				s, connection, contacts, calls := serviceFixture(t, tc.body)
+				var edited models.Contact
+				s.newClient = func(string) *Client {
+					return mockClient(t, func(*http.Request) (*http.Response, error) {
+						*calls++
+						tc.edit(&contacts.row)
+						contacts.row.UpdatedAt = contacts.row.UpdatedAt.Add(time.Second)
+						edited = contacts.row
+						edited.CustomFields = make(map[string]string, len(contacts.row.CustomFields))
+						for key, value := range contacts.row.CustomFields {
+							edited.CustomFields[key] = value
+						}
+						return response(http.StatusOK, tc.body), nil
+					})
+				}
+				out, err := s.EnrichContact(context.Background(), connection.org, connection.id, uuid.New(), models.CompanyEnrichContactRequest{ContactID: contacts.row.ID, Kind: tc.kind, Overwrite: overwrite})
+				var xe *errx.Error
+				if !errors.As(err, &xe) || xe.Code != errx.Conflict || xe.Identifier != "companyenrich_contact_changed" || out != nil || *calls != 1 || contacts.writes != 0 {
+					t.Fatalf("profile edit err=%v calls=%d writes=%d result=%+v", err, *calls, contacts.writes, out)
+				}
+				if !reflect.DeepEqual(contacts.row, edited) {
+					t.Fatal("enrichment changed the edited contact")
+				}
+			})
+		}
+	}
+}
+
+func TestCompanyEnrichRejectsProfileEditsBeforeImport(t *testing.T) {
+	for _, overwrite := range []bool{false, true} {
+		t.Run(map[bool]string{false: "fill blanks", true: "overwrite"}[overwrite], func(t *testing.T) {
+			s, connection, contacts, calls := serviceFixture(t, `{"first_name":"Provider","last_name":"Person"}`)
+			contacts.beforeImport = func() {
+				contacts.row.FirstName = "Edited"
+				contacts.row.UpdatedAt = contacts.row.UpdatedAt.Add(time.Second)
+			}
+			out, err := s.EnrichContact(context.Background(), connection.org, connection.id, uuid.New(), models.CompanyEnrichContactRequest{ContactID: contacts.row.ID, Kind: "person", Overwrite: overwrite})
+			var xe *errx.Error
+			if !errors.As(err, &xe) || xe.Code != errx.Conflict || xe.Identifier != "companyenrich_contact_changed" || out != nil || *calls != 1 || contacts.writes != 1 || contacts.row.FirstName != "Edited" || contacts.row.LastName != "" {
+				t.Fatalf("profile edit err=%v calls=%d writes=%d contact=%+v", err, *calls, contacts.writes, contacts.row)
 			}
 		})
 	}

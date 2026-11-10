@@ -47,11 +47,13 @@ func (s *Service) EnrichContact(ctx context.Context, orgID, connID, userID uuid.
 	if !ok {
 		return nil, publicError(ErrResponse)
 	}
-	// Re-read after the external call so the blank-only policy uses current
-	// values, and a deleted/moved contact never reaches the write.
+	// Re-read after the external call to reject changed, deleted or moved contacts.
 	latest, err := s.contact(ctx, orgID, in.ContactID)
 	if err != nil {
 		return nil, err
+	}
+	if !latest.UpdatedAt.Equal(c.UpdatedAt) {
+		return nil, errx.NewWithIdentifier(errx.Conflict, "companyenrich_contact_changed", "The contact changed during enrichment; no profile fields were saved")
 	}
 	currentQuery, err := contactQuery(*latest, in.Kind)
 	if err != nil {
@@ -67,7 +69,7 @@ func (s *Service) EnrichContact(ctx context.Context, orgID, connID, userID uuid.
 	if len(fields) == 0 {
 		return out, nil
 	}
-	row, mapping := profileImport(*latest, patch)
+	row, mapping := profileImport(*c, patch)
 	saved, xerr := s.Importer.RunImport(ctx, userID.String(), orgID, []contact.ImportRow{row}, &models.ContactImportCommit{
 		Mapping: mapping, Dedup: models.ContactImportDedupUpdate, SkipMissingSegments: true,
 	}, nil, nil)
