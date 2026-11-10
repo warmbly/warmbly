@@ -110,7 +110,7 @@ func TestPendingPushRechecksTheMessageButKeepsActionAlerts(t *testing.T) {
 	id := uuid.New()
 	r := &messageNotificationRepo{}
 	s := &service{repo: r}
-	for _, category := range []models.NotificationCategory{models.NotifInboundReply, models.NotifInboundOOO} {
+	for _, category := range []models.NotificationCategory{models.NotifInboundReply, models.NotifInboundPositiveReply, models.NotifInboundOOO} {
 		if s.canPushMessage(context.Background(), category, pendingPush{MessageID: &id}) {
 			t.Errorf("%s accepted an automated message", category)
 		}

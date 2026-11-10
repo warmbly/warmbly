@@ -34,6 +34,7 @@ import type { AppNotification } from "@/lib/api/models/app/notifications/Notific
 // Per-category icon + tone so the list scans by kind before reading titles.
 const CATEGORY_META: Record<string, { icon: LucideIcon; tone: string }> = {
     inbound_reply: { icon: ReplyIcon, tone: "bg-sky-50 text-sky-600" },
+    inbound_positive_reply: { icon: ReplyIcon, tone: "bg-emerald-50 text-emerald-600" },
     inbound_out_of_office: { icon: ClockIcon, tone: "bg-slate-100 text-slate-500" },
     health_bounce: { icon: TriangleAlertIcon, tone: "bg-amber-50 text-amber-600" },
     health_complaint: { icon: ShieldAlertIcon, tone: "bg-rose-50 text-rose-600" },

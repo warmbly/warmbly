@@ -1880,6 +1880,10 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 		cat := models.NotifInboundReply
 		title := "New reply from " + sender
 		body := msg.Subject
+		if intent == models.ReplyIntentPositive {
+			cat = models.NotifInboundPositiveReply
+			title = "Positive reply from " + sender
+		}
 		if models.IsAutomatedIntent(intent) {
 			// The "out-of-office detected" preference is what someone mutes to
 			// stop hearing about auto-responders, so every machine reply goes

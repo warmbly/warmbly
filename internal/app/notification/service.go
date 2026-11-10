@@ -259,6 +259,7 @@ func (s *service) notifyOneWithError(ctx context.Context, userID uuid.UUID, orgI
 	if err != nil || prefs == nil {
 		return false, err
 	}
+	category = prefs.DeliveryCategory(category)
 	cat := prefs.CategoryPref(category)
 	if !cat.Enabled {
 		return false, nil
@@ -363,7 +364,7 @@ func (s *service) canNotifyMessage(ctx context.Context, category models.Notifica
 }
 
 func (s *service) messageEligibility(ctx context.Context, category models.NotificationCategory, messageID *uuid.UUID) (bool, error) {
-	if messageID == nil || (category != models.NotifInboundReply && category != models.NotifInboundOOO) {
+	if messageID == nil || !category.IsInboundReply() {
 		return true, nil
 	}
 	return s.repo.CanNotifyAboutMessage(ctx, *messageID, category)
