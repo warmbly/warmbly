@@ -165,7 +165,7 @@ private enum MoreNotificationMeta {
     static func caption(_ key: String) -> String? {
         switch key {
         case "inbound_positive_reply": return "A contact answers your outreach with interest"
-        case "inbound_reply": return "A contact replies to your outreach, whatever they say"
+        case "inbound_reply": return "Every reply to your outreach. When on, it covers positive replies too"
         case "inbound_out_of_office": return "Auto-replies detected on your sends"
         case "health_bounce": return "A campaign email hard bounces"
         case "health_complaint": return "A recipient marks your mail as spam"

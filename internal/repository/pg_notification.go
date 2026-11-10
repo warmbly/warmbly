@@ -85,6 +85,7 @@ func (r *notificationRepository) GetPreferences(ctx context.Context, userID uuid
 	return &prefs, nil
 }
 
+// UpdatePreferences saves the blob; a trigger (000387) keeps saved keys it omits.
 func (r *notificationRepository) UpdatePreferences(ctx context.Context, userID uuid.UUID, prefs *models.NotificationPreferences) error {
 	raw, err := json.Marshal(prefs)
 	if err != nil {
