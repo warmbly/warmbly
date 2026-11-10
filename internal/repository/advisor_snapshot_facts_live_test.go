@@ -9,7 +9,8 @@ import (
 )
 
 // The snapshot reads the facts detectors claim on the send path's terms: an
-// enabled sender, a stopped warmup and the tracking host actually used.
+// enabled sender, the all-active fallback, a stopped warmup and the tracking
+// host actually used.
 func TestLiveAdvisorSnapshotReadsTheSendPathsFacts(t *testing.T) {
 	handle, pool := liveContactDB(t)
 	ctx := context.Background()
@@ -17,6 +18,7 @@ func TestLiveAdvisorSnapshotReadsTheSendPathsFacts(t *testing.T) {
 
 	user, org, campaign := uuid.New(), uuid.New(), uuid.New()
 	sending, disabled := uuid.New(), uuid.New()
+	fallbackOrg, fallbackUser, fallbackCampaign, fallbackMailbox := uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	exec := func(sql string, args ...any) {
 		t.Helper()
 		if _, err := pool.Exec(ctx, sql, args...); err != nil {
@@ -24,17 +26,19 @@ func TestLiveAdvisorSnapshotReadsTheSendPathsFacts(t *testing.T) {
 		}
 	}
 	t.Cleanup(func() {
-		for _, sql := range []string{
-			`DELETE FROM campaigns WHERE organization_id = $1`,
-			`DELETE FROM email_accounts WHERE organization_id = $1`,
-			`DELETE FROM organizations WHERE id = $1`,
-		} {
-			if _, err := pool.Exec(ctx, sql, org); err != nil {
-				t.Errorf("cleanup: %v", err)
+		for _, ids := range [][2]uuid.UUID{{org, user}, {fallbackOrg, fallbackUser}} {
+			for _, sql := range []string{
+				`DELETE FROM campaigns WHERE organization_id = $1`,
+				`DELETE FROM email_accounts WHERE organization_id = $1`,
+				`DELETE FROM organizations WHERE id = $1`,
+			} {
+				if _, err := pool.Exec(ctx, sql, ids[0]); err != nil {
+					t.Errorf("cleanup: %v", err)
+				}
 			}
-		}
-		if _, err := pool.Exec(ctx, `DELETE FROM users WHERE id = $1`, user); err != nil {
-			t.Errorf("cleanup user: %v", err)
+			if _, err := pool.Exec(ctx, `DELETE FROM users WHERE id = $1`, ids[1]); err != nil {
+				t.Errorf("cleanup user: %v", err)
+			}
 		}
 	})
 
@@ -52,11 +56,14 @@ func TestLiveAdvisorSnapshotReadsTheSendPathsFacts(t *testing.T) {
 	      VALUES ($1, $2, $3, 'Advisor', '', 62, 'active', 'explicit', true, NOW(), NOW())`, campaign, user, org)
 	exec(`INSERT INTO campaign_senders (campaign_id, email_account_id, enabled) VALUES ($1, $2, true), ($1, $3, false)`,
 		campaign, sending, disabled)
-	snap, err := NewAdvisorRepository(handle).LoadSnapshot(ctx, org, time.Now())
+	repo := NewAdvisorRepository(handle)
+	snap, err := repo.LoadSnapshot(ctx, org, time.Now())
 	if err != nil {
 		t.Fatalf("load snapshot: %v", err)
 	}
+	seen := map[uuid.UUID]bool{}
 	for _, m := range snap.Mailboxes {
+		seen[m.ID] = true
 		switch m.ID {
 		case sending:
 			if !m.InActiveCampaign || !m.TrackedOnMailboxHost {
@@ -70,5 +77,30 @@ func TestLiveAdvisorSnapshotReadsTheSendPathsFacts(t *testing.T) {
 				t.Error("a disabled sender read as in a running campaign")
 			}
 		}
+	}
+	if !seen[sending] || !seen[disabled] {
+		t.Fatalf("the snapshot is missing a fixture mailbox: %v", seen)
+	}
+
+	// A campaign with no picks and no tags sends from every active mailbox.
+	exec(`INSERT INTO users (id, email, first_name, last_name) VALUES ($1, $2, 'Advisor', 'Live')`,
+		fallbackUser, "adv-"+fallbackUser.String()[:8]+"@test.local")
+	exec(`INSERT INTO organizations (id, name, slug, owner_user_id) VALUES ($1, 'Advisor Live', $2, $3)`,
+		fallbackOrg, "adv-"+fallbackOrg.String()[:8], fallbackUser)
+	exec(`INSERT INTO email_accounts (id, user_id, organization_id, email, name, signature_plain, signature_html,
+	          provider, status, campaign_limit, min_wait_time, timezone)
+	      VALUES ($1, $2, $3, $4, 'Advisor', '', '', 'smtp_imap', 'active', 30, 600, 'UTC')`,
+		fallbackMailbox, fallbackUser, fallbackOrg, "adv-"+fallbackMailbox.String()[:8]+"@test.local")
+	exec(`INSERT INTO campaigns (id, user_id, organization_id, name, description, days, status, sender_strategy, link_tracking, utm_tracking, updated_at, created_at)
+	      VALUES ($1, $2, $3, 'Advisor', '', 62, 'active', 'tags', false, true, NOW(), NOW())`, fallbackCampaign, fallbackUser, fallbackOrg)
+	snap, err = repo.LoadSnapshot(ctx, fallbackOrg, time.Now())
+	if err != nil {
+		t.Fatalf("load fallback snapshot: %v", err)
+	}
+	if len(snap.Mailboxes) != 1 || !snap.Mailboxes[0].InActiveCampaign {
+		t.Fatalf("a mailbox the all-active fallback sends from read as idle: %+v", snap.Mailboxes)
+	}
+	if snap.Mailboxes[0].TrackedOnMailboxHost {
+		t.Error("UTM tags alone read as tracking through the mailbox's host")
 	}
 }

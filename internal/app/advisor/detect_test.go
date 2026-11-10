@@ -1182,6 +1182,14 @@ func TestCopyIsMeasuredAsTheRecipientReadsIt(t *testing.T) {
 		}
 	}
 
+	spun := "{Book https://cal.example/x|Grab https://cal.example/x|Meet https://cal.example/x} or {see https://a.example/{one|two}|read https://a.example/one}."
+	if _, fired := run(repository.AdvisorStep{Subject: "hello", BodyPlain: spun})["copy_too_many_links"]; fired {
+		t.Error("spintax options naming the same address counted as several links")
+	}
+	if _, fired := run(repository.AdvisorStep{Subject: "hello", BodyPlain: "{https://a.example https://b.example https://c.example|thanks}"})["copy_too_many_links"]; !fired {
+		t.Error("an option some recipients get with three links was not flagged")
+	}
+
 	if _, fired := run(repository.AdvisorStep{Subject: "hello", BodyPlain: "I will contact now and then. We are not insurgent."})["copy_spam_phrases"]; fired {
 		t.Error("spam phrases matched inside other words")
 	}

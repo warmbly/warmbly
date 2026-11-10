@@ -59,7 +59,7 @@ var (
 	// wordRe splits on whitespace for a word count that does not need to be
 	// exact, only stable.
 	wordRe = regexp.MustCompile(`\S+`)
-	// tagRe strips HTML so the length check measures prose, not markup.
+	// tagRe strips HTML so phrases are matched in prose, not markup.
 	tagRe = regexp.MustCompile(`(?s)<[^>]*>`)
 	// styleRe removes script/style blocks before stripping tags, so their
 	// contents do not count as words.
@@ -80,9 +80,9 @@ var sampleContact = models.Contact{
 type copyView struct {
 	// subject is empty for a step that replies under the conversation's subject.
 	subject string
-	// prose is the body's text, spintax at its shortest; options is the same
-	// with every spintax option kept, for matching phrases any recipient may get.
-	prose, options string
+	// options is the body's text with every spintax option kept, for matching
+	// phrases any recipient may get.
+	options string
 	// links is the body's distinct web addresses.
 	links int
 }
@@ -100,7 +100,17 @@ func viewOf(st repository.AdvisorStep, threaded bool) copyView {
 	if strings.TrimSpace(linkSource) == "" {
 		linkSource = srcAttrRe.ReplaceAllString(html, " ")
 	}
-	v := copyView{prose: tasks.ShortestSpintax(body), options: body, links: distinctLinks(linkSource)}
+	// A recipient gets one option of each group, so count the one carrying the most links.
+	linkSource = tasks.ResolveSpintax(linkSource, func(opts []string) string {
+		best := opts[0]
+		for _, o := range opts[1:] {
+			if distinctLinks(o) > distinctLinks(best) {
+				best = o
+			}
+		}
+		return best
+	})
+	v := copyView{options: body, links: distinctLinks(linkSource)}
 	if !threaded {
 		v.subject = strings.TrimSpace(tasks.ShortestSpintax(render(st.Subject)))
 	}

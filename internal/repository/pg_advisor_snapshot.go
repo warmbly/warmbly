@@ -151,11 +151,11 @@ func (r *advisorRepository) loadMailboxes(ctx context.Context, orgID uuid.UUID, 
 			  AND wt.recipient_account_id = ea.id
 		) inb ON true
 		LEFT JOIN LATERAL (
-			-- A mailbox counts as "in an active campaign" when a running
-			-- campaign either lists it as an enabled sender or matches one of its tags.
-			-- tracked: one of them tracks opens or links on the mailbox's host rather than its own verified one.
+			-- A mailbox counts as "in an active campaign" on ResolveCampaignSenderPool's terms:
+			-- an enabled sender, a tag match, or the all-active fallback.
+			-- tracked: one of them puts a pixel or wrapped links on the mailbox's host (UTM tags alone do not).
 			SELECT true AS active,
-			       bool_or((c.open_tracking OR c.link_tracking OR c.utm_tracking)
+			       bool_or((c.open_tracking OR c.link_tracking)
 			               AND NOT (c.tracking_domain <> '' AND c.tracking_domain_verified)) AS tracked
 			FROM campaigns c
 			WHERE c.organization_id = ea.organization_id
@@ -166,6 +166,17 @@ func (r *advisorRepository) loadMailboxes(ctx context.Context, orgID uuid.UUID, 
 			      SELECT 1 FROM campaign_email_tags cet
 			      JOIN email_tags et ON et.tag_id = cet.tag_id
 			      WHERE cet.campaign_id = c.id AND et.email_id = ea.id
+			    )
+			    OR (
+			      ea.status = 'active' AND ea.seed_scope IS NULL
+			      AND c.sender_strategy <> 'explicit'
+			      AND NOT EXISTS (SELECT 1 FROM campaign_email_tags cet WHERE cet.campaign_id = c.id)
+			      AND NOT EXISTS (
+			        SELECT 1 FROM campaign_senders cs
+			        JOIN email_accounts sea ON sea.id = cs.email_account_id
+			        WHERE cs.campaign_id = c.id AND cs.enabled
+			          AND sea.organization_id = c.organization_id AND sea.status = 'active'
+			      )
 			    )
 			  )
 			HAVING COUNT(*) > 0
