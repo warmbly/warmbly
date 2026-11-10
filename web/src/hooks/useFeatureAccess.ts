@@ -79,7 +79,7 @@ export interface FeatureAccess {
     hasBulkOps: boolean;
     /** Team invitations — Starter+. */
     hasTeam: boolean;
-    /** Webhook endpoints — Business+. */
+    /** Webhook endpoints — Grow+, so both agency plans. */
     hasWebhooks: boolean;
     /** Convenience: viewer is the current org's owner. */
     isOwner: boolean;
@@ -193,7 +193,7 @@ export default function useFeatureAccess(): FeatureAccess {
         hasRealtime: true,
         hasBulkOps: productPaid && isAtLeast(plan, "starter"),
         hasTeam: productPaid && isAtLeast(plan, "starter"),
-        hasWebhooks: productPaid && isAtLeast(plan, "business"),
+        hasWebhooks: productPaid && isAtLeast(plan, "grow"),
         isOwner,
         canManage,
     };

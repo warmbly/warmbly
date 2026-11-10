@@ -35,6 +35,7 @@ const STATUS_LABEL: Record<string, string> = {
 const FEATURES: Record<string, string[]> = {
     Agency: [
         "Unlimited clients, no per-client fee",
+        "The API and webhooks in every client workspace",
         "Your logo, colour and portal domain on client pages",
         "Shared send pool and AI balance across clients",
     ],
@@ -42,7 +43,6 @@ const FEATURES: Record<string, string[]> = {
         "Everything in Agency",
         "No \"Powered by Warmbly\" on client pages",
         "Sending kept apart from other customers",
-        "Webhooks",
     ],
 };
 
