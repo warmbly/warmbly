@@ -11,6 +11,8 @@ This page is the source of truth for what an API key can and cannot reach. Every
 
 When an endpoint says "JWT permission: X / API permission: Y", the dual-auth middleware checks the relevant one based on which credential the caller used.
 
+An [agency API key](/api/authentication/#agency-api-keys) (`wmagency_`) reaches every **API key accepted** route below in one client workspace of its agency, named by the `Warmbly-Organization` header, under the same permission as a workspace key; the exceptions are API key self-service and OAuth apps, which answer `403` `agency_key_not_allowed`. It never reaches a **JWT only** route or the MCP server, except the [agency routes](#agencies) that say they accept it.
+
 A member restricted to [selected resources](/guides/team-roles/#access-scope) is held to a short list of routes whatever credential they use, and those routes filter to their grants. The reads are `GET /campaigns`, `/campaigns-overview`, `/campaigns/:id` with its `/logs`, `/steps` and `/ab-variants`, `GET /analytics/dashboard` (whose `campaign_ids` and `folder_ids` filters must name granted campaigns and folders), `/analytics/campaigns/compare`, `/analytics/campaigns/:id` with `/daily` and `/hourly`, `GET /analytics/accounts` and `/analytics/accounts/:id`, `GET /emails` and `/emails/:id`, and the unibox reads `GET /unibox`, `/unibox/count`, `/unibox/overview`, `/unibox/thread`, `/unibox/thread/labels`, `/unibox/scheduled` and `/unibox/:id` (which, for them, does not mark the message read). Their own account routes under `/auth/*`, `/me/*`, `GET /organization`, `/organization/current`, `/organization/switch/:id`, `/invitations`, `GET /subscription`, `/subscription/features`, `GET /timezones` and `POST /getaway` keep working. With a role that [lets clients act](/guides/team-roles/#client-roles), they can also call `PUT /unibox/thread/labels`, `PATCH /unibox/seen`, `PATCH /unibox/folder`, `POST /unibox/reply`, `POST /unibox/snooze`, `DELETE /unibox/snooze` and `DELETE /unibox/scheduled/:task_id` (with `access_unibox`), `PATCH /campaigns/:id`, `POST /campaigns/:id/steps`, `PATCH` and `DELETE /campaigns/:id/steps/:sid` and `PATCH /campaigns/:id/step-layout` (with `manage_campaigns`), and `POST /campaigns/:id/start` and `/stop` (with `send_campaigns`). Each write is checked against their grants before anything changes: a reply needs a granted sending mailbox and a `thread_id` whose messages all sit in granted mailboxes, inbox changes need every named message or conversation in granted mailboxes, `PATCH /campaigns/:id` refuses `status`, `email_tags`, `sender_strategy`, `folders`, `tracking_domain`, `cc` and `bcc`, steps accept only email, wait and end actions, and a campaign edit, a step change and a start each need the campaign to send only from granted mailboxes in an explicit list with no mailbox tags. Every other route, and a write without such a role, answers `403` `member_access_restricted`, and a campaign or mailbox outside their grants answers `404`. An API key's own mailbox allowlist still applies on top: the key reaches the mailboxes on both lists.
 
 All paths below are relative to the versioned base URL `https://api.warmbly.com/v1` (for example `/campaigns` is `https://api.warmbly.com/v1/campaigns`). See [versioning](/api/) for details.
@@ -49,6 +51,10 @@ These checks use existing grants on hosted and self-hosted instances and need no
 | POST | `/emails/bulk/warmup` | `WRITE_EMAILS` |
 | POST | `/emails/bulk/status` | `WRITE_EMAILS` |
 | GET | `/emails/allowance` | `READ_EMAILS` |
+| POST | `/emails/client-links` | `WRITE_EMAILS` |
+| GET | `/emails/client-links` | `READ_EMAILS` |
+| GET | `/emails/client-links/:id/uses` | `READ_EMAILS` |
+| POST | `/emails/client-links/:id/revoke` | `WRITE_EMAILS` |
 | GET | `/emails/:id/track` | `READ_EMAILS` |
 | PATCH | `/emails/:id/track` | `WRITE_EMAILS` |
 | POST | `/emails/:id/track/verify` | `WRITE_EMAILS` |
@@ -114,6 +120,7 @@ Campaigns, steps and activity logs are scoped to the selected organization for s
 | PATCH | `/campaigns/:id` | `WRITE_CAMPAIGNS` |
 | DELETE | `/campaigns/:id` | `WRITE_CAMPAIGNS` |
 | POST | `/campaigns/:id/duplicate` | `WRITE_CAMPAIGNS` |
+| POST | `/campaigns/:id/copy-to` | `READ_CAMPAIGNS` and `WRITE_CAMPAIGNS` (plus `READ_TEMPLATES` and `WRITE_TEMPLATES` with `template_ids`), same workspace only |
 | GET | `/campaigns/:id/attachments` | `READ_CAMPAIGNS` |
 | POST | `/campaigns/:id/attachments` | `WRITE_CAMPAIGNS` |
 | DELETE | `/campaigns/:id/attachments/:attachmentId` | `WRITE_CAMPAIGNS` |
@@ -156,6 +163,8 @@ Campaigns, steps and activity logs are scoped to the selected organization for s
 `POST /campaigns/:id/attachments` takes a multipart `file` and optional `step_id`. New uploads require matching supported content and a final extension: PDF, DOCX, XLSX, PPTX, CSV, TSV, TXT, PNG, JPG/JPEG, GIF, WebP or ZIP, up to 15 MiB. The server derives canonical outgoing MIME metadata, preserves bytes, and refuses unsupported, malformed or mismatched content with `400 invalid_attachment` before storage or quota reservation. See [format profiles, parser limits and existing-file compatibility](/guides/campaigns/#campaign-attachments). Client MIME declarations do not select the type. Duplication and workspace/admin archive restore preserve existing private files without claiming new-upload validation.
 
 With `CAMPAIGN_ATTACHMENT_DOWNLOAD_PROXY=true`, attachment responses keep the `url` field and return a 15-minute API download link. `GET /campaign-attachments/download/:token` accepts that file-scoped capability, checks the current attachment and campaign tenant, and returns bytes as an attachment with `X-Content-Type-Options: nosniff`, `Cache-Control: no-store` and a sandboxed CSP. The capability contains no dashboard session token and grants no list, upload or delete access. Deleting the attachment ends the link. Treat the link as private until it expires; changing the instance auth secret also ends outstanding links.
+
+`POST /campaigns/:id/copy-to` and `POST /templates/copy-to` copy a campaign's configuration (and any `template_ids` from the same workspace), or a list of templates, into up to 10 workspaces named in `organization_ids`, as drafts. The answer is `200` with one entry per workspace in `data`, each with a `status` of `copied`, `partial` or `failed`, the copies it made, the copied steps whose settings were cleared (`review`), any `warnings`, and an `error` with a stable `code` when that workspace got nothing. The caller needs view access in this workspace and the Manage campaigns permission, with access to the whole workspace, in each destination; a member restricted to selected resources cannot copy anything out and gets `403 member_access_restricted`. A key or OAuth token reaches one workspace, so it can copy only into its own and gets `403 cross_workspace_copy_requires_session` for any other; copy between workspaces from the dashboard or with a signed-in session. Send an `Idempotency-Key` to replay the first answer instead of copying again. See [Copy campaigns to a client](/guides/agencies/#copy-campaigns-to-a-client).
 
 The `hold`, `pause` and `resume` calls under `/campaigns/:id/leads/:contactId/` hold one contact's flow inside one campaign: an out-of-office auto-reply writes one automatically, and a member can write one by hand. The contact stays subscribed and stays a lead, so this is not an unsubscribe and not a suppression. Both writes state an absolute hold rather than applying a delta, and replacing a live hold keeps its original start, so a retry lands on the same row and neither needs an `Idempotency-Key`. See [pause a lead](/api/reference/campaigns/#pause-a-lead).
 
@@ -293,7 +302,7 @@ Segments are saved contact audiences: a condition list plus per-contact manual o
 | POST | `/forms/:id/assets/:kind` | `WRITE_CONTACTS` |
 | DELETE | `/forms/:id/assets/:kind` | `WRITE_CONTACTS` |
 
-Hosted lead-capture forms; see the [forms guide](/guides/forms/). A form's `redirect_url` must be on one of the workspace's own domains when it is set or changed (`redirect_target_not_own_domain` otherwise), and a form with one carries `redirect_url_active`, `false` when the saved address no longer qualifies and visitors see the success message instead. Contact scopes cover them because a form exists to create contacts. Minting a personalized link is a `GET` on top of an upsert, so retries always return the same token. The `/forms/domain` routes are the workspace-wide custom forms domain and additionally need the `manage_settings` organization permission for JWT callers; `PUT` resolves the record as part of saving, and only a verified domain is ever used to build a URL. A new domain verifies only with the workspace's ownership `TXT` record beside the `CNAME`; the status carries it as `txt_name` and `txt_value`, and a domain another workspace holds is refused with `forms_domain_taken`. On the custom domain the forms service serves only that workspace's forms. The public page (`/f/:public_id`), its submit endpoint and the embed loader (`/forms.js`) are served by the standalone forms service on its own host (`FORMS_DOMAIN`), not the API origin, and take no authentication; the unguessable public id is the capability, and the JSON endpoints additionally require the render token the page shell carries.
+Hosted lead-capture forms; see the [forms guide](/guides/forms/). A form's `redirect_url` must be on one of the workspace's own domains when it is set or changed (`redirect_target_not_own_domain` otherwise), and a form with one carries `redirect_url_active`, `false` when the saved address no longer qualifies and visitors see the success message instead. Contact scopes cover them because a form exists to create contacts. Minting a personalized link is a `GET` on top of an upsert, so retries always return the same token. The `/forms/domain` routes are the workspace-wide custom forms domain and additionally need the `manage_settings` organization permission for JWT callers; `PUT` resolves the record as part of saving, and only a verified domain is ever used to build a URL. A new domain verifies only with the workspace's ownership `TXT` record beside the `CNAME`; the status carries it as `txt_name` and `txt_value`, and a domain another workspace holds is refused with `forms_domain_taken`. On the custom domain the forms service serves only that workspace's forms, connect links and reports; the domain is also the workspace's [white-label](/guides/white-label/) portal host. Form URLs are built on that domain or on `FORMS_DOMAIN`, never on an agency portal domain. The public page (`/f/:public_id`), its submit endpoint and the embed loader (`/forms.js`, also at `/embed.js`, which mounts connect pages and reports too) are served by the standalone forms service on its own host (`FORMS_DOMAIN`), not the API origin, and take no authentication; the unguessable public id is the capability, and the JSON endpoints additionally require the render token the page shell carries.
 
 `GET /forms/:id/submissions` is keyset-paginated newest first, ordered by creation time and then id, so submissions that arrive in the same instant are neither skipped nor repeated at a page boundary. It answers `data` plus `pagination` (`next_cursor`, `has_more`); pass `?limit=` (1 to 100, default 50) and `?cursor=` the opaque `pagination.next_cursor` for the next page. A cursor this API did not issue returns `400`. The earlier `?before=` (an RFC 3339 timestamp, returning submissions strictly older than it) and the top-level `has_more` are still accepted and returned for existing clients; sending both `cursor` and `before` returns `400`.
 
@@ -363,6 +372,8 @@ The `/unibox/drafts` endpoints hold autosaved compose drafts, scoped to the call
 
 `POST /emails/:id/resume-sending` lifts a provider pause on the mailbox: it ends a timed pause (`rate_limited`, `daily_limit`, `sender_blocked`, `retry`) and releases a `permanent` or `domain_auth` hold. It answers `{"hold_released": bool, "cooldown_cleared": bool}`, both `false` when nothing was paused. An `authentication` hold is cleared by reconnecting the mailbox, and an unconfirmed (`unknown`) or `conflict` hold keeps its own recovery, so this leaves both in place. If the provider still refuses, the next send pauses the mailbox again. It is bodyless and idempotent, so it takes no `Idempotency-Key`. The mailbox's `send_pause` in [`GET /analytics/accounts/:id`](/api/reference/analytics/) says whether it applies (`resumable`). See [when a provider pauses sending](/guides/mailboxes/#when-a-provider-pauses-sending).
 
+The `/emails/client-links` routes manage [client connect links](/guides/agencies/#client-connect-links), each with JWT permission `MANAGE_EMAILS`. `POST /emails/client-links` takes `label` (optional), `providers` (any of `gmail`, `outlook`, `smtp_imap`), `max_mailboxes` (1 to 500), `expires_in_days` (1 to 90, default 7), `tag_ids` (up to 20 of the workspace's mailbox tags) and `warmup`, and answers `201` with the `link` and its `url`, on the agency's verified portal domain when it has one, else on `PORTAL_DOMAIN` (`503 client_links_unavailable` without it). The URL appears in that response only; send an `Idempotency-Key` so a retry replays it instead of minting a second link. `GET /emails/connect-links` lists links newest first with their `status` (`active`, `expired`, `revoked`, `exhausted`) and `mailboxes_connected`, paginated with `cursor` and `limit` (1 to 100). `GET /emails/connect-links/:id/uses` lists the mailboxes a link connected. `POST /emails/connect-links/:id/revoke` turns a link off; a repeat returns the revoked link, so it needs no `Idempotency-Key`.
+
 `GET /emails/allowance` reports how many mailboxes the workspace holds (`used`), how many it may hold (`allowance`, `null` for unlimited), `remaining`, and the `basis` of the number: `fair_use` (the plan's daily sends divided by `sends_per_mailbox`), `plan`, `override` (an approved request), `free` (no paid plan: `0`, or `10` for a workspace that kept the earlier free plan), or `unlimited`. `pending_request` is the open limit-increase request for mailboxes, if any. Every connect path refuses with `mailbox_allowance_reached` once `remaining` is `0`. See [mailbox allowance](/guides/mailboxes/#mailbox-allowance).
 
 `GET /emails/:id/identity` reports which addresses the mailbox's provider will let it send as, which one it uses, and whether its signature was imported or written here; it contacts no provider. `POST /emails/:id/identity/refresh` re-reads that list from the provider and stores it, and with `import_signature` also replaces the stored signature with the one configured at the provider. Storing the list is what a `send_as_email` choice is validated against, so the refresh needs `WRITE_EMAILS` rather than `READ_EMAILS`; it takes no `Idempotency-Key` because it writes exactly what the provider currently says. Gmail only. See [sending identity](/guides/mailboxes/#sending-identity).
@@ -395,6 +406,7 @@ The `agent-drafts` endpoints back the [inbox agent](/guides/inbox-agent/): the a
 | POST | `/templates/score` | `READ_TEMPLATES` |
 | POST | `/templates/analyze` | `WRITE_TEMPLATES` (it is charged to the workspace balance) |
 | POST/PATCH/DELETE | `/templates[/:id]` | `WRITE_TEMPLATES` |
+| POST | `/templates/copy-to` | `READ_TEMPLATES` and `WRITE_TEMPLATES`, same workspace only |
 | GET | `/crm/pipelines`, `/crm/pipelines/:id` | `READ_CRM` |
 | POST/PATCH/DELETE | `/crm/pipelines[/:id][/stages[/:stageId]]` | `WRITE_CRM` |
 | GET | `/crm/deals`, `/crm/deals/:id` | `READ_CRM` |
@@ -434,6 +446,27 @@ Cloud exposes `POST /pool-link/instance/analytics/warmup` and `POST /pool-link/i
 `GET /analytics/inbox-tagging` accepts `limit`, opaque `cursor`, and `needs_review` query parameters and returns `data`, aggregate `summary`, and `pagination`. Each row carries `actions`, the list of what the verdict was allowed to do (`hold`, `stop`, `task`, `suppress`), and `summary.acted` counts the rows that did anything. `return_date` (`YYYY-MM-DD`, or `null`) is the out-of-office return date the model was asked to confirm, with its answer under `answers.return_date`. Invalid cursors, limits, or booleans return `400`.
 
 `GET /analytics/accounts` returns account health and usage in the standard `data` plus `pagination` envelope with an opaque `cursor`. Pass `email_ids` (comma-separated, up to 200) to ask only for the mailboxes a page shows, or `limit` (`1`-`1000`, default `1000`) and `cursor` to walk the whole inventory. Per-mailbox reads are batched across the page, so a page's cost does not grow with the total inventory, and a workspace with more mailboxes than one page reaches the rest through `next_cursor` instead of having them silently dropped. Invalid cursors, limits, or ids return `400`.
+
+### Client reports
+
+| Method | Path | API Permission |
+|--------|------|----------------|
+| GET | `/reports` | `READ_ANALYTICS` |
+| GET | `/reports/:id` | `READ_ANALYTICS` |
+| GET | `/reports/:id/preview` | `READ_ANALYTICS` |
+| POST | `/reports` | `MANAGE_REPORTS` |
+| PATCH | `/reports/:id` | `MANAGE_REPORTS` |
+| DELETE | `/reports/:id` | `MANAGE_REPORTS` |
+| POST | `/reports/:id/link` | `MANAGE_REPORTS` |
+| DELETE | `/reports/:id/link` | `MANAGE_REPORTS` |
+| PUT | `/reports/:id/schedule` | `MANAGE_REPORTS` |
+| DELETE | `/reports/:id/schedule` | `MANAGE_REPORTS` |
+
+[Client reports](/guides/client-reports/) are saved, scoped views of the workspace's results that can be shared by link and emailed on a schedule. For a dashboard session, reads gate on `view_analytics` and writes on `view_analytics` and `manage_campaigns`; members limited to [selected resources](/guides/team-roles/#access-scope) cannot reach these routes. A report's `access` has the same shape as a member's access (`scope` plus `campaign_folder_ids`, `campaign_ids` and `email_account_ids`), every id must belong to the workspace (`400 invalid_report_scope` otherwise), and folders are resolved to the campaigns they hold each time the report is read. `GET /reports` returns `data` plus `pagination` with an opaque `cursor` (`limit` 1 to 100, default 50). `GET /reports/:id/preview` and the public page take `range` (`last_7_days`, `last_30_days`, `this_month`, `last_month`; anything else is `400 invalid_report_range`) and read the same queries as the analytics dashboard, in whole UTC days.
+
+`POST /reports/:id/link` mints a 32-byte random token, stores only its SHA-256, and returns the `url` in that one response; calling it again replaces the link, so it is also the rotate action. `expires_in_days` is 1 to 365, default 90. `DELETE /reports/:id/link` turns off the share link and the link inside every scheduled email already sent. `PUT /reports/:id/schedule` takes `recipients` (1 to 10 plain addresses), `cadence` (`weekly` or `monthly`), `weekday` (0 is Sunday), `month_day` (1 to 28), `hour`, an IANA `timezone` and `paused`. Writes accept `Idempotency-Key`; minting a link without one mints a new link on every retry, which only replaces the previous one.
+
+The public report page is served at `/r/:token` by the [portal service](/development/configuration/#portal-service), on `PORTAL_DOMAIN` or on an agency's verified portal domain. It takes no authentication and is answered by the backend's internal route `GET /api/v1/internal/reports/:token`. On a portal domain it serves only that agency's clients' reports. Without `PORTAL_DOMAIN` no link is minted (`422 report_links_unavailable`).
 
 ### Inbox placement tests
 
@@ -502,6 +535,8 @@ Apply and undo run the fix under the key's own scopes, and a key limited to cert
 `POST /api-keys` and `PATCH /api-keys/:id` require a recent confirmation (`POST /auth/reauth`) when called from a signed-in session, because a key outlives the session that made it and a stolen browser token should not be able to leave one behind or widen one. An API key calling them is unaffected: it has no session and no second factor to present, it was itself minted from a confirmed session, and the `API_KEYS` scope is the explicit grant that governs it. Automation and the CLI keep working.
 
 Creating, editing, revoking and deleting keys is for a signed-in member or an API key; an OAuth app token gets `403` `oauth_token_not_allowed`. A new or edited key stays within its creator: a member cannot give it a permission their role does not cover, and an API key cannot give it a permission, mailbox or IP address the calling key does not have (`403` `api_key_permissions_exceed_caller`). See [what a role can delegate](/api/permissions/#what-a-role-can-delegate). `GET /api-keys/permissions` reports the caller's bound as `grantable`.
+
+An agency API key cannot call any route in this section, `DELETE /api-keys/self` included (`403` `agency_key_not_allowed`); its keys are managed under [agencies](#agencies). The same goes for the OAuth app routes below.
 
 `DELETE /api-keys/self` revokes the key the request was made with, and is the one route here that needs no scope. A credential must always be able to end itself: requiring `API_KEYS` to sign out would leave a read-only key on a laptop someone is handing back live, which is what [`warmbly auth logout`](/api/cli/) promises to prevent. A JWT caller gets a `400`: there is no key in that request to end, only a session, which `POST /auth/logout` ends.
 
@@ -635,8 +670,14 @@ With [multiple dashboards sharing a backend](/development/configuration/#multipl
 - `POST /auth/reauth/sso/begin`, `/auth/reauth/sso/finish` (confirm through the Google, Apple or single sign-on identity linked to the account, in a browser window)
 - `POST /auth/reauth/native/begin`, `/auth/reauth/native` (confirm with a native Sign in with Apple or Google ID token carrying the session's nonce)
 - `GET /auth/config` (public deployment capabilities: which sign-in methods this backend has enabled, whether a login code step follows, whether signups are open, whether the instance still needs claiming)
+- `GET /auth/portal?host=` (public: whether `host` is a verified agency portal domain and, when it is, the agency brand the dashboard there shows (with the agency's `icon_url`, `sign_in_image_url` and `theme` when set, see [portal theme](#portal-theme)), the main dashboard URL, whether the security check below is available and `sign_in`, where the agency's clients sign in: `portal` or `warmbly` (the main address). Always `200`; anything else answers `{"portal": false}`)
+- `POST /auth/portal/handoff` (JWT only, from the main dashboard address: `host` names a verified portal whose agency signs clients in on the main address, and the answer is a `redirect_url` on that host carrying a one-time code, valid for 60 seconds. `end_session: true` ends the calling session once the code exists, for a sign-in made only to reach the portal. A session signed in on a portal, or a request from any other origin, answers `403 portal_handoff_origin`; any other host `404 portal_not_found`. Each call issues a new single-use code, so a retry is safe without an `Idempotency-Key`)
+- `POST /auth/portal/exchange` (public, from the portal's own origin: trades `code` once for a session bound to that portal's agency, answered like a sign-in. A code that expired, was already spent, or is presented from another origin answers `400 portal_handoff_invalid`, and any attempt spends it)
+- `GET /auth/captcha-frame?origin=` (public: an HTML security check rendered on the API's host for the dashboard on a verified portal domain to embed. Only that origin may frame it and only it receives the token, which goes through the same sign-in checks as on the main address; any other origin answers `400`)
 - `POST /auth/app-attest/challenge`, `/auth/app-attest/keys` (the native app's [App Attest](/api/reference/account-org/#app-attest-native-apps) challenge and one-time key registration, on their own per-IP budget `APP_ATTEST_IP_RATE_LIMIT`)
 - `GET /auth/instance` (JWT only: the running Warmbly version of a self-hosted instance and whether a newer release exists, for the dashboard's version pill; a hosted deployment answers `self_hosted: false` and nothing else)
+
+Sent from an agency [portal domain](/guides/white-label/#where-clients-sign-in), `POST /auth/register` and `/auth/register/confirm` need an `invite` for the submitted address; without one they answer `403 portal_registration_closed`.
 
 `POST /auth/register` accepts an optional `invite` field carrying an invitation token. On a deployment running `DISABLE_REGISTRATION=invite_only` it is what permits the signup, and the account is created inside the inviting organization rather than in a new one. The token must resolve to a live invitation whose email equals the submitted address, otherwise the request is refused with `invitation_invalid`. Omitting it on a closed deployment returns `registration_invite_only` or `registration_closed`. See [error codes](/api/error-codes/#registration-and-invitation-refusals).
 
@@ -657,6 +698,8 @@ These changes require the session to have confirmed the account holder within th
 | Invite or remove a member, change a member's role or change their access scope | `POST /organization/members/invite`, `DELETE /organization/members/:id`, `PATCH /organization/members/:id`, `PUT /organization/members/:id/access` |
 | Create, edit or delete a custom role | `POST /organization/roles`, `PATCH /organization/roles/:id`, `DELETE /organization/roles/:id` |
 | Export or import a whole workspace | `POST /organization/current/export`, `POST /organization/current/import` |
+| Add, change or remove agency staff, bring a workspace into an agency or detach one, take a workspace out of its agency, move AI balance into a client, start an agency checkout, top-up or AI balance purchase, or open its billing portal | `POST /agency/:agencyId/members`, `PATCH /agency/:agencyId/members/:userId`, `DELETE /agency/:agencyId/members/:userId`, `POST /agency/:agencyId/clients/attach`, `DELETE /agency/:agencyId/clients/:orgId`, `POST /agency/:agencyId/clients/:orgId/ai-balance`, `POST /organization/agency/leave`, `POST /agency/:agencyId/billing/checkout`, `POST /agency/:agencyId/billing/topup`, `POST /agency/:agencyId/billing/ai-topup`, `POST /agency/:agencyId/billing/portal` |
+| Create, edit or revoke an agency API key | `POST /agency/:agencyId/api-keys`, `PATCH /agency/:agencyId/api-keys/:keyId`, `DELETE /agency/:agencyId/api-keys/:keyId` |
 | Schedule a workspace or account for deletion | `POST /organization/current/danger-zone/delete`, `POST /me/danger-zone/delete` |
 | Approve a self-hosted instance's warmup pool link (always refused with `403` `pool_link_closed`) | `POST /pool-link/codes/:code/approve` |
 | Start a checkout, open the billing portal, change or cancel the plan, add money to the balance, save a card, change automatic reload or AI spend controls | `POST /subscription/checkout`, `POST /subscription/portal`, `POST /subscription/change-plan`, `POST /subscription/cancel`, `POST /subscription/balance/top-up`, `POST /subscription/balance/checkout`, `POST /subscription/balance/payment-method`, `PATCH /subscription/balance/auto-reload`, `PATCH /subscription/credits/settings`, `POST /pool-link/checkout` (the retired Warmup plan's checkout, which always refuses with `409` `warmup_plan_retired`), `POST /subscription/offers/:planId/checkout` |
@@ -835,6 +878,123 @@ Warmup actions for a deleted, unassigned or no-longer-authorized mailbox return 
 
 `POST /internal/worker/warmup-actions` optionally accepts `filing_id` for a filing-only action. `filing_pending: true` is returned only for permitted, pure filing work still durably queued for that exact mailbox and its current worker. On a failed filing, this proof lets an updated worker finish the command without a `WarmupFiled` completion event; the durable recovery queue remains responsible for retrying it. Missing proof or an older backend retains the existing command retries. Deploy the backend before workers to enable this behavior. Successful filing still requires a completion event, and publication failures remain retryable. No send, arrival or retention-delete authority is added.
 
+### Workspace branding
+
+A workspace's [white-label](/guides/white-label/) brand. Session only: an API key or OAuth token is refused.
+
+| Method | Path | Who |
+|---|---|---|
+| GET | `/organization/brand` | Any member: `brand` (stored), `inherited` (the agency's, when set), `effective` (what public pages show, with `source`, `agency_id`, `portal_host` and `full_white_label`), `portal_host`, `portal_source` (`agency` or `shared`), `portal_base_url` and the instance's `powered_by` |
+| PUT | `/organization/brand` | `manage_settings`: `display_name`, `accent_color` (`#rrggbb`), `website_url` (`https://`) and `hide_powered_by`; replaces all four |
+| DELETE | `/organization/brand` | `manage_settings`: removes the brand so the workspace inherits its agency's again |
+| POST | `/organization/brand/logo` | `manage_settings`: multipart `file`, PNG or JPG up to 2 MB and 1024px on each side |
+| DELETE | `/organization/brand/logo` | `manage_settings` |
+
+Each write answers with the same body as the `GET`. `PUT` and the `DELETE`s set a state, so a retry lands on the same one; a retried logo upload replaces the logo it just stored. A name with a link answers `400 invalid_name`, a bad colour `400 invalid_accent_color`, a website that is not `https://` `400 invalid_website_url`, and turning `hide_powered_by` on without Agency Pro, Agency Scale or Enterprise `403 white_label_not_entitled` (a value already stored saves unchanged). Every write is audited as `workspace_brand`.
+
+### Agencies
+
+The `/agency` routes run an [agency](/guides/agencies/): its staff, its client workspaces, its shared send pool and its billing. An agency is not one workspace, so these routes check that the caller is on the agency's staff, not a workspace permission. Members of the staff can read; the owner and admins can change. An agency the caller is not on answers `404 agency_not_found`.
+
+Besides a signed-in session, the routes in the first rows of the table below accept an [agency API key](/api/authentication/#agency-api-keys) for its own agency, with the [agency bit](/api/permissions/#agency) named there, acting as the owner or admin who created it. A workspace API key or OAuth token answers `403 agency_credential_required`, a key on a session-only route `403 agency_key_not_allowed`, and a key on another agency `404 agency_not_found`.
+
+| Agency key permission | Routes |
+|-----------------------|--------|
+| `AGENCY_READ` | `GET /agency` (its own agency only), `GET /agency/plans`, `GET /agency/:agencyId`, `GET /agency/:agencyId/members`, `GET /agency/:agencyId/clients`, `GET /agency/:agencyId/overview`, `GET /agency/:agencyId/brand` |
+| `AGENCY_READ` and `READ_UNIBOX` | `GET /agency/:agencyId/inbox`, `/inbox/thread`, `/inbox/messages/:messageId` |
+| `AGENCY_MANAGE_CLIENTS` | `POST /agency/:agencyId/clients`, `POST /agency/:agencyId/clients/attach`, `PATCH` and `DELETE /agency/:agencyId/clients/:orgId` |
+| `AGENCY_READ_USAGE` | `GET /agency/:agencyId/usage`, `GET /agency/:agencyId/ai-balance` |
+| `AGENCY_TRANSFER_AI` | `POST /agency/:agencyId/clients/:orgId/ai-balance` |
+| Session only | `POST /agency`, `PATCH /agency/:agencyId`, staff and invitation writes, every `/billing/*` route (checkout, top-ups and the portal open a browser page), brand, logo, icon, sign-in image and portal domain writes, and the `/api-keys` routes |
+
+A key passes the recent-confirmation check the session routes ask for, since it presents its credential on every call; moving AI balance still takes an `Idempotency-Key` and moves the money once per key.
+
+| Method | Path | Who |
+|--------|------|-----|
+| GET | `/agency` | Any signed-in user: their agencies, with `role`, `client_count` and `billing_enabled`. Also claims [invitations](/guides/agencies/#staff) sent to the account's address |
+| GET | `/agency/plans` | Any signed-in user: the agency plans, their `monthly_send_pool` and `agency_ai_allowance_usd` |
+| POST | `/agency` | Any signed-in user; becomes the owner |
+| GET | `/agency/:agencyId` | Staff |
+| PATCH | `/agency/:agencyId` | Owner, admin (rename) |
+| GET | `/agency/:agencyId/members` | Staff: `data` (staff) and `invitations` |
+| POST | `/agency/:agencyId/members` | Owner (admin or member), admin (member): adds an account by `email`, or saves an invitation when no account uses it |
+| PATCH/DELETE | `/agency/:agencyId/members/:userId` | Owner for admins, owner or admin for members; anyone may remove themselves |
+| DELETE | `/agency/:agencyId/invitations/:invitationId` | Owner, admin |
+| GET | `/agency/:agencyId/clients` | Staff: each client with `monthly_send_limit` and `monthly_ai_limit_usd` |
+| POST | `/agency/:agencyId/clients` | Owner, admin: a new workspace from `name` and optional `timezone` |
+| POST | `/agency/:agencyId/clients/attach` | Owner, admin who owns the workspace in `organization_id` |
+| PATCH | `/agency/:agencyId/clients/:orgId` | Owner, admin: `monthly_send_limit` (sends) and `monthly_ai_limit_usd` (dollars of the [shared AI balance](/guides/agencies/#the-shared-ai-balance) per period), each a number or `null` for no cap. Only the fields sent change; a body with neither is refused |
+| POST | `/agency/:agencyId/clients/:orgId/ai-balance` | Owner, admin: moves `amount_usd` ($1 to $5,000) from the agency's AI balance into the workspace's own. Answers `amount_usd`, `agency_balance_usd` and `workspace_balance_usd`; `402 agency_ai_balance_insufficient` when the agency balance holds less |
+| DELETE | `/agency/:agencyId/clients/:orgId` | Owner, admin: detaches the workspace and keeps its data |
+| GET | `/agency/:agencyId/usage` | Staff: pool size, top-ups, used, remaining, per-client use and caps, days left and a projection |
+| GET | `/agency/:agencyId/ai-balance` | Staff: the shared AI balance this period: `allowance_usd` and `allowance_left_usd`, `purchased_usd`, `bought_this_period_usd`, `spent_usd`, `moved_usd`, `balance_usd`, `period_start`, `period_end`, per-client `clients` (`spent_usd`, `moved_usd`, `monthly_ai_limit_usd`) and the `top_up` range. `unmetered: true` where the instance does not charge for AI |
+| GET | `/agency/:agencyId/overview` | Staff: the [agency home](/guides/agencies/#agency-home-and-inbox). `usage` (as `/usage`), `totals`, `attention` (worst first, each with `kind`, `severity`, `organization_id`, `count` and `rate`) and `clients`. Each client carries `access` (`full`, `restricted` or `none`), `pool_used` and `monthly_send_limit`, and only the sections the caller's own membership in it allows: `campaigns` and `mailboxes` (`view_campaigns`), `inbox` (`access_unibox`), `advisor` (`view_analytics`). Cached for up to 20 seconds |
+| GET | `/agency/:agencyId/inbox` | Staff: conversations across every client whose inbox the caller reads (`access_unibox`; a restricted member, only their granted mailboxes), newest first, as `data` plus `pagination`. Filters: `client` (comma-separated workspace ids), `unread`, `needs_reply`, `positive` (each `true`), `q` (search), `cursor`, `limit` (1 to 100, default 30) |
+| GET | `/agency/:agencyId/inbox/thread` | Staff with inbox access in that client: `organization_id` and `thread_id`, the conversation's messages as `GET /unibox/thread` returns them, read-only |
+| GET | `/agency/:agencyId/inbox/messages/:messageId` | Staff with inbox access in that client: `organization_id`, one message with its body as `GET /unibox/:id` returns it, left unread |
+| POST | `/agency/:agencyId/billing/checkout` | Owner, admin: `plan_id` and `interval` (`month` or `year`) |
+| POST | `/agency/:agencyId/billing/topup` | Owner, admin: one 50,000-send pack |
+| POST | `/agency/:agencyId/billing/ai-topup` | Owner, admin: `amount_usd` ($5 to $5,000) added to the agency's AI balance through checkout. Answers `checkout_url` |
+| POST | `/agency/:agencyId/billing/portal` | Owner, admin |
+| GET | `/agency/:agencyId/brand` | Staff: the agency's [brand](/guides/white-label/), `full_white_label`, `can_manage`, `portal_domain` (shaped like the forms domain status), `portal_base_url`, `portal_sign_in`, and the [portal theme](#portal-theme): `icon_url` and `sign_in_image_url` (empty strings when none is uploaded) and `theme` (always an object, `{}` when nothing is set) |
+| PUT | `/agency/:agencyId/brand` | Owner, admin: the same body as `PUT /organization/brand`, plus an optional `portal_sign_in` (`portal` or `warmbly`, see [where clients sign in](/guides/white-label/#where-clients-sign-in)) and an optional `theme` object (see [portal theme](#portal-theme)). Leaving either out keeps what is stored; a `theme` replaces the whole stored theme. Any other `portal_sign_in` answers `400 invalid_portal_sign_in`. `agency_forbidden` for other staff |
+| POST/DELETE | `/agency/:agencyId/brand/logo` | Owner, admin: multipart `file`, as for a workspace logo |
+| POST/DELETE | `/agency/:agencyId/brand/icon` | Owner, admin: the square browser tab icon. Multipart `file`, PNG up to 1 MB and 512px on each side |
+| POST/DELETE | `/agency/:agencyId/brand/sign-in-image` | Owner, admin: the image on the portal's sign-in page. Multipart `file`, PNG or JPG up to 4 MB and 2560px on each side |
+| PUT | `/agency/:agencyId/brand/domain` | Owner, admin: `domain`, the portal host every client's links are built on (empty clears it); resolves it as part of saving. A malformed host answers `400 invalid_portal_domain`, one another workspace or agency holds `409 portal_domain_taken` |
+| POST | `/agency/:agencyId/brand/domain/verify` | Owner, admin: re-resolves the portal host |
+| GET | `/agency/:agencyId/api-keys` | Owner, admin: the agency's [API keys](/api/authentication/#agency-api-keys), newest first, as `data` plus `pagination` (`cursor`, `limit` 1 to 100) |
+| GET | `/agency/:agencyId/api-keys/permissions` | Signed in: the bits an agency key may hold (`workspace`, `agency`), `presets` and `grantable` |
+| POST | `/agency/:agencyId/api-keys` | Owner, admin: `name`, `permissions`, optional `allowed_ips`, `rate_limit_per_minute` and `expires_at`. The answer carries `secret`, shown once. `400 invalid_agency_key_permissions` for a bit an agency key cannot hold |
+| PATCH | `/agency/:agencyId/api-keys/:keyId` | Owner, admin: `name` and `allowed_ips` of an active key; `404 agency_api_key_not_found` otherwise |
+| DELETE | `/agency/:agencyId/api-keys/:keyId` | Owner, admin: revokes the key. `204`, also for a key already revoked |
+
+`POST /agency`, the client creates, adding staff, every checkout, creating an API key and moving AI balance honor `Idempotency-Key`; a move retried with the same key moves the money once. The other writes set a value, so a retry lands on the same state. Moving AI balance, like the billing routes and creating, editing or revoking an agency API key, asks a session for a [recent confirmation](#actions-that-need-a-recent-confirmation). On an instance without billing (`BILLING_PROVIDER=none`) the billing routes and moving AI balance answer `503 agency_billing_disabled`, the pool has no cap and AI is not charged. `GET /organization/current` carries `agency` (`id`, `name`, `can_leave`) on a client workspace, `GET /organization` carries the same `agency` on each membership row whose workspace is a client, and that workspace's `POST /subscription/checkout` answers `409 agency_billed`.
+
+#### Portal theme
+
+The agency's [portal theme](/guides/white-label/#portal-theme) is the `theme` object on its brand, plus two uploaded images. It is available on every agency plan. Every `theme` field is optional, and an empty string or a missing field means the default:
+
+| Field | Value |
+|-------|-------|
+| `font` | `system`, `geometric` or `serif` |
+| `corners` | `sharp` or `round` |
+| `appearance` | `light` or `dark`: the appearance a client sees before choosing one |
+| `sign_in_layout` | `split` or `cover` |
+| `sign_in_background` | `accent`, `dark` or `image` (the uploaded sign-in image) |
+| `sign_in_heading` | Plain text, at most 60 characters |
+| `sign_in_message` | Plain text, at most 200 characters |
+| `support_email` | An email address |
+| `support_url`, `terms_url`, `privacy_url` | Absolute `https://` addresses, under the same rule as `website_url` |
+
+```json
+{
+  "display_name": "Northwind Growth",
+  "accent_color": "#0f766e",
+  "website_url": "https://northwindgrowth.example",
+  "hide_powered_by": false,
+  "theme": {
+    "font": "geometric",
+    "corners": "round",
+    "sign_in_layout": "split",
+    "sign_in_background": "image",
+    "sign_in_heading": "Welcome back",
+    "support_email": "help@northwindgrowth.example",
+    "terms_url": "https://northwindgrowth.example/terms"
+  }
+}
+```
+
+`PUT /agency/:agencyId/brand` without `theme` keeps the stored theme. With `theme`, the object replaces the stored one as a whole, so a field it leaves out is cleared and `"theme": {}` clears everything. `PUT /organization/brand` ignores `theme`: a workspace's own brand has none.
+
+A value outside a field's list answers `400 invalid_theme`. A heading or message that is too long, or that contains a link, a web or email address, markup or control characters, answers `400 invalid_brand_text`; they follow the [name rules](/api/error-codes/#name-refusals) with their own length bounds. A support, terms or privacy address that is not `https://`, or a `support_email` that is not an email address, answers `400 invalid_brand_link`. Each `message` names the field. A refused `PUT` stores nothing.
+
+`icon_url` and `sign_in_image_url` are set only by their upload routes and are never read from a `PUT` body. Each upload is stored under a new address, replaces the image before it and answers with the same body as `GET /agency/:agencyId/brand`; a `DELETE` clears the image and answers the same way, also when there was none. The upload refusals are the [image codes](/api/error-codes/#white-label-refusals) a logo answers, worded for the image in question.
+
+Clients read the theme from the public brand object: `effective.brand` on `GET /organization/brand`, the `brand` on connect and report pages, and `brand` on `GET /auth/portal`. It carries `icon_url`, `sign_in_image_url` and `theme` only when the brand shown is the agency's, each omitted when unset. `GET /auth/portal` always carries the agency's three, including for an agency that set no name, logo, colour or website.
+
+`POST /organization/agency/leave` is the client workspace's side of detaching: its owner takes the current workspace out of its agency, with the same effect as `DELETE /agency/:agencyId/clients/:orgId`. It answers `204`, including for a workspace in no agency, so a retry is safe. Anyone but the workspace's owner gets `403 agency_leave_not_owner`. When the workspace's owner also owns the agency (`can_leave` is `false`), it answers `409 agency_leave_agency_owner`: that owner detaches the workspace from the agency instead.
+
 <a id="referrals-and-discounts"></a>
 
 ### Discounts
@@ -863,12 +1023,12 @@ The workspace balance, adding money, automatic reload, spend controls, the activ
 | GET | `/subscription/credits/settings` | `manage_billing` |
 | PATCH | `/subscription/credits/settings` | `manage_billing` |
 
-- `GET /subscription/balance` is everything the Balance tab shows: `balance_usd`, `monthly_usd`, `purchased_usd`, `monthly_allowance_usd`, `monthly_used_usd`, `next_reset_at`, the saved card (`payment_method`), `auto_reload`, `low_balance_usd`, `charge_in_progress`, and the `top_up` bounds and presets. On a deployment with `BILLING_PROVIDER=none` it answers only `{"unlimited": true}`.
+- `GET /subscription/balance` is everything the Balance tab shows: `balance_usd`, `monthly_usd`, `purchased_usd`, `monthly_allowance_usd`, `monthly_used_usd`, `next_reset_at`, the saved card (`payment_method`), `auto_reload`, `low_balance_usd`, `charge_in_progress`, and the `top_up` bounds and presets. On an [agency](/guides/agencies/#the-shared-ai-balance) client it adds `agency_usd`, what the agency's shared AI balance would pay once the workspace's own runs out (absent when that is nothing). On a deployment with `BILLING_PROVIDER=none` it answers only `{"unlimited": true}`.
 - `POST /subscription/balance/top-up` `{"amount_usd": 25}` charges the saved card now (from $5 to $5,000) and is billed as a Stripe invoice. It answers `200` with `status` `paid`, or `202` with `status` `processing` and `charge_in_progress` `true` while the payment is still going through and Warmbly finishes it in the background. It honors `Idempotency-Key`; without one, a retry while the first payment is pending answers `409` `charge_in_progress`, so it never charges twice. A decline answers `402` with `card_declined`, `authentication_required` or `payment_failed`, which tells a client to offer Checkout instead; no saved card is `409` `payment_method_required`, and another payment still going through is `409` `charge_in_progress`. Needs an active paid plan.
 - `POST /subscription/balance/checkout` `{"amount_usd": 25}` returns a Stripe Checkout `checkout_url` for the amount; the payment saves the card for next time. `POST /subscription/balance/payment-method` returns a Checkout `checkout_url` that saves or replaces the card without charging it. Money is added only in the Stripe webhook, never in the call, and exactly once.
 - `PATCH /subscription/balance/auto-reload` takes `enabled`, `threshold_usd` ($0.01 to $1,000), `amount_usd` ($5 to $5,000, more than the threshold) and `monthly_limit_usd` (at least the amount, at most $50,000), and answers with the same body as `GET /subscription/balance`. An amount not above the threshold is `422` `recharge_too_small`, a monthly limit out of range is `422` `monthly_limit_too_small`, and turning it on with no saved card is `409` `payment_method_required`.
 - `GET /subscription/balance/invoices` returns `data`: the latest Stripe invoices for the workspace, subscription and balance alike, each with `kind` (`subscription`, `top_up` or `auto_reload`), `status`, `amount_cents`, `currency`, `hosted_url` and `pdf_url`.
-- `GET /subscription/credits`, `/credits/transactions`, `/credits/usage` and `/credits/settings` keep their legacy credit fields for older clients and carry the dollar figures next to them: `balance_usd`, `monthly_usd`, `purchased_usd`, `monthly_allowance_usd` and `total_purchased_usd` on the balance; `amount_usd`, `cost_usd` (the provider price before the markup), `input_tokens`, `output_tokens`, `quantity` and `balance_after_usd` on each transaction; `spent_today_usd`, `spent_week_usd`, `spent_month_usd`, the `limit_*_usd` caps and `amount_usd` on each `series` and `by_reason` or `by_model` entry in usage; and the `spend_limit_*_usd`, `member_limit_*_usd` and `low_balance_usd` settings, which `PATCH /subscription/credits/settings` also accepts. `GET /subscription/credits` carries `unlimited` (boolean): `true` on a deployment with `BILLING_PROVIDER=none`, where the balance is bypassed and every amount is zero and meaningless.
+- `GET /subscription/credits`, `/credits/transactions`, `/credits/usage` and `/credits/settings` keep their legacy credit fields for older clients and carry the dollar figures next to them: `balance_usd`, `monthly_usd`, `purchased_usd`, `monthly_allowance_usd` and `total_purchased_usd` on the balance; `amount_usd`, `cost_usd` (the provider price before the markup), `input_tokens`, `output_tokens`, `quantity`, `balance_after_usd` and `agency_delta_usd` (the part of the amount the agency's shared AI balance paid, or got back) on each transaction; `spent_today_usd`, `spent_week_usd`, `spent_month_usd`, the `limit_*_usd` caps and `amount_usd` on each `series` and `by_reason` or `by_model` entry in usage; and the `spend_limit_*_usd`, `member_limit_*_usd` and `low_balance_usd` settings, which `PATCH /subscription/credits/settings` also accepts. `GET /subscription/credits` carries `unlimited` (boolean): `true` on a deployment with `BILLING_PROVIDER=none`, where the balance is bypassed and every amount is zero and meaningless.
 
 `POST /subscription/credits/checkout`, which bought a fixed credit pack, is removed; add money with `POST /subscription/balance/top-up` or `/balance/checkout` instead.
 
@@ -976,6 +1136,14 @@ On the backend's host but outside `/v1`, called by Microsoft Graph or a Google C
 
 - `POST /api/v1/mailbox-push/gmail` (Gmail watch notifications from a Cloud Pub/Sub push subscription, used when `GMAIL_PUSH_SERVICE_ACCOUNT` is set). Each request must carry a Google-signed bearer token whose audience is this URL and whose sender is that service account, or it gets `401`. The body is capped at 64 KiB. The answer is `204` once the mailbox's worker has been woken or when the body names no mailbox, `503` when the wake could not be sent, so Pub/Sub retries, and `404` when Gmail push is not configured. See [realtime mailbox sync](/development/mailbox-push/)
 - `POST /api/v1/mailbox-push/graph/:emailId` (Microsoft Graph change and lifecycle notifications for one mailbox, used when `GRAPH_PUSH` is on). A request carrying `validationToken` gets the token echoed as `text/plain`, which is how Graph confirms a new subscription. Otherwise each notification item is accepted only with the client state issued for that mailbox, and items without it are ignored. The body is capped at 1 MiB. The answer is `202` once the mailbox's worker has been woken, also for a body with nothing to act on, and `503` when the wake could not be sent, so Graph retries. See [realtime mailbox sync](/development/mailbox-push/)
+
+On the [portal service](/development/configuration/#portal-service) (the `PORTAL_DOMAIN` host and every verified agency portal domain), also public and rate-limited per source:
+
+- `GET /r/:token` (a shared [client report](/guides/client-reports/), `noindex`, frameable by any site) and its JSON read `GET /api/reports/:token`, which requires the render token the page shell carries and is cached for a minute
+- `GET /connect/:token` (a [client connect page](/guides/agencies/#client-connect-links), the same headers) and its JSON calls `GET /api/connect/:token`, `POST /api/connect/:token/oauth`, `POST /api/connect/:token/oauth/result` and `POST /api/connect/:token/smtp-imap`, each requiring the page's render token
+- `GET /embed.js`, the embed loader for connect pages and reports
+
+The portal service answers `404` for `/f/`, `/forms.js` and any other `/api/` path. An agency portal domain serves the dashboard on every other path; the shared `PORTAL_DOMAIN` serves nothing else. Behind it are the backend's internal `GET /api/v1/internal/portals/:host`, `GET /api/v1/internal/reports/:token` and `POST /api/v1/internal/connect-links/*`, which take `PORTAL_EDGE_TOKEN` and no other token. The forms service serves none of these pages.
 
 On the tracking service (the `TRACKING_DOMAIN` host, not the API), also public and rate-limited per source:
 

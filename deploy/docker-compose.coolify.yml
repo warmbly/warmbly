@@ -44,6 +44,8 @@ x-server-env: &server-env
   WEBSOCKET_URL: wss://${REALTIME_HOST:?}/socket/websocket
   TRACKING_DOMAIN: ${TRACKING_DOMAIN:?}
   FORMS_DOMAIN: ${FORMS_DOMAIN:?}
+  # Optional: the portal's shared address. Unset, no connect or report link is built.
+  PORTAL_DOMAIN: ${PORTAL_DOMAIN:-}
   GEODB_PATH: /data/blobs/geo/GeoLite2-City.mmdb
   MAIL_TRANSPORT: ${MAIL_TRANSPORT:-log}
   EMAIL_NAME: ${EMAIL_NAME:-Warmbly}
@@ -116,6 +118,7 @@ services:
       GIN_MODE: release
       ENCRYPTED_KEYS_PROVIDER: postgres
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:?}
+      PORTAL_EDGE_TOKEN: ${PORTAL_EDGE_TOKEN:-}
       UPDATER_URL: none
       BOX_GOOGLE_CLIENT_ID: ${BOX_GOOGLE_CLIENT_ID:-}
       BOX_GOOGLE_CLIENT_SECRET: ${BOX_GOOGLE_CLIENT_SECRET:-}
@@ -223,6 +226,24 @@ services:
     healthcheck:
       <<: *http-healthcheck
       test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8090/health"]
+
+  # Connect pages, shared reports and agency portal domains. Serves nothing
+  # itself until PORTAL_DOMAIN and PORTAL_EDGE_TOKEN are set.
+  portal:
+    image: ghcr.io/warmbly/warmbly/portal:${WARMBLY_TAG:-prod}
+    restart: unless-stopped
+    environment:
+      API_ORIGIN: http://backend:8080
+      PORTAL_DOMAIN: ${PORTAL_DOMAIN:-}
+      PORTAL_EDGE_TOKEN: ${PORTAL_EDGE_TOKEN:-}
+      DASHBOARD_ORIGIN: http://web:80
+      FALLBACK_ORIGIN: http://tracking:3000
+      CLIENT_IP_HEADER: X-Forwarded-For
+    depends_on:
+      backend: { condition: service_healthy }
+    healthcheck:
+      <<: *http-healthcheck
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8096/"]
 
   web:
     image: ghcr.io/warmbly/warmbly/web:${WARMBLY_TAG:-prod}

@@ -2,10 +2,19 @@
 // anything shaped like an address is turned into a link. The server is the
 // authority; this only lets the form say so before the request.
 
-export type NameKind = "person" | "workspace";
+/** "heading" and "message" are lines one person writes for a page others open. */
+export type NameKind = "person" | "workspace" | "heading" | "message";
 
 export const PERSON_NAME_MAX = 50;
 export const WORKSPACE_NAME_MAX = 64;
+export const HEADING_MAX = 60;
+export const MESSAGE_MAX = 200;
+const MAX_LENGTH: Record<NameKind, number> = {
+    person: PERSON_NAME_MAX,
+    workspace: WORKSPACE_NAME_MAX,
+    heading: HEADING_MAX,
+    message: MESSAGE_MAX,
+};
 const MAX_COMBINING_RUN = 3;
 
 const SCHEME =
@@ -30,7 +39,7 @@ function looksLikeLink(value: string): boolean {
 export function nameError(label: string, value: string, kind: NameKind, optional = false): string | null {
     const name = normalizeName(value);
     if (!name) return optional ? null : `${label} is required.`;
-    const max = kind === "workspace" ? WORKSPACE_NAME_MAX : PERSON_NAME_MAX;
+    const max = MAX_LENGTH[kind];
     if ([...name].length > max) return `${label} must be ${max} characters or less.`;
     let combining = 0;
     for (const ch of name) {
@@ -39,9 +48,9 @@ export function nameError(label: string, value: string, kind: NameKind, optional
         if (combining > MAX_COMBINING_RUN) return `${label} contains characters that are not allowed.`;
     }
     if (looksLikeLink(name)) return `${label} cannot contain a link, web address or email address.`;
-    const letter = kind === "workspace" ? /[\p{L}\p{N}]/u : /\p{L}/u;
+    const letter = kind === "person" ? /\p{L}/u : /[\p{L}\p{N}]/u;
     if (!letter.test(name)) {
-        return kind === "workspace" ? `${label} must contain a letter or a number.` : `${label} must contain a letter.`;
+        return kind === "person" ? `${label} must contain a letter.` : `${label} must contain a letter or a number.`;
     }
     return null;
 }

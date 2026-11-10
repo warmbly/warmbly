@@ -56,7 +56,7 @@ func TestLiveIdempotencyConcurrentBeginsClaimOnce(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			_, state, xerr := svc.Begin(ctx, org, "race", "POST", "/contacts", "h")
+			_, state, xerr := svc.Begin(ctx, OrgScope(org), "race", "POST", "/contacts", "h")
 			if xerr != nil {
 				t.Errorf("begin %d: %v", i, xerr)
 			}
@@ -85,7 +85,7 @@ func TestLiveIdempotencyOutcomes(t *testing.T) {
 	ctx := context.Background()
 	begin := func(key, path, hash string) (*Record, State) {
 		t.Helper()
-		rec, state, xerr := svc.Begin(ctx, org, key, "PATCH", path, hash)
+		rec, state, xerr := svc.Begin(ctx, OrgScope(org), key, "PATCH", path, hash)
 		if xerr != nil {
 			t.Fatalf("begin %s: %v", key, xerr)
 		}
@@ -152,10 +152,65 @@ func TestLiveIdempotencyPreviousReleaseRecordsNeverMatch(t *testing.T) {
 	`, org); err != nil {
 		t.Fatal(err)
 	}
-	if _, state, xerr := svc.Begin(ctx, org, "old", "PATCH", "/v1/contacts/b", "v2hash"); xerr != nil || state != StateConflict {
+	if _, state, xerr := svc.Begin(ctx, OrgScope(org), "old", "PATCH", "/v1/contacts/b", "v2hash"); xerr != nil || state != StateConflict {
 		t.Fatalf("previous-release record = %q %v, want conflict", state, xerr)
 	}
-	if _, state, xerr := svc.Begin(ctx, org, "old-running", "PATCH", "/v1/contacts/b", "v2hash"); xerr != nil || state != StateConflict {
+	if _, state, xerr := svc.Begin(ctx, OrgScope(org), "old-running", "PATCH", "/v1/contacts/b", "v2hash"); xerr != nil || state != StateConflict {
 		t.Fatalf("previous-release in-flight record = %q %v, want conflict", state, xerr)
+	}
+}
+
+// An agency-scoped key replays within its agency and never collides with a workspace or another agency.
+func TestLiveAgencyScopedKeys(t *testing.T) {
+	dsn := os.Getenv("WARMBLY_TEST_DB")
+	if dsn == "" {
+		t.Skip("WARMBLY_TEST_DB not set")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	owner, agency, other, org := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	for _, q := range []struct {
+		sql  string
+		args []any
+	}{
+		{`INSERT INTO users (id, first_name, last_name, email, password_hash) VALUES ($1, 'Idem', 'Live', $2, 'x')`, []any{owner, "idem-" + owner.String()[:8] + "@test.local"}},
+		{`INSERT INTO agencies (id, name, owner_user_id) VALUES ($1, 'A', $3), ($2, 'B', $3)`, []any{agency, other, owner}},
+		{`INSERT INTO organizations (id, name, slug, owner_user_id) VALUES ($1, 'Idem', $2, $3)`, []any{org, "idem-" + org.String()[:8], owner}},
+	} {
+		if _, err := pool.Exec(ctx, q.sql, q.args...); err != nil {
+			t.Fatalf("fixture: %v", err)
+		}
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM organizations WHERE id = $1`, org)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM agencies WHERE id IN ($1, $2)`, agency, other)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id = $1`, owner)
+	})
+
+	s := NewService(pool)
+	rec, state, xerr := s.Begin(ctx, AgencyScope(agency), "k1", "POST", "/v1/agency/:agencyId/clients", "h")
+	if xerr != nil || state != StateStarted {
+		t.Fatalf("first agency begin = %v, %v", state, xerr)
+	}
+	if xerr := s.Complete(ctx, rec.ID, 201, []byte(`{}`), "application/json"); xerr != nil {
+		t.Fatal(xerr)
+	}
+	if _, state, _ := s.Begin(ctx, AgencyScope(agency), "k1", "POST", "/v1/agency/:agencyId/clients", "h"); state != StateReplay {
+		t.Errorf("retry in the same agency = %v, want replay", state)
+	}
+	if _, state, _ := s.Begin(ctx, AgencyScope(agency), "k1", "POST", "/v1/agency/:agencyId/clients", "other"); state != StateConflict {
+		t.Errorf("reuse with another body = %v, want conflict", state)
+	}
+	for name, scope := range map[string]Scope{"another agency": AgencyScope(other), "a workspace": OrgScope(org)} {
+		if _, state, xerr := s.Begin(ctx, scope, "k1", "POST", "/v1/agency/:agencyId/clients", "h"); xerr != nil || state != StateStarted {
+			t.Errorf("%s shares the key: %v, %v", name, state, xerr)
+		}
+	}
+	if _, _, xerr := s.Begin(ctx, Scope{}, "k2", "POST", "/x", "h"); xerr == nil {
+		t.Error("a request with no scope was accepted")
 	}
 }

@@ -24,6 +24,8 @@ type NotificationRepository interface {
 	CountUnread(ctx context.Context, userID uuid.UUID) (int, error)
 	MarkRead(ctx context.Context, userID, notifID uuid.UUID) error
 	MarkAllRead(ctx context.Context, userID uuid.UUID) error
+	// MarkReadIn marks the user's unread notifications in orgIDs read: notifID alone when set, else all of them.
+	MarkReadIn(ctx context.Context, userID uuid.UUID, notifID *uuid.UUID, orgIDs []uuid.UUID) error
 
 	// ClaimDueEmails atomically claims every pending email row belonging to a
 	// user with at least one due row (so all their pending mail bundles into
@@ -243,6 +245,19 @@ func (r *notificationRepository) MarkAllRead(ctx context.Context, userID uuid.UU
 		SET read_at = now(),
 			email_state = CASE WHEN email_state = 'pending' THEN 'skipped' ELSE email_state END
 		WHERE user_id = $1 AND read_at IS NULL`, userID)
+	return err
+}
+
+func (r *notificationRepository) MarkReadIn(ctx context.Context, userID uuid.UUID, notifID *uuid.UUID, orgIDs []uuid.UUID) error {
+	if len(orgIDs) == 0 {
+		return nil
+	}
+	_, err := r.db.Exec(ctx, `
+		UPDATE notifications
+		SET read_at = now(),
+			email_state = CASE WHEN email_state = 'pending' THEN 'skipped' ELSE email_state END
+		WHERE user_id = $1 AND read_at IS NULL AND organization_id = ANY($2::uuid[])
+		  AND ($3::uuid IS NULL OR id = $3)`, userID, orgIDs, notifID)
 	return err
 }
 

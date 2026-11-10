@@ -30,6 +30,8 @@ An [install from `install.sh`](/development/install/) points all six under one d
 
 Only the first two carry anything you cannot rebuild. The other four are state a fresh container reconstructs, which is why a backup does not include them.
 
+The [portal service](/development/configuration/#portal-service), which serves client connect pages and shared reports, has no variable here because it stores nothing: no volume, no database and no file. Every link and report is read from the backend when it is opened. It keeps whether a host is a portal domain for a minute, a report's answer for a minute and per-visitor request counts for a minute, all in its own memory, and a restart clears them. Nothing about it needs backing up or moving.
+
 ### Encryption
 
 Two keys, and they are not interchangeable.
@@ -80,7 +82,7 @@ Mail over a daily budget is deferred, never dropped: the provider cursor is held
 |---|---|---|---|
 | Automatic inbox tagging | `INBOX_TAGGING_ENABLED=true` | The inbound subject and bounded plain-text body (for a notification recognised offline by its sender, only while the workspace asks notifications whether they need action, or asks one of its own questions of them), plus the previous outbound message in the thread and the name of the campaign it belongs to when one exists, the workspace's own tagging questions, and the names of its tagging languages when any are chosen | `inbox_tag_results`, with the raw probabilities and the actions taken. Completed results travel with the Inbox group in a workspace export; processing claims do not |
 | Reply classification | The key alone | The subject and body of a reply to a campaign, only when no tagging verdict exists for it and the offline layers could not decide | `campaign_contact_progress.reply_class` and `reply_intent` |
-| Copy judgment | The key alone | The subject and body of a campaign step, at Advisor evaluation and on the editor's re-check | `copy_judgments`, keyed by a hash of the copy and never exported |
+| Copy judgment | The key alone | The subject and body of a campaign step, on the editor's re-check | Nothing stored |
 | Warmup content lint | The key alone | A generated warmup thread before it enters the bank | Review state is stored with the generated thread; rejected threads stay archived and are counted on the generation job |
 | Bounce classification | The key alone | The bounce reason text (the status code and the receiving server's reply), only when its status code and wording do not already say whether the address is at fault | `deliverability_events.metadata` |
 | Import column mapping | The key alone | For an import or Google Sheets preview with columns no header matched: every column header, the kind of value each column holds (email addresses, dates, short text and so on, worked out on the instance), and the workspace's custom field names. Never a cell value, and nothing at all unless the first row is clearly headers: none of its cells may be an address, a date or a number, and the Email column must have a header of its own. A contact's row fails that, since its Email cell is the address or blank | Nothing is stored; the answer only fills in the suggested mapping |
@@ -399,7 +401,7 @@ What a reported error carries is the exception, its stack trace, the service, th
 
 Server-side reports that belong to no request, a scheduled job or a worker, are attributed to the process that raised them and to nobody.
 
-The `warmbly` CLI runs on your own machine and reports nowhere, ever. It has nothing to set.
+The `warmbly` CLI runs on your own machine and reports nowhere, ever. It has nothing to set. Neither has the portal service, nor the connect and report pages it serves: they report no error to anybody and load no reporting code.
 
 ### Usage analytics
 

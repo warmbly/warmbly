@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/errx"
@@ -23,6 +25,9 @@ var organizationPolicyRoutes = map[string]bool{
 	"GET /v1/organization/:orgId/limit-requests":  true,
 	"DELETE /v1/limit-requests/:id":               true,
 }
+
+// agencyRoutePrefix is the agency surface: it authorizes agency staff and each client membership on its own.
+const agencyRoutePrefix = "/v1/agency"
 
 // scopeAwareRoutes is every route a restricted member may call; each one filters to the member's grants.
 var scopeAwareRoutes = map[string]bool{
@@ -118,6 +123,10 @@ func ScopeAwareRoutes() []string {
 	return out
 }
 
+func isAgencyRoute(path string) bool {
+	return path == agencyRoutePrefix || strings.HasPrefix(path, agencyRoutePrefix+"/")
+}
+
 // ScopeActionRoutes is scopeActionRoutes for the route-table test.
 func ScopeActionRoutes() map[string]ScopeAction {
 	out := make(map[string]ScopeAction, len(scopeActionRoutes))
@@ -134,7 +143,7 @@ var errScopeActionRefused = errx.NewWithIdentifier(errx.Forbidden, MemberAccessR
 // ResourceScopeGate holds a restricted member, and any key or app acting for one, to scope-aware routes and their grants.
 func (h *Handler) ResourceScopeGate() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if organizationPolicyRoutes[c.Request.Method+" "+c.FullPath()] {
+		if organizationPolicyRoutes[c.Request.Method+" "+c.FullPath()] || isAgencyRoute(c.FullPath()) {
 			c.Next()
 			return
 		}

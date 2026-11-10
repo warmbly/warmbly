@@ -14,7 +14,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/app/socket"
-	"github.com/warmbly/warmbly/internal/app/token"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 )
@@ -33,7 +32,7 @@ func (h *Handler) GenerateWebsocket(c *gin.Context) {
 		return
 	}
 
-	token, xerr := h.SocketService.GenerateWebsocketToken(c.Request.Context(), uid, session.ID)
+	token, xerr := h.SocketService.GenerateWebsocketToken(c.Request.Context(), uid, session.ID, session.PortalAgencyID != nil)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
@@ -82,7 +81,7 @@ func (h *Handler) ProxyWebsocket(c *gin.Context) {
 		c.Status(http.StatusBadRequest)
 		return
 	}
-	claims, xerr := h.TokenService.VerifyTokenFor(token.PurposeWebSocket, c.Query("token"))
+	claims, xerr := h.TokenService.VerifyWebsocketTicket(c.Query("token"))
 	if xerr != nil {
 		c.Status(http.StatusUnauthorized)
 		return

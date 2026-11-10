@@ -22,10 +22,18 @@ const tileTitle = 'mt-6 text-[21px] md:text-[23px] tracking-[-0.02em] text-slate
 const tileBody = 'mt-2 max-w-xl text-[16px] md:text-[17px] leading-[1.55] text-slate-500';
 
 const billing = [
-  { k: 'You pay', v: 'Per workspace', d: 'One subscription per client, owned by you.' },
-  { k: 'Seats', v: 'Free', d: 'Add your SDRs, AEs and reviewers at no cost.' },
-  { k: 'Mailboxes', v: 'Unlimited', d: 'On every paid plan, under fair use.' },
+  { k: 'You pay', v: 'One plan', d: 'Agency from $199 a month, covering every client.' },
+  { k: 'Per client', v: '$0', d: 'Unlimited clients, no per-client fee.' },
+  { k: 'Sends', v: 'Shared', d: 'One monthly pool across clients, so quiet weeks are not wasted.' },
+  { k: 'AI', v: 'Shared', d: '$10 a month on Agency and $30 on Agency Pro, for every client to draw on.' },
+  { k: 'Top-ups', v: '50,000', d: 'More sends for the period, from $60 a pack.' },
   { k: 'Your margin', v: 'Yours', d: 'Bill clients however you like.' },
+];
+
+// Mirrors agencyPlans in src/pages/pricing.astro.
+const agencyPricing = [
+  { name: 'Agency', annual: 199, price: 249, pool: '150,000', ai: '$10', note: 'Your logo, colour and portal domain on every client page, with the API and webhooks.' },
+  { name: 'Agency Pro', annual: 479, price: 599, pool: '500,000', ai: '$30', note: 'No Warmbly branding, and sending kept apart from other customers.' },
 ];
 
 const roles = [
@@ -36,15 +44,21 @@ const roles = [
 
 const faq: [string, string][] = [
   ['Can one client’s bad mailbox hurt another client?', 'Reputation is judged mailbox by mailbox, so one client’s struggling mailbox doesn’t drag another client’s down. The warmup pool is shared on purpose, because a pool only works with many mailboxes, and a mailbox that draws complaints or bounces is taken out of it.'],
-  ['How many clients can I run?', 'As many as you like. Each client is its own workspace with its own subscription, so capacity grows with your roster rather than your headcount.'],
-  ['Do my clients get a Warmbly invoice?', 'No. You own every workspace subscription and bill your clients yourself, at whatever margin you choose.'],
-  ['Can a client’s mailboxes be kept apart from everyone else’s?', 'On Business and Enterprise, a workspace’s mailboxes sign in to their providers from an address no other customer uses.'],
-  ['Can clients log in and see their own results?', 'Yes. Invite them to their workspace with a role that fits, and they see their own campaigns and numbers and nothing from your other clients.'],
+  ['How many clients can I run?', 'As many as you like. Agency plans have no limit on clients and no per-client fee: every client workspace sends from one shared monthly pool, from 150,000 sends on Agency to 500,000 on Agency Pro.'],
+  ['What happens when the pool runs low?', 'You get a notice at 80% and at 100%. Add a top-up pack of 50,000 sends for the rest of the period, or let campaigns wait for the period to renew. You can also cap any client’s monthly share so one busy client cannot use up the pool.'],
+  ['Does a bigger pool mean a mailbox sends more?', 'No. Every mailbox keeps its own daily cap, spacing, warmup ramp and health checks. The pool caps the agency’s total; to send more, connect more healthy mailboxes.'],
+  ['Do my clients get a Warmbly invoice?', 'No. The agency pays one subscription for every client, and you bill your clients yourself, at whatever margin you choose.'],
+  ['Is AI shared across clients too?', 'Yes. Each client spends its own AI balance first, then the agency’s shared balance: $10 a month on Agency and $30 on Agency Pro, refilled every month, plus anything you buy, which never expires. You can cap a client’s share or move balance into a client’s workspace.'],
+  ['Can a client’s mailboxes be kept apart from everyone else’s?', 'On Agency Pro, each client workspace gets a reserved worker, so its mailboxes sign in to their providers from an address no other customer, and no other client of yours, uses. Up to 20 clients of one agency hold one at a time. Business and Enterprise workspaces get the same.'],
+  ['Can clients log in and see their own results?', 'Yes. Invite them to their workspace with a role that fits, and they see their own campaigns and numbers and nothing from your other clients. Clients who should not log in can get a branded report link, or a report emailed every week or month.'],
+  ['Can clients use the dashboard under my brand?', 'Yes. Point a subdomain such as portal.youragency.com at Warmbly under Agency > Branding. Connect links and reports are built on it, and your clients sign in to the full dashboard there with your logo and name. Agency shows a small “Powered by Warmbly” line, and Agency Pro can remove it.'],
+  ['Can one integration work for every client?', 'Yes. Agency API keys reach every client workspace: send the key and name the client in a header, and a client that leaves the agency is out of reach on the next request.'],
 ];
+const perClientAtTen = (agencyPricing[0].annual / 10).toFixed(2);
 ---
 <Layout
   title="Cold Email for Agencies: Run Every Client From One Account | Warmbly"
-  description="Run cold outreach for many clients from one account: a workspace per client with its own contacts, suppression, analytics and integrations, per-workspace billing and no seat charges."
+  description="Run cold outreach for many clients from one account: a workspace per client with its own contacts, suppression, analytics and integrations, one agency plan with no per-client fees, a shared monthly send pool and AI balance, and no seat charges."
 >
   <!-- HERO: the whole dashboard, switcher open over one client's numbers. -->
   <section class="container-page pt-14 md:pt-24">
@@ -54,9 +68,10 @@ const faq: [string, string][] = [
         <h1 class="mt-4 max-w-3xl text-[40px] sm:text-[52px] md:text-[64px] font-medium tracking-[-0.05em] leading-[1.02] text-slate-900">Every client’s outreach, from one account.</h1>
       </div>
       <div class="lg:pb-2">
-        <p class="text-[17px] md:text-[18px] leading-[1.55] text-slate-500">Give each client a workspace of their own, with their own domains, lists and reporting. Switch between them in a click and bill each one however you like.</p>
+        <p class="text-[17px] md:text-[18px] leading-[1.55] text-slate-500">Give each client a workspace of their own, with their own domains, lists and reporting. One agency plan covers them all, with no per-client fee and one shared monthly send pool.</p>
         <div class="mt-7 flex flex-wrap items-center gap-3">
           <a href="https://app.warmbly.com/auth/register" class="inline-flex h-11 items-center gap-2 rounded-full bg-slate-900 px-5 text-[15px] font-medium text-white transition-colors hover:bg-slate-800">Get started <Icon name="arrowRight" size={14} /></a>
+          <a href="/pricing/#agencies" class="inline-flex h-11 items-center rounded-full border border-slate-200 px-5 text-[15px] text-slate-800 transition-colors hover:border-slate-300 hover:bg-slate-50">Agency pricing</a>
           <a href="/contact/?topic=sales" class="inline-flex h-11 items-center rounded-full border border-slate-200 px-5 text-[15px] text-slate-800 transition-colors hover:border-slate-300 hover:bg-slate-50">Talk to us</a>
         </div>
       </div>
@@ -108,7 +123,7 @@ const faq: [string, string][] = [
   <section class="container-page py-20 md:py-28">
     <div class="grid items-center gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
       <div>
-        <SectionIntro lead="Client access." title="Invite the client, pick what they can touch." text="Add the client to their own workspace from Settings, Members, with a role that fits. They see their campaigns and numbers, and nothing from your other clients." />
+        <SectionIntro lead="Client access." title="Invite the client, pick what they can touch." text="Your own staff are added to every client workspace automatically. Add the client to their own workspace from Settings, Members, with a role that fits. They see their campaigns and numbers, and nothing from your other clients." />
         <ul class="mt-9 divide-y divide-slate-200 border-y border-slate-200">
           {roles.map((r) => (
             <li class="flex items-baseline gap-4 py-4">
@@ -128,7 +143,7 @@ const faq: [string, string][] = [
   <section class="container-page py-20 md:py-28">
     <div class="grid items-center gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
       <div class="lg:order-2">
-        <SectionIntro lead="Billing." title="Each client is its own subscription." text="Every workspace carries its own plan, so a client running hard can sit on Grow while a new one warms up on a smaller plan." />
+        <SectionIntro lead="Billing." title="One plan for every client." text="Your agency plan covers every client workspace. Clients share one monthly send pool and one AI balance, so a quiet week for one client is volume another can use, and you can cap any client’s share of either." />
         <dl class="mt-10 grid grid-cols-2 gap-x-6 gap-y-8">
           {billing.map((b) => (
             <div class="border-t border-slate-200 pt-4">
@@ -143,6 +158,30 @@ const faq: [string, string][] = [
         <WorkspaceBilling />
       </div>
     </div>
+  </section>
+
+  <!-- PRICING: the two agency plans, with the full comparison on the pricing page. -->
+  <Rule />
+  <section class="container-page py-20 md:py-28">
+    <div class="grid items-end gap-8 lg:grid-cols-[1.2fr_1fr] lg:gap-16">
+      <SectionIntro lead="Agency pricing." title={`Ten clients on Agency cost $${perClientAtTen} each a month.`} />
+      <p class="text-[16px] md:text-[18px] leading-[1.6] text-slate-500 lg:pb-2">Agency is ${agencyPricing[0].annual} a month billed yearly whether you run 3 clients or 30, so every client you add lowers what each one costs. Every agency plan includes unlimited clients, staff in every client, warmup, connect links, client reports, the cross-client inbox and agency API keys.</p>
+    </div>
+    <div class="mt-12 grid gap-3 md:grid-cols-2">
+      {agencyPricing.map((p) => (
+        <a href="/pricing/#agencies" class="group flex flex-col rounded-[6px] bg-white p-6 ring-1 ring-slate-200 transition-colors hover:ring-slate-900">
+          <span class="text-[17px] font-medium text-slate-900">{p.name}</span>
+          <span class="mt-4 flex flex-wrap items-baseline gap-x-1.5">
+            <span class="text-[36px] font-medium tracking-[-0.04em] leading-none text-slate-900">${p.annual}</span>
+            <span class="text-[13px] text-slate-400">/ month billed yearly, or ${p.price} monthly</span>
+          </span>
+          <span class="mt-3 text-[14px] text-slate-600"><span class="font-medium text-slate-900">{p.pool}</span> sends a month and <span class="font-medium text-slate-900">{p.ai}</span> of AI, shared by every client</span>
+          <span class="mt-1 flex-1 text-[14px] leading-snug text-slate-500">{p.note}</span>
+          <span class="mt-5 inline-flex items-center gap-2 text-[15px] text-[color:var(--brand)] group-hover:text-[color:var(--brand-strong)]">See what it costs per client <Icon name="arrowRight" size={14} class="transition-transform group-hover:translate-x-0.5" /></span>
+        </a>
+      ))}
+    </div>
+    <p class="mt-4 text-[13.5px] text-slate-400">Agency Scale starts at 1,000,000 sends a month, priced to your volume. Self-hosted instances get every agency feature for free.</p>
   </section>
 
   <!-- SAFETY: the same rules for every client. -->

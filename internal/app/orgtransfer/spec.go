@@ -189,8 +189,9 @@ var Tables = []Table{
 	},
 	{
 		Name: "organization_members", Group: models.OrgDataGroupCore,
-		Scope: scopeOrg,
-		Note:  "Members are matched to destination accounts by email; unknown emails become invitations.",
+		Scope:         scopeOrg,
+		ResetOnImport: []string{"via_agency_id"},
+		Note:          "Members are matched to destination accounts by email; unknown emails become invitations.",
 	},
 	{
 		Name: "organization_member_roles", Group: models.OrgDataGroupCore,
@@ -335,6 +336,13 @@ var Tables = []Table{
 		Name: "pool_link_managed_operations", Group: models.OrgDataGroupCore, Scope: scopeOrg,
 		ResetOnImport: []string{"instance_id", "remote_id", "session_hash", "planned_account_id", "activation_pending"},
 		Note:          "Cloud consent history travels without a live instance or resumable OAuth operation.",
+	},
+	{
+		// Below organization_members: updated_by names a member.
+		Name: "workspace_brands", Group: models.OrgDataGroupCore,
+		Scope: scopeOrg,
+		Note:  "The workspace's own brand travels with its logo; a brand inherited from an agency does not, because the agency link stays on the source instance.",
+		Blobs: []BlobColumn{{Column: "logo_url", Kind: BlobKindPublicURL}},
 	},
 	{
 		// Below organization_members: user_id names the creator, and the
@@ -515,6 +523,13 @@ var Tables = []Table{
 	{
 		Name: "campaign_folders", Group: models.OrgDataGroupCampaigns,
 		Scope: `campaign_id IN ` + orgCampaigns,
+	},
+	{
+		// Below campaigns and folders, whose ids its scope arrays name; ids travel unchanged and are re-scoped on every read.
+		Name: "client_reports", Group: models.OrgDataGroupCampaigns,
+		Scope:         scopeOrg,
+		ResetOnImport: []string{"token_hash", "token_hint", "link_created_at", "link_expires_at", "revoked_at"},
+		Note:          "Reports travel with sharing off: a link names the source instance's host, so members mint a new one on the destination.",
 	},
 	{
 		Name: "organization_member_campaign_access", Group: models.OrgDataGroupCampaigns,
@@ -1124,6 +1139,9 @@ var Tables = []Table{
 // read from one list instead of restating it.
 var ExcludedTables = map[string]string{
 	"mailbox_connect_links":            "Single-use sign-in links whose URL points at the source instance and whose secret only the recipient holds. The mailboxes they connected travel; open links do not, so new ones are created on the destination.",
+	"agency_clients":                   "The link to an agency, its billing and its shared send pool belongs to the source instance. An imported workspace starts outside any agency; the agency attaches it again on the destination.",
+	"agency_ai_transactions":           "The agency's ledger of its shared AI balance on the source instance, kept against the agency rather than the workspace. Money already moved into the workspace travels in its own balance; the destination's agency funds it from when it attaches it.",
+	"agency_pool_usage_days":           "The agency's ledger of pool use on the source instance, kept against the agency rather than the workspace. The destination's agency counts the workspace's sends from when it attaches it.",
 	"website_domains":                  "A website's proof is a TXT value bound to the source workspace, so it proves nothing for the destination. The destination shows its own TXT value on each sending-domain redirect that points at the website, and serves redirects and forms there once it is published.",
 	"warmup_conversation_mailboxes":    "Instance-local content reuse reservations against the shared warmup conversation library. Destination mailboxes build their own content history; full instance backups retain these reservations.",
 	"email_account_transport_recovery": "Source-instance sync and provider-confirmed-send recovery clocks cannot authorize destination recovery. Full instance database backups retain them.",
@@ -1168,7 +1186,7 @@ var ExcludedTables = map[string]string{
 	"cloud_link_reports":               "Retired command results and observations once owed to Warmbly Cloud over this instance's link, which does not travel.",
 	"cloud_link_warmup_messages":       "Retired handles this instance gave Warmbly Cloud for warmup mail, bound to its link and to provider coordinates on this instance.",
 	"warmup_conversations":             "The instance's shared warmup content library, not workspace data.",
-	"copy_judgments":                   "A cache of copy judgments keyed by the hash of the words judged. The destination re-reads a step the first time its Advisor runs.",
+	"copy_judgments":                   "A cache of copy judgments keyed by the hash of the words judged, no longer written; nothing reads it.",
 	"warmup_thread_messages":           "Message identifiers this instance recognised as turns of a warmup conversation, so the reply to each is recognised too. The destination syncs provider mail afresh and rebuilds it from the warmup tokens, which do travel.",
 	"sessions":                         "Live login sessions. They are bound to the source instance's signing key and must not survive a move.",
 	"mailbox_erasures":                 "Erasure still owed for a mailbox this instance deleted: a grant to revoke at the provider, and message bodies to remove from this instance's blob store. Both name work on the instance that wrote the row, and the mailboxes are already gone.",
@@ -1187,6 +1205,10 @@ var ExcludedTables = map[string]string{
 	"campaign_send_plan_snapshots":     "Today's precomputed send plan for a campaign, derived from the campaign, its leads, its mailboxes and this instance's limits, which all travel. Keyed to this instance's budget day, and naming mailboxes and workers. The destination's own background snapshotter recomputes it.",
 	"org_export_jobs":                  "The exports this instance ran for the workspace, each naming an archive in this instance's object storage that expires after 7 days. The archive is the export; the destination keeps its own list.",
 	"org_import_jobs":                  "The imports this instance ran into the workspace, with their progress and the uploaded archive's storage key here. An import is work the instance doing it records for itself.",
+	"client_connect_links":             "Client connect links are live capabilities: the stored hash still opens the link wherever it is loaded, and the URL names this instance's forms host. Moving one would hand a working way into the destination workspace to whoever holds a link sent for the source. The mailboxes they connected travel; members send new links from the destination.",
+	"client_report_schedules":          "A schedule emails people outside the workspace. While a workspace exists on both instances during a move, carrying it would send the client every report twice, so members set it again on the destination.",
+	"client_report_deliveries":         "The send log of scheduled report emails and the link each one carried, which opens a page on the source instance's host.",
+	"client_connect_link_uses":         "Which mailboxes each client connect link connected. They follow client_connect_links, which does not travel; the mailboxes themselves do.",
 }
 
 // TableByName indexes Tables for lookup during import.

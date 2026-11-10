@@ -42,7 +42,7 @@ func (h *Handler) AuthorizeTLSDomain(c *gin.Context) {
 	// This instance's own recipient-facing hosts. They normally have their own
 	// site block, but answering for them keeps the endpoint's answer equal to
 	// "does this instance serve that name" rather than a subset of it.
-	if host == config.TrackingHostname() || host == config.FormsHostname() {
+	if host == config.TrackingHostname() || host == config.FormsHostname() || host == config.PortalCNAMETarget() {
 		c.Status(http.StatusNoContent)
 		return
 	}

@@ -49,6 +49,8 @@ import PlacementPage from "@/app/dashboard/PlacementPage";
 import CampaignsPage from "@/app/dashboard/CampaignsPage";
 import SendsPage from "@/app/dashboard/SendsPage";
 import LimitRequestsPage from "@/app/dashboard/LimitRequestsPage";
+import AgenciesPage from "@/app/dashboard/agencies/AgenciesPage";
+import AgencyDetailPage from "@/app/dashboard/agencies/AgencyDetailPage";
 import DiscountsPage from "@/app/dashboard/DiscountsPage";
 import OutreachPage from "@/app/dashboard/OutreachPage";
 import MailboxesPage from "@/app/dashboard/MailboxesPage";
@@ -169,6 +171,8 @@ const router = createBrowserRouter([
                             { path: "organizations", element: gated(AdminPerm.ViewOrganizations, <OrganizationsPage />) },
                             { path: "organizations/:id", element: gated(AdminPerm.ViewOrganizations, <OrganizationDetailPage />) },
                             { path: "limit-requests", element: gated(AdminPerm.ViewOrganizations, <LimitRequestsPage />) },
+                            { path: "agencies", element: gated(AdminPerm.ViewOrganizations, <AgenciesPage />) },
+                            { path: "agencies/:id", element: gated(AdminPerm.ViewOrganizations, <AgencyDetailPage />) },
                             { path: "developer-apps", element: gated(AdminPerm.ViewOrganizations, <DeveloperAppsPage />) },
                             { path: "app-listings", element: <Navigate to="/developer-apps?tab=directory" replace /> },
                             { path: "discounts", element: gated(AdminPerm.ViewOrganizations, <DiscountsPage />) },

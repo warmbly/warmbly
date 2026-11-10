@@ -36,19 +36,6 @@ func mailboxDetectors() []Detector {
 			About:    "Unresolved connection or send errors on a mailbox that campaigns still route through. A mailbox erroring silently drops volume from the campaigns depending on it.",
 			Run:      detectMailboxErrors,
 		},
-		{
-			Key:      "mailbox_concentration",
-			Category: models.AdvisorCategoryMailbox,
-			About:    "How many mailboxes carry the org's cold volume. Spreading sending across more mailboxes and more sending identities is the core safety property of the platform; concentrating it into one or two mailboxes gives up that protection.",
-			Reads:    []repository.AdvisorSection{repository.AdvisorSectionOrg},
-			Run:      detectMailboxConcentration,
-		},
-		{
-			Key:      "mailbox_inactive_in_campaign",
-			Category: models.AdvisorCategoryMailbox,
-			About:    "A mailbox that is inactive or erroring but still attached to a running campaign, so the campaign quietly sends less than it is configured to.",
-			Run:      detectInactiveMailboxInCampaign,
-		},
 	}
 }
 
@@ -65,17 +52,25 @@ func detectCapTooHigh(s *repository.AdvisorSnapshot) []Finding {
 		complaintRate := rate(m.Complaints30d, m.ColdSent30d)
 		proven := m.ColdSent30d >= minSendsForComplaintRate &&
 			bounceRate < bounceRateWarn && complaintRate < complaintRateWarn
+		if proven {
+			continue
+		}
+		// Unproven is not harm: it matters once the mailbox is bouncing or
+		// complaining, or actually sending above the band without a record.
+		struggling := m.ColdSent30d >= minSendsForBounceRate && (bounceRate >= bounceRateWarn || complaintRate >= complaintRateWarn)
+		if !m.SendingCold() || (!struggling && m.ColdSent1d <= safeColdCapBand) {
+			continue
+		}
 
 		severity := models.AdvisorMedium
 		detail := fmt.Sprintf(
 			"%s is capped at %d cold emails a day, above the %d/day safe band. Volume above the default is meant to follow positive reputation signals, not lead them.",
 			m.Email, m.CampaignLimit, safeColdCapBand)
-		if proven {
-			// Proven mailbox: this is a note, not an alarm.
-			severity = models.AdvisorLow
+		if struggling {
+			severity = models.AdvisorHigh
 			detail = fmt.Sprintf(
-				"%s is capped at %d cold emails a day, above the %d/day safe band. Its bounce and complaint rates are clean over %d sends, so the volume is currently holding, but it leaves no headroom if the list quality slips.",
-				m.Email, m.CampaignLimit, safeColdCapBand, m.ColdSent30d)
+				"%s is capped at %d cold emails a day, above the %d/day safe band, while its bounce or complaint rate is already past the warning line. More volume from it spends reputation it is already losing.",
+				m.Email, m.CampaignLimit, safeColdCapBand)
 		}
 
 		out = append(out, Finding{
@@ -97,7 +92,7 @@ func detectCapTooHigh(s *repository.AdvisorSnapshot) []Finding {
 				"safe_band":           safeColdCapBand,
 				"sends_30d":           m.ColdSent30d,
 				"bounce_rate_percent": band(bounceRate),
-				"proven":              proven,
+				"struggling":          struggling,
 			},
 			Action: auto(withUndo(mailboxAction(m.ID,
 				fmt.Sprintf("Set the cap to %d/day", defaultColdCap),
@@ -112,10 +107,8 @@ func detectCapTooHigh(s *repository.AdvisorSnapshot) []Finding {
 func detectNewMailboxRampingFast(s *repository.AdvisorSnapshot) []Finding {
 	out := []Finding{}
 	for _, m := range s.Mailboxes {
-		if m.AgeDays >= newMailboxDays || !m.InActiveCampaign {
-			continue
-		}
-		if m.CampaignLimit <= newMailboxSafeCap {
+		// The cap alone is not volume: a warming mailbox is held to the graduation ramp below it.
+		if m.AgeDays >= newMailboxDays || !m.SendingCold() || m.CampaignLimit <= newMailboxSafeCap || m.ColdSent1d <= newMailboxSafeCap {
 			continue
 		}
 
@@ -129,10 +122,10 @@ func detectNewMailboxRampingFast(s *repository.AdvisorSnapshot) []Finding {
 			EntityID:    ref(m.ID),
 			EntityLabel: m.Email,
 			Impact:      clampImpact(70 - m.AgeDays),
-			Title:       fmt.Sprintf("%s is sending at full volume after %s", m.Email, plural(m.AgeDays, "day", "days")),
+			Title:       fmt.Sprintf("%s sent %d cold emails in a day after %s", m.Email, m.ColdSent1d, plural(m.AgeDays, "day", "days")),
 			Detail: fmt.Sprintf(
-				"%s was connected %s ago and is already capped at %d cold emails a day. A new sending identity has no reputation to spend yet; the safe start is 10-20/day, ramping only while bounce and complaint rates stay clean.",
-				m.Email, plural(m.AgeDays, "day", "days"), m.CampaignLimit),
+				"%s was connected %s ago and sent %d cold emails in the last day, on a cap of %d. A new sending identity has no reputation to spend yet; the safe start is 10-20/day, ramping only while bounce and complaint rates stay clean.",
+				m.Email, plural(m.AgeDays, "day", "days"), m.ColdSent1d, m.CampaignLimit),
 			Remedy: fmt.Sprintf("Drop this mailbox to %d/day and raise it gradually over the next few weeks. Warmup should be running the whole time.", newMailboxSafeCap),
 			Evidence: map[string]any{
 				"mailbox":        m.Email,
@@ -155,7 +148,7 @@ func detectNewMailboxRampingFast(s *repository.AdvisorSnapshot) []Finding {
 func detectGapTooShort(s *repository.AdvisorSnapshot) []Finding {
 	out := []Finding{}
 	for _, m := range s.Mailboxes {
-		if !m.InActiveCampaign || m.MinWaitTime >= minSafeGapSeconds {
+		if !m.SendingCold() || m.MinWaitTime >= minSafeGapSeconds {
 			continue
 		}
 
@@ -197,7 +190,7 @@ func detectMailboxErrors(s *repository.AdvisorSnapshot) []Finding {
 			continue
 		}
 		severity := models.AdvisorMedium
-		if m.InActiveCampaign {
+		if m.SendingCold() {
 			severity = models.AdvisorHigh
 		}
 
@@ -215,7 +208,7 @@ func detectMailboxErrors(s *repository.AdvisorSnapshot) []Finding {
 			Detail: fmt.Sprintf(
 				"%s has %s from the last 7 days still unresolved%s. Send and sync errors do not surface as failures in campaign reporting, so a mailbox in this state quietly delivers less than the campaign asked for.",
 				m.Email, plural(m.UnresolvedErrs, "error", "errors"),
-				map[bool]string{true: " while it is attached to a running campaign", false: ""}[m.InActiveCampaign]),
+				map[bool]string{true: " while it is attached to a running campaign", false: ""}[m.SendingCold()]),
 			Remedy: "Open the mailbox and work through the errors. Authentication failures usually mean a reconnect; rate-limit errors mean the provider is pushing back and the cap should come down.",
 			Steps: []string{
 				"Open the mailbox and read the errors. They are grouped by kind, and the kind tells you the fix.",
@@ -227,101 +220,8 @@ func detectMailboxErrors(s *repository.AdvisorSnapshot) []Finding {
 			Evidence: map[string]any{
 				"mailbox":                m.Email,
 				"unresolved_errors_7d":   m.UnresolvedErrs,
-				"currently_sending_cold": m.InActiveCampaign,
+				"currently_sending_cold": m.SendingCold(),
 				"status":                 m.Status,
-			},
-		})
-	}
-	return out
-}
-
-func detectMailboxConcentration(s *repository.AdvisorSnapshot) []Finding {
-	// Only meaningful once the org is actually sending at volume.
-	sending := 0
-	totalVolume := 0
-	for _, m := range s.Mailboxes {
-		if m.ColdSent7d > 0 {
-			sending++
-			totalVolume += m.ColdSent7d
-		}
-	}
-	if s.Org.RunningCampaigns == 0 || totalVolume < minSendsForEngagement {
-		return nil
-	}
-
-	// The planning heuristic in the sending policy: a mailbox at the default
-	// cap carries ~50/day, so weekly volume divided by the safe per-mailbox
-	// weekly total is how many mailboxes this volume really wants.
-	wantMailboxes := totalVolume / (defaultColdCap * 7)
-	if wantMailboxes < 1 {
-		wantMailboxes = 1
-	}
-	if sending >= wantMailboxes {
-		return nil
-	}
-
-	perMailbox := totalVolume / maxInt(sending, 1) / 7
-	return []Finding{{
-		Key:        "mailbox_concentration",
-		Category:   models.AdvisorCategoryMailbox,
-		Severity:   models.AdvisorHigh,
-		Surface:    models.AdvisorSurfaceMailboxes,
-		EntityType: "",
-		Impact:     clampImpact(40 + (wantMailboxes-sending)*10),
-		Title:      fmt.Sprintf("%s carrying all your cold volume", plural(sending, "mailbox is", "mailboxes are")),
-		Detail: fmt.Sprintf(
-			"You sent %d cold emails in the last week across %s, about %d per mailbox per day. Spreading volume across more mailboxes and more sending identities is the whole safety model here: concentrating it means one reputation problem takes out all of your sending at once.",
-			totalVolume, plural(sending, "mailbox", "mailboxes"), perMailbox),
-		Remedy: fmt.Sprintf("Connect more mailboxes and let the campaign rotate across them. At this volume you want around %s, each staying near the default cap.", plural(wantMailboxes, "mailbox", "mailboxes")),
-		Steps: []string{
-			fmt.Sprintf("Connect more mailboxes until you have around %s carrying this volume.", plural(wantMailboxes, "mailbox", "mailboxes")),
-			"Spread them across more than one domain if you can. Several mailboxes on one domain still concentrate the risk on that domain's reputation.",
-			"Put each new mailbox through warmup before it takes campaign traffic, and start it at 10 to 20 a day.",
-			"Add them to the campaign, or give them the tag it selects senders by, and it starts rotating across them automatically.",
-			fmt.Sprintf("Bring the existing mailboxes back down to about %d/day as the new ones take the load.", defaultColdCap),
-		},
-		Evidence: map[string]any{
-			"sending_mailboxes":     sending,
-			"cold_sends_7d":         totalVolume,
-			"per_mailbox_per_day":   perMailbox,
-			"recommended_mailboxes": wantMailboxes,
-			"safe_per_mailbox_cap":  defaultColdCap,
-		},
-	}}
-}
-
-func detectInactiveMailboxInCampaign(s *repository.AdvisorSnapshot) []Finding {
-	out := []Finding{}
-	for _, m := range s.Mailboxes {
-		if !m.InActiveCampaign || m.Status == "active" {
-			continue
-		}
-
-		out = append(out, Finding{
-			Key:         "mailbox_inactive_in_campaign",
-			GroupTitle:  "{count} inactive mailboxes are attached to running campaigns",
-			Category:    models.AdvisorCategoryMailbox,
-			Severity:    models.AdvisorHigh,
-			Surface:     models.AdvisorSurfaceCampaigns,
-			EntityType:  "email_account",
-			EntityID:    ref(m.ID),
-			EntityLabel: m.Email,
-			Impact:      60,
-			Title:       fmt.Sprintf("%s is attached to a running campaign but is %s", m.Email, m.Status),
-			Detail: fmt.Sprintf(
-				"A running campaign routes through %s, but the mailbox is %s so nothing sends from it. The campaign is delivering less than it is configured to, and the shortfall does not show up as an error anywhere.",
-				m.Email, m.Status),
-			Remedy: "Either reactivate the mailbox or take it off the campaign, so the campaign's real capacity matches what it reports.",
-			Steps: []string{
-				"Decide which you want: the mailbox sending again, or the campaign no longer counting on it.",
-				"To bring it back, open the mailbox and resolve whatever deactivated it, usually a reconnect, then set it active.",
-				"To let it go, open the campaign's sender settings and remove it, or take off the tag that selects it.",
-				"Either way the campaign's reported capacity starts matching what it can actually send, which is what makes its daily limit meaningful.",
-			},
-			Evidence: map[string]any{
-				"mailbox":              m.Email,
-				"status":               m.Status,
-				"unresolved_errors_7d": m.UnresolvedErrs,
 			},
 		})
 	}
@@ -335,11 +235,4 @@ func humanSeconds(sec int) string {
 		return fmt.Sprintf("%d minutes", sec/60)
 	}
 	return fmt.Sprintf("%d seconds", sec)
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }

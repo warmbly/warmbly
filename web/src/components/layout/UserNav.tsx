@@ -12,6 +12,7 @@ import { DashboardImage } from "@/components/ui/dashboard-image";
 import { useNavigate } from "@tanstack/react-router";
 import {
     CompassIcon,
+    LifeBuoyIcon,
     LogOutIcon,
     SettingsIcon,
 } from "lucide-react";
@@ -26,12 +27,17 @@ import {
 } from "@/components/ui/popover-menu";
 import { cn } from "@/lib/utils";
 import { ThemeSwitch } from "@/components/app/theme/ThemePicker";
+import { currentPortal } from "@/lib/portal";
+import { portalSupportLink } from "@/lib/helpLink";
 
 export function UserNav({ collapsed = false }: { collapsed?: boolean }) {
     const navigate = useNavigate();
     const user = useAppStore((s) => s.user);
     const logoutMutation = useLogout();
     const setProductTourOpen = useAppStore((s) => s.setProductTourOpen);
+    // The tour introduces the service by name, so an agency's portal offers its own support link in its place.
+    const onPortal = currentPortal().portal;
+    const support = portalSupportLink();
 
     if (!user) return null;
 
@@ -114,12 +120,25 @@ export function UserNav({ collapsed = false }: { collapsed?: boolean }) {
                 >
                     Settings
                 </PopoverMenuItem>
-                <PopoverMenuItem
-                    onSelect={() => setProductTourOpen(true)}
-                    icon={<CompassIcon className="w-3 h-3" />}
-                >
-                    Take the tour
-                </PopoverMenuItem>
+                {!onPortal && (
+                    <PopoverMenuItem
+                        onSelect={() => setProductTourOpen(true)}
+                        icon={<CompassIcon className="w-3 h-3" />}
+                    >
+                        Take the tour
+                    </PopoverMenuItem>
+                )}
+                {support && (
+                    <PopoverMenuItem
+                        onSelect={() => {
+                            if (support.startsWith("mailto:")) window.location.href = support;
+                            else window.open(support, "_blank", "noopener,noreferrer");
+                        }}
+                        icon={<LifeBuoyIcon className="w-3 h-3" />}
+                    >
+                        Support
+                    </PopoverMenuItem>
+                )}
                 <PopoverMenuSeparator />
                 <PopoverMenuItem
                     onSelect={handleLogout}

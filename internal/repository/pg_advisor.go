@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/warmbly/warmbly/internal/app/copyjudge"
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
 	"github.com/warmbly/warmbly/internal/models"
 )
@@ -74,6 +73,9 @@ type AdvisorMailbox struct {
 	// InActiveCampaign is true when at least one running campaign can send
 	// through this mailbox (tag match or explicit sender).
 	InActiveCampaign bool
+	// TrackedOnMailboxHost is true when one of those campaigns tracks opens or
+	// links and has no verified tracking domain of its own, so the mailbox's host is used.
+	TrackedOnMailboxHost bool
 	// SendLifecycle is active, resting or reserve (held by its owner).
 	SendLifecycle string
 	// The pool's warmup mail handed off to this mailbox over seven days, how
@@ -163,6 +165,8 @@ type AdvisorStep struct {
 	Subject    string
 	BodyPlain  string
 	BodyHTML   string
+	// ThreadReply sends the step under the conversation's subject, never its own.
+	ThreadReply bool
 
 	Sent    int
 	Opened  int
@@ -219,11 +223,9 @@ type AdvisorSnapshot struct {
 	// their mail has already stopped going out or is only about to.
 	DomainAuthEnforced bool
 	DomainAuthGrace    time.Duration
-	// CopyJudgments holds the TypeSafe verdict for each email step's copy,
-	// keyed by step id. Filled by the service when a judge is configured;
-	// a step with no entry is simply not judged, and no copy detector that
-	// reads a verdict fires on it.
-	CopyJudgments map[uuid.UUID]copyjudge.Verdict
+	// WarmupUnavailable is set by the service when the plan does not include
+	// warmup, so no finding asks to turn it on or resume it.
+	WarmupUnavailable bool
 	// Failed holds each section that did not load this run, with its error.
 	Failed map[AdvisorSection]error
 }

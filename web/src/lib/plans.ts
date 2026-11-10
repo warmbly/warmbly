@@ -136,6 +136,13 @@ export const WARMUP_PLAN_ID = "00000000-0000-0000-0000-000000000002";
 // The Partnership plan's server id (models.PartnershipPlanID); warming only, like the Warmup plan.
 export const PARTNERSHIP_PLAN_ID = "00000000-0000-0000-0000-000000000003";
 
+// Agency plans reach a client workspace as a managed grant. Neither is sold from the plans grid, so each
+// borrows the tier it matches for the dashboard's gates and keeps its own name on the plan pill.
+export const AGENCY_PLAN_TIERS: Record<string, { tier: PlanID; label: string }> = {
+    "00000000-0000-0000-0000-0000000000a1": { tier: "grow", label: "Agency" },
+    "00000000-0000-0000-0000-0000000000a2": { tier: "business", label: "Agency Pro" },
+};
+
 /** Plans that pay for warming only; the server refuses sending to them like a free workspace. */
 export function isWarmupOnlyPlan(id: PlanID): boolean {
     return id === "warmup" || id === "partnership";

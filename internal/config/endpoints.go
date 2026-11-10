@@ -65,17 +65,19 @@ func PrimaryDashboardOrigin() string {
 	return DashboardOrigin(u.Scheme + "://" + u.Host)
 }
 
+// WithDashboardOrigin keeps the request's origin when it is a configured dashboard or a verified portal.
 func WithDashboardOrigin(ctx context.Context, origin string) context.Context {
-	return context.WithValue(ctx, dashboardOriginKey{}, DashboardOrigin(origin))
+	return context.WithValue(ctx, dashboardOriginKey{}, TrustedOrigin(origin))
 }
 
+// DashboardOriginFromContext is the dashboard or verified portal origin the request came from.
 func DashboardOriginFromContext(ctx context.Context) string {
 	origin, _ := ctx.Value(dashboardOriginKey{}).(string)
-	return DashboardOrigin(origin)
+	return TrustedOrigin(origin)
 }
 
 func dashboardBaseURL(origin string) string {
-	if trusted := DashboardOrigin(origin); trusted != "" {
+	if trusted := TrustedOrigin(origin); trusted != "" {
 		return trusted
 	}
 	return AppBaseURL()

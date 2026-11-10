@@ -8,6 +8,7 @@ import usePasskeys from "@/lib/api/hooks/auth/usePasskeys";
 import useDeletePasskey from "@/lib/api/hooks/auth/useDeletePasskey";
 import useRenamePasskey from "@/lib/api/hooks/auth/useRenamePasskey";
 import { registerPasskey, passkeySupported, PasskeyCancelled } from "@/lib/passkey";
+import { currentPortal, mainHost } from "@/lib/portal";
 import type Passkey from "@/lib/api/models/auth/Passkey";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
@@ -26,6 +27,8 @@ export default function PasskeyManager() {
     const [draftName, setDraftName] = useState("");
 
     const supported = passkeySupported();
+    // A passkey is bound to the address it was made on, so a portal domain only lists them.
+    const portal = currentPortal();
 
     const handleAdd = async () => {
         setAdding(true);
@@ -168,7 +171,15 @@ export default function PasskeyManager() {
                         </p>
                     )}
 
-                    <button
+                    {portal.portal ? (
+                        <p className="text-[12px] text-slate-500 leading-relaxed">
+                            Passkeys work at{" "}
+                            {portal.main_url
+                                ? <a href={portal.main_url} className="font-medium text-slate-700 underline">{mainHost(portal)}</a>
+                                : mainHost(portal)}
+                            . Add one there to sign in without a password.
+                        </p>
+                    ) : <button
                         type="button"
                         onClick={handleAdd}
                         disabled={adding}
@@ -180,7 +191,7 @@ export default function PasskeyManager() {
                             <Plus className="w-3.5 h-3.5" />
                         )}
                         Add a passkey
-                    </button>
+                    </button>}
                 </div>
             )}
         </Section>

@@ -1,0 +1,103 @@
+/* The accent scale. It is Tailwind's sky unless a brand theme sets --wb-sky-* on the root (lib/portalTheme.ts),
+   so one set of custom properties recolours every sky utility; theme-dark.css reads the same names per context. */
+:root {
+  --color-sky-50: var(--wb-sky-50, oklch(97.7% 0.013 236.62));
+  --color-sky-100: var(--wb-sky-100, oklch(95.1% 0.026 236.824));
+  --color-sky-200: var(--wb-sky-200, oklch(90.1% 0.058 230.902));
+  --color-sky-300: var(--wb-sky-300, oklch(82.8% 0.111 230.318));
+  --color-sky-400: var(--wb-sky-400, oklch(74.6% 0.16 232.661));
+  --color-sky-500: var(--wb-sky-500, oklch(68.5% 0.169 237.323));
+  --color-sky-600: var(--wb-sky-600, oklch(58.8% 0.158 241.966));
+  --color-sky-700: var(--wb-sky-700, oklch(50% 0.134 242.749));
+  --color-sky-800: var(--wb-sky-800, oklch(44.3% 0.11 240.79));
+  --color-sky-900: var(--wb-sky-900, oklch(39.1% 0.09 240.876));
+  --color-sky-950: var(--wb-sky-950, oklch(29.3% 0.066 243.157));
+}
+
+/* While an accent is set (data-accent on the root), sky written as a fixed colour follows it too. */
+:root[data-accent] {
+  --wb-edge-sky: var(--color-sky-500);
+}
+:root[data-accent].dark {
+  --ring: color-mix(in oklab, var(--color-sky-400) 50%, transparent);
+  --sidebar-ring: color-mix(in oklab, var(--color-sky-400) 50%, transparent);
+}
+:root[data-accent].dark ::selection {
+  background-color: color-mix(in oklab, var(--color-sky-400) 32%, transparent);
+}
+
+/* Charts and illustrations that name sky as an SVG attribute. */
+:root[data-accent] :is([stroke="#0284c7" i], [stroke="#0369a1" i]) { stroke: var(--color-sky-600); }
+:root[data-accent] [stroke="#0ea5e9" i] { stroke: var(--color-sky-500); }
+:root[data-accent] [stroke="#38bdf8" i] { stroke: var(--color-sky-400); }
+:root[data-accent] :is([fill="#0284c7" i], [fill="#0369a1" i]) { fill: var(--color-sky-600); }
+:root[data-accent] [fill="#0ea5e9" i] { fill: var(--color-sky-500); }
+:root[data-accent] [fill="#38bdf8" i] { fill: var(--color-sky-400); }
+:root[data-accent] :is([stop-color="#0284c7" i], [stop-color="#0369a1" i]) { stop-color: var(--color-sky-600); }
+:root[data-accent] [stop-color="#0ea5e9" i] { stop-color: var(--color-sky-500); }
+:root[data-accent] [stop-color="#38bdf8" i] { stop-color: var(--color-sky-400); }
+
+/* The sky scenes (upgrade and locked screens) take the accent's hue; --wb-sky-* are the light scale in either theme. */
+:root[data-accent] .sky-base {
+  background: radial-gradient(ellipse 140% 130% at 60% 18%,
+    var(--wb-sky-300) 0%,
+    var(--wb-sky-400) 20%,
+    var(--wb-sky-500) 40%,
+    var(--wb-sky-600) 62%,
+    var(--wb-sky-800) 84%,
+    var(--wb-sky-900) 100%
+  );
+}
+:root[data-accent] .sky-breathe {
+  background: radial-gradient(ellipse 130% 120% at 60% 16%,
+    color-mix(in oklab, var(--wb-sky-200) 80%, transparent) 0%,
+    color-mix(in oklab, var(--wb-sky-400) 40%, transparent) 20%,
+    color-mix(in oklab, var(--wb-sky-500) 16%, transparent) 40%,
+    transparent 62%
+  );
+}
+:root[data-accent].dark .sky-base {
+  background: radial-gradient(ellipse 140% 130% at 60% 18%,
+    color-mix(in oklab, var(--wb-sky-800) 78%, #05070c) 0%,
+    color-mix(in oklab, var(--wb-sky-900) 72%, #05070c) 22%,
+    color-mix(in oklab, var(--wb-sky-900) 52%, #05070c) 42%,
+    color-mix(in oklab, var(--wb-sky-950) 46%, #05070c) 64%,
+    color-mix(in oklab, var(--wb-sky-950) 26%, #05070c) 84%,
+    #060a12 100%
+  );
+}
+:root[data-accent].dark .sky-breathe {
+  background: radial-gradient(ellipse 130% 120% at 60% 16%,
+    color-mix(in oklab, var(--wb-sky-300) 16%, transparent) 0%,
+    color-mix(in oklab, var(--wb-sky-400) 8%, transparent) 22%,
+    transparent 60%
+  );
+}
+
+/* The sign-in page's painted backgrounds (components/shared/PortalSignIn.tsx). White text sits on all three. */
+.wb-signin-accent {
+  background:
+    radial-gradient(120% 90% at 12% 0%, color-mix(in oklab, var(--wb-sky-400, #38bdf8) 55%, transparent) 0%, transparent 60%),
+    radial-gradient(90% 80% at 100% 100%, color-mix(in oklab, var(--wb-sky-900, #0c4a6e) 70%, transparent) 0%, transparent 65%),
+    linear-gradient(155deg, var(--wb-sky-600, #0284c7) 0%, var(--wb-sky-700, #0369a1) 55%, var(--wb-sky-800, #075985) 100%);
+}
+.wb-signin-dark {
+  background:
+    radial-gradient(110% 80% at 10% 0%, color-mix(in oklab, var(--wb-sky-600, #0284c7) 34%, transparent) 0%, transparent 62%),
+    radial-gradient(80% 70% at 100% 100%, color-mix(in oklab, var(--wb-sky-700, #0369a1) 22%, transparent) 0%, transparent 60%),
+    #0b0d12;
+}
+.wb-signin-image::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgb(8 10 15 / 0.38) 0%, rgb(8 10 15 / 0.2) 40%, rgb(8 10 15 / 0.62) 100%);
+}
+/* A fine grid over a painted background, fading toward the bottom, so a flat colour has some depth. */
+.wb-signin-grid {
+  background-image:
+    linear-gradient(rgb(255 255 255 / 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.07) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(120% 90% at 20% 0%, #000 0%, transparent 72%);
+}

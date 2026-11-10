@@ -119,8 +119,10 @@ These settings are optional. An existing self-host keeps its current keys and be
 | `INTERNAL_API_PREVIOUS_UNTIL` | RFC3339 cutoff for previous internal tokens. Missing, malformed or elapsed deadlines reject previous tokens | unset |
 | `NODE_BROKER_PREVIOUS_TOKENS` | Previous bearer tokens for fleet broker routes, accepted only before the cutoff below. These retain broker privileges during the window | unset |
 | `NODE_BROKER_PREVIOUS_UNTIL` | RFC3339 cutoff for previous broker tokens. Missing, malformed or elapsed deadlines reject previous tokens | unset |
+| `PORTAL_EDGE_PREVIOUS_TOKENS` | Previous bearer tokens for the portal service's routes, accepted only before the cutoff below | unset |
+| `PORTAL_EDGE_PREVIOUS_UNTIL` | RFC3339 cutoff for previous portal service tokens. Missing, malformed or elapsed deadlines reject previous tokens | unset |
 
-Changing these settings requires restarting the affected service. Internal-token deadlines are checked on every request, so old tokens stop working at the cutoff without another restart. Tracking and forms overlap does not grant fleet broker access. JWT verification uses only `AUTH_SECRET`; encryption and unsubscribe read keys never authorize sessions.
+Changing these settings requires restarting the affected service. Internal-token deadlines are checked on every request, so old tokens stop working at the cutoff without another restart. Tracking and forms overlap does not grant fleet broker access, and portal service overlap opens only the portal service's routes. JWT verification uses only `AUTH_SECRET`; encryption and unsubscribe read keys never authorize sessions.
 
 For encryption rotation, first deploy a compatible release everywhere with the existing primary key and the replacement included in its read-key list. Confirm that all readers use that baseline before a later deployment activates the replacement primary and retains the old key for reads. Then reseal stored values with [`warmblyctl keys reseal`](/development/warmblyctl/#keys): run it once without `--apply` to see the counts, then with `--apply`, and repeat until `warmblyctl keys status` shows nothing left under a read key. It is resumable and never overwrites a value the backend changed meanwhile. `warmblyctl keys generate` prints replacement values in the right format. The supported rollback floor during rotation is that compatible baseline release, using keys that read both generations. A binary rollback keeps the current compatible key configuration; reverting a primary key alone does not migrate data.
 
@@ -162,6 +164,7 @@ Every emailed link (password reset, invitation, the first-run claim link) is bui
 | `TRACKING_DOMAIN` | The host that serves open pixels, click links and the unsubscribe pages for workspaces that verified their own domain against it, and the `CNAME` value those customers point their tracking subdomain at. Use a separate, neutral domain in production. Unset means campaign mail ships with no pixel and unwrapped links, no custom tracking domain can verify, and every opt-out is served from `API_PUBLIC_URL` | `localhost:3000` under compose, otherwise unset | no |
 | `TRACKING_SERVICE_URL` | Where the backend reaches the tracking service internally | unset | yes |
 | `FORMS_DOMAIN` | The host hosted form pages and embeds are served on (`forms.example.com`, routed to the forms service). The backend builds share links and embed codes from it; unset leaves forms without a public URL | unset | no (read per request) |
+| `PORTAL_DOMAIN` | The shared address of the [portal service](#portal-service) (`portal.warmbly.com` on Warmbly Cloud), with a port if it has one. Every connect link and shared report of a workspace without a verified agency portal domain is built on it, and agency portal domains `CNAME` to its host. Set it on the backend and the portal service. Unset, connect links and report links are refused (`client_links_unavailable`, `report_links_unavailable`) and no portal domain can verify; forms and everything else are unaffected | unset | no (read per request) |
 
 <Callout type="warn" title="Setting PUBLIC_HOST turns localhost off">
 Once `PUBLIC_HOST` is set, every derived URL uses it and `http://localhost:5173` stops working, because a `localhost` origin is no longer in `CORS_ALLOW_ORIGINS`. To keep both, list them yourself in `CORS_ALLOW_ORIGINS`.
@@ -178,6 +181,23 @@ Optional, and only for an instance whose `TRACKING_DOMAIN` is on a Cloudflare fo
 | `CLOUDFLARE_SAAS_ORIGIN` | Origin server for the hostnames the backend creates, when it differs from the zone's fallback origin | the zone's fallback origin | yes |
 
 The origin has to route a request for any registered name to the tracking service with its Host header intact. On the AWS Fargate deployment that is `tracking_serves_unmatched_hosts`; see [AWS Fargate](/development/aws-fargate/).
+
+### Agency portal domains behind Cloudflare for SaaS
+
+Optional, and only for an instance that serves agency portal domains from a Cloudflare for SaaS zone of their own, usually the zone `PORTAL_DOMAIN` is on, as Warmbly Cloud does. Agency portal domains `CNAME` to `PORTAL_DOMAIN`, not to the tracking host, so they get their own zone and their own settings. With both values set, the backend registers a portal domain as a custom hostname on that zone the moment it verifies (and every verified one within two minutes), rechecks a pending one every two minutes, and removes one a day after it stops being verified. While Cloudflare still needs proof of a domain, the agency brand's `portal_domain` lists the `_cf-custom-hostname` `TXT` record in `edge_records`. Workspace forms domains are never registered on this zone; they keep pointing at `FORMS_DOMAIN`. The tracking zone above is unaffected. Unset, no portal domain is registered anywhere, which is the self-host default: the instance issues their certificates on demand and its own portal service serves them.
+
+| Variable | What it does | Default | Restart needed |
+|---|---|---|---|
+| `CLOUDFLARE_SAAS_PORTAL_ZONE_ID` | The Cloudflare zone `PORTAL_DOMAIN` is on | unset | yes |
+| `CLOUDFLARE_SAAS_PORTAL_API_TOKEN` | A token with `SSL and Certificates: Edit` on that zone. Treat it as a secret | unset | yes |
+| `CLOUDFLARE_SAAS_PORTAL_ORIGIN` | Origin server for the hostnames the backend creates, when it differs from the zone's fallback origin | the zone's fallback origin | yes |
+| `CLOUDFLARE_SAAS_PORTAL_WORKER` | Name of the portal Worker on that zone. Each portal domain then gets its own Worker route (`<domain>/*`) when it is registered, removed with it. The token also needs `Workers Routes: Edit` on the zone | unset: the zone routes its custom hostnames itself | yes |
+
+Set `CLOUDFLARE_SAAS_PORTAL_WORKER` when the zone also holds other customer hostnames, such as tracking or redirect domains: one route for every custom hostname would send those to the portal too, and a route for each portal domain touches nothing else. A portal domain reads as registered only once its route to that Worker exists. A domain whose pattern already goes to another Worker is refused, and that route is never changed or removed. On a zone that holds portal domains only, leave it unset and route every custom hostname to the Worker once.
+
+Moving a zone that already serves portal domains from one route for every hostname to a route for each: set the variable first and keep the old route for a day. A domain that is already active gets its own route at its next daily check, not at once, so removing the old route sooner would leave it unanswered until then.
+
+On Warmbly Cloud the [portal service](#portal-service) is a Cloudflare Worker on that zone, configured by `deploy/cloudflare/portal/wrangler.jsonc`; its deployment is in `deploy/cloudflare/README.md`.
 
 ## Network and proxy
 
@@ -276,11 +296,13 @@ The proxy forwards only what PostHog needs to read the request. Cookies and `Aut
 | `TURNSTILE_BYPASS_TOKEN` | A token that skips verification. Only honoured when `APP_ENV=dev` | unset | yes |
 | `APP_ATTEST_APP_IDS` | Comma-separated `<team id>.<bundle id>` App IDs whose App Attest proofs the backend accepts in place of a captcha. Unset with no `APPLE_TEAM_ID`, App Attest is off | `APPLE_TEAM_ID` + `.` + `APPLE_IOS_BUNDLE_ID` when `APPLE_TEAM_ID` is set | yes |
 | `APP_ATTEST_ALLOW_DEVELOPMENT` | Accept App Attest proofs from development-signed builds (an Xcode install on a device). Leave it off in production | `false` | yes |
-| `TURNSTILE_SITE_KEY` | The public Turnstile widget key. The backend hands it to the forms service, which renders it on hosted form pages that enable spam protection. The frontends carry their own copy in `WARMBLY_TURNSTILE_KEY` | unset | no (read per request) |
+| `TURNSTILE_SITE_KEY` | The public Turnstile widget key. The backend hands it to the forms service, which renders it on hosted form pages that enable spam protection, and renders it itself in the security check the dashboard on an agency portal domain embeds (see below). The frontends carry their own copy in `WARMBLY_TURNSTILE_KEY` | unset | no (read per request) |
 
 `CAPTCHA_PROVIDER` has no constant default. Unset, it resolves to `turnstile` when `TURNSTILE_SECRET` holds a value, whether from the environment or from AWS Secrets Manager, and to `none` when it does not, so configuring the secret is what turns captcha on and clearing it is what turns captcha off. The panel reports the resolved value with source `derived`.
 
 Setting `CAPTCHA_PROVIDER=turnstile` explicitly while `TURNSTILE_SECRET` is empty is the one combination that breaks: every verification fails, which means nobody can sign in. Set the secret or set the provider back to `none`.
+
+A Turnstile widget only renders on the hostnames listed for its site key in Cloudflare, and an agency's portal domain cannot be listed in advance. The dashboard on a [portal domain](/guides/white-label/#the-dashboard-on-your-portal-domain) therefore embeds a small page from the API's own host (`/v1/auth/captcha-frame`), which the API lets only a verified portal domain frame, and that page hands the token back to the portal page. The token is checked by the backend exactly as on the main address. For it to work, `TURNSTILE_SITE_KEY` must be set on the backend and the API's hostname must be on the site key's hostname list. Without them the portal sign-in asks people to sign in at the main address.
 
 The native iOS app never renders Turnstile. It proves it is a genuine copy of the app with Apple [App Attest](/api/reference/account-org/#app-attest-native-apps), which stands in for the captcha on sign-in, registration and password reset. With `CAPTCHA_PROVIDER=none` the app sends nothing. With Turnstile on, the app offers email and password sign-in only when `APP_ATTEST_APP_IDS` names its App ID; otherwise it offers Sign in with Apple, Google and passkeys, which never need a captcha. A self-hosted instance that runs Turnstile and wants the iOS app to sign in with a password sets `APP_ATTEST_APP_IDS` to the iOS app's App ID. Verification needs no Apple account and makes no outbound call: it checks against Apple's App Attest root certificate, which ships in the binary. Each install's key is stored in the `app_attest_keys` table, which belongs to the instance and is not part of a [workspace export](/guides/workspace-export-import/). The iOS simulator cannot use App Attest, so local development keeps using `TURNSTILE_BYPASS_TOKEN`.
 
@@ -841,7 +863,7 @@ Salesforce reads `SALESFORCE_OAUTH_CLIENT_ID` and `SALESFORCE_OAUTH_CLIENT_SECRE
 | `WEB_READER_CUSTOM_URL`, `WEB_READER_CUSTOM_API_KEY` | Any reader that answers a GET with the page's HTML, or JSON carrying it (`html`, `content`, `data.html`). The URL is a template: `{url}` is replaced by the page address as is, `{url_encoded}` by its query-escaped form. The key is sent as a bearer token | unset |
 | `MAILHOST_ISPDB` | `true` lets mailbox server detection ask Mozilla's Thunderbird ISPDB (`autoconfig.thunderbird.net`) about a domain whose MX records and own autoconfig file name no known provider. Only the domain name is sent. See [data control](/development/data-control/#outbound-calls) | `false` on a self-host, `true` on Warmbly Cloud |
 | `MAILVENDOR_SANDBOX_URL` | Development only. Points every inbox vendor client at the [sandbox's mock vendor API](/development/sandbox/#mock-inbox-vendors) (`<url>/inboxkit`, `<url>/mailforge`) instead of the real vendors. Ignored unless `APP_ENV` is `dev` | unset |
-| `TYPESAFE_API_KEY` | TypeSafe API key. Turns on the typed judgments: reply classification, the copy judgment in the Advisor and the editor, warmup content review (otherwise performed by OpenAI when its generator is configured), bounce classification, import column mapping and per-form triage. Inbox tagging needs the switch below as well. See [data control](/development/data-control/#typesafe-judgments) for what each one sends | unset |
+| `TYPESAFE_API_KEY` | TypeSafe API key. Turns on the typed judgments: reply classification, the copy judgment in the editor, warmup content review (otherwise performed by OpenAI when its generator is configured), bounce classification, import column mapping and per-form triage. Inbox tagging needs the switch below as well. See [data control](/development/data-control/#typesafe-judgments) for what each one sends | unset |
 | `TYPESAFE_ENDPOINT` | URL the TypeSafe judgments are posted to, for a regional or proxied TypeSafe endpoint. Read by the backend, the consumer and `warmblyctl inbox-tag`; has no effect without `TYPESAFE_API_KEY`. Must be `https`, except `http` to a loopback or private-network host; any other value stops the service at startup | `https://api.typesafe.ai/v1/systemone` |
 | `INBOX_TAGGING_ENABLED` | `true` enables automatic inbox tagging when `TYPESAFE_API_KEY` is also set. Message subject, current body, and the previous outbound body are sent to TypeSafe | `false` |
 
@@ -1049,6 +1071,57 @@ The public face of hosted forms (`cmd/forms`): it serves the React (TanStack) fo
 | `WARMBLY_SENTRY_DSN` | The Sentry half of the same stamping | unset |
 | `TRUSTED_PROXIES` | CIDRs whose `X-Forwarded-For` the service believes, same convention as the backend. Empty trusts nothing and uses the socket peer; set it behind a reverse proxy or the submit limiter throttles the proxy's address instead of the visitor's | empty |
 
+## Portal service
+
+The portal service serves what an agency's clients open: [client connect pages](/guides/agencies/#client-connect-links), [shared reports](/guides/client-reports/) and the `/embed.js` loader that puts either on a website. Its source is `portal/worker`, and it serves the page app built from `portal/`. It answers two kinds of host:
+
+- the shared address, `PORTAL_DOMAIN`: connect links and reports of any workspace, and nothing else. Every other path answers "not found"
+- every verified agency [portal domain](/guides/white-label/#your-own-domain): that agency's clients' connect links and reports, and the dashboard from `DASHBOARD_ORIGIN` on every other path. Any other host answers `404`, or goes to `FALLBACK_ORIGIN` when that is set
+
+It holds no database and no secret beyond `PORTAL_EDGE_TOKEN`: it asks the backend whether a host is a verified portal domain and resolves every link through the backend's internal portal routes. Connect links and report links need it. Without `PORTAL_DOMAIN` the backend mints neither and every other feature works as before.
+
+On Warmbly Cloud it is a Cloudflare Worker (see [above](#agency-portal-domains-behind-cloudflare-for-saas)). A self-hosted instance runs the same code as its own `portal` container, `ghcr.io/warmbly/warmbly/portal`, published with every release beside the other images. The image runs it on [workerd](https://github.com/cloudflare/workerd), the open-source runtime Cloudflare Workers run on, as a non-root user, listening on port `8095`. The [installer](/development/install/), the bundled `docker-compose.yml` and the [Coolify](/development/coolify/) compose file all include it. It reads its own environment:
+
+| Variable | What it does | Default |
+|---|---|---|
+| `API_ORIGIN` | Where it reaches the backend, as an `http(s)` origin such as `https://api.example.com` or `http://backend:8080`. **Required**: unset, it serves nothing | none |
+| `PORTAL_DOMAIN` | The same value the backend reads. **Required**: unset, it serves nothing | none |
+| `PORTAL_EDGE_TOKEN` | Its bearer token for the backend, the same value as the backend's. At least 32 characters; a shorter one answers `503` everywhere. **Required** | none |
+| `DASHBOARD_ORIGIN` | Where the dashboard build is served from, as an `http(s)` origin such as the Pages origin or `http://web:80`. Unset, a portal domain serves connect links and reports only | unset |
+| `CLIENT_IP_HEADER` | The header naming the visitor's address, for the per-visitor budgets and the address passed to the backend. Behind a proxy that appends, the last entry counts. The compose files set `X-Forwarded-For` | `CF-Connecting-IP` |
+| `FALLBACK_ORIGIN` | A plain `http://` origin, such as `http://tracking:3000`, that receives every request for a host that is neither `PORTAL_DOMAIN` nor a verified portal domain, with its method, path, query, headers, body and `Host` unchanged, and whose answer is returned as it is. A failed portal lookup still answers `503` and is never passed on. With `PORTAL_DOMAIN` or `PORTAL_EDGE_TOKEN` unset, every request is passed on. The compose files set `http://tracking:3000`; Warmbly Cloud leaves it unset | unset |
+
+`FALLBACK_ORIGIN` is what lets one proxy rule send every customer-owned domain through the portal. The installer's Caddyfile sends a custom domain's tracking paths (`/t/`, `/c/`, `/tracking.js`, `/p`, `/unsubscribe/`) to the tracking service and its form paths (`/f/`, `/forms.js`, `/api/forms/`) to the forms service, as before, and everything else to the portal. The portal serves an agency portal domain itself and hands any other host, such as a custom tracking domain's root or a [root redirect](/guides/sending-domains/#root-redirects), to tracking unchanged, so those answer exactly as they did before the portal existed.
+
+Per visitor and minute it allows 30 connect link lookups, 10 sign-in starts or server-details submits, 60 sign-in result polls and 60 report reads, counted by the platform's rate-limit bindings when it has them (`CONNECT_VIEWS`, `CONNECT_ACTIONS`, `CONNECT_POLLS`, `REPORT_VIEWS`) and in the process otherwise. The backend also limits attempts per link.
+
+The backend side:
+
+| Variable | What it does | Default | Restart needed |
+|---|---|---|---|
+| `PORTAL_EDGE_TOKEN` | The bearer token the portal service presents. It opens only the internal routes the portal service calls (the portal lookup, connect links and shared reports), and no other token opens them, `INTERNAL_API_TOKEN` included. At least 32 characters: the backend refuses to start with a shorter value. Treat it as a secret. `PORTAL_EDGE_PREVIOUS_TOKENS` and `PORTAL_EDGE_PREVIOUS_UNTIL` keep a replaced value working until a cutoff, like the [internal token overlap](#rotate-instance-keys). Unset, those routes open for nobody | unset | yes |
+
+### The dashboard on a portal domain
+
+For the dashboard an agency's portal domain serves (see [white-label](/guides/white-label/#the-dashboard-on-your-portal-domain)):
+
+1. Set `DASHBOARD_ORIGIN` on the portal service.
+2. Keep `CHECK_ORIGIN_HOSTS` set on the realtime service (the installer sets it for a domain install). Portal origins are only added to a configured list.
+3. The dashboard's `WARMBLY_API_URL` must be an absolute URL, such as `https://api.example.com`, because the dashboard on a portal domain calls the API on its own address.
+4. For the security check on portal sign-in, set `TURNSTILE_SITE_KEY` on the backend and list the API's hostname for that site key in Cloudflare (see [captcha](#captcha)).
+
+### Upgrading a self-hosted instance
+
+The portal is optional, and an instance upgraded without it keeps working: connect links and report links are refused (`client_links_unavailable`, `report_links_unavailable`) until both `PORTAL_DOMAIN` and the portal container exist, and nothing else changes. To turn it on:
+
+- **Installed with `install.sh`**: run the installer again. It adds the `portal` service, `PORTAL_DOMAIN` (`portal.<host>` by default) and a generated `PORTAL_EDGE_TOKEN` to an existing install without touching any other value, and the regenerated Caddyfile adds the portal's site block. Point the portal host's DNS at the machine. The admin panel's **Update and restart** pins a release and pulls it but does not regenerate the compose file, so it does not add the portal on its own.
+- **The bundled `docker-compose.yml`**: it already lists the `portal` service. Set `PORTAL_DOMAIN` and `PORTAL_EDGE_TOKEN` (`openssl rand -hex 32`) in `.env`, run `docker compose up -d`, and route the portal host to port `8095` with its `Host` header kept. With both unset the container serves nothing itself and passes every request to `FALLBACK_ORIGIN`.
+- **Coolify**: set the same two variables and give the `portal` service the portal host on port `8095`.
+
+The backend reads `PORTAL_DOMAIN` per request and `PORTAL_EDGE_TOKEN` at start, so it needs a restart after the token is set; `docker compose up -d` recreates it when `.env` changes. Start the portal before or with the backend that has `PORTAL_DOMAIN`, because links are built on that address from the first request. During a rolling update the order does not matter otherwise: a backend from before the portal ignores both variables and builds no link, so a new portal in front of it has nothing to serve and passes every other host to `FALLBACK_ORIGIN` as before.
+
+The on-demand certificate check (`/tls/authorize`) answers yes for `PORTAL_DOMAIN` and every verified portal domain. The API accepts cross-origin calls, and OAuth sign-ins return, only for portal domains that are verified at the time, checked against the database and cached for at most two minutes.
+
 ## Tracking service
 
 The Rust open and click service. It reads its own environment, so these have to be set on that container, and none of them appear in the admin panel.
@@ -1107,7 +1180,7 @@ The Elixir websocket service. Its runtime configuration is read only when the re
 | `REDIS_URL` | The Redis bridge the backend publishes events onto | `redis://localhost:6379/0` |
 | `PHX_HOST` | The service's own hostname | `localhost` |
 | `PORT` | Listen port | `4000` |
-| `CHECK_ORIGIN_HOSTS` | Origins a browser may open a socket from, comma separated, e.g. `https://app.example.com,https://admin.example.com`. Not this service's own host | unset |
+| `CHECK_ORIGIN_HOSTS` | Origins a browser may open a socket from, comma separated, e.g. `https://app.example.com,https://admin.example.com`. Not this service's own host. With it set, the `https` origin of any verified agency portal domain is accepted as well, looked up in Postgres and cached for two minutes | unset |
 | `CHECK_ORIGIN` | Legacy host-based form, consulted only when `CHECK_ORIGIN_HOSTS` is empty. `true` accepts an upgrade only from `PHX_HOST` | `false` |
 | `REALTIME_ALLOW_QUERY_CREDENTIALS` | `true` accepts an API key or OAuth token in the socket URL's `token` parameter, for an older client that cannot send the `x-warmbly-token` header. URLs reach proxy and access logs, so leave it off unless such a client still depends on it; the realtime service logs a warning at boot while it is on. Read in every environment, not only `prod` | `false` |
 | `PUBSUB_ENABLED` | `true` swaps the Redis bridge for Google Pub/Sub | `false` |

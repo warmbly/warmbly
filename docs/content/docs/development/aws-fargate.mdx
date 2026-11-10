@@ -78,6 +78,17 @@ unchanged. Validate each hostname before moving its traffic.
 
 Customer domains that verify later need no list. Set `tracking_serves_unmatched_hosts = true` and the listener sends any host no rule matches to the tracking service instead of answering `404`, and the backend registers each verified domain at the edge itself when the [Cloudflare for SaaS settings](/development/configuration/#customer-domains-behind-cloudflare-for-saas) are set. The tracking service answers an unknown host with its own `404` and remembers the miss for a minute, so the backend is asked about each unknown name about once a minute. Turn it on once the tracking service has running tasks: the listener then sends every customer host to the same target group as the tracking host itself. The default keeps the `404` at the listener.
 
+### The portal service
+
+The shared portal address, `PORTAL_DOMAIN`, and every agency portal domain that `CNAME`s to it never reach this load balancer. Cloudflare connects to an origin with the customer's hostname as the `Host` header, which no listener rule could route, so on Warmbly Cloud the [portal service](/development/configuration/#portal-service) runs as a Cloudflare Worker: it serves client connect pages, shared reports and the embed loader on both, calling the backend's API origin with its own `PORTAL_EDGE_TOKEN`, and fetches the dashboard for agency portal domains from its Pages build. The forms service is not in this path, and workspace forms domains keep pointing at `FORMS_DOMAIN` as before. Nothing in Terraform changes. To set it up:
+
+1. Enable Cloudflare for SaaS on the zone `PORTAL_DOMAIN` is on (`warmbly.com`), create a proxied fallback origin record and set it as the zone's fallback origin, and create `PORTAL_DOMAIN` (`portal.warmbly.com`) as a proxied record in that zone.
+2. Add a generated `PORTAL_EDGE_TOKEN` (at least 32 characters) to the backend's secret, add the name to the backend's `secret_keys` in the runtime var file, apply the runtime stack and roll the backend.
+3. Build the page app with `pnpm --dir portal build` and deploy the Worker with `API_ORIGIN` (the public API origin), `PORTAL_DOMAIN`, `DASHBOARD_ORIGIN` (the dashboard's production Pages origin) and the secret `PORTAL_EDGE_TOKEN` holding the same value. Attach `PORTAL_DOMAIN` to it and leave the zone's other names on their current handling. Rebuild and redeploy it when a release changes `portal/`.
+4. Set `PORTAL_DOMAIN`, `CLOUDFLARE_SAAS_PORTAL_ZONE_ID` and `CLOUDFLARE_SAAS_PORTAL_API_TOKEN` on the backend and roll it. When the zone also holds other customer hostnames, such as tracking domains, set `CLOUDFLARE_SAAS_PORTAL_WORKER` to the Worker's name as well, so each portal domain gets its own route and no other name is sent to the portal; see [configuration](/development/configuration/#agency-portal-domains-behind-cloudflare-for-saas). Connect links and reports are built on the portal address from then on, verified portal domains are registered on the zone within two minutes, and Cloudflare issues each certificate once the domain's records are in place.
+
+The exact routes, checks, rotation and rollback are in `deploy/cloudflare/README.md`; the variables are in [configuration](/development/configuration/#portal-service).
+
 ## Size tasks from measurements
 
 Fargate bills provisioned CPU and memory. Its smallest Linux task has 0.25 vCPU

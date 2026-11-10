@@ -82,7 +82,8 @@ func (r *advisorRepository) loadMailboxes(ctx context.Context, orgID uuid.UUID, 
 			ea.tracking_domain, ea.tracking_domain_verified,
 			ea.auth_state, ea.auth_spf, ea.auth_dkim, ea.auth_dmarc, ea.auth_dmarc_policy, ea.auth_failing_since,
 			(ea.warmup IS NOT NULL AND ea.warmup_paused_at IS NULL) AS warmup_active,
-			(ea.warmup IS NOT NULL AND ea.warmup_paused_at IS NOT NULL) AS warmup_paused,
+			-- Stop also stamps warmup_paused_at; a stopped mailbox is off, not paused.
+			(ea.warmup IS NOT NULL AND ea.warmup_paused_at IS NOT NULL AND ea.warmup_stopped_at IS NULL) AS warmup_paused,
 			ea.warmup_base, ea.warmup_max, ea.warmup_increase, ea.warmup_reply_rate,
 			COALESCE(ea.warmup_pool_type, 'free'),
 			ea.risk_band::text,
@@ -94,7 +95,7 @@ func (r *advisorRepository) loadMailboxes(ctx context.Context, orgID uuid.UUID, 
 			CASE WHEN cstatus.cloud_only THEN '` + models.WarmupReasonCloudEvidenceUnavailable + `' ELSE COALESCE(p.last_health_reason, '') END,
 			(NOT cstatus.cloud_only AND COALESCE(p.blocked_until > NOW(), false)) AS pool_blocked,
 			COALESCE(err.n, 0),
-			COALESCE(camp.active, false),
+			COALESCE(camp.active, false), COALESCE(camp.tracked, false),
 			ea.send_lifecycle,
 			inb.delivered, inb.arrived, inb.lost_by
 		FROM email_accounts ea
@@ -113,7 +114,9 @@ func (r *advisorRepository) loadMailboxes(ctx context.Context, orgID uuid.UUID, 
 		LEFT JOIN (
 			SELECT
 				t2.email_account_id,
-				COUNT(*) FILTER (WHERE de.event_type = 'bounce')    AS bounces,
+				-- Hard bounces only, on the pool health model's terms: a full mailbox, a block or a transient failure is not about the address.
+				COUNT(*) FILTER (WHERE de.event_type = 'bounce'
+					AND COALESCE(de.metadata->>'bounce_cause', '') NOT IN ('mailbox_full', 'reputation_block', 'transient')) AS bounces,
 				COUNT(*) FILTER (WHERE de.event_type = 'complaint') AS complaints
 			FROM deliverability_events de
 			JOIN tasks t2 ON t2.id = de.task_id
@@ -148,21 +151,36 @@ func (r *advisorRepository) loadMailboxes(ctx context.Context, orgID uuid.UUID, 
 			  AND wt.recipient_account_id = ea.id
 		) inb ON true
 		LEFT JOIN LATERAL (
-			-- A mailbox counts as "in an active campaign" when a running
-			-- campaign either lists it explicitly or matches one of its tags.
-			SELECT true AS active
+			-- A mailbox counts as "in an active campaign" on ResolveCampaignSenderPool's terms:
+			-- an enabled sender, a tag match, or the all-active fallback, and never a seed mailbox.
+			-- tracked: one of them puts a pixel or wrapped links on the mailbox's host (UTM tags alone do not).
+			SELECT true AS active,
+			       bool_or((c.open_tracking OR c.link_tracking)
+			               AND NOT (c.tracking_domain <> '' AND c.tracking_domain_verified)) AS tracked
 			FROM campaigns c
 			WHERE c.organization_id = ea.organization_id
 			  AND c.status = 'active'
+			  AND ea.seed_scope IS NULL
 			  AND (
-			    EXISTS (SELECT 1 FROM campaign_senders cs WHERE cs.campaign_id = c.id AND cs.email_account_id = ea.id)
+			    EXISTS (SELECT 1 FROM campaign_senders cs WHERE cs.campaign_id = c.id AND cs.email_account_id = ea.id AND cs.enabled)
 			    OR EXISTS (
 			      SELECT 1 FROM campaign_email_tags cet
 			      JOIN email_tags et ON et.tag_id = cet.tag_id
 			      WHERE cet.campaign_id = c.id AND et.email_id = ea.id
 			    )
+			    OR (
+			      ea.status = 'active'
+			      AND c.sender_strategy <> 'explicit'
+			      AND NOT EXISTS (SELECT 1 FROM campaign_email_tags cet WHERE cet.campaign_id = c.id)
+			      AND NOT EXISTS (
+			        SELECT 1 FROM campaign_senders cs
+			        JOIN email_accounts sea ON sea.id = cs.email_account_id
+			        WHERE cs.campaign_id = c.id AND cs.enabled
+			          AND sea.organization_id = c.organization_id AND sea.status = 'active' AND sea.seed_scope IS NULL
+			      )
+			    )
 			  )
-			LIMIT 1
+			HAVING COUNT(*) > 0
 		) camp ON true
 		WHERE ea.organization_id = $1
 		ORDER BY ea.created_at ASC`
@@ -190,7 +208,7 @@ func (r *advisorRepository) loadMailboxes(ctx context.Context, orgID uuid.UUID, 
 			&m.WarmupPlacement.MajorDelivered, &m.WarmupPlacement.MajorSpam,
 			&m.WarmupPlacement.OtherDelivered, &m.WarmupPlacement.OtherSpam,
 			&m.PoolHealth, &m.PoolHealthScore, &m.PoolHealthReason, &m.PoolBlocked,
-			&m.UnresolvedErrs, &m.InActiveCampaign,
+			&m.UnresolvedErrs, &m.InActiveCampaign, &m.TrackedOnMailboxHost,
 			&m.SendLifecycle,
 			&m.WarmupDelivered7d, &m.WarmupArrived7d, &m.WarmupLostBy7d,
 		); err != nil {
@@ -230,6 +248,7 @@ func (r *advisorRepository) loadCampaigns(ctx context.Context, orgID uuid.UUID) 
 			FROM email_accounts ea
 			WHERE ea.organization_id = c.organization_id
 			  AND ea.status = 'active'
+			  AND ea.seed_scope IS NULL
 			  AND (
 			    EXISTS (SELECT 1 FROM campaign_senders cs WHERE cs.campaign_id = c.id AND cs.email_account_id = ea.id AND cs.enabled)
 			    OR EXISTS (
@@ -245,7 +264,7 @@ func (r *advisorRepository) loadCampaigns(ctx context.Context, orgID uuid.UUID) 
 			        SELECT 1 FROM campaign_senders cs
 			        JOIN email_accounts sea ON sea.id = cs.email_account_id
 			        WHERE cs.campaign_id = c.id AND cs.enabled
-			          AND sea.organization_id = c.organization_id AND sea.status = 'active'
+			          AND sea.organization_id = c.organization_id AND sea.status = 'active' AND sea.seed_scope IS NULL
 			      )
 			    )
 			  )
@@ -324,7 +343,7 @@ func (r *advisorRepository) loadSteps(ctx context.Context, orgID uuid.UUID) ([]A
 	query := `
 		SELECT
 			s.id, s.campaign_id, s.name, s."position", COALESCE(s.kind, 'email'), s.wait_after,
-			s.subject, s.body_plain, s.body_html,
+			s.subject, s.body_plain, s.body_html, s.thread_reply,
 			COALESCE(f.sent, 0), COALESCE(f.opened, 0), COALESCE(f.replied, 0), COALESCE(f.bounced, 0)
 		FROM sequences s
 		JOIN campaigns c ON c.id = s.campaign_id
@@ -340,7 +359,7 @@ func (r *advisorRepository) loadSteps(ctx context.Context, orgID uuid.UUID) ([]A
 		) f ON true
 		WHERE c.organization_id = $1
 		  AND c.status IN ('active', 'paused', 'draft')
-		ORDER BY s.campaign_id, s."position"
+		ORDER BY s.campaign_id, s."position", s.created_at
 		LIMIT 2000`
 
 	rows, err := r.db.Query(ctx, query, orgID)
@@ -354,7 +373,7 @@ func (r *advisorRepository) loadSteps(ctx context.Context, orgID uuid.UUID) ([]A
 		var s AdvisorStep
 		if err := rows.Scan(
 			&s.ID, &s.CampaignID, &s.Name, &s.Position, &s.Kind, &s.WaitAfter,
-			&s.Subject, &s.BodyPlain, &s.BodyHTML,
+			&s.Subject, &s.BodyPlain, &s.BodyHTML, &s.ThreadReply,
 			&s.Sent, &s.Opened, &s.Replied, &s.Bounced,
 		); err != nil {
 			return nil, err

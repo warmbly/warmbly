@@ -84,13 +84,25 @@ Dedicated reviewer workspaces show **Test** in the header instead of a customer 
 | Plan | Monthly | Annual (per month) | Sends per day | Includes |
 | --- | --- | --- | --- | --- |
 | Starter | $29 | $23 | 150 | Unlimited warmup, unlimited mailboxes, unified inbox, team invitations, bulk contact operations |
-| Grow | $89 | $71 | 3,000 | Everything in Starter |
-| Business | $329 | $263 | 15,000 | Everything in Grow, sending kept apart from other customers, webhooks, advanced outreach |
+| Grow | $89 | $71 | 3,000 | Everything in Starter, the CRM, the API and webhooks |
+| Business | $329 | $263 | 15,000 | Everything in Grow, sending kept apart from other customers, advanced outreach |
 | Enterprise | Custom | Custom | 15,000+ | Everything in Business, dedicated support |
 
 Annual billing is 20% off the monthly price. The same lineup is on the [pricing page](https://warmbly.com/pricing).
 
 Unlimited mailboxes means exactly that, under a fair-use allowance of one mailbox for every send a day the plan includes: Grow holds `3,000`, Business `15,000`, and either can be raised on request. See [mailbox allowance](/guides/mailboxes/#mailbox-allowance).
+
+### Agency plans
+
+Agencies running outreach for many clients buy one plan for the whole agency instead of one per workspace. There is no per-client fee, and every client workspace sends from one shared monthly pool rather than a daily cap. See [agencies](/guides/agencies/#billing-and-top-ups).
+
+| Plan | Monthly | Annual (per month) | Shared sends a month | Includes |
+| --- | --- | --- | --- | --- |
+| Agency | $249 | $199 | 150,000 | Unlimited clients, the API and webhooks in every client workspace, logo, accent colour and portal domain on client pages, $10 of shared AI a month |
+| Agency Pro | $599 | $479 | 500,000 | Everything in Agency, no "Powered by Warmbly" line, sending kept apart from other customers, $30 of shared AI a month |
+| Agency Scale | Custom | Custom | 1,000,000+ | Everything in Agency Pro, with a pool and AI allowance sized to the agency |
+
+Top-up packs add 50,000 sends to the current period: $85 on Agency, $60 on Agency Pro. A client workspace's billing page shows **Billed through** and the agency's name, and its plan is managed from the agency. Each client spends its own AI balance first and then the agency's shared AI balance, which includes $10 a month on Agency and $30 on Agency Pro. See [the shared AI balance](/guides/agencies/#the-shared-ai-balance).
 
 ### The Warmup plan
 
@@ -165,7 +177,13 @@ Operators grant one from the admin panel on the workspace, under **Plan**. The o
 
 A grant is held beside the plan a workspace pays for, never on top of it, so a paying workspace that is granted a different plan goes back to the one it pays for when the grant ends. Revoking returns the workspace to whatever it actually pays for, which can be no plan at all.
 
+An agency plan is never granted to one workspace. An operator gives it to the [agency](/guides/agencies/#a-plan-arranged-directly), from **Agencies** in the admin panel, and the agency's client workspaces receive it.
+
+An [agency's](/guides/agencies/) client workspaces hold the agency's plan the same way, as a grant the agency keeps in step with its own subscription. An operator grant made on a client workspace takes precedence and is never overwritten by the agency; revoking it hands the workspace back to the agency's grant within minutes.
+
 One thing a grant does not do: the monthly balance allowance is granted when an invoice is paid, and a granted plan raises no invoice, so a managed workspace does not receive a recurring allowance. Add money to its balance directly if it needs AI.
+
+A grant onto a plan with sending kept apart from other customers reserves a worker for the workspace, as a paid plan change does, and revoking the grant releases it unless the plan the workspace pays for includes it too.
 
 </Fold>
 

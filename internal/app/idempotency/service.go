@@ -43,12 +43,29 @@ type Record struct {
 	Abandoned bool
 }
 
-// Service records one logical operation per organization and key. Begin claims
+// Scope is what a key is unique within: a workspace, or an agency for an agency key on agency endpoints.
+type Scope struct {
+	OrganizationID uuid.UUID
+	AgencyID       uuid.UUID
+}
+
+func OrgScope(id uuid.UUID) Scope    { return Scope{OrganizationID: id} }
+func AgencyScope(id uuid.UUID) Scope { return Scope{AgencyID: id} }
+
+// scopeSQL is the scope column, its id and the unique index a claim conflicts on; the column is one of two constants, never request input.
+func scopeSQL(scope Scope) (column string, id uuid.UUID, conflict string) {
+	if scope.AgencyID != uuid.Nil {
+		return "agency_id", scope.AgencyID, "(agency_id, key) WHERE agency_id IS NOT NULL"
+	}
+	return "organization_id", scope.OrganizationID, "(organization_id, key)"
+}
+
+// Service records one logical operation per scope (a workspace or an agency) and key. Begin claims
 // the key; every claim then ends in exactly one of Complete (a definite answer
 // to replay), Release (refused before it ran, so the key is free again) or
 // MarkUncertain (ended without a definite outcome).
 type Service interface {
-	Begin(ctx context.Context, orgID uuid.UUID, key, method, path, requestHash string) (*Record, State, *errx.Error)
+	Begin(ctx context.Context, scope Scope, key, method, path, requestHash string) (*Record, State, *errx.Error)
 	Complete(ctx context.Context, recordID uuid.UUID, statusCode int, responseBody []byte, contentType string) *errx.Error
 	Release(ctx context.Context, recordID uuid.UUID) *errx.Error
 	MarkUncertain(ctx context.Context, recordID uuid.UUID, statusCode int) *errx.Error
@@ -62,14 +79,17 @@ func NewService(db *pgxpool.Pool) Service {
 	return &service{db: db}
 }
 
-func (s *service) Begin(ctx context.Context, orgID uuid.UUID, key, method, path, requestHash string) (*Record, State, *errx.Error) {
+func (s *service) Begin(ctx context.Context, scope Scope, key, method, path, requestHash string) (*Record, State, *errx.Error) {
 	if s == nil || s.db == nil {
 		return nil, "", errx.New(errx.ServiceUnavailable, "idempotency service is not available")
+	}
+	if (scope.OrganizationID == uuid.Nil) == (scope.AgencyID == uuid.Nil) {
+		return nil, "", errx.InternalError()
 	}
 
 	// A record released between the claim and the read is claimed again.
 	for attempt := 0; attempt < 2; attempt++ {
-		record, state, xerr := s.begin(ctx, orgID, key, method, path, requestHash)
+		record, state, xerr := s.begin(ctx, scope, key, method, path, requestHash)
 		if xerr != nil || record != nil {
 			return record, state, xerr
 		}
@@ -77,16 +97,17 @@ func (s *service) Begin(ctx context.Context, orgID uuid.UUID, key, method, path,
 	return nil, "", errx.New(errx.Conflict, "an identical request is still processing")
 }
 
-func (s *service) begin(ctx context.Context, orgID uuid.UUID, key, method, path, requestHash string) (*Record, State, *errx.Error) {
+func (s *service) begin(ctx context.Context, scope Scope, key, method, path, requestHash string) (*Record, State, *errx.Error) {
+	column, scopeID, conflict := scopeSQL(scope)
 	// An expired record is taken over in the same statement, so two requests
 	// racing on it still produce exactly one claim.
 	var id uuid.UUID
 	err := s.db.QueryRow(ctx, `
 		INSERT INTO api_idempotency_keys (
-			organization_id, key, method, path, request_hash, status, expires_at
+			`+column+`, key, method, path, request_hash, status, expires_at
 		)
 		VALUES ($1, $2, $3, $4, $5, 'processing', now() + ($6::integer * interval '1 second'))
-		ON CONFLICT (organization_id, key) DO UPDATE
+		ON CONFLICT `+conflict+` DO UPDATE
 		SET id = gen_random_uuid(),
 		    method = EXCLUDED.method,
 		    path = EXCLUDED.path,
@@ -100,7 +121,7 @@ func (s *service) begin(ctx context.Context, orgID uuid.UUID, key, method, path,
 		    expires_at = EXCLUDED.expires_at
 		WHERE api_idempotency_keys.expires_at < now()
 		RETURNING id
-	`, orgID, key, method, path, requestHash, int(ttl.Seconds())).Scan(&id)
+	`, scopeID, key, method, path, requestHash, int(ttl.Seconds())).Scan(&id)
 	if err == nil {
 		return &Record{ID: id, Method: method, Path: path, RequestHash: requestHash, Status: "processing"}, StateStarted, nil
 	}
@@ -108,7 +129,7 @@ func (s *service) begin(ctx context.Context, orgID uuid.UUID, key, method, path,
 		return nil, "", errx.InternalError()
 	}
 
-	record, xerr := s.get(ctx, orgID, key)
+	record, xerr := s.get(ctx, column, scopeID, key)
 	if xerr != nil || record == nil {
 		return nil, "", xerr
 	}
@@ -184,14 +205,14 @@ func (s *service) MarkUncertain(ctx context.Context, recordID uuid.UUID, statusC
 	return nil
 }
 
-func (s *service) get(ctx context.Context, orgID uuid.UUID, key string) (*Record, *errx.Error) {
+func (s *service) get(ctx context.Context, column string, scopeID uuid.UUID, key string) (*Record, *errx.Error) {
 	var record Record
 	err := s.db.QueryRow(ctx, `
 		SELECT id, method, path, request_hash, status, COALESCE(status_code, 0), COALESCE(response_body, ''::bytea), content_type,
 		       status = 'processing' AND updated_at < now() - ($3::integer * interval '1 second')
 		FROM api_idempotency_keys
-		WHERE organization_id = $1 AND key = $2
-	`, orgID, key, int(AbandonedAfter.Seconds())).Scan(
+		WHERE `+column+` = $1 AND key = $2
+	`, scopeID, key, int(AbandonedAfter.Seconds())).Scan(
 		&record.ID,
 		&record.Method,
 		&record.Path,

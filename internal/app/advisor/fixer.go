@@ -66,32 +66,20 @@ const (
 // as the honest answer that this one needs a person.
 //
 // The rule for being on this list: the fix is an edit to content the platform
-// owns. Copy, sequence shape, and list membership qualify. DNS, provider
+// owns. Copy and list membership qualify. DNS, provider
 // consoles, and anything needing a judgement call about volume do not, and
 // those show their manual steps instead.
 var agentFixable = map[string]bool{
 	// Copy: the text is ours to edit.
-	"copy_broken_template":  true,
-	"copy_spam_phrases":     true,
-	"copy_too_long":         true,
-	"copy_subject_too_long": true,
-	"copy_shouty_subject":   true,
-	"copy_too_many_links":   true,
-	"copy_reads_as_bulk":    true,
-	"copy_no_clear_ask":     true,
-
-	// Sequence shape: steps are ours to add and re-time.
-	"campaign_no_followups":       true,
-	"campaign_followup_spacing":   true,
-	"campaign_step_dropoff":       true,
-	"campaign_capacity_shortfall": true,
-	"campaign_narrow_window":      true,
+	"copy_broken_template": true,
+	"copy_spam_phrases":    true,
+	"copy_shouty_subject":  true,
+	"copy_too_many_links":  true,
 
 	// List membership: contacts are ours to filter and correct.
 	"list_role_addresses":               true,
 	"list_missing_personalization_data": true,
 	"list_unsubscribed_enrolled":        true,
-	"list_suppressed_share":             true,
 }
 
 // CanAgentFix reports whether the agent should be offered for a finding. The

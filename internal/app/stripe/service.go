@@ -146,7 +146,16 @@ type stripeService struct {
 	productAnalytics ProductAnalytics
 	balanceCharges   repository.SavedCardChargeRepository
 	balance          BalanceSettler
+	agency           AgencyWebhooks
 }
+
+// AgencyWebhooks applies the Stripe events that bill an agency rather than a workspace.
+type AgencyWebhooks interface {
+	HandleStripeEvent(ctx context.Context, event *stripe.Event) (bool, *errx.Error)
+}
+
+// WireAgency routes agency billing events away from the workspace path.
+func (s *stripeService) WireAgency(a AgencyWebhooks) { s.agency = a }
 
 // WireOperatorNotifier attaches the operator alert channel.
 func (s *stripeService) WireOperatorNotifier(n OperatorNotifier) { s.opsNotify = n }
@@ -642,6 +651,38 @@ func (s *stripeService) ProcessWebhookEvent(ctx context.Context, event *stripe.E
 
 	// Process based on event type
 	var processErr *errx.Error
+	handled := false
+	if s.agency != nil {
+		handled, processErr = s.agency.HandleStripeEvent(ctx, event)
+	}
+	if !handled {
+		processErr = s.processWorkspaceEvent(ctx, event)
+	}
+
+	// Record the event as processed ONLY on success. If a handler failed
+	// (e.g. a transient DB error while granting purchased credits), we must
+	// NOT mark it done: recording it would make WebhookEventExists short-
+	// circuit the Stripe retry, and the customer would have paid without
+	// receiving credits. Leaving it unrecorded lets the retry re-run the
+	// handler, which is safe because every handler is idempotent on the
+	// Stripe event id (credit grants, referral rewards, subscription upserts).
+	if processErr == nil {
+		webhookEvent := &models.StripeWebhookEvent{
+			ID:          event.ID,
+			EventType:   string(event.Type),
+			ProcessedAt: time.Now(),
+		}
+		if err := s.subRepo.RecordWebhookEvent(ctx, webhookEvent); err != nil {
+			// Log but don't fail - idempotency is best-effort on the happy path.
+		}
+	}
+
+	return processErr
+}
+
+// processWorkspaceEvent applies an event that bills a workspace.
+func (s *stripeService) processWorkspaceEvent(ctx context.Context, event *stripe.Event) *errx.Error {
+	var processErr *errx.Error
 	switch event.Type {
 	case "checkout.session.completed", "checkout.session.async_payment_succeeded":
 		processErr = s.handleCheckoutCompleted(ctx, event)
@@ -664,25 +705,6 @@ func (s *stripeService) ProcessWebhookEvent(ctx context.Context, event *stripe.E
 	case "charge.refunded":
 		processErr = s.handleChargeRefunded(ctx, event)
 	}
-
-	// Record the event as processed ONLY on success. If a handler failed
-	// (e.g. a transient DB error while granting purchased credits), we must
-	// NOT mark it done: recording it would make WebhookEventExists short-
-	// circuit the Stripe retry, and the customer would have paid without
-	// receiving credits. Leaving it unrecorded lets the retry re-run the
-	// handler, which is safe because every handler is idempotent on the
-	// Stripe event id (credit grants, referral rewards, subscription upserts).
-	if processErr == nil {
-		webhookEvent := &models.StripeWebhookEvent{
-			ID:          event.ID,
-			EventType:   string(event.Type),
-			ProcessedAt: time.Now(),
-		}
-		if err := s.subRepo.RecordWebhookEvent(ctx, webhookEvent); err != nil {
-			// Log but don't fail - idempotency is best-effort on the happy path.
-		}
-	}
-
 	return processErr
 }
 

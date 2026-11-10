@@ -49,6 +49,7 @@ Read the report, pick the groups to apply, and confirm.
 - An import runs as one transaction. If anything fails, nothing lands.
 - Mailbox overwrite preserves report history, send audit and existing restrictive holds. Destination tasks with send-protection evidence retain their identity, typed payload and send evidence, including older completed tasks, uncertain or applied results without a worker nonce, and known warmup charges. An unprotected task can accept newer imported history without that history blocking its own later task payloads. Source-only history does not grant permission to send. If the archive and destination hold different tasks or have different restrictive hold reasons, overwrite fails and the whole import rolls back rather than discarding either protection. Skipped mailboxes are unaffected. Transport recovery is checked against the destination's newly loaded mailbox transport; an old or in-flight result cannot clear restored transport warnings.
 - To move a whole self-hosted install, use `warmblyctl backup` and `warmblyctl restore` instead.
+- To reuse one campaign or a few templates in another workspace on the same instance, use **Copy to workspace…** instead. It copies only that configuration as drafts and moves no contacts, mailboxes or history. See [Copy campaigns to a client](/guides/agencies/#copy-campaigns-to-a-client).
 
 <Fold>
 
@@ -80,7 +81,7 @@ The data is split into groups. Every export includes **Workspace**; the rest are
 |-------|----------|
 | Workspace | The organization, members with their [access scope](/guides/team-roles/#access-scope) and mailbox grants, roles, teams, mailboxes and their profile photos, mailbox tags, the column mappings saved by [mailbox imports](/guides/mailbox-import/), inbox vendor connections, [root redirects](/guides/sending-domains/#root-redirects), API keys, webhooks, and settings, including the website tracking site key. Always included |
 | Contacts | Contacts, labels, the column mappings saved by [contact imports](/guides/contacts-crm/#importing), [lead finder](/guides/lead-finder/) leads, the people found at them, and searches (a search reopens from its first page), segments with their manual overrides, forms with their images, submissions, personalized link tickets and funnel events, notes, activities, the suppression list, and each contact's [HubSpot](/guides/hubspot/) record id, owner, lifecycle stage, lead status and company |
-| Campaigns | Campaigns, folders, restricted members' campaign and folder grants, sequences, senders, linked segments, attachments, the email image library, per-campaign settings, each lead's step progress with its per-link clicks and per-event opens, the colleagues [copied on each lead](/guides/campaigns/#copying-colleagues-on-one-lead), [placement monitors](/guides/placement-tests/#campaign-placement-monitors), and the [unsubscribe links](/guides/unsubscribe/) already in recipients' inboxes |
+| Campaigns | Campaigns, folders, restricted members' campaign and folder grants, sequences, senders, linked segments, attachments, the email image library, per-campaign settings, each lead's step progress with its per-link clicks and per-event opens, the colleagues [copied on each lead](/guides/campaigns/#copying-colleagues-on-one-lead), [placement monitors](/guides/placement-tests/#campaign-placement-monitors), [client reports](/guides/client-reports/) (without their share links), and the [unsubscribe links](/guides/unsubscribe/) already in recipients' inboxes |
 | CRM | Pipelines, deals, tasks, and meeting bookings |
 | Automations | Automations, connected integrations (including [Clay](/guides/clay/) defaults and events), saved [Apollo](/guides/apollo/) imports, lead sync sources, and the workspace's CRM mode: whether it runs on [HubSpot](/guides/hubspot/), its setup choices, the owner matches, and which Warmbly record is which HubSpot record |
 | Assistant | Remie sessions and messages (including conversations held in [Slack](/guides/slack/)), skills, MCP servers, and AI settings |
@@ -193,6 +194,7 @@ Some things belong to an instance rather than to a workspace, so they are not ap
 | Not imported | Why |
 |--------------|-----|
 | Billing history | Subscription, credits, and referral balances belong to the platform that was paid. The destination issues its own |
+| Agency membership | The link to an [agency](/guides/agencies/), its plan, its shared send pool and its shared AI balance belong to the source instance, and the archive does not carry it. The workspace arrives outside any agency, and members the agency added arrive as ordinary members. The agency's brand, portal domain and [API keys](/guides/agencies/#api) stay with the agency; the workspace's own [brand](/guides/white-label/) and its logo travel |
 | Plan limit overrides | A capacity grant is a decision by one platform's operators, not a property the workspace carries |
 | Plan offers | They are granted by one platform's operators. The destination's operators decide their own, and the archive does not carry them at all |
 | Worker assignment | The destination places mailboxes on its own workers |
@@ -266,6 +268,8 @@ A few things belong to the instance rather than the workspace and are left out o
 
 [Mailbox imports](/guides/mailbox-import/) do not travel either, finished or running: an import is work the source instance is doing, and its rows hold credentials in flight. The mailboxes an import connected are ordinary mailboxes and move with the Workspace group, and the saved column mappings come too, so the same file maps itself on the destination. Let a running import finish before exporting: rows it has not connected yet are not in the archive.
 
+[Client connect links](/guides/agencies/#client-connect-links) do not travel. Each one is a live way into the workspace for whoever holds it, and its address names the source instance, so moving it would let a link sent for the source connect mailboxes into the destination. The mailboxes clients connected are ordinary mailboxes and move with the Workspace group. Send new links from the destination.
+
 [Contact imports](/guides/contacts-crm/#importing) do not travel, finished or running, for the same reason: an import is work the source instance is doing. The contacts it created are ordinary contacts and move with the Contacts group, and the saved column mappings come with them. Let a running import finish before exporting, or the rows it has not reached are not in the archive.
 
 The list of past exports and imports does not travel either. Each job is a record of work the instance that ran it did, and an export's archive lives in that instance's storage until it expires. The destination lists only the exports and imports run there.
@@ -275,6 +279,8 @@ A [community directory](/guides/integrations/#community-apps) listing does not t
 [Slack](/guides/slack/) account links, the record of which Slack thread belongs to which assistant conversation, and which Slack thread mirrors which inbox conversation in the [inbox channel](/guides/slack/#inbox-in-slack) do not travel. They name the Slack install on the source instance, so members link again after Slack is reconnected on the destination, and inbox conversations start new Slack threads there. The assistant conversations themselves move with the Assistant group.
 
 [Confirmed websites](/guides/sending-domains/#confirm-your-website) do not travel. The `TXT` record that confirms one is bound to the source workspace, so it proves nothing on the destination. Redirects and form redirects to the website arrive kept but not used. The destination shows its own record to publish on each sending domain's **Redirect** tab, and form redirects to the website work again once it is confirmed there.
+
+[Client reports](/guides/client-reports/) arrive with sharing off and no email schedule. A share link names the source instance's host, and a schedule emails people outside the workspace, so carrying it would send the client every report twice while the workspace exists on both instances. Mint a new link and set the schedule again on the destination, then turn the schedule off on the source. The log of scheduled emails already sent stays behind.
 
 Reply and forward drafts kept in your browser are also excluded. Finish or copy them before moving to another instance. See [reply drafts](/guides/unibox/#reply-drafts).
 

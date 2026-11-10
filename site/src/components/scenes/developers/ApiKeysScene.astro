@@ -1,7 +1,9 @@
 ---
 import ScaledStage from '../../ScaledStage.astro';
 import Glyph from '../Glyph.astro';
-import { WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_PRIMARY, STAT, STAT_VALUE, STAT_SUB } from '../../../lib/scene';
+import Stat from '../Stat.astro';
+import TrendStat from '../TrendStat.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_PRIMARY } from '../../../lib/scene';
 
 /**
  * The API keys page (web/src/app/app/api-keys/page.tsx): stat strip, the
@@ -56,26 +58,10 @@ const endpoints = [
     </div>
 
     <div class="grid grid-cols-4 border-b border-slate-200">
-      <div class={STAT}>
-        <div class="flex items-center gap-2"><span class={EYEBROW}>Active keys</span><span class="size-1.5 rounded-full bg-sky-500 animate-pulse"></span></div>
-        <div class={STAT_VALUE}>4</div>
-        <div class={STAT_SUB}>1 inactive</div>
-      </div>
-      <div class={STAT}>
-        <div class={EYEBROW}>Requests · 24h</div>
-        <div class={STAT_VALUE}><span data-tick="8241,8320,1700">8241</span></div>
-        <div class={STAT_SUB}>4 errors</div>
-      </div>
-      <div class={STAT}>
-        <div class={EYEBROW}>Avg latency · 24h</div>
-        <div class={STAT_VALUE}>28ms</div>
-        <div class={STAT_SUB}>across all keys</div>
-      </div>
-      <div class="px-5 py-4">
-        <div class={EYEBROW}>Last call</div>
-        <div class={STAT_VALUE}><span data-tick="3,29,1000">14</span>s ago</div>
-        <div class={STAT_SUB}>Oct 9, 02:02 PM</div>
-      </div>
+      <Stat label="Active keys" value="4" sub="1 inactive" accent />
+      <TrendStat label="Requests · 24h" unit="4 errors" points={buckets} kind="bars" tone="sky"><span data-tick="8241,8320,1700">8,241</span></TrendStat>
+      <TrendStat label="Avg latency · 24h" value="28ms" unit="across all keys" points={buckets.map((h, i) => 24 + ((h + i * 7) % 9))} />
+      <Stat label="Last call" sub="Oct 9, 02:02 PM" last><span data-tick="3,29,1000">14</span>s ago</Stat>
     </div>
 
     <div class={SECTIONBAR}>

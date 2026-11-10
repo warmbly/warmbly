@@ -18,6 +18,7 @@ import {
     SUGGEST_PASSKEY_FLAG,
 } from "@/lib/passkey";
 import listPasskeys from "@/lib/api/client/auth/passkey/listCredentials";
+import { currentPortal } from "@/lib/portal";
 
 // Persisted "don't ask again" — set only on an explicit "Not now", so a casual
 // X/escape stays a soft dismiss.
@@ -39,6 +40,8 @@ export default function PasskeyEnrollPrompt() {
                 if (sessionStorage.getItem(SUGGEST_PASSKEY_FLAG) !== "1") return;
                 sessionStorage.removeItem(SUGGEST_PASSKEY_FLAG);
                 if (localStorage.getItem(DISMISS_KEY) === "1") return;
+                // A passkey made on a portal domain would only work there.
+                if (currentPortal().portal) return;
                 if (!passkeySupported() || !(await platformPasskeyAvailable())) return;
 
                 const existing = await listPasskeys();

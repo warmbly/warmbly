@@ -1,0 +1,33 @@
+---
+/**
+ * One StatStrip cell, copied from Stat in web/src/components/layout/Page.tsx:
+ * a sentence-case label, the number, a quiet caption. A bare 0 fades.
+ */
+interface Props {
+  label: string;
+  /** The number; the default slot replaces it when it needs markup. */
+  value?: string | number;
+  sub?: string;
+  /** A sky dot before the label: something live. */
+  accent?: boolean;
+  /** A dot of another colour before the label. */
+  dot?: string;
+  tone?: 'warn';
+  /** Text colour of the number when it carries a band. */
+  ink?: string;
+  last?: boolean;
+  /** Cell padding, for the narrower windows. */
+  pad?: string;
+}
+const { label, value, sub, accent = false, dot, tone, ink, last = false, pad = 'px-5 py-3.5' } = Astro.props;
+const zero = value === 0 || value === '0';
+const color = ink ?? (tone === 'warn' && !zero ? 'text-amber-700' : zero ? 'text-slate-300' : 'text-slate-900');
+---
+<div class={`relative min-w-0 ${pad} ${last ? '' : 'border-r border-slate-200'}`}>
+  <div class="flex items-center gap-1.5 min-w-0">
+    {(accent || dot) && <span class={`size-1.5 shrink-0 rounded-full ${dot ?? 'bg-sky-500'}`}></span>}
+    <span class="text-[12px] font-medium text-slate-500 truncate">{label}</span>
+  </div>
+  <div class={`text-[22px] font-semibold tracking-[-0.02em] leading-none mt-1.5 tabular-nums truncate ${color}`}><slot>{value}</slot></div>
+  {sub && <div class="text-[11.5px] text-slate-400 mt-1.5 truncate">{sub}</div>}
+</div>

@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/observability/errs"
 )
 
 // adminManagedPlanRequest is a grant. A reason is required for the same reason
@@ -92,6 +93,7 @@ func (h *Handler) AdminGrantOrgManagedPlan(c *gin.Context) {
 		errx.JSON(c, xerr)
 		return
 	}
+	h.syncGrantIsolatedEgress(c, orgID)
 	details := map[string]any{"plan_id": planID.String(), "reason": reason}
 	if req.Until != nil {
 		details["until"] = req.Until.UTC().Format(time.RFC3339)
@@ -122,8 +124,19 @@ func (h *Handler) AdminRevokeOrgManagedPlan(c *gin.Context) {
 		errx.JSON(c, xerr)
 		return
 	}
+	h.syncGrantIsolatedEgress(c, orgID)
 	h.logOrgPlanAction(c, *adminID, orgID, "revoke_managed_plan", nil)
 	c.JSON(http.StatusOK, managed)
+}
+
+// syncGrantIsolatedEgress reserves or releases the workspace's worker as a Stripe plan change would.
+func (h *Handler) syncGrantIsolatedEgress(c *gin.Context, orgID uuid.UUID) {
+	if h.WorkerAssignmentService == nil {
+		return
+	}
+	if err := h.WorkerAssignmentService.SyncIsolatedEgress(c.Request.Context(), orgID); err != nil {
+		errs.CaptureException(err)
+	}
 }
 
 // logOrgPlanAction records the operator action on the platform-admin trail,

@@ -62,9 +62,9 @@ type DangerZoneRepository interface {
 
 	// HardDeleteUser removes the user row and every workspace it owns,
 	// returning the same placements to evict as HardDeleteOrganization. It
-	// refuses with ErrAccountHoldsSharedWork or ErrOwnedWorkspaceBilled.
-	// confirm, when set, is asked about every owned subscription still on
-	// record while the workspaces are locked.
+	// refuses with ErrAccountHoldsSharedWork, ErrOwnedWorkspaceBilled or
+	// ErrOwnedAgencyBilled. confirm, when set, is asked about every owned
+	// subscription still on record while the workspaces are locked.
 	HardDeleteUser(ctx context.Context, userID uuid.UUID, confirm BillingCheck) ([]MailboxPlacement, error)
 }
 
@@ -420,21 +420,22 @@ func (r *dangerZoneRepository) HardDeleteUser(ctx context.Context, userID uuid.U
 	}
 	if confirm != nil {
 		// The local row learns of a resumed subscription only from a webhook.
-		rows, err := tx.Query(ctx, `
+		if err := confirmNotBilled(ctx, tx, confirm, `
 			SELECT stripe_subscription_id FROM subscriptions
 			 WHERE organization_id = ANY($1) AND stripe_subscription_id IS NOT NULL
-			   AND status NOT IN ('canceled', 'incomplete_expired')`, owned)
-		if err != nil {
+			   AND status NOT IN ('canceled', 'incomplete_expired')`, owned); err != nil {
 			return nil, err
 		}
-		ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		// Agencies cascade with their owner, and nothing here cancels their subscription.
+		err := confirmNotBilled(ctx, tx, confirm, `
+			SELECT stripe_subscription_id FROM agencies
+			 WHERE owner_user_id = $1 AND stripe_subscription_id IS NOT NULL
+			   AND status NOT IN ('canceled', 'incomplete_expired')`, userID)
+		if errors.Is(err, ErrOwnedWorkspaceBilled) {
+			err = ErrOwnedAgencyBilled
+		}
 		if err != nil {
 			return nil, err
-		}
-		if len(ids) > 0 {
-			if err := confirm(ctx, ids); err != nil {
-				return nil, err
-			}
 		}
 	}
 	// A subscription keeps the user who bought it through ownership transfers; it belongs to the current owner.
@@ -455,6 +456,19 @@ func (r *dangerZoneRepository) HardDeleteUser(ctx context.Context, userID uuid.U
 	return placements, tx.Commit(ctx)
 }
 
+// confirmNotBilled asks the billing provider about the subscription ids the query returns.
+func confirmNotBilled(ctx context.Context, tx pgx.Tx, confirm BillingCheck, query string, arg any) error {
+	rows, err := tx.Query(ctx, query, arg)
+	if err != nil {
+		return err
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil || len(ids) == 0 {
+		return err
+	}
+	return confirm(ctx, ids)
+}
+
 // ErrAccountHoldsSharedWork refuses an account deletion that would take a
 // workspace's assets with it: the user's mailboxes, contacts, campaigns and
 // their attachments, templates, API keys, apps and shared assistant conversations cascade with
@@ -464,6 +478,10 @@ var ErrAccountHoldsSharedWork = errors.New("account holds assets in workspaces i
 // ErrOwnedWorkspaceBilled refuses an account deletion while an owned workspace
 // still has a subscription that will renew, which nothing here cancels.
 var ErrOwnedWorkspaceBilled = errors.New("an owned workspace has a renewing subscription")
+
+// ErrOwnedAgencyBilled refuses an account deletion while an agency the account
+// owns has a subscription that will renew; the agency goes with the account.
+var ErrOwnedAgencyBilled = errors.New("an owned agency has a renewing subscription")
 
 func ownedWorkspaces(ctx context.Context, tx pgx.Tx, userID uuid.UUID, lock bool) ([]uuid.UUID, error) {
 	q := `SELECT id FROM organizations WHERE owner_user_id = $1 ORDER BY id`
@@ -482,7 +500,7 @@ func ownedWorkspaces(ctx context.Context, tx pgx.Tx, userID uuid.UUID, lock bool
 }
 
 func accountDeletable(ctx context.Context, tx pgx.Tx, userID uuid.UUID, owned []uuid.UUID) error {
-	var shared, billed bool
+	var shared, billed, agencyBilled bool
 	err := tx.QueryRow(ctx, `
 		SELECT
 			EXISTS (SELECT 1 FROM email_accounts x WHERE x.user_id = $1 AND x.organization_id <> ALL($2))
@@ -497,8 +515,11 @@ func accountDeletable(ctx context.Context, tx pgx.Tx, userID uuid.UUID, owned []
 				WHERE x.user_id = $1 AND x.org_id <> ALL($2) AND o.assistant_shared_history),
 			EXISTS (SELECT 1 FROM subscriptions s WHERE s.organization_id = ANY($2)
 				AND s.stripe_subscription_id IS NOT NULL AND NOT s.cancel_at_period_end
-				AND s.status NOT IN ('canceled', 'incomplete_expired'))`,
-		userID, owned).Scan(&shared, &billed)
+				AND s.status NOT IN ('canceled', 'incomplete_expired')),
+			EXISTS (SELECT 1 FROM agencies a WHERE a.owner_user_id = $1
+				AND a.stripe_subscription_id IS NOT NULL AND NOT a.cancel_at_period_end
+				AND a.status NOT IN ('canceled', 'incomplete_expired'))`,
+		userID, owned).Scan(&shared, &billed, &agencyBilled)
 	switch {
 	case err != nil:
 		return err
@@ -506,6 +527,8 @@ func accountDeletable(ctx context.Context, tx pgx.Tx, userID uuid.UUID, owned []
 		return ErrAccountHoldsSharedWork
 	case billed:
 		return ErrOwnedWorkspaceBilled
+	case agencyBilled:
+		return ErrOwnedAgencyBilled
 	}
 	return nil
 }

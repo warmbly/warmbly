@@ -5,6 +5,8 @@ description: "Warmbly watches your sending and tells you what to fix, on the pag
 
 The Advisor checks your workspace for problems that quietly hurt cold outreach, such as climbing complaints or a domain missing DMARC. It says what is wrong and what to do, on the page where the problem is.
 
+It only speaks up when something is hurting deliverability or stopping mail from going out, and never about a choice that is yours to make. A one-email campaign, a long follow-up gap, a single copy variant or a high cap on a mailbox with clean numbers is left alone.
+
 ## Fix a finding
 
 <Steps>
@@ -37,14 +39,12 @@ Apply the fix. **Done** offers **Undo** where the change can be reverted.
 
 ## Good to know
 
-- Core detection uses explicit rules and thresholds, works with no AI configured, and never charges the workspace balance. Optional TypeSafe copy reviews are automated judgments.
+- Detection uses explicit rules and thresholds, works with no AI configured, and never charges the workspace balance.
 - A check stays quiet until it has enough data, for example `100` sends in 30 days for complaint rate.
 - Nothing is applied until you have seen the **What changes** screen, and the change runs with your permissions.
 - Autopilot, under **Settings > Workspace**, is off by default and only takes bounded fixes that can be undone.
 - **Snooze** hides a finding for a week or a month. **Stop suggesting this** dismisses it until the problem clears and recurs.
-- Applied fixes leave the suggestions list immediately. Campaign, step and mailbox changes trigger a background recheck; findings that no longer apply disappear when it finishes. Saved copy is reviewed again if it changed, using cached judgments for unchanged content. If the review service is unavailable, its existing findings stay until a successful review.
-
-Follow-up spacing advice applies only after the campaign's first email. A zero-day wait on the first email is valid: it can send when the campaign's schedule and sending limits allow. The first email still receives content checks. With TypeSafe configured, a separate copy check can flag wording that reads as bulk marketing; that is a judgment about the message, not a recommendation to delay it or proof that it will land in spam.
+- Applied fixes leave the suggestions list immediately. Campaign, step and mailbox changes trigger a background recheck; findings that no longer apply disappear when it finishes.
 
 <Fold>
 
@@ -78,7 +78,7 @@ If one check fires on many things, they collapse into a single card ("19 mailbox
 
 ## How findings are made
 
-Core checks use explicit rules and thresholds over your workspace data. Optional TypeSafe copy reviews supply model judgments to the copy checks described below. A separate AI narrator rewrites explanations; it cannot create a finding, change its severity, or change what a fix does. Self-hosts with no AI configured still receive the core checks, and Advisor evaluations never charge the workspace balance.
+Checks use explicit rules and thresholds over your workspace data. A separate AI narrator rewrites explanations; it cannot create a finding, change its severity, or change what a fix does. Self-hosts with no AI configured receive every check, and Advisor evaluations never charge the workspace balance.
 
 ### Sample floors
 
@@ -90,8 +90,6 @@ A check stays quiet until it can be right. Two bounces in thirty sends is not a 
 | Bounce rate | `50` sends in 30 days |
 | Spam placement | `20` warmup deliveries in 7 days |
 | Warmup mail not arriving | `5` warmup emails to the mailbox in 7 days, from at least `2` workspaces |
-| Reply rate and copy | `200` sends in 30 days |
-| Per-step comparison | `100` sends on that step |
 
 ### Severity
 
@@ -110,25 +108,21 @@ Only the first two badge a nav tab.
 
 ## What it checks
 
-**Deliverability**: complaint rate per mailbox (warns `0.03%`, critical `0.10%`, matching Google's bulk-sender ceiling); bounce rate (warns `3%`, critical `5%`, where SES opens a review); spam placement on warmup mail at Google, Microsoft and Yahoo (warns `10%`, escalates `20%`, critical `50%`; other mail hosts are not counted, see [how spam placement is judged](/guides/warmup/#how-spam-placement-is-judged)); SPF and DMARC per sending domain (critical while sending cold, since Google requires them; an unchecked domain is never called failing, and DKIM is never reported missing because its selector is not discoverable from DNS); and whether a mailbox has its own verified tracking domain.
+**Deliverability**: complaint rate per mailbox (warns `0.03%`, critical `0.10%`, matching Google's bulk-sender ceiling); hard-bounce rate (warns `3%`, critical `5%`, where SES opens a review; a full mailbox, a reputation block or a temporary failure is not counted, as in the [pool's health model](/guides/warmup/)); spam placement on warmup mail at Google, Microsoft and Yahoo (warns `10%`, escalates `20%`, critical `50%`; other mail hosts are not counted, see [how spam placement is judged](/guides/warmup/#how-spam-placement-is-judged)); SPF and DMARC per sending domain of an active mailbox (critical while sending cold, since Google requires them; an unchecked domain is never called failing, and DKIM is never reported missing because its selector is not discoverable from DNS); and whether a mailbox has its own verified tracking domain, checked only when a running campaign tracks opens or links through it without a verified tracking domain of its own.
 
-**Mailbox configuration**: daily cap above the `50`/day safe band (gently with clean numbers, firmly without); a mailbox under `30` days old sending above `20`/day; a send gap under `5` minutes; unresolved errors on a mailbox campaigns still use; too few mailboxes carrying total volume; an inactive mailbox attached to a running campaign.
+**Mailbox configuration**: a daily cap above the `50`/day safe band on a mailbox that is bouncing or drawing complaints, or that sent more than `50` in the last day without `100` clean sends behind it (a high cap with clean numbers is your call and is not flagged); a mailbox under `30` days old that sent more than `20` cold emails in the last day (a high cap alone is not flagged, since the warmup graduation ramp holds a new mailbox below it); a send gap under `5` minutes; unresolved errors on a mailbox campaigns still use.
 
-**Warmup**: warmup off while sending cold (critical on a new mailbox); warmup left paused; a ceiling too low to balance cold volume (roughly half the cold cap); reply rate under `20%`, making warmup one-way; temporarily throttled sending, reported separately from quarantine or a pool block; none of the pool's warmup mail to the mailbox arriving, which stops the pool sending to it (see [unreachable mailboxes](/guides/warmup/#mailboxes-the-pool-cannot-reach)). Missing or stale Cloud status is reported separately from a real reputation ban, with steps to refresh it without disconnecting mailboxes.
+**Warmup**: warmup off, or paused, on a mailbox that sent cold mail this week (critical on a new mailbox; a stopped warmup counts as off). Neither is raised when the workspace's plan does not include warmup. Also: temporarily throttled sending, reported separately from quarantine or a pool block; none of the pool's warmup mail to the mailbox arriving, which stops the pool sending to it (see [unreachable mailboxes](/guides/warmup/#mailboxes-the-pool-cannot-reach)). Missing or stale Cloud status is reported separately from a real reputation ban, with steps to refresh it without disconnecting mailboxes.
 
 A **throttled** mailbox remains in the warmup pool. The advisor explains the automatic reduced sending pace rather than asking you to remove it from campaigns, wait a fixed week or manually re-enter the pool. Keep warmup running and do not increase its cap to bypass the slowdown. For placement throttles, half volume steps down to watch below `15%` spam placement, and watch lifts below `7.5%`; separate ramp limits still apply. Re-entry probation and other cooldowns follow the reason shown on the mailbox. A throttle alone does not mean the connection has failed or the provider has blocked the mailbox.
 
 The advisor's placement sample covers today and the preceding six UTC dates, matching the Deliverability display and placement-health decisions. After an upgrade, the next advisor evaluation replaces outdated throttle/exclusion guidance automatically. A campaign hold you already applied remains yours to release after checking any other findings.
 
-**Campaigns**: no follow-ups; reply rate under `1%` at volume, escalating under `0.3%`; one step replying below a quarter of the campaign's best (compared only against siblings, which share an audience); one-click unsubscribe off; a daily limit above what its mailboxes can send; no active sender; follow-up spacing outside `2` to `14` days; under `7` days of leads left; no A/B test at high volume; a sending window too narrow for the volume; contacts enrolled in several running campaigns.
+**Campaigns**: one-click unsubscribe off; a running campaign with no active sender.
 
-**Copy** (conservative, and drafts are skipped): a merge variable that will not resolve, shipping a literal `{{token}}`; two or more bulk-mail phrases (one is never flagged); over `200` words; a subject over `60` characters; more than two links in a first touch; a shouting subject.
+**Copy** (drafts are skipped): a merge variable that will not resolve, shipping a literal `{{token}}`; two or more bulk-mail phrases, matched as whole words (one is never flagged); more than two distinct links in the first email; a shouting subject. Links and capitals are measured on the copy as a recipient reads it: rendered for a contact with every field filled, with markup and `{{if}}` blocks gone. A follow-up sent in the same thread goes out under the first email's subject, so its own subject is not checked. Length, wording and calls to action are yours to judge and are not checked.
 
-Two more copy findings run only when the operator has configured TypeSafe (`TYPESAFE_API_KEY`), a calibrated reader model: an optional **wording review**, and a step with **no clear ask**, either asking for nothing or for several things. The wording review is low severity. Tone advice requires confident agreement that the copy sounds promotional and lacks relevance to the reader or their role. A business offer, a reusable template or a merge variable alone is not enough. Explicit guarantees, free-money or prize promises, and artificial urgency are checked separately. These are model assessments, not measurements of spam placement or reply likelihood. Dismiss a review that does not fit your message.
-
-Each step's subject and body are sent to TypeSafe for this, once per version of the copy and review policy. Verdicts are cached; saving unchanged content reuses its judgment. A policy update rechecks existing copy. At most `40` steps are judged per evaluation, and the rest wait for the next run.
-
-**List quality**: shared inboxes (`info@`, `sales@`) above `15%`; consumer domains above `40%` of a B2B list; suppressed contacts above `10%`; missing first names above `10%` when copy personalizes on them; unsubscribed contacts still enrolled.
+**List quality**: shared inboxes (`info@`, `sales@`) above `15%`; missing first names above `10%` when the copy prints the name with no fallback (a name inside `{{if .FirstName}}`, `{{with .FirstName}}`, `| default "there"` or `or` is covered); unsubscribed contacts still enrolled.
 
 </Fold>
 
@@ -146,7 +140,7 @@ Findings needing a judgement call have no settings preview. Their second screen 
 
 ### Fix with agent
 
-Findings whose fix edits something Warmbly owns (copy, sequence shape, list membership) offer **Fix with agent**: it reads the current campaign, step, or list, makes the smallest change that resolves the problem, and reports back.
+Findings whose fix edits something Warmbly owns (copy or list membership) offer **Fix with agent**: it reads the current campaign, step, or list, makes the smallest change that resolves the problem, and reports back.
 
 It runs as you, with your permissions, and only gets the tools that finding's category needs. A copy problem gets read access to the campaign and edit access to that step, nothing more. **No tool set can send mail, delete a campaign or contact, or touch team, billing, or API keys.** Each loop is charged to the workspace balance for the tokens it uses, typically a few cents.
 
@@ -170,7 +164,6 @@ Under **Settings > Workspace**, off by default. It only takes fixes that are bou
 - lowering a cap above the safe band, or one a new mailbox jumped to early
 - cutting the cap on a mailbox drawing complaints
 - widening a gap that is too short
-- matching a campaign's daily limit to its mailboxes' real capacity
 - turning on one-click unsubscribe
 
 **It never pauses sending, edits copy, starts or resumes warmup, or acts without an undo.** Eligible findings are marked **Auto** on the card whether or not it is on, so the set is visible before you enable it. It acts as the member who enabled it, with their permissions, logged as them, and stops if that person leaves. At most ten fixes per evaluation.

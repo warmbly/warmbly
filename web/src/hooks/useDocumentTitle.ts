@@ -2,12 +2,14 @@ import { useEffect } from "react";
 import { useLocation, useMatches } from "@tanstack/react-router";
 import { useCurrentOrg, useUnseenCount } from "@/stores";
 import { setFaviconBadge } from "@/lib/faviconBadge";
+import { currentPortal, portalBrandName } from "@/lib/portal";
 
-// "Section | Warmbly" from the deepest route's `staticData.title` in router.tsx.
+// "Section | Warmbly" from the deepest route's `staticData.title` in router.tsx; a portal names its agency instead.
 
-const BRAND = "Warmbly";
+const brand = () => portalBrandName(currentPortal(), "Warmbly");
 
 function titleForMatches(title: string | undefined, notFound: boolean): string {
+  const BRAND = brand();
   if (notFound) return `Page not found | ${BRAND}`;
   return title ? `${title} | ${BRAND}` : BRAND;
 }
@@ -17,6 +19,7 @@ function titleForMatches(title: string | undefined, notFound: boolean): string {
 //   "Warmbly"              ->  "Acme | Warmbly"
 function withOrg(base: string, org?: string): string {
   if (!org) return base;
+  const BRAND = brand();
   const suffix = ` | ${BRAND}`;
   if (base === BRAND) return `${org}${suffix}`;
   if (base.endsWith(suffix)) return `${base.slice(0, -suffix.length)} · ${org}${suffix}`;
@@ -47,7 +50,7 @@ export function useDocumentTitle(override?: string) {
     const onApp = pathname.startsWith("/app");
     const count = onApp ? unread : 0;
 
-    const base = override ? `${override} | ${BRAND}` : titleForMatches(title, notFound);
+    const base = override ? `${override} | ${brand()}` : titleForMatches(title, notFound);
     const titled = withOrg(base, onApp ? org?.name : undefined);
     const prefix = count > 0 ? `(${count > 99 ? "99+" : count}) ` : "";
     document.title = `${prefix}${titled}`;

@@ -18,6 +18,18 @@ import { EMPTY_DEAL_SEARCH } from "./lib/api/models/app/crm/SearchDeals";
 import { EMPTY_TASK_SEARCH } from "./lib/api/models/app/crm/SearchTasks";
 
 import { userQuery } from "./lib/api/hooks/auth/useUser";
+import {
+    agenciesQuery,
+    agencyAIBalanceQuery,
+    agencyClientsQuery,
+    agencyPlansQuery,
+    agencyStaffQuery,
+    agencyUsageQuery,
+    pickAgency,
+    readSelectedAgencyId,
+} from "./lib/api/hooks/app/agency/useAgency";
+import { agencyInboxQuery, agencyOverviewQuery, emptyInboxFilters } from "./lib/api/hooks/app/agency/useAgencyHome";
+import { agencyAPIKeysQuery } from "./lib/api/hooks/app/agency/useAgencyAPIKeys";
 import { authConfigQuery } from "./lib/api/hooks/auth/useAuthConfig";
 import { emailsListQuery } from "./lib/api/hooks/app/emails/useEmails";
 import { sendingDomainsQuery } from "./lib/api/hooks/app/emails/useSendingDomains";
@@ -36,7 +48,9 @@ import { apolloOverviewQuery, apolloSourcesQuery } from "./lib/api/hooks/app/int
 import { claySettingsQuery } from "./lib/api/hooks/app/integrations/useClay";
 import { leadFinderConfigQuery, leadSearchesQuery } from "./lib/api/hooks/app/leads/useLeads";
 import { suppressionsListQuery } from "./lib/api/hooks/app/suppressions/useSuppressions";
-import { formQuery, formsListQuery } from "./lib/api/hooks/app/forms";
+import { formQuery, formsDomainQuery, formsListQuery } from "./lib/api/hooks/app/forms";
+import { reportPreviewQuery, reportQuery, reportsListQuery } from "./lib/api/hooks/app/reports";
+import { agencyBrandQuery, workspaceBrandQuery } from "./lib/api/hooks/app/brand";
 import { campaignsListQuery } from "./lib/api/hooks/app/campaigns/useCampaigns";
 import { campaignQuery } from "./lib/api/hooks/app/campaigns/useCampaign";
 import { campaignSendersQuery } from "./lib/api/hooks/app/campaigns/useCampaignSenders";
@@ -195,6 +209,18 @@ export const suppressionsLoader = pageLoader((qc) => [
 export const formsLoader = pageLoader((qc) => [can("VIEW_CONTACTS") && qc.prefetchQuery(formsListQuery)]);
 
 export const formLoader = pageLoader((qc, { params }) => [can("VIEW_CONTACTS") && qc.prefetchQuery(formQuery(params.id))]);
+
+export const reportsLoader = pageLoader((qc) => [can("VIEW_ANALYTICS") && qc.prefetchInfiniteQuery(reportsListQuery)]);
+
+// The preview tab at the report's default range is what the page draws first.
+export const reportLoader = pageLoader((qc, { params, search }) =>
+    can("VIEW_ANALYTICS") && params.id
+        ? [
+              qc.prefetchQuery(reportQuery(params.id)),
+              !search.tab && !search.range && qc.prefetchQuery(reportPreviewQuery(params.id, undefined)),
+          ]
+        : [],
+);
 
 export const campaignsLoader = pageLoader((qc) =>
     can("VIEW_CAMPAIGNS")
@@ -399,6 +425,11 @@ export const membersLoader = pageLoader((qc) => [
     qc.prefetchQuery(rolesQuery),
 ]);
 
+export const brandingLoader = pageLoader((qc) => [
+    can("MANAGE_SETTINGS") && qc.prefetchQuery(workspaceBrandQuery),
+    can("MANAGE_SETTINGS") && qc.prefetchQuery(formsDomainQuery),
+]);
+
 export const teamsLoader = pageLoader((qc) => [qc.prefetchQuery(teamsQuery), qc.prefetchQuery(membersQuery)]);
 
 export const rolesLoader = pageLoader((qc) => [canManageTeam() && qc.prefetchQuery(rolesQuery)]);
@@ -430,3 +461,43 @@ export const billingLoader = pageLoader((qc, { params }) => {
         can("MANAGE_API_KEYS") && qc.prefetchQuery(apiKeyUsageSummaryQuery),
     ];
 });
+
+// Agency pages read the caller's agencies first, then the picked agency's data.
+function agencyPage(more: (qc: QueryClient, agencyId: string) => Prefetch[]): PageLoader {
+    return pageLoader((qc) => [
+        qc.fetchQuery(agenciesQuery).then((res) => {
+            const agency = pickAgency(res.data, readSelectedAgencyId());
+            return agency ? Promise.all(more(qc, agency.id)) : undefined;
+        }),
+    ]);
+}
+
+export const agencyLoader = agencyPage((qc, id) => [
+    qc.prefetchQuery(agencyOverviewQuery(id)),
+    qc.prefetchQuery(agencyClientsQuery(id)),
+    qc.prefetchQuery(agencyAIBalanceQuery(id)),
+]);
+export const agencyInboxLoader = agencyPage((qc, id) => [
+    qc.prefetchInfiniteQuery(agencyInboxQuery(id, emptyInboxFilters)),
+    qc.prefetchQuery(agencyClientsQuery(id)),
+]);
+export const agencyClientsLoader = agencyPage((qc, id) => [
+    qc.prefetchQuery(agencyClientsQuery(id)),
+    qc.prefetchQuery(agencyUsageQuery(id)),
+    qc.prefetchQuery(agencyAIBalanceQuery(id)),
+]);
+export const agencyStaffLoader = agencyPage((qc, id) => [qc.prefetchQuery(agencyStaffQuery(id))]);
+export const agencyUsageLoader = agencyPage((qc, id) => [qc.prefetchQuery(agencyUsageQuery(id)), qc.prefetchQuery(agencyAIBalanceQuery(id))]);
+export const agencyBrandingLoader = agencyPage((qc, id) => [qc.prefetchQuery(agencyBrandQuery(id))]);
+// Only owners and admins can list the keys, so nobody else prefetches them.
+export const agencyAPIKeysLoader = pageLoader((qc) => [
+    qc.fetchQuery(agenciesQuery).then((res) => {
+        const agency = pickAgency(res.data, readSelectedAgencyId());
+        return agency?.role === "owner" || agency?.role === "admin" ? qc.prefetchInfiniteQuery(agencyAPIKeysQuery(agency.id)) : undefined;
+    }),
+]);
+export const agencyBillingLoader = agencyPage((qc, id) => [
+    qc.prefetchQuery(agencyPlansQuery),
+    qc.prefetchQuery(agencyUsageQuery(id)),
+    qc.prefetchQuery(agencyAIBalanceQuery(id)),
+]);

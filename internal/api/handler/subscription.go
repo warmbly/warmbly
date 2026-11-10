@@ -86,6 +86,14 @@ func (h *Handler) CreateCheckoutSession(c *gin.Context) {
 		return
 	}
 
+	// An agency client's plan is the agency's; buying one here would bill twice.
+	if h.AgencyService != nil {
+		if ref := h.AgencyService.AgencyOf(c.Request.Context(), *orgID); ref != nil {
+			errx.JSON(c, errx.NewWithIdentifier(errx.Conflict, "agency_billed", "This workspace is billed through its agency. Manage the plan from the agency's billing settings."))
+			return
+		}
+	}
+
 	// Sells public plans; a private one only to a workspace holding an open offer for it.
 	if xerr := h.authorizePlanPurchase(c, *orgID, req.PriceID, uuid.Nil); xerr != nil {
 		errx.JSON(c, xerr)

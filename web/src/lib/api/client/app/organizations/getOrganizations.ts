@@ -10,6 +10,7 @@ interface RawMembership {
     permissions?: number;
     access_scope?: Organization["access_scope"];
     scope_actions?: number;
+    agency?: Organization["agency"];
     organization?: {
         id: string;
         name: string;
@@ -47,6 +48,7 @@ export default async function getOrganizations(): Promise<Organization[]> {
             permissions: r.permissions,
             access_scope: r.access_scope ?? "workspace",
             scope_actions: r.scope_actions ?? 0,
+            agency: r.agency ?? undefined,
             created_at: new Date(r.organization!.created_at),
         }));
 }

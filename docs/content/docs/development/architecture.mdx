@@ -39,6 +39,7 @@ flowchart LR
 | Consumer | Go | Control | Event bus processor → Postgres |
 | Tracking | Rust (Axum) | Control | Open/click pixels and redirects → event bus |
 | Forms | Go (Gin) + React (TanStack) | Control | Hosted form pages (`forms/` app), embeds and public submissions → backend internal API |
+| Portal | JavaScript (Workers runtime) + React (TanStack) | Control | Client connect pages, shared reports and their embed (`portal/` app) on `PORTAL_DOMAIN` and agency portal domains, plus the dashboard on the latter → backend internal API on `PORTAL_EDGE_TOKEN`. A Cloudflare Worker on Warmbly Cloud, the `portal` image (workerd) on a self-host, where it also hands any host that is not a portal domain to tracking (`FALLBACK_ORIGIN`). Stores nothing |
 | Realtime | Elixir (Phoenix) | Control | WebSocket fanout |
 | Worker | Go | Execution | One per VPS; subscribes to a per-worker event bus topic; never opens a Postgres connection |
 | Web | React (Vite) | n/a | Dashboard frontend |

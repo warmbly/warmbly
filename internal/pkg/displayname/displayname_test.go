@@ -59,6 +59,19 @@ func TestCheck(t *testing.T) {
 		{"1234", Person, NoLetter},
 		{"!!!", Workspace, NoLetter},
 		{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Person, TooLong},
+		{"Welcome back", Heading, OK},
+		{"Sign in to see how your campaigns are doing. Questions? Ask your account manager.", Message, OK},
+		{strings.Repeat("a", HeadingMaxLength), Heading, OK},
+		{strings.Repeat("a", HeadingMaxLength+1), Heading, TooLong},
+		{strings.Repeat("é", MessageMaxLength), Message, OK},
+		{strings.Repeat("a", MessageMaxLength+1), Message, TooLong},
+		{"Sign in at portal.agency.com", Message, Link},
+		{"Write to help@agency.com", Message, Link},
+		{"Welcome <b>back</b>", Heading, Characters},
+		{"Welcome\u202eback", Heading, Characters},
+		{"Line one\nline two", Message, Characters},
+		{"2026", Heading, OK},
+		{"...", Message, NoLetter},
 	}
 	for _, c := range cases {
 		if _, got := Check(c.in, c.kind); got != c.want {

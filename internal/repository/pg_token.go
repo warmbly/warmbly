@@ -31,6 +31,8 @@ type TokenRepository interface {
 	// Organization switching
 	UpdateCurrentOrganization(ctx context.Context, sessionID uuid.UUID, orgID *uuid.UUID) *errx.Error
 	DefaultOrganization(ctx context.Context, userID uuid.UUID) (*uuid.UUID, *errx.Error)
+	// DefaultOrganizationInAgency is DefaultOrganization among agencyID's client workspaces only.
+	DefaultOrganizationInAgency(ctx context.Context, userID, agencyID uuid.UUID) (*uuid.UUID, *errx.Error)
 	ClearOrganization(ctx context.Context, userID, orgID uuid.UUID) ([]uuid.UUID, *errx.Error)
 }
 
@@ -51,13 +53,13 @@ func (r *tokenRepository) GenerateSession(ctx context.Context, tx pgx.Tx, sessio
 		 created_at, expires_at, last_refreshed_at, revoked_at,
 		 access_nonce, refresh_nonce,
 		 location_city, location_region, location_country, location_country_code, location_postal_code,
-		 os_name, browser_name, auth_provider, mfa_verified, reauth_at
+		 os_name, browser_name, auth_provider, mfa_verified, reauth_at, portal_agency_id
 		) VALUES (
 		 $1, $2, $3,
 		 $4, $5, $6, $7,
 		 $8, $9,
 		 $10, $11, $12, $13, $14,
-		 $15, $16, $17, $18, $19
+		 $15, $16, $17, $18, $19, $20
 		)
 	`
 
@@ -66,7 +68,7 @@ func (r *tokenRepository) GenerateSession(ctx context.Context, tx pgx.Tx, sessio
 		session.CreatedAt, session.ExpiresAt, session.LastRefreshedAt, session.RevokedAt,
 		session.AccessNonce, session.RefreshNonce,
 		session.LocationCity, session.LocationRegion, session.LocationCountry, session.LocationCountryCode, session.LocationPostalCode,
-		session.OSName, session.BrowserName, session.AuthProvider, session.MFAVerified, session.ReauthAt,
+		session.OSName, session.BrowserName, session.AuthProvider, session.MFAVerified, session.ReauthAt, session.PortalAgencyID,
 	}
 
 	_, err := tx.Exec(
@@ -88,7 +90,7 @@ func (r *tokenRepository) GetSession(ctx context.Context, sessionID uuid.UUID) (
 		 created_at, expires_at, last_refreshed_at, revoked_at,
 		 access_nonce, refresh_nonce,
 		 location_city, location_region, location_country, location_country_code, location_postal_code,
-		 os_name, browser_name, auth_provider, mfa_verified, reauth_at
+		 os_name, browser_name, auth_provider, mfa_verified, reauth_at, portal_agency_id
 		FROM sessions
 		WHERE id = $1
 	`
@@ -108,7 +110,7 @@ func (r *tokenRepository) GetSession(ctx context.Context, sessionID uuid.UUID) (
 		&sess.CreatedAt, &sess.ExpiresAt, &sess.LastRefreshedAt, &sess.RevokedAt,
 		&sess.AccessNonce, &sess.RefreshNonce,
 		&sess.LocationCity, &sess.LocationRegion, &sess.LocationCountry, &sess.LocationCountryCode, &sess.LocationPostalCode,
-		&sess.OSName, &sess.BrowserName, &sess.AuthProvider, &sess.MFAVerified, &sess.ReauthAt,
+		&sess.OSName, &sess.BrowserName, &sess.AuthProvider, &sess.MFAVerified, &sess.ReauthAt, &sess.PortalAgencyID,
 	)
 	if err != nil {
 		// A missing session row is an expected auth outcome, not a server
@@ -136,7 +138,7 @@ func (r *tokenRepository) ListSessionsByUser(ctx context.Context, userID uuid.UU
 		 created_at, expires_at, last_refreshed_at, revoked_at,
 		 access_nonce, refresh_nonce,
 		 location_city, location_region, location_country, location_country_code, location_postal_code,
-		 os_name, browser_name, auth_provider, mfa_verified, reauth_at
+		 os_name, browser_name, auth_provider, mfa_verified, reauth_at, portal_agency_id
 		FROM sessions
 		WHERE user_id = $1
 		  AND revoked_at IS NULL
@@ -161,7 +163,7 @@ func (r *tokenRepository) ListSessionsByUser(ctx context.Context, userID uuid.UU
 			&sess.CreatedAt, &sess.ExpiresAt, &sess.LastRefreshedAt, &sess.RevokedAt,
 			&sess.AccessNonce, &sess.RefreshNonce,
 			&sess.LocationCity, &sess.LocationRegion, &sess.LocationCountry, &sess.LocationCountryCode, &sess.LocationPostalCode,
-			&sess.OSName, &sess.BrowserName, &sess.AuthProvider, &sess.MFAVerified, &sess.ReauthAt,
+			&sess.OSName, &sess.BrowserName, &sess.AuthProvider, &sess.MFAVerified, &sess.ReauthAt, &sess.PortalAgencyID,
 		); err != nil {
 			db.CaptureError(err, "", nil, "scan")
 			return nil, errx.InternalError()
@@ -420,6 +422,27 @@ func (r *tokenRepository) DefaultOrganization(ctx context.Context, userID uuid.U
 			return nil, nil
 		}
 		db.CaptureError(err, query, []any{userID}, "queryrow")
+		return nil, errx.InternalError()
+	}
+	return &orgID, nil
+}
+
+func (r *tokenRepository) DefaultOrganizationInAgency(ctx context.Context, userID, agencyID uuid.UUID) (*uuid.UUID, *errx.Error) {
+	const query = `
+		SELECT m.organization_id
+		FROM organization_members m
+		JOIN organizations o ON o.id = m.organization_id
+		JOIN agency_clients ac ON ac.organization_id = m.organization_id AND ac.agency_id = $2
+		WHERE m.user_id = $1 AND o.deletion_scheduled_for IS NULL
+		ORDER BY (o.owner_user_id = $1) DESC, m.invited_at, m.organization_id
+		LIMIT 1
+	`
+	var orgID uuid.UUID
+	if err := r.DB.QueryRow(ctx, query, userID, agencyID).Scan(&orgID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		db.CaptureError(err, query, []any{userID, agencyID}, "queryrow")
 		return nil, errx.InternalError()
 	}
 	return &orgID, nil

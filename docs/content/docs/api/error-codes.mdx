@@ -249,12 +249,13 @@ Each registered key may make 30 protected calls per hour. Past that the call ans
 
 #### Account deletion refusals
 
-Scheduling an account deletion is refused with one of these codes, or with `organization_cloud_connected` (see [Cloud connection refusals](#cloud-connection-refusals)) when a workspace it owns is connected to Warmbly Cloud. The same checks run again when the 30-day grace period ends: if either still applies, the deletion stays pending, is checked again a day later, and the account is kept until it completes.
+Scheduling an account deletion is refused with one of these codes, or with `organization_cloud_connected` (see [Cloud connection refusals](#cloud-connection-refusals)) when a workspace it owns is connected to Warmbly Cloud. The same checks run again when the 30-day grace period ends: if any still applies, the deletion stays pending, is checked again a day later, and the account is kept until it completes.
 
 | `code` | Status | Meaning |
 |--------|--------|---------|
 | `account_has_shared_work` | 409 | The account still holds mailboxes, contacts, campaigns, campaign attachments, reply templates, API keys, apps or shared assistant conversations in a workspace it does not own. Remove them before scheduling deletion of the account |
 | `workspace_subscription_active` | 409 | A workspace the account owns has a subscription that will renew. Cancel it before scheduling deletion of the account |
+| `agency_subscription_active` | 409 | An [agency](/guides/agencies/) the account owns has a plan that will renew. Cancel it under **Agency > Billing** before scheduling deletion of the account |
 
 #### Partnership refusals
 
@@ -369,11 +370,11 @@ A mailbox warmed by Warmbly Cloud has its warmup settings changed through the cl
 
 | `code` | Status | Meaning |
 |--------|--------|---------|
-| `invalid_name` | 400 | A first name, last name, workspace name, company name, OAuth app name or mailbox display name broke the naming rules. The `message` names the field and the rule |
+| `invalid_name` | 400 | A first name, last name, workspace name, company name, client report name, brand name, OAuth app name or mailbox display name broke the naming rules. The `message` names the field and the rule |
 
 Names are shown to other people, including in invitation and notification emails, so they carry plain text only. The same rules apply to the dashboard, the API, the setup page and `warmblyctl`:
 
-- a first or last name is at most 50 characters and contains a letter; a workspace or company name is at most 64 characters and contains a letter or a number; a mailbox display name keeps its own 2 to 100 character bound
+- a first or last name is at most 50 characters and contains a letter; a workspace, company or client report name is at most 64 characters and contains a letter or a number; a mailbox display name keeps its own 2 to 100 character bound
 - no links, web addresses or email addresses: nothing with `@`, `//`, `www.` or a scheme such as `https:`, no hostname such as `example.com`, and no IP address. Full-width and ideographic dots count as dots
 - no control characters, invisible formatting characters (zero-width and bidirectional overrides), `<`, `>`, `` ` `` or `\`, and no more than three stacked combining marks
 - leading and trailing spaces are trimmed and runs of spaces become one, and that is the form stored
@@ -489,7 +490,7 @@ The [inbox vendor](/guides/mailbox-import/#import-from-an-inbox-vendor) routes (
 | `pool_link_oauth_unknown` | 409 | The provider exchange has no confirmed committed mailbox. Do not retry the authorization code or infer success; remove the pending connection before starting new explicit consent |
 | `cli_auth_scopes_role` | 403 | Approving a [CLI sign-in](/api/cli/#scopes): your role in the chosen workspace allows none of the scopes the CLI asked for. Pick another workspace, or ask for narrower scopes with `--scopes` |
 | `sending_domain_bulk_invalid` | 400 | A bulk setup named no domain, more than 100, neither a `tracking_label` nor a `redirect_url`, a `tracking_label` that is not one DNS label, or a `served_by` other than `instance` or `cloud` |
-| `forms_domain_taken` | 409 | Another workspace on this instance has already verified this domain, as its forms domain, a tracking domain or a redirect. Returned when saving or verifying the workspace's custom forms domain. Nothing changes |
+| `forms_domain_taken` | 409 | Another workspace on this instance has already verified this domain, as its forms domain, a tracking domain or a redirect, or an agency holds it as its portal domain. Returned when saving or verifying the workspace's custom forms domain. Nothing changes |
 | `lead_sync_target_not_found` | 400 | Creating or editing a [lead sync](/guides/contacts-crm/) source named a target campaign or a category that does not exist in this workspace. Nothing is saved |
 | `tracking_domain_taken` | 409 | Another workspace on this instance has already verified this tracking domain, on a mailbox, as a campaign's override, or as its forms domain. Returned when saving or verifying a mailbox's tracking domain, applying one to a sending domain (including bulk setup), and verifying a campaign's override. Nothing changes |
 | `tracking_host_not_configured` | 400 | This instance has no tracking host (`TRACKING_DOMAIN`), so it cannot serve a tracking domain or a redirect |
@@ -670,6 +671,119 @@ The [CompanyEnrich query and contact-enrichment endpoints](/api/reference/integr
 | `companyenrich_rate_limited` | 429 | The provider's rate limit was reached. Wait before explicitly running another request. |
 
 Warmbly does not automatically retry CompanyEnrich data requests. A contact-save failure does not undo a completed provider lookup or refund its charge.
+
+#### Copy to workspace refusals
+
+`POST /campaigns/:id/copy-to` and `POST /templates/copy-to` refuse the whole request with these codes and copy nothing. A workspace the caller cannot write is reported inside the `200` answer instead, as that entry's `error`.
+
+| `code` | Status | Meaning |
+|--------|--------|---------|
+| `copy_destinations_limit` | 400 | `organization_ids` named more than 10 workspaces |
+| `copy_templates_limit` | 400 | `template_ids` named more than 50 templates |
+| `cross_workspace_copy_requires_session` | 403 | An API key or OAuth token asked to copy into a workspace other than its own. Copy from the dashboard, signed in as a member of both |
+| `member_access_restricted` | 403 | A member restricted to selected campaigns asked to copy templates |
+| `not_found` | 404 | The campaign, or one of the `template_ids`, is not in this workspace or not shared with the caller |
+| `copy_destination_forbidden` | per workspace | In a result entry: the caller is not a member of that workspace with the Manage campaigns permission and access to the whole workspace |
+| `storage_limit_reached` | per workspace | In a result entry: the campaign's attachments would pass that workspace's storage quota |
+
+#### Client report refusals
+
+The [client report](/guides/client-reports/) routes answer these codes. The public report page answers `not_found` for a link that is unknown, expired, revoked or opened on another workspace's custom domain, and `invalid_range` for a `range` it does not offer.
+
+| `code` | Status | Meaning |
+|--------|--------|---------|
+| `invalid_report_scope` | 400 | `access` named a campaign, campaign folder or mailbox outside the workspace, more than 500 of one kind, a `scope` other than `workspace` or `restricted`, or a `restricted` scope with nothing in it |
+| `invalid_report_range` | 400 | `date_range` or `range` is not `last_7_days`, `last_30_days`, `this_month` or `last_month` |
+| `invalid_report_sections` | 400 | Every section is off. Turn on at least one |
+| `invalid_report_link` | 400 | `expires_in_days` is outside 1 to 365 |
+| `invalid_report_schedule` | 400 | The schedule cannot run: no recipients or more than 10, an address with a display name or not an address, an unknown `cadence`, `weekday`, `month_day` or `hour` out of range, or a `timezone` that is not an IANA zone |
+| `invalid_name` | 400 | The report `name` is empty, too long, or contains a link or address. See [name refusals](#name-refusals) |
+| `report_not_found` | 404 | The report does not exist in the selected workspace |
+| `report_limit_reached` | 409 | The workspace already has 200 reports |
+| `report_links_unavailable` | 422 | The instance has no portal service (`PORTAL_DOMAIN`), so a link or a scheduled email would point nowhere |
+| `report_emails_unavailable` | 422 | The instance has no outgoing mail configured, so a schedule could not send |
+
+#### Agency refusals
+
+The [agency](/guides/agencies/) routes answer these codes.
+
+| `code` | Status | Meaning |
+|--------|--------|---------|
+| `invalid_name` | 400 | The agency or client `name` is empty, too long, or contains a link or address. See [name refusals](#name-refusals) |
+| `invalid_email` | 400 | The staff `email` is not a plain address |
+| `invalid_agency_role` | 400 | `role` is not `admin` or `member` |
+| `invalid_monthly_send_limit` | 400 | `monthly_send_limit` is below 0 or above 100,000,000, or is not a whole number |
+| `invalid_monthly_ai_limit` | 400 | `monthly_ai_limit_usd` is below $0 or above $50,000, or is not a number |
+| `invalid_ai_amount` | 400 | `amount_usd` is outside $1 to $5,000 for a move into a client, or $5 to $5,000 for an AI balance purchase |
+| `agency_plan_unavailable` | 400 | The plan is not an agency plan, or has no price for that interval yet |
+| `agency_no_subscription` | 400 | A top-up, an AI balance purchase or the billing portal before the agency has a plan |
+| `agency_pool_unlimited` | 400 | A top-up on a plan with no send pool cap |
+| `invalid_cursor` | 400 | `GET /agency/:agencyId/inbox` was given a `cursor` this API did not issue. Start again without one |
+| `invalid_limit` | 400 | `GET /agency/:agencyId/inbox` was given a `limit` outside 1 to 100 |
+| `agency_ai_balance_insufficient` | 402 | `POST /agency/:agencyId/clients/:orgId/ai-balance` asked to move more than the agency's AI balance holds. Nothing moves |
+| `agency_forbidden` | 403 | The caller's agency role cannot make this change: members change nothing, admins cannot make or change admins |
+| `agency_owner_fixed` | 403 | The owner cannot be removed or given another role |
+| `agency_client_not_owner` | 403 | Only a workspace's owner can bring it into an agency |
+| `agency_limit_reached` | 403 | The account already owns five agencies |
+| `agency_leave_not_owner` | 403 | `POST /organization/agency/leave` from someone other than the workspace's owner |
+| `agency_client_inbox_forbidden` | 403 | `GET /agency/:agencyId/inbox/thread` or `/inbox/messages/:messageId` for a client where the caller is not a member, lacks **Use unified inbox**, or is restricted to no mailboxes |
+| `agency_not_found` | 404 | The agency does not exist, or the caller is not on its staff |
+| `agency_staff_not_found` | 404 | The person is not on the agency's staff |
+| `agency_client_not_found` | 404 | The workspace is not one of this agency's clients, including an `organization_id` on the agency inbox routes |
+| `agency_client_taken` | 409 | The workspace already belongs to an agency |
+| `agency_client_has_subscription` | 409 | The workspace pays for its own plan. Cancel it in the workspace's billing first |
+| `agency_already_subscribed` | 409 | The agency already has a plan; change it in the billing portal |
+| `agency_billed` | 409 | `POST /subscription/checkout` on a client workspace, whose plan comes from its agency |
+| `agency_leave_agency_owner` | 409 | `POST /organization/agency/leave` on a workspace whose owner also owns the agency. Detach it with `DELETE /agency/:agencyId/clients/:orgId` instead |
+| `agency_billing_disabled` | 503 | The instance does not bill agencies (`BILLING_PROVIDER=none`); every agency feature is already available. Also the answer to moving or buying AI balance where AI is not charged |
+
+#### Agency API key refusals
+
+An [agency API key](/api/authentication/#agency-api-keys) is refused with these codes, on top of the ordinary key codes (`unauthorized` for an unknown, revoked or expired key, `rate_limit_exceeded`, and `forbidden` for a missing permission bit).
+
+| `code` | Status | Meaning |
+|--------|--------|---------|
+| `agency_key_organization_required` | 400 | A workspace endpoint was called with an agency key and no valid client workspace id in the `Warmbly-Organization` header |
+| `invalid_agency_key_permissions` | 400 | `POST /agency/:agencyId/api-keys` with no permission, an unknown bit, `API_KEYS`, `REALTIME_SUBSCRIBE` or `CONNECT_EMAILS` |
+| `agency_key_holder_left` | 401 | The owner or admin who created the key is no longer an owner or admin of the agency, or no longer has a membership in the client workspace named. Create a new key |
+| `agency_key_not_client` | 403 | The workspace in `Warmbly-Organization` is not a client of the key's agency, including one that was detached |
+| `agency_key_not_allowed` | 403 | A route an agency key cannot call: session-only routes, agency billing and settings writes, workspace API key and OAuth app management, and the MCP server |
+| `agency_key_ip_not_allowed` | 403 | The request came from an address outside the key's `allowed_ips` |
+| `agency_credential_required` | 403 | An agency route was called with a workspace API key or an OAuth token. Use a session or an agency key |
+| `agency_api_key_not_found` | 404 | `PATCH` or `DELETE /agency/:agencyId/api-keys/:keyId` for a key this agency does not have (or, for `PATCH`, one already revoked) |
+
+#### White-label refusals
+
+`/organization/brand` and `/agency/:agencyId/brand` answer these codes. See [white-label](/guides/white-label/).
+
+| `code` | Status | Meaning |
+|--------|--------|---------|
+| `invalid_name` | 400 | The brand `display_name` contains a link or address, or is too long. See [name refusals](#name-refusals) |
+| `invalid_accent_color` | 400 | `accent_color` is not a six-digit hex colour like `#0284c7` |
+| `invalid_website_url` | 400 | `website_url` is not an absolute `https://` address with a domain, or carries a user name or password |
+| `invalid_portal_domain` | 400 | The agency portal `domain` is not a host name, or is one of this instance's own hosts |
+| `invalid_portal_sign_in` | 400 | `portal_sign_in` on `PUT /agency/:agencyId/brand` is not `portal` or `warmbly` |
+| `invalid_theme` | 400 | A `theme` field on `PUT /agency/:agencyId/brand` holds a value outside its list: `font`, `corners`, `appearance`, `sign_in_layout` or `sign_in_background`. The `message` names the field and the values it takes. See [portal theme](/api/endpoints/#portal-theme) |
+| `invalid_brand_text` | 400 | `theme.sign_in_heading` is over 60 characters or `theme.sign_in_message` is over 200, or one of them contains a link, a web or email address, markup or control characters, or no letter or number. The content rules are the [name rules](#name-refusals). The `message` names the field and the rule |
+| `invalid_brand_link` | 400 | `theme.support_url`, `theme.terms_url` or `theme.privacy_url` is not an absolute `https://` address with a domain, or `theme.support_email` is not a plain email address like `help@example.com`. The `message` names the field |
+| `image_unreadable`, `image_format_not_allowed`, `image_too_large`, `image_dimensions_too_large` | 400 | The logo is not a PNG or JPG up to 2 MB and 1024px on each side, the agency's tab icon is not a PNG up to 1 MB and 512px on each side, or its sign-in image is not a PNG or JPG up to 4 MB and 2560px on each side. The `message` says which image and what is accepted |
+| `white_label_not_entitled` | 403 | Turning `hide_powered_by` on without Agency Pro, Agency Scale or Enterprise. A value already stored saves unchanged |
+| `agency_forbidden` | 403 | Agency staff other than the owner and admins changing the agency's brand |
+| `agency_not_found` | 404 | The agency does not exist, or the caller is not on its staff |
+| `portal_domain_taken` | 409 | Another agency or workspace on this instance holds the portal domain. Nothing changes |
+
+#### Portal session refusals
+
+A session signed in on an agency's [portal domain](/guides/white-label/#where-clients-sign-in) reaches only that agency's client workspaces. These codes answer what it cannot reach, and the sign-in that hands such a portal its session.
+
+| `code` | Status | Meaning |
+|--------|--------|---------|
+| `portal_handoff_invalid` | 400 | `POST /auth/portal/exchange` with a code that expired, was already spent, or came from an origin other than the portal it was issued for. Every attempt spends the code. Sign in again from the portal |
+| `portal_session_restricted` | 403 | A portal session called an account-level route (password, two-factor, passkeys, sign-in methods, sessions, account deletion, creating a workspace or an agency, accepting an invitation to a workspace outside the agency, OAuth consent, CLI and pool link approvals, workspace and agency API key creation, the Warmbly Cloud link or the admin routes), switched to or named a workspace that is not a current client of the agency, or named another agency. The message names the main address, where signing in reaches everything the account can |
+| `portal_registration_closed` | 403 | `POST /auth/register` or `/auth/register/confirm` sent from a portal domain without an invitation. Accounts there are set up from the link in an invitation; an invitation for a different address answers `invitation_invalid` |
+| `portal_sign_in_elsewhere` | 403 | A sign-in sent from a portal whose agency signs its clients in on the main address. Sign in there; it returns you to the portal |
+| `portal_handoff_origin` | 403 | `POST /auth/portal/handoff` from anywhere but the main dashboard address, or from a session signed in on a portal |
+| `portal_not_found` | 404 | `POST /auth/portal/handoff` for a host that is not a verified portal whose agency signs its clients in on the main address |
 
 #### Automation refusals
 
@@ -1203,7 +1317,7 @@ A `400` from `POST /campaigns/:id/attachments` means the new file is unsupported
 
 #### `storage_limit_reached`
 
-A `400` whose `code` is `storage_limit_reached` comes from `POST /campaigns/:id/attachments`, from `POST /email-images`, and from a campaign duplicate that would copy attachments. The workspace's stored bytes, its attachments across every campaign plus its email image library, would pass the quota. The check and the write happen together under one per-workspace lock shared by both, so two uploads racing for the last of the quota cannot both get in. Nothing was stored.
+A `400` whose `code` is `storage_limit_reached` comes from `POST /campaigns/:id/attachments`, from `POST /email-images`, and from a campaign duplicate that would copy attachments. A copy to another workspace reports it per workspace, inside its `200` answer. The workspace's stored bytes, its attachments across every campaign plus its email image library, would pass the quota. The check and the write happen together under one per-workspace lock shared by both, so two uploads racing for the last of the quota cannot both get in. Nothing was stored.
 
 ```json
 {
@@ -1516,6 +1630,36 @@ Attempt budgets use existing `rate_limit_exceeded`. Auth/MFA/reauth and
 dependency failures keep existing codes. Redis failures never authorize a
 single-factor or anonymous admin. [Node diagnostics](/api/endpoints/#platform-node-diagnostics)
 use generic errors and explicit unavailable/stale coverage, not outage inference.
+
+## Client connect link errors
+
+[`POST /emails/client-links`](/api/endpoints/) refuses its input with:
+
+| `code` | Status | Meaning |
+|--------|--------|---------|
+| `client_link_invalid_providers` | 400 | `providers` is empty or names something other than `gmail`, `outlook` and `smtp_imap` |
+| `client_link_invalid_max_mailboxes` | 400 | `max_mailboxes` is outside 1 to 500 |
+| `client_link_invalid_expiry` | 400 | `expires_in_days` is outside 1 to 90 |
+| `client_link_invalid_tags` | 400 | More than 20 `tag_ids` |
+| `invalid_name` | 400 | The `label` contains a link, an address or characters that are not allowed |
+| `client_links_unavailable` | 503 | The instance has no portal service (`PORTAL_DOMAIN`), so there is nowhere to serve the page |
+
+The client's connect page shows these, each in its own words:
+
+| `code` | Status | Meaning |
+|--------|--------|---------|
+| `client_link_not_found` | 404 | No link has this address, or it is opened on another workspace's custom domain |
+| `client_link_expired` | 403 | The link is past its expiry |
+| `client_link_revoked` | 403 | The link was revoked, or the member who made it can no longer manage mailboxes |
+| `client_link_exhausted` | 409 | The link has connected every mailbox it allows |
+| `client_link_provider_not_allowed` | 400 | The link does not accept that kind of mailbox |
+| `client_link_provider_unavailable` | 400 | That sign-in is not configured on this instance |
+| `client_link_signin_expired` | 400 | The provider sign-in took longer than 10 minutes or was already used |
+| `client_link_signin_declined` | 400 | The client cancelled the sign-in at the provider |
+| `client_link_captcha_failed` | 400 | The security check on the server-details form did not pass |
+| `client_link_rate_limited` | 429 | Too many attempts through this link in the last hour |
+
+A workspace at its mailbox allowance refuses the connect with the usual `mailbox_allowance_reached`, which the page words for the client.
 
 ## Admin send hold errors
 

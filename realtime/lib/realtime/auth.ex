@@ -123,18 +123,36 @@ defmodule Realtime.Auth do
 
   def proxy_ip(_, _), do: :error
 
+  # The ticket purpose of a session signed in on an agency portal.
+  @portal_ws_purpose "portal_ws"
+
+  # Read through to_jsonb so the query also runs against a schema without portal_agency_id.
   @live_session_query """
-  SELECT mfa_verified FROM sessions
+  SELECT mfa_verified, to_jsonb(sessions) ->> 'portal_agency_id' FROM sessions
   WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL
     AND (expires_at IS NULL OR expires_at > now())
   """
 
-  # A ticket naming its session is accepted only while that session is live.
-  defp ticket_session(%{"session_id" => session_id}, user_id)
+  # A ticket naming its session is accepted only while that session is live, and carries the
+  # portal purpose exactly when that session is bound to an agency portal.
+  defp ticket_session(%{"session_id" => session_id} = claims, user_id)
        when is_binary(session_id) and session_id != "" do
     case dump_and_query(@live_session_query, [session_id, user_id]) do
-      {:ok, %{rows: [[mfa_verified] | _]}} ->
-        {:ok, %{session_id: session_id, mfa_verified: mfa_verified == true}}
+      {:ok, %{rows: [[mfa_verified | rest] | _]}} ->
+        portal_agency_id = portal_agency(rest)
+        portal_ticket? = claims["purpose"] == @portal_ws_purpose
+        bound? = not is_nil(portal_agency_id)
+
+        if portal_ticket? == bound? do
+          {:ok,
+           %{
+             session_id: session_id,
+             mfa_verified: mfa_verified == true,
+             portal_agency_id: portal_agency_id
+           }}
+        else
+          {:error, :wrong_token_purpose}
+        end
 
       {:ok, %{rows: []}} ->
         {:error, :session_revoked}
@@ -146,6 +164,9 @@ defmodule Realtime.Auth do
 
   # Every ticket names its session; one that does not is not a ticket.
   defp ticket_session(_claims, _user_id), do: {:error, :invalid_claims}
+
+  defp portal_agency([agency_id | _]) when is_binary(agency_id) and agency_id != "", do: agency_id
+  defp portal_agency(_), do: nil
 
   # Each ticket opens one socket; the marker outlives the ticket itself.
   defp claim_ticket(%{"sid" => ticket_id, "exp" => exp})
@@ -219,6 +240,7 @@ defmodule Realtime.Auth do
   def error_code(:permission_denied), do: 4010
   def error_code(:ip_not_allowed), do: 4010
   def error_code(:not_a_member), do: 4010
+  def error_code(:portal_session_restricted), do: 4010
   def error_code(:forbidden), do: 4010
   def error_code(:invalid_topic), do: 4005
   def error_code(:rate_limited), do: 4007
@@ -261,6 +283,10 @@ defmodule Realtime.Auth do
   def error_message(:rate_limited), do: "Rate limited"
   def error_message(:limit_exceeded), do: "Connection limit exceeded"
   def error_message(:not_a_member), do: "Not a member of this organization"
+
+  def error_message(:portal_session_restricted),
+    do: "A session signed in on an agency portal reaches only that agency's client workspaces"
+
   def error_message(:forbidden), do: "Access forbidden"
   def error_message(:not_found), do: "Resource not found"
   def error_message(_), do: "Authentication failed"
@@ -421,6 +447,46 @@ defmodule Realtime.Auth do
 
   def confine({:ok, _member}, _credential), do: {:error, :not_a_member}
   def confine(error, _credential), do: error
+
+  @doc """
+  Narrow a membership lookup to what the socket reaches: its credential's
+  workspace and scopes, and for a session signed in on an agency portal, only
+  that agency's client workspaces.
+  """
+  def confine_socket(result, assigns) do
+    result
+    |> confine(assigns[:credential])
+    |> confine_portal(assigns[:portal_agency_id])
+  end
+
+  @doc """
+  A portal session reaches a workspace only while it is a client of the
+  portal's agency; a lookup that names no workspace reaches nothing.
+  """
+  def confine_portal(result, nil), do: result
+
+  def confine_portal({:ok, %{organization_id: org_id} = member}, agency_id)
+      when not is_nil(org_id) do
+    case agency_client?(org_id, agency_id) do
+      {:ok, true} -> {:ok, member}
+      {:ok, false} -> {:error, :portal_session_restricted}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  def confine_portal({:ok, _member}, _agency_id), do: {:error, :portal_session_restricted}
+  def confine_portal(error, _agency_id), do: error
+
+  @agency_client_query "SELECT 1 FROM agency_clients WHERE organization_id = $1 AND agency_id = $2"
+
+  @doc false
+  def agency_client?(org_id, agency_id) do
+    case dump_and_query(@agency_client_query, [org_id, agency_id]) do
+      {:ok, %{rows: [_ | _]}} -> {:ok, true}
+      {:ok, %{rows: []}} -> {:ok, false}
+      {:error, _reason} -> {:error, :database_error}
+    end
+  end
 
   @doc false
   def matches_org?(_member, org_id) when org_id in [nil, ""], do: true
@@ -718,7 +784,9 @@ defmodule Realtime.Auth do
   # bound to a Redis nonce or a `sessions` row; this service checks neither.
   #
   # So the socket takes exactly one kind: the short-lived ticket minted by
-  # POST /v1/getaway for this purpose. Anything else is refused.
+  # POST /v1/getaway for this purpose. Anything else is refused. A session
+  # signed in on an agency portal gets its own ticket purpose, which only a
+  # release that holds such a session to its agency accepts.
   @ws_purpose "ws"
 
   defp validate_claims(%{"sub" => user_id, "exp" => exp} = claims) do
@@ -731,7 +799,7 @@ defmodule Realtime.Auth do
       exp < now ->
         {:error, :token_expired}
 
-      Map.get(claims, "purpose") != @ws_purpose ->
+      Map.get(claims, "purpose") not in [@ws_purpose, @portal_ws_purpose] ->
         {:error, :wrong_token_purpose}
 
       true ->

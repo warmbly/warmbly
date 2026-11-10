@@ -1,14 +1,15 @@
 // A hosted workspace without a subscription can manage mailboxes, its
 // Warmbly Cloud links and settings, and link a Slack account (whose workspace
 // need not be the selected one); every other page shows the full-screen
-// plan chooser until a plan is active.
+// plan chooser until a plan is active. Agency pages belong to the agency and
+// its own plan, not to the selected workspace.
 
 import React from "react";
 import { useLocation } from "@tanstack/react-router";
 import useFeatureAccess from "@/hooks/useFeatureAccess";
 import SubscriptionLockedScreen from "./SubscriptionLockedScreen";
 
-const OPEN_PREFIXES = ["/app/emails", "/app/settings", "/app/select-org", "/app/slack"];
+const OPEN_PREFIXES = ["/app/emails", "/app/settings", "/app/select-org", "/app/slack", "/app/agency"];
 
 // The Partnership plan drives Warmbly through its API and tests placement from its own mailboxes.
 const PARTNER_PREFIXES = ["/app/api-keys", "/app/placement"];
@@ -19,6 +20,7 @@ const FEATURE_BY_PREFIX: [string, string][] = [
     ["/app/contacts", "Contacts"],
     ["/app/leads", "The lead finder"],
     ["/app/analytics", "Analytics"],
+    ["/app/reports", "Client reports"],
     ["/app/deliverability", "Deliverability"],
     ["/app/crm", "The CRM"],
     ["/app/templates", "Templates"],

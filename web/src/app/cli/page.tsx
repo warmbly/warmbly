@@ -35,6 +35,10 @@ import type { CLIAuthCode } from "@/lib/api/models/app/cliauth/CLIAuth";
 import { useApproveCLIAuthCode, useCLIAuthCode, useCLIAuthGrant, useDenyCLIAuthCode } from "@/lib/api/hooks/app/cliauth/useCLIAuth";
 import ReauthModal from "@/components/app/modals/ReauthModal";
 
+import HelpLink from "@/components/shared/HelpLink";
+import { helpLink } from "@/lib/helpLink";
+
+const CLI_DOCS = "https://docs.warmbly.com/api/cli/";
 const CODE_LENGTH = 8;
 
 function clean(raw: string): string {
@@ -163,8 +167,8 @@ function CLIAuthInner() {
 
                 <div className="theme-solid mt-5 flex items-center justify-center gap-3 text-[12px] text-white/70">
                     <Link to="/app/emails" className="hover:text-white transition-colors">Back to dashboard</Link>
-                    <span className="text-white/40">·</span>
-                    <a href="https://docs.warmbly.com/api/cli/" target="_blank" rel="noreferrer" className="hover:text-white transition-colors">About the CLI</a>
+                    {helpLink(CLI_DOCS) && <span className="text-white/40">·</span>}
+                    <HelpLink href={CLI_DOCS} className="hover:text-white transition-colors" portalLabel="Support">About the CLI</HelpLink>
                 </div>
             </div>
             {/* Approving mints a lasting key, so it asks for a fresh sign-in like creating one does. */}
@@ -513,14 +517,13 @@ function DoneStep({ approved, info, orgName, onAnother }: { approved: boolean; i
                 >
                     API keys <ArrowRightIcon className="w-3.5 h-3.5" />
                 </Link>
-                <a
-                    href="https://docs.warmbly.com/api/cli/"
-                    target="_blank"
-                    rel="noreferrer"
+                <HelpLink
+                    href={CLI_DOCS}
                     className="h-10 px-4 rounded-md border border-slate-200 hover:border-slate-300 text-slate-800 text-[13.5px] font-medium inline-flex items-center gap-1.5 transition-colors"
+                    portalLabel={<>Support <ExternalLinkIcon className="w-3.5 h-3.5" /></>}
                 >
                     CLI docs <ExternalLinkIcon className="w-3.5 h-3.5" />
-                </a>
+                </HelpLink>
             </div>
             <button type="button" onClick={onAnother} className="mt-5 text-[12px] text-slate-500 hover:text-slate-900 transition-colors">
                 Authorize another terminal

@@ -150,4 +150,6 @@ type FormsDomainStatus struct {
 	// FormsHostUnresolvable reports that the install's own forms host does not
 	// resolve, which is an operator problem and not the customer's typo.
 	FormsHostUnresolvable bool `json:"forms_host_unresolvable"`
+	// EdgeRecords are the TXT records the edge provider in front of the forms service still needs before it serves the domain over HTTPS.
+	EdgeRecords []DNSRecord `json:"edge_records,omitempty"`
 }

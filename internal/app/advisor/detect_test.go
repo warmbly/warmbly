@@ -1,7 +1,6 @@
 package advisor
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,9 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/warmbly/warmbly/internal/app/copyjudge"
 	"github.com/warmbly/warmbly/internal/models"
-	"github.com/warmbly/warmbly/internal/pkg/typesafe"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -71,38 +68,6 @@ func findingsByKey(findings []Finding) map[string]Finding {
 		out[f.Key] = f
 	}
 	return out
-}
-
-func TestFollowUpSpacingExcludesTheFirstEmail(t *testing.T) {
-	for _, firstPosition := range []int{1, 3} {
-		t.Run(fmt.Sprintf("opener_at_%d", firstPosition), func(t *testing.T) {
-			campaignID, otherID := uuid.New(), uuid.New()
-			openerID, followupID := uuid.New(), uuid.New()
-			s := &repository.AdvisorSnapshot{
-				Campaigns: []repository.AdvisorCampaign{
-					{ID: campaignID, Name: "Outbound", Status: "active"},
-					{ID: otherID, Name: "Other", Status: "active"},
-				},
-				Steps: []repository.AdvisorStep{
-					{ID: followupID, CampaignID: campaignID, Kind: "email", Position: firstPosition + 1},
-					{ID: uuid.New(), CampaignID: campaignID, Kind: "action", Position: firstPosition - 1},
-					{ID: openerID, CampaignID: campaignID, Kind: "email", Position: firstPosition},
-					{ID: uuid.New(), CampaignID: otherID, Kind: "email", Position: 7},
-				},
-			}
-			got := detectFollowUpSpacing(s)
-			if len(got) != 1 || got[0].EntityID == nil || *got[0].EntityID != followupID {
-				t.Fatalf("only the follow-up should need spacing: %+v", got)
-			}
-			if got[0].Evidence["step_position"] != firstPosition+1 {
-				t.Fatalf("step position must match the stored position: %+v", got[0].Evidence)
-			}
-			s.Steps[0].WaitAfter = 3
-			if got := detectFollowUpSpacing(s); len(got) != 0 {
-				t.Fatalf("a three-day follow-up should need no spacing advice: %+v", got)
-			}
-		})
-	}
 }
 
 func TestHealthyMailboxProducesNoFindings(t *testing.T) {
@@ -236,15 +201,19 @@ func TestUnverifiedDKIMIsNotNamedAsMissing(t *testing.T) {
 	}
 }
 
-func TestNewMailboxAtFullVolumeIsFlagged(t *testing.T) {
+func TestNewMailboxIsFlaggedOnVolumeNotOnItsCap(t *testing.T) {
 	m := healthyMailbox()
 	m.AgeDays = 3
-	m.ColdSent30d = 0
-	m.ColdSent7d = 0
+	m.ColdSent30d, m.ColdSent7d, m.ColdSent1d = 0, 0, 0
 
+	if _, fired := findingsByKey(Detect(snapshotOf(m), defaults()))["mailbox_new_ramping_fast"]; fired {
+		t.Fatal("a new mailbox the graduation ramp is holding back is not sending at full volume")
+	}
+
+	m.ColdSent30d, m.ColdSent7d, m.ColdSent1d = 120, 120, 45
 	f, fired := findingsByKey(Detect(snapshotOf(m), defaults()))["mailbox_new_ramping_fast"]
 	if !fired {
-		t.Fatal("a three-day-old mailbox at the full default cap should be flagged")
+		t.Fatal("a three-day-old mailbox that sent 45 cold emails in a day should be flagged")
 	}
 	if f.Action == nil || f.Action.Undo == nil {
 		t.Fatal("the ramp fix should be applyable and undoable")
@@ -509,8 +478,8 @@ func TestFingerprintIsStablePerDetectorAndEntity(t *testing.T) {
 		t.Error("two mailboxes with the same problem share a fingerprint")
 	}
 
-	orgWide := Finding{Key: "mailbox_concentration"}
-	if orgWide.Fingerprint() != "mailbox_concentration|org" {
+	orgWide := Finding{Key: "org_check"}
+	if orgWide.Fingerprint() != "org_check|org" {
 		t.Errorf("org-scoped fingerprint is %q", orgWide.Fingerprint())
 	}
 }
@@ -774,14 +743,14 @@ func TestUnparseableHTMLBodyIsFlagged(t *testing.T) {
 	}
 }
 
-func TestMissingFirstNameOnlyFiresWhenTheCopyUsesIt(t *testing.T) {
+func TestMissingFirstNameOnlyFiresWhenTheCopyLeavesAGap(t *testing.T) {
 	campaignID := uuid.New()
-	build := func(body string) *repository.AdvisorSnapshot {
+	build := func(body string, followUps ...repository.AdvisorStep) *repository.AdvisorSnapshot {
 		snap := snapshotOf()
 		snap.Campaigns = []repository.AdvisorCampaign{{ID: campaignID, Name: "Outbound", Status: "active"}}
-		snap.Steps = []repository.AdvisorStep{{
+		snap.Steps = append([]repository.AdvisorStep{{
 			ID: uuid.New(), CampaignID: campaignID, Kind: "email", Subject: "hello", BodyPlain: body,
-		}}
+		}}, followUps...)
 		snap.Lists = map[uuid.UUID]repository.AdvisorListStats{
 			campaignID: {CampaignID: campaignID, Total: 200, MissingFirstName: 60},
 		}
@@ -792,10 +761,26 @@ func TestMissingFirstNameOnlyFiresWhenTheCopyUsesIt(t *testing.T) {
 		t.Error("missing-first-name fired on copy that never greets by name")
 	}
 
-	for _, body := range []string{"Hi {{.FirstName}}, worth a chat?", "Hi {{first_name}}, worth a chat?", "Hi {{.firstName | default \"there\"}}"} {
+	for _, body := range []string{"Hi {{.FirstName}}, worth a chat?", "Hi {{first_name}}, worth a chat?", "Hi {{if .Company}}{{.FirstName}}{{end}}"} {
 		if _, fired := findingsByKey(Detect(build(body), defaults()))["list_missing_personalization_data"]; !fired {
-			t.Errorf("missing-first-name did not fire on copy that greets by name: %q", body)
+			t.Errorf("missing-first-name did not fire on copy that prints a missing name: %q", body)
 		}
+	}
+	for _, body := range []string{
+		"{{if .FirstName}}Bonjour {{.FirstName}},{{else}}Bonjour,{{end}}",
+		"Hi {{.firstName | default \"there\"}}",
+		"{{with .FirstName}}Hi {{.}},{{else}}Hi,{{end}}",
+	} {
+		if _, fired := findingsByKey(Detect(build(body), defaults()))["list_missing_personalization_data"]; fired {
+			t.Errorf("missing-first-name fired on copy with a fallback for the name: %q", body)
+		}
+	}
+	threaded := repository.AdvisorStep{
+		ID: uuid.New(), CampaignID: campaignID, Kind: "email", Position: 1, ThreadReply: true,
+		Subject: "Quick one, {{.FirstName}}", BodyPlain: "Following up.",
+	}
+	if _, fired := findingsByKey(Detect(build("Hi there,", threaded), defaults()))["list_missing_personalization_data"]; fired {
+		t.Error("missing-first-name fired on the subject of a follow-up that is sent under the conversation's subject")
 	}
 	if _, fired := findingsByKey(Detect(build("Update the firstname on file, or first_name in your CRM."), defaults()))["list_missing_personalization_data"]; fired {
 		t.Error("missing-first-name fired on prose that only mentions the field")
@@ -823,7 +808,6 @@ func TestAutopilotOnlyGetsReversibleSafeFixes(t *testing.T) {
 		"warmup_off":             true,
 		"warmup_paused":          true,
 		"warmup_ceiling_low":     true,
-		"warmup_reply_rate_low":  true,
 	}
 
 	autos := 0
@@ -982,279 +966,6 @@ func TestUnavailableCloudStandingDoesNotInventAReputationBan(t *testing.T) {
 	}
 }
 
-// judgedSnapshot is one active campaign with one email step, plus the verdict
-// the copy judge would have attached to it.
-func judgedSnapshot(v *copyjudge.Verdict) (*repository.AdvisorSnapshot, uuid.UUID) {
-	campaignID, stepID := uuid.New(), uuid.New()
-	snap := snapshotOf()
-	snap.Campaigns = []repository.AdvisorCampaign{{ID: campaignID, Name: "Outbound", Status: "active"}}
-	snap.Steps = []repository.AdvisorStep{{
-		ID: stepID, CampaignID: campaignID, Kind: "email", Position: 1,
-		Name:      "Opener",
-		Subject:   "quick question",
-		BodyPlain: "Saw your talk on onboarding. Would a short note on how we cut it to a day be useful?",
-	}}
-	if v != nil {
-		snap.CopyJudgments = map[uuid.UUID]copyjudge.Verdict{stepID: *v}
-	}
-	return snap, stepID
-}
-
-func TestJudgmentDetectorsAreSilentWithoutAVerdict(t *testing.T) {
-	// An install without TypeSafe, or a run where the judge was down, has no
-	// verdict for the step. That is "not judged", never "judged fine" or
-	// "judged bad".
-	snap, _ := judgedSnapshot(nil)
-	got := findingsByKey(Detect(snap, defaults()))
-	for _, key := range []string{"copy_reads_as_bulk", "copy_no_clear_ask"} {
-		if _, fired := got[key]; fired {
-			t.Errorf("%s fired on a step with no judgment", key)
-		}
-	}
-}
-
-func TestPersonalCopyWithOneAskIsNotAFinding(t *testing.T) {
-	snap, _ := judgedSnapshot(&copyjudge.Verdict{
-		ReadsAs: 0, Personalization: 0, Ask: copyjudge.AskOneClear, SpamClaim: 0.05, Confidence: 0.95,
-	})
-	got := findingsByKey(Detect(snap, defaults()))
-	for _, key := range []string{"copy_reads_as_bulk", "copy_no_clear_ask"} {
-		if _, fired := got[key]; fired {
-			t.Errorf("%s fired on a personal note with one clear ask", key)
-		}
-	}
-}
-
-func TestReadsAsBulkFiresOnAConfidentBulkVerdict(t *testing.T) {
-	snap, stepID := judgedSnapshot(&copyjudge.Verdict{
-		ReadsAs: 1, Personalization: 1, Ask: copyjudge.AskOneClear, SpamClaim: 0.1, Confidence: 0.9,
-	})
-	f, fired := findingsByKey(Detect(snap, defaults()))["copy_reads_as_bulk"]
-	if !fired {
-		t.Fatal("copy_reads_as_bulk did not fire on a confident bulk verdict")
-	}
-	if f.Severity != models.AdvisorLow {
-		t.Errorf("copy review should be low severity, got %s", f.Severity)
-	}
-	if f.EntityType != "step" || f.EntityID == nil || *f.EntityID != stepID || f.ParentType != "campaign" {
-		t.Error("finding is not attached to its step and campaign")
-	}
-	if f.Evidence["reads_as"] != 1.0 || f.Evidence["confidence"] != 0.9 {
-		t.Errorf("evidence does not carry the numbers it fired on: %v", f.Evidence)
-	}
-	if !strings.Contains(f.Title, "Opener") {
-		t.Errorf("title does not name the step: %q", f.Title)
-	}
-}
-
-func TestReadsAsBulkNeedsConfidenceUnlessAClaimIsMade(t *testing.T) {
-	// The model put it at the bulk end but was not sure. An unsure verdict is
-	// not reproducible, and a finding that flickers between runs is worse
-	// than none.
-	snap, _ := judgedSnapshot(&copyjudge.Verdict{
-		ReadsAs: 1, Ask: copyjudge.AskOneClear, SpamClaim: 0.1, Confidence: 0.5,
-	})
-	if _, fired := findingsByKey(Detect(snap, defaults()))["copy_reads_as_bulk"]; fired {
-		t.Error("copy_reads_as_bulk fired below the confidence floor")
-	}
-
-	// A filter-baiting claim is its own probability and needs no floor.
-	snap, _ = judgedSnapshot(&copyjudge.Verdict{
-		ReadsAs: 0.2, Ask: copyjudge.AskOneClear, SpamClaim: 0.85, Confidence: 0.5,
-	})
-	f, fired := findingsByKey(Detect(snap, defaults()))["copy_reads_as_bulk"]
-	if !fired {
-		t.Fatal("copy_reads_as_bulk did not fire on a spam claim")
-	}
-	if !strings.Contains(f.Detail, "may contain") || !strings.Contains(f.Detail, "not evidence") {
-		t.Errorf("detail should say the claim is the problem: %q", f.Detail)
-	}
-}
-
-func TestCopyReviewRequiresAgreementAndTracksRewrites(t *testing.T) {
-	snap, id := judgedSnapshot(&copyjudge.Verdict{
-		ReadsAs: 1, Personalization: 0, Ask: copyjudge.AskOneClear, Confidence: 0.95,
-	})
-	if got := detectReadsAsBulk(snap); len(got) != 0 {
-		t.Fatal("a message judged relevant should not get a bulk-tone suggestion")
-	}
-	v := snap.CopyJudgments[id]
-	v.Personalization = 1
-	snap.CopyJudgments[id] = v
-	before := detectReadsAsBulk(snap)[0]
-	snap.Steps[0].BodyPlain = "A different email with the same review scores."
-	after := detectReadsAsBulk(snap)[0]
-	if before.Evidence["content_hash"] == after.Evidence["content_hash"] {
-		t.Fatal("rewritten copy must invalidate the old explanation even when scores match")
-	}
-}
-
-func TestNoClearAskSaysWhichWay(t *testing.T) {
-	snap, _ := judgedSnapshot(&copyjudge.Verdict{ReadsAs: 0, Ask: copyjudge.AskNone, Confidence: 0.9})
-	f, fired := findingsByKey(Detect(snap, defaults()))["copy_no_clear_ask"]
-	if !fired {
-		t.Fatal("copy_no_clear_ask did not fire on no_ask")
-	}
-	if f.Severity != models.AdvisorLow {
-		t.Errorf("severity should be low, got %s", f.Severity)
-	}
-	if !strings.Contains(f.Title, "nothing") {
-		t.Errorf("title should say it asks for nothing: %q", f.Title)
-	}
-
-	snap, _ = judgedSnapshot(&copyjudge.Verdict{ReadsAs: 0, Ask: copyjudge.AskSeveral, Confidence: 0.9})
-	f, fired = findingsByKey(Detect(snap, defaults()))["copy_no_clear_ask"]
-	if !fired {
-		t.Fatal("copy_no_clear_ask did not fire on several_asks")
-	}
-	if !strings.Contains(f.Title, "several") {
-		t.Errorf("title should say it asks for several things: %q", f.Title)
-	}
-	if f.Evidence["ask"] != copyjudge.AskSeveral {
-		t.Errorf("evidence should carry the ask: %v", f.Evidence)
-	}
-
-	snap, _ = judgedSnapshot(&copyjudge.Verdict{ReadsAs: 0, Ask: copyjudge.AskNone, Confidence: 0.3})
-	if _, fired := findingsByKey(Detect(snap, defaults()))["copy_no_clear_ask"]; fired {
-		t.Error("copy_no_clear_ask fired below the confidence floor")
-	}
-}
-
-// recordingJudge answers every step with one verdict and counts the calls.
-type recordingJudge struct {
-	calls int
-	err   error
-}
-
-func (r *recordingJudge) Ask(_ context.Context, _ any, _ map[string]typesafe.Question) (*typesafe.Response, error) {
-	r.calls++
-	if r.err != nil {
-		return nil, r.err
-	}
-	resp := &typesafe.Response{Model: typesafe.Model, Answers: map[string]typesafe.Answer{
-		"reads_as":        {Type: typesafe.QuestionScore, Score: 2, Confidence: 0.9},
-		"personalization": {Type: typesafe.QuestionScore, Score: 1, Confidence: 0.9},
-		"ask":             {Type: typesafe.QuestionChoice, Choice: copyjudge.AskOneClear, Confidence: 0.9},
-		"spam_claim":      {Type: typesafe.QuestionNoul, Noul: 0.1},
-	}}
-	return resp, nil
-}
-
-type memoryJudgeCache struct {
-	rows map[string]copyjudge.Verdict
-	puts int
-}
-
-func (m *memoryJudgeCache) Get(_ context.Context, orgID uuid.UUID, hash string) (*copyjudge.Verdict, error) {
-	v, ok := m.rows[orgID.String()+hash]
-	if !ok {
-		return nil, nil
-	}
-	return &v, nil
-}
-
-func (m *memoryJudgeCache) Put(_ context.Context, orgID uuid.UUID, hash string, v *copyjudge.Verdict) error {
-	if m.rows == nil {
-		m.rows = map[string]copyjudge.Verdict{}
-	}
-	m.rows[orgID.String()+hash] = *v
-	m.puts++
-	return nil
-}
-
-func TestJudgeCopyReadsTheCacheBeforeAsking(t *testing.T) {
-	judge := &recordingJudge{}
-	cache := &memoryJudgeCache{}
-	s := NewService(nil, nil, nil, nil, nil, nil, WithCopyJudge(judge, cache)).(*service)
-
-	snap, stepID := judgedSnapshot(nil)
-	s.judgeCopy(context.Background(), snap)
-	if judge.calls != 1 || cache.puts != 1 {
-		t.Fatalf("first run: %d calls, %d cache writes", judge.calls, cache.puts)
-	}
-	v, ok := snap.CopyJudgments[stepID]
-	if !ok || v.ReadsAs != 1 {
-		t.Fatalf("verdict not attached to the step: %v %v", ok, v)
-	}
-
-	// Same copy again: the cache answers, the model is not asked.
-	snap2, _ := judgedSnapshot(nil)
-	snap2.OrganizationID = snap.OrganizationID
-	snap2.Steps[0].ID = stepID
-	s.judgeCopy(context.Background(), snap2)
-	if judge.calls != 1 {
-		t.Errorf("unchanged copy was judged again (%d calls)", judge.calls)
-	}
-	if _, ok := snap2.CopyJudgments[stepID]; !ok {
-		t.Error("cached verdict was not attached")
-	}
-
-	// Drafts are never judged, so they never cost anything.
-	snap3, _ := judgedSnapshot(nil)
-	snap3.Campaigns[0].Status = "draft"
-	s.judgeCopy(context.Background(), snap3)
-	if judge.calls != 1 {
-		t.Error("a draft campaign's step was sent to the judge")
-	}
-}
-
-type unavailableJudgeCache struct{ memoryJudgeCache }
-
-func (m *unavailableJudgeCache) Put(context.Context, uuid.UUID, string, *copyjudge.Verdict) error {
-	return errors.New("cache unavailable")
-}
-
-func TestJudgeCopyReusesIdenticalCopyWhenCacheWriteFails(t *testing.T) {
-	judge := &recordingJudge{}
-	s := NewService(nil, nil, nil, nil, nil, nil, WithCopyJudge(judge, &unavailableJudgeCache{})).(*service)
-	snap, _ := judgedSnapshot(nil)
-	for i := 0; i < 50; i++ {
-		step := snap.Steps[0]
-		step.ID = uuid.New()
-		snap.Steps = append(snap.Steps, step)
-	}
-	s.judgeCopy(context.Background(), snap)
-	if judge.calls != 1 || len(snap.CopyJudgments) != 51 {
-		t.Fatalf("identical copy cost %d calls and produced %d verdicts", judge.calls, len(snap.CopyJudgments))
-	}
-}
-
-func TestJudgeCopyCapsFreshJudgmentsAndSurvivesErrors(t *testing.T) {
-	judge := &recordingJudge{}
-	cache := &memoryJudgeCache{}
-	s := NewService(nil, nil, nil, nil, nil, nil, WithCopyJudge(judge, cache)).(*service)
-
-	snap, _ := judgedSnapshot(nil)
-	campaignID := snap.Campaigns[0].ID
-	for i := 0; i < maxCopyJudgmentsPerRun+10; i++ {
-		snap.Steps = append(snap.Steps, repository.AdvisorStep{
-			ID: uuid.New(), CampaignID: campaignID, Kind: "email", Position: i + 1,
-			Subject: fmt.Sprintf("step %d", i), BodyPlain: fmt.Sprintf("body %d", i),
-		})
-	}
-	s.judgeCopy(context.Background(), snap)
-	if judge.calls != maxCopyJudgmentsPerRun {
-		t.Errorf("expected the cap of %d fresh judgments, got %d", maxCopyJudgmentsPerRun, judge.calls)
-	}
-	if len(snap.CopyJudgments) != maxCopyJudgmentsPerRun {
-		t.Errorf("expected %d verdicts attached, got %d", maxCopyJudgmentsPerRun, len(snap.CopyJudgments))
-	}
-
-	// The judge being down leaves steps unjudged and the run intact.
-	down := NewService(nil, nil, nil, nil, nil, nil, WithCopyJudge(&recordingJudge{err: errors.New("529")}, &memoryJudgeCache{})).(*service)
-	snap, _ = judgedSnapshot(nil)
-	down.judgeCopy(context.Background(), snap)
-	if len(snap.CopyJudgments) != 0 {
-		t.Error("a failed judgment produced a verdict")
-	}
-	got := findingsByKey(Detect(snap, defaults()))
-	for _, key := range []string{"copy_reads_as_bulk", "copy_no_clear_ask"} {
-		if _, fired := got[key]; fired {
-			t.Errorf("%s fired on a step the judge never answered for", key)
-		}
-	}
-}
-
 // The no-senders finding names the way the campaign actually picks mailboxes,
 // so a campaign on "every active mailbox" is never sent to check its tags (#661).
 func TestNoSendersNamesHowTheCampaignPicksMailboxes(t *testing.T) {
@@ -1362,7 +1073,7 @@ func busySnapshot() *repository.AdvisorSnapshot {
 		{
 			ID: uuid.New(), CampaignID: campaignID, Kind: "email", Position: 1, Name: "Opener", WaitAfter: 1,
 			Subject:   "ACT NOW!! LIMITED TIME OFFER, THIS IS NOT SPAM AND IT IS 100% FREE FOR YOU AND YOUR WHOLE TEAM TODAY",
-			BodyPlain: "Hi {{.FirstName}},\n\n{{if .Company}}Act now, click here, buy now, limited time, no obligation, 100% free, risk free. " + strings.Repeat("More words here. ", 200),
+			BodyPlain: "Hi {{.FirstName}},\n\n{{if .Company}}Act now, click here, buy now, limited time, no obligation, 100% free, risk free. https://a.example https://b.example https://c.example " + strings.Repeat("More words here. ", 200),
 			Sent:      2000, Replied: 40,
 		},
 		{
@@ -1395,11 +1106,10 @@ func TestDetectorsDeclareEverySectionTheyRead(t *testing.T) {
 		return strings.Join(out, ",")
 	}
 	base := busySnapshot()
-	fired := 0
 	for _, d := range AllDetectors() {
 		full := d.Run(base)
-		if len(d.Reads) > 0 && len(full) > 0 {
-			fired++
+		if len(d.Reads) > 0 && len(full) == 0 {
+			t.Errorf("detector %q reads a section but does not fire on the fixture, so this check cannot see it", d.Key)
 		}
 		for sec, clear := range blank {
 			declared := false
@@ -1415,9 +1125,6 @@ func TestDetectorsDeclareEverySectionTheyRead(t *testing.T) {
 				t.Errorf("detector %q reads the %s section but does not declare it", d.Key, sec)
 			}
 		}
-	}
-	if fired < 20 {
-		t.Errorf("the fixture fires only %d section-reading detectors; the check has no teeth", fired)
 	}
 }
 
@@ -1452,5 +1159,99 @@ func TestFailedSectionHoldsItsDetectors(t *testing.T) {
 	snap.Failed = nil
 	if got := heldDetectors(snap, settings); len(got) != 0 {
 		t.Errorf("a complete snapshot held %v", got)
+	}
+}
+
+func TestCopyIsMeasuredAsTheRecipientReadsIt(t *testing.T) {
+	campaignID := uuid.New()
+	run := func(st repository.AdvisorStep) map[string]Finding {
+		snap := snapshotOf()
+		snap.Campaigns = []repository.AdvisorCampaign{{ID: campaignID, Name: "Outbound", Status: "active"}}
+		st.ID, st.CampaignID, st.Kind = uuid.New(), campaignID, "email"
+		snap.Steps = []repository.AdvisorStep{st}
+		return findingsByKey(Detect(snap, defaults()))
+	}
+
+	got := run(repository.AdvisorStep{
+		Subject:  "{{if .Company}}Une question pour {{.Company}}{{else}}Une question rapide{{end}}, équipe",
+		BodyHTML: `<p>Voir <a href="https://example.com/a">https://example.com/a</a> et <a href="https://example.com/b">ici</a>.</p><img src="https://cdn.example.com/logo.png">`,
+	})
+	for _, key := range []string{"copy_shouty_subject", "copy_too_many_links"} {
+		if _, fired := got[key]; fired {
+			t.Errorf("%s fired on template syntax or markup rather than on what is sent", key)
+		}
+	}
+
+	spun := "{Book https://cal.example/x|Grab https://cal.example/x|Meet https://cal.example/x} or {see https://a.example/{one|two}|read https://a.example/one}."
+	if _, fired := run(repository.AdvisorStep{Subject: "hello", BodyPlain: spun})["copy_too_many_links"]; fired {
+		t.Error("spintax options naming the same address counted as several links")
+	}
+	if _, fired := run(repository.AdvisorStep{Subject: "hello", BodyPlain: "{https://a.example https://b.example https://c.example|thanks}"})["copy_too_many_links"]; !fired {
+		t.Error("an option some recipients get with three links was not flagged")
+	}
+
+	if _, fired := run(repository.AdvisorStep{Subject: "hello", BodyPlain: "I will contact now and then. We are not insurgent."})["copy_spam_phrases"]; fired {
+		t.Error("spam phrases matched inside other words")
+	}
+	if _, fired := run(repository.AdvisorStep{Subject: "hello", BodyPlain: "It is guaranteed. Act now."})["copy_spam_phrases"]; !fired {
+		t.Error("spam phrases missed whole phrases")
+	}
+}
+
+func TestMailboxFindingsOnlyClaimWhatIsHappening(t *testing.T) {
+	cases := []struct {
+		name, key string
+		state     func(*repository.AdvisorMailbox, *repository.AdvisorSnapshot)
+		fires     bool
+	}{
+		{"untracked campaign", "mailbox_shared_tracking_domain", func(m *repository.AdvisorMailbox, _ *repository.AdvisorSnapshot) {
+			m.TrackingDomain = ""
+		}, false},
+		{"tracked campaign", "mailbox_shared_tracking_domain", func(m *repository.AdvisorMailbox, _ *repository.AdvisorSnapshot) {
+			m.TrackingDomain, m.TrackedOnMailboxHost = "", true
+		}, true},
+		{"disconnected mailbox's stale DNS", "mailbox_domain_auth", func(m *repository.AdvisorMailbox, _ *repository.AdvisorSnapshot) {
+			m.Status, m.AuthState, m.AuthDMARC = "inactive", models.AuthStateFailing, false
+		}, false},
+		{"warmup off, plan cannot warm", "warmup_off_while_sending", func(m *repository.AdvisorMailbox, s *repository.AdvisorSnapshot) {
+			m.WarmupActive, s.WarmupUnavailable = false, true
+		}, false},
+		{"warmup off, nothing sent", "warmup_off_while_sending", func(m *repository.AdvisorMailbox, _ *repository.AdvisorSnapshot) {
+			m.WarmupActive, m.ColdSent7d = false, 0
+		}, false},
+		{"warmup off while sending", "warmup_off_while_sending", func(m *repository.AdvisorMailbox, _ *repository.AdvisorSnapshot) {
+			m.WarmupActive = false
+		}, true},
+		{"paused after the trial", "warmup_paused", func(m *repository.AdvisorMailbox, s *repository.AdvisorSnapshot) {
+			m.WarmupActive, m.WarmupPaused, s.WarmupUnavailable = false, true, true
+		}, false},
+		{"paused on a mailbox sending nothing", "warmup_paused", func(m *repository.AdvisorMailbox, _ *repository.AdvisorSnapshot) {
+			m.WarmupActive, m.WarmupPaused, m.ColdSent7d = false, true, 0
+		}, false},
+		{"paused while sending cold", "warmup_paused", func(m *repository.AdvisorMailbox, _ *repository.AdvisorSnapshot) {
+			m.WarmupActive, m.WarmupPaused = false, true
+		}, true},
+		{"high cap on a clean mailbox", "mailbox_cap_too_high", func(m *repository.AdvisorMailbox, _ *repository.AdvisorSnapshot) {
+			m.CampaignLimit, m.ColdSent1d = 120, 110
+		}, false},
+		{"high cap, new and sending under the band", "mailbox_cap_too_high", func(m *repository.AdvisorMailbox, _ *repository.AdvisorSnapshot) {
+			m.CampaignLimit, m.ColdSent30d, m.ColdSent1d = 120, 40, 30
+		}, false},
+		{"high cap, new and sending above the band", "mailbox_cap_too_high", func(m *repository.AdvisorMailbox, _ *repository.AdvisorSnapshot) {
+			m.CampaignLimit, m.ColdSent30d, m.ColdSent1d = 120, 80, 80
+		}, true},
+		{"high cap while complaining", "mailbox_cap_too_high", func(m *repository.AdvisorMailbox, _ *repository.AdvisorSnapshot) {
+			m.CampaignLimit, m.Complaints30d = 120, 5
+		}, true},
+	}
+	for _, tc := range cases {
+		m := healthyMailbox()
+		m.CampaignLimit = newMailboxSafeCap
+		s := snapshotOf()
+		tc.state(&m, s)
+		s.Mailboxes = []repository.AdvisorMailbox{m}
+		if _, fired := findingsByKey(Detect(s, defaults()))[tc.key]; fired != tc.fires {
+			t.Errorf("%s: %s fired=%v, want %v", tc.name, tc.key, fired, tc.fires)
+		}
 	}
 }

@@ -6,6 +6,7 @@ import { Suspense, lazy, useEffect } from "react";
 import { AnimatePresence } from "framer-motion";
 import useUser from "@/lib/api/hooks/auth/useUser";
 import { useAppStore } from "@/stores";
+import { currentPortal } from "@/lib/portal";
 import { billingPreview } from "./tourUi";
 
 const ProductTour = lazy(() => import("./ProductTour"));
@@ -19,13 +20,17 @@ export default function ProductTourHost() {
     // Strictly null: a backend that predates the field leaves it out, and must not replay the tour every visit.
     const pending = !!user?.onboarding_completed_at && user.product_tour_completed_at === null;
 
+    // The tour introduces the service by name, which an agency's portal domain never shows.
+    const onPortal = currentPortal().portal;
+
     useEffect(() => {
+        if (onPortal) return;
         if ((pending || billingPreview() !== null) && orgId) setOpen(true);
-    }, [pending, orgId, setOpen]);
+    }, [pending, orgId, setOpen, onPortal]);
 
     return (
         <Suspense fallback={null}>
-            <AnimatePresence>{open && <ProductTour key="tour" />}</AnimatePresence>
+            <AnimatePresence>{open && !onPortal && <ProductTour key="tour" />}</AnimatePresence>
         </Suspense>
     );
 }

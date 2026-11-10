@@ -11,6 +11,12 @@ import AutomationsShowcase from '../components/AutomationsShowcase.astro';
 import LeadFinderShowcase from '../components/LeadFinderShowcase.astro';
 
 
+// Agency plans, as on /pricing/#agencies.
+const agencyPlans = [
+  { name: 'Agency', price: '$249', annual: '$199', pool: '150,000', features: ['Unlimited clients, no per-client fee', 'Your logo, colour and portal domain', '$10 of shared AI each month'] },
+  { name: 'Agency Pro', price: '$599', annual: '$479', pool: '500,000', features: ['Everything in Agency', 'No “Powered by Warmbly” on client pages', 'Sending kept apart from other customers'] },
+];
+
 // Mirrors web/src/lib/plans.ts — single source of truth.
 const plans = [
   {
@@ -228,7 +234,7 @@ const softwareJsonLd = {
             <span class="text-slate-900"> Pay for what you send.</span>
           </h2>
           <p class="mt-5 max-w-2xl text-[17px] md:text-[19px] leading-[1.55] text-slate-500">
-            The number on each card is daily send volume. Warmup, the unified inbox, analytics, CRM and the API are in every paid plan.
+            The number on each card is daily send volume. Warmup, the unified inbox and analytics are in every paid plan, and the CRM and the API start on Grow.
           </p>
         </div>
 
@@ -284,6 +290,7 @@ const softwareJsonLd = {
 
               <div class="mt-5 flex items-baseline justify-between text-[12.5px]">
                 <span class="font-medium text-slate-900">{p.sendsPerDay === Infinity ? '15,000+' : p.sendsPerDay.toLocaleString()} sends a day</span>
+                {p.sendsPerDay !== Infinity && <span class="text-slate-400">up to {(p.sendsPerDay * 30).toLocaleString()} a month</span>}
               </div>
               <div class="mt-2 h-[3px] rounded-full bg-slate-100">
                 <span class={`block h-full rounded-full ${p.highlight ? 'bg-slate-900' : 'bg-slate-300'}`} style={`width:${p.meter}%`}></span>
@@ -313,12 +320,50 @@ const softwareJsonLd = {
         </div>
 
         <div class="mt-10 flex flex-wrap items-center gap-x-2 gap-y-1 text-[14px] text-slate-500">
-          <span>All plans include warmup, sending, inbox, analytics and CRM.</span>
+          <span>All plans include warmup, sending, the inbox and analytics.</span>
           <a href="/pricing/" class="inline-flex items-center gap-1 font-medium text-slate-900 hover:text-slate-600">
             See the full comparison <Icon name="arrowRight" size={12} />
           </a>
         </div>
-        <p class="mt-2 max-w-2xl text-[13px] leading-relaxed text-slate-400">
+        <!-- Agencies: one plan for every client workspace, priced on its own page. -->
+        <div class="agency-band mt-12 grid overflow-hidden rounded-[6px] bg-white ring-1 ring-slate-200 lg:grid-cols-12">
+          <div class="flex flex-col p-6 md:p-8 lg:col-span-5">
+            <span class="inline-flex w-fit items-center gap-1.5 rounded-full bg-slate-100 px-2.5 h-6 text-[11.5px] font-medium text-slate-600"><Icon name="users" size={12} /> Warmbly for Agencies</span>
+            <h3 class="mt-4 text-[24px] md:text-[28px] font-medium tracking-[-0.035em] leading-[1.1] text-slate-900">Outreach for clients? One plan covers all of them.</h3>
+            <p class="mt-3 text-[15px] leading-[1.55] text-slate-500">Each client gets its own workspace, and every client sends from one shared monthly pool. No fee per client, no limit on clients, and your brand on the pages clients see.</p>
+            <div class="mt-auto flex flex-wrap items-center gap-x-5 gap-y-2 pt-6 text-[14px]">
+              <a href="/pricing/#agencies" class="inline-flex items-center gap-1 font-medium text-slate-900 hover:text-slate-600">See agency plans <Icon name="arrowRight" size={12} /></a>
+              <a href="/use-cases/agencies/" class="text-slate-500 underline decoration-slate-300 underline-offset-4 hover:text-slate-900 hover:decoration-slate-900">How agencies use Warmbly</a>
+            </div>
+          </div>
+          <div class="grid border-t border-slate-200 sm:grid-cols-2 sm:divide-x sm:divide-slate-200 lg:col-span-7 lg:border-l lg:border-t-0">
+            {agencyPlans.map((a, i) => (
+              <div class={`flex flex-col p-6 md:p-8 ${i > 0 ? 'border-t border-slate-200 sm:border-t-0' : ''}`}>
+                <div class="text-[15px] font-medium text-slate-900">{a.name}</div>
+                <div class="mt-3 flex items-baseline gap-1.5">
+                  <span class="text-[32px] font-medium tracking-[-0.04em] text-slate-900 leading-none">
+                    <span class="plan-price relative inline-block overflow-hidden h-[36px] align-baseline" data-monthly={a.price} data-annual={a.annual}>
+                      <span class="plan-price-inner block leading-[36px]" style="transform: translateY(0)">{a.annual}</span>
+                    </span>
+                  </span>
+                  <span class="text-[12.5px] text-slate-400"><span class="cadence" data-monthly="/ month · billed monthly" data-annual="/ month · billed yearly">/ month · billed yearly</span></span>
+                </div>
+                <div class="mt-3 text-[13.5px] text-slate-600"><span class="font-medium text-slate-900">{a.pool}</span> sends a month, shared by every client</div>
+                <ul class="mt-5 space-y-2 border-t border-slate-100 pt-4 text-[13.5px] text-slate-600">
+                  {a.features.map((f) => (
+                    <li class="flex items-start gap-2.5">
+                      <Icon name="check" size={14} class="mt-[3px] shrink-0 text-slate-400" />
+                      <span>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+        <p class="mt-3 text-[13px] text-slate-400">Sending more than 500,000 a month? Agency Scale sizes the pool to your volume. <a href="/contact/?topic=sales" class="text-slate-600 underline decoration-slate-300 underline-offset-4 hover:decoration-slate-900">Talk to sales</a>.</p>
+
+        <p class="mt-8 max-w-2xl text-[13px] leading-relaxed text-slate-400">
           Self-hosting is free and community supported, and it suits teams that want to own the whole stack. A self-hosted instance warms only between its own mailboxes, with no shared pool, so for deliverability Warmbly Cloud is the better choice.
         </p>
       </div>
@@ -470,6 +515,7 @@ const softwareJsonLd = {
     // The panel reveals as one surface; staggering the joined columns would
     // pop them in one by one inside their own shared border.
     tag('.pricing-grid',    0);
+    tag('.agency-band',     0);
     tag('.step-card',       0.10);
     tag('.feature-card',    0.10);
     tag('.metric-cell',     0.06);

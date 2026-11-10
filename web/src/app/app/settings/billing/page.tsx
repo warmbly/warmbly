@@ -37,6 +37,7 @@ import useValidateDiscountCode from "@/lib/api/hooks/app/subscription/useValidat
 import useAppliedDiscounts from "@/lib/api/hooks/app/subscription/useAppliedDiscounts";
 import usePreviewPlanChange from "@/lib/api/hooks/app/subscription/usePreviewPlanChange";
 import { useAppStore } from "@/stores";
+import useCurrentOrganization from "@/lib/api/hooks/app/organizations/useCurrentOrganization";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import type DiscountPreview from "@/lib/api/models/app/subscription/DiscountPreview";
 import type { DiscountRedemption } from "@/lib/api/models/app/subscription/DiscountRedemption";
@@ -78,6 +79,7 @@ export default function BillingSettingsPage() {
     const access = useFeatureAccess();
     const canManageBilling = usePermission("MANAGE_BILLING");
     const currentOrg = useAppStore((s) => s.currentOrganization);
+    const agencyOf = useCurrentOrganization().data?.agency;
     const validateCode = useValidateDiscountCode();
     // Checkout / plan change / portal live in useUpgradeFlow, shared with the
     // in-app upgrade dialog.
@@ -174,6 +176,38 @@ export default function BillingSettingsPage() {
                                 owner role. Ask your owner to share an update if you need one.
                             </p>
                         </div>
+                    </div>
+                </Section>
+            </SectionShell>
+        );
+    }
+
+    // An agency client's plan and invoices are the agency's; only the workspace's own balance stays here.
+    if (agencyOf && tab !== "balance") {
+        return (
+            <SectionShell title="Billing" description={`Plan and payment for ${currentOrg?.name ?? "this workspace"}.`}>
+                <Section eyebrow="Billed through your agency">
+                    <div className="text-[13px] font-semibold text-slate-900">Billed through {agencyOf.name}</div>
+                    <p className="text-[12px] text-slate-500 leading-relaxed mt-1 max-w-md">
+                        This workspace's plan comes from the agency, and its campaign sends count toward the agency's
+                        shared monthly pool. The agency's owner and admins manage the plan, top-ups and invoices.
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                        <Link
+                            to="/app/agency/billing"
+                            className="h-7 px-2.5 rounded-md border border-slate-200 text-[12px] text-slate-700 inline-flex items-center hover:border-slate-300"
+                        >
+                            Agency billing
+                        </Link>
+                        {canManageBilling && (
+                            <Link
+                                to="/app/settings/billing/{-$tab}"
+                                params={{ tab: "balance" }}
+                                className="h-7 px-2.5 rounded-md text-[12px] text-slate-600 inline-flex items-center hover:bg-slate-100"
+                            >
+                                Workspace balance
+                            </Link>
+                        )}
                     </div>
                 </Section>
             </SectionShell>

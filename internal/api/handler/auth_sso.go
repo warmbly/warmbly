@@ -97,7 +97,11 @@ func (h *Handler) AppleCallback(c *gin.Context) {
 }
 
 func (h *Handler) ssoCallback(c *gin.Context, in auth.SSOCallback) {
+	// Read before the state is consumed; only a verified portal origin replaces APP_URL.
 	base := config.AppBaseURL()
+	if origin := h.AuthService.SSOReturnOrigin(c.Request.Context(), in.State); origin != "" {
+		base = origin
+	}
 
 	// A provider-side refusal arrives as error=, not as a failed exchange.
 	// A closed consent screen is not a failure, so it returns quietly.

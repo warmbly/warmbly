@@ -52,6 +52,8 @@ type AnalyticsService interface {
 	GetDirectMailAnalytics(ctx context.Context, orgID uuid.UUID, period string) (*models.DirectMailAnalytics, *errx.Error)
 	GetCampaignHourlyStats(ctx context.Context, orgID, campaignID uuid.UUID, date time.Time) ([]models.CampaignHourlyStats, *errx.Error)
 	CompareCampaigns(ctx context.Context, orgID uuid.UUID, campaignIDs []uuid.UUID, from, to time.Time) (*models.CampaignComparison, *errx.Error)
+	// GetClientReportAnalytics reads a client report's numbers with the dashboard's queries, reading only the sections q asks for.
+	GetClientReportAnalytics(ctx context.Context, orgID uuid.UUID, q models.ClientReportQuery) (*models.ClientReportAnalytics, *errx.Error)
 }
 
 type analyticsService struct {

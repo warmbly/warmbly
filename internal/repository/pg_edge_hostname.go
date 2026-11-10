@@ -2,10 +2,28 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// EdgeKind is which edge zone a set of hostnames is registered on; each kind keeps its own table.
+type EdgeKind string
+
+const (
+	// EdgeTracking is the zone in front of the tracking host: tracking domains and instance-served redirects.
+	EdgeTracking EdgeKind = "tracking"
+	// EdgePortal is the zone the portal is served from on Warmbly Cloud: verified agency portal domains.
+	EdgePortal EdgeKind = "portal"
+)
+
+func (k EdgeKind) table() string {
+	if k == EdgePortal {
+		return "portal_edge_hostnames"
+	}
+	return "edge_hostnames"
+}
 
 // EdgeHostname is one customer hostname registered at the edge provider.
 type EdgeHostname struct {
@@ -21,7 +39,9 @@ type EdgeHostname struct {
 
 // EdgeHostnameRepository keeps the edge provider's verdict on the customer hostnames this instance serves.
 type EdgeHostnameRepository interface {
-	// Wanted are the hostnames this instance serves for a workspace: verified tracking hosts and instance-served redirects with their www.
+	Kind() EdgeKind
+	// Wanted are the hostnames this kind's zone serves for a workspace: for tracking, verified tracking hosts and instance-served
+	// redirects with their www; for portal, verified agency portal domains.
 	Wanted(ctx context.Context) ([]string, error)
 	List(ctx context.Context) ([]EdgeHostname, error)
 	Get(ctx context.Context, hosts []string) ([]EdgeHostname, error)
@@ -36,23 +56,39 @@ type EdgeHostnameRepository interface {
 }
 
 type edgeHostnameRepository struct {
-	db *pgxpool.Pool
+	db   *pgxpool.Pool
+	kind EdgeKind
 }
 
-func NewEdgeHostnameRepository(db *pgxpool.Pool) EdgeHostnameRepository {
-	return &edgeHostnameRepository{db: db}
+func NewEdgeHostnameRepository(db *pgxpool.Pool, kind EdgeKind) EdgeHostnameRepository {
+	if kind != EdgePortal {
+		kind = EdgeTracking
+	}
+	return &edgeHostnameRepository{db: db, kind: kind}
 }
+
+func (r *edgeHostnameRepository) Kind() EdgeKind { return r.kind }
+
+const wantedTrackingSQL = `
+	SELECT lower(tracking_domain) FROM email_accounts WHERE tracking_domain_verified AND tracking_domain <> ''
+	UNION
+	SELECT lower(tracking_domain) FROM campaigns WHERE tracking_domain_verified AND tracking_domain <> ''
+	UNION
+	SELECT domain FROM domain_redirects WHERE verified AND served_by = 'instance'
+	UNION
+	SELECT 'www.' || domain FROM domain_redirects WHERE verified AND served_by = 'instance' AND include_www
+`
+
+const wantedPortalSQL = `
+	SELECT lower(portal_domain) FROM agency_brands WHERE portal_domain_verified AND portal_domain <> ''
+`
 
 func (r *edgeHostnameRepository) Wanted(ctx context.Context) ([]string, error) {
-	rows, err := r.db.Query(ctx, `
-		SELECT lower(tracking_domain) FROM email_accounts WHERE tracking_domain_verified AND tracking_domain <> ''
-		UNION
-		SELECT lower(tracking_domain) FROM campaigns WHERE tracking_domain_verified AND tracking_domain <> ''
-		UNION
-		SELECT domain FROM domain_redirects WHERE verified AND served_by = 'instance'
-		UNION
-		SELECT 'www.' || domain FROM domain_redirects WHERE verified AND served_by = 'instance' AND include_www
-	`)
+	query := wantedTrackingSQL
+	if r.kind == EdgePortal {
+		query = wantedPortalSQL
+	}
+	rows, err := r.db.Query(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -67,6 +103,9 @@ func (r *edgeHostnameRepository) Wanted(ctx context.Context) ([]string, error) {
 	}
 	return out, rows.Err()
 }
+
+// sql names this kind's table in query; the table comes from a closed set, never from input.
+func (r *edgeHostnameRepository) sql(query string) string { return fmt.Sprintf(query, r.kind.table()) }
 
 const edgeHostnameColumns = `hostname, zone, status, ownership_name, ownership_value, last_error, checked_at, unwanted_since`
 
@@ -88,39 +127,39 @@ func (r *edgeHostnameRepository) scan(ctx context.Context, query string, args ..
 }
 
 func (r *edgeHostnameRepository) List(ctx context.Context) ([]EdgeHostname, error) {
-	return r.scan(ctx, `SELECT `+edgeHostnameColumns+` FROM edge_hostnames`)
+	return r.scan(ctx, r.sql(`SELECT `+edgeHostnameColumns+` FROM %[1]s`))
 }
 
 func (r *edgeHostnameRepository) Get(ctx context.Context, hosts []string) ([]EdgeHostname, error) {
 	if len(hosts) == 0 {
 		return nil, nil
 	}
-	return r.scan(ctx, `SELECT `+edgeHostnameColumns+` FROM edge_hostnames WHERE hostname = ANY($1)`, hosts)
+	return r.scan(ctx, r.sql(`SELECT `+edgeHostnameColumns+` FROM %[1]s WHERE hostname = ANY($1)`), hosts)
 }
 
 func (r *edgeHostnameRepository) Save(ctx context.Context, h EdgeHostname) error {
-	_, err := r.db.Exec(ctx, `
-		INSERT INTO edge_hostnames (hostname, zone, status, ownership_name, ownership_value, last_error, checked_at)
+	_, err := r.db.Exec(ctx, r.sql(`
+		INSERT INTO %[1]s (hostname, zone, status, ownership_name, ownership_value, last_error, checked_at)
 		VALUES ($1, $2, $3, $4, $5, $6, now())
 		ON CONFLICT (hostname) DO UPDATE SET
 			zone = EXCLUDED.zone, status = EXCLUDED.status, ownership_name = EXCLUDED.ownership_name, ownership_value = EXCLUDED.ownership_value,
 			last_error = EXCLUDED.last_error, checked_at = now(), unwanted_since = NULL, updated_at = now()
-	`, h.Hostname, h.Zone, h.Status, h.OwnershipName, h.OwnershipValue, h.LastError)
+	`), h.Hostname, h.Zone, h.Status, h.OwnershipName, h.OwnershipValue, h.LastError)
 	return err
 }
 
 // Failed keeps the last verdict and its ownership record from the same zone; only a fresh answer replaces them.
 func (r *edgeHostnameRepository) Failed(ctx context.Context, host, zone, reason string) error {
-	_, err := r.db.Exec(ctx, `
-		INSERT INTO edge_hostnames (hostname, zone, last_error, checked_at)
+	_, err := r.db.Exec(ctx, r.sql(`
+		INSERT INTO %[1]s (hostname, zone, last_error, checked_at)
 		VALUES ($1, $2, $3, now())
 		ON CONFLICT (hostname) DO UPDATE SET
 			last_error = EXCLUDED.last_error, checked_at = now(), unwanted_since = NULL, updated_at = now(),
-			status = CASE WHEN edge_hostnames.zone = EXCLUDED.zone THEN edge_hostnames.status ELSE '' END,
-			ownership_name = CASE WHEN edge_hostnames.zone = EXCLUDED.zone THEN edge_hostnames.ownership_name ELSE '' END,
-			ownership_value = CASE WHEN edge_hostnames.zone = EXCLUDED.zone THEN edge_hostnames.ownership_value ELSE '' END,
+			status = CASE WHEN %[1]s.zone = EXCLUDED.zone THEN %[1]s.status ELSE '' END,
+			ownership_name = CASE WHEN %[1]s.zone = EXCLUDED.zone THEN %[1]s.ownership_name ELSE '' END,
+			ownership_value = CASE WHEN %[1]s.zone = EXCLUDED.zone THEN %[1]s.ownership_value ELSE '' END,
 			zone = EXCLUDED.zone
-	`, host, zone, reason)
+	`), host, zone, reason)
 	return err
 }
 
@@ -128,11 +167,11 @@ func (r *edgeHostnameRepository) MarkUnwanted(ctx context.Context, hosts []strin
 	if len(hosts) == 0 {
 		return nil
 	}
-	_, err := r.db.Exec(ctx, `UPDATE edge_hostnames SET unwanted_since = now(), updated_at = now() WHERE hostname = ANY($1) AND unwanted_since IS NULL`, hosts)
+	_, err := r.db.Exec(ctx, r.sql(`UPDATE %[1]s SET unwanted_since = now(), updated_at = now() WHERE hostname = ANY($1) AND unwanted_since IS NULL`), hosts)
 	return err
 }
 
 func (r *edgeHostnameRepository) DeleteUnwanted(ctx context.Context, host string) (bool, error) {
-	tag, err := r.db.Exec(ctx, `DELETE FROM edge_hostnames WHERE hostname = $1 AND unwanted_since IS NOT NULL`, host)
+	tag, err := r.db.Exec(ctx, r.sql(`DELETE FROM %[1]s WHERE hostname = $1 AND unwanted_since IS NOT NULL`), host)
 	return tag.RowsAffected() > 0, err
 }

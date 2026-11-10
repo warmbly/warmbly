@@ -2,6 +2,7 @@
 import ScaledStage from '../../ScaledStage.astro';
 import Glyph from '../Glyph.astro';
 import Ico from './Ico.astro';
+import TrendStat from '../TrendStat.astro';
 import { WINDOW, EYEBROW, TAB } from '../../../lib/scene';
 
 /**
@@ -15,14 +16,6 @@ const tabs = [
   { label: 'Contacts', icon: 'user' },
   { label: 'Schedule', icon: 'calendar' },
 ] as const;
-const stats = [
-  { label: 'Sent', value: '4,210', sub: 'emails', tick: '4210,4236,2400', pulse: true },
-  { label: 'Open rate', value: '38.5%', sub: 'after delivery' },
-  { label: 'Click rate', value: '9.2%', sub: 'of delivered' },
-  { label: 'Reply rate', value: '7.4%', sub: 'human replies' },
-  { label: 'Positive rate', value: '2.8%', sub: '112 interested' },
-  { label: 'Bounce rate', value: '0.9%', sub: 'hard + soft', last: true },
-];
 type Cell = [number, number];
 const steps: { n: number; name: string; sent: number; opens: Cell; clicks: Cell; replies: Cell; positive: Cell; bounces: Cell; auto?: boolean }[] = [
   { n: 1, name: 'Quick question about {{company}}', sent: 1642, opens: [702, 42.8], clicks: [188, 11.4], replies: [151, 9.2], positive: [61, 3.7], bounces: [18, 1.1] },
@@ -37,6 +30,14 @@ const cols = [
   { k: 'positive', label: 'Positive', tone: 'text-lime-600' },
   { k: 'bounces', label: 'Bounces', tone: 'text-rose-600' },
 ] as const;
+// The strip's sparklines over the 30 days in range.
+const trend = {
+  sent: [124, 131, 128, 137, 142, 48, 41, 144, 149, 152, 146, 155, 52, 45, 153, 158, 155, 162, 166, 55, 49, 163, 168, 165, 171, 175, 58, 51, 173, 178],
+  opens: [47, 51, 49, 53, 55, 17, 14, 55, 58, 59, 56, 60, 19, 16, 59, 61, 59, 63, 64, 20, 18, 63, 65, 63, 66, 68, 21, 19, 67, 69],
+  clicks: [11, 12, 12, 13, 13, 4, 3, 13, 14, 14, 13, 14, 4, 4, 14, 15, 14, 15, 15, 5, 4, 15, 16, 15, 16, 16, 5, 4, 16, 17],
+  replies: [9, 10, 9, 10, 11, 3, 2, 11, 11, 12, 10, 12, 3, 3, 11, 12, 11, 12, 13, 4, 3, 12, 13, 12, 13, 13, 4, 3, 13, 14],
+  positive: [3, 4, 3, 4, 4, 1, 1, 4, 4, 5, 4, 5, 1, 1, 4, 5, 4, 5, 5, 1, 1, 5, 5, 4, 5, 5, 2, 1, 5, 5],
+};
 ---
 <ScaledStage w={760} h={570} photo="sheer-sky">
   <div class={`${WINDOW} left-[40px] top-[40px] right-0 h-[530px] bg-slate-50`}>
@@ -68,13 +69,12 @@ const cols = [
           <span class="h-7 px-2.5 rounded-md border border-slate-200 text-[12px] font-medium text-slate-700 inline-flex items-center gap-1.5"><Ico name="image" size={12} />Share image</span>
         </div>
         <div class="grid grid-cols-6">
-          {stats.map((s) => (
-            <div class={`px-3 py-3.5 ${s.last ? '' : 'border-r border-slate-200'}`}>
-              <div class="flex items-center gap-1.5"><span class="truncate text-[9.5px] uppercase tracking-[0.08em] text-slate-400 font-medium">{s.label}</span>{s.pulse && <span class="size-1.5 rounded-full bg-sky-500 animate-pulse"></span>}</div>
-              <div class="mt-2 text-[22px] font-light leading-none tabular-nums text-slate-900">{s.tick ? <span data-tick={s.tick}>{s.value}</span> : s.value}</div>
-              <div class="mt-1.5 truncate font-mono text-[10px] text-slate-400">{s.sub}</div>
-            </div>
-          ))}
+          <TrendStat label="Sent" unit="emails" points={trend.sent} kind="area" tone="sky" pad="px-3 py-3.5"><span data-tick="4210,4236,2400">4,210</span></TrendStat>
+          <TrendStat label="Open rate" value="38.5%" unit="after delivery" points={trend.opens} pad="px-3 py-3.5" />
+          <TrendStat label="Click rate" value="9.2%" unit="of delivered" points={trend.clicks} pad="px-3 py-3.5" />
+          <TrendStat label="Reply rate" value="7.4%" unit="human replies" points={trend.replies} kind="bars" pad="px-3 py-3.5" />
+          <TrendStat label="Positive rate" value="2.8%" unit="112 interested" points={trend.positive} kind="bars" tone="emerald" pad="px-3 py-3.5" />
+          <TrendStat label="Bounce rate" value="0.9%" unit="hard + soft" pad="px-3 py-3.5" last />
         </div>
       </div>
 

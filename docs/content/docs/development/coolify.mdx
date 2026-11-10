@@ -3,7 +3,7 @@ title: Deploy on Coolify
 description: Run Warmbly on your VPS with Coolify, published Docker images, persistent volumes, and HTTPS. No host installer or source build required.
 ---
 
-Use [deploy/docker-compose.coolify.yml](https://github.com/warmbly/warmbly/blob/main/deploy/docker-compose.coolify.yml), not the repository-root development Compose file. It runs the API, dashboard, admin panel, consumer, worker, tracking, realtime, forms, PostgreSQL, Redis, and NATS entirely in containers.
+Use [deploy/docker-compose.coolify.yml](https://github.com/warmbly/warmbly/blob/main/deploy/docker-compose.coolify.yml), not the repository-root development Compose file. It runs the API, dashboard, admin panel, consumer, worker, tracking, realtime, forms, the portal, PostgreSQL, Redis, and NATS entirely in containers.
 
 There is no `install.sh`, source compilation, Docker socket mount, or host port mapping. Coolify owns the reverse proxy, certificates, and deployments. Data lives in Docker named volumes, so containers are disposable but the data is not.
 
@@ -53,6 +53,13 @@ REALTIME_HOST=realtime.example.com
 TRACKING_DOMAIN=track.example.com
 FORMS_DOMAIN=forms.example.com
 WARMBLY_TAG=prod
+```
+
+For client connect links and shared reports, also set the [portal service's](/development/configuration/#portal-service) address and its token. Both are optional: without them the portal serves nothing and those two links are refused, and every other feature works.
+
+```dotenv
+PORTAL_DOMAIN=portal.example.com
+PORTAL_EDGE_TOKEN=<openssl rand -hex 32>
 ```
 
 Use **no trailing slash** in the three URLs. The three hostname values have **no scheme, port, or path**. In particular, do not put `:8080` in `API_PUBLIC_URL` or `:4000` in `REALTIME_HOST`. The file builds the secure WebSocket URL automatically.
@@ -108,6 +115,9 @@ In Coolify, configure a domain for each public service. The port suffix selects 
 | `realtime` | `https://realtime.example.com:4000` | `wss://realtime.example.com/socket/websocket` |
 | `tracking` | `https://track.example.com:3000` | `https://track.example.com` |
 | `forms` | `https://forms.example.com:8090` | `https://forms.example.com` |
+| `portal` | `https://portal.example.com:8095` | `https://portal.example.com` |
+
+An agency's verified [portal domain](/guides/white-label/#your-own-domain) is added to the `portal` service the same way, on port `8095`.
 
 For a Git-based resource, use **Domains**, select the receiving service, and add its domain. For Docker Compose Empty, configure the domain in each service's settings. Labels and screen names vary between Coolify versions, but the service/port mapping above is the important part.
 

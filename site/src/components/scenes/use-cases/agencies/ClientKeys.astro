@@ -1,6 +1,8 @@
 ---
 import ScaledStage from '../../../ScaledStage.astro';
 import Glyph from '../../Glyph.astro';
+import Stat from '../../Stat.astro';
+import TrendStat from '../../TrendStat.astro';
 import { WINDOW, EYEBROW, TOPBAR, SECTIONBAR } from '../../../../lib/scene';
 
 /**
@@ -21,18 +23,12 @@ const keys = [
       <span class="text-[12px] text-slate-600">Northwind</span>
     </div>
     <div class="grid grid-cols-2 border-b border-slate-200 pr-6">
-      <div class="px-5 py-3 border-r border-slate-200">
-        <div class={EYEBROW}>Active keys</div>
-        <div class="mt-1.5 text-[22px] font-light leading-none tabular-nums text-slate-900">3</div>
-      </div>
-      <div class="px-5 py-3">
-        <div class={EYEBROW}>Requests · 24h</div>
-        <div class="mt-1.5 text-[22px] font-light leading-none tabular-nums text-slate-900"><span data-tick="1284,1320,1900">1284</span></div>
-      </div>
+      <Stat label="Active keys" value="3" sub="0 inactive" accent pad="px-5 py-2.5" />
+      <TrendStat label="Requests · 24h" unit="0 errors" points={[31, 28, 22, 19, 17, 21, 34, 52, 68, 74, 71, 66, 59, 72, 78, 75, 69, 61, 54, 49, 44, 41, 38, 46]} kind="bars" tone="sky" pad="px-5 py-2.5" last><span data-tick="1284,1320,1900">1,284</span></TrendStat>
     </div>
     <div class={SECTIONBAR}><span class={EYEBROW}>Keys</span><span class="font-mono text-[10.5px] text-slate-400">3</span></div>
     {keys.map((k) => (
-      <div class="h-[52px] px-5 pr-10 flex items-center gap-3 border-b border-slate-200/60">
+      <div class="h-11 px-5 pr-10 flex items-center gap-3 border-b border-slate-200/60">
         <span class="inline-flex size-7 shrink-0 items-center justify-center rounded-md bg-slate-50 text-slate-500 ring-1 ring-slate-200"><Glyph name="terminal" size={13} /></span>
         <div class="min-w-0 flex-1">
           <div class="text-[12.5px] font-medium text-slate-900">{k.name}</div>

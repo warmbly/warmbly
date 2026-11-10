@@ -306,7 +306,7 @@ func (h *Handler) IntegrationOAuthCallback(c *gin.Context) {
 	if origin == "" && h.SlackService != nil {
 		origin = h.SlackService.OAuthReturnOrigin(c.Request.Context(), payload["state"])
 	}
-	origin = config.DashboardOrigin(origin)
+	origin = config.TrustedOrigin(origin)
 	if origin != "" {
 		relay = origin + "/oauth-return"
 	}
@@ -1366,5 +1366,5 @@ func (h *Handler) auditIntegrationEntity(c *gin.Context, userID uuid.UUID, actio
 	if orgID == nil {
 		return
 	}
-	h.AuditService.LogAction(c.Request.Context(), *orgID, userID, action, entityType, &id, c.ClientIP(), c.Request.UserAgent(), nil, meta)
+	h.AuditService.LogAction(c.Request.Context(), *orgID, userID, action, entityType, &id, c.ClientIP(), c.Request.UserAgent(), nil, withAgencyKeyActor(c, meta))
 }

@@ -204,7 +204,14 @@ export default function OnboardingPage() {
                 team_size: data.team_size,
             });
             queryClient.removeQueries({ queryKey: ["auth", "me"] });
-            navigate(hrefTarget(postAuthNext(new URLSearchParams(window.location.search).get("next"))));
+            const target = postAuthNext(new URLSearchParams(window.location.search).get("next"));
+            // An agency lands on the offer to set one up, unless a link sent them somewhere specific; it can be skipped there.
+            const landing = new URL(target, window.location.origin).pathname.replace(/\/+$/, "");
+            if (data.role === "agency" && (landing === "/app" || landing === "/app/emails")) {
+                navigate({ to: "/app/agency" });
+                return;
+            }
+            navigate(hrefTarget(target));
         } catch (e) {
             toast.error(buildError(e as AppError));
         }

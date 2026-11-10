@@ -109,6 +109,7 @@ export const NAV_GROUPS: NavGroup[] = [
                 pages: [
                     { to: "/organizations", label: "Organizations", perm: AdminPerm.ViewOrganizations },
                     { to: "/limit-requests", label: "Limit requests", perm: AdminPerm.ViewOrganizations },
+                    { to: "/agencies", label: "Agencies", perm: AdminPerm.ViewOrganizations },
                 ],
             },
             {

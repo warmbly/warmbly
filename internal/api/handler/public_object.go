@@ -80,5 +80,6 @@ func isPublicKey(key string) bool {
 		return false
 	}
 	return strings.HasPrefix(key, "avatars/") || strings.HasPrefix(key, "oauth-app-logos/") ||
-		strings.HasPrefix(key, "form-assets/") || strings.HasPrefix(key, models.EmailImageKeyPrefix)
+		strings.HasPrefix(key, "form-assets/") || strings.HasPrefix(key, models.EmailImageKeyPrefix) ||
+		strings.HasPrefix(key, models.BrandAssetKeyPrefix)
 }

@@ -2,7 +2,8 @@
 import ScaledStage from '../../ScaledStage.astro';
 import Glyph from '../Glyph.astro';
 import Ico from '../warmup/Ico.astro';
-import { WINDOW, FLOAT, EYEBROW, SECTIONBAR, STAT, STAT_VALUE, STAT_SUB } from '../../../lib/scene';
+import Stat from '../Stat.astro';
+import { WINDOW, FLOAT, EYEBROW, SECTIONBAR } from '../../../lib/scene';
 
 /**
  * Deliverability > Warmup inbox placement (WarmupPlacementSection.tsx): the
@@ -39,9 +40,9 @@ const sparkPath = (v: number[]) => v.map((y, i) => `${i ? 'L' : 'M'} ${(i / (v.l
       </span>
     </div>
     <div class="grid grid-cols-3 border-b border-slate-200">
-      <div class={STAT}><div class={EYEBROW}>Non-spam share · 7 days</div><div class={`${STAT_VALUE} text-emerald-600`}>93.6%</div><div class={STAT_SUB}>Healthy</div></div>
-      <div class={STAT}><div class={EYEBROW}>Classified receipts</div><div class={STAT_VALUE}><span data-tick="1204,1240,2600">1204</span></div><div class={STAT_SUB}>of 1,262 submissions</div></div>
-      <div class="px-5 py-4"><div class={EYEBROW}>Spam</div><div class={`${STAT_VALUE} text-rose-600`}>77</div><div class={STAT_SUB}>6.4% · at the big three only</div></div>
+      <Stat label="Non-spam share · 7 days" value="93.6%" sub="Healthy" ink="text-emerald-600" />
+      <Stat label="Classified receipts" sub="of 1,262 submissions"><span data-tick="1204,1240,2600">1,204</span></Stat>
+      <Stat label="Spam" value="77" sub="6.4% · at the big three only" ink="text-rose-600" last />
     </div>
     <div class={SECTIONBAR}>
       <span class={EYEBROW}>Mailboxes by inbox rate</span>

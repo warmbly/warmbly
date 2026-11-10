@@ -6,7 +6,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams, useSearchParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
     ArrowLeftRight,
@@ -46,6 +46,7 @@ import {
     type AdminOrgAPIKey,
     type AdminWebhookEndpointRow,
 } from "@/lib/api/client/admin/organizations";
+import { getOrganizationAgency } from "@/lib/api/client/admin/agencies";
 import { OrgTransferTab } from "./transfers/OrgTransferTab";
 import { fmtAgo, fmtDate, fmtDateTime } from "./fleet/format";
 import type {
@@ -276,6 +277,7 @@ function OrgProperties({ org }: { org: AdminOrgDetail }) {
                         <span className="tabular-nums">{new Date(org.trial_end).toLocaleDateString()}</span>
                     </Property>
                 )}
+                <AgencyProperty orgId={org.id} />
             </PropertyList>
 
             <div className="mt-5 mb-1 text-xs font-medium text-muted-foreground">Lifecycle</div>
@@ -295,6 +297,23 @@ function OrgProperties({ org }: { org: AdminOrgDetail }) {
                 )}
             </PropertyList>
         </div>
+    );
+}
+
+// The agency this workspace is a client of; nothing when it stands alone.
+function AgencyProperty({ orgId }: { orgId: string }) {
+    const agencyQuery = useQuery({
+        queryKey: ["admin", "organizations", orgId, "agency"],
+        queryFn: () => getOrganizationAgency(orgId),
+    });
+    const agency = agencyQuery.data?.agency;
+    if (!agency) return null;
+    return (
+        <Property label="Agency">
+            <Link to={`/agencies/${agency.id}`} className="underline underline-offset-2">
+                Client of {agency.name}
+            </Link>
+        </Property>
     );
 }
 

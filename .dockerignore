@@ -19,6 +19,7 @@ web/dist
 web/build
 web/coverage
 forms/dist
+portal/dist
 admin/dist
 site/dist
 site/.astro

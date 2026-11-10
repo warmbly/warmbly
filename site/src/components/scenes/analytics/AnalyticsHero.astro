@@ -2,7 +2,8 @@
 import ScaledStage from '../../ScaledStage.astro';
 import Glyph from '../Glyph.astro';
 import Ico from './Ico.astro';
-import { WINDOW, EYEBROW, TOPBAR, SECTIONBAR, STAT, STAT_VALUE, STAT_SUB, ACTION_GHOST } from '../../../lib/scene';
+import TrendStat from '../TrendStat.astro';
+import { WINDOW, EYEBROW, TOPBAR, SECTIONBAR, ACTION_GHOST } from '../../../lib/scene';
 
 /**
  * The whole Analytics page (web/src/app/app/analytics/page.tsx): topbar with
@@ -41,12 +42,6 @@ const grid = [0.25, 0.5, 0.75].map((f) => ({ top: PT + (1 - f) * IH, label: Stri
 const HOVER = 21;
 const hx = x(HOVER);
 
-const stats = [
-  { label: 'Total sent', value: '12,847', sub: 'in range', pulse: true },
-  { label: 'Open rate', value: '34.2%', sub: 'after delivery' },
-  { label: 'Reply rate', value: '6.1%', sub: 'incl. positive' },
-  { label: 'Bounce rate', value: '1.2%', sub: 'hard + soft', last: true },
-];
 const breakdown = [
   { label: 'Sent', value: '12,847', dot: 'bg-slate-400' },
   { label: 'Opens', value: '4,394', dot: 'bg-emerald-500', note: '612 auto, not counted' },
@@ -65,6 +60,12 @@ const feed = [
   { tone: 'text-emerald-600', verb: 'Opened by', who: 'lena@stratech.io', origin: { icon: 'eyeOff', text: 'Gmail · device hidden' }, campaign: 'Win-back: former trials', ts: 'Oct 9, 02:27 PM' },
   { tone: 'text-slate-500', verb: 'Sent to', who: 'omar@brightco.io', campaign: 'Agencies: founder intro', ts: 'Oct 9, 02:20 PM' },
 ];
+// The strip's sparklines over the 30 days in range.
+const trend = {
+  sent: [382, 401, 396, 418, 432, 148, 131, 441, 455, 462, 449, 471, 162, 144, 468, 482, 477, 495, 503, 171, 158, 498, 512, 507, 521, 534, 183, 166, 529, 541],
+  opens: [128, 139, 131, 146, 151, 49, 42, 149, 158, 161, 152, 166, 54, 47, 159, 168, 162, 171, 176, 58, 51, 169, 177, 172, 180, 186, 62, 55, 181, 188],
+  replies: [22, 26, 23, 27, 29, 7, 5, 26, 30, 31, 27, 32, 9, 6, 28, 31, 29, 33, 34, 10, 8, 30, 34, 31, 35, 37, 11, 9, 33, 36],
+};
 ---
 <ScaledStage w={1240} h={780} photo="sheer-lavender">
   <div class={`${WINDOW} left-[56px] top-[52px] right-0 h-[728px]`}>
@@ -84,16 +85,10 @@ const feed = [
     </div>
 
     <div class="grid grid-cols-4 border-b border-slate-200">
-      {stats.map((s) => (
-        <div class={s.last ? 'px-5 py-4' : STAT}>
-          <div class="flex items-center gap-2">
-            <span class={EYEBROW}>{s.label}</span>
-            {s.pulse && <span class="size-1.5 rounded-full bg-sky-500 animate-pulse"></span>}
-          </div>
-          <div class={STAT_VALUE}>{s.value}</div>
-          <div class={STAT_SUB}>{s.sub}</div>
-        </div>
-      ))}
+      <TrendStat label="Total sent" value="12,847" unit="in range" points={trend.sent} kind="area" tone="sky" />
+      <TrendStat label="Open rate" value="34.2%" unit="after delivery" points={trend.opens} />
+      <TrendStat label="Reply rate" value="6.1%" unit="incl. positive" points={trend.replies} kind="bars" />
+      <TrendStat label="Bounce rate" value="1.2%" unit="hard + soft" last />
     </div>
 
     <div class="grid grid-cols-[1fr_300px] border-b border-slate-200">

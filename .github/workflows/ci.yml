@@ -35,6 +35,7 @@ jobs:
       admin: ${{ steps.filter.outputs.admin }}
       site: ${{ steps.filter.outputs.site }}
       forms: ${{ steps.filter.outputs.forms }}
+      portal: ${{ steps.filter.outputs.portal }}
       qa: ${{ steps.filter.outputs.qa }}
       make: ${{ steps.filter.outputs.make }}
       ios: ${{ steps.filter.outputs.ios }}
@@ -94,6 +95,11 @@ jobs:
               - 'web/src/components/app/forms/designCore.ts'
               - 'web/src/components/app/forms/form-theme.css'
               - 'scripts/check-forms-mirror.sh'
+            portal:
+              - 'portal/**'
+              - 'deploy/cloudflare/portal/**'
+              - 'deploy/docker/portal.Dockerfile'
+              - 'deploy/docker/portal/**'
             qa:
               - 'qa/**'
             make:
@@ -135,7 +141,7 @@ jobs:
         with:
           node-version: "22"
       - name: Check production configuration import
-        run: node --test .github/scripts/pages-*.test.mjs deploy/cloudflare/static-edge.test.mjs
+        run: node --test .github/scripts/pages-*.test.mjs deploy/cloudflare/*.test.mjs
 
   migrations-ci:
     name: Migrations
@@ -893,6 +899,68 @@ jobs:
       - name: Build
         run: pnpm build
 
+  # The portal service: the client page app, the service that serves it (portal/worker) and its Cloudflare config.
+  portal-ci:
+    name: Portal CI
+    needs: changes
+    if: needs.changes.outputs.portal == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: portal
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          working-directory: portal
+          node-version: "22"
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Service tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: Cloudflare Worker configuration
+        working-directory: .
+        run: pnpm dlx wrangler@4.45.0 deploy --dry-run --config deploy/cloudflare/portal/wrangler.jsonc --outdir "$RUNNER_TEMP/portal-worker"
+
+      # The self-host image runs the same modules on workerd; release.yml is the only other place it builds.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build the self-host image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/portal.Dockerfile
+          push: false
+          load: true
+          tags: warmbly-portal:ci
+          platforms: linux/amd64
+          cache-from: type=gha,scope=ci-portal
+          cache-to: type=gha,mode=max,scope=ci-portal
+
+      - name: Self-host image answers
+        working-directory: .
+        run: |
+          set -euo pipefail
+          docker run -d --name portal-ci -p 127.0.0.1:8095:8095 -e API_ORIGIN=http://127.0.0.1:9 \
+            -e PORTAL_DOMAIN=portal.ci.test -e PORTAL_EDGE_TOKEN=ci-portal-edge-token-0123456789abcdef warmbly-portal:ci
+          for _ in $(seq 30); do docker exec portal-ci wget -q -O /dev/null http://127.0.0.1:8096/ && break; sleep 1; done
+          curl -fsS -o /dev/null -H 'Host: portal.ci.test' http://127.0.0.1:8095/embed.js
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: portal.ci.test' http://127.0.0.1:8095/)" = 404
+          # An unknown host needs a backend lookup, which fails here, so it is a 503 rather than a 404.
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: other.ci.test' http://127.0.0.1:8095/)" = 503
+          docker rm -f portal-ci
+
   # The installer is served verbatim from site/public, so what CI checks is
   # exactly what a `curl | sh` executes. The checksum is published next to it
   # for anyone who would rather download, verify and read before running, and
@@ -1137,7 +1205,7 @@ jobs:
   ci-status:
     name: CI Status
     runs-on: ubuntu-latest
-    needs: [changes, migrations-ci, go-ci, web-ci, qa-ci, admin-ci, site-ci, forms-ci, installer-ci, cli-installer-ci, make-ci, rust-ci, elixir-ci, ios-ci, frontend-images, pages-ci, aws-deployment-ci]
+    needs: [changes, migrations-ci, go-ci, web-ci, qa-ci, admin-ci, site-ci, forms-ci, portal-ci, installer-ci, cli-installer-ci, make-ci, rust-ci, elixir-ci, ios-ci, frontend-images, pages-ci, aws-deployment-ci]
     if: always()
     steps:
       - name: Check CI status

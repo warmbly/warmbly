@@ -13,8 +13,11 @@
 
 import { useRef } from "react";
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, Menu, Search } from "lucide-react";
-import { Logo } from "@/components/svg";
+import { ArrowLeftIcon, ChevronRight, Menu, Search } from "lucide-react";
+import BrandMark from "@/components/app/brand/BrandMark";
+import { useClientBrand, useWorkspaceAgency } from "@/hooks/useClientBrand";
+import { AgencyBrandMark } from "@/components/app/agency/AgencyMark";
+import { rememberAgency } from "@/lib/api/hooks/app/agency/useAgency";
 import AgentMark from "@/components/app/agent/AgentMark";
 import RemieTip from "@/components/app/agent/RemieTip";
 import { useAppStore } from "@/stores";
@@ -37,6 +40,11 @@ import { useHeaderBreadcrumbs } from "@/hooks/useHeaderBreadcrumbs";
 export function AppHeader({ onMenu }: { onMenu?: () => void }) {
     const crumbs = useHeaderBreadcrumbs();
     const restricted = useAccessRestricted();
+    // A client member of a branded workspace sees none of Warmbly's own plan or release surfaces.
+    const clientBrand = useClientBrand();
+    // Agency staff inside a client see the agency first, with the way back to it.
+    const workspaceAgency = useWorkspaceAgency();
+    const backTo = workspaceAgency.staff ? workspaceAgency.agency : undefined;
     const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen);
     // The logo zone spans the sidebar column, so it has to collapse with it or
     // the breadcrumb stops lining up with the content panel below.
@@ -55,6 +63,24 @@ export function AppHeader({ onMenu }: { onMenu?: () => void }) {
             >
                 <Menu className="w-5 h-5" />
             </button>
+            {backTo ? (
+                <Link
+                    to="/app/agency"
+                    onClick={() => rememberAgency(backTo.id)}
+                    aria-label={`Back to ${backTo.name}`}
+                    title={`Back to ${backTo.name}`}
+                    className={cn(
+                        "h-full flex items-center gap-2 shrink-0 min-w-0 group pl-2 pr-2 md:transition-[width,padding] md:duration-200 md:ease-out",
+                        navCollapsed ? "md:w-14 md:px-0 md:justify-center" : "md:w-64 md:px-4",
+                    )}
+                >
+                    <ArrowLeftIcon className={cn("w-3.5 h-3.5 shrink-0 text-slate-400 group-hover:text-slate-700 transition-colors", navCollapsed && "md:hidden")} />
+                    <AgencyBrandMark agencyId={backTo.id} name={backTo.name} />
+                    <span className={cn("min-w-0 truncate text-[13px] font-semibold text-slate-900 group-hover:text-slate-700", navCollapsed ? "hidden" : "hidden md:inline")}>
+                        {backTo.name}
+                    </span>
+                </Link>
+            ) : (
             <Link
                 to="/app/emails"
                 className={cn(
@@ -70,24 +96,21 @@ export function AppHeader({ onMenu }: { onMenu?: () => void }) {
                     slight warm shift on hover. The earlier blue-gray
                     was too pale and competed with the chrome rather
                     than anchoring it. */}
-                <Logo className="w-7 text-slate-900 group-hover:text-slate-700 transition-colors duration-150" />
                 {/* Wordmark hides on mobile — the mark + the drawer's own brand
-                    header carry it there, leaving room for the workspace pill. */}
-                <span
-                    style={{ fontFamily: "var(--font-display)" }}
-                    className={cn(
-                        "wb-title font-extrabold text-[15.5px] tracking-tight text-slate-900",
-                        navCollapsed ? "hidden" : "hidden md:inline",
-                    )}
-                >
-                    Warmbly
-                </span>
+                    header carry it there, leaving room for the workspace pill.
+                    A client member of a branded workspace sees its brand here. */}
+                <BrandMark
+                    logoClassName="w-7 text-slate-900 group-hover:text-slate-700 transition-colors duration-150"
+                    wordmarkClassName={cn("wb-title text-[15.5px]", navCollapsed ? "hidden" : "hidden md:inline")}
+                />
             </Link>
+            )}
 
             {/* Breadcrumb: org switcher (always) > section > subpages. The
                 section crumbs are redundant with each page's own title on a
                 phone, so they only show on >=md. */}
             <div className="flex items-center gap-1.5 min-w-0 flex-1 pr-2 md:pr-4">
+                {backTo && <ChevronRight aria-hidden="true" className="w-3.5 h-3.5 text-slate-300 shrink-0" />}
                 <div className="min-w-0 md:shrink-0 max-w-32 lg:max-w-48">
                     <OrgSwitcher />
                 </div>
@@ -122,11 +145,11 @@ export function AppHeader({ onMenu }: { onMenu?: () => void }) {
                 {/* Outside the sm-only group on purpose: once the dialog is
                     dismissed this pill is the only way back to it, and a phone
                     is exactly where someone dismisses it fastest. */}
-                <BetaPill />
+                {!clientBrand && <BetaPill />}
                 <div className="hidden sm:flex items-center gap-2">
-                    <div className="hidden lg:contents"><PlanPill /></div>
-                    <VersionPill />
-                    {!restricted && <div className="hidden lg:contents"><BalanceMeter /></div>}
+                    {!clientBrand && <div className="hidden lg:contents"><PlanPill /></div>}
+                    {!clientBrand && <VersionPill />}
+                    {!restricted && !clientBrand && <div className="hidden lg:contents"><BalanceMeter /></div>}
                     <div className="hidden lg:block h-4 w-px bg-slate-200/80" />
                 </div>
                 <OutboxIndicator />

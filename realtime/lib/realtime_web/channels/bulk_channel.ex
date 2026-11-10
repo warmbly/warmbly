@@ -55,7 +55,8 @@ defmodule RealtimeWeb.BulkChannel do
   # An event with no owner belongs to nobody and is never delivered here.
   def own_event?(%{"user_id" => user_id} = event, socket)
       when is_binary(user_id) and user_id != "" do
-    user_id == socket.assigns.user_id and credential_reaches?(event, socket)
+    user_id == socket.assigns.user_id and credential_reaches?(event, socket) and
+      portal_reaches?(event, socket)
   end
 
   def own_event?(_event, _socket), do: false
@@ -74,6 +75,35 @@ defmodule RealtimeWeb.BulkChannel do
           socket
           |> ChannelGuard.remember_authorization(%{permissions: mask})
           |> OrgChannel.can_see_event?(event)
+    end
+  end
+
+  @portal_check_ttl_ms 30_000
+
+  # A portal session sees only operations in its agency's client workspaces, rechecked every 30 seconds.
+  defp portal_reaches?(event, socket) do
+    case socket.assigns[:portal_agency_id] do
+      nil ->
+        true
+
+      agency_id ->
+        org_id = event["org_id"] || event["organization_id"]
+        is_binary(org_id) and org_id != "" and portal_client?(org_id, agency_id)
+    end
+  end
+
+  defp portal_client?(org_id, agency_id) do
+    now = System.monotonic_time(:millisecond)
+    key = {:portal_client, org_id}
+
+    case Process.get(key) do
+      {checked_at, allowed} when now - checked_at < @portal_check_ttl_ms ->
+        allowed
+
+      _ ->
+        allowed = Auth.agency_client?(org_id, agency_id) == {:ok, true}
+        Process.put(key, {now, allowed})
+        allowed
     end
   end
 

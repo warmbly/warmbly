@@ -11,6 +11,8 @@ import { ArrowLeftIcon, CheckIcon, ExternalLinkIcon, LinkIcon, Loader2Icon, Shie
 
 import { useConfirm } from "@/hooks/context/confirm";
 import { httpUrl } from "@/lib/safeUrl";
+import HelpLink from "@/components/shared/HelpLink";
+import { helpLink } from "@/lib/helpLink";
 import { useCommunityApp } from "@/lib/api/hooks/app/integrations/useCommunityApps";
 import { useAuthorizedApps, useRevokeAuthorizedApp } from "@/lib/api/hooks/app/oauth/useAuthorizedApps";
 import { communityAppPath, type CommunityApp } from "@/lib/api/models/app/integrations/Community";
@@ -191,10 +193,14 @@ export function BuiltinDetail({
             actions={
                 <>
                     {entry.docs_url && (
-                        <a href={entry.docs_url} target="_blank" rel="noopener noreferrer" className={secondaryBtn}>
+                        <HelpLink
+                            href={entry.docs_url}
+                            className={secondaryBtn}
+                            portalLabel={<>Get help <ExternalLinkIcon className="w-3.5 h-3.5 text-slate-400" /></>}
+                        >
                             Docs
                             <ExternalLinkIcon className="w-3.5 h-3.5 text-slate-400" />
-                        </a>
+                        </HelpLink>
                     )}
                     {connections.length > 0 ? (
                         <button type="button" onClick={() => onManage(connections[0])} className={secondaryBtn}>
@@ -284,7 +290,7 @@ export function BuiltinDetail({
                     <DetailRow label="Made by">Warmbly</DetailRow>
                     <DetailRow label="Category">{categoryLabel(entry.category)}</DetailRow>
                     <DetailRow label="Connects with">{CONNECT_METHOD[entry.auth_method] ?? entry.auth_method}</DetailRow>
-                    {entry.docs_url && <DetailLink href={entry.docs_url}>Developer docs</DetailLink>}
+                    {entry.docs_url && helpLink(entry.docs_url) === entry.docs_url && <DetailLink href={entry.docs_url}>Developer docs</DetailLink>}
                 </>
             }
             related={related}
