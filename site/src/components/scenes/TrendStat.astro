@@ -1,0 +1,99 @@
+---
+/**
+ * One trend cell of a StatStrip, copied from
+ * web/src/components/ui/TrendStat.tsx: the label and a short fact, today's
+ * number with its unit, and the days before it as a sparkline ending on today.
+ */
+interface Props {
+  label: string;
+  /** The number; the default slot replaces it when it needs markup. */
+  value?: string | number;
+  /** Muted text after the value: a denominator or a window. */
+  unit?: string;
+  /** Right of the label: a delta or a short fact. */
+  note?: string;
+  noteInk?: string;
+  /** One value per day, oldest first. Without it the chart row stays empty. */
+  points?: (number | null)[];
+  kind?: 'line' | 'area' | 'bars';
+  tone?: 'slate' | 'sky' | 'emerald' | 'amber' | 'rose';
+  /** A 0-100 rate: the axis starts just under the lowest day instead of at zero. */
+  rate?: boolean;
+  last?: boolean;
+  pad?: string;
+}
+const {
+  label, value, unit, note, noteInk = 'text-slate-400', points, kind = 'line', tone = 'slate',
+  rate = false, last = false, pad = 'px-5 py-3.5',
+} = Astro.props;
+
+const TONE = { slate: 'text-slate-700', sky: 'text-sky-500', emerald: 'text-emerald-500', amber: 'text-amber-500', rose: 'text-rose-500' };
+const W = 140;
+const H = 28;
+const PAD = 2;
+
+const n = points?.length ?? 0;
+const present = (points ?? []).filter((v): v is number => v != null);
+const lo = rate && present.length ? Math.max(0, Math.min(60, Math.floor((Math.min(...present) - 5) / 10) * 10)) : 0;
+const hi = rate ? 100 : Math.max(1, ...present);
+const x = (i: number) => (n <= 1 ? W / 2 : PAD + (i / (n - 1)) * (W - PAD * 2));
+const y = (v: number) => PAD + (1 - (v - lo) / (hi - lo || 1)) * (H - PAD * 2);
+
+let line = '';
+let area = '';
+if (kind !== 'bars' && points) {
+  let open = false;
+  let runStart = 0;
+  points.forEach((v, i) => {
+    if (v == null) {
+      if (open) area += `L${x(i - 1).toFixed(1)},${H}L${x(runStart).toFixed(1)},${H}Z`;
+      open = false;
+      return;
+    }
+    const seg = `${x(i).toFixed(1)},${y(v).toFixed(1)}`;
+    if (!open) runStart = i;
+    line += `${open ? 'L' : 'M'}${seg}`;
+    area += `${open ? 'L' : 'M'}${seg}`;
+    open = true;
+  });
+  if (open) area += `L${x(n - 1).toFixed(1)},${H}L${x(runStart).toFixed(1)},${H}Z`;
+}
+const focus = n ? n - 1 : null;
+const focusValue = focus != null ? points![focus] : null;
+const slot = n ? W / n : 0;
+const bw = slot * 0.62;
+---
+<div class={`min-w-0 ${pad} ${last ? '' : 'border-r border-slate-200'}`}>
+  <div class="flex items-center gap-2 min-w-0">
+    <span class="text-[12px] font-medium text-slate-500 truncate">{label}</span>
+    {note && <span class={`ml-auto shrink-0 text-[11px] font-medium tabular-nums ${noteInk}`}>{note}</span>}
+  </div>
+  <div class="mt-1.5 flex items-baseline gap-1 min-w-0">
+    <span class="text-[22px] font-semibold tracking-[-0.02em] text-slate-900 leading-none tabular-nums whitespace-nowrap"><slot>{value}</slot></span>
+    <span class="text-[12px] text-slate-400 tabular-nums truncate">{unit}</span>
+  </div>
+  <div class={`relative mt-2.5 h-7 rounded-sm ${TONE[tone]}`} aria-hidden="true">
+    {points && n > 0 && (
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" class="block w-full h-full overflow-visible">
+        {kind === 'bars' ? (
+          points.map((p, i) => {
+            const v = p ?? 0;
+            const h = Math.max(1, ((v - lo) / (hi - lo || 1)) * (H - PAD));
+            return <rect x={i * slot + (slot - bw) / 2} y={H - h} width={bw} height={h} rx="1" fill="currentColor" opacity={v ? (i === focus ? 1 : 0.32) : 0.16} />;
+          })
+        ) : (
+          <>
+            {kind === 'area' && <path d={area} fill="currentColor" opacity="0.12" />}
+            <path d={line} fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke" />
+          </>
+        )}
+      </svg>
+    )}
+    {points && kind !== 'bars' && focus != null && focusValue != null && (
+      <span
+        class="pointer-events-none absolute size-[7px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-current ring-2 ring-white"
+        style={`left:${(x(focus) / W) * 100}%; top:${(y(focusValue) / H) * 100}%`}
+      ></span>
+    )}
+  </div>
+</div>

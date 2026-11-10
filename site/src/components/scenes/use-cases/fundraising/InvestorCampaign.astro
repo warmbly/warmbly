@@ -1,6 +1,7 @@
 ---
 import ScaledStage from '../../../ScaledStage.astro';
 import Glyph from '../../Glyph.astro';
+import Stat from '../../Stat.astro';
 import { WINDOW, FLOAT, EYEBROW, SECTIONBAR } from '../../../../lib/scene';
 import { TH, AVATAR, initials } from '../ui';
 
@@ -30,13 +31,9 @@ const leads: Lead[] = [
       </div>
     </div>
     <div class="grid grid-cols-3 border-y border-slate-200 pr-6">
-      {[['Investors', '48', 'in the campaign'], ['Replied', '9', '18.8% so far'], ['Stopped by a reply', '9', 'no follow-up sent']].map(([k, v, s], i) => (
-        <div class={`px-5 py-3 ${i < 2 ? 'border-r border-slate-200' : ''}`}>
-          <div class={EYEBROW}>{k}</div>
-          <div class="mt-1.5 text-[22px] font-light leading-none tabular-nums text-slate-900">{v}</div>
-          <div class="mt-1 font-mono text-[10px] text-slate-400">{s}</div>
-        </div>
-      ))}
+      <Stat label="Investors" value="48" sub="in the campaign" pad="px-5 py-3" />
+      <Stat label="Replied" value="9" sub="18.8% so far" pad="px-5 py-3" />
+      <Stat label="Stopped by a reply" value="9" sub="no follow-up sent" pad="px-5 py-3" last />
     </div>
     <div class={SECTIONBAR}><span class={EYEBROW}>Leads</span><span class="font-mono text-[10.5px] text-slate-400">48</span><span class="ml-auto mr-6 inline-flex items-center gap-1.5 text-[10.5px] text-slate-400"><span class="size-1.5 rounded-full bg-emerald-500 animate-pulse"></span>Live</span></div>
     <table class="w-[644px] table-fixed">

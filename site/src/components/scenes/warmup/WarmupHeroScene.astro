@@ -3,7 +3,9 @@ import HeroStage from './HeroStage.astro';
 import DrawerHead from './DrawerHead.astro';
 import Glyph from '../Glyph.astro';
 import Ico from './Ico.astro';
-import { WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_GHOST, ACTION_PRIMARY, STAT, STAT_VALUE, STAT_SUB } from '../../../lib/scene';
+import TrendStat from '../TrendStat.astro';
+import MailboxCounts from '../MailboxCounts.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_GHOST, ACTION_PRIMARY } from '../../../lib/scene';
 
 /**
  * The Accounts page (web/src/app/app/emails/page.tsx) with its Warmup column
@@ -30,12 +32,14 @@ const rows: Row[] = [
   { addr: 'team@coastline.io', name: 'Sofia Ruiz', provider: 'SMTP / IMAP', mark: 'imap', status: 'resting', warm: 'Paused', inbox: 90, health: ['healthy', 90] },
   { addr: 'growth@acme.co', name: 'Maya Okonkwo', provider: 'Google Workspace', mark: 'google', status: 'active', sent: 25, warm: [4, 5], inbox: 97, health: ['healthy', 96] },
 ];
-const stats = [
-  { label: 'Total', value: '12', sub: 'connected' },
-  { label: 'Healthy', value: '10', sub: 'sending now', pulse: true },
-  { label: 'Warming', value: '6', sub: 'ramping up' },
-  { label: 'Needs attention', value: '1', sub: 'paused or failing', last: true },
-];
+// Fourteen days ending today, as the strip draws them.
+const trend = {
+  sent: [188, 196, 0, 0, 204, 211, 208, 219, 224, 0, 0, 231, 238, 123],
+  warmup: [96, 101, 105, 109, 112, 116, 121, 124, 128, 131, 135, 139, 142, 88],
+  inbox: [92, 93, 93, 94, 93, 94, 94, 95, 94, 95, 95, 94, 95, 95],
+  replies: [7, 9, 0, 0, 8, 5, 11, 6, 9, 0, 0, 8, 7, 6],
+};
+const repliesTotal = trend.replies.reduce((a, b) => a + b, 0);
 const feed = [
   { icon: 'send', tone: 'text-sky-600 bg-sky-50', text: 'Sent to dana@helio.gen', sub: 'Google Workspace · 2:41 PM' },
   { icon: 'inbox', tone: 'text-emerald-600 bg-emerald-50', text: 'Arrived in the inbox', sub: 'from ravi@stratech.io · Microsoft 365' },
@@ -68,20 +72,15 @@ const healthTone = (h: string) => h === 'healthy'
       </div>
     </div>
     <div class="grid grid-cols-4 border-b border-slate-200">
-      {stats.map((s) => (
-        <div class={s.last ? 'px-5 py-4' : STAT}>
-          <div class="flex items-center gap-2">
-            <span class={EYEBROW}>{s.label}</span>
-            {s.pulse && <span class="size-1.5 rounded-full bg-sky-500 animate-pulse"></span>}
-          </div>
-          <div class={STAT_VALUE}>{s.value}</div>
-          <div class={STAT_SUB}>{s.sub}</div>
-        </div>
-      ))}
+      <TrendStat label="Sent today" value="123" unit="/ 250" note="5 in campaigns" points={trend.sent} />
+      <TrendStat label="Warmup today" unit="/ 131" note="9 warming" points={trend.warmup} kind="area" tone="sky"><span data-tick="88,104,2800">88</span></TrendStat>
+      <TrendStat label="Inbox placement" value="95%" unit="7 days" note="+1 pt" noteInk="text-emerald-700" points={trend.inbox} tone="emerald" rate />
+      <TrendStat label="Replies" value="6" unit="to today's sends" note={`${repliesTotal} over 14 days`} points={trend.replies} kind="bars" last />
     </div>
     <div class={SECTIONBAR}>
       <span class={EYEBROW}>Mailboxes</span>
       <span class="font-mono text-[10.5px] text-slate-400 tabular-nums">12</span>
+      <MailboxCounts healthy={11} warming={6} issues={1} />
       <div class="ml-auto flex items-center gap-1.5 pr-[170px]">
         <div class="h-7 w-48 pl-2 pr-1 rounded-md border border-slate-200 bg-white flex items-center gap-1.5">
           <Glyph name="search" size={13} class="text-slate-400" />

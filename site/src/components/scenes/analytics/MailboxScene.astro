@@ -2,7 +2,9 @@
 import ScaledStage from '../../ScaledStage.astro';
 import Glyph from '../Glyph.astro';
 import Ico from './Ico.astro';
-import { WINDOW, FLOAT, EYEBROW, TOPBAR, STAT, STAT_VALUE, STAT_SUB } from '../../../lib/scene';
+import TrendStat from '../TrendStat.astro';
+import MailboxCounts from '../MailboxCounts.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR } from '../../../lib/scene';
 
 /**
  * Per mailbox: the Accounts table with the one mailbox whose bounces pulled
@@ -11,18 +13,20 @@ import { WINDOW, FLOAT, EYEBROW, TOPBAR, STAT, STAT_VALUE, STAT_SUB } from '../.
  */
 type Row = { addr: string; mark: 'google' | 'microsoft' | 'imap'; sent: string; inbox: string; health: string; bad?: boolean };
 const rows: Row[] = [
-  { addr: 'alex@northwind.dev', mark: 'google', sent: '23/50', inbox: '98%', health: 'Healthy 96' },
   { addr: 'ml@helio.gen', mark: 'imap', sent: '0/50', inbox: '91%', health: 'Issues 50', bad: true },
+  { addr: 'alex@northwind.dev', mark: 'google', sent: '23/50', inbox: '98%', health: 'Healthy 96' },
   { addr: 'sam@northwind.io', mark: 'microsoft', sent: '31/50', inbox: '95%', health: 'Healthy 93' },
   { addr: 'leo@northwind.dev', mark: 'google', sent: '27/50', inbox: '97%', health: 'Healthy 94' },
   { addr: 'mia@northwind.dev', mark: 'google', sent: '18/50', inbox: '96%', health: 'Healthy 91' },
   { addr: 'ops@northwind.co', mark: 'imap', sent: '12/50', inbox: '92%', health: 'Healthy 88' },
 ];
-const stats = [
-  { label: 'Total', value: '8', sub: 'connected' },
-  { label: 'Healthy', value: '7', sub: 'sending now' },
-  { label: 'Needs attention', value: '1', sub: 'paused or failing', last: true },
-];
+// Fourteen days ending today, as the strip draws them.
+const trend = {
+  sent: [212, 221, 0, 0, 228, 236, 231, 244, 249, 0, 0, 238, 226, 148],
+  warmup: [262, 268, 271, 275, 278, 280, 280, 280, 280, 280, 280, 264, 252, 171],
+  inbox: [96, 96, 95, 96, 96, 95, 96, 95, 95, 94, 94, 93, 93, 94],
+  replies: [9, 11, 0, 0, 12, 8, 14, 10, 13, 0, 0, 9, 8, 7],
+};
 const th = 'px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em] text-left';
 ---
 <ScaledStage w={680} h={510} photo="frost-blue">
@@ -32,14 +36,16 @@ const th = 'px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-
       <span class="h-4 w-px bg-slate-200"></span>
       <span class="text-[12.5px] text-slate-600">8 mailboxes</span>
     </div>
-    <div class="grid grid-cols-3 border-b border-slate-200">
-      {stats.map((s) => (
-        <div class={s.last ? 'px-5 py-4' : STAT}>
-          <div class={EYEBROW}>{s.label}</div>
-          <div class={`${STAT_VALUE} ${s.last ? 'text-rose-600' : ''}`}>{s.value}</div>
-          <div class={STAT_SUB}>{s.sub}</div>
-        </div>
-      ))}
+    <div class="grid grid-cols-4 border-b border-slate-200">
+      <TrendStat label="Sent today" value="148" unit="/ 350" points={trend.sent} pad="px-4 py-3.5" />
+      <TrendStat label="Warmup today" value="171" unit="/ 280" points={trend.warmup} kind="area" tone="sky" pad="px-4 py-3.5" />
+      <TrendStat label="Inbox placement" value="94%" unit="7 days" note="−2 pts" noteInk="text-amber-700" points={trend.inbox} tone="emerald" rate pad="px-4 py-3.5" />
+      <TrendStat label="Replies" value="7" unit="to today's sends" points={trend.replies} kind="bars" last pad="px-4 py-3.5" />
+    </div>
+    <div class={SECTIONBAR}>
+      <span class={EYEBROW}>Mailboxes</span>
+      <span class="font-mono text-[10.5px] text-slate-400 tabular-nums">8</span>
+      <MailboxCounts healthy={7} warming={0} issues={1} />
     </div>
     <table class="w-full table-fixed">
       <thead>

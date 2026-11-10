@@ -1,7 +1,8 @@
 ---
 import ScaledStage from '../../../ScaledStage.astro';
 import Glyph from '../../Glyph.astro';
-import { WINDOW, EYEBROW, STAT, STAT_VALUE, STAT_SUB } from '../../../../lib/scene';
+import TrendStat from '../../TrendStat.astro';
+import { WINDOW, EYEBROW } from '../../../../lib/scene';
 import { MENU, MENU_LABEL, MENU_ITEM, initials } from '../ui';
 
 /** Agencies: the workspace switcher open, one workspace per client. */
@@ -19,9 +20,8 @@ const clients = ['Northwind', 'Lumen Robotics', 'Glasshouse Labs', 'Penna Health
     </div>
     <div class="ml-[200px] h-full rounded-tl-2xl border-t border-l border-slate-200/70 bg-white">
       <div class="grid grid-cols-2 border-b border-slate-200 pr-10">
-        {[['Total sent', '4,812', 'in range'], ['Reply rate', '6.4%', 'incl. positive']].map(([k, v, s], i) => (
-          <div class={i === 0 ? STAT : 'px-5 py-4'}><div class={EYEBROW}>{k}</div><div class={STAT_VALUE}>{v}</div><div class={STAT_SUB}>{s}</div></div>
-        ))}
+        <TrendStat label="Total sent" value="4,812" unit="in range" points={[142, 156, 52, 47, 166, 175, 179, 58, 51, 184, 188, 63, 196, 208]} kind="area" tone="sky" />
+        <TrendStat label="Reply rate" value="6.4%" unit="incl. positive" points={[9, 11, 3, 2, 10, 12, 12, 3, 3, 12, 13, 4, 13, 14]} kind="bars" last />
       </div>
       <div class="px-5 pt-5 pr-14 flex h-[200px] items-end gap-1.5">
         {[42, 55, 48, 60, 66, 30, 26, 64, 70, 68, 74, 78, 34, 30, 76, 80].map((v, i) => <span class="enter-grow-y flex-1 rounded-t-[2px] bg-sky-500/70" style={`height:${v}%; --d:${150 + i * 40}ms`}></span>)}
