@@ -12,6 +12,13 @@ test.describe("marketing site agencies", () => {
   test.use({ signedIn: false });
 
   test("agency pricing and the agencies page", async ({ page, proof }) => {
+    await page.goto("/");
+    const band = page.getByRole("heading", { name: /One plan covers all of them/ });
+    await expect(band).toBeVisible();
+    await page.locator(".agency-band").evaluate((node) => node.scrollIntoView({ block: "center", behavior: "instant" }));
+    await proof.dwell(1200);
+    await proof.shot("site-home-agencies", { caption: "Landing page: the agency plans under the regular ones" });
+
     await page.goto("/pricing/#agencies");
     const section = page.locator("#agencies");
     await expect(section.getByText("Agency Pro").first()).toBeVisible();
