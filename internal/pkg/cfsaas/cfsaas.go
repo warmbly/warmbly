@@ -237,17 +237,48 @@ func (c *Client) ensureHostname(ctx context.Context, name string) (*Hostname, er
 // routePattern is every path on one hostname and nothing else, so no other name on the zone is touched.
 func routePattern(name string) string { return name + "/*" }
 
-// ensureRoute sends name to the Worker; a pattern the zone already routes is left as it is.
+type apiRoute struct {
+	ID      string `json:"id"`
+	Pattern string `json:"pattern"`
+	Script  string `json:"script"`
+}
+
+// routesFor lists the zone's routes for name's own pattern.
+func (c *Client) routesFor(ctx context.Context, name string) ([]apiRoute, error) {
+	var all []apiRoute
+	if err := c.do(ctx, http.MethodGet, "/workers/routes", nil, &all); err != nil {
+		return nil, err
+	}
+	var out []apiRoute
+	for _, r := range all {
+		if r.Pattern == routePattern(name) {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
+// ensureRoute sends name to the Worker. A pattern the zone already routes is
+// accepted only when it reaches that Worker; one to another is left alone and refused.
 func (c *Client) ensureRoute(ctx context.Context, name string) error {
 	if c.cfg.Worker == "" {
 		return nil
 	}
 	err := c.do(ctx, http.MethodPost, "/workers/routes", map[string]any{"pattern": routePattern(name), "script": c.cfg.Worker}, nil)
 	var ae *APIError
-	if errors.As(err, &ae) && ae.has(duplicateRouteCode) {
-		return nil
+	if !errors.As(err, &ae) || !ae.has(duplicateRouteCode) {
+		return err
 	}
-	return err
+	routes, err := c.routesFor(ctx, name)
+	if err != nil {
+		return err
+	}
+	for _, r := range routes {
+		if r.Script == c.cfg.Worker {
+			return nil
+		}
+	}
+	return fmt.Errorf("cloudflare: %s is already routed to another Worker", routePattern(name))
 }
 
 // removeRoute deletes the route this created for name, never one to another Worker.
@@ -255,16 +286,12 @@ func (c *Client) removeRoute(ctx context.Context, name string) error {
 	if c.cfg.Worker == "" {
 		return nil
 	}
-	var routes []struct {
-		ID      string `json:"id"`
-		Pattern string `json:"pattern"`
-		Script  string `json:"script"`
-	}
-	if err := c.do(ctx, http.MethodGet, "/workers/routes", nil, &routes); err != nil {
+	routes, err := c.routesFor(ctx, name)
+	if err != nil {
 		return err
 	}
 	for _, r := range routes {
-		if r.Pattern == routePattern(name) && r.Script == c.cfg.Worker {
+		if r.Script == c.cfg.Worker {
 			if err := c.do(ctx, http.MethodDelete, "/workers/routes/"+url.PathEscape(r.ID), nil, nil); err != nil {
 				return err
 			}

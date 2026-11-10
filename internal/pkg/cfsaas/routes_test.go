@@ -99,6 +99,17 @@ func TestEnsureFailsWhenTheRouteIsRefused(t *testing.T) {
 	}
 }
 
+func TestEnsureRefusesAHostnameRoutedToAnotherWorker(t *testing.T) {
+	c, z := newRouted(t, "portal")
+	z.routes["manual"], z.script["manual"] = "portal.agency.example/*", "something-else"
+	if h, err := c.Ensure(context.Background(), "portal.agency.example"); err == nil || h != nil {
+		t.Fatalf("a hostname another Worker answers must not read as registered: %+v, %v", h, err)
+	}
+	if len(z.routes) != 1 || z.script["manual"] != "something-else" {
+		t.Fatalf("the other Worker's route was changed: %v, %v", z.routes, z.script)
+	}
+}
+
 func TestEnsureAddsNoRouteWithoutAWorker(t *testing.T) {
 	c, z := newRouted(t, "")
 	if _, err := c.Ensure(context.Background(), "portal.agency.example"); err != nil || z.posts != 0 {
