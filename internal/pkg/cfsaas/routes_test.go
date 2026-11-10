@@ -110,6 +110,18 @@ func TestEnsureRefusesAHostnameRoutedToAnotherWorker(t *testing.T) {
 	}
 }
 
+func TestRemoveLeavesARouteForANameTheZoneNeverHad(t *testing.T) {
+	c, z := newRouted(t, "portal")
+	// Added by hand for a name this client never registered.
+	z.routes["manual"], z.script["manual"] = "portal.agency.example/*", "portal"
+	if err := c.Remove(context.Background(), "portal.agency.example"); err != nil {
+		t.Fatal(err)
+	}
+	if z.routes["manual"] == "" {
+		t.Fatal("a route for a hostname the zone does not have was removed")
+	}
+}
+
 func TestEnsureAddsNoRouteWithoutAWorker(t *testing.T) {
 	c, z := newRouted(t, "")
 	if _, err := c.Ensure(context.Background(), "portal.agency.example"); err != nil || z.posts != 0 {

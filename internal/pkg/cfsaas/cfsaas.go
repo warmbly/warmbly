@@ -206,6 +206,7 @@ func (c *Client) Ensure(ctx context.Context, name string) (*Hostname, error) {
 	return h, nil
 }
 
+// ensureHostname registers name as a custom hostname unless the zone already has it.
 func (c *Client) ensureHostname(ctx context.Context, name string) (*Hostname, error) {
 	if h, err := c.Find(ctx, name); err != nil || h != nil {
 		return h, err
@@ -237,6 +238,7 @@ func (c *Client) ensureHostname(ctx context.Context, name string) (*Hostname, er
 // routePattern is every path on one hostname and nothing else, so no other name on the zone is touched.
 func routePattern(name string) string { return name + "/*" }
 
+// apiRoute is one Worker route on the zone.
 type apiRoute struct {
 	ID      string `json:"id"`
 	Pattern string `json:"pattern"`
@@ -300,14 +302,16 @@ func (c *Client) removeRoute(ctx context.Context, name string) error {
 	return nil
 }
 
-// Remove deletes name from the zone, its route first; one the zone does not have is already removed.
+// Remove deletes name from the zone, its route first. A name the zone does not
+// have is already removed, and its pattern is left alone: this only ever adds a
+// route after the hostname, so without the hostname the route is not its own.
 func (c *Client) Remove(ctx context.Context, name string) error {
 	name = normalize(name)
-	if err := c.removeRoute(ctx, name); err != nil {
-		return err
-	}
 	h, err := c.Find(ctx, name)
 	if err != nil || h == nil {
+		return err
+	}
+	if err := c.removeRoute(ctx, name); err != nil {
 		return err
 	}
 	return c.do(ctx, http.MethodDelete, "/custom_hostnames/"+url.PathEscape(h.ID), nil, nil)
