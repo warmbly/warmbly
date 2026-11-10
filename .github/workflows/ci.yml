@@ -372,6 +372,15 @@ jobs:
           WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
         run: go test -race ./internal/repository -run '^TestLiveInvitedSignup$' -count=1
 
+      - name: Notification preference save regressions (PostgreSQL)
+        if: matrix.suite == 'live-1'
+        env:
+          WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
+        run: |
+          set -o pipefail
+          go test -race -v ./internal/repository -run '^TestLiveNotificationPreferencesKeepKeysASaveOmits$' -count=1 | tee notification-preferences.log
+          grep -q '^--- PASS: TestLiveNotificationPreferencesKeepKeysASaveOmits ' notification-preferences.log
+
       - name: Tester initial password and sample data regressions (PostgreSQL)
         if: matrix.suite == 'live-1'
         env:
