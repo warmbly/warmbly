@@ -79,7 +79,18 @@ func Compose(deployment Brand, workspace *models.BrandSettings, agency *models.A
 	if chosen.HidePoweredBy && entitled {
 		out.Brand.PoweredBy = nil
 	}
+	if out.Source == SourceAgency {
+		applyPortalTheme(&out.Brand, agency)
+	}
 	return out
+}
+
+// applyPortalTheme adds what only an agency's brand carries: its tab icon, sign-in image and theme, cleaned as stored values.
+func applyPortalTheme(b *Brand, agency *models.AgencyBrand) {
+	b.IconURL, b.SignInImageURL = agency.IconURL, agency.SignInImageURL
+	if theme := CleanTheme(agency.Theme); !theme.Empty() {
+		b.Theme = &theme
+	}
 }
 
 // resolveTTL bounds how stale a brand on a public page may be on another replica.

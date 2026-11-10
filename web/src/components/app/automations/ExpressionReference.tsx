@@ -7,6 +7,7 @@ import toast from "react-hot-toast/headless";
 import { CircleHelpIcon, CopyIcon, ExternalLinkIcon } from "lucide-react";
 import { PopoverMenu, PopoverMenuTrigger, PopoverMenuContent } from "@/components/ui/popover-menu";
 
+import HelpLink from "@/components/shared/HelpLink";
 interface Entry {
     code: string;
     label: string;
@@ -173,14 +174,13 @@ export function ExpressionReference({ label = "Reference" }: { label?: string })
                     </div>
                 </div>
 
-                <a
+                <HelpLink
                     href="https://docs.warmbly.com/learn/personalization/"
-                    target="_blank"
-                    rel="noopener noreferrer"
                     className="mt-3 inline-flex items-center gap-1 border-t border-slate-100 pt-2.5 text-[11px] font-medium text-sky-600 hover:text-sky-700"
+                    portalLabel={<>Get help <ExternalLinkIcon className="w-3 h-3" /></>}
                 >
                     Full guide &amp; examples <ExternalLinkIcon className="w-3 h-3" />
-                </a>
+                </HelpLink>
             </PopoverMenuContent>
         </PopoverMenu>
     );

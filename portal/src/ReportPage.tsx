@@ -3,22 +3,25 @@
 // path only fires when a link is revoked while the page is open.
 
 import type React from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 
 import { StalePageError } from "./api";
+import { BrandFooter, BrandMark } from "./Brand";
 import { isEmbedded, startPageResizeReporting } from "./embed";
-import { StalePage } from "./NotFound";
+import { AlertIcon, PrintIcon } from "./icons";
+import { useBrandLook } from "./look";
+import { PlainState, StalePage } from "./NotFound";
 import {
     fetchReport,
     ReportNotFoundError,
     type PublicReport,
-    type ReportBrand,
     type ReportDay,
     type ReportRange,
     type ReportView,
 } from "./reportApi";
+import type { Corners } from "./theme";
 import "./report.css";
 
 const RANGE_LABEL: Record<ReportRange, string> = {
@@ -39,7 +42,9 @@ const CLASS_LABEL: Record<string, string> = {
     unclassified: "Unclassified",
 };
 
-const DEFAULT_ACCENT = "#0284c7";
+// The top corners of a bar, in chart pixels, for each corner style.
+const BAR_RADIUS: Record<Corners, number> = { sharp: 0, default: 3, round: 6 };
+
 const number = new Intl.NumberFormat();
 
 function rangeFromURL(): ReportRange | null {
@@ -54,20 +59,6 @@ function pct(v: number): string {
 function dayLabel(iso: string, opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" }): string {
     const [y, m, d] = iso.split("-").map(Number);
     return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(undefined, { ...opts, timeZone: "UTC" });
-}
-
-function accentOf(brand: ReportBrand): string {
-    return brand.accent_color && /^#[0-9a-fA-F]{6}$/.test(brand.accent_color) ? brand.accent_color : DEFAULT_ACCENT;
-}
-
-function safeURL(raw?: string): string | undefined {
-    if (!raw) return undefined;
-    try {
-        const u = new URL(raw);
-        return u.protocol === "https:" || u.protocol === "http:" ? u.href : undefined;
-    } catch {
-        return undefined;
-    }
 }
 
 export function ReportPage() {
@@ -89,6 +80,7 @@ export function ReportPage() {
     useEffect(() => {
         if (query.data) document.title = query.data.report.name;
     }, [query.data]);
+    useBrandLook(query.data?.brand);
 
     const choose = (r: ReportRange) => {
         setRange(r);
@@ -97,38 +89,69 @@ export function ReportPage() {
         window.history.replaceState(null, "", url);
     };
 
-    if (query.isPending) return <div className="wr-loading" aria-busy="true" />;
+    if (query.isPending) return <Loading />;
     if (query.isError) {
         if (query.error instanceof StalePageError) return <StalePage />;
         if (query.error instanceof ReportNotFoundError) {
             return (
-                <div className="plain">
-                    <h1>This report is no longer shared</h1>
-                    <p>The link may have expired or been turned off. Ask whoever sent it for a new one.</p>
-                </div>
+                <PlainState
+                    icon={<AlertIcon />}
+                    title="This report is no longer shared"
+                    body="The link may have expired or been turned off. Ask whoever sent it for a new one."
+                />
             );
         }
         return (
-            <div className="plain">
-                <h1>This report is temporarily unavailable</h1>
-                <p>Please try again in a moment.</p>
-            </div>
+            <PlainState
+                icon={<AlertIcon />}
+                title="This report is temporarily unavailable"
+                body="Please try again in a moment."
+                action={{ label: "Try again", run: () => void query.refetch() }}
+            />
         );
     }
     return <Report data={query.data} onRange={choose} loading={query.isFetching} />;
 }
 
-function Report({ data, onRange, loading }: { data: PublicReport; onRange: (r: ReportRange) => void; loading: boolean }) {
-    const { brand, report } = data;
-    const accent = accentOf(brand);
-    const style = { "--wr-accent": accent } as React.CSSProperties;
-    const ranges = data.ranges?.length ? data.ranges : RANGES;
+// Loading keeps the shape of the report, so the page does not jump when the numbers arrive.
+function Loading() {
     return (
-        <div className="wr" style={style}>
-            <BrandHeader brand={brand} />
-            <main className="wr-main" aria-busy={loading}>
+        <div className="wr" aria-busy="true">
+            <div className="wr-header">
+                <span className="pt-sk wr-sk-mark" />
+            </div>
+            <div className="wr-main" role="status">
+                <span className="pt-sr">Loading</span>
                 <div className="wr-titlebar">
                     <div>
+                        <span className="pt-sk wr-sk-eyebrow" />
+                        <span className="pt-sk wr-sk-title" />
+                    </div>
+                    <span className="pt-sk wr-sk-ranges" />
+                </div>
+                <div className="wr-tiles">
+                    {[0, 1, 2, 3].map((i) => (
+                        <span key={i} className="pt-sk wr-sk-tile" />
+                    ))}
+                </div>
+                <span className="pt-sk wr-sk-chart" />
+                <span className="pt-sk wr-sk-table" />
+            </div>
+        </div>
+    );
+}
+
+function Report({ data, onRange, loading }: { data: PublicReport; onRange: (r: ReportRange) => void; loading: boolean }) {
+    const { brand, report } = data;
+    const ranges = data.ranges?.length ? data.ranges : RANGES;
+    return (
+        <div className="wr">
+            <header className="wr-header">
+                <BrandMark brand={brand} />
+            </header>
+            <main className="wr-main" aria-busy={loading}>
+                <div className="wr-titlebar">
+                    <div className="wr-heading">
                         <p className="wr-eyebrow">
                             {report.from === report.to
                                 ? dayLabel(report.to, { month: "short", day: "numeric", year: "numeric" })
@@ -151,67 +174,28 @@ function Report({ data, onRange, loading }: { data: PublicReport; onRange: (r: R
                             ))}
                         </div>
                         <button type="button" className="wr-print" onClick={() => window.print()}>
-                            Print
+                            <PrintIcon /> <span className="wr-print-label">Print</span>
                         </button>
                     </div>
                 </div>
-                <Body report={report} />
+                <Body report={report} corners={brand.theme.corners} />
                 <p className="wr-generated">
                     Updated {new Date(report.generated_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}. Days are in UTC.
                 </p>
             </main>
-            <BrandFooter brand={brand} />
+            <BrandFooter brand={brand} className="wr-footer" showName />
         </div>
     );
 }
 
-function BrandHeader({ brand }: { brand: ReportBrand }) {
-    const logo = safeURL(brand.logo_url);
-    const site = safeURL(brand.website_url);
-    const mark = logo ? <img className="wr-logo" src={logo} alt={brand.name} /> : <span className="wr-brandname">{brand.name}</span>;
-    return (
-        <header className="wr-header">
-            {site ? (
-                <a href={site} target="_blank" rel="noopener noreferrer">
-                    {mark}
-                </a>
-            ) : (
-                mark
-            )}
-        </header>
-    );
-}
-
-function BrandFooter({ brand }: { brand: ReportBrand }) {
-    const powered = brand.powered_by;
-    const poweredURL = safeURL(powered?.url);
-    return (
-        <footer className="wr-footer">
-            <span>{brand.name}</span>
-            {powered && (
-                <>
-                    <span aria-hidden="true"> · </span>
-                    {poweredURL ? (
-                        <a href={poweredURL} target="_blank" rel="noopener noreferrer">
-                            Powered by {powered.name}
-                        </a>
-                    ) : (
-                        <span>Powered by {powered.name}</span>
-                    )}
-                </>
-            )}
-        </footer>
-    );
-}
-
-function Body({ report }: { report: ReportView }) {
+function Body({ report, corners }: { report: ReportView; corners: Corners }) {
     const s = report.sections;
     const nothing =
         !report.overview && !report.daily && !report.campaigns?.length && !report.replies?.length && !report.mailboxes;
     return (
         <>
             {report.overview && <Tiles o={report.overview} />}
-            {s.daily_chart && report.daily && <DailyChart days={report.daily} />}
+            {s.daily_chart && report.daily && <DailyChart days={report.daily} corners={corners} />}
             {s.campaigns && report.campaigns && (
                 <Section title="Campaigns">
                     {report.campaigns.length === 0 ? (
@@ -231,15 +215,18 @@ function Body({ report }: { report: ReportView }) {
                 </Section>
             )}
             {report.mailboxes && <Mailboxes m={report.mailboxes} />}
-            {nothing && <p className="wr-empty">There is nothing to show for this period.</p>}
+            {nothing && <p className="wr-empty wr-empty-page">There is nothing to show for this period.</p>}
         </>
     );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
     return (
         <section className="wr-section">
-            <h2 className="wr-h2">{title}</h2>
+            <div className="wr-section-head">
+                <h2 className="wr-h2">{title}</h2>
+                {action}
+            </div>
             {children}
         </section>
     );
@@ -269,31 +256,23 @@ function Tiles({ o }: { o: NonNullable<ReportView["overview"]> }) {
 }
 
 // One series (emails sent per day) as bars, with the day's opens and replies in the hover tooltip and the table.
-function DailyChart({ days }: { days: ReportDay[] }) {
-    const [hover, setHover] = useState<number | null>(null);
+function DailyChart({ days, corners }: { days: ReportDay[]; corners: Corners }) {
     const [asTable, setAsTable] = useState(false);
-    const max = useMemo(() => Math.max(1, ...days.map((d) => d.sent)), [days]);
-    const ticks = useMemo(() => niceTicks(max), [max]);
-    const top = ticks[ticks.length - 1];
-    const W = 640;
-    const H = 180;
-    const padL = 36;
-    const padB = 22;
-    const plotW = W - padL;
-    const plotH = H - padB - 6;
-    const slot = plotW / Math.max(1, days.length);
-    const barW = Math.max(2, Math.min(28, slot - 2));
-    const labelEvery = Math.ceil(days.length / 8);
-    const active = hover !== null ? days[hover] : null;
-
+    const quiet = days.every((d) => d.sent === 0);
     return (
-        <Section title="Emails sent per day">
-            <div className="wr-chart-tools">
-                <button type="button" className="wr-link" onClick={() => setAsTable((v) => !v)}>
-                    {asTable ? "Show chart" : "Show as table"}
-                </button>
-            </div>
-            {asTable ? (
+        <Section
+            title="Emails sent per day"
+            action={
+                !quiet && (
+                    <button type="button" className="wr-link" onClick={() => setAsTable((v) => !v)}>
+                        {asTable ? "Show chart" : "Show as table"}
+                    </button>
+                )
+            }
+        >
+            {quiet ? (
+                <p className="wr-empty">Nothing was sent in this period.</p>
+            ) : asTable ? (
                 <div className="wr-scroll">
                     <table className="wr-table">
                         <thead>
@@ -317,71 +296,105 @@ function DailyChart({ days }: { days: ReportDay[] }) {
                     </table>
                 </div>
             ) : (
-                <div className="wr-chart" onMouseLeave={() => setHover(null)}>
-                    <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Emails sent per day" preserveAspectRatio="none">
-                        {ticks.map((t) => {
-                            const y = 6 + plotH - (t / top) * plotH;
-                            return (
-                                <g key={t}>
-                                    <line x1={padL} x2={W} y1={y} y2={y} className="wr-grid" />
-                                    <text x={padL - 6} y={y + 3} className="wr-axis" textAnchor="end">
-                                        {number.format(t)}
-                                    </text>
-                                </g>
-                            );
-                        })}
-                        {days.map((d, i) => {
-                            const h = (d.sent / top) * plotH;
-                            const x = padL + i * slot + (slot - barW) / 2;
-                            const y = 6 + plotH - h;
-                            const r = Math.min(4, barW / 2, h);
-                            return (
-                                <g key={d.date}>
-                                    {h > 0 && (
-                                        <path
-                                            className={`wr-bar${hover === i ? " is-hover" : ""}`}
-                                            d={`M${x},${6 + plotH} V${y + r} Q${x},${y} ${x + r},${y} H${x + barW - r} Q${x + barW},${y} ${x + barW},${y + r} V${6 + plotH} Z`}
-                                        />
-                                    )}
-                                    <rect
-                                        x={padL + i * slot}
-                                        y={0}
-                                        width={slot}
-                                        height={H}
-                                        fill="transparent"
-                                        onMouseEnter={() => setHover(i)}
-                                        onFocus={() => setHover(i)}
-                                        onTouchStart={() => setHover(i)}
-                                        tabIndex={-1}
-                                    />
-                                    {i % labelEvery === 0 && (
-                                        <text x={padL + i * slot + slot / 2} y={H - 6} className="wr-axis" textAnchor="middle">
-                                            {dayLabel(d.date)}
-                                        </text>
-                                    )}
-                                </g>
-                            );
-                        })}
-                        <line x1={padL} x2={W} y1={6 + plotH} y2={6 + plotH} className="wr-baseline" />
-                    </svg>
-                    {active && hover !== null && (
-                        <div
-                            className="wr-tooltip"
-                            style={{ left: `${((padL + hover * slot + slot / 2) / W) * 100}%` }}
-                            role="status"
-                        >
-                            <div className="wr-tooltip-day">{dayLabel(active.date, { weekday: "short", month: "short", day: "numeric" })}</div>
-                            <div>
-                                <span className="wr-swatch" /> {number.format(active.sent)} sent
-                            </div>
-                            <div className="wr-muted">
-                                {number.format(active.opens)} opened · {number.format(active.replies)} replied
-                            </div>
-                        </div>
-                    )}
-                </div>
+                <Bars days={days} radius={BAR_RADIUS[corners]} />
             )}
         </Section>
+    );
+}
+
+const CHART_H = 200;
+const PAD_TOP = 8;
+const PAD_BOTTOM = 24;
+
+// Bars draws at the width it is given, one chart unit per pixel, so labels are never stretched. Paper scales the whole drawing.
+function Bars({ days, radius }: { days: ReportDay[]; radius: number }) {
+    const box = useRef<HTMLDivElement>(null);
+    const [W, setW] = useState(640);
+    const [hover, setHover] = useState<number | null>(null);
+    useLayoutEffect(() => {
+        const el = box.current;
+        if (!el) return;
+        const read = () => setW(Math.max(240, Math.round(el.clientWidth)));
+        read();
+        const ro = new ResizeObserver(read);
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
+
+    const max = useMemo(() => Math.max(1, ...days.map((d) => d.sent)), [days]);
+    const ticks = useMemo(() => niceTicks(max), [max]);
+    const top = ticks[ticks.length - 1];
+    const padL = 14 + 6.2 * number.format(top).length;
+    const plotW = W - padL;
+    const plotH = CHART_H - PAD_TOP - PAD_BOTTOM;
+    const floor = PAD_TOP + plotH;
+    const slot = plotW / Math.max(1, days.length);
+    const barW = Math.max(2, Math.min(34, slot * 0.7));
+    const labelEvery = Math.max(1, Math.ceil(days.length / Math.max(2, Math.floor(plotW / 64))));
+    const active = hover !== null ? days[hover] : undefined;
+    const centre = hover !== null ? padL + hover * slot + slot / 2 : 0;
+
+    return (
+        <div ref={box} className="wr-chart" onMouseLeave={() => setHover(null)}>
+            <svg viewBox={`0 0 ${W} ${CHART_H}`} role="img" aria-label="Emails sent per day">
+                {ticks.map((t) => {
+                    const y = floor - (t / top) * plotH;
+                    return (
+                        <g key={t}>
+                            <line x1={padL} x2={W} y1={y} y2={y} className="wr-grid" />
+                            <text x={padL - 8} y={y + 3.5} className="wr-axis" textAnchor="end">
+                                {number.format(t)}
+                            </text>
+                        </g>
+                    );
+                })}
+                {days.map((d, i) => {
+                    const h = (d.sent / top) * plotH;
+                    const x = padL + i * slot + (slot - barW) / 2;
+                    const y = floor - h;
+                    const r = Math.min(radius, barW / 2, h);
+                    return (
+                        <g key={d.date}>
+                            {hover === i && <rect x={padL + i * slot} y={PAD_TOP} width={slot} height={plotH} className="wr-band" />}
+                            {h > 0 && (
+                                <path
+                                    className={`wr-bar${hover === i ? " is-hover" : ""}`}
+                                    d={`M${x},${floor} V${y + r} Q${x},${y} ${x + r},${y} H${x + barW - r} Q${x + barW},${y} ${x + barW},${y + r} V${floor} Z`}
+                                />
+                            )}
+                            <rect
+                                x={padL + i * slot}
+                                y={0}
+                                width={slot}
+                                height={CHART_H}
+                                fill="transparent"
+                                onMouseEnter={() => setHover(i)}
+                                onFocus={() => setHover(i)}
+                                onTouchStart={() => setHover(i)}
+                                tabIndex={-1}
+                            />
+                            {i % labelEvery === 0 && (
+                                <text x={padL + i * slot + slot / 2} y={CHART_H - 6} className="wr-axis" textAnchor="middle">
+                                    {dayLabel(d.date)}
+                                </text>
+                            )}
+                        </g>
+                    );
+                })}
+                <line x1={padL} x2={W} y1={floor} y2={floor} className="wr-baseline" />
+            </svg>
+            {active && (
+                <div className="wr-tooltip" style={{ left: `${W > 180 ? Math.min(W - 86, Math.max(86, centre)) : centre}px` }} role="status">
+                    <div className="wr-tooltip-day">{dayLabel(active.date, { weekday: "short", month: "short", day: "numeric" })}</div>
+                    <div>
+                        <span className="wr-swatch" /> {number.format(active.sent)} sent
+                    </div>
+                    <div className="wr-muted">
+                        {number.format(active.opens)} opened · {number.format(active.replies)} replied
+                    </div>
+                </div>
+            )}
+        </div>
     );
 }
 
@@ -435,7 +448,9 @@ function Replies({ rows, snippets }: { rows: NonNullable<ReportView["replies"]>;
                     <div className="wr-reply-top">
                         <span className="wr-reply-from">{r.name || r.email}</span>
                         {r.name && <span className="wr-muted wr-reply-email">{r.email}</span>}
-                        <span className={`wr-chip is-${r.classification}`}>{CLASS_LABEL[r.classification] ?? r.classification}</span>
+                        <span className={`wr-chip is-${Object.hasOwn(CLASS_LABEL, r.classification) ? r.classification : "unknown"}`}>
+                            {CLASS_LABEL[r.classification] ?? r.classification}
+                        </span>
                         <time className="wr-muted wr-reply-time" dateTime={r.replied_at}>
                             {new Date(r.replied_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
                         </time>
@@ -455,10 +470,18 @@ function Mailboxes({ m }: { m: NonNullable<ReportView["mailboxes"]> }) {
         { label: "Needs attention", value: m.warning, tone: "warning" },
         { label: "Not sending", value: m.error, tone: "critical" },
     ];
+    const counted = rows.filter((r) => r.value > 0);
     return (
         <Section title="Mailboxes">
             <div className="wr-mailboxes">
                 <div className="wr-health">
+                    {counted.length > 0 && (
+                        <div className="wr-healthbar" aria-hidden="true">
+                            {counted.map((r) => (
+                                <span key={r.label} className={`is-${r.tone}`} style={{ flexGrow: r.value }} />
+                            ))}
+                        </div>
+                    )}
                     {rows.map((r) => (
                         <div key={r.label} className="wr-health-row">
                             <span className={`wr-dot is-${r.tone}`} aria-hidden="true" />

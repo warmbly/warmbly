@@ -2,20 +2,14 @@
 // and internal/formwire/connect.go.
 
 import { apiHeaders } from "./api";
+import { type Brand, parseBrand } from "./theme";
 
 export type ConnectProvider = "gmail" | "outlook" | "smtp_imap";
 
-export interface ConnectBrand {
-    name: string;
-    logo_url?: string;
-    accent_color?: string;
-    website_url?: string;
-    powered_by?: { name: string; url?: string };
-}
-
 export interface ConnectLink {
     workspace: string;
-    brand: ConnectBrand;
+    /** Parsed from the answer's brand object; nothing in it is used as it arrived. */
+    brand: Brand;
     providers: ConnectProvider[];
     max_mailboxes: number;
     connected: number;
@@ -71,8 +65,9 @@ async function call<T>(token: string, path: string, init?: RequestInit): Promise
     return body as T;
 }
 
-export function fetchConnectLink(token: string): Promise<ConnectLink> {
-    return call<ConnectLink>(token, "");
+export async function fetchConnectLink(token: string): Promise<ConnectLink> {
+    const raw = await call<Omit<ConnectLink, "brand"> & { brand?: unknown }>(token, "");
+    return { ...raw, brand: parseBrand(raw.brand) };
 }
 
 export interface SigninStarted {

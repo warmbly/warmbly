@@ -24,11 +24,17 @@ const (
 	Person Kind = iota
 	// Workspace is an organization name.
 	Workspace
+	// Heading is a short line of text one person writes for a page others open.
+	Heading
+	// Message is a sentence or two of the same.
+	Message
 )
 
 const (
 	PersonMaxLength    = 50
 	WorkspaceMaxLength = 64
+	HeadingMaxLength   = 60
+	MessageMaxLength   = 200
 	maxCombiningRun    = 3
 )
 
@@ -174,10 +180,10 @@ func Error(label string, kind Kind, r Rejection) *errx.Error {
 	case Link:
 		msg = label + " cannot contain a link, web address or email address."
 	case NoLetter:
-		if kind == Workspace {
-			msg = label + " must contain a letter or a number."
-		} else {
+		if kind == Person {
 			msg = label + " must contain a letter."
+		} else {
+			msg = label + " must contain a letter or a number."
 		}
 	default:
 		msg = label + " contains characters that are not allowed."
@@ -186,8 +192,13 @@ func Error(label string, kind Kind, r Rejection) *errx.Error {
 }
 
 func maxLength(kind Kind) int {
-	if kind == Workspace {
+	switch kind {
+	case Workspace:
 		return WorkspaceMaxLength
+	case Heading:
+		return HeadingMaxLength
+	case Message:
+		return MessageMaxLength
 	}
 	return PersonMaxLength
 }
@@ -229,7 +240,7 @@ func looksLikeLink(s string) bool {
 
 func hasLetter(s string, kind Kind) bool {
 	for _, r := range s {
-		if unicode.IsLetter(r) || (kind == Workspace && unicode.IsDigit(r)) {
+		if unicode.IsLetter(r) || (kind != Person && unicode.IsDigit(r)) {
 			return true
 		}
 	}

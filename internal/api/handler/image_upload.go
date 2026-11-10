@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/pkg/imagetype"
 )
 
 // imageLimits names an upload and its caps, so every image refusal says the
@@ -13,6 +14,15 @@ type imageLimits struct {
 	formats  string // "PNG or JPG"
 	maxBytes int64
 	maxDim   int
+	// allowed is the formats the bytes may be; nil means PNG or JPG.
+	allowed []imagetype.Format
+}
+
+func (l imageLimits) accepts() []imagetype.Format {
+	if l.allowed != nil {
+		return l.allowed
+	}
+	return avatarFormats
 }
 
 var (

@@ -2,16 +2,9 @@
 // Mirrors internal/formwire/report.go and models.ClientReportView.
 
 import { apiHeaders, StalePageError } from "./api";
+import { type Brand, parseBrand } from "./theme";
 
 export type ReportRange = "last_7_days" | "last_30_days" | "this_month" | "last_month";
-
-export interface ReportBrand {
-    name: string;
-    logo_url?: string;
-    accent_color?: string;
-    website_url?: string;
-    powered_by?: { name: string; url?: string };
-}
 
 export interface ReportSections {
     overview: boolean;
@@ -92,7 +85,8 @@ export interface ReportView {
 }
 
 export interface PublicReport {
-    brand: ReportBrand;
+    /** Parsed from the answer's brand object; nothing in it is used as it arrived. */
+    brand: Brand;
     report: ReportView;
     ranges: ReportRange[];
 }
@@ -113,5 +107,6 @@ export async function fetchReport(token: string, range: ReportRange | null): Pro
         if (res.status === 404) throw new ReportNotFoundError();
         throw new Error(`request failed (${res.status})`);
     }
-    return (await res.json()) as PublicReport;
+    const raw = (await res.json()) as Omit<PublicReport, "brand"> & { brand?: unknown };
+    return { ...raw, brand: parseBrand(raw.brand) };
 }

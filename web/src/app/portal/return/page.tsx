@@ -60,7 +60,7 @@ export default function PortalReturnPage() {
                         retry ? (
                             <a
                                 href={retry}
-                                className="mt-5 w-full h-10 rounded-md bg-slate-900 text-white text-[13px] font-medium hover:bg-slate-800 transition-colors inline-flex items-center justify-center"
+                                className="mt-5 w-full h-10 rounded-md bg-sky-600 text-white text-[13px] font-medium hover:bg-sky-700 transition-colors inline-flex items-center justify-center"
                             >
                                 Sign in again
                             </a>

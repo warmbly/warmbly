@@ -13,17 +13,21 @@ import { currentPortal } from "@/lib/portal";
  * link to a site with no relationship to that instance. Only `name` is always
  * present: it is the software's name, which is true of a self-host too.
  */
-export default function useBrand(): DeploymentBrand & { apiURL: string } {
+export default function useBrand(): DeploymentBrand & { apiURL: string; support_url?: string } {
     const { config } = useAuthConfig();
     const portal = currentPortal();
     const apiURL = config.api_url || API_URL;
-    // On an agency's portal domain the agency is who the page says it is; the legal links stay the service's.
+    // On an agency's portal domain the agency is who the page says it is: its support and legal links replace the
+    // service's. Terms and privacy fall back to the service's, which a new account still has to be shown.
     if (portal.portal) {
+        const theme = portal.brand.theme ?? {};
         return {
             name: portal.brand.name,
             website_url: portal.brand.website_url,
-            terms_url: config.brand?.terms_url,
-            privacy_url: config.brand?.privacy_url,
+            terms_url: theme.terms_url || config.brand?.terms_url,
+            privacy_url: theme.privacy_url || config.brand?.privacy_url,
+            support_email: theme.support_email,
+            support_url: theme.support_url,
             apiURL,
         };
     }

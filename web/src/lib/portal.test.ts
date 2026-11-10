@@ -56,7 +56,7 @@ describe("parsePortalInfo", () => {
             portal: true,
             host: "portal.northwind.test",
             agency_id: "a1",
-            brand: { name: "Northwind", logo_url: "https://cdn.test/l.png", accent_color: undefined, website_url: undefined, powered_by: { name: "Warmbly", url: "https://warmbly.test" } },
+            brand: { name: "Northwind", logo_url: "https://cdn.test/l.png", accent_color: undefined, website_url: undefined, theme: {}, powered_by: { name: "Warmbly", url: "https://warmbly.test" } },
             main_url: "https://app.warmbly.test",
             captcha_frame: true,
             sign_in: "portal",
@@ -67,6 +67,40 @@ describe("parsePortalInfo", () => {
         expect(parsePortalInfo({ ...base, sign_in: "warmbly" })).toMatchObject({ sign_in: "warmbly" });
         expect(parsePortalInfo({ ...base, sign_in: "elsewhere" })).toMatchObject({ sign_in: "portal" });
         expect(parsePortalInfo(base)).toMatchObject({ sign_in: "portal" });
+    });
+    it("reads the theme, the icon and the sign-in image", () => {
+        const info = parsePortalInfo({
+            portal: true,
+            agency_id: "a1",
+            brand: {
+                name: "N",
+                icon_url: "https://cdn.test/i.png",
+                sign_in_image_url: "https://cdn.test/s.jpg",
+                theme: { font: "geometric", corners: "sharp", appearance: "dark", sign_in_layout: "cover", sign_in_background: "image", support_url: "https://n.test/help" },
+            },
+        });
+        expect(info.portal && info.brand).toMatchObject({
+            icon_url: "https://cdn.test/i.png",
+            sign_in_image_url: "https://cdn.test/s.jpg",
+            theme: { font: "geometric", corners: "sharp", appearance: "dark", sign_in_layout: "cover", sign_in_background: "image", support_url: "https://n.test/help" },
+        });
+    });
+    it("reads an unknown theme value as the default and never passes a raw string through", () => {
+        const info = parsePortalInfo({
+            portal: true,
+            agency_id: "a1",
+            brand: {
+                name: "N",
+                icon_url: "javascript:alert(1)",
+                sign_in_image_url: 'x") ; background: url(https://evil.test',
+                theme: { font: "comic", corners: "9px", appearance: "auto", sign_in_layout: "grid", sign_in_background: "url(x)", terms_url: "http://n.test", extra: "kept out" },
+            },
+        });
+        expect(info.portal && info.brand.theme).toEqual({});
+        expect(info.portal && info.brand.icon_url).toBeUndefined();
+        expect(info.portal && info.brand.sign_in_image_url).toBeUndefined();
+        const none = parsePortalInfo({ portal: true, agency_id: "a1", brand: { name: "N", theme: "serif" } });
+        expect(none.portal && none.brand.theme).toEqual({});
     });
     it("treats anything malformed as no portal", () => {
         expect(parsePortalInfo(null)).toEqual(NO_PORTAL);

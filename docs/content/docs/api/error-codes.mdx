@@ -742,7 +742,10 @@ An [agency API key](/api/authentication/#agency-api-keys) is refused with these 
 | `invalid_website_url` | 400 | `website_url` is not an absolute `https://` address with a domain, or carries a user name or password |
 | `invalid_portal_domain` | 400 | The agency portal `domain` is not a host name, or is one of this instance's own hosts |
 | `invalid_portal_sign_in` | 400 | `portal_sign_in` on `PUT /agency/:agencyId/brand` is not `portal` or `warmbly` |
-| `image_unreadable`, `image_format_not_allowed`, `image_too_large`, `image_dimensions_too_large` | 400 | The logo is not a PNG or JPG up to 2 MB and 1024px on each side |
+| `invalid_theme` | 400 | A `theme` field on `PUT /agency/:agencyId/brand` holds a value outside its list: `font`, `corners`, `appearance`, `sign_in_layout` or `sign_in_background`. The `message` names the field and the values it takes. See [portal theme](/api/endpoints/#portal-theme) |
+| `invalid_brand_text` | 400 | `theme.sign_in_heading` is over 60 characters or `theme.sign_in_message` is over 200, or one of them contains a link, a web or email address, markup or control characters, or no letter or number. The content rules are the [name rules](#name-refusals). The `message` names the field and the rule |
+| `invalid_brand_link` | 400 | `theme.support_url`, `theme.terms_url` or `theme.privacy_url` is not an absolute `https://` address with a domain, or `theme.support_email` is not a plain email address like `help@example.com`. The `message` names the field |
+| `image_unreadable`, `image_format_not_allowed`, `image_too_large`, `image_dimensions_too_large` | 400 | The logo is not a PNG or JPG up to 2 MB and 1024px on each side, the agency's tab icon is not a PNG up to 1 MB and 512px on each side, or its sign-in image is not a PNG or JPG up to 4 MB and 2560px on each side. The `message` says which image and what is accepted |
 | `white_label_not_entitled` | 403 | Turning `hide_powered_by` on without Agency Pro, Agency Scale or Enterprise. A value already stored saves unchanged |
 | `agency_forbidden` | 403 | Agency staff other than the owner and admins changing the agency's brand |
 | `agency_not_found` | 404 | The agency does not exist, or the caller is not on its staff |

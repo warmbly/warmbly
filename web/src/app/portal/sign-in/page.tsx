@@ -75,7 +75,7 @@ export default function PortalSignInPage() {
                 type="button"
                 onClick={continueAs}
                 disabled={busy}
-                className="mt-5 w-full h-10 rounded-md bg-slate-900 text-white text-[13px] font-medium hover:bg-slate-800 transition-colors disabled:opacity-60 inline-flex items-center justify-center gap-2"
+                className="mt-5 w-full h-10 rounded-md bg-sky-600 text-white text-[13px] font-medium hover:bg-sky-700 transition-colors disabled:opacity-60 inline-flex items-center justify-center gap-2"
             >
                 {busy && <Loader2Icon className="w-4 h-4 animate-spin" />}
                 Continue as {me.data.email}

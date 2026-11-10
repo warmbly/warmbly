@@ -25,6 +25,7 @@ import PendingDeletionBar from "./PendingDeletionBar";
 import SendingRestrictedBar from "./SendingRestrictedBar";
 import TrialBar from "./TrialBar";
 import { useClientBrand } from "@/hooks/useClientBrand";
+import { useBrandTheme } from "@/hooks/useBrandTheme";
 import BalanceBanner from "@/components/app/billing/BalanceBanner";
 import { RouteBoundary } from "./ErrorBoundary";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -51,6 +52,8 @@ export function AppShell() {
     const [navOpen, setNavOpen] = useState(false);
     // A client member of a branded workspace is not shown Warmbly's trial or balance prompts.
     const clientBrand = useClientBrand();
+    // The same members see the dashboard in that brand's colour, font and corners.
+    useBrandTheme(clientBrand);
     const { pathname } = useLocation();
     // Close the drawer whenever the route changes (tapping a nav link).
     useEffect(() => setNavOpen(false), [pathname]);

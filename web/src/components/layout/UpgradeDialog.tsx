@@ -33,6 +33,7 @@ import useBrand from "@/hooks/useBrand";
 import { PAID_PLANS, getPlan, isAtLeast, planOrder, type PlanID } from "@/lib/plans";
 import { describeDiscount, type BillingInterval } from "@/lib/pricing";
 import { TextInput } from "@/components/ui/field";
+import { currentPortal } from "@/lib/portal";
 import BillingIntervalToggle from "@/components/app/billing/BillingIntervalToggle";
 import PlanCard from "@/components/app/billing/PlanCard";
 import EnterpriseInquiryDialog from "@/components/app/billing/EnterpriseInquiryDialog";
@@ -366,7 +367,8 @@ export default function UpgradeDialog({
                                         <ArrowRightIcon className="w-3 h-3" />
                                     </Link>
                                 )}
-                                {brand.website_url && (
+                                {/* The pricing page is the service's own; an agency's website has none. */}
+                                {brand.website_url && !currentPortal().portal && (
                                     <a
                                         href={`${brand.website_url}/pricing`}
                                         target="_blank"

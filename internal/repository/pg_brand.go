@@ -2,7 +2,9 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -32,8 +34,10 @@ type BrandRepository interface {
 	GetAgencyBrand(ctx context.Context, agencyID uuid.UUID) (*models.AgencyBrand, error)
 	// AgencyBrandForOrganization is the brand of the agency orgID is a client of; nil, nil when none.
 	AgencyBrandForOrganization(ctx context.Context, orgID uuid.UUID) (*models.AgencyBrand, error)
+	// UpsertAgencyBrand keeps the stored sign-in choice and theme when in carries none.
 	UpsertAgencyBrand(ctx context.Context, agencyID uuid.UUID, in models.BrandInput, by uuid.UUID) (*models.AgencyBrand, error)
-	SetAgencyLogo(ctx context.Context, agencyID uuid.UUID, url string, by uuid.UUID) (previous string, err error)
+	// SetAgencyImage stores url as the agency's logo, tab icon or sign-in image and returns the one it replaced.
+	SetAgencyImage(ctx context.Context, agencyID uuid.UUID, image models.AgencyBrandImage, url string, by uuid.UUID) (previous string, err error)
 	// SetAgencyPortalDomain stores a host and clears the verdict when the name changed.
 	SetAgencyPortalDomain(ctx context.Context, agencyID uuid.UUID, domain string, by uuid.UUID) error
 	// SetAgencyPortalDomainVerified records a verdict on domain, only while it is still the agency's host; ErrPortalDomainTaken when another agency holds it.
@@ -61,7 +65,13 @@ func NewBrandRepository(db *pgxpool.Pool) BrandRepository {
 
 const brandColumns = `display_name, logo_url, accent_color, website_url, hide_powered_by, updated_at, updated_by`
 
-const agencyBrandColumns = `agency_id, ` + brandColumns + `, portal_domain, portal_domain_verified, portal_domain_verified_at, portal_sign_in`
+const agencyBrandColumns = `agency_id, ` + brandColumns + `, portal_domain, portal_domain_verified, portal_domain_verified_at, portal_sign_in,
+	icon_url, sign_in_image_url, theme`
+
+// agencyBrandColumnsAB is agencyBrandColumns qualified for a join, where agency_id and updated_at are ambiguous.
+const agencyBrandColumnsAB = `ab.agency_id, ab.display_name, ab.logo_url, ab.accent_color, ab.website_url, ab.hide_powered_by,
+	ab.updated_at, ab.updated_by, ab.portal_domain, ab.portal_domain_verified, ab.portal_domain_verified_at, ab.portal_sign_in,
+	ab.icon_url, ab.sign_in_image_url, ab.theme`
 
 func scanBrand(row pgx.Row) (*models.BrandSettings, error) {
 	var b models.BrandSettings
@@ -75,17 +85,39 @@ func scanBrand(row pgx.Row) (*models.BrandSettings, error) {
 	return &b, nil
 }
 
-func scanAgencyBrand(row pgx.Row) (*models.AgencyBrand, error) {
+// scanAgencyBrand reads agencyBrandColumns, then any columns selected after them into extra.
+func scanAgencyBrand(row pgx.Row, extra ...any) (*models.AgencyBrand, error) {
 	var b models.AgencyBrand
-	err := row.Scan(&b.AgencyID, &b.DisplayName, &b.LogoURL, &b.AccentColor, &b.WebsiteURL, &b.HidePoweredBy,
-		&b.UpdatedAt, &b.UpdatedBy, &b.PortalDomain, &b.PortalDomainVerified, &b.PortalDomainVerifiedAt, &b.PortalSignIn)
+	var theme []byte
+	dest := append([]any{&b.AgencyID, &b.DisplayName, &b.LogoURL, &b.AccentColor, &b.WebsiteURL, &b.HidePoweredBy,
+		&b.UpdatedAt, &b.UpdatedBy, &b.PortalDomain, &b.PortalDomainVerified, &b.PortalDomainVerifiedAt, &b.PortalSignIn,
+		&b.IconURL, &b.SignInImageURL, &theme}, extra...)
+	err := row.Scan(dest...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	b.Theme = decodePortalTheme(theme)
 	return &b, nil
+}
+
+// decodePortalTheme reads a stored theme; one that does not fit the type is no theme, never a failed brand read.
+func decodePortalTheme(raw []byte) models.PortalTheme {
+	var t models.PortalTheme
+	if len(raw) == 0 || json.Unmarshal(raw, &t) != nil {
+		return models.PortalTheme{}
+	}
+	return t
+}
+
+// portalThemeParam is NULL when the request kept the stored theme.
+func portalThemeParam(t *models.PortalTheme) ([]byte, error) {
+	if t == nil {
+		return nil, nil
+	}
+	return json.Marshal(t)
 }
 
 func (r *brandRepository) GetWorkspaceBrand(ctx context.Context, orgID uuid.UUID) (*models.BrandSettings, error) {
@@ -134,8 +166,7 @@ func (r *brandRepository) GetAgencyBrand(ctx context.Context, agencyID uuid.UUID
 
 func (r *brandRepository) AgencyBrandForOrganization(ctx context.Context, orgID uuid.UUID) (*models.AgencyBrand, error) {
 	return scanAgencyBrand(r.db.QueryRow(ctx, `
-		SELECT ab.agency_id, ab.display_name, ab.logo_url, ab.accent_color, ab.website_url, ab.hide_powered_by,
-		       ab.updated_at, ab.updated_by, ab.portal_domain, ab.portal_domain_verified, ab.portal_domain_verified_at, ab.portal_sign_in
+		SELECT `+agencyBrandColumnsAB+`
 		FROM agency_clients ac
 		JOIN agency_brands ab ON ab.agency_id = ac.agency_id
 		WHERE ac.organization_id = $1
@@ -146,39 +177,38 @@ func (r *brandRepository) VerifiedPortal(ctx context.Context, host string) (*mod
 	if host == "" {
 		return nil, "", nil
 	}
-	var b models.AgencyBrand
 	var name string
-	err := r.db.QueryRow(ctx, `
-		SELECT ab.agency_id, ab.display_name, ab.logo_url, ab.accent_color, ab.website_url, ab.hide_powered_by,
-		       ab.updated_at, ab.updated_by, ab.portal_domain, ab.portal_domain_verified, ab.portal_domain_verified_at, ab.portal_sign_in, a.name
+	b, err := scanAgencyBrand(r.db.QueryRow(ctx, `
+		SELECT `+agencyBrandColumnsAB+`, a.name
 		FROM agency_brands ab
 		JOIN agencies a ON a.id = ab.agency_id
 		WHERE ab.portal_domain = $1 AND ab.portal_domain_verified
-	`, host).Scan(&b.AgencyID, &b.DisplayName, &b.LogoURL, &b.AccentColor, &b.WebsiteURL, &b.HidePoweredBy,
-		&b.UpdatedAt, &b.UpdatedBy, &b.PortalDomain, &b.PortalDomainVerified, &b.PortalDomainVerifiedAt, &b.PortalSignIn, &name)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, "", nil
-	}
-	if err != nil {
+	`, host), &name)
+	if err != nil || b == nil {
 		return nil, "", err
 	}
-	return &b, name, nil
+	return b, name, nil
 }
 
 func (r *brandRepository) UpsertAgencyBrand(ctx context.Context, agencyID uuid.UUID, in models.BrandInput, by uuid.UUID) (*models.AgencyBrand, error) {
+	theme, err := portalThemeParam(in.Theme)
+	if err != nil {
+		return nil, err
+	}
 	return scanAgencyBrand(r.db.QueryRow(ctx, `
-		INSERT INTO agency_brands (agency_id, display_name, accent_color, website_url, hide_powered_by, portal_sign_in, updated_at, updated_by)
-		VALUES ($1, $2, $3, $4, $5, COALESCE($7, 'portal'), now(), $6)
+		INSERT INTO agency_brands (agency_id, display_name, accent_color, website_url, hide_powered_by, portal_sign_in, theme, updated_at, updated_by)
+		VALUES ($1, $2, $3, $4, $5, COALESCE($7, 'portal'), COALESCE($8::jsonb, '{}'::jsonb), now(), $6)
 		ON CONFLICT (agency_id) DO UPDATE SET
 			display_name = EXCLUDED.display_name,
 			accent_color = EXCLUDED.accent_color,
 			website_url = EXCLUDED.website_url,
 			hide_powered_by = EXCLUDED.hide_powered_by,
 			portal_sign_in = COALESCE($7, agency_brands.portal_sign_in),
+			theme = COALESCE($8::jsonb, agency_brands.theme),
 			updated_at = now(),
 			updated_by = EXCLUDED.updated_by
 		RETURNING `+agencyBrandColumns,
-		agencyID, in.DisplayName, in.AccentColor, in.WebsiteURL, in.HidePoweredBy, by, portalSignInParam(in.PortalSignIn)))
+		agencyID, in.DisplayName, in.AccentColor, in.WebsiteURL, in.HidePoweredBy, by, portalSignInParam(in.PortalSignIn), theme))
 }
 
 // portalSignInParam is NULL when the request kept the stored choice.
@@ -190,14 +220,25 @@ func portalSignInParam(p *models.PortalSignIn) *string {
 	return &v
 }
 
-func (r *brandRepository) SetAgencyLogo(ctx context.Context, agencyID uuid.UUID, url string, by uuid.UUID) (string, error) {
+// agencyImageColumns is the column behind each uploaded image; the name is spliced into SQL, so it only ever comes from here.
+var agencyImageColumns = map[models.AgencyBrandImage]string{
+	models.AgencyBrandLogo:        "logo_url",
+	models.AgencyBrandIcon:        "icon_url",
+	models.AgencyBrandSignInImage: "sign_in_image_url",
+}
+
+func (r *brandRepository) SetAgencyImage(ctx context.Context, agencyID uuid.UUID, image models.AgencyBrandImage, url string, by uuid.UUID) (string, error) {
+	col, ok := agencyImageColumns[image]
+	if !ok {
+		return "", fmt.Errorf("unknown agency brand image %q", image)
+	}
 	var previous string
 	err := r.db.QueryRow(ctx, `
-		WITH prior AS (SELECT logo_url FROM agency_brands WHERE agency_id = $1)
-		INSERT INTO agency_brands (agency_id, logo_url, updated_at, updated_by)
+		WITH prior AS (SELECT `+col+` AS url FROM agency_brands WHERE agency_id = $1)
+		INSERT INTO agency_brands (agency_id, `+col+`, updated_at, updated_by)
 		VALUES ($1, $2, now(), $3)
-		ON CONFLICT (agency_id) DO UPDATE SET logo_url = EXCLUDED.logo_url, updated_at = now(), updated_by = EXCLUDED.updated_by
-		RETURNING COALESCE((SELECT logo_url FROM prior), '')
+		ON CONFLICT (agency_id) DO UPDATE SET `+col+` = EXCLUDED.`+col+`, updated_at = now(), updated_by = EXCLUDED.updated_by
+		RETURNING COALESCE((SELECT url FROM prior), '')
 	`, agencyID, url, by).Scan(&previous)
 	return previous, err
 }

@@ -189,6 +189,11 @@ type AgencyView struct {
 	PoweredBy *PoweredBy `json:"powered_by,omitempty"`
 	// PortalSignIn is where clients sign in to the portal domain.
 	PortalSignIn models.PortalSignIn `json:"portal_sign_in"`
+	// IconURL and SignInImageURL are the uploaded tab icon and sign-in page image; empty when none.
+	IconURL        string `json:"icon_url"`
+	SignInImageURL string `json:"sign_in_image_url"`
+	// Theme is the portal theme, {} when the agency set none.
+	Theme models.PortalTheme `json:"theme"`
 }
 
 // Agency returns the agency's brand for any of its staff.
@@ -213,6 +218,7 @@ func (s *Service) agencyView(ctx context.Context, agencyID uuid.UUID, role model
 	if b != nil {
 		out.Brand = b.BrandSettings
 		out.PortalSignIn = signInOrDefault(b.PortalSignIn)
+		out.IconURL, out.SignInImageURL, out.Theme = b.IconURL, b.SignInImageURL, CleanTheme(b.Theme)
 	}
 	out.PortalDomain = s.portalStatus(ctx, agencyID, b)
 	out.PortalBaseURL = config.PortalBaseURL()
@@ -234,6 +240,13 @@ func (s *Service) UpdateAgency(ctx context.Context, agencyID, userID uuid.UUID, 
 	}
 	if in.PortalSignIn != nil && !in.PortalSignIn.Valid() {
 		return nil, ErrPortalSignInInvalid
+	}
+	if in.Theme != nil {
+		theme, xerr := NormalizeTheme(*in.Theme)
+		if xerr != nil {
+			return nil, xerr
+		}
+		in.Theme = &theme
 	}
 	stored, err := s.repo.GetAgencyBrand(ctx, agencyID)
 	if err != nil {
@@ -262,12 +275,12 @@ func signInOrDefault(p models.PortalSignIn) models.PortalSignIn {
 	return models.PortalSignInPortal
 }
 
-// SetAgencyLogo points the agency's brand at an uploaded logo and returns the URL it replaced.
-func (s *Service) SetAgencyLogo(ctx context.Context, agencyID, userID uuid.UUID, url string) (string, *errx.Error) {
+// SetAgencyImage points the agency's logo, tab icon or sign-in image at an uploaded object and returns the URL it replaced.
+func (s *Service) SetAgencyImage(ctx context.Context, agencyID, userID uuid.UUID, image models.AgencyBrandImage, url string) (string, *errx.Error) {
 	if _, xerr := s.manager(ctx, agencyID, userID); xerr != nil {
 		return "", xerr
 	}
-	previous, err := s.repo.SetAgencyLogo(ctx, agencyID, url, userID)
+	previous, err := s.repo.SetAgencyImage(ctx, agencyID, image, url, userID)
 	if err != nil {
 		return "", errx.InternalError()
 	}

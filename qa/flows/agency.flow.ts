@@ -84,7 +84,17 @@ test.describe("agency", () => {
     await page.goto("/app/agency/branding");
     await expect(page.getByText("Portal domain").first()).toBeVisible();
     await proof.chapter("White-label", "The agency's brand and domain on client pages, plus website embeds");
-    await proof.shot("agency-branding", { caption: "Agency branding, portal domain and website embeds" });
+    await proof.shot("agency-branding", { caption: "Agency branding: identity, look, and a live preview of the sign-in page" });
+
+    await page.getByRole("button", { name: "Dashboard", exact: true }).click();
+    await page.getByRole("heading", { name: "Sign-in page" }).evaluate((el) => el.scrollIntoView({ block: "start" }));
+    await proof.dwell(800);
+    await proof.shot("agency-branding-sign-in", { caption: "The sign-in page's layout, background, image and wording, beside the dashboard preview" });
+
+    await page.getByRole("button", { name: "Report", exact: true }).click();
+    await page.getByRole("heading", { name: "Support and legal" }).evaluate((el) => el.scrollIntoView({ block: "center" }));
+    await proof.dwell(800);
+    await proof.shot("agency-branding-links", { caption: "The agency's own support, terms and privacy links, beside the report preview" });
 
     const signIn = page.getByText("Where clients sign in").first();
     await signIn.evaluate((el) => el.scrollIntoView({ block: "center" }));

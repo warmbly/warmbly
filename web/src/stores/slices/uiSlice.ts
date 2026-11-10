@@ -1,5 +1,5 @@
 import type { StateCreator } from 'zustand'
-import { applyTheme, readStoredTheme, resolveTheme, storeTheme, type ResolvedTheme, type Theme, type ThemeOrigin } from '@/lib/theme'
+import { applyTheme, onDefaultThemeChange, readStoredTheme, resolveTheme, storeTheme, type ResolvedTheme, type Theme, type ThemeOrigin } from '@/lib/theme'
 
 export type { Theme } from '@/lib/theme'
 
@@ -186,7 +186,13 @@ export const applyRailOrder = (defaults: string[], stored: string[] | undefined)
   return out
 }
 
-export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set, get) => ({
+export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set, get) => {
+  // A brand's default theme arrives after the store exists; a viewer with no choice of their own follows it.
+  onDefaultThemeChange(() => {
+    const theme = readStoredTheme()
+    set({ theme, resolvedTheme: resolveTheme(theme) })
+  })
+  return {
   // Sidebar
   navCollapsed: false,
   sidebarMobileOpen: false,
@@ -264,8 +270,9 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set, get) 
 
   // Actions - Theme
   setTheme: (theme, origin) => {
-    if (get().theme === theme) return
+    // Stored even when unchanged, so a choice that matches a brand's default is still the viewer's own.
     storeTheme(theme)
+    if (get().theme === theme) return
     const resolvedTheme = resolveTheme(theme)
     applyTheme(resolvedTheme, origin)
     set({ theme, resolvedTheme })
@@ -305,4 +312,5 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set, get) 
     set((state) =>
       state.uniboxContactRailOpen === uniboxContactRailOpen ? state : { uniboxContactRailOpen },
     ),
-})
+}
+}

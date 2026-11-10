@@ -287,13 +287,13 @@ func readAvatarUpload(c *gin.Context) ([]byte, string, string, *errx.Error) {
 func readImageUpload(c *gin.Context, lim imageLimits) ([]byte, string, string, *errx.Error) {
 	// Cap the request body before parsing so a 50MB upload doesn't
 	// pin a gin worker.
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, avatarMaxBytes+1024)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, lim.maxBytes+1024)
 
 	fh, err := c.FormFile("file")
 	if err != nil {
 		return nil, "", "", errx.New(errx.BadRequest, "file is required")
 	}
-	if fh.Size > avatarMaxBytes {
+	if fh.Size > lim.maxBytes {
 		return nil, "", "", lim.tooLarge()
 	}
 
@@ -311,7 +311,7 @@ func readImageUpload(c *gin.Context, lim imageLimits) ([]byte, string, string, *
 
 	// The declared type and the filename take no part: the sniff and the
 	// format's own decoder have to agree.
-	format, cfg, err := imagetype.Detect(body, avatarFormats...)
+	format, cfg, err := imagetype.Detect(body, lim.accepts()...)
 	if errors.Is(err, imagetype.ErrUnreadable) {
 		return nil, "", "", lim.unreadable()
 	}
@@ -323,7 +323,7 @@ func readImageUpload(c *gin.Context, lim imageLimits) ([]byte, string, string, *
 	// Dimension cap. We expect the client to resize before upload —
 	// this is a backstop against a raw camera dump or a bypass of the
 	// JS resizer.
-	if cfg.Width > avatarMaxDimension || cfg.Height > avatarMaxDimension {
+	if cfg.Width > lim.maxDim || cfg.Height > lim.maxDim {
 		return nil, "", "", lim.tooWide()
 	}
 	return body, mime, ext, nil

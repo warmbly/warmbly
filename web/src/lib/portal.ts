@@ -1,6 +1,7 @@
 // An agency's portal domain: the same dashboard served on a host the agency owns, in its brand.
 
 import type { PublicBrand } from "@/lib/api/models/app/brand/Brand";
+import { applyBrandTheme, brandImageURL, parsePortalTheme, themeFontReady } from "./portalTheme";
 
 export type PortalInfo =
     | { portal: false }
@@ -53,8 +54,11 @@ export function parsePortalInfo(raw: unknown): PortalInfo {
         brand: {
             name: brand.name,
             logo_url: str(brand.logo_url),
+            icon_url: brandImageURL(brand.icon_url),
+            sign_in_image_url: brandImageURL(brand.sign_in_image_url),
             accent_color: str(brand.accent_color),
             website_url: str(brand.website_url),
+            theme: parsePortalTheme(brand.theme),
             powered_by: poweredBy && typeof poweredBy.name === "string" && poweredBy.name
                 ? { name: poweredBy.name, url: str(poweredBy.url) }
                 : undefined,
@@ -173,9 +177,11 @@ export function resolvePortal(appUrl: string, apiBase: string): Promise<PortalIn
     })
         .then((res) => (res.ok ? res.json() : null))
         .then(parsePortalInfo, () => NO_PORTAL)
-        .then((info) => {
+        .then(async (info) => {
             resolved = info;
             applyPortalChrome(info);
+            // A portal set in a webfont waits briefly for it, so the first paint is already in that face.
+            if (info.portal) await themeFontReady(info.brand.theme?.font, 800);
             return info;
         })
         .finally(() => clearTimeout(timer));
@@ -187,15 +193,21 @@ export function safeAccent(value: string | undefined): string {
     return value && /^#[0-9a-fA-F]{6}$/.test(value) ? value : "";
 }
 
-/** Points the tab icon at the agency's logo. */
+/** Puts the agency's theme on the page and points the tab icon at its icon, else its logo. */
 function applyPortalChrome(info: PortalInfo) {
-    if (!info.portal || typeof document === "undefined") return;
-    const logo = info.brand.logo_url;
-    if (!logo) return;
+    if (typeof document === "undefined") return;
+    if (!info.portal) {
+        // An address that was a portal on an earlier visit drops the default appearance it remembered.
+        applyBrandTheme(null, true);
+        return;
+    }
+    applyBrandTheme(info.brand, true);
+    const icon = info.brand.icon_url || info.brand.logo_url;
+    if (!icon) return;
     document.querySelectorAll<HTMLLinkElement>('link[rel~="icon"], link[rel="apple-touch-icon"]').forEach((link) => {
         link.removeAttribute("sizes");
         link.removeAttribute("type");
-        link.href = logo;
+        link.href = icon;
     });
 }
 

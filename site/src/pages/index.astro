@@ -290,6 +290,7 @@ const softwareJsonLd = {
 
               <div class="mt-5 flex items-baseline justify-between text-[12.5px]">
                 <span class="font-medium text-slate-900">{p.sendsPerDay === Infinity ? '15,000+' : p.sendsPerDay.toLocaleString()} sends a day</span>
+                {p.sendsPerDay !== Infinity && <span class="text-slate-400">up to {(p.sendsPerDay * 30).toLocaleString()} a month</span>}
               </div>
               <div class="mt-2 h-[3px] rounded-full bg-slate-100">
                 <span class={`block h-full rounded-full ${p.highlight ? 'bg-slate-900' : 'bg-slate-300'}`} style={`width:${p.meter}%`}></span>

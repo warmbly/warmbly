@@ -386,7 +386,7 @@ QA_AGENCY_FIXTURES=1 pnpm proof agency
 ### Agency clients and the portal domain
 
 `flows/agency-portal.flow.ts` records what an agency's clients see. Apply `fixtures/agency-clients.sql`
-after `fixtures/agency.sql`: it gives Northwind Growth a brand and a verified portal at `portal.localhost`,
+after `fixtures/agency.sql`: it gives Northwind Growth a brand, a portal theme and a verified portal at `portal.localhost`,
 and adds Casey Client (`casey@client.example`, `password123`), the client's own teammate in Dev's
 Organization. The first test needs nothing more.
 

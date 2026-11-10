@@ -1,5 +1,5 @@
 import Request from "../../Request";
-import type { AgencyBrandInput, AgencyBrandView, BrandInput, WorkspaceBrandView } from "@/lib/api/models/app/brand/Brand";
+import type { AgencyBrandImage, AgencyBrandInput, AgencyBrandView, BrandInput, WorkspaceBrandView } from "@/lib/api/models/app/brand/Brand";
 
 export async function getWorkspaceBrand(): Promise<WorkspaceBrandView> {
     return await Request<WorkspaceBrandView>({ method: "GET", url: "/organization/brand", authorization: true });
@@ -33,14 +33,15 @@ export async function updateAgencyBrand(agencyId: string, input: AgencyBrandInpu
     return await Request<AgencyBrandView>({ method: "PUT", url: agencyBase(agencyId), data: input, authorization: true });
 }
 
-export async function uploadAgencyBrandLogo(agencyId: string, file: File): Promise<AgencyBrandView> {
+/** Uploads one of the brand's images (multipart field `file`). */
+export async function uploadAgencyBrandImage(agencyId: string, image: AgencyBrandImage, file: File): Promise<AgencyBrandView> {
     const fd = new FormData();
     fd.append("file", file, file.name);
-    return await Request<AgencyBrandView>({ method: "POST", url: `${agencyBase(agencyId)}/logo`, data: fd, authorization: true });
+    return await Request<AgencyBrandView>({ method: "POST", url: `${agencyBase(agencyId)}/${image}`, data: fd, authorization: true });
 }
 
-export async function deleteAgencyBrandLogo(agencyId: string): Promise<AgencyBrandView> {
-    return await Request<AgencyBrandView>({ method: "DELETE", url: `${agencyBase(agencyId)}/logo`, authorization: true });
+export async function deleteAgencyBrandImage(agencyId: string, image: AgencyBrandImage): Promise<AgencyBrandView> {
+    return await Request<AgencyBrandView>({ method: "DELETE", url: `${agencyBase(agencyId)}/${image}`, authorization: true });
 }
 
 export async function setAgencyPortalDomain(agencyId: string, domain: string): Promise<AgencyBrandView> {

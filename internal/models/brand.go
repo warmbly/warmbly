@@ -33,6 +33,8 @@ type BrandInput struct {
 	HidePoweredBy bool   `json:"hide_powered_by"`
 	// PortalSignIn is read only by the agency PUT; nil keeps the stored choice.
 	PortalSignIn *PortalSignIn `json:"portal_sign_in,omitempty"`
+	// Theme is read only by the agency PUT; nil keeps the stored theme, a value replaces it whole.
+	Theme *PortalTheme `json:"theme,omitempty"`
 }
 
 // PortalSignIn is where an agency's clients sign in to its portal domain.
@@ -57,4 +59,98 @@ type AgencyBrand struct {
 	PortalDomainVerified   bool         `json:"portal_domain_verified"`
 	PortalDomainVerifiedAt *time.Time   `json:"portal_domain_verified_at,omitempty"`
 	PortalSignIn           PortalSignIn `json:"portal_sign_in"`
+	// IconURL and SignInImageURL are set only by their upload routes.
+	IconURL        string      `json:"icon_url"`
+	SignInImageURL string      `json:"sign_in_image_url"`
+	Theme          PortalTheme `json:"theme"`
+}
+
+// AgencyBrandImage names one uploaded image on an agency's brand.
+type AgencyBrandImage string
+
+const (
+	AgencyBrandLogo        AgencyBrandImage = "logo"
+	AgencyBrandIcon        AgencyBrandImage = "icon"
+	AgencyBrandSignInImage AgencyBrandImage = "sign_in_image"
+)
+
+// PortalTheme is how an agency's portal looks and reads beyond its name, logo and accent, stored as agency_brands.theme.
+// Every field is optional and an empty one means the default.
+type PortalTheme struct {
+	Font             PortalFont             `json:"font,omitempty"`
+	Corners          PortalCorners          `json:"corners,omitempty"`
+	Appearance       PortalAppearance       `json:"appearance,omitempty"`
+	SignInLayout     PortalSignInLayout     `json:"sign_in_layout,omitempty"`
+	SignInBackground PortalSignInBackground `json:"sign_in_background,omitempty"`
+	SignInHeading    string                 `json:"sign_in_heading,omitempty"`
+	SignInMessage    string                 `json:"sign_in_message,omitempty"`
+	SupportEmail     string                 `json:"support_email,omitempty"`
+	SupportURL       string                 `json:"support_url,omitempty"`
+	TermsURL         string                 `json:"terms_url,omitempty"`
+	PrivacyURL       string                 `json:"privacy_url,omitempty"`
+}
+
+// Empty reports whether the theme changes nothing.
+func (t PortalTheme) Empty() bool { return t == PortalTheme{} }
+
+// PortalFont is the typeface the portal is set in.
+type PortalFont string
+
+const (
+	PortalFontSystem    PortalFont = "system"
+	PortalFontGeometric PortalFont = "geometric"
+	PortalFontSerif     PortalFont = "serif"
+)
+
+func (f PortalFont) Valid() bool {
+	return f == "" || f == PortalFontSystem || f == PortalFontGeometric || f == PortalFontSerif
+}
+
+// PortalCorners is how rounded the portal's buttons, fields and cards are.
+type PortalCorners string
+
+const (
+	PortalCornersSharp PortalCorners = "sharp"
+	PortalCornersRound PortalCorners = "round"
+)
+
+func (c PortalCorners) Valid() bool {
+	return c == "" || c == PortalCornersSharp || c == PortalCornersRound
+}
+
+// PortalAppearance is the colour scheme a client sees before choosing one.
+type PortalAppearance string
+
+const (
+	PortalAppearanceLight PortalAppearance = "light"
+	PortalAppearanceDark  PortalAppearance = "dark"
+)
+
+func (a PortalAppearance) Valid() bool {
+	return a == "" || a == PortalAppearanceLight || a == PortalAppearanceDark
+}
+
+// PortalSignInLayout is how the portal's sign-in page is arranged.
+type PortalSignInLayout string
+
+const (
+	PortalSignInLayoutSplit PortalSignInLayout = "split"
+	PortalSignInLayoutCover PortalSignInLayout = "cover"
+)
+
+func (l PortalSignInLayout) Valid() bool {
+	return l == "" || l == PortalSignInLayoutSplit || l == PortalSignInLayoutCover
+}
+
+// PortalSignInBackground is what fills the sign-in page behind or beside the form.
+type PortalSignInBackground string
+
+const (
+	PortalSignInBackgroundAccent PortalSignInBackground = "accent"
+	PortalSignInBackgroundDark   PortalSignInBackground = "dark"
+	PortalSignInBackgroundImage  PortalSignInBackground = "image"
+)
+
+func (b PortalSignInBackground) Valid() bool {
+	return b == "" || b == PortalSignInBackgroundAccent || b == PortalSignInBackgroundDark || b == PortalSignInBackgroundImage
 }

@@ -1,6 +1,6 @@
 import { queryOptions, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
-    deleteAgencyBrandLogo,
+    deleteAgencyBrandImage,
     deleteWorkspaceBrandLogo,
     getAgencyBrand,
     getWorkspaceBrand,
@@ -8,11 +8,11 @@ import {
     setAgencyPortalDomain,
     updateAgencyBrand,
     updateWorkspaceBrand,
-    uploadAgencyBrandLogo,
+    uploadAgencyBrandImage,
     uploadWorkspaceBrandLogo,
     verifyAgencyPortalDomain,
 } from "@/lib/api/client/app/brand";
-import type { AgencyBrandInput, AgencyBrandView, BrandInput, WorkspaceBrandView } from "@/lib/api/models/app/brand/Brand";
+import type { AgencyBrandImage, AgencyBrandInput, AgencyBrandView, BrandInput, WorkspaceBrandView } from "@/lib/api/models/app/brand/Brand";
 
 export const workspaceBrandQuery = queryOptions({
     queryKey: ["brand", "workspace"],
@@ -62,11 +62,12 @@ function useAgencyWrite<T>(agencyId: string, fn: (arg: T) => Promise<AgencyBrand
 }
 
 export const useUpdateAgencyBrand = (agencyId: string) =>
-    useAgencyWrite(agencyId, (input: BrandInput) => updateAgencyBrand(agencyId, input));
-export const useUploadAgencyBrandLogo = (agencyId: string) =>
-    useAgencyWrite(agencyId, (file: File) => uploadAgencyBrandLogo(agencyId, file));
-export const useDeleteAgencyBrandLogo = (agencyId: string) =>
-    useAgencyWrite(agencyId, () => deleteAgencyBrandLogo(agencyId));
+    useAgencyWrite(agencyId, (input: AgencyBrandInput) => updateAgencyBrand(agencyId, input));
+/** Uploads the brand's logo, tab icon or sign-in image. */
+export const useUploadAgencyBrandImage = (agencyId: string, image: AgencyBrandImage) =>
+    useAgencyWrite(agencyId, (file: File) => uploadAgencyBrandImage(agencyId, image, file));
+export const useDeleteAgencyBrandImage = (agencyId: string, image: AgencyBrandImage) =>
+    useAgencyWrite(agencyId, () => deleteAgencyBrandImage(agencyId, image));
 export const useSetAgencyPortalDomain = (agencyId: string) =>
     useAgencyWrite(agencyId, (domain: string) => setAgencyPortalDomain(agencyId, domain));
 export const useVerifyAgencyPortalDomain = (agencyId: string) =>

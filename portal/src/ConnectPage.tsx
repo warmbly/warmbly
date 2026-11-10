@@ -3,11 +3,12 @@
 // details. Works on its own tab and inside an iframe on the agency's website.
 
 import type React from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 
 import { StalePageError } from "./api";
+import { BrandFooter, BrandMark } from "./Brand";
 import {
     ConnectError,
     type ConnectLink,
@@ -28,7 +29,10 @@ import {
 } from "./connectEmbed";
 import { CUSTOM_PRESET, MAIL_PRESETS } from "./connectPresets";
 import { isEmbedded } from "./embed";
+import { AlertIcon, BackIcon, CheckIcon, ChevronIcon, MailIcon } from "./icons";
+import { useBrandLook } from "./look";
 import { StalePage } from "./NotFound";
+import type { Brand } from "./theme";
 import { Turnstile } from "./Turnstile";
 import { resetTurnstile } from "./turnstileScript";
 import "./connect.css";
@@ -75,20 +79,6 @@ function saveConnected(token: string, list: Connected[]) {
         sessionStorage.setItem(storageKey(token), JSON.stringify(list));
     } catch {
         // private mode: the list lives only as long as the page
-    }
-}
-
-function safeColor(c?: string): string | undefined {
-    return c && /^#[0-9a-fA-F]{3,8}$/.test(c) ? c : undefined;
-}
-
-function safeURL(u?: string): string | undefined {
-    if (!u) return undefined;
-    try {
-        const parsed = new URL(u);
-        return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.href : undefined;
-    } catch {
-        return undefined;
     }
 }
 
@@ -157,27 +147,33 @@ export function ConnectPage() {
     useEffect(() => {
         document.title = link ? `Connect your mailbox to ${link.workspace}` : "Connect your mailbox";
     }, [link]);
+    useBrandLook(link?.brand);
 
-    const accent = safeColor(link?.brand.accent_color);
-    const style = useMemo(() => (accent ? ({ "--cx-accent": accent } as React.CSSProperties) : undefined), [accent]);
-
-    if (query.isPending) return <div className="cx" style={style} />;
+    if (query.isPending) return <Loading />;
     if (query.isError) {
         if (query.error instanceof StalePageError) return <StalePage />;
         const code = query.error instanceof ConnectError ? query.error.code : "";
         const t = TERMINAL[code];
         if (t && connected.length > 0 && code === "client_link_exhausted") {
             return (
-                <Shell link={undefined} style={style}>
+                <Shell brand={link?.brand}>
                     <Done connected={connected} workspace="the team that sent this link" />
                 </Shell>
             );
         }
         return (
-            <Shell link={undefined} style={style}>
+            <Shell brand={link?.brand}>
                 <div className="cx-state">
+                    <span className="cx-state-icon">
+                        <AlertIcon />
+                    </span>
                     <h1>{t?.title ?? "This page is temporarily unavailable"}</h1>
                     <p>{t?.body ?? "Try again in a few minutes."}</p>
+                    {!t && (
+                        <button type="button" className="cx-secondary" disabled={query.isFetching} onClick={() => void query.refetch()}>
+                            {query.isFetching ? "Trying…" : "Try again"}
+                        </button>
+                    )}
                 </div>
             </Shell>
         );
@@ -187,7 +183,7 @@ export function ConnectPage() {
     const remaining = Math.max(0, live.max_mailboxes - live.connected);
 
     return (
-        <Shell link={live} style={style}>
+        <Shell brand={live.brand}>
             {view === "imap" ? (
                 <ImapForm
                     token={token}
@@ -223,13 +219,20 @@ export function ConnectPage() {
                         <Done connected={connected} workspace={workspace} />
                     ) : (
                         <>
-                            <p className="cx-count">
-                                {live.connected > 0
-                                    ? `${live.connected} of ${live.max_mailboxes} mailboxes connected through this live.`
-                                    : live.max_mailboxes === 1
-                                      ? "This link connects one mailbox."
-                                      : `This link connects up to ${live.max_mailboxes} mailboxes.`}
-                            </p>
+                            <div className="cx-progress">
+                                <p className="cx-count">
+                                    {live.connected > 0
+                                        ? `${live.connected} of ${live.max_mailboxes} mailboxes connected through this link.`
+                                        : live.max_mailboxes === 1
+                                          ? "This link connects one mailbox."
+                                          : `This link connects up to ${live.max_mailboxes} mailboxes.`}
+                                </p>
+                                {live.connected > 0 && (
+                                    <div className="cx-meter" aria-hidden>
+                                        <span style={{ width: `${Math.min(100, (live.connected / live.max_mailboxes) * 100)}%` }} />
+                                    </div>
+                                )}
+                            </div>
                             {error && (
                                 <p className="cx-error" role="alert">
                                     {error}
@@ -280,38 +283,38 @@ function signinErrorMessage(code: string): string {
     }
 }
 
-function Shell({ link, style, children }: { link: ConnectLink | undefined; style?: React.CSSProperties; children: React.ReactNode }) {
-    const brand = link?.brand;
-    const logo = safeURL(brand?.logo_url);
-    const site = safeURL(brand?.website_url);
-    const powered = brand?.powered_by;
-    const poweredURL = safeURL(powered?.url);
-    const mark = logo ? <img className="cx-logo" src={logo} alt={brand?.name ?? ""} /> : brand?.name ? <span className="cx-brand">{brand.name}</span> : null;
+// Shell draws in the look already on the document; a link refused on first load has no brand, so no mark and no footer.
+function Shell({ brand, children }: { brand: Brand | undefined; children: React.ReactNode }) {
+    const hasMark = brand !== undefined && Boolean(brand.logoURL || brand.name);
     return (
-        <div className="cx" style={style}>
-            {mark && (
+        <div className="cx">
+            {brand && hasMark && (
                 <header className="cx-head">
-                    {site ? (
-                        <a href={site} target="_blank" rel="noopener noreferrer">
-                            {mark}
-                        </a>
-                    ) : (
-                        mark
-                    )}
+                    <BrandMark brand={brand} />
                 </header>
             )}
             <main className="cx-card">{children}</main>
-            {powered && (
-                <footer className="cx-foot">
-                    {poweredURL ? (
-                        <a href={poweredURL} target="_blank" rel="noopener noreferrer">
-                            Powered by {powered.name}
-                        </a>
-                    ) : (
-                        <span>Powered by {powered.name}</span>
-                    )}
-                </footer>
-            )}
+            {brand && <BrandFooter brand={brand} className="cx-foot" />}
+        </div>
+    );
+}
+
+// Loading keeps the shape of the page it becomes, so nothing jumps when the link arrives.
+function Loading() {
+    return (
+        <div className="cx" aria-busy="true">
+            <div className="cx-head">
+                <span className="pt-sk cx-sk-mark" />
+            </div>
+            <main className="cx-card" role="status">
+                <span className="pt-sr">Loading</span>
+                <span className="pt-sk cx-sk-title" />
+                <span className="pt-sk cx-sk-line" />
+                <span className="pt-sk cx-sk-line cx-sk-short" />
+                <span className="pt-sk cx-sk-button" />
+                <span className="pt-sk cx-sk-button" />
+                <span className="pt-sk cx-sk-button" />
+            </main>
         </div>
     );
 }
@@ -321,8 +324,8 @@ function ConnectedList({ connected }: { connected: Connected[] }) {
         <ul className="cx-connected" aria-label="Connected mailboxes">
             {connected.map((m) => (
                 <li key={m.email}>
-                    <span className="cx-check" aria-hidden>
-                        ✓
+                    <span className="cx-check">
+                        <CheckIcon />
                     </span>
                     <span className="cx-addr">{m.email}</span>
                     {m.provider && <span className="cx-via">{PROVIDER_LABEL[m.provider] ?? ""}</span>}
@@ -335,6 +338,9 @@ function ConnectedList({ connected }: { connected: Connected[] }) {
 function Done({ connected, workspace }: { connected: Connected[]; workspace: string }) {
     return (
         <div className="cx-state">
+            <span className="cx-state-icon is-ok">
+                <CheckIcon />
+            </span>
             <h1>You're all set</h1>
             <p>
                 {connected.length > 0
@@ -422,14 +428,26 @@ function ProviderButtons({
             )}
             {has("smtp_imap") && (
                 <button type="button" className="cx-provider" disabled={busy !== null} onClick={onImap}>
-                    <span className="cx-mark cx-mark-mail" aria-hidden>
-                        @
-                    </span>
+                    <MailIcon className="cx-mark cx-mark-mail" />
                     Use IMAP and SMTP details
                 </button>
             )}
             {link.providers.length === 0 && <p className="cx-error">This link has no way to connect a mailbox on this server. Ask for a new link.</p>}
         </div>
+    );
+}
+
+type Security = "tls" | "starttls";
+
+function SecuritySelect({ value, onChange }: { value: Security; onChange: (v: Security) => void }) {
+    return (
+        <span className="cx-select">
+            <select value={value} onChange={(e) => onChange(e.target.value as Security)}>
+                <option value="tls">SSL/TLS</option>
+                <option value="starttls">STARTTLS</option>
+            </select>
+            <ChevronIcon />
+        </span>
     );
 }
 
@@ -450,10 +468,10 @@ function ImapForm({
     const [password, setPassword] = useState("");
     const [imapHost, setImapHost] = useState("");
     const [imapPort, setImapPort] = useState("993");
-    const [imapSec, setImapSec] = useState<"tls" | "starttls">("tls");
+    const [imapSec, setImapSec] = useState<Security>("tls");
     const [smtpHost, setSmtpHost] = useState("");
     const [smtpPort, setSmtpPort] = useState("465");
-    const [smtpSec, setSmtpSec] = useState<"tls" | "starttls">("tls");
+    const [smtpSec, setSmtpSec] = useState<Security>("tls");
     const [separate, setSeparate] = useState(false);
     const [smtpUser, setSmtpUser] = useState("");
     const [smtpPass, setSmtpPass] = useState("");
@@ -512,21 +530,24 @@ function ImapForm({
     return (
         <form className="cx-form" onSubmit={(e) => void submit(e)}>
             <button type="button" className="cx-link cx-back" onClick={onBack} disabled={busy}>
-                ← Other ways to connect
+                <BackIcon /> Other ways to connect
             </button>
             <h1 className="cx-title">Connect with server details</h1>
             <p className="cx-sub">Your password is checked against your mail server and stored encrypted. {link.workspace} never sees it.</p>
 
             <label className="cx-field">
                 <span>Mail provider</span>
-                <select value={preset} onChange={(e) => choose(e.target.value)} disabled={busy}>
-                    <option value={CUSTOM_PRESET}>Other (enter the servers)</option>
-                    {MAIL_PRESETS.map((p) => (
-                        <option key={p.id} value={p.id}>
-                            {p.label}
-                        </option>
-                    ))}
-                </select>
+                <span className="cx-select">
+                    <select value={preset} onChange={(e) => choose(e.target.value)} disabled={busy}>
+                        <option value={CUSTOM_PRESET}>Other (enter the servers)</option>
+                        {MAIL_PRESETS.map((p) => (
+                            <option key={p.id} value={p.id}>
+                                {p.label}
+                            </option>
+                        ))}
+                    </select>
+                    <ChevronIcon />
+                </span>
             </label>
             <div className="cx-row">
                 <label className="cx-field">
@@ -557,10 +578,7 @@ function ImapForm({
                     </label>
                     <label className="cx-field cx-sec">
                         <span>Security</span>
-                        <select value={imapSec} onChange={(e) => setImapSec(e.target.value as "tls" | "starttls")}>
-                            <option value="tls">SSL/TLS</option>
-                            <option value="starttls">STARTTLS</option>
-                        </select>
+                        <SecuritySelect value={imapSec} onChange={setImapSec} />
                     </label>
                 </div>
             </fieldset>
@@ -577,10 +595,7 @@ function ImapForm({
                     </label>
                     <label className="cx-field cx-sec">
                         <span>Security</span>
-                        <select value={smtpSec} onChange={(e) => setSmtpSec(e.target.value as "tls" | "starttls")}>
-                            <option value="tls">SSL/TLS</option>
-                            <option value="starttls">STARTTLS</option>
-                        </select>
+                        <SecuritySelect value={smtpSec} onChange={setSmtpSec} />
                     </label>
                 </div>
                 <label className="cx-check-row">
@@ -601,7 +616,7 @@ function ImapForm({
                 )}
             </fieldset>
 
-            {link.captcha_site_key && <Turnstile siteKey={link.captcha_site_key} onToken={setCaptcha} />}
+            {link.captcha_site_key && <Turnstile siteKey={link.captcha_site_key} onToken={setCaptcha} theme={link.brand.theme.appearance} />}
             {error && (
                 <p className="cx-error" role="alert">
                     {error}

@@ -75,15 +75,18 @@ function BrandingSettings() {
             <BrandEditor
                 draft={draft}
                 setDraft={setDraft}
-                stored={data?.brand}
                 inherited={data?.inherited}
+                inheritedTheme={source === "agency" ? data?.effective.brand.theme : undefined}
                 fallbackName={orgName}
                 poweredBy={data?.powered_by}
                 entitled={!!data?.effective.full_white_label}
                 canWrite={write.allowed}
-                onUpload={(file) => upload.mutateAsync(file)}
-                onRemoveLogo={() => removeLogo.mutateAsync(undefined)}
-                logoBusy={upload.isPending || removeLogo.isPending}
+                logo={{
+                    url: data?.brand.logo_url ?? "",
+                    upload: (file) => upload.mutateAsync(file),
+                    remove: () => removeLogo.mutateAsync(undefined),
+                    busy: upload.isPending || removeLogo.isPending,
+                }}
             />
 
             <Section

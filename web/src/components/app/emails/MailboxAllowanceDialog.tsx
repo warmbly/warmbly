@@ -44,6 +44,7 @@ import buildError from "@/lib/helper/buildError";
 import { PAID_PLANS, PLAN_CATALOG, getPlan, planOrder, type PlanID } from "@/lib/plans";
 import { cn } from "@/lib/utils";
 
+import HelpLink from "@/components/shared/HelpLink";
 const EASE = [0.22, 1, 0.36, 1] as const;
 
 /** Mailboxes a catalogue plan holds under fair use; null for unlimited. */
@@ -327,15 +328,14 @@ function Body({
                     All limit requests
                     <ArrowRightIcon className="w-3 h-3" />
                 </Link>
-                <a
+                <HelpLink
                     href="https://docs.warmbly.com/guides/mailboxes/#mailbox-allowance"
-                    target="_blank"
-                    rel="noreferrer"
                     className="text-[11.5px] text-slate-500 hover:text-slate-900 inline-flex items-center gap-1 transition-colors"
+                    portalLabel={<>Get help <ArrowUpRightIcon className="w-3 h-3" /></>}
                 >
                     How fair use works
                     <ArrowUpRightIcon className="w-3 h-3" />
-                </a>
+                </HelpLink>
             </div>
         </div>
     );

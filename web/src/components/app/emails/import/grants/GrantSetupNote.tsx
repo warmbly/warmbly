@@ -6,6 +6,7 @@ import { MS_GRANT_PERMISSIONS, grantMissing } from "./grantSetup";
 import { cn } from "@/lib/utils";
 import { ADMIN_CONNECTIONS_DOCS } from "../importFields";
 
+import HelpLink from "@/components/shared/HelpLink";
 function joinAnd(items: string[]): string {
     if (items.length <= 1) return items.join("");
     return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
@@ -61,10 +62,9 @@ export default function GrantSetupNote({
                     </p>
                 </>
             )}
-            <a
+            <HelpLink
                 href={ADMIN_CONNECTIONS_DOCS}
-                target="_blank"
-                rel="noreferrer"
+                portalLabel={<>Contact support <ExternalLinkIcon className="w-2.5 h-2.5" /></>}
                 onClick={(e) => e.stopPropagation()}
                 className={cn(
                     "inline-flex items-center gap-0.5 underline",
@@ -73,7 +73,7 @@ export default function GrantSetupNote({
             >
                 Configuration docs
                 <ExternalLinkIcon className="w-2.5 h-2.5" />
-            </a>
+            </HelpLink>
         </div>
     );
 }

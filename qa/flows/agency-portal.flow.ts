@@ -84,8 +84,12 @@ test.describe("agency clients", () => {
       await signIn(page);
       await expect(page).toHaveURL(/\/app\//, { timeout: 30_000 });
       await expect(page.getByText("Northwind Growth").first()).toBeVisible();
+      // The agency's name is in the loading frame too, so wait for the page itself.
+      await expect(page.getByRole("link", { name: "Campaigns" }).first()).toBeVisible({ timeout: 30_000 });
+      await page.goto(`${PORTAL}/app/campaigns`);
+      await expect(page.getByRole("button", { name: /New campaign/ }).first()).toBeVisible({ timeout: 30_000 });
       await proof.dwell(1000);
-      await proof.shot("portal-dashboard", { caption: "The client's dashboard on the agency's domain" });
+      await proof.shot("portal-dashboard", { caption: "The client's dashboard on the agency's domain, in the agency's colour, font and corners" });
     });
   });
 });

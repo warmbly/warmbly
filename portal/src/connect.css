@@ -1,25 +1,28 @@
-/* The client connect page. --cx-accent is the workspace's brand colour. */
+/* The client connect page. Colours, fonts and the corner scale come from styles.css, which the brand's theme
+   re-points; this file names the page's own radii from that scale. */
 
 .cx {
-    --cx-accent: #0284c7;
-    --cx-ink: #0f172a;
-    --cx-muted: #64748b;
-    --cx-line: #e2e8f0;
+    --cx-r-field: var(--pt-r-2);
+    --cx-r-button: var(--pt-r-button);
+    --cx-r-box: var(--pt-r-3);
+    --cx-r-card: var(--pt-r-4);
     min-height: 100vh;
-    padding: 2.5rem 1rem 2rem;
+    min-height: 100dvh;
+    padding: clamp(2rem, 7vh, 4.5rem) 1rem 2rem;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 1.25rem;
-    background: #f8fafc;
-    color: var(--cx-ink);
-    font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
-    font-size: 14px;
+    gap: 1.5rem;
+    background: var(--pt-page);
+    color: var(--pt-ink);
+    font-family: var(--pt-font);
+    font-size: var(--pt-size);
     line-height: 1.5;
 }
 body.embed .cx {
     min-height: auto;
     padding: 0.5rem 0.25rem;
+    gap: 1rem;
     background: transparent;
 }
 
@@ -27,108 +30,136 @@ body.embed .cx {
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 2rem;
+    min-height: 2.25rem;
+    max-width: 100%;
 }
-.cx-head a {
-    display: inline-flex;
-    color: inherit;
-    text-decoration: none;
+.cx-head .pt-logo {
+    max-height: 2.5rem;
+    max-width: 13rem;
 }
-.cx-logo {
-    max-height: 2.25rem;
-    max-width: 12rem;
-    object-fit: contain;
-}
-.cx-brand {
-    font-weight: 600;
-    font-size: 1rem;
-    letter-spacing: -0.01em;
+.cx-head .pt-brandname {
+    font-size: 1.1rem;
+    text-align: center;
 }
 
 .cx-card {
     width: 100%;
     max-width: 30rem;
-    background: #fff;
-    border: 1px solid var(--cx-line);
-    border-radius: 0.6rem;
-    padding: 1.5rem;
-    box-shadow: 0 12px 32px -18px rgba(15, 23, 42, 0.25);
+    background: var(--pt-card);
+    border: 1px solid var(--pt-line);
+    border-radius: var(--cx-r-card);
+    padding: 1.75rem;
+    box-shadow: var(--pt-shadow);
 }
 body.embed .cx-card {
     box-shadow: none;
 }
+@media (max-width: 30rem) {
+    .cx-card {
+        padding: 1.25rem;
+    }
+}
 
 .cx-title {
-    font-size: 1.15rem;
-    line-height: 1.35;
-    margin: 0 0 0.4rem;
-    letter-spacing: -0.01em;
+    font-size: 1.3rem;
+    line-height: 1.3;
+    font-weight: 650;
+    margin: 0 0 0.5rem;
+    letter-spacing: var(--pt-tight);
+    overflow-wrap: anywhere;
 }
 .cx-sub {
-    margin: 0 0 1rem;
-    color: var(--cx-muted);
+    margin: 0 0 1.25rem;
+    color: var(--pt-muted);
+    font-size: 0.95rem;
+    line-height: 1.55;
+}
+
+.cx-progress {
+    margin: 0 0 0.9rem;
 }
 .cx-count {
-    margin: 0 0 0.75rem;
+    margin: 0;
     font-size: 0.85rem;
-    color: var(--cx-muted);
+    color: var(--pt-muted);
+}
+.cx-meter {
+    height: 4px;
+    margin-top: 0.5rem;
+    border-radius: var(--pt-r-pill);
+    background: var(--pt-line);
+    overflow: hidden;
+}
+.cx-meter span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--pt-chart);
+    transition: width 0.3s ease;
 }
 
 .cx-buttons {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.6rem;
 }
-.cx-provider {
+.cx-provider,
+.cx-secondary {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.6rem;
-    height: 2.6rem;
-    border: 1px solid #cbd5e1;
-    border-radius: 0.45rem;
-    background: #fff;
-    color: var(--cx-ink);
+    gap: 0.65rem;
+    min-height: 2.85rem;
+    padding: 0.4rem 1rem;
+    border: 1px solid var(--pt-line-strong);
+    border-radius: var(--cx-r-button);
+    background: var(--pt-card);
+    color: var(--pt-ink);
     font: inherit;
-    font-weight: 500;
+    font-weight: 550;
     cursor: pointer;
-    transition: border-color 0.15s, background 0.15s;
+    transition:
+        border-color 0.15s,
+        background-color 0.15s,
+        box-shadow 0.15s;
 }
-.cx-provider:hover:not(:disabled) {
-    border-color: var(--cx-accent);
-    background: #f8fafc;
+.cx-provider:hover:not(:disabled),
+.cx-secondary:hover:not(:disabled) {
+    border-color: var(--pt-ring);
+    background: var(--pt-soft);
 }
-.cx-provider:disabled {
+.cx-provider:active:not(:disabled),
+.cx-secondary:active:not(:disabled) {
+    box-shadow: 0 0 0 3px var(--pt-halo);
+}
+.cx-provider:disabled,
+.cx-secondary:disabled {
     opacity: 0.6;
     cursor: default;
 }
-.cx-provider:focus-visible,
-.cx-primary:focus-visible,
-.cx-link:focus-visible {
-    outline: 2px solid var(--cx-accent);
-    outline-offset: 2px;
+.cx-secondary {
+    display: inline-flex;
+    min-height: 2.5rem;
+    margin-top: 0.5rem;
 }
 .cx-mark {
-    width: 1.1rem;
-    height: 1.1rem;
+    width: 1.15rem;
+    height: 1.15rem;
     flex: none;
 }
 .cx-mark-mail {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 600;
-    color: var(--cx-muted);
+    color: var(--pt-muted);
 }
 
 .cx-primary {
     width: 100%;
-    height: 2.6rem;
+    min-height: 2.85rem;
     margin-top: 0.75rem;
-    border: 0;
-    border-radius: 0.45rem;
-    background: var(--cx-accent);
-    color: #fff;
+    padding: 0.4rem 1rem;
+    border: 1px solid var(--pt-accent-edge);
+    border-radius: var(--cx-r-button);
+    background: var(--pt-accent);
+    color: var(--pt-on-accent);
     font: inherit;
     font-weight: 600;
     cursor: pointer;
@@ -136,60 +167,82 @@ body.embed .cx-card {
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
+    transition: background-color 0.15s;
+}
+.cx-primary:hover:not(:disabled) {
+    background: var(--pt-accent-hover);
 }
 .cx-primary:disabled {
     opacity: 0.75;
     cursor: default;
 }
 .cx-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
     border: 0;
+    border-radius: var(--pt-r-1);
     background: none;
-    padding: 0;
+    padding: 0.15rem 0;
     font: inherit;
-    font-size: 0.85rem;
-    color: var(--cx-accent);
+    font-size: 0.875rem;
+    font-weight: 550;
+    color: var(--pt-link);
     cursor: pointer;
 }
+.cx-link:hover:not(:disabled) {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+.cx-link:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
 .cx-back {
-    margin-bottom: 0.75rem;
+    align-self: flex-start;
+    margin-bottom: 0.35rem;
 }
 
 .cx-error {
-    margin: 0 0 0.75rem;
-    padding: 0.6rem 0.75rem;
-    border: 1px solid #fecaca;
-    border-radius: 0.45rem;
-    background: #fef2f2;
-    color: #b91c1c;
-    font-size: 0.85rem;
+    margin: 0 0 0.9rem;
+    padding: 0.65rem 0.8rem;
+    border: 1px solid var(--pt-danger-line);
+    border-radius: var(--cx-r-field);
+    background: var(--pt-danger-soft);
+    color: var(--pt-danger);
+    font-size: 0.875rem;
+    line-height: 1.45;
 }
 .cx-note {
     margin: 0.5rem 0 0;
     font-size: 0.8rem;
-    color: var(--cx-muted);
+    color: var(--pt-muted);
     text-align: center;
 }
 
 .cx-connected {
     list-style: none;
-    margin: 0 0 1rem;
+    margin: 0 0 1.1rem;
     padding: 0;
-    border: 1px solid var(--cx-line);
-    border-radius: 0.45rem;
+    border: 1px solid var(--pt-line);
+    border-radius: var(--cx-r-box);
+    background: var(--pt-raised);
+    overflow: hidden;
 }
 .cx-connected li {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.85rem;
+    gap: 0.55rem;
+    padding: 0.6rem 0.8rem;
+    font-size: 0.875rem;
 }
 .cx-connected li + li {
-    border-top: 1px solid var(--cx-line);
+    border-top: 1px solid var(--pt-line);
 }
 .cx-check {
-    color: #059669;
-    font-weight: 700;
+    display: inline-flex;
+    color: var(--pt-ok);
+    font-size: 1rem;
 }
 .cx-addr {
     flex: 1;
@@ -199,134 +252,291 @@ body.embed .cx-card {
     white-space: nowrap;
 }
 .cx-via {
-    color: var(--cx-muted);
+    color: var(--pt-muted);
     font-size: 0.75rem;
+    white-space: nowrap;
 }
 
 .cx-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     text-align: center;
-    padding: 0.5rem 0;
+    padding: 0.75rem 0 0.25rem;
+}
+.cx-state-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: var(--pt-r-pill);
+    background: var(--pt-raised);
+    border: 1px solid var(--pt-line);
+    color: var(--pt-muted);
+    font-size: 1.2rem;
+}
+.cx-state-icon.is-ok {
+    background: var(--pt-ok-soft);
+    border-color: var(--pt-ok-line);
+    color: var(--pt-ok);
 }
 .cx-state h1 {
-    font-size: 1.1rem;
-    margin: 0.5rem 0 0.35rem;
+    font-size: 1.2rem;
+    line-height: 1.3;
+    font-weight: 650;
+    letter-spacing: var(--pt-tight);
+    margin: 0.9rem 0 0.4rem;
 }
 .cx-state p {
-    margin: 0 0 0.75rem;
-    color: var(--cx-muted);
+    max-width: 24rem;
+    margin: 0 0 0.9rem;
+    color: var(--pt-muted);
+    font-size: 0.95rem;
+    line-height: 1.55;
 }
 .cx-state .cx-connected {
+    align-self: stretch;
+    margin: 0.25rem 0 0;
     text-align: left;
 }
 
 .cx-spinner {
     display: inline-block;
-    width: 1.5rem;
-    height: 1.5rem;
-    border: 2px solid var(--cx-line);
-    border-top-color: var(--cx-accent);
+    width: 1.75rem;
+    height: 1.75rem;
+    border: 2px solid var(--pt-line);
+    border-top-color: var(--pt-ring);
     border-radius: 50%;
     animation: cx-spin 0.8s linear infinite;
 }
 .cx-spinner-sm {
-    width: 0.9rem;
-    height: 0.9rem;
-    border-color: rgba(255, 255, 255, 0.4);
-    border-top-color: #fff;
+    width: 0.95rem;
+    height: 0.95rem;
+    border-color: transparent;
+    border-top-color: currentColor;
+    border-right-color: currentColor;
 }
 @keyframes cx-spin {
     to {
         transform: rotate(360deg);
     }
 }
+/* A spinner that stops reads as a page that stopped, so reduced motion slows it down. */
+@media (prefers-reduced-motion: reduce) {
+    .cx-spinner {
+        animation-duration: 2.4s !important;
+        animation-iteration-count: infinite !important;
+    }
+}
 
 .cx-form {
     display: flex;
     flex-direction: column;
-    gap: 0.65rem;
+    gap: 0.8rem;
 }
-.cx-form .cx-title,
-.cx-form .cx-sub {
+.cx-form .cx-title {
     margin-bottom: 0;
+}
+.cx-form .cx-sub {
+    margin: -0.35rem 0 0.25rem;
+}
+.cx-form .cx-error {
+    margin-bottom: 0;
+}
+.cx-form .cx-primary {
+    margin-top: 0.25rem;
+}
+.cx-form .cf-turnstile:not(:empty) {
+    min-height: 65px;
 }
 .cx-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 0.65rem;
+    gap: 0.75rem;
 }
 .cx-row-server {
-    grid-template-columns: 1fr 4.5rem 6.5rem;
+    grid-template-columns: 1fr 5rem 7.25rem;
 }
 @media (max-width: 30rem) {
-    .cx-row,
-    .cx-row-server {
+    .cx-row {
         grid-template-columns: 1fr;
+    }
+    .cx-row-server {
+        grid-template-columns: 1fr 1fr;
+    }
+    .cx-row-server > .cx-field:first-child {
+        grid-column: 1 / -1;
     }
 }
 .cx-field {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.3rem;
     min-width: 0;
 }
-.cx-field > span {
-    font-size: 0.78rem;
-    font-weight: 500;
-    color: #334155;
+.cx-field > span:not(.cx-select) {
+    font-size: 0.8rem;
+    font-weight: 550;
+    color: var(--pt-ink-2);
 }
 .cx-field small {
-    font-size: 0.75rem;
-    color: var(--cx-muted);
+    font-size: 0.78rem;
+    line-height: 1.45;
+    color: var(--pt-muted);
 }
 .cx-field input,
 .cx-field select {
-    height: 2.25rem;
-    padding: 0 0.6rem;
-    border: 1px solid #cbd5e1;
-    border-radius: 0.4rem;
-    background: #fff;
-    color: var(--cx-ink);
+    width: 100%;
+    height: 2.5rem;
+    padding: 0 0.7rem;
+    border: 1px solid var(--pt-line-strong);
+    border-radius: var(--cx-r-field);
+    background: var(--pt-field);
+    color: var(--pt-ink);
     font: inherit;
     min-width: 0;
+    transition:
+        border-color 0.15s,
+        box-shadow 0.15s;
+}
+.cx-field input::placeholder {
+    color: var(--pt-muted);
+    opacity: 0.7;
+}
+.cx-field input:hover:not(:disabled, :focus),
+.cx-field select:hover:not(:disabled, :focus) {
+    border-color: var(--pt-muted);
 }
 .cx-field input:focus,
 .cx-field select:focus {
     outline: none;
-    border-color: var(--cx-accent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--cx-accent) 18%, transparent);
+    border-color: var(--pt-ring);
+    box-shadow: 0 0 0 3px var(--pt-halo);
+}
+.cx-field input:disabled,
+.cx-field select:disabled,
+.cx-servers:disabled input,
+.cx-servers:disabled select {
+    opacity: 0.6;
+}
+.cx-select {
+    position: relative;
+    display: block;
+}
+.cx-select select {
+    appearance: none;
+    -webkit-appearance: none;
+    padding-right: 2rem;
+    cursor: pointer;
+}
+.cx-select .pt-icon {
+    position: absolute;
+    right: 0.65rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--pt-muted);
+    pointer-events: none;
+}
+/* Below 16px, iOS zooms the page when a field takes focus. */
+@media (max-width: 30rem) {
+    .cx-field input,
+    .cx-field select {
+        font-size: 16px;
+    }
 }
 .cx-servers {
     margin: 0;
-    padding: 0.65rem 0.75rem 0.75rem;
-    border: 1px solid var(--cx-line);
-    border-radius: 0.45rem;
+    min-width: 0;
+    padding: 0.7rem 0.85rem 0.9rem;
+    border: 1px solid var(--pt-line);
+    border-radius: var(--cx-r-box);
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: 0.7rem;
 }
 .cx-servers legend {
-    padding: 0 0.25rem;
+    padding: 0 0.35rem;
     font-size: 0.72rem;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: var(--cx-muted);
+    color: var(--pt-muted);
 }
 .cx-check-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    font-size: 0.82rem;
-    color: #334155;
+    gap: 0.55rem;
+    font-size: 0.875rem;
+    color: var(--pt-ink-2);
+    cursor: pointer;
 }
 .cx-check-row input {
-    accent-color: var(--cx-accent);
+    appearance: none;
+    -webkit-appearance: none;
+    flex: none;
+    display: inline-grid;
+    place-content: center;
+    width: 1.1rem;
+    height: 1.1rem;
+    margin: 0;
+    border: 1px solid var(--pt-line-strong);
+    border-radius: min(var(--pt-r-1), 5px);
+    background: var(--pt-field);
+    cursor: pointer;
+    transition:
+        background-color 0.15s,
+        border-color 0.15s;
+}
+.cx-check-row input::before {
+    content: "";
+    width: 0.3rem;
+    height: 0.55rem;
+    margin-top: -0.12rem;
+    border: solid var(--pt-on-accent);
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg) scale(0);
+    transition: transform 0.12s;
+}
+.cx-check-row input:checked {
+    background: var(--pt-accent);
+    border-color: var(--pt-accent-edge);
+}
+.cx-check-row input:checked::before {
+    transform: rotate(45deg) scale(1);
+}
+.cx-check-row input:focus-visible {
+    outline: 2px solid var(--pt-ring);
+    outline-offset: 2px;
 }
 
 .cx-foot {
-    font-size: 0.75rem;
-    color: var(--cx-muted);
+    max-width: 30rem;
+    text-align: center;
 }
-.cx-foot a {
-    color: inherit;
+
+/* Loading placeholders, in the shape of the first screen. */
+.cx-sk-mark {
+    width: 8rem;
+    height: 1.6rem;
+}
+.cx-sk-title {
+    width: 78%;
+    height: 1.5rem;
+    margin-bottom: 0.9rem;
+}
+.cx-sk-line {
+    height: 0.8rem;
+    margin-bottom: 0.55rem;
+}
+.cx-sk-short {
+    width: 62%;
+    margin-bottom: 1.5rem;
+}
+.cx-sk-button {
+    height: 2.85rem;
+    border-radius: var(--cx-r-button);
+}
+.cx-sk-button + .cx-sk-button {
+    margin-top: 0.6rem;
 }

@@ -24,6 +24,8 @@
         var dark = false;
         try {
           var t = localStorage.getItem("theme");
+          // No choice of the viewer's own: a brand's default, when one was applied here before.
+          if (t !== "light" && t !== "dark" && t !== "system") t = localStorage.getItem("theme-default");
           dark = t === "dark" || (t === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
         } catch (e) {}
         var root = document.documentElement;

@@ -24,8 +24,8 @@ const plans = [
 
 // Agency plans: one plan for every client workspace, sending from a shared monthly pool.
 const agencyPlans = [
-  { name: 'Agency', price: 249, annual: 199, pool: 150_000, poolLabel: '150,000', href: 'https://app.warmbly.com/auth/register?plan=agency', summary: 'For agencies running outreach for a handful of clients or dozens.', features: ['Unlimited clients, no per-client fee', 'Staff added to every client', 'Your logo, colour and portal domain on client pages', '$10 of shared AI each month', 'Top-up packs: 50,000 sends for $85'] },
-  { name: 'Agency Pro', price: 599, annual: 479, pool: 500_000, poolLabel: '500,000', href: 'https://app.warmbly.com/auth/register?plan=agency-pro', summary: 'For agencies that sell outreach under their own brand.', featured: true, features: ['Everything in Agency', 'No “Powered by Warmbly” on client pages', 'Sending kept apart from other customers', 'Webhooks', '$30 of shared AI each month', 'Top-up packs: 50,000 sends for $60'] },
+  { name: 'Agency', price: 249, annual: 199, pool: 150_000, poolLabel: '150,000', href: 'https://app.warmbly.com/auth/register?plan=agency', summary: 'For agencies running outreach for a handful of clients or dozens.', features: ['Unlimited clients, no per-client fee', 'The CRM and the API in every client workspace', 'Staff added to every client', 'Your logo, colour and portal domain on client pages', '$10 of shared AI each month', 'Top-up packs: 50,000 sends for $85'] },
+  { name: 'Agency Pro', price: 599, annual: 479, pool: 500_000, poolLabel: '500,000', href: 'https://app.warmbly.com/auth/register?plan=agency-pro', summary: 'For agencies that sell outreach under their own brand.', featured: true, features: ['Everything in Agency', 'Team roles and the audit log in every client workspace', 'No “Powered by Warmbly” on client pages', 'Sending kept apart from other customers', 'Webhooks', '$30 of shared AI each month', 'Top-up packs: 50,000 sends for $60'] },
   { name: 'Agency Scale', price: null, annual: null, pool: null, poolLabel: '1,000,000+', href: '/contact/?topic=sales', summary: 'For agencies sending at the largest volumes.', features: ['Everything in Agency Pro', 'Pool sized to your volume', 'Contract and support'] },
 ];
 const calcPlans: CalcPlan[] = agencyPlans.flatMap((p) =>
@@ -48,7 +48,7 @@ const agencyIncluded = [
   { icon: 'chart', t: 'Shareable client reports', d: 'Branded report links and embeds, or a summary emailed to the client every week or month.' },
   { icon: 'inbox', t: 'A cross-client inbox', d: 'Conversations from every client in one list, filtered by client, unread, needs reply or positive.' },
   { icon: 'shuffle', t: 'Copy campaigns between clients', d: 'Build a campaign once and copy it, with its steps, settings and templates, to up to 10 clients at a time.' },
-  { icon: 'globe', t: 'White-label pages and embeds', d: 'Your brand on connect links, reports and the client dashboard on your own domain, and embeds for your site.' },
+  { icon: 'globe', t: 'A portal in your own look', d: 'Your colours, font, logo and sign-in page on a client dashboard at your own domain, on connect links and reports, and in embeds for your site.' },
   { icon: 'key', t: 'Agency API keys', d: 'One key reaches every client, so one integration serves them all without a key per workspace.' },
 ];
 
@@ -166,7 +166,7 @@ const faq: [string, string][] = [
               <span class="text-[34px] font-medium tracking-[-0.04em] leading-none text-slate-900">Custom</span>
             )}
           </div>
-          <div class="mt-2 text-[14px] text-slate-600"><span class="font-medium text-slate-900">{p.sends}</span> cold emails a day</div>
+          <div class="mt-2 text-[14px] text-slate-600"><span class="font-medium text-slate-900">{p.sends}</span> cold emails a day{p.perDay !== null && <span class="text-slate-400">, up to {(p.perDay * DAYS_A_MONTH).toLocaleString('en-US')} a month</span>}</div>
           <a href={p.href} class={`mt-5 inline-flex h-10 w-full items-center justify-center rounded-full text-[14px] font-medium transition-colors ${p.featured ? 'bg-slate-900 text-white hover:bg-slate-800' : 'bg-white text-slate-900 ring-1 ring-slate-200 hover:bg-slate-50'}`}>
             {p.price !== null ? 'Get started' : 'Talk to sales'}
           </a>

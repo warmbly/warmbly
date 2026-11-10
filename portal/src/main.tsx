@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRootRoute, createRoute, createRouter, Outlet, RouterProvider } from "@tanstack/react-router";
 
 import { ConnectPage } from "./ConnectPage";
+import { startLook } from "./look";
 import { NotFound } from "./NotFound";
 import { ReportPage } from "./ReportPage";
 import "./styles.css";
@@ -39,6 +40,8 @@ declare module "@tanstack/react-router" {
 }
 
 const queryClient = new QueryClient();
+
+startLook();
 
 createRoot(document.getElementById("root")!).render(
     <StrictMode>

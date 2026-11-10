@@ -5,8 +5,10 @@ import { APP_URL } from "@/lib/information";
 import useBrand from "@/hooks/useBrand";
 import BrandMark from "@/components/shared/BrandMark";
 import getToken from "@/lib/helper/getToken";
-import { currentPortal } from "@/lib/portal";
-import { cn } from "@/lib/utils";
+import { currentPortal, portalHostParam } from "@/lib/portal";
+import { usePortalForSignIn } from "@/lib/portalHandoff";
+import { usePortalScope } from "@/hooks/usePortalScope";
+import PortalSignIn from "@/components/shared/PortalSignIn";
 import AuthShowcase from "./_components/AuthShowcase";
 
 /* ═══════════════════════════════════════════
@@ -26,11 +28,14 @@ export default function AuthLayout({
     // The rendered page's path, which changes with the Outlet rather than ahead of it.
     const pathname = useMatches({ select: (m) => m[m.length - 1]?.pathname ?? "" });
     const brand = useBrand();
-    // On a portal the footer carries the agency and, when its plan keeps it, the service's attribution.
     const portal = currentPortal();
-    const footerLinks = !portal.portal;
-    const showcase = !portal.portal;
-    const poweredBy = portal.portal ? portal.brand.powered_by : undefined;
+    // The main address signing someone in for an agency portal draws that agency's sign-in page.
+    const handoffHost = useLocation({
+        select: (l) => (portal.portal ? "" : portalHostParam(new URLSearchParams(l.searchStr).get("portal"))),
+    });
+    const handoff = usePortalForSignIn(handoffHost);
+    const agencyBrand = portal.portal ? portal.brand : (handoff.data?.brand ?? undefined);
+    const scope = usePortalScope(agencyBrand);
 
     React.useEffect(() => {
         const receiveMessage = (event: MessageEvent) => {
@@ -48,6 +53,31 @@ export default function AuthLayout({
         return <Navigate to="/app/emails" replace />;
     }
 
+    // Animate full route changes too (login → forgot password).
+    // Enter only: an exiting <Outlet /> would already render the next page.
+    const page = (
+        <AnimatePresence initial={false}>
+            <motion.div
+                key={pathname}
+                initial={{ opacity: 0, x: 12 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+            >
+                <Outlet />
+            </motion.div>
+        </AnimatePresence>
+    );
+
+    if (agencyBrand) {
+        return (
+            <PortalSignIn brand={agencyBrand} scope={scope}>
+                {page}
+            </PortalSignIn>
+        );
+    }
+    // Until the named portal is looked up, neither brand is drawn, so the page never shows one and then the other.
+    if (handoffHost && handoff.isPending) return <div className="min-h-dvh bg-slate-50" />;
+
     return (
         <div className="relative flex min-h-dvh w-full items-center justify-center px-4 py-8 text-slate-900 sm:px-5 sm:py-10 lg:bg-slate-50">
             {/* Mobile airy-sky backdrop (desktop gets the sky inside the card instead) */}
@@ -59,45 +89,31 @@ export default function AuthLayout({
                 <img src="/backdrops/cloud-4.webp" alt="" aria-hidden="true" decoding="async" className="cloud-drift cloud-2 absolute select-none" style={{ bottom: "12%", right: "-14%", width: 240, opacity: 0.5, height: "auto" }} />
             </div>
 
-            <div className={cn("relative z-10 w-full max-w-[400px]", showcase && "lg:max-w-[900px]")}>
+            <div className="relative z-10 w-full max-w-[400px] lg:max-w-[900px]">
                 {/* Mobile logo — white, on the sky, above the card */}
-                <BrandMark className={cn("mb-5 flex w-fit items-center gap-2.5 mx-auto", showcase && "lg:hidden")} />
+                <BrandMark className="mb-5 flex w-fit items-center gap-2.5 mx-auto lg:hidden" />
 
                 {/* Card */}
-                <div className={cn("animate-card-float grid overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_30px_70px_-32px_rgba(15,23,42,0.32)]", showcase && "lg:grid-cols-2 lg:min-h-[580px]")}>
-                    {/* Showcase, desktop only; an agency portal shows only its own brand */}
-                    {showcase && (
-                        <div className="relative hidden lg:block lg:border-r lg:border-slate-200">
-                            <AuthShowcase />
-                            <BrandMark className="absolute left-8 top-8 z-20 flex items-center gap-2.5" />
-                        </div>
-                    )}
+                <div className="animate-card-float grid overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_30px_70px_-32px_rgba(15,23,42,0.32)] lg:grid-cols-2 lg:min-h-[580px]">
+                    {/* Showcase, desktop only */}
+                    <div className="relative hidden lg:block lg:border-r lg:border-slate-200">
+                        <AuthShowcase />
+                        <BrandMark className="absolute left-8 top-8 z-20 flex items-center gap-2.5" />
+                    </div>
 
                     {/* Form column */}
                     <div className="flex flex-col px-6 py-9 sm:px-10">
                         <div className="mx-auto flex w-full max-w-[360px] flex-1 flex-col">
                             <div className="flex flex-1 items-center">
                                 <div className="w-full">
-                                    {/* Animate full route changes too (login → forgot password).
-                                        Enter only: an exiting <Outlet /> would already render the next page. */}
-                                    <AnimatePresence initial={false}>
-                                        <motion.div
-                                            key={pathname}
-                                            initial={{ opacity: 0, x: 12 }}
-                                            animate={{ opacity: 1, x: 0 }}
-                                            transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-                                        >
-                                            <Outlet />
-                                        </motion.div>
-                                    </AnimatePresence>
+                                    {page}
                                 </div>
                             </div>
 
                             {/* Footer — desktop, inside the card */}
                             <div className="hidden items-center gap-3 pt-9 text-[12px] text-slate-400 lg:flex">
-                                {footerLinks && brand.terms_url && <a href={brand.terms_url} target="_blank" rel="noopener noreferrer" className="hover:text-slate-700 transition-colors">Terms</a>}
-                                {footerLinks && brand.privacy_url && <a href={brand.privacy_url} target="_blank" rel="noopener noreferrer" className="hover:text-slate-700 transition-colors">Privacy</a>}
-                                {poweredBy && <PoweredBy name={poweredBy.name} url={poweredBy.url} className="hover:text-slate-700" />}
+                                {brand.terms_url && <a href={brand.terms_url} target="_blank" rel="noopener noreferrer" className="hover:text-slate-700 transition-colors">Terms</a>}
+                                {brand.privacy_url && <a href={brand.privacy_url} target="_blank" rel="noopener noreferrer" className="hover:text-slate-700 transition-colors">Privacy</a>}
                                 <span className="ml-auto">© {new Date().getFullYear()} {brand.name}</span>
                             </div>
                         </div>
@@ -106,16 +122,12 @@ export default function AuthLayout({
 
                 {/* Footer — mobile, on the sky below the card */}
                 <div className="theme-solid mt-5 flex items-center justify-center gap-3 text-[12px] text-white/70 lg:hidden">
-                    {footerLinks && brand.terms_url && <>
+                    {brand.terms_url && <>
                         <a href={brand.terms_url} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Terms</a>
                         <span className="text-white/40">·</span>
                     </>}
-                    {footerLinks && brand.privacy_url && <>
+                    {brand.privacy_url && <>
                         <a href={brand.privacy_url} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Privacy</a>
-                        <span className="text-white/40">·</span>
-                    </>}
-                    {poweredBy && <>
-                        <PoweredBy name={poweredBy.name} url={poweredBy.url} className="hover:text-white" />
                         <span className="text-white/40">·</span>
                     </>}
                     <span>© {new Date().getFullYear()} {brand.name}</span>
@@ -123,9 +135,4 @@ export default function AuthLayout({
             </div>
         </div>
     );
-}
-
-function PoweredBy({ name, url, className }: { name: string; url?: string; className: string }) {
-    if (!url) return <span>Powered by {name}</span>;
-    return <a href={url} target="_blank" rel="noopener noreferrer" className={`${className} transition-colors`}>Powered by {name}</a>;
 }

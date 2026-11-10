@@ -1,4 +1,5 @@
 /* Dark theme: Tailwind's palette remapped under .dark, so every slate/sky/... utility follows without per-file dark: variants. */
+/* Sky reads --wb-sky-* first in each context, which a brand theme sets (theme-accent.css, lib/portalTheme.ts). */
 /* Values derive from tailwindcss/theme.css: neutrals share one near-neutral ramp, a hue's light tints become translucent washes and its dark shades swap for its light ones. */
 
 .dark {
@@ -204,17 +205,17 @@
   --color-cyan-800: oklch(88% 0.051 215.221);
   --color-cyan-900: oklch(93% 0.031 215.221);
   --color-cyan-950: oklch(96% 0.017 215.221);
-  --color-sky-50: oklch(68% 0.140 240 / 0.12);
-  --color-sky-100: oklch(68% 0.140 240 / 0.18);
-  --color-sky-200: oklch(70% 0.140 240 / 0.28);
-  --color-sky-300: oklch(72% 0.140 240 / 0.45);
-  --color-sky-400: oklch(76% 0.150 238);
-  --color-sky-500: oklch(72% 0.160 240);
-  --color-sky-600: oklch(76% 0.145 240);
-  --color-sky-700: oklch(82% 0.120 238);
-  --color-sky-800: oklch(88% 0.085 238);
-  --color-sky-900: oklch(93% 0.050 238);
-  --color-sky-950: oklch(96% 0.028 238);
+  --color-sky-50: var(--wb-sky-d-50, oklch(68% 0.140 240 / 0.12));
+  --color-sky-100: var(--wb-sky-d-100, oklch(68% 0.140 240 / 0.18));
+  --color-sky-200: var(--wb-sky-d-200, oklch(70% 0.140 240 / 0.28));
+  --color-sky-300: var(--wb-sky-d-300, oklch(72% 0.140 240 / 0.45));
+  --color-sky-400: var(--wb-sky-d-400, oklch(76% 0.150 238));
+  --color-sky-500: var(--wb-sky-d-500, oklch(72% 0.160 240));
+  --color-sky-600: var(--wb-sky-d-600, oklch(76% 0.145 240));
+  --color-sky-700: var(--wb-sky-d-700, oklch(82% 0.120 238));
+  --color-sky-800: var(--wb-sky-d-800, oklch(88% 0.085 238));
+  --color-sky-900: var(--wb-sky-d-900, oklch(93% 0.050 238));
+  --color-sky-950: var(--wb-sky-d-950, oklch(96% 0.028 238));
   --color-blue-50: oklch(68% 0.160 262 / 0.12);
   --color-blue-100: oklch(68% 0.160 262 / 0.18);
   --color-blue-200: oklch(70% 0.160 262 / 0.28);
@@ -549,17 +550,17 @@
   --color-cyan-800: oklch(45% 0.085 224.283);
   --color-cyan-900: oklch(39.8% 0.07 227.392);
   --color-cyan-950: oklch(30.2% 0.056 229.695);
-  --color-sky-50: oklch(97.7% 0.013 236.62);
-  --color-sky-100: oklch(95.1% 0.026 236.824);
-  --color-sky-200: oklch(90.1% 0.058 230.902);
-  --color-sky-300: oklch(82.8% 0.111 230.318);
-  --color-sky-400: oklch(74.6% 0.16 232.661);
-  --color-sky-500: oklch(68.5% 0.169 237.323);
-  --color-sky-600: oklch(58.8% 0.158 241.966);
-  --color-sky-700: oklch(50% 0.134 242.749);
-  --color-sky-800: oklch(44.3% 0.11 240.79);
-  --color-sky-900: oklch(39.1% 0.09 240.876);
-  --color-sky-950: oklch(29.3% 0.066 243.157);
+  --color-sky-50: var(--wb-sky-50, oklch(97.7% 0.013 236.62));
+  --color-sky-100: var(--wb-sky-100, oklch(95.1% 0.026 236.824));
+  --color-sky-200: var(--wb-sky-200, oklch(90.1% 0.058 230.902));
+  --color-sky-300: var(--wb-sky-300, oklch(82.8% 0.111 230.318));
+  --color-sky-400: var(--wb-sky-400, oklch(74.6% 0.16 232.661));
+  --color-sky-500: var(--wb-sky-500, oklch(68.5% 0.169 237.323));
+  --color-sky-600: var(--wb-sky-600, oklch(58.8% 0.158 241.966));
+  --color-sky-700: var(--wb-sky-700, oklch(50% 0.134 242.749));
+  --color-sky-800: var(--wb-sky-800, oklch(44.3% 0.11 240.79));
+  --color-sky-900: var(--wb-sky-900, oklch(39.1% 0.09 240.876));
+  --color-sky-950: var(--wb-sky-950, oklch(29.3% 0.066 243.157));
   --color-blue-50: oklch(97% 0.014 254.604);
   --color-blue-100: oklch(93.2% 0.032 255.585);
   --color-blue-200: oklch(88.2% 0.059 254.128);
@@ -940,17 +941,17 @@
   --color-cyan-800: oklch(45% 0.107 215.221);
   --color-cyan-900: oklch(40% 0.100 215.221);
   --color-cyan-950: oklch(30% 0.086 215.221);
-  --color-sky-50: oklch(97.7% 0.013 236.62);
-  --color-sky-100: oklch(95.1% 0.026 236.824);
-  --color-sky-200: oklch(90.1% 0.058 230.902);
-  --color-sky-300: oklch(82.8% 0.111 230.318);
-  --color-sky-400: oklch(74.6% 0.16 232.661);
-  --color-sky-500: oklch(64% 0.160 240);
-  --color-sky-600: oklch(59% 0.165 242);
-  --color-sky-700: oklch(53% 0.160 242);
-  --color-sky-800: oklch(47% 0.150 242);
-  --color-sky-900: oklch(41% 0.130 242);
-  --color-sky-950: oklch(31% 0.110 242);
+  --color-sky-50: var(--wb-sky-50, oklch(97.7% 0.013 236.62));
+  --color-sky-100: var(--wb-sky-100, oklch(95.1% 0.026 236.824));
+  --color-sky-200: var(--wb-sky-200, oklch(90.1% 0.058 230.902));
+  --color-sky-300: var(--wb-sky-300, oklch(82.8% 0.111 230.318));
+  --color-sky-400: var(--wb-sky-400, oklch(74.6% 0.16 232.661));
+  --color-sky-500: var(--wb-sky-s-500, oklch(64% 0.160 240));
+  --color-sky-600: var(--wb-sky-s-600, oklch(59% 0.165 242));
+  --color-sky-700: var(--wb-sky-s-700, oklch(53% 0.160 242));
+  --color-sky-800: var(--wb-sky-s-800, oklch(47% 0.150 242));
+  --color-sky-900: var(--wb-sky-s-900, oklch(41% 0.130 242));
+  --color-sky-950: var(--wb-sky-s-950, oklch(31% 0.110 242));
   --color-blue-50: oklch(97% 0.014 254.604);
   --color-blue-100: oklch(93.2% 0.032 255.585);
   --color-blue-200: oklch(88.2% 0.059 254.128);
@@ -1060,8 +1061,8 @@
 .dark :is([class~="border-slate-900"][class~="bg-slate-900"], [role="switch"][aria-checked="true"][class~="bg-slate-900"]),
 .dark [class~="checked:bg-slate-900"]:checked,
 .dark [class~="checked:bg-sky-600"]:checked {
-  background-color: oklch(59% 0.165 242);
-  border-color: oklch(59% 0.165 242);
+  background-color: var(--wb-sky-s-600, oklch(59% 0.165 242));
+  border-color: var(--wb-sky-s-600, oklch(59% 0.165 242));
   --color-white: #fff;
 }
 .dark :is([class~="checked:bg-slate-900"], [class~="checked:bg-sky-600"]):checked ~ svg { color: #fff; }

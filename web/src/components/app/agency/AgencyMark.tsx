@@ -2,6 +2,7 @@
 
 import { DashboardImage } from "@/components/ui/dashboard-image";
 import { useAgencyBrand } from "@/lib/api/hooks/app/brand";
+import { accentFill } from "@/lib/accentScale";
 import { cn } from "@/lib/utils";
 
 function initials(name: string) {
@@ -43,7 +44,8 @@ export function AgencyMark({
                 logoUrl ? "bg-white dark:bg-transparent p-0.5" : "bg-slate-900",
                 className,
             )}
-            style={!logoUrl && accent ? { background: accent } : undefined}
+            // White initials sit on it, so a pale accent is drawn at a shade they read on.
+            style={!logoUrl && accentFill(accent) ? { background: accentFill(accent) } : undefined}
         >
             {logoUrl ? <DashboardImage src={logoUrl} alt="" className="w-full h-full object-contain" /> : initials(name)}
         </span>

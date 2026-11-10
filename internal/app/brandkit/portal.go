@@ -25,6 +25,10 @@ type Portal struct {
 	AgencyName string
 	Brand      models.BrandSettings
 	SignIn     models.PortalSignIn
+	// IconURL, SignInImageURL and Theme are the agency's portal theme, set or not.
+	IconURL        string
+	SignInImageURL string
+	Theme          models.PortalTheme
 }
 
 const (
@@ -75,7 +79,7 @@ func (p *Portals) Lookup(ctx context.Context, host string) (*Portal, error) {
 	if b != nil && b.PortalDomainVerified && b.PortalDomain == host {
 		entry = portalEntry{
 			portal: &Portal{Host: host, AgencyID: b.AgencyID, AgencyName: displayname.Displayable(name), Brand: b.BrandSettings,
-				SignIn: signInOrDefault(b.PortalSignIn)},
+				SignIn: signInOrDefault(b.PortalSignIn), IconURL: b.IconURL, SignInImageURL: b.SignInImageURL, Theme: b.Theme},
 			expires: now.Add(portalHitTTL),
 		}
 	}
@@ -133,10 +137,13 @@ func (s *Service) PortalView(ctx context.Context, host string, captchaFrame bool
 	if xerr != nil {
 		entitled = false
 	}
-	agency := &models.AgencyBrand{AgencyID: p.AgencyID, BrandSettings: p.Brand}
+	agency := &models.AgencyBrand{AgencyID: p.AgencyID, BrandSettings: p.Brand,
+		IconURL: p.IconURL, SignInImageURL: p.SignInImageURL, Theme: p.Theme}
 	brand := Compose(Default(), nil, agency, entitled).Brand
 	if !p.Brand.Set() {
+		// The theme does not depend on the agency having named or coloured its brand.
 		brand = Brand{Name: p.AgencyName, PoweredBy: Default().PoweredBy}
+		applyPortalTheme(&brand, agency)
 	}
 	if brand.Name == "" {
 		brand.Name = p.AgencyName

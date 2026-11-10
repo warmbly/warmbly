@@ -6,7 +6,7 @@ import { useEffect, useRef } from "react";
 
 import { loadTurnstileScript } from "./turnstileScript";
 
-export function Turnstile({ siteKey, onToken }: { siteKey: string; onToken: (token: string) => void }) {
+export function Turnstile({ siteKey, onToken, theme }: { siteKey: string; onToken: (token: string) => void; theme: "light" | "dark" }) {
     const el = useRef<HTMLDivElement>(null);
     const onTokenRef = useRef(onToken);
     onTokenRef.current = onToken;
@@ -19,6 +19,7 @@ export function Turnstile({ siteKey, onToken }: { siteKey: string; onToken: (tok
                 if (cancelled || !el.current || !window.turnstile) return;
                 widgetId = window.turnstile.render(el.current, {
                     sitekey: siteKey,
+                    theme,
                     callback: (token: string) => onTokenRef.current(token),
                     "expired-callback": () => onTokenRef.current(""),
                     "error-callback": () => onTokenRef.current(""),
@@ -37,7 +38,7 @@ export function Turnstile({ siteKey, onToken }: { siteKey: string; onToken: (tok
                 }
             }
         };
-    }, [siteKey]);
+    }, [siteKey, theme]);
 
     return (
         <div className="fld">

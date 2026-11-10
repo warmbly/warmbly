@@ -1796,6 +1796,10 @@ func Run(
 				agencyRoutes.PUT("/:agencyId/brand", sessionOnly, h.UpdateAgencyBrand)
 				agencyRoutes.POST("/:agencyId/brand/logo", sessionOnly, h.UploadAgencyBrandLogo)
 				agencyRoutes.DELETE("/:agencyId/brand/logo", sessionOnly, h.DeleteAgencyBrandLogo)
+				agencyRoutes.POST("/:agencyId/brand/icon", sessionOnly, h.UploadAgencyBrandIcon)
+				agencyRoutes.DELETE("/:agencyId/brand/icon", sessionOnly, h.DeleteAgencyBrandIcon)
+				agencyRoutes.POST("/:agencyId/brand/sign-in-image", sessionOnly, h.UploadAgencyBrandSignInImage)
+				agencyRoutes.DELETE("/:agencyId/brand/sign-in-image", sessionOnly, h.DeleteAgencyBrandSignInImage)
 				agencyRoutes.PUT("/:agencyId/brand/domain", sessionOnly, h.SetAgencyPortalDomain)
 				agencyRoutes.POST("/:agencyId/brand/domain/verify", sessionOnly, h.VerifyAgencyPortalDomain)
 				// Agency API keys: owners and admins manage them from a session only.

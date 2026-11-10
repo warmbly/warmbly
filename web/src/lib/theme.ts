@@ -17,14 +17,63 @@ export const isTheme = (v: unknown): v is Theme => v === "light" || v === "dark"
 // Light until someone picks otherwise; "system" is an explicit choice.
 export const DEFAULT_THEME: Theme = "light";
 
-export function readStoredTheme(): Theme {
+// A brand's own default for a viewer who has not chosen; index.html reads the same key before the first paint.
+export const THEME_DEFAULT_STORAGE_KEY = "theme-default";
+
+function rememberedDefault(): Theme {
     if (typeof window === "undefined") return DEFAULT_THEME;
     try {
-        const v = localStorage.getItem(THEME_STORAGE_KEY);
-        return isTheme(v) ? v : DEFAULT_THEME;
+        const v = localStorage.getItem(THEME_DEFAULT_STORAGE_KEY);
+        return v === "light" || v === "dark" ? v : DEFAULT_THEME;
     } catch {
         return DEFAULT_THEME;
     }
+}
+
+// Starts from what index.html painted, so the store and the page agree before the brand is known.
+let fallback: Theme = rememberedDefault();
+const fallbackListeners = new Set<() => void>();
+
+/** The theme the viewer picked themselves, or null when they never did. */
+export function storedChoice(): Theme | null {
+    if (typeof window === "undefined") return null;
+    try {
+        const v = localStorage.getItem(THEME_STORAGE_KEY);
+        return isTheme(v) ? v : null;
+    } catch {
+        return null;
+    }
+}
+
+/** The viewer's own choice, else the default in effect. */
+export function readStoredTheme(): Theme {
+    return storedChoice() ?? fallback;
+}
+
+/**
+ * Sets the theme for viewers who have not chosen one (null puts light back). A stored choice always wins.
+ * `remember` keeps it for the next visit's first paint, which only suits an address that always has this default.
+ */
+export function setDefaultTheme(theme: ResolvedTheme | null, remember = false) {
+    const next: Theme = theme ?? DEFAULT_THEME;
+    try {
+        if (theme && remember) localStorage.setItem(THEME_DEFAULT_STORAGE_KEY, theme);
+        else localStorage.removeItem(THEME_DEFAULT_STORAGE_KEY);
+    } catch {
+        // No storage: the default still applies to this tab.
+    }
+    const changed = next !== fallback;
+    fallback = next;
+    if (storedChoice()) return;
+    // Also repaints a first paint made from a remembered default that no longer holds.
+    applyTheme(resolveTheme(next));
+    if (changed) fallbackListeners.forEach((cb) => cb());
+}
+
+/** Runs when the default theme changes for a viewer who follows it. */
+export function onDefaultThemeChange(cb: () => void): () => void {
+    fallbackListeners.add(cb);
+    return () => fallbackListeners.delete(cb);
 }
 
 export function storeTheme(theme: Theme) {

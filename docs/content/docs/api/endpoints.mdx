@@ -666,7 +666,7 @@ With [multiple dashboards sharing a backend](/development/configuration/#multipl
 - `POST /auth/reauth/sso/begin`, `/auth/reauth/sso/finish` (confirm through the Google, Apple or single sign-on identity linked to the account, in a browser window)
 - `POST /auth/reauth/native/begin`, `/auth/reauth/native` (confirm with a native Sign in with Apple or Google ID token carrying the session's nonce)
 - `GET /auth/config` (public deployment capabilities: which sign-in methods this backend has enabled, whether a login code step follows, whether signups are open, whether the instance still needs claiming)
-- `GET /auth/portal?host=` (public: whether `host` is a verified agency portal domain and, when it is, the agency brand the dashboard there shows, the main dashboard URL, whether the security check below is available and `sign_in`, where the agency's clients sign in: `portal` or `warmbly` (the main address). Always `200`; anything else answers `{"portal": false}`)
+- `GET /auth/portal?host=` (public: whether `host` is a verified agency portal domain and, when it is, the agency brand the dashboard there shows (with the agency's `icon_url`, `sign_in_image_url` and `theme` when set, see [portal theme](#portal-theme)), the main dashboard URL, whether the security check below is available and `sign_in`, where the agency's clients sign in: `portal` or `warmbly` (the main address). Always `200`; anything else answers `{"portal": false}`)
 - `POST /auth/portal/handoff` (JWT only, from the main dashboard address: `host` names a verified portal whose agency signs clients in on the main address, and the answer is a `redirect_url` on that host carrying a one-time code, valid for 60 seconds. `end_session: true` ends the calling session once the code exists, for a sign-in made only to reach the portal. A session signed in on a portal, or a request from any other origin, answers `403 portal_handoff_origin`; any other host `404 portal_not_found`. Each call issues a new single-use code, so a retry is safe without an `Idempotency-Key`)
 - `POST /auth/portal/exchange` (public, from the portal's own origin: trades `code` once for a session bound to that portal's agency, answered like a sign-in. A code that expired, was already spent, or is presented from another origin answers `400 portal_handoff_invalid`, and any attempt spends it)
 - `GET /auth/captcha-frame?origin=` (public: an HTML security check rendered on the API's host for the dashboard on a verified portal domain to embed. Only that origin may frame it and only it receives the token, which goes through the same sign-in checks as on the main address; any other origin answers `400`)
@@ -901,7 +901,7 @@ Besides a signed-in session, the routes in the first rows of the table below acc
 | `AGENCY_MANAGE_CLIENTS` | `POST /agency/:agencyId/clients`, `POST /agency/:agencyId/clients/attach`, `PATCH` and `DELETE /agency/:agencyId/clients/:orgId` |
 | `AGENCY_READ_USAGE` | `GET /agency/:agencyId/usage`, `GET /agency/:agencyId/ai-balance` |
 | `AGENCY_TRANSFER_AI` | `POST /agency/:agencyId/clients/:orgId/ai-balance` |
-| Session only | `POST /agency`, `PATCH /agency/:agencyId`, staff and invitation writes, every `/billing/*` route (checkout, top-ups and the portal open a browser page), brand, logo and portal domain writes, and the `/api-keys` routes |
+| Session only | `POST /agency`, `PATCH /agency/:agencyId`, staff and invitation writes, every `/billing/*` route (checkout, top-ups and the portal open a browser page), brand, logo, icon, sign-in image and portal domain writes, and the `/api-keys` routes |
 
 A key passes the recent-confirmation check the session routes ask for, since it presents its credential on every call; moving AI balance still takes an `Idempotency-Key` and moves the money once per key.
 
@@ -932,9 +932,11 @@ A key passes the recent-confirmation check the session routes ask for, since it 
 | POST | `/agency/:agencyId/billing/topup` | Owner, admin: one 50,000-send pack |
 | POST | `/agency/:agencyId/billing/ai-topup` | Owner, admin: `amount_usd` ($5 to $5,000) added to the agency's AI balance through checkout. Answers `checkout_url` |
 | POST | `/agency/:agencyId/billing/portal` | Owner, admin |
-| GET | `/agency/:agencyId/brand` | Staff: the agency's [brand](/guides/white-label/), `full_white_label`, `can_manage`, `portal_domain` (shaped like the forms domain status), `portal_base_url` and `portal_sign_in` |
-| PUT | `/agency/:agencyId/brand` | Owner, admin: the same body as `PUT /organization/brand`, plus an optional `portal_sign_in` (`portal` or `warmbly`, see [where clients sign in](/guides/white-label/#where-clients-sign-in)); leaving it out keeps the stored choice, any other value answers `400 invalid_portal_sign_in`. `agency_forbidden` for other staff |
+| GET | `/agency/:agencyId/brand` | Staff: the agency's [brand](/guides/white-label/), `full_white_label`, `can_manage`, `portal_domain` (shaped like the forms domain status), `portal_base_url`, `portal_sign_in`, and the [portal theme](#portal-theme): `icon_url` and `sign_in_image_url` (empty strings when none is uploaded) and `theme` (always an object, `{}` when nothing is set) |
+| PUT | `/agency/:agencyId/brand` | Owner, admin: the same body as `PUT /organization/brand`, plus an optional `portal_sign_in` (`portal` or `warmbly`, see [where clients sign in](/guides/white-label/#where-clients-sign-in)) and an optional `theme` object (see [portal theme](#portal-theme)). Leaving either out keeps what is stored; a `theme` replaces the whole stored theme. Any other `portal_sign_in` answers `400 invalid_portal_sign_in`. `agency_forbidden` for other staff |
 | POST/DELETE | `/agency/:agencyId/brand/logo` | Owner, admin: multipart `file`, as for a workspace logo |
+| POST/DELETE | `/agency/:agencyId/brand/icon` | Owner, admin: the square browser tab icon. Multipart `file`, PNG up to 1 MB and 512px on each side |
+| POST/DELETE | `/agency/:agencyId/brand/sign-in-image` | Owner, admin: the image on the portal's sign-in page. Multipart `file`, PNG or JPG up to 4 MB and 2560px on each side |
 | PUT | `/agency/:agencyId/brand/domain` | Owner, admin: `domain`, the portal host every client's links are built on (empty clears it); resolves it as part of saving. A malformed host answers `400 invalid_portal_domain`, one another workspace or agency holds `409 portal_domain_taken` |
 | POST | `/agency/:agencyId/brand/domain/verify` | Owner, admin: re-resolves the portal host |
 | GET | `/agency/:agencyId/api-keys` | Owner, admin: the agency's [API keys](/api/authentication/#agency-api-keys), newest first, as `data` plus `pagination` (`cursor`, `limit` 1 to 100) |
@@ -944,6 +946,48 @@ A key passes the recent-confirmation check the session routes ask for, since it 
 | DELETE | `/agency/:agencyId/api-keys/:keyId` | Owner, admin: revokes the key. `204`, also for a key already revoked |
 
 `POST /agency`, the client creates, adding staff, every checkout, creating an API key and moving AI balance honor `Idempotency-Key`; a move retried with the same key moves the money once. The other writes set a value, so a retry lands on the same state. Moving AI balance, like the billing routes and creating, editing or revoking an agency API key, asks a session for a [recent confirmation](#actions-that-need-a-recent-confirmation). On an instance without billing (`BILLING_PROVIDER=none`) the billing routes and moving AI balance answer `503 agency_billing_disabled`, the pool has no cap and AI is not charged. `GET /organization/current` carries `agency` (`id`, `name`, `can_leave`) on a client workspace, `GET /organization` carries the same `agency` on each membership row whose workspace is a client, and that workspace's `POST /subscription/checkout` answers `409 agency_billed`.
+
+#### Portal theme
+
+The agency's [portal theme](/guides/white-label/#portal-theme) is the `theme` object on its brand, plus two uploaded images. It is available on every agency plan. Every `theme` field is optional, and an empty string or a missing field means the default:
+
+| Field | Value |
+|-------|-------|
+| `font` | `system`, `geometric` or `serif` |
+| `corners` | `sharp` or `round` |
+| `appearance` | `light` or `dark`: the appearance a client sees before choosing one |
+| `sign_in_layout` | `split` or `cover` |
+| `sign_in_background` | `accent`, `dark` or `image` (the uploaded sign-in image) |
+| `sign_in_heading` | Plain text, at most 60 characters |
+| `sign_in_message` | Plain text, at most 200 characters |
+| `support_email` | An email address |
+| `support_url`, `terms_url`, `privacy_url` | Absolute `https://` addresses, under the same rule as `website_url` |
+
+```json
+{
+  "display_name": "Northwind Growth",
+  "accent_color": "#0f766e",
+  "website_url": "https://northwindgrowth.example",
+  "hide_powered_by": false,
+  "theme": {
+    "font": "geometric",
+    "corners": "round",
+    "sign_in_layout": "split",
+    "sign_in_background": "image",
+    "sign_in_heading": "Welcome back",
+    "support_email": "help@northwindgrowth.example",
+    "terms_url": "https://northwindgrowth.example/terms"
+  }
+}
+```
+
+`PUT /agency/:agencyId/brand` without `theme` keeps the stored theme. With `theme`, the object replaces the stored one as a whole, so a field it leaves out is cleared and `"theme": {}` clears everything. `PUT /organization/brand` ignores `theme`: a workspace's own brand has none.
+
+A value outside a field's list answers `400 invalid_theme`. A heading or message that is too long, or that contains a link, a web or email address, markup or control characters, answers `400 invalid_brand_text`; they follow the [name rules](/api/error-codes/#name-refusals) with their own length bounds. A support, terms or privacy address that is not `https://`, or a `support_email` that is not an email address, answers `400 invalid_brand_link`. Each `message` names the field. A refused `PUT` stores nothing.
+
+`icon_url` and `sign_in_image_url` are set only by their upload routes and are never read from a `PUT` body. Each upload is stored under a new address, replaces the image before it and answers with the same body as `GET /agency/:agencyId/brand`; a `DELETE` clears the image and answers the same way, also when there was none. The upload refusals are the [image codes](/api/error-codes/#white-label-refusals) a logo answers, worded for the image in question.
+
+Clients read the theme from the public brand object: `effective.brand` on `GET /organization/brand`, the `brand` on connect and report pages, and `brand` on `GET /auth/portal`. It carries `icon_url`, `sign_in_image_url` and `theme` only when the brand shown is the agency's, each omitted when unset. `GET /auth/portal` always carries the agency's three, including for an agency that set no name, logo, colour or website.
 
 `POST /organization/agency/leave` is the client workspace's side of detaching: its owner takes the current workspace out of its agency, with the same effect as `DELETE /agency/:agencyId/clients/:orgId`. It answers `204`, including for a workspace in no agency, so a retry is safe. Anyone but the workspace's owner gets `403 agency_leave_not_owner`. When the workspace's owner also owns the agency (`can_leave` is `false`), it answers `409 agency_leave_agency_owner`: that owner detaches the workspace from the agency instead.
 

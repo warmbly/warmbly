@@ -1,36 +1,32 @@
-// The card both halves of a portal sign-in render: the agency's mark, a title and the body.
+// The card both halves of a portal sign-in render: the agency's sign-in page around a title and the body.
 
 import type React from "react";
 import { AlertCircleIcon } from "lucide-react";
 
+import PortalSignIn from "@/components/shared/PortalSignIn";
 import type { PublicBrand } from "@/lib/api/models/app/brand/Brand";
-import { safeAccent } from "@/lib/portal";
+import { usePortalScope } from "@/hooks/usePortalScope";
 
 export function PortalCard({ brand, title, children }: { brand?: PublicBrand; title: string; children: React.ReactNode }) {
-    const accent = safeAccent(brand?.accent_color);
-    return (
-        <div className="min-h-dvh grid place-items-center bg-slate-50 px-4">
-            <div className="w-full max-w-sm bg-white rounded-xl border border-slate-200 p-6 shadow-sm text-center">
-                {brand && (
-                    <div className="mb-4 flex flex-col items-center gap-2">
-                        {brand.logo_url ? (
-                            <img src={brand.logo_url} alt="" className="h-10 max-w-[160px] object-contain" />
-                        ) : (
-                            <span
-                                className="grid size-10 place-items-center rounded-lg bg-slate-900 text-[15px] font-semibold text-white"
-                                style={accent ? { backgroundColor: accent } : undefined}
-                                aria-hidden="true"
-                            >
-                                {brand.name.slice(0, 1).toUpperCase()}
-                            </span>
-                        )}
-                        <span className="text-[12.5px] font-medium text-slate-600">{brand.name}</span>
-                    </div>
-                )}
-                <h1 className="text-[18px] font-semibold text-slate-900">{title}</h1>
-                {children}
-            </div>
+    const scope = usePortalScope(brand);
+    const body = (
+        <div className="text-center">
+            <h1 className="text-[20px] font-semibold tracking-tight text-slate-900">{title}</h1>
+            {children}
         </div>
+    );
+    // A link that names no portal has no brand to show.
+    if (!brand) {
+        return (
+            <div className="min-h-dvh grid place-items-center bg-slate-50 px-4">
+                <div className="w-full max-w-sm bg-white rounded-xl border border-slate-200 p-6 shadow-sm">{body}</div>
+            </div>
+        );
+    }
+    return (
+        <PortalSignIn brand={brand} scope={scope}>
+            {body}
+        </PortalSignIn>
     );
 }
 

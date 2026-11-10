@@ -25,7 +25,8 @@ export interface CalcResult {
   saving: boolean;
 }
 
-export const CLIENTS_MIN = 1;
+// An agency plan is for more than one client; one workspace is what the regular plans are for.
+export const CLIENTS_MIN = 2;
 export const CLIENTS_MAX = 50;
 export const CLIENTS_DEFAULT = 10;
 // A regular plan's daily cap counted on every day of the month, which favours the regular plans.

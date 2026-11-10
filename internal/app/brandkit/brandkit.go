@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/config"
+	"github.com/warmbly/warmbly/internal/models"
 )
 
 // Brand is what a public page renders in its header and footer. Empty strings
@@ -18,6 +19,10 @@ type Brand struct {
 	LogoURL     string `json:"logo_url,omitempty"`
 	AccentColor string `json:"accent_color,omitempty"`
 	WebsiteURL  string `json:"website_url,omitempty"`
+	// IconURL, SignInImageURL and Theme come only from an agency's brand; a workspace's own brand carries none.
+	IconURL        string              `json:"icon_url,omitempty"`
+	SignInImageURL string              `json:"sign_in_image_url,omitempty"`
+	Theme          *models.PortalTheme `json:"theme,omitempty"`
 	// PoweredBy is the deployment's attribution, nil when the workspace removed it
 	// or the deployment configured none.
 	PoweredBy *PoweredBy `json:"powered_by,omitempty"`
