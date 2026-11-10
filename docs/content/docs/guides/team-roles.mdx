@@ -95,6 +95,14 @@ Each row shows email, role, access, and join date, with your own row tagged "you
 
 To remove someone, hover (or tap) their row and click the remove icon. **You cannot remove the owner or yourself.** To leave a workspace you own, transfer ownership first.
 
+### Transfer ownership
+
+A workspace has exactly one owner. The owner sees a key icon on every other member's row: click it, confirm, and that member becomes the owner. You are asked to sign in again first if you have not done so recently. The new owner must already be a member, so invite them and wait for them to accept before handing over.
+
+The handover takes effect at once. The new owner gets full control, including billing, deleting the workspace and transferring ownership again, and any roles or restricted access they held are cleared. You stay in the workspace as an Admin, and only the new owner can hand ownership back. Mailboxes, campaigns, contacts, warmup, API keys and a link to Warmbly Cloud are untouched: they belong to the workspace, not to its owner.
+
+A member whose account is scheduled for deletion or suspended cannot take ownership. Only the owner can transfer, and the action is not available to API keys.
+
 Removal applies to someone who is signed in right now. Their open dashboard loses the workspace on its next request and its live updates stop, and they are asked to pick another workspace they belong to. Apps they authorized in the workspace are disconnected. Nothing they created is removed with them: mailboxes, contacts, campaigns and API keys belong to the workspace, so revoke their keys under **API keys** if those should go too. Realtime channels refresh access at least every 30 seconds and before delivering with an expired authorization check, even if a change event is missed. A changed role or a new owner reaches open dashboards' live updates without a reload.
 
 </Fold>
