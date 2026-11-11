@@ -19,6 +19,7 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import { cn } from "@/lib/utils";
 import { formatNumber } from "@/components/app/agency/styles";
+import { AGENCY_PLAN_FEATURES } from "@/components/app/agency/planFeatures";
 import { fmtUsd, fmtUsdTrim, roundCents } from "@/lib/money";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -30,20 +31,6 @@ const STATUS_LABEL: Record<string, string> = {
     incomplete: "No plan yet",
     incomplete_expired: "Checkout expired",
     paused: "Paused",
-};
-
-const FEATURES: Record<string, string[]> = {
-    Agency: [
-        "Unlimited clients, no per-client fee",
-        "The API and webhooks in every client workspace",
-        "Your logo, colour and portal domain on client pages",
-        "Shared send pool and AI balance across clients",
-    ],
-    "Agency Pro": [
-        "Everything in Agency",
-        "No \"Powered by Warmbly\" on client pages",
-        "Sending kept apart from other customers",
-    ],
 };
 
 function money(n: number) {
@@ -285,7 +272,7 @@ function AgencyBilling() {
                                     <div className="text-[11.5px] text-slate-600">{fmtUsdTrim(p.agency_ai_allowance_usd)} of shared AI each month</div>
                                 )}
                                 <ul className="mt-3 space-y-1 flex-1">
-                                    {(FEATURES[p.name ?? ""] ?? []).map((f) => (
+                                    {(AGENCY_PLAN_FEATURES[p.name ?? ""] ?? []).map((f) => (
                                         <li key={f} className="flex gap-1.5 text-[11.5px] text-slate-600">
                                             <CheckIcon className="w-3 h-3 mt-0.5 text-sky-600 shrink-0" />
                                             {f}

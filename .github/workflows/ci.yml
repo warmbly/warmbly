@@ -34,6 +34,7 @@ jobs:
       web: ${{ steps.filter.outputs.web }}
       admin: ${{ steps.filter.outputs.admin }}
       site: ${{ steps.filter.outputs.site }}
+      docs: ${{ steps.filter.outputs.docs }}
       forms: ${{ steps.filter.outputs.forms }}
       portal: ${{ steps.filter.outputs.portal }}
       qa: ${{ steps.filter.outputs.qa }}
@@ -88,6 +89,8 @@ jobs:
               - 'admin/**'
             site:
               - 'site/**'
+            docs:
+              - 'docs/**'
             forms:
               - 'forms/**'
               # The mirrored design engine has a copy in web/; editing only
@@ -880,6 +883,32 @@ jobs:
         # in package.json today.
         run: pnpm build
 
+  docs-ci:
+    name: Docs CI
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          working-directory: docs
+          node-version: "22"
+
+      - name: Typecheck
+        run: pnpm types:check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Build
+        # The release builds the same static export; a page whose frontmatter or MDX does not parse fails here first.
+        run: pnpm build
+
   forms-ci:
     name: Forms CI
     needs: changes
@@ -1214,7 +1243,7 @@ jobs:
   ci-status:
     name: CI Status
     runs-on: ubuntu-latest
-    needs: [changes, migrations-ci, go-ci, web-ci, qa-ci, admin-ci, site-ci, forms-ci, portal-ci, installer-ci, cli-installer-ci, make-ci, rust-ci, elixir-ci, ios-ci, frontend-images, pages-ci, aws-deployment-ci]
+    needs: [changes, migrations-ci, go-ci, web-ci, qa-ci, admin-ci, site-ci, docs-ci, forms-ci, portal-ci, installer-ci, cli-installer-ci, make-ci, rust-ci, elixir-ci, ios-ci, frontend-images, pages-ci, aws-deployment-ci]
     if: always()
     steps:
       - name: Check CI status
