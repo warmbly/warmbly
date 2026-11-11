@@ -25,8 +25,15 @@ export const listAgencyMailboxes = (agencyId: string, filters: AgencyMailboxFilt
 export const listAgencyVendors = (agencyId: string, signal?: AbortSignal) =>
     Request<AgencyVendorAccountList>({ method: "GET", url: `/agency/${agencyId}/vendors`, authorization: true, signal });
 
-export const createAgencyVendor = (agencyId: string, data: AgencyVendorAccountInput) =>
-    Request<AgencyVendorAccount>({ method: "POST", url: `/agency/${agencyId}/vendors`, data, authorization: true });
+/** The key names one submission, so sending it again after a lost answer does not connect the account twice. */
+export const createAgencyVendor = (agencyId: string, data: AgencyVendorAccountInput, idempotencyKey?: string) =>
+    Request<AgencyVendorAccount>({
+        method: "POST",
+        url: `/agency/${agencyId}/vendors`,
+        data,
+        headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+        authorization: true,
+    });
 
 export const updateAgencyVendor = (agencyId: string, id: string, data: AgencyVendorAccountInput) =>
     Request<AgencyVendorAccount>({ method: "PATCH", url: `/agency/${agencyId}/vendors/${id}`, data, authorization: true });

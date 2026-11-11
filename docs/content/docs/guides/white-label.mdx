@@ -166,7 +166,7 @@ Put `data-warmbly-connect="CONNECT_TOKEN"` on the tag instead for a connect page
 <iframe src="https://portal.youragency.com/r/REPORT_TOKEN?embed=1" title="Report" style="width:100%;min-height:720px;border:0"></iframe>
 ```
 
-After each mailbox connects, the page fires a `warmbly:connected` event on `document`, with the link's connected count in `detail.connected`.
+After each mailbox connects, the page fires a `warmbly:connected` event on `document`, with the link's connected count in `detail.connected`. When a client starts an import from an inbox vendor account, it fires `warmbly:importing` instead, with the number of mailboxes on their way in `detail.mailboxes` and the link's count in `detail.connected`; those mailboxes connect in the background and fire nothing more.
 
 <Callout type="warn" title="The token is the key">
 A connect link or a report link needs no sign-in: its token is the whole authorisation. A report embedded on a public page can be read by anyone who visits it, and a connect page embedded on a public page lets anyone connect a mailbox while the link is live. Embed them on pages only your client can reach, and revoke a link to take it down everywhere at once.

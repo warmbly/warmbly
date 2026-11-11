@@ -57,7 +57,6 @@ export function useAgencyMailboxes(agencyId: string | undefined, filters: Agency
     return useInfiniteQuery({
         ...agencyMailboxesQuery(agencyId ?? "", filters),
         enabled: !!agencyId,
-        placeholderData: (prev) => prev,
     });
 }
 
@@ -77,8 +76,8 @@ function useRefreshVendors(agencyId: string) {
 export function useSaveAgencyVendor(agencyId: string) {
     const refresh = useRefreshVendors(agencyId);
     return useMutation({
-        mutationFn: ({ id, input }: { id?: string; input: AgencyVendorAccountInput }) =>
-            id ? updateAgencyVendor(agencyId, id, input) : createAgencyVendor(agencyId, input),
+        mutationFn: ({ id, input, idempotencyKey }: { id?: string; input: AgencyVendorAccountInput; idempotencyKey?: string }) =>
+            id ? updateAgencyVendor(agencyId, id, input) : createAgencyVendor(agencyId, input, idempotencyKey),
         onSettled: refresh,
     });
 }

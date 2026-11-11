@@ -2129,6 +2129,10 @@ func main() {
 			Cache:     cache,
 			NewClient: sandboxVendors,
 		})
+		// A client names its own vendor account on a connect link.
+		if connectLinkService != nil {
+			connectLinkService.WireVendors(vendorConnService)
+		}
 		// An agency holds a vendor account once and uses it in any client workspace.
 		if agencyService != nil {
 			vendorConnService.WireAgencies(repository.NewAgencyVendorRepository(primaryDB), agencyService, repository.NewAgencyHomeRepository(primaryDB.Pool), credEncrypter)

@@ -211,6 +211,14 @@ recording: it removes the vendor account the flow connects) and the mock inbox v
 beside itself when started with `QA_VENDOR_MOCK=1 pnpm stack up lite`. Then:
 `QA_ADMIN_AGENCY_FIXTURES=1 pnpm proof agency-mailboxes`.
 
+`flows/client-connect-vendor.flow.ts` records a client connecting many mailboxes from its own vendor account through
+a connect link: the link is made in the dashboard, opened on the portal, and the mock vendor's mailboxes are picked
+and imported. It needs the same fixture (it marks the product tour as seen), the mock inbox vendors
+(`QA_VENDOR_MOCK=1 pnpm stack up lite`) and the portal service in front of this stack, started as described under
+[agency clients and the portal domain](#agency-clients-and-the-portal-domain); the dashboard build and preview there
+are not needed for this flow. Then: `QA_PORTAL_URL=http://localhost:8095 pnpm proof client-connect-vendor`. Stop the
+portal process afterwards along with the stack.
+
 ## Member access proof fixtures
 
 `flows/member-access.flow.ts` is opt-in: apply `fixtures/member-access.sql` to

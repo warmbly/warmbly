@@ -29,6 +29,66 @@ type ConnectLink struct {
 	// WorkspaceFull is the workspace at its mailbox allowance, so no connect can succeed now.
 	WorkspaceFull  bool   `json:"workspace_full,omitempty"`
 	CaptchaSiteKey string `json:"captcha_site_key,omitempty"`
+	// Vendors are the inbox vendors a client can connect an account of, when the link takes one.
+	Vendors []ConnectVendor `json:"vendors,omitempty"`
+}
+
+// ConnectVendor is one inbox vendor and what connecting an account of it asks for.
+type ConnectVendor struct {
+	ID         string               `json:"id"`
+	Label      string               `json:"label"`
+	KeyHelpURL string               `json:"key_help_url,omitempty"`
+	Fields     []ConnectVendorField `json:"fields"`
+}
+
+type ConnectVendorField struct {
+	Key      string `json:"key"`
+	Label    string `json:"label"`
+	Secret   bool   `json:"secret"`
+	Required bool   `json:"required"`
+	Help     string `json:"help,omitempty"`
+}
+
+// ConnectVendorAccount is a vendor key a client typed, to be checked and listed.
+type ConnectVendorAccount struct {
+	ConnectLookup
+	Vendor       string            `json:"vendor"`
+	Fields       map[string]string `json:"fields"`
+	CaptchaToken string            `json:"captcha_token,omitempty"`
+	RemoteIP     string            `json:"remote_ip"`
+}
+
+// ConnectVendorMailboxes is what a client's vendor key reaches. The key is held under Ticket and never sent back.
+type ConnectVendorMailboxes struct {
+	Ticket    string                 `json:"ticket"`
+	Vendor    string                 `json:"vendor"`
+	Mailboxes []ConnectVendorMailbox `json:"mailboxes"`
+	// Remaining is how many more mailboxes the link connects.
+	Remaining int `json:"remaining"`
+}
+
+type ConnectVendorMailbox struct {
+	ID       string `json:"id"`
+	Email    string `json:"email"`
+	Name     string `json:"name,omitempty"`
+	Provider string `json:"provider,omitempty"`
+	// Connected is a mailbox already in the workspace.
+	Connected bool `json:"connected,omitempty"`
+}
+
+// ConnectVendorImport picks mailboxes from the account a ticket holds.
+type ConnectVendorImport struct {
+	ConnectLookup
+	Ticket     string   `json:"ticket"`
+	MailboxIDs []string `json:"mailbox_ids"`
+	RemoteIP   string   `json:"remote_ip"`
+}
+
+// ConnectVendorStarted is an import a client started: how many mailboxes are being connected, and the link's counts after it.
+type ConnectVendorStarted struct {
+	Mailboxes    int `json:"mailboxes"`
+	Connected    int `json:"connected"`
+	MaxMailboxes int `json:"max_mailboxes"`
 }
 
 // ConnectOAuthStart asks for a provider sign-in URL bound to the link.

@@ -175,7 +175,7 @@ var agencyMailboxesSQL = `
 	) m
 	WHERE ea.organization_id = ANY($1::uuid[])
 	  AND ($2 = '' OR position(lower($2) in lower(ea.email)) > 0)
-	  AND (NOT $3 OR ea.status <> 'active' OR m.erroring OR m.held <> '')
+	  AND (NOT $3 OR ea.status <> 'active' OR m.erroring OR m.held IN ('quarantined', 'blocked'))
 	  AND ($4::timestamp IS NULL OR (ea.created_at, ea.id) < ($4::timestamp, $5::uuid))
 	ORDER BY ea.created_at DESC, ea.id DESC
 	LIMIT $6`
