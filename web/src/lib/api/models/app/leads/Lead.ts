@@ -1,6 +1,6 @@
 // The lead finder: businesses found on a map, enriched from their websites.
 
-export type LeadProvider = "osm" | "google_places" | "foursquare" | "outscraper";
+export type LeadProvider = "osm" | "google_places" | "foursquare" | "outscraper" | "scavio";
 export type LeadStatus = "new" | "saved" | "contacted" | "dismissed";
 export type LeadEnrichmentStatus = "none" | "queued" | "done" | "no_website" | "failed";
 export type LeadSort = "recent" | "score" | "rating" | "reviews" | "name";

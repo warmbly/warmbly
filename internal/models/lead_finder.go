@@ -19,10 +19,12 @@ const (
 	LeadProviderFoursquare LeadProvider = "foursquare"
 	// LeadProviderOutscraper is Outscraper's Google Maps search.
 	LeadProviderOutscraper LeadProvider = "outscraper"
+	// LeadProviderScavio is Scavio's Google Maps search.
+	LeadProviderScavio LeadProvider = "scavio"
 )
 
 // LeadProviders lists every provider in the order the finder offers them.
-var LeadProviders = []LeadProvider{LeadProviderOSM, LeadProviderGooglePlaces, LeadProviderFoursquare, LeadProviderOutscraper}
+var LeadProviders = []LeadProvider{LeadProviderOSM, LeadProviderGooglePlaces, LeadProviderFoursquare, LeadProviderOutscraper, LeadProviderScavio}
 
 // Valid reports whether the value is one the database accepts.
 func (p LeadProvider) Valid() bool {

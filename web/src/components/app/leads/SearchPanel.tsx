@@ -181,7 +181,7 @@ export default function SearchPanel({
                         <PopoverMenuSeparator />
                         <div className="px-2.5 py-1.5">
                             <Link to="/app/integrations/$" params={{ _splat: "category/data" }} className="text-[11.5px] text-sky-700 hover:underline">
-                                Connect Google Places, Foursquare or Outscraper
+                                Connect Google Places, Foursquare, Outscraper or Scavio
                             </Link>
                         </div>
                     </PopoverMenuContent>
