@@ -126,16 +126,8 @@ func detectNewMailboxRampingFast(s *repository.AdvisorSnapshot) []Finding {
 			Detail: fmt.Sprintf(
 				"%s was connected %s ago and sent %d cold emails in the last day, on a cap of %d. A new sending identity has no reputation to spend yet; the safe start is 10-20/day, ramping only while bounce and complaint rates stay clean.",
 				m.Email, plural(m.AgeDays, "day", "days"), m.ColdSent1d, m.CampaignLimit),
-			Remedy: fmt.Sprintf("Drop this mailbox to %d/day and raise it gradually over the next few weeks. Warmup should be running the whole time.", newMailboxSafeCap),
-			Evidence: map[string]any{
-				"mailbox":         m.Email,
-				"age_days":        m.AgeDays,
-				"daily_cap":       m.CampaignLimit,
-				"safe_start_cap":  newMailboxSafeCap,
-				"warmup_running":  m.WarmupActive,
-				"warmup_in_cloud": m.CloudWarmed,
-				"cold_sends_7d":   m.ColdSent7d,
-			},
+			Remedy:   fmt.Sprintf("Drop this mailbox to %d/day and raise it gradually over the next few weeks. Warmup should be running the whole time.", newMailboxSafeCap),
+			Evidence: rampEvidence(m),
 			Action: auto(withUndo(mailboxAction(m.ID,
 				fmt.Sprintf("Start at %d/day instead", newMailboxSafeCap),
 				map[string]any{"campaign_limit": newMailboxSafeCap},
@@ -236,4 +228,21 @@ func humanSeconds(sec int) string {
 		return fmt.Sprintf("%d minutes", sec/60)
 	}
 	return fmt.Sprintf("%d seconds", sec)
+}
+
+// rampEvidence reports local warmup only where this instance owns it; Cloud's own state is not held here.
+func rampEvidence(m repository.AdvisorMailbox) map[string]any {
+	ev := map[string]any{
+		"mailbox":        m.Email,
+		"age_days":       m.AgeDays,
+		"daily_cap":      m.CampaignLimit,
+		"safe_start_cap": newMailboxSafeCap,
+		"cold_sends_7d":  m.ColdSent7d,
+	}
+	if m.CloudOwnsWarmup {
+		ev["warmup_managed_by_cloud"] = true
+	} else {
+		ev["warmup_running"] = m.WarmupActive
+	}
+	return ev
 }

@@ -242,21 +242,32 @@ func TestWarmupOffWhileSendingIsCriticalOnANewMailbox(t *testing.T) {
 	}
 }
 
-// Warmbly Cloud owns an enrolled mailbox's warmup, so its local columns being off is not evidence.
-func TestCloudWarmedMailboxIsNotFlaggedForLocalWarmupState(t *testing.T) {
+// Warmbly Cloud manages an enrolled mailbox's warmup, so its local columns being off is not evidence.
+func TestCloudEnrolledMailboxIsNotJudgedOnLocalWarmup(t *testing.T) {
 	m := healthyMailbox()
 	m.WarmupActive = false
 	m.CampaignLimit = newMailboxSafeCap
-	m.CloudWarmed = true
+	m.CloudOwnsWarmup = true
 
 	got := findingsByKey(Detect(snapshotOf(m), defaults()))
 	if _, fired := got["warmup_off_while_sending"]; fired {
-		t.Error("warmup-off fired on a mailbox Warmbly Cloud warms")
+		t.Error("warmup-off fired on a mailbox enrolled in Warmbly Cloud")
 	}
 
 	m.WarmupPaused = true
 	if _, fired := findingsByKey(Detect(snapshotOf(m), defaults()))["warmup_paused"]; fired {
-		t.Error("warmup-paused fired on a mailbox Warmbly Cloud warms")
+		t.Error("warmup-paused fired on a mailbox enrolled in Warmbly Cloud")
+	}
+
+	// The ramp finding names Cloud as the owner rather than reporting the local columns as warmup not running.
+	m.AgeDays, m.CampaignLimit = 3, 50
+	m.ColdSent30d, m.ColdSent7d, m.ColdSent1d = 120, 120, 45
+	f, fired := findingsByKey(Detect(snapshotOf(m), defaults()))["mailbox_new_ramping_fast"]
+	if !fired {
+		t.Fatal("a new Cloud mailbox sending at full volume should still be flagged")
+	}
+	if _, ok := f.Evidence["warmup_running"]; ok || f.Evidence["warmup_managed_by_cloud"] != true {
+		t.Errorf("ramp evidence on a Cloud mailbox = %v, want Cloud ownership and no local warmup reading", f.Evidence)
 	}
 }
 

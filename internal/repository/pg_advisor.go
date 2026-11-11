@@ -49,8 +49,8 @@ type AdvisorMailbox struct {
 	WarmupIncrease  int
 	WarmupReplyRate int
 	WarmupPoolType  string
-	// CloudWarmed is true while Warmbly Cloud owns the mailbox's warmup, so the local warmup columns say nothing about it.
-	CloudWarmed bool
+	// CloudOwnsWarmup is true while the mailbox is enrolled in Warmbly Cloud, whose warmup may still be paused or held there; the local warmup columns say nothing about it.
+	CloudOwnsWarmup bool
 
 	RiskBand string
 

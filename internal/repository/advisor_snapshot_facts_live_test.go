@@ -77,7 +77,7 @@ func TestLiveAdvisorSnapshotReadsTheSendPathsFacts(t *testing.T) {
 			if m.WarmupPaused {
 				t.Error("a stopped warmup read as paused")
 			}
-			if !m.CloudWarmed {
+			if !m.CloudOwnsWarmup {
 				t.Error("a Cloud-enrolled mailbox read as warmed locally")
 			}
 			if m.WarmupPoolType != "premium" {
@@ -87,7 +87,7 @@ func TestLiveAdvisorSnapshotReadsTheSendPathsFacts(t *testing.T) {
 			if m.InActiveCampaign {
 				t.Error("a disabled sender read as in a running campaign")
 			}
-			if m.CloudWarmed {
+			if m.CloudOwnsWarmup {
 				t.Error("a mailbox with no enrollment read as warmed by Cloud")
 			}
 			if m.WarmupPoolType != "free" {
