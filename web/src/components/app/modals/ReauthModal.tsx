@@ -33,12 +33,8 @@ import { PasskeyCancelled, confirmWithPasskey, passkeySupported } from "@/lib/pa
 import { currentPortal, mainHost, signsInOnMain } from "@/lib/portal";
 import { acceptReauthReturn } from "@/lib/oauthReturn";
 import { POPUP_CLOSED, closePopup, navigatePopup, notifyPopupBlocked, reservePopup, waitForPopupMessage } from "@/lib/popup";
+import { takeHeldReauth, type ReauthDetail } from "@/lib/reauthPrompt";
 
-interface ReauthDetail {
-    resolve: () => void;
-    reject: () => void;
-    ack?: () => void;
-}
 
 const POPUP_NAME = "warmbly-reauth";
 
@@ -80,8 +76,7 @@ export default function ReauthModal() {
     }, []);
 
     React.useEffect(() => {
-        const handler = (e: Event) => {
-            const detail = (e as CustomEvent<ReauthDetail>).detail;
+        const take = (detail: ReauthDetail) => {
             detail.ack?.();
             // Already open: this request waits on the same confirmation.
             if (pendingRef.current) {
@@ -111,7 +106,10 @@ export default function ReauthModal() {
                     if (attempt.current === mine) setMethods("unknown");
                 });
         };
+        const handler = (e: Event) => take((e as CustomEvent<ReauthDetail>).detail);
         window.addEventListener("reauth-required", handler);
+        // Requests that asked while this prompt was still loading.
+        for (const detail of takeHeldReauth()) take(detail);
         return () => window.removeEventListener("reauth-required", handler);
     }, [preparePasskey]);
 

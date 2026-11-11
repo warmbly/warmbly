@@ -1,4 +1,17 @@
+import type { Page } from "@playwright/test";
+
 import { expect, test } from "../lib/proof.ts";
+
+// Saving a top-up setting needs a recent sign-in; the dashboard asks for the password when the session is older.
+async function confirmIfAsked(page: Page) {
+  const dialog = page.getByRole("alertdialog").filter({ hasText: "Confirm it is you" });
+  // The prompt opens once the request has been refused, so it is waited for, not sampled.
+  const asked = await dialog.waitFor({ state: "visible", timeout: 4000 }).then(() => true, () => false);
+  if (asked) {
+    await dialog.getByPlaceholder("Password").fill("password123");
+    await dialog.getByPlaceholder("Password").press("Enter");
+  }
+}
 
 // Agency > Billing: what extra sends cost and the automatic top-up. Needs fixtures/admin-agencies.sql with Agency Pro in force (its pack is $60); see the README.
 test("agency billing explains extra sends and automatic top-up", async ({ page, proof }) => {
@@ -18,11 +31,13 @@ test("agency billing explains extra sends and automatic top-up", async ({ page, 
   await proof.shot("agency-auto-topup-unsaved", { caption: "A changed number waits for Save changes; nothing is sent or charged before it" });
   // Saved while off, it is kept; then put back so the recording can run again.
   await page.getByRole("button", { name: "Save changes" }).click();
+  await confirmIfAsked(page);
   await expect(page.getByRole("button", { name: "Save changes" })).toBeHidden();
   await page.reload();
   await expect(page.getByLabel("Stop after this many top-ups in a month")).toHaveValue("3");
   await page.getByLabel("Stop after this many top-ups in a month").fill("2");
   await page.getByRole("button", { name: "Save changes" }).click();
+  await confirmIfAsked(page);
   await expect(page.getByRole("button", { name: "Save changes" })).toBeHidden();
 
   const ai = page.getByLabel("Automatic top-up of AI balance");

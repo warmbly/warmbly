@@ -10,6 +10,7 @@ import { isRequestCancelled, type AppError } from "./normalizeError";
 import { announceSessionEnded, endSession } from "@/lib/auth";
 import { isInsufficientBalance, openInsufficientBalance } from "@/lib/insufficientBalance";
 import type Token from "@/lib/api/models/auth/Token";
+import { askForReauth } from "@/lib/reauthPrompt";
 
 interface AuthRequestConfig extends AxiosRequestConfig {
     authorization?: boolean
@@ -37,12 +38,16 @@ function promptForReauth(): Promise<void> {
             fn();
         };
 
-        // ReauthModal is mounted under the /app layout. A gated call made from
-        // outside that tree would otherwise leave this promise pending forever
-        // and the mutation spinning with nothing on screen, so a listener that
-        // never answers is treated as a refusal.
+        // ReauthModal is mounted under the /app layout and loads lazily. A call
+        // made before it has mounted is held for it; one made where no prompt
+        // ever mounts would otherwise leave this promise pending forever, so a
+        // request nothing takes is treated as a refusal.
+        let withdraw = () => {};
         const timer = window.setTimeout(
-            once(() => reject(new Error("no confirmation prompt is available here"))),
+            once(() => {
+                withdraw();
+                reject(new Error("no confirmation prompt is available here"));
+            }),
             REAUTH_PROMPT_TIMEOUT_MS,
         );
         const finish = (fn: () => void) =>
@@ -51,16 +56,12 @@ function promptForReauth(): Promise<void> {
                 fn();
             });
 
-        window.dispatchEvent(
-            new CustomEvent("reauth-required", {
-                detail: {
-                    resolve: finish(resolve),
-                    reject: finish(() => reject(new Error("cancelled"))),
-                    // A mounted prompt takes over; the person may take as long as they need.
-                    ack: () => window.clearTimeout(timer),
-                },
-            }),
-        );
+        withdraw = askForReauth({
+            resolve: finish(resolve),
+            reject: finish(() => reject(new Error("cancelled"))),
+            // A mounted prompt takes over; the person may take as long as they need.
+            ack: () => window.clearTimeout(timer),
+        });
     });
 }
 
