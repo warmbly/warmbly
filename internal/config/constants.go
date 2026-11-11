@@ -270,6 +270,10 @@ const (
 	// it must stay well clear of a slow provider handshake.
 	CampaignSendReclaimAfterMinutes = 30
 
+	// MailboxUnreachableSwitchOffHours is how long a custom-server mailbox may go without one successful sync or send,
+	// while its server keeps refusing the connection, before Warmbly switches it off instead of retrying forever.
+	MailboxUnreachableSwitchOffHours = 72
+
 	// ManualSendInterruptedAfterMinutes is how long a manual send may sit claimed
 	// without a reservation before recovery treats its execution as lost. It is
 	// well past the handler's two-minute deadline and the execution key's lease.

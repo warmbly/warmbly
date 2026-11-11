@@ -1674,7 +1674,12 @@ function MailboxStatusPill({ box, status, stale, historicalIssue, warmup, compac
 
     let problem: { label: string; text: string; Icon: LucideIcon; title: string } | null = null;
     if (box.status === "revoked") problem = { label: "Reconnect", text: "text-rose-600", Icon: UnplugIcon, title: "Access was revoked at the provider. Reconnect the mailbox to send and warm again." };
-    else if (box.status !== "active") problem = { label: "Off", text: "text-slate-500", Icon: CircleSlashIcon, title: `Switched off on this instance: campaign sending, local warmup and sync are stopped. ${warmup.source === "cloud" ? `Warmbly Cloud: ${warmupActivityLabel[warmup.activity]}.` : "Switch it back on from the row's menu or its Settings tab."}` };
+    else if (box.status !== "active") {
+        // Warmbly switches off a mailbox whose server stayed unreachable for days; say so rather than imply a person did.
+        const unreachable = status?.errors?.find((e) => e.error_code === "MAILBOX_UNREACHABLE");
+        const why = unreachable ? `${unreachable.message} ${unreachable.action_required ?? ""}`.trim() : "Switched off on this instance: campaign sending, local warmup and sync are stopped.";
+        problem = { label: "Off", text: "text-slate-500", Icon: CircleSlashIcon, title: `${why} ${warmup.source === "cloud" ? `Warmbly Cloud: ${warmupActivityLabel[warmup.activity]}.` : unreachable ? "" : "Switch it back on from the row's menu or its Settings tab."}`.trim() };
+    }
     else if (status?.send_pause) problem = { label: "Paused", text: "text-amber-600", Icon: PauseCircleIcon, title: sendPauseSummary(status.send_pause) };
     else if (error) {
         const title = error.action_required ? `${error.title}. ${error.action_required}` : error.title;

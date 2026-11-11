@@ -145,7 +145,7 @@ Worker-side IMAP connection warnings identify `IMAP dial`, `IMAP TLS` or `IMAP S
 
 When the saved warning is general but its user-facing text is missing, the notification uses that general warning rather than a blank message. Other historical transport details are not substituted into notifications.
 
-When a mail server goes down or stops answering, the mailbox is not deactivated. Warmbly says so once in the drawer, retries on a widening interval, and picks up where it left off when the server comes back. Nothing that arrived meanwhile is skipped, and the error clears itself on the first pass that reaches the server again.
+When a mail server goes down or stops answering, the mailbox is not deactivated. Warmbly says so once in the drawer, retries on a widening interval, and picks up where it left off when the server comes back. Nothing that arrived meanwhile is skipped, and the error clears itself on the first pass that reaches the server again. A server that stays unreachable for three days gets the mailbox switched off; see [a server that stops answering](#a-server-that-stops-answering).
 
 The same holds for a server that answers but refuses what Warmbly asked. The drawer shows one row carrying the server's own wording, not one row per retry, and it clears on the first pass that completes.
 
@@ -156,6 +156,12 @@ With two-factor authentication on, generate an app password in your provider's s
 Warmbly signs in using LOGIN or PLAIN over an established TLS connection, preferring LOGIN when both are offered. Hosted production requires one of these password methods or a supported OAuth connection. Self-hosted and development instances also support CRAM-MD5 when the server offers neither LOGIN nor PLAIN. A server with no supported method is refused with the methods it offers, so you can check whether another submission host or port is needed.
 
 Password authentication requires encryption: use the server's SSL/TLS port (usually 465) or a port that offers STARTTLS (usually 587). The **None** mode is available only for a relay on the worker's own machine on a self-hosted instance.
+
+### A server that stops answering
+
+When a mailbox on your own IMAP/SMTP server has gone three days without one successful sync or send, and its server still refuses the connection before answering at all (the host no longer resolves, refuses, or times out), Warmbly switches the mailbox off and stops retrying. A mailbox deleted at a host that still answers is switched off sooner, the first time the server refuses its sign-in. This covers the rest: a host that went away with it, or one that started blocking Warmbly's connections after the deleted mailbox's failed sign-ins. The drawer says why, the dashboard and the `email_account.disconnected` webhook report it, and the mailbox shows **Off** like one you switched off yourself. If the mailbox was deleted, remove it from Warmbly. If it still exists, get the server accepting connections again and switch the mailbox back on: it gets a fresh three days.
+
+The three days count from when the mailbox was connected or last switched on, so a mailbox you just turned back on is never switched off for its old outage. Nothing is switched off for a server that answers but sends a reply Warmbly cannot read, for a certificate waiting on your confirmation, or while the machine running the mailbox cannot reach any server: another mailbox on it has to have synced within the hour, so a machine running only this one mailbox never switches it off. Gmail and Microsoft 365 mailboxes connected with Google or Microsoft sign-in are not affected, and neither are mailboxes Warmbly Cloud runs.
 
 ### Servers with their own certificate
 
