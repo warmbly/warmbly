@@ -22,6 +22,15 @@ const (
 	IdempotencyReplayedHeader = "X-Idempotent-Replayed"
 )
 
+// routeAgencyID is the agency an agency route names; the handler behind it still checks the caller belongs to it.
+func routeAgencyID(c *gin.Context) *uuid.UUID {
+	id, err := uuid.Parse(c.Param("agencyId"))
+	if err != nil {
+		return nil
+	}
+	return &id
+}
+
 // IdempotencyMiddleware implements Stripe-style retry safety for mutating API
 // requests. It is opt-in per request via Idempotency-Key and scoped by
 // organization, so the same key cannot collide across tenants.
@@ -49,6 +58,9 @@ func (h *Handler) IdempotencyMiddleware() gin.HandlerFunc {
 			scope = idempotency.OrgScope(*orgID)
 		case agencyID != nil:
 			scope = idempotency.AgencyScope(*agencyID)
+		case routeAgencyID(c) != nil:
+			// Agency staff with no workspace selected: the agency the route names is the scope.
+			scope = idempotency.AgencyScope(*routeAgencyID(c))
 		default:
 			errx.Handle(c, errx.New(errx.BadRequest, "Idempotency-Key requires an organization context"))
 			c.Abort()

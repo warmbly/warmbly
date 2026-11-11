@@ -331,8 +331,13 @@ export function useAgencyCheckout(agencyId: string) {
 export function useChangeAgencyPlan(agencyId: string) {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: ({ planId, interval }: { planId: string; interval: "month" | "year" }) => changeAgencyPlan(agencyId, planId, interval),
-        onSettled: () => void qc.invalidateQueries({ queryKey: ["agency"] }),
+        mutationFn: ({ planId, interval, prorationDate }: { planId: string; interval: "month" | "year"; prorationDate?: number }) =>
+            changeAgencyPlan(agencyId, planId, interval, prorationDate),
+        // The open workspace may be one of the agency's clients, whose own plan just changed with it.
+        onSettled: () => {
+            void qc.invalidateQueries({ queryKey: ["agency"] });
+            void qc.invalidateQueries({ queryKey: ["subscription"] });
+        },
     });
 }
 

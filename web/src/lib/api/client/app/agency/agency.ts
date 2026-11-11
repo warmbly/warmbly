@@ -108,11 +108,11 @@ export const previewAgencyPlanChange = (agencyId: string, planId: string, interv
         authorization: true,
     });
 
-export const changeAgencyPlan = (agencyId: string, planId: string, interval: "month" | "year") =>
+export const changeAgencyPlan = (agencyId: string, planId: string, interval: "month" | "year", prorationDate?: number) =>
     Request<Agency>({
         method: "POST",
         url: `/agency/${agencyId}/billing/change`,
-        data: { plan_id: planId, interval },
+        data: { plan_id: planId, interval, proration_date: prorationDate },
         headers: idem(),
         authorization: true,
     });

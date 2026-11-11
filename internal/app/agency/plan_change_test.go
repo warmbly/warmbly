@@ -89,6 +89,18 @@ func TestPlanChangeRefusesAPoolThePeriodAlreadyExceeds(t *testing.T) {
 	}
 }
 
+func TestPlanChangeRefusesAStalePreview(t *testing.T) {
+	now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
+	a := activeAgency(now)
+	a.StripeSubscriptionID = strp("sub_1")
+	s, actor := newSwitchService(t, a, 0, now)
+	for _, at := range []time.Time{now.Add(-planChangePreviewTTL - time.Minute), now.Add(10 * time.Minute)} {
+		if _, xerr := s.ChangePlan(context.Background(), a.ID, actor, models.AgencyProPlanID, false, at.Unix()); xerr == nil || xerr.Identifier != "agency_plan_preview_expired" {
+			t.Fatalf("priced at %s: got %v", at, xerr)
+		}
+	}
+}
+
 func TestSubscriptionInterval(t *testing.T) {
 	start := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
 	month, year := start.AddDate(0, 1, 0), start.AddDate(1, 0, 0)

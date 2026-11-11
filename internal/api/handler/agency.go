@@ -536,6 +536,8 @@ func (h *Handler) ChangeAgencyPlan(c *gin.Context) {
 	var req struct {
 		PlanID   string `json:"plan_id"`
 		Interval string `json:"interval"`
+		// ProrationDate is the preview's, so the switch bills what was shown.
+		ProrationDate int64 `json:"proration_date"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		errx.JSON(c, errx.InvalidBody(err))
@@ -545,7 +547,11 @@ func (h *Handler) ChangeAgencyPlan(c *gin.Context) {
 	if !ok {
 		return
 	}
-	a, xerr := h.AgencyService.ChangePlan(c.Request.Context(), agencyID, userID, planID, yearly)
+	if req.ProrationDate < 0 {
+		errx.JSON(c, errx.New(errx.BadRequest, "proration_date must be the value a preview returned"))
+		return
+	}
+	a, xerr := h.AgencyService.ChangePlan(c.Request.Context(), agencyID, userID, planID, yearly, req.ProrationDate)
 	if xerr != nil {
 		errx.JSON(c, xerr)
 		return

@@ -297,3 +297,38 @@ func TestIdempotencyStateAnswers(t *testing.T) {
 		}
 	}
 }
+
+// scopeRecorder is fakeIdempotencyService that keeps the scope each claim was made in.
+type scopeRecorder struct {
+	fakeIdempotencyService
+	scopes []idempotency.Scope
+}
+
+func (s *scopeRecorder) Begin(ctx context.Context, scope idempotency.Scope, key, method, path, requestHash string) (*idempotency.Record, idempotency.State, *errx.Error) {
+	s.scopes = append(s.scopes, scope)
+	return s.fakeIdempotencyService.Begin(ctx, scope, key, method, path, requestHash)
+}
+
+func TestIdempotencyScopesAnAgencyRouteToItsAgencyWithoutAWorkspace(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := &scopeRecorder{}
+	h := &Handler{IdempotencyService: svc}
+	r := gin.New()
+	r.Use(RequestIDMiddleware())
+	ok := func(c *gin.Context) { c.Status(http.StatusOK) }
+	// Agency staff signed in with no workspace selected.
+	r.POST("/agency/:agencyId/billing/change", asUser(uuid.NewString()), h.IdempotencyMiddleware(), ok)
+	r.POST("/contacts", asUser(uuid.NewString()), h.IdempotencyMiddleware(), ok)
+
+	agencyID := uuid.New()
+	if w := sendIdempotent(r, http.MethodPost, "/agency/"+agencyID.String()+"/billing/change", "key-1", `{}`); w.Code != http.StatusOK {
+		t.Fatalf("agency route: %d %s", w.Code, w.Body.String())
+	}
+	if len(svc.scopes) != 1 || svc.scopes[0] != idempotency.AgencyScope(agencyID) {
+		t.Fatalf("scope: %+v", svc.scopes)
+	}
+	// A route that names no agency still needs a workspace.
+	if w := sendIdempotent(r, http.MethodPost, "/contacts", "key-1", `{}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("no scope at all: %d", w.Code)
+	}
+}

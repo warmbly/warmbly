@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -100,10 +101,14 @@ type PlanChangePreview struct {
 	// ProrationCents is the prorated difference for the rest of the period; negative is a credit.
 	ProrationCents int64 `json:"proration_cents"`
 	// AmountDueCents is the total of the next invoice with the switch applied.
-	AmountDueCents  int64     `json:"amount_due_cents"`
-	NextBillingDate time.Time `json:"next_billing_date"`
-	Currency        string    `json:"currency"`
+	AmountDueCents int64  `json:"amount_due_cents"`
+	Currency       string `json:"currency"`
+	// ProrationDate is the moment the amounts were calculated at; sent back with the switch, it bills exactly them.
+	ProrationDate int64 `json:"proration_date"`
 }
+
+// planChangePreviewTTL is how long a previewed price may be confirmed at; an older one is priced again.
+const planChangePreviewTTL = 30 * time.Minute
 
 // planChange is one validated switch of the agency's own Stripe subscription.
 type planChange struct {
@@ -112,6 +117,8 @@ type planChange struct {
 	price  string
 	sub    *stripe.Subscription
 	itemID string
+	// held is true when Stripe already has the subscription on this price.
+	held bool
 }
 
 // planChangeFor checks that the agency can move its subscription to the plan and period now.
@@ -161,11 +168,10 @@ func (s *Service) planChangeFor(ctx context.Context, agencyID, actorID, planID u
 		return nil, errx.New(errx.Internal, "the subscription has an unexpected shape")
 	}
 	item := sub.Items.Data[0]
-	if item.Price != nil && item.Price.ID == price {
-		return nil, errx.NewWithIdentifier(errx.Conflict, "agency_plan_unchanged", "The agency is already on that plan and billing period.")
-	}
-	return &planChange{agency: a, plan: plan, price: price, sub: sub, itemID: item.ID}, nil
+	return &planChange{agency: a, plan: plan, price: price, sub: sub, itemID: item.ID, held: item.Price != nil && item.Price.ID == price}, nil
 }
+
+var errPlanUnchanged = errx.NewWithIdentifier(errx.Conflict, "agency_plan_unchanged", "The agency is already on that plan and billing period.")
 
 func intervalName(yearly bool) string {
 	if yearly {
@@ -180,6 +186,10 @@ func (s *Service) PreviewPlanChange(ctx context.Context, agencyID, actorID, plan
 	if xerr != nil {
 		return nil, xerr
 	}
+	if c.held {
+		return nil, errPlanUnchanged
+	}
+	at := s.now().Unix()
 	params := &stripe.InvoiceCreatePreviewParams{
 		Params:       stripe.Params{Context: ctx},
 		AutomaticTax: &stripe.InvoiceCreatePreviewAutomaticTaxParams{Enabled: stripe.Bool(false)},
@@ -187,6 +197,7 @@ func (s *Service) PreviewPlanChange(ctx context.Context, agencyID, actorID, plan
 		SubscriptionDetails: &stripe.InvoiceCreatePreviewSubscriptionDetailsParams{
 			Items:             []*stripe.InvoiceCreatePreviewSubscriptionDetailsItemParams{{ID: stripe.String(c.itemID), Price: stripe.String(c.price)}},
 			ProrationBehavior: stripe.String("create_prorations"),
+			ProrationDate:     stripe.Int64(at),
 		},
 	}
 	if c.agency.StripeCustomerID != nil {
@@ -198,7 +209,7 @@ func (s *Service) PreviewPlanChange(ctx context.Context, agencyID, actorID, plan
 		return nil, errx.New(errx.Internal, "failed to price the switch")
 	}
 	out := &PlanChangePreview{PlanID: c.plan.ID, Interval: intervalName(yearly), AmountDueCents: inv.AmountDue,
-		NextBillingDate: time.Unix(inv.PeriodEnd, 0).UTC(), Currency: string(inv.Currency)}
+		Currency: string(inv.Currency), ProrationDate: at}
 	if inv.Lines != nil {
 		for _, line := range inv.Lines.Data {
 			if lineIsProration(line) {
@@ -222,29 +233,62 @@ func lineIsProration(line *stripe.InvoiceLineItem) bool {
 	return false
 }
 
+// switching hands out one lock per agency, so a switch is validated, made and applied before the next one starts.
+func (s *Service) switching(agencyID uuid.UUID) *sync.Mutex {
+	l, _ := s.switches.LoadOrStore(agencyID, &sync.Mutex{})
+	return l.(*sync.Mutex)
+}
+
 // ChangePlan moves the agency's subscription to another agency plan or billing
-// period, prorated, and gives every client the new plan at once.
-func (s *Service) ChangePlan(ctx context.Context, agencyID, actorID, planID uuid.UUID, yearly bool) (*models.Agency, *errx.Error) {
+// period, prorated, and gives every client the new plan at once. prorationDate
+// is the moment a preview priced the switch at; zero prices it now. A switch
+// Stripe already holds is applied here again, so one whose result was not
+// recorded the first time completes on the next attempt.
+func (s *Service) ChangePlan(ctx context.Context, agencyID, actorID, planID uuid.UUID, yearly bool, prorationDate int64) (*models.Agency, *errx.Error) {
+	now := s.now()
+	if prorationDate != 0 {
+		at := time.Unix(prorationDate, 0)
+		if at.After(now.Add(time.Minute)) || now.Sub(at) > planChangePreviewTTL {
+			return nil, errx.NewWithIdentifier(errx.Conflict, "agency_plan_preview_expired", "That price is no longer current. Review the switch again.")
+		}
+	}
+	lock := s.switching(agencyID)
+	lock.Lock()
+	defer lock.Unlock()
+
 	c, xerr := s.planChangeFor(ctx, agencyID, actorID, planID, yearly)
 	if xerr != nil {
 		return nil, xerr
 	}
-	updated, err := subscription.Update(c.sub.ID, &stripe.SubscriptionParams{
-		Params:            stripe.Params{Context: ctx},
-		Items:             []*stripe.SubscriptionItemsParams{{ID: stripe.String(c.itemID), Price: stripe.String(c.price)}},
-		ProrationBehavior: stripe.String("create_prorations"),
-		AutomaticTax:      &stripe.SubscriptionAutomaticTaxParams{Enabled: stripe.Bool(false)},
-	})
-	if err != nil {
-		errs.CaptureException(fmt.Errorf("agency plan change: %w", err))
-		return nil, errx.New(errx.Internal, "failed to switch the plan")
+	sub := c.sub
+	if c.held {
+		// Nothing left to bill; only an agency that already shows the switch has nothing left to do.
+		if c.agency.PlanID != nil && *c.agency.PlanID == c.plan.ID && c.agency.SubscriptionInterval() == intervalName(yearly) {
+			return nil, errPlanUnchanged
+		}
+	} else {
+		params := &stripe.SubscriptionParams{
+			Params:            stripe.Params{Context: ctx},
+			Items:             []*stripe.SubscriptionItemsParams{{ID: stripe.String(c.itemID), Price: stripe.String(c.price)}},
+			ProrationBehavior: stripe.String("create_prorations"),
+			AutomaticTax:      &stripe.SubscriptionAutomaticTaxParams{Enabled: stripe.Bool(false)},
+		}
+		if prorationDate != 0 {
+			params.ProrationDate = stripe.Int64(prorationDate)
+		}
+		updated, err := subscription.Update(c.sub.ID, params)
+		if err != nil {
+			errs.CaptureException(fmt.Errorf("agency plan change: %w", err))
+			return nil, errx.New(errx.Internal, "failed to switch the plan")
+		}
+		sub = updated
 	}
 	// Applied here as well as by the webhook, so the dashboard shows the new plan without waiting for it.
 	var raw json.RawMessage
-	if updated.LastResponse != nil {
-		raw = updated.LastResponse.RawJSON
+	if sub.LastResponse != nil {
+		raw = sub.LastResponse.RawJSON
 	}
-	if xerr := s.applySubscription(ctx, agencyID, updated, raw, false); xerr != nil {
+	if xerr := s.applySubscription(ctx, agencyID, sub, raw, false); xerr != nil {
 		return nil, xerr
 	}
 	a, gerr := s.repo.Get(ctx, agencyID)

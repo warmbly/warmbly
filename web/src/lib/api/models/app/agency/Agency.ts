@@ -51,8 +51,9 @@ export interface AgencyPlanChangePreview {
     interval: "month" | "year";
     proration_cents: number;
     amount_due_cents: number;
-    next_billing_date: string;
     currency: string;
+    /** When the amounts were calculated; sent back with the switch so it bills exactly them. */
+    proration_date: number;
 }
 
 export interface AgenciesResult {
