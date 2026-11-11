@@ -93,7 +93,7 @@ func detectWarmupMailNotArriving(s *repository.AdvisorSnapshot) []Finding {
 func detectWarmupOffWhileSending(s *repository.AdvisorSnapshot) []Finding {
 	out := []Finding{}
 	for _, m := range s.Mailboxes {
-		if !m.SendingCold() || m.ColdSent7d == 0 || m.WarmupActive || m.WarmupPaused || s.WarmupUnavailable {
+		if !m.SendingCold() || m.ColdSent7d == 0 || m.WarmupActive || m.WarmupPaused || m.CloudWarmed || s.WarmupUnavailable {
 			continue
 		}
 
@@ -140,7 +140,7 @@ func detectWarmupPaused(s *repository.AdvisorSnapshot) []Finding {
 	for _, m := range s.Mailboxes {
 		// Resuming is not an option the plan offers, as after a trial ends.
 		// A pause is deliberate; it only costs anything while the mailbox sends cold mail without it.
-		if !m.WarmupPaused || s.WarmupUnavailable || !m.SendingCold() || m.ColdSent7d == 0 {
+		if !m.WarmupPaused || m.CloudWarmed || s.WarmupUnavailable || !m.SendingCold() || m.ColdSent7d == 0 {
 			continue
 		}
 		severity := models.AdvisorHigh

@@ -85,7 +85,10 @@ func (r *advisorRepository) loadMailboxes(ctx context.Context, orgID uuid.UUID, 
 			-- Stop also stamps warmup_paused_at; a stopped mailbox is off, not paused.
 			(ea.warmup IS NOT NULL AND ea.warmup_paused_at IS NOT NULL AND ea.warmup_stopped_at IS NULL) AS warmup_paused,
 			ea.warmup_base, ea.warmup_max, ea.warmup_increase, ea.warmup_reply_rate,
-			COALESCE(ea.warmup_pool_type, 'free'),
+			-- Cloud reports the pool it warms a mailbox in; the local column is only the local pool's.
+			COALESCE(enr.health_pool_type, ea.warmup_pool_type, 'free'),
+			-- Any enrollment row hands warmup to Cloud, as the local scheduler's stand-down reads it.
+			enr.email_account_id IS NOT NULL AS cloud_warmed,
 			ea.risk_band::text,
 			COALESCE(sent.d7, 0), COALESCE(sent.d1, 0), COALESCE(sent.d30, 0),
 			COALESCE(dl.bounces, 0), COALESCE(dl.complaints, 0),
@@ -99,6 +102,7 @@ func (r *advisorRepository) loadMailboxes(ctx context.Context, orgID uuid.UUID, 
 			ea.send_lifecycle,
 			inb.delivered, inb.arrived, inb.lost_by, bnc.orgs
 		FROM email_accounts ea
+		LEFT JOIN cloud_link_mailboxes enr ON enr.email_account_id = ea.id
 		LEFT JOIN LATERAL (
 			SELECT
 				COUNT(*) FILTER (WHERE t.completed_at > NOW() - INTERVAL '7 days')  AS d7,
@@ -204,6 +208,7 @@ func (r *advisorRepository) loadMailboxes(ctx context.Context, orgID uuid.UUID, 
 			&m.AuthState, &m.AuthSPF, &m.AuthDKIM, &m.AuthDMARC, &m.AuthDMARCPolicy, &m.AuthFailingSince,
 			&m.WarmupActive, &m.WarmupPaused,
 			&m.WarmupBase, &m.WarmupMax, &m.WarmupIncrease, &m.WarmupReplyRate, &m.WarmupPoolType,
+			&m.CloudWarmed,
 			&m.RiskBand,
 			&m.ColdSent7d, &m.ColdSent1d, &m.ColdSent30d,
 			&m.Bounces30d, &m.Complaints30d,

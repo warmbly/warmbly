@@ -242,6 +242,24 @@ func TestWarmupOffWhileSendingIsCriticalOnANewMailbox(t *testing.T) {
 	}
 }
 
+// Warmbly Cloud owns an enrolled mailbox's warmup, so its local columns being off is not evidence.
+func TestCloudWarmedMailboxIsNotFlaggedForLocalWarmupState(t *testing.T) {
+	m := healthyMailbox()
+	m.WarmupActive = false
+	m.CampaignLimit = newMailboxSafeCap
+	m.CloudWarmed = true
+
+	got := findingsByKey(Detect(snapshotOf(m), defaults()))
+	if _, fired := got["warmup_off_while_sending"]; fired {
+		t.Error("warmup-off fired on a mailbox Warmbly Cloud warms")
+	}
+
+	m.WarmupPaused = true
+	if _, fired := findingsByKey(Detect(snapshotOf(m), defaults()))["warmup_paused"]; fired {
+		t.Error("warmup-paused fired on a mailbox Warmbly Cloud warms")
+	}
+}
+
 func TestSpamPlacementRespectsItsSampleFloorAndBands(t *testing.T) {
 	m := healthyMailbox()
 	m.WarmupPlacement = models.WarmupPlacementEvidence{MajorDelivered: minWarmupDeliveriesForPlacement - 1, MajorSpam: 5}
