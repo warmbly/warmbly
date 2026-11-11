@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -148,6 +149,59 @@ func (h *Handler) InternalConnectSMTPIMAP(c *gin.Context) {
 	c.JSON(http.StatusCreated, formwire.ConnectedMailbox{
 		Email: res.Account.Email, Provider: res.Account.Provider,
 		Connected: res.Link.MailboxesConnected, MaxMailboxes: res.Link.MaxMailboxes,
+	})
+}
+
+// InternalConnectVendorMailboxes is POST /api/v1/internal/connect-links/vendor/mailboxes: check a client's vendor key and list what it reaches.
+func (h *Handler) InternalConnectVendorMailboxes(c *gin.Context) {
+	var req formwire.ConnectVendorAccount
+	if err := c.ShouldBindJSON(&req); err != nil {
+		connectRefusal(c, errx.New(errx.BadRequest, "The request could not be read."))
+		return
+	}
+	link, ok := h.connectLinkOn(c, req.Token, req.Host)
+	if !ok {
+		return
+	}
+	out, xerr := h.ConnectLinkService.VendorMailboxes(c.Request.Context(), link, connectlink.VendorAccountInput{
+		Vendor: req.Vendor, Fields: req.Fields, CaptchaToken: req.CaptchaToken, RemoteIP: req.RemoteIP,
+	})
+	if xerr != nil {
+		connectRefusal(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+// InternalConnectVendorImport is POST /api/v1/internal/connect-links/vendor/import: connect the mailboxes a client picked.
+func (h *Handler) InternalConnectVendorImport(c *gin.Context) {
+	var req formwire.ConnectVendorImport
+	if err := c.ShouldBindJSON(&req); err != nil {
+		connectRefusal(c, errx.New(errx.BadRequest, "The request could not be read."))
+		return
+	}
+	link, ok := h.connectLinkOn(c, req.Token, req.Host)
+	if !ok {
+		return
+	}
+	res, xerr := h.ConnectLinkService.VendorImport(c.Request.Context(), link, connectlink.VendorImportInput{
+		Ticket: req.Ticket, MailboxIDs: req.MailboxIDs, RemoteIP: req.RemoteIP,
+	})
+	if xerr != nil {
+		connectRefusal(c, xerr)
+		return
+	}
+	// Recorded in the creator's name, which is what refreshes every teammate's mailbox list and imports.
+	if h.AuditService != nil && res.Import != nil {
+		importID := res.Import.ID
+		meta := map[string]string{"via": "connect_link", "connect_link_id": res.Link.ID.String(), "vendor": res.Vendor, "mailboxes": strconv.Itoa(len(res.Emails))}
+		h.AuditService.LogAction(c.Request.Context(), res.Link.OrganizationID, res.ActorID, models.AuditActionCreate, models.AuditEntityMailboxImport, &importID,
+			req.RemoteIP, c.Request.UserAgent(), nil, meta)
+		h.AuditService.LogAction(c.Request.Context(), res.Link.OrganizationID, res.ActorID, models.AuditActionUpdate, models.AuditEntityClientConnectLink, &res.Link.ID,
+			req.RemoteIP, c.Request.UserAgent(), nil, meta)
+	}
+	c.JSON(http.StatusCreated, formwire.ConnectVendorStarted{
+		Mailboxes: len(res.Emails), Connected: res.Link.MailboxesConnected, MaxMailboxes: res.Link.MaxMailboxes,
 	})
 }
 

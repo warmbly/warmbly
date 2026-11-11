@@ -1625,7 +1625,7 @@ use generic errors and explicit unavailable/stale coverage, not outage inference
 
 | `code` | Status | Meaning |
 |--------|--------|---------|
-| `client_link_invalid_providers` | 400 | `providers` is empty or names something other than `gmail`, `outlook` and `smtp_imap` |
+| `client_link_invalid_providers` | 400 | `providers` is empty or names something other than `gmail`, `outlook`, `smtp_imap` and `vendor` |
 | `client_link_invalid_max_mailboxes` | 400 | `max_mailboxes` is outside 1 to 500 |
 | `client_link_invalid_expiry` | 400 | `expires_in_days` is outside 1 to 90 |
 | `client_link_invalid_tags` | 400 | More than 20 `tag_ids` |
@@ -1644,7 +1644,10 @@ The client's connect page shows these, each in its own words:
 | `client_link_provider_unavailable` | 400 | That sign-in is not configured on this instance |
 | `client_link_signin_expired` | 400 | The provider sign-in took longer than 10 minutes or was already used |
 | `client_link_signin_declined` | 400 | The client cancelled the sign-in at the provider |
-| `client_link_captcha_failed` | 400 | The security check on the server-details form did not pass |
+| `client_link_captcha_failed` | 400 | The security check on the server-details or vendor account form did not pass |
+| `client_link_no_mailboxes` | 400 | A client started a vendor import through a connect link without picking a mailbox, or none of the ones picked is in the account any more |
+| `client_link_too_many_mailboxes` | 409 | A client picked more vendor mailboxes than the connect link still allows |
+| `mailbox_vendor_hold_expired` | 400 | The ticket a connect page holds for a client's vendor key was already used or is older than 15 minutes. The client enters the key again |
 | `client_link_rate_limited` | 429 | Too many attempts through this link in the last hour |
 
 A workspace at its mailbox allowance refuses the connect with the usual `mailbox_allowance_reached`, which the page words for the client.

@@ -28,8 +28,9 @@ import {
     startConnectResizeReporting,
 } from "./connectEmbed";
 import { CUSTOM_PRESET, MAIL_PRESETS } from "./connectPresets";
+import { VendorForm } from "./ConnectVendor";
 import { isEmbedded } from "./embed";
-import { AlertIcon, BackIcon, CheckIcon, ChevronIcon, MailIcon } from "./icons";
+import { AlertIcon, BackIcon, CheckIcon, ChevronIcon, MailIcon, StackIcon } from "./icons";
 import { useBrandLook } from "./look";
 import { StalePage } from "./NotFound";
 import type { Brand } from "./theme";
@@ -42,7 +43,7 @@ interface Connected {
     provider: string;
 }
 
-type View = "choose" | "imap" | "waiting";
+type View = "choose" | "imap" | "vendor" | "waiting";
 
 const POLL_MS = 2000;
 const POLL_MAX_MS = 10 * 60 * 1000;
@@ -194,6 +195,14 @@ export function ConnectPage() {
                         setView("choose");
                     }}
                 />
+            ) : view === "vendor" ? (
+                <VendorForm
+                    token={token}
+                    link={live}
+                    errorCopy={(e) => errorCopy(e, workspace)}
+                    onBack={() => setView("choose")}
+                    onStarted={() => void qc.invalidateQueries({ queryKey: ["connect", token] })}
+                />
             ) : view === "waiting" ? (
                 <div className="cx-state">
                     <span className="cx-spinner" aria-hidden />
@@ -260,6 +269,10 @@ export function ConnectPage() {
                                 onImap={() => {
                                     setError(null);
                                     setView("imap");
+                                }}
+                                onVendor={() => {
+                                    setError(null);
+                                    setView("vendor");
                                 }}
                             />
                         </>
@@ -359,6 +372,7 @@ function ProviderButtons({
     onWaiting,
     onDone,
     onImap,
+    onVendor,
 }: {
     token: string;
     link: ConnectLink;
@@ -366,6 +380,7 @@ function ProviderButtons({
     onWaiting: () => void;
     onDone: (o: { status: string; email?: string; provider?: string; code?: string; message?: string; connected?: number }) => void;
     onImap: () => void;
+    onVendor: () => void;
 }) {
     const [busy, setBusy] = useState<ConnectProvider | null>(null);
     const poll = useRef<number | null>(null);
@@ -430,6 +445,12 @@ function ProviderButtons({
                 <button type="button" className="cx-provider" disabled={busy !== null} onClick={onImap}>
                     <MailIcon className="cx-mark cx-mark-mail" />
                     Use IMAP and SMTP details
+                </button>
+            )}
+            {has("vendor") && (link.vendors?.length ?? 0) > 0 && (
+                <button type="button" className="cx-provider" disabled={busy !== null} onClick={onVendor}>
+                    <StackIcon className="cx-mark cx-mark-mail" />
+                    Connect many from my inbox vendor
                 </button>
             )}
             {link.providers.length === 0 && <p className="cx-error">This link has no way to connect a mailbox on this server. Ask for a new link.</p>}

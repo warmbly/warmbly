@@ -83,7 +83,12 @@ type Deps struct {
 	// BaseURL is the origin a workspace's connect pages are served on; nil is the shared portal address.
 	BaseURL func(ctx context.Context, orgID uuid.UUID) string
 	Now     func() time.Time
+	// Vendors connects an inbox vendor account a client names; nil leaves that way in off.
+	Vendors Vendors
 }
+
+// WireVendors turns on connecting an inbox vendor account from a link; the two services are built apart.
+func (s *Service) WireVendors(v Vendors) { s.d.Vendors = v }
 
 type Service struct {
 	d      Deps
@@ -284,8 +289,11 @@ func (s *Service) Page(ctx context.Context, link *models.ClientConnectLink) *for
 	if a, xerr := s.d.Workspaces.MailboxAllowance(ctx, orgID); xerr == nil && a != nil && !a.CanAdd(1) {
 		out.WorkspaceFull = true
 	}
-	if s.d.Captcha != nil && config.CaptchaProvider() != "none" && link.Allows(models.InboxProviderSMTPIMAP) {
+	if s.d.Captcha != nil && config.CaptchaProvider() != "none" && (link.Allows(models.InboxProviderSMTPIMAP) || link.Allows(models.ConnectLinkVendor)) {
 		out.CaptchaSiteKey = config.TurnstileSiteKey()
+	}
+	if link.Allows(models.ConnectLinkVendor) && s.d.Vendors != nil {
+		out.Vendors = s.vendorCatalog()
 	}
 	return out
 }
@@ -305,6 +313,8 @@ func (s *Service) providerAvailable(p models.InboxProvider) bool {
 	switch p {
 	case models.InboxProviderSMTPIMAP:
 		return true
+	case models.ConnectLinkVendor:
+		return s.d.Vendors != nil
 	case models.InboxProviderGoogle:
 		if !config.GoogleOAuthConnect() {
 			return false

@@ -485,34 +485,50 @@ type ImportInput struct {
 // Import starts a background import of the picked vendor mailboxes. Their
 // credentials are read from the vendor as each row is worked, never earlier.
 func (s *Service) Import(ctx context.Context, orgID, userID, id uuid.UUID, in ImportInput) (*models.MailboxImport, *errx.Error) {
+	imp, _, xerr := s.ImportPicked(ctx, orgID, userID, id, in)
+	return imp, xerr
+}
+
+// ImportPicked is Import that also names the addresses it took, at most limit of them when limit is above zero.
+func (s *Service) ImportPicked(ctx context.Context, orgID, userID, id uuid.UUID, in ImportInput, limit ...int) (*models.MailboxImport, []string, *errx.Error) {
 	if s.importer == nil {
-		return nil, errx.InternalError()
+		return nil, nil, errx.InternalError()
 	}
 	c, xerr := s.get(ctx, orgID, id)
 	if xerr != nil {
-		return nil, xerr
+		return nil, nil, xerr
 	}
 	boxes, xerr := s.Mailboxes(ctx, orgID, id)
 	if xerr != nil {
-		return nil, xerr
+		return nil, nil, xerr
+	}
+	max := 0
+	if len(limit) > 0 {
+		max = limit[0]
 	}
 	want := map[string]bool{}
 	for _, m := range in.MailboxIDs {
 		want[m] = true
 	}
 	rows := make([]mailboximport.ListRow, 0)
+	emails := make([]string, 0)
 	for _, m := range boxes {
 		if !want[m.ID] && !(in.All && !m.Connected) {
 			continue
 		}
+		if max > 0 && len(rows) >= max {
+			break
+		}
+		emails = append(emails, m.Email)
 		cid := c.ID
 		rows = append(rows, mailboximport.ListRow{
 			Email: m.Email, Name: m.Name, VendorConnectionID: &cid, VendorMailboxID: m.ID, VendorProvider: m.Provider,
 		})
 	}
-	return s.importer.CreateFromList(ctx, mailboximport.ListInput{
+	imp, xerr := s.importer.CreateFromList(ctx, mailboximport.ListInput{
 		OrgID: orgID, UserID: userID, Source: "vendor", Vendor: c.Vendor, Label: c.Label, Rows: rows, Options: in.Options,
 	})
+	return imp, emails, xerr
 }
 
 // credentials reads one vendor mailbox's credentials.

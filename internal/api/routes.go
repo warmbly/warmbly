@@ -281,6 +281,8 @@ func Run(
 		portal.POST("/connect-links/oauth/start", h.InternalStartConnectOAuth)
 		portal.POST("/connect-links/oauth/result", h.InternalConnectOAuthResult)
 		portal.POST("/connect-links/smtp-imap", h.InternalConnectSMTPIMAP)
+		portal.POST("/connect-links/vendor/mailboxes", h.InternalConnectVendorMailboxes)
+		portal.POST("/connect-links/vendor/import", h.InternalConnectVendorImport)
 	}
 
 	corsConfig := cors.Config{

@@ -4,7 +4,23 @@
 import { apiHeaders } from "./api";
 import { type Brand, parseBrand } from "./theme";
 
-export type ConnectProvider = "gmail" | "outlook" | "smtp_imap";
+export type ConnectProvider = "gmail" | "outlook" | "smtp_imap" | "vendor";
+
+export interface ConnectVendorField {
+    key: string;
+    label: string;
+    secret: boolean;
+    required: boolean;
+    help?: string;
+}
+
+/** An inbox vendor a client can connect an account of, and what it asks for. */
+export interface ConnectVendor {
+    id: string;
+    label: string;
+    key_help_url?: string;
+    fields: ConnectVendorField[];
+}
 
 export interface ConnectLink {
     workspace: string;
@@ -16,6 +32,8 @@ export interface ConnectLink {
     expires_at: string;
     workspace_full?: boolean;
     captcha_site_key?: string;
+    /** Present when the link takes a vendor account. */
+    vendors?: ConnectVendor[];
 }
 
 export interface MailService {
@@ -95,4 +113,38 @@ export function connectSMTPIMAP(token: string, payload: SMTPIMAPPayload): Promis
 
 export function fetchSigninOutcome(token: string, resultKey: string): Promise<SigninOutcome> {
     return call(token, "/oauth/result", { method: "POST", body: JSON.stringify({ result_key: resultKey }) });
+}
+
+export interface VendorMailbox {
+    id: string;
+    email: string;
+    name?: string;
+    provider?: string;
+    /** Already connected to the workspace. */
+    connected?: boolean;
+}
+
+/** What a vendor key reaches. The key stays on the server under the ticket. */
+export interface VendorMailboxes {
+    ticket: string;
+    vendor: string;
+    mailboxes: VendorMailbox[];
+    remaining: number;
+}
+
+export interface VendorImportStarted {
+    mailboxes: number;
+    connected: number;
+    max_mailboxes: number;
+}
+
+export function listVendorMailboxes(
+    token: string,
+    payload: { vendor: string; fields: Record<string, string>; captcha_token?: string },
+): Promise<VendorMailboxes> {
+    return call(token, "/vendor", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function importVendorMailboxes(token: string, ticket: string, mailboxIds: string[]): Promise<VendorImportStarted> {
+    return call(token, "/vendor/import", { method: "POST", body: JSON.stringify({ ticket, mailbox_ids: mailboxIds }) });
 }

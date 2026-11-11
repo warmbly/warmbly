@@ -373,6 +373,29 @@ func TestAKeylessRefusalRecordedByAnOlderReleaseDoesNotStick(t *testing.T) {
 	f.svc.healAgencyLinks(ctx)
 	if f.conns.conns[conn.ID].Status != "invalid" {
 		t.Fatal("a refusal by the vendor was cleared")
+
+func TestAClientsKeyIsHeldSealedAndReadOnce(t *testing.T) {
+	client := &fakeClient{boxes: []mailvendor.Mailbox{{ID: "m1", Email: "ava@client.test"}}}
+	s, _, mb, _, _ := newTestService(t, client)
+	mb.existing["ava@client.test"] = models.EmailRef{ID: uuid.New()}
+	ctx := context.Background()
+	org := uuid.New()
+
+	// Nothing to hold it in: the way in is off, not half working.
+	if _, _, xerr := s.Hold(ctx, org, "link-1", CreateInput{Vendor: "zapmail", Fields: map[string]string{"api_key": "k"}}); xerr == nil {
+		t.Fatal("a key was held with nowhere to hold it")
+	}
+	if _, xerr := s.Redeem(ctx, org, "link-1", strings.Repeat("a", 64)); xerr == nil || xerr.Identifier != "mailbox_vendor_hold_expired" {
+		t.Fatalf("an unknown ticket: got %v", xerr)
+	}
+	// Peek verifies and lists without storing anything, marking what the workspace already has.
+	boxes, raw, xerr := s.Peek(ctx, org, CreateInput{Vendor: "zapmail", Fields: map[string]string{"api_key": " k "}})
+	if xerr != nil || len(boxes) != 1 || !boxes[0].Connected || !strings.Contains(raw, `"api_key":"k"`) {
+		t.Fatalf("peek = %+v, %q, %v", boxes, raw, xerr)
+	}
+	client.verify = mailvendor.ErrUnauthorized
+	if _, _, xerr := s.Peek(ctx, org, CreateInput{Vendor: "zapmail", Fields: map[string]string{"api_key": "k"}}); xerr == nil {
+		t.Fatal("a key the vendor refuses was listed")
 	}
 }
 

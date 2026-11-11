@@ -207,7 +207,7 @@ Either of you can. Some clients run their own inboxes; for others you buy and ma
 | **From an inbox vendor** | You | Paste an API key for this client only and pick the mailboxes. See [import from an inbox vendor](/guides/mailbox-import/#import-from-an-inbox-vendor) |
 | **Import a file or a list** | You | A spreadsheet from a vendor or another tool, or addresses and passwords pasted in. See [import mailboxes](/guides/mailbox-import/) |
 | **Connect one yourself** | You | Google or Microsoft sign-in, or IMAP and SMTP details |
-| **Let the client do it** | The client | A [connect link](#client-connect-links): the client connects its own mailboxes with no account, and no password reaches you |
+| **Let the client do it** | The client | A [connect link](#client-connect-links): the client connects its own mailboxes with no account, one at a time or many at once from its own vendor account, and no password reaches you |
 
 Each one opens inside that client's workspace, in the same dialog its own **Accounts** page uses, so warmup, limits and the [mailbox allowance](/guides/mailboxes/#mailbox-allowance) apply exactly as they do there.
 
@@ -227,13 +227,14 @@ The accounts are listed with `GET /agency/:agencyId/vendors` and connected with 
 
 ## Client connect links
 
-Stop asking clients for their mailbox passwords. In a client's workspace, open **Mailboxes** and choose **Invite client to connect**. Pick how the client may connect (Google sign-in, Microsoft sign-in, IMAP and SMTP details, or any of them), how many mailboxes the link connects (up to 500), when it expires (1, 7, 30 or 90 days), the tags each mailbox gets, and whether warmup starts as soon as it connects. A label you give the link is only for your team.
+Stop asking clients for their mailbox passwords. In a client's workspace, open **Mailboxes** and choose **Invite client to connect**. Pick how the client may connect (Google sign-in, Microsoft sign-in, IMAP and SMTP details, an inbox vendor account, or any of them), how many mailboxes the link connects (up to 500), when it expires (1, 7, 30 or 90 days), the tags each mailbox gets, and whether warmup starts as soon as it connects. A label you give the link is only for your team.
 
 The link is shown once. Copy it and send it to the client; Warmbly keeps only a fingerprint of it, so a lost link cannot be shown again. Revoke it and make a new one instead.
 
 The client needs no Warmbly account. The page shows the workspace's name and brand, and:
 
 - **Google or Microsoft**: the client signs in with their provider in a separate window and approves Warmbly there. Their password goes only to Google or Microsoft.
+- **Inbox vendor account**: for a client who bought its mailboxes from Zapmail, InboxKit or another [supported vendor](/guides/mailbox-import/#import-from-an-inbox-vendor). The client picks the vendor, pastes the account's API key, passes a security check, and sees the account's mailboxes with the ones already connected marked. It ticks the ones to connect, up to what the link still allows, and they are imported together in the background. The key is sent once and never returned to the page: it is checked with the vendor, held encrypted for up to 15 minutes while the client picks, and then kept as a vendor account of the workspace, named after the vendor with **(from a client)**, so rotated passwords are picked up later. Every mailbox the client picks counts toward the link when the import starts, including one that later fails to connect, and rows that need you are listed under **Imports** in the workspace.
 - **IMAP and SMTP**: the client picks their mail host from a list (Gmail with an app password, Microsoft 365, Zoho, Yahoo, iCloud, Fastmail, GoDaddy) or enters the servers, passes a security check, and the details are tested against their mail server before anything is saved. The password is stored encrypted and nobody in the workspace can read it.
 
 Each mailbox lands in the workspace exactly as if you connected it, counted against the workspace's [mailbox allowance](/guides/mailboxes/#mailbox-allowance), and in your name: you get a notification each time one connects, and the mailbox list updates for the whole team. When the link reaches its limit the client sees that it is complete; a link that expired or was revoked tells them to ask for a new one, and one whose workspace is full tells them to let you know.
