@@ -62,7 +62,8 @@ func (f *fakeVendors) ImportPicked(_ context.Context, _, _, _ uuid.UUID, in vend
 	var emails []string
 	for _, id := range in.MailboxIDs {
 		for _, b := range vendorBoxes {
-			if b.ID == id {
+			// A mailbox already in the workspace is left out when the caller says so, as the service does.
+			if b.ID == id && !(in.SkipConnected && b.Connected) {
 				emails = append(emails, b.Email)
 			}
 		}
@@ -168,19 +169,68 @@ func TestAVendorImportIsHeldToTheLinksLimit(t *testing.T) {
 	}
 }
 
-func TestAFailedVendorImportGivesItsSlotsBack(t *testing.T) {
+func TestARefusedVendorImportGivesItsSlotsBack(t *testing.T) {
 	s, repo, v, link := vendorFixture(t)
 	ctx := context.Background()
 	list, xerr := s.VendorMailboxes(ctx, link, VendorAccountInput{Vendor: "zapmail", Fields: map[string]string{"api_key": "good"}})
 	if xerr != nil {
 		t.Fatal(xerr)
 	}
+	// Refused before anything was written: nothing is owed to the link.
+	v.importErr = errx.New(errx.BadRequest, "refused")
+	if _, xerr := s.VendorImport(ctx, link, VendorImportInput{Ticket: list.Ticket, MailboxIDs: []string{"m1", "m2"}}); xerr == nil {
+		t.Fatal("a refused import was reported as started")
+	}
+	if repo.link.MailboxesConnected != 0 || v.deleted != 1 || len(repo.uses) != 0 {
+		t.Fatalf("slots %d, connections removed %d, uses %d", repo.link.MailboxesConnected, v.deleted, len(repo.uses))
+	}
+}
+
+func TestAVendorImportThatMayHaveStartedKeepsItsSlotsAndItsKey(t *testing.T) {
+	s, repo, v, link := vendorFixture(t)
+	ctx := context.Background()
+	list, xerr := s.VendorMailboxes(ctx, link, VendorAccountInput{Vendor: "zapmail", Fields: map[string]string{"api_key": "good"}})
+	if xerr != nil {
+		t.Fatal(xerr)
+	}
+	// It is not known whether the import was written. Its rows would read their credentials through the
+	// connection, so that is kept, and the link stays counted so it is never good for more than it allows.
 	v.importErr = errx.InternalError()
 	if _, xerr := s.VendorImport(ctx, link, VendorImportInput{Ticket: list.Ticket, MailboxIDs: []string{"m1", "m2"}}); xerr == nil {
 		t.Fatal("a failed import was reported as started")
 	}
-	if repo.link.MailboxesConnected != 0 || v.deleted != 1 || len(repo.uses) != 0 {
-		t.Fatalf("slots %d, connections removed %d, uses %d", repo.link.MailboxesConnected, v.deleted, len(repo.uses))
+	if repo.link.MailboxesConnected != 2 || v.deleted != 0 {
+		t.Fatalf("slots %d, connections removed %d", repo.link.MailboxesConnected, v.deleted)
+	}
+}
+
+func TestAClientCannotTouchAMailboxTheWorkspaceAlreadyHas(t *testing.T) {
+	s, repo, v, link := vendorFixture(t)
+	ctx := context.Background()
+	in := VendorAccountInput{Vendor: "zapmail", Fields: map[string]string{"api_key": "good"}}
+	list, xerr := s.VendorMailboxes(ctx, link, in)
+	if xerr != nil {
+		t.Fatal(xerr)
+	}
+	// m3 is already connected. Naming it alongside a new one imports only the new one, and never as an update.
+	res, xerr := s.VendorImport(ctx, link, VendorImportInput{Ticket: list.Ticket, MailboxIDs: []string{"m1", "m3"}})
+	if xerr != nil {
+		t.Fatal(xerr)
+	}
+	if len(res.Emails) != 1 || res.Emails[0] != "ava@client.test" || repo.link.MailboxesConnected != 1 || v.options.OnExisting != "skip" {
+		t.Fatalf("imported %v, slots %d, on_existing %q", res.Emails, repo.link.MailboxesConnected, v.options.OnExisting)
+	}
+	// Naming only the connected one starts nothing and costs the link nothing.
+	fresh, _ := repo.Get(ctx, link.OrganizationID, link.ID)
+	list, xerr = s.VendorMailboxes(ctx, fresh, in)
+	if xerr != nil {
+		t.Fatal(xerr)
+	}
+	if _, xerr := s.VendorImport(ctx, fresh, VendorImportInput{Ticket: list.Ticket, MailboxIDs: []string{"m3"}}); xerr == nil || xerr.Identifier != "client_link_no_mailboxes" {
+		t.Fatalf("only a connected mailbox: got %v", xerr)
+	}
+	if repo.link.MailboxesConnected != 1 || v.deleted != 1 {
+		t.Fatalf("slots %d, connections removed %d", repo.link.MailboxesConnected, v.deleted)
 	}
 }
 

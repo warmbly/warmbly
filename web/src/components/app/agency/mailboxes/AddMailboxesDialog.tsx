@@ -96,19 +96,20 @@ export default function AddMailboxesDialog({
     return (
         <AgencyDialog
             open={open}
-            onClose={onClose}
+            // A choice in flight ends in a client's workspace; it is not abandoned half way.
+            onClose={busy ? () => undefined : onClose}
             eyebrow="Mailboxes"
             title={preset ? `Add mailboxes from ${preset.label}` : client ? `Add mailboxes to ${client.name}` : "Add mailboxes"}
             icon={<PlusIcon className="w-3 h-3" />}
             footer={
                 <>
                     {step === "how" && clients.length > 1 && (
-                        <button type="button" onClick={() => setOrgId(null)} className={cn(ghostBtn, "inline-flex items-center gap-1.5")}>
+                        <button type="button" onClick={() => setOrgId(null)} disabled={busy} className={cn(ghostBtn, "inline-flex items-center gap-1.5 disabled:opacity-60")}>
                             <ArrowLeftIcon className="w-3 h-3" />
                             Another client
                         </button>
                     )}
-                    <button type="button" onClick={onClose} className={cn(ghostBtn, "ml-auto")}>
+                    <button type="button" onClick={onClose} disabled={busy} className={cn(ghostBtn, "ml-auto disabled:opacity-60")}>
                         Cancel
                     </button>
                 </>

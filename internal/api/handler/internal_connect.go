@@ -191,12 +191,9 @@ func (h *Handler) InternalConnectVendorImport(c *gin.Context) {
 		connectRefusal(c, xerr)
 		return
 	}
-	// Recorded in the creator's name, which is what refreshes every teammate's mailbox list and imports.
+	// The import records its own creation; this records what the link was used for, in the creator's name.
 	if h.AuditService != nil && res.Import != nil {
-		importID := res.Import.ID
-		meta := map[string]string{"via": "connect_link", "connect_link_id": res.Link.ID.String(), "vendor": res.Vendor, "mailboxes": strconv.Itoa(len(res.Emails))}
-		h.AuditService.LogAction(c.Request.Context(), res.Link.OrganizationID, res.ActorID, models.AuditActionCreate, models.AuditEntityMailboxImport, &importID,
-			req.RemoteIP, c.Request.UserAgent(), nil, meta)
+		meta := map[string]string{"via": "connect_link", "import_id": res.Import.ID.String(), "vendor": res.Vendor, "mailboxes": strconv.Itoa(len(res.Emails))}
 		h.AuditService.LogAction(c.Request.Context(), res.Link.OrganizationID, res.ActorID, models.AuditActionUpdate, models.AuditEntityClientConnectLink, &res.Link.ID,
 			req.RemoteIP, c.Request.UserAgent(), nil, meta)
 	}

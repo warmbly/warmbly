@@ -435,3 +435,24 @@ func TestAnAccountsMailboxCountsFollowTheCallersAccessToEachClient(t *testing.T)
 		}
 	}
 }
+
+func TestAnImportForSomeoneOutsideTheWorkspaceLeavesConnectedMailboxesAlone(t *testing.T) {
+	client := &fakeClient{boxes: []mailvendor.Mailbox{{ID: "m1", Email: "ava@client.test"}, {ID: "m2", Email: "leo@client.test"}}}
+	s, _, mb, imp, _ := newTestService(t, client)
+	ctx := context.Background()
+	org, user := uuid.New(), uuid.New()
+	mb.existing["ava@client.test"] = models.EmailRef{ID: uuid.New()}
+	conn, xerr := s.Create(ctx, org, user, CreateInput{Vendor: "zapmail", Fields: map[string]string{"api_key": "k"}})
+	if xerr != nil {
+		t.Fatal(xerr)
+	}
+	// Both are named; the one already in the workspace is not part of the import.
+	_, emails, xerr := s.ImportPicked(ctx, org, user, conn.ID, ImportInput{MailboxIDs: []string{"m1", "m2"}, SkipConnected: true})
+	if xerr != nil || len(emails) != 1 || emails[0] != "leo@client.test" || len(imp.in.Rows) != 1 {
+		t.Fatalf("emails %v, rows %d, %v", emails, len(imp.in.Rows), xerr)
+	}
+	// A member's own import still takes a named mailbox, which is how one is updated.
+	if _, emails, xerr := s.ImportPicked(ctx, org, user, conn.ID, ImportInput{MailboxIDs: []string{"m1", "m2"}}); xerr != nil || len(emails) != 2 {
+		t.Fatalf("a member's import: %v, %v", emails, xerr)
+	}
+}

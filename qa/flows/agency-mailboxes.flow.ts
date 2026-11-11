@@ -42,11 +42,12 @@ test("an agency sees every client's mailboxes and hands a vendor account to a cl
   await connect.getByRole("radio", { name: "Mailforge" }).click();
   await connect.getByLabel("API key").fill("qa-agency-key");
   await connect.getByLabel("Name, for your team").fill("Agency Mailforge");
-  await proof.dwell(700);
-  await proof.shot("agency-vendor-connect", { caption: "A vendor account connected once for the whole agency" });
   await connect.getByRole("button", { name: "Connect", exact: true }).click();
   await confirmIfAsked(page);
   await expect(page.getByText("Not used for a client yet")).toBeVisible();
+  await expect(page.getByText("Agency Mailforge")).toBeVisible();
+  await proof.dwell(700);
+  await proof.shot("agency-vendor-connect", { caption: "A vendor account connected once for the whole agency" });
 
   // Handing it to a client opens that client's own import on the account, with no key to paste.
   await page.getByRole("button", { name: "Add to a client" }).click();

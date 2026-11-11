@@ -220,6 +220,9 @@ function AgencyMailboxes() {
     const totals = overview.data?.totals;
     const filtered = attention || q !== "" || chosen.length > 0;
     const busy = pending || giveAccount.isPending;
+    // The overview carries a client's mailbox numbers only when the caller can list its mailboxes.
+    const inView = chosen.length ? clients.filter((c) => chosen.includes(c.organization_id)) : clients;
+    const noAccess = !!overview.data && inView.length > 0 && inView.every((c) => !c.mailboxes);
     // Adding mailboxes needs a client the caller manages mailboxes in; without one the action cannot succeed.
     const canAdd = clients.some((c) => c.manage_mailboxes);
     const cannotAdd = clients.length === 0 ? "Add a client first." : "You do not manage mailboxes in any of this agency's clients.";
@@ -250,9 +253,12 @@ function AgencyMailboxes() {
         user.setAddEmail(true);
     };
 
-    const askRemove = (a: AgencyVendorAccount) =>
-        confirm.show(
-            `Remove ${a.label}? The ${plural(a.mailboxes, "mailbox", "mailboxes")} it brought in stay connected in every client. They just stop picking up new passwords from ${vendorLabel(a.vendor)} on their own.`,
+    const askRemove = (a: AgencyVendorAccount) => {
+        // A client whose mailboxes the caller cannot list is used all the same, and its count is not in the total.
+        const unseen = a.clients.filter((c) => c.mailboxes_hidden).length;
+        const also = unseen ? `, and the ones in ${plural(unseen, "client", "clients")} whose mailboxes you cannot list,` : "";
+        return confirm.show(
+            `Remove ${a.label}? The ${plural(a.mailboxes, "mailbox", "mailboxes")} it brought in${also} stay connected. They just stop picking up new passwords from ${vendorLabel(a.vendor)} on their own.`,
             async () => {
                 try {
                     await removeAccount.mutateAsync(a.id);
@@ -264,6 +270,7 @@ function AgencyMailboxes() {
             undefined,
             { title: "Remove vendor account", confirmLabel: "Remove" },
         );
+    };
 
     return (
         <PageBody>
@@ -329,11 +336,13 @@ function AgencyMailboxes() {
                 <LoadFailed what="the mailboxes" error={mailboxes.error} onRetry={() => void mailboxes.refetch()} />
             ) : rows.length === 0 ? (
                 <EmptyBlock
-                    title={filtered ? "No mailbox matches" : "No mailboxes yet"}
+                    title={noAccess ? "No mailboxes you can list" : filtered ? "No mailbox matches" : "No mailboxes yet"}
                     body={
-                        filtered
-                            ? "Nothing matches these filters."
-                            : "Add mailboxes for a client yourself, from a vendor account or a file, or send the client a link to connect its own."
+                        noAccess
+                            ? "You cannot list the mailboxes of the clients shown here. Your access in a client's workspace decides what this page shows."
+                            : filtered
+                              ? "Nothing matches these filters."
+                              : "Add mailboxes for a client yourself, from a vendor account or a file, or send the client a link to connect its own."
                     }
                     cta={!filtered && canAdd ? <TopbarAction onClick={() => setAdding({})}>Add mailboxes</TopbarAction> : undefined}
                 />

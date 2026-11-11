@@ -1,7 +1,11 @@
--- A link that only took a vendor account has no way left to connect, so it is turned off.
-UPDATE client_connect_links SET revoked_at = COALESCE(revoked_at, now()), allowed_providers = ARRAY['smtp_imap']::text[]
-WHERE allowed_providers = ARRAY['vendor']::text[];
-UPDATE client_connect_links SET allowed_providers = array_remove(allowed_providers, 'vendor') WHERE 'vendor' = ANY (allowed_providers);
+-- Refuse rather than change links a client may already hold.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM client_connect_links WHERE 'vendor' = ANY (allowed_providers)) THEN
+        RAISE EXCEPTION 'connect links take a vendor account, written after 000394; roll forward instead of downgrading past it';
+    END IF;
+END $$;
+
 ALTER TABLE client_connect_links DROP CONSTRAINT IF EXISTS client_connect_links_providers_check;
 ALTER TABLE client_connect_links ADD CONSTRAINT client_connect_links_providers_check
     CHECK (cardinality(allowed_providers) BETWEEN 1 AND 3

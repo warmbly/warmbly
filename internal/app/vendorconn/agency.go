@@ -198,12 +198,21 @@ func (s *Service) UpdateAgencyAccount(ctx context.Context, agencyID, userID, id 
 	if err != nil {
 		return nil, errx.InternalError()
 	}
+	failed := false
 	for _, l := range links {
-		_, _ = s.repo.Update(ctx, l.OrganizationID, l.ConnectionID, label, "")
+		if _, err := s.repo.Update(ctx, l.OrganizationID, l.ConnectionID, label, ""); err != nil {
+			failed = true
+		}
 		if sealed != "" {
-			_ = s.repo.SetStatus(ctx, l.ConnectionID, "active", "")
+			if err := s.repo.SetStatus(ctx, l.ConnectionID, "active", ""); err != nil {
+				failed = true
+			}
 		}
 		s.forget(l.ConnectionID)
+	}
+	// The key is saved either way; asking again finishes what did not follow.
+	if failed {
+		return nil, errx.NewPublic(errx.Internal, "The account was saved, but not every client shows it yet. Save it again.")
 	}
 	return s.agencyAccountView(ctx, agencyID, userID, id)
 }

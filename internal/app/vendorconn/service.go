@@ -480,6 +480,9 @@ type ImportInput struct {
 	MailboxIDs []string                    `json:"mailbox_ids"`
 	All        bool                        `json:"all"`
 	Options    models.MailboxImportOptions `json:"options"`
+	// SkipConnected leaves out a mailbox already in the workspace even when it is named; set by a caller
+	// acting for someone who is not a member, never from a request body.
+	SkipConnected bool `json:"-"`
 }
 
 // Import starts a background import of the picked vendor mailboxes. Their
@@ -514,6 +517,9 @@ func (s *Service) ImportPicked(ctx context.Context, orgID, userID, id uuid.UUID,
 	emails := make([]string, 0)
 	for _, m := range boxes {
 		if !want[m.ID] && !(in.All && !m.Connected) {
+			continue
+		}
+		if in.SkipConnected && m.Connected {
 			continue
 		}
 		if max > 0 && len(rows) >= max {

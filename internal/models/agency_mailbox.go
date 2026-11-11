@@ -30,7 +30,8 @@ type AgencyMailbox struct {
 type AgencyMailboxQuery struct {
 	OrgIDs []uuid.UUID
 	Search string
-	// Attention keeps only mailboxes that are disconnected, erroring or held from warmup.
+	// Attention keeps only mailboxes that are disconnected, erroring, or quarantined or blocked from warmup:
+	// the ones the agency home counts as problems.
 	Attention bool
 	Limit     int
 	// Before is the last row of the previous page; zero starts at the newest.

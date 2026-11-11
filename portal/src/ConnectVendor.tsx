@@ -87,9 +87,9 @@ export function VendorForm({
             setStarted(out);
             onStarted(out);
         } catch (err) {
-            setError(errorCopy(err));
-            // A ticket is good once and for a few minutes; after that the key is asked for again.
+            // A ticket is good once and for a few minutes; after that the key is asked for again, with the reason.
             if (err instanceof ConnectError && err.code === "mailbox_vendor_hold_expired") startOver();
+            setError(errorCopy(err));
         } finally {
             setBusy(false);
         }

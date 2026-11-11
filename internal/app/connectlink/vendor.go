@@ -3,6 +3,7 @@ package connectlink
 import (
 	"context"
 	"sort"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
@@ -141,9 +142,12 @@ func (s *Service) VendorImport(ctx context.Context, link *models.ClientConnectLi
 		}
 		return nil, ErrTooManyMailboxes
 	}
+	// Cleaning up must not depend on a request the client may have abandoned.
+	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
 	giveBack := func(n int) {
-		if rerr := s.d.Repo.ReleaseMany(ctx, orgID, link.ID, n); rerr != nil {
-			log.Warn().Str("link_id", link.ID.String()).Msg("connect link: could not give back slots after a failed vendor import")
+		if rerr := s.d.Repo.ReleaseMany(cleanup, orgID, link.ID, n); rerr != nil {
+			log.Warn().Str("link_id", link.ID.String()).Int("slots", n).Msg("connect link: could not give back slots after a failed vendor import")
 		}
 	}
 	account.Label = vendorLabel(s.d.Vendors.Catalog(), account.Vendor) + " (from a client)"
@@ -152,7 +156,8 @@ func (s *Service) VendorImport(ctx context.Context, link *models.ClientConnectLi
 		giveBack(len(ids))
 		return nil, xerr
 	}
-	opts := models.MailboxImportOptions{}
+	// A client adds mailboxes; it never changes one the workspace already has, whatever ids it sends.
+	opts := models.MailboxImportOptions{OnExisting: "skip"}
 	for _, t := range link.TagIDs {
 		opts.Settings.TagIDs = append(opts.Settings.TagIDs, t.String())
 	}
@@ -160,14 +165,22 @@ func (s *Service) VendorImport(ctx context.Context, link *models.ClientConnectLi
 		on := true
 		opts.Settings.Warmup = &on
 	}
-	imp, emails, xerr := s.d.Vendors.ImportPicked(ctx, orgID, actor, conn.ID, vendorconn.ImportInput{MailboxIDs: ids, Options: opts}, len(ids))
+	imp, emails, xerr := s.d.Vendors.ImportPicked(ctx, orgID, actor, conn.ID,
+		vendorconn.ImportInput{MailboxIDs: ids, Options: opts, SkipConnected: true}, len(ids))
 	if xerr == nil && len(emails) == 0 {
 		xerr = ErrNoMailboxes
 	}
 	if xerr != nil {
-		giveBack(len(ids))
-		if derr := s.d.Vendors.Delete(ctx, orgID, conn.ID); derr != nil {
-			log.Warn().Str("link_id", link.ID.String()).Msg("connect link: a vendor connection with no import was left behind")
+		// A refusal means nothing was started, so the slots and the connection are taken back. Any other
+		// failure leaves it unknown whether the import exists: its rows read their credentials through this
+		// connection, so both are kept and the link stays counted.
+		if xerr.Code < errx.Internal {
+			giveBack(len(ids))
+			if derr := s.d.Vendors.Delete(cleanup, orgID, conn.ID); derr != nil {
+				log.Warn().Str("link_id", link.ID.String()).Msg("connect link: a vendor connection with no import was left behind")
+			}
+		} else {
+			log.Warn().Str("link_id", link.ID.String()).Msg("connect link: a vendor import may have started; its slots and connection are kept")
 		}
 		return nil, xerr
 	}

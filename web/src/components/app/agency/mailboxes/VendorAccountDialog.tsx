@@ -38,6 +38,11 @@ export default function VendorAccountDialog({
     const accountId = account?.id;
     const start = React.useRef(account);
     start.current = account;
+    // One key per opening and per changed form, so a retry of the same submission connects one account.
+    const attempt = React.useRef("");
+    React.useEffect(() => {
+        attempt.current = crypto.randomUUID();
+    }, [open, accountId, vendorId, fields]);
     React.useEffect(() => {
         if (!open) return;
         setVendorId(start.current?.vendor ?? "");
@@ -65,6 +70,7 @@ export default function VendorAccountDialog({
         try {
             await save.mutateAsync({
                 id: account?.id,
+                idempotencyKey: attempt.current,
                 input: { vendor: vendor.id, label: label.trim() || undefined, fields: !account || typed ? fields : undefined },
             });
             toast.success(account ? (typed ? "Key updated for every client that uses it" : "Saved") : `${vendor.label} connected`);

@@ -201,7 +201,11 @@ export function ConnectPage() {
                     link={live}
                     errorCopy={(e) => errorCopy(e, workspace)}
                     onBack={() => setView("choose")}
-                    onStarted={() => void qc.invalidateQueries({ queryKey: ["connect", token] })}
+                    // The link's count is moved on here, not re-read: a link this import filled answers "complete",
+                    // which would replace the confirmation the client is reading.
+                    onStarted={(started) =>
+                        qc.setQueryData<ConnectLink>(["connect", token], (prev) => (prev ? { ...prev, connected: started.connected } : prev))
+                    }
                 />
             ) : view === "waiting" ? (
                 <div className="cx-state">
