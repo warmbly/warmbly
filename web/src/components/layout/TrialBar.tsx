@@ -38,6 +38,7 @@ export default function TrialBar() {
                 onClick={() =>
                     upgrade.open({
                         feature: "Your trial",
+                        title: "Choose a plan to keep sending",
                         minPlan: "starter",
                         blurb: "Keep everything you set up in the trial, with every mailbox warming in the premium pool and more sends a day.",
                     })
