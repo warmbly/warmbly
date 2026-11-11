@@ -649,6 +649,9 @@ func main() {
 	// result never came back, so a lead is never held in flight forever.
 	go jobsService.StartStuckSendReclaimer(ctx, 5*time.Minute)
 
+	// Switches off custom-server mailboxes whose server has refused every connection for days.
+	go jobsService.StartUnreachableMailboxSweep(ctx, time.Hour)
+
 	// Gmail push: the watch notifications each Gmail mailbox's worker opened arrive on
 	// this Pub/Sub subscription and wake that worker. Unset keeps Gmail polling.
 	if subscription := config.GmailPushSubscription(); subscription != "" {

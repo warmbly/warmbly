@@ -243,7 +243,7 @@ var Tables = []Table{
 		Name: "email_accounts", Group: models.OrgDataGroupCore,
 		Scope:                   scopeOrg,
 		ExcludeOnExport:         []string{"transport_generation"},
-		ResetColumnsOnOverwrite: []string{"transport_generation"},
+		ResetColumnsOnOverwrite: []string{"transport_generation", "activated_at"},
 		InvalidateOnImport: []repository.ImportInvalidation{{
 			Table: "email_account_transport_recovery", Column: "email_account_id", Key: "id",
 			LockNamespaces: []int64{repository.SendResultMailboxLockNamespace, repository.MailTransportLockNamespace},
@@ -277,8 +277,9 @@ var Tables = []Table{
 		// send_claimed_at is this instance's per-send gap lock.
 		// previous_worker_id and worker_released_at name a worker on this instance.
 		// signin_switch_* is this instance's vendor reconnect attempt; the destination makes its own.
+		// activated_at restarts so the destination's unreachable sweep measures only its own connection attempts.
 		ResetOnImport: []string{
-			"transport_generation",
+			"transport_generation", "activated_at",
 			"worker_id", "auth_checked_at", "auth_failing_since", "cold_ramp_started_at",
 			"send_lifecycle", "send_lifecycle_since", "send_lifecycle_reason", "seed_scope",
 			"avatar_checked_at", "tracking_domain_verified", "tracking_domain_verified_at",

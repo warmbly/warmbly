@@ -385,7 +385,7 @@ There is no `version` field in the payload. If an event's payload ever changes i
 
 Every `email_account.*` event carries `email_account_id`, `email` and `provider`.
 
-- `email_account.disconnected` fires once when a working mailbox is paused because it can no longer be used, and adds `reason` (`auth_error` when the provider refused the sign-in, `account_disabled` when the provider disabled the account, `fair_use` when sync fair use stopped it) and `error_code`. Reconnecting the mailbox and losing it again raises it again.
+- `email_account.disconnected` fires once when a working mailbox is paused because it can no longer be used, and adds `reason` (`auth_error` when the provider refused the sign-in, `account_disabled` when the provider disabled the account, `fair_use` when sync fair use stopped it, `unreachable` when its mail server refused every connection for three days, see [unreachable servers](/guides/mailboxes/#a-server-that-stops-answering)) and `error_code`. Reconnecting the mailbox and losing it again raises it again.
 - `email_account.error` fires when a new temporary sending or sync error is recorded for a mailbox, and adds `error_code` and `operation` (`send`, `sync` or `unknown`). A repeat of an error that is still unresolved, and a brief failure on a mailbox that worked moments ago, do not raise it.
 - `email_account.synced` fires when a mailbox finishes importing its existing mail after it connects, and adds `backfill_status` (`complete`). It does not fire for the ongoing sync that follows.
 
@@ -549,7 +549,7 @@ The full catalog is available at `GET /webhooks/event-types`. Below is the compl
 | Event | Description | Firehose |
 | --- | --- | --- |
 | `email_account.connected` | A mailbox is connected to the organization. | |
-| `email_account.disconnected` | A working mailbox is paused because it can no longer be used (sign-in refused, account disabled, fair-use stop). See [Mailbox payloads](#mailbox-payloads). | |
+| `email_account.disconnected` | A working mailbox is paused because it can no longer be used (sign-in refused, account disabled, fair-use stop, server unreachable for three days). See [Mailbox payloads](#mailbox-payloads). | |
 | `email_account.removed` | A mailbox is removed from the organization. | |
 | `email_account.error` | A mailbox hits a new temporary sending or sync error. | |
 | `email_account.synced` | A mailbox finishes importing its existing mail after it connects. | |

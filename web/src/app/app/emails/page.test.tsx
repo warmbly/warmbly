@@ -545,6 +545,21 @@ describe("mailbox status while account and Cloud checks settle", () => {
         }
     });
 
+    it("says why Warmbly switched off a mailbox whose server stayed unreachable", async () => {
+        const original = rows[0].status;
+        rows[0].status = "inactive";
+        try {
+            const notice = { id: "notice", error_code: "MAILBOX_UNREACHABLE", severity: "CRITICAL", title: "Switched off: server unreachable", message: "Warmbly could not connect to this mailbox's mail server for 3 days.", action_required: "Switch the mailbox back on once its server accepts connections", created_at: new Date() };
+            statusState.data = [{ ...measuredStatus(rows[0]), errors: [notice] }];
+            await renderPage();
+            const mailbox = within(screen.getByText(rows[0].email).closest("tr")!);
+            expect(mailbox.getAllByText("Off").length).toBeGreaterThan(0);
+            expect(mailbox.getAllByTitle(`${notice.message} ${notice.action_required}`).length).toBeGreaterThan(0);
+        } finally {
+            rows[0].status = original;
+        }
+    });
+
     it("keeps a retained issue ahead of cached healthy data until a fresh recovery arrives", async () => {
         const failed = { ...measuredStatus(rows[0]), health: { status: "error", score: 40 } } satisfies AccountStatus;
         statusState.data = [failed];
