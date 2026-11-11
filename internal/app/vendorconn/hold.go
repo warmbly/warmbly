@@ -34,6 +34,21 @@ type heldAccount struct {
 
 func holdKey(ticket string) string { return "mailbox_vendor_hold:" + ticket }
 
+// sealFor seals an already-marshalled field map with a workspace's key.
+func (s *Service) sealFor(ctx context.Context, orgID uuid.UUID, raw string) (string, *errx.Error) {
+	ciph, err := s.cipher.Cipher(ctx, orgID)
+	if err != nil {
+		errs.CaptureException(err)
+		return "", errx.InternalError()
+	}
+	sealed, err := ciph.Encrypt(ctx, raw)
+	if err != nil {
+		errs.CaptureException(err)
+		return "", errx.InternalError()
+	}
+	return sealed, nil
+}
+
 // Peek verifies a key with the vendor and lists what it reaches, marking the mailboxes already in the workspace. Nothing is stored.
 func (s *Service) Peek(ctx context.Context, orgID uuid.UUID, in CreateInput) ([]models.VendorMailbox, string, *errx.Error) {
 	raw, xerr := s.verified(ctx, in.Vendor, in.Fields)
