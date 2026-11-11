@@ -97,6 +97,8 @@ type AgencyRepository interface {
 	SetAutoTopupInvoice(ctx context.Context, id uuid.UUID, invoiceID string) error
 	// FinishAutoTopup settles a pending top-up; false when it was already settled.
 	FinishAutoTopup(ctx context.Context, id uuid.UUID, status, paymentRef string) (bool, error)
+	// MarkAutoTopupStuck records that the agency was told a pending top-up could not be settled; true the first time only.
+	MarkAutoTopupStuck(ctx context.Context, id uuid.UUID) (bool, error)
 	// AutoTopupUsed is how many top-ups of a kind the period has made or has in flight, and what they come to.
 	AutoTopupUsed(ctx context.Context, agencyID uuid.UUID, kind models.AgencyAutoTopupKind, periodStart time.Time) (int, int64, error)
 	// ClaimPoolAlert raises the period's alert level; false when it was already that high.
@@ -624,6 +626,15 @@ func (r *agencyRepository) SetAutoTopupInvoice(ctx context.Context, id uuid.UUID
 func (r *agencyRepository) FinishAutoTopup(ctx context.Context, id uuid.UUID, status, paymentRef string) (bool, error) {
 	tag, err := r.db.Exec(ctx, `UPDATE agency_auto_topups SET status = $2, payment_ref = NULLIF($3, ''), completed_at = now()
 		WHERE id = $1 AND status = 'pending'`, id, status, paymentRef)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+func (r *agencyRepository) MarkAutoTopupStuck(ctx context.Context, id uuid.UUID) (bool, error) {
+	tag, err := r.db.Exec(ctx, `UPDATE agency_auto_topups SET stuck_notified_at = now()
+		WHERE id = $1 AND status = 'pending' AND stuck_notified_at IS NULL`, id)
 	if err != nil {
 		return false, err
 	}

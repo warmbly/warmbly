@@ -14,11 +14,11 @@ import (
 type fakeCharger struct {
 	card     *SavedCard
 	declined bool
-	// failBefore fails once before any money moves; lostAnswer takes the money once and then fails.
-	failBefore, lostAnswer bool
-	invoices               map[uuid.UUID]string
-	claims                 []uuid.UUID
-	cents                  []int64
+	// failBefore fails once before any money moves; lostAnswer takes the money once and then fails; down fails every time.
+	failBefore, lostAnswer, down bool
+	invoices                     map[uuid.UUID]string
+	claims                       []uuid.UUID
+	cents                        []int64
 }
 
 func (f *fakeCharger) Card(context.Context, *models.Agency) (*SavedCard, error) { return f.card, nil }
@@ -50,7 +50,7 @@ func (f *fakeCharger) Charge(_ context.Context, _ *models.Agency, card *SavedCar
 		f.invoices[req.ClaimID] = "void"
 		return chargeResult{Cancelled: true}, nil
 	}
-	if f.failBefore {
+	if f.failBefore || f.down {
 		f.failBefore = false
 		return chargeResult{}, errors.New("stripe is unavailable")
 	}
@@ -74,6 +74,16 @@ type topupRepo struct {
 	disabled string
 	claims   []*models.AgencyAutoTopupClaim
 	members  []models.AgencyMember
+	stuck    map[uuid.UUID]bool
+	at       time.Time
+}
+
+// clock stamps a claim; tests move it to age one.
+func (r *topupRepo) clock() time.Time {
+	if r.at.IsZero() {
+		return time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
+	}
+	return r.at
 }
 
 func (r *topupRepo) ListMembers(context.Context, uuid.UUID) ([]models.AgencyMember, error) {
@@ -121,7 +131,7 @@ func (r *topupRepo) ClaimAutoTopup(_ context.Context, agencyID uuid.UUID, kind m
 	} else if !a.AutoTopupEnabled || level > int64(a.AutoTopupThreshold) || n >= a.AutoTopupMaxPacks {
 		return nil, nil
 	}
-	c := &models.AgencyAutoTopupClaim{ID: uuid.New(), AgencyID: agencyID, Kind: kind, PeriodStart: period, AmountCents: cents, Sends: sends, Status: models.AgencyAutoTopupPending}
+	c := &models.AgencyAutoTopupClaim{ID: uuid.New(), AgencyID: agencyID, Kind: kind, PeriodStart: period, AmountCents: cents, Sends: sends, Status: models.AgencyAutoTopupPending, CreatedAt: r.clock()}
 	r.claims = append(r.claims, c)
 	out := *c
 	return &out, nil
@@ -164,6 +174,17 @@ func (r *topupRepo) FinishAutoTopup(_ context.Context, id uuid.UUID, status, _ s
 		}
 	}
 	return false, nil
+}
+
+func (r *topupRepo) MarkAutoTopupStuck(_ context.Context, id uuid.UUID) (bool, error) {
+	if r.stuck[id] {
+		return false, nil
+	}
+	if r.stuck == nil {
+		r.stuck = map[uuid.UUID]bool{}
+	}
+	r.stuck[id] = true
+	return true, nil
 }
 
 func (r *topupRepo) AutoTopupUsed(_ context.Context, _ uuid.UUID, kind models.AgencyAutoTopupKind, period time.Time) (int, int64, error) {
@@ -359,6 +380,33 @@ func TestAutoTopupTurnedOffCallsOffAnUnpaidTopup(t *testing.T) {
 	s.autoTopup(ctx, a)
 	if len(charger.cents) != 0 || len(repo.recorded) != 0 || repo.statuses()[0] != models.AgencyAutoTopupCancelled {
 		t.Fatalf("turned off: charged %v, recorded %v, claims %v", charger.cents, repo.recorded, repo.statuses())
+	}
+}
+
+func TestAutoTopupThatStaysUnsettledIsToldOnceAndNeverGuessed(t *testing.T) {
+	now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
+	a := topupAgency(now, 10_000, 2)
+	charger := &fakeCharger{card: &SavedCard{ID: "pm_1"}, down: true}
+	s, repo, actor := newTopupService(a, 145_000, charger, now)
+	note := &told{}
+	s.WireNotifier(note)
+	repo.members = []models.AgencyMember{{UserID: actor, Role: models.AgencyRoleOwner}}
+	ctx := context.Background()
+
+	// Within the first hours it is only tried again.
+	for range 3 {
+		s.autoTopup(ctx, a)
+	}
+	if len(note.titles) != 0 || len(repo.claims) != 1 {
+		t.Fatalf("early: told %v, claims %v", note.titles, repo.statuses())
+	}
+	// Still unsettled much later: the owner is told once, and it stays in flight so nothing else is bought.
+	s.now = func() time.Time { return now.Add(models.AgencyAutoTopupStuckAfter + time.Minute) }
+	for range 3 {
+		s.autoTopup(ctx, a)
+	}
+	if len(note.titles) != 1 || len(repo.claims) != 1 || repo.statuses()[0] != models.AgencyAutoTopupPending || len(charger.cents) != 0 {
+		t.Fatalf("late: told %v, claims %v, charged %v", note.titles, repo.statuses(), charger.cents)
 	}
 }
 

@@ -31,7 +31,9 @@ CREATE TABLE IF NOT EXISTS agency_auto_topups (
     stripe_invoice_id text,
     payment_ref       text,
     created_at        timestamptz NOT NULL DEFAULT now(),
-    completed_at      timestamptz
+    completed_at      timestamptz,
+    -- Set once, when the people who manage the agency are told it could not be settled.
+    stuck_notified_at timestamptz
 );
 
 -- At most one in flight for an agency's sends and one for its AI balance.

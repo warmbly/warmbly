@@ -309,9 +309,32 @@ func (s *Service) resumeAutoTopups(ctx context.Context, a *models.Agency, kind m
 		if err := s.settleAutoTopup(ctx, a, &pending[i], nil); err != nil {
 			errs.CaptureException(fmt.Errorf("agency auto top-up %s: %w", a.ID, err))
 			open = true
+			s.tellStuckAutoTopup(ctx, a, &pending[i])
 		}
 	}
 	return open, nil
+}
+
+// tellStuckAutoTopup tells the managers, once, about a top-up that has stayed unsettled. It is never
+// called off on a guess: whether it was paid is not known, and it blocks another until it is.
+func (s *Service) tellStuckAutoTopup(ctx context.Context, a *models.Agency, c *models.AgencyAutoTopupClaim) {
+	if s.now().Sub(c.CreatedAt) < models.AgencyAutoTopupStuckAfter {
+		return
+	}
+	first, err := s.repo.MarkAutoTopupStuck(ctx, c.ID)
+	if err != nil || !first {
+		return
+	}
+	what := "sends"
+	if c.Kind == models.AgencyAutoTopupAI {
+		what = "AI balance"
+	}
+	s.tellManagers(ctx, a, "An automatic top-up could not be confirmed",
+		fmt.Sprintf("We could not confirm with the payment provider whether an automatic top-up of %s for $%.2f went through. "+
+			"No further automatic top-up of %s is made until it is settled, and it is still being checked. "+
+			"If it was paid, what it bought is added as soon as that is confirmed. You can add %s yourself under Agency > Billing meanwhile.",
+			what, float64(c.AmountCents)/100, what, what),
+		map[string]any{"agency_id": a.ID.String(), "auto_topup": "unconfirmed", "kind": string(c.Kind)})
 }
 
 // settleAutoTopup carries one claimed top-up to its end. Money already taken is always honoured;
@@ -516,7 +539,13 @@ func (stripeCharger) Card(ctx context.Context, a *models.Agency) (*SavedCard, er
 // invoiceFor is the top-up's one invoice: the one recorded, else the one carrying its claim, else a new one.
 func (stripeCharger) invoiceFor(ctx context.Context, a *models.Agency, req chargeRequest) (*stripe.Invoice, error) {
 	if req.InvoiceID != "" {
-		return invoice.Get(req.InvoiceID, &stripe.InvoiceParams{Params: stripe.Params{Context: ctx}})
+		inv, err := invoice.Get(req.InvoiceID, &stripe.InvoiceParams{Params: stripe.Params{Context: ctx}})
+		var serr *stripe.Error
+		if errors.As(err, &serr) && serr.Code == stripe.ErrorCodeResourceMissing {
+			// Only a draft can be deleted, and a draft was never charged: the top-up is over, unpaid.
+			return nil, nil
+		}
+		return inv, err
 	}
 	// An invoice made by a request whose answer was lost is found by its claim, so it is never made twice.
 	lp := &stripe.InvoiceListParams{Customer: a.StripeCustomerID}

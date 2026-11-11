@@ -198,12 +198,16 @@ export function SendsAutoTopup({ agencyId, canManage }: { agencyId: string; canM
         setPacks(null);
     };
 
-    // The numbers travel with the switch, so both are saved as one setting.
-    const apply = async (enabled: boolean) => {
+    // The numbers travel with the switch, so both are saved as one setting. Turning it off sends
+    // the saved numbers, so an unfinished edit can never stand in the way of stopping charges.
+    const apply = async (enabled: boolean, off = false) => {
         try {
             const before = data.bought_this_period;
-            const res = await save.mutateAsync({ enabled, threshold_sends: at, max_packs: max });
-            discard();
+            const res = await save.mutateAsync(
+                off ? { enabled: false, threshold_sends: data.threshold_sends, max_packs: data.max_packs } : { enabled, threshold_sends: at, max_packs: max },
+            );
+            // An edit in progress is kept when only the switch was turned off.
+            if (!off) discard();
             if (enabled && !res.enabled) toast.error(res.failure ? FAILURES[res.failure] : "Automatic top-up could not be turned on.");
             else if (res.bought_this_period > before) toast.success(`${pack} sends were added and ${fmtUsdTrim(price)} charged, because fewer than ${formatNumber(res.threshold_sends)} were left`);
             else if (enabled !== data.enabled) toast.success(enabled ? "Automatic top-up is on" : "Automatic top-up is off");
@@ -225,7 +229,7 @@ export function SendsAutoTopup({ agencyId, canManage }: { agencyId: string; canM
             loading={false}
             // Turning it off always works; turning it on needs a pool to top up.
             canToggle={canManage && !save.isPending && (data.enabled || data.available)}
-            onToggle={(enabled) => void apply(enabled)}
+            onToggle={(enabled) => void apply(enabled, !enabled)}
             failure={data.failure}
             card={data.card}
             used={`This month: ${data.bought_this_period} of ${data.max_packs} used.`}
@@ -285,11 +289,17 @@ export function AIAutoTopup({ agencyId, canManage }: { agencyId: string; canMana
     };
 
     // All three numbers are saved together, so a top-up is never charged from a half-made change.
-    const apply = async (enabled: boolean) => {
+    // Turning it off sends the saved numbers, so an edit that cannot be saved never keeps it on.
+    const apply = async (enabled: boolean, off = false) => {
         try {
             const before = data.added_this_period_usd;
-            const res = await save.mutateAsync({ enabled, threshold_usd: at, amount_usd: each, limit_usd: most });
-            discard();
+            const res = await save.mutateAsync(
+                off
+                    ? { enabled: false, threshold_usd: data.threshold_usd, amount_usd: data.amount_usd, limit_usd: data.limit_usd }
+                    : { enabled, threshold_usd: at, amount_usd: each, limit_usd: most },
+            );
+            // An edit in progress is kept when only the switch was turned off.
+            if (!off) discard();
             if (enabled && !res.enabled) toast.error(res.failure ? FAILURES[res.failure] : "Automatic top-up could not be turned on.");
             else if (res.added_this_period_usd > before) toast.success(`${fmtUsdTrim(res.amount_usd)} was added and charged, because less than ${fmtUsdTrim(res.threshold_usd)} was left`);
             else if (enabled !== data.enabled) toast.success(enabled ? "Automatic top-up is on" : "Automatic top-up is off");
@@ -311,7 +321,7 @@ export function AIAutoTopup({ agencyId, canManage }: { agencyId: string; canMana
             loading={false}
             // Turning it off always works; turning it on needs a balance to add to and numbers that can be saved.
             canToggle={canManage && !save.isPending && (data.enabled || (data.available && !problem))}
-            onToggle={(enabled) => void apply(enabled)}
+            onToggle={(enabled) => void apply(enabled, !enabled)}
             failure={data.failure}
             card={data.card}
             used={`This month: ${fmtUsdTrim(data.added_this_period_usd)} of ${fmtUsdTrim(data.limit_usd)} used.`}

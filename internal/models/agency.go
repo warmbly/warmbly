@@ -230,6 +230,9 @@ type AgencyAutoTopupClaim struct {
 	CreatedAt       time.Time
 }
 
+// AgencyAutoTopupStuckAfter is how long a top-up may stay unsettled before the people who manage the agency are told.
+const AgencyAutoTopupStuckAfter = 6 * time.Hour
+
 // Why an automatic top-up turned itself off.
 const (
 	AgencyAutoTopupNoCard   = "no_payment_method"
