@@ -79,6 +79,15 @@ const FIELDS_BY_PROVIDER: Record<string, FieldDef[]> = {
             helper: "Outscraper → Profile → API token. Searches and the email lookup are billed to your Outscraper balance.",
         },
     ],
+    scavio: [
+        {
+            key: "api_key",
+            label: "Scavio API key",
+            type: "password",
+            required: true,
+            helper: "Scavio dashboard → API keys. Each page of 20 places is billed to your Scavio balance; the key check is free.",
+        },
+    ],
     jina: [
         {
             key: "api_key",
@@ -138,6 +147,7 @@ const NEXT_STEP: Record<string, string> = {
     google_places: "Open the Lead finder and pick Google Places as the source.",
     foursquare: "Open the Lead finder and pick Foursquare as the source.",
     outscraper: "Open the Lead finder and pick Outscraper as the source.",
+    scavio: "Open the Lead finder and pick Scavio as the source.",
     jina: "Enrich leads in the Lead finder; blocked sites are read through Jina Reader.",
     discord: "Choose which Warmbly events post to the channel.",
 };
