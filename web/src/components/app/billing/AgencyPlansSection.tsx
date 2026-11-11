@@ -21,7 +21,8 @@ export default function AgencyPlansSection({ interval }: { interval: BillingInte
     // Until the list is known the link stays neutral: an agency that did not load is not a missing one.
     const hasAgency = agencies.isSuccess ? agencies.data.data.length > 0 : undefined;
     const to = hasAgency ? "/app/agency/billing" : "/app/agency";
-    const cta = hasAgency === undefined ? "Agency plans" : hasAgency ? "Choose in agency billing" : "Set up an agency";
+    // An agency that already holds a plan, or a member who cannot buy one, still lands on a page that fits this label.
+    const cta = hasAgency === undefined ? "Agency plans" : hasAgency ? "Open agency billing" : "Set up an agency";
     const list = plans.data?.data ?? [];
 
     return (

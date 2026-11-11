@@ -1,7 +1,8 @@
 import { expect, test } from "../lib/proof.ts";
 
-// The workspace Plans tab lists the agency plans below the regular ones. Needs a stack that bills (QA_STRIPE_SECRET_KEY).
+// The workspace Plans tab lists the agency plans below the regular ones; see the README for the stack it needs.
 test("a workspace's Plans tab lists the agency plans", async ({ page, proof }) => {
+  test.skip(process.env.QA_BILLING !== "1", "Start the stack with QA_STRIPE_SECRET_KEY so it bills, and set QA_BILLING=1.");
   await page.goto("/app/settings/billing/plans");
   const section = page.getByText("Agency plans", { exact: true }).first();
   await expect(section).toBeVisible();

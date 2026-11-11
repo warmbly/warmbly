@@ -168,6 +168,13 @@ Run `QA_FLEET_FIXTURES=1 pnpm proof fleet-telemetry` in `qa/`. Stop the addition
 admin server as well as the stack afterward. This proof does not validate real
 worker sampling, network egress, mail delivery or inbox placement.
 
+## Billing plans proof
+
+`flows/billing-agency-plans.flow.ts` records the agency plans on a workspace's Plans tab. The default stack
+runs with billing off, where the billing page has no Plans tab, so the flow is opt-in: start the stack with
+`QA_STRIPE_SECRET_KEY` set to a Stripe test-mode key (nothing is charged; the flow only reads plans), with the
+seeded workspace not attached to an agency, then run `QA_BILLING=1 pnpm proof billing-agency-plans`.
+
 ## Admin agency proof fixtures
 
 `flows/admin-agencies.flow.ts` records an operator giving an agency a plan, a pool of its own and extra sends
