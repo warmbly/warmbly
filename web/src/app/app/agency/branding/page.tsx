@@ -43,6 +43,15 @@ function mainAddress(): string {
     }
 }
 
+/** The host of the address client pages are served on, or nothing when it is not a URL. */
+function hostOf(url: string | undefined): string | undefined {
+    try {
+        return url ? new URL(url).host : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
 function AgencyBrandingForCurrent() {
     const { agency } = useCurrentAgency();
     if (!agency) return null;
@@ -95,7 +104,7 @@ function AgencyBranding({ agencyId, agencyName }: { agencyId: string; agencyName
 
     return (
         // The shell scrolls here, so the preview sticks to it, below the page's own bar.
-        <PageBody className="overflow-visible [--brand-preview-top:4rem]">
+        <PageBody className="overflow-visible [--brand-preview-top:4.5rem]">
             <SectionShell
                 title="Branding"
                 description="Every client workspace shows this brand on its connect links, shared reports, report emails and forms, unless it sets its own. Your portal domain carries it across the whole dashboard."
@@ -120,6 +129,9 @@ function AgencyBranding({ agencyId, agencyName }: { agencyId: string; agencyName
                     // A backend from before the portal theme answers without one, and has no routes for these two.
                     icon={data?.theme ? icon : undefined}
                     signInImage={data?.theme ? signInImage : undefined}
+                    address={hostOf(data?.portal_base_url)}
+                    signInAddress={data?.portal_sign_in === "warmbly" ? mainAddress() : undefined}
+                    agencyBilling
                 />
 
                 <Section

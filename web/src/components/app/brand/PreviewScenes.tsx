@@ -12,6 +12,7 @@ import {
     PlusIcon,
     SearchIcon,
     SendIcon,
+    ServerIcon,
     SettingsIcon,
 } from "lucide-react";
 
@@ -85,6 +86,10 @@ const CAMPAIGNS = [
     { name: "Agency owners, UK", status: "Active", sent: 44, on: true, picked: false },
     { name: "Webinar follow-up", status: "Paused", sent: 61, on: false, picked: false },
     { name: "Re-engage lost deals", status: "Draft", sent: 0, on: false, picked: false },
+    { name: "Founders, Series A", status: "Active", sent: 83, on: true, picked: false },
+    { name: "Event invitations", status: "Active", sent: 27, on: true, picked: false },
+    { name: "Partner referrals", status: "Paused", sent: 52, on: false, picked: false },
+    { name: "Renewal check-ins", status: "Draft", sent: 0, on: false, picked: false },
 ];
 
 /** The dashboard in a brand's theme: its mark in the chrome and its accent on everything that is sky. */
@@ -132,7 +137,7 @@ export function DashboardScene({ brand, theme, mode, compact = false }: ScenePro
                     <div className={cn("min-w-0 flex-1 overflow-hidden border-t border-slate-200/70 bg-white", !compact && "rounded-tl-2xl border-l")}>
                         <div className="flex h-12 items-center gap-2 border-b border-slate-200 px-4">
                             <span className="text-[14px] font-semibold tracking-tight text-slate-900">Campaigns</span>
-                            <span className="rounded bg-slate-100 px-1.5 text-[11px] leading-5 text-slate-500">4</span>
+                            <span className="rounded bg-slate-100 px-1.5 text-[11px] leading-5 text-slate-500">8</span>
                             <span className="ml-auto inline-flex h-7 items-center gap-1 rounded-md bg-sky-600 px-2.5 text-[12px] font-medium text-white">
                                 <PlusIcon className="size-3.5" />
                                 New campaign
@@ -164,7 +169,7 @@ export function DashboardScene({ brand, theme, mode, compact = false }: ScenePro
                                 ))}
                         </div>
                         <div className="mx-4 overflow-hidden rounded-md border border-slate-200">
-                            {CAMPAIGNS.map((c) => (
+                            {CAMPAIGNS.slice(0, compact ? 6 : 8).map((c) => (
                                 <div
                                     key={c.name}
                                     className={cn("flex h-10 items-center gap-3 border-b border-slate-100 px-3 text-[12.5px] last:border-b-0", c.picked && "bg-sky-50")}
@@ -199,7 +204,7 @@ export function DashboardScene({ brand, theme, mode, compact = false }: ScenePro
                             ))}
                         </div>
                         <div className="px-4 pt-3 text-[12px] text-slate-500">
-                            Three campaigns are sending. <span className="font-medium text-sky-600">See the schedule</span>
+                            Four campaigns are sending. <span className="font-medium text-sky-600">See the schedule</span>
                         </div>
                     </div>
                 </div>
@@ -253,10 +258,28 @@ function ClientFooter({ brand, theme, muted, link }: { brand: PublicBrand; theme
     );
 }
 
+// The providers' own marks, as the connect page shows them.
+const GoogleMark = () => (
+    <svg viewBox="0 0 24 24" className="size-4" aria-hidden>
+        <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.4h6.5a5.5 5.5 0 0 1-2.4 3.6v3h3.9c2.300-2.100 3.500-5.200 3.500-8.700Z" />
+        <path fill="#34A853" d="M12 24c3.200 0 6-1.100 8-2.900l-3.900-3c-1.100.700-2.500 1.200-4.100 1.200-3.100 0-5.800-2.100-6.700-5H1.300v3.100A12 12 0 0 0 12 24Z" />
+        <path fill="#FBBC05" d="M5.300 14.300a7.200 7.200 0 0 1 0-4.600V6.600H1.300a12 12 0 0 0 0 10.800l4-3.100Z" />
+        <path fill="#EA4335" d="M12 4.800c1.800 0 3.300.600 4.600 1.800l3.400-3.400A12 12 0 0 0 1.300 6.600l4 3.100c.900-2.900 3.600-4.900 6.700-4.900Z" />
+    </svg>
+);
+const MicrosoftMark = () => (
+    <svg viewBox="0 0 24 24" className="size-4" aria-hidden>
+        <path fill="#F25022" d="M2 2h9.500v9.500H2z" />
+        <path fill="#7FBA00" d="M12.500 2H22v9.500h-9.500z" />
+        <path fill="#00A4EF" d="M2 12.500h9.500V22H2z" />
+        <path fill="#FFB900" d="M12.500 12.500H22V22h-9.500z" />
+    </svg>
+);
+
 const PROVIDERS = [
-    { label: "Continue with Google", dot: "#ea4335" },
-    { label: "Continue with Microsoft", dot: "#0078d4" },
-    { label: "Use server details", dot: "#64748b" },
+    { label: "Continue with Google", mark: <GoogleMark /> },
+    { label: "Continue with Microsoft", mark: <MicrosoftMark /> },
+    { label: "Use server details", mark: <ServerIcon className="size-4 opacity-70" /> },
 ];
 
 /** The page a client opens from a connect link. */
@@ -264,7 +287,7 @@ export function ConnectScene(props: SceneProps) {
     const { brand, theme } = props;
     const { tones, surface, radius, font } = useClientLook(props);
     return (
-        <div className="flex h-full w-full flex-col items-center overflow-hidden px-5 py-9" style={{ background: surface.page, color: surface.ink, fontFamily: font }}>
+        <div className="flex h-full w-full flex-col items-center justify-center overflow-hidden px-5 py-9" style={{ background: surface.page, color: surface.ink, fontFamily: font }}>
             <div className="mb-5 flex max-w-full justify-center">
                 <ClientMark brand={brand} ink={surface.ink} />
             </div>
@@ -301,7 +324,8 @@ export function ConnectScene(props: SceneProps) {
                                     : { border: `1px solid ${surface.line}`, color: surface.ink, borderRadius: radius.button }
                             }
                         >
-                            <span className="size-2.5 rounded-full" style={{ background: i === 0 ? tones.onAccent : p.dot }} />
+                            {/* On the accent the mark sits on its own white disc, as it does on the page. */}
+                            <span className={cn("inline-flex items-center justify-center", i === 0 && "size-6 rounded-full bg-white")}>{p.mark}</span>
                             {p.label}
                         </div>
                     ))}

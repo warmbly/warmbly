@@ -194,6 +194,11 @@ client workspace receives the plan and that the pool totals are what the page sh
 `QA_ADMIN_AGENCY_FIXTURES=1 pnpm proof agency-arranged-plan` records the agency's own billing page for the plan
 just given. Stop the admin server and the stack afterward.
 
+`flows/agency-branding-look.flow.ts` uses the same fixture, which leaves the agency without a brand: it records
+**Agency > Branding** from nothing set to a finished look, picking a colour, font, corners and a sign-in layout
+and watching the preview follow. Run it against the dashboard, without `QA_WEB_URL`:
+`QA_ADMIN_AGENCY_FIXTURES=1 pnpm proof agency-branding-look`.
+
 ## Member access proof fixtures
 
 `flows/member-access.flow.ts` is opt-in: apply `fixtures/member-access.sql` to

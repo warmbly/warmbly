@@ -21,6 +21,8 @@ VALUES ('22222222-0000-0000-0000-000000000001', 'a9e00000-0000-0000-0000-0000000
 ON CONFLICT (organization_id) DO UPDATE SET agency_id = EXCLUDED.agency_id;
 
 DELETE FROM agency_pool_topups WHERE agency_id = 'a9e00000-0000-0000-0000-000000000002';
+-- No brand yet, so the branding page opens as a new agency sees it.
+DELETE FROM agency_brands WHERE agency_id = 'a9e00000-0000-0000-0000-000000000002';
 DELETE FROM agency_ai_transactions WHERE agency_id = 'a9e00000-0000-0000-0000-000000000002';
 DELETE FROM agency_ai_ledger WHERE agency_id = 'a9e00000-0000-0000-0000-000000000002';
 UPDATE subscriptions SET managed_at = NULL, managed_by = NULL, managed_reason = NULL, managed_until = NULL,
