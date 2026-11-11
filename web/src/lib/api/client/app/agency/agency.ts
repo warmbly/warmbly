@@ -1,18 +1,5 @@
 import Request from "../../Request";
-import type {
-    AgenciesResult,
-    Agency,
-    AgencyAIBalance,
-    AgencyAITransferResult,
-    AgencyClient,
-    AgencyClientPatch,
-    AgencyInvitation,
-    AgencyMember,
-    AgencyPlansResult,
-    AgencyRole,
-    AgencyStaffResult,
-    AgencyUsage,
-} from "@/lib/api/models/app/agency/Agency";
+import type { AgenciesResult, Agency, AgencyAIBalance, AgencyAITransferResult, AgencyClient, AgencyClientPatch, AgencyInvitation, AgencyMember, AgencyPlanChangePreview, AgencyPlansResult, AgencyRole, AgencyStaffResult, AgencyUsage } from "@/lib/api/models/app/agency/Agency";
 
 const idem = () => ({ "Idempotency-Key": crypto.randomUUID() });
 
@@ -109,6 +96,22 @@ export const agencyCheckout = (agencyId: string, planId: string, interval: "mont
     Request<{ checkout_url: string }>({
         method: "POST",
         url: `/agency/${agencyId}/billing/checkout`,
+        data: { plan_id: planId, interval },
+        headers: idem(),
+        authorization: true,
+    });
+
+export const previewAgencyPlanChange = (agencyId: string, planId: string, interval: "month" | "year") =>
+    Request<AgencyPlanChangePreview>({
+        method: "GET",
+        url: `/agency/${agencyId}/billing/change/preview?plan_id=${encodeURIComponent(planId)}&interval=${interval}`,
+        authorization: true,
+    });
+
+export const changeAgencyPlan = (agencyId: string, planId: string, interval: "month" | "year") =>
+    Request<Agency>({
+        method: "POST",
+        url: `/agency/${agencyId}/billing/change`,
         data: { plan_id: planId, interval },
         headers: idem(),
         authorization: true,

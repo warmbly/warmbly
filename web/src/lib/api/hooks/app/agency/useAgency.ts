@@ -23,6 +23,7 @@ import {
     transferAgencyAI,
     updateAgencyClient,
     updateAgencyStaff,
+    changeAgencyPlan,
 } from "@/lib/api/client/app/agency/agency";
 import type { Agency, AgencyClient, AgencyClientPatch, AgencyRole } from "@/lib/api/models/app/agency/Agency";
 import { currentPortal, portalAgencies } from "@/lib/portal";
@@ -323,6 +324,15 @@ export function useAgencyAITopup(agencyId: string) {
 export function useAgencyCheckout(agencyId: string) {
     return useMutation({
         mutationFn: ({ planId, interval }: { planId: string; interval: "month" | "year" }) => agencyCheckout(agencyId, planId, interval),
+    });
+}
+
+// The server decides the switch and its price, so nothing is patched before it answers.
+export function useChangeAgencyPlan(agencyId: string) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: ({ planId, interval }: { planId: string; interval: "month" | "year" }) => changeAgencyPlan(agencyId, planId, interval),
+        onSettled: () => void qc.invalidateQueries({ queryKey: ["agency"] }),
     });
 }
 

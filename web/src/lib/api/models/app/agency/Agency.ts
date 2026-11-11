@@ -41,6 +41,18 @@ export interface Agency {
     has_billing: boolean;
     /** A plan the agency holds without a subscription, while it is in force; `plan` is then that plan. */
     granted?: { plan_id: string; until?: string };
+    /** The agency's own billing period while its subscription is in force. */
+    billing_interval?: "month" | "year";
+}
+
+/** What switching the agency's subscription to another plan or billing period would bill, in the currency's minor unit. */
+export interface AgencyPlanChangePreview {
+    plan_id: string;
+    interval: "month" | "year";
+    proration_cents: number;
+    amount_due_cents: number;
+    next_billing_date: string;
+    currency: string;
 }
 
 export interface AgenciesResult {

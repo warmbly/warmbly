@@ -134,6 +134,7 @@ func (s *Service) access(ctx context.Context, agencyID, userID uuid.UUID, manage
 // hydrate joins the plan in force, the operator's while it stands in for the subscription's.
 func (s *Service) hydrate(ctx context.Context, a *models.Agency) {
 	now := s.now()
+	a.BillingInterval = a.SubscriptionInterval()
 	if a.Granted(now) {
 		a.Grant = &models.AgencyGrant{PlanID: *a.ManagedPlanID, Until: a.ManagedUntil}
 	}
