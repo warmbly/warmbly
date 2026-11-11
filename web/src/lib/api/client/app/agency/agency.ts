@@ -108,11 +108,16 @@ export const previewAgencyPlanChange = (agencyId: string, planId: string, interv
         authorization: true,
     });
 
-export const changeAgencyPlan = (agencyId: string, planId: string, interval: "month" | "year", prorationDate?: number) =>
+export const changeAgencyPlan = (
+    agencyId: string,
+    planId: string,
+    interval: "month" | "year",
+    quote?: Pick<AgencyPlanChangePreview, "proration_date" | "from_price_id">,
+) =>
     Request<Agency>({
         method: "POST",
         url: `/agency/${agencyId}/billing/change`,
-        data: { plan_id: planId, interval, proration_date: prorationDate },
+        data: { plan_id: planId, interval, proration_date: quote?.proration_date, from_price_id: quote?.from_price_id },
         headers: idem(),
         authorization: true,
     });

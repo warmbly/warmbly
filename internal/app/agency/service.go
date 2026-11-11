@@ -71,8 +71,8 @@ type Service struct {
 	billing bool
 	now     func() time.Time
 
-	// switches holds one lock per agency for plan switches.
-	switches sync.Map
+	// switches are the locks plan switches take, picked by agency id.
+	switches [64]sync.Mutex
 
 	mu        sync.Mutex
 	pools     map[uuid.UUID]poolEntry

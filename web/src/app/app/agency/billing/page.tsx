@@ -185,7 +185,7 @@ function AgencyBilling() {
             const preview = await previewAgencyPlanChange(agencyId, p.id, interval);
             confirm.show(switchText(p, interval, agency.billing_interval, preview), async () => {
                 try {
-                    await change.mutateAsync({ planId: p.id, interval, prorationDate: preview.proration_date });
+                    await change.mutateAsync({ planId: p.id, interval, quote: preview });
                     toast.success(`Switched to ${p.name}`);
                 } catch (e) {
                     toast.error(buildError(e as AppError));

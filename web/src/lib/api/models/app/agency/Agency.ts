@@ -54,6 +54,8 @@ export interface AgencyPlanChangePreview {
     currency: string;
     /** When the amounts were calculated; sent back with the switch so it bills exactly them. */
     proration_date: number;
+    /** The price the subscription was on; sent back so a switch priced from another plan is refused. */
+    from_price_id: string;
 }
 
 export interface AgenciesResult {

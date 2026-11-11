@@ -25,7 +25,7 @@ import {
     updateAgencyStaff,
     changeAgencyPlan,
 } from "@/lib/api/client/app/agency/agency";
-import type { Agency, AgencyClient, AgencyClientPatch, AgencyRole } from "@/lib/api/models/app/agency/Agency";
+import type { Agency, AgencyClient, AgencyClientPatch, AgencyRole, AgencyPlanChangePreview } from "@/lib/api/models/app/agency/Agency";
 import { currentPortal, portalAgencies } from "@/lib/portal";
 
 // Every agency query sits under ["agency"], which the audit spine invalidates.
@@ -331,8 +331,8 @@ export function useAgencyCheckout(agencyId: string) {
 export function useChangeAgencyPlan(agencyId: string) {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: ({ planId, interval, prorationDate }: { planId: string; interval: "month" | "year"; prorationDate?: number }) =>
-            changeAgencyPlan(agencyId, planId, interval, prorationDate),
+        mutationFn: ({ planId, interval, quote }: { planId: string; interval: "month" | "year"; quote?: AgencyPlanChangePreview }) =>
+            changeAgencyPlan(agencyId, planId, interval, quote),
         // The open workspace may be one of the agency's clients, whose own plan just changed with it.
         onSettled: () => {
             void qc.invalidateQueries({ queryKey: ["agency"] });

@@ -95,7 +95,7 @@ func TestPlanChangeRefusesAStalePreview(t *testing.T) {
 	a.StripeSubscriptionID = strp("sub_1")
 	s, actor := newSwitchService(t, a, 0, now)
 	for _, at := range []time.Time{now.Add(-planChangePreviewTTL - time.Minute), now.Add(10 * time.Minute)} {
-		if _, xerr := s.ChangePlan(context.Background(), a.ID, actor, models.AgencyProPlanID, false, at.Unix()); xerr == nil || xerr.Identifier != "agency_plan_preview_expired" {
+		if _, xerr := s.ChangePlan(context.Background(), a.ID, actor, models.AgencyProPlanID, false, PlanChangeQuote{ProrationDate: at.Unix()}); xerr == nil || xerr.Identifier != "agency_plan_preview_expired" {
 			t.Fatalf("priced at %s: got %v", at, xerr)
 		}
 	}

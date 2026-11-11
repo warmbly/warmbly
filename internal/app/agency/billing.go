@@ -105,6 +105,8 @@ type PlanChangePreview struct {
 	Currency       string `json:"currency"`
 	// ProrationDate is the moment the amounts were calculated at; sent back with the switch, it bills exactly them.
 	ProrationDate int64 `json:"proration_date"`
+	// FromPriceID is the price the subscription was on; sent back with the switch, it refuses one priced from another plan.
+	FromPriceID string `json:"from_price_id"`
 }
 
 // planChangePreviewTTL is how long a previewed price may be confirmed at; an older one is priced again.
@@ -171,7 +173,16 @@ func (s *Service) planChangeFor(ctx context.Context, agencyID, actorID, planID u
 	return &planChange{agency: a, plan: plan, price: price, sub: sub, itemID: item.ID, held: item.Price != nil && item.Price.ID == price}, nil
 }
 
-var errPlanUnchanged = errx.NewWithIdentifier(errx.Conflict, "agency_plan_unchanged", "The agency is already on that plan and billing period.")
+var (
+	errPlanUnchanged  = errx.NewWithIdentifier(errx.Conflict, "agency_plan_unchanged", "The agency is already on that plan and billing period.")
+	errPreviewExpired = errx.NewWithIdentifier(errx.Conflict, "agency_plan_preview_expired", "That price is no longer current. Review the switch again.")
+)
+
+// PlanChangeQuote is what a preview returned, sent back so the switch bills what was shown; the zero value prices it now.
+type PlanChangeQuote struct {
+	ProrationDate int64
+	FromPriceID   string
+}
 
 func intervalName(yearly bool) string {
 	if yearly {
@@ -186,10 +197,14 @@ func (s *Service) PreviewPlanChange(ctx context.Context, agencyID, actorID, plan
 	if xerr != nil {
 		return nil, xerr
 	}
-	if c.held {
-		return nil, errPlanUnchanged
-	}
 	at := s.now().Unix()
+	if c.held {
+		if c.shows(yearly) {
+			return nil, errPlanUnchanged
+		}
+		// Stripe already holds the switch and nothing more is billed; confirming it applies it here.
+		return &PlanChangePreview{PlanID: c.plan.ID, Interval: intervalName(yearly), Currency: string(c.sub.Currency), ProrationDate: at, FromPriceID: c.fromPrice()}, nil
+	}
 	params := &stripe.InvoiceCreatePreviewParams{
 		Params:       stripe.Params{Context: ctx},
 		AutomaticTax: &stripe.InvoiceCreatePreviewAutomaticTaxParams{Enabled: stripe.Bool(false)},
@@ -209,7 +224,7 @@ func (s *Service) PreviewPlanChange(ctx context.Context, agencyID, actorID, plan
 		return nil, errx.New(errx.Internal, "failed to price the switch")
 	}
 	out := &PlanChangePreview{PlanID: c.plan.ID, Interval: intervalName(yearly), AmountDueCents: inv.AmountDue,
-		Currency: string(inv.Currency), ProrationDate: at}
+		Currency: string(inv.Currency), ProrationDate: at, FromPriceID: c.fromPrice()}
 	if inv.Lines != nil {
 		for _, line := range inv.Lines.Data {
 			if lineIsProration(line) {
@@ -233,10 +248,23 @@ func lineIsProration(line *stripe.InvoiceLineItem) bool {
 	return false
 }
 
-// switching hands out one lock per agency, so a switch is validated, made and applied before the next one starts.
+// switching is the lock an agency's switches share, so one is validated, made and applied before the next starts.
+// A fixed set of locks keyed by the agency id: two agencies may share one, and nothing accumulates.
 func (s *Service) switching(agencyID uuid.UUID) *sync.Mutex {
-	l, _ := s.switches.LoadOrStore(agencyID, &sync.Mutex{})
-	return l.(*sync.Mutex)
+	return &s.switches[int(agencyID[0])%len(s.switches)]
+}
+
+// shows reports an agency that already has the switch applied.
+func (c *planChange) shows(yearly bool) bool {
+	return c.agency.PlanID != nil && *c.agency.PlanID == c.plan.ID && c.agency.SubscriptionInterval() == intervalName(yearly)
+}
+
+// fromPrice is the price the subscription is on before the switch.
+func (c *planChange) fromPrice() string {
+	if item := c.sub.Items.Data[0]; item.Price != nil {
+		return item.Price.ID
+	}
+	return ""
 }
 
 // ChangePlan moves the agency's subscription to another agency plan or billing
@@ -244,12 +272,13 @@ func (s *Service) switching(agencyID uuid.UUID) *sync.Mutex {
 // is the moment a preview priced the switch at; zero prices it now. A switch
 // Stripe already holds is applied here again, so one whose result was not
 // recorded the first time completes on the next attempt.
-func (s *Service) ChangePlan(ctx context.Context, agencyID, actorID, planID uuid.UUID, yearly bool, prorationDate int64) (*models.Agency, *errx.Error) {
+func (s *Service) ChangePlan(ctx context.Context, agencyID, actorID, planID uuid.UUID, yearly bool, quote PlanChangeQuote) (*models.Agency, *errx.Error) {
 	now := s.now()
+	prorationDate := quote.ProrationDate
 	if prorationDate != 0 {
 		at := time.Unix(prorationDate, 0)
 		if at.After(now.Add(time.Minute)) || now.Sub(at) > planChangePreviewTTL {
-			return nil, errx.NewWithIdentifier(errx.Conflict, "agency_plan_preview_expired", "That price is no longer current. Review the switch again.")
+			return nil, errPreviewExpired
 		}
 	}
 	lock := s.switching(agencyID)
@@ -263,10 +292,17 @@ func (s *Service) ChangePlan(ctx context.Context, agencyID, actorID, planID uuid
 	sub := c.sub
 	if c.held {
 		// Nothing left to bill; only an agency that already shows the switch has nothing left to do.
-		if c.agency.PlanID != nil && *c.agency.PlanID == c.plan.ID && c.agency.SubscriptionInterval() == intervalName(yearly) {
+		if c.shows(yearly) {
 			return nil, errPlanUnchanged
 		}
 	} else {
+		// The quote was for a switch from one price inside one billing period; from anywhere else it is priced again.
+		if quote.FromPriceID != "" && quote.FromPriceID != c.fromPrice() {
+			return nil, errPreviewExpired
+		}
+		if start := c.sub.Items.Data[0].CurrentPeriodStart; prorationDate != 0 && start > 0 && prorationDate < start {
+			return nil, errPreviewExpired
+		}
 		params := &stripe.SubscriptionParams{
 			Params:            stripe.Params{Context: ctx},
 			Items:             []*stripe.SubscriptionItemsParams{{ID: stripe.String(c.itemID), Price: stripe.String(c.price)}},
