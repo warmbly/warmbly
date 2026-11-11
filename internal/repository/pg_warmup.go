@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1450,7 +1451,12 @@ func (r *warmupRepository) WarmupPartnerCandidates(ctx context.Context, poolType
 		}
 		cands = append(cands, returns...)
 	}
-	return r.capPartnerCandidates(ctx, poolType, cands)
+	cands, err = r.capPartnerCandidates(ctx, poolType, cands)
+	if err != nil {
+		return nil, err
+	}
+	// An address that bounced this workspace's warmup is not mailed by it again.
+	return slices.DeleteFunc(cands, func(c models.WarmupPartnerCandidate) bool { return c.BouncedFrom(senderOrg) }), nil
 }
 
 type warmupExecutionExclusion struct{}

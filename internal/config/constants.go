@@ -650,7 +650,10 @@ const (
 	WarmupRecipientArrivalGraceHours        = 6
 	WarmupRecipientUnreachableMinDelivered  = 5
 	WarmupRecipientUnreachableMinSenderOrgs = 2
-	DailyThrottleNewOrgs                    = 3 // new workspaces per owner per day
+	// An address that hard-bounced pool warmup as unknown stays out of the
+	// draw this long, unless warmup mail verifiably arrives at it since.
+	WarmupRecipientBounceDays = 7
+	DailyThrottleNewOrgs      = 3 // new workspaces per owner per day
 
 	// CLI sign-in handshake (`warmbly auth login`). Shorter-lived than the pool
 	// link handshake because a person is watching the terminal while it runs.

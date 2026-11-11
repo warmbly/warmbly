@@ -1,6 +1,7 @@
 package models
 
 import (
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -283,6 +284,21 @@ type WarmupPartnerCandidate struct {
 	// candidate's own sync verified.
 	Delivered7d int
 	Arrived7d   int
+	// BouncedBy is each sender workspace whose warmup mail to this candidate
+	// hard-bounced as an unknown address with nothing arriving since.
+	BouncedBy []uuid.UUID
+}
+
+// BouncedFrom reports a candidate whose address bounced org's warmup mail.
+func (c WarmupPartnerCandidate) BouncedFrom(org *uuid.UUID) bool {
+	return org != nil && slices.Contains(c.BouncedBy, *org)
+}
+
+// WarmupRecipientBouncedOut reports an address that hard-bounced warmup mail
+// from enough workspaces that it leaves the pool, so no one sender's report
+// can take a recipient out for everyone.
+func WarmupRecipientBouncedOut(bouncedBy int) bool {
+	return bouncedBy >= config.WarmupRecipientUnreachableMinSenderOrgs
 }
 
 // Borrowed reports whether the candidate was drawn from the tier the sender's
