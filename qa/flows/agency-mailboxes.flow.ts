@@ -22,11 +22,6 @@ async function confirmIfAsked(page: Page) {
 
 test("an agency sees every client's mailboxes and hands a vendor account to a client", async ({ page, proof }) => {
   test.skip(process.env.QA_ADMIN_AGENCY_FIXTURES !== "1", "Apply fixtures/admin-agencies.sql, start the stack with QA_VENDOR_MOCK=1, and set QA_ADMIN_AGENCY_FIXTURES=1.");
-  // A workspace nobody has opened starts with the product tour; it is dismissed before the walkthrough.
-  await page.goto("/app/emails");
-  const skip = page.getByRole("button", { name: "Skip tour" });
-  if (await skip.waitFor({ state: "visible", timeout: 5000 }).then(() => true, () => false)) await skip.click();
-
   await page.goto("/app/agency/mailboxes");
   await expect(page.getByText("Inbox vendor accounts")).toBeVisible();
   await expect(page.getByRole("button", { name: /Open in|@/ }).first()).toBeVisible();
