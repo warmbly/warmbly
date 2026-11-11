@@ -171,11 +171,15 @@ const (
 
 // A rate of opens or clicks is of the sends that could register one, so a
 // send made while tracking was off is in neither half. A send recorded before
-// the flag existed counts when it registered one or its campaign tracks now.
-// Both need ccp (campaign_contact_progress) and c (its campaign).
+// the flag existed follows its campaign's setting now. All need ccp
+// (campaign_contact_progress) and c (its campaign).
 const (
-	openTrackedCount  = `COUNT(CASE WHEN ccp.sent_at IS NOT NULL AND COALESCE(ccp.open_tracked, ccp.opened_at IS NOT NULL OR (c.open_tracking AND NOT c.text_only)) THEN 1 END)`
-	clickTrackedCount = `COUNT(CASE WHEN ccp.sent_at IS NOT NULL AND COALESCE(ccp.click_tracked, ccp.clicked_at IS NOT NULL OR (c.link_tracking AND NOT c.text_only)) THEN 1 END)`
+	openTracked        = `COALESCE(ccp.open_tracked, c.open_tracking AND NOT c.text_only)`
+	clickTracked       = `COALESCE(ccp.click_tracked, c.link_tracking AND NOT c.text_only)`
+	openTrackedCount   = `COUNT(CASE WHEN ccp.sent_at IS NOT NULL AND ` + openTracked + ` THEN 1 END)`
+	clickTrackedCount  = `COUNT(CASE WHEN ccp.sent_at IS NOT NULL AND ` + clickTracked + ` THEN 1 END)`
+	trackedOpensCount  = `COUNT(CASE WHEN ccp.sent_at IS NOT NULL AND ccp.opened_at IS NOT NULL AND NOT ccp.opened_machine AND ` + openTracked + ` THEN 1 END)`
+	trackedClicksCount = `COUNT(CASE WHEN ccp.sent_at IS NOT NULL AND ccp.clicked_at IS NOT NULL AND ` + clickTracked + ` THEN 1 END)`
 )
 
 // sentWithin keeps the progress rows whose send falls on period's UTC days,
@@ -267,7 +271,9 @@ func (r *analyticsRepository) GetCampaignSummary(ctx context.Context, orgID, cam
 			COUNT(CASE WHEN ccp.replied_at IS NULL AND ccp.reply_class = 'auto_reply' THEN 1 END) as auto_replies,
 			COUNT(CASE WHEN ccp.bounced_at IS NOT NULL THEN 1 END) as bounces,
 			` + openTrackedCount + ` as open_tracked_sent,
-			` + clickTrackedCount + ` as click_tracked_sent
+			` + clickTrackedCount + ` as click_tracked_sent,
+			` + trackedOpensCount + ` as tracked_opens,
+			` + trackedClicksCount + ` as tracked_clicks
 		FROM campaigns c
 		CROSS JOIN campaign_plan cp
 		CROSS JOIN campaign_sends cs
@@ -280,6 +286,7 @@ func (r *analyticsRepository) GetCampaignSummary(ctx context.Context, orgID, cam
 	params := append([]any{campaignID, orgID}, cohortArgs...)
 
 	var summary models.CampaignSummary
+	var trackedOpens, trackedClicks int
 	err := r.DB.QueryRow(ctx, query, params...).Scan(
 		&summary.TotalContacts,
 		&summary.FirstSentAt,
@@ -301,6 +308,8 @@ func (r *analyticsRepository) GetCampaignSummary(ctx context.Context, orgID, cam
 		&summary.Bounces,
 		&summary.OpenTrackedSent,
 		&summary.ClickTrackedSent,
+		&trackedOpens,
+		&trackedClicks,
 	)
 	if err != nil {
 		db.CaptureError(err, query, params, "queryrow")
@@ -311,8 +320,8 @@ func (r *analyticsRepository) GetCampaignSummary(ctx context.Context, orgID, cam
 
 	// Calculate rates
 	if summary.EmailsSent > 0 {
-		summary.OpenRate = models.Rate(summary.UniqueOpens, summary.OpenTrackedSent)
-		summary.ClickRate = models.Rate(summary.UniqueClicks, summary.ClickTrackedSent)
+		summary.OpenRate = models.Rate(trackedOpens, summary.OpenTrackedSent)
+		summary.ClickRate = models.Rate(trackedClicks, summary.ClickTrackedSent)
 		summary.ReplyRate = float64(summary.Replies) / float64(summary.EmailsSent) * 100
 		summary.PositiveReplyRate = models.Rate(summary.PositiveReplies, summary.EmailsSent)
 		summary.BounceRate = float64(summary.Bounces) / float64(summary.EmailsSent) * 100
@@ -474,7 +483,9 @@ func (r *analyticsRepository) GetSequenceStats(ctx context.Context, campaignID u
 			` + positiveReplyCount + `,
 			COUNT(CASE WHEN ccp.bounced_at IS NOT NULL THEN 1 END) as bounces,
 			` + openTrackedCount + ` as open_tracked_sent,
-			` + clickTrackedCount + ` as click_tracked_sent
+			` + clickTrackedCount + ` as click_tracked_sent,
+			` + trackedOpensCount + ` as tracked_opens,
+			` + trackedClicksCount + ` as tracked_clicks
 		FROM sequences s
 		JOIN campaigns c ON c.id = s.campaign_id
 		LEFT JOIN campaign_contact_progress ccp ON ccp.sequence_id = s.id AND ccp.campaign_id = $1` + cohort + machineClicksJoin + `
@@ -495,14 +506,15 @@ func (r *analyticsRepository) GetSequenceStats(ctx context.Context, campaignID u
 	stats := make([]models.SequenceStats, 0)
 	for rows.Next() {
 		var s models.SequenceStats
-		if err := rows.Scan(&s.SequenceID, &s.Name, &s.Position, &s.EmailsSent, &s.Opens, &s.MachineOpens, &s.Clicks, &s.MachineClicks, &s.Replies, &s.PositiveReplies, &s.Bounces, &s.OpenTrackedSent, &s.ClickTrackedSent); err != nil {
+		var trackedOpens, trackedClicks int
+		if err := rows.Scan(&s.SequenceID, &s.Name, &s.Position, &s.EmailsSent, &s.Opens, &s.MachineOpens, &s.Clicks, &s.MachineClicks, &s.Replies, &s.PositiveReplies, &s.Bounces, &s.OpenTrackedSent, &s.ClickTrackedSent, &trackedOpens, &trackedClicks); err != nil {
 			db.CaptureError(err, "", nil, "scan")
 			return nil, errx.InternalError()
 		}
 		// Rates are of the step's own sends, which is the only way one step
 		// compares against another that reached fewer contacts.
-		s.OpenRate = models.Rate(s.Opens, s.OpenTrackedSent)
-		s.ClickRate = models.Rate(s.Clicks, s.ClickTrackedSent)
+		s.OpenRate = models.Rate(trackedOpens, s.OpenTrackedSent)
+		s.ClickRate = models.Rate(trackedClicks, s.ClickTrackedSent)
 		s.ReplyRate = models.Rate(s.Replies, s.EmailsSent)
 		s.PositiveReplyRate = models.Rate(s.PositiveReplies, s.EmailsSent)
 		s.BounceRate = models.Rate(s.Bounces, s.EmailsSent)
@@ -806,6 +818,8 @@ func (r *analyticsRepository) GetDashboardOverallStats(ctx context.Context, orgI
 			COUNT(CASE WHEN ccp.bounced_at IS NOT NULL AND ccp.sent_at >= $2 AND ccp.sent_at <= $3 THEN 1 END) as total_bounces,
 			` + openTrackedCount + ` as open_tracked_sent,
 			` + clickTrackedCount + ` as click_tracked_sent,
+			` + trackedOpensCount + ` as tracked_opens,
+			` + trackedClicksCount + ` as tracked_clicks,
 			(SELECT COUNT(*) FROM campaigns ac WHERE ac.organization_id = $1 AND ac.status = 'active'` + inCampaignScope("ac.id", scope, 4) + `) as active_campaigns,
 			(SELECT COUNT(*) FROM email_accounts WHERE organization_id = $1 AND status = 'active'` + inMailboxes("id", mailboxes, mailboxArg) + `) as active_accounts
 		FROM campaign_contact_progress ccp
@@ -827,6 +841,7 @@ func (r *analyticsRepository) GetDashboardOverallStats(ctx context.Context, orgI
 	params := append(append([]any{orgID, from, to}, scopeArgs(scope)...), mailboxArgs(mailboxes)...)
 
 	var stats models.DashboardOverallStats
+	var trackedOpens, trackedClicks int
 	err := r.DB.QueryRow(ctx, query, params...).Scan(
 		&stats.TotalEmailsSent,
 		&stats.TotalOpens,
@@ -837,6 +852,8 @@ func (r *analyticsRepository) GetDashboardOverallStats(ctx context.Context, orgI
 		&stats.TotalBounces,
 		&stats.OpenTrackedSent,
 		&stats.ClickTrackedSent,
+		&trackedOpens,
+		&trackedClicks,
 		&stats.ActiveCampaigns,
 		&stats.ActiveAccounts,
 	)
@@ -847,8 +864,8 @@ func (r *analyticsRepository) GetDashboardOverallStats(ctx context.Context, orgI
 
 	// Calculate rates
 	if stats.TotalEmailsSent > 0 {
-		stats.OpenRate = models.Rate(stats.TotalOpens, stats.OpenTrackedSent)
-		stats.ClickRate = models.Rate(stats.TotalClicks, stats.ClickTrackedSent)
+		stats.OpenRate = models.Rate(trackedOpens, stats.OpenTrackedSent)
+		stats.ClickRate = models.Rate(trackedClicks, stats.ClickTrackedSent)
 		stats.ReplyRate = float64(stats.TotalReplies) / float64(stats.TotalEmailsSent) * 100
 		stats.BounceRate = float64(stats.TotalBounces) / float64(stats.TotalEmailsSent) * 100
 	}
@@ -993,10 +1010,10 @@ func (r *analyticsRepository) GetTopCampaigns(ctx context.Context, orgID uuid.UU
 			` + openTrackedCount + ` as open_tracked_sent,
 			` + clickTrackedCount + ` as click_tracked_sent,
 			CASE WHEN ` + openTrackedCount + ` > 0
-				THEN COUNT(CASE WHEN ccp.opened_at IS NOT NULL AND NOT ccp.opened_machine THEN 1 END)::float / ` + openTrackedCount + ` * 100
+				THEN ` + trackedOpensCount + `::float / ` + openTrackedCount + ` * 100
 				ELSE 0 END as open_rate,
 			CASE WHEN ` + clickTrackedCount + ` > 0
-				THEN COUNT(CASE WHEN ccp.clicked_at IS NOT NULL THEN 1 END)::float / ` + clickTrackedCount + ` * 100
+				THEN ` + trackedClicksCount + `::float / ` + clickTrackedCount + ` * 100
 				ELSE 0 END as click_rate,
 			CASE WHEN COUNT(CASE WHEN ccp.sent_at IS NOT NULL THEN 1 END) > 0
 				THEN COUNT(CASE WHEN ccp.replied_at IS NOT NULL THEN 1 END)::float / COUNT(CASE WHEN ccp.sent_at IS NOT NULL THEN 1 END) * 100
@@ -1171,10 +1188,10 @@ func (r *analyticsRepository) CompareCampaigns(ctx context.Context, orgID uuid.U
 			` + openTrackedCount + ` as open_tracked_sent,
 			` + clickTrackedCount + ` as click_tracked_sent,
 			CASE WHEN ` + openTrackedCount + ` > 0
-				THEN COUNT(CASE WHEN ccp.opened_at IS NOT NULL AND NOT ccp.opened_machine THEN 1 END)::float / ` + openTrackedCount + ` * 100
+				THEN ` + trackedOpensCount + `::float / ` + openTrackedCount + ` * 100
 				ELSE 0 END as open_rate,
 			CASE WHEN ` + clickTrackedCount + ` > 0
-				THEN COUNT(CASE WHEN ccp.clicked_at IS NOT NULL THEN 1 END)::float / ` + clickTrackedCount + ` * 100
+				THEN ` + trackedClicksCount + `::float / ` + clickTrackedCount + ` * 100
 				ELSE 0 END as click_rate,
 			CASE WHEN COUNT(CASE WHEN ccp.sent_at IS NOT NULL THEN 1 END) > 0
 				THEN COUNT(CASE WHEN ccp.replied_at IS NOT NULL THEN 1 END)::float / COUNT(CASE WHEN ccp.sent_at IS NOT NULL THEN 1 END) * 100
