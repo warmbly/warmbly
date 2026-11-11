@@ -9,8 +9,8 @@ import (
 )
 
 // The snapshot reads the facts detectors claim on the send path's terms: an
-// enabled sender, the all-active fallback, a stopped warmup and the tracking
-// host actually used.
+// enabled sender, the all-active fallback, a stopped warmup, a Cloud
+// enrollment and the tracking host actually used.
 func TestLiveAdvisorSnapshotReadsTheSendPathsFacts(t *testing.T) {
 	handle, pool := liveContactDB(t)
 	ctx := context.Background()
@@ -56,6 +56,11 @@ func TestLiveAdvisorSnapshotReadsTheSendPathsFacts(t *testing.T) {
 	      VALUES ($1, $2, $3, 'Advisor', '', 62, 'active', 'explicit', true, NOW(), NOW())`, campaign, user, org)
 	exec(`INSERT INTO campaign_senders (campaign_id, email_account_id, enabled) VALUES ($1, $2, true), ($1, $3, false)`,
 		campaign, sending, disabled)
+	// Warmbly Cloud warms the enabled sender; its local warmup columns stay off.
+	instance := uuid.New()
+	exec(`INSERT INTO cloud_link (cloud_url, instance_id, token, organization_id) VALUES ('https://example.test', $1, 'fixture', $2)`, instance, org)
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM cloud_link WHERE instance_id = $1`, instance) })
+	exec(`INSERT INTO cloud_link_mailboxes (email_account_id, remote_id, instance_id, health_pool_type) VALUES ($1, $2, $3, 'premium')`, sending, uuid.New(), instance)
 	repo := NewAdvisorRepository(handle)
 	snap, err := repo.LoadSnapshot(ctx, org, time.Now())
 	if err != nil {
@@ -72,9 +77,21 @@ func TestLiveAdvisorSnapshotReadsTheSendPathsFacts(t *testing.T) {
 			if m.WarmupPaused {
 				t.Error("a stopped warmup read as paused")
 			}
+			if !m.CloudOwnsWarmup {
+				t.Error("a Cloud-enrolled mailbox read as warmed locally")
+			}
+			if m.WarmupPoolType != "premium" {
+				t.Errorf("a Cloud-enrolled mailbox read pool %q, want the pool Cloud reported", m.WarmupPoolType)
+			}
 		case disabled:
 			if m.InActiveCampaign {
 				t.Error("a disabled sender read as in a running campaign")
+			}
+			if m.CloudOwnsWarmup {
+				t.Error("a mailbox with no enrollment read as warmed by Cloud")
+			}
+			if m.WarmupPoolType != "free" {
+				t.Errorf("a local mailbox read pool %q, want its own column's free", m.WarmupPoolType)
 			}
 		}
 	}
