@@ -140,6 +140,8 @@ function VendorAccounts({
                                 {a.clients.length === 0
                                     ? "Not used for a client yet"
                                     : `${plural(a.mailboxes, "mailbox", "mailboxes")} in ${a.clients.map((c) => c.name).join(", ")}`}
+                                {/* A client whose mailboxes the caller cannot list is named, and its count is not in the number. */}
+                                {a.clients.some((c) => c.mailboxes_hidden) && " (not counting clients whose mailboxes you cannot list)"}
                             </div>
                             {a.status === "invalid" && (
                                 <p className="text-[11.5px] text-red-700 leading-snug">{a.last_error || "The vendor no longer accepts this key."}</p>
