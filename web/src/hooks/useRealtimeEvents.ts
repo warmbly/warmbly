@@ -662,7 +662,7 @@ export function useRealtimeEvents() {
         if (keys) invalidate(keys)
         if (entityType === 'email_account') {
           // Send plans and the sidebar's capacity read mailbox limits.
-          invalidate([['analytics', 'dashboard']])
+          accountRefresh.add([['analytics', 'dashboard']])
           accountRefresh.add([['campaigns']], isSendPlanQuery)
         }
         // Unibox writes come in bursts (reading, filing), so they ride the coalescer.

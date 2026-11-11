@@ -1615,10 +1615,12 @@ func (s *campaignService) WorkspaceCapacity(ctx context.Context, orgID uuid.UUID
 	if !ok {
 		return nil, errx.New(errx.Internal, "send planning is not available")
 	}
+	var gen uint64
 	if s.capacityCache != nil {
 		if out, ok := s.capacityCache.get(orgID.String()); ok {
 			return out, nil
 		}
+		gen = s.capacityCache.generation(orgID.String())
 	}
 	accounts, xerr := s.emailRepo.GetAllActiveInScope(ctx, repository.NewAccountScope(&orgID))
 	if xerr != nil {
@@ -1637,7 +1639,7 @@ func (s *campaignService) WorkspaceCapacity(ctx context.Context, orgID uuid.UUID
 		}
 	}
 	if s.capacityCache != nil {
-		s.capacityCache.put(orgID.String(), out)
+		s.capacityCache.putAt(orgID.String(), out, gen)
 	}
 	return out, nil
 }
