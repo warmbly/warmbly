@@ -71,14 +71,19 @@ export default function AddMailboxesDialog({
 }) {
     const [orgId, setOrgId] = React.useState<string | null>(null);
     const [search, setSearch] = React.useState("");
+    // Reset when it opens or is opened for another account; a refetch of the clients keeps the step it is on.
+    const latest = React.useRef(clients);
+    latest.current = clients;
     React.useEffect(() => {
         if (!open) return;
+        const list = latest.current;
         // One client needs no picking.
-        setOrgId(!presetAccountId && clients.length === 1 && clients[0].manage_mailboxes ? clients[0].organization_id : null);
+        setOrgId(!presetAccountId && list.length === 1 && list[0].manage_mailboxes ? list[0].organization_id : null);
         setSearch("");
-    }, [open, presetAccountId, clients]);
+    }, [open, presetAccountId]);
 
-    const client = clients.find((c) => c.organization_id === orgId);
+    // A client that left the list, or that the caller can no longer add to, is not a choice any more.
+    const client = clients.find((c) => c.organization_id === orgId && c.manage_mailboxes);
     const preset = accounts.find((a) => a.id === presetAccountId);
     const shown = clients.filter((c) => c.name.toLowerCase().includes(search.trim().toLowerCase()));
     const step = client ? "how" : "client";

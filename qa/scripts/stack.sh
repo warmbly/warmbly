@@ -268,7 +268,12 @@ up() {
   if vendor_mock; then want_mock=1; fi
   if alive backend && alive web; then
     # The same mode with the mock inbox vendors switched on or off is a different stack: it is restarted.
-    if [ "$(cat "$RUN/mode" 2>/dev/null)" = "$MODE" ] && [ "$(cat "$RUN/vendor-mock" 2>/dev/null || echo 0)" = "$want_mock" ]; then status; return 0; fi
+    # So is one whose mock has exited: outside the sandbox it is a process of its own.
+    if [ "$(cat "$RUN/mode" 2>/dev/null)" = "$MODE" ] && [ "$(cat "$RUN/vendor-mock" 2>/dev/null || echo 0)" = "$want_mock" ] &&
+      { [ "$want_mock" = 0 ] || has sandbox || alive vendors; }; then
+      status
+      return 0
+    fi
     say "switching to $MODE"
     down >/dev/null
   fi

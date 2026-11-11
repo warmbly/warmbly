@@ -79,6 +79,7 @@ function LoadFailed({ what, error, onRetry }: { what: string; error: unknown; on
 
 function VendorAccounts({
     accounts,
+    canAdd,
     failed,
     onRetry,
     canManage,
@@ -88,6 +89,8 @@ function VendorAccounts({
     onRemove,
 }: {
     accounts: AgencyVendorAccount[];
+    /** The caller manages mailboxes in at least one client, so an account can be handed to one. */
+    canAdd: boolean;
     /** The accounts could not be loaded; nothing can be connected until they are. */
     failed: unknown;
     onRetry: () => void;
@@ -142,7 +145,8 @@ function VendorAccounts({
                         <button
                             type="button"
                             onClick={() => onAdd(a)}
-                            disabled={a.status === "invalid"}
+                            disabled={a.status === "invalid" || !canAdd}
+                            title={canAdd ? undefined : "You do not manage mailboxes in any of this agency's clients."}
                             className="h-7 px-2.5 rounded-md border border-slate-200 text-[12px] text-slate-700 hover:border-slate-300 hover:text-slate-900 inline-flex items-center gap-1.5 disabled:opacity-60"
                         >
                             <PlusIcon className="w-3 h-3" />
@@ -207,6 +211,9 @@ function AgencyMailboxes() {
     const totals = overview.data?.totals;
     const filtered = attention || q !== "" || clientFilter.length > 0;
     const busy = pending || giveAccount.isPending;
+    // Adding mailboxes needs a client the caller manages mailboxes in; without one the action cannot succeed.
+    const canAdd = clients.some((c) => c.manage_mailboxes);
+    const cannotAdd = clients.length === 0 ? "Add a client first." : "You do not manage mailboxes in any of this agency's clients.";
 
     const toggleClient = (id: string) => setClientFilter((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
 
@@ -253,6 +260,7 @@ function AgencyMailboxes() {
         <PageBody>
             <VendorAccounts
                 accounts={accounts}
+                canAdd={canAdd}
                 failed={vendors.isError && !vendors.data ? vendors.error : null}
                 onRetry={() => void vendors.refetch()}
                 canManage={canManage}
@@ -271,7 +279,8 @@ function AgencyMailboxes() {
                     ) : undefined
                 }
             >
-                <TopbarAction icon={<PlusIcon className="w-3 h-3" />} onClick={() => setAdding({})} disabled={clients.length === 0}>
+                {!canAdd && overview.data && <span className="text-[11.5px] text-slate-500">{cannotAdd}</span>}
+                <TopbarAction icon={<PlusIcon className="w-3 h-3" />} onClick={() => setAdding({})} disabled={!canAdd}>
                     Add mailboxes
                 </TopbarAction>
             </SectionBar>
@@ -312,7 +321,7 @@ function AgencyMailboxes() {
                             ? "Nothing matches these filters."
                             : "Add mailboxes for a client yourself, from a vendor account or a file, or send the client a link to connect its own."
                     }
-                    cta={!filtered && clients.length > 0 ? <TopbarAction onClick={() => setAdding({})}>Add mailboxes</TopbarAction> : undefined}
+                    cta={!filtered && canAdd ? <TopbarAction onClick={() => setAdding({})}>Add mailboxes</TopbarAction> : undefined}
                 />
             ) : (
                 <div>
