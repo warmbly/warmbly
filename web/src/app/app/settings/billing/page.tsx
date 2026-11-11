@@ -83,7 +83,9 @@ export default function BillingSettingsPage() {
     const canManageBilling = usePermission("MANAGE_BILLING");
     const currentOrg = useAppStore((s) => s.currentOrganization);
     const agencyOf = useCurrentOrganization().data?.agency;
-    const hasAgency = (useAgencies().data?.data ?? []).length > 0;
+    // Until the list is known the link stays neutral: an agency that did not load is not a missing one.
+    const agencies = useAgencies();
+    const hasAgency = agencies.isSuccess ? agencies.data.data.length > 0 : undefined;
     const validateCode = useValidateDiscountCode();
     // Checkout / plan change / portal live in useUpgradeFlow, shared with the
     // in-app upgrade dialog.
@@ -376,7 +378,7 @@ export default function BillingSettingsPage() {
                                             className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 bg-white text-[12px] text-slate-700 transition-colors"
                                         >
                                             <BuildingIcon className="w-3 h-3" />
-                                            {hasAgency ? "Open agency billing" : "Set up an agency"}
+                                            {hasAgency === undefined ? "Agency plans" : hasAgency ? "Open agency billing" : "Set up an agency"}
                                         </Link>
                                     </Section>
                                 )}
