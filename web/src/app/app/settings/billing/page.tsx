@@ -13,6 +13,7 @@ import useBrowseState from "@/hooks/useBrowseState";
 import { billingIntervalSchema } from "@/lib/browse-other-lists";
 import {
     ArrowUpRightIcon,
+    BuildingIcon,
     CheckIcon,
     CreditCardIcon,
     ExternalLinkIcon,
@@ -38,6 +39,8 @@ import useAppliedDiscounts from "@/lib/api/hooks/app/subscription/useAppliedDisc
 import usePreviewPlanChange from "@/lib/api/hooks/app/subscription/usePreviewPlanChange";
 import { useAppStore } from "@/stores";
 import useCurrentOrganization from "@/lib/api/hooks/app/organizations/useCurrentOrganization";
+import { useAgencies } from "@/lib/api/hooks/app/agency/useAgency";
+import { currentPortal } from "@/lib/portal";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import type DiscountPreview from "@/lib/api/models/app/subscription/DiscountPreview";
 import type { DiscountRedemption } from "@/lib/api/models/app/subscription/DiscountRedemption";
@@ -80,6 +83,7 @@ export default function BillingSettingsPage() {
     const canManageBilling = usePermission("MANAGE_BILLING");
     const currentOrg = useAppStore((s) => s.currentOrganization);
     const agencyOf = useCurrentOrganization().data?.agency;
+    const hasAgency = (useAgencies().data?.data ?? []).length > 0;
     const validateCode = useValidateDiscountCode();
     // Checkout / plan change / portal live in useUpgradeFlow, shared with the
     // in-app upgrade dialog.
@@ -360,6 +364,22 @@ export default function BillingSettingsPage() {
                                         Open full pricing page
                                     </Link>
                                 </Section>
+
+                                {/* Agency plans belong to an agency, not to one workspace, so they are chosen there. */}
+                                {!currentPortal().portal && (
+                                    <Section
+                                        eyebrow="Outreach for clients"
+                                        description="An agency plan covers every client workspace: one bill, one shared pool of sends, no fee per client. It is chosen on the agency, not on a workspace."
+                                    >
+                                        <Link
+                                            to={hasAgency ? "/app/agency/billing" : "/app/agency"}
+                                            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 bg-white text-[12px] text-slate-700 transition-colors"
+                                        >
+                                            <BuildingIcon className="w-3 h-3" />
+                                            {hasAgency ? "Open agency billing" : "Set up an agency"}
+                                        </Link>
+                                    </Section>
+                                )}
 
                                 <Section
                                     eyebrow="Promo code"
