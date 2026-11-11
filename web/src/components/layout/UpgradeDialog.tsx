@@ -410,8 +410,11 @@ function Header({
                     {request.title ?? `${request.feature} is on the ${planLabel} plan`}
                 </h2>
                 <p className="mt-1.5 text-[13px] text-slate-500 leading-relaxed max-w-2xl">
+                    {/* Only a locked feature promises that the feature turns on; a plain chooser compares plans. */}
                     {request.blurb ??
-                        `Pick a plan and ${request.feature.toLowerCase()} turns on for your whole workspace the moment checkout completes.`}
+                        (request.title
+                            ? "Compare every plan and pick monthly or annual billing."
+                            : `Pick a plan and ${request.feature.toLowerCase()} turns on for your whole workspace the moment checkout completes.`)}
                 </p>
                 {bullets && bullets.length > 0 && (
                     <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-slate-600">
