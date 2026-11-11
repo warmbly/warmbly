@@ -172,8 +172,9 @@ worker sampling, network egress, mail delivery or inbox placement.
 
 `flows/billing-agency-plans.flow.ts` records the agency plans on a workspace's Plans tab. The default stack
 runs with billing off, where the billing page has no Plans tab, so the flow is opt-in: start the stack with
-`QA_STRIPE_SECRET_KEY` set to a Stripe test-mode key (nothing is charged; the flow only reads plans), with the
-seeded workspace not attached to an agency, then run `QA_BILLING=1 pnpm proof billing-agency-plans`.
+`QA_STRIPE_SECRET_KEY` set to a Stripe test-mode key (nothing is charged; the flow only reads plans). The
+seeded account must be staff of no agency and its workspace attached to none, which a fresh seed is: the link
+the flow looks for reads "Set up an agency" only then. Run `QA_BILLING=1 pnpm proof billing-agency-plans`.
 
 ## Admin agency proof fixtures
 
