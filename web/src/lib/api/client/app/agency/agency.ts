@@ -1,5 +1,5 @@
 import Request from "../../Request";
-import type { AgenciesResult, Agency, AgencyAIBalance, AgencyAITransferResult, AgencyAutoTopup, AgencyClient, AgencyClientPatch, AgencyInvitation, AgencyMember, AgencyPlanChangePreview, AgencyPlansResult, AgencyRole, AgencyStaffResult, AgencyUsage } from "@/lib/api/models/app/agency/Agency";
+import type { AgenciesResult, Agency, AgencyAIAutoTopup, AgencyAIBalance, AgencyAITransferResult, AgencyAutoTopup, AgencyClient, AgencyClientPatch, AgencyInvitation, AgencyMember, AgencyPlanChangePreview, AgencyPlansResult, AgencyRole, AgencyStaffResult, AgencyUsage } from "@/lib/api/models/app/agency/Agency";
 
 const idem = () => ({ "Idempotency-Key": crypto.randomUUID() });
 
@@ -127,6 +127,12 @@ export const getAgencyAutoTopup = (agencyId: string) =>
 
 export const setAgencyAutoTopup = (agencyId: string, input: { enabled: boolean; threshold_sends: number; max_packs: number }) =>
     Request<AgencyAutoTopup>({ method: "PUT", url: `/agency/${agencyId}/billing/auto-topup`, data: input, authorization: true });
+
+export const getAgencyAIAutoTopup = (agencyId: string) =>
+    Request<AgencyAIAutoTopup>({ method: "GET", url: `/agency/${agencyId}/billing/ai-auto-topup`, authorization: true });
+
+export const setAgencyAIAutoTopup = (agencyId: string, input: { enabled: boolean; threshold_usd: number; amount_usd: number; limit_usd: number }) =>
+    Request<AgencyAIAutoTopup>({ method: "PUT", url: `/agency/${agencyId}/billing/ai-auto-topup`, data: input, authorization: true });
 
 export const agencyTopup = (agencyId: string) =>
     Request<{ checkout_url: string }>({ method: "POST", url: `/agency/${agencyId}/billing/topup`, data: {}, headers: idem(), authorization: true });

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stripe/stripe-go/v86"
@@ -12,11 +13,13 @@ import (
 	"github.com/stripe/stripe-go/v86/invoice"
 	"github.com/stripe/stripe-go/v86/invoiceitem"
 	"github.com/stripe/stripe-go/v86/subscription"
+	"github.com/warmbly/warmbly/internal/app/credits"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
 )
 
+// Both automatic top-ups mark their invoices with one purpose, so agency billing claims their events.
 const purposeAgencyAutoTopup = "agency_topup_auto"
 
 // SavedCard is the card an agency's subscription is paid with, as the dashboard shows it.
@@ -48,7 +51,7 @@ type packCharger interface {
 	// Card is the agency's saved card; nil when it has none.
 	Card(ctx context.Context, a *models.Agency) (*SavedCard, error)
 	// Charge bills cents to the card once per key and returns the payment's reference; declined reports a refusal by the card.
-	Charge(ctx context.Context, a *models.Agency, card *SavedCard, cents int64, key string, meta map[string]string) (ref string, declined bool, err error)
+	Charge(ctx context.Context, a *models.Agency, card *SavedCard, cents int64, description, key string, meta map[string]string) (ref string, declined bool, err error)
 }
 
 func (s *Service) packs() packCharger {
@@ -198,7 +201,7 @@ func (s *Service) autoTopup(ctx context.Context, a *models.Agency) {
 		metaPurpose: purposeAgencyAutoTopup, metaAgencyID: a.ID.String(),
 		"sends": strconv.Itoa(models.AgencyTopupSends), "amount_cents": strconv.FormatInt(cents, 10),
 	}
-	ref, declined, err := charger.Charge(ctx, a, card, cents, key, meta)
+	ref, declined, err := charger.Charge(ctx, a, card, cents, "Agency send pack: 50,000 sends (automatic top-up)", key, meta)
 	if declined {
 		s.autoTopupOff(ctx, a, models.AgencyAutoTopupDeclined)
 		return
@@ -302,8 +305,7 @@ func (stripeCharger) Card(ctx context.Context, a *models.Agency) (*SavedCard, er
 	return cardOf(cust.InvoiceSettings.DefaultPaymentMethod), nil
 }
 
-func (stripeCharger) Charge(ctx context.Context, a *models.Agency, card *SavedCard, cents int64, key string, meta map[string]string) (string, bool, error) {
-	description := "Agency send pack: 50,000 sends (automatic top-up)"
+func (stripeCharger) Charge(ctx context.Context, a *models.Agency, card *SavedCard, cents int64, description, key string, meta map[string]string) (string, bool, error) {
 	ip := &stripe.InvoiceParams{
 		Params:                      stripe.Params{Context: ctx},
 		Customer:                    a.StripeCustomerID,
@@ -368,4 +370,212 @@ func (stripeCharger) Charge(ctx context.Context, a *models.Agency, card *SavedCa
 		}
 	}
 	return inv.ID, false, nil
+}
+
+// AIAutoTopup is the automatic top-up of an agency's shared AI balance as its billing page shows it.
+type AIAutoTopup struct {
+	Enabled bool `json:"enabled"`
+	// Under ThresholdUSD left, AmountUSD is added, never more than LimitUSD in one period.
+	ThresholdUSD float64 `json:"threshold_usd"`
+	AmountUSD    float64 `json:"amount_usd"`
+	LimitUSD     float64 `json:"limit_usd"`
+	// AddedThisPeriodUSD is what it has added in the current period.
+	AddedThisPeriodUSD float64 `json:"added_this_period_usd"`
+	// Failure says why it turned itself off: no_payment_method or card_declined.
+	Failure string     `json:"failure,omitempty"`
+	Card    *SavedCard `json:"card,omitempty"`
+	// Available is false where there is no shared AI balance to add to: no plan in force, or AI is not charged.
+	Available bool    `json:"available"`
+	MinUSD    float64 `json:"min_usd"`
+	MaxUSD    float64 `json:"max_usd"`
+}
+
+func (s *Service) aiAutoTopupView(ctx context.Context, a *models.Agency, withCard bool) (*AIAutoTopup, *errx.Error) {
+	_, _, planned := s.grantPlan(a)
+	out := &AIAutoTopup{
+		Enabled: a.AIAutoTopupEnabled, ThresholdUSD: a.AIAutoTopupThreshold.USD(), AmountUSD: a.AIAutoTopupAmount.USD(), LimitUSD: a.AIAutoTopupLimit.USD(),
+		Available: planned && s.ai != nil && s.aiMetered,
+		MinUSD:    credits.TopUpMin.USD(), MaxUSD: credits.TopUpMax.USD(),
+	}
+	if a.AIAutoTopupFailure != nil {
+		out.Failure = *a.AIAutoTopupFailure
+	}
+	if s.ai != nil && s.aiMetered {
+		added, _, err := s.ai.AutoPurchased(ctx, a.ID, s.aiPeriod(ctx, a).Start)
+		if err != nil {
+			return nil, internal(err)
+		}
+		out.AddedThisPeriodUSD = added.USD()
+	}
+	if withCard && s.billing {
+		if card, cerr := s.packs().Card(ctx, a); cerr == nil {
+			out.Card = card
+		} else {
+			errs.CaptureException(fmt.Errorf("agency saved card: %w", cerr))
+		}
+	}
+	return out, nil
+}
+
+// AIAutoTopup is the shared AI balance's automatic top-up settings, with the card a top-up would be charged to.
+func (s *Service) AIAutoTopup(ctx context.Context, agencyID, userID uuid.UUID) (*AIAutoTopup, *errx.Error) {
+	if !s.billing {
+		return nil, errBillingDisabled
+	}
+	a, _, xerr := s.access(ctx, agencyID, userID, false)
+	if xerr != nil {
+		return nil, xerr
+	}
+	return s.aiAutoTopupView(ctx, a, true)
+}
+
+// SetAIAutoTopup turns the shared AI balance's automatic top-up on or off and sets when it adds money, how much, and the most a period.
+func (s *Service) SetAIAutoTopup(ctx context.Context, agencyID, actorID uuid.UUID, enabled bool, threshold, amount, limit models.Micro) (*AIAutoTopup, *errx.Error) {
+	if !s.billing || s.ai == nil || !s.aiMetered {
+		return nil, errBillingDisabled
+	}
+	a, _, xerr := s.access(ctx, agencyID, actorID, true)
+	if xerr != nil {
+		return nil, xerr
+	}
+	invalid := func(msg string) *errx.Error {
+		return errx.NewWithIdentifier(errx.BadRequest, "invalid_ai_auto_topup", msg)
+	}
+	switch {
+	case amount < credits.TopUpMin || amount > credits.TopUpMax:
+		return nil, invalid("Each top-up must be between $5 and $5,000.")
+	case threshold < 0 || threshold > credits.TopUpMax:
+		return nil, invalid("The balance to top up at must be between $0 and $5,000.")
+	case limit < amount:
+		return nil, invalid("The limit for a billing period must be at least one top-up.")
+	case limit > models.AgencyAIAutoTopupMaxLimit:
+		return nil, invalid("The limit for a billing period can be at most $50,000.")
+	}
+	var card *SavedCard
+	if enabled {
+		if _, _, ok := s.grantPlan(a); !ok {
+			return nil, errx.NewWithIdentifier(errx.BadRequest, "agency_no_subscription", "Choose an agency plan before turning on automatic top-up.")
+		}
+		c, err := s.packs().Card(ctx, a)
+		if err != nil {
+			errs.CaptureException(fmt.Errorf("agency saved card: %w", err))
+			return nil, errx.New(errx.Internal, "failed to read the saved card")
+		}
+		if c == nil {
+			return nil, errx.NewWithIdentifier(errx.Conflict, "agency_no_payment_method",
+				"This agency has no saved card. Automatic top-up charges the card its subscription is paid with.")
+		}
+		card = c
+	}
+	if err := s.repo.SetAIAutoTopup(ctx, agencyID, enabled, threshold, amount, limit); err != nil {
+		return nil, internal(err)
+	}
+	a.AIAutoTopupEnabled, a.AIAutoTopupThreshold, a.AIAutoTopupAmount, a.AIAutoTopupLimit, a.AIAutoTopupFailure = enabled, threshold, amount, limit, nil
+	// A balance already under the new threshold is topped up now, not at the next check.
+	if enabled {
+		s.autoTopupAI(ctx, a)
+		if fresh, err := s.repo.Get(ctx, agencyID); err == nil && fresh != nil {
+			a = fresh
+		}
+	}
+	view, xerr := s.aiAutoTopupView(ctx, a, false)
+	if xerr != nil {
+		return nil, xerr
+	}
+	view.Card = card
+	return view, nil
+}
+
+// OnAgencyAISpend is called after a client workspace's charge drew on its agency's shared AI balance.
+func (s *Service) OnAgencyAISpend(orgID uuid.UUID) {
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	a, err := s.repo.GetAgencyForOrganization(ctx, orgID)
+	if err != nil || a == nil {
+		return
+	}
+	s.autoTopupAI(ctx, a)
+}
+
+// autoTopupAI adds the agency's chosen amount to its shared AI balance when the
+// balance is under its threshold and the period's limit has room for it.
+// Best-effort; a refusal by the card turns it off and tells the people who manage the agency.
+func (s *Service) autoTopupAI(ctx context.Context, a *models.Agency) {
+	if !s.billing || s.ai == nil || !s.aiMetered || !a.AIAutoTopupEnabled || a.StripeCustomerID == nil || *a.StripeCustomerID == "" {
+		return
+	}
+	if _, _, ok := s.grantPlan(a); !ok {
+		return
+	}
+	lock := s.switching(a.ID)
+	lock.Lock()
+	defer lock.Unlock()
+
+	period := s.aiPeriod(ctx, a)
+	stored, err := s.ai.Ledger(ctx, a.ID)
+	if err != nil {
+		errs.CaptureException(err)
+		return
+	}
+	l := stored.In(period)
+	balance := l.Allowance + l.Purchased
+	if balance >= a.AIAutoTopupThreshold {
+		return
+	}
+	added, count, err := s.ai.AutoPurchased(ctx, a.ID, period.Start)
+	if err != nil {
+		errs.CaptureException(err)
+		return
+	}
+	amount := a.AIAutoTopupAmount
+	if added+amount > a.AIAutoTopupLimit {
+		return
+	}
+	charger := s.packs()
+	card, err := charger.Card(ctx, a)
+	if err != nil {
+		errs.CaptureException(fmt.Errorf("agency AI auto top-up card: %w", err))
+		return
+	}
+	off := func(failure string) {
+		if err := s.repo.DisableAIAutoTopup(ctx, a.ID, failure); err != nil {
+			errs.CaptureException(err)
+			return
+		}
+		body := "The card on file was declined, so automatic top-up of the AI balance is off. Update the card under Agency > Billing and turn it on again."
+		if failure == models.AgencyAutoTopupNoCard {
+			body = "There is no saved card to charge, so automatic top-up of the AI balance is off. Add a card under Agency > Billing and turn it on again."
+		}
+		s.tellManagers(ctx, a, "Automatic top-up could not add AI balance", body, map[string]any{"agency_id": a.ID.String(), "ai_auto_topup": failure})
+	}
+	if card == nil {
+		off(models.AgencyAutoTopupNoCard)
+		return
+	}
+	cents := amount.Cents()
+	// One key per top-up of a period, so every replica that reaches this asks Stripe for the same charge.
+	key := fmt.Sprintf("agency-ai-autotopup-%s-%d-%d", a.ID, period.Start.Unix(), count+1)
+	meta := map[string]string{
+		metaPurpose: purposeAgencyAutoTopup, metaAgencyID: a.ID.String(), "kind": "ai", "amount_cents": strconv.FormatInt(cents, 10),
+	}
+	ref, declined, err := charger.Charge(ctx, a, card, cents, "Agency AI balance (automatic top-up)", key, meta)
+	if declined {
+		off(models.AgencyAutoTopupDeclined)
+		return
+	}
+	if err != nil {
+		errs.CaptureException(fmt.Errorf("agency AI auto top-up %s: %w", a.ID, err))
+		return
+	}
+	granted, err := s.ai.GrantAutoPurchased(ctx, a.ID, models.MicroFromCents(cents), period, ref)
+	if err != nil {
+		errs.CaptureException(err)
+		return
+	}
+	if granted {
+		s.tellManagers(ctx, a, "AI balance was added automatically",
+			fmt.Sprintf("Your agency's shared AI balance was down to $%.2f, so $%.2f was added. $%.2f of your $%.2f limit is used this period.",
+				balance.USD(), amount.USD(), (added+amount).USD(), a.AIAutoTopupLimit.USD()),
+			map[string]any{"agency_id": a.ID.String(), "ai_auto_topup": "bought"})
+	}
 }

@@ -23,6 +23,7 @@ import buildError from "@/lib/helper/buildError";
 import { cn } from "@/lib/utils";
 import { formatNumber } from "@/components/app/agency/styles";
 import ExtraSends from "@/components/app/agency/ExtraSends";
+import { AIAutoTopup } from "@/components/app/agency/AutoTopup";
 import { AGENCY_PLAN_FEATURES } from "@/components/app/agency/planFeatures";
 import { fmtUsd, fmtUsdTrim, roundCents } from "@/lib/money";
 
@@ -258,6 +259,9 @@ function AgencyBilling() {
                 <>
                     <SectionBar label="AI balance" />
                     <BuyAIBalance agencyId={agencyId} balance={ai.data} canManage={canManage} />
+                    <div className="px-5 py-4 border-b border-slate-200">
+                        <AIAutoTopup agencyId={agencyId} canManage={canManage} />
+                    </div>
                 </>
             )}
 

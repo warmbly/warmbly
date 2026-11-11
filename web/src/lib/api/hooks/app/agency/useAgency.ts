@@ -26,6 +26,8 @@ import {
     changeAgencyPlan,
     getAgencyAutoTopup,
     setAgencyAutoTopup,
+    getAgencyAIAutoTopup,
+    setAgencyAIAutoTopup,
 } from "@/lib/api/client/app/agency/agency";
 import type { Agency, AgencyClient, AgencyClientPatch, AgencyRole, AgencyPlanChangePreview } from "@/lib/api/models/app/agency/Agency";
 import { currentPortal, portalAgencies } from "@/lib/portal";
@@ -360,6 +362,27 @@ export function useSetAgencyAutoTopup(agencyId: string) {
     return useMutation({
         mutationFn: (input: { enabled: boolean; threshold_sends: number; max_packs: number }) => setAgencyAutoTopup(agencyId, input),
         onSuccess: (data) => qc.setQueryData(agencyAutoTopupQuery(agencyId).queryKey, data),
+        onSettled: () => void qc.invalidateQueries({ queryKey: ["agency"] }),
+    });
+}
+
+export const agencyAIAutoTopupQuery = (agencyId: string) =>
+    queryOptions({
+        queryKey: ["agency", agencyId, "ai-auto-topup"],
+        queryFn: () => getAgencyAIAutoTopup(agencyId),
+        enabled: !!agencyId,
+    });
+
+export function useAgencyAIAutoTopup(agencyId?: string) {
+    return useQuery(agencyAIAutoTopupQuery(agencyId ?? ""));
+}
+
+// The server checks the card and may add balance at once, so nothing is patched before it answers.
+export function useSetAgencyAIAutoTopup(agencyId: string) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (input: { enabled: boolean; threshold_usd: number; amount_usd: number; limit_usd: number }) => setAgencyAIAutoTopup(agencyId, input),
+        onSuccess: (data) => qc.setQueryData(agencyAIAutoTopupQuery(agencyId).queryKey, data),
         onSettled: () => void qc.invalidateQueries({ queryKey: ["agency"] }),
     });
 }

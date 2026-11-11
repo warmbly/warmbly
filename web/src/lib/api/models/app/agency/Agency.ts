@@ -183,3 +183,18 @@ export interface AgencyAutoTopup {
     /** False when the agency has no pool to top up. */
     available: boolean;
 }
+
+/** The automatic top-up of an agency's shared AI balance. */
+export interface AgencyAIAutoTopup {
+    enabled: boolean;
+    /** Under this much left, `amount_usd` is added, never more than `limit_usd` in one period. */
+    threshold_usd: number;
+    amount_usd: number;
+    limit_usd: number;
+    added_this_period_usd: number;
+    failure?: "no_payment_method" | "card_declined";
+    card?: { brand: string; last4: string };
+    available: boolean;
+    min_usd: number;
+    max_usd: number;
+}

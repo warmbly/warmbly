@@ -148,6 +148,7 @@ func (s *Service) Sweep(ctx context.Context) error {
 			}
 			// Topped up before the alert is decided, so a pool the pack refilled raises none.
 			s.autoTopup(ctx, a)
+			s.autoTopupAI(ctx, a)
 			s.checkAlerts(ctx, a)
 		}
 		if len(page) < 100 || ctx.Err() != nil {

@@ -19,7 +19,7 @@ type fakeCharger struct {
 
 func (f *fakeCharger) Card(context.Context, *models.Agency) (*SavedCard, error) { return f.card, nil }
 
-func (f *fakeCharger) Charge(_ context.Context, _ *models.Agency, _ *SavedCard, cents int64, key string, _ map[string]string) (string, bool, error) {
+func (f *fakeCharger) Charge(_ context.Context, _ *models.Agency, _ *SavedCard, cents int64, _, key string, _ map[string]string) (string, bool, error) {
 	f.keys = append(f.keys, key)
 	f.cents = append(f.cents, cents)
 	if f.declined {
@@ -177,5 +177,146 @@ func TestSetAutoTopupNeedsACardAndSaneLimits(t *testing.T) {
 	charger.card = nil
 	if view, xerr := s.SetAutoTopup(ctx, a.ID, actor, false, 10_000, 3); xerr != nil || view.Enabled {
 		t.Fatalf("off: %+v %v", view, xerr)
+	}
+}
+
+// aiLedger is the shared AI balance in memory: what is left and what the automatic top-up added.
+type aiLedger struct {
+	fakeAI
+	left    models.Micro
+	added   []models.Micro
+	periods []time.Time
+}
+
+func (l *aiLedger) Ledger(context.Context, uuid.UUID) (models.AgencyAILedger, error) {
+	// A ledger already in the current period, so the plan's allowance is not refilled over it.
+	far := time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC)
+	return models.AgencyAILedger{Purchased: l.left, PeriodStart: &far}, nil
+}
+
+func (l *aiLedger) AutoPurchased(context.Context, uuid.UUID, time.Time) (models.Micro, int, error) {
+	var sum models.Micro
+	for _, a := range l.added {
+		sum += a
+	}
+	return sum, len(l.added), nil
+}
+
+func (l *aiLedger) GrantAutoPurchased(_ context.Context, _ uuid.UUID, amount models.Micro, p models.AgencyAIPeriod, _ string) (bool, error) {
+	l.added = append(l.added, amount)
+	l.periods = append(l.periods, p.Start)
+	l.left += amount
+	return true, nil
+}
+
+// aiTopupRepo is topupRepo plus the AI balance's own settings.
+type aiTopupRepo struct {
+	*topupRepo
+	aiDisabled string
+}
+
+func (r *aiTopupRepo) SetAIAutoTopup(_ context.Context, _ uuid.UUID, enabled bool, threshold, amount, limit models.Micro) error {
+	a := r.agency
+	a.AIAutoTopupEnabled, a.AIAutoTopupThreshold, a.AIAutoTopupAmount, a.AIAutoTopupLimit, a.AIAutoTopupFailure = enabled, threshold, amount, limit, nil
+	return nil
+}
+
+func (r *aiTopupRepo) DisableAIAutoTopup(_ context.Context, _ uuid.UUID, failure string) error {
+	r.aiDisabled = failure
+	r.agency.AIAutoTopupEnabled = false
+	return nil
+}
+
+func newAITopupService(a *models.Agency, left models.Micro, charger *fakeCharger, now time.Time) (*Service, *aiTopupRepo, *aiLedger, uuid.UUID) {
+	actor := uuid.New()
+	repo := &aiTopupRepo{topupRepo: &topupRepo{operatorRepo: &operatorRepo{
+		fakeRepo: &fakeRepo{agency: a, grants: map[uuid.UUID]uuid.UUID{}},
+		staff:    map[uuid.UUID]bool{actor: true}, untils: map[uuid.UUID]*time.Time{},
+	}}}
+	s := NewService(repo, operatorOrgs{}, operatorUsers{}, operatorSubs{}, fakePlans{pool: intp(150_000)})
+	s.billing = true
+	s.now = func() time.Time { return now }
+	s.charger = charger
+	ledger := &aiLedger{left: left}
+	s.WireAIBalance(ledger, true)
+	return s, repo, ledger, actor
+}
+
+const usd = models.MicroPerUSD
+
+func aiTopupAgency(now time.Time, threshold, amount, limit models.Micro) *models.Agency {
+	a := activeAgency(now)
+	a.StripeCustomerID, a.StripeSubscriptionID = strp("cus_1"), strp("sub_1")
+	a.AIAutoTopupEnabled, a.AIAutoTopupThreshold, a.AIAutoTopupAmount, a.AIAutoTopupLimit = true, threshold, amount, limit
+	return a
+}
+
+func TestAIAutoTopupAddsTheAmountUnderTheThreshold(t *testing.T) {
+	now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
+	a := aiTopupAgency(now, 5*usd, 25*usd, 100*usd)
+	charger := &fakeCharger{card: &SavedCard{ID: "pm_1"}}
+	s, _, ledger, _ := newAITopupService(a, 2*usd, charger, now)
+	ctx := context.Background()
+
+	s.autoTopupAI(ctx, a)
+	if len(ledger.added) != 1 || ledger.added[0] != 25*usd || len(charger.cents) != 1 || charger.cents[0] != 2_500 {
+		t.Fatalf("added %v, charged %v", ledger.added, charger.cents)
+	}
+	// $27 is left now, above the $5 threshold.
+	s.autoTopupAI(ctx, a)
+	if len(charger.keys) != 1 {
+		t.Fatalf("a balance above its threshold was charged again: %v", charger.keys)
+	}
+}
+
+func TestAIAutoTopupNeverPassesThePeriodsLimit(t *testing.T) {
+	now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
+	// $25 at a time with a $60 limit: two fit, a third would pass it.
+	a := aiTopupAgency(now, 5*usd, 25*usd, 60*usd)
+	charger := &fakeCharger{card: &SavedCard{ID: "pm_1"}}
+	s, _, ledger, _ := newAITopupService(a, 0, charger, now)
+	ctx := context.Background()
+	for range 5 {
+		ledger.left = 0
+		s.autoTopupAI(ctx, a)
+	}
+	if len(ledger.added) != 2 || len(charger.keys) != 2 || charger.keys[0] == charger.keys[1] {
+		t.Fatalf("added %v with keys %v, want two top-ups under the $60 limit", ledger.added, charger.keys)
+	}
+}
+
+func TestAIAutoTopupTurnsItselfOffWhenTheCardRefuses(t *testing.T) {
+	now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
+	a := aiTopupAgency(now, 5*usd, 25*usd, 100*usd)
+	s, repo, ledger, _ := newAITopupService(a, 0, &fakeCharger{card: &SavedCard{ID: "pm_1"}, declined: true}, now)
+	s.autoTopupAI(context.Background(), a)
+	if repo.aiDisabled != models.AgencyAutoTopupDeclined || a.AIAutoTopupEnabled || len(ledger.added) != 0 {
+		t.Fatalf("disabled=%q enabled=%v added=%v", repo.aiDisabled, a.AIAutoTopupEnabled, ledger.added)
+	}
+}
+
+func TestSetAIAutoTopupChecksItsAmounts(t *testing.T) {
+	now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
+	ctx := context.Background()
+	a := activeAgency(now)
+	a.StripeCustomerID = strp("cus_1")
+	charger := &fakeCharger{card: &SavedCard{ID: "pm_1", Brand: "visa", Last4: "4242"}}
+	s, _, _, actor := newAITopupService(a, 50*usd, charger, now)
+
+	for _, c := range [][3]models.Micro{{5 * usd, 2 * usd, 100 * usd}, {5 * usd, 25 * usd, 10 * usd}, {-1, 25 * usd, 100 * usd}, {5 * usd, 6_000 * usd, 10_000 * usd}} {
+		if _, xerr := s.SetAIAutoTopup(ctx, a.ID, actor, true, c[0], c[1], c[2]); xerr == nil || xerr.Identifier != "invalid_ai_auto_topup" {
+			t.Fatalf("threshold %d amount %d limit %d: got %v", c[0], c[1], c[2], xerr)
+		}
+	}
+	view, xerr := s.SetAIAutoTopup(ctx, a.ID, actor, true, 5*usd, 25*usd, 100*usd)
+	if xerr != nil {
+		t.Fatal(xerr)
+	}
+	if !view.Enabled || view.ThresholdUSD != 5 || view.AmountUSD != 25 || view.LimitUSD != 100 || view.Card == nil || !view.Available || view.AddedThisPeriodUSD != 0 {
+		t.Fatalf("view: %+v", view)
+	}
+	charger.card = nil
+	if _, xerr := s.SetAIAutoTopup(ctx, a.ID, actor, true, 5*usd, 25*usd, 100*usd); xerr == nil || xerr.Identifier != "agency_no_payment_method" {
+		t.Fatalf("no card: got %v", xerr)
 	}
 }

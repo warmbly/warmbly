@@ -45,6 +45,10 @@ type AgencyAIRepository interface {
 	Transfer(ctx context.Context, agencyID, orgID uuid.UUID, amount models.Micro, period models.AgencyAIPeriod, key string, actor uuid.UUID) (*models.AgencyAITransfer, error)
 	// GrantPurchased adds a paid top-up, once per payment intent.
 	GrantPurchased(ctx context.Context, agencyID uuid.UUID, amount models.Micro, period models.AgencyAIPeriod, paymentIntent string, actor *uuid.UUID) (bool, error)
+	// GrantAutoPurchased is GrantPurchased for a top-up the automatic top-up bought.
+	GrantAutoPurchased(ctx context.Context, agencyID uuid.UUID, amount models.Micro, period models.AgencyAIPeriod, paymentIntent string) (bool, error)
+	// AutoPurchased is what the automatic top-up added in the period, and in how many top-ups, refunded ones included.
+	AutoPurchased(ctx context.Context, agencyID uuid.UUID, periodStart time.Time) (models.Micro, int, error)
 	// Credit adds money an operator gave, which never expires, once per key.
 	Credit(ctx context.Context, agencyID uuid.UUID, amount models.Micro, period models.AgencyAIPeriod, reason, key string, actor uuid.UUID) (bool, error)
 	// RefundPurchase takes a refunded top-up back out of the bought balance, as
@@ -418,7 +422,26 @@ func (r *agencyAIRepository) ownBalance(ctx context.Context, q queryRower, orgID
 	return total, err
 }
 
+// agencyAIAutoTopupReason marks a top-up the automatic top-up bought.
+const agencyAIAutoTopupReason = "agency_ai_auto_topup"
+
 func (r *agencyAIRepository) GrantPurchased(ctx context.Context, agencyID uuid.UUID, amount models.Micro, period models.AgencyAIPeriod, paymentIntent string, actor *uuid.UUID) (bool, error) {
+	return r.grantPurchased(ctx, agencyID, amount, period, paymentIntent, "agency_ai_topup", actor)
+}
+
+func (r *agencyAIRepository) GrantAutoPurchased(ctx context.Context, agencyID uuid.UUID, amount models.Micro, period models.AgencyAIPeriod, paymentIntent string) (bool, error) {
+	return r.grantPurchased(ctx, agencyID, amount, period, paymentIntent, agencyAIAutoTopupReason, nil)
+}
+
+func (r *agencyAIRepository) AutoPurchased(ctx context.Context, agencyID uuid.UUID, periodStart time.Time) (models.Micro, int, error) {
+	var sum models.Micro
+	var n int
+	err := r.DB.QueryRow(ctx, `SELECT COALESCE(SUM(amount_micro), 0), COUNT(*) FROM agency_ai_transactions
+		WHERE agency_id = $1 AND period_start = $2 AND kind = 'topup' AND reason = $3`, agencyID, periodStart, agencyAIAutoTopupReason).Scan(&sum, &n)
+	return sum, n, err
+}
+
+func (r *agencyAIRepository) grantPurchased(ctx context.Context, agencyID uuid.UUID, amount models.Micro, period models.AgencyAIPeriod, paymentIntent, reason string, actor *uuid.UUID) (bool, error) {
 	if amount <= 0 || paymentIntent == "" {
 		return false, errors.New("a top-up needs a positive amount and its payment")
 	}
@@ -446,7 +469,7 @@ func (r *agencyAIRepository) GrantPurchased(ctx context.Context, agencyID uuid.U
 		return false, err
 	}
 	if err := insertAgencyTxn(ctx, tx, agencyTxn{
-		agencyID: agencyID, kind: agencyAITopup, amount: amount, after: l, reason: "agency_ai_topup",
+		agencyID: agencyID, kind: agencyAITopup, amount: amount, after: l, reason: reason,
 		key: &key, paymentIntent: &paymentIntent, actor: actor,
 	}); err != nil {
 		return false, err

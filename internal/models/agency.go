@@ -109,6 +109,12 @@ type Agency struct {
 	AutoTopupThreshold int     `json:"-"`
 	AutoTopupMaxPacks  int     `json:"-"`
 	AutoTopupFailure   *string `json:"-"`
+	// The same for the shared AI balance: under AIAutoTopupThreshold, AIAutoTopupAmount is added, up to AIAutoTopupLimit a period.
+	AIAutoTopupEnabled   bool    `json:"-"`
+	AIAutoTopupThreshold Micro   `json:"-"`
+	AIAutoTopupAmount    Micro   `json:"-"`
+	AIAutoTopupLimit     Micro   `json:"-"`
+	AIAutoTopupFailure   *string `json:"-"`
 	// Grant is set while an operator's plan is in force, for the dashboard.
 	Grant *AgencyGrant `json:"granted,omitempty"`
 	// BillingInterval is "month" or "year" while a subscription is in force, read off its period.
@@ -191,6 +197,8 @@ type AgencyPoolTopup struct {
 const (
 	AgencyAutoTopupMaxThreshold = 10_000_000
 	AgencyAutoTopupMaxPacks     = 20
+	// AgencyAIAutoTopupMaxLimit bounds what the AI balance's automatic top-up may add in one period.
+	AgencyAIAutoTopupMaxLimit Micro = 50_000 * MicroPerUSD
 )
 
 // Why an automatic top-up turned itself off.

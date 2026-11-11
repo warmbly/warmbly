@@ -82,6 +82,10 @@ type AgencyRepository interface {
 	SetAutoTopup(ctx context.Context, agencyID uuid.UUID, enabled bool, threshold, maxPacks int) error
 	// DisableAutoTopup turns the automatic top-up off and records why.
 	DisableAutoTopup(ctx context.Context, agencyID uuid.UUID, failure string) error
+	// SetAIAutoTopup stores the AI balance's automatic top-up settings and clears why it last turned itself off.
+	SetAIAutoTopup(ctx context.Context, agencyID uuid.UUID, enabled bool, threshold, amount, limit models.Micro) error
+	// DisableAIAutoTopup turns the AI balance's automatic top-up off and records why.
+	DisableAIAutoTopup(ctx context.Context, agencyID uuid.UUID, failure string) error
 	// AutoTopupCount is how many packs the automatic top-up bought in the period, refunded ones included.
 	AutoTopupCount(ctx context.Context, agencyID uuid.UUID, periodStart time.Time) (int, error)
 	// ClaimPoolAlert raises the period's alert level; false when it was already that high.
@@ -122,7 +126,8 @@ const agencyColumns = `a.id, a.name, a.owner_user_id, a.plan_id, a.stripe_custom
 	(SELECT COUNT(*) FROM agency_clients ac WHERE ac.agency_id = a.id),
 	a.managed_plan_id, a.managed_at, a.managed_by, a.managed_reason, a.managed_until,
 	a.pool_override, a.ai_allowance_override_micro, a.override_reason, a.override_by, a.override_at,
-	a.auto_topup_enabled, a.auto_topup_threshold, a.auto_topup_max_packs, a.auto_topup_failure`
+	a.auto_topup_enabled, a.auto_topup_threshold, a.auto_topup_max_packs, a.auto_topup_failure,
+	a.ai_auto_topup_enabled, a.ai_auto_topup_threshold_micro, a.ai_auto_topup_amount_micro, a.ai_auto_topup_limit_micro, a.ai_auto_topup_failure`
 
 func scanAgency(row pgx.Row, extra ...any) (*models.Agency, error) {
 	var a models.Agency
@@ -131,7 +136,8 @@ func scanAgency(row pgx.Row, extra ...any) (*models.Agency, error) {
 		&a.CreatedAt, &a.UpdatedAt, &a.ClientCount,
 		&a.ManagedPlanID, &a.ManagedAt, &a.ManagedBy, &a.ManagedReason, &a.ManagedUntil,
 		&a.PoolOverride, &a.AIAllowanceOverride, &a.OverrideReason, &a.OverrideBy, &a.OverrideAt,
-		&a.AutoTopupEnabled, &a.AutoTopupThreshold, &a.AutoTopupMaxPacks, &a.AutoTopupFailure}
+		&a.AutoTopupEnabled, &a.AutoTopupThreshold, &a.AutoTopupMaxPacks, &a.AutoTopupFailure,
+		&a.AIAutoTopupEnabled, &a.AIAutoTopupThreshold, &a.AIAutoTopupAmount, &a.AIAutoTopupLimit, &a.AIAutoTopupFailure}
 	if err := row.Scan(append(dest, extra...)...); err != nil {
 		return nil, err
 	}
@@ -527,6 +533,17 @@ func (r *agencyRepository) SetAutoTopup(ctx context.Context, agencyID uuid.UUID,
 
 func (r *agencyRepository) DisableAutoTopup(ctx context.Context, agencyID uuid.UUID, failure string) error {
 	_, err := r.db.Exec(ctx, `UPDATE agencies SET auto_topup_enabled = false, auto_topup_failure = $2, updated_at = now() WHERE id = $1`, agencyID, failure)
+	return err
+}
+
+func (r *agencyRepository) SetAIAutoTopup(ctx context.Context, agencyID uuid.UUID, enabled bool, threshold, amount, limit models.Micro) error {
+	_, err := r.db.Exec(ctx, `UPDATE agencies SET ai_auto_topup_enabled = $2, ai_auto_topup_threshold_micro = $3, ai_auto_topup_amount_micro = $4,
+			ai_auto_topup_limit_micro = $5, ai_auto_topup_failure = NULL, updated_at = now() WHERE id = $1`, agencyID, enabled, threshold, amount, limit)
+	return err
+}
+
+func (r *agencyRepository) DisableAIAutoTopup(ctx context.Context, agencyID uuid.UUID, failure string) error {
+	_, err := r.db.Exec(ctx, `UPDATE agencies SET ai_auto_topup_enabled = false, ai_auto_topup_failure = $2, updated_at = now() WHERE id = $1`, agencyID, failure)
 	return err
 }
 

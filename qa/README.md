@@ -199,8 +199,8 @@ just given. Stop the admin server and the stack afterward.
 and watching the preview follow. Run it against the dashboard, without `QA_WEB_URL`:
 `QA_ADMIN_AGENCY_FIXTURES=1 pnpm proof agency-branding-look`.
 
-`flows/agency-extra-sends.flow.ts` records the **Extra sends** section of **Agency > Billing**: the pack price,
-automatic top-up and what happens when sends run out. It needs the same fixture with a plan in force on the
+`flows/agency-extra-sends.flow.ts` records **Agency > Billing**: the pack price, the automatic top-ups of sends
+and of the AI balance with what each charges, and what happens when sends run out. It needs the same fixture with a plan in force on the
 agency (set `plan_id`, `status = 'active'` and a current period on its row). No step charges a card:
 `QA_ADMIN_AGENCY_FIXTURES=1 pnpm proof agency-extra-sends`.
 
