@@ -2355,13 +2355,14 @@ func Run(
 }
 
 // largeUploadRoute reports the routes whose handlers cap the body themselves
-// (maxImportUploadBytes), so the global cap does not cut them short.
+// (maxImportUploadBytes, models.MaxOrgArchiveUploadBytes), so the global cap does not cut them short.
 func largeUploadRoute(r *http.Request) bool {
 	if r.Method != http.MethodPost {
 		return false
 	}
 	switch r.URL.Path {
-	case "/v1/contacts/imports", "/v1/contacts/import/preview", "/v1/contacts/import/commit":
+	case "/v1/contacts/imports", "/v1/contacts/import/preview", "/v1/contacts/import/commit",
+		"/v1/organization/current/import", "/v1/organization/current/import/preflight":
 		return true
 	}
 	return false
