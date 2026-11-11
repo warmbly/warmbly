@@ -230,6 +230,7 @@ export default function PortalThemeEditor({
                     </Field>
                 )}
                 <Field
+                    labelled
                     label="Heading"
                     aside={<Counter value={theme.sign_in_heading} max={HEADING_MAX} />}
                     hint={
@@ -250,6 +251,7 @@ export default function PortalThemeEditor({
                     <FieldError message={errors.sign_in_heading} />
                 </Field>
                 <Field
+                    labelled
                     label="Message"
                     aside={<Counter value={theme.sign_in_message} max={MESSAGE_MAX} />}
                     hint="A sentence or two under the heading. Plain text, no links."
@@ -335,7 +337,7 @@ function LinkField({
     type?: string;
 }) {
     return (
-        <Field label={label} hint={hint}>
+        <Field labelled label={label} hint={hint}>
             <TextInput value={value} onChange={onChange} placeholder={placeholder} invalid={!!error} disabled={disabled} type={type} className="w-full" />
             <FieldError message={error} />
         </Field>

@@ -37,6 +37,7 @@ export default function BrandEditor({
     icon,
     signInImage,
     address,
+    signInAddress,
     agencyBilling = false,
 }: {
     draft: BrandDraft;
@@ -56,6 +57,8 @@ export default function BrandEditor({
     signInImage?: BrandImageControl;
     /** The host the brand's pages are served on, for the preview's address bar. */
     address?: string;
+    /** The host clients sign in on when it is not the portal's own. */
+    signInAddress?: string;
     /** An agency's brand: the plan that removes the attribution is the agency's, chosen in its billing. */
     agencyBilling?: boolean;
 }) {
@@ -103,6 +106,7 @@ export default function BrandEditor({
                             tab={previewTab}
                             onTabChange={setPreviewTab}
                             address={address}
+                            signInAddress={signInAddress}
                         />
                     </div>
                 </aside>
@@ -116,7 +120,7 @@ export default function BrandEditor({
                                 : "What clients see in the header of their connect page, shared reports and forms."
                         }
                     >
-                        <Field label="Name" hint="Shown beside the logo, and on its own when there is no logo.">
+                        <Field labelled label="Name" hint="Shown beside the logo, and on its own when there is no logo.">
                             <TextInput
                                 value={draft.display_name}
                                 onChange={(v) => set({ display_name: v })}
@@ -143,7 +147,7 @@ export default function BrandEditor({
                                 <AccentField value={draft.accent_color} onChange={(hex) => set({ accent_color: hex })} disabled={!canWrite} />
                             </Field>
                         )}
-                        <Field label="Website" hint="The name and logo link here. https:// only.">
+                        <Field labelled label="Website" hint="The name and logo link here. https:// only.">
                             <TextInput
                                 value={draft.website_url}
                                 onChange={(v) => set({ website_url: v })}

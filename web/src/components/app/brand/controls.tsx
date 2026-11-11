@@ -22,23 +22,28 @@ export function Field({
     label,
     hint,
     aside,
+    labelled = false,
     children,
 }: {
     label: string;
     hint?: React.ReactNode;
+    /** The field holds one text control, which the label then names. Leave off for a group of controls. */
+    labelled?: boolean;
     /** Sits at the end of the label's line: a counter, a reset. */
     aside?: React.ReactNode;
     children: React.ReactNode;
 }) {
+    // A label element around its one control names it without an id on either.
+    const Root = labelled ? "label" : "div";
     return (
-        <div>
-            <div className="mb-1.5 flex items-center gap-2">
+        <Root className="block">
+            <span className="mb-1.5 flex items-center gap-2">
                 <span className="text-[12px] font-medium text-slate-700">{label}</span>
                 {aside && <span className="ml-auto">{aside}</span>}
-            </div>
+            </span>
             {children}
-            {hint && <p className="mt-1.5 text-[11.5px] leading-snug text-slate-500">{hint}</p>}
-        </div>
+            {hint && <span className="mt-1.5 block text-[11.5px] leading-snug text-slate-500">{hint}</span>}
+        </Root>
     );
 }
 

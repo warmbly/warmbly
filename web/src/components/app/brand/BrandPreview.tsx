@@ -55,6 +55,7 @@ export default function BrandPreview({
     tab,
     onTabChange,
     address,
+    signInAddress,
 }: {
     brand: PublicBrand;
     /** Shown when the brand has no name. */
@@ -65,6 +66,8 @@ export default function BrandPreview({
     onTabChange?: (tab: PreviewTab) => void;
     /** The host the pages are served on; a stand-in is shown without one. */
     address?: string;
+    /** The host of the sign-in page when clients sign in somewhere other than the portal. */
+    signInAddress?: string;
 }) {
     const [ownTab, setOwnTab] = React.useState<PreviewTab>(tabs[0]);
     const shownTab = tab && tabs.includes(tab) ? tab : tabs.includes(ownTab) ? ownTab : tabs[0];
@@ -138,7 +141,7 @@ export default function BrandPreview({
                     height={view.height}
                     phone={device === "phone"}
                     dark={mode === "dark"}
-                    url={`${address || "portal.youragency.com"}${PATHS[shownTab]}`}
+                    url={`${(shownTab === "signin" && signInAddress) || address || "portal.youragency.com"}${PATHS[shownTab]}`}
                 >
                     {shownTab === "signin" ? (
                         <PortalSignIn brand={named} scope={mode} contained>
@@ -152,7 +155,9 @@ export default function BrandPreview({
                         <ReportScene brand={named} theme={theme} mode={mode} compact={device === "phone"} />
                     )}
                 </Stage>
-                <p className="mt-4 text-center text-[11.5px] text-slate-500">{CAPTIONS[shownTab]}</p>
+                <p className="mt-4 text-center text-[11.5px] text-slate-500">
+                    {shownTab === "signin" && signInAddress ? `The page your clients sign in on, at ${signInAddress}.` : CAPTIONS[shownTab]}
+                </p>
             </div>
         </div>
     );
