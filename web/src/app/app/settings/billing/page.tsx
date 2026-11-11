@@ -38,6 +38,8 @@ import useAppliedDiscounts from "@/lib/api/hooks/app/subscription/useAppliedDisc
 import usePreviewPlanChange from "@/lib/api/hooks/app/subscription/usePreviewPlanChange";
 import { useAppStore } from "@/stores";
 import useCurrentOrganization from "@/lib/api/hooks/app/organizations/useCurrentOrganization";
+import AgencyPlansSection from "@/components/app/billing/AgencyPlansSection";
+import { currentPortal } from "@/lib/portal";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import type DiscountPreview from "@/lib/api/models/app/subscription/DiscountPreview";
 import type { DiscountRedemption } from "@/lib/api/models/app/subscription/DiscountRedemption";
@@ -90,8 +92,9 @@ export default function BillingSettingsPage() {
     const openPlanChooser = React.useCallback(() => {
         upgradeDialog.open({
             feature: "Your plan",
+            title: "Choose a plan",
             minPlan: "starter",
-            blurb: "Compare every plan, switch billing interval, and change your subscription in one step.",
+            blurb: "Compare every plan, pick monthly or annual billing, and change your subscription in one step.",
         });
     }, [upgradeDialog]);
     const openPortal = flow.openPortal;
@@ -360,6 +363,9 @@ export default function BillingSettingsPage() {
                                         Open full pricing page
                                     </Link>
                                 </Section>
+
+                                {/* Agency plans belong to an agency, not to one workspace, so they lead there. */}
+                                {!currentPortal().portal && <AgencyPlansSection interval={billingInterval} />}
 
                                 <Section
                                     eyebrow="Promo code"

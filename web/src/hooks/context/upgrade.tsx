@@ -7,6 +7,8 @@ export interface UpgradeRequest {
     feature: string;
     /** Minimum plan that unlocks it. Defaults to starter. */
     minPlan?: PlanID;
+    /** The dialog's own heading, for a chooser that no locked feature opened ("Choose a plan"). */
+    title?: string;
     /** One-sentence pitch shown under the title. */
     blurb?: string;
     /** Feature-specific bullets shown in the hero; falls back to the plan's. */

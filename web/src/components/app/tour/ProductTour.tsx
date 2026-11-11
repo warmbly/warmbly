@@ -244,12 +244,12 @@ export default function ProductTour() {
             return;
         }
         if (id === "enterprise") {
-            act("choose_plan", () => upgrade.open({ feature: "Enterprise", minPlan: "enterprise" }));
+            act("choose_plan", () => upgrade.open({ feature: "Enterprise", title: "Choose a plan", minPlan: "enterprise" }));
             return;
         }
         const outcome = await flow.upgrade(id, { interval: billingInterval, returnTo: window.location.pathname + window.location.search });
         if (outcome === "redirect" || outcome === "changed" || outcome === "portal") finish("choose_plan");
-        else if (outcome === "contact") act("choose_plan", () => upgrade.open({ feature: "Enterprise", minPlan: "enterprise" }));
+        else if (outcome === "contact") act("choose_plan", () => upgrade.open({ feature: "Enterprise", title: "Choose a plan", minPlan: "enterprise" }));
     };
     const mailboxAction = canMailboxes
         ? { label: "Connect a mailbox", outcome: "add_mailbox" as Outcome, run: () => profile.setAddEmail(true) }

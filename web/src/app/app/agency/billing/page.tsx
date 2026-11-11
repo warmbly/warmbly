@@ -12,13 +12,17 @@ import {
     useAgencyPortal,
     useAgencyTopup,
     useAgencyUsage,
+    useChangeAgencyPlan,
     useCurrentAgency,
 } from "@/lib/api/hooks/app/agency/useAgency";
-import type { AgencyAIBalance, AgencyPlan } from "@/lib/api/models/app/agency/Agency";
+import { previewAgencyPlanChange } from "@/lib/api/client/app/agency/agency";
+import { useConfirm } from "@/hooks/context/confirm";
+import type { AgencyAIBalance, AgencyPlan, AgencyPlanChangePreview } from "@/lib/api/models/app/agency/Agency";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import { cn } from "@/lib/utils";
 import { formatNumber } from "@/components/app/agency/styles";
+import { AGENCY_PLAN_FEATURES } from "@/components/app/agency/planFeatures";
 import { fmtUsd, fmtUsdTrim, roundCents } from "@/lib/money";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -32,19 +36,18 @@ const STATUS_LABEL: Record<string, string> = {
     paused: "Paused",
 };
 
-const FEATURES: Record<string, string[]> = {
-    Agency: [
-        "Unlimited clients, no per-client fee",
-        "The API and webhooks in every client workspace",
-        "Your logo, colour and portal domain on client pages",
-        "Shared send pool and AI balance across clients",
-    ],
-    "Agency Pro": [
-        "Everything in Agency",
-        "No \"Powered by Warmbly\" on client pages",
-        "Sending kept apart from other customers",
-    ],
-};
+type Interval = "month" | "year";
+
+// What the confirmation says a switch costs: an interval change is billed at once, a plan change is prorated.
+function switchText(plan: AgencyPlan, interval: Interval, current: Interval | undefined, preview: AgencyPlanChangePreview) {
+    const what = `Switch to ${plan.name}, billed ${interval === "year" ? "yearly" : "monthly"}?`;
+    const usd = (cents: number) => fmtUsd(Math.abs(cents) / 100);
+    let bill = "";
+    if (interval !== current) bill = ` The new billing period starts now and ${usd(preview.amount_due_cents)} is billed right away.`;
+    else if (preview.proration_cents > 0) bill = ` About ${usd(preview.proration_cents)} for the rest of this billing period is added to your next invoice.`;
+    else if (preview.proration_cents < 0) bill = ` About ${usd(preview.proration_cents)} is credited on your next invoice.`;
+    return `${what}${bill} Every client workspace has the new plan at once.`;
+}
 
 function money(n: number) {
     return `$${Math.round(n).toLocaleString()}`;
@@ -132,7 +135,11 @@ function AgencyBilling() {
     const checkout = useAgencyCheckout(agencyId);
     const topup = useAgencyTopup(agencyId);
     const portal = useAgencyPortal(agencyId);
-    const [yearly, setYearly] = React.useState(true);
+    const change = useChangeAgencyPlan(agencyId);
+    const confirm = useConfirm();
+    // The plan being priced for a switch, so only its button waits.
+    const [pricing, setPricing] = React.useState<string | null>(null);
+    const [yearly, setYearly] = React.useState(agency?.billing_interval !== "month");
     const canManage = agency?.role === "owner" || agency?.role === "admin";
 
     if (!agency) return null;
@@ -164,6 +171,32 @@ function AgencyBilling() {
     const current = agency.plan;
     const list = plans.data?.data ?? [];
     const u = usage.data;
+
+    const interval: Interval = yearly ? "year" : "month";
+    // Only the agency's own subscription can be switched here; a plan arranged directly is changed by whoever arranged it.
+    const switchable = active && !granted && !!agency.billing_interval && canManage;
+    const isCurrent = (p: AgencyPlan) => current?.id === p.id && agency.billing_interval === interval;
+    const switchLabel = (p: AgencyPlan) =>
+        current?.id === p.id ? `Switch to ${yearly ? "annual" : "monthly"} billing` : `Switch to ${p.name}`;
+    // The server prices the switch first, so the confirmation states what it will bill.
+    const switchTo = async (p: AgencyPlan) => {
+        setPricing(p.id);
+        try {
+            const preview = await previewAgencyPlanChange(agencyId, p.id, interval);
+            confirm.show(switchText(p, interval, agency.billing_interval, preview), async () => {
+                try {
+                    await change.mutateAsync({ planId: p.id, interval, quote: preview });
+                    toast.success(`Switched to ${p.name}`);
+                } catch (e) {
+                    toast.error(buildError(e as AppError));
+                }
+            });
+        } catch (e) {
+            toast.error(buildError(e as AppError));
+        } finally {
+            setPricing(null);
+        }
+    };
 
     const priceOf = (p: AgencyPlan) => (yearly && p.price_yearly ? p.price_yearly / 12 : p.price);
     const buyable = (p: AgencyPlan) => (yearly ? !!p.stripe_price_id_yearly : !!p.stripe_price_id);
@@ -248,9 +281,9 @@ function AgencyBilling() {
                 </>
             )}
 
-            {!active && (
+            {(!active || switchable) && (
                 <>
-                    <SectionBar label="Plans">
+                    <SectionBar label={active ? "Switch plan" : "Plans"}>
                         <div className="inline-flex rounded-md border border-slate-200 p-0.5 bg-slate-50">
                             {[
                                 { v: false, l: "Monthly" },
@@ -285,14 +318,14 @@ function AgencyBilling() {
                                     <div className="text-[11.5px] text-slate-600">{fmtUsdTrim(p.agency_ai_allowance_usd)} of shared AI each month</div>
                                 )}
                                 <ul className="mt-3 space-y-1 flex-1">
-                                    {(FEATURES[p.name ?? ""] ?? []).map((f) => (
+                                    {(AGENCY_PLAN_FEATURES[p.name ?? ""] ?? []).map((f) => (
                                         <li key={f} className="flex gap-1.5 text-[11.5px] text-slate-600">
                                             <CheckIcon className="w-3 h-3 mt-0.5 text-sky-600 shrink-0" />
                                             {f}
                                         </li>
                                     ))}
                                 </ul>
-                                {canManage && (
+                                {canManage && !active && (
                                     <button
                                         type="button"
                                         disabled={!buyable(p) || checkout.isPending}
@@ -301,6 +334,23 @@ function AgencyBilling() {
                                         className="mt-4 h-7 px-2.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium disabled:opacity-50"
                                     >
                                         {buyable(p) ? `Choose ${p.name}` : "Not available yet"}
+                                    </button>
+                                )}
+                                {active && isCurrent(p) && (
+                                    <div className="mt-4 h-7 px-2.5 rounded-md border border-slate-200 bg-slate-50 text-[12px] text-slate-500 inline-flex items-center justify-center">
+                                        Current plan
+                                    </div>
+                                )}
+                                {active && !isCurrent(p) && (
+                                    <button
+                                        type="button"
+                                        disabled={!buyable(p) || pricing !== null || change.isPending}
+                                        title={buyable(p) ? undefined : "Not available for purchase yet"}
+                                        onClick={() => void switchTo(p)}
+                                        className="mt-4 h-7 px-2.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
+                                    >
+                                        {pricing === p.id && <Loader2Icon className="w-3 h-3 animate-spin" />}
+                                        {!buyable(p) ? "Not available yet" : switchLabel(p)}
                                     </button>
                                 )}
                             </div>

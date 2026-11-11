@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/app/idempotency"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/models"
 )
 
 type idempotencyBegin struct {
@@ -294,6 +295,78 @@ func TestIdempotencyStateAnswers(t *testing.T) {
 		_ = json.Unmarshal(rec.Body.Bytes(), &body)
 		if ran || rec.Code != tc.status || body.Code != tc.code {
 			t.Errorf("%s: ran=%v status=%d code=%q, want %d %q without running", tc.state, ran, rec.Code, body.Code, tc.status, tc.code)
+		}
+	}
+}
+
+// scopeRecorder is fakeIdempotencyService that keeps the scope each claim was made in.
+type scopeRecorder struct {
+	fakeIdempotencyService
+	scopes []idempotency.Scope
+}
+
+func (s *scopeRecorder) Begin(ctx context.Context, scope idempotency.Scope, key, method, path, requestHash string) (*idempotency.Record, idempotency.State, *errx.Error) {
+	s.scopes = append(s.scopes, scope)
+	return s.fakeIdempotencyService.Begin(ctx, scope, key, method, path, requestHash)
+}
+
+func TestIdempotencyScopesAnAgencyRouteToItsAgencyWithoutAWorkspace(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := &scopeRecorder{}
+	h := &Handler{IdempotencyService: svc}
+	r := gin.New()
+	r.Use(RequestIDMiddleware())
+	ok := func(c *gin.Context) { c.Status(http.StatusOK) }
+	// Agency staff signed in with no workspace selected.
+	r.POST("/agency/:agencyId/billing/change", asUser(uuid.NewString()), h.IdempotencyMiddleware(), ok)
+	r.POST("/contacts", asUser(uuid.NewString()), h.IdempotencyMiddleware(), ok)
+
+	agencyID := uuid.New()
+	if w := sendIdempotent(r, http.MethodPost, "/agency/"+agencyID.String()+"/billing/change", "key-1", `{}`); w.Code != http.StatusOK {
+		t.Fatalf("agency route: %d %s", w.Code, w.Body.String())
+	}
+	if len(svc.scopes) != 1 || svc.scopes[0] != idempotency.AgencyScope(agencyID) {
+		t.Fatalf("scope: %+v", svc.scopes)
+	}
+	// A route that names no agency still needs a workspace.
+	if w := sendIdempotent(r, http.MethodPost, "/contacts", "key-1", `{}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("no scope at all: %d", w.Code)
+	}
+}
+
+// staffOf is the agency's staff, by user id.
+type staffOf map[uuid.UUID]bool
+
+func (s staffOf) GetMember(_ context.Context, _, userID uuid.UUID) (*models.AgencyMember, error) {
+	if !s[userID] {
+		return nil, nil
+	}
+	return &models.AgencyMember{UserID: userID, Role: models.AgencyRoleAdmin}, nil
+}
+
+func TestIdempotencyHoldsAnAgencyRouteToItsStaff(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	staff, outsider := uuid.New(), uuid.New()
+	svc := &scopeRecorder{}
+	// A recorded answer is waiting to be replayed.
+	svc.state = idempotency.StateReplay
+	svc.record = &idempotency.Record{ID: uuid.New(), StatusCode: http.StatusOK}
+	h := &Handler{IdempotencyService: svc, AgencyMembers: staffOf{staff: true}}
+	ok := func(c *gin.Context) { c.Status(http.StatusOK) }
+	path := "/agency/" + uuid.NewString() + "/billing/change"
+	for _, c := range []struct {
+		user uuid.UUID
+		want int
+	}{{outsider, http.StatusNotFound}, {staff, http.StatusOK}} {
+		r := gin.New()
+		r.Use(RequestIDMiddleware())
+		r.POST("/agency/:agencyId/billing/change", asUser(c.user.String()), h.IdempotencyMiddleware(), ok)
+		before := len(svc.scopes)
+		if w := sendIdempotent(r, http.MethodPost, path, "key-1", `{}`); w.Code != c.want {
+			t.Fatalf("user %s: %d %s", c.user, w.Code, w.Body.String())
+		}
+		if claimed := len(svc.scopes) > before; claimed != (c.want == http.StatusOK) {
+			t.Fatalf("user %s: claimed=%v", c.user, claimed)
 		}
 	}
 }

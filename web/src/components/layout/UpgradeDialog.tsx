@@ -1,11 +1,10 @@
-// UpgradeDialog — the full-screen plan chooser every plan lock opens.
+// UpgradeDialog — the plan chooser every plan lock and "Change plan" opens.
 //
-// A pricing page that lives inside the app: sky hero naming the locked
-// feature, monthly/annual toggle, the four plans as large cards with the
-// unlocking plan highlighted, and one-click checkout through useUpgradeFlow.
-// Non-owners get the same comparison with an "ask the owner" path instead of
-// a dead CTA. Mounted once by UpgradeDialogProvider; open it with
-// useUpgradeDialog().open({ feature, minPlan }).
+// A plain header naming what the user is choosing, the monthly/annual switch,
+// the four plans as cards with one recommended, and one-click checkout through
+// useUpgradeFlow. Non-owners get the same comparison with an "ask the owner"
+// path instead of a dead CTA. Mounted once by UpgradeDialogProvider; open it
+// with useUpgradeDialog().open({ feature, minPlan }).
 
 import React from "react";
 import { createPortal } from "react-dom";
@@ -15,6 +14,7 @@ import toast from "react-hot-toast/headless";
 import {
     ArrowRightIcon,
     ArrowUpRightIcon,
+    BuildingIcon,
     CheckIcon,
     Loader2Icon,
     LockIcon,
@@ -184,7 +184,7 @@ export default function UpgradeDialog({
                     onMouseDown={(e) => {
                         if (e.target === e.currentTarget) requestClose();
                     }}
-                    className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-900/45 backdrop-blur-[4px] p-3 sm:p-6"
+                    className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-900/40 backdrop-blur-[2px] p-3 sm:p-6"
                 >
                     <motion.div
                         key="upgrade-card"
@@ -199,51 +199,28 @@ export default function UpgradeDialog({
                         exit={reduced ? { opacity: 0 } : { opacity: 0, y: 16, scale: 0.98 }}
                         transition={{ duration: 0.28, ease: EASE }}
                         onMouseDown={(e) => e.stopPropagation()}
-                        className="relative w-full max-w-[1120px] max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-3rem)] overflow-y-auto rounded-2xl bg-white border border-slate-200 shadow-[0_1px_2px_rgba(15,23,42,0.06),0_40px_90px_-30px_rgba(15,23,42,0.5)]"
+                        className="relative w-full max-w-[1080px] max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-3rem)] overflow-y-auto rounded-xl bg-white border border-slate-200 shadow-[0_1px_2px_rgba(15,23,42,0.06),0_32px_64px_-24px_rgba(15,23,42,0.35)]"
                     >
-                        <Hero
+                        <Header
                             request={request}
                             planLabel={minPlan.label}
                             titleId={titleId}
                             onClose={requestClose}
                             busy={busy}
+                            interval={billingInterval}
+                            onInterval={setBillingInterval}
                         />
 
-                        {/* Interval row */}
-                        <div className="px-5 md:px-10 pt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                            <div>
-                                <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
-                                    Choose a plan
-                                </div>
-                                <div className="relative h-[18px] mt-0.5 overflow-hidden">
-                                    <AnimatePresence initial={false} mode="popLayout">
-                                        <motion.p
-                                            key={billingInterval}
-                                            initial={reduced ? { opacity: 0 } : { opacity: 0, y: 14 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                            exit={reduced ? { opacity: 0 } : { opacity: 0, y: -14 }}
-                                            transition={{ duration: 0.26, ease: EASE }}
-                                            className="absolute inset-0 text-[12.5px] text-slate-500"
-                                        >
-                                            {billingInterval === "annual"
-                                                ? "Annual billing, two months free every year."
-                                                : "Monthly billing, switch or cancel any time."}
-                                        </motion.p>
-                                    </AnimatePresence>
-                                </div>
-                            </div>
-                            <BillingIntervalToggle interval={billingInterval} onChange={setBillingInterval} size="md" />
-                        </div>
-
                         {/* Plan cards */}
-                        <div className="px-5 md:px-10 pt-4 pb-6 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 items-stretch">
+                        <div className="px-5 md:px-8 pt-6 pb-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 items-stretch">
                             {PAID_PLANS.map((id, i) => (
                                 <PlanCard
                                     key={id}
                                     id={id}
                                     index={i}
-                                    feature={request.feature}
-                                    minPlan={minPlan.id}
+                                    // A chooser opened without a locked feature has nothing to judge the cards against.
+                                    feature={request.title ? undefined : request.feature}
+                                    minPlan={request.title ? undefined : minPlan.id}
                                     current={current}
                                     recommended={id === recommended}
                                     interval={billingInterval}
@@ -256,8 +233,8 @@ export default function UpgradeDialog({
                             ))}
                         </div>
 
-                        {/* Promo code */}
-                        <div className="px-5 md:px-10 pb-5">
+                        {/* Promo code, and where agency plans are */}
+                        <div className="px-5 md:px-8 pb-5 flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
                             {!promoOpen && !applied ? (
                                 <button
                                     type="button"
@@ -321,25 +298,27 @@ export default function UpgradeDialog({
                                     )}
                                 </motion.div>
                             )}
+                            {/* Agency plans belong to an agency, so they are chosen there; a portal domain is one agency's own. */}
+                            {!currentPortal().portal && (
+                                <Link
+                                    to="/app/agency"
+                                    onClick={onClose}
+                                    className="inline-flex items-center gap-1.5 text-[12px] text-slate-500 hover:text-slate-900 transition-colors"
+                                >
+                                    <BuildingIcon className="w-3 h-3" />
+                                    Outreach for clients? See agency plans
+                                    <ArrowRightIcon className="w-3 h-3" />
+                                </Link>
+                            )}
                         </div>
 
                         {/* Footer */}
-                        <div className="px-5 md:px-10 py-4 border-t border-slate-200 bg-slate-50/60 flex flex-col md:flex-row md:items-center gap-3 text-[12px] text-slate-500">
+                        <div className="px-5 md:px-8 py-3.5 border-t border-slate-200 flex flex-col md:flex-row md:items-center gap-x-6 gap-y-2 text-[12px] text-slate-500">
                             {access.isOwner ? (
-                                <ul className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                                    <li className="inline-flex items-center gap-1.5">
-                                        <ShieldCheckIcon className="w-3.5 h-3.5 text-emerald-600" />
-                                        Secure checkout by Stripe
-                                    </li>
-                                    <li className="inline-flex items-center gap-1.5">
-                                        <CheckIcon className="w-3.5 h-3.5 text-emerald-600" />
-                                        Cancel anytime
-                                    </li>
-                                    <li className="inline-flex items-center gap-1.5">
-                                        <CheckIcon className="w-3.5 h-3.5 text-emerald-600" />
-                                        Plan changes are prorated
-                                    </li>
-                                </ul>
+                                <p className="inline-flex items-center gap-1.5">
+                                    <ShieldCheckIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                    Secure checkout by Stripe. Cancel any time, and plan changes are prorated.
+                                </p>
                             ) : (
                                 <p className="leading-relaxed">
                                     Only the workspace owner can change the plan. Ask them to upgrade to{" "}
@@ -363,7 +342,7 @@ export default function UpgradeDialog({
                                         onClick={onClose}
                                         className="inline-flex items-center gap-1 font-medium text-slate-600 hover:text-slate-900 transition-colors"
                                     >
-                                        Full billing page
+                                        Billing settings
                                         <ArrowRightIcon className="w-3 h-3" />
                                     </Link>
                                 )}
@@ -379,14 +358,6 @@ export default function UpgradeDialog({
                                         <ArrowUpRightIcon className="w-3 h-3" />
                                     </a>
                                 )}
-                                <button
-                                    type="button"
-                                    onClick={requestClose}
-                                    disabled={busy}
-                                    className="h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 bg-white text-[12px] font-medium text-slate-700 hover:text-slate-900 transition-colors disabled:opacity-50"
-                                >
-                                    Not now
-                                </button>
                             </div>
                         </div>
                     </motion.div>
@@ -404,105 +375,70 @@ export default function UpgradeDialog({
     );
 }
 
-function Hero({
+function Header({
     request,
     planLabel,
     titleId,
     onClose,
     busy,
+    interval,
+    onInterval,
 }: {
     request: UpgradeRequest;
     planLabel: string;
     titleId: string;
     onClose: () => void;
     busy: boolean;
+    interval: BillingInterval;
+    onInterval: (i: BillingInterval) => void;
 }) {
-    const reduced = useReducedMotion();
     const bullets = request.bullets?.slice(0, 4);
-    const rise = (delay: number) =>
-        reduced
-            ? {}
-            : {
-                  initial: { opacity: 0, y: 10 },
-                  animate: { opacity: 1, y: 0 },
-                  transition: { duration: 0.4, ease: EASE, delay },
-              };
     return (
-        <div className="theme-solid relative overflow-hidden px-5 pt-9 pb-8 md:px-10 md:pt-12 md:pb-10 text-center text-white">
-            <div className="absolute inset-0" aria-hidden="true">
-                <div className="sky-base" />
-                <div className="sky-breathe" />
-                <div className="sun-glow" />
-                <img
-                    src="/backdrops/cloud-3.webp"
-                    alt=""
-                    decoding="async"
-                    className="cloud-drift cloud-1 absolute select-none"
-                    style={{ top: "-4%", left: "-6%", width: 340, opacity: 0.5, height: "auto" }}
-                />
-                <img
-                    src="/backdrops/cloud-4.webp"
-                    alt=""
-                    decoding="async"
-                    className="cloud-drift cloud-2 absolute select-none"
-                    style={{ bottom: "-10%", right: "-4%", width: 300, opacity: 0.45, height: "auto" }}
-                />
-                <img
-                    src="/backdrops/cloud-1.webp"
-                    alt=""
-                    decoding="async"
-                    className="cloud-drift cloud-1 absolute select-none"
-                    style={{ top: "30%", right: "18%", width: 200, opacity: 0.3, height: "auto" }}
-                />
-                <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-slate-900/25 to-transparent" />
+        <div className="px-5 md:px-8 pt-6 pb-5 border-b border-slate-200 flex flex-col gap-4 md:flex-row md:items-start">
+            <div className="min-w-0 flex-1 pr-10 md:pr-0">
+                {/* A locked feature says which plan opens it; a plain chooser needs no such line. */}
+                {!request.title && (
+                    <span className="inline-flex items-center gap-1.5 h-5 px-1.5 rounded-md bg-slate-100 text-[11px] font-medium text-slate-600">
+                        <LockIcon className="w-3 h-3" />
+                        {planLabel} plan and up
+                    </span>
+                )}
+                <h2
+                    id={titleId}
+                    className={`text-[20px] md:text-[22px] font-semibold tracking-[-0.02em] leading-tight text-slate-900 ${request.title ? "" : "mt-2.5"}`}
+                >
+                    {request.title ?? `${request.feature} is on the ${planLabel} plan`}
+                </h2>
+                <p className="mt-1.5 text-[13px] text-slate-500 leading-relaxed max-w-2xl">
+                    {/* Only a locked feature promises that the feature turns on; a plain chooser compares plans. */}
+                    {request.blurb ??
+                        (request.title
+                            ? "Compare every plan and pick monthly or annual billing."
+                            : `Pick a plan and ${request.feature.toLowerCase()} turns on for your whole workspace the moment checkout completes.`)}
+                </p>
+                {bullets && bullets.length > 0 && (
+                    <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-slate-600">
+                        {bullets.map((b) => (
+                            <li key={b} className="inline-flex items-center gap-1.5">
+                                <CheckIcon className="w-3 h-3 text-sky-600 shrink-0" />
+                                {b}
+                            </li>
+                        ))}
+                    </ul>
+                )}
             </div>
-
+            <div className="flex items-center gap-2 shrink-0 md:pr-10">
+                <BillingIntervalToggle interval={interval} onChange={onInterval} size="md" />
+            </div>
             <button
                 type="button"
                 onClick={onClose}
                 disabled={busy}
                 aria-label="Close"
-                className="absolute top-3 right-3 z-10 size-8 rounded-md bg-white/15 hover:bg-white/25 text-white inline-flex items-center justify-center transition-colors disabled:opacity-50"
+                className="absolute top-4 right-4 size-8 rounded-md text-slate-400 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center transition-colors disabled:opacity-50"
             >
                 <XIcon className="w-4 h-4" />
             </button>
-
-            <div className="relative z-10 max-w-2xl mx-auto">
-                <motion.span
-                    {...rise(0.05)}
-                    className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full bg-white/15 border border-white/25 text-[11px] font-medium backdrop-blur-sm"
-                >
-                    <LockIcon className="w-3 h-3" />
-                    {request.feature} · {planLabel} and up
-                </motion.span>
-                <motion.h2
-                    {...rise(0.12)}
-                    id={titleId}
-                    className="mt-4 text-[26px] md:text-[36px] font-semibold tracking-[-0.03em] leading-[1.08]"
-                >
-                    {request.feature} unlocks with {planLabel}.
-                </motion.h2>
-                <motion.p
-                    {...rise(0.2)}
-                    className="mt-3 text-[14px] md:text-[15px] text-sky-50/90 leading-relaxed max-w-xl mx-auto"
-                >
-                    {request.blurb ??
-                        `Pick a plan and ${request.feature.toLowerCase()} turns on for your whole workspace the moment checkout completes.`}
-                </motion.p>
-                {bullets && bullets.length > 0 && (
-                    <motion.ul
-                        {...rise(0.28)}
-                        className="mt-5 flex flex-wrap justify-center gap-x-4 gap-y-1.5 text-[12.5px] text-white/90"
-                    >
-                        {bullets.map((b) => (
-                            <li key={b} className="inline-flex items-center gap-1.5">
-                                <CheckIcon className="w-3 h-3 text-emerald-200 shrink-0" />
-                                {b}
-                            </li>
-                        ))}
-                    </motion.ul>
-                )}
-            </div>
         </div>
     );
 }

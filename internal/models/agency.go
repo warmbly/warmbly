@@ -106,6 +106,19 @@ type Agency struct {
 	OverrideAt          *time.Time `json:"-"`
 	// Grant is set while an operator's plan is in force, for the dashboard.
 	Grant *AgencyGrant `json:"granted,omitempty"`
+	// BillingInterval is "month" or "year" while a subscription is in force, read off its period.
+	BillingInterval string `json:"billing_interval,omitempty"`
+}
+
+// SubscriptionInterval is the agency's own billing period: a paid period longer than two months is a yearly one.
+func (a *Agency) SubscriptionInterval() string {
+	if a == nil || !a.Status.IsActive() || a.CurrentPeriodStart == nil || a.CurrentPeriodEnd == nil {
+		return ""
+	}
+	if a.CurrentPeriodEnd.Sub(*a.CurrentPeriodStart) > 62*24*time.Hour {
+		return "year"
+	}
+	return "month"
 }
 
 // AgencyGrant is the operator's plan an agency holds now; a nil Until has no end.

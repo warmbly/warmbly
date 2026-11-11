@@ -32,4 +32,6 @@ type Handler struct {
 	AgencyKeys *apikey.AgencyKeyService
 	// PortalClients holds a portal session to its agency's clients; nil lets a portal session reach no workspace.
 	PortalClients PortalClients
+	// AgencyMembers lets a keyed request on an agency route be held to that agency's staff before any answer is recorded or replayed; nil skips the check.
+	AgencyMembers AgencyMembers
 }
