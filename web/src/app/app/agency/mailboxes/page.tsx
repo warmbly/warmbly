@@ -214,6 +214,14 @@ function AgencyMailboxes() {
     const [vendorDialog, setVendorDialog] = React.useState<{ account?: AgencyVendorAccount } | null>(null);
     const [linkOpen, setLinkOpen] = React.useState(false);
 
+    // A dialog belongs to the agency it was opened in. When another agency is selected (here or in another
+    // tab) it is closed, so a key typed for one agency is never submitted to another.
+    React.useEffect(() => {
+        setVendorDialog(null);
+        setAdding(null);
+        setClientFilter([]);
+    }, [agencyId]);
+
     if (!agency) return null;
     const canManage = agency.role === "owner" || agency.role === "admin";
     const clients = overview.data?.clients ?? [];
