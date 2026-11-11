@@ -19,6 +19,8 @@ type memAgencyVendors struct {
 	conns    *memVendors
 	// clients are the agency's client workspaces; a link is only made for one of them.
 	clients map[uuid.UUID]bool
+	// counts is how many mailboxes each workspace connected from an account.
+	counts map[uuid.UUID]int
 }
 
 func (m *memAgencyVendors) Create(_ context.Context, a *models.AgencyVendorAccount, _ uuid.UUID) error {
@@ -37,7 +39,8 @@ func (m *memAgencyVendors) List(_ context.Context, agencyID uuid.UUID) ([]models
 		cp.Credentials, cp.Status, cp.Clients = "", "active", nil
 		for _, c := range m.conns.conns {
 			if c.AgencyConnectionID != nil && *c.AgencyConnectionID == a.ID {
-				cp.Clients = append(cp.Clients, models.AgencyVendorAccountClient{OrganizationID: c.OrganizationID, ConnectionID: c.ID, Status: c.Status})
+				cp.Clients = append(cp.Clients, models.AgencyVendorAccountClient{OrganizationID: c.OrganizationID, ConnectionID: c.ID, Status: c.Status, Mailboxes: m.counts[c.OrganizationID]})
+				cp.Mailboxes += m.counts[c.OrganizationID]
 			}
 		}
 		out = append(out, cp)
@@ -370,5 +373,40 @@ func TestAKeylessRefusalRecordedByAnOlderReleaseDoesNotStick(t *testing.T) {
 	f.svc.healAgencyLinks(ctx)
 	if f.conns.conns[conn.ID].Status != "invalid" {
 		t.Fatal("a refusal by the vendor was cleared")
+	}
+}
+
+func TestAnAccountsMailboxCountsFollowTheCallersAccessToEachClient(t *testing.T) {
+	f := newAgencyFixture(t)
+	ctx := context.Background()
+	a := f.account(t)
+	hidden := uuid.New()
+	f.accounts.clients[hidden] = true
+	f.accounts.counts = map[uuid.UUID]int{f.acme: 12, hidden: 30}
+	admin := string(models.RoleAdmin)
+	viewer := string(models.RoleViewer)
+	// The caller runs Acme and only reads the other client's inbox, so that client's mailbox list is not theirs to see.
+	f.svc.WireAgencies(f.accounts, staffRoles{f.owner: models.AgencyRoleOwner}, clientList{
+		{OrganizationID: f.acme, Name: "Acme", Role: &admin, Permissions: models.RolePermissions[models.RoleAdmin], AccessScope: models.AccessScopeWorkspace},
+		{OrganizationID: hidden, Name: "Hidden", Role: &viewer, Permissions: models.PermAccessUnibox, AccessScope: models.AccessScopeWorkspace},
+	}, f.svc.instance)
+	for _, org := range []uuid.UUID{f.acme, hidden} {
+		id := a.ID
+		f.conns.conns[uuid.New()] = &models.VendorConnection{ID: uuid.New(), OrganizationID: org, AgencyConnectionID: &id, Status: "active"}
+	}
+	list, xerr := f.svc.AgencyAccounts(ctx, f.agency, f.owner)
+	if xerr != nil || len(list) != 1 || len(list[0].Clients) != 2 {
+		t.Fatalf("list = %+v, %v", list, xerr)
+	}
+	if list[0].Mailboxes != 12 {
+		t.Fatalf("the total counts a client the caller cannot list: %d", list[0].Mailboxes)
+	}
+	for _, c := range list[0].Clients {
+		if c.OrganizationID == hidden && (c.Mailboxes != 0 || !c.MailboxesHidden) {
+			t.Fatalf("the hidden client's count is shown: %+v", c)
+		}
+		if c.OrganizationID == f.acme && (c.Mailboxes != 12 || c.MailboxesHidden) {
+			t.Fatalf("the caller's own client: %+v", c)
+		}
 	}
 }

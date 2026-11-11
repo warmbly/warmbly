@@ -142,7 +142,6 @@ func (s *Service) SetAutoTopup(ctx context.Context, agencyID, actorID uuid.UUID,
 	if maxPacks < 1 || maxPacks > models.AgencyAutoTopupMaxPacks {
 		return nil, errx.NewWithIdentifier(errx.BadRequest, "invalid_auto_topup", "Choose between 1 and 20 packs a period.")
 	}
-	var card *SavedCard
 	if enabled {
 		if _, unlimited, active := s.poolSize(ctx, a); !active {
 			return nil, errx.NewWithIdentifier(errx.BadRequest, "agency_no_subscription", "Choose an agency plan before turning on automatic top-up.")
@@ -159,7 +158,6 @@ func (s *Service) SetAutoTopup(ctx context.Context, agencyID, actorID uuid.UUID,
 			return nil, errx.NewWithIdentifier(errx.Conflict, "agency_no_payment_method",
 				"This agency has no saved card. Automatic top-up charges the card its subscription is paid with.")
 		}
-		card = c
 	}
 	if err := s.repo.SetAutoTopup(ctx, agencyID, enabled, threshold, maxPacks); err != nil {
 		return nil, internal(err)
@@ -174,12 +172,8 @@ func (s *Service) SetAutoTopup(ctx context.Context, agencyID, actorID uuid.UUID,
 		return nil, errNotFound
 	}
 	s.hydrate(ctx, fresh)
-	view, xerr := s.autoTopupView(ctx, fresh, false)
-	if xerr != nil {
-		return nil, xerr
-	}
-	view.Card = card
-	return view, nil
+	// Read with the card, so the page that keeps this answer still knows whether one is on file.
+	return s.autoTopupView(ctx, fresh, true)
 }
 
 // autoTopup buys one pack when the agency's pool is at or under its threshold
@@ -761,7 +755,6 @@ func (s *Service) SetAIAutoTopup(ctx context.Context, agencyID, actorID uuid.UUI
 	case limit > models.AgencyAIAutoTopupMaxLimit:
 		return nil, invalid("The limit for a billing period can be at most $50,000.")
 	}
-	var card *SavedCard
 	if enabled {
 		if _, _, ok := s.grantPlan(a); !ok {
 			return nil, errx.NewWithIdentifier(errx.BadRequest, "agency_no_subscription", "Choose an agency plan before turning on automatic top-up.")
@@ -775,7 +768,6 @@ func (s *Service) SetAIAutoTopup(ctx context.Context, agencyID, actorID uuid.UUI
 			return nil, errx.NewWithIdentifier(errx.Conflict, "agency_no_payment_method",
 				"This agency has no saved card. Automatic top-up charges the card its subscription is paid with.")
 		}
-		card = c
 	}
 	if err := s.repo.SetAIAutoTopup(ctx, agencyID, enabled, threshold, amount, limit); err != nil {
 		return nil, internal(err)
@@ -790,12 +782,8 @@ func (s *Service) SetAIAutoTopup(ctx context.Context, agencyID, actorID uuid.UUI
 		return nil, errNotFound
 	}
 	s.hydrate(ctx, fresh)
-	view, xerr := s.aiAutoTopupView(ctx, fresh, false)
-	if xerr != nil {
-		return nil, xerr
-	}
-	view.Card = card
-	return view, nil
+	// Read with the card, so the page that keeps this answer still knows whether one is on file.
+	return s.aiAutoTopupView(ctx, fresh, true)
 }
 
 // aiCheck is one agency's AI balance check: at most one running and one waiting, however many charges arrive.

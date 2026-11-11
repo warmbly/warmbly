@@ -100,7 +100,37 @@ func (s *Service) AgencyAccounts(ctx context.Context, agencyID, userID uuid.UUID
 	if err != nil {
 		return nil, errx.InternalError()
 	}
+	if xerr := s.scopeCounts(ctx, agencyID, userID, list); xerr != nil {
+		return nil, xerr
+	}
 	return list, nil
+}
+
+// scopeCounts leaves a mailbox count only for clients whose mailbox list the caller reads, the rule the
+// agency's mailbox list follows; which clients use an account is visible to every staff member.
+func (s *Service) scopeCounts(ctx context.Context, agencyID, userID uuid.UUID, list []models.AgencyVendorAccount) *errx.Error {
+	memberships, err := s.agencyClients.ClientMemberships(ctx, agencyID, userID)
+	if err != nil {
+		return errx.InternalError()
+	}
+	readable := map[uuid.UUID]bool{}
+	for _, m := range memberships {
+		if m.Can(models.PermViewCampaigns) {
+			readable[m.OrganizationID] = true
+		}
+	}
+	for i := range list {
+		list[i].Mailboxes = 0
+		for j := range list[i].Clients {
+			c := &list[i].Clients[j]
+			if !readable[c.OrganizationID] {
+				c.Mailboxes, c.MailboxesHidden = 0, true
+				continue
+			}
+			list[i].Mailboxes += c.Mailboxes
+		}
+	}
+	return nil
 }
 
 // CreateAgencyAccount verifies the key against the vendor, then stores it sealed with the instance key.
@@ -175,14 +205,17 @@ func (s *Service) UpdateAgencyAccount(ctx context.Context, agencyID, userID, id 
 		}
 		s.forget(l.ConnectionID)
 	}
-	return s.agencyAccountView(ctx, agencyID, id)
+	return s.agencyAccountView(ctx, agencyID, userID, id)
 }
 
 // agencyAccountView is one account as the list shows it.
-func (s *Service) agencyAccountView(ctx context.Context, agencyID, id uuid.UUID) (*models.AgencyVendorAccount, *errx.Error) {
+func (s *Service) agencyAccountView(ctx context.Context, agencyID, userID, id uuid.UUID) (*models.AgencyVendorAccount, *errx.Error) {
 	list, err := s.agencyRepo.List(ctx, agencyID)
 	if err != nil {
 		return nil, errx.InternalError()
+	}
+	if xerr := s.scopeCounts(ctx, agencyID, userID, list); xerr != nil {
+		return nil, xerr
 	}
 	for i := range list {
 		if list[i].ID == id {

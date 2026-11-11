@@ -199,7 +199,13 @@ function AgencyMailboxes() {
     const [clientFilter, setClientFilter] = React.useState<string[]>([]);
     const [attention, setAttention] = React.useState(false);
     const q = useDebouncedValue(search, 300);
-    const filters = React.useMemo<AgencyMailboxFilters>(() => ({ clients: clientFilter, attention, q }), [clientFilter, attention, q]);
+    // A client that is no longer in this agency (removed, or another agency was opened) cannot stay filtered on.
+    const clientIds = (overview.data?.clients ?? []).map((c) => c.organization_id).join(",");
+    const chosen = React.useMemo(
+        () => (overview.data ? clientFilter.filter((id) => clientIds.split(",").includes(id)) : clientFilter),
+        [overview.data, clientFilter, clientIds],
+    );
+    const filters = React.useMemo<AgencyMailboxFilters>(() => ({ clients: chosen, attention, q }), [chosen, attention, q]);
     const mailboxes = useAgencyMailboxes(agency?.id, filters);
 
     const [adding, setAdding] = React.useState<{ accountId?: string } | null>(null);
@@ -212,13 +218,13 @@ function AgencyMailboxes() {
     const accounts = vendors.data?.data ?? [];
     const rows = mailboxes.data?.pages.flatMap((p) => p.data) ?? [];
     const totals = overview.data?.totals;
-    const filtered = attention || q !== "" || clientFilter.length > 0;
+    const filtered = attention || q !== "" || chosen.length > 0;
     const busy = pending || giveAccount.isPending;
     // Adding mailboxes needs a client the caller manages mailboxes in; without one the action cannot succeed.
     const canAdd = clients.some((c) => c.manage_mailboxes);
     const cannotAdd = clients.length === 0 ? "Add a client first." : "You do not manage mailboxes in any of this agency's clients.";
 
-    const toggleClient = (id: string) => setClientFilter((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+    const toggleClient = (id: string) => setClientFilter(chosen.includes(id) ? chosen.filter((x) => x !== id) : [...chosen, id]);
 
     // Every way in ends inside the client's own workspace, where the mailboxes live.
     const choose = async (c: AddMailboxesChoice) => {
@@ -296,13 +302,14 @@ function AgencyMailboxes() {
                 <button type="button" aria-pressed={attention} onClick={() => setAttention((v) => !v)} className={chip(attention)}>
                     Needs attention
                 </button>
-                {clients.length > 1 && (
-                    <ScrollStrip activeKey={clientFilter.join(",")} innerClassName="flex items-center gap-1.5">
-                        <button type="button" aria-pressed={clientFilter.length === 0} data-active={clientFilter.length === 0} onClick={() => setClientFilter([])} className={chip(clientFilter.length === 0)}>
+                {/* Shown with one client too while a filter is on, so it can always be cleared. */}
+                {(clients.length > 1 || chosen.length > 0) && (
+                    <ScrollStrip activeKey={chosen.join(",")} innerClassName="flex items-center gap-1.5">
+                        <button type="button" aria-pressed={chosen.length === 0} data-active={chosen.length === 0} onClick={() => setClientFilter([])} className={chip(chosen.length === 0)}>
                             All clients
                         </button>
                         {clients.map((c) => {
-                            const active = clientFilter.includes(c.organization_id);
+                            const active = chosen.includes(c.organization_id);
                             return (
                                 <button key={c.organization_id} type="button" aria-pressed={active} data-active={active} onClick={() => toggleClient(c.organization_id)} className={chip(active)}>
                                     <ClientAvatar name={c.name} avatar={c.avatar_url} size="sm" />

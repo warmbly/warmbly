@@ -444,8 +444,10 @@ type AgencyVendorAccountClient struct {
 	Name           string    `json:"name"`
 	ConnectionID   uuid.UUID `json:"connection_id"`
 	Mailboxes      int       `json:"mailboxes"`
-	Status         string    `json:"status"`
-	LastError      string    `json:"last_error,omitempty"`
+	// MailboxesHidden is a client whose mailbox list the caller cannot read, so its count is left out.
+	MailboxesHidden bool   `json:"mailboxes_hidden,omitempty"`
+	Status          string `json:"status"`
+	LastError       string `json:"last_error,omitempty"`
 }
 
 // VendorMailbox is one mailbox in a vendor account, as the picker shows it.

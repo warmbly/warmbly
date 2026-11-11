@@ -37,6 +37,8 @@ export interface AgencyVendorAccountClient {
     name: string;
     connection_id: string;
     mailboxes: number;
+    /** You cannot list this client's mailboxes, so its count is left out. */
+    mailboxes_hidden?: boolean;
     status: SourceStatus;
     last_error?: string;
 }
