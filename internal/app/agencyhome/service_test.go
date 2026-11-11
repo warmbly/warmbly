@@ -417,3 +417,19 @@ func TestMailboxListPagesAndRefusesBadInput(t *testing.T) {
 		t.Fatalf("outsider: %v, calls %v", xerr, out.repo.calls)
 	}
 }
+
+func TestOverviewSaysWhereTheCallerCanManageMailboxes(t *testing.T) {
+	f := newFixture(true)
+	o, xerr := f.svc.Overview(context.Background(), uuid.New(), uuid.New())
+	if xerr != nil {
+		t.Fatal(xerr)
+	}
+	got := map[uuid.UUID]bool{}
+	for _, c := range o.Clients {
+		got[c.OrganizationID] = c.ManageMailboxes
+	}
+	// Only the client the caller administers; reading an inbox or being restricted is not enough.
+	if !got[f.full] || got[f.inboxOnly] || got[f.outsider] || got[f.restricted] {
+		t.Fatalf("manage_mailboxes = %v", got)
+	}
+}

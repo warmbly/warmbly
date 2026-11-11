@@ -57,9 +57,6 @@ type SecretColumn struct {
 	// column to hold ciphertext. email_tasks predates unconditional sealing,
 	// so its rows carry a flag rather than a format that can be sniffed.
 	Guard string
-	// Borrowed, when set, names a column that marks the value as someone else's when it is not null:
-	// an agency's key used in a client workspace. A borrowed value never travels; the column arrives blank.
-	Borrowed string
 	// PlaintextPrefix marks a value still stored in the clear from before sealing; it travels as is.
 	PlaintextPrefix string
 	// Plaintext names a column still written in the clear beside this one for the previous release.
@@ -220,11 +217,13 @@ var Tables = []Table{
 		Name: "mailbox_vendor_connections", Group: models.OrgDataGroupCore,
 		Scope: scopeOrg,
 		Secrets: []SecretColumn{
-			{Column: "credentials", Domain: KeyDomainOrgDEK, Borrowed: "agency_connection_id"},
+			{Column: "credentials", Domain: KeyDomainOrgDEK},
 		},
-		// An agency's account lives on the instance that holds the agency; the connection arrives as the workspace's own, without the agency's key.
-		ResetOnImport: []string{"agency_connection_id"},
-		Note:          "Inbox vendor accounts (InboxKit, Zapmail, ...) the workspace imports from. Above email_accounts, whose vendor_connection_id names them. A connection made from an agency's account travels without its key.",
+		// An agency's account lives on the instance that holds the agency, and its key was never in this row:
+		// the connection arrives as the workspace's own, waiting for a key.
+		ResetOnImport:           []string{"agency_connection_id"},
+		ResetColumnsOnOverwrite: []string{"agency_connection_id"},
+		Note:                    "Inbox vendor accounts (InboxKit, Zapmail, ...) the workspace imports from. Above email_accounts, whose vendor_connection_id names them. A connection made from an agency's account holds no key, so it travels without one.",
 	},
 	{
 		Name: "mailbox_domain_grants", Group: models.OrgDataGroupCore,

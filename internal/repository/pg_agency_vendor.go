@@ -27,11 +27,14 @@ type AgencyVendorRepository interface {
 	// Update renames the account and, when sealed is set, replaces its key.
 	Update(ctx context.Context, agencyID, id uuid.UUID, label, sealed string) (bool, error)
 	Delete(ctx context.Context, agencyID, id uuid.UUID) (bool, error)
+	// CredentialsFor is an account's sealed key for a workspace that is still the agency's client; false otherwise.
+	CredentialsFor(ctx context.Context, orgID, id uuid.UUID) (string, bool, error)
 	// Links lists the workspace connections made from an account.
 	Links(ctx context.Context, id uuid.UUID) ([]AgencyVendorLink, error)
 	// Linked is the workspace's connection made from an account; nil when it has none.
 	Linked(ctx context.Context, orgID, id uuid.UUID) (*models.VendorConnection, error)
-	// CreateLinked stores a workspace connection made from an account; false when the workspace already has one.
+	// CreateLinked stores a workspace's connection to an account, which holds no key of its own; false when the
+	// workspace already has one or is not the agency's client.
 	CreateLinked(ctx context.Context, c *models.VendorConnection, agencyConnectionID, createdBy uuid.UUID) (bool, error)
 }
 
@@ -152,6 +155,21 @@ func (r *agencyVendorRepository) Delete(ctx context.Context, agencyID, id uuid.U
 	return tag.RowsAffected() > 0, nil
 }
 
+func (r *agencyVendorRepository) CredentialsFor(ctx context.Context, orgID, id uuid.UUID) (string, bool, error) {
+	var sealed string
+	err := r.DB.QueryRow(ctx, `SELECT a.credentials FROM agency_vendor_connections a
+		JOIN agency_clients ac ON ac.agency_id = a.agency_id AND ac.organization_id = $1
+		WHERE a.id = $2`, orgID, id).Scan(&sealed)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		db.CaptureError(err, "agency vendor credentials", nil, "queryrow")
+		return "", false, err
+	}
+	return sealed, true, nil
+}
+
 func (r *agencyVendorRepository) Links(ctx context.Context, id uuid.UUID) ([]AgencyVendorLink, error) {
 	rows, err := r.DB.Query(ctx, `SELECT organization_id, id FROM mailbox_vendor_connections WHERE agency_connection_id = $1`, id)
 	if err != nil {
@@ -185,13 +203,13 @@ func (r *agencyVendorRepository) Linked(ctx context.Context, orgID, id uuid.UUID
 func (r *agencyVendorRepository) CreateLinked(ctx context.Context, c *models.VendorConnection, agencyConnectionID, createdBy uuid.UUID) (bool, error) {
 	// The workspace must still be the agency's client as the row is written.
 	query := `INSERT INTO mailbox_vendor_connections (id, organization_id, vendor, label, credentials, status, created_by, last_used_at, agency_connection_id)
-		SELECT $1, ac.organization_id, $3, $4, $5, 'active', $6, now(), a.id
+		SELECT $1, ac.organization_id, $3, $4, '', 'active', $5, now(), a.id
 		FROM agency_vendor_connections a
 		JOIN agency_clients ac ON ac.agency_id = a.agency_id AND ac.organization_id = $2
-		WHERE a.id = $7
+		WHERE a.id = $6
 		ON CONFLICT DO NOTHING
 		RETURNING created_at`
-	err := r.DB.QueryRow(ctx, query, c.ID, c.OrganizationID, c.Vendor, c.Label, c.Credentials, createdBy, agencyConnectionID).Scan(&c.CreatedAt)
+	err := r.DB.QueryRow(ctx, query, c.ID, c.OrganizationID, c.Vendor, c.Label, createdBy, agencyConnectionID).Scan(&c.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}

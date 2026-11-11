@@ -326,9 +326,44 @@ func (s *Service) Delete(ctx context.Context, orgID, id uuid.UUID) *errx.Error {
 	return nil
 }
 
+// keyOf is the sealed key a connection uses and how to open it. A connection made from an agency's
+// account holds none of its own: the agency's is read each time, and only while the workspace is its client.
+func (s *Service) keyOf(ctx context.Context, c *models.VendorConnection) (string, func() (string, error), *errx.Error) {
+	if c.AgencyConnectionID != nil {
+		if s.agencyRepo == nil || s.instance == nil {
+			return "", nil, errAgencyVendorGone
+		}
+		sealed, ok, err := s.agencyRepo.CredentialsFor(ctx, c.OrganizationID, *c.AgencyConnectionID)
+		if err != nil {
+			return "", nil, errx.InternalError()
+		}
+		if !ok {
+			return "", nil, errAgencyVendorGone
+		}
+		return sealed, func() (string, error) { return s.instance.Decrypt(sealed) }, nil
+	}
+	// An archive imported without credentials brings the connection but not its key.
+	if c.Credentials == "" {
+		_ = s.repo.SetStatus(ctx, c.ID, "invalid", "This connection has no API key on this instance. Update the key.")
+		return "", nil, errx.NewWithIdentifier(errx.BadRequest, mailboximport.ErrIDVendorUnauthorized,
+			"This "+labelOf(c.Vendor)+" connection has no API key on this instance. Update the key to use it.")
+	}
+	return c.Credentials, func() (string, error) {
+		ciph, err := s.cipher.Cipher(ctx, c.OrganizationID)
+		if err != nil {
+			return "", err
+		}
+		return ciph.Decrypt(ctx, c.Credentials)
+	}, nil
+}
+
 // client is the connection's vendor client, reused for a while so one list serves many rows.
 func (s *Service) client(ctx context.Context, c *models.VendorConnection) (mailvendor.Client, *errx.Error) {
-	sum := sha256.Sum256([]byte(c.Credentials))
+	sealed, open, xerr := s.keyOf(ctx, c)
+	if xerr != nil {
+		return nil, xerr
+	}
+	sum := sha256.Sum256([]byte(sealed))
 	key := c.ID.String() + ":" + hex.EncodeToString(sum[:8])
 	if v, ok := s.clients.Load(key); ok {
 		cc := v.(*cachedClient)
@@ -337,18 +372,7 @@ func (s *Service) client(ctx context.Context, c *models.VendorConnection) (mailv
 		}
 		s.clients.Delete(key)
 	}
-	// An archive imported without credentials brings the connection but not its key.
-	if c.Credentials == "" {
-		_ = s.repo.SetStatus(ctx, c.ID, "invalid", "This connection has no API key on this instance. Update the key.")
-		return nil, errx.NewWithIdentifier(errx.BadRequest, mailboximport.ErrIDVendorUnauthorized,
-			"This "+labelOf(c.Vendor)+" connection has no API key on this instance. Update the key to use it.")
-	}
-	ciph, err := s.cipher.Cipher(ctx, c.OrganizationID)
-	if err != nil {
-		errs.CaptureException(err)
-		return nil, errx.InternalError()
-	}
-	raw, err := ciph.Decrypt(ctx, c.Credentials)
+	raw, err := open()
 	if err != nil {
 		errs.CaptureException(err)
 		return nil, errx.InternalError()

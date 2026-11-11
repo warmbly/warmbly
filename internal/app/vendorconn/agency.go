@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/app/mailboximport"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
@@ -14,11 +15,14 @@ import (
 )
 
 // An agency holds a vendor account once and uses it in any client workspace.
-// The account's key is sealed with the instance key; using it in a client makes
-// an ordinary connection in that workspace, sealed with the workspace's own key,
-// so imports, reconnects and rotated passwords work there exactly as they do for
-// a key the workspace was given directly. Only agency staff browse or import
-// from such a connection: the account lists every client's mailboxes.
+// The account's key is sealed with the instance key and exists in one place.
+// Using the account in a client makes a connection in that workspace that holds
+// no key of its own and names the account: the key is read through it each
+// time, and only while the workspace is still the agency's client. Imports,
+// reconnects and rotated passwords then work there exactly as they do for a key
+// the workspace was given directly. A release that does not know such a
+// connection finds no key in it and can do nothing with it. Only agency staff
+// browse or import from one: the account lists every client's mailboxes.
 
 // Agencies is the slice of the agency service that proves staff.
 type Agencies interface {
@@ -31,9 +35,11 @@ type AgencyClients interface {
 }
 
 var (
-	errAgencyVendorsOff    = errx.New(errx.ServiceUnavailable, "agency vendor accounts are not available on this instance")
-	errAgencyVendorManage  = errx.NewWithIdentifier(errx.Forbidden, "agency_forbidden", "Only the agency's owner and admins can do that.")
-	errAgencyVendorClient  = errx.NewWithIdentifier(errx.NotFound, "agency_client_not_found", "That workspace is not one of this agency's clients.")
+	errAgencyVendorsOff   = errx.New(errx.ServiceUnavailable, "agency vendor accounts are not available on this instance")
+	errAgencyVendorManage = errx.NewWithIdentifier(errx.Forbidden, "agency_forbidden", "Only the agency's owner and admins can do that.")
+	errAgencyVendorClient = errx.NewWithIdentifier(errx.NotFound, "agency_client_not_found", "That workspace is not one of this agency's clients.")
+	errAgencyVendorGone   = errx.NewWithIdentifier(errx.BadRequest, mailboximport.ErrIDVendorUnauthorized,
+		"This vendor account is no longer shared with this workspace by its agency.")
 	errAgencyVendorMailbox = errx.NewWithIdentifier(errx.Forbidden, "agency_client_mailboxes_forbidden", "You cannot manage mailboxes in this client's workspace.")
 	// ErrAgencyVendorStaffOnly refuses a workspace member who is not on the agency's staff.
 	ErrAgencyVendorStaffOnly = errx.NewWithIdentifier(errx.Forbidden, "agency_vendor_staff_only",
@@ -78,21 +84,6 @@ func (s *Service) verified(ctx context.Context, vendor string, in map[string]str
 
 func (s *Service) sealInstance(raw string) (string, *errx.Error) {
 	sealed, err := s.instance.Encrypt(raw)
-	if err != nil {
-		errs.CaptureException(err)
-		return "", errx.InternalError()
-	}
-	return sealed, nil
-}
-
-// sealFor seals an already-marshalled field map with a workspace's key.
-func (s *Service) sealFor(ctx context.Context, orgID uuid.UUID, raw string) (string, *errx.Error) {
-	ciph, err := s.cipher.Cipher(ctx, orgID)
-	if err != nil {
-		errs.CaptureException(err)
-		return "", errx.InternalError()
-	}
-	sealed, err := ciph.Encrypt(ctx, raw)
 	if err != nil {
 		errs.CaptureException(err)
 		return "", errx.InternalError()
@@ -154,9 +145,10 @@ func (s *Service) UpdateAgencyAccount(ctx context.Context, agencyID, userID, id 
 	if xerr != nil {
 		return nil, xerr
 	}
-	raw, sealed := "", ""
+	sealed := ""
 	if len(in.Fields) > 0 {
-		if raw, xerr = s.verified(ctx, a.Vendor, in.Fields); xerr != nil {
+		raw, xerr := s.verified(ctx, a.Vendor, in.Fields)
+		if xerr != nil {
 			return nil, xerr
 		}
 		if sealed, xerr = s.sealInstance(raw); xerr != nil {
@@ -167,22 +159,19 @@ func (s *Service) UpdateAgencyAccount(ctx context.Context, agencyID, userID, id 
 	if strings.TrimSpace(in.Label) != "" {
 		label = cleanLabel(in.Label, a.Vendor)
 	}
+	// One row holds the key, so every client that uses the account has the new one the moment this commits.
 	if _, err := s.agencyRepo.Update(ctx, agencyID, id, label, sealed); err != nil {
 		return nil, errx.InternalError()
 	}
+	// The name each workspace shows, and a refusal recorded against the old key, follow; neither is a secret.
 	links, err := s.agencyRepo.Links(ctx, id)
 	if err != nil {
 		return nil, errx.InternalError()
 	}
 	for _, l := range links {
-		workspaceSealed := ""
-		if raw != "" {
-			if workspaceSealed, xerr = s.sealFor(ctx, l.OrganizationID, raw); xerr != nil {
-				return nil, xerr
-			}
-		}
-		if _, err := s.repo.Update(ctx, l.OrganizationID, l.ConnectionID, label, workspaceSealed); err != nil {
-			return nil, errx.InternalError()
+		_, _ = s.repo.Update(ctx, l.OrganizationID, l.ConnectionID, label, "")
+		if sealed != "" {
+			_ = s.repo.SetStatus(ctx, l.ConnectionID, "active", "")
 		}
 		s.forget(l.ConnectionID)
 	}
@@ -256,16 +245,8 @@ func (s *Service) UseAgencyAccount(ctx context.Context, agencyID, userID, id, or
 		return nil, errx.InternalError()
 	}
 	if linked == nil {
-		raw, derr := s.instance.Decrypt(a.Credentials)
-		if derr != nil {
-			errs.CaptureException(derr)
-			return nil, errx.InternalError()
-		}
-		sealed, xerr := s.sealFor(ctx, orgID, raw)
-		if xerr != nil {
-			return nil, xerr
-		}
-		c := &models.VendorConnection{ID: uuid.New(), OrganizationID: orgID, Vendor: a.Vendor, Label: a.Label, Credentials: sealed}
+		// No key is copied: the connection names the account and the key is read through it.
+		c := &models.VendorConnection{ID: uuid.New(), OrganizationID: orgID, Vendor: a.Vendor, Label: a.Label}
 		made, err := s.agencyRepo.CreateLinked(ctx, c, id, userID)
 		if err != nil {
 			return nil, errx.InternalError()

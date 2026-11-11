@@ -74,7 +74,7 @@ export default function AddMailboxesDialog({
     React.useEffect(() => {
         if (!open) return;
         // One client needs no picking.
-        setOrgId(!presetAccountId && clients.length === 1 && clients[0].access === "full" ? clients[0].organization_id : null);
+        setOrgId(!presetAccountId && clients.length === 1 && clients[0].manage_mailboxes ? clients[0].organization_id : null);
         setSearch("");
     }, [open, presetAccountId, clients]);
 
@@ -127,20 +127,21 @@ export default function AddMailboxesDialog({
                                 {clients.length > 6 && <SearchInput value={search} onChange={setSearch} placeholder="Search clients…" autoFocus />}
                                 <div className="max-h-[46vh] overflow-auto -mx-1 px-1 space-y-1">
                                     {shown.map((c) => {
-                                        const limited = c.access !== "full";
+                                        // Adding mailboxes needs the permission to manage them there, not only access to the workspace.
+                                        const limited = !c.manage_mailboxes;
                                         return (
                                             <button
                                                 key={c.organization_id}
                                                 type="button"
                                                 disabled={limited || busy}
                                                 onClick={() => pickClient(c.organization_id)}
-                                                title={limited ? "Your access to this client is limited, so you cannot add mailboxes to it." : undefined}
+                                                title={limited ? "You cannot manage mailboxes in this client's workspace." : undefined}
                                                 className="w-full h-10 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 hover:bg-slate-50/80 flex items-center gap-2.5 text-left transition-colors disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:border-slate-200"
                                             >
                                                 <ClientAvatar name={c.name} avatar={c.avatar_url} />
                                                 <span className="flex-1 min-w-0 truncate text-[12.5px] text-slate-900">{c.name}</span>
                                                 <span className="text-[11.5px] tabular-nums text-slate-500 shrink-0">
-                                                    {limited ? "Limited access" : `${c.mailboxes?.total ?? 0} mailboxes`}
+                                                    {limited ? "No mailbox access" : `${c.mailboxes?.total ?? 0} mailboxes`}
                                                 </span>
                                             </button>
                                         );

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"reflect"
 	"slices"
-	"strings"
 	"testing"
 )
 
@@ -109,7 +108,7 @@ func TestArchiveCannotSetTestWorkspaceCategory(t *testing.T) {
 	}
 }
 
-func TestAnAgencysVendorKeyNeverLeavesInAClientsArchive(t *testing.T) {
+func TestAnAgencyVendorLinkArrivesAsTheWorkspacesOwnConnection(t *testing.T) {
 	var table *Table
 	for i := range Tables {
 		if Tables[i].Name == "mailbox_vendor_connections" {
@@ -119,24 +118,11 @@ func TestAnAgencysVendorKeyNeverLeavesInAClientsArchive(t *testing.T) {
 	if table == nil {
 		t.Fatal("mailbox_vendor_connections is not registered")
 	}
-	reset := false
-	for _, c := range table.ResetOnImport {
-		reset = reset || c == "agency_connection_id"
+	// The account it names exists only on the source instance, on a fresh insert and over an existing row.
+	if !slices.Contains(table.ResetOnImport, "agency_connection_id") || !slices.Contains(table.ResetColumnsOnOverwrite, "agency_connection_id") {
+		t.Fatalf("agency_connection_id is not reset: import %v, overwrite %v", table.ResetOnImport, table.ResetColumnsOnOverwrite)
 	}
-	if !reset {
-		t.Fatal("agency_connection_id names an account of the source instance and has to be reset on import")
-	}
-	// An archive that carries secrets still leaves the agency's key behind: the cipher is never asked to open it.
-	row := []byte(`{"id":"7b1f0d5c-0000-0000-0000-000000000001","vendor":"zapmail","credentials":"sealed-agency-key","agency_connection_id":"7b1f0d5c-0000-0000-0000-0000000000a1"}`)
-	out, err := (&service{}).exportRow(context.Background(), table, row, nil, []byte("an-archive-key-of-thirty-two-byt"), nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var obj map[string]json.RawMessage
-	if err := json.Unmarshal(out, &obj); err != nil {
-		t.Fatal(err)
-	}
-	if got := jsonString(obj["credentials"]); got != "" || strings.Contains(string(out), "sealed-agency-key") {
-		t.Fatalf("the agency's key travelled: %s", out)
+	if _, ok := ExcludedTables["agency_vendor_connections"]; !ok {
+		t.Fatal("the agency's accounts, which hold the key, must not travel in a workspace archive")
 	}
 }

@@ -86,6 +86,14 @@ func (m *memAgencyVendors) Delete(_ context.Context, agencyID, id uuid.UUID) (bo
 	return true, nil
 }
 
+func (m *memAgencyVendors) CredentialsFor(_ context.Context, orgID, id uuid.UUID) (string, bool, error) {
+	a, ok := m.accounts[id]
+	if !ok || !m.clients[orgID] {
+		return "", false, nil
+	}
+	return a.Credentials, true, nil
+}
+
 func (m *memAgencyVendors) Links(_ context.Context, id uuid.UUID) ([]repository.AgencyVendorLink, error) {
 	var out []repository.AgencyVendorLink
 	for _, c := range m.conns.conns {
@@ -214,11 +222,11 @@ func TestUsingAnAgencyAccountGivesTheClientItsOwnConnection(t *testing.T) {
 	if stored.OrganizationID != f.acme || stored.AgencyConnectionID == nil || *stored.AgencyConnectionID != a.ID || conn.Credentials != "" {
 		t.Fatalf("connection = %+v", stored)
 	}
-	// Sealed for the workspace, not copied from the agency's sealed value.
-	if stored.Credentials == f.accounts.accounts[a.ID].Credentials || strings.Contains(stored.Credentials, "zm_secret") {
-		t.Fatalf("workspace credentials = %q", stored.Credentials)
+	// The key is not copied: a release that does not know such a connection finds nothing in it to use.
+	if stored.Credentials != "" {
+		t.Fatalf("the workspace's connection holds a key: %q", stored.Credentials)
 	}
-	// The workspace's connection works like any other: the vendor is asked with the agency's key.
+	// It works like any other all the same: the vendor is asked with the agency's key, read through the account.
 	boxes, xerr := f.svc.Mailboxes(ctx, f.acme, conn.ID)
 	if xerr != nil || len(boxes) != 1 || f.client.fields["api_key"] != "zm_secret" {
 		t.Fatalf("mailboxes = %+v, %v, asked with %v", boxes, xerr, f.client.fields)
@@ -260,7 +268,6 @@ func TestANewKeyReachesEveryClientThatUsesTheAccount(t *testing.T) {
 	if xerr != nil {
 		t.Fatal(xerr)
 	}
-	before := f.conns.conns[conn.ID].Credentials
 
 	if _, xerr := f.svc.UpdateAgencyAccount(ctx, f.agency, f.member, a.ID, CreateInput{Label: "x"}); xerr == nil || xerr.Identifier != "agency_forbidden" {
 		t.Fatalf("a staff member who is not an admin: got %v", xerr)
@@ -270,12 +277,20 @@ func TestANewKeyReachesEveryClientThatUsesTheAccount(t *testing.T) {
 		t.Fatal(xerr)
 	}
 	stored := f.conns.conns[conn.ID]
-	if out.Label != "Main Zapmail" || stored.Label != "Main Zapmail" || stored.Credentials == before || len(out.Clients) != 1 {
+	// One row holds the key, so there is nothing to bring up to date in each client.
+	if out.Label != "Main Zapmail" || stored.Label != "Main Zapmail" || stored.Credentials != "" || len(out.Clients) != 1 {
 		t.Fatalf("account %+v, connection %+v", out, stored)
 	}
 	if _, xerr := f.svc.Mailboxes(ctx, f.acme, conn.ID); xerr != nil || f.client.fields["api_key"] != "zm_rotated" {
 		t.Fatalf("the client still uses %v (%v)", f.client.fields, xerr)
 	}
+	// A workspace that left the agency keeps the connection row for a moment at most, and can do nothing with it.
+	f.accounts.clients[f.acme] = false
+	f.svc.forget(conn.ID)
+	if _, xerr := f.svc.Mailboxes(ctx, f.acme, conn.ID); xerr == nil {
+		t.Fatal("a workspace that left the agency still used its account")
+	}
+	f.accounts.clients[f.acme] = true
 	// Deleting the account ends its use in every client.
 	if xerr := f.svc.DeleteAgencyAccount(ctx, f.agency, f.owner, a.ID); xerr != nil || len(f.conns.conns) != 0 || len(f.accounts.accounts) != 0 {
 		t.Fatalf("delete: %v, %d connections left", xerr, len(f.conns.conns))

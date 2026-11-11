@@ -34,12 +34,21 @@ export default function VendorAccountDialog({
     const [label, setLabel] = React.useState("");
     const [fields, setFields] = React.useState<Record<string, string>>({});
 
+    // Reset when it opens or moves to another account; a refetch of the same account keeps what was typed.
+    const accountId = account?.id;
+    const start = React.useRef(account);
+    start.current = account;
     React.useEffect(() => {
         if (!open) return;
-        setVendorId(account?.vendor ?? "");
-        setLabel(account?.label ?? "");
+        setVendorId(start.current?.vendor ?? "");
+        setLabel(start.current?.label ?? "");
         setFields({});
-    }, [open, account]);
+    }, [open, accountId]);
+
+    // A save in flight belongs to this dialog: it cannot be closed, and reopened for another account, under it.
+    const close = () => {
+        if (!save.isPending) onClose();
+    };
 
     const vendor = catalog.find((v) => v.id === vendorId);
     const typed = Object.values(fields).some((v) => v.trim() !== "");
@@ -68,14 +77,14 @@ export default function VendorAccountDialog({
     return (
         <AgencyDialog
             open={open}
-            onClose={onClose}
+            onClose={close}
             eyebrow="Inbox vendor"
             title={account ? `Update ${account.label}` : "Connect a vendor account"}
             icon={<KeyRoundIcon className="w-3 h-3" />}
             footer={
                 <>
                     {problem && <span className="text-[11.5px] text-slate-500 truncate">{problem}</span>}
-                    <button type="button" onClick={onClose} className={cn(ghostBtn, "ml-auto")}>
+                    <button type="button" onClick={close} disabled={save.isPending} className={cn(ghostBtn, "ml-auto disabled:opacity-60")}>
                         Cancel
                     </button>
                     <button type="button" onClick={() => void submit()} disabled={!!problem || save.isPending} className={primaryBtn}>

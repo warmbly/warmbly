@@ -170,7 +170,8 @@ func (s *Service) Overview(ctx context.Context, agencyID, userID uuid.UUID) (*mo
 	for _, m := range list {
 		c := models.AgencyOverviewClient{
 			OrganizationID: m.OrganizationID, Name: m.Name, AvatarURL: m.AvatarURL, Access: m.Access(),
-			PoolUsed: used[m.OrganizationID], MonthlySendLimit: m.MonthlySendLimit,
+			ManageMailboxes: m.Can(models.PermManageEmails),
+			PoolUsed:        used[m.OrganizationID], MonthlySendLimit: m.MonthlySendLimit,
 		}
 		if m.Can(models.PermViewCampaigns) {
 			c.Campaigns = orZero(campaigns[m.OrganizationID])

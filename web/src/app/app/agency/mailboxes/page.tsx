@@ -59,8 +59,28 @@ function standing(m: AgencyMailbox): { label: string; cls: string } {
     return { label: "Connected", cls: "bg-emerald-50 text-emerald-700" };
 }
 
+/** A list that could not be loaded says so and offers another try, instead of looking empty. */
+function LoadFailed({ what, error, onRetry }: { what: string; error: unknown; onRetry: () => void }) {
+    return (
+        <div role="alert" className="px-5 py-4 border-b border-slate-200/60 flex flex-wrap items-center gap-3">
+            <p className="min-w-[220px] flex-1 text-[12px] leading-relaxed text-red-700">
+                We could not load {what}. {buildError(error as AppError)}
+            </p>
+            <button
+                type="button"
+                onClick={onRetry}
+                className="h-7 px-2.5 rounded-md border border-slate-200 text-[12px] text-slate-700 hover:border-slate-300 hover:text-slate-900"
+            >
+                Try again
+            </button>
+        </div>
+    );
+}
+
 function VendorAccounts({
     accounts,
+    failed,
+    onRetry,
     canManage,
     onConnect,
     onAdd,
@@ -68,6 +88,9 @@ function VendorAccounts({
     onRemove,
 }: {
     accounts: AgencyVendorAccount[];
+    /** The accounts could not be loaded; nothing can be connected until they are. */
+    failed: unknown;
+    onRetry: () => void;
     canManage: boolean;
     onConnect: () => void;
     onAdd: (a: AgencyVendorAccount) => void;
@@ -76,14 +99,16 @@ function VendorAccounts({
 }) {
     return (
         <>
-            <SectionBar label="Inbox vendor accounts" count={accounts.length}>
-                {canManage && (
+            <SectionBar label="Inbox vendor accounts" count={failed ? undefined : accounts.length}>
+                {canManage && !failed && (
                     <TopbarAction variant="ghost" icon={<PlusIcon className="w-3 h-3" />} onClick={onConnect}>
                         Connect a vendor
                     </TopbarAction>
                 )}
             </SectionBar>
-            {accounts.length === 0 ? (
+            {failed ? (
+                <LoadFailed what="your vendor accounts" error={failed} onRetry={onRetry} />
+            ) : accounts.length === 0 ? (
                 <div className="px-5 py-4 border-b border-slate-200/60">
                     <p className="text-[12px] leading-relaxed text-slate-500 max-w-[80ch]">
                         Bought mailboxes from Zapmail, InboxKit, Mailforge or another vendor for your clients? Connect the account once and hand
@@ -228,6 +253,8 @@ function AgencyMailboxes() {
         <PageBody>
             <VendorAccounts
                 accounts={accounts}
+                failed={vendors.isError && !vendors.data ? vendors.error : null}
+                onRetry={() => void vendors.refetch()}
                 canManage={canManage}
                 onConnect={() => setVendorDialog({})}
                 onAdd={(a) => setAdding({ accountId: a.id })}
@@ -275,6 +302,8 @@ function AgencyMailboxes() {
                 <div className="py-12 flex justify-center">
                     <Loader2Icon className="w-4 h-4 animate-spin text-slate-400" />
                 </div>
+            ) : mailboxes.isError && rows.length === 0 ? (
+                <LoadFailed what="the mailboxes" error={mailboxes.error} onRetry={() => void mailboxes.refetch()} />
             ) : rows.length === 0 ? (
                 <EmptyBlock
                     title={filtered ? "No mailbox matches" : "No mailboxes yet"}
@@ -304,7 +333,10 @@ function AgencyMailboxes() {
                                 tabIndex={0}
                                 onClick={go}
                                 onKeyDown={(e) => {
-                                    if (e.key === "Enter" && e.target === e.currentTarget) go();
+                                    if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) {
+                                        e.preventDefault();
+                                        go();
+                                    }
                                 }}
                                 title={`Open in ${m.client}`}
                                 className="min-h-11 px-5 py-1.5 flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-1 border-b border-slate-200/60 hover:bg-slate-50/80 cursor-pointer"

@@ -261,17 +261,20 @@ seed() {
 
 # ── lifecycle ────────────────────────────────────────────────────────────
 up() {
-  local c
+  local c want_mock=0
   for c in docker go pnpm setsid curl; do command -v "$c" >/dev/null || die "$c is required"; done
   load_ports
   load_mode "${1:-}"
+  if vendor_mock; then want_mock=1; fi
   if alive backend && alive web; then
-    if [ "$(cat "$RUN/mode" 2>/dev/null)" = "$MODE" ]; then status; return 0; fi
+    # The same mode with the mock inbox vendors switched on or off is a different stack: it is restarted.
+    if [ "$(cat "$RUN/mode" 2>/dev/null)" = "$MODE" ] && [ "$(cat "$RUN/vendor-mock" 2>/dev/null || echo 0)" = "$want_mock" ]; then status; return 0; fi
     say "switching to $MODE"
     down >/dev/null
   fi
   heal_ports
   echo "$MODE" >"$RUN/mode"
+  echo "$want_mock" >"$RUN/vendor-mock"
 
   docker ps --format '{{.Names}}' | grep -q '^warmbly-postgres-1$' || (cd "$REPO" && make infra)
   until docker exec warmbly-postgres-1 pg_isready -U warmbly >/dev/null 2>&1; do sleep 1; done

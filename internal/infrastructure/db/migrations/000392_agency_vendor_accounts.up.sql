@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS agency_vendor_connections (
 
 CREATE INDEX IF NOT EXISTS idx_agency_vendor_connections_agency ON agency_vendor_connections (agency_id);
 
--- A workspace's connection made from an agency's account. It ends with the account; its mailboxes stay.
+-- A workspace's connection made from an agency's account. It holds no key of its own (credentials is empty):
+-- the account's key is read through it. It ends with the account; its mailboxes stay.
 ALTER TABLE mailbox_vendor_connections
     ADD COLUMN IF NOT EXISTS agency_connection_id uuid REFERENCES agency_vendor_connections (id) ON DELETE CASCADE;
 
