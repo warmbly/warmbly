@@ -88,7 +88,31 @@ func (s *Service) packs() packCharger {
 	return stripeCharger{}
 }
 
-func (s *Service) autoTopupView(ctx context.Context, a *models.Agency, withCard bool) (*AutoTopup, *errx.Error) {
+// How long a settings answer waits for the saved card: a read can wait for it, the answer to a save cannot,
+// because the person is waiting to see that the setting took.
+const (
+	cardWaitRead = 10 * time.Second
+	cardWaitSave = 3 * time.Second
+)
+
+// savedCard looks the card up within wait. Known is false when it could not be read in time, which is not "none".
+func (s *Service) savedCard(ctx context.Context, a *models.Agency, wait time.Duration) (card *SavedCard, known bool) {
+	if wait <= 0 || !s.billing {
+		return nil, false
+	}
+	ctx, cancel := context.WithTimeout(ctx, wait)
+	defer cancel()
+	card, err := s.packs().Card(ctx, a)
+	if err != nil {
+		if !errors.Is(err, context.DeadlineExceeded) {
+			errs.CaptureException(fmt.Errorf("agency saved card: %w", err))
+		}
+		return nil, false
+	}
+	return card, true
+}
+
+func (s *Service) autoTopupView(ctx context.Context, a *models.Agency, cardWait time.Duration) (*AutoTopup, *errx.Error) {
 	now := s.now()
 	start, _ := models.AgencyPeriod(a.CurrentPeriodStart, a.CurrentPeriodEnd, now)
 	bought, _, err := s.repo.AutoTopupUsed(ctx, a.ID, models.AgencyAutoTopupSends, start)
@@ -104,13 +128,8 @@ func (s *Service) autoTopupView(ctx context.Context, a *models.Agency, withCard 
 	if a.AutoTopupFailure != nil {
 		out.Failure = *a.AutoTopupFailure
 	}
-	if withCard && s.billing {
-		// A card that cannot be read is shown as none; the page then asks for one.
-		if card, cerr := s.packs().Card(ctx, a); cerr == nil {
-			out.Card, out.CardMissing = card, card == nil
-		} else {
-			errs.CaptureException(fmt.Errorf("agency saved card: %w", cerr))
-		}
+	if card, known := s.savedCard(ctx, a, cardWait); known {
+		out.Card, out.CardMissing = card, card == nil
 	}
 	return out, nil
 }
@@ -124,7 +143,7 @@ func (s *Service) AutoTopup(ctx context.Context, agencyID, userID uuid.UUID) (*A
 	if xerr != nil {
 		return nil, xerr
 	}
-	return s.autoTopupView(ctx, a, true)
+	return s.autoTopupView(ctx, a, cardWaitRead)
 }
 
 // SetAutoTopup turns the automatic top-up on or off and sets when it buys and how many packs a period.
@@ -172,8 +191,8 @@ func (s *Service) SetAutoTopup(ctx context.Context, agencyID, actorID uuid.UUID,
 		return nil, errNotFound
 	}
 	s.hydrate(ctx, fresh)
-	// Read with the card, so the page that keeps this answer still knows whether one is on file.
-	return s.autoTopupView(ctx, fresh, true)
+	// Read with the card when it answers quickly, so the page that keeps this answer still knows whether one is on file.
+	return s.autoTopupView(ctx, fresh, cardWaitSave)
 }
 
 // autoTopup buys one pack when the agency's pool is at or under its threshold
@@ -694,7 +713,7 @@ type AIAutoTopup struct {
 	MaxUSD    float64 `json:"max_usd"`
 }
 
-func (s *Service) aiAutoTopupView(ctx context.Context, a *models.Agency, withCard bool) (*AIAutoTopup, *errx.Error) {
+func (s *Service) aiAutoTopupView(ctx context.Context, a *models.Agency, cardWait time.Duration) (*AIAutoTopup, *errx.Error) {
 	_, _, planned := s.grantPlan(a)
 	out := &AIAutoTopup{
 		Enabled: a.AIAutoTopupEnabled, ThresholdUSD: a.AIAutoTopupThreshold.USD(), AmountUSD: a.AIAutoTopupAmount.USD(), LimitUSD: a.AIAutoTopupLimit.USD(),
@@ -711,12 +730,8 @@ func (s *Service) aiAutoTopupView(ctx context.Context, a *models.Agency, withCar
 		}
 		out.AddedThisPeriodUSD = float64(cents) / 100
 	}
-	if withCard && s.billing {
-		if card, cerr := s.packs().Card(ctx, a); cerr == nil {
-			out.Card, out.CardMissing = card, card == nil
-		} else {
-			errs.CaptureException(fmt.Errorf("agency saved card: %w", cerr))
-		}
+	if card, known := s.savedCard(ctx, a, cardWait); known {
+		out.Card, out.CardMissing = card, card == nil
 	}
 	return out, nil
 }
@@ -730,7 +745,7 @@ func (s *Service) AIAutoTopup(ctx context.Context, agencyID, userID uuid.UUID) (
 	if xerr != nil {
 		return nil, xerr
 	}
-	return s.aiAutoTopupView(ctx, a, true)
+	return s.aiAutoTopupView(ctx, a, cardWaitRead)
 }
 
 // SetAIAutoTopup turns the shared AI balance's automatic top-up on or off and sets when it adds money, how much, and the most a period.
@@ -782,8 +797,8 @@ func (s *Service) SetAIAutoTopup(ctx context.Context, agencyID, actorID uuid.UUI
 		return nil, errNotFound
 	}
 	s.hydrate(ctx, fresh)
-	// Read with the card, so the page that keeps this answer still knows whether one is on file.
-	return s.aiAutoTopupView(ctx, fresh, true)
+	// Read with the card when it answers quickly, so the page that keeps this answer still knows whether one is on file.
+	return s.aiAutoTopupView(ctx, fresh, cardWaitSave)
 }
 
 // aiCheck is one agency's AI balance check: at most one running and one waiting, however many charges arrive.
