@@ -146,6 +146,8 @@ func (s *Service) Sweep(ctx context.Context) error {
 			if err := s.rollup(ctx, a); err != nil {
 				errs.CaptureException(fmt.Errorf("agency pool rollup %s: %w", a.ID, err))
 			}
+			// Topped up before the alert is decided, so a pool the pack refilled raises none.
+			s.autoTopup(ctx, a)
 			s.checkAlerts(ctx, a)
 		}
 		if len(page) < 100 || ctx.Err() != nil {

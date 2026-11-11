@@ -78,6 +78,12 @@ type AgencyRepository interface {
 	// RefundTopup marks the pack paid by the payment intent refunded and
 	// returns its agency; false when no pack was paid by it.
 	RefundTopup(ctx context.Context, paymentIntentID string) (uuid.UUID, bool, error)
+	// SetAutoTopup stores the automatic top-up settings and clears why it last turned itself off.
+	SetAutoTopup(ctx context.Context, agencyID uuid.UUID, enabled bool, threshold, maxPacks int) error
+	// DisableAutoTopup turns the automatic top-up off and records why.
+	DisableAutoTopup(ctx context.Context, agencyID uuid.UUID, failure string) error
+	// AutoTopupCount is how many packs the automatic top-up bought in the period, refunded ones included.
+	AutoTopupCount(ctx context.Context, agencyID uuid.UUID, periodStart time.Time) (int, error)
 	// ClaimPoolAlert raises the period's alert level; false when it was already that high.
 	ClaimPoolAlert(ctx context.Context, agencyID uuid.UUID, periodStart time.Time, level int) (bool, error)
 
@@ -115,7 +121,8 @@ const agencyColumns = `a.id, a.name, a.owner_user_id, a.plan_id, a.stripe_custom
 	a.created_at, a.updated_at,
 	(SELECT COUNT(*) FROM agency_clients ac WHERE ac.agency_id = a.id),
 	a.managed_plan_id, a.managed_at, a.managed_by, a.managed_reason, a.managed_until,
-	a.pool_override, a.ai_allowance_override_micro, a.override_reason, a.override_by, a.override_at`
+	a.pool_override, a.ai_allowance_override_micro, a.override_reason, a.override_by, a.override_at,
+	a.auto_topup_enabled, a.auto_topup_threshold, a.auto_topup_max_packs, a.auto_topup_failure`
 
 func scanAgency(row pgx.Row, extra ...any) (*models.Agency, error) {
 	var a models.Agency
@@ -123,7 +130,8 @@ func scanAgency(row pgx.Row, extra ...any) (*models.Agency, error) {
 		&a.CurrentPeriodStart, &a.CurrentPeriodEnd, &a.CancelAtPeriodEnd, &a.PoolAlertLevel, &a.PoolAlertPeriod,
 		&a.CreatedAt, &a.UpdatedAt, &a.ClientCount,
 		&a.ManagedPlanID, &a.ManagedAt, &a.ManagedBy, &a.ManagedReason, &a.ManagedUntil,
-		&a.PoolOverride, &a.AIAllowanceOverride, &a.OverrideReason, &a.OverrideBy, &a.OverrideAt}
+		&a.PoolOverride, &a.AIAllowanceOverride, &a.OverrideReason, &a.OverrideBy, &a.OverrideAt,
+		&a.AutoTopupEnabled, &a.AutoTopupThreshold, &a.AutoTopupMaxPacks, &a.AutoTopupFailure}
 	if err := row.Scan(append(dest, extra...)...); err != nil {
 		return nil, err
 	}
@@ -502,13 +510,30 @@ func (r *agencyRepository) RecordTopup(ctx context.Context, t *models.AgencyPool
 	if t.ID == uuid.Nil {
 		t.ID = uuid.New()
 	}
-	tag, err := r.db.Exec(ctx, `INSERT INTO agency_pool_topups (id, agency_id, sends, amount_cents, stripe_payment_intent_id, period_start, granted_by, reason)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (stripe_payment_intent_id) DO NOTHING`,
-		t.ID, t.AgencyID, t.Sends, t.AmountCents, t.StripePaymentIntentID, t.PeriodStart, t.GrantedBy, t.Reason)
+	tag, err := r.db.Exec(ctx, `INSERT INTO agency_pool_topups (id, agency_id, sends, amount_cents, stripe_payment_intent_id, period_start, granted_by, reason, automatic)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (stripe_payment_intent_id) DO NOTHING`,
+		t.ID, t.AgencyID, t.Sends, t.AmountCents, t.StripePaymentIntentID, t.PeriodStart, t.GrantedBy, t.Reason, t.Automatic)
 	if err != nil {
 		return false, err
 	}
 	return tag.RowsAffected() == 1, nil
+}
+
+func (r *agencyRepository) SetAutoTopup(ctx context.Context, agencyID uuid.UUID, enabled bool, threshold, maxPacks int) error {
+	_, err := r.db.Exec(ctx, `UPDATE agencies SET auto_topup_enabled = $2, auto_topup_threshold = $3, auto_topup_max_packs = $4,
+			auto_topup_failure = NULL, updated_at = now() WHERE id = $1`, agencyID, enabled, threshold, maxPacks)
+	return err
+}
+
+func (r *agencyRepository) DisableAutoTopup(ctx context.Context, agencyID uuid.UUID, failure string) error {
+	_, err := r.db.Exec(ctx, `UPDATE agencies SET auto_topup_enabled = false, auto_topup_failure = $2, updated_at = now() WHERE id = $1`, agencyID, failure)
+	return err
+}
+
+func (r *agencyRepository) AutoTopupCount(ctx context.Context, agencyID uuid.UUID, periodStart time.Time) (int, error) {
+	var n int
+	err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM agency_pool_topups WHERE agency_id = $1 AND period_start = $2 AND automatic`, agencyID, periodStart).Scan(&n)
+	return n, err
 }
 
 func (r *agencyRepository) ClaimPoolAlert(ctx context.Context, agencyID uuid.UUID, periodStart time.Time, level int) (bool, error) {

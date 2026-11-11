@@ -104,6 +104,11 @@ type Agency struct {
 	OverrideReason      *string    `json:"-"`
 	OverrideBy          *uuid.UUID `json:"-"`
 	OverrideAt          *time.Time `json:"-"`
+	// Automatic top-up: a pack is bought on the saved card once AutoTopupThreshold sends or fewer are left, up to AutoTopupMaxPacks a period.
+	AutoTopupEnabled   bool    `json:"-"`
+	AutoTopupThreshold int     `json:"-"`
+	AutoTopupMaxPacks  int     `json:"-"`
+	AutoTopupFailure   *string `json:"-"`
 	// Grant is set while an operator's plan is in force, for the dashboard.
 	Grant *AgencyGrant `json:"granted,omitempty"`
 	// BillingInterval is "month" or "year" while a subscription is in force, read off its period.
@@ -178,7 +183,21 @@ type AgencyPoolTopup struct {
 	// GrantedBy and Reason are set on sends an operator added, which have no payment.
 	GrantedBy *uuid.UUID `json:"-"`
 	Reason    *string    `json:"-"`
+	// Automatic marks a pack the automatic top-up bought.
+	Automatic bool `json:"-"`
 }
+
+// Bounds of an agency's automatic top-up settings.
+const (
+	AgencyAutoTopupMaxThreshold = 10_000_000
+	AgencyAutoTopupMaxPacks     = 20
+)
+
+// Why an automatic top-up turned itself off.
+const (
+	AgencyAutoTopupNoCard   = "no_payment_method"
+	AgencyAutoTopupDeclined = "card_declined"
+)
 
 // AgencyRef names the agency a workspace belongs to.
 type AgencyRef struct {

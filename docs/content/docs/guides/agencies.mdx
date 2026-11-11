@@ -139,6 +139,17 @@ Moving to a smaller pool is refused while the current period has already used mo
 
 When the pool runs low, buy a **top-up pack** under **Agency > Billing**: 50,000 more sends, $85 on Agency or $60 on Agency Pro. A pack is a one-off payment, added to the current period's pool, and does not carry into the next period. A pack that is fully refunded leaves the pool.
 
+#### Automatic top-up
+
+Turn on **Automatic top-up** under **Agency > Billing** and Warmbly buys a pack for you when the pool runs low, so campaigns do not pause for lack of sends. You set two things:
+
+- **When to buy:** a pack is bought once this many sends or fewer are left in the period. The default is 10,000.
+- **How many:** the most packs it may buy in one period, from 1 to 20. The page shows what that comes to. The default is 2.
+
+Each pack is charged to the card your subscription is paid with, at your plan's pack price, and has its own invoice. Owners and admins are told each time one is bought. It is checked every ten minutes, and once when you turn it on, and it buys one pack at a time. An agency with no saved card cannot turn it on: a plan arranged directly has none until you add a card under **Invoices and payment**.
+
+If the card is declined, automatic top-up turns itself off and tells the owners and admins; nothing stays owing. Update the card and turn it on again. Turning it on needs a recent confirmation of your identity, because it lets the card be charged with nobody present.
+
 Like every Warmbly checkout, the agency plan, top-up packs and AI balance purchases ask for your company's legal name and billing address, and for its VAT or other business tax ID if it has one. Prices exclude taxes.
 
 Owners and admins manage the plan, top-ups, AI balance purchases, invoices and payment method. **Invoices and payment** opens the billing portal. If a payment fails, client workspaces keep the plan while Stripe retries; if the subscription ends, they keep it until a few days after the period it paid for, then go back to their own plans.

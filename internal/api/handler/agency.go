@@ -567,6 +567,47 @@ func (h *Handler) ChangeAgencyPlan(c *gin.Context) {
 	c.JSON(http.StatusOK, a)
 }
 
+// GetAgencyAutoTopup is GET /agency/:agencyId/billing/auto-topup: the automatic top-up settings and the card a pack is charged to.
+func (h *Handler) GetAgencyAutoTopup(c *gin.Context) {
+	userID, agencyID, ok := h.agencyCaller(c)
+	if !ok {
+		return
+	}
+	view, xerr := h.AgencyService.AutoTopup(c.Request.Context(), agencyID, userID)
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, view)
+}
+
+// SetAgencyAutoTopup is PUT /agency/:agencyId/billing/auto-topup: turn the automatic top-up on or off and set its limits.
+func (h *Handler) SetAgencyAutoTopup(c *gin.Context) {
+	userID, agencyID, ok := h.agencyCaller(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Enabled        bool `json:"enabled"`
+		ThresholdSends int  `json:"threshold_sends"`
+		MaxPacks       int  `json:"max_packs"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errx.JSON(c, errx.InvalidBody(err))
+		return
+	}
+	view, xerr := h.AgencyService.SetAutoTopup(c.Request.Context(), agencyID, userID, req.Enabled, req.ThresholdSends, req.MaxPacks)
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	h.auditAgency(c, agencyID, models.AuditActionUpdate, map[string]string{
+		"action": "auto_topup", "enabled": strconv.FormatBool(req.Enabled),
+		"threshold_sends": strconv.Itoa(req.ThresholdSends), "max_packs": strconv.Itoa(req.MaxPacks),
+	})
+	c.JSON(http.StatusOK, view)
+}
+
 type agencyReturnRequest struct {
 	SuccessURL string `json:"success_url"`
 	CancelURL  string `json:"cancel_url"`

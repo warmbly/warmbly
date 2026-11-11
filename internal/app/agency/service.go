@@ -71,6 +71,8 @@ type Service struct {
 	billing bool
 	now     func() time.Time
 
+	// charger charges send packs to a saved card; nil uses Stripe.
+	charger packCharger
 	// switches are the locks plan switches take, picked by agency id.
 	switches [64]sync.Mutex
 

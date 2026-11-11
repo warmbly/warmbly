@@ -24,6 +24,8 @@ import {
     updateAgencyClient,
     updateAgencyStaff,
     changeAgencyPlan,
+    getAgencyAutoTopup,
+    setAgencyAutoTopup,
 } from "@/lib/api/client/app/agency/agency";
 import type { Agency, AgencyClient, AgencyClientPatch, AgencyRole, AgencyPlanChangePreview } from "@/lib/api/models/app/agency/Agency";
 import { currentPortal, portalAgencies } from "@/lib/portal";
@@ -338,6 +340,27 @@ export function useChangeAgencyPlan(agencyId: string) {
             void qc.invalidateQueries({ queryKey: ["agency"] });
             void qc.invalidateQueries({ queryKey: ["subscription"] });
         },
+    });
+}
+
+export const agencyAutoTopupQuery = (agencyId: string) =>
+    queryOptions({
+        queryKey: ["agency", agencyId, "auto-topup"],
+        queryFn: () => getAgencyAutoTopup(agencyId),
+        enabled: !!agencyId,
+    });
+
+export function useAgencyAutoTopup(agencyId?: string) {
+    return useQuery(agencyAutoTopupQuery(agencyId ?? ""));
+}
+
+// The server checks the card and may buy a pack at once, so nothing is patched before it answers.
+export function useSetAgencyAutoTopup(agencyId: string) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (input: { enabled: boolean; threshold_sends: number; max_packs: number }) => setAgencyAutoTopup(agencyId, input),
+        onSuccess: (data) => qc.setQueryData(agencyAutoTopupQuery(agencyId).queryKey, data),
+        onSettled: () => void qc.invalidateQueries({ queryKey: ["agency"] }),
     });
 }
 

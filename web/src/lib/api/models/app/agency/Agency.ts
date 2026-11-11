@@ -167,3 +167,19 @@ export interface AgencyRef {
     id: string;
     name: string;
 }
+
+/** An agency's automatic top-up: a send pack bought on its saved card when the pool runs low. */
+export interface AgencyAutoTopup {
+    enabled: boolean;
+    /** A pack is bought once this many sends or fewer are left in the period. */
+    threshold_sends: number;
+    max_packs: number;
+    bought_this_period: number;
+    /** Why it turned itself off. */
+    failure?: "no_payment_method" | "card_declined";
+    pack_sends: number;
+    pack_price_cents: number;
+    card?: { brand: string; last4: string };
+    /** False when the agency has no pool to top up. */
+    available: boolean;
+}
