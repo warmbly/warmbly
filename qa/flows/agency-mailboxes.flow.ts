@@ -1,17 +1,21 @@
 import type { Page } from "@playwright/test";
 
+import { env } from "../lib/env.ts";
 import { expect, test } from "../lib/proof.ts";
 
 // Agency > Mailboxes: every client's mailboxes on one list, a vendor account the agency connects once, and
 // that account opened in a client's own import. Needs fixtures/admin-agencies.sql and the mock vendors; see the README.
 
 // Connecting a vendor account needs a recent sign-in; the dashboard asks for the password when the session is older.
+// Either the account is connected or the prompt opens, so whichever comes first is waited for.
 async function confirmIfAsked(page: Page) {
   const dialog = page.getByRole("alertdialog").filter({ hasText: "Confirm it is you" });
-  // The prompt opens once the request has been refused, so it is waited for, not sampled.
-  const asked = await dialog.waitFor({ state: "visible", timeout: 4000 }).then(() => true, () => false);
+  const asked = await Promise.race([
+    dialog.waitFor({ state: "visible" }).then(() => true),
+    page.getByText("Not used for a client yet").waitFor({ state: "visible" }).then(() => false),
+  ]);
   if (asked) {
-    await dialog.getByPlaceholder("Password").fill("password123");
+    await dialog.getByPlaceholder("Password").fill(env.password);
     await dialog.getByPlaceholder("Password").press("Enter");
   }
 }

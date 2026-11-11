@@ -2,7 +2,7 @@
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM agency_vendor_connections) THEN
-        RAISE EXCEPTION 'agencies hold inbox vendor accounts written after 000392; roll forward instead of downgrading past it';
+        RAISE EXCEPTION 'agencies hold inbox vendor accounts written after 000393; roll forward instead of downgrading past it';
     END IF;
 END $$;
 
