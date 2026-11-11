@@ -201,6 +201,35 @@ const (
 	AgencyAIAutoTopupMaxLimit Micro = 50_000 * MicroPerUSD
 )
 
+// AgencyAutoTopupKind is what an automatic top-up adds to.
+type AgencyAutoTopupKind string
+
+const (
+	AgencyAutoTopupSends AgencyAutoTopupKind = "sends"
+	AgencyAutoTopupAI    AgencyAutoTopupKind = "ai"
+)
+
+// The states of one automatic top-up. Pending is written before the card is charged.
+const (
+	AgencyAutoTopupPending    = "pending"
+	AgencyAutoTopupPaid       = "paid"
+	AgencyAutoTopupWasRefused = "declined"
+	AgencyAutoTopupCancelled  = "cancelled"
+)
+
+// AgencyAutoTopupClaim is one automatic top-up from the moment it is decided to the moment it is settled.
+type AgencyAutoTopupClaim struct {
+	ID              uuid.UUID
+	AgencyID        uuid.UUID
+	Kind            AgencyAutoTopupKind
+	PeriodStart     time.Time
+	AmountCents     int64
+	Sends           int
+	Status          string
+	StripeInvoiceID string
+	CreatedAt       time.Time
+}
+
 // Why an automatic top-up turned itself off.
 const (
 	AgencyAutoTopupNoCard   = "no_payment_method"

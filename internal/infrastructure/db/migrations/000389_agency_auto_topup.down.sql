@@ -1,3 +1,5 @@
+DROP TABLE IF EXISTS agency_auto_topups;
+
 ALTER TABLE agency_pool_topups
     DROP COLUMN IF EXISTS automatic;
 

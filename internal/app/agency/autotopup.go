@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -46,12 +47,36 @@ type AutoTopup struct {
 	Available bool `json:"available"`
 }
 
-// packCharger charges a send pack to an agency's saved card.
+// chargeRequest is one automatic top-up to carry to its end: paid, refused or called off.
+type chargeRequest struct {
+	ClaimID uuid.UUID
+	// InvoiceID is the invoice already made for it; empty until Saved has run.
+	InvoiceID   string
+	Cents       int64
+	Description string
+	Meta        map[string]string
+	// Cancel closes an unpaid invoice without charging it.
+	Cancel bool
+	// Saved records the invoice the moment it exists, before anything is charged to it.
+	Saved func(invoiceID string) error
+}
+
+// chargeResult says how a top-up ended. None set means it is still open, with an error saying why.
+type chargeResult struct {
+	// Ref is the payment a refund would name, or the invoice when no card payment was taken.
+	Ref       string
+	Paid      bool
+	Declined  bool
+	Cancelled bool
+}
+
+// packCharger charges an automatic top-up to an agency's saved card.
 type packCharger interface {
 	// Card is the agency's saved card; nil when it has none.
 	Card(ctx context.Context, a *models.Agency) (*SavedCard, error)
-	// Charge bills cents to the card once per key and returns the payment's reference; declined reports a refusal by the card.
-	Charge(ctx context.Context, a *models.Agency, card *SavedCard, cents int64, description, key string, meta map[string]string) (ref string, declined bool, err error)
+	// Charge finds or makes the top-up's one invoice and pays it. Asked again for the same top-up it answers
+	// from that invoice, so nothing is charged twice. Declined is only reported once the invoice is closed.
+	Charge(ctx context.Context, a *models.Agency, card *SavedCard, req chargeRequest) (chargeResult, error)
 }
 
 func (s *Service) packs() packCharger {
@@ -64,7 +89,7 @@ func (s *Service) packs() packCharger {
 func (s *Service) autoTopupView(ctx context.Context, a *models.Agency, withCard bool) (*AutoTopup, *errx.Error) {
 	now := s.now()
 	start, _ := models.AgencyPeriod(a.CurrentPeriodStart, a.CurrentPeriodEnd, now)
-	bought, err := s.repo.AutoTopupCount(ctx, a.ID, start)
+	bought, _, err := s.repo.AutoTopupUsed(ctx, a.ID, models.AgencyAutoTopupSends, start)
 	if err != nil {
 		return nil, internal(err)
 	}
@@ -137,22 +162,21 @@ func (s *Service) SetAutoTopup(ctx context.Context, agencyID, actorID uuid.UUID,
 	if err := s.repo.SetAutoTopup(ctx, agencyID, enabled, threshold, maxPacks); err != nil {
 		return nil, internal(err)
 	}
-	a.AutoTopupEnabled, a.AutoTopupThreshold, a.AutoTopupMaxPacks, a.AutoTopupFailure = enabled, threshold, maxPacks, nil
-	view, xerr := s.autoTopupView(ctx, a, false)
+	// Turned on, a pool already under the threshold is topped up now; turned off, a top-up still in flight is called off.
+	s.autoTopup(ctx, a)
+	fresh, err := s.repo.Get(ctx, agencyID)
+	if err != nil {
+		return nil, internal(err)
+	}
+	if fresh == nil {
+		return nil, errNotFound
+	}
+	s.hydrate(ctx, fresh)
+	view, xerr := s.autoTopupView(ctx, fresh, false)
 	if xerr != nil {
 		return nil, xerr
 	}
 	view.Card = card
-	// A pool already under the new threshold is topped up now, not at the next sweep.
-	if enabled {
-		s.autoTopup(ctx, a)
-		if fresh, err := s.repo.Get(ctx, agencyID); err == nil && fresh != nil {
-			if v, xerr := s.autoTopupView(ctx, fresh, false); xerr == nil {
-				v.Card = card
-				view = v
-			}
-		}
-	}
 	return view, nil
 }
 
@@ -161,93 +185,274 @@ func (s *Service) SetAutoTopup(ctx context.Context, agencyID, actorID uuid.UUID,
 // another if the pool is still low. Best-effort; a refusal by the card turns
 // it off and tells the people who manage the agency.
 func (s *Service) autoTopup(ctx context.Context, a *models.Agency) {
-	if !s.billing || !a.AutoTopupEnabled || a.StripeCustomerID == nil || *a.StripeCustomerID == "" {
+	s.runAutoTopup(ctx, a.ID, models.AgencyAutoTopupSends)
+}
+
+// autoTopupAI adds the agency's chosen amount to its shared AI balance when the
+// balance is under its threshold and the period's limit has room for it.
+func (s *Service) autoTopupAI(ctx context.Context, a *models.Agency) {
+	s.runAutoTopup(ctx, a.ID, models.AgencyAutoTopupAI)
+}
+
+// autoTopupDue is what one kind of automatic top-up would buy now.
+type autoTopupDue struct {
+	period time.Time
+	cents  int64
+	sends  int
+	// level is what is left: sends in the pool, or micro-dollars of AI balance.
+	level int64
+}
+
+func autoTopupOn(a *models.Agency, kind models.AgencyAutoTopupKind) bool {
+	if kind == models.AgencyAutoTopupAI {
+		return a.AIAutoTopupEnabled
+	}
+	return a.AutoTopupEnabled
+}
+
+func (s *Service) runAutoTopup(ctx context.Context, agencyID uuid.UUID, kind models.AgencyAutoTopupKind) {
+	if !s.billing || (kind == models.AgencyAutoTopupAI && (s.ai == nil || !s.aiMetered)) {
 		return
 	}
-	if _, unlimited, active := s.poolSize(ctx, a); unlimited || !active {
-		return
-	}
-	lock := s.switching(a.ID)
+	lock := s.switching(agencyID)
 	lock.Lock()
 	defer lock.Unlock()
 
-	s.forgetAgency(a.ID)
-	u, xerr := s.usage(ctx, a)
-	if xerr != nil || u.Remaining > int64(a.AutoTopupThreshold) {
+	// Read under the lock, so a setting saved a moment ago is the one acted on.
+	a, err := s.repo.Get(ctx, agencyID)
+	if err != nil || a == nil {
 		return
 	}
-	bought, err := s.repo.AutoTopupCount(ctx, a.ID, u.PeriodStart)
+	s.hydrate(ctx, a)
+	if a.StripeCustomerID == nil || *a.StripeCustomerID == "" {
+		return
+	}
+	// A top-up already in flight is carried to its end before another is considered.
+	open, err := s.resumeAutoTopups(ctx, a, kind)
 	if err != nil {
-		errs.CaptureException(err)
+		errs.CaptureException(fmt.Errorf("agency auto top-up %s: %w", a.ID, err))
 		return
 	}
-	if bought >= a.AutoTopupMaxPacks {
+	if open || !autoTopupOn(a, kind) {
 		return
 	}
-	charger := s.packs()
-	card, err := charger.Card(ctx, a)
+	due, ok := s.autoTopupDue(ctx, a, kind)
+	if !ok {
+		return
+	}
+	card, err := s.packs().Card(ctx, a)
 	if err != nil {
 		errs.CaptureException(fmt.Errorf("agency auto top-up card: %w", err))
 		return
 	}
 	if card == nil {
-		s.autoTopupOff(ctx, a, models.AgencyAutoTopupNoCard)
+		s.autoTopupOff(ctx, a, kind, models.AgencyAutoTopupNoCard)
 		return
 	}
-	cents := models.AgencyTopupPriceCents(a.EffectivePlanID(s.now()))
-	// One key per pack of a period, so every replica that reaches this asks Stripe for the same charge.
-	key := fmt.Sprintf("agency-autotopup-%s-%d-%d", a.ID, u.PeriodStart.Unix(), bought+1)
-	meta := map[string]string{
-		metaPurpose: purposeAgencyAutoTopup, metaAgencyID: a.ID.String(),
-		"sends": strconv.Itoa(models.AgencyTopupSends), "amount_cents": strconv.FormatInt(cents, 10),
-	}
-	ref, declined, err := charger.Charge(ctx, a, card, cents, "Agency send pack: 50,000 sends (automatic top-up)", key, meta)
-	if declined {
-		s.autoTopupOff(ctx, a, models.AgencyAutoTopupDeclined)
-		return
-	}
-	if err != nil {
-		errs.CaptureException(fmt.Errorf("agency auto top-up %s: %w", a.ID, err))
-		return
-	}
-	reason := "auto_topup"
-	added, err := s.repo.RecordTopup(ctx, &models.AgencyPoolTopup{
-		AgencyID: a.ID, Sends: models.AgencyTopupSends, AmountCents: cents, StripePaymentIntentID: &ref,
-		PeriodStart: u.PeriodStart, Reason: &reason, Automatic: true,
-	})
+	// The claim is the decision: it reads the stored settings and the period's limit as it is written.
+	claim, err := s.repo.ClaimAutoTopup(ctx, a.ID, kind, due.period, due.cents, due.sends, due.level)
 	if err != nil {
 		errs.CaptureException(err)
 		return
+	}
+	if claim == nil {
+		return
+	}
+	if err := s.settleAutoTopup(ctx, a, claim, card); err != nil {
+		errs.CaptureException(fmt.Errorf("agency auto top-up %s: %w", a.ID, err))
+	}
+}
+
+// autoTopupDue reports whether a top-up is called for; the claim checks the limits again as it is written.
+func (s *Service) autoTopupDue(ctx context.Context, a *models.Agency, kind models.AgencyAutoTopupKind) (autoTopupDue, bool) {
+	if kind == models.AgencyAutoTopupAI {
+		if _, _, ok := s.grantPlan(a); !ok {
+			return autoTopupDue{}, false
+		}
+		period := s.aiPeriod(ctx, a)
+		stored, err := s.ai.Ledger(ctx, a.ID)
+		if err != nil {
+			errs.CaptureException(err)
+			return autoTopupDue{}, false
+		}
+		l := stored.In(period)
+		balance := l.Allowance + l.Purchased
+		if balance >= a.AIAutoTopupThreshold {
+			return autoTopupDue{}, false
+		}
+		return autoTopupDue{period: period.Start, cents: a.AIAutoTopupAmount.Cents(), level: int64(balance)}, true
+	}
+	if _, unlimited, active := s.poolSize(ctx, a); unlimited || !active {
+		return autoTopupDue{}, false
 	}
 	s.forgetAgency(a.ID)
-	if added {
-		s.tellManagers(ctx, a, "A top-up pack was added automatically",
-			fmt.Sprintf("Your agency was down to %d sends, so %d more were added for $%.2f. Pack %d of %d this period.",
-				u.Remaining, models.AgencyTopupSends, float64(cents)/100, bought+1, a.AutoTopupMaxPacks),
-			map[string]any{"agency_id": a.ID.String(), "auto_topup": "bought"})
+	u, xerr := s.usage(ctx, a)
+	if xerr != nil || u.Remaining > int64(a.AutoTopupThreshold) {
+		return autoTopupDue{}, false
 	}
+	return autoTopupDue{
+		period: u.PeriodStart, cents: models.AgencyTopupPriceCents(a.EffectivePlanID(s.now())),
+		sends: models.AgencyTopupSends, level: u.Remaining,
+	}, true
 }
 
-// autoTopupOff turns the automatic top-up off after a failure and says so.
-func (s *Service) autoTopupOff(ctx context.Context, a *models.Agency, failure string) {
-	if err := s.repo.DisableAutoTopup(ctx, a.ID, failure); err != nil {
+// resumeAutoTopups carries the kind's top-ups still in flight to their end; open reports one that could not be ended yet.
+func (s *Service) resumeAutoTopups(ctx context.Context, a *models.Agency, kind models.AgencyAutoTopupKind) (open bool, err error) {
+	pending, err := s.repo.PendingAutoTopups(ctx, a.ID)
+	if err != nil {
+		return false, err
+	}
+	for i := range pending {
+		if pending[i].Kind != kind {
+			continue
+		}
+		if err := s.settleAutoTopup(ctx, a, &pending[i], nil); err != nil {
+			errs.CaptureException(fmt.Errorf("agency auto top-up %s: %w", a.ID, err))
+			open = true
+		}
+	}
+	return open, nil
+}
+
+// settleAutoTopup carries one claimed top-up to its end. Money already taken is always honoured;
+// an unpaid one is called off when the setting was turned off or the card is gone.
+func (s *Service) settleAutoTopup(ctx context.Context, a *models.Agency, c *models.AgencyAutoTopupClaim, card *SavedCard) error {
+	charger := s.packs()
+	cancel := !autoTopupOn(a, c.Kind)
+	if card == nil && !cancel {
+		found, err := charger.Card(ctx, a)
+		if err != nil {
+			return fmt.Errorf("saved card: %w", err)
+		}
+		card = found
+	}
+	noCard := card == nil && !cancel
+	description := "Agency send pack: 50,000 sends (automatic top-up)"
+	if c.Kind == models.AgencyAutoTopupAI {
+		description = "Agency AI balance (automatic top-up)"
+	}
+	res, err := charger.Charge(ctx, a, card, chargeRequest{
+		ClaimID: c.ID, InvoiceID: c.StripeInvoiceID, Cents: c.AmountCents, Description: description,
+		Meta: map[string]string{
+			metaPurpose: purposeAgencyAutoTopup, metaAgencyID: a.ID.String(), "claim_id": c.ID.String(), "kind": string(c.Kind),
+			"sends": strconv.Itoa(c.Sends), "amount_cents": strconv.FormatInt(c.AmountCents, 10),
+		},
+		Cancel: cancel || noCard,
+		Saved: func(invoiceID string) error {
+			c.StripeInvoiceID = invoiceID
+			return s.repo.SetAutoTopupInvoice(ctx, c.ID, invoiceID)
+		},
+	})
+	if err != nil {
+		return err
+	}
+	switch {
+	case res.Paid:
+		return s.fulfilAutoTopup(ctx, a, c, res.Ref)
+	case res.Declined:
+		done, err := s.repo.FinishAutoTopup(ctx, c.ID, models.AgencyAutoTopupWasRefused, "")
+		if err != nil {
+			return err
+		}
+		if done {
+			s.autoTopupOff(ctx, a, c.Kind, models.AgencyAutoTopupDeclined)
+		}
+	case res.Cancelled:
+		if _, err := s.repo.FinishAutoTopup(ctx, c.ID, models.AgencyAutoTopupCancelled, ""); err != nil {
+			return err
+		}
+		if noCard {
+			s.autoTopupOff(ctx, a, c.Kind, models.AgencyAutoTopupNoCard)
+		}
+	default:
+		return errors.New("the top-up is not settled yet")
+	}
+	return nil
+}
+
+// fulfilAutoTopup adds what a paid top-up bought, once per payment, and says so.
+func (s *Service) fulfilAutoTopup(ctx context.Context, a *models.Agency, c *models.AgencyAutoTopupClaim, ref string) error {
+	var added bool
+	var title, body string
+	if c.Kind == models.AgencyAutoTopupAI {
+		if s.ai == nil {
+			return errors.New("no AI balance to add a paid top-up to")
+		}
+		amount := models.MicroFromCents(c.AmountCents)
+		granted, err := s.ai.GrantAutoPurchased(ctx, a.ID, amount, s.aiPeriod(ctx, a), ref)
+		if err != nil {
+			return err
+		}
+		added = granted
+		_, usedCents, _ := s.repo.AutoTopupUsed(ctx, a.ID, c.Kind, c.PeriodStart)
+		title = "AI balance was added automatically"
+		body = fmt.Sprintf("Your agency's shared AI balance ran low, so $%.2f was added on the saved card. $%.2f of your $%.2f limit is used this period.",
+			amount.USD(), float64(usedCents)/100, a.AIAutoTopupLimit.USD())
+	} else {
+		// Sends that were paid for land in the period that is running now.
+		start, _ := models.AgencyPeriod(a.CurrentPeriodStart, a.CurrentPeriodEnd, s.now())
+		reason := "auto_topup"
+		recorded, err := s.repo.RecordTopup(ctx, &models.AgencyPoolTopup{
+			AgencyID: a.ID, Sends: c.Sends, AmountCents: c.AmountCents, StripePaymentIntentID: &ref,
+			PeriodStart: start, Reason: &reason, Automatic: true,
+		})
+		if err != nil {
+			return err
+		}
+		added = recorded
+		s.forgetAgency(a.ID)
+		bought, _, _ := s.repo.AutoTopupUsed(ctx, a.ID, c.Kind, c.PeriodStart)
+		title = "A top-up pack was added automatically"
+		body = fmt.Sprintf("Your agency's send pool ran low, so %d sends were added for $%.2f on the saved card. Pack %d of %d this period.",
+			c.Sends, float64(c.AmountCents)/100, bought, a.AutoTopupMaxPacks)
+	}
+	if _, err := s.repo.FinishAutoTopup(ctx, c.ID, models.AgencyAutoTopupPaid, ref); err != nil {
+		return err
+	}
+	if added {
+		s.tellManagers(ctx, a, title, body, map[string]any{"agency_id": a.ID.String(), "auto_topup": "bought", "kind": string(c.Kind)})
+	}
+	return nil
+}
+
+// SettleAutoTopupInvoice settles the automatic top-up an invoice belongs to, for a payment that
+// completed after the request that asked for it had ended.
+func (s *Service) SettleAutoTopupInvoice(ctx context.Context, invoiceID string) error {
+	c, err := s.repo.AutoTopupByInvoice(ctx, invoiceID)
+	if err != nil || c == nil || c.Status != models.AgencyAutoTopupPending {
+		return err
+	}
+	lock := s.switching(c.AgencyID)
+	lock.Lock()
+	defer lock.Unlock()
+	a, err := s.repo.Get(ctx, c.AgencyID)
+	if err != nil || a == nil {
+		return err
+	}
+	s.hydrate(ctx, a)
+	return s.settleAutoTopup(ctx, a, c, nil)
+}
+
+// autoTopupOff turns an automatic top-up off after a failure and says so.
+func (s *Service) autoTopupOff(ctx context.Context, a *models.Agency, kind models.AgencyAutoTopupKind, failure string) {
+	what, title, disable := "automatic top-up", "Automatic top-up could not add sends", s.repo.DisableAutoTopup
+	if kind == models.AgencyAutoTopupAI {
+		what, title, disable = "automatic top-up of the AI balance", "Automatic top-up could not add AI balance", s.repo.DisableAIAutoTopup
+	}
+	if err := disable(ctx, a.ID, failure); err != nil {
 		errs.CaptureException(err)
 		return
 	}
-	body := "The card on file was declined, so automatic top-up is off. Update the card under Agency > Billing and turn it on again, or buy a pack there."
+	body := fmt.Sprintf("The card on file was declined, so %s is off and nothing was charged. Update the card under Agency > Billing and turn it on again.", what)
 	if failure == models.AgencyAutoTopupNoCard {
-		body = "There is no saved card to charge, so automatic top-up is off. Add a card under Agency > Billing and turn it on again, or buy a pack there."
+		body = fmt.Sprintf("There is no saved card to charge, so %s is off. Add a card under Agency > Billing and turn it on again.", what)
 	}
-	s.tellManagers(ctx, a, "Automatic top-up could not add sends", body, map[string]any{"agency_id": a.ID.String(), "auto_topup": failure})
+	s.tellManagers(ctx, a, title, body, map[string]any{"agency_id": a.ID.String(), "auto_topup": failure, "kind": string(kind)})
 }
 
-// tellManagers notifies the agency's owner and admins. Notifications are addressed within a workspace; staff are members of every client.
+// tellManagers notifies the agency's owner and admins, in a client workspace when there is one to address it to.
 func (s *Service) tellManagers(ctx context.Context, a *models.Agency, title, body string, meta map[string]any) {
 	if s.notifier == nil {
-		return
-	}
-	clients, err := s.repo.ListClientOrganizations(ctx, a.ID)
-	if err != nil || len(clients) == 0 {
 		return
 	}
 	staff, err := s.repo.ListMembers(ctx, a.ID)
@@ -255,10 +460,13 @@ func (s *Service) tellManagers(ctx context.Context, a *models.Agency, title, bod
 		errs.CaptureException(err)
 		return
 	}
-	orgID := clients[0].OrganizationID
+	var orgID *uuid.UUID
+	if clients, err := s.repo.ListClientOrganizations(ctx, a.ID); err == nil && len(clients) > 0 {
+		orgID = &clients[0].OrganizationID
+	}
 	for _, m := range staff {
 		if m.Role.CanManage() {
-			s.notifier.Notify(ctx, m.UserID, &orgID, models.NotifBillingAlert, title, body, "/app/agency/settings/billing", meta)
+			s.notifier.Notify(ctx, m.UserID, orgID, models.NotifBillingAlert, title, body, "/app/agency/settings/billing", meta)
 		}
 	}
 }
@@ -305,7 +513,27 @@ func (stripeCharger) Card(ctx context.Context, a *models.Agency) (*SavedCard, er
 	return cardOf(cust.InvoiceSettings.DefaultPaymentMethod), nil
 }
 
-func (stripeCharger) Charge(ctx context.Context, a *models.Agency, card *SavedCard, cents int64, description, key string, meta map[string]string) (string, bool, error) {
+// invoiceFor is the top-up's one invoice: the one recorded, else the one carrying its claim, else a new one.
+func (stripeCharger) invoiceFor(ctx context.Context, a *models.Agency, req chargeRequest) (*stripe.Invoice, error) {
+	if req.InvoiceID != "" {
+		return invoice.Get(req.InvoiceID, &stripe.InvoiceParams{Params: stripe.Params{Context: ctx}})
+	}
+	// An invoice made by a request whose answer was lost is found by its claim, so it is never made twice.
+	lp := &stripe.InvoiceListParams{Customer: a.StripeCustomerID}
+	lp.Context = ctx
+	lp.Limit = stripe.Int64(100)
+	it := invoice.List(lp)
+	for seen := 0; seen < 100 && it.Next(); seen++ {
+		if inv := it.Invoice(); inv.Metadata["claim_id"] == req.ClaimID.String() {
+			return inv, nil
+		}
+	}
+	if err := it.Err(); err != nil {
+		return nil, fmt.Errorf("list invoices: %w", err)
+	}
+	if req.Cancel {
+		return nil, nil
+	}
 	ip := &stripe.InvoiceParams{
 		Params:                      stripe.Params{Context: ctx},
 		Customer:                    a.StripeCustomerID,
@@ -313,63 +541,104 @@ func (stripeCharger) Charge(ctx context.Context, a *models.Agency, card *SavedCa
 		AutoAdvance:                 stripe.Bool(false),
 		PendingInvoiceItemsBehavior: stripe.String("exclude"),
 		AutomaticTax:                &stripe.InvoiceAutomaticTaxParams{Enabled: stripe.Bool(false)},
-		Description:                 stripe.String(description),
-		Metadata:                    meta,
+		Description:                 stripe.String(req.Description),
+		Metadata:                    req.Meta,
 	}
-	ip.SetIdempotencyKey(key + "-invoice")
+	ip.SetIdempotencyKey("agency-autotopup-" + req.ClaimID.String() + "-invoice")
 	inv, err := invoice.New(ip)
 	if err != nil {
-		return "", false, fmt.Errorf("create invoice: %w", err)
+		return nil, fmt.Errorf("create invoice: %w", err)
+	}
+	return inv, nil
+}
+
+func (c stripeCharger) Charge(ctx context.Context, a *models.Agency, card *SavedCard, req chargeRequest) (chargeResult, error) {
+	inv, err := c.invoiceFor(ctx, a, req)
+	if err != nil {
+		return chargeResult{}, err
+	}
+	if inv == nil {
+		return chargeResult{Cancelled: true}, nil
+	}
+	// Recorded before anything is charged to it, so a payment is always found again.
+	if req.InvoiceID == "" {
+		if err := req.Saved(inv.ID); err != nil {
+			return chargeResult{}, fmt.Errorf("record invoice: %w", err)
+		}
 	}
 	if inv.Status == stripe.InvoiceStatusDraft {
-		item := &stripe.InvoiceItemParams{
-			Params: stripe.Params{Context: ctx}, Customer: a.StripeCustomerID, Invoice: stripe.String(inv.ID),
-			Amount: stripe.Int64(cents), Currency: stripe.String("usd"), Description: stripe.String(description),
+		if req.Cancel {
+			if _, err := invoice.Del(inv.ID, &stripe.InvoiceParams{Params: stripe.Params{Context: ctx}}); err != nil {
+				return chargeResult{}, fmt.Errorf("delete draft invoice: %w", err)
+			}
+			return chargeResult{Cancelled: true}, nil
 		}
-		item.SetIdempotencyKey(key + "-item")
-		if _, err := invoiceitem.New(item); err != nil {
-			return "", false, fmt.Errorf("add invoice line: %w", err)
+		if inv.Total == 0 {
+			item := &stripe.InvoiceItemParams{
+				Params: stripe.Params{Context: ctx}, Customer: a.StripeCustomerID, Invoice: stripe.String(inv.ID),
+				Amount: stripe.Int64(req.Cents), Currency: stripe.String("usd"), Description: stripe.String(req.Description),
+			}
+			item.SetIdempotencyKey("agency-autotopup-" + req.ClaimID.String() + "-item")
+			if _, err := invoiceitem.New(item); err != nil {
+				return chargeResult{}, fmt.Errorf("add invoice line: %w", err)
+			}
 		}
 		fin := &stripe.InvoiceFinalizeInvoiceParams{Params: stripe.Params{Context: ctx}, AutoAdvance: stripe.Bool(false)}
-		fin.SetIdempotencyKey(key + "-finalize")
 		if inv, err = invoice.FinalizeInvoice(inv.ID, fin); err != nil {
-			return "", false, fmt.Errorf("finalize invoice: %w", err)
+			return chargeResult{}, fmt.Errorf("finalize invoice: %w", err)
 		}
 	}
-	if inv.Status == stripe.InvoiceStatusVoid || inv.Status == stripe.InvoiceStatusUncollectible {
-		return "", true, nil
+	void := func() error {
+		_, err := invoice.VoidInvoice(inv.ID, &stripe.InvoiceVoidInvoiceParams{Params: stripe.Params{Context: ctx}})
+		return err
 	}
-	if inv.Status != stripe.InvoiceStatusPaid {
+	switch inv.Status {
+	case stripe.InvoiceStatusVoid, stripe.InvoiceStatusUncollectible:
+		// Closed unpaid: by a refusal, unless it was being called off.
+		return chargeResult{Cancelled: req.Cancel, Declined: !req.Cancel}, nil
+	case stripe.InvoiceStatusOpen:
+		if req.Cancel || card == nil {
+			if err := void(); err != nil {
+				return chargeResult{}, fmt.Errorf("void invoice: %w", err)
+			}
+			return chargeResult{Cancelled: true}, nil
+		}
+		// An invoice is paid once whoever asks, so a repeat of this call cannot charge it again.
 		pay := &stripe.InvoicePayParams{Params: stripe.Params{Context: ctx}, OffSession: stripe.Bool(true), PaymentMethod: stripe.String(card.ID)}
-		pay.SetIdempotencyKey(key + "-pay")
 		paid, err := invoice.Pay(inv.ID, pay)
 		var serr *stripe.Error
 		if errors.As(err, &serr) && serr.Type == stripe.ErrorTypeCard {
-			// A refused invoice is closed, so nothing stays open on the agency's account.
-			void := &stripe.InvoiceVoidInvoiceParams{Params: stripe.Params{Context: ctx}}
-			if _, verr := invoice.VoidInvoice(inv.ID, void); verr != nil {
-				errs.CaptureException(fmt.Errorf("void refused agency top-up invoice: %w", verr))
+			// A refusal is only final once its invoice is closed; until then the top-up stays open and is tried again.
+			if verr := void(); verr != nil {
+				return chargeResult{}, fmt.Errorf("void refused invoice: %w", verr)
 			}
-			return "", true, nil
+			return chargeResult{Declined: true}, nil
 		}
 		if err != nil {
-			return "", false, fmt.Errorf("pay invoice: %w", err)
+			return chargeResult{}, fmt.Errorf("pay invoice: %w", err)
 		}
 		if paid == nil || paid.Status != stripe.InvoiceStatusPaid {
-			return "", false, errors.New("the invoice is not paid yet")
+			return chargeResult{}, errors.New("the invoice is not paid yet")
 		}
+	case stripe.InvoiceStatusPaid:
+	default:
+		return chargeResult{}, fmt.Errorf("unexpected invoice status %q", inv.Status)
 	}
-	// The payment intent is what a refund names, so a refunded pack can be found again.
+	// The payment intent is what a refund names. An invoice settled with no card payment has none, and no refund to find.
 	gp := &stripe.InvoiceParams{Params: stripe.Params{Context: ctx}}
 	gp.AddExpand("payments")
-	if full, gerr := invoice.Get(inv.ID, gp); gerr == nil && full.Payments != nil {
+	full, err := invoice.Get(inv.ID, gp)
+	if err != nil {
+		return chargeResult{}, fmt.Errorf("read invoice payment: %w", err)
+	}
+	if full.Payments != nil {
 		for _, p := range full.Payments.Data {
 			if p.Payment != nil && p.Payment.PaymentIntent != nil && p.Payment.PaymentIntent.ID != "" {
-				return p.Payment.PaymentIntent.ID, false, nil
+				return chargeResult{Paid: true, Ref: p.Payment.PaymentIntent.ID}, nil
 			}
 		}
 	}
-	return inv.ID, false, nil
+	return chargeResult{Paid: true, Ref: inv.ID}, nil
 }
 
 // AIAutoTopup is the automatic top-up of an agency's shared AI balance as its billing page shows it.
@@ -401,11 +670,11 @@ func (s *Service) aiAutoTopupView(ctx context.Context, a *models.Agency, withCar
 		out.Failure = *a.AIAutoTopupFailure
 	}
 	if s.ai != nil && s.aiMetered {
-		added, _, err := s.ai.AutoPurchased(ctx, a.ID, s.aiPeriod(ctx, a).Start)
+		_, cents, err := s.repo.AutoTopupUsed(ctx, a.ID, models.AgencyAutoTopupAI, s.aiPeriod(ctx, a).Start)
 		if err != nil {
 			return nil, internal(err)
 		}
-		out.AddedThisPeriodUSD = added.USD()
+		out.AddedThisPeriodUSD = float64(cents) / 100
 	}
 	if withCard && s.billing {
 		if card, cerr := s.packs().Card(ctx, a); cerr == nil {
@@ -470,15 +739,17 @@ func (s *Service) SetAIAutoTopup(ctx context.Context, agencyID, actorID uuid.UUI
 	if err := s.repo.SetAIAutoTopup(ctx, agencyID, enabled, threshold, amount, limit); err != nil {
 		return nil, internal(err)
 	}
-	a.AIAutoTopupEnabled, a.AIAutoTopupThreshold, a.AIAutoTopupAmount, a.AIAutoTopupLimit, a.AIAutoTopupFailure = enabled, threshold, amount, limit, nil
-	// A balance already under the new threshold is topped up now, not at the next check.
-	if enabled {
-		s.autoTopupAI(ctx, a)
-		if fresh, err := s.repo.Get(ctx, agencyID); err == nil && fresh != nil {
-			a = fresh
-		}
+	// Turned on, a balance already under the threshold is topped up now; turned off, a top-up still in flight is called off.
+	s.autoTopupAI(ctx, a)
+	fresh, err := s.repo.Get(ctx, agencyID)
+	if err != nil {
+		return nil, internal(err)
 	}
-	view, xerr := s.aiAutoTopupView(ctx, a, false)
+	if fresh == nil {
+		return nil, errNotFound
+	}
+	s.hydrate(ctx, fresh)
+	view, xerr := s.aiAutoTopupView(ctx, fresh, false)
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -486,96 +757,42 @@ func (s *Service) SetAIAutoTopup(ctx context.Context, agencyID, actorID uuid.UUI
 	return view, nil
 }
 
-// OnAgencyAISpend is called after a client workspace's charge drew on its agency's shared AI balance.
-func (s *Service) OnAgencyAISpend(orgID uuid.UUID) {
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-	defer cancel()
-	a, err := s.repo.GetAgencyForOrganization(ctx, orgID)
-	if err != nil || a == nil {
-		return
-	}
-	s.autoTopupAI(ctx, a)
+// aiCheck is one agency's AI balance check: at most one running and one waiting, however many charges arrive.
+type aiCheck struct {
+	mu             sync.Mutex
+	running, again bool
 }
 
-// autoTopupAI adds the agency's chosen amount to its shared AI balance when the
-// balance is under its threshold and the period's limit has room for it.
-// Best-effort; a refusal by the card turns it off and tells the people who manage the agency.
-func (s *Service) autoTopupAI(ctx context.Context, a *models.Agency) {
-	if !s.billing || s.ai == nil || !s.aiMetered || !a.AIAutoTopupEnabled || a.StripeCustomerID == nil || *a.StripeCustomerID == "" {
+// OnAgencyAISpend is called after a client workspace's charge drew on its agency's shared AI balance.
+func (s *Service) OnAgencyAISpend(orgID uuid.UUID) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	a, err := s.repo.GetAgencyForOrganization(ctx, orgID)
+	cancel()
+	if err != nil || a == nil || !a.AIAutoTopupEnabled {
 		return
 	}
-	if _, _, ok := s.grantPlan(a); !ok {
+	state, _ := s.aiChecks.LoadOrStore(a.ID, &aiCheck{})
+	c := state.(*aiCheck)
+	c.mu.Lock()
+	if c.running {
+		// The check under way may have read the balance before this charge, so one more follows it.
+		c.again = true
+		c.mu.Unlock()
 		return
 	}
-	lock := s.switching(a.ID)
-	lock.Lock()
-	defer lock.Unlock()
-
-	period := s.aiPeriod(ctx, a)
-	stored, err := s.ai.Ledger(ctx, a.ID)
-	if err != nil {
-		errs.CaptureException(err)
-		return
-	}
-	l := stored.In(period)
-	balance := l.Allowance + l.Purchased
-	if balance >= a.AIAutoTopupThreshold {
-		return
-	}
-	added, count, err := s.ai.AutoPurchased(ctx, a.ID, period.Start)
-	if err != nil {
-		errs.CaptureException(err)
-		return
-	}
-	amount := a.AIAutoTopupAmount
-	if added+amount > a.AIAutoTopupLimit {
-		return
-	}
-	charger := s.packs()
-	card, err := charger.Card(ctx, a)
-	if err != nil {
-		errs.CaptureException(fmt.Errorf("agency AI auto top-up card: %w", err))
-		return
-	}
-	off := func(failure string) {
-		if err := s.repo.DisableAIAutoTopup(ctx, a.ID, failure); err != nil {
-			errs.CaptureException(err)
+	c.running = true
+	c.mu.Unlock()
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		s.runAutoTopup(ctx, a.ID, models.AgencyAutoTopupAI)
+		cancel()
+		c.mu.Lock()
+		if !c.again {
+			c.running = false
+			c.mu.Unlock()
 			return
 		}
-		body := "The card on file was declined, so automatic top-up of the AI balance is off. Update the card under Agency > Billing and turn it on again."
-		if failure == models.AgencyAutoTopupNoCard {
-			body = "There is no saved card to charge, so automatic top-up of the AI balance is off. Add a card under Agency > Billing and turn it on again."
-		}
-		s.tellManagers(ctx, a, "Automatic top-up could not add AI balance", body, map[string]any{"agency_id": a.ID.String(), "ai_auto_topup": failure})
-	}
-	if card == nil {
-		off(models.AgencyAutoTopupNoCard)
-		return
-	}
-	cents := amount.Cents()
-	// One key per top-up of a period, so every replica that reaches this asks Stripe for the same charge.
-	key := fmt.Sprintf("agency-ai-autotopup-%s-%d-%d", a.ID, period.Start.Unix(), count+1)
-	meta := map[string]string{
-		metaPurpose: purposeAgencyAutoTopup, metaAgencyID: a.ID.String(), "kind": "ai", "amount_cents": strconv.FormatInt(cents, 10),
-	}
-	ref, declined, err := charger.Charge(ctx, a, card, cents, "Agency AI balance (automatic top-up)", key, meta)
-	if declined {
-		off(models.AgencyAutoTopupDeclined)
-		return
-	}
-	if err != nil {
-		errs.CaptureException(fmt.Errorf("agency AI auto top-up %s: %w", a.ID, err))
-		return
-	}
-	granted, err := s.ai.GrantAutoPurchased(ctx, a.ID, models.MicroFromCents(cents), period, ref)
-	if err != nil {
-		errs.CaptureException(err)
-		return
-	}
-	if granted {
-		s.tellManagers(ctx, a, "AI balance was added automatically",
-			fmt.Sprintf("Your agency's shared AI balance was down to $%.2f, so $%.2f was added. $%.2f of your $%.2f limit is used this period.",
-				balance.USD(), amount.USD(), (added+amount).USD(), a.AIAutoTopupLimit.USD()),
-			map[string]any{"agency_id": a.ID.String(), "ai_auto_topup": "bought"})
+		c.again = false
+		c.mu.Unlock()
 	}
 }

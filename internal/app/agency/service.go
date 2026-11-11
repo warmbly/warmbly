@@ -73,6 +73,8 @@ type Service struct {
 
 	// charger charges send packs to a saved card; nil uses Stripe.
 	charger packCharger
+	// aiChecks holds one *aiCheck per agency whose AI balance is being checked.
+	aiChecks sync.Map
 	// switches are the locks plan switches take, picked by agency id.
 	switches [64]sync.Mutex
 

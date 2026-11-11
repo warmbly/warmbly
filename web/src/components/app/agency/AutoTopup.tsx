@@ -7,7 +7,7 @@ import { AlertTriangleIcon, CreditCardIcon, Loader2Icon } from "lucide-react";
 import toast from "react-hot-toast/headless";
 
 import { Toggle } from "@/components/app/campaigns/preferences/components/CampaignPreferenceBoolBox";
-import { NumberInput } from "@/components/ui/field";
+import { Label, NumberInput } from "@/components/ui/field";
 import {
     useAgencyAIAutoTopup,
     useAgencyAutoTopup,
@@ -34,11 +34,13 @@ function cardName(card: Card) {
     return card.last4 ? `${brand} ending ${card.last4}` : brand;
 }
 
-/** One setting: its question, the control, and a line under it. */
-function Setting({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
+/** One setting: its question, naming the field with the given id, the control, and a line under it. */
+function Setting({ label, htmlFor, children, hint }: { label: string; htmlFor: string; children: React.ReactNode; hint?: string }) {
     return (
         <div>
-            <div className="text-[12px] font-medium text-slate-700">{label}</div>
+            <Label htmlFor={htmlFor} className="mb-0 text-[12px] normal-case tracking-normal text-slate-700">
+                {label}
+            </Label>
             <div className="mt-1.5 flex items-center gap-2">{children}</div>
             {hint && <p className="mt-1.5 text-[11.5px] leading-snug text-slate-500">{hint}</p>}
         </div>
@@ -73,6 +75,11 @@ function Panel({
     failure,
     card,
     used,
+    dirty,
+    saving,
+    problem,
+    onSave,
+    onDiscard,
     children,
 }: {
     /** Names the switch for assistive technology. */
@@ -87,6 +94,13 @@ function Panel({
     card?: Card;
     /** What this month has used of its limit, shown while on. */
     used?: string;
+    /** The numbers differ from what is saved. Nothing is sent, and nothing can be charged, until Save. */
+    dirty: boolean;
+    saving: boolean;
+    /** Why the numbers cannot be saved as they stand. */
+    problem?: string | null;
+    onSave: () => void;
+    onDiscard: () => void;
     children: React.ReactNode;
 }) {
     return (
@@ -122,6 +136,33 @@ function Panel({
 
             <div className="border-t border-slate-200 px-4 py-3.5 space-y-3.5">
                 {children}
+                {problem && <p className="text-[11.5px] text-red-600">{problem}</p>}
+                {dirty && (
+                    <div className="flex flex-wrap items-center gap-2 rounded-md bg-slate-50 px-3 py-2">
+                        <p className="min-w-[200px] flex-1 text-[11.5px] leading-snug text-slate-600">
+                            {enabled
+                                ? "Not saved yet. If you are already below the new level when you save, one top-up is charged right away."
+                                : "Not saved yet. Nothing is charged while automatic top-up is off."}
+                        </p>
+                        <button
+                            type="button"
+                            onClick={onDiscard}
+                            disabled={saving}
+                            className="h-7 px-2.5 rounded-md text-[12px] text-slate-600 hover:bg-slate-100 disabled:opacity-60"
+                        >
+                            Discard
+                        </button>
+                        <button
+                            type="button"
+                            onClick={onSave}
+                            disabled={saving || !!problem}
+                            className="h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 disabled:opacity-60"
+                        >
+                            {saving && <Loader2Icon className="w-3 h-3 animate-spin" />}
+                            Save changes
+                        </button>
+                    </div>
+                )}
                 <p className="flex items-start gap-1.5 text-[11.5px] leading-relaxed text-slate-500">
                     <CreditCardIcon className="mt-px w-3.5 h-3.5 text-slate-400 shrink-0" />
                     <span>
@@ -141,25 +182,32 @@ export function SendsAutoTopup({ agencyId, canManage }: { agencyId: string; canM
     const query = useAgencyAutoTopup(agencyId);
     const save = useSetAgencyAutoTopup(agencyId);
     const data = query.data;
-    // Typed freely and saved when the field is left, so a half-typed number is never sent.
+    // Edited freely and sent only by Save or the switch, so a half-made change is never acted on.
     const [threshold, setThreshold] = React.useState<number | null>(null);
     const [packs, setPacks] = React.useState<number | null>(null);
-    if (query.isPending) return <Panel name="Automatic top-up of sends" summary="Loading…" enabled={false} loading canToggle={false} onToggle={() => {}}>{null}</Panel>;
+    if (query.isPending) return <Panel name="Automatic top-up of sends" summary="Loading…" enabled={false} loading canToggle={false} onToggle={() => {}} dirty={false} saving={false} onSave={() => {}} onDiscard={() => {}}>{null}</Panel>;
     if (!data) return null;
 
     const at = threshold ?? data.threshold_sends;
     const max = packs ?? data.max_packs;
     const price = data.pack_price_cents / 100;
     const pack = formatNumber(data.pack_sends);
+    const dirty = at !== data.threshold_sends || max !== data.max_packs;
+    const discard = () => {
+        setThreshold(null);
+        setPacks(null);
+    };
 
-    const apply = async (input: { enabled: boolean; threshold_sends: number; max_packs: number }) => {
+    // The numbers travel with the switch, so both are saved as one setting.
+    const apply = async (enabled: boolean) => {
         try {
             const before = data.bought_this_period;
-            const res = await save.mutateAsync(input);
-            setThreshold(null);
-            setPacks(null);
-            if (res.bought_this_period > before) toast.success(`${pack} sends were added and ${fmtUsdTrim(price)} charged, because fewer than ${formatNumber(res.threshold_sends)} were left`);
-            else if (input.enabled && !data.enabled) toast.success("Automatic top-up is on");
+            const res = await save.mutateAsync({ enabled, threshold_sends: at, max_packs: max });
+            discard();
+            if (enabled && !res.enabled) toast.error(res.failure ? FAILURES[res.failure] : "Automatic top-up could not be turned on.");
+            else if (res.bought_this_period > before) toast.success(`${pack} sends were added and ${fmtUsdTrim(price)} charged, because fewer than ${formatNumber(res.threshold_sends)} were left`);
+            else if (enabled !== data.enabled) toast.success(enabled ? "Automatic top-up is on" : "Automatic top-up is off");
+            else toast.success("Saved");
         } catch (e) {
             toast.error(buildError(e as AppError));
         }
@@ -170,47 +218,35 @@ export function SendsAutoTopup({ agencyId, canManage }: { agencyId: string; canM
             name="Automatic top-up of sends"
             summary={
                 data.enabled
-                    ? `When fewer than ${formatNumber(at)} sends are left, we add ${pack} more and charge ${fmtUsdTrim(price)}. This can happen up to ${max} ${max === 1 ? "time" : "times"} a month.`
+                    ? `When fewer than ${formatNumber(data.threshold_sends)} sends are left, we add ${pack} more and charge ${fmtUsdTrim(price)}. This can happen up to ${data.max_packs} ${data.max_packs === 1 ? "time" : "times"} a month.`
                     : `Turn this on and we add ${pack} sends for ${fmtUsdTrim(price)} whenever you run low, so campaigns never pause. Until then you buy packs yourself.`
             }
             enabled={data.enabled}
             loading={false}
-            canToggle={canManage && !save.isPending && data.available}
-            onToggle={(enabled) => void apply({ enabled, threshold_sends: at, max_packs: max })}
+            // Turning it off always works; turning it on needs a pool to top up.
+            canToggle={canManage && !save.isPending && (data.enabled || data.available)}
+            onToggle={(enabled) => void apply(enabled)}
             failure={data.failure}
             card={data.card}
             used={`This month: ${data.bought_this_period} of ${data.max_packs} used.`}
+            dirty={dirty}
+            saving={save.isPending}
+            onSave={() => void apply(data.enabled)}
+            onDiscard={discard}
         >
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3.5">
-                <Setting label="Top up when this few sends are left" hint="Counted across all your clients for the month.">
+                <Setting label="Top up when this few sends are left" htmlFor="sends-topup-threshold" hint="Counted across all your clients for the month.">
                     <span className="block w-44">
-                        <NumberInput
-                            value={at}
-                            onChange={setThreshold}
-                            onCommit={(v) => {
-                                if (data.enabled && v !== data.threshold_sends) void apply({ enabled: true, threshold_sends: v, max_packs: max });
-                            }}
-                            min={0}
-                            max={10_000_000}
-                            step={1000}
-                            suffix="sends"
-                            disabled={!canManage || save.isPending}
-                        />
+                        <NumberInput id="sends-topup-threshold" value={at} onChange={setThreshold} min={0} max={10_000_000} step={1000} suffix="sends" disabled={!canManage || save.isPending} />
                     </span>
                 </Setting>
-                <Setting label="Stop after this many top-ups in a month" hint="A safety limit. After it, you are told and campaigns pause when sends run out.">
+                <Setting
+                    label="Stop after this many top-ups in a month"
+                    htmlFor="sends-topup-max"
+                    hint="A safety limit. After it, you are told and campaigns pause when sends run out."
+                >
                     <span className="block w-44">
-                        <NumberInput
-                            value={max}
-                            onChange={setPacks}
-                            onCommit={(v) => {
-                                if (data.enabled && v !== data.max_packs) void apply({ enabled: true, threshold_sends: at, max_packs: v });
-                            }}
-                            min={1}
-                            max={20}
-                            suffix={max === 1 ? "top-up" : "top-ups"}
-                            disabled={!canManage || save.isPending}
-                        />
+                        <NumberInput id="sends-topup-max" value={max} onChange={setPacks} min={1} max={20} suffix={max === 1 ? "top-up" : "top-ups"} disabled={!canManage || save.isPending} />
                     </span>
                 </Setting>
             </div>
@@ -227,7 +263,7 @@ export function AIAutoTopup({ agencyId, canManage }: { agencyId: string; canMana
     const [threshold, setThreshold] = React.useState<number | null>(null);
     const [amount, setAmount] = React.useState<number | null>(null);
     const [limit, setLimit] = React.useState<number | null>(null);
-    if (query.isPending) return <Panel name="Automatic top-up of AI balance" summary="Loading…" enabled={false} loading canToggle={false} onToggle={() => {}}>{null}</Panel>;
+    if (query.isPending) return <Panel name="Automatic top-up of AI balance" summary="Loading…" enabled={false} loading canToggle={false} onToggle={() => {}} dirty={false} saving={false} onSave={() => {}} onDiscard={() => {}}>{null}</Panel>;
     if (!data) return null;
 
     const at = threshold ?? data.threshold_usd;
@@ -241,23 +277,26 @@ export function AIAutoTopup({ agencyId, canManage }: { agencyId: string; canMana
               ? "The monthly limit must be at least one top-up."
               : null;
 
-    const apply = async (input: { enabled: boolean; threshold_usd: number; amount_usd: number; limit_usd: number }) => {
+    const dirty = at !== data.threshold_usd || each !== data.amount_usd || most !== data.limit_usd;
+    const discard = () => {
+        setThreshold(null);
+        setAmount(null);
+        setLimit(null);
+    };
+
+    // All three numbers are saved together, so a top-up is never charged from a half-made change.
+    const apply = async (enabled: boolean) => {
         try {
             const before = data.added_this_period_usd;
-            const res = await save.mutateAsync(input);
-            setThreshold(null);
-            setAmount(null);
-            setLimit(null);
-            if (res.added_this_period_usd > before) toast.success(`${fmtUsdTrim(res.amount_usd)} was added and charged, because less than ${fmtUsdTrim(res.threshold_usd)} was left`);
-            else if (input.enabled && !data.enabled) toast.success("Automatic top-up is on");
+            const res = await save.mutateAsync({ enabled, threshold_usd: at, amount_usd: each, limit_usd: most });
+            discard();
+            if (enabled && !res.enabled) toast.error(res.failure ? FAILURES[res.failure] : "Automatic top-up could not be turned on.");
+            else if (res.added_this_period_usd > before) toast.success(`${fmtUsdTrim(res.amount_usd)} was added and charged, because less than ${fmtUsdTrim(res.threshold_usd)} was left`);
+            else if (enabled !== data.enabled) toast.success(enabled ? "Automatic top-up is on" : "Automatic top-up is off");
+            else toast.success("Saved");
         } catch (e) {
             toast.error(buildError(e as AppError));
         }
-    };
-    const commit = (patch: Partial<{ threshold_usd: number; amount_usd: number; limit_usd: number }>) => {
-        const next = { enabled: true, threshold_usd: at, amount_usd: each, limit_usd: most, ...patch };
-        const changed = next.threshold_usd !== data.threshold_usd || next.amount_usd !== data.amount_usd || next.limit_usd !== data.limit_usd;
-        if (data.enabled && changed && next.amount_usd >= data.min_usd && next.amount_usd <= data.max_usd && next.limit_usd >= next.amount_usd) void apply(next);
     };
 
     return (
@@ -265,35 +304,40 @@ export function AIAutoTopup({ agencyId, canManage }: { agencyId: string; canMana
             name="Automatic top-up of AI balance"
             summary={
                 data.enabled
-                    ? `When less than ${fmtUsdTrim(at)} is left in the shared AI balance, we add ${fmtUsdTrim(each)} and charge your card. We stop once ${fmtUsdTrim(most)} has been added in a month.`
+                    ? `When less than ${fmtUsdTrim(data.threshold_usd)} is left in the shared AI balance, we add ${fmtUsdTrim(data.amount_usd)} and charge your card. We stop once ${fmtUsdTrim(data.limit_usd)} has been added in a month.`
                     : `Turn this on and we add ${fmtUsdTrim(each)} of AI balance whenever it runs low, so AI features never stop for your clients. Until then you add balance yourself.`
             }
             enabled={data.enabled}
             loading={false}
-            canToggle={canManage && !save.isPending && data.available && (data.enabled || !problem)}
-            onToggle={(enabled) => void apply({ enabled, threshold_usd: at, amount_usd: each, limit_usd: most })}
+            // Turning it off always works; turning it on needs a balance to add to and numbers that can be saved.
+            canToggle={canManage && !save.isPending && (data.enabled || (data.available && !problem))}
+            onToggle={(enabled) => void apply(enabled)}
             failure={data.failure}
             card={data.card}
             used={`This month: ${fmtUsdTrim(data.added_this_period_usd)} of ${fmtUsdTrim(data.limit_usd)} used.`}
+            dirty={dirty}
+            saving={save.isPending}
+            problem={problem}
+            onSave={() => void apply(data.enabled)}
+            onDiscard={discard}
         >
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-3.5">
-                <Setting label="Top up when less than this is left">
+                <Setting label="Top up when less than this is left" htmlFor="ai-topup-threshold">
                     <span className="block w-36">
-                        <NumberInput value={at} onChange={setThreshold} onCommit={(v) => commit({ threshold_usd: v })} min={0} max={data.max_usd} step={5} suffix="USD" disabled={!canManage || save.isPending} />
+                        <NumberInput id="ai-topup-threshold" value={at} onChange={setThreshold} min={0} max={data.max_usd} step={5} suffix="USD" disabled={!canManage || save.isPending} />
                     </span>
                 </Setting>
-                <Setting label="Add this much each time">
+                <Setting label="Add this much each time" htmlFor="ai-topup-amount">
                     <span className="block w-36">
-                        <NumberInput value={each} onChange={setAmount} onCommit={(v) => commit({ amount_usd: v })} min={data.min_usd} max={data.max_usd} step={5} suffix="USD" disabled={!canManage || save.isPending} />
+                        <NumberInput id="ai-topup-amount" value={each} onChange={setAmount} min={data.min_usd} max={data.max_usd} step={5} suffix="USD" disabled={!canManage || save.isPending} />
                     </span>
                 </Setting>
-                <Setting label="Never add more than this in a month">
+                <Setting label="Never add more than this in a month" htmlFor="ai-topup-limit">
                     <span className="block w-36">
-                        <NumberInput value={most} onChange={setLimit} onCommit={(v) => commit({ limit_usd: v })} min={data.min_usd} max={50_000} step={25} suffix="USD" disabled={!canManage || save.isPending} />
+                        <NumberInput id="ai-topup-limit" value={most} onChange={setLimit} min={data.min_usd} max={50_000} step={25} suffix="USD" disabled={!canManage || save.isPending} />
                     </span>
                 </Setting>
             </div>
-            {problem && <p className="text-[11.5px] text-red-600">{problem}</p>}
             <Costs
                 each={fmtUsdTrim(each)}
                 eachNote="added to the shared AI balance, dollar for dollar"

@@ -86,8 +86,19 @@ type AgencyRepository interface {
 	SetAIAutoTopup(ctx context.Context, agencyID uuid.UUID, enabled bool, threshold, amount, limit models.Micro) error
 	// DisableAIAutoTopup turns the AI balance's automatic top-up off and records why.
 	DisableAIAutoTopup(ctx context.Context, agencyID uuid.UUID, failure string) error
-	// AutoTopupCount is how many packs the automatic top-up bought in the period, refunded ones included.
-	AutoTopupCount(ctx context.Context, agencyID uuid.UUID, periodStart time.Time) (int, error)
+	// ClaimAutoTopup records an automatic top-up before its card is charged, in one statement that reads the
+	// agency's settings as stored: nil when the setting is off, level (sends or micro-dollars left) is not under its
+	// threshold, the period's limit is used, or one is already in flight.
+	ClaimAutoTopup(ctx context.Context, agencyID uuid.UUID, kind models.AgencyAutoTopupKind, periodStart time.Time, cents int64, sends int, level int64) (*models.AgencyAutoTopupClaim, error)
+	// PendingAutoTopups lists an agency's automatic top-ups still in flight.
+	PendingAutoTopups(ctx context.Context, agencyID uuid.UUID) ([]models.AgencyAutoTopupClaim, error)
+	// AutoTopupByInvoice finds the automatic top-up an invoice belongs to; nil when none.
+	AutoTopupByInvoice(ctx context.Context, invoiceID string) (*models.AgencyAutoTopupClaim, error)
+	SetAutoTopupInvoice(ctx context.Context, id uuid.UUID, invoiceID string) error
+	// FinishAutoTopup settles a pending top-up; false when it was already settled.
+	FinishAutoTopup(ctx context.Context, id uuid.UUID, status, paymentRef string) (bool, error)
+	// AutoTopupUsed is how many top-ups of a kind the period has made or has in flight, and what they come to.
+	AutoTopupUsed(ctx context.Context, agencyID uuid.UUID, kind models.AgencyAutoTopupKind, periodStart time.Time) (int, int64, error)
 	// ClaimPoolAlert raises the period's alert level; false when it was already that high.
 	ClaimPoolAlert(ctx context.Context, agencyID uuid.UUID, periodStart time.Time, level int) (bool, error)
 
@@ -527,7 +538,7 @@ func (r *agencyRepository) RecordTopup(ctx context.Context, t *models.AgencyPool
 
 func (r *agencyRepository) SetAutoTopup(ctx context.Context, agencyID uuid.UUID, enabled bool, threshold, maxPacks int) error {
 	_, err := r.db.Exec(ctx, `UPDATE agencies SET auto_topup_enabled = $2, auto_topup_threshold = $3, auto_topup_max_packs = $4,
-			auto_topup_failure = NULL, updated_at = now() WHERE id = $1`, agencyID, enabled, threshold, maxPacks)
+			auto_topup_failure = CASE WHEN $2 THEN NULL ELSE auto_topup_failure END, updated_at = now() WHERE id = $1`, agencyID, enabled, threshold, maxPacks)
 	return err
 }
 
@@ -538,7 +549,7 @@ func (r *agencyRepository) DisableAutoTopup(ctx context.Context, agencyID uuid.U
 
 func (r *agencyRepository) SetAIAutoTopup(ctx context.Context, agencyID uuid.UUID, enabled bool, threshold, amount, limit models.Micro) error {
 	_, err := r.db.Exec(ctx, `UPDATE agencies SET ai_auto_topup_enabled = $2, ai_auto_topup_threshold_micro = $3, ai_auto_topup_amount_micro = $4,
-			ai_auto_topup_limit_micro = $5, ai_auto_topup_failure = NULL, updated_at = now() WHERE id = $1`, agencyID, enabled, threshold, amount, limit)
+			ai_auto_topup_limit_micro = $5, ai_auto_topup_failure = CASE WHEN $2 THEN NULL ELSE ai_auto_topup_failure END, updated_at = now() WHERE id = $1`, agencyID, enabled, threshold, amount, limit)
 	return err
 }
 
@@ -547,10 +558,84 @@ func (r *agencyRepository) DisableAIAutoTopup(ctx context.Context, agencyID uuid
 	return err
 }
 
-func (r *agencyRepository) AutoTopupCount(ctx context.Context, agencyID uuid.UUID, periodStart time.Time) (int, error) {
+const autoTopupColumns = `id, agency_id, kind, period_start, amount_cents, sends, status, COALESCE(stripe_invoice_id, ''), created_at`
+
+func scanAutoTopup(row pgx.Row) (*models.AgencyAutoTopupClaim, error) {
+	var c models.AgencyAutoTopupClaim
+	err := row.Scan(&c.ID, &c.AgencyID, &c.Kind, &c.PeriodStart, &c.AmountCents, &c.Sends, &c.Status, &c.StripeInvoiceID, &c.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+// autoTopupAllowed is the stored setting and the period's limit, per kind; $2 is the period, $3 the cents, $6 what is left.
+var autoTopupAllowed = map[models.AgencyAutoTopupKind]string{
+	models.AgencyAutoTopupSends: `a.auto_topup_enabled AND $6::bigint <= a.auto_topup_threshold AND (SELECT COUNT(*) FROM agency_auto_topups t
+		WHERE t.agency_id = a.id AND t.kind = 'sends' AND t.period_start = $2::timestamptz AND t.status IN ('pending', 'paid')) < a.auto_topup_max_packs`,
+	models.AgencyAutoTopupAI: `a.ai_auto_topup_enabled AND $6::bigint < a.ai_auto_topup_threshold_micro AND a.ai_auto_topup_amount_micro = $3::bigint * 10000
+		AND ((SELECT COALESCE(SUM(t.amount_cents), 0) FROM agency_auto_topups t
+			WHERE t.agency_id = a.id AND t.kind = 'ai' AND t.period_start = $2::timestamptz AND t.status IN ('pending', 'paid')) + $3::bigint) * 10000 <= a.ai_auto_topup_limit_micro`,
+}
+
+func (r *agencyRepository) ClaimAutoTopup(ctx context.Context, agencyID uuid.UUID, kind models.AgencyAutoTopupKind, periodStart time.Time, cents int64, sends int, level int64) (*models.AgencyAutoTopupClaim, error) {
+	allowed, ok := autoTopupAllowed[kind]
+	if !ok {
+		return nil, errors.New("unknown automatic top-up kind")
+	}
+	// The row lock makes two replicas decide one after the other; the partial unique index refuses a second in flight.
+	return scanAutoTopup(r.db.QueryRow(ctx, `
+		WITH a AS (SELECT * FROM agencies WHERE id = $1 FOR UPDATE)
+		INSERT INTO agency_auto_topups (agency_id, kind, period_start, amount_cents, sends)
+		SELECT a.id, $4::text, $2::timestamptz, $3::bigint, $5::int FROM a WHERE `+allowed+`
+		ON CONFLICT DO NOTHING
+		RETURNING `+autoTopupColumns, agencyID, periodStart, cents, string(kind), sends, level))
+}
+
+func (r *agencyRepository) PendingAutoTopups(ctx context.Context, agencyID uuid.UUID) ([]models.AgencyAutoTopupClaim, error) {
+	rows, err := r.db.Query(ctx, `SELECT `+autoTopupColumns+` FROM agency_auto_topups WHERE agency_id = $1 AND status = 'pending' ORDER BY created_at`, agencyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.AgencyAutoTopupClaim
+	for rows.Next() {
+		c, err := scanAutoTopup(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *c)
+	}
+	return out, rows.Err()
+}
+
+func (r *agencyRepository) AutoTopupByInvoice(ctx context.Context, invoiceID string) (*models.AgencyAutoTopupClaim, error) {
+	return scanAutoTopup(r.db.QueryRow(ctx, `SELECT `+autoTopupColumns+` FROM agency_auto_topups WHERE stripe_invoice_id = $1`, invoiceID))
+}
+
+func (r *agencyRepository) SetAutoTopupInvoice(ctx context.Context, id uuid.UUID, invoiceID string) error {
+	_, err := r.db.Exec(ctx, `UPDATE agency_auto_topups SET stripe_invoice_id = $2 WHERE id = $1 AND stripe_invoice_id IS NULL`, id, invoiceID)
+	return err
+}
+
+func (r *agencyRepository) FinishAutoTopup(ctx context.Context, id uuid.UUID, status, paymentRef string) (bool, error) {
+	tag, err := r.db.Exec(ctx, `UPDATE agency_auto_topups SET status = $2, payment_ref = NULLIF($3, ''), completed_at = now()
+		WHERE id = $1 AND status = 'pending'`, id, status, paymentRef)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+func (r *agencyRepository) AutoTopupUsed(ctx context.Context, agencyID uuid.UUID, kind models.AgencyAutoTopupKind, periodStart time.Time) (int, int64, error) {
 	var n int
-	err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM agency_pool_topups WHERE agency_id = $1 AND period_start = $2 AND automatic`, agencyID, periodStart).Scan(&n)
-	return n, err
+	var cents int64
+	err := r.db.QueryRow(ctx, `SELECT COUNT(*), COALESCE(SUM(amount_cents), 0) FROM agency_auto_topups
+		WHERE agency_id = $1 AND kind = $2 AND period_start = $3 AND status IN ('pending', 'paid')`, agencyID, string(kind), periodStart).Scan(&n, &cents)
+	return n, cents, err
 }
 
 func (r *agencyRepository) ClaimPoolAlert(ctx context.Context, agencyID uuid.UUID, periodStart time.Time, level int) (bool, error) {

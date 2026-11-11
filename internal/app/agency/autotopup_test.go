@@ -2,6 +2,7 @@ package agency
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -9,39 +10,173 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 )
 
-// fakeCharger records what was charged and answers as told.
+// fakeCharger keeps one invoice per top-up, as Stripe does, and answers as told.
 type fakeCharger struct {
 	card     *SavedCard
 	declined bool
-	keys     []string
-	cents    []int64
+	// failBefore fails once before any money moves; lostAnswer takes the money once and then fails.
+	failBefore, lostAnswer bool
+	invoices               map[uuid.UUID]string
+	claims                 []uuid.UUID
+	cents                  []int64
 }
 
 func (f *fakeCharger) Card(context.Context, *models.Agency) (*SavedCard, error) { return f.card, nil }
 
-func (f *fakeCharger) Charge(_ context.Context, _ *models.Agency, _ *SavedCard, cents int64, _, key string, _ map[string]string) (string, bool, error) {
-	f.keys = append(f.keys, key)
-	f.cents = append(f.cents, cents)
-	if f.declined {
-		return "", true, nil
+func (f *fakeCharger) Charge(_ context.Context, _ *models.Agency, card *SavedCard, req chargeRequest) (chargeResult, error) {
+	if f.invoices == nil {
+		f.invoices = map[uuid.UUID]string{}
 	}
-	return "pi_" + key, false, nil
+	status, made := f.invoices[req.ClaimID]
+	if !made {
+		if req.Cancel {
+			return chargeResult{Cancelled: true}, nil
+		}
+		status = "open"
+		f.invoices[req.ClaimID] = status
+	}
+	if req.InvoiceID == "" {
+		if err := req.Saved("in_" + req.ClaimID.String()); err != nil {
+			return chargeResult{}, err
+		}
+	}
+	switch status {
+	case "paid":
+		return chargeResult{Paid: true, Ref: "pi_" + req.ClaimID.String()}, nil
+	case "void":
+		return chargeResult{Cancelled: req.Cancel, Declined: !req.Cancel}, nil
+	}
+	if req.Cancel || card == nil {
+		f.invoices[req.ClaimID] = "void"
+		return chargeResult{Cancelled: true}, nil
+	}
+	if f.failBefore {
+		f.failBefore = false
+		return chargeResult{}, errors.New("stripe is unavailable")
+	}
+	if f.declined {
+		f.invoices[req.ClaimID] = "void"
+		return chargeResult{Declined: true}, nil
+	}
+	f.invoices[req.ClaimID] = "paid"
+	f.claims = append(f.claims, req.ClaimID)
+	f.cents = append(f.cents, req.Cents)
+	if f.lostAnswer {
+		f.lostAnswer = false
+		return chargeResult{}, errors.New("the answer was lost")
+	}
+	return chargeResult{Paid: true, Ref: "pi_" + req.ClaimID.String()}, nil
 }
 
 // topupRepo is operatorRepo plus the automatic top-up's own writes.
 type topupRepo struct {
 	*operatorRepo
 	disabled string
+	claims   []*models.AgencyAutoTopupClaim
+	members  []models.AgencyMember
 }
 
-func (r *topupRepo) AutoTopupCount(context.Context, uuid.UUID, time.Time) (int, error) {
-	n := 0
-	for _, t := range r.recorded {
-		if t.Automatic {
-			n++
+func (r *topupRepo) ListMembers(context.Context, uuid.UUID) ([]models.AgencyMember, error) {
+	return r.members, nil
+}
+
+// RecordTopup adds a pack once per payment, like the table's unique payment reference.
+func (r *topupRepo) RecordTopup(ctx context.Context, t *models.AgencyPoolTopup) (bool, error) {
+	for _, seen := range r.recorded {
+		if seen.StripePaymentIntentID != nil && t.StripePaymentIntentID != nil && *seen.StripePaymentIntentID == *t.StripePaymentIntentID {
+			return false, nil
 		}
 	}
-	return n, nil
+	return r.operatorRepo.RecordTopup(ctx, t)
+}
+
+func (r *topupRepo) used(kind models.AgencyAutoTopupKind, period time.Time) (n int, cents int64, pending bool) {
+	for _, c := range r.claims {
+		if c.Kind != kind {
+			continue
+		}
+		if c.Status == models.AgencyAutoTopupPending {
+			pending = true
+		}
+		if c.PeriodStart.Equal(period) && (c.Status == models.AgencyAutoTopupPending || c.Status == models.AgencyAutoTopupPaid) {
+			n++
+			cents += c.AmountCents
+		}
+	}
+	return n, cents, pending
+}
+
+// ClaimAutoTopup decides as the statement does: on the stored settings, the period's limit and nothing in flight.
+func (r *topupRepo) ClaimAutoTopup(_ context.Context, agencyID uuid.UUID, kind models.AgencyAutoTopupKind, period time.Time, cents int64, sends int, level int64) (*models.AgencyAutoTopupClaim, error) {
+	a := r.agency
+	n, usedCents, pending := r.used(kind, period)
+	if pending {
+		return nil, nil
+	}
+	if kind == models.AgencyAutoTopupAI {
+		if !a.AIAutoTopupEnabled || level >= int64(a.AIAutoTopupThreshold) || a.AIAutoTopupAmount != models.MicroFromCents(cents) ||
+			models.MicroFromCents(usedCents+cents) > a.AIAutoTopupLimit {
+			return nil, nil
+		}
+	} else if !a.AutoTopupEnabled || level > int64(a.AutoTopupThreshold) || n >= a.AutoTopupMaxPacks {
+		return nil, nil
+	}
+	c := &models.AgencyAutoTopupClaim{ID: uuid.New(), AgencyID: agencyID, Kind: kind, PeriodStart: period, AmountCents: cents, Sends: sends, Status: models.AgencyAutoTopupPending}
+	r.claims = append(r.claims, c)
+	out := *c
+	return &out, nil
+}
+
+func (r *topupRepo) PendingAutoTopups(context.Context, uuid.UUID) ([]models.AgencyAutoTopupClaim, error) {
+	var out []models.AgencyAutoTopupClaim
+	for _, c := range r.claims {
+		if c.Status == models.AgencyAutoTopupPending {
+			out = append(out, *c)
+		}
+	}
+	return out, nil
+}
+
+func (r *topupRepo) AutoTopupByInvoice(_ context.Context, invoiceID string) (*models.AgencyAutoTopupClaim, error) {
+	for _, c := range r.claims {
+		if c.StripeInvoiceID == invoiceID {
+			out := *c
+			return &out, nil
+		}
+	}
+	return nil, nil
+}
+
+func (r *topupRepo) SetAutoTopupInvoice(_ context.Context, id uuid.UUID, invoiceID string) error {
+	for _, c := range r.claims {
+		if c.ID == id && c.StripeInvoiceID == "" {
+			c.StripeInvoiceID = invoiceID
+		}
+	}
+	return nil
+}
+
+func (r *topupRepo) FinishAutoTopup(_ context.Context, id uuid.UUID, status, _ string) (bool, error) {
+	for _, c := range r.claims {
+		if c.ID == id && c.Status == models.AgencyAutoTopupPending {
+			c.Status = status
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (r *topupRepo) AutoTopupUsed(_ context.Context, _ uuid.UUID, kind models.AgencyAutoTopupKind, period time.Time) (int, int64, error) {
+	n, cents, _ := r.used(kind, period)
+	return n, cents, nil
+}
+
+func (r *topupRepo) statuses() []string {
+	out := make([]string, 0, len(r.claims))
+	for _, c := range r.claims {
+		out = append(out, c.Status)
+	}
+	return out
 }
 
 func (r *topupRepo) DisableAutoTopup(_ context.Context, _ uuid.UUID, failure string) error {
@@ -52,8 +187,22 @@ func (r *topupRepo) DisableAutoTopup(_ context.Context, _ uuid.UUID, failure str
 }
 
 func (r *topupRepo) SetAutoTopup(_ context.Context, _ uuid.UUID, enabled bool, threshold, maxPacks int) error {
-	r.agency.AutoTopupEnabled, r.agency.AutoTopupThreshold, r.agency.AutoTopupMaxPacks, r.agency.AutoTopupFailure = enabled, threshold, maxPacks, nil
+	r.agency.AutoTopupEnabled, r.agency.AutoTopupThreshold, r.agency.AutoTopupMaxPacks = enabled, threshold, maxPacks
+	if enabled {
+		r.agency.AutoTopupFailure = nil
+	}
 	return nil
+}
+
+// told records the notifications sent.
+type told struct {
+	orgs   []*uuid.UUID
+	titles []string
+}
+
+func (n *told) Notify(_ context.Context, _ uuid.UUID, orgID *uuid.UUID, _ models.NotificationCategory, title, _, _ string, _ map[string]any) {
+	n.orgs = append(n.orgs, orgID)
+	n.titles = append(n.titles, title)
 }
 
 func newTopupService(a *models.Agency, used int64, charger *fakeCharger, now time.Time) (*Service, *topupRepo, uuid.UUID) {
@@ -93,8 +242,8 @@ func TestAutoTopupBuysOnePackWhenThePoolIsLow(t *testing.T) {
 	}
 	// 55,000 are left after the pack, so the next sweep buys nothing more.
 	s.autoTopup(ctx, a)
-	if len(charger.keys) != 1 {
-		t.Fatalf("a pool back above its threshold was charged again: %v", charger.keys)
+	if len(charger.claims) != 1 {
+		t.Fatalf("a pool back above its threshold was charged again: %v", charger.claims)
 	}
 }
 
@@ -108,11 +257,11 @@ func TestAutoTopupStopsAtThePeriodsPacks(t *testing.T) {
 	for range 5 {
 		s.autoTopup(ctx, a)
 	}
-	if len(repo.recorded) != 2 || len(charger.keys) != 2 {
-		t.Fatalf("bought %d packs with %d charges, want the period's 2", len(repo.recorded), len(charger.keys))
+	if len(repo.recorded) != 2 || len(charger.claims) != 2 {
+		t.Fatalf("bought %d packs with %d charges, want the period's 2", len(repo.recorded), len(charger.claims))
 	}
-	if charger.keys[0] == charger.keys[1] {
-		t.Fatal("each pack of a period needs its own charge key")
+	if charger.claims[0] == charger.claims[1] {
+		t.Fatal("each pack of a period needs its own charge")
 	}
 }
 
@@ -124,8 +273,8 @@ func TestAutoTopupLeavesAHealthyPoolAlone(t *testing.T) {
 	s.autoTopup(context.Background(), a)
 	a.AutoTopupEnabled = false
 	s.autoTopup(context.Background(), a)
-	if len(charger.keys) != 0 || len(repo.recorded) != 0 {
-		t.Fatalf("charged %v, recorded %v", charger.keys, repo.recorded)
+	if len(charger.claims) != 0 || len(repo.recorded) != 0 || len(repo.claims) != 0 {
+		t.Fatalf("charged %v, recorded %v", charger.claims, repo.recorded)
 	}
 }
 
@@ -144,8 +293,101 @@ func TestAutoTopupTurnsItselfOffWhenTheCardRefuses(t *testing.T) {
 	charger := &fakeCharger{}
 	s, repo, _ = newTopupService(b, 149_000, charger, now)
 	s.autoTopup(ctx, b)
-	if repo.disabled != models.AgencyAutoTopupNoCard || len(charger.keys) != 0 {
-		t.Fatalf("no card: disabled=%q charges=%v", repo.disabled, charger.keys)
+	if repo.disabled != models.AgencyAutoTopupNoCard || len(charger.claims) != 0 {
+		t.Fatalf("no card: disabled=%q charges=%v", repo.disabled, charger.claims)
+	}
+}
+
+func TestAutoTopupChargesOnceWhenTheAnswerIsLost(t *testing.T) {
+	now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
+	a := topupAgency(now, 10_000, 2)
+	charger := &fakeCharger{card: &SavedCard{ID: "pm_1"}, lostAnswer: true}
+	s, repo, _ := newTopupService(a, 145_000, charger, now)
+	ctx := context.Background()
+
+	// The card is charged but the answer never arrives: nothing is added yet and the top-up stays in flight.
+	s.autoTopup(ctx, a)
+	if len(charger.cents) != 1 || len(repo.recorded) != 0 || repo.statuses()[0] != models.AgencyAutoTopupPending {
+		t.Fatalf("after the lost answer: charged %v, recorded %v, claims %v", charger.cents, repo.recorded, repo.statuses())
+	}
+	// The next pass finds that payment and adds its sends; it does not charge again.
+	for range 3 {
+		s.autoTopup(ctx, a)
+	}
+	if len(charger.cents) != 1 || len(repo.recorded) != 1 || len(repo.claims) != 1 || repo.statuses()[0] != models.AgencyAutoTopupPaid {
+		t.Fatalf("after recovery: charged %v, recorded %d, claims %v", charger.cents, len(repo.recorded), repo.statuses())
+	}
+}
+
+func TestAutoTopupPaidInvoiceIsSettledFromItsEvent(t *testing.T) {
+	now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
+	a := topupAgency(now, 10_000, 2)
+	charger := &fakeCharger{card: &SavedCard{ID: "pm_1"}, lostAnswer: true}
+	s, repo, _ := newTopupService(a, 145_000, charger, now)
+	ctx := context.Background()
+	s.autoTopup(ctx, a)
+	// The owner turns it off before anything else runs; the money was taken, so the sends are still owed.
+	a.AutoTopupEnabled = false
+	invoiceID := repo.claims[0].StripeInvoiceID
+	for range 2 {
+		if err := s.SettleAutoTopupInvoice(ctx, invoiceID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(repo.recorded) != 1 || len(charger.cents) != 1 || repo.statuses()[0] != models.AgencyAutoTopupPaid {
+		t.Fatalf("recorded %d, charged %v, claims %v", len(repo.recorded), charger.cents, repo.statuses())
+	}
+	if err := s.SettleAutoTopupInvoice(ctx, "in_unknown"); err != nil {
+		t.Fatalf("an invoice that is not a top-up: %v", err)
+	}
+}
+
+func TestAutoTopupTurnedOffCallsOffAnUnpaidTopup(t *testing.T) {
+	now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
+	a := topupAgency(now, 10_000, 2)
+	charger := &fakeCharger{card: &SavedCard{ID: "pm_1"}, failBefore: true}
+	s, repo, actor := newTopupService(a, 145_000, charger, now)
+	ctx := context.Background()
+
+	s.autoTopup(ctx, a)
+	if len(charger.cents) != 0 || repo.statuses()[0] != models.AgencyAutoTopupPending {
+		t.Fatalf("after the failure: charged %v, claims %v", charger.cents, repo.statuses())
+	}
+	if _, xerr := s.SetAutoTopup(ctx, a.ID, actor, false, 10_000, 2); xerr != nil {
+		t.Fatal(xerr)
+	}
+	s.autoTopup(ctx, a)
+	if len(charger.cents) != 0 || len(repo.recorded) != 0 || repo.statuses()[0] != models.AgencyAutoTopupCancelled {
+		t.Fatalf("turned off: charged %v, recorded %v, claims %v", charger.cents, repo.recorded, repo.statuses())
+	}
+}
+
+func TestAutoTopupTurnedOnAgainAfterARefusalChargesAfresh(t *testing.T) {
+	now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
+	a := topupAgency(now, 10_000, 2)
+	charger := &fakeCharger{card: &SavedCard{ID: "pm_1"}, declined: true}
+	s, repo, actor := newTopupService(a, 145_000, charger, now)
+	note := &told{}
+	s.WireNotifier(note)
+	repo.members = []models.AgencyMember{{UserID: actor, Role: models.AgencyRoleOwner}}
+	ctx := context.Background()
+
+	s.autoTopup(ctx, a)
+	// The agency has no client workspace; its owner is told all the same.
+	if a.AutoTopupEnabled || len(note.titles) != 1 || note.orgs[0] != nil {
+		t.Fatalf("refused: enabled=%v told=%v", a.AutoTopupEnabled, note.titles)
+	}
+	// A new card, turned on again in the same period: a new top-up, not the refused one over again.
+	charger.declined = false
+	view, xerr := s.SetAutoTopup(ctx, a.ID, actor, true, 10_000, 2)
+	if xerr != nil {
+		t.Fatal(xerr)
+	}
+	if !view.Enabled || view.BoughtThisPeriod != 1 || len(repo.recorded) != 1 || len(repo.claims) != 2 || repo.claims[0].ID == repo.claims[1].ID {
+		t.Fatalf("view %+v, recorded %d, claims %v", view, len(repo.recorded), repo.statuses())
+	}
+	if got := repo.statuses(); got[0] != models.AgencyAutoTopupWasRefused || got[1] != models.AgencyAutoTopupPaid {
+		t.Fatalf("claims: %v", got)
 	}
 }
 
@@ -186,6 +428,7 @@ type aiLedger struct {
 	left    models.Micro
 	added   []models.Micro
 	periods []time.Time
+	refs    map[string]bool
 }
 
 func (l *aiLedger) Ledger(context.Context, uuid.UUID) (models.AgencyAILedger, error) {
@@ -194,15 +437,14 @@ func (l *aiLedger) Ledger(context.Context, uuid.UUID) (models.AgencyAILedger, er
 	return models.AgencyAILedger{Purchased: l.left, PeriodStart: &far}, nil
 }
 
-func (l *aiLedger) AutoPurchased(context.Context, uuid.UUID, time.Time) (models.Micro, int, error) {
-	var sum models.Micro
-	for _, a := range l.added {
-		sum += a
+func (l *aiLedger) GrantAutoPurchased(_ context.Context, _ uuid.UUID, amount models.Micro, p models.AgencyAIPeriod, ref string) (bool, error) {
+	if l.refs[ref] {
+		return false, nil
 	}
-	return sum, len(l.added), nil
-}
-
-func (l *aiLedger) GrantAutoPurchased(_ context.Context, _ uuid.UUID, amount models.Micro, p models.AgencyAIPeriod, _ string) (bool, error) {
+	if l.refs == nil {
+		l.refs = map[string]bool{}
+	}
+	l.refs[ref] = true
 	l.added = append(l.added, amount)
 	l.periods = append(l.periods, p.Start)
 	l.left += amount
@@ -217,7 +459,10 @@ type aiTopupRepo struct {
 
 func (r *aiTopupRepo) SetAIAutoTopup(_ context.Context, _ uuid.UUID, enabled bool, threshold, amount, limit models.Micro) error {
 	a := r.agency
-	a.AIAutoTopupEnabled, a.AIAutoTopupThreshold, a.AIAutoTopupAmount, a.AIAutoTopupLimit, a.AIAutoTopupFailure = enabled, threshold, amount, limit, nil
+	a.AIAutoTopupEnabled, a.AIAutoTopupThreshold, a.AIAutoTopupAmount, a.AIAutoTopupLimit = enabled, threshold, amount, limit
+	if enabled {
+		a.AIAutoTopupFailure = nil
+	}
 	return nil
 }
 
@@ -264,8 +509,8 @@ func TestAIAutoTopupAddsTheAmountUnderTheThreshold(t *testing.T) {
 	}
 	// $27 is left now, above the $5 threshold.
 	s.autoTopupAI(ctx, a)
-	if len(charger.keys) != 1 {
-		t.Fatalf("a balance above its threshold was charged again: %v", charger.keys)
+	if len(charger.claims) != 1 {
+		t.Fatalf("a balance above its threshold was charged again: %v", charger.claims)
 	}
 }
 
@@ -280,8 +525,50 @@ func TestAIAutoTopupNeverPassesThePeriodsLimit(t *testing.T) {
 		ledger.left = 0
 		s.autoTopupAI(ctx, a)
 	}
-	if len(ledger.added) != 2 || len(charger.keys) != 2 || charger.keys[0] == charger.keys[1] {
-		t.Fatalf("added %v with keys %v, want two top-ups under the $60 limit", ledger.added, charger.keys)
+	if len(ledger.added) != 2 || len(charger.claims) != 2 || charger.claims[0] == charger.claims[1] {
+		t.Fatalf("added %v with charges %v, want two top-ups under the $60 limit", ledger.added, charger.claims)
+	}
+}
+
+func TestAIAutoTopupChargesOnceWhenTheAnswerIsLost(t *testing.T) {
+	now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
+	a := aiTopupAgency(now, 5*usd, 25*usd, 100*usd)
+	charger := &fakeCharger{card: &SavedCard{ID: "pm_1"}, lostAnswer: true}
+	s, repo, ledger, _ := newAITopupService(a, 2*usd, charger, now)
+	ctx := context.Background()
+	s.autoTopupAI(ctx, a)
+	if len(charger.cents) != 1 || len(ledger.added) != 0 {
+		t.Fatalf("after the lost answer: charged %v, added %v", charger.cents, ledger.added)
+	}
+	// Still under the threshold, but the top-up in flight is finished before any other is bought.
+	for range 3 {
+		s.autoTopupAI(ctx, a)
+	}
+	if len(charger.cents) != 1 || len(ledger.added) != 1 || len(repo.claims) != 1 {
+		t.Fatalf("after recovery: charged %v, added %v, claims %v", charger.cents, ledger.added, repo.statuses())
+	}
+}
+
+func TestAISpendChecksAreCoalesced(t *testing.T) {
+	now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
+	a := aiTopupAgency(now, 5*usd, 25*usd, 100*usd)
+	charger := &fakeCharger{card: &SavedCard{ID: "pm_1"}}
+	s, repo, ledger, _ := newAITopupService(a, 2*usd, charger, now)
+	org := uuid.New()
+	repo.client = &models.AgencyClient{OrganizationID: org}
+	// A check already running: every charge that arrives leaves one follow-up and returns at once.
+	check := &aiCheck{running: true}
+	s.aiChecks.Store(a.ID, check)
+	for range 50 {
+		s.OnAgencyAISpend(org)
+	}
+	if !check.again || len(charger.cents) != 0 {
+		t.Fatalf("again=%v charged=%v", check.again, charger.cents)
+	}
+	check.running, check.again = false, false
+	s.OnAgencyAISpend(org)
+	if len(ledger.added) != 1 || check.running {
+		t.Fatalf("added %v running=%v", ledger.added, check.running)
 	}
 }
 

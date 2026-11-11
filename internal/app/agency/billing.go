@@ -452,7 +452,7 @@ func (s *Service) HandleStripeEvent(ctx context.Context, event *stripe.Event) (b
 		}
 		return s.refundTopup(ctx, &ch)
 	case "invoice.payment_failed", "invoice.finalization_failed":
-		// An automatic top-up's invoice is settled where it was charged; the event is only claimed here.
+		// A refused automatic top-up is closed where it was charged; the event is only claimed here.
 		var inv struct {
 			Metadata map[string]string `json:"metadata"`
 		}
@@ -462,6 +462,7 @@ func (s *Service) HandleStripeEvent(ctx context.Context, event *stripe.Event) (b
 		return false, nil
 	case "invoice.paid":
 		var inv struct {
+			ID       string            `json:"id"`
 			Metadata map[string]string `json:"metadata"`
 			Parent   *struct {
 				SubscriptionDetails *struct {
@@ -474,6 +475,10 @@ func (s *Service) HandleStripeEvent(ctx context.Context, event *stripe.Event) (b
 			return false, nil
 		}
 		if inv.Metadata[metaPurpose] == purposeAgencyAutoTopup {
+			// A payment that completed after its request ended is added here; an error has Stripe send it again.
+			if err := s.SettleAutoTopupInvoice(ctx, inv.ID); err != nil {
+				return true, internal(err)
+			}
 			return true, nil
 		}
 		subID := inv.Subscription
