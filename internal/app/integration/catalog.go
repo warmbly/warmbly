@@ -271,6 +271,19 @@ func Catalog() []models.IntegrationCatalogEntry {
 			},
 		},
 		{
+			Provider:   models.IntegrationScavio,
+			Name:       "Scavio",
+			Tagline:    "Google Maps results from the lead finder map, through your Scavio account.",
+			Category:   models.IntegrationCategoryData,
+			AuthMethod: string(models.IntegrationAuthAPIKey),
+			DocsURL:    "https://docs.warmbly.com/guides/lead-finder/",
+			Highlights: []string{
+				"Google Maps listings with ratings, review counts, hours, phones and websites",
+				"Billed to your Scavio account, not your Warmbly balance",
+				"Up to 120 places per search, 20 a page",
+			},
+		},
+		{
 			Provider:   models.IntegrationJina,
 			Name:       "Jina AI",
 			Tagline:    "Read websites that turn the lead finder away, and search the web for a lead's site and addresses.",

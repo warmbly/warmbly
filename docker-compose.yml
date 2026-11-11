@@ -261,6 +261,7 @@ x-selfhost-env: &selfhost-env
   LEAD_FINDER_GOOGLE_PLACES_API_KEY: ${LEAD_FINDER_GOOGLE_PLACES_API_KEY:-}
   LEAD_FINDER_FOURSQUARE_API_KEY: ${LEAD_FINDER_FOURSQUARE_API_KEY:-}
   LEAD_FINDER_OUTSCRAPER_API_KEY: ${LEAD_FINDER_OUTSCRAPER_API_KEY:-}
+  LEAD_FINDER_SCAVIO_API_KEY: ${LEAD_FINDER_SCAVIO_API_KEY:-}
 
   # Slack app. The OAuth pair lets workspaces connect for notifications; the
   # signing secret turns on the assistant, the inbox and buttons.
