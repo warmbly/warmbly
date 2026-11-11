@@ -57,6 +57,9 @@ type SecretColumn struct {
 	// column to hold ciphertext. email_tasks predates unconditional sealing,
 	// so its rows carry a flag rather than a format that can be sniffed.
 	Guard string
+	// Borrowed, when set, names a column that marks the value as someone else's when it is not null:
+	// an agency's key used in a client workspace. A borrowed value never travels; the column arrives blank.
+	Borrowed string
 	// PlaintextPrefix marks a value still stored in the clear from before sealing; it travels as is.
 	PlaintextPrefix string
 	// Plaintext names a column still written in the clear beside this one for the previous release.
@@ -217,9 +220,11 @@ var Tables = []Table{
 		Name: "mailbox_vendor_connections", Group: models.OrgDataGroupCore,
 		Scope: scopeOrg,
 		Secrets: []SecretColumn{
-			{Column: "credentials", Domain: KeyDomainOrgDEK},
+			{Column: "credentials", Domain: KeyDomainOrgDEK, Borrowed: "agency_connection_id"},
 		},
-		Note: "Inbox vendor accounts (InboxKit, Zapmail, ...) the workspace imports from. Above email_accounts, whose vendor_connection_id names them.",
+		// An agency's account lives on the instance that holds the agency; the connection arrives as the workspace's own, without the agency's key.
+		ResetOnImport: []string{"agency_connection_id"},
+		Note:          "Inbox vendor accounts (InboxKit, Zapmail, ...) the workspace imports from. Above email_accounts, whose vendor_connection_id names them. A connection made from an agency's account travels without its key.",
 	},
 	{
 		Name: "mailbox_domain_grants", Group: models.OrgDataGroupCore,
@@ -1141,6 +1146,7 @@ var Tables = []Table{
 var ExcludedTables = map[string]string{
 	"mailbox_connect_links":            "Single-use sign-in links whose URL points at the source instance and whose secret only the recipient holds. The mailboxes they connected travel; open links do not, so new ones are created on the destination.",
 	"agency_clients":                   "The link to an agency, its billing and its shared send pool belongs to the source instance. An imported workspace starts outside any agency; the agency attaches it again on the destination.",
+	"agency_vendor_connections":        "Inbox vendor accounts an agency holds for its clients, kept against the agency and sealed with the instance key. A client workspace's own connection to one travels without the agency's key.",
 	"agency_ai_transactions":           "The agency's ledger of its shared AI balance on the source instance, kept against the agency rather than the workspace. Money already moved into the workspace travels in its own balance; the destination's agency funds it from when it attaches it.",
 	"agency_pool_usage_days":           "The agency's ledger of pool use on the source instance, kept against the agency rather than the workspace. The destination's agency counts the workspace's sends from when it attaches it.",
 	"website_domains":                  "A website's proof is a TXT value bound to the source workspace, so it proves nothing for the destination. The destination shows its own TXT value on each sending-domain redirect that points at the website, and serves redirects and forms there once it is published.",

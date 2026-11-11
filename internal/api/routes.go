@@ -1782,6 +1782,14 @@ func Run(
 				agencyRoutes.POST("/:agencyId/clients/:orgId/ai-balance", middleware.RequireAgencyAccess(models.APIPermAgencyTransferAI), middleware.RequireFreshAuth(), m.IdempotencyMiddleware(), h.TransferAgencyAIBalance)
 				// The agency home and the cross-client inbox read each client through the caller's own membership in it.
 				agencyRoutes.GET("/:agencyId/overview", read, h.GetAgencyOverview)
+				agencyRoutes.GET("/:agencyId/mailboxes", read, h.ListAgencyMailboxes)
+				// Inbox vendor accounts the agency holds once and uses in any client; session-only, they carry keys.
+				agencyRoutes.GET("/:agencyId/vendors", sessionOnly, h.ListAgencyVendors)
+				agencyRoutes.POST("/:agencyId/vendors", sessionOnly, middleware.RequireFreshAuth(), m.IdempotencyMiddleware(), h.CreateAgencyVendor)
+				agencyRoutes.PATCH("/:agencyId/vendors/:id", sessionOnly, middleware.RequireFreshAuth(), h.UpdateAgencyVendor)
+				agencyRoutes.DELETE("/:agencyId/vendors/:id", sessionOnly, middleware.RequireFreshAuth(), h.DeleteAgencyVendor)
+				// PUT: naming the same client twice answers with the connection it already has.
+				agencyRoutes.PUT("/:agencyId/vendors/:id/clients/:orgId", sessionOnly, h.UseAgencyVendor)
 				inbox := middleware.RequireAgencyAccess(models.APIPermAgencyRead | models.APIPermReadUnibox)
 				agencyRoutes.GET("/:agencyId/inbox", inbox, h.ListAgencyInbox)
 				agencyRoutes.GET("/:agencyId/inbox/thread", inbox, h.GetAgencyInboxThread)

@@ -412,8 +412,37 @@ type VendorConnection struct {
 	LastUsedAt     *time.Time `json:"last_used_at,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	Mailboxes      int        `json:"mailboxes"`
+	// AgencyConnectionID names the agency's account this connection was made from; only agency staff use it.
+	AgencyConnectionID *uuid.UUID `json:"agency_connection_id,omitempty"`
 	// Credentials is the sealed field map; never serialized.
 	Credentials string `json:"-"`
+}
+
+// AgencyVendorAccount is an inbox vendor account an agency holds once and uses in any of its clients.
+type AgencyVendorAccount struct {
+	ID        uuid.UUID `json:"id"`
+	AgencyID  uuid.UUID `json:"-"`
+	Vendor    string    `json:"vendor"`
+	Label     string    `json:"label"`
+	CreatedAt time.Time `json:"created_at"`
+	// Status is invalid when the vendor refused the key in any client that uses it.
+	Status    string `json:"status"`
+	LastError string `json:"last_error,omitempty"`
+	// Mailboxes counts the mailboxes connected from it across every client.
+	Mailboxes int                         `json:"mailboxes"`
+	Clients   []AgencyVendorAccountClient `json:"clients"`
+	// Credentials is the sealed field map; never serialized.
+	Credentials string `json:"-"`
+}
+
+// AgencyVendorAccountClient is one client workspace an agency's vendor account is used in.
+type AgencyVendorAccountClient struct {
+	OrganizationID uuid.UUID `json:"organization_id"`
+	Name           string    `json:"name"`
+	ConnectionID   uuid.UUID `json:"connection_id"`
+	Mailboxes      int       `json:"mailboxes"`
+	Status         string    `json:"status"`
+	LastError      string    `json:"last_error,omitempty"`
 }
 
 // VendorMailbox is one mailbox in a vendor account, as the picker shows it.

@@ -198,6 +198,7 @@ One vendor account lists up to 10,000 mailboxes.
 - **Passwords the vendor rotates are picked up.** An SMTP and IMAP mailbox that came from a vendor and has stopped with an unresolved connection error is looked at every 15 minutes. When the vendor now holds a different password for it, Warmbly verifies that password against the server and reconnects the mailbox with it. Each mailbox is tried at most once every 6 hours, so a password that still fails is not retried on every pass.
 - **A refused key marks the connection.** A key the vendor accepts but that reaches no workspace is refused with `mailbox_vendor_no_workspace`, since there is nothing to list. When the vendor stops accepting the key, the connection shows as invalid with the vendor's reason, and rows that needed it fail as `vendor_unauthorized` until the key is updated.
 - **Deleting the connection keeps the mailboxes.** They stay connected and keep sending; they are no longer reconnected automatically when the vendor rotates a password.
+- **An agency can hold the account for its clients.** A connection tagged **Agency** was made from an account [the agency holds](/guides/agencies/#vendor-accounts-held-by-the-agency). Only the agency's staff list or import its mailboxes, and its key is changed at the agency, not here.
 
 </Fold>
 

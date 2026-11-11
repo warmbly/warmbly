@@ -6,6 +6,7 @@ package agencyhome
 import (
 	"context"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,6 +24,12 @@ const overviewTTL = 20 * time.Second
 const (
 	DefaultInboxLimit = 30
 	MaxInboxLimit     = 100
+)
+
+// Mailbox list page sizes.
+const (
+	DefaultMailboxLimit = 50
+	MaxMailboxLimit     = 200
 )
 
 // Agencies is the slice of the agency service this package needs.
@@ -494,4 +501,74 @@ func (s *Service) Message(ctx context.Context, agencyID, userID, orgID, messageI
 		return nil, errMessageMissing
 	}
 	return msg, nil
+}
+
+// MailboxFilter narrows the agency's mailbox list.
+type MailboxFilter struct {
+	// Clients keeps these workspaces; empty keeps every client the caller can list.
+	Clients []uuid.UUID
+	Search  string
+	// Attention keeps mailboxes that are disconnected, erroring or held from warmup.
+	Attention bool
+	Limit     int
+	Cursor    string
+}
+
+// Mailboxes lists mailboxes across the clients whose mailbox list the caller reads, newest first.
+// A client where the caller is restricted to selected mailboxes is left out, like its numbers on the agency home.
+func (s *Service) Mailboxes(ctx context.Context, agencyID, userID uuid.UUID, f MailboxFilter) (*models.AgencyMailboxList, *errx.Error) {
+	if f.Limit == 0 {
+		f.Limit = DefaultMailboxLimit
+	}
+	if f.Limit < 1 || f.Limit > MaxMailboxLimit {
+		return nil, errx.NewWithIdentifier(errx.BadRequest, "invalid_limit", "limit must be between 1 and 200.")
+	}
+	q := models.AgencyMailboxQuery{Search: strings.TrimSpace(f.Search), Attention: f.Attention, Limit: f.Limit}
+	if f.Cursor != "" {
+		at, id, xerr := decodeCursor(f.Cursor)
+		if xerr != nil {
+			return nil, xerr
+		}
+		q.BeforeAt, q.BeforeID = at, id
+	}
+	list, xerr := s.memberships(ctx, agencyID, userID)
+	if xerr != nil {
+		return nil, xerr
+	}
+	readable := map[uuid.UUID]bool{}
+	for _, m := range list {
+		// The workspace's own mailbox list is gated on view_campaigns.
+		if m.Can(models.PermViewCampaigns) {
+			readable[m.OrganizationID] = true
+		}
+	}
+	if len(f.Clients) == 0 {
+		for id := range readable {
+			q.OrgIDs = append(q.OrgIDs, id)
+		}
+	}
+	for _, id := range f.Clients {
+		isClient := false
+		for _, m := range list {
+			isClient = isClient || m.OrganizationID == id
+		}
+		if !isClient {
+			return nil, errClientNotFound
+		}
+		if readable[id] {
+			q.OrgIDs = append(q.OrgIDs, id)
+		}
+	}
+	rows, err := s.repo.Mailboxes(ctx, q)
+	if err != nil {
+		return nil, internal(err)
+	}
+	out := &models.AgencyMailboxList{Data: rows}
+	if len(rows) > f.Limit {
+		out.Data = rows[:f.Limit]
+		last := out.Data[len(out.Data)-1]
+		next := encodeCursor(last.CreatedAt, last.ID)
+		out.Pagination = models.CPagination{HasMore: true, NextCursor: &next}
+	}
+	return out, nil
 }

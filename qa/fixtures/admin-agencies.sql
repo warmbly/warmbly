@@ -20,6 +20,8 @@ INSERT INTO agency_clients (organization_id, agency_id, added_by)
 VALUES ('22222222-0000-0000-0000-000000000001', 'a9e00000-0000-0000-0000-000000000002', '11111111-0000-0000-0000-000000000001')
 ON CONFLICT (organization_id) DO UPDATE SET agency_id = EXCLUDED.agency_id;
 
+-- The agency holds no inbox vendor account, so flows/agency-mailboxes.flow.ts connects its first.
+DELETE FROM agency_vendor_connections WHERE agency_id = 'a9e00000-0000-0000-0000-000000000002';
 DELETE FROM agency_pool_topups WHERE agency_id = 'a9e00000-0000-0000-0000-000000000002';
 -- No brand yet, so the branding page opens as a new agency sees it.
 DELETE FROM agency_brands WHERE agency_id = 'a9e00000-0000-0000-0000-000000000002';

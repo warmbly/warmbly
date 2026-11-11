@@ -56,6 +56,9 @@ has() { # does the current mode include this tier
   esac
 }
 
+# The mock inbox vendors run with the sandbox, or on their own in any mode with QA_VENDOR_MOCK=1.
+vendor_mock() { has sandbox || [ "${QA_VENDOR_MOCK:-}" = 1 ]; }
+
 # ── ports ────────────────────────────────────────────────────────────────
 PORT_KEYS="API WEB REDIS NATS SMTP MAILPIT RT TRACK IMAPS VENDOR"
 base_of() {
@@ -126,7 +129,7 @@ load_mode() {
 # ── commands derived from the Makefile, so the env stays in step with `make dev` ─
 rewrite() {
   local mock=""
-  has sandbox && mock="http://127.0.0.1:$VENDOR"
+  vendor_mock && mock="http://127.0.0.1:$VENDOR"
   sed \
     -e "s#/warmbly_dev?#/$DB?#g" \
     -e "s#API_HOST=0.0.0.0:8080#API_HOST=0.0.0.0:$API#" \
@@ -214,7 +217,7 @@ check_image() { # image, source dir
 build_bins() {
   local cmds=(./cmd/backend ./cmd/seed)
   has full && cmds+=(./cmd/consumer ./cmd/worker)
-  has sandbox && cmds+=(./cmd/sandbox)
+  vendor_mock && cmds+=(./cmd/sandbox)
   say "building ${cmds[*]##*/} (one go build, cached between runs)"
   mkdir -p "$BIN"
   (cd "$REPO" && go build -o "$BIN/" "${cmds[@]}") || die "go build failed"
@@ -289,6 +292,11 @@ up() {
   wait_for mailpit "curl -fs localhost:$MAILPIT/api/v1/info" 30
 
   say "starting backend on :$API (applies migrations on boot)"
+  # On its own the mock answers at once; the sandbox's simulator runs it otherwise.
+  if vendor_mock && ! has sandbox; then
+    say "starting the mock inbox vendors on :$VENDOR"
+    start vendors "SANDBOX_VENDOR_ADDR=127.0.0.1:$VENDOR SANDBOX_VENDOR_LATENCY_MS=0 exec $BIN/sandbox -vendors-only"
+  fi
   export_stripe
   make_cmd backend | billing >"$RUN/backend.sh"
   start backend "exec bash '$RUN/backend.sh'"
@@ -336,7 +344,7 @@ up() {
 
 down() {
   local n
-  for n in watchdog simulator web worker consumer backend; do stop_proc "$n"; done
+  for n in watchdog simulator vendors web worker consumer backend; do stop_proc "$n"; done
   docker ps -aq --filter "label=$LABEL" | xargs -r docker rm -f >/dev/null
   docker network rm "$NET" >/dev/null 2>&1 || true
   rm -f "$RUN/env.json"

@@ -247,6 +247,11 @@ func (s *service) exportRow(
 		if sc.Guard != "" && !jsonBool(obj[sc.Guard]) {
 			continue
 		}
+		// A borrowed value belongs to whoever lent it, so it stays behind whatever the archive carries.
+		if sc.Borrowed != "" && jsonString(obj[sc.Borrowed]) != "" {
+			blankSecret(obj, sc)
+			continue
+		}
 
 		if archiveKey == nil {
 			// Not carrying secrets: blank the column rather than shipping

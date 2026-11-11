@@ -205,6 +205,12 @@ agency (set `plan_id` to the Agency Pro plan, `status = 'active'` and a current 
 that plan's $60 pack). No step charges a card:
 `QA_ADMIN_AGENCY_FIXTURES=1 pnpm proof agency-extra-sends`.
 
+`flows/agency-mailboxes.flow.ts` records **Agency > Mailboxes**: every client's mailboxes, a vendor account the agency
+connects once, and that account opened in a client's import. It needs the same fixture (apply it again before each
+recording: it removes the vendor account the flow connects) and the mock inbox vendors, which the `lite` stack runs
+beside itself when started with `QA_VENDOR_MOCK=1 pnpm stack up lite`. Then:
+`QA_ADMIN_AGENCY_FIXTURES=1 pnpm proof agency-mailboxes`.
+
 ## Member access proof fixtures
 
 `flows/member-access.flow.ts` is opt-in: apply `fixtures/member-access.sql` to

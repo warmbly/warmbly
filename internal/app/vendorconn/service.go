@@ -24,6 +24,7 @@ import (
 	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
+	"github.com/warmbly/warmbly/internal/pkg/encrypt"
 	"github.com/warmbly/warmbly/internal/pkg/mailvendor"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -85,6 +86,12 @@ type Service struct {
 	audit         Auditor
 	// automatic reports whether the instance switches vendor mailboxes without a click; nil is off.
 	automatic func(ctx context.Context) bool
+
+	// Agency-held accounts; nil leaves them off.
+	agencyRepo    repository.AgencyVendorRepository
+	agencies      Agencies
+	agencyClients AgencyClients
+	instance      *encrypt.Encrypter
 }
 
 type cachedClient struct {

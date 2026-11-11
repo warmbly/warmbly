@@ -2129,6 +2129,10 @@ func main() {
 			Cache:     cache,
 			NewClient: sandboxVendors,
 		})
+		// An agency holds a vendor account once and uses it in any client workspace.
+		if agencyService != nil {
+			vendorConnService.WireAgencies(repository.NewAgencyVendorRepository(primaryDB), agencyService, repository.NewAgencyHomeRepository(primaryDB.Pool), credEncrypter)
+		}
 
 		// Sending domains: tracking host per domain and the bare-domain redirect.
 		sendingDomainService = sendingdomain.NewService(repository.NewDomainRedirectRepository(primaryDB), emailRepostory, nil, domainProver)
