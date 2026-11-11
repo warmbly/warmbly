@@ -227,8 +227,8 @@ export function SendsAutoTopup({ agencyId, canManage }: { agencyId: string; canM
             }
             enabled={data.enabled}
             loading={false}
-            // Turning it off always works; turning it on needs a pool to top up.
-            canToggle={canManage && !save.isPending && (data.enabled || data.available)}
+            // Turning it off always works; turning it on needs a pool to top up and a card to charge.
+            canToggle={canManage && !save.isPending && (data.enabled || (data.available && !data.card_missing))}
             onToggle={(enabled) => void apply(enabled, !enabled)}
             failure={data.failure}
             card={data.card}
@@ -320,7 +320,7 @@ export function AIAutoTopup({ agencyId, canManage }: { agencyId: string; canMana
             enabled={data.enabled}
             loading={false}
             // Turning it off always works; turning it on needs a balance to add to and numbers that can be saved.
-            canToggle={canManage && !save.isPending && (data.enabled || (data.available && !problem))}
+            canToggle={canManage && !save.isPending && (data.enabled || (data.available && !problem && !data.card_missing))}
             onToggle={(enabled) => void apply(enabled, !enabled)}
             failure={data.failure}
             card={data.card}

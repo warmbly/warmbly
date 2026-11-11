@@ -80,6 +80,7 @@ function LoadFailed({ what, error, onRetry }: { what: string; error: unknown; on
 function VendorAccounts({
     accounts,
     canAdd,
+    known,
     failed,
     onRetry,
     canManage,
@@ -91,6 +92,8 @@ function VendorAccounts({
     accounts: AgencyVendorAccount[];
     /** The caller manages mailboxes in at least one client, so an account can be handed to one. */
     canAdd: boolean;
+    /** The clients have loaded, so "cannot add" is a fact about permissions and not a failed request. */
+    known: boolean;
     /** The accounts could not be loaded; nothing can be connected until they are. */
     failed: unknown;
     onRetry: () => void;
@@ -146,7 +149,7 @@ function VendorAccounts({
                             type="button"
                             onClick={() => onAdd(a)}
                             disabled={a.status === "invalid" || !canAdd}
-                            title={canAdd ? undefined : "You do not manage mailboxes in any of this agency's clients."}
+                            title={canAdd || !known ? undefined : "You do not manage mailboxes in any of this agency's clients."}
                             className="h-7 px-2.5 rounded-md border border-slate-200 text-[12px] text-slate-700 hover:border-slate-300 hover:text-slate-900 inline-flex items-center gap-1.5 disabled:opacity-60"
                         >
                             <PlusIcon className="w-3 h-3" />
@@ -261,6 +264,7 @@ function AgencyMailboxes() {
             <VendorAccounts
                 accounts={accounts}
                 canAdd={canAdd}
+                known={!!overview.data}
                 failed={vendors.isError && !vendors.data ? vendors.error : null}
                 onRetry={() => void vendors.refetch()}
                 canManage={canManage}
@@ -270,6 +274,9 @@ function AgencyMailboxes() {
                 onRemove={askRemove}
             />
 
+            {overview.isError && !overview.data && (
+                <LoadFailed what="your clients" error={overview.error} onRetry={() => void overview.refetch()} />
+            )}
             <SectionBar
                 label="Mailboxes"
                 count={totals?.mailboxes ?? undefined}

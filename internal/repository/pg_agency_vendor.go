@@ -29,6 +29,8 @@ type AgencyVendorRepository interface {
 	Delete(ctx context.Context, agencyID, id uuid.UUID) (bool, error)
 	// CredentialsFor is an account's sealed key for a workspace that is still the agency's client; false otherwise.
 	CredentialsFor(ctx context.Context, orgID, id uuid.UUID) (string, bool, error)
+	// HealLinks clears the keyless refusal from connections made from an agency's account, which hold no key by design.
+	HealLinks(ctx context.Context) (int64, error)
 	// Links lists the workspace connections made from an account.
 	Links(ctx context.Context, id uuid.UUID) ([]AgencyVendorLink, error)
 	// Linked is the workspace's connection made from an account; nil when it has none.
@@ -168,6 +170,16 @@ func (r *agencyVendorRepository) CredentialsFor(ctx context.Context, orgID, id u
 		return "", false, err
 	}
 	return sealed, true, nil
+}
+
+func (r *agencyVendorRepository) HealLinks(ctx context.Context) (int64, error) {
+	tag, err := r.DB.Exec(ctx, `UPDATE mailbox_vendor_connections SET status = 'active', last_error = '', updated_at = now()
+		WHERE agency_connection_id IS NOT NULL AND status = 'invalid' AND last_error = $1`, models.VendorConnectionNoKey)
+	if err != nil {
+		db.CaptureError(err, "heal agency vendor links", nil, "exec")
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 func (r *agencyVendorRepository) Links(ctx context.Context, id uuid.UUID) ([]AgencyVendorLink, error) {

@@ -94,6 +94,17 @@ func (m *memAgencyVendors) CredentialsFor(_ context.Context, orgID, id uuid.UUID
 	return a.Credentials, true, nil
 }
 
+func (m *memAgencyVendors) HealLinks(context.Context) (int64, error) {
+	var n int64
+	for _, c := range m.conns.conns {
+		if c.AgencyConnectionID != nil && c.Status == "invalid" && c.LastError == models.VendorConnectionNoKey {
+			c.Status, c.LastError = "active", ""
+			n++
+		}
+	}
+	return n, nil
+}
+
 func (m *memAgencyVendors) Links(_ context.Context, id uuid.UUID) ([]repository.AgencyVendorLink, error) {
 	var out []repository.AgencyVendorLink
 	for _, c := range m.conns.conns {
@@ -327,5 +338,37 @@ func TestOnlyAgencyStaffBrowseAConnectionMadeFromAnAgencyAccount(t *testing.T) {
 	// And one of another workspace is not found.
 	if xerr := f.svc.GuardAgencyAccount(ctx, f.readOnly, conn.ID, f.owner, false); xerr == nil {
 		t.Fatal("a connection of another workspace passed the guard")
+	}
+}
+
+func TestAKeylessRefusalRecordedByAnOlderReleaseDoesNotStick(t *testing.T) {
+	f := newAgencyFixture(t)
+	ctx := context.Background()
+	a := f.account(t)
+	conn, xerr := f.svc.UseAgencyAccount(ctx, f.agency, f.owner, a.ID, f.acme)
+	if xerr != nil {
+		t.Fatal(xerr)
+	}
+	own, xerr := f.svc.Create(ctx, f.acme, f.owner, CreateInput{Vendor: "zapmail", Fields: map[string]string{"api_key": "own"}})
+	if xerr != nil {
+		t.Fatal(xerr)
+	}
+	// A release that does not know an agency connection finds no key in it and records that; the same on a
+	// workspace's own keyless connection is a real refusal and stays.
+	for _, id := range []uuid.UUID{conn.ID, own.ID} {
+		f.conns.conns[id].Status, f.conns.conns[id].LastError = "invalid", models.VendorConnectionNoKey
+	}
+	f.svc.healAgencyLinks(ctx)
+	if got := f.conns.conns[conn.ID]; got.Status != "active" || got.LastError != "" {
+		t.Fatalf("the agency connection is still marked %q: %q", got.Status, got.LastError)
+	}
+	if got := f.conns.conns[own.ID]; got.Status != "invalid" {
+		t.Fatalf("the workspace's own connection was cleared: %q", got.Status)
+	}
+	// A refusal by the vendor itself is not this one and is left for the key to be fixed.
+	f.conns.conns[conn.ID].Status, f.conns.conns[conn.ID].LastError = "invalid", "Zapmail refused the key."
+	f.svc.healAgencyLinks(ctx)
+	if f.conns.conns[conn.ID].Status != "invalid" {
+		t.Fatal("a refusal by the vendor was cleared")
 	}
 }

@@ -180,6 +180,8 @@ export interface AgencyAutoTopup {
     pack_sends: number;
     pack_price_cents: number;
     card?: { brand: string; last4: string };
+    /** The saved card was looked up and there is none; absent when the lookup itself failed. */
+    card_missing?: boolean;
     /** False when the agency has no pool to top up. */
     available: boolean;
 }
@@ -194,6 +196,8 @@ export interface AgencyAIAutoTopup {
     added_this_period_usd: number;
     failure?: "no_payment_method" | "card_declined";
     card?: { brand: string; last4: string };
+    /** The saved card was looked up and there is none; absent when the lookup itself failed. */
+    card_missing?: boolean;
     available: boolean;
     min_usd: number;
     max_usd: number;

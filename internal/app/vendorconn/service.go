@@ -344,7 +344,7 @@ func (s *Service) keyOf(ctx context.Context, c *models.VendorConnection) (string
 	}
 	// An archive imported without credentials brings the connection but not its key.
 	if c.Credentials == "" {
-		_ = s.repo.SetStatus(ctx, c.ID, "invalid", "This connection has no API key on this instance. Update the key.")
+		_ = s.repo.SetStatus(ctx, c.ID, "invalid", models.VendorConnectionNoKey)
 		return "", nil, errx.NewWithIdentifier(errx.BadRequest, mailboximport.ErrIDVendorUnauthorized,
 			"This "+labelOf(c.Vendor)+" connection has no API key on this instance. Update the key to use it.")
 	}
@@ -576,6 +576,7 @@ func (s *Service) StartReconnect(ctx context.Context) {
 	go s.startReconnectDriver(ctx)
 	go s.startAutoSwitch(ctx)
 	jobrun.Loop(ctx, "mailbox_vendor_reconnect", 15*time.Minute, false, func(ctx context.Context) error {
+		s.healAgencyLinks(ctx)
 		cands, err := s.repo.ReconnectCandidates(ctx, 50)
 		if err != nil {
 			return err

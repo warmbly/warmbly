@@ -294,3 +294,16 @@ func (s *Service) GuardAgencyAccount(ctx context.Context, orgID, id, userID uuid
 	}
 	return nil
 }
+
+// healAgencyLinks clears the keyless refusal from connections made from an agency's account. Such a
+// connection holds no key by design, and a release that does not know that records the refusal on it
+// during a rolling deployment or a rollback; left there, it would keep the connection out of the
+// automatic reconnect after this release serves it again.
+func (s *Service) healAgencyLinks(ctx context.Context) {
+	if s.agencyRepo == nil {
+		return
+	}
+	if _, err := s.agencyRepo.HealLinks(ctx); err != nil {
+		errs.CaptureException(err)
+	}
+}

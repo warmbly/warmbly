@@ -43,6 +43,8 @@ type AutoTopup struct {
 	PackCents int64  `json:"pack_price_cents"`
 	// Card is the card a pack is charged to; absent when the agency has none saved.
 	Card *SavedCard `json:"card,omitempty"`
+	// CardMissing is true when the saved card was looked up and there is none; a lookup that failed leaves it false.
+	CardMissing bool `json:"card_missing,omitempty"`
 	// Available is false when the agency has no pool to top up: no plan in force, or a plan with no cap.
 	Available bool `json:"available"`
 }
@@ -105,7 +107,7 @@ func (s *Service) autoTopupView(ctx context.Context, a *models.Agency, withCard 
 	if withCard && s.billing {
 		// A card that cannot be read is shown as none; the page then asks for one.
 		if card, cerr := s.packs().Card(ctx, a); cerr == nil {
-			out.Card = card
+			out.Card, out.CardMissing = card, card == nil
 		} else {
 			errs.CaptureException(fmt.Errorf("agency saved card: %w", cerr))
 		}
@@ -690,6 +692,8 @@ type AIAutoTopup struct {
 	// Failure says why it turned itself off: no_payment_method or card_declined.
 	Failure string     `json:"failure,omitempty"`
 	Card    *SavedCard `json:"card,omitempty"`
+	// CardMissing is true when the saved card was looked up and there is none; a lookup that failed leaves it false.
+	CardMissing bool `json:"card_missing,omitempty"`
 	// Available is false where there is no shared AI balance to add to: no plan in force, or AI is not charged.
 	Available bool    `json:"available"`
 	MinUSD    float64 `json:"min_usd"`
@@ -715,7 +719,7 @@ func (s *Service) aiAutoTopupView(ctx context.Context, a *models.Agency, withCar
 	}
 	if withCard && s.billing {
 		if card, cerr := s.packs().Card(ctx, a); cerr == nil {
-			out.Card = card
+			out.Card, out.CardMissing = card, card == nil
 		} else {
 			errs.CaptureException(fmt.Errorf("agency saved card: %w", cerr))
 		}

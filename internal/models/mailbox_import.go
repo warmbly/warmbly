@@ -418,6 +418,9 @@ type VendorConnection struct {
 	Credentials string `json:"-"`
 }
 
+// VendorConnectionNoKey is the refusal recorded on a connection that holds no key.
+const VendorConnectionNoKey = "This connection has no API key on this instance. Update the key."
+
 // AgencyVendorAccount is an inbox vendor account an agency holds once and uses in any of its clients.
 type AgencyVendorAccount struct {
 	ID        uuid.UUID `json:"id"`
