@@ -85,6 +85,7 @@ func (r *notificationRepository) GetPreferences(ctx context.Context, userID uuid
 	return &prefs, nil
 }
 
+// UpdatePreferences saves the blob; a trigger (000387) keeps saved keys it omits.
 func (r *notificationRepository) UpdatePreferences(ctx context.Context, userID uuid.UUID, prefs *models.NotificationPreferences) error {
 	raw, err := json.Marshal(prefs)
 	if err != nil {
@@ -152,13 +153,13 @@ var ErrNotificationMessageAutomated = errors.New("notification: message is not a
 
 // Legacy thread alerts are hidden only when every verdict in that mailbox's thread is automated.
 const notificationReplyVisibleSQL = `(
-	n.category NOT IN ('inbound_reply', 'inbound_out_of_office') OR (
+	n.category NOT IN ('inbound_reply', 'inbound_positive_reply', 'inbound_out_of_office') OR (
 		NOT EXISTS (
 			SELECT 1 FROM unibox_emails ue
 			LEFT JOIN inbox_tag_results r ON r.email_account_id = ue.email_id
 				AND r.message_id = ue.message_id AND r.status = 'complete'
 			WHERE ue.id = n.unibox_email_id AND (
-				(n.category = 'inbound_reply' AND ue.automated)
+				(n.category IN ('inbound_reply', 'inbound_positive_reply') AND ue.automated)
 				OR (r.kind IN ('notification', 'bounce_hard', 'bounce_soft')
 					AND r.kind_confidence >= 0.70 AND r.review_reason <> 'kind')
 			)
@@ -170,14 +171,14 @@ const notificationReplyVisibleSQL = `(
 				AND r.thread_id <> '' AND r.thread_id = n.metadata->>'thread_id'
 				AND r.status = 'complete' AND r.kind_confidence >= 0.70 AND r.review_reason <> 'kind'
 				AND (r.kind IN ('notification', 'bounce_hard', 'bounce_soft')
-					OR (n.category = 'inbound_reply' AND r.automated))
+					OR (n.category IN ('inbound_reply', 'inbound_positive_reply') AND r.automated))
 				AND NOT EXISTS (
 					SELECT 1 FROM inbox_tag_results other
 					WHERE other.organization_id = r.organization_id AND other.email_account_id = r.email_account_id
 						AND other.thread_id = r.thread_id AND NOT (
 							other.status = 'complete' AND other.kind_confidence >= 0.70 AND other.review_reason <> 'kind'
 							AND (other.kind IN ('notification', 'bounce_hard', 'bounce_soft')
-								OR (n.category = 'inbound_reply' AND other.automated))
+								OR (n.category IN ('inbound_reply', 'inbound_positive_reply') AND other.automated))
 						)
 				)
 		)

@@ -12,14 +12,17 @@ import (
 type NotificationCategory string
 
 const (
-	NotifInboundReply    NotificationCategory = "inbound_reply"
-	NotifInboundOOO      NotificationCategory = "inbound_out_of_office"
-	NotifHealthBounce    NotificationCategory = "health_bounce"
-	NotifHealthComplaint NotificationCategory = "health_complaint"
-	NotifWorkerDowntime  NotificationCategory = "health_worker_downtime"
-	NotifSecuritySignIn  NotificationCategory = "security_new_signin"
-	NotifBillingAlert    NotificationCategory = "billing_alert"
-	NotifTeamActivity    NotificationCategory = "team_activity"
+	NotifInboundReply NotificationCategory = "inbound_reply"
+	// NotifInboundPositiveReply is a human reply classified as positive. It is
+	// the one inbound category on by default.
+	NotifInboundPositiveReply NotificationCategory = "inbound_positive_reply"
+	NotifInboundOOO           NotificationCategory = "inbound_out_of_office"
+	NotifHealthBounce         NotificationCategory = "health_bounce"
+	NotifHealthComplaint      NotificationCategory = "health_complaint"
+	NotifWorkerDowntime       NotificationCategory = "health_worker_downtime"
+	NotifSecuritySignIn       NotificationCategory = "security_new_signin"
+	NotifBillingAlert         NotificationCategory = "billing_alert"
+	NotifTeamActivity         NotificationCategory = "team_activity"
 	// NotifCampaignPaused fires when the platform pauses a campaign on its
 	// own — today, when an auto-pause guardrail band is breached. Rare and
 	// always actionable, so it defaults on with email.
@@ -58,16 +61,18 @@ type CategoryPref struct {
 // NotificationPreferences is the per-user singleton (jsonb on users). Always
 // returned fully populated via DefaultNotificationPreferences merge.
 type NotificationPreferences struct {
-	InboundReply    CategoryPref `json:"inbound_reply"`
-	InboundOOO      CategoryPref `json:"inbound_out_of_office"`
-	HealthBounce    CategoryPref `json:"health_bounce"`
-	HealthComplaint CategoryPref `json:"health_complaint"`
-	WorkerDowntime  CategoryPref `json:"health_worker_downtime"`
-	SecuritySignIn  CategoryPref `json:"security_new_signin"`
-	BillingAlert    CategoryPref `json:"billing_alert"`
-	TeamActivity    CategoryPref `json:"team_activity"`
-	CampaignPaused  CategoryPref `json:"campaign_paused"`
-	DomainAuth      CategoryPref `json:"health_domain_auth"`
+	InboundReply CategoryPref `json:"inbound_reply"`
+	// InboundPositiveReply covers positive replies while InboundReply is off.
+	InboundPositiveReply CategoryPref `json:"inbound_positive_reply"`
+	InboundOOO           CategoryPref `json:"inbound_out_of_office"`
+	HealthBounce         CategoryPref `json:"health_bounce"`
+	HealthComplaint      CategoryPref `json:"health_complaint"`
+	WorkerDowntime       CategoryPref `json:"health_worker_downtime"`
+	SecuritySignIn       CategoryPref `json:"security_new_signin"`
+	BillingAlert         CategoryPref `json:"billing_alert"`
+	TeamActivity         CategoryPref `json:"team_activity"`
+	CampaignPaused       CategoryPref `json:"campaign_paused"`
+	DomainAuth           CategoryPref `json:"health_domain_auth"`
 	// PlacementFinished and PlacementAlert are the inbox placement test pair.
 	PlacementFinished CategoryPref `json:"placement_finished"`
 	PlacementAlert    CategoryPref `json:"placement_alert"`
@@ -83,7 +88,8 @@ type NotificationPreferences struct {
 
 // DefaultNotificationPreferences is the merge base. Health categories default ON
 // (operationally important + low volume); inbound categories default OFF (a big
-// campaign would otherwise flood the feed with a notification per recipient).
+// campaign would otherwise flood the feed with a notification per recipient),
+// except positive replies, which are few and are what the campaign is for.
 // Push defaults on: it only fires for devices the user explicitly registered by
 // granting the OS notification permission, and enabled categories should reach
 // those devices without a second opt-in.
@@ -100,18 +106,19 @@ func DefaultNotificationPreferences() NotificationPreferences {
 	// whoever can edit the DNS, so this one emails by default too.
 	domainAuth := CategoryPref{Enabled: true, Channels: ChannelPrefs{InApp: true, Push: true, Email: true}}
 	return NotificationPreferences{
-		InboundReply:      off,
-		InboundOOO:        off,
-		HealthBounce:      on,
-		HealthComplaint:   on,
-		WorkerDowntime:    on,
-		SecuritySignIn:    on,
-		BillingAlert:      billing,
-		TeamActivity:      on,
-		CampaignPaused:    campaignPaused,
-		DomainAuth:        domainAuth,
-		PlacementFinished: on,
-		PlacementAlert:    domainAuth,
+		InboundReply:         off,
+		InboundPositiveReply: on,
+		InboundOOO:           off,
+		HealthBounce:         on,
+		HealthComplaint:      on,
+		WorkerDowntime:       on,
+		SecuritySignIn:       on,
+		BillingAlert:         billing,
+		TeamActivity:         on,
+		CampaignPaused:       campaignPaused,
+		DomainAuth:           domainAuth,
+		PlacementFinished:    on,
+		PlacementAlert:       domainAuth,
 		// A mailbox about to lose its subscription has to reach whoever can
 		// fix it even when nobody reads the inbox, so this emails too.
 		InboxActionRequired: domainAuth,
@@ -124,6 +131,8 @@ func (p NotificationPreferences) CategoryPref(c NotificationCategory) CategoryPr
 	switch c {
 	case NotifInboundReply:
 		return p.InboundReply
+	case NotifInboundPositiveReply:
+		return p.InboundPositiveReply
 	case NotifInboundOOO:
 		return p.InboundOOO
 	case NotifHealthBounce:
@@ -151,6 +160,26 @@ func (p NotificationPreferences) CategoryPref(c NotificationCategory) CategoryPr
 	default:
 		return CategoryPref{}
 	}
+}
+
+// DeliveryCategory is the category a notification is raised under for this
+// user: with every reply on, a positive one is delivered as a plain reply, so
+// it keeps that category's channels and is never announced twice.
+func (p NotificationPreferences) DeliveryCategory(c NotificationCategory) NotificationCategory {
+	if c == NotifInboundPositiveReply && p.InboundReply.Enabled {
+		return NotifInboundReply
+	}
+	return c
+}
+
+// IsHumanReply reports a category raised by a person answering a send.
+func (c NotificationCategory) IsHumanReply() bool {
+	return c == NotifInboundReply || c == NotifInboundPositiveReply
+}
+
+// IsInboundReply reports a category raised by a reply, automatic ones included.
+func (c NotificationCategory) IsInboundReply() bool {
+	return c.IsHumanReply() || c == NotifInboundOOO
 }
 
 // Notification is one row in the in-app feed.

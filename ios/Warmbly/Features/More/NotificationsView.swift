@@ -119,7 +119,7 @@ final class MoreNotificationsStore {
 private enum MoreNotificationMeta {
     static func icon(_ category: String?) -> String {
         switch category {
-        case "inbound_reply": return "arrowshape.turn.up.left.fill"
+        case "inbound_reply", "inbound_positive_reply": return "arrowshape.turn.up.left.fill"
         case "inbound_out_of_office": return "moon.zzz.fill"
         case "health_bounce": return "arrow.uturn.left.circle.fill"
         case "health_complaint": return "flag.fill"
@@ -133,7 +133,7 @@ private enum MoreNotificationMeta {
 
     static func tone(_ category: String?) -> Tone {
         switch category {
-        case "inbound_reply": return .emerald
+        case "inbound_reply", "inbound_positive_reply": return .emerald
         case "inbound_out_of_office": return .slate
         case "health_bounce": return .rose
         case "health_complaint": return .rose
@@ -147,7 +147,8 @@ private enum MoreNotificationMeta {
 
     static func label(_ key: String) -> String {
         switch key {
-        case "inbound_reply": return "Replies"
+        case "inbound_positive_reply": return "Positive replies"
+        case "inbound_reply": return "All replies"
         case "inbound_out_of_office": return "Out of office"
         case "health_bounce": return "Bounces"
         case "health_complaint": return "Spam complaints"
@@ -163,7 +164,8 @@ private enum MoreNotificationMeta {
 
     static func caption(_ key: String) -> String? {
         switch key {
-        case "inbound_reply": return "A contact replies to your outreach"
+        case "inbound_positive_reply": return "A contact answers your outreach with interest"
+        case "inbound_reply": return "Every reply a person writes to your outreach, positive ones included. Auto-replies have their own setting"
         case "inbound_out_of_office": return "Auto-replies detected on your sends"
         case "health_bounce": return "A campaign email hard bounces"
         case "health_complaint": return "A recipient marks your mail as spam"
@@ -176,7 +178,7 @@ private enum MoreNotificationMeta {
     }
 
     static let knownGroups: [(title: String, keys: [String])] = [
-        ("Inbound", ["inbound_reply", "inbound_out_of_office"]),
+        ("Inbound", ["inbound_positive_reply", "inbound_reply", "inbound_out_of_office"]),
         ("Mailbox health", ["health_bounce", "health_complaint", "health_worker_downtime"]),
         ("Security", ["security_new_signin"]),
         ("Account", ["billing_alert", "team_activity"]),

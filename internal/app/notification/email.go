@@ -291,7 +291,7 @@ func (s *service) keepEligibleEmailMessages(ctx context.Context, rows []models.N
 // of mail Warmbly sends; the in-app feed still shows it.
 func emailBody(n models.Notification) string {
 	switch n.Category {
-	case models.NotifInboundReply, models.NotifInboundOOO:
+	case models.NotifInboundReply, models.NotifInboundPositiveReply, models.NotifInboundOOO:
 		return "Open the conversation in your inbox to read it."
 	}
 	return n.Body

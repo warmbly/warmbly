@@ -32,7 +32,7 @@ Under Email delivery, pick how often unread notifications are emailed to you.
 ## Good to know
 
 - Feeds are per user, not shared across the workspace.
-- Health alerts are on by default. **Reply received** is off by default, so a large campaign does not flood the feed.
+- Health alerts and **Positive reply** are on by default. **Reply received**, which covers every reply a person writes, is off by default, so a large campaign does not flood the feed.
 - Nothing is emailed the moment it happens: unread notifications go out as one bundled email, every 30 minutes by default.
 - Anything you read in the dashboard before the email goes out is never emailed.
 - Every reply still lands in the [Unibox](/guides/unibox/), even with reply notifications off.
@@ -71,10 +71,13 @@ The feed and the bell count update live, without refreshing.
 | New sign-in | Security | On | Your account is accessed from a new device, with browser, OS, and rough location |
 | Billing alerts | Billing | On, including email | A trial expired or sending was paused for billing |
 | Teammate joined | Team | On | Someone accepted an invitation |
-| Reply received | Inbound | Off | A recipient replied to a cold email |
+| Positive reply | Inbound | On | A recipient answered a cold email and the reply was classified as positive |
+| Reply received | Inbound | Off | A person replied to a cold email, whatever they said. Automatic replies are not included |
 | Out-of-office detected | Inbound | Off | An auto-responder hit one of your sends |
 
-Health defaults **on** because those alerts are operationally important and low volume. Inbound defaults **off** because a large campaign would generate one notification per recipient and flood the feed. Turn **Reply received** on only for smaller, higher-touch campaigns.
+Health defaults **on** because those alerts are operationally important and low volume. **Positive reply** defaults **on** for the same reason: interested replies are few, and they are what a campaign is for. The other inbound categories default **off** because a large campaign would generate one notification per recipient and flood the feed. Turn **Reply received** on only for smaller, higher-touch campaigns.
+
+**Positive reply** and **Reply received** never announce the same message twice. With **Reply received** on, a positive reply is delivered as a **Reply received** notification, on that category's channels. With it off, positive replies use the **Positive reply** channels and every other reply from a person stays quiet. Automatic replies follow their own **Out-of-office detected** preference either way. All three need reply intent on in the workspace's outreach settings, which is the default. A positive reply is one the [reply classification](/guides/contacts-crm/) read as interested. A reply it read as neutral, a question or negative raises only **Reply received**, and classification can be wrong, so the [Unibox](/guides/unibox/) remains the full record.
 
 <Callout type="info" title="Who gets notified">
 Workspace events never fan out to everyone. Reply and bounce alerts go to the owner of the mailbox or campaign, worker downtime to members who can manage mailboxes, mailbox mail that needs action to members who can both manage mailboxes and use the inbox, a finished placement test to whoever started it, a placement monitor alert to members who can view campaigns, billing to those who can manage billing, and team changes to those who can manage the team. The person who joined is not notified about themselves.
@@ -86,12 +89,12 @@ Workspace events never fan out to everyone. Reply and bounce alerts go to the ow
 
 ## Notifications about a message follow it
 
-A **Reply received**, **Out-of-office detected** or **Mail that needs action** notification is about one message in the [Unibox](/guides/unibox/), and it stays in step with it:
+A **Positive reply**, **Reply received**, **Out-of-office detected** or **Mail that needs action** notification is about one message in the [Unibox](/guides/unibox/), and it stays in step with it:
 
 - **Clicking it opens that conversation**, not the inbox in general.
 - **Reading the message reads the notification**, wherever you read it: in the Unibox, through the API, or in Gmail or Outlook, which Warmbly picks up on the next sync. A notification read this way is not emailed later either.
 - **Removing the message removes the notification.** Deleted mail, and mail later confirmed to be [warmup](/guides/warmup/), takes its notification out of the feed and the bell count. Warmup never raises one in the first place; this covers anything identified after it arrived. A push or Slack message already delivered cannot be recalled.
-- **Routine automated mail is not a reply.** DMARC aggregate reports, delivery failures and other system notices do not raise **Reply received** or **Out-of-office detected** alerts. If a message is identified as routine automated mail later, its false reply alert disappears from the feed and bell count, and its pending email is cancelled. Genuine out-of-office and automatic replies still use **Out-of-office detected** when enabled. Automated mail that needs your action keeps its separate **Mail that needs action** alert, and bounce and domain-authentication health alerts are unchanged.
+- **Routine automated mail is not a reply.** DMARC aggregate reports, delivery failures and other system notices do not raise **Positive reply**, **Reply received** or **Out-of-office detected** alerts. If a message is identified as routine automated mail later, its false reply alert disappears from the feed and bell count, and its pending email is cancelled. Genuine out-of-office and automatic replies still use **Out-of-office detected** when enabled. Automated mail that needs your action keeps its separate **Mail that needs action** alert, and bounce and domain-authentication health alerts are unchanged.
 
 <Callout type="info" title="Where to read replies">
 Even with reply notifications off you never miss anything: every reply still lands in the [Unibox](/guides/unibox/). The notification is only an optional ping.
