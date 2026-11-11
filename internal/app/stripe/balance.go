@@ -20,6 +20,7 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
+	"github.com/warmbly/warmbly/internal/pkg/businesscheckout"
 )
 
 // Metadata purposes that route a webhook to the balance flow.
@@ -264,20 +265,15 @@ func (s *stripeService) CreateBalanceCheckout(ctx context.Context, userID, orgID
 		"amount_micro": strconv.FormatInt(int64(amount), 10),
 	}
 	params := &stripe.CheckoutSessionParams{
-		Params:                   stripe.Params{Context: ctx},
-		Mode:                     stripe.String(string(stripe.CheckoutSessionModePayment)),
-		AutomaticTax:             &stripe.CheckoutSessionAutomaticTaxParams{Enabled: stripe.Bool(false)},
-		BillingAddressCollection: stripe.String(string(stripe.CheckoutSessionBillingAddressCollectionRequired)),
-		TaxIDCollection:          &stripe.CheckoutSessionTaxIDCollectionParams{Enabled: stripe.Bool(true)},
-		NameCollection:           businessNameCollection(),
-		CustomText:               businessOnlyNotice(),
-		InvoiceCreation:          &stripe.CheckoutSessionInvoiceCreationParams{Enabled: stripe.Bool(true)},
+		Params:          stripe.Params{Context: ctx},
+		Mode:            stripe.String(string(stripe.CheckoutSessionModePayment)),
+		InvoiceCreation: &stripe.CheckoutSessionInvoiceCreationParams{Enabled: stripe.Bool(true)},
 		LineItems: []*stripe.CheckoutSessionLineItemParams{{
 			Quantity: stripe.Int64(1),
 			PriceData: &stripe.CheckoutSessionLineItemPriceDataParams{
 				Currency:    stripe.String("usd"),
 				UnitAmount:  stripe.Int64(amount.Cents()),
-				TaxBehavior: stripe.String("exclusive"),
+				TaxBehavior: stripe.String(businesscheckout.TaxExclusive),
 				ProductData: &stripe.CheckoutSessionLineItemPriceDataProductDataParams{
 					Name: stripe.String("Warmbly balance"),
 				},
@@ -291,6 +287,7 @@ func (s *stripeService) CreateBalanceCheckout(ctx context.Context, userID, orgID
 		CancelURL:  stripe.String(cancelURL),
 		Metadata:   meta,
 	}
+	businesscheckout.Apply(params)
 	if xerr := s.attachCustomer(ctx, orgID, params); xerr != nil {
 		return nil, xerr
 	}

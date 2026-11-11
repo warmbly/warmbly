@@ -15,6 +15,7 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
+	"github.com/warmbly/warmbly/internal/pkg/businesscheckout"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -58,18 +59,16 @@ func (s *Service) Checkout(ctx context.Context, agencyID, actorID, planID uuid.U
 	}
 	meta := map[string]string{metaPurpose: purposeAgencyPlan, metaAgencyID: a.ID.String(), "user_id": actorID.String()}
 	params := &stripe.CheckoutSessionParams{
-		Params:                   stripe.Params{Context: ctx},
-		Mode:                     stripe.String(string(stripe.CheckoutSessionModeSubscription)),
-		AutomaticTax:             &stripe.CheckoutSessionAutomaticTaxParams{Enabled: stripe.Bool(false)},
-		BillingAddressCollection: stripe.String(string(stripe.CheckoutSessionBillingAddressCollectionRequired)),
-		TaxIDCollection:          &stripe.CheckoutSessionTaxIDCollectionParams{Enabled: stripe.Bool(true)},
-		LineItems:                []*stripe.CheckoutSessionLineItemParams{{Price: stripe.String(price), Quantity: stripe.Int64(1)}},
-		ClientReferenceID:        stripe.String(a.ID.String()),
-		SuccessURL:               stripe.String(successURL),
-		CancelURL:                stripe.String(cancelURL),
-		Metadata:                 meta,
-		SubscriptionData:         &stripe.CheckoutSessionSubscriptionDataParams{Metadata: meta},
+		Params:            stripe.Params{Context: ctx},
+		Mode:              stripe.String(string(stripe.CheckoutSessionModeSubscription)),
+		LineItems:         []*stripe.CheckoutSessionLineItemParams{{Price: stripe.String(price), Quantity: stripe.Int64(1)}},
+		ClientReferenceID: stripe.String(a.ID.String()),
+		SuccessURL:        stripe.String(successURL),
+		CancelURL:         stripe.String(cancelURL),
+		Metadata:          meta,
+		SubscriptionData:  &stripe.CheckoutSessionSubscriptionDataParams{Metadata: meta},
 	}
+	businesscheckout.Apply(params)
 	s.attachCustomer(ctx, a, actorID, params)
 	sess, err := session.New(params)
 	if err != nil {
@@ -117,13 +116,13 @@ func (s *Service) Topup(ctx context.Context, agencyID, actorID uuid.UUID, succes
 	params := &stripe.CheckoutSessionParams{
 		Params:          stripe.Params{Context: ctx},
 		Mode:            stripe.String(string(stripe.CheckoutSessionModePayment)),
-		AutomaticTax:    &stripe.CheckoutSessionAutomaticTaxParams{Enabled: stripe.Bool(false)},
 		InvoiceCreation: &stripe.CheckoutSessionInvoiceCreationParams{Enabled: stripe.Bool(true)},
 		LineItems: []*stripe.CheckoutSessionLineItemParams{{
 			Quantity: stripe.Int64(1),
 			PriceData: &stripe.CheckoutSessionLineItemPriceDataParams{
-				Currency:   stripe.String("usd"),
-				UnitAmount: stripe.Int64(cents),
+				Currency:    stripe.String("usd"),
+				UnitAmount:  stripe.Int64(cents),
+				TaxBehavior: stripe.String(businesscheckout.TaxExclusive),
 				ProductData: &stripe.CheckoutSessionLineItemPriceDataProductDataParams{
 					Name: stripe.String("Agency send pack: 50,000 sends"),
 				},
@@ -135,6 +134,7 @@ func (s *Service) Topup(ctx context.Context, agencyID, actorID uuid.UUID, succes
 		CancelURL:         stripe.String(cancelURL),
 		Metadata:          meta,
 	}
+	businesscheckout.Apply(params)
 	s.attachCustomer(ctx, a, actorID, params)
 	sess, err := session.New(params)
 	if err != nil {
