@@ -92,8 +92,9 @@ export default function BillingSettingsPage() {
     const openPlanChooser = React.useCallback(() => {
         upgradeDialog.open({
             feature: "Your plan",
+            title: "Choose a plan",
             minPlan: "starter",
-            blurb: "Compare every plan, switch billing interval, and change your subscription in one step.",
+            blurb: "Compare every plan, pick monthly or annual billing, and change your subscription in one step.",
         });
     }, [upgradeDialog]);
     const openPortal = flow.openPortal;

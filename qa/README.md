@@ -176,6 +176,9 @@ runs with billing off, where the billing page has no Plans tab, so the flow is o
 seeded account must be staff of no agency and its workspace attached to none, which a fresh seed is: the link
 the flow looks for reads "Set up an agency" only then. Run `QA_BILLING=1 pnpm proof billing-agency-plans`.
 
+`flows/plans-popup.flow.ts` records the plan chooser popup, opened from **Settings > Billing**, and the Plans
+tab's cards, on the same stack: `QA_BILLING=1 pnpm proof plans-popup`.
+
 ## Admin agency proof fixtures
 
 `flows/admin-agencies.flow.ts` records an operator giving an agency a plan, a pool of its own and extra sends
