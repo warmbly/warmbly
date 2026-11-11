@@ -357,11 +357,18 @@ export function useAgencyAutoTopup(agencyId?: string) {
 }
 
 // The server checks the card and may buy a pack at once, so nothing is patched before it answers.
+/** A saved setting's answer, with the card state carried over when the answer itself has none. */
+function keepCard<T extends { card?: unknown; card_missing?: boolean }>(next: T, prev: T | undefined): T {
+    if (next.card || next.card_missing || !prev) return next;
+    return { ...next, card: prev.card, card_missing: prev.card_missing };
+}
+
 export function useSetAgencyAutoTopup(agencyId: string) {
     const qc = useQueryClient();
     return useMutation({
         mutationFn: (input: { enabled: boolean; threshold_sends: number; max_packs: number }) => setAgencyAutoTopup(agencyId, input),
-        onSuccess: (data) => qc.setQueryData(agencyAutoTopupQuery(agencyId).queryKey, data),
+        // An answer that could not read the card in time says nothing about it: what was known is kept until the refetch.
+        onSuccess: (data) => qc.setQueryData(agencyAutoTopupQuery(agencyId).queryKey, (prev) => keepCard(data, prev)),
         onSettled: () => void qc.invalidateQueries({ queryKey: ["agency"] }),
     });
 }
@@ -382,7 +389,7 @@ export function useSetAgencyAIAutoTopup(agencyId: string) {
     const qc = useQueryClient();
     return useMutation({
         mutationFn: (input: { enabled: boolean; threshold_usd: number; amount_usd: number; limit_usd: number }) => setAgencyAIAutoTopup(agencyId, input),
-        onSuccess: (data) => qc.setQueryData(agencyAIAutoTopupQuery(agencyId).queryKey, data),
+        onSuccess: (data) => qc.setQueryData(agencyAIAutoTopupQuery(agencyId).queryKey, (prev) => keepCard(data, prev)),
         onSettled: () => void qc.invalidateQueries({ queryKey: ["agency"] }),
     });
 }

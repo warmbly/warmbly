@@ -6,6 +6,7 @@ import React from "react";
 import { Link, useLocation } from "@tanstack/react-router";
 import {
     Building2Icon,
+    MailIcon,
     CreditCardIcon,
     GaugeIcon,
     InboxIcon,
@@ -32,6 +33,7 @@ import { cn } from "@/lib/utils";
 type ItemPath =
     | "/app/agency"
     | "/app/agency/clients"
+    | "/app/agency/mailboxes"
     | "/app/agency/inbox"
     | "/app/agency/usage"
     | "/app/agency/billing"
@@ -42,6 +44,7 @@ type ItemPath =
 const ITEMS: { to: ItemPath; label: string; icon: LucideIcon; exact?: boolean; badge?: "replies" }[] = [
     { to: "/app/agency", label: "Overview", icon: LayoutDashboardIcon, exact: true },
     { to: "/app/agency/clients", label: "Clients", icon: Building2Icon },
+    { to: "/app/agency/mailboxes", label: "Mailboxes", icon: MailIcon },
     { to: "/app/agency/inbox", label: "Inbox", icon: InboxIcon, badge: "replies" },
     { to: "/app/agency/usage", label: "Usage", icon: GaugeIcon },
     { to: "/app/agency/billing", label: "Billing", icon: CreditCardIcon },

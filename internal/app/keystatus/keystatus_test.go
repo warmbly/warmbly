@@ -24,6 +24,7 @@ func TestSealedColumnsCoverEveryInstanceKeySecret(t *testing.T) {
 		"email_accounts_oauth.refresh_token",
 		"webhook_endpoints.secret",
 		"oauth_applications.webhook_secret",
+		"agency_vendor_connections.credentials",
 		"cloud_link.token",
 		"mailbox_erasures.refresh_token",
 	} {

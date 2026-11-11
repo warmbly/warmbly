@@ -708,10 +708,13 @@ The [agency](/guides/agencies/) routes answer these codes.
 | `agency_limit_reached` | 403 | The account already owns five agencies |
 | `agency_leave_not_owner` | 403 | `POST /organization/agency/leave` from someone other than the workspace's owner |
 | `agency_client_inbox_forbidden` | 403 | `GET /agency/:agencyId/inbox/thread` or `/inbox/messages/:messageId` for a client where the caller is not a member, lacks **Use unified inbox**, or is restricted to no mailboxes |
+| `agency_client_mailboxes_forbidden` | 403 | `PUT /agency/:agencyId/vendors/:id/clients/:orgId` for a client where the caller cannot manage mailboxes |
+| `agency_vendor_staff_only` | 403 | A workspace member who is not on the agency's staff listing, importing from, reconnecting through or removing a connection made from the agency's vendor account |
 | `agency_not_found` | 404 | The agency does not exist, or the caller is not on its staff |
 | `agency_staff_not_found` | 404 | The person is not on the agency's staff |
 | `agency_client_not_found` | 404 | The workspace is not one of this agency's clients, including an `organization_id` on the agency inbox routes |
 | `agency_client_taken` | 409 | The workspace already belongs to an agency |
+| `agency_vendor_managed` | 409 | `PATCH /emails/vendors/:id` on a connection made from an agency's vendor account. Its key is changed at the agency, with `PATCH /agency/:agencyId/vendors/:id` |
 | `agency_client_has_subscription` | 409 | The workspace pays for its own plan. Cancel it in the workspace's billing first |
 | `agency_already_subscribed` | 409 | The agency already has a plan; switch it with `POST /agency/:agencyId/billing/change` |
 | `agency_no_payment_method` | 409 | An automatic top-up, of sends or of the AI balance, turned on for an agency with no saved card |

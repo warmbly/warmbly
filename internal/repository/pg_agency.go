@@ -417,8 +417,17 @@ func (r *agencyRepository) AddClient(ctx context.Context, agencyID, orgID uuid.U
 }
 
 func (r *agencyRepository) RemoveClient(ctx context.Context, agencyID, orgID uuid.UUID) (bool, error) {
-	tag, err := r.db.Exec(ctx, `DELETE FROM agency_clients WHERE agency_id = $1 AND organization_id = $2`, agencyID, orgID)
-	return tag.RowsAffected() == 1, err
+	// The agency's vendor accounts leave with it: the keys are the agency's. Mailboxes they connected stay.
+	var removed int
+	err := r.db.QueryRow(ctx, `
+		WITH gone AS (
+			DELETE FROM agency_clients WHERE agency_id = $1 AND organization_id = $2 RETURNING organization_id
+		), unlinked AS (
+			DELETE FROM mailbox_vendor_connections c USING agency_vendor_connections a, gone g
+			WHERE c.agency_connection_id = a.id AND a.agency_id = $1 AND c.organization_id = g.organization_id
+		)
+		SELECT COUNT(*) FROM gone`, agencyID, orgID).Scan(&removed)
+	return removed == 1, err
 }
 
 func (r *agencyRepository) SetClientLimit(ctx context.Context, agencyID, orgID uuid.UUID, limit *int) (bool, error) {

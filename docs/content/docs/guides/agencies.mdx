@@ -41,6 +41,7 @@ The sidebar holds the agency's own pages:
 | --- | --- |
 | **Overview** | Every client on one screen, problems first. See [agency home and inbox](#agency-home-and-inbox) |
 | **Clients** | Add, detach and cap clients |
+| **Mailboxes** | Every client's mailboxes, and the inbox vendor accounts you hold for them. See [mailboxes across clients](#mailboxes-across-clients) |
 | **Inbox** | Conversations from every client's inbox |
 | **Usage** | The send pool and AI balance, client by client |
 | **Billing** | The agency's plan, top-ups and AI balance purchases |
@@ -189,6 +190,40 @@ Workspace spend limits and member spend limits in a client workspace count every
 A self-hosted instance does not charge for AI, so there is no agency balance to manage there: AI runs without a balance, and moving or buying balance answers `503 agency_billing_disabled`.
 
 The agency balance and its history do not travel in a [workspace export](/guides/workspace-export-import/). Money already moved into a workspace is part of that workspace's own balance.
+
+## Mailboxes across clients
+
+**Agency > Mailboxes** lists the mailboxes of every client on one screen, newest first: the address, the client it belongs to, its state (connected, disconnected, failing to sign in, or held from warmup), whether warmup is on and its daily limit. Search addresses, filter by client, or select **Needs attention** to see only the ones that are disconnected, failing or held. Selecting a mailbox opens it in its client's workspace, which is where it is changed.
+
+The list follows your membership in each client, like the agency home: a client where you are restricted to selected mailboxes, or are not a member, is left out. It reads through `GET /agency/:agencyId/mailboxes`.
+
+### Who connects a client's mailboxes
+
+Either of you can. Some clients run their own inboxes; for others you buy and manage them. **Add mailboxes** asks which client, then how:
+
+| Option | Who does it | What happens |
+| --- | --- | --- |
+| **From** one of your vendor accounts | You | Pick mailboxes from an account the agency holds, with no key to paste. See [vendor accounts held by the agency](#vendor-accounts-held-by-the-agency) |
+| **From an inbox vendor** | You | Paste an API key for this client only and pick the mailboxes. See [import from an inbox vendor](/guides/mailbox-import/#import-from-an-inbox-vendor) |
+| **Import a file or a list** | You | A spreadsheet from a vendor or another tool, or addresses and passwords pasted in. See [import mailboxes](/guides/mailbox-import/) |
+| **Connect one yourself** | You | Google or Microsoft sign-in, or IMAP and SMTP details |
+| **Let the client do it** | The client | A [connect link](#client-connect-links): the client connects its own mailboxes with no account, and no password reaches you |
+
+Each one opens inside that client's workspace, in the same dialog its own **Accounts** page uses, so warmup, limits and the [mailbox allowance](/guides/mailboxes/#mailbox-allowance) apply exactly as they do there.
+
+### Vendor accounts held by the agency
+
+When you buy the mailboxes for your clients, the vendor account is yours, not any one client's. An owner or admin connects it once: **Agency > Mailboxes > Connect a vendor**, pick the vendor and paste its API key. The key is checked with the vendor, stored encrypted and never shown again. Connecting, re-keying and removing an account each ask you to confirm it is you.
+
+- **Add to a client** on the account, or the account's own option in **Add mailboxes**, opens that client's vendor import on it. You pick which mailboxes go to this client; the rest stay at the vendor for your other clients.
+- **Any staff member who manages mailboxes in the client can use an account.** Only owners and admins connect, rename, re-key or remove one.
+- **It works in the client like any vendor connection.** The client's workspace lists the account under its vendor accounts, tagged **Agency**. Rotated passwords are picked up, Google mailboxes can be signed in again through the vendor, and DNS is written for the domains the account holds, as described under [import from an inbox vendor](/guides/mailbox-import/#import-from-an-inbox-vendor).
+- **Only your staff see what is in it.** The account lists the mailboxes of every client, so a person a client invited to its own workspace sees that the account is there and cannot list or import its mailboxes (`agency_vendor_staff_only`).
+- **The key lives in one place.** A client's workspace holds no copy of it: the account's key is read each time it is used, and only while the workspace is still your client. **Rename or update key** therefore takes effect in every client at once. It cannot be changed from inside a client's workspace (`agency_vendor_managed`).
+- **Removing it keeps the mailboxes.** Removing the account, or removing a client from the agency, ends the use of the account there. The mailboxes it connected stay connected and keep sending; they just stop picking up new passwords from the vendor on their own.
+- **It does not leave with a client.** A [workspace export](/guides/workspace-export-import/) of a client carries the connection without a key, because the workspace never held yours.
+
+The accounts are listed with `GET /agency/:agencyId/vendors` and connected with `POST` to the same path, changed and removed with `PATCH` and `DELETE /agency/:agencyId/vendors/:id`, and used in a client with `PUT /agency/:agencyId/vendors/:id/clients/:orgId`. They answer a signed-in session only, never an API key, because they carry keys.
 
 ## Client connect links
 

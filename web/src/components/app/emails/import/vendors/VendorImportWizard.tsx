@@ -42,10 +42,13 @@ function toItem(m: VendorMailbox, labelWorkspace: boolean): PickItem {
 }
 
 export default function VendorImportWizard({
+    initialConnectionId,
     onDone,
     onAllowance,
     onDirtyChange,
 }: {
+    /** The account already picked when the wizard opens, such as one an agency holds for this client. */
+    initialConnectionId?: string;
     onDone: () => void;
     onAllowance?: () => void;
     onDirtyChange?: (dirty: boolean) => void;
@@ -53,7 +56,7 @@ export default function VendorImportWizard({
     const catalog = useVendorCatalog();
     const conns = useVendorConnections();
     const grants = useGrants();
-    const [connId, setConnId] = React.useState<string | null>(null);
+    const [connId, setConnId] = React.useState<string | null>(initialConnectionId ?? null);
     const [formDirty, setFormDirty] = React.useState(false);
     const boxes = useVendorMailboxes(connId);
     const imp = useImportVendorMailboxes();

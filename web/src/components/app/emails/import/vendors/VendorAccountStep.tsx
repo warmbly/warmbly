@@ -318,6 +318,14 @@ function ConnectionRow({
                         <span className="text-[11.5px] text-slate-500 truncate">{vendorLabel(conn.vendor)}</span>
                     )}
                     <SourceStatusPill status={conn.status} />
+                    {conn.agency_connection_id && (
+                        <span
+                            title="Your agency holds this account for its clients. Only the agency's staff can import from it."
+                            className="h-[18px] px-1.5 rounded bg-sky-50 text-sky-700 text-[10.5px] font-medium inline-flex items-center shrink-0"
+                        >
+                            Agency
+                        </span>
+                    )}
                 </div>
                 <div className="text-[11px] text-slate-500 mt-0.5 truncate">
                     {plural(conn.mailboxes, "mailbox", "mailboxes")} connected
@@ -326,6 +334,7 @@ function ConnectionRow({
                 {invalid && (
                     <p className="text-[11.5px] text-red-700 mt-1 leading-snug">
                         {conn.last_error || "The vendor no longer accepts this key."}
+                        {conn.agency_connection_id && " An owner or admin of the agency updates it under Agency > Mailboxes."}
                     </p>
                 )}
                 {canReconnect && progress.length > 0 && (
@@ -339,7 +348,7 @@ function ConnectionRow({
                 )}
             </div>
             <div className="shrink-0 flex items-center gap-1 self-center">
-                {invalid && (
+                {invalid && !conn.agency_connection_id && (
                     <button
                         type="button"
                         onClick={(e) => {
@@ -364,9 +373,12 @@ function ConnectionRow({
                             </button>
                         </PopoverMenuTrigger>
                         <PopoverMenuContent minWidth={170}>
-                            <PopoverMenuItem icon={<KeyRoundIcon className="w-3.5 h-3.5" />} onSelect={onUpdate}>
-                                Update key
-                            </PopoverMenuItem>
+                            {/* The agency's key is changed once, at the agency, for every client that uses it. */}
+                            {!conn.agency_connection_id && (
+                                <PopoverMenuItem icon={<KeyRoundIcon className="w-3.5 h-3.5" />} onSelect={onUpdate}>
+                                    Update key
+                                </PopoverMenuItem>
+                            )}
                             {canReconnect && (
                                 <PopoverMenuItem icon={<RefreshCwIcon className="w-3.5 h-3.5" />} onSelect={onReconnect}>
                                     Reconnect all Google mailboxes

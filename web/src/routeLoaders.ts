@@ -29,6 +29,7 @@ import {
     readSelectedAgencyId,
 } from "./lib/api/hooks/app/agency/useAgency";
 import { agencyInboxQuery, agencyOverviewQuery, emptyInboxFilters } from "./lib/api/hooks/app/agency/useAgencyHome";
+import { agencyMailboxesQuery, agencyVendorsQuery, emptyMailboxFilters } from "./lib/api/hooks/app/agency/useAgencyMailboxes";
 import { agencyAPIKeysQuery } from "./lib/api/hooks/app/agency/useAgencyAPIKeys";
 import { authConfigQuery } from "./lib/api/hooks/auth/useAuthConfig";
 import { emailsListQuery } from "./lib/api/hooks/app/emails/useEmails";
@@ -479,6 +480,11 @@ export const agencyClientsLoader = agencyPage((qc, id) => [
     qc.prefetchQuery(agencyClientsQuery(id)),
     qc.prefetchQuery(agencyUsageQuery(id)),
     qc.prefetchQuery(agencyAIBalanceQuery(id)),
+]);
+export const agencyMailboxesLoader = agencyPage((qc, id) => [
+    qc.prefetchInfiniteQuery(agencyMailboxesQuery(id, emptyMailboxFilters)),
+    qc.prefetchQuery(agencyVendorsQuery(id)),
+    qc.prefetchQuery(agencyOverviewQuery(id)),
 ]);
 export const agencyStaffLoader = agencyPage((qc, id) => [qc.prefetchQuery(agencyStaffQuery(id))]);
 export const agencyUsageLoader = agencyPage((qc, id) => [qc.prefetchQuery(agencyUsageQuery(id)), qc.prefetchQuery(agencyAIBalanceQuery(id))]);

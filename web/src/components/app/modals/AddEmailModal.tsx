@@ -82,6 +82,7 @@ import GmailAppPasswordPanel from "@/components/app/emails/GmailAppPasswordPanel
 import GoogleWorkspaceSigninPanel from "@/components/app/emails/GoogleWorkspaceSigninPanel";
 import MailboxImportWizard from "@/components/app/emails/import/MailboxImportWizard";
 import VendorImportWizard from "@/components/app/emails/import/vendors/VendorImportWizard";
+import { takeAddEmailIntent } from "@/lib/addEmailIntent";
 import GrantImportWizard from "@/components/app/emails/import/grants/GrantImportWizard";
 import ProviderLogo, { LogoStack } from "@/components/app/emails/ProviderLogo";
 import { useGrantConfig, useGrants } from "@/lib/api/hooks/app/emails/useMailboxGrants";
@@ -135,6 +136,8 @@ export default function AddEmailModal() {
     const qc = useQueryClient();
 
     const [view, setView] = React.useState<View>("pick");
+    // The vendor account an import opened from elsewhere starts on.
+    const [vendorStart, setVendorStart] = React.useState<string | undefined>(undefined);
     const [cloudAddress, setCloudAddress] = React.useState("");
     // A personal Gmail address typed on the sign-in panel, carried into the app-password walkthrough.
     const [appPasswordEmail, setAppPasswordEmail] = React.useState("");
@@ -189,7 +192,7 @@ export default function AddEmailModal() {
     const gmailOAuth = oauth.gmailAvailable;
     const resetOAuth = oauth.reset;
 
-    // Reset when the modal closes.
+    // Reset when the modal closes; a caller that knows what the person came to do opens it there.
     React.useEffect(() => {
         if (!user.addEmail) {
             setCloudAddress("");
@@ -199,7 +202,14 @@ export default function AddEmailModal() {
             setNotConfigured(null);
             setAllowanceOpen(false);
             setWizardDirty(false);
+            setVendorStart(undefined);
             resetOAuth();
+            return;
+        }
+        const intent = takeAddEmailIntent();
+        if (intent) {
+            setVendorStart(intent.vendorConnectionId);
+            setView(intent.view);
         }
     }, [user.addEmail, resetOAuth]);
 
@@ -397,6 +407,8 @@ export default function AddEmailModal() {
                                     )}
                                     {view === "vendor" && (
                                         <VendorImportWizard
+                                            key={vendorStart ?? "vendor"}
+                                            initialConnectionId={vendorStart}
                                             onDone={finishWizard}
                                             onAllowance={() => openAllowance(allowanceFull(allowance.data))}
                                             onDirtyChange={setWizardDirty}
