@@ -990,6 +990,10 @@ func main() {
 		})
 		agencyService.WireMemberRemoval(oauthService.RevokeMemberGrants)
 		agencyService.WireAIBalance(repository.NewAgencyAIRepository(primaryDB), creditService != nil && !creditService.Unmetered())
+		// A charge that drew on an agency's shared AI balance checks its automatic top-up at once.
+		if hook, ok := creditService.(interface{ SetAgencyMonitor(func(uuid.UUID)) }); ok {
+			hook.SetAgencyMonitor(agencyService.OnAgencyAISpend)
+		}
 		if workerAssignmentService != nil {
 			agencyService.WireIsolatedEgress(workerAssignmentService)
 		}

@@ -199,6 +199,12 @@ just given. Stop the admin server and the stack afterward.
 and watching the preview follow. Run it against the dashboard, without `QA_WEB_URL`:
 `QA_ADMIN_AGENCY_FIXTURES=1 pnpm proof agency-branding-look`.
 
+`flows/agency-extra-sends.flow.ts` records **Agency > Billing**: the pack price, the automatic top-ups of sends
+and of the AI balance with what each charges, and what happens when sends run out. It needs the same fixture with Agency Pro in force on the
+agency (set `plan_id` to the Agency Pro plan, `status = 'active'` and a current period on its row; the flow expects
+that plan's $60 pack). No step charges a card:
+`QA_ADMIN_AGENCY_FIXTURES=1 pnpm proof agency-extra-sends`.
+
 ## Member access proof fixtures
 
 `flows/member-access.flow.ts` is opt-in: apply `fixtures/member-access.sql` to

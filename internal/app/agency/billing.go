@@ -451,9 +451,20 @@ func (s *Service) HandleStripeEvent(ctx context.Context, event *stripe.Event) (b
 			return false, nil
 		}
 		return s.refundTopup(ctx, &ch)
+	case "invoice.payment_failed", "invoice.finalization_failed":
+		// A refused automatic top-up is closed where it was charged; the event is only claimed here.
+		var inv struct {
+			Metadata map[string]string `json:"metadata"`
+		}
+		if json.Unmarshal(event.Data.Raw, &inv) == nil && inv.Metadata[metaPurpose] == purposeAgencyAutoTopup {
+			return true, nil
+		}
+		return false, nil
 	case "invoice.paid":
 		var inv struct {
-			Parent *struct {
+			ID       string            `json:"id"`
+			Metadata map[string]string `json:"metadata"`
+			Parent   *struct {
 				SubscriptionDetails *struct {
 					Subscription string `json:"subscription"`
 				} `json:"subscription_details"`
@@ -462,6 +473,13 @@ func (s *Service) HandleStripeEvent(ctx context.Context, event *stripe.Event) (b
 		}
 		if err := json.Unmarshal(event.Data.Raw, &inv); err != nil {
 			return false, nil
+		}
+		if inv.Metadata[metaPurpose] == purposeAgencyAutoTopup {
+			// A payment that completed after its request ended is added here; an error has Stripe send it again.
+			if err := s.SettleAutoTopupInvoice(ctx, inv.ID); err != nil {
+				return true, internal(err)
+			}
+			return true, nil
 		}
 		subID := inv.Subscription
 		if subID == "" && inv.Parent != nil && inv.Parent.SubscriptionDetails != nil {
@@ -618,7 +636,8 @@ func (s *Service) completeTopup(ctx context.Context, agencyID uuid.UUID, sess *s
 // top-up out of the AI balance. A partial refund leaves it in; a charge that
 // paid for neither belongs to the workspace path.
 func (s *Service) refundTopup(ctx context.Context, ch *stripe.Charge) (bool, *errx.Error) {
-	isTopup := ch.Metadata[metaPurpose] == purposeAgencyTopup || ch.Metadata[metaPurpose] == purposeAgencyAITopup
+	purpose := ch.Metadata[metaPurpose]
+	isTopup := purpose == purposeAgencyTopup || purpose == purposeAgencyAITopup || purpose == purposeAgencyAutoTopup
 	if ch.PaymentIntent == nil || ch.PaymentIntent.ID == "" {
 		return isTopup, nil
 	}

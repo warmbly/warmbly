@@ -139,6 +139,21 @@ Moving to a smaller pool is refused while the current period has already used mo
 
 When the pool runs low, buy a **top-up pack** under **Agency > Billing**: 50,000 more sends, $85 on Agency or $60 on Agency Pro. A pack is a one-off payment, added to the current period's pool, and does not carry into the next period. A pack that is fully refunded leaves the pool.
 
+#### Automatic top-up
+
+**Agency > Billing** has an automatic top-up for the send pool and another for the [shared AI balance](#the-shared-ai-balance). Each is off until you turn it on, and each shows what one top-up charges and the most it can charge in a month before you do.
+
+| | Sends | Shared AI balance |
+| --- | --- | --- |
+| Tops up when | This few sends are left in the month (default 10,000) | Less than this is left (default $5) |
+| Each top-up | One pack: 50,000 sends at your plan's pack price ($85 on Agency, $60 on Agency Pro) | The amount you choose, $5 to $5,000 (default $25), added dollar for dollar |
+| Monthly limit | A number of top-ups, 1 to 20 (default 2) | A total you choose, at least one top-up (default $100) |
+| Checked | Every ten minutes, and when you turn it on | Right after a client's AI use draws on the balance, every ten minutes, and when you turn it on |
+
+Each top-up is charged to the card your plan is paid with and has its own invoice, with tax added where it applies. Owners and admins are told each time one happens. One top-up is made at a time and each is charged once, so the limit is never passed. The numbers are saved together with **Save changes**; nothing you type is acted on before that. If you are already below the new level when you save or turn it on, one top-up is charged right away. Once the month's limit is reached nothing more is charged: campaigns pause when sends run out, and AI features stop when the balance does, until the month renews or you add more yourself.
+
+An agency with no saved card cannot turn either on. The card charged is the one your subscription is paid with, or the default card on your billing account. A plan arranged directly has neither at first: buy a pack or AI balance once at checkout to create the billing account (that purchase does not save its card), then add a card and make it the default under **Invoices and payment**. If the card is declined, that top-up turns itself off and tells the owners and admins, and its invoice is cancelled so nothing stays owing. Update the card and turn it on again. You can turn either off at any time; a top-up that was already paid for is still added. If a top-up cannot be confirmed with the payment provider for several hours, the owners and admins are told, and no further top-up of that kind is made until it is settled. Turning one on needs a recent confirmation of your identity, because it lets the card be charged with nobody present.
+
 Like every Warmbly checkout, the agency plan, top-up packs and AI balance purchases ask for your company's legal name and billing address, and for its VAT or other business tax ID if it has one. Prices exclude taxes.
 
 Owners and admins manage the plan, top-ups, AI balance purchases, invoices and payment method. **Invoices and payment** opens the billing portal. If a payment fails, client workspaces keep the plan while Stripe retries; if the subscription ends, they keep it until a few days after the period it paid for, then go back to their own plans.

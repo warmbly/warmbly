@@ -104,6 +104,17 @@ type Agency struct {
 	OverrideReason      *string    `json:"-"`
 	OverrideBy          *uuid.UUID `json:"-"`
 	OverrideAt          *time.Time `json:"-"`
+	// Automatic top-up: a pack is bought on the saved card once AutoTopupThreshold sends or fewer are left, up to AutoTopupMaxPacks a period.
+	AutoTopupEnabled   bool    `json:"-"`
+	AutoTopupThreshold int     `json:"-"`
+	AutoTopupMaxPacks  int     `json:"-"`
+	AutoTopupFailure   *string `json:"-"`
+	// The same for the shared AI balance: under AIAutoTopupThreshold, AIAutoTopupAmount is added, up to AIAutoTopupLimit a period.
+	AIAutoTopupEnabled   bool    `json:"-"`
+	AIAutoTopupThreshold Micro   `json:"-"`
+	AIAutoTopupAmount    Micro   `json:"-"`
+	AIAutoTopupLimit     Micro   `json:"-"`
+	AIAutoTopupFailure   *string `json:"-"`
 	// Grant is set while an operator's plan is in force, for the dashboard.
 	Grant *AgencyGrant `json:"granted,omitempty"`
 	// BillingInterval is "month" or "year" while a subscription is in force, read off its period.
@@ -178,7 +189,55 @@ type AgencyPoolTopup struct {
 	// GrantedBy and Reason are set on sends an operator added, which have no payment.
 	GrantedBy *uuid.UUID `json:"-"`
 	Reason    *string    `json:"-"`
+	// Automatic marks a pack the automatic top-up bought.
+	Automatic bool `json:"-"`
 }
+
+// Bounds of an agency's automatic top-up settings.
+const (
+	AgencyAutoTopupMaxThreshold = 10_000_000
+	AgencyAutoTopupMaxPacks     = 20
+	// AgencyAIAutoTopupMaxLimit bounds what the AI balance's automatic top-up may add in one period.
+	AgencyAIAutoTopupMaxLimit Micro = 50_000 * MicroPerUSD
+)
+
+// AgencyAutoTopupKind is what an automatic top-up adds to.
+type AgencyAutoTopupKind string
+
+const (
+	AgencyAutoTopupSends AgencyAutoTopupKind = "sends"
+	AgencyAutoTopupAI    AgencyAutoTopupKind = "ai"
+)
+
+// The states of one automatic top-up. Pending is written before the card is charged.
+const (
+	AgencyAutoTopupPending    = "pending"
+	AgencyAutoTopupPaid       = "paid"
+	AgencyAutoTopupWasRefused = "declined"
+	AgencyAutoTopupCancelled  = "cancelled"
+)
+
+// AgencyAutoTopupClaim is one automatic top-up from the moment it is decided to the moment it is settled.
+type AgencyAutoTopupClaim struct {
+	ID              uuid.UUID
+	AgencyID        uuid.UUID
+	Kind            AgencyAutoTopupKind
+	PeriodStart     time.Time
+	AmountCents     int64
+	Sends           int
+	Status          string
+	StripeInvoiceID string
+	CreatedAt       time.Time
+}
+
+// AgencyAutoTopupStuckAfter is how long a top-up may stay unsettled before the people who manage the agency are told.
+const AgencyAutoTopupStuckAfter = 6 * time.Hour
+
+// Why an automatic top-up turned itself off.
+const (
+	AgencyAutoTopupNoCard   = "no_payment_method"
+	AgencyAutoTopupDeclined = "card_declined"
+)
 
 // AgencyRef names the agency a workspace belongs to.
 type AgencyRef struct {
