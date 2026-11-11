@@ -36,6 +36,8 @@ export interface AgencyOverviewClient {
     name: string;
     avatar_url?: string;
     access: AgencyClientAccess;
+    /** The caller can connect and change mailboxes in this workspace. */
+    manage_mailboxes?: boolean;
     pool_used: number;
     monthly_send_limit?: number | null;
     campaigns?: AgencyClientCampaigns;

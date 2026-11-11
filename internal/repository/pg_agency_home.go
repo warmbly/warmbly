@@ -20,6 +20,8 @@ type AgencyHomeRepository interface {
 	ClientMemberships(ctx context.Context, agencyID, userID uuid.UUID) ([]models.AgencyClientMembership, error)
 	CampaignStats(ctx context.Context, orgIDs []uuid.UUID, since time.Time) (map[uuid.UUID]*models.AgencyClientCampaigns, error)
 	MailboxStats(ctx context.Context, orgIDs []uuid.UUID) (map[uuid.UUID]*models.AgencyClientMailboxes, error)
+	// Mailboxes returns up to q.Limit+1 mailboxes across the workspaces, newest first.
+	Mailboxes(ctx context.Context, q models.AgencyMailboxQuery) ([]models.AgencyMailbox, error)
 	RepliesWaiting(ctx context.Context, orgIDs []uuid.UUID) (map[uuid.UUID]int64, error)
 	AdvisorCounts(ctx context.Context, orgIDs []uuid.UUID) (map[uuid.UUID]*models.AgencyClientAdvisor, error)
 	// InboxThreads returns up to q.Limit+1 threads, newest first.
@@ -150,6 +152,55 @@ func (r *agencyHomeRepository) MailboxStats(ctx context.Context, orgIDs []uuid.U
 			return nil, err
 		}
 		out[id] = &s
+	}
+	return out, rows.Err()
+}
+
+// agencyMailboxesSQL lists mailboxes with the standing agencyMailboxStatsSQL counts, so the list and the totals agree.
+var agencyMailboxesSQL = `
+	SELECT ea.id, ea.organization_id, o.name, ea.email, COALESCE(ea.name, ''), ea.provider::text, ea.status::text,
+	       m.erroring, ea.warmup IS NOT NULL, m.held, COALESCE(vc.vendor, ''), COALESCE(ea.campaign_limit, 0), ea.created_at
+	FROM email_accounts ea
+	JOIN organizations o ON o.id = ea.organization_id
+	LEFT JOIN mailbox_vendor_connections vc ON vc.id = ea.vendor_connection_id
+	LEFT JOIN LATERAL (` + warmupKnownStandingSQL("ea.id") + `
+	) wh ON true
+	CROSS JOIN LATERAL (
+		SELECT ea.status = 'active' AND EXISTS (
+		           SELECT 1 FROM email_account_errors eae
+		           WHERE eae.email_account_id = ea.id AND eae.resolved_at IS NULL AND eae.severity = 'CRITICAL') AS erroring,
+		       CASE WHEN wh.health_state::text IN ('watch', 'throttled') THEN wh.health_state::text
+		            WHEN wh.health_state::text IN ('quarantined', 'blocked') AND (wh.blocked_until IS NULL OR wh.blocked_until > NOW()) THEN wh.health_state::text
+		            ELSE '' END AS held
+	) m
+	WHERE ea.organization_id = ANY($1::uuid[])
+	  AND ($2 = '' OR position(lower($2) in lower(ea.email)) > 0)
+	  AND (NOT $3 OR ea.status <> 'active' OR m.erroring OR m.held <> '')
+	  AND ($4::timestamp IS NULL OR (ea.created_at, ea.id) < ($4::timestamp, $5::uuid))
+	ORDER BY ea.created_at DESC, ea.id DESC
+	LIMIT $6`
+
+func (r *agencyHomeRepository) Mailboxes(ctx context.Context, q models.AgencyMailboxQuery) ([]models.AgencyMailbox, error) {
+	out := make([]models.AgencyMailbox, 0)
+	if len(q.OrgIDs) == 0 {
+		return out, nil
+	}
+	var before *time.Time
+	if !q.BeforeAt.IsZero() {
+		before = &q.BeforeAt
+	}
+	rows, err := r.db.Query(ctx, agencyMailboxesSQL, q.OrgIDs, q.Search, q.Attention, before, q.BeforeID, q.Limit+1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var m models.AgencyMailbox
+		if err := rows.Scan(&m.ID, &m.OrganizationID, &m.Client, &m.Email, &m.Name, &m.Provider, &m.Status,
+			&m.Erroring, &m.Warmup, &m.WarmupState, &m.Vendor, &m.CampaignLimit, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
 	}
 	return out, rows.Err()
 }

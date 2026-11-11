@@ -107,3 +107,22 @@ func TestArchiveCannotSetTestWorkspaceCategory(t *testing.T) {
 		t.Fatal("workspace imports must not overwrite the instance's test classification")
 	}
 }
+
+func TestAnAgencyVendorLinkArrivesAsTheWorkspacesOwnConnection(t *testing.T) {
+	var table *Table
+	for i := range Tables {
+		if Tables[i].Name == "mailbox_vendor_connections" {
+			table = &Tables[i]
+		}
+	}
+	if table == nil {
+		t.Fatal("mailbox_vendor_connections is not registered")
+	}
+	// The account it names exists only on the source instance, on a fresh insert and over an existing row.
+	if !slices.Contains(table.ResetOnImport, "agency_connection_id") || !slices.Contains(table.ResetColumnsOnOverwrite, "agency_connection_id") {
+		t.Fatalf("agency_connection_id is not reset: import %v, overwrite %v", table.ResetOnImport, table.ResetColumnsOnOverwrite)
+	}
+	if _, ok := ExcludedTables["agency_vendor_connections"]; !ok {
+		t.Fatal("the agency's accounts, which hold the key, must not travel in a workspace archive")
+	}
+}

@@ -40,6 +40,15 @@ type fakeRepo struct {
 	replies  []uuid.UUID
 	advisor  []uuid.UUID
 	inbox    *models.AgencyInboxQuery
+	// mailboxQuery is the last mailbox list asked for; rows is what it answers.
+	mailboxQuery *models.AgencyMailboxQuery
+	rows         []models.AgencyMailbox
+}
+
+func (f *fakeRepo) Mailboxes(_ context.Context, q models.AgencyMailboxQuery) ([]models.AgencyMailbox, error) {
+	f.hit("mailboxes")
+	f.mailboxQuery = &q
+	return f.rows, nil
 }
 
 func (f *fakeRepo) hit(name string) {
@@ -359,5 +368,68 @@ func TestAttentionPutsCriticalFirst(t *testing.T) {
 	}
 	if a := attention(&models.AgencyUsage{Unlimited: true}, nil); len(a) != 0 {
 		t.Fatalf("an unlimited pool raised %v", a)
+	}
+}
+
+func TestMailboxListCoversOnlyClientsWhoseMailboxesTheCallerReads(t *testing.T) {
+	f := newFixture(true)
+	ctx := context.Background()
+	if _, xerr := f.svc.Mailboxes(ctx, uuid.New(), uuid.New(), MailboxFilter{Search: "  alex ", Attention: true}); xerr != nil {
+		t.Fatal(xerr)
+	}
+	q := f.repo.mailboxQuery
+	// Not the inbox-only client, the one the caller is not in, or the one where they are restricted.
+	if len(q.OrgIDs) != 1 || q.OrgIDs[0] != f.full || q.Search != "alex" || !q.Attention || q.Limit != DefaultMailboxLimit {
+		t.Fatalf("query = %+v", q)
+	}
+	// Narrowing to a client the caller cannot list reads nothing; one outside the agency is refused.
+	if _, xerr := f.svc.Mailboxes(ctx, uuid.New(), uuid.New(), MailboxFilter{Clients: []uuid.UUID{f.restricted}}); xerr != nil || len(f.repo.mailboxQuery.OrgIDs) != 0 {
+		t.Fatalf("restricted client: %v, %+v", xerr, f.repo.mailboxQuery)
+	}
+	if _, xerr := f.svc.Mailboxes(ctx, uuid.New(), uuid.New(), MailboxFilter{Clients: []uuid.UUID{uuid.New()}}); xerr == nil || xerr.Identifier != "agency_client_not_found" {
+		t.Fatalf("a workspace outside the agency: got %v", xerr)
+	}
+}
+
+func TestMailboxListPagesAndRefusesBadInput(t *testing.T) {
+	f := newFixture(true)
+	ctx := context.Background()
+	at := time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)
+	f.repo.rows = []models.AgencyMailbox{{ID: uuid.New(), CreatedAt: at}, {ID: uuid.New(), CreatedAt: at.Add(-time.Hour)}, {ID: uuid.New(), CreatedAt: at.Add(-2 * time.Hour)}}
+	page, xerr := f.svc.Mailboxes(ctx, uuid.New(), uuid.New(), MailboxFilter{Limit: 2})
+	if xerr != nil || len(page.Data) != 2 || !page.Pagination.HasMore || page.Pagination.NextCursor == nil {
+		t.Fatalf("page = %+v, %v", page, xerr)
+	}
+	if _, xerr := f.svc.Mailboxes(ctx, uuid.New(), uuid.New(), MailboxFilter{Limit: 2, Cursor: *page.Pagination.NextCursor}); xerr != nil {
+		t.Fatal(xerr)
+	}
+	if q := f.repo.mailboxQuery; !q.BeforeAt.Equal(page.Data[1].CreatedAt) || q.BeforeID != page.Data[1].ID {
+		t.Fatalf("the next page starts at %+v", q)
+	}
+	for _, bad := range []MailboxFilter{{Limit: 201}, {Limit: -1}, {Cursor: "not-a-cursor"}} {
+		if _, xerr := f.svc.Mailboxes(ctx, uuid.New(), uuid.New(), bad); xerr == nil || xerr.Code != errx.BadRequest {
+			t.Fatalf("%+v: got %v", bad, xerr)
+		}
+	}
+	// Someone outside the agency is refused before anything is read.
+	out := newFixture(false)
+	if _, xerr := out.svc.Mailboxes(ctx, uuid.New(), uuid.New(), MailboxFilter{}); xerr == nil || out.repo.calls["mailboxes"] != 0 {
+		t.Fatalf("outsider: %v, calls %v", xerr, out.repo.calls)
+	}
+}
+
+func TestOverviewSaysWhereTheCallerCanManageMailboxes(t *testing.T) {
+	f := newFixture(true)
+	o, xerr := f.svc.Overview(context.Background(), uuid.New(), uuid.New())
+	if xerr != nil {
+		t.Fatal(xerr)
+	}
+	got := map[uuid.UUID]bool{}
+	for _, c := range o.Clients {
+		got[c.OrganizationID] = c.ManageMailboxes
+	}
+	// Only the client the caller administers; reading an inbox or being restricted is not enough.
+	if !got[f.full] || got[f.inboxOnly] || got[f.outsider] || got[f.restricted] {
+		t.Fatalf("manage_mailboxes = %v", got)
 	}
 }
