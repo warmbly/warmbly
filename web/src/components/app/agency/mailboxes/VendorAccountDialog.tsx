@@ -38,11 +38,12 @@ export default function VendorAccountDialog({
     const accountId = account?.id;
     const start = React.useRef(account);
     start.current = account;
-    // One key per opening and per changed form, so a retry of the same submission connects one account.
+    // One key per opening and per form as it stands, name included: sending the same form again is the same
+    // submission, and a changed one is never sent under a key that stood for something else.
     const attempt = React.useRef("");
     React.useEffect(() => {
         attempt.current = crypto.randomUUID();
-    }, [open, accountId, vendorId, fields]);
+    }, [open, accountId, vendorId, fields, label]);
     React.useEffect(() => {
         if (!open) return;
         setVendorId(start.current?.vendor ?? "");

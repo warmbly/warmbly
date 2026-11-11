@@ -6,6 +6,7 @@
 export const CONNECT_RESIZE_MESSAGE = "warmbly:connect:resize";
 /** Posted to the parent after each mailbox connects, with the link's new count. */
 export const CONNECT_CONNECTED_MESSAGE = "warmbly:connect:connected";
+export const CONNECT_IMPORTING_MESSAGE = "warmbly:connect:importing";
 
 export function startConnectResizeReporting(): () => void {
     if (window.parent === window) return () => {};
@@ -20,6 +21,16 @@ export function startConnectResizeReporting(): () => void {
     const ro = new ResizeObserver(post);
     ro.observe(document.body);
     return () => ro.disconnect();
+}
+
+/** A vendor import was started: mailboxes are on their way, none is claimed as connected yet. */
+export function postImporting(mailboxes: number, connected: number) {
+    if (window.parent === window) return;
+    try {
+        window.parent.postMessage({ type: CONNECT_IMPORTING_MESSAGE, mailboxes, connected }, "*");
+    } catch {
+        // same as above
+    }
 }
 
 export function postConnected(connected: number) {

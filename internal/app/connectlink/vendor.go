@@ -188,7 +188,11 @@ func (s *Service) VendorImport(ctx context.Context, link *models.ClientConnectLi
 	if extra := len(ids) - len(emails); extra > 0 {
 		giveBack(extra)
 	}
+	// The stored count, not this request's own arithmetic: another import through the same link may have run beside it.
 	link.MailboxesConnected += len(emails)
+	if fresh, gerr := s.d.Repo.Get(ctx, orgID, link.ID); gerr == nil && fresh != nil {
+		link.MailboxesConnected = fresh.MailboxesConnected
+	}
 	hashed := ipHash(link.ID, in.RemoteIP)
 	for _, email := range emails {
 		use := &models.ClientConnectLinkUse{LinkID: link.ID, Email: email, Provider: string(models.ConnectLinkVendor)}

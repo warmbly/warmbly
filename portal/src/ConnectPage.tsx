@@ -23,6 +23,7 @@ import {
     navigateForSignin,
     openSigninWindow,
     postConnected,
+    postImporting,
     readSigninResult,
     type SigninResult,
     startConnectResizeReporting,
@@ -203,9 +204,11 @@ export function ConnectPage() {
                     onBack={() => setView("choose")}
                     // The link's count is moved on here, not re-read: a link this import filled answers "complete",
                     // which would replace the confirmation the client is reading.
-                    onStarted={(started) =>
-                        qc.setQueryData<ConnectLink>(["connect", token], (prev) => (prev ? { ...prev, connected: started.connected } : prev))
-                    }
+                    onStarted={(started) => {
+                        qc.setQueryData<ConnectLink>(["connect", token], (prev) => (prev ? { ...prev, connected: started.connected } : prev));
+                        // An embedding page is told an import began; "connected" stays for a mailbox that is.
+                        postImporting(started.mailboxes, started.connected);
+                    }}
                 />
             ) : view === "waiting" ? (
                 <div className="cx-state">
