@@ -373,6 +373,8 @@ func TestAKeylessRefusalRecordedByAnOlderReleaseDoesNotStick(t *testing.T) {
 	f.svc.healAgencyLinks(ctx)
 	if f.conns.conns[conn.ID].Status != "invalid" {
 		t.Fatal("a refusal by the vendor was cleared")
+	}
+}
 
 func TestAClientsKeyIsHeldSealedAndReadOnce(t *testing.T) {
 	client := &fakeClient{boxes: []mailvendor.Mailbox{{ID: "m1", Email: "ava@client.test"}}}
