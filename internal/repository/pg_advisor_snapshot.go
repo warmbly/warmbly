@@ -97,7 +97,7 @@ func (r *advisorRepository) loadMailboxes(ctx context.Context, orgID uuid.UUID, 
 			COALESCE(err.n, 0),
 			COALESCE(camp.active, false), COALESCE(camp.tracked, false),
 			ea.send_lifecycle,
-			inb.delivered, inb.arrived, inb.lost_by
+			inb.delivered, inb.arrived, inb.lost_by, bnc.orgs
 		FROM email_accounts ea
 		LEFT JOIN LATERAL (
 			SELECT
@@ -150,6 +150,9 @@ func (r *advisorRepository) loadMailboxes(ctx context.Context, orgID uuid.UUID, 
 			SELECT ` + warmupInboundColumns + ` ` + warmupInboundSQL + `
 			  AND wt.recipient_account_id = ea.id
 		) inb ON true
+		LEFT JOIN LATERAL (
+			SELECT COUNT(DISTINCT s.organization_id) AS orgs` + warmupBouncedFromSQL("wt.recipient_account_id = ea.id") + `
+		) bnc ON true
 		LEFT JOIN LATERAL (
 			-- A mailbox counts as "in an active campaign" on ResolveCampaignSenderPool's terms:
 			-- an enabled sender, a tag match, or the all-active fallback, and never a seed mailbox.
@@ -210,7 +213,7 @@ func (r *advisorRepository) loadMailboxes(ctx context.Context, orgID uuid.UUID, 
 			&m.PoolHealth, &m.PoolHealthScore, &m.PoolHealthReason, &m.PoolBlocked,
 			&m.UnresolvedErrs, &m.InActiveCampaign, &m.TrackedOnMailboxHost,
 			&m.SendLifecycle,
-			&m.WarmupDelivered7d, &m.WarmupArrived7d, &m.WarmupLostBy7d,
+			&m.WarmupDelivered7d, &m.WarmupArrived7d, &m.WarmupLostBy7d, &m.WarmupBouncedBy7d,
 		); err != nil {
 			return nil, err
 		}

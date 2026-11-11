@@ -83,11 +83,15 @@ type AdvisorMailbox struct {
 	WarmupDelivered7d int
 	WarmupArrived7d   int
 	WarmupLostBy7d    int
+	// WarmupBouncedBy7d is how many sender workspaces' warmup mail to this
+	// address bounced as unknown with nothing arriving since.
+	WarmupBouncedBy7d int
 }
 
 // WarmupUnreachable reports a mailbox the pool has stopped drawing as a recipient.
 func (m AdvisorMailbox) WarmupUnreachable() bool {
-	return models.WarmupRecipientUnreachable(m.WarmupDelivered7d, m.WarmupArrived7d, m.WarmupLostBy7d)
+	return models.WarmupRecipientUnreachable(m.WarmupDelivered7d, m.WarmupArrived7d, m.WarmupLostBy7d) ||
+		models.WarmupRecipientBouncedOut(m.WarmupBouncedBy7d)
 }
 
 // SendingCold is true when campaigns can actually pick this mailbox right now.

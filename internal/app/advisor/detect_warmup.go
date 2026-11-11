@@ -45,7 +45,7 @@ func warmupDetectors() []Detector {
 		{
 			Key:      "warmup_mail_not_arriving",
 			Category: models.AdvisorCategoryWarmup,
-			About:    "A mailbox the pool's warmup mail no longer reaches. When none of a week's warmup mail from several workspaces arrives where Warmbly can see it, the pool stops sending to the mailbox, so it receives no warmup until mail gets through again.",
+			About:    "A mailbox the pool's warmup mail no longer reaches. When none of a week's warmup mail from several workspaces arrives where Warmbly can see it, or its address bounces their warmup as unknown, the pool stops sending to the mailbox, so it receives no warmup until mail gets through again.",
 			Run:      detectWarmupMailNotArriving,
 		},
 	}
@@ -68,10 +68,8 @@ func detectWarmupMailNotArriving(s *repository.AdvisorSnapshot) []Finding {
 			EntityLabel: m.Email,
 			Impact:      clampImpact(60 + m.WarmupDelivered7d),
 			Title:       fmt.Sprintf("%s is not receiving warmup mail", m.Email),
-			Detail: fmt.Sprintf(
-				"None of the %d warmup emails other mailboxes sent to %s in the last week arrived where Warmbly could see them. The pool has stopped sending to it, so it gets no warmup until mail reaches it again.",
-				m.WarmupDelivered7d, m.Email),
-			Remedy: "Make sure mail for this address reaches the inbox Warmbly is connected to. It rejoins the pool on its own as soon as one warmup email arrives.",
+			Detail:      notArrivingDetail(m),
+			Remedy:      "Make sure mail for this address reaches the inbox Warmbly is connected to. It rejoins the pool on its own as soon as one warmup email arrives.",
 			Steps: []string{
 				"Check the domain's MX records. A domain with no MX record, or one pointing at another server, never receives mail at this mailbox.",
 				"Send it a test email from an outside account and confirm it lands in the inbox Warmbly syncs.",
@@ -79,12 +77,13 @@ func detectWarmupMailNotArriving(s *repository.AdvisorSnapshot) []Finding {
 				"Open the mailbox's settings in Warmbly and confirm the IMAP server is the one this address's mail is delivered to.",
 			},
 			Evidence: map[string]any{
-				"mailbox":           m.Email,
-				"warmup_delivered":  m.WarmupDelivered7d,
-				"warmup_arrived":    m.WarmupArrived7d,
-				"sender_workspaces": m.WarmupLostBy7d,
-				"window_days":       7,
-				"pool_type":         m.WarmupPoolType,
+				"mailbox":               m.Email,
+				"warmup_delivered":      m.WarmupDelivered7d,
+				"warmup_arrived":        m.WarmupArrived7d,
+				"sender_workspaces":     m.WarmupLostBy7d,
+				"bounced_by_workspaces": m.WarmupBouncedBy7d,
+				"window_days":           7,
+				"pool_type":             m.WarmupPoolType,
 			},
 		})
 	}
@@ -305,4 +304,13 @@ func detectWarmupPoolBlocked(s *repository.AdvisorSnapshot) []Finding {
 		out = append(out, f)
 	}
 	return out
+}
+
+func notArrivingDetail(m repository.AdvisorMailbox) string {
+	if models.WarmupRecipientBouncedOut(m.WarmupBouncedBy7d) {
+		return fmt.Sprintf("Warmup mail from %d other workspaces to %s came back as a hard bounce saying the address does not exist, and nothing has arrived since. The pool has stopped sending to it, so it gets no warmup until mail reaches it again.",
+			m.WarmupBouncedBy7d, m.Email)
+	}
+	return fmt.Sprintf("None of the %d warmup emails other mailboxes sent to %s in the last week arrived where Warmbly could see them. The pool has stopped sending to it, so it gets no warmup until mail reaches it again.",
+		m.WarmupDelivered7d, m.Email)
 }

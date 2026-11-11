@@ -237,9 +237,10 @@ func inboundSharePercent(poolType string) int {
 }
 
 // capPartnerCandidates attaches each candidate's seven-day counts and drops
-// every one that is unreachable or already at its inbound cap for today,
-// before any count or sample is taken from the set, so a thin tier is sized on
-// who can still receive.
+// every one that is unreachable, bounced out or already at its inbound cap for
+// today, before any count or sample is taken from the set, so a thin tier is
+// sized on who can still receive. A bounce from fewer workspaces stays on the
+// candidate as BouncedBy for each sender to apply to itself.
 func (r *warmupRepository) capPartnerCandidates(ctx context.Context, poolType string, cands []models.WarmupPartnerCandidate) ([]models.WarmupPartnerCandidate, error) {
 	if len(cands) == 0 {
 		return cands, nil
@@ -257,11 +258,17 @@ func (r *warmupRepository) capPartnerCandidates(ctx context.Context, poolType st
 	if err != nil {
 		return nil, err
 	}
+	bounced, err := r.bouncedRecipients(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
 	share := inboundSharePercent(poolType)
 	out := cands[:0]
 	for _, c := range cands {
 		w, t := weeks[c.ID], todays[c.ID]
-		if w.unreachable() || max(t.received, t.inflight) >= partnerInboundCap(w.sent, share) {
+		c.BouncedBy = bounced[c.ID]
+		if w.unreachable() || models.WarmupRecipientBouncedOut(len(c.BouncedBy)) ||
+			max(t.received, t.inflight) >= partnerInboundCap(w.sent, share) {
 			continue
 		}
 		c.Sent7d, c.Received7d, c.Junked7d = w.sent, w.received, w.junked
@@ -269,4 +276,82 @@ func (r *warmupRepository) capPartnerCandidates(ctx context.Context, poolType st
 		out = append(out, c)
 	}
 	return out, nil
+}
+
+// warmupBouncedFromSQL selects pool warmup sends to the recipients the
+// predicate on wt.recipient_account_id names that bounced as an unknown address
+// within the bounce window, with no verified arrival at the recipient since,
+// joined to each sender as s.
+func warmupBouncedFromSQL(recipient string) string {
+	return fmt.Sprintf(`
+	FROM warmup_tokens wt
+	JOIN email_accounts s ON s.id = wt.sender_account_id
+	WHERE %s
+	  AND wt.bounced_at >= NOW() - make_interval(days => %d)
+	  AND s.organization_id IS NOT NULL
+	  AND NOT EXISTS (
+	      SELECT 1 FROM warmup_tokens a
+	      WHERE a.recipient_account_id = wt.recipient_account_id AND a.consumed_at > wt.bounced_at)`,
+		recipient, config.WarmupRecipientBounceDays)
+}
+
+var warmupBouncedSQL = `SELECT wt.recipient_account_id, s.organization_id` +
+	warmupBouncedFromSQL("wt.recipient_account_id = ANY($1::uuid[])") + ` GROUP BY 1, 2`
+
+// bouncedRecipients maps each bounced recipient in ids to the sender workspaces it bounced.
+func (r *warmupRepository) bouncedRecipients(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID][]uuid.UUID, error) {
+	rows, err := resultDB(ctx, r.db).Query(ctx, warmupBouncedSQL, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[uuid.UUID][]uuid.UUID)
+	for rows.Next() {
+		var recipient, org uuid.UUID
+		if err := rows.Scan(&recipient, &org); err != nil {
+			return nil, err
+		}
+		out[recipient] = append(out[recipient], org)
+	}
+	return out, rows.Err()
+}
+
+// WarmupRecipientBounced reports whether senderOrg may not mail recipient
+// because its address bounced that workspace's warmup, or enough workspaces'.
+func (r *warmupRepository) WarmupRecipientBounced(ctx context.Context, recipient, senderOrg uuid.UUID) (bool, error) {
+	bounced, err := r.bouncedRecipients(ctx, []uuid.UUID{recipient})
+	if err != nil {
+		return false, err
+	}
+	c := models.WarmupPartnerCandidate{BouncedBy: bounced[recipient]}
+	return c.BouncedFrom(&senderOrg) || models.WarmupRecipientBouncedOut(len(c.BouncedBy)), nil
+}
+
+// RecordWarmupBounce stamps the warmup send a permanent unknown-address DSN in
+// the sender's own mailbox is about. A named failed recipient must be the
+// send's recipient. Reports whether a send was stamped.
+func (r *warmupRepository) RecordWarmupBounce(ctx context.Context, senderAccountID uuid.UUID, originalMessageID, failedRecipient string) (bool, error) {
+	tag, err := resultDB(ctx, r.db).Exec(ctx, `
+		UPDATE warmup_tokens wt SET bounced_at = NOW()
+		FROM email_accounts rcpt
+		WHERE rcpt.id = wt.recipient_account_id
+		  AND wt.sender_account_id = $1
+		  AND wt.sent_message_id <> '' AND btrim(wt.sent_message_id, '<>') = $2
+		  AND wt.bounced_at IS NULL
+		  AND ($3 = '' OR lower(rcpt.email) = lower($3))`,
+		senderAccountID, originalMessageID, failedRecipient)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+// WarmupBounceRecorder records a warmup send's unknown-address bounce.
+type WarmupBounceRecorder interface {
+	RecordWarmupBounce(ctx context.Context, senderAccountID uuid.UUID, originalMessageID, failedRecipient string) (bool, error)
+}
+
+// WarmupBouncedRecipients answers whether a workspace may still mail an address.
+type WarmupBouncedRecipients interface {
+	WarmupRecipientBounced(ctx context.Context, recipient, senderOrg uuid.UUID) (bool, error)
 }
