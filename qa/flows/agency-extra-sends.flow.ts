@@ -1,14 +1,22 @@
 import type { Page } from "@playwright/test";
 
+import { env } from "../lib/env.ts";
 import { expect, test } from "../lib/proof.ts";
 
+// The password the harness signed in with.
+const PASSWORD = env.password;
+
 // Saving a top-up setting needs a recent sign-in; the dashboard asks for the password when the session is older.
+// Either the save goes through or the prompt opens, so whichever comes first is waited for.
 async function confirmIfAsked(page: Page) {
   const dialog = page.getByRole("alertdialog").filter({ hasText: "Confirm it is you" });
-  // The prompt opens once the request has been refused, so it is waited for, not sampled.
-  const asked = await dialog.waitFor({ state: "visible", timeout: 4000 }).then(() => true, () => false);
+  const saved = page.getByRole("button", { name: "Save changes" });
+  const asked = await Promise.race([
+    dialog.waitFor({ state: "visible" }).then(() => true),
+    saved.waitFor({ state: "hidden" }).then(() => false),
+  ]);
   if (asked) {
-    await dialog.getByPlaceholder("Password").fill("password123");
+    await dialog.getByPlaceholder("Password").fill(PASSWORD);
     await dialog.getByPlaceholder("Password").press("Enter");
   }
 }

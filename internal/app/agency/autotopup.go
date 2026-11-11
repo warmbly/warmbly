@@ -329,12 +329,18 @@ func (s *Service) tellStuckAutoTopup(ctx context.Context, a *models.Agency, c *m
 	if c.Kind == models.AgencyAutoTopupAI {
 		what = "AI balance"
 	}
-	s.tellManagers(ctx, a, "An automatic top-up could not be confirmed",
+	told := s.tellManagers(ctx, a, "An automatic top-up could not be confirmed",
 		fmt.Sprintf("We could not confirm with the payment provider whether an automatic top-up of %s for $%.2f went through. "+
 			"No further automatic top-up of %s is made until it is settled, and it is still being checked. "+
 			"If it was paid, what it bought is added as soon as that is confirmed. You can add %s yourself under Agency > Billing meanwhile.",
 			what, float64(c.AmountCents)/100, what, what),
 		map[string]any{"agency_id": a.ID.String(), "auto_topup": "unconfirmed", "kind": string(c.Kind)})
+	// Nobody could be told this time, so the next pass tells them.
+	if !told {
+		if err := s.repo.ClearAutoTopupStuck(ctx, c.ID); err != nil {
+			errs.CaptureException(err)
+		}
+	}
 }
 
 // settleAutoTopup carries one claimed top-up to its end. Money already taken is always honoured;
@@ -474,14 +480,15 @@ func (s *Service) autoTopupOff(ctx context.Context, a *models.Agency, kind model
 }
 
 // tellManagers notifies the agency's owner and admins, in a client workspace when there is one to address it to.
-func (s *Service) tellManagers(ctx context.Context, a *models.Agency, title, body string, meta map[string]any) {
+// It reports false when the people to tell could not be read, so a caller that tells them once can try again.
+func (s *Service) tellManagers(ctx context.Context, a *models.Agency, title, body string, meta map[string]any) bool {
 	if s.notifier == nil {
-		return
+		return true
 	}
 	staff, err := s.repo.ListMembers(ctx, a.ID)
 	if err != nil {
 		errs.CaptureException(err)
-		return
+		return false
 	}
 	var orgID *uuid.UUID
 	if clients, err := s.repo.ListClientOrganizations(ctx, a.ID); err == nil && len(clients) > 0 {
@@ -492,6 +499,7 @@ func (s *Service) tellManagers(ctx context.Context, a *models.Agency, title, bod
 			s.notifier.Notify(ctx, m.UserID, orgID, models.NotifBillingAlert, title, body, "/app/agency/settings/billing", meta)
 		}
 	}
+	return true
 }
 
 // stripeCharger charges packs through Stripe invoices, so each one has an invoice like a pack bought at checkout.

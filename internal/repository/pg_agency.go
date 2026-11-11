@@ -99,6 +99,8 @@ type AgencyRepository interface {
 	FinishAutoTopup(ctx context.Context, id uuid.UUID, status, paymentRef string) (bool, error)
 	// MarkAutoTopupStuck records that the agency was told a pending top-up could not be settled; true the first time only.
 	MarkAutoTopupStuck(ctx context.Context, id uuid.UUID) (bool, error)
+	// ClearAutoTopupStuck takes that record back when nobody could be told, so the next pass tells them.
+	ClearAutoTopupStuck(ctx context.Context, id uuid.UUID) error
 	// AutoTopupUsed is how many top-ups of a kind the period has made or has in flight, and what they come to.
 	AutoTopupUsed(ctx context.Context, agencyID uuid.UUID, kind models.AgencyAutoTopupKind, periodStart time.Time) (int, int64, error)
 	// ClaimPoolAlert raises the period's alert level; false when it was already that high.
@@ -639,6 +641,11 @@ func (r *agencyRepository) MarkAutoTopupStuck(ctx context.Context, id uuid.UUID)
 		return false, err
 	}
 	return tag.RowsAffected() == 1, nil
+}
+
+func (r *agencyRepository) ClearAutoTopupStuck(ctx context.Context, id uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `UPDATE agency_auto_topups SET stuck_notified_at = NULL WHERE id = $1 AND status = 'pending'`, id)
+	return err
 }
 
 func (r *agencyRepository) AutoTopupUsed(ctx context.Context, agencyID uuid.UUID, kind models.AgencyAutoTopupKind, periodStart time.Time) (int, int64, error) {

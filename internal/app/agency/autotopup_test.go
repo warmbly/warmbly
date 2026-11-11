@@ -76,6 +76,8 @@ type topupRepo struct {
 	members  []models.AgencyMember
 	stuck    map[uuid.UUID]bool
 	at       time.Time
+	// membersDown fails the lookup of who to tell.
+	membersDown bool
 }
 
 // clock stamps a claim; tests move it to age one.
@@ -87,6 +89,9 @@ func (r *topupRepo) clock() time.Time {
 }
 
 func (r *topupRepo) ListMembers(context.Context, uuid.UUID) ([]models.AgencyMember, error) {
+	if r.membersDown {
+		return nil, errors.New("members unavailable")
+	}
 	return r.members, nil
 }
 
@@ -185,6 +190,11 @@ func (r *topupRepo) MarkAutoTopupStuck(_ context.Context, id uuid.UUID) (bool, e
 	}
 	r.stuck[id] = true
 	return true, nil
+}
+
+func (r *topupRepo) ClearAutoTopupStuck(_ context.Context, id uuid.UUID) error {
+	delete(r.stuck, id)
+	return nil
 }
 
 func (r *topupRepo) AutoTopupUsed(_ context.Context, _ uuid.UUID, kind models.AgencyAutoTopupKind, period time.Time) (int, int64, error) {
@@ -400,8 +410,15 @@ func TestAutoTopupThatStaysUnsettledIsToldOnceAndNeverGuessed(t *testing.T) {
 	if len(note.titles) != 0 || len(repo.claims) != 1 {
 		t.Fatalf("early: told %v, claims %v", note.titles, repo.statuses())
 	}
-	// Still unsettled much later: the owner is told once, and it stays in flight so nothing else is bought.
+	// Still unsettled much later, but nobody can be looked up to tell: the notice is owed, not spent.
 	s.now = func() time.Time { return now.Add(models.AgencyAutoTopupStuckAfter + time.Minute) }
+	repo.membersDown = true
+	s.autoTopup(ctx, a)
+	if len(note.titles) != 0 || len(repo.stuck) != 0 {
+		t.Fatalf("told %v with nobody to tell, marked %v", note.titles, repo.stuck)
+	}
+	repo.membersDown = false
+	// Then the owner is told once, and it stays in flight so nothing else is bought.
 	for range 3 {
 		s.autoTopup(ctx, a)
 	}
