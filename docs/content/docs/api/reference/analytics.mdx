@@ -27,6 +27,8 @@ Without `campaign_ids` and `folder_ids` the dashboard covers every campaign in t
 
 The filter narrows everything built from campaign sends: `overall_stats` (sends, opens, clicks, replies, bounces, their rates and `active_campaigns`), `daily_trend`, `top_campaigns` and `recent_activity`. It does not narrow `account_health`, `overall_stats.active_accounts` or `capacity_today`, which describe the workspace's mailboxes, or [direct mail](/guides/analytics/#direct-mail), which belongs to no campaign.
 
+`capacity_today` is what the workspace's running campaigns can send today: each mailbox a running campaign sends from, under that campaign's limits (its daily limit, its ramp, and the warmup graduation ceiling when it follows one), counted once at the larger cap when campaigns share it. A mailbox no running campaign uses adds nothing, so `capacity` is `0` while nothing runs.
+
 An id that does not belong to the active organization, or no longer exists, is dropped and never widens the filter: if nothing named belongs to the workspace, every campaign figure is zero. A malformed id, or more than `100` of either, is a `400`. A filtered response echoes what it was computed for in `scope`:
 
 ```json
@@ -418,7 +420,9 @@ A period is a send cohort: it selects the emails sent on its days, from the star
 
 `steps` lists the campaign's email steps in sequence order, the order the steps list returns them. `position` is the step's 1-based number among those email steps, the `N` the canvas shows as `Email N`. It is not the step's own `position` field: action steps are not counted and a deleted step leaves no gap. Match a row to its step by `step_id`.
 
-Each entry in `steps` carries that step's own rates: `open_rate`, `click_rate`, `reply_rate`, `positive_reply_rate` and `bounce_rate` are percentages of that step's `emails_sent`, not of the campaign's, so a follow-up that reached a tenth of the contacts still compares against the first touch. They are `0` while the step has sent nothing. `machine_opens` and `machine_clicks` follow the same rules as their summary counterparts, scoped to the step.
+`open_tracked_sent` and `click_tracked_sent` count the sends that carried the open pixel and tracked links. `open_rate` is `unique_opens` (or `opens`, `total_opens`) as a percentage of `open_tracked_sent`, and `click_rate` is clicks as a percentage of `click_tracked_sent`, so a send made while tracking was off is in neither half of the rate. Both fields appear on the campaign summary, each step, `overall_stats`, each `top_campaigns` entry and each comparison entry. When `emails_sent` is above zero and the tracked count is `0`, tracking was off for every send and the rate is `0` only because there is nothing to divide by: show it as not tracked. A send recorded before these counts existed is counted as tracked when it registered an open or click, or when its campaign tracks now.
+
+Each entry in `steps` carries that step's own rates: `reply_rate`, `positive_reply_rate` and `bounce_rate` are percentages of that step's `emails_sent`, and `open_rate` and `click_rate` of its tracked sends, not of the campaign's, so a follow-up that reached a tenth of the contacts still compares against the first touch. They are `0` while the step has sent nothing. `machine_opens` and `machine_clicks` follow the same rules as their summary counterparts, scoped to the step.
 
 ## Get campaign daily stats
 

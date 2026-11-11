@@ -72,6 +72,8 @@ const (
 
 	// A human reply landed for a campaign contact (org-scoped pulse).
 	EventEmailReplied EventType = "EMAIL_REPLIED"
+	// A bounce or complaint was recorded against a campaign send (org-scoped pulse).
+	EventEmailBounced EventType = "EMAIL_BOUNCED"
 
 	// A website page view landed for an identified contact (org-scoped; the
 	// dashboard refreshes that contact's timeline).
@@ -1193,6 +1195,37 @@ func (p *StreamingPublisher) PublishEmailReplied(ctx context.Context, orgID, use
 		ContactID:    contactID,
 		ContactEmail: contactEmail,
 		SequenceID:   sequenceID,
+	})
+}
+
+// PublishEmailBounced emits an org-scoped EMAIL_BOUNCED pulse when a bounce or
+// complaint is recorded against a campaign send after it went out.
+func (p *StreamingPublisher) PublishEmailBounced(ctx context.Context, orgID, userID, campaignID, contactID, contactEmail, sequenceID string) {
+	if p == nil || p.client == nil {
+		return
+	}
+	p.PublishTrackingEvent(ctx, &TrackingEventPayload{
+		BaseEvent:    BaseEvent{EventType: EventEmailBounced, UserID: userID},
+		OrgID:        orgID,
+		CampaignID:   campaignID,
+		ContactID:    contactID,
+		ContactEmail: contactEmail,
+		SequenceID:   sequenceID,
+	})
+}
+
+// PublishCampaignPaused emits an org-scoped CAMPAIGN_PAUSED pulse for a pause
+// nobody clicked, such as the deliverability breaker.
+func (p *StreamingPublisher) PublishCampaignPaused(ctx context.Context, orgID, userID, campaignID, name string) {
+	if p == nil || p.client == nil {
+		return
+	}
+	p.PublishCampaignEvent(ctx, &CampaignEvent{
+		BaseEvent:  BaseEvent{EventType: EventCampaignPaused, UserID: userID},
+		OrgID:      orgID,
+		CampaignID: campaignID,
+		Name:       name,
+		Status:     "paused",
 	})
 }
 

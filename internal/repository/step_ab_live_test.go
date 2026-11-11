@@ -92,7 +92,7 @@ func TestLiveStepABCountsAttributeToTheLatestStep(t *testing.T) {
 
 	// The reservation records the arm it dispatches, so a send carries it from the start.
 	c6 := lead()
-	if ok, err := NewCampaignProgressRepository(pool).ReserveSend(ctx, f.campaign, c6, intro, uuid.New(), uuid.Nil, true, &models.StepABArm{VariantID: &b}); err != nil || !ok {
+	if ok, err := NewCampaignProgressRepository(pool).ReserveSend(ctx, f.campaign, c6, intro, uuid.New(), uuid.Nil, true, &models.StepABArm{VariantID: &b}, models.SendTracking{}); err != nil || !ok {
 		t.Fatalf("reserve: %v %v", ok, err)
 	}
 	var arm string

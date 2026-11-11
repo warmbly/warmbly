@@ -20,7 +20,8 @@ func (r *analyticsRepository) GetReportCampaignTable(ctx context.Context, orgID 
 			COUNT(CASE WHEN ccp.clicked_at IS NOT NULL THEN 1 END) AS clicks,
 			COUNT(CASE WHEN ccp.replied_at IS NOT NULL THEN 1 END) AS replies,
 			` + positiveReplyCount + `,
-			COUNT(CASE WHEN ccp.bounced_at IS NOT NULL THEN 1 END) AS bounces
+			COUNT(CASE WHEN ccp.bounced_at IS NOT NULL THEN 1 END) AS bounces,
+			` + openTrackedCount + ` AS open_tracked_sent
 		FROM campaign_contact_progress ccp
 		JOIN campaigns c ON c.id = ccp.campaign_id
 		JOIN sequences s ON s.id = ccp.sequence_id AND s.kind = 'email'
@@ -40,12 +41,12 @@ func (r *analyticsRepository) GetReportCampaignTable(ctx context.Context, orgID 
 	for rows.Next() {
 		var c models.ClientReportCampaign
 		var positive int
-		if err := rows.Scan(&c.ID, &c.Name, &c.Status, &c.Sent, &c.Opens, &c.Clicks, &c.Replies, &positive, &c.Bounces); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.Status, &c.Sent, &c.Opens, &c.Clicks, &c.Replies, &positive, &c.Bounces, &c.OpenTrackedSent); err != nil {
 			db.CaptureError(err, "", nil, "scan")
 			return nil, errx.InternalError()
 		}
 		c.Positive = &positive
-		c.OpenRate, c.ReplyRate, c.BounceRate = models.Rate(c.Opens, c.Sent), models.Rate(c.Replies, c.Sent), models.Rate(c.Bounces, c.Sent)
+		c.OpenRate, c.ReplyRate, c.BounceRate = models.Rate(c.Opens, c.OpenTrackedSent), models.Rate(c.Replies, c.Sent), models.Rate(c.Bounces, c.Sent)
 		out = append(out, c)
 	}
 	if err := rows.Err(); err != nil {

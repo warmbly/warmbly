@@ -73,6 +73,13 @@ func (c *readCache[T]) put(key string, v T) {
 	c.putLocked(key, v)
 }
 
+// forget drops key, so the next read computes it again.
+func (c *readCache[T]) forget(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.m, key)
+}
+
 // putLocked stores v and sweeps expired entries so a long-lived process does
 // not keep every campaign it ever planned. Caller holds c.mu.
 func (c *readCache[T]) putLocked(key string, v T) {

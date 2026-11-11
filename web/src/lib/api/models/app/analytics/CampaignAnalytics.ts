@@ -30,6 +30,10 @@ export interface CampaignSummary {
     bounces: number
     unsubscribes: number
     reply_breakdown: ReplyBreakdown
+    // Sends that carried an open pixel and tracked links; open_rate and
+    // click_rate are of these. Absent from a server older than the field.
+    open_tracked_sent?: number
+    click_tracked_sent?: number
     open_rate: number
     click_rate: number
     reply_rate: number
@@ -65,7 +69,11 @@ export interface SequenceStats {
     replies: number
     positive_replies: number
     bounces: number
-    // Percentages of this step's own emails_sent.
+    // Sends that carried an open pixel and tracked links; open_rate and
+    // click_rate are of these. Absent from a server older than the field.
+    open_tracked_sent?: number
+    click_tracked_sent?: number
+    // Percentages of this step's own sends (opens and clicks of its tracked ones).
     open_rate: number
     click_rate: number
     reply_rate: number

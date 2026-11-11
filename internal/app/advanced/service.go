@@ -2227,6 +2227,9 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 					return toErrx(err)
 				}
 			}
+			if s.realtime != nil {
+				s.realtime.PublishEmailBounced(ctx, organizationID.String(), "", req.CampaignID.String(), req.ContactID.String(), req.RecipientEmail, campaignTask.SequenceID.String())
+			}
 		}
 	}
 
@@ -2351,6 +2354,13 @@ func (s *service) evaluateCampaignBreaker(ctx context.Context, orgID, campaignID
 	pauseComplaint := complaintThresh > 0 && complaintRate >= complaintThresh
 	if pauseBounce || pauseComplaint {
 		if err := s.campaignRepo.UpdateStatus(ctx, campaignID, "paused"); err == nil {
+			if s.realtime != nil {
+				userID, name := "", ""
+				if c, cerr := s.campaignRepo.GetByID(ctx, campaignID); cerr == nil && c != nil {
+					userID, name = c.UserID, c.Name
+				}
+				s.realtime.PublishCampaignPaused(ctx, orgID.String(), userID, campaignID.String(), name)
+			}
 			s.emit(ctx, orgID, models.WebhookEventCampaignPaused, map[string]any{
 				"campaign_id":    campaignID.String(),
 				"reason":         "deliverability_auto_pause",
