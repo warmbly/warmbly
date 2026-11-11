@@ -141,7 +141,12 @@ export default function BrandPreview({
                     height={view.height}
                     phone={device === "phone"}
                     dark={mode === "dark"}
-                    url={`${(shownTab === "signin" && signInAddress) || address || "portal.youragency.com"}${PATHS[shownTab]}`}
+                    url={
+                        // Signing in on the main address names the portal it is for, as the real link does.
+                        shownTab === "signin" && signInAddress
+                            ? `${signInAddress}${PATHS.signin}${address ? `?portal=${address}` : ""}`
+                            : `${address || "portal.youragency.com"}${PATHS[shownTab]}`
+                    }
                 >
                     {shownTab === "signin" ? (
                         <PortalSignIn brand={named} scope={mode} contained>
