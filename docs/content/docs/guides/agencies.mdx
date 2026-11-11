@@ -129,9 +129,17 @@ On Agency Pro, each client workspace gets its own reserved worker, so its mailbo
 - Up to 20 client workspaces of one agency hold a reserved worker at a time: the 20 that joined the agency first among those with a mailbox. Clients beyond that get every other Agency Pro feature, and Warmbly still places their mailboxes away from other customers where it can, but without a worker of their own. When a client with a reserved worker leaves, the next one in line gets it.
 - Moving to Agency, detaching a client, or the plan ending releases the client's worker. Its mailboxes stay where they are until they are moved for another reason.
 
+### Switching plans
+
+Owners and admins move between Agency and Agency Pro, or between monthly and annual billing, under **Agency > Billing**. Each plan shows what the switch would bill before you confirm it. The change is prorated: you pay or are credited the difference for the rest of the billing period on your next invoice, and Stripe bills an interval change right away. Every client workspace has the new plan at once.
+
+Moving to a smaller pool is refused while the current period has already used more sends than that pool and its top-ups hold; switch once the period renews. A plan [arranged directly](#a-plan-arranged-directly) is changed by whoever arranged it, not here.
+
 ### Top-ups and payment
 
 When the pool runs low, buy a **top-up pack** under **Agency > Billing**: 50,000 more sends, $85 on Agency or $60 on Agency Pro. A pack is a one-off payment, added to the current period's pool, and does not carry into the next period. A pack that is fully refunded leaves the pool.
+
+Like every Warmbly checkout, the agency plan, top-up packs and AI balance purchases ask for your company's legal name and billing address, and for its VAT or other business tax ID if it has one. Prices exclude taxes.
 
 Owners and admins manage the plan, top-ups, AI balance purchases, invoices and payment method. **Invoices and payment** opens the billing portal. If a payment fails, client workspaces keep the plan while Stripe retries; if the subscription ends, they keep it until a few days after the period it paid for, then go back to their own plans.
 

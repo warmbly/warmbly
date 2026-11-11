@@ -1788,6 +1788,8 @@ func Run(
 				agencyRoutes.GET("/:agencyId/inbox/messages/:messageId", inbox, h.GetAgencyInboxMessage)
 				// Checkout, top-ups and the portal open a browser page, so they stay with a session.
 				agencyRoutes.POST("/:agencyId/billing/checkout", sessionOnly, middleware.RequireFreshAuth(), m.IdempotencyMiddleware(), h.AgencyCheckout)
+				agencyRoutes.GET("/:agencyId/billing/change/preview", sessionOnly, h.PreviewAgencyPlanChange)
+				agencyRoutes.POST("/:agencyId/billing/change", sessionOnly, middleware.RequireFreshAuth(), m.IdempotencyMiddleware(), h.ChangeAgencyPlan)
 				agencyRoutes.POST("/:agencyId/billing/topup", sessionOnly, middleware.RequireFreshAuth(), m.IdempotencyMiddleware(), h.AgencyTopup)
 				agencyRoutes.POST("/:agencyId/billing/ai-topup", sessionOnly, middleware.RequireFreshAuth(), m.IdempotencyMiddleware(), h.AgencyAITopup)
 				agencyRoutes.POST("/:agencyId/billing/portal", sessionOnly, middleware.RequireFreshAuth(), h.AgencyPortal)

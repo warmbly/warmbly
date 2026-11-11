@@ -695,7 +695,7 @@ The [agency](/guides/agencies/) routes answer these codes.
 | `invalid_monthly_ai_limit` | 400 | `monthly_ai_limit_usd` is below $0 or above $50,000, or is not a number |
 | `invalid_ai_amount` | 400 | `amount_usd` is outside $1 to $5,000 for a move into a client, or $5 to $5,000 for an AI balance purchase |
 | `agency_plan_unavailable` | 400 | The plan is not an agency plan, or has no price for that interval yet |
-| `agency_no_subscription` | 400 | A top-up, an AI balance purchase or the billing portal before the agency has a plan |
+| `agency_no_subscription` | 400 | A top-up, an AI balance purchase, a plan switch or the billing portal before the agency has a plan, or a plan switch while its subscription is not active |
 | `agency_pool_unlimited` | 400 | A top-up on a plan with no send pool cap |
 | `invalid_cursor` | 400 | `GET /agency/:agencyId/inbox` was given a `cursor` this API did not issue. Start again without one |
 | `invalid_limit` | 400 | `GET /agency/:agencyId/inbox` was given a `limit` outside 1 to 100 |
@@ -711,7 +711,10 @@ The [agency](/guides/agencies/) routes answer these codes.
 | `agency_client_not_found` | 404 | The workspace is not one of this agency's clients, including an `organization_id` on the agency inbox routes |
 | `agency_client_taken` | 409 | The workspace already belongs to an agency |
 | `agency_client_has_subscription` | 409 | The workspace pays for its own plan. Cancel it in the workspace's billing first |
-| `agency_already_subscribed` | 409 | The agency already has a plan; change it in the billing portal |
+| `agency_already_subscribed` | 409 | The agency already has a plan; switch it with `POST /agency/:agencyId/billing/change` |
+| `agency_plan_unchanged` | 409 | A plan switch to the plan and billing period the agency is already on |
+| `agency_plan_preview_expired` | 409 | The preview a plan switch was confirmed from no longer holds: `proration_date` is more than 30 minutes old, in the future or before the current billing period, or the subscription is no longer on `from_price_id`. Preview the switch again |
+| `agency_pool_exceeds_plan` | 409 | A switch to a plan whose send pool, with this period's top-ups, is smaller than what the period has already used. Switch after the period renews |
 | `agency_billed` | 409 | `POST /subscription/checkout` on a client workspace, whose plan comes from its agency |
 | `agency_leave_agency_owner` | 409 | `POST /organization/agency/leave` on a workspace whose owner also owns the agency. Detach it with `DELETE /agency/:agencyId/clients/:orgId` instead |
 | `agency_billing_disabled` | 503 | The instance does not bill agencies (`BILLING_PROVIDER=none`); every agency feature is already available. Also the answer to moving or buying AI balance where AI is not charged |

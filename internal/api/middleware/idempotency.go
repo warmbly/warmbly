@@ -15,12 +15,42 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/app/idempotency"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/models"
 )
 
 const (
 	IdempotencyKeyHeader      = "Idempotency-Key"
 	IdempotencyReplayedHeader = "X-Idempotent-Replayed"
 )
+
+// routeAgencyID is the agency an agency route names; the handler behind it still checks the caller belongs to it.
+func routeAgencyID(c *gin.Context) *uuid.UUID {
+	id, err := uuid.Parse(c.Param("agencyId"))
+	if err != nil {
+		return nil
+	}
+	return &id
+}
+
+// AgencyMembers reads one staff row; satisfied by repository.AgencyRepository.
+type AgencyMembers interface {
+	GetMember(ctx context.Context, agencyID, userID uuid.UUID) (*models.AgencyMember, error)
+}
+
+// onAgencyStaff reports whether a session caller is on the staff of the agency its route names.
+// Routes that name no agency, and agency keys (held to their agency elsewhere), pass.
+func (h *Handler) onAgencyStaff(c *gin.Context) (bool, error) {
+	agencyID := routeAgencyID(c)
+	if agencyID == nil || h.AgencyMembers == nil || GetAgencyKeyAgencyID(c) != nil {
+		return true, nil
+	}
+	userID, err := GetUserUUID(c)
+	if err != nil {
+		return false, nil
+	}
+	m, err := h.AgencyMembers.GetMember(c.Request.Context(), *agencyID, userID)
+	return m != nil, err
+}
 
 // IdempotencyMiddleware implements Stripe-style retry safety for mutating API
 // requests. It is opt-in per request via Idempotency-Key and scoped by
@@ -43,12 +73,26 @@ func (h *Handler) IdempotencyMiddleware() gin.HandlerFunc {
 			return
 		}
 
+		// An agency's recorded answers are for its staff: checked before a key is claimed or replayed.
+		if staff, err := h.onAgencyStaff(c); err != nil {
+			errx.Handle(c, errx.InternalError())
+			c.Abort()
+			return
+		} else if !staff {
+			errx.Handle(c, errx.NewWithIdentifier(errx.NotFound, "agency_not_found", "That agency does not exist or you are not part of it."))
+			c.Abort()
+			return
+		}
+
 		var scope idempotency.Scope
 		switch orgID, agencyID := GetOrganizationID(c), GetAgencyKeyAgencyID(c); {
 		case orgID != nil:
 			scope = idempotency.OrgScope(*orgID)
 		case agencyID != nil:
 			scope = idempotency.AgencyScope(*agencyID)
+		case routeAgencyID(c) != nil:
+			// Agency staff with no workspace selected: the agency the route names is the scope.
+			scope = idempotency.AgencyScope(*routeAgencyID(c))
 		default:
 			errx.Handle(c, errx.New(errx.BadRequest, "Idempotency-Key requires an organization context"))
 			c.Abort()

@@ -390,6 +390,8 @@ func main() {
 	// A portal session is held to its agency's clients; sign-in on the main address hands a portal its session.
 	var portalHandoffService *portalhandoff.Service
 	var portalClients middleware.PortalClients
+	// agencyMembers holds keyed requests on agency routes to the agency's staff.
+	var agencyMembers middleware.AgencyMembers
 	// instanceSettings and the health registry are built after the handler
 	// dependencies, so the pool is hoisted out of the connection block.
 	var instanceSettings instancesettings.Service
@@ -1529,6 +1531,7 @@ func main() {
 		tokenService.WirePortalResolver(portals.Binding)
 		portalHandoffService = portalhandoff.NewService(portalhandoff.RedisStore{Cache: cache}, portals, tokenService, userRepostory)
 		portalClients = middleware.NewPortalClientCache(repository.NewAgencyRepository(primaryDB.Pool))
+		agencyMembers = repository.NewAgencyRepository(primaryDB.Pool)
 		go jobs.NewFormsDomainSweep(organizationRepoForHandler, customHosts).WithPortals(brandRepository, brandService).Start(ctx, time.Hour)
 		// Behind a Cloudflare for SaaS zone of their own, verified agency portal domains are registered there as they verify.
 		portalEdge := edgehost.Open(repository.NewEdgeHostnameRepository(primaryDB.Pool, repository.EdgePortal),
@@ -2893,6 +2896,7 @@ func main() {
 		PoolLinkService:     poolLinkService,
 		AgencyKeys:          agencyKeyService,
 		PortalClients:       portalClients,
+		AgencyMembers:       agencyMembers,
 	}
 	if fleetNodeService != nil {
 		m.NodeCredentials = fleetNodeService
