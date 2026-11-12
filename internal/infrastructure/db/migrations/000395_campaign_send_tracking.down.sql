@@ -1,4 +1,7 @@
 -- Refuse rather than discard which sends carried tracking; the rates read it and nothing can rebuild it.
+-- The lock holds off a send recording its tracking between the check and the drop.
+LOCK TABLE campaign_contact_progress IN SHARE ROW EXCLUSIVE MODE;
+
 DO $$
 DECLARE
     recorded boolean;
