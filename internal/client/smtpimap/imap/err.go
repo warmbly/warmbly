@@ -216,7 +216,7 @@ var loginRefusedPhrases = []string{
 }
 
 // A refusal worded as temporary is the server saying "not now", which the loop rides out.
-var loginTemporaryPhrases = []string{"temporar", "try again", "later", "too many", "unavailable", "busy", "maintenance"}
+var loginTemporaryPhrases = []string{"temporar", "try again", "later", "too many", "unavailable", "busy", "maintenance", "timed out", "timeout"}
 
 func loginRefusedText(text string) bool {
 	lower := strings.ToLower(strings.Join(strings.Fields(text), " "))

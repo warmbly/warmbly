@@ -116,13 +116,13 @@ func (a *Agent) RequestReload(mailbox uuid.UUID) {
 	a.missing[mailbox] = struct{}{}
 }
 
-// takeMissing drains up to maxMissingPerBeat requested mailboxes.
-func (a *Agent) takeMissing() []uuid.UUID {
+// takeMissing drains up to limit requested mailboxes, all of them when limit is 0.
+func (a *Agent) takeMissing(limit int) []uuid.UUID {
 	a.missingMu.Lock()
 	defer a.missingMu.Unlock()
-	out := make([]uuid.UUID, 0, min(len(a.missing), maxMissingPerBeat))
+	out := make([]uuid.UUID, 0, len(a.missing))
 	for id := range a.missing {
-		if len(out) == maxMissingPerBeat {
+		if limit > 0 && len(out) == limit {
 			break
 		}
 		out = append(out, id)
@@ -206,16 +206,19 @@ func paceFrom(livenessSeconds int) time.Duration {
 // reloadBeat beats with the boot flag and the mailboxes asked for since the last acknowledged beat.
 // A backend that has not said it reloads by id gets the boot flag instead, its only way to re-ship.
 func (a *Agent) reloadBeat(ctx context.Context, bootPending bool) *models.NodeHeartbeatReply {
-	missing := a.takeMissing()
+	byID := a.reloadsByID.Load()
 	booted := bootPending
-	var named []uuid.UUID
-	if a.reloadsByID.Load() {
+	var missing, named []uuid.UUID
+	if byID {
+		missing = a.takeMissing(maxMissingPerBeat)
 		named = missing
-	} else if len(missing) > 0 {
+	} else if missing = a.takeMissing(0); len(missing) > 0 {
+		// One full reload covers every pending mailbox.
 		booted = true
 	}
 	reply := a.beatWith(ctx, booted, false, named)
-	if reply == nil {
+	// A lost beat, or names sent to a backend that no longer reloads by id (a rollback), are asked for again.
+	if reply == nil || len(named) > 0 && !reply.ReloadsByID {
 		a.returnMissing(missing)
 	}
 	return reply

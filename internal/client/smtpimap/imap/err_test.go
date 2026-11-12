@@ -265,15 +265,16 @@ func TestLoginErrorKeepsMissingMailboxTextOutOfFolderClasses(t *testing.T) {
 func TestLoginErrorCodelessRefusalDialects(t *testing.T) {
 	c := &Client{AuthType: models.AuthPlain}
 	for text, want := range map[string]errx.MailErrorCode{
-		"authentication failed":                   errx.MailErrorCodeInvalidCredentials,
-		"Authentication failed.":                  errx.MailErrorCodeInvalidCredentials,
-		"LOGIN failed.":                           errx.MailErrorCodeInvalidCredentials,
-		"Login failed.":                           errx.MailErrorCodeInvalidCredentials,
-		"Invalid user name or password.":          errx.MailErrorCodeInvalidCredentials,
-		"Logon failure: unknown user name":        errx.MailErrorCodeInvalidCredentials,
-		"Temporary authentication failure.":       errx.MailErrorCodeImapUnknown,
-		"Authentication failed, try again later.": errx.MailErrorCodeImapUnknown,
-		"internal server error":                   errx.MailErrorCodeImapUnknown,
+		"authentication failed":                       errx.MailErrorCodeInvalidCredentials,
+		"Authentication failed.":                      errx.MailErrorCodeInvalidCredentials,
+		"LOGIN failed.":                               errx.MailErrorCodeInvalidCredentials,
+		"Login failed.":                               errx.MailErrorCodeInvalidCredentials,
+		"Invalid user name or password.":              errx.MailErrorCodeInvalidCredentials,
+		"Logon failure: unknown user name":            errx.MailErrorCodeInvalidCredentials,
+		"Temporary authentication failure.":           errx.MailErrorCodeImapUnknown,
+		"Authentication failed, try again later.":     errx.MailErrorCodeImapUnknown,
+		"internal server error":                       errx.MailErrorCodeImapUnknown,
+		"Authentication failed: connection timed out": errx.MailErrorCodeImapUnknown,
 	} {
 		got := c.loginError(&goimap.Error{Type: goimap.StatusResponseTypeNo, Text: text})
 		if got.Code != want {

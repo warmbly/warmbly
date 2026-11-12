@@ -197,17 +197,26 @@ func (s *emailService) runWorkerReloads(workerID uuid.UUID, r *workerReload) {
 		s.reloadMu.Unlock()
 
 		ctx, cancel := context.WithTimeout(context.Background(), workerReloadTimeout)
-		s.reloadWorkerAccounts(ctx, workerID, full, ids)
+		unreached := s.reloadWorkerAccounts(ctx, workerID, full, ids)
 		cancel()
+		// A pass that ran out of time leaves the rest for the next one.
+		if len(unreached) > 0 {
+			s.reloadMu.Lock()
+			for _, id := range unreached {
+				r.ids[id] = struct{}{}
+			}
+			s.reloadMu.Unlock()
+		}
 	}
 }
 
 // reloadWorkerAccounts publishes the active mailboxes assigned to workerID back onto it: all of them, or those in only.
-func (s *emailService) reloadWorkerAccounts(ctx context.Context, workerID uuid.UUID, full bool, only map[uuid.UUID]struct{}) {
+// It returns the mailboxes it did not get to before ctx ran out.
+func (s *emailService) reloadWorkerAccounts(ctx context.Context, workerID uuid.UUID, full bool, only map[uuid.UUID]struct{}) []uuid.UUID {
 	assigned, err := s.emailRepository.ListActiveAccountsByWorker(ctx, workerID)
 	if err != nil {
 		log.Warn().Err(err).Str("worker_id", workerID.String()).Msg("worker boot reload: list accounts failed")
-		return
+		return nil
 	}
 	ids := assigned
 	if !full {
@@ -220,19 +229,26 @@ func (s *emailService) reloadWorkerAccounts(ctx context.Context, workerID uuid.U
 		}
 	}
 	loaded := 0
-	for _, id := range ids {
+	var unreached []uuid.UUID
+	for i, id := range ids {
 		if ctx.Err() != nil {
+			unreached = append(unreached, ids[i:]...)
 			break
 		}
 		if err := s.LoadAccountOntoWorker(ctx, id); err != nil {
+			if ctx.Err() != nil {
+				unreached = append(unreached, ids[i:]...)
+				break
+			}
 			log.Warn().Err(err).Str("email_id", id.String()).Str("worker_id", workerID.String()).Msg("worker boot reload: load account failed")
 			continue
 		}
 		loaded++
 	}
 	if len(ids) > 0 {
-		log.Info().Str("worker_id", workerID.String()).Bool("full", full).Int("loaded", loaded).Int("requested", len(ids)).Int("assigned", len(assigned)).Msg("worker boot reload: mailboxes re-shipped")
+		log.Info().Str("worker_id", workerID.String()).Bool("full", full).Int("loaded", loaded).Int("requested", len(ids)).Int("unreached", len(unreached)).Int("assigned", len(assigned)).Msg("worker boot reload: mailboxes re-shipped")
 	}
+	return unreached
 }
 
 // loadAccountBestEffort loads a freshly onboarded account onto its worker without
