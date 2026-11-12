@@ -5,7 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/config"
+	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
@@ -135,7 +137,9 @@ func TestAPendingReportIsResentDuringTheRetryBackoff(t *testing.T) {
 		return nil
 	}}
 	// A channel was closed, its report refused, and the provider is in backoff.
-	w.push.retryAt = time.Now().Add(time.Hour)
+	w.ID = uuid.New()
+	pushRefusals.Store(w.ID, pushRefusal{retryAt: time.Now().Add(time.Hour), reported: time.Now()})
+	t.Cleanup(func() { pushRefusals.Delete(w.ID) })
 	w.push.unsent.Store(true)
 	w.maintainPush(t.Context())
 	if reports != 1 || sent[0] != nil || w.push.unsent.Load() {
@@ -144,5 +148,45 @@ func TestAPendingReportIsResentDuringTheRetryBackoff(t *testing.T) {
 	w.maintainPush(t.Context())
 	if reports != 1 {
 		t.Fatalf("a report already taken was sent again: %d", reports)
+	}
+}
+
+func TestPushRetryWaitsLongerOnARefusalAndHonoursRetryAfter(t *testing.T) {
+	now := time.Now()
+	fail := func(f errx.SendFailure) error {
+		return errx.ProviderCall("op", "", errx.WithSendFailure(errx.ErrMailSendRejected("x"), f))
+	}
+	if got := pushRetryAt(errors.New("dial tcp: timeout"), now); !got.Equal(now.Add(pushRetryAfter)) {
+		t.Fatalf("transport failure retries at %v", got.Sub(now))
+	}
+	if got := pushRetryAt(fail(errx.SendFailure{Status: 400, Disposition: errx.SendPermanent}), now); !got.Equal(now.Add(pushRefusedRetryAfter)) {
+		t.Fatalf("a refused topic retries at %v", got.Sub(now))
+	}
+	if got := pushRetryAt(fail(errx.SendFailure{Status: 503, Disposition: errx.SendRetry}), now); !got.Equal(now.Add(pushRetryAfter)) {
+		t.Fatalf("an outage retries at %v", got.Sub(now))
+	}
+	later := now.Add(2 * time.Hour)
+	if got := pushRetryAt(fail(errx.SendFailure{Status: 429, Disposition: errx.SendThrottle, RetryAt: &later}), now); !got.Equal(later) {
+		t.Fatalf("Retry-After cut short: %v", got.Sub(now))
+	}
+	far := now.Add(30 * 24 * time.Hour)
+	if got := pushRetryAt(fail(errx.SendFailure{Status: 429, Disposition: errx.SendThrottle, RetryAt: &far}), now); !got.Equal(now.Add(pushRetryAfterMax)) {
+		t.Fatalf("Retry-After not bounded: %v", got.Sub(now))
+	}
+}
+
+func TestARebuiltMailboxKeepsItsPushBackoff(t *testing.T) {
+	id := uuid.New()
+	t.Cleanup(func() { pushRefusals.Delete(id) })
+	want := &models.AddWorkerEmailPushData{GmailTopic: "projects/p/topics/t"}
+	pushRefusals.Store(id, pushRefusal{target: pushTarget(want), retryAt: time.Now().Add(time.Hour), reported: time.Now()})
+	// A fresh WMail with no Google client: it must not reach the provider while the backoff holds.
+	w := &WMail{ID: id, EmailType: models.InboxProviderGoogle, GoogleData: &GoogleData{}, wake: make(chan struct{}, 1)}
+	w.ApplyPush(want)
+	w.maintainPush(t.Context())
+
+	other := &models.AddWorkerEmailPushData{GmailTopic: "projects/p/topics/other"}
+	if pushTarget(other) == pushTarget(want) {
+		t.Fatal("a changed topic is not a new target")
 	}
 }
