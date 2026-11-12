@@ -7,7 +7,7 @@ BEGIN
     LOCK TABLE leads IN ACCESS EXCLUSIVE MODE;
     IF EXISTS (SELECT 1 FROM lead_searches WHERE provider = 'scavio')
         OR EXISTS (SELECT 1 FROM leads WHERE provider = 'scavio') THEN
-        RAISE EXCEPTION 'lead finder holds Scavio searches or leads, written after 000395; roll forward instead of downgrading past it';
+        RAISE EXCEPTION 'lead finder holds Scavio searches or leads, written after 000400; roll forward instead of downgrading past it';
     END IF;
 END $$;
 
