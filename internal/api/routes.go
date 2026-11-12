@@ -2230,6 +2230,8 @@ func Run(
 		// are tightly coupled to user/org context; a dedicated bit
 		// can be carved later if mailbox-specific actions land.
 		adminRoutes.GET("/mailboxes", middleware.RequireAdminPermission(models.AdminPermViewUsers), h.AdminSearchMailboxes)
+		// A domain owner asking for every mailbox on their domains to go, across workspaces.
+		adminRoutes.POST("/mailboxes/remove", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminRemoveMailboxes)
 
 		// Campaign Management
 		adminRoutes.GET("/campaigns", middleware.RequireAdminPermission(models.AdminPermViewCampaigns), h.AdminSearchCampaigns)

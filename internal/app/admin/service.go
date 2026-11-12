@@ -17,6 +17,7 @@ import (
 type AdminService interface {
 	// Mailbox admin
 	SearchMailboxes(ctx context.Context, search *models.AdminMailboxSearch) (*models.AdminMailboxesResult, *errx.Error)
+	MailboxesOnDomains(ctx context.Context, domains []string, limit int) ([]models.AdminMailboxTarget, int, *errx.Error)
 
 	// User Management
 	SearchUsers(ctx context.Context, search *models.AdminUserSearch) (*models.AdminUsersResult, *errx.Error)
@@ -185,6 +186,15 @@ func (s *adminService) SearchMailboxes(ctx context.Context, search *models.Admin
 		return nil, errx.New(errx.Internal, "failed to search mailboxes")
 	}
 	return result, nil
+}
+
+func (s *adminService) MailboxesOnDomains(ctx context.Context, domains []string, limit int) ([]models.AdminMailboxTarget, int, *errx.Error) {
+	targets, total, err := s.repo.MailboxesOnDomains(ctx, domains, limit)
+	if err != nil {
+		errs.CaptureException(err)
+		return nil, 0, errx.New(errx.Internal, "failed to list mailboxes")
+	}
+	return targets, total, nil
 }
 
 func (s *adminService) SearchUsers(ctx context.Context, search *models.AdminUserSearch) (*models.AdminUsersResult, *errx.Error) {
