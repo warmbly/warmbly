@@ -17,6 +17,8 @@ const (
 	// One pass stays well inside a request timeout; the caller repeats until nothing remains.
 	adminRemovalBatch   = 100
 	adminRemovalMaxSkip = 1000
+	// A preview deletes nothing, so it lists far more of the exact targets than a removing pass takes.
+	adminRemovalPreview = 1000
 )
 
 // Shared mailbox providers: nobody owns these domains, so a domain-owner removal never names one.
@@ -63,7 +65,11 @@ func (h *Handler) AdminRemoveMailboxes(c *gin.Context) {
 	if skip == nil {
 		skip = []uuid.UUID{}
 	}
-	targets, total, xerr := h.AdminService.MailboxesOnDomains(ctx, domains, skip, adminRemovalBatch)
+	limit := adminRemovalBatch
+	if req.DryRun {
+		limit = adminRemovalPreview
+	}
+	targets, total, xerr := h.AdminService.MailboxesOnDomains(ctx, domains, skip, limit)
 	if xerr != nil {
 		errx.JSON(c, xerr)
 		return
