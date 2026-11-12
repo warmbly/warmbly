@@ -2,9 +2,9 @@
 
 This root prepares one ARM `t4g.small` per worker in `us-east-1`, each with an
 encrypted 16 GiB gp3 disk, static IPv4 address and pinned worker image. Unlimited
-CPU credits keep a busy worker at full speed and bill CPU time above the 20%
-baseline. Watch `CPUSurplusCreditsCharged`: a worker that runs above baseline
-all day costs less as a larger instance or with fewer mailboxes.
+CPU credits keep a busy worker at full speed: a burst above the 20% baseline
+spends earned credits first, and only CPU time beyond them is billed. Watch
+`CPUSurplusCreditsCharged` to see what that costs.
 
 ```sh
 terraform -chdir=deploy/terraform/aws/workers init \
