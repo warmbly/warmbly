@@ -212,7 +212,7 @@ warmblyctl admin api POST /admin/mailboxes/remove --server laptop \
   --data @remove.json --write --confirm 'POST /admin/mailboxes/remove'
 ```
 
-Run it with `dry_run` first and check `matched` and the listed mailboxes. Each pass removes at most 100 mailboxes and reports `remaining`; repeat it until `remaining` is `0`. A mailbox that fails keeps its row and carries an `error` in the response; put its `id` in `skip` on the next pass so the rest still progress, and `remaining` then counts only the mailboxes not skipped.
+Run it with `dry_run` first and check `matched` and the listed mailboxes. Each pass removes at most 100 mailboxes and reports `remaining`; repeat it until `remaining` is `0`. A mailbox that fails keeps its row and carries an `error` in the response; put its `id` in `skip` on the next pass so the rest still progress, and `remaining` then counts only the mailboxes not skipped. A skipped mailbox is still there when `remaining` reaches `0`: fix what its `error` names, then run a pass without it in `skip`. `skip` holds at most 1,000 ids.
 
 ### JSON, redaction and exit codes
 
