@@ -292,6 +292,10 @@ var (
 		"The email address or password is incorrect. Please check your credentials and try again.",
 		MailErrorResolveMethodReload,
 	)
+	// ErrMailCredentialsRefused is a sign-in the server refused without a response code; detail is its own words.
+	ErrMailCredentialsRefused = func(detail string) *MailError {
+		return MError(MailErrorCritical, MailErrorCodeInvalidCredentials, fmt.Sprintf("The mail server refused the sign-in. The address or password is wrong, or the mailbox no longer exists on the server. The server said: %s", detail), MailErrorResolveMethodReload)
+	}
 	// ErrMailWrongServer is credentials-class because Update credentials is where the host is fixed; detail is the server's own words.
 	ErrMailWrongServer = func(detail string) *MailError {
 		return MError(MailErrorCritical, MailErrorCodeInvalidCredentials, fmt.Sprintf("%s The server said: %s", MailWrongServerHint, detail), MailErrorResolveMethodReload)

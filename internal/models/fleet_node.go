@@ -150,6 +150,9 @@ type NodeHeartbeat struct {
 	// mailboxes in memory only, so the backend reloads them right away instead
 	// of leaving it to the reconciler's next pass.
 	Booted bool `json:"booted,omitempty"`
+	// MissingMailboxes names mailboxes this worker was asked to use but does not hold, so the backend
+	// re-ships just those. Sent only to a backend whose reply set ReloadsByID; older ones get Booted.
+	MissingMailboxes []uuid.UUID `json:"missing_mailboxes,omitempty"`
 	// Stopping is set on the farewell beat, so the row goes inactive at once
 	// rather than staying selectable until the beat ages out.
 	Stopping bool `json:"stopping,omitempty"`
@@ -177,4 +180,6 @@ type NodeHeartbeatReply struct {
 	// EnvRevision is the revision of the env file this node should have, set
 	// only for a node that reported EnvRefresh.
 	EnvRevision string `json:"env_revision,omitempty"`
+	// ReloadsByID says this backend re-ships the mailboxes a beat names in MissingMailboxes.
+	ReloadsByID bool `json:"reloads_by_id,omitempty"`
 }

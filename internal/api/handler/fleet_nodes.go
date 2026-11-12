@@ -217,14 +217,11 @@ func (h *Handler) FleetHeartbeat(c *gin.Context) {
 
 	// A worker that just booted holds no mailboxes: they live in memory only.
 	// Reload them now instead of leaving it to the reconciler's next pass,
-	// during which every send to it would fail with "not found".
-	if beat.Booted && beat.Role == models.NodeRoleWorker && h.EmailService != nil {
-		// Off the request: the reload publishes one ADD_EMAIL per mailbox.
-		go func(id uuid.UUID) {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-			defer cancel()
-			h.EmailService.ReloadWorkerAccounts(ctx, id)
-		}(beat.NodeID)
+	// during which every send to it would fail with "not found". A worker that
+	// was asked for mailboxes it does not hold names them, and gets just those.
+	if beat.Role == models.NodeRoleWorker && h.EmailService != nil {
+		h.EmailService.RequestWorkerReload(beat.NodeID, beat.Booted, beat.MissingMailboxes)
+		reply.ReloadsByID = true
 	}
 
 	if beat.EnvRefresh {

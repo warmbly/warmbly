@@ -214,6 +214,8 @@ export default function AddressesPage() {
         [emailsData.emails],
     );
     const cloudChecking = authConfigLoading || cloud.loading || cloud.refreshing;
+    // A background refresh keeps the last answer on screen; only a first load has nothing to show yet.
+    const cloudInitial = authConfigLoading || cloud.loading;
     const cloudRemovalPending = cloudChecking || authConfig.isError || cloud.unavailable;
     const statuses = useAccountStatuses(visibleEmailIds, {
         enabled: !cloudChecking,
@@ -222,8 +224,8 @@ export default function AddressesPage() {
     // Coerce to an array defensively: a wrong-shape (non-array) response must
     // never reach a `for…of`, which would throw "{} is not iterable".
     const accountStatuses = useMemo(
-        () => (!cloudChecking && Array.isArray(statuses.data) ? statuses.data : []),
-        [cloudChecking, statuses.data],
+        () => (!cloudInitial && Array.isArray(statuses.data) ? statuses.data : []),
+        [cloudInitial, statuses.data],
     );
     const today = utcToday();
     const statusById = useMemo(() => {
@@ -250,7 +252,7 @@ export default function AddressesPage() {
         [warmupById, statusById, warmupSource],
     );
     const warmupCoverageUnknown = (emailsData.emails ?? []).some((box) => warmupUnknown(warmupFor(box)));
-    const statusChecking = emailsData.isLoading || cloudChecking || statuses.isLoading || statuses.isFetching;
+    const statusChecking = emailsData.isLoading || cloudInitial || statuses.isLoading || (cloudChecking && accountStatuses.length === 0 && visibleEmailIds.length > 0);
     const cloudStandingUnavailable = cloud.connected && (emailsData.emails ?? []).some((box) => {
         const row = cloud.rowFor(box.id);
         return row?.enrolled && !row.cloud?.health;
@@ -541,7 +543,7 @@ export default function AddressesPage() {
             const rowCloudUnavailable = cloudUnavailable || !!(cloudRow?.enrolled && !cloudRow.cloud?.health);
             const reported = statusById.get(box.id);
             const status = rowCloudUnavailable && reported?.health?.status === "healthy" && !reported.errors?.length ? undefined : reported;
-            const cloudStatusPending = cloudChecking || rowCloudUnavailable;
+            const cloudStatusPending = cloudInitial || rowCloudUnavailable;
             // Only a row with no status, or one still waiting on Cloud, shows pending; the rest skip the refetch's render.
             const statusPending = statusChecking && !inventoryUnavailable && !rowCloudUnavailable && !statusErrored && (!status || cloudStatusPending);
             return (
@@ -554,7 +556,7 @@ export default function AddressesPage() {
                     box={box}
                     tags={tags}
                     status={status}
-                    statusCurrent={!cloudChecking && !rowCloudUnavailable && currentStatusIds.has(box.id)}
+                    statusCurrent={!cloudInitial && !rowCloudUnavailable && currentStatusIds.has(box.id)}
                     lastReportedIssue={lastReportedIssues.get(box.id)}
                     statusPending={statusPending}
                     cloudStatusPending={cloudStatusPending}
@@ -571,7 +573,7 @@ export default function AddressesPage() {
                 />
             );
         },
-        [cloudConnected, cloudRowFor, cloudUnavailable, statusById, cloudChecking, statusChecking, inventoryUnavailable, statusErrored, warmupFor, rowActions, tags, currentStatusIds, lastReportedIssues, cloudRemovalPending, advisor, canWarmup, retiringDomain, openMigration, selectedSet, toggleSelected, openDetail],
+        [cloudConnected, cloudRowFor, cloudUnavailable, statusById, cloudInitial, statusChecking, inventoryUnavailable, statusErrored, warmupFor, rowActions, tags, currentStatusIds, lastReportedIssues, cloudRemovalPending, advisor, canWarmup, retiringDomain, openMigration, selectedSet, toggleSelected, openDetail],
     );
 
     if (!canView) {
@@ -1675,8 +1677,8 @@ function MailboxStatusPill({ box, status, stale, historicalIssue, warmup, compac
     let problem: { label: string; text: string; Icon: LucideIcon; title: string } | null = null;
     if (box.status === "revoked") problem = { label: "Reconnect", text: "text-rose-600", Icon: UnplugIcon, title: "Access was revoked at the provider. Reconnect the mailbox to send and warm again." };
     else if (box.status !== "active") {
-        // Warmbly switches off a mailbox whose server stayed unreachable for days; say so rather than imply a person did.
-        const unreachable = status?.errors?.find((e) => e.error_code === "MAILBOX_UNREACHABLE");
+        // Warmbly switches off a mailbox whose server stayed unreachable or refused its sign-in; say so rather than imply a person did.
+        const unreachable = status?.errors?.find((e) => e.error_code === "MAILBOX_UNREACHABLE" || e.error_code === "INVALID_CREDENTIALS");
         const why = unreachable ? `${unreachable.message} ${unreachable.action_required ?? ""}`.trim() : "Switched off on this instance: campaign sending, local warmup and sync are stopped.";
         problem = { label: "Off", text: "text-slate-500", Icon: CircleSlashIcon, title: `${why} ${warmup.source === "cloud" ? `Warmbly Cloud: ${warmupActivityLabel[warmup.activity]}.` : unreachable ? "" : "Switch it back on from the row's menu or its Settings tab."}`.trim() };
     }
