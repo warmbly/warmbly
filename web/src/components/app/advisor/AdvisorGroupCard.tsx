@@ -7,6 +7,7 @@
 // them.
 
 import { useState } from "react";
+import toast from "react-hot-toast/headless";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDownIcon, ClockIcon, Loader2Icon, MoreHorizontalIcon, XIcon } from "lucide-react";
 import type { AdvisorFinding, AdvisorGroup } from "@/lib/api/models/app/advisor/Advisor";
@@ -54,11 +55,15 @@ export default function AdvisorGroupCard({ group, onFix }: Props) {
     // Sequential for the same reason as fixAll: one workspace, one invalidation at a time.
     async function eachPending(run: (m: AdvisorFinding) => Promise<unknown>) {
         setProgress({ done: 0, total: pending.length });
+        let done = 0;
         try {
-            for (let i = 0; i < pending.length; i++) {
-                await run(pending[i]);
-                setProgress({ done: i + 1, total: pending.length });
+            for (const m of pending) {
+                await run(m);
+                done++;
+                setProgress({ done, total: pending.length });
             }
+        } catch {
+            toast.error(`${done} of ${pending.length} updated. Try again for the rest.`);
         } finally {
             setProgress(null);
         }
