@@ -189,10 +189,48 @@ func (c *Client) classifyAlert(alert *imap.Error) *errx.MailError {
 func (c *Client) loginError(err error) *errx.MailError {
 	mailErr := c.handleError(err)
 	var imapErr *imap.Error
-	if mailErr.Code == errx.MailErrorCodeNotFound && errors.As(err, &imapErr) && imapErr.Code == "" && missingMailboxText(imapErr.Text) {
+	if mailErr.Code != errx.MailErrorCodeNotFound && mailErr.Code != errx.MailErrorCodeImapUnknown ||
+		!errors.As(err, &imapErr) || imapErr.Code != "" || imapErr.Type != imap.StatusResponseTypeNo {
+		return mailErr
+	}
+	// RFC 3501 6.2.3: NO to LOGIN is a rejected user name or password, so retrying it only earns a fail2ban.
+	if loginRefusedText(imapErr.Text) {
+		if c.AuthType == models.AuthOAuth2 {
+			return errx.ErrMailAuthenticationFailed
+		}
+		return errx.ErrMailCredentialsRefused(imapErrDetail(imapErr))
+	}
+	if mailErr.Code == errx.MailErrorCodeNotFound {
 		return errx.ErrMailUnknownImapError(imapErrDetail(imapErr))
 	}
 	return mailErr
+}
+
+// Codeless sign-in refusals naming the account or its password (Courier, hMailServer, Zimbra, MDaemon, cPanel).
+var loginRefusedPhrases = []string{
+	"authentication failed", "authentication failure", "login failed", "logon failure", "login incorrect",
+	"invalid credentials", "invalid login", "invalid user", "invalid password", "incorrect password",
+	"incorrect username", "wrong password", "bad password", "password incorrect", "unknown user",
+	"user unknown", "no such user", "user not found", "user does not exist", "account not found",
+	"account does not exist", "mailbox doesn't exist", "mailbox does not exist",
+}
+
+// A refusal worded as temporary is the server saying "not now", which the loop rides out.
+var loginTemporaryPhrases = []string{"temporar", "try again", "later", "too many", "unavailable", "busy", "maintenance"}
+
+func loginRefusedText(text string) bool {
+	lower := strings.ToLower(strings.Join(strings.Fields(text), " "))
+	for _, p := range loginTemporaryPhrases {
+		if strings.Contains(lower, p) {
+			return false
+		}
+	}
+	for _, p := range loginRefusedPhrases {
+		if strings.Contains(lower, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // missingMailboxText is a codeless NO naming a missing folder, the way older Dovecot says [NONEXISTENT].

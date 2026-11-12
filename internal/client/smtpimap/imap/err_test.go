@@ -241,12 +241,12 @@ func TestHandleErrorZohoWrongServerKeepsAlert(t *testing.T) {
 	}
 }
 
-// A sign-in refusal worded like a missing mailbox stays unknown: no folder is selected at login.
+// A sign-in refusal worded like a missing mailbox is the account gone, not a missing folder: none is selected at login.
 func TestLoginErrorKeepsMissingMailboxTextOutOfFolderClasses(t *testing.T) {
 	c := &Client{AuthType: models.AuthPlain}
 	reply := &goimap.Error{Type: goimap.StatusResponseTypeNo, Text: "Mailbox doesn't exist: user@example.test"}
-	if got := c.loginError(reply); got.Code != errx.MailErrorCodeImapUnknown {
-		t.Errorf("login reply = %q, want %q", got.Code, errx.MailErrorCodeImapUnknown)
+	if got := c.loginError(reply); got.Code != errx.MailErrorCodeInvalidCredentials {
+		t.Errorf("login reply = %q, want %q", got.Code, errx.MailErrorCodeInvalidCredentials)
 	}
 	if got := c.handleError(reply); got.Code != errx.MailErrorCodeNotFound {
 		t.Errorf("folder reply = %q, want %q", got.Code, errx.MailErrorCodeNotFound)
@@ -258,5 +258,36 @@ func TestLoginErrorKeepsMissingMailboxTextOutOfFolderClasses(t *testing.T) {
 	refused := &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeAuthenticationFailed, Text: "Authentication failed."}
 	if got := c.loginError(refused); got.Code != errx.MailErrorCodeInvalidCredentials {
 		t.Errorf("credential refusal = %q, want %q", got.Code, errx.MailErrorCodeInvalidCredentials)
+	}
+}
+
+// A mailbox deleted at its host answers LOGIN with a codeless NO; only a refusal worded as temporary is retried.
+func TestLoginErrorCodelessRefusalDialects(t *testing.T) {
+	c := &Client{AuthType: models.AuthPlain}
+	for text, want := range map[string]errx.MailErrorCode{
+		"authentication failed":                   errx.MailErrorCodeInvalidCredentials,
+		"Authentication failed.":                  errx.MailErrorCodeInvalidCredentials,
+		"LOGIN failed.":                           errx.MailErrorCodeInvalidCredentials,
+		"Login failed.":                           errx.MailErrorCodeInvalidCredentials,
+		"Invalid user name or password.":          errx.MailErrorCodeInvalidCredentials,
+		"Logon failure: unknown user name":        errx.MailErrorCodeInvalidCredentials,
+		"Temporary authentication failure.":       errx.MailErrorCodeImapUnknown,
+		"Authentication failed, try again later.": errx.MailErrorCodeImapUnknown,
+		"internal server error":                   errx.MailErrorCodeImapUnknown,
+	} {
+		got := c.loginError(&goimap.Error{Type: goimap.StatusResponseTypeNo, Text: text})
+		if got.Code != want {
+			t.Errorf("LOGIN NO %q = %q, want %q", text, got.Code, want)
+		}
+		if want == errx.MailErrorCodeInvalidCredentials && !strings.Contains(got.Message, text) {
+			t.Errorf("LOGIN NO %q message = %q, want the server's words", text, got.Message)
+		}
+	}
+	if got := c.loginError(&goimap.Error{Type: goimap.StatusResponseTypeBad, Text: "authentication failed"}); got.Code != errx.MailErrorCodeImapUnknown {
+		t.Errorf("LOGIN BAD = %q, want %q", got.Code, errx.MailErrorCodeImapUnknown)
+	}
+	oauth := &Client{AuthType: models.AuthOAuth2}
+	if got := oauth.loginError(&goimap.Error{Type: goimap.StatusResponseTypeNo, Text: "authentication failed"}); got.Code != errx.MailErrorCodeAuthenticationFailed {
+		t.Errorf("OAuth LOGIN NO = %q, want %q", got.Code, errx.MailErrorCodeAuthenticationFailed)
 	}
 }
