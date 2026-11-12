@@ -133,7 +133,7 @@ describe("account status aggregation", () => {
         unmount(); client.clear();
     });
 
-    it("marks retained observations non-current during refetch and on refetch failure", async () => {
+    it("keeps observations current during a background refetch and marks them non-current on refetch failure", async () => {
         const { client, wrapper } = harness();
         const ids = ["a"];
         const { result, unmount } = renderHook(() => useAccountStatuses(ids), { wrapper });
@@ -143,11 +143,28 @@ describe("account status aggregation", () => {
         vi.mocked(getAccountStatuses).mockImplementationOnce(() => new Promise((_resolve, rej) => { reject = rej; }));
         act(() => { void client.invalidateQueries({ queryKey: ["analytics", "accounts"] }); });
         await waitFor(() => expect(result.current.isFetching).toBe(true));
-        expect(result.current.observations[0]).toMatchObject({ observedAt, current: false });
+        expect(result.current.observations[0]).toMatchObject({ observedAt, current: true });
         act(() => reject(new Error("refetch failed")));
         await waitFor(() => expect(result.current.isError).toBe(true));
         expect(result.current.data).toEqual([status("a")]);
         expect(result.current.observations[0]).toMatchObject({ observedAt, current: false });
+        unmount(); client.clear();
+    });
+
+    it("keeps a re-keyed chunk's rows on screen, non-current, until the new revision answers", async () => {
+        const { client, wrapper } = harness();
+        const ids = ["a"];
+        const { result, rerender, unmount } = renderHook(({ revision }) => useAccountStatuses(ids, { sourceRevision: revision }), { wrapper, initialProps: { revision: 1 } });
+        await waitFor(() => expect(result.current.observations[0]?.current).toBe(true));
+        let release!: () => void;
+        vi.mocked(getAccountStatuses).mockImplementationOnce(() => new Promise((resolve) => { release = () => resolve([status("a")]); }));
+        rerender({ revision: 2 });
+        await waitFor(() => expect(result.current.isFetching).toBe(true));
+        expect(result.current.isLoading).toBe(false);
+        expect(result.current.data).toEqual([status("a")]);
+        expect(result.current.observations[0].current).toBe(false);
+        act(() => release());
+        await waitFor(() => expect(result.current.observations[0]?.current).toBe(true));
         unmount(); client.clear();
     });
 });

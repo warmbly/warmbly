@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useQueries, type UseQueryResult } from "@tanstack/react-query";
+import { useQueries, useQueryClient, type QueryClient, type UseQueryResult } from "@tanstack/react-query";
 import getAccountStatuses from "@/lib/api/client/app/analytics/getAccountStatuses";
 import type AccountStatus from "@/lib/api/models/app/analytics/AccountStatus";
 
@@ -34,6 +34,7 @@ export default function useAccountStatuses(emailIds: string[], options?: { enabl
     // Sorted within a chunk so its key is stable regardless of the order the
     // mailbox list arrived in, and stable across renders so a later page of the
     // list never re-keys (and refetches) the chunks already loaded.
+    const client = useQueryClient();
     const enabled = options?.enabled ?? true;
     const sourceRevision = options?.sourceRevision ?? 0;
     // The layout is state derived from the last committed one, so a render
@@ -52,18 +53,30 @@ export default function useAccountStatuses(emailIds: string[], options?: { enabl
             // Routine recovery persists without a realtime event.
             refetchInterval: 60_000,
             refetchOnWindowFocus: true,
+            // A new Cloud revision re-keys the chunk; the rows keep their last answer until the new one lands.
+            placeholderData: (previous: AccountStatus[] | undefined) => previous ?? latestAnswer(client, ids),
         })),
-        [chunks, enabled, sourceRevision],
+        [chunks, enabled, sourceRevision, client],
     );
 
     return useQueries({ queries, combine: combineAccountStatuses });
+}
+
+// useQueries matches observers by key, so a re-keyed chunk has no previous data of its own to keep.
+function latestAnswer(client: QueryClient, ids: string[]): AccountStatus[] | undefined {
+    let newest: { at: number; data: AccountStatus[] } | undefined;
+    for (const query of client.getQueryCache().findAll({ queryKey: ["analytics", "accounts", "list", ids] })) {
+        const data = query.state.data as AccountStatus[] | undefined;
+        if (data && (!newest || query.state.dataUpdatedAt > newest.at)) newest = { at: query.state.dataUpdatedAt, data };
+    }
+    return newest?.data;
 }
 
 // TanStack reuses the aggregation only while both results and this callback are stable.
 function combineAccountStatuses(results: UseQueryResult<AccountStatus[], Error>[]) {
     return {
         data: results.flatMap((r) => r.data ?? []),
-        observations: results.flatMap((r) => (r.data ?? []).map((status) => ({ status, observedAt: r.dataUpdatedAt, current: r.isSuccess && !r.isFetching }))),
+        observations: results.flatMap((r) => (r.data ?? []).map((status) => ({ status, observedAt: r.dataUpdatedAt, current: r.isSuccess && !r.isPlaceholderData }))),
         isLoading: results.some((r) => r.isLoading),
         isFetching: results.some((r) => r.isFetching),
         isError: results.some((r) => r.isError),
