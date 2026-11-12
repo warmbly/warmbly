@@ -35,6 +35,14 @@ describe("billing flow selection", () => {
         expect(state.change).not.toHaveBeenCalled();
         expect(state.portal).not.toHaveBeenCalled();
     });
+    it("sends a workspace with no subscription yet to checkout", async () => {
+        state.subscription.data = null as unknown as typeof state.subscription.data;
+        const { result } = renderHook(() => useUpgradeFlow());
+        await act(async () => { await result.current.upgrade("grow", { interval: "monthly" }); });
+        expect(state.checkout).toHaveBeenCalledWith(expect.objectContaining({ price_id: "price_month" }));
+        expect(state.change).not.toHaveBeenCalled();
+        expect(state.error).not.toHaveBeenCalled();
+    });
     it("changes an existing Stripe subscription in place", async () => {
         state.subscription.data = { stripe_customer_id: "cus_existing", stripe_subscription_id: "sub_existing", status: "active", managed: false };
         const { result } = renderHook(() => useUpgradeFlow());
