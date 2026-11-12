@@ -6,7 +6,9 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -85,22 +87,31 @@ func TestRunNamesMissingMailboxesOnceTheBackendReloadsByID(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var a *Agent
 		first, second := uuid.New(), uuid.New()
+		var mu sync.Mutex
 		var beats []models.NodeHeartbeat
+		seen := func() []models.NodeHeartbeat {
+			mu.Lock()
+			defer mu.Unlock()
+			return slices.Clone(beats)
+		}
 		client := &http.Client{Transport: heartbeatTransport(func(r *http.Request) (*http.Response, error) {
 			var beat models.NodeHeartbeat
 			if err := json.NewDecoder(r.Body).Decode(&beat); err != nil {
 				return nil, err
 			}
+			mu.Lock()
 			beats = append(beats, beat)
+			n := len(beats)
+			mu.Unlock()
 			body := `{"liveness_seconds":120}`
-			switch len(beats) {
+			switch n {
 			case 2, 3:
 				body = `{"liveness_seconds":120,"reloads_by_id":true}`
 			case 4:
 				a.RequestReload(second)
 				return nil, errors.New("lost reload acknowledgement")
 			}
-			if len(beats) >= 5 {
+			if n >= 5 {
 				body = `{"liveness_seconds":120,"reloads_by_id":true}`
 			}
 			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
@@ -114,30 +125,31 @@ func TestRunNamesMissingMailboxesOnceTheBackendReloadsByID(t *testing.T) {
 		for range 5 {
 			time.Sleep(40 * time.Second)
 			synctest.Wait()
-			if len(beats) == 2 {
+			if len(seen()) == 2 {
 				a.RequestReload(first)
 			}
 		}
-		if len(beats) < 6 {
-			t.Fatalf("got %d beats, want 6", len(beats))
+		got := seen()
+		if len(got) < 6 {
+			t.Fatalf("got %d beats, want 6", len(got))
 		}
-		if !beats[0].Booted || len(beats[0].MissingMailboxes) != 0 {
-			t.Errorf("beat 1 = %+v, want the boot flag alone", beats[0])
+		if !got[0].Booted || len(got[0].MissingMailboxes) != 0 {
+			t.Errorf("beat 1 = %+v, want the boot flag alone", got[0])
 		}
-		if !beats[1].Booted || len(beats[1].MissingMailboxes) != 0 {
-			t.Errorf("beat 2 = %+v, want a miss before reloads_by_id to ask for a full reload", beats[1])
+		if !got[1].Booted || len(got[1].MissingMailboxes) != 0 {
+			t.Errorf("beat 2 = %+v, want a miss before reloads_by_id to ask for a full reload", got[1])
 		}
-		if beats[2].Booted || len(beats[2].MissingMailboxes) != 1 || beats[2].MissingMailboxes[0] != first {
-			t.Errorf("beat 3 = %+v, want only the missing mailbox named", beats[2])
+		if got[2].Booted || len(got[2].MissingMailboxes) != 1 || got[2].MissingMailboxes[0] != first {
+			t.Errorf("beat 3 = %+v, want only the missing mailbox named", got[2])
 		}
-		if beats[3].Booted || len(beats[3].MissingMailboxes) != 0 {
-			t.Errorf("beat 4 = %+v, want nothing pending", beats[3])
+		if got[3].Booted || len(got[3].MissingMailboxes) != 0 {
+			t.Errorf("beat 4 = %+v, want nothing pending", got[3])
 		}
-		if beats[4].Booted || len(beats[4].MissingMailboxes) != 1 || beats[4].MissingMailboxes[0] != second {
-			t.Errorf("beat 5 = %+v, want the request made during the lost beat", beats[4])
+		if got[4].Booted || len(got[4].MissingMailboxes) != 1 || got[4].MissingMailboxes[0] != second {
+			t.Errorf("beat 5 = %+v, want the request made during the lost beat", got[4])
 		}
-		if len(beats[5].MissingMailboxes) != 0 {
-			t.Errorf("beat 6 = %+v, want nothing pending once acknowledged", beats[5])
+		if len(got[5].MissingMailboxes) != 0 {
+			t.Errorf("beat 6 = %+v, want nothing pending once acknowledged", got[5])
 		}
 		cancel()
 		synctest.Wait()
