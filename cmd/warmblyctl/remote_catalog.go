@@ -111,6 +111,7 @@ var remoteAdminRoutes = []remoteAdminRoute{
 	{"GET", "/admin/warmup-content/jobs/:id", []string{"ViewWarmupPool"}, false, ""},
 	{"GET", "/admin/warmup-content/ab", []string{"ViewAnalytics"}, false, ""},
 	{"GET", "/admin/mailboxes", []string{"ViewUsers"}, false, ""},
+	{"POST", "/admin/mailboxes/remove", []string{"ManageOrganizations"}, false, ""},
 	{"GET", "/admin/campaigns", []string{"ViewCampaigns"}, false, ""},
 	{"GET", "/admin/campaigns/:id", []string{"ViewCampaigns"}, false, ""},
 	{"POST", "/admin/campaigns/:id/stop", []string{"StopCampaigns"}, false, ""},

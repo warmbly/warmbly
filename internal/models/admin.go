@@ -431,6 +431,35 @@ type AdminMailboxRow struct {
 	CreatedAt      time.Time  `json:"created_at"`
 }
 
+// AdminRemoveMailboxesRequest removes every mailbox on the named domains, in any workspace, for a domain owner's request.
+type AdminRemoveMailboxesRequest struct {
+	Domains []string `json:"domains"`
+	Reason  string   `json:"reason"`
+	DryRun  bool     `json:"dry_run"`
+	// Skip leaves out mailboxes an earlier pass could not delete, so the rest still progress.
+	Skip []uuid.UUID `json:"skip,omitempty"`
+}
+
+// AdminMailboxTarget is one mailbox an admin removal matched.
+type AdminMailboxTarget struct {
+	ID             uuid.UUID `json:"id"`
+	Email          string    `json:"email"`
+	OrganizationID uuid.UUID `json:"organization_id"`
+	Status         string    `json:"status"`
+	Removed        bool      `json:"removed"`
+	Error          string    `json:"error,omitempty"`
+}
+
+// AdminRemoveMailboxesResult reports one bounded pass; Remaining > 0 means call again.
+type AdminRemoveMailboxesResult struct {
+	DryRun    bool                 `json:"dry_run"`
+	Matched   int                  `json:"matched"`
+	Removed   int                  `json:"removed"`
+	Failed    int                  `json:"failed"`
+	Remaining int                  `json:"remaining"`
+	Mailboxes []AdminMailboxTarget `json:"mailboxes"`
+}
+
 // AdminMailboxesResult is the paginated wrapper.
 type AdminMailboxesResult struct {
 	Data       []AdminMailboxRow `json:"data"`

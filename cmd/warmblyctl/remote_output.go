@@ -24,6 +24,7 @@ func remoteWordSet(words string) map[string]bool {
 // Unknown fields and free text fail closed, including newly added backend fields.
 var remoteOutputFields = remoteWordSet(`
 data pagination summary permissions user organization workers nodes mailboxes
+matched remaining removed dry_run error
 commands results metrics broker partitions topics consumer_group topic events capture
 generic_error_coverage generic_error_reason
 sources counts health totals failing_endpoints jobs plans discounts members roles

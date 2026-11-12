@@ -199,6 +199,23 @@ Supply `--query key=value` separately for each bounded filter. Mutating JSON inp
 
 Some catalog entries are discoverable but deliberately unavailable: browser device-consent endpoints, fleet join-token and tester credential issuance, binary export downloads and multipart imports, and arbitrary background-job execution. Use the existing browser or transfer/operator tools for those workflows. Unsupported entries fail before network or credential access, even with confirmation.
 
+### Removing every mailbox on a domain
+
+When a domain's owner asks for all of its mailboxes to go, including ones in workspaces they can no longer sign in to, `POST /admin/mailboxes/remove` deletes every mailbox on up to 20 named domains in any workspace. It needs the `manage_organizations` admin permission. Each mailbox goes through the same delete a workspace's own **Delete** takes: its worker drops it first, it leaves the warmup pools, its workspace's webhooks fire, and the admin audit log records it with your reason. Shared providers such as `gmail.com` are refused.
+
+```json
+{ "domains": ["example.com"], "reason": "Domain owner request", "dry_run": true }
+```
+
+```bash
+warmblyctl admin api POST /admin/mailboxes/remove --server laptop \
+  --data @remove.json --write --confirm 'POST /admin/mailboxes/remove'
+```
+
+Preview first. With `dry_run: true` nothing is removed, `matched` is the full count and `remaining` equals it, and `mailboxes` lists the exact targets by `id`, `organization_id` and `status`, up to 1,000 of them; when `matched` is larger, narrow the domains per request. Then send the same body with `dry_run` set to `false` (or left out). Each removing pass deletes at most 100 mailboxes and reports `remaining`; repeat it until `remaining` is `0`.
+
+A mailbox that fails keeps its row and is marked with `removed: false` and an `error`, which the CLI prints as `[REDACTED]`. Put its `id` in `skip` and keep every unresolved `id` there on every later pass, so the rest still progress; `remaining` then counts only the mailboxes not skipped, and `skip` holds at most 1,000 ids. A skipped mailbox is still there when `remaining` reaches `0`. Find its cause in the backend log line `admin mailbox removal: delete failed`, which names the mailbox, or open the mailbox in the admin panel, fix that, then run a pass without it in `skip`.
+
 ### JSON, redaction and exit codes
 
 Remote success is one deterministic JSON value on stdout. Progress, approval codes, help and machine-readable errors are on stderr. Object keys are sorted by the JSON encoder; backend list ordering is preserved. Redaction projects only allowlisted diagnostic fields, canonical UUIDs, timestamps, typed enums, known broker scope names, validated cursors, numbers and booleans. Unknown fields are omitted and counted in `_redacted_fields`; arbitrary strings become `[REDACTED]`, including addresses and display names. No provider tokens, passwords, body, header, payload or free-form error subtree is exposed. The existing local emergency and public API commands keep their own documented output behavior unchanged.
