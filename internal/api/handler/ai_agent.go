@@ -49,6 +49,7 @@ func (h *Handler) jwtInvocation(c *gin.Context) (aitools.Invocation, *errx.Error
 		FreshAuthed: middleware.SessionFresh(c),
 		IP:          c.ClientIP(),
 		UserAgent:   c.Request.UserAgent(),
+		API:         h.agentAPI(c),
 	}, nil
 }
 

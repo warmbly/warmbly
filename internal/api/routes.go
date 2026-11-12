@@ -2351,6 +2351,7 @@ func Run(
 	// Stripe webhook (no auth - uses signature verification)
 	r.POST("/webhook/stripe", h.HandleStripeWebhook)
 
+	h.Router = r
 	return r
 }
 

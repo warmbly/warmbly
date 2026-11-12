@@ -10,6 +10,7 @@ package aitools
 import (
 	"context"
 	"encoding/json"
+	"net/url"
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/models"
@@ -35,6 +36,14 @@ type Invocation struct {
 	// IP / UserAgent flow into the audit trail for write-class tools.
 	IP        string
 	UserAgent string
+	// API reaches the public API as this caller; nil hides the API tools.
+	API APIDispatcher
+}
+
+// APIDispatcher sends one request to the public API as the invoking caller,
+// through the route's own authentication, permission and rate-limit middleware.
+type APIDispatcher interface {
+	Do(ctx context.Context, method, path string, query url.Values, body []byte) (status int, resp []byte, err error)
 }
 
 // Handler executes a tool. args is the raw JSON the model produced; the return
@@ -60,6 +69,8 @@ type Tool struct {
 	AlwaysAsk bool
 	// FreshAuth holds a member to the same recent confirmation the tool's REST route requires.
 	FreshAuth bool
+	// NeedsAPI marks a tool that calls the public API through Invocation.API.
+	NeedsAPI bool
 	// SecretFields are top-level result keys the assistant never sees; the member is shown them once.
 	SecretFields []string
 	// Preview resolves a send's sender, recipients and subject for the approval card, and pins them in the returned args.
@@ -78,6 +89,9 @@ func (t Tool) run(ctx context.Context, inv Invocation, args json.RawMessage) (st
 // allowed reports whether the invocation's permissions grant this tool. A zero
 // required-permission means "no extra gate" (still runs as the user).
 func (t Tool) allowed(inv Invocation) bool {
+	if t.NeedsAPI && inv.API == nil {
+		return false
+	}
 	if inv.IsAPIKey {
 		if t.JWTOnly {
 			return false
@@ -158,15 +172,30 @@ func (r *Registry) ToolDefs(ctx context.Context, inv Invocation) []generation.To
 			Description: t.Description,
 			InputSchema: t.InputSchema,
 			Risk:        t.Risk,
+			Deferred:    !CoreTools[t.Name],
 			Handler: func(ctx context.Context, args json.RawMessage) (string, error) {
 				return t.run(ctx, inv, args)
 			},
 		})
 	}
 	for _, src := range r.dynamic {
-		defs = append(defs, src.ToolsForInvocation(ctx, inv)...)
+		for _, d := range src.ToolsForInvocation(ctx, inv) {
+			d.Deferred = true
+			defs = append(defs, d)
+		}
 	}
 	return defs
+}
+
+// CoreTools are always in front of the model; every other tool is found
+// through tool search, so the request stays small however large the registry grows.
+var CoreTools = map[string]bool{
+	"search_contacts": true, "get_contact": true,
+	"list_campaigns": true, "get_campaign": true, "get_campaign_stats": true, "get_dashboard_analytics": true,
+	"list_mailboxes": true, "get_mailbox": true,
+	"list_threads": true, "get_thread": true, "draft_reply": true,
+	"list_recommendations": true, "load_skill": true, "search_web": true, "fetch_url": true,
+	"search_docs": true, "read_doc": true, "find_api": true, "describe_api": true, "api_read": true, "api_write": true,
 }
 
 // ToolDefsByName returns bound ToolDefs for only the named tools the invocation

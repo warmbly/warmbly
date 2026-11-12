@@ -97,6 +97,25 @@ This is a subset of what the in-product assistant can do. Two categories are das
 
 Every tool is gated by its API permission. `tools/list` returns only the tools your mask allows. Sending-class tools (anything that transmits a message to a recipient) are never exposed over MCP regardless of scope; over MCP the assistant only produces drafts (`draft_reply`).
 
+### Tool discovery
+
+`tools/list` returns a core set of tools plus two discovery tools, so a client with a tool limit (Cursor, for example) never reaches it however many scopes you grant:
+
+- `find_tools` searches every tool your credential may use by keywords and returns each one's description and input schema. An empty query lists everything, twenty at a time.
+- `call_tool` runs a tool found that way, by `name`, with its `arguments`.
+
+Every tool in the table below stays callable directly through `tools/call` whether or not it is listed. To list every tool instead, add `?tools=all` to the server URL (`https://api.warmbly.com/v1/mcp?tools=all`) or send the header `X-Warmbly-Tools: all`. The `initialize` response carries `instructions` that explain how Warmbly fits together and how to use discovery, for clients that pass them to the model.
+
+### Docs and the full API
+
+Six tools give a client the same understanding of the product a person gets from these docs, and reach every documented endpoint without a dedicated tool for each:
+
+- `search_docs` and `read_doc` search and read these docs.
+- `find_api` and `describe_api` search the [API reference](/api/) and return an endpoint's parameters, body schema and response.
+- `api_read` calls a read-only endpoint (any `GET`, or a `POST` that only searches or previews) and `api_write` calls one that changes data. Both send your own credential through the endpoint's normal checks, so they can do exactly what a direct request with the same key or token could, and each call counts against your rate limits and shows in the key's usage log like any other request.
+
+`api_read` and `api_write` refuse endpoints that send mail or start sending (use the dedicated tools, which are not exposed over MCP), sign-in and account security, API keys, webhooks and OAuth apps (their own tools keep secrets out of the conversation), file uploads, and endpoints that take a credential such as a password or API key. Fields holding a credential are withheld from their results.
+
 | Tool | Does | Required scope |
 |------|------|----------------|
 | `search_contacts` | Find contacts by text | `READ_CONTACTS` |
@@ -159,6 +178,9 @@ Every tool is gated by its API permission. `tools/list` returns only the tools y
 | `create_webhook` / `update_webhook` / `delete_webhook` / `rotate_webhook_secret` / `verify_webhook` | Manage webhook endpoints | `WEBHOOKS` |
 | `search_web` / `fetch_url` | Search and read public pages | `AI_AGENT` |
 | `load_skill` | Read one of your playbooks | `AI_AGENT` |
+| `search_docs` / `read_doc` | Search and read the Warmbly docs | none beyond MCP access |
+| `find_api` / `describe_api` | Find an API endpoint and read its parameters and schemas | none beyond MCP access |
+| `api_read` / `api_write` | Call a documented endpoint as your credential | the endpoint's own scope |
 
 Two form surfaces are deliberately absent: brand-asset uploads (logo, cover, background) are multipart images with dimension and MIME limits that a tool call cannot express, and the custom forms domain is workspace-wide branding behind a DNS check, so it lives in settings rather than in a tool.
 

@@ -53,6 +53,15 @@ func TestRealRegistryStaysWithinOpenAIToolLimit(t *testing.T) {
 			if len(defs) <= 128 {
 				t.Fatalf("regression requires the oversized built-in registry, got %d tools", len(defs))
 			}
+			core := 0
+			for _, d := range defs {
+				if !d.Deferred {
+					core++
+					if !CoreTools[d.Name] {
+						t.Fatalf("%s is on the wire but not a core tool", d.Name)
+					}
+				}
+			}
 			requests := 0
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				var req struct {
@@ -62,8 +71,8 @@ func TestRealRegistryStaysWithinOpenAIToolLimit(t *testing.T) {
 					t.Error(err)
 				}
 				requests++
-				if len(req.Tools) != 1 {
-					t.Errorf("initial OpenAI request includes %d tools instead of only discovery", len(req.Tools))
+				if len(req.Tools) != core+1 || len(req.Tools) > 40 {
+					t.Errorf("initial OpenAI request includes %d tools instead of the %d core tools and discovery", len(req.Tools), core)
 				}
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Hello!"}}]}`))

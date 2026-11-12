@@ -149,6 +149,7 @@ func BuildRegistry(d Deps) *Registry {
 	d.registerWebTools(r)
 	d.registerSkillTools(r)
 	d.registerIntegrationTools(r)
+	d.registerKnowledgeTools(r)
 	// Advisor tools are registered separately, after the advisor service is
 	// constructed against this registry (see aitools.RegisterAdvisorTools).
 	return r
