@@ -1901,7 +1901,7 @@ func buildDisplayFields(provider models.IntegrationProvider, config map[string]a
 		pick("server")
 	case models.IntegrationZapier, models.IntegrationMake, models.IntegrationN8N:
 		// Outbound-via-Warmbly-API providers: minimal display fields.
-	case models.IntegrationMillionVerifier, models.IntegrationCleanMyList:
+	case models.IntegrationMillionVerifier, models.IntegrationCleanMyList, models.IntegrationMailVeri:
 		// Credits are filled in at connect time from the provider.
 	case models.IntegrationApollo:
 		// The account the key acts as is filled in by the credential check.
@@ -1921,6 +1921,8 @@ func verificationClient(provider models.IntegrationProvider, key string) (emailv
 		return emailverify.NewMillionVerifier(key, ""), nil
 	case models.IntegrationCleanMyList:
 		return emailverify.NewCleanMyList(key, ""), nil
+	case models.IntegrationMailVeri:
+		return emailverify.NewMailVeri(key, ""), nil
 	default:
 		return nil, fmt.Errorf("%s does not verify addresses", provider)
 	}

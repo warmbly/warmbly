@@ -32,6 +32,7 @@ var curatedOrder = []models.IntegrationProvider{
 	models.IntegrationMillionVerifier,
 	models.IntegrationDiscord,
 	models.IntegrationCleanMyList,
+	models.IntegrationMailVeri,
 	models.IntegrationGooglePlaces,
 	models.IntegrationOutscraper,
 	models.IntegrationFoursquare,

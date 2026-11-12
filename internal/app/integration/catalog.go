@@ -316,6 +316,19 @@ func Catalog() []models.IntegrationCatalogEntry {
 				"Falls back to the built-in check when the service is unavailable",
 			},
 		},
+		{
+			Provider:   models.IntegrationMailVeri,
+			Name:       "MailVeri",
+			Tagline:    "Verify contact addresses with your MailVeri credits.",
+			Category:   models.IntegrationCategoryVerification,
+			AuthMethod: string(models.IntegrationAuthAPIKey),
+			DocsURL:    "https://mailveri.com/docs/api",
+			Highlights: []string{
+				"Checks new contacts and re-verifies existing addresses",
+				"One credit per address; checks that end unknown are free",
+				"Falls back to the built-in check when credits run out",
+			},
+		},
 	}
 }
 

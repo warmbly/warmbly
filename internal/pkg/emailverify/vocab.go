@@ -22,6 +22,15 @@ var vocabularies = map[string]map[string]ExternalVerdict{
 		"risky":         {Status: StatusRisky},
 		"unknown":       {Status: StatusUnknown},
 	},
+	ProviderMailVeri: {
+		"valid":       {Status: StatusValid},
+		"invalid":     {Status: StatusInvalid},
+		"disposable":  {Status: StatusInvalid, SubStatus: SubStatusDisposable},
+		"roleaccount": {Status: StatusRisky, SubStatus: SubStatusRole},
+		"catchall":    {Status: StatusRisky, SubStatus: SubStatusCatchAll},
+		"fullinbox":   {Status: StatusRisky, SubStatus: SubStatusMailboxFull},
+		"unknown":     {Status: StatusUnknown},
+	},
 	ProviderMillionVerifier: {
 		"ok":         {Status: StatusValid},
 		"good":       {Status: StatusValid},
@@ -134,13 +143,14 @@ var vocabularies = map[string]map[string]ExternalVerdict{
 // value. Specific vocabularies first; the generic one last.
 var vocabProviderOrder = []string{
 	"zerobounce", ProviderMillionVerifier, "neverbounce", "emaillistverify",
-	"debounce", "bouncer", "kickbox", "emailable", "clearout", ProviderCleanMyList, ProviderBuiltin,
+	"debounce", "bouncer", "kickbox", "emailable", "clearout", ProviderMailVeri, ProviderCleanMyList, ProviderBuiltin,
 }
 
 // vocabProviderAliases maps how a provider is written in a column header to
 // its vocabulary key.
 var vocabProviderAliases = map[string]string{
 	"cleanmylist":     ProviderCleanMyList,
+	"mailveri":        ProviderMailVeri,
 	"millionverifier": ProviderMillionVerifier, "mv": ProviderMillionVerifier,
 	"zerobounce": "zerobounce", "zb": "zerobounce",
 	"neverbounce": "neverbounce", "nb": "neverbounce",
@@ -158,6 +168,7 @@ var providerLabels = map[string]string{
 	ProviderBuiltin:         "Warmbly's built-in check",
 	ProviderMillionVerifier: "MillionVerifier",
 	ProviderCleanMyList:     "CleanMyList",
+	ProviderMailVeri:        "MailVeri",
 	"zerobounce":            "ZeroBounce",
 	"neverbounce":           "NeverBounce",
 	"bouncer":               "Bouncer",

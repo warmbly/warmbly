@@ -53,7 +53,7 @@ var reservedSlugs = func() map[string]bool {
 		models.IntegrationHubSpot, models.IntegrationSalesforce, models.IntegrationPipedrive, models.IntegrationClose,
 		models.IntegrationZapier, models.IntegrationMake, models.IntegrationN8N, models.IntegrationSlack,
 		models.IntegrationDiscord, models.IntegrationCalendly, models.IntegrationCalCom, models.IntegrationGoogleSheets,
-		models.IntegrationMillionVerifier, models.IntegrationCleanMyList,
+		models.IntegrationMillionVerifier, models.IntegrationCleanMyList, models.IntegrationMailVeri,
 		models.IntegrationGooglePlaces, models.IntegrationFoursquare, models.IntegrationOutscraper, models.IntegrationJina,
 	} {
 		out[string(p)] = true
