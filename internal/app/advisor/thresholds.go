@@ -38,6 +38,10 @@ const (
 	spamPlacementSlowdown = 20.0
 	spamPlacementBlock    = 50.0
 
+	// Google's bulk-sender line: 5,000 messages a day to personal Gmail
+	// accounts, where one-click unsubscribe becomes a requirement.
+	googleBulkSenderDaily = 5000
+
 	// --- mailbox volume ----------------------------------------------------
 	// The repo defaults: 50/day cold cap, 600s minimum gap.
 	defaultColdCap  = 50

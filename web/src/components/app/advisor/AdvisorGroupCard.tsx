@@ -8,7 +8,7 @@
 
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDownIcon, Loader2Icon } from "lucide-react";
+import { ChevronDownIcon, ClockIcon, Loader2Icon, MoreHorizontalIcon, XIcon } from "lucide-react";
 import type { AdvisorFinding, AdvisorGroup } from "@/lib/api/models/app/advisor/Advisor";
 import {
     CATEGORY_LABEL,
@@ -17,7 +17,18 @@ import {
     SEVERITY_LABEL,
     groupTitle,
 } from "@/lib/api/models/app/advisor/Advisor";
-import { useApplyAdvisorFinding } from "@/lib/api/hooks/app/advisor/useAdvisor";
+import {
+    PopoverMenu,
+    PopoverMenuContent,
+    PopoverMenuItem,
+    PopoverMenuLabel,
+    PopoverMenuTrigger,
+} from "@/components/ui/popover-menu";
+import {
+    useApplyAdvisorFinding,
+    useDismissAdvisorFinding,
+    useSnoozeAdvisorFinding,
+} from "@/lib/api/hooks/app/advisor/useAdvisor";
 import { useConfirm } from "@/hooks/context/confirm";
 
 interface Props {
@@ -31,11 +42,38 @@ export default function AdvisorGroupCard({ group, onFix }: Props) {
     const [open, setOpen] = useState(false);
     const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
     const apply = useApplyAdvisorFinding();
+    const snooze = useSnoozeAdvisorFinding();
+    const dismiss = useDismissAdvisorFinding();
     const confirm = useConfirm();
 
     const { lead, members } = group;
     const fixable = members.filter((m) => m.action && m.status !== "applied");
+    const pending = members.filter((m) => m.status !== "applied");
     const title = groupTitle(group);
+
+    // Sequential for the same reason as fixAll: one workspace, one invalidation at a time.
+    async function eachPending(run: (m: AdvisorFinding) => Promise<unknown>) {
+        setProgress({ done: 0, total: pending.length });
+        try {
+            for (let i = 0; i < pending.length; i++) {
+                await run(pending[i]);
+                setProgress({ done: i + 1, total: pending.length });
+            }
+        } finally {
+            setProgress(null);
+        }
+    }
+
+    function snoozeAll(days: number) {
+        void eachPending((m) => snooze.mutateAsync({ id: m.id, days }));
+    }
+
+    function dismissAll() {
+        confirm.show(
+            `Stop suggesting this for all ${pending.length}? Each one comes back only if its problem clears and then happens again.`,
+            () => eachPending((m) => dismiss.mutateAsync({ id: m.id, reason: "" })),
+        );
+    }
 
     // Fixing the whole run is the same confirm-first contract as one card: the
     // dialog names every mailbox it will touch and what changes on each.
@@ -107,6 +145,34 @@ export default function AdvisorGroupCard({ group, onFix }: Props) {
                             {busy ? <Loader2Icon className="h-3 w-3 animate-spin" /> : null}
                             {busy ? `${progress?.done}/${progress?.total}` : `Fix all ${fixable.length}`}
                         </button>
+                    ) : null}
+
+                    {pending.length > 0 ? (
+                        <PopoverMenu align="end">
+                            <PopoverMenuTrigger asChild>
+                                <button
+                                    type="button"
+                                    aria-label="More options"
+                                    disabled={busy}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 disabled:opacity-50"
+                                >
+                                    <MoreHorizontalIcon className="h-3.5 w-3.5" />
+                                </button>
+                            </PopoverMenuTrigger>
+                            <PopoverMenuContent>
+                                <PopoverMenuLabel>Remind me later</PopoverMenuLabel>
+                                <PopoverMenuItem icon={<ClockIcon className="h-3.5 w-3.5" />} onSelect={() => snoozeAll(7)}>
+                                    Snooze for a week
+                                </PopoverMenuItem>
+                                <PopoverMenuItem icon={<ClockIcon className="h-3.5 w-3.5" />} onSelect={() => snoozeAll(30)}>
+                                    Snooze for a month
+                                </PopoverMenuItem>
+                                <PopoverMenuItem icon={<XIcon className="h-3.5 w-3.5" />} onSelect={dismissAll}>
+                                    Stop suggesting this
+                                </PopoverMenuItem>
+                            </PopoverMenuContent>
+                        </PopoverMenu>
                     ) : null}
 
                     <button

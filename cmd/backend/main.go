@@ -2618,7 +2618,9 @@ func main() {
 			// (enforced or not, and the grace window) instead of a default one.
 			advisor.WithDomainAuthPolicy(instanceSettings),
 			// So the warmup findings never ask a plan without warmup to turn it on.
-			advisor.WithWarmupAccess(featureGateService))
+			advisor.WithWarmupAccess(featureGateService),
+			// A self-host warms only among its own mailboxes, so missing warmup is advice there, not an alarm.
+			advisor.WithSelfHosted(config.SelfHosted()))
 		aitools.RegisterAdvisorTools(aiToolRegistry, advisorService)
 		go (&advisor.Runner{Repo: advisorRepository, Service: advisorService}).Run(ctx)
 
