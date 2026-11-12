@@ -64,7 +64,7 @@ How the channel behaves:
 - The endpoint answers `202` well inside Graph's 3-second limit. When the wake cannot be sent it answers `503`, and Graph retries for up to 4 hours.
 - A subscription lasts just under 7 days and is renewed with 2 days left. A `reauthorizationRequired` or `subscriptionRemoved` lifecycle event renews or reopens it at once; a `missed` event triggers a sync pass.
 - Changing `AUTH_SECRET` changes every client state. Workers reopen their subscriptions the next time the mailbox is reloaded, within about 30 minutes, and the 10-minute fallback poll covers the gap.
-- A subscription Microsoft refuses is retried every 30 minutes while the mailbox polls every minute.
+- A subscription Microsoft could not create is retried after 30 minutes, or later when Microsoft sends `Retry-After`. One it refuses outright (a `4xx` other than throttling) is retried after 6 hours. The mailbox polls every minute meanwhile, and a changed notification URL or client state is tried at once.
 
 ## Gmail and Google Workspace
 
@@ -129,13 +129,13 @@ Migration `000351` adds `fleet_nodes.sync_wake_protocol` (default `0`) and the `
 
 ## Troubleshooting
 
-When a worker cannot open a mailbox's Gmail watch or Graph subscription, it reports the first failure for that mailbox to error tracking (PostHog or Sentry, when configured), tagged `component=mailbox_push`, with the provider's own message. The mailbox keeps polling meanwhile.
+When a worker cannot open a mailbox's Gmail watch or Graph subscription, it reports the failure to error tracking (PostHog or Sentry, when configured) at most once a day per mailbox, tagged `component=mailbox_push`. The report names the provider call and its HTTP status, with the provider's own message, for example `gmail users.watch: HTTP 400 Invalid topicName ...` or `graph subscription create: HTTP 429`. A throttle there limits opening the channel, not sending. The mailbox keeps polling meanwhile, and the worker asks again after 30 minutes, after the provider's `Retry-After`, or after 6 hours when the provider refused the request outright.
 
 | Symptom | Cause and fix |
 |---|---|
 | Outlook mail still takes about a minute | Check that `GRAPH_PUSH=true` and that `BACKEND_PUBLIC_URL` (or `API_PUBLIC_URL`) is an `https://` URL. Plain `http` leaves push off. From outside your network, `curl -X POST '<url>/api/v1/mailbox-push/graph/x?validationToken=ok'` must answer `ok`; Microsoft sends the same request when it creates a subscription |
-| Graph subscriptions are never created | Microsoft cannot reach the URL, or the proxy in front of the backend does not forward `/api/v1/mailbox-push/`. Workers retry every 30 minutes and log the refusal at debug level |
-| Gmail watch fails with `Invalid topicName` | The topic is in a different project from `BOX_GOOGLE_CLIENT_ID`. Create it in that project. Whole-domain grant mailboxes are only asked to watch when the delegation key's `project_id` matches the topic's project |
+| Graph subscriptions are never created | Microsoft cannot reach the URL, or the proxy in front of the backend does not forward `/api/v1/mailbox-push/`. Workers retry as described above and log each refusal at debug level |
+| Gmail watch fails with `Invalid topicName` | The topic is in a different project from the OAuth client that issued the mailbox's grant, normally `BOX_GOOGLE_CLIENT_ID`. Create it in that project. A mailbox whose grant came from another Google project keeps polling. Whole-domain grant mailboxes are only asked to watch when the delegation key's `project_id` matches the topic's project |
 | Gmail watch fails with a permission error | Gmail's push service account `gmail-api-push@system.gserviceaccount.com` lacks **Pub/Sub Publisher** on the topic, often because domain restricted sharing refused the grant |
 | Pub/Sub shows push deliveries failing with `401` | The subscription signs with a different service account than `GMAIL_PUSH_SERVICE_ACCOUNT`, authentication is off, or its audience was set to something other than the endpoint URL |
 | Pub/Sub shows push deliveries failing with `404` | `GMAIL_PUSH_SERVICE_ACCOUNT` is unset on the backend, or `BACKEND_PUBLIC_URL` is not `https` |

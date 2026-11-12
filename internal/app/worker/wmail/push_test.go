@@ -1,12 +1,17 @@
 package wmail
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/client/goog"
 	"github.com/warmbly/warmbly/internal/config"
+	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"golang.org/x/oauth2"
 )
 
 func TestWakeRunsTheNextPassEarlyOnlyAfterACleanPass(t *testing.T) {
@@ -135,7 +140,9 @@ func TestAPendingReportIsResentDuringTheRetryBackoff(t *testing.T) {
 		return nil
 	}}
 	// A channel was closed, its report refused, and the provider is in backoff.
-	w.push.retryAt = time.Now().Add(time.Hour)
+	w.ID = uuid.New()
+	pushRefusals.Store(w.ID, pushRefusal{retryAt: time.Now().Add(time.Hour), reported: time.Now()})
+	t.Cleanup(func() { pushRefusals.Delete(w.ID) })
 	w.push.unsent.Store(true)
 	w.maintainPush(t.Context())
 	if reports != 1 || sent[0] != nil || w.push.unsent.Load() {
@@ -144,5 +151,78 @@ func TestAPendingReportIsResentDuringTheRetryBackoff(t *testing.T) {
 	w.maintainPush(t.Context())
 	if reports != 1 {
 		t.Fatalf("a report already taken was sent again: %d", reports)
+	}
+}
+
+func TestPushRetryWaitsLongerOnARefusalAndHonoursRetryAfter(t *testing.T) {
+	now := time.Now()
+	fail := func(f errx.SendFailure) error {
+		return errx.ProviderCall("op", "", errx.WithSendFailure(errx.ErrMailSendRejected("x"), f))
+	}
+	if got := pushRetryAt(errors.New("dial tcp: timeout"), now); !got.Equal(now.Add(pushRetryAfter)) {
+		t.Fatalf("transport failure retries at %v", got.Sub(now))
+	}
+	if got := pushRetryAt(fail(errx.SendFailure{Status: 400, Disposition: errx.SendPermanent}), now); !got.Equal(now.Add(pushRefusedRetryAfter)) {
+		t.Fatalf("a refused topic retries at %v", got.Sub(now))
+	}
+	if got := pushRetryAt(fail(errx.SendFailure{Status: 503, Disposition: errx.SendRetry}), now); !got.Equal(now.Add(pushRetryAfter)) {
+		t.Fatalf("an outage retries at %v", got.Sub(now))
+	}
+	later := now.Add(2 * time.Hour)
+	if got := pushRetryAt(fail(errx.SendFailure{Status: 429, Disposition: errx.SendThrottle, RetryAt: &later}), now); !got.Equal(later) {
+		t.Fatalf("Retry-After cut short: %v", got.Sub(now))
+	}
+	far := now.Add(30 * 24 * time.Hour)
+	if got := pushRetryAt(fail(errx.SendFailure{Status: 429, Disposition: errx.SendThrottle, RetryAt: &far}), now); !got.Equal(now.Add(pushRetryAfterMax)) {
+		t.Fatalf("Retry-After not bounded: %v", got.Sub(now))
+	}
+}
+
+func TestARebuiltMailboxKeepsItsPushBackoff(t *testing.T) {
+	id := uuid.New()
+	t.Cleanup(func() { pushRefusals.Delete(id) })
+	want := &models.AddWorkerEmailPushData{GmailTopic: "projects/p/topics/t"}
+	pushRefusals.Store(id, pushRefusal{target: pushTarget(want), retryAt: time.Now().Add(time.Hour), reported: time.Now()})
+	// A fresh WMail with no Google client: it must not reach the provider while the backoff holds.
+	w := &WMail{ID: id, EmailType: models.InboxProviderGoogle, GoogleData: &GoogleData{}, wake: make(chan struct{}, 1)}
+	w.ApplyPush(want)
+	w.maintainPush(t.Context())
+
+	other := &models.AddWorkerEmailPushData{GmailTopic: "projects/p/topics/other"}
+	if pushTarget(other) == pushTarget(want) {
+		t.Fatal("a changed topic is not a new target")
+	}
+}
+
+func TestAStoppedMailboxRecordsNoRefusal(t *testing.T) {
+	id := uuid.New()
+	t.Cleanup(func() { pushRefusals.Delete(id) })
+	client := &goog.Client{OnTokenRefresh: func(context.Context, *oauth2.Token) error { return nil }}
+	if merr := client.Init(t.Context(), &oauth2.Token{AccessToken: "live", Expiry: time.Now().Add(time.Hour)}, oauth2.Config{}); merr != nil {
+		t.Fatalf("client init: %v", merr.Message)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	w := &WMail{ID: id, EmailType: models.InboxProviderGoogle, wake: make(chan struct{}, 1),
+		GoogleData: &GoogleData{Client: client}, onEvent: func(models.JobEventType, any) error { return nil }}
+	w.ApplyPush(&models.AddWorkerEmailPushData{GmailTopic: "projects/p/topics/t"})
+	w.maintainPush(ctx)
+	if _, ok := pushRefusals.Load(id); ok {
+		t.Fatal("a cancelled call was recorded as a refusal")
+	}
+}
+
+func TestANoOpPassKeepsTheRefusal(t *testing.T) {
+	id := uuid.New()
+	t.Cleanup(func() { pushRefusals.Delete(id) })
+	want := &models.AddWorkerEmailPushData{GmailTopic: "projects/p/topics/t",
+		State: &models.MailboxPushState{Provider: models.MailboxPushGmail, ExpiresAt: time.Now().Add(7 * 24 * time.Hour), Credential: credentialPrint("projects/p/topics/t")}}
+	// The backoff is over, but the watch has days left, so no provider call is made.
+	pushRefusals.Store(id, pushRefusal{target: pushTarget(want), retryAt: time.Now().Add(-time.Minute), reported: time.Now()})
+	w := &WMail{ID: id, EmailType: models.InboxProviderGoogle, GoogleData: &GoogleData{}, wake: make(chan struct{}, 1)}
+	w.ApplyPush(want)
+	w.maintainPush(t.Context())
+	if _, ok := pushRefusals.Load(id); !ok {
+		t.Fatal("a pass that asked the provider nothing cleared the refusal")
 	}
 }
