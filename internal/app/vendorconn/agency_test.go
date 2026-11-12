@@ -376,6 +376,31 @@ func TestAKeylessRefusalRecordedByAnOlderReleaseDoesNotStick(t *testing.T) {
 	}
 }
 
+func TestAClientsKeyIsHeldSealedAndReadOnce(t *testing.T) {
+	client := &fakeClient{boxes: []mailvendor.Mailbox{{ID: "m1", Email: "ava@client.test"}}}
+	s, _, mb, _, _ := newTestService(t, client)
+	mb.existing["ava@client.test"] = models.EmailRef{ID: uuid.New()}
+	ctx := context.Background()
+	org := uuid.New()
+
+	// Nothing to hold it in: the way in is off, not half working.
+	if _, _, xerr := s.Hold(ctx, org, "link-1", CreateInput{Vendor: "zapmail", Fields: map[string]string{"api_key": "k"}}); xerr == nil {
+		t.Fatal("a key was held with nowhere to hold it")
+	}
+	if _, xerr := s.Redeem(ctx, org, "link-1", strings.Repeat("a", 64)); xerr == nil || xerr.Identifier != "mailbox_vendor_hold_expired" {
+		t.Fatalf("an unknown ticket: got %v", xerr)
+	}
+	// Peek verifies and lists without storing anything, marking what the workspace already has.
+	boxes, raw, xerr := s.Peek(ctx, org, CreateInput{Vendor: "zapmail", Fields: map[string]string{"api_key": " k "}})
+	if xerr != nil || len(boxes) != 1 || !boxes[0].Connected || !strings.Contains(raw, `"api_key":"k"`) {
+		t.Fatalf("peek = %+v, %q, %v", boxes, raw, xerr)
+	}
+	client.verify = mailvendor.ErrUnauthorized
+	if _, _, xerr := s.Peek(ctx, org, CreateInput{Vendor: "zapmail", Fields: map[string]string{"api_key": "k"}}); xerr == nil {
+		t.Fatal("a key the vendor refuses was listed")
+	}
+}
+
 func TestAnAccountsMailboxCountsFollowTheCallersAccessToEachClient(t *testing.T) {
 	f := newAgencyFixture(t)
 	ctx := context.Background()
@@ -408,5 +433,26 @@ func TestAnAccountsMailboxCountsFollowTheCallersAccessToEachClient(t *testing.T)
 		if c.OrganizationID == f.acme && (c.Mailboxes != 12 || c.MailboxesHidden) {
 			t.Fatalf("the caller's own client: %+v", c)
 		}
+	}
+}
+
+func TestAnImportForSomeoneOutsideTheWorkspaceLeavesConnectedMailboxesAlone(t *testing.T) {
+	client := &fakeClient{boxes: []mailvendor.Mailbox{{ID: "m1", Email: "ava@client.test"}, {ID: "m2", Email: "leo@client.test"}}}
+	s, _, mb, imp, _ := newTestService(t, client)
+	ctx := context.Background()
+	org, user := uuid.New(), uuid.New()
+	mb.existing["ava@client.test"] = models.EmailRef{ID: uuid.New()}
+	conn, xerr := s.Create(ctx, org, user, CreateInput{Vendor: "zapmail", Fields: map[string]string{"api_key": "k"}})
+	if xerr != nil {
+		t.Fatal(xerr)
+	}
+	// Both are named; the one already in the workspace is not part of the import.
+	_, emails, xerr := s.ImportPicked(ctx, org, user, conn.ID, ImportInput{MailboxIDs: []string{"m1", "m2"}, SkipConnected: true})
+	if xerr != nil || len(emails) != 1 || emails[0] != "leo@client.test" || len(imp.in.Rows) != 1 {
+		t.Fatalf("emails %v, rows %d, %v", emails, len(imp.in.Rows), xerr)
+	}
+	// A member's own import still takes a named mailbox, which is how one is updated.
+	if _, emails, xerr := s.ImportPicked(ctx, org, user, conn.ID, ImportInput{MailboxIDs: []string{"m1", "m2"}}); xerr != nil || len(emails) != 2 {
+		t.Fatalf("a member's import: %v, %v", emails, xerr)
 	}
 }

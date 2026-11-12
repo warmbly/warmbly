@@ -20,6 +20,7 @@ const PLACEHOLDER = '<meta name="wf-token" content="" />';
 const LINK_TOKEN = /^[A-Za-z0-9_-]{43}$/;
 const CONNECT_MAX_BODY = 16 << 10;
 const ACTION_MAX_BODY = 8 << 10;
+const VENDOR_IMPORT_MAX_BODY = 192 << 10;
 const BACKEND_MAX_BODY = 4 << 20;
 const LIMITER_KEYS_MAX = 16384;
 
@@ -168,7 +169,7 @@ export function pathKind(path) {
   if (m) return { kind: "connect", token: m[1] };
   m = /^\/r\/([^/]*)$/.exec(path);
   if (m) return { kind: "report", token: m[1] };
-  m = /^\/api\/connect\/([^/]+)(|\/oauth|\/oauth\/result|\/smtp-imap)$/.exec(path);
+  m = /^\/api\/connect\/([^/]+)(|\/oauth|\/oauth\/result|\/smtp-imap|\/vendor|\/vendor\/import)$/.exec(path);
   if (m) return { kind: "connect-api", token: m[1], action: m[2] };
   m = /^\/api\/reports\/([^/]+)$/.exec(path);
   if (m) return { kind: "report-api", token: m[1] };
@@ -351,6 +352,27 @@ function service(v) {
   return out;
 }
 
+// A vendor asks for a key and at most a few ids; a pick is bounded by the largest link.
+const VENDOR_FIELDS_MAX = 8;
+const VENDOR_PICK_MAX = 500;
+// vendorFields keeps a flat map of short strings; undefined marks a shape the backend would refuse.
+function vendorFields(v) {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+  const entries = Object.entries(v);
+  if (entries.length === 0 || entries.length > VENDOR_FIELDS_MAX) return undefined;
+  const out = {};
+  for (const [name, value] of entries) {
+    if (typeof value !== "string" || name.length > 64 || value.length > 1024) return undefined;
+    out[name] = value;
+  }
+  return out;
+}
+// mailboxIDs keeps a list of short ids; undefined marks a shape the backend would refuse.
+function mailboxIDs(v) {
+  if (!Array.isArray(v) || v.length === 0 || v.length > VENDOR_PICK_MAX) return undefined;
+  return v.every((id) => typeof id === "string" && id.length > 0 && id.length <= 256) ? v : undefined;
+}
+
 // relayConnect passes the backend's verdict through as-is, or a fixed sentence when it could not be reached.
 async function relayConnect(ctx, path, body) {
   try {
@@ -375,7 +397,7 @@ async function connectAPI(ctx, token, action) {
   const lookup = { token, host: ctx.host };
   if (action === "") return relayConnect(ctx, "/lookup", lookup);
 
-  const max = action === "/smtp-imap" ? CONNECT_MAX_BODY : ACTION_MAX_BODY;
+  const max = action === "/vendor/import" ? VENDOR_IMPORT_MAX_BODY : action === "/smtp-imap" || action === "/vendor" ? CONNECT_MAX_BODY : ACTION_MAX_BODY;
   const { value: b, error } = await readBody(ctx.request, max);
   if (action === "/smtp-imap") {
     if (error === "overflow") return abort(413, "body_too_large", "The details are too large.");
@@ -388,6 +410,21 @@ async function connectAPI(ctx, token, action) {
       ...lookup, email: str(b.email, Infinity), name: str(b.name, Infinity), smtp, imap,
       captcha_token: str(b.captcha_token, Infinity), remote_ip: ctx.ip,
     });
+  }
+  if (action === "/vendor") {
+    const fields = b && vendorFields(b.fields);
+    if (error || fields === undefined || typeof b.vendor !== "string" || !isStr(b.captcha_token)) {
+      return abort(400, "invalid_body", "The details could not be read.");
+    }
+    return relayConnect(ctx, "/vendor/mailboxes", {
+      ...lookup, vendor: str(b.vendor, 32), fields, captcha_token: str(b.captcha_token, Infinity), remote_ip: ctx.ip,
+    });
+  }
+  if (action === "/vendor/import") {
+    if (error === "overflow") return abort(413, "body_too_large", "That is too many mailboxes at once.");
+    const ids = b && mailboxIDs(b.mailbox_ids);
+    if (error || ids === undefined || typeof b.ticket !== "string") return abort(400, "invalid_body", "The request could not be read.");
+    return relayConnect(ctx, "/vendor/import", { ...lookup, ticket: str(b.ticket, 128), mailbox_ids: ids, remote_ip: ctx.ip });
   }
   if (action === "/oauth") {
     if (error || !isStr(b.provider)) return abort(400, "invalid_body", "The request could not be read.");

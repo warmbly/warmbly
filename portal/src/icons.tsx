@@ -92,3 +92,13 @@ export function ChevronIcon({ className }: { className?: string }) {
         </Icon>
     );
 }
+
+export function StackIcon({ className }: { className?: string }) {
+    return (
+        <Icon className={className}>
+            <path d="m12 3.5 8.5 4.3L12 12 3.5 7.8 12 3.5Z" />
+            <path d="m3.5 12 8.5 4.2 8.5-4.2" />
+            <path d="m3.5 16.2 8.5 4.3 8.5-4.3" />
+        </Icon>
+    );
+}

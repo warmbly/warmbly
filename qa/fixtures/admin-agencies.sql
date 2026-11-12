@@ -3,7 +3,9 @@
 -- proof), and "Meridian Outbound" has the seeded workspace as a client and no plan yet. Re-runnable.
 BEGIN;
 
-UPDATE users SET admin_permissions = 8388607 WHERE id = '11111111-0000-0000-0000-000000000001';
+-- The product tour is marked seen, so it does not open over a walkthrough on a fresh database.
+UPDATE users SET admin_permissions = 8388607, product_tour_completed_at = COALESCE(product_tour_completed_at, now())
+WHERE id = '11111111-0000-0000-0000-000000000001';
 UPDATE sessions SET mfa_verified = true WHERE user_id = '11111111-0000-0000-0000-000000000001';
 
 INSERT INTO agencies (id, name, owner_user_id, status)

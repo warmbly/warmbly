@@ -74,6 +74,7 @@ function Panel({
     onToggle,
     failure,
     card,
+    cardMissing,
     used,
     dirty,
     saving,
@@ -92,6 +93,8 @@ function Panel({
     onToggle: (on: boolean) => void;
     failure?: Failure;
     card?: Card;
+    /** The card was looked up and there is none; false when it simply could not be read. */
+    cardMissing?: boolean;
     /** What this month has used of its limit, shown while on. */
     used?: string;
     /** The numbers differ from what is saved. Nothing is sent, and nothing can be charged, until Save. */
@@ -168,7 +171,9 @@ function Panel({
                     <span>
                         {card
                             ? `Charged to ${cardName(card)}, the card your plan is paid with. You get an invoice and a notification for each top-up.`
-                            : "You have no saved card yet. Automatic top-up charges the card your plan is paid with, so it can be turned on once a plan is bought with a card."}
+                            : cardMissing
+                              ? "You have no saved card yet. Automatic top-up charges the card your plan is paid with, so it can be turned on once a plan is bought with a card."
+                              : "We could not read your saved card just now, so automatic top-up cannot be turned on. Reload the page to try again."}
                         {enabled && used && ` ${used}`}
                     </span>
                 </p>
@@ -227,11 +232,12 @@ export function SendsAutoTopup({ agencyId, canManage }: { agencyId: string; canM
             }
             enabled={data.enabled}
             loading={false}
-            // Turning it off always works; turning it on needs a pool to top up and a card to charge.
-            canToggle={canManage && !save.isPending && (data.enabled || (data.available && !data.card_missing))}
+            // Turning it off always works; turning it on needs a pool to top up and a card that was read.
+            canToggle={canManage && !save.isPending && (data.enabled || (data.available && !!data.card))}
             onToggle={(enabled) => void apply(enabled, !enabled)}
             failure={data.failure}
             card={data.card}
+            cardMissing={data.card_missing}
             used={`This month: ${data.bought_this_period} of ${data.max_packs} used.`}
             dirty={dirty}
             saving={save.isPending}
@@ -320,10 +326,11 @@ export function AIAutoTopup({ agencyId, canManage }: { agencyId: string; canMana
             enabled={data.enabled}
             loading={false}
             // Turning it off always works; turning it on needs a balance to add to and numbers that can be saved.
-            canToggle={canManage && !save.isPending && (data.enabled || (data.available && !problem && !data.card_missing))}
+            canToggle={canManage && !save.isPending && (data.enabled || (data.available && !problem && !!data.card))}
             onToggle={(enabled) => void apply(enabled, !enabled)}
             failure={data.failure}
             card={data.card}
+            cardMissing={data.card_missing}
             used={`This month: ${fmtUsdTrim(data.added_this_period_usd)} of ${fmtUsdTrim(data.limit_usd)} used.`}
             dirty={dirty}
             saving={save.isPending}
