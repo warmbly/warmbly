@@ -436,6 +436,8 @@ type AdminRemoveMailboxesRequest struct {
 	Domains []string `json:"domains"`
 	Reason  string   `json:"reason"`
 	DryRun  bool     `json:"dry_run"`
+	// Skip leaves out mailboxes an earlier pass could not delete, so the rest still progress.
+	Skip []uuid.UUID `json:"skip,omitempty"`
 }
 
 // AdminMailboxTarget is one mailbox an admin removal matched.

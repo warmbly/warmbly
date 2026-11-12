@@ -80,7 +80,7 @@ type AdminRepository interface {
 	// so the admin table can answer "whose mailbox is this and where
 	// does it live" without N+1 fetches.
 	SearchMailboxesForAdmin(ctx context.Context, search *models.AdminMailboxSearch) (*models.AdminMailboxesResult, error)
-	MailboxesOnDomains(ctx context.Context, domains []string, limit int) ([]models.AdminMailboxTarget, int, error)
+	MailboxesOnDomains(ctx context.Context, domains []string, skip []uuid.UUID, limit int) ([]models.AdminMailboxTarget, int, error)
 }
 
 type adminRepository struct {
@@ -2168,14 +2168,15 @@ func (r *adminRepository) CountSuperAdmins(ctx context.Context) (int, error) {
 	return n, err
 }
 
-// MailboxesOnDomains returns up to limit workspace mailboxes whose address is on one of domains (lowercase), and how many match in all.
-func (r *adminRepository) MailboxesOnDomains(ctx context.Context, domains []string, limit int) ([]models.AdminMailboxTarget, int, error) {
+// MailboxesOnDomains returns up to limit workspace mailboxes whose address is on one of domains (lowercase), outside skip, and how many match in all.
+func (r *adminRepository) MailboxesOnDomains(ctx context.Context, domains []string, skip []uuid.UUID, limit int) ([]models.AdminMailboxTarget, int, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT id, email, organization_id, status::text, count(*) OVER ()
 		FROM email_accounts
 		WHERE lower(split_part(email, '@', 2)) = ANY($1) AND organization_id IS NOT NULL
+			AND NOT (id = ANY($2::uuid[]))
 		ORDER BY organization_id, email
-		LIMIT $2`, domains, limit)
+		LIMIT $3`, domains, skip, limit)
 	if err != nil {
 		return nil, 0, err
 	}

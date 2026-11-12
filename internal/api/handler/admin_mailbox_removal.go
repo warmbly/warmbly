@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/errx"
@@ -14,7 +15,8 @@ import (
 const (
 	adminRemovalMaxDomains = 20
 	// One pass stays well inside a request timeout; the caller repeats until nothing remains.
-	adminRemovalBatch = 100
+	adminRemovalBatch   = 100
+	adminRemovalMaxSkip = 1000
 )
 
 // Shared mailbox providers: nobody owns these domains, so a domain-owner removal never names one.
@@ -51,8 +53,17 @@ func (h *Handler) AdminRemoveMailboxes(c *gin.Context) {
 		return
 	}
 
+	if len(req.Skip) > adminRemovalMaxSkip {
+		errx.JSON(c, errx.New(errx.BadRequest, "skip may name at most 1000 mailboxes"))
+		return
+	}
+
 	ctx := c.Request.Context()
-	targets, total, xerr := h.AdminService.MailboxesOnDomains(ctx, domains, adminRemovalBatch)
+	skip := req.Skip
+	if skip == nil {
+		skip = []uuid.UUID{}
+	}
+	targets, total, xerr := h.AdminService.MailboxesOnDomains(ctx, domains, skip, adminRemovalBatch)
 	if xerr != nil {
 		errx.JSON(c, xerr)
 		return

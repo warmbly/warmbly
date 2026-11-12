@@ -17,7 +17,7 @@ import (
 type AdminService interface {
 	// Mailbox admin
 	SearchMailboxes(ctx context.Context, search *models.AdminMailboxSearch) (*models.AdminMailboxesResult, *errx.Error)
-	MailboxesOnDomains(ctx context.Context, domains []string, limit int) ([]models.AdminMailboxTarget, int, *errx.Error)
+	MailboxesOnDomains(ctx context.Context, domains []string, skip []uuid.UUID, limit int) ([]models.AdminMailboxTarget, int, *errx.Error)
 
 	// User Management
 	SearchUsers(ctx context.Context, search *models.AdminUserSearch) (*models.AdminUsersResult, *errx.Error)
@@ -188,8 +188,8 @@ func (s *adminService) SearchMailboxes(ctx context.Context, search *models.Admin
 	return result, nil
 }
 
-func (s *adminService) MailboxesOnDomains(ctx context.Context, domains []string, limit int) ([]models.AdminMailboxTarget, int, *errx.Error) {
-	targets, total, err := s.repo.MailboxesOnDomains(ctx, domains, limit)
+func (s *adminService) MailboxesOnDomains(ctx context.Context, domains []string, skip []uuid.UUID, limit int) ([]models.AdminMailboxTarget, int, *errx.Error) {
+	targets, total, err := s.repo.MailboxesOnDomains(ctx, domains, skip, limit)
 	if err != nil {
 		errs.CaptureException(err)
 		return nil, 0, errx.New(errx.Internal, "failed to list mailboxes")
